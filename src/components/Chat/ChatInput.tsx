@@ -1023,6 +1023,7 @@ export function ChatInput({
         scenario: nexusCmd.scenario,
         goal: nexusCmd.goal,
         sourceSessionId: activeSessionId ?? undefined,
+        mode: nexusCmd.mode,
       }).then((r) => {
         const res = r as { rosterId: string; waves: string[][]; dispatchedNow: string[] }
         useToastStore.getState().info(

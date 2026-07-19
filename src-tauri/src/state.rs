@@ -218,6 +218,9 @@ pub struct DispatchedTask {
     /// verdict 解析状态：structured | unstructured
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub verdict_status: Option<String>,
+    /// verdict 校验失败的自动重试是否已用过(仅一次)
+    #[serde(default)]
+    pub verdict_retry_done: bool,
     /// 创建时间（Unix 秒）
     pub created_at: i64,
     /// 最后更新时间（Unix 秒）

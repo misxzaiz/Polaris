@@ -30,6 +30,16 @@ fn truncate_summary(summary: String) -> String {
 ///
 /// `status` 允许重复回报（如 running 期间携带 latest_activity 的进度心跳）；
 /// 每次回报都会刷新 updated_at，长任务因此不会被并发额度的陈旧判定误伤。
+/// 回报结果:completed 且配置 resultSchema 时携带解析出的 verdict(P2-3/U1-2)
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportStatusResult {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verdict_status: Option<String>,
+}
+
 pub fn report_dispatch_status_impl(
     state: &AppState,
     dispatch_id: &str,
@@ -37,7 +47,7 @@ pub fn report_dispatch_status_impl(
     summary: Option<String>,
     latest_activity: Option<String>,
     conversation_id: Option<String>,
-) -> Result<()> {
+) -> Result<ReportStatusResult> {
     if !is_valid_dispatch_status(status) {
         return Err(AppError::ValidationError(format!(
             "无效的派发任务状态: {}（允许 running/completed/failed）",
@@ -86,14 +96,36 @@ pub fn report_dispatch_status_impl(
     );
 
     // NEXUS roster 波次推进（P2-5）：成员任务到达终态时由 Rust 触发下波派发
+    let mut result = ReportStatusResult { verdict: None, verdict_status: None };
     if status == "completed" || status == "failed" {
         if let Some(task) = state.get_dispatched_task(dispatch_id) {
+            // verdict 校验失败自动重试一次（B2）：continue 原会话要求重发 JSON，
+            // 任务回到 running，本次不做终态处理；重试后的 completed 再走完整链路。
+            if status == "completed"
+                && task.result_schema.is_some()
+                && task.verdict_status.as_deref() == Some("unstructured")
+                && !task.verdict_retry_done
+            {
+                let retry_prompt = "你上一条结果缺少要求的结构化 JSON verdict（或校验未通过）。请补发：只输出一个符合此前 system prompt 中结构化结果要求的 ```json 代码块，不要重复其他内容。";
+                match crate::services::ask_listener::trigger_dispatch_continue(
+                    state, dispatch_id, retry_prompt,
+                ) {
+                    Ok(()) => {
+                        state.update_dispatched_task(dispatch_id, |t| t.verdict_retry_done = true);
+                        tracing::info!("[Dispatch] verdict 缺失，已自动 continue 重试: {}", dispatch_id);
+                        return Ok(result);
+                    }
+                    Err(e) => tracing::warn!("[Dispatch] verdict 重试失败，降级 unstructured: {}", e),
+                }
+            }
+            result.verdict = task.verdict.clone();
+            result.verdict_status = task.verdict_status.clone();
             if task.roster_id.is_some() {
                 crate::services::nexus_pipeline::on_dispatch_terminal(state, &task);
             }
         }
     }
-    Ok(())
+    Ok(result)
 }
 
 /// 核心实现：按目标会话 ID 查找派发任务（前端只有 sessionId 时使用）
@@ -193,7 +225,7 @@ pub fn dispatch_report_status(
     latest_activity: Option<String>,
     conversation_id: Option<String>,
     state: tauri::State<'_, crate::AppState>,
-) -> Result<()> {
+) -> Result<ReportStatusResult> {
     report_dispatch_status_impl(
         &state,
         &dispatch_id,

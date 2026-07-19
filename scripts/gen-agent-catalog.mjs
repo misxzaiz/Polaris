@@ -221,6 +221,22 @@ fs.writeFileSync(
 `,
 );
 
+// ---- 5.5 playbooks(M3,NEXUS phase 手册,orchestrator 参考) ----
+const playbooksDir = path.join(outRoot, 'playbooks');
+fs.rmSync(playbooksDir, { recursive: true, force: true });
+fs.mkdirSync(playbooksDir, { recursive: true });
+const pbSrc = path.join(zhRoot, 'strategy', 'playbooks');
+let pbCount = 0;
+if (fs.existsSync(pbSrc)) {
+  for (const f of fs.readdirSync(pbSrc)) {
+    if (f.endsWith('.md')) {
+      fs.copyFileSync(path.join(pbSrc, f), path.join(playbooksDir, f));
+      pbCount++;
+    }
+  }
+}
+console.log(`playbooks: ${pbCount}`);
+
 // ---- 6. 写产物 ----
 const write = (name, data) => fs.writeFileSync(path.join(outRoot, name), JSON.stringify(data, null, 2) + '\n');
 write('catalog.json', { agents: catalog });

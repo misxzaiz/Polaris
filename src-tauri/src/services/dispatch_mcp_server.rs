@@ -41,6 +41,7 @@ const CHECK_TOOL_NAME: &str = "check_dispatched_task";
 const CONTINUE_TOOL_NAME: &str = "continue_dispatched_task";
 const TARGETS_TOOL_NAME: &str = "list_dispatch_targets";
 const ROSTER_TOOL_NAME: &str = "dispatch_roster";
+const FIND_EXPERT_TOOL_NAME: &str = "find_expert";
 
 /// Server-level configuration, parsed from CLI args.
 pub struct DispatchMcpConfig {
@@ -288,6 +289,37 @@ fn handle_tools_list() -> Value {
                         "workDir": {
                             "type": "string",
                             "description": "Absolute working directory for member sessions. Omit to inherit."
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["sprint", "micro"],
+                            "description": "sprint (default): full core team. micro: lightweight squad — first 5 core members only, for 1-5 day tasks."
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": FIND_EXPERT_TOOL_NAME,
+                "description": concat!(
+                    "Find the right expert agent for a task from the Agency Agents ",
+                    "corpus (267 experts) plus project custom experts. Deterministic ",
+                    "task-type routing first (frontend/backend/qa/planning/...), then ",
+                    "keyword candidates. Returns up to 8 candidates with slug/name/",
+                    "description — pick one and use its slug with dispatch_task ",
+                    "(prefix the prompt with the expert persona) or tell the user."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["query"],
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Task type keyword (e.g. 'frontend', 'qa') or free-text task description (Chinese or English)."
+                        },
+                        "workDir": {
+                            "type": "string",
+                            "description": "Project dir to include its custom experts (.polaris/agents). Optional."
                         }
                     },
                     "additionalProperties": false
@@ -326,6 +358,20 @@ fn handle_tools_call(params: Value, config: &DispatchMcpConfig) -> Result<Value>
         CHECK_TOOL_NAME => build_status_frame(&arguments, config)?,
         CONTINUE_TOOL_NAME => build_continue_frame(&arguments, config)?,
         ROSTER_TOOL_NAME => build_roster_frame(&arguments, config)?,
+        FIND_EXPERT_TOOL_NAME => {
+            let query = arguments
+                .get("query")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|q| !q.is_empty())
+                .ok_or_else(|| AppError::ValidationError("缺少 query 参数".into()))?;
+            json!({
+                "type": "find_expert",
+                "token": config.token,
+                "query": query,
+                "workDir": arguments.get("workDir").and_then(Value::as_str),
+            })
+        }
         TARGETS_TOOL_NAME => json!({
             "type": "dispatch_targets",
             "token": config.token,
@@ -408,6 +454,7 @@ fn build_roster_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<V
         "scenario": scenario,
         "goal": goal,
         "workDir": arguments.get("workDir").and_then(Value::as_str),
+        "mode": arguments.get("mode").and_then(Value::as_str),
     }))
 }
 

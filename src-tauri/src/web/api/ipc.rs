@@ -78,6 +78,111 @@ pub async fn handle_ipc_bridge(
                 .map(Json)
                 .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))
         }
+        // ── Agency Agents corpus / 自定义专家 / NEXUS(U2-5 web 桥) ─────────
+        "agent_corpus_status" => {
+            let status = crate::commands::agent_corpus::corpus_status_inner(None);
+            to_json(status)
+        }
+        "agent_corpus_install" => crate::commands::agent_corpus::corpus_install_inner(None)
+            .map_err(bad_request)
+            .and_then(to_json),
+        "agent_corpus_uninstall" => crate::commands::agent_corpus::corpus_uninstall_inner()
+            .map_err(bad_request)
+            .map(|_| Json(Value::Null)),
+        "agent_corpus_catalog" => crate::commands::agent_corpus::corpus_catalog_inner(None)
+            .map_err(bad_request)
+            .and_then(to_json),
+        "agent_corpus_divisions" => crate::commands::agent_corpus::corpus_divisions_inner(None)
+            .map_err(bad_request)
+            .map(Json),
+        "agent_corpus_rosters" => crate::commands::agent_corpus::corpus_rosters_inner(None)
+            .map_err(bad_request)
+            .map(Json),
+        "user_roster_save" => {
+            let members: Vec<String> = args
+                .get("members")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
+            let g = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            crate::commands::agent_corpus::user_roster_save_inner(
+                &require_string(&args, "slug")?,
+                &g("title"),
+                &g("summary"),
+                members,
+            )
+            .map_err(bad_request)
+            .map(|_| Json(Value::Null))
+        }
+        "user_roster_delete" => crate::commands::agent_corpus::user_roster_delete_inner(
+            &require_string(&args, "slug")?,
+        )
+        .map_err(bad_request)
+        .map(|_| Json(Value::Null)),
+        "agent_corpus_read" => crate::commands::agent_corpus::corpus_read_inner(
+            &require_string(&args, "slug")?,
+        )
+        .map_err(bad_request)
+        .map(|c| Json(Value::String(c))),
+        "simple_ai_list_agents" => {
+            let work_dir = require_string(&args, "workDir")?;
+            to_json(crate::commands::agent_corpus::simple_ai_list_agents_inner(&work_dir))
+        }
+        "custom_agent_list" => {
+            let work_dir = require_string(&args, "workDir")?;
+            to_json(crate::commands::agent_corpus::custom_agent_list_inner(&work_dir))
+        }
+        "custom_agent_save" => {
+            let g = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            crate::commands::agent_corpus::custom_agent_save_inner(
+                &require_string(&args, "workDir")?,
+                &require_string(&args, "slug")?,
+                &g("name"),
+                &g("description"),
+                &g("emoji"),
+                &g("systemPrompt"),
+            )
+            .map_err(bad_request)
+            .map(|p| Json(Value::String(p.to_string_lossy().to_string())))
+        }
+        "custom_agent_delete" => crate::commands::agent_corpus::custom_agent_delete_inner(
+            &require_string(&args, "workDir")?,
+            &require_string(&args, "slug")?,
+        )
+        .map_err(bad_request)
+        .map(|_| Json(Value::Null)),
+        "nexus_start_roster" => {
+            let source = args.get("sourceSessionId").and_then(Value::as_str).map(str::to_string);
+            let work_dir = args.get("workDir").and_then(Value::as_str).map(str::to_string);
+            let mode = args.get("mode").and_then(Value::as_str).map(str::to_string);
+            crate::commands::nexus::nexus_start_roster_impl(
+                &state,
+                &require_string(&args, "scenario")?,
+                &require_string(&args, "goal")?,
+                source,
+                work_dir,
+                mode,
+            )
+            .map_err(WebError::BadRequest)
+            .and_then(to_json)
+        }
+        "nexus_list_pipelines" => to_json(crate::services::nexus_pipeline::list_pipelines()),
+        "nexus_resolve_escalation" => crate::services::nexus_pipeline::resolve_escalation(
+            &state,
+            &require_string(&args, "rosterId")?,
+            &require_string(&args, "qaSlug")?,
+            &require_string(&args, "action")?,
+        )
+        .map_err(WebError::BadRequest)
+        .map(|_| Json(Value::Null)),
+        "nexus_dispatch_group" => crate::services::nexus_pipeline::dispatch_group(
+            &state,
+            &require_string(&args, "rosterId")?,
+            &require_string(&args, "activation")?,
+        )
+        .map_err(WebError::BadRequest)
+        .and_then(to_json),
+
         "dispatch_delete_task" => {
             let dispatch_id = require_string(&args, "dispatchId")?;
             if !state.delete_dispatched_task(&dispatch_id) {
@@ -455,6 +560,16 @@ fn dispatch_snippet_get(state: &AppState, args: &Value) -> Result<Json<Value>, W
     json_result!(service.get_snippet(&id))
 }
 
+fn to_json<T: serde::Serialize>(value: T) -> Result<Json<Value>, WebError> {
+    serde_json::to_value(value)
+        .map(Json)
+        .map_err(|e| WebError::Internal(format!("序列化失败: {}", e)))
+}
+
+fn bad_request(e: crate::error::AppError) -> WebError {
+    WebError::BadRequest(e.to_message())
+}
+
 fn dispatch_report_dispatch_status(
     state: &AppState,
     args: &Value,
@@ -473,7 +588,7 @@ fn dispatch_report_dispatch_status(
         .get("conversationId")
         .and_then(Value::as_str)
         .map(str::to_string);
-    crate::commands::dispatch::report_dispatch_status_impl(
+    let result = crate::commands::dispatch::report_dispatch_status_impl(
         state,
         &dispatch_id,
         &status,
@@ -482,7 +597,9 @@ fn dispatch_report_dispatch_status(
         conversation_id,
     )
     .map_err(|e| WebError::BadRequest(e.to_message()))?;
-    Ok(Json(Value::Null))
+    serde_json::to_value(result)
+        .map(Json)
+        .map_err(|e| WebError::Internal(format!("序列化回报结果失败: {}", e)))
 }
 
 fn dispatch_create_dispatch_task(

@@ -66,6 +66,21 @@ export interface RosterDef {
   duration: string;
   summary: string;
   groups: RosterGroup[];
+  /** 用户自建 roster 标记 */
+  custom?: boolean;
+}
+
+export async function saveUserRoster(params: {
+  slug: string;
+  title: string;
+  summary: string;
+  members: string[];
+}): Promise<void> {
+  return invoke('user_roster_save', params);
+}
+
+export async function deleteUserRoster(slug: string): Promise<void> {
+  return invoke('user_roster_delete', { slug });
 }
 
 export async function getRosters(): Promise<RosterDef[]> {
@@ -97,6 +112,10 @@ export async function saveCustomAgent(params: {
   return invoke<string>('custom_agent_save', params);
 }
 
+export async function readCorpusAgent(slug: string): Promise<string> {
+  return invoke<string>('agent_corpus_read', { slug });
+}
+
 export async function deleteCustomAgent(workDir: string, slug: string): Promise<void> {
   return invoke('custom_agent_delete', { workDir, slug });
 }
@@ -113,6 +132,63 @@ export async function startRoster(params: {
   goal: string;
   sourceSessionId?: string;
   workDir?: string;
+  mode?: 'sprint' | 'micro';
 }): Promise<RosterStartResult> {
   return invoke<RosterStartResult>('nexus_start_roster', params);
+}
+
+// ============================================================================
+// NEXUS pipeline 进度(U1-1)
+// ============================================================================
+
+export interface PipelineMember {
+  slug: string;
+  status: 'pending' | 'dispatching' | 'running' | 'completed' | 'failed';
+  dispatchId?: string;
+  verdictStatus?: string;
+}
+
+export interface PipelineEscalation {
+  qaSlug: string;
+  devSlug: string;
+  attempts: number;
+  resolution: 'pending' | 'accepted' | 'failed';
+}
+
+export interface PipelineLaterGroup {
+  activation: string;
+  members: string[];
+}
+
+export interface RosterPipeline {
+  id: string;
+  scenario: string;
+  goal: string;
+  sourceSessionId: string;
+  workDir?: string;
+  waves: string[][];
+  currentWave: number;
+  members: Record<string, PipelineMember>;
+  memberSummaries: Record<string, string>;
+  fixAttempts?: Record<string, number>;
+  loopState?: { devSlug: string; qaSlug: string; phase: 'fixing' | 'reverifying' };
+  escalations?: PipelineEscalation[];
+  laterGroups?: PipelineLaterGroup[];
+  dispatchedGroups?: string[];
+  mode?: string;
+  finalReport?: string;
+  status: 'running' | 'completed';
+  createdAt: number;
+}
+
+export async function resolveEscalation(rosterId: string, qaSlug: string, action: 'accept' | 'fail'): Promise<void> {
+  return invoke('nexus_resolve_escalation', { rosterId, qaSlug, action });
+}
+
+export async function dispatchLaterGroup(rosterId: string, activation: string): Promise<string[]> {
+  return invoke<string[]>('nexus_dispatch_group', { rosterId, activation });
+}
+
+export async function listPipelines(): Promise<RosterPipeline[]> {
+  return invoke<RosterPipeline[]>('nexus_list_pipelines');
 }

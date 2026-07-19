@@ -54,6 +54,7 @@ pub(super) async fn run_chat_loop(
     mcp_servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer],
     skills: &std::collections::HashMap<String, super::skill::SkillEntry>,
     depth: u32,
+    allowed_tools: &[String],
 ) -> Result<()> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
     tracing::info!(
@@ -77,7 +78,8 @@ pub(super) async fn run_chat_loop(
         .unwrap_or(DEFAULT_MAX_TOOL_ROUNDS);
 
     // 工具注册表 + 本轮 schema。新增工具无需改动本循环。
-    let mut registry = ToolRegistry::with_builtins();
+    // agent 定义的 tools 白名单(P0-2 解析保留,U2-7 启用):空 = 不过滤
+    let mut registry = ToolRegistry::with_builtins().with_allowed_tools(allowed_tools);
     // dispatch_agent 默认开启；SIMPLE_AI_DISABLE_SUBAGENT=1 时移除（决策 §12-4）。
     let subagent_disabled = profile
         .custom_env

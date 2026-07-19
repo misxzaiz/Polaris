@@ -34,6 +34,9 @@ export interface DispatchTaskView {
   /** 终态结论摘要 */
   summary?: string
   error?: string
+  /** 结构化 verdict(resultSchema 派发完成后由后端解析回填,U1-2) */
+  verdict?: Record<string, unknown>
+  verdictStatus?: 'structured' | 'unstructured'
 }
 
 export interface DispatchReport {

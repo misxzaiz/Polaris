@@ -145,6 +145,7 @@ export const DispatchTaskCard = memo(function DispatchTaskCard({ block }: { bloc
   const isFailed = task.status === 'failed'
   const summaryText = task.summary || (isFailed ? task.error : undefined)
   const summaryLong = (summaryText?.length ?? 0) > 180
+  const verdict = task.verdictStatus === 'structured' ? task.verdict : undefined
 
   return (
     <div
@@ -186,6 +187,9 @@ export const DispatchTaskCard = memo(function DispatchTaskCard({ block }: { bloc
           <span className="truncate">{task.latestActivity}</span>
         </div>
       )}
+
+      {/* 终态：结构化 verdict(resultSchema 派发,U1-2) */}
+      {(isDone || isFailed) && verdict && <VerdictBlock verdict={verdict} />}
 
       {/* 终态：摘要 */}
       {(isDone || isFailed) && summaryText && (
@@ -290,3 +294,92 @@ export const DispatchTaskCard = memo(function DispatchTaskCard({ block }: { bloc
     </div>
   )
 })
+
+
+// ============================================================================
+// 结构化 verdict 渲染(qa-pass/qa-fail/phase-gate/escalation,U1-2)
+// ============================================================================
+
+interface VerdictIssue {
+  severity?: string
+  expected?: string
+  actual?: string
+  fix_instruction?: string
+  file_to_modify?: string
+}
+
+function VerdictBlock({ verdict }: { verdict: Record<string, unknown> }) {
+  const [open, setOpen] = useState(false)
+  const schema = String(verdict.schema ?? '')
+  const isPass = schema === 'qa-pass' || (schema === 'phase-gate' && verdict.verdict === 'PASS')
+  const isFail = schema === 'qa-fail' || (schema === 'phase-gate' && verdict.verdict === 'FAIL')
+  const issues = Array.isArray(verdict.issues) ? (verdict.issues as VerdictIssue[]) : []
+  const acceptance = verdict.acceptance as { passed?: number; failed?: number; total?: number } | undefined
+
+  return (
+    <div className="px-3 pb-2">
+      <div
+        className={clsx(
+          'rounded-md border px-2 py-1.5 text-[11px]',
+          isPass && 'border-success/40 bg-success/[0.05]',
+          isFail && 'border-error/40 bg-error-faint/40',
+          !isPass && !isFail && 'border-border-subtle'
+        )}
+      >
+        <button
+          type="button"
+          className="flex w-full items-center gap-1.5"
+          onClick={() => setOpen(!open)}
+        >
+          <span
+            className={clsx(
+              'rounded px-1.5 py-0.5 text-[10px] font-medium text-white',
+              isPass ? 'bg-success' : isFail ? 'bg-error' : 'bg-text-muted'
+            )}
+          >
+            {schema.toUpperCase()}
+          </span>
+          {acceptance && (
+            <span className="text-text-secondary">
+              验收 {acceptance.passed ?? 0}/{acceptance.total ?? 0}
+            </span>
+          )}
+          {issues.length > 0 && (
+            <span className="text-error">{issues.length} 个问题</span>
+          )}
+          {schema === 'escalation' && (
+            <span className="text-warning">建议处置:{String(verdict.recommendation ?? '')}</span>
+          )}
+          <ChevronDown
+            className={clsx('ml-auto w-3 h-3 shrink-0 text-text-muted transition-transform', open && 'rotate-180')}
+          />
+        </button>
+
+        {open && issues.length > 0 && (
+          <div className="mt-1.5 space-y-1.5">
+            {issues.map((issue, i) => (
+              <div key={i} className="rounded bg-background-secondary px-2 py-1.5">
+                <div>
+                  <span className="font-medium text-error">[{issue.severity ?? '?'}]</span>{' '}
+                  <span className="text-text-secondary">期望:{issue.expected ?? '—'}</span>
+                </div>
+                <div className="text-text-tertiary">实际:{issue.actual ?? '—'}</div>
+                {issue.fix_instruction && (
+                  <div className="text-text-secondary">修复:{issue.fix_instruction}</div>
+                )}
+                {issue.file_to_modify && (
+                  <div className="font-mono text-[10px] text-text-muted">{issue.file_to_modify}</div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {open && issues.length === 0 && (
+          <pre className="mt-1.5 max-h-40 overflow-auto whitespace-pre-wrap break-words text-[10px] text-text-tertiary">
+            {JSON.stringify(verdict, null, 2)}
+          </pre>
+        )}
+      </div>
+    </div>
+  )
+}

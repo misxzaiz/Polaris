@@ -29,6 +29,9 @@ pub struct CorpusStatus {
     pub bundled_count: usize,
     /// 安装目标目录
     pub install_dir: PathBuf,
+    /// 上游基线(corpus-manifest sources,供 UI 展示与 stale 判断)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sources: Option<serde_json::Value>,
 }
 
 /// catalog.json 条目(与生成脚本输出对齐)
@@ -72,13 +75,20 @@ const SIDE_FILES: &[&str] = &[
 ];
 
 /// 随 corpus 一并安装的子目录(整目录复制,先清后装)
-const SIDE_DIRS: &[&str] = &["activation"];
+const SIDE_DIRS: &[&str] = &["activation", "playbooks"];
 
 fn read_manifest_version(dir: &Path) -> Option<u32> {
     let content = fs::read_to_string(dir.join("corpus-manifest.json")).ok()?;
     serde_json::from_str::<CorpusManifest>(&content)
         .ok()
         .map(|m| m.corpus_version)
+}
+
+fn read_manifest_sources(dir: &Path) -> Option<serde_json::Value> {
+    let content = fs::read_to_string(dir.join("corpus-manifest.json")).ok()?;
+    serde_json::from_str::<serde_json::Value>(&content)
+        .ok()
+        .and_then(|v| v.get("sources").cloned())
 }
 
 fn count_corpus_md(dir: &Path) -> usize {
@@ -119,6 +129,7 @@ pub fn corpus_status(resources_agents_dir: &Path, install_dir: &Path) -> CorpusS
         installed_count: count_corpus_md(install_dir),
         bundled_count: count_corpus_md(resources_agents_dir),
         install_dir: install_dir.to_path_buf(),
+        sources: read_manifest_sources(resources_agents_dir),
     }
 }
 

@@ -195,6 +195,9 @@ async fn handle_connection(
         "dispatch_status" => {
             handle_dispatch_status_frame(&mut stream, frame, state, &expected_token).await
         }
+        "find_expert" => {
+            handle_find_expert_frame(&mut stream, frame, &expected_token).await
+        }
         "dispatch_roster" => {
             handle_dispatch_roster_frame(&mut stream, frame, state, &expected_token).await
         }
@@ -683,6 +686,7 @@ pub fn register_dispatch_task(
         roster_id: params.roster_id,
         verdict: None,
         verdict_status: None,
+        verdict_retry_done: false,
         created_at: now,
         updated_at: now,
     };
@@ -739,9 +743,153 @@ async fn handle_dispatch_frame(
     Ok(())
 }
 
+/// 对已终态的派发任务追加指令(同会话续跑):置 running 并通知前端。
+/// nexus Dev↔QA loop 与 verdict 校验重试复用此入口。
+pub fn trigger_dispatch_continue(
+    state: &AppState,
+    dispatch_id: &str,
+    prompt: &str,
+) -> std::result::Result<(), String> {
+    let task = state
+        .get_dispatched_task(dispatch_id)
+        .ok_or_else(|| format!("未找到派发任务: {dispatch_id}"))?;
+    if matches!(task.status.as_str(), "pending" | "running") {
+        return Err("任务仍在执行中".into());
+    }
+    state.update_dispatched_task(dispatch_id, |t| {
+        t.status = "running".to_string();
+        t.latest_activity = None;
+    });
+    emit_dispatch_event(
+        state,
+        "dispatch-task-continue",
+        &json!({
+            "dispatchId": task.dispatch_id,
+            "sessionId": task.session_id,
+            "prompt": prompt,
+            "conversationId": task.conversation_id,
+        }),
+    );
+    Ok(())
+}
+
+/// 通用事件发射(nexus 进度等;tauri emit / web ws 双通道)
+pub fn emit_event(state: &AppState, event_name: &str, payload: &Value) {
+    emit_dispatch_event(state, event_name, payload);
+}
+
 /// 供 nexus_pipeline 派发成员时通知前端（复用 dispatch-task-request 事件链路）
 pub fn emit_dispatch_request(state: &AppState, task: &DispatchedTask) {
     emit_dispatch_event(state, "dispatch-task-request", &dispatch_request_payload(task));
+}
+
+/// 处理 find_expert 帧(U2-4):L1 coordination.json 任务类型查表(零 token 确定性),
+/// miss 时 L2 catalog+自定义专家关键词候选(调用方 LLM 做最终语义挑选)。
+async fn handle_find_expert_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let query = frame
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
+
+    let reply = if query.is_empty() {
+        dispatch_error_reply("find_expert_result", "缺少 query")
+    } else {
+        json!({
+            "type": "find_expert_result",
+            "ok": true,
+            "candidates": find_expert_candidates(&query, work_dir),
+            "note": "从候选中按任务语义选一位;用其 slug 派发时在 prompt 前注明「以该专家身份、先读取其定义文件」",
+        })
+    };
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+fn find_expert_candidates(query: &str, work_dir: &str) -> Vec<Value> {
+    let agents_dir = crate::services::data_root::data_root().root().join("agents");
+    let mut out: Vec<Value> = Vec::new();
+
+    // L1: coordination.json routes 查表(resources/nexus)
+    let coord_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("resources")
+        .join("nexus")
+        .join("coordination.json");
+    if let Ok(coord) = std::fs::read_to_string(&coord_path)
+        .map_err(|e| e.to_string())
+        .and_then(|c| serde_json::from_str::<Value>(&c).map_err(|e| e.to_string()))
+    {
+        if let Some(routes) = coord.get("routes").and_then(Value::as_object) {
+            for (key, slug) in routes {
+                if query == *key || query.contains(key.as_str()) {
+                    if let Some(slug) = slug.as_str() {
+                        out.push(json!({ "slug": slug, "source": "route", "matchedType": key }));
+                    }
+                }
+            }
+        }
+    }
+
+    // L2: catalog + 自定义专家关键词匹配
+    let catalog: Vec<Value> = std::fs::read_to_string(agents_dir.join("catalog.json"))
+        .ok()
+        .and_then(|c| serde_json::from_str::<Value>(&c).ok())
+        .and_then(|v| v.get("agents").and_then(Value::as_array).cloned())
+        .unwrap_or_default();
+    let mut push_match = |slug: &str, name: &str, desc: &str, source: &str| {
+        if out.len() >= 8 {
+            return;
+        }
+        if out.iter().any(|c| c.get("slug").and_then(Value::as_str) == Some(slug)) {
+            return;
+        }
+        let hay = format!("{} {} {}", slug, name, desc).to_lowercase();
+        // 全词命中或任一 ≥2 字词片段命中
+        let hit = hay.contains(query)
+            || query
+                .split_whitespace()
+                .filter(|w| w.chars().count() >= 2)
+                .any(|w| hay.contains(w));
+        if hit {
+            out.push(json!({ "slug": slug, "name": name, "description": desc, "source": source }));
+        }
+    };
+    if !work_dir.is_empty() {
+        for a in crate::ai::engine::simple_ai::list_project_agents(work_dir) {
+            push_match(&a.slug, &a.name, &a.description, "custom");
+        }
+    }
+    for a in &catalog {
+        let g = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default();
+        push_match(g("slug"), g("name"), g("description"), "corpus");
+    }
+
+    // route 命中的补全 name/description
+    for c in out.iter_mut() {
+        if c.get("name").is_none() {
+            if let Some(slug) = c.get("slug").and_then(Value::as_str) {
+                if let Some(entry) = catalog
+                    .iter()
+                    .find(|a| a.get("slug").and_then(Value::as_str) == Some(slug))
+                {
+                    c["name"] = entry.get("name").cloned().unwrap_or(Value::Null);
+                    c["description"] = entry.get("description").cloned().unwrap_or(Value::Null);
+                }
+            }
+        }
+    }
+    out
 }
 
 /// 处理 dispatch_roster 帧：按场景组队 → 拓扑波次派发（P2-5）。
@@ -767,7 +915,8 @@ async fn handle_dispatch_roster_frame(
     let reply = if scenario.is_empty() || goal.trim().is_empty() {
         dispatch_error_reply("dispatch_roster_result", "缺少 scenario 或 goal 参数")
     } else {
-        match super::nexus_pipeline::start_roster(&state, scenario, goal, source_session_id, work_dir) {
+        let mode = frame.get("mode").and_then(Value::as_str);
+        match super::nexus_pipeline::start_roster(&state, scenario, goal, source_session_id, work_dir, mode) {
             Ok((pipeline, dispatched)) => json!({
                 "type": "dispatch_roster_result",
                 "ok": true,
@@ -895,29 +1044,16 @@ async fn handle_dispatch_continue_frame(
                     "任务仍在执行中，请先用 check_dispatched_task 等待其完成",
                 )
             }
-            Some(task) => {
-                state.update_dispatched_task(&dispatch_id, |t| {
-                    t.status = "running".to_string();
-                    t.latest_activity = None;
-                });
-                emit_dispatch_event(
-                    &state,
-                    "dispatch-task-continue",
-                    &json!({
-                        "dispatchId": task.dispatch_id,
-                        "sessionId": task.session_id,
-                        "prompt": prompt,
-                        "conversationId": task.conversation_id,
-                    }),
-                );
-                json!({
+            Some(task) => match trigger_dispatch_continue(&state, &task.dispatch_id, &prompt) {
+                Ok(()) => json!({
                     "type": "dispatch_continue_result",
                     "ok": true,
                     "dispatchId": task.dispatch_id,
                     "sessionId": task.session_id,
                     "note": "追加指令已下发到原后台会话（上下文保留），可用 check_dispatched_task 查询进度",
-                })
-            }
+                }),
+                Err(message) => dispatch_error_reply("dispatch_continue_result", &message),
+            },
         }
     };
 

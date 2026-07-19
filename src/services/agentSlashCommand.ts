@@ -70,6 +70,8 @@ export function rewriteDispatchPromptWithAgent(
 export interface ParsedNexusCommand {
   scenario: string;
   goal: string;
+  /** sprint(默认) | micro(轻量小队,前 5 人) */
+  mode?: 'micro';
 }
 
 export const NEXUS_SCENARIOS = [
@@ -84,9 +86,14 @@ export function parseNexusSlashCommand(text: string): ParsedNexusCommand | null 
   if (!text.startsWith('/nexus')) return null;
   const rest = text.slice('/nexus'.length);
   if (rest && !/^\s/.test(rest)) return null;
-  const trimmed = rest.trim();
+  let trimmed = rest.trim();
+  let mode: 'micro' | undefined;
+  if (trimmed === 'micro' || trimmed.startsWith('micro ')) {
+    mode = 'micro';
+    trimmed = trimmed.slice('micro'.length).trim();
+  }
   const spaceIdx = trimmed.search(/\s/);
   const scenario = spaceIdx > 0 ? trimmed.slice(0, spaceIdx) : trimmed;
   const goal = spaceIdx > 0 ? trimmed.slice(spaceIdx).trim() : '';
-  return { scenario, goal };
+  return mode ? { scenario, goal, mode } : { scenario, goal };
 }

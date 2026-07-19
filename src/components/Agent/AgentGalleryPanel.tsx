@@ -16,7 +16,10 @@ import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
-import { startRoster, type CustomAgent, type RosterDef } from '@/services/tauri/agentCorpusService';
+import { deleteUserRoster, dispatchLaterGroup, listPipelines, readCorpusAgent, resolveEscalation, saveUserRoster, startRoster, type CustomAgent, type RosterDef, type RosterPipeline } from '@/services/tauri/agentCorpusService';
+import { listen } from '@/services/transport';
+import { useDispatchStore } from '@/stores/dispatchStore';
+import { openDispatchSession } from '@/services/dispatchTaskService';
 import type { AgentCatalogEntry } from '@/types/agent';
 
 /** 把 `/dispatch <slug> ` 写入当前会话输入框草稿(替代复制到剪贴板) */
@@ -50,10 +53,12 @@ function AgentCard({
   agent,
   onEdit,
   onDelete,
+  onForkCorpus,
 }: {
   agent: GalleryAgent;
   onEdit: (a: CustomAgent) => void;
   onDelete: (a: CustomAgent) => void;
+  onForkCorpus: (a: GalleryAgent) => void;
 }) {
   const setAgent = useSessionConfig((s) => s.setAgent);
   const currentAgent = useSessionConfig((s) => s.config.agent);
@@ -109,6 +114,16 @@ function AgentCard({
           <Send size={12} />
           派发
         </button>
+        {!agent.custom && (
+          <button
+            type="button"
+            onClick={() => onForkCorpus(agent)}
+            title="复制为自定义专家(可改编 prompt)"
+            className="ml-auto rounded p-1 text-text-muted hover:text-text-primary"
+          >
+            <Pencil size={12} />
+          </button>
+        )}
         {agent.custom && (
           <span className="ml-auto flex gap-1">
             <button
@@ -296,9 +311,26 @@ function RosterCard({ roster }: { roster: RosterDef }) {
   return (
     <div className="rounded-lg border border-border-subtle p-3">
       <div className="flex items-center gap-2">
-        <span className="text-base">🚀</span>
+        <span className="text-base">{roster.custom ? '🧩' : '🚀'}</span>
         <span className="text-sm font-medium">{roster.title}</span>
+        {roster.custom && <span className="rounded-full border border-border-subtle px-1.5 text-[10px] text-text-muted">自建</span>}
         <span className="ml-auto text-[10px] text-text-muted">{roster.mode} · {roster.duration}</span>
+        {roster.custom && (
+          <button
+            type="button"
+            title="删除自建专家团"
+            onClick={() => {
+              if (!window.confirm(`删除自建专家团「${roster.title}」?`)) return;
+              void deleteUserRoster(roster.slug).then(() => {
+                useToastStore.getState().info('已删除', roster.title);
+                void useAgentStore.getState().loadRosters();
+              });
+            }}
+            className="rounded p-0.5 text-text-muted hover:text-error"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
       <p className="mt-1.5 text-xs leading-relaxed text-text-muted">{roster.summary}</p>
 
@@ -351,6 +383,265 @@ function RosterCard({ roster }: { roster: RosterDef }) {
 }
 
 // ============================================================================
+// 进行中(NEXUS pipeline 进度,U1-1)
+// ============================================================================
+
+const MEMBER_STATUS_META: Record<string, { label: string; cls: string }> = {
+  pending: { label: '排队', cls: 'text-text-muted border-border-subtle' },
+  running: { label: '运行中', cls: 'text-primary border-primary/50' },
+  completed: { label: '完成', cls: 'text-success border-success/50' },
+  failed: { label: '失败', cls: 'text-error border-error/50' },
+};
+
+function PipelineCard({ pipeline }: { pipeline: RosterPipeline }) {
+  const catalog = useAgentStore((s) => s.catalog);
+  const bySlug = useMemo(() => new Map(catalog.map((c) => [c.slug, c])), [catalog]);
+  const total = pipeline.waves.flat().length;
+  const doneCount = Object.values(pipeline.members).filter(
+    (m) => m.status === 'completed' || m.status === 'failed',
+  ).length;
+
+  const openMember = (slug: string) => {
+    const dispatchId = pipeline.members[slug]?.dispatchId;
+    const task = dispatchId ? useDispatchStore.getState().getTask(dispatchId) : undefined;
+    if (task?.sessionId) {
+      openDispatchSession(task.sessionId);
+    } else {
+      useToastStore.getState().info('会话不可用', '该成员会话可能已被清理或来自历史运行');
+    }
+  };
+
+  const pendingEscalations = (pipeline.escalations ?? []).filter((e) => e.resolution === 'pending');
+  const undispatchedGroups = (pipeline.laterGroups ?? []).filter(
+    (g) => !(pipeline.dispatchedGroups ?? []).includes(g.activation),
+  );
+
+  const handleEscalation = (qaSlug: string, action: 'accept' | 'fail') => {
+    void resolveEscalation(pipeline.id, qaSlug, action)
+      .then(() => useToastStore.getState().info('已处置', action === 'accept' ? '按通过继续推进' : '已标记失败'))
+      .catch((e) => useToastStore.getState().error('处置失败', String(e)));
+  };
+
+  const handleLaterGroup = (activation: string) => {
+    void dispatchLaterGroup(pipeline.id, activation)
+      .then((d) => useToastStore.getState().info('已追派', `「${activation}」组 ${d.length} 人已出发`))
+      .catch((e) => useToastStore.getState().error('追派失败', String(e)));
+  };
+
+  return (
+    <div className="rounded-lg border border-border-subtle p-3">
+      <div className="flex items-center gap-2">
+        <span>{pipeline.status === 'completed' ? '✅' : '🚀'}</span>
+        <span className="truncate text-sm font-medium" title={pipeline.goal}>
+          {pipeline.scenario} · {pipeline.goal.slice(0, 30)}{pipeline.goal.length > 30 ? '…' : ''}
+        </span>
+        <span className="ml-auto shrink-0 text-[10px] text-text-muted">
+          {pipeline.status === 'completed' ? '已完成' : `波 ${pipeline.currentWave + 1}/${pipeline.waves.length}`} · {doneCount}/{total}
+        </span>
+      </div>
+      <div className="mt-1 h-1 overflow-hidden rounded bg-background-secondary">
+        <div
+          className="h-full rounded bg-primary transition-all"
+          style={{ width: `${total ? Math.round((doneCount / total) * 100) : 0}%` }}
+        />
+      </div>
+      {pipeline.waves.map((wave, i) => (
+        <div key={i} className="mt-2">
+          <div className="text-[11px] text-text-muted">
+            波 {i + 1}
+            {i < pipeline.currentWave && ' · 已回流'}
+            {i === pipeline.currentWave && pipeline.status !== 'completed' && ' · 进行中'}
+            {i > pipeline.currentWave && ' · 等待前波'}
+          </div>
+          <div className="mt-1 flex flex-wrap gap-1">
+            {wave.map((slug) => {
+              const a = bySlug.get(slug);
+              const st = pipeline.members[slug]?.status ?? 'pending';
+              const meta = MEMBER_STATUS_META[st] ?? MEMBER_STATUS_META.pending;
+              return (
+                <button
+                  key={slug}
+                  type="button"
+                  onClick={() => openMember(slug)}
+                  title={`${a?.name ?? slug} · ${meta.label}${pipeline.memberSummaries[slug] ? '\n' + pipeline.memberSummaries[slug].slice(0, 120) : ''}`}
+                  className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors hover:bg-background-hover ${meta.cls}`}
+                >
+                  {a?.emoji || '🤖'} {a?.name ?? slug} · {meta.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+      {pipeline.loopState && (
+        <div className="mt-2 rounded-md border border-warning/40 bg-warning/[0.06] px-2 py-1.5 text-[11px] text-warning">
+          🔁 Dev↔QA 修复循环:{pipeline.loopState.devSlug}
+          {pipeline.loopState.phase === 'fixing' ? ' 修复中' : ' 修复完毕,QA 复验中'}
+          (第 {(pipeline.fixAttempts?.[pipeline.loopState.devSlug] ?? 1)} 轮 / 上限 3)
+        </div>
+      )}
+
+      {pendingEscalations.map((esc) => (
+        <div key={esc.qaSlug} className="mt-2 rounded-md border border-error/40 bg-error-faint/40 px-2 py-1.5 text-[11px]">
+          <div className="text-error">
+            ⚠️ 修复重试已达上限({esc.attempts} 轮):{esc.devSlug} 的实现仍未通过 {esc.qaSlug} 复验,需你决策
+          </div>
+          <div className="mt-1.5 flex gap-2">
+            <button
+              type="button"
+              onClick={() => handleEscalation(esc.qaSlug, 'accept')}
+              className="rounded border border-border-subtle px-2 py-0.5 text-text-secondary hover:text-text-primary"
+            >
+              带风险接受,继续推进
+            </button>
+            <button
+              type="button"
+              onClick={() => handleEscalation(esc.qaSlug, 'fail')}
+              className="rounded border border-error/50 px-2 py-0.5 text-error"
+            >
+              标记失败,继续推进
+            </button>
+          </div>
+        </div>
+      ))}
+
+      {pipeline.status === 'completed' && undispatchedGroups.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {undispatchedGroups.map((g) => (
+            <button
+              key={g.activation}
+              type="button"
+              onClick={() => handleLaterGroup(g.activation)}
+              className="rounded-md border border-primary/50 px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
+              title={g.members.join(', ')}
+            >
+              ➕ 追派「{g.activation}」组({g.members.length} 人)
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// 自建专家团编辑器(U1-5)
+// ============================================================================
+
+function RosterBuilder({ onClose }: { onClose: () => void }) {
+  const catalog = useAgentStore((s) => s.catalog);
+  const customAgents = useAgentStore((s) => s.customAgents);
+  const loadRosters = useAgentStore((s) => s.loadRosters);
+  const [title, setTitle] = useState('');
+  const [summary, setSummary] = useState('');
+  const [members, setMembers] = useState<string[]>([]);
+  const [query, setQuery] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const pool = useMemo(
+    () => [
+      ...customAgents.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji ?? '🧩', description: c.description })),
+      ...catalog.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji, description: c.description })),
+    ],
+    [catalog, customAgents],
+  );
+  const matches = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return [];
+    return pool
+      .filter((a) => !members.includes(a.slug) && (a.slug.includes(q) || a.name.toLowerCase().includes(q) || a.description.toLowerCase().includes(q)))
+      .slice(0, 8);
+  }, [pool, query, members]);
+  const bySlug = useMemo(() => new Map(pool.map((a) => [a.slug, a])), [pool]);
+
+  const submit = async () => {
+    const slug = `user-${title.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'roster'}`.slice(0, 64);
+    setSaving(true);
+    try {
+      await saveUserRoster({ slug, title: title.trim(), summary: summary.trim(), members });
+      await loadRosters();
+      useToastStore.getState().info('已保存', `自建专家团「${title.trim()}」(${members.length} 人)`);
+      onClose();
+    } catch (e) {
+      useToastStore.getState().error('保存失败', e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const field = 'w-full rounded-md border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none focus:border-primary/60';
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+      <div className="w-[520px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+        <div className="mb-3 text-sm font-medium">自建专家团</div>
+        <div className="space-y-2.5">
+          <div>
+            <label className="mb-1 block text-[11px] text-text-muted">名称 *</label>
+            <input className={field} value={title} placeholder="如:全栈小分队" onChange={(e) => setTitle(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-text-muted">说明</label>
+            <input className={field} value={summary} onChange={(e) => setSummary(e.target.value)} />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-text-muted">
+              成员 *({members.length} 人;波次将按角色自动编排,每波 ≤3)
+            </label>
+            <div className="mb-1.5 flex flex-wrap gap-1">
+              {members.map((slug) => {
+                const a = bySlug.get(slug);
+                return (
+                  <button
+                    key={slug}
+                    type="button"
+                    title="点击移除"
+                    onClick={() => setMembers(members.filter((m) => m !== slug))}
+                    className="rounded-full border border-primary/50 px-2 py-0.5 text-[11px] text-primary"
+                  >
+                    {a?.emoji || '🤖'} {a?.name ?? slug} ✕
+                  </button>
+                );
+              })}
+            </div>
+            <input className={field} value={query} placeholder="搜索专家添加(名称/slug/职责)…" onChange={(e) => setQuery(e.target.value)} />
+            {matches.length > 0 && (
+              <div className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle">
+                {matches.map((a) => (
+                  <button
+                    key={a.slug}
+                    type="button"
+                    onClick={() => {
+                      setMembers([...members, a.slug]);
+                      setQuery('');
+                    }}
+                    className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-background-hover"
+                  >
+                    <span>{a.emoji || '🤖'}</span>
+                    <span className="shrink-0">{a.name}</span>
+                    <span className="truncate text-[10px] text-text-muted">{a.description}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="mt-4 flex justify-end gap-2">
+          <button type="button" className="rounded-md border border-border-subtle px-3 py-1.5 text-xs" onClick={onClose}>取消</button>
+          <button
+            type="button"
+            disabled={saving || !title.trim() || members.length === 0}
+            className="rounded-md bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            onClick={() => void submit()}
+          >
+            {saving ? '保存中…' : '保存'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // 面板主体
 // ============================================================================
 
@@ -359,8 +650,10 @@ export default function AgentGalleryPanel() {
     loaded, loading, error, load, loadRosters, loadCustomAgents,
     search, setSearch, division, setDivision, divisions, catalog, rosters, customAgents, deleteCustom,
   } = useAgentStore();
-  const [tab, setTab] = useState<'agents' | 'rosters'>('agents');
+  const [tab, setTab] = useState<'agents' | 'rosters' | 'runs'>('agents');
+  const [pipelines, setPipelines] = useState<RosterPipeline[]>([]);
   const [editor, setEditor] = useState<EditorState | null>(null);
+  const [rosterBuilderOpen, setRosterBuilderOpen] = useState(false);
   const workspacePath = useWorkspaceStore((s) => s.getCurrentWorkspace()?.path);
 
   useEffect(() => {
@@ -370,6 +663,24 @@ export default function AgentGalleryPanel() {
   useEffect(() => {
     if (workspacePath) void loadCustomAgents(workspacePath);
   }, [workspacePath, loadCustomAgents]);
+
+  // 进行中页签:打开时拉取 + 订阅推进事件(后端每成员终态整体推送,低频)
+  useEffect(() => {
+    if (tab !== 'runs') return;
+    void listPipelines().then(setPipelines).catch(() => setPipelines([]));
+    const unlisten = listen<RosterPipeline>('nexus-pipeline-update', (p) => {
+      setPipelines((prev) => {
+        const idx = prev.findIndex((x) => x.id === p.id);
+        if (idx < 0) return [p, ...prev];
+        const next = [...prev];
+        next[idx] = p;
+        return next;
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [tab]);
 
   // 自定义在前 + corpus;项目级同名覆盖 corpus
   const galleryList = useMemo<GalleryAgent[]>(() => {
@@ -418,7 +729,7 @@ export default function AgentGalleryPanel() {
     <div className="flex h-full flex-col">
       {/* 页签 */}
       <div className="flex shrink-0 border-b border-border-subtle">
-        {([['agents', `专家 ${galleryList.length || ''}`], ['rosters', `专家团 ${rosters.length || ''}`]] as const).map(([key, label]) => (
+        {([['agents', `专家 ${galleryList.length || ''}`], ['rosters', `专家团 ${rosters.length || ''}`], ['runs', '进行中']] as const).map(([key, label]) => (
           <button
             key={key}
             type="button"
@@ -490,6 +801,21 @@ export default function AgentGalleryPanel() {
               itemContent={(index) => (
                 <AgentCard
                   agent={filtered[index]}
+                  onForkCorpus={(a) => {
+                    void readCorpusAgent(a.slug)
+                      .then((content) => {
+                        const body = content.replace(/^---[\s\S]*?---\n*/, '');
+                        setEditor({
+                          slug: `${a.slug}-custom`.slice(0, 64),
+                          name: a.name,
+                          emoji: a.emoji,
+                          description: a.description,
+                          systemPrompt: body.trim(),
+                          isNew: true,
+                        });
+                      })
+                      .catch((e) => useToastStore.getState().error('读取专家定义失败', String(e)));
+                  }}
                   onEdit={(c) =>
                     setEditor({
                       slug: c.slug, name: c.name, emoji: c.emoji ?? '',
@@ -506,6 +832,13 @@ export default function AgentGalleryPanel() {
 
       {tab === 'rosters' && (
         <div className="flex-1 space-y-3 overflow-auto p-3">
+          <button
+            type="button"
+            onClick={() => setRosterBuilderOpen(true)}
+            className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-border-subtle py-2 text-xs text-text-muted hover:border-border hover:text-text-secondary"
+          >
+            <Plus size={13} /> 自建专家团(从 {galleryList.length} 位专家中选人组队)
+          </button>
           {rosters.length === 0 && (
             <div className="text-xs text-text-muted">专家团数据未就绪(需先完成 corpus 安装)。</div>
           )}
@@ -515,6 +848,18 @@ export default function AgentGalleryPanel() {
         </div>
       )}
 
+      {tab === 'runs' && (
+        <div className="flex-1 space-y-3 overflow-auto p-3">
+          {pipelines.length === 0 && (
+            <div className="text-xs text-text-muted">暂无专家团运行记录;在「专家团」页签启动一个场景后,这里会显示波次进度。</div>
+          )}
+          {pipelines.map((p) => (
+            <PipelineCard key={p.id} pipeline={p} />
+          ))}
+        </div>
+      )}
+
+      {rosterBuilderOpen && <RosterBuilder onClose={() => setRosterBuilderOpen(false)} />}
       {editor && <CustomAgentEditor initial={editor} onClose={() => setEditor(null)} />}
     </div>
   );

@@ -66,13 +66,23 @@ async function reportStatus(
   extra?: { summary?: string; latestActivity?: string; conversationId?: string }
 ): Promise<void> {
   try {
-    await invoke('dispatch_report_status', {
-      dispatchId,
-      status,
-      summary: extra?.summary,
-      latestActivity: extra?.latestActivity,
-      conversationId: extra?.conversationId,
-    })
+    const result = await invoke<{ verdict?: Record<string, unknown>; verdictStatus?: 'structured' | 'unstructured' } | null>(
+      'dispatch_report_status',
+      {
+        dispatchId,
+        status,
+        summary: extra?.summary,
+        latestActivity: extra?.latestActivity,
+        conversationId: extra?.conversationId,
+      },
+    )
+    // 结构化 verdict 回填视图(resultSchema 派发,U1-2 卡片渲染消费)
+    if (result?.verdictStatus) {
+      useDispatchStore.getState().updateTask(dispatchId, {
+        verdict: result.verdict,
+        verdictStatus: result.verdictStatus,
+      })
+    }
   } catch (e) {
     log.warn('回报派发状态失败', { dispatchId, status, error: String(e) })
   }
@@ -324,7 +334,33 @@ function getDispatchPolicy(): 'auto' | 'ask' {
  * 安装派发请求监听（App 级常驻，useAppEvents 中调用）
  * 返回清理函数。
  */
+const reportedPipelines = new Set<string>()
+
 export function initDispatchTaskListener(): () => void {
+  // NEXUS 场景终局:Pipeline Status Report 注入来源会话(与派发回流同机制,M3)
+  const unlistenPipeline = listen<{
+    id: string
+    scenario: string
+    status: string
+    sourceSessionId: string
+    finalReport?: string
+  }>('nexus-pipeline-update', (p) => {
+    if (p.status !== 'completed' || !p.finalReport || reportedPipelines.has(p.id)) return
+    reportedPipelines.add(p.id)
+    if (!p.sourceSessionId) return
+    const store = useDispatchStore.getState()
+    // 复用 finishTask 的报告入队路径:构造伪任务视图确保 sourceSessionId 命中
+    store.upsertTask({
+      dispatchId: `roster-${p.id}`,
+      sessionId: '',
+      sourceSessionId: p.sourceSessionId,
+      title: `NEXUS 专家团 · ${p.scenario}`,
+      status: 'completed',
+      startedAt: Date.now(),
+    })
+    store.finishTask(`roster-${p.id}`, 'completed', p.finalReport)
+  })
+
   const unlistenRequest = listen<DispatchTaskRequestEvent>(
     'dispatch-task-request',
     (event) => {
@@ -365,6 +401,7 @@ export function initDispatchTaskListener(): () => void {
   return () => {
     unlistenRequest.then((unlisten) => unlisten())
     unlistenContinue.then((unlisten) => unlisten())
+    unlistenPipeline.then((unlisten) => unlisten())
   }
 }
 

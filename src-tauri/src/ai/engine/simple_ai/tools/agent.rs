@@ -111,6 +111,7 @@ impl Tool for DispatchAgentTool {
             ctx.mcp_servers,
             &child_skills,
             ctx.subagent_depth + 1,
+            &agent_def.tools,
         )
         .await;
 

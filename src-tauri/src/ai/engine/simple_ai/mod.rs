@@ -227,11 +227,13 @@ impl AIEngine for SimpleAIEngine {
 
         // 系统提示词（Phase 4d：options.agent 指定时读 .polaris/agents/<name>.md 覆盖 persona；
         // 用户显式传 system_prompt 时完全覆盖，agent 不生效——决策 §12-3）。
+        let mut agent_allowed_tools: Vec<String> = Vec::new();
         let system_prompt = if let Some(custom) = &options.system_prompt {
             custom.clone()
         } else if let Some(agent_name) = &options.agent {
             match agent::load_agent(&work_dir, agent_name) {
                 Some(agent) => {
+                    agent_allowed_tools = agent.tools.clone();
                     tracing::info!(
                         "[SimpleAI] 使用 agent '{}' 的 system prompt",
                         agent_name
@@ -316,6 +318,7 @@ impl AIEngine for SimpleAIEngine {
                 &mcp_servers,
                 &skills_map,
                 0,
+                &agent_allowed_tools,
             )
             .await;
 
@@ -437,6 +440,8 @@ impl AIEngine for SimpleAIEngine {
                 &mcp_servers,
                 &skills_map,
                 0,
+                // continue 路径未保留 agent 定义,不过滤(白名单仅首轮生效的已知限制)
+                &[],
             )
             .await;
 

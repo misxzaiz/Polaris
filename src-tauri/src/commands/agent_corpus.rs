@@ -72,14 +72,75 @@ pub struct SimpleAiAgentItem {
     pub division: Option<String>,
 }
 
-/// rosters.json 原样透传(专家团 UI 消费,P3 体验优化)
+/// 用户自建 roster 存储:<DataRoot>/agents/rosters-user.json
+pub fn user_rosters_path() -> PathBuf {
+    corpus_install_dir().join("rosters-user.json")
+}
+
+fn load_user_rosters() -> Vec<serde_json::Value> {
+    std::fs::read_to_string(user_rosters_path())
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
+        .and_then(|v| v.get("rosters").and_then(|r| r.as_array().cloned()))
+        .unwrap_or_default()
+}
+
+fn save_user_rosters(rosters: &[serde_json::Value]) -> Result<()> {
+    let payload = serde_json::json!({ "rosters": rosters });
+    std::fs::create_dir_all(corpus_install_dir())?;
+    std::fs::write(user_rosters_path(), serde_json::to_string_pretty(&payload)?)?;
+    Ok(())
+}
+
+/// rosters 透传:内置 rosters.json + 用户自建(标 custom:true)合并(专家团 UI 消费)
 pub fn corpus_rosters_inner(resource_dir: Option<PathBuf>) -> Result<serde_json::Value> {
     let path = resolve_resources_agents_dir(resource_dir).join("rosters.json");
     let content = std::fs::read_to_string(&path).map_err(|e| {
         crate::error::AppError::ConfigError(format!("读取 rosters 失败: {e} ({})", path.display()))
     })?;
-    serde_json::from_str(&content)
-        .map_err(|e| crate::error::AppError::ConfigError(format!("rosters.json 解析失败: {e}")))
+    let mut value: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::ConfigError(format!("rosters.json 解析失败: {e}")))?;
+    if let Some(arr) = value.get_mut("rosters").and_then(|r| r.as_array_mut()) {
+        for mut user in load_user_rosters() {
+            user["custom"] = serde_json::Value::Bool(true);
+            arr.push(user);
+        }
+    }
+    Ok(value)
+}
+
+/// 保存用户自建 roster(同 slug 覆盖);members 即 always 组
+pub fn user_roster_save_inner(
+    slug: &str,
+    title: &str,
+    summary: &str,
+    members: Vec<String>,
+) -> Result<()> {
+    validate_custom_slug(slug)?;
+    if title.trim().is_empty() || members.is_empty() {
+        return Err(crate::error::AppError::ValidationError(
+            "名称与成员不能为空".into(),
+        ));
+    }
+    let roster = serde_json::json!({
+        "slug": slug,
+        "title": title.trim(),
+        "mode": "Custom",
+        "duration": "-",
+        "summary": summary.trim(),
+        "groups": [{ "group": "Core Team", "activation": "always", "members": members }],
+    });
+    let mut rosters = load_user_rosters();
+    rosters.retain(|r| r.get("slug").and_then(|s| s.as_str()) != Some(slug));
+    rosters.push(roster);
+    save_user_rosters(&rosters)
+}
+
+pub fn user_roster_delete_inner(slug: &str) -> Result<()> {
+    validate_custom_slug(slug)?;
+    let mut rosters = load_user_rosters();
+    rosters.retain(|r| r.get("slug").and_then(|s| s.as_str()) != Some(slug));
+    save_user_rosters(&rosters)
 }
 
 // ============================================================================
@@ -173,6 +234,15 @@ pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
         .collect()
 }
 
+/// 读取已安装 corpus 中某专家定义原文(「另存为自定义」预填用)
+pub fn corpus_read_inner(slug: &str) -> Result<String> {
+    validate_custom_slug(slug)?;
+    let path = corpus_install_dir().join("corpus").join(format!("{slug}.md"));
+    std::fs::read_to_string(&path).map_err(|e| {
+        crate::error::AppError::ConfigError(format!("读取专家定义失败: {e} ({})", path.display()))
+    })
+}
+
 pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
     crate::ai::engine::simple_ai::list_agents(work_dir)
         .into_iter()
@@ -262,4 +332,27 @@ pub fn custom_agent_save(
 #[tauri::command]
 pub fn custom_agent_delete(work_dir: String, slug: String) -> Result<()> {
     custom_agent_delete_inner(&work_dir, &slug)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn agent_corpus_read(slug: String) -> Result<String> {
+    corpus_read_inner(&slug)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn user_roster_save(
+    slug: String,
+    title: String,
+    summary: String,
+    members: Vec<String>,
+) -> Result<()> {
+    user_roster_save_inner(&slug, &title, &summary, members)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn user_roster_delete(slug: String) -> Result<()> {
+    user_roster_delete_inner(&slug)
 }

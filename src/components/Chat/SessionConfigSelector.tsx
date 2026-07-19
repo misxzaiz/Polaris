@@ -185,7 +185,12 @@ export function SessionConfigSelector({
   const getAgentLabel = useCallback((agentId?: string) => {
     if (!agentId) return t('sessionConfig.noAgent')
     const agent = agentList.find(a => a.id === agentId)
-    return agent?.name || agentId
+    if (agent?.name) return agent.name
+    // corpus/自定义专家兜底:catalog 映射 emoji+显示名(claude 引擎 CLI 列表不含它们)
+    const entry = useAgentStore.getState().catalog.find(c => c.slug === agentId)
+      ?? useAgentStore.getState().customAgents.find(c => c.slug === agentId)
+    if (entry) return `${'emoji' in entry && entry.emoji ? entry.emoji + ' ' : ''}${entry.name}`
+    return agentId
   }, [t, agentList])
 
   const getModelLabel = useCallback((modelId?: string) => {
