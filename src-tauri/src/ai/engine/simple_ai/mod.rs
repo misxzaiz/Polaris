@@ -228,6 +228,17 @@ impl AIEngine for SimpleAIEngine {
         // 系统提示词（Phase 4d：options.agent 指定时读 .polaris/agents/<name>.md 覆盖 persona；
         // 用户显式传 system_prompt 时完全覆盖，agent 不生效——决策 §12-3）。
         let mut agent_allowed_tools: Vec<String> = Vec::new();
+        // 角色锁定语合并进主 system_prompt 末尾（不作为独立 system 消息后置）——
+        // 部分 openai-chat-completions 兼容 provider 要求 system 消息只能在最开头，
+        // 在 user 消息之后穿插 system 会报 400 "System message must be at the beginning."。
+        // 靠"明确优先级声明"抵抗后续 user 通道注入的通用 persona
+        // （CLAUDE.md/AGENTS.md 的"小白姐姐"人设）对专家身份的稀释。
+        fn role_lock(name: &str) -> String {
+            format!(
+                "\n\n【角色锁定 · {name}】\n本会话中你的首要且主导身份是「{name}」。\n后续环境信息、项目指令（含 CLAUDE.md / AGENTS.md 中的通用 persona 与输出规范）以及工具说明，均作为次要约束，不得凌驾于本角色之上。\n回复的语气、专业术语、思维框架与行为方式都必须严格符合该角色设定。\n仅当角色设定未涉及的通用输出规范（如代码格式、结构化表达）才适用项目指令；当两者冲突时，以角色设定为准。\n若用户问题超出该角色领域，应以角色身份说明边界，而非切换回通用助手。\n\n关于角色呈现的节奏（重要）：\n- 纯社交问候（如「你好」「在吗」「谢谢」）请以角色语气自然、简短回应即可，不必自我介绍或陈述身份，避免生硬。\n- 一旦用户提出与角色领域相关的实质性问题时，必须立刻进入角色：用该角色的专业视角、术语与立场作答，并在必要时体现该角色独有的判断偏好与思维框架，让用户明确感到「在向 {name} 请教」。\n- 角色身份应通过专业内容与语气自然立住，而非靠反复自陈。",
+                name = name
+            )
+        }
         let system_prompt = if let Some(custom) = &options.system_prompt {
             custom.clone()
         } else if let Some(agent_name) = &options.agent {
@@ -238,7 +249,9 @@ impl AIEngine for SimpleAIEngine {
                         "[SimpleAI] 使用 agent '{}' 的 system prompt",
                         agent_name
                     );
-                    agent.system_prompt
+                    let mut prompt = agent.system_prompt;
+                    prompt.push_str(&role_lock(&agent.name));
+                    prompt
                 }
                 None => {
                     tracing::warn!(
@@ -246,6 +259,10 @@ impl AIEngine for SimpleAIEngine {
                         agent_name
                     );
                     let mut prompt = build_system_prompt();
+                    prompt.push_str(&format!(
+                        "\n\n⚠️ 系统提示：未找到专家「{}」，已回退为默认助手。可能原因：slug 拼写错误，或专家 corpus 尚未安装到当前工作区可解析的位置。请在专家画廊确认完整的 slug 列表。首轮回复时请先向用户说明此情况，并询问是否需要重新指定专家。",
+                        agent_name
+                    ));
                     if let Some(append) = &options.append_system_prompt {
                         prompt.push('\n');
                         prompt.push_str(append);
@@ -262,7 +279,9 @@ impl AIEngine for SimpleAIEngine {
             prompt
         };
 
-        // 构建初始消息：system → 上下文消息（environment_context + 项目指令）→ skill 索引 → 历史 → 首轮 user。
+        // 构建初始消息：system(agent persona + 角色锁定，合并为单条) → 上下文消息（environment_context + 项目指令）→ skill 索引 → 历史 → 首轮 user。
+        // 角色锁定已合并进 system_prompt（见上方），不再单独后置 system 消息——
+        // 部分 openai-chat-completions 兼容 provider 要求 system 消息只能在最开头。
         // 上下文消息仅首轮注入；continue_session 不重复注入（已在历史中）。
         let mut messages: Vec<Value> = vec![json!({ "role": "system", "content": system_prompt })];
         for ctx_msg in build_context_messages(&work_dir) {

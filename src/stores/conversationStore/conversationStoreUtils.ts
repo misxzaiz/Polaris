@@ -23,7 +23,13 @@ export function resolveRuntimeConfigForEngine(
   const model = sessionConfig.model || undefined
 
   return {
-    agent: engineId === 'claude-code' ? sessionConfig.agent || undefined : undefined,
+    // agent persona 透传：
+    // - claude-code：经 --agent 透传 CLI（注：当前 corpus 未暴露给 CLI，U2-4 待补）
+    // - simple-ai：经 SessionOptions.agent 注入 corpus persona（见 simple_ai/mod.rs start_session）
+    // - codex/mimo：CLI 无对应参数，暂不透传
+    agent: (engineId === 'claude-code' || engineId === 'simple-ai')
+      ? sessionConfig.agent || undefined
+      : undefined,
     // Claude 模型别名（opus/sonnet/haiku）对 codex/mimo 无意义：codex 有自己的模型名，
     // mimo 要求 provider/model 格式，透传会导致 CLI 报错
     model: (engineId === 'codex' || engineId === 'mimo') && model && CLAUDE_MODEL_ALIASES.has(model) ? undefined : model,

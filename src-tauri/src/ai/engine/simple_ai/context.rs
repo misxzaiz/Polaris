@@ -103,7 +103,8 @@ fn discover_project_instructions(work_dir: &str) -> Option<String> {
     let mut out = String::from(
         "# Project instructions\n\
 The following instructions come from AGENTS.md / CLAUDE.md files in this project. \
-Treat them as authoritative project conventions and follow them.\n\n",
+Treat them as authoritative project conventions for engineering/output norms (code style, structure, workflow).\n\n\
+⚠️ 层级说明：这些是次要的通用约束。如果当前会话已激活特定专家角色（agent persona），专家的角色身份、专业视角与行为方式始终优先；项目指令仅在角色设定未涉及或不冲突时适用，冲突时以专家角色为准。\n\n",
     );
     out.push_str(&sections.join("\n\n"));
     if truncated {
