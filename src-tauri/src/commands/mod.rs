@@ -22,8 +22,9 @@ pub use nexus::nexus_start_roster;
 
 #[cfg(feature = "tauri-app")]
 pub use agent_corpus::{
-    agent_corpus_catalog, agent_corpus_divisions, agent_corpus_install, agent_corpus_status,
-    agent_corpus_uninstall, simple_ai_list_agents,
+    agent_corpus_catalog, agent_corpus_divisions, agent_corpus_install, agent_corpus_rosters,
+    agent_corpus_status, agent_corpus_uninstall, custom_agent_delete, custom_agent_list,
+    custom_agent_save, simple_ai_list_agents,
 };
 
 pub mod mobile_config;

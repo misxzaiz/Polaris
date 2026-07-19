@@ -36,6 +36,11 @@ pub(crate) fn list_agents(work_dir: &str) -> Vec<agent::AgentDefinition> {
     agent::discover_agents(work_dir)
 }
 
+/// 仅项目级自定义专家（P3 自定义专家管理）。
+pub(crate) fn list_project_agents(work_dir: &str) -> Vec<agent::AgentDefinition> {
+    agent::discover_project_agents(work_dir)
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

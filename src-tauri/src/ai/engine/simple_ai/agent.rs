@@ -49,6 +49,11 @@ pub(crate) fn discover_agents(work_dir: &str) -> Vec<AgentDefinition> {
     discover_agents_in(&agent_dirs(work_dir))
 }
 
+/// 仅扫描项目级 `.polaris/agents/`（自定义专家管理用,不含全局 corpus）。
+pub(crate) fn discover_project_agents(work_dir: &str) -> Vec<AgentDefinition> {
+    discover_agents_in(&[Path::new(work_dir).join(".polaris").join("agents")])
+}
+
 fn discover_agents_in(dirs: &[std::path::PathBuf]) -> Vec<AgentDefinition> {
     let mut agents = Vec::new();
     let mut seen = std::collections::HashSet::new();

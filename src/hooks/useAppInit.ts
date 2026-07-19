@@ -261,9 +261,15 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
             });
           }
           // catalog 预加载:/agent、/dispatch <slug> 改写与 Gallery 首开都依赖
-          return import('@/stores/agentStore').then(({ useAgentStore }) =>
-            useAgentStore.getState().load(),
-          );
+          return import('@/stores/agentStore').then(({ useAgentStore }) => {
+            const store = useAgentStore.getState();
+            const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+            return Promise.all([
+              store.load(),
+              store.loadRosters(),
+              ws ? store.loadCustomAgents(ws) : Promise.resolve(),
+            ]).then(() => undefined);
+          });
         })
         .catch((err) => log.warn('Agent corpus install failed', { error: String(err) }));
     }

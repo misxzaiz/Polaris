@@ -9,8 +9,14 @@ import { create } from 'zustand';
 import {
   getAgentCatalog,
   getCorpusStatus,
+  getRosters,
+  listCustomAgents,
+  saveCustomAgent,
+  deleteCustomAgent,
   type AgentCatalogEntry,
   type CorpusStatus,
+  type CustomAgent,
+  type RosterDef,
 } from '@/services/tauri/agentCorpusService';
 import { invoke } from '@/services/transport';
 import type { DivisionMap } from '@/types/agent';
@@ -37,12 +43,28 @@ interface AgentState {
   /** SimpleAI 引擎可用 agent(项目级 + 全局 corpus 两级,P1-6) */
   simpleAiAgents: SimpleAiAgentItem[];
 
+  /** 专家团场景(rosters.json) */
+  rosters: RosterDef[];
+  /** 项目级自定义专家 */
+  customAgents: CustomAgent[];
+
   /** 筛选状态 */
   search: string;
   division: string | null;
 
   load: () => Promise<void>;
   loadSimpleAiAgents: (workDir: string) => Promise<void>;
+  loadRosters: () => Promise<void>;
+  loadCustomAgents: (workDir: string) => Promise<void>;
+  saveCustom: (params: {
+    workDir: string;
+    slug: string;
+    name: string;
+    description: string;
+    emoji: string;
+    systemPrompt: string;
+  }) => Promise<void>;
+  deleteCustom: (workDir: string, slug: string) => Promise<void>;
   setSearch: (q: string) => void;
   setDivision: (d: string | null) => void;
   /** 应用当前筛选后的列表 */
@@ -57,6 +79,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   loaded: false,
   error: null,
   simpleAiAgents: [],
+  rosters: [],
+  customAgents: [],
   search: '',
   division: null,
 
@@ -89,6 +113,32 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     } catch (err) {
       log.warn('SimpleAI agent list load failed', { error: String(err) });
     }
+  },
+
+  loadRosters: async () => {
+    try {
+      set({ rosters: await getRosters() });
+    } catch (err) {
+      log.warn('Rosters load failed', { error: String(err) });
+    }
+  },
+
+  loadCustomAgents: async (workDir) => {
+    try {
+      set({ customAgents: await listCustomAgents(workDir) });
+    } catch (err) {
+      log.warn('Custom agents load failed', { error: String(err) });
+    }
+  },
+
+  saveCustom: async (params) => {
+    await saveCustomAgent(params);
+    await get().loadCustomAgents(params.workDir);
+  },
+
+  deleteCustom: async (workDir, slug) => {
+    await deleteCustomAgent(workDir, slug);
+    await get().loadCustomAgents(workDir);
   },
 
   setSearch: (search) => set({ search }),

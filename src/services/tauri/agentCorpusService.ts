@@ -48,3 +48,71 @@ export async function ensureCorpusInstalled(): Promise<CorpusStatus | null> {
   }
   return status;
 }
+
+// ============================================================================
+// 专家团(roster)与自定义专家(P3 体验优化)
+// ============================================================================
+
+export interface RosterGroup {
+  group: string;
+  activation: string;
+  members: string[];
+}
+
+export interface RosterDef {
+  slug: string;
+  title: string;
+  mode: string;
+  duration: string;
+  summary: string;
+  groups: RosterGroup[];
+}
+
+export async function getRosters(): Promise<RosterDef[]> {
+  const raw = await invoke<{ rosters: RosterDef[] }>('agent_corpus_rosters');
+  return raw?.rosters ?? [];
+}
+
+export interface CustomAgent {
+  slug: string;
+  name: string;
+  description: string;
+  emoji: string | null;
+  systemPrompt: string;
+  filePath: string;
+}
+
+export async function listCustomAgents(workDir: string): Promise<CustomAgent[]> {
+  return invoke<CustomAgent[]>('custom_agent_list', { workDir });
+}
+
+export async function saveCustomAgent(params: {
+  workDir: string;
+  slug: string;
+  name: string;
+  description: string;
+  emoji: string;
+  systemPrompt: string;
+}): Promise<string> {
+  return invoke<string>('custom_agent_save', params);
+}
+
+export async function deleteCustomAgent(workDir: string, slug: string): Promise<void> {
+  return invoke('custom_agent_delete', { workDir, slug });
+}
+
+export interface RosterStartResult {
+  rosterId: string;
+  scenario: string;
+  waves: string[][];
+  dispatchedNow: string[];
+}
+
+export async function startRoster(params: {
+  scenario: string;
+  goal: string;
+  sourceSessionId?: string;
+  workDir?: string;
+}): Promise<RosterStartResult> {
+  return invoke<RosterStartResult>('nexus_start_roster', params);
+}

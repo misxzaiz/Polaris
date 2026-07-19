@@ -971,6 +971,10 @@ pub fn run() {
             commands::agent_corpus::agent_corpus_divisions,
             commands::agent_corpus::simple_ai_list_agents,
             commands::nexus::nexus_start_roster,
+            commands::agent_corpus::agent_corpus_rosters,
+            commands::agent_corpus::custom_agent_list,
+            commands::agent_corpus::custom_agent_save,
+            commands::agent_corpus::custom_agent_delete,
             // 历史对话存储
             commands::dialog_storage::dialog_list,
             commands::dialog_storage::dialog_list_meta,

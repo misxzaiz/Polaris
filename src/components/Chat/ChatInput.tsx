@@ -602,6 +602,59 @@ export function ChatInput({
     const cursorPosition = textarea.selectionStart
     const textBeforeCursor = newValue.slice(0, cursorPosition)
 
+    // === -1. Polaris 专家命令参数补全（/agent、/dispatch 的 slug、/nexus 的场景） ===
+    const agentArgMatch = textBeforeCursor.match(/^\/(agent|dispatch|nexus)\s+(\S*)$/)
+    if (agentArgMatch) {
+      const cmdName = agentArgMatch[1]
+      const argQuery = agentArgMatch[2].toLowerCase()
+      const agentState = useAgentStore.getState()
+      let agentItems: SuggestionItem[] = []
+      if (cmdName === 'nexus') {
+        agentItems = agentState.rosters
+          .filter(r => r.slug.includes(argQuery) || r.title.toLowerCase().includes(argQuery))
+          .map(r => ({
+            type: 'agent' as const,
+            data: {
+              slug: r.slug,
+              name: r.title || r.slug,
+              description: `${r.mode} · ${r.duration} · ${r.summary}`,
+              emoji: '🚀',
+              insertText: `/nexus ${r.slug} `,
+            },
+          }))
+      } else {
+        const pool = [
+          ...agentState.customAgents.map(c => ({
+            slug: c.slug, name: c.name, description: `自定义 · ${c.description}`, emoji: c.emoji ?? '🧩',
+          })),
+          ...agentState.catalog.map(c => ({
+            slug: c.slug, name: c.name, description: c.description, emoji: c.emoji,
+          })),
+        ]
+        agentItems = pool
+          .filter(a =>
+            a.slug.toLowerCase().includes(argQuery)
+            || a.name.toLowerCase().includes(argQuery)
+            || a.description.toLowerCase().includes(argQuery))
+          .slice(0, 12)
+          .map(a => ({
+            type: 'agent' as const,
+            data: { ...a, insertText: `/${cmdName} ${a.slug} ` },
+          }))
+      }
+      if (agentItems.length > 0) {
+        setSuggestionItems(agentItems)
+        setSelectedIndex(0)
+        setShowSuggestions(true)
+        const position = calculateSuggestionPosition()
+        setSuggestionPosition({ top: position.top, left: position.left })
+        return
+      }
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      return
+    }
+
     // === 0. / 命令触发检测（任意位置，必须在所有 @ 检测之前） ===
     // 规则：光标前最后一个片段以 / 开头，且 / 前是词边界（行首、空格、或标点符号）
     // 排除 @/path 中的 /（@ 后面的 / 不触发）
@@ -865,6 +918,20 @@ export function ChatInput({
       const skill = item.data as SkillItem
       applySlashReplacement(`skill-${skill.id} `)
       return
+    } else if (item.type === 'agent') {
+      // 专家参数补全：整条命令替换为 insertText（命令必在消息首）
+      const agent = item.data as import('./FileSuggestion').AgentArgSuggestion
+      const replaced = agent.insertText + textAfterCursor
+      setLocalText(replaced)
+      updateInputDraft({ text: replaced, attachments })
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      setTimeout(() => {
+        textarea.focus()
+        const cursor = agent.insertText.length
+        textarea.setSelectionRange(cursor, cursor)
+      }, 0)
+      return
     } else if (item.type === 'mcp') {
       const mcp = item.data as McpServerItem
       applySlashReplacement(`mcp-${mcp.id} `)
@@ -976,8 +1043,10 @@ export function ChatInput({
     // Polaris 本地命令：/agent [slug] → 设为/清除当前专家（L0 用户显式指定）
     const agentCmd = parseAgentSlashCommand(trimmed)
     if (agentCmd) {
-      const { catalog } = useAgentStore.getState()
-      if (agentCmd.slug && catalog.length > 0 && !catalog.some((a) => a.slug === agentCmd.slug)) {
+      const { catalog, customAgents } = useAgentStore.getState()
+      const knownSlug = (slug: string) =>
+        catalog.some((a) => a.slug === slug) || customAgents.some((c) => c.slug === slug)
+      if (agentCmd.slug && (catalog.length > 0 || customAgents.length > 0) && !knownSlug(agentCmd.slug)) {
         useToastStore.getState().info('/agent', t('chat:agentCmd.unknownSlug', {
           defaultValue: '未找到专家「{{slug}}」，可在专家画廊中查找 slug',
           slug: agentCmd.slug,
@@ -1004,7 +1073,13 @@ export function ChatInput({
         const agentState = useAgentStore.getState()
         const rewrite = rewriteDispatchPromptWithAgent(
           dispatchCmd.prompt,
-          agentState.catalog,
+          [
+            ...agentState.customAgents.map((c) => ({
+              slug: c.slug, name: c.name, description: c.description,
+              emoji: c.emoji ?? undefined, filePath: c.filePath,
+            })),
+            ...agentState.catalog,
+          ],
           agentState.status?.installDir ?? null,
         )
         if (rewrite) dispatchCmd.prompt = rewrite.prompt

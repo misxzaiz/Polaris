@@ -8,7 +8,6 @@
  *   (dispatch_task 是独立 Polaris 会话,无 agent 参数,经文件引用注入人格)
  */
 
-import type { AgentCatalogEntry } from '@/types/agent';
 
 export interface ParsedAgentCommand {
   /** 目标 slug;null = 清除当前专家 */
@@ -30,13 +29,23 @@ export interface AgentDispatchRewrite {
   title: string;
 }
 
+/** 可派发专家条目:corpus catalog 或自定义专家(filePath 直接指向定义文件) */
+export interface DispatchableAgent {
+  slug: string;
+  name: string;
+  description: string;
+  emoji?: string;
+  filePath?: string;
+}
+
 /**
- * `/dispatch` 首 token 命中 corpus slug 时,改写派发 prompt(注入专家人格引用)。
+ * `/dispatch` 首 token 命中专家 slug 时,改写派发 prompt(注入专家人格引用)。
+ * 自定义专家用其 filePath;corpus 专家用 installDir/corpus/<slug>.md。
  * 未命中返回 null(按原始 prompt 派发)。
  */
 export function rewriteDispatchPromptWithAgent(
   prompt: string,
-  catalog: AgentCatalogEntry[],
+  catalog: DispatchableAgent[],
   installDir: string | null,
 ): AgentDispatchRewrite | null {
   const spaceIdx = prompt.search(/\s/);
@@ -46,9 +55,9 @@ export function rewriteDispatchPromptWithAgent(
   const task = spaceIdx > 0 ? prompt.slice(spaceIdx).trim() : '';
   if (!task) return null;
 
-  const defRef = installDir
-    ? `${installDir.replace(/[\\/]+$/, '')}/corpus/${agent.slug}.md`
-    : null;
+  const defRef =
+    agent.filePath ??
+    (installDir ? `${installDir.replace(/[\\/]+$/, '')}/corpus/${agent.slug}.md` : null);
   const persona = defRef
     ? `你将以专家「${agent.name}」的身份执行任务。开始前先读取该专家定义并遵循其中的人格、使命与规则:${defRef}`
     : `你将以专家「${agent.name}」(${agent.description})的身份执行任务。`;

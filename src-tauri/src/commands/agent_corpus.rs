@@ -72,6 +72,107 @@ pub struct SimpleAiAgentItem {
     pub division: Option<String>,
 }
 
+/// rosters.json 原样透传(专家团 UI 消费,P3 体验优化)
+pub fn corpus_rosters_inner(resource_dir: Option<PathBuf>) -> Result<serde_json::Value> {
+    let path = resolve_resources_agents_dir(resource_dir).join("rosters.json");
+    let content = std::fs::read_to_string(&path).map_err(|e| {
+        crate::error::AppError::ConfigError(format!("读取 rosters 失败: {e} ({})", path.display()))
+    })?;
+    serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::ConfigError(format!("rosters.json 解析失败: {e}")))
+}
+
+// ============================================================================
+// 自定义专家(项目级 .polaris/agents,P3 体验优化)
+// ============================================================================
+
+fn custom_agents_dir(work_dir: &str) -> PathBuf {
+    std::path::Path::new(work_dir).join(".polaris").join("agents")
+}
+
+fn validate_custom_slug(slug: &str) -> Result<()> {
+    let ok = !slug.is_empty()
+        && slug.len() <= 64
+        && slug
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-');
+    if !ok {
+        return Err(crate::error::AppError::ValidationError(
+            "slug 只允许小写字母/数字/连字符,长度 ≤64".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// 保存(新建/覆盖)项目级自定义专家,返回落盘路径
+pub fn custom_agent_save_inner(
+    work_dir: &str,
+    slug: &str,
+    name: &str,
+    description: &str,
+    emoji: &str,
+    system_prompt: &str,
+) -> Result<PathBuf> {
+    validate_custom_slug(slug)?;
+    if name.trim().is_empty() || system_prompt.trim().is_empty() {
+        return Err(crate::error::AppError::ValidationError(
+            "name 与系统提示词不能为空".into(),
+        ));
+    }
+    let esc = |s: &str| s.replace('\n', " ").replace('"', "'");
+    let mut fm = format!(
+        "---\nname: \"{}\"\ndescription: \"{}\"\n",
+        esc(name.trim()),
+        esc(description.trim())
+    );
+    if !emoji.trim().is_empty() {
+        fm.push_str(&format!("emoji: {}\n", emoji.trim()));
+    }
+    fm.push_str("---\n\n");
+    let dir = custom_agents_dir(work_dir);
+    std::fs::create_dir_all(&dir)?;
+    let path = dir.join(format!("{slug}.md"));
+    std::fs::write(&path, format!("{fm}{}\n", system_prompt.trim()))?;
+    Ok(path)
+}
+
+/// 删除项目级自定义专家
+pub fn custom_agent_delete_inner(work_dir: &str, slug: &str) -> Result<()> {
+    validate_custom_slug(slug)?;
+    let path = custom_agents_dir(work_dir).join(format!("{slug}.md"));
+    if path.exists() {
+        std::fs::remove_file(&path)?;
+    }
+    Ok(())
+}
+
+/// 自定义专家条目(含 system_prompt 供编辑回填)
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomAgentItem {
+    pub slug: String,
+    pub name: String,
+    pub description: String,
+    pub emoji: Option<String>,
+    pub system_prompt: String,
+    pub file_path: String,
+}
+
+pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
+    let dir = custom_agents_dir(work_dir);
+    crate::ai::engine::simple_ai::list_project_agents(work_dir)
+        .into_iter()
+        .map(|a| CustomAgentItem {
+            file_path: dir.join(format!("{}.md", a.slug)).to_string_lossy().to_string(),
+            slug: a.slug,
+            name: a.name,
+            description: a.description,
+            emoji: a.emoji,
+            system_prompt: a.system_prompt,
+        })
+        .collect()
+}
+
 pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
     crate::ai::engine::simple_ai::list_agents(work_dir)
         .into_iter()
@@ -129,4 +230,36 @@ pub fn agent_corpus_divisions(app: tauri::AppHandle) -> Result<serde_json::Value
 #[tauri::command]
 pub fn simple_ai_list_agents(work_dir: String) -> Vec<SimpleAiAgentItem> {
     simple_ai_list_agents_inner(&work_dir)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn agent_corpus_rosters(app: tauri::AppHandle) -> Result<serde_json::Value> {
+    corpus_rosters_inner(app_resource_dir(&app))
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn custom_agent_list(work_dir: String) -> Vec<CustomAgentItem> {
+    custom_agent_list_inner(&work_dir)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn custom_agent_save(
+    work_dir: String,
+    slug: String,
+    name: String,
+    description: String,
+    emoji: String,
+    system_prompt: String,
+) -> Result<String> {
+    custom_agent_save_inner(&work_dir, &slug, &name, &description, &emoji, &system_prompt)
+        .map(|p| p.to_string_lossy().to_string())
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn custom_agent_delete(work_dir: String, slug: String) -> Result<()> {
+    custom_agent_delete_inner(&work_dir, &slug)
 }

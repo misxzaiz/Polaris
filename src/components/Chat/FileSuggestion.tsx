@@ -30,9 +30,19 @@ export interface ConversationSuggestion {
   workspacePath: string | null;
 }
 
+/** 专家参数补全条目(/agent、/dispatch、/nexus 的参数建议) */
+export interface AgentArgSuggestion {
+  slug: string;
+  name: string;
+  description: string;
+  emoji?: string;
+  /** 选中后替换整条命令的文本 */
+  insertText: string;
+}
+
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command';
-  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion;
+  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command' | 'agent';
+  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion | AgentArgSuggestion;
 }
 
 /** Skill 条目（用于 / 命令建议） */
@@ -85,6 +95,7 @@ export function UnifiedSuggestion({
   const fileItems = items.filter(i => i.type === 'file');
   const snippetItems = items.filter(i => i.type === 'snippet');
   const cliCommandItems = items.filter(i => i.type === 'cli-command');
+  const agentItems = items.filter(i => i.type === 'agent');
   const skillItems = items.filter(i => i.type === 'skill');
   const mcpItems = items.filter(i => i.type === 'mcp');
   const conversationItems = items.filter(i => i.type === 'conversation');
@@ -258,6 +269,38 @@ export function UnifiedSuggestion({
                 <span className="text-xs text-text-tertiary truncate">
                   {tChat(`cliCommand.desc.${cmd.descKey}`)}
                 </span>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* 专家参数补全分组 */}
+      {agentItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            专家
+          </div>
+          {agentItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const agent = item.data as AgentArgSuggestion;
+
+            return (
+              <div
+                key={`agent-${agent.slug}`}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="shrink-0">{agent.emoji || '🤖'}</span>
+                <span className="shrink-0 text-sm">{agent.name}</span>
+                <span className="font-mono text-xs text-text-tertiary shrink-0">{agent.slug}</span>
+                <span className="text-xs text-text-tertiary truncate">{agent.description}</span>
               </div>
             );
           })}
