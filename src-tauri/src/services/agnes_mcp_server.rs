@@ -645,10 +645,7 @@ fn exec_generate_video(
 
         match poll_status {
             "completed" => {
-                let url = poll
-                    .get("remixed_from_video_id")
-                    .and_then(Value::as_str)
-                    .unwrap_or("");
+                let url = extract_video_url(&poll);
                 return Ok(json!({
                     "structuredContent": {
                         "type": "video",
@@ -660,7 +657,7 @@ fn exec_generate_video(
                         "model": config.video_model,
                         "prompt": prompt,
                     },
-                    "content": [ { "type": "text", "text": format!("视频生成完成: {url}") } ]
+                    "content": [ { "type": "text", "text": format!("视频生成完成: {}", url.unwrap_or_default()) } ]
                 }));
             }
             "failed" => {
@@ -702,10 +699,7 @@ fn exec_query_video(
 
     match status {
         "completed" => {
-            let url = resp
-                .get("remixed_from_video_id")
-                .and_then(Value::as_str)
-                .unwrap_or("");
+            let url = extract_video_url(&resp);
             Ok(json!({
                 "structuredContent": {
                     "type": "video",
@@ -715,7 +709,7 @@ fn exec_query_video(
                     "seconds": resp.get("seconds").and_then(Value::as_str).unwrap_or("?"),
                     "size": resp.get("size").and_then(Value::as_str).unwrap_or(""),
                 },
-                "content": [ { "type": "text", "text": format!("视频生成完成: {url}") } ]
+                "content": [ { "type": "text", "text": format!("视频生成完成: {}", url.unwrap_or_default()) } ]
             }))
         }
         "failed" => Ok(json!({
@@ -827,6 +821,24 @@ fn extract_error(resp: &Value) -> String {
             .to_string(),
         _ => "未知错误".to_string(),
     }
+}
+
+/// Extract the download URL from a completed video query response.
+///
+/// The current Agnes `/agnesapi` completion payload puts the download address
+/// in the top-level `url` field. The legacy `remixed_from_video_id` field is
+/// `null` for non-remix tasks and is kept only as a fallback for older API
+/// versions that placed the URL there.
+fn extract_video_url(resp: &Value) -> Option<String> {
+    resp.get("url")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            resp.get("remixed_from_video_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .map(String::from)
 }
 
 pub fn mask_key(key: &str) -> String {
@@ -941,5 +953,46 @@ mod tests {
         assert_eq!(mask_key(""), "");
         assert_eq!(mask_key("short"), "*****");
         assert_eq!(mask_key("sk-1234567890"), "sk-1...7890");
+    }
+
+    #[test]
+    fn extract_video_url_prefers_top_level_url() {
+        // 实测完成态:顶层 url 有值,remixed_from_video_id 为 null → 取 url
+        let resp = json!({
+            "status": "completed",
+            "url": "https://platform-outputs.agnes-ai.space/videos/x.mp4",
+            "remixed_from_video_id": null,
+        });
+        assert_eq!(
+            extract_video_url(&resp).as_deref(),
+            Some("https://platform-outputs.agnes-ai.space/videos/x.mp4")
+        );
+    }
+
+    #[test]
+    fn extract_video_url_falls_back_to_remixed_field() {
+        // 旧版上游兼容:无 url 时退回 remixed_from_video_id
+        let resp = json!({
+            "status": "completed",
+            "remixed_from_video_id": "https://legacy/x.mp4",
+        });
+        assert_eq!(extract_video_url(&resp).as_deref(), Some("https://legacy/x.mp4"));
+    }
+
+    #[test]
+    fn extract_video_url_none_when_both_empty() {
+        // 运行中:两字段均 null → None
+        let resp = json!({
+            "status": "in_progress",
+            "url": null,
+            "remixed_from_video_id": null,
+        });
+        assert!(extract_video_url(&resp).is_none());
+    }
+
+    #[test]
+    fn extract_video_url_ignores_empty_string() {
+        let resp = json!({ "status": "completed", "url": "", "remixed_from_video_id": "" });
+        assert!(extract_video_url(&resp).is_none());
     }
 }

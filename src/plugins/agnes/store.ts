@@ -298,7 +298,7 @@ export const useAgnesMediaStore = create<AgnesMediaState & AgnesMediaActions>()(
                     ...item,
                     status: task.status,
                     progress: task.progress,
-                    url: task.url ?? item.url,
+                    url: task.url || item.url,
                     seconds: task.seconds ?? item.seconds,
                     size: task.size ?? item.size,
                     error: task.error ?? item.error,

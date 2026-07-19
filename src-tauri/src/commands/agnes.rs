@@ -390,11 +390,7 @@ pub async fn agnes_query_video(
         .unwrap_or("unknown")
         .to_string();
     let progress = resp.get("progress").and_then(Value::as_u64).unwrap_or(0);
-    let url = resp
-        .get("remixed_from_video_id")
-        .and_then(Value::as_str)
-        .filter(|s| !s.is_empty())
-        .map(String::from);
+    let url = extract_video_url(&resp);
     let error = match status.as_str() {
         "failed" => Some(extract_error(&resp)),
         _ => None,
@@ -428,6 +424,24 @@ fn extract_error(resp: &Value) -> String {
             .to_string(),
         _ => "未知错误".to_string(),
     }
+}
+
+/// Extract the download URL from a completed video query response.
+///
+/// The current Agnes `/agnesapi` completion payload puts the download address
+/// in the top-level `url` field. The legacy `remixed_from_video_id` field is
+/// `null` for non-remix tasks and is kept only as a fallback for older API
+/// versions that placed the URL there.
+fn extract_video_url(resp: &Value) -> Option<String> {
+    resp.get("url")
+        .and_then(Value::as_str)
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            resp.get("remixed_from_video_id")
+                .and_then(Value::as_str)
+                .filter(|s| !s.is_empty())
+        })
+        .map(String::from)
 }
 
 fn urlencode(input: &str) -> String {

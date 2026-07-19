@@ -14,12 +14,12 @@ Base URL：`https://apihub.agnes-ai.com`
 |------|------|------|--------|----------|
 | 生图 | `agnes-image-2.1-flash` | `POST /v1/images/generations` | 同步(数秒) | 返回 `data[0].url` 或 `data[0].b64_json` |
 | 生视频-创建 | `agnes-video-v2.0` | `POST /v1/videos` | 异步 | 返回 `video_id`(长 base64) + `task_id` + `status:queued` |
-| 生视频-查询 | — | `GET /agnesapi?video_id=<VIDEO_ID>` | 轮询 | 完成后 `status:completed`,下载地址在 **`remixed_from_video_id`** |
+| 生视频-查询 | — | `GET /agnesapi?video_id=<VIDEO_ID>` | 轮询 | 完成后 `status:completed`,下载地址在顶层 **`url`** 字段 |
 
 关键实测事实（与文档的补充/纠偏）：
 1. 视频 3.4 秒时长实测耗时 **~100 秒**;10 秒视频预计 300s+。轮询超时须按此设计。
 2. 创建返回的 `video_id` 是**长 base64 串**,查询用它;查询响应里的 `id` 是短规范 id（`video_xxxx`）。以创建返回的 `video_id` 作为轮询键。
-3. 视频完成态下载字段是 `remixed_from_video_id`（命名反直觉,勿误认为 remix 源）。
+3. 视频完成态下载字段是顶层 **`url`**（`https://platform-outputs.agnes-ai.space/.../xxx.mp4`）。`remixed_from_video_id` 现恒为 `null`（仅对 remix 任务承载源视频 id），早期文档曾把下载链接放在该字段，已废弃；代码保留其作为旧版兜底。2026-07-19 实测复核确认。
 4. 图像响应含文档未列字段：`background`/`output_format`/`quality`/`usage`;解析时按需忽略。
 5. `num_frames` 须满足 `8n+1` 且 ≤441;`size` 由服务端映射到最近标准分辨率（如请求 1152x768 实际输出 1088x832）。
 
@@ -45,7 +45,7 @@ git show be2d7a58:src-tauri/src/bin/polaris_agnes_mcp.rs        # bin 入口
 git show be2d7a58:src/components/Chat/chatBlocks/MediaPreviewRenderer.tsx  # 聊天内联渲染(二期)
 ```
 复用价值：JSON-RPC 骨架、blocking reqwest 客户端、tools/list 结构、单测框架。
-须改写：图像 `extra_body` 结构、视频 `num_frames/frame_rate/8n+1`、查询改 `/agnesapi?video_id=`、下载字段 `remixed_from_video_id`。
+须改写：图像 `extra_body` 结构、视频 `num_frames/frame_rate/8n+1`、查询改 `/agnesapi?video_id=`、下载字段 `url`（旧 `remixed_from_video_id` 兜底）。
 
 ---
 
@@ -114,7 +114,7 @@ git show be2d7a58:src/components/Chat/chatBlocks/MediaPreviewRenderer.tsx  # 聊
 
 ### 3.3 `query_video`
 入参：`{ "video_id": "string (必填,用创建返回的长 video_id)" }`
-返回：`{ status, progress, url?(remixed_from_video_id), error? }`。
+返回：`{ status, progress, url?(顶层 url 字段), error? }`。
 实现：`GET /agnesapi?video_id=<video_id>`;404 视为 `queued`（服务端偶发延迟）。
 
 ### 3.4 `get_config` / `set_config`
@@ -259,4 +259,4 @@ Tab 结构：
 
 *附：实测样例*
 - 图：`agnes-image-2.1-flash` + `size 1024x1024` → `data[0].url`（platform-outputs.agnes-ai.space）。
-- 视频：`num_frames 81, frame_rate 24` → `seconds 3.4`, `size 1088x832`, ~100s 完成, `remixed_from_video_id` 为 .mp4 直链。
+- 视频：`num_frames 81, frame_rate 24` → `seconds 3.4`, `size 1088x832`, ~100s 完成, 顶层 `url` 为 .mp4 直链（`remixed_from_video_id` 为 `null`）。
