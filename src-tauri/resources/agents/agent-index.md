@@ -1,0 +1,271 @@
+# Agent Index
+
+> 267 位专家的语义路由索引(slug — 显示名 — 职责)。按任务语义匹配后,用 slug 经 dispatch_agent/dispatch_task 派发。
+
+- academic-anthropologist — 人类学家 — 文化体系、仪式、亲属关系、信仰系统和民族志方法专家——构建有生活气息而非凭空捏造的、文化上连贯自洽的社会
+- academic-geographer — 地理学家 — 自然地理与人文地理、气候系统、制图学和空间分析专家——构建地理上连贯自洽的世界，使地形、气候、资源和聚落模式在科学上合理
+- academic-historian — 历史学家 — 历史分析、分期、物质文化和史学方法专家——验证历史一致性，以扎根于一手和二手资料的真实时代细节丰富设定
+- academic-narratologist — 叙事学家 — 叙事理论、故事结构、人物弧线和文学分析专家——基于从普罗普到坎贝尔再到现代叙事学的成熟框架提供建议
+- academic-psychologist — 心理学家 — 人类行为、人格理论、动机和认知模式专家——基于临床和研究框架构建心理上可信的角色和互动
+- academic-study-planner — 学习规划师 — 面向中国考生和终身学习者的个性化学习规划专家，精通考研、考公、司法考试、CPA 等重大考试的备考策略，擅长运用费曼学习法、艾宾浩斯遗忘曲线、番茄钟等科学方法，帮助学习者制定高效的学习计划并持续优化。
+- accounts-payable-agent — 应付账款智能体 — 自主支付处理专家，负责执行供应商付款、承包商发票和定期账单，支持加密货币、法币、稳定币等多种支付通道，通过 MCP 与 AI 智能体工作流集成。
+- agentic-identity-trust — 身份信任架构师 — 为自主运行的 AI 智能体设计身份认证和信任验证体系，确保智能体能证明自己是谁、被授权做什么、实际做了什么。
+- agents-orchestrator — 智能体编排者 — 自主流水线管理者，负责编排整个开发工作流。你是这个流程的领导者。
+- automation-governance-architect — 自动化治理架构师 — 以治理为先的业务自动化架构师（n8n 优先），在实施之前先审计价值、风险和可维护性。
+- blender-addon-engineer — Blender 插件工程师 — Blender 工具专家——构建 Python 插件、资源验证器、导出工具和管线自动化，把重复的 DCC 工作变成可靠的一键流程
+- business-strategist — 商业战略家 — 资深管理咨询专家，专注竞争分析、市场进入策略、商业模式设计、增长规划、组织战略与战略决策——把复杂的市场动态转化为清晰、可落地、能创造可持续竞争优势的战略
+- change-management-consultant — 变革管理顾问 — 资深变革管理专家，运用 ADKAR、Kotter 和 Prosci 框架，引导组织顺利完成技术落地、组织重构、文化转型与并购整合——管理阻力、推动接纳，并确保变革在上线之后长久落地
+- chief-financial-officer — 首席财务官 — 战略财务高管，掌管资本配置、资金运营、财务规划、并购财务、投资者关系与董事会汇报——把财务的复杂性转化为清晰决策，驱动业务表现并赢得各方利益相关者的信心。
+- corporate-training-designer — 企业培训课程设计师 — 专注企业培训体系搭建与课程开发的专家，精通培训需求分析、教学设计方法论、混合式学习方案设计、内训师培养、领导力发展项目以及培训效果评估与持续优化。
+- customer-success-manager — 客户成功经理 — 战略型客户成功专家，负责 onboarding（新客导入）、health scoring（健康度评分）、QBR 主持、churn（流失）防控、扩张机会识别与续约管理——通过把客户变成能取得可量化成果的长期伙伴，驱动 net revenue retention（净收入留存）
+- data-consolidation-agent — 数据整合师 — 把提取出的销售数据整合到实时报告仪表盘，按区域、销售代表和销售管线生成汇总视图。
+- data-privacy-officer — 数据隐私官 — 企业数据隐私专家与 DPO（数据保护官），负责构建 GDPR、CCPA 及全球隐私合规体系——覆盖数据测绘、隐私影响评估、同意管理、泄露响应、供应商尽职调查与监管沟通。
+- design-brand-guardian — 品牌守护者 — 专精品牌形象开发、一致性维护和战略品牌定位的品牌策略师和品牌守护专家
+- design-image-prompt-engineer — 图像提示词工程师 — 精通摄影美学和 AI 图像生成的提示词专家，擅长把视觉概念转化为精准的文字描述，生成专业级摄影作品。
+- design-inclusive-visuals-specialist — 包容性视觉专家 — 专注于消除 AI 生成图像中的系统性偏见，确保生成的人物图像和视频在文化、肤色、体型等方面真实、有尊严、不刻板。
+- design-persona-walkthrough — Persona 走查专家 — 从设定好的 persona（用户画像）心理视角出发，对网页进行认知走查的模拟——捕捉每个滚动位置上的情绪反应与理性思考，再输出植根于 LIFT、Cialdini、Fogg 框架的结构化 CRO 报告
+- design-ui-designer — UI 设计师 — 精通视觉设计系统、组件库和像素级界面创建的 UI 设计专家。创建美观、一致、无障碍的用户界面，增强用户体验并体现品牌形象
+- design-ux-architect — UX 架构师 — 技术架构与 UX 专家，给开发者提供扎实的基础设施——CSS 体系、布局框架、清晰的实现指引。
+- design-ux-researcher — UX 研究员 — 专精用户行为分析、可用性测试和数据驱动设计洞察的用户体验研究专家。提供可落地的研究发现，提升产品可用性和用户满意度
+- design-visual-storyteller — 视觉叙事师 — 视觉传达专家，擅长把复杂信息转化成有吸引力的视觉故事，通过多媒体内容和品牌叙事打动受众。
+- design-whimsy-injector — 趣味注入师 — 创意专家，专门给品牌体验注入个性、惊喜和趣味元素，用意想不到的小细节让用户记住你的产品。
+- engineering-ai-data-remediation-engineer — AI 数据修复工程师 — 自愈数据管道专家——使用气隙隔离的本地 SLM 和语义聚类，自动检测、分类和修复大规模数据异常。专注于修复层：拦截坏数据、通过 Ollama 生成确定性修复逻辑，并保证零数据丢失。不是通用数据工程师——而是当你的数据出了问题且管道不能停的时候，出手的外科手术级专家。
+- engineering-ai-engineer — AI 工程师 — 精通机器学习模型开发与部署的 AI 工程专家，擅长从数据处理到模型上线的全链路工程化，专注构建可靠、可扩展的 AI 系统。
+- engineering-autonomous-optimization-architect — 自主优化架构师 — 智能系统治理专家，持续对 API 进行影子测试以优化性能，同时严格执行财务和安全护栏，防止成本失控。
+- engineering-backend-architect — 后端架构师 — 资深后端架构师，专精可扩展系统设计、数据库架构、API 开发和云基础设施。构建健壮、安全、高性能的服务端应用和微服务。
+- engineering-cms-developer — CMS 开发者 — Drupal 与 WordPress 专家，精通主题开发、自定义插件/模块、内容架构和代码优先的 CMS 实现。
+- engineering-code-reviewer — 代码审查员 — 专业代码审查专家，提供建设性、可操作的反馈，聚焦正确性、可维护性、安全性和性能，而非代码风格偏好。
+- engineering-codebase-onboarding-engineer — 代码库入职引导工程师 — 专业的开发者入职引导专家，帮助新工程师快速理解陌生代码库，通过阅读源码、追踪代码路径，只陈述基于代码的事实。
+- engineering-data-engineer — 数据工程师 — 专注于构建可靠数据管线、湖仓架构和可扩展数据基础设施的数据工程专家。精通 ETL/ELT、Apache Spark、dbt、流处理系统和云数据平台，将原始数据转化为可信赖的分析就绪资产。
+- engineering-database-optimizer — 数据库优化师 — 数据库性能专家，专注于 Schema 设计、查询优化、索引策略和性能调优，精通 PostgreSQL、MySQL 及 Supabase、PlanetScale 等现代数据库。
+- engineering-devops-automator — DevOps 自动化师 — 精通基础设施自动化、CI/CD 流水线开发和云运维的 DevOps 专家
+- engineering-dingtalk-integration-developer — 钉钉集成开发工程师 — 专注钉钉开放平台全栈集成开发的工程专家，精通钉钉机器人、酷应用、审批流自动化、连接器低代码集成、钉钉小程序、宜搭平台对接及与阿里云生态的深度集成，擅长构建企业级协作与业务自动化解决方案。
+- engineering-drupal-shopping-cart — Drupal 购物车工程师 — 资深 Drupal 电商工程师，精通 Drupal Commerce，负责商品目录管理、支付网关集成、checkout 流程设计、订单管理、税费与促销配置，以及在 Drupal 10/11 上交付高可靠的店面
+- engineering-email-intelligence-engineer — 邮件智能工程师 — 专精从原始邮件线程中提取结构化、可供 AI 推理的数据，服务于智能体和自动化系统。
+- engineering-embedded-firmware-engineer — 嵌入式固件工程师 — 裸机和 RTOS 固件开发专家——精通 ESP32/ESP-IDF、PlatformIO、Arduino、ARM Cortex-M、STM32 HAL/LL、Nordic nRF5/nRF Connect SDK、FreeRTOS、Zephyr。
+- engineering-embedded-linux-driver-engineer — 嵌入式 Linux 驱动工程师 — 嵌入式 Linux 内核驱动与 BSP 开发专家——精通 Linux 内核模块、设备树、Platform/I2C/SPI/USB 驱动框架、DMA、中断子系统、Yocto/Buildroot、U-Boot、交叉编译工具链。
+- engineering-feishu-integration-developer — 飞书集成开发工程师 — 专注飞书开放平台全栈集成开发的工程专家，精通飞书机器人、小程序、审批流、多维表格（Bitable）、消息卡片、Webhook、SSO 单点登录及工作流自动化，擅长在飞书生态内构建企业级协作与自动化解决方案。
+- engineering-filament-optimization-specialist — Filament 优化专家 — 专精于重构和优化 Filament PHP 后台管理界面的专家，专注高影响力的结构性改造，而非表面调整，打造极致可用性与效率。
+- engineering-fpga-digital-design-engineer — FPGA/ASIC 数字设计工程师 — FPGA 与 ASIC 数字前端设计专家——精通 Verilog/SystemVerilog、VHDL、Vivado/Quartus、AXI/AHB 总线、时序收敛、Zynq/Intel SoC FPGA、高层次综合（HLS）。
+- engineering-frontend-developer — 前端开发者 — 精通现代 Web 技术、React/Vue/Angular 框架、UI 实现和性能优化的前端开发专家
+- engineering-git-workflow-master — Git 工作流大师 — Git 工作流专家，精通分支策略、版本控制最佳实践，包括约定式提交、变基、工作树和 CI 友好的分支管理。
+- engineering-incident-response-commander — 故障响应指挥官 — 专精于生产环境故障管理、结构化响应协调、事后复盘、SLO/SLI 跟踪和 on-call 流程设计的事故指挥专家，为工程组织的可靠性保驾护航。
+- engineering-iot-solution-architect — IoT 方案架构师 — 物联网端到端方案设计专家——精通设备接入（MQTT/CoAP/LwM2M）、边缘计算、云平台（AWS IoT/Azure IoT/阿里云 IoT）、OTA、设备管理、数据管道和安全体系。
+- engineering-it-service-manager — IT 服务经理 — 资深 IT 服务管理（ITSM）专家，运用 ITIL 4 框架进行服务目录设计、incident（事件）与 problem（问题）管理、变更控制、SLA 治理、CMDB 维护以及持续服务改进——确保 IT 在任何规模的组织中都能交付可靠、可衡量的业务价值
+- engineering-mechanical-design-engineer — 机械设计工程师 — 通用机械产品设计专家——精通方案选型、传动/机构/结构件/连接设计、强度刚度疲劳振动校核、DFMA 与标准件选型，遵循 GB/ISO/JIS 国家标准，输出可制造可装配的工程图与 BOM。
+- engineering-minimal-change-engineer — 最小变更工程师 — 专注于最小可行差异的工程专家——只修复被要求的内容，拒绝范围蔓延，宁可写三行相似代码也不做过早抽象。这种纪律性能防止 bug 修复 PR 变成重构雪崩。
+- engineering-mobile-app-builder — 移动应用开发者 — 精通 iOS/Android 原生开发和跨平台框架的移动端专家，擅长性能优化、平台特性集成，专注打造流畅的移动体验。
+- engineering-multi-agent-systems-architect — 多智能体系统架构师 — 系统架构师，专精于 multi-agent（多智能体）AI 流水线的设计、协调与治理——涵盖拓扑选型、上下文管理、智能体间信任、故障恢复、human-in-the-loop（人在环中）门控，以及面向生产级智能体系统的可观测性。
+- engineering-network-engineer-china — 国内网络工程师 — 面向国产网络设备的企业网工程专家——精通华为 VRP、华三 Comware、锐捷 RGOS，覆盖园区网/数据中心/广域网的 VLAN、STP、OSPF、IS-IS、BGP、MPLS、VXLAN、SDN 设计与排障，熟悉信创国产化替代与等保 2.0 合规组网。
+- engineering-orgscript-engineer — OrgScript 工程师 — 精通 OrgScript 语法的设计、解析与实现，擅长 AST 校验和业务逻辑定义。
+- engineering-pc-host-engineer — 上位机工程师 — Qt/QML 桌面上位机开发专家——精通 Qt Widgets/Quick、QSerialPort 串口、Modbus/CAN/TCP 工业协议、QChart/QCustomPlot 实时数据可视化，以及与 STM32/ESP32 等下位机的协议对接和跨平台打包部署。
+- engineering-prompt-engineer — Prompt 工程师 — 专精于为 LLM（大语言模型）打磨、测试并系统化优化 prompt 的专家——把含糊的指令变成可靠、可上生产的 AI 行为。
+- engineering-rapid-prototyper — 快速原型师 — 专注于超快速概念验证开发和 MVP 创建，使用高效工具和框架快速实现想法验证。
+- engineering-security-engineer — 安全工程师 — 专业应用安全工程师，专注于威胁建模、漏洞评估、安全代码审查、安全架构设计和事件响应，服务于现代 Web、API 和云原生应用。
+- engineering-senior-developer — 高级开发者 — 精通 Laravel/Livewire/FluxUI 的高级全栈开发者，擅长高端 CSS 效果、Three.js 集成，专注打造有质感的 Web 体验。
+- engineering-software-architect — 软件架构师 — 软件架构专家，精通系统设计、领域驱动设计、架构模式和技术决策，构建可扩展、可维护的系统。
+- engineering-solidity-smart-contract-engineer — Solidity 智能合约工程师 — 精通 EVM 智能合约架构、Gas 优化、可升级代理模式、DeFi 协议开发和安全优先合约设计的 Solidity 开发专家，覆盖 Ethereum 及 L2 链。
+- engineering-sre — SRE (站点可靠性工程师) — 站点可靠性工程专家，精通 SLO、错误预算、可观测性、混沌工程和减少重复劳动，守护大规模生产系统的稳定性。
+- engineering-technical-writer — 技术文档工程师 — 专精于开发者文档、API 参考、README 和教程的技术写作专家。把复杂的工程概念转化为清晰、准确、开发者真正会读也用得上的文档。
+- engineering-threat-detection-engineer — 威胁检测工程师 — 专精于 SIEM 规则开发、MITRE ATT&CK 覆盖度映射、威胁狩猎、告警调优和检测即代码流水线的安全运营检测工程专家。
+- engineering-voice-ai-integration-engineer — 语音 AI 集成工程师 — 专精于使用 Whisper 系列模型和云端 ASR 服务构建端到端语音转录流水线——从原始音频采集、预处理、转录文本清洗、字幕生成、说话人分离，到结构化下游集成至应用、API 和 CMS 平台。
+- engineering-wechat-mini-program-developer — 微信小程序开发者 — 专注微信小程序全栈开发的工程专家，精通 WXML/WXSS/WXS、微信原生API、微信支付集成、订阅消息、云开发，擅长在微信生态内构建高性能、体验流畅的小程序应用。
+- engineering-wordpress-shopping-cart — WordPress 购物车工程师 — WordPress 电商专家工程师，专精 WooCommerce，负责商品目录管理、payment gateway 集成、checkout 定制、订单管理、税费与优惠券配置，以及在 WordPress 上交付以转化率为导向的店铺
+- esg-sustainability-officer — ESG 与可持续发展官 — 企业可持续发展战略专家与 ESG 信息披露专员，负责搭建 environmental、social、governance（环境、社会、治理）项目，管理信息披露，推动 decarbonization（脱碳）行动，并使业务战略与利益相关方及监管预期保持一致。
+- finance-bookkeeper-controller — 簿记与财务总监 — 专业簿记与财务总监，精通日常会计操作、财务对账、月末结账流程和内部控制。确保财务记录的准确性、完整性和时效性，始终保持 GAAP 合规和审计就绪状态。
+- finance-financial-analyst — 财务分析师 — 专业财务分析师，精通财务建模、预测、场景分析和数据驱动的决策支持。将原始财务数据转化为可行动的商业智能，驱动战略规划、投资决策和运营优化。
+- finance-financial-forecaster — 财务预测分析师 — 专注企业财务预测与场景建模的分析专家，精通收入预测、现金流管理、烧钱率分析和融资对接，帮助创业公司和成长型企业在不确定环境中做出有数据支撑的财务决策。
+- finance-fpa-analyst — FP&A 分析师 — 专业财务规划与分析（FP&A）专家，精通预算编制、差异分析、财务规划、滚动预测和战略决策支持。在数字与业务叙事之间架起桥梁，驱动运营绩效和战略资源配置。
+- finance-fraud-detector — 金融风控分析师 — 专注交易欺诈检测与金融风险防控的分析专家，精通支付宝/微信支付/银联渠道的风控策略、反洗钱合规、电信诈骗识别、央行征信应用和互联网金融风控体系搭建，帮助企业守住资金安全底线。
+- finance-investment-researcher — 投资研究员 — 专业投资研究员，精通市场研究、尽职调查、投资组合分析和资产估值。通过严谨的基本面和量化分析识别投资机会、评估风险，支持数据驱动的投资组合决策，覆盖公开股票、私募市场和另类资产。
+- finance-invoice-manager — 发票管理专家 — 专注中国企业发票全生命周期管理的财税专家，精通增值税专用发票与普通发票管理、金税系统操作、电子发票推广、三单匹配、报销审批和税务合规，帮助企业实现发票管理的规范化和数字化。
+- finance-tax-strategist — 税务策略师 — 专业税务策略师，精通税务优化、多辖区合规、转让定价和战略税务规划。在确保完全合规的前提下，穿越复杂税法体系以最小化税负，覆盖地方、州、联邦和国际税务管辖区。
+- game-audio-engineer — 游戏音频工程师 — 交互音频专家——精通 FMOD/Wwise 集成、自适应音乐系统、空间音频，以及全引擎音频性能预算管理
+- game-designer — 游戏设计师 — 系统与机制架构师——精通 GDD 编写、玩家心理学、经济平衡和游戏循环设计，跨引擎跨品类通用
+- gaokao-college-advisor — 高考志愿填报顾问 — 中国高考志愿填报策略专家，精通平行志愿与院校专业组填报规则、位次法与等位分析、新高考选科组合与专业限选、提前批与专项计划、院校层次定位、冲稳保策略，帮助考生和家长制定科学的志愿填报方案。
+- gis-3d-scene-developer — 三维场景开发者 — Web 三维可视化专家，使用 Cesium、ArcGIS Scene Viewer 及现代三维 Web 框架，打造沉浸式三维场景、地形模型、点云可视化和交互式 Web 体验。
+- gis-analyst — GIS 分析师 — 日常 GIS 操作员，负责制图、图层管理、空间查询，并在桌面与 Web 环境中维护地理空间数据的完整性。
+- gis-bim-specialist — BIM/GIS 专家 — 整合专家，打通 BIM（建筑信息模型）与 GIS（地理信息系统）——负责 Revit/IFC 数据转换、室内地图、数字孪生架构与设施管理数据模型。
+- gis-cartography-designer — 地图制图设计师 — 地图美学专家，设计美观、易读、有效的地图——配色理论、字体排印、标注布局、底图选择，以及面向打印和 Web 的视觉层次。
+- gis-drone-reality-mapping — 无人机实景测绘专家 — 摄影测量与实景采集专家，把无人机影像处理成 orthomosaic（正射影像）、数字地形模型、point cloud（点云）和三维网格——打通现场采集与 GIS 可用成果之间的链路。
+- gis-geoai-ml-engineer — GeoAI/ML 工程师 — 地理空间机器学习专家，构建模型从卫星与航拍影像中做特征提取、目标检测、影像分割和地表覆盖分类。
+- gis-geoprocessing-specialist — 地理处理专家 — 精通 ArcPy 与 Python 工具箱的自动化专家，专攻空间工作流自动化——构建 .pyt 工具箱、Model Builder 流程、批量地理处理自动化，以及为 ArcGIS Pro 编写自定义分析脚本。
+- gis-qa-engineer — GIS 质检工程师 — 质量保证专家，负责校验地理空间数据的完整性——拓扑检查、元数据审计、CRS 一致性、精度评估与合规验证。
+- gis-solution-engineer — 解决方案工程师 — 亲力亲为的 GIS 原型搭建者，接过技术顾问的策略，将其落地为可运行的演示、概念验证（PoC）和技术验证，覆盖完整的 Esri 与开源技术栈。
+- gis-spatial-data-engineer — 空间数据工程师 — ETL 专家，把来自任何来源的杂乱地理空间数据，转换成干净、标准化、可投产的数据集——格式转换、坐标系重投影、属性归一化，以及自动化管线。
+- gis-spatial-data-scientist — 空间数据科学家 — 高级空间分析专家，把统计建模、空间计量经济学、聚类和预测分析应用到地理空间数据上——找出地图上看不见的规律。
+- gis-technical-consultant — 技术顾问 — 战略型 GIS 顾问，把业务问题转化为地理空间解决方案——做差距分析、技术路线图、RFP 应答，以及横跨 Esri 与开源生态的数字化转型战略。
+- gis-web-gis-developer — Web GIS 开发工程师 — 全栈 Web GIS 工程师，负责构建交互式地图应用——MapLibre GL JS、ArcGIS JS API、Leaflet、实时仪表盘、REST API 集成与地理空间 Web 服务。
+- godot-gameplay-scripter — Godot 游戏脚本开发者 — 组合与信号完整性专家——精通 GDScript 2.0、C# 集成、节点式架构和类型安全信号设计，面向 Godot 4 项目
+- godot-multiplayer-engineer — Godot 多人游戏工程师 — Godot 4 网络专家——精通 MultiplayerAPI、场景复制、ENet/WebRTC 传输、RPC 和权威模型，面向实时多人游戏
+- godot-shader-developer — Godot Shader 开发者 — Godot 4 视觉效果专家——精通 Godot 着色语言（类 GLSL）、VisualShader 编辑器、CanvasItem 和 Spatial shader、后处理及性能优化，面向 2D/3D 效果
+- government-digital-presales-consultant — 政务数字化售前顾问 — 面向中国政务市场（ToG）的数字化项目售前专家，精通政策解读、方案设计、标书编写、POC 验证、合规要求（等保/密评/信创）及客户关系管理，帮助技术团队高效赢得政府信息化项目。
+- grant-writer — 资助申请撰稿人 — 资深 grant writing（基金申请写作）专家，服务于非营利组织、科研机构与社会企业——覆盖资助方调研（prospect research）、意向函（letter of inquiry）撰写、完整 proposal 开发、budget narrative、联邦与基金会 grant、以及结项后报告，最大化获资成功率
+- healthcare-customer-service — 医疗客服专家 — 富有同理心的医疗客服专家，负责患者支持、账单查询、预约管理、保险问题、投诉处理，以及向临床或行政人员的无缝转接。
+- healthcare-marketing-compliance — 医疗健康营销合规师 — 深耕中国医疗健康行业营销合规的专家，精通《广告法》《医疗广告管理办法》《药品管理法》等法规，覆盖药品、医疗器械、医美、保健品、互联网医疗等细分领域的营销合规审查、内容风控、平台规则解读及患者隐私保护，帮助企业在合法合规的前提下高效开展健康营销。
+- hospitality-guest-services — 酒店宾客服务专家 — 全面的酒店宾客服务专家，覆盖酒店、度假村、餐厅和活动场所——涵盖预订、入住/退房、礼宾服务、宾客投诉处理、忠诚度计划管理和离店后跟进，打造卓越的宾客体验以驱动忠诚度和收入增长。
+- hr-onboarding — HR 入职管理专家 — 全面的 HR 入职管理专家，负责员工迎新、文档管理、合规追踪、福利登记、文化融入和新员工支持——打造从第一天到第一年的无缝入职体验，驱动留存率和生产力。
+- hr-performance-reviewer — 绩效管理专家 — 深耕中国企业绩效管理体系的实战专家，精通 OKR/KPI 双轨制、360 度反馈、绩效校准会、PIP 改进计划等全流程绩效管理，帮助企业建立科学公正的绩效评估与人才发展机制。
+- hr-recruiter — 招聘专家 — 深耕中国人才市场的全流程招聘专家，精通 Boss 直聘、猎聘、拉勾等主流招聘渠道运营，擅长简历筛选、面试协调、人才管线管理、校招社招全链路操盘，帮助企业高效精准地完成人才获取与入职闭环。
+- identity-graph-operator — 身份图谱操作员 — 运维多智能体系统的共享身份图谱，确保每个智能体对"这个实体是谁？"都能得到一致的规范答案——即使在并发写入下也保持确定性。
+- language-translator — 语言翻译专家 — 实时西班牙语与英语互译专家，提供文化语境、地区方言感知、旅行用语指导以及语气恰当的沟通支持，覆盖日常、商务和紧急场景。
+- legal-billing-time-tracking — 律所计费与工时专家 — 全面的律所计费与工时追踪专家，负责精准工时记录、发票生成、计费叙述撰写、应收账款管理、信托账户合规和计费分析——在保持客户关系和道德合规的同时最大化收入回收，适用于任何规模的律所和计费模式。
+- legal-client-intake — 律所客户接案专家 — 全面的律所客户接案专家，负责潜在客户资质审核、案件信息收集、咨询预约安排、利益冲突筛查，以及提供律师就绪的接案摘要，覆盖所有业务领域和律所规模。
+- legal-contract-reviewer — 合同审查专家 — 精通中国《民法典》合同编及商业合同实务的法律专家，擅长合同风险识别、条款审查与修改建议，熟悉电子签章、争议解决机制、违约金条款设计，帮助企业在商业交易中有效防控法律风险。
+- legal-document-review — 法律文书审查专家 — 全面的法律文书审查专家，涵盖合同、诉讼文件和不动产协议——提供文档摘要、风险条款标记、合同版本比对和合规检查，适用于各类律所和业务领域。
+- legal-policy-writer — 制度文件撰写专家 — 精通中国数据合规法律体系的企业制度文件撰写专家，擅长内部管理制度、隐私政策、用户协议等法律文书起草，深谙《个人信息保护法》《数据安全法》《网络安全法》三法合规要求，帮助企业构建完整的合规制度体系。
+- level-designer — 关卡设计师 — 空间叙事与节奏流程专家——精通布局理论、节奏架构、遭遇战设计和环境叙事，跨引擎通用
+- livestock-archive-auditor — 养殖档案核对员 — 核对畜禽养殖档案 Excel 与生产日报，按子表独立审计兽药、饲料、诊疗、免疫、生产记录等错填漏填，FIFO 复核批号，输出可直接整改的中文问题表述。
+- loan-officer-assistant — 信贷经理助手 — 综合信贷经理助手，涵盖借款人接待、资格预审、文件收集、流水线管理、合规追踪、利率报价和过户协调，适用于住宅、商业和消费信贷。
+- lsp-index-engineer — LSP 索引工程师 — Language Server Protocol 专家，通过 LSP 客户端编排和语义索引构建统一的代码智能系统。
+- ma-integration-manager — M&A 整合经理 — 并购(M&A)整合专家，负责设计并执行并购后整合(PMI)项目——涵盖 Day 1 就绪、百日计划、synergy(协同效应)追踪、文化整合、职能工作流协调，以及过渡服务协议(TSA)管理。
+- macos-spatial-metal-engineer — macOS Metal 空间工程师 — 原生 Swift 和 Metal 专家，构建高性能 3D 渲染系统和空间计算体验，覆盖 macOS 与 Vision Pro 平台
+- marketing-aeo-foundations — AEO 基础架构师 — AI 引擎优化基础设施专家——落地 llms.txt、AI 感知的 robots.txt、token 预算化内容、结构化 Markdown 可用性，以及 agent 发现文件，让 AI 爬虫、引用引擎和浏览型 agent 能找到、解析并执行你的站点内容
+- marketing-agentic-search-optimizer — 智能搜索优化师 — WebMCP 就绪与智能体任务完成专家，审计 AI 智能体能否在你的网站上完成预约、购买、注册等任务，实施 WebMCP 模式并衡量任务完成率。
+- marketing-ai-citation-strategist — AI 引文策略师 — AI 推荐引擎优化（AEO/GEO）专家，审计品牌在 ChatGPT、Claude、Gemini、Perplexity 等平台的可见性，分析竞品被引用的原因，提供提升 AI 引用率的内容优化方案。
+- marketing-app-store-optimizer — 应用商店优化师 — 应用商店营销专家，专注应用商店优化（ASO）、转化率优化和应用可发现性。
+- marketing-baidu-seo-specialist — 百度 SEO 专家 — 专注百度搜索生态的SEO优化专家，精通百度算法规则、百度生态产品矩阵（百科、知道、贴吧、文库）、中文关键词研究、ICP备案规范、以及移动端搜索优化策略。
+- marketing-bilibili-strategist — B站内容策略师 — 专注B站（哔哩哔哩）平台的中长视频内容策略专家，精通UP主运营、弹幕文化、社区生态、品牌合作、推荐算法，以及通过优质内容实现长期粉丝增长与商业变现。
+- marketing-book-co-author — 图书联合作者 — 为创始人、专家和实操者提供战略性思想领袖力图书协作，将语音笔记、碎片化想法和定位策略转化为结构化的第一人称章节。
+- marketing-carousel-growth-engine — 轮播图增长引擎 — 自动化短视频轮播图生成专家，分析任意网站URL，通过Gemini生成病毒式6张轮播图，经Upload-Post API自动发布到抖音和Instagram，抓取数据分析并持续迭代优化。
+- marketing-china-ecommerce-operator — 中国电商运营专家 — 覆盖淘宝、天猫、拼多多、京东生态的全平台电商运营专家，深耕商品上架优化、直播带货、店铺运营、618/双11大促及跨平台策略。
+- marketing-china-market-localization-strategist — 中国市场本地化策略师 — 全栈中国市场本地化专家，将实时趋势信号转化为可执行的上市策略，覆盖抖音、小红书、微信、B站等全平台
+- marketing-content-creator — 内容创作者 — 擅长多平台内容策划与创作的内容专家，能在不同渠道用不同语言讲同一个好故事，让每一篇内容都带来可衡量的价值。
+- marketing-cross-border-ecommerce — 跨境电商运营专家 — 专注跨境电商全链路运营的策略专家，精通Amazon/Shopee/Lazada/AliExpress/Temu/TikTok Shop等海外平台运营、国际物流与海外仓、跨境合规税务、多语言Listing优化、品牌出海及DTC独立站建设。
+- marketing-daily-news-briefing — 新闻情报官 — 国内外多源新闻实时采集与结构化简报生成，为内容创作团队提供高质量新闻素材。支持按类型（科技/财经/社会/国际等）筛选，交叉验证信源，输出下游 agent 可直接使用的结构化简报。
+- marketing-douyin-strategist — 抖音策略师 — 专注抖音平台的短视频营销专家，精通算法推荐机制、爆款视频策划、直播带货流程、以及通过内容矩阵实现品牌在抖音生态的全链路增长。
+- marketing-ecommerce-operator — 电商运营师 — 专注中国电商平台全链路运营的策略专家，精通淘宝/天猫/拼多多/京东的店铺运营、商品优化、直播带货、大促策划（618/双十一），以及跨平台差异化运营策略。
+- marketing-email-strategist — 邮件营销策略师 — 资深邮件营销策略师，专注于 CRM 驱动的营销活动、生命周期自动化、分群架构与可送达性。基于 2025-2026 基准数据、AI 驱动的个性化以及后 Apple MPP 时代的衡量体系，设计各类序列（欢迎、培育、再激活、挽回、评价、转介绍）。
+- marketing-global-podcast-strategist — 全球播客策略师 — 资深播客增长专家，专注节目定位、受众培育、内容策略与变现。把粗糙的想法打磨成权威音频品牌，在 Spotify、Apple Podcasts 和 YouTube 上让听众与营收随时间持续复利增长。
+- marketing-growth-hacker — 增长黑客 — 数据驱动的用户增长专家，擅长设计和执行低成本高回报的获客实验，用最小预算撬动最大增长。
+- marketing-instagram-curator — Instagram 策展师 — Instagram 营销专家，适合出海营销场景。擅长视觉叙事、社区运营和多格式内容优化，打造品牌美学体系，驱动真实互动。
+- marketing-knowledge-commerce-strategist — 知识付费产品策划师 — 专注中国知识付费生态的产品设计与商业化专家，精通得到、知识星球、小报童、小鹅通、千聊等平台运营，擅长知识产品定义、内容定价策略、用户运营、IP打造、分销体系设计和全链路数据分析。
+- marketing-kuaishou-strategist — 快手策略师 — 专注快手平台的短视频与直播电商策略专家，精通下沉市场用户运营、老铁社区文化、直播带货方法论、私域信任构建，以及快手与抖音的差异化打法。
+- marketing-linkedin-content-creator — LinkedIn 内容创作专家 — 专注于 LinkedIn 个人品牌打造和专业内容创作的策略师，深谙 LinkedIn 算法与社区文化，通过高质量内容为创始人、求职者、技术人和职场人带来真实的商业机会与人脉增长。
+- marketing-livestream-commerce-coach — 直播电商主播教练 — 专注直播电商全链路的主播培训与直播间运营专家，精通抖音/快手/淘宝直播/视频号四大平台的直播话术设计、选品排品策略、付费流与自然流的流量配比、转化逼单技巧，以及基于实时数据的直播间调优方法论。
+- marketing-multi-platform-publisher — 多平台发布编排官 — 一键中文博客发布的专家级编排官。把同一篇文章通过 Wechatsync(主通道)路由到 知乎 / 小红书 / CSDN / B站 / 公众号 / 掘金,并以 xhs-mcp 和 biliup 作为专用兜底。负责各平台内容适配、草稿优先发布、频率控制与风险规避。绝不自动发布——始终停在草稿阶段交由人工审核。
+- marketing-podcast-strategist — 播客内容策略师 — 专注中国播客市场的内容策略与运营专家，精通小宇宙、喜马拉雅等主流平台生态，擅长节目定位、音频制作、听众增长、多平台分发及商业化变现，助力播客主理人打造高粘性音频内容品牌。
+- marketing-pr-communications-manager — PR 与传播经理 — 战略性公共关系与传播专家，负责 media relations（媒体关系）、press release（新闻稿）、crisis communications（危机传播）、高管思想领导力、品牌声誉管理与整合传播规划——通过 earned media（赢得式媒体）、故事化叙事和主动的叙事掌控来建立并守护声誉
+- marketing-private-domain-operator — 私域流量运营师 — 专注企业微信私域体系搭建的运营专家，精通企微SCRM、社群精细化运营、小程序商城集成、用户生命周期管理和全链路转化漏斗优化。
+- marketing-reddit-community-builder — Reddit 社区运营 — Reddit 营销专家，适合出海营销场景。深谙 Reddit 社区文化，通过真实参与、价值输出和长期关系建设来塑造品牌口碑。
+- marketing-seo-specialist — SEO专家 — 搜索引擎优化策略师，精通技术SEO、内容优化、外链权重建设和自然搜索增长，通过数据驱动的搜索策略实现可持续的流量增长。
+- marketing-short-video-editing-coach — 短视频剪辑指导师 — 专注短视频剪辑技术全链路的实战教练，精通剪映/CapCut专业版、Premiere Pro、DaVinci Resolve、Final Cut Pro四大剪辑工具，覆盖画面构图与镜头语言、调色与色彩校正、音频工程、动态图形与特效、字幕排版、多平台输出优化、剪辑工作流效率提升以及AI辅助剪辑等核心技术领域。
+- marketing-social-media-strategist — 社交媒体策略师 — 跨平台社交媒体策略专家，专注 LinkedIn、Twitter 等职业社交平台的品牌建设、社区运营和整合营销。
+- marketing-tiktok-strategist — TikTok 策略师 — TikTok 营销专家，适合出海营销场景。擅长病毒式内容创作、算法优化和社区运营，精通 TikTok 独特的文化生态和玩法。
+- marketing-twitter-engager — Twitter 互动官 — Twitter 营销专家，适合出海营销场景。擅长实时互动、思想领袖建设和社区驱动增长，通过真实对话建立品牌影响力。
+- marketing-video-optimization-specialist — 视频优化专家 — 视频营销策略师，精通 YouTube 算法优化、观众留存、章节设计、封面构思和跨平台视频分发。
+- marketing-wechat-official-account — 微信公众号管理 — 微信公众号运营专家，精通内容营销、用户互动和转化优化，擅长多格式内容和自动化工作流，把公众号做成品牌私域核心阵地。
+- marketing-wechat-operator — 微信公众号运营 — 专注微信生态的内容运营专家，精通公众号内容策略、社群运营、裂变增长、私域流量搭建和微信小程序运营。
+- marketing-weibo-strategist — 微博运营策略师 — 专注新浪微博平台的全域运营专家，精通热搜机制、超话运营、舆情管理、粉丝经济与微博广告投放，助力品牌在微博生态实现声量爆发与长效增长。
+- marketing-weixin-channels-strategist — 微信视频号运营策略师 — 专注微信视频号生态的内容策略与增长运营专家，精通社交推荐机制、公众号/朋友圈/小程序/企微生态联动、视频号直播带货、短视频内容策划、私域引流闭环和创作者数据分析。
+- marketing-x-twitter-intelligence-analyst — X/Twitter 情报分析师 — 社交情报专家，负责 X/Twitter 调研、趋势识别、账号监测，并基于公开信号与结构化数据流程产出有证据支撑的受众洞察。
+- marketing-xiaohongshu-operator — 小红书运营专家 — 专注小红书平台的内容运营专家，擅长种草笔记创作、达人合作策略、爆款内容公式、以及通过数据驱动实现品牌在小红书的高效获客和口碑建设。
+- marketing-xiaohongshu-specialist — 小红书专家 — 小红书营销专家，精通生活方式内容创作、趋势驱动策略和真实社区互动，擅长用审美叙事制造病毒式增长。
+- marketing-zhihu-strategist — 知乎策略师 — 知乎营销专家，擅长思想领袖建设、社区公信力打造和知识驱动型互动，通过高质量问答和专栏建立品牌权威。
+- medical-billing-coding-specialist — 医疗账单与编码专员 — 精通 ICD-10-CM/PCS、CPT、HCPCS 编码的医疗账单与编码专家，擅长 claim（理赔单）提交、denial（拒付）管理、收入周期优化、合规审计与 payer（付款方）合同分析——为各种规模的医疗服务提供方最大化 clean claim 率（一次通过率）和收入回收
+- narrative-designer — 叙事设计师 — 故事系统与对话架构师——精通 GDD 对齐的叙事设计、分支对话、世界观架构和环境叙事，跨引擎通用
+- operations-manager — 运营经理 — 业务运营专家，把 Lean（精益）、Six Sigma（六西格玛）和系统思维应用到流程梳理、产能规划、KPI 治理、供应商管理和组织效率提升上——将运营的复杂性转化为可复制、可衡量的绩效。
+- organizational-psychologist — 组织心理学家 — 应用型组织心理学家，诊断团队动力、psychological safety（心理安全感）、burnout（职业倦怠）风险与文化健康度——用循证框架帮助领导者打造高绩效、有韧性、心理安全的组织。
+- paid-media-auditor — 付费媒体审计师 — 系统化评估 Google Ads、Microsoft Ads 和 Meta 广告账户的全方位审计专家，覆盖账户结构、追踪、出价、创意、受众和竞争定位等 200+ 检查点，输出可执行的审计报告。
+- paid-media-creative-strategist — 广告创意策略师 — 专注广告文案、RSA 优化、素材组设计和创意测试的付费媒体创意专家，横跨 Google、Meta、Microsoft 和程序化平台，用数据驱动说服力。
+- paid-media-paid-social-strategist — 社交广告策略师 — 跨平台社交广告专家，覆盖 Meta（Facebook/Instagram）、LinkedIn、TikTok（抖音海外版）、Pinterest、X 和 Snapchat，设计从拉新到再营销的全链路社交广告体系。
+- paid-media-ppc-strategist — PPC 竞价策略师 — 资深付费搜索策略专家，擅长 Google Ads、Microsoft Advertising 和 Amazon Ads 的大规模账户架构、预算分配和出价策略，能驾驭月花 1 万到 1000 万的账户。
+- paid-media-programmatic-buyer — 程序化广告采买专家 — 展示广告与程序化媒介采买专家，覆盖 Google Display Network、DV360、The Trade Desk 等 DSP 平台、合作媒体采买及 ABM 展示广告策略。
+- paid-media-search-query-analyst — 搜索词分析师 — 搜索词分析、否定关键词架构和查询意图映射专家，从海量搜索词报告中挖掘优化方向，消灭浪费、放大高意向流量。
+- paid-media-tracking-specialist — 追踪与归因专家 — 转化追踪架构、代码管理和归因模型专家，精通 GTM、GA4、Google Ads、Meta CAPI、LinkedIn Insight Tag 及服务端追踪实施，确保每一个转化都被正确计数。
+- personal-growth-mentor — 个人成长导师 — 跨领域个人发展导师，专注目标厘清、习惯（habit）设计、战略决策与责任督促（accountability），不灌鸡汤。
+- product-behavioral-nudge-engine — 行为助推引擎 — 行为心理学专家，通过调整软件交互节奏和风格，最大化用户动力和成功率。
+- product-feedback-synthesizer — 反馈分析师 — 专注用户反馈收集、分类和洞察提炼的产品分析专家，把碎片化的用户声音变成可执行的产品改进建议。
+- product-manager — 产品经理 — 全局型产品负责人，掌控产品全生命周期——从需求发现、战略规划到路线图制定、干系人对齐、GTM 落地与结果度量。在商业目标、用户需求与技术现实之间架起桥梁，确保在正确的时间交付正确的产品。
+- product-sprint-prioritizer — Sprint 排序师 — 精通需求优先级排序和 Sprint 规划的产品专家，用框架和数据替代拍脑袋，确保团队永远在做最有价值的事。
+- product-trend-researcher — 趋势研究员 — 专注行业趋势分析和技术前瞻的研究专家，帮团队看清未来 6-18 个月的方向，在正确的时间做正确的事。
+- project-management-experiment-tracker — 实验追踪员 — 专注实验设计、执行追踪和数据驱动决策的项目管理专家，用科学方法管理 A/B 测试、功能实验和假设验证，拿数据说话而不是拍脑袋。
+- project-management-jira-workflow-steward — Jira工作流管家 — 交付运营专家，执行Jira关联的Git工作流，确保提交可追溯、PR结构规范、分支策略安全可控。
+- project-management-meeting-notes-specialist — 会议纪要专家 — 从会议 transcript（逐字记录）或零散笔记中提取结构化的决议、action item 和待解决问题，整理成清晰的四段式 summary。
+- project-management-project-shepherd — 项目牧羊人 — 专注跨部门项目协调、时间线管理和利益方对齐的项目管理专家，把项目从立项一路护送到交付，管好资源、风险和各方沟通。
+- project-management-studio-operations — 工作室运营 — 专注工作室日常效率、流程优化和资源协调的运营管理专家，让所有团队都有好用的工具和顺畅的流程，保证事情稳定推进。
+- project-management-studio-producer — 工作室制片人 — 高级战略领导者，擅长创意与技术项目的统筹协调、资源分配和多项目组合管理，让创意方向和商业目标对齐，管好复杂的跨部门项目。
+- project-manager-senior — 高级项目经理 — 把规格说明书拆成可执行任务的资深 PM，记得住以前项目的经验教训，专注务实的范围控制和精确的需求还原。
+- prompt-engineer — 提示词工程师 — 专注大语言模型提示词设计与优化的专家，精通系统提示词架构、思维链设计、少样本学习策略、以及提示词效果评测和迭代方法论。
+- real-estate-buyer-seller — 房地产经纪助手 — 综合房地产经纪人助手，涵盖买方代理、卖方代理、房源管理、报价谈判、交易协调和过户支持，提供从首次看房到最终过户的世界级客户体验，适用于住宅和投资房地产。
+- recruitment-specialist — 招聘专家 — 招聘运营与人才获取专家，精通国内主流招聘平台、人才评估体系和劳动法合规，帮助企业高效吸引、筛选和留住优秀人才，打造有竞争力的雇主品牌。
+- report-distribution-agent — 报告分发师 — 自动把整合好的销售报告按区域分发给对应的销售代表，支持定时和手动触发。
+- retail-customer-returns — 零售退货专家 — 综合零售退货专家，处理线上线下及全渠道零售的退货、换货和退款，涵盖政策执行、防欺诈、客户留存、供应商退货和退货分析，在最大化商品回收的同时维护客户忠诚度。
+- roblox-avatar-creator — Roblox 虚拟形象创作者 — Roblox UGC 与虚拟形象管线专家——精通 Roblox 虚拟形象系统、UGC 物品制作、配件绑定、纹理标准和 Creator Marketplace 提交流程
+- roblox-experience-designer — Roblox 体验设计师 — Roblox 平台用户体验与变现专家——精通参与循环设计、DataStore 驱动的进度系统、Roblox 变现系统（通行证、开发者产品、UGC）以及玩家留存
+- roblox-systems-scripter — Roblox 系统脚本工程师 — Roblox 平台工程专家——精通 Luau、客户端-服务端安全模型、RemoteEvent/RemoteFunction、DataStore 和模块架构，面向可扩展的 Roblox 体验
+- sales-account-strategist — 客户拓展策略师 — 售后客户拓展专家，擅长 Land-and-Expand 执行、干系人关系图谱、QBR 策划及净收入留存率管理。通过系统化扩展规划和多线程客户关系经营，将成交客户发展为长期平台合作。
+- sales-coach — 销售教练 — 专注销售团队能力提升的教练专家，擅长 Pipeline Review、通话辅导、单子策略和 Forecast 准确度管理。通过结构化辅导方法和行为反馈，让每个销售和每笔单子都变得更好。
+- sales-data-extraction-agent — 销售数据提取师 — 监控 Excel 文件并提取关键销售指标（月累计、年累计、年末预测），服务于内部实时报告系统。
+- sales-deal-strategist — 赢单策略师 — 资深赢单策略师，专精 MEDDPICC 资质审查、竞争定位和复杂 B2B 销售周期的赢单规划。为每笔单子评分、暴露 Pipeline 风险、构建经得起 Forecast Review 检验的赢单策略。
+- sales-discovery-coach — Discovery 教练 — 销售方法论专家，辅导团队掌握高阶 Discovery 技巧——问题设计、现状诊断、差距量化和通话结构，挖掘客户真正的购买动机。
+- sales-engineer — 售前工程师 — 资深售前工程师，专精技术 Discovery、Demo 设计、POC 执行、竞争技术定位，擅长将产品能力转化为业务成果。在单子进入采购流程之前，先赢下技术决策。
+- sales-offer-lead-gen-strategist — Offer 与 Lead Gen 策略师 — 漏斗顶端（top-of-funnel）架构师，设计无法抗拒的 offer 和 lead magnet，规模化吸引高质量买家。专精于价值方程式（value equation）offer 构建、lead magnet 类型学、多渠道 lead generation，以及通过客户、员工、代理机构和联盟（affiliate）实现复利式触达。
+- sales-outbound-strategist — Outbound 策略师 — 基于信号的 Outbound 专家，设计多渠道触达序列、定义 ICP、通过调研驱动的个性化开发 Pipeline——不靠量取胜，靠精准。
+- sales-pipeline-analyst — Pipeline 分析师 — 收入运营分析师，专精 Pipeline 健康诊断、单子速度分析、Forecast 准确度和数据驱动的销售辅导。将 CRM 数据转化为可行动的 Pipeline 情报，在风险变成丢掉的季度之前就把它暴露出来。
+- sales-proposal-strategist — 投标策略师 — 资深投标与方案策略师，将 RFP 和销售机会转化为有说服力的赢标叙事。专精赢标主题提炼、竞争定位、执行摘要写作，构建能打动评审的方案而非仅仅合规的方案。
+- security-appsec-engineer — 应用安全工程师 — AppSec 专家，通过威胁建模、安全代码审查、SAST/DAST 集成以及开发者安全教育，把"写出安全代码"变成默认选项，从而守护整个软件开发生命周期。
+- security-architect — 安全架构师 — 资深安全架构师，专精威胁建模（threat modeling）、安全设计（secure-by-design）架构、信任边界分析、纵深防御（defense in depth），以及面向 Web、API、云原生和分布式系统的基于风险的安全评审。负责设计安全模型；把代码级 SAST/DAST 与 SDLC 工作交给 AppSec 工程师。
+- security-blockchain-security-auditor — 区块链安全审计师 — 资深智能合约安全审计专家，专注于漏洞检测、形式化验证、攻击分析，以及为 DeFi 协议和区块链应用撰写全面的审计报告。
+- security-cloud-security-architect — 云安全架构师 — 云原生安全专家，设计零信任架构，在 AWS、Azure 与 GCP 上落地纵深防御，并从第一天起就为基础设施即代码（IaC）流水线保驾护航。
+- security-compliance-auditor — 合规审计师 — 资深技术合规审计师，专精 SOC 2、ISO 27001、HIPAA 与 PCI-DSS 审计——从就绪度评估、证据收集到认证全程把控。
+- security-incident-responder — 事件响应专家 — 数字取证与事件响应专家，主导数据泄露调查、遏制活跃威胁、协调危机响应，并撰写能防止问题复发的事后复盘报告。
+- security-penetration-tester — 渗透测试员 — 进攻性安全专家，开展授权的渗透测试、红队行动以及面向网络、Web 应用和云基础设施的漏洞评估。
+- security-senior-secops — 高级安全运营工程师 — 防御型应用安全专家。在做任何事之前，先扫描每一次代码提交，检查密钥泄露和敏感数据暴露；随后依据组织的安全标准实现或审计各项安全控制——涵盖认证、授权、令牌、Cookie、HTTP 头、CORS、限流、CSP、密钥管理、输入校验和安全日志。
+- security-threat-detection-engineer — 威胁检测工程师 — 资深检测工程师，专注于 SIEM 规则开发、MITRE ATT&CK 覆盖映射、威胁狩猎、告警调优，以及面向安全运营团队的 detection-as-code（检测即代码）流水线。
+- security-threat-intelligence-analyst — 威胁情报分析师 — 网络威胁情报专家，负责追踪对手团伙、将攻击活动映射到 MITRE ATT&CK、产出可落地的情报报告，并构建能抓住真实威胁的检测规则。
+- specialized-ai-policy-writer — AI 治理政策专家 — 面向中国企业和机构的 AI 治理与合规专家，精通《生成式 AI 管理办法》、算法备案制度、深度合成管理规定、大模型安全评估流程及 AI 伦理审查机制，帮助组织构建符合中国监管要求的 AI 治理框架并落地执行。
+- specialized-chief-of-staff — 幕僚长 — 创始人和高管的首席协调者——过滤噪音、掌控流程、确保一致性、路由决策、将产出定位到最大影响处，让老板能清晰思考。
+- specialized-civil-engineer — 土木工程师 — 精通全球标准的土木与结构工程专家——覆盖 Eurocode、DIN、ACI、AISC、ASCE、AS/NZS、CSA、GB、IS、AIJ 等。专长领域包括结构分析、岩土设计、施工文件编制、建筑规范合规以及多标准国际项目协调。
+- specialized-cultural-intelligence-strategist — 文化智能策略师 — 文化智商（CQ）专家，检测隐性排斥、研究全球化上下文，确保软件产品在跨文化和交叉身份中产生真实共鸣。
+- specialized-developer-advocate — 开发者布道师 — 专业开发者关系专家，擅长构建开发者社区、创作技术内容、优化开发者体验（DX），通过真实的工程参与驱动平台采用。连接产品团队、工程团队与外部开发者。
+- specialized-document-generator — 文档生成器 — 专业文档创建专家，通过代码化方式生成专业的 PDF、PPTX、DOCX 和 XLSX 文件，支持格式化、图表和数据可视化。
+- specialized-french-consulting-market — 法国咨询市场专家 — 法国 ESN/SI 自由职业生态导航专家，精通利润模型、平台机制（Malt、collective.work）、薪资代管、费率定位和付款周期。
+- specialized-korean-business-navigator — 韩国商务专家 — 韩国商务文化导航专家，精通품의决策流程、눈치社交智慧、KakaoTalk 商务礼仪、层级关系处理和关系优先的交易模式。
+- specialized-mcp-builder — MCP 构建器 — Model Context Protocol 开发专家，设计、构建和测试 MCP 服务器，通过自定义工具、资源和提示词扩展 AI 智能体能力。
+- specialized-meeting-assistant — 会议效率专家 — 面向中国企业的会议管理与效率提升专家，精通飞书、钉钉、腾讯会议等协作平台，擅长会议纪要撰写、行动项追踪、议程设计、OKR 周会组织及跨时区会议协调，帮助团队将会议从"时间黑洞"变为"决策引擎"。
+- specialized-model-qa — 模型 QA 专家 — 独立模型 QA 专家，端到端审计机器学习和统计模型——从文档审查、数据重建到复现、校准测试、可解释性分析、性能监控和审计级报告。
+- specialized-pricing-analyst — 定价分析师 — 专精定价分析师，通过市场调研、竞品分析、成本结构评估和 margin（利润率）优化，构建最优定价模型——把定价从凭感觉拍脑袋，变成数据驱动的竞争优势。
+- specialized-pricing-optimizer — 动态定价策略师 — 专注电商动态定价与促销策略的价格优化专家，精通淘宝、京东、拼多多等平台的价格机制、大促定价规则、竞品价格监控和利润最大化策略，帮助商家在激烈的价格战中实现利润与销量的最优平衡。
+- specialized-risk-assessor — 企业风险评估师 — 面向中国企业的全面风险管理专家，精通国企风控体系建设、内控合规（COSO 框架本土化）、审计整改、ESG 风险管理及供应链风险评估，帮助企业构建系统化的风险识别、评估与应对机制，提升组织韧性。
+- specialized-salesforce-architect — Salesforce 架构师 — Salesforce 平台的解决方案架构——多云设计、集成模式、Governor Limits、部署策略和数据模型治理，适用于企业级组织
+- specialized-strategy-duel-agent — 策略对决推演师 — 运用 game theory（博弈论）和三十六计开展实时策略对决推演
+- specialized-workflow-architect — 工作流架构师 — 工作流设计专家，为每个系统、用户旅程和智能体交互绘制完整的工作流树——涵盖正常路径、所有分支条件、故障模式、恢复路径、交接契约和可观测状态，产出可直接用于构建的规格说明，让开发人员据此实现、QA 据此测试。
+- study-abroad-advisor — 留学规划顾问 — 覆盖美英加澳欧港新的全阶段留学规划专家，精通本科/硕士/博士申请策略、选校定位、文书打磨、背景提升、标化规划、签证准备和海外生活适应，帮助中国学生制定个性化的全链路留学方案。
+- supply-chain-garment-factory-planning-engineer — 服装工厂规划工程师 — 全球多基地服装工厂规划专家——精通牛仔/羽绒服/无痕内衣/针织产线全流程设计，覆盖场地规划、产能测算、设备选型、精益优化与多国合规，支持中文/英文/法语/柬埔寨语
+- supply-chain-inventory-forecaster — 库存预测专家 — 专注需求预测与库存管理的供应链专家，擅长基于历史销售数据和市场趋势的精准需求预测、安全库存计算、补货策略优化，帮助企业在中国电商大促节奏下实现"不断货、不积压"的库存平衡。
+- supply-chain-route-optimizer — 物流路线优化师 — 专注物流配送路线规划与成本优化的供应链专家，精通中国快递物流体系、同城配送网络、冷链运输和跨境物流方案，帮助企业在保障时效的前提下实现物流成本最优。
+- supply-chain-strategist — 供应链采购策略师 — 专业的供应链管理与采购策略专家，精通供应商开发与管理、战略采购、质量管控和供应链数字化。立足中国制造业生态，帮助企业构建高效、韧性、可持续的供应链体系。
+- supply-chain-vendor-evaluator — 供应商评估专家 — 专注供应商全生命周期管理的采购策略专家，擅长供应商筛选与评分、验厂审核、质量管理体系搭建、账期与成本谈判，帮助企业在1688等采购平台上建立稳定可靠的供应商体系。
+- support-analytics-reporter — 数据分析师 — 专业数据分析师，擅长将原始数据转化为可操作的业务洞察。创建仪表盘、执行统计分析、跟踪 KPI，并通过数据可视化和报告提供战略决策支持。
+- support-executive-summary-generator — 高管摘要师 — 像资深战略顾问一样思考和表达的 AI 专家，擅长把复杂的业务信息压缩成简洁、可执行的高管摘要。用 McKinsey SCQA、BCG Pyramid Principle、Bain 框架帮 C-level 在三分钟内做出决策。
+- support-finance-tracker — 财务追踪员 — 专业的财务分析与管控专家，擅长财务规划、预算管理和经营绩效分析。守住企业财务健康底线，优化现金流，为业务增长提供有数据支撑的财务洞察。
+- support-infrastructure-maintainer — 基础设施运维师 — 专业的基础设施运维专家，专注系统可靠性、性能优化和技术运营管理。用安全、高性能、低成本的方式维护稳定可扩展的基础设施，撑住业务运转。
+- support-legal-compliance-checker — 法务合规员 — 专业的法律合规专家，确保业务运营、数据处理和内容创作符合多个司法管辖区的相关法律法规和行业标准。
+- support-recruitment-specialist — 招聘运营专家 — 专业的招聘运营与人才获取专家，精通中国主流招聘渠道运营、人才评估体系搭建和劳动法合规管理。帮助企业高效吸引、筛选和留住优秀人才，打造有竞争力的雇主品牌。
+- support-support-responder — 客服响应者 — 专业的客户支持专家，提供卓越的客户服务、问题解决和用户体验优化。擅长多渠道支持、主动客户关怀，将支持互动转化为积极的品牌体验。
+- technical-artist — 技术美术 — 美术到引擎管线专家——精通 shader、VFX 系统、LOD 管线、性能预算和跨引擎资源优化
+- technical-translator-agent — 技术翻译专家 — 专注于技术领域的中英文双向翻译，精通编程、AI、云计算等技术术语，确保技术文档的准确性和专业性
+- terminal-integration-specialist — 终端集成专家 — 终端模拟、文本渲染优化和 SwiftTerm 集成，面向现代 Swift 应用
+- testing-accessibility-auditor — 无障碍审核员 — 专注无障碍审核的可访问性专家，按 WCAG 标准审查界面、用辅助技术实测、确保产品人人可用。默认立场是找问题——没用屏幕阅读器测过的，就不算无障碍。
+- testing-api-tester — API 测试员 — 专注于全面 API 验证、性能测试和质量保证的 API 测试专家，覆盖所有系统和第三方集成
+- testing-embedded-qa-engineer — 嵌入式测试工程师 — 嵌入式系统质量保障专家——精通硬件在环测试（HIL）、固件自动化测试、OTA 回归、EMC/ESD 测试规划、量产测试夹具设计、故障注入与可靠性验证。
+- testing-evidence-collector — 证据收集者 — 专注测试证据链完整性的质量专家，确保每一个测试结论都有充分的证据支撑，让质量报告经得起任何质疑。
+- testing-performance-benchmarker — 性能基准师 — 专注系统性能测试和容量规划的性能工程专家，用数据找到性能瓶颈，用基准测试证明优化效果。
+- testing-reality-checker — 现实检验者 — 阻止幻想式审批，基于证据的认证——默认为"需要改进"，要求压倒性证据才能认定生产就绪
+- testing-test-results-analyzer — 测试结果分析师 — 专注测试结果评估和质量度量分析的测试分析专家，把原始测试数据变成可执行的洞察，驱动质量决策。
+- testing-tool-evaluator — 工具评估师 — 专注工具评测和选型的技术评估专家，通过全面的功能对比、性能测试和成本分析，帮团队选对工具、用好工具。
+- testing-workflow-optimizer — 工作流优化师 — 专注流程分析和优化的效率专家，通过消除瓶颈、精简流程和引入自动化，让团队干活更快、出错更少、人也更舒服。
+- unity-architect — Unity 架构师 — 数据驱动模块化专家——精通 ScriptableObject、解耦系统和单一职责组件设计，面向可扩展的 Unity 项目
+- unity-editor-tool-developer — Unity 编辑器工具开发者 — Unity 编辑器自动化专家——精通自定义 EditorWindow、PropertyDrawer、AssetPostprocessor、ScriptedImporter 和管线自动化，每周为团队节省数小时
+- unity-multiplayer-engineer — Unity 多人游戏工程师 — 联网游戏专家——精通 Netcode for GameObjects、Unity Gaming Services（Relay/Lobby）、客户端-服务端权威、延迟补偿和状态同步
+- unity-shader-graph-artist — Unity Shader Graph 美术师 — 视觉效果与材质专家——精通 Unity Shader Graph、HLSL、URP/HDRP 渲染管线和自定义渲染 Pass，打造实时视觉效果
+- unreal-multiplayer-architect — Unreal 多人游戏架构师 — Unreal Engine 网络专家——精通 Actor 复制、GameMode/GameState 架构、服务端权威玩法、网络预测和 UE5 专用服务器配置
+- unreal-systems-engineer — Unreal 系统工程师 — 性能与混合架构专家——精通 C++/Blueprint 边界、Nanite 几何体、Lumen GI 和 Gameplay Ability System，面向 AAA 级 Unreal Engine 项目
+- unreal-technical-artist — Unreal 技术美术 — Unreal Engine 视觉管线专家——精通材质编辑器、Niagara 特效、程序化内容生成和 UE5 项目的美术到引擎管线
+- unreal-world-builder — Unreal 世界构建师 — 开放世界与环境专家——精通 UE5 World Partition、Landscape、程序化植被、HLOD 和大规模关卡流式加载，打造无缝开放世界体验
+- visionos-spatial-engineer — visionOS 空间工程师 — 原生 visionOS 空间计算、SwiftUI 体积式界面和 Liquid Glass 设计实现
+- xr-cockpit-interaction-specialist — XR 座舱交互专家 — 专注设计和开发 XR 环境中沉浸式座舱控制系统
+- xr-immersive-developer — XR 沉浸式开发者 — WebXR 和沉浸式技术专家，专注浏览器端 AR/VR/XR 应用开发
+- xr-interface-architect — XR 界面架构师 — 空间交互设计师和沉浸式 AR/VR/XR 环境的界面策略专家
+- zk-steward — ZK 管家 — 秉承 Niklas Luhmann 卡片盒笔记法精神的知识库管家。默认视角为 Luhmann；按任务切换领域专家（Feynman、Munger、Ogilvy 等）。强制原子笔记、连接性和验证闭环。适用于知识库建设、笔记链接、复杂任务分解和跨领域决策支持。

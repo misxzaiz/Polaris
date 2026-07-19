@@ -1,3 +1,4 @@
+pub mod agent_corpus;
 pub mod config_store;
 pub mod data_root;
 pub mod dialog_index;
@@ -15,6 +16,8 @@ pub mod ask_mcp_server;
 pub mod ask_listener;
 pub mod browser_mcp_server;
 pub mod dispatch_mcp_server;
+pub mod nexus_verdict;
+pub mod nexus_pipeline;
 pub mod prd_preview_mcp_server;
 pub mod scheduler;
 pub mod scheduler_daemon;

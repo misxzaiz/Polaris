@@ -963,6 +963,14 @@ pub fn run() {
             commands::data_root_cmd::migrate_legacy_data,
             commands::data_root_cmd::validate_data_root_target,
             commands::data_root_cmd::set_data_root,
+            // Agency Agents corpus(P0-5)
+            commands::agent_corpus::agent_corpus_status,
+            commands::agent_corpus::agent_corpus_install,
+            commands::agent_corpus::agent_corpus_uninstall,
+            commands::agent_corpus::agent_corpus_catalog,
+            commands::agent_corpus::agent_corpus_divisions,
+            commands::agent_corpus::simple_ai_list_agents,
+            commands::nexus::nexus_start_roster,
             // 历史对话存储
             commands::dialog_storage::dialog_list,
             commands::dialog_storage::dialog_list_meta,

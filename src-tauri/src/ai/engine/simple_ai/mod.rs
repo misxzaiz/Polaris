@@ -31,6 +31,11 @@ mod tools;
 // Agent preset（Phase 4d）：需在 mod 声明后引用，单独放此。
 mod agent;
 
+/// 供命令层列举 agent(项目级 + 全局 corpus 两级,P1-6)。
+pub(crate) fn list_agents(work_dir: &str) -> Vec<agent::AgentDefinition> {
+    agent::discover_agents(work_dir)
+}
+
 use std::collections::HashMap;
 use std::sync::Arc;
 

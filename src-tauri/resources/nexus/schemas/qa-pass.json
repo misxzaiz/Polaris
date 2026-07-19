@@ -1,0 +1,41 @@
+{
+  "$id": "qa-pass",
+  "type": "object",
+  "required": [
+    "schema",
+    "task",
+    "acceptance"
+  ],
+  "properties": {
+    "schema": {
+      "const": "qa-pass"
+    },
+    "task": {
+      "type": "string"
+    },
+    "acceptance": {
+      "type": "object",
+      "properties": {
+        "passed": {
+          "type": "integer"
+        },
+        "failed": {
+          "type": "integer"
+        },
+        "total": {
+          "type": "integer"
+        }
+      }
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "next": {
+      "type": "string"
+    }
+  },
+  "_note": "文档形态;运行时校验为 src-tauri/src/services/nexus_verdict.rs 的必填字段轻量校验,两者须同步维护。qa-verdict 组合 id 在校验层按 schema 字段分派到 qa-pass/qa-fail。"
+}

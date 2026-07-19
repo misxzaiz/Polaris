@@ -56,6 +56,10 @@ import {
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
+import { parseAgentSlashCommand, rewriteDispatchPromptWithAgent, parseNexusSlashCommand, NEXUS_SCENARIOS } from '@/services/agentSlashCommand'
+import { invoke as transportInvoke } from '@/services/transport'
+import { useAgentStore } from '@/stores/agentStore'
+import { useSessionConfig } from '@/stores/sessionConfigStore'
 import { pluginRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
 import {
@@ -941,9 +945,70 @@ export function ChatInput({
     if ((disabled || isStreaming) && attachments.length === 0) return
     if (!trimmed && attachments.length === 0) return
 
-    // Polaris 本地命令：/dispatch [@角色] 任务内容 → 派发到后台会话执行
+    // Polaris 本地命令：/nexus <scenario> <goal> → 组队派发（拓扑波次）
+    const nexusCmd = parseNexusSlashCommand(trimmed)
+    if (nexusCmd) {
+      if (!nexusCmd.goal || !NEXUS_SCENARIOS.includes(nexusCmd.scenario as (typeof NEXUS_SCENARIOS)[number])) {
+        useToastStore.getState().info('/nexus', `用法：/nexus <${NEXUS_SCENARIOS.join('|')}> 团队目标`)
+        return
+      }
+      void transportInvoke('nexus_start_roster', {
+        scenario: nexusCmd.scenario,
+        goal: nexusCmd.goal,
+        sourceSessionId: activeSessionId ?? undefined,
+      }).then((r) => {
+        const res = r as { rosterId: string; waves: string[][]; dispatchedNow: string[] }
+        useToastStore.getState().info(
+          'NEXUS 组队已启动',
+          `${nexusCmd.scenario}：${res.waves.length} 波共 ${res.waves.flat().length} 人，首波已派发 ${res.dispatchedNow.length} 人`,
+        )
+      }).catch((e) => {
+        useToastStore.getState().error('/nexus 派发失败', e instanceof Error ? e.message : String(e))
+      })
+      cancelPersistDraft()
+      setLocalText('')
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      resetPromptOptimize()
+      return
+    }
+
+    // Polaris 本地命令：/agent [slug] → 设为/清除当前专家（L0 用户显式指定）
+    const agentCmd = parseAgentSlashCommand(trimmed)
+    if (agentCmd) {
+      const { catalog } = useAgentStore.getState()
+      if (agentCmd.slug && catalog.length > 0 && !catalog.some((a) => a.slug === agentCmd.slug)) {
+        useToastStore.getState().info('/agent', t('chat:agentCmd.unknownSlug', {
+          defaultValue: '未找到专家「{{slug}}」，可在专家画廊中查找 slug',
+          slug: agentCmd.slug,
+          interpolation: { escapeValue: false },
+        }))
+      } else {
+        useSessionConfig.getState().setAgent(agentCmd.slug ?? '')
+        useToastStore.getState().info('/agent', agentCmd.slug
+          ? t('chat:agentCmd.set', { defaultValue: '当前专家已设为 {{slug}}', slug: agentCmd.slug, interpolation: { escapeValue: false } })
+          : t('chat:agentCmd.cleared', '已清除当前专家'))
+      }
+      cancelPersistDraft()
+      setLocalText('')
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      resetPromptOptimize()
+      return
+    }
+
+    // Polaris 本地命令：/dispatch [@角色|<agent-slug>] 任务内容 → 派发到后台会话执行
     const dispatchCmd = parseDispatchSlashCommand(trimmed)
     if (dispatchCmd) {
+      if (!dispatchCmd.role) {
+        const agentState = useAgentStore.getState()
+        const rewrite = rewriteDispatchPromptWithAgent(
+          dispatchCmd.prompt,
+          agentState.catalog,
+          agentState.status?.installDir ?? null,
+        )
+        if (rewrite) dispatchCmd.prompt = rewrite.prompt
+      }
       void dispatchFromUser(dispatchCmd)
       cancelPersistDraft()
       setLocalText('')

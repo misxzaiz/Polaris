@@ -195,6 +195,9 @@ async fn handle_connection(
         "dispatch_status" => {
             handle_dispatch_status_frame(&mut stream, frame, state, &expected_token).await
         }
+        "dispatch_roster" => {
+            handle_dispatch_roster_frame(&mut stream, frame, state, &expected_token).await
+        }
         "dispatch_continue" => {
             handle_dispatch_continue_frame(&mut stream, frame, state, &expected_token).await
         }
@@ -444,6 +447,10 @@ pub struct DispatchTaskParams {
     pub model: Option<String>,
     /// 指定 dispatch_id（MCP 帧携带；命令路径留空自动生成）
     pub dispatch_id: Option<String>,
+    /// 结构化结果 schema id（P2-2，可选）
+    pub result_schema: Option<String>,
+    /// NEXUS roster 流水线 id（P2-5，仅内部派发路径设置）
+    pub roster_id: Option<String>,
 }
 
 impl DispatchTaskParams {
@@ -475,6 +482,8 @@ impl DispatchTaskParams {
             provider: opt_str("provider"),
             model: opt_str("model"),
             dispatch_id: opt_str("dispatchId"),
+            result_schema: opt_str("resultSchema"),
+            roster_id: None,
         }
     }
 }
@@ -611,6 +620,21 @@ pub fn register_dispatch_task(
         model_profile_id = resolve_dispatch_provider(&config, provider)?;
     }
 
+    // resultSchema 校验与结构化输出指令注入（P2-2）
+    if let Some(schema_id) = params.result_schema.as_deref() {
+        if !super::nexus_verdict::schema_exists(schema_id) {
+            return Err(format!(
+                "未知 resultSchema: {schema_id}；可用: qa-pass/qa-fail/phase-gate/escalation/qa-verdict"
+            ));
+        }
+        if let Some(injection) = super::nexus_verdict::build_injection(schema_id) {
+            append_system_prompt = Some(match append_system_prompt.take() {
+                Some(existing) => format!("{existing}{injection}"),
+                None => injection,
+            });
+        }
+    }
+
     // mimo 引擎不支持 Profile：静默剥离并告警（预设保存侧应已拦截）
     if let Some(engine) = engine_id.as_deref() {
         if engine.starts_with("mimo")
@@ -655,6 +679,10 @@ pub fn register_dispatch_task(
         summary: None,
         latest_activity: None,
         conversation_id: None,
+        result_schema: params.result_schema,
+        roster_id: params.roster_id,
+        verdict: None,
+        verdict_status: None,
         created_at: now,
         updated_at: now,
     };
@@ -704,6 +732,53 @@ async fn handle_dispatch_frame(
             })
         }
         Err(message) => dispatch_error_reply("dispatch_result", &message),
+    };
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 供 nexus_pipeline 派发成员时通知前端（复用 dispatch-task-request 事件链路）
+pub fn emit_dispatch_request(state: &AppState, task: &DispatchedTask) {
+    emit_dispatch_event(state, "dispatch-task-request", &dispatch_request_payload(task));
+}
+
+/// 处理 dispatch_roster 帧：按场景组队 → 拓扑波次派发（P2-5）。
+async fn handle_dispatch_roster_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let scenario = frame.get("scenario").and_then(Value::as_str).unwrap_or_default();
+    let goal = frame.get("goal").and_then(Value::as_str).unwrap_or_default();
+    let source_session_id = frame.get("sessionId").and_then(Value::as_str).unwrap_or_default();
+    let work_dir = frame
+        .get("workDir")
+        .and_then(Value::as_str)
+        .filter(|s| !s.trim().is_empty())
+        .map(str::to_string);
+
+    let reply = if scenario.is_empty() || goal.trim().is_empty() {
+        dispatch_error_reply("dispatch_roster_result", "缺少 scenario 或 goal 参数")
+    } else {
+        match super::nexus_pipeline::start_roster(&state, scenario, goal, source_session_id, work_dir) {
+            Ok((pipeline, dispatched)) => json!({
+                "type": "dispatch_roster_result",
+                "ok": true,
+                "rosterId": pipeline.id,
+                "scenario": pipeline.scenario,
+                "waves": pipeline.waves,
+                "dispatchedNow": dispatched,
+                "note": "已按拓扑波次开始组队派发：每波 ≤3 并行，前波全部结束后自动派发下一波；用 check_dispatched_task 查询各成员进度",
+            }),
+            Err(message) => dispatch_error_reply("dispatch_roster_result", &message),
+        }
     };
 
     write_frame(stream, &reply).await?;

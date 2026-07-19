@@ -1,0 +1,14 @@
+{
+  "generatedBy": "scripts/gen-agent-catalog.mjs",
+  "sources": {
+    "agency-agents-zh": {
+      "commit": "244c37a188c5e4b8fbfdc62f1786a446836eabaf",
+      "agentCount": 267
+    },
+    "agency-agents": {
+      "commit": "459dce837db3bdfdc4763d3fefd1fd854e73c8f1",
+      "use": "divisions.json + strategy/runbooks.json 元数据"
+    }
+  },
+  "corpusVersion": 1
+}

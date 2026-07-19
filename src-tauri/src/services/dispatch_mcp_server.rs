@@ -40,6 +40,7 @@ const DISPATCH_TOOL_NAME: &str = "dispatch_task";
 const CHECK_TOOL_NAME: &str = "check_dispatched_task";
 const CONTINUE_TOOL_NAME: &str = "continue_dispatched_task";
 const TARGETS_TOOL_NAME: &str = "list_dispatch_targets";
+const ROSTER_TOOL_NAME: &str = "dispatch_roster";
 
 /// Server-level configuration, parsed from CLI args.
 pub struct DispatchMcpConfig {
@@ -205,6 +206,11 @@ fn handle_tools_list() -> Value {
                         "model": {
                             "type": "string",
                             "description": "Specific model name for the new session (e.g. a cheaper model for routine verification)."
+                        },
+                        "resultSchema": {
+                            "type": "string",
+                            "enum": ["qa-pass", "qa-fail", "qa-verdict", "phase-gate", "escalation"],
+                            "description": "Require the session's final message to contain a structured JSON verdict of this schema. Use 'qa-verdict' for QA tasks (session picks qa-pass or qa-fail). The parsed verdict is validated and attached to check_dispatched_task results."
                         }
                     },
                     "additionalProperties": false
@@ -257,6 +263,37 @@ fn handle_tools_list() -> Value {
                 }
             },
             {
+                "name": ROSTER_TOOL_NAME,
+                "description": concat!(
+                    "Deploy a pre-built NEXUS expert team (roster) for a scenario as ",
+                    "background sessions in topological waves (<=3 concurrent; next wave ",
+                    "auto-dispatches when the previous wave finishes). Scenarios: ",
+                    "startup-mvp | enterprise-feature | marketing-campaign | ",
+                    "incident-response. Returns { rosterId, waves, dispatchedNow }; track ",
+                    "members with check_dispatched_task."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["scenario", "goal"],
+                    "properties": {
+                        "scenario": {
+                            "type": "string",
+                            "enum": ["startup-mvp", "enterprise-feature", "marketing-campaign", "incident-response"],
+                            "description": "Roster scenario slug."
+                        },
+                        "goal": {
+                            "type": "string",
+                            "description": "Team goal — complete, self-contained description of what to build/handle (each member session only sees this plus its own persona)."
+                        },
+                        "workDir": {
+                            "type": "string",
+                            "description": "Absolute working directory for member sessions. Omit to inherit."
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
                 "name": TARGETS_TOOL_NAME,
                 "description": concat!(
                     "List available dispatch targets: team member presets (roles), ",
@@ -288,6 +325,7 @@ fn handle_tools_call(params: Value, config: &DispatchMcpConfig) -> Result<Value>
         DISPATCH_TOOL_NAME => build_dispatch_frame(&arguments, config)?,
         CHECK_TOOL_NAME => build_status_frame(&arguments, config)?,
         CONTINUE_TOOL_NAME => build_continue_frame(&arguments, config)?,
+        ROSTER_TOOL_NAME => build_roster_frame(&arguments, config)?,
         TARGETS_TOOL_NAME => json!({
             "type": "dispatch_targets",
             "token": config.token,
@@ -345,6 +383,31 @@ fn build_dispatch_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result
         "role": arguments.get("role").and_then(Value::as_str),
         "provider": arguments.get("provider").and_then(Value::as_str),
         "model": arguments.get("model").and_then(Value::as_str),
+        "resultSchema": arguments.get("resultSchema").and_then(Value::as_str),
+    }))
+}
+
+fn build_roster_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
+    let scenario = arguments
+        .get("scenario")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::ValidationError("缺少 scenario 参数".into()))?;
+    let goal = arguments
+        .get("goal")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| AppError::ValidationError("缺少 goal 参数".into()))?;
+
+    Ok(json!({
+        "type": "dispatch_roster",
+        "token": config.token,
+        "sessionId": config.session_id.clone().unwrap_or_default(),
+        "scenario": scenario,
+        "goal": goal,
+        "workDir": arguments.get("workDir").and_then(Value::as_str),
     }))
 }
 

@@ -23,7 +23,12 @@ Polaris 已有的承载能力:
 - [[dispatch-task-mcp]](独立后台会话,并发≤3,深度≤2,带 role/model 选择 + 结果回流)——适合多 agent 并行团队
 - SimpleAI skill 索引 + `read_skill`(progressive disclosure)——适合把 NEXUS doctrine 作为可加载指令
 
-**整合 = 把 NEXUS 的三套协议嫁接到 Polaris 的两个 dispatch 通道上**。corpus 导入是 Phase 0 的准备工作,不是目标。
+**整合 = 把 NEXUS 的三套协议嫁接到 Polaris 的两个 dispatch 通道上**。corpus 导入是准备工作(§6 Phase 0),不是目标。
+
+本文主体是三个问题,各占一章:
+- **§2 怎么选择专家**——分层决策链:用户手动(L0)> 结构路由查表(L1)> 语义路由兜底(L2)> 主会话直做(L3)
+- **§3 怎么配合**——Handoff schema 结构化回流 + Quality Gate + Dev↔QA Loop + O3 混合 orchestrator
+- **§4 怎么组合专家团**——roster 表达 + activation 时序触发器 + 并发≤3 下的拓扑波次调度 + 三层结果汇聚
 
 ---
 
@@ -64,11 +69,24 @@ tools: read_file, edit_file, ...   # 工具白名单
 
 ---
 
-## 2. 选专家机制(整合主体之一)
+## 2. 怎么选择专家(Selection Layer)
 
-「选专家」要回答三个问题:**这个任务该用谁?这个场景该组什么队?用户怎么找到/选中他们?** NEXUS 给了三层答案,Polaris 各有接入点。
+「选专家」要回答:**这个任务该用谁?依据什么决定?用户手动选与自动选怎么共存?**
 
-### 2.1 任务级选人:Coordination Matrix + Activation Prompt
+### 2.1 结论:四层决策链(L0–L3,严格优先级)
+
+| 层 | 决策者 | 机制 | Polaris 接入点 | 适用 |
+|---|---|---|---|---|
+| **L0 用户显式指定** | 用户 | `/agent <slug>` 或 UI 选择 → `options.agent` | `SessionOptions.agent`(traits.rs:110)→ claude CLI `--agent` 透传(claude.rs:416)/ SimpleAI `load_agent`(agent.rs) | 用户明确知道要谁;**终局,orchestrator 不得覆盖** |
+| **L1 结构路由(确定性查表)** | Rust 代码 | 任务类型/phase → slug 查表,来源为固化的 Coordination Matrix + roster | `resources/nexus/coordination.json`,由 `nexus_pipeline.rs` 查,**不进 LLM context** | pipeline 内标准任务(frontend task → frontend-developer);零 token、可测试、可缓存 |
+| **L2 语义路由(兜底)** | orchestrator LLM | 基于 266 条 `slug — name — description` 索引语义匹配,给 1–3 候选 + 理由 | 索引生成为 `agent-index.md`(~40KB),走 skill 通道 `read_skill` 按需加载,不常驻 context | 查表 miss 的长尾任务;交互场景经 AskUserQuestion 确认,pipeline 自动场景取 top-1 并把路由理由记入 pipeline 状态 |
+| **L3 缺省** | — | 不派专家 | 主会话直接做 | 琐碎任务,派发开销 > 收益 |
+
+**理由**:确定性优先(L1 可测试、零成本、不受 LLM 波动影响),语义兜底(L2 覆盖 266 个 agent 的长尾,硬编码矩阵不可能穷举),用户随时可覆盖(L0 尊重显式意图)。这也回答了「手动选与自动选如何分层共存」:`options.agent` 是会话级 persona 覆盖(用户意图),L1/L2 是任务级派发选人(orchestrator 意图),作用域不同、互不抢占——orchestrator 派发子任务时即使父会话有 `options.agent`,子任务仍按 L1/L2 选人。
+
+**关键实现决策:路由不单独 dispatch 一个 agent-router**。为一次选人多开一个子会话(往返延迟 + token 成本)不划算;L2 在 orchestrator 自身 context 内完成(read_skill 加载索引后直接判)。仅当用户在非 pipeline 场景问「这事该找谁」时,才值得可选的轻量 router 交互(Phase 1 进阶项)。
+
+### 2.2 任务级依据:Coordination Matrix + Activation Prompt
 
 **上游机制**:`nexus-strategy.md §10` 的 `Agent Coordination Matrix`(9×9 部门产出/消费依赖图)+ `coordination/agent-activation-prompts.md`(每个 agent 一段激活模板,带 `[PHASE]`/`[TASK ID]`/`[ACCEPTANCE CRITERIA]`/`[REFERENCE DOCUMENTS]` 占位符)。`agents-orchestrator` 根据任务类型从矩阵查「该 spawn 哪个 developer」,再用 activation prompt 模板填占位符后委派。
 
@@ -82,38 +100,25 @@ Do NOT add features beyond the acceptance criteria.
 ```
 
 **Polaris 接入**:
-- **Coordination Matrix 作为 orchestrator 的内置知识**:把 9×9 依赖图 + 关键 handoff pair 表(Senior PM→All Developers / UX Architect→Frontend / Backend→Frontend API spec / Developer→Evidence Collector / Evidence Collector→Orchestrator verdict)固化进 `agents-orchestrator` 的 system prompt,或作为可 `read_skill` 的 `nexus-coordination` skill。orchestrator 据此决定 spawn 谁。
-- **Activation Prompt 模板库**:把 `agent-activation-prompts.md` 拆成 per-agent 模板,落到 `<DataRoot>/agents/activation/<slug>.md`。`dispatch_agent`/`dispatch_task` 委派时,orchestrator 填充占位符(从当前 phase、task list、spec 路径取值)后再作为 task 描述传入——比裸传 task 多了「上下文 + 验收标准 + 下游 reviewer」三个约束。
-- **与现有 `options.agent` 的关系**:`options.agent` 是用户手动选一个 agent 覆盖 persona(单专家);activation prompt 是 orchestrator 自动选 + 自动填上下文(编排)。两者分层不冲突。
+- **Coordination Matrix 双形态**:机器可读形态固化为 `resources/nexus/coordination.json`(任务类型→producer/consumer slug 对),供 L1 查表(Rust,`nexus_pipeline.rs`);语义形态(关键 handoff pair 表:Senior PM→All Developers / UX Architect→Frontend / Backend→Frontend API spec / Developer→Evidence Collector / Evidence Collector→Orchestrator verdict)作为 `nexus-coordination` skill 供 orchestrator `read_skill`,用于 L2 判断与 task 分解。
+- **Activation Prompt 模板库**:把 `agent-activation-prompts.md` 拆成 per-agent 模板,落到 `<DataRoot>/agents/activation/<slug>.md`。**分工:模板检索由 Rust 提供**(`nexus_pipeline::load_activation(slug)`,查不到时回退到通用模板),**占位符填充由 orchestrator LLM 完成**(`[TASK]`/`[ACCEPTANCE CRITERIA]` 需要语义理解,代码填不了;`[PHASE]`/`[REFERENCE DOCUMENTS]` 由 Rust 从 pipeline 状态预填)。填充后的完整文本作为 `dispatch_agent` 的 task 描述或 `dispatch_task` 的 prompt 传入——比裸传 task 多了「上下文 + 验收标准 + 下游 reviewer」三个约束。
+- **与 L0(`options.agent`)的关系**:`options.agent` 是用户手动选一个 agent 覆盖会话 persona(单专家);activation prompt 是 orchestrator 自动选 + 自动填上下文(编排)。两者分层不冲突(见 §2.1)。
 
-### 2.2 场景级选队:Runbook Roster
+### 2.3 场景级选队:Runbook Roster(移至 §4)
 
-**上游机制**:`runbooks.json` 把常见场景预编成团队,每个 roster 用 slug 引用 agent(与文件名 stem 一致,rename-proof),分 `activation` 时序组(always / week 3+ / as needed / post-fix)。4 个场景:
+场景级「选一队人」与任务级「选一个人」机制不同——它是预编排的团队 + 时序,涉及分批派发与结果汇聚,独立成章,见 **§4 怎么组合专家团**。
 
-| 场景 | mode | duration | 核心团队(always) |
-|---|---|---|---|
-| startup-mvp | Sprint | 4-6 周 | orchestrator + senior-PM + sprint-prioritizer + UX-architect + frontend + backend + devops + evidence-collector + reality-checker(9) |
-| enterprise-feature | Sprint | 6-12 周 | 15 人核心 + 合规治理/质量保障按需 |
-| marketing-campaign | Sprint | 2-4 周 | social-media-strategist + content-creator + growth-hacker + brand-guardian + analytics(5) |
-| incident-response | Micro | 分钟~小时 | infra-maintainer + devops + backend + frontend + support-responder + exec-summary(6)→post-fix 验证组 |
+### 2.4 用户级选专家:Agent Gallery + 自动推荐
 
-**Polaris 接入(关键决策)**:
-- **roster 接 `dispatch-task-mcp`,不接 `dispatch_agent`**。理由:roster 是多 agent 并行团队;`dispatch_agent` 子会话共享父 `abort_rx`(父中断全挂、一个挂全挂),且深度≤3 截断;`dispatch-task` 是独立后台 Polaris 会话(并发≤3、深度≤2、有 role/model 选择、结果回流卡片),天然适合「组队派发」。
-- **activation 时序 → 分批派发**:`always` 组立即派发(受并发≤3 限制需排队);`week 3+`/`as needed` 组由 orchestrator 在 phase 推进到对应节点时再派发;`post-fix` 组在修复完成后触发。这要求 orchestrator 持有 pipeline 状态。
-- **新增 `dispatch_roster` 工具**(或 slash 命令 `/nexus <scenario>`):读 `runbooks.json` 的 roster → 对每 slug `load_agent` → 用 activation prompt 填充 → `dispatch_task` 派发 → 按 activation 分批 → 结果回流主会话。
-- **slug 校验**:中文版 4 个 agent 路径与上游不同(见附录 A),roster 引用的 slug 必须以 Polaris 实际扁平化后的 stem 为准,导入器要做 slug→文件存在性校验(对齐上游 `check-runbooks.sh`)。
+**用户主动选**:Phase 1 的 Agent Gallery 面板(复用 `skillStore` 骨架 + `divisions.json` 分组/图标/颜色),卡片展示 emoji+中文名+description,支持搜索/部门筛选,「启用为当前 agent」(写 `options.agent`)或「dispatch 一次性任务」(调 `dispatch_agent`)。`/` 命令补全 `/agent <slug>` 与 `/dispatch <slug> <task>`。
 
-### 2.3 用户级选专家:Agent Gallery + 自动推荐
-
-**用户主动选**:Phase B 的 Agent Gallery 面板(复用 `skillStore` 骨架 + `divisions.json` 分组/图标/颜色),卡片展示 emoji+中文名+description,支持搜索/部门筛选,「启用为当前 agent」(写 `options.agent`)或「dispatch 一次性任务」(调 `dispatch_agent`)。`/` 命令补全 `/agent <slug>` 与 `/dispatch <slug> <task>`。
-
-**自动推荐(进阶,Phase B+)**:用户描述任务后,orchestrator(或一个轻量 `agent-router` agent)基于 agent description 做语义匹配,推荐 1-3 个候选 agent + 说明理由,用户确认后派发。这是对 `agents-orchestrator`「智能选人」的产品化包装——不靠硬编码矩阵,靠 description 语义路由。可借鉴 [[simple-ai-codex-refactor]] 的 AGENTS 注入经验。
+**自动推荐(进阶)**:即 §2.1 的 L2 语义路由的交互化包装——用户描述任务后,orchestrator 在自身 context 内(read_skill 加载 agent-index)匹配 1-3 个候选 agent + 理由,经 AskUserQuestion 让用户确认后派发。不硬编码矩阵,靠 description 语义路由;不单独 dispatch router agent(见 §2.1 实现决策)。
 
 ---
 
-## 3. 配合编排机制(整合主体之二)
+## 3. 怎么配合(Orchestration Layer)
 
-「配合」要回答:**专家之间怎么交接?质量怎么保证?谁来推进 pipeline?** NEXUS 给了四套机制。
+「配合」要回答:**专家之间怎么交接?质量怎么保证?谁来推进 pipeline?** NEXUS 给了四套机制,通道分工的总结论:**developer 类工作走 `dispatch_agent`(同进程子会话,共享 MCP/skills,轻量),QA/Gate/roster 类工作走 `dispatch_task`(独立后台会话,context 隔离,结果回流)**,理由逐条见 §3.3 与 §7。
 
 ### 3.1 标准化交接:Handoff Templates
 
@@ -132,9 +137,15 @@ Do NOT add features beyond the acceptance criteria.
 **核心价值**:交接文档防止「context loss——多 agent 协作失败的第一原因」。尤其 QA FAIL 模板:把「哪里错了、期望什么、实际什么、证据、怎么修、改哪个文件」结构化,developer 拿到就能精准修复,不会发散。
 
 **Polaris 接入**:
-- **Handoff 模板作为 structured output schema**:把这 7 种模板定义成 JSON schema,`dispatch_task`/`dispatch_agent` 的子会话返回时,强制 QA 类 agent(Evidence Collector / Reality Checker / API Tester)用对应 schema 输出 verdict,而非自由文本。这与 [[dispatch-task-mcp]] 的「结果回流注入」机制天然结合——回流的不只是文本,是结构化 verdict。
-- **Dev↔QA Loop 的载体**:orchestrator 持有当前 task 的 QA FAIL 反馈,回传给 developer agent 时作为 task 描述的前置上下文(「上一次 QA 失败原因:...,请只修复这些」),形成闭环。
-- **与 [[compact-handoff-implementation]] 的关系**:Polaris 已有压缩交接(简报卡片),Handoff Template 是其「多 agent 版」——压缩交接是会话内/跨会话的状态转移,Handoff 是 agent 间的工作转移。可共用简报卡片 UI 渲染。
+- **Handoff 模板作为 structured output schema**:把这 7 种模板定义成 JSON schema(`resources/nexus/schemas/*.json`),QA 类 agent(Evidence Collector / Reality Checker / API Tester)的返回强制用对应 schema 输出 verdict,而非自由文本。
+- **结构化回流的具体机制**(现有 `dispatch_task` 只回流自由文本 summary,需要增量改造):
+  1. `dispatch_task` 新增可选参数 `resultSchema`(schema id,如 `qa-fail`)——改 `dispatch_mcp_server.rs` 工具定义与 `ask_listener.rs::register_dispatch_task` 透传;
+  2. 注册派发会话时,在 append_system_prompt 尾部注入「结束前最后一条消息必须输出符合该 schema 的 JSON 代码块」指令;
+  3. 会话完成后,结果回流路径(ask_listener 的 check/回流帧)对 summary 做 JSON 提取 + 字段校验(serde_json,起步手写字段校验即可,不必引入 jsonschema crate);
+  4. 校验失败→自动 `continue_dispatched_task` 一次,要求重发结构化 verdict(复用同会话 context,成本低);再失败则降级为自由文本回流并标记 `unstructured`;
+  5. 校验通过→回流帧携带 parsed verdict,由 `nexus_pipeline.rs` 直接消费(**Rust 读结构化字段推进状态机,不依赖主会话 LLM 转述**——这是「结构化回流而非自由文本」的核心收益)。
+- **Dev↔QA Loop 的载体**:orchestrator 持有当前 task 的 QA FAIL verdict(结构化的 Issue 列表:Severity/Expected/Actual/Evidence/Fix instruction/File to modify),回传给 developer agent 时作为 task 描述的前置上下文(「上一次 QA 失败原因:...,请只修列出的 issue」),形成闭环。
+- **与 [[compact-handoff-implementation]] 的关系**:Polaris 已有压缩交接(简报卡片),Handoff Template 是其「多 agent 版」——压缩交接是会话内/跨会话的状态转移,Handoff 是 agent 间的工作转移。verdict 回流卡片复用简报卡片 UI 渲染。
 
 ### 3.2 质量门:Quality Gates
 
@@ -195,9 +206,62 @@ Do NOT add features beyond the acceptance criteria.
 
 ---
 
-## 4. 可行性评估
+## 4. 怎么组合专家团(Roster Layer)
 
-### 4.1 格式同构(承载基础)
+「组队」要回答:**场景怎么映射到预编团队?activation 时序在 Polaris 怎么表达?并发≤3 下怎么派?结果怎么汇回主会话?**
+
+### 4.1 roster 表达:runbooks.json → rosters.json + dispatch_roster 工具
+
+**上游机制**:`runbooks.json` 把常见场景预编成团队,每个 roster 用 slug 引用 agent(与文件名 stem 一致,rename-proof),分 `activation` 时序组(always / week 3+ / as needed / post-fix)。4 个场景:
+
+| 场景 | mode | duration | 核心团队(always) |
+|---|---|---|---|
+| startup-mvp | Sprint | 4-6 周 | orchestrator + senior-PM + sprint-prioritizer + UX-architect + frontend + backend + devops + evidence-collector + reality-checker(9) |
+| enterprise-feature | Sprint | 6-12 周 | 15 人核心 + 合规治理/质量保障按需 |
+| marketing-campaign | Sprint | 2-4 周 | social-media-strategist + content-creator + growth-hacker + brand-guardian + analytics(5) |
+| incident-response | Micro | 分钟~小时 | infra-maintainer + devops + backend + frontend + support-responder + exec-summary(6)→post-fix 验证组 |
+
+**Polaris 表达**:
+- 导入器把上游 `runbooks.json` 转换为 `resources/nexus/rosters.json`:字段 `scenario / mode / duration / groups[{ activation, members[slug], trigger }]`;转换时做 slug→文件存在性校验(对齐上游 `check-runbooks.sh`,含附录 A.2 的 4 个路径映射),产 `roster_manifest.json` 供启动时校验。
+- **新增 `dispatch_roster` 工具,挂在现有 polaris-dispatch MCP server 上(`dispatch_mcp_server.rs` 注册第 5 个工具),不新建 server**——复用同一条 TCP listener、深度≤2/并发≤3 治理与结果回流链路;slash 入口 `/nexus <scenario>`(注入 `cliSlashCommands.ts`)。
+- 执行流:读 roster → 对每 slug `load_agent` → 填 activation prompt(§2.2)→ 按 §4.3 波次经 `dispatch_task` 派发 → 结果按 §4.4 汇聚。
+
+**通道结论:roster 接 `dispatch_task`,不接 `dispatch_agent`**。理由:① `dispatch_agent` 子会话共享父 `abort_rx`,父中断全挂、一个挂全挂,团队派发不可接受;② 深度≤3 会截断深层 roster;③ `dispatch_task` 是独立后台 Polaris 会话,自带 role/model 选择、`check/continue` 三件套与结果回流卡片,天然适合组队。`dispatch_agent` 留给团队成员内部的轻量 subtask。
+
+### 4.2 activation 时序 → Polaris 触发器映射
+
+| 上游 activation | 语义 | Polaris 触发器 | 实现 |
+|---|---|---|---|
+| `always` | 立即出场 | roster 启动即入派发队列 | `dispatch_roster` 调用时入队,按 §4.3 波次派 |
+| `week 3+` | phase 推进后出场 | **gate PASS 事件触发**(不是墙上时钟——Polaris 场景压缩到小时/天级,按 phase 语义而非周数) | `nexus_pipeline.rs` 在 gate verdict=PASS 时检查 pending groups,命中则入队 |
+| `as needed` | 按需出场 | orchestrator 决策(走 §2.1 L1/L2 选人)或用户手动 `/dispatch <slug>` | 不预派,留在 roster 清单里供选人层引用 |
+| `post-fix` | 修复后复验 | QA FAIL → fix 完成事件触发;**用 `continue_dispatched_task` 复用原 QA 会话复验**,而非新开会话——原会话保留了首次验证的 context(验收标准、复现步骤),复验更准且省 token | `nexus_pipeline.rs` 在 developer 任务标记完成时,对关联 QA dispatchId 发 continue |
+
+### 4.3 并发≤3 约束:拓扑波次调度(不提并发上限)
+
+**结论:不提升 dispatch-task 的并发上限(3 是资源保护:每个后台会话是完整 Polaris 会话,CPU/token 都真实),用「拓扑波次」把 9 人团队变成 3×3 波。**
+
+- `nexus_pipeline.rs` 维护 roster 派发队列,按 Coordination Matrix 的 producer→consumer 依赖做拓扑排序分波:如 startup-mvp 的 always 组 9 人 → 波1(senior-PM + sprint-prioritizer + UX-architect,规划/设计产出方)→ 波2(frontend + backend + devops,消费波1产出)→ 波3(evidence-collector + reality-checker + orchestrator 汇总,消费波2产出)。
+- 每波 ≤3(与并发上限对齐,波内真并行);**前波全部回流后才触发下波**,由 Rust 驱动(dispatchId 完成事件),不靠 LLM 记得。
+- 这不是妥协而是收益:矩阵依赖本来就要求下游 agent 引用上游产出——并行洪泛 9 人反而让 frontend 在没有 API spec 时空转。波次调度让 activation prompt 的 `[REFERENCE DOCUMENTS]` 有实值可填(见 §4.4)。
+- 波内某成员失败:不阻塞同波其他成员回流;该成员进 Dev↔QA loop 重试(§3.3),下波推进以「波内全部达到终态(成功或升级)」为准,升级项由用户拍板是否降级推进。
+
+### 4.4 结果汇聚:三层回流
+
+| 层 | 机制 | 现状 |
+|---|---|---|
+| (a) 单任务回流 | 每个 `dispatch_task` 完成 → 现有结果回流注入(主会话内联卡片 + summary 注入) | **已有,零改动**([[dispatch-task-mcp]] Phase 2 闭环) |
+| (b) 结构化 verdict | QA/Gate 类返回按 §3.1 机制解析为结构化 verdict,由 Rust 写入 pipeline 状态并驱动状态机 | 需新增(`resultSchema` 参数 + 校验回流) |
+| (c) 波次/场景汇总 | 每波完成后 Rust 把各成员 deliverable 摘要写入 pipeline 状态,并填进下波 activation prompt 的 `[REFERENCE DOCUMENTS]`(**跨波上下文传递由 Rust 完成,不经主会话 LLM 转述,防 context loss 与膨胀**);场景终局由 orchestrator 产 Pipeline Status Report(上游模板)作为汇总卡片呈现 | 需新增(nexus_pipeline + 汇总卡片) |
+
+主会话 context 压力控制:9 人团队若逐个全文回流,主会话必爆。策略:(a) 层内联卡片默认折叠只显标题+verdict;全文留在各自后台会话(可点开);orchestrator 只消费 (b)(c) 层的结构化摘要。
+
+---
+
+
+## 5. 可行性评估
+
+### 5.1 格式同构(承载基础)
 
 Polaris `agent.rs:parse_agent` 与 agency-agents `.md` 逐字段对照:
 
@@ -210,7 +274,7 @@ Polaris `agent.rs:parse_agent` 与 agency-agents `.md` 逐字段对照:
 | `tools` | ✅ | ✅ 已解析未启用 | 兼容(Phase 4d 注释"暂未启用过滤") |
 | body | `# <角色> Agent 人格...` | system_prompt | **直接兼容** |
 
-### 4.2 能力 复用/重构/舍弃
+### 5.2 能力 复用/重构/舍弃
 
 | 能力 | 处置 | 理由 |
 |---|---|---|
@@ -225,7 +289,7 @@ Polaris `agent.rs:parse_agent` 与 agency-agents `.md` 逐字段对照:
 | `agency-orchestrator`/`agencyagents.app` | ❌ 舍弃 | Polaris 自身即桌面 App |
 | `assets/`(赞助商二维码等) | ❌ 舍弃 | 与 Polaris 无关 |
 
-### 4.3 与现有模块的关系
+### 5.3 与现有模块的关系
 
 | 现有模块 | 关系 | 说明 |
 |---|---|---|
@@ -240,23 +304,23 @@ Polaris `agent.rs:parse_agent` 与 agency-agents `.md` 逐字段对照:
 
 ---
 
-## 5. 分阶段落地
+## 6. 分阶段落地
 
 ### 总览
 
 ```
-Phase 0:corpus + catalog 导入(Rust 基础设施)         — 让 266 agent 可被 load_agent 读到
-Phase 1:选专家机制(Selection Layer)                  — Coordination Matrix + Roster + Gallery + 自动推荐
-Phase 2:配合编排机制(Orchestration Layer)            — Handoff schema + Quality Gate + Dev↔QA Loop + Pipeline 状态机
+Phase 0:corpus + catalog 导入(准备工作,非重点)       — 让 266 agent 可被 load_agent 读到
+Phase 1:选专家机制(§2)                               — 决策链 L0-L3 + Matrix + Gallery + 语义路由
+Phase 2:配合与组队机制(§3/§4)                        — Handoff schema + Gate + Dev↔QA Loop + roster 波次调度 + Pipeline 状态机
 Phase 3:Agents Orchestrator 接入(O3 混合)            — LLM 决策 + Rust 状态机骨架
-Phase 4:许可证与来源合规                              — LICENSE / NOTICE / 裁剪
+Phase 4:许可证与来源合规
 ```
 
 **MVP 边界**:Phase 0 + 4 让 corpus 可用;**真正交付价值**需要 Phase 1 + 2(选与配合);Phase 3 是完整体验。
 
-### Phase 0:corpus + catalog 导入(Rust)
+### Phase 0(准备工作,非方案重点):corpus + catalog 导入(Rust)
 
-**目标**:266 agent 落到可读位置,catalog 元数据可查。这是 §2/§3 的弹药库。
+**目标**:266 agent 落到可读位置,catalog 元数据可查。这是 §2–§4 的弹药库。
 
 **落点决策**(推荐 P0-2):
 | 方案 | 路径 | 优劣 |
@@ -285,7 +349,7 @@ Phase 4:许可证与来源合规                              — LICENSE / NOTI
 - `agent-activation-prompts.md` 拆成 per-agent 模板,落 `<DataRoot>/agents/activation/<slug>.md`(或在 `AgentDefinition` 加 `activation_template` 字段)。
 - `dispatch_agent`/`dispatch_task` 委派时,orchestrator 填占位符(phase/task/acceptance/reference docs)后传入。
 
-**1.2 Runbook Roster(场景级)**
+**1.2 Runbook Roster(场景级,设计见 §4)**
 - 新增 `dispatch_roster` 工具(或 `/nexus <scenario>` slash):读 `runbooks.json` → `load_agent` 每 slug → 填 activation prompt → `dispatch_task` 派发 → 按 activation(always/week 3+/as needed/post-fix)分批 → 结果回流。
 - 复用 [[dispatch-task-mcp]] 的并发≤3 排队、深度≤2、结果回流卡片。
 - slug 校验:导入器产 `roster_manifest.json`(slug→文件存在性),启动时校验。
@@ -351,45 +415,45 @@ Phase 4:许可证与来源合规                              — LICENSE / NOTI
 
 ---
 
-## 6. 关键设计决策(逐项验证)
+## 7. 关键设计决策(逐项验证)
 
-### 6.1 roster 接 `dispatch-task-mcp` 还是 `dispatch_agent`?
+### 7.1 roster 接 `dispatch-task-mcp` 还是 `dispatch_agent`?
 
 **接 `dispatch-task`**。roster 是多 agent 并行团队:① `dispatch_agent` 子会话共享父 `abort_rx`,一挂全挂;② 深度≤3 截断深层 roster;③ `dispatch-task` 独立会话 + 并发≤3 排队 + 结果回流卡片,天然适合组队。`dispatch_agent` 留给单次轻量 subtask。
 
-### 6.2 Dev↔QA Loop 两个通道怎么分工?
+### 7.2 Dev↔QA Loop 两个通道怎么分工?
 
 **developer 用 `dispatch_agent`,QA 用 `dispatch_task`**。developer 需要共享父 MCP/skills(轻量实现,同进程);QA 需要隔离 context(客观验证,不被 developer context 污染)。两通道特性正好匹配。
 
-### 6.3 orchestrator 是 agent 还是代码?
+### 7.3 orchestrator 是 agent 还是代码?
 
 **O3 混合**。Rust 做状态机骨架(phase/attempts/gate/retry 持久化 + 强制),LLM 做决策(选人/分解/根因)。纯 agent 不可靠(跳 gate、忘计数);纯代码不灵活。骨架复用 [[dispatch-task-mcp]] 三件套。
 
-### 6.4 agent 走 `.polaris/agents/` 还是 `.polaris/skills/`?
+### 7.4 agent 走 `.polaris/agents/` 还是 `.polaris/skills/`?
 
 **走 `.polaris/agents/`**。agent = 完整 persona,可覆盖 system prompt、可被 dispatch spawn;skill = progressive disclosure,`read_skill` 按需加载,不覆盖 persona。agency-agents 是完整人设,走 agent 通道。NEXUS doctrine(playbooks/coordination)走 skill 通道(可加载指令)。
 
-### 6.5 `name` 字段中文冲突?
+### 7.5 `name` 字段中文冲突?
 
 零冲突。slug = 文件名 stem(`engineering-frontend-developer`),display = frontmatter `name`(`前端开发者`)。`load_agent` 按 stem 查(见 `agent.rs:47`),UI 显示 name。不重写上游。
 
-### 6.6 是否换 YAML 解析?
+### 7.6 是否换 YAML 解析?
 
 当前 `parse_agent` 手写逐行,不支持多行/数组/嵌套。agency-agents frontmatter 都是单行标量,够用。若接 `tools` 白名单过滤或复杂 `agent-roles.json`,未来换 `serde_yaml`。Phase 0 不必换。
 
-### 6.7 progressive disclosure?
+### 7.7 progressive disclosure?
 
 **必做**。266 agent 全量注入 context 会爆炸。`discover_agents` 返回全量,但注入上下文时只取 `name`+`description` 索引;正文按需 `dispatch_agent`/`read_skill`。对齐 Claude Code skill 机制。
 
 ---
 
-## 7. 接入点与改动清单(汇总)
+## 8. 接入点与改动清单(汇总)
 
 | 阶段 | 接入点 | 新增文件 | 改动文件 |
 |---|---|---|---|
 | 0 | `simple_ai::agent` + `services` | `services/agent_corpus.rs`、`commands/agent_corpus.rs`、`resources/agents/{*.md, divisions.json, runbooks.json, agent-roles.json}` | `agent.rs`、`services/mod.rs`、`commands/mod.rs`、`lib.rs` |
-| 1 | `plugin-system` + slash + ToolSwitcher + dispatch-task | `stores/agentStore.ts`、`components/Agent/*`、`types/agent.ts`、`resources/nexus/coordination.json` | `builtinPlugins.ts`、`cliSlashCommands.ts`、`ToolSwitcher.tsx`、`agent_corpus.rs` |
-| 2 | dispatch-task + dispatch_agent + 新状态机 | `resources/nexus/{schemas/*.json, gates.json}`、`services/nexus_pipeline.rs`、`commands/nexus.rs` | `dispatch_mcp_server.rs`、dispatch 调用点 |
+| 1 | `plugin-system` + slash + ToolSwitcher + dispatch-task | `stores/agentStore.ts`、`components/Agent/*`、`types/agent.ts`、`resources/nexus/{coordination.json, rosters.json, roster_manifest.json}`、`agent-index.md`(skill) | `builtinPlugins.ts`、`cliSlashCommands.ts`(`/agent` `/dispatch` `/nexus`)、`ToolSwitcher.tsx`、`agent_corpus.rs`、`dispatch_mcp_server.rs`(新增 dispatch_roster 工具) |
+| 2 | dispatch-task + dispatch_agent + 新状态机 | `resources/nexus/{schemas/*.json, gates.json}`、`services/nexus_pipeline.rs`(含波次队列/attempts/gate verdict)、`commands/nexus.rs` | `dispatch_mcp_server.rs`(resultSchema 参数)、`ask_listener.rs`(verdict 校验 + continue 重试 + 回流帧携带 parsed verdict)、dispatch 调用点 |
 | 3 | orchestrator agent + slash | `resources/prompts/nexus/*`(playbooks) | `cliSlashCommands.ts`、orchestrator 定义 |
 | 4 | `resources/agents/` | `LICENSE-*.txt`、`NOTICE.md` | — |
 
@@ -397,7 +461,7 @@ Phase 4:许可证与来源合规                              — LICENSE / NOTI
 
 ---
 
-## 8. 风险提示
+## 9. 风险提示
 
 1. **context 爆炸**:266 agent 全量注入必爆。强制 progressive disclosure——只注 name+description 索引,正文按需加载。
 2. **corpus 质量参差**:社区产物,部分 body 含上游特定工具名(如 `apply_patch`)或平台假设。Phase 0 后抽样审计,对不存在工具做适配/标注。Reality Checker 默认 NEEDS_WORK 可部分对冲。
@@ -410,7 +474,7 @@ Phase 4:许可证与来源合规                              — LICENSE / NOTI
 
 ---
 
-## 9. 优先级
+## 10. 优先级
 
 | 优先级 | 阶段 | 价值 | 工作量 |
 |---|---|---|---|
@@ -457,7 +521,7 @@ Phase 4:许可证与来源合规                              — LICENSE / NOTI
 roster slug 校验时以此映射为准。
 
 ### A.3 runbooks.json 四场景 roster(完整)
-见 §2.2 表。每场景含 `always`/`week 3+`/`as needed`/`post-fix` 时序组。
+见 §4.1 表。每场景含 `always`/`week 3+`/`as needed`/`post-fix` 时序组。
 
 ### A.4 agent 样例(agency-agents 格式)
 ```markdown

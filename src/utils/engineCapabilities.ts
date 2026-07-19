@@ -39,7 +39,7 @@ export type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profil
 const ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
   'claude-code': ['agent', 'model', 'effort', 'permission', 'profile'],
   codex: ['model', 'permission', 'profile'],
-  'simple-ai': ['model', 'profile'],
+  'simple-ai': ['agent', 'model', 'profile'],
   mimo: ['model', 'permission'],
 }
 

@@ -9,6 +9,7 @@ import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
+import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -115,8 +116,12 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(agnesPluginManifest)
+  pluginRegistry.register(agentGalleryPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
+  pluginPanelRegistry.register('agentGallery', 'polaris.agent-gallery', () =>
+    import('@/components/Agent/AgentGalleryPanel').then((m) => ({ default: m.default })),
+  )
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
   )

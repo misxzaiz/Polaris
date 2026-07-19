@@ -1,0 +1,82 @@
+{
+  "_note": "NEXUS 7 phase gate(上游 nexus-strategy.md);Phase 3 orchestrator 接入时由 nexus_pipeline 消费,当前为文档与配置形态。slug 为 corpus 文件 stem。",
+  "gates": [
+    {
+      "transition": "0->1",
+      "name": "Discovery Gate",
+      "keepers": [
+        "support-executive-summary-generator"
+      ],
+      "criteria": [
+        "市场验证",
+        "用户需求确认",
+        "合规路径清晰"
+      ]
+    },
+    {
+      "transition": "1->2",
+      "name": "Architecture Gate",
+      "keepers": [
+        "project-management-studio-producer",
+        "testing-reality-checker"
+      ],
+      "criteria": [
+        "架构完成",
+        "品牌定义",
+        "预算批准",
+        "sprint 计划现实"
+      ]
+    },
+    {
+      "transition": "2->3",
+      "name": "Foundation Gate",
+      "keepers": [
+        "engineering-devops-automator",
+        "testing-evidence-collector"
+      ],
+      "criteria": [
+        "CI/CD 可用",
+        "骨架应用运行",
+        "监控激活"
+      ]
+    },
+    {
+      "transition": "3->4",
+      "name": "Feature Gate",
+      "keepers": [
+        "agents-orchestrator"
+      ],
+      "criteria": [
+        "所有任务过 QA",
+        "无 critical bug",
+        "性能基线达标"
+      ]
+    },
+    {
+      "transition": "4->5",
+      "name": "Production Gate",
+      "keepers": [
+        "testing-reality-checker"
+      ],
+      "criteria": [
+        "用户旅程完整",
+        "跨设备一致",
+        "安全验证",
+        "spec 合规"
+      ]
+    },
+    {
+      "transition": "5->6",
+      "name": "Launch Gate",
+      "keepers": [
+        "project-management-studio-producer",
+        "support-analytics-reporter"
+      ],
+      "criteria": [
+        "部署成功",
+        "系统稳定",
+        "增长渠道激活"
+      ]
+    }
+  ]
+}

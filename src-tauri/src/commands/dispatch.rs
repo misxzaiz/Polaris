@@ -51,6 +51,18 @@ pub fn report_dispatch_status_impl(
         if truncated_summary.is_some() {
             task.summary = truncated_summary;
         }
+        // 结构化 verdict 提取校验（P2-3）：completed 且指定了 resultSchema 时，
+        // 从 summary 提取 JSON 并按 schema 校验；失败降级 unstructured，不阻塞回流。
+        if task.status == "completed" {
+            if let (Some(schema_id), Some(summary_text)) =
+                (task.result_schema.clone(), task.summary.clone())
+            {
+                let (verdict, verdict_status) =
+                    crate::services::nexus_verdict::process_summary(&schema_id, &summary_text);
+                task.verdict = verdict;
+                task.verdict_status = Some(verdict_status.to_string());
+            }
+        }
         if let Some(activity) = latest_activity {
             task.latest_activity = Some(truncate_summary(activity));
         }
@@ -72,6 +84,15 @@ pub fn report_dispatch_status_impl(
         dispatch_id,
         status
     );
+
+    // NEXUS roster 波次推进（P2-5）：成员任务到达终态时由 Rust 触发下波派发
+    if status == "completed" || status == "failed" {
+        if let Some(task) = state.get_dispatched_task(dispatch_id) {
+            if task.roster_id.is_some() {
+                crate::services::nexus_pipeline::on_dispatch_terminal(state, &task);
+            }
+        }
+    }
     Ok(())
 }
 
@@ -131,6 +152,8 @@ pub fn dispatch_create_task(
             provider: provider.filter(|p| !p.trim().is_empty()),
             model: model.filter(|m| !m.trim().is_empty()),
             dispatch_id: None,
+            result_schema: None,
+            roster_id: None,
         },
     )
 }

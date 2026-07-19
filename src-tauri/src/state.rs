@@ -206,6 +206,18 @@ pub struct DispatchedTask {
     /// 后端会话 ID（前端启动成功后回报，续派/恢复路径使用）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversation_id: Option<String>,
+    /// 结构化结果 schema id（P2-2；设置后完成时做 verdict 提取校验）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub result_schema: Option<String>,
+    /// 所属 NEXUS roster 流水线 id（P2-5；完成时触发波次推进）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub roster_id: Option<String>,
+    /// 解析出的结构化 verdict（P2-3；completed 且 result_schema 设置时填充）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict: Option<serde_json::Value>,
+    /// verdict 解析状态：structured | unstructured
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub verdict_status: Option<String>,
     /// 创建时间（Unix 秒）
     pub created_at: i64,
     /// 最后更新时间（Unix 秒）

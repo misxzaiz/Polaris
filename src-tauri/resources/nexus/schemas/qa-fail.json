@@ -1,0 +1,60 @@
+{
+  "$id": "qa-fail",
+  "type": "object",
+  "required": [
+    "schema",
+    "task",
+    "issues"
+  ],
+  "properties": {
+    "schema": {
+      "const": "qa-fail"
+    },
+    "task": {
+      "type": "string"
+    },
+    "attempt": {
+      "type": "integer"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "enum": [
+              "High",
+              "Medium",
+              "Low"
+            ]
+          },
+          "expected": {
+            "type": "string"
+          },
+          "actual": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "fix_instruction": {
+            "type": "string"
+          },
+          "file_to_modify": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "acceptance": {
+      "type": "object"
+    },
+    "next": {
+      "type": "string"
+    }
+  },
+  "_note": "文档形态;运行时校验为 src-tauri/src/services/nexus_verdict.rs 的必填字段轻量校验,两者须同步维护。qa-verdict 组合 id 在校验层按 schema 字段分派到 qa-pass/qa-fail。"
+}

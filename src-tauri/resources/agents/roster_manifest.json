@@ -1,0 +1,389 @@
+{
+  "entries": [
+    {
+      "runbook": "startup-mvp",
+      "slug": "agents-orchestrator",
+      "resolved": "agents-orchestrator",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "project-manager-senior",
+      "resolved": "project-manager-senior",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "product-sprint-prioritizer",
+      "resolved": "product-sprint-prioritizer",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "design-ux-architect",
+      "resolved": "design-ux-architect",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "engineering-frontend-developer",
+      "resolved": "engineering-frontend-developer",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "engineering-backend-architect",
+      "resolved": "engineering-backend-architect",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "engineering-devops-automator",
+      "resolved": "engineering-devops-automator",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "testing-evidence-collector",
+      "resolved": "testing-evidence-collector",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "testing-reality-checker",
+      "resolved": "testing-reality-checker",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "marketing-growth-hacker",
+      "resolved": "marketing-growth-hacker",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "marketing-content-creator",
+      "resolved": "marketing-content-creator",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "marketing-social-media-strategist",
+      "resolved": "marketing-social-media-strategist",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "design-brand-guardian",
+      "resolved": "design-brand-guardian",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "support-analytics-reporter",
+      "resolved": "support-analytics-reporter",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "engineering-rapid-prototyper",
+      "resolved": "engineering-rapid-prototyper",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "engineering-ai-engineer",
+      "resolved": "engineering-ai-engineer",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "testing-performance-benchmarker",
+      "resolved": "testing-performance-benchmarker",
+      "exists": true
+    },
+    {
+      "runbook": "startup-mvp",
+      "slug": "support-infrastructure-maintainer",
+      "resolved": "support-infrastructure-maintainer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "agents-orchestrator",
+      "resolved": "agents-orchestrator",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "project-management-project-shepherd",
+      "resolved": "project-management-project-shepherd",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "project-manager-senior",
+      "resolved": "project-manager-senior",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "product-sprint-prioritizer",
+      "resolved": "product-sprint-prioritizer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "design-ux-architect",
+      "resolved": "design-ux-architect",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "design-ux-researcher",
+      "resolved": "design-ux-researcher",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "design-ui-designer",
+      "resolved": "design-ui-designer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "engineering-frontend-developer",
+      "resolved": "engineering-frontend-developer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "engineering-backend-architect",
+      "resolved": "engineering-backend-architect",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "engineering-senior-developer",
+      "resolved": "engineering-senior-developer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "engineering-devops-automator",
+      "resolved": "engineering-devops-automator",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-evidence-collector",
+      "resolved": "testing-evidence-collector",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-api-tester",
+      "resolved": "testing-api-tester",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-reality-checker",
+      "resolved": "testing-reality-checker",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-performance-benchmarker",
+      "resolved": "testing-performance-benchmarker",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "support-legal-compliance-checker",
+      "resolved": "support-legal-compliance-checker",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "design-brand-guardian",
+      "resolved": "design-brand-guardian",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "support-finance-tracker",
+      "resolved": "support-finance-tracker",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "support-executive-summary-generator",
+      "resolved": "support-executive-summary-generator",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-test-results-analyzer",
+      "resolved": "testing-test-results-analyzer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "testing-workflow-optimizer",
+      "resolved": "testing-workflow-optimizer",
+      "exists": true
+    },
+    {
+      "runbook": "enterprise-feature",
+      "slug": "project-management-experiment-tracker",
+      "resolved": "project-management-experiment-tracker",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-social-media-strategist",
+      "resolved": "marketing-social-media-strategist",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-content-creator",
+      "resolved": "marketing-content-creator",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-growth-hacker",
+      "resolved": "marketing-growth-hacker",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "design-brand-guardian",
+      "resolved": "design-brand-guardian",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "support-analytics-reporter",
+      "resolved": "support-analytics-reporter",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-twitter-engager",
+      "resolved": "marketing-twitter-engager",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-tiktok-strategist",
+      "resolved": "marketing-tiktok-strategist",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-instagram-curator",
+      "resolved": "marketing-instagram-curator",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-reddit-community-builder",
+      "resolved": "marketing-reddit-community-builder",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "marketing-app-store-optimizer",
+      "resolved": "marketing-app-store-optimizer",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "product-trend-researcher",
+      "resolved": "product-trend-researcher",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "project-management-experiment-tracker",
+      "resolved": "project-management-experiment-tracker",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "support-executive-summary-generator",
+      "resolved": "support-executive-summary-generator",
+      "exists": true
+    },
+    {
+      "runbook": "marketing-campaign",
+      "slug": "support-legal-compliance-checker",
+      "resolved": "support-legal-compliance-checker",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "support-infrastructure-maintainer",
+      "resolved": "support-infrastructure-maintainer",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "engineering-devops-automator",
+      "resolved": "engineering-devops-automator",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "engineering-backend-architect",
+      "resolved": "engineering-backend-architect",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "engineering-frontend-developer",
+      "resolved": "engineering-frontend-developer",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "support-support-responder",
+      "resolved": "support-support-responder",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "support-executive-summary-generator",
+      "resolved": "support-executive-summary-generator",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "testing-evidence-collector",
+      "resolved": "testing-evidence-collector",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "testing-api-tester",
+      "resolved": "testing-api-tester",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "testing-workflow-optimizer",
+      "resolved": "testing-workflow-optimizer",
+      "exists": true
+    },
+    {
+      "runbook": "incident-response",
+      "slug": "product-sprint-prioritizer",
+      "resolved": "product-sprint-prioritizer",
+      "exists": true
+    }
+  ],
+  "missing": []
+}

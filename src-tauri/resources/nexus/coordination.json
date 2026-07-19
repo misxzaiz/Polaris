@@ -1,0 +1,41 @@
+{
+  "_note": "L1 结构路由查表:任务类型 -> 推荐 slug(零 token,Rust 消费)。语义兜底走 nexus-agent-index skill(L2)。slug 为 corpus 文件 stem。",
+  "routes": {
+    "frontend": "engineering-frontend-developer",
+    "backend": "engineering-backend-architect",
+    "devops": "engineering-devops-automator",
+    "ui-design": "design-ux-architect",
+    "qa": "testing-evidence-collector",
+    "final-review": "testing-reality-checker",
+    "api-test": "testing-api-tester",
+    "performance": "testing-performance-benchmarker",
+    "planning": "project-manager-senior",
+    "prioritization": "product-sprint-prioritizer",
+    "orchestration": "agents-orchestrator",
+    "growth": "marketing-growth-hacker",
+    "content": "marketing-content-creator",
+    "incident": "support-infrastructure-maintainer"
+  },
+  "handoff_pairs": [
+    [
+      "project-manager-senior",
+      "*developers"
+    ],
+    [
+      "design-ux-architect",
+      "engineering-frontend-developer"
+    ],
+    [
+      "engineering-backend-architect",
+      "engineering-frontend-developer"
+    ],
+    [
+      "*developers",
+      "testing-evidence-collector"
+    ],
+    [
+      "testing-evidence-collector",
+      "agents-orchestrator"
+    ]
+  ]
+}

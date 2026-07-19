@@ -14,6 +14,7 @@ import {
   Languages,
   Target,
   Terminal,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 import type { PluginIconId } from './types'
@@ -34,4 +35,5 @@ export const pluginIconMap: Record<PluginIconId, LucideIcon> = {
   Languages,
   Terminal,
   Target,
+  Users,
 }

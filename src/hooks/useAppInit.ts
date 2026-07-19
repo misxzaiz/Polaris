@@ -248,6 +248,25 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     void import('@/services/dialogStorage').then(({ maybeAutoMigrateOpfs }) =>
       maybeAutoMigrateOpfs(),
     );
+
+    // Agency Agents corpus 自动安装/升级（幂等，后台静默；仅桌面端命令可用）
+    if (currentMode === 'tauri') {
+      void import('@/services/tauri/agentCorpusService')
+        .then(({ ensureCorpusInstalled }) => ensureCorpusInstalled())
+        .then((status) => {
+          if (status) {
+            log.info('Agent corpus ready', {
+              version: status.installedVersion,
+              count: status.installedCount,
+            });
+          }
+          // catalog 预加载:/agent、/dispatch <slug> 改写与 Gallery 首开都依赖
+          return import('@/stores/agentStore').then(({ useAgentStore }) =>
+            useAgentStore.getState().load(),
+          );
+        })
+        .catch((err) => log.warn('Agent corpus install failed', { error: String(err) }));
+    }
   });
 
   // 初始化配置（只执行一次）

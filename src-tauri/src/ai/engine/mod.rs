@@ -4,7 +4,7 @@
 mod claude;
 mod codex;
 pub mod codex_parser;
-mod simple_ai;
+pub(crate) mod simple_ai;
 mod simple_ai_protocol;
 mod mimo;
 

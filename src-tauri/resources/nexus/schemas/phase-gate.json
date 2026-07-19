@@ -1,0 +1,48 @@
+{
+  "$id": "phase-gate",
+  "type": "object",
+  "required": [
+    "schema",
+    "gate",
+    "verdict",
+    "criteria"
+  ],
+  "properties": {
+    "schema": {
+      "const": "phase-gate"
+    },
+    "gate": {
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL"
+      ]
+    },
+    "criteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "pass": {
+            "type": "boolean"
+          },
+          "evidence": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "risks": {
+      "type": "array"
+    },
+    "carry_over": {
+      "type": "array"
+    }
+  },
+  "_note": "文档形态;运行时校验为 src-tauri/src/services/nexus_verdict.rs 的必填字段轻量校验,两者须同步维护。qa-verdict 组合 id 在校验层按 schema 字段分派到 qa-pass/qa-fail。"
+}

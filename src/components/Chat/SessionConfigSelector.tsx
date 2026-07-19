@@ -21,6 +21,8 @@ import {
   type PermissionMode,
 } from '@/types/sessionConfig'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
+import { useAgentStore } from '@/stores/agentStore'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/modelProfile'
@@ -92,23 +94,6 @@ export function SessionConfigSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  // 动态 Agent 列表：优先 CLI 获取，降级 PRESET
-  const dynamicAgents = useCliInfoStore(s => s.agents)
-  const agentList = useMemo(() => {
-    const emptyOption = { id: '', name: t('sessionConfig.noAgent'), description: t('sessionConfig.noAgentDesc') }
-    if (dynamicAgents.length > 0) {
-      return [
-        emptyOption,
-        ...dynamicAgents.map(a => ({
-          id: a.id,
-          name: a.name,
-          description: `${a.source === 'plugin' ? t('sessionConfig.pluginSource') : t('sessionConfig.builtinSource')}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
-        }))
-      ]
-    }
-    return PRESET_AGENTS
-  }, [dynamicAgents, t])
-
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
 
@@ -127,6 +112,42 @@ export function SessionConfigSelector({
         : activeEngineId === 'mimo'
           ? 'mimo'
           : 'claude'
+  const isSimpleAiEngine = currentEngine === 'simple-ai'
+  const workspacePath = useWorkspaceStore(st => st.getCurrentWorkspace()?.path)
+  useEffect(() => {
+    if (isSimpleAiEngine && workspacePath) {
+      void useAgentStore.getState().loadSimpleAiAgents(workspacePath)
+    }
+  }, [isSimpleAiEngine, workspacePath])
+
+  // 动态 Agent 列表：claude 引擎优先 CLI 获取，SimpleAI 用两级 discover(项目级+全局 corpus)，降级 PRESET
+  const dynamicAgents = useCliInfoStore(s => s.agents)
+  const simpleAiAgents = useAgentStore(s => s.simpleAiAgents)
+  const agentList = useMemo(() => {
+    const emptyOption = { id: '', name: t('sessionConfig.noAgent'), description: t('sessionConfig.noAgentDesc') }
+    if (isSimpleAiEngine) {
+      return [
+        emptyOption,
+        ...simpleAiAgents.map(a => ({
+          id: a.slug,
+          name: `${a.emoji ? a.emoji + ' ' : ''}${a.name}`,
+          description: a.description,
+        })),
+      ]
+    }
+    if (dynamicAgents.length > 0) {
+      return [
+        emptyOption,
+        ...dynamicAgents.map(a => ({
+          id: a.id,
+          name: a.name,
+          description: `${a.source === 'plugin' ? t('sessionConfig.pluginSource') : t('sessionConfig.builtinSource')}${a.defaultModel ? ` · ${a.defaultModel}` : ''}`,
+        }))
+      ]
+    }
+    return PRESET_AGENTS
+  }, [dynamicAgents, simpleAiAgents, isSimpleAiEngine, t])
+
 
   // 模型列表：根据当前选中的 Profile 动态生成。
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：

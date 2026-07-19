@@ -18,28 +18,44 @@ pub(crate) struct SkillEntry {
     pub full_text: String,
 }
 
-/// 扫描 `work_dir/.polaris/skills/<name>/SKILL.md`，返回 skill 列表。
+/// 扫描 skill 目录序列，返回 skill 列表。项目级 `work_dir/.polaris/skills/`
+/// 优先，其次全局 `<DataRoot>/skills/`（同名子目录项目级覆盖全局，P1-7）。
 ///
 /// 仅扫一级子目录（每个子目录一个 skill，含 SKILL.md）。目录不存在时返回空。
 pub(crate) fn discover_skills(work_dir: &str) -> Vec<SkillEntry> {
-    let base = Path::new(work_dir).join(".polaris").join("skills");
+    let dirs = vec![
+        Path::new(work_dir).join(".polaris").join("skills"),
+        crate::services::data_root::data_root().root().join("skills"),
+    ];
+    discover_skills_in(&dirs)
+}
+
+fn discover_skills_in(dirs: &[std::path::PathBuf]) -> Vec<SkillEntry> {
     let mut skills = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&base) else {
-        return skills;
-    };
-    for entry in entries.flatten() {
-        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
-        }
-        let skill_md = entry.path().join("SKILL.md");
-        if !skill_md.is_file() {
-            continue;
-        }
-        let Ok(content) = std::fs::read_to_string(&skill_md) else {
+    let mut seen = std::collections::HashSet::new();
+    for base in dirs {
+        let Ok(entries) = std::fs::read_dir(base) else {
             continue;
         };
-        if let Some(skill) = parse_skill(&content, &entry.path()) {
-            skills.push(skill);
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let dir_name = entry.file_name().to_string_lossy().to_string();
+            // 前面的目录优先(项目级覆盖全局)
+            if !seen.insert(dir_name) {
+                continue;
+            }
+            let skill_md = entry.path().join("SKILL.md");
+            if !skill_md.is_file() {
+                continue;
+            }
+            let Ok(content) = std::fs::read_to_string(&skill_md) else {
+                continue;
+            };
+            if let Some(skill) = parse_skill(&content, &entry.path()) {
+                skills.push(skill);
+            }
         }
     }
     skills

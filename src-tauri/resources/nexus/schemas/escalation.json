@@ -1,0 +1,37 @@
+{
+  "$id": "escalation",
+  "type": "object",
+  "required": [
+    "schema",
+    "task",
+    "attempts",
+    "recommendation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "escalation"
+    },
+    "task": {
+      "type": "string"
+    },
+    "attempts": {
+      "type": "array"
+    },
+    "root_cause": {
+      "type": "string"
+    },
+    "recommendation": {
+      "enum": [
+        "reassign",
+        "decompose",
+        "revise",
+        "accept",
+        "defer"
+      ]
+    },
+    "impact": {
+      "type": "string"
+    }
+  },
+  "_note": "文档形态;运行时校验为 src-tauri/src/services/nexus_verdict.rs 的必填字段轻量校验,两者须同步维护。qa-verdict 组合 id 在校验层按 schema 字段分派到 qa-pass/qa-fail。"
+}

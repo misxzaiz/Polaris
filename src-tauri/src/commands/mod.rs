@@ -15,6 +15,17 @@ pub mod data_root_cmd;
 #[cfg(feature = "tauri-app")]
 pub use data_root_cmd::{get_data_root_info, scan_legacy_data_cmd, open_path_in_explorer};
 
+pub mod agent_corpus;
+pub mod nexus;
+#[cfg(feature = "tauri-app")]
+pub use nexus::nexus_start_roster;
+
+#[cfg(feature = "tauri-app")]
+pub use agent_corpus::{
+    agent_corpus_catalog, agent_corpus_divisions, agent_corpus_install, agent_corpus_status,
+    agent_corpus_uninstall, simple_ai_list_agents,
+};
+
 pub mod mobile_config;
 #[cfg(feature = "tauri-app")]
 pub use mobile_config::{get_server_config, set_server_config};
