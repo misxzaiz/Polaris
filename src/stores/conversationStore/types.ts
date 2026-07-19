@@ -505,6 +505,16 @@ export interface SessionMetadata {
   /** 会话绑定的模型名（如 'sonnet'、'opus'）。undefined 时发送降级到全局 sessionConfig.model。 */
   model?: string
   /**
+   * 会话绑定的专家 agent slug（L0 用户显式 persona 覆盖）。
+   * - `undefined`：未设置 → 发送时无专家（跟随全局 sessionConfig.agent，通常为空）
+   * - 非空字符串：使用该 corpus/自定义专家人格
+   *
+   * 与 model/modelProfileId 同属「会话级覆盖 + 切换镜像回填」模式：
+   * 状态栏镜像存 useSessionConfig.config.agent（即显），持久化存此字段（切换时回填镜像）。
+   * sessionStoreManager 为内存级（无 persist），重启后会话级 agent 丢失，与 model 行为一致。
+   */
+  agent?: string
+  /**
    * 会话用途标记。
    * - 'commit-message'  = GitPanel 触发的提交信息生成会话，用于回流定位
    * - 'prompt-optimize' = 输入框提示词优化的一次性静默会话（完成后即删除）
@@ -536,6 +546,8 @@ export interface CreateSessionOptions {
   modelProfileId?: string
   /** 会话绑定的模型名（可选，不指定则使用全局默认） */
   model?: string
+  /** 会话绑定的专家 agent slug（可选，不指定则无专家） */
+  agent?: string
   /** 会话用途标记（透传到 SessionMetadata.kind） */
   kind?: 'commit-message' | 'prompt-optimize'
   /** commit-message 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */
@@ -606,6 +618,14 @@ export interface SessionManagerActions {
    * - 传 `null` → 清除会话级覆盖（回到「未设置 → 跟随全局默认」）
    */
   updateSessionModel: (sessionId: string, model: string | null) => void
+  /**
+   * 更新会话绑定的专家 agent slug。
+   * - 传非空字符串 → 写入会话级覆盖（该会话锁定此专家）
+   * - 传 `null` 或空串 → 清除会话级专家覆盖
+   *
+   * 与 updateSessionModel 同构；镜像同步发生在 switchSession（切回该会话时回填 useSessionConfig.agent）。
+   */
+  updateSessionAgent: (sessionId: string, agent: string | null) => void
 
   // ===== Store 访问 =====
   getStore: (sessionId: string) => ConversationStore | undefined

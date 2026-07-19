@@ -236,7 +236,7 @@ export function SessionConfigSelector({
       ...config,
       ...nextConfig,
     })
-    // P1: Profile / Model 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
+    // P1: Profile / Model / Agent 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
     const activeId = sessionStoreManager.getState().activeSessionId
     if (activeId) {
       if (type === 'profile') {
@@ -245,6 +245,9 @@ export function SessionConfigSelector({
         sessionStoreManager.getState().updateSessionModelProfile(activeId, value || OFFICIAL_API_PROFILE)
       } else if (type === 'model') {
         sessionStoreManager.getState().updateSessionModel(activeId, value)
+      } else if (type === 'agent') {
+        // 空值 = 清除专家；非空 = 写入会话级专家覆盖。
+        sessionStoreManager.getState().updateSessionAgent(activeId, value || null)
       }
     }
     setOpenDropdown(null)

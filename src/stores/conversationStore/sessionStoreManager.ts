@@ -177,6 +177,7 @@ function createSessionManagerStore() {
         forkFromId: options.forkFromId,
         modelProfileId: options.modelProfileId,
         model: options.model,
+        agent: options.agent,
         kind: options.kind,
         commitWorkspaceId: options.commitWorkspaceId,
       }
@@ -400,6 +401,9 @@ function createSessionManagerStore() {
 
         // 会话级模型镜像：有覆盖时用之，未设置时清空（让状态栏反映全局默认）。
         useSessionConfig.getState().setModel(targetMetadata.model ?? '')
+
+        // 会话级专家镜像：有覆盖时用之，未设置时清空（让状态栏反映无专家）。
+        useSessionConfig.getState().setAgent(targetMetadata.agent ?? '')
       }
 
       log.info('切换会话', { sessionId })
@@ -505,6 +509,27 @@ function createSessionManagerStore() {
       })
 
       log.info('更新会话模型', { sessionId, model })
+    },
+
+    updateSessionAgent: (sessionId, agent) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          // null / 空串 = 清除会话级专家覆盖；非空字符串原样保留。
+          agent: agent && agent.length > 0 ? agent : undefined,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话专家', { sessionId, agent })
     },
 
     makeSessionVisible: (sessionId: string) => {
@@ -921,6 +946,7 @@ const cachedActions = {
   get updateSessionEngine() { return sessionStoreManager.getState().updateSessionEngine },
   get updateSessionModelProfile() { return sessionStoreManager.getState().updateSessionModelProfile },
   get updateSessionModel() { return sessionStoreManager.getState().updateSessionModel },
+  get updateSessionAgent() { return sessionStoreManager.getState().updateSessionAgent },
   get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },
   get addToBackground() { return sessionStoreManager.getState().addToBackground },
   get removeFromBackground() { return sessionStoreManager.getState().removeFromBackground },

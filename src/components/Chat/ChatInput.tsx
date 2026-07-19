@@ -45,7 +45,7 @@ import type { SkillItem } from '@/types/skill'
 import { McpServerItem } from './FileSuggestion'
 import { useSkillStore } from '@/stores/skillStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
-import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager'
+import { useActiveSessionId, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { resolveSessionEngine } from '@/stores/conversationStore/conversationStoreUtils'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'
@@ -1055,6 +1055,12 @@ export function ChatInput({
         }))
       } else {
         useSessionConfig.getState().setAgent(agentCmd.slug ?? '')
+        // P1: 专家是会话级 persona 覆盖 — 写入当前会话 metadata，实现窗口间隔离。
+        // 镜像（useSessionConfig）用于状态栏即显 + 发送时透传；metadata 用于切换会话时回填镜像。
+        // 与 SessionConfigSelector 的 model/modelProfileId 双写模式对齐。
+        if (activeSessionId) {
+          sessionStoreManager.getState().updateSessionAgent(activeSessionId, agentCmd.slug ?? null)
+        }
         useToastStore.getState().info('/agent', agentCmd.slug
           ? t('chat:agentCmd.set', { defaultValue: '当前专家已设为 {{slug}}', slug: agentCmd.slug, interpolation: { escapeValue: false } })
           : t('chat:agentCmd.cleared', '已清除当前专家'))
