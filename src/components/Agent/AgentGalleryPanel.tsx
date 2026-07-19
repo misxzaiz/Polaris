@@ -77,38 +77,35 @@ function AgentCard({
 
   return (
     <div
-      className={`flex h-full flex-col rounded-lg border p-3 transition-colors ${
-        isCurrent ? 'border-primary/60 bg-primary/5' : 'border-border-subtle hover:border-border'
+      className={`group flex h-full flex-col rounded-md border p-3 transition-colors ${
+        isCurrent ? 'border-primary/40 bg-primary/[0.03]' : 'border-border-subtle hover:border-border'
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className="text-lg leading-none">{agent.emoji || '🤖'}</span>
-        <span className="truncate text-sm font-medium" title={agent.name}>
+        <span className="text-sm font-medium truncate text-text-primary" title={agent.name}>
           {agent.name}
         </span>
         <span className="ml-auto shrink-0 text-[10px] text-text-muted">{divisionLabel}</span>
       </div>
-      <p className="mt-2 line-clamp-2 flex-1 text-xs leading-relaxed text-text-muted" title={agent.description}>
+      <p className="mt-1 line-clamp-2 flex-1 text-xs leading-relaxed text-text-tertiary" title={agent.description}>
         {agent.description}
       </p>
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2 flex items-center gap-1">
         <button
           type="button"
           onClick={() => {
             const next = isCurrent ? '' : agent.slug;
             setAgent(next);
-            // P1: 专家会话级隔离 — 同步写入当前会话 metadata，切换会话时回填镜像。
-            // 与 ChatInput 的 /agent 命令、SessionConfigSelector 的 model 双写模式对齐。
             const sid = sessionStoreManager.getState().activeSessionId;
             if (sid) {
               sessionStoreManager.getState().updateSessionAgent(sid, next || null);
             }
           }}
           title={isCurrent ? '退出当前会话' : '以该专家身份参与当前会话'}
-          className={`flex items-center gap-1 rounded-md border px-2 py-1 text-xs transition-colors ${
+          className={`flex items-center gap-1 rounded px-2 py-1 text-[11px] transition-colors ${
             isCurrent
-              ? 'border-primary/60 text-primary'
-              : 'border-border-subtle text-text-secondary hover:border-border hover:text-text-primary'
+              ? 'border-primary/40 text-primary border'
+              : 'border border-border-subtle text-text-secondary hover:border-border hover:text-text-primary'
           }`}
         >
           <UserCheck size={12} />
@@ -118,9 +115,9 @@ function AgentCard({
           type="button"
           onClick={handleDispatch}
           title="派发后台任务(填入 /dispatch 命令)"
-          className="flex items-center gap-1 rounded-md border border-border-subtle px-2 py-1 text-xs text-text-secondary transition-colors hover:border-border hover:text-text-primary"
+          className="flex items-center gap-1 rounded border border-border-subtle px-2 py-1 text-[11px] text-text-muted transition-colors hover:border-border hover:text-text-secondary"
         >
-          <Send size={12} />
+          <Send size={11} />
           派发
         </button>
         {!agent.custom && (
@@ -128,18 +125,18 @@ function AgentCard({
             type="button"
             onClick={() => onForkCorpus(agent)}
             title="复制为自定义专家(可改编 prompt)"
-            className="ml-auto rounded p-1 text-text-muted hover:text-text-primary"
+            className="ml-auto rounded p-1 text-text-muted opacity-0 group-hover:opacity-100 transition-opacity hover:text-text-secondary"
           >
             <Pencil size={12} />
           </button>
         )}
         {agent.custom && (
-          <span className="ml-auto flex gap-1">
+          <span className="ml-auto flex gap-0.5">
             <button
               type="button"
               onClick={() => onEdit(agent.custom!)}
               title="编辑"
-              className="rounded p-1 text-text-muted hover:text-text-primary"
+              className="rounded p-1 text-text-muted hover:text-text-secondary"
             >
               <Pencil size={12} />
             </button>
@@ -208,7 +205,7 @@ function CustomAgentEditor({
     }
   };
 
-  const field = 'w-full rounded-md border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none focus:border-primary/60';
+  const field = 'w-full rounded border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-text-muted focus:border-primary/50';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
@@ -257,13 +254,13 @@ function CustomAgentEditor({
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded-md border border-border-subtle px-3 py-1.5 text-xs" onClick={onClose}>
+          <button type="button" className="rounded border border-border-subtle px-3 py-1.5 text-xs" onClick={onClose}>
             取消
           </button>
           <button
             type="button"
             disabled={saving || !slugValid || !form.name.trim() || !form.systemPrompt.trim()}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            className="rounded bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
             onClick={() => void submit()}
           >
             {saving ? '保存中…' : '保存'}
@@ -279,8 +276,15 @@ function CustomAgentEditor({
 // ============================================================================
 
 const ACTIVATION_LABEL: Record<string, string> = {
-  always: '核心团队 · 立即出场',
-  'week 3+': '成长阶段 · 首波完成后按需',
+  always: '核心团队',
+  'week 3+': '成长阶段',
+  'as needed': '按需支援',
+  'post-fix': '修复复验',
+};
+
+const ACTIVATION_HINT: Record<string, string> = {
+  always: '立即出场',
+  'week 3+': '首波完成后按需',
   'as needed': '按需支援',
   'post-fix': '修复后复验',
 };
@@ -317,13 +321,16 @@ function RosterCard({ roster }: { roster: RosterDef }) {
     }
   };
 
+  const coreGroup = roster.groups.find((g) => g.activation === 'always');
+  const coreCount = coreGroup?.members.length ?? 0;
+  const totalMembers = roster.groups.reduce((n, g) => n + g.members.length, 0);
+
   return (
-    <div className="rounded-lg border border-border-subtle p-3">
+    <div className="rounded-md border border-border-subtle p-3">
       <div className="flex items-center gap-2">
-        <span className="text-base">{roster.custom ? '🧩' : '🚀'}</span>
-        <span className="text-sm font-medium">{roster.title}</span>
-        {roster.custom && <span className="rounded-full border border-border-subtle px-1.5 text-[10px] text-text-muted">自建</span>}
-        <span className="ml-auto text-[10px] text-text-muted">{roster.mode} · {roster.duration}</span>
+        <span className="text-sm font-medium text-text-primary">{roster.title}</span>
+        {roster.custom && <span className="rounded border border-border-subtle px-1 text-[10px] text-text-muted">自建</span>}
+        <span className="ml-auto text-[10px] text-text-muted">{roster.mode} · {roster.duration} · {totalMembers} 人</span>
         {roster.custom && (
           <button
             type="button"
@@ -341,13 +348,12 @@ function RosterCard({ roster }: { roster: RosterDef }) {
           </button>
         )}
       </div>
-      <p className="mt-1.5 text-xs leading-relaxed text-text-muted">{roster.summary}</p>
+      <p className="mt-1 text-xs leading-relaxed text-text-tertiary">{roster.summary}</p>
 
       {roster.groups.map((g) => (
-        <div key={g.group} className="mt-2.5">
-          <div className="text-[11px] text-text-muted">
-            {ACTIVATION_LABEL[g.activation] ?? g.activation}
-            <span className="ml-1">({g.members.length})</span>
+        <div key={g.group} className="mt-2">
+          <div className="text-[10px] text-text-muted">
+            {ACTIVATION_LABEL[g.activation] ?? g.activation} · {ACTIVATION_HINT[g.activation] ?? ''} ({g.members.length} 人)
           </div>
           <div className="mt-1 flex flex-wrap gap-1">
             {g.members.map((slug) => {
@@ -356,9 +362,9 @@ function RosterCard({ roster }: { roster: RosterDef }) {
                 <span
                   key={slug}
                   title={a ? `${a.name} — ${a.description}` : slug}
-                  className="rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-text-secondary"
+                  className="rounded border border-border-subtle px-2 py-0.5 text-[11px] text-text-secondary"
                 >
-                  {a?.emoji || '🤖'} {a?.name ?? slug}
+                  {a?.name ?? slug}
                 </span>
               );
             })}
@@ -372,19 +378,19 @@ function RosterCard({ roster }: { roster: RosterDef }) {
           onChange={(e) => setGoal(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && void launch()}
           placeholder="团队目标,如:做一个记账 App 的 MVP…"
-          className="min-w-0 flex-1 rounded-md border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none focus:border-primary/60"
+          className="min-w-0 flex-1 rounded border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-text-muted focus:border-primary/50"
         />
         <button
           type="button"
           disabled={launching}
           onClick={() => void launch()}
-          className="flex shrink-0 items-center gap-1 rounded-md bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
+          className="flex shrink-0 items-center gap-1 rounded bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
         >
           <Rocket size={12} />
-          {launching ? '组队中…' : '启动专家团'}
+          {launching ? '组队中…' : `启动 · ${coreCount} 人首发`}
         </button>
       </div>
-      <div className="mt-1.5 text-[10px] text-text-muted">
+      <div className="mt-1 text-[10px] text-text-muted">
         仅派发「核心团队」组;每波 ≤3 并行,前波全部结束后自动派发下一波,进度见后台会话列表
       </div>
     </div>
@@ -437,63 +443,73 @@ function PipelineCard({ pipeline }: { pipeline: RosterPipeline }) {
       .catch((e) => useToastStore.getState().error('追派失败', String(e)));
   };
 
+  const isCompleted = pipeline.status === 'completed';
+
   return (
-    <div className="rounded-lg border border-border-subtle p-3">
+    <div className="rounded-md border border-border-subtle p-3">
       <div className="flex items-center gap-2">
-        <span>{pipeline.status === 'completed' ? '✅' : '🚀'}</span>
-        <span className="truncate text-sm font-medium" title={pipeline.goal}>
-          {pipeline.scenario} · {pipeline.goal.slice(0, 30)}{pipeline.goal.length > 30 ? '…' : ''}
+        <span className="truncate text-sm font-medium text-text-primary" title={pipeline.goal}>
+          {pipeline.scenario}
         </span>
-        <span className="ml-auto shrink-0 text-[10px] text-text-muted">
-          {pipeline.status === 'completed' ? '已完成' : `波 ${pipeline.currentWave + 1}/${pipeline.waves.length}`} · {doneCount}/{total}
+        {isCompleted && <span className="rounded border border-success/40 px-1 text-[10px] text-success">已完成</span>}
+        <span className="ml-auto text-[10px] text-text-muted">
+          {isCompleted ? `${doneCount}/${total} 完成` : `波 ${pipeline.currentWave + 1}/${pipeline.waves.length} · ${doneCount}/${total}`}
         </span>
       </div>
-      <div className="mt-1 h-1 overflow-hidden rounded bg-background-secondary">
+      <div className="mt-1 text-[10px] text-text-muted truncate">{pipeline.goal.slice(0, 50)}</div>
+      <div className="mt-2 h-1 overflow-hidden rounded bg-background-secondary">
         <div
           className="h-full rounded bg-primary transition-all"
           style={{ width: `${total ? Math.round((doneCount / total) * 100) : 0}%` }}
         />
       </div>
-      {pipeline.waves.map((wave, i) => (
-        <div key={i} className="mt-2">
-          <div className="text-[11px] text-text-muted">
-            波 {i + 1}
-            {i < pipeline.currentWave && ' · 已回流'}
-            {i === pipeline.currentWave && pipeline.status !== 'completed' && ' · 进行中'}
-            {i > pipeline.currentWave && ' · 等待前波'}
+      {pipeline.waves.map((wave, i) => {
+        const waveDone = wave.filter((slug) => {
+          const st = pipeline.members[slug]?.status;
+          return st === 'completed' || st === 'failed';
+        }).length;
+        const waveActive = i === pipeline.currentWave && !isCompleted;
+        const waveWaiting = i > pipeline.currentWave && !isCompleted;
+        return (
+          <div key={i} className="mt-2">
+            <div className="text-[10px] text-text-muted">
+              波 {i + 1}
+              {waveActive ? ' · 进行中' : waveWaiting ? ' · 等待前波' : ' · 已回流'}
+              <span className="ml-1">{waveDone}/{wave.length}</span>
+            </div>
+            <div className="mt-1 flex flex-wrap gap-1">
+              {wave.map((slug) => {
+                const a = bySlug.get(slug);
+                const st = pipeline.members[slug]?.status ?? 'pending';
+                const meta = MEMBER_STATUS_META[st] ?? MEMBER_STATUS_META.pending;
+                return (
+                  <button
+                    key={slug}
+                    type="button"
+                    onClick={() => openMember(slug)}
+                    title={`${a?.name ?? slug} · ${meta.label}${pipeline.memberSummaries[slug] ? '\n' + pipeline.memberSummaries[slug].slice(0, 120) : ''}`}
+                    className={`rounded border px-2 py-0.5 text-[11px] transition-colors hover:bg-background-hover ${meta.cls}`}
+                  >
+                    {a?.name ?? slug} · {meta.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="mt-1 flex flex-wrap gap-1">
-            {wave.map((slug) => {
-              const a = bySlug.get(slug);
-              const st = pipeline.members[slug]?.status ?? 'pending';
-              const meta = MEMBER_STATUS_META[st] ?? MEMBER_STATUS_META.pending;
-              return (
-                <button
-                  key={slug}
-                  type="button"
-                  onClick={() => openMember(slug)}
-                  title={`${a?.name ?? slug} · ${meta.label}${pipeline.memberSummaries[slug] ? '\n' + pipeline.memberSummaries[slug].slice(0, 120) : ''}`}
-                  className={`rounded-full border px-2 py-0.5 text-[11px] transition-colors hover:bg-background-hover ${meta.cls}`}
-                >
-                  {a?.emoji || '🤖'} {a?.name ?? slug} · {meta.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       {pipeline.loopState && (
-        <div className="mt-2 rounded-md border border-warning/40 bg-warning/[0.06] px-2 py-1.5 text-[11px] text-warning">
-          🔁 Dev↔QA 修复循环:{pipeline.loopState.devSlug}
-          {pipeline.loopState.phase === 'fixing' ? ' 修复中' : ' 修复完毕,QA 复验中'}
+        <div className="mt-2 rounded border border-warning/40 bg-warning/[0.06] px-2 py-1.5 text-[11px] text-warning">
+          Dev↔QA 修复循环: {pipeline.loopState.devSlug}
+          {pipeline.loopState.phase === 'fixing' ? ' 修复中' : ' 复验中'}
           (第 {(pipeline.fixAttempts?.[pipeline.loopState.devSlug] ?? 1)} 轮 / 上限 3)
         </div>
       )}
 
       {pendingEscalations.map((esc) => (
-        <div key={esc.qaSlug} className="mt-2 rounded-md border border-error/40 bg-error-faint/40 px-2 py-1.5 text-[11px]">
+        <div key={esc.qaSlug} className="mt-2 rounded border border-error/40 bg-error-faint/40 px-2 py-1.5 text-[11px]">
           <div className="text-error">
-            ⚠️ 修复重试已达上限({esc.attempts} 轮):{esc.devSlug} 的实现仍未通过 {esc.qaSlug} 复验,需你决策
+            修复重试已达上限({esc.attempts} 轮): {esc.devSlug} 的实现仍未通过 {esc.qaSlug} 复验,需你决策
           </div>
           <div className="mt-1.5 flex gap-2">
             <button
@@ -514,17 +530,17 @@ function PipelineCard({ pipeline }: { pipeline: RosterPipeline }) {
         </div>
       ))}
 
-      {pipeline.status === 'completed' && undispatchedGroups.length > 0 && (
+      {isCompleted && undispatchedGroups.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {undispatchedGroups.map((g) => (
             <button
               key={g.activation}
               type="button"
               onClick={() => handleLaterGroup(g.activation)}
-              className="rounded-md border border-primary/50 px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
+              className="rounded border border-primary/50 px-2 py-1 text-[11px] text-primary hover:bg-primary/5"
               title={g.members.join(', ')}
             >
-              ➕ 追派「{g.activation}」组({g.members.length} 人)
+              追派「{ACTIVATION_LABEL[g.activation] ?? g.activation}」组({g.members.length} 人)
             </button>
           ))}
         </div>
@@ -549,8 +565,8 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
 
   const pool = useMemo(
     () => [
-      ...customAgents.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji ?? '🧩', description: c.description })),
-      ...catalog.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji, description: c.description })),
+      ...customAgents.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji ?? '🧩', description: c.description, division: 'custom' })),
+      ...catalog.map((c) => ({ slug: c.slug, name: c.name, emoji: c.emoji, description: c.description, division: c.division })),
     ],
     [catalog, customAgents],
   );
@@ -578,7 +594,7 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
     }
   };
 
-  const field = 'w-full rounded-md border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none focus:border-primary/60';
+  const field = 'w-full rounded border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-text-muted focus:border-primary/50';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="w-[520px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
@@ -605,16 +621,16 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
                     type="button"
                     title="点击移除"
                     onClick={() => setMembers(members.filter((m) => m !== slug))}
-                    className="rounded-full border border-primary/50 px-2 py-0.5 text-[11px] text-primary"
+                    className="rounded-full border border-border-subtle px-2 py-0.5 text-[11px] text-text-secondary"
                   >
-                    {a?.emoji || '🤖'} {a?.name ?? slug} ✕
+                    {a?.name ?? slug} ✕
                   </button>
                 );
               })}
             </div>
             <input className={field} value={query} placeholder="搜索专家添加(名称/slug/职责)…" onChange={(e) => setQuery(e.target.value)} />
             {matches.length > 0 && (
-              <div className="mt-1 max-h-40 overflow-auto rounded-md border border-border-subtle">
+              <div className="mt-1 max-h-40 overflow-auto rounded border border-border-subtle">
                 {matches.map((a) => (
                   <button
                     key={a.slug}
@@ -625,8 +641,7 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
                     }}
                     className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-background-hover"
                   >
-                    <span>{a.emoji || '🤖'}</span>
-                    <span className="shrink-0">{a.name}</span>
+                    <span className="shrink-0 font-medium">{a.name}</span>
                     <span className="truncate text-[10px] text-text-muted">{a.description}</span>
                   </button>
                 ))}
@@ -635,11 +650,11 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
-          <button type="button" className="rounded-md border border-border-subtle px-3 py-1.5 text-xs" onClick={onClose}>取消</button>
+          <button type="button" className="rounded border border-border-subtle px-3 py-1.5 text-xs" onClick={onClose}>取消</button>
           <button
             type="button"
             disabled={saving || !title.trim() || members.length === 0}
-            className="rounded-md bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
+            className="rounded bg-primary px-3 py-1.5 text-xs text-white disabled:opacity-50"
             onClick={() => void submit()}
           >
             {saving ? '保存中…' : '保存'}
