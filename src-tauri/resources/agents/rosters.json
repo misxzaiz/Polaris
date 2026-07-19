@@ -165,6 +165,66 @@
           ]
         }
       ]
+    },
+    {
+      "slug": "3d-web-project",
+      "title": "3D Web Visualization Project",
+      "mode": "NEXUS-Sprint",
+      "duration": "4-8 weeks",
+      "summary": "End-to-end 3D web visualization product (e.g. Yulong Snow Mountain terrain viewer / digital-twin tour) — GIS data pipeline, 3D scene rendering (Cesium/Three.js), interaction, and performance/quality gates.",
+      "groups": [
+        {
+          "group": "Core Team",
+          "activation": "always",
+          "members": [
+            "agents-orchestrator",
+            "project-manager-senior",
+            "engineering-software-architect",
+            "gis-spatial-data-engineer",
+            "gis-3d-scene-developer",
+            "gis-web-gis-developer",
+            "engineering-senior-developer",
+            "engineering-frontend-developer",
+            "technical-artist",
+            "gis-cartography-designer",
+            "testing-evidence-collector",
+            "testing-reality-checker"
+          ]
+        },
+        {
+          "group": "Hardening & UX",
+          "activation": "post-build",
+          "members": [
+            "testing-performance-benchmarker",
+            "testing-accessibility-auditor",
+            "testing-api-tester",
+            "engineering-code-reviewer",
+            "specialized-workflow-architect",
+            "design-ux-architect",
+            "design-ui-designer"
+          ]
+        },
+        {
+          "group": "Docs & Launch",
+          "activation": "pre-launch",
+          "members": [
+            "engineering-technical-writer",
+            "engineering-devops-automator"
+          ]
+        },
+        {
+          "group": "On Demand",
+          "activation": "as needed",
+          "members": [
+            "design-brand-guardian",
+            "gis-solution-engineer",
+            "gis-spatial-data-scientist",
+            "xr-immersive-developer",
+            "xr-interface-architect",
+            "engineering-rapid-prototyper"
+          ]
+        }
+      ]
     }
   ]
 }

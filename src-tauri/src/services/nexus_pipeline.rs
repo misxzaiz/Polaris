@@ -553,14 +553,27 @@ fn dispatch_pending(
     roles: &HashMap<String, String>,
 ) -> Vec<String> {
     let mut dispatched = Vec::new();
+    // 预读配置:roster 成员按 slug 匹配 DispatchPreset(约定 preset.name == 专家 slug),
+    // 命中则把 slug 作为 role 传入,由 register_dispatch_task 应用 preset 的引擎/模型/profile/权限;
+    // 未命中保持 role=None,继承来源会话(与改造前行为一致)。
+    let config = state.clone_config().unwrap_or_default();
     for slug in pipeline.current_wave_pending() {
+        let role = config
+            .dispatch
+            .presets
+            .iter()
+            .find(|p| p.name.eq_ignore_ascii_case(slug.as_str()))
+            .map(|_| slug.clone());
+        if role.is_some() {
+            tracing::info!("[Nexus] 成员 {slug} 命中 DispatchPreset,按预设应用引擎/模型");
+        }
         let params = super::ask_listener::DispatchTaskParams {
             source_session_id: pipeline.source_session_id.clone(),
             prompt: build_member_prompt(pipeline, &slug, roles),
             title: Some(format!("NEXUS·{slug}")),
             work_dir: pipeline.work_dir.clone(),
             engine_id: None,
-            role: None,
+            role,
             provider: None,
             model: None,
             dispatch_id: None,

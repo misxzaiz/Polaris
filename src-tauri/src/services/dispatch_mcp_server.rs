@@ -270,7 +270,7 @@ fn handle_tools_list() -> Value {
                     "background sessions in topological waves (<=3 concurrent; next wave ",
                     "auto-dispatches when the previous wave finishes). Scenarios: ",
                     "startup-mvp | enterprise-feature | marketing-campaign | ",
-                    "incident-response. Returns { rosterId, waves, dispatchedNow }; track ",
+                    "incident-response | 3d-web-project. Returns { rosterId, waves, dispatchedNow }; track ",
                     "members with check_dispatched_task."
                 ),
                 "inputSchema": {
@@ -279,7 +279,7 @@ fn handle_tools_list() -> Value {
                     "properties": {
                         "scenario": {
                             "type": "string",
-                            "enum": ["startup-mvp", "enterprise-feature", "marketing-campaign", "incident-response"],
+                            "enum": ["startup-mvp", "enterprise-feature", "marketing-campaign", "incident-response", "3d-web-project"],
                             "description": "Roster scenario slug."
                         },
                         "goal": {
