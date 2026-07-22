@@ -166,6 +166,36 @@ git push origin vx.x.x
 
 ---
 
+## v10.1.8 构建记录
+
+**构建时间**: 2026-07-23 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.1.8
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.1.8_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.1.8_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.1.8_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.1.8-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.1.8_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.1.8-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.1.8-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.1.8-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- 修复 Web/HTTP 模式下专家 corpus 资源目录解析回退到编译期 `CARGO_MANIFEST_DIR` 导致部署机 catalog 加载失败（os error 3）；`resolve_resources_agents_dir` 增加可执行文件同目录与铺平结构兜底，`ipc.rs` 桥接统一传入 `resource_dir`
+- 注册 Agnes 多模态卡片（`generate_image` / `generate_video` / `query_video`），manifest 与 builtinPlugins 同步登记 `media-card`
+
+---
+
 ## v10.1.7 构建记录
 
 **构建时间**: 2026-07-20 (UTC)
