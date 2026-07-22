@@ -213,10 +213,16 @@ pub async fn handle_get_history(
 pub struct AnswerQuestionRequest {
     pub session_id: String,
     pub call_id: String,
-    /// 新版字段：多题答案数组
+    /// 嵌套形态：与 Tauri 命令 `answer_question(.., answer: QuestionAnswer)` 参数对齐。
+    /// 前端 `invoke('answer_question', { sessionId, callId, answer: { answers, declined } })`
+    /// 经 httpTransport 整体作为 body POST，`answers`/`declined` 嵌在 `answer` 里。
+    /// 若不兼容此字段，Web 模式下 `req.answers` 恒为空，回填 MCP companion 的 selected 恒为 []。
+    #[serde(default)]
+    pub answer: Option<crate::state::QuestionAnswer>,
+    /// 扁平兼容字段：直发的多题答案数组
     #[serde(default)]
     pub answers: Vec<crate::state::SubAnswer>,
-    /// 新版字段：是否整体跳过
+    /// 扁平兼容字段：是否整体跳过
     #[serde(default)]
     pub declined: bool,
     // ===== 兼容字段：旧版单题 payload =====
@@ -235,22 +241,42 @@ pub async fn handle_answer_question(
     validate_session_id(&req.session_id)?;
     validate_entity_id(&req.call_id, "callId")?;
 
-    // 兼容旧版单题 payload：把顶层 selected/customInput 包装成 answers[0]
-    let answers = if !req.answers.is_empty() {
-        req.answers
+    // 优先取嵌套 `answer`（Web 端 httpTransport 把 invoke args 整体作为 body 发送，
+    // 与 Tauri 命令 `answer_question(.., answer: QuestionAnswer)` 参数结构一致）。
+    // 再回退到扁平 `answers`/`declined`，最后回退到旧版单题 `selected`/`customInput`。
+    let (answers, declined) = if let Some(answer) = req.answer {
+        if !answer.answers.is_empty() {
+            (answer.answers, answer.declined)
+        } else if let Some(selected) = req.selected {
+            (
+                vec![crate::state::SubAnswer {
+                    selected,
+                    custom_input: req.custom_input,
+                    declined: false,
+                }],
+                answer.declined,
+            )
+        } else {
+            (Vec::new(), answer.declined)
+        }
+    } else if !req.answers.is_empty() {
+        (req.answers, req.declined)
     } else if req.selected.is_some() || req.custom_input.is_some() {
-        vec![crate::state::SubAnswer {
-            selected: req.selected.unwrap_or_default(),
-            custom_input: req.custom_input,
-            declined: false,
-        }]
+        (
+            vec![crate::state::SubAnswer {
+                selected: req.selected.unwrap_or_default(),
+                custom_input: req.custom_input,
+                declined: false,
+            }],
+            req.declined,
+        )
     } else {
-        Vec::new()
+        (Vec::new(), req.declined)
     };
 
     let answer = QuestionAnswer {
         answers,
-        declined: req.declined,
+        declined,
     };
     let call_id = req.call_id;
 
