@@ -249,8 +249,10 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       maybeAutoMigrateOpfs(),
     );
 
-    // Agency Agents corpus 自动安装/升级（幂等，后台静默；仅桌面端命令可用）
-    if (currentMode === 'tauri') {
+    // Agency Agents corpus 自动安装/升级（幂等，后台静默）
+    // 桌面端(tauri)与 Web 端(http)均触发:Web 端 ipc.rs 已桥接 corpus_*_inner,
+    // 服务端 data_root 可写时安装到全局,多用户共享只读词典(幂等,失败静默不阻塞启动)
+    if (currentMode === 'tauri' || currentMode === 'http') {
       void import('@/services/tauri/agentCorpusService')
         .then(({ ensureCorpusInstalled }) => ensureCorpusInstalled())
         .then((status) => {
