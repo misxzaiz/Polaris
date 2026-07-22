@@ -252,21 +252,21 @@ pub async fn handle_answer_question(
         answers,
         declined: req.declined,
     };
-    let (call_id, session_id) = (req.call_id, req.session_id);
+    let call_id = req.call_id;
 
-    {
+    let backend_session_id = {
         let mut pending = state.lock_pending_questions()?;
         let Some(question) = pending.get(&call_id) else {
             return Err(WebError::NotFound(format!("No pending question found for callId: {}", call_id)));
         };
-        if question.session_id != session_id {
-            return Err(WebError::BadRequest(format!(
-                "session_id mismatch: expected {}, got {}",
-                question.session_id, session_id
-            )));
-        }
+        // call_id 是 pending 表的强主键，足以唯一确定这条待回答问题；
+        // 不再比对前端传入的 sessionId —— Web 模式前端 sessionId 是本地 UUID，
+        // 与后端 MCP 引擎会话 ID 必然不同，强制比对会导致提交永远 400。
+        // 改用 pending 表里真实的后端 sessionId 作为后续事件回路的会话标识。
+        let backend_sid = question.session_id.clone();
         pending.remove(&call_id);
-    }
+        backend_sid
+    };
 
     // 通过 ask_listener oneshot 将答案推回 MCP companion（如果存在）。
     if let Some(entry) = state.take_ask_answer_sender(&call_id) {
@@ -282,7 +282,7 @@ pub async fn handle_answer_question(
     let first = answer.answers.first().cloned().unwrap_or_default();
     let event = serde_json::json!({
         "type": "question_answered",
-        "sessionId": session_id,
+        "sessionId": backend_session_id,
         "questionId": call_id,
         "callId": call_id,  // 兼容字段
         "answers": answer.answers,
@@ -294,7 +294,7 @@ pub async fn handle_answer_question(
         },
     });
 
-    let routed_event = wrap_session_routed_event(&session_id, event);
+    let routed_event = wrap_session_routed_event(&backend_session_id, event);
     dual_emit(&state, &routed_event);
 
     Ok(ok_response())

@@ -1483,7 +1483,7 @@ async fn health_check_version_matches_crate() {
 // ============================================================================
 
 #[tokio::test]
-async fn answer_question_rejects_session_id_mismatch() {
+async fn answer_question_does_not_reject_session_id_mismatch() {
     let state = create_test_state();
     state.pending_questions.lock().unwrap().insert(
         "call-mismatch".to_string(),
@@ -1501,11 +1501,13 @@ async fn answer_question_rejects_session_id_mismatch() {
         ))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::BAD_REQUEST);
+    // call_id 是 pending 表的强主键，sessionId 比对仅用于校验而非路由——
+    // Web 模式下前端 sessionId 与后端 MCP 引擎会话 ID 必然不同，因此不再校验。
+    assert_eq!(res.status(), StatusCode::OK);
 
-    // Entry should NOT be removed on mismatch
+    // Entry should be removed after answering
     let pending = state.pending_questions.lock().unwrap();
-    assert!(pending.get("call-mismatch").is_some());
+    assert!(pending.get("call-mismatch").is_none());
 }
 
 #[tokio::test]

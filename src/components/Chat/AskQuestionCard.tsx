@@ -17,6 +17,7 @@ import { clsx } from 'clsx';
 import { Check, HelpCircle, CheckCircle, X, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
 import { invoke } from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
+import { useToastStore } from '@/stores/toastStore';
 import { Button } from '../Common/Button';
 import type { QuestionBlock, QuestionItem, QuestionOption, SubAnswer } from '@/types';
 
@@ -228,6 +229,10 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
         log.error(
           '提交答案失败:',
           error instanceof Error ? error : new Error(String(error))
+        );
+        useToastStore.getState().error(
+          t('question.submitFailed', '提交失败'),
+          error instanceof Error ? error.message : String(error)
         );
       } finally {
         dispatch({ type: 'END_SUBMIT' });
