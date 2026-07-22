@@ -140,6 +140,17 @@ export function registerBuiltinPlugins(): void {
     },
     () => import('@/plugins/prd-preview/PrdPreviewCard').then((m) => ({ default: m.PrdPreviewCard })),
   )
+  // Agnes 多模态：mcp__polaris-agnes__generate_image / generate_video / query_video
+  chatCardRegistry.registerBuiltin(
+    'polaris.agnes',
+    {
+      id: 'media-card',
+      mcpServerId: 'polaris-agnes',
+      tools: ['generate_image', 'generate_video', 'query_video'],
+      mode: 'result',
+    },
+    () => import('@/plugins/agnes/AgnesMediaCard').then((m) => ({ default: m.AgnesMediaCard })),
+  )
 }
 
 registerBuiltinPlugins()

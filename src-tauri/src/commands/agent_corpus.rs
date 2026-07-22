@@ -9,21 +9,47 @@
 //! 资源目录解析:打包态用 tauri `resource_dir()`(bundle.resources 含
 //! `resources/agents`),开发态回退 `CARGO_MANIFEST_DIR/resources/agents`。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::Result;
 use crate::services::agent_corpus::{self, CatalogEntry, CorpusStatus};
 use crate::services::data_root::data_root;
 
 /// 解析内置 corpus 资源目录(共享实现,resource_dir 由调用层传入)
+///
+/// 解析顺序:
+/// 1. `resource_dir/resources/agents`(Tauri bundle.resources 保留相对结构,
+///    Web 模式由 `lib.rs` 把 resource_dir 设为可执行文件目录)
+/// 2. `resource_dir/agents`(部分打包脚本把 resources 下子目录铺平)
+/// 3. 可执行文件同目录 `resources/agents`(可移植部署兜底,脱离编译目录)
+/// 4. `CARGO_MANIFEST_DIR/resources/agents`(仅开发态命中)
 pub fn resolve_resources_agents_dir(resource_dir: Option<PathBuf>) -> PathBuf {
+    let probe = |dir: &Path| dir.join("corpus-manifest.json").exists();
     if let Some(res) = resource_dir {
-        // bundle.resources 的 "resources/agents" 在 resource_dir 下保持相对路径
         let bundled = res.join("resources").join("agents");
-        if bundled.join("corpus-manifest.json").exists() {
+        if probe(&bundled) {
             return bundled;
         }
+        let flat = res.join("agents");
+        if probe(&flat) {
+            return flat;
+        }
     }
+    // 可执行文件同目录兜底:支持脱离编译目录的可移植部署
+    //(Web 独立部署、绿色版桌面应用),避免落到开发机绝对路径
+    if let Some(exe) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
+        for base in [exe.join("resources"), exe.join("_up_/resources"), exe.clone()] {
+            let bundled = base.join("agents");
+            if probe(&bundled) {
+                return bundled;
+            }
+        }
+        let flat = exe.join("agents");
+        if probe(&flat) {
+            return flat;
+        }
+    }
+    // 仅开发态命中
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("agents")

@@ -34,6 +34,14 @@ export const agnesPluginManifest: PolarisPluginManifest = {
         argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
       },
     ],
+    chatCards: [
+      {
+        id: 'media-card',
+        mcpServerId: 'polaris-agnes',
+        tools: ['generate_image', 'generate_video', 'query_video'],
+        mode: 'result',
+      },
+    ],
   },
   permissions: {
     network: true,
