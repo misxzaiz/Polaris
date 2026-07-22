@@ -412,6 +412,8 @@ export function initDispatchTaskListener(): () => void {
 export interface ParsedDispatchCommand {
   role?: string
   prompt: string
+  /** 专家人格 body(自定义专家前端注入;corpus 专家由后端按 role 注入,不填) */
+  appendSystemPrompt?: string
 }
 
 /**
@@ -459,6 +461,7 @@ export async function dispatchFromUser(parsed: ParsedDispatchCommand): Promise<b
     const task = await invoke<DispatchTaskRequestEvent>('dispatch_create_task', {
       prompt: parsed.prompt,
       role: parsed.role,
+      appendSystemPrompt: parsed.appendSystemPrompt,
       sourceSessionId,
     })
     // DispatchedTask（serde camelCase）与 DispatchTaskRequestEvent 字段兼容

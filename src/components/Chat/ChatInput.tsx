@@ -1084,12 +1084,21 @@ export function ChatInput({
             ...agentState.customAgents.map((c) => ({
               slug: c.slug, name: c.name, description: c.description,
               emoji: c.emoji ?? undefined, filePath: c.filePath,
+              systemPrompt: c.systemPrompt,
             })),
             ...agentState.catalog,
           ],
           agentState.status?.installDir ?? null,
         )
-        if (rewrite) dispatchCmd.prompt = rewrite.prompt
+        if (rewrite) {
+          dispatchCmd.prompt = rewrite.prompt
+          // slug 作为 role 传后端:corpus 专家由后端读人格注入;
+          // 自定义专家(systemPrompt 非空)由前端经 appendSystemPrompt 注入
+          dispatchCmd.role = rewrite.slug
+          if (rewrite.systemPrompt) {
+            dispatchCmd.appendSystemPrompt = rewrite.systemPrompt
+          }
+        }
       }
       void dispatchFromUser(dispatchCmd)
       cancelPersistDraft()

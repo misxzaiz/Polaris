@@ -388,6 +388,18 @@ fn agents_install_dir() -> PathBuf {
     crate::services::data_root::data_root().root().join("agents")
 }
 
+/// 读取专家 corpus 人格 body,作为 system prompt 注入派发会话。
+/// 复用 agent_corpus::load_claude_agent_def(解析 frontmatter + body system prompt);
+/// 命中失败返回 None(未安装或无该 slug),调用方回退默认行为。
+fn load_agent_persona(slug: &str) -> Option<String> {
+    let install_dir = agents_install_dir();
+    let (_s, _desc, body) = crate::services::agent_corpus::load_claude_agent_def(&install_dir, slug)?;
+    if body.trim().is_empty() {
+        return None;
+    }
+    Some(body)
+}
+
 fn load_roles() -> HashMap<String, String> {
     let path = agents_install_dir().join("agent-roles.json");
     std::fs::read_to_string(path)
@@ -405,14 +417,12 @@ fn load_roles() -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-/// 成员派发 prompt:人格文件引用 + 场景目标 + 前波产出提示
+/// 成员派发 prompt:团队目标 + 前波产出提示(人格已注入 system prompt,不在此重复)
 fn build_member_prompt(pipeline: &RosterPipeline, slug: &str, roles: &HashMap<String, String>) -> String {
-    let corpus_file = agents_install_dir().join("corpus").join(format!("{slug}.md"));
     let mut prompt = format!(
-        "你将以专家「{slug}」的身份参与场景「{scenario}」的团队协作。开始前先读取该专家定义并遵循其中的人格、使命与规则:{file}\n\n团队目标:\n{goal}\n\n只做你职责范围内的部分,交付时给出简明的成果摘要。",
+        "你将以专家「{slug}」的身份参与场景「{scenario}」的团队协作。你的专家人格(使命、规则、交付标准)已在系统提示词中注入,严格遵循其中定义。\n\n团队目标:\n{goal}\n\n只做你职责范围内的部分,交付时给出简明的成果摘要。",
         slug = slug,
         scenario = pipeline.scenario,
-        file = corpus_file.display(),
         goal = pipeline.goal,
     );
     let finished = pipeline.finished_summary_slugs();
@@ -567,6 +577,13 @@ fn dispatch_pending(
         if role.is_some() {
             tracing::info!("[Nexus] 成员 {slug} 命中 DispatchPreset,按预设应用引擎/模型");
         }
+        // 专家人格内联注入 system prompt(不再依赖"模型自己去读文件")
+        let persona = load_agent_persona(&slug);
+        if persona.is_some() {
+            tracing::info!("[Nexus] 成员 {slug} 专家人格已注入 system prompt");
+        } else {
+            tracing::warn!("[Nexus] 成员 {slug} 未找到 corpus 人格,回退默认行为(建议先安装 corpus)");
+        }
         let params = super::ask_listener::DispatchTaskParams {
             source_session_id: pipeline.source_session_id.clone(),
             prompt: build_member_prompt(pipeline, &slug, roles),
@@ -579,6 +596,7 @@ fn dispatch_pending(
             dispatch_id: None,
             result_schema: member_result_schema(&slug, roles),
             roster_id: Some(pipeline.id.clone()),
+            append_system_prompt: persona,
         };
         match super::ask_listener::register_dispatch_task(state, params) {
             Ok(task) => {

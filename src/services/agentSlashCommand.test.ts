@@ -33,27 +33,38 @@ describe('parseAgentSlashCommand', () => {
 });
 
 describe('rewriteDispatchPromptWithAgent', () => {
-  it('rewrites when first token is a known slug', () => {
+  it('returns slug + pure task when first token is a known slug', () => {
     const r = rewriteDispatchPromptWithAgent(
       'engineering-frontend-developer 实现结算页表单',
       CATALOG,
       'D:/data/agents',
     );
     expect(r).not.toBeNull();
-    expect(r!.prompt).toContain('前端开发者');
-    expect(r!.prompt).toContain('D:/data/agents/corpus/engineering-frontend-developer.md');
-    expect(r!.prompt).toContain('实现结算页表单');
+    expect(r!.slug).toBe('engineering-frontend-developer');
+    // prompt 仅保留任务文本,不再内联人格/文件路径(由后端注入 system prompt)
+    expect(r!.prompt).toBe('实现结算页表单');
+    expect(r!.prompt).not.toContain('corpus/');
     expect(r!.title).toContain('前端开发者');
   });
 
-  it('falls back to description when installDir unknown', () => {
+  it('works without installDir (corpus slug still returned for backend injection)', () => {
     const r = rewriteDispatchPromptWithAgent(
       'engineering-frontend-developer 做点事',
       CATALOG,
       null,
     );
-    expect(r!.prompt).toContain('React/Vue UI 实现');
-    expect(r!.prompt).not.toContain('corpus/');
+    expect(r!.slug).toBe('engineering-frontend-developer');
+    expect(r!.prompt).toBe('做点事');
+    expect(r!.systemPrompt).toBeUndefined();
+  });
+
+  it('passes through custom agent systemPrompt', () => {
+    const r = rewriteDispatchPromptWithAgent(
+      'my-custom-agent 干活',
+      [{ slug: 'my-custom-agent', name: '自定义', description: 'd', systemPrompt: '你是自定义专家' }],
+      null,
+    );
+    expect(r!.systemPrompt).toBe('你是自定义专家');
   });
 
   it('returns null for unknown slug or missing task', () => {

@@ -626,6 +626,7 @@ fn dispatch_create_dispatch_task(
         dispatch_id: None,
         result_schema: opt_str("resultSchema"),
         roster_id: None,
+        append_system_prompt: opt_str("appendSystemPrompt"),
     };
     let task = crate::commands::dispatch::create_dispatch_task_impl(state, params)
         .map_err(|e| WebError::BadRequest(e.to_message()))?;

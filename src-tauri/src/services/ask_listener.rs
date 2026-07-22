@@ -454,6 +454,9 @@ pub struct DispatchTaskParams {
     pub result_schema: Option<String>,
     /// NEXUS roster 流水线 id（P2-5，仅内部派发路径设置）
     pub roster_id: Option<String>,
+    /// 调用方显式注入的 system prompt（专家人格 body 等）。
+    /// 优先级最高:覆盖 preset.append_system_prompt,result_schema 注入在其后追加。
+    pub append_system_prompt: Option<String>,
 }
 
 impl DispatchTaskParams {
@@ -487,6 +490,7 @@ impl DispatchTaskParams {
             dispatch_id: opt_str("dispatchId"),
             result_schema: opt_str("resultSchema"),
             roster_id: None,
+            append_system_prompt: opt_str("appendSystemPrompt"),
         }
     }
 }
@@ -606,24 +610,51 @@ pub fn register_dispatch_task(
     let mut engine_id = params.engine_id.clone();
     let mut model = params.model.clone();
     let mut model_profile_id: Option<String> = None;
-    let mut append_system_prompt: Option<String> = None;
     let mut permission_mode: Option<String> = None;
     let mut role: Option<String> = None;
 
+    // system prompt 三来源合并(优先级: params 显式人格 > preset > result_schema 追加)
+    let mut append_system_prompt: Option<String> = params.append_system_prompt.clone();
+
     if let Some(role_name) = params.role.as_deref() {
-        let preset = resolve_dispatch_preset(&config, role_name)?;
-        role = Some(preset.name.clone());
-        engine_id = Some(preset.engine_id.clone());
-        model_profile_id = preset.model_profile_id.clone();
-        // 预设内 model 为基准，显式 model 参数可细调覆盖
-        model = params.model.clone().or(preset.model.clone());
-        append_system_prompt = preset.append_system_prompt.clone();
-        permission_mode = preset.permission_mode.clone();
+        // role 可能是 DispatchPreset 名(队员预设)或 corpus 专家 slug(/dispatch <slug>)。
+        // 命中 preset → 应用其引擎/模型/profile/权限;未命中 → 当 corpus slug 读人格注入,
+        // 引擎/模型继承来源会话(不报错,兼容单人专家派发)。
+        match resolve_dispatch_preset(&config, role_name) {
+            Ok(preset) => {
+                role = Some(preset.name.clone());
+                engine_id = Some(preset.engine_id.clone());
+                model_profile_id = preset.model_profile_id.clone();
+                model = params.model.clone().or(preset.model.clone());
+                permission_mode = preset.permission_mode.clone();
+                if append_system_prompt.is_none() {
+                    append_system_prompt = preset.append_system_prompt.clone();
+                }
+            }
+            Err(_) => {
+                // 未命中 preset:尝试当 corpus 专家 slug 读人格注入。
+                // 路径与 nexus_pipeline::load_agent_persona 同构,复用 agent_corpus 解析。
+                let install_dir = crate::services::data_root::data_root().root().join("agents");
+                if let Some((_s, _desc, body)) =
+                    crate::services::agent_corpus::load_claude_agent_def(&install_dir, role_name)
+                {
+                    if !body.trim().is_empty() && append_system_prompt.is_none() {
+                        append_system_prompt = Some(body);
+                        role = Some(role_name.to_string());
+                        tracing::info!("[Dispatch] role「{role_name}」按 corpus 专家注入人格");
+                    }
+                }
+                // corpus 也无此 slug:role 仍记名(供展示),引擎/模型继承来源会话
+                if role.is_none() {
+                    role = Some(role_name.to_string());
+                }
+            }
+        }
     } else if let Some(provider) = params.provider.as_deref() {
         model_profile_id = resolve_dispatch_provider(&config, provider)?;
     }
 
-    // resultSchema 校验与结构化输出指令注入（P2-2）
+    // resultSchema 校验与结构化输出指令注入（P2-2，追加在人格之后）
     if let Some(schema_id) = params.result_schema.as_deref() {
         if !super::nexus_verdict::schema_exists(schema_id) {
             return Err(format!(

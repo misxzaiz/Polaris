@@ -169,6 +169,7 @@ pub fn dispatch_create_task(
     role: Option<String>,
     provider: Option<String>,
     model: Option<String>,
+    append_system_prompt: Option<String>,
     source_session_id: Option<String>,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<DispatchedTask> {
@@ -186,6 +187,7 @@ pub fn dispatch_create_task(
             dispatch_id: None,
             result_schema: None,
             roster_id: None,
+            append_system_prompt: append_system_prompt.filter(|s| !s.trim().is_empty()),
         },
     )
 }
