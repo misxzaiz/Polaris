@@ -220,10 +220,27 @@ export interface UsageStats {
   /** 水位三元组的口径来源：'turn'=单轮快照（精确）| 'cumulative'=累计兜底（可能偏大） */
   contextSource?: 'turn' | 'cumulative'
   /**
-   * 本次 run 内是否已收到 turn 快照。turn 事件置 true；cumulative（run 结束）事件
-   * 消费后复位 false——保证下一 run 若无快照（非流式端点）时累计兜底仍能接管水位。
+   * 本次 run 内是否已收到 turn 快照。turn 事件置 true；run 启动（cli_init）时复位 false
+   * ——保证下一 run 若无快照（非流式端点）时累计兜底仍能接管水位。
+   *
+   * 不能在 cumulative 事件消费时复位：CLI 后台子代理完成后经 task-notification 续跑，
+   * 单 run 会输出多条 result（实测 2.1.205），若首条 result 消费掉标记，次条就会用
+   * 进程累计值（含子代理消耗，实测 3.6 倍虚高）覆盖水位。
    */
   turnSnapshotSeen?: boolean
+  /**
+   * 本 run 已计入 sessionTotals/totalOutput 的贡献值，用于同 run 多条 result 的幂等
+   * 替换（modelUsage 是 CLI 进程累计，后到 result 是前一条的超集，直接累加会重复计数）。
+   * run 启动（cli_init）时复位 null。仅 scope='cumulative'（Claude 引擎）参与替换；
+   * scope 缺省引擎（Codex/SimpleAI）无 run 边界信号，维持逐事件累加旧语义。
+   */
+  runContribution?: {
+    input: number
+    cacheCreation: number
+    cacheRead: number
+    output: number
+    costUsd: number
+  } | null
   /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看 */
   rawPayload?: Record<string, unknown>
 }

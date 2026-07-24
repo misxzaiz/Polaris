@@ -323,6 +323,18 @@ export function handleAIEvent(
         claudeCodeVersion: event.claudeCodeVersion ?? undefined,
         slashCommands: event.slashCommands,
       })
+      // run 边界：复位 usage 双口径状态机（turn 快照标记 + 本 run 已计贡献）。
+      // 复位必须在这里而非 cumulative 消费时——单 run 可能输出多条 result
+      //（后台子代理 task-notification 续跑），详见 UsageStats.turnSnapshotSeen 注释。
+      if (state.usageStats) {
+        set({
+          usageStats: {
+            ...state.usageStats,
+            turnSnapshotSeen: false,
+            runContribution: null,
+          },
+        })
+      }
       break
 
     case 'context_compacted':
@@ -338,7 +350,10 @@ export function handleAIEvent(
       //   同一 run 内每轮覆盖一次，水位随流式实时更新。
       // - cumulative（result 累计）/ 缺省（Codex/SimpleAI）：更新成本与明细组、
       //   累加会话总量；仅当本 run 未收到过 turn 快照时才兜底覆盖水位
-      //   （防多轮累计虚高污染），并复位 turnSnapshotSeen 供下一 run 重新判定。
+      //   （防多轮累计虚高污染）。turnSnapshotSeen 在 run 启动（cli_init）时复位，
+      //   而非在此消费——单 run 可能有多条 result（task-notification 续跑）。
+      // - 同 run 多条 result 的 sessionTotals/totalOutput 用 runContribution 幂等替换
+      //   （modelUsage 是进程累计，后到覆盖先到，直接累加会重复计数）。
       // 实际模型（actualModel）随两类事件更新：响应侧 message.model，逐轮可变。
       const prev = state.usageStats
       if (event.scope === 'turn') {
@@ -363,6 +378,17 @@ export function handleAIEvent(
           event.totalCostUsd ??
           Object.values(event.modelUsage ?? {}).reduce((s, m) => s + (m.costUsd ?? 0), 0)
         const prevTotals = prev?.sessionTotals
+        // 同 run 幂等替换：先回退本 run 已计入的贡献再加本条 result 的值。
+        // 仅 scope='cumulative'（Claude，有 cli_init run 边界）参与；scope 缺省引擎
+        // 无边界信号，rc 恒为 null（不写入），维持逐事件累加旧语义。
+        const rc = event.scope === 'cumulative' ? prev?.runContribution : null
+        const contribution = {
+          input: event.inputTokens,
+          cacheCreation: event.cacheCreationInputTokens ?? 0,
+          cacheRead: event.cacheReadInputTokens ?? 0,
+          output: event.outputTokens,
+          costUsd: runCost,
+        }
         set({
           usageStats: {
             input: snap ? snap.input : event.inputTokens,
@@ -371,21 +397,23 @@ export function handleAIEvent(
             output: event.outputTokens,
             reasoning: event.reasoningOutputTokens,
             contextWindow: event.contextWindow ?? prev?.contextWindow,
-            totalOutput: (prev?.totalOutput ?? 0) + event.outputTokens,
+            totalOutput: (prev?.totalOutput ?? 0) - (rc?.output ?? 0) + event.outputTokens,
             modelUsage: event.modelUsage,
             rawPayload: event.rawPayload,
             actualModel: event.actualModel ?? prev?.actualModel,
             actualModels: mergeActualModels(prev?.actualModels, event.actualModel),
             sessionTotals: {
-              input: (prevTotals?.input ?? 0) + event.inputTokens,
-              cacheCreation: (prevTotals?.cacheCreation ?? 0) + (event.cacheCreationInputTokens ?? 0),
-              cacheRead: (prevTotals?.cacheRead ?? 0) + (event.cacheReadInputTokens ?? 0),
-              output: (prevTotals?.output ?? 0) + event.outputTokens,
-              costUsd: (prevTotals?.costUsd ?? 0) + runCost,
-              runs: (prevTotals?.runs ?? 0) + 1,
+              input: (prevTotals?.input ?? 0) - (rc?.input ?? 0) + contribution.input,
+              cacheCreation:
+                (prevTotals?.cacheCreation ?? 0) - (rc?.cacheCreation ?? 0) + contribution.cacheCreation,
+              cacheRead: (prevTotals?.cacheRead ?? 0) - (rc?.cacheRead ?? 0) + contribution.cacheRead,
+              output: (prevTotals?.output ?? 0) - (rc?.output ?? 0) + contribution.output,
+              costUsd: (prevTotals?.costUsd ?? 0) - (rc?.costUsd ?? 0) + contribution.costUsd,
+              runs: (prevTotals?.runs ?? 0) + (rc ? 0 : 1),
             },
             contextSource: snap ? snap.contextSource : 'cumulative',
-            turnSnapshotSeen: false,
+            turnSnapshotSeen: prev?.turnSnapshotSeen ?? false,
+            runContribution: event.scope === 'cumulative' ? contribution : null,
           },
         })
       }
