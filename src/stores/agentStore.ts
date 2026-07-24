@@ -9,6 +9,7 @@ import { create } from 'zustand';
 import {
   getAgentCatalog,
   getCorpusStatus,
+  installCorpus,
   getRosters,
   listCustomAgents,
   saveCustomAgent,
@@ -48,11 +49,18 @@ interface AgentState {
   /** 项目级自定义专家 */
   customAgents: CustomAgent[];
 
+  /** 正在安装/重装 corpus */
+  installing: boolean;
+  /** 最近一次安装错误(供 UI 诊断展示) */
+  installError: string | null;
+
   /** 筛选状态 */
   search: string;
   division: string | null;
 
   load: () => Promise<void>;
+  /** 一键安装/重装 corpus,完成后刷新 catalog/status。返回成功与否。 */
+  reinstall: () => Promise<boolean>;
   loadSimpleAiAgents: (workDir: string) => Promise<void>;
   loadRosters: () => Promise<void>;
   loadCustomAgents: (workDir: string) => Promise<void>;
@@ -81,6 +89,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   simpleAiAgents: [],
   rosters: [],
   customAgents: [],
+  installing: false,
+  installError: null,
   search: '',
   division: null,
 
@@ -103,6 +113,26 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     } catch (err) {
       log.warn('Agent catalog load failed', { error: String(err) });
       set({ loading: false, error: String(err) });
+    }
+  },
+
+  reinstall: async () => {
+    if (get().installing) return false;
+    set({ installing: true, installError: null });
+    try {
+      await installCorpus();
+      // 安装完成后刷新 catalog 与 status(catalog 从资源目录读,status 反映安装结果)
+      const [catalog, status] = await Promise.all([
+        getAgentCatalog().catch(() => [] as AgentCatalogEntry[]),
+        getCorpusStatus().catch(() => null),
+      ]);
+      set({ catalog, status, installing: false, loaded: true });
+      return true;
+    } catch (err) {
+      const msg = String(err);
+      log.warn('Agent corpus install failed', { error: msg });
+      set({ installing: false, installError: msg });
+      return false;
     }
   },
 

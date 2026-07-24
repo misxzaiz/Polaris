@@ -666,6 +666,82 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
 }
 
 // ============================================================================
+// 专家库安装状态条
+// ============================================================================
+
+type CorpusState =
+  | { kind: 'unknown' }
+  | { kind: 'missing'; bundled: number }
+  | { kind: 'stale'; installed: number; bundled: number }
+  | { kind: 'ready'; installed: number };
+
+function CorpusStatusBar({
+  state,
+  installing,
+  installError,
+  onReinstall,
+}: {
+  state: CorpusState;
+  installing: boolean;
+  installError: string | null;
+  onReinstall: () => void;
+}) {
+  // 已就绪且无错误时折叠为细条,不抢版面
+  if (state.kind === 'ready' && !installError) {
+    return (
+      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border-subtle bg-bg-secondary/30 px-3 py-1 text-[11px] text-text-muted">
+        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        专家库已就绪 · {state.installed} 位
+        <button
+          type="button"
+          onClick={onReinstall}
+          disabled={installing}
+          className="text-text-muted underline-offset-2 hover:text-text-secondary hover:underline disabled:opacity-50"
+        >
+          重装
+        </button>
+      </div>
+    );
+  }
+
+  const tone =
+    state.kind === 'missing' || state.kind === 'stale' || installError
+      ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
+      : 'border-border-subtle bg-bg-secondary/30 text-text-muted';
+
+  const label =
+    state.kind === 'missing'
+      ? `专家库未初始化(内置 ${state.bundled} 位待安装)`
+      : state.kind === 'stale'
+        ? `专家库版本落后(已装 ${state.installed}/内置 ${state.bundled})`
+        : state.kind === 'unknown'
+          ? '专家库状态未知'
+          : '专家库异常';
+
+  return (
+    <div className={`flex shrink-0 flex-col gap-1 border-b px-3 py-2 text-[11px] ${tone}`}>
+      <div className="flex items-center gap-2">
+        <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
+        <span className="flex-1">{installing ? '正在初始化专家库…' : label}</span>
+        <button
+          type="button"
+          onClick={onReinstall}
+          disabled={installing}
+          className="shrink-0 rounded border border-current/30 px-2 py-0.5 font-medium hover:bg-current/10 disabled:opacity-50"
+        >
+          {installing ? '初始化中…' : state.kind === 'stale' ? '升级' : '一键初始化'}
+        </button>
+      </div>
+      {installError && (
+        <div className="break-all rounded bg-red-500/10 px-2 py-1 text-red-600 dark:text-red-400">
+          {installError}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // 面板主体
 // ============================================================================
 
@@ -673,6 +749,7 @@ export default function AgentGalleryPanel() {
   const {
     loaded, loading, error, load, loadRosters, loadCustomAgents,
     search, setSearch, division, setDivision, divisions, catalog, rosters, customAgents, deleteCustom,
+    status, installing, installError, reinstall,
   } = useAgentStore();
   const [tab, setTab] = useState<'agents' | 'rosters' | 'runs'>('agents');
   const [pipelines, setPipelines] = useState<RosterPipeline[]>([]);
@@ -687,6 +764,29 @@ export default function AgentGalleryPanel() {
   useEffect(() => {
     if (workspacePath) void loadCustomAgents(workspacePath);
   }, [workspacePath, loadCustomAgents]);
+
+  // 专家库安装状态:未安装 / 版本落后 / 已就绪
+  const corpusState = useMemo(() => {
+    if (!status) return { kind: 'unknown' as const };
+    if (status.installedVersion === null) {
+      return { kind: 'missing' as const, bundled: status.bundledCount };
+    }
+    if (status.bundledVersion > status.installedVersion) {
+      return { kind: 'stale' as const, installed: status.installedCount, bundled: status.bundledCount };
+    }
+    return { kind: 'ready' as const, installed: status.installedCount };
+  }, [status]);
+
+  const handleReinstall = () => {
+    void reinstall().then((ok) => {
+      const cur = useAgentStore.getState();
+      if (ok) {
+        useToastStore.getState().info('专家库已就绪', `已安装 ${cur.status?.installedCount ?? 0} 位专家`);
+      } else if (cur.installError) {
+        useToastStore.getState().error('专家库初始化失败', cur.installError);
+      }
+    });
+  };
 
   // 进行中页签:打开时拉取 + 订阅推进事件(后端每成员终态整体推送,低频)
   useEffect(() => {
@@ -766,6 +866,14 @@ export default function AgentGalleryPanel() {
           </button>
         ))}
       </div>
+
+      {/* 专家库安装状态条 + 一键初始化 */}
+      <CorpusStatusBar
+        state={corpusState}
+        installing={installing}
+        installError={installError}
+        onReinstall={handleReinstall}
+      />
 
       {tab === 'agents' && (
         <>
