@@ -21,6 +21,7 @@ import {
   parseGrepMatches,
 } from '@/utils/toolSummary';
 import { DiffViewer } from '../../Diff/DiffViewer';
+import { JsonTreeView } from '../../Common/JsonTreeView';
 import { isEditTool } from '@/utils/diffExtractor';
 import { STATUS_CONFIG } from '../chatUtils/constants';
 import { isTodoWriteTool, isGrepTool, parseTodoInput } from '../chatUtils/helpers';
@@ -137,13 +138,6 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   // 获取工具缩写
   const toolShortName = useMemo(() => getToolShortName(block.name), [block.name]);
 
-  // 格式化输入参数
-  const formatInput = (input: Record<string, unknown>): string => {
-    const entries = Object.entries(input);
-    if (entries.length === 0) return '';
-    return entries.map(([k, v]) => `${k}: ${JSON.stringify(v)}`).join('\n');
-  };
-
   // 是否可展开
   const hasInput = block.input && Object.keys(block.input).length > 0;
   const hasOutput = block.output && block.output.length > 0;
@@ -212,6 +206,23 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
 
   // 提取完整命令（用于复制，不截断）
   const fullCommand = useMemo(() => extractFullCommand(block.input), [block.input]);
+
+  // 判断输出是否为 JSON 结构（用于走树形视图，而非纯文本 pre）。
+  // 仅对以 { } 或 [ ] 包裹且能被 JSON.parse 成功的输出判定为 JSON。
+  const outputIsJson = useMemo(() => {
+    if (!displayOutput) return false;
+    const trimmed = displayOutput.trim();
+    if (!((trimmed.startsWith('{') && trimmed.endsWith('}')) ||
+          (trimmed.startsWith('[') && trimmed.endsWith(']')))) {
+      return false;
+    }
+    try {
+      const parsed = JSON.parse(trimmed);
+      return typeof parsed === 'object' && parsed !== null;
+    } catch {
+      return false;
+    }
+  }, [displayOutput]);
 
   // 复制命令回调
   const handleCopyCommand = useCallback(async (e: React.MouseEvent) => {
@@ -416,9 +427,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
               {todoData ? (
                 <TodoWriteInputRenderer data={todoData} />
               ) : (
-                <pre className="text-xs text-text-secondary bg-background-surface rounded p-2.5 max-w-full overflow-x-auto font-mono">
-                  {formatInput(block.input)}
-                </pre>
+                <JsonTreeView data={block.input} defaultDepth={2} />
               )}
             </div>
           )}
@@ -449,7 +458,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
                 </svg>
                 {t('tool.outputResult')}
                 <div className="ml-auto flex items-center gap-1.5">
-                  {displayOutput && (
+                  {displayOutput && !outputIsJson && (
                     <button
                       onClick={handleCopyOutput}
                       className={clsx(
@@ -472,7 +481,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
                       )}
                     </button>
                   )}
-                  {outputNeedsExpand && !useCustomRenderer && (
+                  {outputNeedsExpand && !useCustomRenderer && !outputIsJson && (
                     <button
                       onClick={() => setShowFullOutput(!showFullOutput)}
                       className="text-primary hover:text-primary-hover text-xs"
@@ -484,6 +493,8 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
               </div>
               {useCustomRenderer && grepData ? (
                 <GrepOutputRenderer data={grepData} />
+              ) : outputIsJson ? (
+                <JsonTreeView data={displayOutput} defaultDepth={2} />
               ) : (
                 <pre className={clsx(
                   'text-xs text-text-secondary bg-background-surface rounded p-2.5 overflow-x-auto font-mono',
@@ -519,17 +530,13 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
                   {hasInput && (
                     <div>
                       <div className="text-xs text-text-muted mb-1">{t('tool.inputParams')}</div>
-                      <pre className="text-xs text-text-secondary bg-background-surface rounded p-2.5 overflow-x-auto font-mono">
-                        {formatInput(block.input)}
-                      </pre>
+                      <JsonTreeView data={block.input} defaultDepth={2} />
                     </div>
                   )}
                   {hasOutput && (
                     <div>
                       <div className="text-xs text-text-muted mb-1">{t('tool.outputResult')}</div>
-                      <pre className="text-xs text-text-secondary bg-background-surface rounded p-2.5 overflow-x-auto font-mono max-h-48 overflow-y-auto">
-                        {displayOutput}
-                      </pre>
+                      <JsonTreeView data={displayOutput} defaultDepth={2} />
                     </div>
                   )}
                 </div>
