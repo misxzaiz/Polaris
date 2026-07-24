@@ -183,7 +183,17 @@
     "copied": "已复制",
     "fileChanges": "文件变更",
     "fileDeleted": "文件已删除",
-    "planUpdated": "计划已更新（详细步骤见右侧计划面板）"
+    "planUpdated": "计划已更新（详细步骤见右侧计划面板）",
+    "errorSummary": "失败原因",
+    "searchInJson": "在 JSON 中搜索",
+    "prevMatch": "上一个",
+    "nextMatch": "下一个",
+    "matchCount": "{{current}} / {{total}} 个匹配",
+    "noMatch": "无匹配",
+    "expandValue": "展开原值",
+    "collapseValue": "收起",
+    "objectLabel": "对象",
+    "arrayLabel": "数组"
   },
   "thinking": {
     "title": "思考",

@@ -184,7 +184,17 @@
     "copied": "Copied",
     "fileChanges": "File Changes",
     "fileDeleted": "File deleted",
-    "planUpdated": "Plan updated (see details in the plan panel)"
+    "planUpdated": "Plan updated (see details in the plan panel)",
+    "errorSummary": "Failure reason",
+    "searchInJson": "Search in JSON",
+    "prevMatch": "Previous",
+    "nextMatch": "Next",
+    "matchCount": "{{current}} / {{total}} matches",
+    "noMatch": "No match",
+    "expandValue": "Expand value",
+    "collapseValue": "Collapse",
+    "objectLabel": "Object",
+    "arrayLabel": "Array"
   },
   "thinking": {
     "title": "Thinking",

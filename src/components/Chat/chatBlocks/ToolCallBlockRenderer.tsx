@@ -34,7 +34,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   // 始终默认折叠（流式时也不展开，避免界面跳动）
   const [isExpanded, setIsExpanded] = useState(false);
   const [showFullOutput, setShowFullOutput] = useState(false);
-  const [showToolDetails, setShowToolDetails] = useState(false);
+  const [showToolDetails, setShowToolDetails] = useState(true);
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
 
@@ -72,6 +72,19 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     const calculated = calculateDuration(block.startedAt, block.completedAt);
     return calculated ? formatDuration(calculated) : '';
   }, [block.duration, block.startedAt, block.completedAt]);
+
+  // 耗时毫秒数：用于决定是否显示耗时/起止时间（仅 > 1s 才显示，秒级完成不占位）。
+  const durationMs = useMemo(() => {
+    if (block.duration) return block.duration;
+    return calculateDuration(block.startedAt, block.completedAt);
+  }, [block.duration, block.startedAt, block.completedAt]);
+
+  // 失败摘要：从 error 文本中提取首行非空内容，用于折叠态头部一行展示。
+  const errorSummary = useMemo(() => {
+    if (block.status !== 'failed' || !block.error) return '';
+    const firstLine = block.error.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
+    return firstLine ? (firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine) : '';
+  }, [block.status, block.error]);
 
   // 提取关键信息
   const keyInfo = useMemo(() => extractToolKeyInfo(block.name, block.input), [block.name, block.input]);
@@ -294,25 +307,32 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
           </span>
         )}
 
+        {/* 失败摘要：折叠态也能看到失败原因（一行截断，展开看完整 error） */}
+        {errorSummary && !isExpanded && (
+          <span
+            className="text-[10px] text-error truncate max-w-[40%] shrink-0"
+            title={block.error}
+          >
+            {errorSummary}
+          </span>
+        )}
+
         {/* 右侧信息区 */}
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
-          {duration && (
-            <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-background-secondary rounded">
+          {/* 耗时：仅 > 1s 才显示，秒级完成不占位 */}
+          {duration && durationMs > 1000 && (
+            <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-background-secondary rounded tabular-nums">
               {duration}
             </span>
           )}
 
+          {/* 折叠摘要：统一 grey，仅 status 类型保留语义色（成功/失败是真正需要颜色的信息） */}
           {collapsedSummary && collapsedSummary.summary && (
             <span className={clsx(
               'text-[10px] px-1.5 py-0.5 rounded',
-              collapsedSummary.summaryType === 'lines' && 'text-sky-500 bg-sky-500/10',
-              collapsedSummary.summaryType === 'files' && 'text-primary bg-primary/10',
-              collapsedSummary.summaryType === 'matches' && 'text-cyan-500 bg-cyan-500/10',
-              collapsedSummary.summaryType === 'diff' && 'text-warning bg-warning/10',
-              collapsedSummary.summaryType === 'status' && (block.status === 'completed' ? 'text-success bg-success/10' : 'text-error bg-error/10'),
-              collapsedSummary.summaryType === 'size' && 'text-sky-500 bg-sky-500/10',
-              collapsedSummary.summaryType === 'count' && 'text-primary bg-primary/10',
-              collapsedSummary.summaryType === 'plain' && 'text-text-tertiary bg-background-secondary'
+              collapsedSummary.summaryType === 'status'
+                ? (block.status === 'completed' ? 'text-success bg-success/10' : 'text-error bg-error/10')
+                : 'text-text-tertiary bg-background-secondary'
             )}>
               {collapsedSummary.summary}
             </span>
@@ -331,18 +351,20 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
         </div>
       </div>
 
-      {/* 展开时显示详情区域 */}
+      {/* 展开时显示详情区域：单层背景，透明融入外层 elevated，避免嵌套色阶 */}
       {isExpanded && (
-        <div className="px-4 py-3 bg-background-subtle border-t border-border">
-          {/* 工具名称和时间 */}
+        <div className="px-4 py-3 border-t border-border">
+          {/* 工具名称和时间：仅耗时 > 1s 才显示起止时间，否则只显示工具全名 */}
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-text-muted font-mono">{block.name}</span>
-            <div className="text-xs text-text-tertiary flex gap-3">
-              <span>{t('tool.startTime', { time: new Date(block.startedAt).toLocaleTimeString('zh-CN') })}</span>
-              {block.completedAt && (
-                <span>{t('tool.endTime', { time: new Date(block.completedAt).toLocaleTimeString('zh-CN') })}</span>
-              )}
-            </div>
+            {durationMs > 1000 && (
+              <div className="text-xs text-text-tertiary flex gap-3">
+                <span>{t('tool.startTime', { time: new Date(block.startedAt).toLocaleTimeString('zh-CN') })}</span>
+                {block.completedAt && (
+                  <span>{t('tool.endTime', { time: new Date(block.completedAt).toLocaleTimeString('zh-CN') })}</span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 文件路径：点击打开编辑器 */}
@@ -392,9 +414,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* 非Edit/补丁/计划工具或无Diff：显示输入参数 */}
+          {/* 非Edit/补丁/计划工具或无Diff：显示输入参数（左色条 + 标题，扁平结构） */}
           {!showDiffButton && !hasPatchData && !isUpdatePlan && hasInput && (
-            <div className="mb-3">
+            <div className="mb-3 border-l-2 border-border pl-3">
               <div className="text-xs text-text-muted mb-1.5 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
@@ -449,9 +471,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* 非Edit工具：完整输出结果 */}
+          {/* 非Edit工具：完整输出结果（左色条 + 标题，扁平结构） */}
           {!isEditTool(block.name) && hasOutput && (
-            <div className="mb-3">
+            <div className="mb-3 border-l-2 border-border pl-3">
               <div className="text-xs text-text-muted mb-1.5 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -510,12 +532,12 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* Edit 工具：工具详情折叠区域 */}
+          {/* Edit 工具：工具详情折叠区域（默认展开，避免双层折叠） */}
           {isEditTool(block.name) && (hasInput || hasOutput) && (
-            <div className="mb-3">
+            <div className="mb-3 border-l-2 border-border pl-3">
               <div
                 onClick={() => setShowToolDetails(!showToolDetails)}
-                className="text-xs text-text-tertiary hover:text-text-primary cursor-pointer flex items-center gap-1 select-none"
+                className="text-xs text-text-tertiary hover:text-text-primary cursor-pointer flex items-center gap-1 select-none mb-1.5"
               >
                 <ChevronRight
                   className={clsx(
@@ -526,7 +548,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
                 {t('tool.toolDetails')}
               </div>
               {showToolDetails && (
-                <div className="mt-2 space-y-2">
+                <div className="space-y-2">
                   {hasInput && (
                     <div>
                       <div className="text-xs text-text-muted mb-1">{t('tool.inputParams')}</div>
