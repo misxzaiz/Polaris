@@ -76,7 +76,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   // 耗时毫秒数：用于决定是否显示耗时/起止时间（仅 > 1s 才显示，秒级完成不占位）。
   const durationMs = useMemo(() => {
     if (block.duration) return block.duration;
-    return calculateDuration(block.startedAt, block.completedAt);
+    return calculateDuration(block.startedAt, block.completedAt) ?? 0;
   }, [block.duration, block.startedAt, block.completedAt]);
 
   // 失败摘要：从 error 文本中提取首行非空内容，用于折叠态头部一行展示。
@@ -566,9 +566,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* 错误信息 */}
+          {/* 错误信息（红色左色条，失败定位更醒目） */}
           {hasError && (
-            <div className="mb-3">
+            <div className="mb-3 border-l-2 border-error/50 pl-3">
               <div className="text-xs text-error mb-1.5 flex items-center gap-1.5">
                 <XCircle className="w-3 h-3" />
                 {t('tool.errorInfo')}
