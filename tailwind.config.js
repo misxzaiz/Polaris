@@ -62,6 +62,12 @@ module.exports = {
           DEFAULT: 'rgb(var(--c-status-danger) / <alpha-value>)',
           faint: 'rgb(var(--c-status-danger) / 0.15)',
         },
+        // error 别名 → danger：存量代码 49 处 text-error/bg-error-faint/border-error
+        // 一直未定义（静默失效），此处补齐使其生效
+        error: {
+          DEFAULT: 'rgb(var(--c-status-danger) / <alpha-value>)',
+          faint: 'rgb(var(--c-status-danger) / 0.15)',
+        },
         info: {
           DEFAULT: 'rgb(var(--c-status-info) / <alpha-value>)',
           faint: 'rgb(var(--c-status-info) / 0.15)',

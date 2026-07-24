@@ -193,7 +193,8 @@
     "expandValue": "展开原值",
     "collapseValue": "收起",
     "objectLabel": "对象",
-    "arrayLabel": "数组"
+    "arrayLabel": "数组",
+    "showMoreItems": "显示剩余 {{count}} 项"
   },
   "thinking": {
     "title": "思考",

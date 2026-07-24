@@ -194,7 +194,8 @@
     "expandValue": "Expand value",
     "collapseValue": "Collapse",
     "objectLabel": "Object",
-    "arrayLabel": "Array"
+    "arrayLabel": "Array",
+    "showMoreItems": "Show remaining {{count}} items"
   },
   "thinking": {
     "title": "Thinking",

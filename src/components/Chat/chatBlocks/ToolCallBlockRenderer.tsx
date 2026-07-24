@@ -261,7 +261,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
         'my-1.5 rounded-lg overflow-hidden w-full transition-all duration-200',
         'border border-border bg-background-elevated',
         statusAnimationClass,
-        block.status === 'failed' && 'border-error/30 bg-error-faint/50'
+        block.status === 'failed' && 'border-error/30 bg-error/[0.06]'
       )}
     >
       {/* 统一头部 - 折叠和展开共用 */}

@@ -3,14 +3,20 @@
  *
  * 用户任务驱动设计：
  * - 看详情：层级折叠，默认展开前 2 层；折叠态显示类型徽章 + 前 N 项值预览。
- * - 找字段：大 JSON（节点 > 50 或字符 > 2000）时自动出现搜索框。
+ * - 找字段：大 JSON（节点 > 50 或字符 > 2000）时自动出现搜索框，命中路径自动展开。
  * - 复制：内置复制按钮（格式化后的 JSON）。
  *
  * 视觉规则：
  * - 数组索引不加引号（0: 而非 "0":），符合 JSON 习惯。
  * - 长字符串（> 120 字符）截断 + 点击展开原值。
  * - 整行可点击折叠/展开，hover 高亮整行。
- * - 缩进参考线用 border/subtle 淡化，避免深层糊成一片。
+ *
+ * 健壮性约束（复审修复，勿回退）：
+ * - entries/Object.entries 均有 null/undefined 守卫（运行时数据可能含 undefined 值）。
+ * - 展开深度上限 MAX_EXPAND_DEPTH，防循环引用/极深嵌套导致无限递归。
+ * - 单节点子项渲染上限 MAX_CHILDREN_RENDER，防浅层大数组冻结界面；剩余走"显示更多"。
+ * - 搜索不强制全展开，只展开命中路径；searchJson 有深度上限。
+ * - 复制的 JSON.stringify 有 try/catch（循环引用/BigInt 不崩渲染）。
  */
 
 import { memo, useMemo, useState, useCallback, useRef, useEffect } from 'react';
@@ -43,7 +49,7 @@ interface NodeProps {
   depth: number;
   defaultDepth: number;
   previewCount: number;
-  /** 搜索高亮：匹配的路径集合（用 normalized path 字符串表示）。 */
+  /** 搜索高亮：匹配的路径集合。 */
   matchedPaths?: Set<string>;
   /** 当前跳转命中的路径。 */
   currentPath?: string;
@@ -52,6 +58,16 @@ interface NodeProps {
   /** 滚动到当前命中节点。 */
   onCurrentRef?: (el: HTMLDivElement | null) => void;
 }
+
+// ---- 常量 ----
+
+const LONG_STRING_THRESHOLD = 120;
+/** "展开全部"的深度上限：防止循环引用/极深嵌套导致无限组件递归。 */
+const MAX_EXPAND_DEPTH = 100;
+/** 单个节点一次渲染的子项上限：防止浅层大数组一次挂几千行 DOM 冻结界面。 */
+const MAX_CHILDREN_RENDER = 100;
+/** 搜索遍历的深度上限。 */
+const MAX_SEARCH_DEPTH = 100;
 
 // ---- 工具函数 ----
 
@@ -73,13 +89,13 @@ function isIndexKey(key: string): boolean {
   return /^\d+$/.test(key);
 }
 
-/** 统计 JSON 总节点数与序列化字符数，用于判断是否触发搜索。 */
+/** 统计 JSON 总节点数与字符数，用于判断是否触发搜索。节点数上限内建，循环引用也会终止。 */
 function measureJson(value: unknown): { nodes: number; chars: number } {
   let nodes = 0;
   let chars = 0;
   const walk = (v: unknown) => {
     nodes++;
-    if (nodes > 10000) return; // 防止极端大对象卡死统计
+    if (nodes > 10000) return;
     if (Array.isArray(v)) {
       for (const item of v) walk(item);
     } else if (v && typeof v === 'object') {
@@ -92,11 +108,27 @@ function measureJson(value: unknown): { nodes: number; chars: number } {
   return { nodes, chars };
 }
 
+/** 安全序列化：循环引用/BigInt 时降级，绝不在 render 期抛错。 */
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(
+      value,
+      (_k, v) => (typeof v === 'bigint' ? String(v) : v),
+      2
+    ) ?? String(value);
+  } catch {
+    try {
+      return String(value);
+    } catch {
+      return '[Unserializable]';
+    }
+  }
+}
+
 // ---- 标量值渲染 ----
 
-const LONG_STRING_THRESHOLD = 120;
-
 const ScalarValue = memo(function ScalarValue({ value }: { value: unknown }) {
+  const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
 
   if (value === null) {
@@ -108,16 +140,17 @@ const ScalarValue = memo(function ScalarValue({ value }: { value: unknown }) {
     const escaped = display.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
     return (
       <span>
-        <span className="text-success">"{escaped}"</span>
+        <span className="text-success break-all">"{escaped}"</span>
         {isLong && (
           <button
             onClick={(e) => {
               e.stopPropagation();
               setExpanded((v) => !v);
             }}
+            title={expanded ? t('tool.collapseValue') : t('tool.expandValue')}
             className="ml-1 text-text-muted hover:text-primary text-[10px] underline-offset-2 hover:underline"
           >
-            {expanded ? '…收起' : `…+${value.length - LONG_STRING_THRESHOLD}`}
+            {expanded ? `…${t('tool.collapseValue')}` : `…+${value.length - LONG_STRING_THRESHOLD}`}
           </button>
         )}
       </span>
@@ -152,7 +185,6 @@ function CollapsedPreview({ value, previewCount }: { value: unknown; previewCoun
 
   return (
     <span className="text-text-muted">
-      {isArray ? '[' : '{ '}
       {items.map((item, idx) => (
         <span key={item.k}>
           {idx > 0 && <span>, </span>}
@@ -166,7 +198,7 @@ function CollapsedPreview({ value, previewCount }: { value: unknown; previewCoun
             <span className="text-text-tertiary">
               {Array.isArray(item.v) ? `[${sizeOf(item.v)}]` : `{${sizeOf(item.v)}}`}
             </span>
-          ) : typeof item.v === 'string' && item.v.length > LONG_STRING_THRESHOLD ? (
+          ) : typeof item.v === 'string' && item.v.length > 30 ? (
             <span className="text-success">"{item.v.slice(0, 30)}…"</span>
           ) : (
             <ScalarValue value={item.v} />
@@ -174,7 +206,6 @@ function CollapsedPreview({ value, previewCount }: { value: unknown; previewCoun
         </span>
       ))}
       {hidden > 0 && <span className="text-text-tertiary"> … +{hidden}</span>}
-      {isArray ? ' ]' : ' }'}
     </span>
   );
 }
@@ -192,21 +223,50 @@ const TreeNode = memo(function TreeNode({
   pathPrefix,
   onCurrentRef,
 }: NodeProps) {
+  const { t } = useTranslation('chat');
   const expandable = isExpandable(value);
-  // 默认展开深度内的节点初始展开；超出则折叠。
-  // 若有搜索匹配，默认展开命中路径上的节点。
+  // 命中路径上的节点默认展开（搜索时保证命中可见，其余保持折叠，避免大 JSON 全展开冻结）。
   const isOnMatchedPath = matchedPaths
     ? [...matchedPaths].some((p) => p === pathPrefix || p.startsWith(pathPrefix + '.') || p.startsWith(pathPrefix + '['))
     : false;
   const [expanded, setExpanded] = useState(
     depth < defaultDepth || isOnMatchedPath
   );
+  // 大数组/大对象分页：默认只渲染前 MAX_CHILDREN_RENDER 项。
+  const [showAllChildren, setShowAllChildren] = useState(false);
 
   const isArray = Array.isArray(value);
-  const entries = useMemo(() => {
-    if (isArray) return (value as unknown[]).map((v, i) => ({ k: String(i), v }));
-    return Object.entries(value as Record<string, unknown>).map(([k, v]) => ({ k, v }));
-  }, [value, isArray]);
+  // entries 守卫：value 为 undefined/null 时返回空数组，
+  // 避免 Object.entries(undefined) 抛 "Cannot convert undefined or null to object"。
+  const entriesWithPath = useMemo(() => {
+    let raw: { k: string; v: unknown }[];
+    if (isArray) {
+      raw = (value as unknown[]).map((v, i) => ({ k: String(i), v }));
+    } else if (value && typeof value === 'object') {
+      raw = Object.entries(value as Record<string, unknown>).map(([k, v]) => ({ k, v }));
+    } else {
+      raw = [];
+    }
+    return raw.map((e) => ({
+      ...e,
+      path: isArray ? `${pathPrefix}[${e.k}]` : (pathPrefix ? `${pathPrefix}.` : '') + e.k,
+    }));
+  }, [value, isArray, pathPrefix]);
+
+  // 可见子项：超上限时截断，但搜索命中路径上的子项始终可见（否则"3 个匹配"却看不到）。
+  const visibleEntries = useMemo(() => {
+    if (showAllChildren || entriesWithPath.length <= MAX_CHILDREN_RENDER) {
+      return entriesWithPath;
+    }
+    if (!matchedPaths || matchedPaths.size === 0) {
+      return entriesWithPath.slice(0, MAX_CHILDREN_RENDER);
+    }
+    const onPath = (p: string) =>
+      [...matchedPaths].some((m) => m === p || m.startsWith(p + '.') || m.startsWith(p + '['));
+    return entriesWithPath.filter((e, i) => i < MAX_CHILDREN_RENDER || onPath(e.path));
+  }, [entriesWithPath, showAllChildren, matchedPaths]);
+
+  const hiddenCount = entriesWithPath.length - visibleEntries.length;
 
   const toggle = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -228,10 +288,10 @@ const TreeNode = memo(function TreeNode({
       >
         {keyName !== null && (
           <>
-            <span className="text-primary">
+            <span className="text-primary shrink-0">
               {isIndexKey(keyName) ? keyName : `"${keyName}"`}
             </span>
-            <span className="text-text-muted">:</span>
+            <span className="text-text-muted shrink-0">:</span>
           </>
         )}
         <ScalarValue value={value} />
@@ -274,9 +334,9 @@ const TreeNode = memo(function TreeNode({
             <span className="text-text-muted">{openBracket}</span>
           ) : (
             <>
-              <span className="text-text-muted">{openBracket === '[' ? '[' : '{ '}</span>
+              <span className="text-text-muted">{openBracket}{' '}</span>
               <CollapsedPreview value={value} previewCount={previewCount} />
-              <span className="text-text-muted">{closeBracket === ']' ? ' ]' : ' }'}</span>
+              <span className="text-text-muted">{' '}{closeBracket}</span>
               <span className="text-text-tertiary ml-1.5 text-[10px]">
                 {isArray ? `[${total}]` : `{${total}}`}
               </span>
@@ -287,26 +347,32 @@ const TreeNode = memo(function TreeNode({
 
       {expanded && (
         <>
-          <div className="pl-3 ml-1 border-l border-border/subtle">
-            {entries.map((entry) => {
-              const childPath = isArray
-                ? `${pathPrefix}[${entry.k}]`
-                : (pathPrefix ? `${pathPrefix}.` : '') + entry.k;
-              return (
-                <TreeNode
-                  key={entry.k}
-                  value={entry.v}
-                  keyName={entry.k}
-                  depth={depth + 1}
-                  defaultDepth={defaultDepth}
-                  previewCount={previewCount}
-                  matchedPaths={matchedPaths}
-                  currentPath={currentPath}
-                  pathPrefix={childPath}
-                  onCurrentRef={onCurrentRef}
-                />
-              );
-            })}
+          <div className="pl-3 ml-1 border-l border-border-subtle">
+            {visibleEntries.map((entry) => (
+              <TreeNode
+                key={entry.k}
+                value={entry.v}
+                keyName={entry.k}
+                depth={depth + 1}
+                defaultDepth={defaultDepth}
+                previewCount={previewCount}
+                matchedPaths={matchedPaths}
+                currentPath={currentPath}
+                pathPrefix={entry.path}
+                onCurrentRef={onCurrentRef}
+              />
+            ))}
+            {hiddenCount > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowAllChildren(true);
+                }}
+                className="text-primary hover:text-primary-hover text-xs py-0.5 px-1"
+              >
+                {t('tool.showMoreItems', { count: hiddenCount })}
+              </button>
+            )}
           </div>
           <div className="pl-3 ml-1 py-0.5 text-text-muted">{closeBracket}</div>
         </>
@@ -343,33 +409,34 @@ function normalizeData(data: unknown): { value: unknown; isJson: boolean } {
   return { value: data, isJson: false };
 }
 
-// ---- 搜索：在 value 中查找匹配 key/value，返回路径集合 ----
+// ---- 搜索：在 value 中查找匹配 key/value，返回路径列表（带深度上限，循环引用安全） ----
 
 function searchJson(value: unknown, query: string, prefix: string, results: string[]): void {
   if (!query) return;
   const q = query.toLowerCase();
-  const walk = (v: unknown, path: string) => {
-    if (results.length > 500) return; // 上限保护
+  const walk = (v: unknown, path: string, depth: number) => {
+    if (results.length > 500 || depth > MAX_SEARCH_DEPTH) return;
     if (Array.isArray(v)) {
       for (let i = 0; i < v.length; i++) {
         const childPath = `${path}[${i}]`;
-        walk(v[i], childPath);
+        if (typeof v[i] === 'string' && (v[i] as string).toLowerCase().includes(q)) {
+          results.push(childPath);
+        }
+        walk(v[i], childPath, depth + 1);
       }
     } else if (v && typeof v === 'object') {
       for (const [k, item] of Object.entries(v as Record<string, unknown>)) {
         const childPath = path ? `${path}.${k}` : k;
         if (k.toLowerCase().includes(q)) {
           results.push(childPath);
-        }
-        // 字符串值也参与匹配
-        if (typeof item === 'string' && item.toLowerCase().includes(q)) {
+        } else if (typeof item === 'string' && item.toLowerCase().includes(q)) {
           results.push(childPath);
         }
-        walk(item, childPath);
+        walk(item, childPath, depth + 1);
       }
     }
   };
-  walk(value, prefix);
+  walk(value, prefix, 0);
 }
 
 // ---- 主组件 ----
@@ -397,8 +464,9 @@ export const JsonTreeView = memo(function JsonTreeView({
   const measure = useMemo(() => (isJson ? measureJson(value) : { nodes: 0, chars: 0 }), [value, isJson]);
   const showSearch = isJson && (measure.nodes > 50 || measure.chars > 2000);
 
+  // 复制文本：安全序列化，循环引用/BigInt 不崩。
   const copyText = useMemo(() => {
-    if (isJson) return JSON.stringify(value, null, 2);
+    if (isJson) return safeStringify(value);
     if (typeof value === 'string') return value;
     return String(value ?? '');
   }, [value, isJson]);
@@ -410,7 +478,7 @@ export const JsonTreeView = memo(function JsonTreeView({
   }, [copyText]);
 
   const expandAll = useCallback(() => {
-    setDepthOverride(Infinity);
+    setDepthOverride(MAX_EXPAND_DEPTH);
     setGen((g) => g + 1);
   }, []);
 
@@ -432,14 +500,13 @@ export const JsonTreeView = memo(function JsonTreeView({
     setCurrentMatchIdx(results.length > 0 ? 0 : -1);
   }, [query, value, isJson]);
 
-  // 当有匹配时，强制展开命中路径（通过重挂载 + 把默认深度设为 Infinity，
-  // 但仅在有 query 时这样做，避免无谓全展开）。
   const searchActive = query.trim() !== '' && matchedPaths.size > 0;
-  const renderDepth = searchActive ? Infinity : effectiveDepth;
 
-  // 当前命中路径。
-  const matchedArr = searchActive ? [...matchedPaths] : [];
-  const currentPath = matchedArr.length > 0 ? matchedArr[Math.max(0, Math.min(currentMatchIdx, matchedArr.length - 1))] : undefined;
+  // 当前命中路径（Set 保持插入序，与 searchJson 结果顺序一致）。
+  const matchedArr = useMemo(() => (searchActive ? [...matchedPaths] : []), [searchActive, matchedPaths]);
+  const currentPath = matchedArr.length > 0
+    ? matchedArr[Math.max(0, Math.min(currentMatchIdx, matchedArr.length - 1))]
+    : undefined;
 
   // 跳转当前命中节点时滚动到视图。
   useEffect(() => {
@@ -451,10 +518,14 @@ export const JsonTreeView = memo(function JsonTreeView({
   const goToMatch = useCallback((dir: 1 | -1) => {
     setCurrentMatchIdx((idx) => {
       if (matchedArr.length === 0) return -1;
-      const next = (idx + dir + matchedArr.length) % matchedArr.length;
-      return next;
+      return (idx + dir + matchedArr.length) % matchedArr.length;
     });
   }, [matchedArr.length]);
+
+  // ref 回调保持稳定，避免每次渲染击穿全部 TreeNode 的 memo。
+  const handleCurrentRef = useCallback((el: HTMLDivElement | null) => {
+    currentRef.current = el;
+  }, []);
 
   const showTree = isJson && isExpandable(value);
 
@@ -462,7 +533,7 @@ export const JsonTreeView = memo(function JsonTreeView({
     <div className={clsx('rounded', className)}>
       {/* 顶部条：操作按钮（无自带背景，融入外层） */}
       {showTree && (
-        <div className="flex items-center gap-2 mb-1.5">
+        <div className="flex items-center gap-2 mb-1.5 flex-wrap">
           <button
             onClick={expandAll}
             className="text-primary hover:text-primary-hover text-xs"
@@ -493,7 +564,7 @@ export const JsonTreeView = memo(function JsonTreeView({
                     <button onClick={() => goToMatch(-1)} className="text-text-muted hover:text-primary">
                       <ChevronUp className="w-3.5 h-3.5" />
                     </button>
-                    <span className="text-[10px] text-text-tertiary tabular-nums">
+                    <span className="text-[10px] text-text-tertiary tabular-nums whitespace-nowrap">
                       {t('tool.matchCount', { current: currentMatchIdx + 1, total: matchedArr.length })}
                     </span>
                     <button onClick={() => goToMatch(1)} className="text-text-muted hover:text-primary">
@@ -502,7 +573,7 @@ export const JsonTreeView = memo(function JsonTreeView({
                   </>
                 )}
                 {query.trim() && !searchActive && (
-                  <span className="text-[10px] text-text-tertiary">{t('tool.noMatch')}</span>
+                  <span className="text-[10px] text-text-tertiary whitespace-nowrap">{t('tool.noMatch')}</span>
                 )}
               </div>
             )}
@@ -533,19 +604,22 @@ export const JsonTreeView = memo(function JsonTreeView({
 
       {showTree ? (
         <div className="overflow-x-auto">
+          {/*
+            key 说明：
+            - gen：展开全部/收起触发重挂载，以新的 defaultDepth 重新初始化各节点。
+            - query：搜索词变化时重挂载，让命中路径上的节点以展开态初始化（不强制全展开）。
+          */}
           <TreeNode
-            key={gen + ':' + (searchActive ? 'search' : 'normal')}
+            key={`${gen}:${searchActive ? query : ''}`}
             value={value}
             keyName={null}
             depth={0}
-            defaultDepth={renderDepth}
+            defaultDepth={effectiveDepth}
             previewCount={previewCount}
             matchedPaths={searchActive ? matchedPaths : undefined}
             currentPath={currentPath}
             pathPrefix=""
-            onCurrentRef={(el) => {
-              currentRef.current = el;
-            }}
+            onCurrentRef={handleCurrentRef}
           />
         </div>
       ) : (
