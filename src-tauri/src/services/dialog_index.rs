@@ -11,7 +11,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -75,6 +75,10 @@ struct IndexState {
 
 static INDEX: OnceLock<Mutex<Option<IndexState>>> = OnceLock::new();
 static LAST_NATIVE_SCAN: AtomicU64 = AtomicU64::new(0);
+/// 后台扫描进行中标志（防重入：扫描中再触发直接跳过，不排队）。
+/// 历史面板首次打开必须 <500ms：扫描不再阻塞查询命令，改为后台线程异步执行，
+/// 命令立即返回当前索引快照（可能不含最新 native 会话，下次查询自然补上）。
+static NATIVE_SCAN_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 fn index_cell() -> &'static Mutex<Option<IndexState>> {
     INDEX.get_or_init(|| Mutex::new(None))
@@ -572,52 +576,136 @@ fn collect_codex_files(out: &mut Vec<NativeFile>) {
     }
 }
 
-/// 增量扫描 native 会话进索引（(mtime,size) 未变的文件零解析）。
-/// `force` 跳过节流（用户手动刷新）。
+/// 触发一次后台 native 扫描（不阻塞调用方）。
+///
+/// 历史/搜索命令在返回前不再同步等待扫描完成——命令立即返回当前索引快照，
+/// 扫描在独立线程跑完后更新索引，下一次查询自然带上最新 native 会话。
+/// - `force=true`：跳过 30s 节流（用户手动刷新）；但仍受 `NATIVE_SCAN_IN_FLIGHT` 防重入约束。
+/// - 节流窗口内或已有扫描在跑 → 直接返回（零开销）。
 pub fn ensure_native_scan(force: bool) {
     let now = systemtime_to_epoch_ms(SystemTime::now()) as u64;
     let last = LAST_NATIVE_SCAN.load(Ordering::Relaxed);
     if !force && now.saturating_sub(last) < NATIVE_SCAN_INTERVAL_SECS * 1000 {
         return;
     }
-    LAST_NATIVE_SCAN.store(now, Ordering::Relaxed);
+    // 防重入：已在扫描则跳过（force 也跳，避免重复全扫拖累 IO）。
+    if NATIVE_SCAN_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
 
+    std::thread::spawn(move || {
+        run_native_scan();
+    });
+}
+
+/// 实际执行 native 扫描（在工作线程内同步运行）。
+///
+/// 用**独立连接**做写入，不经过 `index_cell` 全局锁——查询命令走 `with_conn` 持有同一把
+/// `Mutex`，若扫描在这里长时间 upsert 会把所有 `history_query`/`history_search` 挡在
+/// 锁外（实测命令阻塞 7s+）。WAL 模式下 SQLite 允许写连接与读连接并发，互不阻塞。
+fn run_native_scan() {
+    // 进线程即记录触发时间作为节流起点（与旧行为一致：从开始计时）。
+    LAST_NATIVE_SCAN.store(systemtime_to_epoch_ms(SystemTime::now()) as u64, Ordering::Relaxed);
     let start = std::time::Instant::now();
     let mut files: Vec<NativeFile> = Vec::new();
     collect_claude_files(&mut files);
     collect_codex_files(&mut files);
 
-    let result = with_conn(|conn| {
-        // 现有 native 行的失效键
-        let mut known: HashMap<String, (i64, i64)> = HashMap::new();
-        {
-            let mut stmt = conn
-                .prepare("SELECT id, src_mtime, src_size FROM sessions WHERE source != 'self'")
-                .map_err(|e| AppError::StateError(format!("查询 native 索引失败: {}", e)))?;
-            let rows = stmt
-                .query_map([], |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, Option<i64>>(1)?.unwrap_or(0),
-                        row.get::<_, Option<i64>>(2)?.unwrap_or(0),
-                    ))
-                })
-                .map_err(|e| AppError::StateError(format!("查询 native 索引失败: {}", e)))?;
-            for r in rows.flatten() {
-                known.insert(r.0, (r.1, r.2));
+    let result = (|| {
+        // 独立连接：不抢 index_cell 锁，与查询命令的读连接 WAL 并发。
+        let conn = match open_scan_connection() {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("[DialogIndex] 后台扫描打开连接失败: {}", e);
+                return Err(e);
+            }
+        };
+        scan_into(&conn, &files)
+    })();
+
+    NATIVE_SCAN_IN_FLIGHT.store(false, Ordering::SeqCst);
+    match result {
+        Ok(parsed) => {
+            if parsed > 0 {
+                tracing::info!(
+                    "[DialogIndex] native 扫描完成: {} 个文件, 解析 {} 个变化文件, 耗时 {:?}",
+                    files.len(),
+                    parsed,
+                    start.elapsed()
+                );
             }
         }
+        Err(e) => tracing::warn!("[DialogIndex] native 扫描失败: {}", e),
+    }
+}
 
-        let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-        let mut parsed = 0usize;
-        for f in &files {
+/// 打开一个独立扫描连接（WAL 模式，与查询读连接并发不互斥）。
+/// 不经过 `index_cell` 锁——扫描写入长时间持锁会把查询命令挡在锁外。
+fn open_scan_connection() -> Result<Connection> {
+    let path = db_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::StateError(format!("创建 dialogs 目录失败: {}", e)))?;
+    }
+    let conn = Connection::open(&path)
+        .map_err(|e| AppError::StateError(format!("打开扫描连接失败: {}", e)))?;
+    tune_pragmas(&conn);
+    // 扫描可能命中全新/损坏库：复用 open_connection 的建库逻辑兜底。
+    // 但为避免与查询连接争抢重建，这里只在表缺失时建 schema，不删库。
+    let table_exists = conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'",
+            [],
+            |_| Ok(1),
+        )
+        .is_ok();
+    if !table_exists {
+        conn.execute_batch(SCHEMA_SQL)
+            .map_err(|e| AppError::StateError(format!("初始化扫描连接 schema 失败: {}", e)))?;
+        write_schema_version(&conn, SCHEMA_VERSION);
+    }
+    Ok(conn)
+}
+
+/// 把收集到的 native 文件增量索引进给定连接。
+/// 全程单事务批量 upsert——失败整体回滚，不污染索引（替代旧的「失败即删库重建」脆弱逻辑）。
+fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
+    // 现有 native 行的失效键
+    let mut known: HashMap<String, (i64, i64)> = HashMap::new();
+    {
+        let mut stmt = conn
+            .prepare("SELECT id, src_mtime, src_size FROM sessions WHERE source != 'self'")
+            .map_err(|e| AppError::StateError(format!("查询 native 索引失败: {}", e)))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, Option<i64>>(1)?.unwrap_or(0),
+                    row.get::<_, Option<i64>>(2)?.unwrap_or(0),
+                ))
+            })
+            .map_err(|e| AppError::StateError(format!("查询 native 索引失败: {}", e)))?;
+        for r in rows.flatten() {
+            known.insert(r.0, (r.1, r.2));
+        }
+    }
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut parsed = 0usize;
+    // 单事务：批量写入，失败回滚，杜绝「部分 upsert 后遇错导致 with_conn 误判库损坏删库重建」。
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|e| AppError::StateError(format!("开启扫描事务失败: {}", e)))?;
+    let tx_result: Result<()> = (|| {
+        for f in files {
             seen.insert(f.id.clone());
             if let Some((m, s)) = known.get(&f.id) {
                 if *m == f.mtime && *s == f.size {
                     continue; // 未变化，零解析
                 }
             }
-            // 解析（仅变化的文件）
             parsed += 1;
             let (title, message_count, created_at, workspace_path, git_branch) = match f.source {
                 "claude-native" => {
@@ -694,22 +782,18 @@ pub fn ensure_native_scan(force: bool) {
             );
             let _ = conn.execute("DELETE FROM sessions_fts WHERE session_id = ?1", params![id]);
         }
-
-        Ok(parsed)
-    });
-
-    match result {
-        Ok(parsed) => {
-            if parsed > 0 {
-                tracing::info!(
-                    "[DialogIndex] native 扫描完成: {} 个文件, 解析 {} 个变化文件, 耗时 {:?}",
-                    files.len(),
-                    parsed,
-                    start.elapsed()
-                );
-            }
+        Ok(())
+    })();
+    match tx_result {
+        Ok(()) => {
+            conn.execute_batch("COMMIT")
+                .map_err(|e| AppError::StateError(format!("提交扫描事务失败: {}", e)))?;
+            Ok(parsed)
         }
-        Err(e) => tracing::warn!("[DialogIndex] native 扫描失败: {}", e),
+        Err(e) => {
+            let _ = conn.execute_batch("ROLLBACK");
+            Err(e)
+        }
     }
 }
 
