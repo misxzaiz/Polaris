@@ -166,6 +166,39 @@ git push origin vx.x.x
 
 ---
 
+## v10.1.9 构建记录
+
+**构建时间**: 2026-07-24 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.1.9
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.1.9_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.1.9_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.1.9_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.1.9-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.1.9_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.1.9-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.1.9-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.1.9-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- 修复历史记录面板冷态打开触发 `ensure_native_scan` 同步阻塞在 `history_query` 命令线程（实测 6.4s），且扫描持 `index_cell` 全局锁把并发查询挡在锁外（实测 7.3s）
+- `ensure_native_scan` 改为 `std::thread::spawn` 后台执行，命令立即返回当前索引快照；新增 `AtomicBool NATIVE_SCAN_IN_FLIGHT` 防重入
+- 新增独立扫描连接 `open_scan_connection(scan_into)`，不经 `index_cell` 锁，WAL 模式下写连接与查询读连接并发互不阻塞
+- `scan_into` 用 `BEGIN IMMEDIATE/COMMIT` 单事务批量 upsert，失败整体回滚，修复单条 upsert 偶发失败触发 `with_conn` 删库重建、丢掉整个 native 索引的脆弱逻辑
+- 实测（1505 个 native 文件 / 830MB）：冷态命令返回 6.4s → 97ms，扫描中并发查询 7.3s → 70~78ms
+
+---
+
 ## v10.1.8 构建记录
 
 **构建时间**: 2026-07-23 (UTC)
