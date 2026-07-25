@@ -41,8 +41,8 @@ export interface AgentArgSuggestion {
 }
 
 export interface SuggestionItem {
-  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command' | 'agent';
-  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion | AgentArgSuggestion;
+  type: 'workspace' | 'file' | 'snippet' | 'skill' | 'mcp' | 'conversation' | 'cli-command' | 'agent' | 'agent-mention';
+  data: Workspace | FileMatch | PromptSnippet | SkillItemType | ConversationSuggestion | McpServerItem | CliCommandSuggestion | AgentArgSuggestion | AgentArgSuggestion;
 }
 
 /** Skill 条目（用于 / 命令建议） */
@@ -96,6 +96,7 @@ export function UnifiedSuggestion({
   const snippetItems = items.filter(i => i.type === 'snippet');
   const cliCommandItems = items.filter(i => i.type === 'cli-command');
   const agentItems = items.filter(i => i.type === 'agent');
+  const agentMentionItems = items.filter(i => i.type === 'agent-mention');
   const skillItems = items.filter(i => i.type === 'skill');
   const mcpItems = items.filter(i => i.type === 'mcp');
   const conversationItems = items.filter(i => i.type === 'conversation');
@@ -300,6 +301,38 @@ export function UnifiedSuggestion({
                 <span className="shrink-0">{agent.emoji || '🤖'}</span>
                 <span className="shrink-0 text-sm">{agent.name}</span>
                 <span className="font-mono text-xs text-text-tertiary shrink-0">{agent.slug}</span>
+                <span className="text-xs text-text-tertiary truncate">{agent.description}</span>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+  {/* @专家 提及分组 */}
+      {agentMentionItems.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 text-xs text-text-tertiary border-b border-border bg-background-elevated/50 sticky top-0">
+            专家
+          </div>
+          {agentMentionItems.map((item) => {
+            const globalIdx = items.findIndex(i => i === item);
+            const agent = item.data as AgentArgSuggestion;
+
+            return (
+              <div
+                key={`agent-mention-${agent.slug}`}
+                data-index={globalIdx}
+                className={`px-3 py-2 cursor-pointer flex items-center gap-2 text-sm ${
+                  globalIdx === selectedIndex
+                    ? 'bg-primary/20 text-text-primary'
+                    : 'text-text-secondary hover:bg-background-hover'
+                }`}
+                onClick={() => onSelect(item)}
+                onMouseEnter={() => onHover(globalIdx)}
+              >
+                <span className="shrink-0">{agent.emoji || '🧩'}</span>
+                <span className="shrink-0 text-sm">{agent.name}</span>
+                <span className="font-mono text-xs text-text-tertiary shrink-0">@专家:{agent.slug}</span>
                 <span className="text-xs text-text-tertiary truncate">{agent.description}</span>
               </div>
             );

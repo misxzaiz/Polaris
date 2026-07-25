@@ -744,6 +744,50 @@ export function ChatInput({
       return
     }
 
+    // 1.6 @专家 提及：在消息任意位置 `@专家<查询>` 弹出专家列表，选中后注入 `@专家:slug` 文本
+    //      必须用专属中文前缀以避免与 @workspace / @path 通配分支冲突
+    //      必须在 partialMatch（会匹配中文「专家」）之前拦截
+    const agentMentionMatch = textBeforeCursor.match(/@专家(?:\s+(\S*))?$/)
+    if (agentMentionMatch) {
+      setConversationMode(false)
+      setFileWorkspace(null)
+      const query = (agentMentionMatch[1] ?? '').toLowerCase()
+      const agentState = useAgentStore.getState()
+      const pool = [
+        ...agentState.customAgents.map(c => ({
+          slug: c.slug, name: c.name, description: `自定义 · ${c.description}`, emoji: c.emoji ?? '🧩',
+        })),
+        ...agentState.catalog.map(c => ({
+          slug: c.slug, name: c.name, description: c.description, emoji: c.emoji,
+        })),
+      ]
+      const matched = pool
+        .filter(a =>
+          query === '' ||
+          a.slug.toLowerCase().includes(query) ||
+          a.name.toLowerCase().includes(query) ||
+          a.description.toLowerCase().includes(query)
+        )
+        .slice(0, 12)
+      const agentItems: SuggestionItem[] = matched.map(a => ({
+        type: 'agent-mention' as const,
+        data: {
+          slug: a.slug,
+          name: a.name,
+          description: a.description,
+          emoji: a.emoji,
+          insertText: `@专家:${a.slug} `,
+        },
+      }))
+      setSuggestionItems(agentItems)
+      setSelectedIndex(0)
+      setShowSuggestions(agentItems.length > 0)
+
+      const position = calculateSuggestionPosition()
+      setSuggestionPosition({ top: position.top, left: position.left })
+      return
+    }
+
     // 2. 检测 @workspace:path 语法（已指定工作区）
     const workspaceMatch = textBeforeCursor.match(/@([\w\u4e00-\u9fa5-]+):([^\s]*)$/)
     if (workspaceMatch) {
@@ -917,6 +961,20 @@ export function ChatInput({
     } else if (item.type === 'skill') {
       const skill = item.data as SkillItem
       applySlashReplacement(`skill-${skill.id} `)
+      return
+    } else if (item.type === 'agent-mention') {
+      // @专家 提及：只替换 `@专家<查询>` 这个 token，不替换整条命令
+      const agent = item.data as import('./FileSuggestion').AgentArgSuggestion
+      const replaced = textBeforeCursor.replace(/@专家(?:\s+\S*)?$/, `@专家:${agent.slug} `) + textAfterCursor
+      setLocalText(replaced)
+      updateInputDraft({ text: replaced, attachments })
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      setTimeout(() => {
+        textarea.focus()
+        const cursor = replaced.length - textAfterCursor.length
+        textarea.setSelectionRange(cursor, cursor)
+      }, 0)
       return
     } else if (item.type === 'agent') {
       // 专家参数补全：整条命令替换为 insertText（命令必在消息首）
