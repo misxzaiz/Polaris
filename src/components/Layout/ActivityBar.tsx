@@ -13,7 +13,7 @@ import {
   PINNED_LEFT_PANEL_TYPES,
   ToolSwitcher,
 } from './ToolSwitcher'
-import { ProblemsCountBadge, useToolSwitcherItems } from './toolSwitcherData'
+import { useToolSwitcherItems } from './toolSwitcherData'
 import { useTranslation } from 'react-i18next'
 import { pluginIconMap } from '@/plugin-system'
 
@@ -77,9 +77,7 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
             label={t(btn.labelKey, { defaultValue: btn.labelDefault ?? btn.panelType })}
             active={leftPanelType === btn.panelType}
             onClick={() => toggleLeftPanel(btn.panelType)}
-          >
-            {btn.badge === 'problems' && <ProblemsCountBadge />}
-          </ActivityBarIcon>
+          />
         )
       })}
 

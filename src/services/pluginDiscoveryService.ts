@@ -133,7 +133,6 @@ function normalizeViews(
       labelKey,
       labelDefault: asString(item.labelDefault),
       order: typeof item.order === 'number' ? item.order : 1000,
-      badge: item.badge === 'problems' ? 'problems' : undefined,
     }]
   })
 }

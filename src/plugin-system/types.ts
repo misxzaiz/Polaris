@@ -33,7 +33,6 @@ export interface PluginViewContribution {
   labelKey: string
   labelDefault?: string
   order: number
-  badge?: 'problems'
 }
 
 export interface PluginMcpServerContribution {

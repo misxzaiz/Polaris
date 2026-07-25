@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentType, ReactNode } from 'react'
+import type { ComponentType } from 'react'
 import { Grid2X2, PanelLeftClose, Search, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -19,7 +19,6 @@ export interface ToolSwitcherItem {
   description?: string
   group: ToolGroupId
   active?: boolean
-  badge?: ReactNode
   onSelect: () => void
 }
 
@@ -32,7 +31,7 @@ interface ToolSwitcherProps {
   onCloseActivePanel?: () => void
 }
 
-export const PINNED_LEFT_PANEL_TYPES = new Set(['files', 'git', 'browser', 'terminal', 'problems'])
+export const PINNED_LEFT_PANEL_TYPES = new Set(['files', 'git', 'browser', 'terminal'])
 
 const TOOL_GROUP_ORDER: ToolGroupId[] = [
   'context',
@@ -62,7 +61,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
     case 'personalHub':
       return 'context'
     case 'git':
-    case 'problems':
       return 'changes'
     case 'terminal':
     case 'scheduler':
@@ -266,7 +264,6 @@ export function ToolSwitcher({
                           </span>
                         )}
                       </span>
-                      {item.badge && <span className="shrink-0">{item.badge}</span>}
                     </button>
                   )
                 })}

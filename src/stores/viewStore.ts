@@ -285,9 +285,9 @@ export const useViewStore = create<ViewStore>()(
         const { pendingScrollToId: _pendingScrollToId, ...rest } = state;
         return rest;
       },
-      // 兼容旧持久化值：移除 ComicStudio 面板后，将遗留的面板类型回退到文件浏览器
+      // 兼容旧持久化值：移除 Problems 面板后，将遗留的面板类型回退到文件浏览器
       onRehydrateStorage: () => (state) => {
-        if (state && (state.leftPanelType as string) === 'comicStudio') {
+        if (state && (state.leftPanelType as string) === 'problems') {
           state.leftPanelType = 'files';
         }
       },

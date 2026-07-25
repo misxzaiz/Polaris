@@ -1150,9 +1150,6 @@ impl PluginService {
             if view.label_key.trim().is_empty() {
                 Self::push_validation_error(&mut result, &path_text, format!("{}.labelKey is required", prefix));
             }
-            if view.badge.as_deref().is_some_and(|badge| badge != "problems") {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.badge must be problems", prefix));
-            }
         }
 
         for (index, server) in manifest.contributes.mcp_servers.iter().enumerate() {

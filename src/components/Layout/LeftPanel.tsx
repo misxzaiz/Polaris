@@ -169,7 +169,6 @@ export function LeftPanelContent({
   toolsContent,
   developerContent,
   integrationContent,
-  problemsContent,
   demoPluginContent,
   aiConsoleContent,
   currentType,
@@ -185,7 +184,6 @@ export function LeftPanelContent({
   toolsContent?: ReactNode
   developerContent?: ReactNode
   integrationContent?: ReactNode
-  problemsContent?: ReactNode
   demoPluginContent?: ReactNode
   aiConsoleContent?: ReactNode
   currentType?: LeftPanelType
@@ -216,8 +214,6 @@ export function LeftPanelContent({
     return <>{developerContent}</>
   } else if (type === 'integration') {
     return <>{integrationContent}</>
-  } else if (type === 'problems') {
-    return <>{problemsContent}</>
   } else if (type === 'demoPlugin') {
     return <>{demoPluginContent}</>
   } else if (type === 'aiConsole') {

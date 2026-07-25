@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { Settings, PanelRight } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useDiagnosticsStore } from '@/stores/diagnosticsStore'
 import { useViewStore } from '@/stores/viewStore'
 import { isPluginUiEnabled, usePluginStore } from '@/stores/pluginStore'
 import { pluginIconMap, pluginRegistry } from '@/plugin-system'
@@ -11,23 +10,6 @@ interface UseToolSwitcherItemsOptions {
   onOpenSettings?: () => void
   onToggleRightPanel?: () => void
   rightPanelCollapsed?: boolean
-}
-
-export function ProblemsCountBadge({ floating = true }: { floating?: boolean }) {
-  useDiagnosticsStore((s) => s.version)
-  const { errors, warnings } = useDiagnosticsStore.getState().summary
-  const total = errors + warnings
-  if (total === 0) return null
-
-  return (
-    <span
-      className={`${floating ? 'absolute -right-0.5 -bottom-0.5' : ''} min-w-[14px] h-[14px] px-1 rounded-full text-[9px] font-bold flex items-center justify-center text-white ${
-        errors > 0 ? 'bg-red-500' : 'bg-yellow-500'
-      }`}
-    >
-      {total > 99 ? '99+' : total}
-    </span>
-  )
 }
 
 function getToolDescription(panelType: string): string | undefined {
@@ -56,8 +38,6 @@ function getToolDescription(panelType: string): string | undefined {
       return '外部平台与机器人接入'
     case 'aiConsole':
       return 'AI 执行记录与来源概览'
-    case 'problems':
-      return '诊断、错误和警告'
     case 'demoPlugin':
       return '示例插件面板'
     default:
@@ -95,7 +75,6 @@ export function useToolSwitcherItems({
         description: getToolDescription(btn.panelType),
         group: getToolGroup(btn.panelType),
         active: leftPanelType === btn.panelType,
-        badge: btn.badge === 'problems' ? <ProblemsCountBadge floating={false} /> : undefined,
         onSelect: () => toggleLeftPanel(btn.panelType),
       }
     })

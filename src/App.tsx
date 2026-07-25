@@ -16,7 +16,6 @@ import { TranslatePanel, SelectionContextMenu } from './components/Translate';
 import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
 import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
 import { TerminalPanel } from './components/Terminal/TerminalPanel';
-import { ProblemsPanel } from './components/Problems/ProblemsPanel';
 import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
 import { BrowserLauncherPanel } from './components/Browser';
 import { NotificationCenterPanel } from './components/Notification';
@@ -198,7 +197,6 @@ function App() {
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
-      problemsContent={<ProblemsPanel />}
       demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
     />
   );
