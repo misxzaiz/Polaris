@@ -85,10 +85,11 @@ const OPTIMIZE_MODE_OPTIONS: Array<{
   key: PromptOptimizeMode
   label: string
   hint: string
+  costHint?: string
   Icon: typeof Zap
 }> = [
   { key: 'quick', label: 'promptOptimize.modeQuick', hint: 'promptOptimize.modeQuickHint', Icon: Zap },
-  { key: 'deep', label: 'promptOptimize.modeDeep', hint: 'promptOptimize.modeDeepHint', Icon: Sparkles },
+  { key: 'deep', label: 'promptOptimize.modeDeep', hint: 'promptOptimize.modeDeepHint', Icon: Sparkles, costHint: 'promptOptimize.modeDeepCost' },
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
@@ -455,6 +456,7 @@ export function ChatInput({
     () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).engineId,
   )
   const [optimizeMode, setOptimizeMode] = useState<PromptOptimizeMode>('quick')
+  const [optimizePrivacyNotice, setOptimizePrivacyNotice] = useState(false)
   const [optimizeProfileId, setOptimizeProfileId] = useState('')
   const [optimizeModel, setOptimizeModel] = useState('')
   const [showOptimizeAdvanced, setShowOptimizeAdvanced] = useState(false)
@@ -495,6 +497,10 @@ export function ChatInput({
   )
 
   const handleOptimizeWithConfig = useCallback(() => {
+    if (optimizeMode === 'deep' && !localStorage.getItem('polaris.promptOptimize.privacyNoticeSeen')) {
+      setOptimizePrivacyNotice(true)
+      return
+    }
     setOptimizePickerOpen(false)
     if (!canOptimize || !activeSessionId) return
     const cfg: PromptOptimizeConfig = {
@@ -1426,7 +1432,11 @@ export function ChatInput({
           <div className="flex items-start gap-1.5 max-w-full px-2.5 py-1.5 rounded-lg bg-primary/10 border border-primary/20 text-xs text-primary/90">
             <Loader2 size={13} className="shrink-0 mt-0.5 animate-spin" />
             <span className="flex-1 min-w-0 line-clamp-2 break-words whitespace-pre-wrap">
-              {t('promptOptimize.running')}
+              {optimizePreview.isStreaming && optimizePreview.text.trim()
+                ? optimizePreview.text
+                : optimizeMode === 'deep' && !optimizePreview.text.trim()
+                  ? t('promptOptimize.readingContext')
+                  : t('promptOptimize.running')}
             </span>
             <button
               onClick={handleCancelOptimize}
@@ -1578,15 +1588,25 @@ export function ChatInput({
                     <div className="px-2 pb-1 text-[11px] font-medium text-text-tertiary">
                       {t('promptOptimize.mode')}
                     </div>
-                    {OPTIMIZE_MODE_OPTIONS.map(({ key, label, hint, Icon: ModeIcon }) => (
+                    {OPTIMIZE_MODE_OPTIONS.map(({ key, label, hint, costHint, Icon: ModeIcon }) => (
                       <button
                         key={key}
-                        onClick={() => setOptimizeMode(key)}
+                        onClick={() => {
+                          setOptimizeMode(key)
+                          if (key === 'deep' && !localStorage.getItem('polaris.promptOptimize.privacyNoticeSeen')) {
+                            setOptimizePrivacyNotice(true)
+                          }
+                        }}
                         className="w-full flex items-center gap-2 px-2.5 py-1.5 text-xs transition-colors rounded-md hover:bg-background-hover text-text-secondary hover:text-text-primary"
                       >
                         <ModeIcon className="w-3.5 h-3.5" />
-                        <span className="flex-1 text-left flex flex-col">
-                          <span className="text-xs">{t(label)}</span>
+                        <span className="flex-1 text-left flex flex-col gap-0.5">
+                          <span className="text-xs flex items-center gap-1.5">
+                            {t(label)}
+                            {key === 'deep' && costHint && (
+                              <span className="text-[10px] text-warning/70 font-normal">{t(costHint)}</span>
+                            )}
+                          </span>
                           <span className="text-[10px] text-text-tertiary">{t(hint)}</span>
                         </span>
                         {optimizeMode === key && <Check className="w-3 h-3 text-primary" />}
@@ -1734,6 +1754,37 @@ export function ChatInput({
           position={suggestionPosition}
           currentWorkspaceId={currentWorkspaceId}
         />
+      )}
+
+      {/* 深度优化隐私提示（首次使用） */}
+      {optimizePrivacyNotice && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOptimizePrivacyNotice(false)}>
+          <div className="w-[380px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="text-sm font-medium text-text-primary mb-2">{t('promptOptimize.privacyNoticeTitle')}</div>
+            <p className="text-xs text-text-secondary leading-relaxed mb-4">{t('promptOptimize.privacyNoticeBody')}</p>
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setOptimizePrivacyNotice(false)}
+                className="rounded border border-border-subtle px-3 py-1.5 text-xs"
+              >
+                {t('promptOptimize.privacyNoticeCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.setItem('polaris.promptOptimize.privacyNoticeSeen', '1')
+                  setOptimizePrivacyNotice(false)
+                  // 确认后立即触发优化
+                  handleOptimizeWithConfig()
+                }}
+                className="rounded bg-primary px-3 py-1.5 text-xs text-white"
+              >
+                {t('promptOptimize.privacyNoticeConfirm')}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

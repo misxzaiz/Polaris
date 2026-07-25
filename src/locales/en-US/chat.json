@@ -70,6 +70,7 @@
     "dismissError": "Dismiss",
     "errorEmpty": "Optimization returned empty result, please retry",
     "errorTimeout": "Optimization timed out, please retry",
+    "readingContext": "Reading project context…",
     "errorCreateSession": "Failed to create optimization session",
     "emptyInput": "Type something to optimize",
     "slashBlocked": "Slash commands cannot be optimized",
@@ -84,12 +85,17 @@
     "modeQuickHint": "Zero context, wording only",
     "modeDeep": "Deep",
     "modeDeepHint": "Read project and conversation context",
+    "modeDeepCost": "Slower · reads project context",
     "advanced": "Advanced",
     "profile": "Provider",
     "model": "Model",
     "noProfiles": "No providers available; using official API",
     "optimize": "Optimize",
-    "optimizeDeep": "Deep optimize"
+    "optimizeDeep": "Deep optimize",
+    "privacyNoticeTitle": "Privacy Notice",
+    "privacyNoticeBody": "Deep optimization will read the current conversation history and project files, and send them to the selected engine for prompt optimization. You can switch back to Quick mode (zero context) at any time.",
+    "privacyNoticeCancel": "Cancel",
+    "privacyNoticeConfirm": "Continue with Deep"
   },
   "message": {
     "user": "User",

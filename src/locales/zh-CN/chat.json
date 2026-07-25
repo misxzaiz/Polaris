@@ -69,6 +69,7 @@
     "dismissError": "关闭",
     "errorEmpty": "优化结果为空，请重试",
     "errorTimeout": "优化超时，请重试",
+    "readingContext": "正在阅读项目上下文…",
     "errorCreateSession": "优化会话创建失败",
     "emptyInput": "输入内容后可优化",
     "slashBlocked": "命令输入不支持优化",
@@ -83,12 +84,17 @@
     "modeQuickHint": "零上下文，仅措辞打磨",
     "modeDeep": "深度",
     "modeDeepHint": "读取项目与对话上下文",
+    "modeDeepCost": "较慢·读取项目上下文",
     "advanced": "高级选项",
     "profile": "供应商",
     "model": "模型",
     "noProfiles": "无可用供应商，将使用官方 API",
     "optimize": "优化",
-    "optimizeDeep": "深度优化"
+    "optimizeDeep": "深度优化",
+    "privacyNoticeTitle": "隐私提示",
+    "privacyNoticeBody": "深度优化将读取当前对话历史与项目文件，并发送给所选引擎用于优化提示词。你可以在浮层中随时切换回快速模式（零上下文）。",
+    "privacyNoticeCancel": "取消",
+    "privacyNoticeConfirm": "继续使用深度优化"
   },
   "message": {
     "user": "用户",
