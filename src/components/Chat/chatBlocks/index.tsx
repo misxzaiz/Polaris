@@ -17,11 +17,12 @@ import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
 import { DispatchTaskCard } from '../DispatchTaskCard';
-import { AssaultResultCard } from '../AssaultResultCard';
+import { AssaultResultCard, isAssaultWorkflowOutput } from '../AssaultResultCard';
 
 /** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
 const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
-/** workflow 工具块(SDK 内置多 agent 编排)渲染为攻坚结果卡片(完成态时间线) */
+/** workflow 工具块(SDK 内置多 agent 编排)。仅当 output 解析为攻坚格式时才用 AssaultResultCard,
+ * 否则降级通用工具块(deep-research / code-review 等非攻坚 workflow 不被误路由)。 */
 const WORKFLOW_TOOL_NAME = 'workflow';
 
 export function renderContentBlock(
@@ -54,10 +55,14 @@ export function renderContentBlock(
         );
       }
       if (block.name === WORKFLOW_TOOL_NAME) {
-        return wrapWithErrorBoundary(
-          <AssaultResultCard block={block} />,
-          block.id
-        );
+        // 仅攻坚 workflow(output 含 result.status 或 STATE_SNAPSHOT/SURVIVOR 日志)才用攻坚卡片,
+        // 否则降级通用工具块,避免误捕获 deep-research / code-review 等非攻坚 workflow。
+        if (isAssaultWorkflowOutput(block.output)) {
+          return wrapWithErrorBoundary(
+            <AssaultResultCard block={block} />,
+            block.id
+          );
+        }
       }
       return wrapWithErrorBoundary(
         <ToolCallBlockRenderer block={block} />,

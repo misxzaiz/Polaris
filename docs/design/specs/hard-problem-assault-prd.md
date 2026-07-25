@@ -158,15 +158,15 @@ interface AssaultArgs {
 
 ## 五、验收标准
 
-- [x] AC-1: `hard-problem-assault` 命名 workflow 可被 `/workflows` 调用,参数 `problem` 必填。(2026-07-25 验证通过)
+- [x] AC-1: workflow 可被调用,参数 `problem` 必填。**调用方式:`Workflow({scriptPath: ".claude/workflows/hard-problem-assault.md", args: {...}})`**(非命名 workflow——SDK 注册表只有 `deep-research`/`code-review` 是内置命名 workflow,自定义脚本不被自动注册,只能 scriptPath 调)。(2026-07-25 验证通过)
 - [x] AC-2: scout agent 返回符合 `FINDING_SCHEMA` 的结构化结果,无 status 汇报。(3 scout 全结构化)
 - [x] AC-3: `gapStrength==='theorem-strength' && !newMechanism` 的方法族被标记 blocked,下一轮不再派发。(逻辑就位)
 - [x] AC-4: `newMechanism` 命中的 blocked 方法族被解锁。(逻辑就位,scout:cache/state-machine 提出新机制)
 - [x] AC-5: `gap==='none'` 的候选解必须过 audit(`voteThreshold` 票)才返回 solved。(2/2 survives 验证)
 - [x] AC-6: rounds 达上限或 budget 耗尽时返回 `{status:'open', strongest, gap}`,不返回"尽力而为"。(solved/open 双路径验证)
-- [x] AC-7: 三个内置 profile(security-audit/refactor-design/root-cause)可被选用。(root-cause 端到端跑通)
-- [x] AC-8: 高风险场景 `voteThreshold≥3` 时,solved 结论可选触发 `dispatch_task` 人工复核。(逻辑就位)
-- [x] AC-9: 原型 HTML 可在 `prd-preview` 渲染,展示方法族注册表/轮次/审计状态。
+- [x] AC-7: 三个内置 profile(security-audit/refactor-design/root-cause)可被选用。(root-cause + refactor-design 端到端跑通,security-audit 静态验证)
+- [x] AC-8: 高风险场景 `voteThreshold≥3` 时,solved 结论可选触发 `dispatch_task` 人工复核。(needsHumanReview 标志已落地)
+- [x] AC-9: 原型 HTML 可在 `prd-preview` 渲染;**完成态 AssaultResultCard 在 chatBlocks 按 `name==='workflow'` + `isAssaultWorkflowOutput(output)` 精确路由**(避免误捕获 deep-research/code-review)。
 
 > M1 端到端验证(2026-07-25):用 `[1,2,3].map(parseInt)` 根因排查题,root-cause profile(3 族)、maxRounds=2、effort=low,Round 1 即收敛 `status:'solved'`,217k token / 9 agent。详细记录见 [实施方案 §九](../../plan/hard-problem-assault-implementation.md#九m1-验证记录2026-07-25)。
 

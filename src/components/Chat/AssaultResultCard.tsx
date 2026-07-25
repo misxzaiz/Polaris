@@ -83,17 +83,30 @@ function parseWorkflowOutput(output?: string): WorkflowOutput | null {
       typeof parsed?.text === 'string' ? JSON.parse(parsed.text) :
       typeof parsed?.output === 'string' ? JSON.parse(parsed.output) :
       parsed;
-    if (candidate && (candidate.result || candidate.logs || candidate.workflowProgress)) {
-      return candidate as WorkflowOutput;
-    }
-    // 兼容:result 直接是顶层对象
-    if (candidate && typeof candidate === 'object' && (candidate as AssaultResult).status) {
-      return { result: candidate as AssaultResult };
+    if (candidate && typeof candidate === 'object') {
+      // 标准格式:{result, logs, workflowProgress}
+      if (candidate.result || candidate.logs || candidate.workflowProgress) {
+        return candidate as WorkflowOutput;
+      }
+      // 兼容:result 直接是顶层对象
+      if ((candidate as AssaultResult).status) {
+        return { result: candidate as AssaultResult };
+      }
     }
     return null;
   } catch {
     return null;
   }
+}
+
+/** 是否为攻坚 workflow 的 tool_result(用于 chatBlocks 精确路由,避免误捕获 deep-research/code-review)。
+ *  判据:解析出 result.status 为 solved/open,或 logs 含攻坚特征标记(SURVIVOR/STATE_SNAPSHOT/family blocked)。 */
+export function isAssaultWorkflowOutput(output?: string): boolean {
+  const wf = parseWorkflowOutput(output);
+  if (!wf) return false;
+  if (wf.result?.status === 'solved' || wf.result?.status === 'open') return true;
+  const logs = wf.logs || [];
+  return logs.some((l) => /SURVIVOR:|STATE_SNAPSHOT|^family \S+ (blocked|解锁)/.test(l));
 }
 
 /** 从 logs 提取结构化事件 */

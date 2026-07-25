@@ -34,6 +34,17 @@
 
 **文件**:`.claude/workflows/hard-problem-assault.md`
 
+**调用方式(重要)**:只能 `scriptPath` 调,不能用 `name` 调。
+
+```
+Workflow({
+  scriptPath: "D:\\space\\base\\Polaris\\.claude\\workflows\\hard-problem-assault.md",
+  args: { profile: "root-cause", maxRounds: 2, problem: "..." }
+})
+```
+
+原因:Claude Code SDK 内置命名 workflow 注册表只有 `deep-research`/`code-review`,自定义脚本放 `.claude/workflows/` 不会被自动注册。`name` 方式会报 "not found, Available: deep-research, code-review"。
+
 关键点:
 - `meta` 三阶段:Scout / Audit / Synth
 - `FAMILIES` 数组(方法族注册表)

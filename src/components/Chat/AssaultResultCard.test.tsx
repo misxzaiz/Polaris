@@ -9,7 +9,7 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { AssaultResultCard } from './AssaultResultCard';
+import { AssaultResultCard, isAssaultWorkflowOutput } from './AssaultResultCard';
 import type { ToolCallBlock } from '@/types';
 
 // Mock react-i18next
@@ -140,5 +140,28 @@ describe('AssaultResultCard', () => {
     const block = makeBlock(STANDARD_OUTPUT, 'running');
     render(<AssaultResultCard block={block} />);
     expect(screen.getByText('运行中')).toBeTruthy();
+  });
+
+  describe('isAssaultWorkflowOutput 路由判断', () => {
+    it('攻坚 workflow output 返回 true', () => {
+      expect(isAssaultWorkflowOutput(STANDARD_OUTPUT)).toBe(true);
+    });
+
+    it('deep-research / code-review 等非攻坚 workflow 返回 false', () => {
+      const deepResearchOutput = JSON.stringify({
+        summary: 'deep research report',
+        logs: ['searching...', 'synthesizing...'],
+        result: { findings: ['x', 'y'], topic: 'AI search' },  // 无 status, 非攻坚格式
+      });
+      expect(isAssaultWorkflowOutput(deepResearchOutput)).toBe(false);
+    });
+
+    it('纯文本 output 返回 false', () => {
+      expect(isAssaultWorkflowOutput('workflow completed')).toBe(false);
+    });
+
+    it('无 logs 无 result 的 workflow 返回 false', () => {
+      expect(isAssaultWorkflowOutput(JSON.stringify({ summary: 'empty' }))).toBe(false);
+    });
   });
 });
