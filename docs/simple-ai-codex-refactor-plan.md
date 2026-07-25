@@ -1,8 +1,8 @@
 # SimpleAI 引擎重构规划（对照 OpenAI Codex）
 
-> 状态：**Phase 0 + 1 + 2 + 补充批次 A/B/C 已实施（2026-06-07）**；Phase 3（usage/retry/compact 主体）待续。
-> 验证：本机 `cargo check --lib` 通过、单测编译通过；本机 Tauri DLL 限制无法运行测试，单测随 CI 执行。详见 §11 实施记录。
-> 范围：基本对话 · 工具使用 · AI 身份定位 · 项目指令注入（不含权限/sandbox/审批）
+> 状态：**Phase 0 + 1 + 2 + 3 + 补充批次 A/B/C 已全部实施（Phase 3 于 2026-07 完成）**。
+> 验证：本机 `cargo check --lib` 通过，仅2个已知的 dead code warning（nexus_pipeline RosterDef.title 等）。
+> 范围：基本对话 · 工具使用 · AI 身份定位 · 项目指令注入 · **token usage 统计 · 指数退避重试 · 上下文压缩**
 > 参考源码：`temp/codex/codex-rs`（openai/codex 浅克隆）
 
 ## 1. 背景与目标
@@ -291,7 +291,38 @@ impl ToolRegistry {
 
 **验证**：`cargo check --lib` + `cargo test --lib --no-run` 通过（仅 3 个预存无关 warning：`ws.rs` / `ipc.rs`）；本机运行测试仍报 `STATUS_ENTRYPOINT_NOT_FOUND`（Tauri DLL，既知限制）→ 纯函数单测逻辑由 CI 执行。
 
-### 下一步（待续）
+### Phase 3 实施记录（2026-07 完成）
 
-- **Phase 3**：`usage`（三协议 token 解析）+ retry（指数退避）+ compact（上下文压缩）。
+Phase 3 三个子项已全部落地，代码已集成进 `chat_loop.rs` 与协议层。
+
+| 子项 | 模块 | 说明 |
+|---|---|---|
+| **Token usage 统计** | `simple_ai_protocol.rs` + `compact.rs(UsageAccumulator)` + `chat_loop.rs:312-332` | 三协议 `finish_usage()`（OpenAIChat 末包 / Anthropic message_start+message_delta / Responses completed）；每轮 `usage_acc.add(input_tokens)` 累计；发送 UsageEvent 到前端供上下文水位展示；字符估算兜底 |
+| **指数退避重试** | `retry.rs` | `send_with_retry`: 429/5xx 重试，尊重 Retry-After 响应头（秒），400/401/403 立即返回；DEFAULT_RETRY_MAX_ATTEMPTS=3、DEFAULT_RETRY_BASE_MS=500；经 custom_env 的 SIMPLE_AI_RETRY_MAX / SIMPLE_AI_RETRY_BASE_MS 可覆盖 |
+| **上下文压缩** | `compact.rs` | `UsageAccumulator.should_compact(context_window, messages)` 判断最近一轮 input 达窗口 75%；`compact_history` 发非流式摘要请求替换历史区间；区间过小跳过；滚动分段摘要防一次超窗；`fallback_drop_oldest` 兜底；熔断机制（压缩后仍超阈 → 本轮不再压）；DEFAULT_CONTEXT_WINDOW=180K、COMPACT_KEEP_RECENT=6；均经 custom_env 可覆盖 |
+
+**关键设计**：
+- usage 不在单独 `usage.rs` 模块（与计划 §41 不同），而是内聚在 `simple_ai_protocol.rs`（`StreamState.finish_usage()`）+ `compact.rs`（`UsageAccumulator`）+ `chat_loop.rs`（上报 UsageEvent），避免模块膨胀。
+- 压缩触发用**最近一轮 input**（非累计值），更贴合实时窗口状态；累计值仅作花费统计。
+- `history.rs` 的裁剪（B 批次）已先于 Phase 3 落地，与 compact 互补：裁剪处理单条超长输出，compact 处理整体膨胀。
+
+### 状态：全部实施
+
+Phase 0–3 + 补充批次 A/B/C 均已落地。SimpleAI 引擎当前模块结构：
+
+```
+simple_ai/
+├── mod.rs           # SimpleAIEngine（AIEngine trait impl）
+├── session.rs       # SimpleAISession（messages/abort）
+├── chat_loop.rs     # run_chat_loop（流式请求 → SSE 解析 → 工具循环 + retry/compact 触发）
+├── prompt.rs        # 系统提示词（含角色锁定语）
+├── context.rs       # environment_context + 项目指令注入
+├── tools/           # 工具定义与执行（含 subagent/dispatch_agent、MCP pool）
+├── skill.rs         # .polaris/skills/ 扫描与注入
+├── mcp.rs           # MCP stdio client pool（多 server 并行）
+├── agent.rs         # AgentDefinition（项目级 + corpus 两级）
+├── retry.rs         # 指数退避重试（429/5xx, Retry-After）
+├── history.rs       # 历史裁剪（超长 assistant 输出逐条截断）
+└── compact.rs       # 上下文压缩（UsageAccumulator + 摘要替换 + 滚动分段）
+```
 ```
