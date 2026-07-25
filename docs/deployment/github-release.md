@@ -166,6 +166,40 @@ git push origin vx.x.x
 
 ---
 
+## v10.2.0 构建记录
+
+**构建时间**: 2026-07-25 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.2.0
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.2.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.2.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.2.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.2.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.2.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.2.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.2.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.2.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- 工具调用面板 JSON 输出支持格式化树形展示与折叠
+- 工具调用 JSON 树支持搜索/匹配跳转与失败摘要
+- 工具调用错误信息加红色左色条 + `durationMs` 类型兜底
+- JsonTreeView 健壮性复审修复 + 补齐全局缺失的 error 色 token
+- 专家库面板加一键初始化状态条与重装入口
+- 新增硬题攻坚工作流 PRD/ADR/实施计划与内置 profile
+
+---
+
 ## v10.1.9 构建记录
 
 **构建时间**: 2026-07-24 (UTC)
