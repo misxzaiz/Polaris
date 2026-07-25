@@ -408,6 +408,13 @@
     "language": {
       "title": "识别语言"
     },
+    "dictation": {
+      "title": "听写快捷键 (Ctrl/Cmd+D)",
+      "desc": "在输入框聚焦时，按 Ctrl（Mac 为 ⌘）+D 触发语音听写，识别结果填入输入框",
+      "modeToggle": "切换型：按一次开始，再按一次结束",
+      "modePush": "按住型：按住录制，松开结束",
+      "modeHint": "仅当输入框聚焦时生效；语音伙伴通话中自动避让"
+    },
     "wakeWord": {
       "title": "唤醒词模式",
       "desc": "开启后，语音识别将持续运行，等待唤醒词触发",

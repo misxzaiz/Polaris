@@ -6,7 +6,7 @@
 import { useTranslation } from 'react-i18next';
 import { useState, useCallback, type KeyboardEvent } from 'react';
 import type { Config } from '@/types';
-import type { SpeechLanguage, TTSVoice, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry, VoiceCommand } from '@/types/speech';
+import type { SpeechLanguage, TTSVoice, WakeWordConfig, VoiceNotificationConfig, VoiceCommandEntry, VoiceCommand, DictationMode } from '@/types/speech';
 import {
   SPEECH_LANGUAGE_OPTIONS,
   DEFAULT_SPEECH_CONFIG,
@@ -246,6 +246,66 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             ))}
           </select>
         </div>
+
+        {/* 听写快捷键设置（仅语音输入启用时显示） */}
+        {speechConfig.enabled && (
+          <div className="p-4 bg-surface rounded-lg border border-border mb-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-medium text-text-primary">
+                  {t('speech.dictation.title')}
+                </h3>
+                <p className="text-xs text-text-secondary mt-1">
+                  {t('speech.dictation.desc')}
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={speechConfig.dictationShortcutEnabled ?? true}
+                  onChange={(e) => updateSpeechConfig({ dictationShortcutEnabled: e.target.checked })}
+                  disabled={loading}
+                  className="sr-only peer"
+                />
+                <div className="w-9 h-5 bg-border rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-primary"></div>
+              </label>
+            </div>
+
+            {(speechConfig.dictationShortcutEnabled ?? true) && (
+              <div className="mt-3">
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                    <input
+                      type="radio"
+                      name="dictation-mode"
+                      value="toggle"
+                      checked={(speechConfig.dictationMode ?? 'toggle') === 'toggle'}
+                      onChange={() => updateSpeechConfig({ dictationMode: 'toggle' })}
+                      disabled={loading}
+                      className="text-primary"
+                    />
+                    <span>{t('speech.dictation.modeToggle')}</span>
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-text-primary cursor-pointer">
+                    <input
+                      type="radio"
+                      name="dictation-mode"
+                      value="push-to-talk"
+                      checked={(speechConfig.dictationMode ?? 'toggle') === 'push-to-talk'}
+                      onChange={() => updateSpeechConfig({ dictationMode: 'push-to-talk' as DictationMode })}
+                      disabled={loading}
+                      className="text-primary"
+                    />
+                    <span>{t('speech.dictation.modePush')}</span>
+                  </label>
+                </div>
+                <p className="text-xs text-text-tertiary mt-2">
+                  {t('speech.dictation.modeHint')}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 唤醒词设置（仅语音输入启用时显示） */}
         {speechConfig.enabled && (

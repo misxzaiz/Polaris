@@ -8,7 +8,7 @@
  * - 输入状态提示 / 流式状态 / 输入字数
  */
 
-import { useState, useCallback, useEffect, type ReactNode } from 'react';
+import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useSessionStore, useModelProfileStore } from '@/stores';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage } from '@/stores/conversationStore/useActiveSession';
@@ -158,6 +158,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     interimText,
     wakeActive,
     toggle: toggleDictation,
+    stop: stopDictation,
     isSupported: dictationSupported,
     isSecureContext,
     companionOpen,
@@ -168,6 +169,90 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
       setSpeechCommand(cmd);
     },
   });
+
+  // ===== Ctrl/Cmd+D 听写快捷键 =====
+  // 作用域：仅当聊天输入框聚焦时生效（避免与终端 EOF、编辑器、Mac 书签冲突）
+  // - toggle 模式：keydown 触发 toggleDictation（开始/停止）
+  // - push-to-talk 模式：keydown 开始（若未在听写）、keyup/blur/隐藏 停止
+  const dictationShortcutEnabled = speechConfig?.dictationShortcutEnabled ?? true;
+  const dictationMode = speechConfig?.dictationMode ?? 'toggle';
+
+  // 用 ref 持有最新值，避免 stale closure 与依赖重渲染抖动
+  const dictationStateRef = useRef({
+    toggleDictation,
+    stopDictation,
+    isDictating,
+    companionOpen,
+    dictationShortcutEnabled,
+    dictationMode,
+    dictationSupported,
+  });
+  useEffect(() => {
+    dictationStateRef.current = {
+      toggleDictation,
+      stopDictation,
+      isDictating,
+      companionOpen,
+      dictationShortcutEnabled,
+      dictationMode,
+      dictationSupported,
+    };
+  }, [toggleDictation, stopDictation, isDictating, companionOpen, dictationShortcutEnabled, dictationMode, dictationSupported]);
+
+  useEffect(() => {
+    if (!dictationShortcutEnabled || !dictationSupported) return;
+
+    const isChatInputFocused = () => {
+      const el = document.activeElement;
+      return !!el && el instanceof HTMLElement && el.closest('.chat-input-text') !== null;
+    };
+
+    const isOurKey = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      return mod && !e.shiftKey && !e.altKey && (e.code === 'KeyD' || e.key === 'd' || e.key === 'D');
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const s = dictationStateRef.current;
+      if (!s.dictationShortcutEnabled || !s.dictationSupported) return;
+      if (s.companionOpen) return;                 // 通话占用，避让
+      if (!isChatInputFocused()) return;            // 仅输入框聚焦时生效
+      if (!isOurKey(e)) return;
+      // Mac 下 ⌘+D 默认是"加入书签"，必须拦截
+      e.preventDefault();
+      if (e.repeat) return;                         // 键盘连击忽略
+      if (s.dictationMode === 'toggle') {
+        s.toggleDictation();
+      } else {
+        // push-to-talk：未在听写则开始（用 toggle 当 start，因为未开始时 toggle==start）
+        if (!s.isDictating) s.toggleDictation();
+      }
+    };
+
+    const onKeyUp = (e: KeyboardEvent) => {
+      const s = dictationStateRef.current;
+      if (s.dictationMode !== 'push-to-talk') return;
+      if (!isOurKey(e)) return;
+      if (s.isDictating) s.stopDictation();
+    };
+
+    // 失焦/切后台兜底：push-to-talk 模式下若仍在听写，立即停止
+    const onblurStop = () => {
+      const s = dictationStateRef.current;
+      if (s.dictationMode === 'push-to-talk' && s.isDictating) s.stopDictation();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onblurStop);
+    document.addEventListener('visibilitychange', onblurStop);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onblurStop);
+      document.removeEventListener('visibilitychange', onblurStop);
+    };
+  }, [dictationShortcutEnabled, dictationSupported]);
 
   // ===== 语音命令处理 =====
   // send/clear 留给 ChatInput 消费（handleSend 已处理 send、clear 清空输入框）

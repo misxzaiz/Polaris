@@ -408,6 +408,13 @@
     "language": {
       "title": "Recognition Language"
     },
+    "dictation": {
+      "title": "Dictation Shortcut (Ctrl/Cmd+D)",
+      "desc": "With the input focused, press Ctrl (⌘ on Mac)+D to start dictation; recognized text fills the input box",
+      "modeToggle": "Toggle: press once to start, again to stop",
+      "modePush": "Push-to-talk: hold to record, release to stop",
+      "modeHint": "Only active when the input is focused; yields to an active voice companion call"
+    },
     "wakeWord": {
       "title": "Wake Word Mode",
       "desc": "When enabled, speech recognition runs continuously waiting for wake word trigger",

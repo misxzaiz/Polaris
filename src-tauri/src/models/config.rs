@@ -723,6 +723,14 @@ pub struct SpeechConfig {
     /// 识别语言 (默认 "zh-CN")
     #[serde(default = "default_speech_language")]
     pub language: String,
+
+    /// 听写快捷键触发模式 (默认 "toggle")
+    #[serde(default = "default_speech_dictation_mode")]
+    pub dictation_mode: String,
+
+    /// 是否启用 Ctrl/Cmd+D 听写快捷键 (默认 true)
+    #[serde(default = "default_speech_dictation_shortcut_enabled")]
+    pub dictation_shortcut_enabled: bool,
 }
 
 /// 唤醒词配置
@@ -824,12 +832,16 @@ pub struct VoiceCommandEntry {
 
 fn default_speech_enabled() -> bool { true }
 fn default_speech_language() -> String { "zh-CN".to_string() }
+fn default_speech_dictation_mode() -> String { "toggle".to_string() }
+fn default_speech_dictation_shortcut_enabled() -> bool { true }
 
 impl Default for SpeechConfig {
     fn default() -> Self {
         Self {
             enabled: default_speech_enabled(),
             language: default_speech_language(),
+            dictation_mode: default_speech_dictation_mode(),
+            dictation_shortcut_enabled: default_speech_dictation_shortcut_enabled(),
         }
     }
 }

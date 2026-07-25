@@ -346,6 +346,15 @@ function getRegistry(): ShortcutDefinition[] {
       descriptionEn: 'Toggle when not listening',
       keys: 'Space',
     },
+    {
+      id: 'voice.dictation',
+      category: 'voice',
+      label: '语音听写',
+      labelEn: 'Voice Dictation',
+      description: '输入框聚焦时，Ctrl（Mac 为 ⌘）+D 触发语音听写，识别结果填入输入框',
+      descriptionEn: 'With input focused, Ctrl (⌘ on Mac)+D dictates recognized text into the input',
+      keys: `${mod}+D`,
+    },
   ]
 }
 

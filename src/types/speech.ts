@@ -26,12 +26,19 @@ export interface SpeechRecognitionError {
   message: string;
 }
 
+/** 听写快捷键触发模式 */
+export type DictationMode = 'toggle' | 'push-to-talk';
+
 /** 语音识别配置 */
 export interface SpeechConfig {
   /** 是否启用语音输入 */
   enabled: boolean;
   /** 识别语言 */
   language: SpeechLanguage;
+  /** 听写快捷键触发模式（默认 'toggle'） */
+  dictationMode?: DictationMode;
+  /** 是否启用 Ctrl/Cmd+D 听写快捷键（默认 true） */
+  dictationShortcutEnabled?: boolean;
 }
 
 /** 支持的语音识别语言 */
@@ -57,6 +64,8 @@ export const SPEECH_LANGUAGE_OPTIONS: Array<{ value: SpeechLanguage; label: stri
 export const DEFAULT_SPEECH_CONFIG: SpeechConfig = {
   enabled: true,
   language: 'zh-CN',
+  dictationMode: 'toggle',
+  dictationShortcutEnabled: true,
 };
 
 /** 语音命令类型 */
