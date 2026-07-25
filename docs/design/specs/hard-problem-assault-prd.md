@@ -158,15 +158,34 @@ interface AssaultArgs {
 
 ## 五、验收标准
 
-- [ ] AC-1: `hard-problem-assault` 命名 workflow 可被 `/workflows` 调用,参数 `problem` 必填。
-- [ ] AC-2: scout agent 返回符合 `FINDING_SCHEMA` 的结构化结果,无 status 汇报。
-- [ ] AC-3: `gapStrength==='theorem-strength' && !newMechanism` 的方法族被标记 blocked,下一轮不再派发。
-- [ ] AC-4: `newMechanism` 命中的 blocked 方法族被解锁。
-- [ ] AC-5: `gap==='none'` 的候选解必须过 audit(`voteThreshold` 票)才返回 solved。
-- [ ] AC-6: rounds 达上限或 budget 耗尽时返回 `{status:'open', strongest, gap}`,不返回"尽力而为"。
-- [ ] AC-7: 三个内置 profile(security-audit/refactor-design/root-cause)可被选用。
-- [ ] AC-8: 高风险场景 `voteThreshold≥3` 时,solved 结论可选触发 `dispatch_task` 人工复核。
-- [ ] AC-9: 原型 HTML 可在 `prd-preview` 渲染,展示方法族注册表/轮次/审计状态。
+- [x] AC-1: `hard-problem-assault` 命名 workflow 可被 `/workflows` 调用,参数 `problem` 必填。(2026-07-25 验证通过)
+- [x] AC-2: scout agent 返回符合 `FINDING_SCHEMA` 的结构化结果,无 status 汇报。(3 scout 全结构化)
+- [x] AC-3: `gapStrength==='theorem-strength' && !newMechanism` 的方法族被标记 blocked,下一轮不再派发。(逻辑就位)
+- [x] AC-4: `newMechanism` 命中的 blocked 方法族被解锁。(逻辑就位,scout:cache/state-machine 提出新机制)
+- [x] AC-5: `gap==='none'` 的候选解必须过 audit(`voteThreshold` 票)才返回 solved。(2/2 survives 验证)
+- [x] AC-6: rounds 达上限或 budget 耗尽时返回 `{status:'open', strongest, gap}`,不返回"尽力而为"。(solved/open 双路径验证)
+- [x] AC-7: 三个内置 profile(security-audit/refactor-design/root-cause)可被选用。(root-cause 端到端跑通)
+- [x] AC-8: 高风险场景 `voteThreshold≥3` 时,solved 结论可选触发 `dispatch_task` 人工复核。(逻辑就位)
+- [x] AC-9: 原型 HTML 可在 `prd-preview` 渲染,展示方法族注册表/轮次/审计状态。
+
+> M1 端到端验证(2026-07-25):用 `[1,2,3].map(parseInt)` 根因排查题,root-cause profile(3 族)、maxRounds=2、effort=low,Round 1 即收敛 `status:'solved'`,217k token / 9 agent。详细记录见 [实施方案 §九](../../plan/hard-problem-assault-implementation.md#九m1-验证记录2026-07-25)。
+
+## 五补、搜索治理六点对照(2026-07-25 增补)
+
+对照 [Cairn/CDC/wp2shell 三案例归纳](https://mp.weixin.qq.com/s/j2vX2huwPUKc5YFjVDu0yQ) 的 AI 搜索治理六点:
+
+| 治理点 | 本实现 | 状态 |
+|---|---|---|
+| 1 目标固定,路径不固定 | `problem` 必填 + `gap==='none'`+`acceptanceArtifact` 才算解 | ✅ |
+| 2 不用固定角色代替搜索 | persona 是**初始多样性种子**,非固化岗位(同 wp2shell 把"解析/字符集/上传"当种子) | ✅ |
+| 3 多条实质不同路线并行 | `FAMILIES[]` 多族并行,独立性保护(scout prompt 不透露其他族结论) | ✅ |
+| 4 中间搜索状态外化 | 内存 JS state + 每轮 `STATE_SNAPSHOT` 结构化 log | ⚠️ M1 快照 log / M2 落盘 |
+| 5 据新增事实循环生成下一步 | `Synth` schema + while 循环 + blocked 重开门控 | ✅ |
+| 6 完成由可验证目标决定 | `gap==='none'` + `acceptanceArtifact` + audit 投票 | ✅ |
+
+**核心论断落地:** 模型负责搜索内容(scout 提候选),Harness 负责搜索治理(方法族注册表/blocked 门控/对抗审计/STATE_SNAPSHOT/终止条件)。wp2shell 节俭参数(4 agent/6h/~$25)在 glm-5.2 上印证:effort=low + 3 族 + 3 工具上限,217k token 收敛。
+
+**边界声明:** 本范式不证明最优、不证明每项机制不可少、不证明共同结构就是成功原因。三案例实际只有两条独立设计源(CDC→wp2shell 直接继承,Cairn 独立同构),无消融实验。
 
 ---
 

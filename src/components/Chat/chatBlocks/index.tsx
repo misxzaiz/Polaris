@@ -17,9 +17,12 @@ import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
 import { DispatchTaskCard } from '../DispatchTaskCard';
+import { AssaultResultCard } from '../AssaultResultCard';
 
 /** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
 const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
+/** workflow 工具块(SDK 内置多 agent 编排)渲染为攻坚结果卡片(完成态时间线) */
+const WORKFLOW_TOOL_NAME = 'workflow';
 
 export function renderContentBlock(
   block: ContentBlock,
@@ -47,6 +50,12 @@ export function renderContentBlock(
       if (block.name === DISPATCH_TOOL_NAME) {
         return wrapWithErrorBoundary(
           <DispatchTaskCard block={block} />,
+          block.id
+        );
+      }
+      if (block.name === WORKFLOW_TOOL_NAME) {
+        return wrapWithErrorBoundary(
+          <AssaultResultCard block={block} />,
           block.id
         );
       }

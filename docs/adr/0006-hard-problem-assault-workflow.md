@@ -183,6 +183,7 @@ const FAMILIES = [
   - wp2shell 节俭参数:4 agent / 6h / ~$25 产出真实 RCE(印证单机 16 并发够用)
 - 实施计划: [docs/plan/hard-problem-assault-implementation.md](../plan/hard-problem-assault-implementation.md)
 - PRD: [docs/design/specs/hard-problem-assault-prd.md](../design/specs/hard-problem-assault-prd.md)
+- M2 设计: [docs/design/specs/hard-problem-assault-m2-design.md](../design/specs/hard-problem-assault-m2-design.md)
 - 原型: [docs/design/prototypes/polaris-hard-problem-assault.html](../design/prototypes/polaris-hard-problem-assault.html)
 - 关联 ADR: [ADR 0005](0005-simpleai-hybrid-context-compaction.md) 长会话可靠性
 - 关联实现: [docs/dispatch-phase2-plan.md](../dispatch-phase2-plan.md) 派发闭环

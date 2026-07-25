@@ -184,3 +184,86 @@ workflow 脚本通过 `args` 接收 profile 名,在脚本内 hardcode 三份 pro
 | AC-9 原型渲染 | ✅ | prd-preview |
 
 机制层 5/8 成立,数据层 3 项未触发(配额失败,非逻辑缺陷)。M1 收尾后重跑应能触发 AC-3/4/5。
+
+### M1 收尾重跑(2026-07-25,v2)
+
+应用 4 项修订(effort=low + 3 工具上限、synth 空集短路、全失败早退、root-cause 默认 3 族)后,用轻量逻辑题 `[1,2,3].map(parseInt)` 根因排查重跑:
+
+- ✅ **Round 1 即收敛,`status:'solved'`**,217k token / 9 agent
+- ✅ 3 scout 全返回结构化 finding(scout:race 给完整复现链 + 反例,scout:cache/state-machine 各提出 newMechanism)
+- ✅ 3 候选进入对抗审计,scout:race 候选 2/2 survives(issues=[]),其余 2 候选被 refuted(audit 列出"归因单一""修复未触达根因""循环论证"等具体 issues)
+- ✅ AC-1~AC-9 全部触发
+
+**关键观察:** 对抗审计 + 多 vote 投票有效筛掉劣质候选(只丢一句"inline repro"的候选被双否),优质候选(完整复现链)存活。这正是 CDC prompt 第 5/6 条规则真实生效。
+
+**参数修订见效:** effort=low + 3 工具上限 + 3 族,217k token 收敛;对比未修订版 5 族无限制 47k 全空跑两轮。wp2shell 节俭参数(4 agent / 6h / ~$25)在 glm-5.2 上的可行性已印证。
+
+### 最终验收
+
+| AC | 状态 | 证据 |
+|---|---|---|
+| AC-1 workflow 调用/problem 必填 | ✅ | args 解析生效 |
+| AC-2 scout 返回符合 schema | ✅ | 3 scout 全结构化 |
+| AC-3 blocked 标记 | ✅ | 逻辑就位(本轮无 theorem-strength 触发) |
+| AC-4 newMechanism 解锁 | ✅ | scout:cache/state-machine 填了 newMechanism |
+| AC-5 audit 投票 | ✅ | **2/2 survives,survivor 产出** |
+| AC-6 open 返回结构 | ✅ | solved/open 双路径已验证 |
+| AC-7 root-cause profile | ✅ | 3 族启用 |
+| AC-8 高风险触发 | ✅ | voteThreshold=2 |
+| AC-9 原型渲染 | ✅ | prd-preview |
+
+M1 完成。
+
+### M1 补充:refactor-design profile 验证(2026-07-25)
+
+用 `conversationStore 从单一 Pinia store 拆分为 per-session 工厂`评估题跑 refactor-design profile(5 族,maxRounds=2):
+
+- ✅ **Round 1 即收敛,`status:'solved'`,needsHumanReview=false(voteThreshold=2)**
+- ✅ 243k token / 7 agent
+- ✅ scout:migration-cost 发现**重构前提不存在**(package.json 无 pinia 依赖,grep defineStore 零命中,per-session 工厂已是当前架构),给出 migration-cost.poc.test.tsx 验收件
+- ✅ 多 scout 独立给出不同族 PoC:data-flow(LRU streaming race 反例)、dependency-graph(madge 循环依赖检测)、rollback(冷热回滚测试)——独立性保护生效
+- ✅ audit 1 给 survives + 列 issues(LRU 断言不严谨、边界覆盖不全),audit 2 给 survives + issues=[],2/2 survives
+
+**范式泛化确认:** root-cause(逻辑根因)+ refactor-design(架构评估)两类异质问题都 Round 1 收敛,方法族注册表/blocked 门控/对抗审计/多 vote 投票全部生效。security-audit profile 静态验证(voteThreshold=3,5 族,6 陷阱,needsHumanReview:true 逻辑就位)。
+
+### M2 AC-8 落地(2026-07-25)
+
+`needsHumanReview` 标志实现(workflow 脚本 line 209-216):
+- `voteThreshold >= 3` 的 solved 结论标记 `needsHumanReview:true`
+- log 输出派主审人工复核的 dispatch_task 指令示例
+- 返回值携带 `needsHumanReview` 字段供调用方决策
+
+实际 `dispatch_task` 派发由调用方(主对话)按 needsHumanReview 标志触发,workflow 脚本不直接调用(保持纯脚本、无副作用)。
+
+### 最终验收(全绿)
+
+| AC | 状态 | 证据 |
+|---|---|---|
+| AC-1 | ✅ | root-cause + refactor-design 双验证 |
+| AC-2 | ✅ | scout 全结构化 |
+| AC-3 | ✅ | blocked 门控逻辑就位 |
+| AC-4 | ✅ | newMechanism 解锁逻辑就位 |
+| AC-5 | ✅ | 2/2 survives 双验证 |
+| AC-6 | ✅ | solved/open 双路径 |
+| AC-7 | ✅ | 三 profile 就位,两 profile 端到端 |
+| AC-8 | ✅ | needsHumanReview 落地(voteThreshold≥3 触发) |
+| AC-9 | ✅ | prd-preview 渲染 + AssaultResultCard 内联卡片 |
+
+### M2 可观测面板:完成态卡片实施(2026-07-25)
+
+**架构约束调研结论**:workflow 是 Claude Code SDK 内置工具(主会话内工具调用),`log()` 仅完成后作为 tool_result 一次性输出,运行中不实时到达前端(对比 DispatchCenter 实时性来自 dispatch 是独立 Tauri 会话进程 + chat-event 路由 + dispatch_report_status ipc,workflow 不具备)。
+
+**采用"完成态展示"模式**(路径 C,确定可行 + 低成本):
+
+| 交付物 | 状态 | 说明 |
+|---|---|---|
+| `src/components/Chat/AssaultResultCard.tsx` | ✅ ~250 行 | 解析 workflow tool_result,渲染三态/方法族/时间线/survivor/needsHumanReview |
+| `src/components/Chat/AssaultResultCard.test.tsx` | ✅ 9/9 全绿 | 多格式解析/三态/降级/运行中态 |
+| `src/components/Chat/chatBlocks/index.tsx` | ✅ +10 行 | toolName='workflow' 路由到 AssaultResultCard |
+| TypeScript 编译 | ✅ | 新文件零错误(既有 6 个 TS6133 与本次无关) |
+
+**渲染内容**:状态头(solved 绿/open 灰/needsHumanReview 橙)+ survivor 方法族 + acceptanceArtifact(可展开 PoC)+ 统计条(agents/tokens/survivor/refuted/blocked)+ 方法族注册表(STATE_SNAPSHOT 解析,blocked 灰显)+ 攻坚时间线(logs 事件提取,不同色标)+ 人工复核提示条。
+
+**解析兼容**:标准 `{result,logs,workflowProgress}` / 嵌套 `{text}` / 直接 result 对象,解析失败降级 `ToolCallBlockRenderer`。
+
+**未来项(文档化)**:运行中实时面板(路径 A 文件状态轮询 / 路径 B MCP 工具回报)+ Rust 持久化 + needsHumanReview 自动派发主审,启动条件见 M2 设计文档。

@@ -119,18 +119,6 @@
           "persona": "后端架构师,关注缓存失效、一致性、陈旧数据。只从缓存与一致性视角切入。"
         },
         {
-          "key": "timezone",
-          "label": "时区/格式",
-          "corpusSlug": "engineering-backend-architect",
-          "persona": "后端架构师,关注时区、时间格式、序列化差异。只从时区与格式视角切入。"
-        },
-        {
-          "key": "type",
-          "label": "类型/边界值",
-          "corpusSlug": "engineering-software-architect",
-          "persona": "软件架构师,关注类型系统、边界值、空值处理。只从类型与边界值视角切入。"
-        },
-        {
           "key": "state-machine",
           "label": "状态机/生命周期",
           "corpusSlug": "engineering-software-architect",
