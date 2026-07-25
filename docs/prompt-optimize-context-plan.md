@@ -9,8 +9,8 @@
 > 让模型按草稿意图自主读取对话存档 / 项目文件,而非前端预采集拼 prompt(路径1)。
 > 模型选择管线直接复用 CompactHandoffModal 的成熟实现。
 >
-> 状态:**设计稿,待实施**(基于 `prompt-optimize-plan.md` Phase 1 已落地的版本栈体系)
-> 日期:2026-07-18
+> 状态:**全部实施**(2026-07-26)。**Phase 0 已验证通过,Phase 1/2/3 均已落地,仅 §6 混合兜底+§4.2 长对话落盘切换(可选)未做。**
+> 更新日期:2026-07-26
 
 ---
 
@@ -330,43 +330,29 @@ const sourceDefaults = useMemo(() => {
 
 **失败(模型无法稳定只输出优化文本)→ 回退路径1;成功 → Phase 1。**
 
-### Phase 1 — 基础设施:模型透传 + 双模式骨架(1.5 天)
+### ✅ Phase 1 — 基础设施:模型透传 + 双模式骨架(已实施,2026-07-26)
 
-**并行推进**(两项无依赖冲突):
+**模型透传**:
+- `RunPromptOptimizeOptions` 增 `modelProfileId`/`model`/`mode`；`PromptVersion` 增 `mode`。
+- `createSession` 增传 modelProfileId/model；配置记忆从单一 engine 升级为完整对象(engineId+mode+modelProfileId+model,持久化到 localStorage)。
+- 服务层先跑通:即使 UI 未升级,每次优化默认沿用源会话当前模型,比现状"引擎默认模型"更贴合。
 
-1. **模型透传**(0.5 天,可独立先行):
-   - `types.ts`: `RunPromptOptimizeOptions` 增 `modelProfileId`/`model`/`mode`;`PromptVersion` 增 `mode`。
-   - `promptOptimizeService.ts`: `createSession` 增传 modelProfileId/model(§3.3);配置记忆从单一 engine 升级为完整对象(§2 localStorage)。
-   - 服务层先跑通:即使 UI 未升级,每次优化默认沿用源会话当前模型,比现状"引擎默认模型"更贴合。
+**双模式骨架**:
+- `promptOptimizeService.ts` 全部分流(system prompt / sendOptions / 会话创建 / 超时)。
+- `ChatInput.tsx` 优化浮层加"快速/深度"toggle；深度无工作区按 §5-A 降级。
+- i18n: 模式标签 + 深度提示文案。
 
-2. **双模式骨架**(1 天):
-   - `promptOptimizeService.ts`: §3 全部分流(system prompt / sendOptions / 会话创建 / 超时)。
-   - `ChatInput.tsx`: 优化浮层加"快速/深度"toggle;深度无工作区按 §5-A 降级。
-   - i18n: 模式标签 + 深度提示文案。
+### ✅ Phase 2 — 浮层 UI 升级 + 精调(已实施,2026-07-26)
 
-**节点**:深度模式真实项目跑通 + 模型默认沿用正确;版本栈标注生效。
+1. **浮层三级选择 UI**:引擎四选一 + 模式切换 + 折叠高级选项(供应商 Profile + 模型下拉)；默认值走 `sourceDefaults` 同款解析链。
+2. **Prompt 精调 + 边界加固**:深度版 System Prompt 精调；对话上下文轻量接入(buildRecentContext,近6轮~200字摘要)；simple-ai 无 Profile 提示("无可用供应商，将使用官方 API")。
 
-### Phase 2 — 浮层 UI 升级 + 精调(1.5 天)
+### ✅ Phase 3 — 护栏与体验(已实施,2026-07-26)
 
-1. **浮层三级选择 UI**(1 天):
-   - 搬 CompactHandoffModal 的 `EnginePicker` / `Dropdown` / Profile·模型联动取数进优化浮层。
-   - 默认值走 `sourceDefaults` 同款解析链(§7.1)。
-   - 信息架构按 §7.3 布局:"引擎 + 模式"常显,"供应商 + 模型"折叠。
-
-2. **Prompt 精调 + 边界加固**(0.5 天):
-   - 深度版 System Prompt 精调(§3.1)。
-   - 对话上下文轻量接入(§4.1);`sanitizeBriefing` 同款后处理兜底。
-   - simple-ai 无 Profile 提示(§7.5)。
-   - 四引擎各跑一轮深度优化:确认不跑偏、不夹带、输出干净。
-
-**节点**:四引擎深度优化稳定;模型切换联动正确。
-
-### Phase 3 — 护栏与体验(0.5~1 天)
-
-1. 隐私提示:深度模式首次使用一次性告知"将读取项目文件与对话并发送给所选引擎"。
-2. 进度胶囊:深度工具调用期间显示"正在阅读项目上下文…"。
-3. 成本可见:浮层深度选项标注"较慢·读取项目上下文"。
-4. (可选)§6 混合兜底 + §4.2 长对话落盘切换。
+1. ✅ 隐私提示:深度模式首次使用弹窗告知"将读取项目文件与对话并发送给所选引擎"；确认后 `localStorage` 标记已见，不再重复。
+2. ✅ 进度胶囊:深度模式且无流式文本时显示"正在阅读项目上下文…"；有流式文本时显示实时预览。
+3. ✅ 成本可见:深度模式选项旁标注"较慢·读取项目上下文"（黄色警告色）。
+4. (可选)§6 混合兜底 + §4.2 长对话落盘切换 — 未做（低优先级，按需补）。
 
 ---
 
