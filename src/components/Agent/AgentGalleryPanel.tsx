@@ -8,9 +8,9 @@
  * - 专家团:roster 场景卡(成员/时序可见),填目标一键组队(nexus_start_roster 波次派发)
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
-import { Pencil, Plus, Rocket, Search, Send, Trash2, UserCheck } from 'lucide-react';
+import { BookOpen, ChevronLeft, Copy, Loader2, Pencil, Plus, Rocket, Search, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { useAgentStore } from '@/stores/agentStore';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -54,11 +54,13 @@ function AgentCard({
   onEdit,
   onDelete,
   onForkCorpus,
+  onDetail,
 }: {
   agent: GalleryAgent;
   onEdit: (a: CustomAgent) => void;
   onDelete: (a: CustomAgent) => void;
   onForkCorpus: (a: GalleryAgent) => void;
+  onDetail: (a: GalleryAgent) => void;
 }) {
   const setAgent = useSessionConfig((s) => s.setAgent);
   const currentAgent = useSessionConfig((s) => s.config.agent);
@@ -82,9 +84,15 @@ function AgentCard({
       }`}
     >
       <div className="flex items-center gap-2">
-        <span className="text-sm font-medium truncate text-text-primary" title={agent.name}>
-          {agent.name}
-        </span>
+        <button
+          type="button"
+          onClick={() => onDetail(agent)}
+          className="flex-1 text-left truncate"
+        >
+          <span className="text-sm font-medium truncate text-text-primary" title={agent.name}>
+            {agent.name}
+          </span>
+        </button>
         <span className="ml-auto shrink-0 text-[10px] text-text-muted">{divisionLabel}</span>
       </div>
       <p className="mt-1 line-clamp-2 flex-1 text-xs leading-relaxed text-text-tertiary" title={agent.description}>
@@ -666,6 +674,161 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
 }
 
 // ============================================================================
+// 专家详情抽屉(U1-4):完整 system prompt 预览 + 角色徽标 + 另存为自定义
+// ============================================================================
+
+const ROLE_LABEL: Record<string, string> = {
+  developer: '开发者',
+  qa: '质量验证',
+  'gate-keeper': '关卡守卫',
+  orchestrator: '流程编排',
+  governance: '合规治理',
+};
+const ROLE_CLS: Record<string, string> = {
+  developer: 'text-primary border-primary/40',
+  qa: 'text-warning border-warning/40',
+  'gate-keeper': 'text-error border-error/40',
+  orchestrator: 'text-blue-400 border-blue-400/40',
+  governance: 'text-purple-400 border-purple-400/40',
+};
+
+function AgentDetailDrawer({
+  agent,
+  roles,
+  onClose,
+  onFork,
+}: {
+  agent: GalleryAgent;
+  roles: Record<string, string>;
+  onClose: () => void;
+  onFork: (content: string) => void;
+}) {
+  const [systemPrompt, setSystemPrompt] = useState<string>('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const isCustom = agent.custom !== undefined;
+  const division = isCustom ? undefined : (roles[agent.slug] || 'developer');
+  const roleLabel = division ? (ROLE_LABEL[division] ?? division) : undefined;
+  const roleCls = division ? (ROLE_CLS[division] ?? 'text-text-muted border-border-subtle') : '';
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setSystemPrompt('');
+    if (isCustom && agent.custom) {
+      setSystemPrompt(agent.custom.systemPrompt);
+      setLoading(false);
+      return;
+    }
+    void readCorpusAgent(agent.slug)
+      .then((content) => {
+        if (cancelled) return;
+        const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
+        setSystemPrompt(body || '(该专家无系统提示词)');
+      })
+      .catch((e) => {
+        if (cancelled) return;
+        setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [agent.slug, isCustom]);
+
+  const handleCopy = useCallback(() => {
+    void navigator.clipboard?.writeText(systemPrompt).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [systemPrompt]);
+
+  const handleFork = useCallback(() => {
+    if (loading) return;
+    onFork(systemPrompt);
+  }, [loading, systemPrompt, onFork]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/30" />
+      <div
+        className="relative w-[520px] max-w-[96vw] flex h-full flex-col overflow-hidden border-l border-border bg-background-surface shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* 头部 */}
+        <div className="flex items-center gap-2 border-b border-border-subtle px-4 py-3">
+          <button type="button" onClick={onClose} className="rounded p-1 text-text-muted hover:text-text-primary hover:bg-background-hover">
+            <ChevronLeft size={16} />
+          </button>
+          <span className="text-lg">{agent.emoji || '🧩'}</span>
+          <span className="flex-1 truncate text-sm font-medium text-text-primary">{agent.name}</span>
+          <button type="button" onClick={onClose} className="rounded p-1 text-text-muted hover:text-text-primary hover:bg-background-hover">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* 元信息 */}
+        <div className="border-b border-border-subtle px-4 py-3">
+          <div className="text-[10px] font-mono text-text-tertiary">{agent.slug}</div>
+          <p className="mt-1 text-xs leading-relaxed text-text-secondary">{agent.description}</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {isCustom && <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] text-text-muted">自定义</span>}
+            {!isCustom && <span className="rounded border border-border-subtle px-1.5 py-0.5 text-[10px] text-text-muted">corpus</span>}
+            {roleLabel && (
+              <span className={`rounded border px-1.5 py-0.5 text-[10px] ${roleCls}`}>
+                {roleLabel}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={handleFork}
+              disabled={loading}
+              className="ml-auto flex items-center gap-1 rounded border border-primary/40 px-2 py-1 text-[10px] text-primary hover:bg-primary/5 disabled:opacity-50"
+            >
+              <Copy size={11} />
+              另存为自定义
+            </button>
+          </div>
+        </div>
+
+        {/* System Prompt */}
+        <div className="flex-1 overflow-auto px-4 py-3">
+          <div className="mb-2 flex items-center gap-1 text-[10px] text-text-tertiary">
+            <BookOpen size={11} />
+            系统提示词
+            {systemPrompt && (
+              <button
+                type="button"
+                onClick={handleCopy}
+                className="ml-auto text-text-muted hover:text-text-primary"
+              >
+                {copied ? '已复制' : '复制'}
+              </button>
+            )}
+          </div>
+          {loading && (
+            <div className="flex items-center gap-2 text-xs text-text-muted">
+              <Loader2 size={12} className="animate-spin" />
+              加载中…
+            </div>
+          )}
+          {error && (
+            <div className="rounded bg-error-faint/40 px-2 py-1.5 text-[11px] text-error">{error}</div>
+          )}
+          {!loading && !error && systemPrompt && (
+            <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary">
+              {systemPrompt}
+            </pre>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // 专家库安装状态条
 // ============================================================================
 
@@ -755,11 +918,17 @@ export default function AgentGalleryPanel() {
   const [pipelines, setPipelines] = useState<RosterPipeline[]>([]);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [rosterBuilderOpen, setRosterBuilderOpen] = useState(false);
+  const [detailAgent, setDetailAgent] = useState<GalleryAgent | null>(null);
+  const [roles, setRoles] = useState<Record<string, string>>({});
   const workspacePath = useWorkspaceStore((s) => s.getCurrentWorkspace()?.path);
 
   useEffect(() => {
     if (!loaded) void load();
     void loadRosters();
+    // 加载角色映射
+    void import('@/services/tauri/agentCorpusService').then(({ getAgentRoles }) =>
+      void getAgentRoles().then(setRoles).catch(() => {})
+    );
   }, [loaded, load, loadRosters]);
   useEffect(() => {
     if (workspacePath) void loadCustomAgents(workspacePath);
@@ -955,6 +1124,7 @@ export default function AgentGalleryPanel() {
                     })
                   }
                   onDelete={handleDelete}
+                  onDetail={setDetailAgent}
                 />
               )}
             />
@@ -993,6 +1163,24 @@ export default function AgentGalleryPanel() {
 
       {rosterBuilderOpen && <RosterBuilder onClose={() => setRosterBuilderOpen(false)} />}
       {editor && <CustomAgentEditor initial={editor} onClose={() => setEditor(null)} />}
+      {detailAgent && (
+        <AgentDetailDrawer
+          agent={detailAgent}
+          roles={roles}
+          onClose={() => setDetailAgent(null)}
+          onFork={(prompt) => {
+            setDetailAgent(null);
+            setEditor({
+              slug: `${detailAgent.slug}-custom`.slice(0, 64),
+              name: detailAgent.name,
+              emoji: detailAgent.emoji ?? '🧩',
+              description: detailAgent.description,
+              systemPrompt: prompt,
+              isNew: true,
+            });
+          }}
+        />
+      )}
     </div>
   );
 }

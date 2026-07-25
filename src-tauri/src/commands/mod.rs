@@ -23,6 +23,7 @@ pub use nexus::{nexus_dispatch_group, nexus_list_pipelines, nexus_resolve_escala
 #[cfg(feature = "tauri-app")]
 pub use agent_corpus::{
     agent_corpus_catalog, agent_corpus_divisions, agent_corpus_install, agent_corpus_read,
+    agent_corpus_roles,
     agent_corpus_rosters,
     agent_corpus_status, agent_corpus_uninstall, custom_agent_delete, custom_agent_list,
     custom_agent_save, simple_ai_list_agents, user_roster_delete, user_roster_save,

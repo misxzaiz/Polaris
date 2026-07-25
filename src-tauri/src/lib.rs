@@ -981,6 +981,7 @@ pub fn run() {
             commands::agent_corpus::custom_agent_list,
             commands::agent_corpus::custom_agent_save,
             commands::agent_corpus::custom_agent_delete,
+            commands::agent_corpus::agent_corpus_roles,
             // 历史对话存储
             commands::dialog_storage::dialog_list,
             commands::dialog_storage::dialog_list_meta,

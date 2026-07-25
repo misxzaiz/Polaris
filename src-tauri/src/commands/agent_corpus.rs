@@ -87,6 +87,15 @@ pub fn corpus_divisions_inner(resource_dir: Option<PathBuf>) -> Result<serde_jso
     agent_corpus::load_divisions(&resolve_resources_agents_dir(resource_dir))
 }
 
+/// 专家角色映射 agent-roles.json(U1-4 详情抽屉用)
+pub fn corpus_roles_inner() -> Result<serde_json::Value> {
+    let path = corpus_install_dir().join("agent-roles.json");
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| crate::error::AppError::ConfigError(format!("agent-roles.json 不可读: {e}")))?;
+    serde_json::from_str(&content)
+        .map_err(|e| crate::error::AppError::ConfigError(format!("agent-roles.json 解析失败: {e}")))
+}
+
 /// SimpleAI agent 列表条目(P1-6,discover_agents 两级查找结果)
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -332,6 +341,12 @@ pub fn simple_ai_list_agents(work_dir: String) -> Vec<SimpleAiAgentItem> {
 #[tauri::command]
 pub fn agent_corpus_rosters(app: tauri::AppHandle) -> Result<serde_json::Value> {
     corpus_rosters_inner(app_resource_dir(&app))
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn agent_corpus_roles() -> Result<serde_json::Value> {
+    corpus_roles_inner()
 }
 
 #[cfg(feature = "tauri-app")]

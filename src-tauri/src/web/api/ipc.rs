@@ -137,6 +137,9 @@ pub async fn handle_ipc_bridge(
         )
         .map_err(bad_request)
         .map(|c| Json(Value::String(c))),
+        "agent_corpus_roles" => crate::commands::agent_corpus::corpus_roles_inner()
+            .map_err(bad_request)
+            .map(Json),
         "simple_ai_list_agents" => {
             let work_dir = require_string(&args, "workDir")?;
             to_json(crate::commands::agent_corpus::simple_ai_list_agents_inner(&work_dir))

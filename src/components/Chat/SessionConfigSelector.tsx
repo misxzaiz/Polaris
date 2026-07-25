@@ -583,7 +583,14 @@ export function CompactSessionSelector({
 
   const getAgentLabel = (agentId?: string) => {
     if (!agentId) return t('sessionConfig.noAgent')
-    return agentList.find(a => a.id === agentId)?.name || agentId
+    const agent = agentList.find(a => a.id === agentId)
+    if (agent?.name) return agent.name
+    // corpus/自定义专家兜底:catalog 映射 emoji+显示名（CompactSessionSelector 无 catalog 订阅，从 agentStore 读取）
+    const agentState = useAgentStore.getState()
+    const entry = agentState.catalog.find(c => c.slug === agentId)
+      ?? agentState.customAgents.find(c => c.slug === agentId)
+    if (entry) return `${'emoji' in entry && entry.emoji ? entry.emoji + ' ' : ''}${entry.name}`
+    return agentId
   }
 
   const getModelLabel = (modelId?: string) => {

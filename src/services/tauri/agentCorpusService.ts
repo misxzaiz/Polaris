@@ -120,6 +120,12 @@ export async function deleteCustomAgent(workDir: string, slug: string): Promise<
   return invoke('custom_agent_delete', { workDir, slug });
 }
 
+/** 专家角色映射(agent-roles.json, U1-4 详情抽屉用) */
+export async function getAgentRoles(): Promise<Record<string, string>> {
+  const raw = await invoke<{ roles: Record<string, string> }>('agent_corpus_roles');
+  return raw?.roles ?? {};
+}
+
 export interface RosterStartResult {
   rosterId: string;
   scenario: string;
