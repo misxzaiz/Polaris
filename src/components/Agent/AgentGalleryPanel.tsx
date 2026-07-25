@@ -173,6 +173,7 @@ interface EditorState {
   emoji: string;
   description: string;
   systemPrompt: string;
+  tools: string[];
   isNew: boolean;
 }
 
@@ -203,6 +204,7 @@ function CustomAgentEditor({
         description: form.description,
         emoji: form.emoji,
         systemPrompt: form.systemPrompt,
+        tools: form.tools.length > 0 ? form.tools : undefined,
       });
       useToastStore.getState().info('已保存', `专家「${form.name}」已写入 .polaris/agents/${form.slug}.md`);
       onClose();
@@ -259,6 +261,11 @@ function CustomAgentEditor({
               placeholder={'你是……\n\n## 核心使命\n- …\n\n## 关键规则\n- …'}
               onChange={(e) => setForm({ ...form, systemPrompt: e.target.value })}
             />
+          </div>
+          <div>
+            <label className="mb-1 block text-[11px] text-text-muted">可用工具(空=不限制,逗号分隔)</label>
+            <input className={field} value={form.tools.join(', ')} placeholder="bash, read_file, write_file, edit_file, apply_patch, ..."
+              onChange={(e) => setForm({ ...form, tools: e.target.value.split(',').map(s => s.trim()).filter(Boolean) })} />
           </div>
         </div>
         <div className="mt-4 flex justify-end gap-2">
@@ -1059,7 +1066,7 @@ export default function AgentGalleryPanel() {
               </div>
               <button
                 type="button"
-                onClick={() => setEditor({ slug: '', name: '', emoji: '', description: '', systemPrompt: '', isNew: true })}
+                onClick={() => setEditor({ slug: '', name: '', emoji: '', description: '', systemPrompt: '', tools: [], isNew: true })}
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border-subtle px-2.5 py-1.5 text-xs text-text-secondary hover:border-border hover:text-text-primary"
                 title="在当前工作区 .polaris/agents/ 新建专家"
               >
@@ -1112,6 +1119,7 @@ export default function AgentGalleryPanel() {
                           emoji: a.emoji,
                           description: a.description,
                           systemPrompt: body.trim(),
+                          tools: [],
                           isNew: true,
                         });
                       })
@@ -1120,7 +1128,7 @@ export default function AgentGalleryPanel() {
                   onEdit={(c) =>
                     setEditor({
                       slug: c.slug, name: c.name, emoji: c.emoji ?? '',
-                      description: c.description, systemPrompt: c.systemPrompt, isNew: false,
+                      description: c.description, systemPrompt: c.systemPrompt, tools: c.tools ?? [], isNew: false,
                     })
                   }
                   onDelete={handleDelete}
@@ -1176,6 +1184,7 @@ export default function AgentGalleryPanel() {
               emoji: detailAgent.emoji ?? '🧩',
               description: detailAgent.description,
               systemPrompt: prompt,
+              tools: [],
               isNew: true,
             });
           }}

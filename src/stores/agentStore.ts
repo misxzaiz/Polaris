@@ -71,6 +71,7 @@ interface AgentState {
     description: string;
     emoji: string;
     systemPrompt: string;
+    tools?: string[];
   }) => Promise<void>;
   deleteCustom: (workDir: string, slug: string) => Promise<void>;
   setSearch: (q: string) => void;

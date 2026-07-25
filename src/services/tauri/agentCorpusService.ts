@@ -95,6 +95,7 @@ export interface CustomAgent {
   emoji: string | null;
   systemPrompt: string;
   filePath: string;
+  tools: string[];
 }
 
 export async function listCustomAgents(workDir: string): Promise<CustomAgent[]> {
@@ -108,6 +109,7 @@ export async function saveCustomAgent(params: {
   description: string;
   emoji: string;
   systemPrompt: string;
+  tools?: string[];
 }): Promise<string> {
   return invoke<string>('custom_agent_save', params);
 }

@@ -208,6 +208,7 @@ pub fn custom_agent_save_inner(
     description: &str,
     emoji: &str,
     system_prompt: &str,
+    tools: &[String],
 ) -> Result<PathBuf> {
     validate_custom_slug(slug)?;
     if name.trim().is_empty() || system_prompt.trim().is_empty() {
@@ -223,6 +224,9 @@ pub fn custom_agent_save_inner(
     );
     if !emoji.trim().is_empty() {
         fm.push_str(&format!("emoji: {}\n", emoji.trim()));
+    }
+    if !tools.is_empty() {
+        fm.push_str(&format!("tools: \"{}\"\n", tools.join(", ")));
     }
     fm.push_str("---\n\n");
     let dir = custom_agents_dir(work_dir);
@@ -252,6 +256,8 @@ pub struct CustomAgentItem {
     pub emoji: Option<String>,
     pub system_prompt: String,
     pub file_path: String,
+    #[serde(default)]
+    pub tools: Vec<String>,
 }
 
 pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
@@ -265,6 +271,7 @@ pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
             description: a.description,
             emoji: a.emoji,
             system_prompt: a.system_prompt,
+            tools: a.tools,
         })
         .collect()
 }
@@ -364,8 +371,9 @@ pub fn custom_agent_save(
     description: String,
     emoji: String,
     system_prompt: String,
+    tools: Vec<String>,
 ) -> Result<String> {
-    custom_agent_save_inner(&work_dir, &slug, &name, &description, &emoji, &system_prompt)
+    custom_agent_save_inner(&work_dir, &slug, &name, &description, &emoji, &system_prompt, &tools)
         .map(|p| p.to_string_lossy().to_string())
 }
 

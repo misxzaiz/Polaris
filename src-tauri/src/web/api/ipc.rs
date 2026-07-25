@@ -150,6 +150,11 @@ pub async fn handle_ipc_bridge(
         }
         "custom_agent_save" => {
             let g = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+            let tools: Vec<String> = args
+                .get("tools")
+                .and_then(Value::as_array)
+                .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                .unwrap_or_default();
             crate::commands::agent_corpus::custom_agent_save_inner(
                 &require_string(&args, "workDir")?,
                 &require_string(&args, "slug")?,
@@ -157,6 +162,7 @@ pub async fn handle_ipc_bridge(
                 &g("description"),
                 &g("emoji"),
                 &g("systemPrompt"),
+                &tools,
             )
             .map_err(bad_request)
             .map(|p| Json(Value::String(p.to_string_lossy().to_string())))
