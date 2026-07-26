@@ -107,6 +107,10 @@ walkdir = "2"
 reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
 futures-util = "0.3"
 md5 = "0.7"
+# AES-128-CBC 加解密（与前端 crypto-js 兼容）
+aes = "0.8"
+cbc = "0.1"
+rand = "0.8"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 tempfile = "3"
 tauri-plugin-notification = { version = "2.3.3", optional = true }
