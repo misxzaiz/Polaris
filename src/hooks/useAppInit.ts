@@ -249,31 +249,19 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       maybeAutoMigrateOpfs(),
     );
 
-    // Agency Agents corpus 自动安装/升级（幂等，后台静默）
-    // 桌面端(tauri)与 Web 端(http)均触发:Web 端 ipc.rs 已桥接 corpus_*_inner,
-    // 服务端 data_root 可写时安装到全局,多用户共享只读词典(幂等,失败静默不阻塞启动)
+    // 专家/专家团数据预加载(内置 corpus 已移除,仅加载用户自建数据)
     if (currentMode === 'tauri' || currentMode === 'http') {
-      void import('@/services/tauri/agentCorpusService')
-        .then(({ ensureCorpusInstalled }) => ensureCorpusInstalled())
-        .then((status) => {
-          if (status) {
-            log.info('Agent corpus ready', {
-              version: status.installedVersion,
-              count: status.installedCount,
-            });
-          }
-          // catalog 预加载:/agent、/dispatch <slug> 改写与 Gallery 首开都依赖
-          return import('@/stores/agentStore').then(({ useAgentStore }) => {
-            const store = useAgentStore.getState();
-            const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
-            return Promise.all([
-              store.load(),
-              store.loadRosters(),
-              ws ? store.loadCustomAgents(ws) : Promise.resolve(),
-            ]).then(() => undefined);
-          });
+      void import('@/stores/agentStore')
+        .then(({ useAgentStore }) => {
+          const store = useAgentStore.getState();
+          const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+          return Promise.all([
+            store.load(),
+            store.loadRosters(),
+            ws ? store.loadCustomAgents(ws) : Promise.resolve(),
+          ]).then(() => undefined);
         })
-        .catch((err) => log.warn('Agent corpus install failed', { error: String(err) }));
+        .catch((err) => log.warn('Agent data load failed', { error: String(err) }));
     }
   });
 

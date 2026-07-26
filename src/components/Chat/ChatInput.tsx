@@ -1152,7 +1152,7 @@ export function ChatInput({
             })),
             ...agentState.catalog,
           ],
-          agentState.status?.installDir ?? null,
+          null,
         )
         if (rewrite) {
           dispatchCmd.prompt = rewrite.prompt

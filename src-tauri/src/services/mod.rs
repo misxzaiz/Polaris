@@ -1,4 +1,3 @@
-pub mod agent_corpus;
 pub mod config_store;
 pub mod data_root;
 pub mod dialog_index;

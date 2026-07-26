@@ -388,12 +388,12 @@ fn agents_install_dir() -> PathBuf {
     crate::services::data_root::data_root().root().join("agents")
 }
 
-/// 读取专家 corpus 人格 body,作为 system prompt 注入派发会话。
-/// 复用 agent_corpus::load_claude_agent_def(解析 frontmatter + body system prompt);
-/// 命中失败返回 None(未安装或无该 slug),调用方回退默认行为。
-fn load_agent_persona(slug: &str) -> Option<String> {
-    let install_dir = agents_install_dir();
-    let (_s, _desc, body) = crate::services::agent_corpus::load_claude_agent_def(&install_dir, slug)?;
+/// 读取项目级专家人格 body,作为 system prompt 注入派发会话。
+/// 复用 simple_ai::load_agent_def(解析 frontmatter + body system prompt);
+/// 命中失败返回 None(无该 slug),调用方回退默认行为。
+fn load_agent_persona(work_dir: &str, slug: &str) -> Option<String> {
+    let (_s, _desc, body) =
+        crate::ai::engine::simple_ai::load_agent_def(work_dir, slug)?;
     if body.trim().is_empty() {
         return None;
     }
@@ -484,12 +484,14 @@ pub fn start_roster(
     work_dir: Option<String>,
     mode: Option<&str>,
 ) -> std::result::Result<(RosterPipeline, Vec<String>), String> {
-    let rosters_path = agents_install_dir().join("rosters.json");
-    let content = std::fs::read_to_string(&rosters_path)
-        .map_err(|e| format!("rosters.json 不可读({e});请先安装 agent corpus"))?;
-    let mut file: RostersFile =
-        serde_json::from_str(&content).map_err(|e| format!("rosters.json 解析失败: {e}"))?;
-    // 合并用户自建 roster(rosters-user.json,同 slug 用户覆盖内置)
+    let mut file = RostersFile { rosters: vec![] };
+    // 内置 rosters.json(可选;旧用户已安装的残留,新装机无此文件)
+    if let Ok(content) = std::fs::read_to_string(agents_install_dir().join("rosters.json")) {
+        if let Ok(f) = serde_json::from_str::<RostersFile>(&content) {
+            file.rosters.extend(f.rosters);
+        }
+    }
+    // 用户自建 rosters-user.json(同 slug 覆盖内置)
     if let Ok(user_content) =
         std::fs::read_to_string(agents_install_dir().join("rosters-user.json"))
     {
@@ -499,6 +501,9 @@ pub fn start_roster(
                 file.rosters.push(r);
             }
         }
+    }
+    if file.rosters.is_empty() {
+        return Err("无可用专家团;请先用 save_roster 创建".into());
     }
     let def = file
         .rosters
@@ -578,11 +583,12 @@ fn dispatch_pending(
             tracing::info!("[Nexus] 成员 {slug} 命中 DispatchPreset,按预设应用引擎/模型");
         }
         // 专家人格内联注入 system prompt(不再依赖"模型自己去读文件")
-        let persona = load_agent_persona(&slug);
+        let wd = pipeline.work_dir.as_deref().unwrap_or("");
+        let persona = load_agent_persona(wd, &slug);
         if persona.is_some() {
             tracing::info!("[Nexus] 成员 {slug} 专家人格已注入 system prompt");
         } else {
-            tracing::warn!("[Nexus] 成员 {slug} 未找到 corpus 人格,回退默认行为(建议先安装 corpus)");
+            tracing::warn!("[Nexus] 成员 {slug} 未找到项目级专家人格,回退默认行为(建议先用 save_agent 创建)");
         }
         let params = super::ask_listener::DispatchTaskParams {
             source_session_id: pipeline.source_session_id.clone(),

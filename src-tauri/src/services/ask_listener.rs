@@ -207,6 +207,10 @@ async fn handle_connection(
         "dispatch_targets" => {
             handle_dispatch_targets_frame(&mut stream, frame, state, &expected_token).await
         }
+        "agent_save" => handle_agent_save_frame(&mut stream, frame, &expected_token).await,
+        "agent_delete" => handle_agent_delete_frame(&mut stream, frame, &expected_token).await,
+        "agent_list" => handle_agent_list_frame(&mut stream, frame, &expected_token).await,
+        "roster_save" => handle_roster_save_frame(&mut stream, frame, &expected_token).await,
         other => Err(AppError::ValidationError(format!("未知帧类型: {}", other))),
     }
 }
@@ -632,19 +636,19 @@ pub fn register_dispatch_task(
                 }
             }
             Err(_) => {
-                // 未命中 preset:尝试当 corpus 专家 slug 读人格注入。
-                // 路径与 nexus_pipeline::load_agent_persona 同构,复用 agent_corpus 解析。
-                let install_dir = crate::services::data_root::data_root().root().join("agents");
+                // 未命中 preset:尝试当项目级专家 slug 读人格注入。
+                // 路径与 nexus_pipeline::load_agent_persona 同构,复用 simple_ai::load_agent_def。
+                let wd = params.work_dir.as_deref().unwrap_or("");
                 if let Some((_s, _desc, body)) =
-                    crate::services::agent_corpus::load_claude_agent_def(&install_dir, role_name)
+                    crate::ai::engine::simple_ai::load_agent_def(wd, role_name)
                 {
                     if !body.trim().is_empty() && append_system_prompt.is_none() {
                         append_system_prompt = Some(body);
                         role = Some(role_name.to_string());
-                        tracing::info!("[Dispatch] role「{role_name}」按 corpus 专家注入人格");
+                        tracing::info!("[Dispatch] role「{role_name}」按项目专家注入人格");
                     }
                 }
-                // corpus 也无此 slug:role 仍记名(供展示),引擎/模型继承来源会话
+                // 项目级也无该 slug:role 仍记名(供展示),引擎/模型继承来源会话
                 if role.is_none() {
                     role = Some(role_name.to_string());
                 }
@@ -849,75 +853,29 @@ async fn handle_find_expert_frame(
 }
 
 fn find_expert_candidates(query: &str, work_dir: &str) -> Vec<Value> {
-    let agents_dir = crate::services::data_root::data_root().root().join("agents");
     let mut out: Vec<Value> = Vec::new();
-
-    // L1: coordination.json routes 查表(resources/nexus)
-    let coord_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join("nexus")
-        .join("coordination.json");
-    if let Ok(coord) = std::fs::read_to_string(&coord_path)
-        .map_err(|e| e.to_string())
-        .and_then(|c| serde_json::from_str::<Value>(&c).map_err(|e| e.to_string()))
-    {
-        if let Some(routes) = coord.get("routes").and_then(Value::as_object) {
-            for (key, slug) in routes {
-                if query == *key || query.contains(key.as_str()) {
-                    if let Some(slug) = slug.as_str() {
-                        out.push(json!({ "slug": slug, "source": "route", "matchedType": key }));
-                    }
-                }
-            }
-        }
+    let q = query.trim().to_lowercase();
+    if q.is_empty() || work_dir.is_empty() {
+        return out;
     }
 
-    // L2: catalog + 自定义专家关键词匹配
-    let catalog: Vec<Value> = std::fs::read_to_string(agents_dir.join("catalog.json"))
-        .ok()
-        .and_then(|c| serde_json::from_str::<Value>(&c).ok())
-        .and_then(|v| v.get("agents").and_then(Value::as_array).cloned())
-        .unwrap_or_default();
-    let mut push_match = |slug: &str, name: &str, desc: &str, source: &str| {
+    // 项目级自定义专家关键词匹配(内置 corpus 已移除)
+    for a in crate::ai::engine::simple_ai::list_project_agents(work_dir) {
         if out.len() >= 8 {
-            return;
+            break;
         }
-        if out.iter().any(|c| c.get("slug").and_then(Value::as_str) == Some(slug)) {
-            return;
-        }
-        let hay = format!("{} {} {}", slug, name, desc).to_lowercase();
-        // 全词命中或任一 ≥2 字词片段命中
-        let hit = hay.contains(query)
-            || query
-                .split_whitespace()
+        let hay = format!("{} {} {}", a.slug, a.name, a.description).to_lowercase();
+        let hit = hay.contains(&q)
+            || q.split_whitespace()
                 .filter(|w| w.chars().count() >= 2)
                 .any(|w| hay.contains(w));
         if hit {
-            out.push(json!({ "slug": slug, "name": name, "description": desc, "source": source }));
-        }
-    };
-    if !work_dir.is_empty() {
-        for a in crate::ai::engine::simple_ai::list_project_agents(work_dir) {
-            push_match(&a.slug, &a.name, &a.description, "custom");
-        }
-    }
-    for a in &catalog {
-        let g = |k: &str| a.get(k).and_then(Value::as_str).unwrap_or_default();
-        push_match(g("slug"), g("name"), g("description"), "corpus");
-    }
-
-    // route 命中的补全 name/description
-    for c in out.iter_mut() {
-        if c.get("name").is_none() {
-            if let Some(slug) = c.get("slug").and_then(Value::as_str) {
-                if let Some(entry) = catalog
-                    .iter()
-                    .find(|a| a.get("slug").and_then(Value::as_str) == Some(slug))
-                {
-                    c["name"] = entry.get("name").cloned().unwrap_or(Value::Null);
-                    c["description"] = entry.get("description").cloned().unwrap_or(Value::Null);
-                }
-            }
+            out.push(json!({
+                "slug": a.slug,
+                "name": a.name,
+                "description": a.description,
+                "source": "custom"
+            }));
         }
     }
     out
@@ -1144,6 +1102,159 @@ async fn handle_dispatch_targets_frame(
         "note": "role 优先于 provider/model；均省略时继承来源会话配置",
     });
 
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 agent_save 帧:新建/覆盖项目级专家。
+async fn handle_agent_save_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let g = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let work_dir = g("workDir");
+    let slug = g("slug");
+    let name = g("name");
+    let description = g("description");
+    let emoji = g("emoji");
+    let system_prompt = g("systemPrompt");
+    let tools: Vec<String> = frame
+        .get("tools")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+
+    let reply = match crate::commands::agent_corpus::custom_agent_save_inner(
+        &work_dir, &slug, &name, &description, &emoji, &system_prompt, &tools,
+    ) {
+        Ok(path) => json!({
+            "type": "agent_save_result",
+            "ok": true,
+            "slug": slug,
+            "filePath": path.to_string_lossy(),
+        }),
+        Err(e) => json!({
+            "type": "agent_save_result",
+            "ok": false,
+            "error": e.to_message(),
+        }),
+    };
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 agent_delete 帧:删除项目级专家。
+async fn handle_agent_delete_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
+    let slug = frame.get("slug").and_then(Value::as_str).unwrap_or_default();
+
+    let reply = match crate::commands::agent_corpus::custom_agent_delete_inner(&work_dir, &slug) {
+        Ok(()) => json!({ "type": "agent_delete_result", "ok": true, "slug": slug }),
+        Err(e) => json!({
+            "type": "agent_delete_result",
+            "ok": false,
+            "error": e.to_message(),
+        }),
+    };
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 agent_list 帧:返回项目级专家 + 用户专家团(供 AI 查重)。
+async fn handle_agent_list_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
+
+    let agents: Vec<Value> = crate::ai::engine::simple_ai::list_project_agents(work_dir)
+        .into_iter()
+        .map(|a| {
+            json!({
+                "slug": a.slug,
+                "name": a.name,
+                "description": a.description,
+                "source": "custom",
+            })
+        })
+        .collect();
+    let rosters: Vec<Value> = crate::commands::agent_corpus::corpus_rosters_inner()
+        .ok()
+        .and_then(|v| v.get("rosters").and_then(Value::as_array).cloned())
+        .unwrap_or_default()
+        .into_iter()
+        .map(|r| {
+            json!({
+                "slug": r.get("slug").cloned().unwrap_or(Value::Null),
+                "title": r.get("title").cloned().unwrap_or(Value::Null),
+                "members": r.pointer("/groups/0/members").cloned().unwrap_or(Value::Array(vec![])),
+                "source": "roster",
+            })
+        })
+        .collect();
+
+    let reply = json!({
+        "type": "agent_list_result",
+        "ok": true,
+        "agents": agents,
+        "rosters": rosters,
+    });
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 roster_save 帧:新建/覆盖用户专家团。
+async fn handle_roster_save_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame.get("token").and_then(Value::as_str).unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
+    }
+    let g = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
+    let slug = g("slug");
+    let title = g("title");
+    let summary = g("summary");
+    let members: Vec<String> = frame
+        .get("members")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .unwrap_or_default();
+
+    let reply = match crate::commands::agent_corpus::user_roster_save_inner(
+        &slug, &title, &summary, members,
+    ) {
+        Ok(()) => json!({ "type": "roster_save_result", "ok": true, "slug": slug }),
+        Err(e) => json!({
+            "type": "roster_save_result",
+            "ok": false,
+            "error": e.to_message(),
+        }),
+    };
     write_frame(stream, &reply).await?;
     let _ = stream.shutdown().await;
     Ok(())

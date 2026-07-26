@@ -13,6 +13,9 @@
 //!   --polaris-session <ID>     Optional session id of the calling session
 //!                              (used for engine/workspace inheritance and
 //!                              dispatch-depth limiting)
+//!   --polaris-workdir <DIR>    Optional default workspace dir for self-service
+//!                              agent tools (save_agent/list_agents/...) when
+//!                              the tool call omits workDir
 
 use polaris_lib::services::dispatch_mcp_server::{run_dispatch_mcp_server, DispatchMcpConfig};
 use polaris_lib::{AppError, Result};
@@ -35,6 +38,7 @@ fn parse_args(args: &[String]) -> Result<DispatchMcpConfig> {
     let mut port: Option<u16> = None;
     let mut token: Option<String> = None;
     let mut session_id: Option<String> = None;
+    let mut work_dir: Option<String> = None;
 
     let mut iter = args.iter().skip(1);
     while let Some(arg) = iter.next() {
@@ -63,6 +67,15 @@ fn parse_args(args: &[String]) -> Result<DispatchMcpConfig> {
                         .clone(),
                 );
             }
+            "--polaris-workdir" => {
+                work_dir = Some(
+                    iter.next()
+                        .ok_or_else(|| {
+                            AppError::ValidationError("--polaris-workdir 缺少值".into())
+                        })?
+                        .clone(),
+                );
+            }
             other => {
                 return Err(AppError::ValidationError(format!(
                     "未知参数: {}。用法：polaris-dispatch-mcp --polaris-port <PORT> --polaris-token <TOKEN>",
@@ -79,5 +92,6 @@ fn parse_args(args: &[String]) -> Result<DispatchMcpConfig> {
         port,
         token,
         session_id,
+        work_dir,
     })
 }

@@ -1,26 +1,21 @@
 /**
- * Agency Agents catalog 状态管理(P1-3)
+ * 专家/专家团状态管理
  *
- * 数据源:`agent_corpus_catalog` / `agent_corpus_divisions` 命令(P0-5/M0 产物),
- * 不经 discover_agents 拼装。搜索/部门筛选为纯前端内存过滤(267 条量级)。
+ * 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`(由 AI 经 MCP
+ * `save_agent` 自助维护),专家团存于 `<DataRoot>/agents/rosters-user.json`。
+ * `catalog` 为 customAgents 的派生视图(供旧消费点兼容),搜索/筛选为纯前端内存过滤。
  */
 
 import { create } from 'zustand';
 import {
-  getAgentCatalog,
-  getCorpusStatus,
-  installCorpus,
   getRosters,
   listCustomAgents,
   saveCustomAgent,
   deleteCustomAgent,
-  type AgentCatalogEntry,
-  type CorpusStatus,
   type CustomAgent,
   type RosterDef,
 } from '@/services/tauri/agentCorpusService';
 import { invoke } from '@/services/transport';
-import type { DivisionMap } from '@/types/agent';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('AgentStore');
@@ -33,34 +28,36 @@ interface SimpleAiAgentItem {
   division: string | null;
 }
 
+/** 派生 catalog 条目(从 customAgents 映射,兼容旧消费点) */
+export interface AgentCatalogEntry {
+  slug: string;
+  name: string;
+  description: string;
+  emoji: string;
+  color: string;
+  division: string;
+}
+
 interface AgentState {
+  /** 派生 catalog(从 customAgents 映射) */
   catalog: AgentCatalogEntry[];
-  divisions: DivisionMap;
-  status: CorpusStatus | null;
   loading: boolean;
   loaded: boolean;
   error: string | null;
 
-  /** SimpleAI 引擎可用 agent(项目级 + 全局 corpus 两级,P1-6) */
+  /** SimpleAI 引擎可用 agent(项目级) */
   simpleAiAgents: SimpleAiAgentItem[];
 
-  /** 专家团场景(rosters.json) */
+  /** 专家团场景(rosters-user.json) */
   rosters: RosterDef[];
   /** 项目级自定义专家 */
   customAgents: CustomAgent[];
-
-  /** 正在安装/重装 corpus */
-  installing: boolean;
-  /** 最近一次安装错误(供 UI 诊断展示) */
-  installError: string | null;
 
   /** 筛选状态 */
   search: string;
   division: string | null;
 
   load: () => Promise<void>;
-  /** 一键安装/重装 corpus,完成后刷新 catalog/status。返回成功与否。 */
-  reinstall: () => Promise<boolean>;
   loadSimpleAiAgents: (workDir: string) => Promise<void>;
   loadRosters: () => Promise<void>;
   loadCustomAgents: (workDir: string) => Promise<void>;
@@ -80,61 +77,35 @@ interface AgentState {
   filtered: () => AgentCatalogEntry[];
 }
 
+/** 把 CustomAgent 映射为派生 catalog 条目 */
+function toCatalogEntry(c: CustomAgent): AgentCatalogEntry {
+  return {
+    slug: c.slug,
+    name: c.name,
+    description: c.description,
+    emoji: c.emoji ?? '',
+    color: '',
+    division: 'custom',
+  };
+}
+
 export const useAgentStore = create<AgentState>()((set, get) => ({
   catalog: [],
-  divisions: {},
-  status: null,
   loading: false,
   loaded: false,
   error: null,
   simpleAiAgents: [],
   rosters: [],
   customAgents: [],
-  installing: false,
-  installError: null,
   search: '',
   division: null,
 
   load: async () => {
     if (get().loading) return;
     set({ loading: true, error: null });
-    try {
-      const [catalog, divisionsRaw, status] = await Promise.all([
-        getAgentCatalog(),
-        invoke<{ divisions: DivisionMap }>('agent_corpus_divisions'),
-        getCorpusStatus().catch(() => null),
-      ]);
-      set({
-        catalog,
-        divisions: divisionsRaw?.divisions ?? {},
-        status,
-        loading: false,
-        loaded: true,
-      });
-    } catch (err) {
-      log.warn('Agent catalog load failed', { error: String(err) });
-      set({ loading: false, error: String(err) });
-    }
-  },
-
-  reinstall: async () => {
-    if (get().installing) return false;
-    set({ installing: true, installError: null });
-    try {
-      await installCorpus();
-      // 安装完成后刷新 catalog 与 status(catalog 从资源目录读,status 反映安装结果)
-      const [catalog, status] = await Promise.all([
-        getAgentCatalog().catch(() => [] as AgentCatalogEntry[]),
-        getCorpusStatus().catch(() => null),
-      ]);
-      set({ catalog, status, installing: false, loaded: true });
-      return true;
-    } catch (err) {
-      const msg = String(err);
-      log.warn('Agent corpus install failed', { error: msg });
-      set({ installing: false, installError: msg });
-      return false;
-    }
+    // 内置 corpus 已移除:catalog 从 customAgents 派生,此处仅置 loaded
+    // 真正数据加载由 loadCustomAgents(需 workDir)触发
+    set({ loading: false, loaded: true });
   },
 
   loadSimpleAiAgents: async (workDir) => {
@@ -156,7 +127,8 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
   loadCustomAgents: async (workDir) => {
     try {
-      set({ customAgents: await listCustomAgents(workDir) });
+      const customAgents = await listCustomAgents(workDir);
+      set({ customAgents, catalog: customAgents.map(toCatalogEntry), loaded: true });
     } catch (err) {
       log.warn('Custom agents load failed', { error: String(err) });
     }

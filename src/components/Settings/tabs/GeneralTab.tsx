@@ -3,73 +3,11 @@
  * 包含语言、主题等全局外观偏好
  */
 
-import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config, WindowSettings, ChatDisplayDensity, ChatDisplayFontFamily } from '@/types';
 import { DEFAULT_CHAT_DISPLAY_SETTINGS, getChatDisplayStyleVars, normalizeChatDisplaySettings } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
-import { getCorpusStatus, installCorpus, type CorpusStatus } from '@/services/tauri/agentCorpusService';
-
-/** 专家库状态卡片(U2-7:显示版本/计数,落后时显示升级按钮) */
-function CorpusStaleSection() {
-  const [status, setStatus] = useState<CorpusStatus | null>(null);
-  const [installing, setInstalling] = useState(false);
-
-  useEffect(() => {
-    void getCorpusStatus().then(setStatus).catch(() => setStatus(null));
-  }, []);
-
-  const handleInstall = async () => {
-    setInstalling(true);
-    try {
-      await installCorpus();
-      void getCorpusStatus().then(setStatus);
-    } catch {
-      // 静默(错误由后端日志覆盖);刷新状态让用户看到
-      void getCorpusStatus().then(setStatus);
-    } finally {
-      setInstalling(false);
-    }
-  };
-
-  if (!status) return null;
-  const isStale = status.bundledVersion > (status.installedVersion ?? 0);
-  const isMissing = status.installedVersion === null;
-  const tone = isStale
-    ? 'border-warning/40 bg-warning/5'
-    : 'bg-surface border-border';
-
-  return (
-    <div className={`rounded-lg border p-4 ${tone}`}>
-      <div className="flex items-center gap-2">
-        <span className="text-lg">{isStale ? '📦' : isMissing ? '⬇️' : '✅'}</span>
-        <div className="flex-1">
-          <div className="text-sm font-medium text-text-primary">
-            {isStale ? '专家库有更新' : isMissing ? '专家库未安装' : '专家库已就绪'}
-          </div>
-          <div className="text-[11px] text-text-tertiary">
-            {isStale
-              ? `已安装 v${status.installedVersion}(${status.installedCount} 位) → 内置 v${status.bundledVersion}(${status.bundledCount} 位)`
-              : isMissing
-                ? `内置 ${status.bundledCount} 位专家待安装`
-                : `${status.installedCount} 位专家 · v${status.installedVersion}`}
-          </div>
-        </div>
-        {(isStale || isMissing) && (
-          <button
-            type="button"
-            onClick={handleInstall}
-            disabled={installing}
-            className="rounded border border-primary/40 px-2 py-1 text-[11px] text-primary hover:bg-primary/5 disabled:opacity-50"
-          >
-            {installing ? '升级中…' : isStale ? '升级' : '安装'}
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}
 
 
 interface GeneralTabProps {
@@ -240,9 +178,6 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
   return (
     <div className="space-y-6">
-      {/* 专家库状态(U2-7:corpus stale 提示) */}
-      {/* <CorpusStaleSection /> */}
-
       {/* 语言设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('language.title')}</h3>

@@ -10,17 +10,16 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
-import { BookOpen, ChevronLeft, Copy, Loader2, Pencil, Plus, Rocket, Search, Send, Trash2, UserCheck, X } from 'lucide-react';
+import { BookOpen, ChevronLeft, Copy, Pencil, Plus, Rocket, Search, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { useAgentStore } from '@/stores/agentStore';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
-import { deleteUserRoster, dispatchLaterGroup, listPipelines, readCorpusAgent, resolveEscalation, saveUserRoster, startRoster, type CustomAgent, type RosterDef, type RosterPipeline } from '@/services/tauri/agentCorpusService';
+import { deleteUserRoster, dispatchLaterGroup, listPipelines, resolveEscalation, saveUserRoster, startRoster, type CustomAgent, type RosterDef, type RosterPipeline } from '@/services/tauri/agentCorpusService';
 import { listen } from '@/services/transport';
 import { useDispatchStore } from '@/stores/dispatchStore';
 import { openDispatchSession } from '@/services/dispatchTaskService';
-import type { AgentCatalogEntry } from '@/types/agent';
 
 /** 把 `/dispatch <slug> ` 写入当前会话输入框草稿(替代复制到剪贴板) */
 function draftDispatchCommand(slug: string): boolean {
@@ -64,9 +63,8 @@ function AgentCard({
 }) {
   const setAgent = useSessionConfig((s) => s.setAgent);
   const currentAgent = useSessionConfig((s) => s.config.agent);
-  const divisions = useAgentStore((s) => s.divisions);
   const isCurrent = currentAgent === agent.slug;
-  const divisionLabel = agent.custom ? '自定义' : divisions[agent.division]?.label ?? agent.division;
+  const divisionLabel = agent.custom ? '自定义' : agent.division;
 
   const handleDispatch = () => {
     if (draftDispatchCommand(agent.slug)) {
@@ -710,40 +708,13 @@ function AgentDetailDrawer({
   onClose: () => void;
   onFork: (content: string) => void;
 }) {
-  const [systemPrompt, setSystemPrompt] = useState<string>('');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const isCustom = agent.custom !== undefined;
   const division = isCustom ? undefined : (roles[agent.slug] || 'developer');
   const roleLabel = division ? (ROLE_LABEL[division] ?? division) : undefined;
   const roleCls = division ? (ROLE_CLS[division] ?? 'text-text-muted border-border-subtle') : '';
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setSystemPrompt('');
-    if (isCustom && agent.custom) {
-      setSystemPrompt(agent.custom.systemPrompt);
-      setLoading(false);
-      return;
-    }
-    void readCorpusAgent(agent.slug)
-      .then((content) => {
-        if (cancelled) return;
-        const body = content.replace(/^---[\s\S]*?---\n*/, '').trim();
-        setSystemPrompt(body || '(该专家无系统提示词)');
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setError(String(e));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [agent.slug, isCustom]);
+  // 内置 corpus 已移除:Gallery 只显示自定义专家,systemPrompt 直接从 custom 字段取
+  const systemPrompt = isCustom && agent.custom ? agent.custom.systemPrompt : '(该专家无系统提示词)';
 
   const handleCopy = useCallback(() => {
     void navigator.clipboard?.writeText(systemPrompt).then(() => {
@@ -753,9 +724,8 @@ function AgentDetailDrawer({
   }, [systemPrompt]);
 
   const handleFork = useCallback(() => {
-    if (loading) return;
     onFork(systemPrompt);
-  }, [loading, systemPrompt, onFork]);
+  }, [systemPrompt, onFork]);
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
@@ -791,7 +761,6 @@ function AgentDetailDrawer({
             <button
               type="button"
               onClick={handleFork}
-              disabled={loading}
               className="ml-auto flex items-center gap-1 rounded border border-primary/40 px-2 py-1 text-[10px] text-primary hover:bg-primary/5 disabled:opacity-50"
             >
               <Copy size={11} />
@@ -815,16 +784,7 @@ function AgentDetailDrawer({
               </button>
             )}
           </div>
-          {loading && (
-            <div className="flex items-center gap-2 text-xs text-text-muted">
-              <Loader2 size={12} className="animate-spin" />
-              加载中…
-            </div>
-          )}
-          {error && (
-            <div className="rounded bg-error-faint/40 px-2 py-1.5 text-[11px] text-error">{error}</div>
-          )}
-          {!loading && !error && systemPrompt && (
+          {systemPrompt && (
             <pre className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed text-text-secondary">
               {systemPrompt}
             </pre>
@@ -836,80 +796,8 @@ function AgentDetailDrawer({
 }
 
 // ============================================================================
-// 专家库安装状态条
+// 专家库安装状态条(内置 corpus 已移除,状态条不再需要)
 // ============================================================================
-
-type CorpusState =
-  | { kind: 'unknown' }
-  | { kind: 'missing'; bundled: number }
-  | { kind: 'stale'; installed: number; bundled: number }
-  | { kind: 'ready'; installed: number };
-
-function CorpusStatusBar({
-  state,
-  installing,
-  installError,
-  onReinstall,
-}: {
-  state: CorpusState;
-  installing: boolean;
-  installError: string | null;
-  onReinstall: () => void;
-}) {
-  // 已就绪且无错误时折叠为细条,不抢版面
-  if (state.kind === 'ready' && !installError) {
-    return (
-      <div className="flex shrink-0 items-center justify-end gap-2 border-b border-border-subtle bg-bg-secondary/30 px-3 py-1 text-[11px] text-text-muted">
-        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        专家库已就绪 · {state.installed} 位
-        <button
-          type="button"
-          onClick={onReinstall}
-          disabled={installing}
-          className="text-text-muted underline-offset-2 hover:text-text-secondary hover:underline disabled:opacity-50"
-        >
-          重装
-        </button>
-      </div>
-    );
-  }
-
-  const tone =
-    state.kind === 'missing' || state.kind === 'stale' || installError
-      ? 'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400'
-      : 'border-border-subtle bg-bg-secondary/30 text-text-muted';
-
-  const label =
-    state.kind === 'missing'
-      ? `专家库未初始化(内置 ${state.bundled} 位待安装)`
-      : state.kind === 'stale'
-        ? `专家库版本落后(已装 ${state.installed}/内置 ${state.bundled})`
-        : state.kind === 'unknown'
-          ? '专家库状态未知'
-          : '专家库异常';
-
-  return (
-    <div className={`flex shrink-0 flex-col gap-1 border-b px-3 py-2 text-[11px] ${tone}`}>
-      <div className="flex items-center gap-2">
-        <span className="inline-flex h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />
-        <span className="flex-1">{installing ? '正在初始化专家库…' : label}</span>
-        <button
-          type="button"
-          onClick={onReinstall}
-          disabled={installing}
-          className="shrink-0 rounded border border-current/30 px-2 py-0.5 font-medium hover:bg-current/10 disabled:opacity-50"
-        >
-          {installing ? '初始化中…' : state.kind === 'stale' ? '升级' : '一键初始化'}
-        </button>
-      </div>
-      {installError && (
-        <div className="break-all rounded bg-red-500/10 px-2 py-1 text-red-600 dark:text-red-400">
-          {installError}
-        </div>
-      )}
-    </div>
-  );
-}
 
 // ============================================================================
 // 面板主体
@@ -918,51 +806,22 @@ function CorpusStatusBar({
 export default function AgentGalleryPanel() {
   const {
     loaded, loading, error, load, loadRosters, loadCustomAgents,
-    search, setSearch, division, setDivision, divisions, catalog, rosters, customAgents, deleteCustom,
-    status, installing, installError, reinstall,
+    search, setSearch, division, setDivision, rosters, customAgents, deleteCustom,
   } = useAgentStore();
   const [tab, setTab] = useState<'agents' | 'rosters' | 'runs'>('agents');
   const [pipelines, setPipelines] = useState<RosterPipeline[]>([]);
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [rosterBuilderOpen, setRosterBuilderOpen] = useState(false);
   const [detailAgent, setDetailAgent] = useState<GalleryAgent | null>(null);
-  const [roles, setRoles] = useState<Record<string, string>>({});
   const workspacePath = useWorkspaceStore((s) => s.getCurrentWorkspace()?.path);
 
   useEffect(() => {
     if (!loaded) void load();
     void loadRosters();
-    // 加载角色映射
-    void import('@/services/tauri/agentCorpusService').then(({ getAgentRoles }) =>
-      void getAgentRoles().then(setRoles).catch(() => {})
-    );
   }, [loaded, load, loadRosters]);
   useEffect(() => {
     if (workspacePath) void loadCustomAgents(workspacePath);
   }, [workspacePath, loadCustomAgents]);
-
-  // 专家库安装状态:未安装 / 版本落后 / 已就绪
-  const corpusState = useMemo(() => {
-    if (!status) return { kind: 'unknown' as const };
-    if (status.installedVersion === null) {
-      return { kind: 'missing' as const, bundled: status.bundledCount };
-    }
-    if (status.bundledVersion > status.installedVersion) {
-      return { kind: 'stale' as const, installed: status.installedCount, bundled: status.bundledCount };
-    }
-    return { kind: 'ready' as const, installed: status.installedCount };
-  }, [status]);
-
-  const handleReinstall = () => {
-    void reinstall().then((ok) => {
-      const cur = useAgentStore.getState();
-      if (ok) {
-        useToastStore.getState().info('专家库已就绪', `已安装 ${cur.status?.installedCount ?? 0} 位专家`);
-      } else if (cur.installError) {
-        useToastStore.getState().error('专家库初始化失败', cur.installError);
-      }
-    });
-  };
 
   // 进行中页签:打开时拉取 + 订阅推进事件(后端每成员终态整体推送,低频)
   useEffect(() => {
@@ -982,9 +841,8 @@ export default function AgentGalleryPanel() {
     };
   }, [tab]);
 
-  // 自定义在前 + corpus;项目级同名覆盖 corpus
+  // 内置 corpus 已移除:Gallery 只显示自定义专家(catalog 为 customAgents 派生)
   const galleryList = useMemo<GalleryAgent[]>(() => {
-    const customSlugs = new Set(customAgents.map((c) => c.slug));
     const customItems: GalleryAgent[] = customAgents.map((c) => ({
       slug: c.slug,
       name: c.name,
@@ -993,11 +851,8 @@ export default function AgentGalleryPanel() {
       division: 'custom',
       custom: c,
     }));
-    const corpusItems: GalleryAgent[] = catalog
-      .filter((a: AgentCatalogEntry) => !customSlugs.has(a.slug))
-      .map((a) => ({ slug: a.slug, name: a.name, description: a.description, emoji: a.emoji, division: a.division }));
-    return [...customItems, ...corpusItems];
-  }, [customAgents, catalog]);
+    return customItems;
+  }, [customAgents]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1043,14 +898,6 @@ export default function AgentGalleryPanel() {
         ))}
       </div>
 
-      {/* 专家库安装状态条 + 一键初始化 */}
-      <CorpusStatusBar
-        state={corpusState}
-        installing={installing}
-        installError={installError}
-        onReinstall={handleReinstall}
-      />
-
       {tab === 'agents' && (
         <>
           <div className="shrink-0 space-y-2 border-b border-border-subtle p-3">
@@ -1093,7 +940,7 @@ export default function AgentGalleryPanel() {
                     division === key ? 'border-primary/60 text-primary' : 'border-border-subtle text-text-muted'
                   }`}
                 >
-                  {key === 'custom' ? '🧩 自定义' : divisions[key]?.label ?? key} {count}
+                  {key === 'custom' ? '🧩 自定义' : key} {count}
                 </button>
               ))}
             </div>
@@ -1110,20 +957,17 @@ export default function AgentGalleryPanel() {
                 <AgentCard
                   agent={filtered[index]}
                   onForkCorpus={(a) => {
-                    void readCorpusAgent(a.slug)
-                      .then((content) => {
-                        const body = content.replace(/^---[\s\S]*?---\n*/, '');
-                        setEditor({
-                          slug: `${a.slug}-custom`.slice(0, 64),
-                          name: a.name,
-                          emoji: a.emoji,
-                          description: a.description,
-                          systemPrompt: body.trim(),
-                          tools: [],
-                          isNew: true,
-                        });
-                      })
-                      .catch((e) => useToastStore.getState().error('读取专家定义失败', String(e)));
+                    // 内置 corpus 已移除:fork 直接从自定义专家的 systemPrompt 复制
+                    const body = a.custom?.systemPrompt ?? '';
+                    setEditor({
+                      slug: `${a.slug}-custom`.slice(0, 64),
+                      name: a.name,
+                      emoji: a.emoji,
+                      description: a.description,
+                      systemPrompt: body,
+                      tools: a.custom?.tools ?? [],
+                      isNew: true,
+                    });
                   }}
                   onEdit={(c) =>
                     setEditor({
@@ -1174,7 +1018,7 @@ export default function AgentGalleryPanel() {
       {detailAgent && (
         <AgentDetailDrawer
           agent={detailAgent}
-          roles={roles}
+          roles={{}}
           onClose={() => setDetailAgent(null)}
           onFork={(prompt) => {
             setDetailAgent(null);

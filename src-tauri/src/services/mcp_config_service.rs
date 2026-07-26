@@ -1006,6 +1006,11 @@ fn build_mcp_server_args(
                             args.push(session_id.to_string());
                         }
                     }
+                    // 默认工作目录:save_agent/list_agents 等自助工具缺省 workDir 时回退
+                    if !workspace_path.trim().is_empty() {
+                        args.push("--polaris-workdir".to_string());
+                        args.push(strip_unc_prefix(workspace_path));
+                    }
                     args
                 }
                 None => Vec::new(),

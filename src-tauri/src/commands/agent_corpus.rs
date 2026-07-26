@@ -1,102 +1,25 @@
-//! Agency Agents corpus 相关 Tauri 命令(P0-5)
+//! 专家/专家团 Tauri 命令
+//!
+//! 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`,由 AI 经
+//! MCP `save_agent` 自助维护;专家团存于 `<DataRoot>/agents/rosters-user.json`。
 //!
 //! 暴露给前端:
-//! - `agent_corpus_status` —— 内置/已安装版本与计数
-//! - `agent_corpus_install` —— 安装(幂等)到 `<DataRoot>/agents/`
-//! - `agent_corpus_uninstall` —— 卸载(仅清理本模块管理的文件)
-//! - `agent_corpus_catalog` —— 读取内置 catalog(266+ agent 元数据,供 Gallery/选择器)
-//!
-//! 资源目录解析:打包态用 tauri `resource_dir()`(bundle.resources 含
-//! `resources/agents`),开发态回退 `CARGO_MANIFEST_DIR/resources/agents`。
+//! - `custom_agent_list/save/delete` —— 项目级自定义专家 CRUD
+//! - `simple_ai_list_agents` —— SimpleAI 引擎可用 agent(项目级)
+//! - `agent_corpus_rosters` —— 用户专家团列表(仅用户自建)
+//! - `user_roster_save/delete` —— 用户专家团 CRUD
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use crate::error::Result;
-use crate::services::agent_corpus::{self, CatalogEntry, CorpusStatus};
 use crate::services::data_root::data_root;
 
-/// 解析内置 corpus 资源目录(共享实现,resource_dir 由调用层传入)
-///
-/// 解析顺序:
-/// 1. `resource_dir/resources/agents`(Tauri bundle.resources 保留相对结构,
-///    Web 模式由 `lib.rs` 把 resource_dir 设为可执行文件目录)
-/// 2. `resource_dir/agents`(部分打包脚本把 resources 下子目录铺平)
-/// 3. 可执行文件同目录 `resources/agents`(可移植部署兜底,脱离编译目录)
-/// 4. `CARGO_MANIFEST_DIR/resources/agents`(仅开发态命中)
-pub fn resolve_resources_agents_dir(resource_dir: Option<PathBuf>) -> PathBuf {
-    let probe = |dir: &Path| dir.join("corpus-manifest.json").exists();
-    if let Some(res) = resource_dir {
-        let bundled = res.join("resources").join("agents");
-        if probe(&bundled) {
-            return bundled;
-        }
-        let flat = res.join("agents");
-        if probe(&flat) {
-            return flat;
-        }
-    }
-    // 可执行文件同目录兜底:支持脱离编译目录的可移植部署
-    //(Web 独立部署、绿色版桌面应用),避免落到开发机绝对路径
-    if let Some(exe) = std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.to_path_buf())) {
-        for base in [exe.join("resources"), exe.join("_up_/resources"), exe.clone()] {
-            let bundled = base.join("agents");
-            if probe(&bundled) {
-                return bundled;
-            }
-        }
-        let flat = exe.join("agents");
-        if probe(&flat) {
-            return flat;
-        }
-    }
-    // 仅开发态命中
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join("agents")
-}
-
-/// 安装目标目录:`<DataRoot>/agents/`
-pub fn corpus_install_dir() -> PathBuf {
+/// 专家团与专家数据根目录:`<DataRoot>/agents/`
+pub fn agents_dir() -> PathBuf {
     data_root().root().join("agents")
 }
 
-pub fn corpus_status_inner(resource_dir: Option<PathBuf>) -> CorpusStatus {
-    agent_corpus::corpus_status(&resolve_resources_agents_dir(resource_dir), &corpus_install_dir())
-}
-
-pub fn corpus_install_inner(resource_dir: Option<PathBuf>) -> Result<CorpusStatus> {
-    let res = resolve_resources_agents_dir(resource_dir);
-    let status = agent_corpus::install_corpus(&res, &corpus_install_dir())?;
-    // L2 语义路由索引落为全局 skill(P1-7);失败不阻塞 corpus 安装
-    if let Err(e) = agent_corpus::install_index_skill(&res, &data_root().root().join("skills")) {
-        eprintln!("[agent_corpus] index skill 安装失败: {e}");
-    }
-    Ok(status)
-}
-
-pub fn corpus_uninstall_inner() -> Result<()> {
-    agent_corpus::uninstall_corpus(&corpus_install_dir())?;
-    agent_corpus::uninstall_index_skill(&data_root().root().join("skills"))
-}
-
-pub fn corpus_catalog_inner(resource_dir: Option<PathBuf>) -> Result<Vec<CatalogEntry>> {
-    agent_corpus::load_catalog(&resolve_resources_agents_dir(resource_dir))
-}
-
-pub fn corpus_divisions_inner(resource_dir: Option<PathBuf>) -> Result<serde_json::Value> {
-    agent_corpus::load_divisions(&resolve_resources_agents_dir(resource_dir))
-}
-
-/// 专家角色映射 agent-roles.json(U1-4 详情抽屉用)
-pub fn corpus_roles_inner() -> Result<serde_json::Value> {
-    let path = corpus_install_dir().join("agent-roles.json");
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| crate::error::AppError::ConfigError(format!("agent-roles.json 不可读: {e}")))?;
-    serde_json::from_str(&content)
-        .map_err(|e| crate::error::AppError::ConfigError(format!("agent-roles.json 解析失败: {e}")))
-}
-
-/// SimpleAI agent 列表条目(P1-6,discover_agents 两级查找结果)
+/// SimpleAI agent 列表条目(项目级)
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SimpleAiAgentItem {
@@ -109,7 +32,7 @@ pub struct SimpleAiAgentItem {
 
 /// 用户自建 roster 存储:<DataRoot>/agents/rosters-user.json
 pub fn user_rosters_path() -> PathBuf {
-    corpus_install_dir().join("rosters-user.json")
+    agents_dir().join("rosters-user.json")
 }
 
 fn load_user_rosters() -> Vec<serde_json::Value> {
@@ -122,26 +45,21 @@ fn load_user_rosters() -> Vec<serde_json::Value> {
 
 fn save_user_rosters(rosters: &[serde_json::Value]) -> Result<()> {
     let payload = serde_json::json!({ "rosters": rosters });
-    std::fs::create_dir_all(corpus_install_dir())?;
+    std::fs::create_dir_all(agents_dir())?;
     std::fs::write(user_rosters_path(), serde_json::to_string_pretty(&payload)?)?;
     Ok(())
 }
 
-/// rosters 透传:内置 rosters.json + 用户自建(标 custom:true)合并(专家团 UI 消费)
-pub fn corpus_rosters_inner(resource_dir: Option<PathBuf>) -> Result<serde_json::Value> {
-    let path = resolve_resources_agents_dir(resource_dir).join("rosters.json");
-    let content = std::fs::read_to_string(&path).map_err(|e| {
-        crate::error::AppError::ConfigError(format!("读取 rosters 失败: {e} ({})", path.display()))
-    })?;
-    let mut value: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| crate::error::AppError::ConfigError(format!("rosters.json 解析失败: {e}")))?;
-    if let Some(arr) = value.get_mut("rosters").and_then(|r| r.as_array_mut()) {
-        for mut user in load_user_rosters() {
-            user["custom"] = serde_json::Value::Bool(true);
-            arr.push(user);
-        }
-    }
-    Ok(value)
+/// rosters 透传:仅用户自建(标 custom:true)。内置 rosters.json 已移除。
+pub fn corpus_rosters_inner() -> Result<serde_json::Value> {
+    let rosters: Vec<serde_json::Value> = load_user_rosters()
+        .into_iter()
+        .map(|mut r| {
+            r["custom"] = serde_json::Value::Bool(true);
+            r
+        })
+        .collect();
+    Ok(serde_json::json!({ "rosters": rosters }))
 }
 
 /// 保存用户自建 roster(同 slug 覆盖);members 即 always 组
@@ -179,7 +97,7 @@ pub fn user_roster_delete_inner(slug: &str) -> Result<()> {
 }
 
 // ============================================================================
-// 自定义专家(项目级 .polaris/agents,P3 体验优化)
+// 自定义专家(项目级 .polaris/agents)
 // ============================================================================
 
 fn custom_agents_dir(work_dir: &str) -> PathBuf {
@@ -276,15 +194,6 @@ pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
         .collect()
 }
 
-/// 读取已安装 corpus 中某专家定义原文(「另存为自定义」预填用)
-pub fn corpus_read_inner(slug: &str) -> Result<String> {
-    validate_custom_slug(slug)?;
-    let path = corpus_install_dir().join("corpus").join(format!("{slug}.md"));
-    std::fs::read_to_string(&path).map_err(|e| {
-        crate::error::AppError::ConfigError(format!("读取专家定义失败: {e} ({})", path.display()))
-    })
-}
-
 pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
     crate::ai::engine::simple_ai::list_agents(work_dir)
         .into_iter()
@@ -303,42 +212,6 @@ pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
 // ============================================================================
 
 #[cfg(feature = "tauri-app")]
-fn app_resource_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    use tauri::Manager;
-    app.path().resource_dir().ok()
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_status(app: tauri::AppHandle) -> CorpusStatus {
-    corpus_status_inner(app_resource_dir(&app))
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_install(app: tauri::AppHandle) -> Result<CorpusStatus> {
-    corpus_install_inner(app_resource_dir(&app))
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_uninstall() -> Result<()> {
-    corpus_uninstall_inner()
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_catalog(app: tauri::AppHandle) -> Result<Vec<CatalogEntry>> {
-    corpus_catalog_inner(app_resource_dir(&app))
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_divisions(app: tauri::AppHandle) -> Result<serde_json::Value> {
-    corpus_divisions_inner(app_resource_dir(&app))
-}
-
-#[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn simple_ai_list_agents(work_dir: String) -> Vec<SimpleAiAgentItem> {
     simple_ai_list_agents_inner(&work_dir)
@@ -346,14 +219,8 @@ pub fn simple_ai_list_agents(work_dir: String) -> Vec<SimpleAiAgentItem> {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn agent_corpus_rosters(app: tauri::AppHandle) -> Result<serde_json::Value> {
-    corpus_rosters_inner(app_resource_dir(&app))
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_roles() -> Result<serde_json::Value> {
-    corpus_roles_inner()
+pub fn agent_corpus_rosters() -> Result<serde_json::Value> {
+    corpus_rosters_inner()
 }
 
 #[cfg(feature = "tauri-app")]
@@ -381,12 +248,6 @@ pub fn custom_agent_save(
 #[tauri::command]
 pub fn custom_agent_delete(work_dir: String, slug: String) -> Result<()> {
     custom_agent_delete_inner(&work_dir, &slug)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn agent_corpus_read(slug: String) -> Result<String> {
-    corpus_read_inner(&slug)
 }
 
 #[cfg(feature = "tauri-app")]

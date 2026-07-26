@@ -1,56 +1,15 @@
 /**
- * Agency Agents corpus 相关 Tauri 命令(P1-0)
+ * 专家/专家团相关 Tauri 命令
+ *
+ * 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`,专家团存于
+ * `<DataRoot>/agents/rosters-user.json`。AI 可经 MCP(save_agent/save_roster/list_agents)
+ * 自助维护,无需人工操作 UI。
  */
 
 import { invoke } from '@/services/transport';
 
-export interface CorpusStatus {
-  installedVersion: number | null;
-  bundledVersion: number;
-  installedCount: number;
-  bundledCount: number;
-  installDir: string;
-}
-
-export interface AgentCatalogEntry {
-  slug: string;
-  name: string;
-  description: string;
-  emoji: string;
-  color: string;
-  division: string;
-}
-
-export async function getCorpusStatus(): Promise<CorpusStatus> {
-  return invoke<CorpusStatus>('agent_corpus_status');
-}
-
-export async function installCorpus(): Promise<CorpusStatus> {
-  return invoke<CorpusStatus>('agent_corpus_install');
-}
-
-export async function uninstallCorpus(): Promise<void> {
-  return invoke('agent_corpus_uninstall');
-}
-
-export async function getAgentCatalog(): Promise<AgentCatalogEntry[]> {
-  return invoke<AgentCatalogEntry[]>('agent_corpus_catalog');
-}
-
-/**
- * 启动期自动安装/升级(幂等):未安装或内置版本更新时执行 install。
- * 失败静默(warn 由调用方记录),不阻塞启动。
- */
-export async function ensureCorpusInstalled(): Promise<CorpusStatus | null> {
-  const status = await getCorpusStatus();
-  if (status.installedVersion === null || status.bundledVersion > status.installedVersion) {
-    return installCorpus();
-  }
-  return status;
-}
-
 // ============================================================================
-// 专家团(roster)与自定义专家(P3 体验优化)
+// 专家团(roster)与自定义专家
 // ============================================================================
 
 export interface RosterGroup {
@@ -114,18 +73,8 @@ export async function saveCustomAgent(params: {
   return invoke<string>('custom_agent_save', params);
 }
 
-export async function readCorpusAgent(slug: string): Promise<string> {
-  return invoke<string>('agent_corpus_read', { slug });
-}
-
 export async function deleteCustomAgent(workDir: string, slug: string): Promise<void> {
   return invoke('custom_agent_delete', { workDir, slug });
-}
-
-/** 专家角色映射(agent-roles.json, U1-4 详情抽屉用) */
-export async function getAgentRoles(): Promise<Record<string, string>> {
-  const raw = await invoke<{ roles: Record<string, string> }>('agent_corpus_roles');
-  return raw?.roles ?? {};
 }
 
 export interface RosterStartResult {
@@ -146,7 +95,7 @@ export async function startRoster(params: {
 }
 
 // ============================================================================
-// NEXUS pipeline 进度(U1-1)
+// NEXUS pipeline 进度
 // ============================================================================
 
 export interface PipelineMember {

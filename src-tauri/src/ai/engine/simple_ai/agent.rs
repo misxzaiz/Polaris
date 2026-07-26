@@ -3,8 +3,13 @@
  * 扫描 `work_dir/.polaris/agents/<name>.md`：YAML frontmatter（`name` / `description`
  * / `tools`）+ body（system prompt）。`options.agent` 指定时，body 覆盖默认 persona
  * （用户显式传 `system_prompt` 时仍完全覆盖，决策 §12-3）。
+ *
+ * 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`,由 AI 经 MCP
+ * `save_agent` 自助维护,或用户手工放置。`load_agent_def` 供 claude 引擎与派发链路
+ * 读取专家 body 注入人格。
  */
 
+use std::fs;
 use std::path::Path;
 
 /// 单个 agent 定义。
@@ -31,27 +36,19 @@ pub(crate) struct AgentDefinition {
     pub role: Option<String>,
 }
 
-/// agent 查找目录序列:项目级 `.polaris/agents/` 优先,其次全局
-/// `<DataRoot>/agents/corpus/`(agency-agents corpus,P0-3 回退)。
+/// agent 查找目录:仅项目级 `.polaris/agents/`(内置 corpus 已移除)。
 fn agent_dirs(work_dir: &str) -> Vec<std::path::PathBuf> {
-    let mut dirs = vec![Path::new(work_dir).join(".polaris").join("agents")];
-    dirs.push(
-        crate::services::data_root::data_root()
-            .root()
-            .join("agents")
-            .join("corpus"),
-    );
-    dirs
+    vec![Path::new(work_dir).join(".polaris").join("agents")]
 }
 
-/// 扫描所有 agent 定义（供前端选择器）。项目级同名覆盖全局。
+/// 扫描所有 agent 定义（供前端选择器）。
 pub(crate) fn discover_agents(work_dir: &str) -> Vec<AgentDefinition> {
     discover_agents_in(&agent_dirs(work_dir))
 }
 
-/// 仅扫描项目级 `.polaris/agents/`（自定义专家管理用,不含全局 corpus）。
+/// 仅扫描项目级 `.polaris/agents/`（与 discover_agents 等价,保留以兼容旧调用）。
 pub(crate) fn discover_project_agents(work_dir: &str) -> Vec<AgentDefinition> {
-    discover_agents_in(&[Path::new(work_dir).join(".polaris").join("agents")])
+    discover_agents_in(&agent_dirs(work_dir))
 }
 
 fn discover_agents_in(dirs: &[std::path::PathBuf]) -> Vec<AgentDefinition> {
@@ -84,7 +81,7 @@ fn discover_agents_in(dirs: &[std::path::PathBuf]) -> Vec<AgentDefinition> {
     agents
 }
 
-/// 加载指定 agent（按文件名，不含 `.md`）。项目级优先,miss 回退全局 corpus。
+/// 加载指定 agent（按文件名，不含 `.md`）。仅项目级。
 pub(crate) fn load_agent(work_dir: &str, name: &str) -> Option<AgentDefinition> {
     load_agent_in(&agent_dirs(work_dir), name)
 }
@@ -185,6 +182,66 @@ fn parse_agent(content: &str, path: &Path) -> Option<AgentDefinition> {
     })
 }
 
+/// 读取项目级专家定义的 `(slug, description, system_prompt)`,供 claude 引擎
+/// `--agents <json>` 免落盘注入与派发链路人格注入(原 `agent_corpus::load_claude_agent_def` 迁移)。
+///
+/// 解析 `<work_dir>/.polaris/agents/<slug>.md` 的 frontmatter `description` 与 body。
+/// 命中失败返回 None(调用方回退默认行为)。
+pub fn load_agent_def(work_dir: &str, slug: &str) -> Option<(String, String, String)> {
+    let path = Path::new(work_dir)
+        .join(".polaris")
+        .join("agents")
+        .join(format!("{slug}.md"));
+    let content = fs::read_to_string(&path).ok()?;
+    let (description, body) = parse_frontmatter_and_body(&content);
+    let desc = description.unwrap_or_else(|| slug.to_string());
+    let prompt = if body.trim().is_empty() {
+        content
+    } else {
+        body
+    };
+    Some((slug.to_string(), desc, prompt))
+}
+
+/// 从专家 `.md` 文本解析 frontmatter 中的 `description` 字段与 body(system prompt)。
+/// 与 `parse_agent` 同构但只取 description + body,供 `load_agent_def` 使用。
+fn parse_frontmatter_and_body(content: &str) -> (Option<String>, String) {
+    let lines: Vec<&str> = content.lines().collect();
+    let fm_start = if lines.first().is_some_and(|l| l.trim() == "---") {
+        1
+    } else {
+        0
+    };
+    let fm_end = if fm_start > 0 {
+        lines[fm_start..]
+            .iter()
+            .position(|l| l.trim() == "---")
+            .map_or(lines.len(), |i| fm_start + i)
+    } else {
+        0
+    };
+    let mut description: Option<String> = None;
+    if fm_end > fm_start {
+        for line in &lines[fm_start..fm_end] {
+            let l = line.trim();
+            if let Some(rest) = l.strip_prefix("description:") {
+                let v = rest.trim().trim_matches('"').trim_matches('\'').to_string();
+                if !v.is_empty() {
+                    description = Some(v);
+                }
+            }
+        }
+    }
+    let body = if fm_end > 0 && fm_end + 1 < lines.len() {
+        lines[fm_end + 1..].join("\n").trim().to_string()
+    } else if fm_end == 0 {
+        content.trim().to_string()
+    } else {
+        String::new()
+    };
+    (description, body)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -277,6 +334,8 @@ mod tests {
 
     #[test]
     fn project_agents_shadow_global_corpus() {
+        // discover_agents_in 接受显式目录列表,前面目录优先(项目级覆盖语义)。
+        // 注:内置 corpus 已移除,生产路径只传项目级一个目录;此测试验证多目录去重逻辑。
         let dir = tempfile::tempdir().unwrap();
         let project = dir.path().join("proj");
         let global = dir.path().join("global");
@@ -293,9 +352,27 @@ mod tests {
         assert!(agents.iter().any(|a| a.name == "only-global"));
         assert!(!agents.iter().any(|a| a.name == "global-dup"));
 
-        // load 同样项目级优先,miss 回退全局
+        // load 同样前面目录优先
         assert_eq!(load_agent_in(&dirs, "dup").unwrap().name, "project-dup");
         assert_eq!(load_agent_in(&dirs, "only-global").unwrap().name, "only-global");
         assert!(load_agent_in(&dirs, "nope").is_none());
+    }
+
+    #[test]
+    fn load_agent_def_reads_project_level() {
+        let dir = tempfile::tempdir().unwrap();
+        let agents_dir = dir.path().join(".polaris").join("agents");
+        fs::create_dir_all(&agents_dir).unwrap();
+        fs::write(
+            agents_dir.join("reviewer.md"),
+            "---\nname: reviewer\ndescription: code review\n---\n你是代码审查专家。",
+        )
+        .unwrap();
+        let (slug, desc, body) = load_agent_def(dir.path().to_str().unwrap(), "reviewer").unwrap();
+        assert_eq!(slug, "reviewer");
+        assert_eq!(desc, "code review");
+        assert!(body.contains("代码审查专家"));
+        // 缺失返回 None
+        assert!(load_agent_def(dir.path().to_str().unwrap(), "nope").is_none());
     }
 }

@@ -31,9 +31,7 @@
     "targets": "all",
     "createUpdaterArtifacts": false,
     "resources": [
-      "../dist",
-      "resources/agents",
-      "resources/nexus"
+      "../dist"
     ],
     "icon": [
       "icons/32x32.png",

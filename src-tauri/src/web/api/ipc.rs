@@ -78,37 +78,8 @@ pub async fn handle_ipc_bridge(
                 .map(Json)
                 .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))
         }
-        // ── Agency Agents corpus / 自定义专家 / NEXUS(U2-5 web 桥) ─────────
-        // Web/HTTP 模式必须传入 resource_dir(由 lib.rs 设为可执行文件目录),
-        // 否则 resolve_resources_agents_dir 会回退到编译期常量 CARGO_MANIFEST_DIR,
-        // 在部署机上不存在 → catalog 加载失败 os error 3。
-        "agent_corpus_status" => {
-            let status = crate::commands::agent_corpus::corpus_status_inner(
-                state.resource_dir.get().and_then(|p| p.clone()),
-            );
-            to_json(status)
-        }
-        "agent_corpus_install" => crate::commands::agent_corpus::corpus_install_inner(
-            state.resource_dir.get().and_then(|p| p.clone()),
-        )
-            .map_err(bad_request)
-            .and_then(to_json),
-        "agent_corpus_uninstall" => crate::commands::agent_corpus::corpus_uninstall_inner()
-            .map_err(bad_request)
-            .map(|_| Json(Value::Null)),
-        "agent_corpus_catalog" => crate::commands::agent_corpus::corpus_catalog_inner(
-            state.resource_dir.get().and_then(|p| p.clone()),
-        )
-            .map_err(bad_request)
-            .and_then(to_json),
-        "agent_corpus_divisions" => crate::commands::agent_corpus::corpus_divisions_inner(
-            state.resource_dir.get().and_then(|p| p.clone()),
-        )
-            .map_err(bad_request)
-            .map(Json),
-        "agent_corpus_rosters" => crate::commands::agent_corpus::corpus_rosters_inner(
-            state.resource_dir.get().and_then(|p| p.clone()),
-        )
+        // ── 专家/专家团(自定义 + 用户自建,内置 corpus 已移除) ─────────
+        "agent_corpus_rosters" => crate::commands::agent_corpus::corpus_rosters_inner()
             .map_err(bad_request)
             .map(Json),
         "user_roster_save" => {
@@ -132,14 +103,6 @@ pub async fn handle_ipc_bridge(
         )
         .map_err(bad_request)
         .map(|_| Json(Value::Null)),
-        "agent_corpus_read" => crate::commands::agent_corpus::corpus_read_inner(
-            &require_string(&args, "slug")?,
-        )
-        .map_err(bad_request)
-        .map(|c| Json(Value::String(c))),
-        "agent_corpus_roles" => crate::commands::agent_corpus::corpus_roles_inner()
-            .map_err(bad_request)
-            .map(Json),
         "simple_ai_list_agents" => {
             let work_dir = require_string(&args, "workDir")?;
             to_json(crate::commands::agent_corpus::simple_ai_list_agents_inner(&work_dir))
