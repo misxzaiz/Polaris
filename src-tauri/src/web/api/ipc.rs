@@ -221,10 +221,22 @@ pub async fn handle_ipc_bridge(
         // ── Context Memory ─────────────────────────────────────────────────
         "context_get_all" => dispatch_context_get_all(&state, &args),
 
+        // ── Config ──────────────────────────────────────────────────────────
+        "get_config" => {
+            let store = state.lock_config()?;
+            json_result!(store.get().clone())
+        }
+        "health_check" => {
+            let store = state.lock_config()?;
+            json_result!(store.health_status())
+        }
+
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
         "set_claude_cmd" => dispatch_set_claude_cmd(&state, &args).await,
         "reset_cli_config" => dispatch_reset_cli_config(&state).await,
+        "set_personal_hub_session" => dispatch_set_personal_hub_session(&state, &args),
+        "get_personal_hub_session_token" => dispatch_get_personal_hub_session_token(&state),
 
         // ── File Explorer ──────────────────────────────────────────────────
         "read_directory" => dispatch_read_directory(&args).await,

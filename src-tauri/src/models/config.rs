@@ -148,6 +148,11 @@ pub struct PersonalHubConfig {
     /// 字段级加密密钥（口令字符串，crypto-js AES 口令模式派生）
     #[serde(default)]
     pub encryption_key: String,
+
+    /// Supabase session token（前端登录后写入，供 MCP server 认证使用）
+    /// 持久化存储，仅写入非空值；值为空时表示未登录/已登出。
+    #[serde(default)]
+    pub session_token: String,
 }
 
 /// Supabase 默认 URL（personal-hub 既有项目）
@@ -166,6 +171,7 @@ impl Default for PersonalHubConfig {
             supabase_url: default_personal_hub_supabase_url(),
             supabase_anon_key: default_personal_hub_supabase_anon_key(),
             encryption_key: String::new(),
+            session_token: String::new(),
         }
     }
 }
