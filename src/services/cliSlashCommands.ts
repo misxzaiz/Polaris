@@ -36,6 +36,7 @@ export const CLI_SUGGESTED_COMMANDS: CliSlashCommandMeta[] = [
   { name: 'model', descKey: 'model' },
   { name: 'recap', descKey: 'recap' },
   { name: 'assault', argumentHint: '<profile> <problem>', descKey: 'assault' },
+  { name: 'spec', argumentHint: '<S00X> <补充说明>', descKey: 'spec' },
 ]
 
 /**
@@ -108,6 +109,17 @@ export function parseAssaultSlashCommand(text: string): string | null {
   const rest = text.slice('/assault'.length)
   if (rest && !/^\s/.test(rest)) return null
   // 保留首字符后的文本，即 "assault <profile> <problem>"
+  return text.slice(1)
+}
+
+/**
+ * 解析 /spec 命令，剥离 / 前缀后返回纯文本。
+ * 若不以 /spec 开头则返回 null（拒绝 /specs 等前缀误匹配）。
+ */
+export function parseSpecSlashCommand(text: string): string | null {
+  if (!text.startsWith('/spec')) return null
+  const rest = text.slice('/spec'.length)
+  if (rest && !/^\s/.test(rest)) return null
   return text.slice(1)
 }
 

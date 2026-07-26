@@ -6,6 +6,7 @@ import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
   parseAssaultSlashCommand,
+  parseSpecSlashCommand,
 } from './cliSlashCommands'
 
 describe('cliSlashCommands', () => {
@@ -109,6 +110,36 @@ describe('cliSlashCommands', () => {
 
     it('拒绝普通文本', () => {
       expect(parseAssaultSlashCommand('assault refactor-design')).toBeNull()
+    })
+  })
+
+  describe('parseSpecSlashCommand', () => {
+    it('正常解析 /spec S004 xxx', () => {
+      expect(parseSpecSlashCommand('/spec S004 实现文件上传')).toBe('spec S004 实现文件上传')
+    })
+
+    it('无参时返回 spec', () => {
+      expect(parseSpecSlashCommand('/spec')).toBe('spec')
+    })
+
+    it('带空格时返回 spec 开头', () => {
+      expect(parseSpecSlashCommand('/spec  S004')).toBe('spec  S004')
+    })
+
+    it('拒绝 /specs 前缀误匹配', () => {
+      expect(parseSpecSlashCommand('/specs')).toBeNull()
+    })
+
+    it('拒绝 /specified 前缀误匹配', () => {
+      expect(parseSpecSlashCommand('/specified')).toBeNull()
+    })
+
+    it('拒绝非 spec 命令', () => {
+      expect(parseSpecSlashCommand('/dispatch')).toBeNull()
+    })
+
+    it('拒绝普通文本', () => {
+      expect(parseSpecSlashCommand('spec S004')).toBeNull()
     })
   })
 })

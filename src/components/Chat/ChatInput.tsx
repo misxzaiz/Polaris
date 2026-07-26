@@ -54,6 +54,7 @@ import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
   parseAssaultSlashCommand,
+  parseSpecSlashCommand,
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
@@ -1184,6 +1185,19 @@ export function ChatInput({
       setHistoryIndex(-1)
       resetPromptOptimize()
       onSend(assaultText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      return
+    }
+
+    // Polaris 本地命令：/spec <S00X> <补充说明> → 剥离 / 前缀后作为普通文本发送
+    const specText = parseSpecSlashCommand(trimmed)
+    if (specText) {
+      cancelPersistDraft()
+      setLocalText('')
+      setLocalAttachments([])
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      resetPromptOptimize()
+      onSend(specText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       return
     }
 

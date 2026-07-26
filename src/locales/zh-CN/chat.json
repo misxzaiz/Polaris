@@ -663,6 +663,7 @@
       "model": "查看当前生效模型",
       "recap": "生成一行会话回顾",
       "assault": "硬问题攻坚：5 方法族分析 + 对抗审计",
+      "spec": "规格驱动开发：读规格 → 实施 → AC 验证",
       "custom": "CLI 自定义命令"
     },
     "clearBlockedTitle": "已拦截 {{command}}",

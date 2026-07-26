@@ -311,6 +311,7 @@ export function buildWorkspaceSystemPrompt(
 
   lines.push(``);
   lines.push(t('systemPrompt:workspaceToolGuidance'));
+  lines.push(t('systemPrompt:specDevelopmentProtocol'));
 
   return lines.join('\n');
 }
