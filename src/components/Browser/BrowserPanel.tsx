@@ -18,6 +18,7 @@ import {
   PanelBottom,
   RefreshCw,
   Search,
+  Smartphone,
   Sparkles,
   Terminal,
   X,
@@ -78,6 +79,86 @@ const OCCLUDING_ELEMENT_SELECTOR = [
   '.fixed',
   '.absolute',
 ].join(',')
+
+/** 手机模式下的设备预设 */
+export interface PhoneDevicePreset {
+  id: string
+  name: string
+  width: number
+  height: number
+  hasNotch: boolean
+}
+
+export const PHONE_DEVICE_PRESETS: PhoneDevicePreset[] = [
+  { id: 'iphone-15-pro', name: 'iPhone 15 Pro', width: 393, height: 852, hasNotch: true },
+  { id: 'iphone-14-pro', name: 'iPhone 14 Pro', width: 390, height: 844, hasNotch: true },
+  { id: 'iphone-se',    name: 'iPhone SE',     width: 375, height: 667, hasNotch: false },
+  { id: 'pixel-7',     name: 'Pixel 7',        width: 412, height: 892, hasNotch: true },
+  { id: 'galaxy-s24',  name: 'Galaxy S24',     width: 360, height: 780, hasNotch: true },
+  { id: 'custom',      name: '自定义',         width: 390, height: 844, hasNotch: true },
+]
+
+/** 手机模式的外壳 CSS */
+const BrowserPhoneShellStyles = `
+  .browser-phone-shell-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .browser-phone-frame {
+    position: relative;
+    border-radius: 40px;
+    border: 10px solid rgba(255, 255, 255, 0.15);
+    background: transparent;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  /* 顶部刘海 / Dynamic Island */
+  .browser-phone-notch {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 28px;
+    border-radius: 20px;
+    background: #000;
+    z-index: 10;
+  }
+
+  .browser-phone-notch::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    transform: translateY(-50%);
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #1a1a2e;
+    border: 1px solid #2a2a3e;
+  }
+
+  /* 底部 Home Indicator（iOS 风格横条） */
+  .browser-phone-home-bar {
+    position: absolute;
+    bottom: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 120px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.4);
+    z-index: 10;
+  }
+`
 
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -246,6 +327,19 @@ export function BrowserPanel({
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
 
+  // 手机模式状态
+  const [phoneMode, setPhoneMode] = useState(false)
+  const [phoneDeviceId, setPhoneDeviceId] = useState(PHONE_DEVICE_PRESETS[1].id) // iPhone 14 Pro 默认
+  const [phoneRotated, setPhoneRotated] = useState(false)
+  const selectedDevice = useMemo(
+    () => PHONE_DEVICE_PRESETS.find((d) => d.id === phoneDeviceId) ?? PHONE_DEVICE_PRESETS[1],
+    [phoneDeviceId],
+  )
+  // 考虑旋转后的设备尺寸
+  const [deviceWidth, deviceHeight] = phoneRotated
+    ? [selectedDevice.height, selectedDevice.width]
+    : [selectedDevice.width, selectedDevice.height]
+
   const { sendMessage } = useActiveSessionActions()
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
@@ -258,6 +352,29 @@ export function BrowserPanel({
     const container = containerRef.current
     if (!container) return null
 
+    if (phoneMode) {
+      // 手机模式：容器为全屏 WebView2，但只取居中设备尺寸
+      const rect = container.getBoundingClientRect()
+      const panelWidth = rect.width
+      const panelHeight = rect.height
+
+      // 计算缩放（确保手机框在面板内）
+      const panelPadding = 24
+      const availW = panelWidth - panelPadding * 2
+      const availH = panelHeight - panelPadding * 2
+      const scale = Math.min(1, availW / deviceWidth, availH / deviceHeight)
+
+      const scaledW = Math.max(1, Math.round(deviceWidth * scale))
+      const scaledH = Math.max(1, Math.round(deviceHeight * scale))
+
+      return {
+        x: Math.round(rect.left + (panelWidth - scaledW) / 2),
+        y: Math.round(rect.top + (panelHeight - scaledH) / 2),
+        width: scaledW,
+        height: scaledH,
+      }
+    }
+
     const rect = container.getBoundingClientRect()
     return {
       x: Math.round(rect.left),
@@ -265,7 +382,7 @@ export function BrowserPanel({
       width: Math.round(rect.width),
       height: Math.round(rect.height),
     }
-  }, [])
+  }, [phoneMode, deviceWidth, deviceHeight])
 
   const syncBounds = useCallback(async () => {
     if (!readyRef.current) return
@@ -292,6 +409,13 @@ export function BrowserPanel({
       })
     })
   }, [syncBounds])
+
+  // 手机模式切换时同步 WebView2 边界
+  useEffect(() => {
+    if (readyRef.current) {
+      scheduleSyncBounds()
+    }
+  }, [phoneMode, deviceWidth, deviceHeight, scheduleSyncBounds])
 
   useEffect(() => {
     mountedRef.current = true
@@ -825,6 +949,51 @@ export function BrowserPanel({
           >
             <ExternalLink size={15} />
           </button>
+          {/* 手机模式切换 */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              className={clsx(toolbarButtonClass, phoneMode && 'bg-primary/15 text-primary')}
+              onClick={() => setPhoneMode((v) => !v)}
+              disabled={status !== 'ready'}
+              title={phoneMode ? '退出手机模式' : '手机模式'}
+            >
+              <Smartphone size={15} />
+            </button>
+            {phoneMode && (
+              <>
+                <select
+                  className="h-7 rounded border border-border-subtle bg-background-surface px-1.5 text-[11px] text-text-secondary outline-none"
+                  value={phoneDeviceId}
+                  onChange={(e) => setPhoneDeviceId(e.target.value)}
+                >
+                  <optgroup label="iPhone">
+                    {PHONE_DEVICE_PRESETS.filter((d) => d.id.startsWith('iphone')).map((d) => (
+                      <option key={d.id} value={d.id}>{d.name} ({d.width}×{d.height})</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Android">
+                    {PHONE_DEVICE_PRESETS.filter((d) => !d.id.startsWith('iphone') && d.id !== 'custom').map((d) => (
+                      <option key={d.id} value={d.id}>{d.name} ({d.width}×{d.height})</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="其他">
+                    {PHONE_DEVICE_PRESETS.filter((d) => d.id === 'custom').map((d) => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </optgroup>
+                </select>
+                <button
+                  type="button"
+                  className={clsx(toolbarButtonClass, phoneRotated && 'bg-primary/15 text-primary')}
+                  onClick={() => setPhoneRotated((v) => !v)}
+                  title={phoneRotated ? '竖屏' : '横屏'}
+                >
+                  <span style={{ writingMode: 'vertical-rl', fontSize: 9 }}>⇄</span>
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -844,6 +1013,21 @@ export function BrowserPanel({
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
         <div ref={containerRef} className="absolute inset-0 bg-background-base" />
+
+        {phoneMode && (
+          /* 手机外壳装饰层（纯 CSS，不参与 WebView2 定位） */
+          <div className="browser-phone-shell-overlay">
+            <div
+              className="browser-phone-frame"
+              style={{ width: deviceWidth, height: deviceHeight } as React.CSSProperties}
+            >
+              {selectedDevice.hasNotch && <div className="browser-phone-notch" />}
+              <div className="browser-phone-home-bar" />
+            </div>
+          </div>
+        )}
+
+        {phoneMode && <style>{BrowserPhoneShellStyles}</style>}
 
         {status === 'native-unavailable' && (
           <iframe
@@ -880,7 +1064,10 @@ export function BrowserPanel({
             </div>
           </div>
         )}
-      </div>
+
+        {phoneMode && selectedDevice.hasNotch && (
+          <style>{BrowserPhoneShellStyles}</style>
+        )}      </div>
 
       {aiPanelOpen && (
         <div className="shrink-0 border-t border-border-subtle bg-background-elevated px-3 py-2">
