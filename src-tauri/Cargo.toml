@@ -66,6 +66,10 @@ name = "polaris-agnes-mcp"
 path = "src/bin/polaris_agnes_mcp.rs"
 
 [[bin]]
+name = "polaris-ph-mcp"
+path = "src/bin/polaris_ph_mcp.rs"
+
+[[bin]]
 name = "polaris-web"
 path = "src/bin/polaris_web.rs"
 
@@ -110,6 +114,7 @@ md5 = "0.7"
 # AES-128-CBC 加解密（与前端 crypto-js 兼容）
 aes = "0.8"
 cbc = "0.1"
+cipher = { version = "0.4", features = ["block-padding"] }
 rand = "0.8"
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
 tempfile = "3"

@@ -163,6 +163,8 @@ export interface PersonalHubConfig {
   supabaseAnonKey: string;
   /** 字段级加密密钥（crypto-js AES 口令模式） */
   encryptionKey: string;
+  /** Supabase session token（前端登录后同步写入，供 MCP server 使用） */
+  sessionToken?: string;
 }
 
 /** 消息显示模式 */

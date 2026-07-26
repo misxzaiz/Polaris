@@ -26,6 +26,8 @@ const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
 const BROWSER_MCP_BIN_NAME: &str = "polaris-browser-mcp";
 const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
 const AGNES_MCP_BIN_NAME: &str = "polaris-agnes-mcp";
+const PH_MCP_SERVER_NAME: &str = "polaris-ph";
+const PH_MCP_BIN_NAME: &str = "polaris-ph-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
@@ -35,6 +37,7 @@ const ASK_PLUGIN_ID: &str = "polaris.ask";
 const DISPATCH_PLUGIN_ID: &str = "polaris.dispatch";
 const BROWSER_PLUGIN_ID: &str = "polaris.browser";
 const AGNES_PLUGIN_ID: &str = "polaris.agnes";
+const PERSONAL_HUB_PLUGIN_ID: &str = "polaris.personal-hub";
 
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
@@ -193,6 +196,10 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             plugin_id: AGNES_PLUGIN_ID,
             mcp_server_names: &[AGNES_MCP_SERVER_NAME],
         },
+        BuiltinPluginMcpManifest {
+            plugin_id: PERSONAL_HUB_PLUGIN_ID,
+            mcp_server_names: &[PH_MCP_SERVER_NAME],
+        },
     ]
 }
 
@@ -311,6 +318,19 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-agnes-mcp",
             "src-tauri/target/debug/polaris-agnes-mcp",
             "POLARIS_AGNES_MCP_PATH",
+            McpServerArgsMode::ConfigDirAndWorkspace,
+            false,
+        ),
+    );
+    registry.register_plugin_server(
+        PERSONAL_HUB_PLUGIN_ID,
+        PluginMcpServerContribution::builtin(
+            PH_MCP_SERVER_NAME,
+            PH_MCP_BIN_NAME,
+            "bin/polaris-ph-mcp",
+            "polaris-ph-mcp",
+            "src-tauri/target/debug/polaris-ph-mcp",
+            "POLARIS_PH_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),

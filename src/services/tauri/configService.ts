@@ -90,3 +90,17 @@ export async function getCliVersionFor(cliName: string): Promise<string> {
 export async function healthCheck(): Promise<HealthStatus> {
   return invoke<HealthStatus>('health_check');
 }
+
+/**
+ * 写入 Personal Hub session token（供 MCP server 认证 Supabase）。
+ * 前端登录后调用，将 Supabase auth session token 持久化到 config.json，
+ * 使 Rust 端 MCP server 能够以用户身份访问 Supabase 私有数据。
+ */
+export async function setPersonalHubSession(token: string): Promise<void> {
+  return invoke('set_personal_hub_session', { sessionToken: token });
+}
+
+/** 检查 Personal Hub 是否已同步 session token */
+export async function hasPersonalHubSession(): Promise<boolean> {
+  return invoke<boolean>('get_personal_hub_session_token');
+}

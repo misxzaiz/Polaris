@@ -224,11 +224,17 @@ pub async fn handle_ipc_bridge(
         // ── Config ──────────────────────────────────────────────────────────
         "get_config" => {
             let store = state.lock_config()?;
-            json_result!(store.get().clone())
+            let config = store.get().clone();
+            serde_json::to_value(config)
+                .map(Json)
+                .map_err(|e| WebError::Internal(format!("序列化失败: {e}")))
         }
         "health_check" => {
             let store = state.lock_config()?;
-            json_result!(store.health_status())
+            let status = store.health_status();
+            serde_json::to_value(status)
+                .map(Json)
+                .map_err(|e| WebError::Internal(format!("序列化失败: {e}")))
         }
 
         // ── Config helpers ─────────────────────────────────────────────────
