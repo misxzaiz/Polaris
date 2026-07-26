@@ -10,7 +10,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react';
 import { VirtuosoGrid } from 'react-virtuoso';
-import { BookOpen, ChevronLeft, Copy, Pencil, Plus, Rocket, Search, Send, Trash2, UserCheck, X } from 'lucide-react';
+import { BookOpen, ChevronLeft, Copy, Pencil, Plus, RefreshCw, Rocket, Search, Send, Trash2, UserCheck, X } from 'lucide-react';
 import { useAgentStore } from '@/stores/agentStore';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
@@ -799,7 +799,7 @@ function AgentDetailDrawer({
 
 export default function AgentGalleryPanel() {
   const {
-    loaded, loading, error, load, loadRosters,
+    loaded, loading, error, load, loadCustomAgents, loadRosters,
     search, setSearch, division, setDivision, rosters, customAgents, deleteCustom,
   } = useAgentStore();
   const [tab, setTab] = useState<'agents' | 'rosters' | 'runs'>('agents');
@@ -908,6 +908,14 @@ export default function AgentGalleryPanel() {
               >
                 <Plus size={13} />
                 新建专家
+              </button>
+              <button
+                type="button"
+                onClick={() => { void loadCustomAgents(); }}
+                className="flex shrink-0 items-center rounded-md border border-border-subtle px-2 py-1.5 text-xs text-text-muted hover:border-border hover:text-text-primary"
+                title="刷新专家列表"
+              >
+                <RefreshCw size={13} />
               </button>
             </div>
             <div className="flex flex-wrap gap-1.5">
