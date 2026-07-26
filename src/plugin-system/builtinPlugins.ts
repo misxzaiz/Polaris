@@ -8,6 +8,7 @@ import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
+import { appPreviewPluginManifest } from '@/plugins/app-preview/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 
@@ -46,6 +47,15 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.browserPanel',
         labelDefault: 'Browser',
         order: 30,
+      },
+      {
+        id: 'app-preview.panel',
+        area: 'activityBar',
+        panelType: 'app-preview',
+        icon: 'Smartphone',
+        labelKey: 'labels.appPreview',
+        labelDefault: 'App Preview',
+        order: 35,
       },
       {
         id: 'translate.panel',
@@ -103,6 +113,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(prdPreviewPluginManifest)
+  pluginRegistry.register(appPreviewPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(agnesPluginManifest)
@@ -114,6 +125,9 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
+  )
+  pluginPanelRegistry.register('appPreview', 'polaris.app-preview', () =>
+    import('@/plugins/app-preview/AppPreviewPanel').then((m) => ({ default: m.AppPreviewPanel })),
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
