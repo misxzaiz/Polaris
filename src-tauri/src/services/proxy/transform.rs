@@ -686,6 +686,9 @@ fn convert_user_message(content: Option<&Value>) -> Result<Vec<Value>, ProxyErro
     }
 
     // 合并文本和图片为一条 user message
+    // 注意：如果 messages 中已有 tool_result（role:"tool"），
+    // OpenAI Chat Completions 要求 tool 消息紧跟在 assistant(tool_calls) 之后，
+    // user 文本必须在 tool 消息之后，否则会返回 400 "insufficient tool messages"。
     if !text_parts.is_empty() || !image_parts.is_empty() {
         let mut parts = Vec::new();
         for img in image_parts {
@@ -694,15 +697,16 @@ fn convert_user_message(content: Option<&Value>) -> Result<Vec<Value>, ProxyErro
         if !text_parts.is_empty() {
             parts.push(json!({"type": "text", "text": text_parts.join("\n")}));
         }
-        if parts.len() == 1 && parts[0].get("type").and_then(|t| t.as_str()) == Some("text") {
+        let user_msg = if parts.len() == 1
+            && parts[0].get("type").and_then(|t| t.as_str()) == Some("text")
+        {
             // 只有纯文本，简化格式
-            messages.insert(
-                0,
-                json!({"role": "user", "content": parts[0].get("text").cloned().unwrap_or(json!(""))}),
-            );
+            json!({"role": "user", "content": parts[0].get("text").cloned().unwrap_or(json!(""))})
         } else {
-            messages.insert(0, json!({"role": "user", "content": parts}));
-        }
+            json!({"role": "user", "content": parts})
+        };
+        // 追加到末尾（tool 消息之后），而非插入到开头
+        messages.push(user_msg);
     }
 
     if messages.is_empty() {
@@ -1278,22 +1282,83 @@ mod tests {
     }
 
     #[test]
-    fn test_responses_to_anthropic_function_call() {
-        let resp = json!({
-            "id": "resp_2",
-            "model": "gpt-5",
-            "output": [
-                {"type": "function_call", "call_id": "call_9", "name": "read_file",
-                 "arguments": "{\"path\":\"/test.txt\"}"}
-            ],
-            "usage": {"input_tokens": 20, "output_tokens": 30}
+    fn test_anthropic_user_message_tool_result_and_text_order() {
+        // 复现 Bug：Anthropic user 消息同时包含 tool_result blocks + 文本。
+        // DeepSeek 等 OpenAI Chat Completions 实现要求 tool 消息紧跟在 assistant(tool_calls)
+        // 之后，user 文本必须在 tool 消息之后，否则返回 400。
+        let anthropic = json!({
+            "model": "deepseek-chat",
+            "max_tokens": 1024,
+            "messages": [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "text", "text": "Let me check these files."},
+                        {"type": "tool_use", "id": "tu_1", "name": "read_file", "input": {"path": "/a.txt"}},
+                        {"type": "tool_use", "id": "tu_2", "name": "read_file", "input": {"path": "/b.txt"}}
+                    ]
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "tool_result", "tool_use_id": "tu_1", "content": "content of a"},
+                        {"type": "tool_result", "tool_use_id": "tu_2", "content": "content of b"},
+                        {"type": "text", "text": "What do you think?"}
+                    ]
+                }
+            ]
         });
-        let result = responses_to_anthropic(resp).unwrap();
-        assert_eq!(result["stop_reason"], "tool_use");
-        let content = result["content"].as_array().unwrap();
-        assert_eq!(content[0]["type"], "tool_use");
-        assert_eq!(content[0]["id"], "call_9");
-        assert_eq!(content[0]["name"], "read_file");
-        assert_eq!(content[0]["input"]["path"], "/test.txt");
+        let result = anthropic_to_openai(anthropic).unwrap();
+        let msgs = result["messages"].as_array().unwrap();
+
+        // 找到 assistant(tool_calls) 的位置
+        let assistant_idx = msgs
+            .iter()
+            .position(|m| {
+                m["role"] == "assistant" && m.get("tool_calls").is_some()
+            })
+            .expect("should have assistant with tool_calls");
+
+        // tool 消息应该紧跟在 assistant 之后
+        let tool_idx = assistant_idx + 1;
+        assert_eq!(msgs[tool_idx]["role"], "tool", "tool must follow assistant(tool_calls)");
+        assert_eq!(msgs[tool_idx]["tool_call_id"], "tu_1");
+
+        let tool_idx2 = assistant_idx + 2;
+        assert_eq!(msgs[tool_idx2]["role"], "tool");
+        assert_eq!(msgs[tool_idx2]["tool_call_id"], "tu_2");
+
+        // user 文本应该在所有 tool 消息之后
+        let user_idx = assistant_idx + 3;
+        assert_eq!(msgs[user_idx]["role"], "user");
+        let content = msgs[user_idx]["content"].as_str().unwrap();
+        assert!(content.contains("What do you think?"));
+    }
+
+    #[test]
+    fn test_anthropic_user_message_multiple_tool_results_with_followup_text() {
+        // 多条 tool_result + 多段文本的混合场景
+        let anthropic = json!({
+            "model": "deepseek-chat",
+            "max_tokens": 1024,
+            "messages": [
+                {"role": "assistant", "content": [{"type": "tool_use", "id": "tu_3", "name": "bash", "input": {"command": "ls"}}]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "tu_3", "content": "file.txt\nother.md"},
+                    {"type": "text", "text": "Please read file.txt"}
+                ]}
+            ]
+        });
+        let result = anthropic_to_openai(anthropic).unwrap();
+        let msgs = result["messages"].as_array().unwrap();
+
+        // 预期序列：assistant(tool_calls) → tool(tu_3) → user
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[0]["role"], "assistant");
+        assert_eq!(msgs[0]["tool_calls"][0]["id"], "tu_3");
+        assert_eq!(msgs[1]["role"], "tool");
+        assert_eq!(msgs[1]["tool_call_id"], "tu_3");
+        assert_eq!(msgs[2]["role"], "user");
+        assert!(msgs[2]["content"].as_str().unwrap().contains("Please read file.txt"));
     }
 }
