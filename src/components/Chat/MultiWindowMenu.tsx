@@ -15,7 +15,7 @@ import { useViewStore } from '@/stores';
 import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager';
 
 /** 预设宽度选项 */
-const WIDTH_PRESETS = [250, 300, 350, 400, 450];
+const WIDTH_PRESETS = [250, 450, 650, 850];
 
 /**
  * 多窗口设置菜单组件
@@ -66,7 +66,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
 
   // 调整宽度
   const handleAdjustWidth = useCallback((delta: number) => {
-    const newWidth = Math.max(200, Math.min(600, multiSessionCellWidth + delta));
+    const newWidth = Math.max(100, multiSessionCellWidth + delta);
     setMultiSessionCellWidth(newWidth);
   }, [multiSessionCellWidth, setMultiSessionCellWidth]);
 
