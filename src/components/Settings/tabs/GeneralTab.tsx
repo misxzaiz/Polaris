@@ -241,7 +241,7 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
   return (
     <div className="space-y-6">
       {/* 专家库状态(U2-7:corpus stale 提示) */}
-      <CorpusStaleSection />
+      {/* <CorpusStaleSection /> */}
 
       {/* 语言设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
