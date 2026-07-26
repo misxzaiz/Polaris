@@ -29,6 +29,14 @@ pub fn sanitize_anthropic_messages_body(
         }
     }
 
+    // 修复孤儿 tool_use:claude code 在 Stop 中断时会话状态损坏(见
+    // GitHub issue #8004 werdnum 评论、#7380、#10693),会发出缺 tool_result
+    // 的 assistant(tool_use)。Anthropic/GLM 上游校验「每个 tool_use 必须紧跟
+    // tool_result」失败返回 400。本代理在出口扫描配对,把孤儿 tool_use 降级
+    // 为 text 摘要,让请求能继续——这是 claude code 自身修不干净(旧 transcript
+    // / hooks / rewound timeline)时 Polaris 的网关层防线。
+    repair_orphan_tool_use(&mut body);
+
     body
 }
 
@@ -89,6 +97,108 @@ fn sanitize_block(block: &Value, capability: AnthropicProviderCapability) -> Val
                     "text": summarize_provider_owned_block(block_type, block),
                 })
             }
+        }
+    }
+}
+
+/// 修复孤儿 tool_use:把缺对应 tool_result 的 tool_use block 降级为 text 摘要。
+///
+/// Anthropic 协议要求 assistant(tool_use) 后紧跟 user(tool_result),且每个
+/// tool_use 的 id 必须有对应的 tool_use_id。claude code 中断/分叉场景会留下
+/// 没配对的 tool_use,导致上游 400。本函数扫描 messages 配对关系,把孤儿
+/// tool_use 转成 text(与 server_tool_use 净化思路一致),并在 assistant content
+/// 因移除全部 tool_use 而变空时补一个提示性 text block(Anthropic 不接受空 content)。
+///
+/// 不处理反向损坏(孤儿 tool_result,见 #10693)与连续同角色消息(见 #8004 knail1
+/// 评论)——前者划 P2,后者划 P1。本函数专注「assistant 有 tool_use 但后续无
+/// tool_result」这一最常见根因。
+fn repair_orphan_tool_use(body: &mut Value) {
+    let Some(messages) = body.get_mut("messages").and_then(Value::as_array_mut) else {
+        return;
+    };
+
+    // 第 1 遍:统计每个 tool_use id 出现次数与 tool_result 配对次数。
+    // Anthropic 要求严格配对:若 assistant 有 2 个同 id 的 tool_use 但只有 1 个
+    // tool_result,则第 2 个 tool_use 是孤儿。用计数保证只保留可配对的前 N 个。
+    let mut tool_use_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    let mut tool_result_count: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for msg in messages.iter() {
+        let Some(blocks) = msg.get("content").and_then(Value::as_array) else {
+            continue;
+        };
+        for b in blocks {
+            let btype = b.get("type").and_then(Value::as_str).unwrap_or("");
+            match btype {
+                "tool_use" => {
+                    if let Some(id) = b.get("id").and_then(Value::as_str) {
+                        *tool_use_count.entry(id.to_string()).or_insert(0) += 1;
+                    }
+                }
+                "tool_result" => {
+                    if let Some(id) = b.get("tool_use_id").and_then(Value::as_str) {
+                        *tool_result_count.entry(id.to_string()).or_insert(0) += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 第 2 遍:改写 assistant content。对每个 tool_use,按出现顺序判定是否配对:
+    // 前 `tool_result_count[id]` 个保留,之后的降级为 text。
+    let mut consumed: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
+    for msg in messages.iter_mut() {
+        let role = msg.get("role").and_then(Value::as_str).unwrap_or("");
+        if role != "assistant" {
+            continue;
+        }
+        let Some(blocks) = msg.get_mut("content").and_then(Value::as_array_mut) else {
+            continue;
+        };
+
+        let mut new_blocks: Vec<Value> = Vec::with_capacity(blocks.len());
+        let mut changed = false;
+        for b in blocks.iter() {
+            if b.get("type").and_then(Value::as_str) == Some("tool_use") {
+                let id = b.get("id").and_then(Value::as_str).unwrap_or("");
+                let seen = consumed.entry(id.to_string()).or_insert(0);
+                *seen += 1;
+                let paired = tool_result_count.get(id).copied().unwrap_or(0);
+                if *seen <= paired {
+                    // 有配对,保留
+                    new_blocks.push(b.clone());
+                } else {
+                    // 孤儿:降级为 text 摘要(与 server_tool_use 净化思路一致)
+                    let name = b.get("name").and_then(Value::as_str).unwrap_or("unknown");
+                    let input_json = b
+                        .get("input")
+                        .map(|v| serde_json::to_string(v).unwrap_or_default())
+                        .unwrap_or_default();
+                    let summary = format!(
+                        "[tool_use interrupted - auto-patched by Polaris proxy]\nname: {}\nid: {}\ninput: {}",
+                        name, id, truncate_chars(&input_json, 500)
+                    );
+                    new_blocks.push(json!({ "type": "text", "text": summary }));
+                    changed = true;
+                }
+            } else {
+                new_blocks.push(b.clone());
+            }
+        }
+
+        if changed {
+            // 防御性兜底:移除孤儿 tool_use 后若 content 为空(理论上不会,至少有替换
+            // 出的 text),补一个提示 text(Anthropic 不接受空 content 数组)。
+            if new_blocks.is_empty() {
+                new_blocks.push(json!({
+                    "type": "text",
+                    "text": "[assistant turn had only orphan tool_use - auto-patched by Polaris proxy]"
+                }));
+            }
+            *blocks = new_blocks;
         }
     }
 }
@@ -299,5 +409,134 @@ mod tests {
             sanitized["messages"][0]["content"][0]["type"],
             "server_tool_use"
         );
+    }
+
+    // ============================================================
+    // P0:孤儿 tool_use 修复测试
+    //
+    // 场景:claude code Stop 中断后留下 assistant(tool_use) 但无 tool_result,
+    // 上游校验失败返回 400。Polaris 在 sanitize 出口把孤儿 tool_use 降级为
+    // text 摘要,让请求能继续。
+    // ============================================================
+
+    #[test]
+    fn repairs_orphan_tool_use_by_converting_to_text() {
+        // assistant 有 tool_use(toolu_orphan)但后续 user 无 tool_result
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "list files"},
+                {"role": "assistant", "content": [
+                    {"type": "text", "text": "I'll run bash."},
+                    {"type": "tool_use", "id": "toolu_orphan", "name": "bash",
+                     "input": {"command": "ls"}}
+                ]},
+                {"role": "user", "content": "continue"}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        let assistant_blocks = sanitized["messages"][1]["content"].as_array().unwrap();
+        // 第 1 个 block 是原 text,保留
+        assert_eq!(assistant_blocks[0]["type"], "text");
+        assert_eq!(assistant_blocks[0]["text"].as_str().unwrap(), "I'll run bash.");
+        // 第 2 个 block 由 tool_use 降级为 text,含中断提示
+        assert_eq!(assistant_blocks[1]["type"], "text");
+        let patched = assistant_blocks[1]["text"].as_str().unwrap();
+        assert!(patched.contains("tool_use interrupted"));
+        assert!(patched.contains("bash"));
+        assert!(patched.contains("toolu_orphan"));
+    }
+
+    #[test]
+    fn preserves_paired_tool_use_tool_result() {
+        // 正常配对:tool_use + tool_result,不应被改
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "list files"},
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "toolu_ok", "name": "bash",
+                     "input": {"command": "ls"}}
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "toolu_ok", "content": "file1\nfile2"}
+                ]}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        assert_eq!(sanitized["messages"][1]["content"][0]["type"], "tool_use");
+        assert_eq!(sanitized["messages"][1]["content"][0]["id"], "toolu_ok");
+        assert_eq!(sanitized["messages"][2]["content"][0]["type"], "tool_result");
+    }
+
+    #[test]
+    fn repairs_only_orphan_when_partial_pair_exists() {
+        // 同一 id 出现 2 次但只有 1 个 tool_result:第 2 个 tool_use 是孤儿
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "run twice"},
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "toolu_x", "name": "bash", "input": {"command": "ls"}},
+                    {"type": "tool_use", "id": "toolu_x", "name": "bash", "input": {"command": "pwd"}}
+                ]},
+                {"role": "user", "content": [
+                    {"type": "tool_result", "tool_use_id": "toolu_x", "content": "out1"}
+                ]}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        let blocks = sanitized["messages"][1]["content"].as_array().unwrap();
+        // 第 1 个 tool_use 保留(配对消费了唯一的 tool_result)
+        assert_eq!(blocks[0]["type"], "tool_use");
+        // 第 2 个 tool_use 降级为 text(孤儿)
+        assert_eq!(blocks[1]["type"], "text");
+        assert!(blocks[1]["text"].as_str().unwrap().contains("tool_use interrupted"));
+    }
+
+    #[test]
+    fn repairs_assistant_with_only_orphan_tool_use() {
+        // assistant content 全是 tool_use 且无 tool_result:全部降级,至少留一个 text
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "go"},
+                {"role": "assistant", "content": [
+                    {"type": "tool_use", "id": "toolu_a", "name": "bash", "input": {}}
+                ]},
+                {"role": "user", "content": "more"}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        let blocks = sanitized["messages"][1]["content"].as_array().unwrap();
+        // 不为空,且为 text 类型
+        assert!(!blocks.is_empty());
+        assert_eq!(blocks[0]["type"], "text");
+        assert!(blocks[0]["text"].as_str().unwrap().contains("tool_use interrupted"));
+    }
+
+    #[test]
+    fn leaves_string_content_untouched() {
+        // content 是字符串(旧格式)而非数组:repair 不应崩溃,直接跳过
+        let body = json!({
+            "messages": [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "I will help."}
+            ]
+        });
+
+        let sanitized =
+            sanitize_anthropic_messages_body(body, AnthropicProviderCapability::default());
+
+        // content 仍是字符串,未被改
+        assert_eq!(sanitized["messages"][1]["content"].as_str().unwrap(), "I will help.");
     }
 }

@@ -38,4 +38,17 @@ impl ProxyError {
             _ => 500,
         }
     }
+
+    /// 获取上游原始响应体(仅 `UpstreamError` 变体有)。
+    ///
+    /// 用于 P3:错误体透传。上游 4xx 时,`forward_raw_response` 已把上游原始
+    /// body 读到 `UpstreamError.body`,handler 层应原样透传给客户端(而非
+    /// 包装成 `api_error`),保留上游结构化错误码(如 `invalid_request_error`
+    /// + `tool_use ids were found without tool_result blocks`),排查友好。
+    pub fn upstream_body(&self) -> Option<&str> {
+        match self {
+            ProxyError::UpstreamError { body, .. } => Some(body.as_str()),
+            _ => None,
+        }
+    }
 }

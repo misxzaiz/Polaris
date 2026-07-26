@@ -6,7 +6,7 @@
 use axum::{
     body::Body,
     extract::{RawQuery, State},
-    http::{HeaderMap, StatusCode},
+    http::{HeaderMap, HeaderValue, StatusCode},
     response::Response,
 };
 use serde_json::{json, Value};
@@ -84,6 +84,30 @@ pub async fn handle_messages(
             return error_response(StatusCode::BAD_REQUEST, &format!("无效的 JSON 请求: {}", e));
         }
     };
+
+    // 调试:把 claude CLI 发来的原始 Anthropic 请求体落盘(直通 + 转换模式均落盘)。
+    // 用于诊断 Stop 后 400:对比 claude CLI 实际请求与 curl 重放请求的差异。
+    // 路径:%TEMP%/polaris-proxy-<wire>-request-debug.json
+    {
+        let wire_tag = match state.forwarder.wire_api {
+            ProxyWireApi::AnthropicMessages => "anthropic",
+            ProxyWireApi::ChatCompletions => "chat",
+            ProxyWireApi::Responses => "responses",
+            ProxyWireApi::CodexResponsesToChatCompletions => "codex",
+        };
+        let debug_path = std::env::temp_dir()
+            .join(format!("polaris-proxy-{}-request-debug.json", wire_tag));
+        if let Ok(body_str) = serde_json::to_string_pretty(&anthropic_body) {
+            let _ = std::fs::write(&debug_path, &body_str);
+            tracing::info!(
+                "[Proxy] 原始 Anthropic 请求体已落盘: {:?} (model={}, messages={}, tools={})",
+                debug_path,
+                anthropic_body.get("model").and_then(|v| v.as_str()).unwrap_or("?"),
+                anthropic_body.get("messages").and_then(|m| m.as_array()).map(|a| a.len()).unwrap_or(0),
+                anthropic_body.get("tools").and_then(|t| t.as_array()).map(|a| a.len()).unwrap_or(0),
+            );
+        }
+    }
 
     // 检查是否为流式请求
     let is_streaming = anthropic_body
@@ -222,12 +246,18 @@ async fn handle_anthropic_passthrough(
         Err(e) => {
             tracing::error!("[Proxy] Anthropic 直通上游请求失败: {}", e);
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            let message = if e.to_string().contains("server_tool_use") {
-                "上游拒绝 server_tool_use 历史块；请确认该会话已通过 Polaris 净化代理重试，或切换到支持 Anthropic server tools 的供应商。".to_string()
+            // P3:错误体透传上游原始 body,保留结构化错误码便于排查。
+            // server_tool_use 场景仍追加 Polaris 提示(作为 x-polaris-hint header,
+            // 不污染上游原始 body)。
+            let hint = if e.to_string().contains("server_tool_use") {
+                Some("上游拒绝 server_tool_use 历史块；请确认该会话已通过 Polaris 净化代理重试，或切换到支持 Anthropic server tools 的供应商。")
             } else {
-                format!("上游请求失败: {}", e)
+                None
             };
-            error_response(status, &message)
+            match e.upstream_body() {
+                Some(body) => upstream_error_response(status, body, hint),
+                None => error_response(status, &format!("上游请求失败: {}", e)),
+            }
         }
     }
 }
@@ -332,7 +362,10 @@ async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Resp
         Err(e) => {
             tracing::error!("[Proxy] Codex 上游请求失败: {}", e);
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            error_response(status, &format!("上游请求失败: {}", e))
+            match e.upstream_body() {
+                Some(body) => upstream_error_response(status, body, None),
+                None => error_response(status, &format!("上游请求失败: {}", e)),
+            }
         }
     }
 }
@@ -362,7 +395,10 @@ async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response
         Err(e) => {
             tracing::error!("[Proxy] Codex 上游流式请求失败: {}", e);
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            error_response(status, &format!("上游请求失败: {}", e))
+            match e.upstream_body() {
+                Some(body) => upstream_error_response(status, body, None),
+                None => error_response(status, &format!("上游请求失败: {}", e)),
+            }
         }
     }
 }
@@ -436,7 +472,10 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
         Err(e) => {
             tracing::error!("[Proxy] 上游请求失败: {}", e);
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            error_response(status, &format!("上游请求失败: {}", e))
+            match e.upstream_body() {
+                Some(body) => upstream_error_response(status, body, None),
+                None => error_response(status, &format!("上游请求失败: {}", e)),
+            }
         }
     }
 }
@@ -729,7 +768,10 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
         Err(e) => {
             tracing::error!("[Proxy] 上游流式请求失败: {}", e);
             let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            error_response(status, &format!("上游请求失败: {}", e))
+            match e.upstream_body() {
+                Some(body) => upstream_error_response(status, body, None),
+                None => error_response(status, &format!("上游请求失败: {}", e)),
+            }
         }
     }
 }
@@ -1037,6 +1079,39 @@ fn error_response(status: StatusCode, message: &str) -> Response {
         })
 }
 
+/// 构建上游错误透传响应(P3:错误体透传上游原始 body)。
+///
+/// 上游 4xx/5xx 时,`forward_raw_response` 已把上游原始响应体读到
+/// `ProxyError::UpstreamError.body`。本函数优先把原始 body 原样透传给客户端
+/// (Content-Type: application/json),保留上游结构化错误码(如
+/// `invalid_request_error` + `tool_use ids were found without tool_result blocks`),
+/// 便于排查。原始 body 非 JSON 时退化为 `error_response` 包装,保持兼容。
+///
+/// `extra_hint` 用于追加 Polaris 侧提示(如 server_tool_use 处理建议),
+/// 仅在透传成功时作为独立 header `x-polaris-hint` 返回,不污染上游原始 body。
+fn upstream_error_response(status: StatusCode, upstream_body: &str, extra_hint: Option<&str>) -> Response {
+    // 尝试把上游 body 解析为 JSON 原样透传
+    if let Ok(parsed) = serde_json::from_str::<Value>(upstream_body) {
+        let body_str = serde_json::to_string(&parsed).unwrap_or_else(|_| upstream_body.to_string());
+        let mut builder = Response::builder()
+            .status(status)
+            .header("Content-Type", "application/json");
+        if let Some(hint) = extra_hint {
+            // HeaderValue::from_str 不接受非 ASCII(如中文提示),用 from_bytes 兜底。
+            if let Ok(v) = HeaderValue::from_bytes(hint.as_bytes()) {
+                builder = builder.header("x-polaris-hint", v);
+            }
+        }
+        return builder
+            .body(Body::from(body_str))
+            .unwrap_or_else(|_| {
+                error_response(status, &format!("上游请求失败: {}", upstream_body))
+            });
+    }
+    // 上游 body 非 JSON(如纯文本/HTML 错误页):退化为包装格式
+    error_response(status, &format!("上游请求失败: {}", upstream_body))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1068,5 +1143,188 @@ mod tests {
         assert!(!names.contains(&"host"));
         assert!(!names.contains(&"content-length"));
         assert!(!names.contains(&"accept-encoding"));
+    }
+
+    // ============================================================
+    // P0 回归测试:孤儿 tool_use 经 Polaris 净化后不再触发上游 400
+    //
+    // 场景:ClaudeCode 引擎 + AnthropicMessages 直通。Stop 中断后 claude code
+    // 留下孤儿 assistant(tool_use)(无 tool_result)。mock 上游模拟真实 Anthropic
+    // 严格校验(每个 tool_use 必须有对应 tool_result,否则 400)。
+    //
+    // P0 修复前:代理原样透传孤儿 → 上游 400(本测试原名 reproduce_..._400)。
+    // P0 修复后:代理在 sanitize 出口把孤儿 tool_use 降级为 text → 上游 200。
+    // ============================================================
+    #[tokio::test]
+    async fn orphan_tool_use_replay_passes_after_p0_repair() {
+        use axum::{routing::post, Router};
+        use std::collections::HashMap;
+        use tokio::net::TcpListener;
+
+        // --- 1. mock 上游:模拟真实 Anthropic 严格校验 tool_use/tool_result 配对 ---
+        let upstream = Router::new().route(
+            "/v1/messages",
+            post(|body: String| async move {
+                let v: Value = serde_json::from_str(&body).unwrap_or(Value::Null);
+                let mut tool_use_ids: Vec<String> = Vec::new();
+                let mut tool_result_ids: Vec<String> = Vec::new();
+                if let Some(msgs) = v.get("messages").and_then(Value::as_array) {
+                    for msg in msgs {
+                        if let Some(blocks) = msg.get("content").and_then(Value::as_array) {
+                            for b in blocks {
+                                match b.get("type").and_then(Value::as_str) {
+                                    Some("tool_use") => {
+                                        if let Some(id) = b.get("id").and_then(Value::as_str) {
+                                            tool_use_ids.push(id.to_string());
+                                        }
+                                    }
+                                    Some("tool_result") => {
+                                        if let Some(id) =
+                                            b.get("tool_use_id").and_then(Value::as_str)
+                                        {
+                                            tool_result_ids.push(id.to_string());
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    }
+                }
+                // 真实 Anthropic 校验:每个 tool_use 必须有对应 tool_result
+                let orphan: Vec<&String> = tool_use_ids
+                    .iter()
+                    .filter(|id| !tool_result_ids.contains(id))
+                    .collect();
+                if !orphan.is_empty() {
+                    return (
+                        axum::http::StatusCode::BAD_REQUEST,
+                        axum::Json(json!({
+                            "type": "error",
+                            "error": {
+                                "type": "invalid_request_error",
+                                "message": format!(
+                                    "tool_use ids without tool_result: {:?}",
+                                    orphan
+                                )
+                            }
+                        })),
+                    );
+                }
+                (
+                    axum::http::StatusCode::OK,
+                    axum::Json(json!({"id":"msg_ok","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"model":"claude-test","stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}})),
+                )
+            }),
+        );
+        let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream_listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(upstream_listener, upstream).await.unwrap();
+        });
+        let upstream_url = format!("http://127.0.0.1:{}/v1/messages", upstream_addr.port());
+
+        // --- 2. 起 Polaris 代理,直通模式指向 mock 上游(P0 修复在 sanitize 出口) ---
+        let forwarder = ForwarderConfig::with_options(
+            &upstream_url,
+            "test-key",
+            ProxyWireApi::AnthropicMessages,
+            HashMap::new(),
+        );
+        let proxy = super::super::server::start_proxy_server(forwarder, 0).await.unwrap();
+        let proxy_url = format!("http://{}/v1/messages", proxy.addr);
+
+        // --- 3. 模拟 claude CLI 中断后重试:历史含孤儿 tool_use ---
+        // assistant 消息带 tool_use(id=toolu_orphan),但后续 user turn 没有 tool_result。
+        let orphan_request = json!({
+            "model": "claude-test",
+            "max_tokens": 1024,
+            "stream": false,
+            "messages": [
+                {"role": "user", "content": "list files"},
+                {"role": "assistant", "content": [
+                    {"type": "text", "text": "I'll run bash."},
+                    {"type": "tool_use", "id": "toolu_orphan", "name": "bash", "input": {"command": "ls"}}
+                ]},
+                {"role": "user", "content": "continue"}  // 没有 tool_result!
+            ]
+        });
+
+        let client = reqwest::Client::new();
+        let resp = client
+            .post(&proxy_url)
+            .header("x-api-key", "test-key")
+            .header("anthropic-version", "2023-06-01")
+            .json(&orphan_request)
+            .send()
+            .await
+            .expect("代理请求应成功发送");
+
+        let status = resp.status();
+        let body: Value = resp.json().await.unwrap_or(Value::Null);
+
+        proxy.shutdown();
+
+        // --- 4. 断言:P0 修复后上游返回 200(孤儿已被出口净化降级为 text) ---
+        assert_eq!(
+            status.as_u16(),
+            200u16,
+            "孤儿 tool_use 经 Polaris P0 净化后上游应返回 200,实际 status={}, body={}",
+            status,
+            body
+        );
+        assert_eq!(body["type"], "message");
+        assert_eq!(body["stop_reason"], "end_turn");
+        eprintln!("P0_VERIFIED: orphan tool_use repaired → upstream 200");
+    }
+
+    // ============================================================
+    // P3:错误体透传上游原始 body
+    // ============================================================
+
+    /// 上游 JSON 错误体透传:上游原始 body 被原样返回,不包装成 `api_error`。
+    #[tokio::test]
+    async fn p3_verify_upstream_error_body_passthrough() {
+        use axum::body::to_bytes;
+
+        // 1. JSON 错误体透传:Anthropic 的 invalid_request_error
+        let upstream_json = r#"{"type":"error","error":{"type":"invalid_request_error","message":"tool_use ids were found without tool_result blocks"}}"#;
+        let resp = upstream_error_response(StatusCode::BAD_REQUEST, upstream_json, None);
+        let bytes = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+        let body = String::from_utf8_lossy(&bytes);
+
+        assert!(body.contains("invalid_request_error"));
+        assert!(body.contains("tool_use ids were found without tool_result blocks"));
+        assert!(!body.contains("api_error"), "上游 JSON 不应被包装成 api_error");
+
+        // 2. 非 JSON 退化:纯文本错误页退化为包装格式
+        let resp2 = upstream_error_response(
+            StatusCode::BAD_GATEWAY,
+            "upstream connection failed: text error",
+            None,
+        );
+        let bytes2 = to_bytes(resp2.into_body(), usize::MAX).await.unwrap();
+        let body2 = String::from_utf8_lossy(&bytes2);
+
+        assert!(body2.contains("api_error"));
+        assert!(body2.contains("upstream connection failed: text error"));
+
+        // 3. 带 hint 的场景:直通模式 server_tool_use 拒绝时
+        let resp3 = upstream_error_response(
+            StatusCode::BAD_REQUEST,
+            r#"{"type":"error","error":{"type":"invalid_request_error","message":"server_tool_use not supported"}}"#,
+            Some("请确认会话已通过净化代理重试"),
+        );
+        // header 值可能含非 ASCII(中文),用 from_bytes 比较
+        let hint_bytes = resp3
+            .headers()
+            .get("x-polaris-hint")
+            .map(|v| v.as_bytes().to_vec());
+        assert_eq!(
+            hint_bytes,
+            Some("请确认会话已通过净化代理重试".as_bytes().to_vec())
+        );
+
+        eprintln!("P3_VERIFIED: JSON body passthrough + non-JSON fallback + hint header");
     }
 }

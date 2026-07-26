@@ -513,4 +513,91 @@ mod tests {
         }
         assert_eq!(parsed_count, 5, "Expected 5 chunks to parse successfully");
     }
+
+    // ============================================================
+    // Stop 中断复现测试
+    //
+    // 场景:ClaudeCode 引擎 + OpenAI 协议供应商。用户在 Tool Calling
+    // 过程中点 Stop,claude CLI 进程被杀,代理与上游的 in-flight 流中断。
+    // 此时上游可能已发出 tool_call delta(代理侧 tool_use block 已 started)。
+    //
+    // 复现目标:验证代理在中断时
+    //   1) 已发出 content_block_start(tool_use)
+    //   2) 补发 content_block_stop 关闭该 tool_use block(让它结构完整)
+    //   3) message_delta 的 stop_reason = end_turn(而非 tool_use)
+    // 三者同时成立 ⇒ claude CLI 会把含 tool_use 但无 tool_result 的
+    // assistant 消息写入历史,下次 continue 时上游 400。
+    // ============================================================
+
+    /// 构造一个模拟上游 OpenAI SSE 流:发出一条 tool_call delta(id+name 就位)
+    /// 后以 Err 终止,模拟用户点 Stop 导致的连接中断。
+    #[tokio::test]
+    async fn reproduce_stop_during_tool_call_emits_orphan_tool_use() {
+        use futures_util::stream;
+        // 注意:上游 chunk 必须包含 SSE 的 `data:` 前缀和 `\n\n` 分隔符,
+        // 因为 `create_anthropic_sse_stream` 内部调用 `take_sse_block`(按 `\n\n` 分割)
+        // 和 `strip_sse_field`(取 `data:` 后的内容)解析。
+        // 第一条 chunk:tool_call delta,id 与 name 已到(触发 content_block_start)
+        let chunk1 = Bytes::from(
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1780682244,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"bash\",\"arguments\":\"{\\\"co\"}}]}}]}\n\n"
+        );
+        // 第二条 chunk:补一点 arguments delta(让流"进行中"但未 finish)
+        let chunk2 = Bytes::from(
+            "data: {\"id\":\"chatcmpl-test\",\"object\":\"chat.completion.chunk\",\"created\":1780682244,\"model\":\"test-model\",\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"function\":{\"arguments\":\"mmand:\\\"ls\\\"}\"}}]}}]}\n\n"
+        );
+        // 用 Err 模拟连接中断(claude CLI 被杀 → TCP 断开)
+        let upstream = stream::iter(vec![
+            Ok::<Bytes, std::io::Error>(chunk1),
+            Ok::<Bytes, std::io::Error>(chunk2),
+            Err(std::io::Error::new(std::io::ErrorKind::ConnectionAborted, "client stopped")),
+        ]);
+
+        // 收集代理输出的全部 Anthropic SSE
+        let mut out = String::new();
+        let s = create_anthropic_sse_stream(upstream);
+        futures_util::pin_mut!(s);
+        use futures_util::StreamExt;
+        while let Some(item) = s.next().await {
+            match item {
+                Ok(bytes) => out.push_str(&String::from_utf8_lossy(&bytes)),
+                Err(_) => break,
+            }
+        }
+
+        // 断言 1:发出了 content_block_start(tool_use)
+        assert!(
+            out.contains("event: content_block_start")
+                && out.contains(r#""type":"tool_use""#),
+            "应发出 content_block_start(tool_use),实际输出:\n{}",
+            out
+        );
+        // 断言 2:补发了 content_block_stop(关闭 tool_use block → 结构完整)
+        // 注意:content_block_stop 的 `type` 在 event 名中,data 仅有 `{"index":0}`
+        assert!(
+            out.contains("event: content_block_stop"),
+            "应补发 content_block_stop,实际输出:\n{}",
+            out
+        );
+        // 断言 3:message_delta 的 stop_reason = end_turn(根因:应为 tool_use 或不补 stop)
+        assert!(
+            out.contains(r#""stop_reason":"end_turn""#),
+            "中断时 stop_reason 被硬编码为 end_turn(根因),实际输出:\n{}",
+            out
+        );
+        // 断言 4:不应出现 tool_result(claude CLI 侧无 tool_result ⇒ 孤儿)
+        assert!(
+            !out.contains("tool_result"),
+            "中断流不应含 tool_result,实际输出:\n{}",
+            out
+        );
+
+        // ===== 复现结论 =====
+        // 代理在中断时:
+        //   - content_block_start(tool_use) 已发出
+        //   - content_block_stop 关闭了 tool_use(结构完整)
+        //   - stop_reason=end_turn(而非 tool_use)
+        //   - 无 tool_result
+        // ⇒ claude CLI 把 assistant(tool_use) 写入历史,下次 continue 上游 400。
+        eprintln!("REPRODUCE_OK: orphan tool_use + end_turn + no tool_result");
+    }
 }
