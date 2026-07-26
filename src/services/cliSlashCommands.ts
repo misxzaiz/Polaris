@@ -105,6 +105,8 @@ export function matchBlockedCliCommand(text: string): string | null {
  */
 export function parseAssaultSlashCommand(text: string): string | null {
   if (!text.startsWith('/assault')) return null
+  const rest = text.slice('/assault'.length)
+  if (rest && !/^\s/.test(rest)) return null
   // 保留首字符后的文本，即 "assault <profile> <problem>"
   return text.slice(1)
 }

@@ -5,6 +5,7 @@ import {
   CLI_BLOCKED_COMMANDS,
   getCliCommandSuggestions,
   matchBlockedCliCommand,
+  parseAssaultSlashCommand,
 } from './cliSlashCommands'
 
 describe('cliSlashCommands', () => {
@@ -78,6 +79,36 @@ describe('cliSlashCommands', () => {
       const dynamic = Array.from({ length: 20 }, (_, i) => `cmd-${i}`)
       const result = getCliCommandSuggestions('', dynamic, new Set())
       expect(result.filter(r => r.dynamic).length).toBeLessThanOrEqual(6)
+    })
+  })
+
+  describe('parseAssaultSlashCommand', () => {
+    it('正常解析 /assault refactor-design xxx', () => {
+      expect(parseAssaultSlashCommand('/assault refactor-design 评估xxx')).toBe('assault refactor-design 评估xxx')
+    })
+
+    it('无参时返回 assault', () => {
+      expect(parseAssaultSlashCommand('/assault')).toBe('assault')
+    })
+
+    it('带空格时返回 assault 开头', () => {
+      expect(parseAssaultSlashCommand('/assault  多个空格')).toBe('assault  多个空格')
+    })
+
+    it('拒绝 /assaults 前缀误匹配', () => {
+      expect(parseAssaultSlashCommand('/assaults')).toBeNull()
+    })
+
+    it('拒绝 /assault-team 前缀误匹配', () => {
+      expect(parseAssaultSlashCommand('/assault-team')).toBeNull()
+    })
+
+    it('拒绝非 assault 命令', () => {
+      expect(parseAssaultSlashCommand('/dispatch')).toBeNull()
+    })
+
+    it('拒绝普通文本', () => {
+      expect(parseAssaultSlashCommand('assault refactor-design')).toBeNull()
     })
   })
 })

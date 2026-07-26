@@ -1179,6 +1179,7 @@ export function ChatInput({
     if (assaultText) {
       cancelPersistDraft()
       setLocalText('')
+      setLocalAttachments([])
       updateInputDraft({ text: '', attachments: [] })
       setHistoryIndex(-1)
       resetPromptOptimize()
