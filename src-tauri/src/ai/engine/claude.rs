@@ -357,23 +357,17 @@ impl ClaudeEngine {
         settings_overlay_path: Option<&str>,
     ) -> Result<Command> {
         // U2-4:claude 引擎会话内 persona 注入。
-        // claude CLI 的 `--agent <slug>` 只认 `.claude/agents/` 落盘文件,Polaris 专家装在
-        // 项目级 `.polaris/agents/`,CLI 看不到。改用 `--agents <json>` 免落盘注入:把项目级
+        // claude CLI 的 `--agent <slug>` 只认 `.claude/agents/` 落盘文件,Polaris 专家存于
+        // 全局 `<DataRoot>/agents/`,CLI 看不到。改用 `--agents <json>` 免落盘注入:把全局
         // 专家定义(description + system prompt body)序列化为 JSON,随 `--agent <slug>`
         // 一起传入,CLI 即以此人格驱动会话。
         // 命中失败(无该 slug / slug 拼错)时仅传 `--agent <slug>`(由 CLI 自行处理或忽略),
         // 不阻断会话——与 SimpleAI 的"未找到回退默认 persona"策略一致,但不静默:日志记 warn。
-        let work_dir = self
-            .config
-            .work_dir
-            .as_deref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_default();
         let agents_json: Option<String> = agent.and_then(|a| {
             if a.is_empty() {
                 return None;
             }
-            match load_agent_def(&work_dir, a) {
+            match load_agent_def(a) {
                 Some((_slug, desc, prompt)) => {
                     // claude `--agents` 期望 { "<slug>": { "description":..., "prompt":... } } 形态。
                     let mut obj = serde_json::Map::new();
@@ -385,7 +379,7 @@ impl ClaudeEngine {
                 }
                 None => {
                     tracing::warn!(
-                        "[ClaudeEngine] 未在项目 .polaris/agents 找到 agent「{}」，仅传 --agent（CLI 可能忽略或回退默认）",
+                        "[ClaudeEngine] 未在全局 agents 目录找到 agent「{}」，仅传 --agent（CLI 可能忽略或回退默认）",
                         a
                     );
                     None

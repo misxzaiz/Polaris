@@ -184,19 +184,13 @@ function CustomAgentEditor({
 }) {
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
-  const workspacePath = useWorkspaceStore((s) => s.getCurrentWorkspace()?.path);
   const saveCustom = useAgentStore((s) => s.saveCustom);
   const slugValid = /^[a-z0-9-]{1,64}$/.test(form.slug);
 
   const submit = async () => {
-    if (!workspacePath) {
-      useToastStore.getState().error('无法保存', '当前会话未关联工作区');
-      return;
-    }
     setSaving(true);
     try {
       await saveCustom({
-        workDir: workspacePath,
         slug: form.slug,
         name: form.name,
         description: form.description,
@@ -204,7 +198,7 @@ function CustomAgentEditor({
         systemPrompt: form.systemPrompt,
         tools: form.tools.length > 0 ? form.tools : undefined,
       });
-      useToastStore.getState().info('已保存', `专家「${form.name}」已写入 .polaris/agents/${form.slug}.md`);
+      useToastStore.getState().info('已保存', `专家「${form.name}」已写入全局 agents/${form.slug}.md`);
       onClose();
     } catch (e) {
       useToastStore.getState().error('保存失败', e instanceof Error ? e.message : String(e));
@@ -805,7 +799,7 @@ function AgentDetailDrawer({
 
 export default function AgentGalleryPanel() {
   const {
-    loaded, loading, error, load, loadRosters, loadCustomAgents,
+    loaded, loading, error, load, loadRosters,
     search, setSearch, division, setDivision, rosters, customAgents, deleteCustom,
   } = useAgentStore();
   const [tab, setTab] = useState<'agents' | 'rosters' | 'runs'>('agents');
@@ -813,15 +807,11 @@ export default function AgentGalleryPanel() {
   const [editor, setEditor] = useState<EditorState | null>(null);
   const [rosterBuilderOpen, setRosterBuilderOpen] = useState(false);
   const [detailAgent, setDetailAgent] = useState<GalleryAgent | null>(null);
-  const workspacePath = useWorkspaceStore((s) => s.getCurrentWorkspace()?.path);
 
   useEffect(() => {
     if (!loaded) void load();
     void loadRosters();
   }, [loaded, load, loadRosters]);
-  useEffect(() => {
-    if (workspacePath) void loadCustomAgents(workspacePath);
-  }, [workspacePath, loadCustomAgents]);
 
   // 进行中页签:打开时拉取 + 订阅推进事件(后端每成员终态整体推送,低频)
   useEffect(() => {
@@ -873,9 +863,8 @@ export default function AgentGalleryPanel() {
   }, [galleryList]);
 
   const handleDelete = (c: CustomAgent) => {
-    if (!workspacePath) return;
-    if (!window.confirm(`删除自定义专家「${c.name}」(${c.slug})?文件将从 .polaris/agents/ 移除。`)) return;
-    void deleteCustom(workspacePath, c.slug).then(() =>
+    if (!window.confirm(`删除专家「${c.name}」(${c.slug})?文件将从全局 agents 目录移除。`)) return;
+    void deleteCustom(c.slug).then(() =>
       useToastStore.getState().info('已删除', c.slug),
     );
   };
@@ -915,7 +904,7 @@ export default function AgentGalleryPanel() {
                 type="button"
                 onClick={() => setEditor({ slug: '', name: '', emoji: '', description: '', systemPrompt: '', tools: [], isNew: true })}
                 className="flex shrink-0 items-center gap-1 rounded-md border border-border-subtle px-2.5 py-1.5 text-xs text-text-secondary hover:border-border hover:text-text-primary"
-                title="在当前工作区 .polaris/agents/ 新建专家"
+                title="新建全局专家(存于 <DataRoot>/agents/)"
               >
                 <Plus size={13} />
                 新建专家

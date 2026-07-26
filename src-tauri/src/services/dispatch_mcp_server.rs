@@ -52,8 +52,6 @@ pub struct DispatchMcpConfig {
     pub port: u16,
     pub token: String,
     pub session_id: Option<String>,
-    /// 默认工作目录(save_agent/list_agents 等工具缺省 workDir 时回退)
-    pub work_dir: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -164,20 +162,20 @@ fn handle_initialize() -> Value {
             "Polaris dispatch & self-service expert MCP.\n\n",
             "You can delegate sub-tasks (dispatch_task) and ALSO build your own ",
             "experts and teams on the fly:\n",
-            "1. list_agents(workDir?) — list existing project experts (slug/name/",
+            "1. list_agents — list existing global experts (slug/name/",
             "description) and user rosters; use before creating to avoid slug ",
             "collisions.\n",
-            "2. save_agent(slug, name, description, systemPrompt, emoji?, tools?, ",
-            "workDir?) — create/overwrite a project expert at ",
-            "<workDir>/.polaris/agents/<slug>.md. systemPrompt should state the ",
-            "mission, behavioral rules, deliverable standards, and tool whitelist. ",
-            "slug must be lowercase-kebab, ≤64 chars.\n",
-            "3. delete_agent(slug, workDir?) — remove a project expert.\n",
+            "2. save_agent(slug, name, description, systemPrompt, emoji?, tools?) ",
+            "— create/overwrite a global expert at <DataRoot>/agents/<slug>.md. ",
+            "systemPrompt should state the mission, behavioral rules, deliverable ",
+            "standards, and tool whitelist. slug must be lowercase-kebab, ≤64 chars. ",
+            "Experts are global (shared across all workspaces).\n",
+            "3. delete_agent(slug) — remove a global expert.\n",
             "4. save_roster(slug, title, summary?, members[]) — assemble a team; ",
             "members are existing expert slugs ordered by dependency (upstream ",
             "producers first). Stored globally; consumed by dispatch_roster.\n",
-            "5. find_expert(query, workDir?) — keyword search among project ",
-            "experts if you need a recommendation.\n\n",
+            "5. find_expert(query) — keyword search among global experts if you ",
+            "need a recommendation.\n\n",
             "Created experts/teams are immediately usable via /dispatch <slug> and ",
             "/nexus <scenario> with no restart. Prefer creating focused, reusable ",
             "experts over writing ad-hoc prompts."
@@ -369,10 +367,10 @@ fn handle_tools_list() -> Value {
             {
                 "name": SAVE_AGENT_TOOL_NAME,
                 "description": concat!(
-                    "Create or overwrite a project-level expert at ",
-                    "<workDir>/.polaris/agents/<slug>.md (follows the project via git). ",
-                    "The expert is immediately usable via /dispatch <slug> with no restart. ",
-                    "Use list_agents first to avoid slug collisions."
+                    "Create or overwrite a global expert at ",
+                    "<DataRoot>/agents/<slug>.md (shared across all workspaces). ",
+                    "The expert is immediately usable via /dispatch <slug> with no ",
+                    "restart. Use list_agents first to avoid slug collisions."
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -394,10 +392,6 @@ fn handle_tools_list() -> Value {
                             "type": "array",
                             "items": { "type": "string" },
                             "description": "Optional tool whitelist (empty = unrestricted)."
-                        },
-                        "workDir": {
-                            "type": "string",
-                            "description": "Project root containing .polaris/agents/. Omit to use the session workspace."
                         }
                     },
                     "additionalProperties": false
@@ -405,16 +399,12 @@ fn handle_tools_list() -> Value {
             },
             {
                 "name": DELETE_AGENT_TOOL_NAME,
-                "description": "Delete a project-level expert (.polaris/agents/<slug>.md).",
+                "description": "Delete a global expert (<DataRoot>/agents/<slug>.md).",
                 "inputSchema": {
                     "type": "object",
                     "required": ["slug"],
                     "properties": {
-                        "slug": { "type": "string", "description": "Expert slug to delete." },
-                        "workDir": {
-                            "type": "string",
-                            "description": "Project root. Omit to use the session workspace."
-                        }
+                        "slug": { "type": "string", "description": "Expert slug to delete." }
                     },
                     "additionalProperties": false
                 }
@@ -422,19 +412,14 @@ fn handle_tools_list() -> Value {
             {
                 "name": LIST_AGENTS_TOOL_NAME,
                 "description": concat!(
-                    "List existing experts and user-built rosters to avoid slug ",
-                    "collisions before creating new ones. Returns project experts ",
-                    "(.polaris/agents) with slug/name/description, and user rosters ",
-                    "with slug/title/members."
+                    "List existing global experts and user-built rosters to avoid ",
+                    "slug collisions before creating new ones. Returns experts ",
+                    "(<DataRoot>/agents) with slug/name/description, and user ",
+                    "rosters with slug/title/members."
                 ),
                 "inputSchema": {
                     "type": "object",
-                    "properties": {
-                        "workDir": {
-                            "type": "string",
-                            "description": "Project root. Omit to use the session workspace."
-                        }
-                    },
+                    "properties": {},
                     "additionalProperties": false
                 }
             },
@@ -506,7 +491,7 @@ fn handle_tools_call(params: Value, config: &DispatchMcpConfig) -> Result<Value>
         }),
         SAVE_AGENT_TOOL_NAME => build_agent_save_frame(&arguments, config)?,
         DELETE_AGENT_TOOL_NAME => build_agent_delete_frame(&arguments, config)?,
-        LIST_AGENTS_TOOL_NAME => build_agent_list_frame(&arguments, config)?,
+        LIST_AGENTS_TOOL_NAME => build_agent_list_frame(config),
         SAVE_ROSTER_TOOL_NAME => build_roster_save_frame(&arguments, config)?,
         other => return Err(AppError::ValidationError(format!("未知工具: {}", other))),
     };
@@ -627,24 +612,7 @@ fn build_status_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<V
     }))
 }
 
-/// 解析 workDir:显式传入优先,缺省回退 config.work_dir
-fn resolve_work_dir(arguments: &Value, config: &DispatchMcpConfig) -> Result<String> {
-    let wd = arguments
-        .get("workDir")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(String::from)
-        .or_else(|| config.work_dir.clone())
-        .filter(|s| !s.is_empty())
-        .ok_or_else(|| AppError::ValidationError(
-            "缺少 workDir 参数且会话无默认工作目录".into()
-        ))?;
-    Ok(wd)
-}
-
 fn build_agent_save_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
-    let work_dir = resolve_work_dir(arguments, config)?;
     let slug = arguments
         .get("slug")
         .and_then(Value::as_str)
@@ -682,7 +650,6 @@ fn build_agent_save_frame(arguments: &Value, config: &DispatchMcpConfig) -> Resu
     Ok(json!({
         "type": "agent_save",
         "token": config.token,
-        "workDir": work_dir,
         "slug": slug,
         "name": name,
         "description": description,
@@ -693,7 +660,6 @@ fn build_agent_save_frame(arguments: &Value, config: &DispatchMcpConfig) -> Resu
 }
 
 fn build_agent_delete_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
-    let work_dir = resolve_work_dir(arguments, config)?;
     let slug = arguments
         .get("slug")
         .and_then(Value::as_str)
@@ -703,18 +669,15 @@ fn build_agent_delete_frame(arguments: &Value, config: &DispatchMcpConfig) -> Re
     Ok(json!({
         "type": "agent_delete",
         "token": config.token,
-        "workDir": work_dir,
         "slug": slug,
     }))
 }
 
-fn build_agent_list_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
-    let work_dir = resolve_work_dir(arguments, config)?;
-    Ok(json!({
+fn build_agent_list_frame(config: &DispatchMcpConfig) -> Value {
+    json!({
         "type": "agent_list",
         "token": config.token,
-        "workDir": work_dir,
-    }))
+    })
 }
 
 fn build_roster_save_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
@@ -856,7 +819,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: None,
-            work_dir: None,
         };
         assert!(build_continue_frame(&json!({ "dispatchId": "d1" }), &cfg).is_err());
         assert!(build_continue_frame(&json!({ "prompt": "go" }), &cfg).is_err());
@@ -886,7 +848,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: Some("session-abc".into()),
-            work_dir: None,
         };
         let err = build_dispatch_frame(&json!({ "title": "x" }), &cfg).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
@@ -900,7 +861,6 @@ mod tests {
             port: 0,
             token: "tok".into(),
             session_id: Some("abc".into()),
-            work_dir: None,
         };
         let frame = build_dispatch_frame(
             &json!({ "prompt": "run tests", "title": "测试", "workDir": "D:/x" }),
@@ -921,7 +881,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: None,
-            work_dir: None,
         };
         let err = build_status_frame(&json!({}), &cfg).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
@@ -940,7 +899,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: None,
-            work_dir: None,
         };
         let err = handle_tools_call(params, &cfg).unwrap_err();
         assert!(matches!(err, AppError::ValidationError(_)));
@@ -952,7 +910,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: None,
-            work_dir: Some("/proj".into()),
         };
         // 缺 slug
         assert!(build_agent_save_frame(
@@ -964,33 +921,27 @@ mod tests {
             &json!({ "slug": "s", "name": "n" }),
             &cfg
         ).is_err());
-        // 缺 workDir 且无默认 → 错误
-        let cfg_no_wd = DispatchMcpConfig {
-            port: 0,
-            token: "t".into(),
-            session_id: None,
-            work_dir: None,
-        };
-        assert!(build_agent_save_frame(
-            &json!({ "slug": "s", "name": "n", "systemPrompt": "p" }),
-            &cfg_no_wd
-        ).is_err());
-        // 完整 + 默认 workDir 回退
+        // 完整(无 workDir,全局存储)
         let frame = build_agent_save_frame(
             &json!({ "slug": "code-reviewer", "name": "Code Reviewer", "description": "d", "systemPrompt": "你是审查员", "tools": ["bash"] }),
             &cfg,
         )
         .unwrap();
         assert_eq!(frame.get("type").and_then(Value::as_str), Some("agent_save"));
-        assert_eq!(frame.get("workDir").and_then(Value::as_str), Some("/proj"));
+        assert!(frame.get("workDir").is_none());
         assert_eq!(frame.get("slug").and_then(Value::as_str), Some("code-reviewer"));
-        // 显式 workDir 优先
-        let frame2 = build_agent_save_frame(
-            &json!({ "slug": "s", "name": "n", "systemPrompt": "p", "workDir": "/other" }),
-            &cfg,
-        )
-        .unwrap();
-        assert_eq!(frame2.get("workDir").and_then(Value::as_str), Some("/other"));
+    }
+
+    #[test]
+    fn agent_list_frame_has_no_workdir() {
+        let cfg = DispatchMcpConfig {
+            port: 0,
+            token: "t".into(),
+            session_id: None,
+        };
+        let frame = build_agent_list_frame(&cfg);
+        assert_eq!(frame.get("type").and_then(Value::as_str), Some("agent_list"));
+        assert!(frame.get("workDir").is_none());
     }
 
     #[test]
@@ -999,7 +950,6 @@ mod tests {
             port: 0,
             token: "t".into(),
             session_id: None,
-            work_dir: None,
         };
         assert!(build_roster_save_frame(
             &json!({ "slug": "t", "title": "T", "members": [] }),

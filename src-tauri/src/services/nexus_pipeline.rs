@@ -388,12 +388,11 @@ fn agents_install_dir() -> PathBuf {
     crate::services::data_root::data_root().root().join("agents")
 }
 
-/// 读取项目级专家人格 body,作为 system prompt 注入派发会话。
+/// 读取全局专家人格 body,作为 system prompt 注入派发会话。
 /// 复用 simple_ai::load_agent_def(解析 frontmatter + body system prompt);
 /// 命中失败返回 None(无该 slug),调用方回退默认行为。
-fn load_agent_persona(work_dir: &str, slug: &str) -> Option<String> {
-    let (_s, _desc, body) =
-        crate::ai::engine::simple_ai::load_agent_def(work_dir, slug)?;
+fn load_agent_persona(slug: &str) -> Option<String> {
+    let (_s, _desc, body) = crate::ai::engine::simple_ai::load_agent_def(slug)?;
     if body.trim().is_empty() {
         return None;
     }
@@ -583,8 +582,7 @@ fn dispatch_pending(
             tracing::info!("[Nexus] 成员 {slug} 命中 DispatchPreset,按预设应用引擎/模型");
         }
         // 专家人格内联注入 system prompt(不再依赖"模型自己去读文件")
-        let wd = pipeline.work_dir.as_deref().unwrap_or("");
-        let persona = load_agent_persona(wd, &slug);
+        let persona = load_agent_persona(&slug);
         if persona.is_some() {
             tracing::info!("[Nexus] 成员 {slug} 专家人格已注入 system prompt");
         } else {

@@ -53,6 +53,7 @@ import type { PromptOptimizeMode } from '@/stores/conversationStore/types'
 import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
+  parseAssaultSlashCommand,
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
@@ -1170,6 +1171,18 @@ export function ChatInput({
       updateInputDraft({ text: '', attachments: [] })
       setHistoryIndex(-1)
       resetPromptOptimize()
+      return
+    }
+
+    // Polaris 本地命令：/assault <profile> <problem> → 剥离 / 前缀后作为普通文本发送
+    const assaultText = parseAssaultSlashCommand(trimmed)
+    if (assaultText) {
+      cancelPersistDraft()
+      setLocalText('')
+      updateInputDraft({ text: '', attachments: [] })
+      setHistoryIndex(-1)
+      resetPromptOptimize()
+      onSend(assaultText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       return
     }
 

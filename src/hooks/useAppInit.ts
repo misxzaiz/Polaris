@@ -249,16 +249,14 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       maybeAutoMigrateOpfs(),
     );
 
-    // 专家/专家团数据预加载(内置 corpus 已移除,仅加载用户自建数据)
+    // 专家/专家团数据预加载(全局存储,启动即可加载)
     if (currentMode === 'tauri' || currentMode === 'http') {
       void import('@/stores/agentStore')
         .then(({ useAgentStore }) => {
           const store = useAgentStore.getState();
-          const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
           return Promise.all([
             store.load(),
             store.loadRosters(),
-            ws ? store.loadCustomAgents(ws) : Promise.resolve(),
           ]).then(() => undefined);
         })
         .catch((err) => log.warn('Agent data load failed', { error: String(err) }));

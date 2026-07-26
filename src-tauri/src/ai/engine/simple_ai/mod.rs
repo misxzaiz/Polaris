@@ -31,17 +31,12 @@ mod tools;
 // Agent preset（Phase 4d）：需在 mod 声明后引用，单独放此。
 mod agent;
 
-// 供 claude 引擎与派发链路读取项目级专家人格注入(内置 corpus 已移除,只读项目级)。
+// 供 claude 引擎与派发链路读取全局专家人格注入(专家全局存储,2026-07 重构)。
 pub use agent::load_agent_def;
 
-/// 供命令层列举 agent(项目级 + 全局 corpus 两级,P1-6)。
-pub(crate) fn list_agents(work_dir: &str) -> Vec<agent::AgentDefinition> {
-    agent::discover_agents(work_dir)
-}
-
-/// 仅项目级自定义专家（P3 自定义专家管理）。
-pub(crate) fn list_project_agents(work_dir: &str) -> Vec<agent::AgentDefinition> {
-    agent::discover_project_agents(work_dir)
+/// 供命令层列举 agent(全局 `<DataRoot>/agents/`)。
+pub(crate) fn list_agents() -> Vec<agent::AgentDefinition> {
+    agent::discover_agents()
 }
 
 use std::collections::HashMap;
@@ -245,7 +240,7 @@ impl AIEngine for SimpleAIEngine {
         let system_prompt = if let Some(custom) = &options.system_prompt {
             custom.clone()
         } else if let Some(agent_name) = &options.agent {
-            match agent::load_agent(&work_dir, agent_name) {
+            match agent::load_agent(agent_name) {
                 Some(agent) => {
                     agent_allowed_tools = agent.tools.clone();
                     tracing::info!(

@@ -35,6 +35,7 @@ export const CLI_SUGGESTED_COMMANDS: CliSlashCommandMeta[] = [
   { name: 'mcp', descKey: 'mcp' },
   { name: 'model', descKey: 'model' },
   { name: 'recap', descKey: 'recap' },
+  { name: 'assault', argumentHint: '<profile> <problem>', descKey: 'assault' },
 ]
 
 /**
@@ -96,6 +97,16 @@ export function matchBlockedCliCommand(text: string): string | null {
   if (!text.startsWith('/')) return null
   const name = text.slice(1).split(/\s/, 1)[0]?.toLowerCase() ?? ''
   return CLI_BLOCKED_COMMANDS.includes(name) ? name : null
+}
+
+/**
+ * 解析 /assault 命令，剥离 / 前缀后返回纯文本。
+ * 若不以 /assault 开头则返回 null。
+ */
+export function parseAssaultSlashCommand(text: string): string | null {
+  if (!text.startsWith('/assault')) return null
+  // 保留首字符后的文本，即 "assault <profile> <problem>"
+  return text.slice(1)
 }
 
 /**

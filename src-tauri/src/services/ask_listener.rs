@@ -636,19 +636,18 @@ pub fn register_dispatch_task(
                 }
             }
             Err(_) => {
-                // 未命中 preset:尝试当项目级专家 slug 读人格注入。
+                // 未命中 preset:尝试当全局专家 slug 读人格注入。
                 // 路径与 nexus_pipeline::load_agent_persona 同构,复用 simple_ai::load_agent_def。
-                let wd = params.work_dir.as_deref().unwrap_or("");
                 if let Some((_s, _desc, body)) =
-                    crate::ai::engine::simple_ai::load_agent_def(wd, role_name)
+                    crate::ai::engine::simple_ai::load_agent_def(role_name)
                 {
                     if !body.trim().is_empty() && append_system_prompt.is_none() {
                         append_system_prompt = Some(body);
                         role = Some(role_name.to_string());
-                        tracing::info!("[Dispatch] role「{role_name}」按项目专家注入人格");
+                        tracing::info!("[Dispatch] role「{role_name}」按全局专家注入人格");
                     }
                 }
-                // 项目级也无该 slug:role 仍记名(供展示),引擎/模型继承来源会话
+                // 全局也无该 slug:role 仍记名(供展示),引擎/模型继承来源会话
                 if role.is_none() {
                     role = Some(role_name.to_string());
                 }
@@ -835,7 +834,6 @@ async fn handle_find_expert_frame(
         .unwrap_or_default()
         .trim()
         .to_lowercase();
-    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
 
     let reply = if query.is_empty() {
         dispatch_error_reply("find_expert_result", "缺少 query")
@@ -843,7 +841,7 @@ async fn handle_find_expert_frame(
         json!({
             "type": "find_expert_result",
             "ok": true,
-            "candidates": find_expert_candidates(&query, work_dir),
+            "candidates": find_expert_candidates(&query),
             "note": "从候选中按任务语义选一位;用其 slug 派发时在 prompt 前注明「以该专家身份、先读取其定义文件」",
         })
     };
@@ -852,15 +850,15 @@ async fn handle_find_expert_frame(
     Ok(())
 }
 
-fn find_expert_candidates(query: &str, work_dir: &str) -> Vec<Value> {
+fn find_expert_candidates(query: &str) -> Vec<Value> {
     let mut out: Vec<Value> = Vec::new();
     let q = query.trim().to_lowercase();
-    if q.is_empty() || work_dir.is_empty() {
+    if q.is_empty() {
         return out;
     }
 
-    // 项目级自定义专家关键词匹配(内置 corpus 已移除)
-    for a in crate::ai::engine::simple_ai::list_project_agents(work_dir) {
+    // 全局专家关键词匹配
+    for a in crate::ai::engine::simple_ai::list_agents() {
         if out.len() >= 8 {
             break;
         }
@@ -1118,7 +1116,6 @@ async fn handle_agent_save_frame(
         return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
     }
     let g = |k: &str| frame.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
-    let work_dir = g("workDir");
     let slug = g("slug");
     let name = g("name");
     let description = g("description");
@@ -1131,7 +1128,7 @@ async fn handle_agent_save_frame(
         .unwrap_or_default();
 
     let reply = match crate::commands::agent_corpus::custom_agent_save_inner(
-        &work_dir, &slug, &name, &description, &emoji, &system_prompt, &tools,
+        &slug, &name, &description, &emoji, &system_prompt, &tools,
     ) {
         Ok(path) => json!({
             "type": "agent_save_result",
@@ -1150,7 +1147,7 @@ async fn handle_agent_save_frame(
     Ok(())
 }
 
-/// 处理 agent_delete 帧:删除项目级专家。
+/// 处理 agent_delete 帧:删除全局专家。
 async fn handle_agent_delete_frame(
     stream: &mut TcpStream,
     frame: Value,
@@ -1160,10 +1157,9 @@ async fn handle_agent_delete_frame(
     if token != expected_token {
         return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
     }
-    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
     let slug = frame.get("slug").and_then(Value::as_str).unwrap_or_default();
 
-    let reply = match crate::commands::agent_corpus::custom_agent_delete_inner(&work_dir, &slug) {
+    let reply = match crate::commands::agent_corpus::custom_agent_delete_inner(&slug) {
         Ok(()) => json!({ "type": "agent_delete_result", "ok": true, "slug": slug }),
         Err(e) => json!({
             "type": "agent_delete_result",
@@ -1176,7 +1172,7 @@ async fn handle_agent_delete_frame(
     Ok(())
 }
 
-/// 处理 agent_list 帧:返回项目级专家 + 用户专家团(供 AI 查重)。
+/// 处理 agent_list 帧:返回全局专家 + 用户专家团(供 AI 查重)。
 async fn handle_agent_list_frame(
     stream: &mut TcpStream,
     frame: Value,
@@ -1186,9 +1182,8 @@ async fn handle_agent_list_frame(
     if token != expected_token {
         return Err(AppError::ValidationError("ask_listener token 不匹配".into()));
     }
-    let work_dir = frame.get("workDir").and_then(Value::as_str).unwrap_or_default();
 
-    let agents: Vec<Value> = crate::ai::engine::simple_ai::list_project_agents(work_dir)
+    let agents: Vec<Value> = crate::ai::engine::simple_ai::list_agents()
         .into_iter()
         .map(|a| {
             json!({

@@ -663,6 +663,7 @@
       "mcp": "Show MCP server connection status",
       "model": "Show the current model",
       "recap": "Generate a one-line session recap",
+      "assault": "Hard problem assault: 5-family analysis + adversarial audit",
       "custom": "CLI custom command"
     },
     "clearBlockedTitle": "{{command}} blocked",

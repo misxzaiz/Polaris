@@ -662,6 +662,7 @@
       "mcp": "查看 MCP 服务器连接状态",
       "model": "查看当前生效模型",
       "recap": "生成一行会话回顾",
+      "assault": "硬问题攻坚：5 方法族分析 + 对抗审计",
       "custom": "CLI 自定义命令"
     },
     "clearBlockedTitle": "已拦截 {{command}}",

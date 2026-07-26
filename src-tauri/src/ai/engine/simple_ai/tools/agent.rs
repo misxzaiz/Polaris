@@ -38,7 +38,7 @@ impl Tool for DispatchAgentTool {
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "agent": { "type": "string", "description": "Agent name (a .polaris/agents/<name>.md file stem)" },
+                        "agent": { "type": "string", "description": "Agent name (a global <DataRoot>/agents/<name>.md file stem)" },
                         "task": { "type": "string", "description": "The self-contained subtask description. Must include all context the sub-agent needs, since it has no access to the parent conversation." }
                     },
                     "required": ["agent", "task"]
@@ -63,11 +63,11 @@ impl Tool for DispatchAgentTool {
             ));
         }
 
-        let agent_def = match agent::load_agent(ctx.work_dir, agent_name) {
+        let agent_def = match agent::load_agent(agent_name) {
             Some(a) => a,
             None => {
                 return ToolOutcome::fail(format!(
-                    "agent '{}' not found in .polaris/agents/",
+                    "agent '{}' not found in global agents directory",
                     agent_name
                 ))
             }

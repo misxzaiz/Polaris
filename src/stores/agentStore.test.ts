@@ -29,15 +29,10 @@ describe('agentStore', () => {
     });
   });
 
-  it('load() sets loaded flag (catalog derived from customAgents via loadCustomAgents)', async () => {
+  it('load() populates customAgents and derived catalog (global, no workspace)', async () => {
     await useAgentStore.getState().load();
     const s = useAgentStore.getState();
     expect(s.loaded).toBe(true);
-  });
-
-  it('loadCustomAgents populates catalog (derived view) and customAgents', async () => {
-    await useAgentStore.getState().loadCustomAgents('/proj');
-    const s = useAgentStore.getState();
     expect(s.customAgents).toHaveLength(3);
     expect(s.catalog).toHaveLength(3);
     // 派生条目 division 为 'custom'
@@ -45,7 +40,7 @@ describe('agentStore', () => {
   });
 
   it('filters by search (name/slug/description) on derived catalog', async () => {
-    await useAgentStore.getState().loadCustomAgents('/proj');
+    await useAgentStore.getState().load();
 
     useAgentStore.getState().setSearch('种草');
     expect(useAgentStore.getState().filtered()).toHaveLength(1);

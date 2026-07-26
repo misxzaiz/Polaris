@@ -1,9 +1,9 @@
 /**
  * 专家/专家团相关 Tauri 命令
  *
- * 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`,专家团存于
- * `<DataRoot>/agents/rosters-user.json`。AI 可经 MCP(save_agent/save_roster/list_agents)
- * 自助维护,无需人工操作 UI。
+ * 专家全局存储(2026-07):专家存于 `<DataRoot>/agents/<slug>.md`,专家团存于
+ * `<DataRoot>/agents/rosters-user.json`,与其他设置统一。AI 可经 MCP
+ * (save_agent/save_roster/list_agents) 自助维护,无需人工操作 UI。
  */
 
 import { invoke } from '@/services/transport';
@@ -57,12 +57,11 @@ export interface CustomAgent {
   tools: string[];
 }
 
-export async function listCustomAgents(workDir: string): Promise<CustomAgent[]> {
-  return invoke<CustomAgent[]>('custom_agent_list', { workDir });
+export async function listCustomAgents(): Promise<CustomAgent[]> {
+  return invoke<CustomAgent[]>('custom_agent_list');
 }
 
 export async function saveCustomAgent(params: {
-  workDir: string;
   slug: string;
   name: string;
   description: string;
@@ -73,8 +72,8 @@ export async function saveCustomAgent(params: {
   return invoke<string>('custom_agent_save', params);
 }
 
-export async function deleteCustomAgent(workDir: string, slug: string): Promise<void> {
-  return invoke('custom_agent_delete', { workDir, slug });
+export async function deleteCustomAgent(slug: string): Promise<void> {
+  return invoke('custom_agent_delete', { slug });
 }
 
 export interface RosterStartResult {

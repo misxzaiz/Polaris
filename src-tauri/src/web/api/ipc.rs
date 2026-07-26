@@ -104,12 +104,10 @@ pub async fn handle_ipc_bridge(
         .map_err(bad_request)
         .map(|_| Json(Value::Null)),
         "simple_ai_list_agents" => {
-            let work_dir = require_string(&args, "workDir")?;
-            to_json(crate::commands::agent_corpus::simple_ai_list_agents_inner(&work_dir))
+            to_json(crate::commands::agent_corpus::simple_ai_list_agents_inner())
         }
         "custom_agent_list" => {
-            let work_dir = require_string(&args, "workDir")?;
-            to_json(crate::commands::agent_corpus::custom_agent_list_inner(&work_dir))
+            to_json(crate::commands::agent_corpus::custom_agent_list_inner())
         }
         "custom_agent_save" => {
             let g = |k: &str| args.get(k).and_then(Value::as_str).unwrap_or_default().to_string();
@@ -119,7 +117,6 @@ pub async fn handle_ipc_bridge(
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
                 .unwrap_or_default();
             crate::commands::agent_corpus::custom_agent_save_inner(
-                &require_string(&args, "workDir")?,
                 &require_string(&args, "slug")?,
                 &g("name"),
                 &g("description"),
@@ -131,7 +128,6 @@ pub async fn handle_ipc_bridge(
             .map(|p| Json(Value::String(p.to_string_lossy().to_string())))
         }
         "custom_agent_delete" => crate::commands::agent_corpus::custom_agent_delete_inner(
-            &require_string(&args, "workDir")?,
             &require_string(&args, "slug")?,
         )
         .map_err(bad_request)

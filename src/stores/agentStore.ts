@@ -1,7 +1,7 @@
 /**
  * 专家/专家团状态管理
  *
- * 内置 corpus 已移除(2026-07):专家只来自项目级 `.polaris/agents/`(由 AI 经 MCP
+ * 专家全局存储(2026-07):专家存于 `<DataRoot>/agents/<slug>.md`(由 AI 经 MCP
  * `save_agent` 自助维护),专家团存于 `<DataRoot>/agents/rosters-user.json`。
  * `catalog` 为 customAgents 的派生视图(供旧消费点兼容),搜索/筛选为纯前端内存过滤。
  */
@@ -58,11 +58,10 @@ interface AgentState {
   division: string | null;
 
   load: () => Promise<void>;
-  loadSimpleAiAgents: (workDir: string) => Promise<void>;
+  loadSimpleAiAgents: () => Promise<void>;
   loadRosters: () => Promise<void>;
-  loadCustomAgents: (workDir: string) => Promise<void>;
+  loadCustomAgents: () => Promise<void>;
   saveCustom: (params: {
-    workDir: string;
     slug: string;
     name: string;
     description: string;
@@ -70,7 +69,7 @@ interface AgentState {
     systemPrompt: string;
     tools?: string[];
   }) => Promise<void>;
-  deleteCustom: (workDir: string, slug: string) => Promise<void>;
+  deleteCustom: (slug: string) => Promise<void>;
   setSearch: (q: string) => void;
   setDivision: (d: string | null) => void;
   /** 应用当前筛选后的列表 */
@@ -103,14 +102,14 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
   load: async () => {
     if (get().loading) return;
     set({ loading: true, error: null });
-    // 内置 corpus 已移除:catalog 从 customAgents 派生,此处仅置 loaded
-    // 真正数据加载由 loadCustomAgents(需 workDir)触发
+    // 专家全局存储:启动即可加载,无需 workspace
+    await get().loadCustomAgents();
     set({ loading: false, loaded: true });
   },
 
-  loadSimpleAiAgents: async (workDir) => {
+  loadSimpleAiAgents: async () => {
     try {
-      const agents = await invoke<SimpleAiAgentItem[]>('simple_ai_list_agents', { workDir });
+      const agents = await invoke<SimpleAiAgentItem[]>('simple_ai_list_agents');
       set({ simpleAiAgents: agents });
     } catch (err) {
       log.warn('SimpleAI agent list load failed', { error: String(err) });
@@ -125,9 +124,9 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
     }
   },
 
-  loadCustomAgents: async (workDir) => {
+  loadCustomAgents: async () => {
     try {
-      const customAgents = await listCustomAgents(workDir);
+      const customAgents = await listCustomAgents();
       set({ customAgents, catalog: customAgents.map(toCatalogEntry), loaded: true });
     } catch (err) {
       log.warn('Custom agents load failed', { error: String(err) });
@@ -136,12 +135,12 @@ export const useAgentStore = create<AgentState>()((set, get) => ({
 
   saveCustom: async (params) => {
     await saveCustomAgent(params);
-    await get().loadCustomAgents(params.workDir);
+    await get().loadCustomAgents();
   },
 
-  deleteCustom: async (workDir, slug) => {
-    await deleteCustomAgent(workDir, slug);
-    await get().loadCustomAgents(workDir);
+  deleteCustom: async (slug) => {
+    await deleteCustomAgent(slug);
+    await get().loadCustomAgents();
   },
 
   setSearch: (search) => set({ search }),

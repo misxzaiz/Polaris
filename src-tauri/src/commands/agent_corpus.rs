@@ -97,12 +97,8 @@ pub fn user_roster_delete_inner(slug: &str) -> Result<()> {
 }
 
 // ============================================================================
-// 自定义专家(项目级 .polaris/agents)
+// 自定义专家(全局 <DataRoot>/agents/)
 // ============================================================================
-
-fn custom_agents_dir(work_dir: &str) -> PathBuf {
-    std::path::Path::new(work_dir).join(".polaris").join("agents")
-}
 
 fn validate_custom_slug(slug: &str) -> Result<()> {
     let ok = !slug.is_empty()
@@ -118,9 +114,8 @@ fn validate_custom_slug(slug: &str) -> Result<()> {
     Ok(())
 }
 
-/// 保存(新建/覆盖)项目级自定义专家,返回落盘路径
+/// 保存(新建/覆盖)全局专家,返回落盘路径
 pub fn custom_agent_save_inner(
-    work_dir: &str,
     slug: &str,
     name: &str,
     description: &str,
@@ -147,17 +142,17 @@ pub fn custom_agent_save_inner(
         fm.push_str(&format!("tools: \"{}\"\n", tools.join(", ")));
     }
     fm.push_str("---\n\n");
-    let dir = custom_agents_dir(work_dir);
+    let dir = agents_dir();
     std::fs::create_dir_all(&dir)?;
     let path = dir.join(format!("{slug}.md"));
     std::fs::write(&path, format!("{fm}{}\n", system_prompt.trim()))?;
     Ok(path)
 }
 
-/// 删除项目级自定义专家
-pub fn custom_agent_delete_inner(work_dir: &str, slug: &str) -> Result<()> {
+/// 删除全局专家
+pub fn custom_agent_delete_inner(slug: &str) -> Result<()> {
     validate_custom_slug(slug)?;
-    let path = custom_agents_dir(work_dir).join(format!("{slug}.md"));
+    let path = agents_dir().join(format!("{slug}.md"));
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
@@ -178,9 +173,9 @@ pub struct CustomAgentItem {
     pub tools: Vec<String>,
 }
 
-pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
-    let dir = custom_agents_dir(work_dir);
-    crate::ai::engine::simple_ai::list_project_agents(work_dir)
+pub fn custom_agent_list_inner() -> Vec<CustomAgentItem> {
+    let dir = agents_dir();
+    crate::ai::engine::simple_ai::list_agents()
         .into_iter()
         .map(|a| CustomAgentItem {
             file_path: dir.join(format!("{}.md", a.slug)).to_string_lossy().to_string(),
@@ -194,8 +189,8 @@ pub fn custom_agent_list_inner(work_dir: &str) -> Vec<CustomAgentItem> {
         .collect()
 }
 
-pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
-    crate::ai::engine::simple_ai::list_agents(work_dir)
+pub fn simple_ai_list_agents_inner() -> Vec<SimpleAiAgentItem> {
+    crate::ai::engine::simple_ai::list_agents()
         .into_iter()
         .map(|a| SimpleAiAgentItem {
             slug: a.slug,
@@ -213,8 +208,8 @@ pub fn simple_ai_list_agents_inner(work_dir: &str) -> Vec<SimpleAiAgentItem> {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn simple_ai_list_agents(work_dir: String) -> Vec<SimpleAiAgentItem> {
-    simple_ai_list_agents_inner(&work_dir)
+pub fn simple_ai_list_agents() -> Vec<SimpleAiAgentItem> {
+    simple_ai_list_agents_inner()
 }
 
 #[cfg(feature = "tauri-app")]
@@ -225,14 +220,13 @@ pub fn agent_corpus_rosters() -> Result<serde_json::Value> {
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn custom_agent_list(work_dir: String) -> Vec<CustomAgentItem> {
-    custom_agent_list_inner(&work_dir)
+pub fn custom_agent_list() -> Vec<CustomAgentItem> {
+    custom_agent_list_inner()
 }
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn custom_agent_save(
-    work_dir: String,
     slug: String,
     name: String,
     description: String,
@@ -240,14 +234,14 @@ pub fn custom_agent_save(
     system_prompt: String,
     tools: Vec<String>,
 ) -> Result<String> {
-    custom_agent_save_inner(&work_dir, &slug, &name, &description, &emoji, &system_prompt, &tools)
+    custom_agent_save_inner(&slug, &name, &description, &emoji, &system_prompt, &tools)
         .map(|p| p.to_string_lossy().to_string())
 }
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn custom_agent_delete(work_dir: String, slug: String) -> Result<()> {
-    custom_agent_delete_inner(&work_dir, &slug)
+pub fn custom_agent_delete(slug: String) -> Result<()> {
+    custom_agent_delete_inner(&slug)
 }
 
 #[cfg(feature = "tauri-app")]

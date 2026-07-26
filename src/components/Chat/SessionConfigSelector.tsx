@@ -22,7 +22,6 @@ import {
 } from '@/types/sessionConfig'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useAgentStore } from '@/stores/agentStore'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/modelProfile'
@@ -113,12 +112,11 @@ export function SessionConfigSelector({
           ? 'mimo'
           : 'claude'
   const isSimpleAiEngine = currentEngine === 'simple-ai'
-  const workspacePath = useWorkspaceStore(st => st.getCurrentWorkspace()?.path)
   useEffect(() => {
-    if (isSimpleAiEngine && workspacePath) {
-      void useAgentStore.getState().loadSimpleAiAgents(workspacePath)
+    if (isSimpleAiEngine) {
+      void useAgentStore.getState().loadSimpleAiAgents()
     }
-  }, [isSimpleAiEngine, workspacePath])
+  }, [isSimpleAiEngine])
 
   // 动态 Agent 列表：claude 引擎优先 CLI 获取，SimpleAI 用两级 discover(项目级+全局 corpus)，降级 PRESET
   const dynamicAgents = useCliInfoStore(s => s.agents)
