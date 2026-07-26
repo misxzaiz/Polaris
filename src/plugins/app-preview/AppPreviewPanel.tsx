@@ -225,7 +225,10 @@ export const AppPreviewPanel: ComponentType<AppPreviewPanelProps & { pluginId: s
           ref={previewContainerRef}
           className="app-preview__preview-area"
         >
-          <div className="app-preview__phone-wrapper">
+          <div
+            className="app-preview__phone-scaler"
+            style={{ transform: `scale(${effectiveScale})`, transformOrigin: 'center center' } as React.CSSProperties}
+          >
             <div ref={phoneFrameRef} className="app-preview__phone-frame-container">
               <PhoneFrame
                 device={{
@@ -234,7 +237,6 @@ export const AppPreviewPanel: ComponentType<AppPreviewPanelProps & { pluginId: s
                   height: deviceHeight,
                 }}
                 dprText={`@${currentDevice?.devicePixelRatio}x`}
-                scale={effectiveScale}
                 showHomeIndicator={currentDevice?.group === 'iphone'}
               >
                 <PreviewContent src={currentSrc || undefined} />
@@ -407,11 +409,11 @@ const AppPreviewStyles = `
     ) 0 0 / 20px 20px;
   }
 
-  .app-preview__phone-wrapper {
+  .app-preview__phone-scaler {
     display: flex;
     align-items: center;
     justify-content: center;
-    min-height: 0;
+    /* transform: scale 在父组件通过 style 传入 */
   }
 
   .app-preview__phone-frame-container {

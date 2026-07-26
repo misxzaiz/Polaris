@@ -49,15 +49,6 @@ const corePluginManifest: PolarisPluginManifest = {
         order: 30,
       },
       {
-        id: 'app-preview.panel',
-        area: 'activityBar',
-        panelType: 'app-preview',
-        icon: 'Smartphone',
-        labelKey: 'labels.appPreview',
-        labelDefault: 'App Preview',
-        order: 35,
-      },
-      {
         id: 'translate.panel',
         area: 'activityBar',
         panelType: 'translate',
@@ -126,7 +117,7 @@ export function registerBuiltinPlugins(): void {
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
   )
-  pluginPanelRegistry.register('appPreview', 'polaris.app-preview', () =>
+  pluginPanelRegistry.register('app-preview', 'polaris.app-preview', () =>
     import('@/plugins/app-preview/AppPreviewPanel').then((m) => ({ default: m.AppPreviewPanel })),
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>

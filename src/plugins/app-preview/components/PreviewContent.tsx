@@ -87,10 +87,6 @@ const PreviewContentStyles = `
     height: 100%;
     border: none;
     display: block;
-    transform: scale(var(--preview-scale));
-    transform-origin: top left;
-    width: var(--preview-iframe-width);
-    height: var(--preview-iframe-height);
   }
 
   .preview-content__loading {
