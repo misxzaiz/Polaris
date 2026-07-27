@@ -167,6 +167,7 @@
     "marqueeRegionCount": "{{count}} 个区域",
     "marqueeElementCount": "{{count}} 个元素",
     "marqueeNoElement": "无元素",
+    "marqueeTextOnly": "纯文本区域",
     "marqueeNotePlaceholder": "补充说明：想怎么改这个区域？",
     "marqueeSend": "发送给 AI",
     "marqueeSent": "已发送圈选上下文给 AI",

@@ -274,6 +274,8 @@ pub struct BrowserRegionResult {
     pub elements: Vec<BrowserRegionElement>,
     pub html_snippet: String,
     #[serde(default)]
+    pub text_snippet: Option<String>,
+    #[serde(default)]
     pub screenshot: Option<BrowserScreenshot>,
 }
 
@@ -2787,7 +2789,6 @@ pub async fn browser_set_marquee(
 }
 
 const REGION_SELECT_SCRIPT_BODY: &str = r#"
-(() => {
   const targetRect = { x: targetX, y: targetY, w: targetW, h: targetH };
   const intersects = (rx, ry, rw, rh) => !(
     rx + rw < targetRect.x ||
@@ -2795,12 +2796,12 @@ const REGION_SELECT_SCRIPT_BODY: &str = r#"
     rx > targetRect.x + targetRect.w ||
     ry > targetRect.y + targetRect.h
   );
+  // 1. 交互元素（按钮/链接/输入框等）
   const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
   const inRegion = entries.filter((e) => {
     if (!e.rect) return false;
     return intersects(e.rect.left, e.rect.top, e.rect.width, e.rect.height);
   });
-  const regionElements = inRegion.map((e) => e.element);
   const elements = inRegion.map((e, i) => ({
     index: i,
     kind: e.kind,
@@ -2810,34 +2811,73 @@ const REGION_SELECT_SCRIPT_BODY: &str = r#"
     disabled: e.disabled,
     selector: e.selector || null
   }));
+  // 2. 区域内所有可见元素的 DOM 片段（不限于交互元素）
+  //    用 elementFromPoint 网格采样找到区域内所有元素
   let htmlSnippet = '';
+  let textSnippet = '';
   try {
-    if (regionElements.length > 0) {
-      const wrap = document.createElement('div');
-      const fragment = document.createDocumentFragment();
-      const seen = new WeakSet();
-      for (const el of regionElements) {
-        let node = el;
-        while (node && node !== document.body) {
-          if (seen.has(node)) break;
-          node = node.parentNode;
+    const step = 10;
+    const collected = new Set();
+    const candidates = [];
+    const POLARIS_OVERLAY_IDS = new Set([
+      '__polaris_marquee_overlay__',
+      '__polaris_ai_overlay__',
+    ]);
+    for (let px = targetRect.x; px < targetRect.x + targetRect.w; px += step) {
+      for (let py = targetRect.y; py < targetRect.y + targetRect.h; py += step) {
+        const el = document.elementFromPoint(px, py);
+        if (!el || el === document.body || el === document.documentElement) continue;
+        // 排除 Polaris 注入的 overlay（圈选/AI 层），避免采到自己
+        if (el.id && POLARIS_OVERLAY_IDS.has(el.id)) continue;
+        let skip = false;
+        let n: Element | null = el.parentElement;
+        while (n && !skip) {
+          if (n.id && POLARIS_OVERLAY_IDS.has(n.id)) skip = true;
+          n = n.parentElement;
         }
-        if (node !== document.body && node !== null && !seen.has(el)) {
-          seen.add(el);
-          fragment.appendChild(el.cloneNode(true));
+        if (skip) continue;
+        const r = el.getBoundingClientRect();
+          if (r.width > 0 && r.height > 0) {
+            collected.add(el);
+            candidates.push(el);
+          }
         }
       }
-      wrap.appendChild(fragment);
-      htmlSnippet = wrap.innerHTML;
     }
+    // 按文档顺序排序
+    candidates.sort((a, b) => {
+      if (a === b) return 0;
+      const pos = a.compareDocumentPosition(b);
+      if (pos & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (pos & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
+    // 去重:如果一个元素包含另一个,只保留外层
+    const deduped = [];
+    for (const el of candidates) {
+      const isChildOfKept = deduped.some((kept) => kept.contains(el));
+      if (!isChildOfKept) deduped.push(el);
+    }
+    const htmlParts = [];
+    const textParts = [];
+    for (const el of deduped.slice(0, 30)) {
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag === 'script' || tag === 'style' || tag === 'noscript') continue;
+      const html = clean(el.outerHTML, 2000);
+      if (html) htmlParts.push(html);
+      const text = clean(el.innerText || el.textContent || '', 1000);
+      if (text) textParts.push(text);
+    }
+    htmlSnippet = htmlParts.join('\n').slice(0, 6000);
+    textSnippet = textParts.join('\n').slice(0, 3000);
   } catch {}
   return JSON.stringify({
     count: inRegion.length,
     elements: elements.slice(0, 120),
-    htmlSnippet: htmlSnippet.slice(0, 6000),
+    htmlSnippet: htmlSnippet,
+    textSnippet: textSnippet,
     url: String(location.href)
   });
-})()
 "#;
 
 fn region_select_script(rect: &BrowserRect) -> String {

@@ -166,6 +166,7 @@
     "marqueeRegionCount": "{{count}} regions",
     "marqueeElementCount": "{{count}} elements",
     "marqueeNoElement": "No elements",
+    "marqueeTextOnly": "Text-only region",
     "marqueeNotePlaceholder": "Note: how do you want to change this region?",
     "marqueeSend": "Send to AI",
     "marqueeSent": "Marquee context sent to AI",

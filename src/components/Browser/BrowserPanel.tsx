@@ -640,6 +640,7 @@ export function BrowserPanel({
                 count: 0,
                 elements: [],
                 htmlSnippet: '',
+                textSnippet: '',
               }))
             })
 
@@ -666,6 +667,7 @@ export function BrowserPanel({
                       count: detail.region.count,
                       elements: detail.region.elements,
                       htmlSnippet: detail.region.htmlSnippet,
+                      textSnippet: detail.region.textSnippet ?? '',
                     }
                   }
                   return r
@@ -728,6 +730,7 @@ export function BrowserPanel({
                   count: region.count,
                   elements: region.elements,
                   htmlSnippet: region.htmlSnippet,
+                  textSnippet: region.textSnippet ?? '',
                 } satisfies BrowserRegion
               } catch {
                 return null
@@ -1086,13 +1089,19 @@ export function BrowserPanel({
                               count: region.count,
                               defaultValue: '{{count}} 个元素',
                             })
-                          : t('browser.marqueeNoElement', { defaultValue: '无元素' })}
+                          : region.textSnippet
+                            ? t('browser.marqueeTextOnly', { defaultValue: '纯文本区域' })
+                            : t('browser.marqueeNoElement', { defaultValue: '无元素' })}
                       </span>
-                      {region.elements[0] && (
+                      {region.elements[0] ? (
                         <span className="min-w-0 truncate text-text-tertiary">
                           · {region.elements[0].kind} “{region.elements[0].text}”
                         </span>
-                      )}
+                      ) : region.textSnippet ? (
+                        <span className="min-w-0 truncate text-text-tertiary">
+                          · {region.textSnippet.slice(0, 40)}
+                        </span>
+                      ) : null}
                     </div>
                   ))}
                 </div>
