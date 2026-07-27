@@ -720,18 +720,19 @@ export function BrowserPanel({
       try {
         const result = await browserGetMarqueeResult(webviewLabel)
         if (result.rects.length > 0) {
-          const fetched = await Promise.all(
+          const fetched: (BrowserRegion | null)[] = await Promise.all(
             result.rects.map(async (rect, idx) => {
               try {
                 const region = await browserSelectRegion(webviewLabel, rect)
-                return {
+                const r: BrowserRegion = {
                   id: idx,
                   rect,
                   count: region.count,
                   elements: region.elements,
                   htmlSnippet: region.htmlSnippet,
                   textSnippet: region.textSnippet ?? '',
-                } satisfies BrowserRegion
+                }
+                return r
               } catch {
                 return null
               }
