@@ -246,6 +246,23 @@ export class TTSService {
     const taskId = this.currentTaskId;
 
     this.setStatus('synthesizing');
+
+    // 非安全上下文（如 HTTP WebView）下 crypto.subtle 不可用，edge-tts 会失败或返回空音频。
+    // 主动降级到浏览器内置 speechSynthesis，更快更可靠（Android WebView 7.0+ 均支持）。
+    const preferBrowserTTS = TTSService.browserTTSSupported && !window.isSecureContext;
+    if (preferBrowserTTS) {
+      log.info('非安全上下文，主动降级到浏览器内置 TTS');
+      try {
+        await this.speakWithBrowserTTS(text, options?.rate);
+        return;
+      } catch (err) {
+        log.error('浏览器内置 TTS 失败', err instanceof Error ? err : new Error(String(err)));
+        this.setStatus('error');
+        this.callbacks.onError?.(err instanceof Error ? err : new Error(String(err)));
+        return;
+      }
+    }
+
     log.info('开始合成语音', { textLength: text.length, voice: options?.voice || this.config.voice });
 
     try {
@@ -263,6 +280,17 @@ export class TTSService {
 
       if (!blob) {
         log.warn('未生成音频数据');
+        // 在非安全上下文且浏览器 TTS 可用时，edge-tts 可能静默返回空音频（不进 catch），
+        // 此处也做一次降级，避免无声。
+        if (TTSService.browserTTSSupported && !window.isSecureContext) {
+          log.info('edge-tts 返回空音频，降级到浏览器内置 TTS');
+          try {
+            await this.speakWithBrowserTTS(text, options?.rate);
+            return;
+          } catch (err) {
+            log.error('浏览器内置 TTS 也失败', err instanceof Error ? err : new Error(String(err)));
+          }
+        }
         this.setStatus('idle');
         return;
       }
