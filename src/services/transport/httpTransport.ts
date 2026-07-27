@@ -20,7 +20,7 @@ const MAX_RECONNECT_ATTEMPTS = 50;
 const CLIENT_HEARTBEAT_MS = 25_000;
 
 /** HTTP request timeout in milliseconds. */
-const HTTP_TIMEOUT_MS = 30_000;
+const HTTP_TIMEOUT_MS = 600_000; // 10 分钟，适配弱网/跨地域远程连接场景
 
 /** Tauri 命令名 → HTTP 路由映射 (module-level constant, avoids repeated allocation) */
 const COMMAND_ROUTE_MAP: Record<string, string> = {
