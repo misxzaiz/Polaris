@@ -19,7 +19,6 @@ export type PluginIconId =
   | 'AlertCircle'
   | 'Film'
   | 'Globe2'
-  | 'Smartphone'
   | 'Activity'
   | 'Users'
 

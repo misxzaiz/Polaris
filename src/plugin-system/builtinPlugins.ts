@@ -8,7 +8,6 @@ import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
-import { appPreviewPluginManifest } from '@/plugins/app-preview/manifest'
 import { agnesPluginManifest } from '@/plugins/agnes/manifest'
 import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 
@@ -104,7 +103,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(prdPreviewPluginManifest)
-  pluginRegistry.register(appPreviewPluginManifest)
   pluginRegistry.register(computerPluginManifest)
   pluginRegistry.register(personalHubPluginManifest)
   pluginRegistry.register(agnesPluginManifest)
@@ -116,9 +114,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
-  )
-  pluginPanelRegistry.register('app-preview', 'polaris.app-preview', () =>
-    import('@/plugins/app-preview/AppPreviewPanel').then((m) => ({ default: m.AppPreviewPanel })),
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
