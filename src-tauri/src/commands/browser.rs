@@ -26,7 +26,7 @@ static BROWSER_ACQUIRE_PENDING: OnceLock<Mutex<HashMap<String, BrowserAcquireSen
     OnceLock::new();
 
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
-const MAX_EVAL_TIMEOUT_MS: u64 = 10_000;
+const MAX_EVAL_TIMEOUT_MS: u64 = 15_000;
 const BROWSER_ACQUIRE_TIMEOUT_SECS: u64 = 15;
 
 type BrowserAcquireSender =
@@ -93,6 +93,19 @@ pub struct BrowserHeading {
 pub struct BrowserLink {
     pub text: String,
     pub href: String,
+    #[serde(default)]
+    pub rel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserSelectOption {
+    pub value: String,
+    pub text: String,
+    #[serde(default)]
+    pub selected: bool,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +119,34 @@ pub struct BrowserInteractiveElement {
     pub href: String,
     pub disabled: bool,
     pub fillable: bool,
+    // P0: 坐标、状态、选项、稳定定位
+    #[serde(default)]
+    pub rect: Option<BrowserRect>,
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub options: Option<Vec<BrowserSelectOption>>,
+    #[serde(default)]
+    pub selector: Option<String>,
+    // P1: 工具提示、展开/按下态、只读、表单约束
+    #[serde(default)]
+    pub tooltip: Option<String>,
+    #[serde(default)]
+    pub expanded: Option<bool>,
+    #[serde(default)]
+    pub pressed: Option<bool>,
+    #[serde(default)]
+    pub read_only: Option<bool>,
+    #[serde(default)]
+    pub required: Option<bool>,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub step: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +190,75 @@ pub struct BrowserPageContext {
     pub text: String,
     pub headings: Vec<BrowserHeading>,
     pub links: Vec<BrowserLink>,
+    // P0: 结构化内容
+    #[serde(default)]
+    pub tables: Vec<BrowserTable>,
+    #[serde(default)]
+    pub code_blocks: Vec<BrowserCodeBlock>,
+    #[serde(default)]
+    pub images: Vec<BrowserImage>,
+    #[serde(default)]
+    pub structured_data: Vec<serde_json::Value>,
+    // P1: 扩展 meta & 列表/表单
+    #[serde(default)]
+    pub lists: Vec<BrowserList>,
+    #[serde(default)]
+    pub forms: Vec<BrowserForm>,
+    #[serde(default)]
+    pub canonical: Option<String>,
+    #[serde(default)]
+    pub og_title: Option<String>,
+    #[serde(default)]
+    pub og_image: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserTable {
+    pub rows: Vec<Vec<String>>,
+    #[serde(default)]
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserCodeBlock {
+    pub language: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserImage {
+    pub src: String,
+    #[serde(default)]
+    pub alt: String,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserList {
+    pub ordered: bool,
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserForm {
+    pub action: String,
+    pub method: String,
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserHistoryState {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +296,13 @@ pub struct BrowserVisualElement {
     pub rect: BrowserRect,
     pub fillable: bool,
     pub disabled: bool,
+    // P1: 状态信息
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub selector: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -878,7 +995,7 @@ pub async fn browser_get_page_context_with_app(
     app: &AppHandle,
     label: &str,
 ) -> Result<BrowserPageContext> {
-    let raw = browser_eval_with_app(app, label, PAGE_CONTEXT_SCRIPT, Some(3_500)).await?;
+    let raw = browser_eval_with_app(app, label, PAGE_CONTEXT_SCRIPT, Some(5_000)).await?;
     let value = parse_eval_json(&raw)?;
     let context: BrowserPageContext = serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器上下文格式错误: {e}")))?;
@@ -967,7 +1084,7 @@ pub async fn browser_get_diagnostics_with_app(
     let context = browser_get_page_context_with_app(app, label).await?;
     let elements = browser_get_interactive_elements_with_app(app, label).await?;
     let script = diagnostics_script();
-    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let raw = browser_eval_with_app(app, label, &script, Some(5_000)).await?;
     let value = parse_eval_json(&raw)?;
     let mut visual: BrowserVisualSnapshot = serde_json::from_value(
         value
@@ -1401,6 +1518,39 @@ pub async fn browser_toggle_devtools(app: AppHandle, label: String) -> Result<()
     browser_toggle_devtools_with_app(&app, &label)
 }
 
+/// 获取浏览器历史状态：通过注入 JS 读取 history.length 和 __polaris_can_go_forward__ 标记
+#[cfg(feature = "tauri-app")]
+pub async fn browser_get_history_state_with_app(app: &AppHandle, label: &str) -> Result<BrowserHistoryState> {
+    let script = r#"
+      (() => {
+        try {
+          // history.length 为当前导航栈中页面数
+          return JSON.stringify({
+            canGoBack: history.length > 1,
+            canGoForward: window.__polaris_can_go_forward__ === true
+          });
+        } catch { return '{"canGoBack":false,"canGoForward":false}'; }
+      })();
+    "#;
+    let raw = browser_eval_with_app(app, label, script, Some(DEFAULT_EVAL_TIMEOUT_MS)).await?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| AppError::ValidationError(format!("浏览器历史状态解析失败: {e}")))?;
+
+    let can_go_back = value.get("canGoBack").and_then(|v| v.as_bool()).unwrap_or(false);
+    let can_go_forward = value.get("canGoForward").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    Ok(BrowserHistoryState {
+        can_go_back,
+        can_go_forward,
+    })
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_history_state(app: AppHandle, label: String) -> Result<BrowserHistoryState> {
+    browser_get_history_state_with_app(&app, &label).await
+}
+
 #[cfg(feature = "tauri-app")]
 const PAGE_CONTEXT_SCRIPT: &str = r#"
 (() => {
@@ -1413,22 +1563,68 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     document.querySelector('meta[name="description"], meta[property="og:description"]')?.content || '',
     1000
   );
+  const canonical = clean(document.querySelector('link[rel="canonical"]')?.href || '', 500) || null;
+  const ogTitle = clean(document.querySelector('meta[property="og:title"]')?.content || '', 500) || null;
+  const ogImage = clean(document.querySelector('meta[property="og:image"]')?.content || '', 500) || null;
   const articleText = document.querySelector('article')?.innerText || '';
   const bodyText = document.body?.innerText || '';
-  const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
-    .slice(0, 30)
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+    .slice(0, 60)
     .map((node) => ({
       level: Number(node.tagName.slice(1)),
       text: clean(node.textContent || '', 240)
     }))
     .filter((item) => item.text);
   const links = Array.from(document.querySelectorAll('a[href]'))
-    .slice(0, 40)
+    .slice(0, 80)
     .map((node) => ({
       text: clean(node.textContent || node.getAttribute('aria-label') || '', 160),
-      href: String(node.href || '')
+      href: String(node.href || ''),
+      rel: clean(node.getAttribute('rel') || '', 60) || null
     }))
     .filter((item) => item.href);
+  const tables = Array.from(document.querySelectorAll('table'))
+    .slice(0, 15)
+    .map((table) => {
+      const caption = clean(table.caption?.innerText || table.getAttribute('aria-label') || '', 240) || null;
+      const rows = [];
+      for (const tr of Array.from(table.querySelectorAll('tr')).slice(0, 200)) {
+        const cells = Array.from(tr.querySelectorAll('td, th'))
+          .map((c) => clean(c.textContent || '', 200));
+        if (cells.length > 0) rows.push(cells);
+      }
+      return { rows, caption };
+    })
+    .filter((t) => t.rows.length > 0);
+  const codeBlocks = Array.from(document.querySelectorAll('pre, code'))
+    .slice(0, 30)
+    .map((node) => ({
+      language: clean(
+        (node.getAttribute('class') || '').match(/language-(\w+)/)?.[1] ||
+        (node.getAttribute('data-language') || ''),
+        40
+      ),
+      code: clean(node.textContent || '', 4000)
+    }))
+    .filter((c) => c.code);
+  const images = Array.from(document.querySelectorAll('img[src], img[alt]'))
+    .slice(0, 40)
+    .map((node) => ({
+      src: clean(node.src || '', 500),
+      alt: clean(node.getAttribute('alt') || '', 240),
+      width: node.naturalWidth > 0 ? node.naturalWidth : null,
+      height: node.naturalHeight > 0 ? node.naturalHeight : null
+    }))
+    .filter((i) => i.src || i.alt);
+  const structuredData = [];
+  try {
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 20)) {
+      try {
+        const parsed = JSON.parse(script.textContent || '');
+        structuredData.push(parsed);
+      } catch {}
+    }
+  } catch {}
   return JSON.stringify({
     title: clean(document.title || '', 300),
     url: String(location.href),
@@ -1436,7 +1632,11 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     metaDescription,
     text: clean(articleText || bodyText, 12000),
     headings,
-    links
+    links,
+    tables,
+    codeBlocks,
+    images,
+    structuredData
   });
 })()
 "#;
@@ -1494,7 +1694,8 @@ const POLARIS_CLICKABLE_ROLES = new Set([
   'listbox', 'treeitem', 'gridcell', 'slider', 'spinbutton'
 ]);
 const POLARIS_FILLABLE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
-const POLARIS_SCAN_LIMIT = 5000;
+const POLARIS_SCAN_LIMIT = 8000;
+const POLARIS_SHADOW_MAX_DEPTH = 5;
 
 const clean = (value, max = 220) => String(value || '')
   .replace(/\s+/g, ' ')
@@ -1502,7 +1703,14 @@ const clean = (value, max = 220) => String(value || '')
   .slice(0, max);
 
 const ownerWindowOf = (element) => element?.ownerDocument?.defaultView || window;
-const styleOf = (element) => ownerWindowOf(element).getComputedStyle(element);
+
+const styleCache = new WeakMap();
+const styleOf = (element) => {
+  if (styleCache.has(element)) return styleCache.get(element);
+  const style = ownerWindowOf(element).getComputedStyle(element);
+  styleCache.set(element, style);
+  return style;
+};
 const tagOf = (element) => String(element?.tagName || '').toLowerCase();
 const roleOf = (element) => clean(element.getAttribute('role') || '', 80).toLowerCase();
 const isElement = (value) => value && value.nodeType === 1;
@@ -1747,7 +1955,7 @@ const buildSearchText = (element, label) => clean([
 const collectRoots = () => {
   const roots = [];
   const visit = (root, offset, depth, frames) => {
-    if (!root || depth > 3) return;
+    if (!root || depth > POLARIS_SHADOW_MAX_DEPTH) return;
     roots.push({ root, offset, frames });
     let nodes = [];
     try {
@@ -1774,6 +1982,67 @@ const collectRoots = () => {
   return roots;
 };
 
+const buildStableSelector = (element) => {
+  if (!isElement(element)) return '';
+  const id = clean(element.getAttribute('id') || '', 80);
+  if (id) return `#${cssEscape(id)}`;
+  const name = clean(element.getAttribute('name') || '', 80);
+  if (name && tagOf(element) === 'input') return `${tagOf(element)}[name="${cssEscape(name)}"]`;
+  const testId = clean(element.getAttribute('data-testid') || element.getAttribute('data-test') || element.getAttribute('data-cy') || '', 80);
+  if (testId) return `[data-testid="${cssEscape(testId)}"]`;
+  const tag = tagOf(element) || 'element';
+  let parent = element.parentElement;
+  let path = tag;
+  while (parent && parent !== document.body && parent !== document.documentElement) {
+    const parentTag = tagOf(parent) || 'element';
+    const parentIndex = Array.from(parent.children).indexOf(element);
+    path = `${parentTag}${parentIndex >= 0 ? `:nth-child(${parentIndex + 1})` : ''} > ${path}`;
+    element = parent;
+    parent = parent.parentElement;
+    if (path.length > 200) break;
+  }
+  return path.length > 200 ? path.slice(0, 200) : path;
+};
+
+const extractOptions = (element) => {
+  try {
+    if (element.tagName === 'SELECT') {
+      return Array.from(element.options)
+        .slice(0, 30)
+        .map((opt) => ({ value: opt.value, text: clean(opt.textContent || '', 120), selected: opt.selected, disabled: Boolean(opt.disabled) }));
+    }
+    const role = roleOf(element);
+    if (role === 'combobox' || role === 'listbox') {
+      const opts = Array.from(element.querySelectorAll('option, [role="option"]'))
+        .slice(0, 30);
+      if (opts.length > 0) {
+        return opts.map((opt) => ({ value: opt.value || clean(opt.textContent || '', 120), text: clean(opt.textContent || '', 120), selected: opt.getAttribute('aria-selected') === 'true' || Boolean(opt.selected), disabled: Boolean(opt.getAttribute('aria-disabled') === 'true' || opt.disabled) }));
+      }
+    }
+  } catch {}
+  return null;
+};
+
+const tooltipOf = (element) => {
+  const title = element.getAttribute('title');
+  if (title) return clean(title, 240);
+  try {
+    const id = element.getAttribute('aria-describedby');
+    if (id) {
+      const target = element.ownerDocument.getElementById(id);
+      if (target) return clean(target.textContent || '', 240);
+    }
+  } catch {}
+  return null;
+};
+
+const buildChecked = (element) => {
+  if (element.checked !== undefined) return element.checked;
+  if (element.getAttribute('aria-checked') === 'true') return true;
+  if (element.getAttribute('aria-checked') === 'false') return false;
+  return null;
+};
+
 const sameRect = (a, b) => Math.abs(a.left - b.left) < 2
   && Math.abs(a.top - b.top) < 2
   && Math.abs(a.width - b.width) < 2
@@ -1781,7 +2050,7 @@ const sameRect = (a, b) => Math.abs(a.left - b.left) < 2
 
 const collectPolarisInteractiveElements = (options = {}) => {
   const viewportOnly = options.viewportOnly === true;
-  const maxElements = Number.isFinite(options.maxElements) ? options.maxElements : 220;
+  const maxElements = Number.isFinite(options.maxElements) ? options.maxElements : 300;
   const candidates = [];
   const seen = new WeakSet();
   let order = 0;
@@ -1803,6 +2072,18 @@ const collectPolarisInteractiveElements = (options = {}) => {
       href: clean(element.href || element.getAttribute('data-href') || '', 500),
       disabled: isDisabled(element),
       fillable: isFillable(element) && !isDisabled(element) && !isReadOnly(element),
+      checked: buildChecked(element),
+      selected: element.getAttribute('aria-selected') === 'true' || null,
+      options: extractOptions(element),
+      selector: buildStableSelector(element),
+      tooltip: tooltipOf(element),
+      expanded: element.getAttribute('aria-expanded') === 'true' ? true : element.getAttribute('aria-expanded') === 'false' ? false : null,
+      pressed: element.getAttribute('aria-pressed') === 'true' ? true : element.getAttribute('aria-pressed') === 'false' ? false : null,
+      readOnly: isReadOnly(element) || null,
+      required: element.hasAttribute('required') || null,
+      min: element.getAttribute('min') ? Number(element.getAttribute('min')) : null,
+      max: element.getAttribute('max') ? Number(element.getAttribute('max')) : null,
+      step: element.getAttribute('step') ? Number(element.getAttribute('step')) : null,
       frames,
       score: scoreOf(element),
       order: order++
@@ -1858,7 +2139,20 @@ const toPolarisInteractiveElement = (entry, index) => ({
   placeholder: entry.placeholder,
   href: entry.href,
   disabled: entry.disabled,
-  fillable: entry.fillable
+  fillable: entry.fillable,
+  rect: entry.rect ? { x: Math.round(entry.rect.left), y: Math.round(entry.rect.top), width: Math.round(entry.rect.width), height: Math.round(entry.rect.height) } : null,
+  checked: entry.checked,
+  selected: entry.selected,
+  options: entry.options,
+  selector: entry.selector,
+  tooltip: entry.tooltip,
+  expanded: entry.expanded,
+  pressed: entry.pressed,
+  readOnly: entry.readOnly,
+  required: entry.required,
+  min: entry.min,
+  max: entry.max,
+  step: entry.step
 });
 
 const toPolarisVisualElement = (entry, index) => ({
@@ -1872,7 +2166,10 @@ const toPolarisVisualElement = (entry, index) => ({
     height: Math.round(entry.rect.height)
   },
   fillable: entry.fillable,
-  disabled: entry.disabled
+  disabled: entry.disabled,
+  checked: entry.checked,
+  selected: entry.selected,
+  selector: entry.selector
 });
 "#
     };
@@ -1918,13 +2215,13 @@ if (!window.__POLARIS_BROWSER_CONSOLE__) {
 "#;
 
 const INTERACTIVE_ELEMENTS_SCRIPT_BODY: &str = r#"
-const elements = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 220 })
+const elements = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 })
   .map((entry, index) => toPolarisInteractiveElement(entry, index));
 return JSON.stringify(elements);
 "#;
 
 const DIAGNOSTICS_SCRIPT_BODY: &str = r#"
-const elements = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 })
+const elements = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 220 })
   .map((entry, index) => toPolarisVisualElement(entry, index));
 return JSON.stringify({
   visual: {
@@ -1943,7 +2240,7 @@ return JSON.stringify({
 "#;
 
 const CLICK_ELEMENT_SCRIPT_BODY: &str = r#"
-const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
 const query = clean(requestedText, 240).toLowerCase();
 let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
 let entry = index >= 0 ? entries[index] : null;
@@ -1982,6 +2279,9 @@ const dispatchPointer = (type) => {
     }
   } catch {}
 };
+dispatchPointer('pointerover');
+dispatchMouse('mouseover');
+dispatchMouse('mouseenter');
 dispatchPointer('pointerdown');
 dispatchMouse('mousedown');
 dispatchPointer('pointerup');
@@ -1995,7 +2295,7 @@ return JSON.stringify({ ok: true, action: 'click', index, text: entry.label, url
 "#;
 
 const FILL_ELEMENT_SCRIPT_BODY: &str = r#"
-const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
 const query = clean(requestedText, 240).toLowerCase();
 let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
 let entry = index >= 0 ? entries[index] : null;
@@ -2068,7 +2368,7 @@ root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI
 document.documentElement.appendChild(root);
 
 const render = () => {
-  const entries = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 });
+  const entries = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 220 });
   const nodes = entries.map((entry, index) => {
     const rect = entry.rect;
     const box = document.createElement('div');
