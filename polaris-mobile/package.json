@@ -1,0 +1,8 @@
+{
+  "name": "polaris-mobile",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}

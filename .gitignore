@@ -3,7 +3,18 @@ node_modules/
 .pnp
 .pnp.js
 package-lock.json  # 项目使用 pnpm，忽略 npm 的 lock 文件
-polaris-mobile/
+polaris-mobile/node_modules/
+polaris-mobile/dist/
+polaris-mobile/src-tauri/target/
+polaris-mobile/src-tauri/Cargo.lock
+polaris-mobile/src-tauri/gen/android/.gradle/
+polaris-mobile/src-tauri/gen/android/build/
+polaris-mobile/src-tauri/gen/android/app/build/
+polaris-mobile/src-tauri/gen/android/app/src/main/jniLibs/
+polaris-mobile/src-tauri/gen/android/app/src/main/assets/assets/
+polaris-mobile/src-tauri/gen/android/app/src/main/assets/index.html
+polaris-mobile/src-tauri/gen/android/app/src/main/assets/tauri.svg
+polaris-mobile/src-tauri/gen/android/app/src/main/assets/vite.svg
 # Build outputs
 dist/
 dist-ssr/
