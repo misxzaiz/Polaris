@@ -628,37 +628,62 @@ export function BrowserPanel({
         try {
           const result = await browserGetMarqueeResult(webviewLabel)
           if (cancelled) break
+
+          // 有矩形：先把 rects 写入 state（发送时至少有坐标）
           if (result.rects.length > 0) {
-            // 有新矩形：提取区域上下文（不阻塞轮询）
+            setMarqueeRegions((prev) => {
+              // 数量相同就跳过，避免重复 select_region
+              if (prev.length === result.rects.length) return prev
+              return result.rects.map((rect, idx) => ({
+                id: idx,
+                rect,
+                count: 0,
+                elements: [],
+                htmlSnippet: '',
+              }))
+            })
+
+            // 异步补充元素详情（不阻塞轮询）
             void Promise.all(
               result.rects.map(async (rect, idx) => {
                 try {
                   const region = await browserSelectRegion(webviewLabel, rect)
-                  return {
-                    id: idx,
-                    rect,
-                    count: region.count,
-                    elements: region.elements,
-                    htmlSnippet: region.htmlSnippet,
-                  } satisfies BrowserRegion
+                  return { idx, region }
                 } catch {
                   return null
                 }
               })
-            ).then((regions) => {
+            ).then((details) => {
               if (cancelled) return
-              const valid = regions.filter((r): r is BrowserRegion => r !== null)
               setMarqueeRegions((prev) => {
-                // 仅在数量变化时更新，避免重复 select_region 调用
-                if (prev.length === valid.length) return prev
-                return valid
+                let changed = false
+                const next = prev.map((r, i) => {
+                  const detail = details.find((d) => d?.idx === i)
+                  if (detail && r.elements.length === 0) {
+                    changed = true
+                    return {
+                      ...r,
+                      count: detail.region.count,
+                      elements: detail.region.elements,
+                      htmlSnippet: detail.region.htmlSnippet,
+                    }
+                  }
+                  return r
+                })
+                return changed ? next : prev
               })
             })
           }
+
+          // 圈选完成：先确保最后一次结果已写入，再延迟关闭 overlay
           if (result.done) {
             cancelled = true
             setMarqueePolling(false)
-            void stopMarquee()
+            // 延迟关闭 overlay，确保 select_region 能读到最终数据
+            setTimeout(() => {
+              void browserSetMarquee(webviewLabel, false).catch(() => undefined)
+              setMarqueeMode(false)
+            }, 300)
             break
           }
         } catch {
@@ -672,7 +697,7 @@ export function BrowserPanel({
       cancelled = true
       setMarqueePolling(false)
     }
-  }, [marqueeMode, status, webviewLabel, stopMarquee])
+  }, [marqueeMode, status, webviewLabel])
 
   // 组件卸载 / 会话切换时清理 overlay
   useEffect(() => {
@@ -682,12 +707,43 @@ export function BrowserPanel({
   }, [webviewLabel])
 
   const sendMarqueeToChat = useCallback(async () => {
-    if (marqueeRegions.length === 0) {
-      toast.error(t('browser.marqueeEmpty', { defaultValue: '请先在页面上圈选一个区域' }))
-      return
-    }
     if (!currentWorkspace) {
       toast.error(t('messages.noWorkspace'))
+      return
+    }
+
+    // 发送前主动同步一次圈选结果，避免轮询未及时填充
+    let regionsToSend = marqueeRegions
+    if (regionsToSend.length === 0 && status === 'ready') {
+      try {
+        const result = await browserGetMarqueeResult(webviewLabel)
+        if (result.rects.length > 0) {
+          const fetched = await Promise.all(
+            result.rects.map(async (rect, idx) => {
+              try {
+                const region = await browserSelectRegion(webviewLabel, rect)
+                return {
+                  id: idx,
+                  rect,
+                  count: region.count,
+                  elements: region.elements,
+                  htmlSnippet: region.htmlSnippet,
+                } satisfies BrowserRegion
+              } catch {
+                return null
+              }
+            })
+          )
+          regionsToSend = fetched.filter((r): r is BrowserRegion => r !== null)
+          setMarqueeRegions(regionsToSend)
+        }
+      } catch {
+        // 同步失败，继续用现有 state
+      }
+    }
+
+    if (regionsToSend.length === 0) {
+      toast.error(t('browser.marqueeEmpty', { defaultValue: '请先在页面上圈选一个区域' }))
       return
     }
 
@@ -696,7 +752,7 @@ export function BrowserPanel({
       const context: BrowserRegionContext = {
         title: pageTitle || 'Browser',
         url: currentUrl,
-        regions: marqueeRegions,
+        regions: regionsToSend,
         userNote: marqueeNote.trim() || undefined,
       }
       const text = formatMarqueeContext(context)
@@ -714,7 +770,7 @@ export function BrowserPanel({
     } finally {
       setMarqueeSending(false)
     }
-  }, [marqueeRegions, currentWorkspace, pageTitle, currentUrl, marqueeNote, sendMessage, toast, t])
+  }, [marqueeRegions, currentWorkspace, pageTitle, currentUrl, marqueeNote, sendMessage, toast, t, status, webviewLabel])
 
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
