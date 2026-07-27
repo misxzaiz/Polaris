@@ -9,7 +9,7 @@ import {
   Copy,
   Eraser,
   ExternalLink,
-  FrameCorners,
+  BoxSelect,
   Globe2,
   ListTree,
   Loader2,
@@ -32,7 +32,6 @@ import {
   browserGetDiagnostics,
   browserGetMarqueeResult,
   browserGetPageContext,
-  browserGetRegionScreenshot,
   browserHistory,
   browserNavigate,
   browserReload,
@@ -46,7 +45,6 @@ import {
   normalizeBrowserUrl,
   type BrowserBounds,
   type BrowserDiagnostics,
-  type BrowserMarqueeRect,
   type BrowserOperationEvent,
   type BrowserPageContext,
   type BrowserRegion,
@@ -56,6 +54,8 @@ import {
 import { useToastStore } from '@/stores/toastStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
+import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
+import { useWorkspaceStore } from '@/stores/workspaceStore'
 
 interface BrowserPanelProps {
   tabId: string
@@ -215,10 +215,17 @@ export function BrowserPanel({
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
   const [boundAgentKey, setBoundAgentKey] = useState<string | null>(null)
+  const [marqueeMode, setMarqueeMode] = useState(false)
+  const [marqueeRegions, setMarqueeRegions] = useState<BrowserRegion[]>([])
+  const [marqueeNote, setMarqueeNote] = useState('')
+  const [marqueeSending, setMarqueeSending] = useState(false)
+  const [marqueePolling, setMarqueePolling] = useState(false)
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
+  const { sendMessage } = useActiveSessionActions()
+  const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
   const latestOperation = operationEvents[0]
 
@@ -580,6 +587,135 @@ export function BrowserPanel({
     }
   }, [currentUrl, t, toast])
 
+  // ── 圈选 (Marquee Selection) ──
+
+  const stopMarquee = useCallback(async () => {
+    setMarqueeMode(false)
+    setMarqueePolling(false)
+    try {
+      await browserSetMarquee(webviewLabel, false)
+    } catch {
+      // 静默：overlay 清理失败不应阻塞 UI
+    }
+  }, [webviewLabel])
+
+  const startMarquee = useCallback(async () => {
+    if (status !== 'ready') return
+    setMarqueeRegions([])
+    setMarqueeNote('')
+    setMarqueeMode(true)
+    setAiPanelOpen(true)
+    try {
+      await browserSetMarquee(webviewLabel, true)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast.error(message)
+      setMarqueeMode(false)
+    }
+  }, [status, webviewLabel, toast])
+
+  // 圈选结果轮询：marqueeMode 开启期间，定期读取 overlay 写入的结果
+  useEffect(() => {
+    if (!marqueeMode || status !== 'ready') return
+    let cancelled = false
+    setMarqueePolling(true)
+
+    const poll = async () => {
+      while (!cancelled) {
+        await new Promise((r) => setTimeout(r, 400))
+        if (cancelled) break
+        try {
+          const result = await browserGetMarqueeResult(webviewLabel)
+          if (cancelled) break
+          if (result.rects.length > 0) {
+            // 有新矩形：提取区域上下文（不阻塞轮询）
+            void Promise.all(
+              result.rects.map(async (rect, idx) => {
+                try {
+                  const region = await browserSelectRegion(webviewLabel, rect)
+                  return {
+                    id: idx,
+                    rect,
+                    count: region.count,
+                    elements: region.elements,
+                    htmlSnippet: region.htmlSnippet,
+                  } satisfies BrowserRegion
+                } catch {
+                  return null
+                }
+              })
+            ).then((regions) => {
+              if (cancelled) return
+              const valid = regions.filter((r): r is BrowserRegion => r !== null)
+              setMarqueeRegions((prev) => {
+                // 仅在数量变化时更新，避免重复 select_region 调用
+                if (prev.length === valid.length) return prev
+                return valid
+              })
+            })
+          }
+          if (result.done) {
+            cancelled = true
+            setMarqueePolling(false)
+            void stopMarquee()
+            break
+          }
+        } catch {
+          // 轮询失败：继续尝试，不阻塞
+        }
+      }
+    }
+
+    void poll()
+    return () => {
+      cancelled = true
+      setMarqueePolling(false)
+    }
+  }, [marqueeMode, status, webviewLabel, stopMarquee])
+
+  // 组件卸载 / 会话切换时清理 overlay
+  useEffect(() => {
+    return () => {
+      browserSetMarquee(webviewLabel, false).catch(() => undefined)
+    }
+  }, [webviewLabel])
+
+  const sendMarqueeToChat = useCallback(async () => {
+    if (marqueeRegions.length === 0) {
+      toast.error(t('browser.marqueeEmpty', { defaultValue: '请先在页面上圈选一个区域' }))
+      return
+    }
+    if (!currentWorkspace) {
+      toast.error(t('messages.noWorkspace'))
+      return
+    }
+
+    setMarqueeSending(true)
+    try {
+      const context: BrowserRegionContext = {
+        title: pageTitle || 'Browser',
+        url: currentUrl,
+        regions: marqueeRegions,
+        userNote: marqueeNote.trim() || undefined,
+      }
+      const text = formatMarqueeContext(context)
+      await sendMessage(text, currentWorkspace.path)
+      // 发送成功后清理圈选状态
+      setMarqueeRegions([])
+      setMarqueeNote('')
+      setMarqueeMode(false)
+      setAiPanelOpen(false)
+      toast.success(t('browser.marqueeSent', { defaultValue: '已发送圈选上下文给 AI' }))
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setMarqueeSending(false)
+    }
+  }, [marqueeRegions, currentWorkspace, pageTitle, currentUrl, marqueeNote, sendMessage, toast, t])
+
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
   const taskButtonClass =
@@ -718,6 +854,21 @@ export function BrowserPanel({
           </button>
           <button
             type="button"
+            className={clsx(
+              taskButtonClass,
+              marqueeMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
+            )}
+            onClick={() => (marqueeMode ? stopMarquee() : startMarquee())}
+            disabled={status !== 'ready'}
+            title={t('browser.marqueeHint', { defaultValue: '圈选页面区域发给 AI' })}
+          >
+            <BoxSelect size={15} />
+            <span className="hidden 2xl:inline">
+              {t('browser.marquee', { defaultValue: '圈选' })}
+            </span>
+          </button>
+          <button
+            type="button"
             className={toolbarButtonClass}
             onClick={() => browserToggleDevtools(webviewLabel).catch((e) => setError(String(e)))}
             disabled={status !== 'ready'}
@@ -830,6 +981,101 @@ export function BrowserPanel({
               <X size={13} />
             </button>
           </div>
+
+          {marqueeMode && (
+            <div className="mb-2 rounded-md border border-primary/30 bg-primary/5 p-2">
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-primary">
+                  <BoxSelect size={13} />
+                  <span className="truncate">
+                    {marqueePolling
+                      ? t('browser.marqueeDrawing', { defaultValue: '圈选中… 双击空白或按 Esc 结束' })
+                      : t('browser.marqueeDone', { defaultValue: '圈选完成' })}
+                  </span>
+                  {marqueeRegions.length > 0 && (
+                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px]">
+                      {t('browser.marqueeRegionCount', {
+                        count: marqueeRegions.length,
+                        defaultValue: '{{count}} 个区域',
+                      })}
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void stopMarquee()}
+                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                  title={t('buttons.close')}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+
+              {marqueeRegions.length > 0 ? (
+                <div className="mb-2 flex max-h-24 flex-col gap-1 overflow-auto">
+                  {marqueeRegions.map((region, idx) => (
+                    <div
+                      key={`region-${idx}`}
+                      className="flex min-w-0 items-center gap-2 rounded border border-border-subtle bg-background-surface px-2 py-1 text-[11px]"
+                    >
+                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+                        {idx + 1}
+                      </span>
+                      <span className="shrink-0 text-text-tertiary">
+                        {Math.round(region.rect.width)}×{Math.round(region.rect.height)}
+                      </span>
+                      <span className="min-w-0 truncate text-text-secondary">
+                        {region.count > 0
+                          ? t('browser.marqueeElementCount', {
+                              count: region.count,
+                              defaultValue: '{{count}} 个元素',
+                            })
+                          : t('browser.marqueeNoElement', { defaultValue: '无元素' })}
+                      </span>
+                      {region.elements[0] && (
+                        <span className="min-w-0 truncate text-text-tertiary">
+                          · {region.elements[0].kind} “{region.elements[0].text}”
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mb-2 text-[11px] text-text-tertiary">
+                  {t('browser.marqueeEmptyHint', { defaultValue: '在页面上按住左键拖拽画矩形' })}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <input
+                  value={marqueeNote}
+                  onChange={(e) => setMarqueeNote(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      void sendMarqueeToChat()
+                    }
+                  }}
+                  placeholder={t('browser.marqueeNotePlaceholder', {
+                    defaultValue: '补充说明：想怎么改这个区域？',
+                  })}
+                  className="h-8 min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary/70"
+                />
+                <button
+                  type="button"
+                  onClick={() => void sendMarqueeToChat()}
+                  disabled={marqueeSending || marqueeRegions.length === 0}
+                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                  title={t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
+                >
+                  {marqueeSending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                  <span className="hidden xl:inline">
+                    {t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="grid max-h-40 min-h-0 grid-cols-[minmax(0,1fr)_minmax(220px,320px)] gap-3 overflow-hidden max-lg:grid-cols-1">
             <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
@@ -995,6 +1241,17 @@ export function BrowserPanel({
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
+          {marqueeMode && (
+            <span className="hidden items-center gap-1 text-primary lg:inline-flex">
+              <BoxSelect size={12} />
+              {marqueeRegions.length > 0
+                ? t('browser.marqueeRegionCount', {
+                    count: marqueeRegions.length,
+                    defaultValue: '{{count}} 个区域',
+                  })
+                : t('browser.marqueeDrawing', { defaultValue: '圈选中… 双击空白或按 Esc 结束' })}
+            </span>
+          )}
           {aiOperationMode && (
             <span className="hidden items-center gap-1 text-primary lg:inline-flex">
               <MousePointer2 size={12} />
