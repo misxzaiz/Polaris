@@ -4,14 +4,12 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
-  BookOpen,
   Bug,
   Code2,
   Copy,
   Eraser,
   ExternalLink,
   Globe2,
-  Hammer,
   ListTree,
   Loader2,
   MousePointer2,
@@ -45,9 +43,7 @@ import {
   type BrowserPageContext,
   type BrowserSessionInfo,
 } from '@/services/tauri/browserService'
-import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
 import { useToastStore } from '@/stores/toastStore'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 
@@ -164,43 +160,6 @@ function isLocalDevUrl(url: string): boolean {
   }
 }
 
-function formatContextForChat(context: BrowserPageContext, mode: 'learn' | 'modify'): string {
-  const selected = context.selectedText.trim()
-  const excerpt = selected || context.text.slice(0, 4000)
-  const headingText = context.headings
-    .slice(0, 10)
-    .map((h) => `${'#'.repeat(Math.min(Math.max(h.level, 1), 6))} ${h.text}`)
-    .join('\n')
-
-  if (mode === 'modify') {
-    return [
-      '我正在用 Polaris 内置浏览器查看一个页面，请根据网页上下文协助我修改当前项目。',
-      '',
-      `标题: ${context.title || 'Untitled'}`,
-      `URL: ${context.url}`,
-      headingText ? `页面标题结构:\n${headingText}` : '',
-      excerpt ? `关注内容:\n${excerpt}` : '',
-      '',
-      '请先判断这可能对应项目中的哪些文件或组件，再给出修改方案；如果信息足够，可以直接实施修改。',
-    ]
-      .filter(Boolean)
-      .join('\n')
-  }
-
-  return [
-    '请讲解这个网页内容，重点帮助我学习和理解。',
-    '',
-    `标题: ${context.title || 'Untitled'}`,
-    `URL: ${context.url}`,
-    headingText ? `页面标题结构:\n${headingText}` : '',
-    excerpt ? `引用内容:\n${excerpt}` : '',
-    '',
-    selected ? '请围绕我选中的内容讲解。' : '请先总结核心概念，再给出适合开发者的例子。',
-  ]
-    .filter(Boolean)
-    .join('\n')
-}
-
 export function BrowserPanel({
   tabId,
   initialUrl = 'https://www.bing.com',
@@ -247,9 +206,7 @@ export function BrowserPanel({
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
   const [boundAgentKey, setBoundAgentKey] = useState<string | null>(null)
 
-  const { sendMessage } = useActiveSessionActions()
   const toast = useToastStore()
-  const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
@@ -543,40 +500,6 @@ export function BrowserPanel({
     })
   }, [markBrowserNavigationHandled, navigateTo, navigationRequestId, navigationRequestUrl, status, tabId])
 
-  const handleContextToChat = useCallback(
-    async (mode: 'learn' | 'modify') => {
-      if (!currentWorkspace) {
-        toast.error(t('messages.noWorkspace'))
-        return
-      }
-
-      setLoading(true)
-      setError(null)
-      try {
-        const context = status === 'native-unavailable'
-          ? {
-              title: 'Browser',
-              url: currentUrl,
-              selectedText: '',
-              metaDescription: '',
-              text: '',
-              headings: [],
-              links: [],
-            }
-          : await browserGetPageContext(webviewLabel)
-
-        await sendMessage(formatContextForChat(context, mode), currentWorkspace.path)
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e)
-        setError(message)
-        toast.error(message)
-      } finally {
-        setLoading(false)
-      }
-    },
-    [currentUrl, currentWorkspace, sendMessage, status, t, toast, webviewLabel]
-  )
-
   const refreshContextPreview = useCallback(async () => {
     setContextLoading(true)
     setError(null)
@@ -744,26 +667,6 @@ export function BrowserPanel({
         </form>
 
         <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className={taskButtonClass}
-            onClick={() => handleContextToChat('learn')}
-            disabled={loading}
-            title={t('browser.explainSelection', { defaultValue: '讲解当前网页或选区' })}
-          >
-            <BookOpen size={15} />
-            <span className="hidden xl:inline">{t('browser.learnMode', { defaultValue: '讲解' })}</span>
-          </button>
-          <button
-            type="button"
-            className={taskButtonClass}
-            onClick={() => handleContextToChat('modify')}
-            disabled={loading}
-            title={t('browser.modifyPage', { defaultValue: '让 AI 协助修改页面' })}
-          >
-            <Hammer size={15} />
-            <span className="hidden xl:inline">{t('browser.devMode', { defaultValue: '修改' })}</span>
-          </button>
           <button
             type="button"
             className={taskButtonClass}
