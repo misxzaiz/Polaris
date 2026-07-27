@@ -7,6 +7,7 @@ polaris-mobile/node_modules/
 polaris-mobile/dist/
 polaris-mobile/src-tauri/target/
 polaris-mobile/src-tauri/Cargo.lock
+polaris-mobile/src-tauri/gen/schemas/
 polaris-mobile/src-tauri/gen/android/.gradle/
 polaris-mobile/src-tauri/gen/android/build/
 polaris-mobile/src-tauri/gen/android/app/build/

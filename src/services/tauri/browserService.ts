@@ -147,6 +147,109 @@ export interface BrowserOverlayResult {
   count: number
 }
 
+// ── 圈选区域 (Marquee Selection) ──
+
+export interface BrowserMarqueeResult {
+  enabled: boolean
+  count: number
+}
+
+export interface BrowserRegionElement {
+  index: number
+  kind: string
+  text: string
+  rect: BrowserRect
+  fillable: boolean
+  disabled: boolean
+  selector?: string | null
+}
+
+export interface BrowserRegionResult {
+  url: string
+  count: number
+  elements: BrowserRegionElement[]
+  htmlSnippet: string
+  screenshot?: BrowserScreenshot | null
+}
+
+export interface BrowserRegionContext {
+  title: string
+  url: string
+  regions: BrowserRegion[]
+  userNote?: string
+}
+
+export interface BrowserRegion {
+  id: number
+  rect: BrowserRect
+  count: number
+  elements: BrowserRegionElement[]
+  htmlSnippet: string
+  screenshot?: BrowserScreenshot | null
+}
+
+export interface BrowserMarqueeRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+export function formatMarqueeContext(context: BrowserRegionContext): string {
+  const { title, url, regions, userNote } = context
+  const isMulti = regions.length > 1
+
+  if (isMulti) {
+    const regionBlocks = regions.map((r, i) => {
+      const elems = r.elements.map((e) => `  · ${e.kind} "${e.text}"`).join('\n')
+      return [
+        `【区域 ${i + 1}】坐标(${r.rect.x},${r.rect.y})，尺寸${r.rect.width}×${r.rect.height}，包含 ${r.count} 个元素`,
+        elems,
+        '```html',
+        r.htmlSnippet,
+        '```',
+      ].join('\n')
+    }).join('\n\n')
+
+    return [
+      '我正在用 Polaris 内置浏览器查看一个页面，圈选了多个区域，请根据圈选区域的内容协助我修改项目。',
+      '',
+      `标题: ${title || 'Untitled'}`,
+      `URL: ${url}`,
+      '',
+      userNote ? `用户意图：${userNote}` : '',
+      '',
+      regionBlocks,
+      '',
+      '请按区域分别定位到项目中对应的组件或文件，再给出修改方案；如果信息足够，可以直接实施修改。',
+    ].filter(Boolean).join('\n')
+  }
+
+  const region = regions[0]
+  if (!region) return ''
+
+  const elems = region.elements.map((e) => `  · ${e.kind} "${e.text}"`).join('\n')
+  return [
+    '我正在用 Polaris 内置浏览器查看一个页面，圈选了页面中一个区域，请根据圈选区域的内容协助我修改项目。',
+    '',
+    `标题: ${title || 'Untitled'}`,
+    `URL: ${url}`,
+    `圈选区域: 坐标(${region.rect.x},${region.rect.y})，尺寸${region.rect.width}×${region.rect.height}，包含 ${region.count} 个元素`,
+    '',
+    userNote ? `用户意图：${userNote}` : '',
+    '',
+    '圈选区域内元素：',
+    elems,
+    '',
+    '圈选区域 DOM 片段：',
+    '```html',
+    region.htmlSnippet,
+    '```',
+    '',
+    '请先判断这可能对应项目中的哪些文件或组件，再给出修改方案；如果信息足够，可以直接实施修改。',
+  ].filter(Boolean).join('\n')
+}
+
 export interface BrowserBounds {
   x: number
   y: number
@@ -277,4 +380,29 @@ export interface BrowserHistoryState {
 
 export async function browserGetHistoryState(label: string): Promise<BrowserHistoryState> {
   return invoke<BrowserHistoryState>('browser_get_history_state', { label })
+}
+
+export async function browserSetMarquee(label: string, enabled: boolean): Promise<BrowserMarqueeResult> {
+  return invoke<BrowserMarqueeResult>('browser_set_marquee', { label, enabled })
+}
+
+export async function browserGetMarqueeResult(label: string): Promise<{ rects: BrowserMarqueeRect[]; done: boolean }> {
+  const raw = await invoke<Record<string, unknown>>('browser_get_marquee_result', { label })
+  const rects = (raw.rects as Array<BrowserMarqueeRect>) ?? []
+  const done = raw.done === true
+  return { rects, done }
+}
+
+export async function browserSelectRegion(
+  label: string,
+  rect: BrowserMarqueeRect,
+): Promise<BrowserRegionResult> {
+  return invoke<BrowserRegionResult>('browser_select_region', { label, region: rect })
+}
+
+export async function browserGetRegionScreenshot(
+  label: string,
+  rect: BrowserMarqueeRect,
+): Promise<BrowserScreenshot> {
+  return invoke<BrowserScreenshot>('browser_get_region_screenshot', { label, region: rect })
 }

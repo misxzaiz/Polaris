@@ -28,6 +28,7 @@ static BROWSER_ACQUIRE_PENDING: OnceLock<Mutex<HashMap<String, BrowserAcquireSen
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
 const MAX_EVAL_TIMEOUT_MS: u64 = 15_000;
 const BROWSER_ACQUIRE_TIMEOUT_SECS: u64 = 15;
+const MARQUEE_MIN_DIM: usize = 20;
 
 type BrowserAcquireSender =
     oneshot::Sender<std::result::Result<BrowserAcquireFrontendResult, String>>;
@@ -262,6 +263,40 @@ pub struct BrowserForm {
 pub struct BrowserHistoryState {
     pub can_go_back: bool,
     pub can_go_forward: bool,
+}
+
+/// 圈选区域筛选结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserRegionResult {
+    pub url: String,
+    pub count: usize,
+    pub elements: Vec<BrowserRegionElement>,
+    pub html_snippet: String,
+    #[serde(default)]
+    pub screenshot: Option<BrowserScreenshot>,
+}
+
+/// 圈选区域内元素
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserRegionElement {
+    pub index: usize,
+    pub kind: String,
+    pub text: String,
+    pub rect: BrowserRect,
+    pub fillable: bool,
+    pub disabled: bool,
+    #[serde(default)]
+    pub selector: Option<String>,
+}
+
+/// 圈选 overlay 结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserMarqueeResult {
+    pub enabled: bool,
+    pub count: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2544,6 +2579,373 @@ fn ai_overlay_script(enabled: bool) -> String {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Marquee Selection: 用户圈选区域交互 overlay
+// ──────────────────────────────────────────────────────────────────────────
+
+const MARQUEE_OVERLAY_SCRIPT_BODY: &str = r#"
+const existingCleanup = window.__POLARIS_MARQUEE_CLEANUP__;
+if (typeof existingCleanup === 'function') {
+  existingCleanup();
+}
+
+if (!marqueeEnabled) {
+  return JSON.stringify({ enabled: false, count: 0 });
+}
+
+const MARQUEE_MIN_DIM = 20;
+
+const root = document.createElement('div');
+root.id = '__polaris_marquee_overlay__';
+root.style.position = 'fixed';
+root.style.inset = '0';
+root.style.pointerEvents = 'auto';
+root.style.zIndex = '2147483645';
+root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+document.documentElement.appendChild(root);
+
+const savedOverflow = document.body.style.overflow;
+document.body.style.overflow = 'hidden';
+
+const currentRectangles = [];
+let drawing = false;
+let startX = 0, startY = 0;
+let currentBox = null;
+
+const addCompletedBox = (x, y, w, h) => {
+  const num = currentRectangles.length + 1;
+  const box = document.createElement('div');
+  box.style.position = 'fixed';
+  box.style.left = Math.max(0, x) + 'px';
+  box.style.top = Math.max(0, y) + 'px';
+  box.style.width = Math.max(MARQUEE_MIN_DIM, Math.abs(w)) + 'px';
+  box.style.height = Math.max(MARQUEE_MIN_DIM, Math.abs(h)) + 'px';
+  box.style.border = '2px solid rgba(59,130,246,0.95)';
+  box.style.background = 'rgba(59,130,246,0.08)';
+  box.style.boxShadow = '0 0 0 1px rgba(15,23,42,0.35)';
+  box.style.borderRadius = '6px';
+  box.style.boxSizing = 'border-box';
+  box.style.pointerEvents = 'none';
+  const badge = document.createElement('div');
+  badge.textContent = String(num);
+  badge.style.position = 'absolute';
+  badge.style.left = '-1px';
+  badge.style.top = '-14px';
+  badge.style.minWidth = '22px';
+  badge.style.height = '22px';
+  badge.style.borderRadius = '11px';
+  badge.style.background = 'rgb(37,99,235)';
+  badge.style.color = 'white';
+  badge.style.fontSize = '12px';
+  badge.style.fontWeight = '650';
+  badge.style.lineHeight = '22px';
+  badge.style.textAlign = 'center';
+  box.appendChild(badge);
+  root.appendChild(box);
+  currentRectangles.push({ x: Math.max(0, x), y: Math.max(0, y), width: Math.max(MARQUEE_MIN_DIM, Math.abs(w)), height: Math.max(MARQUEE_MIN_DIM, Math.abs(h)) });
+};
+
+const updateResult = (done) => {
+  window.__POLARIS_MARQUEE_RESULT__ = JSON.stringify({
+    rects: currentRectangles,
+    done: !!done
+  });
+};
+
+const onMousedown = (e) => {
+  if (e.button !== 0) return;
+  drawing = true;
+  startX = e.clientX;
+  startY = e.clientY;
+  currentBox = document.createElement('div');
+  currentBox.style.position = 'fixed';
+  currentBox.style.pointerEvents = 'none';
+  currentBox.style.border = '2px dashed rgba(59,130,246,0.95)';
+  currentBox.style.background = 'rgba(59,130,246,0.12)';
+  currentBox.style.boxShadow = '0 0 0 1px rgba(15,23,42,0.35)';
+  currentBox.style.borderRadius = '6px';
+  currentBox.style.boxSizing = 'border-box';
+  root.appendChild(currentBox);
+  e.preventDefault();
+};
+const onMousemove = (e) => {
+  if (!drawing || !currentBox) return;
+  const x = Math.min(startX, e.clientX);
+  const y = Math.min(startY, e.clientY);
+  const w = Math.abs(e.clientX - startX);
+  const h = Math.abs(e.clientY - startY);
+  currentBox.style.left = Math.max(0, x) + 'px';
+  currentBox.style.top = Math.max(0, y) + 'px';
+  currentBox.style.width = Math.max(MARQUEE_MIN_DIM, w) + 'px';
+  currentBox.style.height = Math.max(MARQUEE_MIN_DIM, h) + 'px';
+};
+const onMouseup = (e) => {
+  if (!drawing) return;
+  drawing = false;
+  if (currentBox) {
+    currentBox.remove();
+    currentBox = null;
+  }
+  const w = Math.abs(e.clientX - startX);
+  const h = Math.abs(e.clientY - startY);
+  if (w >= MARQUEE_MIN_DIM && h >= MARQUEE_MIN_DIM) {
+    addCompletedBox(Math.min(startX, e.clientX), Math.min(startY, e.clientY), w, h);
+  }
+  updateResult(false);
+};
+const onDblclick = () => {
+  if (drawing && currentBox) { currentBox.remove(); currentBox = null; drawing = false; }
+  updateResult(true);
+};
+const onKeydown = (e) => {
+  if (e.key === 'Escape') {
+    if (drawing && currentBox) { currentBox.remove(); currentBox = null; drawing = false; }
+    updateResult(true);
+  }
+};
+
+root.addEventListener('mousedown', onMousedown, true);
+document.addEventListener('mousemove', onMousemove, true);
+document.addEventListener('mouseup', onMouseup, true);
+document.addEventListener('dblclick', onDblclick, true);
+document.addEventListener('keydown', onKeydown, true);
+
+window.__POLARIS_MARQUEE_CLEANUP__ = () => {
+  root.removeEventListener('mousedown', onMousedown, true);
+  document.removeEventListener('mousemove', onMousemove, true);
+  document.removeEventListener('mouseup', onMouseup, true);
+  document.removeEventListener('dblclick', onDblclick, true);
+  document.removeEventListener('keydown', onKeydown, true);
+  root.remove();
+  document.body.style.overflow = savedOverflow;
+  delete window.__POLARIS_MARQUEE_CLEANUP__;
+  delete window.__POLARIS_MARQUEE_RESULT__;
+};
+
+return JSON.stringify({ enabled: true, count: 0 });
+"#;
+
+fn marquee_overlay_script(enabled: bool) -> String {
+    let mut script = String::from("(() => {\nconst marqueeEnabled = ");
+    script.push_str(if enabled { "true" } else { "false" });
+    script.push_str(";\n");
+    script.push_str(MARQUEE_OVERLAY_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_set_marquee_with_app(
+    app: &AppHandle,
+    label: &str,
+    enabled: bool,
+) -> Result<BrowserMarqueeResult> {
+    let script = marquee_overlay_script(enabled);
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    let count = value.get("count").and_then(Value::as_u64).unwrap_or(0) as usize;
+    Ok(BrowserMarqueeResult { enabled, count })
+}
+
+const MARQUEE_GET_RESULT_SCRIPT: &str = r#"
+(() => {
+  try {
+    const raw = window.__POLARIS_MARQUEE_RESULT__;
+    if (!raw) return JSON.stringify({ rects: [], done: false });
+    return JSON.stringify(JSON.parse(raw));
+  } catch {
+    return JSON.stringify({ rects: [], done: false });
+  }
+})()
+"#;
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_get_marquee_result_with_app(
+    app: &AppHandle,
+    label: &str,
+) -> Result<Value> {
+    let raw = browser_eval_with_app(app, label, MARQUEE_GET_RESULT_SCRIPT, Some(1_000)).await?;
+    parse_eval_json(&raw)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_marquee_result(
+    app: AppHandle,
+    label: String,
+) -> Result<Value> {
+    browser_get_marquee_result_with_app(&app, &label).await
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_set_marquee(
+    app: AppHandle,
+    label: String,
+    enabled: bool,
+) -> Result<BrowserMarqueeResult> {
+    browser_set_marquee_with_app(&app, &label, enabled).await
+}
+
+const REGION_SELECT_SCRIPT_BODY: &str = r#"
+(() => {
+  const targetRect = { x: targetX, y: targetY, w: targetW, h: targetH };
+  const intersects = (rx, ry, rw, rh) => !(
+    rx + rw < targetRect.x ||
+    ry + rh < targetRect.y ||
+    rx > targetRect.x + targetRect.w ||
+    ry > targetRect.y + targetRect.h
+  );
+  const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
+  const inRegion = entries.filter((e) => {
+    if (!e.rect) return false;
+    return intersects(e.rect.left, e.rect.top, e.rect.width, e.rect.height);
+  });
+  const regionElements = inRegion.map((e) => e.element);
+  const elements = inRegion.map((e, i) => ({
+    index: i,
+    kind: e.kind,
+    text: clean(e.label, 240),
+    rect: { x: Math.round(e.rect.left), y: Math.round(e.rect.top), width: Math.round(e.rect.width), height: Math.round(e.rect.height) },
+    fillable: e.fillable,
+    disabled: e.disabled,
+    selector: e.selector || null
+  }));
+  let htmlSnippet = '';
+  try {
+    if (regionElements.length > 0) {
+      const wrap = document.createElement('div');
+      const fragment = document.createDocumentFragment();
+      const seen = new WeakSet();
+      for (const el of regionElements) {
+        let node = el;
+        while (node && node !== document.body) {
+          if (seen.has(node)) break;
+          node = node.parentNode;
+        }
+        if (node !== document.body && node !== null && !seen.has(el)) {
+          seen.add(el);
+          fragment.appendChild(el.cloneNode(true));
+        }
+      }
+      wrap.appendChild(fragment);
+      htmlSnippet = wrap.innerHTML;
+    }
+  } catch {}
+  return JSON.stringify({
+    count: inRegion.length,
+    elements: elements.slice(0, 120),
+    htmlSnippet: htmlSnippet.slice(0, 6000),
+    url: String(location.href)
+  });
+})()
+"#;
+
+fn region_select_script(rect: &BrowserRect) -> String {
+    let mut script = String::from("(() => {\nconst targetX = ");
+    script.push_str(&rect.x.to_string());
+    script.push_str(";\nconst targetY = ");
+    script.push_str(&rect.y.to_string());
+    script.push_str(";\nconst targetW = ");
+    script.push_str(&rect.width.to_string());
+    script.push_str(";\nconst targetH = ");
+    script.push_str(&rect.height.to_string());
+    script.push_str(";\n");
+    script.push_str(polaris_interactive_collector_script!());
+    script.push('\n');
+    script.push_str(REGION_SELECT_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+#[cfg(feature = "tauri-app")]
+pub async fn browser_select_region_with_app(
+    app: &AppHandle,
+    label: &str,
+    rect: &BrowserRect,
+) -> Result<BrowserRegionResult> {
+    if rect.width < MARQUEE_MIN_DIM as f64 || rect.height < MARQUEE_MIN_DIM as f64 {
+        return Err(AppError::ValidationError(format!(
+            "圈选区域过小（{:.0}×{:.0}），请重新圈选（最小 {:.0}×{:.0}）",
+            rect.width, rect.height, MARQUEE_MIN_DIM, MARQUEE_MIN_DIM
+        )));
+    }
+    let script = region_select_script(rect);
+    let raw = browser_eval_with_app(app, label, &script, Some(5_000)).await?;
+    let value = parse_eval_json(&raw)?;
+    let result: BrowserRegionResult = serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("圈选区域筛选格式错误: {e}")))?;
+    Ok(result)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_select_region(
+    app: AppHandle,
+    label: String,
+    region: BrowserRect,
+) -> Result<BrowserRegionResult> {
+    browser_select_region_with_app(&app, &label, &region).await
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_region_screenshot(
+    app: AppHandle,
+    label: String,
+    region: BrowserRect,
+) -> Result<BrowserScreenshot> {
+    browser_get_region_screenshot_with_app(&app, &label, &region)
+}
+
+#[cfg(all(feature = "tauri-app", windows))]
+fn browser_get_region_screenshot_with_app(
+    app: &AppHandle,
+    label: &str,
+    rect: &BrowserRect,
+) -> Result<BrowserScreenshot> {
+    let window = app
+        .get_window("main")
+        .ok_or_else(|| AppError::ValidationError("主窗口不存在，无法截图".to_string()))?;
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let position = window
+        .outer_position()
+        .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
+    // rect 是视口坐标(逻辑像素); WebView bounds 也是逻辑像素
+    // 屏幕坐标 = window_position + (bounds + region) × scale_factor
+    let opt_bounds = browser_bounds(label).ok().flatten();
+    let (bw, bh) = match opt_bounds {
+        Some(b) => (b.x as f64, b.y as f64),
+        None => (0.0, 0.0),
+    };
+    let x = ((position.x as f64) + (bw + rect.x) * scale_factor).round().max(0.0) as u32;
+    let y = ((position.y as f64) + (bh + rect.y) * scale_factor).round().max(0.0) as u32;
+    let width = (rect.width * scale_factor).round().max(1.0) as u32;
+    let height = (rect.height * scale_factor).round().max(1.0) as u32;
+
+    let controller_config = crate::services::computer_control::ComputerConfig::from_env();
+    let controller = crate::services::computer_control::ComputerController::new(controller_config)?;
+    let shot = controller.screenshot(Some(0), Some((x, y, width, height)), Some(1.0))?;
+    Ok(BrowserScreenshot {
+        mime_type: "image/png".to_string(),
+        data: shot.png_base64,
+        width: shot.width,
+        height: shot.height,
+        scale: 1.0,
+    })
+}
+
+#[cfg(all(feature = "tauri-app", not(windows)))]
+fn browser_get_region_screenshot_with_app(
+    _app: &AppHandle,
+    _label: &str,
+    _rect: &BrowserRect,
+) -> Result<BrowserScreenshot> {
+    Err(AppError::ValidationError(
+        "当前平台暂不支持内置浏览器区域截图；Windows 平台可用 computer_control 截图".to_string(),
+    ))
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // BrowserActionDispatcher: 统一 SimpleAI / ask-listener / MCP 三路分派
 // (ADR 0004 P0 #2 落地)
 // ──────────────────────────────────────────────────────────────────────────
@@ -2771,6 +3173,23 @@ impl BrowserActionDispatcher {
             "historyState" | "history_state" => {
                 let state = browser_get_history_state_with_app(&self.app, &label).await?;
                 serde_json::to_value(state).map_err(Into::into)
+            }
+            "marquee" => {
+                let enabled = args
+                    .get("enabled")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let result = browser_set_marquee_with_app(&self.app, &label, enabled).await?;
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "select_region" | "selectRegion" => {
+                let rect_val = args
+                    .get("region")
+                    .ok_or_else(|| AppError::ValidationError("select_region 缺少 region".to_string()))?;
+                let rect: BrowserRect = serde_json::from_value(rect_val.clone())
+                    .map_err(|e| AppError::ValidationError(format!("region 格式错误: {e}")))?;
+                let result = browser_select_region_with_app(&self.app, &label, &rect).await?;
+                serde_json::to_value(result).map_err(Into::into)
             }
             other => Err(AppError::ValidationError(format!(
                 "未知 browser action: {other}"

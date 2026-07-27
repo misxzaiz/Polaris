@@ -728,6 +728,10 @@ pub fn run() {
             commands::browser::browser_history,
             commands::browser::browser_get_page_context,
             commands::browser::browser_get_diagnostics,
+            commands::browser::browser_set_marquee,
+            commands::browser::browser_get_marquee_result,
+            commands::browser::browser_select_region,
+            commands::browser::browser_get_region_screenshot,
             commands::browser::browser_toggle_devtools,
             commands::browser::browser_get_history_state,
             // 上下文管理相关

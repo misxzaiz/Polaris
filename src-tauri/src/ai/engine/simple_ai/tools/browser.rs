@@ -26,14 +26,14 @@ impl Tool for BrowserTool {
             "type": "function",
             "function": {
                 "name": "browser",
-                "description": "Operate Polaris built-in browser tabs. Use acquire first when the agent needs a tab: it binds this agent to an existing label or creates a dedicated browser tab. Later actions without label use the current agent binding before falling back to the most recent tab. Supports navigation, page context, diagnostics, inspect, click, fill, reload, back, forward, and historyState.",
+                "description": "Operate Polaris built-in browser tabs. Use acquire first when the agent needs a tab: it binds this agent to an existing label or creates a dedicated browser tab. Later actions without label use the current agent binding before falling back to the most recent tab. Supports navigation, page context, diagnostics, inspect, click, fill, reload, back, forward, historyState, marquee (user region selection), and selectRegion.",
                 "parameters": {
                     "type": "object",
                     "required": ["action"],
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["list", "acquire", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward", "historyState"]
+                            "enum": ["list", "acquire", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward", "historyState", "marquee", "selectRegion"]
                         },
                         "mode": {
                             "type": "string",
@@ -75,6 +75,20 @@ impl Tool for BrowserTool {
                         "includeScreenshot": {
                             "type": "boolean",
                             "description": "diagnostics 是否尝试返回当前内置浏览器区域截图。默认 false；需要视觉判断时再开启。"
+                        },
+                        "enabled": {
+                            "type": "boolean",
+                            "description": "marquee 模式：用户圈选模式开关。true 注入圈选 overlay，false 关闭。"
+                        },
+                        "region": {
+                            "type": "object",
+                            "description": "selectRegion 的圈选区域：{ x, y, width, height }，视口坐标。用户完成圈选后从 marquee 结果获取。",
+                            "properties": {
+                                "x": { "type": "number", "description": "视口坐标左上角 X" },
+                                "y": { "type": "number", "description": "视口坐标左上角 Y" },
+                                "width": { "type": "number", "description": "区域宽度" },
+                                "height": { "type": "number", "description": "区域高度" }
+                            }
                         }
                     },
                     "additionalProperties": false
