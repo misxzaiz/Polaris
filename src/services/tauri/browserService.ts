@@ -6,6 +6,7 @@ export interface BrowserSessionInfo {
   url?: string | null
   title?: string | null
   updatedAt: number
+  boundAgentKey?: string | null
 }
 
 export interface BrowserAcquireRequest {

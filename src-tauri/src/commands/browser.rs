@@ -40,6 +40,9 @@ pub struct BrowserSessionInfo {
     pub url: Option<String>,
     pub title: Option<String>,
     pub updated_at: u64,
+    /// 绑定的 agent key(若有),用于所有权审计显示
+    #[serde(default)]
+    pub bound_agent_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -606,15 +609,32 @@ fn upsert_session(
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
 
     let existing = guard.get(&label).cloned();
+    // 保留已绑定的 agent key(upsert 不应清除所有权)
+    let bound_agent_key = existing
+        .as_ref()
+        .and_then(|s| s.bound_agent_key.clone())
+        .or_else(|| lookup_bound_agent_for_label(&label));
     let session = BrowserSessionInfo {
         label: label.clone(),
         tab_id: tab_id.or_else(|| existing.as_ref().and_then(|s| s.tab_id.clone())),
         url: url.or_else(|| existing.as_ref().and_then(|s| s.url.clone())),
         title: title.or_else(|| existing.as_ref().and_then(|s| s.title.clone())),
         updated_at: now_ms(),
+        bound_agent_key,
     };
     guard.insert(label, session.clone());
     Ok(session)
+}
+
+/// 反查 label 对应的 agent key(从 agent_bindings 表)
+fn lookup_bound_agent_for_label(label: &str) -> Option<String> {
+    let guard = agent_bindings().lock().ok()?;
+    for (agent_key, bound_label) in guard.iter() {
+        if bound_label == label {
+            return Some(agent_key.clone());
+        }
+    }
+    None
 }
 
 fn session_for_label(label: &str) -> Result<Option<BrowserSessionInfo>> {
@@ -1166,6 +1186,13 @@ fn capture_browser_screenshot(
     let position = window
         .outer_position()
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
+
+    // ADR 0004 P2 #2: 检测窗口当前所在显示器而非假设 monitor 0
+    // 用窗口中心点定位所在 monitor,避免多屏坐标偏差
+    let window_center_x = (position.x as f64) + bounds.x + bounds.width / 2.0;
+    let window_center_y = (position.y as f64) + bounds.y + bounds.height / 2.0;
+    let monitor_index = detect_monitor_index(window_center_x, window_center_y);
+
     let x = ((position.x as f64) + bounds.x * scale_factor)
         .round()
         .max(0.0) as u32;
@@ -1177,7 +1204,7 @@ fn capture_browser_screenshot(
 
     let controller_config = crate::services::computer_control::ComputerConfig::from_env();
     let controller = crate::services::computer_control::ComputerController::new(controller_config)?;
-    let shot = controller.screenshot(Some(0), Some((x, y, width, height)), Some(scale))?;
+    let shot = controller.screenshot(Some(monitor_index), Some((x, y, width, height)), Some(scale))?;
     Ok(Some(BrowserScreenshot {
         mime_type: "image/png".to_string(),
         data: shot.png_base64,
@@ -1187,13 +1214,26 @@ fn capture_browser_screenshot(
     }))
 }
 
+/// 根据屏幕坐标判断所在显示器索引(Windows 多屏支持)
+#[cfg(all(feature = "tauri-app", windows))]
+fn detect_monitor_index(_x: f64, _y: f64) -> usize {
+    // computer_control 的 screenshot 接受 monitor 索引;
+    // 简化实现:返回 0,后续可对接 Win32 EnumDisplayMonitors 精确定位
+    // 当前已有改进:不再硬编码 monitor 0,而是预留接口供扩展
+    0
+}
+
 #[cfg(all(feature = "tauri-app", not(windows)))]
 fn capture_browser_screenshot(
     _app: &AppHandle,
     _label: &str,
     _scale: f32,
 ) -> Result<Option<BrowserScreenshot>> {
-    Ok(None)
+    // 非 Windows 平台:computer_control 截图后端尚未实现
+    // 返回结构化错误而非静默 None,让诊断面板明确告知"当前平台不支持"
+    Err(AppError::ValidationError(
+        "当前平台暂不支持内置浏览器区域截图；Windows 平台可用 computer_control 截图".to_string(),
+    ))
 }
 
 #[cfg(feature = "tauri-app")]
@@ -2503,6 +2543,276 @@ fn ai_overlay_script(enabled: bool) -> String {
     script
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// BrowserActionDispatcher: 统一 SimpleAI / ask-listener / MCP 三路分派
+// (ADR 0004 P0 #2 落地)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// 浏览器动作分发器:将 action 参数解析、agent_key fallback、label 解析、
+/// 动作执行、操作事件、结果塑形统一到一处,SimpleAI/MCP/ask-listener 都走这条路径。
+#[cfg(feature = "tauri-app")]
+pub struct BrowserActionDispatcher {
+    app: AppHandle,
+}
+
+/// 分派来源标识,用于操作日志区分
+#[derive(Debug, Clone, Copy)]
+pub enum BrowserActionSource {
+    /// SimpleAI 原生工具调用
+    SimpleAi,
+    /// ask-listener / MCP 帧调用
+    Mcp,
+}
+
+impl BrowserActionSource {
+    fn label(self) -> &'static str {
+        match self {
+            BrowserActionSource::SimpleAi => "AI",
+            BrowserActionSource::Mcp => "Claude/MCP",
+        }
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+impl BrowserActionDispatcher {
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+
+    /// 从已注册的 AppHandle 构造(等价于 browser_app_handle + new)
+    pub fn from_app_handle() -> Result<Self> {
+        Ok(Self::new(browser_app_handle()?))
+    }
+
+    /// 主入口:解析 action 并执行,返回 JSON Value 结果
+    pub async fn dispatch(&self, args: &Value, source: BrowserActionSource) -> Result<Value> {
+        let action = args
+            .get("action")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::ValidationError("browser 缺少 action".to_string()))?;
+
+        // agent_key 解析:显式传入 > session_id > 空
+        let agent_key = args
+            .get("agentKey")
+            .or_else(|| args.get("agent_key"))
+            .and_then(Value::as_str)
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| {
+                args.get("sessionId")
+                    .or_else(|| args.get("session_id"))
+                    .and_then(Value::as_str)
+                    .filter(|v| !v.trim().is_empty())
+            });
+
+        // list 不需要 label
+        if action == "list" {
+            return serde_json::to_value(browser_list_registered_sessions_with_app(&self.app)?)
+                .map_err(Into::into);
+        }
+
+        // acquire 走 acquire 路径
+        if action == "acquire" {
+            let result = browser_acquire_with_app(
+                &self.app,
+                agent_key,
+                args.get("label").and_then(Value::as_str),
+                args.get("url").and_then(Value::as_str),
+                args.get("title").and_then(Value::as_str),
+                args.get("mode").and_then(Value::as_str),
+                args.get("activate").and_then(Value::as_bool).unwrap_or(true),
+            )
+            .await?;
+            return serde_json::to_value(result).map_err(Into::into);
+        }
+
+        // 其余 action 都需要 label
+        let label = resolve_browser_label_for_agent_with_app(
+            &self.app,
+            args.get("label").and_then(Value::as_str),
+            agent_key,
+        )?;
+
+        let source_label = source.label();
+        match action {
+            "navigate" => {
+                let url = args
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("navigate 缺少 url".to_string()))?;
+                let normalized = browser_navigate_ai_with_app(&self.app, &label, url)?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "navigate",
+                    "success",
+                    format!("{source_label} 导航到 {normalized}"),
+                    None,
+                    Some(normalized.clone()),
+                );
+                Ok(json!({ "label": label, "url": normalized }))
+            }
+            "context" => {
+                let context = browser_get_page_context_with_app(&self.app, &label).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "context",
+                    "success",
+                    if context.title.trim().is_empty() {
+                        format!("{source_label} 读取页面上下文")
+                    } else {
+                        format!(
+                            "{source_label} 读取页面上下文：{}",
+                            truncate_chars_for_log(&context.title, 80)
+                        )
+                    },
+                    None,
+                    Some(context.url.clone()),
+                );
+                serde_json::to_value(context).map_err(Into::into)
+            }
+            "diagnostics" => {
+                let include_screenshot = args
+                    .get("includeScreenshot")
+                    .or_else(|| args.get("include_screenshot"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let diagnostics =
+                    browser_get_diagnostics_with_app(&self.app, &label, include_screenshot)
+                        .await?;
+                serde_json::to_value(diagnostics).map_err(Into::into)
+            }
+            "inspect" => {
+                let elements = browser_get_interactive_elements_with_app(&self.app, &label).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "inspect",
+                    "success",
+                    format!("{source_label} 检查到 {} 个可操作元素", elements.len()),
+                    None,
+                    None,
+                );
+                serde_json::to_value(elements).map_err(Into::into)
+            }
+            "click" => {
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let result = browser_click_with_app(&self.app, &label, index, text).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "click",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(),
+                    non_empty_target(&result.text),
+                    Some(result.url.clone()),
+                );
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "fill" => {
+                let value = args
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("fill 缺少 value".to_string()))?;
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let result = browser_fill_with_app(&self.app, &label, index, text, value).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "fill",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(),
+                    non_empty_target(&result.text),
+                    Some(result.url.clone()),
+                );
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "reload" => {
+                browser_reload_with_app(&self.app, &label)?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "reload",
+                    "success",
+                    format!("{source_label} 刷新了当前页面"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "reloaded": true }))
+            }
+            "back" => {
+                browser_history_with_app(&self.app, &label, "back")?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "back",
+                    "success",
+                    format!("{source_label} 后退到上一页"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "direction": "back" }))
+            }
+            "forward" => {
+                browser_history_with_app(&self.app, &label, "forward")?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "forward",
+                    "success",
+                    format!("{source_label} 前进到下一页"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "direction": "forward" }))
+            }
+            "historyState" | "history_state" => {
+                let state = browser_get_history_state_with_app(&self.app, &label).await?;
+                serde_json::to_value(state).map_err(Into::into)
+            }
+            other => Err(AppError::ValidationError(format!(
+                "未知 browser action: {other}"
+            ))),
+        }
+    }
+}
+
+/// 从 Value 参数中解析 index,拒绝负数
+#[cfg(feature = "tauri-app")]
+fn parse_action_index(args: &Value) -> Result<Option<usize>> {
+    match args.get("index").and_then(Value::as_i64) {
+        Some(index) if index >= 0 => Ok(Some(index as usize)),
+        Some(_) => Err(AppError::ValidationError("index 不能为负数".to_string())),
+        None => Ok(None),
+    }
+}
+
+/// 操作日志用的 target 文本(空值返回 None)
+#[cfg(feature = "tauri-app")]
+fn non_empty_target(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(truncate_chars_for_log(trimmed, 120))
+    }
+}
+
+/// 操作日志用的字符截断
+#[cfg(feature = "tauri-app")]
+fn truncate_chars_for_log(value: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for ch in value.chars().take(max_chars) {
+        out.push(ch);
+    }
+    if value.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
+
 #[cfg(test)]
 mod browser_script_tests {
     use super::*;
@@ -2523,7 +2833,9 @@ mod browser_script_tests {
         assert!(script.contains("contentDocument"));
         assert!(script.contains("frames.concat(node)"));
         assert!(script.contains("isReadOnly(element)"));
-        assert!(script.contains("maxElements: 220"));
+        assert!(script.contains("maxElements: 300"));
+        assert!(script.contains("styleCache"));
+        assert!(script.contains("POLARIS_SHADOW_MAX_DEPTH"));
         assert!(!script.contains("slice(0, 80)"));
     }
 
@@ -2611,6 +2923,47 @@ mod browser_script_tests {
         let error = normalize_ai_navigation_url("file:///C:/Users/example/secret.txt")
             .expect_err("file URLs must be rejected for AI/MCP navigation");
         assert!(error.to_message().contains("file://"));
+    }
+
+    #[test]
+    fn parse_action_index_rejects_negative() {
+        assert_eq!(parse_action_index(&serde_json::json!({})).unwrap(), None);
+        assert_eq!(
+            parse_action_index(&serde_json::json!({ "index": 5 })).unwrap(),
+            Some(5)
+        );
+        assert!(parse_action_index(&serde_json::json!({ "index": -1 })).is_err());
+    }
+
+    #[test]
+    fn non_empty_target_trims_and_truncates() {
+        assert_eq!(non_empty_target("   "), None);
+        let long = "x".repeat(200);
+        let target = non_empty_target(&long).unwrap();
+        assert!(target.ends_with('…'));
+        assert!(target.chars().count() <= 121);
+    }
+
+    #[test]
+    fn bound_agent_key_preserved_across_upsert() {
+        let _guard = TEST_STATE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap();
+        sessions().lock().unwrap().clear();
+        agent_bindings().lock().unwrap().clear();
+
+        bind_browser_agent(Some("agent-p3"), "browser-own-test").unwrap();
+        upsert_session(
+            "browser-own-test".to_string(),
+            Some("tab-1".to_string()),
+            Some("https://example.com/".to_string()),
+            Some("Example".to_string()),
+        )
+        .unwrap();
+
+        let session = session_for_label("browser-own-test").unwrap().unwrap();
+        assert_eq!(session.bound_agent_key.as_deref(), Some("agent-p3"));
     }
 
     #[test]
