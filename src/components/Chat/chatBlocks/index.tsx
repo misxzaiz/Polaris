@@ -18,7 +18,6 @@ import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
 import { DispatchTaskCard } from '../DispatchTaskCard';
 import { AssaultResultCard, isAssaultWorkflowOutput } from '../AssaultResultCard';
-import { SpecBlockRenderer, isSpecProtocolOutput } from '../SpecBlockRenderer';
 
 /** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
 const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';
@@ -39,13 +38,7 @@ export function renderContentBlock(
 
   switch (block.type) {
     case 'text':
-      // spec 协议输出：包裹为步骤卡片（/spec 命令产物）
-      if (isSpecProtocolOutput(block.content)) {
-        return wrapWithErrorBoundary(
-          <SpecBlockRenderer block={block} isStreaming={isStreaming} />,
-          `spec-${block.content.slice(0, 20)}`
-        );
-      }
+      // spec 协议输出（已移除）
       return wrapWithErrorBoundary(
         <TextBlockRenderer block={block} isStreaming={isStreaming} />,
         `text-${block.content.slice(0, 20)}`

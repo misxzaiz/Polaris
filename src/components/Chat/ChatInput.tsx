@@ -54,7 +54,6 @@ import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
   parseAssaultSlashCommand,
-  parseSpecSlashCommand,
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
@@ -1188,18 +1187,7 @@ export function ChatInput({
       return
     }
 
-    // Polaris 本地命令：/spec <S00X> <补充说明> → 剥离 / 前缀后作为普通文本发送
-    const specText = parseSpecSlashCommand(trimmed)
-    if (specText) {
-      cancelPersistDraft()
-      setLocalText('')
-      setLocalAttachments([])
-      updateInputDraft({ text: '', attachments: [] })
-      setHistoryIndex(-1)
-      resetPromptOptimize()
-      onSend(specText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
-      return
-    }
+    // /spec 规格驱动开发命令（已移除）
 
     // Claude 引擎：拦截 /clear（及别名）—— CLI 侧会新开对话，
     // 导致 CLI 上下文与 Polaris 界面历史脱钩。清空上下文请用 Polaris 新建会话。
