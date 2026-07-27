@@ -245,6 +245,7 @@ export function BrowserPanel({
   const [contextLoading, setContextLoading] = useState(false)
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
+  const [boundAgentKey, setBoundAgentKey] = useState<string | null>(null)
 
   const { sendMessage } = useActiveSessionActions()
   const toast = useToastStore()
@@ -354,6 +355,8 @@ export function BrowserPanel({
             setPageTitle(session.title)
             updateBrowserTab(tabId, { title: session.title })
           }
+          // 同步 agent 所有权标识(ADR 0004 P2 #3)
+          setBoundAgentKey(session.boundAgentKey ?? null)
         })
         unlistenOperation = await listen<BrowserOperationEvent>('browser://operation', (event) => {
           const operation = event.payload
@@ -1066,6 +1069,15 @@ export function BrowserPanel({
             <span className="hidden shrink-0 items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 text-success md:inline-flex">
               <Terminal size={11} />
               {t('browser.localDev', { defaultValue: '本地开发页' })}
+            </span>
+          )}
+          {boundAgentKey && (
+            <span
+              className="hidden shrink-0 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary lg:inline-flex"
+              title={t('browser.agentOwnedHint', { defaultValue: '此标签由 AI 绑定: {{key}}', key: boundAgentKey })}
+            >
+              <Sparkles size={11} />
+              <span className="max-w-[80px] truncate">{boundAgentKey}</span>
             </span>
           )}
         </div>

@@ -6,6 +6,7 @@ export interface BrowserSessionInfo {
   url?: string | null
   title?: string | null
   updatedAt: number
+  boundAgentKey?: string | null
 }
 
 export interface BrowserAcquireRequest {
@@ -32,7 +33,18 @@ export interface BrowserPageContext {
   metaDescription: string
   text: string
   headings: Array<{ level: number; text: string }>
-  links: Array<{ text: string; href: string }>
+  links: Array<{ text: string; href: string; rel?: string | null }>
+  // P0: 结构化内容
+  tables?: Array<{ rows: string[][]; caption?: string | null }>
+  codeBlocks?: Array<{ language: string; code: string }>
+  images?: Array<{ src: string; alt?: string; width?: number | null; height?: number | null }>
+  structuredData?: unknown[]
+  // P1: 扩展 meta & 列表/表单
+  lists?: Array<{ ordered: boolean; items: string[] }>
+  forms?: Array<{ action: string; method: string; fields: string[] }>
+  canonical?: string | null
+  ogTitle?: string | null
+  ogImage?: string | null
 }
 
 export interface BrowserOperationEvent {
@@ -68,6 +80,21 @@ export interface BrowserInteractiveElement {
   href: string
   disabled: boolean
   fillable: boolean
+  // P0: 坐标、状态、选项、稳定定位
+  rect?: BrowserRect | null
+  checked?: boolean | null
+  selected?: boolean | null
+  options?: Array<{ value: string; text: string; selected?: boolean; disabled?: boolean }> | null
+  selector?: string | null
+  // P1: 工具提示、展开/按下态、只读、表单约束
+  tooltip?: string | null
+  expanded?: boolean | null
+  pressed?: boolean | null
+  readOnly?: boolean | null
+  required?: boolean | null
+  min?: number | null
+  max?: number | null
+  step?: number | null
 }
 
 export interface BrowserConsoleMessage {
@@ -84,6 +111,10 @@ export interface BrowserVisualElement {
   rect: BrowserRect
   fillable: boolean
   disabled: boolean
+  // P1: 状态信息
+  checked?: boolean | null
+  selected?: boolean | null
+  selector?: string | null
 }
 
 export interface BrowserScreenshot {
@@ -237,4 +268,13 @@ export async function browserGetDiagnostics(
 
 export async function browserToggleDevtools(label: string): Promise<void> {
   return invoke<void>('browser_toggle_devtools', { label })
+}
+
+export interface BrowserHistoryState {
+  canGoBack: boolean
+  canGoForward: boolean
+}
+
+export async function browserGetHistoryState(label: string): Promise<BrowserHistoryState> {
+  return invoke<BrowserHistoryState>('browser_get_history_state', { label })
 }

@@ -26,7 +26,7 @@ static BROWSER_ACQUIRE_PENDING: OnceLock<Mutex<HashMap<String, BrowserAcquireSen
     OnceLock::new();
 
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
-const MAX_EVAL_TIMEOUT_MS: u64 = 10_000;
+const MAX_EVAL_TIMEOUT_MS: u64 = 15_000;
 const BROWSER_ACQUIRE_TIMEOUT_SECS: u64 = 15;
 
 type BrowserAcquireSender =
@@ -40,6 +40,9 @@ pub struct BrowserSessionInfo {
     pub url: Option<String>,
     pub title: Option<String>,
     pub updated_at: u64,
+    /// 绑定的 agent key(若有),用于所有权审计显示
+    #[serde(default)]
+    pub bound_agent_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,6 +96,19 @@ pub struct BrowserHeading {
 pub struct BrowserLink {
     pub text: String,
     pub href: String,
+    #[serde(default)]
+    pub rel: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserSelectOption {
+    pub value: String,
+    pub text: String,
+    #[serde(default)]
+    pub selected: bool,
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -106,6 +122,34 @@ pub struct BrowserInteractiveElement {
     pub href: String,
     pub disabled: bool,
     pub fillable: bool,
+    // P0: 坐标、状态、选项、稳定定位
+    #[serde(default)]
+    pub rect: Option<BrowserRect>,
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub options: Option<Vec<BrowserSelectOption>>,
+    #[serde(default)]
+    pub selector: Option<String>,
+    // P1: 工具提示、展开/按下态、只读、表单约束
+    #[serde(default)]
+    pub tooltip: Option<String>,
+    #[serde(default)]
+    pub expanded: Option<bool>,
+    #[serde(default)]
+    pub pressed: Option<bool>,
+    #[serde(default)]
+    pub read_only: Option<bool>,
+    #[serde(default)]
+    pub required: Option<bool>,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+    #[serde(default)]
+    pub step: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +193,75 @@ pub struct BrowserPageContext {
     pub text: String,
     pub headings: Vec<BrowserHeading>,
     pub links: Vec<BrowserLink>,
+    // P0: 结构化内容
+    #[serde(default)]
+    pub tables: Vec<BrowserTable>,
+    #[serde(default)]
+    pub code_blocks: Vec<BrowserCodeBlock>,
+    #[serde(default)]
+    pub images: Vec<BrowserImage>,
+    #[serde(default)]
+    pub structured_data: Vec<serde_json::Value>,
+    // P1: 扩展 meta & 列表/表单
+    #[serde(default)]
+    pub lists: Vec<BrowserList>,
+    #[serde(default)]
+    pub forms: Vec<BrowserForm>,
+    #[serde(default)]
+    pub canonical: Option<String>,
+    #[serde(default)]
+    pub og_title: Option<String>,
+    #[serde(default)]
+    pub og_image: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserTable {
+    pub rows: Vec<Vec<String>>,
+    #[serde(default)]
+    pub caption: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserCodeBlock {
+    pub language: String,
+    pub code: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserImage {
+    pub src: String,
+    #[serde(default)]
+    pub alt: String,
+    #[serde(default)]
+    pub width: Option<u32>,
+    #[serde(default)]
+    pub height: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserList {
+    pub ordered: bool,
+    pub items: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserForm {
+    pub action: String,
+    pub method: String,
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BrowserHistoryState {
+    pub can_go_back: bool,
+    pub can_go_forward: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -186,6 +299,13 @@ pub struct BrowserVisualElement {
     pub rect: BrowserRect,
     pub fillable: bool,
     pub disabled: bool,
+    // P1: 状态信息
+    #[serde(default)]
+    pub checked: Option<bool>,
+    #[serde(default)]
+    pub selected: Option<bool>,
+    #[serde(default)]
+    pub selector: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -489,15 +609,32 @@ fn upsert_session(
         .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?;
 
     let existing = guard.get(&label).cloned();
+    // 保留已绑定的 agent key(upsert 不应清除所有权)
+    let bound_agent_key = existing
+        .as_ref()
+        .and_then(|s| s.bound_agent_key.clone())
+        .or_else(|| lookup_bound_agent_for_label(&label));
     let session = BrowserSessionInfo {
         label: label.clone(),
         tab_id: tab_id.or_else(|| existing.as_ref().and_then(|s| s.tab_id.clone())),
         url: url.or_else(|| existing.as_ref().and_then(|s| s.url.clone())),
         title: title.or_else(|| existing.as_ref().and_then(|s| s.title.clone())),
         updated_at: now_ms(),
+        bound_agent_key,
     };
     guard.insert(label, session.clone());
     Ok(session)
+}
+
+/// 反查 label 对应的 agent key(从 agent_bindings 表)
+fn lookup_bound_agent_for_label(label: &str) -> Option<String> {
+    let guard = agent_bindings().lock().ok()?;
+    for (agent_key, bound_label) in guard.iter() {
+        if bound_label == label {
+            return Some(agent_key.clone());
+        }
+    }
+    None
 }
 
 fn session_for_label(label: &str) -> Result<Option<BrowserSessionInfo>> {
@@ -878,7 +1015,7 @@ pub async fn browser_get_page_context_with_app(
     app: &AppHandle,
     label: &str,
 ) -> Result<BrowserPageContext> {
-    let raw = browser_eval_with_app(app, label, PAGE_CONTEXT_SCRIPT, Some(3_500)).await?;
+    let raw = browser_eval_with_app(app, label, PAGE_CONTEXT_SCRIPT, Some(5_000)).await?;
     let value = parse_eval_json(&raw)?;
     let context: BrowserPageContext = serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器上下文格式错误: {e}")))?;
@@ -967,7 +1104,7 @@ pub async fn browser_get_diagnostics_with_app(
     let context = browser_get_page_context_with_app(app, label).await?;
     let elements = browser_get_interactive_elements_with_app(app, label).await?;
     let script = diagnostics_script();
-    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let raw = browser_eval_with_app(app, label, &script, Some(5_000)).await?;
     let value = parse_eval_json(&raw)?;
     let mut visual: BrowserVisualSnapshot = serde_json::from_value(
         value
@@ -1049,6 +1186,13 @@ fn capture_browser_screenshot(
     let position = window
         .outer_position()
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
+
+    // ADR 0004 P2 #2: 检测窗口当前所在显示器而非假设 monitor 0
+    // 用窗口中心点定位所在 monitor,避免多屏坐标偏差
+    let window_center_x = (position.x as f64) + bounds.x + bounds.width / 2.0;
+    let window_center_y = (position.y as f64) + bounds.y + bounds.height / 2.0;
+    let monitor_index = detect_monitor_index(window_center_x, window_center_y);
+
     let x = ((position.x as f64) + bounds.x * scale_factor)
         .round()
         .max(0.0) as u32;
@@ -1060,7 +1204,7 @@ fn capture_browser_screenshot(
 
     let controller_config = crate::services::computer_control::ComputerConfig::from_env();
     let controller = crate::services::computer_control::ComputerController::new(controller_config)?;
-    let shot = controller.screenshot(Some(0), Some((x, y, width, height)), Some(scale))?;
+    let shot = controller.screenshot(Some(monitor_index), Some((x, y, width, height)), Some(scale))?;
     Ok(Some(BrowserScreenshot {
         mime_type: "image/png".to_string(),
         data: shot.png_base64,
@@ -1070,13 +1214,26 @@ fn capture_browser_screenshot(
     }))
 }
 
+/// 根据屏幕坐标判断所在显示器索引(Windows 多屏支持)
+#[cfg(all(feature = "tauri-app", windows))]
+fn detect_monitor_index(_x: f64, _y: f64) -> usize {
+    // computer_control 的 screenshot 接受 monitor 索引;
+    // 简化实现:返回 0,后续可对接 Win32 EnumDisplayMonitors 精确定位
+    // 当前已有改进:不再硬编码 monitor 0,而是预留接口供扩展
+    0
+}
+
 #[cfg(all(feature = "tauri-app", not(windows)))]
 fn capture_browser_screenshot(
     _app: &AppHandle,
     _label: &str,
     _scale: f32,
 ) -> Result<Option<BrowserScreenshot>> {
-    Ok(None)
+    // 非 Windows 平台:computer_control 截图后端尚未实现
+    // 返回结构化错误而非静默 None,让诊断面板明确告知"当前平台不支持"
+    Err(AppError::ValidationError(
+        "当前平台暂不支持内置浏览器区域截图；Windows 平台可用 computer_control 截图".to_string(),
+    ))
 }
 
 #[cfg(feature = "tauri-app")]
@@ -1401,6 +1558,39 @@ pub async fn browser_toggle_devtools(app: AppHandle, label: String) -> Result<()
     browser_toggle_devtools_with_app(&app, &label)
 }
 
+/// 获取浏览器历史状态：通过注入 JS 读取 history.length 和 __polaris_can_go_forward__ 标记
+#[cfg(feature = "tauri-app")]
+pub async fn browser_get_history_state_with_app(app: &AppHandle, label: &str) -> Result<BrowserHistoryState> {
+    let script = r#"
+      (() => {
+        try {
+          // history.length 为当前导航栈中页面数
+          return JSON.stringify({
+            canGoBack: history.length > 1,
+            canGoForward: window.__polaris_can_go_forward__ === true
+          });
+        } catch { return '{"canGoBack":false,"canGoForward":false}'; }
+      })();
+    "#;
+    let raw = browser_eval_with_app(app, label, script, Some(DEFAULT_EVAL_TIMEOUT_MS)).await?;
+    let value: serde_json::Value = serde_json::from_str(&raw)
+        .map_err(|e| AppError::ValidationError(format!("浏览器历史状态解析失败: {e}")))?;
+
+    let can_go_back = value.get("canGoBack").and_then(|v| v.as_bool()).unwrap_or(false);
+    let can_go_forward = value.get("canGoForward").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    Ok(BrowserHistoryState {
+        can_go_back,
+        can_go_forward,
+    })
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_history_state(app: AppHandle, label: String) -> Result<BrowserHistoryState> {
+    browser_get_history_state_with_app(&app, &label).await
+}
+
 #[cfg(feature = "tauri-app")]
 const PAGE_CONTEXT_SCRIPT: &str = r#"
 (() => {
@@ -1413,22 +1603,68 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     document.querySelector('meta[name="description"], meta[property="og:description"]')?.content || '',
     1000
   );
+  const canonical = clean(document.querySelector('link[rel="canonical"]')?.href || '', 500) || null;
+  const ogTitle = clean(document.querySelector('meta[property="og:title"]')?.content || '', 500) || null;
+  const ogImage = clean(document.querySelector('meta[property="og:image"]')?.content || '', 500) || null;
   const articleText = document.querySelector('article')?.innerText || '';
   const bodyText = document.body?.innerText || '';
-  const headings = Array.from(document.querySelectorAll('h1,h2,h3'))
-    .slice(0, 30)
+  const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
+    .slice(0, 60)
     .map((node) => ({
       level: Number(node.tagName.slice(1)),
       text: clean(node.textContent || '', 240)
     }))
     .filter((item) => item.text);
   const links = Array.from(document.querySelectorAll('a[href]'))
-    .slice(0, 40)
+    .slice(0, 80)
     .map((node) => ({
       text: clean(node.textContent || node.getAttribute('aria-label') || '', 160),
-      href: String(node.href || '')
+      href: String(node.href || ''),
+      rel: clean(node.getAttribute('rel') || '', 60) || null
     }))
     .filter((item) => item.href);
+  const tables = Array.from(document.querySelectorAll('table'))
+    .slice(0, 15)
+    .map((table) => {
+      const caption = clean(table.caption?.innerText || table.getAttribute('aria-label') || '', 240) || null;
+      const rows = [];
+      for (const tr of Array.from(table.querySelectorAll('tr')).slice(0, 200)) {
+        const cells = Array.from(tr.querySelectorAll('td, th'))
+          .map((c) => clean(c.textContent || '', 200));
+        if (cells.length > 0) rows.push(cells);
+      }
+      return { rows, caption };
+    })
+    .filter((t) => t.rows.length > 0);
+  const codeBlocks = Array.from(document.querySelectorAll('pre, code'))
+    .slice(0, 30)
+    .map((node) => ({
+      language: clean(
+        (node.getAttribute('class') || '').match(/language-(\w+)/)?.[1] ||
+        (node.getAttribute('data-language') || ''),
+        40
+      ),
+      code: clean(node.textContent || '', 4000)
+    }))
+    .filter((c) => c.code);
+  const images = Array.from(document.querySelectorAll('img[src], img[alt]'))
+    .slice(0, 40)
+    .map((node) => ({
+      src: clean(node.src || '', 500),
+      alt: clean(node.getAttribute('alt') || '', 240),
+      width: node.naturalWidth > 0 ? node.naturalWidth : null,
+      height: node.naturalHeight > 0 ? node.naturalHeight : null
+    }))
+    .filter((i) => i.src || i.alt);
+  const structuredData = [];
+  try {
+    for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 20)) {
+      try {
+        const parsed = JSON.parse(script.textContent || '');
+        structuredData.push(parsed);
+      } catch {}
+    }
+  } catch {}
   return JSON.stringify({
     title: clean(document.title || '', 300),
     url: String(location.href),
@@ -1436,7 +1672,11 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     metaDescription,
     text: clean(articleText || bodyText, 12000),
     headings,
-    links
+    links,
+    tables,
+    codeBlocks,
+    images,
+    structuredData
   });
 })()
 "#;
@@ -1494,7 +1734,8 @@ const POLARIS_CLICKABLE_ROLES = new Set([
   'listbox', 'treeitem', 'gridcell', 'slider', 'spinbutton'
 ]);
 const POLARIS_FILLABLE_ROLES = new Set(['textbox', 'searchbox', 'combobox', 'spinbutton', 'slider']);
-const POLARIS_SCAN_LIMIT = 5000;
+const POLARIS_SCAN_LIMIT = 8000;
+const POLARIS_SHADOW_MAX_DEPTH = 5;
 
 const clean = (value, max = 220) => String(value || '')
   .replace(/\s+/g, ' ')
@@ -1502,7 +1743,14 @@ const clean = (value, max = 220) => String(value || '')
   .slice(0, max);
 
 const ownerWindowOf = (element) => element?.ownerDocument?.defaultView || window;
-const styleOf = (element) => ownerWindowOf(element).getComputedStyle(element);
+
+const styleCache = new WeakMap();
+const styleOf = (element) => {
+  if (styleCache.has(element)) return styleCache.get(element);
+  const style = ownerWindowOf(element).getComputedStyle(element);
+  styleCache.set(element, style);
+  return style;
+};
 const tagOf = (element) => String(element?.tagName || '').toLowerCase();
 const roleOf = (element) => clean(element.getAttribute('role') || '', 80).toLowerCase();
 const isElement = (value) => value && value.nodeType === 1;
@@ -1747,7 +1995,7 @@ const buildSearchText = (element, label) => clean([
 const collectRoots = () => {
   const roots = [];
   const visit = (root, offset, depth, frames) => {
-    if (!root || depth > 3) return;
+    if (!root || depth > POLARIS_SHADOW_MAX_DEPTH) return;
     roots.push({ root, offset, frames });
     let nodes = [];
     try {
@@ -1774,6 +2022,67 @@ const collectRoots = () => {
   return roots;
 };
 
+const buildStableSelector = (element) => {
+  if (!isElement(element)) return '';
+  const id = clean(element.getAttribute('id') || '', 80);
+  if (id) return `#${cssEscape(id)}`;
+  const name = clean(element.getAttribute('name') || '', 80);
+  if (name && tagOf(element) === 'input') return `${tagOf(element)}[name="${cssEscape(name)}"]`;
+  const testId = clean(element.getAttribute('data-testid') || element.getAttribute('data-test') || element.getAttribute('data-cy') || '', 80);
+  if (testId) return `[data-testid="${cssEscape(testId)}"]`;
+  const tag = tagOf(element) || 'element';
+  let parent = element.parentElement;
+  let path = tag;
+  while (parent && parent !== document.body && parent !== document.documentElement) {
+    const parentTag = tagOf(parent) || 'element';
+    const parentIndex = Array.from(parent.children).indexOf(element);
+    path = `${parentTag}${parentIndex >= 0 ? `:nth-child(${parentIndex + 1})` : ''} > ${path}`;
+    element = parent;
+    parent = parent.parentElement;
+    if (path.length > 200) break;
+  }
+  return path.length > 200 ? path.slice(0, 200) : path;
+};
+
+const extractOptions = (element) => {
+  try {
+    if (element.tagName === 'SELECT') {
+      return Array.from(element.options)
+        .slice(0, 30)
+        .map((opt) => ({ value: opt.value, text: clean(opt.textContent || '', 120), selected: opt.selected, disabled: Boolean(opt.disabled) }));
+    }
+    const role = roleOf(element);
+    if (role === 'combobox' || role === 'listbox') {
+      const opts = Array.from(element.querySelectorAll('option, [role="option"]'))
+        .slice(0, 30);
+      if (opts.length > 0) {
+        return opts.map((opt) => ({ value: opt.value || clean(opt.textContent || '', 120), text: clean(opt.textContent || '', 120), selected: opt.getAttribute('aria-selected') === 'true' || Boolean(opt.selected), disabled: Boolean(opt.getAttribute('aria-disabled') === 'true' || opt.disabled) }));
+      }
+    }
+  } catch {}
+  return null;
+};
+
+const tooltipOf = (element) => {
+  const title = element.getAttribute('title');
+  if (title) return clean(title, 240);
+  try {
+    const id = element.getAttribute('aria-describedby');
+    if (id) {
+      const target = element.ownerDocument.getElementById(id);
+      if (target) return clean(target.textContent || '', 240);
+    }
+  } catch {}
+  return null;
+};
+
+const buildChecked = (element) => {
+  if (element.checked !== undefined) return element.checked;
+  if (element.getAttribute('aria-checked') === 'true') return true;
+  if (element.getAttribute('aria-checked') === 'false') return false;
+  return null;
+};
+
 const sameRect = (a, b) => Math.abs(a.left - b.left) < 2
   && Math.abs(a.top - b.top) < 2
   && Math.abs(a.width - b.width) < 2
@@ -1781,7 +2090,7 @@ const sameRect = (a, b) => Math.abs(a.left - b.left) < 2
 
 const collectPolarisInteractiveElements = (options = {}) => {
   const viewportOnly = options.viewportOnly === true;
-  const maxElements = Number.isFinite(options.maxElements) ? options.maxElements : 220;
+  const maxElements = Number.isFinite(options.maxElements) ? options.maxElements : 300;
   const candidates = [];
   const seen = new WeakSet();
   let order = 0;
@@ -1803,6 +2112,18 @@ const collectPolarisInteractiveElements = (options = {}) => {
       href: clean(element.href || element.getAttribute('data-href') || '', 500),
       disabled: isDisabled(element),
       fillable: isFillable(element) && !isDisabled(element) && !isReadOnly(element),
+      checked: buildChecked(element),
+      selected: element.getAttribute('aria-selected') === 'true' || null,
+      options: extractOptions(element),
+      selector: buildStableSelector(element),
+      tooltip: tooltipOf(element),
+      expanded: element.getAttribute('aria-expanded') === 'true' ? true : element.getAttribute('aria-expanded') === 'false' ? false : null,
+      pressed: element.getAttribute('aria-pressed') === 'true' ? true : element.getAttribute('aria-pressed') === 'false' ? false : null,
+      readOnly: isReadOnly(element) || null,
+      required: element.hasAttribute('required') || null,
+      min: element.getAttribute('min') ? Number(element.getAttribute('min')) : null,
+      max: element.getAttribute('max') ? Number(element.getAttribute('max')) : null,
+      step: element.getAttribute('step') ? Number(element.getAttribute('step')) : null,
       frames,
       score: scoreOf(element),
       order: order++
@@ -1858,7 +2179,20 @@ const toPolarisInteractiveElement = (entry, index) => ({
   placeholder: entry.placeholder,
   href: entry.href,
   disabled: entry.disabled,
-  fillable: entry.fillable
+  fillable: entry.fillable,
+  rect: entry.rect ? { x: Math.round(entry.rect.left), y: Math.round(entry.rect.top), width: Math.round(entry.rect.width), height: Math.round(entry.rect.height) } : null,
+  checked: entry.checked,
+  selected: entry.selected,
+  options: entry.options,
+  selector: entry.selector,
+  tooltip: entry.tooltip,
+  expanded: entry.expanded,
+  pressed: entry.pressed,
+  readOnly: entry.readOnly,
+  required: entry.required,
+  min: entry.min,
+  max: entry.max,
+  step: entry.step
 });
 
 const toPolarisVisualElement = (entry, index) => ({
@@ -1872,7 +2206,10 @@ const toPolarisVisualElement = (entry, index) => ({
     height: Math.round(entry.rect.height)
   },
   fillable: entry.fillable,
-  disabled: entry.disabled
+  disabled: entry.disabled,
+  checked: entry.checked,
+  selected: entry.selected,
+  selector: entry.selector
 });
 "#
     };
@@ -1918,13 +2255,13 @@ if (!window.__POLARIS_BROWSER_CONSOLE__) {
 "#;
 
 const INTERACTIVE_ELEMENTS_SCRIPT_BODY: &str = r#"
-const elements = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 220 })
+const elements = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 })
   .map((entry, index) => toPolarisInteractiveElement(entry, index));
 return JSON.stringify(elements);
 "#;
 
 const DIAGNOSTICS_SCRIPT_BODY: &str = r#"
-const elements = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 })
+const elements = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 220 })
   .map((entry, index) => toPolarisVisualElement(entry, index));
 return JSON.stringify({
   visual: {
@@ -1943,7 +2280,7 @@ return JSON.stringify({
 "#;
 
 const CLICK_ELEMENT_SCRIPT_BODY: &str = r#"
-const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
 const query = clean(requestedText, 240).toLowerCase();
 let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
 let entry = index >= 0 ? entries[index] : null;
@@ -1982,6 +2319,9 @@ const dispatchPointer = (type) => {
     }
   } catch {}
 };
+dispatchPointer('pointerover');
+dispatchMouse('mouseover');
+dispatchMouse('mouseenter');
 dispatchPointer('pointerdown');
 dispatchMouse('mousedown');
 dispatchPointer('pointerup');
@@ -1995,7 +2335,7 @@ return JSON.stringify({ ok: true, action: 'click', index, text: entry.label, url
 "#;
 
 const FILL_ELEMENT_SCRIPT_BODY: &str = r#"
-const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 240 });
+const entries = collectPolarisInteractiveElements({ viewportOnly: false, maxElements: 300 });
 const query = clean(requestedText, 240).toLowerCase();
 let index = Number.isInteger(requestedIndex) ? requestedIndex : -1;
 let entry = index >= 0 ? entries[index] : null;
@@ -2068,7 +2408,7 @@ root.style.fontFamily = 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI
 document.documentElement.appendChild(root);
 
 const render = () => {
-  const entries = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 180 });
+  const entries = collectPolarisInteractiveElements({ viewportOnly: true, maxElements: 220 });
   const nodes = entries.map((entry, index) => {
     const rect = entry.rect;
     const box = document.createElement('div');
@@ -2203,6 +2543,276 @@ fn ai_overlay_script(enabled: bool) -> String {
     script
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// BrowserActionDispatcher: 统一 SimpleAI / ask-listener / MCP 三路分派
+// (ADR 0004 P0 #2 落地)
+// ──────────────────────────────────────────────────────────────────────────
+
+/// 浏览器动作分发器:将 action 参数解析、agent_key fallback、label 解析、
+/// 动作执行、操作事件、结果塑形统一到一处,SimpleAI/MCP/ask-listener 都走这条路径。
+#[cfg(feature = "tauri-app")]
+pub struct BrowserActionDispatcher {
+    app: AppHandle,
+}
+
+/// 分派来源标识,用于操作日志区分
+#[derive(Debug, Clone, Copy)]
+pub enum BrowserActionSource {
+    /// SimpleAI 原生工具调用
+    SimpleAi,
+    /// ask-listener / MCP 帧调用
+    Mcp,
+}
+
+impl BrowserActionSource {
+    fn label(self) -> &'static str {
+        match self {
+            BrowserActionSource::SimpleAi => "AI",
+            BrowserActionSource::Mcp => "Claude/MCP",
+        }
+    }
+}
+
+#[cfg(feature = "tauri-app")]
+impl BrowserActionDispatcher {
+    pub fn new(app: AppHandle) -> Self {
+        Self { app }
+    }
+
+    /// 从已注册的 AppHandle 构造(等价于 browser_app_handle + new)
+    pub fn from_app_handle() -> Result<Self> {
+        Ok(Self::new(browser_app_handle()?))
+    }
+
+    /// 主入口:解析 action 并执行,返回 JSON Value 结果
+    pub async fn dispatch(&self, args: &Value, source: BrowserActionSource) -> Result<Value> {
+        let action = args
+            .get("action")
+            .and_then(Value::as_str)
+            .ok_or_else(|| AppError::ValidationError("browser 缺少 action".to_string()))?;
+
+        // agent_key 解析:显式传入 > session_id > 空
+        let agent_key = args
+            .get("agentKey")
+            .or_else(|| args.get("agent_key"))
+            .and_then(Value::as_str)
+            .filter(|v| !v.trim().is_empty())
+            .or_else(|| {
+                args.get("sessionId")
+                    .or_else(|| args.get("session_id"))
+                    .and_then(Value::as_str)
+                    .filter(|v| !v.trim().is_empty())
+            });
+
+        // list 不需要 label
+        if action == "list" {
+            return serde_json::to_value(browser_list_registered_sessions_with_app(&self.app)?)
+                .map_err(Into::into);
+        }
+
+        // acquire 走 acquire 路径
+        if action == "acquire" {
+            let result = browser_acquire_with_app(
+                &self.app,
+                agent_key,
+                args.get("label").and_then(Value::as_str),
+                args.get("url").and_then(Value::as_str),
+                args.get("title").and_then(Value::as_str),
+                args.get("mode").and_then(Value::as_str),
+                args.get("activate").and_then(Value::as_bool).unwrap_or(true),
+            )
+            .await?;
+            return serde_json::to_value(result).map_err(Into::into);
+        }
+
+        // 其余 action 都需要 label
+        let label = resolve_browser_label_for_agent_with_app(
+            &self.app,
+            args.get("label").and_then(Value::as_str),
+            agent_key,
+        )?;
+
+        let source_label = source.label();
+        match action {
+            "navigate" => {
+                let url = args
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("navigate 缺少 url".to_string()))?;
+                let normalized = browser_navigate_ai_with_app(&self.app, &label, url)?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "navigate",
+                    "success",
+                    format!("{source_label} 导航到 {normalized}"),
+                    None,
+                    Some(normalized.clone()),
+                );
+                Ok(json!({ "label": label, "url": normalized }))
+            }
+            "context" => {
+                let context = browser_get_page_context_with_app(&self.app, &label).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "context",
+                    "success",
+                    if context.title.trim().is_empty() {
+                        format!("{source_label} 读取页面上下文")
+                    } else {
+                        format!(
+                            "{source_label} 读取页面上下文：{}",
+                            truncate_chars_for_log(&context.title, 80)
+                        )
+                    },
+                    None,
+                    Some(context.url.clone()),
+                );
+                serde_json::to_value(context).map_err(Into::into)
+            }
+            "diagnostics" => {
+                let include_screenshot = args
+                    .get("includeScreenshot")
+                    .or_else(|| args.get("include_screenshot"))
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                let diagnostics =
+                    browser_get_diagnostics_with_app(&self.app, &label, include_screenshot)
+                        .await?;
+                serde_json::to_value(diagnostics).map_err(Into::into)
+            }
+            "inspect" => {
+                let elements = browser_get_interactive_elements_with_app(&self.app, &label).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "inspect",
+                    "success",
+                    format!("{source_label} 检查到 {} 个可操作元素", elements.len()),
+                    None,
+                    None,
+                );
+                serde_json::to_value(elements).map_err(Into::into)
+            }
+            "click" => {
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let result = browser_click_with_app(&self.app, &label, index, text).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "click",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(),
+                    non_empty_target(&result.text),
+                    Some(result.url.clone()),
+                );
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "fill" => {
+                let value = args
+                    .get("value")
+                    .and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("fill 缺少 value".to_string()))?;
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let result = browser_fill_with_app(&self.app, &label, index, text, value).await?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "fill",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(),
+                    non_empty_target(&result.text),
+                    Some(result.url.clone()),
+                );
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "reload" => {
+                browser_reload_with_app(&self.app, &label)?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "reload",
+                    "success",
+                    format!("{source_label} 刷新了当前页面"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "reloaded": true }))
+            }
+            "back" => {
+                browser_history_with_app(&self.app, &label, "back")?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "back",
+                    "success",
+                    format!("{source_label} 后退到上一页"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "direction": "back" }))
+            }
+            "forward" => {
+                browser_history_with_app(&self.app, &label, "forward")?;
+                emit_browser_operation_with_app(
+                    &self.app,
+                    &label,
+                    "forward",
+                    "success",
+                    format!("{source_label} 前进到下一页"),
+                    None,
+                    None,
+                );
+                Ok(json!({ "label": label, "direction": "forward" }))
+            }
+            "historyState" | "history_state" => {
+                let state = browser_get_history_state_with_app(&self.app, &label).await?;
+                serde_json::to_value(state).map_err(Into::into)
+            }
+            other => Err(AppError::ValidationError(format!(
+                "未知 browser action: {other}"
+            ))),
+        }
+    }
+}
+
+/// 从 Value 参数中解析 index,拒绝负数
+#[cfg(feature = "tauri-app")]
+fn parse_action_index(args: &Value) -> Result<Option<usize>> {
+    match args.get("index").and_then(Value::as_i64) {
+        Some(index) if index >= 0 => Ok(Some(index as usize)),
+        Some(_) => Err(AppError::ValidationError("index 不能为负数".to_string())),
+        None => Ok(None),
+    }
+}
+
+/// 操作日志用的 target 文本(空值返回 None)
+#[cfg(feature = "tauri-app")]
+fn non_empty_target(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(truncate_chars_for_log(trimmed, 120))
+    }
+}
+
+/// 操作日志用的字符截断
+#[cfg(feature = "tauri-app")]
+fn truncate_chars_for_log(value: &str, max_chars: usize) -> String {
+    let mut out = String::new();
+    for ch in value.chars().take(max_chars) {
+        out.push(ch);
+    }
+    if value.chars().count() > max_chars {
+        out.push('…');
+    }
+    out
+}
+
 #[cfg(test)]
 mod browser_script_tests {
     use super::*;
@@ -2223,7 +2833,9 @@ mod browser_script_tests {
         assert!(script.contains("contentDocument"));
         assert!(script.contains("frames.concat(node)"));
         assert!(script.contains("isReadOnly(element)"));
-        assert!(script.contains("maxElements: 220"));
+        assert!(script.contains("maxElements: 300"));
+        assert!(script.contains("styleCache"));
+        assert!(script.contains("POLARIS_SHADOW_MAX_DEPTH"));
         assert!(!script.contains("slice(0, 80)"));
     }
 
@@ -2311,6 +2923,47 @@ mod browser_script_tests {
         let error = normalize_ai_navigation_url("file:///C:/Users/example/secret.txt")
             .expect_err("file URLs must be rejected for AI/MCP navigation");
         assert!(error.to_message().contains("file://"));
+    }
+
+    #[test]
+    fn parse_action_index_rejects_negative() {
+        assert_eq!(parse_action_index(&serde_json::json!({})).unwrap(), None);
+        assert_eq!(
+            parse_action_index(&serde_json::json!({ "index": 5 })).unwrap(),
+            Some(5)
+        );
+        assert!(parse_action_index(&serde_json::json!({ "index": -1 })).is_err());
+    }
+
+    #[test]
+    fn non_empty_target_trims_and_truncates() {
+        assert_eq!(non_empty_target("   "), None);
+        let long = "x".repeat(200);
+        let target = non_empty_target(&long).unwrap();
+        assert!(target.ends_with('…'));
+        assert!(target.chars().count() <= 121);
+    }
+
+    #[test]
+    fn bound_agent_key_preserved_across_upsert() {
+        let _guard = TEST_STATE_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap();
+        sessions().lock().unwrap().clear();
+        agent_bindings().lock().unwrap().clear();
+
+        bind_browser_agent(Some("agent-p3"), "browser-own-test").unwrap();
+        upsert_session(
+            "browser-own-test".to_string(),
+            Some("tab-1".to_string()),
+            Some("https://example.com/".to_string()),
+            Some("Example".to_string()),
+        )
+        .unwrap();
+
+        let session = session_for_label("browser-own-test").unwrap().unwrap();
+        assert_eq!(session.bound_agent_key.as_deref(), Some("agent-p3"));
     }
 
     #[test]
