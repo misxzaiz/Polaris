@@ -378,10 +378,6 @@ export function createHttpTransport(
 
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
-        // ngrok 免费版会对新浏览器/WebView 首次访问注入"Visit Site"警告中间页，
-        // 导致 App WebView 的 fetch 请求被拦截（报 "Failed to fetch"）。
-        // 该头让 ngrok 跳过中间页，直接转发到后端。
-        'ngrok-skip-browser-warning': 'true',
       };
 
       const tokenMd5 = getTokenMd5();
