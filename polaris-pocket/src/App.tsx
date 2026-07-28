@@ -43,7 +43,7 @@ export default function App() {
       case "todo":
         return <TodoPage />;
       case "connect":
-        return <ConnectPage onConnected={() => setConnected(true)} />;
+        return <ConnectPage />;
       case "settings":
         return <SettingsPage />;
     }
