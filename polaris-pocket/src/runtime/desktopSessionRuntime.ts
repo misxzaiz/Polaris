@@ -1,77 +1,63 @@
 /**
- * MobileSessionRuntime — 移动端多会话并行运行时
+ * desktopSessionRuntime — Pocket 桌面会话运行时
  *
- * 设计：
- * - 全局唯一 chat-event 订阅（不绑组件生命周期）
- * - 按 contextId `mobile-${sessionId}` 路由事件
- * - UI 可卸载；关 Tab 才 dispose
- * - 与桌面 sessionStoreManager 解耦，保持 companion 轻量
+ * 全局 Zustand store，管理连接到桌面端后的会话状态。
+ * 功能：
+ * - 单次 WS 订阅，按 sessionId 路由事件到对应会话
+ * - 多会话并行（最多 MAX_POCKET_TABS 个）
+ * - applyAIEvent 纯函数归约
+ * - 会话管理（打开/关闭/切换）
  */
-
 import { create } from 'zustand';
-import type { AIEvent } from '@/ai-runtime/event';
-import type { ChatMessage } from '@/types';
-import { invoke, listen } from '@/services/transport';
+import { onEvent, disconnect } from '../services/desktopTransport';
+import { getSessionHistory } from '../services/desktopClient';
 import { applyAIEvent } from './applyAIEvent';
 import {
-  MAX_MOBILE_TABS,
+  MAX_POCKET_TABS,
   createEmptySessionState,
-  fromMobileContextId,
-  toMobileContextId,
-  type MobileSessionMeta,
-  type MobileSessionStatus,
+  fromPocketContextId,
+  toPocketContextId,
+  type ChatMessage,
+  type PocketAIEvent,
   type SessionRuntimeState,
 } from './types';
 
 // ============================================================================
-// 类型
+// Store 类型
 // ============================================================================
 
-interface MobileSessionRuntimeState {
-  /** sessionId → 运行时状态 */
+interface DesktopSessionRuntimeState {
   sessions: Record<string, SessionRuntimeState>;
-  /** Tab 顺序（最多 MAX_MOBILE_TABS） */
   tabOrder: string[];
-  /** 当前激活会话 */
   activeSessionId: string | null;
-  /** 全局 listen 是否已建立 */
   initialized: boolean;
-  /** 初始化错误（可选展示） */
   initError: string | null;
 }
 
-interface MobileSessionRuntimeActions {
-  /** 确保全局 WS 订阅已建立（幂等） */
+interface DesktopSessionRuntimeActions {
   ensureInitialized: () => Promise<void>;
-  /** 打开/钉住会话；已存在则仅激活 */
-  openSession: (meta: MobileSessionMeta) => { ok: true } | { ok: false; reason: string };
-  /** 关闭会话并释放状态 */
+  openSession: (meta: {
+    id: string;
+    title: string;
+    engineId: string;
+    projectPath?: string;
+    messages?: ChatMessage[];
+  }) => { ok: true } | { ok: false; reason: string };
   closeSession: (sessionId: string) => void;
-  /** 切换激活会话（不 dispose） */
   setActiveSession: (sessionId: string | null) => void;
-  /** 清空激活（回列表），保留 Tab */
   clearActive: () => void;
-  /** 更新输入草稿 */
   setInput: (sessionId: string, input: string) => void;
-  /** 发送消息（continue_chat） */
   sendMessage: (sessionId: string, text: string) => Promise<void>;
-  /** 中断生成 */
   interrupt: (sessionId: string) => Promise<void>;
-  /** 回答 question */
   answerQuestion: (sessionId: string, selected: string[], declined: boolean) => Promise<void>;
-  /** 批准/拒绝 plan */
   respondPlan: (sessionId: string, approve: boolean) => Promise<void>;
-  /** 权限响应（Phase 1 仍用文本回退，与现网一致） */
   respondPermission: (sessionId: string, approve: boolean) => Promise<void>;
-  /** 用历史消息覆盖（result 后刷新 / 外部加载） */
   setMessages: (sessionId: string, messages: ChatMessage[]) => void;
-  /** 路由入口（测试可直接调） */
-  routeEvent: (contextId: string | undefined, event: AIEvent) => void;
-  /** 测试/卸载：重置全部 */
+  routeEvent: (contextId: string | undefined, event: PocketAIEvent) => void;
   reset: () => void;
 }
 
-export type MobileSessionRuntimeStore = MobileSessionRuntimeState & MobileSessionRuntimeActions;
+export type DesktopSessionRuntimeStore = DesktopSessionRuntimeState & DesktopSessionRuntimeActions;
 
 // ============================================================================
 // 内部
@@ -80,12 +66,21 @@ export type MobileSessionRuntimeStore = MobileSessionRuntimeState & MobileSessio
 let unlistenGlobal: (() => void) | null = null;
 let initPromise: Promise<void> | null = null;
 
-/** 历史刷新回调：由 UI 层注入（避免 Runtime 依赖 history service） */
-type HistoryRefresher = (session: SessionRuntimeState) => Promise<ChatMessage[] | null>;
-let historyRefresher: HistoryRefresher | null = null;
-
-export function setMobileHistoryRefresher(fn: HistoryRefresher | null) {
-  historyRefresher = fn;
+function pickEvictCandidate(
+  tabOrder: string[],
+  sessions: Record<string, SessionRuntimeState>,
+): string | null {
+  const ranked = tabOrder
+    .map((id) => sessions[id])
+    .filter((s): s is SessionRuntimeState => !!s)
+    .filter((s) => s.status === 'idle' || s.status === 'error')
+    .sort((a, b) => {
+      const rank = (st: string) => (st === 'idle' ? 0 : 1);
+      const r = rank(a.status) - rank(b.status);
+      if (r !== 0) return r;
+      return a.lastAccessedAt - b.lastAccessedAt;
+    });
+  return ranked[0]?.id ?? null;
 }
 
 function parseRoutedPayload(raw: unknown): { contextId?: string; payload: unknown } {
@@ -97,7 +92,6 @@ function parseRoutedPayload(raw: unknown): { contextId?: string; payload: unknow
       return { payload: raw };
     }
   }
-
   if (data && typeof data === 'object' && 'payload' in data) {
     const obj = data as { contextId?: string; payload: unknown };
     let payload = obj.payload;
@@ -110,37 +104,14 @@ function parseRoutedPayload(raw: unknown): { contextId?: string; payload: unknow
     }
     return { contextId: obj.contextId, payload };
   }
-
   return { payload: data };
-}
-
-function isAIEvent(value: unknown): value is AIEvent {
-  return !!value && typeof value === 'object' && typeof (value as { type?: unknown }).type === 'string';
-}
-
-function pickEvictCandidate(
-  tabOrder: string[],
-  sessions: Record<string, SessionRuntimeState>,
-): string | null {
-  // 优先淘汰 idle，其次 error；禁止自动淘汰 running/waiting
-  const ranked = tabOrder
-    .map((id) => sessions[id])
-    .filter((s): s is SessionRuntimeState => !!s)
-    .filter((s) => s.status === 'idle' || s.status === 'error')
-    .sort((a, b) => {
-      const rank = (st: MobileSessionStatus) => (st === 'idle' ? 0 : 1);
-      const r = rank(a.status) - rank(b.status);
-      if (r !== 0) return r;
-      return a.lastAccessedAt - b.lastAccessedAt;
-    });
-  return ranked[0]?.id ?? null;
 }
 
 // ============================================================================
 // Store
 // ============================================================================
 
-export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, get) => ({
+export const useDesktopSessionRuntime = create<DesktopSessionRuntimeStore>((set, get) => ({
   sessions: {},
   tabOrder: [],
   activeSessionId: null,
@@ -153,10 +124,12 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
 
     initPromise = (async () => {
       try {
-        unlistenGlobal = await listen<unknown>('chat-event', (raw) => {
+        unlistenGlobal = onEvent('chat-event', (raw) => {
           const { contextId, payload } = parseRoutedPayload(raw);
-          if (!isAIEvent(payload)) return;
-          get().routeEvent(contextId, payload);
+          if (!payload || typeof payload !== 'object') return;
+          const event = payload as PocketAIEvent;
+          if (!event.type) return;
+          get().routeEvent(contextId, event);
         });
         set({ initialized: true, initError: null });
       } catch (err) {
@@ -183,7 +156,6 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
           [meta.id]: {
             ...state.sessions[meta.id],
             lastAccessedAt: Date.now(),
-            // 不覆盖已有 messages/流状态
             title: meta.title || state.sessions[meta.id].title,
             projectPath: meta.projectPath ?? state.sessions[meta.id].projectPath,
           },
@@ -195,12 +167,12 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     let tabOrder = [...state.tabOrder];
     let sessions = { ...state.sessions };
 
-    if (tabOrder.length >= MAX_MOBILE_TABS) {
+    if (tabOrder.length >= MAX_POCKET_TABS) {
       const evictId = pickEvictCandidate(tabOrder, sessions);
       if (!evictId) {
         return {
           ok: false,
-          reason: `已达上限 ${MAX_MOBILE_TABS} 个会话，且均在运行/等待确认，请先关闭空闲会话`,
+          reason: `已达上限 ${MAX_POCKET_TABS} 个会话，请先关闭空闲会话`,
         };
       }
       tabOrder = tabOrder.filter((id) => id !== evictId);
@@ -211,11 +183,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     sessions[meta.id] = next;
     tabOrder = [...tabOrder, meta.id];
 
-    set({
-      sessions,
-      tabOrder,
-      activeSessionId: meta.id,
-    });
+    set({ sessions, tabOrder, activeSessionId: meta.id });
     return { ok: true };
   },
 
@@ -231,11 +199,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
         ? (nextOrder.length > 0 ? nextOrder[nextOrder.length - 1] : null)
         : activeSessionId;
 
-    set({
-      sessions: nextSessions,
-      tabOrder: nextOrder,
-      activeSessionId: nextActive,
-    });
+    set({ sessions: nextSessions, tabOrder: nextOrder, activeSessionId: nextActive });
   },
 
   setActiveSession: (sessionId) => {
@@ -273,11 +237,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     set({
       sessions: {
         ...get().sessions,
-        [sessionId]: {
-          ...session,
-          messages,
-          partial: null,
-        },
+        [sessionId]: { ...session, messages, partial: null },
       },
     });
   },
@@ -289,7 +249,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     if (!trimmed || session.sending) return;
 
     const userMessage: ChatMessage = {
-      id: `mobile-user-${Date.now()}`,
+      id: `pocket-user-${Date.now()}`,
       type: 'user',
       content: trimmed,
       timestamp: new Date().toISOString(),
@@ -311,13 +271,14 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     });
 
     try {
+      const { invoke } = await import('../services/desktopClient');
       await invoke('continue_chat', {
         sessionId,
         message: trimmed,
         options: {
           engineId: session.engineId,
           workDir: session.projectPath,
-          contextId: toMobileContextId(sessionId),
+          contextId: toPocketContextId(sessionId),
         },
       });
     } catch (err) {
@@ -341,6 +302,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     const session = get().sessions[sessionId];
     if (!session) return;
     try {
+      const { invoke } = await import('../services/desktopClient');
       await invoke('interrupt_chat', { sessionId });
       const current = get().sessions[sessionId];
       if (!current) return;
@@ -375,18 +337,11 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     if (!session?.pendingCard?.questionId) return;
     const callId = session.pendingCard.questionId;
     try {
+      const { invoke } = await import('../services/desktopClient');
       if (declined) {
-        await invoke('answer_question', {
-          sessionId,
-          callId,
-          answer: { declined: true },
-        });
+        await invoke('answer_question', { sessionId, callId, answer: { declined: true } });
       } else {
-        await invoke('answer_question', {
-          sessionId,
-          callId,
-          answer: { selected },
-        });
+        await invoke('answer_question', { sessionId, callId, answer: { selected } });
       }
       const current = get().sessions[sessionId];
       if (!current) return;
@@ -401,7 +356,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
         },
       });
     } catch {
-      // 等待后续 question_answered / error
+      // 等待后续事件
     }
   },
 
@@ -410,6 +365,7 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     if (!session?.pendingCard?.planId) return;
     const planId = session.pendingCard.planId;
     try {
+      const { invoke } = await import('../services/desktopClient');
       if (approve) {
         await invoke('approve_plan', { sessionId, planId });
       } else {
@@ -445,13 +401,12 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
   },
 
   respondPermission: async (sessionId, approve) => {
-    // Phase 1：与现网一致，文本回退；Phase 2 再接正式 API
     const session = get().sessions[sessionId];
     if (!session) return;
 
     const text = approve ? '批准' : '拒绝';
     const userMessage: ChatMessage = {
-      id: `mobile-perm-${Date.now()}`,
+      id: `pocket-perm-${Date.now()}`,
       type: 'user',
       content: text,
       timestamp: new Date().toISOString(),
@@ -472,13 +427,14 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     });
 
     try {
+      const { invoke } = await import('../services/desktopClient');
       await invoke('continue_chat', {
         sessionId,
         message: text,
         options: {
           engineId: session.engineId,
           workDir: session.projectPath,
-          contextId: toMobileContextId(sessionId),
+          contextId: toPocketContextId(sessionId),
         },
       });
     } catch (err) {
@@ -501,19 +457,19 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
   routeEvent: (contextId, event) => {
     const state = get();
     const eventSessionId =
-      event && typeof event === 'object' && 'sessionId' in event && typeof (event as { sessionId?: unknown }).sessionId === 'string'
+      event && typeof event === 'object' && 'sessionId' in event && typeof (event as { sessionId: unknown }).sessionId === 'string'
         ? (event as { sessionId: string }).sessionId
         : undefined;
 
-    // 1) contextId mobile-${id}
-    let targetId = fromMobileContextId(contextId);
+    // 1) contextId pocket-{id}
+    let targetId = fromPocketContextId(contextId);
 
-    // 2) payload.sessionId 若正好是已打开的前端 id
+    // 2) payload.sessionId 如果正好是已打开的会话
     if (!targetId && eventSessionId && state.sessions[eventSessionId]) {
       targetId = eventSessionId;
     }
 
-    // 3) 仅当唯一 running 会话时，允许无 contextId 的事件落入（弱兜底）
+    // 3) 仅当唯一 running 会话时，兜底
     if (!targetId) {
       const running = state.tabOrder.filter((id) => state.sessions[id]?.sending);
       if (running.length === 1) targetId = running[0];
@@ -523,25 +479,13 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
     const session = state.sessions[targetId];
     if (!session) return;
 
-    const { state: next, shouldRefreshHistory } = applyAIEvent(session, event);
+    const { state: next } = applyAIEvent(session, event);
     set({
       sessions: {
         ...get().sessions,
         [targetId]: next,
       },
     });
-
-    if (shouldRefreshHistory && historyRefresher) {
-      const snapshot = next;
-      void historyRefresher(snapshot).then((messages) => {
-        if (!messages || messages.length === 0) return;
-        const current = get().sessions[targetId];
-        if (!current) return;
-        // 若刷新返回期间又有新的 streaming partial，不要覆盖
-        if (current.partial || current.sending) return;
-        get().setMessages(targetId, messages);
-      });
-    }
   },
 
   reset: () => {
@@ -561,41 +505,16 @@ export const useMobileSessionRuntime = create<MobileSessionRuntimeStore>((set, g
 }));
 
 // ============================================================================
-// Selectors / hooks helpers
+// Selectors
 // ============================================================================
 
-/**
- * 缓存 selectTabSessions 结果，避免每次订阅比较都拿到新数组引用。
- * Zustand 默认用 Object.is；selector 每次 map 出新数组会触发 React #185 无限重渲染。
- */
-let cachedTabOrder: string[] | null = null;
-let cachedSessionsMap: Record<string, SessionRuntimeState> | null = null;
-let cachedTabSessions: SessionRuntimeState[] = [];
-
-export function selectTabSessions(state: MobileSessionRuntimeStore): SessionRuntimeState[] {
-  if (state.tabOrder === cachedTabOrder && state.sessions === cachedSessionsMap) {
-    return cachedTabSessions;
-  }
-  cachedTabOrder = state.tabOrder;
-  cachedSessionsMap = state.sessions;
-  cachedTabSessions = state.tabOrder
-    .map((id) => state.sessions[id])
-    .filter((s): s is SessionRuntimeState => !!s);
-  return cachedTabSessions;
-}
-
-export function selectActiveSession(state: MobileSessionRuntimeStore): SessionRuntimeState | null {
+export function selectActiveSession(state: DesktopSessionRuntimeStore): SessionRuntimeState | null {
   if (!state.activeSessionId) return null;
   return state.sessions[state.activeSessionId] ?? null;
 }
 
-export function selectWaitingCount(state: MobileSessionRuntimeStore): number {
-  return Object.values(state.sessions).filter((s) => s.status === 'waiting').length;
-}
-
-/** 供测试重置 selector 缓存 */
-export function __resetTabSessionsCacheForTests() {
-  cachedTabOrder = null;
-  cachedSessionsMap = null;
-  cachedTabSessions = [];
+export function selectTabSessions(state: DesktopSessionRuntimeStore): SessionRuntimeState[] {
+  return state.tabOrder
+    .map((id) => state.sessions[id])
+    .filter((s): s is SessionRuntimeState => !!s);
 }

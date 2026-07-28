@@ -1,22 +1,14 @@
 /**
- * 纯函数：将 AIEvent 归约到 SessionRuntimeState
+ * 纯函数：将 PocketAIEvent 归约到 SessionRuntimeState
  *
- * 可单测、无副作用。Runtime store 在拿到路由目标后调用本函数。
+ * 从 polaris-mobile applyAIEvent.ts 精简，适配 Pocket 类型。
+ * 可单测、无副作用。
  */
-
-import type { AIEvent } from '@/ai-runtime/event';
-import type { ChatMessage } from '@/types';
-import type { PartialBuffer, SessionRuntimeState } from './types';
+import type { ChatMessage, PartialBuffer, SessionRuntimeState, PocketAIEvent } from './types';
 import { deriveStatus } from './types';
-
-export interface ApplyAIEventOptions {
-  /** result 时是否标记需要刷新历史（由 Runtime 异步执行） */
-  markHistoryRefresh?: boolean;
-}
 
 export interface ApplyAIEventResult {
   state: SessionRuntimeState;
-  /** 是否需要拉取完整历史（result 后） */
   shouldRefreshHistory: boolean;
 }
 
@@ -28,10 +20,7 @@ function withStatus(state: SessionRuntimeState): SessionRuntimeState {
   };
 }
 
-function appendAssistant(
-  messages: ChatMessage[],
-  partial: PartialBuffer,
-): ChatMessage[] {
+function appendAssistant(messages: ChatMessage[], partial: PartialBuffer): ChatMessage[] {
   return [
     ...messages,
     {
@@ -45,10 +34,7 @@ function appendAssistant(
   ];
 }
 
-function updateLastAssistant(
-  messages: ChatMessage[],
-  content: string,
-): ChatMessage[] {
+function updateLastAssistant(messages: ChatMessage[], content: string): ChatMessage[] {
   const updated = [...messages];
   const lastIdx = updated.length - 1;
   if (lastIdx >= 0 && updated[lastIdx]?.type === 'assistant') {
@@ -65,13 +51,9 @@ function updateLastAssistant(
   return updated;
 }
 
-/**
- * 处理单个 AIEvent，返回新状态（不可变）。
- */
 export function applyAIEvent(
   prev: SessionRuntimeState,
-  event: AIEvent,
-  _options?: ApplyAIEventOptions,
+  event: PocketAIEvent,
 ): ApplyAIEventResult {
   let shouldRefreshHistory = false;
 
@@ -114,9 +96,7 @@ export function applyAIEvent(
     case 'result': {
       shouldRefreshHistory = true;
       const messages = prev.messages.map((m) =>
-        m.type === 'assistant' && m.isStreaming
-          ? { ...m, isStreaming: false }
-          : m,
+        m.type === 'assistant' && m.isStreaming ? { ...m, isStreaming: false } : m,
       );
       return {
         state: withStatus({
@@ -124,7 +104,6 @@ export function applyAIEvent(
           messages,
           partial: null,
           sending: false,
-          // result 不清 pendingCard：question 可能仍挂起
         }),
         shouldRefreshHistory,
       };
@@ -148,9 +127,7 @@ export function applyAIEvent(
           sending: false,
           partial: null,
           messages: prev.messages.map((m) =>
-            m.type === 'assistant' && m.isStreaming
-              ? { ...m, isStreaming: false }
-              : m,
+            m.type === 'assistant' && m.isStreaming ? { ...m, isStreaming: false } : m,
           ),
         }),
         shouldRefreshHistory: false,
@@ -233,8 +210,8 @@ export function applyAIEvent(
             toolName: event.denials?.[0]?.toolName,
             toolUseId: event.denials?.[0]?.toolUseId,
             extra:
-              event.denials?.[0]?.reason
-              ?? (event.denials?.[0]?.toolInput
+              event.denials?.[0]?.reason ??
+              (event.denials?.[0]?.toolInput
                 ? JSON.stringify(event.denials[0].toolInput)
                 : ''),
           },
@@ -244,7 +221,6 @@ export function applyAIEvent(
       };
 
     default:
-      // token / thinking / tool_call_* 等 Phase 1 不渲染，但标记活跃
       if (prev.sending || prev.partial) {
         return {
           state: withStatus({ ...prev, lastEventAt: Date.now() }),

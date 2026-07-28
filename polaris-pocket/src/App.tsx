@@ -28,8 +28,14 @@ export default function App() {
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const url = localStorage.getItem("pocket-server-url") || "";
-    setConnected(!!url);
+    const checkConnected = () => {
+      const url = localStorage.getItem("pocket-server-url") || "";
+      setConnected(!!url);
+    };
+    checkConnected();
+    // 监听 ConnectPage 发出的连接状态变更事件
+    window.addEventListener("pocket-connection-changed", checkConnected);
+    return () => window.removeEventListener("pocket-connection-changed", checkConnected);
   }, []);
 
   const renderPage = () => {

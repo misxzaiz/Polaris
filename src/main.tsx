@@ -2,9 +2,8 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import * as ReactJSXRuntime from "react/jsx-runtime";
 import App from "./App";
-import MobileApp from "./mobile/MobileApp";
 import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
-import { isMobileTauriRuntime, shouldRenderMobileApp } from "./mobile/platform";
+import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
 
 // 暴露宿主 React 给外部插件面板使用
@@ -26,15 +25,12 @@ const root = document.getElementById("root") as HTMLElement;
 
 /**
  * 根组件选择：
- * - ?mobile=1：旧 MobileApp companion（调试）
  * - 移动端 Tauri APK：完整 Web App + 连接配置 Gate（无 serverUrl 时先配地址/Token）
  * - 其它（桌面 / 手机浏览器访问 polaris-web）：完整 Web App
+ *
+ * 旧版独立 MobileApp companion 壳（?mobile=1）已废弃（2026-07-12 产品决策）。
  */
 function RootApp() {
-  if (shouldRenderMobileApp()) {
-    return <MobileApp />;
-  }
-
   if (isMobileTauriRuntime()) {
     return (
       <MobileConnectionGate>
