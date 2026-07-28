@@ -336,11 +336,28 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
     Value::Object(frame)
 }
 
+/// Ensure a value is a JSON object. If it is an array (e.g. `browser_list`
+/// returns `[]`), wrap it as `{ "items": [...] }` so that `structuredContent`
+/// always satisfies the MCP protocol requirement of being an object.
+fn ensure_object(value: Value) -> Value {
+    if let Value::Array(arr) = value {
+        Value::Object({
+            let mut map = Map::new();
+            map.insert("items".to_string(), Value::Array(arr));
+            map
+        })
+    } else {
+        value
+    }
+}
+
 fn tool_success(result: Value) -> Value {
     let sanitized = sanitize_screenshot_payload(result.clone());
+    let structured_content = ensure_object(sanitized);
     let mut content = vec![json!({
         "type": "text",
-        "text": serde_json::to_string_pretty(&sanitized).unwrap_or_else(|_| "{}".to_string())
+        "text": serde_json::to_string_pretty(&structured_content)
+            .unwrap_or_else(|_| "{}".to_string()),
     })];
 
     if let Some((mime_type, data)) = extract_screenshot(&result) {
@@ -352,7 +369,7 @@ fn tool_success(result: Value) -> Value {
     }
 
     json!({
-        "structuredContent": sanitized,
+        "structuredContent": structured_content,
         "content": content
     })
 }
@@ -482,5 +499,35 @@ mod tests {
                 .and_then(Value::as_str),
             Some("<returned as MCP image content>")
         );
+    }
+
+    #[test]
+    fn ensure_object_wraps_array_into_items() {
+        let result = ensure_object(json!([1, 2, 3]));
+        assert_eq!(result.pointer("/items").and_then(Value::as_array).unwrap().len(), 3);
+        assert!(result.is_object());
+    }
+
+    #[test]
+    fn ensure_object_passes_through_object() {
+        let result = ensure_object(json!({"a": 1, "b": 2}));
+        assert_eq!(result.get("a").unwrap(), 1);
+        assert!(result.is_object());
+    }
+
+    #[test]
+    fn tool_success_wraps_array_result_as_object() {
+        let result = tool_success(json!([1, 2, 3]));
+        assert!(result.is_object());
+        let sc = result.get("structuredContent").unwrap();
+        assert!(sc.is_object());
+        assert_eq!(sc.pointer("/items").and_then(Value::as_array).unwrap().len(), 3);
+    }
+
+    #[test]
+    fn tool_success_passes_through_object_result() {
+        let result = tool_success(json!({"label": "test", "url": "https://example.com"}));
+        let sc = result.get("structuredContent").unwrap();
+        assert_eq!(sc.get("label").and_then(Value::as_str).unwrap(), "test");
     }
 }
