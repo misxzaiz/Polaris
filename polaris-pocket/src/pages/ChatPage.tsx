@@ -78,6 +78,7 @@ export function ChatPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   const hasConfig = !!profile;
 
@@ -100,6 +101,14 @@ export function ChatPage() {
 
   // 自动滚动
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, stream, error]);
+
+  // 输入框自适应高度
+  useEffect(() => {
+    const ta = taRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 128)}px`;
+  }, [input]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -230,6 +239,15 @@ export function ChatPage() {
 
   const stopStreaming = () => {
     abort.current?.abort();
+    // 保留已接收的部分回复（若有），标注中断后落盘
+    if (stream.trim()) {
+      const partial: Msg = { id: `${Date.now()}-a`, role: "assistant", content: `${stream}\n\n_（已中断）_`, ts: Date.now() };
+      setMsgs(prev => {
+        const next = [...prev, partial];
+        if (active) save(KEYS.msgs(active), next);
+        return next;
+      });
+    }
     setStreaming(false);
     setStream("");
   };
@@ -389,6 +407,7 @@ export function ChatPage() {
       {/* 输入区 */}
       <div className="mt-3 flex items-end gap-2 rounded-[14px] border border-border bg-background-elevated p-2 transition-[border-color,box-shadow] focus-within:border-primary focus-within:shadow-[0_0_0_3px_rgba(203,166,247,0.12)]">
         <textarea
+          ref={taRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
