@@ -125,7 +125,7 @@ export const useViewStore = create<ViewStore>()(
       },
       schedulerLogDrawerHeight: 128, // 默认 128px
       // 多会话窗口初始状态
-      multiSessionMode: false,      // 默认单会话模式
+      multiSessionMode: true,       // 默认多会话模式
       multiSessionIds: [],          // 默认空列表
       multiSessionRows: 1,          // 默认 1 行
       multiSessionCellWidth: 350,   // 默认格子宽度 350px
