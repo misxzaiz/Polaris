@@ -1,0 +1,30 @@
+# Rust build artifacts
+src-tauri/target/
+
+# Auto-generated Android project
+src-tauri/gen/
+
+# Tauri build outputs
+src-tauri/dist/
+
+# Node modules
+node_modules/
+
+# npm lock (optional, keep if you want exact deps)
+# package-lock.json
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Signed APK (rebuildable, keep key material out)
+dist/*.apk
+dist/*.jks
+
+# Frontend build output
+dist/
+!dist/.gitkeep

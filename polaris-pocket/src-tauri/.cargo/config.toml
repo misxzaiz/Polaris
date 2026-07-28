@@ -1,0 +1,15 @@
+[target.aarch64-linux-android]
+linker = "D:/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android21-clang.cmd"
+
+[target.armv7-linux-androideabi]
+linker = "D:/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/armv7a-linux-androideabi16-clang.cmd"
+
+[target.i686-linux-android]
+linker = "D:/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/i686-linux-android21-clang.cmd"
+
+[target.x86_64-linux-android]
+linker = "D:/Android/Sdk/ndk/26.1.10909125/toolchains/llvm/prebuilt/windows-x86_64/bin/x86_64-linux-android21-clang.cmd"
+
+[profile.release]
+strip = true
+lto = "thin"
