@@ -13,7 +13,7 @@
 //! 认证: 从 config 读取 session_token，以 Bearer token 形式附加到 Supabase REST 请求。
 
 use std::io::{self, BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -86,11 +86,6 @@ impl PhClient {
     /// 构建 Supabase REST URL
     fn rest_url(&self, path: &str) -> String {
         format!("{}/rest/v1/{}", self.supabase_url, path)
-    }
-
-    /// 构建 Supabase Auth URL
-    fn auth_url(&self) -> String {
-        format!("{}/auth/v1", self.supabase_url)
     }
 
     /// 发送 GET 请求到 Supabase REST API
@@ -234,19 +229,6 @@ impl PhClient {
         }
 
         Ok(())
-    }
-
-    /// 尝试用 refresh_token 刷新 session token
-    /// 调用 Supabase Auth 的 POST /auth/v1/token?grant_type=refresh_token
-    fn try_refresh(&mut self) -> Result<bool> {
-        // 尝试从 config 读取 refresh_token（PersonalHubConfig 中暂未存储，暂不实现）
-        Ok(false)
-    }
-
-    /// 加密 description（如果配置了 encryption_key）
-    fn encrypt_description(&self, _text: &str) -> String {
-        // 由前端决定是否加密，MCP server 只负责解密展示
-        _text.to_string()
     }
 
     /// 解密 description（如果已加密且配置了 encryption_key）

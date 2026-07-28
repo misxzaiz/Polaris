@@ -7,7 +7,6 @@
 
 use polaris_lib::services::personal_hub_mcp_server::run_ph_mcp_server;
 use polaris_lib::{AppError, Result};
-use std::path::PathBuf;
 
 fn main() {
     if let Err(error) = main_impl() {

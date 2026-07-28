@@ -373,6 +373,7 @@ struct RostersFile {
 struct RosterDef {
     slug: String,
     #[serde(default)]
+    #[allow(dead_code)]
     title: String,
     groups: Vec<RosterGroup>,
 }

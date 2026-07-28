@@ -99,18 +99,22 @@ fn resolve_dist_dir(state: &AppState) -> std::path::PathBuf {
     std::path::PathBuf::from("../dist")
 }
 
-/// Build CORS layer: permissive in dev (Vite dev server on different port),
-/// restrictive in production (SPA served from same origin, no CORS needed).
+/// Build CORS layer: permissive in both dev and production.
+///
+/// Polaris is a personal/local tool — users commonly access it via ngrok, Tailscale,
+/// or other tunnel services that produce a different origin than the server's own.
+/// Restricting CORS in production would break those legitimate use cases.
 fn build_cors_layer() -> CorsLayer {
-    if cfg!(debug_assertions) {
-        CorsLayer::new()
-            .allow_origin(tower_http::cors::Any)
-            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE, Method::OPTIONS])
-            .allow_headers(tower_http::cors::Any)
-    } else {
-        // Production: empty CORS — same-origin requests pass, cross-origin blocked
-        CorsLayer::new()
-    }
+    CorsLayer::new()
+        .allow_origin(tower_http::cors::Any)
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::DELETE,
+            Method::OPTIONS,
+        ])
+        .allow_headers(tower_http::cors::Any)
 }
 
 /// Build the complete axum Router with API routes, auth middleware, CORS, and SPA fallback.

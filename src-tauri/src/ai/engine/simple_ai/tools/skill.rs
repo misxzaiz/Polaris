@@ -6,7 +6,6 @@
 
 use serde_json::{json, Value};
 
-use super::super::skill::SkillEntry;
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
 
 pub(super) struct ReadSkillTool;

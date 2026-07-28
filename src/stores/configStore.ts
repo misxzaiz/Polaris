@@ -330,6 +330,15 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         useThemeStore.getState().applyTheme(config.theme);
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
+
+      // Token 认证成功后，reload 页面以触发完整初始化链路（runPostAuthInit 在
+      // useAppInit useEffect[] 中内联调用），避免 React effect 链的时序竞态。
+      if (connectionState === 'success') {
+        // 给 store 同步和 ConnectingOverlay 卸载一个渲染帧的时间
+        setTimeout(() => {
+          window.location.reload();
+        }, 0);
+      }
     } catch (e: unknown) {
       // Token still wrong → stay in needsToken state
       if (isAuthError(e)) {
