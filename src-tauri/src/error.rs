@@ -58,9 +58,13 @@ pub enum AppError {
     #[error("Invalid path: {0}")]
     InvalidPath(String),
 
-    /// 超时
+    /// 超时（无描述，legacy fallback）
     #[error("Operation timed out")]
     Timeout,
+
+    /// 超时（带详细描述，用于需要给用户指导的场景）
+    #[error("操作超时: {0}")]
+    TimeoutWithMessage(String),
 
     /// 网络错误
     #[error("Network error: {0}")]
@@ -139,6 +143,7 @@ impl AppError {
             AppError::PermissionDenied(e) => format!("权限被拒绝: {}", e),
             AppError::InvalidPath(path) => format!("无效路径: {}", path),
             AppError::Timeout => "操作超时".to_string(),
+            AppError::TimeoutWithMessage(msg) => msg.clone(),
             AppError::NetworkError(e) => format!("网络错误: {}", e),
             AppError::AuthError(e) => format!("认证错误: {}", e),
             AppError::ApiError(e) => format!("API 错误: {}", e),

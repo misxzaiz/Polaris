@@ -940,7 +940,13 @@ pub async fn browser_acquire_with_app(
                 if let Ok(mut guard) = acquire_pending().lock() {
                     guard.remove(&request_id);
                 }
-                return Err(AppError::Timeout);
+                let msg = format!(
+                    "浏览器 acquire 超时（{BROWSER_ACQUIRE_TIMEOUT_SECS}s）：\n\
+                    \t- 请确保 Polaris 主窗口处于可见/前台状态，MCP 工具通过 app.emit 等待前端创建 WebView；\n\
+                    \t- 如果从未打开过内置浏览器面板，请先在侧边栏打开「浏览器」面板；\n\
+                    \t- 极少数情况下，主窗口最小化会导致前端未响应事件，请恢复窗口后重试。"
+                );
+                return Err(AppError::TimeoutWithMessage(msg));
             }
         };
 
