@@ -30,7 +30,11 @@ class MainActivity : TauriActivity() {
     // ngrok 会检测 UA 是否为标准浏览器（以 Mozilla/ 开头），非标准 UA
     // 直接放行。所有从 WebView 发出的请求（包括 fetch 的 preflight OPTIONS）
     // 都会携带此 UA，不会被中间页拦截。
-    webView.settings.userAgentString = "Polaris-App/1.0"
+    //
+    // ⚠️ 注意：UA 必须包含 "Android" 关键字，否则前端 isMobilePlatform()
+    // 会误判为桌面端（走 ConnectingOverlay 而非 MobileConnectionGate）。
+    webView.settings.userAgentString =
+      webView.settings.userAgentString.replace("Mozilla/5.0", "Polaris-App/1.0")
     super.onWebViewCreate(webView)
   }
 }
