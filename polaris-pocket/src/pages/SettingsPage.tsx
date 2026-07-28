@@ -1,11 +1,10 @@
 /**
  * SettingsPage — 设置页
  *
- * 四区块：
+ * 三区块：
  * 1. AI 供应商（对标主项目 ModelProviderTab，多 Profile 多模型管理）
  * 2. Personal Hub（Supabase 配置）
- * 3. 外观（主题 + 字号）
- * 4. 关于
+ * 3. 关于
  *
  * Profile 数据模型对齐主项目 src/types/modelProfile.ts。
  * Profile 持久化到 localStorage（pocket-config.modelProfiles），
@@ -191,30 +190,7 @@ export function SettingsPage() {
         </div>
       </section>
 
-      {/* 3. 外观 */}
-      <section>
-        <h3 className="mb-2.5 text-[15px] font-semibold">外观</h3>
-        <div className="space-y-3 rounded-[14px] border border-border bg-background-elevated p-4 shadow-[0_2px_8px_rgba(0,0,0,0.12)]">
-          <div className="flex items-center justify-between">
-            <div><div className="text-[13px] font-medium">主题</div><div className="text-[11px] text-text-tertiary">暗色 / 跟随系统</div></div>
-            <div className="flex gap-1.5">
-              <button className="rounded-[8px] bg-primary px-3 py-1.5 text-[11px] font-medium text-background-base">暗色</button>
-              <button className="rounded-[8px] border border-border px-3 py-1.5 text-[11px] text-text-secondary">跟随系统</button>
-            </div>
-          </div>
-          <div className="h-px bg-border" />
-          <div className="flex items-center justify-between">
-            <div><div className="text-[13px] font-medium">字号</div><div className="text-[11px] text-text-tertiary">小 / 中 / 大</div></div>
-            <div className="flex gap-1 rounded-[9px] border border-border bg-background-surface p-0.5">
-              <button className="rounded-[7px] px-3 py-1.5 text-[11px] text-text-secondary">小</button>
-              <button className="rounded-[7px] bg-primary px-3 py-1.5 text-[11px] font-medium text-background-base">中</button>
-              <button className="rounded-[7px] px-3 py-1.5 text-[11px] text-text-secondary">大</button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 5. 关于 */}
+      {/* 关于 */}
       <section>
         <h3 className="mb-2.5 text-[15px] font-semibold">关于</h3>
         <div className="rounded-[14px] border border-border bg-background-elevated p-4 shadow-[0_2px_8px_rgba(0,0,0,0.12)]">

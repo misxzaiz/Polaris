@@ -18,6 +18,8 @@ const TABS: TabDef[] = [
   { id: "settings", label: "设置", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1.1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1.1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1.1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.1z" },
 ];
 
+const TITLES: Record<Tab, string> = { chat: "AI 对话", space: "个人空间", settings: "设置" };
+
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
 
@@ -32,8 +34,9 @@ export default function App() {
   return (
     <div className="flex min-h-dvh flex-col bg-background-base text-text-primary">
       {/* Header */}
-      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background-elevated px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+12px)]">
-        <span className="text-[17px] font-semibold tracking-[0.3px]">Pocket</span>
+      <header className="flex shrink-0 items-center justify-between border-b border-border bg-background-elevated px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+12px)]">
+        <span className="text-[17px] font-semibold tracking-[0.3px]">{TITLES[tab]}</span>
+        <span className="font-mono text-[10px] tracking-wide text-text-tertiary">POCKET</span>
       </header>
 
       {/* Main */}

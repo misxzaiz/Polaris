@@ -8,6 +8,14 @@
  * 会话历史收纳到左侧抽屉（汉堡按钮打开），提高信息密度。
  */
 import { useState, useRef, useEffect, useCallback } from "react";
+import { Markdown } from "../components/Markdown";
+
+// 空状态建议 prompt
+const SUGGESTIONS = [
+  { icon: "✦", text: "帮我写一封本周工作周报" },
+  { icon: "✎", text: "用大白话解释什么是闭包" },
+  { icon: "☑", text: "总结今天的待办优先级" },
+];
 
 // ---- 存储 ----
 const KEYS = {
@@ -108,6 +116,14 @@ export function ChatPage() {
     clearError();
     const text = input.trim();
     if (!text) return;
+    setInput("");
+    await sendMessageWith(text, msgs);
+  };
+
+  /** 核心：用给定文本和已存在消息列表发起请求 */
+  const sendMessageWith = useCallback(async (text: string, baseMsgs: Msg[]) => {
+    clearError();
+    if (!text.trim()) return;
 
     const cfg = readActiveProfile();
     if (!cfg) {
@@ -125,10 +141,9 @@ export function ChatPage() {
     }
 
     const userMsg: Msg = { id: `${Date.now()}-u`, role: "user", content: text, ts: Date.now() };
-    const updated = [...msgs, userMsg];
+    const updated = [...baseMsgs, userMsg];
     setMsgs(updated);
     if (sid) save(KEYS.msgs(sid), updated);
-    setInput("");
     setStreaming(true);
     setStream("");
 
@@ -176,9 +191,6 @@ export function ChatPage() {
           for (const line of lines) {
             const data = line.slice(6);
             if (data === "[DONE]") {
-              if (full) {
-                setMsgs(prev => [...prev, { id: `${Date.now()}-a`, role: "assistant", content: full, ts: Date.now() }]);
-              }
               break;
             }
             try {
@@ -214,13 +226,38 @@ export function ChatPage() {
       setStreaming(false);
       setStream("");
     }
-  };
+  }, [active, msgs, streaming]);
 
   const stopStreaming = () => {
     abort.current?.abort();
     setStreaming(false);
     setStream("");
   };
+
+  // 复制消息内容
+  const copyMsg = useCallback(async (content: string) => {
+    try { await navigator.clipboard.writeText(content); } catch { /* ignore */ }
+  }, []);
+
+  // 重试：以某条 user 消息为最后一条，丢弃其后内容重新发起
+  const retryFrom = useCallback(async (msgId: string) => {
+    if (streaming) return;
+    const idx = msgs.findIndex(m => m.id === msgId);
+    if (idx < 0) return;
+    const target = msgs[idx];
+    if (target.role !== "user") return;
+    // 截断到该 user 消息（含），丢弃其后的 assistant/error
+    const truncated = msgs.slice(0, idx + 1);
+    setMsgs(truncated);
+    if (active) save(KEYS.msgs(active), truncated);
+    // 用该消息内容重新发送（不 push 新 user 消息）
+    setInput(target.content);
+    // 下一帧触发发送
+    setTimeout(() => {
+      setInput("");
+      sendMessageWith(target.content, truncated);
+    }, 0);
+  }, [msgs, active, streaming]);
 
   const selectSession = (id: string) => {
     clearError();
@@ -275,27 +312,73 @@ export function ChatPage() {
       {/* 消息流 */}
       <div className="flex-1 space-y-3 overflow-y-auto">
         {msgs.length === 0 && !streaming && (
-          <p className="py-10 text-center text-[12px] text-text-tertiary">
-            {hasConfig ? "开始对话吧，输入消息后按发送" : "配置好 AI 后开始对话"}
-          </p>
+          <div className="flex flex-col items-center gap-4 py-12">
+            <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+              <svg viewBox="0 0 24 24" className="h-8 w-8 fill-none stroke-current stroke-[1.6px]" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>
+            </div>
+            <div className="text-center">
+              <p className="text-[14px] font-semibold text-text-primary">{hasConfig ? "开始对话" : "配置 AI 后开始"}</p>
+              <p className="mt-1 text-[12px] text-text-tertiary">{hasConfig ? "选择下方话题或直接输入" : "前往设置激活一个 Profile"}</p>
+            </div>
+            {hasConfig && (
+              <div className="flex w-full flex-col gap-2">
+                {SUGGESTIONS.map(s => (
+                  <button
+                    key={s.text}
+                    onClick={() => sendMessageWith(s.text, [])}
+                    className="flex items-center gap-2.5 rounded-xl border border-border bg-background-surface px-3.5 py-2.5 text-left text-[13px] text-text-secondary transition-colors hover:border-primary/40 hover:bg-primary/5"
+                  >
+                    <span className="text-primary">{s.icon}</span>
+                    <span className="flex-1">{s.text}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         )}
         {msgs.map(m => (
-          <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-            <div className={`max-w-[84%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed shadow-sm ${
+          <div key={m.id} className={`group/msg flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[86%] rounded-2xl px-3.5 py-2 text-[13px] shadow-sm ${
               m.role === "user"
                 ? "bg-primary text-background-base [border-bottom-right-radius:5px] font-medium"
                 : m.role === "error"
-                  ? "border border-danger/40 bg-danger/8 text-danger"
+                  ? "border border-danger/40 bg-danger/8 text-danger [border-bottom-left-radius:5px]"
                   : "border border-border bg-background-surface text-text-primary [border-bottom-left-radius:5px]"
             }`}>
-              <span className="whitespace-pre-wrap break-words">{m.content}</span>
+              {m.role === "assistant" ? (
+                <Markdown content={m.content} />
+              ) : (
+                <span className="whitespace-pre-wrap break-words">{m.content}</span>
+              )}
+              {/* 消息操作条 */}
+              <div className={`mt-1 flex items-center gap-1 ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                <button
+                  onClick={() => copyMsg(m.content)}
+                  className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] opacity-0 transition-opacity hover:bg-background-base/40 group-hover/msg:opacity-100"
+                  title="复制"
+                >
+                  <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-current stroke-[1.8px]" strokeLinecap="round" strokeLinejoin="round"><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></svg>
+                  复制
+                </button>
+                {m.role === "user" && (
+                  <button
+                    onClick={() => retryFrom(m.id)}
+                    disabled={streaming}
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] opacity-0 transition-opacity hover:bg-background-base/40 disabled:opacity-30 group-hover/msg:opacity-100"
+                    title="重试"
+                  >
+                    <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-current stroke-[1.8px]" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 0 1 15.6-6.3L21 8M21 3v5h-5M21 12a9 9 0 0 1-15.6 6.3L3 16M3 21v-5h5" /></svg>
+                    重试
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         ))}
         {streaming && stream && (
           <div className="flex justify-start">
-            <div className="max-w-[84%] rounded-2xl border border-border bg-background-surface px-3.5 py-2 text-[13px] leading-relaxed [border-bottom-left-radius:5px]">
-              <span className="whitespace-pre-wrap break-words">{stream}</span>
+            <div className="max-w-[86%] rounded-2xl border border-border bg-background-surface px-3.5 py-2 text-[13px] [border-bottom-left-radius:5px]">
+              <Markdown content={stream} />
               <span className="ml-0.5 inline-block w-[7px] text-primary animate-pulse">▌</span>
             </div>
           </div>
