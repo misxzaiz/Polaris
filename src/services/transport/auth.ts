@@ -4,6 +4,12 @@
 
 const SERVER_URL_KEY = 'polaris_server_url';
 const TOKEN_MD5_KEY = 'polaris_web_token_md5';
+/** 已连接过的服务地址历史（JSON 数组），最近使用排在前面 */
+const SERVER_HISTORY_KEY = 'polaris_server_history';
+/** 用户主动断开后，阻止 getServerUrl 回退到页面 origin */
+const DISCONNECT_REQUESTED_KEY = 'polaris_disconnect_requested';
+/** 历史记录上限，超出后丢弃最旧条目 */
+const MAX_HISTORY_ENTRIES = 10;
 
 /**
  * 获取服务器地址
@@ -11,10 +17,18 @@ const TOKEN_MD5_KEY = 'polaris_web_token_md5';
  * 优先级: localStorage > window.location.origin
  * 移动端 Tauri 中，window.location.origin 是 tauri://localhost，
  * 不可用作 API 地址，因此移动端必须通过 localStorage 预设服务器地址。
+ *
+ * 如果用户主动断开（clearServerUrl），则不再回退到页面 origin，
+ * 返回空字符串以确保重新进入设置页。
  */
 export function getServerUrl(): string {
   const stored = localStorage.getItem(SERVER_URL_KEY);
   if (stored) return stored;
+
+  // 用户主动断开后不从页面 origin 回退
+  if (localStorage.getItem(DISCONNECT_REQUESTED_KEY) === '1') {
+    return '';
+  }
 
   // 移动端 Tauri WebView 的 origin 是 tauri.localhost，不可用
   const origin = window.location.origin;
@@ -33,7 +47,11 @@ function isMobileTauri(): boolean {
 
 /** 保存服务器地址 */
 export function storeServerUrl(url: string): void {
-  localStorage.setItem(SERVER_URL_KEY, url);
+  const trimmed = url.trim();
+  if (!trimmed) return;
+  localStorage.setItem(SERVER_URL_KEY, trimmed);
+  // 重新连接后清除断开标记，恢复正常的 origin 回退行为
+  localStorage.removeItem(DISCONNECT_REQUESTED_KEY);
   // 移动端同步保存到 Rust 后端（持久化到文件）
   saveToMobileBackend(url);
 }
@@ -62,6 +80,79 @@ export function getTokenMd5(): string {
 export function storeTokenMd5(tokenMd5: string): void {
   localStorage.setItem(TOKEN_MD5_KEY, tokenMd5);
   saveToMobileBackend(localStorage.getItem(SERVER_URL_KEY) || '');
+}
+
+// ─── 连接历史 ──────────────────────────────────────────────
+
+export interface ServerHistoryEntry {
+  /** 服务地址 */
+  url: string;
+  /** Token MD5（可选，为空表示该地址未配 Token） */
+  tokenMd5?: string;
+  /** 最近使用时间戳（ms） */
+  lastUsed: number;
+}
+
+/** 读取历史记录（按最近使用倒序，最多 MAX_HISTORY_ENTRIES 条） */
+export function getServerHistory(): ServerHistoryEntry[] {
+  try {
+    const raw = localStorage.getItem(SERVER_HISTORY_KEY);
+    if (!raw) return [];
+    return JSON.parse(raw) as ServerHistoryEntry[];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 添加或更新历史记录。
+ * - 同 url 的已有条目会被移到首位并更新 tokenMd5 / lastUsed
+ * - 去重并截断至 MAX_HISTORY_ENTRIES 条
+ * - 不写 Token 明文，只存 MD5
+ */
+export function addServerToHistory(url: string, tokenMd5?: string): void {
+  const existing = getServerHistory().filter((e) => e.url !== url);
+  const entry: ServerHistoryEntry = {
+    url,
+    tokenMd5: tokenMd5 ? tokenMd5 : undefined,
+    lastUsed: Date.now(),
+  };
+  const next = [entry, ...existing].slice(0, MAX_HISTORY_ENTRIES);
+  localStorage.setItem(SERVER_HISTORY_KEY, JSON.stringify(next));
+}
+
+/** 从历史记录中移除指定地址 */
+export function removeServerFromHistory(url: string): void {
+  const filtered = getServerHistory().filter((e) => e.url !== url);
+  localStorage.setItem(SERVER_HISTORY_KEY, JSON.stringify(filtered));
+}
+
+/** 清空全部历史记录 */
+export function clearServerHistory(): void {
+  localStorage.removeItem(SERVER_HISTORY_KEY);
+}
+
+/**
+ * 断开当前连接（清除当前地址 + Token，保留历史记录）。
+ * 设置断开标记，阻止 getServerUrl 回退到页面 origin。
+ * 移动端会等待后端清空完成后再返回，避免与后续 storeServerUrl 的
+ * saveToMobileBackend 发生写写竞态（两个 set_server_config 并发时
+ * 后到达的空值会覆盖有效值）。
+ */
+export async function clearServerUrl(): Promise<void> {
+  localStorage.removeItem(SERVER_URL_KEY);
+  localStorage.removeItem(TOKEN_MD5_KEY);
+  // 标记主动断开，防止 getServerUrl 回退到页面 origin
+  localStorage.setItem(DISCONNECT_REQUESTED_KEY, '1');
+  // 移动端等待后端清空完成，消除与后续写入的竞态
+  if (isMobileTauri()) {
+    try {
+      const { invoke } = await import('@tauri-apps/api/core');
+      await invoke('set_server_config', { serverUrl: '', token: '' });
+    } catch {
+      // 静默失败，不影响前端断开体验
+    }
+  }
 }
 
 function rotl(x: number, n: number): number {
