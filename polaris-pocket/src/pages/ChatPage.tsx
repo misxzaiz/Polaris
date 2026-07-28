@@ -1,11 +1,11 @@
 /**
  * Pocket Chat — 独立 AI 对话页
  *
- * 核心交互：
- * - 用户输入文本 → 发送 → 流式显示 AI 回复
- * - 支持多会话切换
- * - 错误清晰反馈，不再静默吞掉
- * - 未配置 API 时有明显的引导提示
+ * 与桌面端完全隔离：直连 OpenAI 兼容 API（从设置页激活的 AI Profile 读取
+ * baseUrl/apiKey/model），流式响应，多会话历史存 localStorage。
+ *
+ * 布局：主页面只显示当前对话的消息流 + 底部输入区；
+ * 会话历史收纳到左侧抽屉（汉堡按钮打开），提高信息密度。
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 
@@ -25,20 +25,36 @@ interface Session {
 interface Msg {
   id: string; role: "user" | "assistant" | "error"; content: string; ts: number;
 }
-interface ChatConfig {
-  apiBase: string; apiKey: string; model: string;
+
+/** AI Profile 配置（与 SettingsPage 的 ModelProfile 对齐） */
+interface ActiveProfile {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  name?: string;
 }
 
-// 从 localStorage 读取配置
-function readConfig(): ChatConfig {
-  const defaultCfg: ChatConfig = { apiBase: "", apiKey: "", model: "gpt-4o" };
+/** 从 localStorage 读取激活的 AI Profile（active=true），回退到旧三字段配置 */
+function readActiveProfile(): ActiveProfile | null {
   try {
     const raw = localStorage.getItem("pocket-config");
-    if (!raw) return defaultCfg;
-    const parsed = JSON.parse(raw) as Partial<ChatConfig>;
-    return { ...defaultCfg, ...parsed };
+    if (!raw) return null;
+    const cfg = JSON.parse(raw);
+    // 优先：激活的 Profile
+    const profiles = cfg.modelProfiles as ActiveProfile[] | undefined;
+    if (Array.isArray(profiles)) {
+      const active = profiles.find(p => (p as { active?: boolean }).active);
+      if (active && active.baseUrl && active.apiKey && active.model) {
+        return { baseUrl: active.baseUrl, apiKey: active.apiKey, model: active.model, name: active.name };
+      }
+    }
+    // 回退：旧三字段配置
+    if (cfg.apiBase && cfg.apiKey) {
+      return { baseUrl: cfg.apiBase, apiKey: cfg.apiKey, model: cfg.model || "gpt-4o" };
+    }
+    return null;
   } catch {
-    return defaultCfg;
+    return null;
   }
 }
 
@@ -50,33 +66,33 @@ export function ChatPage() {
   const [streaming, setStreaming] = useState(false);
   const [stream, setStream] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [configRead, setConfigRead] = useState<ChatConfig>(() => readConfig());
+  const [profile, setProfile] = useState<ActiveProfile | null>(() => readActiveProfile());
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  const hasConfig = configRead.apiKey !== "";
+  const hasConfig = !!profile;
 
-  // 每次渲染时重新读取配置（从 localStorage）
+  // 切换到本页时重新读取 Profile（用户可能在设置页改过）
+  const refreshProfile = useCallback(() => setProfile(readActiveProfile()), []);
+  useEffect(() => { refreshProfile(); }, [refreshProfile]);
+
+  // 监听设置页保存事件
   useEffect(() => {
-    setConfigRead(readConfig());
-  }, []);
+    const handler = () => refreshProfile();
+    window.addEventListener("pocket-config-changed", handler);
+    return () => window.removeEventListener("pocket-config-changed", handler);
+  }, [refreshProfile]);
 
   // 切换会话时加载历史消息
   useEffect(() => {
-    if (active) {
-      const cached = load(KEYS.msgs(active), []);
-      setMsgs(cached);
-    } else {
-      setMsgs([]);
-    }
+    if (active) setMsgs(load(KEYS.msgs(active), []));
+    else setMsgs([]);
   }, [active]);
 
-  // 自动滚动到底部
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [msgs, stream, error]);
+  // 自动滚动
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, stream, error]);
 
-  // 清除错误
   const clearError = useCallback(() => setError(null), []);
 
   const newSession = () => {
@@ -85,6 +101,7 @@ export function ChatPage() {
     setSessions(prev => { save(KEYS.sessions, [s, ...prev]); return [s, ...prev]; });
     setActive(s.id);
     setMsgs([]);
+    setDrawerOpen(false);
   };
 
   const sendMessage = async () => {
@@ -92,17 +109,10 @@ export function ChatPage() {
     const text = input.trim();
     if (!text) return;
 
-    // 未配置 API Key
-    if (!hasConfig) {
-      setError("请先在「设置」中配置 AI API Key 后再发送消息");
-      return;
-    }
-
-    // 先检查配置是否有变化（可能刚在设置页保存）
-    const cfg = readConfig();
-    if (!cfg.apiKey) {
-      setConfigRead(cfg);
-      setError("请先在「设置」中配置 AI API Key 后再发送消息");
+    const cfg = readActiveProfile();
+    if (!cfg) {
+      setError("请先在「设置 → AI 供应商」中激活一个 Profile 后再发送消息");
+      setProfile(null);
       return;
     }
 
@@ -126,7 +136,7 @@ export function ChatPage() {
     abort.current = ctrl;
 
     try {
-      const apiBase = (cfg.apiBase || "https://api.openai.com/v1").replace(/\/+$/, "");
+      const apiBase = cfg.baseUrl.replace(/\/+$/, "");
       const res = await fetch(`${apiBase}/chat/completions`, {
         method: "POST",
         headers: {
@@ -134,8 +144,8 @@ export function ChatPage() {
           Authorization: `Bearer ${cfg.apiKey}`,
         },
         body: JSON.stringify({
-          model: cfg.model || "gpt-4o",
-          messages: updated.map(m => ({ role: m.role, content: m.content })),
+          model: cfg.model,
+          messages: updated.map(m => ({ role: m.role === "error" ? "assistant" : m.role, content: m.content })),
           stream: true,
         }),
         signal: ctrl.signal,
@@ -144,7 +154,6 @@ export function ChatPage() {
       if (!res.ok) {
         const errText = await res.text().catch(() => "");
         let msg = `请求失败 (${res.status})`;
-        // 尝试解析错误详情
         try {
           const body = JSON.parse(errText);
           msg = body.error?.message || body.message || body.detail || msg;
@@ -162,33 +171,21 @@ export function ChatPage() {
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
           const chunk = decoder.decode(value, { stream: true });
           const lines = chunk.split("\n").filter(l => l.startsWith("data: "));
-
           for (const line of lines) {
             const data = line.slice(6);
             if (data === "[DONE]") {
               if (full) {
-                setMsgs(prev => [...prev, {
-                  id: `${Date.now()}-a`,
-                  role: "assistant",
-                  content: full,
-                  ts: Date.now(),
-                }]);
+                setMsgs(prev => [...prev, { id: `${Date.now()}-a`, role: "assistant", content: full, ts: Date.now() }]);
               }
               break;
             }
             try {
               const parsed = JSON.parse(data);
               const delta = parsed.choices?.[0]?.delta?.content;
-              if (delta) {
-                full += delta;
-                setStream(full);
-              }
-            } catch {
-              // 跳过非 JSON 行
-            }
+              if (delta) { full += delta; setStream(full); }
+            } catch { /* skip */ }
           }
         }
       } finally {
@@ -202,10 +199,7 @@ export function ChatPage() {
         if (sid) save(KEYS.msgs(sid), final);
         if (sid) {
           setSessions(p => {
-            const n = p.map(s => s.id === sid
-              ? { ...s, updated: Date.now(), last: full.slice(0, 80) }
-              : s
-            );
+            const n = p.map(s => s.id === sid ? { ...s, updated: Date.now(), last: full.slice(0, 80) } : s);
             save(KEYS.sessions, n);
             return n;
           });
@@ -213,13 +207,9 @@ export function ChatPage() {
       }
     } catch (e: unknown) {
       if ((e as Error).name === "AbortError") {
-        setStreaming(false);
-        setStream("");
-        return;
+        setStreaming(false); setStream(""); return;
       }
-      const msg = (e as Error).message || "发送失败，请检查 API 配置和网络";
-      setError(msg);
-      // 保存错误消息到聊天记录（可选，方便调试）
+      setError((e as Error).message || "发送失败，请检查 API 配置和网络");
     } finally {
       setStreaming(false);
       setStream("");
@@ -236,35 +226,40 @@ export function ChatPage() {
     clearError();
     setActive(id);
     setMsgs(load(KEYS.msgs(id), []));
+    setDrawerOpen(false);
   };
 
   const deleteSession = (id: string) => {
     clearError();
-    setSessions(p => {
-      const n = p.filter(s => s.id !== id);
-      save(KEYS.sessions, n);
-      return n;
-    });
+    setSessions(p => { const n = p.filter(s => s.id !== id); save(KEYS.sessions, n); return n; });
     localStorage.removeItem(KEYS.msgs(id));
-    if (active === id) {
-      setActive(null);
-      setMsgs([]);
-    }
+    if (active === id) { setActive(null); setMsgs([]); }
   };
 
   const send = () => sendMessage();
+  const curSession = sessions.find(s => s.id === active);
 
   return (
-    <div className="flex h-full flex-col">
-      {/* 未配置 API 引导 */}
+    <div className="relative flex h-full flex-col">
+      {/* 顶栏：汉堡 + 当前会话标题 */}
+      <div className="mb-3 flex items-center gap-2">
+        <button onClick={() => setDrawerOpen(true)} className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] border border-border bg-background-surface text-text-secondary transition-colors hover:bg-border" title="会话历史">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-none stroke-current stroke-[1.8px]" strokeLinecap="round"><path d="M3 6h18M3 12h18M3 18h18" /></svg>
+        </button>
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[14px] font-semibold">{curSession?.title || "新对话"}</h3>
+          {profile && <span className="font-mono text-[10px] text-text-tertiary">{profile.name || profile.model}</span>}
+        </div>
+        <button onClick={newSession} className="flex h-[34px] w-[34px] items-center justify-center rounded-[10px] bg-background-surface text-text-secondary transition-colors hover:bg-border" title="新对话">
+          <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-none stroke-current stroke-[1.8px]" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+        </button>
+      </div>
+
+      {/* 未配置引导 */}
       {!hasConfig && (
         <div className="mb-2 rounded-xl border border-primary/40 bg-primary/8 px-4 py-3">
-          <p className="text-xs font-semibold text-primary">
-            ⚠ 请先配置 AI
-          </p>
-          <p className="mt-1 text-[10px] leading-5 text-text-secondary">
-            进入「设置」→ 填入 API 地址和 Key 后即可开始对话
-          </p>
+          <p className="text-xs font-semibold text-primary">⚠ 请先配置 AI</p>
+          <p className="mt-1 text-[11px] leading-relaxed text-text-secondary">进入「设置 → AI 供应商」激活一个 Profile 后即可开始对话</p>
         </div>
       )}
 
@@ -273,88 +268,103 @@ export function ChatPage() {
         <div className="mb-2 flex items-start gap-2 rounded-xl border border-danger/40 bg-danger/8 px-3 py-2">
           <span className="shrink-0 text-xs text-danger">✕</span>
           <span className="min-w-0 flex-1 text-[11px] leading-5 text-danger">{error}</span>
-          <button
-            type="button"
-            onClick={clearError}
-            className="shrink-0 text-[10px] text-text-tertiary hover:text-text-primary"
-          >
-            关闭
-          </button>
+          <button onClick={clearError} className="shrink-0 text-[10px] text-text-tertiary hover:text-text-primary">关闭</button>
         </div>
       )}
 
-      {/* 会话列表 */}
-      <div className="mb-2 space-y-1.5 rounded-xl border border-border bg-background-elevated p-2">
-        <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-text-secondary">对话</span>
-          <button type="button" onClick={newSession} className="rounded bg-background-surface px-2 py-1 text-xs text-text-secondary">+ 新对话</button>
-        </div>
-        {sessions.length === 0 && <p className="text-[10px] text-text-tertiary">暂无对话</p>}
-        {sessions.slice(0, 15).map(s => (
-          <div key={s.id} className="flex items-center gap-1 rounded-lg px-2 py-1.5 text-xs" style={active === s.id ? { background: "rgba(203,166,247,0.12)", color: "#cba6f7" } : undefined}>
-            <button className="min-w-0 flex-1 text-left truncate" onClick={() => selectSession(s.id)}>
-              <span className="block truncate">{s.title}</span>
-              <span className="block truncate text-[9px] text-text-tertiary">{s.last}</span>
-            </button>
-            <button className="text-text-tertiary hover:text-danger" onClick={() => deleteSession(s.id)}>×</button>
-          </div>
-        ))}
-      </div>
-
       {/* 消息流 */}
-      <div className="flex-1 space-y-2 overflow-y-auto">
+      <div className="flex-1 space-y-3 overflow-y-auto">
         {msgs.length === 0 && !streaming && (
-          <p className="py-8 text-center text-[11px] text-text-tertiary">
-            {hasConfig ? "开始对话吧，输入消息后按发送" : "配置好 API 后开始对话"}
+          <p className="py-10 text-center text-[12px] text-text-tertiary">
+            {hasConfig ? "开始对话吧，输入消息后按发送" : "配置好 AI 后开始对话"}
           </p>
         )}
         {msgs.map(m => (
-          <div key={m.id} className={`rounded-xl px-3 py-2 text-sm leading-6 ${
-            m.role === "user" ? "ml-6 bg-primary/10"
-              : m.role === "error" ? "mr-6 border border-danger/40 bg-danger/8"
-              : "mr-6 border border-border bg-background-surface"
-          }`}>
-            <span className="mb-0.5 block text-[9px] text-text-tertiary">
-              {m.role === "user" ? "你" : m.role === "error" ? "错误" : "AI"}
-            </span>
-            <span className="whitespace-pre-wrap break-words">{m.content}</span>
+          <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+            <div className={`max-w-[84%] rounded-2xl px-3.5 py-2 text-[13px] leading-relaxed shadow-sm ${
+              m.role === "user"
+                ? "bg-primary text-background-base [border-bottom-right-radius:5px] font-medium"
+                : m.role === "error"
+                  ? "border border-danger/40 bg-danger/8 text-danger"
+                  : "border border-border bg-background-surface text-text-primary [border-bottom-left-radius:5px]"
+            }`}>
+              <span className="whitespace-pre-wrap break-words">{m.content}</span>
+            </div>
           </div>
         ))}
         {streaming && stream && (
-          <div className="mr-6 rounded-xl border border-border bg-background-surface px-3 py-2 text-sm whitespace-pre-wrap break-words">
-            {stream}
-            <span className="inline-block ml-1 text-text-tertiary">▌</span>
+          <div className="flex justify-start">
+            <div className="max-w-[84%] rounded-2xl border border-border bg-background-surface px-3.5 py-2 text-[13px] leading-relaxed [border-bottom-left-radius:5px]">
+              <span className="whitespace-pre-wrap break-words">{stream}</span>
+              <span className="ml-0.5 inline-block w-[7px] text-primary animate-pulse">▌</span>
+            </div>
           </div>
         )}
         <div ref={bottomRef} />
       </div>
 
       {/* 输入区 */}
-      <div className="mt-2 flex gap-1.5">
+      <div className="mt-3 flex items-end gap-2 rounded-[14px] border border-border bg-background-elevated p-2 transition-[border-color,box-shadow] focus-within:border-primary focus-within:shadow-[0_0_0_3px_rgba(203,166,247,0.12)]">
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={e => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-          placeholder="输入消息..."
-          className="flex-1 resize-none rounded-lg border border-border bg-background-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-primary disabled:opacity-50"
-          disabled={streaming || !hasConfig}
+          onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
+          rows={1}
+          placeholder="输入消息…"
+          className="max-h-32 flex-1 resize-none bg-transparent text-[13px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary"
+          disabled={streaming}
         />
         <button
           onClick={streaming ? stopStreaming : send}
-          disabled={!input.trim()}
-          className={`rounded-lg px-3 py-2 text-xs disabled:opacity-40 ${
-            streaming ? "bg-danger/20 text-danger" : "bg-primary text-background-base"
+          disabled={!streaming && !input.trim()}
+          className={`flex h-[34px] w-[34px] items-center justify-center rounded-[10px] transition-transform hover:scale-105 disabled:opacity-40 disabled:transform-none ${
+            streaming ? "bg-danger/15 text-danger" : "bg-primary text-background-base"
           }`}
+          title={streaming ? "停止" : "发送"}
         >
-          {streaming ? "停" : "发"}
+          {streaming ? (
+            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-current"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" /></svg>
+          )}
         </button>
       </div>
+
+      {/* 会话历史抽屉 */}
+      {drawerOpen && (
+        <>
+          <div className="fixed inset-0 z-[60] bg-black/45 transition-opacity" onClick={() => setDrawerOpen(false)} />
+          <aside className="fixed left-0 top-0 bottom-0 z-[61] flex w-[280px] max-w-[75%] flex-col border-r border-border bg-background-elevated shadow-[0_8px_28px_rgba(0,0,0,0.28)]" style={{ transform: "translateX(0)", animation: "slideIn 0.25s ease" }}>
+            <style>{`@keyframes slideIn{from{transform:translateX(-100%)}to{transform:translateX(0)}}`}</style>
+            <div className="flex items-center justify-between border-b border-border px-4 py-3.5">
+              <span className="text-[14px] font-semibold">对话历史</span>
+              <button onClick={() => setDrawerOpen(false)} className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] border border-border text-text-secondary hover:bg-background-surface">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="px-3 py-2">
+              <button onClick={newSession} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] bg-primary py-2 text-[13px] font-medium text-background-base transition-opacity hover:opacity-90">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-[2.4px]" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+                新对话
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-2.5 py-1">
+              {sessions.length === 0 && <p className="py-6 text-center text-[11px] text-text-tertiary">暂无对话</p>}
+              {sessions.map(s => (
+                <div key={s.id} className={`mb-1 flex items-center gap-2 rounded-[10px] border px-2.5 py-2 transition-colors ${active === s.id ? "border-primary/30 bg-primary/5" : "border-transparent hover:bg-background-surface"}`}>
+                  <button className="min-w-0 flex-1 text-left" onClick={() => selectSession(s.id)}>
+                    <span className="block truncate text-[12px] font-medium text-text-primary">{s.title}</span>
+                    <span className="block truncate text-[10px] text-text-tertiary">{s.last || "（空）"}</span>
+                  </button>
+                  <button onClick={() => deleteSession(s.id)} className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger" title="删除">
+                    <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-current stroke-2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" /></svg>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </aside>
+        </>
+      )}
     </div>
   );
 }

@@ -1,91 +1,62 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState } from "react";
 import { ChatPage } from "./pages/ChatPage";
-import { HubPage } from "./pages/HubPage";
-import { ImagesPage } from "./pages/ImagesPage";
-import { TodoPage } from "./pages/TodoPage";
-import { ConnectPage } from "./pages/ConnectPage";
+import { SpacePage } from "./pages/SpacePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
-type Tab = "chat" | "hub" | "images" | "todo" | "connect" | "settings";
+type Tab = "chat" | "space" | "settings";
 
 interface TabDef {
   id: Tab;
   label: string;
+  /** 内联 SVG path（stroke 风格，受 currentColor 控制） */
   icon: string;
 }
 
 const TABS: TabDef[] = [
-  { id: "chat", label: "聊天", icon: "💬" },
-  { id: "hub", label: "空间", icon: "🔖" },
-  { id: "images", label: "画图", icon: "🎨" },
-  { id: "todo", label: "待办", icon: "✓" },
-  { id: "connect", label: "桌面", icon: "🔗" },
-  { id: "settings", label: "设置", icon: "⚙" },
+  { id: "chat", label: "AI", icon: "M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" },
+  { id: "space", label: "空间", icon: "M12 2l3 7h7l-5.5 4 2 7L12 16l-6.5 4 2-7L2 9h7z" },
+  { id: "settings", label: "设置", icon: "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1.1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1.1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1.1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1.1z" },
 ];
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
-  const [connected, setConnected] = useState(false);
-
-  useEffect(() => {
-    const checkConnected = () => {
-      const url = localStorage.getItem("pocket-server-url") || "";
-      setConnected(!!url);
-    };
-    checkConnected();
-    // 监听 ConnectPage 发出的连接状态变更事件
-    window.addEventListener("pocket-connection-changed", checkConnected);
-    return () => window.removeEventListener("pocket-connection-changed", checkConnected);
-  }, []);
 
   const renderPage = () => {
     switch (tab) {
-      case "chat":
-        return <ChatPage />;
-      case "hub":
-        return <HubPage />;
-      case "images":
-        return <ImagesPage />;
-      case "todo":
-        return <TodoPage />;
-      case "connect":
-        return <ConnectPage />;
-      case "settings":
-        return <SettingsPage />;
+      case "chat": return <ChatPage />;
+      case "space": return <SpacePage />;
+      case "settings": return <SettingsPage />;
     }
   };
 
   return (
     <div className="flex min-h-dvh flex-col bg-background-base text-text-primary">
-      {/* 顶部条 */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border bg-background-elevated px-4 pb-2 pt-[calc(env(safe-area-inset-top)+8px)]">
-        <span className="text-base font-semibold tracking-wide">Pocket</span>
-        <div className="flex items-center gap-1.5 text-[10px] text-text-tertiary">
-          <span className={`h-1.5 w-1.5 rounded-full ${connected ? "bg-success" : "bg-text-tertiary"}`} />
-          <span>{connected ? "已连桌面" : "离线"}</span>
-        </div>
+      {/* Header */}
+      <header className="flex shrink-0 items-center gap-3 border-b border-border bg-background-elevated px-4 pb-2.5 pt-[calc(env(safe-area-inset-top)+12px)]">
+        <span className="text-[17px] font-semibold tracking-[0.3px]">Pocket</span>
       </header>
 
-      {/* 主内容 */}
-      <main className="flex-1 overflow-y-auto p-3 pb-[calc(env(safe-area-inset-bottom)+72px)]">
+      {/* Main */}
+      <main className="flex-1 overflow-y-auto px-4 pb-[calc(env(safe-area-inset-bottom)+76px)] pt-3.5">
         {renderPage()}
       </main>
 
-      {/* 底部导航 */}
+      {/* Tab Bar */}
       <nav className="fixed inset-x-0 bottom-0 border-t border-border bg-background-elevated/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm">
-        <div className="grid grid-cols-6 gap-0 px-2 py-1.5">
+        <div className="mx-auto grid max-w-[430px] grid-cols-3">
           {TABS.map((t) => {
             const sel = tab === t.id;
             return (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
-                className={`flex flex-col items-center gap-0 rounded-lg px-1 py-1.5 text-[10px] transition-colors ${
-                  sel ? "text-primary" : "text-text-tertiary"
-                }`}
+                className={`relative flex flex-col items-center gap-1 py-2 text-[10px] transition-colors ${sel ? "text-primary" : "text-text-tertiary"}`}
               >
-                <span className="text-lg leading-5">{t.icon}</span>
-                <span>{t.label}</span>
+                {sel && <span className="absolute left-1/2 top-0 h-[2px] w-[18px] -translate-x-1/2 rounded-full bg-primary" />}
+                <svg viewBox="0 0 24 24" className={`h-[20px] w-[20px] fill-none stroke-current ${sel ? "stroke-[2px]" : "stroke-[1.7px]"}`} strokeLinecap="round" strokeLinejoin="round">
+                  <path d={t.icon} />
+                </svg>
+                <span className={sel ? "font-medium" : ""}>{t.label}</span>
               </button>
             );
           })}

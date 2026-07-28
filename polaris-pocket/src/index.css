@@ -7,12 +7,13 @@
 }
 
 html {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
 }
 
 body {
-  background: #1e1e2e;
+  background: linear-gradient(180deg, #16161e 0%, #1a1a26 100%);
+  background-attachment: fixed;
   margin: 0;
   overflow: hidden;
 }
@@ -23,11 +24,41 @@ body {
   flex-direction: column;
 }
 
+/* 滚动条隐藏 */
+::-webkit-scrollbar {
+  display: none;
+}
+* {
+  scrollbar-width: none;
+}
+
 /* 代码块样式 */
 code {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 0.9em;
-  background: rgba(69, 71, 90, 0.6);
+  background: rgba(0, 0, 0, 0.25);
   padding: 0.15em 0.4em;
   border-radius: 4px;
+}
+
+/* 输入框基础类（SettingsPage 等复用） */
+@layer components {
+  .input-base {
+    width: 100%;
+    border-radius: 10px;
+    border: 1px solid theme("colors.border");
+    background: theme("colors.background-surface");
+    padding: 9px 12px;
+    font-size: 13px;
+    color: theme("colors.text-primary");
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .input-base::placeholder {
+    color: theme("colors.text-tertiary");
+  }
+  .input-base:focus {
+    border-color: theme("colors.primary");
+    box-shadow: 0 0 0 3px rgba(203, 166, 247, 0.12);
+  }
 }

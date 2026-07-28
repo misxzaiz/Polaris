@@ -1,72 +1,25 @@
 /**
  * desktopClient — Pocket 连接桌面端后的 HTTP API 客户端
  *
- * 参考 polaris-mobile src/services/transport/httpTransport.ts 的路由映射。
- * 读取 localStorage 中的 serverUrl 和 token，所有请求统一走 JSON fetch。
+ * HTTP invoke 直接复用主项目 @/services/transport/httpTransport 的 createHttpTransport。
+ * 保留 Pocket 自己的类型定义和快捷 API 函数。
  */
-
-import { getServerUrl, getTokenMd5 } from './auth';
+import { getServerUrl } from './auth';
 
 // ============================================================================
-// 路由映射
+// 获取传输适配器（懒加载单例）
 // ============================================================================
 
-const COMMAND_ROUTE_MAP: Record<string, string> = {
-  // Chat
-  continue_chat: '/api/chat/send',
-  interrupt_chat: '/api/chat/interrupt',
-  get_session_history: '/api/chat/history',
-  answer_question: '/api/chat/answer-question',
-  approve_plan: '/api/chat/approve-plan',
-  reject_plan: '/api/chat/reject-plan',
-  // Sessions (paginated)
-  list_sessions: '/api/sessions',
-  // Settings
-  get_config: '/api/settings',
-  // Health
-  health_check: '/api/health',
-  // Todos
-  list_todos: '/api/todos',
-  complete_todo: '/api/todos',
-  // Scheduler
-  scheduler_list_tasks: '/api/scheduler/tasks',
-  scheduler_run_task: '/api/scheduler/tasks',
-  // Workspace
-  validate_workspace_path: '/api/workspace/validate',
-};
+let transportPromise: ReturnType<typeof import('@/services/transport/httpTransport').createHttpTransport> | null = null;
 
-/** GET-only commands */
-const GET_COMMANDS: ReadonlySet<string> = new Set([
-  'get_config',
-  'list_sessions',
-  'health_check',
-  'get_session_history',
-  'list_todos',
-  'scheduler_list_tasks',
-]);
-
-function commandToPath(command: string): string {
-  const mapped = COMMAND_ROUTE_MAP[command];
-  if (mapped) return mapped;
-  // fallback: kebab-case
-  return `/api/${command.replace(/_/g, '-')}`;
-}
-
-function getUrl(): string {
-  return getServerUrl().replace(/\/+$/, '');
-}
-
-function getToken(): string {
-  return getTokenMd5();
-}
-
-function getHeaders(): Record<string, string> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = getToken();
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+async function getTransport() {
+  if (!transportPromise) {
+    const { createHttpTransport } = await import('@/services/transport/httpTransport');
+    const url = getServerUrl().replace(/\/+$/, '');
+    if (!url) throw new Error('未配置桌面端连接');
+    transportPromise = createHttpTransport(url);
   }
-  return headers;
+  return transportPromise;
 }
 
 // ============================================================================
@@ -74,63 +27,15 @@ function getHeaders(): Record<string, string> {
 // ============================================================================
 
 export function isConfigured(): boolean {
-  return !!getUrl();
+  return !!getServerUrl();
 }
 
 /**
- * 通用 invoke — 类似于 Tauri invoke 的 HTTP 版
+ * 通用 invoke — 委托给主项目 httpTransport 的 invoke
  */
 export async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
-  const baseUrl = getUrl();
-  if (!baseUrl) {
-    throw new Error('未配置桌面端连接');
-  }
-
-  const path = commandToPath(command);
-  const isGet = GET_COMMANDS.has(command);
-
-  let url = `${baseUrl}${path}`;
-  let method = 'POST';
-  let body: string | undefined;
-
-  if (isGet) {
-    method = 'GET';
-    if (args && Object.keys(args).length > 0) {
-      const params = new URLSearchParams();
-      for (const [key, val] of Object.entries(args)) {
-        if (val != null && val !== '') {
-          params.set(key, String(val));
-        }
-      }
-      const qs = params.toString();
-      if (qs) url = `${url}?${qs}`;
-    }
-  } else if (command === 'get_session_history' && args?.sessionId) {
-    method = 'GET';
-    url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}`;
-  } else if (command === 'complete_todo' && args?.id) {
-    // POST with id in body
-    body = JSON.stringify({ id: args.id, workspacePath: args.workspacePath || null });
-  } else if (command === 'scheduler_run_task' && args?.id) {
-    body = JSON.stringify({ id: args.id, workspacePath: args.workspacePath || null });
-  } else {
-    body = JSON.stringify(args ?? {});
-  }
-
-  const res = await fetch(url, {
-    method,
-    headers: getHeaders(),
-    body,
-    signal: AbortSignal.timeout(30000),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error((errBody as { error?: string }).error || `API error: ${res.status}`);
-  }
-
-  if (res.status === 204) return undefined as T;
-  return res.json() as Promise<T>;
+  const transport = await getTransport();
+  return transport.invoke<T>(command, args);
 }
 
 // ============================================================================
@@ -211,6 +116,22 @@ export async function continueChat(sessionId: string, message: string, options?:
   return invoke('continue_chat', { sessionId, message, options });
 }
 
+export async function interruptChat(sessionId: string): Promise<void> {
+  return invoke('interrupt_chat', { sessionId });
+}
+
+export async function answerQuestion(sessionId: string, callId: string, answer: { selected?: string[]; declined?: boolean }): Promise<void> {
+  return invoke('answer_question', { sessionId, callId, answer });
+}
+
+export async function approvePlan(sessionId: string, planId: string): Promise<void> {
+  return invoke('approve_plan', { sessionId, planId });
+}
+
+export async function rejectPlan(sessionId: string, planId: string): Promise<void> {
+  return invoke('reject_plan', { sessionId, planId });
+}
+
 export async function listTodos(workspacePath?: string | null): Promise<TodoItem[]> {
   return invoke<TodoItem[]>('list_todos', { params: { scope: 'workspace', workspacePath: workspacePath || null } });
 }
@@ -233,20 +154,4 @@ export async function getConfig(): Promise<Config> {
 
 export async function validateWorkspacePath(path: string): Promise<{ valid: boolean; error?: string }> {
   return invoke<{ valid: boolean; error?: string }>('validate_workspace_path', { path });
-}
-
-export async function interruptChat(sessionId: string): Promise<void> {
-  return invoke('interrupt_chat', { sessionId });
-}
-
-export async function answerQuestion(sessionId: string, callId: string, answer: { selected?: string[]; declined?: boolean }): Promise<void> {
-  return invoke('answer_question', { sessionId, callId, answer });
-}
-
-export async function approvePlan(sessionId: string, planId: string): Promise<void> {
-  return invoke('approve_plan', { sessionId, planId });
-}
-
-export async function rejectPlan(sessionId: string, planId: string): Promise<void> {
-  return invoke('reject_plan', { sessionId, planId });
 }
