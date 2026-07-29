@@ -155,6 +155,22 @@ export function ChatPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
+  // 监听文件管理器的"发送到 AI"事件（从文件页注入文件内容到对话）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as {
+        path: string; name: string; content?: string | null; size: number; mime: string;
+      };
+      if (detail.content) {
+        setInput(`请分析这个文件（${detail.name}，${(detail.size / 1024).toFixed(1)} KB）：\n\n\`\`\`\n${detail.content}\n\`\`\``);
+      } else {
+        setInput(`请分析文件 ${detail.name}（路径：${detail.path}，${detail.mime}）`);
+      }
+    };
+    window.addEventListener("pocket-ai-send-file", handler);
+    return () => window.removeEventListener("pocket-ai-send-file", handler);
+  }, []);
+
   // 切换到本页时重新读取 Profile
   const refreshProfile = useCallback(() => setProfile(readActiveProfile()), []);
   useEffect(() => { refreshProfile(); }, [refreshProfile]);

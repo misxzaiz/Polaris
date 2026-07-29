@@ -1,0 +1,150 @@
+name: Pocket Android Release
+
+on:
+  push:
+    tags:
+      - 'polaris-pocket-v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. v1.1.0)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  NDK_VERSION: '26.1.10909125'
+  ANDROID_API: 35
+  RUST_ANDROID_TARGETS: 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android'
+
+jobs:
+  build:
+    name: Build & Sign
+    runs-on: ubuntu-latest
+
+    steps:
+      # ---- Checkout ----
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Setup: Node.js ----
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: polaris-pocket/package-lock.json
+
+      # ---- Setup: Rust ----
+      - name: Setup Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: ${{ env.RUST_ANDROID_TARGETS }}
+
+      # ---- Setup: JDK ----
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # ---- Setup: Android SDK ----
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          install-r: true
+          add-extras: 'none'
+          packages: 'platform-tools;build-tools;android-${{ env.ANDROID_API }};ndk.${{ env.NDK_VERSION }}'
+
+      # ---- Build: Frontend ----
+      - name: Build frontend
+        working-directory: polaris-pocket
+        run: npm ci && npm run build
+
+      # ---- Build: APK ----
+      - name: Build Android APK
+        working-directory: polaris-pocket
+        run: npx tauri android build
+        shell: bash
+
+      # ---- Sign: Zipalign ----
+      - name: Zipalign APK
+        working-directory: polaris-pocket
+        run: |
+          APK=$(find src-tauri/gen/android/app/build/outputs/apk -name '*unsigned.apk' | head -1)
+          if [ -z "$APK" ]; then echo "APK not found"; exit 1; fi
+          echo "APK_PATH=$APK" >> "$GITHUB_ENV"
+          zipalign -v -p 4 "$APK" polaris-pocket-aligned.apk
+
+      # ---- Sign: apksigner ----
+      - name: Sign APK
+        working-directory: polaris-pocket
+        run: |
+          echo "${{ secrets.POCKET_KEYSTORE_BASE64 }}" | base64 -d > polaris-pocket.keystore
+          chmod 600 polaris-pocket.keystore
+
+          java -jar "${ANDROID_HOME}/build-tools/${ANDROID_API}/lib/apksigner.jar" sign \
+            --ks polaris-pocket.keystore \
+            --ks-pass "pass:${{ secrets.POCKET_KEYSTORE_PASSWORD }}" \
+            --ks-key-alias "${{ secrets.POCKET_KEY_ALIAS }}" \
+            --key-pass "pass:${{ secrets.POCKET_KEY_PASSWORD }}" \
+            --out polaris-pocket-signed.apk \
+            polaris-pocket-aligned.apk
+
+          # Clean up keystore
+          rm -f polaris-pocket.keystore polaris-pocket-aligned.apk
+
+      # ---- Verify ----
+      - name: Verify signature
+        working-directory: polaris-pocket
+        run: |
+          java -jar "${ANDROID_HOME}/build-tools/${ANDROID_API}/lib/apksigner.jar" verify --print-certs polaris-pocket-signed.apk
+
+      # ---- Version info ----
+      - name: Extract version
+        working-directory: polaris-pocket
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          else
+            VERSION="manual-$(date +%Y%m%d-%H%M%S)"
+          fi
+          echo "tag=$VERSION" >> "$GITHUB_OUTPUT"
+
+      # ---- Upload artifact (for download from Actions page) ----
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-pocket-${{ steps.version.outputs.tag }}
+          path: polaris-pocket/polaris-pocket-signed.apk
+          retention-days: 90
+
+      # ---- Create / Upload Release ----
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          name: Polaris Pocket ${{ steps.version.outputs.tag }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          files: polaris-pocket/polaris-pocket-signed.apk
+          body: |
+            ## 更新内容
+
+            - 文件管理器：本地文件浏览、预览、管理
+            - AI 工具链：file_list、file_read
+            - Rust 后端 4 个新命令
+
+            ## 下载
+
+            - `polaris-pocket-signed.apk` — 已签名 Android 通用 APK
+
+            ## 签名
+
+            SHA-256 指纹请查看 Actions 日志确认一致性。

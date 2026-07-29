@@ -45,6 +45,12 @@ fn run() {
             pocket_tools::get_contacts,
             pocket_tools::scan_barcode,
             pocket_tools::authenticate_biometric,
+            // 文件管理器（结构化 API）
+            pocket_tools::file_manager_ls,
+            pocket_tools::file_read_base64,
+            pocket_tools::file_rename,
+            pocket_tools::file_delete_file,
+            pocket_tools::file_manager_probe,
             // AI 聊天代理命令（绕过 CORS）
             pocket_chat_proxy::pocket_chat_completions,
             pocket_chat_proxy::pocket_chat_completions_stream,

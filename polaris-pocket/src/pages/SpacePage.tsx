@@ -9,7 +9,10 @@
  */
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { getSupabase, isSupabaseConfigured, getPersonalHubConfig } from "../services/supabaseClient";
+import { FilePage } from "./FilePage";
 import type { Session } from "@supabase/supabase-js";
+
+type SubTab = "files" | "cloud";
 
 type LinkType = "navigation" | "bookmark" | "todo" | "note";
 type Priority = "low" | "medium" | "high";
@@ -45,6 +48,7 @@ const TYPE_TABS: { value: LinkType | "all"; label: string }[] = [
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function SpacePage() {
+  const [subTab, setSubTab] = useState<SubTab>("files");
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [configured] = useState(() => isSupabaseConfigured());
@@ -63,10 +67,30 @@ export function SpacePage() {
     return () => sub.subscription.unsubscribe();
   }, [configured]);
 
-  if (authLoading) return <div className="py-10 text-center text-xs text-text-tertiary">加载中...</div>;
-  if (!configured) return <UnconfiguredCard />;
-  if (!session) return <LoginCard />;
-  return <LinksView session={session} />;
+  return (
+    <div className="flex h-full flex-col">
+      {/* 子 Tab 切换：本地文件 / 个人空间 */}
+      <div className="mb-3 flex gap-1 rounded-[10px] bg-background-surface p-1">
+        <button onClick={() => setSubTab("files")}
+          className={`flex-1 rounded-[8px] py-1.5 text-[12px] font-medium transition-colors ${subTab === "files" ? "bg-background-elevated text-text-primary shadow-sm" : "text-text-secondary"}`}>
+          📁 本地文件
+        </button>
+        <button onClick={() => setSubTab("cloud")}
+          className={`flex-1 rounded-[8px] py-1.5 text-[12px] font-medium transition-colors ${subTab === "cloud" ? "bg-background-elevated text-text-primary shadow-sm" : "text-text-secondary"}`}>
+          ☁️ 个人空间
+        </button>
+      </div>
+
+      {subTab === "files" ? <FilePage /> : (
+        <>
+          {authLoading && <div className="py-10 text-center text-xs text-text-tertiary">加载中...</div>}
+          {!authLoading && !configured && <UnconfiguredCard />}
+          {!authLoading && configured && !session && <LoginCard />}
+          {!authLoading && configured && session && <LinksView session={session} />}
+        </>
+      )}
+    </div>
+  );
 }
 
 // ============================================================================

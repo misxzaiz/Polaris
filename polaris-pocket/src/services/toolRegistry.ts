@@ -342,6 +342,27 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       message: { type: "string", description: "通知内容" },
     }),
   },
+  // ---- 文件管理工具（AI 可读取/搜索本地文件） ----
+  {
+    name: "file_list",
+    category: "frontend",
+    icon: "📂",
+    description:
+      "列出本地文件目录内容。path 是相对于应用私有目录的路径（如 'documents'），空字符串列出根目录。返回文件名、大小、修改时间、类型。",
+    inputSchema: SCHEMA_OBJECT({
+      path: { type: "string", description: "目录相对路径，空字符串=根目录" },
+    }),
+  },
+  {
+    name: "file_read",
+    category: "frontend",
+    icon: "📖",
+    description:
+      "读取本地文件内容（文本文件，如 .txt/.md/.json/.py/.js/.ts/.rs 等）。返回文件源码。path 是相对于应用私有目录的路径，如 'documents/周报.txt'。",
+    inputSchema: SCHEMA_OBJECT({
+      path: { type: "string", description: "文件相对路径，如 'documents/周报.txt'" },
+    }),
+  },
   {
     name: "contact_lookup",
     category: "system",
@@ -1045,6 +1066,50 @@ const FRONTEND_TOOL_HANDLERS: Record<string, ToolHandler> = {
       return { content: `设置提醒失败：${(e as Error).message}`, is_error: true };
     }
   },
+
+  // ---- 文件管理 handler ----
+
+  file_list: async (input) => {
+    const path = (input.path as string) || "";
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const raw = await invoke("file_manager_ls", { path });
+      const entries: Array<{ name: string; is_dir: boolean; size: number; modified: number }> = JSON.parse(String(raw));
+      if (entries.length === 0) return { content: `目录为空：${path || "根目录"}` };
+      const lines = entries.map((e) => {
+        const size = e.size < 1024 ? `${e.size}B` : e.size < 1024 * 1024 ? `${(e.size / 1024).toFixed(1)}KB` : `${(e.size / (1024 * 1024)).toFixed(1)}MB`;
+        return `${e.is_dir ? "📁" : "📄"} ${e.name}  ${size}`;
+      });
+      return { content: `目录 ${path || "根目录"}（${entries.length} 项）：\n${lines.join("\n")}` };
+    } catch (e: unknown) {
+      return { content: `读取目录失败：${(e as Error).message}`, is_error: true };
+    }
+  },
+
+  file_read: async (input) => {
+    const path = (input.path as string) || "";
+    if (!path) return { content: "请指定文件路径", is_error: true };
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const raw = await invoke("file_read_base64", { path });
+      const data: { content: string; size: number; mime: string } = JSON.parse(String(raw));
+      // 尝试解码为文本
+      const bytes = Uint8Array.from(atob(data.content), (c) => c.charCodeAt(0));
+      const text = new TextDecoder().decode(bytes);
+      // 截断过长的内容
+      const maxLength = 4000;
+      if (text.length > maxLength) {
+        return { content: `${text.slice(0, maxLength)}\n\n...（文件共 ${text.length} 字符，已截断）` };
+      }
+      return { content: text };
+    } catch (e: unknown) {
+      // base64 解码失败说明不是文本文件
+      if (e instanceof Error && e.message.includes("Invalid character")) {
+        return { content: `该文件不是文本文件，无法直接读取（尝试用"发送到 AI"功能处理）`, is_error: true };
+      }
+      return { content: `读取文件失败：${(e as Error).message}`, is_error: true };
+    }
+  },
 };
 
 const SYSTEM_TOOL_HANDLERS: Record<string, ToolHandler> = {};
@@ -1233,6 +1298,17 @@ async function probeFrontendTool(name: string): Promise<ToolCapability> {
         return "available";
       } catch {
         return typeof setTimeout !== "undefined" ? "available" : "unavailable";
+      }
+    }
+
+    case "file_list":
+    case "file_read": {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("file_manager_probe");
+        return "available";
+      } catch {
+        return "unavailable";
       }
     }
 

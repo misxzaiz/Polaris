@@ -19,6 +19,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::PathBuf;
 use tauri::Manager;
+use base64::Engine;
 
 /// 将相对路径解析到 Tauri 应用私有数据目录，防止路径穿越。
 /// 空字符串返回 data_dir 本身；禁止 ../ 等穿越访问。
@@ -369,4 +370,212 @@ pub fn scan_barcode_probe() -> Result<(), String> {
 #[tauri::command]
 pub fn authenticate_biometric_probe() -> Result<(), String> {
     Ok(())
+}
+
+// ============================================================================
+// 文件管理器命令 — 结构化 API（用于前端文件管理页面 + AI 工具链）
+// 所有路径均基于 app_data_dir，复用 resolve_app_path 防穿越。
+// 返回 JSON 字符串，便于前端解析。
+// ============================================================================
+
+/// 文件条目元数据（结构化返回，替代文本格式）
+#[derive(Debug, Serialize)]
+struct FileEntry {
+    name: String,
+    is_dir: bool,
+    size: u64,
+    modified: u64, // Unix 秒
+}
+
+/// 列出目录内容（JSON 数组），目录在前，按名称升序。
+/// path 为空字符串时列出 app_data_dir 根目录。
+#[tauri::command]
+pub fn file_manager_ls(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let full = resolve_app_path(&app, &path)?;
+    if !full.is_dir() {
+        return Err(format!("路径不是目录：{}", full.display()));
+    }
+
+    let mut entries: Vec<FileEntry> = Vec::new();
+    for entry in fs::read_dir(&full).map_err(|e| format!("读取目录失败: {}", e))? {
+        let entry = entry.map_err(|e| format!("读取条目失败: {}", e))?;
+        let name = entry.file_name().to_string_lossy().to_string();
+        let meta = entry.metadata().map_err(|e| format!("读取元数据失败: {}", e))?;
+        let is_dir = meta.is_dir();
+        let size = meta.len();
+        let modified = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        entries.push(FileEntry {
+            name,
+            is_dir,
+            size,
+            modified,
+        });
+    }
+
+    // 目录在前，按名称不区分大小写升序
+    entries.sort_by(|a, b| {
+        if a.is_dir != b.is_dir {
+            return if a.is_dir {
+                std::cmp::Ordering::Less
+            } else {
+                std::cmp::Ordering::Greater
+            };
+        }
+        a.name.to_lowercase().cmp(&b.name.to_lowercase())
+    });
+
+    Ok(serde_json::to_string(&entries).map_err(|e| e.to_string())?)
+}
+
+/// 以 base64 读取文件（二进制通用，文本/图片/文档均可用）。
+/// 返回 JSON：{"content":"...", "size":1234, "mime":"application/pdf"}
+#[tauri::command]
+pub fn file_read_base64(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    let full = resolve_app_path(&app, &path)?;
+    if !full.is_file() {
+        return Err(format!("不是文件：{}", full.display()));
+    }
+
+    let data = fs::read(&full).map_err(|e| format!("读取文件失败: {}", e))?;
+    let size = data.len() as u64;
+
+    // 大小限制：2MB
+    const MAX_BYTES: usize = 2 * 1024 * 1024;
+    if data.len() > MAX_BYTES {
+        return Err(format!(
+            "文件过大（{:.1}MB），限制 2MB",
+            data.len() as f64 / (1024.0 * 1024.0)
+        ));
+    }
+
+    let mime = infer_mime_type(&full);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+
+    let result = serde_json::json!({
+        "content": encoded,
+        "size": size,
+        "mime": mime,
+    });
+    Ok(serde_json::to_string(&result).map_err(|e| e.to_string())?)
+}
+
+/// 重命名文件或目录。new_name 仅含文件名（不含路径）。
+#[tauri::command]
+pub fn file_rename(
+    app: tauri::AppHandle,
+    old_path: String,
+    new_name: String,
+) -> Result<String, String> {
+    if new_name.is_empty() {
+        return Err("新文件名不能为空".to_string());
+    }
+    if new_name.contains('/') || new_name.contains('\\') || new_name.contains("..") {
+        return Err("新文件名包含非法字符".to_string());
+    }
+
+    let old_full = resolve_app_path(&app, &old_path)?;
+    if !old_full.exists() {
+        return Err(format!("源文件不存在：{}", old_full.display()));
+    }
+
+    let parent = old_full.parent().ok_or("无法获取父目录")?.to_path_buf();
+    let new_full = parent.join(&new_name);
+
+    // 确保目标仍在 app_data_dir 内
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    new_full
+        .strip_prefix(&data_dir)
+        .map_err(|_| "路径穿越检测失败")?;
+
+    if new_full.exists() {
+        return Err(format!("目标已存在：{}", new_name));
+    }
+
+    fs::rename(&old_full, &new_full).map_err(|e| format!("重命名失败: {}", e))?;
+    Ok(format!("已重命名为：{}", new_full.display()))
+}
+
+/// 删除文件或目录（递归删除需 recursive=true），前端确认后再调。
+#[tauri::command]
+pub fn file_delete_file(
+    app: tauri::AppHandle,
+    path: String,
+    recursive: Option<bool>,
+) -> Result<String, String> {
+    let full = resolve_app_path(&app, &path)?;
+    if !full.exists() {
+        return Err(format!("路径不存在：{}", full.display()));
+    }
+
+    if full.is_dir() {
+        if recursive.unwrap_or(false) {
+            fs::remove_dir_all(&full).map_err(|e| format!("删除目录失败: {}", e))?;
+            Ok(format!("已递归删除目录：{}", full.display()))
+        } else {
+            fs::remove_dir(&full).map_err(|e| format!("删除目录失败（非空请传 recursive=true）: {}", e))?;
+            Ok(format!("已删除目录：{}", full.display()))
+        }
+    } else {
+        fs::remove_file(&full).map_err(|e| format!("删除文件失败: {}", e))?;
+        Ok(format!("已删除文件：{}", full.display()))
+    }
+}
+
+/// 文件管理器 probe（始终可用，基于 app_data_dir）
+#[tauri::command]
+pub fn file_manager_probe() -> Result<(), String> {
+    Ok(())
+}
+
+// ============================================================================
+// 辅助：根据文件扩展名推断 MIME 类型（零依赖，不引入额外 crate）
+// ============================================================================
+
+fn infer_mime_type(path: &std::path::Path) -> String {
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    match ext.as_str() {
+        "txt" => "text/plain",
+        "md" | "markdown" => "text/markdown",
+        "json" => "application/json",
+        "html" | "htm" => "text/html",
+        "xml" => "application/xml",
+        "csv" => "text/csv",
+        "py" => "text/x-python",
+        "js" | "mjs" | "cjs" => "text/javascript",
+        "ts" | "tsx" => "text/typescript",
+        "rs" => "text/x-rust",
+        "java" => "text/x-java",
+        "go" => "text/x-go",
+        "css" => "text/css",
+        "yaml" | "yml" => "text/x-yaml",
+        "toml" => "text/x-toml",
+        "sh" | "bat" | "ps1" => "text/x-shellscript",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "ico" => "image/x-icon",
+        "docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc" => "application/msword",
+        "pptx" => "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        "pdf" => "application/pdf",
+        "mp3" => "audio/mpeg",
+        "mp4" => "video/mp4",
+        "zip" => "application/zip",
+        "gz" | "tgz" => "application/gzip",
+        _ => "application/octet-stream",
+    }
+    .to_string()
 }

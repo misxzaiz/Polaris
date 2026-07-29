@@ -25,6 +25,11 @@ Thumbs.db
 dist/*.apk
 dist/*.jks
 
+# APK signing key material — NEVER commit
+*.keystore
+*.jks
+*.p12
+
 # APK signature files
 *.apk.idsig
 

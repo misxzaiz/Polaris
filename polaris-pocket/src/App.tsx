@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ChatPage } from "./pages/ChatPage";
 import { SpacePage } from "./pages/SpacePage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -22,6 +22,13 @@ const TITLES: Record<Tab, string> = { chat: "AI 对话", space: "个人空间", 
 
 export default function App() {
   const [tab, setTab] = useState<Tab>("chat");
+
+  // 监听文件页"发送到 AI"导航事件
+  useEffect(() => {
+    const handler = () => setTab("chat");
+    window.addEventListener("pocket-navigate-to-ai", handler);
+    return () => window.removeEventListener("pocket-navigate-to-ai", handler);
+  }, []);
 
   const renderPage = () => {
     switch (tab) {
