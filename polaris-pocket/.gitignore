@@ -25,6 +25,9 @@ Thumbs.db
 dist/*.apk
 dist/*.jks
 
+# APK signature files
+*.apk.idsig
+
 # Frontend build output
 dist/
 !dist/.gitkeep
