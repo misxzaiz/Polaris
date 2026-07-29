@@ -320,6 +320,11 @@ export async function browserListSessions(): Promise<BrowserSessionInfo[]> {
   return invoke<BrowserSessionInfo[]>('browser_list_sessions')
 }
 
+/** 清理所有已注册但无对应活跃 WebView 的残留浏览器会话 */
+export async function browserClearOrphanedSessions(): Promise<number> {
+  return invoke<number>('browser_clear_orphaned_sessions')
+}
+
 export async function browserAcquireComplete(params: {
   requestId: string
   label?: string

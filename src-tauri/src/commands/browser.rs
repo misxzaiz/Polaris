@@ -1499,6 +1499,32 @@ pub async fn browser_list_sessions(app: AppHandle) -> Result<Vec<BrowserSessionI
     browser_list_registered_sessions_with_app(&app)
 }
 
+/// 清理所有残留的浏览器 WebView 及其会话状态。
+///
+/// 页面刷新 / HMR 重挂载时，BrowserPanel cleanup 的 browserSetBounds(0,0,0,0) 调用
+/// 可能因 IPC 连接中断而被取消，导致 native WebView 子窗口残留且可见（"置顶关不掉"）。
+/// 此命令在应用启动时被调用，确保旧的 WebView 被关闭。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_clear_orphaned_sessions(app: AppHandle) -> Result<usize> {
+    let labels: Vec<String> = sessions()
+        .lock()
+        .map_err(|e| AppError::Unknown(format!("浏览器会话表锁异常: {e}")))?
+        .keys()
+        .cloned()
+        .collect();
+
+    let mut count = 0usize;
+    for label in &labels {
+        if let Some(webview) = app.get_webview(label) {
+            let _ = webview.close();
+            count += 1;
+        }
+        let _ = forget_browser_session_state(label);
+    }
+    Ok(count)
+}
+
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn browser_acquire(
