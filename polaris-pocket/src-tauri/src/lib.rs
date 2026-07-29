@@ -3,6 +3,7 @@ mod pocket_tools;
 mod pocket_chat_proxy;
 mod pocket_offload;
 mod pocket_document;
+mod pocket_alarm;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 fn run() {
@@ -59,6 +60,9 @@ fn run() {
             // 文档生成 Rust 端（base64 解码 + 落盘）
             pocket_document::document_download,
             pocket_document::document_download_probe,
+            // 后台定时任务（AlarmManager 持久化提醒）
+            pocket_alarm::alarm_schedule_backend,
+            pocket_alarm::alarm_schedule_backend_probe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket app");

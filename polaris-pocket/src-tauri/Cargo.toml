@@ -1,6 +1,6 @@
 [package]
 name = "polaris-pocket"
-version = "1.0.0"
+version = "1.0.1"
 description = "Polaris Pocket — 独立 AI 多功能工具"
 authors = ["Polaris"]
 edition = "2021"

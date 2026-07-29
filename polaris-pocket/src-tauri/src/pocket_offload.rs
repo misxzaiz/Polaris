@@ -1,8 +1,7 @@
 /// Pocket Offload 统一入口
 ///
 /// 提供日历、无障碍、视觉拍照等 Offload 命令，通过 JNI 桥接 Android 原生 API。
-/// Phase 2 阶段：`#[cfg(not(mobile))]` 分支返回 stub 值，保证桌面端 cargo check 通过。
-/// Phase 3 阶段：收紧为 `Err("仅移动端可用")`。
+/// Phase 3 收紧：`#[cfg(not(mobile))]` 分支返回 `Err("仅移动端可用")`。
 ///
 /// 注意：`pocket_tools.rs` 中的 `send_sms`/`get_contacts`/`scan_barcode`/`authenticate_biometric`
 /// 已有 JNI 占位，本模块新增的 Offload 命令使用 `offload_` 前缀区分。
@@ -35,7 +34,7 @@ pub fn offload_calendar_create(
     }
     #[cfg(not(mobile))]
     {
-        Ok("日历事件已创建（stub：仅移动端可用）".to_string())
+        Err("仅移动端可用".to_string())
     }
 }
 
@@ -65,7 +64,7 @@ pub fn offload_accessibility_ui_tree() -> Result<String, String> {
     }
     #[cfg(not(mobile))]
     {
-        Ok("{\"note\": \"stub：仅移动端可用\"}".to_string())
+        Err("仅移动端可用".to_string())
     }
 }
 
@@ -91,7 +90,7 @@ pub fn offload_accessibility_click(x: f64, y: f64) -> Result<String, String> {
     }
     #[cfg(not(mobile))]
     {
-        Ok(format!("已点击 ({}, {})（stub：仅移动端可用）", x, y))
+        Err("仅移动端可用".to_string())
     }
 }
 
@@ -122,7 +121,7 @@ pub fn offload_vision_capture() -> Result<String, String> {
     }
     #[cfg(not(mobile))]
     {
-        Ok("拍照功能（stub：仅移动端可用）".to_string())
+        Err("仅移动端可用".to_string())
     }
 }
 
