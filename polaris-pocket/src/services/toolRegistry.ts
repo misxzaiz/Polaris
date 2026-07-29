@@ -45,6 +45,35 @@ const SCHEMA_OBJECT = (props: Record<string, Record<string, unknown>>) => ({
   required: Object.keys(props),
 });
 
+// ============================================================================
+// 待办数据层（localStorage，不与外部交互）
+// ============================================================================
+
+const TODO_LS_KEY = "pocket-todos";
+
+interface TodoItem {
+  id: string;
+  text: string;
+  done: boolean;
+  createdAt: number;
+  dueAt?: number;
+}
+
+function loadTodos(): TodoItem[] {
+  try {
+    const raw = localStorage.getItem(TODO_LS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTodos(todos: TodoItem[]): void {
+  localStorage.setItem(TODO_LS_KEY, JSON.stringify(todos));
+}
+
 export const TOOL_REGISTRY: ToolDefinition[] = [
   // ---- 前端工具（纯浏览器 API） ----
 
@@ -240,6 +269,92 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       content: SCHEMA_STRING,
       directory: { type: "string", default: "Documents" },
     }),
+  },
+  // ---- 生活助手工具（工具链新增，不改 UI） ----
+
+  {
+    name: "todo_add",
+    category: "frontend",
+    icon: "📝",
+    description:
+      "新增一条待办事项。text 是待办内容，dueAt 是可选截止时间（ISO 8601，如 2026-07-29T14:00:00）。不传 dueAt 则无截止提醒。",
+    inputSchema: SCHEMA_OBJECT({
+      text: SCHEMA_STRING,
+      dueAt: {
+        type: "string",
+        description: "可选截止时间，ISO 8601 格式，如 2026-07-29T15:00:00",
+      },
+    }),
+  },
+  {
+    name: "todo_list",
+    category: "frontend",
+    icon: "📋",
+    description: "列出所有待办事项，显示完成状态、内容和截止时间。",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "todo_done",
+    category: "frontend",
+    icon: "✅",
+    description: "将指定待办事项标记为已完成。需要 todo_id。",
+    inputSchema: SCHEMA_OBJECT({ todo_id: SCHEMA_STRING }),
+  },
+  {
+    name: "todo_delete",
+    category: "frontend",
+    icon: "🗑",
+    description: "删除指定待办事项。需要 todo_id。",
+    inputSchema: SCHEMA_OBJECT({ todo_id: SCHEMA_STRING }),
+  },
+  {
+    name: "generate_document",
+    category: "frontend",
+    icon: "📄",
+    description:
+      "生成一份 Word 文档（.docx），保存到设备并触发下载。content 是 Markdown 格式正文。格式仅支持 docx。",
+    inputSchema: SCHEMA_OBJECT({
+      content: {
+        type: "string",
+        description:
+          "文档正文，支持 Markdown 语法（# 标题、- 列表、**加粗**、\n换行）。",
+      },
+      filename: {
+        type: "string",
+        description: "文件名，不含扩展名，如 '周报'。默认 '文档'",
+      },
+    }),
+  },
+  {
+    name: "alarm_schedule",
+    category: "frontend",
+    icon: "⏰",
+    description:
+      "设置一次性提醒。delay_seconds 是从现在开始的延迟秒数（60-86400，即 1 分钟到 24 小时）。系统会在指定时间后发送一条通知。",
+    inputSchema: SCHEMA_OBJECT({
+      delay_seconds: {
+        type: "integer",
+        minimum: 60,
+        maximum: 86400,
+        description: "从现在起的延迟秒数，60-86400（1 分钟到 24 小时）",
+      },
+      title: { type: "string", description: "通知标题" },
+      message: { type: "string", description: "通知内容" },
+    }),
+  },
+  {
+    name: "contact_lookup",
+    category: "system",
+    icon: "👤",
+    description:
+      "查询通讯录联系人。phone_hint 提供时按电话号码过滤，否则返回全部联系人列表。需要 READ_CONTACTS 权限。",
+    inputSchema: {
+      type: "object",
+      properties: {
+        phone_hint: { type: "string", description: "可选电话号码关键字过滤" },
+      },
+      required: [],
+    },
   },
   // ---- 前端新工具（纯浏览器 API，无需重新构建 APK） ----
 
@@ -810,6 +925,126 @@ const FRONTEND_TOOL_HANDLERS: Record<string, ToolHandler> = {
       return { content: `条码扫描失败：${(e as Error).message}`, is_error: true };
     }
   },
+
+  // ---- 生活助手工具 handler ----
+
+  todo_add: async (input) => {
+    const text = (input.text as string) || "";
+    const dueAt = input.dueAt ? new Date(input.dueAt as string).getTime() : undefined;
+    if (!text) return { content: "待办内容不能为空", is_error: true };
+    const todos = loadTodos();
+    const id = crypto.randomUUID?.() ?? `t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+    todos.push({ id, text, done: false, createdAt: Date.now(), dueAt });
+    saveTodos(todos);
+    const suffix = dueAt ? `\n截止时间：${new Date(dueAt).toLocaleString("zh-CN")}` : "";
+    return { content: `已添加待办：${text}${suffix}` };
+  },
+
+  todo_list: async () => {
+    const todos = loadTodos();
+    if (todos.length === 0) return { content: "当前没有待办事项" };
+    const doneCount = todos.filter((t) => t.done).length;
+    let lines = todos.map(
+      (t) =>
+        `• [${t.done ? "✅" : "⬜"}] ${t.text}${t.dueAt ? `（截止：${new Date(t.dueAt).toLocaleString("zh-CN")}）` : ""}  [id=${t.id}]`
+    );
+    return {
+      content: `共 ${todos.length} 项待办（已完成 ${doneCount} 项）\n${lines.join("\n")}`,
+    };
+  },
+
+  todo_done: async (input) => {
+    const todo_id = (input.todo_id as string) || "";
+    if (!todo_id) return { content: "请指定 todo_id", is_error: true };
+    const todos = loadTodos();
+    const item = todos.find((t) => t.id === todo_id);
+    if (!item) return { content: `未找到 id 为 ${todo_id} 的待办`, is_error: true };
+    if (item.done) return { content: `该待办 ${item.text} 已完成，无需重复操作` };
+    item.done = true;
+    saveTodos(todos);
+    return { content: `已标记完成：${item.text}` };
+  },
+
+  todo_delete: async (input) => {
+    const todo_id = (input.todo_id as string) || "";
+    if (!todo_id) return { content: "请指定 todo_id", is_error: true };
+    const todos = loadTodos();
+    const item = todos.find((t) => t.id === todo_id);
+    if (!item) return { content: `未找到 id 为 ${todo_id} 的待办`, is_error: true };
+    const removed = item.text;
+    const updated = todos.filter((t) => t.id !== todo_id);
+    saveTodos(updated);
+    return { content: `已删除待办：${removed}` };
+  },
+
+  generate_document: async (input) => {
+    const content = (input.content as string) || "";
+    const filename = (input.filename as string) || "文档";
+    if (!content.trim()) return { content: "文档内容为空，请提供正文内容", is_error: true };
+    try {
+      const { Document, Packer, Paragraph, TextRun, HeadingLevel } = await import("docx");
+      type DocxParagraph = InstanceType<typeof Paragraph>;
+      const children: DocxParagraph[] = content
+        .split("\n")
+        .map((line) => {
+          if (line.startsWith("# ")) {
+            return new Paragraph({ heading: HeadingLevel.HEADING_1, children: [new TextRun({ text: line.slice(2), size: 32, bold: true })] });
+          }
+          if (line.startsWith("## ")) {
+            return new Paragraph({ heading: HeadingLevel.HEADING_2, children: [new TextRun({ text: line.slice(3), size: 26, bold: true })] });
+          }
+          return new Paragraph({ children: [new TextRun({ text: line, size: 22 })] });
+        });
+      const doc = new Document({ sections: [{ properties: {}, children }] });
+      const blob = await Packer.toBlob(doc);
+      const file = new File([blob], `${filename}.docx`, { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" });
+      // 移动端 Tauri 环境：触发浏览器下载
+      const url = URL.createObjectURL(file);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${filename}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      return { content: `文档已生成并下载：${filename}.docx` };
+    } catch (e: unknown) {
+      // docx 未安装时的友好降级：把内容存为 txt 文件
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        await invoke("write_file", { path: `${filename}.txt`, content });
+        return { content: `docx 库未安装，已降级保存为文本文件：${filename}.txt（请构建 APK 前运行 npm install docx）` };
+      } catch {
+        return { content: `生成文档失败：${(e as Error).message}，请确认已安装 docx 库（npm install docx）`, is_error: true };
+      }
+    }
+  },
+
+  alarm_schedule: async (input) => {
+    const delaySeconds = Number(input.delay_seconds) || 0;
+    const title = (input.title as string) || "提醒";
+    const message = (input.message as string) || "";
+    if (delaySeconds < 60 || delaySeconds > 86400) {
+      return { content: "delay_seconds 必须在 60-86400 之间（1 分钟到 24 小时）", is_error: true };
+    }
+    try {
+      const { requestPermission, sendNotification } = await import("@tauri-apps/plugin-notification");
+      const perm = await requestPermission();
+      if (perm !== "granted") {
+        return {
+          content: "通知权限未授予，请在 Android 设置 → 应用 → Polaris Pocket → 权限 → 通知 中开启。",
+          is_error: true,
+        };
+      }
+      setTimeout(async () => {
+        await sendNotification({ title, body: message });
+      }, delaySeconds * 1000);
+      const fireTime = new Date(Date.now() + delaySeconds * 1000);
+      return {
+        content: `提醒已设置：${fireTime.toLocaleString("zh-CN")}\n标题：${title}\n内容：${message}\n（注：此提醒在 App 前台时触发；App 完全关闭时需后台闹钟服务，后续版本支持）`,
+      };
+    } catch (e: unknown) {
+      return { content: `设置提醒失败：${(e as Error).message}`, is_error: true };
+    }
+  },
 };
 
 const SYSTEM_TOOL_HANDLERS: Record<string, ToolHandler> = {};
@@ -828,6 +1063,8 @@ const SYSTEM_TOOL_NAMES = [
   "get_file_size",
   "send_sms",
   "get_contacts",
+  // contact_lookup → 底层复用 get_contacts（前端过滤 phone_hint）
+  "contact_lookup",
 ] as const;
 
 async function invokeSystemTool(
@@ -837,6 +1074,19 @@ async function invokeSystemTool(
 ): Promise<{ content: string; is_error?: boolean }> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
+    // contact_lookup 底层复用 get_contacts 命令，前端做 phone_hint 过滤
+    if (toolName === "contact_lookup") {
+      const phoneHint = (input.phone_hint as string) || "";
+      const result = await invoke("get_contacts");
+      const text = String(result ?? "");
+      if (phoneHint) {
+        const lines = text.split("\n").filter((l) => l.includes(phoneHint));
+        return {
+          content: lines.length ? `匹配 ${phoneHint} 的联系人：\n${lines.join("\n")}` : `未找到包含 ${phoneHint} 的联系人`,
+        };
+      }
+      return { content: text || "联系人列表为空" };
+    }
     const result = await invoke(toolName, input);
     return { content: String(result ?? "") };
   } catch (e: unknown) {
@@ -961,6 +1211,31 @@ async function probeFrontendTool(name: string): Promise<ToolCapability> {
       }
     }
 
+    case "todo_add":
+    case "todo_list":
+    case "todo_done":
+    case "todo_delete":
+      return typeof localStorage !== "undefined" ? "available" : "unavailable";
+
+    case "generate_document": {
+      // docx 库是外部依赖，未安装时不可用
+      try {
+        const { Document, Packer } = await import("docx");
+        return typeof Document !== "undefined" && typeof Packer !== "undefined" ? "available" : "unavailable";
+      } catch {
+        return "unavailable";
+      }
+    }
+
+    case "alarm_schedule": {
+      try {
+        const { requestPermission } = await import("@tauri-apps/plugin-notification");
+        return "available";
+      } catch {
+        return typeof setTimeout !== "undefined" ? "available" : "unavailable";
+      }
+    }
+
     default:
       return "available";
   }
@@ -970,12 +1245,14 @@ async function probeSystemTool(name: string): Promise<ToolCapability> {
   try {
     const { invoke } = await import("@tauri-apps/api/core");
     // 文件系统工具共享同一个 probe 命令
-    const probeCmd =
+    const probeBase =
       ["read_file", "write_file", "list_files", "delete_file", "create_directory", "file_exists", "get_file_size"].includes(
         name
       )
         ? "file_system"
         : name;
+    // contact_lookup 复用 get_contacts 的 probe
+    const probeCmd = probeBase === "contact_lookup" ? "get_contacts" : probeBase;
     await invoke(`${probeCmd}_probe`);
     return "available";
   } catch (e: unknown) {

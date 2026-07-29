@@ -1,6 +1,8 @@
 mod pocket_config;
 mod pocket_tools;
 mod pocket_chat_proxy;
+mod pocket_offload;
+mod pocket_document;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 fn run() {
@@ -45,6 +47,18 @@ fn run() {
             // AI 聊天代理命令（绕过 CORS）
             pocket_chat_proxy::pocket_chat_completions,
             pocket_chat_proxy::pocket_chat_completions_stream,
+            // Offload 命令（统一入口，新增）
+            pocket_offload::offload_calendar_create,
+            pocket_offload::offload_calendar_create_probe,
+            pocket_offload::offload_accessibility_ui_tree,
+            pocket_offload::offload_accessibility_ui_tree_probe,
+            pocket_offload::offload_accessibility_click,
+            pocket_offload::offload_accessibility_click_probe,
+            pocket_offload::offload_vision_capture,
+            pocket_offload::offload_vision_capture_probe,
+            // 文档生成 Rust 端（base64 解码 + 落盘）
+            pocket_document::document_download,
+            pocket_document::document_download_probe,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Pocket app");
