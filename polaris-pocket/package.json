@@ -13,6 +13,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.110.9",
     "@tauri-apps/api": "^2.11.1",
+    "@tauri-apps/plugin-barcode-scanner": "^2.4.5",
+    "@tauri-apps/plugin-geolocation": "^2.3.2",
+    "@tauri-apps/plugin-haptics": "^2.3.2",
+    "@tauri-apps/plugin-notification": "^2.3.3",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "clsx": "^2.1.1",
     "highlight.js": "^11.11.1",
     "react": "^19.1.0",

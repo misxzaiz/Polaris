@@ -17,3 +17,14 @@ tauri-build = { version = "2.0", features = [] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2.0", features = ["custom-protocol"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+tokio = { version = "1", features = ["rt", "macros", "sync", "rt-multi-thread"] }
+futures-util = "0.3"
+# 定位 / 通知 / 打开 URL / 震动 / 条码扫描 / 生物识别（Android 原生）
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-geolocation = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-haptics = "2"
+tauri-plugin-barcode-scanner = "2"
+tauri-plugin-biometric = "2"

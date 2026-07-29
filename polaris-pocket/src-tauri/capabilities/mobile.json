@@ -1,0 +1,28 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "mobile-capability",
+  "description": "Capabilities for Android/iOS",
+  "webviews": ["main"],
+  "platforms": ["android", "iOS"],
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "geolocation:allow-get-current-position",
+    "geolocation:allow-request-permissions",
+    "geolocation:allow-check-permissions",
+    "geolocation:allow-watch-position",
+    "notification:allow-notify",
+    "notification:allow-request-permission",
+    "notification:allow-show",
+    "notification:allow-create-channel",
+    "opener:allow-default-urls",
+    "opener:allow-open",
+    "haptics:allow-vibrate",
+    "haptics:allow-impact-feedback",
+    "haptics:allow-notification-feedback",
+    "haptics:allow-selection-feedback",
+    "barcode-scanner:allow-start",
+    "barcode-scanner:allow-stop",
+    "biometric:allow-authenticate"
+  ]
+}
