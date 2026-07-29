@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::ai::engine::simple_ai_protocol::{self, WireProtocol};
+use crate::ai::engine::simple_ai_protocol::{self, CliModelSuffix, WireProtocol};
 use crate::error::{AppError, Result};
 use crate::models::ai_event::ProgressEvent;
 use crate::models::AIEvent;
@@ -235,9 +235,17 @@ async fn request_summary_once(
         json!({ "role": "system", "content": instruction }),
         json!({ "role": "user", "content": history_text }),
     ];
+
+    // 剥离 CLI 私有模型后缀（如 `[1m]`），返回纯模型名与协议信号。
+    let suffix = CliModelSuffix::new(&profile.model);
+    let base_model = suffix
+        .base_model
+        .as_deref()
+        .unwrap_or_else(|| profile.model.as_str());
+
     let mut body = simple_ai_protocol::build_request_body(
         protocol,
-        &profile.model,
+        base_model,
         &messages,
         &[],
         Some(max_tokens),
@@ -254,10 +262,25 @@ async fn request_summary_once(
         .timeout(std::time::Duration::from_secs(COMPACT_TIMEOUT_SECS))
         .build()
         .map_err(|e| SummaryFailure::Other(AppError::ProcessError(format!("HTTP client error: {}", e))))?;
-    let url = protocol.build_url(&profile.base_url);
+
+    // 追加 CLI 后缀衍生的 query（仅 Anthropic 协议生效，如 `?beta=true`）。
+    let url = if let Some(ref q) = suffix.query {
+        format!("{}?{}", protocol.build_url(&profile.base_url), q)
+    } else {
+        protocol.build_url(&profile.base_url)
+    };
     let mut req = client.post(&url).header("Content-Type", "application/json");
     for (k, v) in protocol.auth_headers(&profile.api_key) {
         req = req.header(k, v);
+    }
+    // Anthropic 协议下，注入 CLI `[1m]` 后缀对应的 `anthropic-beta` 头；
+    // 注入在 custom_headers 之前，允许用户通过 Profile 覆盖。
+    if let Some(ref beta_tokens) = suffix.beta_tokens {
+        if !beta_tokens.is_empty() {
+            let beta_header = beta_tokens.join(",");
+            tracing::debug!("[SimpleAI] compact: 注入 anthropic-beta 头: {}", beta_header);
+            req = req.header("anthropic-beta", beta_header);
+        }
     }
     if let Some(headers) = &profile.custom_headers {
         for (k, v) in headers {

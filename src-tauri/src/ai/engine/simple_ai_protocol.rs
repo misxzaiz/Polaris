@@ -29,6 +29,91 @@ const DEFAULT_MAX_TOKENS: u64 = 8192;
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 // ============================================================================
+// CLI 私有模型后缀解析
+// ============================================================================
+
+/// CLI 私有模型后缀解析结果。
+///
+/// Anthropic Claude CLI 使用 `[1m]` 等方括号后缀作为元数据标记（不在上游 API 协议中），
+/// 含义是把"1M 上下文"等能力开关转换成 `anthropic-beta` 请求头与 `?beta=true` query。
+///
+/// SimpleAI 引擎走直接 HTTP 调用，上游不认方括号后缀。本函数负责：
+/// - 剥离后缀，返回纯模型名（写入请求体 `model` 字段）；
+/// - 对已知的 `[1m]` 标记返回 beta 头片段，供 HTTP 请求构建时注入。
+/// - 对未知后缀（如 `glm-5.2[1m]` 这类从 CLI 复制过来、对非 Anthropic 上游无意义的标记）
+///   静默剥离，不注入 beta 头。
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct CliModelSuffix {
+    /// 剥离后的纯模型名（可直接写入请求体 `model` 字段）。
+    pub base_model: Option<String>,
+    /// 应注入 `anthropic-beta` 头的片段（逗号拼接），仅 Anthropic 协议使用。
+    /// `None` = 不需要 beta 头。
+    pub beta_tokens: Option<Vec<String>>,
+    /// 应追加到上游 URL 的 query（如 `?beta=true`），仅 Anthropic 协议使用。
+    pub query: Option<String>,
+}
+
+/// 内置的 Anthropic 1M 上下文 beta 头片段与 query。
+/// 取自 Claude CLI 实际发送值（见 docs/proxy-anthropic-passthrough-headers-fix.md）。
+const CONTEXT_1M_BETA_TOKENS: &[&str] = &[
+    "claude-code-20250219",
+    "context-1m-2025-08-07",
+    "interleaved-thinking-2025-05-14",
+];
+const CONTEXT_1M_QUERY: &str = "beta=true";
+
+/// 剥离模型名中的 CLI 私有后缀，解析附带的协议信号。
+///
+/// 输入示例：
+/// - `"claude-fable-5[1m]"` → base=`claude-fable-5`, beta=[context-1m,...], query=`beta=true`
+/// - `"glm-5.2[1m]"`        → base=`glm-5.2`,   beta=None(未知后缀), query=None
+/// - `"deepseek-v3"`        → base=`deepseek-v3`, 无变更
+/// - `"gpt-4o[thinking]"`   → base=`gpt-4o`, 无变更(未知后缀)
+pub fn strip_cli_model_suffix(model: &str) -> CliModelSuffix {
+    let Some((base, suffix_part)) = model.split_once('[') else {
+        return CliModelSuffix {
+            base_model: Some(model.to_string()),
+            beta_tokens: None,
+            query: None,
+        };
+    };
+
+    let suffix = suffix_part.trim_end_matches(']');
+    let base = base.trim_end();
+
+    if base.is_empty() {
+        // 畸形输入（如 `[1m]`），保守地当作原样返回，不剥离。
+        return CliModelSuffix {
+            base_model: Some(model.to_string()),
+            beta_tokens: None,
+            query: None,
+        };
+    }
+
+    let (beta_tokens, query) = if suffix == "1m" {
+        (
+            Some(CONTEXT_1M_BETA_TOKENS.iter().map(|s| s.to_string()).collect()),
+            Some(CONTEXT_1M_QUERY.to_string()),
+        )
+    } else {
+        (None, None)
+    };
+
+    CliModelSuffix {
+        base_model: Some(base.to_string()),
+        beta_tokens,
+        query,
+    }
+}
+
+/// 构建：等价于 `strip_cli_model_suffix(model)`，提供 `::new` 调用点。
+impl CliModelSuffix {
+    pub fn new(model: &str) -> Self {
+        strip_cli_model_suffix(model)
+    }
+}
+
+// ============================================================================
 // 线路协议
 // ============================================================================
 
@@ -1149,5 +1234,62 @@ mod tests {
         // Responses：Some 覆盖 max_output_tokens。
         let body = build_request_body(WireProtocol::Responses, "m", &messages, &[], Some(2048));
         assert_eq!(body["max_output_tokens"], 2048);
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_no_suffix() {
+        let s = strip_cli_model_suffix("claude-fable-5");
+        assert_eq!(s.base_model, Some("claude-fable-5".to_string()));
+        assert!(s.beta_tokens.is_none());
+        assert!(s.query.is_none());
+
+        let s = strip_cli_model_suffix("glm-5.2");
+        assert_eq!(s.base_model, Some("glm-5.2".to_string()));
+        assert!(s.beta_tokens.is_none());
+
+        let s = strip_cli_model_suffix("deepseek-v3");
+        assert_eq!(s.base_model, Some("deepseek-v3".to_string()));
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_1m_yields_beta() {
+        let s = strip_cli_model_suffix("claude-fable-5[1m]");
+        assert_eq!(s.base_model, Some("claude-fable-5".to_string()));
+        assert!(s.beta_tokens.is_some());
+        assert!(s.beta_tokens.as_ref().unwrap().contains(&"context-1m-2025-08-07".to_string()));
+        assert!(s.query.is_some());
+        assert_eq!(s.query.as_ref().unwrap(), "beta=true");
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_unknown_suffix_stripped_but_no_beta() {
+        // 未知后缀（如从 CLI 复制的 glm-5.2[1m]）：剥离但不注入 beta。
+        let s = strip_cli_model_suffix("glm-5.2[1m]");
+        assert_eq!(s.base_model, Some("glm-5.2".to_string()));
+        assert!(s.beta_tokens.is_none());
+        assert!(s.query.is_none());
+
+        let s = strip_cli_model_suffix("gpt-4o[thinking]");
+        assert_eq!(s.base_model, Some("gpt-4o".to_string()));
+        assert!(s.beta_tokens.is_none());
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_malformed() {
+        // 空 base（仅后缀）：保守返回原样，不剥离。
+        let s = strip_cli_model_suffix("[1m]");
+        assert_eq!(s.base_model, Some("[1m]".to_string()));
+        assert!(s.beta_tokens.is_none());
+
+        let s = strip_cli_model_suffix("model[");
+        assert_eq!(s.base_model, Some("model".to_string()));
+        assert!(s.beta_tokens.is_none());
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_trims_trailing_space_before_bracket() {
+        let s = strip_cli_model_suffix("claude-fable-5 [1m]");
+        assert_eq!(s.base_model, Some("claude-fable-5".to_string()));
+        assert!(s.beta_tokens.is_some());
     }
 }

@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use crate::ai::engine::simple_ai_protocol::{
-    build_request_body, StreamDelta, StreamState, WireProtocol,
+    build_request_body, CliModelSuffix, StreamDelta, StreamState, WireProtocol,
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
@@ -170,8 +170,15 @@ pub(super) async fn run_chat_loop(
             }
         }
 
-        // 构建请求体（按线路协议转换内部 OpenAI 消息格式）
-        let body = build_request_body(protocol, &profile.model, messages, &tools, profile.max_tokens);
+        // 剥离 CLI 私有模型后缀（如 `[1m]`），返回纯模型名与协议信号。
+        let suffix = CliModelSuffix::new(&profile.model);
+        let base_model = suffix
+            .base_model
+            .as_deref()
+            .unwrap_or_else(|| profile.model.as_str());
+
+        // 构建请求体（按线路协议转换内部 OpenAI 消息格式）—— 用剥离后的纯模型名。
+        let body = build_request_body(protocol, base_model, messages, &tools, profile.max_tokens);
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
@@ -188,10 +195,29 @@ pub(super) async fn run_chat_loop(
             .build()
             .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
-        let url = protocol.build_url(&profile.base_url);
+        // 追加 CLI 后缀衍生的 query（仅 Anthropic 协议生效，如 `?beta=true`）。
+        let url = if let Some(ref q) = suffix.query {
+            format!("{}?{}", protocol.build_url(&profile.base_url), q)
+        } else {
+            protocol.build_url(&profile.base_url)
+        };
         let mut req = client.post(&url).header("Content-Type", "application/json");
         for (k, v) in protocol.auth_headers(&profile.api_key) {
             req = req.header(k, v);
+        }
+        // Anthropic 协议下，注入 CLI `[1m]` 等后缀对应的 `anthropic-beta` 头。
+        // 这些头告知上游启用 1M 上下文 / 交错思考等 beta 能力。
+        // 注入在 custom_headers 之前，允许用户通过 Profile 的 custom_headers 覆盖。
+        if let Some(ref beta_tokens) = suffix.beta_tokens {
+            if !beta_tokens.is_empty() {
+                let beta_header = beta_tokens.join(",");
+                tracing::debug!(
+                    "[SimpleAI] 注入 anthropic-beta 头: {} (protocol={})",
+                    beta_header,
+                    protocol.as_str()
+                );
+                req = req.header("anthropic-beta", beta_header);
+            }
         }
         if let Some(headers) = &profile.custom_headers {
             for (k, v) in headers {
@@ -211,8 +237,9 @@ pub(super) async fn run_chat_loop(
             super::retry::DEFAULT_RETRY_BASE_MS,
         );
         tracing::info!(
-            "[SimpleAI] 发送 API 请求: {} (model={}, retry_max={})",
+            "[SimpleAI] 发送 API 请求: {} (model={}, raw={}, retry_max={})",
             url,
+            base_model,
             profile.model,
             retry_max
         );
