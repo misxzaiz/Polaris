@@ -1498,6 +1498,8 @@ export function createConversationStore(
             set({ conversationId: newSessionId })
           }
         } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e))
+          log.error('sendMessage failed', err, { sessionId, conversationId, workspaceDir: actualWorkspaceDir })
           set({
             error: resolveChatError(e, { sessionId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,
@@ -1617,6 +1619,8 @@ export function createConversationStore(
             },
           })
         } catch (e) {
+          const err = e instanceof Error ? e : new Error(String(e))
+          log.error('continueChat failed', err, { conversationId, workspaceDir: actualWorkspaceDir })
           set({
             error: resolveChatError(e, { conversationId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,

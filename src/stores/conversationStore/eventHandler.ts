@@ -101,6 +101,12 @@ export function handleAIEvent(
         isStreaming: false,
         progressMessage: null,
       })
+      // 兜底：后端标记 reason=error 但未单独发 error 事件时（或 error 事件丢失），
+      // 给一个可见提示，避免"静默中断无错误信息"。
+      // 正常路径下 error 事件先到达，state.error 已被填充原文，此条件不触发。
+      if (event.reason === 'error' && !get().error) {
+        set({ error: 'errors:appError.ai' })
+      }
       // 保存到自有 JSONL 存储（轮末规整覆写：合并保护 + 前缀保留 + seq 重排）
       // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
       saveDialog(get, set)

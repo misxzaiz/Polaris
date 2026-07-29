@@ -12,6 +12,7 @@ use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use crate::models::events::StreamEvent;
 use crate::models::AIEvent;
+use crate::models::ai_event::{SessionEndEvent, SessionEndReason};
 use crate::ai::engine::simple_ai::load_agent_def;
 
 #[cfg(windows)]
@@ -93,6 +94,41 @@ mod tests {
             ]
         );
     }
+
+    #[test]
+    fn fallback_message_empty_stderr_returns_default() {
+        let buf: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let msg = build_fallback_error_message(&buf);
+        assert_eq!(msg, "Claude CLI 异常退出，未产生结束事件");
+    }
+
+    #[test]
+    fn fallback_message_with_stderr_includes_tail() {
+        let buf: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(vec![
+                "line1".to_string(),
+                "line2".to_string(),
+                "Error: api key invalid".to_string(),
+            ]));
+        let msg = build_fallback_error_message(&buf);
+        assert!(msg.starts_with("Claude CLI 异常退出:\n"));
+        // 末尾 8 行（此处全部 3 行）都应包含
+        assert!(msg.contains("Error: api key invalid"));
+    }
+
+    #[test]
+    fn fallback_message_truncates_to_last_eight_lines() {
+        let lines: Vec<String> = (0..20).map(|i| format!("line{}", i)).collect();
+        let buf: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(lines));
+        let msg = build_fallback_error_message(&buf);
+        // 仅末尾 8 行（line12..line19）应出现，早期的 line0 不应出现
+        assert!(msg.contains("line19"));
+        assert!(msg.contains("line12"));
+        assert!(!msg.contains("line0"));
+        assert!(!msg.contains("line11"));
+    }
 }
 
 fn merged_disallowed_tools(extra_tools: &[String]) -> Vec<String> {
@@ -103,6 +139,25 @@ fn merged_disallowed_tools(extra_tools: &[String]) -> Vec<String> {
         }
     }
     tools
+}
+
+/// 从 stderr 共享缓冲构造 fallback 错误消息。
+///
+/// 取末尾 8 行（stderr 行按时间序追加，最新错误在尾部），拼接为摘要。
+/// 缓冲为空或仅空白时返回兜底文案。抽为纯函数便于单测。
+fn build_fallback_error_message(stderr_buf: &std::sync::Arc<std::sync::Mutex<Vec<String>>>) -> String {
+    let stderr_summary = stderr_buf
+        .lock()
+        .map(|buf| {
+            let start = buf.len().saturating_sub(8);
+            buf[start..].join("\n")
+        })
+        .unwrap_or_default();
+    if stderr_summary.trim().is_empty() {
+        "Claude CLI 异常退出，未产生结束事件".to_string()
+    } else {
+        format!("Claude CLI 异常退出:\n{}", stderr_summary)
+    }
 }
 
 /// Claude Code CLI 安装类型
@@ -883,12 +938,26 @@ impl ClaudeEngine {
                 }
             });
 
+            // stderr 共享缓冲：供 stdout EOF fallback 读取，构造错误事件摘要。
+            // 仅保留末尾若干行，避免长会话 stderr 累积；stderr 行远少于 stdout，
+            // 加锁成本可忽略。
+            let stderr_buf: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+                std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+            let stderr_buf_for_thread = stderr_buf.clone();
+
             // 读取 stderr
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
                 for line in reader.lines().map_while(|r| r.ok()) {
                     // 使用 warn 级别，确保 stderr 错误被记录
                     tracing::warn!("[ClaudeEngine] stderr: {}", line);
+                    if let Ok(mut buf) = stderr_buf_for_thread.lock() {
+                        buf.push(line);
+                        // 容量封顶，滚动保留末尾 50 行
+                        if buf.len() > 50 {
+                            buf.remove(0);
+                        }
+                    }
                 }
             });
 
@@ -959,9 +1028,21 @@ impl ClaudeEngine {
                 }
             }
 
-            // 如果没有收到 session_end，发送一个
+            // 如果没有收到 session_end，发送 fallback
             if !received_session_end {
-                event_callback(AIEvent::session_end(&current_session_id));
+                // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
+                // 与 Codex/Mimo/SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
+                // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
+                let msg = build_fallback_error_message(&stderr_buf);
+                tracing::warn!(
+                    "[ClaudeEngine] 未收到 SessionEnd，发送 fallback error: {}",
+                    msg
+                );
+                event_callback(AIEvent::error(&current_session_id, msg));
+                event_callback(AIEvent::SessionEnd(
+                    SessionEndEvent::new(&current_session_id)
+                        .with_reason(SessionEndReason::Error),
+                ));
             }
 
             // 完成回调
