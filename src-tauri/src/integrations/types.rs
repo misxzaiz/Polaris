@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 pub enum Platform {
     QQBot,
     Feishu,
+    DingTalk,
     // 后续扩展
-    // DingTalk,
     // WeChat,
     // Telegram,
 }
@@ -54,6 +54,7 @@ impl std::fmt::Display for Platform {
         match self {
             Platform::QQBot => write!(f, "qqbot"),
             Platform::Feishu => write!(f, "feishu"),
+            Platform::DingTalk => write!(f, "dingtalk"),
         }
     }
 }
@@ -65,6 +66,7 @@ impl std::str::FromStr for Platform {
         match s.to_lowercase().as_str() {
             "qqbot" | "qq" => Ok(Platform::QQBot),
             "feishu" | "lark" => Ok(Platform::Feishu),
+            "dingtalk" | "dingding" => Ok(Platform::DingTalk),
             _ => Err(format!("Unknown platform: {}", s)),
         }
     }

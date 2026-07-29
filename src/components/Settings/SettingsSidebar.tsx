@@ -24,6 +24,7 @@ export type SettingsTabId =
   | 'model-provider'
   | 'qqbot'
   | 'feishu'
+  | 'dingtalk'
   | 'speech'
   | 'lsp'
   | 'shortcuts'
@@ -55,6 +56,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
   { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
   { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
+  { id: 'dingtalk', icon: <IconBot size={16} />, labelKey: 'nav.dingtalk' },
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'shortcuts', icon: <Keyboard size={16} />, labelKey: 'nav.shortcuts' },

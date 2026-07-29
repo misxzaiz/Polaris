@@ -21,6 +21,7 @@ import { PromptSnippetTab } from './tabs/PromptSnippetTab';
 
 import { QQBotTab } from './tabs/QQBotTab';
 import { FeishuTab } from './tabs/FeishuTab';
+import { DingTalkTab } from './tabs/DingTalkTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
@@ -55,6 +56,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'model-provider': 'nav.modelProvider',
   'qqbot': 'nav.qqbot',
   'feishu': 'nav.feishu',
+  'dingtalk': 'nav.dingtalk',
   'speech': 'nav.speech',
   'lsp': 'nav.lsp',
   'shortcuts': 'nav.shortcuts',
@@ -286,6 +288,12 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'feishu' && (
               <FeishuTab
+                loading={loading}
+              />
+            )}
+
+            {activeTab === 'dingtalk' && (
+              <DingTalkTab
                 loading={loading}
               />
             )}

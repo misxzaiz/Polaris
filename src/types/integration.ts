@@ -5,7 +5,7 @@
 import type { IntegrationDisplayMode } from './config';
 
 /** 平台类型 */
-export type Platform = 'qqbot' | 'feishu' | 'wechat' | 'telegram';
+export type Platform = 'qqbot' | 'feishu' | 'dingtalk' | 'wechat' | 'telegram';
 
 /** 实例 ID */
 export type InstanceId = string;
@@ -60,9 +60,26 @@ export interface FeishuInstanceConfigData {
   lastActive?: string;
 }
 
+/** DingTalk 实例配置 */
+export interface DingTalkInstanceConfigData {
+  id: InstanceId;
+  name: string;
+  enabled: boolean;
+  /** 应用 Key (App Key) */
+  appKey: string;
+  /** 应用密钥 (App Secret) */
+  appSecret: string;
+  /** 企业机器人 Webhook URL（用于发送回复） */
+  webhookUrl: string;
+  displayMode: IntegrationDisplayMode;
+  autoConnect: boolean;
+  createdAt?: string;
+  lastActive?: string;
+}
+
 /** 实例配置枚举 */
 export interface InstanceConfig {
-  type: 'qqbot' | 'feishu';
+  type: 'qqbot' | 'feishu' | 'dingtalk';
   enabled: boolean;
   appId: string;
   /** QQ Bot: clientSecret */
@@ -75,6 +92,8 @@ export interface InstanceConfig {
   verificationToken: string;
   /** Feishu: encryptKey */
   encryptKey: string;
+  /** DingTalk: webhookUrl */
+  webhookUrl?: string;
   displayMode: IntegrationDisplayMode;
   autoConnect: boolean;
   /** 默认工作目录 */

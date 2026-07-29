@@ -244,6 +244,32 @@ export interface FeishuConfig {
   activeInstanceId?: string;
 }
 
+/** DingTalk (钉钉) 实例配置 */
+export interface DingTalkInstanceConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  /** 应用 Key (App Key) */
+  appKey: string;
+  /** 应用密钥 (App Secret) */
+  appSecret: string;
+  /** 企业机器人 Webhook URL（用于发送回复） */
+  webhookUrl: string;
+  displayMode: IntegrationDisplayMode;
+  autoConnect: boolean;
+  createdAt?: string;
+  lastActive?: string;
+  /** 默认工作目录（新会话自动使用） */
+  workDir?: string;
+}
+
+/** DingTalk 集成配置 */
+export interface DingTalkConfig {
+  enabled: boolean;
+  instances: DingTalkInstanceConfig[];
+  activeInstanceId?: string;
+}
+
 /** 窗口设置 */
 export interface WindowSettings {
   /** 大窗模式透明度 (0 - 100) */
@@ -343,6 +369,8 @@ export interface Config {
   qqbot: QQBotConfig;
   /** Feishu 集成配置 */
   feishu?: FeishuConfig;
+  /** DingTalk 集成配置 */
+  dingtalk?: DingTalkConfig;
   /** 窗口设置 */
   window?: WindowSettings;
   /** 语音输入配置 */

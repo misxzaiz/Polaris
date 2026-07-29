@@ -572,6 +572,131 @@ pub struct FeishuConfig {
     pub active_instance_id: Option<String>,
 }
 
+/// DingTalk (钉钉) 实例配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DingTalkInstanceConfig {
+    /// 实例 ID
+    pub id: String,
+    /// 显示名称
+    pub name: String,
+    /// 是否启用
+    #[serde(default = "default_instance_enabled")]
+    pub enabled: bool,
+    /// 应用 Key (App Key)
+    #[serde(default)]
+    pub app_key: String,
+    /// 应用密钥 (App Secret)
+    #[serde(default)]
+    pub app_secret: String,
+    /// 企业机器人 Webhook URL（用于发送回复）
+    #[serde(default)]
+    pub webhook_url: String,
+    /// 消息显示模式
+    #[serde(default)]
+    pub display_mode: IntegrationDisplayMode,
+    /// 启动时自动连接
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool,
+    /// 创建时间 (ISO 8601)
+    #[serde(default)]
+    pub created_at: Option<String>,
+    /// 最后活跃时间 (ISO 8601)
+    #[serde(default)]
+    pub last_active: Option<String>,
+    /// 默认工作目录（新会话自动使用）
+    #[serde(default)]
+    pub work_dir: Option<String>,
+}
+
+impl Default for DingTalkInstanceConfig {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: "DingTalk Bot".to_string(),
+            enabled: true,
+            app_key: String::new(),
+            app_secret: String::new(),
+            webhook_url: String::new(),
+            display_mode: IntegrationDisplayMode::default(),
+            auto_connect: true,
+            created_at: None,
+            last_active: None,
+            work_dir: None,
+        }
+    }
+}
+
+/// DingTalk 单个实例运行时配置（用于适配器）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DingTalkRuntimeConfig {
+    /// 是否启用
+    #[serde(default)]
+    pub enabled: bool,
+    /// 应用 Key (App Key)
+    #[serde(default)]
+    pub app_id: String,
+    /// 应用密钥 (App Secret)
+    #[serde(default)]
+    pub app_secret: String,
+    /// 企业机器人 Webhook URL（用于发送回复）
+    #[serde(default)]
+    pub webhook_url: String,
+    /// 消息显示模式
+    #[serde(default)]
+    pub display_mode: IntegrationDisplayMode,
+    /// 启动时自动连接
+    #[serde(default = "default_auto_connect")]
+    pub auto_connect: bool,
+    /// 默认工作目录
+    #[serde(default)]
+    pub work_dir: Option<String>,
+}
+
+impl Default for DingTalkRuntimeConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            app_id: String::new(),
+            app_secret: String::new(),
+            webhook_url: String::new(),
+            display_mode: IntegrationDisplayMode::default(),
+            auto_connect: true,
+            work_dir: None,
+        }
+    }
+}
+
+impl From<&DingTalkInstanceConfig> for DingTalkRuntimeConfig {
+    fn from(instance: &DingTalkInstanceConfig) -> Self {
+        Self {
+            enabled: instance.enabled,
+            app_id: instance.app_key.clone(),
+            app_secret: instance.app_secret.clone(),
+            webhook_url: instance.webhook_url.clone(),
+            display_mode: instance.display_mode.clone(),
+            auto_connect: instance.auto_connect,
+            work_dir: instance.work_dir.clone(),
+        }
+    }
+}
+
+/// DingTalk 集成配置
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DingTalkConfig {
+    /// 是否启用钉钉集成（全局开关）
+    #[serde(default)]
+    pub enabled: bool,
+    /// 钉钉实例列表
+    #[serde(default)]
+    pub instances: Vec<DingTalkInstanceConfig>,
+    /// 当前激活的实例 ID
+    #[serde(default)]
+    pub active_instance_id: Option<String>,
+}
+
 
 fn default_floating_window_enabled() -> bool {
     false
@@ -1145,6 +1270,10 @@ pub struct Config {
     #[serde(default)]
     pub feishu: FeishuConfig,
 
+    /// DingTalk 集成配置
+    #[serde(default)]
+    pub dingtalk: DingTalkConfig,
+
     /// 窗口设置
     #[serde(default)]
     pub window: WindowSettings,
@@ -1236,6 +1365,7 @@ impl Default for Config {
             personal_hub: PersonalHubConfig::default(),
             qqbot: QQBotConfig::default(),
             feishu: FeishuConfig::default(),
+            dingtalk: DingTalkConfig::default(),
             window: WindowSettings::default(),
             speech: SpeechConfig::default(),
             tts: TTSConfig::default(),

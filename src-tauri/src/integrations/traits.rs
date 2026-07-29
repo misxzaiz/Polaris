@@ -70,6 +70,7 @@ pub trait PlatformIntegration: Send + Sync {
         match self.platform() {
             Platform::QQBot => "QQ Bot",
             Platform::Feishu => "Feishu",
+            Platform::DingTalk => "DingTalk",
         }
     }
 }

@@ -15,6 +15,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use super::common::{SessionManager, ConversationStore};
 use super::qqbot::QQBotAdapter;
 use super::feishu::FeishuAdapter;
+use super::dingtalk::DingTalkAdapter;
 use super::traits::PlatformIntegration;
 use super::types::*;
 use super::commands::{BotCommand, CommandParser, get_help_text, PromptMode};
@@ -22,7 +23,11 @@ use super::instance_registry::{InstanceRegistry, PlatformInstance, InstanceConfi
 use crate::ai::{EngineRegistry, SessionOptions};
 use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
 use crate::error::Result;
-use crate::models::config::{QQBotConfig, QQBotRuntimeConfig, FeishuConfig, FeishuRuntimeConfig};
+use crate::models::config::{
+    QQBotConfig, QQBotRuntimeConfig,
+    FeishuConfig, FeishuRuntimeConfig,
+    DingTalkConfig, DingTalkRuntimeConfig,
+};
 use crate::services::prompt_store::PromptStore;
 
 /// 集成管理器
@@ -107,7 +112,13 @@ impl IntegrationManager {
 
     /// 初始化
     #[cfg(feature = "tauri-app")]
-    pub async fn init(&mut self, qqbot_config: Option<QQBotConfig>, feishu_config: Option<FeishuConfig>, app_handle: AppHandle) {
+    pub async fn init(
+        &mut self,
+        qqbot_config: Option<QQBotConfig>,
+        feishu_config: Option<FeishuConfig>,
+        dingtalk_config: Option<DingTalkConfig>,
+        app_handle: AppHandle,
+    ) {
         self.app_handle = Some(app_handle.clone());
 
         // 创建消息通道（仅在未创建时，避免重复 init 时覆盖）
@@ -204,6 +215,58 @@ impl IntegrationManager {
                         adapters.entry(Platform::Feishu).or_insert_with(|| {
                             let adapter = FeishuAdapter::new(feishu_cfg.clone());
                             tracing::info!("[IntegrationManager] ✅ 创建 Feishu 适配器: {}", active_instance.name);
+                            Box::new(adapter)
+                        });
+                    }
+                }
+            }
+        }
+
+        // 从传入的配置中加载 DingTalk 实例
+        if let Some(config) = dingtalk_config {
+            let mut registry = self.instance_registry.lock().await;
+            for instance_config in &config.instances {
+                // 跳过已存在的实例
+                if registry.get(&instance_config.id).is_some() {
+                    continue;
+                }
+                let runtime_config = DingTalkRuntimeConfig::from(instance_config);
+                let platform_instance = PlatformInstance {
+                    id: instance_config.id.clone(),
+                    name: instance_config.name.clone(),
+                    platform: Platform::DingTalk,
+                    config: InstanceConfig::DingTalk(runtime_config),
+                    created_at: instance_config.created_at.as_ref()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc))
+                        .unwrap_or_else(chrono::Utc::now),
+                    last_active: instance_config.last_active.as_ref()
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.with_timezone(&chrono::Utc)),
+                    enabled: instance_config.enabled,
+                };
+                registry.add(platform_instance);
+            }
+
+            if let Some(ref active_id) = config.active_instance_id {
+                registry.activate(active_id);
+            }
+
+            tracing::info!("[IntegrationManager] ✅ DingTalk 实例已加载 (共 {} 个)", config.instances.len());
+
+            if let Some(active_instance) = registry.get_active(Platform::DingTalk) {
+                if let InstanceConfig::DingTalk(dingtalk_cfg) = &active_instance.config {
+                    if dingtalk_cfg.enabled
+                        && !dingtalk_cfg.app_id.is_empty()
+                        && !dingtalk_cfg.app_secret.is_empty()
+                    {
+                        let mut adapters = self.adapters.lock().await;
+                        adapters.entry(Platform::DingTalk).or_insert_with(|| {
+                            let mut adapter = DingTalkAdapter::new(dingtalk_cfg.clone());
+                            if !dingtalk_cfg.webhook_url.is_empty() {
+                                adapter = adapter.with_webhook(dingtalk_cfg.webhook_url.clone());
+                            }
+                            tracing::info!("[IntegrationManager] ✅ 创建 DingTalk 适配器: {}", active_instance.name);
                             Box::new(adapter)
                         });
                     }
@@ -396,6 +459,7 @@ impl IntegrationManager {
             .and_then(|inst| match &inst.config {
                 InstanceConfig::QQBot(cfg) => cfg.work_dir.clone(),
                 InstanceConfig::Feishu(cfg) => cfg.work_dir.clone(),
+                InstanceConfig::DingTalk(cfg) => cfg.work_dir.clone(),
             })
             .filter(|dir| !dir.is_empty())
     }
@@ -1065,6 +1129,7 @@ impl IntegrationManager {
             let platform_name = match platform {
                 Platform::QQBot => "QQ",
                 Platform::Feishu => "飞书",
+                Platform::DingTalk => "钉钉",
             };
             let default_prompt = format!("你是一个友好的助手，通过 {} 回复用户消息。回复简洁、有帮助。", platform_name);
 
@@ -1767,6 +1832,14 @@ impl IntegrationManager {
             InstanceConfig::Feishu(config) => {
                 tracing::info!("[IntegrationManager] 创建新的 Feishu Adapter: {}", instance.name);
                 Box::new(FeishuAdapter::new(config.clone()))
+            }
+            InstanceConfig::DingTalk(config) => {
+                tracing::info!("[IntegrationManager] 创建新的 DingTalk Adapter: {}", instance.name);
+                let mut adapter = DingTalkAdapter::new(config.clone());
+                if !config.webhook_url.is_empty() {
+                    adapter = adapter.with_webhook(config.webhook_url.clone());
+                }
+                Box::new(adapter)
             }
         };
 

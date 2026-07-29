@@ -197,11 +197,23 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 初始化集成管理器
     const qqbotConfig = config?.qqbot ?? null;
     const feishuConfig = config?.feishu ?? null;
+    const dingtalkConfig = config?.dingtalk ?? null;
 
-    if (qqbotConfig || feishuConfig) {
+    if (qqbotConfig || feishuConfig || dingtalkConfig) {
       try {
         const { initialize, startPlatform } = useIntegrationStore.getState();
-        await initialize(qqbotConfig, feishuConfig);
+        await initialize(qqbotConfig, feishuConfig, dingtalkConfig);
+
+        if (dingtalkConfig && dingtalkConfig.instances.length > 0) {
+          const activeInstance = dingtalkConfig.activeInstanceId
+            ? dingtalkConfig.instances.find(i => i.id === dingtalkConfig.activeInstanceId)
+            : dingtalkConfig.instances.find(i => i.enabled);
+
+          if (activeInstance && activeInstance.autoConnect !== false) {
+            log.info('自动连接 DingTalk...');
+            await startPlatform('dingtalk');
+          }
+        }
 
         if (qqbotConfig && qqbotConfig.instances.length > 0) {
           const activeInstance = qqbotConfig.activeInstanceId

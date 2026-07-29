@@ -13,6 +13,7 @@ import type {
   MessageContent,
   QQBotConfig,
   FeishuConfig,
+  DingTalkConfig,
 } from '@/types';
 import type { PlatformInstance, InstanceId } from '@/types';
 
@@ -94,8 +95,8 @@ export async function getIntegrationSessions(): Promise<IntegrationSession[]> {
 }
 
 /** 初始化集成管理器 */
-export async function initIntegration(qqbotConfig: QQBotConfig | null, feishuConfig: FeishuConfig | null): Promise<void> {
-  return invoke('init_integration', { qqbotConfig, feishuConfig });
+export async function initIntegration(qqbotConfig: QQBotConfig | null, feishuConfig: FeishuConfig | null, dingtalkConfig?: DingTalkConfig | null): Promise<void> {
+  return invoke('init_integration', { qqbotConfig, feishuConfig, dingtalkConfig: dingtalkConfig ?? null });
 }
 
 /** 监听集成消息事件 */

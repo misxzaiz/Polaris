@@ -15,6 +15,7 @@ import type {
   MessageContent,
   QQBotConfig,
   FeishuConfig,
+  DingTalkConfig,
   PlatformInstance,
   InstanceId,
 } from '@/types';
@@ -49,6 +50,7 @@ interface IntegrationState {
   // 保存配置以便重新初始化
   _qqbotConfig: QQBotConfig | null;
   _feishuConfig: FeishuConfig | null;
+  _dingtalkConfig: DingTalkConfig | null;
   // 存储 unlisten 函数以便清理
   _unlisten: (() => void) | null;
   // 存储初始化 Promise 防止并发初始化
@@ -59,7 +61,7 @@ interface IntegrationState {
   activeInstances: Record<Platform, InstanceId | null>;
 
   // Actions - 基础
-  initialize: (qqbotConfig: QQBotConfig | null, feishuConfig?: FeishuConfig | null) => Promise<void>;
+  initialize: (qqbotConfig: QQBotConfig | null, feishuConfig?: FeishuConfig | null, dingtalkConfig?: DingTalkConfig | null) => Promise<void>;
   startPlatform: (platform: Platform, qqbotConfig?: QQBotConfig, feishuConfig?: FeishuConfig) => Promise<void>;
   stopPlatform: (platform: Platform) => Promise<void>;
   sendMessage: (platform: Platform, target: SendTarget, content: MessageContent) => Promise<void>;
@@ -94,6 +96,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   error: null,
   _qqbotConfig: null,
   _feishuConfig: null,
+  _dingtalkConfig: null,
   _unlisten: null,
   _initPromise: null,
   // 实例管理初始状态
@@ -101,9 +104,9 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   activeInstances: {} as Record<Platform, InstanceId | null>,
 
   // 初始化
-  initialize: async (qqbotConfig, feishuConfig) => {
+  initialize: async (qqbotConfig, feishuConfig, dingtalkConfig) => {
     // 保存配置
-    set({ _qqbotConfig: qqbotConfig, _feishuConfig: feishuConfig ?? null });
+    set({ _qqbotConfig: qqbotConfig, _feishuConfig: feishuConfig ?? null, _dingtalkConfig: dingtalkConfig ?? null });
 
     // 如果已初始化，不需要重复初始化
     if (get().initialized) {

@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use crate::models::config::{QQBotRuntimeConfig, FeishuRuntimeConfig};
+use crate::models::config::{QQBotRuntimeConfig, FeishuRuntimeConfig, DingTalkRuntimeConfig};
 use super::types::Platform;
 
 /// 实例 ID
@@ -61,6 +61,19 @@ impl PlatformInstance {
         }
     }
 
+    /// 创建新的 DingTalk 实例
+    pub fn new_dingtalk(name: impl Into<String>, config: DingTalkRuntimeConfig) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            platform: Platform::DingTalk,
+            config: InstanceConfig::DingTalk(config),
+            created_at: Utc::now(),
+            last_active: None,
+            enabled: true,
+        }
+    }
+
     /// 更新最后活跃时间
     pub fn touch(&mut self) {
         self.last_active = Some(Utc::now());
@@ -73,7 +86,7 @@ impl PlatformInstance {
 pub enum InstanceConfig {
     QQBot(QQBotRuntimeConfig),
     Feishu(FeishuRuntimeConfig),
-    // DingTalk(DingTalkConfig), // 未来扩展
+    DingTalk(DingTalkRuntimeConfig),
 }
 
 impl InstanceConfig {
@@ -105,6 +118,22 @@ impl InstanceConfig {
     pub fn as_feishu_mut(&mut self) -> Option<&mut FeishuRuntimeConfig> {
         match self {
             InstanceConfig::Feishu(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    /// 获取 DingTalk 配置
+    pub fn as_dingtalk(&self) -> Option<&DingTalkRuntimeConfig> {
+        match self {
+            InstanceConfig::DingTalk(config) => Some(config),
+            _ => None,
+        }
+    }
+
+    /// 获取可变的 DingTalk 配置
+    pub fn as_dingtalk_mut(&mut self) -> Option<&mut DingTalkRuntimeConfig> {
+        match self {
+            InstanceConfig::DingTalk(config) => Some(config),
             _ => None,
         }
     }

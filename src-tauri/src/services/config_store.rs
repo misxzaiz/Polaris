@@ -635,6 +635,7 @@ impl OldConfig {
             mimo_code: Default::default(),
             qqbot: Default::default(),
             feishu: Default::default(),
+            dingtalk: Default::default(),
             work_dir: self.work_dir,
             session_dir: self.session_dir,
             git_bin_path: self.git_bin_path,

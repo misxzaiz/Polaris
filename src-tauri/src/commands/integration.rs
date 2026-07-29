@@ -12,6 +12,7 @@ use crate::integrations::types::*;
 use crate::integrations::instance_registry::{PlatformInstance, InstanceId};
 use crate::models::config::{
     QQBotConfig, QQBotInstanceConfig, FeishuConfig, FeishuInstanceConfig,
+    DingTalkConfig, DingTalkInstanceConfig,
 };
 
 /// 启动集成平台
@@ -107,11 +108,12 @@ pub async fn get_integration_sessions(
 pub async fn init_integration(
     qqbot_config: Option<QQBotConfig>,
     feishu_config: Option<FeishuConfig>,
+    dingtalk_config: Option<DingTalkConfig>,
     app_handle: tauri::AppHandle,
     state: State<'_, crate::AppState>,
 ) -> Result<()> {
     let mut manager = state.integration_manager.lock().await;
-    manager.init(qqbot_config, feishu_config, app_handle).await;
+    manager.init(qqbot_config, feishu_config, dingtalk_config, app_handle).await;
     Ok(())
 }
 
@@ -245,7 +247,7 @@ pub async fn update_integration_instance(
 #[cfg(feature = "tauri-app")]
 async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<()> {
     // Step 1: 从 InstanceRegistry 读取数据（async lock，用完立即释放）
-    let (qqbot_instances, feishu_instances, qqbot_active_id, feishu_active_id) = {
+    let (qqbot_instances, feishu_instances, dingtalk_instances, qqbot_active_id, feishu_active_id, dingtalk_active_id) = {
         let manager = state.integration_manager.lock().await;
         let instances = manager.list_instances().await;
 
@@ -261,6 +263,12 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
             .filter_map(platform_instance_to_feishu)
             .collect();
 
+        let dingtalk_instances: Vec<DingTalkInstanceConfig> = instances
+            .iter()
+            .filter(|i| i.platform == Platform::DingTalk)
+            .filter_map(platform_instance_to_dingtalk)
+            .collect();
+
         let qqbot_active_id = manager
             .get_active_instance(Platform::QQBot)
             .await
@@ -269,8 +277,12 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
             .get_active_instance(Platform::Feishu)
             .await
             .map(|i| i.id);
+        let dingtalk_active_id = manager
+            .get_active_instance(Platform::DingTalk)
+            .await
+            .map(|i| i.id);
 
-        (qqbot_instances, feishu_instances, qqbot_active_id, feishu_active_id)
+        (qqbot_instances, feishu_instances, dingtalk_instances, qqbot_active_id, feishu_active_id, dingtalk_active_id)
     };
     // manager async lock 已释放
 
@@ -279,6 +291,7 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
         .map_err(|_| AppError::StateError("ConfigStore lock poisoned".to_string()))?;
     let qqbot_enabled = config_store.get().qqbot.enabled;
     let feishu_enabled = config_store.get().feishu.enabled;
+    let dingtalk_enabled = config_store.get().dingtalk.enabled;
 
     config_store.patch(serde_json::json!({
         "qqbot": {
@@ -290,6 +303,11 @@ async fn sync_instances_to_config(state: &State<'_, crate::AppState>) -> Result<
             "enabled": feishu_enabled,
             "instances": feishu_instances,
             "activeInstanceId": feishu_active_id,
+        },
+        "dingtalk": {
+            "enabled": dingtalk_enabled,
+            "instances": dingtalk_instances,
+            "activeInstanceId": dingtalk_active_id,
         },
     }))?;
     Ok(())
@@ -324,6 +342,24 @@ fn platform_instance_to_feishu(instance: &PlatformInstance) -> Option<FeishuInst
         app_secret: cfg.app_secret.clone(),
         verification_token: cfg.verification_token.clone(),
         encrypt_key: cfg.encrypt_key.clone(),
+        display_mode: cfg.display_mode.clone(),
+        auto_connect: cfg.auto_connect,
+        created_at: Some(instance.created_at.to_rfc3339()),
+        last_active: instance.last_active.map(|dt| dt.to_rfc3339()),
+        work_dir: cfg.work_dir.clone(),
+    })
+}
+
+/// 将 PlatformInstance 转换回 DingTalkInstanceConfig（配置格式）
+fn platform_instance_to_dingtalk(instance: &PlatformInstance) -> Option<DingTalkInstanceConfig> {
+    let cfg = instance.config.as_dingtalk()?;
+    Some(DingTalkInstanceConfig {
+        id: instance.id.clone(),
+        name: instance.name.clone(),
+        enabled: instance.enabled,
+        app_key: cfg.app_id.clone(),
+        app_secret: cfg.app_secret.clone(),
+        webhook_url: cfg.webhook_url.clone(),
         display_mode: cfg.display_mode.clone(),
         auto_connect: cfg.auto_connect,
         created_at: Some(instance.created_at.to_rfc3339()),
