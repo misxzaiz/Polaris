@@ -354,17 +354,15 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
       {/* 展开时显示详情区域：单层背景，透明融入外层 elevated，避免嵌套色阶 */}
       {isExpanded && (
         <div className="px-4 py-3 border-t border-border">
-          {/* 工具名称和时间：仅耗时 > 1s 才显示起止时间，否则只显示工具全名 */}
+          {/* 工具名称和时间：始终显示起止时间，帮助用户判断最新活动与AI是否还在执行 */}
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-text-muted font-mono">{block.name}</span>
-            {durationMs > 1000 && (
-              <div className="text-xs text-text-tertiary flex gap-3">
-                <span>{t('tool.startTime', { time: new Date(block.startedAt).toLocaleTimeString('zh-CN') })}</span>
-                {block.completedAt && (
-                  <span>{t('tool.endTime', { time: new Date(block.completedAt).toLocaleTimeString('zh-CN') })}</span>
-                )}
-              </div>
-            )}
+            <div className="text-xs text-text-tertiary flex gap-3">
+              <span>{t('tool.startTime', { time: new Date(block.startedAt).toLocaleTimeString('zh-CN') })}</span>
+              {block.completedAt && (
+                <span>{t('tool.endTime', { time: new Date(block.completedAt).toLocaleTimeString('zh-CN') })}</span>
+              )}
+            </div>
           </div>
 
           {/* 文件路径：点击打开编辑器 */}
