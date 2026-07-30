@@ -39,7 +39,8 @@ function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
   if (filter === 'claude-code') return ['claude-code']
   if (filter === 'mimo') return ['mimo']
   if (filter === 'simple-ai') return ['simple-ai']
-  return ['claude-code', 'codex', 'mimo', 'simple-ai']
+  if (filter === 'pi') return ['pi']
+  return ['claude-code', 'codex', 'mimo', 'simple-ai', 'pi']
 }
 
 /** 日期分组类型 */
@@ -416,6 +417,12 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         bgColor: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300',
       }
     }
+    if (engineId === 'pi') {
+      return {
+        name: getEngineFullName(engineId),
+        bgColor: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900 dark:text-cyan-300',
+      }
+    }
     return {
       name: getEngineFullName(engineId),
       bgColor: 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-300',
@@ -680,7 +687,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         </button>
         <span className="hidden sm:block border-l border-border h-4" />
 
-        {(['all', 'claude-code', 'codex', 'mimo', 'simple-ai'] as const).map((f) => (
+        {(['all', 'claude-code', 'codex', 'mimo', 'simple-ai', 'pi'] as const).map((f) => (
           <button
             key={f}
             onClick={() => setFilter(f)}
