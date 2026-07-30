@@ -184,12 +184,13 @@ export function DingTalkTab({ loading }: DingTalkTabProps) {
         setSaving(false);
       }
 
-      // 保存实例后启动平台
-      await startPlatform('dingtalk');
-
+      // 保存实例后，如编辑的实例非当前激活实例，先切换再启动平台
       if (activeInstance?.id !== editingInstance.id) {
         await switchInstance(editingInstance.id);
       }
+
+      // 启动平台连接
+      await startPlatform('dingtalk');
     } catch (error) {
       log.error('Failed to connect DingTalk Bot:', error instanceof Error ? error : new Error(String(error)));
     } finally {

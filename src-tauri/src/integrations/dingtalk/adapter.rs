@@ -47,9 +47,6 @@ const DINGTALK_WS_BASE: &str = "https://open-dingtalk.com/ws/v1";
 /// 连接超时时间（秒）
 const CONNECT_TIMEOUT_SECS: u64 = 15;
 
-/// HMAC 签名过期容差（秒）
-const TOKEN_VALID_SECS: u64 = 3600;
-
 /// 内部共享状态
 #[derive(Debug, Default)]
 struct InnerState {

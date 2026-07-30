@@ -62,7 +62,7 @@ interface IntegrationState {
 
   // Actions - 基础
   initialize: (qqbotConfig: QQBotConfig | null, feishuConfig?: FeishuConfig | null, dingtalkConfig?: DingTalkConfig | null) => Promise<void>;
-  startPlatform: (platform: Platform, qqbotConfig?: QQBotConfig, feishuConfig?: FeishuConfig) => Promise<void>;
+  startPlatform: (platform: Platform, qqbotConfig?: QQBotConfig, feishuConfig?: FeishuConfig, dingtalkConfig?: DingTalkConfig) => Promise<void>;
   stopPlatform: (platform: Platform) => Promise<void>;
   sendMessage: (platform: Platform, target: SendTarget, content: MessageContent) => Promise<void>;
   refreshStatus: (platform: Platform) => Promise<void>;
@@ -127,7 +127,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
 
       try {
         // 初始化集成管理器
-        await initIntegration(qqbotConfig, feishuConfig ?? null);
+        await initIntegration(qqbotConfig, feishuConfig ?? null, dingtalkConfig ?? null);
 
         // 监听消息事件
         const unlisten = await onIntegrationMessage((message) => {
@@ -165,7 +165,7 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
   },
 
   // 启动平台
-  startPlatform: async (platform, qqbotConfig, feishuConfig) => {
+  startPlatform: async (platform, qqbotConfig, feishuConfig, dingtalkConfig) => {
     set({ loading: true, error: null });
 
     try {
@@ -176,14 +176,18 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
       if (feishuConfig) {
         set({ _feishuConfig: feishuConfig });
       }
+      if (dingtalkConfig) {
+        set({ _dingtalkConfig: dingtalkConfig });
+      }
 
       const qConfig = qqbotConfig || get()._qqbotConfig;
       const fConfig = feishuConfig || get()._feishuConfig;
+      const dConfig = dingtalkConfig || get()._dingtalkConfig;
 
       if (!get().initialized) {
         // 首次初始化：注册适配器 + 设置消息监听
         log.info('Not initialized, initializing first');
-        await initIntegration(qConfig, fConfig);
+        await initIntegration(qConfig, fConfig, dConfig);
         set({ initialized: true });
 
         // 监听消息事件
@@ -191,10 +195,10 @@ export const useIntegrationStore = create<IntegrationState>((set, get) => ({
           get()._addMessage(message);
         });
         set({ _unlisten: unlisten });
-      } else if (qqbotConfig || feishuConfig) {
+      } else if (qqbotConfig || feishuConfig || dingtalkConfig) {
         // 已初始化但有新配置：重新注册适配器（不重复设置消息监听）
         log.info('Already initialized, re-registering adapters with new config');
-        await initIntegration(qConfig, fConfig);
+        await initIntegration(qConfig, fConfig, dConfig);
       }
 
       await startIntegration(platform);
