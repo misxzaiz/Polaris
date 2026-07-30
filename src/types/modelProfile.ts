@@ -29,14 +29,15 @@ export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
  * - 'codex': 适用于 Codex CLI 引擎
  * - 'simple-ai': 适用于 Simple AI 引擎
  * - 'mimo': 适用于 Mimo 引擎
+ * - 'pi': 适用于 Pi 引擎
  *
  * 历史兼容：旧数据使用 `targetEngine?: ProfileTargetEngine` 单值字段，
  * 由 `resolveTargetEngines()` 做回退迁移，不再新增。
  */
-export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'mimo'
+export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'mimo' | 'pi'
 
 /** 全部可用引擎列表 — 用于「全选/取消全选」等场景 */
-export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'mimo']
+export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'mimo', 'pi']
 
 /** 供应商分类 — 决定预设引导和提示文案
  * - 'official': 官方直连（Anthropic / OpenAI）
@@ -309,7 +310,7 @@ export function resolveTargetEngines(profile: {
 /** 判断 Profile 是否适用于指定引擎 */
 export function isProfileForEngine(
   profile: ModelProfile,
-  engine: 'claude' | 'codex' | 'simple-ai' | 'mimo',
+  engine: 'claude' | 'codex' | 'simple-ai' | 'mimo' | 'pi',
 ): boolean {
   const engines = resolveTargetEngines(profile)
   // 空数组 = 全选 = 适用于所有引擎

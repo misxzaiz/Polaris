@@ -19,13 +19,14 @@ pub mod event_parser;
 
 pub use traits::{
     EngineId, SessionOptions, HistoryEntry, ImageAttachment, EngineMetadata,
-    EngineDistribution, EngineCapabilities, EnvKeyMapping, PlatformBinary,
+    EngineDistribution, EngineCapabilities, EnvKeyMapping, PlatformBinary, PiProviderConfig,
 };
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
 pub use engine::MimocodeEngine;
+pub use engine::PiEngine;
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };

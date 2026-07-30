@@ -24,6 +24,7 @@ const ENGINE_OPTIONS = [
   { id: 'codex', label: 'Codex' },
   { id: 'simple-ai', label: 'SimpleAI' },
   { id: 'mimo-code', label: 'Mimo' },
+  { id: 'pi', label: 'Pi' },
 ];
 
 const PERMISSION_OPTIONS = ['', 'default', 'acceptEdits', 'bypassPermissions', 'plan'];
@@ -72,9 +73,9 @@ export function DispatchSettingsSection({ config, onConfigChange, loading }: Dis
       setFormError(t('dispatch.errors.nameDuplicated', '角色名已存在'));
       return;
     }
-    // mimo 不支持模型 Profile（强制官方端点）
-    if (draft.engineId.startsWith('mimo') && draft.modelProfileId) {
-      setFormError(t('dispatch.errors.mimoNoProfile', 'Mimo 引擎不支持模型 Profile，请选择官方端点'));
+    // mimo / pi 不支持模型 Profile（强制官方端点 / auth.json 认证）
+    if ((draft.engineId.startsWith('mimo') || draft.engineId.startsWith('pi')) && draft.modelProfileId) {
+      setFormError(t('dispatch.errors.mimoNoProfile', '该引擎不支持模型 Profile，请选择官方端点'));
       return;
     }
 

@@ -233,6 +233,7 @@ mod tests {
                 EngineId::Codex => "MockCodex",
                 EngineId::SimpleAI => "MockSimpleAI",
                 EngineId::MimoCode => "MockMimo",
+                EngineId::Pi => "MockPi",
             }
         }
 

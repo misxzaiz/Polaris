@@ -4,7 +4,7 @@ import { normalizeEngineId, getEngineFullName } from './engineDisplay';
 export interface SelectedEngineHealth {
   engineId: EngineId;
   name: string;
-  command: 'claude' | 'codex' | 'simple-ai' | 'mimo';
+  command: 'claude' | 'codex' | 'simple-ai' | 'mimo' | 'pi';
   cliPath: string;
   available: boolean;
   version?: string;
@@ -54,6 +54,17 @@ export function getSelectedEngineHealth(
     };
   }
 
+  if (engineId === 'pi') {
+    return {
+      engineId,
+      name: getEngineFullName(engineId),
+      command: 'pi',
+      cliPath: config?.piCode?.cliPath || 'pi',
+      available: health?.piAvailable ?? false,
+      version: health?.piVersion,
+    };
+  }
+
   // claude-code 默认走 Claude 路径
   return {
     engineId,
@@ -73,5 +84,5 @@ export function hasAnyEngineAvailable(
   const hasSimpleAI = (config?.modelProfiles ?? []).some(
     p => p.baseUrl && p.apiKey && p.model,
   );
-  return Boolean(health?.claudeAvailable || health?.codexAvailable || health?.mimoAvailable || hasSimpleAI);
+  return Boolean(health?.claudeAvailable || health?.codexAvailable || health?.mimoAvailable || health?.piAvailable || hasSimpleAI);
 }

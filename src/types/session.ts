@@ -9,7 +9,7 @@ export type SessionType = 'project' | 'free'
 export type SessionStatus = 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
 
 /** AI 引擎 ID（与 types/config.ts 保持一致，@/types 经 config.ts re-export） */
-export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo'
+export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo' | 'pi'
 
 /** 会话元数据 */
 export interface ChatSession {

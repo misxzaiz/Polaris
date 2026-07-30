@@ -510,6 +510,9 @@ pub fn run() {
     // 注册 Mimo Code 引擎（mimocode CLI）
     engine_registry.register(ai::MimocodeEngine::new(config.clone()));
 
+    // 注册 Pi 引擎（earendil-works pi-coding-agent CLI）
+    engine_registry.register(ai::PiEngine::new(config.clone()));
+
     // 设置默认引擎
     let default_engine = ai::EngineId::parse(&config.default_engine)
         .unwrap_or(ai::EngineId::ClaudeCode);
@@ -1053,6 +1056,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     engine_registry.register(ai::CodexEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
     engine_registry.register(ai::MimocodeEngine::new(config.clone()));
+    engine_registry.register(ai::PiEngine::new(config.clone()));
     let default_engine = ai::EngineId::parse(&config.default_engine)
         .unwrap_or(ai::EngineId::ClaudeCode);
     let _ = engine_registry.set_default(default_engine);

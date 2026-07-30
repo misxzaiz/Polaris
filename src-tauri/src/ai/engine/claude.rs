@@ -861,7 +861,7 @@ impl ClaudeEngine {
         let on_complete = options.on_complete.clone();
         let on_error = options.on_error.clone();
         let on_session_id_update = options.on_session_id_update.clone();
-        let current_session_id = temp_id.clone();
+        let mut current_session_id = temp_id.clone();
 
         // 创建 stdin 输入 channel
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
@@ -975,6 +975,9 @@ impl ClaudeEngine {
             // 读取 stdout
             let reader = BufReader::new(stdout);
             let mut received_session_end = false;
+            // claude --print 模式正常完成时只发 result(success)，不发 SessionEnd。
+            // 用此标志区分"正常完成但无 SessionEnd"与"真的异常退出"。
+            let mut received_result_success = false;
 
             for line in reader.lines() {
                 let line = match line {
@@ -999,6 +1002,9 @@ impl ClaudeEngine {
                                 extra.get("session_id")
                             {
                                 parser.set_session_id(real_id);
+                                // 同步更新本地 current_session_id，确保 reader 循环退出时
+                                // fallback error/session_end 用真实 ID，与 usage/result 事件一致。
+                                current_session_id = real_id.clone();
                                 SessionManager::update_session_id_shared(
                                     &sessions,
                                     &temp_id,
@@ -1020,6 +1026,13 @@ impl ClaudeEngine {
                     if matches!(raw_event, StreamEvent::SessionEnd) {
                         received_session_end = true;
                     }
+                    // claude --print 模式正常完成时发 result(success)，不发 SessionEnd。
+                    // 记录此标志，避免 reader 循环退出时误判为"异常退出"。
+                    if let StreamEvent::Result { ref subtype, .. } = raw_event {
+                        if subtype == "success" {
+                            received_result_success = true;
+                        }
+                    }
 
                     // 使用 EventParser 转换为 AIEvent 并调用回调
                     for ai_event in parser.parse(raw_event) {
@@ -1030,19 +1043,33 @@ impl ClaudeEngine {
 
             // 如果没有收到 session_end，发送 fallback
             if !received_session_end {
-                // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
-                // 与 Codex/Mimo/SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
-                // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
-                let msg = build_fallback_error_message(&stderr_buf);
-                tracing::warn!(
-                    "[ClaudeEngine] 未收到 SessionEnd，发送 fallback error: {}",
-                    msg
-                );
-                event_callback(AIEvent::error(&current_session_id, msg));
-                event_callback(AIEvent::SessionEnd(
-                    SessionEndEvent::new(&current_session_id)
-                        .with_reason(SessionEndReason::Error),
-                ));
+                if received_result_success {
+                    // claude --print 模式正常完成：已发 result(success) 与 usage，
+                    // 但未发 SessionEnd（--print 模式特性）。补发正常 session_end，
+                    // 不发 error —— 避免把正常完成误报为"Claude CLI 异常退出"。
+                    tracing::info!(
+                        "[ClaudeEngine] --print 模式正常完成（收到 result success），补发 session_end: {}",
+                        current_session_id
+                    );
+                    event_callback(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&current_session_id)
+                            .with_reason(SessionEndReason::Completed),
+                    ));
+                } else {
+                    // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
+                    // 与 Codex/Mimo/SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
+                    // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
+                    let msg = build_fallback_error_message(&stderr_buf);
+                    tracing::warn!(
+                        "[ClaudeEngine] 未收到 SessionEnd，发送 fallback error: {}",
+                        msg
+                    );
+                    event_callback(AIEvent::error(&current_session_id, msg));
+                    event_callback(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&current_session_id)
+                            .with_reason(SessionEndReason::Error),
+                    ));
+                }
             }
 
             // 完成回调

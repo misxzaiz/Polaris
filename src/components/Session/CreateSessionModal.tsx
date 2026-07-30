@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Bot, Check, Cpu, Sparkles, Zap } from 'lucide-react'
+import { Bot, Check, Cpu, Sparkles, Zap, Orbit } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
@@ -75,6 +75,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
     { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
     { id: 'mimo' as EngineId, label: 'Mimo', Icon: Sparkles },
+    { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
   ], [])
 
   // 点击外部关闭

@@ -47,6 +47,7 @@ const ENGINE_FORK_CAPABILITY: Record<EngineId, boolean> = {
   codex: false,
   'simple-ai': false,
   mimo: true,
+  pi: false,
 }
 
 /** 源对话 token 阈值：低于此值走 full-file（本身小，直注无负担） */

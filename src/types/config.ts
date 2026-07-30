@@ -8,7 +8,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo'
+export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo' | 'pi'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -355,6 +355,11 @@ export interface Config {
     /** Mimo CLI 命令路径 */
     cliPath: string;
   };
+  /** Pi Code 引擎配置（earendil-works pi-coding-agent） */
+  piCode: {
+    /** Pi CLI 命令路径 */
+    cliPath: string;
+  };
   /** 工作目录 */
   workDir?: string;
   /** 会话保存路径 */
@@ -424,6 +429,10 @@ export interface HealthStatus {
   mimoAvailable?: boolean;
   /** Mimo 版本 */
   mimoVersion?: string;
+  /** Pi CLI 是否可用 */
+  piAvailable?: boolean;
+  /** Pi 版本 */
+  piVersion?: string;
   /** 工作目录 */
   workDir?: string;
   /** 配置是否有效 */

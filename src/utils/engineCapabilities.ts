@@ -41,6 +41,7 @@ const ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
   codex: ['model', 'permission', 'profile'],
   'simple-ai': ['agent', 'model', 'profile'],
   mimo: ['model', 'permission'],
+  pi: ['model', 'effort', 'profile'],
 }
 
 /** 获取指定引擎可展示的选择器列表（未知引擎降级为 claude-code） */

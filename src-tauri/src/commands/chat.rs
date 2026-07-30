@@ -513,6 +513,14 @@ fn prepare_mcp_config_with_paths(
                 simple_ai_mcp_servers: None,
             })
         }
+        EngineId::Pi => {
+            // Pi 使用 auth.json + extensions 体系，不走 claude/codex MCP 配置
+            Ok(PreparedMcpConfig {
+                claude_config_path: None,
+                codex_config_args: Vec::new(),
+                simple_ai_mcp_servers: None,
+            })
+        }
     }
 }
 
@@ -561,6 +569,7 @@ async fn apply_model_profile_options(
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
         EngineId::MimoCode => "mimo",
+        EngineId::Pi => "pi",
     };
     if !profile.is_for_engine(expected_engine) {
         // 同样不静默跳过：明确告知用户所选 Profile 不适用于当前引擎，引导重新选择。
@@ -783,6 +792,69 @@ async fn apply_model_profile_options(
                 profile.model
             );
             // Mimo 不直接使用 env_overrides，由 CLI 自身处理认证
+        }
+        EngineId::Pi => {
+            // Pi 引擎: 通过 `~/.pi/agent/models.json` 注册自定义 provider，
+            // 使用 `--provider <name> --model <model>` 驱动。
+            // 前端 profile 的 baseUrl/apiKey/wireApi 转换为 pi models.json 条目。
+            tracing::info!(
+                "[{}] Pi 引擎使用 Profile: {} (model={}, wireApi={:?})",
+                log_scope,
+                profile.name,
+                profile.model,
+                profile.wire_api
+            );
+
+            // 剥离 CLI 私有后缀（如 `[1m]`），得到纯模型名
+            let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&profile.model);
+            let clean_model = stripped.base_model.clone().unwrap_or_else(|| profile.model.clone());
+
+            // 确定 pi 的 api 类型
+            let pi_api = match profile.wire_api.as_deref() {
+                Some("openai-chat-completions") => "openai-completions",
+                Some("openai-responses") => "openai-responses",
+                _ => "anthropic-messages", // 默认 Anthropic Messages
+            };
+
+            // 构建 provider 名称（用 Profile name + id 保证唯一）
+            let provider_name = format!("polaris-{}", profile.id);
+
+            // 设置 pi_provider_config（PiEngine 据此写 models.json + 传 --provider）
+            let ctx_window = profile.context_window.unwrap_or(128000);
+            session_opts = session_opts.with_pi_provider_config(
+                crate::ai::PiProviderConfig {
+                    name: provider_name,
+                    base_url: profile.base_url.clone(),
+                    api_key: profile.api_key.clone(),
+                    api: pi_api.to_string(),
+                    context_window: ctx_window,
+                    max_tokens: 16384,
+                }
+            );
+
+            // 传剥离后的纯模型名（pi 的 --model 不接受 `[1m]` 后缀）
+            session_opts = session_opts.with_pi_model(clean_model);
+
+            // 同时注入环境变量兜底（pi 也读 env）
+            let mut env_overrides = std::collections::HashMap::new();
+            if let Some(custom) = &profile.custom_env {
+                for (k, v) in custom {
+                    env_overrides.insert(k.clone(), v.clone());
+                }
+            }
+            if !profile.api_key.is_empty() {
+                // openai 线路 → OPENAI_API_KEY，否则 ANTHROPIC_API_KEY
+                let env_name = match profile.wire_api.as_deref() {
+                    Some("openai-chat-completions" | "openai-responses") => "OPENAI_API_KEY",
+                    _ => "ANTHROPIC_API_KEY",
+                };
+                env_overrides.entry(env_name.to_string())
+                    .or_insert_with(|| profile.api_key.clone());
+                // 也注入通用 key 变量作为兜底
+                env_overrides.entry("ANTHROPIC_API_KEY".to_string())
+                    .or_insert_with(|| profile.api_key.clone());
+            }
+            session_opts = session_opts.with_env_overrides(env_overrides);
         }
     }
 
@@ -1147,7 +1219,7 @@ pub async fn continue_chat_inner(
     {
         let mut registry = state.engine_registry.lock().await;
         match engine {
-            EngineId::ClaudeCode | EngineId::Codex | EngineId::MimoCode => {
+            EngineId::ClaudeCode | EngineId::Codex | EngineId::MimoCode | EngineId::Pi => {
                 registry.try_interrupt_all(&session_id);
             }
             EngineId::SimpleAI => {}

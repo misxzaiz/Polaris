@@ -28,7 +28,7 @@ interface AIEngineTabProps {
 // 引擎元数据（前端镜像，作为后端 EngineMetadata 的视图模型）
 // ============================================================================
 
-type CliField = 'claudeCode' | 'codexCode' | 'mimoCode';
+type CliField = 'claudeCode' | 'codexCode' | 'mimoCode' | 'piCode';
 
 interface EngineMetaEntry {
   id: EngineId
@@ -118,6 +118,24 @@ const ENGINE_META: EngineMetaEntry[] = [
     defaultCli: 'mimo',
     npmPackage: 'mimocode',
   },
+  {
+    id: 'pi',
+    nameKey: 'engines.pi.name',
+    descKey: 'engines.pi.description',
+    capabilities: {
+      tools: true,
+      imageInput: false,
+      streaming: true,
+      interrupt: true,
+      resume: false,
+      stdinInput: true,
+      forkSession: false,
+    },
+    distribution: 'npm @earendil-works/pi-coding-agent',
+    cliField: 'piCode',
+    defaultCli: 'pi',
+    npmPackage: '@earendil-works/pi-coding-agent',
+  },
 ]
 
 /** 从 healthStatus 解析某引擎的安装版本与可用性 */
@@ -138,6 +156,8 @@ function resolveEngineStatus(
       return { available: !!health?.codexAvailable, version: health?.codexVersion }
     case 'mimo':
       return { available: !!health?.mimoVersion, version: health?.mimoVersion }
+    case 'pi':
+      return { available: !!health?.piAvailable, version: health?.piVersion }
     default:
       return { available: false }
   }
@@ -215,6 +235,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       onConfigChange({ ...config, claudeCode: { ...config.claudeCode, cliPath: cmd } });
     } else if (field === 'codexCode') {
       onConfigChange({ ...config, codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath: cmd } });
+    } else if (field === 'piCode') {
+      onConfigChange({ ...config, piCode: { ...(config.piCode || { cliPath: 'pi' }), cliPath: cmd } });
     } else {
       onConfigChange({ ...config, mimoCode: { ...(config.mimoCode || { cliPath: 'mimo' }), cliPath: cmd } });
     }
@@ -224,6 +246,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     if (engine.cliField === 'claudeCode') return config.claudeCode?.cliPath || 'claude';
     if (engine.cliField === 'codexCode') return config.codexCode?.cliPath || 'codex';
     if (engine.cliField === 'mimoCode') return config.mimoCode?.cliPath || 'mimo';
+    if (engine.cliField === 'piCode') return config.piCode?.cliPath || 'pi';
     return '';
   };
 

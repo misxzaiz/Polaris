@@ -109,6 +109,13 @@
       "title": "Mimo Code 配置",
       "cliPath": "Mimo CLI 路径",
       "notAvailable": "不可用"
+    },
+    "pi": {
+      "name": "Pi",
+      "description": "earendil-works pi-coding-agent CLI - 多提供商终端编码助手，支持 RPC 双向协议",
+      "title": "Pi 配置",
+      "cliPath": "Pi CLI 路径",
+      "notAvailable": "不可用"
     }
   },
   "modelProfile": {
@@ -179,7 +186,10 @@
     "filter": {
       "all": "全部",
       "claude": "Claude",
-      "codex": "Codex"
+      "codex": "Codex",
+      "simple-ai": "Simple AI",
+      "mimo": "Mimo",
+      "pi": "Pi"
     },
     "authType": {
       "label": "认证方式",
@@ -200,6 +210,7 @@
       "codex": "Codex CLI",
       "simple-ai": "Simple AI",
       "mimo": "Mimo",
+      "pi": "Pi",
       "selectAll": "全选",
       "allEngines": "适用于所有引擎"
     },
@@ -312,6 +323,11 @@
       "name": "Mimo Code",
       "placeholder": "请输入 Mimo CLI 的完整路径或命令名",
       "example": "例如: mimo、C:\\Users\\...\\mimo.cmd (Windows) 或 /usr/local/bin/mimo (macOS/Linux)"
+    },
+    "pi": {
+      "name": "Pi",
+      "placeholder": "请输入 Pi CLI 的完整路径或命令名",
+      "example": "例如: pi、C:\\Users\\...\\pi.cmd (Windows) 或 /usr/local/bin/pi (macOS/Linux)"
     }
   },
   "validation": {

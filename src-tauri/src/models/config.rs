@@ -50,6 +50,21 @@ impl Default for MimoCodeConfig {
     }
 }
 
+/// Pi Code 引擎配置（earendil-works pi-coding-agent）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PiCodeConfig {
+    /// Pi CLI 命令路径
+    pub cli_path: String,
+}
+
+impl Default for PiCodeConfig {
+    fn default() -> Self {
+        Self {
+            cli_path: "pi".to_string(),
+        }
+    }
+}
+
 // EngineId 的定义统一在 crate::ai::EngineId（ai/traits.rs）。
 // 此处仅做兼容性重导出，避免破坏现有引用路径。
 //
@@ -1241,6 +1256,10 @@ pub struct Config {
     #[serde(default)]
     pub mimo_code: MimoCodeConfig,
 
+    /// Pi Code 引擎配置（earendil-works pi-coding-agent）
+    #[serde(default)]
+    pub pi_code: PiCodeConfig,
+
     /// 工作目录
     pub work_dir: Option<PathBuf>,
 
@@ -1357,6 +1376,7 @@ impl Default for Config {
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
             mimo_code: MimoCodeConfig::default(),
+            pi_code: PiCodeConfig::default(),
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
@@ -1410,6 +1430,11 @@ impl Config {
         self.mimo_code.cli_path.clone()
     }
 
+    /// 获取 Pi CLI 命令路径
+    pub fn get_pi_cmd(&self) -> String {
+        self.pi_code.cli_path.clone()
+    }
+
     /// 确保 default_engine 与显示设置有效
     pub fn validate(&mut self) {
         if EngineId::parse(&self.default_engine).is_none() {
@@ -1455,6 +1480,14 @@ pub struct HealthStatus {
     /// Mimo 版本
     #[serde(default)]
     pub mimo_version: Option<String>,
+
+    /// Pi CLI 是否可用
+    #[serde(default)]
+    pub pi_available: bool,
+
+    /// Pi 版本
+    #[serde(default)]
+    pub pi_version: Option<String>,
 
     /// 工作目录
     pub work_dir: Option<String>,

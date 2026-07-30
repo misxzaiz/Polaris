@@ -24,6 +24,7 @@ use std::sync::Arc;
 /// - `SimpleAI`   → `"simple-ai"` （显式 rename，防止 kebab-case 将
 ///   "AI" 拆为 "a-i"）
 /// - `MimoCode`   → `"mimo-code"`
+/// - `Pi`         → `"pi"` （earendil-works pi-coding-agent CLI）
 ///
 /// ## 向后兼容
 ///
@@ -42,6 +43,8 @@ pub enum EngineId {
     SimpleAI,
     /// Mimo Code 引擎（mimocode CLI）
     MimoCode,
+    /// Pi 引擎（earendil-works pi-coding-agent CLI）
+    Pi,
 }
 
 impl EngineId {
@@ -52,6 +55,7 @@ impl EngineId {
     /// - `"codex" | "openai-codex" | "openai_codex"` → `Codex`
     /// - `"simple-ai" | "simpleai" | "simple_ai"` → `SimpleAI`
     /// - `"mimo" | "mimo-code" | "mimocode"` → `MimoCode`
+    /// - `"pi" | "pi-coding-agent" | "piagent"` → `Pi`
     pub fn parse(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
         match lower.as_str() {
@@ -59,6 +63,7 @@ impl EngineId {
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAI),
             "mimo" | "mimo-code" | "mimocode" => Some(Self::MimoCode),
+            "pi" | "pi-coding-agent" | "piagent" => Some(Self::Pi),
             _ => None,
         }
     }
@@ -72,6 +77,7 @@ impl EngineId {
             Self::Codex => "codex",
             Self::SimpleAI => "simple-ai",
             Self::MimoCode => "mimo-code",
+            Self::Pi => "pi",
         }
     }
 
@@ -82,6 +88,7 @@ impl EngineId {
             Self::Codex => "OpenAI Codex",
             Self::SimpleAI => "Simple AI",
             Self::MimoCode => "Mimo Code",
+            Self::Pi => "Pi",
         }
     }
 
@@ -92,6 +99,7 @@ impl EngineId {
             EngineId::Codex,
             EngineId::SimpleAI,
             EngineId::MimoCode,
+            EngineId::Pi,
         ]
     }
 }
@@ -150,6 +158,32 @@ pub struct SessionOptions {
     /// 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
     /// 用于将请求路由到第三方 Anthropic 兼容端点
     pub env_overrides: HashMap<String, String>,
+
+    /// Pi 引擎专用：写入 `~/.pi/agent/models.json` 的 provider 配置。
+    /// 非 None 时，PiEngine 会在启动前写入/更新 models.json，
+    /// 并通过 `--provider <name>` 让 pi 使用该端点。
+    pub pi_provider_config: Option<PiProviderConfig>,
+
+    /// Pi 引擎专用：已剥离 CLI 私有后缀（如 `[1m]`）的纯模型名。
+    /// 非 None 时 PiEngine 用此值替代 `model` 字段传给 `--model`。
+    pub pi_model: Option<String>,
+}
+
+/// Pi 引擎通过 `~/.pi/agent/models.json` 注册自定义 provider 的配置。
+#[derive(Debug, Clone, Default)]
+pub struct PiProviderConfig {
+    /// 在 models.json 中使用的 provider 标识名（需唯一，通常用 Profile 名 + id）
+    pub name: String,
+    /// 端点 URL（如 `http://120.79.164.155:9850/v1`）
+    pub base_url: String,
+    /// 用于 `--api-key` 的 API key
+    pub api_key: String,
+    /// pi 的 API 类型（`openai-completions` / `anthropic-messages` / 等）
+    pub api: String,
+    /// 上下文窗口（用于注册模型元数据）
+    pub context_window: u64,
+    /// 最大输出 token（用于注册模型元数据）
+    pub max_tokens: u32,
 }
 
 /// 图片附件（用于 stream-json 模式原生传递给模型）
@@ -197,6 +231,8 @@ impl SessionOptions {
             settings_overlay_path: None,
             codex_config_args: Vec::new(),
             env_overrides: HashMap::new(),
+            pi_provider_config: None,
+            pi_model: None,
         }
     }
 
@@ -323,6 +359,18 @@ impl SessionOptions {
     /// 设置环境变量覆盖
     pub fn with_env_overrides(mut self, overrides: HashMap<String, String>) -> Self {
         self.env_overrides = overrides;
+        self
+    }
+
+    /// 设置 Pi provider 配置（写入 models.json）
+    pub fn with_pi_provider_config(mut self, config: PiProviderConfig) -> Self {
+        self.pi_provider_config = Some(config);
+        self
+    }
+
+    /// 设置 Pi 纯模型名（已剥离 CLI 私有后缀）
+    pub fn with_pi_model(mut self, model: impl Into<String>) -> Self {
+        self.pi_model = Some(model.into());
         self
     }
 }

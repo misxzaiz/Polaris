@@ -282,6 +282,12 @@ impl ConfigStore {
         Self::detect_cli_version(&cmd, "detect_mimo")
     }
 
+    /// 检测 Pi CLI 是否可用
+    pub fn detect_pi(&self) -> Option<String> {
+        let cmd = self.config.get_pi_cmd();
+        Self::detect_cli_version(&cmd, "detect_pi")
+    }
+
     fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
         eprintln!("[{}] 尝试执行: {} --version", log_prefix, cmd);
 
@@ -437,6 +443,8 @@ impl ConfigStore {
         let codex_available = codex_version.is_some();
         let mimo_version = self.detect_mimo();
         let mimo_available = mimo_version.is_some();
+        let pi_version = self.detect_pi();
+        let pi_available = pi_version.is_some();
 
         HealthStatus {
             claude_available,
@@ -445,6 +453,8 @@ impl ConfigStore {
             codex_version,
             mimo_available,
             mimo_version,
+            pi_available,
+            pi_version,
             work_dir: self
                 .config
                 .work_dir
@@ -633,6 +643,7 @@ impl OldConfig {
             },
             codex_code: Default::default(),
             mimo_code: Default::default(),
+            pi_code: Default::default(),
             qqbot: Default::default(),
             feishu: Default::default(),
             dingtalk: Default::default(),

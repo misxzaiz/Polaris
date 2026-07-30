@@ -109,6 +109,13 @@
       "title": "Mimo Code Configuration",
       "cliPath": "Mimo CLI Path",
       "notAvailable": "Not available"
+    },
+    "pi": {
+      "name": "Pi",
+      "description": "earendil-works pi-coding-agent CLI - multi-provider terminal coding assistant with bidirectional RPC protocol",
+      "title": "Pi Configuration",
+      "cliPath": "Pi CLI Path",
+      "notAvailable": "Not available"
     }
   },
   "modelProfile": {
@@ -179,7 +186,10 @@
     "filter": {
       "all": "All",
       "claude": "Claude",
-      "codex": "Codex"
+      "codex": "Codex",
+      "simple-ai": "Simple AI",
+      "mimo": "Mimo",
+      "pi": "Pi"
     },
     "authType": {
       "label": "Authentication",
@@ -200,6 +210,7 @@
       "codex": "Codex CLI",
       "simple-ai": "Simple AI",
       "mimo": "Mimo",
+      "pi": "Pi",
       "selectAll": "Select All",
       "allEngines": "Applies to all engines"
     },
@@ -312,6 +323,11 @@
       "name": "Mimo Code",
       "placeholder": "Enter the full path or command name for Mimo CLI",
       "example": "e.g., mimo, C:\\Users\\...\\mimo.cmd (Windows), or /usr/local/bin/mimo (macOS/Linux)"
+    },
+    "pi": {
+      "name": "Pi",
+      "placeholder": "Enter the full path or command name for Pi CLI",
+      "example": "e.g., pi, C:\\Users\\...\\pi.cmd (Windows), or /usr/local/bin/pi (macOS/Linux)"
     }
   },
   "validation": {
