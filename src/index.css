@@ -363,7 +363,6 @@ body {
 /* 表格样式 */
 .prose table {
   width: 100%;
-  max-width: 45em;
   border-collapse: collapse;
   margin: 0;
 }

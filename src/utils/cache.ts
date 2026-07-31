@@ -399,8 +399,12 @@ export function wrapTables(html: string): string {
         rawWidths.map(w => '<col style="width:' + w + '%">').join('') +
         '</colgroup>';
 
-      // 给 <table> 加 table-layout:fixed，并插入 <colgroup>
-      const tableWithFixed = tableHtml.replace('<table', '<table style="table-layout:fixed"');
+      // 计算表格最小宽度：每列至少 8em，最少 30em
+      // 列少时表格自然填满容器，列多时自动变宽触发横向滚动
+      const minTableWidth = Math.max(30, colCount * 8);
+
+      // 给 <table> 加 table-layout:fixed 和 min-width，并插入 <colgroup>
+      const tableWithFixed = tableHtml.replace('<table', '<table style="table-layout:fixed;min-width:' + minTableWidth + 'em"');
       const modifiedTable = tableWithFixed.replace('>', '>' + colgroup);
 
       return '<div class="table-scroll-wrapper">' + modifiedTable + '</div>';
