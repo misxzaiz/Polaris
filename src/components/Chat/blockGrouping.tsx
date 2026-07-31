@@ -154,9 +154,6 @@ export function identifyCollapsibleBlockGroups(blocks: ContentBlock[]): Collapsi
   return groups;
 }
 
-/**
- * 渲染内容块数组（支持思考块和工具块折叠聚合）
- */
 export function renderBlocksWithGrouping(
   blocks: ContentBlock[],
   isStreaming: boolean | undefined

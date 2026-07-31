@@ -377,10 +377,16 @@ body {
 .prose td {
   border: 1px solid rgba(255, 255, 255, 0.15);
   padding: 6px 8px;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .prose th {
   background-color: rgba(255, 255, 255, 0.05);
+}
+
+.prose td code {
+  word-break: break-all;
 }
 
 /* strong/em 样式 */
