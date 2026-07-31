@@ -15,7 +15,7 @@ import { MarkdownRenderCache } from './cache';
 
 /** 渲染片段类型 */
 interface RenderPart {
-  type: 'text' | 'bold' | 'italic' | 'code' | 'link' | 'strikethrough';
+  type: 'text' | 'bold' | 'italic' | 'code' | 'link' | 'strikethrough' | 'image';
   content: string;
   href?: string;
 }
@@ -46,6 +46,18 @@ function parseInlineMarkdown(content: string): RenderPart[] {
       { pattern: '`', type: 'code' as const },
       { pattern: '~~', type: 'strikethrough' as const },
     ];
+
+    // 查找图片 ![alt](src)
+    const imageMatch = remaining.match(/^!\[([^\]]*)\]\(([^)]+)\)/);
+    if (imageMatch) {
+      parts.push({
+        type: 'image',
+        content: imageMatch[1],
+        href: imageMatch[2],
+      });
+      remaining = remaining.slice(imageMatch[0].length);
+      continue;
+    }
 
     // 查找链接 [text](url) - 只匹配开头位置
     const linkMatch = remaining.match(/^\[([^\]]+)\]\(([^)]+)\)/);
@@ -199,6 +211,16 @@ function renderPart(part: RenderPart, index: number): React.ReactNode {
         >
           {part.content}
         </code>
+      );
+    case 'image':
+      return (
+        <img
+          key={index}
+          src={part.href!}
+          alt={part.content}
+          className="markdown-chat-image"
+          loading="lazy"
+        />
       );
     case 'link':
       return (
