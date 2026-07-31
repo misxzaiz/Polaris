@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, X, ChevronDown, Bot, Cpu, Zap, Sparkles } from 'lucide-react'
+import { Archive, X, ChevronDown, Bot, Cpu, Zap, Orbit } from 'lucide-react'
 import { clsx } from 'clsx'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'
@@ -46,12 +46,13 @@ const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> =
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
+  { id: 'pi', label: 'Pi', Icon: Orbit },
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' {
+function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'pi' {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : 'claude'
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : 'claude'
 }
 
 /** 引擎单选段（图标 + 名称，四选一横向排列） */

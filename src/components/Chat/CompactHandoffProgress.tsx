@@ -25,7 +25,7 @@ export function CompactHandoffProgress() {
   if (!task) return null
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex items-center gap-2 pl-3 pr-2 py-2 rounded-full bg-background-elevated border border-border shadow-lg max-w-[320px]">
+    <div className="fixed bottom-24 right-4 z-40 flex items-center gap-2 pl-3 pr-2 py-2 rounded-full bg-background-elevated border border-border shadow-lg max-w-[320px]">
       <Loader2 size={14} className="animate-spin text-primary shrink-0" />
       <div className="flex flex-col min-w-0">
         <span className="text-xs font-medium text-text-primary truncate">

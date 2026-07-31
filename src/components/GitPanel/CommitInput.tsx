@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Sparkles, Loader2, Bot, Cpu, Zap, Check, MessageSquare } from 'lucide-react'
+import { Send, Sparkles, Loader2, Bot, Cpu, Zap, Check, MessageSquare, Orbit } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
@@ -27,6 +27,7 @@ const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> =
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
+  { id: 'pi', label: 'Pi', Icon: Orbit },
 ]
 
 function readStoredEngine(defaultEngine: EngineId): EngineId {

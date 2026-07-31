@@ -8,6 +8,7 @@ import type { Config, WindowSettings, ChatDisplayDensity, ChatDisplayFontFamily 
 import { DEFAULT_CHAT_DISPLAY_SETTINGS, getChatDisplayStyleVars, normalizeChatDisplaySettings } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
+import { SystemPromptSection } from './SystemPromptSection';
 
 
 interface GeneralTabProps {
@@ -514,6 +515,9 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
       {/* 数据存储 */}
       <DataStorageCard />
+
+      {/* 系统提示词 */}
+      <SystemPromptSection />
     </div>
   );
 }

@@ -5,7 +5,7 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import type { SystemPromptConfig, SystemPromptMode } from '@/types/config';
+import type { SystemPromptConfig } from '@/types/config';
 
 interface SystemPromptState {
   /** 当前配置 */
@@ -14,8 +14,6 @@ interface SystemPromptState {
   _hasHydrated: boolean;
   /** 设置水合状态 */
   setHasHydrated: (state: boolean) => void;
-  /** 设置模式 */
-  setMode: (mode: SystemPromptMode) => void;
   /** 设置自定义提示词 */
   setCustomPrompt: (prompt: string) => void;
   /** 设置启用状态 */
@@ -26,7 +24,6 @@ interface SystemPromptState {
 
 /** 默认配置 */
 const DEFAULT_CONFIG: SystemPromptConfig = {
-  mode: 'append',
   customPrompt: '',
   enabled: false,
 };
@@ -38,11 +35,6 @@ export const useSystemPromptStore = create<SystemPromptState>()(
       _hasHydrated: false,
 
       setHasHydrated: (state) => set({ _hasHydrated: state }),
-
-      setMode: (mode) =>
-        set((state) => ({
-          config: { ...state.config, mode },
-        })),
 
       setCustomPrompt: (customPrompt) =>
         set((state) => ({
@@ -77,7 +69,6 @@ export function getSystemPromptConfigDirect(): SystemPromptConfig {
       const parsed = JSON.parse(stored);
       if (parsed?.state?.config) {
         return {
-          mode: parsed.state.config.mode ?? 'default',
           customPrompt: parsed.state.config.customPrompt ?? '',
           enabled: parsed.state.config.enabled ?? false,
         };

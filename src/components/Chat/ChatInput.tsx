@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
-import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown } from 'lucide-react'
+import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown, Orbit } from 'lucide-react'
 import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize } from '@/stores/conversationStore/useActiveSession'
@@ -78,6 +78,7 @@ const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
+  { id: 'pi', label: 'Pi', Icon: Orbit },
 ]
 
 /** 提示词优化模式选项（标签/提示语走 i18n） */
@@ -93,9 +94,9 @@ const OPTIMIZE_MODE_OPTIONS: Array<{
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' {
+function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'pi' {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : 'claude'
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : 'claude'
 }
 
 export interface EditMode {

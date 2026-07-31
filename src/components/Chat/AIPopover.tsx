@@ -6,7 +6,7 @@
 
 import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X } from 'lucide-react'
+import { X, Orbit } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
 import type { EditMode } from '../Chat'
 import { ErrorBanner } from './ErrorBanner'
@@ -75,6 +75,8 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
   const engineOptions = useMemo(() => [
     { id: 'claude-code' as EngineId, name: 'Claude Code' },
     { id: 'codex' as EngineId, name: 'OpenAI Codex' },
+    { id: 'simple-ai' as EngineId, name: 'Simple AI' },
+    { id: 'pi' as EngineId, name: 'Pi' },
   ], [])
 
   const activeSessionMetadata = useMemo(

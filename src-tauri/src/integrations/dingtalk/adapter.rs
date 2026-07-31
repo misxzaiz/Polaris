@@ -7,7 +7,7 @@
  *   - 发消息: 企业机器人 Webhook (HTTP POST)
  *
  * 钉钉长连接协议:
- *   - 连接 URL: https://open-dingtalk.com/ws/v1?appkey=<AppKey>&token=<hmac_sha256(base64(timestamp), AppSecret)>
+ *   - 连接 URL: wss://open-dingtalk.com/ws/v1?appkey=<AppKey>&token=<hmac_sha256(base64(timestamp), AppSecret)>
  *   - 连接验证: 服务端回复 {"type":"connection_result","success":true/false,"error":...}
  *   - 收消息: {"type":"message","conversationType":1|2,"conversationId":"...","senderStaffId":"...",
  *              "senderUserId":"...","senderCorpId":"...","isInAtList":true,
@@ -42,7 +42,7 @@ use super::super::traits::PlatformIntegration;
 use super::super::types::*;
 
 /// DingTalk WebSocket 长连接 URL 前缀
-const DINGTALK_WS_BASE: &str = "https://open-dingtalk.com/ws/v1";
+const DINGTALK_WS_BASE: &str = "wss://open-dingtalk.com/ws/v1";
 
 /// 连接超时时间（秒）
 const CONNECT_TIMEOUT_SECS: u64 = 15;
