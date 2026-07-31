@@ -2,7 +2,7 @@
  * 工具调用块渲染器 - 优化版本
  */
 
-import { memo, useState, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
@@ -31,12 +31,24 @@ import { PatchDiffRenderer } from './PatchDiffRenderer';
 
 export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block }: { block: ToolCallBlock }) {
   const { t } = useTranslation('chat');
-  // 始终默认折叠（流式时也不展开，避免界面跳动）
-  const [isExpanded, setIsExpanded] = useState(false);
+  // 运行时自动展开，完成后自动折叠
+  const [isExpanded, setIsExpanded] = useState(() =>
+    block.status === 'running' || block.status === 'pending'
+  );
   const [showFullOutput, setShowFullOutput] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(true);
+  const [showRawContent, setShowRawContent] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
+
+  // 同步状态变化：运行时展开，完成时折叠
+  useEffect(() => {
+    if (block.status === 'completed' || block.status === 'failed') {
+      setIsExpanded(false);
+    } else if (block.status === 'running' || block.status === 'pending') {
+      setIsExpanded(true);
+    }
+  }, [block.status]);
 
   // 获取工具配置
   const toolConfig = useMemo(() => getToolConfig(block.name), [block.name]);
@@ -256,13 +268,25 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   }, [block.output]);
 
   return (
+    <>
+      <style>{`
+        @keyframes tool-glow {
+          0%, 100% { box-shadow: 0 0 6px rgba(59, 130, 246, 0.06); border-color: rgba(59, 130, 246, 0.15); }
+          50% { box-shadow: 0 0 12px rgba(59, 130, 246, 0.12); border-color: rgba(59, 130, 246, 0.3); }
+        }
+      `}</style>
     <div
       className={clsx(
         'my-1.5 rounded-lg overflow-hidden w-full transition-all duration-200',
-        'border border-border bg-background-elevated',
+        (block.status === 'running' || block.status === 'pending')
+          ? 'border border-primary/20 bg-[#0f1117]'
+          : 'border border-border bg-background-elevated',
         statusAnimationClass,
         block.status === 'failed' && 'border-error/30 bg-error/[0.06]'
       )}
+      style={block.status === 'running' || block.status === 'pending' ? {
+        animation: 'tool-glow 2s ease-in-out infinite',
+      } : {}}
     >
       {/* 统一头部 - 折叠和展开共用 */}
       <div
@@ -564,6 +588,30 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
+          {/* 原始内容查看 */}
+          <div className="mb-3 border-l-2 border-border pl-3">
+            <div
+              onClick={() => setShowRawContent(!showRawContent)}
+              className="text-xs text-text-tertiary hover:text-text-primary cursor-pointer flex items-center gap-1.5 select-none mb-1"
+            >
+              <ChevronRight
+                className={clsx(
+                  'w-3 h-3 transition-transform',
+                  showRawContent && 'rotate-90'
+                )}
+              />
+              📄 {t('tool.rawContent', '查看原始内容')}
+            </div>
+            {showRawContent && (
+              <div className="bg-background-surface rounded p-2 max-h-48 overflow-y-auto">
+                <JsonTreeView
+                  data={{ name: block.name, input: block.input, output: block.output }}
+                  defaultDepth={2}
+                />
+              </div>
+            )}
+          </div>
+
           {/* 错误信息（红色左色条，失败定位更醒目） */}
           {hasError && (
             <div className="mb-3 border-l-2 border-error/50 pl-3">
@@ -595,5 +643,6 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
         </div>
       )}
     </div>
+    </>
   );
 });
