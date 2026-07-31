@@ -332,9 +332,16 @@ function toTypeBox(schema) {
       return Type.Array(schema.items ? toTypeBox(schema.items) : Type.Any());
     case "object": {
       if (!schema.properties) return Type.Record(Type.String(), Type.Any());
+      const required = schema.required;
+      const hasRequired = Array.isArray(required) && required.length > 0;
+      const requiredSet = new Set(hasRequired ? required : []);
       const props = {};
       for (const [key, val] of Object.entries(schema.properties)) {
-        props[key] = toTypeBox(val);
+        let propSchema = toTypeBox(val);
+        if (!hasRequired || !requiredSet.has(key)) {
+          propSchema = Type.Optional(propSchema);
+        }
+        props[key] = propSchema;
       }
       return Type.Object(props, { additionalProperties: schema.additionalProperties !== false });
     }
