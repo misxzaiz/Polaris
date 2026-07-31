@@ -32,11 +32,9 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::RecvTimeoutError;
-use std::time::Duration;
 
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
@@ -539,12 +537,6 @@ impl PiEngine {
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
         let input_sender_for_return = input_sender.clone();
 
-        // [P0] session 头就绪信号：stdout 读取线程收到 session 头后发信号，
-        // stdin 写入线程等待此信号再发送初始 prompt 命令，避免在 Pi RPC 状态机
-        // 尚未就绪时即发出 prompt（见 pi.responder 在 stdin 就绪但 stdout
-        // 尚未输出 session 头时的竞态，会导致 Pi 静默退出）。
-        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<()>();
-
         std::thread::spawn(move || {
             let (stdout, stdin) = match (child.stdout, child.stdin) {
                 (Some(s), Some(i)) => (s, i),
@@ -565,75 +557,18 @@ impl PiEngine {
                 }
             };
 
-            // stderr 读取线程：收集前若干条 stderr 行，在 stdout 无有效事件时作为错误
-            // 透传，便于诊断 Pi 启动失败/模型不可用等真实原因。
-            let stderr_buf = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-            let stderr_buf_clone = stderr_buf.clone();
+            // stderr 读取线程（日志）
             std::thread::spawn(move || {
                 let reader = BufReader::new(stderr);
-                let mut count = 0;
                 for line in reader.lines().map_while(|r| r.ok()) {
                     tracing::warn!("[PiEngine] stderr: {}", line);
-                    if let Ok(mut buf) = stderr_buf_clone.lock() {
-                        buf.push(line);
-                    }
-                    count += 1;
-                    // 防止 stderr 持续刷屏撑大内存（pi 启动慢时会大量输出 debug）
-                    if count >= 50 {
-                        break;
-                    }
                 }
             });
 
-            // stdin 写入线程：等待 session 头就绪信号后，才发送初始 prompt 命令。
-            const READY_TIMEOUT_SECS: u64 = 60;
-            let stderr_buf_for_stdin = stderr_buf.clone();
+            // stdin 写入线程：先发初始 prompt（若有），再保持 stdin 打开供后续 abort/steer
             std::thread::spawn(move || {
+                use std::io::Write;
                 let mut stdin_writer = stdin;
-
-                // 等待 Pi RPC 状态机就绪（session 头到达）
-                let session_ready = ready_rx.recv_timeout(Duration::from_secs(READY_TIMEOUT_SECS));
-                match session_ready {
-                    Ok(()) => {
-                        tracing::info!("[PiEngine] Pi 已就绪（session 头已接收），发送初始 prompt");
-                    }
-                    Err(RecvTimeoutError::Timeout) => {
-                        tracing::error!(
-                            "[PiEngine] 等待 Pi session 头就绪超时（{}s），进程 PID={}；\
-                             请检查 pi 安装、provider 配置与网络连接",
-                            READY_TIMEOUT_SECS,
-                            pid,
-                        );
-                        let stderr_lines = stderr_buf_for_stdin
-                            .lock()
-                            .ok()
-                            .map(|b| b.iter().cloned().collect::<Vec<_>>())
-                            .unwrap_or_default();
-                        let stderr_hint = if !stderr_lines.is_empty() {
-                            format!(
-                                "\nstderr 关键输出:\n{}",
-                                stderr_lines.iter().take(10).map(|l| format!("  {}", l)).collect::<Vec<_>>().join("\n")
-                            )
-                        } else {
-                            String::new()
-                        };
-                        if let Some(ref cb) = on_error {
-                            cb(format!(
-                                "等待 Pi 就绪超时（{}s），未收到 session 头。请检查 pi 是否已正确安装、provider 是否配置有效（~/.pi/agent/models.json）以及网络连接。{}",
-                                READY_TIMEOUT_SECS, stderr_hint
-                            ));
-                        }
-                        return;
-                    }
-                    Err(RecvTimeoutError::Disconnected) => {
-                        // ready_tx 已销毁（reader 线程异常退出），进程 stdout 已关闭，
-                        // 不在 stdin 侧重复报告——reader 主线程会发出收尾错误。
-                        tracing::warn!(
-                            "[PiEngine] ready_tx 已断开（reader 线程已退出），跳过初始 prompt"
-                        );
-                        return;
-                    }
-                }
 
                 if let Some(prompt) = initial_prompt {
                     let cmd_line = build_prompt_command(&prompt, "init", &initial_images);
@@ -665,7 +600,6 @@ impl PiEngine {
             let mut line_count: usize = 0;
             let mut known_event_count: usize = 0;
             let mut agent_ended = false;
-            let mut session_header_received = false;
 
             for line in reader.lines() {
                 let line = match line {
@@ -688,12 +622,6 @@ impl PiEngine {
                 // 会话头 / get_state 响应里可能携带 pi 真实 sessionId
                 let mut sid_hint: Option<String> = None;
                 if pi_line.line_type == "session" {
-                    // [P0] 收到 session 头后通知 stdin 线程：Pi RPC 状态机已就绪，
-                    // 可以安全发送初始 prompt 命令。忽略 ready_tx 发送失败（reader 线程
-                    // 自身 panic 或 stdin 线程已超时的退化情况）——不影响 Pi 行为。
-                    let _ = ready_tx.send(());
-                    session_header_received = true;
-
                     sid_hint = pi_line.data.get("id")
                         .and_then(|v| v.as_str())
                         .filter(|s| !s.is_empty())
@@ -752,29 +680,11 @@ impl PiEngine {
                 );
             }
             if line_count == 0 {
-                // [P0] stdout 完全无输出：区分"Pi 尚未就绪"与"纯空"
-                if !session_header_received {
-                    let stderr_lines = stderr_buf.lock().ok().map(|b| b.iter().cloned().collect::<Vec<_>>()).unwrap_or_default();
-                    let stderr_hint = if !stderr_lines.is_empty() {
-                        format!(
-                            "\nstderr 关键输出:\n{}",
-                            stderr_lines.iter().take(10).map(|l| format!("  {}", l)).collect::<Vec<_>>().join("\n")
-                        )
-                    } else {
-                        String::new()
-                    };
-                    tracing::warn!("[PiEngine] CLI 未产生任何 stdout 输出（session 头也未收到）");
-                    event_callback(AIEvent::error(
-                        &real_session_id,
-                        format!("Pi CLI 未产生任何输出，未收到 session 头。请检查 pi 是否已正确安装（npm install -g --ignore-scripts @earendil-works/pi-coding-agent）、provider 是否已配置（~/.pi/agent/models.json）以及网络连接。{}", stderr_hint),
-                    ));
-                } else {
-                    tracing::warn!("[PiEngine] CLI 未产生任何 stdout 输出");
-                    event_callback(AIEvent::error(
-                        &real_session_id,
-                        "Pi CLI 未产生任何输出，请检查 pi 是否已安装（npm install -g --ignore-scripts @earendil-works/pi-coding-agent）及 provider 是否已配置".to_string(),
-                    ));
-                }
+                tracing::warn!("[PiEngine] CLI 未产生任何 stdout 输出");
+                event_callback(AIEvent::error(
+                    &real_session_id,
+                    "Pi CLI 未产生任何输出，请检查 pi 是否已安装（npm install -g @earendil-works/pi-coding-agent）及 provider 是否已配置".to_string(),
+                ));
             } else if known_event_count == 0 {
                 tracing::warn!("[PiEngine] CLI 产生 {} 行输出但无法解析任何事件", line_count);
                 event_callback(AIEvent::error(
