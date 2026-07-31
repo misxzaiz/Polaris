@@ -380,10 +380,13 @@ export function splitByCodeBlocks(content: string): Array<{
           completed: true,
         });
       }
-      // 未闭合的代码块部分作为未完成的文本
+      // 未闭合的代码块部分作为代码块渲染（流式预览）
+      const lang = openBlockMatch[1] || '';
+      const codeContent = openBlockMatch[2] || '';
       parts.push({
-        type: 'text',
-        content: remaining.slice(remaining.indexOf('```')),
+        type: 'code-block',
+        content: codeContent,
+        language: lang,
         completed: false,
       });
     } else {
