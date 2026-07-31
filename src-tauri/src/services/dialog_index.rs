@@ -473,12 +473,12 @@ pub fn on_self_append(name: &str, meta_line: Option<&str>, lines: &[String]) {
                     params![external_id, preview],
                 );
             }
-            // FTS 增量：追加一行（搜索时 GROUP BY session_id 去重）
-            conn.execute(
-                "INSERT INTO sessions_fts (session_id, title, content) VALUES (?1, '', ?2)",
-                params![external_id, text],
-            )
-            .map_err(|e| AppError::StateError(format!("FTS 增量失败: {}", e)))?;
+            // FTS 不在此增量写入：on_self_append 每条消息都会触发，若每次都 INSERT
+            // 一行，一个长会话会在 sessions_fts 表里留下上百行（搜索时 GROUP BY
+            // session_id 去重，但物理行膨胀），实测 index.db 因此膨胀到 261MB+、
+            // WAL 60MB+，拖慢所有 history_query / history_search。
+            // FTS 由轮末整存路径 on_self_write → index_self_content → replace_fts
+            // 全量重建（每会话只保留一行），搜索当前轮次的时效性损失可接受。
         }
         Ok(())
     });
@@ -623,7 +623,15 @@ fn run_native_scan() {
                 return Err(e);
             }
         };
-        scan_into(&conn, &files)
+        let parsed = scan_into(&conn, &files);
+        // 清理 self FTS 冗余行（历史 bug 存量，幂等）
+        dedup_self_fts(&conn);
+        // WAL checkpoint：把累积的 -wal 页合并回主库，避免 WAL 无限膨胀拖慢读。
+        // 修复前 on_self_append 每条消息都往 FTS INSERT 一行，WAL 一度胀到 62MB，
+        // 历史查询/搜索全部变卡。现在 FTS 增量已移除，WAL 增长大幅放缓，
+        // 仍在此做 PASSIVE checkpoint 兜底（每轮扫描一次，开销极小）。
+        let _ = conn.pragma_update(None, "wal_checkpoint", "PASSIVE");
+        parsed
     })();
 
     NATIVE_SCAN_IN_FLIGHT.store(false, Ordering::SeqCst);
@@ -794,6 +802,29 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
             let _ = conn.execute_batch("ROLLBACK");
             Err(e)
         }
+    }
+}
+
+/// 清理 self 会话在 sessions_fts 表里的冗余行。
+///
+/// 历史 bug：`on_self_append` 曾对每条追加消息都 INSERT 一行 FTS（未先 DELETE 旧行），
+/// 导致一个长会话在 FTS 表里留下上百行，index.db 因此膨胀到 261MB+。该 bug 已修，
+/// 但存量冗余行需一次性清理：每个 session_id 只保留 rowid 最大（最新）的一行。
+///
+/// 幂等：清理后 FTS 每会话一行，再调无副作用。配合 wal_checkpoint 回收空间。
+fn dedup_self_fts(conn: &Connection) {
+    // FTS5 隐式 rowid；保留每 session_id 最大 rowid，删除其余。
+    // 用临时表收集要删的 rowid，避免 DELETE 直接引用子查询的某些限制。
+    let sql = r#"
+        DELETE FROM sessions_fts
+        WHERE rowid NOT IN (
+            SELECT MAX(rowid) FROM sessions_fts GROUP BY session_id
+        )
+    "#;
+    match conn.execute(sql, []) {
+        Ok(n) if n > 0 => tracing::info!("[DialogIndex] FTS 去重: 清理 {} 行冗余", n),
+        Ok(_) => {}
+        Err(e) => tracing::warn!("[DialogIndex] FTS 去重失败: {}", e),
     }
 }
 

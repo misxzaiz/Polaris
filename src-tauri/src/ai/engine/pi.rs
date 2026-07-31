@@ -15,9 +15,10 @@
  *      "message_update"|"message_end"|"turn_end"|"agent_end"|
  *      "tool_execution_start"|"tool_execution_update"|"tool_execution_end"|...}`
  * - 续聊: session 落盘到 `<DataRoot>/pi-sessions`，通过 `--session-dir` +
- *   `--session-id <id>` 让 pi 跨进程 resume。start_session 用临时 ID 创建，
- *   continue_session 用从 session 头读回的真实 ID resume。每轮仍 kill+respawn
- *   新进程（与 Mimo 同构），上下文由 pi 的 resume 机制恢复，而非进程常驻。
+ *   `--session-id <id>`(创建) / `--session <id>`(resume) 让 pi 跨进程恢复上文。
+ *   start_session 用临时 ID + --session-id 创建；continue_session 用从 session
+ *   头读回的真实 ID + --session（partial UUID 命中 <ts>_<id>.jsonl 并回放历史）。
+ *   每轮仍 kill+respawn 新进程（与 Mimo 同构），上下文由 pi 的 resume 机制恢复，而非进程常驻。
  * - 中断: 向 stdin 发 `{"type":"abort"}\n` 命令（优雅中断），失败则 kill 进程
  *
  * 不支持/首版未启用的能力：
@@ -360,10 +361,21 @@ impl PiEngine {
     }
 
     /// 构建 `pi --mode rpc` 命令
+    ///
+    /// `resume=false`（start_session）用 `--session-id <id>`：精确 ID，不存在则创建。
+    /// `resume=true`（continue_session）改用 `--session <id>`：按 partial UUID 匹配已落盘的
+    /// `<timestamp>_<id>.jsonl` 并加载历史上下文。
+    ///
+    /// 实测发现：`--session-id` 的语义是"精确 ID，不存在就新建"——它在 session-dir 下
+    /// 查找时**不匹配带时间戳前缀的落盘文件名 `<ts>_<id>.jsonl`**，因此即便该 id 的
+    /// session 文件已存在，pi 仍报 "No project session found; creating a new session"，
+    /// 导致续聊每轮都是空 session、LLM 看不到上文。`--session <id>` 才会真正 resume
+    /// 已有 session（按 partial UUID 命中文件 + 回放历史消息 + 追加新轮次）。
     #[allow(clippy::too_many_arguments)]
     fn build_command(
         &self,
         session_id: &str,
+        resume: bool,
         system_prompt: Option<&str>,
         append_system_prompt: Option<&str>,
         model: Option<&str>,
@@ -388,7 +400,13 @@ impl PiEngine {
         // 的 resume 机制恢复，而非进程常驻（与 Mimo --session <id> 同构）。
         let session_dir = Self::pi_session_dir()?;
         cmd.arg("--session-dir").arg(&session_dir);
-        cmd.arg("--session-id").arg(session_id);
+        if resume {
+            // 续聊：--session 按 partial UUID 命中 <ts>_<id>.jsonl 并回放历史
+            cmd.arg("--session").arg(session_id);
+        } else {
+            // 首轮：--session-id 精确 ID，不存在则创建
+            cmd.arg("--session-id").arg(session_id);
+        }
 
         // 自定义 provider：通过 models.json 注册后，用 --provider 选择
         // 优先使用 pi_model（已剥离 CLI 私有后缀），否则用 model 原值
@@ -771,6 +789,7 @@ impl AIEngine for PiEngine {
 
         let mut cmd = self.build_command(
             &temp_id,
+            false,
             options.system_prompt.as_deref(),
             options.append_system_prompt.as_deref(),
             options.model.as_deref(),
@@ -844,6 +863,7 @@ impl AIEngine for PiEngine {
 
         let mut cmd = self.build_command(
             &real_session_id,
+            true,
             options.system_prompt.as_deref(),
             options.append_system_prompt.as_deref(),
             options.model.as_deref(),
