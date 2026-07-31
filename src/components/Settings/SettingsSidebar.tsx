@@ -6,7 +6,6 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   IconAIEngine,
-  IconBot,
   IconSearch,
   IconGeneral,
   IconMic,
@@ -18,13 +17,9 @@ import type { ReactNode } from 'react';
 
 export type SettingsTabId =
   | 'general'
-  | 'system-prompt'
   | 'prompt-snippet'
   | 'ai-engine'
   | 'model-provider'
-  | 'qqbot'
-  | 'feishu'
-  | 'dingtalk'
   | 'speech'
   | 'lsp'
   | 'shortcuts'
@@ -50,13 +45,10 @@ interface SettingsSidebarProps {
 
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
-  { id: 'system-prompt', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.systemPrompt' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
   { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
-  { id: 'qqbot', icon: <IconBot size={16} />, labelKey: 'nav.qqbot' },
-  { id: 'feishu', icon: <IconBot size={16} />, labelKey: 'nav.feishu' },
-  { id: 'dingtalk', icon: <IconBot size={16} />, labelKey: 'nav.dingtalk' },
+
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'shortcuts', icon: <Keyboard size={16} />, labelKey: 'nav.shortcuts' },
