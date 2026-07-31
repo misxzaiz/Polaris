@@ -212,7 +212,7 @@ impl DingTalkAdapter {
             "message": "OK",
             "data": data_str
         });
-        if let Err(e) = write
+        if let Err(_e) = write
             .send(WsMessage::Text(ack.to_string()))
             .await
         {
@@ -228,7 +228,7 @@ impl DingTalkAdapter {
             "message": "OK",
             "data": null
         });
-        if let Err(e) = write
+        if let Err(_e) = write
             .send(WsMessage::Text(pong.to_string()))
             .await
         {
@@ -487,6 +487,35 @@ impl PlatformIntegration for DingTalkAdapter {
                                     }
                                 }
                             }
+                            Some(Ok(WsMessage::Binary(data))) => {
+                                // 钉钉 Stream 可能发送二进制帧，转为文本处理
+                                if let Ok(payload) = String::from_utf8(data) {
+                                    let parsed: serde_json::Value =
+                                        match serde_json::from_str(&payload) {
+                                            Ok(v) => v,
+                                            Err(_) => continue,
+                                        };
+                                    let msg_type = parsed
+                                        .get("type")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    let topic = parsed
+                                        .get("headers")
+                                        .and_then(|h| h.get("topic"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    if msg_type == "SYSTEM" && topic == "REGISTERED" {
+                                        tracing::info!("[DingTalk] ✅ 已注册 (Binary)");
+                                        registered = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            Some(Ok(WsMessage::Ping(data))) => {
+                                let _ = write.send(WsMessage::Pong(data)).await;
+                            }
+                            Some(Ok(WsMessage::Pong(_))) => {}
+                            Some(Ok(WsMessage::Frame(_))) => {}
                             Some(Ok(WsMessage::Close(frame))) => {
                                 tracing::warn!("[DingTalk] 注册前连接关闭: {:?}", frame);
                                 let err_msg = frame
@@ -522,7 +551,6 @@ impl PlatformIntegration for DingTalkAdapter {
                                 }
                                 return;
                             }
-                            _ => {}
                         }
                     }
 
@@ -597,103 +625,16 @@ impl PlatformIntegration for DingTalkAdapter {
                             }
 
                             msg = read.next() => {
-                                match msg {
-                                    Some(Ok(WsMessage::Text(payload))) => {
-                                        let parsed: serde_json::Value =
-                                            match serde_json::from_str(&payload) {
-                                                Ok(v) => v,
-                                                Err(_) => {
-                                                    tracing::warn!("[DingTalk] 无法解析消息: {}", &payload[..payload.len().min(200)]);
-                                                    continue;
-                                                }
-                                            };
-
-                                        let msg_type = parsed
-                                            .get("type")
-                                            .and_then(|v| v.as_str())
-                                            .unwrap_or("")
-                                            .to_string();
-
-                                        tracing::debug!("[DingTalk] 📩 收到消息: type={}", msg_type);
-
-                                        match msg_type.as_str() {
-                                            "SYSTEM" => {
-                                                let topic = parsed
-                                                    .get("headers")
-                                                    .and_then(|h| h.get("topic"))
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-
-                                                match topic {
-                                                    "KEEPALIVE" => {
-                                                        // 心跳，无需回复
-                                                    }
-                                                    "ping" => {
-                                                        let _ = Self::send_pong(
-                                                            &mut write,
-                                                            parsed.get("headers").unwrap_or(&serde_json::json!({})),
-                                                        ).await;
-                                                    }
-                                                    "disconnect" => {
-                                                        tracing::warn!("[DingTalk] 服务端要求断开");
-                                                        break;
-                                                    }
-                                                    _ => {
-                                                        tracing::debug!("[DingTalk] SYSTEM 消息: topic={}", topic);
-                                                    }
-                                                }
-                                            }
-                                            "EVENT" => {
-                                                // 回 ACK
-                                                let message_id = parsed
-                                                    .get("headers")
-                                                    .and_then(|h| h.get("messageId"))
-                                                    .and_then(|v| v.as_str());
-
-                                                if let Some(mid) = message_id {
-                                                    let _ = Self::send_ack(&mut write, mid).await;
-                                                }
-
-                                                // 处理消息
-                                                if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
-                                                    if let Err(e) = tx.send(im).await {
-                                                        tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
-                                                    }
-                                                }
-                                            }
-                                            "CALLBACK" => {
-                                                let topic = parsed
-                                                    .get("headers")
-                                                    .and_then(|h| h.get("topic"))
-                                                    .and_then(|v| v.as_str())
-                                                    .unwrap_or("");
-
-                                                tracing::debug!("[DingTalk] CALLBACK 消息: topic={}", topic);
-
-                                                if topic == TOPIC_ROBOT {
-                                                    // 回 ACK
-                                                    let message_id = parsed
-                                                        .get("headers")
-                                                        .and_then(|h| h.get("messageId"))
-                                                        .and_then(|v| v.as_str());
-
-                                                    if let Some(mid) = message_id {
-                                                        let _ = Self::send_ack(&mut write, mid).await;
-                                                    }
-
-                                                    // 处理消息
-                                                    if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
-                                                        if let Err(e) = tx.send(im).await {
-                                                            tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                            _ => {
-                                                tracing::debug!("[DingTalk] 未知消息类型: {}", msg_type);
-                                            }
-                                        }
+                                // 辅助函数：将 WS Message 转为文本
+                                let payload_text = match msg {
+                                    Some(Ok(WsMessage::Text(payload))) => Some(payload),
+                                    Some(Ok(WsMessage::Binary(data))) => String::from_utf8(data).ok(),
+                                    Some(Ok(WsMessage::Ping(data))) => {
+                                        let _ = write.send(WsMessage::Pong(data)).await;
+                                        continue;
                                     }
+                                    Some(Ok(WsMessage::Pong(_))) => continue,
+                                    Some(Ok(WsMessage::Frame(_))) => continue,
                                     Some(Ok(WsMessage::Close(frame))) => {
                                         tracing::warn!("[DingTalk] Connection closed: {:?}", frame);
                                         {
@@ -722,7 +663,103 @@ impl PlatformIntegration for DingTalkAdapter {
                                         }
                                         break;
                                     }
-                                    _ => {}
+                                };
+
+                                let Some(payload) = payload_text else { continue; };
+
+                                let parsed: serde_json::Value =
+                                    match serde_json::from_str(&payload) {
+                                        Ok(v) => v,
+                                        Err(_) => {
+                                            tracing::warn!("[DingTalk] 无法解析消息: {}", &payload[..payload.len().min(200)]);
+                                            continue;
+                                        }
+                                    };
+
+                                let msg_type = parsed
+                                    .get("type")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+
+                                tracing::debug!("[DingTalk] 📩 收到消息: type={}", msg_type);
+
+                                match msg_type.as_str() {
+                                    "SYSTEM" => {
+                                        let topic = parsed
+                                            .get("headers")
+                                            .and_then(|h| h.get("topic"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+
+                                        match topic {
+                                            "KEEPALIVE" => {
+                                                // 心跳，无需回复
+                                            }
+                                            "ping" => {
+                                                let _ = Self::send_pong(
+                                                    &mut write,
+                                                    parsed.get("headers").unwrap_or(&serde_json::json!({})),
+                                                ).await;
+                                            }
+                                            "disconnect" => {
+                                                tracing::warn!("[DingTalk] 服务端要求断开");
+                                                break;
+                                            }
+                                            _ => {
+                                                tracing::debug!("[DingTalk] SYSTEM 消息: topic={}", topic);
+                                            }
+                                        }
+                                    }
+                                    "EVENT" => {
+                                        // 回 ACK
+                                        let message_id = parsed
+                                            .get("headers")
+                                            .and_then(|h| h.get("messageId"))
+                                            .and_then(|v| v.as_str());
+
+                                        if let Some(mid) = message_id {
+                                            let _ = Self::send_ack(&mut write, mid).await;
+                                        }
+
+                                        // 处理消息
+                                        if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
+                                            if let Err(e) = tx.send(im).await {
+                                                tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
+                                            }
+                                        }
+                                    }
+                                    "CALLBACK" => {
+                                        let topic = parsed
+                                            .get("headers")
+                                            .and_then(|h| h.get("topic"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("");
+
+                                        tracing::debug!("[DingTalk] CALLBACK 消息: topic={}", topic);
+
+                                        if topic == TOPIC_ROBOT {
+                                            // 回 ACK
+                                            let message_id = parsed
+                                                .get("headers")
+                                                .and_then(|h| h.get("messageId"))
+                                                .and_then(|v| v.as_str());
+
+                                            if let Some(mid) = message_id {
+                                                let _ = Self::send_ack(&mut write, mid).await;
+                                            }
+
+                                            // 处理消息
+                                            if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
+                                                if let Err(e) = tx.send(im).await {
+                                                    tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    _ => {
+                                        tracing::debug!("[DingTalk] 未知消息类型: {}", msg_type);
+                                    }
                                 }
                             }
                         }
