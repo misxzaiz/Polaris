@@ -636,6 +636,7 @@ impl OldConfig {
         let claude_cmd_clone = self.claude_cmd.clone();
         Config {
             default_engine: "claude-code".to_string(),
+            auxiliary_engine: None,
             language: None,
             theme: None,
             claude_code: crate::models::config::ClaudeCodeConfig {

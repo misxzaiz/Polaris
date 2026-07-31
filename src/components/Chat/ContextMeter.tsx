@@ -28,6 +28,14 @@ interface ContextMeterProps {
   contextWindow?: number;
   /** 主行标签密度：full=used/window, percent=百分比, icon=仅圆圈 */
   labelMode?: 'full' | 'percent' | 'icon';
+  /** 当前会话引擎 ID：用于区分"自动压缩"vs"需手动压缩交接"提示文案。
+   * simple-ai/claude-code 有运行时压缩；codex/mimo/pi 无（pi 已透出 compaction 事件但触发能力待实测）。 */
+  engineId?: string;
+}
+
+/** 引擎是否具备运行时自动压缩能力 */
+function engineHasAutoCompact(engineId?: string): boolean {
+  return engineId === 'simple-ai' || engineId === 'claude-code';
 }
 
 /** 压缩阈值(与 SimpleAI compact.rs 默认对齐) */
@@ -63,7 +71,7 @@ function isFocusStillInside(
   return anchor.contains(relatedTarget) || card.contains(relatedTarget);
 }
 
-export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: ContextMeterProps) {
+export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineId }: ContextMeterProps) {
   const [active, setActive] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -366,7 +374,9 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full' }: Conte
                 >
                   {level === 'crit'
                     ? `逼近上下文窗口(${percentLabel})· 建议压缩交接或开启新会话`
-                    : `接近压缩阈值(${percentLabel})· 即将自动压缩上下文`}
+                    : engineHasAutoCompact(engineId)
+                      ? `接近压缩阈值(${percentLabel})· 即将自动压缩上下文`
+                      : `接近上下文上限(${percentLabel})· 该引擎无自动压缩，建议压缩交接`}
                 </div>
               )}
             </>

@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>✦ POLARIS 街机 ✦</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: #0a0a1a;
+    font-family: 'Courier New', monospace;
+    color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    user-select: none;
+  }
+  .arcade {
+    background: linear-gradient(135deg, #1a1a3a, #0a0a2a);
+    padding: 20px;
+    border-radius: 20px;
+    border: 2px solid #4fc3f7;
+    box-shadow: 0 0 40px rgba(79,195,247,0.2), inset 0 0 40px rgba(79,195,247,0.05);
+    position: relative;
+  }
+  .cabinet {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+  }
+  .screen-wrap {
+    position: relative;
+    background: #000;
+    border-radius: 12px;
+    border: 2px solid #333;
+    overflow: hidden;
+    box-shadow: 0 0 20px rgba(0,0,0,0.8);
+  }
+  canvas { display: block; background: #000; }
+  .controls {
+    display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+    padding: 8px;
+  }
+  .btn {
+    background: #1a1a3a; border: 1px solid #4fc3f7;
+    color: #4fc3f7; font-family: 'Courier New', monospace;
+    font-size: 12px; padding: 6px 14px; cursor: pointer;
+    transition: all 0.15s; border-radius: 4px;
+    letter-spacing: 1px;
+  }
+  .btn:hover { background: #4fc3f7; color: #000; }
+  .btn.active { background: #4fc3f7; color: #000; }
+  .btn.danger { border-color: #ff4f81; color: #ff4f81; }
+  .btn.danger:hover { background: #ff4f81; color: #000; }
+  .btn.warn { border-color: #ffd54f; color: #ffd54f; }
+  .btn.warn:hover { background: #ffd54f; color: #000; }
+  .marquee {
+    font-size: 18px; letter-spacing: 6px;
+    text-shadow: 0 0 20px #4fc3f7;
+    color: #4fc3f7; padding: 8px 0 4px;
+  }
+  .sub {
+    font-size: 10px; color: #666; letter-spacing: 2px;
+  }
+  .hud {
+    position: absolute; top: 8px; left: 10px; right: 10px;
+    display: flex; justify-content: space-between;
+    font-size: 11px; color: rgba(255,255,255,0.6);
+    pointer-events: none; z-index: 5;
+  }
+  .hud-right { text-align: right; }
+  .overlay {
+    position: absolute; inset: 0; display: flex;
+    flex-direction: column; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.7); z-index: 10;
+    gap: 8px; text-align: center; padding: 20px;
+  }
+  .overlay.hidden { display: none; }
+  .overlay h2 { font-size: 22px; margin-bottom: 4px; }
+  .overlay p { font-size: 11px; color: #aaa; max-width: 280px; line-height: 1.5; }
+  .overlay .big { font-size: 32px; }
+  .flash { animation: blink 0.8s ease-in-out infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .game-selector {
+    display: flex; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; justify-content: center;
+  }
+  .game-btn {
+    background: transparent; border: 1px solid #333;
+    color: #888; font-family: 'Courier New', monospace;
+    font-size: 11px; padding: 4px 12px; cursor: pointer;
+    transition: all 0.15s; border-radius: 3px;
+    letter-spacing: 1px;
+  }
+  .game-btn:hover { border-color: #4fc3f7; color: #4fc3f7; }
+  .game-btn.sel { border-color: #4fc3f7; color: #4fc3f7; background: rgba(79,195,247,0.1); }
+  #scoreDisplay { color: #ffd54f; }
+  #highDisplay { color: #4fc3f7; }
+</style>
+</head>
+<body>
+<div class="arcade">
+  <div class="cabinet">
+    <div class="marquee">✦ POLARIS ARCADE ✦</div>
+    <div class="game-selector">
+      <button class="game-btn sel" data-g="snake">🐍 贪吃蛇</button>
+      <button class="game-btn" data-g="brick">🧱 打砖块</button>
+      <button class="game-btn" data-g="pong">🏓 乒乓球</button>
+    </div>
+    <div class="screen-wrap">
+      <canvas id="cv" width="400" height="500"></canvas>
+      <div class="hud">
+        <span>SCORE: <span id="scoreDisplay">0</span></span>
+        <span class="hud-right">BEST: <span id="highDisplay">0</span></span>
+      </div>
+      <div class="overlay" id="overlay">
+        <h2 id="oTitle">WELCOME</h2>
+        <p id="oDesc">选择一个游戏开始</p>
+        <p id="oExtra" class="flash" style="margin-top:8px;color:#4fc3f7;">按 空格 / Enter 开始</p>
+      </div>
+    </div>
+    <div class="controls">
+      <button class="btn" id="btnStart">▶ 开始</button>
+      <button class="btn danger" id="btnReset">⟳ 重置</button>
+      <button class="btn warn" id="btnPause">⏸ 暂停</button>
+    </div>
+    <div class="sub" style="margin-top:4px;">
+      ← → 移动 · ↑ 加速 · 空格 开始/射击 · R 重置
+    </div>
+  </div>
+</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+const W = 400, H = 500;
+
+// ── 音效 ──
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let actx = null;
+function initAudio() {
+  if (!actx) actx = new AudioCtx();
+}
+function beep(freq, dur, vol = 0.1) {
+  try {
+    initAudio();
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.connect(gain); gain.connect(actx.destination);
+    osc.frequency.value = freq;
+    gain.gain.value = vol;
+    gain.gain.exponentialRampToValueAtTime(0.001, actx.currentTime + dur);
+    osc.start(); osc.stop(actx.currentTime + dur);
+  } catch(e) {}
+}
+function sfxEat() { beep(600, 0.08); beep(800, 0.08); }
+function sfxHit() { beep(250, 0.15, 0.15); }
+function sfxGameOver() { beep(200, 0.3, 0.15); setTimeout(()=>beep(150,0.4,0.12), 150); }
+function sfxClear() { for(let i=0;i<5;i++) setTimeout(()=>beep(500+i*100,0.06), i*60); }
+function sfxBounce() { beep(400, 0.05, 0.08); }
+
+// ── 游戏状态 ──
+let game = 'menu'; // menu | playing | paused | over
+let currentGame = 'snake'; // snake | brick | pong
+let score = 0, highScore = 0;
+let frame = 0;
+
+const scores = { snake: 0, brick: 0, pong: 0 };
+
+// ── 贪吃蛇 ──
+let snake = [];
+let snakeDir = {x:1,y:0};
+let snakeNext = {x:1,y:0};
+let food = {x:0,y:0};
+let snakeSpeed = 8;
+let snakeTimer = 0;
+let snakeAlive = true;
+
+function initSnake() {
+  snake = [];
+  for (let i = 4; i >= 0; i--) snake.push({x:8+i, y:10});
+  snakeDir = {x:1,y:0}; snakeNext = {x:1,y:0};
+  snakeSpeed = 8; snakeTimer = 0; snakeAlive = true;
+  placeFood();
+}
+
+function placeFood() {
+  let ok;
+  do {
+    food.x = Math.floor(Math.random()*20);
+    food.y = Math.floor(Math.random()*20);
+    ok = true;
+    for (const s of snake) {
+      if (s.x === food.x && s.y === food.y) { ok = false; break; }
+    }
+  } while (!ok);
+}
+
+function updateSnake() {
+  if (game !== 'playing') return;
+  snakeTimer++;
+  if (snakeTimer < snakeSpeed) return;
+  snakeTimer = 0;
+  snakeDir = {...snakeNext};
+  const head = {x: snake[0].x + snakeDir.x, y: snake[0].y + snakeDir.y};
+  // 穿墙
+  if (head.x < 0) head.x = 19;
+  if (head.x >= 20) head.x = 0;
+  if (head.y < 0) head.y = 19;
+  if (head.y >= 20) head.y = 0;
+  // 撞自己
+  for (const s of snake) {
+    if (s.x === head.x && s.y === head.y) { snakeAlive = false; return; }
+  }
+  snake.unshift(head);
+  if (head.x === food.x && head.y === food.y) {
+    score += 10 * Math.max(1, Math.floor(snakeSpeed/2));
+    sfxEat();
+    placeFood();
+    if (snakeSpeed > 3) snakeSpeed -= 0.1;
+  } else {
+    snake.pop();
+  }
+}
+
+function drawSnake() {
+  const s = 20; // 20x20 grid
+  const offX = (W - 400)/2;
+  const offY = 30;
+  // 网格线
+  ctx.strokeStyle = 'rgba(79,195,247,0.05)';
+  ctx.lineWidth = 0.5;
+  for (let i = 0; i <= 20; i++) {
+    ctx.beginPath();
+    ctx.moveTo(offX, offY + i*s);
+    ctx.lineTo(offX + 400, offY + i*s);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(offX + i*s, offY);
+    ctx.lineTo(offX + i*s, offY + 400);
+    ctx.stroke();
+  }
+  // 食物
+  ctx.fillStyle = '#ff4f81';
+  ctx.shadowColor = '#ff4f81';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.arc(offX + food.x*s + s/2, offY + food.y*s + s/2, s/2-2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // 蛇
+  for (let i = 0; i < snake.length; i++) {
+    const seg = snake[i];
+    const t = 1 - i/snake.length;
+    const hue = 180 + t * 120;
+    ctx.fillStyle = `hsl(${hue},90%,${50+t*30}%)`;
+    ctx.shadowColor = `hsl(${hue},90%,60%)`;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.roundRect(offX + seg.x*s + 1, offY + seg.y*s + 1, s-2, s-2, 3);
+    ctx.fill();
+    // 眼睛
+    if (i === 0) {
+      ctx.fillStyle = '#fff';
+      ctx.shadowBlur = 0;
+      const ex = offX + seg.x*s + s/2 + snakeDir.x*4;
+      const ey = offY + seg.y*s + s/2 + snakeDir.y*4;
+      ctx.beginPath();
+      ctx.arc(ex-2, ey-2, 2, 0, Math.PI*2);
+      ctx.arc(ex+2, ey-2, 2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  ctx.shadowBlur = 0;
+}
+
+// ── 打砖块 ──
+let brickPaddle = {x:W/2, y:H-25, w:60, h:10};
+let brickBall = {x:W/2, y:H-50, vx:3, vy:-3, r:5};
+let bricks = [];
+let brickRows = 5, brickCols = 8;
+let brickAlive = true;
+
+function initBricks() {
+  bricks = [];
+  for (let r = 0; r < brickRows; r++) {
+    for (let c = 0; c < brickCols; c++) {
+      const colors = ['#ff4f81','#ff6e4f','#ffd54f','#4fc3f7','#69f0ae'];
+      bricks.push({
+        x: c * 48 + 12, y: r * 18 + 35,
+        w: 44, h: 14, hp: r < 2 ? 2 : 1,
+        color: colors[r % colors.length]
+      });
+    }
+  }
+  brickPaddle.x = W/2;
+  brickBall.x = W/2; brickBall.y = H-50;
+  brickBall.vx = 3 * (Math.random()>0.5?1:-1);
+  brickBall.vy = -3;
+  brickAlive = true;
+}
+
+function updateBricks() {
+  if (game !== 'playing') return;
+  // 挡板
+  if (keys['ArrowLeft'] || keys['a']) brickPaddle.x -= 5;
+  if (keys['ArrowRight'] || keys['d']) brickPaddle.x += 5;
+  brickPaddle.x = Math.max(brickPaddle.w/2, Math.min(W-brickPaddle.w/2, brickPaddle.x));
+  // 球
+  brickBall.x += brickBall.vx;
+  brickBall.y += brickBall.vy;
+  // 墙
+  if (brickBall.x < brickBall.r) { brickBall.x = brickBall.r; brickBall.vx *= -1; }
+  if (brickBall.x > W-brickBall.r) { brickBall.x = W-brickBall.r; brickBall.vx *= -1; }
+  if (brickBall.y < brickBall.r) { brickBall.y = brickBall.r; brickBall.vy *= -1; }
+  // 落地
+  if (brickBall.y > H + 10) { brickAlive = false; return; }
+  // 挡板
+  if (brickBall.vy > 0 &&
+      brickBall.y + brickBall.r >= brickPaddle.y - brickPaddle.h/2 &&
+      brickBall.y - brickBall.r <= brickPaddle.y + brickPaddle.h/2 &&
+      brickBall.x >= brickPaddle.x - brickPaddle.w/2 &&
+      brickBall.x <= brickPaddle.x + brickPaddle.w/2) {
+    const rel = (brickBall.x - brickPaddle.x) / (brickPaddle.w/2);
+    brickBall.vx = rel * 4;
+    brickBall.vy = -Math.abs(brickBall.vy) - 0.1;
+    if (Math.abs(brickBall.vy) < 2) brickBall.vy = -2.5;
+    sfxBounce();
+  }
+  // 砖块
+  for (let i = bricks.length-1; i >= 0; i--) {
+    const b = bricks[i];
+    if (brickBall.x + brickBall.r > b.x && brickBall.x - brickBall.r < b.x + b.w &&
+        brickBall.y + brickBall.r > b.y && brickBall.y - brickBall.r < b.y + b.h) {
+      b.hp--;
+      if (b.hp <= 0) {
+        bricks.splice(i,1);
+        score += 20;
+        sfxEat();
+        explode(b.x+b.w/2, b.y+b.h/2, b.color, 8);
+      } else {
+        sfxHit();
+      }
+      // 反弹方向
+      const overlapX = Math.min(brickBall.x + brickBall.r - b.x, b.x + b.w - (brickBall.x - brickBall.r));
+      const overlapY = Math.min(brickBall.y + brickBall.r - b.y, b.y + b.h - (brickBall.y - brickBall.r));
+      if (overlapX < overlapY) brickBall.vx *= -1;
+      else brickBall.vy *= -1;
+      break;
+    }
+  }
+  // 通关
+  if (bricks.length === 0) {
+    score += 200;
+    sfxClear();
+    brickRows = Math.min(brickRows + 1, 8);
+    brickCols = Math.min(brickCols + 1, 12);
+    initBricks();
+  }
+}
+
+function drawBricks() {
+  // 砖块
+  for (const b of bricks) {
+    ctx.fillStyle = b.color;
+    ctx.shadowColor = b.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.roundRect(b.x, b.y, b.w, b.h, 2);
+    ctx.fill();
+    if (b.hp > 1) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.fillRect(b.x+4, b.y+4, b.w-8, 4);
+    }
+  }
+  ctx.shadowBlur = 0;
+  // 挡板
+  ctx.fillStyle = '#4fc3f7';
+  ctx.shadowColor = '#4fc3f7';
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.roundRect(brickPaddle.x - brickPaddle.w/2, brickPaddle.y - brickPaddle.h/2, brickPaddle.w, brickPaddle.h, 3);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // 球
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 12;
+  ctx.beginPath();
+  ctx.arc(brickBall.x, brickBall.y, brickBall.r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // 剩余砖块数
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText(`砖块: ${bricks.length}`, 8, H-6);
+}
+
+// ── 乒乓球 ──
+let pongP1 = {x:20, y:H/2, w:8, h:50, score:0};
+let pongP2 = {x:W-20, y:H/2, w:8, h:50, score:0};
+let pongBall = {x:W/2, y:H/2, vx:3, vy:2, r:5};
+let pongAlive = true;
+let pongAI = true;
+
+function initPong() {
+  pongP1.y = H/2; pongP2.y = H/2;
+  pongP1.score = 0; pongP2.score = 0;
+  resetPongBall();
+  pongAlive = true;
+}
+
+function resetPongBall() {
+  pongBall.x = W/2; pongBall.y = H/2;
+  const angle = (Math.random() - 0.5) * Math.PI * 0.5;
+  const speed = 3.5;
+  pongBall.vx = (Math.random()>0.5?1:-1) * speed * Math.cos(angle);
+  pongBall.vy = speed * Math.sin(angle);
+}
+
+function updatePong() {
+  if (game !== 'playing') return;
+  // P1 玩家
+  if (keys['ArrowUp'] || keys['w']) pongP1.y -= 5;
+  if (keys['ArrowDown'] || keys['s']) pongP1.y += 5;
+  pongP1.y = Math.max(pongP1.h/2, Math.min(H-pongP1.h/2, pongP1.y));
+  // P2 AI
+  if (pongAI) {
+    const target = pongBall.y;
+    const diff = target - pongP2.y;
+    pongP2.y += Math.sign(diff) * Math.min(Math.abs(diff)*0.08 + 1.5, 4);
+    pongP2.y = Math.max(pongP2.h/2, Math.min(H-pongP2.h/2, pongP2.y));
+  } else {
+    if (keys['ArrowUp'] || keys['w']) pongP2.y -= 5;
+    if (keys['ArrowDown'] || keys['s']) pongP2.y += 5;
+    pongP2.y = Math.max(pongP2.h/2, Math.min(H-pongP2.h/2, pongP2.y));
+  }
+  // 球
+  pongBall.x += pongBall.vx;
+  pongBall.y += pongBall.vy;
+  // 上下墙
+  if (pongBall.y < pongBall.r) { pongBall.y = pongBall.r; pongBall.vy *= -1; }
+  if (pongBall.y > H-pongBall.r) { pongBall.y = H-pongBall.r; pongBall.vy *= -1; }
+  // 得分
+  if (pongBall.x < 0) { pongP2.score++; score = pongP2.score; resetPongBall(); sfxHit(); }
+  if (pongBall.x > W) { pongP1.score++; score = pongP1.score; resetPongBall(); sfxHit(); }
+  // P1 挡板
+  if (pongBall.vx < 0 &&
+      pongBall.x - pongBall.r <= pongP1.x + pongP1.w/2 &&
+      pongBall.x + pongBall.r >= pongP1.x - pongP1.w/2 &&
+      pongBall.y >= pongP1.y - pongP1.h/2 &&
+      pongBall.y <= pongP1.y + pongP1.h/2) {
+    const rel = (pongBall.y - pongP1.y) / (pongP1.h/2);
+    pongBall.vy = rel * 3;
+    pongBall.vx = Math.abs(pongBall.vx) + 0.2;
+    sfxBounce();
+  }
+  // P2 挡板
+  if (pongBall.vx > 0 &&
+      pongBall.x + pongBall.r >= pongP2.x - pongP2.w/2 &&
+      pongBall.x - pongBall.r <= pongP2.x + pongP2.w/2 &&
+      pongBall.y >= pongP2.y - pongP2.h/2 &&
+      pongBall.y <= pongP2.y + pongP2.h/2) {
+    const rel = (pongBall.y - pongP2.y) / (pongP2.h/2);
+    pongBall.vy = rel * 3;
+    pongBall.vx = -Math.abs(pongBall.vx) + 0.2;
+    sfxBounce();
+  }
+  // 速度上限
+  const speed = Math.sqrt(pongBall.vx*pongBall.vx + pongBall.vy*pongBall.vy);
+  if (speed > 7) {
+    pongBall.vx *= 7/speed;
+    pongBall.vy *= 7/speed;
+  }
+}
+
+function drawPong() {
+  // 中线
+  ctx.strokeStyle = 'rgba(79,195,247,0.15)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8,8]);
+  ctx.beginPath();
+  ctx.moveTo(W/2, 0); ctx.lineTo(W/2, H);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 分数
+  ctx.fillStyle = 'rgba(255,255,255,0.1)';
+  ctx.font = 'bold 60px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(pongP1.score, W/4, 80);
+  ctx.fillText(pongP2.score, W*3/4, 80);
+  // P1
+  ctx.fillStyle = '#4fc3f7';
+  ctx.shadowColor = '#4fc3f7';
+  ctx.shadowBlur = 8;
+  ctx.fillRect(pongP1.x - pongP1.w/2, pongP1.y - pongP1.h/2, pongP1.w, pongP1.h);
+  // P2
+  ctx.fillStyle = '#ff4f81';
+  ctx.shadowColor = '#ff4f81';
+  ctx.shadowBlur = 8;
+  ctx.fillRect(pongP2.x - pongP2.w/2, pongP2.y - pongP2.h/2, pongP2.w, pongP2.h);
+  ctx.shadowBlur = 0;
+  // 球
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = '#fff';
+  ctx.shadowBlur = 15;
+  ctx.beginPath();
+  ctx.arc(pongBall.x, pongBall.y, pongBall.r, 0, Math.PI*2);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  // 球尾迹
+  const trailLen = 5;
+  for (let i = 1; i <= trailLen; i++) {
+    ctx.globalAlpha = 0.1 * (1 - i/trailLen);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(pongBall.x - pongBall.vx*i*2, pongBall.y - pongBall.vy*i*2, pongBall.r * (1-i/trailLen*0.5), 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── 通用 ──
+function explode(x, y, color, count = 6) {
+  for (let i = 0; i < count; i++) {
+    const a = Math.random()*Math.PI*2;
+    const s = Math.random()*2+1;
+    particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:1,color,r:Math.random()*2+1});
+  }
+}
+
+let particles = [];
+const keys = {};
+
+function updateParticles() {
+  for (let i = particles.length-1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.life -= 0.03;
+    if (p.life <= 0) { particles.splice(i,1); continue; }
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 6;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+}
+
+// ── 输入 ──
+window.addEventListener('keydown', e => {
+  keys[e.key] = true;
+  if (e.key === ' ') {
+    e.preventDefault();
+    if (game === 'menu' || game === 'over') startGame();
+    else if (game === 'playing' && currentGame === 'brick') {
+      // 发球
+    }
+  }
+  if (e.key === 'Enter') {
+    if (game === 'menu' || game === 'over') startGame();
+  }
+  if (e.key === 'r' || e.key === 'R') resetGame();
+  if (e.key === 'p' || e.key === 'P') togglePause();
+});
+window.addEventListener('keyup', e => { keys[e.key] = false; });
+
+// ── UI ──
+function showOverlay(title, desc, extra = '') {
+  document.getElementById('oTitle').textContent = title;
+  document.getElementById('oDesc').textContent = desc;
+  document.getElementById('oExtra').textContent = extra;
+  document.getElementById('overlay').classList.remove('hidden');
+}
+
+function hideOverlay() {
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+function updateScore() {
+  document.getElementById('scoreDisplay').textContent = score;
+  const best = scores[currentGame];
+  document.getElementById('highDisplay').textContent = best;
+}
+
+function startGame() {
+  initAudio();
+  game = 'playing';
+  score = 0;
+  hideOverlay();
+  particles = [];
+  switch(currentGame) {
+    case 'snake': initSnake(); break;
+    case 'brick': initBricks(); break;
+    case 'pong': initPong(); break;
+  }
+  updateScore();
+}
+
+function resetGame() {
+  if (game === 'playing' || game === 'paused' || game === 'over') {
+    startGame();
+  }
+}
+
+function togglePause() {
+  if (game === 'playing') { game = 'paused'; showOverlay('⏸ 暂停', '', '按 P 继续'); }
+  else if (game === 'paused') { game = 'playing'; hideOverlay(); }
+}
+
+function gameOverCheck() {
+  if (currentGame === 'snake' && !snakeAlive) {
+    game = 'over';
+    sfxGameOver();
+    if (score > scores.snake) scores.snake = score;
+    showOverlay('💀 游戏结束', `得分: ${score}`, '按 空格/Enter 重新开始');
+    updateScore();
+  }
+  if (currentGame === 'brick' && !brickAlive) {
+    game = 'over';
+    sfxGameOver();
+    if (score > scores.brick) scores.brick = score;
+    showOverlay('💀 游戏结束', `得分: ${score}`, '按 空格/Enter 重新开始');
+    updateScore();
+  }
+  if (currentGame === 'pong') {
+    if (pongP1.score >= 7 || pongP2.score >= 7) {
+      game = 'over';
+      sfxGameOver();
+      const winner = pongP1.score >= 7 ? '🏆 玩家' : '🤖 AI';
+      if (pongP1.score > scores.pong) scores.pong = pongP1.score;
+      score = pongP1.score >= 7 ? pongP1.score : pongP2.score;
+      showOverlay(`${winner} 获胜!`, `${pongP1.score} : ${pongP2.score}`, '按 空格/Enter 重新开始');
+      updateScore();
+    }
+  }
+}
+
+// ── 游戏选择 ──
+document.querySelectorAll('.game-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.game-btn').forEach(b => b.classList.remove('sel'));
+    btn.classList.add('sel');
+    currentGame = btn.dataset.g;
+    game = 'menu';
+    const descs = {
+      snake: '🐍 吃食物变长，不要撞到自己！· 方向键移动 · ↑加速',
+      brick: '🧱 打掉所有砖块！· 方向键移动挡板',
+      pong: '🏓 对战AI，先得7分获胜！· ↑↓ 移动'
+    };
+    showOverlay('✦ ' + btn.textContent, descs[currentGame], '按 空格/Enter 开始');
+    document.getElementById('scoreDisplay').textContent = '0';
+    document.getElementById('highDisplay').textContent = scores[currentGame];
+  });
+});
+
+document.getElementById('btnStart').addEventListener('click', startGame);
+document.getElementById('btnReset').addEventListener('click', resetGame);
+document.getElementById('btnPause').addEventListener('click', togglePause);
+
+// ── 绘制背景 ──
+function drawBg() {
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 350);
+  grad.addColorStop(0, '#0a0a2a');
+  grad.addColorStop(1, '#00000a');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0,0,W,H);
+  // 星星
+  for (const s of window._stars || []) {
+    ctx.fillStyle = `rgba(255,255,255,${s.a})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+    ctx.fill();
+  }
+}
+
+// 初始化星星
+window._stars = [];
+for (let i = 0; i < 80; i++) {
+  window._stars.push({
+    x: Math.random()*W, y: Math.random()*H,
+    r: Math.random()*1+0.2, a: Math.random()*0.5+0.2
+  });
+}
+
+// ── 主循环 ──
+function loop() {
+  frame++;
+  drawBg();
+  switch(currentGame) {
+    case 'snake':
+      updateSnake();
+      drawSnake();
+      break;
+    case 'brick':
+      updateBricks();
+      drawBricks();
+      break;
+    case 'pong':
+      updatePong();
+      drawPong();
+      break;
+  }
+  updateParticles();
+  drawParticles();
+  gameOverCheck();
+  updateScore();
+  requestAnimationFrame(loop);
+}
+
+// 初始菜单
+showOverlay('✦ POLARIS ARCADE', '选择游戏，按空格开始', '← → 移动 · ↑ 加速 · R 重置');
+
+// roundRect polyfill
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    if (r > w/2) r = w/2;
+    if (r > h/2) r = h/2;
+    this.moveTo(x+r, y);
+    this.arcTo(x+w, y, x+w, y+h, r);
+    this.arcTo(x+w, y+h, x, y+h, r);
+    this.arcTo(x, y+h, x, y, r);
+    this.arcTo(x, y, x+w, y, r);
+    return this;
+  };
+}
+
+loop();
+</script>
+</body>
+</html>

@@ -29,7 +29,9 @@ import {
   normalizeForInvoke,
   resolveChatError,
   resolveEffectiveProfileId,
+  resolveAuxiliaryEngine,
 } from './conversationStoreUtils'
+import { runTitleGeneration } from '@/services/titleGenerationService'
 import { dialogStorageService } from '@/services/dialogStorage'
 import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
@@ -1397,8 +1399,22 @@ export function createConversationStore(
         get().addMessage(userMessage)
 
         if (messages.length === 0) {
-          const title = generateTitleFromMessage(content)
-          sessionStoreManager.getState().updateSessionTitle(sessionId, title)
+          // 首轮用户消息：先用本地截断设占位标题（即时可见），再异步触发 AI 标题覆盖。
+          const placeholder = generateTitleFromMessage(content)
+          sessionStoreManager.getState().updateSessionTitle(sessionId, placeholder)
+
+          // 异步 AI 标题生成：辅助引擎优先（降本），失败/超时静默保留占位标题。
+          // 不 await、不阻塞发送流程；fire-and-forget。
+          const titleEngine = resolveAuxiliaryEngine(config)
+          void runTitleGeneration({
+            sourceSessionId: sessionId,
+            workspaceId: currentWorkspace?.id,
+            workspacePath: actualWorkspaceDir,
+            engineId: titleEngine,
+            modelProfileId: undefined, // 辅助任务跟随全局默认 Profile
+          }).catch((e) => {
+            log.warn('AI 标题生成失败，保留本地截断标题', { sessionId, error: String(e) })
+          })
         }
 
         get().clearInputDraft()

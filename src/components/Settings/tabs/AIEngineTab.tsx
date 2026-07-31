@@ -230,6 +230,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     onConfigChange({ ...config, defaultEngine: engineId });
   };
 
+  const handleSetAuxiliary = (engineId: string) => {
+    // 空串 = 清除，跟随主引擎
+    onConfigChange({ ...config, auxiliaryEngine: engineId || undefined });
+  };
+
   const handleCliPathChange = (field: CliField, cmd: string) => {
     if (field === 'claudeCode') {
       onConfigChange({ ...config, claudeCode: { ...config.claudeCode, cliPath: cmd } });
@@ -360,6 +365,43 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             </div>
           )}
 
+          {/* Pi 引擎专属：MCP 桥接开关 */}
+          {selected.id === 'pi' && (
+            <div className="mt-4 p-3 rounded-md border border-amber-500/25 bg-amber-500/5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {t('aiEngine.piMcpBridge', { defaultValue: 'MCP 桥接（实验性）' })}
+                  </h4>
+                  <p className="text-[11px] text-text-secondary mt-1">
+                    {t('aiEngine.piMcpBridgeHint', {
+                      defaultValue:
+                        '开启后移除 --no-extensions，把 Polaris MCP server 写入 pi auth.json extensions，让 pi 引擎能使用浏览器/电脑操作等 MCP 工具。pi extensions 协议未稳定，兼容性需实测，出问题请关闭。',
+                    })}
+                  </p>
+                </div>
+                <label className="shrink-0 inline-flex items-center cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={config.piCode?.enableExtensions ?? false}
+                    onChange={(e) =>
+                      onConfigChange({
+                        ...config,
+                        piCode: {
+                          ...(config.piCode || { cliPath: 'pi' }),
+                          enableExtensions: e.target.checked,
+                        },
+                      })
+                    }
+                    disabled={loading}
+                    className="sr-only peer"
+                  />
+                  <span className="relative w-9 h-5 bg-border rounded-full peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-4 after:h-4 after:rounded-full after:transition-transform peer-checked:after:translate-x-4" />
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* 内置引擎说明 */}
           {selected.builtin && (
             <div className="mt-4 text-xs text-text-secondary bg-blue-500/5 border border-blue-500/15 rounded-md px-3 py-2">
@@ -379,6 +421,39 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               onChanged={refreshHealth}
             />
           )}
+        </div>
+      </div>
+
+      {/* 辅助任务引擎（标题生成 / 润色等低频任务的专用引擎，留空跟随主引擎） */}
+      <div className="p-4 rounded-lg border border-border bg-surface">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h3 className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+              <Bot size={14} />
+              {t('aiEngine.auxiliaryTitle', { defaultValue: '辅助任务引擎' })}
+            </h3>
+            <p className="text-xs text-text-secondary mt-1">
+              {t('aiEngine.auxiliaryDescription', {
+                defaultValue:
+                  '标题生成、提示词润色等低频辅助任务使用的引擎。留空则跟随默认引擎。建议选择更便宜的引擎以降低成本。',
+              })}
+            </p>
+          </div>
+          <select
+            value={config.auxiliaryEngine ?? ''}
+            onChange={(e) => handleSetAuxiliary(e.target.value)}
+            disabled={loading}
+            className="shrink-0 px-3 py-1.5 text-sm rounded-md border border-border bg-surface text-text-primary focus:outline-none focus:border-primary"
+          >
+            <option value="">
+              {t('aiEngine.auxiliaryFollowDefault', { defaultValue: '跟随默认引擎' })}
+            </option>
+            {ENGINE_META.map((engine) => (
+              <option key={engine.id} value={engine.id}>
+                {t(engine.nameKey)}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
 

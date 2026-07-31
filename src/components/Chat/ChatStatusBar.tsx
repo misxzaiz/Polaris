@@ -566,7 +566,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           {healthIndicator}
 
           {usageStats && (
-            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} />
+            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} engineId={activeEngineId} />
           )}
 
           {!embedded && (isStreaming || inputHint || inputLength > 0) && (

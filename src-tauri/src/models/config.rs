@@ -55,12 +55,18 @@ impl Default for MimoCodeConfig {
 pub struct PiCodeConfig {
     /// Pi CLI 命令路径
     pub cli_path: String,
+    /// 是否启用 pi extensions（加载 auth.json 注册的扩展）。
+    /// 开启后移除 --no-extensions，pi 可消费 Polaris 注入的 MCP server。
+    /// 默认关闭：pi extensions 与 RPC 通信兼容性需用户显式确认。
+    #[serde(default)]
+    pub enable_extensions: bool,
 }
 
 impl Default for PiCodeConfig {
     fn default() -> Self {
         Self {
             cli_path: "pi".to_string(),
+            enable_extensions: false,
         }
     }
 }
@@ -1236,6 +1242,12 @@ pub struct Config {
     #[serde(default = "default_default_engine")]
     pub default_engine: String,
 
+    /// 辅助任务引擎（标题生成 / 润色等低频辅助任务的专用引擎）。
+    /// None 或空 = 跟随 default_engine。
+    /// 用于将辅助任务路由到更便宜的引擎以降本。
+    #[serde(default)]
+    pub auxiliary_engine: Option<String>,
+
     /// 界面语言
     #[serde(default)]
     pub language: Option<String>,
@@ -1371,6 +1383,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             default_engine: default_default_engine(),
+            auxiliary_engine: None,
             language: None,
             theme: None,
             claude_code: ClaudeCodeConfig::default(),
@@ -1440,6 +1453,12 @@ impl Config {
         if EngineId::parse(&self.default_engine).is_none() {
             self.default_engine = "claude-code".to_string();
         }
+        // 校验 auxiliary_engine：None/空合法（=跟随默认）；非法字符串清空为 None
+        if let Some(ref ae) = self.auxiliary_engine {
+            if ae.is_empty() || EngineId::parse(ae).is_none() {
+                self.auxiliary_engine = None;
+            }
+        }
         self.chat_display.validate();
     }
 
@@ -1452,6 +1471,14 @@ impl Config {
     /// 设置默认引擎
     pub fn set_engine_id(&mut self, engine_id: EngineId) {
         self.default_engine = engine_id.as_str().to_string();
+    }
+
+    /// 获取辅助任务引擎 ID（标题生成 / 润色等）。
+    /// None 或非法 → 返回 None，调用方降级到 `get_engine_id()`。
+    pub fn get_auxiliary_engine_id(&self) -> Option<EngineId> {
+        self.auxiliary_engine
+            .as_ref()
+            .and_then(|s| EngineId::parse(s))
     }
 }
 

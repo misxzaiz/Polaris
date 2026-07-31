@@ -21,9 +21,12 @@
  * - 中断: 向 stdin 发 `{"type":"abort"}\n` 命令（优雅中断），失败则 kill 进程
  *
  * 不支持/首版未启用的能力：
- * - 图片附件：pi RPC prompt 命令支持 images 字段，首版未传递（待后续接）
- * - MCP 配置文件：pi 用 auth.json + extensions 体系，不走 --mcp-config
+ * - MCP 配置文件：pi 用 auth.json + extensions 体系，不走 --mcp-config（见 M4 桥接方案）
  * - 多目录：pi 无 --add-dir 等价参数
+ * - 运行时压缩：pi_parser 已透出 compaction 事件，但 pi 本体触发能力待实测
+ *
+ * 已支持：
+ * - 图片附件：通过 prompt 命令的 images 字段传递（media_type + 纯 base64 data）
  */
 
 use std::collections::HashMap;
@@ -285,6 +288,67 @@ impl PiEngine {
         }
     }
 
+    /// 写入 pi extensions 配置（auth.json），把 Polaris MCP server 注册为 pi extension。
+    ///
+    /// ⚠️ 路径 A（auth.json extensions 注入）：pi extensions 协议未公开稳定，
+    /// 本函数按 pi auth.json 的 extensions 数组格式写入 stdio MCP server
+    /// （name + command + args）。是否真能被 pi 加载并桥接 MCP 工具，**需实测确认**。
+    /// 若 pi 不支持 stdio MCP extension，应回退到路径 B（自研 Pi Extension 桥接）。
+    ///
+    /// 只在 config.pi_code.enable_extensions = true 时调用。
+    /// 以追加/合并方式写入，不覆盖非 polaris-mcp 的 extension 项。
+    fn write_extensions_config(servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer]) -> Result<()> {
+        let pi_dir = Self::pi_agent_dir();
+        fs::create_dir_all(&pi_dir)?;
+        let auth_path = pi_dir.join("auth.json");
+
+        let existing = fs::read_to_string(&auth_path)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+
+        // polaris-mcp extension 项前缀，便于识别与更新（不破坏用户其他 extension）
+        const POLARIS_PREFIX: &str = "polaris-mcp-";
+
+        let mut extensions_arr: Vec<serde_json::Value> = Vec::new();
+        if let Some(ref existing) = existing {
+            if let Some(arr) = existing.get("extensions").and_then(|v| v.as_array()) {
+                // 保留非 polaris-mcp 的 extension 项
+                for item in arr {
+                    let name = item.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                    if !name.starts_with(POLARIS_PREFIX) {
+                        extensions_arr.push(item.clone());
+                    }
+                }
+            }
+        }
+
+        // 追加 polaris-mcp extension 项（每个 MCP server 一个 extension）
+        for srv in servers {
+            let ext_name = format!("{}{}", POLARIS_PREFIX, srv.server_name);
+            extensions_arr.push(serde_json::json!({
+                "name": ext_name,
+                "command": srv.command,
+                "args": srv.args,
+                // stdio 传输（pi extension 默认 stdio）
+                "transport": "stdio",
+            }));
+        }
+
+        let mut updated = existing.unwrap_or_else(|| serde_json::json!({}));
+        if !updated.is_object() {
+            updated = serde_json::json!({});
+        }
+        updated["extensions"] = serde_json::Value::Array(extensions_arr);
+
+        let content = serde_json::to_string_pretty(&updated)?;
+        fs::write(&auth_path, content)?;
+        tracing::info!(
+            "[PiEngine] 已写入 auth.json extensions: {} 个 polaris-mcp server",
+            servers.len()
+        );
+        Ok(())
+    }
+
     /// pi session 落盘目录：`<DataRoot>/pi-sessions`
     ///
     /// 用 `--session-dir` 指定后，pi 会在此目录下按 session-id 持久化
@@ -310,7 +374,7 @@ impl PiEngine {
         permission_mode: Option<&str>,
         allowed_tools: &[String],
         disallowed_tools: &[String],
-        image_attachments: &[ImageAttachment],
+        _image_attachments: &[ImageAttachment],
     ) -> Result<Command> {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError("CLI 路径未初始化".to_string()))?;
@@ -382,17 +446,17 @@ impl PiEngine {
             cmd.arg("--exclude-tools").arg(disallowed_tools.join(","));
         }
 
-        // 首版未支持图片附件（pi RPC prompt 命令支持 images 字段，待后续接）
-        if !image_attachments.is_empty() {
-            tracing::warn!(
-                "[PiEngine] 首版暂不支持图片附件（RPC prompt images 字段待接），已忽略 {} 个",
-                image_attachments.len()
-            );
-        }
+        // 图片附件：不通过 CLI 启动参数传递，而是在 prompt 命令的 images 字段传递
+        // （见 spawn_event_reader → build_prompt_command）。此处无需处理。
 
         // 禁用 pi 扩展/skills/context 发现，避免污染（与最小引擎语义一致）
         // 注：这会禁用 pi 的 prompt-templates/skills，但内置 read/bash/edit/write 工具仍可用
-        cmd.arg("--no-extensions").arg("--no-skills");
+        // MCP 桥接：当 enable_extensions 开启时，移除 --no-extensions 以加载 auth.json extensions
+        // （Polaris 把 MCP server 写入 extensions，让 pi 能消费 Polaris MCP 生态）
+        if !self.config.pi_code.enable_extensions {
+            cmd.arg("--no-extensions");
+        }
+        cmd.arg("--no-skills");
 
         Ok(cmd)
     }
@@ -443,6 +507,7 @@ impl PiEngine {
         pid: u32,
         options: SessionOptions,
         initial_prompt: Option<String>,
+        initial_images: Vec<ImageAttachment>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
         let event_callback = options.event_callback.clone();
@@ -488,7 +553,7 @@ impl PiEngine {
                 let mut stdin_writer = stdin;
 
                 if let Some(prompt) = initial_prompt {
-                    let cmd_line = build_prompt_command(&prompt, "init");
+                    let cmd_line = build_prompt_command(&prompt, "init", &initial_images);
                     if let Err(e) = stdin_writer.write_all(cmd_line.as_bytes())
                         .and_then(|_| stdin_writer.flush())
                     {
@@ -696,6 +761,14 @@ impl AIEngine for PiEngine {
         // 先生成 temp_id：build_command 需要用它作为 --session-id，让 pi 创建 session
         let temp_id = uuid::Uuid::new_v4().to_string();
 
+        // MCP 桥接（路径 A）：enable_extensions 时把 Polaris MCP server 写入 auth.json
+        // extensions，并移除 --no-extensions 让 pi 加载。⚠️ 需实测 pi 是否支持 stdio MCP extension。
+        if self.config.pi_code.enable_extensions && !options.mcp_servers.is_empty() {
+            if let Err(e) = Self::write_extensions_config(&options.mcp_servers) {
+                tracing::warn!("[PiEngine] 写入 auth.json extensions 失败: {}，MCP 桥接未生效", e);
+            }
+        }
+
         let mut cmd = self.build_command(
             &temp_id,
             options.system_prompt.as_deref(),
@@ -720,8 +793,10 @@ impl AIEngine for PiEngine {
         let pid = child.id();
         tracing::info!("[PiEngine] 进程启动，PID: {}, 临时 ID: {}", pid, temp_id);
 
+        // 初始 prompt 附带的图片（move options 前克隆）
+        let initial_images = options.image_attachments.clone();
         let input_sender = self.spawn_event_reader(
-            child, temp_id.clone(), pid, options, Some(message.to_string()),
+            child, temp_id.clone(), pid, options, Some(message.to_string()), initial_images,
         );
         self.sessions.register_with_sender(
             temp_id.clone(), pid, "pi".to_string(), Some(input_sender),
@@ -745,6 +820,13 @@ impl AIEngine for PiEngine {
         // 自定义 provider：写入 models.json 注册端点
         if let Some(ref provider_cfg) = options.pi_provider_config {
             Self::write_models_json(provider_cfg)?;
+        }
+
+        // MCP 桥接（路径 A）：enable_extensions 时刷新 auth.json extensions
+        if self.config.pi_code.enable_extensions && !options.mcp_servers.is_empty() {
+            if let Err(e) = Self::write_extensions_config(&options.mcp_servers) {
+                tracing::warn!("[PiEngine] 写入 auth.json extensions 失败: {}，MCP 桥接未生效", e);
+            }
         }
 
         // pi 持久化 session：继续会话即 kill 旧进程 + spawn 新进程，用从 session 头
@@ -783,8 +865,10 @@ impl AIEngine for PiEngine {
             .map_err(|e| AppError::ProcessError(format!("继续 pi 会话失败: {}", e)))?;
         let pid = child.id();
 
+        // 续聊 prompt 附带的图片（move options 前克隆）
+        let initial_images = options.image_attachments.clone();
         let input_sender = self.spawn_event_reader(
-            child, real_session_id.clone(), pid, options, Some(message.to_string()),
+            child, real_session_id.clone(), pid, options, Some(message.to_string()), initial_images,
         );
         self.sessions.register_with_sender(
             real_session_id.clone(), pid, "pi".to_string(), Some(input_sender),

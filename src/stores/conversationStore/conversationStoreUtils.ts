@@ -14,6 +14,24 @@ export function resolveSessionEngine(sessionId: string, configEngineId?: string)
   return normalizeEngineId(metadataEngineId || configEngineId)
 }
 
+/**
+ * 解析辅助任务引擎（标题生成 / 润色等低频任务）。
+ *
+ * 优先级：
+ * 1. config.auxiliaryEngine（非空且合法）→ 该引擎
+ * 2. 主引擎（defaultEngine）
+ *
+ * 用于将辅助任务路由到更便宜的引擎以降本；用户留空 = 跟随主引擎。
+ */
+export function resolveAuxiliaryEngine(config?: { auxiliaryEngine?: string; defaultEngine?: string } | null): EngineId {
+  const aux = config?.auxiliaryEngine
+  if (aux && aux.trim()) {
+    // 只在 aux 为合法引擎 ID 时采用，否则降级主引擎
+    return normalizeEngineId(aux)
+  }
+  return normalizeEngineId(config?.defaultEngine)
+}
+
 const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku'])
 
 export function resolveRuntimeConfigForEngine(

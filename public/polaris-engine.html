@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>✦ POLARIS · 北极星引擎 ✦</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#000;font-family:'Segoe UI',-apple-system,sans-serif;color:#cfe8ff;cursor:crosshair}
+#gl{display:block;width:100vw;height:100vh}
+.hud{position:fixed;pointer-events:none;z-index:10;color:#cfe8ff;text-shadow:0 0 8px rgba(79,195,247,.6);font-variant-numeric:tabular-nums}
+#title{top:24px;left:32px}
+#title .big{display:block;font-size:26px;letter-spacing:12px;margin-top:4px;color:#e8f4ff;text-shadow:0 0 24px rgba(79,195,247,.8),0 0 48px rgba(79,195,247,.4)}
+#title .sub{font-size:11px;letter-spacing:6px;color:#6a98b8;margin-top:4px}
+#stats{top:24px;right:32px;text-align:right;font-size:10px;line-height:1.9;color:#5a88a8}
+#stats b{color:#a8d4ff;font-weight:500}
+#hint{bottom:24px;left:32px;font-size:10px;line-height:1.8;color:#3a6888}
+#hint kbd{display:inline-block;padding:1px 5px;margin:0 1px;background:rgba(79,195,247,.06);border:1px solid rgba(79,195,247,.22);border-radius:2px;color:#7fc3ef;font-family:'Courier New',monospace;font-size:9px}
+#nav{bottom:24px;right:32px;text-align:right;font-size:9px;color:#2a5070;letter-spacing:3px}
+.vignette{position:fixed;inset:0;pointer-events:none;z-index:4;background:radial-gradient(ellipse at center,transparent 35%,rgba(0,0,0,.45) 75%,rgba(0,0,0,.85) 100%)}
+.scanline{position:fixed;inset:0;pointer-events:none;z-index:5;background:repeating-linear-gradient(0deg,transparent 0,transparent 2px,rgba(0,0,0,.04) 3px,transparent 4px);mix-blend-mode:multiply;opacity:.5}
+</style>
+</head>
+<body>
+<canvas id="gl"></canvas>
+<div class="vignette"></div>
+<div class="scanline"></div>
+<div class="hud" id="title">
+  <div style="font-size:12px;letter-spacing:7px;color:#7fc3ff">POLARIS · ENGINE</div>
+  <span class="big">✦ 北 极 星 ✦</span>
+  <span class="sub">A WebGL2 SHADER-DRIVEN INTERACTIVE EXPERIENCE</span>
+</div>
+<div class="hud" id="stats">
+  <div>FPS &nbsp;<b id="fps">--</b></div>
+  <div>STARS &nbsp;<b id="sc">∞</b></div>
+  <div>NOVAS &nbsp;<b id="nv">0</b></div>
+  <div>TIME &nbsp;<b id="tv">0.0</b>s</div>
+  <div>MODE &nbsp;<b id="md">STELLAR</b></div>
+  <div>PARTICLES &nbsp;<b id="pc">0</b></div>
+</div>
+<div class="hud" id="hint">
+  <div><kbd>鼠标移动</kbd> 视差导航</div>
+  <div><kbd>点击</kbd> 引发新星爆发 · <kbd>滚轮</kbd> 推进</div>
+  <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 场景切换 · <kbd>空格</kbd> 自动巡航</div>
+</div>
+<div class="hud" id="nav">F O L L O W &nbsp;·&nbsp; T H E &nbsp;·&nbsp; N O R T H &nbsp;·&nbsp; S T A R</div>
+
+<script>
+const canvas = document.getElementById('gl');
+const gl = canvas.getContext('webgl2', { antialias: true, alpha: false });
+if (!gl) { document.body.innerHTML = '<div style="color:#fff;padding:40px;font-family:monospace">WebGL2 不支持</div>'; throw 0; }
+
+function makeShader(t, src){ const s=gl.createShader(t); gl.shaderSource(s,src); gl.compileShader(s); if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){console.error(gl.getShaderInfoLog(s));} return s; }
+function makeProgram(vs, fs){ const p=gl.createProgram(); gl.attachShader(p,makeShader(gl.VERTEX_SHADER,vs)); gl.attachShader(p,makeShader(gl.FRAGMENT_SHADER,fs)); gl.linkProgram(p); if(!gl.getProgramParameter(p,gl.LINK_STATUS)){console.error(gl.getProgramInfoLog(p));} return p; }
+
+const quadBuf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 3,-1, -1,3]), gl.STATIC_DRAW);
+
+// ── 着色器 ──
+const bgVS = `#version 300 es
+precision highp float;
+out vec2 vUv;
+void main(){
+  vec2 p = vec2(float(gl_VertexID==1)*4.0-1.0, float(gl_VertexID==2)*4.0-1.0);
+  gl_Position = vec4(p,0.0,1.0);
+  vUv = p*0.5+0.5;
+}`;
+
+const bgFS = `#version 300 es
+precision highp float;
+in vec2 vUv; out vec4 fragColor;
+uniform vec2 uRes; uniform float uTime; uniform vec2 uMouse;
+uniform float uZoom; uniform int uMode; uniform float uNova;
+
+float hash(vec2 p){ p=fract(p*vec2(234.34,435.345)); p+=dot(p,p+34.23); return fract(p.x*p.y); }
+float noise(vec2 p){ vec2 i=floor(p),f=fract(p); vec2 u=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),u.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x),u.y); }
+float fbm(vec2 p){ float v=0.0,a=0.5; for(int i=0;i<6;i++){v+=a*noise(p);p*=2.03+vec2(1.7,-2.3);a*=0.5;} return v; }
+
+vec3 starLayer(vec2 uv,float depth,float scale,float twk){
+  vec2 p=uv*scale; vec2 ip=floor(p),fp=fract(p);
+  float h=hash(ip+depth*17.0),h2=hash(ip+depth*53.0+3.1);
+  float d=length(fp-vec2(h,h2));
+  float star=smoothstep(0.035,0.0,d);
+  float tw=0.5+0.5*sin(uTime*(1.5+h2*3.0)+h*10.0);
+  star*=(0.4+0.6*tw*twk);
+  vec3 col=mix(vec3(1.0,0.95,0.8),vec3(0.6,0.8,1.0),step(0.85,h2));
+  col=mix(col,vec3(1.0,0.6,0.4),step(0.95,h)*0.4);
+  if(star>0.5&&h2>0.9){
+    float c=max(smoothstep(0.025,0.0,abs(fp.x-vec2(h,h2).x))*smoothstep(0.18,0.0,abs(fp.y-vec2(h,h2).y)),
+                smoothstep(0.025,0.0,abs(fp.y-vec2(h,h2).y))*smoothstep(0.18,0.0,abs(fp.x-vec2(h,h2).x)));
+    star+=c*0.5;
+  }
+  return col*star*(0.3+0.7*depth);
+}
+
+void main(){
+  vec2 uv=(vUv*2.0-1.0)*vec2(uRes.x/uRes.y,1.0);
+  vec2 mp=uMouse;
+  vec2 par=mp*0.15;
+  vec2 nuv=uv*1.5+par*0.3+vec2(uTime*0.005,0.0);
+  float n1=fbm(nuv*1.2),n2=fbm(nuv*2.5+vec2(3.0,-1.0)),n3=fbm(nuv*0.5-vec2(2.0,1.0));
+  vec3 col=vec3(0.0);
+  if(uMode==0){ vec3 c1=vec3(0.04,0.08,0.18),c2=vec3(0.20,0.10,0.35),c3=vec3(0.05,0.25,0.40),c4=vec3(0.45,0.20,0.10);
+    col=mix(c1,c2,n1); col=mix(col,c3,n2*0.7); col=mix(col,c4,smoothstep(0.55,0.85,n3)*0.3);
+  } else if(uMode==1){ vec3 c1=vec3(0.12,0.02,0.10),c2=vec3(0.45,0.10,0.35),c3=vec3(0.80,0.30,0.55),c4=vec3(0.95,0.65,0.40);
+    col=mix(c1,c2,n1); col=mix(col,c3,n2*0.8); col=mix(col,c4,smoothstep(0.6,0.9,n3)*0.5);
+  } else { vec3 c1=vec3(0.01,0.01,0.02),c2=vec3(0.05,0.08,0.12),c3=vec3(0.10,0.15,0.25);
+    col=mix(c1,c2,n1*0.7); col=mix(col,c3,n2*0.4); }
+  
+  vec3 stars=vec3(0.0);
+  float z=uZoom;
+  stars+=starLayer(uv*z+par*1.0,0.3,80.0,1.0)*0.7;
+  stars+=starLayer(uv*z+par*0.6,0.6,45.0,0.8)*0.8;
+  stars+=starLayer(uv*z+par*0.3,0.85,22.0,0.6)*0.9;
+  stars+=starLayer(uv*z+par*0.1,1.0,10.0,0.4)*1.0;
+  col+=stars;
+
+  vec2 pu=uv+par*0.05; float pd=length(pu);
+  float core=smoothstep(0.05,0.0,pd);
+  float halo=smoothstep(0.45,0.0,pd)*0.18;
+  float ang=atan(pu.y,pu.x);
+  float spike=pow(max(abs(cos(ang)),abs(sin(ang))),60.0)*smoothstep(0.6,0.0,pd);
+  float spike2=pow(max(abs(cos(ang+0.5236)),abs(sin(ang+0.5236))),80.0)*smoothstep(0.4,0.0,pd)*0.5;
+  vec3 pc=vec3(0.9,0.95,1.0)*core*1.6;
+  pc+=vec3(0.4,0.7,1.0)*halo; pc+=vec3(0.7,0.85,1.0)*spike*0.8; pc+=vec3(0.8,0.9,1.0)*spike2;
+  pc*=(1.0+uNova*0.6);
+  col+=pc;
+  col=pow(col,vec3(0.95)); col*=vec3(0.95,1.0,1.05);
+  float vig=1.0-smoothstep(0.5,1.4,length(uv));
+  col*=0.35+0.65*vig;
+  col+=(hash(vUv*uRes+uTime)-0.5)*0.02;
+  fragColor=vec4(col,1.0);
+}`;
+
+const ptVS = `#version 300 es
+precision highp float;
+in vec2 aPos; in float aLife; in float aSize; in vec3 aCol;
+uniform vec2 uRes; out float vLife; out vec3 vCol;
+void main(){
+  gl_Position=vec4((aPos/uRes*2.0-1.0)*vec2(1.0,-1.0),0.0,1.0);
+  gl_PointSize=aSize*(0.3+0.7*aLife)*(uRes.y/900.0);
+  vLife=aLife; vCol=aCol;
+}`;
+
+const ptFS = `#version 300 es
+precision highp float;
+in float vLife; in vec3 vCol; out vec4 fragColor;
+void main(){
+  vec2 c=gl_PointCoord-0.5; float d=length(c);
+  float a=smoothstep(0.5,0.0,d); a*=a;
+  vec3 col=vCol*(1.0+(1.0-vLife)*0.6);
+  fragColor=vec4(col,a*vLife);
+}`;
+
+// ── 编译 ──
+const bgP = makeProgram(bgVS, bgFS);
+const ptP = makeProgram(ptVS, ptFS);
+
+// VAO
+const bgVAO = gl.createVertexArray();
+gl.bindVertexArray(bgVAO);
+gl.bindBuffer(gl.ARRAY_BUFFER, quadBuf);
+gl.bindVertexArray(null);
+
+const uBg = { res:gl.getUniformLocation(bgP,'uRes'), time:gl.getUniformLocation(bgP,'uTime'),
+  mouse:gl.getUniformLocation(bgP,'uMouse'), zoom:gl.getUniformLocation(bgP,'uZoom'),
+  mode:gl.getUniformLocation(bgP,'uMode'), nova:gl.getUniformLocation(bgP,'uNova') };
+
+const ptVao = gl.createVertexArray();
+gl.bindVertexArray(ptVao);
+gl.enableVertexAttribArray(gl.getAttribLocation(ptP,'aPos'));
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.vertexAttribPointer(gl.getAttribLocation(ptP,'aPos'),2,gl.FLOAT,false,9*4,0);
+gl.enableVertexAttribArray(gl.getAttribLocation(ptP,'aLife'));
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.vertexAttribPointer(gl.getAttribLocation(ptP,'aLife'),1,gl.FLOAT,false,0,0);
+gl.enableVertexAttribArray(gl.getAttribLocation(ptP,'aSize'));
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.vertexAttribPointer(gl.getAttribLocation(ptP,'aSize'),1,gl.FLOAT,false,0,0);
+gl.enableVertexAttribArray(gl.getAttribLocation(ptP,'aCol'));
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+gl.vertexAttribPointer(gl.getAttribLocation(ptP,'aCol'),3,gl.FLOAT,false,0,0);
+gl.bindVertexArray(null);
+
+const uPt = { res:gl.getUniformLocation(ptP,'uRes') };
+const ptBuffers = [gl.createBuffer(), gl.createBuffer(), gl.createBuffer(), gl.createBuffer()];
+const ptLoc = [gl.getAttribLocation(ptP,'aPos'), gl.getAttribLocation(ptP,'aLife'), gl.getAttribLocation(ptP,'aSize'), gl.getAttribLocation(ptP,'aCol')];
+
+// ── 粒子 ──
+const MAX = 3000;
+const S = 9; // x,y, vx,vy, life, size, r,g,b
+const part = new Float32Array(MAX * S);
+let pCount = 0;
+let novaCount = 0, novaPulse = 0;
+
+const PALETTE = [[0.9,0.95,1.0],[0.5,0.8,1.0],[1.0,0.8,0.4],[0.95,0.5,0.7],[1.0,0.6,0.8],[0.4,0.85,1.0]];
+function spawnNova(x, y, n = 200) {
+  for (let i = 0; i < n; i++) {
+    if (pCount >= MAX) break;
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 350 + 30;
+    const col = PALETTE[Math.floor(Math.random()*PALETTE.length)];
+    const o = pCount * S;
+    part[o]=x; part[o+1]=y; part[o+2]=Math.cos(a)*s; part[o+3]=Math.sin(a)*s;
+    part[o+4]=1.0; part[o+5]=Math.random()*10+3;
+    part[o+6]=col[0]; part[o+7]=col[1]; part[o+8]=col[2];
+    pCount++;
+  }
+  novaCount++;
+  novaPulse = 1.0;
+}
+
+function uploadParticles() {
+  if (!pCount) return;
+  const N = pCount;
+  const pos = new Float32Array(N*2), life = new Float32Array(N), size = new Float32Array(N), col = new Float32Array(N*3);
+  for (let i=0;i<N;i++){ const o=i*S; pos[i*2]=part[o]; pos[i*2+1]=part[o+1]; life[i]=part[o+4]; size[i]=part[o+5]; col[i*3]=part[o+6]; col[i*3+1]=part[o+7]; col[i*3+2]=part[o+8]; }
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuffers[0]); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuffers[1]); gl.bufferData(gl.ARRAY_BUFFER, life, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuffers[2]); gl.bufferData(gl.ARRAY_BUFFER, size, gl.DYNAMIC_DRAW);
+  gl.bindBuffer(gl.ARRAY_BUFFER, ptBuffers[3]); gl.bufferData(gl.ARRAY_BUFFER, col, gl.DYNAMIC_DRAW);
+}
+
+function updateParticles(dt){
+  const decay = 0.5 * dt;
+  let w = 0;
+  for (let i=0;i<pCount;i++){
+    const o=i*S;
+    let life = part[o+4];
+    if (life<=0) continue;
+    life -= decay;
+    if (life<=0) continue;
+    let vx = part[o+2], vy = part[o+3];
+    const damp = Math.pow(0.6, dt);
+    vx *= damp; vy *= damp;
+    vy += 25 * dt * (1-life);
+    vx += -part[o+1] * 0.02 * dt;
+    vy +=  part[o+0] * 0.02 * dt;
+    part[o] += vx * dt; part[o+1] += vy * dt;
+    part[o+2]=vx; part[o+3]=vy; part[o+4]=life;
+    if (w!==i){ for (let k=0;k<S;k++) part[w*S+k]=part[o+k]; }
+    w++;
+  }
+  pCount = w;
+}
+
+// ── 状态 ──
+let time=0, lastT=performance.now();
+let mouse={x:0,y:0,tx:0,ty:0};
+let zoom=1.0, tzoom=1.0;
+let mode=0;
+let autoCruise=false, cruiseAng=0;
+let fpsAccum=0, fpsLast=performance.now(), fpsDisp=0;
+
+function resize(){
+  const dpr=Math.min(window.devicePixelRatio||1, 2);
+  canvas.width=window.innerWidth*dpr; canvas.height=window.innerHeight*dpr;
+  canvas.style.width=window.innerWidth+'px'; canvas.style.height=window.innerHeight+'px';
+}
+resize();
+window.addEventListener('resize', resize);
+
+canvas.addEventListener('mousemove', e=>{ mouse.tx=(e.clientX/window.innerWidth)*2-1; mouse.ty=-((e.clientY/window.innerHeight)*2-1); });
+canvas.addEventListener('click', e=>{ const x=e.clientX*(canvas.width/window.innerWidth); const y=(window.innerHeight-e.clientY)*(canvas.height/window.innerHeight); spawnNova(x,y,250); });
+canvas.addEventListener('wheel', e=>{ e.preventDefault(); tzoom*=e.deltaY>0?0.92:1.08; tzoom=Math.max(0.5,Math.min(2.5,tzoom)); },{passive:false});
+window.addEventListener('keydown', e=>{
+  if(e.key==='1'){mode=0;document.getElementById('md').textContent='STELLAR';}
+  if(e.key==='2'){mode=1;document.getElementById('md').textContent='NEBULA';}
+  if(e.key==='3'){mode=2;document.getElementById('md').textContent='VOID';}
+  if(e.key===' '){e.preventDefault();autoCruise=!autoCruise;}
+});
+
+function loop(){
+  const now=performance.now();
+  const dt=Math.min((now-lastT)/1000, 0.05);
+  lastT=now; time+=dt;
+  mouse.x+=(mouse.tx-mouse.x)*0.08;
+  mouse.y+=(mouse.ty-mouse.y)*0.08;
+  zoom+=(tzoom-zoom)*0.08;
+  novaPulse*=Math.pow(0.05, dt);
+  if(autoCruise){ cruiseAng+=dt*0.2; mouse.tx=Math.cos(cruiseAng)*0.7; mouse.ty=Math.sin(cruiseAng*0.7)*0.5; tzoom=1.0+Math.sin(cruiseAng*0.5)*0.3; }
+  
+  // 背景
+  gl.viewport(0,0,canvas.width,canvas.height);
+  gl.disable(gl.DEPTH_TEST); gl.disable(gl.BLEND);
+  gl.useProgram(bgP); gl.bindVertexArray(bgVAO);
+  gl.uniform2f(uBg.res,canvas.width,canvas.height);
+  gl.uniform1f(uBg.time,time); gl.uniform2f(uBg.mouse,mouse.x,mouse.y);
+  gl.uniform1f(uBg.zoom,zoom); gl.uniform1i(uBg.mode,mode); gl.uniform1f(uBg.nova,novaPulse);
+  gl.drawArrays(gl.TRIANGLES,0,3);
+
+  // 粒子
+  updateParticles(dt);
+  uploadParticles();
+  if(pCount>0){
+    gl.useProgram(ptP); gl.bindVertexArray(ptVao);
+    gl.uniform2f(uPt.res,canvas.width,canvas.height);
+    // 更新 buffer 绑定
+    for(let i=0;i<4;i++){
+      gl.bindBuffer(gl.ARRAY_BUFFER, ptBuffers[i]);
+      gl.vertexAttribPointer(ptLoc[i], [2,1,1,3][i], gl.FLOAT, false, 0, 0);
+    }
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.drawArrays(gl.POINTS, 0, pCount);
+    gl.disable(gl.BLEND);
+  }
+
+  // FPS
+  fpsAccum++;
+  if(now-fpsLast>500){ fpsDisp=Math.round(fpsAccum*1000/(now-fpsLast)); fpsAccum=0; fpsLast=now; }
+  document.getElementById('fps').textContent=fpsDisp;
+  document.getElementById('nv').textContent=novaCount;
+  document.getElementById('tv').textContent=time.toFixed(1);
+  document.getElementById('pc').textContent=pCount;
+  requestAnimationFrame(loop);
+}
+
+// 开场特效
+setTimeout(()=>spawnNova(canvas.width/2, canvas.height/2, 500), 300);
+setTimeout(()=>spawnNova(canvas.width*0.3, canvas.height*0.4, 200), 800);
+setTimeout(()=>spawnNova(canvas.width*0.7, canvas.height*0.6, 200), 1200);
+
+loop();
+</script>
+</body>
+</html>

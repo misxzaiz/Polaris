@@ -336,6 +336,9 @@ export interface WorkspaceEntry {
 export interface Config {
   /** 当前选择的引擎 */
   defaultEngine: EngineId;
+  /** 辅助任务引擎（标题生成 / 润色等低频辅助任务的专用引擎）。
+   *  空串/缺省 = 跟随 defaultEngine。用于将辅助任务路由到更便宜的引擎以降本。 */
+  auxiliaryEngine?: string;
   /** 界面语言 */
   language?: Language;
   /** 界面主题 */
@@ -359,6 +362,9 @@ export interface Config {
   piCode: {
     /** Pi CLI 命令路径 */
     cliPath: string;
+    /** 是否启用 pi extensions（加载 auth.json 注册的扩展，消费 Polaris MCP server）。
+     *  默认关闭：pi extensions 与 RPC 通信兼容性需用户显式确认。 */
+    enableExtensions?: boolean;
   };
   /** 工作目录 */
   workDir?: string;

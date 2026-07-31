@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Polaris 🌟 · 星空彩蛋</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 100vw; height: 100vh; overflow: hidden;
+    background: #000; cursor: crosshair;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    color: white;
+  }
+  canvas { display: block; }
+  #ui {
+    position: fixed; top: 20px; left: 20px;
+    z-index: 10;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  #ui h1 {
+    font-size: 22px;
+    text-shadow: 0 0 20px #4fc3f7, 0 0 40px #4fc3f7;
+    letter-spacing: 2px;
+  }
+  #hint {
+    font-size: 12px; color: rgba(255,255,255,0.6);
+  }
+  #counter {
+    position: fixed; bottom: 20px; right: 20px;
+    font-size: 14px; color: rgba(255,255,255,0.5);
+    z-index: 10;
+  }
+  #mode {
+    position: fixed; bottom: 20px; left: 20px;
+    font-size: 12px; color: rgba(255,255,255,0.4);
+    z-index: 10;
+  }
+  #center {
+    position: fixed; bottom: 50px; left: 50%;
+    transform: translateX(-50%);
+    font-size: 11px;
+    color: rgba(79,195,247,0.4);
+    letter-spacing: 4px;
+    z-index: 10;
+  }
+</style>
+</head>
+<body>
+<canvas id="cv"></canvas>
+<div id="ui">
+  <h1>✦ POLARIS ✦</h1>
+  <div id="hint">点击星空 · 发射流星 · 按 M 切换模式</div>
+</div>
+<div id="counter">⭐ <span id="cnt">0</span></div>
+<div id="mode">模式: 自由创作</div>
+<div id="center">F O L L O W   T H E   S T A R</div>
+
+<script>
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let W, H, DPR = window.devicePixelRatio || 1;
+const stars = [];
+const meteors = [];
+const particles = [];
+let starCount = 0;
+let mode = 'free'; // 'free' or 'pulse'
+let mouseX = 0, mouseY = 0;
+let frame = 0;
+
+function resize() {
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  cv.style.width = W + 'px'; cv.style.height = H + 'px';
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// 初始星空
+function genStars() {
+  stars.length = 0;
+  const count = Math.floor(W * H / 3000);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * W,
+      y: Math.random() * H,
+      r: Math.random() * 1.6 + 0.3,
+      a: Math.random() * 0.7 + 0.3,
+      tw: Math.random() * Math.PI * 2,
+      sp: Math.random() * 0.02 + 0.01,
+      hue: Math.random() < 0.15 ? 200 + Math.random()*40 : 0
+    });
+  }
+}
+genStars();
+
+// 流星
+function spawnMeteor(x, y) {
+  const angle = Math.atan2(y - H/2, x - W/2) + (Math.random()-0.5)*0.3;
+  const speed = 6 + Math.random()*4;
+  const hue = Math.random() < 0.3 ? 200+Math.random()*60 : 30+Math.random()*20;
+  meteors.push({
+    x, y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    life: 1,
+    hue,
+    trail: []
+  });
+}
+
+// 爆炸粒子
+function burst(x, y) {
+  const hue = Math.random() < 0.4 ? 200+Math.random()*40 : 30+Math.random()*20;
+  for (let i = 0; i < 24; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const s = Math.random() * 3 + 1;
+    particles.push({
+      x, y,
+      vx: Math.cos(a)*s, vy: Math.sin(a)*s,
+      life: 1,
+      hue,
+      r: Math.random()*2+1
+    });
+  }
+}
+
+// 交互
+cv.addEventListener('click', (e) => {
+  spawnMeteor(e.clientX, e.clientY);
+  burst(e.clientX, e.clientY);
+  starCount++;
+  document.getElementById('cnt').textContent = starCount;
+});
+
+cv.addEventListener('mousemove', (e) => {
+  mouseX = e.clientX; mouseY = e.clientY;
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'm' || e.key === 'M') {
+    mode = mode === 'free' ? 'pulse' : 'free';
+    document.getElementById('mode').textContent = mode === 'free' ? '模式: 自由创作' : '模式: 脉冲星';
+  }
+  if (e.key === ' ') {
+    e.preventDefault();
+    // 全屏烟花
+    for (let i = 0; i < 10; i++) {
+      setTimeout(() => {
+        spawnMeteor(Math.random()*W, Math.random()*H);
+        burst(Math.random()*W, Math.random()*H);
+      }, i * 100);
+    }
+  }
+});
+
+// 连线星座（当星星靠近时）
+function drawConstellations() {
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i+1; j < stars.length; j++) {
+      const dx = stars[i].x - stars[j].x;
+      const dy = stars[i].y - stars[j].y;
+      const d = Math.sqrt(dx*dx+dy*dy);
+      if (d < 80) {
+        const alpha = (1 - d/80) * 0.12;
+        ctx.strokeStyle = `rgba(79,195,247,${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(stars[i].x, stars[i].y);
+        ctx.lineTo(stars[j].x, stars[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+}
+
+function draw() {
+  frame++;
+  // 渐变背景
+  const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, Math.max(W,H)*0.7);
+  grad.addColorStop(0, '#0a0e2a');
+  grad.addColorStop(0.5, '#060818');
+  grad.addColorStop(1, '#000008');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // 鼠标光晕
+  const mouseGrad = ctx.createRadialGradient(mouseX, mouseY, 0, mouseX, mouseY, 200);
+  mouseGrad.addColorStop(0, 'rgba(79,195,247,0.06)');
+  mouseGrad.addColorStop(1, 'rgba(79,195,247,0)');
+  ctx.fillStyle = mouseGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // 星座连线
+  drawConstellations();
+
+  // 绘制星星
+  for (const s of stars) {
+    s.tw += s.sp;
+    const alpha = s.a * (0.6 + 0.4 * Math.sin(s.tw));
+    const r = s.r;
+    // 光晕
+    if (s.hue) {
+      const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, r*8);
+      g.addColorStop(0, `hsla(${s.hue},80%,80%,${alpha*0.3})`);
+      g.addColorStop(1, `hsla(${s.hue},80%,80%,0)`);
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, r*8, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, r, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 流星
+  for (let i = meteors.length-1; i >= 0; i--) {
+    const m = meteors[i];
+    m.trail.push({x: m.x, y: m.y, life: 1});
+    m.x += m.vx; m.y += m.vy;
+    m.life -= 0.012;
+    if (m.life <= 0 || m.x < -50 || m.x > W+50 || m.y < -50 || m.y > H+50) {
+      meteors.splice(i, 1); continue;
+    }
+    // 尾迹
+    for (let j = 0; j < m.trail.length; j++) {
+      const t = m.trail[j];
+      const a = t.life * m.life * 0.8;
+      ctx.fillStyle = `hsla(${m.hue},90%,70%,${a})`;
+      ctx.beginPath();
+      ctx.arc(t.x, t.y, 2.5 * t.life, 0, Math.PI*2);
+      ctx.fill();
+      t.life -= 0.04;
+    }
+    m.trail = m.trail.filter(t => t.life > 0);
+    // 头部
+    const headG = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, 15);
+    headG.addColorStop(0, `hsla(${m.hue},100%,95%,${m.life})`);
+    headG.addColorStop(0.5, `hsla(${m.hue},100%,70%,${m.life*0.5})`);
+    headG.addColorStop(1, `hsla(${m.hue},100%,70%,0)`);
+    ctx.fillStyle = headG;
+    ctx.beginPath();
+    ctx.arc(m.x, m.y, 15, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 粒子
+  for (let i = particles.length-1; i >= 0; i--) {
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy;
+    p.vx *= 0.96; p.vy *= 0.96;
+    p.life -= 0.02;
+    if (p.life <= 0) { particles.splice(i, 1); continue; }
+    ctx.fillStyle = `hsla(${p.hue},90%,70%,${p.life})`;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r * p.life, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // 脉冲星模式 - 脉冲
+  if (mode === 'pulse') {
+    const pulseR = 100 + Math.sin(frame*0.03) * 60;
+    const pulseG = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, pulseR);
+    pulseG.addColorStop(0, `rgba(79,195,247,${0.1 + 0.1*Math.sin(frame*0.03)})`);
+    pulseG.addColorStop(1, 'rgba(79,195,247,0)');
+    ctx.fillStyle = pulseG;
+    ctx.beginPath();
+    ctx.arc(W/2, H/2, pulseR, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  requestAnimationFrame(draw);
+}
+
+draw();
+</script>
+</body>
+</html>

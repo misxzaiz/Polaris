@@ -21,7 +21,7 @@
  * 与 Polaris AIEvent::assistant_message(is_delta=true) 对齐。
  */
 
-use crate::models::{AIEvent, ToolCallStartEvent, ToolCallEndEvent};
+use crate::models::{AIEvent, ModelUsageBreakdown, ToolCallStartEvent, ToolCallEndEvent};
 
 /// pi RPC stdout 单行的宽松解析结构
 ///
@@ -129,10 +129,20 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
 
         // —— 消息生命周期 ——
         "message_start" | "message_end" => {
-            // pi 的 message_start/end 携带完整 message 对象；
-            // 文本内容通过 message_update(text_delta) 增量透出，这里不重复整段发送，
-            // 避免 delta + 整段双渲染。仅对纯工具调用消息在 end 时补发工具事件兜底
-            // （工具执行有独立的 tool_execution_* 事件，通常无需在此处理）。
+            // message_end 携带完整 message 对象，从中提取 usage 字段
+            if line.line_type == "message_end" {
+                if let Some(msg) = &line.message {
+                    if let Some(role) = msg.get("role").and_then(|v| v.as_str()) {
+                        // 仅对 assistant 消息提取用量
+                        if role == "assistant" {
+                            let usage_event = extract_usage_event(msg, current_sid);
+                            if let Some(ev) = usage_event {
+                                out.events.push(ev);
+                            }
+                        }
+                    }
+                }
+            }
         }
         "message_update" => {
             if let Some(ame) = &line.assistant_message_event {
@@ -212,8 +222,31 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
             out.events.push(AIEvent::ToolCallEnd(end));
         }
 
-        // —— 其它生命周期（queue/compaction/retry 等）：当前不透出 ——
-        // 后续可按需映射 compaction → ContextCompacted、auto_retry → Progress 等
+        // —— 上下文压缩：透出为 ContextCompacted 事件 ——
+        // pi 在自动压缩上下文时发出 compaction 事件（字段名基于 pi RPC 约定）。
+        // trigger 取值 manual/auto；preTokens/postTokens 从 data 提取（可能缺失）。
+        "compaction" | "context_compacted" | "context_compaction" => {
+            let trigger = line.data.get("trigger")
+                .and_then(|v| v.as_str())
+                .unwrap_or("auto")
+                .to_string();
+            let pre_tokens = line.data.get("preTokens")
+                .or_else(|| line.data.get("pre_tokens"))
+                .and_then(|v| v.as_u64());
+            let post_tokens = line.data.get("postTokens")
+                .or_else(|| line.data.get("post_tokens"))
+                .and_then(|v| v.as_u64());
+            out.events.push(AIEvent::ContextCompacted(
+                crate::models::ai_event::ContextCompactedEvent::new(
+                    current_sid,
+                    trigger,
+                    pre_tokens,
+                    post_tokens,
+                ),
+            ));
+        }
+
+        // —— 其它生命周期（queue/retry 等）：当前不透出 ——
         _ => {
             tracing::debug!("[PiEngine] 未映射的 pi 事件类型: {}", line.line_type);
         }
@@ -230,11 +263,30 @@ pub fn extract_session_id_from_state(data: &serde_json::Value) -> Option<String>
 }
 
 /// 构造发送给 pi stdin 的 prompt 命令 JSONL 行
-pub fn build_prompt_command(message: &str, request_id: &str) -> String {
+///
+/// `images` 非空时附带 images 字段（pi RPC prompt 命令原生支持），
+/// 每项为 `{"media_type": <mime>, "data": <纯 base64>}`。
+pub fn build_prompt_command(
+    message: &str,
+    request_id: &str,
+    images: &[crate::ai::traits::ImageAttachment],
+) -> String {
     let mut obj = serde_json::Map::new();
     obj.insert("id".to_string(), serde_json::Value::String(request_id.to_string()));
     obj.insert("type".to_string(), serde_json::Value::String("prompt".to_string()));
     obj.insert("message".to_string(), serde_json::Value::String(message.to_string()));
+    if !images.is_empty() {
+        let imgs: Vec<serde_json::Value> = images
+            .iter()
+            .map(|img| {
+                serde_json::json!({
+                    "media_type": img.media_type,
+                    "data": img.data,
+                })
+            })
+            .collect();
+        obj.insert("images".to_string(), serde_json::Value::Array(imgs));
+    }
     let mut line = serde_json::to_string(&serde_json::Value::Object(obj))
         .unwrap_or_else(|_| "{}".to_string());
     line.push('\n');
@@ -244,6 +296,111 @@ pub fn build_prompt_command(message: &str, request_id: &str) -> String {
 /// 构造 abort 命令
 pub fn build_abort_command() -> String {
     "{\"type\":\"abort\"}\n".to_string()
+}
+
+/// 从 pi 的 message_end 事件中提取 token 用量，转换为 AIEvent::Usage
+///
+/// pi 的 message_end 数据格式参考：
+/// ```json
+/// {
+///   "role": "assistant",
+///   "usage": {
+///     "inputTokens": 123,
+///     "outputTokens": 456,
+///     "cacheCreationInputTokens": 78,
+///     "cacheReadInputTokens": 90
+///   }
+/// }
+/// ```
+fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEvent> {
+    let usage = msg.get("usage")?;
+
+    let input_tokens = usage.get("inputTokens")
+        .or_else(|| usage.get("input"))
+        .and_then(|v| v.as_u64())?;
+    let output_tokens = usage.get("outputTokens")
+        .or_else(|| usage.get("output"))
+        .and_then(|v| v.as_u64())?;
+
+    // 缓存读取（pi 可能使用 cacheRead 或 cacheReadInputTokens）
+    let cache_read = usage.get("cacheReadInputTokens")
+        .or_else(|| usage.get("cacheRead"))
+        .and_then(|v| v.as_u64());
+    // 缓存写入
+    let cache_create = usage.get("cacheCreationInputTokens")
+        .or_else(|| usage.get("cacheCreation"))
+        .and_then(|v| v.as_u64());
+
+    // 提取实际模型名（pi 的 message 中可能携带 model 字段）
+    let actual_model = msg.get("model").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+    // 上下文窗口
+    let context_window = msg.get("contextWindow").and_then(|v| v.as_u64());
+
+    // 提取按模型用量明细（pi 可能以 modelUsage 形式提供）
+    let model_usage: Option<std::collections::HashMap<String, ModelUsageBreakdown>> = msg
+        .get("modelUsage")
+        .and_then(|v| v.as_object())
+        .map(|m| {
+            m.iter()
+                .map(|(k, v)| {
+                    let breakdown = ModelUsageBreakdown {
+                        input_tokens: v
+                            .get("inputTokens")
+                            .or_else(|| v.get("input"))
+                            .and_then(|n| n.as_u64())
+                            .unwrap_or(input_tokens),
+                        cache_creation_input_tokens: v
+                            .get("cacheCreationInputTokens")
+                            .or_else(|| v.get("cacheCreation"))
+                            .and_then(|n| n.as_u64()),
+                        cache_read_input_tokens: v
+                            .get("cacheReadInputTokens")
+                            .or_else(|| v.get("cacheRead"))
+                            .and_then(|n| n.as_u64()),
+                        output_tokens: v
+                            .get("outputTokens")
+                            .or_else(|| v.get("output"))
+                            .and_then(|n| n.as_u64())
+                            .unwrap_or(output_tokens),
+                        reasoning_output_tokens: None,
+                        context_window: None,
+                        max_output_tokens: None,
+                        cost_usd: v.get("costUsd").and_then(|n| n.as_f64()),
+                        web_search_requests: None,
+                    };
+                    (k.clone(), breakdown)
+                })
+                .collect()
+        });
+
+    // 总成本
+    let total_cost_usd = msg.get("totalCostUsd").and_then(|v| v.as_f64());
+
+    let mut usage_event = crate::models::UsageEvent::new(
+        session_id,
+        input_tokens,
+        cache_create,
+        cache_read,
+        output_tokens,
+        None, // reasoning_output_tokens
+        context_window,
+    );
+
+    // 附加可选字段
+    if let Some(mu) = model_usage {
+        if !mu.is_empty() {
+            usage_event = usage_event.with_model_usage(mu);
+        }
+    }
+    if let Some(cost) = total_cost_usd {
+        usage_event = usage_event.with_total_cost_usd(Some(cost));
+    }
+    if let Some(model) = actual_model {
+        usage_event = usage_event.with_actual_model(Some(model));
+    }
+
+    Some(AIEvent::Usage(usage_event))
 }
 
 #[cfg(test)]
@@ -342,11 +499,65 @@ mod tests {
 
     #[test]
     fn test_prompt_command_format() {
-        let cmd = build_prompt_command("Hello", "req-1");
+        let cmd = build_prompt_command("Hello", "req-1", &[]);
         assert!(cmd.ends_with('\n'));
         let v: serde_json::Value = serde_json::from_str(cmd.trim()).unwrap();
         assert_eq!(v["type"], "prompt");
         assert_eq!(v["id"], "req-1");
         assert_eq!(v["message"], "Hello");
+        // 无图片时不带 images 字段
+        assert!(v.get("images").is_none());
+    }
+
+    #[test]
+    fn test_prompt_command_with_images() {
+        use crate::ai::traits::ImageAttachment;
+        let imgs = vec![ImageAttachment {
+            media_type: "image/png".to_string(),
+            data: "iVBORw0KGgo=".to_string(),
+        }];
+        let cmd = build_prompt_command("看图", "req-2", &imgs);
+        let v: serde_json::Value = serde_json::from_str(cmd.trim()).unwrap();
+        assert_eq!(v["type"], "prompt");
+        assert!(v.get("images").is_some());
+        assert_eq!(v["images"][0]["media_type"], "image/png");
+        assert_eq!(v["images"][0]["data"], "iVBORw0KGgo=");
+    }
+
+    #[test]
+    fn test_message_end_usage_extraction() {
+        let line = parse(
+            r#"{"type":"message_end","message":{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{"inputTokens":1234,"outputTokens":567,"cacheCreationInputTokens":78,"cacheReadInputTokens":90}}}"#,
+        );
+        let r = pi_line_to_ai_events(&line, "sid");
+        assert_eq!(r.events.len(), 1);
+        match &r.events[0] {
+            AIEvent::Usage(e) => {
+                assert_eq!(e.input_tokens, 1234);
+                assert_eq!(e.output_tokens, 567);
+                assert_eq!(e.cache_creation_input_tokens, Some(78));
+                assert_eq!(e.cache_read_input_tokens, Some(90));
+                assert_eq!(e.actual_model, Some("claude-sonnet-4-20250514".to_string()));
+            }
+            other => panic!("应为 Usage，实际: {}", other.event_type()),
+        }
+    }
+
+    #[test]
+    fn test_message_end_without_usage_returns_no_event() {
+        let line = parse(
+            r#"{"type":"message_end","message":{"role":"assistant","content":"hello"}}"#,
+        );
+        let r = pi_line_to_ai_events(&line, "sid");
+        assert!(r.events.is_empty());
+    }
+
+    #[test]
+    fn test_message_end_non_assistant_returns_no_event() {
+        let line = parse(
+            r#"{"type":"message_end","message":{"role":"user","usage":{"inputTokens":100,"outputTokens":50}}}"#,
+        );
+        let r = pi_line_to_ai_events(&line, "sid");
+        assert!(r.events.is_empty());
     }
 }
