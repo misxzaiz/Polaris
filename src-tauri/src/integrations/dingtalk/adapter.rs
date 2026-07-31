@@ -142,6 +142,7 @@ impl DingTalkAdapter {
                 "clientId": self.config.app_id,
                 "clientSecret": self.config.app_secret,
                 "subscriptions": [
+                    { "type": "EVENT", "topic": "*" },
                     { "type": "CALLBACK", "topic": TOPIC_ROBOT }
                 ]
             }))
