@@ -402,10 +402,29 @@ function getExtensionsForClient(
   return [
     languageServerSupport(client, uri, languageID),
     makeCtrlClickJump(client, uri),
+    makeDefinitionKeymap(client, uri),
     makeSymbolPaletteKeymap(client, uri),
     makeFindReferencesKeymap(client, uri),
     ctrlHoverLink,
   ];
+}
+
+/**
+ * 跳转定义快捷键。LSP 模式下发 textDocument/definition 请求，
+ * 复用 smartJumpLsp 实现「在定义处 → 查引用」的智能行为。
+ * 快捷键读取 editorSettingsStore（默认 Mod-Alt-b）。
+ */
+function makeDefinitionKeymap(client: LSPClient, currentUri: string): Extension {
+  const settings = useEditorSettingsStore.getState();
+  return keymap.of([
+    {
+      key: settings.lspKeyDefinition,
+      run: (view) => {
+        void smartJumpLsp(view, client, currentUri);
+        return true;
+      },
+    },
+  ]);
 }
 
 /**
