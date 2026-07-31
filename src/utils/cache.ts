@@ -339,11 +339,72 @@ function getContentFingerprint(content: string): string {
  * - 增量内容检测：新内容是旧内容延伸时，只渲染新增部分
  * - 预设允许的 HTML 标签和属性
  */
-/** 将 <table> 包裹在可横向滚动的容器中，防止宽表格撑开父布局 */
+/**
+ * 将 <table> 包裹在可横向滚动的容器中，防止宽表格撑开父布局。
+ *
+ * 同时根据每列内容长度计算列宽比例，插入 <colgroup> 并设置 table-layout:fixed，
+ * 使得短列自然窄、长列自然宽，避免所有列等宽或某列被压到极窄。
+ *
+ * 列宽算法：对每列最大内容长度取 sqrt（平方根压缩），
+ * 再按比例分配百分比宽度，最小 5%，最大 50%。
+ */
 export function wrapTables(html: string): string {
   return html.replace(
     /(<table[\s>][\s\S]*?<\/table>)/g,
-    '<div class="table-scroll-wrapper">$1</div>'
+    (tableHtml) => {
+      // 提取所有行
+      const rows = tableHtml.match(/<tr[\s>][\s\S]*?<\/tr>/gi);
+      if (!rows || rows.length < 2) {
+        return '<div class="table-scroll-wrapper">' + tableHtml + '</div>';
+      }
+
+      // 从第一行统计列数
+      const firstRowCells = rows[0].match(/<t[dh][\s>][\s\S]*?<\/t[dh]>/gi);
+      if (!firstRowCells || firstRowCells.length < 2) {
+        return '<div class="table-scroll-wrapper">' + tableHtml + '</div>';
+      }
+
+      const colCount = firstRowCells.length;
+
+      // 计算每列最大内容长度（去掉 HTML 标签后的纯文本长度）
+      const maxLengths = new Array(colCount).fill(0);
+      for (const row of rows) {
+        const cells = row.match(/<t[dh][\s>][\s\S]*?<\/t[dh]>/gi);
+        if (cells) {
+          for (let i = 0; i < Math.min(cells.length, colCount); i++) {
+            const text = cells[i].replace(/<[^>]+>/g, '').trim();
+            maxLengths[i] = Math.max(maxLengths[i], text.length);
+          }
+        }
+      }
+
+      // 用 sqrt 压缩：短列和长列的差距被缩小，避免极端分配
+      const sqrtValues = maxLengths.map(len => Math.sqrt(Math.max(len, 1)));
+      const totalSqrt = sqrtValues.reduce((sum, v) => sum + v, 0);
+
+      // 计算百分比，最小 5%，最大 50%
+      let rawWidths = sqrtValues.map(v => {
+        const pct = (v / totalSqrt) * 100;
+        return Math.max(5, Math.min(50, Math.round(pct * 10) / 10));
+      });
+
+      // 归一化使总和为 100%
+      const rawTotal = rawWidths.reduce((s, w) => s + w, 0);
+      if (rawTotal > 0) {
+        rawWidths = rawWidths.map(w => Math.round((w / rawTotal) * 100));
+      }
+
+      // 构建 <colgroup>
+      const colgroup = '<colgroup>' +
+        rawWidths.map(w => '<col style="width:' + w + '%">').join('') +
+        '</colgroup>';
+
+      // 给 <table> 加 table-layout:fixed，并插入 <colgroup>
+      const tableWithFixed = tableHtml.replace('<table', '<table style="table-layout:fixed"');
+      const modifiedTable = tableWithFixed.replace('>', '>' + colgroup);
+
+      return '<div class="table-scroll-wrapper">' + modifiedTable + '</div>';
+    }
   );
 }
 
