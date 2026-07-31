@@ -24,6 +24,7 @@
  *   - 钉钉 Stream Mode 文档: https://opensource.dingtalk.com/developerpedia/docs/explore/tutorials/overview
  */
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -61,6 +62,8 @@ struct InnerState {
     /// 当前 WebSocket endpoint（重连时复用）
     endpoint: Option<String>,
     ticket: Option<String>,
+    /// 会话 Webhook URL 映射 (conversationId → sessionWebhook)
+    session_webhooks: HashMap<String, String>,
 }
 
 /// DingTalk Stream Mode 适配器
@@ -241,7 +244,7 @@ impl DingTalkAdapter {
     fn handle_event(
         payload: &serde_json::Value,
         dedup: &mut MessageDedup,
-    ) -> Option<IntegrationMessage> {
+    ) -> Option<(IntegrationMessage, Option<String>)> {
         // Stream Mode EVENT 消息格式:
         // { "type":"EVENT", "headers":{"messageId":"...","topic":"/v1.0/im/bot/messages/get"},
         //   "data":"{\"senderNick\":\"...\",\"text\":{\"content\":\"...\"},...}" }
@@ -311,12 +314,18 @@ impl DingTalkAdapter {
             _ => format!("dingtalk_{}", conversation_id),
         };
 
+        // 会话 Webhook URL（用于回复）
+        let session_webhook = data
+            .get("sessionWebhook")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         tracing::info!(
-            "[DingTalk] 📝 消息: sender={}, conv={}, type={}",
-            sender_name, full_conversation_id, msgtype
+            "[DingTalk] 📝 消息: sender={}, conv={}, type={}, webhook={}",
+            sender_name, full_conversation_id, msgtype, session_webhook.as_deref().unwrap_or("无")
         );
 
-        Some(
+        Some((
             IntegrationMessage::new(
                 Platform::DingTalk,
                 full_conversation_id,
@@ -326,7 +335,8 @@ impl DingTalkAdapter {
             )
             .with_platform_message_id(dedup_id.to_string())
             .with_raw(data),
-        )
+            session_webhook,
+        ))
     }
 
     /// 去掉 @机器人 的提及标记
@@ -591,7 +601,12 @@ impl PlatformIntegration for DingTalkAdapter {
                                         }
 
                                         // 处理消息
-                                        if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
+                                        if let Some((im, webhook)) = Self::handle_event(&parsed, &mut dedup) {
+                                            // 存储会话 Webhook 用于回复
+                                            if let Some(wh) = webhook {
+                                                let conv_id = im.conversation_id.clone();
+                                                inner_state.write().await.session_webhooks.insert(conv_id, wh);
+                                            }
                                             if let Err(e) = tx.send(im).await {
                                                 tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
                                             }
@@ -618,7 +633,12 @@ impl PlatformIntegration for DingTalkAdapter {
                                             }
 
                                             // 处理消息
-                                            if let Some(im) = Self::handle_event(&parsed, &mut dedup) {
+                                            if let Some((im, webhook)) = Self::handle_event(&parsed, &mut dedup) {
+                                                // 存储会话 Webhook 用于回复
+                                                if let Some(wh) = webhook {
+                                                    let conv_id = im.conversation_id.clone();
+                                                    inner_state.write().await.session_webhooks.insert(conv_id, wh);
+                                                }
                                                 if let Err(e) = tx.send(im).await {
                                                     tracing::error!("[DingTalk] ❌ 发送消息到通道失败: {}", e);
                                                 }
@@ -726,7 +746,24 @@ impl PlatformIntegration for DingTalkAdapter {
                 }
                 Err(AppError::ValidationError("Webhook URL 为空".to_string()))
             }
-            SendTarget::Conversation(_) | SendTarget::Channel(_) | SendTarget::User(_) => {
+            SendTarget::Conversation(ref conv_id) => {
+                // 优先使用会话中的 sessionWebhook（Stream Mode）
+                let webhook_url = self.inner_state.try_read()
+                    .ok()
+                    .and_then(|state| state.session_webhooks.get(conv_id).cloned())
+                    .or_else(|| self.webhook.clone());
+
+                if let Some(ref url) = webhook_url {
+                    if !url.is_empty() {
+                        return self.send_via_webhook(url, text).await;
+                    }
+                }
+                Err(AppError::ValidationError(
+                    "未配置 Webhook URL，请在钉钉配置中填写 Webhook 地址以启用回复功能"
+                        .to_string(),
+                ))
+            }
+            SendTarget::Channel(_) | SendTarget::User(_) => {
                 if let Some(ref webhook) = self.webhook {
                     self.send_via_webhook(webhook, text).await
                 } else {
