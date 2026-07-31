@@ -26,7 +26,7 @@ import type {
   ProfileCategory,
   AuthType,
 } from '@/types'
-import { COMMON_PROVIDER_PRESETS, OFFICIAL_API_PROFILE, type ProviderPreset, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine, ALL_ENGINES } from '@/types/modelProfile'
+import { OFFICIAL_API_PROFILE, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine, ALL_ENGINES } from '@/types/modelProfile'
 import {
   testModelProfileConnection,
   fetchModelsForProfile,
@@ -41,7 +41,6 @@ import {
   Pencil,
   Loader2,
   TestTube,
-  Sparkles,
   X,
   Download,
   KeyRound,
@@ -952,7 +951,6 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const [showEditor, setShowEditor] = useState(false)
   const [editingProfile, setEditingProfile] = useState<ModelProfile | null>(null)
   const [testingProfileId, setTestingProfileId] = useState<string | null>(null)
-  const [showPresets, setShowPresets] = useState(false)
 
   // 同步 store → config（onConfigChange 回传 SettingsPage）
   const syncToConfig = useCallback(
@@ -997,25 +995,8 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     })
   }, [profiles, search, engineFilter])
 
-  const openCreate = (preset?: ProviderPreset) => {
-    setShowPresets(false)
-    if (preset) {
-      setEditingProfile({
-        id: '',
-        name: preset.name,
-        baseUrl: preset.baseUrls[0] || '',
-        apiKey: '',
-        model: preset.commonModels[0] || '',
-        modelOptions: [...preset.commonModels],
-        active: false,
-        wireApi: preset.defaultWireApi,
-        targetEngines: preset.defaultTargetEngines,
-        category: preset.category,
-        description: preset.description,
-      })
-    } else {
-      setEditingProfile(null)
-    }
+  const openCreate = () => {
+    setEditingProfile(null)
     setShowEditor(true)
   }
 
@@ -1140,6 +1121,15 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
 
       {/* 工具栏 */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+        {/* 添加按钮 */}
+        <button
+          onClick={() => openCreate()}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors shrink-0"
+        >
+          <Plus size={14} />
+          {t('modelProfile.add')}
+        </button>
+
         {/* 搜索 */}
         <div className="relative flex-1">
           <input
@@ -1167,47 +1157,6 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
               {t(`modelProfile.filter.${f}`)}
             </button>
           ))}
-        </div>
-      </div>
-
-      {/* 操作按钮 */}
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => openCreate()}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors"
-        >
-          <Plus size={14} />
-          {t('modelProfile.add')}
-        </button>
-        <div className="relative">
-          <button
-            onClick={() => setShowPresets((p) => !p)}
-            className="flex items-center gap-1.5 px-3 py-2 text-sm rounded-lg border border-amber-500/40 text-amber-500 hover:bg-amber-500/10 transition-colors"
-          >
-            <Sparkles size={14} />
-            {t('modelProfile.fromPreset')}
-          </button>
-          {showPresets && (
-            <>
-              <div className="fixed inset-0 z-40" onClick={() => setShowPresets(false)} />
-              <div className="absolute left-0 top-full mt-1 z-50 w-72 p-2 bg-background-elevated rounded-lg border border-border shadow-glow max-h-80 overflow-y-auto">
-                <p className="text-[11px] text-text-tertiary px-1 py-1">{t('modelProfile.presetHint')}</p>
-                {COMMON_PROVIDER_PRESETS.map((preset) => (
-                  <button
-                    key={preset.name}
-                    onClick={() => openCreate(preset)}
-                    className="w-full flex items-center gap-2 p-2 rounded-md hover:bg-primary/5 transition-colors text-left"
-                  >
-                    <Sparkles size={14} className="text-amber-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="text-xs font-medium text-text-primary truncate">{preset.name}</div>
-                      <div className="text-[10px] text-text-tertiary truncate">{preset.description}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
         </div>
       </div>
 

@@ -398,7 +398,7 @@ export default async function (pi) {
     return;
   }
 
-  for (const srv of servers) {
+  await Promise.all(servers.map(async (srv) => {
     console.log("[polaris-mcp] Connecting to server:", srv.serverName);
     let proc;
     try {
@@ -407,17 +407,7 @@ export default async function (pi) {
       proc.stderr.on("data", (d) => console.error("[polaris-mcp] stderr:", srv.serverName, d.toString().trim()));
     } catch (e) {
       console.error("[polaris-mcp] Failed to spawn:", srv.serverName, e.message);
-      continue;
-    }
-
-    // Wait for process to be ready, then initialize
-    try {
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error("Ready timeout")), 5000);
-        proc.stdout.once("data", () => { clearTimeout(timeout); resolve(); });
-      });
-    } catch {
-      // Process may not send data without initialize; continue anyway
+      return;
     }
 
     let initResult;
@@ -428,7 +418,7 @@ export default async function (pi) {
       });
     } catch (e) {
       console.error("[polaris-mcp] Initialize failed:", srv.serverName, e.message);
-      continue;
+      return;
     }
 
     let toolsResult;
@@ -436,7 +426,7 @@ export default async function (pi) {
       toolsResult = await mcpRequest(proc, { method: "tools/list", params: {} });
     } catch (e) {
       console.error("[polaris-mcp] tools/list failed:", srv.serverName, e.message);
-      continue;
+      return;
     }
 
     const tools = toolsResult.result?.tools || [];
@@ -463,7 +453,7 @@ export default async function (pi) {
       });
       console.log("[polaris-mcp] Registered tool:", toolName, "from", srv.serverName);
     }
-  }
+  }));
 }
 "##;
 
