@@ -216,7 +216,20 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
             }
             if let Some(result) = line.result.clone() {
                 if !result.is_null() {
-                    end = end.with_result(result);
+                    // Pi 的 tool_execution_end 返回的 result 格式为：
+                    // { content: [{ type: "text", text: "..." }] }
+                    // 提取 text 字符串作为 ToolCallEndEvent 的 result，
+                    // 让前端 parseCardData 能识别 JSON fence 块并渲染卡片。
+                    let extracted = result.get("content")
+                        .and_then(|c| c.as_array())
+                        .and_then(|arr| arr.first())
+                        .and_then(|item| item.get("text"))
+                        .and_then(|t| t.as_str())
+                        .map(|s| s.to_string());
+                    match extracted {
+                        Some(text) => end = end.with_result(serde_json::Value::String(text)),
+                        None => end = end.with_result(result),
+                    }
                 }
             }
             out.events.push(AIEvent::ToolCallEnd(end));

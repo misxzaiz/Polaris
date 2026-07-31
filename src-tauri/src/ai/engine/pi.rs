@@ -438,7 +438,7 @@ export default async function (pi) {
 
     const tools = toolsResult.result?.tools || [];
     for (const tool of tools) {
-      const toolName = "polaris_" + tool.name;
+      const toolName = `mcp__${srv.serverName}__${tool.name}`;
       pi.registerTool({
         name: toolName,
         label: tool.name,
@@ -452,7 +452,11 @@ export default async function (pi) {
             });
             const content = result.result?.content || [];
             const text = content.map((c) => c.text || JSON.stringify(c)).join("\n");
-            return { content: [{ type: "text", text }] };
+            // 透传 structuredContent：以 ```json fence 块形式追加到文本末尾，
+            // 前端 parseCardData 的 fenced 提取逻辑能识别并渲染卡片。
+            const sc = result.result?.structuredContent;
+            const output = sc ? text + "\n```json\n" + JSON.stringify(sc) + "\n```" : text;
+            return { content: [{ type: "text", text: output }] };
           } catch (e) {
             return { content: [{ type: "text", text: "Error: " + e.message }], isError: true };
           }
