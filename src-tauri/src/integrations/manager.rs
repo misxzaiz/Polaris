@@ -1258,11 +1258,6 @@ impl IntegrationManager {
                                         tracing::info!("[IntegrationManager] SimpleAI 引擎不使用 MCP，跳过配置");
                                         IntegrationMcpConfig::default()
                                     },
-                                    crate::ai::EngineId::MimoCode => {
-                                        // Mimo 不使用 MCP，返回默认空配置
-                                        tracing::info!("[IntegrationManager] Mimo 引擎不使用 MCP，跳过配置");
-                                        IntegrationMcpConfig::default()
-                                    },
                                     crate::ai::EngineId::Pi => {
                                         // Pi 使用 auth.json 体系，返回默认空配置
                                         tracing::info!("[IntegrationManager] Pi 引擎不使用 MCP，跳过配置");

@@ -154,13 +154,11 @@ function resolveEngineId(event: DispatchTaskRequestEvent): string | undefined {
  * - "official" 哨兵（显式官方端点）→ 不传 Profile
  * - 显式 id → 直接使用（后端 role/provider 解析产物）
  * - 未指定 → 继承来源会话绑定，降级全局激活 Profile
- * - mimo 引擎不支持 Profile，强制官方端点
  */
 function resolveModelProfileId(
   event: DispatchTaskRequestEvent,
   engineId: string | undefined
 ): string | undefined {
-  if (engineId?.startsWith('mimo')) return undefined
   if (event.modelProfileId === 'official') return undefined
   if (event.modelProfileId) return event.modelProfileId
   const sourceSessionId = event.sourceSessionId || ''

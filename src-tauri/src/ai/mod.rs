@@ -4,7 +4,7 @@
  * - Claude Code
  * - OpenAI Codex
  * - Simple AI
- * - Mimo Code (Mimocode)
+ * - Pi
  */
 
 pub mod traits;
@@ -25,7 +25,6 @@ pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
-pub use engine::MimocodeEngine;
 pub use engine::PiEngine;
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,

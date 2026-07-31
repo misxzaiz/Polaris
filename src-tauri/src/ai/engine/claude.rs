@@ -1057,7 +1057,7 @@ impl ClaudeEngine {
                     ));
                 } else {
                     // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
-                    // 与 Codex/Mimo/SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
+                    // 与 Codex/SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
                     // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
                     let msg = build_fallback_error_message(&stderr_buf);
                     tracing::warn!(

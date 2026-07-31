@@ -27,7 +27,6 @@ const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> =
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'mimo', label: 'Mimo', Icon: Sparkles },
 ]
 
 function readStoredEngine(defaultEngine: EngineId): EngineId {

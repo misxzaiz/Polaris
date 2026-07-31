@@ -505,14 +505,6 @@ fn prepare_mcp_config_with_paths(
                 simple_ai_mcp_servers: Some(servers),
             })
         }
-        EngineId::MimoCode => {
-            // Mimo 不使用 MCP 配置文件
-            Ok(PreparedMcpConfig {
-                claude_config_path: None,
-                codex_config_args: Vec::new(),
-                simple_ai_mcp_servers: None,
-            })
-        }
         EngineId::Pi => {
             // Pi 通过 Extension 桥接消费 MCP server（路径 B）：
             // 与 SimpleAI 同构获取 MCP server 列表，外部插件检查 aiToolAccess 门控。
@@ -599,7 +591,6 @@ async fn apply_model_profile_options(
         EngineId::ClaudeCode => "claude",
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
-        EngineId::MimoCode => "mimo",
         EngineId::Pi => "pi",
     };
     if !profile.is_for_engine(expected_engine) {
@@ -814,15 +805,6 @@ async fn apply_model_profile_options(
             let mut env_overrides = std::collections::HashMap::new();
             env_overrides.insert("__simple_ai_profile_id".to_string(), profile.id.clone());
             session_opts = session_opts.with_env_overrides(env_overrides);
-        }
-        EngineId::MimoCode => {
-            // Mimo 引擎使用模型配置（通过 --model 传递）
-            tracing::info!(
-                "[{}] Mimo 引擎使用 Profile 模型: {}",
-                log_scope,
-                profile.model
-            );
-            // Mimo 不直接使用 env_overrides，由 CLI 自身处理认证
         }
         EngineId::Pi => {
             // Pi 引擎: 通过 `~/.pi/agent/models.json` 注册自定义 provider，
@@ -1235,7 +1217,7 @@ pub async fn continue_chat_inner(
     // ──────────────────────────────────────────────────────
     // 先杀掉本会话的旧 CLI 进程，再处理代理。
     //
-    // 仅对 CLI 类引擎（Claude/Codex/Mimo）生效：它们每轮会 spawn 新进程,
+    // 仅对 CLI 类引擎（Claude/Codex）生效：它们每轮会 spawn 新进程,
     // 旧进程若有 in-flight 请求在等上游响应,代理端口被关闭时会收到
     // ConnectionRefused(见 99770ad8)。先 try_interrupt_all 杀旧进程,
     // 确保无 in-flight 请求后再安全切换代理。
@@ -1250,7 +1232,7 @@ pub async fn continue_chat_inner(
     {
         let mut registry = state.engine_registry.lock().await;
         match engine {
-            EngineId::ClaudeCode | EngineId::Codex | EngineId::MimoCode | EngineId::Pi => {
+            EngineId::ClaudeCode | EngineId::Codex | EngineId::Pi => {
                 registry.try_interrupt_all(&session_id);
             }
             EngineId::SimpleAI => {}

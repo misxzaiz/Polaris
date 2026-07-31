@@ -15,13 +15,7 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
-import { SystemPromptTab } from './tabs/SystemPromptTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
-
-
-import { QQBotTab } from './tabs/QQBotTab';
-import { FeishuTab } from './tabs/FeishuTab';
-import { DingTalkTab } from './tabs/DingTalkTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
@@ -50,13 +44,10 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
   'auto-mode': 'nav.autoMode',
   'plugins': 'nav.plugins',
-  'system-prompt': 'nav.systemPrompt',
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
   'model-provider': 'nav.modelProvider',
-  'qqbot': 'nav.qqbot',
-  'feishu': 'nav.feishu',
-  'dingtalk': 'nav.dingtalk',
+
   'speech': 'nav.speech',
   'lsp': 'nav.lsp',
   'shortcuts': 'nav.shortcuts',
@@ -94,7 +85,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
     'personal-hub': ['personalHub'],
-    'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'mimoCode', 'piCode'],
+    'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'piCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
   };
 
@@ -272,30 +263,8 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {activeTab === 'system-prompt' && (
-              <SystemPromptTab />
-            )}
-
             {activeTab === 'prompt-snippet' && (
               <PromptSnippetTab />
-            )}
-
-            {activeTab === 'qqbot' && (
-              <QQBotTab
-                loading={loading}
-              />
-            )}
-
-            {activeTab === 'feishu' && (
-              <FeishuTab
-                loading={loading}
-              />
-            )}
-
-            {activeTab === 'dingtalk' && (
-              <DingTalkTab
-                loading={loading}
-              />
             )}
 
             {activeTab === 'speech' && (

@@ -34,22 +34,6 @@ impl Default for CodexCodeConfig {
     }
 }
 
-/// Mimo Code 引擎配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MimoCodeConfig {
-    /// Mimo CLI 命令路径
-    pub cli_path: String,
-}
-
-impl Default for MimoCodeConfig {
-    fn default() -> Self {
-        Self {
-            cli_path: "mimo".to_string(),
-        }
-    }
-}
-
 /// Pi Code 引擎配置（earendil-works pi-coding-agent）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -237,7 +221,7 @@ pub struct ModelProfile {
     /// 适用的引擎（多选）。
     /// - `None` 或空数组：适用于所有引擎
     /// - 非空数组：仅适用于列出的引擎
-    /// - 引擎标识：`"claude"` / `"codex"` / `"simple-ai"` / `"mimo"`
+    /// - 引擎标识：`"claude"` / `"codex"` / `"simple-ai"`
     ///
     /// 历史兼容：旧数据使用 `target_engine: Option<String>` 单值字段，
     /// 由 `resolve_target_engines()` 做回退迁移。
@@ -1268,10 +1252,6 @@ pub struct Config {
     #[serde(default)]
     pub codex_code: CodexCodeConfig,
 
-    /// Mimo Code 引擎配置
-    #[serde(default)]
-    pub mimo_code: MimoCodeConfig,
-
     /// Pi Code 引擎配置（earendil-works pi-coding-agent）
     #[serde(default)]
     pub pi_code: PiCodeConfig,
@@ -1392,7 +1372,6 @@ impl Default for Config {
             theme: None,
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
-            mimo_code: MimoCodeConfig::default(),
             pi_code: PiCodeConfig::default(),
             work_dir: None,
             session_dir: None,
@@ -1440,11 +1419,6 @@ impl Config {
     /// 获取 Codex CLI 命令路径
     pub fn get_codex_cmd(&self) -> String {
         self.codex_code.cli_path.clone()
-    }
-
-    /// 获取 Mimo CLI 命令路径
-    pub fn get_mimo_cmd(&self) -> String {
-        self.mimo_code.cli_path.clone()
     }
 
     /// 获取 Pi CLI 命令路径
@@ -1503,14 +1477,6 @@ pub struct HealthStatus {
     /// Codex 版本
     #[serde(default)]
     pub codex_version: Option<String>,
-
-    /// Mimo CLI 是否可用
-    #[serde(default)]
-    pub mimo_available: bool,
-
-    /// Mimo 版本
-    #[serde(default)]
-    pub mimo_version: Option<String>,
 
     /// Pi CLI 是否可用
     #[serde(default)]

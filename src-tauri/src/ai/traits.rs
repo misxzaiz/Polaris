@@ -23,7 +23,6 @@ use std::sync::Arc;
 /// - `Codex`      → `"codex"`
 /// - `SimpleAI`   → `"simple-ai"` （显式 rename，防止 kebab-case 将
 ///   "AI" 拆为 "a-i"）
-/// - `MimoCode`   → `"mimo-code"`
 /// - `Pi`         → `"pi"` （earendil-works pi-coding-agent CLI）
 ///
 /// ## 向后兼容
@@ -41,8 +40,6 @@ pub enum EngineId {
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
     #[serde(rename = "simple-ai")]
     SimpleAI,
-    /// Mimo Code 引擎（mimocode CLI）
-    MimoCode,
     /// Pi 引擎（earendil-works pi-coding-agent CLI）
     Pi,
 }
@@ -54,7 +51,6 @@ impl EngineId {
     /// - `"claude" | "claude-code" | "claudecode"` → `ClaudeCode`
     /// - `"codex" | "openai-codex" | "openai_codex"` → `Codex`
     /// - `"simple-ai" | "simpleai" | "simple_ai"` → `SimpleAI`
-    /// - `"mimo" | "mimo-code" | "mimocode"` → `MimoCode`
     /// - `"pi" | "pi-coding-agent" | "piagent"` → `Pi`
     pub fn parse(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
@@ -62,7 +58,6 @@ impl EngineId {
             "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
             "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
             "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAI),
-            "mimo" | "mimo-code" | "mimocode" => Some(Self::MimoCode),
             "pi" | "pi-coding-agent" | "piagent" => Some(Self::Pi),
             _ => None,
         }
@@ -76,7 +71,6 @@ impl EngineId {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::SimpleAI => "simple-ai",
-            Self::MimoCode => "mimo-code",
             Self::Pi => "pi",
         }
     }
@@ -87,7 +81,6 @@ impl EngineId {
             Self::ClaudeCode => "Claude Code",
             Self::Codex => "OpenAI Codex",
             Self::SimpleAI => "Simple AI",
-            Self::MimoCode => "Mimo Code",
             Self::Pi => "Pi",
         }
     }
@@ -98,7 +91,6 @@ impl EngineId {
             EngineId::ClaudeCode,
             EngineId::Codex,
             EngineId::SimpleAI,
-            EngineId::MimoCode,
             EngineId::Pi,
         ]
     }

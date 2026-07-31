@@ -4,7 +4,7 @@
  * 将一个已有会话的内容带入一个新会话（可用不同引擎），让新会话了解此前进展后继续。
  *
  * 设计首要约束：避免新会话初始上下文膨胀。按 resolveTransferMode 决策四种模式：
- * - fork          同引擎 + 目标支持 fork（claude-code / mimo）：--fork-session 原生续接，不占额外上下文（结构完整）
+ * - fork          同引擎 + 目标支持 fork（claude-code）：--fork-session 原生续接，不占额外上下文（结构完整）
  * - full-file     源较短：全文落盘 + @ 引用注入（本身小，无负担）
  * - summary       默认：精简摘要落盘 + @ 引用注入（~1-2k token，控制上下文体积）
  * - message-history 仅 simple-ai 目标（直注 SessionOptions.message_history，管线未接，暂降级 summary）
@@ -274,7 +274,7 @@ async function createHandoffSession(params: CreateHandoffParams): Promise<Handof
  * 按引擎加载源会话完整消息（不受前端消息压缩影响）
  *
  * - claude-code / codex：从 CLI 原生历史文件读完整原文
- * - simple-ai / mimo：从 self JSONL 读完整原文
+ * - simple-ai：从 self JSONL 读完整原文
  * - 加载失败或无 conversationId：回退内存消息（可能已被压缩，记 warn）
  *
  * 亦被压缩交接（contextCompactHandoff）复用作为源消息加载器。
@@ -295,7 +295,7 @@ export async function loadConversationMessages(
         const raw = await service.getSessionHistory(conversationId)
         if (raw.length > 0) return withAssistantEngineId(service.convertToChatMessages(raw), engineId)
       } else {
-        // simple-ai / mimo：self JSONL（externalId = conversationId）
+        // simple-ai：self JSONL（externalId = conversationId）
         const msgs = await dialogStorageService.getConversationMessages(conversationId)
         if (msgs.length > 0) return withAssistantEngineId(msgs, engineId)
       }
@@ -340,7 +340,7 @@ async function loadHistoryChatMessages(item: UnifiedHistoryItem): Promise<ChatMe
       const messages = await service.getSessionHistory(item.id)
       return messages.length > 0 ? withAssistantEngineId(service.convertToChatMessages(messages), engineId) : []
     }
-    // simple-ai / mimo：self JSONL（externalId = item.id）
+    // simple-ai：self JSONL（externalId = item.id）
     const msgs = await dialogStorageService.getConversationMessages(item.id)
     return msgs.length > 0 ? withAssistantEngineId(msgs, engineId) : []
   } catch (e) {

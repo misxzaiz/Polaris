@@ -10,17 +10,11 @@ export * from './claude-code'
 // 导出 Codex Engine
 export * from './codex'
 
-// 导出 Mimo Code Engine
-export { MimoCodeEngine, getMimoEngine } from './mimo'
-export type { MimoEngineConfig } from './mimo'
-export { MimoCodeSession, createMimoSession } from './mimo'
-export type { MimoSessionConfig } from './mimo'
-
 /**
  * 获取所有可用的 Engine IDs
  */
 export function getAvailableEngineIds(): string[] {
-  return ['claude-code', 'codex', 'simple-ai', 'mimo']
+  return ['claude-code', 'codex', 'simple-ai']
 }
 
 /**
@@ -61,12 +55,6 @@ export function getEngineDescriptors(): EngineDescriptor[] {
       id: 'simple-ai',
       name: 'Simple AI',
       description: '轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具',
-      available: true,
-    },
-    {
-      id: 'mimo',
-      name: 'Mimo Code',
-      description: 'Mimo (Mimocode) CLI - 多提供商 AI 编程助手，支持内置认证',
       available: true,
     },
   ]

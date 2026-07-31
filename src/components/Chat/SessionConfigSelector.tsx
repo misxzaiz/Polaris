@@ -103,16 +103,14 @@ export function SessionConfigSelector({
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
   const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
   const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
-  const currentEngine: 'claude' | 'codex' | 'simple-ai' | 'mimo' | 'pi' =
+  const currentEngine: 'claude' | 'codex' | 'simple-ai' | 'pi' =
     activeEngineId === 'codex'
       ? 'codex'
       : activeEngineId === 'simple-ai'
         ? 'simple-ai'
-        : activeEngineId === 'mimo'
-          ? 'mimo'
-          : activeEngineId === 'pi'
-            ? 'pi'
-            : 'claude'
+        : activeEngineId === 'pi'
+          ? 'pi'
+          : 'claude'
   const isSimpleAiEngine = currentEngine === 'simple-ai'
   useEffect(() => {
     if (isSimpleAiEngine) {
@@ -151,7 +149,7 @@ export function SessionConfigSelector({
 
   // 模型列表：根据当前选中的 Profile 动态生成。
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：
-  //   · claude / mimo：使用官方模型档位
+  //   · claude：使用官方模型档位
   //   · codex：使用 Profile 模型或空（无 Profile 时显示通用项）
   //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
@@ -467,7 +465,7 @@ export function SessionConfigSelector({
 
   const ALL_TYPES: SelectorType[] = ['agent', 'model', 'effort', 'permission', 'profile']
   // 仅展示当前引擎实际支持的选择器：与调用方传入的 visibleTypes 求交集，
-  // 防止向 mimo 等引擎渲染会导致后端报错的 profile / 无效的 agent·effort。
+  // 防止向不支持的引擎渲染会导致后端报错的 profile / 无效的 agent·effort。
   const allowedByEngine = getEngineSelectors(activeEngineId)
   const typesToShow = (visibleTypes ?? ALL_TYPES).filter(t => allowedByEngine.includes(t))
 

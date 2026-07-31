@@ -18,7 +18,7 @@
  *   `--session-id <id>`(创建) / `--session <id>`(resume) 让 pi 跨进程恢复上文。
  *   start_session 用临时 ID + --session-id 创建；continue_session 用从 session
  *   头读回的真实 ID + --session（partial UUID 命中 <ts>_<id>.jsonl 并回放历史）。
- *   每轮仍 kill+respawn 新进程（与 Mimo 同构），上下文由 pi 的 resume 机制恢复，而非进程常驻。
+ *   每轮仍 kill+respawn 新进程，上下文由 pi 的 resume 机制恢复，而非进程常驻。
  * - 中断: 向 stdin 发 `{"type":"abort"}\n` 命令（优雅中断），失败则 kill 进程
  *
  * 不支持/首版未启用的能力：
@@ -83,7 +83,7 @@ impl PiEngine {
 
     /// 获取 Pi CLI 路径
     ///
-    /// 查找顺序（与 CodexEngine / MimocodeEngine 对齐）：
+    /// 查找顺序（与 CodexEngine 对齐）：
     /// 1. 配置文件中的 pi_code.cli_path（用户自定义）
     /// 2. Windows: %APPDATA%\npm\pi.cmd / %PNPM_HOME%\pi.cmd / %LOCALAPPDATA%\pnpm\pi.cmd
     /// 3. where/which pi（PATH 查找，取完整路径）
@@ -549,7 +549,7 @@ export default async function (pi) {
         // 持久化 session：落盘到 <DataRoot>/pi-sessions，用 --session-id 绑定 Polaris
         // 会话 ID。start_session 时 pi 会创建该 session；continue_session 时 pi 会
         // 从落盘文件 resume 恢复上下文。每轮仍 kill+respawn 新进程，上下文由 pi
-        // 的 resume 机制恢复，而非进程常驻（与 Mimo --session <id> 同构）。
+        // 的 resume 机制恢复，而非进程常驻。
         let session_dir = Self::pi_session_dir()?;
         cmd.arg("--session-dir").arg(&session_dir);
         if resume {

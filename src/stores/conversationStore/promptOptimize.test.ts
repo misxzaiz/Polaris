@@ -58,7 +58,7 @@ describe('promptOptimize 版本栈', () => {
   it('完成时输入被手改：不覆盖草稿，转 ready 待应用；应用时手改文本先入栈', () => {
     const store = createStore()
     store.getState().updateInputDraft({ text: '原文', attachments: [] })
-    store.getState().beginPromptOptimize('原文', { engineId: 'mimo', optimizeSessionId: 'opt-1' })
+    store.getState().beginPromptOptimize('原文', { engineId: 'claude-code', optimizeSessionId: 'opt-1' })
 
     // 优化期间用户手改输入
     store.getState().updateInputDraft({ text: '手改后的原文', attachments: [] })
@@ -157,7 +157,7 @@ describe('promptOptimize 版本栈', () => {
     store.getState().completePromptOptimize('孤儿结果')
     expect(store.getState().promptOptimize.history).toHaveLength(0)
 
-    store.getState().beginPromptOptimize('v1', { engineId: 'mimo', optimizeSessionId: 'opt-1' })
+    store.getState().beginPromptOptimize('v1', { engineId: 'claude-code', optimizeSessionId: 'opt-1' })
     store.getState().completePromptOptimize('   ')
     const po = store.getState().promptOptimize
     expect(po.status).toBe('idle')

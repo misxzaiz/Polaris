@@ -8,7 +8,6 @@
 import { getEngineRegistry, registerEngine } from '@/ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
 import { CodexEngine } from '../engines/codex'
-import { MimoCodeEngine } from '../engines/mimo'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EngineBootstrap')
@@ -16,7 +15,7 @@ const log = createLogger('EngineBootstrap')
 /**
  * 已注册的 Engine ID 列表（传统引擎）
  */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'simple-ai', 'mimo'] as const
+export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'simple-ai'] as const
 
 /**
  * Engine 类型
@@ -40,10 +39,6 @@ export async function bootstrapEngines(
   // 注册 Codex 引擎
   const codexEngine = new CodexEngine()
   registerEngine(codexEngine, { asDefault: defaultEngineId === 'codex' })
-
-  // 注册 Mimo Code 引擎
-  const mimoEngine = new MimoCodeEngine()
-  registerEngine(mimoEngine, { asDefault: defaultEngineId === 'mimo' })
 
   // 初始化已注册的引擎
   await registry.initializeAll()
@@ -74,10 +69,6 @@ export async function registerEngineLazy(
     const codexEngine = new CodexEngine()
     registerEngine(codexEngine)
     await codexEngine.initialize()
-  } else if (engineId === 'mimo') {
-    const mimoEngine = new MimoCodeEngine()
-    registerEngine(mimoEngine)
-    await mimoEngine.initialize()
   }
 
   log.info('Lazy registered engine', { engineId })

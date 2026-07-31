@@ -341,7 +341,7 @@ pub fn find_cli_paths(cli_name: &str) -> Vec<String> {
 pub fn get_cli_version(cli_name: &str) -> Result<String> {
     #[cfg(windows)]
     let output = {
-        // 解析为完整路径（处理 "mimo" → "...\npm\mimo.cmd" 的情况）
+        // 解析为完整路径（处理 "codex" → "...\npm\codex.cmd" 的情况）
         let resolved = if Path::new(cli_name).is_absolute() {
             cli_name.to_string()
         } else {

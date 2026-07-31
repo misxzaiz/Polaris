@@ -46,13 +46,12 @@ const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> =
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'mimo', label: 'Mimo', Icon: Sparkles },
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'mimo' {
+function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'mimo' ? 'mimo' : 'claude'
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : 'claude'
 }
 
 /** 引擎单选段（图标 + 名称，四选一横向排列） */

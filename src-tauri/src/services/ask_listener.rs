@@ -672,16 +672,6 @@ pub fn register_dispatch_task(
         }
     }
 
-    // mimo 引擎不支持 Profile：静默剥离并告警（预设保存侧应已拦截）
-    if let Some(engine) = engine_id.as_deref() {
-        if engine.starts_with("mimo")
-            && model_profile_id.as_deref().is_some_and(|id| id != "official")
-        {
-            tracing::warn!("[Dispatch] mimo 引擎不支持模型 Profile，已忽略 profile 配置");
-            model_profile_id = None;
-        }
-    }
-
     let dispatch_id = params
         .dispatch_id
         .clone()
@@ -1095,7 +1085,7 @@ async fn handle_dispatch_targets_frame(
         "type": "dispatch_targets_result",
         "ok": true,
         "roles": roles,
-        "engines": ["claude-code", "codex", "simple-ai", "mimo-code"],
+        "engines": ["claude-code", "codex", "simple-ai"],
         "providers": providers,
         "note": "role 优先于 provider/model；均省略时继承来源会话配置",
     });

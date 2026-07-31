@@ -29,7 +29,7 @@ interface ContextMeterProps {
   /** 主行标签密度：full=used/window, percent=百分比, icon=仅圆圈 */
   labelMode?: 'full' | 'percent' | 'icon';
   /** 当前会话引擎 ID：用于区分"自动压缩"vs"需手动压缩交接"提示文案。
-   * simple-ai/claude-code 有运行时压缩；codex/mimo/pi 无（pi 已透出 compaction 事件但触发能力待实测）。 */
+   * simple-ai/claude-code 有运行时压缩；codex/pi 无（pi 已透出 compaction 事件但触发能力待实测）。 */
   engineId?: string;
 }
 

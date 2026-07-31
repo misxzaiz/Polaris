@@ -28,7 +28,7 @@ interface AIEngineTabProps {
 // 引擎元数据（前端镜像，作为后端 EngineMetadata 的视图模型）
 // ============================================================================
 
-type CliField = 'claudeCode' | 'codexCode' | 'mimoCode' | 'piCode';
+type CliField = 'claudeCode' | 'codexCode' | 'piCode';
 
 interface EngineMetaEntry {
   id: EngineId
@@ -101,24 +101,6 @@ const ENGINE_META: EngineMetaEntry[] = [
     builtin: true,
   },
   {
-    id: 'mimo',
-    nameKey: 'engines.mimo.name',
-    descKey: 'engines.mimo.description',
-    capabilities: {
-      tools: true,
-      imageInput: false,
-      streaming: true,
-      interrupt: true,
-      resume: true,
-      stdinInput: true,
-      forkSession: false,
-    },
-    distribution: 'npx mimocode',
-    cliField: 'mimoCode',
-    defaultCli: 'mimo',
-    npmPackage: 'mimocode',
-  },
-  {
     id: 'pi',
     nameKey: 'engines.pi.name',
     descKey: 'engines.pi.description',
@@ -154,8 +136,6 @@ function resolveEngineStatus(
       return { available: !!health?.claudeAvailable, version: health?.claudeVersion }
     case 'codex':
       return { available: !!health?.codexAvailable, version: health?.codexVersion }
-    case 'mimo':
-      return { available: !!health?.mimoVersion, version: health?.mimoVersion }
     case 'pi':
       return { available: !!health?.piAvailable, version: health?.piVersion }
     default:
@@ -242,15 +222,12 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       onConfigChange({ ...config, codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath: cmd } });
     } else if (field === 'piCode') {
       onConfigChange({ ...config, piCode: { ...(config.piCode || { cliPath: 'pi' }), cliPath: cmd } });
-    } else {
-      onConfigChange({ ...config, mimoCode: { ...(config.mimoCode || { cliPath: 'mimo' }), cliPath: cmd } });
     }
   };
 
   const getCliPath = (engine: EngineMetaEntry): string => {
     if (engine.cliField === 'claudeCode') return config.claudeCode?.cliPath || 'claude';
     if (engine.cliField === 'codexCode') return config.codexCode?.cliPath || 'codex';
-    if (engine.cliField === 'mimoCode') return config.mimoCode?.cliPath || 'mimo';
     if (engine.cliField === 'piCode') return config.piCode?.cliPath || 'pi';
     return '';
   };

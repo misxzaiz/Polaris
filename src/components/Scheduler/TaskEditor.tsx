@@ -389,7 +389,6 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
             >
               <option value="claude-code">Claude Code</option>
               <option value="codex">OpenAI Codex</option>
-              <option value="mimo">Mimo Code</option>
             </select>
           </div>
 

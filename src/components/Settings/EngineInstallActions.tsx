@@ -1,7 +1,7 @@
 /**
  * 引擎安装 / 卸载 / 更新操作区
  *
- * 面向 npm/npx 分发的引擎（Claude Code / Codex / Mimo）。
+ * 面向 npm/npx 分发的引擎（Claude Code / Codex）。
  * 通过后端 `engine_install` / `engine_uninstall` 命令执行，
  * 并订阅 `engine-install:event` 事件流实时展示安装日志。
  */

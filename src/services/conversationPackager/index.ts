@@ -36,17 +36,15 @@ const HANDOFF_DIR = '.polaris-handoff'
  *
  * 依据后端 src-tauri/src/ai/engine/*.rs：
  * - claude-code：--fork-session 真正支持（claude.rs:964-968）
- * - mimo：同样消费 fork_session_id（mimo.rs:679-682，与 claude 完全相同的 resume+fork 逻辑）
  * - codex / simple-ai：不消费 fork_session_id
  *
  * 注意：fork 仍受 sessionHandoff 的「必须有真实源 conversationId」守卫保护，
- *       若 mimo 会话无有效 CLI session id 会自动降级 summary，不丢能力也不崩。
+ *       若会话无有效 CLI session id 会自动降级 summary，不丢能力也不崩。
  */
 const ENGINE_FORK_CAPABILITY: Record<EngineId, boolean> = {
   'claude-code': true,
   codex: false,
   'simple-ai': false,
-  mimo: true,
   pi: false,
 }
 

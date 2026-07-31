@@ -8,7 +8,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'mimo' | 'pi'
+export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi'
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -353,11 +353,6 @@ export interface Config {
     /** Codex CLI 命令路径 */
     cliPath: string;
   };
-  /** Mimo Code 引擎配置 */
-  mimoCode: {
-    /** Mimo CLI 命令路径 */
-    cliPath: string;
-  };
   /** Pi Code 引擎配置（earendil-works pi-coding-agent） */
   piCode: {
     /** Pi CLI 命令路径 */
@@ -433,10 +428,6 @@ export interface HealthStatus {
   codexAvailable?: boolean;
   /** Codex 版本 */
   codexVersion?: string;
-  /** Mimo CLI 是否可用 */
-  mimoAvailable?: boolean;
-  /** Mimo 版本 */
-  mimoVersion?: string;
   /** Pi CLI 是否可用 */
   piAvailable?: boolean;
   /** Pi 版本 */
@@ -447,13 +438,8 @@ export interface HealthStatus {
   configValid: boolean;
 }
 
-/** 系统提示词模式 */
-export type SystemPromptMode = 'append' | 'replace';
-
 /** 系统提示词配置（localStorage 独立存储） */
 export interface SystemPromptConfig {
-  /** 模式：append=追加到默认后（默认）, replace=完全替换 */
-  mode: SystemPromptMode;
   /** 用户自定义提示词内容 */
   customPrompt: string;
   /** 是否启用自定义提示词 */

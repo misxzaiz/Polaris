@@ -121,7 +121,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
   // 容器宽度监听
   const { ref: containerRef, width: containerWidth } = useContainerWidth();
 
-  // 当前活动引擎：决定哪些配置选择器对该引擎有效（避免向 mimo 展示会报错的 profile 等）
+  // 当前活动引擎：决定哪些配置选择器对该引擎有效（避免展示不兼容的 profile 等）
   const activeSessionMetadata = sessionMetadataList.find(session => session.id === activeSessionId);
   const activeEngineId = normalizeEngineId(activeSessionMetadata?.engineId || config?.defaultEngine);
   const engineSelectors = getEngineSelectors(activeEngineId);

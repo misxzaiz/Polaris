@@ -36,7 +36,7 @@ export interface CompactHandoffParams {
   sessionId: string
   /** 压缩会话配置 */
   compact: {
-    /** 用哪个 AI 引擎来压缩（claude-code / codex / simple-ai / mimo；空 = 沿用源会话引擎） */
+    /** 用哪个 AI 引擎来压缩（claude-code / codex / simple-ai；空 = 沿用源会话引擎） */
     engineId?: string
     /** 压缩会话绑定的模型 Profile（空 = 跟随全局默认） */
     modelProfileId?: string

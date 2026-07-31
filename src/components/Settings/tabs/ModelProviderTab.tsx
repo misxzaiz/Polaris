@@ -61,7 +61,7 @@ const CONTEXT_WINDOW_PRESETS: Record<string, string> = {
   '1m': '1000000',
 };
 
-type EngineFilter = 'all' | 'claude' | 'codex' | 'simple-ai' | 'mimo' | 'pi'
+type EngineFilter = 'all' | 'claude' | 'codex' | 'simple-ai' | 'pi'
 
 /** 键值对（用于 customHeaders / customEnv 的表单态） */
 interface KeyValuePair {
@@ -297,11 +297,6 @@ function ProfileCard({
           {engineList.length === 0 || engineList.includes('simple-ai') ? (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 shrink-0">
               Simple
-            </span>
-          ) : null}
-          {engineList.length === 0 || engineList.includes('mimo') ? (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-pink-500/10 text-pink-400 shrink-0">
-              Mimo
             </span>
           ) : null}
           {engineList.length === 0 || engineList.includes('pi') ? (
@@ -1144,7 +1139,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
 
         {/* 引擎筛选 */}
         <div className="flex flex-wrap gap-1 shrink-0">
-          {(['all', 'claude', 'codex', 'simple-ai', 'mimo', 'pi'] as EngineFilter[]).map((f) => (
+          {(['all', 'claude', 'codex', 'simple-ai', 'pi'] as EngineFilter[]).map((f) => (
             <button
               key={f}
               onClick={() => setEngineFilter(f)}

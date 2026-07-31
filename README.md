@@ -88,7 +88,6 @@ pnpm run package:web
 - [GLM (智谱)](https://open.bigmodel.cn/)
 - [OpenAI](https://chatgpt.com/)
 - [DeepSeek](https://platform.deepseek.com/)
-- [MiMo](https://mimo.mi.com/)
 - [Ruoli](https://ruoli.dev/)
 - [Agnes](https://agnes-ai.com/)
 - [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)

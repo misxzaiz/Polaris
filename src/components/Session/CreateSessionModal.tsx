@@ -74,7 +74,6 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
     { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
     { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
-    { id: 'mimo' as EngineId, label: 'Mimo', Icon: Sparkles },
     { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
   ], [])
 

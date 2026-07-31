@@ -22,7 +22,7 @@ import type { EngineId } from '@/types'
  * 避免硬编码与注册表不同步、或展示出不存在的引擎。
  * 新增引擎时只需在此追加（registry 已注册才会显示）。
  */
-const PREFERRED_ENGINE_ORDER: EngineId[] = ['claude-code', 'codex', 'simple-ai', 'mimo']
+const PREFERRED_ENGINE_ORDER: EngineId[] = ['claude-code', 'codex', 'simple-ai']
 
 interface SessionTabContextMenuProps {
   visible: boolean

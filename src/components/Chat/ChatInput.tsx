@@ -78,7 +78,6 @@ const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof
   { id: 'claude-code', label: 'Claude', Icon: Bot },
   { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'mimo', label: 'Mimo', Icon: Sparkles },
 ]
 
 /** 提示词优化模式选项（标签/提示语走 i18n） */
@@ -94,9 +93,9 @@ const OPTIMIZE_MODE_OPTIONS: Array<{
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'mimo' {
+function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'mimo' ? 'mimo' : 'claude'
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : 'claude'
 }
 
 export interface EditMode {
@@ -1007,7 +1006,7 @@ export function ChatInput({
       const beforeCursor = textBeforeCursor
       const afterCursor = textAfterCursor
       // 落盘工作区：优先用源对话自己的工作区（它本来就在那产生），
-      // 避免当前会话（如无工作区的 mimo 会话）无 path 时报「未关联工作区」。
+      // 避免当前会话（如无工作区的会话）无 path 时报「未关联工作区」。
       // 两者都没有才真正无法导出。
       const workspacePath = conv.workspacePath || currentWorkspace?.path || ''
       setShowSuggestions(false)

@@ -4,7 +4,7 @@
  * - 派发策略：auto（AI 派发直接执行）/ ask（每次弹确认）
  * - 结果注入开关：完成摘要是否注入来源会话下一回合
  * - 队员预设 CRUD：角色 → 引擎 + 模型 Profile + 模型 + 职责提示词
- *   保存时校验组合合法性（mimo 不支持 Profile）
+ *   保存时校验组合合法性
  */
 
 import { useState } from 'react';
@@ -23,7 +23,6 @@ const ENGINE_OPTIONS = [
   { id: 'claude-code', label: 'Claude Code' },
   { id: 'codex', label: 'Codex' },
   { id: 'simple-ai', label: 'SimpleAI' },
-  { id: 'mimo-code', label: 'Mimo' },
   { id: 'pi', label: 'Pi' },
 ];
 
@@ -73,9 +72,9 @@ export function DispatchSettingsSection({ config, onConfigChange, loading }: Dis
       setFormError(t('dispatch.errors.nameDuplicated', '角色名已存在'));
       return;
     }
-    // mimo / pi 不支持模型 Profile（强制官方端点 / auth.json 认证）
-    if ((draft.engineId.startsWith('mimo') || draft.engineId.startsWith('pi')) && draft.modelProfileId) {
-      setFormError(t('dispatch.errors.mimoNoProfile', '该引擎不支持模型 Profile，请选择官方端点'));
+    // pi 不支持模型 Profile（强制官方端点 / auth.json 认证）
+    if (draft.engineId.startsWith('pi') && draft.modelProfileId) {
+      setFormError(t('dispatch.errors.piNoProfile', '该引擎不支持模型 Profile，请选择官方端点'));
       return;
     }
 

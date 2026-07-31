@@ -117,7 +117,7 @@ export interface PagedHistoryResult {
 
 /** 历史查询范围 */
 export type HistoryScope = 'workspace' | 'global'
-export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex' | 'mimo' | 'simple-ai' | 'pi'>
+export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex' | 'simple-ai' | 'pi'>
 
 // ============================================================================
 // 工具函数
@@ -236,7 +236,7 @@ export const historyService = {
       return this.listSelfHistory(
         page,
         pageSize,
-        options.engines ?? ['claude-code', 'codex', 'mimo', 'simple-ai', 'pi'],
+        options.engines ?? ['claude-code', 'codex', 'simple-ai', 'pi'],
         scope,
       )
     }
