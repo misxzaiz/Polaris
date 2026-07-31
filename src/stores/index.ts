@@ -32,7 +32,7 @@ export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
 export { useTerminalScriptStore } from './terminalScriptStore';
 export { useRequirementStore } from './requirementStore';
-export { useSessionStore, getSessionEffectiveWorkspace } from './sessionStore';
+export { useVoiceInputStore } from './voiceInputStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';
 export { usePluginStore } from './pluginStore';
 export type { PluginState, PluginStateMap, PluginStore } from './pluginStore';

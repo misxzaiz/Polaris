@@ -10,7 +10,8 @@
 
 import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useConfigStore, useSessionStore, useModelProfileStore } from '@/stores';
+import { useConfigStore, useModelProfileStore } from '@/stores';
+import { useVoiceInputStore } from '@/stores/voiceInputStore';
 import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, MoreHorizontal, Loader2, Mic, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
@@ -99,7 +100,7 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
     speechCommand,
     setSpeechCommand,
     undoSpeechTranscript,
-  } = useSessionStore();
+  } = useVoiceInputStore();
 
   // 直接从 conversationStore 获取状态（消除 chatInputStore 冗余同步）
   const hasPendingQuestion = useHasPendingQuestion();

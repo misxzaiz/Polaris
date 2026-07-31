@@ -58,6 +58,29 @@ async function ensureWorkspace(): Promise<string> {
 }
 
 /**
+ * 根据 input.id 或 input.content 解析待办 ID
+ * 所有工具共用此方法，消除重复的查找逻辑。
+ */
+async function resolveTodoId(input: AIToolInput): Promise<{ todoId: string } | { error: string }> {
+  if (input.id) {
+    return { todoId: input.id as string }
+  }
+
+  const content = input.content as string
+  if (!content) {
+    return { error: '请提供待办 ID 或内容' }
+  }
+
+  const todos = simpleTodoService.getAllTodos()
+  const matched = todos.find((t) => t.content === content)
+  if (!matched) {
+    return { error: `未找到内容为 "${content}" 的待办` }
+  }
+
+  return { todoId: matched.id }
+}
+
+/**
  * 创建待办工具
  */
 export const createTodoTool: AITool = {
@@ -278,25 +301,12 @@ export const updateTodoTool: AITool = {
     try {
       await ensureWorkspace()
 
-      // 查找待办 ID
-      let todoId = input.id as string | undefined
-
-      if (!todoId) {
-        // 如果没有提供 id，尝试通过内容查找
-        const content = input.content as string
-        if (!content) {
-          return { success: false, error: '请提供待办 ID 或内容' }
-        }
-
-        const todos = simpleTodoService.getAllTodos()
-        const matched = todos.find((t) => t.content === content)
-
-        if (!matched) {
-          return { success: false, error: `未找到内容为 "${content}" 的待办` }
-        }
-
-        todoId = matched.id
+      // 解析待办 ID
+      const resolved = await resolveTodoId(input)
+      if ('error' in resolved) {
+        return { success: false, error: resolved.error }
       }
+      const todoId = resolved.todoId
 
       // 构建更新参数
       const updates: Record<string, unknown> = {}
@@ -356,25 +366,12 @@ export const deleteTodoTool: AITool = {
     try {
       await ensureWorkspace()
 
-      // 查找待办 ID
-      let todoId = input.id as string | undefined
-
-      if (!todoId) {
-        // 如果没有提供 id，尝试通过内容查找
-        const content = input.content as string
-        if (!content) {
-          return { success: false, error: '请提供待办 ID 或内容' }
-        }
-
-        const todos = simpleTodoService.getAllTodos()
-        const matched = todos.find((t) => t.content === content)
-
-        if (!matched) {
-          return { success: false, error: `未找到内容为 "${content}" 的待办` }
-        }
-
-        todoId = matched.id
+      // 解析待办 ID
+      const resolved = await resolveTodoId(input)
+      if ('error' in resolved) {
+        return { success: false, error: resolved.error }
       }
+      const todoId = resolved.todoId
 
       // 执行删除
       await simpleTodoService.deleteTodo(todoId)
@@ -426,24 +423,12 @@ export const toggleTodoStatusTool: AITool = {
     try {
       await ensureWorkspace()
 
-      // 查找待办 ID
-      let todoId = input.id as string | undefined
-
-      if (!todoId) {
-        const content = input.content as string
-        if (!content) {
-          return { success: false, error: '请提供待办 ID 或内容' }
-        }
-
-        const todos = simpleTodoService.getAllTodos()
-        const matched = todos.find((t) => t.content === content)
-
-        if (!matched) {
-          return { success: false, error: `未找到内容为 "${content}" 的待办` }
-        }
-
-        todoId = matched.id
+      // 解析待办 ID
+      const resolved = await resolveTodoId(input)
+      if ('error' in resolved) {
+        return { success: false, error: resolved.error }
       }
+      const todoId = resolved.todoId
 
       const newStatus = input.newStatus as TodoStatus
       await simpleTodoService.updateTodo(todoId, { status: newStatus })
@@ -490,24 +475,12 @@ export const completeTodoTool: AITool = {
     try {
       await ensureWorkspace()
 
-      // 查找待办 ID
-      let todoId = input.id as string | undefined
-
-      if (!todoId) {
-        const content = input.content as string
-        if (!content) {
-          return { success: false, error: '请提供待办 ID 或内容' }
-        }
-
-        const todos = simpleTodoService.getAllTodos()
-        const matched = todos.find((t) => t.content === content)
-
-        if (!matched) {
-          return { success: false, error: `未找到内容为 "${content}" 的待办` }
-        }
-
-        todoId = matched.id
+      // 解析待办 ID
+      const resolved = await resolveTodoId(input)
+      if ('error' in resolved) {
+        return { success: false, error: resolved.error }
       }
+      const todoId = resolved.todoId
 
       // 标记为完成
       await simpleTodoService.updateTodo(todoId, { status: 'completed' })
@@ -554,24 +527,12 @@ export const startTodoTool: AITool = {
     try {
       await ensureWorkspace()
 
-      // 查找待办 ID
-      let todoId = input.id as string | undefined
-
-      if (!todoId) {
-        const content = input.content as string
-        if (!content) {
-          return { success: false, error: '请提供待办 ID 或内容' }
-        }
-
-        const todos = simpleTodoService.getAllTodos()
-        const matched = todos.find((t) => t.content === content)
-
-        if (!matched) {
-          return { success: false, error: `未找到内容为 "${content}" 的待办` }
-        }
-
-        todoId = matched.id
+      // 解析待办 ID
+      const resolved = await resolveTodoId(input)
+      if ('error' in resolved) {
+        return { success: false, error: resolved.error }
       }
+      const todoId = resolved.todoId
 
       // 标记为进行中
       await simpleTodoService.updateTodo(todoId, { status: 'in_progress' })

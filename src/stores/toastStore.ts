@@ -9,7 +9,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import i18n from 'i18next'
-import { storeEventBus } from './storeEventBus'
 
 export type ToastType = 'success' | 'error' | 'warning' | 'info' | 'session_complete'
 
@@ -188,11 +187,3 @@ export const useToastStore = create<ToastState>()(
   )
 )
 
-// ============================================================================
-// EventBus 订阅：监听 TOAST_REQUESTED 事件
-// ============================================================================
-
-storeEventBus.on('TOAST_REQUESTED', (payload) => {
-  const { message, type, duration } = payload
-  useToastStore.getState().addToast({ type, title: message, duration })
-})

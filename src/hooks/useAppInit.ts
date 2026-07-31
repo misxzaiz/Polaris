@@ -23,7 +23,7 @@ import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
 import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
-import { bootstrapEngines, type EngineId } from '../core/engine-bootstrap';
+import { bootstrapEngines } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
@@ -180,7 +180,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     log.info('SessionStoreManager initialized', { defaultEngine });
 
     // 按需初始化传统 AI Engine
-    await bootstrapEngines(defaultEngine as EngineId);
+    await bootstrapEngines(defaultEngine);
 
     // 注册 AI 工具
     bootstrapTools();

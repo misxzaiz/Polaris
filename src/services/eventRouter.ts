@@ -1,8 +1,13 @@
 /**
- * 事件路由器
+ * EventRouter — 事件路由器
  *
- * 根据 sessionId 将 chat-event 路由到正确的 ConversationStore
- * 支持多会话并行运行，每个会话独立接收事件
+ * 职责（仅此一个）：
+ * 1. 监听 Tauri 的 'chat-event' 通道
+ * 2. 按 sessionId 路由到正确的 ConversationStore
+ *
+ * 不处理 Store 间通信（无此需求时勿扩展此模块）。
+ * 如需全局 AI 事件广播（如 DeveloperPanel 调试面板），
+ * 请使用 ai-runtime 的 EventBus。
  */
 
 import { listen } from '@/services/transport'

@@ -2,25 +2,18 @@
  * Engine Bootstrap - AI 引擎启动注册
  *
  * 在应用启动时按需注册 AI Engine。
+ * 使用 registerFactory 惰性创建，避免 StrictMode 双重调用。
  * UI/Core 通过 Registry 获取 Engine，而非直接 new。
  */
 
-import { getEngineRegistry, registerEngine } from '@/ai-runtime'
+import { getEngineRegistry } from '@/ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
 import { CodexEngine } from '../engines/codex'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('EngineBootstrap')
 
-/**
- * 已注册的 Engine ID 列表（传统引擎）
- */
-export const REGISTERED_ENGINE_IDS = ['claude-code', 'codex', 'simple-ai'] as const
-
-/**
- * Engine 类型
- */
-export type EngineId = typeof REGISTERED_ENGINE_IDS[number]
+let bootstrapped = false
 
 /**
  * 按需初始化 AI Engine
@@ -28,76 +21,26 @@ export type EngineId = typeof REGISTERED_ENGINE_IDS[number]
  * @param defaultEngineId 默认引擎 ID
  */
 export async function bootstrapEngines(
-  defaultEngineId: EngineId = 'claude-code',
+  defaultEngineId: string = 'claude-code',
 ): Promise<void> {
-  const registry = getEngineRegistry()
-
-  // 注册 Claude Code 引擎
-  const claudeEngine = new ClaudeCodeEngine()
-  registerEngine(claudeEngine, { asDefault: defaultEngineId === 'claude-code' })
-
-  // 注册 Codex 引擎
-  const codexEngine = new CodexEngine()
-  registerEngine(codexEngine, { asDefault: defaultEngineId === 'codex' })
-
-  // 初始化已注册的引擎
-  await registry.initializeAll()
-
-  log.info('Initialized engines', { defaultEngineId })
-}
-
-/**
- * 延迟注册引擎（用于切换引擎时）
- *
- * @param engineId 要注册的引擎 ID
- */
-export async function registerEngineLazy(
-  engineId: EngineId,
-): Promise<void> {
-  const registry = getEngineRegistry()
-
-  // 如果已注册，跳过
-  if (registry.has(engineId)) {
+  if (bootstrapped) {
+    log.debug('bootstrapEngines already called, skipping')
     return
   }
+  bootstrapped = true
 
-  if (engineId === 'claude-code') {
-    const claudeEngine = new ClaudeCodeEngine()
-    registerEngine(claudeEngine)
-    await claudeEngine.initialize()
-  } else if (engineId === 'codex') {
-    const codexEngine = new CodexEngine()
-    registerEngine(codexEngine)
-    await codexEngine.initialize()
-  }
+  const registry = getEngineRegistry()
 
-  log.info('Lazy registered engine', { engineId })
-}
+  // 注册工厂（惰性创建：首次 get() 时才 new 实例）
+  registry.registerFactory('claude-code', () => new ClaudeCodeEngine(), {
+    asDefault: defaultEngineId === 'claude-code',
+  })
+  registry.registerFactory('codex', () => new CodexEngine(), {
+    asDefault: defaultEngineId === 'codex',
+  })
 
-/**
- * 获取默认 Engine
- */
-export function getDefaultEngine() {
-  return getEngineRegistry().getDefault()
-}
+  // 只初始化默认引擎（其他引擎首次 get() 时自动初始化）
+  await registry.initialize(defaultEngineId)
 
-/**
- * 获取指定 Engine
- */
-export function getEngine(engineId: EngineId) {
-  return getEngineRegistry().get(engineId)
-}
-
-/**
- * 列出所有可用 Engine
- */
-export function listEngines() {
-  return getEngineRegistry().list()
-}
-
-/**
- * 检查 Engine 是否可用
- */
-export async function isEngineAvailable(engineId: EngineId): Promise<boolean> {
-  return await getEngineRegistry().isAvailable(engineId)
+  log.info('Engines bootstrapped', { defaultEngineId })
 }

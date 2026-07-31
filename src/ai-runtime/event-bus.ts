@@ -1,7 +1,14 @@
 /**
- * 统一事件总线（EventBus）
+ * EventBus — 全局 AI 事件广播
  *
- * 提供全局的事件发布订阅机制，支持：
+ * 职责：
+ * - 全局 AI 事件广播（DeveloperPanel 等调试工具订阅）
+ * - 支持命名空间隔离（NamespacedEventBus）
+ *
+ * 不处理会话级事件路由（那是 EventRouter 的职责）。
+ * 不处理 Store 间通信（直接调用目标 Store 的 action 即可）。
+ *
+ * 提供：
  * - 事件监听器管理
  * - 事件过滤和转换
  * - 命名空间隔离

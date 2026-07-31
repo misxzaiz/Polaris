@@ -12,7 +12,8 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
 import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown, Orbit } from 'lucide-react'
-import { useWorkspaceStore, useSessionStore, useToastStore, useConfigStore } from '@/stores'
+import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
+import { useVoiceInputStore } from '@/stores/voiceInputStore'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize } from '@/stores/conversationStore/useActiveSession'
 import {
@@ -277,7 +278,7 @@ export function ChatInput({
     clearSpeechTranscript,
     setSpeechCommand,
     setSpeechWakeActive,
-  } = useSessionStore()
+  } = useVoiceInputStore()
 
   // 处理语音识别文字
   useEffect(() => {

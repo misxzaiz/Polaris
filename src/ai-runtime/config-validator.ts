@@ -258,9 +258,20 @@ export function validateObject<T extends object>(
 }
 
 /**
+ * CLI Engine 配置（原定义在 base-cli-engine.ts，该文件已删除）
+ */
+export interface CLIEngineConfig {
+  executablePath?: string
+  model?: string
+  apiKey?: string
+  apiBase?: string
+  extraArgs?: string[]
+}
+
+/**
  * CLI Engine 配置验证规则
  */
-export const CLI_ENGINE_CONFIG_RULES: ObjectRules<import('./base').CLIEngineConfig> = {
+export const CLI_ENGINE_CONFIG_RULES: ObjectRules<CLIEngineConfig> = {
   executablePath: {
     type: 'string',
     description: 'CLI executable path',
@@ -359,7 +370,7 @@ export function validateConfig<T extends object>(config: Partial<T>): ConfigVali
  * 快捷验证函数 - CLI Engine 配置
  */
 export function validateCLIEngineConfig(
-  config: Partial<import('./base').CLIEngineConfig>
+  config: Partial<CLIEngineConfig>
 ): ValidationResult {
   return validateObject(config, CLI_ENGINE_CONFIG_RULES)
 }

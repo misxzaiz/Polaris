@@ -21,7 +21,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import { speechService } from '@/services/speechService';
 import { audioFocusManager } from '@/services/audioFocusManager';
 import { useVoiceCompanionStore } from '@/stores/voiceCompanionStore';
-import { useSessionStore } from '@/stores';
+import { useVoiceInputStore } from '@/stores/voiceInputStore';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import type { SpeechLanguage, VoiceCommand, VoiceCommandConfig, WakeWordConfig } from '@/types/speech';
 import { checkVoiceCommand, matchWakeWord } from '@/types/speech';
@@ -85,9 +85,9 @@ export function useVoiceDictation(
   useEffect(() => { voiceCommandsRef.current = voiceCommands; }, [voiceCommands]);
   useEffect(() => { wakeWordConfigRef.current = wakeWordConfig; }, [wakeWordConfig]);
 
-  const getWakeActive = useCallback(() => useSessionStore.getState().speechWakeActive, []);
+  const getWakeActive = useCallback(() => useVoiceInputStore.getState().speechWakeActive, []);
   const setWakeActive = useCallback((active: boolean) => {
-    useSessionStore.getState().setSpeechWakeActive(active);
+    useVoiceInputStore.getState().setSpeechWakeActive(active);
   }, []);
 
   const stop = useCallback(() => {
