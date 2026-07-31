@@ -4,7 +4,7 @@
 
 import { memo, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import type { AssistantChatMessage, TextBlock } from '@/types';
+import type { AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -187,6 +187,8 @@ export const AssistantBubble = memo(function AssistantBubble({
 
     if (lastPrev.type === 'text' && lastNext.type === 'text') {
       if ((lastPrev as TextBlock).content.length !== (lastNext as TextBlock).content.length) return false;
+    } else if (lastPrev.type === 'thinking' && lastNext.type === 'thinking') {
+      if ((lastPrev as ThinkingBlock).content.length !== (lastNext as ThinkingBlock).content.length) return false;
     } else if (lastPrev.type !== lastNext.type) {
       return false;
     }

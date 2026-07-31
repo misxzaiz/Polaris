@@ -6,103 +6,14 @@ import { memo, useState, useEffect } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Check, Loader2, ChevronDown, ChevronRight, ChevronUp, Brain } from 'lucide-react';
+import { ChevronRight, ChevronUp } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { CollapsibleBlockGroup } from './chatUtils/types';
 import { TOOL_COLLAPSE_CONFIG } from './chatUtils/constants';
 import { isEmptyTextBlock } from './chatUtils/helpers';
 import { ToolCallBlockRenderer } from './chatBlocks/ToolCallBlockRenderer';
+import { ThinkingBlockRenderer } from './chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from './chatBlocks';
-
-/**
- * 思考块简化渲染器（使用工具调用样式）
- */
-const ThinkingAsToolRenderer = memo(function ThinkingAsToolRenderer({
-  block,
-  isStreaming = false,
-}: {
-  block: ThinkingBlock;
-  isStreaming?: boolean;
-}) {
-  const { t } = useTranslation('chat');
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  // 计算字数统计
-  const charCount = block.content.length;
-
-  // 生成预览文本
-  const previewText = block.content.length > 50
-    ? block.content.slice(0, 50) + '...'
-    : block.content;
-
-  // 状态配置
-  const statusIcon = isStreaming ? Loader2 : Check;
-  const statusClass = isStreaming ? 'animate-spin text-primary' : 'text-success';
-  const StatusIcon = statusIcon;
-
-  return (
-    <div className="my-1.5 rounded-lg overflow-hidden w-full transition-all duration-200 border border-border bg-background-elevated">
-      <div
-        className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-background-hover transition-colors border-l-2 border-primary/30"
-        onClick={() => setIsExpanded(!isExpanded)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setIsExpanded(!isExpanded);
-          }
-        }}
-        tabIndex={0}
-        role="button"
-        aria-expanded={isExpanded}
-      >
-        <div className="w-5 h-5 rounded text-[10px] font-semibold flex items-center justify-center shrink-0 bg-primary/10 text-primary">
-          <Brain className="w-3.5 h-3.5" />
-        </div>
-        <span className="text-xs font-medium text-text-secondary shrink-0">
-          {t('thinking.title')}
-        </span>
-        <span className="text-xs text-text-tertiary truncate flex-1 min-w-0">
-          {t('thinking.charCount', { display: charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : String(charCount) })}
-        </span>
-        {isStreaming && (
-          <span className="text-xs text-primary">{t('thinking.streaming')}</span>
-        )}
-        <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusClass)} />
-        <ChevronDown
-          className={clsx(
-            'w-3 h-3 text-text-muted shrink-0 transition-transform duration-200',
-            isExpanded && 'rotate-180'
-          )}
-        />
-      </div>
-
-      {isExpanded && (
-        <div className="px-3 py-2 border-t border-border bg-background-subtle">
-          <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
-            {block.content}
-          </div>
-          {isStreaming && (
-            <span className="inline-flex ml-1 mt-1">
-              <span className="flex gap-0.5 items-end h-4">
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </span>
-            </span>
-          )}
-        </div>
-      )}
-
-      {!isExpanded && previewText && (
-        <div className="px-3 py-1.5 border-t border-border bg-background-surface/50">
-          <p className="text-xs text-text-tertiary italic truncate">
-            {previewText}
-          </p>
-        </div>
-      )}
-    </div>
-  );
-});
 
 /**
  * 可折叠块组组件 - thinking + tool_call 混合折叠
@@ -142,7 +53,7 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
         if (block.type === 'thinking') {
           return (
             <div key={`thinking-${index}`}>
-              <ThinkingAsToolRenderer block={block} isStreaming={isStreaming} />
+              <ThinkingBlockRenderer block={block} isStreaming={isStreaming} />
             </div>
           );
         } else {
@@ -294,7 +205,7 @@ export function renderBlocksWithGrouping(
         if (b.type === 'thinking') {
           result.push(
             <div key={`block-${blockIndex}`}>
-              <ThinkingAsToolRenderer block={b as ThinkingBlock} isStreaming={isStreaming} />
+              <ThinkingBlockRenderer block={b as ThinkingBlock} isStreaming={isStreaming} />
             </div>
           );
         } else {

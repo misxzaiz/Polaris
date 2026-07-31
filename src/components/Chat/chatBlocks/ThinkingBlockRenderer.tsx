@@ -1,11 +1,15 @@
 /**
- * 思考过程块渲染器 - 增强版可折叠展示
+ * 思考过程块渲染器 - 极简风格，支持流式打字效果
+ *
+ * 设计原则：
+ * - 与聊天界面融为一体，不抢眼
+ * - 流式期间展开，显示打字光标
+ * - 流式结束后自动折叠，展示内容预览
  */
 
-import { memo, useState, useEffect, useMemo } from 'react';
-import { Brain, ChevronDown, ChevronRight, ListOrdered } from 'lucide-react';
+import { memo, useState, useEffect } from 'react';
+import { Brain, ChevronDown } from 'lucide-react';
 import type { ThinkingBlock } from '@/types';
-import { extractThinkingSteps } from '../chatUtils/thinkingSteps';
 
 export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
   block,
@@ -16,9 +20,7 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
 }) {
   // 流式期间展开显示思考内容，结束后折叠
   const [isCollapsed, setIsCollapsed] = useState(() => {
-    // 如果有明确的 collapsed 属性，使用它
     if (block.collapsed !== undefined) return block.collapsed;
-    // 流式时展开，结束后折叠
     return !isStreaming;
   });
 
@@ -29,69 +31,53 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
     }
   }, [isStreaming]);
 
-  // 计算字数统计
-  const charCount = block.content.length;
-
-  // 提取思考步骤
-  const steps = useMemo(() => extractThinkingSteps(block.content), [block.content]);
-
-  // 生成预览文本（折叠时显示前80字或步骤摘要）
-  const previewText = useMemo(() => {
-    if (steps.length >= 2) {
-      // 有步骤时显示步骤数量和第一个步骤
-      return `${steps.length} 个步骤: ${steps[0].text.slice(0, 40)}${steps[0].text.length > 40 ? '...' : ''}`;
-    }
-    // 无步骤时显示前80字
-    return block.content.length > 80
-      ? block.content.slice(0, 80) + '...'
-      : block.content;
-  }, [block.content, steps]);
+  // 折叠时预览文本（内容前 60 字）
+  const previewText = block.content.length > 60
+    ? block.content.slice(0, 60) + '...'
+    : block.content;
 
   return (
-    <div className="my-2 rounded-lg border border-primary/20 bg-gradient-to-r from-primary/5 to-transparent overflow-hidden">
+    <div
+      className={`my-2 rounded-lg overflow-hidden border transition-colors ${
+        isStreaming
+          ? 'border-border-hover bg-background-elevated'
+          : 'border-border bg-background-elevated'
+      }`}
+    >
       {/* 头部 - 可点击折叠 */}
       <button
         onClick={() => setIsCollapsed(!isCollapsed)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-primary/5 transition-colors"
+        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-background-hover transition-colors"
       >
-        <Brain className="w-4 h-4 text-primary shrink-0" />
-        <span className="text-sm font-medium text-primary">思考过程</span>
+        <Brain className="w-4 h-4 text-text-muted shrink-0" />
 
-        {/* 字数统计 */}
-        <span className="text-xs text-text-tertiary ml-2">
-          {charCount > 1000 ? `${(charCount / 1000).toFixed(1)}k` : charCount} 字
-        </span>
+        <span className="text-xs font-medium text-text-secondary">思考</span>
 
-        {/* 步骤数量徽章 */}
-        {steps.length >= 2 && (
-          <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-primary/10 text-primary text-xs">
-            <ListOrdered className="w-3 h-3" />
-            {steps.length} 步骤
-          </span>
-        )}
-
-        {/* 流式指示器 */}
+        {/* 流式声波动画指示器 */}
         {isStreaming && (
-          <span className="flex items-center gap-1 ml-2">
-            <span className="w-1.5 h-1.5 bg-primary rounded-full animate-pulse" />
-            <span className="text-xs text-primary">思考中...</span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="flex items-end gap-[2px] h-3">
+              <span className="w-[3px] rounded-sm bg-primary/60 animate-pulse" style={{ height: '6px', animationDelay: '0s' }} />
+              <span className="w-[3px] rounded-sm bg-primary/60 animate-pulse" style={{ height: '10px', animationDelay: '0.15s' }} />
+              <span className="w-[3px] rounded-sm bg-primary/60 animate-pulse" style={{ height: '8px', animationDelay: '0.3s' }} />
+              <span className="w-[3px] rounded-sm bg-primary/60 animate-pulse" style={{ height: '11px', animationDelay: '0.45s' }} />
+            </span>
+            <span className="text-[11px] text-primary/70">思考中</span>
           </span>
         )}
 
-        {/* 展开/折叠图标 */}
-        <span className="ml-auto flex items-center gap-1">
-          {isCollapsed ? (
-            <ChevronRight className="w-4 h-4 text-text-muted" />
-          ) : (
-            <ChevronDown className="w-4 h-4 text-text-muted" />
-          )}
-        </span>
+        {/* 展开/折叠箭头 */}
+        <ChevronDown
+          className={`ml-auto w-3.5 h-3.5 text-text-muted transition-transform duration-200 ${
+            !isCollapsed ? 'rotate-180' : ''
+          }`}
+        />
       </button>
 
       {/* 折叠时显示预览 */}
       {isCollapsed && previewText && (
-        <div className="px-3 py-1.5 border-t border-primary/10 bg-background-surface/50">
-          <p className="text-xs text-text-tertiary italic truncate">
+        <div className="px-3 pb-2 pl-9">
+          <p className="text-xs text-text-tertiary truncate leading-relaxed">
             {previewText}
           </p>
         </div>
@@ -99,21 +85,14 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
 
       {/* 展开时显示完整内容 */}
       {!isCollapsed && (
-        <div className="px-3 py-2 border-t border-primary/10 bg-background-surface/30">
-          {/* 完整思考内容 */}
+        <div className="px-3 pb-2.5 pl-9 border-t border-border pt-2">
           <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
             {block.content}
+            {/* 流式打字光标 */}
+            {isStreaming && (
+              <span className="inline-block w-[2px] h-[15px] bg-primary/70 ml-0.5 align-text-bottom animate-pulse" />
+            )}
           </div>
-          {/* 流式光标 */}
-          {isStreaming && (
-            <span className="inline-flex ml-1">
-              <span className="flex gap-0.5 items-end h-4">
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 bg-primary rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </span>
-            </span>
-          )}
         </div>
       )}
     </div>
