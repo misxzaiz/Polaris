@@ -680,7 +680,7 @@ export default async function (pi) {
     /// 启动后台线程读取 RPC stdout 事件
     fn spawn_event_reader(
         &self,
-        child: Child,
+        mut child: Child,
         temp_id: String,
         pid: u32,
         options: SessionOptions,
@@ -698,7 +698,9 @@ export default async function (pi) {
         let input_sender_for_return = input_sender.clone();
 
         std::thread::spawn(move || {
-            let (stdout, stdin) = match (child.stdout, child.stdin) {
+            // 取出 stdio 句柄但保留 child 所有权：agent_end 后需 child.kill()
+            // 兜底，避免修复 EPIPE 后进程残留。
+            let (stdout, stdin) = match (child.stdout.take(), child.stdin.take()) {
                 (Some(s), Some(i)) => (s, i),
                 _ => {
                     if let Some(ref cb) = on_error {
@@ -707,7 +709,7 @@ export default async function (pi) {
                     return;
                 }
             };
-            let stderr = match child.stderr {
+            let stderr = match child.stderr.take() {
                 Some(s) => s,
                 None => {
                     if let Some(ref cb) = on_error {
@@ -759,6 +761,7 @@ export default async function (pi) {
             let mut real_session_id = current_session_id.clone();
             let mut line_count: usize = 0;
             let mut known_event_count: usize = 0;
+            let mut message_event_count: usize = 0;
             let mut agent_ended = false;
 
             for line in reader.lines() {
@@ -806,6 +809,11 @@ export default async function (pi) {
                     agent_ended = true;
                 }
 
+                // 统计 message 增量事件，用于 agent_end 时诊断"无响应中断"
+                if pi_line.line_type == "message_update" || pi_line.line_type == "message_end" {
+                    message_event_count += 1;
+                }
+
                 // Pi RPC：agent_end（或 agent_settled）后当前 prompt 处理已完全结束。
                 // 首版无状态模式不保留进程做续聊——收到 agent_end 后发 session_end
                 // 并退出 reader 循环，让 stdin channel 关闭、pi 进程退出，前端
@@ -828,6 +836,14 @@ export default async function (pi) {
                 }
 
                 if pi_line.line_type == "agent_end" || pi_line.line_type == "agent_settled" {
+                    // 诊断：agent_end 时若全程无 message 事件，说明 Pi 在模型调用阶段
+                    // 就直接结束（常见于 MCP 加载慢 + provider 超时），非正常完成。
+                    if message_event_count == 0 {
+                        tracing::warn!(
+                            "[PiEngine] agent_end 但全程 0 个 message 事件，session={}（疑似 provider 超时或模型调用失败）",
+                            real_session_id
+                        );
+                    }
                     break;
                 }
             }
@@ -857,6 +873,31 @@ export default async function (pi) {
             if !agent_ended {
                 tracing::warn!("[PiEngine] 进程退出但未收到 agent_end 事件");
             }
+
+            // 主动收尾进程：先尝试等其自然退出 300ms（让 output-guard 排空收尾输出，
+            // 避免管道读端过早关闭导致 EPIPE unhandled exception），超时则 kill 兜底。
+            // 之前此处依赖 EPIPE 崩溃退出进程，现在读端正常 drain，需显式 kill 防残留。
+            let mut child = child;
+            match child.try_wait() {
+                Ok(Some(_status)) => {
+                    // 已退出，无需 kill
+                }
+                Ok(None) => {
+                    // 仍在运行，给 300ms 让其排空 stdout 收尾数据
+                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    if let Ok(None) = child.try_wait() {
+                        tracing::debug!("[PiEngine] 300ms 后进程仍在运行，执行 kill 兜底，pid={}", pid);
+                        let _ = child.kill();
+                        let _ = child.wait();
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("[PiEngine] try_wait 失败 {}: {}", pid, e);
+                    let _ = child.kill();
+                    let _ = child.wait();
+                }
+            }
+
             if let Some(cb) = on_complete {
                 cb(0);
             }
