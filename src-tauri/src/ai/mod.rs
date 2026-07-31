@@ -16,6 +16,7 @@ pub mod history;
 pub mod history_claude;
 pub mod history_codex;
 pub mod event_parser;
+pub mod launcher;
 
 pub use traits::{
     EngineId, SessionOptions, HistoryEntry, ImageAttachment, EngineMetadata,
@@ -26,6 +27,7 @@ pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
 pub use engine::PiEngine;
+pub use launcher::{McpSessionConfig, prepare_mcp_config, inject_mcp_into_session_opts, McpConfigParams};
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,
 };

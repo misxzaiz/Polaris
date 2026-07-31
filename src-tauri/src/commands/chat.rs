@@ -9,12 +9,12 @@ use std::sync::Arc;
 
 use crate::ai::{
     ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider,
-    SessionMeta,
+    SessionMeta, launcher::{self, McpSessionConfig, McpConfigParams},
 };
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
-use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
+
 use crate::services::proxy::ProxyWireApi;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
@@ -379,172 +379,6 @@ pub struct ChatCallbacks {
     pub emit_event: Arc<dyn Fn(serde_json::Value) + Send + Sync>,
     /// Show a desktop notification when AI reply completes (no-op for web-only clients).
     pub notify_complete: Arc<dyn Fn() + Send + Sync>,
-}
-
-#[derive(Default)]
-struct PreparedMcpConfig {
-    claude_config_path: Option<String>,
-    codex_config_args: Vec<String>,
-    /// SimpleAI 直接消费的 MCP server 列表（Phase 4b；CLI 引擎不用）。
-    simple_ai_mcp_servers:
-        Option<Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer>>,
-}
-
-fn merge_disabled_mcp_servers(requested: &[String], persisted: Vec<String>) -> Vec<String> {
-    let mut merged = requested.to_vec();
-    for server_name in persisted {
-        if !merged.iter().any(|name| name == &server_name) {
-            merged.push(server_name);
-        }
-    }
-    merged
-}
-
-fn prepare_mcp_config_with_paths(
-    options: &ChatRequestOptions,
-    engine: &EngineId,
-    paths: &AppPaths,
-    ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
-    ask_mcp_enabled: bool,
-) -> Result<PreparedMcpConfig> {
-    let enable_mcp_tools = options.enable_mcp_tools.unwrap_or(false);
-    if !enable_mcp_tools {
-        return Ok(PreparedMcpConfig::default());
-    }
-
-    let work_dir = match options.work_dir.as_deref() {
-        Some(dir) if !dir.trim().is_empty() => dir,
-        _ => return Ok(PreparedMcpConfig::default()),
-    };
-
-    let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| AppError::ProcessError("无法确定应用根目录".to_string()))?
-        .to_path_buf();
-
-    let (service, persisted_disabled_servers) = resolve_workspace_mcp_runtime_service(
-        paths.config_dir.clone(),
-        paths.resource_dir.clone(),
-        app_root,
-        std::path::Path::new(work_dir),
-        ask_listener,
-        options.context_id.as_deref().and_then(|id| {
-            // 普通会话 contextId 为 "session-{sessionId}"，剥前缀得到前端会话 ID；
-            // 派发会话 contextId 为 "dispatch-{depth}-{id}"，整体透传——伴生 MCP 据此
-            // 做事件路由与派发深度限制（见 ask_listener::parse_dispatch_depth）。
-            id.strip_prefix("session-")
-                .map(str::to_string)
-                .or_else(|| id.starts_with("dispatch-").then(|| id.to_string()))
-        }),
-    )?;
-    let mut disabled_servers = merge_disabled_mcp_servers(
-        options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
-        persisted_disabled_servers,
-    );
-    // InteractionConfig 门控只作用于 polaris-ask 本身；listener handle 仍传入，
-    // 同为 AskListener 模式的 polaris-dispatch / polaris-browser 不被连坐。
-    if !ask_mcp_enabled && !disabled_servers.iter().any(|name| name == "polaris-ask") {
-        disabled_servers.push("polaris-ask".to_string());
-    }
-
-    match engine {
-        EngineId::ClaudeCode => {
-            let config_path =
-                service.prepare_workspace_config_with_disabled(work_dir, &disabled_servers)?;
-            Ok(PreparedMcpConfig {
-                claude_config_path: Some(config_path.to_string_lossy().to_string()),
-                codex_config_args: Vec::new(),
-                simple_ai_mcp_servers: None,
-            })
-        }
-        EngineId::Codex => {
-            let codex_config_args = service
-                .prepare_workspace_codex_config_args_with_disabled(work_dir, &disabled_servers)?;
-            Ok(PreparedMcpConfig {
-                claude_config_path: None,
-                codex_config_args,
-                simple_ai_mcp_servers: None,
-            })
-        }
-        EngineId::SimpleAI => {
-            // SimpleAI 直接消费 MCP server（Phase 4b + 内置桥接）：
-            // service 已合并内置（polaris.builtin）+ 外部插件，按 disabled 过滤。
-            let mut servers = service.resolved_simple_ai_servers(work_dir, &disabled_servers);
-            // aiToolAccess 门控：内置（plugin_id="polaris.builtin"）总暴露；
-            // 外部插件检查 aiToolAccess（决策 §12-7：只对 SimpleAI 过滤，CLI 引擎不变）。
-            let (_, plugins) = crate::services::mcp_config_service::load_plugin_mcp_runtime_state(
-                &paths.config_dir,
-                std::path::Path::new(work_dir),
-            );
-            servers.retain(|s| {
-                if s.plugin_id == "polaris.builtin" {
-                    return true;
-                }
-                plugins
-                    .iter()
-                    .find(|p| p.id == s.plugin_id)
-                    .map(|p| p.permissions.ai_tool_access.unwrap_or(false))
-                    .unwrap_or(false)
-            });
-            if !servers.is_empty() {
-                let builtin_count = servers
-                    .iter()
-                    .filter(|s| s.plugin_id == "polaris.builtin")
-                    .count();
-                let plugin_count = servers.len() - builtin_count;
-                tracing::info!(
-                    "[SimpleAI] 解析到 {} 个可用 MCP server（内置 {} + 插件 {}，aiToolAccess 已过滤）",
-                    servers.len(),
-                    builtin_count,
-                    plugin_count
-                );
-            }
-            Ok(PreparedMcpConfig {
-                claude_config_path: None,
-                codex_config_args: Vec::new(),
-                simple_ai_mcp_servers: Some(servers),
-            })
-        }
-        EngineId::Pi => {
-            // Pi 通过 Extension 桥接消费 MCP server（路径 B）：
-            // 与 SimpleAI 同构获取 MCP server 列表，外部插件检查 aiToolAccess 门控。
-            let mut servers = service.resolved_simple_ai_servers(work_dir, &disabled_servers);
-            // aiToolAccess 门控：内置总暴露，外部插件检查 aiToolAccess
-            let (_, plugins) =
-                crate::services::mcp_config_service::load_plugin_mcp_runtime_state(
-                    &paths.config_dir,
-                    std::path::Path::new(work_dir),
-                );
-            servers.retain(|s| {
-                if s.plugin_id == "polaris.builtin" {
-                    return true;
-                }
-                plugins
-                    .iter()
-                    .find(|p| p.id == s.plugin_id)
-                    .map(|p| p.permissions.ai_tool_access.unwrap_or(false))
-                    .unwrap_or(false)
-            });
-            if !servers.is_empty() {
-                let builtin_count = servers
-                    .iter()
-                    .filter(|s| s.plugin_id == "polaris.builtin")
-                    .count();
-                let plugin_count = servers.len() - builtin_count;
-                tracing::info!(
-                    "[Pi] 解析到 {} 个可用 MCP server（内置 {} + 插件 {}，已过滤 aiToolAccess）",
-                    servers.len(),
-                    builtin_count,
-                    plugin_count
-                );
-            }
-            Ok(PreparedMcpConfig {
-                claude_config_path: None,
-                codex_config_args: Vec::new(),
-                simple_ai_mcp_servers: Some(servers),
-            })
-        }
-    }
 }
 
 async fn apply_model_profile_options(
@@ -952,16 +786,36 @@ pub async fn start_chat_inner(
     };
 
     tracing::info!("[start_chat_inner] 使用引擎: {:?}", engine);
-    let mut mcp_config = prepare_mcp_config_with_paths(
-        &options,
-        &engine,
-        app_paths,
-        state.ask_listener.get().cloned(),
-        state
-            .clone_config()
-            .map(|c| c.interaction.ask_mcp_enabled)
-            .unwrap_or(true),
-    )?;
+
+    // 统一 MCP 配置准备
+    let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
+    let mcp_config: McpSessionConfig = if enable_mcp {
+        if let Some(ref dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+            let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
+                id.strip_prefix("session-")
+                    .map(str::to_string)
+                    .or_else(|| id.starts_with("dispatch-").then(|| id.to_string()))
+            });
+            launcher::prepare_mcp_config(McpConfigParams {
+                engine_id: &engine,
+                work_dir: dir,
+                config_dir: &app_paths.config_dir,
+                resource_dir: app_paths.resource_dir.as_deref(),
+                app_root: &PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
+                ask_listener: state.ask_listener.get().cloned(),
+                ask_route_session_id,
+                disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
+                ask_mcp_enabled: state
+                    .clone_config()
+                    .map(|c| c.interaction.ask_mcp_enabled)
+                    .unwrap_or(true),
+            })?
+        } else {
+            McpSessionConfig::default()
+        }
+    } else {
+        McpSessionConfig::default()
+    };
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -1005,17 +859,8 @@ pub async fn start_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
-    }
-    if !mcp_config.codex_config_args.is_empty() {
-        session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
-    }
-    if let Some(servers) = mcp_config.simple_ai_mcp_servers.take() {
-        if !servers.is_empty() {
-            session_opts = session_opts.with_mcp_servers(servers);
-        }
-    }
+    // 统一 MCP 注入
+    launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();
     }
@@ -1114,16 +959,36 @@ pub async fn continue_chat_inner(
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
-    let mut mcp_config = prepare_mcp_config_with_paths(
-        &options,
-        &engine,
-        app_paths,
-        state.ask_listener.get().cloned(),
-        state
-            .clone_config()
-            .map(|c| c.interaction.ask_mcp_enabled)
-            .unwrap_or(true),
-    )?;
+
+    // 统一 MCP 配置准备
+    let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
+    let mcp_config: McpSessionConfig = if enable_mcp {
+        if let Some(ref dir) = options.work_dir.as_deref().filter(|d| !d.trim().is_empty()) {
+            let ask_route_session_id = options.context_id.as_deref().and_then(|id| {
+                id.strip_prefix("session-")
+                    .map(str::to_string)
+                    .or_else(|| id.starts_with("dispatch-").then(|| id.to_string()))
+            });
+            launcher::prepare_mcp_config(McpConfigParams {
+                engine_id: &engine,
+                work_dir: dir,
+                config_dir: &app_paths.config_dir,
+                resource_dir: app_paths.resource_dir.as_deref(),
+                app_root: &PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap(),
+                ask_listener: state.ask_listener.get().cloned(),
+                ask_route_session_id,
+                disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
+                ask_mcp_enabled: state
+                    .clone_config()
+                    .map(|c| c.interaction.ask_mcp_enabled)
+                    .unwrap_or(true),
+            })?
+        } else {
+            McpSessionConfig::default()
+        }
+    } else {
+        McpSessionConfig::default()
+    };
 
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
@@ -1167,17 +1032,8 @@ pub async fn continue_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
-    if let Some(ref mcp_config_path) = mcp_config.claude_config_path {
-        session_opts = session_opts.with_mcp_config_path(mcp_config_path.clone());
-    }
-    if !mcp_config.codex_config_args.is_empty() {
-        session_opts = session_opts.with_codex_config_args(mcp_config.codex_config_args);
-    }
-    if let Some(servers) = mcp_config.simple_ai_mcp_servers.take() {
-        if !servers.is_empty() {
-            session_opts = session_opts.with_mcp_servers(servers);
-        }
-    }
+    // 统一 MCP 注入
+    launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);
     if let Some(ref dirs) = options.additional_dirs {
         session_opts.additional_dirs = dirs.clone();
     }
@@ -1216,7 +1072,6 @@ pub async fn continue_chat_inner(
 
     // ──────────────────────────────────────────────────────
     // 先杀掉本会话的旧 CLI 进程，再处理代理。
-    //
     // 仅对 CLI 类引擎（Claude/Codex）生效：它们每轮会 spawn 新进程,
     // 旧进程若有 in-flight 请求在等上游响应,代理端口被关闭时会收到
     // ConnectionRefused(见 99770ad8)。先 try_interrupt_all 杀旧进程,

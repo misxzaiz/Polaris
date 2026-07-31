@@ -6,7 +6,6 @@
  */
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex, oneshot};
 #[cfg(feature = "tauri-app")]
@@ -20,8 +19,8 @@ use super::traits::PlatformIntegration;
 use super::types::*;
 use super::commands::{BotCommand, CommandParser, get_help_text, PromptMode};
 use super::instance_registry::{InstanceRegistry, PlatformInstance, InstanceConfig, InstanceId};
-use crate::ai::{EngineRegistry, SessionOptions};
-use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
+use crate::ai::{EngineRegistry, SessionOptions, launcher::{self, McpSessionConfig, McpConfigParams}};
+
 use crate::error::Result;
 use crate::models::config::{
     QQBotConfig, QQBotRuntimeConfig,
@@ -71,12 +70,6 @@ struct ProcessAiMessageContext {
     adapters: Arc<Mutex<HashMap<Platform, Box<dyn PlatformIntegration>>>>,
     conversation_states: Arc<Mutex<ConversationStore>>,
     active_sessions: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
-}
-
-#[derive(Default)]
-struct IntegrationMcpConfig {
-    claude_config_path: Option<String>,
-    codex_config_args: Vec<String>,
 }
 
 impl IntegrationManager {
@@ -1200,81 +1193,55 @@ impl IntegrationManager {
             }
         }
 
-        // 准备 MCP 配置（需求库、定时任务、待办工具）
+        // 统一 MCP 配置准备（使用 SessionLauncher）
         let mcp_config = match &work_dir {
             Some(dir) if !dir.trim().is_empty() => {
                 #[cfg(feature = "tauri-app")]
                 let config_dir = app_handle.path().app_config_dir().ok();
                 #[cfg(feature = "tauri-app")]
                 let resource_dir = app_handle.path().resource_dir().ok();
-                let app_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                    .parent()
-                    .map(|p| p.to_path_buf());
 
                 #[cfg(not(feature = "tauri-app"))]
                 let config_dir: Option<std::path::PathBuf> = None;
                 #[cfg(not(feature = "tauri-app"))]
                 let resource_dir: Option<std::path::PathBuf> = None;
-                match (config_dir, app_root) {
-                    (Some(cdir), Some(aroot)) => {
-                        match resolve_workspace_mcp_runtime_service(
-                            cdir,
-                            resource_dir,
-                            aroot,
-                            std::path::Path::new(dir),
-                            None, // integrations 场景无人类交互通道
-                            None,
-                        ) {
-                            Ok((service, disabled_servers)) => {
-                                match &engine_id {
-                                    crate::ai::EngineId::ClaudeCode => match service.prepare_workspace_config_with_disabled(dir, &disabled_servers) {
-                                    Ok(path) => {
-                                        tracing::info!("[IntegrationManager] ✅ Claude MCP 配置已准备: {}", path.display());
-                                        IntegrationMcpConfig {
-                                            claude_config_path: Some(path.to_string_lossy().to_string()),
-                                            codex_config_args: Vec::new(),
-                                        }
-                                    }
-                                    Err(e) => {
-                                        tracing::warn!("[IntegrationManager] ⚠️ Claude MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
-                                        IntegrationMcpConfig::default()
-                                    }
-                                    },
-                                    crate::ai::EngineId::Codex => match service.prepare_workspace_codex_config_args_with_disabled(dir, &disabled_servers) {
-                                        Ok(args) => {
-                                            tracing::info!("[IntegrationManager] ✅ Codex MCP 配置已准备: {} 个参数", args.len());
-                                            IntegrationMcpConfig {
-                                                claude_config_path: None,
-                                                codex_config_args: args,
-                                            }
-                                        }
-                                        Err(e) => {
-                                            tracing::warn!("[IntegrationManager] ⚠️ Codex MCP 配置生成失败: {}，继续无 MCP 模式", e.to_message());
-                                            IntegrationMcpConfig::default()
-                                        }
-                                    },
-                                    crate::ai::EngineId::SimpleAI => {
-                                        // SimpleAI 不使用 MCP，返回默认空配置
-                                        tracing::info!("[IntegrationManager] SimpleAI 引擎不使用 MCP，跳过配置");
-                                        IntegrationMcpConfig::default()
-                                    },
-                                    crate::ai::EngineId::Pi => {
-                                        // Pi 使用 auth.json 体系，返回默认空配置
-                                        tracing::info!("[IntegrationManager] Pi 引擎不使用 MCP，跳过配置");
-                                        IntegrationMcpConfig::default()
-                                    },
-                                }
+
+                match config_dir {
+                    Some(cdir) => {
+                        let app_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                            .parent()
+                            .expect("无法确定应用根目录");
+                        match launcher::prepare_mcp_config(McpConfigParams {
+                            engine_id: &engine_id,
+                            work_dir: dir,
+                            config_dir: &cdir,
+                            resource_dir: resource_dir.as_deref(),
+                            app_root,
+                            ask_listener: None, // integrations 场景无人类交互通道
+                            ask_route_session_id: None,
+                            disabled_mcp_servers: &[],
+                            ask_mcp_enabled: true,
+                        }) {
+                            Ok(config) => {
+                                tracing::info!(
+                                    "[IntegrationManager] ✅ MCP 配置已准备（engine={:?}）",
+                                    engine_id
+                                );
+                                config
                             }
                             Err(e) => {
-                                tracing::warn!("[IntegrationManager] ⚠️ MCP 服务初始化失败: {}，继续无 MCP 模式", e.to_message());
-                                IntegrationMcpConfig::default()
+                                tracing::warn!(
+                                    "[IntegrationManager] ⚠️ MCP 配置准备失败: {}，继续无 MCP 模式",
+                                    e.to_message()
+                                );
+                                McpSessionConfig::default()
                             }
                         }
                     }
-                    _ => IntegrationMcpConfig::default(),
+                    _ => McpSessionConfig::default(),
                 }
             }
-            _ => IntegrationMcpConfig::default(),
+            _ => McpSessionConfig::default(),
         };
 
         // 发送即时确认消息
@@ -1486,12 +1453,8 @@ impl IntegrationManager {
                     if let Some(ref dir) = work_dir {
                         options = options.with_work_dir(dir);
                     }
-                    if let Some(ref mcp_path) = task_mcp_config.claude_config_path {
-                        options = options.with_mcp_config_path(mcp_path);
-                    }
-                    if !task_mcp_config.codex_config_args.is_empty() {
-                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
-                    }
+                    // 统一 MCP 注入
+                    launcher::inject_mcp_into_session_opts(&mut options, &engine_id, &task_mcp_config);
 
                     registry.continue_session(engine_id, existing_id, &message, options)
                 };
@@ -1527,12 +1490,8 @@ impl IntegrationManager {
                     if let Some(ref dir) = work_dir {
                         options = options.with_work_dir(dir);
                     }
-                    if let Some(ref mcp_path) = task_mcp_config.claude_config_path {
-                        options = options.with_mcp_config_path(mcp_path);
-                    }
-                    if !task_mcp_config.codex_config_args.is_empty() {
-                        options = options.with_codex_config_args(task_mcp_config.codex_config_args.clone());
-                    }
+                    // 统一 MCP 注入
+                    launcher::inject_mcp_into_session_opts(&mut options, &engine_id, &task_mcp_config);
 
                     registry.start_session(Some(engine_id), &message, options)
                 };
