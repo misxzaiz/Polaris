@@ -387,7 +387,7 @@ body {
 }
 
 .prose td code {
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 
 /* strong/em 样式 */
