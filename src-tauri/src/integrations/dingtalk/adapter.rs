@@ -437,8 +437,12 @@ impl PlatformIntegration for DingTalkAdapter {
                     let mut dedup = MessageDedup::default();
 
                     // 等待 REGISTERED 事件
+                    tracing::info!("[DingTalk] 🔄 等待注册消息...");
+                    let mut msg_count = 0u32;
                     loop {
                         let msg = read.next().await;
+                        msg_count += 1;
+                        tracing::info!("[DingTalk] 📩 收到第 {} 条消息", msg_count);
                         match msg {
                             Some(Ok(WsMessage::Text(payload))) => {
                                 let parsed: serde_json::Value =
@@ -489,7 +493,9 @@ impl PlatformIntegration for DingTalkAdapter {
                             }
                             Some(Ok(WsMessage::Binary(data))) => {
                                 // 钉钉 Stream 可能发送二进制帧，转为文本处理
+                                tracing::info!("[DingTalk] 📩 Binary 消息: {} 字节", data.len());
                                 if let Ok(payload) = String::from_utf8(data) {
+                                    tracing::info!("[DingTalk] 📩 Binary 内容: {}", &payload[..payload.len().min(500)]);
                                     let parsed: serde_json::Value =
                                         match serde_json::from_str(&payload) {
                                             Ok(v) => v,
@@ -504,11 +510,14 @@ impl PlatformIntegration for DingTalkAdapter {
                                         .and_then(|h| h.get("topic"))
                                         .and_then(|v| v.as_str())
                                         .unwrap_or("");
+                                    tracing::info!("[DingTalk] 📩 Binary 解析: type={}, topic={}", msg_type, topic);
                                     if msg_type == "SYSTEM" && topic == "REGISTERED" {
                                         tracing::info!("[DingTalk] ✅ 已注册 (Binary)");
                                         registered = true;
                                         break;
                                     }
+                                } else {
+                                    tracing::warn!("[DingTalk] Binary 消息非 UTF-8");
                                 }
                             }
                             Some(Ok(WsMessage::Ping(data))) => {
