@@ -514,11 +514,52 @@ fn prepare_mcp_config_with_paths(
             })
         }
         EngineId::Pi => {
-            // Pi 使用 auth.json + extensions 体系，不走 claude/codex MCP 配置
+            // Pi 通过 Extension 桥接消费 MCP server（路径 B）：
+            // 与 SimpleAI 同构获取 MCP server 列表，但额外过滤：
+            // 1. AskListener 模式 server（polaris-ask/polaris-dispatch/polaris-browser）
+            //    依赖 TCP 通信，无法通过 stdio Extension 桥接，排除
+            // 2. 外部插件检查 aiToolAccess 门控
+            let mut servers = service.resolved_simple_ai_servers(work_dir, &disabled_servers);
+            // 过滤 AskListener 模式的 server
+            servers.retain(|s| {
+                !matches!(
+                    s.server_name.as_str(),
+                    "polaris-ask" | "polaris-dispatch" | "polaris-browser"
+                )
+            });
+            // aiToolAccess 门控：内置总暴露，外部插件检查 aiToolAccess
+            let (_, plugins) =
+                crate::services::mcp_config_service::load_plugin_mcp_runtime_state(
+                    &paths.config_dir,
+                    std::path::Path::new(work_dir),
+                );
+            servers.retain(|s| {
+                if s.plugin_id == "polaris.builtin" {
+                    return true;
+                }
+                plugins
+                    .iter()
+                    .find(|p| p.id == s.plugin_id)
+                    .map(|p| p.permissions.ai_tool_access.unwrap_or(false))
+                    .unwrap_or(false)
+            });
+            if !servers.is_empty() {
+                let builtin_count = servers
+                    .iter()
+                    .filter(|s| s.plugin_id == "polaris.builtin")
+                    .count();
+                let plugin_count = servers.len() - builtin_count;
+                tracing::info!(
+                    "[Pi] 解析到 {} 个可用 MCP server（内置 {} + 插件 {}，已过滤 AskListener + aiToolAccess）",
+                    servers.len(),
+                    builtin_count,
+                    plugin_count
+                );
+            }
             Ok(PreparedMcpConfig {
                 claude_config_path: None,
                 codex_config_args: Vec::new(),
-                simple_ai_mcp_servers: None,
+                simple_ai_mcp_servers: Some(servers),
             })
         }
     }

@@ -362,8 +362,10 @@ export interface Config {
   piCode: {
     /** Pi CLI 命令路径 */
     cliPath: string;
-    /** 是否启用 pi extensions（加载 auth.json 注册的扩展，消费 Polaris MCP server）。
-     *  默认关闭：pi extensions 与 RPC 通信兼容性需用户显式确认。 */
+    /** 是否启用 Pi MCP 桥接（Pi Extension 桥接）。
+     *  开启后，Polaris 会把 MCP server 列表写入 ~/.pi/agent/extensions/polaris-mcp-bridge/，
+     *  通过 Pi Extension 桥接消费 Polaris MCP 工具生态。
+     *  默认关闭：需用户显式确认。 */
     enableExtensions?: boolean;
   };
   /** 工作目录 */

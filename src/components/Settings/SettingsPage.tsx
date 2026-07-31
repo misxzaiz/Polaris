@@ -94,7 +94,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
     'personal-hub': ['personalHub'],
-    'ai-engine': ['defaultEngine', 'claudeCode', 'codexCode', 'mimoCode'],
+    'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'mimoCode', 'piCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
   };
 

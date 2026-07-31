@@ -52,13 +52,17 @@ impl Default for MimoCodeConfig {
 
 /// Pi Code 引擎配置（earendil-works pi-coding-agent）
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PiCodeConfig {
     /// Pi CLI 命令路径
+    #[serde(alias = "cli_path")]
     pub cli_path: String,
-    /// 是否启用 pi extensions（加载 auth.json 注册的扩展）。
-    /// 开启后移除 --no-extensions，pi 可消费 Polaris 注入的 MCP server。
-    /// 默认关闭：pi extensions 与 RPC 通信兼容性需用户显式确认。
-    #[serde(default)]
+    /// 是否启用 Pi MCP 桥接（Pi Extension 桥接）。
+    /// 开启后，Polaris 会把 MCP server 列表写入
+    /// `~/.pi/agent/extensions/polaris-mcp-bridge/`，并通过显式 `--extension`
+    /// 注入 Pi，让 Pi 通过 Extension 桥接消费 Polaris MCP 工具生态。
+    /// 默认关闭：需用户显式确认。
+    #[serde(default, alias = "enable_extensions")]
     pub enable_extensions: bool,
 }
 
