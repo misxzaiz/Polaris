@@ -264,6 +264,21 @@ export function hasOpenCodeBlock(content: string): boolean {
   return inCodeBlock;
 }
 
+/**
+ * 检测内容是否包含表格特征（行首以 | 开头）
+ * 用于流式渲染时判断最后一段是否需要走 marked 完整渲染
+ */
+function looksLikeTable(text: string): boolean {
+  let count = 0;
+  for (const line of text.split('\n')) {
+    if (line.trimStart().startsWith('|')) {
+      count++;
+      if (count >= 2) return true;
+    }
+  }
+  return false;
+}
+
 /** 段落分割正则（编译一次，避免每次渲染重新创建） */
 const PARAGRAPH_SPLIT_RE = /\n\n+/;
 
@@ -522,6 +537,10 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       const paragraphs = content.split(PARAGRAPH_SPLIT_RE);
 
       if (paragraphs.length <= 1) {
+        // 流式最后一段含表格 → 走 marked 完整渲染
+        if (looksLikeTable(content)) {
+          return <CompletedTextBlock content={content} />;
+        }
         return <LightweightMarkdown content={content} />;
       }
 
@@ -534,7 +553,11 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
         <>
           <div className="break-words" style={{ contain: 'content' }}
             dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedContent) }} />
-          <LightweightMarkdown content={lastPara} />
+          {looksLikeTable(lastPara) ? (
+            <CompletedTextBlock content={lastPara} />
+          ) : (
+            <LightweightMarkdown content={lastPara} />
+          )}
         </>
       );
     }
@@ -593,6 +616,10 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           // 未完成文本（流式中）：段落级渐进渲染
           const paragraphs = part.content.split(PARAGRAPH_SPLIT_RE);
           if (paragraphs.length <= 1) {
+            // 流式最后一段含表格 → 走 marked 完整渲染
+            if (looksLikeTable(part.content)) {
+              return <CompletedTextBlock key={`ctext-${index}`} content={part.content} />;
+            }
             return <LightweightMarkdown key={`ltext-${index}`} content={part.content} />;
           }
 
@@ -604,7 +631,11 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
             <span key={`streaming-${index}`}>
               <div className="break-words" style={{ contain: 'content' }}
                 dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedParasContent) }} />
-              <LightweightMarkdown content={lastPara} />
+              {looksLikeTable(lastPara) ? (
+                <CompletedTextBlock content={lastPara} />
+              ) : (
+                <LightweightMarkdown content={lastPara} />
+              )}
             </span>
           );
         })}

@@ -510,7 +510,8 @@ export class MarkdownRenderCache {
     }
 
     // 检查新增部分是否包含块级元素开始标记（可能跨块）
-    if (/^(#{1,6}|[-*+]\s|>\s|```)/.test(newPart.trim())) {
+    // 含表格行 | 前缀，防止单行增量破坏已渲染的 <table>
+    if (/^(#{1,6}|[-*+]\s|>\s|```|\|)/.test(newPart.trim())) {
       // 新增部分以块级元素开始，可能导致解析问题，完整渲染
       return null;
     }
