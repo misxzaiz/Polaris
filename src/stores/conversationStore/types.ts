@@ -271,6 +271,8 @@ export interface ConversationState {
   conversationId: string | null
   currentConversationSeed: string | null
   isStreaming: boolean
+  /** 用户主动点击中断的标志。用于区分"用户主动终止"与"后端意外崩溃/异常退出"。中断后后端发的 error/session_end(reason=error) 据此静默处理。 */
+  isInterrupting: boolean
   error: string | null
   progressMessage: string | null
   /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */

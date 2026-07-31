@@ -117,6 +117,7 @@ function createInitialState(sessionId: string): ConversationState {
     conversationId: null,
     currentConversationSeed: null,
     isStreaming: false,
+    isInterrupting: false,
     error: null,
     progressMessage: null,
     promptSuggestion: null,
@@ -1534,29 +1535,36 @@ export function createConversationStore(
 
         log.info('Attempting to interrupt session', { conversationId, engine, isStreaming })
 
+        // 仅标记主动中断。不提前 set({ isStreaming: false })、不调 finishMessage()：
+        // 否则 UI 先经历一次"流式停止但消息未就位"的过渡，随后 session_end 又触发
+        // 一次 finishMessage 把 currentMessage 移到 messages，两次渲染之间出现闪烁。
+        // 正确做法：把 isStreaming=false 与 finishMessage 的单一过渡交给
+        // session_end handler 一次性完成。
+        set({ isInterrupting: true })
+
         try {
           await invoke('interrupt_chat', {
             sessionId: conversationId,
             engineId: engine,
           })
-          log.info('Session interrupted', { conversationId })
-          set({ isStreaming: false })
-          get().finishMessage()
+          log.info('Session interrupted, waiting for backend session_end to finalize', {
+            conversationId,
+          })
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
           log.error('Interrupt failed', err, { conversationId, engine })
 
-          // 即使中断失败,也停止前端流式状态,避免 UI 卡死
-          set({ isStreaming: false })
+          // invoke 本身失败（如后端未找到会话）：session_end 不会到达，
+          // 前端需主动结束流式状态避免 UI 卡死。
+          set({ isStreaming: false, isInterrupting: false })
           get().finishMessage()
 
-          // 用户可见提示:不再静默吞错,让用户感知"后端可能仍在执行"
-          // 动态导入避免循环依赖
+          // 用户可见提示
           try {
             const { useToastStore } = await import('../toastStore')
             useToastStore.getState().error(
               i18n.t('chat:error.interruptFailed'),
-              i18n.t('chat:error.interruptFailedHint')
+              i18n.t('chat:error.interruptFailedHint'),
             )
           } catch (toastErr) {
             log.warn('Toast 提示失败', { error: String(toastErr) })

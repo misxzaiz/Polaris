@@ -101,11 +101,23 @@ export function handleAIEvent(
         isStreaming: false,
         progressMessage: null,
       })
+
       // 兜底：后端标记 reason=error 但未单独发 error 事件时（或 error 事件丢失），
       // 给一个可见提示，避免"静默中断无错误信息"。
       // 正常路径下 error 事件先到达，state.error 已被填充原文，此条件不触发。
+      // 排除用户主动中断（isInterrupting），避免误报"异常退出"。
       if (event.reason === 'error' && !get().error) {
-        set({ error: 'errors:appError.ai' })
+        if (get().isInterrupting) {
+          // 用户主动中断：静默，不显示"异常退出"提示
+          log.info('Session end after user interrupt, suppressed error display')
+        } else {
+          set({ error: 'errors:appError.ai' })
+        }
+      }
+
+      // 清除主动中断标志（无论什么 reason，session_end 到达即说明本轮结束）
+      if (get().isInterrupting) {
+        set({ isInterrupting: false })
       }
       // 保存到自有 JSONL 存储（轮末规整覆写：合并保护 + 前缀保留 + seq 重排）
       // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
@@ -201,11 +213,18 @@ export function handleAIEvent(
       break
 
     case 'error':
+      if (get().isInterrupting) {
+        // 用户主动中断后，后端硬杀进程会触发 fallback error + session_end(reason=error)。
+        // 这是用户期望行为，不显示错误、不做语音提醒，静默交给 session_end 收尾。
+        break
+      }
       set({
         error: event.error,
         isStreaming: false,
-        currentMessage: null,
       })
+      // currentMessage 不清空：消息固化由随后的 session_end handler 的 finishMessage()
+      // 统一负责。此前在 error handler 里直接置 null 会导致流式输出被丢弃（中断时
+      // error 和 session_end 同序到达，error 先清空后 finishMessage 空跑，消息消失）。
       // 语音提醒：错误提醒
       voiceNotificationService.notifyError()
       break
