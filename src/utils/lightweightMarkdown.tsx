@@ -290,7 +290,7 @@ export function hasOpenCodeBlock(content: string): boolean {
  * 检测内容是否包含块级 Markdown 元素
  * 用于流式渲染时判断最后一段是否需要走 marked 完整渲染
  *
- * 覆盖：表格、无序列表、有序列表、任务列表、标题、块引用、水平线
+ * 覆盖：表格、无序列表、有序列表、任务列表、标题、块引用、水平线、块级数学公式
  */
 function hasBlockElement(text: string): boolean {
   let tableCount = 0;
@@ -331,6 +331,11 @@ function hasBlockElement(text: string): boolean {
 
     // 水平线：检测到 1 行就触发
     if (/^[-*_]{3,}$/.test(trimmed) || /^[-*_]{3,}\s*$/.test(trimmed)) {
+      return true;
+    }
+
+    // 块级数学公式 $$...$$：检测到行首为 $$ 即触发
+    if (/^\$\$/.test(trimmed)) {
       return true;
     }
   }

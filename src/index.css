@@ -1,6 +1,7 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+@import 'katex/dist/katex.min.css';
 
 
 /* 全局样式 */

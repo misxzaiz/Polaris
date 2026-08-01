@@ -5,6 +5,7 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
+import katex from 'katex';
 import type { FileMatch } from '@/services/fileSearch';
 import { createLogger } from './logger';
 
@@ -77,6 +78,56 @@ const linkRenderer = {
     return `<img src="${safeSrc}" alt="${safeAlt}"${safeTitle} class="markdown-chat-image" loading="lazy" />`;
   },
 };
+// 注册 KaTeX 数学公式渲染扩展（块级 $$...$$ 和行内 $...$）
+marked.use({
+  extensions: [
+    {
+      name: 'blockMath',
+      level: 'block',
+      start(src: string) { return src.indexOf('$$'); },
+      tokenizer(this: marked.Tokenizer, src: string) {
+        const match = src.match(/^\$\$([\s\S]*?)\$\$/);
+        if (match) {
+          return {
+            type: 'blockMath',
+            raw: match[0],
+            math: match[1].trim(),
+          };
+        }
+      },
+      renderer(token: any) {
+        try {
+          return katex.renderToString(token.math, { displayMode: true, throwOnError: false });
+        } catch {
+          return token.math;
+        }
+      },
+    },
+    {
+      name: 'inlineMath',
+      level: 'inline',
+      start(src: string) { return src.indexOf('$'); },
+      tokenizer(this: marked.Tokenizer, src: string) {
+        const match = src.match(/^\$([^$\n]+?)\$/);
+        if (match) {
+          return {
+            type: 'inlineMath',
+            raw: match[0],
+            math: match[1],
+          };
+        }
+      },
+      renderer(token: any) {
+        try {
+          return katex.renderToString(token.math, { throwOnError: false });
+        } catch {
+          return token.math;
+        }
+      },
+    },
+  ],
+});
+
 marked.use({ renderer: linkRenderer });
 
 interface CacheEntry<T> {
@@ -418,6 +469,8 @@ export const MARKDOWN_ALLOWED_TAGS = [
   'ul', 'ol', 'li', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
   'a', 'span', 'div', 'mark', 'table', 'thead', 'tbody',
   'tr', 'td', 'th', 'hr', 'dl', 'dt', 'dd', 'input', 'img',
+  // KaTeX 数学公式渲染标签
+  'math', 'semantics', 'mrow', 'mi', 'mo', 'msup', 'mn', 'annotation',
 ];
 
 /** 聊天消息 Markdown 渲染允许的 HTML 属性 */
@@ -433,6 +486,11 @@ export const MARKDOWN_ALLOWED_ATTR = [
   'alt',
   'title',
   'loading',
+  // KaTeX 数学公式渲染属性
+  'xmlns',
+  'display',
+  'encoding',
+  'style',
 ];
 
 export class MarkdownRenderCache {
