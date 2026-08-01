@@ -655,6 +655,25 @@ body {
 }
 
 /* ============================================
+   ConnectingOverlay 增强动画
+   ============================================ */
+
+@keyframes polaris-spin {
+  to { transform: rotate(360deg); }
+}
+@keyframes polaris-spin-rev {
+  to { transform: rotate(-360deg); }
+}
+@keyframes polaris-glow {
+  0%, 100% { box-shadow: 0 0 4px rgba(96, 165, 250, 0.3); transform: scale(1); }
+  50% { box-shadow: 0 0 16px rgba(96, 165, 250, 0.6); transform: scale(1.2); }
+}
+@keyframes polaris-blink {
+  0%, 80%, 100% { opacity: 0.2; }
+  40% { opacity: 1; }
+}
+
+/* ============================================
    Highlight.js 代码高亮样式（暗色主题）
    ============================================ */
 
