@@ -4,8 +4,8 @@
  * 用于 Write 工具展开态下的内容展示，直接渲染写入的代码。
  * 特性：
  * - 文件路径整合到头部，可点击打开编辑器
- * - 语法高亮（基于 CodeBlock / highlight.js）
- * - 行号显示
+ * - 代码以等宽字体展示，深色背景
+ * - 无工具栏、无行号、无折叠，保持简洁
  * - 与 InlineDiffView 一致的头部风格
  */
 
@@ -13,7 +13,6 @@ import { memo, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { FileCode } from 'lucide-react';
 import { getLanguageFromPath } from '@/utils/language';
-import { CodeBlock } from '../CodeBlock';
 
 interface CodePreviewViewProps {
   /** 文件路径 */
@@ -41,12 +40,6 @@ export const CodePreviewView = memo(function CodePreviewView({
   // 文件名
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
 
-  // 行数
-  const lineCount = useMemo(() => {
-    if (!content) return 0;
-    return content.split('\n').length;
-  }, [content]);
-
   const handleClick = () => {
     onOpenFile?.(filePath);
   };
@@ -73,19 +66,16 @@ export const CodePreviewView = memo(function CodePreviewView({
         <span className="text-[10px] px-1.5 py-0.5 rounded bg-background-secondary text-text-tertiary shrink-0">
           {language}
         </span>
-        <span className="text-[10px] text-text-muted shrink-0 tabular-nums">
-          {lineCount} 行
-        </span>
       </div>
 
-      {/* 代码内容 */}
+      {/* 代码内容：简洁 pre/code，无工具栏/行号/折叠 */}
       <div
-        className="overflow-auto"
+        className="overflow-auto bg-background-base"
         style={{ maxHeight }}
       >
-        <CodeBlock className={`language-${language}`}>
-          {content}
-        </CodeBlock>
+        <pre className="p-3 text-xs font-mono text-text-secondary leading-5 whitespace-pre-wrap break-all">
+          <code>{content}</code>
+        </pre>
       </div>
     </div>
   );
