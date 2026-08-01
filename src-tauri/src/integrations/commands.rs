@@ -90,19 +90,16 @@ impl CommandParser {
         let cmd = parts[0].to_lowercase();
 
         let command = match cmd.as_str() {
-            // 模型切换
-            "claude" | "claude-code" | "claudecode" => {
+            // 模型切换 —— 遍历 EngineId::all() + aliases() 动态匹配
+            // 新增引擎只需在 EngineId::aliases() 中加别名，无需修改此处
+            _ if EngineId::all().iter().any(|e| e.aliases().contains(&cmd.as_str())) => {
+                let provider = EngineId::all().iter()
+                    .find(|e| e.aliases().contains(&cmd.as_str()))
+                    .copied()
+                    .unwrap_or(EngineId::ClaudeCode);
                 let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
                 Some(BotCommand::SwitchProvider {
-                    provider: EngineId::ClaudeCode,
-                    custom_prompt,
-                    replace_mode,
-                })
-            }
-            "codex" | "openai-codex" | "openai_codex" => {
-                let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
-                Some(BotCommand::SwitchProvider {
-                    provider: EngineId::Codex,
+                    provider,
                     custom_prompt,
                     replace_mode,
                 })
@@ -230,7 +227,7 @@ impl ConversationState {
 
         Self {
             conversation_id: conversation_id.into(),
-            engine_id: "claude".to_string(),
+            engine_id: EngineId::default().as_str().to_string(),
             ai_session_id: None,
             work_dir: None,
             prompt_preset_id: None,
@@ -301,12 +298,22 @@ impl Default for ConversationState {
 
 /// 帮助信息
 pub fn get_help_text() -> String {
-    r#"📖 **命令帮助**
+    // 动态生成引擎切换帮助（从 EngineId::all() 遍历）
+    let engine_help: String = EngineId::all().iter().map(|e| {
+        let alias_str = e.as_str();
+        let alias = e.aliases().first().unwrap_or(&alias_str);
+        format!(
+            "`/{} [提示词]` - 切换到 {}，可附加自定义提示词\n",
+            alias,
+            e.display_name()
+        )
+    }).collect::<Vec<_>>().join("");
+
+    format!(
+        r#"📖 **命令帮助**
 
 **模型**
-`/claude [提示词]` - 切换到 Claude，可附加自定义提示词
-`/codex [提示词]` - 切换到 Codex，可附加自定义提示词
-• 添加 `-r` 参数替换默认提示词
+{engine_help}• 添加 `-r` 参数替换默认提示词
 • 示例: `/claude 你是Python专家 -r`
 • 示例: `/codex 你是Rust专家 -r`
 
@@ -329,12 +336,85 @@ pub fn get_help_text() -> String {
 `/status` - 查看会话状态
 `/agent` - 查看当前引擎信息
 `/help` - 显示帮助
-"#.to_string()
+"#
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_switch_provider_pi() {
+        // Pi 引擎切换
+        let cmd = CommandParser::parse("/pi");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::Pi,
+                custom_prompt: None,
+                replace_mode: false
+            })
+        ));
+
+        // Pi 带提示词
+        let cmd = CommandParser::parse("/pi 你是专家");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::Pi,
+                custom_prompt: Some(_),
+                replace_mode: false
+            })
+        ));
+
+        // Pi 别名
+        let cmd = CommandParser::parse("/piagent");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::Pi,
+                custom_prompt: None,
+                replace_mode: false
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_switch_provider_simple_ai() {
+        // SimpleAI 引擎切换
+        let cmd = CommandParser::parse("/simple-ai");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::SimpleAI,
+                custom_prompt: None,
+                replace_mode: false
+            })
+        ));
+
+        // SimpleAI 别名
+        let cmd = CommandParser::parse("/simpleai");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::SimpleAI,
+                custom_prompt: None,
+                replace_mode: false
+            })
+        ));
+
+        // SimpleAI 带提示词和替换模式
+        let cmd = CommandParser::parse("/simple-ai -r 你是助手");
+        assert!(matches!(
+            cmd,
+            Some(BotCommand::SwitchProvider {
+                provider: EngineId::SimpleAI,
+                custom_prompt: Some(_),
+                replace_mode: true
+            })
+        ));
+    }
 
     #[test]
     fn test_parse_switch_provider() {

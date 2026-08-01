@@ -10,6 +10,7 @@ import {
 import { useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput';
 import type { EngineId } from '@/types';
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 
 /**
  * 新建会话按钮
@@ -87,12 +88,22 @@ export const NewSessionButton = memo(function NewSessionButton() {
   // 是否支持关联工作区（多于 1 个工作区且已选主工作区时）
   const canPickContext = sortedWorkspaces.length > 1 && pendingPrimaryId !== null;
 
-  const engineOptions = useMemo(() => [
-    { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
-    { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
-    { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
-    { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
-  ], []);
+  const engineMetadatas = useEngineMetadataStore(s => s.metadatas)
+  const engineOptions = useMemo(() => {
+    if (engineMetadatas.length > 0) {
+      return engineMetadatas.map(meta => ({
+        id: meta.id as EngineId,
+        label: meta.name,
+        Icon: Bot,
+      }))
+    }
+    return [
+      { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
+      { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
+      { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
+      { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
+    ]
+  }, [engineMetadatas]);
 
   useEffect(() => {
     if (!isOpen) {

@@ -19,6 +19,7 @@ import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace
 import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 
 const log = createLogger('CreateSessionModal')
 
@@ -70,12 +71,22 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     setEngineId(defaultEngineId)
   }, [defaultEngineId])
 
-  const engineOptions = useMemo(() => [
-    { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
-    { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
-    { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
-    { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
-  ], [])
+  const engineMetadatas = useEngineMetadataStore(s => s.metadatas)
+  const engineOptions = useMemo(() => {
+    if (engineMetadatas.length > 0) {
+      return engineMetadatas.map(meta => ({
+        id: meta.id as EngineId,
+        label: meta.name,
+        Icon: Bot,
+      }))
+    }
+    return [
+      { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
+      { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
+      { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
+      { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
+    ]
+  }, [engineMetadatas])
 
   // 点击外部关闭
   const modalRef = useRef<HTMLDivElement>(null)

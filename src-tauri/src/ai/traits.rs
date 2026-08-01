@@ -47,19 +47,22 @@ pub enum EngineId {
 impl EngineId {
     /// 从字符串解析引擎 ID。
     ///
-    /// 解析不区分大小写，兼容历史格式：
-    /// - `"claude" | "claude-code" | "claudecode"` → `ClaudeCode`
-    /// - `"codex" | "openai-codex" | "openai_codex"` → `Codex`
-    /// - `"simple-ai" | "simpleai" | "simple_ai"` → `SimpleAI`
-    /// - `"pi" | "pi-coding-agent" | "piagent"` → `Pi`
+    /// 遍历 `all()` + `aliases()` 匹配，新增引擎只需在 `aliases()` 中加别名。
+    /// 解析不区分大小写，兼容历史格式。
     pub fn parse(s: &str) -> Option<Self> {
         let lower = s.to_lowercase();
-        match lower.as_str() {
-            "claude" | "claude-code" | "claudecode" => Some(Self::ClaudeCode),
-            "codex" | "openai-codex" | "openai_codex" => Some(Self::Codex),
-            "simple-ai" | "simpleai" | "simple_ai" => Some(Self::SimpleAI),
-            "pi" | "pi-coding-agent" | "piagent" => Some(Self::Pi),
-            _ => None,
+        Self::all().iter().find(|e| e.aliases().contains(&lower.as_str())).copied()
+    }
+
+    /// 返回该引擎的所有命令别名（用于 IM 命令解析和配置兼容）。
+    ///
+    /// 新增引擎时在此方法中加一行别名列表即可。
+    pub fn aliases(&self) -> &'static [&'static str] {
+        match self {
+            Self::ClaudeCode => &["claude", "claude-code", "claudecode"],
+            Self::Codex => &["codex", "openai-codex", "openai_codex"],
+            Self::SimpleAI => &["simple-ai", "simpleai", "simple_ai"],
+            Self::Pi => &["pi", "pi-coding-agent", "piagent"],
         }
     }
 

@@ -6,7 +6,7 @@
 use std::collections::HashMap;
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
-use super::traits::{AIEngine, EngineId, SessionOptions};
+use super::traits::{AIEngine, EngineId, EngineMetadata, SessionOptions};
 use super::types::EngineStatus;
 
 /// 引擎注册表
@@ -88,6 +88,17 @@ impl EngineRegistry {
         self.engines
             .values()
             .map(|e| EngineStatus::from_engine(e.as_ref()))
+            .collect()
+    }
+
+    /// 获取所有已注册引擎的元数据列表。
+    ///
+    /// 新增引擎时只需注册到 EngineRegistry，此方法自动包含。
+    /// 前端通过 `get_engine_metadata_list` Tauri 命令消费此数据。
+    pub fn list_all_metadata(&self) -> Vec<EngineMetadata> {
+        self.engines
+            .values()
+            .map(|e| e.metadata())
             .collect()
     }
 

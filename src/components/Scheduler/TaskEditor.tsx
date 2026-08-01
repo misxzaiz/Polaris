@@ -9,6 +9,7 @@ import { TEMPLATE_VARIABLES, TASK_MODE_LABELS, TASK_CATEGORY_LABELS } from '@/ty
 import { TriggerConfig } from './TriggerConfig';
 import { ProtocolTemplateSelector, TemplateParamsForm } from './ProtocolTemplateSelector';
 import { useToastStore, useWorkspaceStore, useConfigStore, useSchedulerStore } from '@/stores';
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 
 export interface TaskEditorProps {
   /** 编辑的任务（可选，不传则为新建） */
@@ -27,6 +28,7 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   const { getCurrentWorkspace, workspaces } = useWorkspaceStore();
   const { config } = useConfigStore();
   const { templates, loadTemplates } = useSchedulerStore();
+  const engineMetadatas = useEngineMetadataStore(s => s.metadatas);
 
   // 默认工作目录
   const currentWorkspace = getCurrentWorkspace();
@@ -387,8 +389,19 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
               onChange={(e) => handleEngineChange(e.target.value)}
               className="w-full px-3 py-2 bg-background-surface border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
             >
-              <option value="claude-code">Claude Code</option>
-              <option value="codex">OpenAI Codex</option>
+              {engineMetadatas.length > 0
+                ? engineMetadatas.map(m => (
+                    <option key={m.id} value={m.id}>{m.name}</option>
+                  ))
+                : (
+                  <>
+                    <option value="claude-code">Claude Code</option>
+                    <option value="codex">OpenAI Codex</option>
+                    <option value="simple-ai">Simple AI</option>
+                    <option value="pi">Pi</option>
+                  </>
+                )
+              }
             </select>
           </div>
 

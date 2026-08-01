@@ -5,48 +5,54 @@
  * UI（ChatStatusBar / SessionConfigSelector）据此裁剪展示，避免向用户展示
  * 对当前引擎无效、甚至会导致后端报错的选择器。
  *
- * 矩阵依据后端实际命令构建逻辑（src-tauri/src/ai/engine/*.rs + commands/chat.rs）：
- *
- * | 选择器     | claude-code | codex | simple-ai |
- * |-----------|:-----------:|:-----:|:---------:|
- * | agent     | ✅ --agent  | ❌    | ❌        |
- * | model     | ✅ 别名     | ✅    | ✅(用profile.model) |
- * | effort    | ✅          | ❌    | ❌        |
- * | permission| ✅          | ✅    | ❌        |
- * | profile   | ✅          | ✅    | ✅(必需)  |
- *
- * 说明：
- * - codex 后端 build_command 不接收 agent / effort，展示它们只会误导用户。
- * - simple-ai 的 model 选择器由所选 Profile 的 modelOptions 驱动（commands/chat.rs
- *   apply_model_profile_options 优先使用前端 selected_model），agent/effort/permission
- *   由文件系统与自定义配置驱动，不暴露。
+ * 能力矩阵从后端引擎元数据动态获取，新增引擎时只需在后端注册，
+ * 并在 EngineCapabilities 中声明能力，前端自动识别。
  */
 
 import { normalizeEngineId } from './engineDisplay'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 
 /** 会话配置选择器类型（与 SessionConfigSelector / ChatStatusBar 保持一致） */
 export type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
 
 /**
- * 引擎 → 可展示的选择器列表。
- *
- * 用 `Record<string, ...>` 而非 `Record<EngineId, ...>`，以归一化后的字符串为键。
- * 键与 normalizeEngineId 的返回值对齐。
+ * 引擎 → 可展示的选择器列表（静态兜底，元数据加载后使用动态数据）。
  */
-const ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
+const FALLBACK_ENGINE_SELECTOR_CAPABILITIES: Record<string, SelectorType[]> = {
   'claude-code': ['agent', 'model', 'effort', 'permission', 'profile'],
   codex: ['model', 'permission', 'profile'],
   'simple-ai': ['agent', 'model', 'profile'],
   pi: ['model', 'effort', 'profile'],
 }
 
-/** 获取指定引擎可展示的选择器列表（未知引擎降级为 claude-code） */
-export function getEngineSelectors(engineId?: string | null): SelectorType[] {
-  const id = normalizeEngineId(engineId)
-  return ENGINE_SELECTOR_CAPABILITIES[id] ?? ENGINE_SELECTOR_CAPABILITIES['claude-code']
+/**
+ * 根据后端引擎元数据的能力标志动态推导选择器列表。
+ */
+function deriveSelectorsFromCapabilities(engineId: string): SelectorType[] {
+  const meta = useEngineMetadataStore.getState().getEngine(engineId)
+  if (!meta) {
+    return FALLBACK_ENGINE_SELECTOR_CAPABILITIES[engineId] ?? FALLBACK_ENGINE_SELECTOR_CAPABILITIES['claude-code']
+  }
+  const caps = meta.capabilities
+  const selectors: SelectorType[] = ['profile'] // profile 始终可用
+  if (caps.tools) selectors.push('agent')
+  selectors.push('model') // model 始终可用
+  if (caps.interrupt) selectors.push('effort')
+  if (caps.stdinInput) selectors.push('permission')
+  return selectors
 }
 
-/** 判断某选择器是否适用于指定引擎 */
+/**
+ * 获取指定引擎可展示的选择器列表（未知引擎降级为 claude-code）
+ */
+export function getEngineSelectors(engineId?: string | null): SelectorType[] {
+  const id = normalizeEngineId(engineId)
+  return deriveSelectorsFromCapabilities(id)
+}
+
+/**
+ * 判断某选择器是否适用于指定引擎
+ */
 export function isSelectorSupported(engineId: string | null | undefined, type: SelectorType): boolean {
   return getEngineSelectors(engineId).includes(type)
 }

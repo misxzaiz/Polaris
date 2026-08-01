@@ -949,6 +949,8 @@ pub fn run() {
             commands::engine_install::engine_detect_version,
             commands::engine_install::engine_install,
             commands::engine_install::engine_uninstall,
+            // 引擎元数据（前端统一消费）
+            commands::engine_metadata::get_engine_metadata_list,
             // MCP 管理器相关
             commands::mcp_manager::mcp_list_servers,
             commands::mcp_manager::mcp_get_server,

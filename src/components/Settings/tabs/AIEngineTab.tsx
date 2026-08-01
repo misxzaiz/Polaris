@@ -4,17 +4,20 @@
  * 布局：左侧引擎列表（选中查看 / 设为默认）+ 右侧选中引擎详情
  * （能力标签 / 分发方式 / CLI 路径 / 安装状态 / 安装·卸载·检测）。
  *
- * 模型供应商 Profile 管理已抽离至独立的 ModelProviderTab（设置 → 模型供应商）。
- * 引擎能力信息（工具调用 / 图片输入 / 流式输出等）以标签形式展示。
+ * 引擎列表从后端 `get_engine_metadata_list` 动态获取，
+ * 新增引擎时只需在后端注册到 EngineRegistry，前端自动感知。
+ * UI 专属配置（i18n 键、CLI 字段映射）在 ENGINE_UI_MAP 中维护。
  */
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ClaudePathSelector } from '../../Common';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 import type { Config, EngineId, EngineCapabilities, HealthStatus } from '@/types';
-import { getCapabilityLabels } from '@/types/engineMetadata';
+import type { EngineMetadata } from '@/types/engineMetadata';
+import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import { EngineInstallActions } from '../EngineInstallActions';
 import { Bot, RotateCcw, Check, Cpu, Package, Terminal } from 'lucide-react';
 
@@ -25,18 +28,19 @@ interface AIEngineTabProps {
 }
 
 // ============================================================================
-// 引擎元数据（前端镜像，作为后端 EngineMetadata 的视图模型）
+// 引擎 UI 专属配置（i18n 键、CLI 字段映射等）
+// 引擎列表从后端获取，此处仅维护 UI 呈现所需的额外信息。
 // ============================================================================
 
 type CliField = 'claudeCode' | 'codexCode' | 'piCode';
 
-interface EngineMetaEntry {
+interface EngineUiConfig {
+  /** 引擎 ID */
   id: EngineId
+  /** i18n 名称键 */
   nameKey: string
+  /** i18n 描述键 */
   descKey: string
-  capabilities: EngineCapabilities
-  /** 分发方式展示文本 */
-  distribution: string
   /** 内置引擎（无外部 CLI，无需安装） */
   builtin?: boolean
   /** CLI 路径所在的 config 字段 */
@@ -47,78 +51,42 @@ interface EngineMetaEntry {
   npmPackage?: string
 }
 
-const ENGINE_META: EngineMetaEntry[] = [
-  {
+/**
+ * UI 专属配置映射（keyed by engine ID）。
+ * 新增引擎时在此加一条记录即可。
+ */
+const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
+  'claude-code': {
     id: 'claude-code',
     nameKey: 'engines.claudeCode.name',
     descKey: 'engines.claudeCode.description',
-    capabilities: {
-      tools: true,
-      imageInput: true,
-      streaming: true,
-      interrupt: true,
-      resume: true,
-      stdinInput: true,
-      forkSession: true,
-    },
-    distribution: 'npx @anthropic-ai/claude-code',
     cliField: 'claudeCode',
     defaultCli: 'claude',
     npmPackage: '@anthropic-ai/claude-code',
   },
-  {
+  codex: {
     id: 'codex',
     nameKey: 'engines.codex.name',
     descKey: 'engines.codex.description',
-    capabilities: {
-      tools: true,
-      imageInput: false,
-      streaming: true,
-      interrupt: true,
-      resume: true,
-      stdinInput: false,
-      forkSession: false,
-    },
-    distribution: 'npm @openai/codex',
     cliField: 'codexCode',
     defaultCli: 'codex',
     npmPackage: '@openai/codex',
   },
-  {
+  'simple-ai': {
     id: 'simple-ai',
     nameKey: 'engines.simpleAi.name',
     descKey: 'engines.simpleAi.description',
-    capabilities: {
-      tools: true,
-      imageInput: false,
-      streaming: true,
-      interrupt: true,
-      resume: true,
-      stdinInput: false,
-      forkSession: false,
-    },
-    distribution: '内置引擎',
     builtin: true,
   },
-  {
+  pi: {
     id: 'pi',
     nameKey: 'engines.pi.name',
     descKey: 'engines.pi.description',
-    capabilities: {
-      tools: true,
-      imageInput: false,
-      streaming: true,
-      interrupt: true,
-      resume: false,
-      stdinInput: true,
-      forkSession: false,
-    },
-    distribution: 'npm @earendil-works/pi-coding-agent',
     cliField: 'piCode',
     defaultCli: 'pi',
     npmPackage: '@earendil-works/pi-coding-agent',
   },
-]
+}
 
 /** 从 healthStatus 解析某引擎的安装版本与可用性 */
 export interface EngineRuntimeStatus {
@@ -127,20 +95,26 @@ export interface EngineRuntimeStatus {
 }
 
 function resolveEngineStatus(
-  engine: EngineMetaEntry,
+  engineId: string,
   health: HealthStatus | null,
 ): EngineRuntimeStatus {
-  if (engine.builtin) return { available: true }
-  switch (engine.id) {
-    case 'claude-code':
-      return { available: !!health?.claudeAvailable, version: health?.claudeVersion }
-    case 'codex':
-      return { available: !!health?.codexAvailable, version: health?.codexVersion }
-    case 'pi':
-      return { available: !!health?.piAvailable, version: health?.piVersion }
-    default:
-      return { available: false }
+  const uiConfig = ENGINE_UI_MAP[engineId]
+  if (uiConfig?.builtin) return { available: true }
+
+  // 按引擎 ID 映射到 HealthStatus 字段
+  const fieldMap: Record<string, { available: string; version: string }> = {
+    'claude-code': { available: 'claudeAvailable', version: 'claudeVersion' },
+    codex: { available: 'codexAvailable', version: 'codexVersion' },
+    pi: { available: 'piAvailable', version: 'piVersion' },
   }
+  const fields = fieldMap[engineId]
+  if (fields && health) {
+    return {
+      available: !!(health as any)[fields.available],
+      version: (health as any)[fields.version],
+    }
+  }
+  return { available: false }
 }
 
 /** 引擎能力标签渲染 */
@@ -163,14 +137,15 @@ function CapabilityTags({ capabilities }: { capabilities: EngineCapabilities }) 
 
 /** 状态徽章（已安装 vN / 内置 / 未检测到） */
 function StatusBadge({
-  engine,
+  engineId,
   status,
 }: {
-  engine: EngineMetaEntry
+  engineId: string
   status: EngineRuntimeStatus
 }) {
   const { t } = useTranslation(['settings', 'common'])
-  if (engine.builtin) {
+  const uiConfig = ENGINE_UI_MAP[engineId]
+  if (uiConfig?.builtin) {
     return (
       <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-500 border border-blue-500/20 shrink-0">
         {t('aiEngine.builtinBadge', { defaultValue: '内置' })}
@@ -197,14 +172,46 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const { healthStatus, resetCliConfig, refreshHealth } = useConfigStore();
   const { agents } = useCliInfoStore();
   const [resetting, setResetting] = useState(false);
+  const engineMetadatas = useEngineMetadataStore(s => s.metadatas);
+
+  // 如果元数据未加载，触发加载
+  useEffect(() => {
+    const store = useEngineMetadataStore.getState()
+    if (!store.loaded && !store.loading) {
+      store.load()
+    }
+  }, [])
+
   // 当前查看的引擎（默认指向默认引擎）
   const [selectedId, setSelectedId] = useState<EngineId>(config.defaultEngine);
 
-  const selected = useMemo(
-    () => ENGINE_META.find((e) => e.id === selectedId) ?? ENGINE_META[0],
+  // 选中引擎的元数据 + UI 配置
+  const selectedMeta = useMemo(
+    () => engineMetadatas.find(m => m.id === selectedId),
+    [engineMetadatas, selectedId],
+  );
+  const selectedUiConfig = useMemo(
+    () => ENGINE_UI_MAP[selectedId],
     [selectedId],
   );
-  const selectedStatus = resolveEngineStatus(selected, healthStatus);
+  const selectedStatus = useMemo(
+    () => resolveEngineStatus(selectedId, healthStatus),
+    [selectedId, healthStatus],
+  );
+
+  // 引擎列表：从后端元数据获取，合并 UI 配置
+  const engineList = useMemo(() => {
+    if (engineMetadatas.length === 0) {
+      // 兜底：使用 UI 配置
+      return Object.values(ENGINE_UI_MAP)
+    }
+    return engineMetadatas.map(meta => ({
+      id: meta.id,
+      nameKey: ENGINE_UI_MAP[meta.id]?.nameKey ?? meta.name,
+      descKey: ENGINE_UI_MAP[meta.id]?.descKey ?? meta.description ?? '',
+      ...ENGINE_UI_MAP[meta.id],
+    }))
+  }, [engineMetadatas])
 
   const handleSetDefault = (engineId: EngineId) => {
     onConfigChange({ ...config, defaultEngine: engineId });
@@ -225,10 +232,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     }
   };
 
-  const getCliPath = (engine: EngineMetaEntry): string => {
-    if (engine.cliField === 'claudeCode') return config.claudeCode?.cliPath || 'claude';
-    if (engine.cliField === 'codexCode') return config.codexCode?.cliPath || 'codex';
-    if (engine.cliField === 'piCode') return config.piCode?.cliPath || 'pi';
+  const getCliPath = (engineId: string): string => {
+    const uiConfig = ENGINE_UI_MAP[engineId]
+    if (uiConfig?.cliField === 'claudeCode') return config.claudeCode?.cliPath || uiConfig.defaultCli || 'claude';
+    if (uiConfig?.cliField === 'codexCode') return config.codexCode?.cliPath || uiConfig.defaultCli || 'codex';
+    if (uiConfig?.cliField === 'piCode') return config.piCode?.cliPath || uiConfig.defaultCli || 'pi';
     return '';
   };
 
@@ -253,10 +261,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       <div className="flex gap-5 items-start">
         {/* 左侧：引擎列表 */}
         <div className="w-56 shrink-0 space-y-1.5">
-          {ENGINE_META.map((engine) => {
-            const status = resolveEngineStatus(engine, healthStatus);
+          {engineList.map((engine) => {
+            const status = resolveEngineStatus(engine.id, healthStatus);
             const isSelected = selectedId === engine.id;
             const isDefault = config.defaultEngine === engine.id;
+            const uiConfig = ENGINE_UI_MAP[engine.id]
             return (
               <button
                 key={engine.id}
@@ -269,7 +278,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                 }`}
               >
                 <div className="flex items-center gap-2">
-                  {engine.builtin ? (
+                  {uiConfig?.builtin ? (
                     <Cpu size={15} className="text-blue-400 shrink-0" />
                   ) : (
                     <Terminal size={15} className="text-text-tertiary shrink-0" />
@@ -277,7 +286,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                   <span className="font-medium text-sm text-text-primary truncate flex-1">
                     {t(engine.nameKey)}
                   </span>
-                  <StatusBadge engine={engine} status={status} />
+                  <StatusBadge engineId={engine.id} status={status} />
                 </div>
                 {isDefault && (
                   <div className="mt-1.5 inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">
@@ -296,12 +305,16 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           <div className="flex items-start justify-between gap-3 mb-1">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-base font-medium text-text-primary">{t(selected.nameKey)}</h3>
-                <StatusBadge engine={selected} status={selectedStatus} />
+                <h3 className="text-base font-medium text-text-primary">
+                  {t(selectedUiConfig?.nameKey ?? selectedId)}
+                </h3>
+                <StatusBadge engineId={selectedId} status={selectedStatus} />
               </div>
-              <p className="text-sm text-text-secondary mt-1">{t(selected.descKey)}</p>
+              <p className="text-sm text-text-secondary mt-1">
+                {t(selectedUiConfig?.descKey ?? '')}
+              </p>
             </div>
-            {config.defaultEngine === selected.id ? (
+            {config.defaultEngine === selectedId ? (
               <span className="shrink-0 inline-flex items-center gap-1 text-xs px-2.5 py-1.5 rounded-md bg-primary/10 text-primary border border-primary/20">
                 <Check size={12} />
                 {t('aiEngine.currentDefault', { defaultValue: '当前默认' })}
@@ -309,7 +322,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             ) : (
               <button
                 type="button"
-                onClick={() => handleSetDefault(selected.id)}
+                onClick={() => handleSetDefault(selectedId)}
                 disabled={loading}
                 className="shrink-0 text-xs px-2.5 py-1.5 rounded-md border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
               >
@@ -319,31 +332,35 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           </div>
 
           {/* 分发方式 */}
-          <div className="flex items-center gap-1.5 mt-2 text-xs text-text-tertiary">
-            <Package size={12} />
-            <span className="font-mono">{selected.distribution}</span>
-          </div>
+          {selectedMeta && (
+            <div className="flex items-center gap-1.5 mt-2 text-xs text-text-tertiary">
+              <Package size={12} />
+              <span className="font-mono">{getDistributionLabel(selectedMeta.distribution)}</span>
+            </div>
+          )}
 
           {/* 能力标签 */}
-          <CapabilityTags capabilities={selected.capabilities} />
+          {selectedMeta && (
+            <CapabilityTags capabilities={selectedMeta.capabilities} />
+          )}
 
           {/* CLI 路径（非内置引擎） */}
-          {selected.cliField && (
+          {selectedUiConfig?.cliField && (
             <div className="mt-4">
               <label className="block text-xs text-text-secondary mb-2">
                 {t('claudeCode.cliPath', { defaultValue: 'CLI 路径' })}
               </label>
               <ClaudePathSelector
-                value={getCliPath(selected)}
-                onChange={(cmd) => handleCliPathChange(selected.cliField!, cmd)}
-                engineType={selected.id}
+                value={getCliPath(selectedId)}
+                onChange={(cmd) => handleCliPathChange(selectedUiConfig.cliField!, cmd)}
+                engineType={selectedId}
                 disabled={loading}
               />
             </div>
           )}
 
           {/* Pi 引擎专属：MCP 桥接开关 */}
-          {selected.id === 'pi' && (
+          {selectedId === 'pi' && (
             <div className="mt-4 p-3 rounded-md border border-amber-500/25 bg-amber-500/5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -380,7 +397,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           )}
 
           {/* 内置引擎说明 */}
-          {selected.builtin && (
+          {selectedUiConfig?.builtin && (
             <div className="mt-4 text-xs text-text-secondary bg-blue-500/5 border border-blue-500/15 rounded-md px-3 py-2">
               {t('aiEngine.builtinHint', {
                 defaultValue: '内置引擎无需安装外部 CLI，使用「模型供应商」中配置的 API 端点运行。',
@@ -389,10 +406,10 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           )}
 
           {/* 安装 / 卸载 / 检测（npx/二进制分发引擎） */}
-          {!selected.builtin && selected.npmPackage && (
+          {!selectedUiConfig?.builtin && selectedUiConfig?.npmPackage && (
             <EngineInstallActions
-              engineId={selected.id}
-              npmPackage={selected.npmPackage}
+              engineId={selectedId}
+              npmPackage={selectedUiConfig.npmPackage}
               installed={selectedStatus.available}
               version={selectedStatus.version}
               onChanged={refreshHealth}
@@ -425,7 +442,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             <option value="">
               {t('aiEngine.auxiliaryFollowDefault', { defaultValue: '跟随默认引擎' })}
             </option>
-            {ENGINE_META.map((engine) => (
+            {engineList.map((engine) => (
               <option key={engine.id} value={engine.id}>
                 {t(engine.nameKey)}
               </option>
@@ -516,3 +533,4 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     </div>
   );
 }
+
