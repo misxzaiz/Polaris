@@ -86,7 +86,7 @@ marked.use({
       level: 'block',
       start(src: string) { return src.indexOf('$$'); },
       tokenizer(this: marked.Tokenizer, src: string) {
-        const match = src.match(/^\$\$([\s\S]*?)\$\$/);
+        const match = src.match(/^\x24\x24([\s\S]*?)\x24\x24/);
         if (match) {
           return {
             type: 'blockMath',
@@ -108,7 +108,7 @@ marked.use({
       level: 'inline',
       start(src: string) { return src.indexOf('$'); },
       tokenizer(this: marked.Tokenizer, src: string) {
-        const match = src.match(/^\$([^$\n]+?)\$/);
+        const match = src.match(/^\x24([^$\n]+?)\x24/);
         if (match) {
           return {
             type: 'inlineMath',
@@ -634,7 +634,7 @@ export class MarkdownRenderCache {
 
     // 检查新增部分是否包含块级元素开始标记（可能跨块）
     // 含表格行 | 前缀，防止单行增量破坏已渲染的 <table>
-    if (/^(#{1,6}|[-*+]\s|>\s|```|\|)/.test(newPart.trim())) {
+    if (/^(#{1,6}|[-*+]\s|>\s|```|\||\x24\x24)/.test(newPart.trim())) {
       // 新增部分以块级元素开始，可能导致解析问题，完整渲染
       return null;
     }
