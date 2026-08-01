@@ -132,10 +132,10 @@ export const InlineDiffView = memo(function InlineDiffView({
   }
 
   return (
-    <div className="border border-border rounded-md overflow-hidden">
+    <div className="overflow-hidden">
       {/* 头部：文件路径 + 统计 */}
       <div
-        className="flex items-center gap-2 px-3 py-1.5 bg-background-surface border-b border-border cursor-pointer hover:bg-background-hover transition-colors text-xs select-none"
+        className="flex items-center gap-2 px-3 py-1.5 bg-background-surface cursor-pointer hover:bg-background-hover transition-colors text-xs select-none"
         onClick={handleClick}
         title={filePath}
       >

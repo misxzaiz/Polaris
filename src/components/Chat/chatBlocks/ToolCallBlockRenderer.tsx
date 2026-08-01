@@ -393,9 +393,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* Edit 工具：紧凑内联 Diff */}
+          {/* Edit 工具：紧凑内联 Diff（负 margin 抵消父级 px-4 padding） */}
           {showDiffButton && block.diffData && (
-            <div className="mb-3">
+            <div className="mb-3 -mx-4">
               <InlineDiffView
                 filePath={block.diffData.filePath}
                 oldContent={block.diffData.oldContent}
