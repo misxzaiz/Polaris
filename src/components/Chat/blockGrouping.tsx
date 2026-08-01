@@ -59,7 +59,7 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
         } else {
           return (
             <div key={`tool-${index}`}>
-              <ToolCallBlockRenderer block={block as ToolCallBlock} />
+              <ToolCallBlockRenderer block={block as ToolCallBlock} isStreaming={isStreaming} />
             </div>
           );
         }
@@ -208,7 +208,7 @@ export function renderBlocksWithGrouping(
         } else {
           result.push(
             <div key={`block-${blockIndex}`}>
-              <ToolCallBlockRenderer block={b as ToolCallBlock} />
+              <ToolCallBlockRenderer block={b as ToolCallBlock} isStreaming={isStreaming} />
             </div>
           );
         }

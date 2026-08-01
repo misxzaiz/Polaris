@@ -66,7 +66,7 @@ export function renderContentBlock(
         }
       }
       return wrapWithErrorBoundary(
-        <ToolCallBlockRenderer block={block} />,
+        <ToolCallBlockRenderer block={block} isStreaming={isStreaming} />,
         block.id
       );
     case 'artifact_preview':

@@ -2,7 +2,7 @@
  * 工具调用块渲染器 - 优化版本
  */
 
-import { memo, useState, useMemo, useCallback } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
@@ -30,10 +30,12 @@ import { TodoWriteInputRenderer } from './TodoWriteRenderer';
 import { PatchDiffRenderer } from './PatchDiffRenderer';
 import { CodePreviewView } from './CodePreviewView';
 
-export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block }: { block: ToolCallBlock }) {
+export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block, isStreaming }: { block: ToolCallBlock; isStreaming?: boolean }) {
   const { t } = useTranslation('chat');
-  // 始终默认折叠（流式时也不展开，避免界面跳动）
-  const [isExpanded, setIsExpanded] = useState(false);
+  // edit/write 工具流式期间默认展开，方便查看 diff/预览
+  const [isExpanded, setIsExpanded] = useState(() =>
+    (isEditTool(block.name) || isWriteTool(block.name)) && isStreaming === true
+  );
   const [showFullOutput, setShowFullOutput] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
@@ -99,6 +101,14 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     const firstLine = block.error.split('\n').map((l) => l.trim()).find((l) => l.length > 0);
     return firstLine ? (firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine) : '';
   }, [block.status, block.error]);
+
+  // 流式结束后自动折叠 edit/write 面板
+  useEffect(() => {
+    if (!isStreaming && isExpanded && (isEditTool(block.name) || isWriteTool(block.name))) {
+      setIsExpanded(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming]);
 
   // 提取关键信息
   const keyInfo = useMemo(() => extractToolKeyInfo(block.name, block.input), [block.name, block.input]);
@@ -380,7 +390,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
           </div>
 
           {/* 文件路径：点击打开编辑器（非 Edit 工具，Edit 工具已整合到 InlineDiffView 头部） */}
-          {fullFilePath && !isEditTool(block.name) && (
+          {fullFilePath && !isEditTool(block.name) && !isWriteTool(block.name) && (
             <div className="mb-3">
               <button
                 type="button"

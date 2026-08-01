@@ -652,9 +652,16 @@ async fn apply_model_profile_options(
                 profile.wire_api
             );
 
-            // 剥离 CLI 私有后缀（如 `[1m]`），得到纯模型名
-            let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&profile.model);
-            let clean_model = stripped.base_model.clone().unwrap_or_else(|| profile.model.clone());
+            // 确定传给 pi 的纯模型名（剥离 CLI 私有后缀如 `[1m]`）。
+            // 优先用前端传入的 model（用户状态栏选择的 Profile 多模型选项），
+            // 前端未传时回退到 Profile 默认模型。
+            // 注意：pi_model 字段在 PiEngine.build_command 中优先于 model 字段
+            // （pi.rs: final_model = pi_model.or(model)），因此 pi_model 必须承载
+            // 用户选择的最终模型，否则用户在状态栏选的模型会被 Profile 默认模型覆盖。
+            let source_model = session_opts.model.clone()
+                .unwrap_or_else(|| profile.model.clone());
+            let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&source_model);
+            let clean_model = stripped.base_model.clone().unwrap_or_else(|| source_model);
 
             // 确定 pi 的 api 类型
             let pi_api = match profile.wire_api.as_deref() {

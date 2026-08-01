@@ -13,6 +13,7 @@ import { memo, useMemo } from 'react';
 import { clsx } from 'clsx';
 import { FileCode } from 'lucide-react';
 import { getLanguageFromPath } from '@/utils/language';
+import { highlightCode } from '@/utils/syntaxHighlight';
 
 interface CodePreviewViewProps {
   /** 文件路径 */
@@ -36,6 +37,9 @@ export const CodePreviewView = memo(function CodePreviewView({
     const lang = getLanguageFromPath(filePath);
     return lang || 'plaintext';
   }, [filePath]);
+
+  // 语法高亮
+  const highlighted = useMemo(() => highlightCode(content, language), [content, language]);
 
   // 文件名
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
@@ -73,8 +77,8 @@ export const CodePreviewView = memo(function CodePreviewView({
         className="overflow-auto bg-background-base"
         style={{ maxHeight }}
       >
-        <pre className="p-3 text-xs font-mono text-text-secondary leading-5 whitespace-pre-wrap break-all">
-          <code>{content}</code>
+        <pre className="p-3 text-xs font-mono leading-5 whitespace-pre-wrap break-all">
+          <code dangerouslySetInnerHTML={{ __html: highlighted }} />
         </pre>
       </div>
     </div>
