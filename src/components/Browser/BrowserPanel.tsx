@@ -13,7 +13,6 @@ import {
   Globe2,
   ListTree,
   Loader2,
-  MoreVertical,
   MousePointer2,
   PanelBottom,
   RefreshCw,
@@ -40,7 +39,6 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
-  browserShowOverflowMenu,
   browserToggleDevtools,
   formatMarqueeContext,
   makeBrowserWebviewLabel,
@@ -184,7 +182,7 @@ export function BrowserPanel({
   const { t } = useTranslation('common')
   const rootRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const overflowBtnRef = useRef<HTMLButtonElement>(null)
+  const toolbarWidthRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
@@ -226,6 +224,7 @@ export function BrowserPanel({
   const [marqueeNote, setMarqueeNote] = useState('')
   const [marqueeSending, setMarqueeSending] = useState(false)
   const [marqueePolling, setMarqueePolling] = useState(false)
+  const [toolbarWidth, setToolbarWidth] = useState(0)
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
@@ -730,39 +729,18 @@ export function BrowserPanel({
     }
   }, [marqueeMode, status, webviewLabel])
 
-  // 监听原生溢出菜单的操作事件（由 Rust 端触发）
+  // 监听工具栏容器宽度，用于响应式显隐
   useEffect(() => {
-    if (status !== 'ready') return
-    let unlisten: UnlistenFn | null = null
-
-    async function setup() {
-      unlisten = await listen<{ label: string; action: string }>(
-        'browser://overflow-menu-action',
-        (event) => {
-          if (event.payload.label !== webviewLabel) return
-          switch (event.payload.action) {
-            case 'devtools':
-              browserToggleDevtools(webviewLabel).catch((e) => setError(String(e)))
-              break
-            case 'copyUrl':
-              copyUrl()
-              break
-            case 'openExternal':
-              openExternal()
-              break
-            case 'clearData':
-              browserClearData(webviewLabel).catch((e) => setError(String(e)))
-              break
-          }
-        },
-      )
-    }
-
-    setup()
-    return () => {
-      unlisten?.()
-    }
-  }, [status, webviewLabel, copyUrl, openExternal])
+    const el = toolbarWidthRef.current
+    if (!el) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setToolbarWidth(entry.contentRect.width)
+      }
+    })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   // 组件卸载 / 会话切换时清理 overlay
   useEffect(() => {
@@ -881,7 +859,7 @@ export function BrowserPanel({
 
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
+      <div ref={toolbarWidthRef} className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -940,7 +918,7 @@ export function BrowserPanel({
         <div className="flex items-center gap-1">
           <button
             type="button"
-            className={taskButtonClass}
+            className={clsx(taskButtonClass, toolbarWidth < 680 && 'hidden')}
             onClick={refreshContextPreview}
             disabled={contextLoading}
             title={t('browser.previewContext', { defaultValue: '预览发送给 AI 的网页上下文' })}
@@ -952,7 +930,7 @@ export function BrowserPanel({
           </button>
           <button
             type="button"
-            className={taskButtonClass}
+            className={clsx(taskButtonClass, toolbarWidth < 680 && 'hidden')}
             onClick={refreshDiagnostics}
             disabled={diagnosticsLoading || status !== 'ready'}
             title={t('browser.diagnosticsHint', { defaultValue: '读取 DOM、Console 和可操作元素诊断' })}
@@ -966,6 +944,7 @@ export function BrowserPanel({
             type="button"
             className={clsx(
               taskButtonClass,
+              toolbarWidth < 520 && 'hidden',
               aiOperationMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
             )}
             onClick={() => setAiOperationMode((enabled) => !enabled)}
@@ -991,20 +970,6 @@ export function BrowserPanel({
             <span className="hidden 2xl:inline">
               {t('browser.marquee', { defaultValue: '圈选' })}
             </span>
-          </button>
-          <button
-            type="button"
-            ref={overflowBtnRef}
-            className={toolbarButtonClass}
-            onClick={() => {
-              const rect = overflowBtnRef.current?.getBoundingClientRect()
-              if (rect) {
-                browserShowOverflowMenu(webviewLabel, rect.left, rect.bottom + 4)
-              }
-            }}
-            title={t('browser.more', { defaultValue: '更多' })}
-          >
-            <MoreVertical size={15} />
           </button>
         </div>
       </div>

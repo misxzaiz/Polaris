@@ -1669,7 +1669,7 @@ pub async fn browser_show_overflow_menu(
     x: f64,
     y: f64,
 ) -> Result<()> {
-    use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
+    use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::{LogicalPosition, Position};
 
     let devtools = MenuItemBuilder::with_id("browser-overflow-devtools", "开发者工具")
@@ -1695,7 +1695,7 @@ pub async fn browser_show_overflow_menu(
         let app_clone = app.clone();
         let label_clone = label.clone();
 
-        window.on_menu_event(move |_window, event: &tauri::menu::MenuEvent| {
+        window.on_menu_event(move |_window, event: tauri::menu::MenuEvent| {
             let id = event.id().0.clone();
             let action = id.replace("browser-overflow-", "");
             let _ = app_clone.emit(
@@ -1707,7 +1707,7 @@ pub async fn browser_show_overflow_menu(
             );
         });
 
-        menu.popup_at(&window, Position::Logical(LogicalPosition::new(x, y)))?;
+        window.popup_menu_at(&menu, Position::Logical(LogicalPosition::new(x, y)))?;
     }
 
     Ok(())
