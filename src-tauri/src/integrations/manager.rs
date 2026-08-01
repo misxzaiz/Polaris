@@ -1290,26 +1290,56 @@ impl IntegrationManager {
         // 创建事件回调 —— 按事件类型分条发送
         // 提前 clone adapters 给闭包使用，避免 move 后无法再访问
         let adapters_for_callback = adapters.clone();
+
+        // 思考事件节流：记录上次发送思考摘要的时间
+        let last_thinking_time = Arc::new(std::sync::Mutex::new(
+            std::time::Instant::now()
+                .checked_sub(std::time::Duration::from_secs(10))
+                .unwrap_or_else(std::time::Instant::now)
+        ));
+        let last_thinking_time_clone = last_thinking_time.clone();
+
         let callback = move |event: crate::models::AIEvent| {
             tracing::debug!("[IntegrationManager] 收到事件: {:?}", std::mem::discriminant(&event));
 
             match &event {
-                // 思考事件：发送思考摘要
+                // 思考事件：带节流，同时累积到最终文本中
                 crate::models::AIEvent::Thinking(thinking) => {
                     let text = &thinking.content;
                     if !text.is_empty() {
-                        let preview: String = text.chars().take(150).collect();
-                        let preview = if preview.len() < text.len() {
-                            format!("{}...", preview)
-                        } else {
-                            preview
+                        // 累积思考内容到最终回复文本
+                        if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
+                            accumulated.push_str(&text);
+                        }
+
+                        // 节流发送思考摘要到 IM 平台（避免碎片消息轰炸）
+                        let should_send = {
+                            if let Ok(mut last) = last_thinking_time_clone.try_lock() {
+                                let now = std::time::Instant::now();
+                                if now.duration_since(*last) >= std::time::Duration::from_millis(PROGRESS_THROTTLE_MS) {
+                                    *last = now;
+                                    true
+                                } else {
+                                    false
+                                }
+                            } else {
+                                false
+                            }
                         };
-                        let msg = format!("[思考中] {}", preview);
-                        let adapters = adapters_for_callback.clone();
-                        let conv_id = conversation_id_for_callback.clone();
-                        rt_handle.spawn(async move {
-                            Self::send_reply(&adapters, platform, &conv_id, &msg).await;
-                        });
+                        if should_send {
+                            let preview: String = text.chars().take(150).collect();
+                            let preview = if preview.len() < text.len() {
+                                format!("{}...", preview)
+                            } else {
+                                preview
+                            };
+                            let msg = format!("[思考中] {}", preview);
+                            let adapters = adapters_for_callback.clone();
+                            let conv_id = conversation_id_for_callback.clone();
+                            rt_handle.spawn(async move {
+                                Self::send_reply(&adapters, platform, &conv_id, &msg).await;
+                            });
+                        }
                     }
                 }
 

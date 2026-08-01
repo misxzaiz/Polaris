@@ -768,6 +768,10 @@ export default async function (pi) {
                     if let Some(ref cb) = on_error {
                         cb("无法获取进程输入/输出流".to_string());
                     }
+                    event_callback(AIEvent::session_end(&current_session_id));
+                    if let Some(ref cb) = on_complete {
+                        cb(0);
+                    }
                     return;
                 }
             };
@@ -776,6 +780,10 @@ export default async function (pi) {
                 None => {
                     if let Some(ref cb) = on_error {
                         cb("无法获取进程错误流".to_string());
+                    }
+                    event_callback(AIEvent::session_end(&current_session_id));
+                    if let Some(ref cb) = on_complete {
+                        cb(0);
                     }
                     return;
                 }

@@ -318,6 +318,7 @@ impl AIEngine for SimpleAIEngine {
         let sessions = Arc::clone(&self.sessions);
         let sid = session_id.clone();
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
+        let on_complete = options.on_complete.clone();
         let mcp_servers = options.mcp_servers.clone();
         let skills_map = skills_map.clone();
         tokio::spawn(async move {
@@ -352,11 +353,17 @@ impl AIEngine for SimpleAIEngine {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] 对话循环完成, session={}", sid);
                     let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
                 }
                 Err(e) => {
                     tracing::error!("[SimpleAI] 对话循环失败, session={}, error={}", sid, e);
                     let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
                     let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
                 }
             }
         });
@@ -410,6 +417,7 @@ impl AIEngine for SimpleAIEngine {
         let sid = session_id.to_string();
         let msg = message.to_string();
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = options.event_callback.clone();
+        let on_complete = options.on_complete.clone();
         let mcp_servers = options.mcp_servers.clone();
         let skills_map = skills_map.clone();
 
@@ -475,11 +483,17 @@ impl AIEngine for SimpleAIEngine {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] continue 完成, session={}", sid);
                     let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
                 }
                 Err(e) => {
                     tracing::error!("[SimpleAI] continue 失败, session={}, error={}", sid, e);
                     let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
                     let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
                 }
             }
         });
