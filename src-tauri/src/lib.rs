@@ -1016,6 +1016,11 @@ pub fn run() {
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,
+            // 用量统计命令
+            commands::usage::get_usage_summary,
+            commands::usage::get_usage_model_stats,
+            commands::usage::get_usage_daily_trends,
+            commands::usage::get_usage_recent_logs,
             // 文件下载
             commands::file_explorer::download_file_binary,
             commands::file_explorer::download_directory_to_zip,

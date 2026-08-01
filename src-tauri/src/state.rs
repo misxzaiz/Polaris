@@ -13,6 +13,7 @@ use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
 use crate::services::data_root::data_root;
+use crate::services::usage_db::init_usage_db;
 use crate::services::file_watcher::FileWatcherManager;
 use crate::services::lsp::LspManager;
 use crate::services::lsp_config_repository::LspConfigRepository;
@@ -299,6 +300,20 @@ pub fn create_app_state(
     integration_manager: IntegrationManager,
 ) -> AppState {
     let config_dir = data_root().config_dir();
+
+    // 初始化用量数据库全局单例（proxy handler 通过 record_usage 全局函数访问）
+    {
+        let db_path = data_root().dialogs_dir().join("usage.db");
+        match crate::services::usage_db::UsageDb::open(db_path) {
+            Ok(db) => {
+                init_usage_db(db);
+                tracing::info!("[UsageDb] 用量数据库已初始化");
+            }
+            Err(e) => {
+                tracing::warn!("[UsageDb] 初始化失败，用量统计不可用: {}", e);
+            }
+        }
+    }
 
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),

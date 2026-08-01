@@ -30,6 +30,9 @@ pub mod agnes_mcp_server;
 pub mod personal_hub_crypto;
 pub mod personal_hub_mcp_server;
 
+pub mod usage_db;
+pub use usage_db::UsageDb;
+
 #[cfg(windows)]
 pub mod computer_control;
 #[cfg(windows)]

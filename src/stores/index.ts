@@ -41,9 +41,9 @@ export { useEngineMetadataStore, initEngineMetadata } from './engineMetadataStor
 
 export { useTokenAnalyticsStore } from './tokenAnalyticsStore';
 export type {
-  SessionTokenUsage,
-  TotalStats,
-  ModelStats,
-  EngineStats,
+  UsageSummary,
+  ModelUsageStats,
+  DailyUsageStats,
+  UsageLogEntry,
   TimeRange,
 } from './tokenAnalyticsStore';

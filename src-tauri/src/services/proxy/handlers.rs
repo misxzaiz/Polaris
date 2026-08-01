@@ -22,6 +22,35 @@ use super::transform::{
     anthropic_to_openai, anthropic_to_responses, openai_to_anthropic, responses_to_anthropic,
 };
 
+/// 从 OpenAI 响应中提取 usage 并记录到用量数据库
+fn record_openai_usage(openai_body: &Value, request_model: Option<&str>, latency_ms: u64, status_code: u16, is_streaming: bool) {
+    let model = openai_body.get("model").and_then(|v| v.as_str()).unwrap_or("unknown");
+    let usage = openai_body.get("usage");
+    if let Some(usage) = usage {
+        let input_tokens = usage.get("prompt_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        let output_tokens = usage.get("completion_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+        let cache_read = usage
+            .get("prompt_tokens_details")
+            .and_then(|d| d.get("cached_tokens"))
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        // OpenAI 格式没有 cache_creation 字段，设为 0
+        let cache_creation = 0;
+
+        crate::services::usage_db::record_usage(
+            model,
+            request_model,
+            input_tokens,
+            output_tokens,
+            cache_read,
+            cache_creation,
+            latency_ms as i64,
+            status_code as i64,
+            is_streaming,
+        );
+    }
+}
+
 /// 不透传给上游的入站请求头（小写）：
 /// hop-by-hop 头由本地连接管理；认证头以 Profile 配置替换；
 /// content-type / accept-encoding 由转发客户端自行设置。
@@ -411,6 +440,10 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
             match response.text().await {
                 Ok(body_text) => match serde_json::from_str::<Value>(&body_text) {
                     Ok(openai_response) => {
+                        // 记录用量：从响应中提取 usage 字段
+                        let request_model = openai_body.get("model").and_then(|v| v.as_str());
+                        record_openai_usage(&openai_response, request_model, 0, status.as_u16(), false);
+
                         let converted = match state.forwarder.wire_api {
                             ProxyWireApi::Responses => responses_to_anthropic(openai_response),
                             ProxyWireApi::ChatCompletions => openai_to_anthropic(openai_response),
@@ -754,6 +787,20 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 let event_name = event["event"].as_str().unwrap_or("message");
                 let event_data = serde_json::to_string(&event["data"]).unwrap_or_default();
                 sse_body.push_str(&format!("event: {}\ndata: {}\n\n", event_name, event_data));
+            }
+
+            // 记录用量（流式响应：从 usage_json 提取）
+            if let Some(u) = usage_json.as_object() {
+                let input_tokens = u.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                let output_tokens = u.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                let request_model = openai_body.get("model").and_then(|v| v.as_str());
+                crate::services::usage_db::record_usage(
+                    &model,
+                    request_model,
+                    input_tokens,
+                    output_tokens,
+                    0, 0, 0, 200, true,
+                );
             }
 
             Response::builder()

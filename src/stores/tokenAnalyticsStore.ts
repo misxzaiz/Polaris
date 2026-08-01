@@ -1,61 +1,84 @@
 /**
  * Token 用量统计 Store
  *
- * 数据源：DialogStorage 中每个会话的 DialogMeta.tokenUsage（由后端 saveDialog 轮末写入 JSONL）。
- * 读取方式：首次调用 getData() 时从 JSONL 加载并缓存，后续直读缓存。
- * 数据覆盖：常规 UI 会话（经 eventHandler → saveDialog）和调度任务（subscribe: true 后同样经 saveDialog）都会落盘。
+ * 数据源：代理层 SQLite 数据库（proxy handler 在转发 API 响应时实时写入）。
+ * 覆盖所有经过代理的请求路径，包括 UI 会话、调度任务、IM 机器人等。
  *
- * 性能：首次加载走一次 listConversations（读 meta 首行），之后纯内存。无 persist，无冗余 pushSession。
+ * 查询方式：直调后端 tauri::command，无需前端事件流参与。
+ * 性能：首次加载后缓存，后续直读。
  */
 
 import { create } from 'zustand'
-import { dialogStorageService } from '@/services/dialogStorage'
-import type { TokenUsageSummary } from '@/services/dialogStorage'
+import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('TokenAnalyticsStore')
 
 // ============================================================================
-// 类型定义
+// 类型定义（与后端 serde 对齐）
 // ============================================================================
 
-export interface SessionTokenUsage {
-  sessionId: string
-  title: string
-  engineId: string
-  createdAt: string
-  updatedAt: string
-  tokenUsage: TokenUsageSummary
-}
-
-export interface TotalStats {
-  totalSessions: number
-  totalInput: number
-  totalOutput: number
-  totalCacheCreation: number
-  totalCacheRead: number
+export interface UsageSummary {
+  totalRequests: number
+  totalInputTokens: number
+  totalOutputTokens: number
+  totalCacheReadTokens: number
+  totalCacheCreationTokens: number
   totalCostUsd: number
 }
 
-export interface ModelStats {
+export interface ModelUsageStats {
   model: string
-  sessions: number
-  input: number
-  output: number
-  cacheCreation: number
-  cacheRead: number
-  costUsd: number
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  totalCostUsd: number
 }
 
-export interface EngineStats {
-  engineId: string
-  sessions: number
-  input: number
-  output: number
-  costUsd: number
+export interface DailyUsageStats {
+  date: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  totalCostUsd: number
 }
 
-export type TimeRange = 'day' | 'week' | 'month' | 'all'
+export interface UsageLogEntry {
+  id: number
+  model: string
+  requestModel: string | null
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  latencyMs: number
+  statusCode: number
+  isStreaming: boolean
+  createdAt: number
+}
+
+export type TimeRange = 'today' | '1d' | '7d' | '14d' | '30d' | 'all'
+
+// ============================================================================
+// 辅助：时间范围 → Unix 时间戳
+// ============================================================================
+
+function timeRangeToDates(range: TimeRange): { startDate?: number; endDate?: number } {
+  if (range === 'all') return {}
+  const now = Math.floor(Date.now() / 1000)
+  const day = 86400
+  const map: Record<string, number> = { 'today': 0, '1d': day, '7d': 7 * day, '14d': 14 * day, '30d': 30 * day }
+  const lookback = map[range]
+  if (lookback === 0) {
+    // today: 当天 0 点
+    const d = new Date()
+    const startOfDay = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000)
+    return { startDate: startOfDay, endDate: now }
+  }
+  return { startDate: now - lookback, endDate: now }
+}
 
 // ============================================================================
 // Store
@@ -63,182 +86,69 @@ export type TimeRange = 'day' | 'week' | 'month' | 'all'
 
 interface TokenAnalyticsState {
   /** 缓存的有效会话列表（null = 未加载） */
-  sessions: SessionTokenUsage[] | null
+  cachedSummary: UsageSummary | null
+  cachedModelStats: ModelUsageStats[] | null
+  cachedTopSessions: UsageLogEntry[] | null
   /** 是否已加载过 */
   loaded: boolean
 
-  /** 从 JSONL 加载/刷新数据，返回缓存后的会话列表 */
-  loadData: () => Promise<SessionTokenUsage[]>
-  /** 强制刷新缓存 */
-  refreshData: () => Promise<SessionTokenUsage[]>
-  /** 清除缓存 */
-  clearCache: () => void
+  loadData: () => Promise<void>
+  refreshData: () => Promise<void>
 
-  // 查询函数（纯函数，依赖 sessions 快照）
-  getTotalStats: () => TotalStats
-  getByModel: () => ModelStats[]
-  getByTimeRange: (range: TimeRange) => { labels: string[]; input: number[]; output: number[]; costUsd: number[]; sessions: number[] }
-  getTopSessions: (limit?: number) => SessionTokenUsage[]
-  getEngineDistribution: () => EngineStats[]
+  getSummary: () => UsageSummary
+  getModelStats: () => ModelUsageStats[]
+  getTopSessions: (limit?: number) => UsageLogEntry[]
+  getDailyTrends: (range: TimeRange) => Promise<DailyUsageStats[]>
 }
 
 export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => ({
-  sessions: null,
+  cachedSummary: null,
+  cachedModelStats: null,
+  cachedTopSessions: null,
   loaded: false,
 
   loadData: async () => {
-    const state = get()
-    if (state.sessions) return state.sessions // 缓存有效
-
     try {
-      const result = await dialogStorageService.listConversations({ pageSize: 9999, sortOrder: 'desc' })
-      const sessions: SessionTokenUsage[] = []
-
-      for (const meta of result.items) {
-        const usage = meta.tokenUsage as TokenUsageSummary | undefined
-        if (!usage) continue
-        if (usage.input === 0 && usage.output === 0) continue
-        sessions.push({
-          sessionId: meta.externalId,
-          title: meta.title || '(无标题)',
-          engineId: meta.engineId,
-          createdAt: meta.createdAt,
-          updatedAt: meta.updatedAt,
-          tokenUsage: usage,
-        })
-      }
-
-      set({ sessions, loaded: true })
-      log.info('Token 统计数据已加载', { sessionCount: sessions.length })
-      return sessions
+      const [summary, modelStats, topSessions] = await Promise.all([
+        invoke<UsageSummary>('get_usage_summary', {}),
+        invoke<ModelUsageStats[]>('get_usage_model_stats', {}),
+        invoke<UsageLogEntry[]>('get_usage_recent_logs', { limit: 10 }),
+      ])
+      set({
+        cachedSummary: summary,
+        cachedModelStats: modelStats,
+        cachedTopSessions: topSessions,
+        loaded: true,
+      })
+      log.info('Token 统计数据已加载', { totalRequests: summary.totalRequests })
     } catch (e) {
-      log.warn('Token 统计加载失败（降级为空数据）' + String(e))
-      set({ sessions: [], loaded: true })
-      return []
+      log.warn('Token 统计加载失败: ' + String(e))
+      set({ loaded: true })
     }
   },
 
   refreshData: async () => {
-    set({ sessions: null })
+    set({ cachedSummary: null, cachedModelStats: null, cachedTopSessions: null, loaded: false })
     return get().loadData()
   },
 
-  clearCache: () => set({ sessions: null, loaded: false }),
-
-  getTotalStats: () => {
-    const { sessions } = get()
-    if (!sessions) return { totalSessions: 0, totalInput: 0, totalOutput: 0, totalCacheCreation: 0, totalCacheRead: 0, totalCostUsd: 0 }
-    return sessions.reduce(
-      (acc, s) => {
-        acc.totalSessions++
-        acc.totalInput += s.tokenUsage.input
-        acc.totalOutput += s.tokenUsage.output
-        acc.totalCacheCreation += s.tokenUsage.cacheCreation
-        acc.totalCacheRead += s.tokenUsage.cacheRead
-        acc.totalCostUsd += s.tokenUsage.costUsd
-        return acc
-      },
-      { totalSessions: 0, totalInput: 0, totalOutput: 0, totalCacheCreation: 0, totalCacheRead: 0, totalCostUsd: 0 },
-    )
-  },
-
-  getByModel: () => {
-    const { sessions } = get()
-    if (!sessions) return []
-    const modelMap = new Map<string, ModelStats>()
-    for (const session of sessions) {
-      const bd = session.tokenUsage.modelBreakdown
-      if (!bd || Object.keys(bd).length === 0) {
-        const key = 'unknown'
-        const existing = modelMap.get(key)
-        if (existing) {
-          existing.sessions++; existing.input += session.tokenUsage.input; existing.output += session.tokenUsage.output
-          existing.cacheCreation += session.tokenUsage.cacheCreation; existing.cacheRead += session.tokenUsage.cacheRead; existing.costUsd += session.tokenUsage.costUsd
-        } else {
-          modelMap.set(key, { model: key, sessions: 1, input: session.tokenUsage.input, output: session.tokenUsage.output, cacheCreation: session.tokenUsage.cacheCreation, cacheRead: session.tokenUsage.cacheRead, costUsd: session.tokenUsage.costUsd })
-        }
-        continue
-      }
-      for (const [model, usage] of Object.entries(bd)) {
-        const m = usage as NonNullable<TokenUsageSummary['modelBreakdown']>[string]
-        const existing = modelMap.get(model)
-        if (existing) {
-          existing.sessions++; existing.input += m.input; existing.output += m.output
-          existing.cacheCreation += m.cacheCreation; existing.cacheRead += m.cacheRead; existing.costUsd += m.costUsd
-        } else {
-          modelMap.set(model, { model, sessions: 1, input: m.input, output: m.output, cacheCreation: m.cacheCreation, cacheRead: m.cacheRead, costUsd: m.costUsd })
-        }
-      }
-    }
-    return Array.from(modelMap.values()).sort((a, b) => b.costUsd - a.costUsd)
-  },
-
-  getByTimeRange: (range: TimeRange) => {
-    const { sessions } = get()
-    if (!sessions) return { labels: [], input: [], output: [], costUsd: [], sessions: [] }
-    const buckets = new Map<string, { input: number; output: number; costUsd: number; sessions: number }>()
-    for (const session of sessions) {
-      const date = new Date(session.updatedAt)
-      let label: string
-      switch (range) {
-        case 'day': label = `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; break
-        case 'week': label = getISOWeekLabel(date); break
-        case 'month': label = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`; break
-        default: label = '全部'
-      }
-      const existing = buckets.get(label)
-      if (existing) {
-        existing.input += session.tokenUsage.input; existing.output += session.tokenUsage.output
-        existing.costUsd += session.tokenUsage.costUsd; existing.sessions++
-      } else {
-        buckets.set(label, { input: session.tokenUsage.input, output: session.tokenUsage.output, costUsd: session.tokenUsage.costUsd, sessions: 1 })
-      }
-    }
-    const sortedLabels = Array.from(buckets.keys()).sort((a, b) => {
-      if (range === 'all') return 0
-      return a.localeCompare(b)
-    })
-    return {
-      labels: sortedLabels,
-      input: sortedLabels.map((l) => buckets.get(l)!.input),
-      output: sortedLabels.map((l) => buckets.get(l)!.output),
-      costUsd: sortedLabels.map((l) => buckets.get(l)!.costUsd),
-      sessions: sortedLabels.map((l) => buckets.get(l)!.sessions),
+  getSummary: () => {
+    return get().cachedSummary ?? {
+      totalRequests: 0, totalInputTokens: 0, totalOutputTokens: 0,
+      totalCacheReadTokens: 0, totalCacheCreationTokens: 0, totalCostUsd: 0,
     }
   },
 
-  getTopSessions: (limit = 10) => {
-    const { sessions } = get()
-    if (!sessions) return []
-    return [...sessions].sort((a, b) => b.tokenUsage.input - a.tokenUsage.input).slice(0, limit)
-  },
+  getModelStats: () => get().cachedModelStats ?? [],
 
-  getEngineDistribution: () => {
-    const { sessions } = get()
-    if (!sessions) return []
-    const engineMap = new Map<string, EngineStats>()
-    for (const session of sessions) {
-      const key = session.engineId || 'unknown'
-      const existing = engineMap.get(key)
-      if (existing) {
-        existing.sessions++; existing.input += session.tokenUsage.input; existing.output += session.tokenUsage.output; existing.costUsd += session.tokenUsage.costUsd
-      } else {
-        engineMap.set(key, { engineId: key, sessions: 1, input: session.tokenUsage.input, output: session.tokenUsage.output, costUsd: session.tokenUsage.costUsd })
-      }
+  getTopSessions: (_limit = 10) => get().cachedTopSessions ?? [],
+
+  getDailyTrends: async (range: TimeRange) => {
+    const { startDate, endDate } = timeRangeToDates(range)
+    try {
+      return await invoke<DailyUsageStats[]>('get_usage_daily_trends', { startDate, endDate })
+    } catch {
+      return []
     }
-    return Array.from(engineMap.values()).sort((a, b) => b.input - a.input)
   },
 }))
-
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-function getISOWeekLabel(date: Date): string {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-  const dayNum = d.getUTCDay() || 7
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum)
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
-  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`
-}
