@@ -3,8 +3,8 @@
  */
 import { useTranslation } from 'react-i18next';
 import { Package } from 'lucide-react';
-import { ClaudePathSelector } from '../../Common';
-import { EngineInstallActions } from '../EngineInstallActions';
+import { ClaudePathSelector } from '../Common';
+import { EngineInstallActions } from './EngineInstallActions';
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import type { EngineCapabilities, EngineMetadata, Config, EngineId } from '@/types';
 import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './AIEngineTab';

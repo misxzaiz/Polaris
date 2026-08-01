@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Layout, FileExplorer, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
+import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
+import { FileExplorer } from './components/FileExplorer';
 import { createLogger } from './utils/logger';
 
 const log = createLogger('App');
