@@ -90,6 +90,12 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
   'Analyze': 'Z',
   'analyze': 'Z',
 
+  // Pi 引擎工具（全小写）
+  'read': 'R',
+  'edit': 'E',
+  'write': 'W',
+  'grep': 'G',
+
   // SimpleAI 引擎工具
   'bash': 'B',
   'edit_file': 'E',
@@ -167,6 +173,12 @@ const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   'skill': Layers,
   'AskUserQuestion': Sparkles,
   'ask_user_question': Sparkles,
+
+  // Pi 引擎工具（全小写）
+  'read': FileText,
+  'edit': Edit2,
+  'write': Save,
+  'grep': FileSearch,
 
   // SimpleAI 引擎工具
   'bash': Terminal,
@@ -316,6 +328,12 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   'AskUserQuestion': 'other',
   'ask_user_question': 'other',
 
+  // Pi 引擎工具（全小写）
+  'read': 'read',
+  'edit': 'edit',
+  'write': 'write',
+  'grep': 'search',
+
   // SimpleAI 引擎工具
   'bash': 'execute',
   'edit_file': 'edit',
@@ -376,6 +394,12 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   'web_fetch': 'labels.webRequest',
   'AskUserQuestion': 'labels.ask',
   'ask_user_question': 'labels.ask',
+
+  // Pi 引擎工具（全小写）
+  'read': 'labels.read',
+  'edit': 'labels.edit',
+  'write': 'labels.write',
+  'grep': 'labels.searchContent',
 
   // SimpleAI 引擎工具
   'bash': 'labels.execute',
