@@ -1,28 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
   <defs>
-    <linearGradient id="arc1" x1="0" y1="0" x2="96" y2="96">
+    <linearGradient id="g1" x1="0" y1="0" x2="96" y2="96">
       <stop offset="0%" stop-color="#4FC3F7"/>
       <stop offset="100%" stop-color="#7C4DFF"/>
     </linearGradient>
-    <linearGradient id="arc2" x1="96" y1="0" x2="0" y2="96">
-      <stop offset="0%" stop-color="#7C4DFF" stop-opacity="0.3"/>
+    <linearGradient id="g2" x1="96" y1="0" x2="0" y2="96">
+      <stop offset="0%" stop-color="#7C4DFF" stop-opacity="0.35"/>
       <stop offset="100%" stop-color="#4FC3F7" stop-opacity="0.15"/>
     </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="2.5" result="blur"/>
-      <feMerge>
-        <feMergeNode in="blur"/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <!-- 背景圈 -->
-  <circle cx="48" cy="48" r="44" stroke="#1a2a3a" stroke-width="1.5"/>
-  <!-- 主弧（蓝紫渐变，对应 spinner 主旋转弧） -->
-  <path d="M4 48 A44 44 0 0 1 76 16" stroke="url(#arc1)" stroke-width="3" stroke-linecap="round" fill="none"/>
-  <!-- 内弧（反向，对应 spinner 内圈） -->
-  <path d="M92 48 A44 44 0 0 1 20 80" stroke="url(#arc2)" stroke-width="2" stroke-linecap="round" fill="none"/>
-  <!-- 中心光点 -->
-  <circle cx="48" cy="48" r="4.5" fill="#4FC3F7" filter="url(#glow)"/>
-  <circle cx="48" cy="48" r="9" fill="#4FC3F7" opacity="0.08"/>
+  <circle cx="48" cy="48" r="45" stroke="url(#g1)" stroke-width="4" fill="none" stroke-linecap="round"
+    stroke-dasharray="139.01 143.73" transform="rotate(135, 48, 48)"/>
+  <circle cx="48" cy="48" r="39" stroke="url(#g2)" stroke-width="2.5" fill="none" stroke-linecap="round"
+    stroke-dasharray="110.27 134.77" transform="rotate(210.5, 48, 48)"/>
+  <circle cx="48" cy="48" r="3" fill="#4FC3F7" filter="url(#glow)"/>
+  <circle cx="48" cy="48" r="6" fill="#4FC3F7" opacity="0.1"/>
 </svg>
