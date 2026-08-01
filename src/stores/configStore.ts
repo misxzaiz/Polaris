@@ -9,7 +9,6 @@ import * as tauri from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
 import { currentMode } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
-import { getSelectedEngineHealth, hasAnyEngineAvailable } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
 
@@ -68,10 +67,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tauri.healthCheck(),
       ]);
 
-      // Web 模式下，认证成功拿到 config 即视为连接成功（CLI 可用性是服务端的事）
-      const connectionState = (currentMode === 'http' || hasAnyEngineAvailable(health, config))
-        ? 'success'
-        : 'failed';
+      // 配置加载成功即视为连接成功，引擎可用性是后续 UI 展示的独立维度
+      const connectionState = 'success';
 
       if (config?.language) {
         i18n.changeLanguage(config.language);
@@ -105,12 +102,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         }).catch(() => {})
       }
 
-      // CLI 可用时，异步获取动态信息（agents, auth status, version）
-      if (connectionState === 'success') {
-        import('./cliInfoStore').then(({ useCliInfoStore }) => {
-          useCliInfoStore.getState().fetchAll()
-        }).catch(() => {})
-      }
+      // 异步获取动态信息（agents, auth status, version）
+      import('./cliInfoStore').then(({ useCliInfoStore }) => {
+        useCliInfoStore.getState().fetchAll()
+      }).catch(() => {})
     } catch (e: unknown) {
       // In web mode, detect 401 auth error → show token input instead of CLI error
       log.error('loadConfig failed', e instanceof Error ? e : new Error(String(e)), { currentMode, isWebAuth: isWebAuthError(e) });
@@ -207,15 +202,13 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const config = await tauri.resetCliConfig();
-      // 重新跑健康检查 + 评估连接状态;若 PATH 中没有 claude/codex,
-      // connectionState 会变为 'failed',ConnectingOverlay 会自然显示出来
+      // 重新跑健康检查，引擎可用性通过 healthStatus 展示，不阻塞界面
       const health = await tauri.healthCheck();
-      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
       set({
         config,
         healthStatus: health,
-        connectionState,
-        isConnecting: connectionState !== 'success',
+        connectionState: 'success',
+        isConnecting: false,
         loading: false,
         error: null,
       });
@@ -237,8 +230,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (!config) {
         config = await tauri.getConfig();
       }
-      const connectionState = hasAnyEngineAvailable(health, config) ? 'success' : 'failed';
-      set({ healthStatus: health, connectionState });
+      set({ healthStatus: health });
     } catch (e) {
       log.error('refreshHealth failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
       if (isWebAuthError(e)) {
@@ -273,26 +265,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       }
 
       const health = await tauri.healthCheck();
-      const selectedHealth = getSelectedEngineHealth(config, health);
-      const connectionState = selectedHealth.available ? 'success' : 'failed';
-
-      if (connectionState === 'failed') {
-        set({
-          error: i18n.t('errors:cliNotFound', {
-            name: selectedHealth.name,
-            path: cliPath || selectedHealth.cliPath || i18n.t('errors:notSet'),
-          }),
-          loading: false,
-          connectionState: 'failed'
-        });
-      } else {
-        set({
-          healthStatus: health,
-          loading: false,
-          connectionState: 'success',
-          error: null
-        });
-      }
+      set({
+        healthStatus: health,
+        loading: false,
+        connectionState: 'success',
+        error: null
+      });
     } catch (e: unknown) {
       // In web mode, detect 401 auth error → show token input
       log.error('retryConnection failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
@@ -319,10 +297,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tauri.getConfig(),
         tauri.healthCheck(),
       ]);
-      // Web 模式下，认证成功拿到 config 即视为连接成功（CLI 可用性是服务端的事）
-      const connectionState = (currentMode === 'http' || hasAnyEngineAvailable(health, config))
-        ? 'success'
-        : 'failed';
+      const connectionState = 'success';
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }

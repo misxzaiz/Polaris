@@ -210,7 +210,7 @@ function App() {
   return (
     <ErrorBoundary>
       <Layout>
-        {(isConnecting || connectionState === 'failed' || connectionState === 'needsToken') && <ConnectingOverlay />}
+        {(isConnecting || connectionState === 'needsToken') && <ConnectingOverlay />}
 
         <TopMenuBarComponent
           onToggleRightPanel={toggleRightPanel}
