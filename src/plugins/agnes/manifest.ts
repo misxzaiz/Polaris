@@ -13,7 +13,8 @@ export const agnesPluginManifest: PolarisPluginManifest = {
   version: '0.1.0',
   description: 'Agnes Image 2.1 Flash 文生图/图生图 + Agnes Video V2.0 文生视频/图生视频/多图/关键帧。',
   builtin: true,
-  enabledByDefault: true,
+  enabledByDefault: false,
+  deprecated: true,
   contributes: {
     views: [
       {
