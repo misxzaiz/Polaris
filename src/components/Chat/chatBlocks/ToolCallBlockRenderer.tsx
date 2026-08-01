@@ -29,13 +29,17 @@ import { GrepOutputRenderer } from './GrepOutputRenderer';
 import { TodoWriteInputRenderer } from './TodoWriteRenderer';
 import { PatchDiffRenderer } from './PatchDiffRenderer';
 import { CodePreviewView } from './CodePreviewView';
+import { highlightCode } from '@/utils/syntaxHighlight';
+import { ansiToHtml } from '@/utils/ansiToHtml';
 
 export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block, isStreaming }: { block: ToolCallBlock; isStreaming?: boolean }) {
   const { t } = useTranslation('chat');
-  // edit/write 工具流式期间默认展开，方便查看 diff/预览
-  const [isExpanded, setIsExpanded] = useState(() =>
-    (isEditTool(block.name) || isWriteTool(block.name)) && isStreaming === true
-  );
+  // edit/write/bash 工具流式期间默认展开，方便查看 diff/命令/输出
+  const [isExpanded, setIsExpanded] = useState(() => {
+    const normalizedName = block.name.toLowerCase();
+    const isBash = normalizedName.includes('bash') || normalizedName.includes('command') || normalizedName.includes('execute');
+    return (isEditTool(block.name) || isWriteTool(block.name) || isBash) && isStreaming === true;
+  });
   const [showFullOutput, setShowFullOutput] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
@@ -102,9 +106,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     return firstLine ? (firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine) : '';
   }, [block.status, block.error]);
 
-  // 流式结束后自动折叠 edit/write 面板
+  // 流式结束后自动折叠 edit/write/bash 面板
   useEffect(() => {
-    if (!isStreaming && isExpanded && (isEditTool(block.name) || isWriteTool(block.name))) {
+    if (!isStreaming && isExpanded && (isEditTool(block.name) || isWriteTool(block.name) || isBashTool)) {
       setIsExpanded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -240,6 +244,13 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     const n = block.name.toLowerCase();
     return n.includes('bash') || n.includes('command') || n.includes('execute');
   }, [block.name]);
+
+  // Bash 工具输出渲染为彩色 HTML（保留 ANSI 颜色，仅用于展示）
+  const renderedOutput = useMemo(() => {
+    if (!block.output) return '';
+    if (isBashTool) return ansiToHtml(block.output);
+    return '';
+  }, [block.name, block.output, isBashTool]);
 
   // 提取完整命令（用于复制，不截断）
   const fullCommand = useMemo(() => extractFullCommand(block.input), [block.input]);
@@ -480,6 +491,10 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
               </div>
               {todoData ? (
                 <TodoWriteInputRenderer data={todoData} />
+              ) : isBashTool && fullCommand ? (
+                <pre className="text-xs font-mono bg-background-surface rounded p-2.5 overflow-x-auto">
+                  <code dangerouslySetInnerHTML={{ __html: highlightCode(fullCommand, 'bash') }} />
+                </pre>
               ) : (
                 <JsonTreeView data={block.input} defaultDepth={2} />
               )}
@@ -549,6 +564,14 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
                 <GrepOutputRenderer data={grepData} />
               ) : outputIsJson ? (
                 <JsonTreeView data={displayOutput} defaultDepth={2} />
+              ) : renderedOutput ? (
+                <pre
+                  className={clsx(
+                    'text-xs font-mono bg-background-surface rounded p-2.5 overflow-x-auto',
+                    showFullOutput ? 'max-h-96 overflow-y-auto' : 'max-h-48 overflow-y-auto'
+                  )}
+                  dangerouslySetInnerHTML={{ __html: renderedOutput }}
+                />
               ) : (
                 <pre className={clsx(
                   'text-xs text-text-secondary bg-background-surface rounded p-2.5 overflow-x-auto font-mono',
