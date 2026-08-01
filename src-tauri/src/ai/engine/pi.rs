@@ -446,7 +446,7 @@ function mcpRequest(process, request) {
         process.stdout.removeListener("data", onData);
         reject(new Error("MCP request timeout"));
       }
-    }, 15000);
+    }, 300000);
   });
 }
 
