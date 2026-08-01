@@ -367,9 +367,10 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
           />
         )}
 
-        {/* 聊天导航器 - compact 模式下隐藏 */}
-        {!compact && !isEmpty && (
+        {/* 对话导航时间线 */}
+        {!isEmpty && (
           <ChatNavigator
+            variant="timeline"
             rounds={conversationRounds}
             currentRoundIndex={currentRoundIndex}
             onScrollToBottom={scrollToBottom}

@@ -24,6 +24,8 @@ interface ChatNavigatorProps {
   onScrollToBottom: () => void;
   /** 滚动到指定轮次 */
   onScrollToRound: (roundIndex: number) => void;
+  /** 导航样式变体：'floating' 当前浮球 | 'timeline' 右侧时间线 */
+  variant?: 'floating' | 'timeline';
 }
 
 /** 延迟隐藏时间（毫秒） */
@@ -37,6 +39,7 @@ export function ChatNavigator({
   currentRoundIndex,
   onScrollToBottom,
   onScrollToRound,
+  variant = 'floating',
 }: ChatNavigatorProps) {
   const { t } = useTranslation('chat');
   const { isCompact } = useWindowSize({ compactThreshold: 500 });
@@ -120,13 +123,21 @@ export function ChatNavigator({
         maxHeight: '50vh',
       };
     }
+    if (variant === 'timeline') {
+      return {
+        right: '16px',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        maxHeight: '70vh',
+      };
+    }
     return {
       right: '24px',
       top: '50%',
       transform: 'translateY(-50%)',
       maxHeight: '70vh',
     };
-  }, [isCompact]);
+  }, [isCompact, variant]);
 
   // 当面板显示或当前项变化时，滚动到当前项
   useEffect(() => {
@@ -183,53 +194,87 @@ export function ChatNavigator({
 
   return (
     <div className="absolute inset-0 pointer-events-none z-40">
-      {/* 贴边悬浮球 - 位于当前聊天区域右边缘 */}
-      <div
-        ref={floatingBallRef}
-        className={clsx(
-          'absolute right-0 top-1/2 -translate-y-1/2',
-          // 尺寸：紧凑模式更大方便触摸
-          isCompact ? 'w-9 h-9 rounded-l-xl' : 'w-7 h-12 rounded-l-xl',
-          // 实心背景
-          'bg-[#1A1A1F]',
-          'border border-border/50 border-r-0',
-          'shadow-lg shadow-black/5',
-          // 内容布局
-          'flex items-center justify-center',
-          // 交互
-          'pointer-events-auto cursor-pointer transition-all duration-150',
-          'group',
-          // 悬停状态
-          isPanelVisible
-            ? 'bg-[#22222A] shadow-xl'
-            : 'hover:bg-[#22222A] hover:shadow-xl'
-        )}
-        onMouseEnter={handleFloatingBallMouseEnter}
-        onMouseLeave={handleFloatingBallMouseLeave}
-        onClick={handleFloatingBallClick}
-        title={t('navigator.title')}
-      >
-        {/* 列表图标 - 表示对话轮次 */}
-        <div className={clsx(
-          'w-4 h-4 flex flex-col items-center justify-center gap-0.5',
-          'transition-transform duration-200',
-          isPanelVisible ? 'scale-110' : 'group-hover:scale-110'
-        )}>
-          {/* 数字列表样式 */}
-          <div className="flex items-center gap-1 w-full">
-            <div className="w-1 h-1 bg-text-secondary rounded-full" />
-            <div className="flex-1 h-0.5 bg-text-muted rounded" />
-          </div>
-          <div className="flex items-center gap-1 w-full">
-            <div className="w-1 h-1 bg-text-tertiary rounded-full" />
-            <div className="w-2.5 h-0.5 bg-text-muted rounded" />
-          </div>
-          <div className="flex items-center gap-1 w-full">
-            <div className="w-1 h-1 bg-text-tertiary rounded-full" />
-            <div className="w-2 h-0.5 bg-text-muted rounded" />
+      {variant === 'timeline' ? (
+        /* 时间线变体：贴边圆点列 */
+        <div className="absolute right-0 top-0 bottom-0 w-3 z-40 pointer-events-none">
+          {/* 仅圆点区域可触发，垂直居中，不铺满全高 */}
+          <div
+            ref={floatingBallRef}
+            className="absolute left-0.5 right-0.5 top-1/2 -translate-y-1/2 flex flex-col items-center gap-1 pointer-events-auto cursor-pointer"
+            onMouseEnter={handleFloatingBallMouseEnter}
+            onMouseLeave={handleFloatingBallMouseLeave}
+            onClick={handleFloatingBallClick}
+          >
+            {rounds.map((round, idx) => (
+              <div
+                key={round.roundIndex}
+                className={clsx(
+                  'w-1.5 h-1.5 rounded-full transition-all duration-150',
+                  idx === currentRoundIndex
+                    ? 'bg-primary scale-125 shadow-sm shadow-primary/40'
+                    : round.hasTools
+                      ? 'bg-warning/40'
+                      : 'bg-border-strong',
+                  'hover:scale-150 hover:bg-primary/80'
+                )}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRoundClick(idx);
+                }}
+                title={round.userSummary}
+              />
+            ))}
           </div>
         </div>
-      </div>
+      ) : (
+        /* 浮球变体：贴边悬浮球 - 位于当前聊天区域右边缘 */
+        <div
+          ref={floatingBallRef}
+          className={clsx(
+            'absolute right-0 top-1/2 -translate-y-1/2',
+            // 尺寸：紧凑模式更大方便触摸
+            isCompact ? 'w-9 h-9 rounded-l-xl' : 'w-7 h-12 rounded-l-xl',
+            // 实心背景
+            'bg-[#1A1A1F]',
+            'border border-border/50 border-r-0',
+            'shadow-lg shadow-black/5',
+            // 内容布局
+            'flex items-center justify-center',
+            // 交互
+            'pointer-events-auto cursor-pointer transition-all duration-150',
+            'group',
+            // 悬停状态
+            isPanelVisible
+              ? 'bg-[#22222A] shadow-xl'
+              : 'hover:bg-[#22222A] hover:shadow-xl'
+          )}
+          onMouseEnter={handleFloatingBallMouseEnter}
+          onMouseLeave={handleFloatingBallMouseLeave}
+          onClick={handleFloatingBallClick}
+          title={t('navigator.title')}
+        >
+          {/* 列表图标 - 表示对话轮次 */}
+          <div className={clsx(
+            'w-4 h-4 flex flex-col items-center justify-center gap-0.5',
+            'transition-transform duration-200',
+            isPanelVisible ? 'scale-110' : 'group-hover:scale-110'
+          )}>
+            {/* 数字列表样式 */}
+            <div className="flex items-center gap-1 w-full">
+              <div className="w-1 h-1 bg-text-secondary rounded-full" />
+              <div className="flex-1 h-0.5 bg-text-muted rounded" />
+            </div>
+            <div className="flex items-center gap-1 w-full">
+              <div className="w-1 h-1 bg-text-tertiary rounded-full" />
+              <div className="w-2.5 h-0.5 bg-text-muted rounded" />
+            </div>
+            <div className="flex items-center gap-1 w-full">
+              <div className="w-1 h-1 bg-text-tertiary rounded-full" />
+              <div className="w-2 h-0.5 bg-text-muted rounded" />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 悬浮面板 */}
       {isPanelVisible && (

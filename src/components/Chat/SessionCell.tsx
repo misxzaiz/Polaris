@@ -11,11 +11,12 @@
 import { memo, useCallback, useState, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square } from 'lucide-react';
+import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, ArrowUpToLine } from 'lucide-react';
 import { SessionMessagesView } from './SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { useViewStore } from '@/stores/viewStore';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
 import { getChatDisplayStyleVars } from '@/types';
 import { WorkspaceBadge } from '../Session/WorkspaceBadge';
@@ -111,6 +112,12 @@ export const SessionCell = memo(function SessionCell({
     onToggleExpand?.();
   }, [onToggleExpand]);
 
+  // 前置：将当前会话移到多窗口最前面
+  const handleMoveToFront = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    useViewStore.getState().moveSessionToFront(sessionId);
+  }, [sessionId]);
+
   return (
     <>
       <div
@@ -170,9 +177,6 @@ export const SessionCell = memo(function SessionCell({
             <span className="w-1.5 h-1.5 bg-warning rounded-full shrink-0" title={t('sessionCell.pendingQuestion')} />
           )}
 
-          {/* 状态图标 */}
-          <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusConfig.className)} />
-
           {/* 中断按钮 - 仅在流式状态时显示 */}
           {isStreaming && (
             <button
@@ -197,10 +201,22 @@ export const SessionCell = memo(function SessionCell({
             )}
           </button>
 
+          {/* 前置按钮 */}
+          <button
+            onClick={handleMoveToFront}
+            className="shrink-0 p-0.5 rounded text-text-muted hover:text-primary hover:bg-background-hover transition-colors"
+            title={t('sessionCell.moveToFront')}
+          >
+            <ArrowUpToLine className="w-3 h-3" />
+          </button>
+
+          {/* 状态图标 */}
+          <StatusIcon className={clsx('w-3.5 h-3.5 shrink-0', statusConfig.className)} />
+
           {/* 关闭按钮 */}
           <button
             onClick={handleClose}
-            className="shrink-0 p-0.5 rounded text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
+            className="shrink-0 p-0.5 rounded ml-1 text-text-muted hover:text-text-primary hover:bg-background-hover transition-colors"
             title={t('sessionCell.close')}
           >
             <X className="w-3 h-3" />

@@ -90,6 +90,8 @@ interface ViewActions {
   // 滚动信号
   requestScrollToSession: (sessionId: string) => void;
   clearScrollRequest: () => void;
+  // 排序操作
+  moveSessionToFront: (sessionId: string) => void;
 }
 
 /** 完整的 View Store 类型 */
@@ -278,6 +280,16 @@ export const useViewStore = create<ViewStore>()(
       // 请求滚动到指定会话（一次性信号，由 MultiSessionGrid 消费后清空）
       requestScrollToSession: (sessionId: string) => set({ pendingScrollToId: sessionId }),
       clearScrollRequest: () => set({ pendingScrollToId: null }),
+
+      // 将会话移到多窗口最前面
+      moveSessionToFront: (sessionId: string) => set((state) => {
+        const idx = state.multiSessionIds.indexOf(sessionId);
+        if (idx <= 0) return state;
+        const newIds = [...state.multiSessionIds];
+        const [item] = newIds.splice(idx, 1);
+        newIds.unshift(item);
+        return { multiSessionIds: newIds };
+      }),
     }),
     {
       name: 'view-store',

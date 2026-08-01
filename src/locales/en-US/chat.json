@@ -585,7 +585,8 @@
       "waiting": "Waiting",
       "error": "Error",
       "backgroundRunning": "Background"
-    }
+    },
+    "moveToFront": "Move to front"
   },
   "emptyState": {
     "startChat": "Start chatting"

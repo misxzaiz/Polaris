@@ -4,7 +4,7 @@
  * 直接使用 zustand store 订阅特定 session 的状态，避免复杂的 hook 链
  */
 
-import { memo, useMemo, useRef, useCallback, useEffect, useSyncExternalStore } from 'react';
+import { memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -12,6 +12,12 @@ import { renderChatMessage } from './EnhancedChatMessages';
 import type { MessageScrollActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
+import {
+  findCurrentRoundIndexForRange,
+  getRoundScrollTargetIndex,
+  groupConversationRounds,
+} from '@/utils/conversationRounds';
+import { ChatNavigator } from './ChatNavigator';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -97,6 +103,7 @@ function useSessionStoreSubscription<T>(
 export const SessionMessagesView = memo(function SessionMessagesView({ sessionId }: SessionMessagesViewProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const autoScrollRef = useRef(true);
+  const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
 
   // 直接订阅特定 session store 的状态
   const messages = useSessionStoreSubscription(
@@ -154,6 +161,35 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
 
   const isEmpty = displayMessages.length === 0;
 
+  // 对话轮次分组
+  const conversationRounds = useMemo(() => {
+    return groupConversationRounds(displayMessages);
+  }, [displayMessages]);
+
+  // 可见范围变化时更新当前轮次
+  const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
+    const target = findCurrentRoundIndexForRange(conversationRounds, range.startIndex, range.endIndex);
+    if (target >= 0) setCurrentRoundIndex(target);
+  }, [conversationRounds]);
+
+  // 滚动到指定轮次
+  const scrollToRound = useCallback((roundIndex: number) => {
+    const round = conversationRounds[roundIndex];
+    if (!round || !virtuosoRef.current) return;
+
+    const targetIndex = getRoundScrollTargetIndex(round);
+    if (targetIndex === null) return;
+
+    virtuosoRef.current.scrollToIndex({
+      index: targetIndex,
+      align: 'start',
+      behavior: 'smooth',
+    });
+
+    autoScrollRef.current = false;
+    setCurrentRoundIndex(roundIndex);
+  }, [conversationRounds]);
+
   // 自动滚动到底部
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
     autoScrollRef.current = atBottom;
@@ -207,7 +243,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   }, [isStreaming, displayMessages.length]);
 
   return (
-    <div className="h-full w-full">
+    <div className="h-full w-full relative">
       {isEmpty ? (
         <EmptyState />
       ) : (
@@ -225,10 +261,24 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           followOutput={autoScrollRef.current ? (isStreaming ? true : 'smooth') : false}
           atBottomStateChange={handleAtBottomStateChange}
           atBottomThreshold={100}
+          rangeChanged={handleRangeChange}
           increaseViewportBy={{ top: 50, bottom: 100 }}
           initialTopMostItemIndex={displayMessages.length - 1}
         />
       )}
+
+      {/* 对话导航时间线 */}
+      {!isEmpty && conversationRounds.length > 1 && (
+        <ChatNavigator
+          variant="timeline"
+          rounds={conversationRounds}
+          currentRoundIndex={currentRoundIndex}
+          onScrollToBottom={scrollToBottom}
+          onScrollToRound={scrollToRound}
+        />
+      )}
+
+
     </div>
   );
 });

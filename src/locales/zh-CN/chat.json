@@ -584,7 +584,8 @@
       "waiting": "等待中",
       "error": "错误",
       "backgroundRunning": "后台运行"
-    }
+    },
+    "moveToFront": "前置"
   },
   "emptyState": {
     "startChat": "开始对话吧"
