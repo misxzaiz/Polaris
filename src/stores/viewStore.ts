@@ -110,7 +110,7 @@ export const useViewStore = create<ViewStore>()(
       developerPanelWidth: 400,
       gitPanelWidth: 320,
       // 新布局初始状态
-      leftPanelType: 'files' as LeftPanelType,  // 默认显示文件浏览器
+      leftPanelType: 'none' as LeftPanelType,   // 默认折叠（隐藏左侧面板）
       leftPanelWidth: 280,        // 左侧面板默认宽度
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
