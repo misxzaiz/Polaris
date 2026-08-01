@@ -73,10 +73,6 @@ export default defineConfig(async () => ({
           // Mermaid diagram library - 动态加载，使用更精确的匹配
           // 注：mermaid 已排除在 optimizeDeps 之外，确保 rollup 能识别其子模块
           if (id.includes('node_modules/mermaid')) {
-            // 内部布局引擎（dagre/dagre-d3）单独拆分
-            if (id.includes('dagre') || id.includes('graphlib')) {
-              return 'mermaid-layout';
-            }
             // 各类图表渲染器单独拆分
             if (id.includes('diagrams/')) {
               return 'mermaid-diagrams';
