@@ -105,6 +105,8 @@ export interface SessionStartEvent {
   type: 'session_start'
   /** 会话 ID */
   sessionId: string
+  /** 引擎 ID（如 "pi"、"claude-code"），用于自动创建会话时绑定正确引擎 */
+  engineId?: string
 }
 
 /**
@@ -906,8 +908,8 @@ export function createErrorEvent(
 /**
  * 创建会话开始事件
  */
-export function createSessionStartEvent(sessionId: string): SessionStartEvent {
-  return { type: 'session_start', sessionId }
+export function createSessionStartEvent(sessionId: string, engineId?: string): SessionStartEvent {
+  return { type: 'session_start', sessionId, engineId }
 }
 
 /**

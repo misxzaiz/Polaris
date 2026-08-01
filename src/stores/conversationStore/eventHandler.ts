@@ -88,6 +88,18 @@ export function handleAIEvent(
         error: null,
         promptSuggestion: null,
       })
+      // 如果事件携带了 engineId，更新会话元数据，确保后续回复使用正确引擎
+      if (event.engineId && state.sessionId) {
+        const managerState = sessionStoreManager.getState()
+        const currentMeta = managerState.sessionMetadata.get(state.sessionId)
+        if (currentMeta && currentMeta.engineId !== event.engineId) {
+          const newMeta = { ...currentMeta, engineId: event.engineId as any }
+          const newMetadata = new Map(managerState.sessionMetadata)
+          newMetadata.set(state.sessionId, newMeta)
+          sessionStoreManager.setState({ sessionMetadata: newMetadata })
+          log.info('会话引擎已更新', { sessionId: state.sessionId, engineId: event.engineId })
+        }
+      }
       // 轮次开始即落盘：把水位之后的消息（本轮用户消息；引擎轮换会话 ID/Fork 时为完整历史）
       // 增量写入 JSONL——用户消息从此不等轮末,发出即持久化。
       void flushNewMessages(get, set)

@@ -642,13 +642,17 @@ function createSessionManagerStore() {
         const isDispatchTask = routeSessionId.startsWith('dispatch-')
         const silentMode = isSchedulerTask || isDispatchTask
 
-        log.info('事件路由时自动创建会话', { routeSessionId, silentMode })
+        // 从 session_start 事件中提取 engineId，确保自动创建的会话绑定正确引擎
+        const eventEngineId = event.type === 'session_start' ? event.engineId : undefined
+
+        log.info('事件路由时自动创建会话', { routeSessionId, silentMode, eventEngineId })
 
         get().createSession({
           id: routeSessionId,
           type: 'free',
           title: isSchedulerTask ? '定时任务' : isDispatchTask ? '派发任务' : '新对话',
           silentMode,
+          engineId: eventEngineId,
         })
         store = get().stores.get(routeSessionId)
 

@@ -271,6 +271,9 @@ pub struct SessionStartEvent {
     pub event_type: String,
     /// 会话 ID
     pub session_id: String,
+    /// 引擎 ID（如 "pi"、"claude-code"），用于前端自动创建会话时绑定正确引擎
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_id: Option<String>,
 }
 
 impl SessionStartEvent {
@@ -278,7 +281,13 @@ impl SessionStartEvent {
         Self {
             event_type: "session_start".to_string(),
             session_id: session_id.into(),
+            engine_id: None,
         }
+    }
+
+    pub fn with_engine_id(mut self, engine_id: impl Into<String>) -> Self {
+        self.engine_id = Some(engine_id.into());
+        self
     }
 }
 
@@ -1638,6 +1647,16 @@ impl AIEvent {
     /// 创建会话开始事件
     pub fn session_start(session_id: impl Into<String>) -> Self {
         AIEvent::SessionStart(SessionStartEvent::new(session_id))
+    }
+
+    /// 创建会话开始事件（携带引擎 ID）
+    pub fn session_start_with_engine(
+        session_id: impl Into<String>,
+        engine_id: impl Into<String>,
+    ) -> Self {
+        AIEvent::SessionStart(
+            SessionStartEvent::new(session_id).with_engine_id(engine_id),
+        )
     }
 
     /// 创建会话结束事件

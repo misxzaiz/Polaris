@@ -159,7 +159,7 @@ opt-level = "z"        # 以体积优先优化
 lto = "fat"            # 全链接时优化（跨 crate 内联/消除死代码）
 codegen-units = 1       # 单代码生成单元，最大化 LTO 效果
 strip = "symbols"       # 去除调试符号（平均减少 30-50% 体积）
-panic = "abort"         # panic 直接 abort，不生成 unwind 表（减小体积）
+# 注：不使用 panic=abort，因 tauri 内部依赖 catch_unwind 处理窗口/JS 回调异常
 
 [profile.dev]
 # 开发模式下加快增量编译

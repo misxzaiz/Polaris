@@ -144,6 +144,34 @@ impl EngineRegistry {
         engine.interrupt(session_id)
     }
 
+    /// 遍历所有引擎（除指定引擎外）尝试续接会话。
+    /// 返回 true 表示在某个引擎中成功续接。
+    pub fn try_continue_all(
+        &mut self,
+        skip_engine: &EngineId,
+        session_id: &str,
+        message: &str,
+        options: SessionOptions,
+    ) -> bool {
+        for (id, engine) in &mut self.engines {
+            if *id == *skip_engine {
+                continue;
+            }
+            if engine
+                .continue_session(session_id, message, options.clone())
+                .is_ok()
+            {
+                tracing::info!(
+                    "[EngineRegistry] 在引擎 {} 中成功续接会话 {}",
+                    id,
+                    session_id
+                );
+                return true;
+            }
+        }
+        false
+    }
+
     /// 遍历所有引擎尝试中断会话
     pub fn try_interrupt_all(&mut self, session_id: &str) -> bool {
         for (id, engine) in &mut self.engines {

@@ -817,14 +817,35 @@ pub async fn start_chat_inner(
         McpSessionConfig::default()
     };
 
+    let engine_str = engine.as_str();
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
+        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
+        let enriched = match &event {
+            AIEvent::SessionStart(_) => {
+                serde_json::to_value(&event).ok().map(|mut v| {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                    }
+                    v
+                })
+            }
+            _ => None,
+        };
         let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({ "contextId": cid, "payload": event })
+            if let Some(ref enriched) = enriched {
+                serde_json::json!({ "contextId": cid, "payload": enriched })
+            } else {
+                serde_json::json!({ "contextId": cid, "payload": event })
+            }
         } else {
-            serde_json::json!({ "contextId": "main", "payload": event })
+            if let Some(ref enriched) = enriched {
+                serde_json::json!({ "contextId": "main", "payload": enriched })
+            } else {
+                serde_json::json!({ "contextId": "main", "payload": event })
+            }
         };
         tracing::debug!(
             "[start_chat_inner] 发送事件: {}",
@@ -836,13 +857,14 @@ pub async fn start_chat_inner(
         }
     };
 
+    let engine_str_for_session = engine.as_str();
     let ctx_id_for_session = options.context_id.clone();
     let emit_ref2 = callbacks.emit_event.clone();
     let session_id_update_callback = move |new_session_id: String| {
         let event_json = if let Some(ref cid) = ctx_id_for_session {
-            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
+            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id, "engineId": engine_str_for_session } })
         } else {
-            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id } })
+            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id, "engineId": engine_str_for_session } })
         };
         emit_ref2(event_json);
     };
@@ -990,14 +1012,35 @@ pub async fn continue_chat_inner(
         McpSessionConfig::default()
     };
 
+    let engine_str = engine.as_str();
     let ctx_id = options.context_id.clone();
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
+        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
+        let enriched = match &event {
+            AIEvent::SessionStart(_) => {
+                serde_json::to_value(&event).ok().map(|mut v| {
+                    if let Some(obj) = v.as_object_mut() {
+                        obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                    }
+                    v
+                })
+            }
+            _ => None,
+        };
         let event_json = if let Some(ref cid) = ctx_id {
-            serde_json::json!({ "contextId": cid, "payload": event })
+            if let Some(ref enriched) = enriched {
+                serde_json::json!({ "contextId": cid, "payload": enriched })
+            } else {
+                serde_json::json!({ "contextId": cid, "payload": event })
+            }
         } else {
-            serde_json::json!({ "contextId": "main", "payload": event })
+            if let Some(ref enriched) = enriched {
+                serde_json::json!({ "contextId": "main", "payload": enriched })
+            } else {
+                serde_json::json!({ "contextId": "main", "payload": event })
+            }
         };
         tracing::debug!(
             "[continue_chat_inner] 发送事件: {}",
@@ -1009,13 +1052,14 @@ pub async fn continue_chat_inner(
         }
     };
 
+    let engine_str_for_session = engine.as_str();
     let ctx_id_for_session = options.context_id.clone();
     let emit_ref2 = callbacks.emit_event.clone();
     let session_id_update_callback = move |new_session_id: String| {
         let event_json = if let Some(ref cid) = ctx_id_for_session {
-            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id } })
+            serde_json::json!({ "contextId": cid, "payload": { "type": "session_start", "sessionId": new_session_id, "engineId": engine_str_for_session } })
         } else {
-            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id } })
+            serde_json::json!({ "contextId": "main", "payload": { "type": "session_start", "sessionId": new_session_id, "engineId": engine_str_for_session } })
         };
         emit_ref2(event_json);
     };
@@ -1105,7 +1149,24 @@ pub async fn continue_chat_inner(
     .await?;
 
     let mut registry = state.engine_registry.lock().await;
-    registry.continue_session(engine, &session_id, &final_message, session_opts)
+
+    // 按指定引擎续接会话
+    match registry.continue_session(engine, &session_id, &final_message, session_opts.clone()) {
+        Ok(()) => Ok(()),
+        Err(primary_err) => {
+            // 兜底：指定引擎续接失败时，遍历所有引擎尝试（与 try_interrupt_all 模式一致）
+            tracing::warn!(
+                "[continue_chat_inner] 指定引擎 {:?} 续接失败，尝试遍历所有引擎: {}",
+                engine,
+                primary_err
+            );
+            if registry.try_continue_all(&engine, &session_id, &final_message, session_opts) {
+                Ok(())
+            } else {
+                Err(primary_err)
+            }
+        }
+    }
 }
 
 pub async fn interrupt_chat_inner(
