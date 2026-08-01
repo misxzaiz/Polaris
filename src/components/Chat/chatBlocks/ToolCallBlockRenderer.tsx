@@ -22,12 +22,13 @@ import {
 } from '@/utils/toolSummary';
 import { InlineDiffView } from './InlineDiffView';
 import { JsonTreeView } from '../../Common/JsonTreeView';
-import { isEditTool } from '@/utils/diffExtractor';
+import { isEditTool, isWriteTool } from '@/utils/diffExtractor';
 import { STATUS_CONFIG } from '../chatUtils/constants';
 import { isTodoWriteTool, isGrepTool, parseTodoInput } from '../chatUtils/helpers';
 import { GrepOutputRenderer } from './GrepOutputRenderer';
 import { TodoWriteInputRenderer } from './TodoWriteRenderer';
 import { PatchDiffRenderer } from './PatchDiffRenderer';
+import { CodePreviewView } from './CodePreviewView';
 
 export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block }: { block: ToolCallBlock }) {
   const { t } = useTranslation('chat');
@@ -408,6 +409,18 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
+          {/* Write 工具：代码预览 */}
+          {isWriteTool(block.name) && block.input && (
+            <div className="mb-3 -mx-4">
+              <CodePreviewView
+                filePath={(block.input.file_path || block.input.path || block.input.filePath) as string}
+                content={(block.input.content || block.input.newContent) as string}
+                onOpenFile={handleOpenFileByPath}
+                maxHeight="240px"
+              />
+            </div>
+          )}
+
           {/* apply_patch：多文件补丁渲染 */}
           {hasPatchData && (
             <PatchDiffRenderer block={block} />
@@ -424,7 +437,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
           )}
 
           {/* 非Edit/补丁/计划工具或无Diff：显示输入参数（左色条 + 标题，扁平结构） */}
-          {!showDiffButton && !hasPatchData && !isUpdatePlan && hasInput && (
+          {!showDiffButton && !hasPatchData && !isUpdatePlan && !isWriteTool(block.name) && hasInput && (
             <div className="mb-3 border-l-2 border-border pl-3">
               <div className="text-xs text-text-muted mb-1.5 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -481,7 +494,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
           )}
 
           {/* 非Edit工具：完整输出结果（左色条 + 标题，扁平结构） */}
-          {!isEditTool(block.name) && hasOutput && (
+          {!isEditTool(block.name) && !isWriteTool(block.name) && hasOutput && (
             <div className="mb-3 border-l-2 border-border pl-3">
               <div className="text-xs text-text-muted mb-1.5 flex items-center gap-1.5">
                 <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
