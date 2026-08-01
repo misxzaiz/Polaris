@@ -11,7 +11,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { BookOpen, User, Bot, ArrowDown, Wrench } from 'lucide-react';
+import { ArrowDown } from 'lucide-react';
 import type { ConversationRound } from '@/utils/conversationRounds';
 import { useWindowSize } from '@/hooks/useWindowSize';
 
@@ -282,9 +282,9 @@ export function ChatNavigator({
           ref={panelRef}
           className={clsx(
             isCompact
-              ? 'w-auto bg-[#1A1A1F]'
-              : 'w-56 bg-[#1A1A1F]',
-            'border border-border rounded-lg shadow-lg shadow-primary/10',
+              ? 'w-auto bg-background-elevated'
+              : 'w-56 bg-background-elevated',
+            'border border-border/80 rounded-lg shadow-lg shadow-black/20',
             'overflow-hidden animate-in fade-in zoom-in-95 duration-150',
             'pointer-events-auto flex flex-col',
             'absolute z-50'
@@ -294,70 +294,67 @@ export function ChatNavigator({
           onMouseLeave={handlePanelMouseLeave}
         >
           {/* 标题 */}
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle bg-[#25252B] shrink-0">
-            <span className="text-xs font-medium text-text-secondary flex items-center gap-1.5">
-              <BookOpen className="w-3.5 h-3.5" />
+          <div className="flex items-center justify-between px-2.5 py-1 shrink-0">
+            <span className="text-[10px] text-text-tertiary tracking-wide">
               {t('navigator.title')}
             </span>
-            <span className="text-xs text-text-tertiary">
-              {rounds.length} {t('navigator.round')}
+            <span className="text-[10px] text-text-muted">
+              {rounds.length}
             </span>
           </div>
 
           {/* 对话轮次列表 */}
-          <div className="overflow-y-auto chat-navigator-list flex-1 min-h-0 bg-[#1A1A1F]">
+          <div className="overflow-y-auto chat-navigator-list flex-1 min-h-0">
             {rounds.map((round, idx) => (
               <div
                 key={round.roundIndex}
                 ref={idx === currentRoundIndex ? currentItemRef : null}
                 className={clsx(
-                  'px-3 py-2 border-b border-border-subtle/50 cursor-pointer transition-colors',
-                  'hover:bg-[#2D2D35]',
-                  idx === currentRoundIndex && 'bg-primary/10 border-l-2 border-l-primary'
+                  'px-2.5 py-1.5 cursor-pointer transition-colors relative',
+                  'hover:bg-background-hover',
+                  idx === currentRoundIndex && 'bg-primary/5'
                 )}
                 onClick={() => handleRoundClick(idx)}
               >
-                {/* 轮次标题 */}
-                <div className="flex items-center gap-2 mb-1">
+                {/* 当前轮次指示线 */}
+                {idx === currentRoundIndex && (
+                  <div className="absolute left-0 top-1 bottom-1 w-0.5 bg-primary rounded-full" />
+                )}
+
+                {/* 第一行：序号 + 用户摘要 + 时间 */}
+                <div className="flex items-center gap-1.5 mb-0.5">
                   <span className={clsx(
-                    'text-xs font-medium',
-                    idx === currentRoundIndex ? 'text-primary' : 'text-text-tertiary'
+                    'text-[10px] font-semibold w-3.5 text-right shrink-0',
+                    idx === currentRoundIndex ? 'text-primary' : 'text-text-muted'
                   )}>
-                    {t('navigator.roundLabel', { round: round.roundIndex + 1 })}
+                    {round.roundIndex + 1}
                   </span>
-                  {round.hasTools && (
-                    <Wrench className="w-3 h-3 text-warning" />
-                  )}
-                  <span className="text-xs text-text-tertiary ml-auto">
+                  <span className={clsx(
+                    'text-xs truncate flex-1',
+                    idx === currentRoundIndex ? 'text-text-primary' : 'text-text-secondary'
+                  )}>
+                    {round.userSummary}
+                  </span>
+                  <span className="text-[9px] text-text-muted shrink-0">
                     {round.timestamp}
                   </span>
                 </div>
 
-                {/* 用户消息 */}
-                <div className="flex items-start gap-1.5 mb-1">
-                  <User className="w-3 h-3 text-text-secondary shrink-0 mt-0.5" />
-                  <p className="text-xs text-text-secondary line-clamp-1">
-                    {round.userSummary}
-                  </p>
-                </div>
-
-                {/* 助手回复 */}
+                {/* 第二行：助手回复 */}
                 {round.assistantMessage ? (
-                  <div className="flex items-start gap-1.5">
-                    <Bot className="w-3 h-3 text-primary shrink-0 mt-0.5" />
-                    <p className={clsx(
-                      'text-xs line-clamp-1',
-                      idx === currentRoundIndex ? 'text-text-primary' : 'text-text-tertiary'
-                    )}>
+                  <div className="flex items-center gap-1.5 pl-5">
+                    {round.hasTools && (
+                      <span className="text-[9px] text-warning shrink-0">🔧</span>
+                    )}
+                    <span className="text-[10px] text-text-tertiary truncate">
                       {round.assistantSummary || t('navigator.replying')}
-                    </p>
+                    </span>
                   </div>
                 ) : (
-                  <div className="flex items-start gap-1.5">
-                    <Bot className="w-3 h-3 text-text-tertiary shrink-0 mt-0.5" />
-                    <p className="text-xs text-text-tertiary italic">
+                  <div className="flex items-center gap-1.5 pl-5">
+                    <span className="text-[10px] text-text-muted italic">
                       {t('navigator.waitingReply')}
-                    </p>
+                    </span>
                   </div>
                 )}
               </div>
@@ -365,13 +362,13 @@ export function ChatNavigator({
           </div>
 
           {/* 底部按钮 */}
-          <div className="p-2 border-t border-border-subtle bg-[#25252B] shrink-0">
+          <div className="flex justify-center px-2 py-1.5 shrink-0 border-t border-border-subtle/50">
             <button
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-primary hover:bg-primary/10 rounded-md transition-colors"
+              className="w-[50px] h-7 rounded-md flex items-center justify-center text-text-muted hover:text-text-secondary hover:bg-background-hover transition-colors"
               onClick={handleScrollToBottom}
+              title={t('navigator.scrollToBottom')}
             >
               <ArrowDown className="w-4 h-4" />
-              {t('navigator.scrollToBottom')}
             </button>
           </div>
         </div>
