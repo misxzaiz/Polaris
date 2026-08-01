@@ -70,12 +70,18 @@ export default defineConfig(async () => ({
           if (id.includes('@codemirror')) {
             return 'codemirror';
           }
-          // Mermaid diagram library - 使用更精确的匹配
+          // Mermaid diagram library - 动态加载，使用更精确的匹配
+          // 注：mermaid 已排除在 optimizeDeps 之外，确保 rollup 能识别其子模块
           if (id.includes('node_modules/mermaid')) {
-            // 将 mermaid 的不同部分分离
-            if (id.includes('mermaid/dist/diagrams')) {
+            // 内部布局引擎（dagre/dagre-d3）单独拆分
+            if (id.includes('dagre') || id.includes('graphlib')) {
+              return 'mermaid-layout';
+            }
+            // 各类图表渲染器单独拆分
+            if (id.includes('diagrams/')) {
               return 'mermaid-diagrams';
             }
+            // 核心运行时（解析器、渲染引擎、API）
             if (id.includes('mermaid/dist/')) {
               return 'mermaid-core';
             }
@@ -143,6 +149,12 @@ export default defineConfig(async () => ({
       '@codemirror/lint',
       '@codemirror/lsp-client',
       '@lezer/highlight',
+    ],
+    // 排除大型动态加载库，让 rollup 在 manualChunks 中精确拆分
+    exclude: [
+      'mermaid',
+      'cytoscape',
+      'katex',
     ],
   },
 }));

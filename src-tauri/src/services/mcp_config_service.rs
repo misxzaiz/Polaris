@@ -9,25 +9,25 @@ use crate::services::plugin_state_service::PluginStateService;
 
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const TODO_MCP_SERVER_NAME: &str = "polaris-todo";
-const TODO_MCP_BIN_NAME: &str = "polaris-todo-mcp";
+const TODO_MCP_BIN_NAME: &str = "polaris-mcp";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
-const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-requirements-mcp";
+const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-mcp";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
-const SCHEDULER_MCP_BIN_NAME: &str = "polaris-scheduler-mcp";
+const SCHEDULER_MCP_BIN_NAME: &str = "polaris-mcp";
 const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
-const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-prd-preview-mcp";
+const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
-const COMPUTER_MCP_BIN_NAME: &str = "polaris-computer-mcp";
+const COMPUTER_MCP_BIN_NAME: &str = "polaris-mcp";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
-const ASK_MCP_BIN_NAME: &str = "polaris-ask-mcp";
+const ASK_MCP_BIN_NAME: &str = "polaris-mcp";
 const DISPATCH_MCP_SERVER_NAME: &str = "polaris-dispatch";
-const DISPATCH_MCP_BIN_NAME: &str = "polaris-dispatch-mcp";
+const DISPATCH_MCP_BIN_NAME: &str = "polaris-mcp";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
-const BROWSER_MCP_BIN_NAME: &str = "polaris-browser-mcp";
+const BROWSER_MCP_BIN_NAME: &str = "polaris-mcp";
 const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
-const AGNES_MCP_BIN_NAME: &str = "polaris-agnes-mcp";
+const AGNES_MCP_BIN_NAME: &str = "polaris-mcp";
 const PH_MCP_SERVER_NAME: &str = "polaris-ph";
-const PH_MCP_BIN_NAME: &str = "polaris-ph-mcp";
+const PH_MCP_BIN_NAME: &str = "polaris-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
@@ -48,16 +48,16 @@ fn mcp_exe_path(prefix: &str) -> String {
 }
 
 #[cfg(test)]
-fn todo_bundle_path() -> String {
-    mcp_exe_path("bin/polaris-todo-mcp")
+fn mcp_bundle_path() -> String {
+    mcp_exe_path("bin/polaris-mcp")
 }
 #[cfg(test)]
-fn todo_fallback_path() -> String {
-    mcp_exe_path("polaris-todo-mcp")
+fn mcp_fallback_path() -> String {
+    mcp_exe_path("polaris-mcp")
 }
 #[cfg(test)]
-fn todo_dev_path() -> String {
-    mcp_exe_path("src-tauri/target/debug/polaris-todo-mcp")
+fn mcp_dev_path() -> String {
+    mcp_exe_path("src-tauri/target/debug/polaris-mcp")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -210,9 +210,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             TODO_MCP_SERVER_NAME,
             TODO_MCP_BIN_NAME,
-            "bin/polaris-todo-mcp",
-            "polaris-todo-mcp",
-            "src-tauri/target/debug/polaris-todo-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_TODO_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -223,9 +223,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             REQUIREMENTS_MCP_SERVER_NAME,
             REQUIREMENTS_MCP_BIN_NAME,
-            "bin/polaris-requirements-mcp",
-            "polaris-requirements-mcp",
-            "src-tauri/target/debug/polaris-requirements-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_REQUIREMENTS_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -236,9 +236,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             SCHEDULER_MCP_SERVER_NAME,
             SCHEDULER_MCP_BIN_NAME,
-            "bin/polaris-scheduler-mcp",
-            "polaris-scheduler-mcp",
-            "src-tauri/target/debug/polaris-scheduler-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_SCHEDULER_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -249,9 +249,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             COMPUTER_MCP_SERVER_NAME,
             COMPUTER_MCP_BIN_NAME,
-            "bin/polaris-computer-mcp",
-            "polaris-computer-mcp",
-            "src-tauri/target/debug/polaris-computer-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_COMPUTER_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -262,9 +262,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             PRD_PREVIEW_MCP_SERVER_NAME,
             PRD_PREVIEW_MCP_BIN_NAME,
-            "bin/polaris-prd-preview-mcp",
-            "polaris-prd-preview-mcp",
-            "src-tauri/target/debug/polaris-prd-preview-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_PRD_PREVIEW_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -275,9 +275,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             ASK_MCP_SERVER_NAME,
             ASK_MCP_BIN_NAME,
-            "bin/polaris-ask-mcp",
-            "polaris-ask-mcp",
-            "src-tauri/target/debug/polaris-ask-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_ASK_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -288,9 +288,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             DISPATCH_MCP_SERVER_NAME,
             DISPATCH_MCP_BIN_NAME,
-            "bin/polaris-dispatch-mcp",
-            "polaris-dispatch-mcp",
-            "src-tauri/target/debug/polaris-dispatch-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_DISPATCH_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -301,9 +301,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             BROWSER_MCP_SERVER_NAME,
             BROWSER_MCP_BIN_NAME,
-            "bin/polaris-browser-mcp",
-            "polaris-browser-mcp",
-            "src-tauri/target/debug/polaris-browser-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -314,9 +314,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             AGNES_MCP_SERVER_NAME,
             AGNES_MCP_BIN_NAME,
-            "bin/polaris-agnes-mcp",
-            "polaris-agnes-mcp",
-            "src-tauri/target/debug/polaris-agnes-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_AGNES_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -327,9 +327,9 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PluginMcpServerContribution::builtin(
             PH_MCP_SERVER_NAME,
             PH_MCP_BIN_NAME,
-            "bin/polaris-ph-mcp",
-            "polaris-ph-mcp",
-            "src-tauri/target/debug/polaris-ph-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_PH_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -543,6 +543,7 @@ impl WorkspaceMcpConfigService {
 
             let args = build_mcp_server_args(
                 binary.args_mode,
+                &binary.server_name,
                 &self.config_dir,
                 normalized_workspace,
                 self.ask_listener.as_ref(),
@@ -641,6 +642,7 @@ impl WorkspaceMcpConfigService {
 
             let server_args = build_mcp_server_args(
                 binary.args_mode,
+                &binary.server_name,
                 &self.config_dir,
                 normalized_workspace,
                 self.ask_listener.as_ref(),
@@ -741,6 +743,7 @@ impl WorkspaceMcpConfigService {
             }
             let args = build_mcp_server_args(
                 binary.args_mode,
+                &binary.server_name,
                 &self.config_dir,
                 workspace_path,
                 self.ask_listener.as_ref(),
@@ -995,19 +998,32 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
     disabled_server_names.iter().any(|name| name == server_name)
 }
 
+/// 将 MCP server 名称（如 "polaris-todo"）转换为子命令名（如 "todo"）。
+fn server_name_to_subcommand(server_name: &str) -> &str {
+    server_name.strip_prefix("polaris-").unwrap_or(server_name)
+}
+
 fn build_mcp_server_args(
     args_mode: McpServerArgsMode,
+    server_name: &str,
     config_dir: &Path,
     workspace_path: &str,
     ask_listener: Option<&crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<&str>,
 ) -> Vec<String> {
+    let subcommand = server_name_to_subcommand(server_name);
     match args_mode {
-        McpServerArgsMode::ConfigDirAndWorkspace => vec![
-            strip_unc_prefix(&config_dir.to_string_lossy()),
-            workspace_path.to_string(),
-        ],
-        McpServerArgsMode::WorkspaceOnly => vec![workspace_path.to_string()],
+        McpServerArgsMode::ConfigDirAndWorkspace => {
+            let args = vec![
+                subcommand.to_string(),
+                strip_unc_prefix(&config_dir.to_string_lossy()),
+                workspace_path.to_string(),
+            ];
+            args
+        }
+        McpServerArgsMode::WorkspaceOnly => {
+            vec![subcommand.to_string(), workspace_path.to_string()]
+        }
         McpServerArgsMode::AskListener => {
             // Caller is expected to skip when no handle is present; defensive
             // fallback yields empty args (the companion will then exit with
@@ -1015,6 +1031,7 @@ fn build_mcp_server_args(
             match ask_listener {
                 Some(handle) => {
                     let mut args = vec![
+                        subcommand.to_string(),
                         "--polaris-port".to_string(),
                         handle.port.to_string(),
                         "--polaris-token".to_string(),
@@ -1291,12 +1308,12 @@ mod tests {
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(resource_dir.join("bin")).unwrap();
         std::fs::write(
-            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-mcp")),
             "dev bin",
         )
         .unwrap();
         std::fs::write(
-            resource_dir.join(fixture_exe("bin/polaris-todo-mcp")),
+            resource_dir.join(fixture_exe("bin/polaris-mcp")),
             "bundled bin",
         )
         .unwrap();
@@ -1305,13 +1322,13 @@ mod tests {
             Some(resource_dir.clone()),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            &todo_bundle_path(),
-            &todo_fallback_path(),
-            &todo_dev_path(),
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         )
         .unwrap();
-        assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-todo-mcp")));
+        assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -1326,12 +1343,12 @@ mod tests {
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
         std::fs::write(
-            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-mcp")),
             "dev bin",
         )
         .unwrap();
         std::fs::write(
-            resource_dir.join(fixture_exe("polaris-todo-mcp")),
+            resource_dir.join(fixture_exe("polaris-mcp")),
             "bundled root bin",
         )
         .unwrap();
@@ -1340,13 +1357,13 @@ mod tests {
             Some(resource_dir.clone()),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            &todo_bundle_path(),
-            &todo_fallback_path(),
-            &todo_dev_path(),
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         )
         .unwrap();
-        assert_eq!(path, resource_dir.join(fixture_exe("polaris-todo-mcp")));
+        assert_eq!(path, resource_dir.join(fixture_exe("polaris-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
@@ -1361,7 +1378,7 @@ mod tests {
         std::fs::create_dir_all(app_root.join("src-tauri/target/debug")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
         std::fs::write(
-            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp")),
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-mcp")),
             "dev bin",
         )
         .unwrap();
@@ -1370,15 +1387,15 @@ mod tests {
             Some(resource_dir),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            &todo_bundle_path(),
-            &todo_fallback_path(),
-            &todo_dev_path(),
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         )
         .unwrap();
         assert_eq!(
             path,
-            app_root.join(fixture_exe("src-tauri/target/debug/polaris-todo-mcp"))
+            app_root.join(fixture_exe("src-tauri/target/debug/polaris-mcp"))
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -1395,7 +1412,7 @@ mod tests {
         std::fs::create_dir_all(app_root.join("src-tauri/target/release")).unwrap();
         std::fs::create_dir_all(&resource_dir).unwrap();
         std::fs::write(
-            app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp")),
+            app_root.join(fixture_exe("src-tauri/target/release/polaris-mcp")),
             "release bin",
         )
         .unwrap();
@@ -1404,15 +1421,15 @@ mod tests {
             Some(resource_dir),
             app_root.clone(),
             TODO_MCP_BIN_NAME,
-            &todo_bundle_path(),
-            &todo_fallback_path(),
-            &todo_dev_path(),
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
             "POLARIS_TODO_MCP_PATH",
         )
         .unwrap();
         assert_eq!(
             path,
-            app_root.join(fixture_exe("src-tauri/target/release/polaris-todo-mcp"))
+            app_root.join(fixture_exe("src-tauri/target/release/polaris-mcp"))
         );
 
         let _ = std::fs::remove_dir_all(&temp_root);
@@ -1427,10 +1444,10 @@ mod tests {
         let mut registry = McpServerContributionRegistry::new();
         registry.register(PluginMcpServerContribution::builtin(
             "polaris-required-test",
-            "polaris-required-test-mcp",
-            "bin/polaris-required-test-mcp",
-            "polaris-required-test-mcp",
-            "missing/polaris-required-test-mcp",
+            "polaris-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "missing/polaris-mcp",
             "POLARIS_REQUIRED_TEST_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             true,
@@ -1455,10 +1472,10 @@ mod tests {
         let mut registry = McpServerContributionRegistry::new();
         registry.register(PluginMcpServerContribution::builtin(
             "polaris-optional-test",
-            "polaris-optional-test-mcp",
-            "bin/polaris-optional-test-mcp",
-            "polaris-optional-test-mcp",
-            "missing/polaris-optional-test-mcp",
+            "polaris-mcp",
+            "bin/polaris-mcp",
+            "polaris-mcp",
+            "missing/polaris-mcp",
             "POLARIS_OPTIONAL_TEST_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -1495,9 +1512,9 @@ mod tests {
             "polaris.sample",
             PluginMcpServerContribution::builtin(
                 "polaris-sample",
-                "polaris-sample-mcp",
-                "bin/polaris-sample-mcp",
-                "polaris-sample-mcp",
+                "polaris-mcp",
+                "bin/polaris-mcp",
+                "polaris-mcp",
                 "plugins/sample/plugin-mcp",
                 "POLARIS_SAMPLE_MCP_PATH",
                 McpServerArgsMode::WorkspaceOnly,
@@ -1635,7 +1652,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-external-config");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let plugin_script = config_dir
             .join("plugins")
             .join("example.demo-mcp")
@@ -1686,7 +1703,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-external-codex");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let plugin_script = config_dir
             .join("plugins")
             .join("example.demo-mcp")
@@ -1729,7 +1746,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-external-conflict");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -1765,10 +1782,10 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-a");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let requirements_executable_path =
-            temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
-        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
+            temp_root.join(fixture_exe("bin/polaris-mcp"));
+        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -1846,10 +1863,10 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-c");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let requirements_executable_path =
-            temp_root.join(fixture_exe("bin/polaris-requirements-mcp"));
-        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-scheduler-mcp"));
+            temp_root.join(fixture_exe("bin/polaris-mcp"));
+        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -1900,8 +1917,8 @@ mod tests {
     #[test]
     fn codex_toml_literals_handle_windows_paths_and_quotes() {
         assert_eq!(
-            toml_string_literal(r"D:\app\polaris\polaris-todo-mcp.exe"),
-            r"'D:\app\polaris\polaris-todo-mcp.exe'"
+            toml_string_literal(r"D:\app\polaris\polaris-mcp.exe"),
+            r"'D:\app\polaris\polaris-mcp.exe'"
         );
         assert_eq!(
             toml_string_array(&[
@@ -1923,7 +1940,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-b");
         let config_dir = temp_root.join("config");
-        let executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -1953,7 +1970,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-disabled");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
@@ -1982,7 +1999,7 @@ mod tests {
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
         let workspace = temp_root.join("workspace-disabled-codex");
         let config_dir = temp_root.join("config");
-        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-todo-mcp"));
+        let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();

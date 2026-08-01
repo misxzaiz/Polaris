@@ -51,12 +51,12 @@ impl TodoMcpDiagnosticsService {
             executable_exists: resolved_executable_path.exists(),
             expected_resource_bin_path: resource_dir
                 .as_ref()
-                .map(|dir| dir.join(format!("bin/polaris-todo-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
+                .map(|dir| dir.join(format!("bin/polaris-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
             expected_resource_root_path: resource_dir
                 .as_ref()
-                .map(|dir| dir.join(format!("polaris-todo-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
+                .map(|dir| dir.join(format!("polaris-mcp{}", EXE_SUFFIX)).to_string_lossy().to_string()),
             expected_dev_path: app_root
-                .join(format!("src-tauri/target/debug/polaris-todo-mcp{}", EXE_SUFFIX))
+                .join(format!("src-tauri/target/debug/polaris-mcp{}", EXE_SUFFIX))
                 .to_string_lossy()
                 .to_string(),
             workspace_config_path: workspace_config_path

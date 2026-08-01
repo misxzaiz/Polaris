@@ -1081,7 +1081,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     // 设置 resource_dir 为可执行文件所在目录。
     // Web 独立部署没有 Tauri 的资源解析器，若不设置 resource_dir，内置 MCP 二进制的解析会
     // 回退到编译期常量 CARGO_MANIFEST_DIR 推导的开发路径——该路径在部署机上通常不存在，
-    // 导致 required 的 polaris-todo-mcp 定位失败并使对话接口返回 500。
+    // 导致 required 的 polaris-mcp 定位失败并使对话接口返回 500。
     // 以可执行文件目录作为资源根后，只要 MCP 二进制与 polaris-web 同目录即可被发现，
     // 支持脱离编译目录的可移植部署；若仍未找到，解析逻辑会继续回退到环境变量与开发路径。
     match std::env::current_exe()

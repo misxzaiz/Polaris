@@ -324,7 +324,7 @@ impl McpManagerService {
     /// ```text
     /// chrome-devtools: cmd /c npx @anthropic-ai/chrome-devtools-mcp@latest - ✓ Connected
     /// plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication
-    /// polaris-todo: /path/to/polaris-todo-mcp /config /workspace - ✓ Connected
+    /// polaris-todo: /path/to/polaris-mcp /config /workspace - ✓ Connected
     /// ```
     fn parse_mcp_list_output(output: &str) -> Vec<McpHealthStatus> {
         let mut statuses = Vec::new();
@@ -406,7 +406,7 @@ impl McpManagerService {
     /// 输出格式示例:
     /// ```text
     /// polaris-todo
-    ///   Command: /path/to/polaris-todo-mcp arg1 arg2
+    ///   Command: /path/to/polaris-mcp arg1 arg2
     ///   Status: ✓ Connected
     /// ```
     fn parse_mcp_get_output(name: &str, output: &str) -> Result<McpHealthStatus> {
@@ -652,13 +652,13 @@ plugin:figma:figma: https://mcp.figma.com/mcp (HTTP) - ! Needs authentication"#;
     #[test]
     fn test_parse_mcp_get_output_connected() {
         let output = r#"polaris-todo
-  Command: /path/to/polaris-todo-mcp /config /workspace
+  Command: /path/to/polaris-mcp /config /workspace
   Status: ✓ Connected"#;
         let status = McpManagerService::parse_mcp_get_output("polaris-todo", output).unwrap();
         assert_eq!(status.name, "polaris-todo");
         assert!(status.connected);
         assert_eq!(status.status, "Connected");
-        assert_eq!(status.command, Some("/path/to/polaris-todo-mcp /config /workspace".to_string()));
+        assert_eq!(status.command, Some("/path/to/polaris-mcp /config /workspace".to_string()));
     }
 
     #[test]
