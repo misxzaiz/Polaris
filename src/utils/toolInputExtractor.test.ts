@@ -218,4 +218,80 @@ describe('normalizeCommandForDisplay', () => {
   it('应该处理普通命令', () => {
     expect(normalizeCommandForDisplay('npm run build')).toBe('npm run build')
   })
+
+  describe('stripLeadingCd', () => {
+    it('应该剥离前导 cd /path &&', () => {
+      expect(normalizeCommandForDisplay('cd /path && npm run build')).toBe('npm run build')
+    })
+
+    it('应该保留多命令链', () => {
+      expect(normalizeCommandForDisplay('cd /path && npm install && npm run build'))
+        .toBe('npm install && npm run build')
+    })
+
+    it('应该处理 cd /path; 分号分隔', () => {
+      expect(normalizeCommandForDisplay('cd /path; npm run build')).toBe('npm run build')
+    })
+
+    it('应该保留纯 cd 命令（无分隔符）', () => {
+      expect(normalizeCommandForDisplay('cd /path')).toBe('cd /path')
+    })
+
+    it('应该保留 cd 在中间的命令', () => {
+      expect(normalizeCommandForDisplay('npm test && cd /path && npm build'))
+        .toBe('npm test && cd /path && npm build')
+    })
+
+    it('不应该误伤 cdxxx 开头的命令', () => {
+      expect(normalizeCommandForDisplay('cd_rom_check && command')).toBe('cd_rom_check && command')
+    })
+
+    it('应该处理带重定向的 cd', () => {
+      expect(normalizeCommandForDisplay('cd /path 2>/dev/null && npm run build'))
+        .toBe('npm run build')
+    })
+
+    it('应该处理双引号路径', () => {
+      expect(normalizeCommandForDisplay('cd "C:\\Program Files" && dir'))
+        .toBe('dir')
+    })
+
+    it('应该处理嵌套 cd', () => {
+      expect(normalizeCommandForDisplay('cd /a && cd /b && command')).toBe('command')
+    })
+
+    it('不应该处理 || 分隔符（避免剥离 exit 1 等错误处理样板）', () => {
+      expect(normalizeCommandForDisplay('cd /path || exit 1 && npm run build'))
+        .toBe('cd /path || exit 1 && npm run build')
+    })
+
+    it('剥离后为空时应回退', () => {
+      expect(normalizeCommandForDisplay('cd /path &&')).toBe('cd /path &&')
+    })
+
+    it('应该保留 || exit 1 不变', () => {
+      expect(normalizeCommandForDisplay('cd /path || exit 1')).toBe('cd /path || exit 1')
+    })
+
+    it('应该处理完整重定向组合', () => {
+      expect(normalizeCommandForDisplay('cd /path > /dev/null 2>&1 && npm run build'))
+        .toBe('npm run build')
+    })
+
+    it('应该处理单引号路径', () => {
+      expect(normalizeCommandForDisplay("cd '/my project' && ls")).toBe('ls')
+    })
+
+    it('应该处理反引号路径', () => {
+      expect(normalizeCommandForDisplay('cd `/my project` && ls')).toBe('ls')
+    })
+
+    it('应该处理相对路径 cd ..', () => {
+      expect(normalizeCommandForDisplay('cd ../src && ls')).toBe('ls')
+    })
+
+    it('应该处理 Windows 盘符路径', () => {
+      expect(normalizeCommandForDisplay('cd D:\space\project && dir')).toBe('dir')
+    })
+  })
 })

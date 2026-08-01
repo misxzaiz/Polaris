@@ -48,6 +48,34 @@ function stripPairedQuotes(value: string): string {
 }
 
 /**
+ * 剥离前导 cd 命令，保留后续实际命令。
+ *
+ * 处理模式：
+ *   cd <路径> [可选重定向] <分隔符(&&|;||)> <剩余命令>
+ *
+ * 仅当有分隔符时才剥离，保留纯 "cd /path" 不动。
+ * 循环剥离前导 cd 链（如 cd /a && cd /b && command → command）。
+ * 剥离后为空时回退到原始字符串。
+ */
+function stripLeadingCd(command: string): string {
+  // 匹配前导 cd 模式：cd <路径> [重定向] <分隔符>
+  // 路径支持双引号、单引号、反引号或无空格无引号
+  // 仅处理 && 和 ; 分隔符，不处理 ||（|| exit 1 是错误处理样板，剥离不干净）
+  const CD_PATTERN = /^cd\s+(?:"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`|\S+)\s*(?:\d*(?:>|>>)<?(?:&\d)?\s*(?:\S+\s*)?)*(?:&&|;)\s*/;
+
+  let result = command;
+  let match;
+
+  while ((match = result.match(CD_PATTERN))) {
+    const stripped = result.slice(match[0].length);
+    if (!stripped) break; // 剥离后为空，退出循环保留原样
+    result = stripped;
+  }
+
+  return result;
+}
+
+/**
  * 清理展示用命令，剥离 Windows shell 启动器等内部包装。
  *
  * 原始命令仍由 extractFullCommand 返回，用于复制和详情调试。
@@ -82,6 +110,9 @@ export function normalizeCommandForDisplay(command: string): string {
       result = stripPairedQuotes(result.slice(cmdMatch.index + cmdMatch[0].length));
     }
   }
+
+  // 剥离前导 cd 前缀（如 "cd /path && command" → "command"）
+  result = stripLeadingCd(result);
 
   return result;
 }
