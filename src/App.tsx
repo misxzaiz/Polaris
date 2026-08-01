@@ -6,20 +6,11 @@ import { createLogger } from './utils/logger';
 const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
-import { GitPanel } from './components/GitPanel';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
 import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactHandoffButton, DispatchCenterButton, CompactHandoffProgress, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
-import { SimpleTodoPanel } from './components/TodoPanel/SimpleTodoPanel';
-import { TranslatePanel, SelectionContextMenu } from './components/Translate';
-import { SchedulerPanel } from './components/Scheduler/SchedulerPanel';
-import { RequirementPanel } from './components/RequirementPanel/RequirementPanel';
-import { TerminalPanel } from './components/Terminal/TerminalPanel';
-import { DemoPluginPanel } from './components/Plugins/DemoPluginPanel';
-import { BrowserLauncherPanel } from './components/Browser';
-import { NotificationCenterPanel } from './components/Notification';
-import { VoiceCompanionOverlay } from './components/VoiceCompanion';
+import { SelectionContextMenu } from './components/Translate';
 
 // 懒加载大型组件，减少初始 bundle 大小
 const SettingsPage = lazy(() => import('./components/Settings/SettingsPage').then(m => ({ default: m.SettingsPage })));
@@ -32,6 +23,18 @@ const FileSearchModal = lazy(() => import('./components/Editor/FileSearchModal')
 const SymbolPalette = lazy(() => import('./components/Editor/SymbolPalette').then(m => ({ default: m.SymbolPalette })));
 const ReferencesPanel = lazy(() => import('./components/Editor/ReferencesPanel').then(m => ({ default: m.ReferencesPanel })));
 const DefinitionPeek = lazy(() => import('./components/Editor/DefinitionPeek').then(m => ({ default: m.DefinitionPeek })));
+
+// 懒加载大型面板组件，减少初始 bundle 大小
+const GitPanel = lazy(() => import('./components/GitPanel').then(m => ({ default: m.GitPanel })));
+const SchedulerPanel = lazy(() => import('./components/Scheduler/SchedulerPanel').then(m => ({ default: m.SchedulerPanel })));
+const SimpleTodoPanel = lazy(() => import('./components/TodoPanel/SimpleTodoPanel').then(m => ({ default: m.SimpleTodoPanel })));
+const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
+const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
+const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
+const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
+const BrowserLauncherPanel = lazy(() => import('./components/Browser/BrowserPanel').then(m => ({ default: m.BrowserLauncherPanel })));
+const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
+const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/VoiceCompanionOverlay').then(m => ({ default: m.VoiceCompanionOverlay })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
@@ -181,23 +184,25 @@ function App() {
   const leftPanelContent = (
     <LeftPanelContent
       filesContent={<FileExplorer />}
-      gitContent={(
-        <GitPanel
-          onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
-          onOpenFileInEditor={openFileInEditor}
-          onOpenWorkbench={openGitWorkbench}
-        />
-      )}
-      browserContent={<BrowserLauncherPanel />}
-      todoContent={<SimpleTodoPanel />}
-      translateContent={<TranslatePanel onSendToChat={sendMessage} />}
-      schedulerContent={<SchedulerPanel />}
-      requirementContent={<RequirementPanel />}
-      terminalContent={<TerminalPanel />}
+      gitContent={
+        <Suspense fallback={loadingFallback}>
+          <GitPanel
+            onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
+            onOpenFileInEditor={openFileInEditor}
+            onOpenWorkbench={openGitWorkbench}
+          />
+        </Suspense>
+      }
+      browserContent={<Suspense fallback={loadingFallback}><BrowserLauncherPanel /></Suspense>}
+      todoContent={<Suspense fallback={loadingFallback}><SimpleTodoPanel /></Suspense>}
+      translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
+      schedulerContent={<Suspense fallback={loadingFallback}><SchedulerPanel /></Suspense>}
+      requirementContent={<Suspense fallback={loadingFallback}><RequirementPanel /></Suspense>}
+      terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
-      demoPluginContent={<DemoPluginPanel onSendToChat={sendMessage} />}
+      demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
     />
   );
 
@@ -324,7 +329,9 @@ function App() {
             className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
             style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
           >
-            <NotificationCenterPanel onClose={toggleNotificationCenter} />
+            <Suspense fallback={null}>
+              <NotificationCenterPanel onClose={toggleNotificationCenter} />
+            </Suspense>
           </div>
         )}
 
@@ -349,7 +356,9 @@ function App() {
         </Suspense>
 
         {/* 语音伙伴「小陈」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
-        <VoiceCompanionOverlay />
+        <Suspense fallback={null}>
+          <VoiceCompanionOverlay />
+        </Suspense>
       </Layout>
     </ErrorBoundary>
   );

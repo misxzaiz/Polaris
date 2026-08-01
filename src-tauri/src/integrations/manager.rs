@@ -256,6 +256,7 @@ impl IntegrationManager {
                         let mut adapters = self.adapters.lock().await;
                         adapters.entry(Platform::DingTalk).or_insert_with(|| {
                             let mut adapter = DingTalkAdapter::new(dingtalk_cfg.clone());
+                            #[cfg(feature = "tauri-app")]
                             if let Some(ref app_handle) = self.app_handle {
                                 adapter = adapter.with_app_handle(app_handle.clone());
                             }
@@ -1835,6 +1836,7 @@ impl IntegrationManager {
             InstanceConfig::DingTalk(config) => {
                 tracing::info!("[IntegrationManager] 创建新的 DingTalk Adapter: {}", instance.name);
                 let mut adapter = DingTalkAdapter::new(config.clone());
+                #[cfg(feature = "tauri-app")]
                 if let Some(ref app_handle) = self.app_handle {
                     adapter = adapter.with_app_handle(app_handle.clone());
                 }
