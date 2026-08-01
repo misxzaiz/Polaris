@@ -6,7 +6,7 @@ import { memo, useState, useMemo, useCallback } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Check, XCircle, ChevronDown, ChevronRight, Code, FileDiff, Copy, ListChecks } from 'lucide-react';
+import { Check, XCircle, ChevronDown, ChevronRight, Code, Copy, ListChecks } from 'lucide-react';
 import type { ToolCallBlock } from '@/types';
 import { getToolConfig, extractToolKeyInfo, getToolShortName } from '@/utils/toolConfig';
 import { extractFullFilePath, extractFullCommand } from '@/utils/toolInputExtractor';
@@ -20,7 +20,7 @@ import {
   stripAnsiCodes,
   parseGrepMatches,
 } from '@/utils/toolSummary';
-import { DiffViewer } from '../../Diff/DiffViewer';
+import { InlineDiffView } from './InlineDiffView';
 import { JsonTreeView } from '../../Common/JsonTreeView';
 import { isEditTool } from '@/utils/diffExtractor';
 import { STATUS_CONFIG } from '../chatUtils/constants';
@@ -61,6 +61,19 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     const fileName = fullFilePath.split(/[/\\]/).pop() || fullFilePath;
     openFile(absolutePath, fileName);
   }, [fullFilePath, currentWorkspace, openFile]);
+
+  /** 从 InlineDiffView 回调打开文件（接受路径字符串，非事件） */
+  const handleOpenFileByPath = useCallback((path: string) => {
+    if (!path) return;
+    const isAbsolute = path.startsWith('/') || /^[A-Za-z]:[\/]/.test(path);
+    const absolutePath = isAbsolute
+      ? path
+      : currentWorkspace
+        ? (currentWorkspace.path.replace(/[\/]+$/, '') + '/' + path.replace(/^[\/]+/, ''))
+        : path;
+    const fileName = path.split(/[/\]/).pop() || path;
+    openFile(absolutePath, fileName);
+  }, [currentWorkspace, openFile]);
 
   // 状态图标
   const statusConfig = STATUS_CONFIG[block.status] || STATUS_CONFIG.pending;
@@ -365,8 +378,8 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           </div>
 
-          {/* 文件路径：点击打开编辑器 */}
-          {fullFilePath && (
+          {/* 文件路径：点击打开编辑器（非 Edit 工具，Edit 工具已整合到 InlineDiffView 头部） */}
+          {fullFilePath && !isEditTool(block.name) && (
             <div className="mb-3">
               <button
                 type="button"
@@ -380,19 +393,17 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
             </div>
           )}
 
-          {/* Edit 工具：直接显示 Diff */}
+          {/* Edit 工具：紧凑内联 Diff */}
           {showDiffButton && block.diffData && (
             <div className="mb-3">
-              <div className="text-xs text-text-muted mb-2 flex items-center gap-1.5">
-                <FileDiff className="w-3 h-3" />
-                {t('tool.fileDiff')}
-              </div>
-              <DiffViewer
+              <InlineDiffView
+                filePath={block.diffData.filePath}
                 oldContent={block.diffData.oldContent}
                 newContent={block.diffData.newContent}
-                changeType="modified"
-                showStatusHint={false}
-                maxHeight="300px"
+                diffString={block.diffData.diffString}
+                edits={block.diffData.edits}
+                onOpenFile={handleOpenFileByPath}
+                maxHeight="240px"
               />
             </div>
           )}

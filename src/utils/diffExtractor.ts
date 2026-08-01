@@ -11,6 +11,14 @@ export interface DiffData {
   oldContent: string;
   newContent: string;
   filePath: string;
+  /** 原始 edits 数组（用于统一展示，引擎无关） */
+  edits?: Array<{ oldText: string; newText: string }>;
+  /** 引擎已计算好的 diff 字符串（如 Pi 引擎的 details.diff） */
+  diffString?: string;
+  /** 引擎已计算好的 patch 字符串 */
+  patchString?: string;
+  /** 首个变更行号（用于编辑器导航） */
+  firstChangedLine?: number;
 }
 
 /**
@@ -59,11 +67,15 @@ export function extractEditDiff(block: ToolCallBlock): DiffData | null {
   let oldContent = (input.old_string || input.old_str || input.oldContent) as string;
   let newContent = (input.new_string || input.new_str || input.newContent) as string;
 
-  // Pi 引擎格式：edits[{oldText, newText}]（取首个 edit）
-  if ((!oldContent || !newContent) && Array.isArray(input.edits) && input.edits.length > 0) {
-    const first = input.edits[0] as Record<string, unknown>;
-    oldContent = (first.oldText || oldContent) as string;
-    newContent = (first.newText || newContent) as string;
+  // Pi 引擎格式：edits[{oldText, newText}]（完整数组）
+  let edits: Array<{ oldText: string; newText: string }> | undefined;
+  if (Array.isArray(input.edits) && input.edits.length > 0) {
+    edits = input.edits as Array<{ oldText: string; newText: string }>;
+    if (!oldContent || !newContent) {
+      const first = edits[0];
+      oldContent = first.oldText;
+      newContent = first.newText;
+    }
   }
 
   // 验证必需字段
@@ -71,10 +83,31 @@ export function extractEditDiff(block: ToolCallBlock): DiffData | null {
     return null;
   }
 
+  // 尝试从 Pi 引擎的 output 中解析 details.diff / details.patch
+  let diffString: string | undefined;
+  let patchString: string | undefined;
+  let firstChangedLine: number | undefined;
+  if (block.output) {
+    try {
+      const parsed = JSON.parse(block.output);
+      if (parsed && typeof parsed === 'object') {
+        diffString = parsed.diff ?? parsed.details?.diff;
+        patchString = parsed.patch ?? parsed.details?.patch;
+        firstChangedLine = parsed.firstChangedLine ?? parsed.details?.firstChangedLine;
+      }
+    } catch {
+      // 非 JSON 输出（如 Claude 的纯文本 "File has been updated."），忽略
+    }
+  }
+
   return {
     oldContent,
     newContent,
-    filePath
+    filePath,
+    edits,
+    diffString,
+    patchString,
+    firstChangedLine,
   };
 }
 
