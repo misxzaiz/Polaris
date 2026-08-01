@@ -37,12 +37,13 @@ export function isWriteTool(toolName: string): boolean {
 /**
  * 从 Edit 工具的输入中提取 Diff 数据
  *
- * Edit 工具（str_replace_editor）的输入格式：
- * {
- *   file_path: string,
- *   old_string: string,
- *   new_string: string
- * }
+ * 支持两种输入格式：
+ *
+ * 1. Claude Code（str_replace_editor）：
+ *   { file_path: string, old_string: string, new_string: string }
+ *
+ * 2. Pi 引擎（edit）：
+ *   { path: string, edits: [{ oldText: string, newText: string }] }
  */
 export function extractEditDiff(block: ToolCallBlock): DiffData | null {
   if (!isEditTool(block.name)) {
@@ -53,8 +54,17 @@ export function extractEditDiff(block: ToolCallBlock): DiffData | null {
 
   // 支持多种命名格式
   const filePath = (input.file_path || input.path || input.filePath) as string;
-  const oldContent = (input.old_string || input.old_str || input.oldContent) as string;
-  const newContent = (input.new_string || input.new_str || input.newContent) as string;
+
+  // Claude Code 格式：old_string / new_string
+  let oldContent = (input.old_string || input.old_str || input.oldContent) as string;
+  let newContent = (input.new_string || input.new_str || input.newContent) as string;
+
+  // Pi 引擎格式：edits[{oldText, newText}]（取首个 edit）
+  if ((!oldContent || !newContent) && Array.isArray(input.edits) && input.edits.length > 0) {
+    const first = input.edits[0] as Record<string, unknown>;
+    oldContent = (first.oldText || oldContent) as string;
+    newContent = (first.newText || newContent) as string;
+  }
 
   // 验证必需字段
   if (!filePath || typeof oldContent !== 'string' || typeof newContent !== 'string') {
