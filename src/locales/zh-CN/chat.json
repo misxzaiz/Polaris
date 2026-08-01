@@ -200,7 +200,13 @@
     "collapseValue": "收起",
     "objectLabel": "对象",
     "arrayLabel": "数组",
-    "showMoreItems": "显示剩余 {{count}} 项"
+    "showMoreItems": "显示剩余 {{count}} 项",
+    "fileTooLargeForDiff": "文件过大，已跳过差异对比",
+    "fileTooLargeForPreview": "文件过大，已跳过语法高亮",
+    "diffTruncated": "还有 {{count}} 行差异未显示",
+    "previewTruncatedBySize": "内容过长，已省略部分",
+    "previewTruncatedByLines": "还有 {{count}} 行未显示",
+    "openInEditor": "在编辑器中打开"
   },
   "thinking": {
     "title": "思考",

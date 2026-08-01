@@ -201,7 +201,13 @@
     "collapseValue": "Collapse",
     "objectLabel": "Object",
     "arrayLabel": "Array",
-    "showMoreItems": "Show remaining {{count}} items"
+    "showMoreItems": "Show remaining {{count}} items",
+    "fileTooLargeForDiff": "File too large, diff skipped",
+    "fileTooLargeForPreview": "File too large, syntax highlighting skipped",
+    "diffTruncated": "{{count}} more diff lines not shown",
+    "previewTruncatedBySize": "Content too long, truncated",
+    "previewTruncatedByLines": "{{count}} more lines not shown",
+    "openInEditor": "Open in editor"
   },
   "thinking": {
     "title": "Thinking",

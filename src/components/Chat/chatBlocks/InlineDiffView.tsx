@@ -9,12 +9,20 @@
  * - 支持两种数据源：
  *   1. diffString（Pi 引擎 output 自带的 diff）
  *   2. oldContent + newContent（Claude Code 格式，需要计算 diff）
+ * - 大文件保护：超出阈值时跳过 diff 计算，减轻主线程压力
  */
 
 import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { FileCode, ChevronRight } from 'lucide-react';
+import { FileCode, ChevronRight, AlertTriangle } from 'lucide-react';
 import { diffLines } from 'diff';
+
+/** 超过此字符数时跳过 diff 计算，避免主线程卡顿（≈ 100KB 文本） */
+const MAX_DIFF_CHARS = 100_000;
+
+/** 超过此行数的 diff 结果也截断渲染（防止大量 DOM 节点） */
+const MAX_DIFF_LINES = 5_000;
 
 interface Edit {
   oldText: string;
@@ -98,8 +106,22 @@ export const InlineDiffView = memo(function InlineDiffView({
   onOpenFile,
   maxHeight = '240px',
 }: InlineDiffViewProps) {
-  // 计算展示行
+  const { t } = useTranslation('chat');
+
+  // 检查内容是否过大，过大则跳过 diff 计算
+  const isTooLarge = useMemo(() => {
+    if (diffString) {
+      return diffString.length > MAX_DIFF_CHARS;
+    }
+    if (oldContent !== undefined && newContent !== undefined) {
+      return (oldContent.length + newContent.length) > MAX_DIFF_CHARS;
+    }
+    return false;
+  }, [diffString, oldContent, newContent]);
+
+  // 计算展示行（仅当内容不过大时）
   const displayLines = useMemo<DiffLineDisplay[]>(() => {
+    if (isTooLarge) return [];
     if (diffString) {
       return parseUnifiedDiff(diffString);
     }
@@ -107,7 +129,12 @@ export const InlineDiffView = memo(function InlineDiffView({
       return computeDiffLines(oldContent, newContent);
     }
     return [];
-  }, [diffString, oldContent, newContent]);
+  }, [diffString, oldContent, newContent, isTooLarge]);
+
+  // 检查 diff 结果行数是否过多
+  const resultTooLarge = useMemo(() => {
+    return displayLines.length > MAX_DIFF_LINES;
+  }, [displayLines]);
 
   // 统计
   const stats = useMemo(() => {
@@ -127,7 +154,7 @@ export const InlineDiffView = memo(function InlineDiffView({
     onOpenFile?.(filePath);
   };
 
-  if (displayLines.length === 0) {
+  if (displayLines.length === 0 && !isTooLarge) {
     return null;
   }
 
@@ -143,7 +170,7 @@ export const InlineDiffView = memo(function InlineDiffView({
         <span className="text-primary hover:underline truncate flex-1 min-w-0">
           {fileName}
         </span>
-        {(stats.added > 0 || stats.removed > 0) && (
+        {!isTooLarge && (stats.added > 0 || stats.removed > 0) && (
           <span className="flex items-center gap-1.5 shrink-0 tabular-nums">
             <span className="text-success">+{stats.added}</span>
             <span className="text-error">−{stats.removed}</span>
@@ -157,37 +184,97 @@ export const InlineDiffView = memo(function InlineDiffView({
         className="overflow-auto font-mono text-xs leading-5"
         style={{ maxHeight }}
       >
-        {displayLines.map((line, i) => (
-          <div
-            key={i}
-            className={clsx(
-              'flex gap-0 px-3 min-w-max',
-              line.type === 'added' && 'bg-success/[0.04]',
-              line.type === 'removed' && 'bg-error/[0.04]',
-            )}
-          >
-            <span
-              className={clsx(
-                'w-4 shrink-0 select-none text-center font-bold',
-                line.type === 'added' && 'text-success',
-                line.type === 'removed' && 'text-error',
-                line.type === 'context' && 'text-text-muted',
-              )}
-            >
-              {line.type === 'added' ? '+' : line.type === 'removed' ? '−' : ' '}
+        {isTooLarge ? (
+          <div className="flex items-center gap-2 px-3 py-4 text-text-tertiary">
+            <AlertTriangle className="w-4 h-4 shrink-0 text-warning" />
+            <span className="text-xs">
+              {t('tool.fileTooLargeForDiff')}
             </span>
-            <span
-              className={clsx(
-                'flex-1 whitespace-pre',
-                line.type === 'added' && 'text-text-primary',
-                line.type === 'removed' && 'text-text-tertiary',
-                line.type === 'context' && 'text-text-muted',
-              )}
+            <button
+              onClick={handleClick}
+              className="ml-auto text-xs text-primary hover:underline shrink-0"
             >
-              {line.content}
-            </span>
+              {t('tool.openInEditor')}
+            </button>
           </div>
-        ))}
+        ) : resultTooLarge ? (
+          <div>
+            {displayLines.slice(0, MAX_DIFF_LINES).map((line, i) => (
+              <div
+                key={i}
+                className={clsx(
+                  'flex gap-0 px-3 min-w-max',
+                  line.type === 'added' && 'bg-success/[0.04]',
+                  line.type === 'removed' && 'bg-error/[0.04]',
+                )}
+              >
+                <span
+                  className={clsx(
+                    'w-4 shrink-0 select-none text-center font-bold',
+                    line.type === 'added' && 'text-success',
+                    line.type === 'removed' && 'text-error',
+                    line.type === 'context' && 'text-text-muted',
+                  )}
+                >
+                  {line.type === 'added' ? '+' : line.type === 'removed' ? '−' : ' '}
+                </span>
+                <span
+                  className={clsx(
+                    'flex-1 whitespace-pre',
+                    line.type === 'added' && 'text-text-primary',
+                    line.type === 'removed' && 'text-text-tertiary',
+                    line.type === 'context' && 'text-text-muted',
+                  )}
+                >
+                  {line.content}
+                </span>
+              </div>
+            ))}
+            <div className="flex items-center gap-2 px-3 py-2 text-text-tertiary border-t border-border">
+              <span className="text-xs">
+                {t('tool.diffTruncated', { count: displayLines.length - MAX_DIFF_LINES })}
+              </span>
+              <button
+                onClick={handleClick}
+                className="ml-auto text-xs text-primary hover:underline"
+              >
+                {t('tool.openInEditor')}
+              </button>
+            </div>
+          </div>
+        ) : (
+          displayLines.map((line, i) => (
+            <div
+              key={i}
+              className={clsx(
+                'flex gap-0 px-3 min-w-max',
+                line.type === 'added' && 'bg-success/[0.04]',
+                line.type === 'removed' && 'bg-error/[0.04]',
+              )}
+            >
+              <span
+                className={clsx(
+                  'w-4 shrink-0 select-none text-center font-bold',
+                  line.type === 'added' && 'text-success',
+                  line.type === 'removed' && 'text-error',
+                  line.type === 'context' && 'text-text-muted',
+                )}
+              >
+                {line.type === 'added' ? '+' : line.type === 'removed' ? '−' : ' '}
+              </span>
+              <span
+                className={clsx(
+                  'flex-1 whitespace-pre',
+                  line.type === 'added' && 'text-text-primary',
+                  line.type === 'removed' && 'text-text-tertiary',
+                  line.type === 'context' && 'text-text-muted',
+                )}
+              >
+                {line.content}
+              </span>
+            </div>
+          ))
+        )}
       </div>
     </div>
   );
