@@ -821,281 +821,6 @@ impl IntegrationManager {
         }
     }
 
-    /// 从工具参数中提取文件名（仅 basename）
-    fn extract_file_basename(args: &std::collections::HashMap<String, serde_json::Value>) -> Option<String> {
-        for key in &["path", "file_path", "filePath", "filename", "file"] {
-            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    let name = val.rsplit(['/', '\\']).next().unwrap_or(val);
-                    return Some(name.to_string());
-                }
-            }
-        }
-        None
-    }
-
-    /// 从工具参数中提取命令
-    fn extract_command(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
-        for key in &["command", "cmd", "command_string"] {
-            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    return Some(Self::truncate_str(&Self::sanitize_command_for_display(val), max_len));
-                }
-            }
-        }
-        None
-    }
-
-    /// 从工具参数中提取搜索词
-    fn extract_search_query(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
-        for key in &["query", "q", "search", "keyword", "pattern", "regex"] {
-            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    return Some(Self::truncate_str(val, max_len));
-                }
-            }
-        }
-        None
-    }
-
-    /// 从工具参数中提取 URL 简称
-    fn extract_url_brief(args: &std::collections::HashMap<String, serde_json::Value>, max_len: usize) -> Option<String> {
-        for key in &["url", "uri", "href"] {
-            if let Some(val) = args.get(*key).and_then(|v| v.as_str()) {
-                if !val.is_empty() {
-                    // 简化显示：取 hostname + 路径前段
-                    let simplified = if val.starts_with("http://") || val.starts_with("https://") {
-                        let stripped = val.trim_start_matches("https://").trim_start_matches("http://");
-                        let path_end = stripped.find('?').unwrap_or(stripped.len());
-                        &stripped[..path_end]
-                    } else {
-                        val
-                    };
-                    return Some(Self::truncate_str(simplified, max_len));
-                }
-            }
-        }
-        None
-    }
-
-    /// 安全截断字符串（按字符边界）
-    fn truncate_str(s: &str, max_len: usize) -> String {
-        if s.chars().count() <= max_len {
-            s.to_string()
-        } else {
-            let truncated: String = s.chars().take(max_len - 3).collect();
-            format!("{}...", truncated)
-        }
-    }
-
-    fn strip_paired_quotes(value: &str) -> String {
-        let mut result = value.trim().to_string();
-        loop {
-            let Some(first) = result.chars().next() else {
-                break;
-            };
-            let Some(last) = result.chars().last() else {
-                break;
-            };
-            let paired = matches!(
-                (first, last),
-                ('"', '"') | ('\'', '\'') | ('`', '`')
-            );
-            if !paired || result.chars().count() < 2 {
-                break;
-            }
-            let start = first.len_utf8();
-            let end = result.len() - last.len_utf8();
-            let inner = &result[start..end];
-            if first != '`' && inner.contains(first) {
-                break;
-            }
-            result = inner.trim().to_string();
-        }
-        result
-    }
-
-    /// 清理展示用命令，剥离 PowerShell/cmd 启动器等内部包装。
-    fn sanitize_command_for_display(command: &str) -> String {
-        let mut result = Self::strip_paired_quotes(command);
-
-        if let Some(idx) = result.to_lowercase().find(" rejected: ") {
-            result = Self::strip_paired_quotes(&result[..idx]);
-        }
-
-        let lower = result.to_lowercase();
-        let is_powershell = lower.contains("powershell.exe")
-            || lower.contains("pwsh.exe")
-            || lower.starts_with("powershell ")
-            || lower.starts_with("pwsh ");
-        if is_powershell {
-            if let Some(idx) = lower.find(" -command ") {
-                let after = result[idx + " -command ".len()..].trim();
-                if !after.is_empty() {
-                    return Self::strip_paired_quotes(after);
-                }
-            }
-            if let Some(idx) = lower.find("-c ") {
-                let after = result[idx + "-c".len()..].trim();
-                if !after.is_empty() {
-                    return Self::strip_paired_quotes(after);
-                }
-            }
-        }
-
-        let lower = result.to_lowercase();
-        let is_cmd = lower.contains("cmd.exe") || lower.starts_with("cmd ");
-        if is_cmd {
-            if let Some(idx) = lower.find("/c") {
-                let after = result[idx + "/c".len()..].trim();
-                if !after.is_empty() {
-                    return Self::strip_paired_quotes(after);
-                }
-            }
-        }
-
-        result
-    }
-
-    fn tool_display_label(tool_name: &str) -> &'static str {
-        match tool_name.to_lowercase().as_str() {
-            "bash" | "bashcommand" | "run_command" | "execute" | "shell" | "shell_command" | "command_execution" => "执行命令",
-            "read" | "readfile" | "read_file" => "读取文件",
-            "write" | "writefile" | "write_file" => "写入文件",
-            "createfile" | "create_file" => "创建文件",
-            "edit" | "edit3" | "str_replace_editor" => "编辑文件",
-            "delete" | "deletefile" | "remove" => "删除文件",
-            "glob" => "搜索文件",
-            "grep" | "search" | "searchfiles" => "搜索内容",
-            "websearch" | "web_search" => "网络搜索",
-            "webfetch" | "web_fetch" | "httprequest" | "http_request" => "网络请求",
-            "todowrite" => "更新任务列表",
-            "task" | "agent" => "运行代理",
-            "skill" => "使用技能",
-            _ => "执行工具",
-        }
-    }
-
-    fn format_tool_progress_message(tool_name: &str, brief: &str, running: bool, success: Option<bool>) -> String {
-        let label = Self::tool_display_label(tool_name);
-        if running {
-            if brief.is_empty() {
-                format!("正在{}", label)
-            } else {
-                format!("正在{}: {}", label, brief)
-            }
-        } else {
-            let status = if success.unwrap_or(false) { "完成 ✅" } else { "失败 ❌" };
-            if brief.is_empty() {
-                format!("{}{}", label, status)
-            } else {
-                format!("{}: {} {}", label, brief, status)
-            }
-        }
-    }
-
-    /// 根据工具名和参数生成简短描述
-    ///
-    /// 等价于前端 `extractToolKeyInfo()`，根据工具类型从 args 中提取关键信息
-    fn format_tool_brief(tool_name: &str, args: &std::collections::HashMap<String, serde_json::Value>) -> String {
-        let name_lower = tool_name.to_lowercase();
-
-        // Skill 工具：提取 skill 参数
-        if name_lower == "skill" {
-            if let Some(val) = args.get("skill").and_then(|v| v.as_str()) {
-                let name = val.rsplit(':').next().unwrap_or(val);
-                return name.to_string();
-            }
-        }
-
-        // Task / Agent 工具：提取 prompt 或 description
-        if name_lower == "task" || name_lower == "agent" {
-            if let Some(val) = args.get("prompt").and_then(|v| v.as_str()) {
-                return Self::truncate_str(val, 50);
-            }
-            if let Some(val) = args.get("description").and_then(|v| v.as_str()) {
-                return Self::truncate_str(val, 50);
-            }
-        }
-
-        // AskUserQuestion：提取问题
-        if name_lower == "askuserquestion" {
-            if let Some(val) = args.get("header").and_then(|v| v.as_str()) {
-                return val.to_string();
-            }
-            if let Some(questions) = args.get("questions").and_then(|v| v.as_array()) {
-                if let Some(first) = questions.first() {
-                    if let Some(q) = first.get("question").and_then(|v| v.as_str()) {
-                        return Self::truncate_str(q, 50);
-                    }
-                }
-            }
-        }
-
-        // Glob 特殊：优先取 pattern
-        if tool_name == "Glob" {
-            if let Some(val) = args.get("pattern").and_then(|v| v.as_str()) {
-                return Self::truncate_str(val, 40);
-            }
-        }
-
-        // 文件类工具（Read / Write / Edit / Delete）
-        if matches!(name_lower.as_str(),
-            "read" | "readfile" | "read_file" |
-            "write" | "writefile" | "write_file" | "create_file" |
-            "edit" | "edit3" | "str_replace_editor" |
-            "delete" | "deletefile" | "remove"
-        ) {
-            if let Some(name) = Self::extract_file_basename(args) {
-                return name;
-            }
-        }
-
-        // Bash / 执行类
-        if matches!(name_lower.as_str(), "bash" | "bashcommand" | "run_command" | "execute") {
-            if let Some(cmd) = Self::extract_command(args, 40) {
-                return cmd;
-            }
-        }
-
-        // Grep / 搜索类
-        if matches!(name_lower.as_str(), "grep" | "search" | "searchfiles" | "websearch" | "web_search") {
-            if let Some(q) = Self::extract_search_query(args, 30) {
-                return q;
-            }
-        }
-
-        // 网络请求类
-        if matches!(name_lower.as_str(), "webfetch" | "web_fetch" | "httprequest" | "http_request") {
-            if let Some(url) = Self::extract_url_brief(args, 30) {
-                return url;
-            }
-        }
-
-        // TodoWrite：提取统计
-        if name_lower == "todowrite" {
-            if let Some(todos) = args.get("todos").and_then(|v| v.as_array()) {
-                let total = todos.len();
-                let completed = todos.iter()
-                    .filter(|t| t.get("status").and_then(|s| s.as_str()) == Some("completed"))
-                    .count();
-                return if completed == total && total > 0 {
-                    format!("{}个已完成", total)
-                } else if completed > 0 {
-                    format!("{}/{} ({}%)", completed, total, completed * 100 / total)
-                } else {
-                    format!("{}个任务", total)
-                };
-            }
-        }
-
-        // 兜底：尝试文件名 → 命令 → 搜索词
-        Self::extract_file_basename(args)
-            .or_else(|| Self::extract_command(args, 40))
-            .or_else(|| Self::extract_search_query(args, 30))
-            .unwrap_or_default()
-    }
-
     /// 处理 AI 消息
     async fn process_ai_message(ctx: ProcessAiMessageContext) {
         let ProcessAiMessageContext {
@@ -1257,17 +982,9 @@ impl IntegrationManager {
             Self::send_reply(&adapters, platform, &conversation_id, "✅ 已接收到消息，正在处理中").await;
         }
 
-        // 用于累积最终回复文本（仅 AssistantMessage / Token / Result）
+        // 用于累积最终回复文本（AssistantMessage / Token / Thinking）
         let accumulated_text = Arc::new(Mutex::new(String::new()));
         let accumulated_text_clone = accumulated_text.clone();
-
-        // 进度消息节流：记录上次发送进度消息的时间
-        let last_progress_time = Arc::new(std::sync::Mutex::new(
-            std::time::Instant::now()
-                .checked_sub(std::time::Duration::from_secs(10))
-                .unwrap_or_else(std::time::Instant::now)
-        ));
-        let last_progress_time_clone = last_progress_time.clone();
 
         // 创建 oneshot 通道等待进程完成
         let (complete_tx, complete_rx) = oneshot::channel();
@@ -1277,123 +994,26 @@ impl IntegrationManager {
         #[cfg(feature = "tauri-app")]
         let app_handle_for_callback = app_handle.clone();
 
-        // 进度消息节流间隔（毫秒）
-        const PROGRESS_THROTTLE_MS: u64 = 1500;
-
-        // 工具描述缓存：ToolCallStart 时存入，ToolCallEnd 时取出
-        let tool_brief_cache: Arc<std::sync::Mutex<std::collections::HashMap<String, String>>> =
-            Arc::new(std::sync::Mutex::new(std::collections::HashMap::new()));
-        let tool_brief_cache_clone = tool_brief_cache.clone();
-
-        // 捕获当前 Tokio runtime handle，因为 callback 可能从非 Tokio 线程调用
-        let rt_handle = tokio::runtime::Handle::current();
-
         // 创建事件回调 —— 按事件类型分条发送
-        // 提前 clone adapters 给闭包使用，避免 move 后无法再访问
-        let adapters_for_callback = adapters.clone();
-
-        // 思考事件节流：记录上次发送思考摘要的时间
-        let last_thinking_time = Arc::new(std::sync::Mutex::new(
-            std::time::Instant::now()
-                .checked_sub(std::time::Duration::from_secs(10))
-                .unwrap_or_else(std::time::Instant::now)
-        ));
-        let last_thinking_time_clone = last_thinking_time.clone();
-
         let callback = move |event: crate::models::AIEvent| {
             tracing::debug!("[IntegrationManager] 收到事件: {:?}", std::mem::discriminant(&event));
 
             match &event {
-                // 思考事件：带节流，同时累积到最终文本中
+                // 思考事件：累积到最终回复文本（让用户看到完整回复），
+                // 但不向 IM 发送逐条思考推送（避免流式碎片效果）。
                 crate::models::AIEvent::Thinking(thinking) => {
                     let text = &thinking.content;
                     if !text.is_empty() {
-                        // 累积思考内容到最终回复文本
                         if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
                             accumulated.push_str(&text);
                         }
-
-                        // 节流发送思考摘要到 IM 平台（避免碎片消息轰炸）
-                        let should_send = {
-                            if let Ok(mut last) = last_thinking_time_clone.try_lock() {
-                                let now = std::time::Instant::now();
-                                if now.duration_since(*last) >= std::time::Duration::from_millis(PROGRESS_THROTTLE_MS) {
-                                    *last = now;
-                                    true
-                                } else {
-                                    false
-                                }
-                            } else {
-                                false
-                            }
-                        };
-                        if should_send {
-                            let preview: String = text.chars().take(150).collect();
-                            let preview = if preview.len() < text.len() {
-                                format!("{}...", preview)
-                            } else {
-                                preview
-                            };
-                            let msg = format!("[思考中] {}", preview);
-                            let adapters = adapters_for_callback.clone();
-                            let conv_id = conversation_id_for_callback.clone();
-                            rt_handle.spawn(async move {
-                                Self::send_reply(&adapters, platform, &conv_id, &msg).await;
-                            });
-                        }
                     }
                 }
 
-                // 工具调用开始：带节流
-                crate::models::AIEvent::ToolCallStart(tc) => {
-                    let brief = Self::format_tool_brief(&tc.tool, &tc.args);
-                    // 缓存描述供 ToolCallEnd 使用
-                    if let Some(ref call_id) = tc.call_id {
-                        if let Ok(mut cache) = tool_brief_cache_clone.try_lock() {
-                            cache.insert(call_id.clone(), brief.clone());
-                        }
-                    }
-                    let msg = Self::format_tool_progress_message(&tc.tool, &brief, true, None);
-                    let should_send = {
-                        if let Ok(mut last) = last_progress_time_clone.try_lock() {
-                            let now = std::time::Instant::now();
-                            if now.duration_since(*last) >= std::time::Duration::from_millis(PROGRESS_THROTTLE_MS) {
-                                *last = now;
-                                true
-                            } else {
-                                false
-                            }
-                        } else {
-                            false
-                        }
-                    };
-                    if should_send {
-                        let adapters = adapters_for_callback.clone();
-                        let conv_id = conversation_id_for_callback.clone();
-                        rt_handle.spawn(async move {
-                            Self::send_reply(&adapters, platform, &conv_id, &msg).await;
-                        });
-                    }
-                }
+                // 工具调用事件：IM 平台不需要展示工具调用进度，不发送到平台。
+                crate::models::AIEvent::ToolCallStart(_) | crate::models::AIEvent::ToolCallEnd(_) => {}
 
-                // 工具调用结束：不受节流限制
-                crate::models::AIEvent::ToolCallEnd(tc) => {
-                    // 从缓存取出描述
-                    let brief = tc.call_id.as_ref()
-                        .and_then(|id| {
-                            tool_brief_cache_clone.try_lock().ok()
-                                .and_then(|mut cache| cache.remove(id))
-                        })
-                        .unwrap_or_default();
-                    let msg = Self::format_tool_progress_message(&tc.tool, &brief, false, Some(tc.success));
-                    let adapters = adapters_for_callback.clone();
-                    let conv_id = conversation_id_for_callback.clone();
-                    rt_handle.spawn(async move {
-                        Self::send_reply(&adapters, platform, &conv_id, &msg).await;
-                    });
-                }
-
-                // Progress 事件：忽略（已由 Thinking/ToolCall 覆盖）
+                // Progress 事件：忽略
                 crate::models::AIEvent::Progress(_) => {}
 
                 // 文本类事件（流式增量 / 整段回复）：仅累积，待进程完成后整段发送到平台。
