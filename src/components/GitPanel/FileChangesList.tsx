@@ -57,6 +57,16 @@ function getStatusCode(status: GitFileStatus, area: ChangeArea) {
   return 'M'
 }
 
+function sortByPath(a: string | { path: string }, b: string | { path: string }) {
+  const pa = (typeof a === 'string' ? a : a.path).toLowerCase()
+  const pb = (typeof b === 'string' ? b : b.path).toLowerCase()
+  // 目录优先：按父目录分组，再按文件名排序
+  const dirA = pa.replace(/\/[^/]*$/, '/')
+  const dirB = pb.replace(/\/[^/]*$/, '/')
+  if (dirA !== dirB) return dirA.localeCompare(dirB)
+  return pa.localeCompare(pb)
+}
+
 function getStatusClass(status: GitFileStatus, area: ChangeArea) {
   if (area === 'untracked' || status === 'added' || status === 'untracked') return 'text-success border-success/20 bg-success/10'
   if (status === 'deleted') return 'text-danger border-danger/20 bg-danger/10'
@@ -234,15 +244,11 @@ export function FileChangesList({
     const isOperating = operatingPath === filePath
     const { dir, name } = splitPath(filePath)
     const statusCode = getStatusCode(status, area)
-    const canBlame = onBlame && area !== 'untracked' && status !== 'untracked' && status !== 'deleted'
-    const primaryAction = area === 'staged'
-      ? { title: t('unstage'), icon: <X size={12} />, onClick: () => handleUnstage(filePath), className: 'hover:text-text-primary' }
-      : { title: status === 'deleted' ? t('stageDeleted') : t('stage'), icon: <Check size={12} />, onClick: () => handleStage(filePath), className: 'hover:text-success' }
 
     return (
       <div
         key={`${area}:${filePath}`}
-        className={`grid grid-cols-[18px_34px_minmax(0,1fr)_auto_auto] items-center gap-1.5 px-3 min-h-[30px] border-b border-border-subtle/60 hover:bg-background-hover group cursor-pointer ${selected ? 'bg-primary/10' : ''} ${isOperating ? 'opacity-60 pointer-events-none' : ''}`}
+        className={`grid grid-cols-[16px_28px_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 min-h-[26px] border-b border-border-subtle/60 hover:bg-background-hover group cursor-pointer ${selected ? 'bg-primary/10' : ''} ${isOperating ? 'opacity-60 pointer-events-none' : ''}`}
         onClick={() => openDiff(filePath, area, file)}
         onContextMenu={(e) => showContextMenu(e, buildMenuItems(filePath, area, status, file))}
       >
@@ -254,61 +260,33 @@ export function FileChangesList({
             onToggleFileSelection?.(filePath)
           }}
           disabled={isSelectionDisabled || isOperating}
-          className="w-3.5 h-3.5 rounded border-border"
+          className="w-3 h-3 rounded border-border"
           onClick={(e) => e.stopPropagation()}
           aria-label={filePath}
         />
 
         <div className="flex items-center min-w-0">
-          <span className={`inline-flex items-center justify-center w-[18px] h-[18px] rounded border text-[10px] font-bold ${getStatusClass(status, area)}`}>
+          <span className={`inline-flex items-center justify-center w-[16px] h-[16px] rounded border text-[9px] font-semibold ${getStatusClass(status, area)}`}>
             {statusCode}
           </span>
         </div>
 
-        <div className="flex items-center min-w-0 gap-1.5">
-          <span className="min-w-0 truncate text-xs text-text-primary" title={filePath}>
-            {dir && <span className="text-text-tertiary">{dir}</span>}{name}
-          </span>
-          <span className={`shrink-0 px-1.5 h-[17px] rounded-full border text-[10px] leading-[15px] ${area === 'staged' ? 'text-success bg-success/10 border-success/20' : area === 'untracked' ? 'text-info bg-info/10 border-info/20' : status === 'deleted' ? 'text-danger bg-danger/10 border-danger/20' : 'text-text-tertiary bg-background-surface border-border'}`}>
-            {area === 'staged' ? t('status.staged') : area === 'untracked' ? t('status.untracked') : status === 'deleted' ? t('changes.deleted') : t('status.unstaged')}
-          </span>
+        <div className="flex items-center min-w-0 gap-0.5" title={filePath}>
+          {dir && <span className="text-text-tertiary/70 truncate min-w-0 text-[11px] font-normal leading-none">{dir}</span>}
+          <span className="text-text-primary text-xs font-medium shrink-0 leading-none">{name}</span>
         </div>
 
         {(additions !== undefined || deletions !== undefined) && (
-          <span className="text-[11px] text-text-tertiary tabular-nums whitespace-nowrap">
+          <span className="text-[10px] text-text-tertiary tabular-nums whitespace-nowrap">
             <span className="text-success">+{additions ?? 0}</span>
             <span className="text-danger ml-1">-{deletions ?? 0}</span>
           </span>
         )}
 
-        <div className="flex items-center justify-end gap-0.5 opacity-80 group-hover:opacity-100">
-          {canBlame && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onBlame(filePath)
-              }}
-              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
-              title={t('blame.button')}
-              type="button"
-            >
-              <GitCommit size={12} />
-            </button>
-          )}
-          <button
-            onClick={(e) => {
-              e.stopPropagation()
-              primaryAction.onClick()
-            }}
-            className={`p-1 text-text-tertiary hover:bg-background-surface rounded transition-all ${primaryAction.className}`}
-            title={primaryAction.title}
-            type="button"
-          >
-            {primaryAction.icon}
-          </button>
+        <div className="flex items-center justify-end opacity-80 group-hover:opacity-100">
           <button
             onClick={(e) => showContextMenu(e, buildMenuItems(filePath, area, status, file))}
-            className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-surface rounded transition-all"
+            className="p-0.5 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-all"
             title={t('moreActions')}
             type="button"
           >
@@ -357,7 +335,7 @@ export function FileChangesList({
         </span>
       </div>
 
-      {renderGroup(t('status.staged'), staged.length, staged.map((file) => renderChangeRow({
+      {renderGroup(t('status.staged'), staged.length, [...staged].sort(sortByPath).map((file) => renderChangeRow({
         filePath: file.path,
         area: 'staged',
         status: file.status,
@@ -366,7 +344,7 @@ export function FileChangesList({
         deletions: file.deletions,
       })))}
 
-      {renderGroup(t('status.unstaged'), unstaged.length, unstaged.map((file) => renderChangeRow({
+      {renderGroup(t('status.unstaged'), unstaged.length, [...unstaged].sort(sortByPath).map((file) => renderChangeRow({
         filePath: file.path,
         area: 'unstaged',
         status: file.status,
@@ -375,7 +353,7 @@ export function FileChangesList({
         deletions: file.deletions,
       })))}
 
-      {renderGroup(t('status.untracked'), untracked.length, untracked.map((path) => renderChangeRow({
+      {renderGroup(t('status.untracked'), untracked.length, [...untracked].sort(sortByPath).map((path) => renderChangeRow({
         filePath: path,
         area: 'untracked',
         status: 'untracked',
