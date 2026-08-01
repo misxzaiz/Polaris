@@ -121,10 +121,10 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             <span className="text-sm font-medium text-text-primary ml-2" data-tauri-drag-region={false}>Polaris</span>
             {/* 分隔线 */}
             <div className="w-px h-4 bg-border-subtle mx-3" />
-            {/* 工作区快速切换 - 仅正常模式显示 */}
-            <WorkspaceQuickSwitch />
           </>
         )}
+        {/* 工作区快速切换 - 始终显示（紧凑模式下隐藏品牌名，保留工作区选择） */}
+        <WorkspaceQuickSwitch />
 
         {showTopToolSwitcher && (
           <button
