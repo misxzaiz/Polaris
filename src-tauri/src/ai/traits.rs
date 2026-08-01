@@ -106,6 +106,7 @@ impl std::fmt::Display for EngineId {
 }
 
 /// 会话选项
+#[derive(Clone)]
 pub struct SessionOptions {
     /// 工作目录
     pub work_dir: Option<String>,
