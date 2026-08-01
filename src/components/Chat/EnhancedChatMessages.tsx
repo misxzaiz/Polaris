@@ -34,6 +34,7 @@ import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';
 import { renderChatMessage } from './renderChatMessage';
 import { EmptyState } from './EmptyState';
+import { ThinkingOrb } from './ThinkingOrb';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 
 // Re-export for external consumers
@@ -127,6 +128,9 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
       return () => clearTimeout(timer);
     }
   }, [messages]);
+
+  // PENDING 状态：已发送消息、正在等待首 token
+  const isPending = isStreaming && !currentMessage;
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
   const prevDisplayMessagesRef = useRef<ChatMessage[]>([]);
@@ -326,10 +330,18 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative">
-        <div className="h-full">
+        <div className="relative h-full">
           {isEmpty ? (
             <EmptyState />
           ) : (
+            <>
+              {/* Orb 始终渲染，用绝对定位覆盖 Virtuoso，通过 isPending 控制显隐 */}
+              <div
+                className="absolute inset-0 z-10"
+                style={{ pointerEvents: isPending ? 'auto' : 'none' }}
+              >
+                <ThinkingOrb isPending={isPending} compact={compact} />
+              </div>
             <Virtuoso
               ref={virtuosoRef}
               style={{ height: '100%' }}
@@ -350,6 +362,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               increaseViewportBy={VIEWPORT_EXTENSION}
               initialTopMostItemIndex={displayMessages.length - 1}
             />
+            </>
           )}
         </div>
 

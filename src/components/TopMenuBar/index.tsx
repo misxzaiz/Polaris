@@ -103,8 +103,18 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
     <div className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
       {/* 左侧:Logo/应用名称 - 小屏模式下更紧凑 */}
       <div data-tauri-drag-region className={`flex items-center ${isCompactMode ? 'px-2' : 'pl-4 pr-2'}`}>
-        <div className="w-6 h-6 rounded bg-gradient-to-br from-primary to-primary-600 flex items-center justify-center shadow-glow" data-tauri-drag-region={false}>
-          <span className="text-xs font-bold text-white">P</span>
+        <div className="relative w-6 h-6" data-tauri-drag-region={false}>
+          {/* 背景圈 */}
+          <div className="absolute inset-0 border border-border-subtle rounded-full" />
+          {/* 主旋转弧 */}
+          <div className="absolute inset-0 border border-transparent border-t-primary border-r-accent-ai rounded-full"
+            style={{ animation: 'polaris-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite' }} />
+          {/* 内圈反向旋转 */}
+          <div className="absolute inset-[3px] border border-transparent border-b-primary/30 border-l-accent-ai/30 rounded-full"
+            style={{ animation: 'polaris-spin-rev 2s linear infinite' }} />
+          {/* 中心光晕 */}
+          <div className="absolute top-1/2 left-1/2 w-1 h-1 -mt-0.5 -ml-0.5 rounded-full bg-primary"
+            style={{ animation: 'polaris-glow 1.5s ease-in-out infinite' }} />
         </div>
         {!isCompactMode && (
           <>

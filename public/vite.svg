@@ -1,22 +1,33 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" fill="none">
   <defs>
-    <linearGradient id="g1" x1="0" y1="0" x2="96" y2="96">
-      <stop offset="0%" stop-color="#4FC3F7"/>
-      <stop offset="100%" stop-color="#7C4DFF"/>
-    </linearGradient>
-    <linearGradient id="g2" x1="96" y1="0" x2="0" y2="96">
-      <stop offset="0%" stop-color="#7C4DFF" stop-opacity="0.35"/>
-      <stop offset="100%" stop-color="#4FC3F7" stop-opacity="0.15"/>
-    </linearGradient>
     <filter id="glow">
       <feGaussianBlur stdDeviation="2.5" result="blur"/>
       <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
     </filter>
   </defs>
-  <circle cx="48" cy="48" r="45" stroke="url(#g1)" stroke-width="4" fill="none" stroke-linecap="round"
-    stroke-dasharray="139.01 143.73" transform="rotate(135, 48, 48)"/>
-  <circle cx="48" cy="48" r="39" stroke="url(#g2)" stroke-width="2.5" fill="none" stroke-linecap="round"
-    stroke-dasharray="110.27 134.77" transform="rotate(210.5, 48, 48)"/>
-  <circle cx="48" cy="48" r="3" fill="#4FC3F7" filter="url(#glow)"/>
-  <circle cx="48" cy="48" r="6" fill="#4FC3F7" opacity="0.1"/>
+  <!-- 大弧 177° 分成3段：青→蓝→紫，旋转135° -->
+  <!-- 段1: 青 #00BCD4, 59° -->
+  <circle cx="48" cy="48" r="45" stroke="#00BCD4" stroke-width="4" fill="none" stroke-linecap="round"
+    stroke-dasharray="46.34 236.41" transform="rotate(135, 48, 48)"/>
+  <!-- 段2: 蓝 #2196F3, 59° -->
+  <circle cx="48" cy="48" r="45" stroke="#2196F3" stroke-width="4" fill="none" stroke-linecap="round"
+    stroke-dasharray="46.34 236.41" transform="rotate(194, 48, 48)"/>
+  <!-- 段3: 紫 #9C27B0, 59° -->
+  <circle cx="48" cy="48" r="45" stroke="#CE93D8" stroke-width="4" fill="none" stroke-linecap="round"
+    stroke-dasharray="46.34 236.41" transform="rotate(253, 48, 48)"/>
+
+  <!-- 小弧 162° 分成3段：紫→蓝→青，旋转210.5° -->
+  <!-- 段1: 紫 #CE93D8, 54° -->
+  <circle cx="48" cy="48" r="39" stroke="#CE93D8" stroke-width="2.5" fill="none" stroke-linecap="round"
+    stroke-dasharray="36.76 208.28" transform="rotate(210.5, 48, 48)" opacity="0.5"/>
+  <!-- 段2: 蓝 #2196F3, 54° -->
+  <circle cx="48" cy="48" r="39" stroke="#2196F3" stroke-width="2.5" fill="none" stroke-linecap="round"
+    stroke-dasharray="36.76 208.28" transform="rotate(264.5, 48, 48)" opacity="0.35"/>
+  <!-- 段3: 青 #00BCD4, 54° -->
+  <circle cx="48" cy="48" r="39" stroke="#00BCD4" stroke-width="2.5" fill="none" stroke-linecap="round"
+    stroke-dasharray="36.76 208.28" transform="rotate(318.5, 48, 48)" opacity="0.2"/>
+
+  <!-- 中心点 -->
+  <circle cx="48" cy="48" r="3" fill="#00E5FF" filter="url(#glow)"/>
+  <circle cx="48" cy="48" r="6" fill="#00E5FF" opacity="0.1"/>
 </svg>
