@@ -19,7 +19,7 @@ export function normalizeEngineId(engineId?: string | null): EngineId {
   const metadatas = useEngineMetadataStore.getState().metadatas
   if (metadatas.length === 0) {
     // 元数据未加载时使用静态降级列表
-    const fallback: EngineId[] = ['claude-code', 'codex', 'simple-ai', 'pi']
+    const fallback: EngineId[] = ['claude-code', 'codex', 'pi', 'simple-ai']
     return (fallback as string[]).includes(engineId) ? (engineId as EngineId) : 'claude-code'
   }
   return metadatas.some(m => m.id === engineId) ? (engineId as EngineId) : 'claude-code'

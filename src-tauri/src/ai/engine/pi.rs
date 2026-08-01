@@ -758,19 +758,24 @@ export default async function (pi) {
             });
 
             // 读取 stdout JSONL，翻译为 AIEvent
-            let reader = BufReader::new(stdout);
+            // 使用 read_line 手动循环而非 reader.lines()，以便保留 reader 所有权
+            // 避免循环退出后 reader 被 drop 导致 stdout 管道关闭、pi 进程写入时 EPIPE
+            let mut reader = BufReader::new(stdout);
             let mut real_session_id = current_session_id.clone();
             let mut line_count: usize = 0;
             let mut known_event_count: usize = 0;
             let mut message_event_count: usize = 0;
             let mut agent_ended = false;
+            let mut line_buf = String::new();
 
-            for line in reader.lines() {
-                let line = match line {
-                    Ok(l) => l,
+            loop {
+                line_buf.clear();
+                match reader.read_line(&mut line_buf) {
+                    Ok(0) => break,  // EOF
+                    Ok(_) => {}
                     Err(_) => break,
-                };
-                let trimmed = line.trim();
+                }
+                let trimmed = line_buf.trim();
                 if trimmed.is_empty() {
                     continue;
                 }
@@ -877,7 +882,7 @@ export default async function (pi) {
 
             // 主动收尾进程：先尝试等其自然退出 300ms（让 output-guard 排空收尾输出，
             // 避免管道读端过早关闭导致 EPIPE unhandled exception），超时则 kill 兜底。
-            // 之前此处依赖 EPIPE 崩溃退出进程，现在读端正常 drain，需显式 kill 防残留。
+            // 注意：reader 此时仍存活，stdout 管道保持打开，pi 进程可安全写入收尾数据。
             let mut child = child;
             match child.try_wait() {
                 Ok(Some(_status)) => {
@@ -898,6 +903,10 @@ export default async function (pi) {
                     let _ = child.wait();
                 }
             }
+
+            // 子进程已退出，现在安全关闭 stdout 管道
+            // 延迟 drop 确保 pi 进程的 output-guard 在管道关闭前完成所有写入
+            drop(reader);
 
             if let Some(cb) = on_complete {
                 cb(0);

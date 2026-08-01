@@ -91,14 +91,13 @@ impl EngineRegistry {
             .collect()
     }
 
-    /// 获取所有已注册引擎的元数据列表。
+    /// 获取所有已注册引擎的元数据列表（按 EngineId::all() 顺序排列）。
     ///
     /// 新增引擎时只需注册到 EngineRegistry，此方法自动包含。
     /// 前端通过 `get_engine_metadata_list` Tauri 命令消费此数据。
     pub fn list_all_metadata(&self) -> Vec<EngineMetadata> {
-        self.engines
-            .values()
-            .map(|e| e.metadata())
+        EngineId::all().iter()
+            .filter_map(|id| self.engines.get(id).map(|e| e.metadata()))
             .collect()
     }
 

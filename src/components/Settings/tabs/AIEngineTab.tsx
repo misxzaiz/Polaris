@@ -72,12 +72,6 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     defaultCli: 'codex',
     npmPackage: '@openai/codex',
   },
-  'simple-ai': {
-    id: 'simple-ai',
-    nameKey: 'engines.simpleAi.name',
-    descKey: 'engines.simpleAi.description',
-    builtin: true,
-  },
   pi: {
     id: 'pi',
     nameKey: 'engines.pi.name',
@@ -85,6 +79,12 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     cliField: 'piCode',
     defaultCli: 'pi',
     npmPackage: '@earendil-works/pi-coding-agent',
+  },
+  'simple-ai': {
+    id: 'simple-ai',
+    nameKey: 'engines.simpleAi.name',
+    descKey: 'engines.simpleAi.description',
+    builtin: true,
   },
 }
 

@@ -61,8 +61,8 @@ impl EngineId {
         match self {
             Self::ClaudeCode => &["claude", "claude-code", "claudecode"],
             Self::Codex => &["codex", "openai-codex", "openai_codex"],
-            Self::SimpleAI => &["simple-ai", "simpleai", "simple_ai"],
             Self::Pi => &["pi", "pi-coding-agent", "piagent"],
+            Self::SimpleAI => &["simple-ai", "simpleai", "simple_ai"],
         }
     }
 
@@ -93,8 +93,8 @@ impl EngineId {
         &[
             EngineId::ClaudeCode,
             EngineId::Codex,
-            EngineId::SimpleAI,
             EngineId::Pi,
+            EngineId::SimpleAI,
         ]
     }
 }
