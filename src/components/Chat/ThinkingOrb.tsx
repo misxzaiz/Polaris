@@ -4,11 +4,11 @@
  * 在消息发送后、首 token 到达前的 PENDING 状态显示，
  * 用旋转的同心环动画填充空白等待期，提升用户体验。
  *
- * 设计：
+ * 设计原则：
+ * - 挂载即渲染，零帧延迟
+ * - 使用 inline style 控制 opacity，避免 <style> 标签动态更新不可靠
  * - 三层同心环旋转（蓝色→紫色→蓝色渐变）
  * - 文案按时间轮播：连接中 → 思考中 → 生成中
- * - 淡入/淡出过渡动画
- * - 纯 CSS 内联 style 标签，无外部依赖
  */
 
 import { memo, useState, useEffect, useRef } from 'react'
@@ -38,6 +38,12 @@ export interface ThinkingOrbProps {
   message?: string
 }
 
+const spinKeyframes = `
+@keyframes orb-spin {
+  to { transform: rotate(360deg); }
+}
+`
+
 export const ThinkingOrb = memo(function ThinkingOrb({
   isPending,
   engineName,
@@ -50,28 +56,13 @@ export const ThinkingOrb = memo(function ThinkingOrb({
   const [phase, setPhase] = useState<OrbPhase>('connecting')
   const startTimeRef = useRef<number>(0)
 
-  // 退出动画状态
-  const [exiting, setExiting] = useState(false)
-  const [shouldRender, setShouldRender] = useState(false)
-
-  // 当 isPending 变化时控制渲染和退出动画
-  useEffect(() => {
-    if (isPending) {
-      setShouldRender(true)
-      setExiting(false)
-      startTimeRef.current = Date.now()
-      setPhase('connecting')
-    } else if (shouldRender) {
-      // 触发退出动画
-      setExiting(true)
-      const timer = setTimeout(() => {
-        setShouldRender(false)
-        setExiting(false)
-      }, 250)
-      return () => clearTimeout(timer)
-    }
-    return undefined
-  }, [isPending, shouldRender])
+  // 重置计时器：每次 isPending 从 false→true 时重置
+  const prevPendingRef = useRef(false)
+  if (isPending && !prevPendingRef.current) {
+    startTimeRef.current = Date.now()
+    setPhase('connecting')
+  }
+  prevPendingRef.current = isPending
 
   // 文案轮播定时器
   useEffect(() => {
@@ -88,8 +79,6 @@ export const ThinkingOrb = memo(function ThinkingOrb({
 
     return () => clearInterval(timer)
   }, [isPending])
-
-  if (!shouldRender) return null
 
   // 当前文案
   const phaseMessage = externalMessage ?? (() => {
@@ -110,100 +99,71 @@ export const ThinkingOrb = memo(function ThinkingOrb({
 
   return (
     <>
-      {/* 内联 CSS 动画 — 与 ThinkingBlockRenderer 同样的方式注入 */}
-      <style>{`
-        @keyframes orb-spin {
-          to { transform: rotate(360deg); }
-        }
-        @keyframes orb-fade-in {
-          from { opacity: 0; transform: scale(0.9); }
-          to { opacity: 1; transform: scale(1); }
-        }
-        @keyframes orb-fade-out {
-          from { opacity: 1; transform: scale(1); }
-          to { opacity: 0; transform: scale(0.8); }
-        }
-        .thinking-orb-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 48px 16px;
-          gap: 16px;
-          animation: orb-fade-in 0.3s ease-out;
-          user-select: none;
-        }
-        .thinking-orb-container.exit {
-          animation: orb-fade-out 0.25s ease-in forwards;
-        }
-        .thinking-orb {
-          position: relative;
-          flex-shrink: 0;
-        }
-        .thinking-orb-ring {
-          position: absolute;
-          border-radius: 50%;
-          border: 2.5px solid transparent;
-          border-top-color: #3b82f6;
-          animation: orb-spin 1s linear infinite;
-          will-change: transform;
-        }
-        .thinking-orb-ring--reverse {
-          border-top-color: transparent;
-          border-right-color: #8b5cf6;
-          animation: orb-spin 0.8s linear infinite reverse;
-        }
-        .thinking-orb-ring:nth-child(3) {
-          border-top-color: transparent;
-          border-bottom-color: #60a5fa;
-          animation: orb-spin 0.6s linear infinite;
-        }
-        .thinking-orb-text {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          gap: 4px;
-        }
-        .thinking-orb-title {
-          font-size: 14px;
-          font-weight: 600;
-          color: #e0e0e0;
-        }
-        .thinking-orb-message {
-          font-size: 12px;
-          color: #888;
-        }
-      `}</style>
+      <style>{spinKeyframes}</style>
       <div
-        className={`thinking-orb-container${exiting ? ' exit' : ''}`}
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '48px 16px',
+          gap: '16px',
+          userSelect: 'none',
+          opacity: isPending ? 1 : 0,
+          transition: 'opacity 0.25s ease-in-out',
+        }}
         role="presentation"
         aria-hidden="true"
       >
         <div
-          className="thinking-orb"
-          style={{ width: orbSize, height: orbSize }}
+          style={{
+            position: 'relative',
+            flexShrink: 0,
+            width: orbSize,
+            height: orbSize,
+          }}
         >
+          {/* 外层环 */}
           <span
-            className="thinking-orb-ring"
             style={{
+              position: 'absolute',
+              borderRadius: '50%',
+              border: '2.5px solid transparent',
+              borderTopColor: '#3b82f6',
+              animation: 'orb-spin 1s linear infinite',
+              willChange: 'transform',
               width: ringSizes[0],
               height: ringSizes[0],
               top: ringOffsets[0],
               left: ringOffsets[0],
             }}
           />
+          {/* 中层环（反向） */}
           <span
-            className="thinking-orb-ring thinking-orb-ring--reverse"
             style={{
+              position: 'absolute',
+              borderRadius: '50%',
+              border: '2.5px solid transparent',
+              borderTopColor: 'transparent',
+              borderRightColor: '#8b5cf6',
+              animation: 'orb-spin 0.8s linear infinite reverse',
+              willChange: 'transform',
               width: ringSizes[1],
               height: ringSizes[1],
               top: ringOffsets[1],
               left: ringOffsets[1],
             }}
           />
+          {/* 内层环 */}
           <span
-            className="thinking-orb-ring"
             style={{
+              position: 'absolute',
+              borderRadius: '50%',
+              border: '2.5px solid transparent',
+              borderTopColor: 'transparent',
+              borderBottomColor: '#60a5fa',
+              animation: 'orb-spin 0.6s linear infinite',
+              willChange: 'transform',
               width: ringSizes[2],
               height: ringSizes[2],
               top: ringOffsets[2],
@@ -212,11 +172,11 @@ export const ThinkingOrb = memo(function ThinkingOrb({
           />
         </div>
 
-        <div className="thinking-orb-text">
-          <span className="thinking-orb-title">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+          <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>
             {displayName} 正在思考
           </span>
-          <span className="thinking-orb-message">
+          <span style={{ fontSize: '12px', color: '#888' }}>
             {phaseMessage}
           </span>
         </div>
