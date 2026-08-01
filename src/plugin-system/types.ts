@@ -139,6 +139,8 @@ export interface PolarisPluginManifest {
   description?: string
   builtin: boolean
   enabledByDefault: boolean
+  /** 标记为废弃待移除（true=通用，string=具体说明） */
+  deprecated?: boolean | string
   contributes: {
     views?: Omit<PluginViewContribution, 'pluginId'>[]
     mcpServers?: Omit<PluginMcpServerContribution, 'pluginId'>[]

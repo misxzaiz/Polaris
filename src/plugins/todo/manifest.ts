@@ -6,7 +6,8 @@ export const todoPluginManifest: PolarisPluginManifest = {
   version: '0.1.0',
   description: '提供工作区待办面板和 Todo MCP 工具能力。',
   builtin: true,
-  enabledByDefault: true,
+  enabledByDefault: false,
+  deprecated: true,
   contributes: {
     views: [
       {

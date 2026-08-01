@@ -73,7 +73,7 @@ git2 = { version = "0.18", features = ["vendored-openssl"] }
 similar = "2.4"
 bitflags = "2.4"
 walkdir = "2"
-reqwest = { version = "0.11", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "blocking"] }
 futures-util = "0.3"
 md5 = "0.7"
 # AES-128-CBC 加解密（与前端 crypto-js 兼容）

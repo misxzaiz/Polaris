@@ -83,10 +83,6 @@ export default defineConfig(async () => ({
             }
             return 'mermaid';
           }
-          // Cytoscape graph library
-          if (id.includes('cytoscape')) {
-            return 'cytoscape';
-          }
           // KaTeX math library
           if (id.includes('katex')) {
             return 'katex';
@@ -149,7 +145,6 @@ export default defineConfig(async () => ({
     // 排除大型动态加载库，让 rollup 在 manualChunks 中精确拆分
     exclude: [
       'mermaid',
-      'cytoscape',
       'katex',
     ],
   },

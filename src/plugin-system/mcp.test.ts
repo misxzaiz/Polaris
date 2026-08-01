@@ -16,16 +16,6 @@ describe('plugin MCP contributions', () => {
 
     expect(servers).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: 'polaris-todo',
-        pluginId: 'polaris.todo',
-        transport: 'stdio',
-      }),
-      expect.objectContaining({
-        id: 'polaris-requirements',
-        pluginId: 'polaris.requirements',
-        transport: 'stdio',
-      }),
-      expect.objectContaining({
         id: 'polaris-scheduler',
         pluginId: 'polaris.scheduler',
         transport: 'stdio',
@@ -40,6 +30,12 @@ describe('plugin MCP contributions', () => {
         pluginId: 'polaris.computer',
         transport: 'stdio',
       }),
+    ]))
+
+    // 废弃插件默认不启用
+    expect(servers).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'polaris-todo' }),
+      expect.objectContaining({ id: 'polaris-requirements' }),
     ]))
   })
 
@@ -131,7 +127,7 @@ describe('plugin MCP contributions', () => {
     expect(listEnabledPluginMcpServers(pluginStates)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-todo',
+          id: 'polaris-prd-preview',
         }),
       ])
     )

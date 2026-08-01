@@ -956,6 +956,11 @@ function PluginCard({
                 {t('plugins.builtin')}
               </span>
             )}
+            {plugin.deprecated && (
+              <span className="rounded-sm bg-warning/10 px-1.5 py-px text-[10px] leading-tight text-warning">
+                {t('plugins.deprecated', { defaultValue: '已废弃' })}
+              </span>
+            )}
             {!plugin.builtin && plugin.source && (
               <span className="rounded-sm bg-background-hover px-1 py-px text-[10px] leading-tight text-text-muted">
                 {plugin.source.kind === 'project'
@@ -1024,6 +1029,18 @@ function PluginCard({
           {isCorePlugin && (
             <div className="rounded border border-border-subtle bg-background-elevated px-2.5 py-1.5 text-xs text-text-muted">
               {t('plugins.coreLocked')}
+            </div>
+          )}
+
+          {/* 废弃插件提示 */}
+          {plugin.deprecated && (
+            <div className="rounded border border-warning/20 bg-warning/5 px-2.5 py-2 text-xs">
+              <span className="flex items-center gap-1.5 text-warning">
+                <AlertTriangle size={12} />
+                {typeof plugin.deprecated === 'string'
+                  ? plugin.deprecated
+                  : t('plugins.deprecatedHint', { defaultValue: '此插件已废弃，即将移除，建议迁移至其他方案' })}
+              </span>
             </div>
           )}
 

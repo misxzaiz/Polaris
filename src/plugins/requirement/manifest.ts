@@ -6,7 +6,8 @@ export const requirementPluginManifest: PolarisPluginManifest = {
   version: '0.1.0',
   description: '提供需求管理面板和 Requirements MCP 工具能力。',
   builtin: true,
-  enabledByDefault: true,
+  enabledByDefault: false,
+  deprecated: true,
   contributes: {
     views: [
       {

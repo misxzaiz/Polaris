@@ -98,6 +98,15 @@ importers:
       '@tauri-apps/plugin-updater':
         specifier: ^2.10.1
         version: 2.10.1
+      '@xterm/addon-fit':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/addon-web-links':
+        specifier: ^0.10.0
+        version: 0.10.0(@xterm/xterm@5.5.0)
+      '@xterm/xterm':
+        specifier: ^5.5.0
+        version: 5.5.0
       autoprefixer:
         specifier: ^10.4.23
         version: 10.5.0(postcss@8.5.10)
@@ -164,15 +173,6 @@ importers:
       tailwindcss:
         specifier: ^3.4.0
         version: 3.4.19
-      xterm:
-        specifier: ^5.3.0
-        version: 5.3.0
-      xterm-addon-fit:
-        specifier: ^0.8.0
-        version: 0.8.0(xterm@5.3.0)
-      xterm-addon-web-links:
-        specifier: ^0.9.0
-        version: 0.9.0(xterm@5.3.0)
       zustand:
         specifier: ^5.0.9
         version: 5.0.12(@types/react@19.2.14)(react@19.2.5)
@@ -201,15 +201,9 @@ importers:
       '@types/crypto-js':
         specifier: ^4.2.2
         version: 4.2.2
-      '@types/dompurify':
-        specifier: ^3.0.5
-        version: 3.2.0
       '@types/katex':
         specifier: ^0.16.8
         version: 0.16.8
-      '@types/mermaid':
-        specifier: ^9.1.0
-        version: 9.2.0
       '@types/node':
         specifier: ^25.1.0
         version: 25.6.0
@@ -1362,10 +1356,6 @@ packages:
   '@types/deep-eql@4.0.2':
     resolution: {integrity: sha512-c9h9dVVMigMPc4bwTvC5dxqtqJZwQPePsWjPlpSOnojbor6pGqdk541lfA7AqFQr5pB1BRdq0juY9db81BwyFw==}
 
-  '@types/dompurify@3.2.0':
-    resolution: {integrity: sha512-Fgg31wv9QbLDA0SpTOXO3MaxySc4DKGLi8sna4/Utjo4r3ZRPdCt4UQee8BWr+Q5z21yifghREPJGYaEOEIACg==}
-    deprecated: This is a stub types definition. dompurify provides its own type definitions, so you do not need this installed.
-
   '@types/estree-jsx@1.0.5':
     resolution: {integrity: sha512-52CcUVNFyfb1A2ALocQw/Dd1BQFNmSdkuC3BkZ6iqhdMfQz7JWOFRuJFloOzjk+6WijU56m9oKXFAXc7o3Towg==}
 
@@ -1386,10 +1376,6 @@ packages:
 
   '@types/mdast@4.0.4':
     resolution: {integrity: sha512-kGaNbPh1k7AFzgpud/gMdvIm5xuECykRR+JnWKQno9TAXVa6WIVCGTPvYGekIDL4uwCZQSYbUxNBSb1aUo79oA==}
-
-  '@types/mermaid@9.2.0':
-    resolution: {integrity: sha512-AlvLWYer6u4BkO4QzMkHo0t9RkvVIgqggVZmO+5snUiuX2caTKqtdqygX6GeE1VQa/TnXw9WoH0spcmHtG0inQ==}
-    deprecated: This is a stub types definition. mermaid provides its own type definitions, so you do not need this installed.
 
   '@types/ms@2.1.0':
     resolution: {integrity: sha512-GsCCIZDE/p3i96vtEqx+7dBUGXrc7zeSK3wwPHIaRThS+9OhWIXRqzs4d6k1SVU8g91DrNRWxWUGhp5KXQb2VA==}
@@ -1527,6 +1513,19 @@ packages:
 
   '@vitest/utils@4.1.5':
     resolution: {integrity: sha512-76wdkrmfXfqGjueGgnb45ITPyUi1ycZ4IHgC2bhPDUfWHklY/q3MdLOAB+TF1e6xfl8NxNY0ZYaPCFNWSsw3Ug==}
+
+  '@xterm/addon-fit@0.10.0':
+    resolution: {integrity: sha512-UFYkDm4HUahf2lnEyHvio51TNGiLK66mqP2JoATy7hRZeXaGMRDr00JiSF7m63vR5WKATF605yEggJKsw0JpMQ==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/addon-web-links@0.10.0':
+    resolution: {integrity: sha512-QhrHCUr8w6ATGviyXwcAIM1qN3nD1hdxwMC8fsW7z/6aaQlb2nt7zmByJt4eOn7ZzrHOzczljqV5S2pkdQp2xw==}
+    peerDependencies:
+      '@xterm/xterm': ^5.0.0
+
+  '@xterm/xterm@5.5.0':
+    resolution: {integrity: sha512-hqJHYaQb5OptNunnyAnkHyM8aCjZ1MEIDTQu1iIbbTD/xops91NB5yq1ZK/dC2JDbVWtF23zUtl9JE2NqwT87A==}
 
   acorn-jsx@5.3.2:
     resolution: {integrity: sha512-rq9s+JNhf0IChjtDXxllJ7g41oZk5SlXtp0LHwyA5cejwn7vKmKp4pPri6YEePv2PU65sAsegbXtIinmDFDXgQ==}
@@ -4065,22 +4064,6 @@ packages:
   xmlchars@2.2.0:
     resolution: {integrity: sha512-JZnDKK8B0RCDw84FNdDAIpZK+JuJw+s7Lz8nksI7SIuU3UXJJslUthsi+uWBUYOwPFwW7W7PRLRfUKpxjtjFCw==}
 
-  xterm-addon-fit@0.8.0:
-    resolution: {integrity: sha512-yj3Np7XlvxxhYF/EJ7p3KHaMt6OdwQ+HDu573Vx1lRXsVxOcnVJs51RgjZOouIZOczTsskaS+CpXspK81/DLqw==}
-    deprecated: This package is now deprecated. Move to @xterm/addon-fit instead.
-    peerDependencies:
-      xterm: ^5.0.0
-
-  xterm-addon-web-links@0.9.0:
-    resolution: {integrity: sha512-LIzi4jBbPlrKMZF3ihoyqayWyTXAwGfu4yprz1aK2p71e9UKXN6RRzVONR0L+Zd+Ik5tPVI9bwp9e8fDTQh49Q==}
-    deprecated: This package is now deprecated. Move to @xterm/addon-web-links instead.
-    peerDependencies:
-      xterm: ^5.0.0
-
-  xterm@5.3.0:
-    resolution: {integrity: sha512-8QqjlekLUFTrU6x7xck1MsPzPA571K5zNqWm0M0oroYEWVOptZ0+ubQSkQ3uxIEhcIHRujJy6emDWX4A7qyFzg==}
-    deprecated: This package is now deprecated. Move to @xterm/xterm instead.
-
   y18n@5.0.8:
     resolution: {integrity: sha512-0pfFzegeDWJHJIAmTLRP2DwHjdF5s7jo9tuztdQxAhINCdvS+3nGINqPd00AphqJR/0LhANUS6/+7SCb98YOfA==}
     engines: {node: '>=10'}
@@ -5268,10 +5251,6 @@ snapshots:
 
   '@types/deep-eql@4.0.2': {}
 
-  '@types/dompurify@3.2.0':
-    dependencies:
-      dompurify: 3.4.1
-
   '@types/estree-jsx@1.0.5':
     dependencies:
       '@types/estree': 1.0.8
@@ -5291,10 +5270,6 @@ snapshots:
   '@types/mdast@4.0.4':
     dependencies:
       '@types/unist': 3.0.3
-
-  '@types/mermaid@9.2.0':
-    dependencies:
-      mermaid: 11.14.0
 
   '@types/ms@2.1.0': {}
 
@@ -5492,6 +5467,16 @@ snapshots:
       '@vitest/pretty-format': 4.1.5
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
+
+  '@xterm/addon-fit@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/addon-web-links@0.10.0(@xterm/xterm@5.5.0)':
+    dependencies:
+      '@xterm/xterm': 5.5.0
+
+  '@xterm/xterm@5.5.0': {}
 
   acorn-jsx@5.3.2(acorn@8.16.0):
     dependencies:
@@ -8535,16 +8520,6 @@ snapshots:
   xml-name-validator@5.0.0: {}
 
   xmlchars@2.2.0: {}
-
-  xterm-addon-fit@0.8.0(xterm@5.3.0):
-    dependencies:
-      xterm: 5.3.0
-
-  xterm-addon-web-links@0.9.0(xterm@5.3.0):
-    dependencies:
-      xterm: 5.3.0
-
-  xterm@5.3.0: {}
 
   y18n@5.0.8: {}
 

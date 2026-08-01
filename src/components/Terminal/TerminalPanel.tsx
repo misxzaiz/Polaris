@@ -5,10 +5,10 @@
  */
 
 import { useEffect, useRef, useCallback, useState } from 'react';
-import { Terminal as XTerm } from 'xterm';
-import type { ITheme } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit';
-import { WebLinksAddon } from 'xterm-addon-web-links';
+import { Terminal as XTerm } from '@xterm/xterm';
+import type { ITheme } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
@@ -20,7 +20,7 @@ import { TerminalScriptPanel } from './TerminalScriptPanel';
 import { TerminalQuickRunBar } from './TerminalQuickRunBar';
 import { TerminalRunCommandModal } from './TerminalRunCommandModal';
 import { TerminalTabContextMenu } from './TerminalTabContextMenu';
-import 'xterm/css/xterm.css';
+import '@xterm/xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
 
