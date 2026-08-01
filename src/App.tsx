@@ -33,7 +33,7 @@ const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel'
 const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
-const BrowserLauncherPanel = lazy(() => import('./components/Browser/BrowserPanel').then(m => ({ default: m.BrowserLauncherPanel })));
+const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
 const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
 const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/VoiceCompanionOverlay').then(m => ({ default: m.VoiceCompanionOverlay })));
 
@@ -194,7 +194,7 @@ function App() {
           />
         </Suspense>
       }
-      browserContent={<Suspense fallback={loadingFallback}><BrowserLauncherPanel /></Suspense>}
+      browserContent={<Suspense fallback={loadingFallback}><BrowserSidebarPanel /></Suspense>}
       todoContent={<Suspense fallback={loadingFallback}><SimpleTodoPanel /></Suspense>}
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       schedulerContent={<Suspense fallback={loadingFallback}><SchedulerPanel /></Suspense>}
