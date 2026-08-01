@@ -1,20 +1,19 @@
 /**
  * AI 引擎配置 Tab
  *
- * 布局：引擎摘要列表（垂直）+ 展开详情 + 全局设置
- * 默认引擎始终置顶展开，其余引擎可点击展开。
- * 搜索框过滤引擎列表，未安装引擎降低透明度。
+ * 布局：顶部 Tab 栏 + 引擎详情 + 全局设置
+ * Tab 栏可横向滚动，支持 10+ 引擎。
+ * 每个 Tab 显示引擎名称和状态徽章（版本/内置/未安装）。
+ * 默认引擎 Tab 带有「默认」标记。
  */
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot } from 'lucide-react';
+import { Bot, ChevronDown } from 'lucide-react';
 import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 import type { Config, EngineId, HealthStatus } from '@/types';
 
-import { EngineSearchBar } from '../EngineSearchBar';
-import { EngineRow, getStatusConfig } from '../EngineRow';
 import { EngineExpandDetail } from '../EngineExpandDetail';
 import { GlobalSettingsCard } from '../GlobalSettingsCard';
 
@@ -25,8 +24,7 @@ interface AIEngineTabProps {
 }
 
 // ============================================================================
-// 引擎 UI 专属配置（i18n 键、CLI 字段映射等）
-// 引擎列表从后端获取，此处仅维护 UI 呈现所需的额外信息。
+// 引擎 UI 专属配置
 // ============================================================================
 
 export type CliField = 'claudeCode' | 'codexCode' | 'piCode';
@@ -98,13 +96,32 @@ function resolveEngineStatus(engineId: string, health: HealthStatus | null): Eng
   return { available: false }
 }
 
+/** 状态徽章配置 */
+function getTabBadge(engineId: string, status: EngineRuntimeStatus): { label: string; className: string } | null {
+  const uiConfig = ENGINE_UI_MAP[engineId]
+  if (uiConfig?.builtin) {
+    return { label: '内置', className: 'text-blue-500 bg-blue-500/10 border-blue-500/20' }
+  }
+  if (status.available) {
+    return {
+      label: status.version ? `v${status.version.replace(/^v/, '')}` : '已安装',
+      className: 'text-green-500 bg-green-500/10 border-green-500/20',
+    }
+  }
+  return { label: '未安装', className: 'text-text-tertiary bg-text-tertiary/10 border-border' }
+}
+
+// 最多在 Tab 栏显示多少个引擎，超出部分折叠到「更多」下拉
+const MAX_VISIBLE_TABS = 5;
+
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
   const { t } = useTranslation(['settings', 'common']);
   const { healthStatus, resetCliConfig, refreshHealth } = useConfigStore();
   const { agents } = useCliInfoStore();
   const [resetting, setResetting] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [expandedId, setExpandedId] = useState<EngineId | null>(null);
+  const [selectedId, setSelectedId] = useState<EngineId>(config.defaultEngine);
+  const [showMore, setShowMore] = useState(false);
+  const moreRef = useRef<HTMLDivElement>(null);
   const engineMetadatas = useEngineMetadataStore(s => s.metadatas);
 
   useEffect(() => {
@@ -114,7 +131,19 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     }
   }, [])
 
-  // 引擎列表：从后端元数据获取，合并 UI 配置
+  // 点击外部关闭「更多」下拉
+  useEffect(() => {
+    if (!showMore) return;
+    const handleClick = (e: MouseEvent) => {
+      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+        setShowMore(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [showMore]);
+
+  // 引擎列表
   const engineList = useMemo(() => {
     if (engineMetadatas.length === 0) {
       return Object.values(ENGINE_UI_MAP)
@@ -127,39 +156,35 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     }))
   }, [engineMetadatas])
 
-  // 搜索过滤
-  const filteredEngines = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase()
-    if (!q) return engineList
-    return engineList.filter(e => {
-      const name = t(e.nameKey).toLowerCase()
-      const desc = t(e.descKey).toLowerCase()
-      return name.includes(q) || desc.includes(q)
-    })
-  }, [engineList, searchQuery, t])
+  // 当前选中引擎的元数据 + UI 配置
+  const selectedMeta = useMemo(
+    () => engineMetadatas.find(m => m.id === selectedId),
+    [engineMetadatas, selectedId],
+  );
+  const selectedUiConfig = useMemo(
+    () => ENGINE_UI_MAP[selectedId],
+    [selectedId],
+  );
+  const selectedStatus = useMemo(
+    () => resolveEngineStatus(selectedId, healthStatus),
+    [selectedId, healthStatus],
+  );
 
-  // 分组：默认引擎、已安装、未安装
-  const { defaultEngine, installed, available } = useMemo(() => {
-    const def = engineList.find(e => e.id === config.defaultEngine)
-    const rest = engineList.filter(e => e.id !== config.defaultEngine)
-    const inst = rest.filter(e => {
-      const s = resolveEngineStatus(e.id, healthStatus)
-      return s.available || ENGINE_UI_MAP[e.id]?.builtin
-    })
-    const avail = rest.filter(e => {
-      const s = resolveEngineStatus(e.id, healthStatus)
-      return !s.available && !ENGINE_UI_MAP[e.id]?.builtin
-    })
-    return { defaultEngine: def, installed: inst, available: avail }
-  }, [engineList, config.defaultEngine, healthStatus])
-
-  // 当前展开的引擎（搜索时固定展开第一个匹配项）
-  const resolvedExpandedId = useMemo(() => {
-    if (searchQuery.trim() && filteredEngines.length > 0) {
-      return filteredEngines[0].id
+  // 可见 Tab 和溢出引擎
+  const { visibleTabs, overflowEngines } = useMemo(() => {
+    if (engineList.length <= MAX_VISIBLE_TABS) {
+      return { visibleTabs: engineList, overflowEngines: [] }
     }
-    return expandedId
-  }, [searchQuery, filteredEngines, expandedId])
+    // 确保选中的引擎在可见范围内
+    const selectedIdx = engineList.findIndex(e => e.id === selectedId)
+    if (selectedIdx < MAX_VISIBLE_TABS) {
+      return { visibleTabs: engineList.slice(0, MAX_VISIBLE_TABS), overflowEngines: engineList.slice(MAX_VISIBLE_TABS) }
+    }
+    // 选中的引擎在溢出区，把最后一个可见位置换成选中的引擎
+    const visible = engineList.slice(0, MAX_VISIBLE_TABS - 1)
+    const overflow = engineList.slice(MAX_VISIBLE_TABS - 1)
+    return { visibleTabs: visible, overflowEngines: overflow }
+  }, [engineList, selectedId])
 
   const handleSetDefault = (engineId: EngineId) => {
     onConfigChange({ ...config, defaultEngine: engineId });
@@ -198,143 +223,112 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     }
   };
 
-  const toggleExpand = (id: EngineId) => {
-    setExpandedId(prev => prev === id ? null : id);
+  const selectEngine = (id: EngineId) => {
+    setSelectedId(id);
+    setShowMore(false);
   };
 
-  const renderEngineDetail = (engineId: EngineId) => {
-    const meta = engineMetadatas.find(m => m.id === engineId)
-    const uiConfig = ENGINE_UI_MAP[engineId]
-    const status = resolveEngineStatus(engineId, healthStatus)
-    return (
+  return (
+    <div className="space-y-4">
+      {/* ====== Tab 栏 ====== */}
+      <div className="flex items-end gap-0 overflow-x-auto border-b border-border">
+        {visibleTabs.map(engine => {
+          const status = resolveEngineStatus(engine.id, healthStatus);
+          const badge = getTabBadge(engine.id, status);
+          const isDefault = config.defaultEngine === engine.id;
+          const isActive = selectedId === engine.id;
+          return (
+            <button
+              key={engine.id}
+              type="button"
+              onClick={() => selectEngine(engine.id)}
+              className={`shrink-0 flex items-center gap-1.5 px-3 py-2 text-sm font-medium border-b-2 transition-colors whitespace-nowrap
+                ${isActive
+                  ? 'border-primary text-text-primary'
+                  : 'border-transparent text-text-tertiary hover:text-text-secondary hover:border-border'
+                }
+              `}
+            >
+              {t(engine.nameKey)}
+              {badge && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.className}`}>
+                  {badge.label}
+                </span>
+              )}
+              {isDefault && (
+                <span className="text-[10px] text-primary">默认</span>
+              )}
+            </button>
+          );
+        })}
+
+        {/* 更多引擎下拉 */}
+        {overflowEngines.length > 0 && (
+          <div ref={moreRef} className="relative shrink-0">
+            <button
+              type="button"
+              onClick={() => setShowMore(v => !v)}
+              className={`flex items-center gap-1 px-3 py-2 text-sm font-medium border-b-2 transition-colors
+                ${showMore
+                  ? 'border-primary text-text-primary'
+                  : 'border-transparent text-text-tertiary hover:text-text-secondary hover:border-border'
+                }
+              `}
+            >
+              更多
+              <ChevronDown size={12} />
+            </button>
+
+            {showMore && (
+              <div className="absolute top-full right-0 mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+                {overflowEngines.map(engine => {
+                  const status = resolveEngineStatus(engine.id, healthStatus);
+                  const badge = getTabBadge(engine.id, status);
+                  const isDefault = config.defaultEngine === engine.id;
+                  return (
+                    <button
+                      key={engine.id}
+                      type="button"
+                      onClick={() => selectEngine(engine.id)}
+                      className={`w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-background-hover transition-colors
+                        ${selectedId === engine.id ? 'bg-primary/5 text-text-primary' : 'text-text-secondary'}
+                      `}
+                    >
+                      <span className="flex-1 truncate">{t(engine.nameKey)}</span>
+                      {badge && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}>
+                          {badge.label}
+                        </span>
+                      )}
+                      {isDefault && (
+                        <span className="text-[10px] text-primary shrink-0">默认</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ====== 引擎详情 ====== */}
       <EngineExpandDetail
-        engineId={engineId}
-        meta={meta}
-        uiConfig={uiConfig}
-        status={status}
+        engineId={selectedId}
+        meta={selectedMeta}
+        uiConfig={selectedUiConfig}
+        status={selectedStatus}
         config={config}
         onConfigChange={onConfigChange}
         onCliPathChange={handleCliPathChange}
         getCliPath={getCliPath}
         loading={loading}
         refreshHealth={refreshHealth}
+        isDefault={config.defaultEngine === selectedId}
+        onSetDefault={() => handleSetDefault(selectedId)}
       />
-    )
-  }
 
-  return (
-    <div className="space-y-4">
-      {/* 搜索栏 */}
-      <EngineSearchBar value={searchQuery} onChange={setSearchQuery} />
-
-      {/* 空结果 */}
-      {filteredEngines.length === 0 && (
-        <div className="py-12 text-center text-sm text-text-tertiary">
-          没有匹配的引擎
-        </div>
-      )}
-
-      {/* 默认引擎（始终置顶展开） */}
-      {defaultEngine && !searchQuery && (
-        <EngineRow
-          icon={ENGINE_UI_MAP[defaultEngine.id]?.builtin ? 'cpu' : 'terminal'}
-          name={t(defaultEngine.nameKey)}
-          status={getStatusConfig(
-            resolveEngineStatus(defaultEngine.id, healthStatus),
-            ENGINE_UI_MAP[defaultEngine.id]?.builtin,
-          )}
-          isDefault={true}
-          isExpanded={true}
-          onToggle={() => toggleExpand(defaultEngine.id)}
-        >
-          {renderEngineDetail(defaultEngine.id)}
-        </EngineRow>
-      )}
-
-      {/* 已安装引擎 */}
-      {installed.length > 0 && !searchQuery && (
-        <div className="text-xs font-medium text-text-tertiary px-0.5">已安装</div>
-      )}
-      {installed.map(engine => (
-        <EngineRow
-          key={engine.id}
-          icon={ENGINE_UI_MAP[engine.id]?.builtin ? 'cpu' : 'terminal'}
-          name={t(engine.nameKey)}
-          status={getStatusConfig(
-            resolveEngineStatus(engine.id, healthStatus),
-            ENGINE_UI_MAP[engine.id]?.builtin,
-          )}
-          isDefault={false}
-          isExpanded={resolvedExpandedId === engine.id}
-          onToggle={() => toggleExpand(engine.id)}
-          actions={
-            <button
-              type="button"
-              onClick={() => handleSetDefault(engine.id)}
-              disabled={loading}
-              className="text-xs px-2 py-1 rounded border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
-            >
-              设为默认
-            </button>
-          }
-        >
-          {resolvedExpandedId === engine.id && renderEngineDetail(engine.id)}
-        </EngineRow>
-      ))}
-
-      {/* 未安装引擎 */}
-      {available.length > 0 && !searchQuery && (
-        <div className="text-xs font-medium text-text-tertiary px-0.5 pt-1">可安装</div>
-      )}
-      {available.map(engine => (
-        <EngineRow
-          key={engine.id}
-          icon={ENGINE_UI_MAP[engine.id]?.builtin ? 'cpu' : 'terminal'}
-          name={t(engine.nameKey)}
-          status={getStatusConfig(
-            resolveEngineStatus(engine.id, healthStatus),
-            ENGINE_UI_MAP[engine.id]?.builtin,
-          )}
-          isDefault={false}
-          isExpanded={resolvedExpandedId === engine.id}
-          dimmed={true}
-          onToggle={() => toggleExpand(engine.id)}
-        >
-          {resolvedExpandedId === engine.id && renderEngineDetail(engine.id)}
-        </EngineRow>
-      ))}
-
-      {/* 搜索模式：默认展开第一个匹配项 */}
-      {searchQuery.trim() && filteredEngines.map(engine => (
-        <EngineRow
-          key={engine.id}
-          icon={ENGINE_UI_MAP[engine.id]?.builtin ? 'cpu' : 'terminal'}
-          name={t(engine.nameKey)}
-          status={getStatusConfig(
-            resolveEngineStatus(engine.id, healthStatus),
-            ENGINE_UI_MAP[engine.id]?.builtin,
-          )}
-          isDefault={config.defaultEngine === engine.id}
-          isExpanded={resolvedExpandedId === engine.id}
-          onToggle={() => toggleExpand(engine.id)}
-          actions={
-            config.defaultEngine !== engine.id && (
-              <button
-                type="button"
-                onClick={() => handleSetDefault(engine.id)}
-                disabled={loading}
-                className="text-xs px-2 py-1 rounded border border-primary/40 bg-primary/5 text-primary hover:bg-primary/10 transition-colors disabled:opacity-50"
-              >
-                设为默认
-              </button>
-            )
-          }
-        >
-          {resolvedExpandedId === engine.id && renderEngineDetail(engine.id)}
-        </EngineRow>
-      ))}
-
-      {/* 全局设置 */}
+      {/* ====== 全局设置 ====== */}
       <GlobalSettingsCard
         auxiliaryEngine={config.auxiliaryEngine}
         onAuxiliaryChange={handleSetAuxiliary}
@@ -345,7 +339,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         t={t}
       />
 
-      {/* 可用 Agent 列表 */}
+      {/* ====== 可用 Agent 列表 ====== */}
       {agents.length > 0 && (
         <div>
           <div className="flex items-center justify-between mb-2">
