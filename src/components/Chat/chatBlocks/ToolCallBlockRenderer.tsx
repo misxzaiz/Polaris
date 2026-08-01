@@ -34,12 +34,10 @@ import { ansiToHtml } from '@/utils/ansiToHtml';
 
 export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block, isStreaming }: { block: ToolCallBlock; isStreaming?: boolean }) {
   const { t } = useTranslation('chat');
-  // edit/write/bash 工具流式期间默认展开，方便查看 diff/命令/输出
-  const [isExpanded, setIsExpanded] = useState(() => {
-    const normalizedName = block.name.toLowerCase();
-    const isBash = normalizedName.includes('bash') || normalizedName.includes('command') || normalizedName.includes('execute');
-    return (isEditTool(block.name) || isWriteTool(block.name) || isBash) && isStreaming === true;
-  });
+  // edit/write 工具流式期间默认展开，方便查看 diff/预览
+  const [isExpanded, setIsExpanded] = useState(() =>
+    (isEditTool(block.name) || isWriteTool(block.name)) && isStreaming === true
+  );
   const [showFullOutput, setShowFullOutput] = useState(false);
   const [showToolDetails, setShowToolDetails] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
@@ -106,9 +104,9 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
     return firstLine ? (firstLine.length > 80 ? firstLine.slice(0, 80) + '…' : firstLine) : '';
   }, [block.status, block.error]);
 
-  // 流式结束后自动折叠 edit/write/bash 面板
+  // 流式结束后自动折叠 edit/write 面板
   useEffect(() => {
-    if (!isStreaming && isExpanded && (isEditTool(block.name) || isWriteTool(block.name) || isBashTool)) {
+    if (!isStreaming && isExpanded && (isEditTool(block.name) || isWriteTool(block.name))) {
       setIsExpanded(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
