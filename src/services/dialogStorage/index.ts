@@ -21,6 +21,7 @@ export {
 export {
   DIALOG_FORMAT_VERSION,
   type DialogMeta,
+  type TokenUsageSummary,
   type DialogMessageLine,
   type DialogLine,
   type DialogRecord,

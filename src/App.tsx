@@ -126,6 +126,17 @@ function App() {
 
   useWorkspaceSync(true);
 
+  // 监听 polaris:open-settings 自定义事件（从 ContextMeter 等组件触发）
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail as { tab?: string } | undefined
+      setSettingsInitialTab(detail?.tab)
+      setShowSettings(true)
+    }
+    window.addEventListener('polaris:open-settings', handler)
+    return () => window.removeEventListener('polaris:open-settings', handler)
+  }, [])
+
   // 进入小屏模式时自动关闭左侧面板：leftPanelType 持久化且默认 'files'，
   // 不关闭的话手机首屏会被左面板抽屉直接盖住聊天区
   useEffect(() => {

@@ -38,7 +38,8 @@
     "lsp": "Language Servers",
     "shortcuts": "Shortcuts",
     "web": "Web Service",
-    "personalHub": "Personal Hub"
+    "personalHub": "Personal Hub",
+    "tokenStats": "Token Stats"
   },
   "messages": {
     "saved": "Saved",

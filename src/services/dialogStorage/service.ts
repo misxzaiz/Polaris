@@ -213,6 +213,7 @@ class DialogStorageServiceImpl {
         messages: allMessages,
         createdAt,
         updatedAt: new Date().toISOString(),
+        tokenUsage: input.tokenUsage,
       })
 
       const jsonl = serializeDialog(meta, allMessages)

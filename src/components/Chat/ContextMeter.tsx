@@ -77,9 +77,9 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
   const anchorRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  const window = usage.contextWindow ?? contextWindow ?? 200000;
+  const cw = usage.contextWindow ?? contextWindow ?? 200000;
   const used = usage.input + usage.cacheCreation + usage.cacheRead;
-  const pct = window > 0 ? used / window : 0;
+  const pct = cw > 0 ? used / cw : 0;
   const pctClamped = Math.min(Math.max(pct, 0), 1);
   const hitRate = used > 0 ? Math.round((usage.cacheRead / used) * 100) : 0;
 
@@ -105,11 +105,11 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
         : 'text-text-secondary';
 
   // 三段宽度(相对窗口)，主行圆圈只表达总量与风险等级，详情卡保留构成信息。
-  const wi = Math.min((usage.input / window) * 100, 100);
-  const wc = Math.min((usage.cacheCreation / window) * 100, 100);
-  const wr = Math.min((usage.cacheRead / window) * 100, 100);
+  const wi = Math.min((usage.input / cw) * 100, 100);
+  const wc = Math.min((usage.cacheCreation / cw) * 100, 100);
+  const wr = Math.min((usage.cacheRead / cw) * 100, 100);
 
-  const winLabel = window >= 1e6 ? `${window / 1e6}m` : `${Math.round(window / 1000)}k`;
+  const winLabel = cw >= 1e6 ? `${cw / 1e6}m` : `${Math.round(cw / 1000)}k`;
   const percentLabel = `${Math.round(pct * 100)}%`;
   const mainLabel = labelMode === 'full'
     ? `${fmt(used)}/${winLabel}`
@@ -362,6 +362,22 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                   </button>
                 </div>
               )}
+
+              {/* 查看完整 Token 统计 */}
+              <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
+                <button
+                  className="flex items-center gap-1 text-[11px] text-text-muted hover:text-primary transition-colors"
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent('polaris:open-settings', { detail: { tab: 'token-stats' } })
+                    )
+                    setActive(false)
+                  }}
+                >
+                  <span className="text-xs">📊</span>
+                  查看 Token 统计
+                </button>
+              </div>
 
               {level !== 'ok' && (
                 <div

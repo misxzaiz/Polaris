@@ -38,3 +38,12 @@ export { usePluginStore } from './pluginStore';
 export type { PluginState, PluginStateMap, PluginStore } from './pluginStore';
 
 export { useEngineMetadataStore, initEngineMetadata } from './engineMetadataStore';
+
+export { useTokenAnalyticsStore } from './tokenAnalyticsStore';
+export type {
+  SessionTokenUsage,
+  TotalStats,
+  ModelStats,
+  EngineStats,
+  TimeRange,
+} from './tokenAnalyticsStore';

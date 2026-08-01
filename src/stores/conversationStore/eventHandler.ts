@@ -560,6 +560,7 @@ function buildDialogMetaInput(state: ConversationStore, messages: ChatMessage[])
   title: string
   workspaceId: string | null
   workspacePath: string | null
+  tokenUsage?: import('@/services/dialogStorage').TokenUsageSummary
 } {
   const metadata = sessionStoreManager.getState().sessionMetadata.get(state.sessionId)
   const engineId = normalizeEngineId(metadata?.engineId)
@@ -580,7 +581,45 @@ function buildDialogMetaInput(state: ConversationStore, messages: ChatMessage[])
     workspacePath = ws?.path ?? null
   }
 
-  return { engineId, title, workspaceId: metadata?.workspaceId ?? null, workspacePath }
+  // 会话级 token 用量（从 usageStats.sessionTotals 提取）
+  // 注意：sessionTotals 是跨 run 正确累计的（幂等替换），但 modelUsage 仅保留
+  // 末次 cumulative 事件覆盖值（多 run 会话时 modelBreakdown 会漏计），因此
+  // modelBreakdown 仅在单 run 会话（totals.runs === 1）时写入，多 run 跳过。
+  const totals = state.usageStats?.sessionTotals
+  let tokenUsage: import('@/services/dialogStorage').TokenUsageSummary | undefined
+  if (totals && totals.runs > 0) {
+    // 按模型维度的用量（仅单 run 会话写入，多 run 时 modelUsage 非累计值）
+    const modelUsage = state.usageStats?.modelUsage
+    let modelBreakdown: Record<string, {
+      input: number
+      output: number
+      cacheCreation: number
+      cacheRead: number
+      costUsd: number
+    }> | undefined
+    if (modelUsage && Object.keys(modelUsage).length > 0 && totals.runs <= 1) {
+      modelBreakdown = {}
+      for (const [model, m] of Object.entries(modelUsage)) {
+        modelBreakdown[model] = {
+          input: m.inputTokens,
+          output: m.outputTokens,
+          cacheCreation: m.cacheCreationInputTokens ?? 0,
+          cacheRead: m.cacheReadInputTokens ?? 0,
+          costUsd: m.costUsd ?? 0,
+        }
+      }
+    }
+    tokenUsage = {
+      input: totals.input,
+      output: totals.output,
+      cacheCreation: totals.cacheCreation,
+      cacheRead: totals.cacheRead,
+      costUsd: totals.costUsd,
+      modelBreakdown,
+    }
+  }
+
+  return { engineId, title, workspaceId: metadata?.workspaceId ?? null, workspacePath, tokenUsage }
 }
 
 // ============================================================================

@@ -25,6 +25,7 @@ import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { ShortcutsTab } from './tabs/ShortcutsTab';
+import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
@@ -55,6 +56,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'advanced': 'nav.advanced',
   'web': 'nav.web',
   'personal-hub': 'nav.personalHub',
+  'token-stats': 'nav.tokenStats',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -310,6 +312,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
               />
+            )}
+
+            {activeTab === 'token-stats' && (
+              <TokenStatsTab />
             )}
           </div>
 

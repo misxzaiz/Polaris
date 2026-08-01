@@ -38,7 +38,8 @@
     "mcp": "MCP 服务器",
     "web": "Web 服务",
     "appUpdate": "应用更新",
-    "personalHub": "个人空间"
+    "personalHub": "个人空间",
+    "tokenStats": "Token 统计"
   },
   "messages": {
     "saved": "已保存",

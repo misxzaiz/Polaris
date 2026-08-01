@@ -14,12 +14,34 @@
 
 import type { ChatMessage, EngineId } from '@/types'
 
-/** 当前 JSONL 格式版本（用于未来兼容性迁移）。v2：新增 preview（最后一条消息摘要） */
-export const DIALOG_FORMAT_VERSION = 2
+/** 当前 JSONL 格式版本（用于未来兼容性迁移）。v2：新增 preview（最后一条消息摘要）；v3：新增 tokenUsage（会话级 token 用量汇总） */
+export const DIALOG_FORMAT_VERSION = 3
 
 // ============================================================================
 // JSONL 行类型
 // ============================================================================
+
+/** 会话级 token 用量汇总（写入 JSONL meta 行，供跨会话聚合查询） */
+export interface TokenUsageSummary {
+  /** 输入 token */
+  input: number
+  /** 输出 token */
+  output: number
+  /** 缓存写入 token */
+  cacheCreation: number
+  /** 缓存读取 token */
+  cacheRead: number
+  /** 花费（美元） */
+  costUsd: number
+  /** 按模型维度的用量（key=模型名，value=该模型用量） */
+  modelBreakdown?: Record<string, {
+    input: number
+    output: number
+    cacheCreation: number
+    cacheRead: number
+    costUsd: number
+  }>
+}
 
 /** 会话主表行（每个文件的第一行） */
 export interface DialogMeta {
@@ -50,6 +72,8 @@ export interface DialogMeta {
   preview?: string
   /** 标签（工具调用名称去重，用于分析/检索） */
   tags?: string[]
+  /** 会话级 token 用量汇总（v3 新增，轮末保存时写入） */
+  tokenUsage?: TokenUsageSummary
 }
 
 /** 对话明细行（每条消息一行） */
@@ -96,6 +120,8 @@ export interface SaveDialogInput {
    * 从该会话文件复制（通常为分页恢复时的原会话 ID）。
    */
   prefixSourceExternalId?: string
+  /** 会话级 token 用量汇总（轮末保存时写入 meta） */
+  tokenUsage?: import('./types').TokenUsageSummary
 }
 
 /** 分页选项 */

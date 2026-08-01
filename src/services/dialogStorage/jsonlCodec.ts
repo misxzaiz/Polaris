@@ -84,6 +84,7 @@ export function buildMeta(input: {
   messages: ChatMessage[]
   createdAt?: string
   updatedAt?: string
+  tokenUsage?: DialogMeta['tokenUsage']
 }): DialogMeta {
   const now = new Date().toISOString()
   return {
@@ -100,6 +101,7 @@ export function buildMeta(input: {
     firstUserText: extractFirstUserText(input.messages),
     preview: extractPreview(input.messages),
     tags: extractTags(input.messages),
+    tokenUsage: input.tokenUsage,
   }
 }
 
@@ -244,6 +246,23 @@ export function parseMeta(jsonl: string): DialogMeta | null {
 
 /** 规范化 meta 对象，补全缺失字段，防止脏数据 */
 function normalizeMeta(obj: Record<string, unknown>): DialogMeta {
+  const rawTokenUsage = obj.tokenUsage
+  let tokenUsage: DialogMeta['tokenUsage']
+  if (rawTokenUsage && typeof rawTokenUsage === 'object') {
+    const t = rawTokenUsage as Record<string, unknown>
+    if (typeof t.input === 'number' && typeof t.output === 'number') {
+      tokenUsage = {
+        input: t.input as number,
+        output: t.output as number,
+        cacheCreation: (t.cacheCreation as number) ?? 0,
+        cacheRead: (t.cacheRead as number) ?? 0,
+        costUsd: (t.costUsd as number) ?? 0,
+        modelBreakdown: t.modelBreakdown && typeof t.modelBreakdown === 'object'
+          ? (t.modelBreakdown as Record<string, { input: number; output: number; cacheCreation: number; cacheRead: number; costUsd: number }>)
+          : undefined,
+      }
+    }
+  }
   return {
     v: typeof obj.v === 'number' ? obj.v : DIALOG_FORMAT_VERSION,
     type: 'meta',
@@ -258,6 +277,7 @@ function normalizeMeta(obj: Record<string, unknown>): DialogMeta {
     firstUserText: typeof obj.firstUserText === 'string' ? obj.firstUserText : undefined,
     preview: typeof obj.preview === 'string' ? obj.preview : undefined,
     tags: Array.isArray(obj.tags) ? (obj.tags as string[]) : undefined,
+    tokenUsage,
   }
 }
 
