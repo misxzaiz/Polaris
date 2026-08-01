@@ -287,15 +287,51 @@ export function hasOpenCodeBlock(content: string): boolean {
 }
 
 /**
- * 检测内容是否包含表格特征（行首以 | 开头）
+ * 检测内容是否包含块级 Markdown 元素
  * 用于流式渲染时判断最后一段是否需要走 marked 完整渲染
+ *
+ * 覆盖：表格、无序列表、有序列表、任务列表、标题、块引用、水平线
  */
-function looksLikeTable(text: string): boolean {
-  let count = 0;
+function hasBlockElement(text: string): boolean {
+  let tableCount = 0;
+  let listCount = 0;
+  let quoteCount = 0;
+
   for (const line of text.split('\n')) {
-    if (line.trimStart().startsWith('|')) {
-      count++;
-      if (count >= 2) return true;
+    const trimmed = line.trimStart();
+
+    // 表格：需要 >= 2 行以 | 开头
+    if (trimmed.startsWith('|')) {
+      tableCount++;
+      if (tableCount >= 2) return true;
+    }
+
+    // 无序列表 / 任务列表：需要 >= 2 行以 - * + 开头
+    if (/^[-*+]\s/.test(trimmed)) {
+      listCount++;
+      if (listCount >= 2) return true;
+    }
+
+    // 有序列表：需要 >= 2 行以 数字+点+空格 开头
+    if (/^\d+\.\s/.test(trimmed)) {
+      listCount++;
+      if (listCount >= 2) return true;
+    }
+
+    // 标题：检测到 1 行就触发（# 后跟空格）
+    if (/^#{1,6}\s/.test(trimmed)) {
+      return true;
+    }
+
+    // 块引用：需要 >= 2 行以 > 开头
+    if (/^>\s/.test(trimmed)) {
+      quoteCount++;
+      if (quoteCount >= 2) return true;
+    }
+
+    // 水平线：检测到 1 行就触发
+    if (/^[-*_]{3,}$/.test(trimmed) || /^[-*_]{3,}\s*$/.test(trimmed)) {
+      return true;
     }
   }
   return false;
@@ -559,8 +595,8 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       const paragraphs = content.split(PARAGRAPH_SPLIT_RE);
 
       if (paragraphs.length <= 1) {
-        // 流式最后一段含表格 → 走 marked 完整渲染
-        if (looksLikeTable(content)) {
+        // 流式最后一段含块级元素 → 走 marked 完整渲染
+        if (hasBlockElement(content)) {
           return <CompletedTextBlock content={content} />;
         }
         return <LightweightMarkdown content={content} />;
@@ -575,7 +611,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
         <>
           <div className="break-words" style={{ contain: 'content' }}
             dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedContent) }} />
-          {looksLikeTable(lastPara) ? (
+          {hasBlockElement(lastPara) ? (
             <CompletedTextBlock content={lastPara} />
           ) : (
             <LightweightMarkdown content={lastPara} />
@@ -638,8 +674,8 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           // 未完成文本（流式中）：段落级渐进渲染
           const paragraphs = part.content.split(PARAGRAPH_SPLIT_RE);
           if (paragraphs.length <= 1) {
-            // 流式最后一段含表格 → 走 marked 完整渲染
-            if (looksLikeTable(part.content)) {
+            // 流式最后一段含块级元素 → 走 marked 完整渲染
+            if (hasBlockElement(part.content)) {
               return <CompletedTextBlock key={`ctext-${index}`} content={part.content} />;
             }
             return <LightweightMarkdown key={`ltext-${index}`} content={part.content} />;
@@ -653,7 +689,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
             <span key={`streaming-${index}`}>
               <div className="break-words" style={{ contain: 'content' }}
                 dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedParasContent) }} />
-              {looksLikeTable(lastPara) ? (
+              {hasBlockElement(lastPara) ? (
                 <CompletedTextBlock content={lastPara} />
               ) : (
                 <LightweightMarkdown content={lastPara} />
