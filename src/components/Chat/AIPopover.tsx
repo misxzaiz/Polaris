@@ -6,7 +6,7 @@
 
 import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, Orbit } from 'lucide-react'
+import { X } from 'lucide-react'
 import { EnhancedChatMessages, ChatInput } from '../Chat'
 import type { EditMode } from '../Chat'
 import { ErrorBanner } from './ErrorBanner'

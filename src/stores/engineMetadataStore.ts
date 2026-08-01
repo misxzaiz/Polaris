@@ -52,9 +52,9 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
       set({ metadatas, loaded: true, loading: false })
       log.info(`已加载 ${metadatas.length} 个引擎元数据`)
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      log.error('加载引擎元数据失败', message)
-      set({ error: message, loading: false })
+      const err = e instanceof Error ? e : new Error(String(e))
+      log.error('加载引擎元数据失败', err)
+      set({ error: err.message, loading: false })
     }
   },
 

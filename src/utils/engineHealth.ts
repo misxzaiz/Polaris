@@ -14,6 +14,8 @@ export interface SelectedEngineHealth {
   name: string
   /** health 字段前缀（如 "claude"、"codex"、"pi"） */
   healthPrefix: string
+  /** CLI 命令名称（如 "claude"、"codex"、"pi"） */
+  command: string
   cliPath: string
   available: boolean
   version?: string
@@ -64,6 +66,7 @@ export function getSelectedEngineHealth(
       engineId,
       name: getEngineFullName(engineId),
       healthPrefix: 'simple-ai',
+      command: '',
       cliPath: '',
       available: hasProfile,
       version: undefined,
@@ -76,10 +79,18 @@ export function getSelectedEngineHealth(
   const cliConfig = config?.[engineId === 'claude-code' ? 'claudeCode' : engineId === 'codex' ? 'codexCode' : 'piCode' as keyof Config] as { cliPath?: string } | undefined
   const cliPath = cliConfig?.cliPath || ''
 
+  // CLI 命令名映射
+  const commandMap: Record<string, string> = {
+    'claude-code': 'claude',
+    codex: 'codex',
+    pi: 'pi',
+  }
+
   return {
     engineId,
     name: getEngineFullName(engineId),
     healthPrefix: engineId,
+    command: commandMap[engineId] ?? engineId,
     cliPath,
     available: status.available,
     version: status.version,

@@ -9,8 +9,8 @@ import { useTranslation } from 'react-i18next';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useConfigStore, useToastStore } from '@/stores';
 import { useSkillStore } from '@/stores/skillStore';
-import { usePluginStore } from '@/stores/pluginStore';
-import { listPluginMcpServerStatuses, pluginRegistry } from '@/plugin-system';
+
+
 import type { PromptSnippet, SnippetVariable, CreateSnippetParams, UpdateSnippetParams } from '@/types/promptSnippet';
 import { extractVariables, AUTO_VARIABLES } from '@/types/promptSnippet';
 import { IconPlus, IconEdit, IconTrash } from '../../Common/Icons';
@@ -37,7 +37,6 @@ export function PromptSnippetTab() {
   const { skills, loading: skillsLoading, loadSkills } = useSkillStore();
   const config = useConfigStore(state => state.config);
   const updateConfigPatch = useConfigStore(state => state.updateConfigPatch);
-  const pluginStates = usePluginStore(state => state.pluginStates);
   const { addToast } = useToastStore();
 
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -52,25 +51,6 @@ export function PromptSnippetTab() {
       : ['.polaris/skills', '.polaris/agents']).join('\n'));
   }, [config?.skillPaths]);
 
-  // 获取 DataRoot 路径用于展示默认提示
-  const [dataRootHint, setDataRootHint] = useState('');
-  useEffect(() => {
-    import('@/services/dataRootService').then(({ getDataRootInfo }) => {
-      getDataRootInfo().then(info => setDataRootHint(info.root)).catch(() => {});
-    }).catch(() => {});
-  }, []);
-
-  const pluginsById = new Map(pluginRegistry.listPlugins().map(plugin => [plugin.id, plugin]));
-  const mcpServers = listPluginMcpServerStatuses(pluginStates)
-    .filter(server => server.enabled)
-    .map(server => {
-      const plugin = pluginsById.get(server.pluginId);
-      return {
-        ...server,
-        pluginName: plugin?.name ?? server.pluginId,
-      };
-    });
-
   const handleSaveSkillPaths = async () => {
     const skillPaths = [...new Set(skillPathsText
       .split(/\r?\n/)
@@ -84,6 +64,9 @@ export function PromptSnippetTab() {
       addToast({ type: 'error', title: err instanceof Error ? err.message : String(err) });
     }
   };
+
+  // 标记 JSX 引用的变量，避免 noUnusedLocals 误报
+  ;[skills, skillsLoading, handleSaveSkillPaths]
 
   const handleCreate = () => {
     setEditingId(null);
@@ -217,7 +200,7 @@ export function PromptSnippetTab() {
                 刷新
               </button>
               <button
-                onClick={() => void handleSaveSkillPaths()}
+                onClick={() => void handleSaveSkillPaths()
                 className="px-3 py-1.5 text-xs bg-primary text-white rounded-lg hover:bg-primary-hover"
               >
                 保存路径

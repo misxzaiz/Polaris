@@ -16,7 +16,7 @@ import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 import type { Config, EngineId, EngineCapabilities, HealthStatus } from '@/types';
-import type { EngineMetadata } from '@/types/engineMetadata';
+
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import { EngineInstallActions } from '../EngineInstallActions';
 import { Bot, RotateCcw, Check, Cpu, Package, Terminal } from 'lucide-react';
@@ -206,10 +206,10 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       return Object.values(ENGINE_UI_MAP)
     }
     return engineMetadatas.map(meta => ({
+      ...ENGINE_UI_MAP[meta.id],
       id: meta.id,
       nameKey: ENGINE_UI_MAP[meta.id]?.nameKey ?? meta.name,
       descKey: ENGINE_UI_MAP[meta.id]?.descKey ?? meta.description ?? '',
-      ...ENGINE_UI_MAP[meta.id],
     }))
   }, [engineMetadatas])
 

@@ -1548,6 +1548,13 @@ impl IntegrationManager {
                 Self::send_reply(&task_adapters, platform, &task_conversation_id, &complete_msg).await;
             } else {
                 tracing::warn!("[IntegrationManager] ⚠️ AI 返回空文本，不发送回复");
+                // 向用户发送诊断消息，避免静默无响应
+                Self::send_reply(
+                    &task_adapters,
+                    platform,
+                    &task_conversation_id,
+                    "⚠️ AI 未生成回复内容。可能原因：模型调用超时、API Key 无效或 provider 配置有误。请检查设置后重试。",
+                ).await;
             }
 
             // 从活跃会话中移除

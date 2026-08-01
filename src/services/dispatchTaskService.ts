@@ -157,7 +157,7 @@ function resolveEngineId(event: DispatchTaskRequestEvent): string | undefined {
  */
 function resolveModelProfileId(
   event: DispatchTaskRequestEvent,
-  engineId: string | undefined
+  _engineId: string | undefined
 ): string | undefined {
   if (event.modelProfileId === 'official') return undefined
   if (event.modelProfileId) return event.modelProfileId

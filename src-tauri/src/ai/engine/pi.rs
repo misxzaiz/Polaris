@@ -55,6 +55,7 @@ use super::pi_parser::{
     PiRpcLine, pi_line_to_ai_events, extract_session_id_from_state,
     build_prompt_command, build_abort_command,
 };
+use super::simple_ai_protocol::strip_cli_model_suffix;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -279,6 +280,66 @@ impl PiEngine {
             provider_cfg.name, provider_cfg.base_url
         );
         Ok(())
+    }
+
+    /// 从 self.config 中解析活跃模型 Profile，构造 PiProviderConfig 及 env_overrides。
+    ///
+    /// 当 options 中未显式传入 pi_provider_config 时（如 IM 集成调用），
+    /// 自动降级使用 Polaris 配置中的活跃模型 Profile，确保 Pi 引擎始终
+    /// 能获得 provider/model/api-key 参数，避免静默使用 Pi 默认配置导致
+    /// LLM 调用失败。
+    fn resolve_provider_config_from_config(
+        &self,
+    ) -> Option<(PiProviderConfig, String, std::collections::HashMap<String, String>)> {
+        let active_id = self.config.active_model_profile_id.as_ref()?;
+        let profile = self.config.model_profiles.iter()
+            .find(|p| &p.id == active_id)?;
+
+        // 剥离 CLI 私有后缀
+        let stripped = strip_cli_model_suffix(&profile.model);
+        let clean_model = stripped.base_model.clone().unwrap_or_else(|| profile.model.clone());
+
+        // 确定 pi 的 api 类型
+        let pi_api = match profile.wire_api.as_deref() {
+            Some("openai-chat-completions") => "openai-completions",
+            Some("openai-responses") => "openai-responses",
+            _ => "anthropic-messages",
+        };
+
+        let provider_name = format!("polaris-{}", profile.id);
+        let ctx_window = profile.context_window.unwrap_or(128000);
+
+        let config = PiProviderConfig {
+            name: provider_name,
+            base_url: profile.base_url.clone(),
+            api_key: profile.api_key.clone(),
+            api: pi_api.to_string(),
+            context_window: ctx_window,
+            max_tokens: 16384,
+        };
+
+        // 构建环境变量覆盖（与 chat.rs 对齐）
+        let mut env_overrides = std::collections::HashMap::new();
+        if let Some(custom) = &profile.custom_env {
+            for (k, v) in custom {
+                env_overrides.insert(k.clone(), v.clone());
+            }
+        }
+        if !profile.api_key.is_empty() {
+            let env_name = match profile.wire_api.as_deref() {
+                Some("openai-chat-completions" | "openai-responses") => "OPENAI_API_KEY",
+                _ => "ANTHROPIC_API_KEY",
+            };
+            env_overrides.entry(env_name.to_string())
+                .or_insert_with(|| profile.api_key.clone());
+        }
+
+        tracing::info!(
+            "[PiEngine] 从配置中解析 provider: {} (model={}, baseUrl={})",
+            config.name, clean_model, config.base_url
+        );
+
+        Some((config, clean_model, env_overrides))
     }
 
     /// 获取 pi agent 配置目录（PI_CODING_AGENT_DIR 或 ~/.pi/agent）
@@ -849,6 +910,12 @@ export default async function (pi) {
                             "[PiEngine] agent_end 但全程 0 个 message 事件，session={}（疑似 provider 超时或模型调用失败）",
                             real_session_id
                         );
+                        // 发射 error 事件告知上层 LLM 调用失败，避免 IntegrationManager
+                        // 静默跳过空回复，用户收不到任何反馈。
+                        event_callback(AIEvent::error(
+                            &real_session_id,
+                            "Pi 引擎未生成任何回复：模型调用可能超时或 provider 配置有误。请检查 API Key、模型名称及网络连接。".to_string(),
+                        ));
                     }
                     break;
                 }
@@ -880,27 +947,42 @@ export default async function (pi) {
                 tracing::warn!("[PiEngine] 进程退出但未收到 agent_end 事件");
             }
 
-            // 主动收尾进程：先尝试等其自然退出 300ms（让 output-guard 排空收尾输出，
+            // 主动收尾进程：先尝试等其自然退出（让 output-guard 排空收尾输出，
             // 避免管道读端过早关闭导致 EPIPE unhandled exception），超时则 kill 兜底。
             // 注意：reader 此时仍存活，stdout 管道保持打开，pi 进程可安全写入收尾数据。
             let mut child = child;
-            match child.try_wait() {
-                Ok(Some(_status)) => {
-                    // 已退出，无需 kill
-                }
-                Ok(None) => {
-                    // 仍在运行，给 300ms 让其排空 stdout 收尾数据
-                    std::thread::sleep(std::time::Duration::from_millis(300));
-                    if let Ok(None) = child.try_wait() {
-                        tracing::debug!("[PiEngine] 300ms 后进程仍在运行，执行 kill 兜底，pid={}", pid);
+            // 持续读取 stdout 直到子进程退出或超时，确保 output-guard 的收尾输出被排空
+            // 而非管道读端关闭后写入 EPIPE。
+            let max_wait = std::time::Duration::from_secs(5);
+            let start = std::time::Instant::now();
+            loop {
+                match child.try_wait() {
+                    Ok(Some(_status)) => {
+                        // 已退出
+                        break;
+                    }
+                    Ok(None) => {
+                        if start.elapsed() >= max_wait {
+                            tracing::debug!("[PiEngine] 等待 {}s 后进程仍在运行，执行 kill 兜底，pid={}", max_wait.as_secs(), pid);
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            break;
+                        }
+                        // 继续读取 stdout 让 output-guard 排空
+                        let mut drain = String::new();
+                        let _ = reader.read_line(&mut drain);
+                        if !drain.trim().is_empty() {
+                            tracing::trace!("[PiEngine] 收尾 stdout: {}", drain.trim());
+                        }
+                        // 短暂休眠避免忙等
+                        std::thread::sleep(std::time::Duration::from_millis(50));
+                    }
+                    Err(e) => {
+                        tracing::warn!("[PiEngine] try_wait 失败 {}: {}", pid, e);
                         let _ = child.kill();
                         let _ = child.wait();
+                        break;
                     }
-                }
-                Err(e) => {
-                    tracing::warn!("[PiEngine] try_wait 失败 {}: {}", pid, e);
-                    let _ = child.kill();
-                    let _ = child.wait();
                 }
             }
 
@@ -966,7 +1048,7 @@ impl AIEngine for PiEngine {
     fn start_session(
         &mut self,
         message: &str,
-        options: SessionOptions,
+        mut options: SessionOptions,
     ) -> Result<String> {
         tracing::info!("[PiEngine] 启动会话，消息长度: {}", message.len());
 
@@ -979,12 +1061,33 @@ impl AIEngine for PiEngine {
         }
 
         // 自定义 provider：写入 models.json 注册端点
-        if let Some(ref provider_cfg) = options.pi_provider_config {
-            Self::write_models_json(provider_cfg)?;
+        // 优先使用 options 中显式传入的 provider 配置（AI 对话路径），
+        // 否则从 self.config 的活跃模型 Profile 自动解析（IM 集成路径）。
+        let (resolved_provider, resolved_model) = if let Some(ref cfg) = options.pi_provider_config {
             tracing::info!(
-                "[PiEngine] 将使用自定义 provider: {} (baseUrl={})",
-                provider_cfg.name, provider_cfg.base_url
+                "[PiEngine] 使用显式传入的 provider: {} (baseUrl={})",
+                cfg.name, cfg.base_url
             );
+            (Some(cfg.clone()), options.pi_model.clone())
+        } else if let Some((cfg, model, envs)) = self.resolve_provider_config_from_config() {
+            tracing::info!(
+                "[PiEngine] 从配置自动解析 provider: {} (model={})",
+                cfg.name, model
+            );
+            // 注入 env_overrides（API Key 等），确保 Pi 子进程能读到环境变量
+            for (k, v) in envs {
+                options.env_overrides.entry(k).or_insert(v);
+            }
+            (Some(cfg), Some(model))
+        } else {
+            tracing::warn!(
+                "[PiEngine] 无 provider 配置，Pi 将使用默认 provider（可能未配置导致 LLM 调用失败）"
+            );
+            (None, None)
+        };
+
+        if let Some(ref cfg) = resolved_provider {
+            Self::write_models_json(cfg)?;
         }
 
         // 先生成 temp_id：build_command 需要用它作为 --session-id，让 pi 创建 session
@@ -1005,9 +1108,9 @@ impl AIEngine for PiEngine {
             options.system_prompt.as_deref(),
             options.append_system_prompt.as_deref(),
             options.model.as_deref(),
-            options.pi_model.as_deref(),
-            options.pi_provider_config.as_ref().map(|c| c.name.as_str()),
-            options.pi_provider_config.as_ref().map(|c| c.api_key.as_str()),
+            resolved_model.as_deref(),
+            resolved_provider.as_ref().map(|c| c.name.as_str()),
+            resolved_provider.as_ref().map(|c| c.api_key.as_str()),
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,
@@ -1040,7 +1143,7 @@ impl AIEngine for PiEngine {
         &mut self,
         session_id: &str,
         message: &str,
-        options: SessionOptions,
+        mut options: SessionOptions,
     ) -> Result<()> {
         tracing::info!("[PiEngine] 继续会话: {}, 消息长度: {}", session_id, message.len());
 
@@ -1049,8 +1152,33 @@ impl AIEngine for PiEngine {
         }
 
         // 自定义 provider：写入 models.json 注册端点
-        if let Some(ref provider_cfg) = options.pi_provider_config {
-            Self::write_models_json(provider_cfg)?;
+        // 优先使用 options 中显式传入的 provider 配置（AI 对话路径），
+        // 否则从 self.config 的活跃模型 Profile 自动解析（IM 集成路径）。
+        let (resolved_provider, resolved_model) = if let Some(ref cfg) = options.pi_provider_config {
+            tracing::info!(
+                "[PiEngine] 使用显式传入的 provider: {} (baseUrl={})",
+                cfg.name, cfg.base_url
+            );
+            (Some(cfg.clone()), options.pi_model.clone())
+        } else if let Some((cfg, model, envs)) = self.resolve_provider_config_from_config() {
+            tracing::info!(
+                "[PiEngine] 从配置自动解析 provider: {} (model={})",
+                cfg.name, model
+            );
+            // 注入 env_overrides（API Key 等），确保 Pi 子进程能读到环境变量
+            for (k, v) in envs {
+                options.env_overrides.entry(k).or_insert(v);
+            }
+            (Some(cfg), Some(model))
+        } else {
+            tracing::warn!(
+                "[PiEngine] 无 provider 配置，Pi 将使用默认 provider（可能未配置导致 LLM 调用失败）"
+            );
+            (None, None)
+        };
+
+        if let Some(ref cfg) = resolved_provider {
+            Self::write_models_json(cfg)?;
         }
 
         // MCP 桥接（路径 B）：enable_extensions 时刷新 Extension 桥接
@@ -1079,9 +1207,9 @@ impl AIEngine for PiEngine {
             options.system_prompt.as_deref(),
             options.append_system_prompt.as_deref(),
             options.model.as_deref(),
-            options.pi_model.as_deref(),
-            options.pi_provider_config.as_ref().map(|c| c.name.as_str()),
-            options.pi_provider_config.as_ref().map(|c| c.api_key.as_str()),
+            resolved_model.as_deref(),
+            resolved_provider.as_ref().map(|c| c.name.as_str()),
+            resolved_provider.as_ref().map(|c| c.api_key.as_str()),
             options.effort.as_deref(),
             options.permission_mode.as_deref(),
             &options.allowed_tools,

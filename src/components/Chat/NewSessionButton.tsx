@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check, Bot, Cpu, Search, Zap, Sparkles, Link, Orbit } from 'lucide-react';
+import { Plus, Folder, Check, Bot, Cpu, Search, Zap, Link, Orbit } from 'lucide-react';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
