@@ -65,13 +65,13 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   /** 从 InlineDiffView 回调打开文件（接受路径字符串，非事件） */
   const handleOpenFileByPath = useCallback((path: string) => {
     if (!path) return;
-    const isAbsolute = path.startsWith('/') || /^[A-Za-z]:[\/]/.test(path);
+    const isAbsolute = path.startsWith('/') || /^[A-Za-z]:[/\]/.test(path);
     const absolutePath = isAbsolute
       ? path
       : currentWorkspace
-        ? (currentWorkspace.path.replace(/[\/]+$/, '') + '/' + path.replace(/^[\/]+/, ''))
+        ? (currentWorkspace.path.replace(/[\\/]+$/, '') + '/' + path.replace(/^[\\/]+/, ''))
         : path;
-    const fileName = path.split(/[/\]/).pop() || path;
+    const fileName = path.split(/[\\/]/).pop() || path;
     openFile(absolutePath, fileName);
   }, [currentWorkspace, openFile]);
 
