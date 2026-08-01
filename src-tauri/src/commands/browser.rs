@@ -1660,6 +1660,59 @@ pub async fn browser_get_history_state(app: AppHandle, label: String) -> Result<
     browser_get_history_state_with_app(&app, &label).await
 }
 
+/// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_show_overflow_menu(
+    app: AppHandle,
+    label: String,
+    x: f64,
+    y: f64,
+) -> Result<()> {
+    use tauri::menu::{ContextMenu, MenuBuilder, MenuItemBuilder};
+    use tauri::{LogicalPosition, Position};
+
+    let devtools = MenuItemBuilder::with_id("browser-overflow-devtools", "开发者工具")
+        .build(&app)?;
+    let copy_url = MenuItemBuilder::with_id("browser-overflow-copyUrl", "复制地址")
+        .accelerator("CmdOrCtrl+L")
+        .build(&app)?;
+    let open_external =
+        MenuItemBuilder::with_id("browser-overflow-openExternal", "外部浏览器打开")
+            .build(&app)?;
+    let clear_data = MenuItemBuilder::with_id("browser-overflow-clearData", "清理浏览数据")
+        .build(&app)?;
+
+    let menu = MenuBuilder::new(&app)
+        .item(&devtools)
+        .item(&copy_url)
+        .item(&open_external)
+        .separator()
+        .item(&clear_data)
+        .build()?;
+
+    if let Some(window) = app.get_webview_window("main") {
+        let app_clone = app.clone();
+        let label_clone = label.clone();
+
+        window.on_menu_event(move |_window, event: &tauri::menu::MenuEvent| {
+            let id = event.id().0.clone();
+            let action = id.replace("browser-overflow-", "");
+            let _ = app_clone.emit(
+                "browser://overflow-menu-action",
+                serde_json::json!({
+                    "label": label_clone,
+                    "action": action,
+                }),
+            );
+        });
+
+        menu.popup_at(&window, Position::Logical(LogicalPosition::new(x, y)))?;
+    }
+
+    Ok(())
+}
+
 #[cfg(feature = "tauri-app")]
 const PAGE_CONTEXT_SCRIPT: &str = r#"
 (() => {

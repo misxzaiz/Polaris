@@ -384,6 +384,14 @@ export async function browserGetHistoryState(label: string): Promise<BrowserHist
   return invoke<BrowserHistoryState>('browser_get_history_state', { label })
 }
 
+export async function browserShowOverflowMenu(
+  label: string,
+  x: number,
+  y: number,
+): Promise<void> {
+  return invoke<void>('browser_show_overflow_menu', { label, x, y })
+}
+
 export async function browserSetMarquee(label: string, enabled: boolean): Promise<BrowserMarqueeResult> {
   return invoke<BrowserMarqueeResult>('browser_set_marquee', { label, enabled })
 }

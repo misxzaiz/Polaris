@@ -12,10 +12,7 @@ polaris-mobile/src-tauri/gen/android/.gradle/
 polaris-mobile/src-tauri/gen/android/build/
 polaris-mobile/src-tauri/gen/android/app/build/
 polaris-mobile/src-tauri/gen/android/app/src/main/jniLibs/
-polaris-mobile/src-tauri/gen/android/app/src/main/assets/assets/
-polaris-mobile/src-tauri/gen/android/app/src/main/assets/index.html
-polaris-mobile/src-tauri/gen/android/app/src/main/assets/tauri.svg
-polaris-mobile/src-tauri/gen/android/app/src/main/assets/vite.svg
+polaris-mobile/src-tauri/gen/android/app/src/main/assets/
 # Build outputs
 dist/
 dist-ssr/

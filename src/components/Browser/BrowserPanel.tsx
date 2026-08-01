@@ -13,6 +13,7 @@ import {
   Globe2,
   ListTree,
   Loader2,
+  MoreVertical,
   MousePointer2,
   PanelBottom,
   RefreshCw,
@@ -39,6 +40,7 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
+  browserShowOverflowMenu,
   browserToggleDevtools,
   formatMarqueeContext,
   makeBrowserWebviewLabel,
@@ -56,6 +58,7 @@ import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+
 
 interface BrowserPanelProps {
   tabId: string
@@ -181,6 +184,7 @@ export function BrowserPanel({
   const { t } = useTranslation('common')
   const rootRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const overflowBtnRef = useRef<HTMLButtonElement>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
@@ -204,9 +208,11 @@ export function BrowserPanel({
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
   const [pageTitle, setPageTitle] = useState('Browser')
   const [loading, setLoading] = useState(false)
+  const [loadProgress, setLoadProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
+  const [aiPanelTab, setAiPanelTab] = useState<'context' | 'marquee' | 'log'>('context')
   const [aiOperationMode, setAiOperationMode] = useState(false)
   const [highlightCount, setHighlightCount] = useState<number | null>(null)
   const [contextPreview, setContextPreview] = useState<BrowserPageContext | null>(null)
@@ -250,7 +256,13 @@ export function BrowserPanel({
     const nextBounds = isBrowserOccludedByAppOverlay(bounds, rootRef.current)
       ? HIDDEN_BROWSER_BOUNDS
       : bounds
-    if (boundsEqual(lastAppliedBoundsRef.current, nextBounds)) return
+
+    // 跳过相等检查的情况：当前 bounds 是隐藏状态但实际需要显示，必须强制恢复
+    if (boundsEqual(lastAppliedBoundsRef.current, nextBounds)) {
+      const isHidden = lastAppliedBoundsRef.current === HIDDEN_BROWSER_BOUNDS
+      const needShow = nextBounds !== HIDDEN_BROWSER_BOUNDS
+      if (!isHidden || !needShow) return
+    }
 
     await browserSetBounds(webviewLabel, nextBounds)
     lastAppliedBoundsRef.current = nextBounds
@@ -442,27 +454,32 @@ export function BrowserPanel({
     }
 
     let cancelled = false
-    const timeout = window.setTimeout(
-      () => {
-        browserSetAiOverlay(webviewLabel, aiOperationMode)
-          .then((result) => {
-            if (cancelled) return
-            setHighlightCount(result.enabled ? result.count : null)
-          })
-          .catch((e) => {
-            if (cancelled) return
-            setHighlightCount(null)
-            if (aiOperationMode) {
-              setError(e instanceof Error ? e.message : String(e))
-            }
-          })
-      },
-      aiOperationMode ? 350 : 0
-    )
+    let intervalId: number | null = null
+
+    async function refreshOverlay() {
+      try {
+        const result = await browserSetAiOverlay(webviewLabel, aiOperationMode)
+        if (cancelled) return
+        setHighlightCount(result.enabled ? result.count : null)
+      } catch (e) {
+        if (cancelled) return
+        setHighlightCount(null)
+        if (aiOperationMode) {
+          setError(e instanceof Error ? e.message : String(e))
+        }
+      }
+    }
+
+    const timeout = window.setTimeout(refreshOverlay, aiOperationMode ? 350 : 0)
+
+    if (aiOperationMode) {
+      intervalId = window.setInterval(refreshOverlay, 3000)
+    }
 
     return () => {
       cancelled = true
       window.clearTimeout(timeout)
+      if (intervalId !== null) window.clearInterval(intervalId)
     }
   }, [aiOperationMode, currentUrl, status, webviewLabel])
 
@@ -470,6 +487,7 @@ export function BrowserPanel({
     async (rawUrl: string) => {
       const nextUrl = normalizeBrowserUrl(rawUrl)
       setLoading(true)
+      setLoadProgress(10)
       setError(null)
       setAddress(nextUrl)
       setCurrentUrl(nextUrl)
@@ -477,15 +495,23 @@ export function BrowserPanel({
       setDiagnostics(null)
       setContextPreview(null)
       updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
+
+      const progressTimer = window.setInterval(() => {
+        setLoadProgress((prev) => Math.min(prev + 15, 85))
+      }, 300)
+
       try {
         if (status === 'native-unavailable') {
           return
         }
         await browserNavigate(webviewLabel, nextUrl)
+        setLoadProgress(100)
       } catch (e) {
         setError(e instanceof Error ? e.message : String(e))
       } finally {
+        window.clearInterval(progressTimer)
         setLoading(false)
+        setTimeout(() => setLoadProgress(0), 400)
       }
     },
     [status, tabId, updateBrowserTab, webviewLabel]
@@ -535,6 +561,7 @@ export function BrowserPanel({
 
       setContextPreview(context)
       setAiPanelOpen(true)
+      setAiPanelTab('context')
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setError(message)
@@ -558,6 +585,7 @@ export function BrowserPanel({
       setDiagnostics(result)
       setContextPreview(result.context)
       setAiPanelOpen(true)
+      setAiPanelTab('log')
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
       setError(message)
@@ -605,6 +633,7 @@ export function BrowserPanel({
     setMarqueeNote('')
     setMarqueeMode(true)
     setAiPanelOpen(true)
+    setAiPanelTab('marquee')
     try {
       await browserSetMarquee(webviewLabel, true)
     } catch (e) {
@@ -701,6 +730,40 @@ export function BrowserPanel({
     }
   }, [marqueeMode, status, webviewLabel])
 
+  // 监听原生溢出菜单的操作事件（由 Rust 端触发）
+  useEffect(() => {
+    if (status !== 'ready') return
+    let unlisten: UnlistenFn | null = null
+
+    async function setup() {
+      unlisten = await listen<{ label: string; action: string }>(
+        'browser://overflow-menu-action',
+        (event) => {
+          if (event.payload.label !== webviewLabel) return
+          switch (event.payload.action) {
+            case 'devtools':
+              browserToggleDevtools(webviewLabel).catch((e) => setError(String(e)))
+              break
+            case 'copyUrl':
+              copyUrl()
+              break
+            case 'openExternal':
+              openExternal()
+              break
+            case 'clearData':
+              browserClearData(webviewLabel).catch((e) => setError(String(e)))
+              break
+          }
+        },
+      )
+    }
+
+    setup()
+    return () => {
+      unlisten?.()
+    }
+  }, [status, webviewLabel, copyUrl, openExternal])
+
   // 组件卸载 / 会话切换时清理 overlay
   useEffect(() => {
     return () => {
@@ -780,6 +843,8 @@ export function BrowserPanel({
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
   const taskButtonClass =
     'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
+
+
   const hostText = useMemo(() => {
     try {
       return new URL(currentUrl).host || currentUrl
@@ -929,28 +994,17 @@ export function BrowserPanel({
           </button>
           <button
             type="button"
+            ref={overflowBtnRef}
             className={toolbarButtonClass}
-            onClick={() => browserToggleDevtools(webviewLabel).catch((e) => setError(String(e)))}
-            disabled={status !== 'ready'}
-            title={t('browser.devtools', { defaultValue: '开发者工具' })}
+            onClick={() => {
+              const rect = overflowBtnRef.current?.getBoundingClientRect()
+              if (rect) {
+                browserShowOverflowMenu(webviewLabel, rect.left, rect.bottom + 4)
+              }
+            }}
+            title={t('browser.more', { defaultValue: '更多' })}
           >
-            <Bug size={15} />
-          </button>
-          <button
-            type="button"
-            className={toolbarButtonClass}
-            onClick={copyUrl}
-            title={t('browser.copyUrl', { defaultValue: '复制当前地址' })}
-          >
-            <Copy size={15} />
-          </button>
-          <button
-            type="button"
-            className={toolbarButtonClass}
-            onClick={openExternal}
-            title={t('browser.openExternal', { defaultValue: '外部浏览器打开' })}
-          >
-            <ExternalLink size={15} />
+            <MoreVertical size={15} />
           </button>
         </div>
       </div>
@@ -970,6 +1024,14 @@ export function BrowserPanel({
       )}
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
+        {loadProgress > 0 && (
+          <div className="absolute top-0 left-0 right-0 h-0.5 z-10 bg-primary/20">
+            <div
+              className="h-full bg-primary transition-all duration-300 ease-out"
+              style={{ width: `${loadProgress}%` }}
+            />
+          </div>
+        )}
         <div ref={containerRef} className="absolute inset-0 bg-background-base" />
 
         {status === 'native-unavailable' && (
@@ -1010,27 +1072,13 @@ export function BrowserPanel({
       </div>
 
       {aiPanelOpen && (
-        <div className="shrink-0 border-t border-border-subtle bg-background-elevated px-3 py-2">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-text-secondary">
+        <div className="shrink-0 border-t border-border-subtle bg-background-elevated">
+          <div className="flex items-center justify-between gap-3 px-3 pt-2 pb-0">
+            <div className="flex items-center gap-1 text-xs font-medium text-text-secondary">
               <PanelBottom size={14} className="text-primary" />
               <span className="truncate">
-                {t('browser.aiPanel', { defaultValue: '网页上下文与 AI 操作' })}
+                {t('browser.aiPanel', { defaultValue: 'AI 面板' })}
               </span>
-              {isLocalDev && (
-                <span className="inline-flex shrink-0 items-center gap-1 rounded border border-success/30 bg-success/10 px-1.5 py-0.5 text-[11px] text-success">
-                  <Terminal size={11} />
-                  {t('browser.localDev', { defaultValue: '本地开发页' })}
-                </span>
-              )}
-              {aiOperationMode && highlightCount !== null && (
-                <span className="shrink-0 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-                  {t('browser.highlightCount', {
-                    count: highlightCount,
-                    defaultValue: '已标记 {{count}} 个元素',
-                  })}
-                </span>
-              )}
             </div>
             <button
               type="button"
@@ -1042,219 +1090,209 @@ export function BrowserPanel({
             </button>
           </div>
 
-          {marqueeMode && (
-            <div className="mb-2 rounded-md border border-primary/30 bg-primary/5 p-2">
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-primary">
-                  <BoxSelect size={13} />
-                  <span className="truncate">
-                    {marqueePolling
-                      ? t('browser.marqueeDrawing', { defaultValue: '圈选中… 双击空白或按 Esc 结束' })
-                      : t('browser.marqueeDone', { defaultValue: '圈选完成' })}
-                  </span>
-                  {marqueeRegions.length > 0 && (
-                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px]">
-                      {t('browser.marqueeRegionCount', {
-                        count: marqueeRegions.length,
-                        defaultValue: '{{count}} 个区域',
-                      })}
+          <div className="flex gap-0 border-b border-border-subtle px-3 mt-1">
+            <TabButton
+              active={aiPanelTab === 'context'}
+              onClick={() => setAiPanelTab('context')}
+              label={t('browser.contextPreview', { defaultValue: '上下文' })}
+            />
+            <TabButton
+              active={aiPanelTab === 'marquee'}
+              onClick={() => setAiPanelTab('marquee')}
+              label={t('browser.marquee', { defaultValue: '圈选' })}
+              count={marqueeRegions.length}
+            />
+            <TabButton
+              active={aiPanelTab === 'log'}
+              onClick={() => setAiPanelTab('log')}
+              label={t('browser.operationLog', { defaultValue: '操作日志' })}
+            />
+          </div>
+
+          <div className="px-3 py-2" style={{ minHeight: aiPanelTab === 'marquee' ? '120px' : '70px' }}>
+            {aiPanelTab === 'context' && (
+              <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
+                <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
+                  <div className="min-w-0 truncate text-xs font-medium text-text-primary">
+                    {contextPreview?.title || pageTitle || t('browser.contextPreview', { defaultValue: '上下文' })}
+                  </div>
+                  {contextPreview?.selectedText.trim() && (
+                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
+                      {t('browser.hasSelection', { defaultValue: '已选区' })}
                     </span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void stopMarquee()}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-                  title={t('buttons.close')}
-                >
-                  <X size={13} />
-                </button>
-              </div>
-
-              {marqueeRegions.length > 0 ? (
-                <div className="mb-2 flex max-h-24 flex-col gap-1 overflow-auto">
-                  {marqueeRegions.map((region, idx) => (
-                    <div
-                      key={`region-${idx}`}
-                      className="flex min-w-0 items-center gap-2 rounded border border-border-subtle bg-background-surface px-2 py-1 text-[11px]"
-                    >
-                      <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
-                        {idx + 1}
-                      </span>
-                      <span className="shrink-0 text-text-tertiary">
-                        {Math.round(region.rect.width)}×{Math.round(region.rect.height)}
-                      </span>
-                      <span className="min-w-0 truncate text-text-secondary">
-                        {region.count > 0
-                          ? t('browser.marqueeElementCount', {
-                              count: region.count,
-                              defaultValue: '{{count}} 个元素',
-                            })
-                          : region.textSnippet
-                            ? t('browser.marqueeTextOnly', { defaultValue: '纯文本区域' })
-                            : t('browser.marqueeNoElement', { defaultValue: '无元素' })}
-                      </span>
-                      {region.elements[0] ? (
-                        <span className="min-w-0 truncate text-text-tertiary">
-                          · {region.elements[0].kind} “{region.elements[0].text}”
-                        </span>
-                      ) : region.textSnippet ? (
-                        <span className="min-w-0 truncate text-text-tertiary">
-                          · {region.textSnippet.slice(0, 40)}
-                        </span>
-                      ) : null}
-                    </div>
-                  ))}
+                <div className="mb-1 truncate text-[11px] text-text-tertiary">
+                  {contextPreview?.url || currentUrl}
                 </div>
-              ) : (
-                <div className="mb-2 text-[11px] text-text-tertiary">
-                  {t('browser.marqueeEmptyHint', { defaultValue: '在页面上按住左键拖拽画矩形' })}
+                <div className="line-clamp-2 text-xs leading-5 text-text-secondary">
+                  {contextExcerpt || t('browser.noContextPreview', { defaultValue: '还没有读取网页上下文。' })}
                 </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  value={marqueeNote}
-                  onChange={(e) => setMarqueeNote(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      void sendMarqueeToChat()
-                    }
-                  }}
-                  placeholder={t('browser.marqueeNotePlaceholder', {
-                    defaultValue: '补充说明：想怎么改这个区域？',
-                  })}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary/70"
-                />
-                <button
-                  type="button"
-                  onClick={() => void sendMarqueeToChat()}
-                  disabled={marqueeSending || marqueeRegions.length === 0}
-                  className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
-                  title={t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
-                >
-                  {marqueeSending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
-                  <span className="hidden xl:inline">
-                    {t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
-                  </span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="grid max-h-40 min-h-0 grid-cols-[minmax(0,1fr)_minmax(220px,320px)] gap-3 overflow-hidden max-lg:grid-cols-1">
-            <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
-              <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
-                <div className="min-w-0 truncate text-xs font-medium text-text-primary">
-                  {contextPreview?.title || pageTitle || t('browser.contextPreview', { defaultValue: '上下文' })}
-                </div>
-                {contextPreview?.selectedText.trim() && (
-                  <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-                    {t('browser.hasSelection', { defaultValue: '已选区' })}
-                  </span>
+                {contextHeadings.length > 0 && (
+                  <div className="mt-1 flex min-w-0 flex-wrap gap-1 overflow-hidden">
+                    {contextHeadings.map((heading, index) => (
+                      <span
+                        key={`${heading.level}-${heading.text}-${index}`}
+                        className="max-w-[180px] truncate rounded border border-border-subtle px-1.5 py-0.5 text-[11px] text-text-tertiary"
+                        title={heading.text}
+                      >
+                        H{heading.level} {heading.text}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-              <div className="mb-1 truncate text-[11px] text-text-tertiary">
-                {contextPreview?.url || currentUrl}
-              </div>
-              <div className="line-clamp-2 text-xs leading-5 text-text-secondary">
-                {contextExcerpt || t('browser.noContextPreview', { defaultValue: '还没有读取网页上下文。' })}
-              </div>
-              {contextHeadings.length > 0 && (
-                <div className="mt-1 flex min-w-0 flex-wrap gap-1 overflow-hidden">
-                  {contextHeadings.map((heading, index) => (
-                    <span
-                      key={`${heading.level}-${heading.text}-${index}`}
-                      className="max-w-[180px] truncate rounded border border-border-subtle px-1.5 py-0.5 text-[11px] text-text-tertiary"
-                      title={heading.text}
-                    >
-                      H{heading.level} {heading.text}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
+            )}
 
-            <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
-              <div className="mb-1 flex items-center justify-between gap-2">
-                <div className="text-xs font-medium text-text-primary">
-                  {t('browser.operationLog', { defaultValue: 'AI 操作日志' })}
-                </div>
-                <span className="text-[11px] text-text-tertiary">{operationEvents.length}</span>
-              </div>
-              {diagnostics && (
-                <div className="mb-2 border-b border-border-subtle pb-2">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
-                    <span className="font-medium text-text-secondary">
-                      {t('browser.diagnostics', { defaultValue: '诊断' })}
-                    </span>
-                    <span
-                      className={clsx(
-                        diagnosticsIssueCount > 0 ? 'text-warning' : 'text-success'
-                      )}
-                    >
-                      {diagnosticsIssueCount > 0
-                        ? t('browser.consoleIssues', {
-                            count: diagnosticsIssueCount,
-                            defaultValue: '{{count}} 条 Console 风险',
-                          })
-                        : t('browser.consoleClean', { defaultValue: 'Console 正常' })}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-3 gap-1 text-[11px] text-text-tertiary">
-                    <span>
-                      {t('browser.actionableCount', {
-                        count: diagnostics.elements.length,
-                        defaultValue: '可操作 {{count}}',
-                      })}
-                    </span>
-                    <span>
-                      {t('browser.visibleCount', {
-                        count: diagnostics.visual.elements.length,
-                        defaultValue: '可视 {{count}}',
-                      })}
-                    </span>
-                    <span>
-                      {diagnostics.visual.screenshot
-                        ? t('browser.screenshotReady', { defaultValue: '截图可用' })
-                        : t('browser.textOnlyDiagnostics', { defaultValue: '文本诊断' })}
-                    </span>
-                  </div>
-                  {diagnosticsLatestIssue && (
-                    <div className="mt-1 truncate text-[11px] text-text-secondary" title={diagnosticsLatestIssue.message}>
-                      {diagnosticsLatestIssue.level}: {diagnosticsLatestIssue.message}
-                    </div>
-                  )}
-                </div>
-              )}
-              <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
-                {operationEvents.length === 0 ? (
-                  <div className="text-xs text-text-tertiary">
-                    {t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
+            {aiPanelTab === 'marquee' && (
+              <div>
+                {marqueeRegions.length > 0 ? (
+                  <div className="mb-2 flex max-h-24 flex-col gap-1 overflow-auto">
+                    {marqueeRegions.map((region, idx) => (
+                      <div
+                        key={`region-${idx}`}
+                        className="flex min-w-0 items-center gap-2 rounded border border-border-subtle bg-background-surface px-2 py-1 text-[11px]"
+                      >
+                        <span className="shrink-0 rounded bg-primary/15 px-1.5 py-0.5 font-medium text-primary">
+                          {idx + 1}
+                        </span>
+                        <span className="shrink-0 text-text-tertiary">
+                          {Math.round(region.rect.width)}x{Math.round(region.rect.height)}
+                        </span>
+                        <span className="min-w-0 truncate text-text-secondary">
+                          {region.count > 0
+                            ? t('browser.marqueeElementCount', {
+                                count: region.count,
+                                defaultValue: '{{count}} 个元素',
+                              })
+                            : region.textSnippet
+                              ? t('browser.marqueeTextOnly', { defaultValue: '纯文本区域' })
+                              : t('browser.marqueeNoElement', { defaultValue: '无元素' })}
+                        </span>
+                        {region.elements[0] ? (
+                          <span className="min-w-0 truncate text-text-tertiary">
+                            - {region.elements[0].kind} "{region.elements[0].text}"
+                          </span>
+                        ) : region.textSnippet ? (
+                          <span className="min-w-0 truncate text-text-tertiary">
+                            - {region.textSnippet.slice(0, 40)}
+                          </span>
+                        ) : null}
+                      </div>
+                    ))}
                   </div>
                 ) : (
-                  operationEvents.slice(0, 4).map((operation) => (
-                    <div key={`${operation.timestamp}-${operation.action}`} className="flex min-w-0 items-center gap-2 text-xs">
+                  <div className="mb-2 text-[11px] text-text-tertiary">
+                    {t('browser.marqueeEmptyHint', { defaultValue: '点击工具栏圈选按钮在页面上拖拽选择区域' })}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <input
+                    value={marqueeNote}
+                    onChange={(e) => setMarqueeNote(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        void sendMarqueeToChat()
+                      }
+                    }}
+                    placeholder={t('browser.marqueeNotePlaceholder', {
+                      defaultValue: '补充说明：想怎么改这个区域？',
+                    })}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary/70"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void sendMarqueeToChat()}
+                    disabled={marqueeSending || marqueeRegions.length === 0}
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md bg-primary px-3 text-xs font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50"
+                    title={t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
+                  >
+                    {marqueeSending ? <Loader2 size={13} className="animate-spin" /> : <Send size={13} />}
+                    <span className="hidden xl:inline">
+                      {t('browser.marqueeSend', { defaultValue: '发送给 AI' })}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {aiPanelTab === 'log' && (
+              <div>
+                {diagnostics && (
+                  <div className="mb-2 border-b border-border-subtle pb-2">
+                    <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
+                      <span className="font-medium text-text-secondary">
+                        {t('browser.diagnostics', { defaultValue: '诊断' })}
+                      </span>
                       <span
                         className={clsx(
-                          'h-1.5 w-1.5 shrink-0 rounded-full',
-                          operation.status === 'success'
-                            ? 'bg-success'
-                            : operation.status === 'warning'
-                              ? 'bg-warning'
-                              : 'bg-danger'
+                          diagnosticsIssueCount > 0 ? 'text-warning' : 'text-success'
                         )}
-                      />
-                      <span className="shrink-0 text-text-tertiary">{operation.action}</span>
-                      <span className="min-w-0 truncate text-text-secondary">
-                        {operation.target ? `${operation.message}: ${operation.target}` : operation.message}
+                      >
+                        {diagnosticsIssueCount > 0
+                          ? t('browser.consoleIssues', {
+                              count: diagnosticsIssueCount,
+                              defaultValue: '{{count}} 条 Console 风险',
+                            })
+                          : t('browser.consoleClean', { defaultValue: 'Console 正常' })}
                       </span>
                     </div>
-                  ))
+                    <div className="grid grid-cols-3 gap-1 text-[11px] text-text-tertiary">
+                      <span>
+                        {t('browser.actionableCount', {
+                          count: diagnostics.elements.length,
+                          defaultValue: '可操作 {{count}}',
+                        })}
+                      </span>
+                      <span>
+                        {t('browser.visibleCount', {
+                          count: diagnostics.visual.elements.length,
+                          defaultValue: '可视 {{count}}',
+                        })}
+                      </span>
+                      <span>
+                        {diagnostics.visual.screenshot
+                          ? t('browser.screenshotReady', { defaultValue: '截图可用' })
+                          : t('browser.textOnlyDiagnostics', { defaultValue: '文本诊断' })}
+                      </span>
+                    </div>
+                    {diagnosticsLatestIssue && (
+                      <div className="mt-1 truncate text-[11px] text-text-secondary" title={diagnosticsLatestIssue.message}>
+                        {diagnosticsLatestIssue.level}: {diagnosticsLatestIssue.message}
+                      </div>
+                    )}
+                  </div>
                 )}
+                <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
+                  {operationEvents.length === 0 ? (
+                    <div className="text-xs text-text-tertiary">
+                      {t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
+                    </div>
+                  ) : (
+                    operationEvents.slice(0, 4).map((operation) => (
+                      <div key={`${operation.timestamp}-${operation.action}`} className="flex min-w-0 items-center gap-2 text-xs">
+                        <span
+                          className={clsx(
+                            'h-1.5 w-1.5 shrink-0 rounded-full',
+                            operation.status === 'success'
+                              ? 'bg-success'
+                              : operation.status === 'warning'
+                                ? 'bg-warning'
+                                : 'bg-danger'
+                          )}
+                        />
+                        <span className="shrink-0 text-text-tertiary">{operation.action}</span>
+                        <span className="min-w-0 truncate text-text-secondary">
+                          {operation.target ? `${operation.message}: ${operation.target}` : operation.message}
+                        </span>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}
@@ -1280,72 +1318,32 @@ export function BrowserPanel({
         </button>
       )}
 
-      <div className="flex h-7 shrink-0 items-center justify-between border-t border-border-subtle bg-background-elevated px-3 text-[11px] text-text-tertiary">
-        <div className="flex min-w-0 items-center gap-2">
-          <span
-            className={clsx(
-              'h-1.5 w-1.5 rounded-full',
-              status === 'ready' ? 'bg-success' : status === 'error' ? 'bg-danger' : 'bg-warning'
-            )}
-          />
-          <span className="shrink-0 truncate font-medium text-text-secondary">{hostText}</span>
-          <span className="min-w-0 truncate">{pageTitle || currentUrl}</span>
-          {isLocalDev && (
-            <span className="hidden shrink-0 items-center gap-1 rounded bg-success/10 px-1.5 py-0.5 text-success md:inline-flex">
-              <Terminal size={11} />
-              {t('browser.localDev', { defaultValue: '本地开发页' })}
-            </span>
+      <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-[11px] text-text-tertiary">
+        <span
+          className={clsx(
+            'h-1.5 w-1.5 shrink-0 rounded-full',
+            status === 'ready' ? 'bg-success' : status === 'error' ? 'bg-danger' : 'bg-warning'
           )}
-          {boundAgentKey && (
-            <span
-              className="hidden shrink-0 items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary lg:inline-flex"
-              title={t('browser.agentOwnedHint', { defaultValue: '此标签由 AI 绑定: {{key}}', key: boundAgentKey })}
-            >
-              <Sparkles size={11} />
-              <span className="max-w-[80px] truncate">{boundAgentKey}</span>
-            </span>
-          )}
-        </div>
-        <div className="flex shrink-0 items-center gap-1">
-          {marqueeMode && (
-            <span className="hidden items-center gap-1 text-primary lg:inline-flex">
-              <BoxSelect size={12} />
-              {marqueeRegions.length > 0
-                ? t('browser.marqueeRegionCount', {
-                    count: marqueeRegions.length,
-                    defaultValue: '{{count}} 个区域',
-                  })
-                : t('browser.marqueeDrawing', { defaultValue: '圈选中… 双击空白或按 Esc 结束' })}
-            </span>
-          )}
-          {aiOperationMode && (
-            <span className="hidden items-center gap-1 text-primary lg:inline-flex">
-              <MousePointer2 size={12} />
-              {highlightCount === null
-                ? t('browser.operationMode', { defaultValue: 'AI 操作' })
-                : t('browser.highlightCount', {
-                    count: highlightCount,
-                    defaultValue: '已标记 {{count}} 个元素',
-                  })}
-            </span>
-          )}
-          <span className="hidden items-center gap-1 text-text-tertiary lg:inline-flex">
-            <Sparkles size={12} />
-            {t('browser.aiReady', { defaultValue: 'AI 可读取并操作当前页' })}
-          </span>
-          <button
-            type="button"
-            onClick={() => {
-              browserClearData(webviewLabel).catch((e) => setError(String(e)))
-            }}
-            disabled={status !== 'ready'}
-            className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:opacity-45"
-            title={t('browser.clearData', { defaultValue: '清理浏览数据' })}
-          >
-            <Eraser size={12} />
-            <span>{t('browser.clearDataShort', { defaultValue: '清理' })}</span>
-          </button>
-        </div>
+          title={
+            status === 'ready'
+              ? t('status.ready', { defaultValue: '已就绪' })
+              : status === 'error'
+                ? t('status.error', { defaultValue: '错误' })
+                : status === 'native-unavailable'
+                  ? t('browser.fallbackMode', { defaultValue: '降级模式' })
+                  : t('status.loading', { defaultValue: '加载中' })
+          }
+        />
+        <span
+          className="truncate font-medium text-text-secondary cursor-pointer hover:text-text-primary"
+          onClick={copyUrl}
+          title={currentUrl}
+        >
+          {hostText}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-text-tertiary" title={currentUrl}>
+          {pageTitle || currentUrl}
+        </span>
       </div>
     </div>
   )
@@ -1424,5 +1422,31 @@ export function BrowserLauncherPanel() {
         </button>
       </div>
     </div>
+  )
+}
+
+function TabButton({ active, onClick, label, count }: {
+  active: boolean
+  onClick: () => void
+  label: string
+  count?: number
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={clsx(
+        'px-3 py-1.5 text-xs font-medium border-b-2 transition-colors',
+        active
+          ? 'text-primary border-primary'
+          : 'text-text-tertiary border-transparent hover:text-text-secondary'
+      )}
+    >
+      {label}
+      {count !== undefined && count > 0 && (
+        <span className="ml-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
+          {count}
+        </span>
+      )}
+    </button>
   )
 }

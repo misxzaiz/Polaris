@@ -1,7 +1,7 @@
 # APK 打包完整过程
 
 > 适用范围：`polaris-mobile/` — Android APK 客户端
-> 最后更新：2026-07-27
+> 最后更新：2026-08-01
 
 ---
 
@@ -99,6 +99,10 @@ polaris-mobile/
 
 ## 3. 完整打包流程
 
+> ⚠️ **重要：当前环境不推荐使用 `npx tauri android build` 一条命令打包**
+> 该命令在 Windows 上可能无法正确将前端资产复制到 APK 中（见 5.7）。
+> 请使用下方的**手动分步流程**（3.3），经过验证更可靠。
+
 ### 3.1 环境要求
 
 | 组件 | 版本 | 验证命令 |
@@ -131,9 +135,9 @@ export ANDROID_SDK_ROOT=D:/Android/Sdk
 | cargo-ndk | ✅ 4.1.2（仅手动编译 .so 时需要） |
 | Gradle wrapper | ✅ 8.14.3（项目内自带） |
 
-### 3.2 推荐流程：一条命令打包
+### 3.2 一条命令打包（不推荐 — 可能遗漏前端资产）
 
-**这是最简单、最可靠的方式**——`tauri android build` 会自动完成代码生成、Rust 编译、前端资产复制、Gradle 打包：
+`tauri android build` 会自动完成代码生成、Rust 编译、前端资产复制、Gradle 打包，但在当前 Windows 环境下**可能无法正确将前端资产复制到 APK**（见 5.7）：
 
 ```bash
 # 1. 在主仓构建最新前端
@@ -160,25 +164,44 @@ npx tauri android build --apk -t aarch64 --split-per-abi
 polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
 ```
 
-### 3.3 手动分步流程（调试用）
+### 3.3 ✅ 推荐流程：手动分步打包（更可靠）
 
-如果需要分步控制（如单独调试 Rust 编译或 Gradle 配置），可以拆分：
+这是当前环境**更可靠的方式**——手动控制每一步，确保前端资产和 Rust 库都被正确打包：
 
 ```bash
-cd /d/space/base/Polaris/polaris-mobile
+cd /d/space/base/Polaris
 
-# Step 1: 构建 Rust 原生库（用 cargo-ndk）
-cd src-tauri
+# 0. 前置准备：构建前端 + 同步到 polaris-mobile/dist
+pnpm run build
+rm -rf polaris-mobile/dist
+cp -r dist polaris-mobile/dist
+
+# 1. 编译 Rust 原生库（用 cargo-ndk）
+cd polaris-mobile/src-tauri
 cargo ndk -t arm64-v8a -o gen/android/app/src/main/jniLibs build --release
+# ⚠️ cargo ndk 复制 .so 可能失败（Windows 符号链接 / os error 448）
+# 失败时手动复制：
+#   rm -f gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
+#   cp target/aarch64-linux-android/release/libpolaris_mobile_lib.so \
+#     gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
 
-# Step 2: 复制前端资产到 Android assets 目录
+# 2. 复制前端资产到 Android assets 目录
 rm -rf gen/android/app/src/main/assets
 cp -r ../dist gen/android/app/src/main/assets
+# 确保 tauri.conf.json 也在 assets 中
+cp tauri.conf.json gen/android/app/src/main/assets/tauri.conf.json
 
-# Step 3: Gradle 打包
+# 3. Gradle 打包（跳过 Rust 编译，因为已预编译 .so）
 cd gen/android
-./gradlew :app:assembleArm64Release
+./gradlew :app:assembleArm64Release -x :app:rustBuildArm64Release
+
+# 4. 产物路径
+#   polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
 ```
+
+**注意**：`-x :app:rustBuildArm64Release` 跳过 Gradle 内部的 Rust 编译任务，
+因为 BuildTask.kt 会尝试连接 Tauri WebSocket 服务（`npx tauri android android-studio-script`），
+如果没有先启动 `tauri android build` 则会失败。
 
 ---
 
@@ -316,7 +339,59 @@ unzip -l polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/releas
 3. `Cargo.toml` 中 `tauri` feature 包含 `custom-protocol`
 4. `ANDROID_NDK_HOME` 指向正确的 NDK 路径
 
-### 5.6 Kotlin 编译报 `Unresolved reference: TauriActivity`
+### 5.6 `cargo ndk` 复制 .so 时失败：`os error 448`（不受信任的装入点）
+
+**症状**：
+```
+Error: failed to copy ... over to ...
+Caused by: 无法遍历该路径，因为它包含不受信任的装入点。 (os error 448)
+```
+
+**原因**：Windows 上 `cargo ndk` 的 copy 操作遇到了符号链接/挂载点问题。
+
+**修复**：手动复制 .so 文件：
+```bash
+rm -f polaris-mobile/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
+cp polaris-mobile/src-tauri/target/aarch64-linux-android/release/libpolaris_mobile_lib.so \
+  polaris-mobile/src-tauri/gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
+```
+
+### 5.7 ⚠️ 前端资产未打包进 APK（`npx tauri android build` 的已知问题）
+
+**症状**：APK 体积偏小（~5.6MB 而非 19MB），APK 内缺少 `assets/index.html` 和 `assets/assets/main-*.js`。
+
+**验证命令**：
+```bash
+unzip -l app-arm64-release.apk | grep -E "(index\.html|assets/main-)"
+# 正常应有：assets/index.html 和 assets/assets/main-*.js
+```
+
+**原因**：`tauri android build` 在本机 Windows 环境下，前端资产复制步骤可能未被执行。
+可能是 Gradle 缓存或 Tauri CLI 的 WebSocket 资产服务未能正确分发资产。
+
+**修复**：
+1. 清理 Gradle 缓存：`cd polaris-mobile/src-tauri/gen/android && ./gradlew clean`
+2. 使用手动分步流程（见 3.3）
+3. 验证 APK 内容：`unzip -l app-arm64-release.apk | grep "assets/"`
+
+### 5.8 Kotlin 编译失败：`this and base files have different roots`
+
+**症状**：
+```
+Caused by: java.lang.IllegalArgumentException: this and base files have different roots:
+  C:\Users\<user>\.cargo\registry\src\...\tauri-2.11.5\mobile\android\...
+  and D:\space\base\Polaris\polaris-mobile\src-tauri\gen\android.
+```
+
+**原因**：Kotlin daemon 的增量编译缓存试图在两个不同盘符（C: 和 D:）的文件之间计算相对路径，
+导致 `toRelativeString` 失败。
+
+**修复**：
+- 该错误是 daemon 编译失败，Gradle 会自动 fallback 到**无 daemon 编译模式**，编译仍然成功。
+- 如果想彻底消除，可以运行 `./gradlew --stop` 停止 Kotlin daemon，或设置 `kotlin.daemon.jvmargs` 避免跨盘符问题。
+- 这不影响构建结果，只是多了一条警告。
+
+### 5.9 Kotlin 编译报 `Unresolved reference: TauriActivity`
 
 **原因**：`tauri-android` 项目未正确包含。
 
@@ -457,7 +532,7 @@ fn main() {
 ## 7. 快速参考
 
 ```bash
-# === 完整一条命令链 ===
+# === ✅ 推荐的完整打包流程（手动分步） ===
 
 cd /d/space/base/Polaris
 
@@ -468,12 +543,28 @@ pnpm run build
 rm -rf polaris-mobile/dist
 cp -r dist polaris-mobile/dist
 
-# 3. 打包 APK（自动代码生成 + Rust 编译 + 前端资产复制 + Gradle 打包）
-cd polaris-mobile
-npx tauri android build --apk -t aarch64 --split-per-abi
+# 3. 编译 Rust 原生库
+cd polaris-mobile/src-tauri
+cargo ndk -t arm64-v8a -o gen/android/app/src/main/jniLibs build --release
+# 如果 cargo ndk 复制失败（os error 448），手动复制：
+#   rm -f gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
+#   cp target/aarch64-linux-android/release/libpolaris_mobile_lib.so \
+#     gen/android/app/src/main/jniLibs/arm64-v8a/libpolaris_mobile_lib.so
 
-# 4. 产物路径
-# polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
+# 4. 复制前端资产到 Android assets 目录
+rm -rf gen/android/app/src/main/assets
+cp -r ../dist gen/android/app/src/main/assets
+cp tauri.conf.json gen/android/app/src/main/assets/tauri.conf.json
+
+# 5. Gradle 打包（跳过 Rust 编译）
+cd gen/android
+./gradlew :app:assembleArm64Release -x :app:rustBuildArm64Release
+
+# 6. 产物路径
+# D:/space/base/Polaris/polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk
+#
+# 验证 APK 包含前端资产：
+# unzip -l app-arm64-release.apk | grep -E "(index\.html|assets/main-)"
 ```
 
 ---
