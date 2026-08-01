@@ -34,7 +34,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   // 始终默认折叠（流式时也不展开，避免界面跳动）
   const [isExpanded, setIsExpanded] = useState(false);
   const [showFullOutput, setShowFullOutput] = useState(false);
-  const [showToolDetails, setShowToolDetails] = useState(true);
+  const [showToolDetails, setShowToolDetails] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState(false);
   const [copiedOutput, setCopiedOutput] = useState(false);
 
