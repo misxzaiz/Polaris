@@ -94,7 +94,7 @@ export function EngineInstallActions({
   );
 
   return (
-    <div className="mt-4 pt-4 border-t border-border">
+    <div>
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -132,7 +132,7 @@ export function EngineInstallActions({
           </button>
         )}
 
-        <span className="text-[11px] text-text-tertiary font-mono ml-auto truncate">
+        <span className="text-xs text-text-tertiary font-mono ml-auto truncate">
           npm i -g {npmPackage}
         </span>
       </div>
@@ -141,7 +141,7 @@ export function EngineInstallActions({
       {(logs.length > 0 || running) && (
         <div
           ref={logBoxRef}
-          className="mt-3 max-h-40 overflow-auto rounded-md bg-background border border-border p-2 font-mono text-[11px] leading-relaxed text-text-secondary whitespace-pre-wrap"
+          className="mt-3 max-h-32 overflow-auto rounded-md bg-background border border-border p-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap"
         >
           {logs.length === 0 ? (
             <span className="text-text-tertiary">
@@ -160,7 +160,7 @@ export function EngineInstallActions({
         </div>
       )}
 
-      <p className="mt-2 text-[11px] text-text-tertiary">
+      <p className="mt-2 text-xs text-text-tertiary">
         {t('aiEngine.installHint', {
           defaultValue: '通过 npm 全局安装，需本机已安装 Node.js / npm 并在 PATH 中。',
         })}
