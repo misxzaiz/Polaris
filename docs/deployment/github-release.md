@@ -76,12 +76,13 @@ git push origin vx.x.x
 
 ### 步骤四：等待自动打包
 
-推送标签后，GitHub Actions 自动触发两个工作流：
+推送标签后，GitHub Actions 自动触发三个工作流（并行执行）：
 
 | 工作流 | 产物 | 平台 |
 |---|---|---|
 | **Release** | Tauri 桌面应用安装包 | Windows, Linux |
 | **Release Web** | Web 独立服务压缩包 | Windows, Linux, macOS |
+| **Release APK** | Android APK 安装包 | Android (arm64-v8a) |
 
 查看进度：仓库 → **Actions** → 选择对应的工作流运行
 
@@ -97,6 +98,7 @@ git push origin vx.x.x
 | `polaris-web-x.x.x-win-x64.zip` | Windows Web 版 |
 | `polaris-web-x.x.x-linux-x64.tar.gz` | Linux Web 版 |
 | `polaris-web-x.x.x-macos-x64.tar.gz` | macOS Web 版 |
+| `polaris-mobile-x.x.x.apk` | Android APK (arm64-v8a) |
 | `latest.json` | 自动更新元数据 |
 
 ## 完整命令参考
@@ -115,7 +117,7 @@ git push origin vx.x.x
 如需在不打标签的情况下测试打包：
 
 1. 进入仓库 → **Actions**
-2. 选择 **Release** 或 **Release Web**
+2. 选择 **Release**、**Release Web** 或 **Release APK**
 3. 点击 **Run workflow**
 4. 选择分支，点击 **Run workflow**
 
