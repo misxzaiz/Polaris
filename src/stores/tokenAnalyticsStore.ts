@@ -49,6 +49,7 @@ export interface UsageLogEntry {
   id: number
   model: string
   requestModel: string | null
+  engineId: string | null
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number

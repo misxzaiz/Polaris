@@ -23,7 +23,7 @@ use super::transform::{
 };
 
 /// 从 OpenAI 响应中提取 usage 并记录到用量数据库
-fn record_openai_usage(openai_body: &Value, request_model: Option<&str>, latency_ms: u64, status_code: u16, is_streaming: bool) {
+fn record_openai_usage(openai_body: &Value, request_model: Option<&str>, engine_id: Option<&str>, latency_ms: u64, status_code: u16, is_streaming: bool) {
     let model = openai_body.get("model").and_then(|v| v.as_str()).unwrap_or("unknown");
     let usage = openai_body.get("usage");
     if let Some(usage) = usage {
@@ -40,6 +40,7 @@ fn record_openai_usage(openai_body: &Value, request_model: Option<&str>, latency
         crate::services::usage_db::record_usage(
             model,
             request_model,
+            engine_id,
             input_tokens,
             output_tokens,
             cache_read,
@@ -48,6 +49,16 @@ fn record_openai_usage(openai_body: &Value, request_model: Option<&str>, latency
             status_code as i64,
             is_streaming,
         );
+    }
+}
+
+/// 从线路协议推断引擎标识
+fn wire_api_to_engine(wire_api: ProxyWireApi) -> &'static str {
+    match wire_api {
+        ProxyWireApi::AnthropicMessages => "claude",
+        ProxyWireApi::ChatCompletions => "claude",
+        ProxyWireApi::Responses => "claude",
+        ProxyWireApi::CodexResponsesToChatCompletions => "codex",
     }
 }
 
@@ -280,7 +291,7 @@ async fn handle_anthropic_passthrough(
                                     .and_then(|v| v.as_str());
                                 tracing::debug!("[Proxy] Anthropic 直通记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
                                 crate::services::usage_db::record_usage(
-                                    model, request_model, input_tokens, output_tokens,
+                                    model, request_model, Some("claude"), input_tokens, output_tokens,
                                     cache_read, cache_creation,
                                     0, status.as_u16() as i64, false,
                                 );
@@ -300,7 +311,7 @@ async fn handle_anthropic_passthrough(
                                             let model = request_model.unwrap_or("unknown");
                                             tracing::debug!("[Proxy] Anthropic 直通流式记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
                                             crate::services::usage_db::record_usage(
-                                                model, request_model, input_tokens, output_tokens,
+                                                model, request_model, Some("claude"), input_tokens, output_tokens,
                                                 cache_read, cache_creation,
                                                 0, status.as_u16() as i64, true,
                                             );
@@ -416,7 +427,7 @@ async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Resp
                 Ok(chat_response) => {
                     // DX: 记录用量 - Codex 上游 Chat Completions 响应
                     let request_model = chat_body.get("model").and_then(|v| v.as_str());
-                    record_openai_usage(&chat_response, request_model, 0, 200, false);
+                    record_openai_usage(&chat_response, request_model, Some("codex"), 0, 200, false);
 
                     match chat_to_codex_response(chat_response) {
                         Ok(responses_response) => Response::builder()
@@ -501,7 +512,7 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
                     Ok(openai_response) => {
                         // 记录用量：从响应中提取 usage 字段
                         let request_model = openai_body.get("model").and_then(|v| v.as_str());
-                        record_openai_usage(&openai_response, request_model, 0, status.as_u16(), false);
+                        record_openai_usage(&openai_response, request_model, Some(wire_api_to_engine(state.forwarder.wire_api)), 0, status.as_u16(), false);
 
                         let converted = match state.forwarder.wire_api {
                             ProxyWireApi::Responses => responses_to_anthropic(openai_response),
@@ -853,9 +864,11 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                 let input_tokens = u.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
                 let output_tokens = u.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
                 let request_model = openai_body.get("model").and_then(|v| v.as_str());
+                let engine_id = wire_api_to_engine(state.forwarder.wire_api);
                 crate::services::usage_db::record_usage(
                     &model,
                     request_model,
+                    Some(engine_id),
                     input_tokens,
                     output_tokens,
                     0, 0, 0, 200, true,

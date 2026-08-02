@@ -419,6 +419,7 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
     crate::services::usage_db::record_usage(
         &model_name,
         None,
+        Some("pi"),
         input_tokens as i64,
         output_tokens as i64,
         cache_read.unwrap_or(0) as i64,

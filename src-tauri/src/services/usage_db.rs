@@ -9,6 +9,7 @@
 //!   id              INTEGER PRIMARY KEY AUTOINCREMENT,
 //!   model           TEXT NOT NULL,       -- 模型名（如 claude-sonnet-4-5）
 //!   request_model   TEXT,                -- 请求侧模型名（中转站别名）
+//!   engine_id       TEXT,                -- 引擎标识（claude/codex/simple-ai/pi）
 //!   input_tokens    INTEGER NOT NULL DEFAULT 0,
 //!   output_tokens   INTEGER NOT NULL DEFAULT 0,
 //!   cache_read_tokens    INTEGER NOT NULL DEFAULT 0,
@@ -40,6 +41,8 @@ pub struct UsageLogEntry {
     pub model: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub request_model: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_id: Option<String>,
     pub input_tokens: i64,
     pub output_tokens: i64,
     pub cache_read_tokens: i64,
@@ -155,6 +158,22 @@ impl UsageDb {
         )
         .map_err(|e| AppError::StateError(format!("创建模型索引失败: {}", e)))?;
 
+        // 索引：按引擎查询
+        let _ = conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_usage_logs_engine ON usage_logs(engine_id)",
+            [],
+        );
+
+        // 迁移：为旧表添加 engine_id 列（如果已存在则静默忽略）
+        match conn.execute("ALTER TABLE usage_logs ADD COLUMN engine_id TEXT", []) {
+            Ok(_) => tracing::info!("[UsageDb] 添加 engine_id 列成功"),
+            Err(e) => {
+                if !e.to_string().contains("duplicate column") {
+                    tracing::warn!("[UsageDb] 添加 engine_id 列失败: {}", e);
+                }
+            }
+        }
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
@@ -165,6 +184,7 @@ impl UsageDb {
         &self,
         model: &str,
         request_model: Option<&str>,
+        engine_id: Option<&str>,
         input_tokens: i64,
         output_tokens: i64,
         cache_read_tokens: i64,
@@ -178,11 +198,12 @@ impl UsageDb {
         })?;
         let now = chrono::Utc::now().timestamp();
         conn.execute(
-            "INSERT INTO usage_logs (model, request_model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, latency_ms, status_code, is_streaming, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO usage_logs (model, request_model, engine_id, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, latency_ms, status_code, is_streaming, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             params![
                 model,
                 request_model,
+                engine_id,
                 input_tokens,
                 output_tokens,
                 cache_read_tokens,
@@ -203,12 +224,13 @@ impl UsageDb {
         start_date: Option<i64>,
         end_date: Option<i64>,
         model_filter: Option<&str>,
+        engine_filter: Option<&str>,
     ) -> Result<UsageSummary, AppError> {
         let conn = self.conn.lock().map_err(|e| {
             AppError::StateError(format!("获取数据库锁失败: {}", e))
         })?;
 
-        let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter);
+        let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
 
         let sql = format!(
             "SELECT COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
@@ -254,12 +276,13 @@ impl UsageDb {
         &self,
         start_date: Option<i64>,
         end_date: Option<i64>,
+        engine_filter: Option<&str>,
     ) -> Result<Vec<ModelUsageStats>, AppError> {
         let conn = self.conn.lock().map_err(|e| {
             AppError::StateError(format!("获取数据库锁失败: {}", e))
         })?;
 
-        let (where_clause, param_values) = build_where_clause(start_date, end_date, None);
+        let (where_clause, param_values) = build_where_clause(start_date, end_date, None, engine_filter);
 
         let sql = format!(
             "SELECT model, COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
@@ -320,12 +343,13 @@ impl UsageDb {
         start_date: Option<i64>,
         end_date: Option<i64>,
         model_filter: Option<&str>,
+        engine_filter: Option<&str>,
     ) -> Result<Vec<DailyUsageStats>, AppError> {
         let conn = self.conn.lock().map_err(|e| {
             AppError::StateError(format!("获取数据库锁失败: {}", e))
         })?;
 
-        let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter);
+        let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
 
         let sql = format!(
             "SELECT DATE(created_at, 'unixepoch') as day,
@@ -386,16 +410,17 @@ impl UsageDb {
         start_date: Option<i64>,
         end_date: Option<i64>,
         model_filter: Option<&str>,
+        engine_filter: Option<&str>,
     ) -> Result<Vec<UsageLogEntry>, AppError> {
         let conn = self.conn.lock().map_err(|e| {
             AppError::StateError(format!("获取数据库锁失败: {}", e))
         })?;
 
-        let (where_clause, mut param_values) = build_where_clause(start_date, end_date, model_filter);
+        let (where_clause, mut param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
         param_values.push(Box::new(limit) as Box<dyn rusqlite::types::ToSql>);
 
         let sql = format!(
-            "SELECT id, model, request_model, input_tokens, output_tokens,
+            "SELECT id, model, request_model, engine_id, input_tokens, output_tokens,
                     cache_read_tokens, cache_creation_tokens, latency_ms,
                     status_code, is_streaming, created_at
              FROM usage_logs{}
@@ -419,14 +444,15 @@ impl UsageDb {
                     id: row.get(0)?,
                     model: row.get(1)?,
                     request_model: row.get(2)?,
-                    input_tokens: row.get(3)?,
-                    output_tokens: row.get(4)?,
-                    cache_read_tokens: row.get(5)?,
-                    cache_creation_tokens: row.get(6)?,
-                    latency_ms: row.get(7)?,
-                    status_code: row.get(8)?,
-                    is_streaming: row.get::<_, i64>(9)? != 0,
-                    created_at: row.get(10)?,
+                    engine_id: row.get(3)?,
+                    input_tokens: row.get(4)?,
+                    output_tokens: row.get(5)?,
+                    cache_read_tokens: row.get(6)?,
+                    cache_creation_tokens: row.get(7)?,
+                    latency_ms: row.get(8)?,
+                    status_code: row.get(9)?,
+                    is_streaming: row.get::<_, i64>(10)? != 0,
+                    created_at: row.get(11)?,
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询记录失败: {}", e)))?;
@@ -457,6 +483,7 @@ pub fn get_usage_db() -> Option<&'static UsageDb> {
 pub fn record_usage(
     model: &str,
     request_model: Option<&str>,
+    engine_id: Option<&str>,
     input_tokens: i64,
     output_tokens: i64,
     cache_read_tokens: i64,
@@ -469,6 +496,7 @@ pub fn record_usage(
         if let Err(e) = db.log_usage(
             model,
             request_model,
+            engine_id,
             input_tokens,
             output_tokens,
             cache_read_tokens,
@@ -497,6 +525,7 @@ fn build_where_clause(
     start_date: Option<i64>,
     end_date: Option<i64>,
     model_filter: Option<&str>,
+    engine_filter: Option<&str>,
 ) -> (String, Vec<Box<dyn rusqlite::types::ToSql>>) {
     let mut conditions: Vec<String> = Vec::new();
     let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -512,6 +541,10 @@ fn build_where_clause(
     if let Some(mf) = model_filter {
         conditions.push("model = ?".to_string());
         params.push(Box::new(mf.to_string()));
+    }
+    if let Some(ef) = engine_filter {
+        conditions.push("engine_id = ?".to_string());
+        params.push(Box::new(ef.to_string()));
     }
 
     if conditions.is_empty() {

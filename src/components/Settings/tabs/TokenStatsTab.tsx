@@ -30,6 +30,21 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+/** 从模型名推断引擎标识 */
+function inferEngine(model: string): string {
+  const prefix = model.includes('-') ? model.split('-')[0] : model
+  const engineMap: Record<string, string> = {
+    claude: 'claude',
+    gpt: 'codex',
+    o1: 'codex',
+    deepseek: 'simple',
+    glm: 'simple',
+    qwen: 'simple',
+    yi: 'simple',
+  }
+  return engineMap[prefix] || prefix
+}
+
 // ============================================================================
 // 颜色方案
 // ============================================================================
@@ -89,24 +104,23 @@ export function TokenStatsTab() {
 
   const isEmpty = loaded && summary.totalRequests === 0
 
-  // 引擎分布：从 modelStats 按模型前缀去重
+  // 引擎分布：从 topSessions 提取真实 engineId（来自 DB）
   const engineDistribution = useMemo(() => {
     const map = new Map<string, { sessions: number; input: number; output: number; costUsd: number }>()
-    for (const m of modelStats) {
-      // 按模型前缀分组（如 claude-* → claude, deepseek-* → deepseek）
-      const prefix = m.model.includes('-') ? m.model.split('-')[0] : m.model
-      const existing = map.get(prefix)
+    for (const s of topSessions) {
+      const eid = s.engineId || 'unknown'
+      const existing = map.get(eid)
       if (existing) {
-        existing.sessions += m.requestCount
-        existing.input += m.inputTokens
-        existing.output += m.outputTokens
-        existing.costUsd += m.totalCostUsd
+        existing.sessions += 1
+        existing.input += s.inputTokens
+        existing.output += s.outputTokens
+        existing.costUsd += 0 // 单条 cost 未独立存储，暂不聚合
       } else {
-        map.set(prefix, { sessions: m.requestCount, input: m.inputTokens, output: m.outputTokens, costUsd: m.totalCostUsd })
+        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens, costUsd: 0 })
       }
     }
     return Array.from(map.entries()).map(([engineId, s]) => ({ engineId, ...s })).sort((a, b) => b.input - a.input)
-  }, [modelStats])
+  }, [topSessions])
 
   return (
     <div className="space-y-4">
@@ -342,6 +356,7 @@ export function TokenStatsTab() {
                     <thead>
                       <tr className="text-text-muted border-b border-border-subtle bg-background-surface/80 sticky top-0">
                         <th className="text-left py-2 px-3 font-medium">#</th>
+                        <th className="text-left py-2 px-2 font-medium">{t('tokenStats.engine', '引擎')}</th>
                         <th className="text-left py-2 px-2 font-medium">{t('tokenStats.model', '模型')}</th>
                         <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
                         <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
@@ -353,11 +368,12 @@ export function TokenStatsTab() {
                       {topSessions.map((s, i) => (
                         <tr key={s.id} className="border-b border-border-subtle/30 last:border-0 hover:bg-background-hover/50 transition-colors">
                           <td className="py-2 px-3 text-text-muted tabular-nums">{i + 1}</td>
-                          <td className="py-2 px-2 max-w-[180px] truncate text-text-primary" title={s.model}>{s.model}</td>
+                          <td className="py-2 px-2 text-text-muted">{s.engineId || inferEngine(s.model)}</td>
+                          <td className="py-2 px-2 max-w-[160px] truncate text-text-primary" title={s.model}>{s.model}</td>
                           <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
                           <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
                           <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.cacheCreationTokens > 0 || s.cacheReadTokens > 0 ? s.cacheReadTokens + s.cacheCreationTokens : 0)}</td>
-                          <td className="py-2 pl-2 text-right text-text-muted">{new Date(s.createdAt * 1000).toLocaleDateString()}</td>
+                          <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
                         </tr>
                       ))}
                     </tbody>

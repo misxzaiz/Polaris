@@ -363,6 +363,7 @@ pub(super) async fn run_chat_loop(
             crate::services::usage_db::record_usage(
                 base_model,
                 request_model,
+                Some("simple-ai"),
                 usage.input_tokens as i64,
                 usage.output_tokens as i64,
                 0, 0, 0, 200, true,
