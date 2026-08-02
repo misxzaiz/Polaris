@@ -82,24 +82,49 @@ function timeRangeToDates(range: TimeRange): { startDate?: number; endDate?: num
 }
 
 // ============================================================================
+// 筛选参数
+// ============================================================================
+
+export interface TokenFilterParams {
+  engineId?: string
+  model?: string
+  /** 显式时间范围（Unix 秒时间戳），优先级高于 timeRange */
+  startDate?: number
+  endDate?: number
+  /** 预设时间范围（当 startDate/endDate 未设置时生效） */
+  timeRange?: TimeRange
+}
+
+// ============================================================================
 // Store
 // ============================================================================
 
 interface TokenAnalyticsState {
-  /** 缓存的有效会话列表（null = 未加载） */
   cachedSummary: UsageSummary | null
   cachedModelStats: ModelUsageStats[] | null
   cachedTopSessions: UsageLogEntry[] | null
-  /** 是否已加载过 */
   loaded: boolean
+  /** 当前筛选参数 */
+  filterParams: TokenFilterParams
 
-  loadData: () => Promise<void>
-  refreshData: () => Promise<void>
+  loadData: (filters?: TokenFilterParams) => Promise<void>
+  refreshData: (filters?: TokenFilterParams) => Promise<void>
 
   getSummary: () => UsageSummary
   getModelStats: () => ModelUsageStats[]
-  getTopSessions: (limit?: number) => UsageLogEntry[]
-  getDailyTrends: (range: TimeRange) => Promise<DailyUsageStats[]>
+  getTopSessions: (limit?: number, offset?: number) => Promise<UsageLogEntry[]>
+  getDailyTrends: (range: TimeRange, engineId?: string, model?: string, startDate?: number, endDate?: number) => Promise<DailyUsageStats[]>
+}
+
+/** 将筛选参数转为后端 invoke 参数 */
+function filterToInvokeArgs(filters: TokenFilterParams) {
+  const fallback = filters.timeRange ? timeRangeToDates(filters.timeRange) : {}
+  return {
+    startDate: filters.startDate ?? fallback.startDate,
+    endDate: filters.endDate ?? fallback.endDate,
+    engineId: filters.engineId || undefined,
+    model: filters.model || undefined,
+  }
 }
 
 export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => ({
@@ -107,30 +132,33 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
   cachedModelStats: null,
   cachedTopSessions: null,
   loaded: false,
+  filterParams: { timeRange: '30d' },
 
-  loadData: async () => {
+  loadData: async (filters?: TokenFilterParams) => {
+    const f = filters ?? get().filterParams
+    if (filters) set({ filterParams: filters })
+    const args = filterToInvokeArgs(f)
     try {
-      const [summary, modelStats, topSessions] = await Promise.all([
-        invoke<UsageSummary>('get_usage_summary', {}),
-        invoke<ModelUsageStats[]>('get_usage_model_stats', {}),
-        invoke<UsageLogEntry[]>('get_usage_recent_logs', { limit: 10 }),
+      const [summary, modelStats] = await Promise.all([
+        invoke<UsageSummary>('get_usage_summary', args),
+        invoke<ModelUsageStats[]>('get_usage_model_stats', { startDate: args.startDate, endDate: args.endDate, engineId: args.engineId }),
       ])
       set({
         cachedSummary: summary,
         cachedModelStats: modelStats,
-        cachedTopSessions: topSessions,
+        cachedTopSessions: null, // 分页数据单独加载
         loaded: true,
       })
-      log.info('Token 统计数据已加载', { totalRequests: summary.totalRequests })
+      log.info('Token 统计数据已加载', { totalRequests: summary.totalRequests, filters: f })
     } catch (e) {
       log.warn('Token 统计加载失败: ' + String(e))
       set({ loaded: true })
     }
   },
 
-  refreshData: async () => {
+  refreshData: async (filters?: TokenFilterParams) => {
     set({ cachedSummary: null, cachedModelStats: null, cachedTopSessions: null, loaded: false })
-    return get().loadData()
+    return get().loadData(filters)
   },
 
   getSummary: () => {
@@ -142,12 +170,22 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
 
   getModelStats: () => get().cachedModelStats ?? [],
 
-  getTopSessions: (_limit = 10) => get().cachedTopSessions ?? [],
-
-  getDailyTrends: async (range: TimeRange) => {
-    const { startDate, endDate } = timeRangeToDates(range)
+  getTopSessions: async (limit = 20, offset = 0) => {
+    const f = get().filterParams
+    const args = filterToInvokeArgs(f)
     try {
-      return await invoke<DailyUsageStats[]>('get_usage_daily_trends', { startDate, endDate })
+      return await invoke<UsageLogEntry[]>('get_usage_recent_logs', { limit, offset, ...args })
+    } catch {
+      return []
+    }
+  },
+
+  getDailyTrends: async (range: TimeRange, engineId?: string, model?: string, startDate?: number, endDate?: number) => {
+    const dates = (startDate !== undefined && endDate !== undefined)
+      ? { startDate, endDate }
+      : timeRangeToDates(range)
+    try {
+      return await invoke<DailyUsageStats[]>('get_usage_daily_trends', { ...dates, engineId, model })
     } catch {
       return []
     }

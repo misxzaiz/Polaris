@@ -44,10 +44,11 @@ pub fn get_usage_daily_trends(
     db.get_daily_trends(start_date, end_date, model.as_deref(), engine_id.as_deref())
 }
 
-/// 获取最近 N 条记录
+/// 获取最近 N 条记录（支持分页）
 #[tauri::command]
 pub fn get_usage_recent_logs(
     limit: Option<i64>,
+    offset: Option<i64>,
     start_date: Option<i64>,
     end_date: Option<i64>,
     model: Option<String>,
@@ -55,5 +56,5 @@ pub fn get_usage_recent_logs(
 ) -> Result<Vec<UsageLogEntry>, AppError> {
     let db = usage_db::get_usage_db()
         .ok_or_else(|| AppError::StateError("用量数据库未初始化".to_string()))?;
-    db.get_recent_logs(limit.unwrap_or(20), start_date, end_date, model.as_deref(), engine_id.as_deref())
+    db.get_recent_logs(limit.unwrap_or(20), offset.unwrap_or(0), start_date, end_date, model.as_deref(), engine_id.as_deref())
 }

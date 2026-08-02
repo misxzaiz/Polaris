@@ -4,13 +4,13 @@
  * 数据源：useTokenAnalyticsStore（代理层 SQLite 数据库，后端实时写入）。
  * 覆盖：所有经过代理的 API 请求（UI 会话 / 调度任务 / IM 机器人等）。
  *
- * 查询方式：直调后端 tauri::command，首次加载后缓存。
+ * 全局筛选栏：引擎 / 模型 / 时间范围 → 影响所有 Tab 数据。
  */
 
-import { useEffect, useState, useMemo } from 'react'
+import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTokenAnalyticsStore, type TimeRange } from '@/stores/tokenAnalyticsStore'
-import { Loader2, RefreshCw, BarChart3, PieChart, TrendingUp, Database } from 'lucide-react'
+import { useTokenAnalyticsStore, type TimeRange, type UsageLogEntry, type TokenFilterParams } from '@/stores/tokenAnalyticsStore'
+import { Loader2, RefreshCw, BarChart3, PieChart, TrendingUp, Database, ChevronLeft, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
 
 // ============================================================================
@@ -30,17 +30,12 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
-/** 从模型名推断引擎标识 */
+/** 从模型名推断引擎标识（兜底） */
 function inferEngine(model: string): string {
   const prefix = model.includes('-') ? model.split('-')[0] : model
   const engineMap: Record<string, string> = {
-    claude: 'claude',
-    gpt: 'codex',
-    o1: 'codex',
-    deepseek: 'simple',
-    glm: 'simple',
-    qwen: 'simple',
-    yi: 'simple',
+    claude: 'claude', gpt: 'codex', o1: 'codex',
+    deepseek: 'simple', glm: 'simple', qwen: 'simple', yi: 'simple',
   }
   return engineMap[prefix] || prefix
 }
@@ -53,8 +48,19 @@ const CHART_COLORS = [
   'bg-primary', 'bg-amber-500', 'bg-purple-400', 'bg-green-500', 'bg-blue-500',
   'bg-pink-500', 'bg-teal-500', 'bg-orange-500', 'bg-cyan-500', 'bg-red-500',
 ]
-
 function getColor(i: number) { return CHART_COLORS[i % CHART_COLORS.length] }
+
+// ============================================================================
+// 引擎选项
+// ============================================================================
+
+const ENGINE_OPTIONS = [
+  { value: '', label: '全部引擎' },
+  { value: 'claude', label: 'Claude' },
+  { value: 'codex', label: 'Codex' },
+  { value: 'simple-ai', label: 'Simple AI' },
+  { value: 'pi', label: 'Pi' },
+]
 
 // ============================================================================
 // 导航标签
@@ -69,24 +75,131 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 // ============================================================================
+// 筛选栏
+// ============================================================================
+
+function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngineChange, onModelChange, onDateChange, onRefresh }: {
+  engineId: string; model: string; startDate: string; endDate: string
+  modelOptions: string[]
+  onEngineChange: (v: string) => void; onModelChange: (v: string) => void
+  onDateChange: (start: string, end: string) => void
+  onRefresh: () => void
+}) {
+  const today = () => new Date().toISOString().slice(0, 10)
+  const daysAgo = (n: number) => {
+    const d = new Date()
+    d.setDate(d.getDate() - n)
+    return d.toISOString().slice(0, 10)
+  }
+  const presets = [
+    { label: '今天', start: today(), end: today() },
+    { label: '近7天', start: daysAgo(6), end: today() },
+    { label: '近30天', start: daysAgo(29), end: today() },
+  ]
+  const isActivePreset = (s: string, e: string) => startDate === s && endDate === e
+  return (
+    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-background-surface/40 border border-border-subtle">
+      {/* 引擎 */}
+      <select value={engineId} onChange={e => onEngineChange(e.target.value)}
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary">
+        {ENGINE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+      {/* 模型 */}
+      <select value={model} onChange={e => onModelChange(e.target.value)}
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary max-w-[160px]">
+        <option value="">全部模型</option>
+        {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
+      </select>
+      {/* 快捷预设 */}
+      <div className="flex items-center gap-0.5">
+        {presets.map(p => (
+          <button key={p.label} onClick={() => onDateChange(p.start, p.end)}
+            className={clsx('px-2 py-1 text-xs rounded-md transition-colors', isActivePreset(p.start, p.end) ? 'bg-primary/10 text-primary font-medium' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover')}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+      {/* 分隔 */}
+      <span className="w-px h-4 bg-border-subtle" />
+      {/* 日期范围 */}
+      <input type="date" value={startDate} onChange={e => onDateChange(e.target.value, endDate)}
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[120px]" />
+      <span className="text-text-muted text-xs">~</span>
+      <input type="date" value={endDate} onChange={e => onDateChange(startDate, e.target.value)}
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[120px]" />
+      {/* 刷新 */}
+      <button onClick={onRefresh}
+        className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors" title="刷新">
+        <RefreshCw size={13} />
+      </button>
+    </div>
+  )
+}
+
+// ============================================================================
 // 主组件
 // ============================================================================
 
 export function TokenStatsTab() {
   const { t } = useTranslation('settings')
-  const { loaded, loadData, refreshData, getSummary, getModelStats, getTopSessions, getDailyTrends } = useTokenAnalyticsStore()
+  const { loaded, loadData, refreshData, getSummary, getModelStats, filterParams } = useTokenAnalyticsStore()
 
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d')
+  // 筛选状态
+  const [engineFilter, setEngineFilter] = useState('')
+  const [modelFilter, setModelFilter] = useState('')
+  // 日期范围（YYYY-MM-DD 格式，空串 = 不限）
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+
+  // 视图切换
   const [viewMode, setViewMode] = useState<'overview' | 'model' | 'time' | 'sessions'>('overview')
+
+  // 时间趋势
   const [timeSeries, setTimeSeries] = useState<{ labels: string[]; input: number[]; output: number[]; costUsd: number[]; sessions: number[] }>({ labels: [], input: [], output: [], costUsd: [], sessions: [] })
   const [trendsLoading, setTrendsLoading] = useState(false)
 
-  useEffect(() => { loadData() }, [loadData])
+  // 分页
+  const PAGE_SIZE = 20
+  const [page, setPage] = useState(0)
+  const [topSessions, setTopSessions] = useState<UsageLogEntry[]>([])
+  const [topSessionsLoading, setTopSessionsLoading] = useState(false)
 
-  // 时间范围变化时异步加载趋势
+  const { getTopSessions, getDailyTrends } = useTokenAnalyticsStore()
+
+  // 首次加载（无筛选，默认全部）
+  useEffect(() => {
+    loadData({})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 构建筛选参数
+  const buildFilters = useCallback((eng: string, mdl: string, sd: string, ed: string): TokenFilterParams => {
+    const f: TokenFilterParams = { engineId: eng || undefined, model: mdl || undefined }
+    if (sd && ed) {
+      f.startDate = Math.floor(new Date(sd).getTime() / 1000)
+      f.endDate = Math.floor(new Date(ed).getTime() / 1000) + 86399 // 包含当天
+    }
+    return f
+  }, [])
+
+  // 筛选变化时重新加载
+  const applyFilters = useCallback(async (eng: string, mdl: string, sd: string, ed: string) => {
+    const filters = buildFilters(eng, mdl, sd, ed)
+    await loadData(filters)
+    setPage(0)
+    setTopSessions([])
+  }, [loadData, buildFilters])
+
+  const onEngineChange = (v: string) => { setEngineFilter(v); applyFilters(v, modelFilter, startDate, endDate) }
+  const onModelChange = (v: string) => { setModelFilter(v); applyFilters(engineFilter, v, startDate, endDate) }
+  const onDateChange = (sd: string, ed: string) => { setStartDate(sd); setEndDate(ed); applyFilters(engineFilter, modelFilter, sd, ed) }
+  const onRefresh = () => refreshData(buildFilters(engineFilter, modelFilter, startDate, endDate))
+
+  // 时间趋势（跟随全局筛选）
   useEffect(() => {
     setTrendsLoading(true)
-    getDailyTrends(timeRange).then(data => {
+    const sd = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : undefined
+    const ed = endDate ? Math.floor(new Date(endDate).getTime() / 1000) + 86399 : undefined
+    getDailyTrends('30d', engineFilter || undefined, modelFilter || undefined, sd, ed).then(data => {
       setTimeSeries({
         labels: data.map(d => d.date),
         input: data.map(d => d.inputTokens),
@@ -96,17 +209,27 @@ export function TokenStatsTab() {
       })
       setTrendsLoading(false)
     })
-  }, [timeRange, getDailyTrends])
+  }, [startDate, endDate, engineFilter, modelFilter, getDailyTrends])
+
+  // 分页加载 Top 请求
+  useEffect(() => {
+    if (viewMode !== 'sessions') return
+    setTopSessionsLoading(true)
+    getTopSessions(PAGE_SIZE, page * PAGE_SIZE).then(data => {
+      setTopSessions(data)
+      setTopSessionsLoading(false)
+    })
+  }, [viewMode, page, filterParams, getTopSessions]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const summary = getSummary()
   const modelStats = getModelStats()
-  const topSessions = getTopSessions(10)
+  const modelOptions = useMemo(() => modelStats.map(m => m.model), [modelStats])
 
   const isEmpty = loaded && summary.totalRequests === 0
 
-  // 引擎分布：从 topSessions 提取真实 engineId（来自 DB）
+  // 引擎分布
   const engineDistribution = useMemo(() => {
-    const map = new Map<string, { sessions: number; input: number; output: number; costUsd: number }>()
+    const map = new Map<string, { sessions: number; input: number; output: number }>()
     for (const s of topSessions) {
       const eid = s.engineId || 'unknown'
       const existing = map.get(eid)
@@ -114,24 +237,21 @@ export function TokenStatsTab() {
         existing.sessions += 1
         existing.input += s.inputTokens
         existing.output += s.outputTokens
-        existing.costUsd += 0 // 单条 cost 未独立存储，暂不聚合
       } else {
-        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens, costUsd: 0 })
+        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens })
       }
     }
     return Array.from(map.entries()).map(([engineId, s]) => ({ engineId, ...s })).sort((a, b) => b.input - a.input)
   }, [topSessions])
 
+  const hasPrev = page > 0
+  const hasNext = topSessions.length >= PAGE_SIZE
+
   return (
     <div className="space-y-4">
-      {/* 标题栏 */}
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium text-text-primary">{t('tokenStats.title', 'Token 用量统计')}</h4>
-        <button onClick={refreshData} className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors" title={t('tokenStats.refresh', '刷新')}>
-          <RefreshCw size={13} />
-          <span>{t('tokenStats.refresh', '刷新')}</span>
-        </button>
-      </div>
+      {/* 筛选栏 */}
+      <FilterBar engineId={engineFilter} model={modelFilter} startDate={startDate} endDate={endDate} modelOptions={modelOptions}
+        onEngineChange={onEngineChange} onModelChange={onModelChange} onDateChange={onDateChange} onRefresh={onRefresh} />
 
       {/* 加载中 */}
       {!loaded && (
@@ -207,7 +327,8 @@ export function TokenStatsTab() {
                 ) : (
                   <div className="space-y-2.5">
                     {engineDistribution.map((e, i) => {
-                      const pct = summary.totalRequests > 0 ? e.sessions / summary.totalRequests : 0
+                      const total = engineDistribution.reduce((s, x) => s + x.sessions, 0)
+                      const pct = total > 0 ? e.sessions / total : 0
                       return (
                         <div key={e.engineId}>
                           <div className="flex items-center justify-between text-xs mb-1">
@@ -282,17 +403,6 @@ export function TokenStatsTab() {
           {/* 按时间视图 */}
           {viewMode === 'time' && (
             <div className="space-y-3">
-              <div className="flex items-center gap-1">
-                {[
-                  { value: 'today' as const, label: t('tokenStats.today', '今天') },
-                  { value: '7d' as const, label: t('tokenStats.week', '7天') },
-                  { value: '30d' as const, label: t('tokenStats.month', '30天') },
-                  { value: 'all' as const, label: t('tokenStats.all', '全部') },
-                ].map(o => (
-                  <button key={o.value} onClick={() => setTimeRange(o.value)}
-                    className={clsx('px-2.5 py-1 text-xs rounded-md transition-colors', timeRange === o.value ? 'bg-primary/10 text-primary font-medium' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover')}>{o.label}</button>
-                ))}
-              </div>
               {trendsLoading ? (
                 <div className="flex items-center justify-center py-8"><Loader2 size={18} className="animate-spin text-text-tertiary" /></div>
               ) : timeSeries.labels.length === 0 ? (
@@ -348,37 +458,55 @@ export function TokenStatsTab() {
           {/* Top 请求视图 */}
           {viewMode === 'sessions' && (
             <div className="rounded-lg border border-border-subtle bg-background-surface/40 overflow-hidden">
-              {topSessions.length === 0 ? (
+              {topSessionsLoading ? (
+                <div className="flex items-center justify-center py-8"><Loader2 size={18} className="animate-spin text-text-tertiary" /></div>
+              ) : topSessions.length === 0 ? (
                 <p className="text-xs text-text-tertiary text-center py-6">{t('tokenStats.noSessions', '暂无请求数据')}</p>
               ) : (
-                <div className="max-h-[400px] overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="text-text-muted border-b border-border-subtle bg-background-surface/80 sticky top-0">
-                        <th className="text-left py-2 px-3 font-medium">#</th>
-                        <th className="text-left py-2 px-2 font-medium">{t('tokenStats.engine', '引擎')}</th>
-                        <th className="text-left py-2 px-2 font-medium">{t('tokenStats.model', '模型')}</th>
-                        <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
-                        <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
-                        <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cost', '花费')}</th>
-                        <th className="text-right py-2 pl-2 font-medium">{t('tokenStats.time', '时间')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {topSessions.map((s, i) => (
-                        <tr key={s.id} className="border-b border-border-subtle/30 last:border-0 hover:bg-background-hover/50 transition-colors">
-                          <td className="py-2 px-3 text-text-muted tabular-nums">{i + 1}</td>
-                          <td className="py-2 px-2 text-text-muted">{s.engineId || inferEngine(s.model)}</td>
-                          <td className="py-2 px-2 max-w-[160px] truncate text-text-primary" title={s.model}>{s.model}</td>
-                          <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
-                          <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
-                          <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.cacheCreationTokens > 0 || s.cacheReadTokens > 0 ? s.cacheReadTokens + s.cacheCreationTokens : 0)}</td>
-                          <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
+                <>
+                  <div className="max-h-[400px] overflow-y-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-text-muted border-b border-border-subtle bg-background-surface/80 sticky top-0">
+                          <th className="text-left py-2 px-3 font-medium">#</th>
+                          <th className="text-left py-2 px-2 font-medium">{t('tokenStats.engine', '引擎')}</th>
+                          <th className="text-left py-2 px-2 font-medium">{t('tokenStats.model', '模型')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cost', '花费')}</th>
+                          <th className="text-right py-2 pl-2 font-medium">{t('tokenStats.time', '时间')}</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody>
+                        {topSessions.map((s, i) => (
+                          <tr key={s.id} className="border-b border-border-subtle/30 last:border-0 hover:bg-background-hover/50 transition-colors">
+                            <td className="py-2 px-3 text-text-muted tabular-nums">{page * PAGE_SIZE + i + 1}</td>
+                            <td className="py-2 px-2 text-text-muted">{s.engineId || inferEngine(s.model)}</td>
+                            <td className="py-2 px-2 max-w-[160px] truncate text-text-primary" title={s.model}>{s.model}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.cacheCreationTokens > 0 || s.cacheReadTokens > 0 ? s.cacheReadTokens + s.cacheCreationTokens : 0)}</td>
+                            <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* 分页 */}
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-background-surface/40">
+                    <span className="text-[10px] text-text-muted">{t('tokenStats.pageInfo', '第 {page} 页', { page: page + 1 })}</span>
+                    <div className="flex items-center gap-1">
+                      <button disabled={!hasPrev} onClick={() => setPage(p => p - 1)}
+                        className={clsx('flex items-center gap-0.5 px-2 py-1 text-xs rounded-md transition-colors', hasPrev ? 'text-text-primary hover:bg-background-hover' : 'text-text-muted opacity-40 cursor-not-allowed')}>
+                        <ChevronLeft size={13} /> {t('tokenStats.prev', '上一页')}
+                      </button>
+                      <button disabled={!hasNext} onClick={() => setPage(p => p + 1)}
+                        className={clsx('flex items-center gap-0.5 px-2 py-1 text-xs rounded-md transition-colors', hasNext ? 'text-text-primary hover:bg-background-hover' : 'text-text-muted opacity-40 cursor-not-allowed')}>
+                        {t('tokenStats.next', '下一页')} <ChevronRight size={13} />
+                      </button>
+                    </div>
+                  </div>
+                </>
               )}
             </div>
           )}

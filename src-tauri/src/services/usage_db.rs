@@ -407,6 +407,7 @@ impl UsageDb {
     pub fn get_recent_logs(
         &self,
         limit: i64,
+        offset: i64,
         start_date: Option<i64>,
         end_date: Option<i64>,
         model_filter: Option<&str>,
@@ -418,6 +419,7 @@ impl UsageDb {
 
         let (where_clause, mut param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
         param_values.push(Box::new(limit) as Box<dyn rusqlite::types::ToSql>);
+        param_values.push(Box::new(offset) as Box<dyn rusqlite::types::ToSql>);
 
         let sql = format!(
             "SELECT id, model, request_model, engine_id, input_tokens, output_tokens,
@@ -425,7 +427,7 @@ impl UsageDb {
                     status_code, is_streaming, created_at
              FROM usage_logs{}
              ORDER BY created_at DESC
-             LIMIT ?",
+             LIMIT ? OFFSET ?",
             where_clause
         );
 
