@@ -24,3 +24,14 @@ export function supportsQrScanning(): boolean {
     typeof navigator.mediaDevices.getUserMedia === 'function'
   );
 }
+
+/**
+ * 检测是否在安全上下文中（HTTPS 或 localhost）。
+ * iOS Safari 在非安全上下文中拒绝 getUserMedia。
+ */
+export function isSecureContext(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.isSecureContext) return true;
+  const hostname = window.location.hostname;
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}

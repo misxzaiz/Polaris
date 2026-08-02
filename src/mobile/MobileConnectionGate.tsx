@@ -160,18 +160,16 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
     } catch (err) {
       if (err instanceof DOMException && err.name === 'NotAllowedError') {
         setScannerError('需要相机权限才能扫码，请在系统设置中开启');
+      } else if (typeof window !== 'undefined' && !window.isSecureContext
+                 && window.location.protocol !== 'https:'
+                 && window.location.hostname !== 'localhost'
+                 && window.location.hostname !== '127.0.0.1') {
+        setScannerError('相机扫码需要 HTTPS 或 localhost 环境，请尝试手动输入');
       } else {
         setScannerError('无法启动相机，请尝试手动输入');
       }
     }
   }, [checkConnection]);
-
-  /** 显示扫描器时自动启动相机 */
-  useEffect(() => {
-    if (showScanner) {
-      void startScanner();
-    }
-  }, [showScanner, startScanner]);
 
   /** 停止二维码扫描 */
   const stopScanner = useCallback(() => {
@@ -248,7 +246,16 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
           {supportsQrScanning() && !connected && (
             <div className="mb-4">
               <button
-                onClick={() => { setShowScanner(true); setScannerError(null); }}
+                onClick={() => {
+                  setShowScanner(true);
+                  setScannerError(null);
+                  // 用 requestAnimationFrame 等待 DOM 渲染，同时保持 iOS Safari 手势链
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      void startScanner();
+                    });
+                  });
+                }}
                 className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-primary/40
                            bg-primary/5 text-primary font-medium text-sm
                            flex items-center justify-center gap-2
