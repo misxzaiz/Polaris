@@ -473,6 +473,7 @@ export function TokenStatsTab() {
                           <th className="text-left py-2 px-2 font-medium">{t('tokenStats.model', '模型')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
+                          <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cache', '缓存')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cost', '花费')}</th>
                           <th className="text-right py-2 pl-2 font-medium">{t('tokenStats.time', '时间')}</th>
                         </tr>
@@ -485,7 +486,8 @@ export function TokenStatsTab() {
                             <td className="py-2 px-2 max-w-[160px] truncate text-text-primary" title={s.model}>{s.model}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
-                            <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.cacheCreationTokens > 0 || s.cacheReadTokens > 0 ? s.cacheReadTokens + s.cacheCreationTokens : 0)}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-purple-400">{fmt(s.cacheReadTokens + s.cacheCreationTokens)}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">$0</td>
                             <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
                           </tr>
                         ))}

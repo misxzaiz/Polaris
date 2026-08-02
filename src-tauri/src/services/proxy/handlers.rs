@@ -863,6 +863,8 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
             if let Some(u) = usage_json.as_object() {
                 let input_tokens = u.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
                 let output_tokens = u.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                let cache_read = u.get("cache_read_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                let cache_creation = u.get("cache_creation_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
                 let request_model = openai_body.get("model").and_then(|v| v.as_str());
                 let engine_id = wire_api_to_engine(state.forwarder.wire_api);
                 crate::services::usage_db::record_usage(
@@ -871,7 +873,7 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                     Some(engine_id),
                     input_tokens,
                     output_tokens,
-                    0, 0, 0, 200, true,
+                    cache_read, cache_creation, 0, 200, true,
                 );
             }
 
@@ -933,8 +935,13 @@ fn collect_from_chat_sse(body_str: &str) -> StreamCollected {
             model = chunk.model.clone();
         }
         if let Some(u) = &chunk.usage {
+            let cache_read = u.prompt_tokens_details
+                .as_ref()
+                .map(|d| d.cached_tokens as i64)
+                .unwrap_or(0);
             usage_json =
-                json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens});
+                json!({"input_tokens": u.prompt_tokens, "output_tokens": u.completion_tokens,
+                       "cache_read_input_tokens": cache_read, "cache_creation_input_tokens": 0});
         }
         if chunk.choices.is_empty() {
             continue;
@@ -1135,7 +1142,14 @@ fn collect_from_responses_sse(body_str: &str) -> StreamCollected {
                     if let Some(u) = resp.get("usage") {
                         let it = u.get("input_tokens").cloned().unwrap_or(json!(0));
                         let ot = u.get("output_tokens").cloned().unwrap_or(json!(0));
-                        usage_json = json!({"input_tokens": it, "output_tokens": ot});
+                        usage_json = json!({"input_tokens": it, "output_tokens": ot,
+                                               "cache_read_input_tokens": 0, "cache_creation_input_tokens": 0});
+                        // 尝试从 usage 中提取缓存字段
+                        if let Some(details) = u.get("input_tokens_details") {
+                            if let Some(cached) = details.get("cached_tokens").and_then(|v| v.as_u64()) {
+                                usage_json["cache_read_input_tokens"] = json!(cached);
+                            }
+                        }
                     }
                     if event_type == "response.incomplete"
                         && resp
