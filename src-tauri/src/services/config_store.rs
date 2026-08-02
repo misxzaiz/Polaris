@@ -652,6 +652,7 @@ impl OldConfig {
             web: Default::default(),
             interaction: Default::default(),
             dispatch: Default::default(),
+            spiderman_theme: None,
             chat_display: Default::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

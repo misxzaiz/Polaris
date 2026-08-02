@@ -194,9 +194,10 @@
    当 data-theme != spiderman 时，因 CSS 选择器不匹配，::before/::after 不会渲染。 */
 :root {
   --spiderman-bg-image: url('https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920');
-  --spiderman-bg-opacity: 0.2;
+  --spiderman-bg-overlay: 0.8;
   --spiderman-bg-position: center;
   --spiderman-bg-size: cover;
+  --spiderman-avatar-url: none;
   --spiderman-web-opacity: 0.15;
 }
 

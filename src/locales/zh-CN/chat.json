@@ -679,6 +679,9 @@
       "manual": "上下文已压缩",
       "auto": "上下文已自动压缩",
       "tokens": "{{pre}} → {{post}} tokens"
+    },
+    "thinkingOrb": {
+      "title": "{{name}} 正在思考"
     }
   }
 }

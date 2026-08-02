@@ -43,6 +43,7 @@ import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { getFileNameFromPath } from './utils/path';
 import './index.css';
+import './App.css';
 
 // 拆分后的 Hooks
 import { useAppInit } from './hooks/useAppInit';

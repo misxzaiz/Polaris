@@ -73,6 +73,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
+      // 同步 spidermanTheme 到 localStorage（供 themeStore.syncSpiderManCssVars 读取）
+      if (config?.spidermanTheme) {
+        try {
+          window.localStorage.setItem('spiderman-theme', JSON.stringify(config.spidermanTheme));
+        } catch { /* ignore */ }
+      }
       if (config?.theme) {
         useThemeStore.getState().applyTheme(config.theme);
       }
@@ -136,6 +142,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
       }
+      // 同步 spidermanTheme 到 localStorage
+      if (savedConfig?.spidermanTheme) {
+        try {
+          window.localStorage.setItem('spiderman-theme', JSON.stringify(savedConfig.spidermanTheme));
+        } catch { /* ignore */ }
+      }
       if (savedConfig?.theme) {
         useThemeStore.getState().applyTheme(savedConfig.theme);
       }
@@ -154,6 +166,12 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       const savedConfig = await tauri.updateConfigPatch(patch);
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
+      }
+      // 同步 spidermanTheme 到 localStorage
+      if (savedConfig?.spidermanTheme) {
+        try {
+          window.localStorage.setItem('spiderman-theme', JSON.stringify(savedConfig.spidermanTheme));
+        } catch { /* ignore */ }
       }
       if (savedConfig?.theme) {
         useThemeStore.getState().applyTheme(savedConfig.theme);

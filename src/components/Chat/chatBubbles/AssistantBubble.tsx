@@ -11,6 +11,7 @@ import { MessageContextMenu } from './MessageContextMenu';
 import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../MarkdownImageSurface';
+import { useConfigStore } from '@/stores/configStore';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -29,6 +30,10 @@ export const AssistantBubble = memo(function AssistantBubble({
 }) {
   const { t } = useTranslation('chat');
   const hasBlocks = message.blocks && message.blocks.length > 0;
+  // 读取蜘蛛侠面具头像 URL
+  const spidermanAvatarUrl = useConfigStore(s =>
+    s.config?.theme === 'spiderman' ? s.config.spidermanTheme?.avatarUrl : null
+  );
 
   // 提取消息文本（用于复制）
   const messageText = useMemo(() => extractAssistantText(message), [message]);
@@ -84,8 +89,12 @@ export const AssistantBubble = memo(function AssistantBubble({
       <div className="chat-assistant-message flex gap-2 group" onContextMenu={handleContextMenu}>
         {/* Avatar */}
         <div className="shrink-0 mt-0.5">
-          <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center">
-            <Bot className="w-3.5 h-3.5 text-primary" />
+          <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center overflow-hidden">
+            {spidermanAvatarUrl ? (
+              <img src={spidermanAvatarUrl} alt="" className="w-full h-full object-cover" />
+            ) : (
+              <Bot className="w-3.5 h-3.5 text-primary" />
+            )}
           </div>
         </div>
 

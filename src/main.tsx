@@ -16,6 +16,32 @@ import "./i18n";
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null;
     const theme = stored === 'spiderman' ? 'spiderman' : stored === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
+    // 如果是 spiderman 主题，提前同步 CSS 变量避免首屏闪烁
+    if (theme === 'spiderman') {
+      const storedBg = window.localStorage.getItem('spiderman-theme');
+      if (storedBg) {
+        try {
+          const config = JSON.parse(storedBg);
+          if (config.backgroundImage) {
+            document.documentElement.style.setProperty('--spiderman-bg-image', `url('${config.backgroundImage}')`);
+          } else {
+            document.documentElement.setAttribute('data-spiderman-bg-off', '');
+          }
+          const bgOpacity = config.backgroundOpacity ?? 0.2;
+          const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
+          document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
+          document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
+          document.documentElement.style.setProperty('--spiderman-bg-position',
+            `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
+          if (config.backgroundSize) {
+            document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize);
+          }
+          if (config.avatarUrl) {
+            document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${config.avatarUrl}')`);
+          }
+        } catch { /* ignore */ }
+      }
+    }
   } catch {
     document.documentElement.setAttribute('data-theme', 'dark');
   }

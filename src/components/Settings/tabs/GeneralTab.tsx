@@ -10,7 +10,7 @@ import { DEFAULT_CHAT_DISPLAY_SETTINGS, DEFAULT_SPIDERMAN_THEME, getChatDisplayS
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
 import { SystemPromptSection } from './SystemPromptSection';
-
+import { useThemeStore } from '@/stores/themeStore';
 
 interface GeneralTabProps {
   config: Config;
@@ -228,7 +228,10 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => onConfigChange({ ...config, theme: 'dark' })}
+              onClick={() => {
+                onConfigChange({ ...config, theme: 'dark' });
+                useThemeStore.getState().applyTheme('dark');
+              }}
               disabled={loading}
               className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${
                 currentTheme === 'dark'
@@ -240,7 +243,10 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
             </button>
             <button
               type="button"
-              onClick={() => onConfigChange({ ...config, theme: 'light' })}
+              onClick={() => {
+                onConfigChange({ ...config, theme: 'light' });
+                useThemeStore.getState().applyTheme('light');
+              }}
               disabled={loading}
               className={`px-3 py-1.5 text-xs rounded-lg transition-colors inline-flex items-center gap-1.5 ${
                 currentTheme === 'light'
@@ -256,7 +262,10 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
             </button>
             <button
               type="button"
-              onClick={() => onConfigChange({ ...config, theme: 'spiderman' })}
+              onClick={() => {
+                onConfigChange({ ...config, theme: 'spiderman' });
+                useThemeStore.getState().applyTheme('spiderman');
+              }}
               disabled={loading}
               className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${currentTheme === 'spiderman'
                   ? 'bg-primary text-on-primary'
@@ -601,11 +610,20 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
     } else {
       document.documentElement.setAttribute('data-spiderman-bg-off', '');
     }
-    document.documentElement.style.setProperty('--spiderman-bg-opacity', String(merged.backgroundOpacity ?? 0.2));
+    // 计算遮罩 alpha = 1 - bgOpacity
+    const bgOpacity = merged.backgroundOpacity ?? 0.2;
+    const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
+    document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
     document.documentElement.style.setProperty('--spiderman-web-opacity', String(merged.webTextureOpacity ?? 0.15));
     document.documentElement.style.setProperty('--spiderman-bg-position',
       `${merged.backgroundPositionX ?? 50}% ${merged.backgroundPositionY ?? 50}%`);
     document.documentElement.style.setProperty('--spiderman-bg-size', merged.backgroundSize ?? 'cover');
+    // 同步面具头像
+    if (merged.avatarUrl) {
+      document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${merged.avatarUrl}')`);
+    } else {
+      document.documentElement.style.removeProperty('--spiderman-avatar-url');
+    }
   };
 
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -644,7 +662,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
               onClick={() => updateSpiderManConfig({ avatarUrl: mask.src })}
               disabled={loading}
               className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                (spidermanTheme.avatarUrl || SPIDERMAN_MASKS[0].src) === mask.src
+                spidermanTheme.avatarUrl && spidermanTheme.avatarUrl === mask.src
                   ? 'border-primary'
                   : 'border-transparent hover:border-border'
               } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
@@ -679,13 +697,21 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
               onClick={() => updateSpiderManConfig({ backgroundImage: bg.src })}
               disabled={loading}
               className={`aspect-video rounded-lg overflow-hidden border-2 transition-all relative ${
-                (spidermanTheme.backgroundImage || SPIDERMAN_BACKGROUNDS[0].src) === bg.src
+                (spidermanTheme.backgroundImage === undefined
+                  ? SPIDERMAN_BACKGROUNDS[0].src
+                  : spidermanTheme.backgroundImage) === bg.src
                   ? 'border-primary'
                   : 'border-transparent hover:border-border'
               } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
               {bg.src ? (
-                <img src={bg.src} alt={bg.label} className="w-full h-full object-cover" loading="lazy" />
+                <img
+                  src={bg.src}
+                  alt={bg.label}
+                  className="w-full h-full object-cover"
+                  loading="lazy"
+                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                />
               ) : (
                 <div className="w-full h-full flex items-center justify-center bg-background-base text-text-muted text-xs">
                   {bg.label}
@@ -718,11 +744,10 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <input
           type="range"
           min="0"
-          max="45"
+          max="100"
           value={Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ backgroundOpacity: v });
             updateSpiderManConfig({ backgroundOpacity: v });
           }}
           disabled={loading}
@@ -741,7 +766,6 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           value={Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ webTextureOpacity: v });
             updateSpiderManConfig({ webTextureOpacity: v });
           }}
           disabled={loading}

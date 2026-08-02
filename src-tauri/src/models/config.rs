@@ -1220,6 +1220,33 @@ fn default_dispatch_auto_inject() -> bool {
     true
 }
 
+/// Spider-Man 沉浸主题配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpiderManThemeConfig {
+    /// 背景图片 URL（空字符串 = 使用预设）
+    #[serde(default)]
+    pub background_image: Option<String>,
+    /// 背景图片透明度 (0-1)
+    #[serde(default)]
+    pub background_opacity: Option<f64>,
+    /// 蛛网纹理强度 (0-1)
+    #[serde(default)]
+    pub web_texture_opacity: Option<f64>,
+    /// 背景缩放模式
+    #[serde(default)]
+    pub background_size: Option<String>,
+    /// 背景水平偏移 (0-100)
+    #[serde(default)]
+    pub background_position_x: Option<f64>,
+    /// 背景垂直偏移 (0-100)
+    #[serde(default)]
+    pub background_position_y: Option<f64>,
+    /// 面具头像 URL
+    #[serde(default)]
+    pub avatar_url: Option<String>,
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1240,7 +1267,7 @@ pub struct Config {
     #[serde(default)]
     pub language: Option<String>,
 
-    /// 界面主题（"dark" | "light"）
+    /// 界面主题（"dark" | "light" | "spiderman"）
     #[serde(default)]
     pub theme: Option<String>,
 
@@ -1325,6 +1352,10 @@ pub struct Config {
     #[serde(default)]
     pub dispatch: DispatchConfig,
 
+    /// Spider-Man 沉浸主题配置
+    #[serde(default)]
+    pub spiderman_theme: Option<SpiderManThemeConfig>,
+
     /// AI 对话窗口显示设置
     #[serde(default)]
     pub chat_display: ChatDisplaySettings,
@@ -1391,6 +1422,7 @@ impl Default for Config {
             web: WebConfig::default(),
             interaction: InteractionConfig::default(),
             dispatch: DispatchConfig::default(),
+            spiderman_theme: None,
             chat_display: ChatDisplaySettings::default(),
             workspaces: Vec::new(),
             current_workspace_id: None,

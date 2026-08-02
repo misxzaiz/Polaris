@@ -174,7 +174,7 @@ export const ThinkingOrb = memo(function ThinkingOrb({
 
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
           <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>
-            {displayName} 正在思考
+            {t('thinkingOrb.title', { name: displayName })}
           </span>
           <span style={{ fontSize: '12px', color: '#888' }}>
             {phaseMessage}

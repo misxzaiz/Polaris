@@ -44,18 +44,29 @@ function syncSpiderManCssVars(): void {
   try {
     const stored = window.localStorage.getItem('spiderman-theme');
     const config = stored ? JSON.parse(stored) : {};
-    const bg = config.backgroundImage || SPIDERMAN_DEFAULT_BG;
-    if (bg) {
+    // 明确检查用户是否选择了「关闭背景」（backgroundImage === ''）
+    const bgOff = 'backgroundImage' in config && !config.backgroundImage;
+    const bg = bgOff ? '' : (config.backgroundImage || SPIDERMAN_DEFAULT_BG);
+    if (bgOff || !bg) {
+      document.documentElement.setAttribute('data-spiderman-bg-off', '');
+    } else {
       document.documentElement.style.setProperty('--spiderman-bg-image', `url('${bg}')`);
       document.documentElement.removeAttribute('data-spiderman-bg-off');
-    } else {
-      document.documentElement.setAttribute('data-spiderman-bg-off', '');
     }
-    document.documentElement.style.setProperty('--spiderman-bg-opacity', String(config.backgroundOpacity ?? 0.2));
+    // 计算遮罩 alpha = 1 - bgOpacity，写入 --spiderman-bg-overlay
+    const bgOpacity = config.backgroundOpacity ?? 0.2;
+    const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
+    document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
     document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
     document.documentElement.style.setProperty('--spiderman-bg-position',
       `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
     document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize ?? 'cover');
+    // 同步面具头像 URL
+    if (config.avatarUrl) {
+      document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${config.avatarUrl}')`);
+    } else {
+      document.documentElement.style.removeProperty('--spiderman-avatar-url');
+    }
   } catch {
     // 静默失败，使用 CSS 默认值
   }
@@ -67,7 +78,7 @@ function writeDom(theme: Theme): void {
   // 同步更新 favicon
   const link = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
   if (link) {
-    link.href = theme === 'spiderman' ? '/src/assets/spiderman/favicon.svg' : '/favicon.ico';
+    link.href = theme === 'spiderman' ? '/spiderman-favicon.svg' : '/tauri.svg';
   }
   // 同步 Spider-Man CSS 变量
   if (theme === 'spiderman') {

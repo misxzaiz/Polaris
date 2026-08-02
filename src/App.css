@@ -111,34 +111,72 @@
    Spider-Man 沉浸主题装饰层
    ======================================== */
 
-/* Layout 根容器：定位锚点 */
-[data-theme="spiderman"] .theme-root {
-  position: relative;
-}
-
-/* 背景图片层（z-index:-1，在子元素下方）
-   通过 opacity 控制可见度，默认 0.2 */
-[data-theme="spiderman"] .theme-root::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: -1;
-  background-image: var(--spiderman-bg-image);
-  background-position: var(--spiderman-bg-position, center);
-  background-size: var(--spiderman-bg-size, cover);
-  background-attachment: fixed;
-  background-repeat: no-repeat;
-  opacity: var(--spiderman-bg-opacity, 0.2);
-  pointer-events: none;
-  transition: opacity 0.3s;
-}
-
-/* 关闭背景 */
-[data-theme="spiderman"][data-spiderman-bg-off] .theme-root::before {
+/* 默认隐藏，非 spiderman 主题下不渲染 */
+.theme-web-texture,
+.theme-ambient {
   display: none;
 }
 
-/* 蛛网纹理（z-index:-1，在子元素下方） */
+/* === 背景方案：直接放在 html 元素上 ===
+   html 的 background 是根叠加上下文的 Layer 1（最底层），
+   永远不会被任何内容挡住，也不会挡住任何内容。
+   通过 multi-background 实现遮罩控制：
+   - 第一层（前景）：深色渐变遮罩，alpha = 1 - bgOpacity
+   - 第二层（背景）：背景图片
+   遮罩 alpha 由 JS 在 syncSpiderManCssVars() 中计算为
+   --spiderman-bg-overlay = 1 - backgroundOpacity。 */
+
+/* html 背景：深色基底 + 渐变遮罩 + 背景图片
+   注意：multi-background 的 background-size/position 需要为每层提供值，
+   第一层（渐变遮罩）始终 cover/center，第二层（图片）使用用户配置。 */
+html[data-theme="spiderman"] {
+  background-color: rgb(var(--c-bg-base));
+  background-image:
+    /* 深色遮罩层，alpha = 1 - bgOpacity（由 JS 计算） */
+    linear-gradient(
+      rgb(var(--c-bg-base) / var(--spiderman-bg-overlay, 0.8)),
+      rgb(var(--c-bg-base) / var(--spiderman-bg-overlay, 0.8))
+    ),
+    /* 背景图片 */
+    var(--spiderman-bg-image);
+  background-position: center, var(--spiderman-bg-position, center);
+  background-size: cover, var(--spiderman-bg-size, cover);
+  background-repeat: no-repeat;
+}
+
+/* body 透明，让 html 背景透出 */
+html[data-theme="spiderman"] body {
+  background-color: transparent !important;
+}
+
+/* 关闭背景：移除图片，保留深色基底 */
+html[data-theme="spiderman"][data-spiderman-bg-off] {
+  background-image: none !important;
+}
+
+/* 关闭背景时 .theme-root 恢复纯色背景 */
+html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
+  background-color: rgb(var(--c-bg-base)) !important;
+}
+
+/* 主题根容器：isolation: isolate 创建局部叠加上下文
+   让 z-index: -1 的子元素（纹理、光晕）在内容层之下。
+   background-color 透明，让 html 背景（Layer 1）透出。 */
+[data-theme="spiderman"] .theme-root {
+  isolation: isolate;
+  background-color: transparent !important;
+  position: relative;
+}
+
+/* 聊天消息区域透明，让背景继续透到子窗口 */
+[data-theme="spiderman"] .chat-display-root {
+  background-color: transparent !important;
+}
+
+/* 蛛网纹理：position: absolute; z-index: -1
+   在局部叠加上下文中处于 Layer 2（负层），
+   在内容（Layer 3+）之下。
+   用 pointer-events: none 不阻挡交互。 */
 [data-theme="spiderman"] .theme-web-texture {
   display: block;
   position: absolute;
@@ -151,11 +189,13 @@
     repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
     repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px);
-  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
   -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  animation: web-pulse 4s ease-in-out infinite;
 }
 
-/* 环境光晕（z-index:-1，在子元素下方） */
+/* 环境光晕：position: absolute; z-index: -1
+   与蛛网纹理同层，按 DOM 顺序纹理在上、光晕在下 */
 [data-theme="spiderman"] .theme-ambient {
   display: block;
   position: absolute;
@@ -167,30 +207,44 @@
     radial-gradient(ellipse at 85% 30%, rgba(59,130,246,0.06) 0%, transparent 50%);
 }
 
-/* === 布局面板半透明化，让背景图片透出 === */
-
-/* TopMenuBar */
-[data-theme="spiderman"] .theme-root > header {
-  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+/* 蛛网纹理脉冲动画 */
+@keyframes web-pulse {
+  0%, 100% { opacity: var(--spiderman-web-opacity, 0.15); }
+  50% { opacity: calc(var(--spiderman-web-opacity, 0.15) * 1.4); }
 }
 
-/* ActivityBar / LeftPanel / RightPanel */
-[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"] {
-  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
+/* === 布局面板半透明化，让背景图片透出 ===
+   所有 bg-background-elevated 面板 + chat-input-root 降低不透明度。
+   backdrop-filter 会创建叠加上下文，薄面板（TopMenuBar、ActivityBar）
+   去掉 blur 避免困住子元素下拉菜单的 z-index。 */
 
-/* ChatInput 底部输入区 */
+/* 所有面板半透明基础（降低不透明度让背景更可见） */
+[data-theme="spiderman"] .theme-root > [class*="bg-background-elevated"],
+[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"],
 [data-theme="spiderman"] .chat-input-root {
-  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background-color: rgb(var(--c-bg-elevated) / 0.55) !important;
+}
+
+/* 大面板（LeftPanel、RightPanel、ChatInput）保持模糊效果
+   注意：使用 :not([class*="items-center"]) 排除 ActivityBar（薄面板不需要 blur） */
+[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"]:not([class*="items-center"]),
+[data-theme="spiderman"] .chat-input-root {
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 /* 发送按钮红蓝渐变 */
 [data-theme="spiderman"] .send-button {
   background: linear-gradient(135deg, #DC2626, #3B82F6) !important;
+  background-size: 200% 200% !important;
+  animation: spiderman-btn-shift 4s ease-in-out infinite;
+}
+
+[data-theme="spiderman"] .send-button:not(:disabled):hover {
+  box-shadow: 0 0 20px rgba(220, 38, 38, 0.4), 0 0 40px rgba(59, 130, 246, 0.2) !important;
+}
+
+@keyframes spiderman-btn-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }

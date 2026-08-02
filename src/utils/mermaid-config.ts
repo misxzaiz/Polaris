@@ -281,6 +281,6 @@ export const mermaidLightTheme: Partial<MermaidConfig> = {
  * const config = getMermaidConfig(useThemeStore.getState().theme);
  * ```
  */
-export function getMermaidConfig(theme: 'dark' | 'light' = 'dark'): Partial<MermaidConfig> {
-  return theme === 'dark' ? mermaidDarkTheme : mermaidLightTheme;
+export function getMermaidConfig(theme: 'dark' | 'light' | 'spiderman' = 'dark'): Partial<MermaidConfig> {
+  return theme === 'light' ? mermaidLightTheme : mermaidDarkTheme;
 }
