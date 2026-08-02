@@ -3,9 +3,10 @@
  * 包含语言、主题等全局外观偏好
  */
 
+import * as React from 'react';
 import { useTranslation } from 'react-i18next';
-import type { Config, WindowSettings, ChatDisplayDensity, ChatDisplayFontFamily } from '@/types';
-import { DEFAULT_CHAT_DISPLAY_SETTINGS, getChatDisplayStyleVars, normalizeChatDisplaySettings } from '@/types';
+import type { Config, WindowSettings, ChatDisplayDensity, ChatDisplayFontFamily, SpiderManThemeConfig } from '@/types';
+import { DEFAULT_CHAT_DISPLAY_SETTINGS, DEFAULT_SPIDERMAN_THEME, getChatDisplayStyleVars, normalizeChatDisplaySettings } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
 import { SystemPromptSection } from './SystemPromptSection';
@@ -253,9 +254,25 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
                 β
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => onConfigChange({ ...config, theme: 'spiderman' })}
+              disabled={loading}
+              className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${currentTheme === 'spiderman'
+                  ? 'bg-primary text-on-primary'
+                  : 'bg-background-surface border border-border text-text-secondary hover:text-text-primary'
+              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              🕷️ {t('appearance.spiderman')}
+            </button>
           </div>
         </div>
       </div>
+
+      {/* Spider-Man 主题设置 */}
+      {currentTheme === 'spiderman' && (
+        <SpiderManSection config={config} onConfigChange={onConfigChange} loading={loading} />
+      )}
 
       {/* 对话显示 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
@@ -518,6 +535,280 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
       {/* 系统提示词 */}
       <SystemPromptSection />
+    </div>
+  );
+}
+
+/* ============================================
+   Spider-Man 沉浸主题设置区块
+   ============================================ */
+
+const SPIDERMAN_BACKGROUNDS = [
+  { src: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920', label: '🌆 纽约天际线' },
+  { src: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?q=80&w=1920', label: '👀 面具发光眼' },
+  { src: 'https://images.unsplash.com/photo-1715783735932-2aaa7bcfab34?q=80&w=1920', label: '🕷️ 金色蜘蛛 Logo' },
+  { src: 'https://images.unsplash.com/photo-1642456074142-92f75cb84533?q=80&w=1920', label: '⚡ 战衣发光眼' },
+  { src: 'https://images.unsplash.com/photo-1505925456693-124134d66749?q=80&w=1920', label: '🏙️ 城市之巅' },
+  { src: '', label: '🚫 关闭背景' },
+];
+
+const SPIDERMAN_MASKS = [
+  { src: 'https://www.pngmart.com/files/10/Spider-Man-Mask-Logo-PNG-Transparent-Image.png', label: '经典 #1' },
+  { src: 'https://assets.stickpng.com/images/5853bcc7ec0c270fc2f62de8.png', label: '经典 #2' },
+  { src: 'https://cdn.creazilla.com/cliparts/7105/spiderman-mask-clipart-xl.png', label: '经典 #3' },
+  { src: 'https://www.pngarts.com/files/3/Spider-Man-Mask-Transparent-Background-PNG.png', label: '经典 #4' },
+  { src: 'https://purepng.com/public/uploads/large/purepng.com-spider-man-maskspider-manspidermansuperherocomic-bookmarvel-comicscharacterstan-lee-1701528655211dzh6y.png', label: '经典 #5' },
+  { src: 'https://www.pngmart.com/files/10/Spider-Man-Mask-Logo-PNG-Photos.png', label: '经典 #6' },
+];
+
+const SCALE_OPTIONS = [
+  { value: 'cover', label: '铺满' },
+  { value: 'contain', label: '适应' },
+  { value: 'auto 100%', label: '自适应高' },
+  { value: '100% auto', label: '自适应宽' },
+];
+
+interface SpiderManSectionProps {
+  config: Config;
+  onConfigChange: (config: Config) => void;
+  loading: boolean;
+}
+
+function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionProps) {
+  const { t } = useTranslation('settings');
+
+  const spidermanTheme: SpiderManThemeConfig = {
+    ...DEFAULT_SPIDERMAN_THEME,
+    ...config.spidermanTheme,
+  };
+
+  /** 保存到配置 + localStorage（供 themeStore.syncSpiderManCssVars 读取） */
+  const updateSpiderManConfig = (patch: Partial<SpiderManThemeConfig>) => {
+    const merged = { ...spidermanTheme, ...patch };
+    // 更新 React 配置
+    onConfigChange({
+      ...config,
+      spidermanTheme: merged,
+    });
+    // 同步到 localStorage 供 themeStore 读取
+    try {
+      window.localStorage.setItem('spiderman-theme', JSON.stringify(merged));
+    } catch { /* ignore */ }
+    // 立即同步 CSS 变量到 DOM
+    if (merged.backgroundImage) {
+      document.documentElement.style.setProperty('--spiderman-bg-image', `url('${merged.backgroundImage}')`);
+      document.documentElement.removeAttribute('data-spiderman-bg-off');
+    } else {
+      document.documentElement.setAttribute('data-spiderman-bg-off', '');
+    }
+    document.documentElement.style.setProperty('--spiderman-bg-opacity', String(merged.backgroundOpacity ?? 0.2));
+    document.documentElement.style.setProperty('--spiderman-web-opacity', String(merged.webTextureOpacity ?? 0.15));
+    document.documentElement.style.setProperty('--spiderman-bg-position',
+      `${merged.backgroundPositionX ?? 50}% ${merged.backgroundPositionY ?? 50}%`);
+    document.documentElement.style.setProperty('--spiderman-bg-size', merged.backgroundSize ?? 'cover');
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      updateSpiderManConfig({ avatarUrl: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      updateSpiderManConfig({ backgroundImage: dataUrl });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* 面具头像 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">🎭 {t('spiderman.avatar.title')}</h3>
+        <div className="text-xs text-text-secondary mb-3">{t('spiderman.avatar.hint')}</div>
+        <div className="grid grid-cols-4 gap-2">
+          {SPIDERMAN_MASKS.map((mask) => (
+            <button
+              key={mask.src}
+              type="button"
+              onClick={() => updateSpiderManConfig({ avatarUrl: mask.src })}
+              disabled={loading}
+              className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                (spidermanTheme.avatarUrl || SPIDERMAN_MASKS[0].src) === mask.src
+                  ? 'border-primary'
+                  : 'border-transparent hover:border-border'
+              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <img
+                src={mask.src}
+                alt={mask.label}
+                className="w-full h-full object-contain p-1"
+                onError={(e) => { (e.target as HTMLElement).style.display = 'none'; }}
+              />
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center justify-center gap-2 mt-3 p-2 rounded-lg border border-dashed border-primary/50 text-primary text-xs cursor-pointer hover:bg-primary/5">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+          </svg>
+          {t('spiderman.background.upload')}
+          <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+        </label>
+      </div>
+
+      {/* 背景图片 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">🕸️ {t('spiderman.background.title')}</h3>
+        <div className="text-xs text-text-secondary mb-3">{t('spiderman.background.hint')}</div>
+        <div className="grid grid-cols-2 gap-2">
+          {SPIDERMAN_BACKGROUNDS.map((bg) => (
+            <button
+              key={bg.src}
+              type="button"
+              onClick={() => updateSpiderManConfig({ backgroundImage: bg.src })}
+              disabled={loading}
+              className={`aspect-video rounded-lg overflow-hidden border-2 transition-all relative ${
+                (spidermanTheme.backgroundImage || SPIDERMAN_BACKGROUNDS[0].src) === bg.src
+                  ? 'border-primary'
+                  : 'border-transparent hover:border-border'
+              } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              {bg.src ? (
+                <img src={bg.src} alt={bg.label} className="w-full h-full object-cover" loading="lazy" />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center bg-background-base text-text-muted text-xs">
+                  {bg.label}
+                </div>
+              )}
+              <span className="absolute bottom-0 left-0 right-0 p-1 bg-gradient-to-t from-black/60 to-transparent text-[10px] text-white/80 text-center">
+                {bg.label}
+              </span>
+            </button>
+          ))}
+        </div>
+        <label className="flex items-center justify-center gap-2 mt-3 p-2 rounded-lg border border-dashed border-primary/50 text-primary text-xs cursor-pointer hover:bg-primary/5">
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M9 16h6v-6h4l-7-7-7 7h4zm-4 2h14v2H5z"/>
+          </svg>
+          {t('spiderman.background.upload')}
+          <input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
+        </label>
+      </div>
+
+      {/* 视觉效果 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">🎨 {t('spiderman.effects.title')}</h3>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.bgOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="45"
+          value={Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ backgroundOpacity: v });
+            updateSpiderManConfig({ backgroundOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.webOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="35"
+          value={Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ webTextureOpacity: v });
+            updateSpiderManConfig({ webTextureOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+      </div>
+
+      {/* 位置与大小 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">📐 {t('spiderman.position.title')}</h3>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.scaleMode')}</span>
+          <div className="flex gap-1">
+            {SCALE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => updateSpiderManConfig({ backgroundSize: opt.value })}
+                disabled={loading}
+                className={`px-2 py-1 text-xs rounded ${
+                  (spidermanTheme.backgroundSize || 'cover') === opt.value
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-background-surface border border-border text-text-secondary'
+                } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.horizontal')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.backgroundPositionX ?? 50}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={spidermanTheme.backgroundPositionX ?? 50}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ backgroundPositionX: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.vertical')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.backgroundPositionY ?? 50}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={spidermanTheme.backgroundPositionY ?? 50}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ backgroundPositionY: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+      </div>
     </div>
   );
 }

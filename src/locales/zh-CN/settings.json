@@ -243,7 +243,35 @@
     "hint": "深色 / 浅色主题切换（浅色为实验性）",
     "dark": "深色",
     "light": "浅色",
+    "spiderman": "蜘蛛侠",
     "experimental": "实验性"
+  },
+  "spiderman": {
+    "title": "蜘蛛侠主题",
+    "avatar": {
+      "title": "面具头像",
+      "hint": "选择你的蜘蛛侠面具头像"
+    },
+    "background": {
+      "title": "背景图片",
+      "hint": "选择或上传背景图片",
+      "upload": "上传自定义图片"
+    },
+    "effects": {
+      "title": "视觉效果",
+      "bgOpacity": "背景透明度",
+      "bgOpacityHint": "调节背景图片的可见度",
+      "webOpacity": "蛛网纹理",
+      "webOpacityHint": "调节蛛网纹理的强度"
+    },
+    "position": {
+      "title": "位置与大小",
+      "scaleMode": "缩放模式",
+      "horizontal": "水平偏移",
+      "horizontalHint": "左右移动背景位置",
+      "vertical": "垂直偏移",
+      "verticalHint": "上下移动背景位置"
+    }
   },
   "chatDisplay": {
     "title": "对话显示",

@@ -14,7 +14,7 @@ import "./i18n";
 (() => {
   try {
     const stored = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null;
-    const theme = stored === 'light' ? 'light' : 'dark';
+    const theme = stored === 'spiderman' ? 'spiderman' : stored === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
   } catch {
     document.documentElement.setAttribute('data-theme', 'dark');

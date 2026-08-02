@@ -106,3 +106,91 @@
   66% { content: '..'; }
   100% { content: '...'; }
 }
+
+/* ========================================
+   Spider-Man 沉浸主题装饰层
+   ======================================== */
+
+/* Layout 根容器：定位锚点 */
+[data-theme="spiderman"] .theme-root {
+  position: relative;
+}
+
+/* 背景图片层（z-index:-1，在子元素下方）
+   通过 opacity 控制可见度，默认 0.2 */
+[data-theme="spiderman"] .theme-root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background-image: var(--spiderman-bg-image);
+  background-position: var(--spiderman-bg-position, center);
+  background-size: var(--spiderman-bg-size, cover);
+  background-attachment: fixed;
+  background-repeat: no-repeat;
+  opacity: var(--spiderman-bg-opacity, 0.2);
+  pointer-events: none;
+  transition: opacity 0.3s;
+}
+
+/* 关闭背景 */
+[data-theme="spiderman"][data-spiderman-bg-off] .theme-root::before {
+  display: none;
+}
+
+/* 蛛网纹理（z-index:-1，在子元素下方） */
+[data-theme="spiderman"] .theme-web-texture {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--spiderman-web-opacity, 0.15);
+  background-image:
+    repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
+    repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
+    repeating-linear-gradient(45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
+    repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px);
+  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+}
+
+/* 环境光晕（z-index:-1，在子元素下方） */
+[data-theme="spiderman"] .theme-ambient {
+  display: block;
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse at 15% 50%, rgba(220,38,38,0.08) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 30%, rgba(59,130,246,0.06) 0%, transparent 50%);
+}
+
+/* === 布局面板半透明化，让背景图片透出 === */
+
+/* TopMenuBar */
+[data-theme="spiderman"] .theme-root > header {
+  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ActivityBar / LeftPanel / RightPanel */
+[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"] {
+  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* ChatInput 底部输入区 */
+[data-theme="spiderman"] .chat-input-root {
+  background-color: rgb(var(--c-bg-elevated) / 0.7) !important;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 发送按钮红蓝渐变 */
+[data-theme="spiderman"] .send-button {
+  background: linear-gradient(135deg, #DC2626, #3B82F6) !important;
+}

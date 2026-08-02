@@ -14,7 +14,7 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ThemeStore');
 
-export type Theme = 'dark' | 'light';
+export type Theme = 'dark' | 'light' | 'spiderman';
 
 const STORAGE_KEY = 'theme';
 const DEFAULT_THEME: Theme = 'dark';
@@ -31,12 +31,48 @@ interface ThemeState {
 function readInitialTheme(): Theme {
   if (typeof window === 'undefined') return DEFAULT_THEME;
   const stored = window.localStorage.getItem(STORAGE_KEY);
+  if (stored === 'spiderman') return 'spiderman';
   return stored === 'light' ? 'light' : 'dark';
+}
+
+/** Spider-Man 主题默认背景图 */
+const SPIDERMAN_DEFAULT_BG = 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920';
+
+/** 同步 Spider-Man CSS 变量到 DOM */
+function syncSpiderManCssVars(): void {
+  if (typeof document === 'undefined') return;
+  try {
+    const stored = window.localStorage.getItem('spiderman-theme');
+    const config = stored ? JSON.parse(stored) : {};
+    const bg = config.backgroundImage || SPIDERMAN_DEFAULT_BG;
+    if (bg) {
+      document.documentElement.style.setProperty('--spiderman-bg-image', `url('${bg}')`);
+      document.documentElement.removeAttribute('data-spiderman-bg-off');
+    } else {
+      document.documentElement.setAttribute('data-spiderman-bg-off', '');
+    }
+    document.documentElement.style.setProperty('--spiderman-bg-opacity', String(config.backgroundOpacity ?? 0.2));
+    document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
+    document.documentElement.style.setProperty('--spiderman-bg-position',
+      `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
+    document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize ?? 'cover');
+  } catch {
+    // 静默失败，使用 CSS 默认值
+  }
 }
 
 function writeDom(theme: Theme): void {
   if (typeof document === 'undefined') return;
   document.documentElement.setAttribute('data-theme', theme);
+  // 同步更新 favicon
+  const link = document.querySelector('link[rel="icon"]') as HTMLLinkElement | null;
+  if (link) {
+    link.href = theme === 'spiderman' ? '/src/assets/spiderman/favicon.svg' : '/favicon.ico';
+  }
+  // 同步 Spider-Man CSS 变量
+  if (theme === 'spiderman') {
+    syncSpiderManCssVars();
+  }
 }
 
 function writeStorage(theme: Theme): void {
@@ -48,8 +84,17 @@ function writeStorage(theme: Theme): void {
   }
 }
 
+// 启动时同步 Spider-Man CSS 变量（如果主题是 spiderman）
+const initialTheme = readInitialTheme();
+if (initialTheme === 'spiderman') {
+  // 延迟到 DOM 就绪后执行
+  if (typeof window !== 'undefined') {
+    queueMicrotask(() => syncSpiderManCssVars());
+  }
+}
+
 export const useThemeStore = create<ThemeState>((set, get) => ({
-  theme: readInitialTheme(),
+  theme: initialTheme,
 
   applyTheme: (theme) => {
     if (get().theme === theme) {

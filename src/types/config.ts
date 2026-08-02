@@ -14,7 +14,7 @@ export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi'
 export type Language = 'zh-CN' | 'en-US'
 
 /** 界面主题 */
-export type Theme = 'dark' | 'light'
+export type Theme = 'dark' | 'light' | 'spiderman'
 
 /** 对话显示密度 */
 export type ChatDisplayDensity = 'compact' | 'comfortable' | 'spacious'
@@ -270,6 +270,34 @@ export interface DingTalkConfig {
   activeInstanceId?: string;
 }
 
+/** Spider-Man 主题配置 */
+export interface SpiderManThemeConfig {
+  /** 背景图片 URL（空字符串 = 使用预设） */
+  backgroundImage?: string;
+  /** 背景图片透明度 (0-1) */
+  backgroundOpacity?: number;
+  /** 蛛网纹理强度 (0-1) */
+  webTextureOpacity?: number;
+  /** 背景缩放模式 */
+  backgroundSize?: string;
+  /** 背景水平偏移 (0-100) */
+  backgroundPositionX?: number;
+  /** 背景垂直偏移 (0-100) */
+  backgroundPositionY?: number;
+  /** 面具头像 URL */
+  avatarUrl?: string;
+}
+
+/** Spider-Man 主题默认值 */
+export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
+  backgroundImage: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920',
+  backgroundOpacity: 0.2,
+  webTextureOpacity: 0.15,
+  backgroundSize: 'cover',
+  backgroundPositionX: 50,
+  backgroundPositionY: 50,
+};
+
 /** 窗口设置 */
 export interface WindowSettings {
   /** 大窗模式透明度 (0 - 100) */
@@ -381,6 +409,8 @@ export interface Config {
   dingtalk?: DingTalkConfig;
   /** 窗口设置 */
   window?: WindowSettings;
+  /** Spider-Man 沉浸主题配置 */
+  spidermanTheme?: SpiderManThemeConfig;
   /** 语音输入配置 */
   speech?: SpeechConfig;
   /** 语音输出配置 (TTS) */

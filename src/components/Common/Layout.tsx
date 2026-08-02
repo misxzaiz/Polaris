@@ -36,9 +36,11 @@ export function Layout({ children }: LayoutProps) {
     // h-screen 为不支持 dvh 的浏览器兜底；内联 100dvh 在移动端浏览器
     // 排除地址栏占位，避免底部输入框被遮挡（不支持 dvh 时该值被忽略）
     <div
-      className="flex flex-col h-screen w-screen overflow-hidden bg-background-base"
+      className="flex flex-col h-screen w-screen overflow-hidden bg-background-base theme-root"
       style={{ height: '100dvh' }}
     >
+      <div className="theme-web-texture" />
+      <div className="theme-ambient" />
       {children}
     </div>
   );

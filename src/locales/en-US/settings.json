@@ -243,7 +243,35 @@
     "hint": "Switch between dark and light theme (light is experimental)",
     "dark": "Dark",
     "light": "Light",
+    "spiderman": "Spider-Man",
     "experimental": "Experimental"
+  },
+  "spiderman": {
+    "title": "Spider-Man Theme",
+    "avatar": {
+      "title": "Mask Avatar",
+      "hint": "Choose your Spider-Man mask avatar"
+    },
+    "background": {
+      "title": "Background",
+      "hint": "Choose or upload a background image",
+      "upload": "Upload Custom Image"
+    },
+    "effects": {
+      "title": "Visual Effects",
+      "bgOpacity": "Background Opacity",
+      "bgOpacityHint": "Adjust the visibility of the background image",
+      "webOpacity": "Web Texture",
+      "webOpacityHint": "Adjust the intensity of the spider web texture"
+    },
+    "position": {
+      "title": "Position & Size",
+      "scaleMode": "Scale Mode",
+      "horizontal": "Horizontal Offset",
+      "horizontalHint": "Move the background left or right",
+      "vertical": "Vertical Offset",
+      "verticalHint": "Move the background up or down"
+    }
   },
   "chatDisplay": {
     "title": "Chat Display",
