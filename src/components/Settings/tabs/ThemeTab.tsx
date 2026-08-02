@@ -233,7 +233,7 @@ export function ThemeTab({ config, onConfigChange, loading }: ThemeTabProps) {
                   : 'bg-background-surface border border-border text-text-secondary hover:text-text-primary'
               } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
-              🕷️ {t('appearance.spiderman')}
+              {t('appearance.spiderman')}
             </button>
           </div>
         </div>
@@ -398,18 +398,18 @@ export function ThemeTab({ config, onConfigChange, loading }: ThemeTabProps) {
    ============================================ */
 
 const SPIDERMAN_BACKGROUNDS = [
-  { src: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920', label: '🌆 纽约天际线' },
-  { src: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?q=80&w=1920', label: '👀 面具发光眼' },
-  { src: 'https://images.unsplash.com/photo-1715783735932-2aaa7bcfab34?q=80&w=1920', label: '🕷️ 金色蜘蛛 Logo' },
-  { src: 'https://images.unsplash.com/photo-1642456074142-92f75cb84533?q=80&w=1920', label: '⚡ 战衣发光眼' },
-  { src: 'https://images.unsplash.com/photo-1505925456693-124134d66749?q=80&w=1920', label: '🏙️ 城市之巅' },
+  { src: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920', label: '纽约天际线' },
+  { src: 'https://images.unsplash.com/photo-1635805737707-575885ab0820?q=80&w=1920', label: '面具发光眼' },
+  { src: 'https://images.unsplash.com/photo-1715783735932-2aaa7bcfab34?q=80&w=1920', label: '金色蜘蛛 Logo' },
+  { src: 'https://images.unsplash.com/photo-1642456074142-92f75cb84533?q=80&w=1920', label: '战衣发光眼' },
+  { src: 'https://images.unsplash.com/photo-1505925456693-124134d66749?q=80&w=1920', label: '城市之巅' },
   // Spider-Man: Brand New Day 壁纸
-  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-movie-8l-3840x2400.jpg', label: '🎬 崭新之日·电影' },
-  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-begins-zg-3840x2160.jpg', label: '🌅 崭新之日·开始' },
-  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-zk-3840x2160.jpg', label: '🕷️ 崭新之日·经典' },
-  { src: 'https://images.hdqwalls.com/wallpapers/spider-man-brand-new-day-the-amazing-hero-2e.jpg', label: '🦸 超凡英雄' },
-  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-5k-qg-3840x2400.jpg', label: '⚡ 崭新之日·5K' },
-  { src: '', label: '🚫 关闭背景' },
+  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-movie-8l-3840x2400.jpg', label: '崭新之日·电影' },
+  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-begins-zg-3840x2160.jpg', label: '崭新之日·开始' },
+  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-zk-3840x2160.jpg', label: '崭新之日·经典' },
+  { src: 'https://images.hdqwalls.com/wallpapers/spider-man-brand-new-day-the-amazing-hero-2e.jpg', label: '超凡英雄' },
+  { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-5k-qg-3840x2400.jpg', label: '崭新之日·5K' },
+  { src: '', label: '关闭背景' },
 ];
 
 const SPIDERMAN_MASKS = [
@@ -418,11 +418,11 @@ const SPIDERMAN_MASKS = [
   { src: 'https://purepng.com/public/uploads/large/purepng.com-spider-man-maskspider-manspidermansuperherocomic-bookmarvel-comicscharacterstan-lee-1701528655211dzh6y.png', label: '经典 #5' },
   { src: 'https://www.pngmart.com/files/10/Spider-Man-Mask-Logo-PNG-Photos.png', label: '经典 #6' },
   // 更多透明面具头像
-  { src: 'https://www.citypng.com/public/uploads/preview/hd-mask-spiderman-realistic-png-735811696952449ro3pyf5lqp.png', label: '🎭 写实面具' },
-  { src: 'https://www.pngplay.com/wp-content/uploads/15/Spiderman-Mask-Transparent-PNG.png', label: '🎭 透明面具' },
-  { src: 'https://www.citypng.com/public/uploads/preview/hd-mask-spiderman-3d-png-11695958056q2ii6wyjfz.png', label: '🎭 3D 面具' },
+  { src: 'https://www.citypng.com/public/uploads/preview/hd-mask-spiderman-realistic-png-735811696952449ro3pyf5lqp.png', label: '写实面具' },
+  { src: 'https://www.pngplay.com/wp-content/uploads/15/Spiderman-Mask-Transparent-PNG.png', label: '透明面具' },
+  { src: 'https://www.citypng.com/public/uploads/preview/hd-mask-spiderman-3d-png-11695958056q2ii6wyjfz.png', label: '3D 面具' },
   // 动态 GIF 头像 (img 标签支持 GIF 动画)
-  { src: 'https://media3.giphy.com/media/gjJHFL9KPkbLErYPrr/giphy.gif', label: '🔄 动态·蜘蛛感应' },
+  { src: 'https://media3.giphy.com/media/gjJHFL9KPkbLErYPrr/giphy.gif', label: '动态·蜘蛛感应' },
 ];
 
 const SCALE_OPTIONS = [
@@ -517,9 +517,203 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
 
   return (
     <div className="space-y-4">
+      {/* 视觉效果 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">{t('spiderman.effects.title')}</h3>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.bgOpacity')}</span>
+          <div className="flex items-center gap-2">
+            {imageBrightness !== null && (
+              <span className="text-[10px] text-text-muted">
+                {Math.round(imageBrightness)}
+              </span>
+            )}
+            <span className="text-xs text-text-secondary tabular-nums">
+              {Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}%
+            </span>
+          </div>
+        </div>
+        {isBoosted && (
+          <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded bg-accent-workspace/10 border border-accent-workspace/20">
+            <svg className="w-3 h-3 text-accent-workspace flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+            </svg>
+            <span className="text-[10px] text-accent-workspace">
+              {t('spiderman.effects.adaptiveHint', '图片偏亮，遮罩自动增强至 {{value}}%', { value: Math.round(effectiveOverlay * 100) })}
+            </span>
+          </div>
+        )}
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ backgroundOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ panelOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelBlur')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.panelBlur ?? 8}px
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="32"
+          step="1"
+          value={spidermanTheme.panelBlur ?? 8}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ panelBlur: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        {/* 蓝色强调强度 */}
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.blueAccent')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.blueAccent ?? 0.5) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round((spidermanTheme.blueAccent ?? 0.5) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ blueAccent: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.webOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="35"
+          value={Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ webTextureOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        {/* 内容卡片透明度 */}
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.surfaceOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ surfaceOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+      </div>
+
+      {/* 位置与大小 */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <h3 className="text-sm font-medium text-text-primary mb-3">{t('spiderman.position.title')}</h3>
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.scaleMode')}</span>
+          <div className="flex gap-1">
+            {SCALE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => updateSpiderManConfig({ backgroundSize: opt.value })}
+                disabled={loading}
+                className={`px-2 py-1 text-xs rounded ${
+                  (spidermanTheme.backgroundSize || 'cover') === opt.value
+                    ? 'bg-primary text-on-primary'
+                    : 'bg-background-surface border border-border text-text-secondary'
+                } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.horizontal')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.backgroundPositionX ?? 50}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={spidermanTheme.backgroundPositionX ?? 50}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ backgroundPositionX: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.position.vertical')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.backgroundPositionY ?? 50}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={spidermanTheme.backgroundPositionY ?? 50}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ backgroundPositionY: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+      </div>
+
       {/* 面具头像 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">🎭 {t('spiderman.avatar.title')}</h3>
+        <h3 className="text-sm font-medium text-text-primary mb-3">{t('spiderman.avatar.title')}</h3>
         <div className="text-xs text-text-secondary mb-3">{t('spiderman.avatar.hint')}</div>
         <div className="grid grid-cols-4 gap-2">
           {SPIDERMAN_MASKS.map((mask) => (
@@ -555,7 +749,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
       {/* 背景图片 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-medium text-text-primary">🕸️ {t('spiderman.background.title')}</h3>
+          <h3 className="text-sm font-medium text-text-primary">{t('spiderman.background.title')}</h3>
           {/* 显示/关闭背景开关 */}
           <button
             type="button"
@@ -628,200 +822,8 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           <input type="file" accept="image/*" className="hidden" onChange={handleBgUpload} />
         </label>
       </div>
-
-      {/* 视觉效果 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">🎨 {t('spiderman.effects.title')}</h3>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.effects.bgOpacity')}</span>
-          <div className="flex items-center gap-2">
-            {imageBrightness !== null && (
-              <span className="text-[10px] text-text-muted">
-                🌅 {Math.round(imageBrightness)}
-              </span>
-            )}
-            <span className="text-xs text-text-secondary tabular-nums">
-              {Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}%
-            </span>
-          </div>
-        </div>
-        {isBoosted && (
-          <div className="flex items-center gap-1.5 mb-2 px-2 py-1 rounded bg-accent-workspace/10 border border-accent-workspace/20">
-            <svg className="w-3 h-3 text-accent-workspace flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
-            </svg>
-            <span className="text-[10px] text-accent-workspace">
-              {t('spiderman.effects.adaptiveHint', '图片偏亮，遮罩自动增强至 {{value}}%', { value: Math.round(effectiveOverlay * 100) })}
-            </span>
-          </div>
-        )}
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}
-          onChange={(e) => {
-            const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ backgroundOpacity: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelOpacity')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}
-          onChange={(e) => {
-            const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ panelOpacity: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelBlur')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {spidermanTheme.panelBlur ?? 8}px
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="32"
-          step="1"
-          value={spidermanTheme.panelBlur ?? 8}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            updateSpiderManConfig({ panelBlur: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        {/* 蓝色强调强度 */}
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">🔵 {t('spiderman.effects.blueAccent')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.blueAccent ?? 0.5) * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round((spidermanTheme.blueAccent ?? 0.5) * 100)}
-          onChange={(e) => {
-            const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ blueAccent: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.effects.webOpacity')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="35"
-          value={Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}
-          onChange={(e) => {
-            const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ webTextureOpacity: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        {/* 内容卡片透明度 */}
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.effects.surfaceOpacity')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}
-          onChange={(e) => {
-            const v = Number(e.target.value) / 100;
-            updateSpiderManConfig({ surfaceOpacity: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-      </div>
-
-      {/* 位置与大小 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">📐 {t('spiderman.position.title')}</h3>
-        <div className="flex items-center justify-between mb-3">
-          <span className="text-xs text-text-secondary">{t('spiderman.position.scaleMode')}</span>
-          <div className="flex gap-1">
-            {SCALE_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                type="button"
-                onClick={() => updateSpiderManConfig({ backgroundSize: opt.value })}
-                disabled={loading}
-                className={`px-2 py-1 text-xs rounded ${
-                  (spidermanTheme.backgroundSize || 'cover') === opt.value
-                    ? 'bg-primary text-on-primary'
-                    : 'bg-background-surface border border-border text-text-secondary'
-                } ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.position.horizontal')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {spidermanTheme.backgroundPositionX ?? 50}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={spidermanTheme.backgroundPositionX ?? 50}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            updateSpiderManConfig({ backgroundPositionX: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-text-secondary">{t('spiderman.position.vertical')}</span>
-          <span className="text-xs text-text-secondary tabular-nums">
-            {spidermanTheme.backgroundPositionY ?? 50}%
-          </span>
-        </div>
-        <input
-          type="range"
-          min="0"
-          max="100"
-          value={spidermanTheme.backgroundPositionY ?? 50}
-          onChange={(e) => {
-            const v = Number(e.target.value);
-            updateSpiderManConfig({ backgroundPositionY: v });
-          }}
-          disabled={loading}
-          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
-        />
-      </div>
     </div>
+
+      
   );
 }

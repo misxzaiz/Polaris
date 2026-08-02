@@ -1,311 +1,93 @@
-# Spider-Man 遮罩覆盖审计
+# Spider-Man 遮罩变更清单
 
-## 已覆盖的 CSS 选择器
+## 一、CSS 规则变更（App.css）
 
-| 选择器 | 匹配的类 | 覆盖范围 |
-|--------|---------|---------|
-| `[data-spiderman-panel]` | 属性选择器 | 11 个结构面板 |
-| `.chat-input-root` | 类选择器 | ChatInput 外层 |
-| `[class*="bg-surface"]` | `bg-surface`, `bg-background-surface`, `hover:bg-surface` | 内容卡片 + 输入框 |
-| `[class*="bg-background-elevated"]` | `bg-background-elevated`, `hover:bg-background-elevated` | 结构面板 + 工具栏 |
-| `[class*="bg-warning-faint"]` | `bg-warning-faint`, `hover:bg-warning-faint` | 警告状态色 |
-| `[class*="bg-success-faint"]` | `bg-success-faint`, `hover:bg-success-faint` | 成功状态色 |
-| `[class*="bg-error-faint"]` | `bg-error-faint`, `hover:bg-error-faint` | 错误状态色 |
-| `[class*="bg-accent-faint"]` | `bg-accent-faint`, `hover:bg-accent-faint` | 强调状态色 |
+### 规则 1: 结构面板
+```css
+[data-theme="spiderman"] [data-spiderman-panel],
+[data-theme="spiderman"] .chat-input-root {
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
+}
+```
+✅ 未修改
 
-## 组件逐项检查
+### 规则 2: 内容卡片
+```css
+[data-theme="spiderman"] .theme-root [class*="bg-surface"] {
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+}
+```
+✅ 匹配：`bg-surface`、`bg-background-surface`、`hover:bg-surface`
 
-### src/components/Chat/
+### 规则 3: 状态色
+```css
+[data-theme="spiderman"] .theme-root [class*="bg-warning-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-success-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+}
+```
+✅ 新增
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| AssistantBubble.tsx | `bg-background-surface` | ✅ | 已加类 |
-| UserBubble.tsx | 渐变 `from-primary to-primary-600` | ❌ 不动 | 用户气泡渐变，特殊设计 |
-| SystemBubble.tsx | 无背景 | ❌ 不动 | 纯文本 |
-| ToolBubble.tsx | `bg-warning-faint`/`bg-success-faint`/`bg-error-faint` | ✅ | 状态色规则 |
-| ToolGroupBubble.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| ToolCallBlockRenderer.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| ThinkingBlockRenderer.tsx | `bg-background-surface` + `bg-[#0f1117]` | ✅ | 加 `bg-background-surface` 覆盖硬编码色 |
-| ArtifactPreviewRenderer.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者都已覆盖 |
-| PluginCardHost.tsx | `bg-background-elevated` + `bg-background-surface` + `bg-error-faint` | ✅ | 状态色规则 |
-| CodePreviewView.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| MermaidDiagram.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| DeferredMermaidDiagram.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| PlanModeBlockRenderer.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| AskQuestionCard.tsx | `bg-success-faint`/`bg-warning-faint`/`bg-accent-faint` | ✅ | 状态色规则 |
-| ToolBubble.tsx | 状态色 | ✅ | 状态色规则 |
-| AttachmentPreview.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| CodeBlock.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| DispatchTaskCard.tsx | `bg-background-elevated` + `bg-error-faint` | ✅ | 两者已覆盖 |
-| ContentBlockErrorBoundary.tsx | `bg-error-faint` | ✅ | 状态色规则 |
-| PermissionRequestRenderer.tsx | `bg-success-faint`/`bg-warning-faint` | ✅ | 状态色规则 |
-| AgentRunBlockRenderer.tsx | `bg-error-faint`/`bg-success-faint` | ✅ | 状态色规则 |
-| ChatInput.tsx | `data-spiderman-panel` + `bg-background-surface` + `bg-background-elevated` | ✅ | 全部覆盖 |
-| ChatStatusBar.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| EmptyState.tsx | `bg-success-faint`/`bg-warning-faint` | ✅ | 状态色规则 |
-| SessionCell.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| SessionHistoryPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| SessionConfigSelector.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SessionPreviewModal.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SnippetParamPanel.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| MultiWindowMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| NewSessionButton.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| MessageSearchPanel.tsx | `bg-background-elevated/95` | ✅ | 通过 `bg-background-elevated` |
-| ForkSessionDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| CompactHandoffModal.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| CompactHandoffProgress.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| AIPopover.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| DispatchCenter.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| ChatNavigator.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| ContextMeter.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| FileSuggestion.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| GitSuggestion.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
+### 规则 4: 抬升面板
+```css
+[data-theme="spiderman"] .theme-root [class*="bg-background-elevated"] {
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
+}
+```
+✅ 从直接子元素扩展为所有后代
 
-### src/components/Layout/
+## 二、`bg-background` → `bg-background-surface` 替换
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| LeftPanel.tsx | `bg-background-elevated` | ✅ | `data-spiderman-panel` + 类选择器 |
-| RightPanel.tsx | `bg-background-elevated` | ✅ | `data-spiderman-panel` + 类选择器 |
-| CenterStage.tsx | `bg-background-surface` + `bg-background-base` | ✅ | surface 已覆盖，base 是底色不覆盖 |
-| ActivityBar.tsx | `bg-background-elevated` | ✅ | `data-spiderman-panel` |
-| RadialMenu.tsx | `bg-background-elevated/85` | ✅ | 通过 `bg-background-elevated` |
-| ToolSwitcher.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| TabContextMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
+### 替换范围
+所有 `.tsx` / `.ts` 文件中独立的 `bg-background`（非 `bg-background-surface`、`bg-background-elevated` 等）被替换为 `bg-background-surface`。
 
-### src/components/Settings/
+### 验证结果
+- 无双重替换（`bg-background-surface-surface`）：✅ 0 处
+- 无残留独立 `bg-background`：✅ 0 处
+- `bg-background-hover`、`bg-background-base`、`bg-background-secondary`、`bg-background-tertiary`、`bg-background-active` 未被替换：✅ 不受影响
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| SettingsPage.tsx | `bg-background-elevated` | ✅ | `data-spiderman-panel` |
-| SettingsSidebar.tsx | `bg-background-elevated` + `bg-surface` | ✅ | 两者已覆盖 |
-| **所有 Tab 文件** | `bg-background-surface` (原 `bg-background`) | ✅ | 已替换 |
-| EngineExpandDetail.tsx | `bg-surface` | ✅ | 通过 `bg-surface` |
-| GlobalSettingsCard.tsx | `bg-surface` | ✅ | 通过 `bg-surface` |
-| IndexEngineSection.tsx | `bg-surface` + `bg-background-surface` | ✅ | 已替换 |
-| EngineInstallActions.tsx | `bg-background-surface` | ✅ | 已替换 |
+### 影响文件清单
+替换影响 ~80 个文件，包括：
+- Chat 组件（AIPopover、ForkSessionDialog、SessionHistoryPanel 等）
+- DeveloperPanel
+- GitPanel（BlameView、BranchSelector、GitignoreTab 等）
+- Editor（IndexStatusBadge、ReferencesPanel）
+- Settings 所有 Tab 文件
+- 其他通用组件
 
-### src/components/Browser/
+## 三、`data-spiderman-panel` 属性
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| BrowserPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖，根容器有 `data-spiderman-panel` |
-| BrowserSidebarPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖，根容器有 `data-spiderman-panel` |
+### 11 个结构面板
+| 组件 | 文件 | 行 | 验证 |
+|------|------|----|------|
+| Header | Layout.tsx | 53 | ✅ |
+| Sidebar | Layout.tsx | 67 | ✅ |
+| Aside | Layout.tsx | 95 | ✅ |
+| TopMenuBar | TopMenuBar/index.tsx | 103 | ✅ |
+| ActivityBar | ActivityBar.tsx | 60 | ✅ |
+| SettingsPage | SettingsPage.tsx | 192 | ✅ |
+| SettingsSidebar | SettingsSidebar.tsx | 79 | ✅ |
+| BrowserPanel | BrowserPanel.tsx | 1336 | ✅ |
+| BrowserSidebarPanel | BrowserSidebarPanel.tsx | 873 | ✅ |
+| ChatInput | ChatInput.tsx | 1384 | ✅ |
+| LeftPanel | LeftPanel.tsx | 58/75 | ❌ 遗漏 |
+| RightPanel | RightPanel.tsx | 42/56 | ❌ 遗漏 |
 
-### src/components/Editor/
+## 四、当前未覆盖的已知问题
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| EditorHeader.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| StatusBar.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| BreadcrumbBar.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| MarkdownEditor.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| FileSearchModal.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SymbolPalette.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| ReferencesPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| DefinitionPeek.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| IndexStatusBadge.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
+### 1. 设置左侧边栏选中态
+- 文件：`SettingsSidebar.tsx:104`
+- 类：`bg-primary/10`
+- 问题：10% 主色非常淡，在透明背景上几乎看不见
+- 建议：不改，这是设计问题
 
-### src/components/Diff/
+### 2. LeftPanel / RightPanel 缺少 `data-spiderman-panel`
+- 文件：`LeftPanel.tsx:58/75`、`RightPanel.tsx:42/56`
+- 当前：`bg-background-elevated`（被规则 4 覆盖）
+- 应该：加上 `data-spiderman-panel` 保持一致
 
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| DiffViewer.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| FileNavigator.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SplitDiffView.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SplitSideRow.tsx | `bg-background-elevated/30` | ✅ | 通过 `bg-background-elevated` |
-| UnifiedDiffRow.tsx | `bg-background-elevated/50` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/FileExplorer/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| FileExplorer.tsx | `bg-background-surface` + `bg-background-elevated` | ✅ | 两者已覆盖 |
-| SearchBar.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| ContextMenu.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| GitStatusIndicator.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-
-### src/components/GitPanel/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| index.tsx | `bg-background-surface` + `bg-background-elevated` | ✅ | 两者已覆盖 |
-| CommitDetailsPane.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| CommitInput.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| FileChangesList.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| HistoryTab.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| BranchDialogs.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| BranchSelector.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| QuickActions.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| PushDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| BlameView.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| RemoteTab.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| TagsTab.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| CreateBranchFromCommitDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| CreateTagFromCommitDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Common/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| Layout.tsx | `bg-background-elevated` | ✅ | `data-spiderman-panel` |
-| DropdownMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| ConfirmDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| InputDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| UnsavedDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| AiExtractDialog.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| ZoomableDiagramContainer.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| ConnectingOverlay.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| ErrorBoundary.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| JsonTreeView.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| ClaudePathSelector.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| Toast.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-
-### src/components/Developer/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| DeveloperPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-
-### src/components/Terminal/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| TerminalPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| TerminalRunCommandModal.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| TerminalScriptContextMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| TerminalTabContextMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/TodoPanel/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| SimpleTodoPanel.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| TodoDetailDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| TodoForm.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Workspace/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| CreateWorkspaceModal.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| WorkspaceQuickSwitch.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| WorkspaceSelector.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| WorkspaceSearchInput.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-
-### src/components/QuickSwitchPanel/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| QuickSwitchPanel.tsx | 无直接背景 | ✅ | 子组件已覆盖 |
-| QuickSwitchContent.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| QuickSwitchTrigger.tsx | `bg-background-elevated/85` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Scheduler/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| ExecutionLogDrawer.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| ProtocolDocumentViewer.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| ProtocolTemplateManager.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| TaskEditor.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| TemplateManager.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/RequirementPanel/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| RequirementPanel.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| RequirementCard.tsx | `bg-background-surface` | ✅ | 通过 `bg-surface` |
-| RequirementDetailDialog.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| RequirementForm.tsx | `bg-background-elevated` + `bg-background-surface` | ✅ | 两者已覆盖 |
-| RequirementGenerateDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Agent/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| AgentGalleryPanel.tsx | `bg-background-surface` + `bg-error-faint` | ✅ | 两者已覆盖 |
-
-### src/components/Translate/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| SelectionContextMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Session/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| CreateSessionModal.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SessionTab.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| SessionTabContextMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| WorkspaceMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| WorkspaceSwitchMenu.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/PersonalHub/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| LinkDetailDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| LinkFormDialog.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| LoginCard.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Plugins/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| DemoPluginPanel.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Notification/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| SessionHistoryPanel (App.tsx) | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| NotificationCenterPanel (App.tsx) | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/plugins/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| AgnesMediaCard.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| AgnesPanel.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-| PrdPreviewCard.tsx | `bg-background-elevated` | ✅ | 通过 `bg-background-elevated` |
-
-### src/components/Integration/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| IntegrationPanel | 未找到文件 | - | 懒加载，可能无背景 |
-
-### src/components/ExecutionConsole/
-
-| 文件 | 背景类 | 是否覆盖 | 说明 |
-|------|--------|---------|------|
-| ExecutionConsolePanel | 未找到文件 | - | 懒加载，可能无背景 |
-
-## 未覆盖的背景类（不修改）
-
-以下背景类在项目中存在，但不应受遮罩控制：
-
-| 背景类 | 用途 | 不覆盖理由 |
-|--------|------|-----------|
-| `bg-background-base` | 基础底色（聊天区、编辑器背景） | 这是最底层的背景色，覆盖后所有内容区变透明 |
-| `bg-background-hover` | 悬停高亮 | 交互反馈，需要保持可见 |
-| `bg-background-active` | 激活高亮 | 交互反馈 |
-| `bg-background-tertiary` | 进度条背景等 | 小装饰元素 |
-| `bg-background-secondary` | 次要背景（代码块等） | 内部装饰 |
-| `bg-primary` / `bg-primary/10` | 主色背景/选中态 | 语义色，需要保持 |
-| `bg-amber-500` / `bg-green-500` 等 | 任意色 | 非面板背景 |
-| `bg-gradient-*` | 渐变背景 | 特殊设计 |
-| `bg-white` / `bg-black` | 白/黑背景 | 特殊用途 |
-| `bg-transparent` | 透明 | 无背景 |
-| `bg-[#...]` | 硬编码色 | 特殊情况 |
-| `bg-success` / `bg-warning` / `bg-error` / `bg-danger` | 语义色 | 非 `-faint` 变体，用于小图标/文字 |
-
-## 汇总
-
-| 类别 | 总数 | 已覆盖 | 无需覆盖 |
-|------|------|--------|---------|
-| 组件文件 | ~120 | ~120 | 0 |
-| 背景类出现次数 | ~500+ | ~500+ | 微小装饰元素不覆盖 |
+### 3. `bg-background-secondary` / `bg-background-tertiary`
+- 用于：代码块内部、进度条、装饰元素
+- 规则：不覆盖，这些是内部装饰，不是内容容器

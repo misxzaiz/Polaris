@@ -264,7 +264,7 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    不需要手动标记 data-spiderman-surface 属性。
    与 data-spiderman-panel 独立控制，互不干扰。
    使用 !important 统一半透明，状态仅靠边框区分。 */
-[data-theme="spiderman"] .theme-root [class*="bg-surface"] {
+[data-theme="spiderman"] .theme-root [class*="-surface"] {
   background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
 }
 
