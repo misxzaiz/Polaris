@@ -91,6 +91,16 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
     }
   }, [addressList, selectedAddress]);
 
+  /** 二维码内容：带 Token 的 URL */
+  const qrValue = useMemo(() => {
+    const base = selectedAddress;
+    if (web.token) {
+      const sep = base.includes('?') ? '&' : '?';
+      return `${base}${sep}token=${encodeURIComponent(web.token)}`;
+    }
+    return base;
+  }, [selectedAddress, web.token]);
+
   const handleOpenInBrowser = async () => {
     setOpeningBrowser(true);
     try {
@@ -169,9 +179,21 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
 
             {/* 二维码 */}
             <div className="p-3 bg-white rounded-lg">
-              <QRCode value={selectedAddress} size={160} />
+              <QRCode value={qrValue} size={160} />
             </div>
-            <div className="flex items-center justify-between gap-3 mb-3">
+
+            {/* Token 状态提示 */}
+            {web.token ? (
+              <div className="w-full px-3 py-2 rounded-lg bg-green/5 border border-green/20 text-xs text-green text-center">
+                ✅ 二维码已包含 Token 信息，手机扫码即可自动完成鉴权
+              </div>
+            ) : (
+              <div className="w-full px-3 py-2 rounded-lg bg-warning/5 border border-warning/20 text-xs text-warning text-center">
+                ⚠️ 未设置 Token，二维码仅包含 URL，扫码后需手动输入 Token
+              </div>
+            )}
+
+            <div className="flex items-center justify-between gap-3">
               <button
                   type="button"
                   onClick={handleOpenInBrowser}

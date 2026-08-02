@@ -1,7 +1,7 @@
 {
   "name": "polaris",
   "private": true,
-  "version": "10.2.8",
+  "version": "10.2.9",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -71,6 +71,7 @@
     "react-markdown": "^10.1.0",
     "react-qr-code": "^2.0.18",
     "react-virtuoso": "^4.18.1",
+    "html5-qrcode": "^2.3.8",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "tailwindcss": "^3.4.0",

@@ -10,7 +10,19 @@
  * Profile 持久化到 localStorage（pocket-config.modelProfiles），
  * ChatPage 读取激活 Profile（active=true）的 baseUrl/apiKey/model 发请求。
  */
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import {
+  getServerUrl,
+  storeServerUrl,
+  clearServerUrl,
+  getTokenMd5,
+  storeTokenMd5,
+  getServerHistory,
+  addServerToHistory,
+  removeServerFromHistory,
+  md5Hex,
+  type ServerHistoryEntry,
+} from "../services/auth";
 
 type WireApi = "anthropic-messages" | "openai-chat-completions" | "openai-responses";
 type ProfileCategory = "official" | "cn_official" | "aggregator" | "third_party" | "custom";
@@ -67,6 +79,78 @@ export function SettingsPage() {
   const [supabaseUrl, setSupabaseUrl] = useState(() => JSON.parse(localStorage.getItem("pocket-config") || "{}").supabaseUrl || "");
   const [supabaseKey, setSupabaseKey] = useState(() => JSON.parse(localStorage.getItem("pocket-config") || "{}").supabaseKey || "");
   const [encKey, setEncKey] = useState(() => JSON.parse(localStorage.getItem("pocket-config") || "{}").encryptionKey || "");
+  // ├─ 桌面端连接状态 ──────────────────────────────────
+  const [connServerInput, setConnServerInput] = useState(() => getServerUrl());
+  const [connTokenInput, setConnTokenInput] = useState("");
+  const [connConnected, setConnConnected] = useState(false);
+  const [connChecking, setConnChecking] = useState(false);
+  const [connError, setConnError] = useState<string | null>(null);
+  const [connHistory, setConnHistory] = useState<ServerHistoryEntry[]>(() => getServerHistory());
+
+  const reloadConnHistory = useCallback(() => {
+    setConnHistory(getServerHistory());
+  }, []);
+
+  const connCheck = useCallback(async () => {
+    const url = getServerUrl();
+    if (!url) { setConnConnected(false); return; }
+    setConnChecking(true);
+    setConnError(null);
+    try {
+      const res = await fetch(`${url.replace(/\/+$/, "")}/api/health`);
+      if (res.ok) {
+        setConnConnected(true);
+        setConnServerInput(url);
+        addServerToHistory(url, getTokenMd5());
+        reloadConnHistory();
+      } else {
+        throw new Error(`HTTP ${res.status}`);
+      }
+    } catch (err) {
+      setConnConnected(false);
+      setConnError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConnChecking(false);
+    }
+  }, [reloadConnHistory]);
+
+  useEffect(() => { void connCheck(); }, [connCheck]);
+
+  const connSave = async () => {
+    const url = connServerInput.trim().replace(/\/$/, "");
+    if (!url) return;
+    storeServerUrl(url);
+    if (connTokenInput.trim()) {
+      storeTokenMd5(await md5Hex(connTokenInput.trim()));
+    }
+    // 重建 transport
+    const { rebuildTransport } = await import("../services/desktopTransport");
+    rebuildTransport();
+    await connCheck();
+  };
+
+  const connPickFromHistory = async (entry: ServerHistoryEntry) => {
+    setConnServerInput(entry.url);
+    setConnTokenInput("");
+    storeServerUrl(entry.url);
+    if (entry.tokenMd5) storeTokenMd5(entry.tokenMd5);
+    else storeTokenMd5("");
+    const { rebuildTransport } = await import("../services/desktopTransport");
+    rebuildTransport();
+    await connCheck();
+  };
+
+  const connDisconnect = async () => {
+    const { disconnect } = await import("../services/desktopTransport");
+    disconnect();
+    await clearServerUrl();
+    setConnConnected(false);
+    setConnServerInput("");
+    setConnTokenInput("");
+    setConnError(null);
+    reloadConnHistory();
+  };
+
   const [saved, setSaved] = useState(false);
 
   const persistProfiles = (next: ModelProfile[]) => {
@@ -177,6 +261,72 @@ export function SettingsPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* 1.5 桌面端连接 */}
+      <section>
+        <h3 className="mb-2.5 text-[15px] font-semibold">📡 桌面端连接</h3>
+        <div className="space-y-3 rounded-[14px] border border-border bg-background-elevated p-4 shadow-[0_2px_8px_rgba(0,0,0,0.12)]">
+          {connConnected && (
+            <div className="flex items-center justify-between px-2 py-1.5 rounded-lg bg-green/5 border border-green/20">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-green shrink-0 shadow-[0_0_6px_rgba(166,227,161,0.5)]" />
+                <span className="text-xs text-green shrink-0">已连接</span>
+                <code className="text-[10px] text-text-tertiary truncate">{getServerUrl()}</code>
+              </div>
+              <button onClick={connDisconnect} className="text-[10px] text-danger/80 hover:text-danger shrink-0 ml-1">
+                断开
+              </button>
+            </div>
+          )}
+
+          <Field label="服务地址">
+            <input value={connServerInput} onChange={e => setConnServerInput(e.target.value)}
+              className="input-base font-mono" placeholder="http://192.168.1.10:9830" />
+          </Field>
+          <Field label="访问 Token（可选）">
+            <input type="password" value={connTokenInput} onChange={e => setConnTokenInput(e.target.value)}
+              className="input-base font-mono" placeholder="留空则不启用鉴权" />
+          </Field>
+
+          {connError && (
+            <div className="rounded-lg border border-danger/30 bg-danger-faint px-2.5 py-2 text-[11px] text-danger">
+              {connError}
+            </div>
+          )}
+
+          <button onClick={connSave} disabled={connChecking || !connServerInput.trim()}
+            className="w-full rounded-[10px] bg-primary py-2.5 text-sm font-medium text-background-base disabled:opacity-40 transition-opacity hover:opacity-90">
+            {connChecking ? "连接中..." : "保存并连接"}
+          </button>
+
+          {connConnected && (
+            <button onClick={connDisconnect}
+              className="w-full rounded-[10px] border border-danger/30 bg-danger/5 py-2 text-xs font-medium text-danger transition-colors hover:bg-danger/10">
+              断开连接
+            </button>
+          )}
+
+          {connHistory.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-[10px] text-text-tertiary">最近连接</span>
+              {connHistory.map(entry => (
+                <div key={entry.url}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-border bg-background-surface px-2.5 py-2">
+                  <button onClick={() => connPickFromHistory(entry)} disabled={connChecking}
+                    className="min-w-0 flex-1 text-left">
+                    <span className="truncate text-[11px] text-text-primary block">{entry.url}</span>
+                    <span className="text-[9px] text-text-tertiary">
+                      {entry.tokenMd5 ? "已配 Token" : "无 Token"}
+                    </span>
+                  </button>
+                  <button onClick={() => { removeServerFromHistory(entry.url); reloadConnHistory(); }}
+                    className="text-text-tertiary hover:text-danger text-xs shrink-0">✕</button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
 

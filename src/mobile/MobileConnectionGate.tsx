@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Button } from '@/components/Common';
-import { X } from 'lucide-react';
+import { X, Camera } from 'lucide-react';
 import {
   getServerUrl,
   getTokenMd5,
@@ -11,10 +11,12 @@ import {
   addServerToHistory,
   removeServerFromHistory,
   clearServerUrl,
+  parseQrContent,
   type ServerHistoryEntry,
 } from '@/services/transport/auth';
 import { waitForMobileConfig, rebuildTransport, disconnect } from '@/services/transport';
 import { getConfig, healthCheck } from '@/services/tauri/configService';
+import { supportsQrScanning } from '@/mobile/platform';
 import type { Config } from '@/types';
 
 interface MobileConnectionGateProps {
@@ -42,6 +44,9 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
   const [showSettings, setShowSettings] = useState(() => !getServerUrl());
   const [error, setError] = useState<string | null>(null);
   const [history, setHistory] = useState<ServerHistoryEntry[]>(getServerHistory);
+  const [showScanner, setShowScanner] = useState(false);
+  const [scannerError, setScannerError] = useState<string | null>(null);
+  const scannerRef = useRef<{ stop: () => Promise<void> } | null>(null);
 
   const reloadHistory = useCallback(() => {
     setHistory(getServerHistory());
@@ -118,6 +123,76 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
     reloadHistory();
   };
 
+  /** 启动二维码扫描 */
+  const startScanner = useCallback(async () => {
+    setScannerError(null);
+    try {
+      const { Html5Qrcode } = await import('html5-qrcode');
+      const scanner = new Html5Qrcode('qr-reader');
+      scannerRef.current = scanner;
+      await scanner.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: { width: 250, height: 250 } },
+        (decodedText) => {
+          // 扫描成功：停止扫描，解析内容，自动填入
+          scanner.stop().catch(() => {});
+          scannerRef.current = null;
+          setShowScanner(false);
+
+          const { serverUrl, token } = parseQrContent(decodedText);
+          setServerInput(serverUrl);
+          if (token) {
+            setTokenInput(token);
+            // 自动触发连接
+            storeServerUrl(serverUrl);
+            md5Hex(token).then(md5 => storeTokenMd5(md5));
+            rebuildTransport();
+            void checkConnection();
+          } else {
+            // 无 Token，只填 URL，用户手动输入
+            setError('已填入服务地址，如需 Token 请手动输入后连接');
+          }
+        },
+        () => {
+          // 非成功回调，不处理
+        },
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        setScannerError('需要相机权限才能扫码，请在系统设置中开启');
+      } else {
+        setScannerError('无法启动相机，请尝试手动输入');
+      }
+    }
+  }, [checkConnection]);
+
+  /** 显示扫描器时自动启动相机 */
+  useEffect(() => {
+    if (showScanner) {
+      void startScanner();
+    }
+  }, [showScanner, startScanner]);
+
+  /** 停止二维码扫描 */
+  const stopScanner = useCallback(() => {
+    if (scannerRef.current) {
+      scannerRef.current.stop().catch(() => {});
+      scannerRef.current = null;
+    }
+    setShowScanner(false);
+    setScannerError(null);
+  }, []);
+
+  /** 扫描完成时清理 */
+  useEffect(() => {
+    if (!showScanner) {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+        scannerRef.current = null;
+      }
+    }
+  }, [showScanner]);
+
   /**
    * 手动断开当前连接。
    * 1. 关闭 WebSocket + 停止自动重连（disconnect）
@@ -142,14 +217,48 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
 
   if (showSettings) {
     return (
-      <div className="flex h-[100dvh] overflow-y-auto bg-background-base px-5 py-8 text-text-primary">
+      <>
+        <div className="flex h-[100dvh] overflow-y-auto bg-background-base px-5 py-8 text-text-primary">
         <div className="m-auto w-full max-w-md rounded-3xl border border-border bg-background-elevated p-5 shadow-xl">
           <div className="mb-5">
             <h1 className="text-xl font-semibold">连接 Polaris 服务</h1>
             <p className="mt-2 text-sm leading-6 text-text-secondary">
-              请输入桌面端或 Web 服务地址。连接成功后，移动端会进入专用界面。
+              扫码桌面端设置页的二维码，或手动输入地址。
             </p>
           </div>
+
+          {/* 已连接状态行 */}
+          {connected && (
+            <div className="mb-4 px-4 py-3 rounded-xl bg-green/5 border border-green/20 flex items-center justify-between">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-green shrink-0 shadow-[0_0_6px_rgba(166,227,161,0.5)]" />
+                <span className="text-sm text-green shrink-0">已连接</span>
+                <code className="text-xs text-text-tertiary truncate">{serverUrl}</code>
+              </div>
+              <button
+                onClick={handleDisconnect}
+                className="text-xs text-danger/80 hover:text-danger shrink-0 ml-2"
+              >
+                断开
+              </button>
+            </div>
+          )}
+
+          {/* 扫码按钮 */}
+          {supportsQrScanning() && !connected && (
+            <div className="mb-4">
+              <button
+                onClick={() => { setShowScanner(true); setScannerError(null); }}
+                className="w-full py-3 px-4 rounded-xl border-2 border-dashed border-primary/40
+                           bg-primary/5 text-primary font-medium text-sm
+                           flex items-center justify-center gap-2
+                           hover:bg-primary/10 transition-colors"
+              >
+                <Camera size={18} />
+                扫描桌面端二维码
+              </button>
+            </div>
+          )}
 
           <div className="space-y-4">
             <label className="block space-y-2">
@@ -228,7 +337,43 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
           </div>
         </div>
       </div>
-    );
+
+      {/* 相机取景框覆盖层 */}
+      {showScanner && (
+        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+          <div className="flex items-center justify-between px-4 pt-4 pb-2">
+            <button
+              onClick={stopScanner}
+              className="px-4 py-2 rounded-lg bg-white/15 text-white text-sm"
+            >
+              取消
+            </button>
+            <span className="text-white text-sm font-medium">扫描二维码</span>
+            <span className="w-16" />
+          </div>
+
+          <div className="flex-1 flex items-center justify-center">
+            <div className="relative w-64 h-64">
+              <div id="qr-reader" className="w-full h-full" />
+              {/* 扫描框装饰角 */}
+              <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-primary rounded-tl" />
+              <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-primary rounded-tr" />
+              <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-primary rounded-bl" />
+              <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-primary rounded-br" />
+            </div>
+          </div>
+
+          <div className="text-center text-white/60 text-sm pb-8">
+            {scannerError ? (
+              <span className="text-danger">{scannerError}</span>
+            ) : (
+              <span>将二维码对准框内自动扫描</span>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
   }
 
   return <>{children({ config, connected, serverUrl, openSettings: () => setShowSettings(true) })}</>;

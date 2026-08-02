@@ -274,3 +274,24 @@ export async function md5Hex(input: string): Promise<string> {
   const bytes = new TextEncoder().encode(input);
   return bytesToHex(md5Bytes(bytes));
 }
+
+/**
+ * 从二维码扫描结果中解析服务地址和 Token。
+ *
+ * 格式: `http://ip:port?token=xxx`
+ * 降级: 纯 URL 或纯文本
+ */
+export function parseQrContent(qrContent: string): {
+  serverUrl: string;
+  token: string;
+} {
+  try {
+    const url = new URL(qrContent);
+    const serverUrl = `${url.protocol}//${url.host}`;
+    const token = url.searchParams.get('token') || '';
+    return { serverUrl, token };
+  } catch {
+    // 不是合法 URL，作为纯文本返回
+    return { serverUrl: qrContent, token: '' };
+  }
+}

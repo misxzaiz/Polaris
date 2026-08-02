@@ -15,3 +15,12 @@ export function isMobileTauriRuntime(): boolean {
     typeof window !== 'undefined' &&
     '__TAURI_INTERNALS__' in window;
 }
+
+/** 检测当前环境是否支持二维码扫描（需要 getUserMedia） */
+export function supportsQrScanning(): boolean {
+  return !!(
+    typeof navigator !== 'undefined' &&
+    navigator.mediaDevices &&
+    typeof navigator.mediaDevices.getUserMedia === 'function'
+  );
+}
