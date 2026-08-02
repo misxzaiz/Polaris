@@ -57,7 +57,11 @@ jobs:
         with:
           install-r: true
           add-extras: 'none'
-          packages: 'platform-tools;build-tools;android-${{ env.ANDROID_API }};ndk.${{ env.NDK_VERSION }}'
+          packages: |
+            platform-tools
+            build-tools;35.0.0
+            platforms;android-${{ env.ANDROID_API }}
+            ndk;${{ env.NDK_VERSION }}
 
       # ---- Build: Frontend ----
       - name: Install frontend dependencies
