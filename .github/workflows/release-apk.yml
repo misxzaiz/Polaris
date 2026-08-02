@@ -56,11 +56,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
-          packages: |
-            platform-tools
-            build-tools;35.0.0
-            platforms;android-${{ env.ANDROID_API }}
-            ndk;${{ env.NDK_VERSION }}
+          packages: platform-tools build-tools;35.0.0 platforms;android-${{ env.ANDROID_API }} ndk;${{ env.NDK_VERSION }}
 
       # ---- Build: Frontend ----
       - name: Install frontend dependencies
