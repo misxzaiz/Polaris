@@ -141,7 +141,7 @@ export function EngineInstallActions({
       {(logs.length > 0 || running) && (
         <div
           ref={logBoxRef}
-          className="mt-3 max-h-32 overflow-auto rounded-md bg-background border border-border p-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap"
+          className="mt-3 max-h-32 overflow-auto rounded-md bg-background-surface border border-border p-2 font-mono text-xs leading-relaxed text-text-secondary whitespace-pre-wrap"
         >
           {logs.length === 0 ? (
             <span className="text-text-tertiary">

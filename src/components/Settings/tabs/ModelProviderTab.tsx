@@ -266,7 +266,7 @@ function ProfileCard({
       className={`flex items-center gap-3 p-3 rounded-lg border transition-all cursor-pointer ${
         isActive
           ? 'border-primary bg-primary/5'
-          : 'border-border bg-background-default hover:border-primary/30'
+          : 'border-border bg-background-surface hover:border-primary/30'
       }`}
       onClick={onActivate}
     >
@@ -491,7 +491,7 @@ function ProfileEditorModal({
   const fieldClass =
     'w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary'
   const labelClass = 'block text-xs text-text-secondary mb-1'
-  const sectionClass = 'space-y-3 p-3 bg-background-default rounded-lg border border-border'
+  const sectionClass = 'space-y-3 p-3 bg-background-surface rounded-lg border border-border'
   const sectionTitleClass = 'text-xs font-semibold text-text-secondary uppercase tracking-wide'
 
   return (

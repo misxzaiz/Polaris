@@ -178,7 +178,7 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
         </div>
 
         {/* 消息区（只读） */}
-        <div className="relative flex-1 min-h-0 bg-background">
+        <div className="relative flex-1 min-h-0 bg-background-surface">
           {loading ? (
             <div className="flex flex-col items-center justify-center h-full text-text-tertiary">
               <Loader2 className="w-7 h-7 animate-spin" />

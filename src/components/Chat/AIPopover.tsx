@@ -123,7 +123,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
                 title={canSwitchEngine ? t('tooltips.engineSwitchEnabled') : t('tooltips.engineSwitchDisabled')}
               >
                 {engineOptions.map((opt) => (
-                  <option key={opt.id} value={opt.id} className="bg-background text-text-primary">{opt.name}</option>
+                  <option key={opt.id} value={opt.id} className="bg-background-surface text-text-primary">{opt.name}</option>
                 ))}
               </select>
             </div>

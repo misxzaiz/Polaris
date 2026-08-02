@@ -267,13 +267,13 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
               value={pathFilter}
               onChange={(e) => setPathFilter(e.target.value)}
               placeholder="路径或预览过滤（支持正则）"
-              className="flex-1 min-w-[200px] px-2 py-0.5 text-xs bg-background border border-border rounded focus:outline-none focus:border-primary"
+              className="flex-1 min-w-[200px] px-2 py-0.5 text-xs bg-background-surface border border-border rounded focus:outline-none focus:border-primary"
             />
             {availableKinds.length > 0 && (
               <select
                 value={kindFilter ?? ''}
                 onChange={(e) => setKindFilter(e.target.value || null)}
-                className="px-2 py-0.5 text-xs bg-background border border-border rounded"
+                className="px-2 py-0.5 text-xs bg-background-surface border border-border rounded"
               >
                 <option value="">全部 kind</option>
                 {availableKinds.map((k) => (

@@ -80,7 +80,7 @@ export function IndexEngineSection() {
               }
             }}
             disabled={acting || status?.state === 'building'}
-            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md text-text-secondary hover:bg-background border border-border-subtle hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
+            className="flex items-center gap-1 px-2 py-1 text-[11px] rounded-md text-text-secondary hover:bg-background-surface border border-border-subtle hover:border-primary hover:text-primary transition-colors disabled:opacity-50"
           >
             {acting || status?.state === 'building' ? (
               <Loader2 size={11} className="animate-spin" />
@@ -94,7 +94,7 @@ export function IndexEngineSection() {
 
       <div className="text-[11px] text-text-muted leading-relaxed">
         基于 tree-sitter 的 AST 级 Java 索引，支持跨文件跳转、查找引用、import / 同包感知排序。
-        索引存于 <code className="text-[10px] bg-background px-1 rounded">.polaris/index.db</code>，文件保存即增量更新。
+        索引存于 <code className="text-[10px] bg-background-surface px-1 rounded">.polaris/index.db</code>，文件保存即增量更新。
       </div>
 
       {status?.state === 'building' && (
@@ -105,7 +105,7 @@ export function IndexEngineSection() {
               {status.progressDone} / {status.progressTotal || '…'}
             </span>
           </div>
-          <div className="h-1 bg-background rounded overflow-hidden">
+          <div className="h-1 bg-background-surface rounded overflow-hidden">
             <div
               className="h-full bg-primary transition-all"
               style={{

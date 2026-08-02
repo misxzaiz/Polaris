@@ -134,7 +134,7 @@ export function BlameView({ filePath, onClose, onCommitClick }: BlameViewProps) 
                   <div
                     key={index}
                     className={`flex hover:bg-primary/5 ${
-                      colorGroup === 0 ? 'bg-background' : 'bg-background-hover/30'
+                      colorGroup === 0 ? 'bg-background-surface' : 'bg-background-hover/30'
                     }`}
                   >
                     {/* 行号 */}

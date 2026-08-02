@@ -156,7 +156,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
       return (
         <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50 p-4">
-          <div className="max-w-md w-full bg-background-panel rounded-2xl shadow-xl p-8 text-center">
+          <div className="max-w-md w-full bg-background-surface rounded-2xl shadow-xl p-8 text-center">
             {/* 错误图标 */}
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-danger-faint flex items-center justify-center">
               <svg className="w-8 h-8 text-danger" fill="none" viewBox="0 0 24 24" stroke="currentColor">

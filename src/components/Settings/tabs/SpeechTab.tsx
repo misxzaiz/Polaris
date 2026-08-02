@@ -237,7 +237,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
             value={speechConfig.language}
             onChange={(e) => updateSpeechConfig({ language: e.target.value as SpeechLanguage })}
             disabled={loading}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
           >
             {SPEECH_LANGUAGE_OPTIONS.map(option => (
               <option key={option.value} value={option.value}>
@@ -365,7 +365,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     onKeyDown={handleWakeWordKeyDown}
                     placeholder={t('speech.wakeWord.placeholder')}
                     disabled={loading}
-                    className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    className="flex-1 px-3 py-1.5 bg-background-surface border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
                   <button
                     onClick={addWakeWord}
@@ -390,7 +390,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
           </h3>
           <div className="space-y-3">
             {voiceCommands.map(entry => (
-              <div key={entry.type} className="p-3 bg-background rounded-lg">
+              <div key={entry.type} className="p-3 bg-background-surface rounded-lg">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xs font-medium text-text-primary">{entry.label}</span>
                   <span className="text-xs text-text-tertiary">({entry.type})</span>
@@ -492,7 +492,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                 value={ttsConfig.voice}
                 onChange={(e) => updateTTSConfig({ voice: e.target.value as TTSVoice })}
                 disabled={loading}
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 {TTS_VOICE_OPTIONS.map(option => (
                   <option key={option.value} value={option.value}>
@@ -511,7 +511,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                 value={ttsConfig.rate}
                 onChange={(e) => updateTTSConfig({ rate: e.target.value })}
                 disabled={loading}
-                className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 {TTS_RATE_OPTIONS.map(option => (
                   <option key={option.value} value={option.value}>
@@ -674,7 +674,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     value={notifConfig.sendConfirmText}
                     onChange={(e) => updateNotifConfig({ sendConfirmText: e.target.value })}
                     disabled={loading}
-                    className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    className="w-full px-3 py-1.5 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
                 </div>
               )}
@@ -731,7 +731,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                       onKeyDown={handleWakeResponseKeyDown}
                       placeholder={t('speech.notification.wakeResponse.placeholder')}
                       disabled={loading}
-                      className="flex-1 px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                      className="flex-1 px-3 py-1.5 bg-background-surface border border-border rounded-lg text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                     />
                     <button
                       onClick={addWakeResponseText}
@@ -777,7 +777,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     value={notifConfig.errorAlertText}
                     onChange={(e) => updateNotifConfig({ errorAlertText: e.target.value })}
                     disabled={loading}
-                    className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    className="w-full px-3 py-1.5 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
                 </div>
               )}
@@ -815,7 +815,7 @@ export function SpeechTab({ config, onConfigChange, loading }: SpeechTabProps) {
                     value={notifConfig.backgroundNotifyText}
                     onChange={(e) => updateNotifConfig({ backgroundNotifyText: e.target.value })}
                     disabled={loading}
-                    className="w-full px-3 py-1.5 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    className="w-full px-3 py-1.5 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
                   />
                 </div>
               )}

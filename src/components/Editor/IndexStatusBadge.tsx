@@ -132,7 +132,7 @@ function IndexStatusDetail({
           <div className="text-[10px] text-text-tertiary mb-1">
             构建中：{status.progressDone} / {status.progressTotal || '…'}
           </div>
-          <div className="h-1 bg-background rounded overflow-hidden">
+          <div className="h-1 bg-background-surface rounded overflow-hidden">
             <div
               className="h-full bg-primary transition-all"
               style={{
@@ -175,7 +175,7 @@ function IndexStatusDetail({
         <button
           onClick={() => void onRebuild()}
           disabled={rebuilding || status.state === 'building'}
-          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-background hover:bg-background-hover border border-border rounded text-[11px] disabled:opacity-50"
+          className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-background-surface hover:bg-background-hover border border-border rounded text-[11px] disabled:opacity-50"
         >
           {rebuilding || status.state === 'building' ? (
             <Loader2 className="w-3 h-3 animate-spin" />

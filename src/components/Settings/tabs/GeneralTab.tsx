@@ -126,7 +126,7 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
               baiduTranslate: { ...config.baiduTranslate, appId: e.target.value, secretKey: config.baiduTranslate?.secretKey || '' }
             })}
             placeholder={t('baiduTranslate.appIdPlaceholder', '百度翻译 App ID')}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
         </div>
@@ -143,7 +143,7 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
               baiduTranslate: { ...config.baiduTranslate, appId: config.baiduTranslate?.appId || '', secretKey: e.target.value }
             })}
             placeholder={t('baiduTranslate.secretKeyPlaceholder', '百度翻译 Secret Key')}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
         </div>

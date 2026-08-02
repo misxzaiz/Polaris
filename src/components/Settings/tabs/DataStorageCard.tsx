@@ -721,7 +721,7 @@ function HistoryPrefField({
         max={max}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full px-2 py-1.5 text-xs bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 text-text-primary"
+        className="w-full px-2 py-1.5 text-xs bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary/50 text-text-primary"
       />
       {hint && <span className="text-[10px] text-text-muted">{hint}</span>}
     </label>

@@ -298,7 +298,7 @@ export function TagsTab() {
                   value={newTagName}
                   onChange={(e) => setNewTagName(e.target.value)}
                   placeholder={t('tags.tagNamePlaceholder')}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
+                  className="w-full px-3 py-2 text-sm bg-background-surface border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
                   autoFocus
                 />
               </div>
@@ -313,7 +313,7 @@ export function TagsTab() {
                   value={newTagCommitish}
                   onChange={(e) => setNewTagCommitish(e.target.value)}
                   placeholder={t('tags.targetCommitPlaceholder', { head: status?.shortCommit || 'HEAD' })}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
+                  className="w-full px-3 py-2 text-sm bg-background-surface border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
                 />
                 <p className="text-xs text-text-tertiary mt-1">{t('tags.targetCommitHint')}</p>
               </div>
@@ -329,7 +329,7 @@ export function TagsTab() {
                   onChange={(e) => setNewTagMessage(e.target.value)}
                   placeholder={t('tags.tagMessagePlaceholder')}
                   rows={3}
-                  className="w-full px-3 py-2 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary resize-none"
+                  className="w-full px-3 py-2 text-sm bg-background-surface border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary resize-none"
                 />
                 <p className="text-xs text-text-tertiary mt-1">{t('tags.tagMessageHint')}</p>
               </div>

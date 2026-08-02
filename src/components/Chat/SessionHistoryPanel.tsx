@@ -748,7 +748,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           placeholder={t('history.searchFullText', '搜索标题与对话内容…')}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
-          className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background"
+          className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background-surface"
         />
         {searching && (
           <Loader2 className="w-4 h-4 animate-spin text-text-tertiary absolute right-6 top-1/2 -translate-y-1/2" />

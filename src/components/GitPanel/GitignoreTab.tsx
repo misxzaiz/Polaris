@@ -168,7 +168,7 @@ export function GitignoreTab() {
           onChange={(e) => setNewRule(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAddNewRule()}
           placeholder={t('gitignore.quickAddPlaceholder')}
-          className="flex-1 px-2 py-1 text-sm bg-background border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
+          className="flex-1 px-2 py-1 text-sm bg-background-surface border border-border-subtle rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder-text-tertiary"
         />
         <button
           onClick={handleAddNewRule}
@@ -203,7 +203,7 @@ export function GitignoreTab() {
               <textarea
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
-                className="w-full h-full p-4 text-sm font-mono bg-background text-text-primary resize-none focus:outline-none"
+                className="w-full h-full p-4 text-sm font-mono bg-background-surface text-text-primary resize-none focus:outline-none"
                 placeholder={t('gitignore.editorPlaceholder')}
                 spellCheck={false}
               />
@@ -258,7 +258,7 @@ export function GitignoreTab() {
                     <p className="text-xs text-text-tertiary mb-2">{template.description}</p>
                     <div className="flex flex-wrap gap-1">
                       {template.rules.slice(0, 4).map((rule, i) => (
-                        <code key={i} className="text-[10px] px-1.5 py-0.5 bg-background rounded text-text-tertiary">
+                        <code key={i} className="text-[10px] px-1.5 py-0.5 bg-background-surface rounded text-text-tertiary">
                           {rule}
                         </code>
                       ))}

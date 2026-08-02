@@ -427,7 +427,7 @@ export function RemoteTab() {
               placeholder={t('remote.namePlaceholder')}
               value={newRemoteName}
               onChange={(e) => setNewRemoteName(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+              className="w-full px-2 py-1.5 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   handleAddRemote()
@@ -443,7 +443,7 @@ export function RemoteTab() {
               placeholder={t('remote.urlPlaceholder')}
               value={newRemoteUrl}
               onChange={(e) => setNewRemoteUrl(e.target.value)}
-              className="w-full px-2 py-1.5 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary font-mono text-xs"
+              className="w-full px-2 py-1.5 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary font-mono text-xs"
               onKeyDown={(e) => {
                 if (e.key === 'Enter') {
                   handleAddRemote()

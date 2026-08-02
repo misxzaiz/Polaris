@@ -153,7 +153,7 @@ export function SystemPromptSection() {
 
       {/* 变量列表 */}
       {showVariables && (
-        <div className="mb-3 p-3 bg-background-faint rounded-lg">
+        <div className="mb-3 p-3 bg-background-surface rounded-lg">
           <div className="text-xs text-text-secondary mb-2">
             {t('systemPrompt.variablesHint', '点击变量可插入到下方编辑器：')}
           </div>
@@ -184,7 +184,7 @@ export function SystemPromptSection() {
           'systemPrompt.placeholder',
           '输入自定义系统提示词...\n\n可用变量:\n{{workspaceName}} - 当前工作区名称\n{{workspacePath}} - 当前工作区路径\n{{contextWorkspaces}} - 关联工作区列表\n{{date}} - 当前日期\n{{time}} - 当前时间\n{{defaultPrompt}} - 默认系统提示词'
         )}
-        className={`w-full h-48 p-3 bg-background rounded-lg border border-border-subtle text-sm text-text-primary placeholder-text-muted resize-y focus:outline-none focus:border-primary ${
+        className={`w-full h-48 p-3 bg-background-surface rounded-lg border border-border-subtle text-sm text-text-primary placeholder-text-muted resize-y focus:outline-none focus:border-primary ${
           !config.enabled ? 'opacity-50 cursor-not-allowed' : ''
         }`}
       />
@@ -205,7 +205,7 @@ export function SystemPromptSection() {
 
       {/* 预览 */}
       {config.enabled && config.customPrompt.trim() && (
-        <div className="mt-4 p-4 bg-background-faint rounded-lg border border-border-subtle">
+        <div className="mt-4 p-4 bg-background-surface rounded-lg border border-border-subtle">
           <h3 className="text-xs font-medium text-text-secondary mb-2">
             {t('systemPrompt.preview', '预览')}
           </h3>

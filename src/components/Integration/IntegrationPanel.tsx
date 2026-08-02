@@ -600,7 +600,7 @@ export function IntegrationPanel() {
                     type="text"
                     value={editingInstance.name}
                     onChange={(e) => updateName(e.target.value)}
-                    className="w-full px-2 py-1.5 bg-background border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+                    className="w-full px-2 py-1.5 bg-background-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
                   />
                 </div>
 
@@ -613,7 +613,7 @@ export function IntegrationPanel() {
                       value={(editingInstance.config as unknown as Record<string, string>)[field.key] || ''}
                       onChange={(e) => updateConfig({ [field.key]: e.target.value })}
                       placeholder={field.placeholder}
-                      className="w-full px-2 py-1.5 bg-background border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+                      className="w-full px-2 py-1.5 bg-background-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
                     />
                     {field.hint && <p className="mt-0.5 text-[9px] text-text-tertiary">{field.hint}</p>}
                   </div>
@@ -652,7 +652,7 @@ export function IntegrationPanel() {
                         value={(editingInstance.config as unknown as Record<string, string>)[field.key] || ''}
                         onChange={(e) => updateConfig({ [field.key]: e.target.value })}
                         placeholder={field.placeholder}
-                        className="w-full px-2 py-1.5 bg-background border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+                        className="w-full px-2 py-1.5 bg-background-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
                       />
                       {field.hint && <p className="mt-0.5 text-[9px] text-text-tertiary">{field.hint}</p>}
                     </div>
@@ -685,7 +685,7 @@ export function IntegrationPanel() {
                     value={editingInstance.config.workDir || ''}
                     onChange={(e) => updateConfig({ workDir: e.target.value })}
                     placeholder="留空则使用应用默认目录"
-                    className="w-full px-2 py-1.5 bg-background border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
+                    className="w-full px-2 py-1.5 bg-background-surface border border-border rounded text-xs text-text-primary focus:outline-none focus:border-primary transition-colors"
                   />
                   <p className="mt-0.5 text-[9px] text-text-tertiary">新会话自动使用此目录（可选）</p>
                 </div>

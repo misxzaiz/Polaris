@@ -61,7 +61,7 @@ export function ForkSessionDialog({
         {/* 内容 */}
         <div className="px-5 py-4 space-y-4">
           {/* 源会话信息 */}
-          <div className="p-3 rounded-lg bg-background border border-border-subtle">
+          <div className="p-3 rounded-lg bg-background-surface border border-border-subtle">
             <p className="text-xs text-text-tertiary mb-2">{t('fork.sourceSession')}</p>
             <p className="text-sm font-medium text-text-primary truncate">
               {sourceSession.title}
@@ -108,7 +108,7 @@ export function ForkSessionDialog({
               value={branchName}
               onChange={(e) => setBranchName(e.target.value)}
               placeholder={t('fork.branchNamePlaceholder')}
-              className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background"
+              className="w-full px-3 py-2 text-sm border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary/50 bg-background-surface"
             />
           </div>
         </div>

@@ -199,7 +199,7 @@ export function BranchSelector() {
                   onChange={(e) => setNewBranchName(e.target.value)}
                   onKeyDown={handleKeyDown}
                   placeholder={t('branch.newBranchPlaceholder')}
-                  className="flex-1 px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                  className="flex-1 px-2 py-1 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
                 />
                 <button
                   onClick={handleCreateBranch}
@@ -226,7 +226,7 @@ export function BranchSelector() {
                 <>
                   {localBranches.length > 0 && (
                     <>
-                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background sticky top-0">
+                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background-surface sticky top-0">
                         {t('branch.local')} ({localBranches.length})
                       </div>
                       {localBranches.map((branch) => (
@@ -247,7 +247,7 @@ export function BranchSelector() {
 
                   {remoteBranches.length > 0 && (
                     <>
-                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background sticky top-0">
+                      <div className="px-3 py-1 text-xs text-text-tertiary bg-background-surface sticky top-0">
                         {t('branch.remote')} ({remoteBranches.length})
                       </div>
                       {remoteBranches.map((branch) => (

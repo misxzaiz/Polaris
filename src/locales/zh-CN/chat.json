@@ -680,11 +680,5 @@
       "auto": "上下文已自动压缩",
       "tokens": "{{pre}} → {{post}} tokens"
     }
-  },
-  "thinkingOrb": {
-    "title": "{{name}} 正在思考",
-    "connecting": "正在连接引擎…",
-    "thinking": "AI 正在思考…",
-    "generating": "还在生成中，请稍候…"
   }
 }

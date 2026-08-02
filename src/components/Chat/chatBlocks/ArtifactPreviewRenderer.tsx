@@ -221,7 +221,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
       </div>
 
       {showSource && (
-        <div className="border-t border-border bg-background-subtle p-3">
+        <div className="border-t border-border bg-background-surface p-3">
           <pre
             className={clsx(
               'max-h-72 overflow-auto rounded-md bg-background-surface p-3',

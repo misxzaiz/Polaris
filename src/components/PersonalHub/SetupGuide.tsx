@@ -159,7 +159,7 @@ export function SetupGuide() {
             <p>
               {t('personalHub.step3Desc', '进入 SQL Editor → New query，粘贴下方脚本并运行。将创建 links 表、索引、updated_at 触发器与 RLS 行级安全策略。脚本幂等，可重复执行。')}
             </p>
-            <div className="rounded-md border border-border bg-background overflow-hidden">
+            <div className="rounded-md border border-border bg-background-surface overflow-hidden">
               <div className="flex items-center justify-between px-2 py-1 border-b border-border bg-surface">
                 <span className="text-[10px] text-text-muted font-mono">setup.sql</span>
                 <CopyButton text={SETUP_SQL} />

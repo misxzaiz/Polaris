@@ -51,7 +51,7 @@ export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProp
             value={config.gitBinPath || ''}
             onChange={(e) => handleGitBinPathChange(e.target.value)}
             placeholder={t('advanced.gitBinPathPlaceholder')}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
           <p className="mt-1 text-xs text-text-tertiary">
@@ -73,7 +73,7 @@ export function AdvancedTab({ config, onConfigChange, loading }: AdvancedTabProp
             value={config.sessionDir || ''}
             onChange={(e) => handleSessionDirChange(e.target.value)}
             placeholder={t('advanced.sessionDirPlaceholder')}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
           <p className="mt-1 text-xs text-text-tertiary">

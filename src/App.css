@@ -268,6 +268,14 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
 }
 
+/* 语义状态色也统一半透明（警告/成功/错误/强调），状态靠边框颜色区分 */
+[data-theme="spiderman"] .theme-root [class*="bg-warning-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-success-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
+[data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+}
+
 /* 向后兼容：旧 class 选择器（在新版 Layout.tsx 统一使用 data-* 后移除）
    扩展为覆盖所有后代，不再限于直接子元素 */
 [data-theme="spiderman"] .theme-root [class*="bg-background-elevated"] {
@@ -295,16 +303,20 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   box-shadow: 0 0 20px rgba(220, 38, 38, 0.4), 0 0 40px rgba(59, 130, 246, 0.2) !important;
 }
 
-/* 滚动条蓝色主题 */
+/* 滚动条中性色 — 在壁纸背景上保持清晰可见 */
+[data-theme="spiderman"] ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15) !important;
+  border-radius: 5px;
+}
 [data-theme="spiderman"] ::-webkit-scrollbar-thumb {
-  background: rgba(59, 130, 246, 0.3) !important;
+  background: rgba(255, 255, 255, 0.35) !important;
   border-radius: 5px;
   border: 2px solid transparent;
-  background-clip: content-box;
+  background-clip: padding-box;
 }
 [data-theme="spiderman"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(59, 130, 246, 0.5) !important;
-  background-clip: content-box;
+  background: rgba(255, 255, 255, 0.5) !important;
+  background-clip: padding-box;
 }
 
 /* 输入框容器聚焦发光 — 父容器 .chat-input-root 使用 focus-within

@@ -480,7 +480,7 @@ export function GitPanel({
                       value={initBranchName}
                       onChange={(e) => setInitBranchName(e.target.value)}
                       placeholder="main"
-                      className="flex-1 px-2 py-1 text-sm bg-background border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                      className="flex-1 px-2 py-1 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div className="text-xs text-text-tertiary mb-3">{t('init.branchHint')}</div>

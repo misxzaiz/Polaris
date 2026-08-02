@@ -84,7 +84,7 @@ export function DemoPluginPanel({ onSendToChat }: DemoPluginPanelProps) {
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
-              className="h-24 w-full resize-none rounded-md border border-border bg-background px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
+              className="h-24 w-full resize-none rounded-md border border-border bg-background-surface px-3 py-2 text-sm text-text-primary outline-none focus:border-accent"
               spellCheck={false}
             />
             <div className="mt-2 flex items-center gap-2">
@@ -105,7 +105,7 @@ export function DemoPluginPanel({ onSendToChat }: DemoPluginPanelProps) {
                 Copy
               </button>
             </div>
-            <div className="mt-3 rounded-md bg-background px-3 py-2 text-sm text-text-secondary">
+            <div className="mt-3 rounded-md bg-background-surface px-3 py-2 text-sm text-text-secondary">
               {echoText}
             </div>
           </section>
@@ -114,7 +114,7 @@ export function DemoPluginPanel({ onSendToChat }: DemoPluginPanelProps) {
             <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-tertiary">
               MCP Test
             </h3>
-            <div className="rounded-md border border-border bg-background px-3 py-2 font-mono text-xs text-text-secondary">
+            <div className="rounded-md border border-border bg-background-surface px-3 py-2 font-mono text-xs text-text-secondary">
               {testPrompt}
             </div>
             <button

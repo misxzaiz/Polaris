@@ -195,7 +195,7 @@ export function ChangeDataRootWizard({ current, onClose, onChanged }: Props) {
                       '点击右侧浏览选择目录',
                     )}
                     disabled={resetToDefault}
-                    className="flex-1 px-3 py-1.5 bg-background border border-border rounded text-sm text-text-primary font-mono disabled:opacity-50"
+                    className="flex-1 px-3 py-1.5 bg-background-surface border border-border rounded text-sm text-text-primary font-mono disabled:opacity-50"
                   />
                   <button
                     type="button"

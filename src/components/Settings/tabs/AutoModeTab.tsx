@@ -366,7 +366,7 @@ export function AutoModeTab() {
             <textarea
               value={jsonEditValue}
               onChange={(e) => setJsonEditValue(e.target.value)}
-              className="w-full h-96 p-3 text-sm font-mono bg-background border border-border rounded-lg focus:outline-none focus:border-primary resize-none"
+              className="w-full h-96 p-3 text-sm font-mono bg-background-surface border border-border rounded-lg focus:outline-none focus:border-primary resize-none"
               spellCheck={false}
             />
           </div>
@@ -406,7 +406,7 @@ export function AutoModeTab() {
                   type="text"
                   value={newRuleName}
                   onChange={(e) => setNewRuleName(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background-surface focus:outline-none focus:border-primary"
                   placeholder="e.g., Local Operations"
                 />
               </div>
@@ -417,7 +417,7 @@ export function AutoModeTab() {
                 <textarea
                   value={newRuleDesc}
                   onChange={(e) => setNewRuleDesc(e.target.value)}
-                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-none"
+                  className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background-surface focus:outline-none focus:border-primary resize-none"
                   rows={3}
                   placeholder="e.g., Allow local file operations within project scope"
                 />
@@ -456,7 +456,7 @@ function CustomRuleItem({
   const iconColor = type === 'allow' ? 'text-green-500' : 'text-yellow-500';
 
   return (
-    <li className="flex items-start gap-2 p-2 bg-background rounded group">
+    <li className="flex items-start gap-2 p-2 bg-background-surface rounded group">
       <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconColor}`} />
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium text-text-primary">{name}</div>

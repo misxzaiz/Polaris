@@ -186,7 +186,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as FilterType)}
-                className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               >
                 <option value="all">{t('filter.all')}</option>
                 <option value="taskId">{t('filter.byTaskId')}</option>
@@ -199,7 +199,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                   value={filterValue}
                   onChange={(e) => setFilterValue(e.target.value)}
                   placeholder={filterType === 'taskId' ? t('filter.taskIdPlaceholder') : t('filter.sessionIdPlaceholder')}
-                  className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                  className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
                 />
               )}
             </div>
@@ -209,7 +209,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
               <select
                 value={selectedEventType || ''}
                 onChange={(e) => setSelectedEventType(e.target.value || null)}
-                className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               >
                 <option value="">{t('filter.allTypes')}</option>
                 {eventTypes.map((type) => (
@@ -225,7 +225,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                   'px-2 py-1.5 text-xs rounded-md border transition-colors',
                   autoScroll
                     ? 'bg-primary/10 border-primary text-primary'
-                    : 'bg-background border-border text-text-tertiary hover:text-text-primary'
+                    : 'bg-background-surface border-border text-text-tertiary hover:text-text-primary'
                 )}
                 title={autoScroll ? t('scroll.autoOn') : t('scroll.autoOff')}
               >
@@ -236,7 +236,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
 
               <button
                 onClick={clearEvents}
-                className="px-2 py-1.5 text-xs bg-background border border-border text-text-tertiary rounded-md hover:text-text-primary hover:bg-background-hover transition-colors"
+                className="px-2 py-1.5 text-xs bg-background-surface border border-border text-text-tertiary rounded-md hover:text-text-primary hover:bg-background-hover transition-colors"
                 title={t('events.clearEvents')}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -255,7 +255,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                 step={100}
                 value={maxEvents}
                 onChange={(e) => setMaxEvents(Number(e.target.value))}
-                className="w-20 px-2 py-1 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="w-20 px-2 py-1 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               />
             </div>
           </div>
@@ -380,7 +380,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
               <select
                 value={filterType}
                 onChange={(e) => setFilterType(e.target.value as FilterType)}
-                className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               >
                 <option value="all">{t('filter.all')}</option>
                 <option value="taskId">{t('filter.byTaskId')}</option>
@@ -393,7 +393,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                   value={filterValue}
                   onChange={(e) => setFilterValue(e.target.value)}
                   placeholder={filterType === 'taskId' ? t('filter.taskIdPlaceholder') : t('filter.sessionIdPlaceholder')}
-                  className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                  className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
                 />
               )}
             </div>
@@ -403,7 +403,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
               <select
                 value={selectedEventType || ''}
                 onChange={(e) => setSelectedEventType(e.target.value || null)}
-                className="flex-1 px-2 py-1.5 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="flex-1 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               >
                 <option value="">{t('filter.allTypes')}</option>
                 {eventTypes.map((type) => (
@@ -419,7 +419,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                   'px-2 py-1.5 text-xs rounded-md border transition-colors',
                   autoScroll
                     ? 'bg-primary/10 border-primary text-primary'
-                    : 'bg-background border-border text-text-tertiary hover:text-text-primary'
+                    : 'bg-background-surface border-border text-text-tertiary hover:text-text-primary'
                 )}
                 title={autoScroll ? t('scroll.autoOn') : t('scroll.autoOff')}
               >
@@ -430,7 +430,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
 
               <button
                 onClick={clearEvents}
-                className="px-2 py-1.5 text-xs bg-background border border-border text-text-tertiary rounded-md hover:text-text-primary hover:bg-background-hover transition-colors"
+                className="px-2 py-1.5 text-xs bg-background-surface border border-border text-text-tertiary rounded-md hover:text-text-primary hover:bg-background-hover transition-colors"
                 title={t('events.clearEvents')}
               >
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -449,7 +449,7 @@ export function DeveloperPanel({ className = '', width, fillRemaining = false }:
                 step={100}
                 value={maxEvents}
                 onChange={(e) => setMaxEvents(Number(e.target.value))}
-                className="w-20 px-2 py-1 text-xs bg-background border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
+                className="w-20 px-2 py-1 text-xs bg-background-surface border border-border rounded-md text-text-primary focus:outline-none focus:border-primary"
               />
             </div>
           </div>

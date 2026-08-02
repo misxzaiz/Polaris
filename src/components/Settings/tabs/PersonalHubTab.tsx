@@ -63,7 +63,7 @@ export function PersonalHubTab({ config, onConfigChange, loading }: PersonalHubT
             value={ph.supabaseUrl}
             onChange={(e) => update({ supabaseUrl: e.target.value })}
             placeholder={t('personalHub.supabaseUrlPlaceholder', '留空使用默认：{{host}}', { host: defaultUrlHost })}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
         </div>
@@ -77,7 +77,7 @@ export function PersonalHubTab({ config, onConfigChange, loading }: PersonalHubT
             value={ph.supabaseAnonKey}
             onChange={(e) => update({ supabaseAnonKey: e.target.value })}
             placeholder={t('personalHub.supabaseKeyPlaceholder', '留空使用默认：{{preview}}', { preview: defaultKeyPreview })}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
         </div>
@@ -101,7 +101,7 @@ export function PersonalHubTab({ config, onConfigChange, loading }: PersonalHubT
             value={ph.encryptionKey}
             onChange={(e) => update({ encryptionKey: e.target.value })}
             placeholder={t('personalHub.encryptionPlaceholder', '输入或生成加密密钥')}
-            className="flex-1 px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="flex-1 px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading}
           />
           <button

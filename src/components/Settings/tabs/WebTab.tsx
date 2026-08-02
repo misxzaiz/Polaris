@@ -159,7 +159,7 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors ${
                       selectedAddress === url
                         ? 'bg-primary/10 border border-primary/30'
-                        : 'hover:bg-background border border-transparent'
+                        : 'hover:bg-background-surface border border-transparent'
                     }`}
                   >
                     <input
@@ -221,7 +221,7 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
             value={web.host}
             onChange={(e) => updateWeb({ host: e.target.value })}
             placeholder="0.0.0.0"
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading || !web.enabled}
           />
           <p className="mt-1 text-xs text-text-tertiary">
@@ -245,7 +245,7 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
               }
             }}
             placeholder="9830"
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading || !web.enabled}
           />
           <p className="mt-1 text-xs text-text-tertiary">
@@ -262,7 +262,7 @@ export function WebTab({ config, onConfigChange, loading, statusRefreshKey = 0 }
             value={web.token ?? ''}
             onChange={(e) => updateWeb({ token: e.target.value })}
             placeholder={t('web.tokenPlaceholder')}
-            className="w-full px-3 py-2 bg-background border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            className="w-full px-3 py-2 bg-background-surface border border-border rounded-lg text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             disabled={loading || !web.enabled}
           />
           <p className="mt-1 text-xs text-text-tertiary">
