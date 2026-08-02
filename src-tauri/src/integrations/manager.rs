@@ -370,6 +370,21 @@ impl IntegrationManager {
             return;
         }
 
+        // ★ DIAG: 记录即将处理 AI 消息的引擎状态
+        {
+            let states = conversation_states.lock().await;
+            if let Some(state) = states.get(&conversation_id) {
+                let engine_id = state.get_engine_id();
+                tracing::info!(
+                    "[IntegrationManager-DIAG] handle_message: conversation={}, engine={:?}, ai_session_id={:?}, work_dir={:?}",
+                    conversation_id,
+                    engine_id,
+                    state.ai_session_id.as_ref().map(|s| &s[..8.min(s.len())]),
+                    state.work_dir
+                );
+            }
+        }
+
         // 2. 普通 AI 消息处理
         if let Some(ref registry) = engine_registry {
             let ctx = ProcessAiMessageContext {
@@ -836,6 +851,23 @@ impl IntegrationManager {
         } = ctx;
         tracing::info!("[IntegrationManager] 🤖 开始 AI 回复: conversation={}, message_len={}", conversation_id, message.len());
 
+        // ★ DIAG: 记录当前引擎和会话状态（在获取 state 之前，先通过 conversation_states 查询）
+        {
+            let states = conversation_states.lock().await;
+            if let Some(s) = states.get(&conversation_id) {
+                tracing::info!(
+                    "[IntegrationManager-DIAG] 引擎: {:?}, 引擎ID字符串: {}, 有历史会话: {}, 有工作目录: {}, 待恢复: {}",
+                    s.get_engine_id(),
+                    s.engine_id,
+                    s.ai_session_id.is_some(),
+                    s.work_dir.is_some(),
+                    s.pending_resume
+                );
+            } else {
+                tracing::info!("[IntegrationManager-DIAG] 尚未创建会话状态");
+            }
+        }
+
         // 获取会话状态（包括已有的 ai_session_id）
         let (engine_id, work_dir, system_prompt, existing_session_id, is_resuming) = {
             let mut states = conversation_states.lock().await;
@@ -983,7 +1015,9 @@ impl IntegrationManager {
         }
 
         // 用于累积最终回复文本（AssistantMessage / Token / Thinking）
-        let accumulated_text = Arc::new(Mutex::new(String::new()));
+        // 使用 std::sync::Mutex 而非 tokio::sync::Mutex；
+        // 因事件回调是同步 Fn 闭包，不能 .await
+        let accumulated_text = Arc::new(std::sync::Mutex::new(String::new()));
         let accumulated_text_clone = accumulated_text.clone();
 
         // 创建 oneshot 通道等待进程完成
@@ -996,6 +1030,34 @@ impl IntegrationManager {
 
         // 创建事件回调 —— 按事件类型分条发送
         let callback = move |event: crate::models::AIEvent| {
+            // ★ DIAG: 记录事件详情
+            match &event {
+                crate::models::AIEvent::AssistantMessage(e) => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到 AssistantMessage: len={}, is_delta={}, preview={:?}",
+                        e.content.len(), e.is_delta, Some(&e.content[..20.min(e.content.len())]));
+                }
+                crate::models::AIEvent::Token(e) => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到 Token: len={}, preview={:?}",
+                        e.value.len(), Some(&e.value[..20.min(e.value.len())]));
+                }
+                crate::models::AIEvent::Thinking(e) => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到 Thinking: len={}", e.content.len());
+                }
+                crate::models::AIEvent::Error(e) => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到 Error: {}", e.error);
+                }
+                crate::models::AIEvent::SessionEnd(_) => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到 SessionEnd");
+                }
+                crate::models::AIEvent::Result(e) => {
+                    if let Some(text) = e.output.as_str() {
+                        tracing::info!("[IntegrationManager-DIAG] 回调收到 Result: len={}", text.len());
+                    }
+                }
+                _ => {
+                    tracing::info!("[IntegrationManager-DIAG] 回调收到其他事件: {:?}", std::mem::discriminant(&event));
+                }
+            }
             tracing::debug!("[IntegrationManager] 收到事件: {:?}", std::mem::discriminant(&event));
 
             match &event {
@@ -1004,7 +1066,7 @@ impl IntegrationManager {
                 crate::models::AIEvent::Thinking(thinking) => {
                     let text = &thinking.content;
                     if !text.is_empty() {
-                        if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
+                        if let Ok(mut accumulated) = accumulated_text_clone.lock() {
                             accumulated.push_str(&text);
                         }
                     }
@@ -1023,7 +1085,7 @@ impl IntegrationManager {
                     if let Some(text) = event.extract_text() {
                         if !text.is_empty() {
                             // 累积完整回复文本，供进程完成后整段发送
-                            if let Ok(mut accumulated) = accumulated_text_clone.try_lock() {
+                            if let Ok(mut accumulated) = accumulated_text_clone.lock() {
                                 accumulated.push_str(&text);
                             }
 
@@ -1107,6 +1169,16 @@ impl IntegrationManager {
                     // 统一 MCP 注入
                     launcher::inject_mcp_into_session_opts(&mut options, &engine_id, &task_mcp_config);
 
+                    // ★ DIAG: 记录 Pi 引擎的 SessionOptions 关键字段（续聊）
+                    tracing::info!(
+                        "[IntegrationManager-DIAG] 即将 continue_session: engine={:?}, exists_session_id={:?}, pi_provider_config={}, pi_model={:?}, model={:?}, env_overrides_count={}",
+                        engine_id,
+                        Some(&existing_id[..8.min(existing_id.len())]),
+                        options.pi_provider_config.is_some(),
+                        options.pi_model,
+                        options.model,
+                        options.env_overrides.len()
+                    );
                     registry.continue_session(engine_id, existing_id, &message, options)
                 };
 
@@ -1144,6 +1216,15 @@ impl IntegrationManager {
                     // 统一 MCP 注入
                     launcher::inject_mcp_into_session_opts(&mut options, &engine_id, &task_mcp_config);
 
+                    // ★ DIAG: 记录 Pi 引擎的 SessionOptions 关键字段
+                    tracing::info!(
+                        "[IntegrationManager-DIAG] 即将 start_session: engine={:?}, pi_provider_config={}, pi_model={:?}, model={:?}, env_overrides_count={}",
+                        engine_id,
+                        options.pi_provider_config.is_some(),
+                        options.pi_model,
+                        options.model,
+                        options.env_overrides.len()
+                    );
                     registry.start_session(Some(engine_id), &message, options)
                 };
 
@@ -1178,7 +1259,7 @@ impl IntegrationManager {
             let _ = complete_rx.await;
 
             // 获取最终回复文本（仅用于前端事件）
-            let final_text = accumulated_text.lock().await.clone();
+            let final_text = accumulated_text.lock().unwrap().clone();
             tracing::info!("[IntegrationManager] 📝 回复文本长度: {}", final_text.len());
 
             // 发送完整回复事件到前端

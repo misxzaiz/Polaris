@@ -291,9 +291,29 @@ impl PiEngine {
     fn resolve_provider_config_from_config(
         &self,
     ) -> Option<(PiProviderConfig, String, std::collections::HashMap<String, String>)> {
-        let active_id = self.config.active_model_profile_id.as_ref()?;
+        // ★ DIAG: 记录配置解析过程
+        let active_id = match self.config.active_model_profile_id.as_ref() {
+            Some(id) => {
+                tracing::info!("[PiEngine-DIAG] resolve_provider_config: active_model_profile_id={}", id);
+                id
+            }
+            None => {
+                tracing::warn!("[PiEngine-DIAG] resolve_provider_config: active_model_profile_id 未设置，无法解析 provider");
+                return None;
+            }
+        };
         let profile = self.config.model_profiles.iter()
-            .find(|p| &p.id == active_id)?;
+            .find(|p| &p.id == active_id);
+        let profile = match profile {
+            Some(p) => {
+                tracing::info!("[PiEngine-DIAG] resolve_provider_config: 找到 profile: name={}, model={}, baseUrl={}", p.name, p.model, p.base_url);
+                p
+            }
+            None => {
+                tracing::warn!("[PiEngine-DIAG] resolve_provider_config: 未找到 profile id={}，可用 profiles: {:?}", active_id, self.config.model_profiles.iter().map(|p| &p.id).collect::<Vec<_>>());
+                return None;
+            }
+        };
 
         // 剥离 CLI 私有后缀
         let stripped = strip_cli_model_suffix(&profile.model);
@@ -930,6 +950,12 @@ export default async function (pi) {
             }
 
             // 收尾
+            // ★ DIAG: 输出事件统计摘要
+            tracing::info!(
+                "[PiEngine-DIAG] 事件统计: session={}, line_count={}, known_event_count={}, message_event_count={}, agent_ended={}",
+                real_session_id, line_count, known_event_count, message_event_count, agent_ended
+            );
+
             if !agent_ended && line_count > 0 {
                 tracing::warn!(
                     "[PiEngine] reader 循环退出但未收到 agent_end，session={}",
@@ -958,39 +984,51 @@ export default async function (pi) {
             // 主动收尾进程：先尝试等其自然退出（让 output-guard 排空收尾输出，
             // 避免管道读端过早关闭导致 EPIPE unhandled exception），超时则 kill 兜底。
             // 注意：reader 此时仍存活，stdout 管道保持打开，pi 进程可安全写入收尾数据。
+            //
+            // ★ 修复：先等进程退出，再排空 stdout。之前的实现在进程未退出时调用
+            //   read_line 阻塞读取 stdout，导致 pi 进程正在运行但 stdout 无数据时
+            //   永久阻塞，清理循环无法到达超时检查，complete_callback 永远不触发。
             let mut child = child;
-            // 持续读取 stdout 直到子进程退出或超时，确保 output-guard 的收尾输出被排空
-            // 而非管道读端关闭后写入 EPIPE。
+            // 阶段一：等待进程退出（最多 5 秒）
             let max_wait = std::time::Duration::from_secs(5);
             let start = std::time::Instant::now();
-            loop {
+            let child_exited = loop {
                 match child.try_wait() {
-                    Ok(Some(_status)) => {
-                        // 已退出
-                        break;
+                    Ok(Some(status)) => {
+                        tracing::debug!("[PiEngine] 进程已自然退出，pid={}, status={:?}", pid, status.code());
+                        break true;
                     }
                     Ok(None) => {
                         if start.elapsed() >= max_wait {
                             tracing::debug!("[PiEngine] 等待 {}s 后进程仍在运行，执行 kill 兜底，pid={}", max_wait.as_secs(), pid);
                             let _ = child.kill();
                             let _ = child.wait();
-                            break;
+                            break false;
                         }
-                        // 继续读取 stdout 让 output-guard 排空
-                        let mut drain = String::new();
-                        let _ = reader.read_line(&mut drain);
-                        if !drain.trim().is_empty() {
-                            tracing::trace!("[PiEngine] 收尾 stdout: {}", drain.trim());
-                        }
-                        // 短暂休眠避免忙等
-                        std::thread::sleep(std::time::Duration::from_millis(50));
+                        // 进程仍在运行，短暂休眠后重试
+                        std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                     Err(e) => {
                         tracing::warn!("[PiEngine] try_wait 失败 {}: {}", pid, e);
                         let _ = child.kill();
                         let _ = child.wait();
-                        break;
+                        break false;
                     }
+                }
+            };
+
+            // 阶段二：进程已退出后，排空 stdout 剩余数据（此时管道已关闭，read_line 不会阻塞）
+            if child_exited {
+                use std::io::BufRead;
+                let mut drain = String::new();
+                while let Ok(n) = reader.read_line(&mut drain) {
+                    if n == 0 {
+                        break;  // EOF
+                    }
+                    if !drain.trim().is_empty() {
+                        tracing::trace!("[PiEngine] 收尾 stdout: {}", drain.trim());
+                    }
+                    drain.clear();
                 }
             }
 

@@ -356,6 +356,17 @@ pub(super) async fn run_chat_loop(
                 None,
                 None,
             ));
+
+            // DX: 同步写入 SQLite 用量数据库（覆盖 SimpleAI 不经过代理的路径）
+            tracing::debug!("[SimpleAI] 调用 record_usage: model={}, input={}, output={}", base_model, usage.input_tokens, usage.output_tokens);
+            let request_model = Some(profile.model.as_str());
+            crate::services::usage_db::record_usage(
+                base_model,
+                request_model,
+                usage.input_tokens as i64,
+                usage.output_tokens as i64,
+                0, 0, 0, 200, true,
+            );
         }
         // 压缩效果监督计数（每完成一轮 +1；Some(1) 表示"刚压缩后的第一轮"）。
         if let Some(r) = rounds_since_compact.as_mut() {

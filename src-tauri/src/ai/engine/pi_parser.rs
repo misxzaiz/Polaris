@@ -409,9 +409,22 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
     if let Some(cost) = total_cost_usd {
         usage_event = usage_event.with_total_cost_usd(Some(cost));
     }
+    let model_name = actual_model.as_deref().unwrap_or("unknown").to_string();
     if let Some(model) = actual_model {
         usage_event = usage_event.with_actual_model(Some(model));
     }
+
+    // DX: 同步写入 SQLite 用量数据库（覆盖 Pi 不经过代理的路径）
+    tracing::debug!("[PiParser] 调用 record_usage: model={}, input={}, output={}", model_name, input_tokens, output_tokens);
+    crate::services::usage_db::record_usage(
+        &model_name,
+        None,
+        input_tokens as i64,
+        output_tokens as i64,
+        cache_read.unwrap_or(0) as i64,
+        cache_create.unwrap_or(0) as i64,
+        0, 200, true,
+    );
 
     Some(AIEvent::Usage(usage_event))
 }

@@ -478,7 +478,17 @@ pub fn record_usage(
             is_streaming,
         ) {
             tracing::warn!("[UsageDb] 记录用量失败: {}", e);
+        } else {
+            tracing::debug!(
+                "[UsageDb] 记录用量成功: model={}, input={}, output={}",
+                model, input_tokens, output_tokens
+            );
         }
+    } else {
+        tracing::warn!(
+            "[UsageDb] USAGE_DB 未初始化，跳过记录: model={}, input={}, output={}",
+            model, input_tokens, output_tokens
+        );
     }
 }
 

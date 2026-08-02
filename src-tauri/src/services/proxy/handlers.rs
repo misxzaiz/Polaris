@@ -259,13 +259,66 @@ async fn handle_anthropic_passthrough(
                 });
 
             match response.bytes().await {
-                Ok(bytes) => Response::builder()
-                    .status(status)
-                    .header("Content-Type", content_type)
-                    .body(Body::from(bytes))
-                    .unwrap_or_else(|_| {
-                        error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建直通响应失败")
-                    }),
+                Ok(bytes) => {
+                    // DX: 解析响应提取 usage 并记录到用量数据库（覆盖 Anthropic 直通路径）
+                    let body_str = String::from_utf8_lossy(&bytes);
+                    if !is_streaming {
+                        if let Ok(body_json) = serde_json::from_str::<Value>(&body_str) {
+                            if let Some(usage) = body_json.get("usage") {
+                                let model = body_json.get("model")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("unknown");
+                                let input_tokens = usage.get("input_tokens")
+                                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                                let output_tokens = usage.get("output_tokens")
+                                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                                let cache_read = usage.get("cache_read_input_tokens")
+                                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                                let cache_creation = usage.get("cache_creation_input_tokens")
+                                    .and_then(|v| v.as_i64()).unwrap_or(0);
+                                let request_model = body.get("model")
+                                    .and_then(|v| v.as_str());
+                                tracing::debug!("[Proxy] Anthropic 直通记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
+                                crate::services::usage_db::record_usage(
+                                    model, request_model, input_tokens, output_tokens,
+                                    cache_read, cache_creation,
+                                    0, status.as_u16() as i64, false,
+                                );
+                            }
+                        }
+                    } else {
+                        for line in body_str.lines() {
+                            if let Some(data) = line.strip_prefix("data: ") {
+                                if let Ok(event) = serde_json::from_str::<Value>(data) {
+                                    if event.get("type").and_then(|v| v.as_str()) == Some("message_delta") {
+                                        if let Some(usage) = event.get("usage") {
+                                            let input_tokens = usage.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                            let output_tokens = usage.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                            let cache_creation = usage.get("cache_creation_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                            let request_model = body.get("model").and_then(|v| v.as_str());
+                                            let model = request_model.unwrap_or("unknown");
+                                            tracing::debug!("[Proxy] Anthropic 直通流式记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
+                                            crate::services::usage_db::record_usage(
+                                                model, request_model, input_tokens, output_tokens,
+                                                cache_read, cache_creation,
+                                                0, status.as_u16() as i64, true,
+                                            );
+                                        }
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Response::builder()
+                        .status(status)
+                        .header("Content-Type", content_type)
+                        .body(Body::from(bytes))
+                        .unwrap_or_else(|_| {
+                            error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建直通响应失败")
+                        })
+                }
                 Err(e) => {
                     tracing::error!("[Proxy] 读取 Anthropic 直通上游响应失败: {}", e);
                     error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e))
@@ -360,22 +413,28 @@ async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Resp
     match forward_raw_response(&state.forwarder, &chat_body, None).await {
         Ok(response) => match response.text().await {
             Ok(body_text) => match serde_json::from_str::<Value>(&body_text) {
-                Ok(chat_response) => match chat_to_codex_response(chat_response) {
-                    Ok(responses_response) => Response::builder()
-                        .status(StatusCode::OK)
-                        .header("Content-Type", "application/json")
-                        .body(Body::from(
-                            serde_json::to_string(&responses_response).unwrap_or_default(),
-                        ))
-                        .unwrap_or_else(|_| {
-                            error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建响应失败")
-                        }),
-                    Err(e) => {
-                        tracing::error!("[Proxy] Chat 响应转 Codex Responses 失败: {}", e);
-                        error_response(
-                            StatusCode::INTERNAL_SERVER_ERROR,
-                            &format!("响应格式转换失败: {}", e),
-                        )
+                Ok(chat_response) => {
+                    // DX: 记录用量 - Codex 上游 Chat Completions 响应
+                    let request_model = chat_body.get("model").and_then(|v| v.as_str());
+                    record_openai_usage(&chat_response, request_model, 0, 200, false);
+
+                    match chat_to_codex_response(chat_response) {
+                        Ok(responses_response) => Response::builder()
+                            .status(StatusCode::OK)
+                            .header("Content-Type", "application/json")
+                            .body(Body::from(
+                                serde_json::to_string(&responses_response).unwrap_or_default(),
+                            ))
+                            .unwrap_or_else(|_| {
+                                error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建响应失败")
+                            }),
+                        Err(e) => {
+                            tracing::error!("[Proxy] Chat 响应转 Codex Responses 失败: {}", e);
+                            error_response(
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                &format!("响应格式转换失败: {}", e),
+                            )
+                        }
                     }
                 },
                 Err(e) => {
