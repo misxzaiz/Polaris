@@ -91,7 +91,7 @@ unzip -l app-arm64-release.apk | grep "\.so"
 
 ---
 
-## 最终打包流程
+## ✅ 最终打包流程
 
 ```bash
 cd /d/space/base/Polaris
@@ -106,6 +106,12 @@ cp -r dist polaris-mobile/dist
 # 3. 一条命令打包（自动处理代码生成 + Rust 编译 + JNI 符号 + 资产复制 + Gradle 打包）
 cd polaris-mobile
 npx tauri android build --apk -t aarch64 --split-per-abi
+
+# 4. （可选）复制到 temp 目录方便下载
+cd ..
+mkdir -p temp
+cp polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk \
+  temp/polaris-mobile.apk
 ```
 
 **产物**：
@@ -127,10 +133,10 @@ polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm
 
 ## 经验总结
 
-1. **不要单独用 `cargo ndk` 编译 Android APK**：`cargo ndk` 不会设置 `mobile` cfg，导致 JNI 入口宏不展开。必须通过 `npx tauri android build` 打包。
-2. **Windows 符号链接问题**：Windows 下 symlink 需要开发者模式权限，Gradle 打包时不会跟随 symlink。Tauri CLI 在完整流程中会主动复制文件。
-3. **`BuildTask.kt` 的预置 `.so` 跳过逻辑**：当 `.so` 已存在且是实际文件（非 symlink）时，`BuildTask` 会直接跳过 Rust 编译，避免 WebSocket 连接问题。
-4. **一条命令优于分步操作**：`npx tauri android build` 自动处理所有步骤（代码生成、编译、符号生成、资产复制、打包），是最佳实践。
+1. **必须用 `npx tauri android build` 打包**：`cargo ndk` 不会设置 `mobile` cfg，导致 JNI 入口宏不展开。不要手动分步编译 Rust。
+2. **Windows 符号链接问题**：`npx tauri android build` 会自动处理符号链接复制，Gradle 能正确打包 `.so`。
+3. **`BuildTask.kt` 的预置 `.so` 跳过逻辑**：当 `.so` 已存在且是实际文件时，`BuildTask` 跳过 Rust 编译，避免 WebSocket 连接问题。
+4. **一条命令最佳**：`npx tauri android build` 自动处理所有步骤，是最佳实践。
 
 ---
 
