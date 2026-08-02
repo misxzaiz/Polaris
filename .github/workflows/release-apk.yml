@@ -58,6 +58,15 @@ jobs:
           accept-android-sdk-licenses: true
           packages: platform-tools build-tools;35.0.0 platforms;android-${{ env.ANDROID_API }} ndk;${{ env.NDK_VERSION }}
 
+      # ---- Fix NDK version (pre-installed NDK 29 may conflict) ----
+      - name: Set NDK version
+        shell: bash
+        run: |
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
+          echo "Using NDK: $ANDROID_HOME/ndk/${{ env.NDK_VERSION }}"
+          ls -la "$ANDROID_HOME/ndk/"
+
       # ---- Build: Frontend ----
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
