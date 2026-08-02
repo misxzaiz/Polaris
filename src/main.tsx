@@ -5,6 +5,7 @@ import App from "./App";
 import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
+import { syncSpiderManCssVarsToDom } from '@/utils/spiderman-theme';
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
@@ -17,33 +18,9 @@ import "./i18n";
     const theme = stored === 'spiderman' ? 'spiderman' : stored === 'light' ? 'light' : 'dark';
     document.documentElement.setAttribute('data-theme', theme);
     // 如果是 spiderman 主题，提前同步 CSS 变量避免首屏闪烁
+    // 使用共享工具函数，与 themeStore 的同步逻辑保持完全一致
     if (theme === 'spiderman') {
-      const storedBg = window.localStorage.getItem('spiderman-theme');
-      if (storedBg) {
-        try {
-          const config = JSON.parse(storedBg);
-          if (config.backgroundImage) {
-            document.documentElement.style.setProperty('--spiderman-bg-image', `url('${config.backgroundImage}')`);
-          } else {
-            document.documentElement.setAttribute('data-spiderman-bg-off', '');
-          }
-          const bgOpacity = config.backgroundOpacity ?? 0.2;
-          const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
-          document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
-          document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
-          document.documentElement.style.setProperty('--spiderman-panel-opacity', String(config.panelOpacity ?? 0.55));
-          const blur = config.panelBlur ?? 8;
-          document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
-          document.documentElement.style.setProperty('--spiderman-bg-position',
-            `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
-          if (config.backgroundSize) {
-            document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize);
-          }
-          if (config.avatarUrl) {
-            document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${config.avatarUrl}')`);
-          }
-        } catch { /* ignore */ }
-      }
+      syncSpiderManCssVarsToDom();
     }
   } catch {
     document.documentElement.setAttribute('data-theme', 'dark');

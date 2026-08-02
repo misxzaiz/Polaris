@@ -290,6 +290,8 @@ export interface SpiderManThemeConfig {
   backgroundPositionY?: number;
   /** 面具头像 URL */
   avatarUrl?: string;
+  /** 蓝色强调强度 (0-1)，0=无蓝色，1=最大蓝色 */
+  blueAccent?: number;
 }
 
 /** Spider-Man 主题默认值 */
@@ -302,6 +304,7 @@ export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   backgroundSize: 'cover',
   backgroundPositionX: 50,
   backgroundPositionY: 50,
+  blueAccent: 0.5,
 };
 
 /** 窗口设置 */

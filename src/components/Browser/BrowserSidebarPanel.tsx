@@ -870,7 +870,7 @@ export function BrowserSidebarPanel() {
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-background-elevated">
+    <div data-spiderman-panel className="flex h-full min-h-0 flex-col bg-background-elevated">
       {/* 标题栏 */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
         <Globe2 size={16} className="text-primary" />

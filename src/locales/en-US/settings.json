@@ -21,6 +21,7 @@
   "saveTab": "Save {{name}}",
   "nav": {
     "general": "General",
+    "theme": "Theme",
     "systemPrompt": "System Prompt",
     "promptSnippet": "Prompt Snippets",
     "window": "Window",
@@ -265,6 +266,8 @@
       "panelOpacityHint": "Adjust the transparency of sidebars and chat panels",
       "panelBlur": "Panel Frost",
       "panelBlurHint": "Adjust the blur intensity of panels, 0=off",
+      "blueAccent": "Blue Accent",
+      "blueAccentHint": "Adjust the intensity of blue elements. 0=no blue, 100=maximum blue",
       "webOpacity": "Web Texture",
       "webOpacityHint": "Adjust the intensity of the spider web texture"
     },

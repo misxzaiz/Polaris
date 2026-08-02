@@ -11,6 +11,7 @@
 
 import { create } from 'zustand';
 import { createLogger } from '@/utils/logger';
+import { syncSpiderManCssVarsToDom } from '@/utils/spiderman-theme';
 
 const log = createLogger('ThemeStore');
 
@@ -35,46 +36,9 @@ function readInitialTheme(): Theme {
   return stored === 'light' ? 'light' : 'dark';
 }
 
-/** Spider-Man 主题默认背景图 */
-const SPIDERMAN_DEFAULT_BG = 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920';
-
-/** 同步 Spider-Man CSS 变量到 DOM */
+/** 同步 Spider-Man CSS 变量到 DOM（委托给共享工具函数） */
 function syncSpiderManCssVars(): void {
-  if (typeof document === 'undefined') return;
-  try {
-    const stored = window.localStorage.getItem('spiderman-theme');
-    const config = stored ? JSON.parse(stored) : {};
-    // 明确检查用户是否选择了「关闭背景」（backgroundImage === ''）
-    const bgOff = 'backgroundImage' in config && !config.backgroundImage;
-    const bg = bgOff ? '' : (config.backgroundImage || SPIDERMAN_DEFAULT_BG);
-    if (bgOff || !bg) {
-      document.documentElement.setAttribute('data-spiderman-bg-off', '');
-    } else {
-      document.documentElement.style.setProperty('--spiderman-bg-image', `url('${bg}')`);
-      document.documentElement.removeAttribute('data-spiderman-bg-off');
-    }
-    // 计算遮罩 alpha = 1 - bgOpacity，写入 --spiderman-bg-overlay
-    const bgOpacity = config.backgroundOpacity ?? 0.2;
-    const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
-    document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
-    document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
-    document.documentElement.style.setProperty('--spiderman-bg-position',
-      `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
-    document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize ?? 'cover');
-    // 同步面板透明度
-    document.documentElement.style.setProperty('--spiderman-panel-opacity', String(config.panelOpacity ?? 0.55));
-    // 同步面板磨砂强度（0 → none 避免创建叠加上下文）
-    const blur = config.panelBlur ?? 8;
-    document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
-    // 同步面具头像 URL
-    if (config.avatarUrl) {
-      document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${config.avatarUrl}')`);
-    } else {
-      document.documentElement.style.removeProperty('--spiderman-avatar-url');
-    }
-  } catch {
-    // 静默失败，使用 CSS 默认值
-  }
+  syncSpiderManCssVarsToDom();
 }
 
 function writeDom(theme: Theme): void {
@@ -101,12 +65,13 @@ function writeStorage(theme: Theme): void {
 }
 
 // 启动时同步 Spider-Man CSS 变量（如果主题是 spiderman）
+// 注意：main.tsx 内联脚本已在 React render 之前同步过一次，
+// 此处作为兜底确保 themeStore 初始化后 CSS 变量与 state 一致。
 const initialTheme = readInitialTheme();
-if (initialTheme === 'spiderman') {
-  // 延迟到 DOM 就绪后执行
-  if (typeof window !== 'undefined') {
-    queueMicrotask(() => syncSpiderManCssVars());
-  }
+if (initialTheme === 'spiderman' && typeof window !== 'undefined') {
+  // 使用 requestAnimationFrame 替代 queueMicrotask，
+  // 确保在首次 paint 之后执行，避免与 main.tsx 的内联脚本竞争。
+  requestAnimationFrame(() => syncSpiderManCssVars());
 }
 
 export const useThemeStore = create<ThemeState>((set, get) => ({

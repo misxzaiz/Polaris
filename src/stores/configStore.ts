@@ -319,6 +319,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
+      // 同步 spidermanTheme 到 localStorage（供 themeStore.syncSpiderManCssVars 读取）
+      if (config?.spidermanTheme) {
+        saveSpiderManConfig(config.spidermanTheme);
+      }
       if (config?.theme) {
         useThemeStore.getState().applyTheme(config.theme);
       }

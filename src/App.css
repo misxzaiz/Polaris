@@ -159,13 +159,17 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: rgb(var(--c-bg-base)) !important;
 }
 
-/* 主题根容器：isolation: isolate 创建局部叠加上下文
+/* 主题根容器：isolation: isolate 创建局部叠加上上下文
    让 z-index: -1 的子元素（纹理、光晕）在内容层之下。
-   background-color 透明，让 html 背景（Layer 1）透出。 */
+   background-color 透明，让 html 背景（Layer 1）透出。
+   backdrop-filter: 单层 blur 覆盖所有子面板，避免每个面板独立创建合成层。 */
 [data-theme="spiderman"] .theme-root {
   isolation: isolate;
   background-color: transparent !important;
   position: relative;
+  /* 单层 backdrop-filter：所有子面板继承此效果，只创建 1 个 GPU 合成层 */
+  backdrop-filter: var(--spiderman-panel-blur, blur(8px));
+  -webkit-backdrop-filter: var(--spiderman-panel-blur, blur(8px));
 }
 
 /* 聊天消息区域透明，让背景继续透到子窗口 */
@@ -176,7 +180,8 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 /* 蛛网纹理：position: absolute; z-index: -1
    在局部叠加上下文中处于 Layer 2（负层），
    在内容（Layer 3+）之下。
-   用 pointer-events: none 不阻挡交互。 */
+   用 pointer-events: none 不阻挡交互。
+   注意：用 ::after 伪元素实现边缘淡出，替代 mask-image 以兼容旧版 WebView2。 */
 [data-theme="spiderman"] .theme-web-texture {
   display: block;
   position: absolute;
@@ -188,10 +193,21 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
     repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
-    repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px);
-  -webkit-mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
-  mask-image: radial-gradient(ellipse at center, black 25%, transparent 72%);
+    repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
+    /* 蓝色对角线线条 */
+    repeating-linear-gradient(135deg, transparent, transparent 100px, rgba(59,130,246,0.03) 100px, rgba(59,130,246,0.03) 101px),
+    repeating-linear-gradient(45deg, transparent, transparent 100px, rgba(59,130,246,0.02) 100px, rgba(59,130,246,0.02) 101px);
   animation: web-pulse 4s ease-in-out infinite;
+}
+
+/* 伪元素淡出遮罩：替代 mask-image，兼容性更好（Edge 87+ 均支持）
+   在纹理上方叠加径向渐变，从中心透明过渡到边缘 bg-base 色，实现边缘淡出。 */
+[data-theme="spiderman"] .theme-web-texture::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, transparent 25%, rgb(var(--c-bg-base)) 72%);
+  pointer-events: none;
 }
 
 /* 环境光晕：position: absolute; z-index: -1
@@ -204,7 +220,8 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   pointer-events: none;
   background:
     radial-gradient(ellipse at 15% 50%, rgba(220,38,38,0.08) 0%, transparent 50%),
-    radial-gradient(ellipse at 85% 30%, rgba(59,130,246,0.06) 0%, transparent 50%);
+    radial-gradient(ellipse at 85% 30%, rgba(59,130,246,0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 100%, rgba(59,130,246,0.05) 0%, transparent 40%);
 }
 
 /* 蛛网纹理脉冲动画 */
@@ -213,24 +230,39 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   50% { opacity: calc(var(--spiderman-web-opacity, 0.15) * 1.4); }
 }
 
-/* === 布局面板半透明化，让背景图片透出 ===
-   所有 bg-background-elevated 面板 + chat-input-root 降低不透明度。
-   backdrop-filter 会创建叠加上下文，薄面板（TopMenuBar、ActivityBar）
-   去掉 blur 避免困住子元素下拉菜单的 z-index。 */
+/* ===== 对比度保护 =====
+   当用户偏好更高对比度时，强制深色遮罩不透明度不低于 0.85，
+   确保文字在任何背景图片上都可读。 */
+@media (prefers-contrast: more) {
+  [data-theme="spiderman"] {
+    --spiderman-bg-overlay: 0.9 !important;
+  }
+  [data-theme="spiderman"] .theme-web-texture {
+    opacity: 0.05 !important; /* 降低纹理干扰 */
+  }
+}
 
-/* 所有面板半透明基础（降低不透明度让背景更可见） */
-[data-theme="spiderman"] .theme-root > [class*="bg-background-elevated"],
-[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"],
+/* === 布局面板半透明化，让背景图片透出 ===
+   所有面板降低不透明度，让背景透出。
+   backdrop-filter 已从每个面板迁移到 .theme-root 单层（见上方），
+   此处只控制透明度，不再创建独立合成层。
+
+   选择器策略：
+   - 优先使用 data-spiderman-panel 属性（在 Layout.tsx 中声明），不依赖类名
+   - 向后兼容旧的 [class*="bg-background-elevated"] 选择器 */
+
+/* 所有面板半透明基础（降低不透明度让背景更可见）
+   使用 data-spiderman-panel 属性驱动，不受 tailwind 类名重构影响。
+   同时保留旧 class 选择器作为向后兼容。 */
+[data-theme="spiderman"] [data-spiderman-panel],
 [data-theme="spiderman"] .chat-input-root {
   background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 
-/* 大面板（LeftPanel、RightPanel、ChatInput）保持模糊效果
-   注意：使用 :not([class*="items-center"]) 排除 ActivityBar（薄面板不需要 blur） */
-[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"]:not([class*="items-center"]),
-[data-theme="spiderman"] .chat-input-root {
-  backdrop-filter: var(--spiderman-panel-blur, blur(8px));
-  -webkit-backdrop-filter: var(--spiderman-panel-blur, blur(8px));
+/* 向后兼容：旧 class 选择器（在新版 Layout.tsx 统一使用 data-* 后移除） */
+[data-theme="spiderman"] .theme-root > [class*="bg-background-elevated"],
+[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"] {
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 
 /* 发送按钮红蓝渐变 */
@@ -240,8 +272,42 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   animation: spiderman-btn-shift 4s ease-in-out infinite;
 }
 
+/* 尊重用户减少动画偏好 */
+@media (prefers-reduced-motion: reduce) {
+  [data-theme="spiderman"] .theme-web-texture {
+    animation: none !important;
+  }
+  [data-theme="spiderman"] .send-button {
+    animation: none !important;
+  }
+}
+
 [data-theme="spiderman"] .send-button:not(:disabled):hover {
   box-shadow: 0 0 20px rgba(220, 38, 38, 0.4), 0 0 40px rgba(59, 130, 246, 0.2) !important;
+}
+
+/* 滚动条蓝色主题 */
+[data-theme="spiderman"] ::-webkit-scrollbar-thumb {
+  background: rgba(59, 130, 246, 0.3) !important;
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+[data-theme="spiderman"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 130, 246, 0.5) !important;
+  background-clip: content-box;
+}
+
+/* 输入框容器聚焦发光 — 父容器 .chat-input-root 使用 focus-within
+   避免在 border-0 的 textarea 上产生方形边框。
+   box-shadow 带模糊半径，自然呈现圆角光晕效果。 */
+[data-theme="spiderman"] .chat-input-root:focus-within {
+  box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.3) !important;
+}
+
+/* AI 头像蓝色光晕 */
+[data-theme="spiderman"] .assistant-avatar {
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.3) !important;
 }
 
 @keyframes spiderman-btn-shift {

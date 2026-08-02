@@ -21,6 +21,7 @@
   "saveTab": "保存{{name}}",
   "nav": {
     "general": "通用",
+    "theme": "主题",
     "systemPrompt": "系统提示词",
     "promptSnippet": "快捷片段",
     "window": "窗口",
@@ -265,6 +266,8 @@
       "panelOpacityHint": "调节侧栏和聊天面板的透明程度",
       "panelBlur": "面板磨砂",
       "panelBlurHint": "调节面板背景模糊程度，0=关闭",
+      "blueAccent": "蓝色强调",
+      "blueAccentHint": "调节界面中蓝色元素的强度，0=无蓝色，100=最大蓝色",
       "webOpacity": "蛛网纹理",
       "webOpacityHint": "调节蛛网纹理的强度"
     },

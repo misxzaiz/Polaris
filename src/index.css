@@ -138,14 +138,14 @@
   --c-primary-600: 185 28 28;
   --c-primary-700: 153 27 27;
 
-  /* Background - Deep Dark */
-  --c-bg-base: 5 5 15;
-  --c-bg-elevated: 11 11 24;
-  --c-bg-surface: 17 17 34;
-  --c-bg-hover: 22 22 40;
-  --c-bg-active: 28 28 48;
-  --c-bg-tertiary: 20 24 36;
-  --c-bg-secondary: 14 18 28;
+  /* Background - Pure Black */
+  --c-bg-base: 0 0 0;
+  --c-bg-elevated: 8 8 10;
+  --c-bg-surface: 14 14 18;
+  --c-bg-hover: 20 20 24;
+  --c-bg-active: 26 26 30;
+  --c-bg-tertiary: 16 18 22;
+  --c-bg-secondary: 10 12 16;
 
   /* Border base RGB */
   --c-border: 220 38 38;
@@ -160,19 +160,19 @@
   --c-status-warning: 251 191 36;
   --c-status-success: 52 211 153;
   --c-status-danger: 248 113 113;
-  --c-status-info: 220 38 38;
+  --c-status-info: 59 130 246;
   --c-status-done: 16 185 129;
   --c-status-failed: 239 68 68;
   --c-status-neutral: 156 163 175;
 
   /* Priority */
   --c-priority-low: 156 163 175;
-  --c-priority-normal: 220 38 38;
+  --c-priority-normal: 59 130 246;
   --c-priority-high: 251 146 60;
   --c-priority-urgent: 248 113 113;
 
   /* Accent */
-  --c-accent-ai: 220 38 38;
+  --c-accent-ai: 59 130 246;
   --c-accent-prototype: 34 211 238;
   --c-accent-workspace: 59 130 246;
 
@@ -190,9 +190,9 @@
 }
 
 /* Spider-Man 动态 CSS 变量（默认值）
-   注意：--spiderman-bg-image 默认值不能为 none，否则 background 属性会无效。
-   当 data-theme != spiderman 时，因 CSS 选择器不匹配，::before/::after 不会渲染。 */
-:root {
+   仅在 data-theme="spiderman" 时定义，避免非 spiderman 主题时发起图片请求。
+   JS 会在设置变更时通过 style.setProperty 动态覆盖这些值。 */
+:root[data-theme="spiderman"] {
   --spiderman-bg-image: url('https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920');
   --spiderman-bg-overlay: 0.8;
   --spiderman-bg-position: center;
@@ -201,6 +201,7 @@
   --spiderman-panel-blur: blur(8px);
   --spiderman-avatar-url: none;
   --spiderman-web-opacity: 0.15;
+  --spiderman-blue-accent: 0.5;
 }
 
 * {

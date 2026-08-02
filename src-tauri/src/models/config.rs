@@ -1225,31 +1225,31 @@ fn default_dispatch_auto_inject() -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct SpiderManThemeConfig {
     /// 背景图片 URL（空字符串 = 使用预设）
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_image: Option<String>,
     /// 背景图片透明度 (0-1)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_opacity: Option<f64>,
     /// 面板背景透明度 (0-1)，控制侧栏/聊天面板的透明程度
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_opacity: Option<f64>,
     /// 面板磨砂强度 (px)，0=关闭磨砂效果
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub panel_blur: Option<f64>,
     /// 蛛网纹理强度 (0-1)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub web_texture_opacity: Option<f64>,
     /// 背景缩放模式
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_size: Option<String>,
     /// 背景水平偏移 (0-100)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_position_x: Option<f64>,
     /// 背景垂直偏移 (0-100)
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background_position_y: Option<f64>,
     /// 面具头像 URL
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
 }
 

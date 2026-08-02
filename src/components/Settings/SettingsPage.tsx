@@ -15,6 +15,7 @@ import { SettingsSidebar, type SettingsTabId } from './SettingsSidebar';
 import { AIEngineTab } from './tabs/AIEngineTab';
 import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
+import { ThemeTab } from './tabs/ThemeTab';
 import { PromptSnippetTab } from './tabs/PromptSnippetTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
@@ -43,6 +44,7 @@ interface SettingsPageProps {
 // Tab 标题映射 - 使用 i18n key
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
+  'theme': 'nav.theme',
   'auto-mode': 'nav.autoMode',
   'plugins': 'nav.plugins',
   'prompt-snippet': 'nav.promptSnippet',
@@ -82,7 +84,8 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }, [config]);
 
   const topLevelKeysByTab: Partial<Record<SettingsTabId, (keyof Config)[]>> = {
-    general: ['language', 'theme', 'window', 'baiduTranslate', 'interaction', 'chatDisplay', 'spidermanTheme'],
+    general: ['language', 'baiduTranslate', 'interaction'],
+    theme: ['theme', 'spidermanTheme', 'chatDisplay', 'window'],
     speech: ['speech', 'tts', 'wakeWord', 'voiceNotification', 'voiceCommands'],
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
@@ -186,7 +189,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
+    <div data-spiderman-panel className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
       {/* 顶部标题栏 */}
       <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
         <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>
@@ -251,6 +254,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'model-provider' && (
               <ModelProviderTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
+            )}
+
+            {activeTab === 'theme' && (
+              <ThemeTab
                 config={localConfig}
                 onConfigChange={setLocalConfig}
                 loading={loading}

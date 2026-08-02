@@ -39,6 +39,7 @@ export function Layout({ children }: LayoutProps) {
       className="flex flex-col h-screen w-screen overflow-hidden bg-background-base theme-root"
       style={{ height: '100dvh' }}
     >
+      {/* Spider-Man 装饰层：CSS 默认隐藏（display:none），仅在 spiderman 主题下显示 */}
       <div className="theme-web-texture" />
       <div className="theme-ambient" />
       {children}
@@ -49,7 +50,7 @@ export function Layout({ children }: LayoutProps) {
 /** 头部 */
 export function Header({ title, children }: HeaderProps) {
   return (
-    <header className="flex items-center justify-between px-5 h-14 bg-background-elevated border-b border-border shrink-0">
+    <header data-spiderman-panel className="flex items-center justify-between px-5 h-14 bg-background-elevated border-b border-border shrink-0">
       <h1 className="text-base font-semibold text-text-primary">{title}</h1>
       {children && <div className="flex items-center gap-2">{children}</div>}
     </header>
@@ -63,6 +64,8 @@ export function Sidebar({ children, className = '', width }: SidebarProps) {
 
   return (
     <aside
+      data-spiderman-panel
+      data-spiderman-blur
       className={`flex flex-col bg-background-elevated border-r border-border shrink-0 ${className}`}
       style={style}
       {...(width && { className: className + ' ' + widthClass })}
@@ -89,6 +92,8 @@ export function Aside({ children, className = '', width }: AsideProps) {
 
   return (
     <aside
+      data-spiderman-panel
+      data-spiderman-blur
       className={`flex flex-col bg-background-elevated border-l border-border shrink-0 ${className}`}
       style={style}
       {...(width && { className: className + ' ' + widthClass })}
@@ -98,3 +103,5 @@ export function Aside({ children, className = '', width }: AsideProps) {
     </aside>
   );
 }
+
+

@@ -1381,7 +1381,7 @@ export function ChatInput({
   const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
 
   return (
-    <div className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
+    <div data-spiderman-panel className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
       {/* 待发送简报卡片（压缩交接产物，随下一条消息作为上下文发出） */}
       <PendingBriefingCard />
       {/* 片段变量填写浮窗 */}

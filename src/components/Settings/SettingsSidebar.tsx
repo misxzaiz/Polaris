@@ -11,12 +11,13 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard } from 'lucide-react';
+import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
 export type SettingsTabId =
   | 'general'
+  | 'theme'
   | 'prompt-snippet'
   | 'ai-engine'
   | 'model-provider'
@@ -46,6 +47,7 @@ interface SettingsSidebarProps {
 
 const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'general', icon: <IconGeneral size={16} />, labelKey: 'nav.general' },
+  { id: 'theme', icon: <Palette size={16} />, labelKey: 'nav.theme' },
   { id: 'prompt-snippet', icon: <IconMessageSquareText size={16} />, labelKey: 'nav.promptSnippet' },
   { id: 'ai-engine', icon: <IconAIEngine size={16} />, labelKey: 'nav.aiEngine' },
   { id: 'model-provider', icon: <Server size={16} />, labelKey: 'nav.modelProvider' },
@@ -74,7 +76,7 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
   );
 
   return (
-    <div className="sm:w-56 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
+    <div data-spiderman-panel className="sm:w-56 sm:flex-shrink-0 sm:border-r sm:border-b-0 border-b border-border-subtle bg-background-elevated flex sm:flex-col">
       {/* 搜索框 — 小屏隐藏，大屏显示 */}
       <div className="hidden sm:block p-3 border-b border-border-subtle">
         <div className="relative">
