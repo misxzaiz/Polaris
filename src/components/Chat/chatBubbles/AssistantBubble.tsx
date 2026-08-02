@@ -86,7 +86,7 @@ export const AssistantBubble = memo(function AssistantBubble({
 
   return (
     <>
-      <div className="chat-assistant-message flex gap-2 group" onContextMenu={handleContextMenu}>
+      <div className="chat-assistant-message flex gap-2 p-2 rounded-lg bg-background-surface group" onContextMenu={handleContextMenu}>
         {/* Avatar */}
         <div className="shrink-0 mt-0.5">
           <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center overflow-hidden">

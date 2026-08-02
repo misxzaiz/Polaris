@@ -1251,6 +1251,12 @@ pub struct SpiderManThemeConfig {
     /// 面具头像 URL
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub avatar_url: Option<String>,
+    /// 内容卡片透明度 (0-1)，控制消息气泡/卡片/输入框的内容容器半透明程度
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface_opacity: Option<f64>,
+    /// 蓝色强调强度 (0-1)，0=无蓝色，1=最大蓝色
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blue_accent: Option<f64>,
 }
 
 /// 应用配置（新版本）

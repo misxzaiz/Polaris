@@ -98,7 +98,7 @@ function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngine
   ]
   const isActivePreset = (s: string, e: string) => startDate === s && endDate === e
   return (
-    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-background-surface/40 border border-border-subtle">
+    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-background-surface border border-border-subtle">
       {/* 引擎 */}
       <select value={engineId} onChange={e => onEngineChange(e.target.value)}
         className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary">
@@ -279,7 +279,7 @@ export function TokenStatsTab() {
               { label: t('tokenStats.totalCache', '缓存'), value: fmt(summary.totalCacheReadTokens + summary.totalCacheCreationTokens), color: 'text-purple-400' },
               { label: t('tokenStats.totalCost', '总花费'), value: fmtCost(summary.totalCostUsd), color: 'text-green-500' },
             ].map(c => (
-              <div key={c.label} className="rounded-lg border border-border-subtle bg-background-surface/40 p-3">
+              <div key={c.label} className="rounded-lg border border-border-subtle bg-background-surface p-3">
                 <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">{c.label}</div>
                 <div className={clsx('text-base font-mono tabular-nums font-semibold', c.color)}>{c.value}</div>
               </div>
@@ -287,7 +287,7 @@ export function TokenStatsTab() {
           </div>
 
           {/* 导航标签 */}
-          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-background-surface/60 border border-border-subtle w-fit">
+          <div className="flex items-center gap-1 p-0.5 rounded-lg bg-background-surface border border-border-subtle w-fit">
             <TabBtn active={viewMode === 'overview'} onClick={() => setViewMode('overview')} icon={<BarChart3 size={13} />} label={t('tokenStats.overview', '概览')} />
             <TabBtn active={viewMode === 'model'} onClick={() => setViewMode('model')} icon={<PieChart size={13} />} label={t('tokenStats.model', '按模型')} />
             <TabBtn active={viewMode === 'time'} onClick={() => setViewMode('time')} icon={<TrendingUp size={13} />} label={t('tokenStats.time', '按时间')} />
@@ -297,7 +297,7 @@ export function TokenStatsTab() {
           {/* 概览视图 */}
           {viewMode === 'overview' && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <div className="rounded-lg border border-border-subtle bg-background-surface/40 p-3">
+              <div className="rounded-lg border border-border-subtle bg-background-surface p-3">
                 <h5 className="text-xs font-medium text-text-primary mb-3">{t('tokenStats.topModels', '模型用量 Top 5')}</h5>
                 {modelStats.length === 0 ? (
                   <p className="text-xs text-text-tertiary">{t('tokenStats.noModelData', '暂无模型级数据')}</p>
@@ -320,7 +320,7 @@ export function TokenStatsTab() {
                   </div>
                 )}
               </div>
-              <div className="rounded-lg border border-border-subtle bg-background-surface/40 p-3">
+              <div className="rounded-lg border border-border-subtle bg-background-surface p-3">
                 <h5 className="text-xs font-medium text-text-primary mb-3">{t('tokenStats.engineDistribution', '引擎分布')}</h5>
                 {engineDistribution.length === 0 ? (
                   <p className="text-xs text-text-tertiary">{t('tokenStats.noEngineData', '暂无引擎数据')}</p>
@@ -349,7 +349,7 @@ export function TokenStatsTab() {
 
           {/* 按模型视图 */}
           {viewMode === 'model' && (
-            <div className="rounded-lg border border-border-subtle bg-background-surface/40 p-3 overflow-x-auto">
+            <div className="rounded-lg border border-border-subtle bg-background-surface p-3 overflow-x-auto">
               {modelStats.length === 0 ? (
                 <p className="text-xs text-text-tertiary text-center py-6">{t('tokenStats.noModelData', '暂无模型级数据')}</p>
               ) : (
@@ -406,11 +406,11 @@ export function TokenStatsTab() {
               {trendsLoading ? (
                 <div className="flex items-center justify-center py-8"><Loader2 size={18} className="animate-spin text-text-tertiary" /></div>
               ) : timeSeries.labels.length === 0 ? (
-                <div className="rounded-lg border border-border-subtle bg-background-surface/40 p-6 text-center text-text-tertiary">
+                <div className="rounded-lg border border-border-subtle bg-background-surface p-6 text-center text-text-tertiary">
                   <p className="text-sm">{t('tokenStats.noTimeData', '该时间范围内无数据')}</p>
                 </div>
               ) : (
-                <div className="rounded-lg border border-border-subtle bg-background-surface/40 p-3">
+                <div className="rounded-lg border border-border-subtle bg-background-surface p-3">
                   <div className="mb-4">
                     <div className="flex items-center gap-3 mb-2">
                       <span className="text-xs font-medium text-text-primary">{t('tokenStats.input', '输入 Token')}</span>
@@ -457,7 +457,7 @@ export function TokenStatsTab() {
 
           {/* Top 请求视图 */}
           {viewMode === 'sessions' && (
-            <div className="rounded-lg border border-border-subtle bg-background-surface/40 overflow-hidden">
+            <div className="rounded-lg border border-border-subtle bg-background-surface overflow-hidden">
               {topSessionsLoading ? (
                 <div className="flex items-center justify-center py-8"><Loader2 size={18} className="animate-spin text-text-tertiary" /></div>
               ) : topSessions.length === 0 ? (
@@ -467,7 +467,7 @@ export function TokenStatsTab() {
                   <div className="max-h-[400px] overflow-y-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="text-text-muted border-b border-border-subtle bg-background-surface/80 sticky top-0">
+                        <tr className="text-text-muted border-b border-border-subtle bg-background-surface sticky top-0">
                           <th className="text-left py-2 px-3 font-medium">#</th>
                           <th className="text-left py-2 px-2 font-medium">{t('tokenStats.engine', '引擎')}</th>
                           <th className="text-left py-2 px-2 font-medium">{t('tokenStats.model', '模型')}</th>
@@ -495,7 +495,7 @@ export function TokenStatsTab() {
                     </table>
                   </div>
                   {/* 分页 */}
-                  <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-background-surface/40">
+                  <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-background-surface">
                     <span className="text-[10px] text-text-muted">{t('tokenStats.pageInfo', '第 {page} 页', { page: page + 1 })}</span>
                     <div className="flex items-center gap-1">
                       <button disabled={!hasPrev} onClick={() => setPage(p => p - 1)}

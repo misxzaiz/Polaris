@@ -182,7 +182,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
   if (!localConfig) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-background-elevated">
+      <div className="flex-1 flex items-center justify-center">
         <div className="text-center text-text-muted">{tCommon('status.loading')}</div>
       </div>
     );
@@ -331,7 +331,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
           </div>
 
           {/* 底部保存按钮 - 支持分组保存 */}
-          <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle bg-background-elevated">
+          <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle">
             <div className="flex items-center justify-between">
               <span className="text-xs text-text-tertiary">
                 {t('currentGroup', '当前分组：{{name}}', { name: t(TAB_TITLE_KEYS[activeTab]) })}

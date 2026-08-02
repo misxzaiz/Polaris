@@ -57,7 +57,7 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
         }
       `}</style>
       <div
-        className={`my-2 rounded-lg overflow-hidden border transition-colors ${
+        className={`my-2 rounded-lg overflow-hidden border transition-colors bg-background-surface ${
           isStreaming
             ? 'bg-[#0f1117]'
             : 'border-border bg-background-elevated'

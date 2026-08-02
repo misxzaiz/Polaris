@@ -680,9 +680,12 @@
       "manual": "Context compacted",
       "auto": "Context auto-compacted",
       "tokens": "{{pre}} → {{post}} tokens"
-    },
-    "thinkingOrb": {
-      "title": "{{name}} is thinking"
     }
+  },
+  "thinkingOrb": {
+    "title": "{{name}} is thinking",
+    "connecting": "Connecting to engine…",
+    "thinking": "AI is thinking…",
+    "generating": "Still generating, please wait…"
   }
 }

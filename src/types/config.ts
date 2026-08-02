@@ -280,6 +280,8 @@ export interface SpiderManThemeConfig {
   panelOpacity?: number;
   /** 面板磨砂强度 (px)，0=关闭磨砂效果 */
   panelBlur?: number;
+  /** 内容卡片透明度 (0-1)，控制消息气泡/卡片/输入框的内容容器半透明程度 */
+  surfaceOpacity?: number;
   /** 蛛网纹理强度 (0-1) */
   webTextureOpacity?: number;
   /** 背景缩放模式 */
@@ -300,6 +302,7 @@ export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   backgroundOpacity: 0.2,
   panelOpacity: 0.55,
   panelBlur: 8,
+  surfaceOpacity: 0.4,
   webTextureOpacity: 0.15,
   backgroundSize: 'cover',
   backgroundPositionX: 50,

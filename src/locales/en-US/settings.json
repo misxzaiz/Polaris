@@ -269,7 +269,9 @@
       "blueAccent": "Blue Accent",
       "blueAccentHint": "Adjust the intensity of blue elements. 0=no blue, 100=maximum blue",
       "webOpacity": "Web Texture",
-      "webOpacityHint": "Adjust the intensity of the spider web texture"
+      "webOpacityHint": "Adjust the intensity of the spider web texture",
+      "surfaceOpacity": "Card Opacity",
+      "surfaceOpacityHint": "Adjust the transparency of message bubbles, cards and input fields"
     },
     "position": {
       "title": "Position & Size",

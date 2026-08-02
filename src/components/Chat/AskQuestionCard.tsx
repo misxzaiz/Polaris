@@ -412,6 +412,7 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
   return (
     <div
       ref={containerRef}
+     
       role="group"
       aria-labelledby={`askq-title-${block.id}`}
       onKeyDown={handleKeyDown}

@@ -334,14 +334,6 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
           {isEmpty ? (
             <EmptyState />
           ) : (
-            <>
-              {/* Orb 始终渲染，用绝对定位覆盖 Virtuoso，通过 isPending 控制显隐 */}
-              <div
-                className="absolute inset-0 z-10"
-                style={{ pointerEvents: isPending ? 'auto' : 'none' }}
-              >
-                <ThinkingOrb isPending={isPending} compact={compact} />
-              </div>
             <Virtuoso
               ref={virtuosoRef}
               style={{ height: '100%' }}
@@ -351,7 +343,15 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               }}
               components={{
                 EmptyPlaceholder: () => null,
-                Footer: () => <div style={FOOTER_SPACER_STYLE} />,
+                Footer: () => (
+                  <>
+                    {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
+                    {isPending && (
+                      <ThinkingOrb isPending={isPending} compact={compact} />
+                    )}
+                    <div style={FOOTER_SPACER_STYLE} />
+                  </>
+                ),
                 ...(LoadEarlierHeader ? { Header: LoadEarlierHeader } : {}),
               }}
               followOutput={autoScroll ? (isStreaming ? true : 'smooth') : false}
@@ -362,7 +362,6 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               increaseViewportBy={VIEWPORT_EXTENSION}
               initialTopMostItemIndex={displayMessages.length - 1}
             />
-            </>
           )}
         </div>
 

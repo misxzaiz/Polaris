@@ -259,9 +259,18 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 
-/* 向后兼容：旧 class 选择器（在新版 Layout.tsx 统一使用 data-* 后移除） */
-[data-theme="spiderman"] .theme-root > [class*="bg-background-elevated"],
-[data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"] {
+/* 内容卡片半透明背景
+   使用类选择器自动覆盖所有 bg-surface 和 bg-background-surface 元素，
+   不需要手动标记 data-spiderman-surface 属性。
+   与 data-spiderman-panel 独立控制，互不干扰。
+   使用 !important 统一半透明，状态仅靠边框区分。 */
+[data-theme="spiderman"] .theme-root [class*="bg-surface"] {
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+}
+
+/* 向后兼容：旧 class 选择器（在新版 Layout.tsx 统一使用 data-* 后移除）
+   扩展为覆盖所有后代，不再限于直接子元素 */
+[data-theme="spiderman"] .theme-root [class*="bg-background-elevated"] {
   background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 

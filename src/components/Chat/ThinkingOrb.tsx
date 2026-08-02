@@ -1,13 +1,14 @@
 /**
- * ThinkingOrb - 等待 AI 回复时的 Orb 动画组件
+ * ThinkingOrb - 等待 AI 回复时的 Polaris 旋转图标组件
  *
  * 在消息发送后、首 token 到达前的 PENDING 状态显示，
- * 用旋转的同心环动画填充空白等待期，提升用户体验。
+ * 使用与应用顶部一致的 Polaris 品牌旋转动画（双圈反向旋转 + 中心光晕），
+ * 下方展示文案轮播（连接中 → 思考中 → 生成中）。
  *
  * 设计原则：
  * - 挂载即渲染，零帧延迟
  * - 使用 inline style 控制 opacity，避免 <style> 标签动态更新不可靠
- * - 三层同心环旋转（蓝色→紫色→蓝色渐变）
+ * - 复用全局 keyframes：polaris-spin / polaris-spin-rev / polaris-glow
  * - 文案按时间轮播：连接中 → 思考中 → 生成中
  */
 
@@ -37,12 +38,6 @@ export interface ThinkingOrbProps {
   /** 外部传入的进度文案（覆盖自动轮播） */
   message?: string
 }
-
-const spinKeyframes = `
-@keyframes orb-spin {
-  to { transform: rotate(360deg); }
-}
-`
 
 export const ThinkingOrb = memo(function ThinkingOrb({
   isPending,
@@ -92,95 +87,99 @@ export const ThinkingOrb = memo(function ThinkingOrb({
   // 引擎名
   const displayName = engineName ?? 'AI'
 
-  // 紧凑模式尺寸缩小
-  const orbSize = compact ? 28 : 48
-  const ringSizes = compact ? [28, 20, 14] : [48, 36, 24]
-  const ringOffsets = compact ? [0, 4, 7] : [0, 6, 12]
+  // 紧凑模式尺寸缩小（与 ConnectingOverlay / TopMenuBar 一致）
+  const iconSize = compact ? 28 : 48
+  const outerBorder = compact ? 2 : 3
+  const innerInset = compact ? 3 : 5
+  const innerBorder = compact ? 1.5 : 2
+  const glowSize = compact ? 2 : 3
 
   return (
-    <>
-      <style>{spinKeyframes}</style>
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '32px 16px',
+        gap: '14px',
+        userSelect: 'none',
+        opacity: isPending ? 1 : 0,
+        transition: 'opacity 0.25s ease-in-out',
+      }}
+      role="presentation"
+      aria-hidden="true"
+    >
+      {/* Polaris 品牌旋转图标：双圈反向旋转 + 中心光晕 */}
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '48px 16px',
-          gap: '16px',
-          userSelect: 'none',
-          opacity: isPending ? 1 : 0,
-          transition: 'opacity 0.25s ease-in-out',
+          position: 'relative',
+          flexShrink: 0,
+          width: iconSize,
+          height: iconSize,
         }}
-        role="presentation"
-        aria-hidden="true"
       >
+        {/* 背景圈 */}
         <div
           style={{
-            position: 'relative',
-            flexShrink: 0,
-            width: orbSize,
-            height: orbSize,
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: `${outerBorder}px solid var(--border-subtle, rgba(255,255,255,0.1))`,
           }}
-        >
-          {/* 外层环 */}
-          <span
-            style={{
-              position: 'absolute',
-              borderRadius: '50%',
-              border: '2.5px solid transparent',
-              borderTopColor: 'var(--orb-color-outer, #3b82f6)',
-              animation: 'orb-spin 1s linear infinite',
-              willChange: 'transform',
-              width: ringSizes[0],
-              height: ringSizes[0],
-              top: ringOffsets[0],
-              left: ringOffsets[0],
-            }}
-          />
-          {/* 中层环（反向） */}
-          <span
-            style={{
-              position: 'absolute',
-              borderRadius: '50%',
-              border: '2.5px solid transparent',
-              borderTopColor: 'transparent',
-              borderRightColor: 'var(--orb-color-middle, #8b5cf6)',
-              animation: 'orb-spin 0.8s linear infinite reverse',
-              willChange: 'transform',
-              width: ringSizes[1],
-              height: ringSizes[1],
-              top: ringOffsets[1],
-              left: ringOffsets[1],
-            }}
-          />
-          {/* 内层环 */}
-          <span
-            style={{
-              position: 'absolute',
-              borderRadius: '50%',
-              border: '2.5px solid transparent',
-              borderTopColor: 'transparent',
-              borderBottomColor: 'var(--orb-color-inner, #60a5fa)',
-              animation: 'orb-spin 0.6s linear infinite',
-              willChange: 'transform',
-              width: ringSizes[2],
-              height: ringSizes[2],
-              top: ringOffsets[2],
-              left: ringOffsets[2],
-            }}
-          />
-        </div>
-
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
-          <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>
-            {t('thinkingOrb.title', { name: displayName })}
-          </span>
-          <span style={{ fontSize: '12px', color: '#888' }}>
-            {phaseMessage}
-          </span>
-        </div>
+        />
+        {/* 主旋转弧（蓝紫渐变）— 与 ConnectingOverlay 一致 */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            borderRadius: '50%',
+            border: `${outerBorder}px solid transparent`,
+            borderTopColor: 'var(--orb-color-outer, #3b82f6)',
+            borderRightColor: 'var(--orb-color-accent, #818cf8)',
+            animation: 'polaris-spin 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite',
+            willChange: 'transform',
+          }}
+        />
+        {/* 内圈反向旋转 — 与 ConnectingOverlay 一致：bottom + left 弧线 */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: innerInset,
+            borderRadius: '50%',
+            border: `${innerBorder}px solid transparent`,
+            borderBottomColor: 'var(--orb-color-inner, rgba(59,130,246,0.3))',
+            borderLeftColor: 'var(--orb-color-inner-accent, rgba(129,140,248,0.3))',
+            animation: 'polaris-spin-rev 2s linear infinite',
+            willChange: 'transform',
+          }}
+        />
+        {/* 中心光晕 */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            width: glowSize,
+            height: glowSize,
+            marginTop: -glowSize / 2,
+            marginLeft: -glowSize / 2,
+            borderRadius: '50%',
+            backgroundColor: 'var(--orb-color-outer, #3b82f6)',
+            animation: 'polaris-glow 1.5s ease-in-out infinite',
+          }}
+        />
       </div>
-    </>
+
+      {/* 文案区域 */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+        <span style={{ fontSize: '14px', fontWeight: 600, color: '#e0e0e0' }}>
+          {t('thinkingOrb.title', { name: displayName })}
+        </span>
+        <span style={{ fontSize: '12px', color: '#888' }}>
+          {phaseMessage}
+        </span>
+      </div>
+    </div>
   )
 })

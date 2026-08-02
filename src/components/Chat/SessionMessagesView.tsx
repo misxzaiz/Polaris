@@ -7,7 +7,7 @@
 import { memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { sessionStoreManager, useSessionMetadataList } from '@/stores/conversationStore/sessionStoreManager';
 import { renderChatMessage } from './EnhancedChatMessages';
 import type { MessageScrollActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
@@ -17,7 +17,9 @@ import {
   getRoundScrollTargetIndex,
   groupConversationRounds,
 } from '@/utils/conversationRounds';
+import { ThinkingOrb } from './ThinkingOrb';
 import { ChatNavigator } from './ChatNavigator';
+import { getEngineDisplayName } from '@/utils/engineDisplay';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -124,6 +126,12 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     false
   );
 
+  // 从会话元数据中获取引擎名称
+  const sessionMetadata = useSessionMetadataList().find(m => m.id === sessionId);
+  const engineName = sessionMetadata?.engineId
+    ? getEngineDisplayName(sessionMetadata.engineId)
+    : undefined;
+
   // 合并流式消息到消息列表
   const displayMessages = useMemo(() => {
     if (!currentMessage || !isStreaming) {
@@ -160,6 +168,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   }, [messages, currentMessage, isStreaming]);
 
   const isEmpty = displayMessages.length === 0;
+  // PENDING 状态：已发送消息、正在等待首 token
+  const isPending = isStreaming && !currentMessage;
 
   // 对话轮次分组
   const conversationRounds = useMemo(() => {
@@ -256,7 +266,15 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           }}
           components={{
             EmptyPlaceholder: () => null,
-            Footer: () => <div style={{ height: '80px' }} />,
+            Footer: () => (
+              <>
+                {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
+                {isPending && (
+                  <ThinkingOrb isPending={isPending} compact={true} engineName={engineName} />
+                )}
+                <div style={{ height: '80px' }} />
+              </>
+            ),
           }}
           followOutput={autoScrollRef.current ? (isStreaming ? true : 'smooth') : false}
           atBottomStateChange={handleAtBottomStateChange}
