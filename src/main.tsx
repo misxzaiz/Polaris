@@ -31,6 +31,9 @@ import "./i18n";
           const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
           document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
           document.documentElement.style.setProperty('--spiderman-web-opacity', String(config.webTextureOpacity ?? 0.15));
+          document.documentElement.style.setProperty('--spiderman-panel-opacity', String(config.panelOpacity ?? 0.55));
+          const blur = config.panelBlur ?? 8;
+          document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
           document.documentElement.style.setProperty('--spiderman-bg-position',
             `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
           if (config.backgroundSize) {

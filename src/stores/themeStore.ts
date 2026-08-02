@@ -61,6 +61,11 @@ function syncSpiderManCssVars(): void {
     document.documentElement.style.setProperty('--spiderman-bg-position',
       `${config.backgroundPositionX ?? 50}% ${config.backgroundPositionY ?? 50}%`);
     document.documentElement.style.setProperty('--spiderman-bg-size', config.backgroundSize ?? 'cover');
+    // 同步面板透明度
+    document.documentElement.style.setProperty('--spiderman-panel-opacity', String(config.panelOpacity ?? 0.55));
+    // 同步面板磨砂强度（0 → none 避免创建叠加上下文）
+    const blur = config.panelBlur ?? 8;
+    document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
     // 同步面具头像 URL
     if (config.avatarUrl) {
       document.documentElement.style.setProperty('--spiderman-avatar-url', `url('${config.avatarUrl}')`);

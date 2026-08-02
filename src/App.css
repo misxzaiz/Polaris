@@ -222,15 +222,15 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 [data-theme="spiderman"] .theme-root > [class*="bg-background-elevated"],
 [data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"],
 [data-theme="spiderman"] .chat-input-root {
-  background-color: rgb(var(--c-bg-elevated) / 0.55) !important;
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 
 /* 大面板（LeftPanel、RightPanel、ChatInput）保持模糊效果
    注意：使用 :not([class*="items-center"]) 排除 ActivityBar（薄面板不需要 blur） */
 [data-theme="spiderman"] .theme-root > div > [class*="bg-background-elevated"]:not([class*="items-center"]),
 [data-theme="spiderman"] .chat-input-root {
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: var(--spiderman-panel-blur, blur(8px));
+  -webkit-backdrop-filter: var(--spiderman-panel-blur, blur(8px));
 }
 
 /* 发送按钮红蓝渐变 */

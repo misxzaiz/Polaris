@@ -261,6 +261,10 @@
       "title": "Visual Effects",
       "bgOpacity": "Background Opacity",
       "bgOpacityHint": "Adjust the visibility of the background image",
+      "panelOpacity": "Panel Opacity",
+      "panelOpacityHint": "Adjust the transparency of sidebars and chat panels",
+      "panelBlur": "Panel Frost",
+      "panelBlurHint": "Adjust the blur intensity of panels, 0=off",
       "webOpacity": "Web Texture",
       "webOpacityHint": "Adjust the intensity of the spider web texture"
     },

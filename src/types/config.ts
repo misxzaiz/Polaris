@@ -276,6 +276,10 @@ export interface SpiderManThemeConfig {
   backgroundImage?: string;
   /** 背景图片透明度 (0-1) */
   backgroundOpacity?: number;
+  /** 面板背景透明度 (0-1)，控制侧栏/聊天面板的透明程度 */
+  panelOpacity?: number;
+  /** 面板磨砂强度 (px)，0=关闭磨砂效果 */
+  panelBlur?: number;
   /** 蛛网纹理强度 (0-1) */
   webTextureOpacity?: number;
   /** 背景缩放模式 */
@@ -292,6 +296,8 @@ export interface SpiderManThemeConfig {
 export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   backgroundImage: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920',
   backgroundOpacity: 0.2,
+  panelOpacity: 0.55,
+  panelBlur: 8,
   webTextureOpacity: 0.15,
   backgroundSize: 'cover',
   backgroundPositionX: 50,

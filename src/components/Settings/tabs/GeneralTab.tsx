@@ -615,6 +615,11 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
     const overlayAlpha = Math.max(0, Math.min(1, 1 - bgOpacity));
     document.documentElement.style.setProperty('--spiderman-bg-overlay', String(overlayAlpha));
     document.documentElement.style.setProperty('--spiderman-web-opacity', String(merged.webTextureOpacity ?? 0.15));
+    // 同步面板透明度
+    document.documentElement.style.setProperty('--spiderman-panel-opacity', String(merged.panelOpacity ?? 0.55));
+    // 同步面板磨砂强度
+    const blur = merged.panelBlur ?? 8;
+    document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
     document.documentElement.style.setProperty('--spiderman-bg-position',
       `${merged.backgroundPositionX ?? 50}% ${merged.backgroundPositionY ?? 50}%`);
     document.documentElement.style.setProperty('--spiderman-bg-size', merged.backgroundSize ?? 'cover');
@@ -749,6 +754,43 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ backgroundOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelOpacity')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}%
+          </span>
+        </div>
+        <input
+          type="range"
+          min="5"
+          max="100"
+          value={Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}
+          onChange={(e) => {
+            const v = Number(e.target.value) / 100;
+            updateSpiderManConfig({ panelOpacity: v });
+          }}
+          disabled={loading}
+          className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"
+        />
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-xs text-text-secondary">{t('spiderman.effects.panelBlur')}</span>
+          <span className="text-xs text-text-secondary tabular-nums">
+            {spidermanTheme.panelBlur ?? 8}px
+          </span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="32"
+          step="1"
+          value={spidermanTheme.panelBlur ?? 8}
+          onChange={(e) => {
+            const v = Number(e.target.value);
+            updateSpiderManConfig({ panelBlur: v });
           }}
           disabled={loading}
           className="w-full h-1.5 bg-border rounded-full appearance-none cursor-pointer mb-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3.5 [&::-webkit-slider-thumb]:h-3.5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary"

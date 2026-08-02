@@ -261,6 +261,10 @@
       "title": "视觉效果",
       "bgOpacity": "背景透明度",
       "bgOpacityHint": "调节背景图片的可见度",
+      "panelOpacity": "面板透明度",
+      "panelOpacityHint": "调节侧栏和聊天面板的透明程度",
+      "panelBlur": "面板磨砂",
+      "panelBlurHint": "调节面板背景模糊程度，0=关闭",
       "webOpacity": "蛛网纹理",
       "webOpacityHint": "调节蛛网纹理的强度"
     },

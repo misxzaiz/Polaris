@@ -197,6 +197,8 @@
   --spiderman-bg-overlay: 0.8;
   --spiderman-bg-position: center;
   --spiderman-bg-size: cover;
+  --spiderman-panel-opacity: 0.55;
+  --spiderman-panel-blur: blur(8px);
   --spiderman-avatar-url: none;
   --spiderman-web-opacity: 0.15;
 }

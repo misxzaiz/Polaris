@@ -1230,6 +1230,12 @@ pub struct SpiderManThemeConfig {
     /// 背景图片透明度 (0-1)
     #[serde(default)]
     pub background_opacity: Option<f64>,
+    /// 面板背景透明度 (0-1)，控制侧栏/聊天面板的透明程度
+    #[serde(default)]
+    pub panel_opacity: Option<f64>,
+    /// 面板磨砂强度 (px)，0=关闭磨砂效果
+    #[serde(default)]
+    pub panel_blur: Option<f64>,
     /// 蛛网纹理强度 (0-1)
     #[serde(default)]
     pub web_texture_opacity: Option<f64>,
