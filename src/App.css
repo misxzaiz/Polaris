@@ -277,6 +277,15 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
 }
 
+/* 设置页中的静态背景区域
+   如 PromptSnippetTab 的变量说明区、section header 等，
+   使用 bg-background-hover 作为静态背景，叠加半透明保持视觉一致。
+   注意：hover:bg-background-hover 的交互效果不会被破坏，
+   hover 时 class 被激活，仍以半透明形式显示。 */
+[data-theme="spiderman"] .theme-root [class*="bg-background-hover"] {
+  background-color: rgb(var(--c-bg-hover) / var(--spiderman-surface-opacity, 0.5)) !important;
+}
+
 /* === 模态框/对话框内容保护 ===
    确保 fixed 定位的模态框/对话框内的内容面板保持完全不透明。
    模态框是独立弹出层，其背景与壁纸主题无关。
