@@ -41,6 +41,7 @@ import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
+import { useOverlayStore } from './stores/overlayStore';
 import { getFileNameFromPath } from './utils/path';
 import './index.css';
 import './App.css';
@@ -75,11 +76,13 @@ function App() {
   }, [editAndResend]);
 
   // UI 状态
-  const [showSettings, setShowSettings] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
-  const [showCreateSession, setShowCreateSession] = useState(false);
-  const [showFileSearch, setShowFileSearch] = useState(false);
+
+  // OverlayStore 状态（替代 useState）
+  const showSettings = useOverlayStore(s => s.settingsOpen);
+  const showCreateSession = useOverlayStore(s => s.createSessionOpen);
+  const showFileSearch = useOverlayStore(s => s.fileSearchOpen);
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -104,7 +107,10 @@ function App() {
 
   // === 拆分后的 Hooks ===
   useAppInit({
-    onNoWorkspaces: useCallback(() => setShowCreateWorkspace(true), []),
+    onNoWorkspaces: useCallback(() => {
+      setShowCreateWorkspace(true);
+      useOverlayStore.getState().increment();
+    }, []),
   });
 
   usePluginServiceSync();
@@ -112,16 +118,6 @@ function App() {
   useAppEvents();
 
   const { isCompact } = useWindowManager({
-    onOpenSettings: useCallback((tab?: string) => {
-      setSettingsInitialTab(tab);
-      setShowSettings(true);
-    }, []),
-    onToggleFileSearch: useCallback(() => {
-      setShowFileSearch(prev => !prev);
-    }, []),
-    onOpenCreateSessionModal: useCallback(() => {
-      setShowCreateSession(true);
-    }, []),
     isCreateSessionModalOpen: showCreateSession,
   });
 
@@ -132,7 +128,7 @@ function App() {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent).detail as { tab?: string } | undefined
       setSettingsInitialTab(detail?.tab)
-      setShowSettings(true)
+      useOverlayStore.getState().setSettingsOpen(true)
     }
     window.addEventListener('polaris:open-settings', handler)
     return () => window.removeEventListener('polaris:open-settings', handler)
@@ -228,7 +224,7 @@ function App() {
           onToggleRightPanel={toggleRightPanel}
           rightPanelCollapsed={rightPanelCollapsed}
           isCompactMode={isCompact}
-          onOpenSettings={() => setShowSettings(true)}
+          onOpenSettings={() => useOverlayStore.getState().setSettingsOpen(true)}
         />
 
         <div className="flex flex-1 overflow-hidden relative">
@@ -236,13 +232,13 @@ function App() {
             <Suspense fallback={loadingFallback}>
               <SettingsPage
                 initialTab={settingsInitialTab as SettingsTabId | undefined}
-                onClose={() => { setShowSettings(false); setSettingsInitialTab(undefined); }}
+                onClose={() => { useOverlayStore.getState().setSettingsOpen(false); setSettingsInitialTab(undefined); }}
               />
             </Suspense>
           ) : (
             <>
               <ActivityBar
-                onOpenSettings={() => setShowSettings(true)}
+                onOpenSettings={() => useOverlayStore.getState().setSettingsOpen(true)}
                 onToggleRightPanel={toggleRightPanel}
                 rightPanelCollapsed={rightPanelCollapsed}
                 forceCollapsed={isCompact}
@@ -302,7 +298,7 @@ function App() {
 
         {showCreateWorkspace && (
           <Suspense fallback={<div className="flex items-center justify-center text-text-muted">{t('status.loading')}</div>}>
-            <CreateWorkspaceModal onClose={() => setShowCreateWorkspace(false)} />
+            <CreateWorkspaceModal onClose={() => { setShowCreateWorkspace(false); useOverlayStore.getState().decrement(); }} />
           </Suspense>
         )}
 
@@ -310,7 +306,7 @@ function App() {
         {showCreateSession && (
           <Suspense fallback={null}>
             <CreateSessionModal
-              onClose={() => setShowCreateSession(false)}
+              onClose={() => useOverlayStore.getState().setCreateSessionOpen(false)}
               onCreated={() => {
                 // createSession 已切换活跃会话，这里等一帧后请求聚焦输入框
                 requestAnimationFrame(() => {
@@ -323,7 +319,7 @@ function App() {
 
         {showFileSearch && (
           <Suspense fallback={null}>
-            <FileSearchModal onClose={() => setShowFileSearch(false)} />
+            <FileSearchModal onClose={() => useOverlayStore.getState().setFileSearchOpen(false)} />
           </Suspense>
         )}
 

@@ -1358,6 +1358,8 @@ fn reuse_browser_webview(
         existing.navigate(normalized)?;
     }
 
+    // 先隐藏再重设 bounds，避免 hide→show 帧窗口期黑屏
+    let _ = existing.hide();
     apply_webview_bounds(&existing, bounds)?;
     remember_browser_bounds(&label, bounds)?;
     upsert_session_and_emit(

@@ -56,6 +56,7 @@ import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useOverlayStore } from '@/stores/overlayStore'
 
 
 interface BrowserPanelProps {
@@ -78,8 +79,6 @@ const QUICK_STARTS = [
 const MAX_OPERATION_EVENTS = 8
 const MIN_OCCLUDING_Z_INDEX = 40
 const HIDDEN_BROWSER_BOUNDS: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 }
-// 清理时移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏
-const OFFSCREEN_BROWSER_BOUNDS: BrowserBounds = { x: -99999, y: -99999, width: 1, height: 1 }
 const OCCLUDING_ELEMENT_SELECTOR = [
   '[data-native-webview-overlay]',
   '[role="dialog"]',
@@ -480,9 +479,9 @@ export function BrowserPanel({
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       // 移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏；
       // 真正的遮挡隐藏由 syncBounds 的 occlusion 检测控制
-      log('BrowserPanel UNMOUNT: setting OFFSCREEN_BOUNDS', { webviewLabel })
-      browserSetBounds(webviewLabel, OFFSCREEN_BROWSER_BOUNDS).catch(() => undefined)
-      lastAppliedBoundsRef.current = OFFSCREEN_BROWSER_BOUNDS
+      log('BrowserPanel UNMOUNT: hiding webview', { webviewLabel })
+      browserSetBounds(webviewLabel, HIDDEN_BROWSER_BOUNDS).catch(() => undefined)
+      lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
     }
   }, [
     getContainerBounds,
@@ -530,6 +529,25 @@ export function BrowserPanel({
       if (intervalId !== null) window.clearInterval(intervalId)
     }
   }, [aiOperationMode, currentUrl, status, webviewLabel])
+
+  // overlayStore 订阅：当有覆盖层打开时立即隐藏 WebView
+  const overlayCount = useOverlayStore((s) => s.count)
+  const overlayPrevCountRef = useRef(0)
+  useEffect(() => {
+    const prev = overlayPrevCountRef.current
+    overlayPrevCountRef.current = overlayCount
+
+    if (overlayCount > 0 && prev === 0) {
+      // 覆盖层打开：立即隐藏 WebView
+      log('overlayStore: hiding webview (count > 0)', { count: overlayCount })
+      browserSetBounds(webviewLabel, HIDDEN_BROWSER_BOUNDS).catch(() => undefined)
+      lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
+    } else if (overlayCount === 0 && prev > 0) {
+      // 覆盖层全部关闭：恢复 WebView
+      log('overlayStore: restoring webview (count === 0)')
+      syncBounds()
+    }
+  }, [overlayCount, webviewLabel, syncBounds])
 
   const navigateTo = useCallback(
     async (rawUrl: string) => {

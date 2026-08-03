@@ -15,6 +15,7 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '@/stores';
 import { useViewStore } from '@/stores/viewStore';
+import { useOverlayStore } from '@/stores/overlayStore';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useWindowSize } from './useWindowSize';
@@ -25,18 +26,11 @@ import { createLogger } from '@/utils/logger';
 const log = createLogger('WindowManager');
 
 interface UseWindowManagerOptions {
-  onOpenSettings: (tab?: string) => void;
-  onToggleFileSearch: () => void;
-  /** Ctrl/Cmd+Shift+'+' 触发：弹出工作区/关联工作区选择弹窗 */
-  onOpenCreateSessionModal: () => void;
   /** 新建会话弹窗是否已打开（打开期间屏蔽 '+' 系列快捷键，避免背后静默建会话） */
   isCreateSessionModalOpen: boolean;
 }
 
 export function useWindowManager({
-  onOpenSettings,
-  onToggleFileSearch,
-  onOpenCreateSessionModal,
   isCreateSessionModalOpen,
 }: UseWindowManagerOptions) {
   const { t } = useTranslation('chat');
@@ -96,7 +90,7 @@ export function useWindowManager({
         if (useViewStore.getState().leftPanelType === 'terminal') {
           window.dispatchEvent(new CustomEvent('terminal:open-runner'));
         } else {
-          onToggleFileSearch();
+          useOverlayStore.getState().toggleFileSearch();
         }
       }
       // Ctrl/Cmd + '+' 系列快捷键（主键盘 Equal 物理键 / 小键盘 NumpadAdd）
@@ -115,7 +109,7 @@ export function useWindowManager({
 
         // Ctrl/Cmd + Shift + '+'：弹出工作区/关联工作区选择
         if (e.shiftKey) {
-          onOpenCreateSessionModal();
+          useOverlayStore.getState().setCreateSessionOpen(true);
           return;
         }
 
@@ -148,17 +142,17 @@ export function useWindowManager({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onToggleFileSearch, onOpenCreateSessionModal, isCreateSessionModalOpen, t]);
+  }, [isCreateSessionModalOpen, t]);
 
   // navigate-to-settings 事件
   useEffect(() => {
-    const handleNavigateToSettings = (e: CustomEvent<{ tab?: string }>) => {
-      onOpenSettings(e.detail?.tab);
+    const handleNavigateToSettings = () => {
+      useOverlayStore.getState().setSettingsOpen(true);
     };
 
     window.addEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
     return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
-  }, [onOpenSettings]);
+  }, []);
 
   return { windowWidth, windowHeight, isCompact };
 }
