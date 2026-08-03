@@ -168,6 +168,48 @@ git push origin vx.x.x
 
 ---
 
+## v10.3.0 构建记录
+
+**构建时间**: 2026-08-04 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.3.0
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.3.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.3.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.3.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.3.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.3.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.3.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.3.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.3.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- feat(theme): 实现 Spider-Man 沉浸式主题（蓝调增强、红蓝黑三色平衡）
+- feat(theme): 主题配置完善 — UI 密度与聊天字体大小设置
+- feat(theme): 透明层级系统 — 聊天工具面板、悬停背景、模态框独立可调透明度
+- feat: 浏览器 acquire 重试机制 & 样式优化
+- feat: 移动端二维码扫描连接 + 手势链修复
+- fix(browser): WebView 覆盖问题（Phase 0+1 / Phase 2+3）
+- fix(pi): release input_sender before wait 防止 EPIPE 崩溃
+- fix(theme): 默认深色主题背景改为纯黑，AI 回复消息背景调整
+- fix(spiderman): 半透明支持覆盖设置页静态背景区域
+- fix(spiderman): 聊天消息工具面板半透明支持 + 设置侧栏激活态背景修复
+- fix: 多窗口 ThinkingOrb 动画 + i18n 修复
+- refactor: 重构主题配置与样式系统，新增动态主题切换
+- refactor(theme): Spider-Man 主题区块顺序调整，移除 emoji，优化面板遮罩
+- ui(spiderman): 背景网格增加至 4 列
+
+---
+
 ## v10.2.2 构建记录
 
 **构建时间**: 2026-07-28 (UTC)
