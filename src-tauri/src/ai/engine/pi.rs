@@ -975,21 +975,25 @@ export default async function (pi) {
                     format!("Pi CLI 输出无法解析（{} 行）。请检查 pi 版本兼容性", line_count),
                 ));
             }
-            event_callback(AIEvent::session_end(&real_session_id));
 
             if !agent_ended {
                 tracing::warn!("[PiEngine] 进程退出但未收到 agent_end 事件");
             }
 
-            // 主动收尾进程：先尝试等其自然退出（让 output-guard 排空收尾输出，
-            // 避免管道读端过早关闭导致 EPIPE unhandled exception），超时则 kill 兜底。
-            // 注意：reader 此时仍存活，stdout 管道保持打开，pi 进程可安全写入收尾数据。
+            // 主动收尾进程：先移除 session（释放 input_sender 让 stdin 线程退出），
+            // pi 收到 stdin EOF 后自然退出，避免 EPIPE。
             //
-            // ★ 修复：先等进程退出，再排空 stdout。之前的实现在进程未退出时调用
-            //   read_line 阻塞读取 stdout，导致 pi 进程正在运行但 stdout 无数据时
-            //   永久阻塞，清理循环无法到达超时检查，complete_callback 永远不触发。
+            // 之前的问题：try_wait 循环中只 sleep(100ms) 不读取 stdout 管道，
+            // pi 的 output-guard.js 写缓冲区满 → EPIPE crash。
+            // 现在先关闭 stdin（通过释放 input_sender），pi 自然退出后再等 wait，
+            // 管道写端关闭后 read_line 不会阻塞，也无缓冲区满的问题。
             let mut child = child;
-            // 阶段一：等待进程退出（最多 5 秒）
+            // 从 sessions 中移除，释放 input_sender 让 stdin 线程退出
+            if let Ok(mut s) = sessions.lock() {
+                s.remove(&real_session_id);
+            }
+
+            // 等待进程退出（最多 5 秒）
             let max_wait = std::time::Duration::from_secs(5);
             let start = std::time::Instant::now();
             let child_exited = loop {
@@ -1017,7 +1021,7 @@ export default async function (pi) {
                 }
             };
 
-            // 阶段二：进程已退出后，排空 stdout 剩余数据（此时管道已关闭，read_line 不会阻塞）
+            // 进程已退出后，排空 stdout 剩余数据（此时管道已关闭，read_line 不会阻塞）
             if child_exited {
                 use std::io::BufRead;
                 let mut drain = String::new();
@@ -1035,6 +1039,9 @@ export default async function (pi) {
             // 子进程已退出，现在安全关闭 stdout 管道
             // 延迟 drop 确保 pi 进程的 output-guard 在管道关闭前完成所有写入
             drop(reader);
+
+            // session_end 在清理完成后发送，确保前端在收到结束信号前已收到所有数据
+            event_callback(AIEvent::session_end(&real_session_id));
 
             if let Some(cb) = on_complete {
                 cb(0);

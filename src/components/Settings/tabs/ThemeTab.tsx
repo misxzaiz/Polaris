@@ -409,6 +409,11 @@ const SPIDERMAN_BACKGROUNDS = [
   { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-zk-3840x2160.jpg', label: '崭新之日·经典' },
   { src: 'https://images.hdqwalls.com/wallpapers/spider-man-brand-new-day-the-amazing-hero-2e.jpg', label: '超凡英雄' },
   { src: 'https://images.hdqwalls.com/download/spider-man-brand-new-day-5k-qg-3840x2400.jpg', label: '崭新之日·5K' },
+  // 本地打包图片（随 MSI 分发）
+  { src: '/spiderman/062a7b7e3de3931c1f2892c3268fc09d.jpg', label: '本地背景 #1' },
+  { src: '/spiderman/09fca96a312390d96dcad588fd3ef02a.jpg', label: '本地背景 #2' },
+  { src: '/spiderman/1c28d5d56749d9244e5bea157668dad5.jpg', label: '本地背景 #3' },
+  { src: '/spiderman/b34f8cb8d3e94d6c49b52e520904183d.jpg', label: '本地背景 #4' },
   { src: '', label: '关闭背景' },
 ];
 
@@ -423,6 +428,11 @@ const SPIDERMAN_MASKS = [
   { src: 'https://www.citypng.com/public/uploads/preview/hd-mask-spiderman-3d-png-11695958056q2ii6wyjfz.png', label: '3D 面具' },
   // 动态 GIF 头像 (img 标签支持 GIF 动画)
   { src: 'https://media3.giphy.com/media/gjJHFL9KPkbLErYPrr/giphy.gif', label: '动态·蜘蛛感应' },
+  // 本地打包图片（随 MSI 分发）
+  { src: '/spiderman/062a7b7e3de3931c1f2892c3268fc09d.jpg', label: '本地头像 #1' },
+  { src: '/spiderman/09fca96a312390d96dcad588fd3ef02a.jpg', label: '本地头像 #2' },
+  { src: '/spiderman/1c28d5d56749d9244e5bea157668dad5.jpg', label: '本地头像 #3' },
+  { src: '/spiderman/b34f8cb8d3e94d6c49b52e520904183d.jpg', label: '本地头像 #4' },
 ];
 
 const SCALE_OPTIONS = [
@@ -753,7 +763,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
       <div className="p-4 bg-surface rounded-lg border border-border">
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('spiderman.avatar.title')}</h3>
         <div className="text-xs text-text-secondary mb-3">{t('spiderman.avatar.hint')}</div>
-        <div className="grid grid-cols-4 gap-2">
+        <div className="grid grid-cols-6 gap-2">
           {SPIDERMAN_MASKS.map((mask) => (
             <button
               key={mask.src}

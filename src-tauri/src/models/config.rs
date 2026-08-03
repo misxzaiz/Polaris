@@ -1257,6 +1257,12 @@ pub struct SpiderManThemeConfig {
     /// 蓝色强调强度 (0-1)，0=无蓝色，1=最大蓝色
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blue_accent: Option<f64>,
+    /// 聊天工具面板透明度 (0-1)，控制工具调用块/派发卡片等背景
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub chat_tool_opacity: Option<f64>,
+    /// 悬停态背景透明度 (0-1)，控制按钮/列表项等静态背景区域
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hover_opacity: Option<f64>,
 }
 
 /// 应用配置（新版本）
