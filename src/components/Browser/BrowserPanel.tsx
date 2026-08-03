@@ -88,6 +88,10 @@ const OCCLUDING_ELEMENT_SELECTOR = [
   '.absolute',
 ].join(',')
 
+const log = (msg: string, data?: unknown) => {
+  console.log(`[BrowserPanel] ${msg}`, data !== undefined ? data : '')
+}
+
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 }
@@ -137,6 +141,7 @@ function isBrowserOccludedByAppOverlay(
   browserRoot: HTMLElement | null
 ): boolean {
   if (browserBounds.width < 1 || browserBounds.height < 1) {
+    log('isBrowserOccludedByAppOverlay: bounds too small', browserBounds)
     return true
   }
 
@@ -157,6 +162,15 @@ function isBrowserOccludedByAppOverlay(
     if (!canOverlayNativeWebview) continue
 
     if (rectIntersectsBrowserBounds(element.getBoundingClientRect(), browserBounds)) {
+      log('isBrowserOccludedByAppOverlay: occluding element found', {
+        tag: element.tagName,
+        id: element.id,
+        className: element.className,
+        position: style.position,
+        zIndex: style.zIndex,
+        rect: element.getBoundingClientRect(),
+        browserBounds,
+      })
       return true
     }
   }
@@ -240,33 +254,51 @@ export function BrowserPanel({
 
   const getContainerBounds = useCallback((): BrowserBounds | null => {
     const container = containerRef.current
-    if (!container) return null
+    if (!container) {
+      log('getContainerBounds: containerRef is null')
+      return null
+    }
 
     const rect = container.getBoundingClientRect()
-    return {
+    const bounds = {
       x: Math.round(rect.left),
       y: Math.round(rect.top),
       width: Math.round(rect.width),
       height: Math.round(rect.height),
     }
+    log('getContainerBounds', bounds)
+    return bounds
   }, [])
 
   const syncBounds = useCallback(async () => {
-    if (!readyRef.current) return
+    if (!readyRef.current) {
+      log('syncBounds: skipped (not ready)')
+      return
+    }
     const bounds = getContainerBounds()
-    if (!bounds) return
+    if (!bounds) {
+      log('syncBounds: skipped (no bounds)')
+      return
+    }
 
-    const nextBounds = isBrowserOccludedByAppOverlay(bounds, rootRef.current)
-      ? HIDDEN_BROWSER_BOUNDS
-      : bounds
+    const occluded = isBrowserOccludedByAppOverlay(bounds, rootRef.current)
+    const nextBounds = occluded ? HIDDEN_BROWSER_BOUNDS : bounds
+
+    if (occluded) {
+      log('syncBounds: OCCLUDED by app overlay → HIDDEN_BOUNDS', { bounds })
+    }
 
     // 跳过相等检查的情况：当前 bounds 是隐藏状态但实际需要显示，必须强制恢复
     if (boundsEqual(lastAppliedBoundsRef.current, nextBounds)) {
       const isHidden = lastAppliedBoundsRef.current === HIDDEN_BROWSER_BOUNDS
       const needShow = nextBounds !== HIDDEN_BROWSER_BOUNDS
-      if (!isHidden || !needShow) return
+      if (!isHidden || !needShow) {
+        log('syncBounds: skipped (bounds unchanged)', { prev: lastAppliedBoundsRef.current, next: nextBounds })
+        return
+      }
     }
 
+    log('syncBounds: applying bounds', { prev: lastAppliedBoundsRef.current, next: nextBounds })
     await browserSetBounds(webviewLabel, nextBounds)
     lastAppliedBoundsRef.current = nextBounds
   }, [getContainerBounds, webviewLabel])
@@ -274,12 +306,14 @@ export function BrowserPanel({
   const scheduleSyncBounds = useCallback(() => {
     const now = Date.now()
     if (now - lastSyncTimeRef.current < SYNC_THROTTLE_MS) {
+      log('scheduleSyncBounds: throttled')
       return
     }
     lastSyncTimeRef.current = now
     if (rafRef.current !== null) {
       window.cancelAnimationFrame(rafRef.current)
     }
+    log('scheduleSyncBounds: scheduled')
     rafRef.current = window.requestAnimationFrame(() => {
       rafRef.current = null
       syncBounds().catch((e) => {
@@ -331,6 +365,7 @@ export function BrowserPanel({
       setError(null)
       try {
         const bounds = getContainerBounds() ?? { x: 0, y: 0, width: 320, height: 240 }
+        log('createNativeWebview: initial bounds', { bounds, webviewLabel })
         const session = await browserCreate(webviewLabel, tabId, normalizedInitialUrl, bounds, 'Browser')
         lastAppliedBoundsRef.current = bounds
 
@@ -422,9 +457,11 @@ export function BrowserPanel({
       }
     }
 
+    log('BrowserPanel MOUNT', { tabId, webviewLabel, normalizedInitialUrl, acquireRequestId })
     createNativeWebview()
 
     return () => {
+      log('BrowserPanel UNMOUNT', { tabId, webviewLabel, lastAppliedBounds: lastAppliedBoundsRef.current })
       cleanup = true
       mountedRef.current = false
       readyRef.current = false
@@ -443,6 +480,7 @@ export function BrowserPanel({
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       // 移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏；
       // 真正的遮挡隐藏由 syncBounds 的 occlusion 检测控制
+      log('BrowserPanel UNMOUNT: setting OFFSCREEN_BOUNDS', { webviewLabel })
       browserSetBounds(webviewLabel, OFFSCREEN_BROWSER_BOUNDS).catch(() => undefined)
       lastAppliedBoundsRef.current = OFFSCREEN_BROWSER_BOUNDS
     }

@@ -75,11 +75,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [webStatusRefreshKey, setWebStatusRefreshKey] = useState(0);
 
-  // 同步远程配置到本地
+  // 同步远程配置到本地：仅在首次加载时执行，避免保存后 useEffect 覆盖 localConfig
+  // 保存操作由 handleSaveCurrentTab 直接管理 localConfig 和 baseConfigRef
+  const initialLoadDone = useRef(false);
   useEffect(() => {
-    if (config) {
+    if (config && !initialLoadDone.current) {
       setLocalConfig(config);
       baseConfigRef.current = config;
+      initialLoadDone.current = true;
     }
   }, [config]);
 

@@ -713,9 +713,18 @@ fn browser_bounds(label: &str) -> Result<Option<BrowserBounds>> {
 #[cfg(feature = "tauri-app")]
 fn apply_webview_bounds(webview: &tauri::Webview, bounds: BrowserBounds) -> Result<()> {
     if bounds.width < 1.0 || bounds.height < 1.0 {
+        tracing::info!(
+            "[Browser] apply_webview_bounds: HIDE (bounds={:?})",
+            bounds
+        );
         webview.hide()?;
         return Ok(());
     }
+
+    tracing::info!(
+        "[Browser] apply_webview_bounds: SET ({:.0},{:.0} {:.0}x{:.0})",
+        bounds.x, bounds.y, bounds.width, bounds.height
+    );
 
     webview.set_position(tauri::LogicalPosition::new(
         bounds.x.round(),
@@ -1340,6 +1349,11 @@ fn reuse_browser_webview(
 
     let is_same_url = current_url == normalized_string;
 
+    tracing::info!(
+        "[Browser] reuse_browser_webview: label={}, same_url={}, bounds=({:.0},{:.0} {:.0}x{:.0})",
+        label, is_same_url, bounds.x, bounds.y, bounds.width, bounds.height
+    );
+
     if !is_same_url {
         existing.navigate(normalized)?;
     }
@@ -1378,8 +1392,17 @@ fn browser_create_with_app(
     let normalized = normalize_url(&url)?;
 
     if let Some(existing) = app.get_webview(&label) {
+        tracing::info!(
+            "[Browser] browser_create_with_app: reusing existing webview label={}",
+            label
+        );
         return reuse_browser_webview(app, label, tab_id, normalized, title, bounds, existing);
     }
+
+    tracing::info!(
+        "[Browser] browser_create_with_app: creating new webview label={} url={}",
+        label, normalized
+    );
 
     let host_window = app
         .get_window("main")

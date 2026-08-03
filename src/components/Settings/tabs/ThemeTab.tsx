@@ -476,7 +476,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
   };
 
   // 计算自适应遮罩值（用于 UI 展示）
-  const bgOpacity = spidermanTheme.backgroundOpacity ?? 0.2;
+  const bgOpacity = spidermanTheme.backgroundOpacity ?? 1.0;
   const userOverlay = 1 - bgOpacity;
   const effectiveOverlay = computeAdaptiveOverlay(bgOpacity, imageBrightness);
   const isBoosted = effectiveOverlay > userOverlay + 0.02;
@@ -529,7 +529,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
               </span>
             )}
             <span className="text-xs text-text-secondary tabular-nums">
-              {Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}%
+              {Math.round((spidermanTheme.backgroundOpacity ?? 1.0) * 100)}%
             </span>
           </div>
         </div>
@@ -547,7 +547,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           type="range"
           min="0"
           max="100"
-          value={Math.round((spidermanTheme.backgroundOpacity ?? 0.2) * 100)}
+          value={Math.round((spidermanTheme.backgroundOpacity ?? 1.0) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ backgroundOpacity: v });
@@ -558,14 +558,14 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-text-secondary">{t('spiderman.effects.panelOpacity')}</span>
           <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}%
+            {Math.round((spidermanTheme.panelOpacity ?? 0) * 100)}%
           </span>
         </div>
         <input
           type="range"
           min="0"
           max="100"
-          value={Math.round((spidermanTheme.panelOpacity ?? 0.55) * 100)}
+          value={Math.round((spidermanTheme.panelOpacity ?? 0) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ panelOpacity: v });
@@ -576,7 +576,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-text-secondary">{t('spiderman.effects.panelBlur')}</span>
           <span className="text-xs text-text-secondary tabular-nums">
-            {spidermanTheme.panelBlur ?? 8}px
+            {spidermanTheme.panelBlur ?? 0}px
           </span>
         </div>
         <input
@@ -584,7 +584,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           min="0"
           max="32"
           step="1"
-          value={spidermanTheme.panelBlur ?? 8}
+          value={spidermanTheme.panelBlur ?? 0}
           onChange={(e) => {
             const v = Number(e.target.value);
             updateSpiderManConfig({ panelBlur: v });
@@ -614,14 +614,14 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-text-secondary">{t('spiderman.effects.webOpacity')}</span>
           <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}%
+            {Math.round((spidermanTheme.webTextureOpacity ?? 0) * 100)}%
           </span>
         </div>
         <input
           type="range"
           min="0"
           max="35"
-          value={Math.round((spidermanTheme.webTextureOpacity ?? 0.15) * 100)}
+          value={Math.round((spidermanTheme.webTextureOpacity ?? 0) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ webTextureOpacity: v });
@@ -633,14 +633,14 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-text-secondary">{t('spiderman.effects.surfaceOpacity')}</span>
           <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.surfaceOpacity ?? 0.5) * 100)}%
+            {Math.round((spidermanTheme.surfaceOpacity ?? 0.27) * 100)}%
           </span>
         </div>
         <input
           type="range"
           min="0"
           max="100"
-          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.5) * 100)}
+          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.27) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ surfaceOpacity: v });

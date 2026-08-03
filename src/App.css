@@ -168,8 +168,8 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: transparent !important;
   position: relative;
   /* 单层 backdrop-filter：所有子面板继承此效果，只创建 1 个 GPU 合成层 */
-  backdrop-filter: var(--spiderman-panel-blur, blur(8px));
-  -webkit-backdrop-filter: var(--spiderman-panel-blur, blur(8px));
+  backdrop-filter: var(--spiderman-panel-blur, none);
+  -webkit-backdrop-filter: var(--spiderman-panel-blur, none);
 }
 
 /* 聊天消息区域透明，让背景继续透到子窗口 */
@@ -195,7 +195,7 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: var(--spiderman-web-opacity, 0.15);
+  opacity: var(--spiderman-web-opacity, 0);
   background-image:
     repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
@@ -233,8 +233,8 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 
 /* 蛛网纹理脉冲动画 */
 @keyframes web-pulse {
-  0%, 100% { opacity: var(--spiderman-web-opacity, 0.15); }
-  50% { opacity: calc(var(--spiderman-web-opacity, 0.15) * 1.4); }
+  0%, 100% { opacity: var(--spiderman-web-opacity, 0); }
+  50% { opacity: calc(var(--spiderman-web-opacity, 0) * 1.4); }
 }
 
 /* ===== 对比度保护 =====
@@ -264,7 +264,7 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    内容卡片都设为完全不透明，避免双重半透明导致文字不可读。 */
 [data-theme="spiderman"] [data-spiderman-panel],
 [data-theme="spiderman"] .chat-input-root {
-  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0)) !important;
 }
 
 /* 内容卡片半透明背景
@@ -273,7 +273,7 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    由 surface-opacity 变量控制，默认 50%，让背景更可见。
    注意：模态框/对话框内容不受影响（下方有 .fixed 保护）。 */
 [data-theme="spiderman"] .theme-root [class*="-surface"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.27)) !important;
 }
 
 /* 语义状态色（警告/成功/错误/强调），状态靠边框颜色区分 */
@@ -281,14 +281,15 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 [data-theme="spiderman"] .theme-root [class*="bg-success-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.27)) !important;
 }
 
 /* 聊天消息气泡保护
    - 默认主题：AI 回复无背景（已从 JSX 移除 bg-background-surface）
-   - 蜘蛛侠主题：AI 回复有半透明背景提升可读性；用户消息保持透明让壁纸透出 */
+   - 蜘蛛侠主题：AI 回复有半透明背景提升可读性；用户消息保持透明让壁纸透出
+   - 使用 --spiderman-surface-opacity 替代硬编码 0.85，受主题设置控制 */
 [data-theme="spiderman"] .theme-root .chat-assistant-message {
-  background-color: rgb(var(--c-bg-surface) / 0.85) !important;
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.85)) !important;
   backdrop-filter: blur(8px);
 }
 [data-theme="spiderman"] .theme-root .chat-user-message {
@@ -323,9 +324,15 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 /* 设置页中的静态背景区域
    如 PromptSnippetTab 的变量说明区、section header 等，
    使用 bg-background-hover 作为静态背景，叠加半透明保持视觉一致。
-   注意：hover:bg-background-hover 的交互效果不会被破坏，
-   hover 时 class 被激活，仍以半透明形式显示。 */
-[data-theme="spiderman"] .theme-root [class*="bg-background-hover"] {
+   注意：分为两条规则——
+   1. 静态类 bg-background-hover → 始终半透明
+   2. hover:bg-background-hover → 仅在 hover 时半透明，非 hover 时透明让背景透出 */
+/* 静态 bg-background-hover：始终半透明 */
+[data-theme=spiderman] .theme-root [class*=bg-background-hover]:not([class*=hover:]):not([class*=focus:]):not([class*=active:]):not([class*=group-hover:]):not([class*=peer-hover:]) {
+  background-color: rgb(var(--c-bg-hover) / var(--spiderman-hover-opacity, 0.5)) !important;
+}
+/* hover 变体：仅在 hover 时半透明，非 hover 时透明让壁纸透出 */
+[data-theme=spiderman] .theme-root [class*=hover:bg-background-hover]:hover {
   background-color: rgb(var(--c-bg-hover) / var(--spiderman-hover-opacity, 0.5)) !important;
 }
 

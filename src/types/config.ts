@@ -303,13 +303,13 @@ export interface SpiderManThemeConfig {
 /** Spider-Man 主题默认值 */
 export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   backgroundImage: 'https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920',
-  backgroundOpacity: 0.2,
-  panelOpacity: 0.55,
-  panelBlur: 8,
-  surfaceOpacity: 0.5,
+  backgroundOpacity: 1.0,
+  panelOpacity: 0,
+  panelBlur: 0,
+  surfaceOpacity: 0.27,
   chatToolOpacity: 0.55,
   hoverOpacity: 0.5,
-  webTextureOpacity: 0.15,
+  webTextureOpacity: 0,
   backgroundSize: 'cover',
   backgroundPositionX: 50,
   backgroundPositionY: 50,

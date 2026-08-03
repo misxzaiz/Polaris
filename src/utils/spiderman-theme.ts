@@ -150,7 +150,7 @@ export function syncSpiderManCssVarsToDom(
   // ===== 自适应遮罩计算 =====
   // 读取亮度缓存（参数优先，其次缓存，最后 null）
   const imgBrightness = brightness ?? getCachedBrightness();
-  const bgOpacity = (cfg.backgroundOpacity as number) ?? 0.2;
+  const bgOpacity = (cfg.backgroundOpacity as number) ?? 1.0;
 
   // 用户期望的遮罩 = 1 - bgOpacity
   const userOverlay = Math.max(0, Math.min(1, 1 - bgOpacity));
@@ -174,7 +174,7 @@ export function syncSpiderManCssVarsToDom(
   document.documentElement.style.setProperty('--spiderman-overlay-boost', String(diff > 0.02 ? diff : 0));
 
   // 蛛网纹理透明度
-  document.documentElement.style.setProperty('--spiderman-web-opacity', String((cfg.webTextureOpacity as number) ?? 0.15));
+  document.documentElement.style.setProperty('--spiderman-web-opacity', String((cfg.webTextureOpacity as number) ?? 0));
 
   // 背景位置
   document.documentElement.style.setProperty(
@@ -186,10 +186,10 @@ export function syncSpiderManCssVarsToDom(
   document.documentElement.style.setProperty('--spiderman-bg-size', (cfg.backgroundSize as string) ?? 'cover');
 
   // 面板透明度
-  document.documentElement.style.setProperty('--spiderman-panel-opacity', String((cfg.panelOpacity as number) ?? 0.55));
+  document.documentElement.style.setProperty('--spiderman-panel-opacity', String((cfg.panelOpacity as number) ?? 0));
 
   // 内容卡片透明度
-  document.documentElement.style.setProperty('--spiderman-surface-opacity', String((cfg.surfaceOpacity as number) ?? 0.5));
+  document.documentElement.style.setProperty('--spiderman-surface-opacity', String((cfg.surfaceOpacity as number) ?? 0.27));
 
   // 聊天工具面板透明度
   document.documentElement.style.setProperty('--spiderman-chat-tool-opacity', String((cfg.chatToolOpacity as number) ?? 0.55));
@@ -198,7 +198,7 @@ export function syncSpiderManCssVarsToDom(
   document.documentElement.style.setProperty('--spiderman-hover-opacity', String((cfg.hoverOpacity as number) ?? 0.5));
 
   // 面板磨砂强度（0 → none 避免创建叠加上下文）
-  const blur = (cfg.panelBlur as number) ?? 8;
+  const blur = (cfg.panelBlur as number) ?? 0;
   document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');
 
   // 同步面具头像 URL
