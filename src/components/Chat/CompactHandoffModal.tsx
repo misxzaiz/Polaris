@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, X, ChevronDown, Bot, Cpu, Zap, Orbit } from 'lucide-react'
+import { OverlayGuard } from '@/components/Browser/OverlayGuard'
 import { clsx } from 'clsx'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'
@@ -247,7 +248,8 @@ export function CompactHandoffModal({
   const handleCancel = () => onClose()
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+    <OverlayGuard label="CompactHandoffModal">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <div className="bg-background-elevated rounded-xl shadow-2xl border border-border w-[440px] max-w-[92vw] max-h-[88vh] flex flex-col">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
@@ -343,7 +345,8 @@ export function CompactHandoffModal({
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </OverlayGuard>
   )
 }
 

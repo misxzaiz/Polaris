@@ -6,6 +6,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { OverlayGuard } from '@/components/Browser/OverlayGuard';
 import { Save, FileText } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 
@@ -58,10 +59,11 @@ export function UnsavedDialog({
   };
 
   return (
-    <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      onKeyDown={handleKeyDown}
-    >
+    <OverlayGuard label="UnsavedDialog">
+      <div
+        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+        onKeyDown={handleKeyDown}
+      >
       <div
         className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow"
         role="dialog"
@@ -130,6 +132,7 @@ export function UnsavedDialog({
           </button>
         </div>
       </div>
-    </div>
+      </div>
+    </OverlayGuard>
   );
 }

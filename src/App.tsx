@@ -11,6 +11,7 @@ import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage,
 import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactHandoffButton, DispatchCenterButton, CompactHandoffProgress, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
+import { OverlayGuard } from './components/Browser/OverlayGuard';
 import { SelectionContextMenu } from './components/Translate';
 
 // 懒加载大型组件，减少初始 bundle 大小
@@ -324,24 +325,28 @@ function App() {
         )}
 
         {showSessionHistory && (
-          <div
-            className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-            style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
-          >
-            <SessionHistoryPanel onClose={toggleSessionHistory} />
-          </div>
+          <OverlayGuard>
+            <div
+              className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
+              style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
+            >
+              <SessionHistoryPanel onClose={toggleSessionHistory} />
+            </div>
+          </OverlayGuard>
         )}
 
         {/* 全局消息中心：右侧滑出，复用会话历史面板的浮层范式 */}
         {showNotificationCenter && (
-          <div
-            className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-            style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
-          >
-            <Suspense fallback={null}>
-              <NotificationCenterPanel onClose={toggleNotificationCenter} />
-            </Suspense>
-          </div>
+          <OverlayGuard>
+            <div
+              className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
+              style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
+            >
+              <Suspense fallback={null}>
+                <NotificationCenterPanel onClose={toggleNotificationCenter} />
+              </Suspense>
+            </div>
+          </OverlayGuard>
         )}
 
         <SelectionContextMenu />

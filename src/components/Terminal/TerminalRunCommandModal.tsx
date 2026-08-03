@@ -4,6 +4,8 @@ import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { createLogger } from '@/utils/logger';
 
+import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+
 const log = createLogger('TerminalRunCommandModal');
 
 interface TerminalRunCommandModalProps {
@@ -71,7 +73,8 @@ export function TerminalRunCommandModal({ workspacePath, onClose }: TerminalRunC
   };
 
   return (
-    <div className="fixed inset-0 z-[80] bg-black/40 flex items-start justify-center pt-[12vh]" onMouseDown={onClose}>
+    <OverlayGuard label="TerminalRunCommandModal">
+      <div className="fixed inset-0 z-[80] bg-black/40 flex items-start justify-center pt-[12vh]" onMouseDown={onClose}>
       <div
         className="w-[min(720px,92vw)] bg-background-elevated border border-border rounded-lg shadow-xl overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}
@@ -135,6 +138,7 @@ export function TerminalRunCommandModal({ workspacePath, onClose }: TerminalRunC
           )}
         </div>
       </div>
-    </div>
+      </div>
+    </OverlayGuard>
   );
 }

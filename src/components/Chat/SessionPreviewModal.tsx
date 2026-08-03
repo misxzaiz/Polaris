@@ -21,6 +21,8 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('SessionPreviewModal')
 
+import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+
 interface SessionPreviewModalProps {
   item: UnifiedHistoryItem
   /** 继续（恢复）该会话 */
@@ -129,10 +131,11 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
   }
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
-      onClick={onClose}
-    >
+    <OverlayGuard label="SessionPreviewModal">
+      <div
+        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        onClick={onClose}
+      >
       <div
         className="flex flex-col bg-background-elevated rounded-xl shadow-2xl border border-border w-[900px] max-w-[95vw] h-[84vh] max-h-[860px] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -261,7 +264,8 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
           </div>
         </div>
       </div>
-    </div>
+      </div>
+    </OverlayGuard>
   )
 }
 

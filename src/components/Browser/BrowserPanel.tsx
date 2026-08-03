@@ -77,11 +77,15 @@ const QUICK_STARTS = [
 ]
 
 const MAX_OPERATION_EVENTS = 8
-const MIN_OCCLUDING_Z_INDEX = 40
+const MIN_OCCLUDING_Z_INDEX = 10
 const HIDDEN_BROWSER_BOUNDS: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 }
 const OCCLUDING_ELEMENT_SELECTOR = [
   '[data-native-webview-overlay]',
+  '[data-spiderman-panel]',
+  '[data-workspace-dropdown]',
   '[role="dialog"]',
+  '[role="menu"]',
+  '[role="alertdialog"]',
   '[aria-modal="true"]',
   '.fixed',
   '.absolute',
