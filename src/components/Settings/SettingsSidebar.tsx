@@ -101,7 +101,7 @@ export function SettingsSidebar({ activeTab, onTabChange, searchQuery, onSearchC
             onClick={() => onTabChange(item.id)}
             className={`flex-shrink-0 flex items-center gap-2 px-4 py-2.5 text-left text-sm transition-colors sm:w-full ${
               activeTab === item.id
-                ? 'bg-surface text-text-primary border-b-2 sm:border-b-0 sm:border-r-2 border-primary'
+                ? 'bg-primary/10 text-primary border-b-2 sm:border-b-0 sm:border-r-2 border-primary'
                 : 'text-text-secondary hover:bg-surface hover:text-text-primary'
             }`}
           >

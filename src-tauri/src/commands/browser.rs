@@ -28,6 +28,8 @@ static BROWSER_ACQUIRE_PENDING: OnceLock<Mutex<HashMap<String, BrowserAcquireSen
 const DEFAULT_EVAL_TIMEOUT_MS: u64 = 2_500;
 const MAX_EVAL_TIMEOUT_MS: u64 = 15_000;
 const BROWSER_ACQUIRE_TIMEOUT_SECS: u64 = 15;
+const BROWSER_ACQUIRE_RETRY_DELAY: Duration = Duration::from_millis(1_500);
+const BROWSER_ACQUIRE_MAX_RETRIES: u32 = 1;
 const MARQUEE_MIN_DIM: usize = 20;
 
 type BrowserAcquireSender =
@@ -914,51 +916,80 @@ pub async fn browser_acquire_with_app(
         // A newly-created native WebView is mounted by the active BrowserPanel.
         activate: true,
     };
-    let (tx, rx) = oneshot::channel();
-    acquire_pending()
-        .lock()
-        .map_err(|e| AppError::Unknown(format!("浏览器 acquire 等待表锁异常: {e}")))?
-        .insert(request_id.clone(), tx);
-
-    if let Err(error) = app.emit("browser://acquire-request", request) {
-        if let Ok(mut guard) = acquire_pending().lock() {
-            guard.remove(&request_id);
+    let mut last_timeout_error = None;
+    for attempt in 0..=BROWSER_ACQUIRE_MAX_RETRIES {
+        if attempt > 0 {
+            tokio::time::sleep(BROWSER_ACQUIRE_RETRY_DELAY).await;
         }
-        return Err(error.into());
-    }
 
-    let frontend_result =
+        // 每次重试都重新 emit 事件（新 request_id 让前端重新创建 tab）
+        if let Err(error) = app.emit("browser://acquire-request", &request) {
+            if let Ok(mut guard) = acquire_pending().lock() {
+                guard.remove(&request_id);
+            }
+            return Err(error.into());
+        }
+
+        let (tx, rx) = oneshot::channel();
+        acquire_pending()
+            .lock()
+            .map_err(|e| AppError::Unknown(format!("浏览器 acquire 等待表锁异常: {e}")))?
+            .insert(request_id.clone(), tx);
+
         match tokio::time::timeout(Duration::from_secs(BROWSER_ACQUIRE_TIMEOUT_SECS), rx).await {
-            Ok(Ok(Ok(result))) => result,
-            Ok(Ok(Err(error))) => return Err(AppError::ProcessError(error)),
+            Ok(Ok(Ok(result))) => {
+                // 成功：清理重试状态
+                if let Ok(mut guard) = acquire_pending().lock() {
+                    guard.remove(&request_id);
+                }
+                bind_browser_agent(agent_key.as_deref(), &result.label)?;
+                return Ok(BrowserAcquireResult {
+                    label: result.label,
+                    tab_id: result.tab_id,
+                    url: result.url,
+                    title: result.title,
+                    created: result.created,
+                    bound_agent_key: agent_key,
+                });
+            }
+            Ok(Ok(Err(error))) => {
+                if let Ok(mut guard) = acquire_pending().lock() {
+                    guard.remove(&request_id);
+                }
+                return Err(AppError::ProcessError(error));
+            }
             Ok(Err(_)) => {
+                if let Ok(mut guard) = acquire_pending().lock() {
+                    guard.remove(&request_id);
+                }
                 return Err(AppError::ProcessError(
                     "浏览器 acquire 请求被取消".to_string(),
                 ));
             }
             Err(_) => {
+                // 超时：记录错误，清理 pending 表，准备重试
                 if let Ok(mut guard) = acquire_pending().lock() {
                     guard.remove(&request_id);
                 }
-                let msg = format!(
-                    "浏览器 acquire 超时（{BROWSER_ACQUIRE_TIMEOUT_SECS}s）：\n\
-                    \t- 请确保 Polaris 主窗口处于可见/前台状态，MCP 工具通过 app.emit 等待前端创建 WebView；\n\
-                    \t- 如果从未打开过内置浏览器面板，请先在侧边栏打开「浏览器」面板；\n\
-                    \t- 极少数情况下，主窗口最小化会导致前端未响应事件，请恢复窗口后重试。"
-                );
-                return Err(AppError::TimeoutWithMessage(msg));
+                last_timeout_error = Some((
+                    attempt,
+                    BROWSER_ACQUIRE_MAX_RETRIES,
+                    BROWSER_ACQUIRE_TIMEOUT_SECS,
+                ));
+                // 继续循环重试
             }
-        };
+        }
+    }
 
-    bind_browser_agent(agent_key.as_deref(), &frontend_result.label)?;
-    Ok(BrowserAcquireResult {
-        label: frontend_result.label,
-        tab_id: frontend_result.tab_id,
-        url: frontend_result.url,
-        title: frontend_result.title,
-        created: frontend_result.created,
-        bound_agent_key: agent_key,
-    })
+    // 所有重试耗尽
+    let (attempt, max_retries, timeout_secs) = last_timeout_error.unwrap_or((0, 0, 15));
+    let msg = format!(
+        "浏览器 acquire 超时（已重试 {attempt}/{max_retries} 次，每次 {timeout_secs}s）：\n\
+        \t- 请确保 Polaris 主窗口处于可见/前台状态，MCP 工具通过 app.emit 等待前端创建 WebView；\n\
+        \t- 如果从未打开过内置浏览器面板，请先在侧边栏打开「浏览器」面板；\n\
+        \t- 极少数情况下，主窗口最小化会导致前端未响应事件，请恢复窗口后重试。"
+    );
+    return Err(AppError::TimeoutWithMessage(msg));
 }
 
 #[cfg(feature = "tauri-app")]

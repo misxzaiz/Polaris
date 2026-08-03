@@ -78,6 +78,8 @@ const QUICK_STARTS = [
 const MAX_OPERATION_EVENTS = 8
 const MIN_OCCLUDING_Z_INDEX = 40
 const HIDDEN_BROWSER_BOUNDS: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 }
+// 清理时移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏
+const OFFSCREEN_BROWSER_BOUNDS: BrowserBounds = { x: -99999, y: -99999, width: 1, height: 1 }
 const OCCLUDING_ELEMENT_SELECTOR = [
   '[data-native-webview-overlay]',
   '[role="dialog"]',
@@ -200,7 +202,9 @@ export function BrowserPanel({
       : undefined
   const initialNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestId)
   const lastNavigationRequestRef = useRef<number | undefined>(initialNavigationRequestRef.current)
-  const completedAcquireRequestRef = useRef<string | undefined>(undefined)
+  // RAF 防抖 + 时间窗口 throttle：避免动画期间 occlusion 检测频繁触发 hide/show
+  const lastSyncTimeRef = useRef(0)
+  const SYNC_THROTTLE_MS = 100
 
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
@@ -268,6 +272,11 @@ export function BrowserPanel({
   }, [getContainerBounds, webviewLabel])
 
   const scheduleSyncBounds = useCallback(() => {
+    const now = Date.now()
+    if (now - lastSyncTimeRef.current < SYNC_THROTTLE_MS) {
+      return
+    }
+    lastSyncTimeRef.current = now
     if (rafRef.current !== null) {
       window.cancelAnimationFrame(rafRef.current)
     }
@@ -302,10 +311,10 @@ export function BrowserPanel({
       created: boolean,
       acquireError?: string
     ) {
-      if (!acquireRequestId || completedAcquireRequestRef.current === acquireRequestId) {
+      if (!acquireRequestId) {
         return
       }
-      completedAcquireRequestRef.current = acquireRequestId
+      // 每次 mount 都调用 completeAcquire，后端对重复调用幂等安全
       await browserAcquireComplete({
         requestId: acquireRequestId,
         label: acquireError ? undefined : webviewLabel,
@@ -432,8 +441,10 @@ export function BrowserPanel({
         rafRef.current = null
       }
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
-      browserSetBounds(webviewLabel, { x: 0, y: 0, width: 0, height: 0 }).catch(() => undefined)
-      lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
+      // 移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏；
+      // 真正的遮挡隐藏由 syncBounds 的 occlusion 检测控制
+      browserSetBounds(webviewLabel, OFFSCREEN_BROWSER_BOUNDS).catch(() => undefined)
+      lastAppliedBoundsRef.current = OFFSCREEN_BROWSER_BOUNDS
     }
   }, [
     getContainerBounds,
