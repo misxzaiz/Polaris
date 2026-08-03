@@ -282,6 +282,10 @@ export interface SpiderManThemeConfig {
   panelBlur?: number;
   /** 内容卡片透明度 (0-1)，控制消息气泡/卡片/输入框的内容容器半透明程度 */
   surfaceOpacity?: number;
+  /** 聊天工具面板透明度 (0-1)，控制工具调用块/派发卡片等背景 */
+  chatToolOpacity?: number;
+  /** 悬停态背景透明度 (0-1)，控制按钮/列表项等静态背景区域 */
+  hoverOpacity?: number;
   /** 蛛网纹理强度 (0-1) */
   webTextureOpacity?: number;
   /** 背景缩放模式 */
@@ -303,6 +307,8 @@ export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   panelOpacity: 0.55,
   panelBlur: 8,
   surfaceOpacity: 0.5,
+  chatToolOpacity: 0.55,
+  hoverOpacity: 0.5,
   webTextureOpacity: 0.15,
   backgroundSize: 'cover',
   backgroundPositionX: 50,

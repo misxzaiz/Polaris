@@ -283,7 +283,7 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    注意：hover:bg-background-hover 的交互效果不会被破坏，
    hover 时 class 被激活，仍以半透明形式显示。 */
 [data-theme="spiderman"] .theme-root [class*="bg-background-hover"] {
-  background-color: rgb(var(--c-bg-hover) / var(--spiderman-surface-opacity, 0.5)) !important;
+  background-color: rgb(var(--c-bg-hover) / var(--spiderman-hover-opacity, 0.5)) !important;
 }
 
 /* 聊天消息区域内的工具面板/代码块背景
@@ -291,13 +291,13 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    ToolBubble 的 bg-background-secondary/tertiary 详情区域。
    限定在 chat-display-root 内，避免影响其他面板的卡片层级。 */
 [data-theme="spiderman"] .chat-display-root [class*="bg-background-elevated"] {
-  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
+  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
 }
 [data-theme="spiderman"] .chat-display-root [class*="bg-background-secondary"] {
-  background-color: rgb(var(--c-bg-secondary) / var(--spiderman-panel-opacity, 0.55)) !important;
+  background-color: rgb(var(--c-bg-secondary) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
 }
 [data-theme="spiderman"] .chat-display-root [class*="bg-background-tertiary"] {
-  background-color: rgb(var(--c-bg-tertiary) / var(--spiderman-panel-opacity, 0.55)) !important;
+  background-color: rgb(var(--c-bg-tertiary) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
 }
 
 /* === 模态框/对话框内容保护 ===

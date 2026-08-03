@@ -191,6 +191,12 @@ export function syncSpiderManCssVarsToDom(
   // 内容卡片透明度
   document.documentElement.style.setProperty('--spiderman-surface-opacity', String((cfg.surfaceOpacity as number) ?? 0.5));
 
+  // 聊天工具面板透明度
+  document.documentElement.style.setProperty('--spiderman-chat-tool-opacity', String((cfg.chatToolOpacity as number) ?? 0.55));
+
+  // 悬停态背景透明度
+  document.documentElement.style.setProperty('--spiderman-hover-opacity', String((cfg.hoverOpacity as number) ?? 0.5));
+
   // 面板磨砂强度（0 → none 避免创建叠加上下文）
   const blur = (cfg.panelBlur as number) ?? 8;
   document.documentElement.style.setProperty('--spiderman-panel-blur', blur > 0 ? `blur(${blur}px)` : 'none');

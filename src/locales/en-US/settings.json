@@ -271,7 +271,11 @@
       "webOpacity": "Web Texture",
       "webOpacityHint": "Adjust the intensity of the spider web texture",
       "surfaceOpacity": "Card Opacity",
-      "surfaceOpacityHint": "Adjust the transparency of message bubbles, cards and input fields"
+      "surfaceOpacityHint": "Adjust the transparency of message bubbles, cards and input fields",
+      "chatToolOpacity": "Tool Panel Opacity",
+      "chatToolOpacityHint": "Adjust the transparency of tool call panels, dispatch cards, etc.",
+      "hoverOpacity": "Hover Background Opacity",
+      "hoverOpacityHint": "Adjust the transparency of static hover backgrounds like buttons, list items"
     },
     "position": {
       "title": "Position & Size",

@@ -271,7 +271,11 @@
       "webOpacity": "蛛网纹理",
       "webOpacityHint": "调节蛛网纹理的强度",
       "surfaceOpacity": "内容卡片透明度",
-      "surfaceOpacityHint": "调节消息气泡、卡片、输入框等半透明程度"
+      "surfaceOpacityHint": "调节消息气泡、卡片、输入框等半透明程度",
+      "chatToolOpacity": "工具面板透明度",
+      "chatToolOpacityHint": "调节聊天中工具调用面板、派发卡片等半透明程度",
+      "hoverOpacity": "悬停背景透明度",
+      "hoverOpacityHint": "调节按钮悬停、列表项等静态背景区域的半透明程度"
     },
     "position": {
       "title": "位置与大小",
