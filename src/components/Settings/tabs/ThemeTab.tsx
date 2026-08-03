@@ -828,7 +828,7 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
           </button>
         </div>
         <div className="text-xs text-text-secondary mb-3">{t('spiderman.background.hint')}</div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {SPIDERMAN_BACKGROUNDS.map((bg) => (
             <button
               key={bg.src}
