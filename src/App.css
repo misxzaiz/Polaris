@@ -177,6 +177,13 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   background-color: transparent !important;
 }
 
+/* 主内容区 <main> 透明 — 移除 bg-background-base 的阻塞
+   <main> 的 bg-background-base 在 spiderman 下为 rgb(0 0 0)，
+   完全阻挡了 html 壁纸透出。 */
+[data-theme="spiderman"] .theme-root main {
+  background-color: transparent !important;
+}
+
 /* 蛛网纹理：position: absolute; z-index: -1
    在局部叠加上下文中处于 Layer 2（负层），
    在内容（Layer 3+）之下。
@@ -275,6 +282,42 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 [data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
   background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
+}
+
+/* 聊天消息气泡保护
+   - 默认主题：AI 回复无背景（已从 JSX 移除 bg-background-surface）
+   - 蜘蛛侠主题：AI 回复有半透明背景提升可读性；用户消息保持透明让壁纸透出 */
+[data-theme="spiderman"] .theme-root .chat-assistant-message {
+  background-color: rgb(var(--c-bg-surface) / 0.85) !important;
+  backdrop-filter: blur(8px);
+}
+[data-theme="spiderman"] .theme-root .chat-user-message {
+  background-color: transparent !important;
+}
+
+/* 聊天区域右侧面板透明 — 移除 data-spiderman-panel 的半透明背景
+   右侧面板是聊天消息的容器，它的半透明背景（rgba(8,8,10,0.55)）
+   会覆盖在壁纸上，产生"遮罩"感。让聊天区域面板完全透明，
+   让 html 壁纸和渐变遮罩直接透出。
+   注意：仅对带 border-l 的右侧面板生效，不影响左侧面板、活动栏等。 */
+[data-theme="spiderman"] [data-spiderman-panel].border-l,
+[data-theme="spiderman"] [data-spiderman-panel].border-l [data-spiderman-panel] {
+  background-color: transparent !important;
+}
+
+/* 聊天输入框区域透明 — 移除半透明背景，仅保留边框作为视觉区分
+   输入框内层容器（bg-background-surface）也一并透明化，
+   输入框文字和按钮仅靠 html 渐变遮罩保护对比度。 */
+[data-theme="spiderman"] .chat-input-root,
+[data-theme="spiderman"] .chat-input-root [class*="bg-background-"] {
+  background-color: transparent !important;
+}
+
+/* 空状态建议卡片透明 — 移除半透明背景让壁纸透出
+   建议卡片（EmptyState 中的快速启动卡片）也是聊天区域的一部分，
+   和消息气泡一样不需要背景色。 */
+[data-theme="spiderman"] .chat-display-root [class*="rounded-xl"][class*="bg-background-surface"] {
+  background-color: transparent !important;
 }
 
 /* 设置页中的静态背景区域
