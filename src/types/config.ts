@@ -302,7 +302,7 @@ export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   backgroundOpacity: 0.2,
   panelOpacity: 0.55,
   panelBlur: 8,
-  surfaceOpacity: 0.4,
+  surfaceOpacity: 0.5,
   webTextureOpacity: 0.15,
   backgroundSize: 'cover',
   backgroundPositionX: 50,

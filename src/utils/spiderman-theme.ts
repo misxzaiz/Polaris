@@ -189,7 +189,7 @@ export function syncSpiderManCssVarsToDom(
   document.documentElement.style.setProperty('--spiderman-panel-opacity', String((cfg.panelOpacity as number) ?? 0.55));
 
   // 内容卡片透明度
-  document.documentElement.style.setProperty('--spiderman-surface-opacity', String((cfg.surfaceOpacity as number) ?? 0.4));
+  document.documentElement.style.setProperty('--spiderman-surface-opacity', String((cfg.surfaceOpacity as number) ?? 0.5));
 
   // 面板磨砂强度（0 → none 避免创建叠加上下文）
   const blur = (cfg.panelBlur as number) ?? 8;

@@ -248,38 +248,49 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
    此处只控制透明度，不再创建独立合成层。
 
    选择器策略：
-   - 优先使用 data-spiderman-panel 属性（在 Layout.tsx 中声明），不依赖类名
-   - 向后兼容旧的 [class*="bg-background-elevated"] 选择器 */
+   - 第一层：data-spiderman-panel 属性（在 Layout.tsx 中声明）→ 半透明
+   - 第二层（内容卡片）：.theme-root 内的 [class*="-surface"] → 不透明
+   - 所有 fixed 定位元素（模态框/对话框）→ 不透明 */
 
 /* 所有面板半透明基础（降低不透明度让背景更可见）
-   使用 data-spiderman-panel 属性驱动，不受 tailwind 类名重构影响。
-   同时保留旧 class 选择器作为向后兼容。 */
+   注意：仅 data-spiderman-panel 属性保持半透明，面板内部的所有
+   内容卡片都设为完全不透明，避免双重半透明导致文字不可读。 */
 [data-theme="spiderman"] [data-spiderman-panel],
 [data-theme="spiderman"] .chat-input-root {
   background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
 }
 
 /* 内容卡片半透明背景
-   使用类选择器自动覆盖所有 bg-surface 和 bg-background-surface 元素，
-   不需要手动标记 data-spiderman-surface 属性。
-   与 data-spiderman-panel 独立控制，互不干扰。
-   使用 !important 统一半透明，状态仅靠边框区分。 */
+   面板本身（data-spiderman-panel）已设为半透明（0.55），
+   面板内部的卡片（bg-surface, bg-background-surface）额外叠加半透明，
+   由 surface-opacity 变量控制，默认 50%，让背景更可见。
+   注意：模态框/对话框内容不受影响（下方有 .fixed 保护）。 */
 [data-theme="spiderman"] .theme-root [class*="-surface"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
 }
 
-/* 语义状态色也统一半透明（警告/成功/错误/强调），状态靠边框颜色区分 */
+/* 语义状态色（警告/成功/错误/强调），状态靠边框颜色区分 */
 [data-theme="spiderman"] .theme-root [class*="bg-warning-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-success-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
 [data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.4)) !important;
+  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.5)) !important;
 }
 
-/* 向后兼容：旧 class 选择器（在新版 Layout.tsx 统一使用 data-* 后移除）
-   扩展为覆盖所有后代，不再限于直接子元素 */
-[data-theme="spiderman"] .theme-root [class*="bg-background-elevated"] {
-  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0.55)) !important;
+/* === 模态框/对话框内容保护 ===
+   确保 fixed 定位的模态框/对话框内的内容面板保持完全不透明。
+   模态框是独立弹出层，其背景与壁纸主题无关。
+   使用 explicit 变量值（不带 alpha）覆盖半透明规则。 */
+[data-theme="spiderman"] .fixed [class*="-surface"] {
+  background-color: rgb(var(--c-bg-surface)) !important;
+}
+[data-theme="spiderman"] .fixed [class*="bg-background-elevated"],
+[data-theme="spiderman"] .fixed[class*="bg-background-elevated"] {
+  background-color: rgb(var(--c-bg-elevated)) !important;
+}
+[data-theme="spiderman"] .fixed [data-spiderman-panel],
+[data-theme="spiderman"] .fixed[data-spiderman-panel] {
+  background-color: rgb(var(--c-bg-elevated)) !important;
 }
 
 /* 发送按钮红蓝渐变 */

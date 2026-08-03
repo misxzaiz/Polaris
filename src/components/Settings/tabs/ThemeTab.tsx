@@ -633,14 +633,14 @@ function SpiderManSection({ config, onConfigChange, loading }: SpiderManSectionP
         <div className="flex items-center justify-between mb-1">
           <span className="text-xs text-text-secondary">{t('spiderman.effects.surfaceOpacity')}</span>
           <span className="text-xs text-text-secondary tabular-nums">
-            {Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}%
+            {Math.round((spidermanTheme.surfaceOpacity ?? 0.5) * 100)}%
           </span>
         </div>
         <input
           type="range"
           min="0"
           max="100"
-          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.4) * 100)}
+          value={Math.round((spidermanTheme.surfaceOpacity ?? 0.5) * 100)}
           onChange={(e) => {
             const v = Number(e.target.value) / 100;
             updateSpiderManConfig({ surfaceOpacity: v });
