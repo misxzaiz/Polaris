@@ -289,16 +289,56 @@
   background-color: rgb(var(--c-bg-tertiary) / var(--theme-child-opacity, 0.55)) !important;
 }
 
-/* === 模态框/对话框内容保护 === */
-[data-theme-immersive="true"] .fixed [class*="-surface"] {
+/* === 模态框/对话框/浮层面板内容保护 ===
+ * 保护规则：所有 fixed 元素 + z-20/30/40/50/z-[*] 浮层 + z-10 弹出面板
+ * 保持不透明背景，避免沉浸主题的 layerOpacity 透出壁纸导致内容看不清。
+ * z-10 的 sticky 表头通过 top-full/bottom-full 区分：浮层面板使用
+ * top-full 或 bottom-full 定位，sticky 表头没有。
+ */
+[data-theme-immersive="true"] .fixed [class*="-surface"],
+[data-theme-immersive="true"] [class*="z-2"] [class*="-surface"],
+[data-theme-immersive="true"] [class*="z-3"] [class*="-surface"],
+[data-theme-immersive="true"] [class*="z-4"] [class*="-surface"],
+[data-theme-immersive="true"] [class*="z-5"] [class*="-surface"],
+[data-theme-immersive="true"] [class*="z-["] [class*="-surface"],
+[data-theme-immersive="true"] [class*="top-full"] [class*="-surface"],
+[data-theme-immersive="true"] [class*="bottom-full"] [class*="-surface"] {
   background-color: rgb(var(--c-bg-surface)) !important;
 }
 [data-theme-immersive="true"] .fixed [class*="bg-background-elevated"],
-[data-theme-immersive="true"] .fixed[class*="bg-background-elevated"] {
+[data-theme-immersive="true"] .fixed[class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-2"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-2"][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-3"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-3"][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-4"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-4"][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-5"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-5"][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-["] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="z-["][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="top-full"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="top-full"][class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="bottom-full"] [class*="bg-background-elevated"],
+[data-theme-immersive="true"] [class*="bottom-full"][class*="bg-background-elevated"] {
   background-color: rgb(var(--c-bg-elevated)) !important;
 }
 [data-theme-immersive="true"] .fixed [data-theme-panel],
-[data-theme-immersive="true"] .fixed[data-theme-panel] {
+[data-theme-immersive="true"] .fixed[data-theme-panel],
+[data-theme-immersive="true"] [class*="z-2"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="z-2"][data-theme-panel],
+[data-theme-immersive="true"] [class*="z-3"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="z-3"][data-theme-panel],
+[data-theme-immersive="true"] [class*="z-4"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="z-4"][data-theme-panel],
+[data-theme-immersive="true"] [class*="z-5"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="z-5"][data-theme-panel],
+[data-theme-immersive="true"] [class*="z-["] [data-theme-panel],
+[data-theme-immersive="true"] [class*="z-["][data-theme-panel],
+[data-theme-immersive="true"] [class*="top-full"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="top-full"][data-theme-panel],
+[data-theme-immersive="true"] [class*="bottom-full"] [data-theme-panel],
+[data-theme-immersive="true"] [class*="bottom-full"][data-theme-panel] {
   background-color: rgb(var(--c-bg-elevated)) !important;
 }
 

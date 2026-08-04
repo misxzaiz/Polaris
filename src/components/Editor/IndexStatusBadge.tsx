@@ -86,8 +86,7 @@ export function IndexStatusBadge() {
       {open && (
         <div
           ref={popRef}
-          className="absolute right-0 bottom-full mb-1 w-72 bg-background-elevated border border-border rounded-lg shadow-glow text-xs overflow-hidden"
-          style={{ zIndex: 70 }}
+          className="absolute right-0 bottom-full mb-1 w-72 bg-background-elevated border border-border rounded-lg shadow-glow text-xs overflow-hidden z-[70]"
         >
           <IndexStatusDetail status={status} workspace={workspace} onClose={() => setOpen(false)} />
         </div>
