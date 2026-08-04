@@ -13,7 +13,7 @@ import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
-import { useThemeStore, type Theme } from '@/stores/themeStore';
+import { useThemeStore } from '@/stores/themeStore';
 import { Plus, X, Terminal as TerminalIcon, Maximize2, Minimize2 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptPanel } from './TerminalScriptPanel';
@@ -24,55 +24,41 @@ import '@xterm/xterm/css/xterm.css';
 
 const log = createLogger('TerminalPanel');
 
-/** 根据主题返回 xterm 终端配色 */
-function getXtermTheme(theme: Theme): ITheme {
-  if (theme === 'light') {
-    return {
-      background: '#ffffff',
-      foreground: '#1e1e1e',
-      cursor: '#1e1e1e',
-      cursorAccent: '#ffffff',
-      selectionBackground: 'rgba(0, 0, 0, 0.2)',
-      black: '#000000',
-      red: '#cd3131',
-      green: '#107c10',
-      yellow: '#b58900',
-      blue: '#1f6feb',
-      magenta: '#8250df',
-      cyan: '#0598bc',
-      white: '#5c5c5c',
-      brightBlack: '#7a7a7a',
-      brightRed: '#cd3131',
-      brightGreen: '#14ce14',
-      brightYellow: '#b89500',
-      brightBlue: '#0451a5',
-      brightMagenta: '#bc05bc',
-      brightCyan: '#0598bc',
-      brightWhite: '#1e1e1e',
-    };
-  }
+/** 根据主题返回 xterm 终端配色（从 CSS 变量读取） */
+function getXtermTheme(_theme: string): ITheme {
+  const get = (name: string, fallback: string): string => {
+    if (typeof document === 'undefined') return fallback;
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+  };
+
+  const isLight = _theme === 'light';
+  const bg = get('--c-bg-base', isLight ? '250 250 252' : '0 0 0');
+  const text = get('--c-text-primary', isLight ? '15 23 42' : '248 248 248');
+  const textSec = get('--c-text-secondary', isLight ? '51 65 85' : '180 180 184');
+  const primary = get('--c-primary', isLight ? '37 99 235' : '59 130 246');
+
   return {
-    background: '#1e1e1e',
-    foreground: '#d4d4d4',
-    cursor: '#d4d4d4',
-    cursorAccent: '#1e1e1e',
-    selectionBackground: 'rgba(255, 255, 255, 0.3)',
+    background: `rgb(${bg})`,
+    foreground: `rgb(${text})`,
+    cursor: `rgb(${text})`,
+    cursorAccent: `rgb(${bg})`,
+    selectionBackground: isLight ? 'rgba(0, 0, 0, 0.2)' : 'rgba(255, 255, 255, 0.3)',
     black: '#000000',
     red: '#cd3131',
-    green: '#0dbc79',
-    yellow: '#e5e510',
-    blue: '#2472c8',
-    magenta: '#bc3fbc',
+    green: isLight ? '#107c10' : '#0dbc79',
+    yellow: isLight ? '#b58900' : '#e5e510',
+    blue: `rgb(${primary})`,
+    magenta: isLight ? '#8250df' : '#bc3fbc',
     cyan: '#11a8cd',
-    white: '#e5e5e5',
+    white: `rgb(${textSec})`,
     brightBlack: '#666666',
     brightRed: '#f14c4c',
-    brightGreen: '#23d18b',
-    brightYellow: '#f5f543',
-    brightBlue: '#3b8eea',
-    brightMagenta: '#d670d6',
+    brightGreen: isLight ? '#14ce14' : '#23d18b',
+    brightYellow: isLight ? '#b89500' : '#f5f543',
+    brightBlue: `rgb(${primary})`,
+    brightMagenta: isLight ? '#bc05bc' : '#d670d6',
     brightCyan: '#29b8db',
-    brightWhite: '#e5e5e5',
+    brightWhite: `rgb(${text})`,
   };
 }
 
@@ -88,7 +74,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
   const fitAddonRef = useRef<FitAddon | null>(null);
   const write = useTerminalStore((state) => state.write);
   const resize = useTerminalStore((state) => state.resize);
-  const theme = useThemeStore((state) => state.theme);
+  const theme = useThemeStore((state) => state.activeThemeId);
 
   // 初始化终端
   useEffect(() => {
@@ -102,7 +88,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
     }
 
     const xterm = new XTerm({
-      theme: getXtermTheme(useThemeStore.getState().theme),
+      theme: getXtermTheme(useThemeStore.getState().activeThemeId),
       fontFamily: 'Consolas, "SF Mono", Menlo, "DejaVu Sans Mono", "Courier New", monospace',
       fontSize: 14,
       lineHeight: 1.2,

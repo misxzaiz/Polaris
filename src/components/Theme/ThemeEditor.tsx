@@ -92,7 +92,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
         {/* 头部 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
           <h2 className="text-base font-semibold text-text-primary">
-            ✏️ {t('settings:theme.editing', '编辑主题')} — {draft.name}
+            {t('settings:theme.editing', '编辑主题')} — {draft.name}
           </h2>
           <button
             type="button"
@@ -228,7 +228,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                             : 'bg-background-hover text-text-secondary'
                         }`}
                       >
-                        {type === 'image' ? '🖼️ 图片' : type === 'gradient' ? '🌈 渐变' : type === 'solid' ? '🎨 纯色' : '🚫 无'}
+                        {type === 'image' ? '图片' : type === 'gradient' ? '渐变' : type === 'solid' ? '纯色' : '无'}
                       </button>
                     ))}
                   </div>
@@ -308,7 +308,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
             onClick={() => onSave(draft)}
             className="px-4 py-2 text-xs rounded-lg bg-primary text-on-primary hover:bg-primary-600 transition-colors"
           >
-            💾 {t('settings:theme.save', '保存主题')}
+            {t('settings:theme.save', '保存主题')}
           </button>
         </div>
       </div>

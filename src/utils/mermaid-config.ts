@@ -271,7 +271,7 @@ export const mermaidLightTheme: Partial<MermaidConfig> = {
  * 在 React 组件中使用：
  * ```tsx
  * import { useThemeStore } from '@/stores/themeStore';
- * const theme = useThemeStore(state => state.theme);
+ * const theme = useThemeStore(state => state.activeThemeId);
  * const config = getMermaidConfig(theme);
  * ```
  *
@@ -281,6 +281,137 @@ export const mermaidLightTheme: Partial<MermaidConfig> = {
  * const config = getMermaidConfig(useThemeStore.getState().theme);
  * ```
  */
-export function getMermaidConfig(theme: 'dark' | 'light' | 'spiderman' = 'dark'): Partial<MermaidConfig> {
-  return theme === 'light' ? mermaidLightTheme : mermaidDarkTheme;
+export function getMermaidConfig(theme: string = 'dark'): Partial<MermaidConfig> {
+  // 从 CSS 变量读取当前颜色值
+  const getCssVar = (name: string, fallback: string): string => {
+    if (typeof document === 'undefined') return fallback;
+    const val = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    return val || fallback;
+  };
+
+  const primary = getCssVar('--c-primary', '59 130 246');
+  const primaryHover = getCssVar('--c-primary-hover', '37 99 235');
+  const bgBase = getCssVar('--c-bg-base', '0 0 0');
+  const bgElevated = getCssVar('--c-bg-elevated', '26 26 31');
+  const bgSurface = getCssVar('--c-bg-surface', '37 37 43');
+  const textPrimary = getCssVar('--c-text-primary', '248 248 248');
+  const textSecondary = getCssVar('--c-text-secondary', '180 180 184');
+  const border = getCssVar('--c-border', '255 255 255');
+  const accentAi = getCssVar('--c-accent-ai', '167 139 250');
+
+  const isLight = theme.includes('light');
+  const themeName = isLight ? 'default' : 'dark';
+
+  const primaryHex = rgbToHex(primary);
+  const primaryHoverHex = rgbToHex(primaryHover);
+  const bgBaseHex = rgbToHex(bgBase);
+  const bgElevatedHex = rgbToHex(bgElevated);
+  const bgSurfaceHex = rgbToHex(bgSurface);
+  const textPrimaryHex = rgbToHex(textPrimary);
+  const textSecondaryHex = rgbToHex(textSecondary);
+  const borderHex = `rgba(${border}, ${isLight ? '0.3' : '0.15'})`;
+  const accentAiHex = rgbToHex(accentAi);
+
+  return {
+    startOnLoad: false,
+    theme: themeName,
+    securityLevel: 'loose',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace',
+    themeVariables: {
+      primaryColor: primaryHex,
+      primaryTextColor: textPrimaryHex,
+      primaryBorderColor: primaryHoverHex,
+      lineColor: textSecondaryHex,
+      secondaryColor: bgSurfaceHex,
+      tertiaryColor: bgElevatedHex,
+      background: bgBaseHex,
+      mainBkg: bgSurfaceHex,
+      nodeBorder: borderHex,
+      clusterBkg: bgElevatedHex,
+      clusterBorder: borderHex,
+      titleColor: textPrimaryHex,
+      edgeLabelBackground: bgSurfaceHex,
+      actorBkg: bgSurfaceHex,
+      actorBorder: borderHex,
+      actorTextColor: textPrimaryHex,
+      actorLineColor: primaryHex,
+      signalColor: textPrimaryHex,
+      signalTextColor: textPrimaryHex,
+      labelBoxBkgColor: bgSurfaceHex,
+      labelBoxBorderColor: borderHex,
+      labelTextColor: textPrimaryHex,
+      loopTextColor: textPrimaryHex,
+      boxBorderColor: borderHex,
+      boxBkgColor: bgSurfaceHex,
+      noteBorderColor: borderHex,
+      noteBkgColor: bgElevatedHex,
+      noteTextColor: textSecondaryHex,
+      activationBorderColor: primaryHex,
+      activationBkgColor: bgSurfaceHex,
+      sequenceNumberColor: textPrimaryHex,
+      classText: textPrimaryHex,
+      classBorderColor: borderHex,
+      stroke: primaryHex,
+      fill: bgSurfaceHex,
+      entityBackgroundColor: bgSurfaceHex,
+      entityBorderColor: borderHex,
+      sectionBkgColor: bgElevatedHex,
+      altSectionBkgColor: bgSurfaceHex,
+      gridColor: borderHex,
+      journeyBkgColor: bgSurfaceHex,
+      pie1: primaryHex,
+      pie2: '#34D399',
+      pie3: '#FBBF24',
+      pie4: '#F87171',
+      pie5: '#60A5FA',
+      pie6: '#93C5FD',
+      pie7: accentAiHex,
+      pie8: '#F9A8D4',
+      pie9: '#FCD34D',
+      pie10: '#A7F3D0',
+      pie11: '#7DD3FC',
+      pie12: '#FCA5A5',
+      color0: primaryHex,
+      color1: '#34D399',
+      color2: '#FBBF24',
+      color3: '#F87171',
+      color4: '#60A5FA',
+      color5: '#93C5FD',
+      color6: accentAiHex,
+      color7: '#F9A8D4',
+      color8: '#FCD34D',
+      color9: '#A7F3D0',
+      color10: '#7DD3FC',
+      color11: '#FCA5A5',
+      color12: '#E9D5FF',
+    },
+    flowchart: {
+      useMaxWidth: true,
+      htmlLabels: true,
+      curve: 'basis',
+    },
+    sequence: {
+      useMaxWidth: true,
+      diagramMarginX: 20,
+      diagramMarginY: 20,
+      actorMargin: 50,
+      width: 150,
+      height: 65,
+      boxMargin: 10,
+      messageMargin: 35,
+      mirrorActors: false,
+      bottomMarginAdj: 1,
+      rightAngles: false,
+      showSequenceNumbers: false,
+    },
+  };
+}
+
+/** 将 RGB 三元组转换为 hex 色值 */
+function rgbToHex(rgb: string): string {
+  const parts = rgb.trim().split(/\s+/).map(Number);
+  if (parts.length >= 3 && parts.slice(0, 3).every((n) => !isNaN(n) && n >= 0 && n <= 255)) {
+    return '#' + parts.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
+  }
+  return rgb;
 }

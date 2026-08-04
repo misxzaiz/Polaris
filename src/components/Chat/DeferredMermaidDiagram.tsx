@@ -94,7 +94,7 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
 
       // 检查是否已初始化（mermaid 10.x 不支持 isInitialized 检查，直接调用 initialize）
       try {
-        const theme = useThemeStore.getState().theme;
+        const theme = useThemeStore.getState().activeThemeId;
         const config = getMermaidConfig(theme);
         mermaidInstance.initialize(config);
       } catch {

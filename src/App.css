@@ -31,20 +31,20 @@
   position: absolute;
   border-radius: 50%;
   border: 2.5px solid transparent;
-  border-top-color: #3b82f6;
+  border-top-color: var(--orb-color-middle, #3b82f6);
   animation: orb-spin 1s linear infinite;
   will-change: transform;
 }
 
 .thinking-orb-ring--reverse {
   border-top-color: transparent;
-  border-right-color: #8b5cf6;
+  border-right-color: var(--orb-color-outer, #8b5cf6);
   animation: orb-spin 0.8s linear infinite reverse;
 }
 
 .thinking-orb-ring:nth-child(3) {
   border-top-color: transparent;
-  border-bottom-color: #60a5fa;
+  border-bottom-color: var(--orb-color-inner, #60a5fa);
   animation: orb-spin 0.6s linear infinite;
 }
 

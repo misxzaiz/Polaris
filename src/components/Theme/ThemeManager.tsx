@@ -105,7 +105,7 @@ export function ThemeManager() {
             onClick={handleImport}
             className="px-3 py-1.5 text-xs rounded-lg border border-dashed border-border text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
           >
-            📥 {t('settings:theme.import', '导入')}
+            {t('settings:theme.import', '导入')}
           </button>
           <button
             type="button"
@@ -215,21 +215,21 @@ export function ThemeManager() {
                     onClick={() => handleEdit(theme)}
                     className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
                   >
-                    {isBuiltIn ? '📋 复制编辑' : '✏️ 编辑'}
+                    {isBuiltIn ? '复制编辑' : '编辑'}
                   </button>
                   <button
                     type="button"
                     onClick={() => handleDuplicate(theme.id)}
                     className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
                   >
-                    📋 复制
+                    复制
                   </button>
                   <button
                     type="button"
                     onClick={() => downloadTheme(theme.id)}
                     className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
                   >
-                    📤 导出
+                    导出
                   </button>
                   {!isBuiltIn && (
                     <button
@@ -237,7 +237,7 @@ export function ThemeManager() {
                       onClick={() => handleDelete(theme.id)}
                       className="px-2 py-1 text-[11px] rounded-md text-danger hover:bg-danger/10 transition-colors"
                     >
-                      🗑️ 删除
+                      删除
                     </button>
                   )}
                   {!isActive && (

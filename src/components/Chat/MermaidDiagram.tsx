@@ -137,7 +137,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
 
         // 检查是否已初始化
         if (!mermaidInstance.isInitialized?.()) {
-          const theme = useThemeStore.getState().theme;
+          const theme = useThemeStore.getState().activeThemeId;
           const config = getMermaidConfig(theme);
           mermaidInstance.initialize(config);
         }
