@@ -20,6 +20,7 @@ import { applyThemeSync, applyCustomCss, clearCustomCss } from '@/services/theme
 import { validateCustomCss } from '@/utils/cssValidator';
 import { ColorPicker } from './ColorPicker';
 import { ThemePreview } from './ThemePreview';
+import { PRESET_AVATARS } from '@/data/themeAssets';
 
 interface ThemeEditorProps {
   theme: ThemeDefinition;
@@ -531,6 +532,76 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                             className="w-full px-3 py-2 text-sm bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
                           />
                         )}
+                      </div>
+
+                      {/* 头像 */}
+                      <div className="space-y-2">
+                        <h4 className="text-xs font-medium text-text-primary">AI 头像</h4>
+                        <input
+                          type="text"
+                          value={draft.immersive?.avatar?.url ?? ''}
+                          onChange={(e) => updateImmersive('avatar.url', e.target.value || undefined)}
+                          placeholder="头像 URL（留空使用默认图标）"
+                          className="w-full px-3 py-2 text-sm bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
+                        />
+                        {/* 预设头像网格 */}
+                        <div className="grid grid-cols-6 gap-1.5">
+                          {PRESET_AVATARS.map((av) => {
+                            const isSelected = draft.immersive?.avatar?.url === av.src;
+                            return (
+                              <button
+                                key={av.src}
+                                type="button"
+                                title={av.label}
+                                onClick={() => updateImmersive('avatar.url', av.src)}
+                                className={`aspect-square rounded-lg overflow-hidden border-2 transition-all ${
+                                  isSelected ? 'border-primary' : 'border-border-subtle hover:border-border'
+                                }`}
+                              >
+                                <img
+                                  src={av.src}
+                                  alt={av.label}
+                                  className="w-full h-full object-cover"
+                                  onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                />
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {/* 上传 + 清除 */}
+                        <div className="flex items-center gap-2">
+                          <label className="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-xs rounded-lg border border-dashed border-primary/50 text-primary cursor-pointer hover:bg-primary/5 transition-colors">
+                            上传图片
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (!file) return;
+                                if (file.size > 500 * 1024) {
+                                  alert('图片超过 500KB 限制，请选择更小的图片');
+                                  return;
+                                }
+                                const reader = new FileReader();
+                                reader.onload = (ev) => {
+                                  updateImmersive('avatar.url', ev.target?.result as string);
+                                };
+                                reader.readAsDataURL(file);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {draft.immersive?.avatar?.url && (
+                            <button
+                              type="button"
+                              onClick={() => updateImmersive('avatar.url', undefined)}
+                              className="px-3 py-1.5 text-xs rounded-lg bg-background-hover text-text-secondary hover:text-danger transition-colors"
+                            >
+                              清除
+                            </button>
+                          )}
+                        </div>
                       </div>
                       {[
                         { key: 'wallpaper.opacity', label: '背景可见度', min: 0, max: 100, suffix: '%' },

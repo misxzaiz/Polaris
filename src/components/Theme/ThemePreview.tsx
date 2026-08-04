@@ -127,10 +127,14 @@ export function ThemePreview({ theme }: ThemePreviewProps) {
           {/* AI 消息 */}
           <div className="flex gap-1.5">
             <div
-              className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold"
+              className="w-5 h-5 rounded-full shrink-0 flex items-center justify-center text-[9px] font-semibold overflow-hidden"
               style={{ background: `rgb(${c.primary} / 0.15)`, color: rgb(c.primary.base) }}
             >
-              P
+              {theme.immersive?.enabled && theme.immersive.avatar?.url ? (
+                <img src={theme.immersive.avatar.url} alt="" className="w-full h-full object-cover" />
+              ) : (
+                'P'
+              )}
             </div>
             <div className="flex-1 min-w-0 space-y-1.5">
               <span className="text-[11px] font-medium" style={{ color: rgb(c.text.primary) }}>

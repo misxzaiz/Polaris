@@ -6,19 +6,20 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { FolderOpen, Code, FileSearch, Bot } from 'lucide-react';
 import { useConfigStore } from '@/stores/configStore';
+import { useThemeStore } from '@/stores/themeStore';
 
 export const EmptyState = memo(function EmptyState() {
   const { t } = useTranslation('chat');
-  const spidermanAvatarUrl = useConfigStore(s =>
-    s.config?.theme === 'spiderman' ? s.config.spidermanTheme?.avatarUrl : null
-  );
+  const immersiveAvatarUrl = useThemeStore(s => s.activeTheme?.immersive?.enabled ? s.activeTheme.immersive.avatar?.url : null);
+  const legacyAvatarUrl = useConfigStore(s => s.config?.theme === 'spiderman' ? s.config.spidermanTheme?.avatarUrl : null);
+  const avatarUrl = immersiveAvatarUrl ?? legacyAvatarUrl;
 
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
       {/* 图标 */}
       <div className="w-16 h-16 rounded-2xl bg-primary-faint flex items-center justify-center mb-4 overflow-hidden">
-        {spidermanAvatarUrl ? (
-          <img src={spidermanAvatarUrl} alt="" className="w-full h-full object-cover" />
+        {avatarUrl ? (
+          <img src={avatarUrl} alt="" className="w-full h-full object-cover" />
         ) : (
           <Bot className="w-8 h-8 text-primary" />
         )}
