@@ -154,6 +154,10 @@ function isBrowserOccludedByAppOverlay(
     if (!isElementRendered(element)) continue
 
     const style = window.getComputedStyle(element)
+
+    // pointer-events: none 的元素是视觉浮层，不遮挡 Native WebView
+    if (style.pointerEvents === 'none') continue
+
     const isExplicitOverlay = element.hasAttribute('data-native-webview-overlay')
     const isModal = element.getAttribute('aria-modal') === 'true' || element.getAttribute('role') === 'dialog'
     const canOverlayNativeWebview =
