@@ -57,7 +57,7 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   // 展开状态：显示传统的垂直图标栏
   return (
     <div
-      data-spiderman-panel
+      data-theme-panel
       className={`flex flex-col items-center shrink-0 w-12 py-2 bg-background-elevated border-r border-border ${className || ''}`}
     >
       {/* 折叠按钮 */}

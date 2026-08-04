@@ -81,7 +81,7 @@ const MIN_OCCLUDING_Z_INDEX = 10
 const HIDDEN_BROWSER_BOUNDS: BrowserBounds = { x: 0, y: 0, width: 0, height: 0 }
 const OCCLUDING_ELEMENT_SELECTOR = [
   '[data-native-webview-overlay]',
-  '[data-spiderman-panel]',
+  '[data-theme-panel]',
   '[data-workspace-dropdown]',
   '[role="dialog"]',
   '[role="menu"]',
@@ -1404,7 +1404,7 @@ export function BrowserLauncherPanel() {
   }, [closeLeftPanel, openBrowserTab])
 
   return (
-    <div data-spiderman-panel className="flex h-full min-h-0 flex-col bg-background-elevated">
+    <div data-theme-panel className="flex h-full min-h-0 flex-col bg-background-elevated">
       <div className="flex items-center gap-2 border-b border-border px-4 py-3">
         <Globe2 size={16} className="text-primary" />
         <span className="text-sm font-medium text-text-primary">

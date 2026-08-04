@@ -50,7 +50,7 @@ export function Layout({ children }: LayoutProps) {
 /** 头部 */
 export function Header({ title, children }: HeaderProps) {
   return (
-    <header data-spiderman-panel className="flex items-center justify-between px-5 h-14 bg-background-elevated border-b border-border shrink-0">
+    <header data-theme-panel className="flex items-center justify-between px-5 h-14 bg-background-elevated border-b border-border shrink-0">
       <h1 className="text-base font-semibold text-text-primary">{title}</h1>
       {children && <div className="flex items-center gap-2">{children}</div>}
     </header>
@@ -64,8 +64,7 @@ export function Sidebar({ children, className = '', width }: SidebarProps) {
 
   return (
     <aside
-      data-spiderman-panel
-      data-spiderman-blur
+      data-theme-panel
       className={`flex flex-col bg-background-elevated border-r border-border shrink-0 ${className}`}
       style={style}
       {...(width && { className: className + ' ' + widthClass })}
@@ -92,8 +91,7 @@ export function Aside({ children, className = '', width }: AsideProps) {
 
   return (
     <aside
-      data-spiderman-panel
-      data-spiderman-blur
+      data-theme-panel
       className={`flex flex-col bg-background-elevated border-l border-border shrink-0 ${className}`}
       style={style}
       {...(width && { className: className + ' ' + widthClass })}

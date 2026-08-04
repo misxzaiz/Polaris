@@ -13,7 +13,7 @@ export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi'
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
 
-/** 界面主题 */
+/** 界面主题（@deprecated 使用 activeThemeId 替代） */
 export type Theme = 'dark' | 'light' | 'spiderman'
 
 /** 对话显示密度 */
@@ -387,8 +387,10 @@ export interface Config {
   auxiliaryEngine?: string;
   /** 界面语言 */
   language?: Language;
-  /** 界面主题 */
+  /** 界面主题（@deprecated 使用 activeThemeId 替代） */
   theme?: Theme;
+  /** 当前激活的主题 ID（UUID 格式，替换旧 theme 字段） */
+  activeThemeId?: string;
   /** Claude Code 引擎配置 */
   claudeCode: {
     /** Claude CLI 命令路径 */

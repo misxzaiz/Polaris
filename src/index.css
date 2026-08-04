@@ -5,9 +5,11 @@
 
 
 /* 全局样式 */
-/* === 主题变量（Dark - 默认） ===
+/* === 主题变量（Dark - 默认回退） ===
  * 所有颜色 token 以 `R G B` 三元组形式存储，由 tailwind.config.js 通过
- * `rgb(var(--c-xxx) / <alpha-value>)` 引用。切换主题只需替换变量值。 */
+ * `rgb(var(--c-xxx) / <alpha-value>)` 引用。切换主题由 themeEngine 注入变量。
+ * 此处 :root 保留 Dark 值作为 CSS var() fallback，确保 JS 引擎失败时仍可读。
+ * 注意：light/spiderman 主题的变量块已移除，由 themeEngine 动态注入。 */
 :root {
   color-scheme: dark;
   --window-opacity: 1.0;
@@ -68,143 +70,65 @@
   --c-canvas: 255 255 255;
   --c-tag-bg: 255 255 255;
   --c-shadow: 0 0 0;
-}
 
-/* === 主题变量（Light） === */
-:root[data-theme="light"] {
-  color-scheme: light;
+  /* 排版变量（L1） */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+  --font-size-base: 14px;
+  --font-weight-normal: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --letter-spacing: normal;
 
-  /* Primary - 保持品牌蓝，略加深 */
-  --c-primary: 37 99 235;
-  --c-primary-hover: 29 78 216;
+  /* 形状变量（L2） */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+  --chat-bubble-radius: 16px;
+  --border-width: 1px;
+  --border-style: solid;
+  --chat-bubble-padding-x: 16px;
+  --chat-bubble-padding-y: 12px;
 
-  /* Background - 浅色分层 */
-  --c-bg-base: 250 250 252;
-  --c-bg-elevated: 255 255 255;
-  --c-bg-surface: 241 245 249;
-  --c-bg-hover: 226 232 240;
-  --c-bg-active: 203 213 225;
-  --c-bg-tertiary: 232 236 241;
-  --c-bg-secondary: 248 250 252;
+  /* 动效变量（L3） */
+  --transition-fast: 0.15s;
+  --transition-normal: 0.3s;
+  --transition-slow: 0.5s;
+  --ease-default: ease;
+  --ease-in: ease-in;
+  --ease-out: ease-out;
+  --ease-in-out: ease-in-out;
 
-  /* Border base RGB（黑色基底） */
-  --c-border: 15 23 42;
+  /* 沉浸变量默认值（占位，避免未定义） */
+  --theme-bg-image: none;
+  --theme-bg-overlay: 0.8;
+  --theme-bg-position: center;
+  --theme-bg-size: cover;
+  --theme-panel-opacity: 1;
+  --theme-panel-blur: none;
+  --theme-surface-opacity: 1;
+  --theme-child-opacity: 1;
+  --theme-web-opacity: 0;
+  --theme-hover-opacity: 1;
+  --theme-blue-accent: 0.5;
+  --theme-avatar-url: none;
 
-  /* Text - 深色 */
-  --c-text-primary: 15 23 42;
-  --c-text-secondary: 51 65 85;
-  --c-text-tertiary: 100 116 139;
-  --c-text-muted: 148 163 184;
+  /* 兼容旧名（过渡期后移除） */
+  --spiderman-bg-image: none;
+  --spiderman-bg-overlay: 0.8;
+  --spiderman-panel-opacity: 1;
+  --spiderman-panel-blur: none;
+  --spiderman-surface-opacity: 1;
+  --spiderman-web-opacity: 0;
+  --spiderman-hover-opacity: 1;
+  --spiderman-blue-accent: 0.5;
 
-  /* Status - 加深以保证对比度 */
-  --c-status-warning: 217 119 6;
-  --c-status-success: 22 163 74;
-  --c-status-danger: 220 38 38;
-  --c-status-info: 37 99 235;
-  --c-status-done: 5 150 105;
-  --c-status-failed: 185 28 28;
-  --c-status-neutral: 107 114 128;
-
-  /* Priority */
-  --c-priority-low: 107 114 128;
-  --c-priority-normal: 37 99 235;
-  --c-priority-high: 234 88 12;
-  --c-priority-urgent: 220 38 38;
-
-  /* Accent */
-  --c-accent-ai: 124 58 237;
-  --c-accent-prototype: 14 165 233;
-  --c-accent-workspace: 217 119 6;
-
-  /* Misc */
-  --c-overlay: 15 23 42;
-  --c-shadow: 15 23 42;
-  --c-tag-bg: 15 23 42;
-}
-
-/* === 主题变量（Spider-Man） === */
-:root[data-theme="spiderman"] {
-  color-scheme: dark;
-
-  /* Primary - Spider-Man Red */
-  --c-primary: 220 38 38;
-  --c-primary-hover: 185 28 28;
-  --c-primary-50: 254 226 226;
-  --c-primary-100: 254 202 202;
-  --c-primary-200: 252 165 165;
-  --c-primary-300: 248 113 113;
-  --c-primary-400: 239 68 68;
-  --c-primary-500: 220 38 38;
-  --c-primary-600: 185 28 28;
-  --c-primary-700: 153 27 27;
-
-  /* Background - Pure Black */
-  --c-bg-base: 0 0 0;
-  --c-bg-elevated: 8 8 10;
-  --c-bg-surface: 14 14 18;
-  --c-bg-hover: 20 20 24;
-  --c-bg-active: 26 26 30;
-  --c-bg-tertiary: 16 18 22;
-  --c-bg-secondary: 10 12 16;
-
-  /* Border base RGB */
-  --c-border: 220 38 38;
-
-  /* Text */
-  --c-text-primary: 248 248 248;
-  --c-text-secondary: 180 180 184;
-  --c-text-tertiary: 142 142 147;
-  --c-text-muted: 109 109 112;
-
-  /* Status */
-  --c-status-warning: 251 191 36;
-  --c-status-success: 52 211 153;
-  --c-status-danger: 248 113 113;
-  --c-status-info: 59 130 246;
-  --c-status-done: 16 185 129;
-  --c-status-failed: 239 68 68;
-  --c-status-neutral: 156 163 175;
-
-  /* Priority */
-  --c-priority-low: 156 163 175;
-  --c-priority-normal: 59 130 246;
-  --c-priority-high: 251 146 60;
-  --c-priority-urgent: 248 113 113;
-
-  /* Accent */
-  --c-accent-ai: 59 130 246;
-  --c-accent-prototype: 34 211 238;
-  --c-accent-workspace: 59 130 246;
-
-  /* Misc */
-  --c-overlay: 0 0 0;
-  --c-on-primary: 255 255 255;
-  --c-canvas: 255 255 255;
-  --c-tag-bg: 255 255 255;
-  --c-shadow: 0 0 0;
-
-  /* Thinking Orb 环颜色（红蓝黑） */
+  /* Thinking Orb 环颜色 */
   --orb-color-outer: #DC2626;
   --orb-color-middle: #3B82F6;
   --orb-color-inner: #EF4444;
-}
-
-/* Spider-Man 动态 CSS 变量（默认值）
-   仅在 data-theme="spiderman" 时定义，避免非 spiderman 主题时发起图片请求。
-   JS 会在设置变更时通过 style.setProperty 动态覆盖这些值。 */
-:root[data-theme="spiderman"] {
-  --spiderman-bg-image: url('https://images.unsplash.com/photo-1534809027769-b00d750a6bac?q=80&w=1920');
-  --spiderman-bg-overlay: 0.8;
-  --spiderman-bg-position: center;
-  --spiderman-bg-size: cover;
-  --spiderman-panel-opacity: 0.55;
-  --spiderman-panel-blur: blur(8px);
-  --spiderman-avatar-url: none;
-  --spiderman-web-opacity: 0.15;
-  --spiderman-surface-opacity: 0.5;
-  --spiderman-chat-tool-opacity: 0.55;
-  --spiderman-hover-opacity: 0.5;
-  --spiderman-blue-accent: 0.5;
 }
 
 * {

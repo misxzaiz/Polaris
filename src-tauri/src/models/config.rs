@@ -1289,6 +1289,10 @@ pub struct Config {
     #[serde(default)]
     pub theme: Option<String>,
 
+    /// 当前激活的主题 ID（UUID 格式，替换旧 theme 字段）
+    #[serde(default)]
+    pub active_theme_id: Option<String>,
+
     /// Claude Code 引擎配置
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
@@ -1419,6 +1423,7 @@ impl Default for Config {
             auxiliary_engine: None,
             language: None,
             theme: None,
+            active_theme_id: None,
             claude_code: ClaudeCodeConfig::default(),
             codex_code: CodexCodeConfig::default(),
             pi_code: PiCodeConfig::default(),

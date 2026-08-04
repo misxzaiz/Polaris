@@ -11,6 +11,9 @@ import { currentMode } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
+import { saveLegacySpiderManConfig } from '@/services/themeEngine';
+import { BUILT_IN_THEME_IDS } from '@/types/theme';
+import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 
 const log = createLogger('ConfigStore');
 
@@ -73,14 +76,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
-      // 同步 spidermanTheme 到 localStorage（供 themeStore.syncSpiderManCssVars 读取）
+      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
       if (config?.spidermanTheme) {
-        try {
-          window.localStorage.setItem('spiderman-theme', JSON.stringify(config.spidermanTheme));
-        } catch { /* ignore */ }
+        saveLegacySpiderManConfig(config.spidermanTheme);
       }
-      if (config?.theme) {
-        useThemeStore.getState().applyTheme(config.theme);
+      // 优先使用 activeThemeId，否则迁移旧 theme 字段
+      if (config?.activeThemeId) {
+        useThemeStore.getState().applyThemeById(config.activeThemeId);
+      } else if (config?.theme) {
+        const builtIn = getBuiltInThemeByShortName(config.theme);
+        if (builtIn) {
+          useThemeStore.getState().applyThemeById(builtIn.id);
+        }
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 
@@ -142,14 +149,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
       }
-      // 同步 spidermanTheme 到 localStorage
+      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
       if (savedConfig?.spidermanTheme) {
-        try {
-          window.localStorage.setItem('spiderman-theme', JSON.stringify(savedConfig.spidermanTheme));
-        } catch { /* ignore */ }
+        saveLegacySpiderManConfig(savedConfig.spidermanTheme);
       }
-      if (savedConfig?.theme) {
-        useThemeStore.getState().applyTheme(savedConfig.theme);
+      // 优先使用 activeThemeId，否则迁移旧 theme 字段
+      if (savedConfig?.activeThemeId) {
+        useThemeStore.getState().applyThemeById(savedConfig.activeThemeId);
+      } else if (savedConfig?.theme) {
+        const builtIn = getBuiltInThemeByShortName(savedConfig.theme);
+        if (builtIn) {
+          useThemeStore.getState().applyThemeById(builtIn.id);
+        }
       }
       set({ config: savedConfig, loading: false });
     } catch (e) {
@@ -167,14 +178,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (savedConfig?.language) {
         i18n.changeLanguage(savedConfig.language);
       }
-      // 同步 spidermanTheme 到 localStorage
+      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
       if (savedConfig?.spidermanTheme) {
-        try {
-          window.localStorage.setItem('spiderman-theme', JSON.stringify(savedConfig.spidermanTheme));
-        } catch { /* ignore */ }
+        saveLegacySpiderManConfig(savedConfig.spidermanTheme);
       }
-      if (savedConfig?.theme) {
-        useThemeStore.getState().applyTheme(savedConfig.theme);
+      // 优先使用 activeThemeId，否则迁移旧 theme 字段
+      if (savedConfig?.activeThemeId) {
+        useThemeStore.getState().applyThemeById(savedConfig.activeThemeId);
+      } else if (savedConfig?.theme) {
+        const builtIn = getBuiltInThemeByShortName(savedConfig.theme);
+        if (builtIn) {
+          useThemeStore.getState().applyThemeById(builtIn.id);
+        }
       }
       set({ config: savedConfig, loading: false });
       return savedConfig;
@@ -319,12 +334,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       if (config?.language) {
         i18n.changeLanguage(config.language);
       }
-      // 同步 spidermanTheme 到 localStorage（供 themeStore.syncSpiderManCssVars 读取）
+      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
       if (config?.spidermanTheme) {
-        saveSpiderManConfig(config.spidermanTheme);
+        saveLegacySpiderManConfig(config.spidermanTheme);
       }
-      if (config?.theme) {
-        useThemeStore.getState().applyTheme(config.theme);
+      // 优先使用 activeThemeId，否则迁移旧 theme 字段
+      if (config?.activeThemeId) {
+        useThemeStore.getState().applyThemeById(config.activeThemeId);
+      } else if (config?.theme) {
+        const builtIn = getBuiltInThemeByShortName(config.theme);
+        if (builtIn) {
+          useThemeStore.getState().applyThemeById(builtIn.id);
+        }
       }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 

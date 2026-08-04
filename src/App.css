@@ -108,108 +108,85 @@
 }
 
 /* ========================================
-   Spider-Man 沉浸主题装饰层
+   沉浸主题装饰层（通用化）
    ======================================== */
 
-/* 默认隐藏，非 spiderman 主题下不渲染 */
+/* 默认隐藏，非沉浸主题下不渲染 */
 .theme-web-texture,
 .theme-ambient {
   display: none;
 }
 
-/* === 背景方案：直接放在 html 元素上 ===
-   html 的 background 是根叠加上下文的 Layer 1（最底层），
-   永远不会被任何内容挡住，也不会挡住任何内容。
-   通过 multi-background 实现遮罩控制：
-   - 第一层（前景）：深色渐变遮罩，alpha = 1 - bgOpacity
-   - 第二层（背景）：背景图片
-   遮罩 alpha 由 JS 在 syncSpiderManCssVars() 中计算为
-   --spiderman-bg-overlay = 1 - backgroundOpacity。 */
-
-/* html 背景：深色基底 + 渐变遮罩 + 背景图片
-   注意：multi-background 的 background-size/position 需要为每层提供值，
-   第一层（渐变遮罩）始终 cover/center，第二层（图片）使用用户配置。 */
-html[data-theme="spiderman"] {
+/* === 背景方案：直接放在 html 元素上 == */
+[data-theme-immersive="true"] {
   background-color: rgb(var(--c-bg-base));
   background-image:
     /* 深色遮罩层，alpha = 1 - bgOpacity（由 JS 计算） */
     linear-gradient(
-      rgb(var(--c-bg-base) / var(--spiderman-bg-overlay, 0.8)),
-      rgb(var(--c-bg-base) / var(--spiderman-bg-overlay, 0.8))
+      rgb(var(--c-bg-base) / var(--theme-bg-overlay, 0.8)),
+      rgb(var(--c-bg-base) / var(--theme-bg-overlay, 0.8))
     ),
     /* 背景图片 */
-    var(--spiderman-bg-image);
-  background-position: center, var(--spiderman-bg-position, center);
-  background-size: cover, var(--spiderman-bg-size, cover);
+    var(--theme-bg-image);
+  background-position: center, var(--theme-bg-position, center);
+  background-size: cover, var(--theme-bg-size, cover);
   background-repeat: no-repeat;
 }
 
 /* body 透明，让 html 背景透出 */
-html[data-theme="spiderman"] body {
+[data-theme-immersive="true"] body {
   background-color: transparent !important;
 }
 
 /* 关闭背景：移除图片，保留深色基底 */
-html[data-theme="spiderman"][data-spiderman-bg-off] {
+[data-theme-immersive="true"][data-theme-bg-off] {
   background-image: none !important;
 }
 
 /* 关闭背景时 .theme-root 恢复纯色背景 */
-html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
+[data-theme-immersive="true"][data-theme-bg-off] .theme-root {
   background-color: rgb(var(--c-bg-base)) !important;
 }
 
-/* 主题根容器：isolation: isolate 创建局部叠加上上下文
-   让 z-index: -1 的子元素（纹理、光晕）在内容层之下。
-   background-color 透明，让 html 背景（Layer 1）透出。
-   backdrop-filter: 单层 blur 覆盖所有子面板，避免每个面板独立创建合成层。 */
-[data-theme="spiderman"] .theme-root {
+/* 主题根容器 */
+[data-theme-immersive="true"] .theme-root {
   isolation: isolate;
   background-color: transparent !important;
   position: relative;
-  /* 单层 backdrop-filter：所有子面板继承此效果，只创建 1 个 GPU 合成层 */
-  backdrop-filter: var(--spiderman-panel-blur, none);
-  -webkit-backdrop-filter: var(--spiderman-panel-blur, none);
+  backdrop-filter: var(--theme-panel-blur, none);
+  -webkit-backdrop-filter: var(--theme-panel-blur, none);
 }
 
-/* 聊天消息区域透明，让背景继续透到子窗口 */
-[data-theme="spiderman"] .chat-display-root {
+/* 聊天消息区域透明 */
+[data-theme-immersive="true"] .chat-display-root {
   background-color: transparent !important;
 }
 
-/* 主内容区 <main> 透明 — 移除 bg-background-base 的阻塞
-   <main> 的 bg-background-base 在 spiderman 下为 rgb(0 0 0)，
-   完全阻挡了 html 壁纸透出。 */
-[data-theme="spiderman"] .theme-root main {
+/* 主内容区 <main> 透明 */
+[data-theme-immersive="true"] .theme-root main {
   background-color: transparent !important;
 }
 
-/* 蛛网纹理：position: absolute; z-index: -1
-   在局部叠加上下文中处于 Layer 2（负层），
-   在内容（Layer 3+）之下。
-   用 pointer-events: none 不阻挡交互。
-   注意：用 ::after 伪元素实现边缘淡出，替代 mask-image 以兼容旧版 WebView2。 */
-[data-theme="spiderman"] .theme-web-texture {
+/* 蛛网纹理 */
+[data-theme-immersive="true"] .theme-web-texture {
   display: block;
   position: absolute;
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  opacity: var(--spiderman-web-opacity, 0);
+  opacity: var(--theme-web-opacity, 0);
   background-image:
     repeating-linear-gradient(0deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(90deg, transparent, transparent 60px, rgba(220,38,38,0.04) 60px, rgba(220,38,38,0.04) 61px),
     repeating-linear-gradient(45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
     repeating-linear-gradient(-45deg, transparent, transparent 85px, rgba(220,38,38,0.02) 85px, rgba(220,38,38,0.02) 86px),
-    /* 蓝色对角线线条 */
     repeating-linear-gradient(135deg, transparent, transparent 100px, rgba(59,130,246,0.03) 100px, rgba(59,130,246,0.03) 101px),
     repeating-linear-gradient(45deg, transparent, transparent 100px, rgba(59,130,246,0.02) 100px, rgba(59,130,246,0.02) 101px);
   animation: web-pulse 4s ease-in-out infinite;
 }
 
-/* 伪元素淡出遮罩：替代 mask-image，兼容性更好（Edge 87+ 均支持）
-   在纹理上方叠加径向渐变，从中心透明过渡到边缘 bg-base 色，实现边缘淡出。 */
-[data-theme="spiderman"] .theme-web-texture::after {
+/* 伪元素淡出遮罩 */
+[data-theme-immersive="true"] .theme-web-texture::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -217,9 +194,8 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
   pointer-events: none;
 }
 
-/* 环境光晕：position: absolute; z-index: -1
-   与蛛网纹理同层，按 DOM 顺序纹理在上、光晕在下 */
-[data-theme="spiderman"] .theme-ambient {
+/* 环境光晕 */
+[data-theme-immersive="true"] .theme-ambient {
   display: block;
   position: absolute;
   inset: 0;
@@ -233,141 +209,101 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 
 /* 蛛网纹理脉冲动画 */
 @keyframes web-pulse {
-  0%, 100% { opacity: var(--spiderman-web-opacity, 0); }
-  50% { opacity: calc(var(--spiderman-web-opacity, 0) * 1.4); }
+  0%, 100% { opacity: var(--theme-web-opacity, 0); }
+  50% { opacity: calc(var(--theme-web-opacity, 0) * 1.4); }
 }
 
-/* ===== 对比度保护 =====
-   当用户偏好更高对比度时，强制深色遮罩不透明度不低于 0.85，
-   确保文字在任何背景图片上都可读。 */
+/* ===== 对比度保护 ===== */
 @media (prefers-contrast: more) {
-  [data-theme="spiderman"] {
-    --spiderman-bg-overlay: 0.9 !important;
+  [data-theme-immersive="true"] {
+    --theme-bg-overlay: 0.9 !important;
   }
-  [data-theme="spiderman"] .theme-web-texture {
-    opacity: 0.05 !important; /* 降低纹理干扰 */
+  [data-theme-immersive="true"] .theme-web-texture {
+    opacity: 0.05 !important;
   }
 }
 
-/* === 布局面板半透明化，让背景图片透出 ===
-   所有面板降低不透明度，让背景透出。
-   backdrop-filter 已从每个面板迁移到 .theme-root 单层（见上方），
-   此处只控制透明度，不再创建独立合成层。
+/* === 布局面板半透明化 === */
 
-   选择器策略：
-   - 第一层：data-spiderman-panel 属性（在 Layout.tsx 中声明）→ 半透明
-   - 第二层（内容卡片）：.theme-root 内的 [class*="-surface"] → 不透明
-   - 所有 fixed 定位元素（模态框/对话框）→ 不透明 */
-
-/* 所有面板半透明基础（降低不透明度让背景更可见）
-   注意：仅 data-spiderman-panel 属性保持半透明，面板内部的所有
-   内容卡片都设为完全不透明，避免双重半透明导致文字不可读。 */
-[data-theme="spiderman"] [data-spiderman-panel],
-[data-theme="spiderman"] .chat-input-root {
-  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-panel-opacity, 0)) !important;
+/* 所有面板半透明基础 */
+[data-theme-immersive="true"] [data-theme-panel],
+[data-theme-immersive="true"] .chat-input-root {
+  background-color: rgb(var(--c-bg-elevated) / var(--theme-panel-opacity, 0)) !important;
 }
 
-/* 内容卡片半透明背景
-   面板本身（data-spiderman-panel）已设为半透明（0.55），
-   面板内部的卡片（bg-surface, bg-background-surface）额外叠加半透明，
-   由 surface-opacity 变量控制，默认 50%，让背景更可见。
-   注意：模态框/对话框内容不受影响（下方有 .fixed 保护）。 */
-[data-theme="spiderman"] .theme-root [class*="-surface"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.27)) !important;
+/* 内容卡片半透明背景 */
+[data-theme-immersive="true"] .theme-root [class*="-surface"] {
+  background-color: rgb(var(--c-bg-surface) / var(--theme-surface-opacity, 0.27)) !important;
 }
 
-/* 语义状态色（警告/成功/错误/强调），状态靠边框颜色区分 */
-[data-theme="spiderman"] .theme-root [class*="bg-warning-faint"],
-[data-theme="spiderman"] .theme-root [class*="bg-success-faint"],
-[data-theme="spiderman"] .theme-root [class*="bg-error-faint"],
-[data-theme="spiderman"] .theme-root [class*="bg-accent-faint"] {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.27)) !important;
+/* 语义状态色 */
+[data-theme-immersive="true"] .theme-root [class*="bg-warning-faint"],
+[data-theme-immersive="true"] .theme-root [class*="bg-success-faint"],
+[data-theme-immersive="true"] .theme-root [class*="bg-error-faint"],
+[data-theme-immersive="true"] .theme-root [class*="bg-accent-faint"] {
+  background-color: rgb(var(--c-bg-surface) / var(--theme-surface-opacity, 0.27)) !important;
 }
 
-/* 聊天消息气泡保护
-   - 默认主题：AI 回复无背景（已从 JSX 移除 bg-background-surface）
-   - 蜘蛛侠主题：AI 回复有半透明背景提升可读性；用户消息保持透明让壁纸透出
-   - 使用 --spiderman-surface-opacity 替代硬编码 0.85，受主题设置控制 */
-[data-theme="spiderman"] .theme-root .chat-assistant-message {
-  background-color: rgb(var(--c-bg-surface) / var(--spiderman-surface-opacity, 0.85)) !important;
+/* 聊天消息气泡保护 */
+[data-theme-immersive="true"] .theme-root .chat-assistant-message {
+  background-color: rgb(var(--c-bg-surface) / var(--theme-surface-opacity, 0.85)) !important;
   backdrop-filter: blur(8px);
 }
-[data-theme="spiderman"] .theme-root .chat-user-message {
+[data-theme-immersive="true"] .theme-root .chat-user-message {
   background-color: transparent !important;
 }
 
-/* 聊天区域右侧面板透明 — 移除 data-spiderman-panel 的半透明背景
-   右侧面板是聊天消息的容器，它的半透明背景（rgba(8,8,10,0.55)）
-   会覆盖在壁纸上，产生"遮罩"感。让聊天区域面板完全透明，
-   让 html 壁纸和渐变遮罩直接透出。
-   注意：仅对带 border-l 的右侧面板生效，不影响左侧面板、活动栏等。 */
-[data-theme="spiderman"] [data-spiderman-panel].border-l,
-[data-theme="spiderman"] [data-spiderman-panel].border-l [data-spiderman-panel] {
+/* 聊天区域右侧面板透明 */
+[data-theme-immersive="true"] [data-theme-panel].border-l,
+[data-theme-immersive="true"] [data-theme-panel].border-l [data-theme-panel] {
   background-color: transparent !important;
 }
 
-/* 聊天输入框区域透明 — 移除半透明背景，仅保留边框作为视觉区分
-   输入框内层容器（bg-background-surface）也一并透明化，
-   输入框文字和按钮仅靠 html 渐变遮罩保护对比度。 */
-[data-theme="spiderman"] .chat-input-root,
-[data-theme="spiderman"] .chat-input-root [class*="bg-background-"] {
+/* 聊天输入框区域透明 */
+[data-theme-immersive="true"] .chat-input-root,
+[data-theme-immersive="true"] .chat-input-root [class*="bg-background-"] {
   background-color: transparent !important;
 }
 
-/* 空状态建议卡片透明 — 移除半透明背景让壁纸透出
-   建议卡片（EmptyState 中的快速启动卡片）也是聊天区域的一部分，
-   和消息气泡一样不需要背景色。 */
-[data-theme="spiderman"] .chat-display-root [class*="rounded-xl"][class*="bg-background-surface"] {
+/* 空状态建议卡片透明 */
+[data-theme-immersive="true"] .chat-display-root [class*="rounded-xl"][class*="bg-background-surface"] {
   background-color: transparent !important;
 }
 
-/* 设置页中的静态背景区域
-   如 PromptSnippetTab 的变量说明区、section header 等，
-   使用 bg-background-hover 作为静态背景，叠加半透明保持视觉一致。
-   注意：分为两条规则——
-   1. 静态类 bg-background-hover → 始终半透明
-   2. hover:bg-background-hover → 仅在 hover 时半透明，非 hover 时透明让背景透出 */
-/* 静态 bg-background-hover：始终半透明 */
-[data-theme=spiderman] .theme-root [class*=bg-background-hover]:not([class*=hover:]):not([class*=focus:]):not([class*=active:]):not([class*=group-hover:]):not([class*=peer-hover:]) {
-  background-color: rgb(var(--c-bg-hover) / var(--spiderman-hover-opacity, 0.5)) !important;
+/* 静态 bg-background-hover */
+[data-theme-immersive="true"] .theme-root [class*=bg-background-hover]:not([class*=hover:]):not([class*=focus:]):not([class*=active:]):not([class*=group-hover:]):not([class*=peer-hover:]) {
+  background-color: rgb(var(--c-bg-hover) / var(--theme-hover-opacity, 0.5)) !important;
 }
-/* hover 变体：仅在 hover 时半透明，非 hover 时透明让壁纸透出 */
-[data-theme=spiderman] .theme-root [class*=hover:bg-background-hover]:hover {
-  background-color: rgb(var(--c-bg-hover) / var(--spiderman-hover-opacity, 0.5)) !important;
+[data-theme-immersive="true"] .theme-root [class*=hover:bg-background-hover]:hover {
+  background-color: rgb(var(--c-bg-hover) / var(--theme-hover-opacity, 0.5)) !important;
 }
 
-/* 聊天消息区域内的工具面板/代码块背景
-   如 ToolCallBlockRenderer 的 bg-background-elevated 主容器、
-   ToolBubble 的 bg-background-secondary/tertiary 详情区域。
-   限定在 chat-display-root 内，避免影响其他面板的卡片层级。 */
-[data-theme="spiderman"] .chat-display-root [class*="bg-background-elevated"] {
-  background-color: rgb(var(--c-bg-elevated) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
+/* 聊天消息区域内的工具面板/代码块背景 */
+[data-theme-immersive="true"] .chat-display-root [class*="bg-background-elevated"] {
+  background-color: rgb(var(--c-bg-elevated) / var(--theme-child-opacity, 0.55)) !important;
 }
-[data-theme="spiderman"] .chat-display-root [class*="bg-background-secondary"] {
-  background-color: rgb(var(--c-bg-secondary) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
+[data-theme-immersive="true"] .chat-display-root [class*="bg-background-secondary"] {
+  background-color: rgb(var(--c-bg-secondary) / var(--theme-child-opacity, 0.55)) !important;
 }
-[data-theme="spiderman"] .chat-display-root [class*="bg-background-tertiary"] {
-  background-color: rgb(var(--c-bg-tertiary) / var(--spiderman-chat-tool-opacity, 0.55)) !important;
+[data-theme-immersive="true"] .chat-display-root [class*="bg-background-tertiary"] {
+  background-color: rgb(var(--c-bg-tertiary) / var(--theme-child-opacity, 0.55)) !important;
 }
 
-/* === 模态框/对话框内容保护 ===
-   确保 fixed 定位的模态框/对话框内的内容面板保持完全不透明。
-   模态框是独立弹出层，其背景与壁纸主题无关。
-   使用 explicit 变量值（不带 alpha）覆盖半透明规则。 */
-[data-theme="spiderman"] .fixed [class*="-surface"] {
+/* === 模态框/对话框内容保护 === */
+[data-theme-immersive="true"] .fixed [class*="-surface"] {
   background-color: rgb(var(--c-bg-surface)) !important;
 }
-[data-theme="spiderman"] .fixed [class*="bg-background-elevated"],
-[data-theme="spiderman"] .fixed[class*="bg-background-elevated"] {
+[data-theme-immersive="true"] .fixed [class*="bg-background-elevated"],
+[data-theme-immersive="true"] .fixed[class*="bg-background-elevated"] {
   background-color: rgb(var(--c-bg-elevated)) !important;
 }
-[data-theme="spiderman"] .fixed [data-spiderman-panel],
-[data-theme="spiderman"] .fixed[data-spiderman-panel] {
+[data-theme-immersive="true"] .fixed [data-theme-panel],
+[data-theme-immersive="true"] .fixed[data-theme-panel] {
   background-color: rgb(var(--c-bg-elevated)) !important;
 }
 
 /* 发送按钮红蓝渐变 */
-[data-theme="spiderman"] .send-button {
+[data-theme-immersive="true"] .send-button {
   background: linear-gradient(135deg, #DC2626, #3B82F6) !important;
   background-size: 200% 200% !important;
   animation: spiderman-btn-shift 4s ease-in-out infinite;
@@ -375,43 +311,41 @@ html[data-theme="spiderman"][data-spiderman-bg-off] .theme-root {
 
 /* 尊重用户减少动画偏好 */
 @media (prefers-reduced-motion: reduce) {
-  [data-theme="spiderman"] .theme-web-texture {
+  [data-theme-immersive="true"] .theme-web-texture {
     animation: none !important;
   }
-  [data-theme="spiderman"] .send-button {
+  [data-theme-immersive="true"] .send-button {
     animation: none !important;
   }
 }
 
-[data-theme="spiderman"] .send-button:not(:disabled):hover {
+[data-theme-immersive="true"] .send-button:not(:disabled):hover {
   box-shadow: 0 0 20px rgba(220, 38, 38, 0.4), 0 0 40px rgba(59, 130, 246, 0.2) !important;
 }
 
-/* 滚动条中性色 — 在壁纸背景上保持清晰可见 */
-[data-theme="spiderman"] ::-webkit-scrollbar-track {
+/* 滚动条中性色 */
+[data-theme-immersive="true"] ::-webkit-scrollbar-track {
   background: rgba(0, 0, 0, 0.15) !important;
   border-radius: 5px;
 }
-[data-theme="spiderman"] ::-webkit-scrollbar-thumb {
+[data-theme-immersive="true"] ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.35) !important;
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-[data-theme="spiderman"] ::-webkit-scrollbar-thumb:hover {
+[data-theme-immersive="true"] ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.5) !important;
   background-clip: padding-box;
 }
 
-/* 输入框容器聚焦发光 — 父容器 .chat-input-root 使用 focus-within
-   避免在 border-0 的 textarea 上产生方形边框。
-   box-shadow 带模糊半径，自然呈现圆角光晕效果。 */
-[data-theme="spiderman"] .chat-input-root:focus-within {
+/* 输入框容器聚焦发光 */
+[data-theme-immersive="true"] .chat-input-root:focus-within {
   box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.3) !important;
 }
 
 /* AI 头像蓝色光晕 */
-[data-theme="spiderman"] .assistant-avatar {
+[data-theme-immersive="true"] .assistant-avatar {
   box-shadow: 0 0 12px rgba(59, 130, 246, 0.3) !important;
 }
 

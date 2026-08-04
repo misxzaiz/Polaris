@@ -5,26 +5,15 @@ import App from "./App";
 import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
-import { syncSpiderManCssVarsToDom } from '@/utils/spiderman-theme';
+import { bootstrapTheme } from '@/services/themeEngine';
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 
-// 主题预设：在 React render 之前同步读取 localStorage 并写入 data-theme，防止首屏闪烁（FOUC）
+// 主题引导：在 React render 之前同步读取 localStorage 并注入 CSS 变量，防止首屏闪烁（FOUC）
 (() => {
-  try {
-    const stored = typeof window !== 'undefined' ? window.localStorage.getItem('theme') : null;
-    const theme = stored === 'spiderman' ? 'spiderman' : stored === 'light' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', theme);
-    // 如果是 spiderman 主题，提前同步 CSS 变量避免首屏闪烁
-    // 使用共享工具函数，与 themeStore 的同步逻辑保持完全一致
-    if (theme === 'spiderman') {
-      syncSpiderManCssVarsToDom();
-    }
-  } catch {
-    document.documentElement.setAttribute('data-theme', 'dark');
-  }
+  bootstrapTheme();
 })();
 
 const root = document.getElementById("root") as HTMLElement;

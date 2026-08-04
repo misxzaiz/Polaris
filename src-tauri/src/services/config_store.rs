@@ -629,6 +629,7 @@ impl OldConfig {
             auxiliary_engine: None,
             language: None,
             theme: None,
+            active_theme_id: None,
             claude_code: crate::models::config::ClaudeCodeConfig {
                 cli_path: self.claude_cmd,
             },

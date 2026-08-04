@@ -39,7 +39,7 @@ export function RightPanel({ children, fillRemaining = false, forceShow = false 
   // 填充模式：flex-1 自适应，无拖拽条
   if (fillRemaining) {
     return (
-      <aside data-spiderman-panel className="flex flex-col bg-background-elevated border-l border-border relative flex-1 min-w-[200px]">
+      <aside data-theme-panel className="flex flex-col bg-background-elevated border-l border-border relative flex-1 min-w-[200px]">
         <QuickSwitchPanel />
         <div className="flex-1 flex flex-col">
           {children}
@@ -52,7 +52,7 @@ export function RightPanel({ children, fillRemaining = false, forceShow = false 
   return (
     <>
       <ResizeHandle direction="horizontal" position="left" onDrag={handleResize} />
-      <aside data-spiderman-panel
+      <aside data-theme-panel
         className="flex flex-col bg-background-elevated border-l border-border shrink-0 relative"
         style={{ width: `${width}px` }}
       >

@@ -100,7 +100,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
   };
 
   return (
-    <div data-spiderman-panel className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
+    <div data-theme-panel className="flex items-center h-10 bg-background-elevated border-b border-border shrink-0">
       {/* 左侧:Logo/应用名称 - 小屏模式下更紧凑 */}
       <div data-tauri-drag-region className={`flex items-center ${isCompactMode ? 'px-2' : 'pl-4 pr-2'}`}>
         <div className="relative w-6 h-6" data-tauri-drag-region={false}>

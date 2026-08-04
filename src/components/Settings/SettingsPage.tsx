@@ -192,7 +192,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }
 
   return (
-    <div data-spiderman-panel className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
+    <div data-theme-panel className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
       {/* 顶部标题栏 */}
       <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
         <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>

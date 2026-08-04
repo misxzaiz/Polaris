@@ -54,7 +54,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   // 全屏 / 填充模式：flex-1 自适应，无拖拽条
   if (fullscreen || fillRemaining) {
     return (
-      <aside data-spiderman-panel
+      <aside data-theme-panel
         className={`flex flex-col bg-background-elevated border-r border-border relative flex-1 min-w-[200px] ${className}`}
       >
         <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
@@ -71,7 +71,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   return (
     <>
       {/* 面板容器 */}
-      <aside data-spiderman-panel
+      <aside data-theme-panel
         className={`flex flex-col bg-background-elevated border-r border-border shrink-0 relative ${className}`}
         style={{ width: `${width}px`, maxWidth: styleMaxWidth }}
       >

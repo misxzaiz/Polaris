@@ -3,7 +3,9 @@
  */
 
 export { useConfigStore } from './configStore';
-export { useThemeStore, type Theme } from './themeStore';
+export { useThemeStore } from './themeStore';
+// 兼容旧导出：Theme 类型仍可被引用，但已迁移到 types/theme
+export type { Theme } from '../types/config';
 
 export { useCommandStore } from './commandStore';
 export { useWorkspaceStore } from './workspaceStore';
