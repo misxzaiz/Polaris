@@ -94,17 +94,46 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
   // TOC 目录
   const tocHeadings = useMemo(() => extractHeadings(value), [value]);
 
-  // 代码高亮 + 为标题元素赋 ID（用于 TOC 跳转）
+  // 代码高亮 + 为标题元素赋 ID（用于 TOC 跳转）+ 注入代码块复制按钮
   useEffect(() => {
     if (viewMode === 'edit' || !previewRef.current) return;
-    previewRef.current.querySelectorAll('pre code').forEach((block) => {
+    const container = previewRef.current;
+
+    // 代码高亮
+    container.querySelectorAll('pre code').forEach((block) => {
       const el = block as HTMLElement;
       if (!el.dataset.highlighted) {
         hljs.highlightElement(el);
       }
     });
-    const domHeadings = previewRef.current.querySelectorAll('h1, h2, h3, h4, h5, h6');
+
+    // 为标题元素赋 ID
+    const domHeadings = container.querySelectorAll('h1, h2, h3, h4, h5, h6');
     domHeadings.forEach((h, i) => { h.id = `toc-h-${i}`; });
+
+    // 为代码块注入复制按钮
+    container.querySelectorAll('pre').forEach((pre) => {
+      if (pre.querySelector('.md-editor-copy-btn')) return; // 已注入
+      const codeText = pre.querySelector('code')?.textContent || '';
+      const btn = document.createElement('button');
+      btn.className = 'md-editor-copy-btn';
+      btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      btn.title = '复制代码';
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await navigator.clipboard.writeText(codeText);
+          btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+          btn.title = '已复制';
+          setTimeout(() => {
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+            btn.title = '复制代码';
+          }, 2000);
+        } catch { /* ignore */ }
+      });
+      pre.style.position = 'relative';
+      pre.appendChild(btn);
+    });
   }, [previewParts, viewMode]);
 
   // 分隔条拖拽

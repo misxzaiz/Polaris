@@ -267,7 +267,7 @@ function App() {
                   {error && <ErrorBanner error={error} />}
 
                   {multiSessionMode ? (
-                    <MultiSessionGrid />
+                    <MultiSessionGrid onEditMessage={handleEditMessage} />
                   ) : (
                     <EnhancedChatMessages onEditMessage={handleEditMessage} />
                   )}

@@ -73,18 +73,29 @@ export function ThemeManager() {
   };
 
   const handleEdit = (theme: ThemeDefinition) => {
-    // 内置主题：复制后编辑
-    if (theme.builtIn) {
-      const dup = duplicateTheme(theme.id);
-      if (dup) setEditingTheme(dup);
-    } else {
-      setEditingTheme(theme);
-    }
+    setEditingTheme(theme);
   };
 
   const handleSave = (theme: ThemeDefinition) => {
-    saveTheme(theme);
-    setEditingTheme(null);
+    if (theme.builtIn) {
+      // 内置主题：以固定 ID 存入自定义主题，第二次编辑时覆盖
+      const now = new Date().toISOString();
+      const customId = `custom:${theme.id}`;
+      const existing = themes.find((t) => t.id === customId);
+      const custom = {
+        ...theme,
+        id: customId,
+        name: existing ? theme.name : `${theme.name} (自定义)`,
+        builtIn: false,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      };
+      saveTheme(custom);
+      setEditingTheme(null);
+    } else {
+      saveTheme(theme);
+      setEditingTheme(null);
+    }
   };
 
   return (
@@ -215,7 +226,7 @@ export function ThemeManager() {
                     onClick={() => handleEdit(theme)}
                     className="px-2 py-1 text-[11px] rounded-md text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
                   >
-                    {isBuiltIn ? '复制编辑' : '编辑'}
+                    编辑
                   </button>
                   <button
                     type="button"

@@ -1,0 +1,140 @@
+{
+  "formatVersion": 1,
+  "type": "polaris-theme",
+  "exportedAt": "2026-08-04T12:00:00.000Z",
+  "minAppVersion": "1.0.0",
+  "theme": {
+    "name": "Shenzhen · 深圳",
+    "description": "以深圳为灵感的沉浸式暗色主题 · 深蓝夜空 × 霓虹科技感 · 城市脉搏与未来感交织",
+    "author": "Polaris Community",
+    "version": 1,
+    "extends": null,
+    "colors": {
+      "primary": {
+        "base": "0 217 255",
+        "hover": "0 188 230",
+        "50": "224 248 255",
+        "100": "179 239 255",
+        "200": "128 229 255",
+        "300": "77 219 255",
+        "400": "38 211 255",
+        "500": "0 217 255",
+        "600": "0 188 230",
+        "700": "0 155 196"
+      },
+      "background": {
+        "base": "6 8 20",
+        "elevated": "12 15 34",
+        "surface": "18 22 45",
+        "hover": "24 29 55",
+        "active": "30 36 65",
+        "tertiary": "10 13 28",
+        "secondary": "8 10 24"
+      },
+      "border": {
+        "base": "0 217 255"
+      },
+      "text": {
+        "primary": "235 240 255",
+        "secondary": "180 196 235",
+        "tertiary": "130 145 190",
+        "muted": "90 100 145"
+      },
+      "status": {
+        "warning": "255 186 82",
+        "success": "0 230 180",
+        "danger": "255 82 110",
+        "info": "0 217 255",
+        "done": "0 200 150",
+        "failed": "255 60 70",
+        "neutral": "130 140 180"
+      },
+      "priority": {
+        "low": "130 140 180",
+        "normal": "0 217 255",
+        "high": "255 186 82",
+        "urgent": "255 82 110"
+      },
+      "accent": {
+        "ai": "180 100 255",
+        "prototype": "0 230 200",
+        "workspace": "255 186 82"
+      },
+      "misc": {
+        "overlay": "6 8 20",
+        "onPrimary": "6 8 20",
+        "canvas": "255 255 255",
+        "tagBg": "255 255 255",
+        "shadow": "0 0 0"
+      }
+    },
+    "typography": {
+      "fontSans": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"Helvetica Neue\", Arial, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "fontMono": "\"JetBrains Mono\", \"Fira Code\", \"Cascadia Code\", \"SF Mono\", Consolas, \"Source Han Mono\", monospace",
+      "fontSizeBase": "14px",
+      "fontWeightNormal": "400",
+      "fontWeightMedium": "500",
+      "fontWeightSemibold": "600",
+      "letterSpacing": "0.02em",
+      "chatFontFamily": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", Roboto, \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "chatFontSize": 14,
+      "chatLineHeight": 1.6,
+      "chatCodeFontSize": 13,
+      "chatInputFontSize": 14
+    },
+    "shape": {
+      "radiusSm": "6px",
+      "radiusMd": "10px",
+      "radiusLg": "14px",
+      "radiusXl": "20px",
+      "radiusFull": "9999px",
+      "chatBubbleRadius": "18px",
+      "borderWidth": "1px",
+      "borderStyle": "solid",
+      "chatBubblePaddingX": "16px",
+      "chatBubblePaddingY": "12px"
+    },
+    "motion": {
+      "transitionFast": "0.15s",
+      "transitionNormal": "0.3s",
+      "transitionSlow": "0.5s",
+      "easeDefault": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "easeIn": "cubic-bezier(0.4, 0, 1, 1)",
+      "easeOut": "cubic-bezier(0, 0, 0.2, 1)",
+      "easeInOut": "cubic-bezier(0.4, 0, 0.2, 1)",
+      "motionReduce": false
+    },
+    "layout": {
+      "windowOpacity": {
+        "normal": 100,
+        "compact": 100
+      },
+      "chatMessageGap": 10,
+      "chatBlockGap": 6,
+      "chatParagraphSpacing": 4
+    },
+    "immersive": {
+      "enabled": true,
+      "wallpaper": {
+        "type": "image",
+        "image": "https://images.unsplash.com/photo-1580651315530-69c8e0026377?q=80&w=1920",
+        "opacity": 0.65,
+        "positionX": 50,
+        "positionY": 50,
+        "size": "cover"
+      },
+      "layerOpacity": {
+        "panel": 0.45,
+        "surface": 0.35,
+        "child": 0.45
+      },
+      "effects": {
+        "panelBlur": 12,
+        "webTexture": 0.08,
+        "blueAccent": 0.4,
+        "hoverOpacity": 0.5
+      }
+    },
+    "customCss": "/**\n * Shenzhen · 深圳 主题自定义样式\n * 霓虹光晕效果 & 科技感点缀\n */\n\n/* 主色调霓虹发光 */\n.theme-preview-strip {\n  box-shadow: inset 0 0 60px rgba(0, 217, 255, 0.08);\n}\n\n/* 输入框聚焦光晕 */\ninput:focus, textarea:focus, select:focus {\n  box-shadow: 0 0 0 2px rgba(0, 217, 255, 0.15) !important;\n}\n\n/* 滚动条科技感 */\n::-webkit-scrollbar-thumb {\n  background: rgba(0, 217, 255, 0.2) !important;\n  border-radius: 4px !important;\n}\n\n::-webkit-scrollbar-thumb:hover {\n  background: rgba(0, 217, 255, 0.35) !important;\n}\n\n/* 选中文本高亮 */\n::selection {\n  background: rgba(0, 217, 255, 0.25) !important;\n  color: #fff !important;\n}\n\n/* 代码块微光边框 */\npre, code {\n  border-color: rgba(0, 217, 255, 0.1) !important;\n}\n\n/* 分割线微光 */\nhr {\n  border-color: rgba(0, 217, 255, 0.08) !important;\n}\n\n/* 按钮悬停微光 */\nbutton:hover {\n  box-shadow: 0 0 12px rgba(0, 217, 255, 0.1);\n}\n"
+  }
+}

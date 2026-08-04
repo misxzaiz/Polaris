@@ -20,7 +20,7 @@ import { applyThemeSync, applyCustomCss, clearCustomCss } from '@/services/theme
 import { validateCustomCss } from '@/utils/cssValidator';
 import { ColorPicker } from './ColorPicker';
 import { ThemePreview } from './ThemePreview';
-import { PRESET_AVATARS } from '@/data/themeAssets';
+import { PRESET_AVATARS, PRESET_BACKGROUNDS } from '@/data/themeAssets';
 
 interface ThemeEditorProps {
   theme: ThemeDefinition;
@@ -491,9 +491,9 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                           updateDraft({
                             immersive: {
                               enabled: true,
-                              wallpaper: { type: 'image', image: '', opacity: 0.8, positionX: 50, positionY: 50, size: 'cover' },
-                              layerOpacity: { panel: 0.55, surface: 0.50, child: 0.55 },
-                              effects: { panelBlur: 8, webTexture: 0.15, blueAccent: 0.5, hoverOpacity: 0.5 },
+                              wallpaper: { type: 'image', image: '', opacity: 0.58, positionX: 49, positionY: 49, size: 'cover' },
+                              layerOpacity: { panel: 0.62, surface: 0.39, child: 0.43 },
+                              effects: { panelBlur: 1, webTexture: 0.35, blueAccent: 0.5, hoverOpacity: 0.41 },
                             },
                           });
                         } else {
@@ -531,6 +531,30 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                             placeholder="输入图片 URL"
                             className="w-full px-3 py-2 text-sm bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
                           />
+                        )}
+                        {/* 预设背景网格 */}
+                        {draft.immersive?.wallpaper.type === 'image' && (
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {PRESET_BACKGROUNDS.map((bg) => {
+                              const isSelected = draft.immersive?.wallpaper.image === bg.src;
+                              return (
+                                <button
+                                  key={bg.src}
+                                  type="button"
+                                  title={bg.label}
+                                  onClick={() => updateImmersive('wallpaper.image', bg.src)}
+                                  className={`aspect-video rounded-lg overflow-hidden border-2 transition-all bg-cover bg-center ${
+                                    isSelected ? 'border-primary' : 'border-border-subtle hover:border-border'
+                                  }`}
+                                  style={{ backgroundImage: `url(${bg.thumbnail || bg.src})` }}
+                                >
+                                  <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-[9px] text-white px-1 py-0.5 text-center truncate">
+                                    {bg.label}
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
                         )}
                       </div>
 

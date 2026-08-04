@@ -31,6 +31,8 @@ export interface MultiSessionGridRef {
 interface MultiSessionGridProps {
   /** 可选的 ref 转发 */
   ref?: React.Ref<MultiSessionGridRef>;
+  /** 编辑消息回调 */
+  onEditMessage?: (messageId: string, content: string) => void;
 }
 
 /** 内部滚动辅助函数 */
@@ -44,7 +46,7 @@ function scrollRowTo(rowRef: React.RefObject<HTMLDivElement | null>, index: numb
  * MultiSessionGrid 组件
  */
 export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessionGridProps>(
-  function MultiSessionGrid(_, ref) {
+  function MultiSessionGrid({ onEditMessage }, ref) {
     const { t } = useTranslation('chat');
     const multiSessionIds = useViewStore(state => state.multiSessionIds);
     const multiSessionMode = useViewStore(state => state.multiSessionMode);
@@ -179,6 +181,7 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
                 sessionId={session.id}
                 isActive={session.id === activeSessionId}
                 onToggleExpand={() => handleToggleExpand(session.id)}
+                onEditMessage={onEditMessage}
               />
             </div>
           ))}
@@ -201,6 +204,7 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
                   sessionId={session.id}
                   isActive={session.id === activeSessionId}
                   onToggleExpand={() => handleToggleExpand(session.id)}
+                  onEditMessage={onEditMessage}
                 />
               </div>
             ))}

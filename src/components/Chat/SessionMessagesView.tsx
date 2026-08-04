@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { renderChatMessage } from './EnhancedChatMessages';
-import type { MessageScrollActions } from './EnhancedChatMessages';
+import type { MessageScrollActions, MessageActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
@@ -39,6 +39,8 @@ const EmptyState = memo(function EmptyState() {
 
 interface SessionMessagesViewProps {
   sessionId: string;
+  /** 编辑消息回调 */
+  onEditMessage?: (messageId: string, content: string) => void;
 }
 
 /**
@@ -101,7 +103,7 @@ function useSessionStoreSubscription<T>(
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
-export const SessionMessagesView = memo(function SessionMessagesView({ sessionId }: SessionMessagesViewProps) {
+export const SessionMessagesView = memo(function SessionMessagesView({ sessionId, onEditMessage }: SessionMessagesViewProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const autoScrollRef = useRef(true);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
@@ -247,6 +249,11 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     }
   }, [isStreaming, displayMessages.length]);
 
+  // 消息操作
+  const messageActions = useMemo<MessageActions | undefined>(() => {
+    return onEditMessage ? { onEdit: onEditMessage } : undefined;
+  }, [onEditMessage]);
+
   return (
     <div className="h-full w-full relative">
       {isEmpty ? (
@@ -257,7 +264,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           style={{ height: '100%' }}
           data={displayMessages}
           itemContent={(index, item) => {
-            return renderChatMessage(item, index, scrollActions);
+            return renderChatMessage(item, index, scrollActions, messageActions);
           }}
           components={{
             EmptyPlaceholder: () => null,

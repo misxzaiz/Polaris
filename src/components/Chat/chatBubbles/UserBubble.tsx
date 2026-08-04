@@ -78,16 +78,16 @@ export const UserBubble = memo(function UserBubble({
     <>
       <div className="chat-user-message flex justify-end group" onContextMenu={handleContextMenu}>
         <div className="chat-user-bubble-wrap relative max-w-[85%]">
-          {/* Hover 操作栏 */}
-          {onEdit && (
-            <div className="absolute -top-8 right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-              <button
-                onClick={handleCopy}
-                className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
-                title={t('contextMenu.copyMessage')}
-              >
-                {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
-              </button>
+          {/* Hover 操作栏 - 始终显示复制按钮，有 onEdit 时显示编辑按钮 */}
+          <div className="absolute -top-8 right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+            <button
+              onClick={handleCopy}
+              className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
+              title={copied ? t('contextMenu.copied') : t('contextMenu.copyMessage')}
+            >
+              {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
+            </button>
+            {onEdit && (
               <button
                 onClick={handleEdit}
                 className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -95,8 +95,8 @@ export const UserBubble = memo(function UserBubble({
               >
                 <Pencil size={14} />
               </button>
-            </div>
-          )}
+            )}
+          </div>
           <div className="chat-user-bubble
                       bg-gradient-to-br from-primary to-primary-600
                       text-white shadow-glow">

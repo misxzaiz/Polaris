@@ -40,6 +40,8 @@ interface SessionCellProps {
   isExpanded?: boolean;
   /** 展开按钮点击回调 */
   onToggleExpand?: () => void;
+  /** 编辑消息回调 */
+  onEditMessage?: (messageId: string, content: string) => void;
 }
 
 /**
@@ -50,6 +52,7 @@ export const SessionCell = memo(function SessionCell({
   isActive,
   isExpanded = false,
   onToggleExpand,
+  onEditMessage,
 }: SessionCellProps) {
   const { t } = useTranslation('chat');
   const { switchSession, deleteSession } = useSessionManagerActions();
@@ -225,7 +228,7 @@ export const SessionCell = memo(function SessionCell({
 
         {/* 消息区域 - 使用专门的多窗口消息组件 */}
         <div className="chat-display-root flex-1 min-h-0 overflow-hidden bg-background-base" style={chatDisplayStyle}>
-          <SessionMessagesView sessionId={sessionId} />
+          <SessionMessagesView sessionId={sessionId} onEditMessage={onEditMessage} />
         </div>
       </div>
 

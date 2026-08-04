@@ -1,7 +1,8 @@
+@import 'katex/dist/katex.min.css';
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-@import 'katex/dist/katex.min.css';
 
 
 /* 全局样式 */
@@ -162,13 +163,51 @@ body {
   flex-direction: column;
 }
 
-/* 优化的滚动条样式 */
+/* 优化的滚动条样式 - 全局细化 */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 6px;
+  height: 6px;
 }
 
-/* 聊天导航器面板列表滚动条 - 极致对称 */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-clip: content-box;
+  min-height: 30px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 聊天显示区域滚动条 - 极致纤细 */
+.chat-display-root ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.chat-display-root ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 2px;
+  border: none;
+  min-height: 24px;
+}
+
+.chat-display-root ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* 聊天导航器面板列表滚动条 */
 .chat-navigator-list::-webkit-scrollbar {
   width: 4px;
 }
@@ -186,27 +225,6 @@ body {
 
 .chat-navigator-list::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.35);
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 5px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-  background-clip: content-box;
-}
-
-::-webkit-scrollbar-corner {
-  background: rgba(255, 255, 255, 0.05);
 }
 
 /* 优化的 prose 样式 */
@@ -2006,4 +2024,34 @@ html.focus-mode .chat-prose:hover > blockquote:not(:hover) {
 /* ============================================================================
    开发用移动端模拟样式：?mobile=1 模式下给 MobileShell 加手机框
    ============================================================================ */
+
+/* 编辑器预览代码块复制按钮 */
+.md-editor-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  z-index: 10;
+}
+
+.md-editor-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.prose pre:hover .md-editor-copy-btn {
+  opacity: 1;
+}
 
