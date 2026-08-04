@@ -138,9 +138,7 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background-color: rgb(var(--c-bg-base) / var(--window-opacity));
@@ -928,7 +926,7 @@ body {
 }
 
 .git-header .commit-sha {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 12px;
   color: #9CA3AF;
   background: #1F1F22;
@@ -1062,7 +1060,7 @@ body {
   display: flex;
   gap: 6px;
   font-size: 11px;
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
 }
 
 .file-stats .additions {
@@ -1295,7 +1293,7 @@ body {
 }
 
 .git-context .commit {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   background: #1F1F22;
   padding: 2px 6px;
   border-radius: 4px;
@@ -1505,7 +1503,7 @@ body {
 }
 
 .comment-line {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 11px;
   color: #9CA3AF;
 }
@@ -1639,7 +1637,7 @@ body {
 }
 
 .pr-number {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 12px;
   color: #60A5FA;
   font-weight: 600;
@@ -1698,7 +1696,7 @@ body {
 }
 
 .pr-value code {
-  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 11px;
   padding: 2px 6px;
   background: #1F1F22;

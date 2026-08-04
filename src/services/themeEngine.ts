@@ -140,6 +140,12 @@ export function flattenThemeToCSSVars(theme: ThemeDefinition): Record<string, st
   vars['--font-weight-medium'] = t.fontWeightMedium;
   vars['--font-weight-semibold'] = t.fontWeightSemibold;
   vars['--letter-spacing'] = t.letterSpacing;
+  // 聊天排版变量（与 index.css --chat-* 对齐）
+  vars['--chat-font-family'] = t.chatFontFamily ?? t.fontSans;
+  vars['--chat-font-size'] = `${t.chatFontSize}px`;
+  vars['--chat-line-height'] = String(t.chatLineHeight);
+  vars['--chat-code-font-size'] = `${t.chatCodeFontSize}px`;
+  vars['--chat-input-font-size'] = `${t.chatInputFontSize}px`;
 
   // ===== L2 形状变量 =====
   const s = theme.shape;
@@ -168,6 +174,9 @@ export function flattenThemeToCSSVars(theme: ThemeDefinition): Record<string, st
 
   // ===== L5 布局变量 =====
   vars['--window-opacity'] = String(theme.layout.windowOpacity.normal / 100);
+  vars['--chat-message-gap'] = `${theme.layout.chatMessageGap}px`;
+  vars['--chat-block-gap'] = `${theme.layout.chatBlockGap}px`;
+  vars['--chat-paragraph-spacing'] = `${theme.layout.chatParagraphSpacing}px`;
 
   // ===== L4 沉浸变量 =====
   if (theme.immersive?.enabled) {

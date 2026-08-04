@@ -94,6 +94,8 @@ export interface ThemeTypography {
   fontWeightMedium: string;
   fontWeightSemibold: string;
   letterSpacing: string;
+  /** 聊天字体族，不设置时跟随 fontSans */
+  chatFontFamily?: string;
   chatFontSize: number;
   chatLineHeight: number;
   chatCodeFontSize: number;
