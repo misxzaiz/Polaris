@@ -1947,6 +1947,63 @@ body {
 }
 
 /* ============================================================================
+   全局阅读聚焦模式（Focus Mode）
+   - L1 语义聚焦：鼠标悬停的消息块/段落提亮，兄弟降亮度
+   - 由 <html>.focus-mode 类联动，强度变量 --focus-dim-opacity / --focus-dim-brightness
+   - L2 聚光灯遮罩由 FocusOverlay 组件渲染，此处不涉及
+   ============================================================================ */
+
+/* 聚焦模式下：所有可聚焦单元先加过渡 */
+html.focus-mode .chat-user-message,
+html.focus-mode .chat-assistant-message,
+html.focus-mode .chat-prose > p,
+html.focus-mode .chat-prose > ul,
+html.focus-mode .chat-prose > ol,
+html.focus-mode .chat-prose > pre,
+html.focus-mode .chat-prose > blockquote,
+html.focus-mode .chat-prose > table {
+  transition: opacity .25s ease, filter .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+
+/* 兄弟降亮度：当某消息块处于 hover 时，同级其它消息块降亮 */
+html.focus-mode .chat-user-message:hover ~ .chat-user-message,
+html.focus-mode .chat-user-message:hover ~ .chat-assistant-message,
+html.focus-mode .chat-assistant-message:hover ~ .chat-user-message,
+html.focus-mode .chat-assistant-message:hover ~ .chat-assistant-message {
+  opacity: var(--focus-dim-opacity, .32);
+  filter: brightness(var(--focus-dim-brightness, .5));
+}
+
+/* 当前高亮：悬停的消息块提亮 + 边框/阴影提示 */
+html.focus-mode .chat-user-message:hover,
+html.focus-mode .chat-assistant-message:hover {
+  opacity: 1;
+  filter: none;
+  box-shadow: 0 0 0 1px var(--c-primary, #5b8df0), 0 8px 28px rgba(91, 141, 240, .22);
+  border-radius: var(--chat-bubble-radius, 16px);
+}
+
+/* 段落级：.chat-prose 内当前 hover 段提亮，兄弟段降亮 */
+html.focus-mode .chat-prose > p:hover,
+html.focus-mode .chat-prose > ul:hover,
+html.focus-mode .chat-prose > ol:hover,
+html.focus-mode .chat-prose > pre:hover,
+html.focus-mode .chat-prose > blockquote:hover {
+  opacity: 1;
+  filter: none;
+}
+
+/* 兄弟段降亮（hover 段的兄弟） */
+html.focus-mode .chat-prose:hover > p:not(:hover),
+html.focus-mode .chat-prose:hover > ul:not(:hover),
+html.focus-mode .chat-prose:hover > ol:not(:hover),
+html.focus-mode .chat-prose:hover > pre:not(:hover),
+html.focus-mode .chat-prose:hover > blockquote:not(:hover) {
+  opacity: var(--focus-dim-opacity, .32);
+  filter: brightness(var(--focus-dim-brightness, .5));
+}
+
+/* ============================================================================
    开发用移动端模拟样式：?mobile=1 模式下给 MobileShell 加手机框
    ============================================================================ */
 

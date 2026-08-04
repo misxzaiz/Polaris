@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import type { Config } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
+import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
 
 interface GeneralTabProps {
@@ -107,6 +108,9 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
       {/* 派发任务设置 — 策略/结果注入/队员预设 */}
       <DispatchSettingsSection config={config} onConfigChange={onConfigChange} loading={loading} />
+
+      {/* 阅读聚焦模式 — 独立 store，即时生效 */}
+      <FocusModeSettings />
 
       {/* 翻译设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">

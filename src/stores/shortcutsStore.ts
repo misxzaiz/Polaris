@@ -114,6 +114,24 @@ function getRegistry(): ShortcutDefinition[] {
       descriptionEn: 'Open workspace picker then create session',
       keys: `${mod}+Shift++`,
     },
+    {
+      id: 'global.focusMode',
+      category: 'global',
+      label: '阅读聚焦模式',
+      labelEn: 'Reading Focus Mode',
+      description: '切换全局阅读聚焦：鼠标悬停的消息块提亮、其余降亮度，减少视觉干扰',
+      descriptionEn: 'Toggle reading focus: highlight hovered message block, dim others',
+      keys: 'Alt+F',
+    },
+    {
+      id: 'global.focusModeStrong',
+      category: 'global',
+      label: '聚焦强模式（聚光灯）',
+      labelEn: 'Focus Strong Mode (Spotlight)',
+      description: '在聚焦之上叠加全屏聚光灯遮罩，鼠标处清晰、其余暗化模糊',
+      descriptionEn: 'Overlay spotlight mask on top of focus, clear at cursor, dim elsewhere',
+      keys: 'Alt+Shift+F',
+    },
 
     // ── 编辑器 ──
     {

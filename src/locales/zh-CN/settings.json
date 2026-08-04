@@ -28,7 +28,6 @@
     "aiEngine": "AI 引擎",
     "modelProvider": "模型供应商",
     "translate": "翻译",
-
     "scheduler": "定时任务",
     "speech": "语音输入",
     "lsp": "语言服务器",
@@ -781,5 +780,21 @@
       "nameRequired": "角色名不能为空",
       "nameDuplicated": "角色名已存在"
     }
+  },
+  "focus": {
+    "title": "阅读聚焦模式",
+    "hint": "减少视觉干扰，专注当前内容。快捷键 Alt+F / Alt+Shift+F",
+    "off": "关闭",
+    "offDesc": "不启用聚焦",
+    "l1": "语义聚焦",
+    "l1Desc": "悬停消息块高亮，其余降亮度",
+    "l2": "聚光灯",
+    "l2Desc": "叠加全屏遮罩，鼠标处清晰",
+    "desktopOnly": "仅桌面端可用：触屏设备无鼠标悬停语义。",
+    "dimOpacity": "兄弟降亮度",
+    "spotRadius": "聚光灯半径",
+    "spotBlur": "圆外模糊强度",
+    "noBlur": "不模糊",
+    "spotBlurHint": "低端机掉帧时设为 0（仅降亮度不模糊）"
   }
 }

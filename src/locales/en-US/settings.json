@@ -28,7 +28,6 @@
     "aiEngine": "AI Engine",
     "modelProvider": "Model Providers",
     "translate": "Translate",
-
     "scheduler": "Scheduler",
     "speech": "Speech Input",
     "advanced": "Advanced",
@@ -781,5 +780,21 @@
       "nameRequired": "Role name is required",
       "nameDuplicated": "Role name already exists"
     }
+  },
+  "focus": {
+    "title": "Reading Focus Mode",
+    "hint": "Reduce visual distraction, focus on current content. Shortcuts Alt+F / Alt+Shift+F",
+    "off": "Off",
+    "offDesc": "No focus",
+    "l1": "Semantic",
+    "l1Desc": "Highlight hovered block, dim others",
+    "l2": "Spotlight",
+    "l2Desc": "Overlay mask, clear at cursor",
+    "desktopOnly": "Desktop only: no hover on touch devices.",
+    "dimOpacity": "Sibling dim",
+    "spotRadius": "Spotlight radius",
+    "spotBlur": "Outer blur",
+    "noBlur": "No blur",
+    "spotBlurHint": "Set 0 on low-end machines (dim only, no blur)"
   }
 }

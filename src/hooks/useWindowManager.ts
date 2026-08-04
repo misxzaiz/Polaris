@@ -16,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useConfigStore } from '@/stores';
 import { useViewStore } from '@/stores/viewStore';
 import { useOverlayStore } from '@/stores/overlayStore';
+import { useFocusModeStore } from '@/stores/focusModeStore';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useWindowSize } from './useWindowSize';
@@ -91,6 +92,25 @@ export function useWindowManager({
           window.dispatchEvent(new CustomEvent('terminal:open-runner'));
         } else {
           useOverlayStore.getState().toggleFileSearch();
+        }
+      }
+      // Alt+F / Alt+Shift+F：全局阅读聚焦模式（语义聚焦 / 聚光灯强模式）
+      // 用 Alt 修饰避免与编辑器搜索 Ctrl+F 冲突
+      // 输入框/可编辑元素聚焦时不触发，避免干扰打字
+      if (
+        e.altKey && !e.ctrlKey && !e.metaKey && !e.repeat &&
+        (e.key === 'f' || e.key === 'F')
+      ) {
+        const target = e.target as HTMLElement | null
+        const tag = target?.tagName
+        const isEditable =
+          tag === 'INPUT' || tag === 'TEXTAREA' ||
+          target?.isContentEditable === true
+        if (!isEditable) {
+          e.preventDefault()
+          const { toggle, toggleStrong } = useFocusModeStore.getState()
+          if (e.shiftKey) toggleStrong()
+          else toggle()
         }
       }
       // Ctrl/Cmd + '+' 系列快捷键（主键盘 Equal 物理键 / 小键盘 NumpadAdd）
