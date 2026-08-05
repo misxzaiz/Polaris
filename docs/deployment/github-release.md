@@ -168,6 +168,40 @@ git push origin vx.x.x
 
 ---
 
+## v10.3.2 构建记录
+
+**构建时间**: 2026-08-06 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.3.2
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.3.2_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.3.2_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.3.2_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.3.2-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.3.2_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.3.2-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.3.2-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.3.2-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- feat(ui): ActivityBar 紧凑化重构 + 历史面板支持选择工作区
+- feat(ui): 移除左侧面板宽度拖拽限制（硬上限 + CSS 视口保护全移除）
+- fix(preview): PRD 预览全屏改用真 Fullscreen API，修复移动端全屏不覆盖物理屏幕
+- fix(theme): 使用 `setThemeById` 持久化 `activeThemeId` 到后端 config
+- fix(browser): 圈选采样期间 overlay pointer-events 临时关闭（后回退，保留原行为）
+- chore: history_index / dialog_index / ipc、SessionHistoryPanel / ArtifactPreviewRenderer / ActivityBar / TopMenuBar / windowService 等杂项同步
+
+---
+
 ## v10.3.0 构建记录
 
 **构建时间**: 2026-08-04 (UTC)
