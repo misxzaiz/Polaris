@@ -2954,14 +2954,6 @@ const REGION_SELECT_SCRIPT_BODY: &str = r#"
   }));
   // 2. 区域内所有可见元素的 DOM 片段（不限于交互元素）
   //    用 elementFromPoint 网格采样找到区域内所有元素
-  //    注意:圈选 overlay (__polaris_marquee_overlay__) 覆盖整个视口且 pointerEvents=auto,
-  //    采样期间必须临时关闭其 pointer-events,否则 elementFromPoint 全部命中 overlay 自身,
-  //    导致纯文字区域永远采不到任何元素(显示"无元素")。采样后恢复。
-  const __marqueeOverlay = document.getElementById('__polaris_marquee_overlay__');
-  const __savedOverlayPE = __marqueeOverlay ? __marqueeOverlay.style.pointerEvents : null;
-  if (__marqueeOverlay) __marqueeOverlay.style.pointerEvents = 'none';
-  // 诊断:确认脚本执行到此,以及 overlay 状态
-  try { console.log('[marquee:region] start sample', { targetRect, overlayFound: !!__marqueeOverlay, savedPE: __savedOverlayPE, interactiveCount: inRegion.length }); } catch {}
   let htmlSnippet = '';
   let textSnippet = '';
   try {
@@ -2993,8 +2985,6 @@ const REGION_SELECT_SCRIPT_BODY: &str = r#"
         }
       }
     }
-    // 诊断:采样结果
-    try { console.log('[marquee:region] sample done', { collected: collected.size, candidates: candidates.length, dedupedPreview: candidates.slice(0,3).map(e=>e.tagName) }); } catch {}
     // 按文档顺序排序
     candidates.sort((a, b) => {
       if (a === b) return 0;
@@ -3022,10 +3012,6 @@ const REGION_SELECT_SCRIPT_BODY: &str = r#"
     htmlSnippet = htmlParts.join('\n').slice(0, 6000);
     textSnippet = textParts.join('\n').slice(0, 3000);
   } catch {}
-  // 恢复 overlay 的 pointer-events（即使上面 try 抛错也要恢复）
-  if (__marqueeOverlay && __savedOverlayPE !== null) {
-    __marqueeOverlay.style.pointerEvents = __savedOverlayPE;
-  }
   return JSON.stringify({
     count: inRegion.length,
     elements: elements.slice(0, 120),
