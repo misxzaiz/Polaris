@@ -103,8 +103,6 @@ export interface UnifiedTimelineOptions {
   starred?: boolean
   archived?: boolean
   forceScan?: boolean
-  /** scope='workspace-select' 时指定选中的工作区路径 */
-  selectedWorkspacePath?: string | null
 }
 
 /** 分页历史结果 */
@@ -118,7 +116,7 @@ export interface PagedHistoryResult {
 }
 
 /** 历史查询范围 */
-export type HistoryScope = 'workspace' | 'global' | 'workspace-select'
+export type HistoryScope = 'workspace' | 'global'
 export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex' | 'simple-ai' | 'pi'>
 
 // ============================================================================
@@ -210,15 +208,9 @@ export const historyService = {
     const { scope, page, pageSize } = options
     try {
       const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
-      let targetWorkspacePath: string | null = null
-      if (scope === 'workspace') {
-        targetWorkspacePath = currentWorkspace?.path ?? null
-      } else if (scope === 'workspace-select') {
-        targetWorkspacePath = options.selectedWorkspacePath ?? null
-      }
       const result = await invoke<IndexQueryResult>('history_query', {
         params: {
-          workspacePath: targetWorkspacePath,
+          workspacePath: scope === 'workspace' ? currentWorkspace?.path ?? null : null,
           engines:
             options.engines && options.engines.length > 0 ? options.engines : undefined,
           starred: options.starred || undefined,
@@ -251,24 +243,14 @@ export const historyService = {
   },
 
   /** 全文搜索（标题 + 消息正文，FTS5）；返回带命中片段的条目 */
-  async searchHistory(
-    query: string,
-    scope: HistoryScope,
-    selectedWorkspacePath?: string | null,
-  ): Promise<UnifiedHistoryItem[]> {
+  async searchHistory(query: string, scope: HistoryScope): Promise<UnifiedHistoryItem[]> {
     const q = query.trim()
     if (!q) return []
     try {
       const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
-      let targetWorkspacePath: string | null = null
-      if (scope === 'workspace') {
-        targetWorkspacePath = currentWorkspace?.path ?? null
-      } else if (scope === 'workspace-select') {
-        targetWorkspacePath = selectedWorkspacePath ?? null
-      }
       const rows = await invoke<IndexSessionRow[]>('history_search', {
         query: q,
-        workspacePath: targetWorkspacePath,
+        workspacePath: scope === 'workspace' ? currentWorkspace?.path ?? null : null,
         limit: 50,
       })
       return rows.map(indexRowToItem)

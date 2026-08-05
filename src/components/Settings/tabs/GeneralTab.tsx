@@ -3,22 +3,12 @@
  * 包含语言、交互、翻译、数据存储、系统提示词等通用偏好
  */
 
-import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { GripVertical, ChevronUp, ChevronDown, PanelLeft } from 'lucide-react';
 import type { Config } from '@/types';
-import { useViewStore } from '@/stores/viewStore';
-import { pluginRegistry } from '@/plugin-system';
-import { usePluginStore, isPluginUiEnabled } from '@/stores/pluginStore';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
 import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
-
-// ─── 常量 ───────────────────────────────────────────
-
-const LEFT_PANEL_MIN = 200
-const LEFT_PANEL_MAX = 600
 
 interface GeneralTabProps {
   config: Config;
@@ -29,158 +19,8 @@ interface GeneralTabProps {
 export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps) {
   const { t } = useTranslation('settings');
 
-  // ── 左侧面板宽度 ──
-  const leftPanelWidth = useViewStore((s) => s.leftPanelWidth);
-  const setLeftPanelWidth = useViewStore((s) => s.setLeftPanelWidth);
-
-  // ── Activity Bar 图标顺序 ──
-  const pluginStates = usePluginStore((s) => s.pluginStates);
-  const panelOrder = useViewStore((s) => s.panelOrder);
-  const setPanelOrder = useViewStore((s) => s.setPanelOrder);
-
-  // 所有注册的 activityBar 面板（按 order 排序）
-  const allPanels = useMemo(() => {
-    return pluginRegistry
-      .listViewContributions('activityBar')
-      .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
-      .sort((a, b) => a.order - b.order);
-  }, [pluginStates]);
-
-  // 当前生效的排序列表
-  const orderedPanels = useMemo(() => {
-    if (!panelOrder || panelOrder.length === 0) return allPanels;
-    const orderMap = new Map(panelOrder.map((id, idx) => [id, idx]));
-    const sorted = [...allPanels].sort((a, b) => {
-      const oa = orderMap.get(a.id);
-      const ob = orderMap.get(b.id);
-      if (oa !== undefined && ob !== undefined) return oa - ob;
-      if (oa !== undefined) return -1;
-      if (ob !== undefined) return 1;
-      return a.order - b.order;
-    });
-    return sorted;
-  }, [allPanels, panelOrder]);
-
-  const handleMoveUp = useCallback((index: number) => {
-    if (index <= 0) return;
-    const newOrder = orderedPanels.map((p) => p.id);
-    [newOrder[index - 1], newOrder[index]] = [newOrder[index], newOrder[index - 1]];
-    setPanelOrder(newOrder);
-  }, [orderedPanels, setPanelOrder]);
-
-  const handleMoveDown = useCallback((index: number) => {
-    if (index >= orderedPanels.length - 1) return;
-    const newOrder = orderedPanels.map((p) => p.id);
-    [newOrder[index], newOrder[index + 1]] = [newOrder[index + 1], newOrder[index]];
-    setPanelOrder(newOrder);
-  }, [orderedPanels, setPanelOrder]);
-
-  const handleResetOrder = useCallback(() => {
-    setPanelOrder(null);
-  }, [setPanelOrder]);
-
-  const panelIconMap: Record<string, React.ReactNode> = {
-    Files: <PanelLeft size={14} />,
-    GitPullRequest: <span className="text-[11px]">Git</span>,
-    Globe2: <span className="text-[11px]">Web</span>,
-    Languages: <span className="text-[11px]">L10n</span>,
-    Terminal: <span className="text-[11px]">$</span>,
-    Code2: <span className="text-[11px]">{'{}'}</span>,
-    Bot: <span className="text-[11px]">Bot</span>,
-    Activity: <span className="text-[11px]">AI</span>,
-  };
-
   return (
     <div className="space-y-6">
-      {/* 左侧面板宽度 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">
-          {t('leftPanel.title', '左侧面板')}
-        </h3>
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="text-xs text-text-secondary">
-              {t('leftPanel.width', '面板宽度')}
-            </div>
-            <div className="text-sm font-medium text-text-primary">
-              {leftPanelWidth}px
-            </div>
-          </div>
-          <input
-            type="range"
-            min={LEFT_PANEL_MIN}
-            max={LEFT_PANEL_MAX}
-            step={10}
-            value={leftPanelWidth}
-            onChange={(e) => setLeftPanelWidth(Number(e.target.value))}
-            className="w-full h-2 rounded-full appearance-none cursor-pointer bg-background-surface accent-primary
-              [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4
-              [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:cursor-pointer
-              [&::-webkit-slider-thumb]:shadow-sm"
-            aria-label={t('leftPanel.width', '面板宽度')}
-          />
-          <div className="flex justify-between text-[10px] text-text-tertiary mt-1">
-            <span>{LEFT_PANEL_MIN}px</span>
-            <span>{LEFT_PANEL_MAX}px</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Activity Bar 图标顺序 */}
-      <div className="p-4 bg-surface rounded-lg border border-border">
-        <h3 className="text-sm font-medium text-text-primary mb-3">
-          {t('activityBar.title', 'Activity Bar 图标顺序')}
-        </h3>
-        <div className="space-y-1">
-          {orderedPanels.map((panel, index) => (
-            <div
-              key={panel.id}
-              className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-2.5 py-2"
-            >
-              <GripVertical size={14} className="shrink-0 text-text-tertiary" />
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-background-hover text-text-secondary">
-                {panelIconMap[panel.icon] || <span className="text-[11px]">?</span>}
-              </span>
-              <span className="min-w-0 flex-1 text-sm text-text-primary">
-                {t(panel.labelKey, { defaultValue: panel.labelDefault ?? panel.panelType })}
-              </span>
-              <div className="flex shrink-0 gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => handleMoveUp(index)}
-                  disabled={index === 0}
-                  className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
-                  title={t('buttons.moveUp', '上移')}
-                >
-                  <ChevronUp size={14} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleMoveDown(index)}
-                  disabled={index >= orderedPanels.length - 1}
-                  className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-30"
-                  title={t('buttons.moveDown', '下移')}
-                >
-                  <ChevronDown size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-        {panelOrder && panelOrder.length > 0 && (
-          <button
-            type="button"
-            onClick={handleResetOrder}
-            className="mt-2 rounded px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-          >
-            {t('activityBar.resetOrder', '重置为默认顺序')}
-          </button>
-        )}
-        <div className="mt-2 text-[11px] text-text-tertiary">
-          {t('activityBar.hint', '调整 Activity Bar 中图标的显示顺序，拖拽或上下移动调整。')}
-        </div>
-      </div>
-
       {/* 语言设置 */}
       <div className="p-4 bg-surface rounded-lg border border-border">
         <h3 className="text-sm font-medium text-text-primary mb-3">{t('language.title')}</h3>

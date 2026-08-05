@@ -45,8 +45,6 @@ interface ViewState {
   multiSessionCellWidth: number; // 每个格子的统一宽度（像素）
   expandSessionId: string | null; // 展开的会话 ID（全屏显示）
   pendingScrollToId: string | null; // 待滚动的会话 ID（一次性信号）
-  // Activity Bar 图标顺序自定义
-  panelOrder: string[] | null;   // 用户自定义的图标顺序（null 表示使用默认 order）
 }
 
 /** 视图操作 */
@@ -94,8 +92,6 @@ interface ViewActions {
   clearScrollRequest: () => void;
   // 排序操作
   moveSessionToFront: (sessionId: string) => void;
-  // Activity Bar 图标顺序自定义
-  setPanelOrder: (order: string[] | null) => void;
 }
 
 /** 完整的 View Store 类型 */
@@ -137,7 +133,6 @@ export const useViewStore = create<ViewStore>()(
       multiSessionCellWidth: 350,   // 默认格子宽度 350px
       expandSessionId: null,        // 默认无展开会话
       pendingScrollToId: null,      // 默认无待滚动会话
-      panelOrder: null,             // 默认 null 表示使用默认 order
 
       // 切换侧边栏
       toggleSidebar: () => set((state) => ({ showSidebar: !state.showSidebar })),
@@ -295,9 +290,6 @@ export const useViewStore = create<ViewStore>()(
         newIds.unshift(item);
         return { multiSessionIds: newIds };
       }),
-
-      // 设置 Activity Bar 图标顺序（null = 使用默认 order）
-      setPanelOrder: (order: string[] | null) => set({ panelOrder: order }),
     }),
     {
       name: 'view-store',
