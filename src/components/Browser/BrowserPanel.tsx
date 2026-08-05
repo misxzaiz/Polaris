@@ -752,8 +752,18 @@ export function BrowserPanel({
               result.rects.map(async (rect, idx) => {
                 try {
                   const region = await browserSelectRegion(webviewLabel, rect)
+                  // 诊断日志:看后端到底返回了什么
+                  console.log('[marquee] select_region', idx, {
+                    rect,
+                    count: region.count,
+                    elementsLen: region.elements?.length ?? 0,
+                    htmlSnippetLen: region.htmlSnippet?.length ?? 0,
+                    textSnippetLen: region.textSnippet?.length ?? 0,
+                    textSnippetHead: region.textSnippet?.slice(0, 80),
+                  })
                   return { idx, region }
-                } catch {
+                } catch (err) {
+                  console.warn('[marquee] select_region failed', idx, rect, err)
                   return null
                 }
               })
