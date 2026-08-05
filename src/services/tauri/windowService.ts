@@ -13,7 +13,7 @@ const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in win
 /** Lazy-loaded Tauri APIs */
 let _openPath: ((path: string) => Promise<void>) | null = null;
 let _openUrl: ((url: string) => Promise<void>) | null = null;
-let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; close: () => Promise<void> }) | null = null;
+let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; setFullscreen: (fullscreen: boolean) => Promise<void>; isFullscreen: () => Promise<boolean>; close: () => Promise<void> }) | null = null;
 
 async function getOpenPath() {
   if (!isTauriEnv) return null;
@@ -105,6 +105,25 @@ export async function baiduTranslate(
 // ============================================================================
 // 窗口控制相关命令
 // ============================================================================
+
+/** 设置/退出全屏 */
+export async function setFullscreen(fullscreen: boolean): Promise<void> {
+  const getWindow = await getGetCurrentWindow();
+  if (getWindow) {
+    const window = getWindow();
+    await window.setFullscreen(fullscreen);
+  }
+}
+
+/** 检查当前是否全屏状态 */
+export async function isFullscreen(): Promise<boolean> {
+  const getWindow = await getGetCurrentWindow();
+  if (getWindow) {
+    const window = getWindow();
+    return window.isFullscreen();
+  }
+  return false;
+}
 
 /** 最小化窗口 */
 export async function minimizeWindow(): Promise<void> {

@@ -3,6 +3,8 @@
   "description": "Capability for the main window",
   "webviews": ["main"],
   "permissions": [
-    "core:default"
+    "core:default",
+    "core:window:allow-set-fullscreen",
+    "core:window:allow-is-fullscreen"
   ]
 }

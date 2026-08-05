@@ -1,15 +1,15 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Code2, Copy, Download, ExternalLink, FileText, Maximize2, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
-import { openInDefaultApp } from '@/services/tauri/windowService';
+import { openInDefaultApp, setFullscreen as tauriSetFullscreen } from '@/services/tauri/windowService';
 
 function safeFileName(value: string): string {
   const normalized = value
     .trim()
-    .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '-')
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
@@ -21,6 +21,24 @@ function createHtmlBlobUrl(html: string): string {
   return URL.createObjectURL(blob);
 }
 
+/** 进入真全屏：Tauri setFullscreen / 浏览器 Fullscreen API */
+async function enterFullscreen(): Promise<void> {
+  if (isTauri()) {
+    await tauriSetFullscreen(true);
+  } else {
+    await document.documentElement.requestFullscreen();
+  }
+}
+
+/** 退出真全屏 */
+async function exitFullscreenSafe(): Promise<void> {
+  if (isTauri()) {
+    await tauriSetFullscreen(false);
+  } else if (document.fullscreenElement) {
+    await document.exitFullscreen();
+  }
+}
+
 export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   block,
 }: {
@@ -29,6 +47,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const [showSource, setShowSource] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
+  const fullscreenContainerRef = useRef<HTMLDivElement>(null);
 
   const sizeLabel = useMemo(() => {
     const bytes = new Blob([block.html]).size;
@@ -95,10 +114,47 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, [block.html, block.title]);
 
+  // 进入全屏
+  const handleEnterFullscreen = useCallback(async () => {
+    try {
+      await enterFullscreen();
+      setIsFullscreen(true);
+    } catch {
+      // 浏览器可能因用户交互要求限制拒绝 requestFullscreen，静默失败
+    }
+  }, []);
+
+  // 退出全屏
+  const handleExitFullscreen = useCallback(async () => {
+    try {
+      await exitFullscreenSafe();
+    } catch {
+      // 静默失败
+    }
+    setIsFullscreen(false);
+  }, []);
+
+  // 监听全屏状态变化（浏览器 fullscreenchange / 用户按 Esc 退出）
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', onFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+  }, []);
+
+  // Escape 兜底退出（Tauri 环境中 setFullscreen 后 Esc 可能不触发 fullscreenchange）
   useEffect(() => {
     if (!isFullscreen) return;
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = async (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
+        try {
+          await exitFullscreenSafe();
+        } catch {
+          // 静默失败
+        }
         setIsFullscreen(false);
       }
     };
@@ -198,7 +254,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
           <button
             type="button"
             className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-            onClick={() => setIsFullscreen(true)}
+            onClick={handleEnterFullscreen}
             title="全屏预览"
           >
             <Maximize2 className="h-3.5 w-3.5" />
@@ -236,6 +292,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
 
     {isFullscreen && (
       <div
+        ref={fullscreenContainerRef}
         className="fixed inset-0 z-[60] flex flex-col bg-background-base"
         role="dialog"
         aria-modal="true"
@@ -255,8 +312,8 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
           <button
             type="button"
             className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
-            onClick={() => setIsFullscreen(false)}
-            title="关闭"
+            onClick={handleExitFullscreen}
+            title="退出全屏"
           >
             <X className="h-4 w-4" />
           </button>
