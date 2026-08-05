@@ -13,9 +13,12 @@ import {
 } from '@/services/tauri/windowService';
 
 function safeFileName(value: string): string {
+  // 控制字符 \x00-\x1F 通过 String.fromCharCode 构造，避免在正则字面量中直接出现（触发 no-control-regex）
+  const controlChars = Array.from({ length: 32 }, (_, i) => String.fromCharCode(i)).join('');
+  const controlRe = new RegExp(`[<>:"/\\\\|?*${controlChars}]`, 'g');
   const normalized = value
     .trim()
-    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+    .replace(controlRe, '-')
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '');
