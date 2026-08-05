@@ -22,13 +22,6 @@ interface LeftPanelProps {
   fullscreen?: boolean
 }
 
-/** 终端面板宽度上限：典型 80 列约需 720px，放宽到 1200 */
-const TERMINAL_MAX_WIDTH = 1200
-/** 其他左侧面板（文件/git 等）宽度上限 */
-const DEFAULT_MAX_WIDTH = 600
-/** 最小宽度 */
-const MIN_WIDTH = 200
-
 /**
  * 左侧面板组件
  * - fullscreen: flex-1 撑满除 ActivityBar 外全部横向空间，无拖拽条（终端全屏）
@@ -38,17 +31,10 @@ const MIN_WIDTH = 200
 export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false }: LeftPanelProps) {
   const width = useViewStore((state) => state.leftPanelWidth)
   const setWidth = useViewStore((state) => state.setLeftPanelWidth)
-  const leftPanelType = useViewStore((state) => state.leftPanelType)
-  const rightPanelCollapsed = useViewStore((state) => state.rightPanelCollapsed)
 
-  // 终端激活时放宽宽度上限
-  const isTerminal = leftPanelType === 'terminal'
-  const maxWidth = isTerminal ? TERMINAL_MAX_WIDTH : DEFAULT_MAX_WIDTH
-
-  // 拖拽处理
+  // 拖拽处理（无限制）
   const handleResize = (delta: number) => {
-    const newWidth = Math.max(MIN_WIDTH, Math.min(maxWidth, width + delta))
-    setWidth(newWidth)
+    setWidth(width + delta)
   }
 
   // 全屏 / 填充模式：flex-1 自适应，无拖拽条
@@ -63,17 +49,12 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   }
 
   // 固定宽度模式：有拖拽条
-  // maxWidth 渲染层钳制：窄视口下保证 ActivityBar(48px) + 至少 220px 聊天区可见。
-  // 右侧 AI 面板已折叠时无需预留聊天区，放宽钳制让终端可用更宽。
-  const reserveForChat = rightPanelCollapsed ? 0 : 220
-  const styleMaxWidth = `calc(100vw - 48px - ${reserveForChat}px)`
-
   return (
     <>
       {/* 面板容器 */}
       <aside data-theme-panel
         className={`flex flex-col bg-background-elevated border-r border-border shrink-0 relative ${className}`}
-        style={{ width: `${width}px`, maxWidth: styleMaxWidth }}
+        style={{ width: `${width}px` }}
       >
         {/* 面板内容 */}
         <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
