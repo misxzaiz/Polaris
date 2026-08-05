@@ -105,6 +105,8 @@ export interface UnifiedTimelineOptions {
   forceScan?: boolean
   /** 显式指定工作区路径，覆盖 scope 推算 */
   workspacePath?: string
+  /** 严格工作区模式：设为 true 时不包含 workspace_path IS NULL 的自由会话（用于显式按工作区筛选） */
+  strictWorkspace?: boolean
 }
 
 /** 分页历史结果 */
@@ -219,6 +221,7 @@ export const historyService = {
           starred: options.starred || undefined,
           archived: options.archived ?? undefined,
           forceScan: options.forceScan || undefined,
+          strictWorkspace: options.strictWorkspace || undefined,
           page,
           pageSize,
         },
@@ -254,6 +257,7 @@ export const historyService = {
     query: string,
     scope: HistoryScope,
     workspacePath?: string,
+    strictWorkspace?: boolean,
   ): Promise<UnifiedHistoryItem[]> {
     const q = query.trim()
     if (!q) return []
@@ -263,6 +267,7 @@ export const historyService = {
       const rows = await invoke<IndexSessionRow[]>('history_search', {
         query: q,
         workspacePath: wsPath,
+        strictWorkspace: strictWorkspace || undefined,
         limit: 50,
       })
       return rows.map(indexRowToItem)

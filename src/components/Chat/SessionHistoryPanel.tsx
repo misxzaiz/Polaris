@@ -228,6 +228,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       return historyService.listUnifiedTimeline({
         scope,
         workspacePath: resolveWorkspacePath() ?? undefined,
+        strictWorkspace: !!selectedWorkspaceId || undefined,
         page: targetPage,
         pageSize: listPageSize,
         engines: getHistoryEngines(filter),
@@ -236,7 +237,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         forceScan,
       })
     },
-    [scope, resolveWorkspacePath, filter, starredOnly, showArchived, listPageSize],
+    [scope, resolveWorkspacePath, selectedWorkspaceId, filter, starredOnly, showArchived, listPageSize],
   )
 
   // 加载首页（筛选条件变化 / 手动刷新时）
@@ -284,7 +285,10 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     setSearching(true)
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await historyService.searchHistory(q, scope, resolveWorkspacePath() ?? undefined)
+        const results = await historyService.searchHistory(
+          q, scope, resolveWorkspacePath() ?? undefined,
+          !!selectedWorkspaceId || undefined,
+        )
         setSearchResults(results)
       } catch {
         setSearchResults([])
@@ -320,10 +324,13 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const handleRestore = async (item: UnifiedHistoryItem) => {
     setRestoring(item.id)
     try {
+      // 当用户按特定工作区筛选时，确保恢复的会话绑定到该工作区
+      const effectiveProjectPath = item.projectPath ||
+        (selectedWorkspaceId ? workspaces.find(w => w.id === selectedWorkspaceId)?.path : undefined)
       const success = await historyService.restoreFromHistory(
         item.id,
         item.engineId,
-        item.projectPath,
+        effectiveProjectPath,
         item.claudeProjectName,
         item.title,
       )

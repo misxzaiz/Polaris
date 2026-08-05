@@ -2314,7 +2314,8 @@ fn dispatch_history_search(args: &Value) -> Result<Json<Value>, WebError> {
         .ok_or_else(|| WebError::BadRequest("query 参数缺失".to_string()))?;
     let workspace_path = args.get("workspacePath").and_then(|v| v.as_str());
     let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as u32;
-    let result = crate::services::dialog_index::history_search_inner(query, workspace_path, limit)
+    let strict_workspace = args.get("strictWorkspace").and_then(|v| v.as_bool()).unwrap_or(false);
+    let result = crate::services::dialog_index::history_search_inner(query, workspace_path, limit, strict_workspace)
         .map_err(|e| WebError::Internal(format!("history_search 失败: {}", e)))?;
     Ok(Json(serde_json::to_value(result).unwrap()))
 }

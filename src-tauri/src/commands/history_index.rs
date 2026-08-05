@@ -21,8 +21,9 @@ pub fn history_search(
     query: String,
     workspace_path: Option<String>,
     limit: Option<u32>,
+    strict_workspace: Option<bool>,
 ) -> Result<Vec<HistorySessionRow>> {
-    history_search_inner(&query, workspace_path.as_deref(), limit.unwrap_or(50))
+    history_search_inner(&query, workspace_path.as_deref(), limit.unwrap_or(50), strict_workspace.unwrap_or(false))
 }
 
 #[cfg(feature = "tauri-app")]

@@ -1,10 +1,16 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Check, Code2, Copy, Download, ExternalLink, FileText, Maximize2, X } from 'lucide-react';
 import { clsx } from 'clsx';
 import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
-import { openInDefaultApp, setFullscreen as tauriSetFullscreen } from '@/services/tauri/windowService';
+import {
+  openInDefaultApp,
+  setFullscreen as tauriSetFullscreen,
+  isFullscreen as tauriIsFullscreen,
+  onFullscreenChange,
+} from '@/services/tauri/windowService';
 
 function safeFileName(value: string): string {
   const normalized = value
@@ -21,23 +27,11 @@ function createHtmlBlobUrl(html: string): string {
   return URL.createObjectURL(blob);
 }
 
-/** 进入真全屏：Tauri setFullscreen / 浏览器 Fullscreen API */
-async function enterFullscreen(): Promise<void> {
-  if (isTauri()) {
-    await tauriSetFullscreen(true);
-  } else {
-    await document.documentElement.requestFullscreen();
-  }
-}
-
-/** 退出真全屏 */
-async function exitFullscreenSafe(): Promise<void> {
-  if (isTauri()) {
-    await tauriSetFullscreen(false);
-  } else if (document.fullscreenElement) {
-    await document.exitFullscreen();
-  }
-}
+/**
+ * 全屏覆盖层距顶距离：保留顶部 TopMenuBar（h-10 = 40px）。
+ * 用常量便于后续统一维护。
+ */
+const TOPBAR_HEIGHT = 40;
 
 export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   block,
@@ -47,7 +41,6 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const [showSource, setShowSource] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
-  const fullscreenContainerRef = useRef<HTMLDivElement>(null);
 
   const sizeLabel = useMemo(() => {
     const bytes = new Blob([block.html]).size;
@@ -114,10 +107,14 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, [block.html, block.title]);
 
-  // 进入全屏
+  // 进入全屏：让整个应用窗口全屏（Tauri setFullscreen / 浏览器 Fullscreen API）
   const handleEnterFullscreen = useCallback(async () => {
     try {
-      await enterFullscreen();
+      if (isTauri()) {
+        await tauriSetFullscreen(true);
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
       setIsFullscreen(true);
     } catch {
       // 浏览器可能因用户交互要求限制拒绝 requestFullscreen，静默失败
@@ -127,40 +124,50 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   // 退出全屏
   const handleExitFullscreen = useCallback(async () => {
     try {
-      await exitFullscreenSafe();
+      if (isTauri()) {
+        await tauriSetFullscreen(false);
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      }
     } catch {
       // 静默失败
     }
     setIsFullscreen(false);
   }, []);
 
-  // 监听全屏状态变化（浏览器 fullscreenchange / 用户按 Esc 退出）
+  // 状态同步：挂载时初始化 + 监听全屏状态变化
+  // Tauri 模式下 setFullscreen 是窗口级操作，不触发 DOM fullscreenchange，
+  // 因此用 onResized + isFullscreen() 检测；Web 模式用原生 fullscreenchange。
   useEffect(() => {
-    const onFullscreenChange = () => {
-      if (!document.fullscreenElement) {
-        setIsFullscreen(false);
-      }
-    };
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+    let unlisten: (() => void) | null = null;
+
+    if (isTauri()) {
+      // 挂载时同步当前状态（防止重挂载时状态错位）
+      tauriIsFullscreen().then(setIsFullscreen).catch(() => {});
+      // 监听窗口大小变化（全屏切换会触发 onResized）
+      onFullscreenChange((fs) => setIsFullscreen(fs))
+        .then((fn) => { unlisten = fn; })
+        .catch(() => {});
+    } else {
+      const handler = () => setIsFullscreen(!!document.fullscreenElement);
+      document.addEventListener('fullscreenchange', handler);
+      return () => document.removeEventListener('fullscreenchange', handler);
+    }
+
+    return () => { unlisten?.(); };
   }, []);
 
-  // Escape 兜底退出（Tauri 环境中 setFullscreen 后 Esc 可能不触发 fullscreenchange）
+  // Escape 兜底退出（onResized 在窗口大小未变化时可能不触发，需保留键盘兜底）
   useEffect(() => {
     if (!isFullscreen) return;
-    const onKeyDown = async (event: KeyboardEvent) => {
+    const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
-        try {
-          await exitFullscreenSafe();
-        } catch {
-          // 静默失败
-        }
-        setIsFullscreen(false);
+        void handleExitFullscreen();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isFullscreen]);
+  }, [isFullscreen, handleExitFullscreen]);
 
   const previewFrame = (
     <iframe
@@ -290,10 +297,10 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
       )}
     </section>
 
-    {isFullscreen && (
+    {isFullscreen && createPortal(
       <div
-        ref={fullscreenContainerRef}
-        className="fixed inset-0 z-[60] flex flex-col bg-background-base"
+        className="fixed inset-x-0 bottom-0 z-[60] flex flex-col bg-background-base"
+        style={{ top: `${TOPBAR_HEIGHT}px` }}
         role="dialog"
         aria-modal="true"
         aria-label={`${block.title} 全屏预览`}
@@ -311,17 +318,19 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
           </button>
           <button
             type="button"
-            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className="inline-flex items-center gap-1 rounded-md bg-red-500 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500/50"
             onClick={handleExitFullscreen}
             title="退出全屏"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
+            退出全屏
           </button>
         </div>
         <div className="min-h-0 flex-1 bg-white">
           {previewFrame}
         </div>
-      </div>
+      </div>,
+      document.body
     )}
     </>
   );

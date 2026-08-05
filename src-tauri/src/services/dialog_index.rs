@@ -849,6 +849,8 @@ pub struct HistoryQueryParams {
     pub source: Option<String>,
     /// 强制立即扫描 native（手动刷新）
     pub force_scan: Option<bool>,
+    /// 严格工作区模式：设为 true 时，不包含 workspace_path IS NULL 的自由会话（用于显式按工作区筛选）
+    pub strict_workspace: Option<bool>,
     pub page: Option<u32>,
     pub page_size: Option<u32>,
 }
@@ -958,6 +960,7 @@ pub fn history_query_inner(p: HistoryQueryParams) -> Result<HistoryQueryResult> 
         args.push(Box::new(source.clone()));
     }
 
+    let strict_ws = p.strict_workspace.unwrap_or(false);
     let workspace_norm = p.workspace_path.as_deref().map(normalize_path);
 
     with_conn(move |conn| {
@@ -984,8 +987,9 @@ pub fn history_query_inner(p: HistoryQueryParams) -> Result<HistoryQueryResult> 
             if let Some(wn) = &workspace_norm {
                 match &r.workspace_path {
                     Some(wp) if normalize_path(wp) == *wn => {}
-                    // 自有"自由会话"（无工作区）在任何工作区可见，与旧行为一致
-                    None if r.source == "self" => {}
+                    // 严格模式下：不包含 workspace_path IS NULL 的自由会话
+                    // 非严格模式：自有自由会话仍在当前工作区可见（与旧行为一致）
+                    None if !strict_ws && r.source == "self" => {}
                     _ => continue,
                 }
             }
@@ -1013,6 +1017,7 @@ pub fn history_search_inner(
     query: &str,
     workspace_path: Option<&str>,
     limit: u32,
+    strict_workspace: bool,
 ) -> Result<Vec<HistorySessionRow>> {
     ensure_native_scan(false);
     let q = query.trim();
@@ -1063,7 +1068,8 @@ pub fn history_search_inner(
             if let Some(wn) = &workspace_norm {
                 match &r.workspace_path {
                     Some(wp) if normalize_path(wp) == *wn => {}
-                    None if r.source == "self" => {}
+                    // 严格模式下：不包含 workspace_path IS NULL 的自由会话
+                    None if !strict_workspace && r.source == "self" => {}
                     _ => continue,
                 }
             }

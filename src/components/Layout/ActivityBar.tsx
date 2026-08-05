@@ -17,12 +17,12 @@ import { useToolSwitcherItems } from './toolSwitcherData'
 import { useTranslation } from 'react-i18next'
 import { pluginIconMap } from '@/plugin-system'
 
-/** 每个图标占用的高度：24px 按钮 + 1px margin-bottom */
-const ICON_HEIGHT = 25
+/** 每个图标占用的高度：32px 按钮 + 1px margin-bottom */
+const ICON_HEIGHT = 33
 /** 容器上下 padding: py-2 = 8px * 2 */
 const CONTAINER_PADDING = 16
-/** 底部固定保留：更多工具(25px) + 设置(25px) */
-const BOTTOM_RESERVED = 50
+/** 底部固定保留：更多工具(33px) + 设置(33px) */
+const BOTTOM_RESERVED = 66
 
 interface ActivityBarProps {
   className?: string
@@ -91,7 +91,7 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
     <div
       ref={containerRef}
       data-theme-panel
-      className={`flex flex-col items-center shrink-0 w-9 py-2 bg-background-elevated border-r border-border ${className || ''}`}
+      className={`flex flex-col items-center shrink-0 w-[42px] py-2 bg-background-elevated border-r border-border ${className || ''}`}
     >
       {visibleButtons.map((btn) => {
         const Icon = pluginIconMap[btn.icon]

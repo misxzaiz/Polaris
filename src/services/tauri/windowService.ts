@@ -13,7 +13,7 @@ const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in win
 /** Lazy-loaded Tauri APIs */
 let _openPath: ((path: string) => Promise<void>) | null = null;
 let _openUrl: ((url: string) => Promise<void>) | null = null;
-let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; setFullscreen: (fullscreen: boolean) => Promise<void>; isFullscreen: () => Promise<boolean>; close: () => Promise<void> }) | null = null;
+let _getCurrentWindow: (() => { minimize: () => Promise<void>; maximize: () => Promise<void>; unmaximize: () => Promise<void>; isMaximized: () => Promise<boolean>; setFullscreen: (fullscreen: boolean) => Promise<void>; isFullscreen: () => Promise<boolean>; onResized: (handler: () => void) => Promise<() => void>; close: () => Promise<void> }) | null = null;
 
 async function getOpenPath() {
   if (!isTauriEnv) return null;
@@ -123,6 +123,31 @@ export async function isFullscreen(): Promise<boolean> {
     return window.isFullscreen();
   }
   return false;
+}
+
+/**
+ * 监听全屏状态变化。
+ *
+ * Tauri 模式下窗口级的 setFullscreen 不会触发 DOM 的 fullscreenchange 事件，
+ * 因此通过 onResized（窗口大小变化时触发）内部调用 isFullscreen() 检测。
+ *
+ * 返回取消监听的函数；非 Tauri 环境返回 null。
+ */
+export async function onFullscreenChange(
+  callback: (isFullscreen: boolean) => void
+): Promise<(() => void) | null> {
+  const getWindow = await getGetCurrentWindow();
+  if (!getWindow) return null;
+  const win = getWindow();
+  const unlisten = await win.onResized(async () => {
+    try {
+      const fs = await win.isFullscreen();
+      callback(fs);
+    } catch {
+      // 静默失败
+    }
+  });
+  return unlisten;
 }
 
 /** 最小化窗口 */

@@ -12,8 +12,9 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, PanelRight, Pin, Settings, Grid2X2 } from 'lucide-react';
+import { Minus, Square, X, PanelRight, PanelLeft, Pin, Settings, Grid2X2 } from 'lucide-react';
 import { invoke } from '@/services/transport';
+import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
@@ -33,11 +34,13 @@ interface TopMenuBarProps {
 
 export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode, onOpenSettings }: TopMenuBarProps) {
   const { t } = useTranslation('common');
+  const leftPanelType = useViewStore((state) => state.leftPanelType);
+  const switchToLeftPanel = useViewStore((state) => state.switchToLeftPanel);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false);
   const showTopToolSwitcher = isCompactMode;
-  const { toolSwitcherItems, activePanelLabel, closeLeftPanel } = useToolSwitcherItems({
+  const { toolSwitcherItems, activePanelLabel, closeLeftPanel: closeLeftPanelFromItems } = useToolSwitcherItems({
     onOpenSettings,
     onToggleRightPanel,
     rightPanelCollapsed,
@@ -149,7 +152,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
           items={toolSwitcherItems}
           placement="top"
           activePanelLabel={activePanelLabel}
-          onCloseActivePanel={closeLeftPanel}
+          onCloseActivePanel={closeLeftPanelFromItems}
           onClose={() => setIsToolSwitcherOpen(false)}
         />
       </div>
@@ -229,6 +232,26 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
         ) : (
           <>
             {/* 正常模式：完整菜单 */}
+
+            {/* 左侧面板显示/隐藏按钮 */}
+            <button
+              onClick={() => {
+                if (leftPanelType === 'none') {
+                  switchToLeftPanel('files');
+                } else {
+                  closeLeftPanelFromItems();
+                }
+              }}
+              className={`p-1.5 rounded-md transition-colors ${
+                leftPanelType !== 'none'
+                  ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                  : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+              }`}
+              title={leftPanelType !== 'none' ? t('labels.hideSidebar') : t('labels.showSidebar')}
+              data-tauri-drag-region={false}
+            >
+              <PanelLeft className="w-4 h-4" />
+            </button>
 
             {/* 右侧 AI 面板切换按钮 */}
             <button
