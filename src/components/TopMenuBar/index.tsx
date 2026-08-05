@@ -12,9 +12,8 @@
 
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Minus, Square, X, PanelRight, Pin, PanelLeftClose, PanelLeft, Settings, Grid2X2 } from 'lucide-react';
+import { Minus, Square, X, PanelRight, Pin, Settings, Grid2X2 } from 'lucide-react';
 import { invoke } from '@/services/transport';
-import { useViewStore } from '@/stores';
 import * as tauri from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
 import { WorkspaceQuickSwitch } from '../Workspace';
@@ -34,11 +33,10 @@ interface TopMenuBarProps {
 
 export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactMode, onOpenSettings }: TopMenuBarProps) {
   const { t } = useTranslation('common');
-  const { activityBarCollapsed, toggleActivityBar } = useViewStore();
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false);
-  const showTopToolSwitcher = activityBarCollapsed || isCompactMode;
+  const showTopToolSwitcher = isCompactMode;
   const { toolSwitcherItems, activePanelLabel, closeLeftPanel } = useToolSwitcherItems({
     onOpenSettings,
     onToggleRightPanel,
@@ -231,20 +229,6 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
         ) : (
           <>
             {/* 正常模式：完整菜单 */}
-
-            {/* ActivityBar 显示/隐藏按钮 */}
-            <button
-              onClick={toggleActivityBar}
-              className={`p-1.5 rounded-md transition-colors ${
-                activityBarCollapsed
-                  ? 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-                  : 'text-primary bg-primary/10 hover:bg-primary/20'
-              }`}
-              title={activityBarCollapsed ? t('labels.showActivityBar') : t('labels.hideActivityBar')}
-              data-tauri-drag-region={false}
-            >
-              {activityBarCollapsed ? <PanelLeft className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-            </button>
 
             {/* 右侧 AI 面板切换按钮 */}
             <button

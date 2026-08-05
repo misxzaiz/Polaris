@@ -365,6 +365,8 @@
     "viewPr": "View PR",
     "currentProject": "Current Project",
     "all": "All",
+    "selectWorkspace": "Select workspace…",
+    "emptyWorkspace": "No history for this workspace",
     "listView": "List view",
     "treeView": "Tree view (Fork/PR)",
     "createBranch": "Create branch",

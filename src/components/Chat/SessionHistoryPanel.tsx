@@ -15,7 +15,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '@/services/historyService'
 import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter, HistoryMarks } from '@/services/historyService'
-import type { ChatMessage, EngineId } from '@/types'
+import type { ChatMessage, EngineId, Workspace } from '@/types'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
@@ -23,7 +23,7 @@ import { useViewStore, useToastStore } from '@/stores/index'
 import { createLogger } from '@/utils/logger'
 import {
   Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown,
-  Globe, FolderOpen, List, GitBranch, Star, Pin, Archive, ArchiveRestore, Play, RefreshCw,
+  Globe, FolderOpen, List, GitBranch, Star, Pin, Archive, ArchiveRestore, Play, RefreshCw, Check,
 } from 'lucide-react'
 import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
@@ -116,6 +116,71 @@ interface SessionHistoryPanelProps {
   onClose?: () => void
 }
 
+/** 工作区选择器（下拉菜单） */
+function WorkspaceSelector({
+  workspaces,
+  selectedWorkspaceId,
+  onSelect,
+}: {
+  workspaces: Workspace[]
+  selectedWorkspaceId: string | null
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  const { t } = useTranslation('chat')
+
+  // 点击外部关闭
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const selected = workspaces.find(w => w.id === selectedWorkspaceId)
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors border ${
+          selectedWorkspaceId
+            ? 'bg-primary/20 text-primary border-primary/30'
+            : 'text-text-secondary hover:bg-background-hover border-transparent hover:border-border'
+        }`}
+      >
+        <FolderOpen className="w-3 h-3" />
+        <span className="max-w-[80px] truncate">
+          {selected ? selected.name : t('history.selectWorkspace', '选择工作区…')}
+        </span>
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 min-w-[140px] max-h-[50vh] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg py-1">
+          {workspaces.map(ws => (
+            <button
+              key={ws.id}
+              onClick={() => { onSelect(ws.id); setOpen(false) }}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-background-hover transition-colors ${
+                ws.id === selectedWorkspaceId ? 'text-primary font-medium' : 'text-text-secondary'
+              }`}
+              title={ws.path}
+            >
+              <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+              <span className="truncate flex-1">{ws.name}</span>
+              {ws.id === selectedWorkspaceId && (
+                <Check className="w-3.5 h-3.5 shrink-0" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const { t } = useTranslation('chat')
   const listPageSize = useHistoryPrefsStore((s) => s.listPageSize)
@@ -139,16 +204,30 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const [forkTarget, setForkTarget] = useState<UnifiedHistoryItem | null>(null)
   const [previewTarget, setPreviewTarget] = useState<UnifiedHistoryItem | null>(null)
   const [refreshTick, setRefreshTick] = useState(0)
+  /** 选中的特定工作区 ID（null 表示未指定，按 scope 推算） */
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
+  const workspaces = useWorkspaceStore((state) => state.workspaces)
+
+  /** 解析工作区路径：优先使用显式选中，否则从 scope 推算 */
+  const resolveWorkspacePath = useCallback((): string | null => {
+    if (selectedWorkspaceId) {
+      const ws = workspaces.find(w => w.id === selectedWorkspaceId)
+      return ws?.path ?? null
+    }
+    if (scope === 'workspace') return currentWorkspace?.path ?? null
+    return null  // 'global' 模式
+  }, [scope, selectedWorkspaceId, currentWorkspace?.path, workspaces])
 
   /** 拉取一页统一时间线 */
   const fetchPage = useCallback(
     async (targetPage: number, forceScan = false) => {
       return historyService.listUnifiedTimeline({
         scope,
+        workspacePath: resolveWorkspacePath() ?? undefined,
         page: targetPage,
         pageSize: listPageSize,
         engines: getHistoryEngines(filter),
@@ -157,11 +236,18 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         forceScan,
       })
     },
-    [scope, filter, starredOnly, showArchived, listPageSize],
+    [scope, resolveWorkspacePath, filter, starredOnly, showArchived, listPageSize],
   )
 
   // 加载首页（筛选条件变化 / 手动刷新时）
   useEffect(() => {
+    // 若选中的工作区已被删除，自动回退到当前工作区
+    if (selectedWorkspaceId && !workspaces.find(w => w.id === selectedWorkspaceId)) {
+      setSelectedWorkspaceId(null)
+      setScope('workspace')
+      return
+    }
+
     let cancelled = false
     const load = async () => {
       setLoading(true)
@@ -184,7 +270,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     return () => {
       cancelled = true
     }
-  }, [currentWorkspace?.path, fetchPage, refreshTick])
+  }, [currentWorkspace?.path, fetchPage, refreshTick, selectedWorkspaceId, workspaces])
 
   // 全文搜索（防抖 250ms）
   useEffect(() => {
@@ -198,7 +284,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     setSearching(true)
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await historyService.searchHistory(q, scope)
+        const results = await historyService.searchHistory(q, scope, resolveWorkspacePath() ?? undefined)
         setSearchResults(results)
       } catch {
         setSearchResults([])
@@ -209,7 +295,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     }
-  }, [searchQuery, scope])
+  }, [searchQuery, scope, resolveWorkspacePath])
 
   // 加载更多
   const handleLoadMore = useCallback(async () => {
@@ -540,7 +626,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
               {formatTime(item.timestamp)}
             </span>
             {item.fileSize ? <span>{formatFileSize(item.fileSize)}</span> : null}
-            {scope === 'global' && item.projectPath && (
+            {(scope === 'global' || selectedWorkspaceId) && item.projectPath && (
               <span className="flex items-center gap-1 max-w-[120px] truncate" title={item.projectPath}>
                 <FolderOpen className="w-3 h-3 shrink-0" />
                 <span className="truncate">{getPathBasename(item.projectPath)}</span>
@@ -661,16 +747,16 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       {/* 范围 + 引擎筛选 + 标注筛选 + 视图切换 */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
         <button
-          onClick={() => setScope('workspace')}
+          onClick={() => { setScope('workspace'); setSelectedWorkspaceId(null) }}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
-            scope === 'workspace' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+            scope === 'workspace' && !selectedWorkspaceId ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
         >
           <FolderOpen className="w-3 h-3" />
           {t('history.currentProject')}
         </button>
         <button
-          onClick={() => setScope('global')}
+          onClick={() => { setScope('global'); setSelectedWorkspaceId(null) }}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
             scope === 'global' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
@@ -678,6 +764,16 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           <Globe className="w-3 h-3" />
           {t('history.all')}
         </button>
+
+        {/* 工作区下拉选择器（仅当工作区数量 >= 2 时显示） */}
+        {workspaces.length >= 2 && (
+          <WorkspaceSelector
+            workspaces={workspaces}
+            selectedWorkspaceId={selectedWorkspaceId}
+            onSelect={(id) => { setSelectedWorkspaceId(id); setScope('workspace') }}
+          />
+        )}
+
         <span className="hidden sm:block border-l border-border h-4" />
 
         {(['all', 'claude-code', 'codex', 'simple-ai', 'pi'] as const).map((f) => (
@@ -811,7 +907,11 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           <div className="flex flex-col items-center justify-center h-full p-8 text-text-tertiary">
             <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
             <p className="text-sm">
-              {searchResults ? t('history.noSearchResults', '没有匹配的会话') : t('history.noHistory')}
+              {searchResults
+                ? t('history.noSearchResults', '没有匹配的会话')
+                : selectedWorkspaceId
+                  ? t('history.emptyWorkspace', '该工作区暂无历史会话')
+                  : t('history.noHistory')}
             </p>
           </div>
         ) : viewMode === 'tree' ? (

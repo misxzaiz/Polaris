@@ -364,6 +364,8 @@
     "viewPr": "查看 PR",
     "currentProject": "当前项目",
     "all": "全部",
+    "selectWorkspace": "选择工作区…",
+    "emptyWorkspace": "该工作区暂无历史会话",
     "listView": "列表视图",
     "treeView": "树形视图 (Fork/PR 关系)",
     "createBranch": "创建分支",

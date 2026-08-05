@@ -103,6 +103,8 @@ export interface UnifiedTimelineOptions {
   starred?: boolean
   archived?: boolean
   forceScan?: boolean
+  /** 显式指定工作区路径，覆盖 scope 推算 */
+  workspacePath?: string
 }
 
 /** 分页历史结果 */
@@ -207,10 +209,11 @@ export const historyService = {
   async listUnifiedTimeline(options: UnifiedTimelineOptions): Promise<PagedHistoryResult> {
     const { scope, page, pageSize } = options
     try {
-      const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+      const wsPath = options.workspacePath ??
+        (scope === 'workspace' ? useWorkspaceStore.getState().getCurrentWorkspace()?.path ?? null : null)
       const result = await invoke<IndexQueryResult>('history_query', {
         params: {
-          workspacePath: scope === 'workspace' ? currentWorkspace?.path ?? null : null,
+          workspacePath: wsPath,
           engines:
             options.engines && options.engines.length > 0 ? options.engines : undefined,
           starred: options.starred || undefined,
@@ -233,24 +236,33 @@ export const historyService = {
       log.warn('索引查询失败，降级到自有存储列举', {
         error: e instanceof Error ? e.message : String(e),
       })
+      // 降级时传入显式 workspacePath 作为 targetWorkspacePath
+      const targetWsPath = options.workspacePath ??
+        (scope === 'workspace' ? useWorkspaceStore.getState().getCurrentWorkspace()?.path ?? undefined : undefined)
       return this.listSelfHistory(
         page,
         pageSize,
         options.engines ?? ['claude-code', 'codex', 'simple-ai', 'pi'],
         scope,
+        targetWsPath,
       )
     }
   },
 
   /** 全文搜索（标题 + 消息正文，FTS5）；返回带命中片段的条目 */
-  async searchHistory(query: string, scope: HistoryScope): Promise<UnifiedHistoryItem[]> {
+  async searchHistory(
+    query: string,
+    scope: HistoryScope,
+    workspacePath?: string,
+  ): Promise<UnifiedHistoryItem[]> {
     const q = query.trim()
     if (!q) return []
     try {
-      const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+      const wsPath = workspacePath ??
+        (scope === 'workspace' ? useWorkspaceStore.getState().getCurrentWorkspace()?.path ?? null : null)
       const rows = await invoke<IndexSessionRow[]>('history_search', {
         query: q,
-        workspacePath: scope === 'workspace' ? currentWorkspace?.path ?? null : null,
+        workspacePath: wsPath,
         limit: 50,
       })
       return rows.map(indexRowToItem)
@@ -301,6 +313,7 @@ export const historyService = {
     pageSize: number,
     engines: HistoryEngineFilter[],
     scope: HistoryScope = 'workspace',
+    targetWorkspacePath?: string,
   ): Promise<PagedHistoryResult> {
     try {
       // 多读取一些用于按引擎过滤后仍能填满页（自有会话量通常不大，直接全量读 meta）
@@ -310,15 +323,14 @@ export const historyService = {
         sortOrder: 'desc',
       })
 
-      const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
-      const normalizedCurrentPath = currentWorkspace?.path
-        ? normalizeWorkspacePath(currentWorkspace.path)
-        : null
+      const effectiveWsPath = targetWorkspacePath ??
+        (scope === 'workspace' ? useWorkspaceStore.getState().getCurrentWorkspace()?.path ?? null : null)
+      const normalizedWsPath = effectiveWsPath ? normalizeWorkspacePath(effectiveWsPath) : null
 
       const filtered = all.items.filter((m) => {
         if (!engines.includes(m.engineId as HistoryEngineFilter)) return false
-        if (scope === 'workspace' && normalizedCurrentPath && m.workspacePath) {
-          return normalizeWorkspacePath(m.workspacePath) === normalizedCurrentPath
+        if (normalizedWsPath && m.workspacePath) {
+          return normalizeWorkspacePath(m.workspacePath) === normalizedWsPath
         }
         return true
       })
@@ -352,6 +364,7 @@ export const historyService = {
     page: number,
     pageSize: number,
     engines: HistoryEngineFilter[],
+    targetWorkDir?: string,
   ): Promise<PagedHistoryResult> {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
     const includeClaudeCode = engines.includes('claude-code')
@@ -374,7 +387,8 @@ export const historyService = {
       }))
 
     // 2. 后端分页 API
-    const workDir = scope === 'workspace' ? currentWorkspace?.path ?? null : null
+    const workDir = targetWorkDir ??
+      (scope === 'workspace' ? currentWorkspace?.path ?? null : null)
     const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
     const [claudePagedResult, codexPagedResult] = await Promise.all([
       includeClaudeCode

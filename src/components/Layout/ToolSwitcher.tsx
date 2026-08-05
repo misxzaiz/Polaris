@@ -84,7 +84,7 @@ function getPlacementClass(placement: ToolSwitcherProps['placement']) {
     return 'left-2 top-11 w-[min(360px,calc(100vw-16px))]'
   }
 
-  return 'left-14 top-12 w-[min(360px,calc(100vw-72px))]'
+  return 'left-10 top-12 w-[min(360px,calc(100vw-72px))]'
 }
 
 export function ToolSwitcher({
