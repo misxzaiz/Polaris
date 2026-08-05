@@ -15,7 +15,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '@/services/historyService'
 import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter, HistoryMarks } from '@/services/historyService'
-import type { ChatMessage, EngineId } from '@/types'
+import type { ChatMessage, EngineId, Workspace } from '@/types'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
@@ -24,6 +24,7 @@ import { createLogger } from '@/utils/logger'
 import {
   Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown,
   Globe, FolderOpen, List, GitBranch, Star, Pin, Archive, ArchiveRestore, Play, RefreshCw,
+  Check,
 } from 'lucide-react'
 import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
@@ -123,6 +124,8 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
   const [allHistory, setAllHistory] = useState<UnifiedHistoryItem[]>([])
   const [scope, setScope] = useState<HistoryScope>('workspace')
+  const [selectedWorkspace, setSelectedWorkspace] = useState<Workspace | null>(null)
+  const [workspaceSelectorOpen, setWorkspaceSelectorOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [totalCount, setTotalCount] = useState(0)
   const [hasMore, setHasMore] = useState(false)
@@ -143,6 +146,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
+  const workspaces = useWorkspaceStore((state) => state.workspaces)
+
+  // 点击外部关闭工作区选择器
+  useEffect(() => {
+    if (!workspaceSelectorOpen) return
+    const handler = () => setWorkspaceSelectorOpen(false)
+    document.addEventListener('click', handler)
+    return () => document.removeEventListener('click', handler)
+  }, [workspaceSelectorOpen])
 
   /** 拉取一页统一时间线 */
   const fetchPage = useCallback(
@@ -155,9 +167,10 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         starred: starredOnly || undefined,
         archived: showArchived ? true : undefined,
         forceScan,
+        selectedWorkspacePath: scope === 'workspace-select' ? selectedWorkspace?.path ?? null : undefined,
       })
     },
-    [scope, filter, starredOnly, showArchived, listPageSize],
+    [scope, filter, starredOnly, showArchived, listPageSize, selectedWorkspace],
   )
 
   // 加载首页（筛选条件变化 / 手动刷新时）
@@ -198,7 +211,11 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     setSearching(true)
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const results = await historyService.searchHistory(q, scope)
+        const results = await historyService.searchHistory(
+          q,
+          scope,
+          scope === 'workspace-select' ? selectedWorkspace?.path ?? null : undefined,
+        )
         setSearchResults(results)
       } catch {
         setSearchResults([])
@@ -209,7 +226,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     }
-  }, [searchQuery, scope])
+  }, [searchQuery, scope, selectedWorkspace])
 
   // 加载更多
   const handleLoadMore = useCallback(async () => {
@@ -661,7 +678,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       {/* 范围 + 引擎筛选 + 标注筛选 + 视图切换 */}
       <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-border-subtle shrink-0">
         <button
-          onClick={() => setScope('workspace')}
+          onClick={() => { setScope('workspace'); setWorkspaceSelectorOpen(false) }}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
             scope === 'workspace' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
@@ -670,7 +687,57 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           {t('history.currentProject')}
         </button>
         <button
-          onClick={() => setScope('global')}
+          onClick={() => {
+            if (scope === 'workspace-select') {
+              setWorkspaceSelectorOpen((v) => !v)
+            } else {
+              setScope('workspace-select')
+              setWorkspaceSelectorOpen(true)
+            }
+          }}
+          className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors relative ${
+            scope === 'workspace-select' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
+          }`}
+          title={t('history.selectWorkspace', '选择工作区')}
+        >
+          <FolderOpen className="w-3 h-3" />
+          {scope === 'workspace-select' && selectedWorkspace
+            ? <span className="truncate max-w-[80px]">{selectedWorkspace.name}</span>
+            : t('history.selectWorkspace', '选择工作区')}
+          <ChevronDown className="w-3 h-3" />
+          {scope === 'workspace-select' && workspaceSelectorOpen && (
+            <div
+              className="absolute top-full left-0 mt-1 w-56 max-h-48 overflow-y-auto bg-background-surface border border-border rounded-lg shadow-lg z-50 py-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {workspaces.length === 0 ? (
+                <div className="px-3 py-2 text-xs text-text-tertiary">
+                  {t('history.noWorkspaces', '暂无工作区')}
+                </div>
+              ) : (
+                workspaces.map((ws) => (
+                  <button
+                    key={ws.id}
+                    onClick={() => {
+                      setSelectedWorkspace(ws)
+                      setWorkspaceSelectorOpen(false)
+                    }}
+                    className={`w-full flex items-center gap-2 px-3 py-2 text-xs text-left hover:bg-background-hover transition-colors ${
+                      selectedWorkspace?.id === ws.id ? 'text-primary bg-primary/10' : 'text-text-secondary'
+                    }`}
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate flex-1">{ws.name}</span>
+                    <span className="text-[10px] text-text-muted truncate max-w-[80px]">{getPathBasename(ws.path)}</span>
+                    {selectedWorkspace?.id === ws.id && <Check className="w-3 h-3 shrink-0" />}
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </button>
+        <button
+          onClick={() => { setScope('global'); setWorkspaceSelectorOpen(false) }}
           className={`flex items-center gap-1 px-2 py-1 rounded-md text-xs transition-colors ${
             scope === 'global' ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
           }`}
@@ -808,12 +875,19 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
         )}
 
         {displayItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full p-8 text-text-tertiary">
-            <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
-            <p className="text-sm">
-              {searchResults ? t('history.noSearchResults', '没有匹配的会话') : t('history.noHistory')}
-            </p>
-          </div>
+          scope === 'workspace-select' && !selectedWorkspace ? (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-text-tertiary">
+              <FolderOpen className="w-12 h-12 mb-4 opacity-50" />
+              <p className="text-sm">{t('history.selectWorkspaceHint', '请从上方下拉菜单中选择一个工作区')}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full p-8 text-text-tertiary">
+              <MessageSquare className="w-12 h-12 mb-4 opacity-50" />
+              <p className="text-sm">
+                {searchResults ? t('history.noSearchResults', '没有匹配的会话') : t('history.noHistory')}
+              </p>
+            </div>
+          )
         ) : viewMode === 'tree' ? (
           <SessionTree sessions={displayItems} onRestore={handleRestore} restoringId={restoring} />
         ) : searchResults ? (

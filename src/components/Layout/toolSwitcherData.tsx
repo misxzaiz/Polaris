@@ -55,10 +55,27 @@ export function useToolSwitcherItems({
   const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
   const closeLeftPanel = useViewStore((state) => state.closeLeftPanel)
   const pluginStates = usePluginStore((state) => state.pluginStates)
+  const panelOrder = useViewStore((state) => state.panelOrder)
 
-  const panelButtons = pluginRegistry
+  // 获取所有面板，按自定义顺序或默认 order 排序
+  const allPanels = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
+
+  const panelButtons = useMemo(() => {
+    if (!panelOrder || panelOrder.length === 0) {
+      return allPanels.sort((a, b) => a.order - b.order)
+    }
+    const orderMap = new Map(panelOrder.map((id, idx) => [id, idx]))
+    return [...allPanels].sort((a, b) => {
+      const oa = orderMap.get(a.id)
+      const ob = orderMap.get(b.id)
+      if (oa !== undefined && ob !== undefined) return oa - ob
+      if (oa !== undefined) return -1
+      if (ob !== undefined) return 1
+      return a.order - b.order
+    })
+  }, [allPanels, panelOrder])
 
   const activePanel = panelButtons.find((btn) => btn.panelType === leftPanelType)
   const activePanelLabel = leftPanelType !== 'none' && activePanel
