@@ -17,7 +17,7 @@ export function ThemeManager() {
   const {
     themes,
     activeThemeId,
-    applyThemeById,
+    setThemeById,
     saveTheme,
     deleteTheme,
     duplicateTheme,
@@ -69,7 +69,10 @@ export function ThemeManager() {
   };
 
   const handleUse = (id: ThemeId) => {
-    applyThemeById(id);
+    // 使用 setThemeById 而非 applyThemeById：
+    // 前者额外触发 updateConfigPatch 将 activeThemeId 持久化到后端 config，
+    // 否则重启后 loadConfig 会用后端旧 ID 覆盖 localStorage，导致主题回退。
+    void setThemeById(id);
   };
 
   const handleEdit = (theme: ThemeDefinition) => {
