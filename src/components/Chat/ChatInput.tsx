@@ -438,11 +438,6 @@ export function ChatInput({
   const optimizeRunning = promptOptimize.status === 'running'
   // 以 / 开头的输入会被解析为命令，优化会破坏命令语义
   const isSlashCommandInput = value.trimStart().startsWith('/')
-  // 不要求关联工作区：优化会话可无工作区运行（free），与无工作区聊天一致
-  const canOptimize = Boolean(
-    value.trim() && !optimizeRunning && !editMode && !isSlashCommandInput && !disabled && activeSessionId
-      && (optimizeDirection !== 'custom' || optimizeCustomText.trim() !== '')
-  )
 
   // 点击外部关闭优化引擎浮层
   useEffect(() => {
@@ -486,6 +481,14 @@ export function ChatInput({
   // 迭代轮次（缺省 1 = 单轮）
   const [optimizeIterations, setOptimizeIterations] = useState<number>(
     () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).iterations ?? 1,
+  )
+
+  // 不要求关联工作区：优化会话可无工作区运行（free），与无工作区聊天一致
+  // 注意：必须在 optimizeDirection / optimizeCustomText 等 useState 声明之后计算，
+  // 否则 const 未初始化即被引用，触发 TDZ ReferenceError。
+  const canOptimize = Boolean(
+    value.trim() && !optimizeRunning && !editMode && !isSlashCommandInput && !disabled && activeSessionId
+      && (optimizeDirection !== 'custom' || optimizeCustomText.trim() !== '')
   )
 
   // 切换引擎时清空已选的 Profile / 模型
