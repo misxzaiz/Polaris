@@ -59,11 +59,16 @@ export interface VoiceCompanionConfig {
   fullDuplex: boolean;
   /** 朗读结束后的回声冷却时长（毫秒，半双工生效） */
   echoCooldownMs: number;
+  /**
+   * 语音对话延迟诊断埋点开关（默认 false）。
+   * 开启后采集每轮 ASR/LLM/TTS 各环节耗时，数据仅存本地 localStorage。
+   */
+  enableLatencyMeter: boolean;
 }
 
 /** 默认配置（小陈默认「晓晓」女声；唤醒词默认开，含同音容错；默认半双工） */
 export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
-  configVersion: 4,
+  configVersion: 5,
   mode: 'companion',
   language: 'zh-CN',
   voice: 'zh-CN-XiaoxiaoNeural',
@@ -74,6 +79,7 @@ export const DEFAULT_VOICE_COMPANION_CONFIG: VoiceCompanionConfig = {
   standbyTimeout: 15000,
   fullDuplex: false,
   echoCooldownMs: 800,
+  enableLatencyMeter: false,
 };
 
 /**伙伴身份（用于 UI 展示与人格构建） */

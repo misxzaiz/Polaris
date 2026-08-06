@@ -444,6 +444,14 @@ pub async fn handle_ipc_bridge(
         "history_search" => dispatch_history_search(&args),
         "history_mark" => dispatch_history_mark(&args),
 
+        // ── Usage Statistics ───────────────────────────────────────────────
+        // 查询代理层用量数据库（与 Tauri 命令同名同参，走 record_usage 写入）。
+        // 参数为 camelCase（前端 invoke 直接透传），这里转成后端函数的 snake_case。
+        "get_usage_summary" => dispatch_get_usage_summary(&args),
+        "get_usage_model_stats" => dispatch_get_usage_model_stats(&args),
+        "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
+        "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
+
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
             tracing::debug!("[Web:IPC] Unsupported command: {}", command);
@@ -2331,6 +2339,69 @@ fn dispatch_history_mark(args: &Value) -> Result<Json<Value>, WebError> {
     crate::services::dialog_index::history_mark_inner(id, marks)
         .map_err(|e| WebError::Internal(format!("history_mark 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Usage Statistics — 桥接 Tauri 命令到 Web HTTP 路由
+// ═══════════════════════════════════════════════════════════════════════════
+//
+// 前端 invoke 直接透传 camelCase 参数，这里提取后调用 services::usage_db 的查询方法
+// （与 Tauri commands::usage 同源，绕开被 #[cfg(feature="tauri-app")] 门控的 commands 模块）。
+// USAGE_DB 全局单例在 create_app_state 中初始化，Web 模式同样会执行该初始化
+// （run_web_server → create_app_state），因此这里查询与 Tauri 模式走同一份数据库。
+
+/// 从 args 提取可选 i64 字段（兼容数字与数字字符串）
+fn opt_i64(args: &Value, key: &str) -> Option<i64> {
+    args.get(key).and_then(|v| {
+        if v.is_null() {
+            None
+        } else if let Some(n) = v.as_i64() {
+            Some(n)
+        } else {
+            v.as_str().and_then(|s| s.trim().parse::<i64>().ok())
+        }
+    })
+}
+
+fn dispatch_get_usage_summary(args: &Value) -> Result<Json<Value>, WebError> {
+    let db = crate::services::usage_db::get_usage_db()
+        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
+    let start_date = opt_i64(args, "startDate");
+    let end_date = opt_i64(args, "endDate");
+    let model = optional_string(args, "model");
+    let engine_id = optional_string(args, "engineId");
+    json_result!(db.get_summary(start_date, end_date, model.as_deref(), engine_id.as_deref()))
+}
+
+fn dispatch_get_usage_model_stats(args: &Value) -> Result<Json<Value>, WebError> {
+    let db = crate::services::usage_db::get_usage_db()
+        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
+    let start_date = opt_i64(args, "startDate");
+    let end_date = opt_i64(args, "endDate");
+    let engine_id = optional_string(args, "engineId");
+    json_result!(db.get_model_stats(start_date, end_date, engine_id.as_deref()))
+}
+
+fn dispatch_get_usage_daily_trends(args: &Value) -> Result<Json<Value>, WebError> {
+    let db = crate::services::usage_db::get_usage_db()
+        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
+    let start_date = opt_i64(args, "startDate");
+    let end_date = opt_i64(args, "endDate");
+    let model = optional_string(args, "model");
+    let engine_id = optional_string(args, "engineId");
+    json_result!(db.get_daily_trends(start_date, end_date, model.as_deref(), engine_id.as_deref()))
+}
+
+fn dispatch_get_usage_recent_logs(args: &Value) -> Result<Json<Value>, WebError> {
+    let db = crate::services::usage_db::get_usage_db()
+        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
+    let limit = opt_i64(args, "limit").unwrap_or(20);
+    let offset = opt_i64(args, "offset").unwrap_or(0);
+    let start_date = opt_i64(args, "startDate");
+    let end_date = opt_i64(args, "endDate");
+    let model = optional_string(args, "model");
+    let engine_id = optional_string(args, "engineId");
+    json_result!(db.get_recent_logs(limit, offset, start_date, end_date, model.as_deref(), engine_id.as_deref()))
 }
 
 fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {

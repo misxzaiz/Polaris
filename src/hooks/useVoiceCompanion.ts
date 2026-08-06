@@ -38,6 +38,8 @@ import {
 import { isAssistantMessage, type AssistantChatMessage } from '@/types/chat';
 import { createLogger } from '@/utils/logger';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
+import { voiceLatencyMeter } from '@/services/voiceLatencyMeter';
+import type { LatencyMark } from '@/services/voiceLatencyMeter';
 
 const log = createLogger('useVoiceCompanion');
 
@@ -62,6 +64,11 @@ export function useVoiceCompanion() {
   const { messages, currentMessage } = useActiveSessionMessages();
 
   const isSupported = speechService.supported;
+
+  // —— 延迟埋点：配置变化时同步开关 ——
+  useEffect(() => {
+    voiceLatencyMeter.setEnabled(config.enableLatencyMeter ?? false);
+  }, [config.enableLatencyMeter]);
 
   // —— refs（避免闭包陈旧） ——
   const awaitingReplyRef = useRef(false); // 是否等待语音发起的回复
@@ -133,6 +140,8 @@ export function useVoiceCompanion() {
     (text: string) => {
       const clean = text.trim();
       if (!clean) return;
+      // t2: 发送（停顿合并结束）
+      voiceLatencyMeter.mark('t2_send');
       const st = useVoiceCompanionStore.getState();
       const { config: cfg } = st;
       st.setTranscript('');
@@ -288,6 +297,8 @@ export function useVoiceCompanion() {
 
       // 实时字幕：聆听/待命显示；冷却期不上屏（可能是回声尾巴）
       if (!isFinal) {
+        // t0: 用户开口（interim 首次非空）
+        if (text.trim()) voiceLatencyMeter.mark('t0_mouth_open');
         if (cur === 'listening' || cur === 'standby') {
           const sep = bufferRef.current ? ' ' : '';
           st.setTranscript(bufferRef.current + sep + text);
@@ -299,6 +310,8 @@ export function useVoiceCompanion() {
 
       const finalText = text.trim();
       if (!finalText) return;
+      // t1: ASR final 到达
+      voiceLatencyMeter.mark('t1_asr_final');
 
       // —— speaking（仅全双工会收到结果）：回声过滤 + 仅唤醒词穿透 ——
       if (cur === 'speaking') {

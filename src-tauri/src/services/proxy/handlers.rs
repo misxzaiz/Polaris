@@ -298,27 +298,44 @@ async fn handle_anthropic_passthrough(
                             }
                         }
                     } else {
+                        // 流式响应：从 message_start 提取真实模型（上游实际使用的模型），
+                        // 从 message_delta 提取 usage。request_model 仅作为 requestModel 列留存
+                        // （中转站别名），model 列必须反映上游真实模型，避免统计面板显示别名。
+                        let mut stream_model: Option<String> = None;
                         for line in body_str.lines() {
-                            if let Some(data) = line.strip_prefix("data: ") {
-                                if let Ok(event) = serde_json::from_str::<Value>(data) {
-                                    if event.get("type").and_then(|v| v.as_str()) == Some("message_delta") {
-                                        if let Some(usage) = event.get("usage") {
-                                            let input_tokens = usage.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                                            let output_tokens = usage.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                                            let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                                            let cache_creation = usage.get("cache_creation_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
-                                            let request_model = body.get("model").and_then(|v| v.as_str());
-                                            let model = request_model.unwrap_or("unknown");
-                                            tracing::debug!("[Proxy] Anthropic 直通流式记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
-                                            crate::services::usage_db::record_usage(
-                                                model, request_model, Some("claude"), input_tokens, output_tokens,
-                                                cache_read, cache_creation,
-                                                0, status.as_u16() as i64, true,
-                                            );
-                                        }
-                                        break;
+                            let Some(data) = line.strip_prefix("data: ") else { continue };
+                            let Ok(event) = serde_json::from_str::<Value>(data) else { continue };
+                            match event.get("type").and_then(|v| v.as_str()) {
+                                Some("message_start") => {
+                                    if let Some(m) = event
+                                        .get("message")
+                                        .and_then(|m| m.get("model"))
+                                        .and_then(|v| v.as_str())
+                                    {
+                                        stream_model = Some(m.to_string());
                                     }
                                 }
+                                Some("message_delta") => {
+                                    if let Some(usage) = event.get("usage") {
+                                        let input_tokens = usage.get("input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let output_tokens = usage.get("output_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let cache_read = usage.get("cache_read_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let cache_creation = usage.get("cache_creation_input_tokens").and_then(|v| v.as_i64()).unwrap_or(0);
+                                        let request_model = body.get("model").and_then(|v| v.as_str());
+                                        let model = stream_model
+                                            .as_deref()
+                                            .or(request_model)
+                                            .unwrap_or("unknown");
+                                        tracing::debug!("[Proxy] Anthropic 直通流式记录 usage: model={}, input={}, output={}", model, input_tokens, output_tokens);
+                                        crate::services::usage_db::record_usage(
+                                            model, request_model, Some("claude"), input_tokens, output_tokens,
+                                            cache_read, cache_creation,
+                                            0, status.as_u16() as i64, true,
+                                        );
+                                    }
+                                    break;
+                                }
+                                _ => {}
                             }
                         }
                     }
