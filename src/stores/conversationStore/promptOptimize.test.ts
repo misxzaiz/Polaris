@@ -165,4 +165,79 @@ describe('promptOptimize 版本栈', () => {
     // 原文版本仍在栈中
     expect(po.history.map((v) => v.text)).toEqual(['v1'])
   })
+
+  it('多轮迭代：continuePromptOptimize 中间轮跳过冲突检测直接入栈，带 iteration 元信息', () => {
+    const store = createStore()
+    store.getState().updateInputDraft({ text: '原文', attachments: [] })
+
+    // 第 1 轮（中间轮）：begin → continue
+    store.getState().beginPromptOptimize('原文', {
+      engineId: 'claude-code', mode: 'quick', direction: 'convergent',
+      iteration: 1, totalIterations: 3, optimizeSessionId: 'opt-1',
+    })
+    // 优化期间用户手改输入（中间轮不应触发冲突 ready）
+    store.getState().updateInputDraft({ text: '用户手改', attachments: [] })
+    store.getState().continuePromptOptimize('第1轮结果')
+    let po = store.getState().promptOptimize
+    expect(po.status).toBe('idle')           // 中间轮切回 idle 供下一轮 begin
+    expect(po.history).toHaveLength(2)       // 原文 + 第1轮结果
+    expect(po.history[1]).toMatchObject({
+      text: '第1轮结果', origin: 'optimized',
+      direction: 'convergent', iteration: 1, totalIterations: 3,
+    })
+    expect(po.pendingMeta).toBeNull()        // 清空，供下一轮 begin 重填
+    expect(store.getState().inputDraft.text).toBe('第1轮结果')  // 写回（跳过冲突检测）
+
+    // 第 2 轮（中间轮）：以第 1 轮结果为 sourceText
+    store.getState().beginPromptOptimize('第1轮结果', {
+      engineId: 'claude-code', direction: 'convergent',
+      iteration: 2, totalIterations: 3, optimizeSessionId: 'opt-2',
+    })
+    store.getState().continuePromptOptimize('第2轮结果')
+    po = store.getState().promptOptimize
+    expect(po.history).toHaveLength(3)
+    expect(po.history[2]).toMatchObject({ iteration: 2, totalIterations: 3 })
+
+    // 第 3 轮（末轮）：走 complete，保留冲突检测
+    store.getState().beginPromptOptimize('第2轮结果', {
+      engineId: 'claude-code', direction: 'convergent',
+      iteration: 3, totalIterations: 3, optimizeSessionId: 'opt-3',
+    })
+    store.getState().completePromptOptimize('第3轮结果')
+    po = store.getState().promptOptimize
+    expect(po.status).toBe('idle')
+    expect(po.history).toHaveLength(4)
+    expect(po.history[3]).toMatchObject({ iteration: 3, totalIterations: 3 })
+    expect(po.cursor).toBe(3)
+  })
+
+  it('continuePromptOptimize 空结果转错误（不进入下一轮）；running 外调用为 no-op', () => {
+    const store = createStore()
+    store.getState().updateInputDraft({ text: '原文', attachments: [] })
+    store.getState().beginPromptOptimize('原文', {
+      engineId: 'claude-code', iteration: 1, totalIterations: 2, optimizeSessionId: 'opt-1',
+    })
+    store.getState().continuePromptOptimize('   ')
+    const po = store.getState().promptOptimize
+    expect(po.status).toBe('idle')
+    expect(po.error).toBeTruthy()
+    expect(po.history.map((v) => v.text)).toEqual(['原文'])  // 空结果未入栈
+
+    // running 外调用 no-op
+    store.getState().continuePromptOptimize('孤儿')
+    expect(po.history).toHaveLength(1)
+  })
+
+  it('custom 方向元信息透传：version 记录 customDirection 原文', () => {
+    const store = createStore()
+    store.getState().updateInputDraft({ text: '原文', attachments: [] })
+    store.getState().beginPromptOptimize('原文', {
+      engineId: 'claude-code', direction: 'custom', customDirection: '按 BDD 重写',
+      iteration: 1, totalIterations: 1, optimizeSessionId: 'opt-1',
+    })
+    store.getState().completePromptOptimize('BDD 重写结果')
+    const v = store.getState().promptOptimize.history[1]
+    expect(v.direction).toBe('custom')
+    expect(v.customDirection).toBe('按 BDD 重写')
+  })
 })

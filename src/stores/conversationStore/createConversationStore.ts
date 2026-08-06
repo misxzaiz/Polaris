@@ -332,7 +332,15 @@ export function createConversationStore(
             cursor,
             sourceSnapshot: sourceText,
             pendingResult: null,
-            pendingMeta: { engineId: meta.engineId, model: meta.model, mode: meta.mode },
+            pendingMeta: {
+              engineId: meta.engineId,
+              model: meta.model,
+              mode: meta.mode,
+              direction: meta.direction,
+              customDirection: meta.customDirection,
+              iteration: meta.iteration,
+              totalIterations: meta.totalIterations,
+            },
             optimizeSessionId: meta.optimizeSessionId,
             error: null,
           },
@@ -374,6 +382,63 @@ export function createConversationStore(
             engineId: po.pendingMeta?.engineId,
             model: po.pendingMeta?.model,
             mode: po.pendingMeta?.mode,
+            direction: po.pendingMeta?.direction,
+            customDirection: po.pendingMeta?.customDirection,
+            iteration: po.pendingMeta?.iteration,
+            totalIterations: po.pendingMeta?.totalIterations,
+            createdAt: Date.now(),
+          },
+        ]
+        set({
+          promptOptimize: {
+            status: 'idle',
+            history,
+            cursor: history.length - 1,
+            sourceSnapshot: null,
+            pendingResult: null,
+            pendingMeta: null,
+            optimizeSessionId: null,
+            error: null,
+          },
+          inputDraft: { text, attachments: state.inputDraft.attachments },
+        })
+      },
+
+      continuePromptOptimize: (resultText) => {
+        const state = get()
+        const po = state.promptOptimize
+        if (po.status !== 'running') return
+
+        const text = resultText.trim()
+        if (!text) {
+          // 空结果按失败收口（不进入下一轮）
+          set({
+            promptOptimize: {
+              ...po,
+              status: 'idle',
+              sourceSnapshot: null,
+              pendingMeta: null,
+              optimizeSessionId: null,
+              error: i18n.t('chat:promptOptimize.errorEmpty', '优化结果为空，请重试') || '优化结果为空，请重试',
+            },
+          })
+          return
+        }
+
+        // 多轮迭代中间轮：跳过冲突检测，结果直接入栈并写回 inputDraft。
+        // 下一轮基线恒为上一轮 AI 结果（非用户手改），故无冲突判定必要。
+        const history = [
+          ...po.history,
+          {
+            text,
+            origin: 'optimized' as const,
+            engineId: po.pendingMeta?.engineId,
+            model: po.pendingMeta?.model,
+            mode: po.pendingMeta?.mode,
+            direction: po.pendingMeta?.direction,
+            customDirection: po.pendingMeta?.customDirection,
+            iteration: po.pendingMeta?.iteration,
+            totalIterations: po.pendingMeta?.totalIterations,
             createdAt: Date.now(),
           },
         ]
@@ -411,6 +476,10 @@ export function createConversationStore(
             engineId: po.pendingMeta?.engineId,
             model: po.pendingMeta?.model,
             mode: po.pendingMeta?.mode,
+            direction: po.pendingMeta?.direction,
+            customDirection: po.pendingMeta?.customDirection,
+            iteration: po.pendingMeta?.iteration,
+            totalIterations: po.pendingMeta?.totalIterations,
             createdAt: Date.now(),
           },
         ]

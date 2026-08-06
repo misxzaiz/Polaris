@@ -11,6 +11,10 @@
  *
  * 优化会话不主动删除：eventRouter 对不存在的路由目标会自动重建可见会话，
  * 删除后若有迟到事件会冒出空会话；静默会话本就不可见，交由 LRU 驱逐回收。
+ *
+ * 多轮迭代：每轮独立一次性静默会话（不跨会话污染），service 内部链式调用——
+ * 下一轮 sourceText 恒为上一轮 AI 结果（非用户手改），中间轮走
+ * continuePromptOptimize（跳过冲突检测），末轮走 completePromptOptimize。
  */
 
 import { useCallback, useRef } from 'react'
@@ -23,11 +27,11 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import type { AssistantChatMessage } from '@/types/chat'
-import type { ConversationStore, ConversationStoreInstance, PromptOptimizeMode, SendMessageOptions } from '@/stores/conversationStore/types'
+import type { ConversationStore, ConversationStoreInstance, OptimizeDirection, PromptOptimizeMode, SendMessageOptions } from '@/stores/conversationStore/types'
 
 const log = createLogger('PromptOptimize')
 
-/** 优化配置记忆 key（引擎 + 模式 + 供应商 + 模型，单一 JSON 对象） */
+/** 优化配置记忆 key（引擎 + 模式 + 供应商 + 模型 + 方向 + 轮次，单一 JSON 对象） */
 const OPTIMIZE_CONFIG_STORAGE_KEY = 'polaris.promptOptimize.config'
 
 /** 单轮优化的超时兜底 */
@@ -35,12 +39,15 @@ const QUICK_TIMEOUT_MS = 180_000
 /** 深度模式放开工具，多轮往返，超时上调 */
 const DEEP_TIMEOUT_MS = 330_000
 
+/** 多轮迭代硬上限（防烧 token） */
+const MAX_ITERATIONS = 5
+
 /**
  * 快速模式优化器约束（经 oneTimeSystemPrompt 注入，不进消息流）。
  * 要求保留原意图/语言/特殊标记，只输出优化后的提示词本身，禁用工具。
  */
 export const PROMPT_OPTIMIZE_SYSTEM_PROMPT = `You are a prompt optimization assistant. The user gives you a draft prompt they intend to send to an AI coding assistant. Rewrite it to be clearer, more specific, and better structured, while strictly preserving:
-1. The user's original intent and scope — never add new requirements or drop existing ones
+1. The user's original intent and scope — never add requirements or drop existing ones
 2. The original language (Chinese stays Chinese, English stays English)
 3. All special tokens verbatim: @/path references, @workspace, /slash-commands, code fences, file paths, URLs
 Structure the result (context / task / constraints / expected output) only when it genuinely helps; keep short prompts short.
@@ -70,6 +77,22 @@ Strict rules:
 /** 深度模式只读工具白名单（排除 Bash/Write/Edit，防跑偏与全盘扫描） */
 const DEEP_ALLOWED_TOOLS = ['Read', 'Grep', 'Glob']
 
+/**
+ * 方向 → system prompt 追加指令映射。
+ * structured 为默认方向，不追加（基础 prompt 已含结构化要求）；
+ * 其余方向在基础 prompt 末尾追加一句方向指令，不替换基础约束。
+ * custom 与预设互斥（UI 单选），custom 选中即覆盖预设方向。
+ */
+export const DIRECTION_INSTRUCTIONS: Record<Exclude<OptimizeDirection, 'custom'>, string> = {
+  structured: '',
+  convergent: '\n\n优化方向：精炼。压缩冗余表述与重复信息，保留全部原始意图与特殊标记，使提示词更短更准。不要新增需求。',
+  divergent: '\n\n优化方向：发散。在严格保留原意图与范围内，补充 2~3 个互补的角度/可能解法/边界场景供下游 AI 选择，但不要改变用户要解决的核心问题。',
+  elaborate: '\n\n优化方向：扩写。补全缺失的上下文、隐含假设、验收标准与预期输出形态，使下游 AI 无歧义执行；不新增用户未表达的需求。',
+}
+
+/** 自定义方向指令的字符上限（超出截断提示，防注入过长） */
+const CUSTOM_DIRECTION_MAX = 200
+
 /** 优化配置（持久化到 localStorage 的偏好） */
 export interface PromptOptimizeConfig {
   engineId: EngineId
@@ -77,6 +100,12 @@ export interface PromptOptimizeConfig {
   /** 供应商 Profile；'' 或缺省 = 官方 API */
   modelProfileId?: string
   model?: string
+  /** 优化方向（缺省 = structured） */
+  direction?: OptimizeDirection
+  /** 自定义方向指令原文（direction === 'custom' 时使用） */
+  customDirectionText?: string
+  /** 迭代轮次（1=单轮，2~5=多轮；缺省=1） */
+  iterations?: number
 }
 
 export function readStoredOptimizeConfig(defaultEngine: EngineId): PromptOptimizeConfig {
@@ -90,10 +119,27 @@ export function readStoredOptimizeConfig(defaultEngine: EngineId): PromptOptimiz
       mode: parsed.mode === 'deep' ? 'deep' : 'quick',
       modelProfileId: parsed.modelProfileId || undefined,
       model: parsed.model || undefined,
+      direction: normalizeDirection(parsed.direction),
+      customDirectionText: typeof parsed.customDirectionText === 'string' ? parsed.customDirectionText : undefined,
+      iterations: normalizeIterations(parsed.iterations),
     }
   } catch {
     return fallback
   }
+}
+
+function normalizeDirection(d: unknown): OptimizeDirection | undefined {
+  if (d === 'structured' || d === 'convergent' || d === 'divergent' || d === 'elaborate' || d === 'custom') {
+    return d
+  }
+  return undefined
+}
+
+function normalizeIterations(n: unknown): number | undefined {
+  if (typeof n !== 'number' || !Number.isFinite(n)) return undefined
+  const i = Math.floor(n)
+  if (i < 1 || i > MAX_ITERATIONS) return undefined
+  return i
 }
 
 export function storeOptimizeConfig(config: PromptOptimizeConfig): void {
@@ -117,6 +163,12 @@ export interface RunPromptOptimizeOptions {
   modelProfileId?: string
   /** 具体模型（可选） */
   model?: string
+  /** 优化方向（缺省 = structured） */
+  direction?: OptimizeDirection
+  /** 自定义方向指令原文（direction === 'custom' 时必填非空） */
+  customDirectionText?: string
+  /** 迭代轮次（1=单轮，2~5=多轮；缺省=1） */
+  iterations?: number
   /** 触发时输入框全文（调用方需先把它同步进 inputDraft，冲突检测以此为基线） */
   sourceText: string
 }
@@ -150,25 +202,63 @@ function buildRecentContext(state: ConversationStore): string {
 }
 
 /**
- * 触发一轮提示词优化。
- *
- * 前置要求（由调用方保证）：sourceText 非空且已同步到源会话 inputDraft；
- * 源会话当前没有进行中的优化（promptOptimize.status !== 'running'）。
+ * 构造优化器 system prompt：基础 prompt + 方向指令（custom 时拼用户指令）。
+ * structured 默认方向不追加；custom 与预设互斥（custom 覆盖预设）。
  */
-export async function runPromptOptimize(options: RunPromptOptimizeOptions): Promise<void> {
-  const { sourceSessionId, workspaceId, workspacePath, engineId, modelProfileId, model, sourceText } = options
-  const mode: PromptOptimizeMode = options.mode === 'deep' ? 'deep' : 'quick'
-  const isDeep = mode === 'deep'
-
-  const manager = sessionStoreManager.getState()
-  const srcStore = manager.stores.get(sourceSessionId)
-  if (!srcStore) {
-    log.warn('源会话不存在，忽略优化请求', { sourceSessionId })
-    return
+function buildSystemPrompt(
+  basePrompt: string,
+  direction: OptimizeDirection,
+  customDirectionText?: string,
+): string {
+  if (direction === 'custom') {
+    const trimmed = (customDirectionText ?? '').trim()
+    const clipped = trimmed.length > CUSTOM_DIRECTION_MAX ? `${trimmed.slice(0, CUSTOM_DIRECTION_MAX)}…` : trimmed
+    return `${basePrompt}\n\n优化方向（用户指定）：${clipped}。在不违背上述基础约束的前提下，按此方向润色。`
   }
+  return `${basePrompt}${DIRECTION_INSTRUCTIONS[direction] ?? ''}`
+}
 
-  // 防御：清理同源会话的旧订阅（UI 已禁用重复触发）
-  activeRuns.get(sourceSessionId)?.()
+/**
+ * 执行单轮优化，返回该轮结果（成功 {ok,text} / 失败 {error}）。
+ * Promise 在轮次流式结束（isStreaming 回落）或超时/失败后才 resolve，
+ * 故多轮迭代循环 `await` 本函数可保证"上一轮完全收口后再开始下一轮"。
+ * 单轮与多轮均基于此：单轮/末轮由 service 调 completePromptOptimize；
+ * 多轮中间轮由 service 调 continuePromptOptimize。
+ *
+ * @param abortSignal 已取消则不再 settle（resolve 一个失败结果，由循环跳出）
+ */
+function executeSingleRound(opts: {
+  srcStore: ConversationStore
+  sourceSessionId: string
+  workspaceId?: string
+  workspacePath?: string
+  engineId: EngineId
+  modelProfileId?: string
+  model?: string
+  mode: PromptOptimizeMode
+  direction: OptimizeDirection
+  customDirectionText?: string
+  iteration: number
+  totalIterations: number
+  sourceText: string
+  abortSignal: { aborted: boolean }
+}): Promise<{ ok: true; text: string } | { ok: false; error: string | null }> {
+  return new Promise((resolve) => {
+    const {
+      srcStore, sourceSessionId, workspaceId, workspacePath, engineId,
+      modelProfileId, model, mode, direction, customDirectionText,
+      iteration, totalIterations, sourceText, abortSignal,
+    } = opts
+    const isDeep = mode === 'deep'
+    const manager = sessionStoreManager.getState()
+
+    const settle = (r: { ok: true; text: string } | { ok: false; error: string | null }) => {
+      if (abortSignal.aborted) {
+        resolve({ ok: false, error: null })
+        return
+      }
+      resolve(r)
+    }
 
   // 一次性静默优化会话：不激活、不进列表；完成后交由 LRU 回收。
   // 无工作区时建 free 会话（sendMessage 的 workDir 解析链会自行兜底全局工作区）。
@@ -188,46 +278,34 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
 
   const optStore = sessionStoreManager.getState().stores.get(optimizeSessionId)
   if (!optStore) {
-    srcStore.getState().failPromptOptimize(i18n.t('chat:promptOptimize.errorCreateSession', '优化会话创建失败'))
+    settle({ ok: false, error: i18n.t('chat:promptOptimize.errorCreateSession', '优化会话创建失败') })
     return
   }
 
-  srcStore.getState().beginPromptOptimize(sourceText, { engineId, model, mode, optimizeSessionId })
-  log.info('开始提示词优化', { sourceSessionId, optimizeSessionId, engineId, mode, sourceLength: sourceText.length })
+  // 登记 running 状态（每轮 begin；多轮中间轮 service 已先调 continue 切 idle 再 begin）
+  srcStore.getState().beginPromptOptimize(sourceText, {
+    engineId,
+    model,
+    mode,
+    direction,
+    customDirection: direction === 'custom' ? customDirectionText : undefined,
+    iteration,
+    totalIterations,
+    optimizeSessionId,
+  })
 
   let finished = false
   const cleanupFns: Array<() => void> = []
   const cleanup = () => {
-    cleanupFns.forEach((fn) => {
-      try {
-        fn()
-      } catch {
-        // 清理失败不影响主流程
-      }
-    })
+    cleanupFns.forEach((fn) => { try { fn() } catch { /* noop */ } })
     cleanupFns.length = 0
-    if (activeRuns.get(sourceSessionId) === abort) activeRuns.delete(sourceSessionId)
   }
 
-  // 取消入口（cancelPromptOptimize 调用）：停订阅/计时器，不回写状态
-  const abort = () => {
-    finished = true
-    cleanup()
-  }
-  activeRuns.set(sourceSessionId, abort)
-
-  const settle = (result: { ok: true; text: string } | { ok: false; error: string | null }) => {
+  const finish = (r: { ok: true; text: string } | { ok: false; error: string | null }) => {
     if (finished) return
     finished = true
     cleanup()
-    const src = srcStore.getState()
-    if (result.ok) {
-      src.completePromptOptimize(result.text)
-      log.info('提示词优化完成', { sourceSessionId, optimizeSessionId, resultLength: result.text.length })
-    } else {
-      src.failPromptOptimize(result.error)
-      log.warn('提示词优化失败', { sourceSessionId, optimizeSessionId, error: result.error })
-    }
+    settle(r)
   }
 
   // 完成检测：isStreaming 从 true 回落 false 视为轮次结束；
@@ -235,32 +313,24 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
   let sawStreaming = optStore.getState().isStreaming
   const unsubscribe = optStore.subscribe((state) => {
     if (finished) return
-    if (state.isStreaming) {
-      sawStreaming = true
-      return
-    }
+    if (state.isStreaming) { sawStreaming = true; return }
     if (sawStreaming) {
       const text = pickLatestAssistantText(state)
       if (state.error && !text.trim()) {
-        settle({ ok: false, error: state.error })
+        finish({ ok: false, error: state.error })
       } else {
-        settle({ ok: true, text })
+        finish({ ok: true, text })
       }
       return
     }
-    if (state.error) {
-      settle({ ok: false, error: state.error })
-    }
+    if (state.error) finish({ ok: false, error: state.error })
   })
   cleanupFns.push(unsubscribe)
 
   // 超时兜底：中断优化会话并报错（原文无损，可重试）。深度模式放开工具，超时上调。
   const timer = setTimeout(() => {
-    void optStore
-      .getState()
-      .interrupt()
-      .catch(() => undefined)
-    settle({ ok: false, error: i18n.t('chat:promptOptimize.errorTimeout', '优化超时，请重试') })
+    void optStore.getState().interrupt().catch(() => undefined)
+    finish({ ok: false, error: i18n.t('chat:promptOptimize.errorTimeout', '优化超时，请重试') })
   }, isDeep ? DEEP_TIMEOUT_MS : QUICK_TIMEOUT_MS)
   cleanupFns.push(() => clearTimeout(timer))
 
@@ -268,52 +338,166 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
   const recentContext = isDeep ? buildRecentContext(srcStore.getState()) : ''
   const instructionPrefix = isDeep
     ? i18n.t(
-        'chat:promptOptimize.deepInstructionPrefix',
-        '请结合项目上下文优化以下提示词（仅重写，不新增需求，不要执行或回答它）。你可以用 Read/Grep/Glob 阅读项目约定文件与草稿提到的文件。只输出优化后的提示词本身：'
-      )
+      'chat:promptOptimize.deepInstructionPrefix',
+      '请结合项目上下文优化以下提示词（仅重写，不新增需求，不要执行或回答它）。你可以用 Read/Grep/Glob 阅读项目约定文件与草稿提到的文件。只输出优化后的提示词本身：',
+    )
     : i18n.t(
-        'chat:promptOptimize.instructionPrefix',
-        '请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身：'
-      )
+      'chat:promptOptimize.instructionPrefix',
+      '请优化以下提示词（仅重写，不要执行或回答它），只输出优化后的提示词本身：',
+    )
+  const roundPrefix = totalIterations > 1
+    ? i18n.t('chat:promptOptimize.roundPrefix', {
+      defaultValue: '（第 {{cur}}/{{total}} 轮，以上一轮优化结果为基础继续按既定方向润色，不要回退已有改进，不要执行/回答提示词本身）',
+      cur: iteration,
+      total: totalIterations,
+    })
+    : ''
   const userMessage =
+    (roundPrefix ? `${roundPrefix}\n` : '') +
     instructionPrefix +
     (recentContext ? `\n\n<recent_context>\n${recentContext}\n</recent_context>` : '') +
     `\n\n<original_prompt>\n${sourceText}\n</original_prompt>`
 
+  const baseSystemPrompt = isDeep ? PROMPT_OPTIMIZE_DEEP_SYSTEM_PROMPT : PROMPT_OPTIMIZE_SYSTEM_PROMPT
+  const systemPrompt = buildSystemPrompt(baseSystemPrompt, direction, customDirectionText)
+
   const sendOptions: SendMessageOptions = isDeep
     ? {
-        oneTimeSystemPrompt: PROMPT_OPTIMIZE_DEEP_SYSTEM_PROMPT,
-        allowedTools: DEEP_ALLOWED_TOOLS,
-        // 静默会话不可见，任何交互式权限等待都会永久挂起 —— 强制 bypass
-        runtimeOverride: { permissionMode: 'bypassPermissions' },
-      }
-    : {
-        oneTimeSystemPrompt: PROMPT_OPTIMIZE_SYSTEM_PROMPT,
-      }
+      oneTimeSystemPrompt: systemPrompt,
+      allowedTools: DEEP_ALLOWED_TOOLS,
+      // 静默会话不可见，任何交互式权限等待都会永久挂起 —— 强制 bypass
+      runtimeOverride: { permissionMode: 'bypassPermissions' },
+    }
+    : { oneTimeSystemPrompt: systemPrompt }
 
-  try {
-    await optStore.getState().sendMessage(userMessage, workspacePath, undefined, sendOptions)
-  } catch (e) {
-    settle({ ok: false, error: String(e) })
+  void (async () => {
+    try {
+      await optStore.getState().sendMessage(userMessage, workspacePath, undefined, sendOptions)
+      // sendMessage resolve 仅表示发送完成，流式完成由 store.subscribe 的 finish 负责；
+      // 此处无需额外处理，Promise 由 finish 的 settle resolve。
+    } catch (e) {
+      finish({ ok: false, error: String(e) })
+    }
+  })()
+  })
+}
+
+/**
+ * 触发提示词优化（单轮或多轮迭代）。
+ *
+ * 单轮：executeSingleRound → completePromptOptimize（末轮冲突检测）。
+ * 多轮：链式 executeSingleRound，中间轮 continuePromptOptimize（跳过冲突，
+ * 下一轮基线恒为上一轮 AI 结果），末轮 completePromptOptimize。
+ * 中途取消（abortSignal.aborted）：立即停止后续轮，已完成版本保留。
+ * 任一轮失败即终止迭代，已成功版本保留，胶囊转错误态可重试。
+ *
+ * 前置要求（由调用方保证）：sourceText 非空且已同步到源会话 inputDraft；
+ * 源会话当前没有进行中的优化（promptOptimize.status !== 'running'）。
+ */
+export async function runPromptOptimize(options: RunPromptOptimizeOptions): Promise<void> {
+  const {
+    sourceSessionId, workspaceId, workspacePath, engineId, modelProfileId, model, sourceText,
+    direction, customDirectionText,
+  } = options
+  const mode: PromptOptimizeMode = options.mode === 'deep' ? 'deep' : 'quick'
+  const dir: OptimizeDirection = direction ?? 'structured'
+  const iterations = Math.max(1, Math.min(MAX_ITERATIONS, options.iterations ?? 1))
+
+  const manager = sessionStoreManager.getState()
+  const srcStore = manager.stores.get(sourceSessionId)
+  if (!srcStore) {
+    log.warn('源会话不存在，忽略优化请求', { sourceSessionId })
+    return
+  }
+
+  // 防御：清理同源会话的旧订阅（UI 已禁用重复触发）
+  activeRuns.get(sourceSessionId)?.()
+
+  const abort = { aborted: false }
+  activeRuns.set(sourceSessionId, () => { abort.aborted = true })
+
+  log.info('开始提示词优化', {
+    sourceSessionId, engineId, mode, direction: dir,
+    iterations, sourceLength: sourceText.length,
+  })
+
+  let currentText = sourceText
+  for (let i = 1; i <= iterations; i++) {
+    if (abort.aborted) {
+      log.info('迭代被取消，停止后续轮', { sourceSessionId, atIteration: i })
+      break
+    }
+
+    const isLast = i === iterations
+    // eslint-disable-next-line no-await-in-loop -- 迭代链天然串行，每轮依赖上一轮结果；
+    // executeSingleRound 返回的 Promise 在该轮流式结束（isStreaming 回落）后才 resolve，
+    // 故 await 可保证"上一轮完全收口（已入栈/已 fail）后再开始下一轮"，无竞态。
+    const result = await executeSingleRound({
+      srcStore,
+      sourceSessionId,
+      workspaceId,
+      workspacePath,
+      engineId,
+      modelProfileId,
+      model,
+      mode,
+      direction: dir,
+      customDirectionText,
+      iteration: i,
+      totalIterations: iterations,
+      sourceText: currentText,
+      abortSignal: abort,
+    })
+
+    if (abort.aborted) break
+    const src = srcStore.getState()
+    if (result.ok) {
+      if (isLast) {
+        src.completePromptOptimize(result.text)
+        log.info('提示词优化完成', { sourceSessionId, resultLength: result.text.length, iteration: i })
+      } else {
+        src.continuePromptOptimize(result.text)
+        log.info('迭代轮完成', { sourceSessionId, iteration: i, of: iterations, resultLength: result.text.length })
+      }
+    } else {
+      src.failPromptOptimize(result.error)
+      log.warn('提示词优化失败', { sourceSessionId, atIteration: i, error: result.error })
+      break // 任一轮失败即终止迭代，已成功版本保留
+    }
+
+    // 上一轮成功且非末轮：取最新入栈版本作为下一轮 sourceText
+    if (isLast) break
+    if (abort.aborted) break
+    const po = srcStore.getState().promptOptimize
+    if (po.status !== 'idle' || po.error) {
+      // 上一轮失败/取消：终止迭代
+      break
+    }
+    const lastVersion = po.history[po.cursor]
+    if (!lastVersion || !lastVersion.text.trim()) break
+    currentText = lastVersion.text
+  }
+
+  if (activeRuns.get(sourceSessionId) === abort) {
+    activeRuns.delete(sourceSessionId)
   }
 }
 
 /**
  * 取消进行中的优化：中断优化会话、停止订阅，源会话状态回 idle（版本栈保留）。
+ * 多轮迭代中途取消：设置 abort flag，后续轮不再执行；已成功版本入栈保留。
  */
 export function cancelPromptOptimize(sourceSessionId: string): void {
   const manager = sessionStoreManager.getState()
   const srcStore = manager.stores.get(sourceSessionId)
   const po = srcStore?.getState().promptOptimize
 
+  // 先设 abort flag，停止链式迭代与超时/settle
   activeRuns.get(sourceSessionId)?.()
 
   if (po?.optimizeSessionId) {
     const optStore = manager.stores.get(po.optimizeSessionId)
-    void optStore
-      ?.getState()
-      .interrupt()
-      .catch(() => undefined)
+    void optStore?.getState().interrupt().catch(() => undefined)
   }
   srcStore?.getState().failPromptOptimize(null)
   log.info('取消提示词优化', { sourceSessionId })
@@ -354,7 +538,7 @@ export function usePromptOptimizePreview(optimizeSessionId: string | null) {
       }
       return store.subscribe(onChange)
     },
-    [store]
+    [store],
   )
 
   return useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_PREVIEW)

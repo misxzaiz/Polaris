@@ -50,7 +50,7 @@ import { useActiveSessionId, sessionStoreManager } from '@/stores/conversationSt
 import { resolveSessionEngine } from '@/stores/conversationStore/conversationStoreUtils'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
 import { isProfileForEngine } from '@/types/modelProfile'
-import type { PromptOptimizeMode } from '@/stores/conversationStore/types'
+import type { PromptOptimizeMode, OptimizeDirection } from '@/stores/conversationStore/types'
 import {
   getCliCommandSuggestions,
   matchBlockedCliCommand,
@@ -93,6 +93,18 @@ const OPTIMIZE_MODE_OPTIONS: Array<{
   { key: 'quick', label: 'promptOptimize.modeQuick', hint: 'promptOptimize.modeQuickHint', Icon: Zap },
   { key: 'deep', label: 'promptOptimize.modeDeep', hint: 'promptOptimize.modeDeepHint', Icon: Sparkles, costHint: 'promptOptimize.modeDeepCost' },
 ]
+
+/** 提示词优化方向选项（标签走 i18n） */
+const OPTIMIZE_DIRECTION_OPTIONS: Array<{ key: OptimizeDirection; label: string }> = [
+  { key: 'convergent', label: 'promptOptimize.dirConvergent' },
+  { key: 'divergent', label: 'promptOptimize.dirDivergent' },
+  { key: 'elaborate', label: 'promptOptimize.dirElaborate' },
+  { key: 'structured', label: 'promptOptimize.dirStructured' },
+  { key: 'custom', label: 'promptOptimize.dirCustom' },
+]
+
+/** 提示词优化迭代轮次选项 */
+const OPTIMIZE_ITERATION_OPTIONS = [1, 2, 3, 4, 5] as const
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
 function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'pi' {
@@ -429,6 +441,7 @@ export function ChatInput({
   // 不要求关联工作区：优化会话可无工作区运行（free），与无工作区聊天一致
   const canOptimize = Boolean(
     value.trim() && !optimizeRunning && !editMode && !isSlashCommandInput && !disabled && activeSessionId
+      && (optimizeDirection !== 'custom' || optimizeCustomText.trim() !== '')
   )
 
   // 点击外部关闭优化引擎浮层
@@ -462,6 +475,18 @@ export function ChatInput({
   const [optimizeProfileId, setOptimizeProfileId] = useState('')
   const [optimizeModel, setOptimizeModel] = useState('')
   const [showOptimizeAdvanced, setShowOptimizeAdvanced] = useState(false)
+  // 优化方向（缺省 structured = 等价现有默认行为）
+  const [optimizeDirection, setOptimizeDirection] = useState<OptimizeDirection>(
+    () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).direction ?? 'structured',
+  )
+  // 自定义方向指令（direction === 'custom' 时使用）
+  const [optimizeCustomText, setOptimizeCustomText] = useState<string>(
+    () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).customDirectionText ?? '',
+  )
+  // 迭代轮次（缺省 1 = 单轮）
+  const [optimizeIterations, setOptimizeIterations] = useState<number>(
+    () => readStoredOptimizeConfig(normalizeEngineId(defaultEngine)).iterations ?? 1,
+  )
 
   // 切换引擎时清空已选的 Profile / 模型
   const setOptimizeEngineAndReset = useCallback(
@@ -503,6 +528,10 @@ export function ChatInput({
       setOptimizePrivacyNotice(true)
       return
     }
+    // custom 方向必须填指令，空则阻断执行
+    if (optimizeDirection === 'custom' && !optimizeCustomText.trim()) {
+      return
+    }
     setOptimizePickerOpen(false)
     if (!canOptimize || !activeSessionId) return
     const cfg: PromptOptimizeConfig = {
@@ -510,6 +539,9 @@ export function ChatInput({
       mode: optimizeMode,
       modelProfileId: optimizeProfileId || undefined,
       model: optimizeModel || undefined,
+      direction: optimizeDirection,
+      customDirectionText: optimizeDirection === 'custom' ? optimizeCustomText.trim() : undefined,
+      iterations: optimizeIterations,
     }
     persistOptimizeConfig(cfg)
     syncDraftNow()
@@ -523,10 +555,14 @@ export function ChatInput({
       mode: optimizeMode,
       modelProfileId: cfg.modelProfileId,
       model: cfg.model,
+      direction: optimizeDirection,
+      customDirectionText: cfg.customDirectionText,
+      iterations: optimizeIterations,
       sourceText: value,
     })
   }, [
     canOptimize, activeSessionId, optimizeEngine, optimizeMode, optimizeProfileId, optimizeModel,
+    optimizeDirection, optimizeCustomText, optimizeIterations,
     value, syncDraftNow, currentWorkspace, workspaces, currentWorkspaceId, persistOptimizeConfig,
   ])
 
@@ -1455,6 +1491,15 @@ export function ChatInput({
                   ? t('promptOptimize.readingContext')
                   : t('promptOptimize.running')}
             </span>
+            {promptOptimize.pendingMeta && (promptOptimize.pendingMeta.totalIterations ?? 1) > 1 && (
+              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] bg-primary/20 text-primary">
+                {t('promptOptimize.iterationBadge', {
+                  defaultValue: '第 {{cur}}/{{total}} 轮',
+                  cur: promptOptimize.pendingMeta.iteration ?? 1,
+                  total: promptOptimize.pendingMeta.totalIterations ?? 1,
+                })}
+              </span>
+            )}
             <button
               onClick={handleCancelOptimize}
               className="shrink-0 p-0.5 rounded hover:bg-primary/20 transition-colors"
@@ -1630,6 +1675,72 @@ export function ChatInput({
                       </button>
                     ))}
 
+                    {/* 方向选择 */}
+                    <div className="my-1.5 border-t border-border" />
+                    <div className="px-2 pb-1 text-[11px] font-medium text-text-tertiary">
+                      {t('promptOptimize.direction')}
+                    </div>
+                    <div className="flex flex-wrap gap-1 px-2 pb-1">
+                      {OPTIMIZE_DIRECTION_OPTIONS.map(({ key, label }) => (
+                        <button
+                          key={key}
+                          onClick={() => setOptimizeDirection(key)}
+                          className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
+                            optimizeDirection === key
+                              ? 'bg-primary text-white border-primary'
+                              : 'border-border text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                          }`}
+                        >
+                          {t(label)}
+                        </button>
+                      ))}
+                    </div>
+                    {/* 自定义方向输入框（仅 custom 选中时展开） */}
+                    {optimizeDirection === 'custom' && (
+                      <div className="px-2 pb-1">
+                        <textarea
+                          value={optimizeCustomText}
+                          onChange={(e) => setOptimizeCustomText(e.target.value)}
+                          placeholder={t('promptOptimize.customDirectionPlaceholder')}
+                          rows={2}
+                          className={`w-full px-2 py-1.5 text-[11px] rounded-md bg-background border rounded-md resize-none focus:outline-none transition-colors ${
+                            !optimizeCustomText.trim()
+                              ? 'border-danger/50'
+                              : 'border-border focus:border-primary'
+                          }`}
+                        />
+                        {!optimizeCustomText.trim() && (
+                          <p className="text-[10px] text-danger mt-0.5">{t('promptOptimize.customDirectionRequired')}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 轮次选择 */}
+                    <div className="my-1 border-t border-border" />
+                    <div className="px-2 pb-1 text-[11px] font-medium text-text-tertiary">
+                      {t('promptOptimize.iterations')}
+                    </div>
+                    <div className="flex flex-wrap gap-1 px-2 pb-1">
+                      {OPTIMIZE_ITERATION_OPTIONS.map((n) => (
+                        <button
+                          key={n}
+                          onClick={() => setOptimizeIterations(n)}
+                          className={`px-2 py-1 text-[11px] rounded-md border transition-colors ${
+                            optimizeIterations === n
+                              ? 'bg-primary text-white border-primary'
+                              : 'border-border text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                          }`}
+                        >
+                          {n === 1 ? t('promptOptimize.singleRound') : String(n)}
+                        </button>
+                      ))}
+                    </div>
+                    {optimizeIterations > 1 && (
+                      <p className="px-2 pb-1 text-[10px] text-text-tertiary leading-relaxed">
+                        {t('promptOptimize.iterationHint')}
+                      </p>
+                    )}
+
                     {/* 折叠高级选项：供应商 / 模型 */}
                     <div className="my-1 border-t border-border" />
                     <button
@@ -1687,10 +1798,19 @@ export function ChatInput({
                     <div className="sticky bottom-0 bg-background-elevated border-t border-border px-2 py-2 rounded-b-lg">
                       <button
                         onClick={handleOptimizeWithConfig}
-                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover transition-colors"
+                        disabled={!canOptimize}
+                        className="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-md bg-primary text-white text-xs font-medium hover:bg-primary-hover transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
                       >
                         {optimizeMode === 'deep' && <Loader2 className="w-3 h-3" />}
-                        <span>{optimizeMode === 'deep' ? t('promptOptimize.optimizeDeep') : t('promptOptimize.optimize')}</span>
+                        <span>
+                          {optimizeMode === 'deep'
+                            ? (optimizeIterations > 1
+                                ? t('promptOptimize.optimizeDeepIter', { defaultValue: '深度优化(迭代 {{n}} 轮)', n: optimizeIterations })
+                                : t('promptOptimize.optimizeDeep'))
+                            : (optimizeIterations > 1
+                                ? t('promptOptimize.optimizeIter', { defaultValue: '优化(迭代 {{n}} 轮)', n: optimizeIterations })
+                                : t('promptOptimize.optimize'))}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1707,9 +1827,25 @@ export function ChatInput({
                   >
                     <Undo2 size={14} />
                   </button>
-                  <span className="text-[10px] tabular-nums px-0.5 select-none" title={t('promptOptimize.versionIndicator')}>
-                    {promptOptimize.cursor + 1}/{promptOptimize.history.length}
-                  </span>
+                  {(() => {
+                    const v = promptOptimize.history[promptOptimize.cursor]
+                    const total = (v?.totalIterations ?? 1)
+                    const iter = total > 1 ? ` · ${t('promptOptimize.iterationBadge', { defaultValue: '第 {{cur}}/{{total}} 轮', cur: v?.iteration ?? 1, total })}` : ''
+                    const dirLabel = v?.direction && v.direction !== 'structured'
+                      ? ` · ${t(`promptOptimize.dir${v.direction.charAt(0).toUpperCase()}${v.direction.slice(1)}`)}`
+                      : ''
+                    const engineLabel = v?.engineId ? ` · ${getEngineFullName(v.engineId)}` : ''
+                    const originLabel = v?.origin === 'original'
+                      ? t('promptOptimize.versionOriginal')
+                      : v?.origin === 'edited'
+                        ? t('promptOptimize.versionEdited')
+                        : `${t('promptOptimize.versionOptimized')}${iter}${dirLabel}${engineLabel}`
+                    return (
+                      <span className="text-[10px] tabular-nums px-0.5 select-none cursor-default" title={originLabel}>
+                        {promptOptimize.cursor + 1}/{promptOptimize.history.length}
+                      </span>
+                    )
+                  })()}
                   <button
                     onClick={handleRedoOptimize}
                     disabled={!canRedoVersion}

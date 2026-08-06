@@ -67,6 +67,21 @@ export interface InputDraft {
  */
 export type PromptOptimizeMode = 'quick' | 'deep'
 
+/**
+ * 提示词优化方向预设。
+ * - structured  = 结构化（默认）：分节模板（背景/任务/约束/产出），等价基础 system prompt
+ * - convergent  = 精炼：压缩冗余、保留要点、更短更准
+ * - divergent   = 发散：在不偏题前提下补充互补角度/可能解法/边界场景
+ * - elaborate   = 扩写：补全上下文/隐含假设/验收标准
+ * - custom      = 自定义：用户填入自由方向指令
+ */
+export type OptimizeDirection =
+  | 'structured'
+  | 'convergent'
+  | 'divergent'
+  | 'elaborate'
+  | 'custom'
+
 /** 提示词优化版本栈中的一个版本 */
 export interface PromptVersion {
   text: string
@@ -82,6 +97,14 @@ export interface PromptVersion {
   model?: string
   /** origin === 'optimized' 时记录来源模式（quick / deep，回滚时可辨识） */
   mode?: PromptOptimizeMode
+  /** origin === 'optimized' 时记录来源方向（structured/convergent/...） */
+  direction?: OptimizeDirection
+  /** direction === 'custom' 时记录用户自定义方向指令原文 */
+  customDirection?: string
+  /** 多轮迭代中的轮次序号（1-based；单轮=1） */
+  iteration?: number
+  /** 本轮迭代总轮数（单轮=1） */
+  totalIterations?: number
   createdAt: number
 }
 
@@ -103,8 +126,16 @@ export interface PromptOptimizeState {
   sourceSnapshot: string | null
   /** status === 'ready' 时的待应用结果 */
   pendingResult: string | null
-  /** 本轮优化的引擎/模型/模式（结果入栈时随版本记录） */
-  pendingMeta: { engineId: EngineId; model?: string; mode?: PromptOptimizeMode } | null
+  /** 本轮优化的引擎/模型/模式/方向/轮次（结果入栈时随版本记录） */
+  pendingMeta: {
+    engineId: EngineId
+    model?: string
+    mode?: PromptOptimizeMode
+    direction?: OptimizeDirection
+    customDirection?: string
+    iteration?: number
+    totalIterations?: number
+  } | null
   /** 本轮优化使用的静默会话 ID（流式预览订阅 / 取消中断用） */
   optimizeSessionId: string | null
   /** 最近一次优化失败的错误信息（进入 running 时清空） */
@@ -349,13 +380,28 @@ export interface ConversationActions {
    * 开始一轮优化：登记快照/引擎/优化会话，status → running。
    * 版本栈处理：首轮把原文入栈；多轮先截断 redo 分支，输入被手改则手改文本先入栈。
    */
-  beginPromptOptimize: (sourceText: string, meta: { engineId: EngineId; model?: string; mode?: PromptOptimizeMode; optimizeSessionId: string }) => void
+  beginPromptOptimize: (sourceText: string, meta: {
+    engineId: EngineId
+    model?: string
+    mode?: PromptOptimizeMode
+    direction?: OptimizeDirection
+    customDirection?: string
+    iteration?: number
+    totalIterations?: number
+    optimizeSessionId: string
+  }) => void
   /**
    * 优化完成回填：输入与快照一致 → 结果入栈并写回 inputDraft；
    * 输入被手改 → status → ready，结果暂存 pendingResult 待用户点击应用。
    * 仅在 status === 'running' 时生效。
    */
   completePromptOptimize: (resultText: string) => void
+  /**
+   * 多轮迭代的中间轮收口：结果直接入栈并写回 inputDraft（跳过冲突检测，
+   * 因迭代链下一轮基线恒为上一轮 AI 结果），status 切回 idle 供 service 立即
+   * begin 下一轮。仅多轮迭代的非末轮调用；末轮仍走 completePromptOptimize。
+   */
+  continuePromptOptimize: (resultText: string) => void
   /** 应用 ready 状态的待应用结果（当前手改文本先入栈保留） */
   applyPendingPromptOptimize: () => void
   /** 优化失败/取消：status → idle（版本栈保留），error 可为 null（用户主动取消） */
