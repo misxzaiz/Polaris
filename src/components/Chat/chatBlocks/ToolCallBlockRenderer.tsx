@@ -429,7 +429,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
           )}
 
           {/* Write 工具：代码预览 */}
-          {isWriteTool(block.name) && block.input && (
+          {isWriteTool(block.name) && block.input && (block.input.content || block.input.newContent) && (
             <div className="mb-3 -mx-4">
               <CodePreviewView
                 filePath={(block.input.file_path || block.input.path || block.input.filePath) as string}

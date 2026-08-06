@@ -129,7 +129,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
 
   const updateImmersive = (path: string, value: any) => {
     setDraft((prev) => {
-      const immersive = { ...prev.immersive, enabled: prev.immersive?.enabled ?? false };
+      const immersive = structuredClone(prev.immersive ?? {});
       const parts = path.split('.');
       let obj: any = immersive;
       for (let i = 0; i < parts.length - 1; i++) {
@@ -640,7 +640,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                         const parts = key.split('.');
                         let val: any = draft.immersive;
                         for (const p of parts) { val = val?.[p]; }
-                        const numVal = typeof val === 'number' ? val * (key.includes('opacity') || key.includes('webTexture') || key.includes('blueAccent') ? 100 : 1) : 0;
+                        const numVal = typeof val === 'number' ? val * (key.toLowerCase().includes('opacity') || key.toLowerCase().includes('webtexture') || key.toLowerCase().includes('blueaccent') ? 100 : 1) : 0;
                         return (
                           <div key={key} className="flex items-center gap-3">
                             <span className="text-xs text-text-secondary w-24 shrink-0">{label}</span>
@@ -651,7 +651,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                               value={numVal}
                               onChange={(e) => {
                                 const raw = Number(e.target.value);
-                                const normalized = key.includes('opacity') || key.includes('webTexture') || key.includes('blueAccent') ? raw / 100 : raw;
+                                const normalized = key.toLowerCase().includes('opacity') || key.toLowerCase().includes('webtexture') || key.toLowerCase().includes('blueaccent') ? raw / 100 : raw;
                                 updateImmersive(key, normalized);
                               }}
                               className="flex-1 h-1 bg-border rounded-full appearance-none cursor-pointer accent-primary"

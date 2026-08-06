@@ -42,20 +42,25 @@ export const CodePreviewView = memo(function CodePreviewView({
 }: CodePreviewViewProps) {
   const { t } = useTranslation('chat');
 
+  // compactor 压缩后 input 被置为 {}，filePath/content 可能均为 undefined。
+  // 在各 useMemo 内守卫，避免 getLanguageFromPath(undefined) 触发
+  // `Cannot read properties of undefined (reading 'split')`（scroll 重渲染路径）。
+  // 不用提前 return：会违反 React Hooks 顺序规则（条件性跳过后续 useMemo）。
+
   // 从文件路径推断语言
   const language = useMemo(() => {
-    const lang = getLanguageFromPath(filePath);
+    const lang = filePath ? getLanguageFromPath(filePath) : 'plaintext';
     return lang || 'plaintext';
   }, [filePath]);
 
   // 内容是否过大
   const isTooLarge = useMemo(() => {
-    return content.length > MAX_PREVIEW_CHARS;
+    return content ? content.length > MAX_PREVIEW_CHARS : false;
   }, [content]);
 
   // 内容行数是否过多（截断预览）
   const lineCount = useMemo(() => {
-    return content.split('\n').length;
+    return content ? content.split('\n').length : 0;
   }, [content]);
 
   const isTooManyLines = useMemo(() => {
@@ -64,6 +69,7 @@ export const CodePreviewView = memo(function CodePreviewView({
 
   // 语法高亮（仅当内容不过大时，过大时直接显示纯文本）
   const highlighted = useMemo(() => {
+    if (!content) return null;
     if (isTooLarge) return null;
     if (isTooManyLines) {
       // 行数过多时只对前 N 行做高亮
@@ -73,24 +79,27 @@ export const CodePreviewView = memo(function CodePreviewView({
     return highlightCode(content, language);
   }, [content, language, isTooLarge, isTooManyLines]);
 
-  // 文件名
-  const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  // 文件名（filePath 在渲染层守卫，避免 undefined.split）
+  const fileName = filePath ? (filePath.split(/[/\\]/).pop() || filePath) : '';
 
   const handleClick = () => {
     onOpenFile?.(filePath);
   };
 
-  if (!content) {
-    return null;
-  }
-
   // 纯文本内容（过大或行数过多时截断，避免 DOM 膨胀）
   const plainContent = useMemo(() => {
+    if (!content) return '';
     if (isTooLarge || isTooManyLines) {
       return content.split('\n').slice(0, MAX_PREVIEW_LINES).join('\n');
     }
     return content;
   }, [content, isTooLarge, isTooManyLines]);
+
+  // 无内容则不渲染（compactor 压缩态 input 为空对象）。所有 hooks 之后才 return，
+  // 避免违反 React Hooks 顺序规则。
+  if (!content) {
+    return null;
+  }
 
   return (
     <div className="overflow-hidden">

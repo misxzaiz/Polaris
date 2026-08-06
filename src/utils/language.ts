@@ -47,7 +47,8 @@ const EXTENSION_LANGUAGE_MAP: Record<string, string> = {
  * @param filePath 文件路径（如 "src/App.tsx"）
  * @returns highlight.js 语言名称，未知扩展名返回 'plaintext'
  */
-export function getLanguageFromPath(filePath: string): string {
+export function getLanguageFromPath(filePath: string | null | undefined): string {
+  if (!filePath) return 'plaintext'
   const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
   return EXTENSION_LANGUAGE_MAP[ext] ?? 'plaintext'
 }
