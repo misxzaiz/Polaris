@@ -104,12 +104,15 @@ export function UnifiedSuggestion({
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 bg-background-surface border border-border rounded-lg shadow-lg max-h-80 overflow-auto"
+      className="fixed z-50 border border-border rounded-lg shadow-lg max-h-80 overflow-auto"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,
         minWidth: '280px',
         maxWidth: '450px',
+        // 显式不透明：直接用 --c-bg-elevated，不复 --window-opacity，
+        // 避免沉浸/窗口透明模式把浮层背景拉低导致下层内容透出
+        backgroundColor: 'rgb(var(--c-bg-elevated))',
       }}
     >
       {/* 工作区分组 */}

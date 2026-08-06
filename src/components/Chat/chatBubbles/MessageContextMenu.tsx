@@ -164,8 +164,10 @@ export const MessageContextMenu = memo(function MessageContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-[10000] bg-background-surface border border-border rounded-lg shadow-lg py-1 min-w-[180px]"
-      style={{ left: x, top: y }}
+      className="fixed z-[10000] border border-border rounded-lg shadow-lg py-1 min-w-[180px]"
+      // 显式不透明：直接用 --c-bg-elevated，不复 --window-opacity，
+      // 避免沉浸/窗口透明模式把浮层背景拉低导致下层内容透出
+      style={{ left: x, top: y, backgroundColor: 'rgb(var(--c-bg-elevated))' }}
     >
       {/* 跳转到消息开头 */}
       {hasJumpActions && (
