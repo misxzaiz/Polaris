@@ -6,7 +6,7 @@ import { memo, useState, useEffect, useMemo, useCallback } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ChevronRight, ChevronUp, FileText, FilePlus } from 'lucide-react';
+import { ChevronRight, ChevronUp, FileText, FilePlus, Brain } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { ProcessBlockCollapseMode } from '@/types';
 import type { CollapsibleBlockGroup } from './chatUtils/types';
@@ -207,9 +207,7 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
  * 展现形式：
  * 1. 汇总条（一行）：运行过程已折叠 [思考 1] [工具 3] [计划 1]
  * 2. 变更文件列表（始终可见，可点击跳转编辑器）
- * 3. 展开后过程块 50vh 滚动
- *
- * 结果块（text/artifact_preview/plugin_card）由上层渲染，在汇总条上方。
+ * 3. 展开后按类型分组紧凑列表 + 逐行展开
  */
 const ProcessBlockSummary = memo(function ProcessBlockSummary({
   processBlocks,
@@ -358,22 +356,130 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
         </div>
       )}
 
-      {/* 展开态：汇总条下方，全部块按原始顺序渲染，50vh 限制高度 + 滚动 */}
+      {/* 展开态：分组紧凑列表 + 逐行展开 */}
       {expanded && (
-        <div
-          className="flex flex-col gap-1.5 p-2 border border-border rounded-md bg-background-base"
-          style={{ maxHeight: '50vh', overflowY: 'auto' }}
-        >
-          {processBlocks.map((block, idx) => (
-            <div key={`process-${idx}`} style={{ flexShrink: 0 }}>
-              {renderContentBlock(block, false)}
-            </div>
-          ))}
-        </div>
+        <ProcessBlockGroupedList processBlocks={processBlocks} />
       )}
     </>
   );
 });
+
+/**
+ * 过程块全部展开列表组件
+ * - 按类型分组（思考 / 工具调用 / 计划 / 权限…）
+ * - 所有块直接完整渲染，限高滚动
+ */
+const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
+  processBlocks,
+}: {
+  processBlocks: ContentBlock[];
+}) {
+  const { t } = useTranslation('chat');
+
+  // 按类型分组
+  const groups = useMemo(() => {
+    const map = new Map<string, { type: string; label: string; blocks: ContentBlock[] }>();
+    for (let i = 0; i < processBlocks.length; i++) {
+      const block = processBlocks[i];
+      const groupKey = getBlockGroupKey(block);
+      if (!map.has(groupKey)) {
+        map.set(groupKey, { type: groupKey, label: getBlockGroupLabel(groupKey, t), blocks: [] });
+      }
+      map.get(groupKey)!.blocks.push(block);
+    }
+    // 按出现的顺序排序
+    const order: string[] = [];
+    for (const b of processBlocks) {
+      const key = getBlockGroupKey(b);
+      if (!order.includes(key)) order.push(key);
+    }
+    return order.map(k => map.get(k)!).filter(Boolean);
+  }, [processBlocks, t]);
+
+  return (
+    <div
+      className="flex flex-col border border-border rounded-md overflow-hidden"
+      style={{ maxHeight: '60vh', overflowY: 'auto' }}
+    >
+      {/* 顶部工具条 */}
+      <div className="flex items-center gap-2 px-3 py-1.5 bg-background-surface border-b border-border sticky top-0 z-10">
+        <span className="text-xs font-medium text-text-secondary">
+          {t('summary.toolbarTitle')}
+        </span>
+        <span className="text-[11px] text-text-muted">
+          {t('summary.toolbarBlockCount', { count: processBlocks.length })}
+        </span>
+      </div>
+
+      {/* 分组列表：全部展开，直接渲染完整卡片 */}
+      {groups.map(group => (
+        <div key={group.type} className="flex flex-col">
+          {/* 分组 header */}
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-background-base border-b border-border sticky top-8 z-10">
+            {getGroupIcon(group.type)}
+            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
+              {group.label}
+            </span>
+            <span className="text-[10px] text-text-muted/60 font-normal">
+              {group.blocks.length}
+            </span>
+          </div>
+
+          {/* 全部展开，直接渲染每个块的原始内容 */}
+          {group.blocks.map((block, idx) => (
+            <div key={idx} className="border-b border-border">
+              {renderContentBlock(block, false)}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+});
+
+/** 获取块的分组 key */
+function getBlockGroupKey(block: ContentBlock): string {
+  switch (block.type) {
+    case 'thinking': return 'thinking';
+    case 'tool_call': return 'tools';
+    case 'plan_mode': return 'plan';
+    case 'permission_request': return 'permission';
+    case 'agent_run': return 'agent';
+    case 'question': return 'question';
+    case 'context_compact': return 'compact';
+    case 'tool_group': return 'tools';
+    case 'text': return 'text';
+    default: return 'other';
+  }
+}
+
+/** 获取分组显示标签 */
+function getBlockGroupLabel(key: string, t: (key: string) => string): string {
+  switch (key) {
+    case 'thinking': return t('thinking.title');
+    case 'tools': return 'Tools';
+    case 'plan': return 'Plan';
+    case 'permission': return 'Permission';
+    case 'agent': return 'Agent';
+    case 'question': return 'Question';
+    case 'compact': return 'Compact';
+    case 'text': return 'Text';
+    default: return 'Other';
+  }
+}
+
+/** 获取分组图标 */
+function getGroupIcon(key: string): React.ReactNode {
+  const className = 'w-3.5 h-3.5';
+  switch (key) {
+    case 'thinking':
+      return <Brain className={clsx(className, 'text-purple-400')} />;
+    case 'tools':
+      return <FileText className={clsx(className, 'text-blue-400')} />;
+    default:
+      return <FileText className={clsx(className, 'text-text-muted')} />;
+  }
+}
 
 /**
  * 识别连续的可折叠块分组（thinking + tool_call）

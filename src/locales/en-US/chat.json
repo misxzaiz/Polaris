@@ -242,7 +242,9 @@
     "fileChangesCount": "{{count}} files",
     "fileCreated": "Created",
     "fileModified": "Modified",
-    "fileDeleted": "Deleted"
+    "fileDeleted": "Deleted",
+    "toolbarTitle": "Process",
+    "toolbarBlockCount": "{{count}} blocks"
   },
   "thinking": {
     "title": "Thinking",

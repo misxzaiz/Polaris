@@ -241,7 +241,9 @@
     "fileChangesCount": "{{count}} 个文件",
     "fileCreated": "新建",
     "fileModified": "已修改",
-    "fileDeleted": "已删除"
+    "fileDeleted": "已删除",
+    "toolbarTitle": "运行过程",
+    "toolbarBlockCount": "{{count}} 个块"
   },
   "thinking": {
     "title": "思考",
