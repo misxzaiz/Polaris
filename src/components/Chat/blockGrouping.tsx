@@ -358,9 +358,12 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
         </div>
       )}
 
-      {/* 展开态：汇总条下方，全部块按原始顺序渲染，不限制高度 */}
+      {/* 展开态：汇总条下方，全部块按原始顺序渲染，50vh 限制高度 + 滚动 */}
       {expanded && (
-        <div className="flex flex-col gap-1.5 p-2 border border-border rounded-md bg-background-base">
+        <div
+          className="flex flex-col gap-1.5 p-2 border border-border rounded-md bg-background-base"
+          style={{ maxHeight: '50vh', overflowY: 'auto' }}
+        >
           {processBlocks.map((block, idx) => (
             <div key={`process-${idx}`} style={{ flexShrink: 0 }}>
               {renderContentBlock(block, false)}

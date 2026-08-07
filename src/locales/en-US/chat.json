@@ -229,7 +229,6 @@
   },
   "summary": {
     "collapsedLabel": "Process collapsed",
-    "expandToView": "Expand to view",
     "chipThinking": "{{count}} thinking",
     "chipText": "{{count}} intermediate",
     "chipTool": "{{count}} tools",

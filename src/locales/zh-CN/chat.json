@@ -228,7 +228,6 @@
   },
   "summary": {
     "collapsedLabel": "运行过程已折叠",
-    "expandToView": "展开查看全部",
     "chipThinking": "思考 {{count}}",
     "chipText": "中间文本 {{count}}",
     "chipTool": "工具 {{count}}",
