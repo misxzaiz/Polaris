@@ -32,6 +32,8 @@ interface CodePreviewViewProps {
   onOpenFile?: (path: string) => void;
   /** 最大高度 */
   maxHeight?: string;
+  /** 是否隐藏头部（由外部行提供文件名时使用） */
+  noHeader?: boolean;
 }
 
 export const CodePreviewView = memo(function CodePreviewView({
@@ -39,6 +41,7 @@ export const CodePreviewView = memo(function CodePreviewView({
   content,
   onOpenFile,
   maxHeight = '240px',
+  noHeader = false,
 }: CodePreviewViewProps) {
   const { t } = useTranslation('chat');
 
@@ -103,23 +106,25 @@ export const CodePreviewView = memo(function CodePreviewView({
 
   return (
     <div className="overflow-hidden">
-      {/* 头部：文件路径 + 语言标签 */}
-      <div
-        className={clsx(
-          'flex items-center gap-2 px-3 py-1.5 bg-background-surface',
-          'cursor-pointer hover:bg-background-hover transition-colors text-xs select-none',
-        )}
-        onClick={handleClick}
-        title={filePath}
-      >
-        <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
-        <span className="text-primary hover:underline truncate flex-1 min-w-0">
-          {fileName}
-        </span>
-        <span className="text-[10px] px-1.5 py-0.5 rounded bg-background-secondary text-text-tertiary shrink-0">
-          {language}
-        </span>
-      </div>
+      {/* 头部：文件路径 + 语言标签（noHeader 时跳过） */}
+      {!noHeader && (
+        <div
+          className={clsx(
+            'flex items-center gap-2 px-3 py-1.5 bg-background-surface',
+            'cursor-pointer hover:bg-background-hover transition-colors text-xs select-none',
+          )}
+          onClick={handleClick}
+          title={filePath}
+        >
+          <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="text-primary hover:underline truncate flex-1 min-w-0">
+            {fileName}
+          </span>
+          <span className="text-[10px] px-1.5 py-0.5 rounded bg-background-secondary text-text-tertiary shrink-0">
+            {language}
+          </span>
+        </div>
+      )}
 
       {/* 代码内容：简洁 pre/code，无工具栏/行号/折叠 */}
       <div

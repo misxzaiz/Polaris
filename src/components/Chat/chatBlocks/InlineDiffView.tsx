@@ -44,6 +44,8 @@ interface InlineDiffViewProps {
   onOpenFile?: (path: string) => void;
   /** 最大高度 */
   maxHeight?: string;
+  /** 是否隐藏头部（由外部行提供文件名/统计时使用） */
+  noHeader?: boolean;
 }
 
 interface DiffLineDisplay {
@@ -105,6 +107,7 @@ export const InlineDiffView = memo(function InlineDiffView({
   newContent,
   onOpenFile,
   maxHeight = '240px',
+  noHeader = false,
 }: InlineDiffViewProps) {
   const { t } = useTranslation('chat');
 
@@ -160,24 +163,26 @@ export const InlineDiffView = memo(function InlineDiffView({
 
   return (
     <div className="overflow-hidden">
-      {/* 头部：文件路径 + 统计 */}
-      <div
-        className="flex items-center gap-2 px-3 py-1.5 bg-background-surface cursor-pointer hover:bg-background-hover transition-colors text-xs select-none"
-        onClick={handleClick}
-        title={filePath}
-      >
-        <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
-        <span className="text-primary hover:underline truncate flex-1 min-w-0">
-          {fileName}
-        </span>
-        {!isTooLarge && (stats.added > 0 || stats.removed > 0) && (
-          <span className="flex items-center gap-1.5 shrink-0 tabular-nums">
-            <span className="text-success">+{stats.added}</span>
-            <span className="text-error">−{stats.removed}</span>
+      {/* 头部：文件路径 + 统计（noHeader 时跳过） */}
+      {!noHeader && (
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 bg-background-surface cursor-pointer hover:bg-background-hover transition-colors text-xs select-none"
+          onClick={handleClick}
+          title={filePath}
+        >
+          <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
+          <span className="text-primary hover:underline truncate flex-1 min-w-0">
+            {fileName}
           </span>
-        )}
-        <ChevronRight className="w-3 h-3 text-text-muted" />
-      </div>
+          {!isTooLarge && (stats.added > 0 || stats.removed > 0) && (
+            <span className="flex items-center gap-1.5 shrink-0 tabular-nums">
+              <span className="text-success">+{stats.added}</span>
+              <span className="text-error">−{stats.removed}</span>
+            </span>
+          )}
+          <ChevronRight className="w-3 h-3 text-text-muted" />
+        </div>
+      )}
 
       {/* Diff 内容 */}
       <div
