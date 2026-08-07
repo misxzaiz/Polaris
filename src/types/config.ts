@@ -22,6 +22,9 @@ export type ChatDisplayDensity = 'compact' | 'comfortable' | 'spacious'
 /** 对话字体族 */
 export type ChatDisplayFontFamily = 'system' | 'serif' | 'mono'
 
+/** 过程块折叠模式 */
+export type ProcessBlockCollapseMode = 'auto' | 'legacy'
+
 /** AI 对话窗口显示设置 */
 export interface ChatDisplaySettings {
   /** 正文字号 (px) */
@@ -40,6 +43,8 @@ export interface ChatDisplaySettings {
   inputFontSize?: number;
   /** 对话字体族 */
   fontFamily: ChatDisplayFontFamily;
+  /** 过程块折叠模式：'auto' 折叠为分段汇总条，'legacy' 使用旧版阈值折叠 */
+  processBlockCollapse?: ProcessBlockCollapseMode;
 }
 
 export const DEFAULT_CHAT_DISPLAY_SETTINGS: ChatDisplaySettings = {
@@ -50,6 +55,7 @@ export const DEFAULT_CHAT_DISPLAY_SETTINGS: ChatDisplaySettings = {
   contentWidth: 78,
   codeFontSize: 13,
   fontFamily: 'system',
+  processBlockCollapse: 'auto',
 }
 
 const CHAT_DISPLAY_FONT_FAMILIES: Record<ChatDisplayFontFamily, string> = {
@@ -110,6 +116,7 @@ export function normalizeChatDisplaySettings(settings?: Partial<ChatDisplaySetti
       ? undefined
       : clampNumber(settings.inputFontSize, 12, 20, DEFAULT_CHAT_DISPLAY_SETTINGS.fontSize),
     fontFamily,
+    processBlockCollapse: settings?.processBlockCollapse ?? DEFAULT_CHAT_DISPLAY_SETTINGS.processBlockCollapse,
   }
 }
 

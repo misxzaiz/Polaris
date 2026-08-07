@@ -8,9 +8,11 @@ import { memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExterna
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { useConfigStore } from '@/stores/configStore';
 import { renderChatMessage } from './EnhancedChatMessages';
 import type { MessageScrollActions, MessageActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
+import type { ProcessBlockCollapseMode } from '@/types';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
   findCurrentRoundIndexForRange,
@@ -107,6 +109,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const autoScrollRef = useRef(true);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+  const collapseMode = useConfigStore((s) => s.config?.chatDisplay?.processBlockCollapse ?? 'auto');
 
   // 直接订阅特定 session store 的状态
   const messages = useSessionStoreSubscription(
@@ -264,7 +267,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           style={{ height: '100%' }}
           data={displayMessages}
           itemContent={(index, item) => {
-            return renderChatMessage(item, index, scrollActions, messageActions);
+            return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
           }}
           components={{
             EmptyPlaceholder: () => null,

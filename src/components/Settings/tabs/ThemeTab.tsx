@@ -294,6 +294,22 @@ export function ThemeTab({ config, onConfigChange, loading }: ThemeTabProps) {
             />
           </div>
 
+          {/* 过程块折叠模式 */}
+          <div className="flex items-center justify-between gap-4 pt-1">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm text-text-primary">{t('chatDisplay.processBlockCollapse')}</div>
+              <div className="text-xs text-text-secondary">{t('chatDisplay.processBlockCollapseHint')}</div>
+            </div>
+            <SegmentedButton<'auto' | 'legacy'>
+              value={chatDisplay.processBlockCollapse ?? 'auto'}
+              onChange={(mode) => updateChatDisplay({ processBlockCollapse: mode })}
+              options={[
+                { value: 'auto', label: t('chatDisplay.collapseAuto') },
+                { value: 'legacy', label: t('chatDisplay.collapseLegacy') },
+              ]}
+            />
+          </div>
+
           <div className="p-3 rounded-lg bg-background-base border border-border-subtle chat-display-root" style={getChatDisplayStyleVars(chatDisplay)}>
             <div className="text-xs font-medium text-text-secondary mb-2">{t('chatDisplay.preview')}</div>
             <div className="chat-user-message flex justify-end">

@@ -5,6 +5,7 @@
 import { memo, useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
+import type { ProcessBlockCollapseMode } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
@@ -17,6 +18,7 @@ import { useThemeStore } from '@/stores/themeStore';
 export const AssistantBubble = memo(function AssistantBubble({
   message,
   messageIndex,
+  collapseMode,
   onScrollToMessage,
   onScrollToTop,
   onScrollToBottom,
@@ -24,6 +26,7 @@ export const AssistantBubble = memo(function AssistantBubble({
 }: {
   message: AssistantChatMessage;
   messageIndex?: number;
+  collapseMode?: ProcessBlockCollapseMode;
   onScrollToMessage?: (index: number) => void;
   onScrollToTop?: () => void;
   onScrollToBottom?: () => void;
@@ -136,7 +139,7 @@ export const AssistantBubble = memo(function AssistantBubble({
           {/* 渲染内容块（支持工具和思考块折叠聚合） */}
           {hasBlocks ? (
             <div>
-              {renderBlocksWithGrouping(message.blocks, message.isStreaming)}
+              {renderBlocksWithGrouping(message.blocks, message.isStreaming, collapseMode)}
             </div>
           ) : message.content ? (
             // 兼容旧格式（content 字符串）
@@ -187,6 +190,7 @@ export const AssistantBubble = memo(function AssistantBubble({
   if (prevProps.message.id !== nextProps.message.id) return false;
   if (prevProps.message.isStreaming !== nextProps.message.isStreaming) return false;
   if (prevProps.messageIndex !== nextProps.messageIndex) return false;
+  if (prevProps.collapseMode !== nextProps.collapseMode) return false;
 
   // blocks 数量不同，需要更新
   if (prevBlocks.length !== nextBlocks.length) return false;

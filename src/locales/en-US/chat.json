@@ -227,6 +227,24 @@
     "previewTruncatedByLines": "{{count}} more lines not shown",
     "openInEditor": "Open in editor"
   },
+  "summary": {
+    "collapsedLabel": "Process collapsed",
+    "expandToView": "Expand to view",
+    "chipThinking": "{{count}} thinking",
+    "chipText": "{{count}} intermediate",
+    "chipTool": "{{count}} tools",
+    "chipPlan": "{{count}} plans",
+    "chipPermission": "{{count}} permissions",
+    "chipAgent": "{{count}} agents",
+    "chipQuestion": "{{count}} questions",
+    "chipCompact": "{{count}} compactions",
+    "chipFile": "{{count}} file changes",
+    "fileChangesTitle": "Changed Files",
+    "fileChangesCount": "{{count}} files",
+    "fileCreated": "Created",
+    "fileModified": "Modified",
+    "fileDeleted": "Deleted"
+  },
   "thinking": {
     "title": "Thinking",
     "streaming": "Thinking...",

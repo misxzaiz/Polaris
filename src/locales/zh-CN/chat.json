@@ -226,6 +226,24 @@
     "previewTruncatedByLines": "还有 {{count}} 行未显示",
     "openInEditor": "在编辑器中打开"
   },
+  "summary": {
+    "collapsedLabel": "运行过程已折叠",
+    "expandToView": "展开查看全部",
+    "chipThinking": "思考 {{count}}",
+    "chipText": "中间文本 {{count}}",
+    "chipTool": "工具 {{count}}",
+    "chipPlan": "计划 {{count}}",
+    "chipPermission": "权限 {{count}}",
+    "chipAgent": "代理 {{count}}",
+    "chipQuestion": "提问 {{count}}",
+    "chipCompact": "压缩 {{count}}",
+    "chipFile": "{{count}} 个文件变更",
+    "fileChangesTitle": "变更文件",
+    "fileChangesCount": "{{count}} 个文件",
+    "fileCreated": "新建",
+    "fileModified": "已修改",
+    "fileDeleted": "已删除"
+  },
   "thinking": {
     "title": "思考",
     "streaming": "思考中...",

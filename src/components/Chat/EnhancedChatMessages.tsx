@@ -54,6 +54,7 @@ interface EnhancedChatMessagesProps {
 export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage }: EnhancedChatMessagesProps = {}) {
   const chatDisplay = useConfigStore((state) => state.config?.chatDisplay);
   const chatDisplayStyle = useMemo(() => getChatDisplayStyleVars(chatDisplay), [chatDisplay]);
+  const collapseMode = chatDisplay?.processBlockCollapse ?? 'auto';
 
   // 根据是否提供 sessionId 选择使用对应的 hooks
   const activeSessionData = useActiveSessionMessages();
@@ -339,7 +340,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               style={{ height: '100%' }}
               data={displayMessages}
               itemContent={(index, item) => {
-                return renderChatMessage(item, index, scrollActions, messageActions);
+                return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
               }}
               components={{
                 EmptyPlaceholder: () => null,
