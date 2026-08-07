@@ -498,7 +498,7 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
         </div>
       )}
 
-      {/* 展开态：分组紧凑列表 + 逐行展开 */}
+      {/* 展开态：过程块分组列表 */}
       {expanded && (
         <ProcessBlockGroupedList processBlocks={processBlocks} />
       )}
