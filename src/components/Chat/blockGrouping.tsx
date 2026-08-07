@@ -370,9 +370,9 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
         )}
       </div>
 
-      {/* 变更文件列表（始终可见，可展开查看具体内容） */}
+      {/* 变更文件列表（始终可见，可展开查看具体内容，超长时滚动） */}
       {fileChanges.length > 0 && (
-        <div className="border border-border rounded-lg overflow-hidden bg-background-surface">
+        <div className="border border-border rounded-lg bg-background-surface" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
           <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary border-b border-border bg-background-elevated">
             {t('summary.fileChangesTitle')}
             <span className="ml-auto text-[11px] font-normal text-text-muted">
