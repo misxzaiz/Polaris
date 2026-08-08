@@ -28,6 +28,7 @@ import type {
 } from '@/types'
 import { OFFICIAL_API_PROFILE, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine, ALL_ENGINES } from '@/types/modelProfile'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
+import { getEngineDisplayName } from '@/utils/engineDisplay'
 import {
   testModelProfileConnection,
   fetchModelsForProfile,
@@ -783,7 +784,9 @@ function ProfileEditorModal({
                         : 'border-border bg-background-surface text-text-tertiary hover:border-primary/30'
                     }`}
                   >
-                    {t(`modelProfile.targetEngine.${engineOption}`)}
+                    {ALL_ENGINES.includes(engineOption)
+                      ? t(`modelProfile.targetEngine.${engineOption}`)
+                      : getEngineDisplayName(engineOption)}
                   </button>
                 ))}
               </div>
@@ -1165,7 +1168,11 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
                   : 'border-border bg-surface text-text-tertiary hover:border-primary/30'
               }`}
             >
-              {t(`modelProfile.filter.${f}`)}
+              {f === 'all'
+                ? t('modelProfile.filter.all')
+                : ALL_ENGINES.includes(f)
+                  ? t(`modelProfile.filter.${f}`)
+                  : getEngineDisplayName(f)}
             </button>
           ))}
         </div>
