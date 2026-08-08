@@ -62,7 +62,17 @@ pub async fn handle_list_sessions(
             .await
             .map_err(|e| WebError::Internal(e.to_string()))??
         }
-        _ => unreachable!(),
+        // 其他引擎（含插件引擎）暂不支持 Web API 会话历史查询
+        _ => {
+            // 返回空结果
+            return Ok(Json(crate::ai::history::PagedResult::<crate::ai::history::SessionMeta> {
+                items: Vec::new(),
+                total: 0,
+                page: 1,
+                page_size: pagination.page_size,
+                total_pages: 0,
+            }))
+        }
     };
     Ok(Json(result))
 }
@@ -132,7 +142,8 @@ pub async fn handle_delete_session(
             .await
             .map_err(|e| WebError::Internal(e.to_string()))??;
         }
-        _ => unreachable!(),
+        // 其他引擎（含插件引擎）暂不支持 Web API 会话删除
+        _ => {}
     }
     Ok(ok_response())
 }
