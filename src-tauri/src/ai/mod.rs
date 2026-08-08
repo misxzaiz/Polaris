@@ -15,6 +15,7 @@ pub mod engine;
 pub mod history;
 pub mod history_claude;
 pub mod history_codex;
+pub mod history_plugin;
 pub mod event_parser;
 pub mod launcher;
 
@@ -35,3 +36,4 @@ pub use history::{
 };
 pub use history_claude::ClaudeHistoryProvider;
 pub use history_codex::CodexHistoryProvider;
+pub use history_plugin::PluginHistoryProvider;

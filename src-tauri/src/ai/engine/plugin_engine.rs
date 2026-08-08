@@ -16,11 +16,10 @@ use std::process::{Child, Command, Stdio};
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
     AIEngine, EngineId, EngineMetadata, EngineDistribution, EngineCapabilities,
-    EnvKeyMapping, EngineCliConfig, RpcProtocol, PluginEngineConfig, PluginEngineCapabilities,
-    SessionOptions, ImageAttachment,
+    EnvKeyMapping, PluginEngineConfig, PluginEngineCapabilities,
+    SessionOptions,
 };
 use crate::error::{AppError, Result};
-use crate::models::config::Config;
 use crate::models::AIEvent;
 use crate::services::data_root::data_root;
 

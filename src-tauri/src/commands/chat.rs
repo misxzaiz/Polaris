@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ai::{
-    ClaudeHistoryProvider, CodexHistoryProvider, HistoryMessage, SessionHistoryProvider,
+    ClaudeHistoryProvider, CodexHistoryProvider, PluginHistoryProvider,
+    HistoryMessage, SessionHistoryProvider,
     SessionMeta, launcher::{self, McpSessionConfig, McpConfigParams},
 };
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
@@ -815,13 +816,11 @@ pub async fn start_chat_inner(
     };
 
     let engine = match &options.engine_id {
-        Some(id) => EngineId::parse(id).unwrap_or_else(|| {
-            tracing::warn!(
-                "[start_chat_inner] Unrecognized engine_id '{}', falling back to configured default",
-                id
-            );
-            default_engine()
-        }),
+        Some(id) => {
+            let parsed = EngineId::parse_any(id);
+            tracing::info!("[start_chat_inner] 解析引擎: '{}' -> {:?}", id, parsed);
+            parsed
+        }
         None => default_engine(),
     };
 
@@ -1017,7 +1016,7 @@ pub async fn continue_chat_inner(
     let engine = options
         .engine_id
         .as_ref()
-        .and_then(|id| EngineId::parse(id))
+        .map(|id| EngineId::parse_any(id))
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
@@ -1219,7 +1218,7 @@ pub async fn interrupt_chat_inner(
         session_id,
         engine_id
     );
-    let engine = engine_id.as_ref().and_then(|id| EngineId::parse(id));
+    let engine = engine_id.as_ref().map(|id| EngineId::parse_any(id));
     let mut registry = state.engine_registry.lock().await;
 
     // 优先按前端给出的 engine_id 路由;失败时回退遍历所有引擎.
@@ -1414,10 +1413,11 @@ pub async fn list_sessions(
             let provider = CodexHistoryProvider::new(config);
             provider.list_sessions(work_dir.as_deref(), pagination)
         }
-        _ => Err(AppError::ValidationError(format!(
-            "不支持的引擎: {}",
-            engine_id
-        ))),
+        engine => {
+            // 插件引擎走通用历史提供者
+            let provider = PluginHistoryProvider::new(engine, engine);
+            provider.list_sessions(work_dir.as_deref(), pagination)
+        }
     }
 }
 
@@ -1454,10 +1454,10 @@ pub async fn get_session_history(
             let provider = CodexHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
-        _ => Err(AppError::ValidationError(format!(
-            "不支持的引擎: {}",
-            engine_id
-        ))),
+        engine => {
+            let provider = PluginHistoryProvider::new(engine, engine);
+            provider.get_session_history(&session_id, pagination)
+        }
     }
 }
 
@@ -1486,10 +1486,10 @@ pub async fn delete_session(
             let provider = CodexHistoryProvider::new(config);
             provider.delete_session(&session_id)
         }
-        _ => Err(AppError::ValidationError(format!(
-            "不支持的引擎: {}",
-            engine_id
-        ))),
+        engine => {
+            let provider = PluginHistoryProvider::new(engine, engine);
+            provider.delete_session(&session_id)
+        }
     }
 }
 

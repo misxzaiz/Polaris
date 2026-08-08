@@ -56,7 +56,7 @@ impl Serialize for EngineId {
 impl<'de> Deserialize<'de> for EngineId {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
         let s = String::deserialize(deserializer)?;
-        Ok(EngineId::parse(&s).unwrap_or(EngineId::Custom(s)))
+        Ok(EngineId::parse_any(&s))
     }
 }
 
@@ -83,26 +83,31 @@ impl EngineId {
         self.as_str()
     }
 
-    /// 从字符串解析引擎 ID。
+    /// 从字符串解析已知引擎 ID。
     ///
-    /// 先匹配已知引擎别名，再尝试作为动态引擎 ID。
+    /// 仅识别已知引擎别名（claude/codex/pi/simple-ai），未知字符串返回 None。
+    /// 想要接受动态（Custom）引擎的场景请使用 `parse_any`。
     /// 解析不区分大小写，兼容历史格式。
     pub fn parse(s: &str) -> Option<Self> {
-        // 处理 Custom 内部携带的字符串（deserialize 时避免二次包装）
-        if let Some(inner) = s.strip_prefix("Custom(") {
-            if let Some(rest) = inner.strip_suffix(')') {
-                return Some(EngineId::Custom(rest.to_string()));
-            }
-        }
         let lower = s.to_lowercase();
-        // 先匹配已知引擎别名
-        for known in Self::known() {
-            if known.aliases().contains(&lower.as_str()) {
-                return Some(known.clone());
+        Self::known().iter()
+            .find(|e| e.aliases().contains(&lower.as_str()))
+            .cloned()
+    }
+
+    /// 从字符串解析引擎 ID，未知字符串作为 Custom 引擎。
+    ///
+    /// 用于序列化反序列化及前端传入的引擎 ID（信任前端已通过 registry 校验）。
+    pub fn parse_any(s: &str) -> Self {
+        Self::parse(s).unwrap_or_else(|| {
+            // 处理 Custom 内部携带的字符串（反序列化旧数据时避免二次包装）
+            if let Some(inner) = s.strip_prefix("Custom(") {
+                if let Some(rest) = inner.strip_suffix(')') {
+                    return EngineId::Custom(rest.to_string());
+                }
             }
-        }
-        // 未匹配已知引擎则作为动态引擎 ID
-        Some(EngineId::Custom(s.to_string()))
+            EngineId::Custom(s.to_string())
+        })
     }
 
     /// 返回已知引擎数组（不含 Custom）
