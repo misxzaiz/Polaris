@@ -126,6 +126,12 @@ pub struct PluginManifestContributes {
     pub services: Vec<PluginServiceManifestContribution>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub panel: Option<PluginPanelContribution>,
+    /// 插件声明的引擎
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub engines: Vec<PluginEngineManifestContribution>,
+    /// 插件声明的聊天卡片
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub chat_cards: Vec<PluginChatCardManifestContribution>,
 }
 
 /// 插件面板贡献
@@ -197,6 +203,60 @@ fn default_true() -> bool {
 
 fn default_max_restarts() -> u32 {
     3
+}
+
+/// 插件引擎 contribution
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineManifestContribution {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub cli: PluginEngineCliContribution,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub capabilities: Option<PluginEngineCapabilitiesContribution>,
+}
+
+/// 插件引擎 CLI 配置
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineCliContribution {
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_guide: Option<String>,
+}
+
+/// 插件引擎能力
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineCapabilitiesContribution {
+    #[serde(default)]
+    pub tools: bool,
+    #[serde(default)]
+    pub streaming: bool,
+    #[serde(default)]
+    pub interrupt: bool,
+    #[serde(default)]
+    pub resume: bool,
+}
+
+/// 插件聊天卡片 contribution
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginChatCardManifestContribution {
+    pub id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub entry: Option<String>,
+    pub mcp_server_id: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tools: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
 }
 
 /// 插件权限声明
