@@ -4,6 +4,10 @@
  * 注意：Web Speech API 要求安全上下文（HTTPS 或 localhost），
  * 在非安全 HTTP 环境下浏览器会拒绝麦克风权限。
  *
+ * Android WebView 回退：当 Web Speech API 不可用时，自动检测
+ * 原生 SpeechBridge（@JavascriptInterface）并使用原生识别。
+ * 接口语义对齐，下游无感。
+ *
  * 内部机制：
  *   - 期望状态机：desiredState（唯一事实源）决定 start/abort 调度
  *   - 会话代际：epoch 自增，旧会话事件（onstart/onend/onerror）比对 epoch 后丢弃
@@ -17,6 +21,7 @@ import type {
   SpeechRecognitionError as AppSpeechError
 } from '@/types/speech';
 import { createLogger } from '@/utils/logger';
+import { nativeSpeechService } from './nativeSpeechService';
 
 const log = createLogger('SpeechService');
 
@@ -112,6 +117,17 @@ export class SpeechService {
   private readonly RESTART_THRESHOLD = 3;
   private readonly RESTART_WINDOW_MS = 2000;
 
+  /** 是否使用原生桥接模式（Android WebView 回退） */
+  private usingNative = false;
+
+  /** 原生桥接当前会话的识别回调（nativeSpeechService 注入对象的引用） */
+  private nativeCallbacks: {
+    onStart: () => void;
+    onResult: (transcript: string, isFinal: boolean) => void;
+    onError: (code: string, message: string) => void;
+    onEnd: () => void;
+  } | null = null;
+
   // ========================================
   // 回调函数
   // ========================================
@@ -125,6 +141,8 @@ export class SpeechService {
 
   /**
    * 检查浏览器是否支持语音识别
+   *
+   * 检测顺序：Web Speech API → 原生桥接（Android WebView 回退）
    */
   private checkSupport(): void {
     const win = window as WindowWithSpeech;
@@ -132,10 +150,16 @@ export class SpeechService {
 
     if (SpeechRecognitionAPI) {
       this.isSupported = true;
+      this.usingNative = false;
       log.info('Web Speech API 可用');
+    } else if (nativeSpeechService.supported) {
+      this.isSupported = true;
+      this.usingNative = true;
+      log.info('Web Speech API 不可用，回退到原生语音识别桥接');
     } else {
       this.isSupported = false;
-      log.warn('Web Speech API 不可用');
+      this.usingNative = false;
+      log.warn('Web Speech API 不可用，原生语音桥接也不可用');
     }
 
     // 安全上下文检测：非 HTTPS / 非 localhost 下语音功能受限
@@ -195,6 +219,12 @@ export class SpeechService {
    * 初始化语音识别
    */
   private initRecognition(): void {
+    if (this.usingNative) {
+      // 原生桥接模式不需要创建 Web Speech API 实例
+      log.info('原生桥接模式，跳过 Web Speech 初始化');
+      return;
+    }
+
     const win = window as WindowWithSpeech;
     const SpeechRecognitionAPI = win.SpeechRecognition || win.webkitSpeechRecognition;
 
@@ -249,8 +279,15 @@ export class SpeechService {
    *
    * Web Speech 的 start() 在已启动/启动中再次调用会抛 InvalidStateError。
    * runningRef 只能在 onstart 后置 true，因此额外用 startingRef 覆盖过渡窗口。
+   *
+   * 原生桥接模式：委托 nativeSpeechService.start()，通过回调模拟 Web Speech 事件。
    */
   private startRecognition(): void {
+    if (this.usingNative) {
+      this.startNativeRecognition();
+      return;
+    }
+
     if (!this.recognition || this.runningRef || this.startingRef) return;
 
     try {
@@ -268,6 +305,90 @@ export class SpeechService {
   }
 
   /**
+   * 通过原生桥接启动识别
+   */
+  private startNativeRecognition(): void {
+    if (this.runningRef || this.startingRef) return;
+
+    this.startingRef = true;
+    const epoch = this.epoch;
+
+    this.nativeCallbacks = {
+      onStart: () => {
+        this.startingRef = false;
+        this.runningRef = true;
+
+        if (this.desiredState === 'paused' || this.desiredState === 'stopped') {
+          log.debug('原生桥接旧会话 onStart，丢弃');
+          return;
+        }
+
+        log.info('原生语音识别已启动');
+        this.onStatusChange?.('listening');
+      },
+      onResult: (transcript, isFinal) => {
+        if (this.epoch !== epoch) return; // 代际检查
+        log.debug('原生识别结果:', { transcript, isFinal });
+        this.onResult?.(transcript, isFinal);
+      },
+      onError: (code, message) => {
+        this.startingRef = false;
+        this.runningRef = false;
+
+        if (this.epoch !== epoch) return; // 代际检查
+
+        if (code === 'aborted') {
+          log.debug('原生桥接识别被中止（预期流程）');
+          return;
+        }
+
+        log.error(`原生语音识别错误: ${code}: ${message}`);
+
+        const errorMap: Record<string, AppSpeechError['type']> = {
+          'not-allowed': 'service-not-allowed',
+          'no-speech': 'no-speech',
+          'audio-capture': 'audio-capture',
+          'network': 'network',
+          'language-not-supported': 'language-not-supported',
+        };
+
+        this.onError?.({
+          type: errorMap[code] || 'unknown',
+          message: message || code,
+        });
+        this.onStatusChange?.('error');
+      },
+      onEnd: () => {
+        this.startingRef = false;
+        this.runningRef = false;
+
+        if (this.epoch !== epoch) return; // 代际检查
+
+        if (this.desiredState === 'listening') {
+          this.clearRestartTimer();
+
+          if (this.isRestartThrottled()) {
+            return;
+          }
+
+          this.restartTimer = setTimeout(() => {
+            this.clearRestartTimer();
+            if (this.desiredState === 'listening') {
+              log.info('原生桥接自动重启');
+              this.startNativeRecognition();
+            }
+          }, 100);
+        } else {
+          log.info('原生语音识别自然结束', { desiredState: this.desiredState });
+          this.onStatusChange?.('idle');
+        }
+      },
+    };
+
+    nativeSpeechService.start(this.config.language, this.nativeCallbacks);
+  }
+
+  /**
    * 调度调度：对比期望状态与实际运行状态，决定 start 或 abort
    *
    * 核心调和逻辑：
@@ -276,6 +397,15 @@ export class SpeechService {
    *   否则保持现状
    */
   private reconcile(): void {
+    if (this.usingNative) {
+      if (this.desiredState === 'listening' && !this.runningRef) {
+        this.startNativeRecognition();
+      } else if (this.desiredState !== 'listening' && (this.runningRef || this.startingRef)) {
+        this.abortNativeRecognition('状态调和中止原生语音识别');
+      }
+      return;
+    }
+
     if (!this.recognition) {
       if (this.desiredState === 'listening') {
         this.initRecognition();
@@ -296,6 +426,22 @@ export class SpeechService {
 
     try {
       this.recognition.abort();
+    } catch (e) {
+      log.debug(`${reason}失败`, { error: String(e) });
+    } finally {
+      this.startingRef = false;
+      this.runningRef = false;
+    }
+  }
+
+  /**
+   * 中止原生桥接识别
+   */
+  private abortNativeRecognition(reason: string): void {
+    if (!this.runningRef && !this.startingRef) return;
+
+    try {
+      nativeSpeechService.stop();
     } catch (e) {
       log.debug(`${reason}失败`, { error: String(e) });
     } finally {
@@ -439,6 +585,12 @@ export class SpeechService {
     this.epoch++;  // 代际失效旧会话事件
     this.clearRestartTimer();
 
+    if (this.usingNative) {
+      this.abortNativeRecognition('停止语音识别');
+      this.nativeCallbacks = null;
+      return;
+    }
+
     if (this.recognition) {
       if (this.runningRef || this.startingRef) {
         try {
@@ -458,6 +610,10 @@ export class SpeechService {
    * 直接 abort 底层实例（等价于 pause，但不改 desiredState，调用方慎用）
    */
   abort(): void {
+    if (this.usingNative) {
+      this.abortNativeRecognition('直接中止语音识别');
+      return;
+    }
     this.abortRecognition('直接中止语音识别');
   }
 
@@ -479,7 +635,11 @@ export class SpeechService {
     this.epoch++;  // 代际失效旧会话事件
     this.clearRestartTimer();  // 取消在途重启（根治循环的根因）
 
-    this.abortRecognition('暂停语音识别');
+    if (this.usingNative) {
+      this.abortNativeRecognition('暂停语音识别');
+    } else {
+      this.abortRecognition('暂停语音识别');
+    }
     log.info('语音识别已暂停');
   }
 
@@ -509,6 +669,10 @@ export class SpeechService {
    */
   destroy(): void {
     this.stop();
+    if (this.usingNative) {
+      nativeSpeechService.destroy();
+      this.nativeCallbacks = null;
+    }
     this.recognition = null;
     this.onStatusChange = null;
     this.onResult = null;

@@ -13,7 +13,7 @@
 import { createLogger } from '@/utils/logger';
 import type { ThemeDefinition, ThemeId } from '@/types/theme';
 import { BUILT_IN_THEME_IDS } from '@/types/theme';
-import { getTheme } from '@/services/themeService';
+import { getTheme, getActiveThemeId } from '@/services/themeService';
 import { mergeThemes } from '@/services/themeMerger';
 import { DARK_THEME } from '@/data/builtInThemes';
 
@@ -335,8 +335,10 @@ export async function applyTheme(id: ThemeId): Promise<void> {
 export function bootstrapTheme(): void {
   if (typeof window === 'undefined') return;
   try {
-    const stored = window.localStorage.getItem('polaris:activeThemeId');
-    const id = stored || BUILT_IN_THEME_IDS.DARK;
+    // 使用 getActiveThemeId() 而非直接 getItem：activeThemeId 以 JSON.stringify
+    // 写入 localStorage，直接 getItem 会拿到带引号的 ID（如 `"0000...0003"`），
+    // 传给 applyThemeSync 后 getTheme 匹配失败，导致首屏回退到 Dark 主题。
+    const id = getActiveThemeId();
     applyThemeSync(id);
   } catch {
     applyThemeSync(BUILT_IN_THEME_IDS.DARK);

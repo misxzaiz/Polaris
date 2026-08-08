@@ -35,6 +35,10 @@ class MainActivity : TauriActivity() {
     // 会误判为桌面端（走 ConnectingOverlay 而非 MobileConnectionGate）。
     webView.settings.userAgentString =
       webView.settings.userAgentString.replace("Mozilla/5.0", "Polaris-App/1.0")
+
+    // 注册原生语音识别桥接（供 WebView 内 Web Speech API 不可用时回退）
+    webView.addJavascriptInterface(SpeechBridge(this, webView), "SpeechBridge")
+
     super.onWebViewCreate(webView)
   }
 }

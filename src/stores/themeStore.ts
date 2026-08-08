@@ -256,8 +256,12 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   applyThemeById: (id: ThemeId) => {
     const state = get();
     if (state.activeThemeId === id) {
-      // 已激活，补一次 DOM 同步
+      // 已激活，补一次 DOM 同步 + CSS 变量注入（确保变量完整，避免启动时
+      // bootstrapTheme 回退到 Dark 后 loadConfig 只调 writeDom 不重新注入）
       writeDom(id, state.activeTheme);
+      if (state.activeTheme) {
+        flattenAndInject(state.activeTheme);
+      }
       return;
     }
 
