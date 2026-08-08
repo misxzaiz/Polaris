@@ -52,8 +52,8 @@ class PluginRegistry {
     }
   }
 
-  replaceInstalled(manifests: PolarisPluginManifest[]): void {
-    // 先收集所有待卸载的引擎 ID，全部卸载完后才注册新的
+  replaceInstalled(manifests: PolarisPluginManifest[]): Promise<void> {
+    // 先收集所有待卸载的引擎注册（异步 fire-and-forget）
     const unregisterPromises: Promise<void>[] = []
     for (const [pluginId, manifest] of this.manifests) {
       if (!manifest.builtin) {
@@ -64,10 +64,24 @@ class PluginRegistry {
       }
     }
 
-    // 等所有卸载完成后再注册
-    Promise.all(unregisterPromises).then(() => {
-      this.registerInstalled(manifests)
-    })
+    // 同步注册新插件清单（面板、卡片等），listPlugins() 立即可见
+    // 先收集引擎配置，等旧引擎卸载完成后再注册（避免竞态）
+    const engineConfigs: PolarisPluginManifest[] = []
+    for (const manifest of manifests) {
+      const existing = this.manifests.get(manifest.id)
+      if (existing?.builtin) continue
+
+      const registered = { ...manifest, builtin: false }
+      this.manifests.set(manifest.id, registered)
+      this.registerPanel(registered)
+      this.registerChatCards(registered)
+      engineConfigs.push(registered)
+    }
+
+    // 等旧引擎卸载完成后，再注册新引擎
+    return Promise.all(unregisterPromises)
+      .then(() => Promise.all(engineConfigs.map(m => this.registerEngines(m))))
+      .then(() => {})
   }
 
   private registerPanel(manifest: PolarisPluginManifest): void {
@@ -109,15 +123,15 @@ class PluginRegistry {
     }
   }
 
-  private registerEngines(manifest: PolarisPluginManifest): void {
+  private registerEngines(manifest: PolarisPluginManifest): Promise<void> {
     const engines = manifest.contributes.engines
-    if (!engines || engines.length === 0) return
+    if (!engines || engines.length === 0) return Promise.resolve()
 
     // 先注册所有引擎，再统一刷新 store
-    Promise.all(engines.map(e => this.registerSingleEngine(e)))
+    return Promise.all(engines.map(e => this.registerSingleEngine(e)))
       .then(() => {
         log.info(`[PluginRegistry] 已注册 ${engines.length} 个插件引擎，刷新引擎元数据 store`)
-        useEngineMetadataStore.getState().reload().then(() => {
+        return useEngineMetadataStore.getState().reload().then(() => {
           const ids = useEngineMetadataStore.getState().getEngineIds()
           log.info(`[PluginRegistry] 刷新后引擎列表: [${ids.join(', ')}]`)
         }).catch(err => {
@@ -140,6 +154,8 @@ class PluginRegistry {
         installGuide: engine.cli.installGuide ?? '',
       },
       protocol: engine.protocol ?? 'pi-rpc',
+      sessionFlags: engine.sessionFlags ?? 'pi',
+      providerConfig: engine.providerConfig,
       capabilities: {
         tools: engine.capabilities?.tools ?? true,
         streaming: engine.capabilities?.streaming ?? true,
@@ -147,16 +163,17 @@ class PluginRegistry {
         resume: engine.capabilities?.resume ?? true,
       },
     }
+    log.info(`[registerSingleEngine] engine.id=${engine.id}, source sessionFlags=${engine.sessionFlags ?? 'undefined'}, final sessionFlags=${engineConfig.sessionFlags}, hasProviderConfig=${!!engineConfig.providerConfig}`)
     log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)
     await invoke('register_plugin_engine', { engine: engineConfig })
     log.info(`[PluginRegistry] 引擎注册成功: ${engine.id}`)
   }
 
-  private unregisterEngines(manifest: PolarisPluginManifest): void {
+  private unregisterEngines(manifest: PolarisPluginManifest): Promise<void> {
     const engines = manifest.contributes.engines
-    if (!engines || engines.length === 0) return
+    if (!engines || engines.length === 0) return Promise.resolve()
 
-    Promise.all(engines.map(e =>
+    return Promise.all(engines.map(e =>
       invoke('unregister_plugin_engine', { engineId: e.id }).catch(() => {})
     )).then(() => {
       useEngineMetadataStore.getState().reload().catch(() => {})

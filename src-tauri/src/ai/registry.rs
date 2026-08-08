@@ -124,6 +124,10 @@ impl EngineRegistry {
             return Ok(());
         }
         let id_for_log = config.id.clone();
+        tracing::info!(
+            "[EngineRegistry] 注册插件引擎: id={}, protocol={:?}, session_flags={:?}, command={}, args={:?}",
+            config.id, config.protocol, config.session_flags, config.cli.command, config.cli.args
+        );
         let runner = PluginEngineRunner::new(config);
         self.engines.insert(engine_id, Box::new(runner));
         tracing::info!("[EngineRegistry] 已注册插件引擎: {}", id_for_log);

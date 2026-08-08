@@ -129,7 +129,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     const currentWorkspacePath = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
     try {
       const result = await discoverInstalledPlugins(currentWorkspacePath);
-      pluginRegistry.replaceInstalled(result.plugins);
+      await pluginRegistry.replaceInstalled(result.plugins);
       if (result.errors.length > 0) {
         log.warn('Plugin discovery completed with errors', { errors: result.errors });
       }

@@ -19,11 +19,29 @@ use tauri::State;
 #[tauri::command]
 pub async fn register_plugin_engine(
     state: State<'_, AppState>,
-    engine: PluginEngineConfig,
+    engine: serde_json::Value,
 ) -> Result<()> {
-    tracing::info!("[PluginEngineCmd] 注册插件引擎: id={}, name={}, cli={}", engine.id, engine.name, engine.cli.command);
+    // 诊断：先打印前端传来的原始 payload，再看反序列化结果
+    let raw = engine.to_string();
+    let parsed: PluginEngineConfig = match serde_json::from_value(engine) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            tracing::error!(
+                "[PluginEngineCmd] 反序列化失败: {}, raw={}",
+                e, raw
+            );
+            return Err(crate::error::AppError::ValidationError(format!(
+                "PluginEngineConfig 反序列化失败: {}",
+                e
+            )));
+        }
+    };
+    tracing::info!(
+        "[PluginEngineCmd] 注册插件引擎: id={}, name={}, cli={}, session_flags={:?}, protocol={:?}, raw={}",
+        parsed.id, parsed.name, parsed.cli.command, parsed.session_flags, parsed.protocol, raw
+    );
     let mut registry = state.engine_registry.lock().await;
-    let result = registry.register_plugin_engine(engine);
+    let result = registry.register_plugin_engine(parsed);
     match &result {
         Ok(()) => tracing::info!("[PluginEngineCmd] 插件引擎注册成功"),
         Err(e) => tracing::error!("[PluginEngineCmd] 插件引擎注册失败: {}", e),

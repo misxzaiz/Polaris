@@ -115,6 +115,30 @@ export interface PluginChatCardContribution {
  * 声明一个 AI 引擎，由后端 PluginEngineRunner 自动适配。
  * 用户安装插件后，该引擎立即可在引擎选择器中使用。
  */
+/**
+ * Provider 注册声明（声明式 provider 注册）
+ *
+ * 不同 Pi fork / CLI 注册自定义 provider 端点的方式不同：
+ * - Pi: 写 `~/.pi/agent/models.json`，api="openai-chat-completions"，用 --provider/--model 选择
+ * - omp: 写 `~/.omp/agent/models.yml`，api="openai-completions"，用 --provider/--model 选择
+ *
+ * 由插件 manifest 声明，PluginEngine 据此写配置文件并传 CLI 参数。
+ */
+export interface PluginEngineProviderConfigContribution {
+  /** 配置文件路径（相对 CLI 配置根目录，如 "agent/models.yml"） */
+  configFile: string
+  /** 配置文件格式（"yaml" / "json"） */
+  format?: 'yaml' | 'json'
+  /** 写入 provider 条目的 API 协议枚举值（如 "openai-completions"） */
+  apiValue: string
+  /** 选择 provider 的 CLI 参数名（如 "--provider"），缺省则不传 */
+  providerArg?: string
+  /** 传递 model 名的 CLI 参数名（如 "--model"），缺省则不传 */
+  modelArg?: string
+  /** CLI 配置根目录的环境变量名（缺省则按 CLI id 推断 ~/.<id>/） */
+  configDirEnv?: string
+}
+
 export interface PluginEngineContribution {
   /** 引擎 ID（如 "omp"） */
   id: string
@@ -133,6 +157,10 @@ export interface PluginEngineContribution {
   }
   /** RPC 协议类型，默认 pi-rpc */
   protocol?: 'pi-rpc' | 'json-rpc' | 'command'
+  /** Session ID CLI 标志风格，默认 'pi'（--session-id / --session） */
+  sessionFlags?: 'pi' | 'omp'
+  /** Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点） */
+  providerConfig?: PluginEngineProviderConfigContribution
   /** 引擎能力声明 */
   capabilities?: {
     tools?: boolean

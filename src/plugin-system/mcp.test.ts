@@ -7,8 +7,8 @@ import type { PluginStateMap } from '@/stores/pluginStore'
 import { pluginRegistry } from './registry'
 
 describe('plugin MCP contributions', () => {
-  afterEach(() => {
-    pluginRegistry.replaceInstalled([])
+  afterEach(async () => {
+    await pluginRegistry.replaceInstalled([])
   })
 
   it('lists built-in MCP servers as enabled by default', () => {

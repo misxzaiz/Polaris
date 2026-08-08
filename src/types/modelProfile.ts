@@ -308,10 +308,10 @@ export function resolveTargetEngines(profile: {
   return [old as ProfileTargetEngine]
 }
 
-/** 判断 Profile 是否适用于指定引擎 */
+/** 判断 Profile 是否适用于指定引擎（含插件引擎，如 'omp'） */
 export function isProfileForEngine(
   profile: ModelProfile,
-  engine: 'claude' | 'codex' | 'simple-ai' | 'pi',
+  engine: string,
 ): boolean {
   const engines = resolveTargetEngines(profile)
   // 空数组 = 全选 = 适用于所有引擎

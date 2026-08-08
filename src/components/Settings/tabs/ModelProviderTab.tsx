@@ -394,10 +394,12 @@ function ProfileEditorModal({
   initialProfile,
   onSave,
   onClose,
+  allEngines,
 }: {
   initialProfile: ModelProfile | null
   onSave: (form: ProfileForm) => void
   onClose: () => void
+  allEngines: string[]
 }) {
   const { t } = useTranslation(['settings', 'common'])
   const { success, error: toastError } = useToastStore()
@@ -752,8 +754,8 @@ function ProfileEditorModal({
               <button
                 type="button"
                 onClick={() => {
-                  const allSelected = dynamicEngineList.every((e) => form.targetEngines.includes(e))
-                  patch({ targetEngines: allSelected ? [] : [...dynamicEngineList] })
+                  const allSelected = allEngines.every((e) => form.targetEngines.includes(e))
+                  patch({ targetEngines: allSelected ? [] : [...allEngines] })
                 }}
                 className="mb-2 px-2 py-1 text-[10px] rounded-md border transition-all hover:border-primary/30"
               >
@@ -763,7 +765,7 @@ function ProfileEditorModal({
               </button>
               {/* 引擎多选 */}
               <div className="grid grid-cols-2 gap-2">
-                {dynamicEngineList.map((engineOption) => (
+                {allEngines.map((engineOption) => (
                   <button
                     key={engineOption}
                     type="button"
@@ -1204,6 +1206,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
           initialProfile={editingProfile}
           onSave={handleSave}
           onClose={closeEditor}
+          allEngines={dynamicEngineList}
         />
       )}
     </div>

@@ -216,8 +216,36 @@ pub struct PluginEngineManifestContribution {
     pub cli: PluginEngineCliContribution,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<String>,
+    /// Session ID CLI 标志风格（"pi" / "omp"），缺省时前端按 "pi" 处理
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_flags: Option<String>,
+    /// Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_config: Option<PluginEngineProviderConfigManifest>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<PluginEngineCapabilitiesContribution>,
+}
+
+/// 插件引擎 provider 注册声明（manifest 层，字符串形式透传给后端 PluginEngineConfig）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineProviderConfigManifest {
+    /// 配置文件路径（相对 CLI 配置根目录，如 "agent/models.yml"）
+    pub config_file: String,
+    /// 配置文件格式（"yaml" / "json"）
+    #[serde(default)]
+    pub format: String,
+    /// 写入 provider 条目的 API 协议枚举值（如 "openai-completions"）
+    pub api_value: String,
+    /// 选择 provider 的 CLI 参数名（如 "--provider"）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_arg: Option<String>,
+    /// 传递 model 名的 CLI 参数名（如 "--model"）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_arg: Option<String>,
+    /// CLI 配置根目录的环境变量名
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_dir_env: Option<String>,
 }
 
 /// 插件引擎 CLI 配置

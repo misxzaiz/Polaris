@@ -472,7 +472,7 @@ export function PluginTab() {
 
     try {
       const result = await discoverInstalledPlugins(currentWorkspacePath)
-      pluginRegistry.replaceInstalled(result.plugins)
+      await pluginRegistry.replaceInstalled(result.plugins)
       setPluginDiscoveryIssues(result.errors)
       setPlugins(pluginRegistry.listPlugins())
 

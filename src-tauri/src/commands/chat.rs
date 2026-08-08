@@ -712,16 +712,54 @@ async fn apply_model_profile_options(
             }
             session_opts = session_opts.with_env_overrides(env_overrides);
         }
-        // 插件引擎（Custom）：复用 Pi 的 provider 配置逻辑，
-        // 通过 env_overrides 注入 provider 端点/API key/model。
+        // 插件引擎（Custom）：复用 Pi 的 provider 配置逻辑。
+        // 当引擎 manifest 声明了 providerConfig 时，PluginEngine 会据此
+        // 写配置文件（models.yml/models.json）+ 传 --provider/--model；
+        // 同时注入 env_overrides 兜底（部分 CLI 也读 env）。
         EngineId::Custom(_) => {
+            tracing::info!(
+                "[{}] 插件引擎使用 Profile: {} (model={}, wireApi={:?})",
+                log_scope,
+                profile.name,
+                profile.model,
+                profile.wire_api
+            );
+
+            // 剥离 CLI 私有后缀（如 [1m]），传给 CLI 的必须是纯模型名
+            let source_model = session_opts.model.clone()
+                .unwrap_or_else(|| profile.model.clone());
+            let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&source_model);
+            let clean_model = stripped.base_model.clone().unwrap_or_else(|| source_model);
+
+            // 覆盖 session_opts.model 为纯模型名，确保传给 CLI 的 --model 不带后缀
+            // （PluginEngine 的 write_provider_config model_id 和 build_command --model 都读这个字段）
+            session_opts = session_opts.with_model(clean_model.clone());
+
+            // provider 名称：polaris-<profile_id>，与 Pi 引擎一致
+            let provider_name = format!("polaris-{}", profile.id);
+
+            // 构造 pi_provider_config：PluginEngine 据此写配置文件 + 传 CLI 参数。
+            // api 字段仅作默认；实际写入时由 manifest 的 providerConfig.apiValue 覆盖
+            // （omp 要求 openai-completions，Pi 要求 openai-chat-completions）。
+            let ctx_window = profile.context_window.unwrap_or(128000);
+            session_opts = session_opts.with_pi_provider_config(
+                crate::ai::PiProviderConfig {
+                    name: provider_name,
+                    base_url: profile.base_url.clone(),
+                    api_key: profile.api_key.clone(),
+                    api: String::new(), // 由 PluginEngine 按 manifest apiValue 覆盖
+                    context_window: ctx_window,
+                    max_tokens: 16384,
+                }
+            );
+
+            // env_overrides 兜底（部分 CLI 也读环境变量）
             let mut env_overrides = std::collections::HashMap::new();
             if let Some(custom) = &profile.custom_env {
                 for (k, v) in custom {
                     env_overrides.insert(k.clone(), v.clone());
                 }
             }
-            // 注入端点与模型（插件引擎 CLI 读取标准 env 变量）
             if !profile.base_url.is_empty() {
                 env_overrides.entry("ANTHROPIC_BASE_URL".to_string())
                     .or_insert_with(|| profile.base_url.clone());
@@ -738,9 +776,9 @@ async fn apply_model_profile_options(
                 env_overrides.entry("ANTHROPIC_API_KEY".to_string())
                     .or_insert_with(|| profile.api_key.clone());
             }
-            if !profile.model.is_empty() {
-                env_overrides.insert("ANTHROPIC_MODEL".to_string(), profile.model.clone());
-                env_overrides.insert("OPENAI_MODEL".to_string(), profile.model.clone());
+            if !clean_model.is_empty() {
+                env_overrides.insert("ANTHROPIC_MODEL".to_string(), clean_model.clone());
+                env_overrides.insert("OPENAI_MODEL".to_string(), clean_model);
             }
             session_opts = session_opts.with_env_overrides(env_overrides);
         }

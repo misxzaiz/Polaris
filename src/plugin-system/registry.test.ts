@@ -15,10 +15,10 @@ function createManifest(overrides: Partial<PolarisPluginManifest> = {}): Polaris
 }
 
 describe('PluginRegistry', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     // 清空注册表
     // 注意：replaceInstalled 只清除非内置插件，内置插件会保留
-    pluginRegistry.replaceInstalled([])
+    await pluginRegistry.replaceInstalled([])
   })
 
   describe('register', () => {
@@ -79,11 +79,11 @@ describe('PluginRegistry', () => {
   })
 
   describe('replaceInstalled', () => {
-    it('应该替换非内置插件', () => {
+    it('应该替换非内置插件', async () => {
       pluginRegistry.register(createManifest({ id: 'builtin', builtin: true }))
       pluginRegistry.register(createManifest({ id: 'installed', builtin: false }))
 
-      pluginRegistry.replaceInstalled([
+      await pluginRegistry.replaceInstalled([
         createManifest({ id: 'new-plugin' }),
       ])
 

@@ -12,6 +12,9 @@ import type {
   PluginViewContribution,
   PolarisPluginManifest,
 } from '@/plugin-system/types'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('PluginDiscovery')
 
 export interface PluginDiscoveryIssue {
   path: string
@@ -250,17 +253,35 @@ function normalizeEngines(
 ): PluginEngineContribution[] {
   if (!Array.isArray(value)) return []
 
-  return value.flatMap((item, index) => {
+  return value.flatMap((item) => {
     if (!isRecord(item)) {
       return []
     }
     const id = asString(item.id)
     const name = asString(item.name)
     const description = asString(item.description)
-    const command = asString(item.cli?.command)
+    const cli = isRecord(item.cli) ? item.cli : null
+    const command = cli ? asString(cli.command) : undefined
 
     if (!id || !name || !command) {
       return []
+    }
+
+    const rawSessionFlags = asString(item.sessionFlags)
+    log.info(`[normalizeEngines] engine id=${id}, raw sessionFlags=${rawSessionFlags ?? 'undefined'} -> fallback ${rawSessionFlags ?? 'pi'}`)
+
+    // providerConfig 声明（可选）：CLI 如何注册自定义 provider 端点
+    const rawProviderConfig = isRecord(item.providerConfig) ? item.providerConfig : null
+    const providerConfig = rawProviderConfig ? {
+      configFile: asString(rawProviderConfig.configFile) ?? '',
+      format: (asString(rawProviderConfig.format) as 'yaml' | 'json' | undefined) ?? 'yaml',
+      apiValue: asString(rawProviderConfig.apiValue) ?? '',
+      providerArg: asString(rawProviderConfig.providerArg),
+      modelArg: asString(rawProviderConfig.modelArg),
+      configDirEnv: asString(rawProviderConfig.configDirEnv),
+    } : undefined
+    if (providerConfig) {
+      log.info(`[normalizeEngines] engine id=${id}, providerConfig: configFile=${providerConfig.configFile}, format=${providerConfig.format}, apiValue=${providerConfig.apiValue}`)
     }
 
     return [{
@@ -269,15 +290,22 @@ function normalizeEngines(
       description: description ?? '',
       cli: {
         command,
-        args: Array.isArray(item.cli?.args) ? item.cli.args.filter((a): a is string => typeof a === 'string') : [],
-        installGuide: asString(item.cli?.installGuide) ?? '',
+        args: cli && Array.isArray(cli.args) ? cli.args.filter((a): a is string => typeof a === 'string') : [],
+        installGuide: cli ? asString(cli.installGuide) ?? '' : '',
       },
       protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
-      capabilities: {
-        tools: item.capabilities?.tools !== false,
-        streaming: item.capabilities?.streaming !== false,
-        interrupt: item.capabilities?.interrupt !== false,
-        resume: item.capabilities?.resume !== false,
+      sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
+      providerConfig,
+      capabilities: isRecord(item.capabilities) ? {
+        tools: item.capabilities.tools !== false,
+        streaming: item.capabilities.streaming !== false,
+        interrupt: item.capabilities.interrupt !== false,
+        resume: item.capabilities.resume !== false,
+      } : {
+        tools: true,
+        streaming: true,
+        interrupt: true,
+        resume: true,
       },
     }]
   })

@@ -17,7 +17,7 @@ use crate::ai::session::SessionManager;
 use crate::ai::traits::{
     AIEngine, EngineId, EngineMetadata, EngineDistribution, EngineCapabilities,
     EnvKeyMapping, PluginEngineConfig, PluginEngineCapabilities,
-    SessionOptions,
+    SessionFlags, SessionOptions,
 };
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
@@ -158,19 +158,53 @@ impl PluginEngineRunner {
     }
 
     /// 构建 RPC 命令
-    fn build_command(&self, session_id: &str, resume: bool) -> Result<Command> {
+    fn build_command(
+        &self,
+        session_id: &str,
+        resume: bool,
+        provider_name: Option<&str>,
+        model: Option<&str>,
+    ) -> Result<Command> {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError(format!("CLI 路径未初始化: {}", self.config.id)))?;
 
         let mut cmd = Self::create_command(cli_path);
+        // 累积完整参数列表用于诊断日志（Command 不暴露已设参数）
+        let mut argv: Vec<String> = Vec::new();
 
         // 添加--mode rpc 参数
         cmd.arg("--mode").arg("rpc");
+        argv.push("--mode".into());
+        argv.push("rpc".into());
 
         // 添加用户自定义 args
         if let Some(ref args) = self.config.cli.args {
             for arg in args {
                 cmd.arg(arg);
+                argv.push(arg.clone());
+            }
+        }
+
+        // Provider 选择（声明式：manifest 声明了 providerArg 才传）
+        // 必须在 --session-dir 之前传，避免某些 CLI 参数顺序敏感
+        if let Some(decl) = self.config.provider_config.as_ref() {
+            if let Some(ref p_arg) = decl.provider_arg {
+                if let Some(name) = provider_name {
+                    if !name.is_empty() {
+                        cmd.arg(p_arg).arg(name);
+                        argv.push(p_arg.clone());
+                        argv.push(name.to_string());
+                    }
+                }
+            }
+            if let Some(ref m_arg) = decl.model_arg {
+                if let Some(m) = model {
+                    if !m.is_empty() {
+                        cmd.arg(m_arg).arg(m);
+                        argv.push(m_arg.clone());
+                        argv.push(m.to_string());
+                    }
+                }
             }
         }
 
@@ -178,12 +212,41 @@ impl PluginEngineRunner {
         let session_dir = self.plugin_session_dir()?;
         fs::create_dir_all(&session_dir)?;
         cmd.arg("--session-dir").arg(&session_dir);
+        argv.push("--session-dir".into());
+        argv.push(session_dir.display().to_string());
 
-        if resume {
-            cmd.arg("--session").arg(session_id);
-        } else {
-            cmd.arg("--session-id").arg(session_id);
-        }
+        // 根据 CLI 的 session 标志风格选择参数
+        // - Pi 风格：--session-id <id>（新会话）/ --session <id>（恢复）
+        // - omp 风格：无 session-id（新会话）/ --resume <id>（恢复）
+        let flags_label = match self.config.session_flags {
+            SessionFlags::Pi => {
+                if resume {
+                    cmd.arg("--session").arg(session_id);
+                    argv.push("--session".into());
+                    argv.push(session_id.to_string());
+                } else {
+                    cmd.arg("--session-id").arg(session_id);
+                    argv.push("--session-id".into());
+                    argv.push(session_id.to_string());
+                }
+                "pi"
+            }
+            SessionFlags::Omp => {
+                if resume {
+                    cmd.arg("--resume").arg(session_id);
+                    argv.push("--resume".into());
+                    argv.push(session_id.to_string());
+                }
+                // 新会话无需指定 session-id，omp 自动生成
+                "omp"
+            }
+        };
+
+        tracing::info!(
+            "[PluginEngine:{}] build_command: session_flags={}, resume={}, session_id={}, provider={}, model={}, argv=[{}]",
+            self.config.id, flags_label, resume, session_id,
+            provider_name.unwrap_or(""), model.unwrap_or(""), argv.join(" ")
+        );
 
         // 无 session 模式（不持久化历史）
         // 插件引擎默认不持久化，由配置决定
@@ -216,6 +279,156 @@ impl PluginEngineRunner {
         let dir = data_root().root().join("plugin-sessions").join(&self.config.id);
         Ok(dir)
     }
+
+    /// CLI 配置根目录（如 ~/.omp/、~/.pi/）
+    ///
+    /// 优先读 manifest 声明的 configDirEnv 环境变量，否则按 CLI id 推断 ~/.<id>/
+    fn cli_config_root(&self) -> PathBuf {
+        if let Some(ref decl) = self.config.provider_config {
+            if let Some(ref env_name) = decl.config_dir_env {
+                if let Ok(dir) = std::env::var(env_name) {
+                    return PathBuf::from(dir);
+                }
+            }
+        }
+        // 按 CLI command 推断 ~/.<command>/（omp 命令 → ~/.omp/）
+        let dir_name = format!(".{}", self.config.cli.command);
+        dirs::home_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join(&dir_name)
+    }
+
+    /// 写入 provider 配置文件，注册自定义 provider 端点
+    ///
+    /// 根据 manifest 声明的 providerConfig：
+    /// - 格式 yaml：写 models.yml（omp）
+    /// - 格式 json：写 models.json（Pi 风格）
+    /// api_value 由声明决定（omp: openai-completions, Pi: openai-chat-completions）
+    ///
+    /// model_id 是注册到 models[].id 的模型标识，CLI 的 --model 用它匹配。
+    /// 对 omp：--model 必须命中 models[].id，所以 model_id = 真实模型名（如 deepseek-v4-flash）
+    fn write_provider_config(
+        &self,
+        provider_cfg: &crate::ai::PiProviderConfig,
+        model_id: &str,
+    ) -> Result<()> {
+        let decl = match self.config.provider_config.as_ref() {
+            Some(d) => d,
+            None => return Ok(()), // 引擎未声明 provider 注册方式，跳过
+        };
+        let config_root = self.cli_config_root();
+        let config_file_path = std::path::Path::new(&decl.config_file);
+        let config_dir = config_root.join(
+            config_file_path
+                .parent()
+                .unwrap_or(std::path::Path::new("")),
+        );
+        fs::create_dir_all(&config_dir)?;
+        let file_path = config_root.join(&decl.config_file);
+
+        // 实际写入的 api 值：优先用 manifest 声明的 apiValue，否则回退 PiProviderConfig.api
+        let api_value = if !decl.api_value.is_empty() {
+            decl.api_value.as_str()
+        } else if !provider_cfg.api.is_empty() {
+            provider_cfg.api.as_str()
+        } else {
+            "openai-completions"
+        };
+
+        // models[].id：omp 的 --model 匹配它，必须用真实模型名
+        // 若 model_id 为空，回退到 provider 名（Pi 兼容行为）
+        let model_entry_id = if model_id.is_empty() {
+            &provider_cfg.name
+        } else {
+            model_id
+        };
+
+        let provider_entry = serde_json::json!({
+            "baseUrl": provider_cfg.base_url,
+            "api": api_value,
+            "apiKey": provider_cfg.api_key,
+            "models": [{
+                "id": model_entry_id,
+                "name": model_entry_id,
+                "reasoning": false,
+                "input": ["text"],
+                "contextWindow": provider_cfg.context_window,
+                "maxTokens": provider_cfg.max_tokens,
+            }]
+        });
+
+        match decl.format {
+            crate::ai::ProviderConfigFormat::Yaml => {
+                // 覆盖式写入（omp 的 models.yml 由 Polaris 单独管理）
+                let mut providers = std::collections::HashMap::new();
+                providers.insert(provider_cfg.name.clone(), provider_entry);
+                let yaml = Self::render_models_yaml(&providers);
+                fs::write(&file_path, yaml)?;
+            }
+            crate::ai::ProviderConfigFormat::Json => {
+                // JSON 格式：合并到现有 models.json 的 providers 对象（Pi 风格，多 provider 共存）
+                let existing = fs::read_to_string(&file_path)
+                    .ok()
+                    .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
+                let mut root = existing.unwrap_or_else(|| serde_json::json!({}));
+                if !root.is_object() {
+                    root = serde_json::json!({});
+                }
+                if root.get("providers").is_none() {
+                    root["providers"] = serde_json::json!({});
+                }
+                root["providers"][&provider_cfg.name] = provider_entry;
+                let content = serde_json::to_string_pretty(&root)?;
+                fs::write(&file_path, content)?;
+            }
+        }
+        tracing::info!(
+            "[PluginEngine:{}] 已写入 provider 配置: file={}, provider={}, model_id={}, api={}, baseUrl={}",
+            self.config.id, file_path.display(), provider_cfg.name, model_entry_id, api_value, provider_cfg.base_url
+        );
+        Ok(())
+    }
+
+    /// 渲染 models.yml（providers 顶层 + 每个 provider 的字段）
+    fn render_models_yaml(
+        providers: &std::collections::HashMap<String, serde_json::Value>,
+    ) -> String {
+        let mut out = String::from("providers:\n");
+        for (name, entry) in providers {
+            out.push_str(&format!("  {}:\n", name));
+            if let Some(obj) = entry.as_object() {
+                if let Some(v) = obj.get("baseUrl").and_then(|v| v.as_str()) {
+                    out.push_str(&format!("    baseUrl: \"{}\"\n", v));
+                }
+                if let Some(v) = obj.get("api").and_then(|v| v.as_str()) {
+                    out.push_str(&format!("    api: \"{}\"\n", v));
+                }
+                if let Some(v) = obj.get("apiKey").and_then(|v| v.as_str()) {
+                    out.push_str(&format!("    apiKey: \"{}\"\n", v));
+                }
+                if let Some(models) = obj.get("models").and_then(|v| v.as_array()) {
+                    out.push_str("    models:\n");
+                    for m in models {
+                        if let Some(mo) = m.as_object() {
+                            let id = mo.get("id").and_then(|v| v.as_str()).unwrap_or("");
+                            let nm = mo.get("name").and_then(|v| v.as_str()).unwrap_or("");
+                            let cw = mo.get("contextWindow").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let mt = mo.get("maxTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                            out.push_str(&format!("      - id: \"{}\"\n", id));
+                            out.push_str(&format!("        name: \"{}\"\n", nm));
+                            out.push_str("        reasoning: false\n");
+                            out.push_str("        input: [\"text\"]\n");
+                            out.push_str(&format!("        contextWindow: {}\n", cw));
+                            out.push_str(&format!("        maxTokens: {}\n", mt));
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+
 
     /// 启动后台线程读取 RPC stdout 事件
     fn spawn_event_reader(
@@ -282,12 +495,17 @@ impl PluginEngineRunner {
 
                 if let Some(prompt) = initial_prompt {
                     let cmd_line = super::pi_parser::build_prompt_command(&prompt, "init", &[]);
+                    tracing::info!(
+                        "[PluginEngine:{}] 准备发送初始 prompt 到 stdin，长度={} 字节，内容={}",
+                        engine_id_stdin, cmd_line.len(), cmd_line.trim()
+                    );
                     if let Err(e) = stdin_writer.write_all(cmd_line.as_bytes())
                         .and_then(|_| stdin_writer.flush())
                     {
                         tracing::error!("[PluginEngine:{}] 发送初始 prompt 失败: {}", engine_id_stdin, e);
                         return;
                     }
+                    tracing::info!("[PluginEngine:{}] 初始 prompt 已写入 stdin 并 flush", engine_id_stdin);
                 }
 
                 // 保持 stdin 打开，转发后续命令
@@ -310,13 +528,32 @@ impl PluginEngineRunner {
             let mut message_event_count: usize = 0;
             let mut agent_ended = false;
             let mut line_buf = String::new();
+            let mut read_attempts: u32 = 0;
 
             loop {
                 line_buf.clear();
+                read_attempts += 1;
                 match reader.read_line(&mut line_buf) {
-                    Ok(0) => break,
-                    Ok(_) => {}
-                    Err(_) => break,
+                    Ok(0) => {
+                        tracing::info!(
+                            "[PluginEngine:{}] stdout read_line 返回 0 (EOF)，attempts={}, lines_parsed={}",
+                            engine_id, read_attempts, line_count
+                        );
+                        break;
+                    }
+                    Ok(n) => {
+                        tracing::info!(
+                            "[PluginEngine:{}] stdout read_line 返回 {} 字节: {:?}",
+                            engine_id, n, line_buf.chars().take(200).collect::<String>()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[PluginEngine:{}] stdout read_line 错误: {}, attempts={}",
+                            engine_id, e, read_attempts
+                        );
+                        break;
+                    }
                 }
                 let trimmed = line_buf.trim();
                 if trimmed.is_empty() {
@@ -511,9 +748,23 @@ impl AIEngine for PluginEngineRunner {
             )));
         }
 
+        // 写入 provider 配置文件（如 manifest 声明了 providerConfig）
+        let (provider_name, clean_model) = if let Some(ref pcfg) = options.pi_provider_config {
+            let model_str = options.model.as_deref().unwrap_or("");
+            self.write_provider_config(pcfg, model_str)?;
+            (Some(pcfg.name.clone()), options.model.clone())
+        } else {
+            (None, options.model.clone())
+        };
+
         let temp_id = uuid::Uuid::new_v4().to_string();
 
-        let mut cmd = self.build_command(&temp_id, false)?;
+        let mut cmd = self.build_command(
+            &temp_id,
+            false,
+            provider_name.as_deref(),
+            clean_model.as_deref(),
+        )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
         tracing::info!("[PluginEngine:{}] 执行命令: {} {}", engine_id, self.config.cli.command, self.config.cli.args.as_ref().map(|a| a.join(" ")).unwrap_or_default());
@@ -551,7 +802,21 @@ impl AIEngine for PluginEngineRunner {
             session_id.to_string()
         };
 
-        let mut cmd = self.build_command(&real_session_id, true)?;
+        // 续聊同样需要写 provider 配置 + 传 provider/model
+        let (provider_name, clean_model) = if let Some(ref pcfg) = options.pi_provider_config {
+            let model_str = options.model.as_deref().unwrap_or("");
+            self.write_provider_config(pcfg, model_str)?;
+            (Some(pcfg.name.clone()), options.model.clone())
+        } else {
+            (None, options.model.clone())
+        };
+
+        let mut cmd = self.build_command(
+            &real_session_id,
+            true,
+            provider_name.as_deref(),
+            clean_model.as_deref(),
+        )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
         let child = cmd.spawn()

@@ -188,6 +188,51 @@ pub struct PluginEngineConfig {
     /// 引擎能力
     #[serde(default)]
     pub capabilities: PluginEngineCapabilities,
+    /// Session ID CLI 标志风格（默认 Pi 风格）
+    #[serde(default, rename = "sessionFlags")]
+    pub session_flags: SessionFlags,
+    /// Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点）
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "providerConfig")]
+    pub provider_config: Option<ProviderConfigDeclaration>,
+}
+
+/// Provider 注册声明（声明式 provider 注册）
+///
+/// 不同 Pi fork / CLI 注册自定义 provider 端点的方式不同：
+/// - Pi: 写 `~/.pi/agent/models.json`，`api="openai-chat-completions"`，用 `--provider`/`--model` 选择
+/// - omp: 写 `~/.omp/agent/models.yml`，`api="openai-completions"`，用 `--provider`/`--model` 选择
+///
+/// 由插件 manifest 声明，PluginEngine 据此写配置文件并传 CLI 参数。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderConfigDeclaration {
+    /// 配置文件路径（相对 CLI 配置根目录，如 "agent/models.yml"）
+    pub config_file: String,
+    /// 配置文件格式
+    #[serde(default)]
+    pub format: ProviderConfigFormat,
+    /// 写入 provider 条目的 API 协议枚举值（如 "openai-completions"）
+    pub api_value: String,
+    /// 选择 provider 的 CLI 参数名（如 "--provider"），缺省则不传
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub provider_arg: Option<String>,
+    /// 传递 model 名的 CLI 参数名（如 "--model"），缺省则不传
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_arg: Option<String>,
+    /// CLI 配置根目录的环境变量名（缺省则按 CLI id 推断 ~/.<id>/）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_dir_env: Option<String>,
+}
+
+/// Provider 配置文件格式
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum ProviderConfigFormat {
+    /// YAML 格式（omp 用 models.yml）
+    #[default]
+    Yaml,
+    /// JSON 格式（Pi 用 models.json）
+    Json,
 }
 
 /// CLI 入口配置
@@ -219,6 +264,26 @@ pub enum RpcProtocol {
 impl Default for RpcProtocol {
     fn default() -> Self {
         Self::PiRpc
+    }
+}
+
+/// Session ID CLI 标志风格
+///
+/// 不同 CLI 对 session 管理的命令行标志不同：
+/// - Pi: `--session-id <id>` (新会话), `--session <id>` (恢复)
+/// - omp: 无 session-id 标志 (新会话), `--resume <id>` (恢复)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum SessionFlags {
+    /// Pi 风格：--session-id / --session
+    Pi,
+    /// omp 风格：无 session-id / --resume
+    Omp,
+}
+
+impl Default for SessionFlags {
+    fn default() -> Self {
+        Self::Pi
     }
 }
 
