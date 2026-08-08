@@ -156,6 +156,7 @@ class PluginRegistry {
       protocol: engine.protocol ?? 'pi-rpc',
       sessionFlags: engine.sessionFlags ?? 'pi',
       providerConfig: engine.providerConfig,
+      mcpConsumption: engine.mcpConsumption ?? 'mcp-servers',
       capabilities: {
         tools: engine.capabilities?.tools ?? true,
         streaming: engine.capabilities?.streaming ?? true,

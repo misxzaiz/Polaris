@@ -171,6 +171,31 @@ impl std::fmt::Display for EngineId {
 }
 
 /// 插件引擎配置 —— 描述一个通过插件注册的动态 AI 引擎。
+/// MCP 消费策略 —— 插件引擎如何桥接 MCP 工具到子进程。
+///
+/// 不同引擎家族对 MCP 的消费方式不同，由插件 manifest 声明：
+/// - `McpServers`（默认）：直接注入 mcp_servers 列表（SimpleAI 风格，in-process 消费）。
+///   适用于引擎自身会通过 stdio 与 MCP server 通信的场景。
+/// - `PiExtension`：Pi Extension 桥接风格。
+///   写 JS Extension 文件 + `--extension` 注入，子进程通过 `pi.registerTool()` 注册工具。
+///   适用于 OMP/Pi 等兼容 Pi Extension API 的 CLI。
+/// - `McpConfigPath`：配置文件路径风格。
+///   写 MCP 配置文件（JSON）+ `--mcp-config <path>` 注入，Claude Code 风格。
+/// - `None`：引擎不支持 MCP 工具。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum McpConsumptionStrategy {
+    /// 直接注入 mcp_servers 列表（SimpleAI 风格，in-process 消费）
+    #[default]
+    McpServers,
+    /// Pi Extension 桥接：写 JS Extension + --extension
+    PiExtension,
+    /// 配置文件路径：写 JSON + --mcp-config
+    McpConfigPath,
+    /// 不消费 MCP
+    None,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginEngineConfig {
@@ -194,6 +219,9 @@ pub struct PluginEngineConfig {
     /// Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点）
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "providerConfig")]
     pub provider_config: Option<ProviderConfigDeclaration>,
+    /// MCP 消费策略（默认 McpServers，向后兼容）
+    #[serde(default, rename = "mcpConsumption")]
+    pub mcp_consumption: McpConsumptionStrategy,
 }
 
 /// Provider 注册声明（声明式 provider 注册）
@@ -225,14 +253,19 @@ pub struct ProviderConfigDeclaration {
 }
 
 /// Provider 配置文件格式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ProviderConfigFormat {
     /// YAML 格式（omp 用 models.yml）
-    #[default]
     Yaml,
     /// JSON 格式（Pi 用 models.json）
     Json,
+}
+
+impl Default for ProviderConfigFormat {
+    fn default() -> Self {
+        Self::Yaml
+    }
 }
 
 /// CLI 入口配置

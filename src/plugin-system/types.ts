@@ -139,6 +139,24 @@ export interface PluginEngineProviderConfigContribution {
   configDirEnv?: string
 }
 
+/**
+ * MCP 消费策略 —— 插件引擎如何桥接 MCP 工具到子进程。
+ *
+ * - `mcp-servers`（默认）：直接注入 mcp_servers 列表（SimpleAI 风格，in-process 消费）。
+ *   适用于引擎自身会通过 stdio 与 MCP server 通信的场景。
+ * - `pi-extension`：Pi Extension 桥接风格。
+ *   写 JS Extension 文件 + `--extension` 注入，子进程通过 `pi.registerTool()` 注册工具。
+ *   适用于 OMP/Pi 等兼容 Pi Extension API 的 CLI。
+ * - `mcp-config-path`：配置文件路径风格。
+ *   写 MCP 配置文件（JSON）+ `--mcp-config <path>` 注入，Claude Code 风格。
+ * - `none`：引擎不支持 MCP 工具。
+ */
+export type PluginEngineConsumptionStrategy =
+  | 'mcp-servers'
+  | 'pi-extension'
+  | 'mcp-config-path'
+  | 'none'
+
 export interface PluginEngineContribution {
   /** 引擎 ID（如 "omp"） */
   id: string
@@ -161,6 +179,8 @@ export interface PluginEngineContribution {
   sessionFlags?: 'pi' | 'omp'
   /** Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点） */
   providerConfig?: PluginEngineProviderConfigContribution
+  /** MCP 消费策略（默认 'mcp-servers'，向后兼容） */
+  mcpConsumption?: PluginEngineConsumptionStrategy
   /** 引擎能力声明 */
   capabilities?: {
     tools?: boolean

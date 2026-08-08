@@ -23,7 +23,7 @@ pub use traits::{
     EngineId, SessionOptions, HistoryEntry, ImageAttachment, EngineMetadata,
     EngineDistribution, EngineCapabilities, EnvKeyMapping, PlatformBinary, PiProviderConfig,
     PluginEngineConfig, EngineCliConfig, RpcProtocol, PluginEngineCapabilities,
-    SessionFlags, ProviderConfigDeclaration, ProviderConfigFormat,
+    SessionFlags, ProviderConfigDeclaration, ProviderConfigFormat, McpConsumptionStrategy,
 };
 pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;

@@ -296,6 +296,7 @@ function normalizeEngines(
       protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
       sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
       providerConfig,
+      mcpConsumption: asString(item.mcpConsumption) as PluginEngineContribution['mcpConsumption'] ?? 'mcp-servers',
       capabilities: isRecord(item.capabilities) ? {
         tools: item.capabilities.tools !== false,
         streaming: item.capabilities.streaming !== false,

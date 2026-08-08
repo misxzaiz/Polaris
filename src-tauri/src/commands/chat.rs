@@ -849,7 +849,10 @@ pub async fn start_chat_inner(
         state
             .clone_config()
             .ok()
-            .and_then(|config| EngineId::parse(&config.default_engine))
+            .and_then(|config| {
+                let s = config.default_engine.trim();
+                if s.is_empty() { None } else { Some(EngineId::parse_any(s)) }
+            })
             .unwrap_or(EngineId::ClaudeCode)
     };
 

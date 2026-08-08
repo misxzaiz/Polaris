@@ -16,7 +16,7 @@ use std::process::{Child, Command, Stdio};
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
     AIEngine, EngineId, EngineMetadata, EngineDistribution, EngineCapabilities,
-    EnvKeyMapping, PluginEngineConfig, PluginEngineCapabilities,
+    EnvKeyMapping, McpConsumptionStrategy, PluginEngineConfig, PluginEngineCapabilities,
     SessionFlags, SessionOptions,
 };
 use crate::error::{AppError, Result};
@@ -164,6 +164,7 @@ impl PluginEngineRunner {
         resume: bool,
         provider_name: Option<&str>,
         model: Option<&str>,
+        bridge_dir: Option<&PathBuf>,
     ) -> Result<Command> {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError(format!("CLI 路径未初始化: {}", self.config.id)))?;
@@ -242,6 +243,33 @@ impl PluginEngineRunner {
             }
         };
 
+        // MCP 桥接：根据消费策略注入 CLI 参数
+        match self.config.mcp_consumption {
+            McpConsumptionStrategy::PiExtension => {
+                // Pi/OMP 风格：始终禁用自动扩展发现，显式注入桥接扩展
+                cmd.arg("--no-extensions");
+                argv.push("--no-extensions".into());
+                if let Some(dir) = bridge_dir {
+                    if dir.exists() {
+                        cmd.arg("--extension").arg(dir);
+                        argv.push("--extension".into());
+                        argv.push(dir.to_string_lossy().to_string());
+                        tracing::info!(
+                            "[PluginEngine:{}] 注入 MCP 桥接 Extension: {}",
+                            self.config.id, dir.display()
+                        );
+                    } else {
+                        tracing::warn!(
+                            "[PluginEngine:{}] PiExtension 策略但桥接目录不存在，跳过 --extension",
+                            self.config.id
+                        );
+                    }
+                }
+            }
+            // McpServers/McpConfigPath/None：无需 CLI 参数注入
+            _ => {}
+        }
+
         tracing::info!(
             "[PluginEngine:{}] build_command: session_flags={}, resume={}, session_id={}, provider={}, model={}, argv=[{}]",
             self.config.id, flags_label, resume, session_id,
@@ -280,6 +308,27 @@ impl PluginEngineRunner {
         Ok(dir)
     }
 
+    /// 在落盘目录中查找最新的 session 文件（.jsonl）
+    ///
+    /// omp 新会话自动生成 id 并落盘，文件名形如 `<时间戳>_<uuid>.jsonl`。
+    /// 按修改时间取最新一个，作为 resume 的真实 id。
+    fn find_latest_session_file(dir: &Path) -> Option<PathBuf> {
+        let entries = fs::read_dir(dir).ok()?;
+        let mut latest: Option<(PathBuf, std::time::SystemTime)> = None;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+                continue;
+            }
+            let modified = entry.metadata().ok()?.modified().ok()?;
+            match &latest {
+                Some((_, t)) if *t >= modified => {}
+                _ => latest = Some((path, modified)),
+            }
+        }
+        latest.map(|(p, _)| p)
+    }
+
     /// CLI 配置根目录（如 ~/.omp/、~/.pi/）
     ///
     /// 优先读 manifest 声明的 configDirEnv 环境变量，否则按 CLI id 推断 ~/.<id>/
@@ -296,6 +345,50 @@ impl PluginEngineRunner {
         dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(&dir_name)
+    }
+
+    /// MCP Extension 桥接目录（`~/.<cli_command>/agent/extensions/polaris-mcp-bridge/`）
+    ///
+    /// 仅 PiExtension 策略使用。目录生成后由 `write_extension_bridge` 填充，
+    /// `build_command` 通过 `--extension <dir>` 注入子进程。
+    fn mcp_bridge_dir(&self) -> PathBuf {
+        self.cli_config_root()
+            .join("agent")
+            .join("extensions")
+            .join("polaris-mcp-bridge")
+    }
+
+    /// 根据配置的 MCP 消费策略，写入 MCP 桥接文件。
+    ///
+    /// 当前实现：
+    /// - `PiExtension`：调用 `mcp_bridge::write_extension_bridge` 写 JS Extension + config.json
+    /// - 其他策略：无操作（默认 `McpServers` 由引擎自身消费，`None` 禁用）
+    fn write_mcp_bridge(&self, servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer]) -> Result<()> {
+        match self.config.mcp_consumption {
+            McpConsumptionStrategy::PiExtension => {
+                if servers.is_empty() {
+                    tracing::info!(
+                        "[PluginEngine:{}] PiExtension 策略但无 MCP server，跳过桥接",
+                        self.config.id
+                    );
+                    return Ok(());
+                }
+                let bridge_dir = self.mcp_bridge_dir();
+                super::mcp_bridge::write_extension_bridge(&bridge_dir, servers)?;
+                tracing::info!(
+                    "[PluginEngine:{}] PiExtension 桥接已写入: {}",
+                    self.config.id,
+                    bridge_dir.display()
+                );
+                Ok(())
+            }
+            // McpServers：由引擎自身通过 stdio 消费，PluginEngineRunner 无需桥接
+            // McpConfigPath：暂未实现（留待未来 Claude Code 风格插件引擎）
+            // None：显式禁用
+            McpConsumptionStrategy::McpServers
+            | McpConsumptionStrategy::McpConfigPath
+            | McpConsumptionStrategy::None => Ok(()),
+        }
     }
 
     /// 写入 provider 配置文件，注册自定义 provider 端点
@@ -444,6 +537,9 @@ impl PluginEngineRunner {
         let on_complete = options.on_complete.clone();
         let on_error = options.on_error.clone();
         let current_session_id = session_id.clone();
+        // 预取 session 落盘目录（闭包 move 后无法再借 &self）
+        let session_dir = self.plugin_session_dir().unwrap_or_default();
+        let engine_id_for_session = self.config.id.clone();
 
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
         let input_sender_for_return = input_sender.clone();
@@ -591,6 +687,28 @@ impl PluginEngineRunner {
                             &current_session_id,
                             format!("{} 引擎未生成任何回复：模型调用可能超时或 provider 配置有误。", engine_id),
                         ));
+                    }
+                    // 会话结束后，扫描落盘目录找到 omp 自动生成的 session 文件，
+                    // 记录其路径作为 resume 的真实 id（omp 不回传 session id）
+                    if let Some(file_path) = Self::find_latest_session_file(&session_dir) {
+                        tracing::info!(
+                            "[PluginEngine:{}] 捕获 omp 会话落盘文件: {} (原 id: {})",
+                            engine_id, file_path.display(), current_session_id
+                        );
+                        let new_id = file_path.to_string_lossy().to_string();
+                        SessionManager::update_session_id_shared(
+                            &sessions,
+                            &current_session_id,
+                            &new_id,
+                            pid,
+                            &engine_id_for_session,
+                            Some(input_sender.clone()),
+                        );
+                    } else {
+                        tracing::warn!(
+                            "[PluginEngine:{}] 会话结束后未在 {} 找到落盘文件",
+                            engine_id, session_dir.display()
+                        );
                     }
                     break;
                 }
@@ -757,6 +875,14 @@ impl AIEngine for PluginEngineRunner {
             (None, options.model.clone())
         };
 
+        // 写入 MCP 桥接文件（根据 mcpConsumption 策略）
+        self.write_mcp_bridge(&options.mcp_servers)?;
+        // PiExtension 策略时，构建命令需注入 --extension 指向桥接目录
+        let bridge_dir = match self.config.mcp_consumption {
+            McpConsumptionStrategy::PiExtension => Some(self.mcp_bridge_dir()),
+            _ => None,
+        };
+
         let temp_id = uuid::Uuid::new_v4().to_string();
 
         let mut cmd = self.build_command(
@@ -764,6 +890,7 @@ impl AIEngine for PluginEngineRunner {
             false,
             provider_name.as_deref(),
             clean_model.as_deref(),
+            bridge_dir.as_ref(),
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
@@ -811,11 +938,19 @@ impl AIEngine for PluginEngineRunner {
             (None, options.model.clone())
         };
 
+        // 续聊同样写 MCP 桥接 + 注入 --extension（保持与首轮一致）
+        self.write_mcp_bridge(&options.mcp_servers)?;
+        let bridge_dir = match self.config.mcp_consumption {
+            McpConsumptionStrategy::PiExtension => Some(self.mcp_bridge_dir()),
+            _ => None,
+        };
+
         let mut cmd = self.build_command(
             &real_session_id,
             true,
             provider_name.as_deref(),
             clean_model.as_deref(),
+            bridge_dir.as_ref(),
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
