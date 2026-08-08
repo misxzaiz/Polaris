@@ -103,14 +103,16 @@ export function SessionConfigSelector({
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
   const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
   const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
-  const currentEngine: 'claude' | 'codex' | 'simple-ai' | 'pi' =
+  const currentEngine: string =
     activeEngineId === 'codex'
       ? 'codex'
       : activeEngineId === 'simple-ai'
         ? 'simple-ai'
         : activeEngineId === 'pi'
           ? 'pi'
-          : 'claude'
+          : activeEngineId === 'claude-code'
+            ? 'claude'
+            : activeEngineId
   const isSimpleAiEngine = currentEngine === 'simple-ai'
   useEffect(() => {
     if (isSimpleAiEngine) {

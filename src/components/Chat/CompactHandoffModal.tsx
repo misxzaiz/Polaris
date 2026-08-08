@@ -51,9 +51,9 @@ const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> =
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'pi' {
+function toProfileEngine(engineId: string): string {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : 'claude'
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : e === 'claude-code' ? 'claude' : e
 }
 
 /** 引擎单选段（图标 + 名称，四选一横向排列） */

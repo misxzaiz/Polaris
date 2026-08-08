@@ -29,13 +29,15 @@ export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
  * - 'codex': 适用于 Codex CLI 引擎
  * - 'simple-ai': 适用于 Simple AI 引擎
  * - 'pi': 适用于 Pi 引擎
+ * - 任意字符串: 适用于插件注册的动态引擎（如 'omp'）
  *
  * 历史兼容：旧数据使用 `targetEngine?: ProfileTargetEngine` 单值字段，
  * 由 `resolveTargetEngines()` 做回退迁移，不再新增。
  */
-export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'pi'
+export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'pi' | (string & NonNullable<unknown>)
 
-/** 全部可用引擎列表 — 用于「全选/取消全选」等场景 */
+/** 全部可用引擎列表 — 用于「全选/取消全选」等场景。
+ *  注意：此常量只包含已知引擎，插件引擎由运行时动态补充。 */
 export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'pi']
 
 /** 供应商分类 — 决定预设引导和提示文案

@@ -107,9 +107,10 @@ const OPTIMIZE_DIRECTION_OPTIONS: Array<{ key: OptimizeDirection; label: string 
 const OPTIMIZE_ITERATION_OPTIONS = [1, 2, 3, 4, 5] as const
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
-function toProfileEngine(engineId: string): 'claude' | 'codex' | 'simple-ai' | 'pi' {
+function toProfileEngine(engineId: string): string {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : 'claude'
+  // 已知引擎映射到其别名，插件引擎直接透传
+  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : e === 'claude-code' ? 'claude' : e
 }
 
 export interface EditMode {

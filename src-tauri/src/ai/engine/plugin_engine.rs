@@ -62,13 +62,50 @@ impl PluginEngineRunner {
     }
 
     /// 获取 CLI 路径
+    ///
+    /// 查找顺序（与 PiEngine 对齐）：
+    /// 1. Windows: %APPDATA%\npm\{cmd}.cmd / %PNPM_HOME%\pnpm\{cmd}.cmd / %LOCALAPPDATA%\pnpm\{cmd}.cmd
+    /// 2. Windows: %USERPROFILE%\.bun\bin\{cmd}.exe（bun 全局）
+    /// 3. where/which {cmd}（PATH 查找）
+    /// 4. 默认 "{cmd}"
     fn get_cli_path(&mut self) -> Result<String> {
         if let Some(ref path) = self.cli_path {
             return Ok(path.clone());
         }
 
-        let cli = &self.config.cli;
-        let cmd = &cli.command;
+        let cmd = &self.config.cli.command;
+
+        // 直接路径存在
+        if Path::new(cmd).exists() {
+            self.cli_path = Some(cmd.clone());
+            return Ok(cmd.clone());
+        }
+
+        // Windows: 探测 npm/pnpm/bun 全局安装路径
+        #[cfg(windows)]
+        {
+            let candidates = [
+                // npm 全局
+                std::env::var("APPDATA").ok()
+                    .map(|d| PathBuf::from(&d).join("npm").join(format!("{}.cmd", cmd))),
+                // pnpm 全局
+                std::env::var("PNPM_HOME").ok()
+                    .map(|d| PathBuf::from(&d).join(format!("{}.cmd", cmd))),
+                std::env::var("LOCALAPPDATA").ok()
+                    .map(|d| PathBuf::from(&d).join("pnpm").join(format!("{}.cmd", cmd))),
+                // bun 全局
+                std::env::var("USERPROFILE").ok()
+                    .map(|d| PathBuf::from(&d).join(".bun").join("bin").join(format!("{}.exe", cmd))),
+            ];
+            for candidate in candidates.into_iter().flatten() {
+                if candidate.exists() {
+                    let s = candidate.to_string_lossy().to_string();
+                    tracing::info!("[PluginEngine:{}] 在 {} 找到 CLI: {}", self.config.id, candidate.display(), s);
+                    self.cli_path = Some(s.clone());
+                    return Ok(s);
+                }
+            }
+        }
 
         // 检查命令是否在 PATH 中（通过 which/where）
         let which_cmd = if cfg!(windows) { "where" } else { "which" };
@@ -78,12 +115,6 @@ impl PluginEngineRunner {
         check.creation_flags(CREATE_NO_WINDOW);
 
         if check.output().map(|o| o.status.success()).unwrap_or(false) {
-            self.cli_path = Some(cmd.clone());
-            return Ok(cmd.clone());
-        }
-
-        // 检查路径是否存在
-        if Path::new(cmd).exists() {
             self.cli_path = Some(cmd.clone());
             return Ok(cmd.clone());
         }
@@ -425,15 +456,37 @@ impl AIEngine for PluginEngineRunner {
     }
 
     fn is_available(&self) -> bool {
-        // 简单检查：CLI 命令是否在 PATH 中
-        let which_cmd = if cfg!(windows) { "where" } else { "which" };
-        let mut cmd = Command::new(which_cmd);
-        cmd.arg(&self.config.cli.command);
+        let cmd = &self.config.cli.command;
+        // 直接路径存在
+        if Path::new(cmd).exists() {
+            return true;
+        }
+        // Windows: 探测 npm/pnpm/bun 全局安装路径
         #[cfg(windows)]
-        cmd.creation_flags(CREATE_NO_WINDOW);
-        cmd.output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+        {
+            let candidates = [
+                std::env::var("APPDATA").ok()
+                    .map(|d| PathBuf::from(&d).join("npm").join(format!("{}.cmd", cmd))),
+                std::env::var("PNPM_HOME").ok()
+                    .map(|d| PathBuf::from(&d).join(format!("{}.cmd", cmd))),
+                std::env::var("LOCALAPPDATA").ok()
+                    .map(|d| PathBuf::from(&d).join("pnpm").join(format!("{}.cmd", cmd))),
+                std::env::var("USERPROFILE").ok()
+                    .map(|d| PathBuf::from(&d).join(".bun").join("bin").join(format!("{}.exe", cmd))),
+            ];
+            for candidate in candidates.into_iter().flatten() {
+                if candidate.exists() {
+                    return true;
+                }
+            }
+        }
+        // PATH 查找
+        let which_cmd = if cfg!(windows) { "where" } else { "which" };
+        let mut check = Command::new(which_cmd);
+        check.arg(cmd);
+        #[cfg(windows)]
+        check.creation_flags(CREATE_NO_WINDOW);
+        check.output().map(|o| o.status.success()).unwrap_or(false)
     }
 
     fn unavailable_reason(&self) -> Option<String> {
