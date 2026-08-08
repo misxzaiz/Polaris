@@ -87,7 +87,12 @@
       "appConfigWrite": "写入应用配置",
       "network": "网络访问",
       "aiToolAccess": "AI 工具访问"
-    }
+    },
+    "marketplaceBannerTitle": "Polaris 插件商城",
+    "marketplaceBannerDesc": "浏览、搜索并一键安装社区插件，管理与更新已装插件。",
+    "marketplaceInstall": "安装商城",
+    "marketplaceInstalling": "安装中…",
+    "marketplaceInstallSucceeded": "插件商城安装成功"
   },
   "engines": {
     "claudeCode": {

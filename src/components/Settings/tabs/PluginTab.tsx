@@ -35,6 +35,11 @@ import { pluginServiceManager } from '@/services/pluginServiceManager'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import type { PolarisPluginManifest } from '@/plugin-system/types'
 
+/** 插件商城的 ID 与远程安装 URL */
+const MARKETPLACE_PLUGIN_ID = 'polaris.marketplace'
+const MARKETPLACE_DOWNLOAD_URL =
+  'https://cdn.jsdelivr.net/gh/misxzaiz/Polaris-plugin@main/plugins/marketplace/marketplace.zip'
+
 function formatPermissionLabel(key: string, t: (key: string, options?: { defaultValue?: string }) => string): string {
   return t(`plugins.permissions.${key}`, { defaultValue: key })
 }
@@ -417,6 +422,7 @@ export function PluginTab() {
   const [plugins, setPlugins] = useState(() => pluginRegistry.listPlugins())
   const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(new Set())
   const [showGuide, setShowGuide] = useState(false)
+  const [marketplaceInstalling, setMarketplaceInstalling] = useState(false)
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -426,6 +432,7 @@ export function PluginTab() {
   const resetPluginState = usePluginStore((state) => state.resetPluginState)
 
   const discoveredPluginCount = plugins.filter((plugin) => !plugin.builtin).length
+  const marketplaceInstalled = plugins.some((plugin) => plugin.id === MARKETPLACE_PLUGIN_ID)
   const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
   const enabledMcpServerCount = mcpServerStatuses.filter((server) => server.enabled).length
   const disabledMcpServerCount = mcpServerStatuses.length - enabledMcpServerCount
@@ -599,6 +606,27 @@ export function PluginTab() {
     }
   }, [currentWorkspacePath, pluginInstallScope, pluginRemoteSourceUrl, refreshInstallLocations, refreshInstalledPlugins, t])
 
+  const handleInstallMarketplace = useCallback(async () => {
+    setMarketplaceInstalling(true)
+    setPluginOperationMessage(null)
+
+    try {
+      const result = await installRemotePlugin(MARKETPLACE_DOWNLOAD_URL, pluginInstallScope, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.installFailed', { defaultValue: 'Plugin install failed' }))
+        return
+      }
+
+      setPluginOperationMessage(result.message ?? t('plugins.marketplaceInstallSucceeded', { defaultValue: 'Marketplace installed' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setMarketplaceInstalling(false)
+    }
+  }, [currentWorkspacePath, pluginInstallScope, refreshInstallLocations, refreshInstalledPlugins, t])
+
   const handleUninstallLocalPlugin = useCallback(async (pluginId: string, installPath?: string) => {
     if (!installPath) return
     const confirmed = window.confirm(t('plugins.uninstallConfirm', {
@@ -701,6 +729,31 @@ export function PluginTab() {
 
   return (
     <div className="space-y-3">
+      {/* === 插件商城安装提示条（未安装时显示） === */}
+      {!marketplaceInstalled && (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2.5">
+          <div className="min-w-0">
+            <div className="text-xs font-medium text-text-primary">
+              {t('plugins.marketplaceBannerTitle', { defaultValue: 'Polaris 插件商城' })}
+            </div>
+            <div className="text-[11px] text-text-tertiary">
+              {t('plugins.marketplaceBannerDesc', { defaultValue: '浏览、搜索并一键安装社区插件，管理与更新已装插件。' })}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleInstallMarketplace}
+            disabled={marketplaceInstalling || pluginOperationLoading || (pluginInstallScope === 'project' && !currentWorkspacePath)}
+            className="inline-flex shrink-0 items-center gap-1 rounded border border-primary/40 bg-primary/15 px-3 py-1.5 text-xs text-primary hover:bg-primary/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <PackagePlus size={12} />
+            {marketplaceInstalling
+              ? t('plugins.marketplaceInstalling', { defaultValue: 'Installing...' })
+              : t('plugins.marketplaceInstall', { defaultValue: 'Install' })}
+          </button>
+        </div>
+      )}
+
       {/* === 顶部紧凑工具栏 === */}
       <div className="rounded-lg border border-border-subtle bg-background-surface p-3 space-y-2">
         {/* 第一行：摘要信息 + 刷新 */}

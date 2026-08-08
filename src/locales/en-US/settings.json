@@ -87,7 +87,12 @@
       "appConfigWrite": "Write app config",
       "network": "Network access",
       "aiToolAccess": "AI tool access"
-    }
+    },
+    "marketplaceBannerTitle": "Polaris Marketplace",
+    "marketplaceBannerDesc": "Browse, search and one-click install community plugins. Manage and update installed plugins.",
+    "marketplaceInstall": "Install",
+    "marketplaceInstalling": "Installing...",
+    "marketplaceInstallSucceeded": "Marketplace installed"
   },
   "engines": {
     "claudeCode": {
