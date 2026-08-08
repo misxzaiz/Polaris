@@ -53,16 +53,21 @@ class PluginRegistry {
   }
 
   replaceInstalled(manifests: PolarisPluginManifest[]): void {
+    // 先收集所有待卸载的引擎 ID，全部卸载完后才注册新的
+    const unregisterPromises: Promise<void>[] = []
     for (const [pluginId, manifest] of this.manifests) {
       if (!manifest.builtin) {
         this.manifests.delete(pluginId)
         pluginPanelRegistry.unregisterAll(pluginId)
         chatCardRegistry.unregisterAll(pluginId)
-        this.unregisterEngines(manifest)
+        unregisterPromises.push(this.unregisterEngines(manifest))
       }
     }
 
-    this.registerInstalled(manifests)
+    // 等所有卸载完成后再注册
+    Promise.all(unregisterPromises).then(() => {
+      this.registerInstalled(manifests)
+    })
   }
 
   private registerPanel(manifest: PolarisPluginManifest): void {

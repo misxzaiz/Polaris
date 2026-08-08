@@ -116,14 +116,12 @@ impl EngineRegistry {
     /// 注册插件引擎（动态 Custom 引擎）。
     ///
     /// 由前端插件系统通过 `register_plugin_engine` Tauri 命令调用。
+    /// 幂等：如果引擎已注册，返回 Ok 而非错误。
     pub fn register_plugin_engine(&mut self, config: PluginEngineConfig) -> Result<()> {
         let engine_id = EngineId::Custom(config.id.clone());
         if self.engines.contains_key(&engine_id) {
-            tracing::warn!("[EngineRegistry] 插件引擎 {} 已注册，跳过", config.id);
-            return Err(AppError::ValidationError(format!(
-                "插件引擎 {} 已注册",
-                config.id
-            )));
+            tracing::info!("[EngineRegistry] 插件引擎 {} 已注册，跳过（幂等）", config.id);
+            return Ok(());
         }
         let id_for_log = config.id.clone();
         let runner = PluginEngineRunner::new(config);
