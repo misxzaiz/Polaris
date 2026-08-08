@@ -141,6 +141,9 @@ export default defineConfig(async () => ({
       '@codemirror/lint',
       '@codemirror/lsp-client',
       '@lezer/highlight',
+      '@xterm/xterm',
+      '@xterm/addon-fit',
+      '@xterm/addon-web-links',
     ],
     // 排除大型动态加载库，让 rollup 在 manualChunks 中精确拆分
     exclude: [

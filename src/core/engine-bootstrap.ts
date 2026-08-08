@@ -80,6 +80,10 @@ export async function bootstrapEngines(
     }
   }
 
+  // 先通过 get() 触发惰性工厂创建实例，确保 initialize() 能找到。
+  // registerFactory 只存工厂不进 engines Map，而 initialize 只查 engines Map。
+  registry.get(defaultEngineId)
+
   // 只初始化默认引擎（其他引擎首次 get() 时自动初始化）
   await registry.initialize(defaultEngineId)
 

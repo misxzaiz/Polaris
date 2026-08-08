@@ -13,6 +13,7 @@ import { chatCardRegistry } from './chatCardRegistry'
 import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader'
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 
 const log = createLogger('PluginRegistry')
 
@@ -107,11 +108,16 @@ class PluginRegistry {
     const engines = manifest.contributes.engines
     if (!engines || engines.length === 0) return
 
-    for (const engine of engines) {
-      this.registerSingleEngine(engine).catch(err => {
-        log.warn(`Failed to register engine ${engine.id} from plugin ${manifest.id}:`, err)
+    // 先注册所有引擎，再统一刷新 store
+    Promise.all(engines.map(e => this.registerSingleEngine(e)))
+      .then(() => {
+        useEngineMetadataStore.getState().reload().catch(err => {
+          log.warn('Failed to reload engine metadata after engine registration:', err)
+        })
       })
-    }
+      .catch(err => {
+        log.warn(`Failed to register engines from plugin ${manifest.id}:`, err)
+      })
   }
 
   private async registerSingleEngine(engine: PluginEngineContribution): Promise<void> {
@@ -140,11 +146,11 @@ class PluginRegistry {
     const engines = manifest.contributes.engines
     if (!engines || engines.length === 0) return
 
-    for (const engine of engines) {
-      invoke('unregister_plugin_engine', { engineId: engine.id }).catch(() => {
-        // Ignore errors during unregister
-      })
-    }
+    Promise.all(engines.map(e =>
+      invoke('unregister_plugin_engine', { engineId: e.id }).catch(() => {})
+    )).then(() => {
+      useEngineMetadataStore.getState().reload().catch(() => {})
+    })
   }
 
   listPlugins(): PolarisPluginManifest[] {

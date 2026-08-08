@@ -26,6 +26,8 @@ export interface EngineMetadataStore {
   error: string | null
   /** 加载引擎元数据 */
   load: () => Promise<void>
+  /** 重新加载引擎元数据（强制重新请求） */
+  reload: () => Promise<void>
   /** 获取指定引擎的元数据 */
   getEngine: (engineId: string) => EngineMetadata | undefined
   /** 获取所有引擎 ID 列表 */
@@ -56,6 +58,12 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
       log.error('加载引擎元数据失败', err)
       set({ error: err.message, loading: false })
     }
+  },
+
+  /** 重新加载引擎元数据（强制重新请求） */
+  reload: async () => {
+    set({ loaded: false, loading: false })
+    await get().load()
   },
 
   getEngine: (engineId: string) => {
