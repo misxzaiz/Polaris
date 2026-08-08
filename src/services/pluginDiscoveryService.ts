@@ -6,6 +6,7 @@ import type {
   PluginManifestSource,
   PluginMcpServerContribution,
   PluginChatCardContribution,
+  PluginEngineContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
   PluginViewContribution,
@@ -243,6 +244,45 @@ function normalizeChatCards(
   })
 }
 
+function normalizeEngines(
+  value: unknown,
+  _errors: string[]
+): PluginEngineContribution[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      return []
+    }
+    const id = asString(item.id)
+    const name = asString(item.name)
+    const description = asString(item.description)
+    const command = asString(item.cli?.command)
+
+    if (!id || !name || !command) {
+      return []
+    }
+
+    return [{
+      id,
+      name,
+      description: description ?? '',
+      cli: {
+        command,
+        args: Array.isArray(item.cli?.args) ? item.cli.args.filter((a): a is string => typeof a === 'string') : [],
+        installGuide: asString(item.cli?.installGuide) ?? '',
+      },
+      protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
+      capabilities: {
+        tools: item.capabilities?.tools !== false,
+        streaming: item.capabilities?.streaming !== false,
+        interrupt: item.capabilities?.interrupt !== false,
+        resume: item.capabilities?.resume !== false,
+      },
+    }]
+  })
+}
+
 export function normalizeDiscoveredPlugin(raw: unknown): PolarisPluginManifest | null {
   return validateDiscoveredPlugin(raw).plugin
 }
@@ -288,6 +328,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
         mcpServers,
         panel: normalizePanel(contributes.panel),
         chatCards: normalizeChatCards(contributes.chatCards, ownMcpServerIds, errors),
+        engines: normalizeEngines(contributes.engines, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

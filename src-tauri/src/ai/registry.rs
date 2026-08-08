@@ -119,6 +119,7 @@ impl EngineRegistry {
     pub fn register_plugin_engine(&mut self, config: PluginEngineConfig) -> Result<()> {
         let engine_id = EngineId::Custom(config.id.clone());
         if self.engines.contains_key(&engine_id) {
+            tracing::warn!("[EngineRegistry] 插件引擎 {} 已注册，跳过", config.id);
             return Err(AppError::ValidationError(format!(
                 "插件引擎 {} 已注册",
                 config.id

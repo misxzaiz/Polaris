@@ -111,7 +111,11 @@ class PluginRegistry {
     // 先注册所有引擎，再统一刷新 store
     Promise.all(engines.map(e => this.registerSingleEngine(e)))
       .then(() => {
-        useEngineMetadataStore.getState().reload().catch(err => {
+        log.info(`[PluginRegistry] 已注册 ${engines.length} 个插件引擎，刷新引擎元数据 store`)
+        useEngineMetadataStore.getState().reload().then(() => {
+          const ids = useEngineMetadataStore.getState().getEngineIds()
+          log.info(`[PluginRegistry] 刷新后引擎列表: [${ids.join(', ')}]`)
+        }).catch(err => {
           log.warn('Failed to reload engine metadata after engine registration:', err)
         })
       })
@@ -138,8 +142,9 @@ class PluginRegistry {
         resume: engine.capabilities?.resume ?? true,
       },
     }
+    log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)
     await invoke('register_plugin_engine', { engine: engineConfig })
-    log.info(`Registered plugin engine: ${engine.id}`)
+    log.info(`[PluginRegistry] 引擎注册成功: ${engine.id}`)
   }
 
   private unregisterEngines(manifest: PolarisPluginManifest): void {

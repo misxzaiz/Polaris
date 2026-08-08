@@ -25,5 +25,8 @@ pub async fn get_engine_metadata_list(
     state: State<'_, AppState>,
 ) -> Result<Vec<EngineMetadata>> {
     let registry = state.engine_registry.lock().await;
-    Ok(registry.list_all_metadata())
+    let metas = registry.list_all_metadata();
+    let ids: Vec<String> = metas.iter().map(|m| m.id.to_string()).collect();
+    tracing::info!("[EngineMetadataCmd] 返回 {} 个引擎: [{}]", metas.len(), ids.join(", "));
+    Ok(metas)
 }

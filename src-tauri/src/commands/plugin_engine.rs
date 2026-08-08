@@ -21,8 +21,14 @@ pub async fn register_plugin_engine(
     state: State<'_, AppState>,
     engine: PluginEngineConfig,
 ) -> Result<()> {
+    tracing::info!("[PluginEngineCmd] 注册插件引擎: id={}, name={}, cli={}", engine.id, engine.name, engine.cli.command);
     let mut registry = state.engine_registry.lock().await;
-    registry.register_plugin_engine(engine)
+    let result = registry.register_plugin_engine(engine);
+    match &result {
+        Ok(()) => tracing::info!("[PluginEngineCmd] 插件引擎注册成功"),
+        Err(e) => tracing::error!("[PluginEngineCmd] 插件引擎注册失败: {}", e),
+    }
+    result
 }
 
 /// 注销插件引擎。
