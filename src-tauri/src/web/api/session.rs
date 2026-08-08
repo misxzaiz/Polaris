@@ -13,12 +13,14 @@ use crate::AppState;
 use super::WebError;
 
 /// Validate that the engine_id is supported. Returns the normalized engine string.
-fn validate_engine(engine_id: &str) -> Result<&'static str, WebError> {
+fn validate_engine(engine_id: &str) -> Result<String, WebError> {
     match engine_id {
-        "claude" | "claude-code" => Ok("claude-code"),
-        "codex" | "openai-codex" => Ok("codex"),
-        "simple-ai" | "simpleai" => Ok("simple-ai"),
-        _ => Err(WebError::BadRequest(format!("Unsupported engine: {}", engine_id))),
+        "claude" | "claude-code" => Ok("claude-code".to_string()),
+        "codex" | "openai-codex" => Ok("codex".to_string()),
+        "simple-ai" | "simpleai" => Ok("simple-ai".to_string()),
+        "pi" => Ok("pi".to_string()),
+        // 插件引擎（动态 ID）直接透传
+        _ => Ok(engine_id.to_string()),
     }
 }
 
@@ -48,7 +50,7 @@ pub async fn handle_list_sessions(
 
     let work_dir = query.work_dir;
     let config = state.clone_config().map_err(WebError::Internal)?;
-    let result = match engine {
+    let result = match engine.as_str() {
         "claude-code" => run_claude_blocking(&state, move |provider| {
             provider.list_sessions(work_dir.as_deref(), pagination)
         }).await?,
@@ -116,7 +118,7 @@ pub async fn handle_delete_session(
     let engine = validate_engine(&engine_id)?;
 
     let config = state.clone_config().map_err(WebError::Internal)?;
-    match engine {
+    match engine.as_str() {
         "claude-code" => {
             run_claude_blocking(&state, move |provider| {
                 provider.delete_session(&session_id)

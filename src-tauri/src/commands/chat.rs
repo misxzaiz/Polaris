@@ -426,6 +426,7 @@ async fn apply_model_profile_options(
         EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
         EngineId::Pi => "pi",
+        EngineId::Custom(id) => id.as_str(),
     };
     if !profile.is_for_engine(expected_engine) {
         // 同样不静默跳过：明确告知用户所选 Profile 不适用于当前引擎，引导重新选择。
@@ -707,6 +708,38 @@ async fn apply_model_profile_options(
                 // 也注入通用 key 变量作为兜底
                 env_overrides.entry("ANTHROPIC_API_KEY".to_string())
                     .or_insert_with(|| profile.api_key.clone());
+            }
+            session_opts = session_opts.with_env_overrides(env_overrides);
+        }
+        // 插件引擎（Custom）：复用 Pi 的 provider 配置逻辑，
+        // 通过 env_overrides 注入 provider 端点/API key/model。
+        EngineId::Custom(_) => {
+            let mut env_overrides = std::collections::HashMap::new();
+            if let Some(custom) = &profile.custom_env {
+                for (k, v) in custom {
+                    env_overrides.insert(k.clone(), v.clone());
+                }
+            }
+            // 注入端点与模型（插件引擎 CLI 读取标准 env 变量）
+            if !profile.base_url.is_empty() {
+                env_overrides.entry("ANTHROPIC_BASE_URL".to_string())
+                    .or_insert_with(|| profile.base_url.clone());
+                env_overrides.entry("OPENAI_BASE_URL".to_string())
+                    .or_insert_with(|| profile.base_url.clone());
+            }
+            if !profile.api_key.is_empty() {
+                let env_name = match profile.wire_api.as_deref() {
+                    Some("openai-chat-completions" | "openai-responses") => "OPENAI_API_KEY",
+                    _ => "ANTHROPIC_API_KEY",
+                };
+                env_overrides.entry(env_name.to_string())
+                    .or_insert_with(|| profile.api_key.clone());
+                env_overrides.entry("ANTHROPIC_API_KEY".to_string())
+                    .or_insert_with(|| profile.api_key.clone());
+            }
+            if !profile.model.is_empty() {
+                env_overrides.insert("ANTHROPIC_MODEL".to_string(), profile.model.clone());
+                env_overrides.insert("OPENAI_MODEL".to_string(), profile.model.clone());
             }
             session_opts = session_opts.with_env_overrides(env_overrides);
         }
@@ -1138,7 +1171,7 @@ pub async fn continue_chat_inner(
     {
         let mut registry = state.engine_registry.lock().await;
         match engine {
-            EngineId::ClaudeCode | EngineId::Codex | EngineId::Pi => {
+            EngineId::ClaudeCode | EngineId::Codex | EngineId::Pi | EngineId::Custom(_) => {
                 registry.try_interrupt_all(&session_id);
             }
             EngineId::SimpleAI => {}
@@ -1158,7 +1191,7 @@ pub async fn continue_chat_inner(
     let mut registry = state.engine_registry.lock().await;
 
     // 按指定引擎续接会话
-    match registry.continue_session(engine, &session_id, &final_message, session_opts.clone()) {
+    match registry.continue_session(engine.clone(), &session_id, &final_message, session_opts.clone()) {
         Ok(()) => Ok(()),
         Err(primary_err) => {
             // 兜底：指定引擎续接失败时，遍历所有引擎尝试（与 try_interrupt_all 模式一致）

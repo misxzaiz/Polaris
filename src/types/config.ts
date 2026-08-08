@@ -7,8 +7,8 @@ import type { SpeechConfig, TTSConfig, WakeWordConfig, VoiceNotificationConfig, 
 import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
-/**  引擎 ID */
-export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi'
+/**  引擎 ID（支持动态插件引擎） */
+export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi' | (string & NonNullable<unknown>)
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'

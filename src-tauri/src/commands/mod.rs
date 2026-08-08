@@ -90,6 +90,10 @@ pub mod engine_metadata;
 #[cfg(feature = "tauri-app")]
 pub use engine_metadata::get_engine_metadata_list;
 
+pub mod plugin_engine;
+#[cfg(feature = "tauri-app")]
+pub use plugin_engine::{register_plugin_engine, unregister_plugin_engine, list_plugin_engines};
+
 pub mod mcp_manager;
 #[cfg(feature = "tauri-app")]
 pub use mcp_manager::{mcp_list_servers, mcp_get_server, mcp_health_check, mcp_health_check_one, mcp_add_server, mcp_remove_server, mcp_start_auth};

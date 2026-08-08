@@ -4,6 +4,12 @@
  *
  * EngineId 是引擎标识的单一来源（Single Source of Truth）。
  * 其他模块通过 `pub use crate::ai::EngineId` 引用，严禁重复定义。
+ *
+ * ## 动态引擎支持
+ *
+ * EngineId 现为混合枚举：已知引擎（编译期确定） + Custom(String)（运行时发现）。
+ * 插件引擎通过 `EngineId::Custom(id)` 注册，无需修改核心代码。
+ * serde 序列化使用 `#[serde(untagged)]`，向后兼容旧格式。
  */
 
 use crate::error::Result;
@@ -15,81 +21,92 @@ use std::sync::Arc;
 
 /// 引擎 ID —— AI 引擎子系统的单一标识来源。
 ///
+/// 混合枚举：已知引擎 + Custom(String) 支持插件注册的动态引擎。
+///
 /// ## 序列化格式
 ///
-/// `#[serde(rename_all = "kebab-case")]` 确保与前端及配置文件中的
-/// kebab-case 字符串一致：
-/// - `ClaudeCode` → `"claude-code"`
-/// - `Codex`      → `"codex"`
-/// - `SimpleAI`   → `"simple-ai"` （显式 rename，防止 kebab-case 将
-///   "AI" 拆为 "a-i"）
-/// - `Pi`         → `"pi"` （earendil-works pi-coding-agent CLI）
+/// 自定义 Serialize/Deserialize，始终序列化为纯字符串（kebab-case）：
+/// - 已知引擎：`"claude-code"` / `"codex"` / `"simple-ai"` / `"pi"`
+/// - 动态引擎：`"omp"` 等任意字符串
 ///
 /// ## 向后兼容
 ///
 /// `parse()` 接受旧格式（"claude"、"openai_codex" 等），
 /// 确保存量会话数据和旧版配置文件不受影响。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
-#[serde(rename_all = "kebab-case")]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineId {
     /// Claude Code 引擎（Anthropic 官方 CLI）
-    #[default]
     ClaudeCode,
     /// OpenAI Codex CLI 引擎
     Codex,
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
-    #[serde(rename = "simple-ai")]
     SimpleAI,
     /// Pi 引擎（earendil-works pi-coding-agent CLI）
     Pi,
+    /// 插件注册的动态引擎（运行时发现）
+    Custom(String),
+}
+
+impl Serialize for EngineId {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        serializer.serialize_str(&self.to_serialized_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for EngineId {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> std::result::Result<Self, D::Error> {
+        let s = String::deserialize(deserializer)?;
+        Ok(EngineId::parse(&s).unwrap_or(EngineId::Custom(s)))
+    }
+}
+
+impl Default for EngineId {
+    fn default() -> Self {
+        EngineId::ClaudeCode
+    }
 }
 
 impl EngineId {
-    /// 从字符串解析引擎 ID。
-    ///
-    /// 遍历 `all()` + `aliases()` 匹配，新增引擎只需在 `aliases()` 中加别名。
-    /// 解析不区分大小写，兼容历史格式。
-    pub fn parse(s: &str) -> Option<Self> {
-        let lower = s.to_lowercase();
-        Self::all().iter().find(|e| e.aliases().contains(&lower.as_str())).copied()
-    }
-
-    /// 返回该引擎的所有命令别名（用于 IM 命令解析和配置兼容）。
-    ///
-    /// 新增引擎时在此方法中加一行别名列表即可。
-    pub fn aliases(&self) -> &'static [&'static str] {
-        match self {
-            Self::ClaudeCode => &["claude", "claude-code", "claudecode"],
-            Self::Codex => &["codex", "openai-codex", "openai_codex"],
-            Self::Pi => &["pi", "pi-coding-agent", "piagent"],
-            Self::SimpleAI => &["simple-ai", "simpleai", "simple_ai"],
-        }
-    }
-
-    /// 返回引擎 ID 的规范字符串表示（kebab-case）。
-    ///
-    /// 此方法是序列化到配置文件、数据库和 API 响应的权威格式。
-    pub fn as_str(&self) -> &'static str {
+    /// 序列化到配置文件/API 的权威字符串表示（kebab-case）。
+    pub fn as_serialized_str(&self) -> &str {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::Codex => "codex",
             Self::SimpleAI => "simple-ai",
             Self::Pi => "pi",
+            Self::Custom(_) => "custom",
         }
     }
 
-    /// 获取简短显示名称（用于日志和 UI 展示）
-    pub fn display_name(&self) -> &'static str {
-        match self {
-            Self::ClaudeCode => "Claude Code",
-            Self::Codex => "OpenAI Codex",
-            Self::SimpleAI => "Simple AI",
-            Self::Pi => "Pi",
-        }
+    /// 返回引擎 ID 作为字符串（用于序列化到 JSON 等）
+    pub fn to_serialized_string(&self) -> String {
+        self.as_str()
     }
 
-    /// 所有已知引擎 ID 的迭代器
-    pub fn all() -> &'static [EngineId] {
+    /// 从字符串解析引擎 ID。
+    ///
+    /// 先匹配已知引擎别名，再尝试作为动态引擎 ID。
+    /// 解析不区分大小写，兼容历史格式。
+    pub fn parse(s: &str) -> Option<Self> {
+        // 处理 Custom 内部携带的字符串（deserialize 时避免二次包装）
+        if let Some(inner) = s.strip_prefix("Custom(") {
+            if let Some(rest) = inner.strip_suffix(')') {
+                return Some(EngineId::Custom(rest.to_string()));
+            }
+        }
+        let lower = s.to_lowercase();
+        // 先匹配已知引擎别名
+        for known in Self::known() {
+            if known.aliases().contains(&lower.as_str()) {
+                return Some(known.clone());
+            }
+        }
+        // 未匹配已知引擎则作为动态引擎 ID
+        Some(EngineId::Custom(s.to_string()))
+    }
+
+    /// 返回已知引擎数组（不含 Custom）
+    pub fn known() -> &'static [EngineId] {
         &[
             EngineId::ClaudeCode,
             EngineId::Codex,
@@ -97,11 +114,137 @@ impl EngineId {
             EngineId::SimpleAI,
         ]
     }
+
+    /// 返回该引擎的所有命令别名（用于 IM 命令解析和配置兼容）。
+    pub fn aliases(&self) -> Vec<&str> {
+        match self {
+            Self::ClaudeCode => vec!["claude", "claude-code", "claudecode"],
+            Self::Codex => vec!["codex", "openai-codex", "openai_codex"],
+            Self::Pi => vec!["pi", "pi-coding-agent", "piagent"],
+            Self::SimpleAI => vec!["simple-ai", "simpleai", "simple_ai"],
+            Self::Custom(id) => vec![id.as_str()],
+        }
+    }
+
+    /// 返回引擎 ID 的规范字符串表示。
+    pub fn as_str(&self) -> String {
+        match self {
+            Self::ClaudeCode => "claude-code".to_string(),
+            Self::Codex => "codex".to_string(),
+            Self::SimpleAI => "simple-ai".to_string(),
+            Self::Pi => "pi".to_string(),
+            Self::Custom(id) => id.clone(),
+        }
+    }
+
+    /// 获取简短显示名称（用于日志和 UI 展示）
+    pub fn display_name(&self) -> String {
+        match self {
+            Self::ClaudeCode => "Claude Code".to_string(),
+            Self::Codex => "OpenAI Codex".to_string(),
+            Self::SimpleAI => "Simple AI".to_string(),
+            Self::Pi => "Pi".to_string(),
+            Self::Custom(id) => id.clone(),
+        }
+    }
+
+    /// 所有已知引擎 ID + 动态引擎 ID 的迭代器。
+    pub fn all() -> Vec<EngineId> {
+        Self::known().to_vec()
+    }
+
+    /// 判断是否为已知引擎（非 Custom）
+    pub fn is_known(&self) -> bool {
+        matches!(self, Self::ClaudeCode | Self::Codex | Self::Pi | Self::SimpleAI)
+    }
 }
 
 impl std::fmt::Display for EngineId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        f.write_str(&self.as_str())
+    }
+}
+
+/// 插件引擎配置 —— 描述一个通过插件注册的动态 AI 引擎。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineConfig {
+    /// 引擎 ID（如 "omp"）
+    pub id: String,
+    /// 显示名称（如 "Oh My Pi"）
+    pub name: String,
+    /// 引擎描述
+    pub description: String,
+    /// CLI 命令或路径
+    pub cli: EngineCliConfig,
+    /// RPC 协议类型
+    #[serde(default)]
+    pub protocol: RpcProtocol,
+    /// 引擎能力
+    #[serde(default)]
+    pub capabilities: PluginEngineCapabilities,
+}
+
+/// CLI 入口配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineCliConfig {
+    /// 命令（如 "omp"）
+    pub command: String,
+    /// 启动参数
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    /// 安装指引
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_guide: Option<String>,
+}
+
+/// RPC 协议类型
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum RpcProtocol {
+    /// Pi 兼容的 --mode rpc JSONL 协议
+    PiRpc,
+    /// 标准 stdio JSON-RPC 协议
+    JsonRpc,
+    /// 简单命令执行
+    Command,
+}
+
+impl Default for RpcProtocol {
+    fn default() -> Self {
+        Self::PiRpc
+    }
+}
+
+/// 插件引擎能力标志
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineCapabilities {
+    /// 是否支持工具调用
+    #[serde(default = "default_true")]
+    pub tools: bool,
+    /// 是否支持流式输出
+    #[serde(default = "default_true")]
+    pub streaming: bool,
+    /// 是否支持中断
+    #[serde(default = "default_true")]
+    pub interrupt: bool,
+    /// 是否支持恢复会话
+    #[serde(default = "default_true")]
+    pub resume: bool,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for PluginEngineCapabilities {
+    fn default() -> Self {
+        Self {
+            tools: true,
+            streaming: true,
+            interrupt: true,
+            resume: true,
+        }
     }
 }
 
@@ -448,6 +591,11 @@ pub trait AIEngine: Send + Sync {
     }
 
     fn update_config(&mut self, _new_config: Config) {}
+
+    /// 清理引擎资源（动态分发，用于 Box<dyn AIEngine> 场景）
+    fn cleanup_dyn(&mut self) -> Option<Box<dyn FnOnce() + Send>> {
+        None
+    }
 }
 
 // ============================================================================

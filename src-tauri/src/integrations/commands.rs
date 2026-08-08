@@ -95,7 +95,7 @@ impl CommandParser {
             _ if EngineId::all().iter().any(|e| e.aliases().contains(&cmd.as_str())) => {
                 let provider = EngineId::all().iter()
                     .find(|e| e.aliases().contains(&cmd.as_str()))
-                    .copied()
+                    .cloned()
                     .unwrap_or(EngineId::ClaudeCode);
                 let (custom_prompt, replace_mode) = Self::parse_switch_args(&parts[1..]);
                 Some(BotCommand::SwitchProvider {
@@ -300,8 +300,7 @@ impl Default for ConversationState {
 pub fn get_help_text() -> String {
     // 动态生成引擎切换帮助（从 EngineId::all() 遍历）
     let engine_help: String = EngineId::all().iter().map(|e| {
-        let alias_str = e.as_str();
-        let alias = e.aliases().first().unwrap_or(&alias_str);
+        let alias = e.aliases().first().cloned().unwrap_or("").to_string();
         format!(
             "`/{} [提示词]` - 切换到 {}，可附加自定义提示词\n",
             alias,

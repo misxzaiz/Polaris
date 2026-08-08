@@ -14,6 +14,7 @@ export type {
   PluginChatCardMode,
   PluginChatCardProps,
   PluginChatCardStatus,
+  PluginEngineContribution,
   PluginIconId,
   PluginId,
   PluginLeftPanelType,

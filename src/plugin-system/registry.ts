@@ -5,11 +5,16 @@ import type {
   PluginPanelLoader,
   PluginChatCardContribution,
   PluginChatCardLoader,
+  PluginEngineContribution,
   PolarisPluginManifest,
 } from './types'
 import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
 import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader'
+import { invoke } from '@/services/transport'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('PluginRegistry')
 
 function createPanelLoader(pluginInstallPath: string, entry: string): PluginPanelLoader {
   const fullPath = resolvePluginEntryPath(pluginInstallPath, entry)
@@ -28,6 +33,7 @@ class PluginRegistry {
     this.manifests.set(manifest.id, manifest)
     this.registerPanel(manifest)
     this.registerChatCards(manifest)
+    this.registerEngines(manifest)
   }
 
   registerInstalled(manifests: PolarisPluginManifest[]): void {
@@ -41,6 +47,7 @@ class PluginRegistry {
       this.manifests.set(manifest.id, registered)
       this.registerPanel(registered)
       this.registerChatCards(registered)
+      this.registerEngines(registered)
     }
   }
 
@@ -50,6 +57,7 @@ class PluginRegistry {
         this.manifests.delete(pluginId)
         pluginPanelRegistry.unregisterAll(pluginId)
         chatCardRegistry.unregisterAll(pluginId)
+        this.unregisterEngines(manifest)
       }
     }
 
@@ -72,10 +80,6 @@ class PluginRegistry {
     }
   }
 
-  /**
-   * 注册插件声明的聊天卡片。仅外部插件（有 installPath + entry）在此自动注册；
-   * 内置插件的卡片 loader 在 builtinPlugins.ts 手动注册（无 installPath）。
-   */
   private registerChatCards(manifest: PolarisPluginManifest): void {
     const cards = manifest.contributes.chatCards
     if (!cards || cards.length === 0) return
@@ -85,8 +89,6 @@ class PluginRegistry {
     )
 
     for (const card of cards) {
-      // 安全校验：mcpServerId 必须属于本插件（外部插件 discovery 已校验过，
-      // 此处对内置/直接 register 的 manifest 再保底一次）
       if (!ownMcpServerIds.has(card.mcpServerId)) {
         continue
       }
@@ -98,7 +100,50 @@ class PluginRegistry {
           createChatCardLoader(manifest.installPath, card.entry)
         )
       }
-      // 无 entry 的内置卡片由 builtinPlugins.ts 手动 register(loader)
+    }
+  }
+
+  private registerEngines(manifest: PolarisPluginManifest): void {
+    const engines = manifest.contributes.engines
+    if (!engines || engines.length === 0) return
+
+    for (const engine of engines) {
+      this.registerSingleEngine(engine).catch(err => {
+        log.warn(`Failed to register engine ${engine.id} from plugin ${manifest.id}:`, err)
+      })
+    }
+  }
+
+  private async registerSingleEngine(engine: PluginEngineContribution): Promise<void> {
+    const engineConfig = {
+      id: engine.id,
+      name: engine.name,
+      description: engine.description,
+      cli: {
+        command: engine.cli.command,
+        args: engine.cli.args ?? [],
+        installGuide: engine.cli.installGuide ?? '',
+      },
+      protocol: engine.protocol ?? 'pi-rpc',
+      capabilities: {
+        tools: engine.capabilities?.tools ?? true,
+        streaming: engine.capabilities?.streaming ?? true,
+        interrupt: engine.capabilities?.interrupt ?? true,
+        resume: engine.capabilities?.resume ?? true,
+      },
+    }
+    await invoke('register_plugin_engine', { engine: engineConfig })
+    log.info(`Registered plugin engine: ${engine.id}`)
+  }
+
+  private unregisterEngines(manifest: PolarisPluginManifest): void {
+    const engines = manifest.contributes.engines
+    if (!engines || engines.length === 0) return
+
+    for (const engine of engines) {
+      invoke('unregister_plugin_engine', { engineId: engine.id }).catch(() => {
+        // Ignore errors during unregister
+      })
     }
   }
 

@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 use crate::error::{AppError, Result};
 use crate::models::config::Config;
-use super::traits::{AIEngine, EngineId, EngineMetadata, SessionOptions};
+use super::traits::{AIEngine, EngineId, EngineMetadata, PluginEngineConfig, SessionOptions};
+use super::engine::plugin_engine::PluginEngineRunner;
 use super::types::EngineStatus;
 
 /// 引擎注册表
@@ -96,8 +97,64 @@ impl EngineRegistry {
     /// 新增引擎时只需注册到 EngineRegistry，此方法自动包含。
     /// 前端通过 `get_engine_metadata_list` Tauri 命令消费此数据。
     pub fn list_all_metadata(&self) -> Vec<EngineMetadata> {
-        EngineId::all().iter()
-            .filter_map(|id| self.engines.get(id).map(|e| e.metadata()))
+        // 收集：已知引擎 + 动态引擎
+        let mut metas: Vec<EngineMetadata> = Vec::new();
+        for id in EngineId::all() {
+            if let Some(e) = self.engines.get(&id) {
+                metas.push(e.metadata());
+            }
+        }
+        // 附加 Custom（插件）引擎元数据
+        for (id, e) in &self.engines {
+            if let EngineId::Custom(_) = id {
+                metas.push(e.metadata());
+            }
+        }
+        metas
+    }
+
+    /// 注册插件引擎（动态 Custom 引擎）。
+    ///
+    /// 由前端插件系统通过 `register_plugin_engine` Tauri 命令调用。
+    pub fn register_plugin_engine(&mut self, config: PluginEngineConfig) -> Result<()> {
+        let engine_id = EngineId::Custom(config.id.clone());
+        if self.engines.contains_key(&engine_id) {
+            return Err(AppError::ValidationError(format!(
+                "插件引擎 {} 已注册",
+                config.id
+            )));
+        }
+        let id_for_log = config.id.clone();
+        let runner = PluginEngineRunner::new(config);
+        self.engines.insert(engine_id, Box::new(runner));
+        tracing::info!("[EngineRegistry] 已注册插件引擎: {}", id_for_log);
+        Ok(())
+    }
+
+    /// 注销插件引擎。
+    pub fn unregister_plugin_engine(&mut self, engine_id: &str) -> Result<()> {
+        let id = EngineId::Custom(engine_id.to_string());
+        if let Some(mut engine) = self.engines.remove(&id) {
+            if let Some(cleanup) = engine.as_mut().cleanup_dyn() {
+                cleanup();
+            }
+            tracing::info!("[EngineRegistry] 已注销插件引擎: {}", engine_id);
+            Ok(())
+        } else {
+            Err(AppError::ValidationError(format!(
+                "引擎 {} 未注册",
+                engine_id
+            )))
+        }
+    }
+
+    /// 列出所有自定义（插件）引擎 ID
+    pub fn list_plugin_engines(&self) -> Vec<String> {
+        self.engines.keys()
+            .filter_map(|id| match id {
+                EngineId::Custom(s) => Some(s.clone()),
+                _ => None,
+            })
             .collect()
     }
 
@@ -266,11 +323,12 @@ mod tests {
         }
 
         fn name(&self) -> &'static str {
-            match self.id {
+            match &self.id {
                 EngineId::ClaudeCode => "MockClaude",
                 EngineId::Codex => "MockCodex",
                 EngineId::SimpleAI => "MockSimpleAI",
                 EngineId::Pi => "MockPi",
+                EngineId::Custom(_) => "MockCustom",
             }
         }
 

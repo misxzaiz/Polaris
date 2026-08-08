@@ -109,6 +109,39 @@ export interface PluginChatCardContribution {
   mode: PluginChatCardMode
 }
 
+/**
+ * 引擎贡献点声明（manifest.contributes.engines[]）
+ *
+ * 声明一个 AI 引擎，由后端 PluginEngineRunner 自动适配。
+ * 用户安装插件后，该引擎立即可在引擎选择器中使用。
+ */
+export interface PluginEngineContribution {
+  /** 引擎 ID（如 "omp"） */
+  id: string
+  /** 显示名称（如 "Oh My Pi"） */
+  name: string
+  /** 引擎描述 */
+  description: string
+  /** CLI 入口配置 */
+  cli: {
+    /** 命令（如 "omp"） */
+    command: string
+    /** 启动参数 */
+    args?: string[]
+    /** 安装指引文本 */
+    installGuide?: string
+  }
+  /** RPC 协议类型，默认 pi-rpc */
+  protocol?: 'pi-rpc' | 'json-rpc' | 'command'
+  /** 引擎能力声明 */
+  capabilities?: {
+    tools?: boolean
+    streaming?: boolean
+    interrupt?: boolean
+    resume?: boolean
+  }
+}
+
 export interface PluginPermissionDeclaration {
   workspaceRead?: boolean
   workspaceWrite?: boolean
@@ -147,6 +180,7 @@ export interface PolarisPluginManifest {
     services?: Omit<PluginServiceContribution, 'pluginId'>[]
     panel?: PluginPanelContribution
     chatCards?: Omit<PluginChatCardContribution, 'pluginId'>[]
+    engines?: PluginEngineContribution[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata

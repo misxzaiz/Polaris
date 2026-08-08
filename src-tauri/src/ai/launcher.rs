@@ -172,11 +172,11 @@ pub fn inject_mcp_into_session_opts(
                 );
             }
         }
-        EngineId::Pi => {
+        EngineId::Pi | EngineId::Custom(_) => {
             if !mcp.mcp_servers.is_empty() {
                 opts.mcp_servers = mcp.mcp_servers.clone();
                 tracing::debug!(
-                    "[SessionLauncher] 注入 Pi MCP: {} 个 server",
+                    "[SessionLauncher] 注入 Pi/Custom MCP: {} 个 server",
                     mcp.mcp_servers.len()
                 );
             }
