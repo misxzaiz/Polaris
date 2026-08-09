@@ -117,7 +117,8 @@ fn normalize_tool_name(name: &str, args: Option<&serde_json::Value>, result: Opt
 /// 将一行 pi RPC 输出翻译为标准化 AIEvent 集合
 ///
 /// `current_sid` 为当前 Polaris 会话 ID（事件透出时回填）。
-pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine {
+/// `engine_id` 为引擎标识（如 "pi"、"omp"），用于用量统计归因。
+pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str, engine_id: &str) -> ParsedPiLine {
     let mut out = ParsedPiLine {
         events: Vec::new(),
         session_id_hint: None,
@@ -167,7 +168,7 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
                     if let Some(role) = msg.get("role").and_then(|v| v.as_str()) {
                         // 仅对 assistant 消息提取用量
                         if role == "assistant" {
-                            let usage_event = extract_usage_event(msg, current_sid);
+                            let usage_event = extract_usage_event(msg, current_sid, engine_id);
                             if let Some(ev) = usage_event {
                                 out.events.push(ev);
                             }
@@ -345,7 +346,15 @@ pub fn build_abort_command() -> String {
     "{\"type\":\"abort\"}\n".to_string()
 }
 
-/// 从 pi 的 message_end 事件中提取 token 用量，转换为 AIEvent::Usage
+/// 从 pi/omp 的 message_end 事件中提取 token 用量，转换为 AIEvent::Usage
+///
+/// 兼容两种字段命名风格：
+/// - pi 风格：`inputTokens` / `outputTokens` / `cacheReadInputTokens` / `cacheCreationInputTokens`
+/// - omp 风格：`input` / `output` / `cacheRead` / `cacheWrite`
+///
+/// 成本提取也兼容两种形式：
+/// - pi 风格：`message.totalCostUsd` 顶层字段
+/// - omp 风格：`usage.cost.total` 嵌套字段
 ///
 /// pi 的 message_end 数据格式参考：
 /// ```json
@@ -359,7 +368,22 @@ pub fn build_abort_command() -> String {
 ///   }
 /// }
 /// ```
-fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEvent> {
+///
+/// omp 的 message_end 数据格式参考：
+/// ```json
+/// {
+///   "role": "assistant",
+///   "usage": {
+///     "input": 12100,
+///     "output": 33,
+///     "cacheRead": 9216,
+///     "cacheWrite": 0,
+///     "reasoningTokens": 20,
+///     "cost": { "total": 0.001729 }
+///   }
+/// }
+/// ```
+fn extract_usage_event(msg: &serde_json::Value, session_id: &str, engine_id: &str) -> Option<AIEvent> {
     let usage = msg.get("usage")?;
 
     let input_tokens = usage.get("inputTokens")
@@ -369,13 +393,19 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
         .or_else(|| usage.get("output"))
         .and_then(|v| v.as_u64())?;
 
-    // 缓存读取（pi 可能使用 cacheRead 或 cacheReadInputTokens）
+    // 缓存读取：兼容 cacheReadInputTokens（pi）/ cacheRead（omp）
     let cache_read = usage.get("cacheReadInputTokens")
         .or_else(|| usage.get("cacheRead"))
         .and_then(|v| v.as_u64());
-    // 缓存写入
+    // 缓存写入：兼容 cacheCreationInputTokens（pi）/ cacheCreation（第三方）/ cacheWrite（omp）
     let cache_create = usage.get("cacheCreationInputTokens")
         .or_else(|| usage.get("cacheCreation"))
+        .or_else(|| usage.get("cacheWrite"))
+        .and_then(|v| v.as_u64());
+
+    // reasoning 输出 token：omp 的 usage.reasoningTokens
+    let reasoning_tokens = usage.get("reasoningTokens")
+        .or_else(|| usage.get("reasoningOutputTokens"))
         .and_then(|v| v.as_u64());
 
     // 提取实际模型名（pi 的 message 中可能携带 model 字段）
@@ -421,8 +451,14 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
                 .collect()
         });
 
-    // 总成本
-    let total_cost_usd = msg.get("totalCostUsd").and_then(|v| v.as_f64());
+    // 总成本：优先 msg.totalCostUsd（pi 风格），回退 usage.cost.total（omp 风格）
+    let total_cost_usd = msg.get("totalCostUsd")
+        .and_then(|v| v.as_f64())
+        .or_else(|| {
+            usage.get("cost")
+                .and_then(|c| c.get("total"))
+                .and_then(|v| v.as_f64())
+        });
 
     let mut usage_event = crate::models::UsageEvent::new(
         session_id,
@@ -430,7 +466,7 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
         cache_create,
         cache_read,
         output_tokens,
-        None, // reasoning_output_tokens
+        reasoning_tokens,
         context_window,
     );
 
@@ -448,12 +484,12 @@ fn extract_usage_event(msg: &serde_json::Value, session_id: &str) -> Option<AIEv
         usage_event = usage_event.with_actual_model(Some(model));
     }
 
-    // DX: 同步写入 SQLite 用量数据库（覆盖 Pi 不经过代理的路径）
-    tracing::debug!("[PiParser] 调用 record_usage: model={}, input={}, output={}", model_name, input_tokens, output_tokens);
+    // DX: 同步写入 SQLite 用量数据库（覆盖 Pi/omp 不经过代理的路径）
+    tracing::debug!("[PiParser] 调用 record_usage: engine={}, model={}, input={}, output={}", engine_id, model_name, input_tokens, output_tokens);
     crate::services::usage_db::record_usage(
         &model_name,
         None,
-        Some("pi"),
+        Some(engine_id),
         input_tokens as i64,
         output_tokens as i64,
         cache_read.unwrap_or(0) as i64,
@@ -475,7 +511,7 @@ mod tests {
     #[test]
     fn test_parse_session_header() {
         let line = parse(r#"{"type":"session","version":3,"id":"abc-123","timestamp":1,"cwd":"/x"}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert_eq!(r.session_id_hint.as_deref(), Some("abc-123"));
         assert!(r.events.is_empty());
     }
@@ -483,7 +519,7 @@ mod tests {
     #[test]
     fn test_text_delta_produces_delta_event() {
         let line = parse(r#"{"type":"message_update","message":{},"assistantMessageEvent":{"type":"text_delta","delta":"Hi"}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert_eq!(r.events.len(), 1);
         match &r.events[0] {
             AIEvent::AssistantMessage(e) => {
@@ -497,7 +533,7 @@ mod tests {
     #[test]
     fn test_thinking_delta_produces_thinking_event() {
         let line = parse(r#"{"type":"message_update","message":{},"assistantMessageEvent":{"type":"thinking_delta","delta":"思考"}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert_eq!(r.events.len(), 1);
         match &r.events[0] {
             AIEvent::Thinking(e) => assert_eq!(e.content, "思考"),
@@ -508,7 +544,7 @@ mod tests {
     #[test]
     fn test_tool_execution_start_end() {
         let start_line = parse(r#"{"type":"tool_execution_start","toolCallId":"c1","toolName":"bash","args":{"command":"ls"}}"#);
-        let r1 = pi_line_to_ai_events(&start_line, "sid");
+        let r1 = pi_line_to_ai_events(&start_line, "sid", "pi");
         assert_eq!(r1.events.len(), 1);
         match &r1.events[0] {
             AIEvent::ToolCallStart(e) => {
@@ -520,7 +556,7 @@ mod tests {
         }
 
         let end_line = parse(r#"{"type":"tool_execution_end","toolCallId":"c1","toolName":"bash","result":{"exit":0},"isError":false}"#);
-        let r2 = pi_line_to_ai_events(&end_line, "sid");
+        let r2 = pi_line_to_ai_events(&end_line, "sid", "pi");
         assert_eq!(r2.events.len(), 1);
         match &r2.events[0] {
             AIEvent::ToolCallEnd(e) => {
@@ -535,7 +571,7 @@ mod tests {
     #[test]
     fn test_prompt_failure_response_emits_error() {
         let line = parse(r#"{"id":"q1","type":"response","command":"prompt","success":false,"data":{"message":"rate limited"}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert_eq!(r.events.len(), 1);
         match &r.events[0] {
             AIEvent::Error(e) => assert!(e.error.contains("rate limited")),
@@ -546,7 +582,7 @@ mod tests {
     #[test]
     fn test_non_prompt_failure_is_command_error_not_event() {
         let line = parse(r#"{"id":"q1","type":"response","command":"set_model","success":false,"data":{"error":"bad model"}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert!(r.events.is_empty());
         assert!(r.command_error.is_some());
     }
@@ -562,7 +598,7 @@ mod tests {
     fn test_omp_mcp_write_wrapper_normalized() {
         // OMP 把 MCP 调用包装成 write 工具，args.path 带 xd://mcp__ 前缀
         let line = parse(r#"{"type":"tool_execution_start","toolCallId":"c1","toolName":"write","args":{"path":"xd://mcp__chrome_devtools_list_pages"}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         match &r.events[0] {
             AIEvent::ToolCallStart(e) => {
                 assert_eq!(e.tool, "mcp__chrome_devtools_list_pages");
@@ -575,7 +611,7 @@ mod tests {
     fn test_omp_mcp_direct_xd_prefix_normalized() {
         // 直接带 xd:// 前缀的工具名
         let line = parse(r#"{"type":"tool_execution_start","toolCallId":"c1","toolName":"xd://mcp__polaris-browser__browser_acquire","args":{}}"#);
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         match &r.events[0] {
             AIEvent::ToolCallStart(e) => {
                 assert_eq!(e.tool, "mcp__polaris-browser__browser_acquire");
@@ -616,7 +652,7 @@ mod tests {
         let line = parse(
             r#"{"type":"message_end","message":{"role":"assistant","model":"claude-sonnet-4-20250514","usage":{"inputTokens":1234,"outputTokens":567,"cacheCreationInputTokens":78,"cacheReadInputTokens":90}}}"#,
         );
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert_eq!(r.events.len(), 1);
         match &r.events[0] {
             AIEvent::Usage(e) => {
@@ -635,7 +671,7 @@ mod tests {
         let line = parse(
             r#"{"type":"message_end","message":{"role":"assistant","content":"hello"}}"#,
         );
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert!(r.events.is_empty());
     }
 
@@ -644,7 +680,52 @@ mod tests {
         let line = parse(
             r#"{"type":"message_end","message":{"role":"user","usage":{"inputTokens":100,"outputTokens":50}}}"#,
         );
-        let r = pi_line_to_ai_events(&line, "sid");
+        let r = pi_line_to_ai_events(&line, "sid", "pi");
         assert!(r.events.is_empty());
+    }
+
+    #[test]
+    fn test_omp_usage_format() {
+        // omp 的 message_end 使用不同字段名：
+        // input/output/cacheRead/cacheWrite/reasoningTokens
+        // 成本在 usage.cost.total 而非 msg.totalCostUsd
+        let line = parse(
+            r#"{"type":"message_end","message":{"role":"assistant","model":"deepseek-v4-flash","usage":{"input":12100,"output":33,"cacheRead":9216,"cacheWrite":15,"reasoningTokens":20,"cost":{"total":0.001729}}}}"#,
+        );
+        let r = pi_line_to_ai_events(&line, "sid", "omp");
+        assert_eq!(r.events.len(), 1);
+        match &r.events[0] {
+            AIEvent::Usage(e) => {
+                assert_eq!(e.input_tokens, 12100);
+                assert_eq!(e.output_tokens, 33);
+                assert_eq!(e.cache_read_input_tokens, Some(9216));
+                assert_eq!(e.cache_creation_input_tokens, Some(15));
+                assert_eq!(e.reasoning_output_tokens, Some(20));
+                assert_eq!(e.total_cost_usd, Some(0.001729));
+                assert_eq!(e.actual_model, Some("deepseek-v4-flash".to_string()));
+            }
+            other => panic!("应为 Usage，实际: {}", other.event_type()),
+        }
+    }
+
+    #[test]
+    fn test_omp_usage_without_cost() {
+        // omp 格式但无 cost 字段
+        let line = parse(
+            r#"{"type":"message_end","message":{"role":"assistant","usage":{"input":50,"output":25,"cacheRead":10,"cacheWrite":0}}}"#,
+        );
+        let r = pi_line_to_ai_events(&line, "sid", "omp");
+        assert_eq!(r.events.len(), 1);
+        match &r.events[0] {
+            AIEvent::Usage(e) => {
+                assert_eq!(e.input_tokens, 50);
+                assert_eq!(e.output_tokens, 25);
+                assert_eq!(e.cache_read_input_tokens, Some(10));
+                assert_eq!(e.cache_creation_input_tokens, Some(0));
+                assert_eq!(e.reasoning_output_tokens, None);
+                assert_eq!(e.total_cost_usd, None);
+            }
+            other => panic!("应为 Usage，实际: {}", other.event_type()),
+        }
     }
 }

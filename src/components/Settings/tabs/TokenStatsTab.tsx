@@ -60,6 +60,7 @@ const ENGINE_OPTIONS = [
   { value: 'codex', label: 'Codex' },
   { value: 'simple-ai', label: 'Simple AI' },
   { value: 'pi', label: 'Pi' },
+  { value: 'omp', label: 'OMP' },
 ]
 
 // ============================================================================

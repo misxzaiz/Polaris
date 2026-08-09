@@ -605,7 +605,6 @@ impl PluginEngineRunner {
         let current_session_id = session_id.clone();
         // 预取 session 落盘目录（闭包 move 后无法再借 &self）
         let session_dir = self.plugin_session_dir().unwrap_or_default();
-        let engine_id_for_session = self.config.id.clone();
         // session_paths 持久映射的共享引用（跨进程生命周期存活）
         let session_paths = self.session_paths.clone();
         // session_paths 持久化文件路径（同闭包 move）
@@ -742,7 +741,7 @@ impl PluginEngineRunner {
                     message_event_count += 1;
                 }
 
-                let parsed = super::pi_parser::pi_line_to_ai_events(&pi_line, &current_session_id);
+                let parsed = super::pi_parser::pi_line_to_ai_events(&pi_line, &current_session_id, &engine_id);
                 for ev in parsed.events {
                     event_callback(ev);
                 }

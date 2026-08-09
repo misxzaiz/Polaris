@@ -733,7 +733,7 @@ impl PiEngine {
                     );
                 }
 
-                let parsed = pi_line_to_ai_events(&pi_line, &real_session_id);
+                let parsed = pi_line_to_ai_events(&pi_line, &real_session_id, "pi");
                 for ev in parsed.events {
                     event_callback(ev);
                 }
