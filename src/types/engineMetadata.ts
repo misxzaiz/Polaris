@@ -109,6 +109,8 @@ export interface EngineMetadata {
   envKeys: EnvKeyMapping
   /** 是否支持通过 model_provider 切换 API 端点 */
   supportsModelProvider: boolean
+  /** 安装指引（插件引擎 CLI 安装说明） */
+  installGuide?: string
 }
 
 // ============================================================================

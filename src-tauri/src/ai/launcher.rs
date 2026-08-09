@@ -142,6 +142,8 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
 /// - Codex      → codex_config_args（-c key=value 参数）
 /// - SimpleAI   → mcp_servers（直接注入 function calling schema）
 /// - Pi         → mcp_servers（同 SimpleAI，通过 Extension 桥接）
+/// - Custom(_)  → mcp_servers（注入后由 PluginEngineRunner 根据自身
+///   mcp_consumption 策略决定如何桥接，如 PiExtension 写 JS Extension + --extension）
 pub fn inject_mcp_into_session_opts(
     opts: &mut SessionOptions,
     engine_id: &EngineId,

@@ -1124,6 +1124,7 @@ impl AIEngine for ClaudeEngine {
                 model: "ANTHROPIC_MODEL",
             },
             supports_model_provider: true,
+            install_guide: None,
         }
     }
 

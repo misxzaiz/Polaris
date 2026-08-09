@@ -979,10 +979,11 @@ function PluginCard({
 }: PluginCardProps) {
   const isCorePlugin = plugin.id === 'polaris.core'
   const views = plugin.contributes.views ?? []
+  const engines = plugin.contributes.engines ?? []
   const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
   const originEntries = Object.entries(plugin.origin ?? {})
     .filter(([, value]) => typeof value === 'string' && value.length > 0)
-  const hasDetails = views.length > 0 || mcpServerStatuses.length > 0 || permissionEntries.length > 0 || originEntries.length > 0
+  const hasDetails = views.length > 0 || engines.length > 0 || mcpServerStatuses.length > 0 || permissionEntries.length > 0 || originEntries.length > 0
 
   return (
     <div className={`rounded-lg border transition-colors ${expanded ? 'border-border-subtle bg-background-surface' : 'border-transparent hover:border-border-subtle hover:bg-background-surface/50'}`}>
@@ -1033,6 +1034,11 @@ function PluginCard({
             {views.length > 0 && (
               <span className="text-[10px] text-text-muted">
                 {t('plugins.viewCount', { defaultValue: '{{count}} views', count: views.length })}
+              </span>
+            )}
+            {engines.length > 0 && (
+              <span className="text-[10px] text-text-muted">
+                {t('plugins.engineCount', { defaultValue: '{{count}} 引擎', count: engines.length })}
               </span>
             )}
             {mcpServerStatuses.length > 0 && (
@@ -1097,8 +1103,8 @@ function PluginCard({
             </div>
           )}
 
-          {/* 三列信息：界面 | MCP 服务器 | 权限 */}
-          <div className="grid gap-2 sm:grid-cols-3">
+          {/* 四列信息：界面 | MCP 服务器 | AI 引擎 | 权限 */}
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {/* 界面 */}
             <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
               <div className="flex items-center justify-between mb-1.5">
@@ -1180,6 +1186,27 @@ function PluginCard({
                 </div>
               ) : (
                 <span className="text-[11px] text-text-muted">{t('plugins.noMcpServers', { defaultValue: 'None' })}</span>
+              )}
+            </div>
+
+            {/* AI 引擎 */}
+            <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+              <div className="mb-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('plugins.engineSurface', { defaultValue: 'AI 引擎' })}
+                </span>
+              </div>
+              {engines.length > 0 ? (
+                <div className="space-y-1">
+                  {engines.map((engine) => (
+                    <div key={engine.id} className="flex items-center gap-1 text-[11px]">
+                      <span className="text-text-secondary">{engine.name}</span>
+                      <span className="font-mono text-text-muted">({engine.id})</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-[11px] text-text-muted">{t('plugins.noEngines', { defaultValue: 'None' })}</span>
               )}
             </div>
 

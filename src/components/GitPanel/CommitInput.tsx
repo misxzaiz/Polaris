@@ -6,7 +6,7 @@
  * 把选中变更作为上下文自动发送；AI 输出可通过"采用"按钮回流到提交输入框。
  */
 
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Send, Sparkles, Loader2, Bot, Cpu, Zap, Check, MessageSquare, Orbit } from 'lucide-react'
 import { clsx } from 'clsx'
@@ -17,25 +17,33 @@ import { invoke } from '@/services/transport'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { openCommitMessageChat, useCommitMessageSuggestion } from '@/services/commitMessageChat'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { logger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import type { GitDiffEntry } from '@/types/git'
 
 const COMMIT_ENGINE_STORAGE_KEY = 'polaris.git.commitEngine'
 
-const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> = [
-  { id: 'claude-code', label: 'Claude', Icon: Bot },
-  { id: 'codex', label: 'Codex', Icon: Cpu },
-  { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'pi', label: 'Pi', Icon: Orbit },
-]
+/** 引擎显示图标映射（已知引擎映射到专属图标，插件引擎统一用 Bot） */
+const KNOWN_ENGINE_ICONS: Record<string, typeof Bot> = {
+  'claude-code': Bot,
+  codex: Cpu,
+  'simple-ai': Zap,
+  pi: Orbit,
+}
 
 function readStoredEngine(defaultEngine: EngineId): EngineId {
   try {
     const raw = localStorage.getItem(COMMIT_ENGINE_STORAGE_KEY)
     if (raw) {
-      const normalized = normalizeEngineId(raw)
-      if (ENGINE_OPTIONS.some((o) => o.id === normalized)) return normalized
+      const trimmed = raw.trim()
+      if (!trimmed) return defaultEngine
+      // 元数据已加载时校验引擎是否存在；未加载时信任存储值（插件引擎可能尚未注册）
+      const metadatas = useEngineMetadataStore.getState().metadatas
+      if (metadatas.length > 0) {
+        return metadatas.some((m) => m.id === trimmed) ? (trimmed as EngineId) : defaultEngine
+      }
+      return trimmed as EngineId
     }
   } catch {
     // localStorage 不可用时静默回退
@@ -58,6 +66,25 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
 
   const { commitChanges, isLoading, status, getIndexFileDiff, getWorktreeFileDiff } = useGitStore()
   const defaultEngine = normalizeEngineId(useConfigStore((s) => s.config?.defaultEngine))
+
+  // 引擎选项（动态从元数据读取，插件注册后自动可见）
+  const metadatas = useEngineMetadataStore((s) => s.metadatas)
+  const engineOptions = useMemo<Array<{ id: EngineId; label: string; Icon: typeof Bot }>>(() => {
+    if (metadatas.length > 0) {
+      return metadatas.map((meta) => ({
+        id: meta.id as EngineId,
+        label: meta.name,
+        Icon: KNOWN_ENGINE_ICONS[meta.id] ?? Bot,
+      }))
+    }
+    return [
+      { id: 'claude-code', label: 'Claude', Icon: Bot },
+      { id: 'codex', label: 'Codex', Icon: Cpu },
+      { id: 'simple-ai', label: 'Simple', Icon: Zap },
+      { id: 'pi', label: 'Pi', Icon: Orbit },
+    ]
+  }, [metadatas])
+
   const [selectedEngine, setSelectedEngine] = useState<EngineId>(() => readStoredEngine(defaultEngine))
   const toggleRightPanel = useViewStore((s) => s.toggleRightPanel)
   const rightPanelCollapsed = useViewStore((s) => s.rightPanelCollapsed)
@@ -279,7 +306,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
             <div className="px-2 pb-1.5 text-[11px] font-medium text-text-tertiary">
               {t('commit.selectEngine')}
             </div>
-            {ENGINE_OPTIONS.map(({ id, label, Icon }) => (
+            {engineOptions.map(({ id, label, Icon }) => (
               <button
                 key={id}
                 onClick={() => handlePickEngine(id)}

@@ -26,6 +26,7 @@ import {
 import type { EngineId } from '@/types'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId } from '@/utils/engineDisplay'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 
 const log = createLogger('AIPopover')
 
@@ -71,13 +72,22 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [isOpen, onClose])
 
-  // 引擎选项
-  const engineOptions = useMemo(() => [
-    { id: 'claude-code' as EngineId, name: 'Claude Code' },
-    { id: 'codex' as EngineId, name: 'OpenAI Codex' },
-    { id: 'simple-ai' as EngineId, name: 'Simple AI' },
-    { id: 'pi' as EngineId, name: 'Pi' },
-  ], [])
+  // 引擎选项（动态从元数据读取，插件注册后自动可见）
+  const metadatas = useEngineMetadataStore((s) => s.metadatas)
+  const engineOptions = useMemo(() => {
+    if (metadatas.length > 0) {
+      return metadatas.map((meta) => ({
+        id: meta.id as EngineId,
+        name: meta.name,
+      }))
+    }
+    return [
+      { id: 'claude-code' as EngineId, name: 'Claude Code' },
+      { id: 'codex' as EngineId, name: 'OpenAI Codex' },
+      { id: 'simple-ai' as EngineId, name: 'Simple AI' },
+      { id: 'pi' as EngineId, name: 'Pi' },
+    ]
+  }, [metadatas])
 
   const activeSessionMetadata = useMemo(
     () => sessionMetadataList.find(session => session.id === activeSessionId),

@@ -20,9 +20,7 @@ import type { EngineId } from '@/types'
  *
  * 实际渲染前用 engine-registry 过滤掉未注册/不可用的引擎，
  * 避免硬编码与注册表不同步、或展示出不存在的引擎。
- * 新增引擎时只需在此追加（registry 已注册才会显示）。
  */
-const PREFERRED_ENGINE_ORDER: EngineId[] = ['claude-code', 'codex', 'simple-ai', 'pi']
 
 interface SessionTabContextMenuProps {
   visible: boolean
@@ -47,11 +45,17 @@ export function SessionTabContextMenu({
   const { t } = useTranslation('chat')
   const menuRef = useRef<HTMLDivElement>(null)
 
-  // 从 registry 动态读取已注册引擎，按偏好顺序过滤（registry 未就绪时回退全量，避免菜单空）
+  // 从 registry 动态读取已注册引擎（registry 未就绪时回退全量，避免菜单空）
   const engineOptions = useMemo<EngineId[]>(() => {
     const registered = new Set(getEngineRegistry().list().map(d => d.id))
-    const filtered = PREFERRED_ENGINE_ORDER.filter(id => registered.has(id))
-    return filtered.length > 0 ? filtered : PREFERRED_ENGINE_ORDER
+    const preferredOrder = ['claude-code', 'codex', 'simple-ai', 'pi'] as EngineId[]
+    // 已知引擎按偏好顺序，其余（插件引擎）追加到末尾
+    const known = preferredOrder.filter(id => registered.has(id))
+    const plugin = registered.size > 0
+      ? [...registered].filter(id => !preferredOrder.includes(id as EngineId)) as EngineId[]
+      : []
+    const combined = known.length > 0 ? [...known, ...plugin] : preferredOrder
+    return combined
   }, [])
 
   useEffect(() => {

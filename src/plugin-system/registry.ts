@@ -29,6 +29,8 @@ function createChatCardLoader(pluginInstallPath: string, entry: string): PluginC
 
 class PluginRegistry {
   private manifests = new Map<string, PolarisPluginManifest>()
+  /** engineId → pluginId 映射（用于引擎设置页定位来源插件） */
+  private engineToPlugin = new Map<string, string>()
 
   register(manifest: PolarisPluginManifest): void {
     this.manifests.set(manifest.id, manifest)
@@ -60,6 +62,7 @@ class PluginRegistry {
         this.manifests.delete(pluginId)
         pluginPanelRegistry.unregisterAll(pluginId)
         chatCardRegistry.unregisterAll(pluginId)
+        this.clearEngineMapping(pluginId)
         unregisterPromises.push(this.unregisterEngines(manifest))
       }
     }
@@ -127,6 +130,9 @@ class PluginRegistry {
     const engines = manifest.contributes.engines
     if (!engines || engines.length === 0) return Promise.resolve()
 
+    // 记录引擎→插件映射
+    this.recordEngineMapping(manifest)
+
     // 先注册所有引擎，再统一刷新 store
     return Promise.all(engines.map(e => this.registerSingleEngine(e)))
       .then(() => {
@@ -168,6 +174,25 @@ class PluginRegistry {
     log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)
     await invoke('register_plugin_engine', { engine: engineConfig })
     log.info(`[PluginRegistry] 引擎注册成功: ${engine.id}`)
+  }
+
+  /** 记录引擎 → 插件映射（在引擎贡献点注册后调用） */
+  private recordEngineMapping(manifest: PolarisPluginManifest): void {
+    for (const engine of manifest.contributes.engines ?? []) {
+      this.engineToPlugin.set(engine.id, manifest.id)
+    }
+  }
+
+  /** 清理某插件的引擎映射（卸载/替换时） */
+  private clearEngineMapping(pluginId: string): void {
+    for (const [engineId, pid] of this.engineToPlugin) {
+      if (pid === pluginId) this.engineToPlugin.delete(engineId)
+    }
+  }
+
+  /** 获取指定引擎的来源插件 ID（未找到返回 undefined） */
+  getPluginIdForEngine(engineId: string): string | undefined {
+    return this.engineToPlugin.get(engineId)
   }
 
   private unregisterEngines(manifest: PolarisPluginManifest): Promise<void> {

@@ -899,6 +899,7 @@ impl AIEngine for CodexEngine {
                 model: "OPENAI_MODEL",
             },
             supports_model_provider: true,
+            install_guide: None,
         }
     }
 

@@ -1483,12 +1483,12 @@ impl Config {
 
     /// 确保 default_engine 与显示设置有效
     pub fn validate(&mut self) {
-        if EngineId::parse(&self.default_engine).is_none() {
+        if self.default_engine.trim().is_empty() {
             self.default_engine = "claude-code".to_string();
         }
         // 校验 auxiliary_engine：None/空合法（=跟随默认）；非法字符串清空为 None
         if let Some(ref ae) = self.auxiliary_engine {
-            if ae.is_empty() || EngineId::parse(ae).is_none() {
+            if ae.trim().is_empty() {
                 self.auxiliary_engine = None;
             }
         }
@@ -1497,8 +1497,7 @@ impl Config {
 
     /// 获取当前引擎 ID
     pub fn get_engine_id(&self) -> EngineId {
-        EngineId::parse(&self.default_engine)
-            .unwrap_or(EngineId::ClaudeCode)
+        EngineId::parse_any(&self.default_engine)
     }
 
     /// 设置默认引擎
@@ -1511,7 +1510,13 @@ impl Config {
     pub fn get_auxiliary_engine_id(&self) -> Option<EngineId> {
         self.auxiliary_engine
             .as_ref()
-            .and_then(|s| EngineId::parse(s))
+            .and_then(|s| {
+                if s.trim().is_empty() {
+                    None
+                } else {
+                    Some(EngineId::parse_any(s))
+                }
+            })
     }
 }
 

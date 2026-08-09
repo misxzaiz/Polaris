@@ -2,10 +2,11 @@
  * 引擎详情面板
  */
 import { useTranslation } from 'react-i18next';
-import { Package, Check } from 'lucide-react';
+import { Package, Check, Puzzle } from 'lucide-react';
 import { ClaudePathSelector } from '../Common';
 import { EngineInstallActions } from './EngineInstallActions';
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
+import { pluginRegistry } from '@/plugin-system';
 import type { EngineCapabilities, EngineMetadata, Config, EngineId } from '@/types';
 import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './AIEngineTab';
 
@@ -139,6 +140,50 @@ export function EngineExpandDetail({
             version={status.version}
             onChanged={refreshHealth}
           />
+        </div>
+      )}
+
+      {/* ====== 插件引擎安装引导（非已知引擎且 distribution 为 custom-path） ====== */}
+      {!uiConfig && meta?.distribution.type === 'custom-path' && (
+        <div className="bg-surface border border-border rounded-lg p-4 space-y-3">
+          <div className="flex items-center gap-2 text-xs text-text-secondary">
+            <Puzzle size={13} />
+            <span className="font-medium">插件引擎</span>
+            {(() => {
+              const pluginId = pluginRegistry.getPluginIdForEngine(engineId)
+              return pluginId ? (
+                <span className="text-text-muted">· 来自插件 {pluginId}</span>
+              ) : null
+            })()}
+          </div>
+
+          {/* CLI 安装状态 */}
+          <div className="flex items-center gap-2 text-sm">
+            <span className="font-mono text-text-primary">{meta.distribution.path}</span>
+            {status.available ? (
+              <span className="text-xs px-2 py-0.5 rounded bg-green-500/10 text-green-500 border border-green-500/20">
+                已安装
+              </span>
+            ) : (
+              <span className="text-xs px-2 py-0.5 rounded bg-text-tertiary/10 text-text-tertiary border border-border">
+                未安装
+              </span>
+            )}
+          </div>
+
+          {/* 安装指引 */}
+          {meta.installGuide && (
+            <div className="text-xs text-text-tertiary leading-relaxed whitespace-pre-wrap">
+              {meta.installGuide}
+            </div>
+          )}
+
+          {/* 无安装指引时显示默认提示 */}
+          {!meta.installGuide && !status.available && (
+            <div className="text-xs text-text-tertiary">
+              请确保 <code className="font-mono bg-background-elevated px-1 rounded">{meta.distribution.path}</code> 已安装并在 PATH 中可用。
+            </div>
+          )}
         </div>
       )}
 

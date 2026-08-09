@@ -13,6 +13,7 @@ import { useConfigStore } from '@/stores';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 import type { Config, EngineId, HealthStatus } from '@/types';
+import type { EngineMetadata } from '@/types/engineMetadata';
 
 import { EngineExpandDetail } from '../EngineExpandDetail';
 import { GlobalSettingsCard } from '../GlobalSettingsCard';
@@ -77,10 +78,15 @@ export interface EngineRuntimeStatus {
   version?: string
 }
 
-function resolveEngineStatus(engineId: string, health: HealthStatus | null): EngineRuntimeStatus {
+function resolveEngineStatus(
+  engineId: string,
+  health: HealthStatus | null,
+  meta?: EngineMetadata,
+): EngineRuntimeStatus {
   const uiConfig = ENGINE_UI_MAP[engineId]
   if (uiConfig?.builtin) return { available: true }
 
+  // 已知引擎：用 healthStatus 的 CLI 检测结果
   const fieldMap: Record<string, { available: string; version: string }> = {
     'claude-code': { available: 'claudeAvailable', version: 'claudeVersion' },
     codex: { available: 'codexAvailable', version: 'codexVersion' },
@@ -93,6 +99,12 @@ function resolveEngineStatus(engineId: string, health: HealthStatus | null): Eng
       version: (health as any)[fields.version],
     }
   }
+
+  // 插件引擎：用后端元数据里的 CLI 可用性（is_available() 已计算）
+  if (meta?.distribution.type === 'custom-path') {
+    return { available: meta.distribution.available }
+  }
+
   return { available: false }
 }
 
@@ -166,8 +178,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     [selectedId],
   );
   const selectedStatus = useMemo(
-    () => resolveEngineStatus(selectedId, healthStatus),
-    [selectedId, healthStatus],
+    () => resolveEngineStatus(selectedId, healthStatus, selectedMeta),
+    [selectedId, healthStatus, selectedMeta],
   );
 
   // 可见 Tab 和溢出引擎
@@ -233,7 +245,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
       {/* ====== Tab 栏 ====== */}
       <div className="flex items-end gap-0 overflow-x-auto border-b border-border">
         {visibleTabs.map(engine => {
-          const status = resolveEngineStatus(engine.id, healthStatus);
+          const meta = engineMetadatas.find(m => m.id === engine.id)
+          const status = resolveEngineStatus(engine.id, healthStatus, meta);
           const badge = getTabBadge(engine.id, status);
           const isDefault = config.defaultEngine === engine.id;
           const isActive = selectedId === engine.id;
@@ -282,7 +295,8 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             {showMore && (
               <div className="absolute top-full right-0 mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
                 {overflowEngines.map(engine => {
-                  const status = resolveEngineStatus(engine.id, healthStatus);
+                  const meta = engineMetadatas.find(m => m.id === engine.id)
+                  const status = resolveEngineStatus(engine.id, healthStatus, meta);
                   const badge = getTabBadge(engine.id, status);
                   const isDefault = config.defaultEngine === engine.id;
                   return (

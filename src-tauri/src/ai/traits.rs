@@ -651,6 +651,7 @@ pub trait AIEngine: Send + Sync {
             capabilities: EngineCapabilities::default(),
             env_keys: EnvKeyMapping::default(),
             supports_model_provider: false,
+            install_guide: None,
         }
     }
 
@@ -722,6 +723,9 @@ pub struct EngineMetadata {
     pub env_keys: EnvKeyMapping,
     /// 是否支持通过 model_provider 切换 API 端点
     pub supports_model_provider: bool,
+    /// 安装指引（插件引擎 CLI 安装说明）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_guide: Option<String>,
 }
 
 /// 引擎分发方式。

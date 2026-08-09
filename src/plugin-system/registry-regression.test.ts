@@ -220,6 +220,13 @@ describe('normalizeEngines 空值安全 (pluginDiscoveryService.ts)', () => {
             name: 'OMP Engine',
             description: 'OMP CLI engine',
             cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            providerConfig: {
+              configFile: 'agent/models.yml',
+              format: 'yaml',
+              apiValue: 'openai-completions',
+              providerArg: '--provider',
+              modelArg: '--model',
+            },
           },
         ],
       },
@@ -230,6 +237,34 @@ describe('normalizeEngines 空值安全 (pluginDiscoveryService.ts)', () => {
     expect(plugin!.contributes.engines).toHaveLength(1)
     expect(plugin!.contributes.engines[0].id).toBe('omp')
     expect(plugin!.contributes.engines[0].cli.command).toBe('omp')
+    // mcpConsumption 默认值应为 'mcp-servers'（向后兼容）
+    expect(plugin!.contributes.engines[0].mcpConsumption).toBe('mcp-servers')
+    // providerConfig 完整保留
+    expect(plugin!.contributes.engines[0].providerConfig?.configFile).toBe('agent/models.yml')
+  })
+
+  it('mcpConsumption 字段通过 normalizeEngines 保留', () => {
+    const raw = {
+      id: 'omp-mcp-plugin',
+      name: 'OMP MCP Plugin',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'OMP Engine',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            mcpConsumption: 'pi-extension',
+          },
+        ],
+      },
+    }
+
+    const { plugin } = validateDiscoveredPlugin(raw)
+    expect(plugin).not.toBeNull()
+    expect(plugin!.contributes.engines[0].mcpConsumption).toBe('pi-extension')
   })
 })
 
@@ -249,5 +284,69 @@ describe('dynamicEngineList 跨组件作用域 (ModelProviderTab.tsx)', () => {
     // 运行时结果：ProfileEditorModal 被调用时 → ReferenceError: dynamicEngineList is not defined
     // 入口：设置 → 模型供应商 → 新建/编辑 Profile 弹窗
     expect(true).toBe(true)
+  })
+})
+
+// ============================================================
+// 5. engineId → pluginId 映射（getPluginIdForEngine）
+// ============================================================
+describe('engineId → pluginId 映射 (pluginRegistry)', () => {
+  beforeEach(() => {
+    // 清空已注册插件，避免测试间相互污染
+    pluginRegistry.replaceInstalled([])
+  })
+
+  it('registerInstalled 后可通过 getPluginIdForEngine 查到来源插件', async () => {
+    const manifest = createManifest({
+      id: 'omp-engine',
+      name: 'OMP Engine',
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'Oh My Pi',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            protocol: 'pi-rpc',
+            sessionFlags: 'omp',
+            capabilities: { tools: true, streaming: true, interrupt: true, resume: true },
+          },
+        ],
+      },
+    })
+
+    await pluginRegistry.replaceInstalled([manifest])
+    expect(pluginRegistry.getPluginIdForEngine('omp')).toBe('omp-engine')
+  })
+
+  it('卸载插件后映射被清除', async () => {
+    const manifest = createManifest({
+      id: 'omp-engine',
+      name: 'OMP Engine',
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'Oh My Pi',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            protocol: 'pi-rpc',
+            sessionFlags: 'omp',
+            capabilities: { tools: true, streaming: true, interrupt: true, resume: true },
+          },
+        ],
+      },
+    })
+
+    await pluginRegistry.replaceInstalled([manifest])
+    expect(pluginRegistry.getPluginIdForEngine('omp')).toBe('omp-engine')
+
+    // 卸载（replaceInstalled 空数组）
+    await pluginRegistry.replaceInstalled([])
+    expect(pluginRegistry.getPluginIdForEngine('omp')).toBeUndefined()
+  })
+
+  it('未注册引擎返回 undefined', () => {
+    expect(pluginRegistry.getPluginIdForEngine('nonexistent-engine')).toBeUndefined()
   })
 })

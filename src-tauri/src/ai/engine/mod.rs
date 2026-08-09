@@ -4,6 +4,7 @@
 mod claude;
 mod codex;
 pub mod codex_parser;
+pub mod mcp_bridge;
 mod pi;
 pub mod plugin_engine;
 pub(crate) mod pi_parser;

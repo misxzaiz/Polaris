@@ -510,9 +510,8 @@ pub fn run() {
     // 注册 Pi 引擎（earendil-works pi-coding-agent CLI）
     engine_registry.register(ai::PiEngine::new(config.clone()));
 
-    // 设置默认引擎
-    let default_engine = ai::EngineId::parse(&config.default_engine)
-        .unwrap_or(ai::EngineId::ClaudeCode);
+    // 设置默认引擎（parse_any 支持自定义/插件引擎）
+    let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
 
     // 使用 Arc 共享 engine_registry (使用 tokio::sync::Mutex 支持异步)
@@ -1065,8 +1064,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     engine_registry.register(ai::CodexEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
     engine_registry.register(ai::PiEngine::new(config.clone()));
-    let default_engine = ai::EngineId::parse(&config.default_engine)
-        .unwrap_or(ai::EngineId::ClaudeCode);
+    let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
 
