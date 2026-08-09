@@ -153,6 +153,9 @@ class PluginRegistry {
   private async registerSingleEngine(engine: PluginEngineContribution, pluginId: string): Promise<void> {
     // 读取插件 MCP 启用状态
     const mcpEnabled = usePluginStore.getState().isPluginMcpEnabled(pluginId)
+    // 获取插件安装路径（用于解析适配器入口等相对路径）
+    const manifest = this.manifests.get(pluginId)
+    const installPath = manifest?.installPath
     const engineConfig = {
       id: engine.id,
       name: engine.name,
@@ -175,8 +178,10 @@ class PluginRegistry {
         interrupt: engine.capabilities?.interrupt ?? true,
         resume: engine.capabilities?.resume ?? true,
       },
+      adapter: engine.adapter,
+      installPath: installPath,
     }
-    log.info(`[registerSingleEngine] engine.id=${engine.id}, source sessionFlags=${engine.sessionFlags ?? 'undefined'}, final sessionFlags=${engineConfig.sessionFlags}, hasProviderConfig=${!!engineConfig.providerConfig}, mcpEnabled=${mcpEnabled}, mcpConsumption=${engineConfig.mcpConsumption}`)
+    log.info(`[registerSingleEngine] engine.id=${engine.id}, hasAdapter=${!!engine.adapter}, installPath=${installPath}, mcpEnabled=${mcpEnabled}`)
     log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)
     await invoke('register_plugin_engine', { engine: engineConfig })
     log.info(`[PluginRegistry] 引擎注册成功: ${engine.id}`)

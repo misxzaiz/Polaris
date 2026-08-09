@@ -157,6 +157,22 @@ export type PluginEngineConsumptionStrategy =
   | 'mcp-config-path'
   | 'none'
 
+/**
+ * 适配器进程声明 —— 描述插件引擎适配器进程的入口与协议。
+ *
+ * 声明后该引擎走 PluginProcessEngine（通过 stdin/stdout JSONRPC 与适配器进程通信），
+ * 实现"加新引擎不改 Polaris 核心"。适配器进程负责与底层引擎 CLI 交互、
+ * 把引擎事件翻译为 AIEvent 回传。
+ */
+export interface PluginEngineAdapterContribution {
+  /** 适配器入口（相对插件 installPath 的可执行文件路径） */
+  entry: string
+  /** 运行 runtime（"node" / "python3" / "deno" / 空=直接执行） */
+  runtime?: string
+  /** 协议版本（"engine-v1"） */
+  protocol: string
+}
+
 export interface PluginEngineContribution {
   /** 引擎 ID（如 "omp"） */
   id: string
@@ -185,6 +201,8 @@ export interface PluginEngineContribution {
   providerConfig?: PluginEngineProviderConfigContribution
   /** MCP 消费策略（默认 'mcp-servers'，向后兼容） */
   mcpConsumption?: PluginEngineConsumptionStrategy
+  /** 适配器进程声明（存在时走 PluginProcessEngine） */
+  adapter?: PluginEngineAdapterContribution
   /** 引擎能力声明 */
   capabilities?: {
     tools?: boolean

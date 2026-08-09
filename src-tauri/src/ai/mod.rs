@@ -31,6 +31,7 @@ pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
 pub use engine::PiEngine;
 pub use engine::PluginEngineRunner;
+pub use engine::PluginProcessEngine;
 pub use launcher::{McpSessionConfig, prepare_mcp_config, inject_mcp_into_session_opts, McpConfigParams};
 pub use history::{
     Pagination, PagedResult, SessionMeta, HistoryMessage, SessionHistoryProvider,

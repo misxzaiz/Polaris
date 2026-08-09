@@ -235,6 +235,29 @@ pub struct PluginEngineConfig {
     /// 默认 true：后端行为不变，由前端根据插件 mcpEnabled 状态控制。
     #[serde(default, rename = "mcpEnabled")]
     pub mcp_enabled: bool,
+    /// 适配器进程声明（存在时走 PluginProcessEngine，否则走 PluginEngineRunner）
+    /// 插件引擎通过适配器进程与 Polaris 通信，实现"加引擎不改核心"。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter: Option<PluginEngineAdapterDecl>,
+    /// 插件安装路径（前端注册时注入，用于解析适配器入口等相对路径）
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "installPath")]
+    pub install_path: Option<String>,
+}
+
+/// 适配器进程声明 —— 描述插件引擎适配器进程的入口与协议。
+///
+/// 加新引擎只需在插件包中声明适配器进程，Polaris 核心通过 `PluginProcessEngine`
+/// 自动适配，无需修改核心代码。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginEngineAdapterDecl {
+    /// 适配器入口（相对插件 installPath 的可执行文件路径）
+    pub entry: String,
+    /// 运行 runtime（"node" / "python3" / "deno" / 空=直接可执行）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
+    /// 协议版本（当前为 "engine-v1"）
+    pub protocol: String,
 }
 
 /// Provider 注册声明（声明式 provider 注册）

@@ -8,6 +8,7 @@ use crate::error::{AppError, Result};
 use crate::models::config::Config;
 use super::traits::{AIEngine, EngineId, EngineMetadata, PluginEngineConfig, SessionOptions};
 use super::engine::plugin_engine::PluginEngineRunner;
+use super::engine::plugin_process_engine::PluginProcessEngine;
 use super::types::EngineStatus;
 
 /// 引擎注册表
@@ -117,6 +118,10 @@ impl EngineRegistry {
     ///
     /// 由前端插件系统通过 `register_plugin_engine` Tauri 命令调用。
     /// 幂等：如果引擎已注册，返回 Ok 而非错误。
+    ///
+    /// 根据 config 是否声明 `adapter` 字段自动分流：
+    /// - 有 adapter → PluginProcessEngine（适配器进程模式，加引擎不改核心）
+    /// - 无 adapter → PluginEngineRunner（传统模式，PiRpc 协议）
     pub fn register_plugin_engine(&mut self, config: PluginEngineConfig) -> Result<()> {
         let engine_id = EngineId::Custom(config.id.clone());
         if self.engines.contains_key(&engine_id) {
@@ -124,13 +129,29 @@ impl EngineRegistry {
             return Ok(());
         }
         let id_for_log = config.id.clone();
+        let has_adapter = config.adapter.is_some();
         tracing::info!(
-            "[EngineRegistry] 注册插件引擎: id={}, protocol={:?}, session_flags={:?}, command={}, args={:?}",
-            config.id, config.protocol, config.session_flags, config.cli.command, config.cli.args
+            "[EngineRegistry] 注册插件引擎: id={}, has_adapter={}, protocol={:?}, session_flags={:?}, command={}, args={:?}",
+            config.id, has_adapter, config.protocol, config.session_flags, config.cli.command, config.cli.args
         );
-        let runner = PluginEngineRunner::new(config);
-        self.engines.insert(engine_id, Box::new(runner));
-        tracing::info!("[EngineRegistry] 已注册插件引擎: {}", id_for_log);
+        if has_adapter {
+            // 适配器进程模式：通过 stdin/stdout JSONRPC 与插件适配器进程通信
+            match PluginProcessEngine::new(config) {
+                Ok(engine) => {
+                    self.engines.insert(engine_id, Box::new(engine));
+                    tracing::info!("[EngineRegistry] 已注册适配器插件引擎: {}", id_for_log);
+                }
+                Err(e) => {
+                    tracing::error!("[EngineRegistry] 创建适配器插件引擎失败: {}: {}", id_for_log, e);
+                    return Err(e);
+                }
+            }
+        } else {
+            // 传统模式：PluginEngineRunner（PiRpc 协议，与现有 omp 引擎兼容）
+            let runner = PluginEngineRunner::new(config);
+            self.engines.insert(engine_id, Box::new(runner));
+            tracing::info!("[EngineRegistry] 已注册插件引擎: {}", id_for_log);
+        }
         Ok(())
     }
 

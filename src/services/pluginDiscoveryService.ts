@@ -285,6 +285,17 @@ function normalizeEngines(
       log.info(`[normalizeEngines] engine id=${id}, providerConfig: configFile=${providerConfig.configFile}, format=${providerConfig.format}, apiValue=${providerConfig.apiValue}`)
     }
 
+    // adapter 声明（可选）：引擎适配器进程入口与协议
+    const rawAdapter = isRecord(item.adapter) ? item.adapter : null
+    const adapter = rawAdapter ? {
+      entry: asString(rawAdapter.entry) ?? '',
+      runtime: asString(rawAdapter.runtime) || undefined,
+      protocol: asString(rawAdapter.protocol) ?? 'engine-v1',
+    } : undefined
+    if (adapter && !adapter.entry) {
+      adapter.entry = '[invalid]'
+    }
+
     return [{
       id,
       name,
@@ -300,6 +311,7 @@ function normalizeEngines(
       sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
       providerConfig,
       mcpConsumption: asString(item.mcpConsumption) as PluginEngineContribution['mcpConsumption'] ?? 'mcp-servers',
+      adapter,
       capabilities: isRecord(item.capabilities) ? {
         tools: item.capabilities.tools !== false,
         streaming: item.capabilities.streaming !== false,
