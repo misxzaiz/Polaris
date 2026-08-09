@@ -82,10 +82,22 @@ export async function bootstrapEngines(
 
   // 先通过 get() 触发惰性工厂创建实例，确保 initialize() 能找到。
   // registerFactory 只存工厂不进 engines Map，而 initialize 只查 engines Map。
-  registry.get(defaultEngineId)
+  // 若配置的默认引擎没有前端实现（如插件引擎 "omp"，由后端处理 AI 调用），
+  // 则回退到注册表中实际可用的默认引擎，避免 initialize 报 "not registered"。
+  let targetEngineId = defaultEngineId
+  if (!registry.get(targetEngineId)) {
+    targetEngineId = registry.getDefaultId() ?? defaultEngineId
+    if (!registry.get(targetEngineId)) {
+      log.warn(
+        `No frontend engine available for default "${defaultEngineId}", skipping engine initialization`,
+        { engineIds },
+      )
+      return
+    }
+  }
 
   // 只初始化默认引擎（其他引擎首次 get() 时自动初始化）
-  await registry.initialize(defaultEngineId)
+  await registry.initialize(targetEngineId)
 
-  log.info('Engines bootstrapped', { defaultEngineId, engineCount: engineIds.length })
+  log.info('Engines bootstrapped', { defaultEngineId, targetEngineId, engineCount: engineIds.length })
 }
