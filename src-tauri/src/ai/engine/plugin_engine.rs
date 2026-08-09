@@ -539,8 +539,16 @@ impl PluginEngineRunner {
 
         match decl.format {
             crate::ai::ProviderConfigFormat::Yaml => {
-                // 覆盖式写入（omp 的 models.yml 由 Polaris 单独管理）
+                // YAML 格式：合并到现有 models.yml 的 providers，保留用户手动配置的其他 provider
+                // （如 ollama / lm-studio / llama.cpp），避免覆盖式写入把多 provider 配置冲掉。
+                // 无 YAML 解析库，采用轻量文本解析顶层 provider 名：providers: 下缩进的 <name>:
+                // 行即为 provider 名，合并时保留这些 provider 的原始文本片段。
+                let current_providers = Self::parse_models_yaml_providers(&file_path);
+                // 用当前 provider 名覆盖合并：新 provider 优先，其余保留
                 let mut providers = std::collections::HashMap::new();
+                for (name, entry) in current_providers {
+                    providers.insert(name, entry);
+                }
                 providers.insert(provider_cfg.name.clone(), provider_entry);
                 let yaml = Self::render_models_yaml(&providers);
                 fs::write(&file_path, yaml)?;
@@ -606,6 +614,116 @@ impl PluginEngineRunner {
             }
         }
         out
+    }
+
+    /// 轻量解析现有 models.yml 中的 provider 列表，返回 provider_name → JSON 结构。
+    ///
+    /// 不依赖 serde_yaml 库，仅处理 `render_models_yaml()` 输出的确定格式（2 层缩进结构）。
+    /// 文件不存在或格式不符时返回空 map（退化为与之前一致的覆盖式写入）。
+    fn parse_models_yaml_providers(file_path: &Path) -> std::collections::HashMap<String, serde_json::Value> {
+        let content = match fs::read_to_string(file_path) {
+            Ok(c) => c,
+            Err(_) => return std::collections::HashMap::new(),
+        };
+
+        let mut providers = std::collections::HashMap::new();
+        let mut lines = content.lines().peekable();
+
+        // 跳过至 providers: 行
+        while let Some(line) = lines.next() {
+            if line.trim() == "providers:" {
+                break;
+            }
+        }
+
+        // 逐块解析 "  <name>:" 及后续的属性行
+        loop {
+            // 跳过空行
+            while let Some(l) = lines.peek() {
+                if l.trim().is_empty() { lines.next(); } else { break; }
+            }
+            let Some(line) = lines.next() else { break };
+            if !line.starts_with("  ") || line.starts_with("    ") {
+                break;
+            }
+            let name = line.trim_end_matches(':').trim().to_string();
+            if name.is_empty() { break; }
+
+            let mut provider_map = serde_json::Map::new();
+            let mut models: Vec<serde_json::Value> = Vec::new();
+
+            while let Some(prop_line) = lines.peek() {
+                if !prop_line.starts_with("    ") {
+                    break;
+                }
+                let prop_line = lines.next().unwrap();
+                let trimmed = prop_line.trim();
+
+                if trimmed == "models:" {
+                    // 解析模型列表（- id: 块）
+                    while let Some(model_line) = lines.peek() {
+                        if !model_line.starts_with("      ") {
+                            break;
+                        }
+                        let model_line = lines.next().unwrap();
+                        let model_trimmed = model_line.trim();
+                        if !model_trimmed.starts_with("- id:") {
+                            continue;
+                        }
+                        let mut model_map = serde_json::Map::new();
+                        model_map.insert(
+                            "id".to_string(),
+                            serde_json::Value::String(
+                                model_trimmed.strip_prefix("- id:").unwrap_or("").trim().trim_matches('"').to_string(),
+                            ),
+                        );
+                        // 继续读取模型属性行（缩进 8 空格）
+                        while let Some(m_line) = lines.peek() {
+                            if !m_line.starts_with("        ") {
+                                break;
+                            }
+                            let m_line = lines.next().unwrap();
+                            let m_trimmed = m_line.trim();
+                            if let Some((k, v)) = Self::parse_yaml_kv(m_trimmed) {
+                                model_map.insert(k, v);
+                            }
+                        }
+                        models.push(serde_json::Value::Object(model_map));
+                    }
+                    if !models.is_empty() {
+                        provider_map.insert("models".to_string(), serde_json::Value::Array(std::mem::take(&mut models)));
+                    }
+                } else if let Some((k, v)) = Self::parse_yaml_kv(trimmed) {
+                    provider_map.insert(k, v);
+                }
+            }
+
+            providers.insert(name, serde_json::Value::Object(provider_map));
+        }
+
+        providers
+    }
+
+    /// 解析 YAML 单行 `key: "value"` 或 `key: value` 为 (key, JSON) 对。
+    fn parse_yaml_kv(s: &str) -> Option<(String, serde_json::Value)> {
+        let colon = s.find(':')?;
+        let key = s[..colon].trim().to_string();
+        if key.is_empty() { return None; }
+        let val = s[colon + 1..].trim().trim_matches('"').to_string();
+        // 尝试解析数字
+        if let Ok(n) = val.parse::<u64>() {
+            return Some((key, serde_json::Value::Number(n.into())));
+        }
+        if let Ok(n) = val.parse::<f64>() {
+            if let Some(num) = serde_json::Number::from_f64(n) {
+                return Some((key, serde_json::Value::Number(num)));
+            }
+        }
+        // bool
+        if val == "true" || val == "false" {
+            return Some((key, serde_json::Value::Bool(val == "true")));
+        }
+        Some((key, serde_json::Value::String(val)))
     }
 
 

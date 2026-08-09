@@ -181,6 +181,27 @@ pub fn inject_mcp_into_session_opts(
                     "[SessionLauncher] 注入 Pi/Custom MCP: {} 个 server",
                     mcp.mcp_servers.len()
                 );
+                // 自动追加 MCP 直接调用指导：LLM 应直接调用 mcp__{server}__{tool} 工具名，
+                // 而不是用 write 包装（OMP 的默认行为不稳定）。实测 add-system-prompt 指导后
+                // LLM 能稳定直接调用，不再依赖 write 包装。
+                let server_names: Vec<&str> = mcp.mcp_servers.iter().map(|s| s.server_name.as_str()).collect();
+                let mcp_guidance = format!(
+                    "You have MCP tools available via Extension bridge. \
+                     Call them directly by their tool name `mcp__{{server}}__{{tool}}`. \
+                     DO NOT wrap MCP calls in `write()` or use `xd://` prefix. \
+                     Available MCP servers: {}.",
+                    server_names.join(", ")
+                );
+                if let Some(ref mut existing) = opts.append_system_prompt {
+                    existing.push_str("\n\n");
+                    existing.push_str(&mcp_guidance);
+                } else {
+                    opts.append_system_prompt = Some(mcp_guidance);
+                }
+                tracing::debug!(
+                    "[SessionLauncher] 已追加 MCP 直接调用指导到 append_system_prompt（{} 个 server）",
+                    mcp.mcp_servers.len()
+                );
             }
         }
     }
