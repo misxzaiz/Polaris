@@ -29,6 +29,10 @@ polaris-web/
 # Scratch / debugging notes (local-only)
 temp/
 
+# Python
+__pycache__/
+*.pyc
+
 # Environment variables
 .env
 .env.local
