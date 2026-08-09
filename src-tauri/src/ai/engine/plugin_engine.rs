@@ -12,6 +12,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 
 use crate::ai::session::SessionManager;
 use crate::ai::traits::{
@@ -42,6 +43,15 @@ pub struct PluginEngineRunner {
     leaked_name: &'static str,
     /// 泄漏到 &'static str 的引擎描述
     leaked_description: &'static str,
+    /// Polaris 会话 ID -> omp 落盘文件路径的持久映射
+    ///
+    /// omp 新会话自动生成 session id 并落盘，且不通过 stdout 回传。
+    /// agent_end 后扫描 --session-dir 捕获文件路径，存入此 map，
+    /// 供 continue_session 用 --resume <path> 精确续聊。
+    ///
+    /// 不放 SessionManager：SessionManager 在进程退出时会被清理，
+    /// 而此映射必须跨进程生命周期存活（每轮 kill+respawn）。
+    session_paths: Arc<std::sync::Mutex<HashMap<String, String>>>,
 }
 
 impl PluginEngineRunner {
@@ -58,6 +68,7 @@ impl PluginEngineRunner {
             cli_path: None,
             leaked_name,
             leaked_description,
+            session_paths: Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -540,6 +551,8 @@ impl PluginEngineRunner {
         // 预取 session 落盘目录（闭包 move 后无法再借 &self）
         let session_dir = self.plugin_session_dir().unwrap_or_default();
         let engine_id_for_session = self.config.id.clone();
+        // session_paths 持久映射的共享引用（跨进程生命周期存活）
+        let session_paths = self.session_paths.clone();
 
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
         let input_sender_for_return = input_sender.clone();
@@ -689,21 +702,17 @@ impl PluginEngineRunner {
                         ));
                     }
                     // 会话结束后，扫描落盘目录找到 omp 自动生成的 session 文件，
-                    // 记录其路径作为 resume 的真实 id（omp 不回传 session id）
+                    // 记录其路径作为 resume 的真实 id（omp 不回传 session id）。
+                    // 存入 session_paths 持久 map（不进 SessionManager，避免被收尾清理抹掉）。
                     if let Some(file_path) = Self::find_latest_session_file(&session_dir) {
+                        let fp = file_path.to_string_lossy().to_string();
                         tracing::info!(
                             "[PluginEngine:{}] 捕获 omp 会话落盘文件: {} (原 id: {})",
-                            engine_id, file_path.display(), current_session_id
+                            engine_id, fp, current_session_id
                         );
-                        let new_id = file_path.to_string_lossy().to_string();
-                        SessionManager::update_session_id_shared(
-                            &sessions,
-                            &current_session_id,
-                            &new_id,
-                            pid,
-                            &engine_id_for_session,
-                            Some(input_sender.clone()),
-                        );
+                        if let Ok(mut m) = session_paths.lock() {
+                            m.insert(current_session_id.clone(), fp);
+                        }
                     } else {
                         tracing::warn!(
                             "[PluginEngine:{}] 会话结束后未在 {} 找到落盘文件",
@@ -807,6 +816,7 @@ impl AIEngine for PluginEngineRunner {
             capabilities: caps,
             env_keys: EnvKeyMapping::default(),
             supports_model_provider: false,
+            install_guide: self.config.cli.install_guide.clone(),
         }
     }
 
@@ -920,11 +930,26 @@ impl AIEngine for PluginEngineRunner {
         }
 
         // Kill 旧进程（如果有）
-        let real_session_id = if let Some(info) = self.sessions.get(session_id) {
-            tracing::info!("[PluginEngine:{}] 找到会话，真实 ID: {}, PID: {}", engine_id, info.id, info.pid);
+        if let Some(info) = self.sessions.get(session_id) {
+            tracing::info!("[PluginEngine:{}] 找到活跃进程，PID: {}，尝试中断", engine_id, info.pid);
             let _ = self.sessions.kill_process(session_id);
             std::thread::sleep(std::time::Duration::from_millis(100));
-            info.id.clone()
+        }
+
+        // 续聊的真实 id：优先从 session_paths 查 omp 落盘文件路径（omp 不回传 session id，
+        // agent_end 后由 spawn_event_reader 扫描 --session-dir 捕获）。
+        // 该映射是持久的，不受 SessionManager 进程退出清理影响。
+        let real_session_id = if let Ok(m) = self.session_paths.lock() {
+            if let Some(fp) = m.get(session_id) {
+                tracing::info!("[PluginEngine:{}] 续聊用落盘文件路径: {} (原 id: {})", engine_id, fp, session_id);
+                fp.clone()
+            } else {
+                tracing::warn!(
+                    "[PluginEngine:{}] session_paths 中未找到 {} 的落盘文件，回退用原 id（omp 可能报 not found）",
+                    engine_id, session_id
+                );
+                session_id.to_string()
+            }
         } else {
             session_id.to_string()
         };
@@ -958,11 +983,13 @@ impl AIEngine for PluginEngineRunner {
             .map_err(|e| AppError::ProcessError(format!("继续 {} 会话失败: {}", self.config.cli.command, e)))?;
         let pid = child.id();
 
+        // spawn_event_reader 用 session_id（前端 temp_id），事件回填用 temp_id，
+        // agent_end 后 session_paths 用 temp_id 作 key 存本轮落盘文件路径
         let input_sender = self.spawn_event_reader(
-            child, real_session_id.clone(), pid, options, Some(message.to_string()),
+            child, session_id.to_string(), pid, options, Some(message.to_string()),
         );
         self.sessions.register_with_sender(
-            real_session_id.clone(), pid, engine_id, Some(input_sender),
+            session_id.to_string(), pid, engine_id, Some(input_sender),
         )?;
 
         Ok(())
