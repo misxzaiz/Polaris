@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 3D 建模预览</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #1a1a2e; color: #eee; overflow: hidden;
+  }
+  #container { width: 100vw; height: 100vh; display: block; }
+
+  /* 工具栏 */
+  #toolbar {
+    position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center;
+    background: rgba(0,0,0,0.6); backdrop-filter: blur(12px);
+    padding: 10px 18px; border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+  }
+  #toolbar button {
+    background: rgba(255,255,255,0.1); border: none; color: #fff;
+    padding: 8px 16px; border-radius: 8px; cursor: pointer;
+    font-size: 13px; transition: all 0.2s;
+  }
+  #toolbar button:hover { background: rgba(255,255,255,0.2); }
+  #toolbar button.active { background: #4a9eff; }
+  #toolbar select {
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2);
+    color: #fff; padding: 8px 12px; border-radius: 8px; font-size: 13px;
+  }
+  #toolbar label { font-size: 12px; color: #aaa; }
+  #toolbar input[type="range"] { width: 80px; }
+
+  #info {
+    position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.5); backdrop-filter: blur(8px);
+    padding: 8px 20px; border-radius: 20px;
+    font-size: 13px; color: #aaa; pointer-events: none;
+  }
+
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; color: #888;
+  }
+  #loading .spinner {
+    width: 40px; height: 40px; margin: 0 auto 16px;
+    border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: #4a9eff; border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading.hidden { display: none; }
+</style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div>加载模型...</div>
+</div>
+
+<div id="info">🖱 拖拽旋转 · 滚轮缩放 · 右键平移</div>
+
+<div id="container"></div>
+
+<div id="toolbar">
+  <button id="btnReset" title="重置视角">⟲ 复位</button>
+  <button id="btnWireframe" title="线框模式">◇ 线框</button>
+  <button id="btnAutoRotate">⟳ 自转</button>
+  <span style="width:1px;height:24px;background:rgba(255,255,255,0.15);margin:0 4px;"></span>
+  <label>动作</label>
+  <select id="animSelect">
+    <option value="">—</option>
+  </select>
+  <button id="btnPlay" class="active">▶ 播放</button>
+  <label>速度</label>
+  <input type="range" id="speedRange" min="0.1" max="2.0" step="0.1" value="1.0">
+  <span id="speedLabel" style="font-size:12px;width:30px">1.0x</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ============================================================
+// 场景设置
+// ============================================================
+const container = document.getElementById('container');
+const loadingEl = document.getElementById('loading');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+
+// 相机
+const camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 100);
+camera.position.set(0, 1.5, 4);
+
+// 渲染器
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+container.appendChild(renderer.domElement);
+
+// 控制器
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 1.5;
+controls.maxDistance = 10;
+controls.update();
+
+// ============================================================
+// 光照
+// ============================================================
+// 环境光
+const ambient = new THREE.AmbientLight(0x404060, 0.5);
+scene.add(ambient);
+
+// 主光源
+const mainLight = new THREE.DirectionalLight(0xffeedd, 2.5);
+mainLight.position.set(4, 6, 3);
+mainLight.castShadow = true;
+mainLight.shadow.mapSize.width = 1024;
+mainLight.shadow.mapSize.height = 1024;
+scene.add(mainLight);
+
+// 补光
+const fillLight = new THREE.DirectionalLight(0x8888ff, 0.8);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+
+// 背光
+const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+rimLight.position.set(0, 1, -5);
+scene.add(rimLight);
+
+// 半球光
+const hemiLight = new THREE.HemisphereLight(0x8888ff, 0x444422, 0.6);
+scene.add(hemiLight);
+
+// 环境光（地面辅助）
+const groundGeo = new THREE.PlaneGeometry(8, 8);
+const groundMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.3;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 网格辅助（可选，低透明度）
+const gridHelper = new THREE.GridHelper(4, 8, 0x6666aa, 0x444466);
+gridHelper.position.y = -0.3;
+scene.add(gridHelper);
+
+// ============================================================
+// 模型变量
+// ============================================================
+let model = null;
+let mixer = null;
+let animActions = {};
+let currentAnim = null;
+let isPlaying = true;
+let autoRotate = false;
+
+// ============================================================
+// 加载模型
+// ============================================================
+// 默认使用相对路径，可通过 URL 参数 ?model=xxx.glb 指定
+const urlParams = new URLSearchParams(window.location.search);
+const modelPath = urlParams.get('model') || './output/qbox_character.glb';
+
+const loader = new GLTFLoader();
+loader.load(
+  modelPath,
+  (gltf) => {
+    model = gltf.scene;
+    scene.add(model);
+
+    // 居中并缩放适配
+    const box = new THREE.Box3().setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+
+    // 水平居中，垂直方向抬升到地面以上（模型底部贴地 y=0）
+    const minY = box.min.y;
+    model.position.x -= center.x;
+    model.position.z -= center.z;
+    model.position.y -= minY;   // 让模型底部落地
+
+    if (maxDim > 3) {
+      model.scale.setScalar(3 / maxDim);
+    }
+
+    // 相机对准模型中心
+    controls.target.set(0, size.y / 2, 0);
+    camera.position.set(0, size.y * 0.7, maxDim * 2.2);
+    controls.update();
+
+    // 开启阴影
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+
+    // 动画
+    if (gltf.animations && gltf.animations.length > 0) {
+      mixer = new THREE.AnimationMixer(model);
+      const select = document.getElementById('animSelect');
+
+      gltf.animations.forEach((clip, i) => {
+        const name = clip.name || `动作 ${i}`;
+        const action = mixer.clipAction(clip);
+        animActions[name] = action;
+
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+
+      // 自动播放第一个动画
+      if (gltf.animations.length > 0) {
+        select.value = gltf.animations[0].name;
+        playAnim(gltf.animations[0].name);
+      }
+    }
+
+    loadingEl.classList.add('hidden');
+    console.log('✅ 模型加载完成:', modelPath);
+
+    // 暴露到全局用于调试
+    window.__THREE_MODEL__ = model;
+    window.__THREE_SCENE__ = scene;
+    window.__THREE_RENDERER__ = renderer;
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      loadingEl.innerHTML = `<div class="spinner"></div><div>加载中 ${pct}%</div>`;
+    }
+  },
+  (error) => {
+    loadingEl.innerHTML = `<div style="color:#f66">❌ 加载失败: ${error.message}</div>`;
+    console.error('❌ 模型加载失败:', error);
+  }
+);
+
+// ============================================================
+// 动画控制
+// ============================================================
+function playAnim(name) {
+  if (!mixer) return;
+
+  // 停止当前动作
+  if (currentAnim) {
+    currentAnim.fadeOut(0.3);
+  }
+
+  const action = animActions[name];
+  if (action) {
+    action.reset();
+    action.fadeIn(0.3);
+    if (isPlaying) action.play();
+    currentAnim = action;
+  }
+}
+
+document.getElementById('animSelect').addEventListener('change', (e) => {
+  if (e.target.value) playAnim(e.target.value);
+});
+
+document.getElementById('btnPlay').addEventListener('click', () => {
+  isPlaying = !isPlaying;
+  const btn = document.getElementById('btnPlay');
+  btn.textContent = isPlaying ? '▶ 播放' : '⏸ 暂停';
+  btn.classList.toggle('active', isPlaying);
+
+  if (mixer) {
+    if (isPlaying) {
+      Object.values(animActions).forEach(a => a.play());
+    } else {
+      Object.values(animActions).forEach(a => a.paused = true);
+    }
+  }
+});
+
+document.getElementById('speedRange').addEventListener('input', (e) => {
+  const speed = parseFloat(e.target.value);
+  document.getElementById('speedLabel').textContent = speed.toFixed(1) + 'x';
+  if (mixer) mixer.timeScale = speed;
+});
+
+// ============================================================
+// 视图控制
+// ============================================================
+document.getElementById('btnReset').addEventListener('click', () => {
+  camera.position.set(0, 1.5, 4);
+  controls.target.set(0, 0.5, 0);
+  controls.update();
+});
+
+document.getElementById('btnWireframe').addEventListener('click', () => {
+  const btn = document.getElementById('btnWireframe');
+  const isWire = btn.classList.toggle('active');
+
+  if (model) {
+    model.traverse((child) => {
+      if (child.isMesh) {
+        child.material.wireframe = isWire;
+      }
+    });
+  }
+});
+
+document.getElementById('btnAutoRotate').addEventListener('click', () => {
+  autoRotate = !autoRotate;
+  document.getElementById('btnAutoRotate').classList.toggle('active', autoRotate);
+});
+
+// ============================================================
+// 窗口自适应
+// ============================================================
+window.addEventListener('resize', () => {
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+});
+
+// ============================================================
+// 渲染循环
+// ============================================================
+const clock = new THREE.Clock();
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  const delta = clock.getDelta();
+
+  if (mixer) mixer.update(delta);
+
+  if (autoRotate) {
+    const pivot = controls.target;
+    const radius = camera.position.distanceTo(pivot);
+    const angle = performance.now() / 10000;
+    camera.position.x = pivot.x + radius * Math.sin(angle);
+    camera.position.z = pivot.z + radius * Math.cos(angle);
+    camera.lookAt(pivot);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+
+animate();
+
+console.log('🎨 3D 预览已启动');
+</script>
+</body>
+</html>
