@@ -21,7 +21,26 @@
  * 与 Polaris AIEvent::assistant_message(is_delta=true) 对齐。
  */
 
+use std::collections::HashMap;
+use std::sync::Mutex;
+
 use crate::models::{AIEvent, ModelUsageBreakdown, ToolCallStartEvent, ToolCallEndEvent};
+
+/// 跨 tool_execution_start/end 缓存工具名（按 tool_call_id）。
+/// OMP 的 write 包装在 tool_execution_end 时丢失 args.path 字段，
+/// 导致 normalize_tool_name 无法从 write 提取真实工具名。
+/// 通过 tool_execution_start 时按 tool_call_id 缓存归一化后的工具名，
+/// tool_execution_end 时优先从缓存取。
+static NORMALIZED_TOOL_CACHE: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+fn with_tool_cache<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut HashMap<String, String>) -> R,
+{
+    let mut guard = NORMALIZED_TOOL_CACHE.lock().unwrap();
+    let map = guard.get_or_insert_with(HashMap::new);
+    f(map)
+}
 
 /// pi RPC stdout 单行的宽松解析结构
 ///
@@ -228,6 +247,12 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str, engine_id: &str
         "tool_execution_start" => {
             let raw_tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
             let tool = normalize_tool_name(&raw_tool, line.args.as_ref(), None);
+            // 按 tool_call_id 缓存归一化后的工具名，供 tool_execution_end 使用
+            if let Some(ref cid) = line.tool_call_id {
+                with_tool_cache(|cache| {
+                    cache.insert(cid.clone(), tool.clone());
+                });
+            }
             let args_map = line.args.as_ref()
                 .and_then(|a| a.as_object())
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
@@ -243,7 +268,15 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str, engine_id: &str
         }
         "tool_execution_end" => {
             let raw_tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
-            let tool = normalize_tool_name(&raw_tool, line.args.as_ref(), line.result.as_ref());
+            // 优先从缓存取 tool_execution_start 归一化的工具名（OMP write 包装的兜底）
+            let tool = line.tool_call_id.as_ref()
+                .and_then(|cid| with_tool_cache(|cache| cache.get(cid).cloned()))
+                .unwrap_or_else(|| normalize_tool_name(&raw_tool, line.args.as_ref(), line.result.as_ref()));
+            // DX 日志：OMP write 包装时观察 args/result 结构，确认归一化是否得到正确工具名
+            tracing::debug!(
+                "[PiParser] tool_execution_end: raw_tool={}, normalized_tool={}, has_args={}, has_result={}, call_id={:?}",
+                raw_tool, tool, line.args.is_some(), line.result.is_some(), line.tool_call_id
+            );
             let success = line.is_error != Some(true);
             let mut end = ToolCallEndEvent::new(current_sid, tool, success);
             if let Some(cid) = line.tool_call_id.clone() {
