@@ -204,15 +204,16 @@ loader.load(
     const minY = box.min.y;
     model.position.x -= center.x;
     model.position.z -= center.z;
-    model.position.y -= minY;   // 让模型底部落地
+    model.position.y -= minY;
 
     if (maxDim > 3) {
       model.scale.setScalar(3 / maxDim);
     }
 
-    // 相机对准模型中心
-    controls.target.set(0, size.y / 2, 0);
-    camera.position.set(0, size.y * 0.7, maxDim * 2.2);
+    // 从斜上方俯瞰，飞机在画面中下方
+    const _d = maxDim * 2.5;
+    controls.target.set(0, size.y * 0.2, 0);
+    camera.position.set(_d * 0.2, _d * 0.5, _d * 1.0);
     controls.update();
 
     // 开启阴影
