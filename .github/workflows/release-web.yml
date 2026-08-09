@@ -183,7 +183,7 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: 'Polaris ${{ github.ref_name }}'
           body: ${{ steps.notes.outputs.release_body }}
-          draft: false
+          draft: true
           prerelease: false
           make_latest: true
         env:

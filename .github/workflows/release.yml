@@ -133,5 +133,5 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: 'Polaris ${{ github.ref_name }}'
           releaseBody: ${{ steps.notes.outputs.release_body }}
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
