@@ -212,9 +212,14 @@ loader.load(
 
     // 从斜上方俯瞰，飞机在画面中下方
     const _d = maxDim * 2.5;
-    controls.target.set(0, size.y * 0.2, 0);
-    camera.position.set(_d * 0.2, _d * 0.5, _d * 1.0);
+    const modelCenterY = size.y * 0.5;
+    controls.target.set(0, modelCenterY * 0.35, 0);
+    camera.position.set(_d * 0.35, _d * 0.15, _d * 0.8);
     controls.update();
+
+    // 暴露全局变量用于调试
+    window.__camera = camera;
+    window.__controls = controls;
 
     // 开启阴影
     model.traverse((child) => {
