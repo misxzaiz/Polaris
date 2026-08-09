@@ -214,6 +214,8 @@ impl PluginEngineRunner {
         provider_name: Option<&str>,
         model: Option<&str>,
         bridge_dir: Option<&PathBuf>,
+        system_prompt: Option<&str>,
+        append_system_prompt: Option<&str>,
     ) -> Result<Command> {
         let cli_path = self.cli_path.as_ref()
             .ok_or_else(|| AppError::ProcessError(format!("CLI 路径未初始化: {}", self.config.id)))?;
@@ -325,6 +327,25 @@ impl PluginEngineRunner {
             }
             // McpServers/McpConfigPath/None：无需 CLI 参数注入
             _ => {}
+        }
+
+        // 系统提示词：传 --system-prompt / --append-system-prompt 给 CLI（与 Pi 引擎对齐）。
+        // OMP 的 LLM 默认被训练成用 write 设备路由包装 MCP 调用，
+        // 但 write 的设备路由表是独立的内置机制，不包含 registerTool 注册的工具，
+        // 因此必须通过 system prompt 指导 LLM 直接调用工具名。
+        if let Some(prompt) = system_prompt {
+            if !prompt.is_empty() {
+                cmd.arg("--system-prompt").arg(prompt);
+                argv.push("--system-prompt".into());
+                argv.push(prompt.to_string());
+            }
+        }
+        if let Some(prompt) = append_system_prompt {
+            if !prompt.is_empty() {
+                cmd.arg("--append-system-prompt").arg(prompt);
+                argv.push("--append-system-prompt".into());
+                argv.push(prompt.to_string());
+            }
         }
 
         tracing::info!(
@@ -970,6 +991,8 @@ impl AIEngine for PluginEngineRunner {
             provider_name.as_deref(),
             clean_model.as_deref(),
             bridge_dir.as_ref(),
+            options.system_prompt.as_deref(),
+            options.append_system_prompt.as_deref(),
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
@@ -1045,6 +1068,8 @@ impl AIEngine for PluginEngineRunner {
             provider_name.as_deref(),
             clean_model.as_deref(),
             bridge_dir.as_ref(),
+            options.system_prompt.as_deref(),
+            options.append_system_prompt.as_deref(),
         )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 

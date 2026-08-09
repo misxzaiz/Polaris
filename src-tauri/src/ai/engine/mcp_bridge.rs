@@ -160,10 +160,12 @@ export default async function (pi) {
 
     const tools = toolsResult.result?.tools || [];
     for (const tool of tools) {
-      // OMP 的 LLM 默认被训练成用 write {path: "xd://..."} 设备路由
-      // 调用 MCP 工具，因此注册时加上 xd:// 前缀，让 write 设备路由能找到设备。
+      // 注册工具时使用纯 mcp__{server}__{tool} 名，不添加 xd:// 前缀。
+      // OMP 的 write 设备路由是独立的内置机制，不包含 registerTool 注册的工具，
+      // 因此加 xd:// 前缀也无法让 write 路由找到设备。
+      // 正确的做法是通过 --append-system-prompt 告诉 LLM 直接调用工具名。
       // Polaris 前端 pi_parser 的 normalize_tool_name 会归一化回 mcp__{server}__{tool} 格式。
-      const toolName = `xd://mcp__${srv.serverName}__${tool.name}`;
+      const toolName = `mcp__${srv.serverName}__${tool.name}`;
       pi.registerTool({
         name: toolName,
         label: tool.name,
