@@ -16,55 +16,20 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        // 检查 jniLibs 中是否已存在预编译的 .so，存在则跳过编译
-        val jniLibsDir = File(project.projectDir, "src/main/jniLibs")
-        val archDir = when (target) {
-            "aarch64" -> "arm64-v8a"
-            "armv7" -> "armeabi-v7a"
-            "i686" -> "x86"
-            "x86_64" -> "x86_64"
-            else -> null
-        }
-        if (archDir != null) {
-            val soFile = File(jniLibsDir, "$archDir/libpolaris_mobile_lib.so")
-            if (soFile.exists() && soFile.isFile()) {
-                logger.info("Pre-built .so found at ${soFile.absolutePath}, skipping Rust build")
-                return
-            }
-        }
-
-        val executable = """npx""";
+        val executable = """D:\install\nodejs\node.exe""";
+        val cliEntry = "D:/space/base/Polaris/node_modules/@tauri-apps/cli/main.js";
         try {
-            runTauriCli(executable)
+            runTauriCli(executable, cliEntry)
         } catch (e: Exception) {
-            if (Os.isFamily(Os.FAMILY_WINDOWS)) {
-                // Try different Windows-specific extensions
-                val fallbacks = listOf(
-                    "$executable.exe",
-                    "$executable.cmd",
-                )
-
-                var lastException: Exception = e
-                for (fallback in fallbacks) {
-                    try {
-                        runTauriCli(fallback)
-                        return
-                    } catch (fallbackException: Exception) {
-                        lastException = fallbackException
-                    }
-                }
-                throw lastException
-            } else {
-                throw e;
-            }
+            throw e
         }
     }
 
-    fun runTauriCli(executable: String) {
+    fun runTauriCli(executable: String, cliEntry: String) {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = mutableListOf("tauri", "android", "android-studio-script");
+        val args = listOf(cliEntry, "android", "android-studio-script");
 
         project.exec {
             workingDir(File(project.projectDir, rootDirRel))
