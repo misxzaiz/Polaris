@@ -269,6 +269,7 @@ function normalizeEngines(
 
     const rawSessionFlags = asString(item.sessionFlags)
     log.info(`[normalizeEngines] engine id=${id}, raw sessionFlags=${rawSessionFlags ?? 'undefined'} -> fallback ${rawSessionFlags ?? 'pi'}`)
+    log.info(`[normalizeEngines] engine id=${id}, raw mcpConsumption=${JSON.stringify(item.mcpConsumption)}, raw keys=${Object.keys(item as object).join(',')}`)
 
     // providerConfig 声明（可选）：CLI 如何注册自定义 provider 端点
     const rawProviderConfig = isRecord(item.providerConfig) ? item.providerConfig : null
@@ -293,6 +294,8 @@ function normalizeEngines(
         args: cli && Array.isArray(cli.args) ? cli.args.filter((a): a is string => typeof a === 'string') : [],
         installGuide: cli ? asString(cli.installGuide) ?? '' : '',
       },
+      npmPackage: asString(item.npmPackage) || undefined,
+      installUrl: asString(item.installUrl) || undefined,
       protocol: asString(item.protocol) as PluginEngineContribution['protocol'] ?? 'pi-rpc',
       sessionFlags: asString(item.sessionFlags) as PluginEngineContribution['sessionFlags'] ?? 'pi',
       providerConfig,

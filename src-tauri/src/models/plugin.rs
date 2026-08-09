@@ -214,6 +214,14 @@ pub struct PluginEngineManifestContribution {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
     pub cli: PluginEngineCliContribution,
+    /// 可通过 npm 全局安装的包名（如 "@earendil-works/pi-coding-agent"）。
+    /// 声明后 AI 引擎设置页自动显示一键安装/卸载按钮。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub npm_package: Option<String>,
+    /// 安装页面 URL（如 "https://omp.sh/install"）。
+    /// 适用于非 npm 分发的引擎，AI 引擎设置页显示「打开安装页面」按钮。
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub install_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub protocol: Option<String>,
     /// Session ID CLI 标志风格（"pi" / "omp"），缺省时前端按 "pi" 处理
@@ -222,6 +230,10 @@ pub struct PluginEngineManifestContribution {
     /// Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub provider_config: Option<PluginEngineProviderConfigManifest>,
+    /// MCP 消费策略（"mcp-servers" / "pi-extension" / "mcp-config-path" / "none"），
+    /// 缺省时前端按 "mcp-servers" 处理
+    #[serde(skip_serializing_if = "Option::is_none", rename = "mcpConsumption")]
+    pub mcp_consumption: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capabilities: Option<PluginEngineCapabilitiesContribution>,
 }

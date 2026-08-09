@@ -350,3 +350,104 @@ describe('engineId → pluginId 映射 (pluginRegistry)', () => {
     expect(pluginRegistry.getPluginIdForEngine('nonexistent-engine')).toBeUndefined()
   })
 })
+
+
+// ============================================================
+// 6. npmPackage 字段链路（一键安装/卸载 CLI）
+// ============================================================
+describe('npmPackage 字段链路（插件引擎一键安装/卸载）', () => {
+  it('normalizeEngines 保留 npmPackage（manifest → 前端插件类型）', () => {
+    const raw = {
+      id: 'omp-engine',
+      name: 'OMP Engine Plugin',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'OMP Engine',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            npmPackage: '@earendil-works/pi-coding-agent',
+          },
+        ],
+      },
+    }
+
+    const { plugin } = validateDiscoveredPlugin(raw)
+    expect(plugin).not.toBeNull()
+    const engine = plugin!.contributes.engines![0]
+    expect(engine.id).toBe('omp')
+    expect(engine.npmPackage).toBe('@earendil-works/pi-coding-agent')
+  })
+
+  it('npmPackage 缺失时 normalizeEngines 返回 undefined（不误伤）', () => {
+    const raw = {
+      id: 'omp-engine',
+      name: 'OMP Engine Plugin',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'OMP Engine',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+          },
+        ],
+      },
+    }
+
+    const { plugin } = validateDiscoveredPlugin(raw)
+    expect(plugin!.contributes.engines![0].npmPackage).toBeUndefined()
+  })
+
+  it('installUrl 通过 normalizeEngines 保留', () => {
+    const raw = {
+      id: 'omp-engine',
+      name: 'OMP Engine Plugin',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'OMP Engine',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+            installUrl: 'https://omp.sh/install',
+          },
+        ],
+      },
+    }
+
+    const { plugin } = validateDiscoveredPlugin(raw)
+    expect(plugin).not.toBeNull()
+    const engine = plugin!.contributes.engines![0]
+    expect(engine.installUrl).toBe('https://omp.sh/install')
+  })
+
+  it('installUrl 缺失时 normalizeEngines 返回 undefined（不误伤）', () => {
+    const raw = {
+      id: 'omp-engine',
+      name: 'OMP Engine Plugin',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      contributes: {
+        engines: [
+          {
+            id: 'omp',
+            name: 'OMP Engine',
+            description: 'OMP CLI engine',
+            cli: { command: 'omp', args: ['--mode', 'rpc'] },
+          },
+        ],
+      },
+    }
+
+    const { plugin } = validateDiscoveredPlugin(raw)
+    expect(plugin!.contributes.engines![0].installUrl).toBeUndefined()
+  })
+})

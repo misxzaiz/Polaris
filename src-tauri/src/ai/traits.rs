@@ -219,9 +219,22 @@ pub struct PluginEngineConfig {
     /// Provider 注册声明（声明式：CLI 如何注册自定义 provider 端点）
     #[serde(default, skip_serializing_if = "Option::is_none", rename = "providerConfig")]
     pub provider_config: Option<ProviderConfigDeclaration>,
+    /// 可通过 npm 全局安装/卸载的包名（如 "@earendil-works/pi-coding-agent"）。
+    /// 声明后 AI 引擎设置页自动显示一键安装/卸载按钮。
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "npmPackage")]
+    pub npm_package: Option<String>,
+    /// 安装页面 URL（如 "https://omp.sh/install"）。
+    /// 适用于非 npm 分发的引擎，AI 引擎设置页显示「打开安装页面」按钮。
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "installUrl")]
+    pub install_url: Option<String>,
     /// MCP 消费策略（默认 McpServers，向后兼容）
     #[serde(default, rename = "mcpConsumption")]
     pub mcp_consumption: McpConsumptionStrategy,
+    /// 是否启用 MCP 桥接。当 false 时，即使 mcp_consumption 为 PiExtension，
+    /// 也不写入桥接文件、不注入 --extension。
+    /// 默认 true：后端行为不变，由前端根据插件 mcpEnabled 状态控制。
+    #[serde(default, rename = "mcpEnabled")]
+    pub mcp_enabled: bool,
 }
 
 /// Provider 注册声明（声明式 provider 注册）
@@ -652,6 +665,8 @@ pub trait AIEngine: Send + Sync {
             env_keys: EnvKeyMapping::default(),
             supports_model_provider: false,
             install_guide: None,
+            npm_package: None,
+            install_url: None,
         }
     }
 
@@ -726,6 +741,14 @@ pub struct EngineMetadata {
     /// 安装指引（插件引擎 CLI 安装说明）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_guide: Option<String>,
+    /// 可通过 npm 全局安装的包名（如 "@earendil-works/pi-coding-agent"）。
+    /// 声明后 AI 引擎设置页自动显示一键安装/卸载按钮。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub npm_package: Option<String>,
+    /// 安装页面 URL（如 "https://omp.sh/install"）。
+    /// 适用于非 npm 分发的引擎，AI 引擎设置页显示「打开安装页面」按钮。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub install_url: Option<String>,
 }
 
 /// 引擎分发方式。

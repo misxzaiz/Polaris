@@ -82,6 +82,38 @@ pub struct ParsedPiLine {
     pub command_error: Option<String>,
 }
 
+/// 归一化工具名：处理 OMP 运行时对 MCP 调用的特殊包装。
+///
+/// OMP 通过 Pi Extension 桥接注册了 `mcp__{server}__{tool}` 工具，
+/// 但运行时把 MCP 调用包装成 `write` 工具，参数 `args.path` 或
+/// `result.path` 里带 `xd://mcp__{server}__{tool}` 前缀。
+/// 此处识别该模式，把真正的 MCP 工具名提取出来，统一为
+/// `mcp__{server}__{tool}`，与 Polaris 前端期望格式一致。
+fn normalize_tool_name(name: &str, args: Option<&serde_json::Value>, result: Option<&serde_json::Value>) -> String {
+    // 情况 1：工具名本身带 xd:// 前缀（如 `xd://mcp__xxx`）
+    if let Some(stripped) = name.strip_prefix("xd://") {
+        return stripped.to_string();
+    }
+    // 情况 2：OMP 把 MCP 调用包装为 write 工具，args.path 或 result.path 带 xd://mcp__ 前缀
+    if name == "write" {
+        // tool_execution_start 时查 args.path，tool_execution_end 时查 result.path
+        let path = args
+            .and_then(|a| a.get("path"))
+            .and_then(|p| p.as_str())
+            .or_else(|| {
+                result
+                    .and_then(|r| r.get("path"))
+                    .and_then(|p| p.as_str())
+            });
+        if let Some(p) = path {
+            if let Some(stripped) = p.strip_prefix("xd://") {
+                return stripped.to_string();
+            }
+        }
+    }
+    name.to_string()
+}
+
 /// 将一行 pi RPC 输出翻译为标准化 AIEvent 集合
 ///
 /// `current_sid` 为当前 Polaris 会话 ID（事件透出时回填）。
@@ -193,7 +225,8 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
 
         // —— 工具执行 ——
         "tool_execution_start" => {
-            let tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let raw_tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let tool = normalize_tool_name(&raw_tool, line.args.as_ref(), None);
             let args_map = line.args.as_ref()
                 .and_then(|a| a.as_object())
                 .map(|m| m.iter().map(|(k, v)| (k.clone(), v.clone())).collect())
@@ -208,7 +241,8 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str) -> ParsedPiLine
             // 工具执行进度（流式输出）；当前不透出，避免噪声
         }
         "tool_execution_end" => {
-            let tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let raw_tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let tool = normalize_tool_name(&raw_tool, line.args.as_ref(), line.result.as_ref());
             let success = line.is_error != Some(true);
             let mut end = ToolCallEndEvent::new(current_sid, tool, success);
             if let Some(cid) = line.tool_call_id.clone() {
@@ -522,6 +556,32 @@ mod tests {
         assert!(PiRpcLine::parse_line("").is_none());
         assert!(PiRpcLine::parse_line("plain text").is_none());
         assert!(PiRpcLine::parse_line("{broken").is_none());
+    }
+
+    #[test]
+    fn test_omp_mcp_write_wrapper_normalized() {
+        // OMP 把 MCP 调用包装成 write 工具，args.path 带 xd://mcp__ 前缀
+        let line = parse(r#"{"type":"tool_execution_start","toolCallId":"c1","toolName":"write","args":{"path":"xd://mcp__chrome_devtools_list_pages"}}"#);
+        let r = pi_line_to_ai_events(&line, "sid");
+        match &r.events[0] {
+            AIEvent::ToolCallStart(e) => {
+                assert_eq!(e.tool, "mcp__chrome_devtools_list_pages");
+            }
+            other => panic!("应为 ToolCallStart，实际: {}", other.event_type()),
+        }
+    }
+
+    #[test]
+    fn test_omp_mcp_direct_xd_prefix_normalized() {
+        // 直接带 xd:// 前缀的工具名
+        let line = parse(r#"{"type":"tool_execution_start","toolCallId":"c1","toolName":"xd://mcp__polaris-browser__browser_acquire","args":{}}"#);
+        let r = pi_line_to_ai_events(&line, "sid");
+        match &r.events[0] {
+            AIEvent::ToolCallStart(e) => {
+                assert_eq!(e.tool, "mcp__polaris-browser__browser_acquire");
+            }
+            other => panic!("应为 ToolCallStart，实际: {}", other.event_type()),
+        }
     }
 
     #[test]

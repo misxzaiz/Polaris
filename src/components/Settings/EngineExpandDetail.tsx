@@ -2,11 +2,12 @@
  * 引擎详情面板
  */
 import { useTranslation } from 'react-i18next';
-import { Package, Check, Puzzle } from 'lucide-react';
+import { Package, Check, Puzzle, ExternalLink } from 'lucide-react';
 import { ClaudePathSelector } from '../Common';
 import { EngineInstallActions } from './EngineInstallActions';
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import { pluginRegistry } from '@/plugin-system';
+import { openInDefaultApp } from '@/services/tauri/windowService';
 import type { EngineCapabilities, EngineMetadata, Config, EngineId } from '@/types';
 import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './AIEngineTab';
 
@@ -183,6 +184,29 @@ export function EngineExpandDetail({
             <div className="text-xs text-text-tertiary">
               请确保 <code className="font-mono bg-background-elevated px-1 rounded">{meta.distribution.path}</code> 已安装并在 PATH 中可用。
             </div>
+          )}
+
+          {/* npm 分发的插件引擎：一键安装/卸载 CLI */}
+          {meta.npmPackage && (
+            <EngineInstallActions
+              engineId={engineId}
+              npmPackage={meta.npmPackage}
+              installed={status.available}
+              version={status.version}
+              onChanged={refreshHealth}
+            />
+          )}
+
+          {/* 非 npm 分发（OMP 等 curl|sh 安装）：打开安装页面 */}
+          {meta.installUrl && (
+            <button
+              type="button"
+              onClick={() => openInDefaultApp(meta.installUrl!)}
+              className="inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border border-primary/40 bg-primary/10 text-primary hover:bg-primary/15 transition-colors"
+            >
+              <ExternalLink size={13} />
+              {t('aiEngine.openInstallPage', { defaultValue: '打开安装页面' })}
+            </button>
           )}
         </div>
       )}

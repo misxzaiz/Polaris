@@ -120,7 +120,7 @@ impl PluginHistoryProvider {
         Ok(entries)
     }
 
-    /// 从 JSONL 文件中提取摘要（第一条用户消息）
+    /// 从 JSONL 文件中提取摘要（第一条用户消息的文本内容）
     fn extract_summary(&self, path: &Path) -> Option<String> {
         let file = fs::File::open(path).ok()?;
         let reader = BufReader::new(file);
@@ -134,9 +134,12 @@ impl PluginHistoryProvider {
                 if val.get("type").and_then(|t| t.as_str()) == Some("message") {
                     if let Some(msg) = val.get("message") {
                         if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
-                            if let Some(content) = msg.get("content").and_then(|c| c.as_str()) {
-                                first_user_message = Some(content.to_string());
-                                break;
+                            // 兼容 content 字符串和数组格式
+                            if let Some(content) = msg.get("content") {
+                                if let Some(text) = Self::extract_text_content(content) {
+                                    first_user_message = Some(text.to_string());
+                                    break;
+                                }
                             }
                         }
                     }
@@ -151,6 +154,75 @@ impl PluginHistoryProvider {
                 s
             }
         })
+    }
+
+    /// 从 content 字段提取纯文本内容
+    ///
+    /// 兼容两种格式：
+    /// - 字符串：`"content": "hello"`
+    /// - 数组（OMP 风格）：`"content": [{"type":"text","text":"hello"}, ...]`
+    fn extract_text_content<'a>(content: &'a serde_json::Value) -> Option<&'a str> {
+        // 字符串格式
+        if let Some(s) = content.as_str() {
+            return Some(s);
+        }
+        // 数组格式：取第一个 text 类型块的内容
+        if let Some(arr) = content.as_array() {
+            for block in arr {
+                if block.get("type").and_then(|t| t.as_str()) == Some("text") {
+                    if let Some(text) = block.get("text").and_then(|t| t.as_str()) {
+                        return Some(text);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// 从 content 数组提取工具调用列表
+    ///
+    /// OMP 风格在 content 数组中嵌入 `{"type":"toolCall","name":"...","arguments":{...}}` 块。
+    fn extract_tool_calls_from_content(content: &serde_json::Value) -> Vec<ToolCallInfo> {
+        let Some(arr) = content.as_array() else { return Vec::new() };
+        arr.iter().filter_map(|block| {
+            if block.get("type").and_then(|t| t.as_str()) != Some("toolCall") {
+                return None;
+            }
+            let tool_name = block.get("name").and_then(|n| n.as_str())?.to_string();
+            let tool_id = block.get("id").and_then(|i| i.as_str()).unwrap_or("").to_string();
+            let arguments = block.get("arguments").or_else(|| block.get("args")).map(|a| a.to_string());
+            Some(ToolCallInfo { tool_id, tool_name, arguments })
+        }).collect()
+    }
+
+    /// 从 content 数组提取工具结果（role=toolResult 消息）
+    ///
+    /// OMP 风格工具结果在 role=toolResult 消息的 content 数组第一个 text 块中。
+    fn extract_tool_result_from_content(content: &serde_json::Value) -> Option<ToolResultInfo> {
+        let Some(arr) = content.as_array() else { return None };
+        let mut tool_id = String::new();
+        let mut tool_name = None;
+        let mut output = None;
+        let mut success = true;
+
+        for block in arr {
+            match block.get("type").and_then(|t| t.as_str()) {
+                Some("text") => {
+                    output = output.or_else(|| block.get("text").and_then(|t| t.as_str()).map(|s| s.to_string()));
+                }
+                Some("toolResult") => {
+                    tool_id = block.get("id").or_else(|| block.get("toolCallId"))
+                        .and_then(|i| i.as_str()).unwrap_or("").to_string();
+                    tool_name = block.get("name").or_else(|| block.get("toolName"))
+                        .and_then(|n| n.as_str()).map(|s| s.to_string());
+                    output = output.or_else(|| block.get("output").or_else(|| block.get("text"))
+                        .and_then(|o| o.as_str()).map(|s| s.to_string()));
+                    success = block.get("isError").and_then(|e| e.as_bool()) != Some(true);
+                }
+                _ => {}
+            }
+        }
+        Some(ToolResultInfo { tool_id, tool_name, output, success })
     }
 
     /// 解析 JSONL 文件为消息列表
@@ -170,11 +242,16 @@ impl PluginHistoryProvider {
                 }
                 if let Some(msg) = val.get("message") {
                     let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("user").to_string();
-                    let content = msg.get("content").and_then(|c| c.as_str()).unwrap_or("").to_string();
+
+                    // 兼容 content 字符串和数组格式
+                    let content = msg.get("content")
+                        .map(|c| Self::extract_text_content(c).unwrap_or("").to_string())
+                        .unwrap_or_default();
+
                     let message_id = val.get("id").and_then(|i| i.as_str()).map(|s| s.to_string());
                     let timestamp = val.get("timestamp").and_then(|t| t.as_str()).map(|s| s.to_string());
 
-                    // 提取工具调用信息
+                    // 提取工具调用信息：优先从 msg.toolCalls/msg.tool_calls，否则从 content 数组提取
                     let tool_calls = msg.get("toolCalls").or_else(|| msg.get("tool_calls"))
                         .and_then(|tc| tc.as_array())
                         .map(|arr| {
@@ -191,11 +268,16 @@ impl PluginHistoryProvider {
                                     arguments,
                                 })
                             }).collect()
+                        })
+                        .or_else(|| {
+                            // OMP 风格：toolCall 嵌入在 content 数组中
+                            let calls = Self::extract_tool_calls_from_content(msg.get("content").unwrap_or(&serde_json::Value::Null));
+                            if calls.is_empty() { None } else { Some(calls) }
                         });
 
                     let mut hm = HistoryMessage {
                         message_id,
-                        role,
+                        role: role.clone(),
                         content,
                         timestamp,
                         tool_calls,
@@ -203,7 +285,7 @@ impl PluginHistoryProvider {
                         usage: None,
                     };
 
-                    // 工具结果
+                    // 工具结果：优先从顶层 result/toolResult 字段，否则从 role=toolResult 消息的 content 提取
                     if let Some(result) = val.get("result").or_else(|| val.get("toolResult")) {
                         hm.tool_result = Some(ToolResultInfo {
                             tool_id: result.get("id").or_else(|| result.get("toolCallId"))
@@ -214,9 +296,14 @@ impl PluginHistoryProvider {
                                 .and_then(|o| o.as_str()).map(|s| s.to_string()),
                             success: result.get("isError").and_then(|e| e.as_bool()) != Some(true),
                         });
+                    } else if role == "toolResult" {
+                        // OMP 风格：toolResult 消息从 content 数组提取
+                        hm.tool_result = Self::extract_tool_result_from_content(
+                            msg.get("content").unwrap_or(&serde_json::Value::Null)
+                        );
                     }
 
-                    // Token 用量
+                    // Token 用量（OMP 风格在 msg.usage 中，字段名为 input/output/cacheRead 等）
                     if let Some(usage) = msg.get("usage") {
                         hm.usage = Some(TokenUsage {
                             input_tokens: usage.get("inputTokens").or_else(|| usage.get("input"))
@@ -347,4 +434,64 @@ impl SessionHistoryProvider for PluginHistoryProvider {
         fs::remove_file(&entry.path)
             .map_err(|e| AppError::ProcessError(format!("删除会话文件失败: {}", e)))
     }
+}
+
+/// 提取插件引擎 JSONL 文件的元数据（供索引扫描使用）
+///
+/// 返回 (title, message_count, created_at, workspace_path, session_id)
+pub(crate) fn parse_plugin_metadata(path: &Path) -> (Option<String>, usize, Option<String>, Option<String>, Option<String>) {
+    let file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return (None, 0, None, None, None),
+    };
+    let reader = BufReader::new(file);
+    let mut title = None;
+    let mut created_at = None;
+    let mut workspace_path = None;
+    let mut session_id = None;
+    let mut message_count: usize = 0;
+
+    for line in reader.lines().map_while(|r| r.ok()) {
+        if line.trim().is_empty() || !line.trim().starts_with('{') {
+            continue;
+        }
+        let Ok(val) = serde_json::from_str::<serde_json::Value>(&line) else { continue };
+        match val.get("type").and_then(|t| t.as_str()) {
+            Some("title") => {
+                let t = val.get("title").and_then(|v| v.as_str()).unwrap_or("");
+                if !t.is_empty() {
+                    title = Some(t.to_string());
+                }
+            }
+            Some("session") => {
+                session_id = val.get("id").and_then(|v| v.as_str()).map(|s| s.to_string());
+                created_at = val.get("timestamp").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let cwd = val.get("cwd").and_then(|v| v.as_str());
+                if cwd.map_or(false, |c| !c.is_empty()) {
+                    workspace_path = cwd.map(|s| s.to_string());
+                }
+            }
+            Some("message") => {
+                message_count += 1;
+                // 优先取第一条 user 消息作为 title（若无 title 行）
+                if title.is_none() {
+                    if let Some(msg) = val.get("message") {
+                        if msg.get("role").and_then(|r| r.as_str()) == Some("user") {
+                            if let Some(content) = msg.get("content") {
+                                if let Some(text) = PluginHistoryProvider::extract_text_content(content) {
+                                    let text = text.to_string();
+                                    if !text.is_empty() {
+                                        title = Some(text.chars().take(80).collect());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    (title, message_count, created_at, workspace_path, session_id)
 }

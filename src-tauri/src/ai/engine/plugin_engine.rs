@@ -51,7 +51,11 @@ pub struct PluginEngineRunner {
     ///
     /// 不放 SessionManager：SessionManager 在进程退出时会被清理，
     /// 而此映射必须跨进程生命周期存活（每轮 kill+respawn）。
+    ///
+    /// 持久化到 session_paths.json 文件，避免应用重启后丢失。
     session_paths: Arc<std::sync::Mutex<HashMap<String, String>>>,
+    /// session_paths 持久化文件路径
+    session_paths_file: Option<PathBuf>,
 }
 
 impl PluginEngineRunner {
@@ -61,6 +65,31 @@ impl PluginEngineRunner {
         // 将名称和描述泄漏到 &'static str（引擎存活于整个应用生命周期，安全）
         let leaked_name: &'static str = Box::leak(config.name.clone().into_boxed_str());
         let leaked_description: &'static str = Box::leak(config.description.clone().into_boxed_str());
+
+        // 尝试从磁盘加载持久化的 session_paths 映射（应用重启后仍可续聊）
+        let mut session_paths = HashMap::new();
+        let session_paths_file = Self::session_paths_file_path(&config.id);
+        if let Some(path) = &session_paths_file {
+            if let Ok(content) = fs::read_to_string(path) {
+                match serde_json::from_str::<HashMap<String, String>>(&content) {
+                    Ok(map) => {
+                        session_paths = map;
+                        tracing::info!(
+                            "[PluginEngine:{}] 从磁盘加载 session_paths 映射: {} 条",
+                            config.id,
+                            session_paths.len()
+                        );
+                    }
+                    Err(e) => {
+                        tracing::warn!(
+                            "[PluginEngine:{}] session_paths 持久化文件解析失败，忽略: {}",
+                            config.id, e
+                        );
+                    }
+                }
+            }
+        }
+
         Self {
             config,
             capabilities,
@@ -68,8 +97,17 @@ impl PluginEngineRunner {
             cli_path: None,
             leaked_name,
             leaked_description,
-            session_paths: Arc::new(std::sync::Mutex::new(HashMap::new())),
+            session_paths: Arc::new(std::sync::Mutex::new(session_paths)),
+            session_paths_file,
         }
+    }
+
+    /// session_paths 持久化文件路径
+    ///
+    /// 位于 plugin-sessions/<engine_id>/session_paths.json，与 omp 落盘文件同目录。
+    fn session_paths_file_path(engine_id: &str) -> Option<PathBuf> {
+        let dir = data_root().root().join("plugin-sessions").join(engine_id);
+        Some(dir.join("session_paths.json"))
     }
 
     /// 获取 CLI 路径
@@ -255,26 +293,34 @@ impl PluginEngineRunner {
         };
 
         // MCP 桥接：根据消费策略注入 CLI 参数
-        match self.config.mcp_consumption {
-            McpConsumptionStrategy::PiExtension => {
+        // 受 mcp_enabled 门控：关闭时注入 --no-extensions 但跳过 --extension
+        match (self.config.mcp_consumption, self.config.mcp_enabled) {
+            (McpConsumptionStrategy::PiExtension, _) => {
                 // Pi/OMP 风格：始终禁用自动扩展发现，显式注入桥接扩展
                 cmd.arg("--no-extensions");
                 argv.push("--no-extensions".into());
-                if let Some(dir) = bridge_dir {
-                    if dir.exists() {
-                        cmd.arg("--extension").arg(dir);
-                        argv.push("--extension".into());
-                        argv.push(dir.to_string_lossy().to_string());
-                        tracing::info!(
-                            "[PluginEngine:{}] 注入 MCP 桥接 Extension: {}",
-                            self.config.id, dir.display()
-                        );
-                    } else {
-                        tracing::warn!(
-                            "[PluginEngine:{}] PiExtension 策略但桥接目录不存在，跳过 --extension",
-                            self.config.id
-                        );
+                if self.config.mcp_enabled {
+                    if let Some(dir) = bridge_dir {
+                        if dir.exists() {
+                            cmd.arg("--extension").arg(dir);
+                            argv.push("--extension".into());
+                            argv.push(dir.to_string_lossy().to_string());
+                            tracing::info!(
+                                "[PluginEngine:{}] 注入 MCP 桥接 Extension: {}",
+                                self.config.id, dir.display()
+                            );
+                        } else {
+                            tracing::warn!(
+                                "[PluginEngine:{}] PiExtension 策略但桥接目录不存在，跳过 --extension",
+                                self.config.id
+                            );
+                        }
                     }
+                } else {
+                    tracing::info!(
+                        "[PluginEngine:{}] mcp_enabled=false，注入 --no-extensions 但不注入 --extension",
+                        self.config.id
+                    );
                 }
             }
             // McpServers/McpConfigPath/None：无需 CLI 参数注入
@@ -374,7 +420,16 @@ impl PluginEngineRunner {
     /// 当前实现：
     /// - `PiExtension`：调用 `mcp_bridge::write_extension_bridge` 写 JS Extension + config.json
     /// - 其他策略：无操作（默认 `McpServers` 由引擎自身消费，`None` 禁用）
+    ///
+    /// 受 `mcp_enabled` 门控：当 false 时，即使策略为 PiExtension 也跳过。
     fn write_mcp_bridge(&self, servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer]) -> Result<()> {
+        if !self.config.mcp_enabled {
+            tracing::info!(
+                "[PluginEngine:{}] mcp_enabled=false，跳过 MCP 桥接",
+                self.config.id
+            );
+            return Ok(());
+        }
         match self.config.mcp_consumption {
             McpConsumptionStrategy::PiExtension => {
                 if servers.is_empty() {
@@ -553,6 +608,8 @@ impl PluginEngineRunner {
         let engine_id_for_session = self.config.id.clone();
         // session_paths 持久映射的共享引用（跨进程生命周期存活）
         let session_paths = self.session_paths.clone();
+        // session_paths 持久化文件路径（同闭包 move）
+        let session_paths_file = self.session_paths_file.clone();
 
         let (input_sender, input_receiver) = std::sync::mpsc::channel::<String>();
         let input_sender_for_return = input_sender.clone();
@@ -712,6 +769,17 @@ impl PluginEngineRunner {
                         );
                         if let Ok(mut m) = session_paths.lock() {
                             m.insert(current_session_id.clone(), fp);
+                            // 持久化到磁盘，应用重启后仍可续聊
+                            if let Some(path) = &session_paths_file {
+                                if let Ok(map_str) = serde_json::to_string_pretty(&*m) {
+                                    if let Err(e) = fs::write(path, map_str) {
+                                        tracing::warn!(
+                                            "[PluginEngine:{}] 写入 session_paths 持久化文件失败: {}",
+                                            engine_id, e
+                                        );
+                                    }
+                                }
+                            }
                         }
                     } else {
                         tracing::warn!(
@@ -817,6 +885,8 @@ impl AIEngine for PluginEngineRunner {
             env_keys: EnvKeyMapping::default(),
             supports_model_provider: false,
             install_guide: self.config.cli.install_guide.clone(),
+            npm_package: self.config.npm_package.clone(),
+            install_url: self.config.install_url.clone(),
         }
     }
 

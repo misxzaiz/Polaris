@@ -173,6 +173,10 @@ export interface PluginEngineContribution {
     /** 安装指引文本 */
     installGuide?: string
   }
+  /** 可通过 npm 全局安装的包名（如 "@earendil-works/pi-coding-agent"），声明后引擎页显示一键安装/卸载按钮 */
+  npmPackage?: string
+  /** 安装页面 URL（如 "https://omp.sh/install"），声明后引擎页显示「打开安装页面」按钮 */
+  installUrl?: string
   /** RPC 协议类型，默认 pi-rpc */
   protocol?: 'pi-rpc' | 'json-rpc' | 'command'
   /** Session ID CLI 标志风格，默认 'pi'（--session-id / --session） */

@@ -508,8 +508,8 @@ pub fn on_self_delete(name: &str) {
 
 struct NativeFile {
     id: String,
-    engine_id: &'static str,
-    source: &'static str,
+    engine_id: String,
+    source: String,
     path: PathBuf,
     mtime: i64,
     size: i64,
@@ -541,8 +541,8 @@ fn collect_claude_files(out: &mut Vec<NativeFile>) {
                 }
                 out.push(NativeFile {
                     id,
-                    engine_id: "claude-code",
-                    source: "claude-native",
+                    engine_id: "claude-code".to_string(),
+                    source: "claude-native".to_string(),
                     path,
                     mtime: md.modified().map(systemtime_to_epoch_ms).unwrap_or(0),
                     size: md.len() as i64,
@@ -567,12 +567,60 @@ fn collect_codex_files(out: &mut Vec<NativeFile>) {
         }
         out.push(NativeFile {
             id,
-            engine_id: "codex",
-            source: "codex-native",
+            engine_id: "codex".to_string(),
+            source: "codex-native".to_string(),
             path,
             mtime: md.modified().map(systemtime_to_epoch_ms).unwrap_or(0),
             size: md.len() as i64,
         });
+    }
+}
+
+/// 收集插件引擎的会话文件
+///
+/// 扫描 `<DataRoot>/plugin-sessions/<engine-id>/` 目录下的 JSONL 文件。
+/// 插件引擎 engine_id 为目录名，source 固定为 `plugin-native`。
+fn collect_plugin_files(out: &mut Vec<NativeFile>) {
+    let base = data_root().root().join("plugin-sessions");
+    let Ok(entries) = std::fs::read_dir(&base) else { return };
+    for engine_entry in entries.flatten() {
+        let engine_dir = engine_entry.path();
+        if !engine_dir.is_dir() {
+            continue;
+        }
+        let engine_id = engine_dir
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if engine_id.is_empty() {
+            continue;
+        }
+        let Ok(files) = std::fs::read_dir(&engine_dir) else { continue };
+        for f in files.flatten() {
+            let path = f.path();
+            if path.is_dir() {
+                // omp 可能生成同名目录（如 `<ts>_<uuid>/`），跳过
+                continue;
+            }
+            if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
+                let Ok(md) = std::fs::metadata(&path) else { continue };
+                let id = path
+                    .file_stem()
+                    .map(|s| s.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if id.is_empty() {
+                    continue;
+                }
+                out.push(NativeFile {
+                    id,
+                    engine_id: engine_id.clone(),
+                    source: "plugin-native".to_string(),
+                    path,
+                    mtime: md.modified().map(systemtime_to_epoch_ms).unwrap_or(0),
+                    size: md.len() as i64,
+                });
+            }
+        }
     }
 }
 
@@ -613,6 +661,7 @@ fn run_native_scan() {
     let mut files: Vec<NativeFile> = Vec::new();
     collect_claude_files(&mut files);
     collect_codex_files(&mut files);
+    collect_plugin_files(&mut files);
 
     let result = (|| {
         // 独立连接：不抢 index_cell 锁，与查询命令的读连接 WAL 并发。
@@ -715,7 +764,7 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
                 }
             }
             parsed += 1;
-            let (title, message_count, created_at, workspace_path, git_branch) = match f.source {
+            let (title, message_count, created_at, workspace_path, git_branch) = match f.source.as_str() {
                 "claude-native" => {
                     let (first_prompt, count, created, cwd, branch) =
                         crate::ai::history_claude::ClaudeHistoryProvider::parse_session_metadata_light(&f.path);
@@ -727,7 +776,7 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
                         branch,
                     )
                 }
-                _ => {
+                _ if f.source == "codex-native" => {
                     let (summary, count, created, cwd, _sid) =
                         crate::ai::history_codex::CodexHistoryProvider::parse_metadata(&f.path);
                     (
@@ -737,6 +786,21 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
                         cwd,
                         None,
                     )
+                }
+                "plugin-native" => {
+                    let (p_title, p_count, p_created, p_cwd, _) =
+                        crate::ai::history_plugin::parse_plugin_metadata(&f.path);
+                    (
+                        p_title.unwrap_or_else(|| format!("{} 对话", f.engine_id)),
+                        p_count as i64,
+                        p_created.as_deref().map(iso_to_epoch_ms).unwrap_or(0),
+                        p_cwd,
+                        None,
+                    )
+                }
+                _ => {
+                    // 未知来源降级
+                    (format!("{} 对话", f.engine_id), 0, 0, None, None)
                 }
             };
             let title_short: String = title.chars().take(80).collect();

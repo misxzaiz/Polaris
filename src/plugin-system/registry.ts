@@ -14,6 +14,7 @@ import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
+import { usePluginStore } from '@/stores/pluginStore'
 
 const log = createLogger('PluginRegistry')
 
@@ -134,7 +135,7 @@ class PluginRegistry {
     this.recordEngineMapping(manifest)
 
     // 先注册所有引擎，再统一刷新 store
-    return Promise.all(engines.map(e => this.registerSingleEngine(e)))
+    return Promise.all(engines.map(e => this.registerSingleEngine(e, manifest.id)))
       .then(() => {
         log.info(`[PluginRegistry] 已注册 ${engines.length} 个插件引擎，刷新引擎元数据 store`)
         return useEngineMetadataStore.getState().reload().then(() => {
@@ -149,7 +150,9 @@ class PluginRegistry {
       })
   }
 
-  private async registerSingleEngine(engine: PluginEngineContribution): Promise<void> {
+  private async registerSingleEngine(engine: PluginEngineContribution, pluginId: string): Promise<void> {
+    // 读取插件 MCP 启用状态
+    const mcpEnabled = usePluginStore.getState().isPluginMcpEnabled(pluginId)
     const engineConfig = {
       id: engine.id,
       name: engine.name,
@@ -162,7 +165,10 @@ class PluginRegistry {
       protocol: engine.protocol ?? 'pi-rpc',
       sessionFlags: engine.sessionFlags ?? 'pi',
       providerConfig: engine.providerConfig,
+      npmPackage: engine.npmPackage,
+      installUrl: engine.installUrl,
       mcpConsumption: engine.mcpConsumption ?? 'mcp-servers',
+      mcpEnabled,
       capabilities: {
         tools: engine.capabilities?.tools ?? true,
         streaming: engine.capabilities?.streaming ?? true,
@@ -170,7 +176,7 @@ class PluginRegistry {
         resume: engine.capabilities?.resume ?? true,
       },
     }
-    log.info(`[registerSingleEngine] engine.id=${engine.id}, source sessionFlags=${engine.sessionFlags ?? 'undefined'}, final sessionFlags=${engineConfig.sessionFlags}, hasProviderConfig=${!!engineConfig.providerConfig}`)
+    log.info(`[registerSingleEngine] engine.id=${engine.id}, source sessionFlags=${engine.sessionFlags ?? 'undefined'}, final sessionFlags=${engineConfig.sessionFlags}, hasProviderConfig=${!!engineConfig.providerConfig}, mcpEnabled=${mcpEnabled}, mcpConsumption=${engineConfig.mcpConsumption}`)
     log.info(`[PluginRegistry] 调用 register_plugin_engine: ${JSON.stringify(engineConfig)}`)
     await invoke('register_plugin_engine', { engine: engineConfig })
     log.info(`[PluginRegistry] 引擎注册成功: ${engine.id}`)
@@ -193,6 +199,25 @@ class PluginRegistry {
   /** 获取指定引擎的来源插件 ID（未找到返回 undefined） */
   getPluginIdForEngine(engineId: string): string | undefined {
     return this.engineToPlugin.get(engineId)
+  }
+
+  /** 重新注册插件的所有引擎（MCP 开关切换后调用） */
+  async reRegisterPluginEngines(pluginId: string): Promise<void> {
+    const manifest = this.manifests.get(pluginId)
+    if (!manifest) {
+      log.warn(`[reRegisterPluginEngines] 未找到插件: ${pluginId}`)
+      return
+    }
+    const engines = manifest.contributes.engines
+    if (!engines || engines.length === 0) return
+
+    log.info(`[PluginRegistry] 重新注册插件引擎: ${pluginId}（MCP 状态变更）`)
+    // 先卸载旧引擎，再重新注册
+    await this.unregisterEngines(manifest)
+    this.clearEngineMapping(pluginId)
+    this.recordEngineMapping(manifest)
+    await Promise.all(engines.map(e => this.registerSingleEngine(e, pluginId)))
+    useEngineMetadataStore.getState().reload().catch(() => {})
   }
 
   private unregisterEngines(manifest: PolarisPluginManifest): Promise<void> {

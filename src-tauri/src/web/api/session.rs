@@ -4,7 +4,7 @@ use axum::Json;
 use serde::Deserialize;
 use std::sync::Arc;
 
-use crate::ai::{CodexHistoryProvider, SessionHistoryProvider};
+use crate::ai::{CodexHistoryProvider, PluginHistoryProvider, SessionHistoryProvider};
 use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
 use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
 use crate::web::error::ok_response;
@@ -62,16 +62,16 @@ pub async fn handle_list_sessions(
             .await
             .map_err(|e| WebError::Internal(e.to_string()))??
         }
-        // 其他引擎（含插件引擎）暂不支持 Web API 会话历史查询
-        _ => {
-            // 返回空结果
-            return Ok(Json(crate::ai::history::PagedResult::<crate::ai::history::SessionMeta> {
-                items: Vec::new(),
-                total: 0,
-                page: 1,
-                page_size: pagination.page_size,
-                total_pages: 0,
-            }))
+        // 其他引擎（含插件引擎）：走通用插件会话历史提供者
+        engine => {
+            let engine = engine.to_string();
+            let engine2 = engine.clone();
+            tokio::task::spawn_blocking(move || {
+                let provider = PluginHistoryProvider::new(engine, engine2);
+                provider.list_sessions(work_dir.as_deref(), pagination)
+            })
+            .await
+            .map_err(|e| WebError::Internal(e.to_string()))??
         }
     };
     Ok(Json(result))
@@ -142,8 +142,18 @@ pub async fn handle_delete_session(
             .await
             .map_err(|e| WebError::Internal(e.to_string()))??;
         }
-        // 其他引擎（含插件引擎）暂不支持 Web API 会话删除
-        _ => {}
+        // 插件引擎走通用删除
+        engine => {
+            let engine = engine.to_string();
+            let engine2 = engine.clone();
+            let sid = session_id.clone();
+            tokio::task::spawn_blocking(move || {
+                let provider = PluginHistoryProvider::new(engine, engine2);
+                provider.delete_session(&sid)
+            })
+            .await
+            .map_err(|e| WebError::Internal(e.to_string()))??;
+        }
     }
     Ok(ok_response())
 }

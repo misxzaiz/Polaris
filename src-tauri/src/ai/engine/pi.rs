@@ -896,6 +896,8 @@ impl AIEngine for PiEngine {
             env_keys: EnvKeyMapping::default(), // 多提供商，走通用 env_overrides
             supports_model_provider: false,
             install_guide: None,
+            npm_package: None,
+            install_url: None,
         }
     }
 

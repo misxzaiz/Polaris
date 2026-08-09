@@ -160,6 +160,10 @@ export default async function (pi) {
 
     const tools = toolsResult.result?.tools || [];
     for (const tool of tools) {
+      // 注册工具时使用纯 mcp__{server}__{tool} 名，不添加 xd:// 前缀。
+      // OMP 的 write 工具设备解析存在 xd:// 前缀剥离不一致问题：
+      // 注册的设备带 xd:// 前缀，但 write 解析路径时剥离前缀后找不到设备。
+      // 去掉前缀后 OMP 将其视为普通工具，LLM 直接调用工具名，绕过 write 层。
       const toolName = `mcp__${srv.serverName}__${tool.name}`;
       pi.registerTool({
         name: toolName,

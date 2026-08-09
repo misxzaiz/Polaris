@@ -431,6 +431,12 @@ export function PluginTab() {
   const setPluginMcpServerEnabled = usePluginStore((state) => state.setPluginMcpServerEnabled)
   const resetPluginState = usePluginStore((state) => state.resetPluginState)
 
+  // 包装 MCP 开关：同时更新插件状态和重新注册引擎（MCP 状态变更需要引擎重注册）
+  const handleSetPluginMcpEnabled = useCallback((pluginId: string, enabled: boolean) => {
+    setPluginMcpEnabled(pluginId, enabled)
+    pluginRegistry.reRegisterPluginEngines(pluginId)
+  }, [setPluginMcpEnabled])
+
   const discoveredPluginCount = plugins.filter((plugin) => !plugin.builtin).length
   const marketplaceInstalled = plugins.some((plugin) => plugin.id === MARKETPLACE_PLUGIN_ID)
   const mcpServerStatuses = listPluginMcpServerStatuses(pluginStates)
@@ -912,7 +918,7 @@ export function PluginTab() {
             updateApplyLoadingId={pluginUpdateApplyLoadingId}
             onSetEnabled={setPluginEnabled}
             onSetUiEnabled={setPluginUiEnabled}
-            onSetMcpEnabled={setPluginMcpEnabled}
+            onSetMcpEnabled={handleSetPluginMcpEnabled}
             onSetMcpServerEnabled={setPluginMcpServerEnabled}
             onReset={resetPluginState}
             onCheckUpdate={handleCheckPluginUpdate}
@@ -1150,7 +1156,7 @@ function PluginCard({
                   <input
                     type="checkbox"
                     checked={state.mcpEnabled}
-                    disabled={!state.enabled || mcpServerStatuses.length === 0}
+                    disabled={!state.enabled || (mcpServerStatuses.length === 0 && engines.length === 0)}
                     onChange={(event) => onSetMcpEnabled(plugin.id, event.target.checked)}
                     className="h-3.5 w-3.5 accent-primary"
                   />

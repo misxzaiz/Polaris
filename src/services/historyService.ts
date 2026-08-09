@@ -51,7 +51,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'self' | 'local' | 'claude-code-native' | 'codex-native'
+  source: 'self' | 'local' | 'claude-code-native' | 'codex-native' | 'plugin-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -99,7 +99,7 @@ export interface UnifiedTimelineOptions {
   scope: HistoryScope
   page: number
   pageSize: number
-  engines?: HistoryEngineFilter[]
+  engines?: string[]
   starred?: boolean
   archived?: boolean
   forceScan?: boolean
@@ -173,7 +173,9 @@ function indexRowToItem(row: IndexSessionRow): UnifiedHistoryItem {
       ? 'claude-code-native'
       : row.source === 'codex-native'
         ? 'codex-native'
-        : 'self'
+        : row.source === 'plugin-native'
+          ? 'plugin-native'
+          : 'self'
   return {
     id: row.id,
     title: row.title || '未命名会话',
@@ -245,7 +247,7 @@ export const historyService = {
       return this.listSelfHistory(
         page,
         pageSize,
-        options.engines ?? ['claude-code', 'codex', 'simple-ai', 'pi'],
+        options.engines && options.engines.length > 0 ? options.engines : undefined,
         scope,
         targetWsPath,
       )
@@ -300,7 +302,7 @@ export const historyService = {
     scope: HistoryScope = 'workspace',
     page: number = 1,
     pageSize: number = 20,
-    engines: HistoryEngineFilter[] = ['claude-code'],
+    engines: string[] = ['claude-code'],
   ): Promise<PagedHistoryResult> {
     try {
       const selfResult = await this.listSelfHistory(page, pageSize, engines)
@@ -316,7 +318,7 @@ export const historyService = {
   async listSelfHistory(
     page: number,
     pageSize: number,
-    engines: HistoryEngineFilter[],
+    engines: string[] | undefined,
     scope: HistoryScope = 'workspace',
     targetWorkspacePath?: string,
   ): Promise<PagedHistoryResult> {
@@ -333,7 +335,7 @@ export const historyService = {
       const normalizedWsPath = effectiveWsPath ? normalizeWorkspacePath(effectiveWsPath) : null
 
       const filtered = all.items.filter((m) => {
-        if (!engines.includes(m.engineId as HistoryEngineFilter)) return false
+        if (engines && engines.length > 0 && !engines.includes(m.engineId)) return false
         if (normalizedWsPath && m.workspacePath) {
           return normalizeWorkspacePath(m.workspacePath) === normalizedWsPath
         }
@@ -368,7 +370,7 @@ export const historyService = {
     scope: HistoryScope,
     page: number,
     pageSize: number,
-    engines: HistoryEngineFilter[],
+    engines: string[],
     targetWorkDir?: string,
   ): Promise<PagedHistoryResult> {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
@@ -603,6 +605,41 @@ export const historyService = {
       }
     }
 
+    // 4. 插件引擎原生（通过后端 get_session_history 拉取 JSONL 消息）
+    if (engineId && !['claude-code', 'codex', 'simple-ai', 'pi'].includes(engineId)) {
+      const { invoke } = await import('../services/tauri')
+      try {
+        const result = await invoke<{ items: { role: string; content: string; messageId?: string; timestamp?: string }[] }>('get_session_history', {
+          sessionId,
+          engineId,
+          page: 1,
+          pageSize: 10000,
+        })
+        if (result.items && result.items.length > 0) {
+          const messages: ChatMessage[] = result.items
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .map((m, idx) => ({
+              id: m.messageId || `${m.role}-${idx}`,
+              type: m.role === 'assistant' ? 'assistant' : 'user',
+              content: m.content,
+              timestamp: m.timestamp || new Date().toISOString(),
+              ...(m.role === 'assistant' ? { blocks: [{ type: 'text' as const, content: m.content }] } : {}),
+            }))
+          return {
+            messages: withAssistantEngineId(messages, normalizeEngineId(engineId)),
+            title: titleHint || '恢复的会话',
+            engineId: normalizeEngineId(engineId),
+            externalSessionId: sessionId,
+            workspacePath: null,
+            source: 'plugin-native',
+            paging: null,
+          }
+        }
+      } catch (e) {
+        log.warn('插件引擎会话恢复失败', { engineId, error: e instanceof Error ? e.message : String(e) })
+      }
+    }
+
     return {
       messages: [],
       title: titleHint || '恢复的会话',
@@ -666,7 +703,10 @@ export const historyService = {
       const { invoke } = await import('../services/tauri')
       await invoke('delete_session', {
         sessionId,
-        engineId: engineId || (source === 'codex-native' ? 'codex' : 'claude-code'),
+        engineId: engineId || (
+          source === 'codex-native' ? 'codex'
+          : source === 'plugin-native' ? source
+          : 'claude-code'),
       })
     } catch (e) {
       log.error('删除历史会话失败', e instanceof Error ? e : new Error(String(e)))

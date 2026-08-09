@@ -14,10 +14,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { historyService } from '@/services/historyService'
-import type { UnifiedHistoryItem, HistoryScope, HistoryEngineFilter, HistoryMarks } from '@/services/historyService'
+import type { UnifiedHistoryItem, HistoryScope, HistoryMarks } from '@/services/historyService'
 import type { ChatMessage, EngineId, Workspace } from '@/types'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useViewStore, useToastStore } from '@/stores/index'
 import { createLogger } from '@/utils/logger'
@@ -34,12 +35,14 @@ import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 
 const log = createLogger('SessionHistoryPanel')
 
-function getHistoryEngines(filter: 'all' | EngineId): HistoryEngineFilter[] {
+function getHistoryEngines(filter: 'all' | EngineId): string[] {
+  if (filter === 'all') return [] // 不传引擎参数，后端返回所有引擎
   if (filter === 'codex') return ['codex']
   if (filter === 'claude-code') return ['claude-code']
   if (filter === 'simple-ai') return ['simple-ai']
   if (filter === 'pi') return ['pi']
-  return ['claude-code', 'codex', 'simple-ai', 'pi']
+  // 插件引擎（元数据中已知的引擎）
+  return [filter]
 }
 
 /** 日期分组类型 */
@@ -783,15 +786,15 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
         <span className="hidden sm:block border-l border-border h-4" />
 
-        {(['all', 'claude-code', 'codex', 'simple-ai', 'pi'] as const).map((f) => (
+        {(['all', ...useEngineMetadataStore.getState().metadatas.map(m => m.id)] as const).filter((f, i, arr) => f === 'all' || arr.indexOf(f) === i).map((f) => (
           <button
             key={f}
-            onClick={() => setFilter(f)}
+            onClick={() => setFilter(f as 'all' | EngineId)}
             className={`px-2 py-1 rounded-md text-xs transition-colors ${
               filter === f ? 'bg-primary/20 text-primary' : 'text-text-secondary hover:bg-background-hover'
             }`}
           >
-            {f === 'all' ? t('history.allEngines', '全部') : getEngineFullName(f)}
+            {f === 'all' ? t('history.allEngines', '全部') : getEngineFullName(f as EngineId)}
           </button>
         ))}
 

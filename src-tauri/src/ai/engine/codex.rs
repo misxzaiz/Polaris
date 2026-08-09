@@ -900,6 +900,8 @@ impl AIEngine for CodexEngine {
             },
             supports_model_provider: true,
             install_guide: None,
+            npm_package: None,
+            install_url: None,
         }
     }
 

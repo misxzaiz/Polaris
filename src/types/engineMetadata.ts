@@ -111,6 +111,10 @@ export interface EngineMetadata {
   supportsModelProvider: boolean
   /** 安装指引（插件引擎 CLI 安装说明） */
   installGuide?: string
+  /** 可通过 npm 全局安装的包名（如 "@earendil-works/pi-coding-agent"），声明后显示一键安装/卸载按钮 */
+  npmPackage?: string
+  /** 安装页面 URL（如 "https://omp.sh/install"），声明后显示「打开安装页面」按钮 */
+  installUrl?: string
 }
 
 // ============================================================================

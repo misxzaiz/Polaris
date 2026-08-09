@@ -750,6 +750,21 @@ impl PluginService {
 
     fn read_manifest(path: &Path) -> Result<PluginManifestFile> {
         let content = std::fs::read_to_string(path)?;
+        // ★ DIAG: 打印读取的路径和原始 JSON 中引擎的 mcpConsumption 字段
+        tracing::info!("[PluginDiscover-PATH] reading manifest: {}", path.display());
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            tracing::info!("[PluginDiscover-RAW] raw JSON: {}", val.to_string().chars().take(500).collect::<String>());
+            if let Some(engines) = val.get("contributes").and_then(|c| c.get("engines")).and_then(|e| e.as_array()) {
+                for eng in engines {
+                    let raw_mcp = eng.get("mcpConsumption").map(|v| v.to_string()).unwrap_or_else(|| "MISSING".to_string());
+                    tracing::info!(
+                        "[PluginDiscover-RAW] engine_id={}, raw field mcpConsumption={}",
+                        eng.get("id").and_then(|v| v.as_str()).unwrap_or("?"),
+                        raw_mcp
+                    );
+                }
+            }
+        }
         serde_json::from_str::<PluginManifestFile>(&content)
             .map_err(|error| AppError::ConfigError(format!("插件 manifest 格式错误: {}", error)))
     }

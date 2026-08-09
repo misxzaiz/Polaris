@@ -149,6 +149,8 @@ impl AIEngine for SimpleAIEngine {
             env_keys: EnvKeyMapping::default(), // OpenAI 兼容（默认值）
             supports_model_provider: true,
             install_guide: None,
+            npm_package: None,
+            install_url: None,
         }
     }
 
