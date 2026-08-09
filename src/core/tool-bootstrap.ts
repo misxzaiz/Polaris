@@ -10,10 +10,18 @@ import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ToolBootstrap')
 
+let bootstrapped = false
+
 /**
  * 注册所有 AI 工具
  */
 export function bootstrapTools(): void {
+  if (bootstrapped) {
+    log.debug('bootstrapTools already called, skipping')
+    return
+  }
+  bootstrapped = true
+
   log.info('Registering AI tools...')
 
   // 注册待办工具

@@ -203,13 +203,16 @@ function QuickAccessTab({ onNavigate }: { onNavigate: (url: string) => void }) {
                 <Globe2 size={12} className="shrink-0 text-text-tertiary" />
                 <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 {item.pinned && <Star size={10} className="shrink-0 text-warning" />}
-                <button
+                <span
+                  role="button"
+                  tabIndex={0}
                   onClick={(e) => { e.stopPropagation(); removeShortcut(item.id) }}
-                  className="shrink-0 rounded p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-danger"
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); removeShortcut(item.id) } }}
+                  className="shrink-0 cursor-pointer rounded p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-danger"
                   title={t('buttons.remove')}
                 >
                   <X size={10} />
-                </button>
+                </span>
               </button>
             )}
           </div>
