@@ -350,6 +350,12 @@ pub async fn handle_ipc_bridge(
         "scheduler_read_protocol_documents" => Ok(Json(serde_json::json!([]))),
         "scheduler_build_protocol_prompt" => Ok(Json(Value::String(String::new()))),
 
+        // ── Engine Metadata ────────────────────────────────────────────────
+        "get_engine_metadata_list" => {
+            let registry = state.engine_registry.lock().await;
+            let metas = registry.list_all_metadata();
+            Ok(Json(serde_json::to_value(metas).unwrap_or_default()))
+        }
         // ── Other commands ────────────────────────────────────────────────────
         "auto_mode_config" => dispatch_auto_mode_config(&state),
         "auto_mode_defaults" => dispatch_auto_mode_defaults(&state),
@@ -421,6 +427,9 @@ pub async fn handle_ipc_bridge(
         "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
+        // 插件引擎注册 / 注销（前端插件系统 contributes.engines 触发）
+        "register_plugin_engine" => dispatch_register_plugin_engine(&state, &args).await,
+        "unregister_plugin_engine" => dispatch_unregister_plugin_engine(&state, &args).await,
 
         // ── Data Root ──────────────────────────────────────────────────────
         "get_data_root_info" => dispatch_get_data_root_info(),
@@ -1975,6 +1984,38 @@ fn dispatch_fs_watch_stop(state: &AppState) -> Result<Json<Value>, WebError> {
 // ═══════════════════════════════════════════════════════════════════════════
 // Plugin
 // ═══════════════════════════════════════════════════════════════════════════
+
+/// 注册插件引擎（前端插件系统 contributes.engines 触发）。
+/// 与 Tauri 命令 `register_plugin_engine` 同源，绕开 tauri-app cfg 门控。
+async fn dispatch_register_plugin_engine(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let engine = args.get("engine").cloned().ok_or_else(|| {
+        WebError::BadRequest("register_plugin_engine 缺少 engine 参数".into())
+    })?;
+    let parsed: crate::ai::PluginEngineConfig = serde_json::from_value(engine).map_err(|e| {
+        WebError::BadRequest(format!("PluginEngineConfig 反序列化失败: {}", e))
+    })?;
+    let mut registry = state.engine_registry.lock().await;
+    registry
+        .register_plugin_engine(parsed)
+        .map_err(bad_request)?;
+    Ok(Json(Value::Null))
+}
+
+/// 注销插件引擎。
+async fn dispatch_unregister_plugin_engine(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let engine_id = require_string(args, "engineId")?;
+    let mut registry = state.engine_registry.lock().await;
+    registry
+        .unregister_plugin_engine(&engine_id)
+        .map_err(bad_request)?;
+    Ok(Json(Value::Null))
+}
 
 fn dispatch_plugin_list(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let available = args.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
