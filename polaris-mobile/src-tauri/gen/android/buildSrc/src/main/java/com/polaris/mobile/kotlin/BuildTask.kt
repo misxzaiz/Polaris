@@ -16,20 +16,51 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
-        val executable = """D:\install\nodejs\node.exe""";
-        val cliEntry = "D:/space/base/Polaris/node_modules/@tauri-apps/cli/main.js";
+        // Cross-platform: Windows uses absolute node path, Linux (CI) uses npx
+        val isWindows = Os.isFamily(Os.FAMILY_WINDOWS)
+        val executable: String
+        val cliEntry: String?
+        if (isWindows) {
+            executable = """D:\install\nodejs\node.exe"""
+            cliEntry = "D:/space/base/Polaris/node_modules/@tauri-apps/cli/main.js"
+        } else {
+            // Linux (GitHub Actions CI): use standard npx entry point
+            executable = "npx"
+            cliEntry = null
+        }
         try {
             runTauriCli(executable, cliEntry)
         } catch (e: Exception) {
-            throw e
+            if (isWindows) {
+                val fallbacks = listOf(
+                    "$executable.exe",
+                    "$executable.cmd",
+                )
+                var lastException: Exception = e
+                for (fallback in fallbacks) {
+                    try {
+                        runTauriCli(fallback, cliEntry)
+                        return
+                    } catch (fallbackException: Exception) {
+                        lastException = fallbackException
+                    }
+                }
+                throw lastException
+            } else {
+                throw e
+            }
         }
     }
 
-    fun runTauriCli(executable: String, cliEntry: String) {
+    fun runTauriCli(executable: String, cliEntry: String?) {
         val rootDirRel = rootDirRel ?: throw GradleException("rootDirRel cannot be null")
         val target = target ?: throw GradleException("target cannot be null")
         val release = release ?: throw GradleException("release cannot be null")
-        val args = listOf(cliEntry, "android", "android-studio-script");
+        val args = if (cliEntry != null) {
+            listOf(cliEntry, "android", "android-studio-script")
+        } else {
+            listOf("tauri", "android", "android-studio-script")
+        }
 
         project.exec {
             workingDir(File(project.projectDir, rootDirRel))
