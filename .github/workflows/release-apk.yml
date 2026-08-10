@@ -100,7 +100,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release-artifacts
-          APK_PATH=$(find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name 'app-*-release.apk' -not -name '*universal*' -not -name '*signed*' -not -name '*univer*' | sort -V | tail -1)
+          APK_PATH=$(find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -not -name '*signed*' -not -name '*unsigned*' | sort -V | tail -1)
           if [ -z "$APK_PATH" ]; then
             echo "No APK found"
             find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null || true
