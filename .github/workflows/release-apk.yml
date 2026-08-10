@@ -12,6 +12,7 @@ permissions:
 env:
   NDK_VERSION: '26.1.10909125'
   ANDROID_API: 35
+  RUST_ANDROID_TARGETS: 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android'
 
 jobs:
   build-apk:
@@ -42,7 +43,7 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: ${{ env.RUST_ANDROID_TARGETS }}
 
       # ---- Setup: JDK ----
       - name: Setup JDK
@@ -83,12 +84,15 @@ jobs:
       # ---- Install polaris-mobile deps ----
       - name: Install polaris-mobile dependencies
         working-directory: polaris-mobile
-        run: npm install
+        run: npm install --legacy-peer-deps
 
       # ---- Build: APK ----
+      # 直接从 polaris-mobile/ 根目录用 Tauri CLI 构建,
+      # CLI 内部处理: Rust 编译(--target 约束) -> 前端打包 -> Gradle -> APK
+      # 绕开 buildSrc/BuildTask.kt 的 android-studio-script WebSocket 依赖
       - name: Build Android APK
         working-directory: polaris-mobile
-        run: npx tauri android build --apk -t aarch64 --split-per-abi
+        run: npx tauri android build --apk -t aarch64 -vv
 
       # ---- Rename APK ----
       - name: Rename APK with version
@@ -96,8 +100,14 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release-artifacts
-          cp polaris-mobile/src-tauri/gen/android/app/build/outputs/apk/arm64/release/app-arm64-release.apk \
-            "release-artifacts/polaris-mobile-${VERSION}.apk"
+          APK_PATH=$(find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name 'app-*-release.apk' -not -name '*universal*' -not -name '*signed*' -not -name '*univer*' | sort -V | tail -1)
+          if [ -z "$APK_PATH" ]; then
+            echo "No APK found"
+            find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name "*.apk" 2>/dev/null || true
+            exit 1
+          fi
+          echo "Found APK: $APK_PATH"
+          cp "$APK_PATH" "release-artifacts/polaris-mobile-${VERSION}.apk"
 
       # ---- Verify APK ----
       - name: Verify APK contents
