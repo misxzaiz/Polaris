@@ -16,6 +16,24 @@ open class BuildTask : DefaultTask() {
 
     @TaskAction
     fun assemble() {
+        // If .so already exists (pre-compiled by `npx tauri android build`), skip Rust build entirely.
+        // This avoids calling `android-studio-script` which requires Android Studio WebSocket (unavailable on CI).
+        val jniLibsDir = File(project.projectDir, "src/main/jniLibs")
+        val archDir = when (target) {
+            "aarch64" -> "arm64-v8a"
+            "armv7" -> "armeabi-v7a"
+            "i686" -> "x86"
+            "x86_64" -> "x86_64"
+            else -> null
+        }
+        if (archDir != null) {
+            val soFile = File(jniLibsDir, "$archDir/libpolaris_mobile_lib.so")
+            if (soFile.exists() && soFile.isFile()) {
+                logger.info("Pre-compiled .so found at ${soFile.absolutePath}, skipping Rust build")
+                return
+            }
+        }
+
         // Cross-platform: Windows uses absolute node path, Linux (CI) uses npx
         val isWindows = Os.isFamily(Os.FAMILY_WINDOWS)
         val executable: String
