@@ -465,6 +465,14 @@ export const TOOL_REGISTRY: ToolDefinition[] = [
       "扫描二维码或条形码。需要 CAMERA 权限。",
     inputSchema: { type: "object", properties: {}, required: [] },
   },
+  {
+    name: "vision_obstacle_detect",
+    category: "frontend",
+    icon: "👁️",
+    description:
+      "调用后置摄像头拍摄当前画面，返回图片给 AI 模型分析障碍物。用于盲人路障识别、前方环境描述、物体识别等场景。每次调用会触发一次拍照，AI 看到图片后描述画面中的障碍物、台阶、路况、行人、车辆等。需要 CAMERA 权限。",
+    inputSchema: { type: "object", properties: {}, required: [] },
+  },
   // ---- 系统工具（Rust/Kotlin 后端） ----
   {
     name: "send_sms",
@@ -947,6 +955,41 @@ const FRONTEND_TOOL_HANDLERS: Record<string, ToolHandler> = {
     }
   },
 
+  vision_obstacle_detect: async () => {
+    try {
+      // 1. 请求相机权限 + 获取视频流
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 640 }, height: { ideal: 480 } },
+      });
+      // 2. 用 video element 捕获一帧
+      const video = document.createElement("video");
+      video.srcObject = stream;
+      video.setAttribute("playsinline", "");
+      await video.play();
+      // 等一帧
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      // 3. 绘制到 canvas 并编码为 JPEG base64
+      const canvas = document.createElement("canvas");
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext("2d")!;
+      ctx.drawImage(video, 0, 0, 640, 480);
+      const blob = await new Promise<Blob>((resolve) => canvas.toBlob((b) => resolve(b!), "image/jpeg", 0.8));
+      const buffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(buffer);
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const base64 = btoa(binary);
+      // 4. 释放相机
+      stream.getTracks().forEach((t) => t.stop());
+      video.remove();
+      // 5. 返回标记，协议适配器会将此转换为图片块
+      return { content: `__IMAGE__:data:image/jpeg;base64,${base64}` };
+    } catch (e: unknown) {
+      return { content: `拍照失败：${(e as Error).message}`, is_error: true };
+    }
+  },
+
   // ---- 生活助手工具 handler ----
 
   todo_add: async (input) => {
@@ -1276,6 +1319,12 @@ async function probeFrontendTool(name: string): Promise<ToolCapability> {
       }
     }
 
+    case "vision_obstacle_detect": {
+      return typeof navigator !== "undefined" && "mediaDevices" in navigator && !!navigator.mediaDevices?.getUserMedia
+        ? "available"
+        : "unavailable";
+    }
+
     case "todo_add":
     case "todo_list":
     case "todo_done":
@@ -1422,6 +1471,19 @@ export const AnthropicAdapter: ProtocolAdapter = {
             tool_use_id: block.tool_use_id,
             content: block.content,
           };
+          // 检测 __IMAGE__ 标记：把 base64 图片拆分为 text + image 块
+          if (typeof block.content === "string" && block.content.startsWith("__IMAGE__:")) {
+            const dataUri = block.content.slice("__IMAGE__:".length);
+            const m = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) {
+              const mediaType = m[1];
+              const data = m[2];
+              tr.content = [
+                { type: "text", text: "用户拍摄的环境画面（用于障碍物识别）：" },
+                { type: "image", source: { type: "base64", media_type: mediaType, data } },
+              ];
+            }
+          }
           // Anthropic tool_result 必须携带 is_error，否则错误结果会被当成功处理
           if (block.is_error) {
             tr.is_error = true;
@@ -1487,10 +1549,25 @@ export const OpenAIAdapter: ProtocolAdapter = {
           (b): b is ToolResultBlock => b.type === "tool_result"
         );
         for (const tr of toolResults) {
+          // 检测 __IMAGE__ 标记：OpenAI 用多模态 content 数组，role 仍是 "tool"
+          let trContent: unknown = tr.content;
+          if (typeof tr.content === "string" && tr.content.startsWith("__IMAGE__:")) {
+            const dataUri = tr.content.slice("__IMAGE__:".length);
+            const m = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+            if (m) {
+              trContent = [
+                { type: "text", text: "用户拍摄的环境画面（用于障碍物识别）：" },
+                {
+                  type: "image_url",
+                  image_url: { url: dataUri },
+                },
+              ];
+            }
+          }
           result.push({
             role: "tool",
             tool_call_id: tr.tool_use_id,
-            content: tr.content,
+            content: trContent,
           });
         }
       } else {

@@ -19,6 +19,16 @@ export interface TextBlock {
   text: string;
 }
 
+/** 图片块（多模态输入，base64 编码） */
+export interface ImageBlock {
+  type: "image";
+  source: {
+    type: "base64";
+    media_type: string;
+    data: string;
+  };
+}
+
 /** 工具调用块（模型发出，前端解析后执行） */
 export interface ToolUseBlock {
   type: "tool_use";
@@ -36,7 +46,7 @@ export interface ToolResultBlock {
 }
 
 /** 消息内容块联合类型 */
-export type MsgBlock = TextBlock | ToolUseBlock | ToolResultBlock;
+export type MsgBlock = TextBlock | ImageBlock | ToolUseBlock | ToolResultBlock;
 
 /** 消息内容：兼容旧 string + 新 Array<MsgBlock> */
 export type ContentValue = string | MsgBlock[];
