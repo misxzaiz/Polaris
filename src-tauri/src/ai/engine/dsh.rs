@@ -94,6 +94,8 @@ pub struct DshEngine {
     tokio_handle: Mutex<Option<Handle>>,
     /// Polaris session_id → dsh session_id 映射
     session_map: Mutex<HashMap<String, String>>,
+    /// dsh callId → toolName 映射（tool/call 时写入，tool/result 时读取）
+    call_id_map: Arc<Mutex<HashMap<String, String>>>,
     /// 泄漏到 &'static str 的引擎标识
     leaked_name: &'static str,
     leaked_description: &'static str,
@@ -110,6 +112,7 @@ impl DshEngine {
             dsh_running: AtomicBool::new(false),
             tokio_handle: Mutex::new(None),
             session_map: Mutex::new(HashMap::new()),
+            call_id_map: Arc::new(Mutex::new(HashMap::new())),
             leaked_name: Box::leak("DeepSeek Harness".to_string().into_boxed_str()),
             leaked_description: Box::leak(
                 "DeepSeek Harness — 开源 Agent 编排框架（HTTP RPC + WebSocket 事件流）"
@@ -453,6 +456,7 @@ impl DshEngine {
 
         // 复制需要的数据到闭包
         let session_id_clone = session_id.clone();
+        let call_id_map = self.call_id_map.clone();
 
         handle.spawn(async move {
             tracing::info!("[DshEngine] 启动 WebSocket 事件读取器: {}", ws_url);
@@ -509,6 +513,7 @@ impl DshEngine {
                                         &session_id_clone,
                                         payload,
                                         &event_callback,
+                                        &call_id_map,
                                     );
                                 }
                                 "approval/requested" => {
@@ -603,12 +608,12 @@ impl DshEngine {
         session_id: &str,
         payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
+        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
     ) {
-        let event = payload.get("event");
-        if event.is_none() {
-            return;
-        }
-        let event = event.unwrap();
+        let event = match payload.get("event") {
+            Some(e) => e,
+            None => return,
+        };
 
         let event_type = event
             .get("type")
@@ -626,10 +631,10 @@ impl DshEngine {
                 Self::handle_user_message(session_id, event, event_callback);
             }
             "tool/call" => {
-                Self::handle_tool_call(session_id, event, event_callback);
+                Self::handle_tool_call(session_id, event, event_callback, call_id_map);
             }
             "tool/result" => {
-                Self::handle_tool_result(session_id, event, event_callback);
+                Self::handle_tool_result(session_id, event, event_callback, call_id_map);
             }
             "turn/start" => {
                 event_callback(AIEvent::progress(
@@ -668,64 +673,83 @@ impl DshEngine {
     }
 
     /// 处理 assistant/chunk 事件（流式输出）
+    ///
+    /// dsh 实际 chunk 类型（2026-08-13 实测）：
+    ///   "reasoning-delta" → 思考过程增量，text 字段携带增量文本
+    ///   "text-delta"      → 可见文本增量，text 字段携带增量文本
+    ///   "block-start"     → 块边界开始（无文本，blockType=reasoning|text）
+    ///   "block-end"       → 块边界结束（block.text 含完整内容，非增量）
+    ///   "usage"           → 流末 token 用量（chunk.usage.inputTokens/outputTokens）
+    ///   "finish"          → 流完成（reason.kind=stop|length|error）
     fn handle_assistant_chunk(
         session_id: &str,
         event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
-        let data = event.get("data");
-        if data.is_none() {
-            return;
-        }
-        let data = data.unwrap();
-        let chunk = data.get("chunk");
-        if chunk.is_none() {
-            return;
-        }
-        let chunk = chunk.unwrap();
+        let data = match event.get("data") {
+            Some(d) => d,
+            None => return,
+        };
+        let chunk = match data.get("chunk") {
+            Some(c) => c,
+            None => return,
+        };
 
         let chunk_type = chunk
             .get("type")
             .and_then(|v| v.as_str())
             .unwrap_or("");
-        let block_type = chunk
-            .get("blockType")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
 
         match chunk_type {
-            "delta" => {
-                match block_type {
-                    "text" => {
-                        let text = chunk
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if !text.is_empty() {
-                            event_callback(AIEvent::token(session_id, text));
-                        }
+            "text-delta" => {
+                if let Some(text) = chunk.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        event_callback(AIEvent::token(session_id, text));
                     }
-                    "reasoning" => {
-                        let text = chunk
-                            .get("text")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if !text.is_empty() {
-                            event_callback(AIEvent::thinking(session_id, text));
-                        }
-                    }
-                    _ => {}
                 }
             }
-            "block-start" | "block-end" => {
-                // 块边界标记，无需前端事件
+            "reasoning-delta" => {
+                if let Some(text) = chunk.get("text").and_then(|v| v.as_str()) {
+                    if !text.is_empty() {
+                        event_callback(AIEvent::thinking(session_id, text));
+                    }
+                }
+            }
+            "usage" => {
+                // 流末 token 用量（也可从 assistant/message.data.usage 获取）
+                if let Some(usage) = chunk.get("usage") {
+                    let input = usage.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    let output = usage.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
+                    if input > 0 || output > 0 {
+                        event_callback(AIEvent::usage(session_id, input, None, None, output, None, None));
+                    }
+                }
+            }
+            "finish" => {
+                // 流完成标记，无文本
+                let reason = chunk
+                    .get("reason")
+                    .and_then(|r| r.get("kind"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 tracing::trace!(
-                    "[DshEngine] assistant/chunk {}: blockType={}",
-                    chunk_type,
-                    block_type
+                    "[DshEngine] assistant/chunk finish: reason={}",
+                    reason
                 );
             }
-            _ => {}
+            "block-start" | "block-end" => {
+                // 块边界标记，无增量文本
+                tracing::trace!(
+                    "[DshEngine] assistant/chunk {}",
+                    chunk_type
+                );
+            }
+            _ => {
+                tracing::debug!(
+                    "[DshEngine] 未处理的 assistant/chunk 类型: {}",
+                    chunk_type
+                );
+            }
         }
     }
 
@@ -822,19 +846,28 @@ impl DshEngine {
     }
 
     /// 处理 tool/call 事件
+    ///
+    /// 实测 dsh 格式（2026-08-13）：
+    /// ```json
+    /// { "data": { "callId": "call_00_xxx", "name": "pwsh",
+    ///             "arguments": "{\"command\":\"echo\"}" } }
+    /// ```
+    /// - `name` 是工具名（非 `toolName`）
+    /// - `callId` 是调用 ID
+    /// - `arguments` 是 JSON 字符串，需要 serde_json::from_str 解析
     fn handle_tool_call(
         session_id: &str,
         event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
+        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
     ) {
-        let data = event.get("data");
-        if data.is_none() {
-            return;
-        }
-        let data = data.unwrap();
+        let data = match event.get("data") {
+            Some(d) => d,
+            None => return,
+        };
 
         let tool_name = data
-            .get("toolName")
+            .get("name")
             .and_then(|v| v.as_str())
             .unwrap_or("unknown")
             .to_string();
@@ -845,45 +878,110 @@ impl DshEngine {
             .unwrap_or("")
             .to_string();
 
+        // 写入 callId → toolName 映射（供 tool/result 使用）
+        if !call_id.is_empty() {
+            if let Ok(mut map) = call_id_map.lock() {
+                map.insert(call_id.clone(), tool_name.clone());
+            }
+        }
+
+        // arguments 是 JSON 字符串，需解析为 HashMap
         let mut args = HashMap::new();
-        if let Some(raw_args) = data.get("args") {
-            if let Some(obj) = raw_args.as_object() {
-                for (k, v) in obj {
-                    args.insert(k.clone(), v.clone());
+        if let Some(raw_args) = data.get("arguments").and_then(|v| v.as_str()) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw_args) {
+                if let Some(obj) = parsed.as_object() {
+                    for (k, v) in obj {
+                        args.insert(k.clone(), v.clone());
+                    }
                 }
             }
         }
 
         tracing::debug!(
-            "[DshEngine] tool/call: tool={} callId={}",
-            tool_name, call_id
+            "[DshEngine] tool/call: tool={} callId={} args={}",
+            tool_name, call_id, serde_json::to_string(&args).unwrap_or_default()
         );
         event_callback(AIEvent::tool_call_start(session_id, tool_name, args));
     }
 
     /// 处理 tool/result 事件
+    ///
+    /// 实测 dsh 格式（2026-08-13）：
+    /// ```json
+    /// { "data": { "message": { "content": [{
+    ///     "type": "tool-result", "toolCallId": "call_00_xxx",
+    ///     "content": [{"type": "text", "text": "output"}],
+    ///     "isError": false
+    /// }] } } }
+    /// ```
+    /// - isError 在 `message.content[0].isError`
+    /// - toolCallId 在 `message.content[0].toolCallId`
+    /// - tool name 从 `call_id_map` 查询（tool/call 时已写入）
     fn handle_tool_result(
         session_id: &str,
-        event: &Value,
+        _event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
+        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
     ) {
-        let data = event.get("data");
-        if data.is_none() {
-            return;
-        }
-        let data = data.unwrap();
+        // 从 data.message.content[0] 提取工具结果
+        let data = match _event.get("data") {
+            Some(d) => d,
+            None => return,
+        };
+        let message = match data.get("message") {
+            Some(m) => m,
+            None => return,
+        };
+        let content = match message.get("content").and_then(|c| c.as_array()) {
+            Some(arr) => arr,
+            None => return,
+        };
 
-        let tool_name = data
-            .get("toolName")
-            .and_then(|v| v.as_str())
-            .unwrap_or("unknown")
-            .to_string();
+        // 取第一个 tool-result block
+        let tool_result_block = content.iter().find(|b| {
+            b.get("type").and_then(|v| v.as_str()) == Some("tool-result")
+        });
+        let (tool_call_id, is_error) = match tool_result_block {
+            Some(block) => {
+                let tid = block
+                    .get("toolCallId")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                let err = block
+                    .get("isError")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                (tid, err)
+            }
+            None => {
+                // 回退到外层 source.callId
+                let tid = message
+                    .get("source")
+                    .and_then(|s| s.get("callId"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                (tid, false)
+            }
+        };
 
-        let is_error = data
-            .get("isError")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        // 从 call_id_map 查询工具名
+        let tool_name = call_id_map.lock()
+            .ok()
+            .and_then(|map| map.get(&tool_call_id).cloned())
+            .unwrap_or_else(|| {
+                if tool_call_id.len() > 8 {
+                    tool_call_id[..8].to_string()
+                } else {
+                    "tool".to_string()
+                }
+            });
 
+        tracing::debug!(
+            "[DshEngine] tool/result: tool={} callId={} isError={}",
+            tool_name, tool_call_id, is_error
+        );
         event_callback(AIEvent::tool_call_end(session_id, tool_name, !is_error));
     }
 
