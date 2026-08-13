@@ -113,6 +113,13 @@
       "title": "Pi Configuration",
       "cliPath": "Pi CLI Path",
       "notAvailable": "Not available"
+    },
+    "dsh": {
+      "name": "DeepSeek Harness",
+      "description": "DeepSeek Harness — open-source agent orchestration framework via HTTP RPC + WebSocket event stream",
+      "title": "DeepSeek Harness Configuration",
+      "cliPath": "dsh CLI Path",
+      "notAvailable": "Not available"
     }
   },
   "modelProfile": {

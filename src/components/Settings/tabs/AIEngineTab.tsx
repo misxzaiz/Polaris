@@ -71,6 +71,13 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     descKey: 'engines.simpleAi.description',
     builtin: true,
   },
+  dsh: {
+    id: 'dsh',
+    nameKey: 'engines.dsh.name',
+    descKey: 'engines.dsh.description',
+    defaultCli: 'dsh',
+    npmPackage: '@deepseek-ai/dsh',
+  },
 }
 
 export interface EngineRuntimeStatus {

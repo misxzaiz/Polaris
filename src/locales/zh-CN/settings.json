@@ -113,6 +113,13 @@
       "title": "Pi 配置",
       "cliPath": "Pi CLI 路径",
       "notAvailable": "不可用"
+    },
+    "dsh": {
+      "name": "DeepSeek Harness",
+      "description": "DeepSeek Harness — 开源 Agent 编排框架，HTTP RPC + WebSocket 事件流",
+      "title": "DeepSeek Harness 配置",
+      "cliPath": "dsh CLI 路径",
+      "notAvailable": "不可用"
     }
   },
   "modelProfile": {

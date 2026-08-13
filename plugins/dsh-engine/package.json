@@ -1,0 +1,11 @@
+{
+  "name": "@polaris/plugin-dsh-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DeepSeek Harness 引擎插件 — 将 DSH 完整 Agent 能力集成到 Polaris",
+  "scripts": {
+    "smoke": "node smoke.mjs",
+    "probe": "node probe-api.mjs"
+  }
+}

@@ -29,6 +29,7 @@ pub use registry::EngineRegistry;
 pub use engine::ClaudeEngine;
 pub use engine::CodexEngine;
 pub use engine::SimpleAIEngine;
+pub use engine::DshEngine;
 pub use engine::PiEngine;
 pub use engine::PluginEngineRunner;
 pub use engine::PluginProcessEngine;

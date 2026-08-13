@@ -510,6 +510,9 @@ pub fn run() {
     // 注册 Pi 引擎（earendil-works pi-coding-agent CLI）
     engine_registry.register(ai::PiEngine::new(config.clone()));
 
+    // 注册 DeepSeek Harness 引擎（HTTP RPC + WebSocket 事件流）
+    engine_registry.register(ai::DshEngine::new(config.clone()));
+
     // 设置默认引擎（parse_any 支持自定义/插件引擎）
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
@@ -1064,6 +1067,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     engine_registry.register(ai::CodexEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
     engine_registry.register(ai::PiEngine::new(config.clone()));
+    engine_registry.register(ai::DshEngine::new(config.clone()));
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));
