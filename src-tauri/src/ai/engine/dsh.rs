@@ -46,8 +46,9 @@
  */
 
 use std::collections::HashMap;
+use std::fs;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -94,8 +95,8 @@ pub struct DshEngine {
     tokio_handle: Mutex<Option<Handle>>,
     /// Polaris session_id → dsh session_id 映射
     session_map: Mutex<HashMap<String, String>>,
-    /// dsh callId → toolName 映射（tool/call 时写入，tool/result 时读取）
-    call_id_map: Arc<Mutex<HashMap<String, String>>>,
+    /// 每个 session 的 callId → toolName 映射（per-session 隔离）
+    call_id_maps: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     /// 泄漏到 &'static str 的引擎标识
     leaked_name: &'static str,
     leaked_description: &'static str,
@@ -112,7 +113,7 @@ impl DshEngine {
             dsh_running: AtomicBool::new(false),
             tokio_handle: Mutex::new(None),
             session_map: Mutex::new(HashMap::new()),
-            call_id_map: Arc::new(Mutex::new(HashMap::new())),
+            call_id_maps: Arc::new(Mutex::new(HashMap::new())),
             leaked_name: Box::leak("DeepSeek Harness".to_string().into_boxed_str()),
             leaked_description: Box::leak(
                 "DeepSeek Harness — 开源 Agent 编排框架（HTTP RPC + WebSocket 事件流）"
@@ -189,20 +190,23 @@ impl DshEngine {
 
     /// 启动 dsh Web 服务器
     fn ensure_dsh_server(&mut self) -> Result<String> {
-        // 如果已经在运行，直接返回
-        if let Some(url) = self.dsh_base_url.lock().unwrap().as_ref() {
+        // 读取一次锁，避免两次获取
+        let url_opt = self.dsh_base_url.lock().unwrap().clone();
+        if let Some(ref url) = url_opt {
             if self.dsh_running.load(Ordering::SeqCst) {
                 return Ok(url.clone());
             }
         }
+        drop(url_opt);
 
         // 检查子进程是否还活着
         if let Some(ref mut child) = self.dsh_child {
             if let Ok(None) = child.try_wait() {
-                // 还在运行
-                if let Some(url) = self.dsh_base_url.lock().unwrap().as_ref() {
+                // 还在运行，重新读取 URL
+                let url = self.dsh_base_url.lock().unwrap().clone();
+                if let Some(url) = url {
                     self.dsh_running.store(true, Ordering::SeqCst);
-                    return Ok(url.clone());
+                    return Ok(url);
                 }
             }
             // 已退出，需要重启
@@ -272,6 +276,24 @@ impl DshEngine {
         }
 
         let url = base_url.unwrap();
+
+        // 消费 stderr（避免管道缓冲区满阻塞 dsh 进程）
+        // 用独立线程持续读取 stderr 并记录为 warn 级别日志
+        let stderr = match child.stderr.take() {
+            Some(s) => s,
+            None => {
+                return Err(AppError::ProcessError(
+                    "无法获取 dsh stderr".to_string(),
+                ))
+            }
+        };
+        std::thread::spawn(move || {
+            let reader = BufReader::new(stderr);
+            for line in reader.lines().map_while(|r| r.ok()) {
+                tracing::warn!("[DshEngine] dsh stderr: {}", line);
+            }
+        });
+
         self.dsh_child = Some(child);
         *self.dsh_base_url.lock().unwrap() = Some(url.clone());
         self.dsh_running.store(true, Ordering::SeqCst);
@@ -329,8 +351,100 @@ impl DshEngine {
             };
             let _ = tx.send(result);
         });
-        rx.recv()
-            .map_err(|e| AppError::ProcessError(format!("ready 线程通信失败: {}", e)))?
+        let result = rx.recv()
+            .map_err(|e| AppError::ProcessError(format!("ready 线程通信失败: {}", e)))?;
+
+        // 确保 settings.yaml 的 agent-default-model 有效
+        // 之前的 session.selectModel 可能污染了该配置
+        self.ensure_valid_default_model();
+
+        result
+    }
+
+    /// 确保 settings.yaml 的 agent-default-model 使用有效的 provider/model
+    ///
+    /// dsh 的 settings.yaml 中 agent-default-model 可能被之前失败的
+    /// session.selectModel 调用污染（如 provider=deepseek-official + model=sensenova-6.8-flash-lite
+    /// 这种不存在组合），导致模型调用静默失败。
+    ///
+    /// 如果当前配置无效，回退到有效的默认值（deepseek-official + deepseek-v4-flash）。
+    fn ensure_valid_default_model(&self) {
+        let settings_path = dirs::home_dir()
+            .map(|h| h.join(".dsh").join("settings.yaml"))
+            .unwrap_or_else(|| PathBuf::from(".dsh/settings.yaml"));
+
+        if !settings_path.exists() {
+            return;
+        }
+
+        let content = match fs::read_to_string(&settings_path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+
+        // 检查 agent-default-model 的 provider 和 model
+        // 简单 YAML 解析：找到 provider: 和 model: 行
+        let mut has_default = false;
+        let mut in_default_block = false;
+        let mut lines: Vec<String> = content.lines().map(|l| l.to_string()).collect();
+        let mut modified = false;
+
+        for (i, line) in lines.clone().iter().enumerate() {
+            let trimmed = line.trim();
+            if trimmed == "agent-default-model:" {
+                in_default_block = true;
+                has_default = true;
+                continue;
+            }
+            if in_default_block {
+                if trimmed.starts_with('-') || !trimmed.starts_with("  ") {
+                    // 离开 agent-default-model 块
+                    break;
+                }
+                if trimmed.starts_with("provider:") {
+                    let val = trimmed.trim_start_matches("provider:").trim();
+                    // 只接受 deepseek-official 或 st（这两个 provider 已注册）
+                    if val != "deepseek-official" && val != "st" {
+                        // 修复 provider
+                        let indent = line.len() - line.trim_start().len();
+                        lines[i] = format!("{}provider: deepseek-official", " ".repeat(indent));
+                        modified = true;
+                    }
+                }
+                if trimmed.starts_with("model:") {
+                    let val = trimmed.trim_start_matches("model:").trim().trim_matches('"');
+                    // 只接受 deepseek-official 下存在的模型名
+                    if val != "deepseek-v4-flash" && val != "deepseek-v4-pro" {
+                        let indent = line.len() - line.trim_start().len();
+                        lines[i] = format!("{}model: deepseek-v4-flash", " ".repeat(indent));
+                        modified = true;
+                    }
+                }
+            }
+        }
+
+        if !has_default {
+            // 没有 agent-default-model 块，追加一个
+            lines.push(String::new());
+            lines.push("agent-default-model:".to_string());
+            lines.push("  provider: deepseek-official".to_string());
+            lines.push("  model: deepseek-v4-flash".to_string());
+            modified = true;
+        }
+
+        if modified {
+            let new_content = lines.join("\n");
+            if let Err(e) = fs::write(&settings_path, &new_content) {
+                tracing::warn!(
+                    "[DshEngine] 修复 settings.yaml 失败: {}",
+                    e
+                );
+            } else {
+                tracing::info!(
+                    "[DshEngine] 已修复 settings.yaml 的 agent-default-model（回退到 deepseek-official + deepseek-v4-flash）"
+                );
+            }
+        }
     }
 
     // ========================================================================
@@ -430,6 +544,7 @@ impl DshEngine {
         &self,
         base_url: String,
         session_id: String,
+        dsh_session_id: String,
         event_callback: Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) -> Result<()> {
         let ws_url = base_url
@@ -456,7 +571,8 @@ impl DshEngine {
 
         // 复制需要的数据到闭包
         let session_id_clone = session_id.clone();
-        let call_id_map = self.call_id_map.clone();
+        let dsh_session_id_clone = dsh_session_id.clone();
+        let call_id_maps = self.call_id_maps.clone();
 
         handle.spawn(async move {
             tracing::info!("[DshEngine] 启动 WebSocket 事件读取器: {}", ws_url);
@@ -496,11 +612,29 @@ impl DshEngine {
                                 }
                             };
 
+                            // 调试：日志所有帧（首版开发期间保留，后续可降级为 trace）
+                            tracing::debug!(
+                                "[DshEngine] WebSocket 帧: {}",
+                                text.chars().take(300).collect::<String>()
+                            );
+
                             let payload = frame.get("payload");
                             if payload.is_none() {
                                 continue;
                             }
                             let payload = payload.unwrap();
+
+                            // 多会话隔离：mux 流包含所有会话的事件，只处理本会话的事件
+                            let frame_session_id = payload
+                                .get("sessionId")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("");
+                            if !frame_session_id.is_empty()
+                                && frame_session_id != dsh_session_id_clone
+                            {
+                                // 不是本会话的事件，跳过
+                                continue;
+                            }
 
                             let event_type = payload
                                 .get("type")
@@ -513,7 +647,7 @@ impl DshEngine {
                                         &session_id_clone,
                                         payload,
                                         &event_callback,
-                                        &call_id_map,
+                                        &call_id_maps,
                                     );
                                 }
                                 "approval/requested" => {
@@ -608,7 +742,7 @@ impl DshEngine {
         session_id: &str,
         payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
-        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
+        call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     ) {
         let event = match payload.get("event") {
             Some(e) => e,
@@ -631,10 +765,10 @@ impl DshEngine {
                 Self::handle_user_message(session_id, event, event_callback);
             }
             "tool/call" => {
-                Self::handle_tool_call(session_id, event, event_callback, call_id_map);
+                Self::handle_tool_call(session_id, event, event_callback, call_id_maps);
             }
             "tool/result" => {
-                Self::handle_tool_result(session_id, event, event_callback, call_id_map);
+                Self::handle_tool_result(session_id, event, event_callback, call_id_maps);
             }
             "turn/start" => {
                 event_callback(AIEvent::progress(
@@ -754,95 +888,46 @@ impl DshEngine {
     }
 
     /// 处理 assistant/message 事件（完整消息）
+    ///
+    /// 注意：文本内容已通过 assistant/chunk 的 text-delta 事件逐 Token 发送，
+    /// 此处不再重复发送 AssistantMessage，否则前端会重复渲染。
+    /// 只提取 Token 用量信息。
     fn handle_assistant_message(
         session_id: &str,
         event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
-        let data = event.get("data");
-        if data.is_none() {
-            return;
-        }
-        let data = data.unwrap();
+        let data = match event.get("data") {
+            Some(d) => d,
+            None => return,
+        };
 
-        // 提取文本内容
-        let message = data.get("message");
-        if let Some(msg) = message {
-            let content = msg.get("content");
-            if let Some(content) = content {
-                let mut text_parts = Vec::new();
-                if let Some(arr) = content.as_array() {
-                    for block in arr {
-                        let block_type = block
-                            .get("type")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("");
-                        if block_type == "text" {
-                            if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                                if !text.is_empty() {
-                                    text_parts.push(text.to_string());
-                                }
-                            }
-                        }
-                    }
-                }
-                let full_text = text_parts.join("");
-                if !full_text.is_empty() {
-                    // 流式已经在 chunk 中发送了，这里发送完整的 AssistantMessage（is_delta=false）
-                    event_callback(AIEvent::assistant_message(
-                        session_id,
-                        full_text,
-                        false,
-                    ));
-                }
-            }
-        }
-
-        // Token 用量
-        let usage = data.get("usage");
-        if let Some(usage) = usage {
+        // 仅提取 Token 用量（文本已通过 chunk 流式发送）
+        if let Some(usage) = data.get("usage") {
             let input_tokens = usage.get("inputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
             let output_tokens = usage.get("outputTokens").and_then(|v| v.as_u64()).unwrap_or(0);
-            event_callback(AIEvent::usage(
-                session_id,
-                input_tokens,
-                None,
-                None,
-                output_tokens,
-                None,
-                None,
-            ));
+            if input_tokens > 0 || output_tokens > 0 {
+                event_callback(AIEvent::usage(
+                    session_id,
+                    input_tokens,
+                    None,
+                    None,
+                    output_tokens,
+                    None,
+                    None,
+                ));
+            }
         }
     }
 
-    /// 处理 user/message 事件
+    /// 处理 user/message 事件（dsh 回显用户消息，前端已知道内容，跳过避免重复）
     fn handle_user_message(
-        session_id: &str,
-        event: &Value,
-        event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
+        _session_id: &str,
+        _event: &Value,
+        _event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
-        let data = event.get("data");
-        if data.is_none() {
-            return;
-        }
-        let data = data.unwrap();
-        let content = data.get("content");
-        if let Some(content) = content {
-            let mut text_parts = Vec::new();
-            if let Some(arr) = content.as_array() {
-                for block in arr {
-                    if block.get("type").and_then(|v| v.as_str()) == Some("text") {
-                        if let Some(text) = block.get("text").and_then(|v| v.as_str()) {
-                            text_parts.push(text.to_string());
-                        }
-                    }
-                }
-            }
-            let full_text = text_parts.join("");
-            if !full_text.is_empty() {
-                event_callback(AIEvent::user_message(session_id, full_text));
-            }
-        }
+        // dsh 的 mux 流会回显 user/message 事件，但消息已由 Polaris 前端发送，
+        // 重复发送 AIEvent::UserMessage 会导致前端重复渲染，故跳过。
     }
 
     /// 处理 tool/call 事件
@@ -859,7 +944,7 @@ impl DshEngine {
         session_id: &str,
         event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
-        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
+        call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     ) {
         let data = match event.get("data") {
             Some(d) => d,
@@ -878,10 +963,11 @@ impl DshEngine {
             .unwrap_or("")
             .to_string();
 
-        // 写入 callId → toolName 映射（供 tool/result 使用）
-        if !call_id.is_empty() {
-            if let Ok(mut map) = call_id_map.lock() {
-                map.insert(call_id.clone(), tool_name.clone());
+        // 写入 callId → toolName 映射（per-session 隔离，供 tool/result 使用）
+        if !call_id.is_empty() && !tool_name.is_empty() && !tool_name.eq("unknown") {
+            if let Ok(mut maps) = call_id_maps.lock() {
+                let session_map = maps.entry(session_id.to_string()).or_default();
+                session_map.insert(call_id.clone(), tool_name.clone());
             }
         }
 
@@ -921,7 +1007,7 @@ impl DshEngine {
         session_id: &str,
         _event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
-        call_id_map: &Arc<Mutex<HashMap<String, String>>>,
+        call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     ) {
         // 从 data.message.content[0] 提取工具结果
         let data = match _event.get("data") {
@@ -966,10 +1052,13 @@ impl DshEngine {
             }
         };
 
-        // 从 call_id_map 查询工具名
-        let tool_name = call_id_map.lock()
+        // 从 per-session call_id_maps 查询工具名
+        let tool_name = call_id_maps.lock()
             .ok()
-            .and_then(|map| map.get(&tool_call_id).cloned())
+            .and_then(|maps| {
+                maps.get(session_id)
+                    .and_then(|session_map| session_map.get(&tool_call_id).cloned())
+            })
             .unwrap_or_else(|| {
                 if tool_call_id.len() > 8 {
                     tool_call_id[..8].to_string()
@@ -1193,20 +1282,14 @@ impl AIEngine for DshEngine {
             dsh_session_id
         );
 
-        // 如果有模型选择，切换模型
-        if let Some(model) = &options.model {
-            // 需要从 llm.models 获取 provider，这里用默认的 deepseek-official
-            // 首版用 deepseek-official provider
-            let _ = self.rpc_call("session.selectModel", json!({
-                "sessionId": dsh_session_id,
-                "provider": "deepseek-official",
-                "model": model,
-            }));
-            tracing::debug!(
-                "[DshEngine] 尝试切换模型: provider=deepseek-official model={}",
-                model
-            );
-        }
+        // 不切换模型：dsh 的 settings.yaml 已通过 Polaris 环境正确配置了
+        // 默认 provider 和模型（agent-default-model: provider=st, model=deepseek-v4-flash）。
+        // Polaris 的 pi_provider_config.name 是内部 Profile 标识符（如
+        // "polaris-profile_xxx"），不是 dsh 的 provider 名，传递无效。
+        // 让 dsh 使用其默认模型即可，无需 session.selectModel。
+        tracing::debug!(
+            "[DshEngine] 使用 dsh 默认模型（settings.yaml 已配置），跳过 session.selectModel"
+        );
 
         // 生成 Polaris session_id
         let polaris_session_id = uuid::Uuid::new_v4().to_string();
@@ -1219,7 +1302,7 @@ impl AIEngine for DshEngine {
 
         // 启动 WebSocket 事件读取器（必须成功，否则会话无法接收回复）
         let event_callback = options.event_callback.clone();
-        self.spawn_event_reader(base_url.clone(), polaris_session_id.clone(), event_callback)?;
+        self.spawn_event_reader(base_url.clone(), polaris_session_id.clone(), dsh_session_id.clone(), event_callback)?;
 
         // 等待 WebSocket 连接就绪
         std::thread::sleep(Duration::from_millis(1000));
@@ -1269,9 +1352,10 @@ impl AIEngine for DshEngine {
         let _base_url = self.ensure_dsh_server()?;
 
         // 重新连接 WebSocket 事件读取器（必须成功）
-        let base_url = self.dsh_base_url.lock().unwrap().as_ref().unwrap().clone();
+        let base_url = self.dsh_base_url.lock().unwrap().clone()
+            .ok_or_else(|| AppError::ProcessError("dsh 服务器未启动（续聊时）".to_string()))?;
         let event_callback = options.event_callback.clone();
-        self.spawn_event_reader(base_url, session_id.to_string(), event_callback)?;
+        self.spawn_event_reader(base_url, session_id.to_string(), dsh_session_id.clone(), event_callback)?;
         std::thread::sleep(Duration::from_millis(1000));
 
         // 发送续聊消息
