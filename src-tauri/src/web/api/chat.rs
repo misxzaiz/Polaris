@@ -302,6 +302,19 @@ pub async fn handle_answer_question(
             answer.declined,
         );
         let _ = entry.sender.send(outcome);
+    } else {
+        // 无 ask_listener sender，尝试 dsh 引擎问题回答
+        let first = answer.answers.first().cloned().unwrap_or_default();
+        match crate::ai::engine::dsh::submit_answer(
+            &call_id,
+            &first.selected,
+            first.custom_input.as_deref(),
+            answer.declined,
+        ) {
+            Ok(true) => tracing::debug!("[handle_answer_question] dsh 问题回答已提交: {}", call_id),
+            Ok(false) => {} // 不是 dsh 的问题，忽略
+            Err(e) => tracing::warn!("[handle_answer_question] dsh 问题回答失败: {}", e),
+        }
     }
 
     // 旧测试断言可能引用 answer.selected/customInput，这里同时挂上首题摘要兼容字段

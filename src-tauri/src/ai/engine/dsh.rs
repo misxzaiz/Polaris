@@ -45,13 +45,13 @@
  *   - MCP 工具（❌ dsh 内部 Cordis 插件生态，不直接桥接 Polaris MCP）
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -73,7 +73,149 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
-/// DSH 引擎
+/// 全局 dsh 问题回答注册表
+/// key = callId (question_id), value = (dsh_rpcId, dsh_base_url, dsh_session_id)
+/// 由 handle_question 写入，由 submit_answer 读取
+static DSH_QUESTION_ANSWERS: OnceLock<Mutex<HashMap<String, (String, String, String)>>> = OnceLock::new();
+
+fn dsh_question_answers() -> &'static Mutex<HashMap<String, (String, String, String)>> {
+    DSH_QUESTION_ANSWERS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 向 dsh 服务器提交问答案（供 answer_question Tauri 命令调用）
+///
+/// 协议格式（dsh 源码验证）：
+/// ```json
+/// {
+///   "type": "client-response",
+///   "rpcId": "<question_rpcId>",
+///   "result": {
+///     "ok": true,
+///     "value": {
+///       "sessionId": "<dsh_session_id>",
+///       "answer": {
+///         "answers": [{
+///           "id": "<question_id>",
+///           "selected": ["<option>"],
+///           "custom": "<custom_input>"  // optional
+///         }]
+///       }
+///     }
+///   }
+/// }
+/// ```
+pub fn submit_answer(
+    call_id: &str,
+    selected: &[String],
+    custom_input: Option<&str>,
+    declined: bool,
+) -> crate::error::Result<bool> {
+    let entry = {
+        let map = dsh_question_answers().lock().unwrap();
+        map.get(call_id).cloned()
+    };
+    let (rpc_id, base_url, dsh_session_id) = match entry {
+        Some(e) => e,
+        None => return Ok(false), // 不是 dsh 的问题
+    };
+
+    let body = if declined {
+        // 取消回答
+        json!({
+            "type": "client-response",
+            "rpcId": rpc_id,
+            "result": {
+                "ok": false,
+                "error": {
+                    "code": "cancelled",
+                    "message": "user cancelled",
+                    "details": {}
+                }
+            }
+        })
+    } else {
+        let answers_json: Vec<Value> = selected
+            .iter()
+            .map(|s| {
+                let mut a = json!({
+                    "id": call_id,
+                    "selected": [s],
+                });
+                if let Some(ci) = custom_input {
+                    if !ci.is_empty() {
+                        a["custom"] = json!(ci);
+                    }
+                }
+                a
+            })
+            .collect();
+
+        json!({
+            "type": "client-response",
+            "rpcId": rpc_id,
+            "result": {
+                "ok": true,
+                "value": {
+                    "sessionId": dsh_session_id,
+                    "answer": {
+                        "answers": answers_json
+                    }
+                }
+            }
+        })
+    };
+
+    let url = format!("{}/api/respond", base_url);
+
+    // 在独立线程中执行 blocking HTTP 调用
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| -> crate::error::Result<bool> {
+            let resp = reqwest::blocking::Client::new()
+                .post(&url)
+                .header("Content-Type", "application/json")
+                .body(body.to_string())
+                .timeout(Duration::from_secs(10))
+                .send()
+                .map_err(|e| crate::error::AppError::ProcessError(
+                    format!("dsh 问题回答请求失败: {}", e)
+                ))?;
+
+            let resp_body: Value = resp
+                .json()
+                .map_err(|e| crate::error::AppError::ProcessError(
+                    format!("dsh 问题回答响应解析失败: {}", e)
+                ))?;
+
+            let accepted = resp_body
+                .get("accepted")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+
+            if accepted {
+                Ok(true)
+            } else {
+                let reason = resp_body
+                    .get("reason")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                Err(crate::error::AppError::ProcessError(
+                    format!("dsh 问题回答被拒绝: {}", reason)
+                ))
+            }
+        })();
+        let _ = tx.send(result);
+    });
+
+    match rx.recv() {
+        Ok(Ok(true)) => Ok(true),
+        Ok(Ok(false)) => Ok(false),
+        Ok(Err(e)) => Err(e),
+        Err(e) => Err(crate::error::AppError::ProcessError(
+            format!("dsh 问题回答线程通信失败: {}", e)
+        )),
+    }
+}
 pub struct DshEngine {
     /// 应用配置
     _config: Config,
@@ -95,6 +237,8 @@ pub struct DshEngine {
     tokio_handle: Mutex<Option<Handle>>,
     /// Polaris session_id → dsh session_id 映射
     session_map: Mutex<HashMap<String, String>>,
+    /// 正在运行的 WebSocket 读取器 session 集合（避免重复创建）
+    websocket_active: Arc<Mutex<HashSet<String>>>,
     /// 每个 session 的 callId → toolName 映射（per-session 隔离）
     call_id_maps: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
     /// 泄漏到 &'static str 的引擎标识
@@ -113,6 +257,7 @@ impl DshEngine {
             dsh_running: AtomicBool::new(false),
             tokio_handle: Mutex::new(None),
             session_map: Mutex::new(HashMap::new()),
+            websocket_active: Arc::new(Mutex::new(HashSet::new())),
             call_id_maps: Arc::new(Mutex::new(HashMap::new())),
             leaked_name: Box::leak("DeepSeek Harness".to_string().into_boxed_str()),
             leaked_description: Box::leak(
@@ -547,6 +692,18 @@ impl DshEngine {
         dsh_session_id: String,
         event_callback: Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) -> Result<()> {
+        // 检查是否已有活跃的 WebSocket 读取器（避免重复创建）
+        {
+            let active = self.websocket_active.lock().unwrap();
+            if active.contains(&session_id) {
+                tracing::debug!(
+                    "[DshEngine] 会话 {} 已有活跃 WebSocket 读取器，跳过重复创建",
+                    session_id
+                );
+                return Ok(());
+            }
+        }
+
         let ws_url = base_url
             .replace("http://", "ws://")
             .replace("https://", "wss://")
@@ -573,9 +730,18 @@ impl DshEngine {
         let session_id_clone = session_id.clone();
         let dsh_session_id_clone = dsh_session_id.clone();
         let call_id_maps = self.call_id_maps.clone();
+        let websocket_active = self.websocket_active.clone();
+        // 从 ws_url 反推出 HTTP base URL（用于 /api/respond）
+        let ws_url_base = base_url.trim_end_matches('/').to_string();
 
         handle.spawn(async move {
             tracing::info!("[DshEngine] 启动 WebSocket 事件读取器: {}", ws_url);
+
+            // 注册为活跃 WebSocket（避免 continue_session 重复创建）
+            {
+                let mut active = websocket_active.lock().unwrap();
+                active.insert(session_id_clone.clone());
+            }
 
             // 发送 CliInit 事件（前端显示引擎启动中）
             event_callback(AIEvent::CliInit(
@@ -663,6 +829,9 @@ impl DshEngine {
                                 "question/requested" => {
                                     Self::handle_question(
                                         &session_id_clone,
+                                        &ws_url_base,
+                                        &dsh_session_id_clone,
+                                        &frame,
                                         payload,
                                         &event_callback,
                                     );
@@ -698,10 +867,19 @@ impl DshEngine {
                                 }
                             }
 
-                            // 不发送 session_end 在 turn/end 上：dsh 的 turn/end 只是单轮结束，
-        // 会话可能继续（多轮对话）。session_end 只在外层循环退出时发出。
-        // 当连接断开或 stream/error 时，外层循环会退出，此时在循环外发出 session_end。
-        // 这样前端不会在 turn/end 后关闭会话，用户可继续发送消息。
+                            // turn/end = 一轮回复完成，发 session_end 让前端结束本轮
+                            // 多轮对话时，下一轮 start_session 会重新连接，再次发送 CliInit
+                            if event_type == "session/event" {
+                                if let Some(inner_type) = payload
+                                    .get("event")
+                                    .and_then(|e| e.get("type"))
+                                    .and_then(|t| t.as_str())
+                                {
+                                    if inner_type == "turn/end" {
+                                        event_callback(AIEvent::session_end(&session_id_clone));
+                                    }
+                                }
+                            }
                         }
                         Ok(WsMessage::Close(_)) => {
                             tracing::info!("[DshEngine] WebSocket 连接关闭");
@@ -727,6 +905,13 @@ impl DshEngine {
                 "[DshEngine] WebSocket 事件读取器退出: session={}",
                 session_id
             );
+
+            // 注销活跃 WebSocket
+            {
+                let mut active = websocket_active.lock().unwrap();
+                active.remove(&session_id_clone);
+            }
+
             // 读取器退出时发送 session_end（连接断开或会话结束）
             event_callback(AIEvent::session_end(&session_id_clone));
         });
@@ -1111,13 +1296,27 @@ impl DshEngine {
 
     /// 处理 question/requested 事件
     ///
-    /// dsh mux 帧格式：{ type: "question/requested", sessionId, questions: [{ id, question, header, options, multiSelect }] }
-    /// 翻译为 AIEvent::Question（前端显示多选/单选对话框）
+    /// dsh mux 帧格式（顶层 ServerRequest）：
+    ///   { type: "server-request", rpcId, method: "question/requested",
+    ///     payload: { type: "question/requested", sessionId, questions: [{ id, question, header, options, multiSelect }] } }
+    ///
+    /// 翻译为 AIEvent::Question（前端显示多选/单选对话框），
+    /// 同时把 callId → (rpcId, base_url, dsh_session_id) 写入全局表，供 submit_answer 通过 /api/respond 回复。
     fn handle_question(
         session_id: &str,
+        base_url: &str,
+        dsh_session_id: &str,
+        frame: &Value,
         frame_payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
+        // 顶层 rpcId（用于 /api/respond 回复）
+        let rpc_id = frame
+            .get("rpcId")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
         let questions = frame_payload
             .get("questions")
             .and_then(|v| v.as_array())
@@ -1137,7 +1336,6 @@ impl DshEngine {
                         let val = o.get("value").or_else(|| o.get("label"))?.as_str()?;
                         let mut opt = crate::models::ai_event::QuestionOptionData::new(val);
                         if let Some(label) = o.get("label").and_then(|v| v.as_str()) {
-                            // 如果 label 不等于 value，设置为 label
                             if label != val {
                                 opt.label = Some(label.to_string());
                             }
@@ -1152,8 +1350,18 @@ impl DshEngine {
                 })
                 .unwrap_or_default();
 
-            let mut multi_select = false;
-            let mut allow_custom_input = true;
+            // 注册 callId → (rpcId, base_url, dsh_session_id)，供用户提交答案时通过 /api/respond 回复
+            if !qid.is_empty() && !rpc_id.is_empty() {
+                let mut map = dsh_question_answers().lock().unwrap();
+                map.insert(qid.clone(), (rpc_id.clone(), base_url.to_string(), dsh_session_id.to_string()));
+                tracing::debug!(
+                    "[DshEngine] 注册 dsh 问题: callId={} rpcId={} sessionId={}",
+                    qid, rpc_id, dsh_session_id
+                );
+            }
+
+            let multi_select = q.get("multiSelect").and_then(|v| v.as_bool()).unwrap_or(false);
+            let allow_custom_input = true;
 
             event_callback(AIEvent::Question(
                 crate::models::ai_event::QuestionEvent::new(
@@ -1422,12 +1630,20 @@ impl AIEngine for DshEngine {
         // 确保 dsh 服务器已启动
         let _base_url = self.ensure_dsh_server()?;
 
-        // 重新连接 WebSocket 事件读取器（必须成功）
-        let base_url = self.dsh_base_url.lock().unwrap().clone()
-            .ok_or_else(|| AppError::ProcessError("dsh 服务器未启动（续聊时）".to_string()))?;
-        let event_callback = options.event_callback.clone();
-        self.spawn_event_reader(base_url, session_id.to_string(), dsh_session_id.clone(), event_callback)?;
-        std::thread::sleep(Duration::from_millis(1000));
+        // 检查是否已有活跃 WebSocket 读取器（dsh 的 mux 流是全局的，不需要重复连接）
+        // 已有读取器会继续接收事件，不需要重新创建
+        if !self.websocket_active.lock().unwrap().contains(session_id) {
+            let base_url = self.dsh_base_url.lock().unwrap().clone()
+                .ok_or_else(|| AppError::ProcessError("dsh 服务器未启动（续聊时）".to_string()))?;
+            let event_callback = options.event_callback.clone();
+            self.spawn_event_reader(base_url, session_id.to_string(), dsh_session_id.clone(), event_callback)?;
+            std::thread::sleep(Duration::from_millis(1000));
+        } else {
+            tracing::debug!(
+                "[DshEngine] 续聊时复用已有 WebSocket 读取器: session={}",
+                session_id
+            );
+        }
 
         // 发送续聊消息
         self.send_prompt(&dsh_session_id, message, session_id)?;

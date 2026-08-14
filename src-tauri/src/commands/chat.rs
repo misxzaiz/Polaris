@@ -2193,6 +2193,20 @@ pub async fn answer_question(
             "[answer_question] 无 ask_listener sender，按 legacy 路径处理: {}",
             call_id
         );
+        // 尝试 dsh 引擎问题回答
+        let first = answer.answers.first().cloned().unwrap_or_default();
+        let selected = first.selected.clone();
+        let custom_input = first.custom_input.clone();
+        match crate::ai::engine::dsh::submit_answer(
+            &call_id,
+            &selected,
+            custom_input.as_deref(),
+            answer.declined,
+        ) {
+            Ok(true) => tracing::debug!("[answer_question] dsh 问题回答已提交: {}", call_id),
+            Ok(false) => {} // 不是 dsh 的问题，忽略
+            Err(e) => tracing::warn!("[answer_question] dsh 问题回答失败: {}", e),
+        }
     }
 
     // 2. 清理 pending_questions（ask_listener 也会清理，这里做幂等）
