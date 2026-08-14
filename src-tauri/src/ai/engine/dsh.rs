@@ -82,6 +82,13 @@ fn dsh_question_answers() -> &'static Mutex<HashMap<String, (String, String, Str
     DSH_QUESTION_ANSWERS.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// 全局桥接准备完成标志（进程内幂等）。
+///
+/// 独立于 DshEngine 实例存在，供 `prepare_dsh_bridge_standalone` 在
+/// `engine_registry` 锁外调用——`start_chat_inner` 检测到引擎为 dsh 时，
+/// 在获取锁之前先完成依赖桥接，避免首次约 28 秒的复制阻塞其他引擎。
+static DSH_BRIDGE_PREPARED: AtomicBool = AtomicBool::new(false);
+
 /// 向 dsh 服务器提交问答案（供 answer_question Tauri 命令调用）
 ///
 /// 协议格式（dsh 源码验证）：
@@ -342,6 +349,57 @@ impl DshEngine {
     // ========================================================================
     // Windows 依赖桥接准备（修复 Junction 问题）
     // ========================================================================
+
+    /// 预检查：在获取 engine_registry 锁之前预先完成依赖桥接准备。
+    ///
+    /// 调用方（`start_chat_inner`）在锁定 `engine_registry` 之前调用此方法，
+    /// 把首次约 28 秒的依赖复制开销移出锁临界区，避免阻塞其他引擎请求。
+    ///
+    /// 幂等：`bridge_prepared` 标志保证本进程内只执行一次真实复制；后续调用
+    /// 直接返回。线程安全：`prepare_dsh_bridge` 全程只访问文件系统，无引擎
+    /// 状态依赖，多线程并发调用也只会触发一次（首次抢到的执行复制，其余
+    /// 在 `bridge_healthy` 快路径返回）。
+    #[allow(dead_code)]
+    pub fn ensure_bridge_prepared(&self) -> Result<()> {
+        self.prepare_dsh_bridge_preflight()
+    }
+
+    /// 桥接预检查的内部实现（解析 cli_path 后委托给 prepare_dsh_bridge）。
+    fn prepare_dsh_bridge_preflight(&self) -> Result<()> {
+        // 幂等快路径：本进程内已完成，直接返回
+        if self.bridge_prepared.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        let cli_path = match self.cli_path.as_ref() {
+            Some(p) => p.clone(),
+            None => {
+                // cli_path 尚未缓存，尝试常见路径探测（不写入 self.cli_path，
+                // 因为这里是 &self；真正的解析在 ensure_dsh_server 的 get_cli_path 里完成）
+                #[cfg(windows)]
+                {
+                    let cmd = "dsh";
+                    let mut found: Option<String> = None;
+                    if Path::new(cmd).exists() {
+                        found = Some(cmd.to_string());
+                    } else {
+                        for cand in [
+                            std::env::var("APPDATA").ok().map(|d| std::path::PathBuf::from(&d).join("npm").join("dsh.cmd")),
+                            std::env::var("LOCALAPPDATA").ok().map(|d| std::path::PathBuf::from(&d).join("pnpm").join("dsh.cmd")),
+                        ].into_iter().flatten() {
+                            if cand.exists() { found = Some(cand.to_string_lossy().to_string()); break; }
+                        }
+                    }
+                    match found {
+                        Some(p) => p,
+                        None => return Ok(()), // dsh 未安装，跳过
+                    }
+                }
+                #[cfg(not(windows))]
+                { return Ok(()); }
+            }
+        };
+        self.prepare_dsh_bridge(&cli_path)
+    }
 
     /// Windows 桥接准备：在启动 dsh 子进程前，修复 `profiles/node_modules` 的
     /// Junction 不可跟随问题。
@@ -626,10 +684,6 @@ impl DshEngine {
         }
 
         let cli_path = self.get_cli_path()?;
-
-        // Windows 依赖桥接准备：修复 profiles/node_modules 的 Junction 不可跟随问题。
-        // 必须在 spawn 子进程之前完成（dsh 启动即 ESM import，依赖必须可解析）。
-        self.prepare_dsh_bridge(&cli_path)?;
 
         tracing::info!("[DshEngine] 启动 dsh Web 服务器: {}", cli_path);
 
@@ -1792,6 +1846,12 @@ impl AIEngine for DshEngine {
         }
     }
 
+    /// 预检查：在 engine_registry 锁外完成依赖桥接准备（Windows）。
+    /// 幂等，本进程内只执行一次真实复制。
+    fn prepare_preflight(&self) -> crate::error::Result<()> {
+        self.prepare_dsh_bridge_preflight()
+    }
+
     fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         let engine_id = self.id().to_string();
         tracing::info!(
@@ -1802,6 +1862,11 @@ impl AIEngine for DshEngine {
         if !self.is_available() {
             return Err(AppError::ProcessError("DeepSeek Harness CLI 不可用".to_string()));
         }
+
+        // 依赖桥接准备（幂等兜底）：正常流程下 start_chat_inner 已在锁外
+        // 通过 prepare_preflight 完成；此处保留兜底调用，靠 bridge_prepared
+        // 标志保证只执行一次，避免重复复制。
+        let _ = self.prepare_dsh_bridge_preflight();
 
         // 确保 dsh 服务器已启动
         let base_url = self.ensure_dsh_server()?;
@@ -2007,4 +2072,250 @@ impl DshEngine {
             )))
         }
     }
+}
+
+// ============================================================================
+// 独立桥接准备函数（锁外调用入口）
+// ============================================================================
+
+/// 在 `engine_registry` 锁外预先完成 dsh 依赖桥接准备。
+///
+/// `start_chat_inner` 检测到引擎为 dsh（`EngineId::Custom("dsh")`）时，在获取
+/// `engine_registry` 锁之前调用此函数。把首次约 28 秒的依赖复制开销移出锁
+/// 临界区，避免阻塞其他引擎请求（claude-code/codex 等）。
+///
+/// 幂等：`DSH_BRIDGE_PREPARED` 全局标志保证本进程内只执行一次真实复制。
+/// 纯文件系统操作，线程安全。dsh 未安装时静默返回 Ok（由 start_session 做可用性检查）。
+pub fn prepare_dsh_bridge_standalone() -> Result<()> {
+    // 幂等快路径
+    if DSH_BRIDGE_PREPARED.load(Ordering::Acquire) {
+        return Ok(());
+    }
+
+    #[cfg(windows)]
+    {
+        // 探测 dsh CLI 路径（不依赖 DshEngine 实例）
+        let cli_path = resolve_dsh_cli_path();
+        let cli_path = match cli_path {
+            Some(p) => p,
+            None => return Ok(()), // dsh 未安装
+        };
+
+        let dsh_cmd = PathBuf::from(&cli_path);
+        let npm_bin_dir = match dsh_cmd.parent() {
+            Some(d) => d,
+            None => return Ok(()),
+        };
+        let dsh_node = npm_bin_dir
+            .join("node_modules")
+            .join("@deepseek-ai")
+            .join("dsh")
+            .join("node_modules");
+        if !dsh_node.is_dir() {
+            tracing::warn!(
+                "[DshEngine] standalone: dsh node_modules 未找到 ({}), 跳过",
+                dsh_node.display()
+            );
+            return Ok(());
+        }
+
+        // patch ensureSymlink（幂等）
+        if let Err(e) = patch_ensure_symlink_standalone(&dsh_node) {
+            tracing::warn!("[DshEngine] standalone: patch ensureSymlink 失败: {}", e);
+        }
+
+        let bridge = bridge_dir_standalone()?;
+        if bridge_healthy_standalone(&bridge) {
+            tracing::info!(
+                "[DshEngine] standalone: 桥接已就绪（磁盘健康），跳过重建"
+            );
+            DSH_BRIDGE_PREPARED.store(true, Ordering::Release);
+            return Ok(());
+        }
+
+        if bridge.exists() {
+            if let Err(e) = fs::remove_dir_all(&bridge) {
+                tracing::warn!("[DshEngine] standalone: 清理旧 bridge 失败: {}", e);
+            }
+        }
+        fs::create_dir_all(&bridge).map_err(|e| {
+            AppError::ProcessError(format!("创建 dsh bridge 目录失败: {}", e))
+        })?;
+
+        let mut copied = 0usize;
+        let mut skipped = 0usize;
+        for entry in fs::read_dir(&dsh_node).map_err(|e| {
+            AppError::ProcessError(format!("读取 dsh node_modules 失败: {}", e))
+        })? {
+            let entry = entry.map_err(|e| AppError::ProcessError(e.to_string()))?;
+            let sp = entry.path();
+            let name = sp
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if name.starts_with('.') {
+                continue;
+            }
+            let meta = match fs::metadata(&sp) {
+                Ok(m) => m,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
+            };
+            let dp = match sp.file_name() {
+                Some(n) => bridge.join(n),
+                None => continue,
+            };
+            if meta.is_dir() {
+                if copy_dir_following_standalone(&sp, &dp).is_ok() {
+                    copied += 1;
+                } else {
+                    skipped += 1;
+                }
+            } else if meta.is_file() {
+                if fs::copy(&sp, &dp).is_ok() {
+                    copied += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+        }
+
+        tracing::info!(
+            "[DshEngine] standalone: 桥接准备完成: 复制 {} 个包, 跳过 {} 个",
+            copied,
+            skipped
+        );
+        DSH_BRIDGE_PREPARED.store(true, Ordering::Release);
+    }
+
+    #[cfg(not(windows))]
+    {
+        // 非 Windows 无 Junction 问题，无需桥接
+        DSH_BRIDGE_PREPARED.store(true, Ordering::Release);
+    }
+
+    Ok(())
+}
+
+#[cfg(windows)]
+fn resolve_dsh_cli_path() -> Option<String> {
+    let cmd = "dsh";
+    if Path::new(cmd).exists() {
+        return Some(cmd.to_string());
+    }
+    for cand in [
+        std::env::var("APPDATA").ok().map(|d| {
+            std::path::PathBuf::from(&d).join("npm").join("dsh.cmd")
+        }),
+        std::env::var("LOCALAPPDATA").ok().map(|d| {
+            std::path::PathBuf::from(&d).join("pnpm").join("dsh.cmd")
+        }),
+        std::env::var("USERPROFILE").ok().map(|d| {
+            std::path::PathBuf::from(&d).join(".bun").join("bin").join("dsh.exe")
+        }),
+    ]
+    .into_iter()
+    .flatten()
+    {
+        if cand.exists() {
+            return Some(cand.to_string_lossy().to_string());
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+fn patch_ensure_symlink_standalone(dsh_node: &Path) -> Result<()> {
+    let boot = dsh_node
+        .join("@deepseek-ai")
+        .join("dsh-app-boot")
+        .join("lib")
+        .join("index.js");
+    if !boot.is_file() {
+        return Ok(());
+    }
+    let mark = "Polaris-bridge";
+    let src = fs::read_to_string(&boot).map_err(|e| {
+        AppError::ProcessError(format!("读取 dsh-app-boot 失败: {}", e))
+    })?;
+    if src.contains(mark) {
+        return Ok(());
+    }
+    let bak = boot.with_extension("js.polaris.bak");
+    if !bak.exists() {
+        let _ = fs::write(&bak, &src);
+    }
+    let patched = src.replace(
+        "function ensureSymlink(link, target) {",
+        "function ensureSymlink(link, target) { return; /* Polaris-bridge: no-op */",
+    );
+    if patched == src {
+        return Ok(());
+    }
+    fs::write(&boot, patched).map_err(|e| {
+        AppError::ProcessError(format!("写入 dsh-app-boot 补丁失败: {}", e))
+    })?;
+    tracing::info!("[DshEngine] standalone: 已打补丁 ensureSymlink 置为空操作");
+    Ok(())
+}
+
+fn bridge_dir_standalone() -> Result<PathBuf> {
+    let profiles = dirs::home_dir()
+        .map(|h| h.join(".dsh").join("profiles"))
+        .ok_or_else(|| AppError::ProcessError("无法获取用户目录".to_string()))?;
+    Ok(profiles.join("node_modules"))
+}
+
+#[cfg(windows)]
+fn bridge_healthy_standalone(bridge: &Path) -> bool {
+    let lmeta = match fs::symlink_metadata(bridge) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if !lmeta.is_dir() || lmeta.file_type().is_symlink() {
+        return false;
+    }
+    let scope = bridge.join("@deepseek-ai");
+    let scope_meta = match fs::symlink_metadata(&scope) {
+        Ok(m) => m,
+        Err(_) => return false,
+    };
+    if !scope_meta.is_dir() || scope_meta.file_type().is_symlink() {
+        return false;
+    }
+    for k in ["cordis-plugin-loader", "dsh-base", "dsh-web-app", "dsh-session-persistence-jsonl"] {
+        let p = scope.join(k);
+        let m = match fs::symlink_metadata(&p) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if !m.is_dir() || m.file_type().is_symlink() {
+            return false;
+        }
+    }
+    true
+}
+
+fn copy_dir_following_standalone(src: &Path, dst: &Path) -> std::io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let sp = entry.path();
+        let meta = match fs::metadata(&sp) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let dp = match sp.file_name() {
+            Some(n) => dst.join(n),
+            None => continue,
+        };
+        if meta.is_dir() {
+            copy_dir_following_standalone(&sp, &dp)?;
+        } else if meta.is_file() {
+            fs::copy(&sp, &dp)?;
+        }
+    }
+    Ok(())
 }

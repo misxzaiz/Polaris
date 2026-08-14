@@ -708,7 +708,16 @@ pub trait AIEngine: Send + Sync {
         None
     }
 
-    // ... rest of existing methods ...
+    /// 启动前的预检查/重准备工作（可选）。
+    ///
+    /// 在 `engine_registry` 锁临界区**之外**调用，用于执行可能耗时的引擎就绪
+    /// 准备（如依赖目录桥接、缓存预热）。默认空实现；需要预准备的引擎覆写。
+    ///
+    /// 幂等：实现方应保证多次调用安全，首次执行后后续调用快速返回。
+    fn prepare_preflight(&self) -> Result<()> {
+        Ok(())
+    }
+
     fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String>;
 
     fn continue_session(

@@ -1016,6 +1016,15 @@ pub async fn start_chat_inner(
     )
     .await?;
 
+    // DSH 引擎锁外预检查：在获取 engine_registry 锁之前完成依赖桥接准备。
+    // 首次执行约 28 秒（复制几百个依赖包），移出锁临界区避免阻塞其他引擎。
+    // 幂等，本进程内只执行一次。
+    if matches!(engine, EngineId::Custom(ref id) if id == "dsh") {
+        if let Err(e) = crate::ai::engine::dsh::prepare_dsh_bridge_standalone() {
+            tracing::warn!("[start_chat_inner] dsh 桥接预检查失败: {}", e);
+        }
+    }
+
     let mut registry = state.engine_registry.lock().await;
     registry.start_session(Some(engine), &final_message, session_opts)
 }
