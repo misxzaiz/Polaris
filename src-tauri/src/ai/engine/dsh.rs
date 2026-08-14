@@ -577,6 +577,11 @@ impl DshEngine {
         handle.spawn(async move {
             tracing::info!("[DshEngine] 启动 WebSocket 事件读取器: {}", ws_url);
 
+            // 发送 CliInit 事件（前端显示引擎启动中）
+            event_callback(AIEvent::CliInit(
+                crate::models::ai_event::CliInitEvent::new(&session_id_clone)
+            ));
+
             let mut connected = true;
             while connected {
                 let (ws_stream, _resp) = match tokio_tungstenite::connect_async(&ws_url).await {
@@ -589,8 +594,6 @@ impl DshEngine {
                 };
 
                 tracing::info!("[DshEngine] WebSocket 已连接: {}", ws_url);
-
-                let mut turn_ended = false;
 
                 // 使用 write half 保持连接（Ping/pong 由 tokio-tungstenite 自动处理）
                 let (_write, read) = ws_stream.split();
@@ -695,18 +698,10 @@ impl DshEngine {
                                 }
                             }
 
-                            // turn/end 后如果没有 pending 的 tool calls，发送 session_end
-                            if event_type == "session/event" {
-                                let inner_type = payload
-                                    .get("event")
-                                    .and_then(|e| e.get("type"))
-                                    .and_then(|t| t.as_str())
-                                    .unwrap_or("");
-                                if inner_type == "turn/end" && !turn_ended {
-                                    turn_ended = true;
-                                    event_callback(AIEvent::session_end(&session_id_clone));
-                                }
-                            }
+                            // 不发送 session_end 在 turn/end 上：dsh 的 turn/end 只是单轮结束，
+        // 会话可能继续（多轮对话）。session_end 只在外层循环退出时发出。
+        // 当连接断开或 stream/error 时，外层循环会退出，此时在循环外发出 session_end。
+        // 这样前端不会在 turn/end 后关闭会话，用户可继续发送消息。
                         }
                         Ok(WsMessage::Close(_)) => {
                             tracing::info!("[DshEngine] WebSocket 连接关闭");
@@ -732,6 +727,8 @@ impl DshEngine {
                 "[DshEngine] WebSocket 事件读取器退出: session={}",
                 session_id
             );
+            // 读取器退出时发送 session_end（连接断开或会话结束）
+            event_callback(AIEvent::session_end(&session_id_clone));
         });
 
         Ok(())
@@ -754,6 +751,7 @@ impl DshEngine {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
+        // 所有事件类型统一处理，不遗漏
         match event_type {
             "assistant/chunk" => {
                 Self::handle_assistant_chunk(session_id, event, event_callback);
@@ -771,10 +769,7 @@ impl DshEngine {
                 Self::handle_tool_result(session_id, event, event_callback, call_id_maps);
             }
             "turn/start" => {
-                event_callback(AIEvent::progress(
-                    session_id,
-                    "turn started",
-                ));
+                // 轮次内部的边界事件，前端无需额外通知
             }
             "turn/end" => {
                 // session_end 在 spawn_event_reader 中统一发出
@@ -783,16 +778,10 @@ impl DshEngine {
                 // 内部步骤边界，无需前端事件
             }
             "compaction/start" => {
-                event_callback(AIEvent::progress(
-                    session_id,
-                    "context compaction started",
-                ));
+                // 上下文压缩开始，无需前端事件
             }
             "compaction/end" | "compaction/summary" => {
-                event_callback(AIEvent::progress(
-                    session_id,
-                    "context compaction completed",
-                ));
+                // 上下文压缩完成，无需前端事件
             }
             "agent/inbox/spliced" => {
                 // 收件箱变更，内部事件
@@ -870,6 +859,16 @@ impl DshEngine {
                     "[DshEngine] assistant/chunk finish: reason={}",
                     reason
                 );
+                // 出错时发送错误事件
+                if reason == "error" {
+                    if let Some(failure) = chunk.get("reason").and_then(|r| r.get("failure")) {
+                        let msg = failure
+                            .get("message")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown error");
+                        event_callback(AIEvent::error(session_id, msg));
+                    }
+                }
             }
             "block-start" | "block-end" => {
                 // 块边界标记，无增量文本
@@ -1075,36 +1074,108 @@ impl DshEngine {
     }
 
     /// 处理 approval/requested 事件
+    ///
+    /// dsh mux 帧格式：{ type: "approval/requested", sessionId, approvalId, toolName, callId, reason }
+    /// 翻译为 AIEvent::PermissionRequest（前端显示审批对话框）
     fn handle_approval(
         session_id: &str,
-        _payload: &Value,
+        frame_payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
-        let tool_name = _payload
+        let tool_name = frame_payload
             .get("toolName")
             .and_then(|v| v.as_str())
-            .unwrap_or("unknown");
-        let reason = _payload
+            .unwrap_or("unknown")
+            .to_string();
+        let reason = frame_payload
             .get("reason")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or("")
+            .to_string();
 
-        event_callback(AIEvent::progress(
-            session_id,
-            format!("approval requested for {}: {}", tool_name, reason),
+        let mut denial = crate::models::ai_event::PermissionDenial::new(tool_name, reason);
+        if let Some(call_id) = frame_payload.get("callId").and_then(|v| v.as_str()) {
+            denial.extra.insert("callId".to_string(), serde_json::json!(call_id));
+        }
+        if let Some(approval_id) = frame_payload.get("approvalId").and_then(|v| v.as_str()) {
+            denial.extra.insert("approvalId".to_string(), serde_json::json!(approval_id));
+        }
+
+        event_callback(AIEvent::PermissionRequest(
+            crate::models::ai_event::PermissionRequestEvent::new(
+                session_id,
+                vec![denial],
+            )
         ));
     }
 
     /// 处理 question/requested 事件
+    ///
+    /// dsh mux 帧格式：{ type: "question/requested", sessionId, questions: [{ id, question, header, options, multiSelect }] }
+    /// 翻译为 AIEvent::Question（前端显示多选/单选对话框）
     fn handle_question(
         session_id: &str,
-        _payload: &Value,
+        frame_payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     ) {
-        event_callback(AIEvent::progress(
-            session_id,
-            "agent is asking a question",
-        ));
+        let questions = frame_payload
+            .get("questions")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+
+        for q in &questions {
+            let qid = q.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let question_text = q.get("question").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let header = q.get("header").and_then(|v| v.as_str()).unwrap_or("").to_string();
+
+            let options: Vec<crate::models::ai_event::QuestionOptionData> = q
+                .get("options")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter().filter_map(|o| {
+                        let val = o.get("value").or_else(|| o.get("label"))?.as_str()?;
+                        let mut opt = crate::models::ai_event::QuestionOptionData::new(val);
+                        if let Some(label) = o.get("label").and_then(|v| v.as_str()) {
+                            // 如果 label 不等于 value，设置为 label
+                            if label != val {
+                                opt.label = Some(label.to_string());
+                            }
+                        }
+                        if let Some(desc) = o.get("description").and_then(|v| v.as_str()) {
+                            if !desc.is_empty() {
+                                opt.description = Some(desc.to_string());
+                            }
+                        }
+                        Some(opt)
+                    }).collect()
+                })
+                .unwrap_or_default();
+
+            let mut multi_select = false;
+            let mut allow_custom_input = true;
+
+            event_callback(AIEvent::Question(
+                crate::models::ai_event::QuestionEvent::new(
+                    session_id,
+                    qid.clone(),
+                    header.clone(),
+                    options.clone(),
+                )
+                .with_questions(vec![
+                    crate::models::ai_event::QuestionItemData {
+                        question: question_text,
+                        header: header.clone(),
+                        options: options.clone(),
+                        multi_select,
+                        allow_custom_input,
+                        category_label: None,
+                    }
+                ])
+                .with_multi_select(multi_select)
+                .with_allow_custom_input(allow_custom_input),
+            ));
+        }
     }
 
     /// 处理 session/projection 事件
