@@ -241,6 +241,11 @@ pub struct DshEngine {
     websocket_active: Arc<Mutex<HashSet<String>>>,
     /// 每个 session 的 callId → toolName 映射（per-session 隔离）
     call_id_maps: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+    /// Windows 依赖桥接是否已在本进程内完成（避免每次启动重做几百包的复制）
+    ///
+    /// `prepare_dsh_bridge` 首次执行后置 true，后续启动直接跳过磁盘复制；
+    /// 同时还有磁盘级幂等检测（`bridge_healthy`）兜底跨进程场景。
+    bridge_prepared: AtomicBool,
     /// 泄漏到 &'static str 的引擎标识
     leaked_name: &'static str,
     leaked_description: &'static str,
@@ -259,6 +264,7 @@ impl DshEngine {
             session_map: Mutex::new(HashMap::new()),
             websocket_active: Arc::new(Mutex::new(HashSet::new())),
             call_id_maps: Arc::new(Mutex::new(HashMap::new())),
+            bridge_prepared: AtomicBool::new(false),
             leaked_name: Box::leak("DeepSeek Harness".to_string().into_boxed_str()),
             leaked_description: Box::leak(
                 "DeepSeek Harness — 开源 Agent 编排框架（HTTP RPC + WebSocket 事件流）"
@@ -357,6 +363,11 @@ impl DshEngine {
     /// 影响——这正是本修复必须在 Rust 侧而非 Node 脚本侧实现的原因。
     #[cfg(windows)]
     fn prepare_dsh_bridge(&self, cli_path: &str) -> Result<()> {
+        // 幂等快路径 1：本进程内已执行过，直接跳过（避免每次启动都重做几百包复制）
+        if self.bridge_prepared.load(Ordering::Acquire) {
+            return Ok(());
+        }
+
         let dsh_node = self.resolve_dsh_node_modules(cli_path)?;
         if !dsh_node.is_dir() {
             tracing::warn!(
@@ -371,6 +382,17 @@ impl DshEngine {
 
         // 2. 重建 profiles/node_modules 为真实目录副本
         let bridge = self.bridge_dir()?;
+
+        // 幂等快路径 2：磁盘级健康检测——bridge 已是真实目录且关键包齐全时跳过
+        // 覆盖跨进程场景（应用重启后，bridge 仍在磁盘上，无需重做）
+        if self.bridge_healthy(&bridge) {
+            tracing::info!(
+                "[DshEngine] dsh 桥接已就绪（磁盘健康检测通过），跳过重建"
+            );
+            self.bridge_prepared.store(true, Ordering::Release);
+            return Ok(());
+        }
+
         if bridge.exists() {
             if let Err(e) = fs::remove_dir_all(&bridge) {
                 tracing::warn!("[DshEngine] 清理旧 bridge 失败: {}", e);
@@ -427,6 +449,7 @@ impl DshEngine {
             copied,
             skipped
         );
+        self.bridge_prepared.store(true, Ordering::Release);
         Ok(())
     }
 
@@ -500,6 +523,53 @@ impl DshEngine {
             .map(|h| h.join(".dsh").join("profiles"))
             .ok_or_else(|| AppError::ProcessError("无法获取用户目录".to_string()))?;
         Ok(profiles.join("node_modules"))
+    }
+
+    /// 磁盘级健康检测：bridge 是否已是真实目录且关键依赖可解析。
+    ///
+    /// 判据：① bridge 是真实目录（非 Junction/symlink）；② `@deepseek-ai` 子目录存在
+    /// 且为真实目录（非 Junction）；③ 关键包 `cordis-plugin-loader` 和 `dsh-base`
+    /// 可被 `metadata` 跟随（说明内部条目也已从 Junction 复制为真实目录）。
+    ///
+    /// 全部满足则认为上次桥接已完成，可跳过重建。
+    #[cfg(windows)]
+    fn bridge_healthy(&self, bridge: &Path) -> bool {
+        // bridge 必须是真实目录（非 symlink）
+        let lmeta = match fs::symlink_metadata(bridge) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if !lmeta.is_dir() || lmeta.file_type().is_symlink() {
+            return false;
+        }
+        // @deepseek-ai scope 必须是真实目录
+        let scope = bridge.join("@deepseek-ai");
+        let scope_meta = match fs::symlink_metadata(&scope) {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        if !scope_meta.is_dir() || scope_meta.file_type().is_symlink() {
+            return false;
+        }
+        // 关键包可被 metadata 跟随（证明已从 Junction 复制为真实目录）
+        let keys = [
+            "cordis-plugin-loader",
+            "dsh-base",
+            "dsh-web-app",
+            "dsh-session-persistence-jsonl",
+        ];
+        for k in keys {
+            let p = scope.join(k);
+            // 用 symlink_metadata 确保是真实目录而非 Junction
+            let m = match fs::symlink_metadata(&p) {
+                Ok(m) => m,
+                Err(_) => return false,
+            };
+            if !m.is_dir() || m.file_type().is_symlink() {
+                return false;
+            }
+        }
+        true
     }
 
     /// 递归复制目录，**跟随** Junction / 符号链接取真实内容。
