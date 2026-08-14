@@ -333,6 +333,202 @@ impl DshEngine {
         Ok(cmd.to_string())
     }
 
+    // ========================================================================
+    // Windows 依赖桥接准备（修复 Junction 问题）
+    // ========================================================================
+
+    /// Windows 桥接准备：在启动 dsh 子进程前，修复 `profiles/node_modules` 的
+    /// Junction 不可跟随问题。
+    ///
+    /// 根因（本机实测）：dsh 的 `healProfilesModuleFallback` 在 `profiles/node_modules`
+    /// 下为每个依赖创建 Windows Junction，但在未开开发者模式 / 无
+    /// `SeCreateSymbolicLinkPrivilege` 的环境下，这些 Junction 无法被 Node 跟随，
+    /// 导致 dsh 启动时 ESM `import()` 全部 `ERR_MODULE_NOT_FOUND`，子进程秒退、
+    /// stdout 无 URL，Polaris 收到"启动超时"。
+    ///
+    /// 修复（Polaris 侧，无需改上游 npm 包）：
+    ///   1. 将 `dsh-app-boot` 的 `ensureSymlink` 置为空操作，阻止 dsh 重建坏 Junction；
+    ///   2. 把 `profiles/node_modules` 重建成真实目录副本（从 dsh 安装根 `node_modules`
+    ///      递归复制并跟随 Junction 取真实内容），覆盖 `@deepseek-ai/*` 及 npm 扁平化
+    ///      的传递依赖（chokidar / koffi / js-yaml / commander / node-pty 等）。
+    ///
+    /// 实现要点：Rust 在 Tauri 中是**原生 Windows 进程**，`std::fs` 能正确处理
+    /// Junction（`fs::metadata` 自动跟随），不受 MSYS2 层的 `ERROR_INVALID_REPARSE_DATA`
+    /// 影响——这正是本修复必须在 Rust 侧而非 Node 脚本侧实现的原因。
+    #[cfg(windows)]
+    fn prepare_dsh_bridge(&self, cli_path: &str) -> Result<()> {
+        let dsh_node = self.resolve_dsh_node_modules(cli_path)?;
+        if !dsh_node.is_dir() {
+            tracing::warn!(
+                "[DshEngine] dsh node_modules 未找到 ({}), 跳过桥接准备",
+                dsh_node.display()
+            );
+            return Ok(());
+        }
+
+        // 1. 将 ensureSymlink 置为空操作（阻止 dsh 重建坏 Junction）
+        self.patch_ensure_symlink(&dsh_node)?;
+
+        // 2. 重建 profiles/node_modules 为真实目录副本
+        let bridge = self.bridge_dir()?;
+        if bridge.exists() {
+            if let Err(e) = fs::remove_dir_all(&bridge) {
+                tracing::warn!("[DshEngine] 清理旧 bridge 失败: {}", e);
+            }
+        }
+        fs::create_dir_all(&bridge).map_err(|e| {
+            AppError::ProcessError(format!("创建 dsh bridge 目录失败: {}", e))
+        })?;
+
+        let mut copied = 0usize;
+        let mut skipped = 0usize;
+        for entry in fs::read_dir(&dsh_node).map_err(|e| {
+            AppError::ProcessError(format!("读取 dsh node_modules 失败: {}", e))
+        })? {
+            let entry = entry.map_err(|e| AppError::ProcessError(e.to_string()))?;
+            let sp = entry.path();
+            let name = sp
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if name.starts_with('.') {
+                continue;
+            }
+            // 跟随 Junction/symlink 判断真实类型
+            let meta = match fs::metadata(&sp) {
+                Ok(m) => m,
+                Err(_) => {
+                    skipped += 1;
+                    continue;
+                }
+            };
+            let dp = match sp.file_name() {
+                Some(n) => bridge.join(n),
+                None => continue,
+            };
+            if meta.is_dir() {
+                if Self::copy_dir_following(&sp, &dp).is_ok() {
+                    copied += 1;
+                } else {
+                    skipped += 1;
+                    tracing::debug!("[DshEngine] bridge 跳过: {}", name);
+                }
+            } else if meta.is_file() {
+                if fs::copy(&sp, &dp).is_ok() {
+                    copied += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+        }
+
+        tracing::info!(
+            "[DshEngine] dsh 桥接准备完成: 复制 {} 个包, 跳过 {} 个",
+            copied,
+            skipped
+        );
+        Ok(())
+    }
+
+    /// 非 Windows 平台无需桥接准备（Junction 是 Windows 概念）。
+    #[cfg(not(windows))]
+    fn prepare_dsh_bridge(&self, _cli_path: &str) -> Result<()> {
+        Ok(())
+    }
+
+    /// 定位 dsh 安装根的 `node_modules` 目录。
+    /// cli_path 通常是 `.../npm/dsh.cmd` 或 `.../pnpm/dsh.cmd`。
+    #[cfg(windows)]
+    fn resolve_dsh_node_modules(&self, cli_path: &str) -> Result<PathBuf> {
+        let dsh_cmd = PathBuf::from(cli_path);
+        let npm_bin_dir = dsh_cmd.parent().ok_or_else(|| {
+            AppError::ProcessError("无法获取 dsh 命令父目录".to_string())
+        })?;
+        let dsh_node = npm_bin_dir.join("node_modules").join("@deepseek-ai").join("dsh").join("node_modules");
+        Ok(dsh_node)
+    }
+
+    /// 将 `dsh-app-boot/lib/index.js` 的 `ensureSymlink` 函数置为空操作，
+    /// 阻止 dsh 在启动时重建无法跟随的 Junction。
+    ///
+    /// 幂等：已含 `Polaris-bridge` 标记则跳过；首次执行时保留 `.js.polaris.bak` 备份。
+    #[cfg(windows)]
+    fn patch_ensure_symlink(&self, dsh_node: &Path) -> Result<()> {
+        let boot = dsh_node
+            .join("@deepseek-ai")
+            .join("dsh-app-boot")
+            .join("lib")
+            .join("index.js");
+        if !boot.is_file() {
+            tracing::debug!("[DshEngine] dsh-app-boot 不存在, 跳过 ensureSymlink 补丁");
+            return Ok(());
+        }
+        let mark = "Polaris-bridge";
+        let src = fs::read_to_string(&boot).map_err(|e| {
+            AppError::ProcessError(format!("读取 dsh-app-boot 失败: {}", e))
+        })?;
+        if src.contains(mark) {
+            return Ok(());
+        }
+        let bak = boot.with_extension("js.polaris.bak");
+        if !bak.exists() {
+            if let Err(e) = fs::write(&bak, &src) {
+                tracing::warn!("[DshEngine] 备份 dsh-app-boot 失败: {}", e);
+            }
+        }
+        let patched = src.replace(
+            "function ensureSymlink(link, target) {",
+            "function ensureSymlink(link, target) { return; /* Polaris-bridge: no-op */",
+        );
+        if patched == src {
+            tracing::warn!("[DshEngine] 未找到 ensureSymlink 定义, 跳过补丁");
+            return Ok(());
+        }
+        fs::write(&boot, patched).map_err(|e| {
+            AppError::ProcessError(format!(
+                "写入 dsh-app-boot 补丁失败 (需对 dsh 安装目录有写权限): {}",
+                e
+            ))
+        })?;
+        tracing::info!("[DshEngine] 已打补丁: dsh-app-boot ensureSymlink 置为空操作");
+        Ok(())
+    }
+
+    /// 返回 dsh profile 的 bridge 目录（`~/.dsh/profiles/node_modules`）。
+    fn bridge_dir(&self) -> Result<PathBuf> {
+        let profiles = dirs::home_dir()
+            .map(|h| h.join(".dsh").join("profiles"))
+            .ok_or_else(|| AppError::ProcessError("无法获取用户目录".to_string()))?;
+        Ok(profiles.join("node_modules"))
+    }
+
+    /// 递归复制目录，**跟随** Junction / 符号链接取真实内容。
+    ///
+    /// 与普通 `copy_dir_all` 不同：此处对每个条目用 `fs::metadata`（跟随链接）
+    /// 判断真实类型，确保 Junction 指向的真实文件被复制为普通目录/文件，
+    /// 从而在目标环境不依赖 Junction 跟随权限也能被 Node 正常解析。
+    fn copy_dir_following(src: &Path, dst: &Path) -> std::io::Result<()> {
+        fs::create_dir_all(dst)?;
+        for entry in fs::read_dir(src)? {
+            let entry = entry?;
+            let sp = entry.path();
+            let meta = match fs::metadata(&sp) {
+                Ok(m) => m,
+                Err(_) => continue, // 坏的链接，跳过
+            };
+            let dp = match sp.file_name() {
+                Some(n) => dst.join(n),
+                None => continue,
+            };
+            if meta.is_dir() {
+                Self::copy_dir_following(&sp, &dp)?;
+            } else if meta.is_file() {
+                fs::copy(&sp, &dp)?;
+            }
+        }
+        Ok(())
+    }
+
     /// 启动 dsh Web 服务器
     fn ensure_dsh_server(&mut self) -> Result<String> {
         // 读取一次锁，避免两次获取
@@ -360,6 +556,11 @@ impl DshEngine {
         }
 
         let cli_path = self.get_cli_path()?;
+
+        // Windows 依赖桥接准备：修复 profiles/node_modules 的 Junction 不可跟随问题。
+        // 必须在 spawn 子进程之前完成（dsh 启动即 ESM import，依赖必须可解析）。
+        self.prepare_dsh_bridge(&cli_path)?;
+
         tracing::info!("[DshEngine] 启动 dsh Web 服务器: {}", cli_path);
 
         let mut cmd: Command = if cfg!(windows) {
