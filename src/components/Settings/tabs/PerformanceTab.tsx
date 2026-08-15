@@ -133,7 +133,7 @@ export function PerformanceTab({ config, onConfigChange, loading }: PerformanceT
                 enabled
                   ? 'bg-primary/5 border-primary/30'
                   : 'bg-background-base border-border-subtle'
-              } ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+              }`}
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex-1 min-w-0">
@@ -150,18 +150,34 @@ export function PerformanceTab({ config, onConfigChange, loading }: PerformanceT
                     {feature.fallback}
                   </p>
                 </div>
+                {/* 开关 — 与项目标准 (WebTab / LspTab) 统一：w-11 h-6 + thumb w-4 h-4 */}
                 <button
-                  className={`flex-shrink-0 w-10 h-5 rounded-full relative transition-colors ${
-                    enabled ? 'bg-primary' : 'bg-text-tertiary/30'
-                  } ${loading ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  role="switch"
+                  aria-checked={enabled}
+                  aria-label={enabled
+                    ? t('performance.switchOff', '关闭 {{name}}', { name: feature.title })
+                    : t('performance.switchOn', '开启 {{name}}', { name: feature.title })
+                  }
+                  title={enabled ? '关闭' : '开启'}
                   onClick={() => toggleFeature(feature.key)}
                   disabled={loading}
-                  title={enabled ? '关闭' : '开启'}
+                  className={`
+                    relative inline-flex items-center h-6 w-11 rounded-full
+                    transition-colors
+                    focus:outline-none
+                    focus-visible:ring-2 focus-visible:ring-primary
+                    focus-visible:ring-offset-2
+                    ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+                    ${enabled ? 'bg-primary' : 'bg-border'}
+                  `}
                 >
                   <span
-                    className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${
-                      enabled ? 'translate-x-5' : 'translate-x-0.5'
-                    }`}
+                    className={`
+                      inline-block h-4 w-4 transform rounded-full bg-white
+                      shadow-sm
+                      transition-transform
+                      ${enabled ? 'translate-x-6' : 'translate-x-1'}
+                    `}
                   />
                 </button>
               </div>
