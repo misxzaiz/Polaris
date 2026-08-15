@@ -20,6 +20,7 @@ import {
 } from '@/services/tauri/lspService';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useLspUiStore } from '@/stores/lspUiStore';
+import { isLspIndexEnabled } from '@/utils/performanceFeatures';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('LspIndexStore');
@@ -67,9 +68,9 @@ export const useLspIndexStore = create<LspIndexState>((set, get) => ({
       log.warn('failed to listen lsp_index:status', { error: String(err) });
     }
 
-    // 当前 workspace 自动打开
+    // 当前 workspace 自动打开（仅当索引引擎开启时）
     const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
-    if (ws) {
+    if (ws && isLspIndexEnabled()) {
       await get().ensureOpen(ws);
     }
 
@@ -87,6 +88,11 @@ export const useLspIndexStore = create<LspIndexState>((set, get) => ({
   },
 
   ensureOpen: async (workspace: string) => {
+    // 性能开关：lspIndex=false 时引擎不启动（不建 DB、不起 watcher、不发起调用）
+    if (!isLspIndexEnabled()) {
+      log.debug('lspIndex 关闭，跳过索引引擎打开', { workspace });
+      return;
+    }
     if (get().openedWorkspaces.has(workspace)) {
       // 仍刷一次状态（DB 可能是上一次会话留下的）
       void get().refresh(workspace);
@@ -125,6 +131,10 @@ export const useLspIndexStore = create<LspIndexState>((set, get) => ({
   },
 
   rebuild: async (workspace: string) => {
+    if (!isLspIndexEnabled()) {
+      log.debug('lspIndex 关闭，跳过重建', { workspace });
+      return;
+    }
     try {
       await lspIndexRebuild(workspace);
     } catch (err) {
@@ -133,6 +143,9 @@ export const useLspIndexStore = create<LspIndexState>((set, get) => ({
   },
 
   refresh: async (workspace: string) => {
+    if (!isLspIndexEnabled()) {
+      return;
+    }
     try {
       const s = await lspIndexStatus(workspace);
       useLspUiStore.getState().setIndexStatus(s);

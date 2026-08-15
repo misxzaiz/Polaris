@@ -17,6 +17,8 @@ import { listen } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
 import { fsWatchStop } from '@/services/tauri/fileService';
 import { schedulerStop } from '@/services/tauri/schedulerService';
+import { useLspIndexStore } from '@/stores/lspIndexStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { PerformanceFeatures } from '@/types';
 
 type UnlistenFn = () => void;
@@ -85,7 +87,29 @@ function handleSwitch(prev: PerformanceFeatures, next: PerformanceFeatures): voi
     });
   }
 
-  // 其余开关（syntaxHighlighting / mermaidDiagrams / katexMath / lspIndex /
+  // lspIndex：true → false 时关闭所有 workspace 索引引擎（释放 DB + watcher）
+  if (prev.lspIndex && !next.lspIndex) {
+    log.info('lspIndex 关闭，释放索引引擎');
+    const { openedWorkspaces, ensureClose } = useLspIndexStore.getState();
+    // 关闭所有已打开 workspace 的引擎（确保 watcher / DB 句柄释放）
+    openedWorkspaces.forEach((ws) => {
+      void ensureClose(ws);
+    });
+    // 空集合时也补一层保险：清理 UI 状态占位（无动作，如无 workspace 则 no-op）
+    if (openedWorkspaces.size === 0) {
+      log.debug('lspIndex 关闭时无已打开 workspace');
+    }
+  }
+  // lspIndex：false → true 时热开启当前 workspace（按需拉起，非阻塞）
+  if (!prev.lspIndex && next.lspIndex) {
+    log.info('lspIndex 开启，热启动索引引擎');
+    const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+    if (ws) {
+      void useLspIndexStore.getState().ensureOpen(ws);
+    }
+  }
+
+  // 其余开关（syntaxHighlighting / mermaidDiagrams / katexMath /
   // codeEditorLanguages / pluginAutoStart）均为"下次调用时生效"型，
   // 无需主动停止 —— 关闭后渲染层/命令层门控会自然降级。
 }

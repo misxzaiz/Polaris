@@ -333,7 +333,6 @@ impl Default for RouteStrategy {
 /// 用于判定 `start_session` 后的异步错误是否应切换到组内下一个 Profile。
 /// 只有"首字前失败"（尚未向用户输出 assistant token）才允许透明切换。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum FailoverPattern {
     /// HTTP 状态码命中（如 401/403/429/5xx）。
     /// `code = 500` 代表整个 5xx 段（500-599）。

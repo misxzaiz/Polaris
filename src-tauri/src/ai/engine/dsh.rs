@@ -148,21 +148,21 @@ pub fn submit_answer(
             }
         })
     } else {
-        let answers_json: Vec<Value> = selected
-            .iter()
-            .map(|s| {
-                let mut a = json!({
-                    "id": call_id,
-                    "selected": [s],
-                });
-                if let Some(ci) = custom_input {
-                    if !ci.is_empty() {
-                        a["custom"] = json!(ci);
-                    }
-                }
-                a
-            })
-            .collect();
+        // 构造单个 answer 条目（一个 call_id 对应一道题）。
+        // selected 数组整体作为该题被选的选项列表；custom 是可选的自定义输入。
+        // 注意：不能把每个 selected 元素拆成独立条目——DSH 的 matchesQuestions
+        // 要求 answers.length === pending.questions.length，拆分会导致多选或多题
+        // 场景下条目数与题数对不上，被判为 bad-response。
+        let mut answer_entry = json!({
+            "id": call_id,
+            "selected": selected,
+        });
+        if let Some(ci) = custom_input {
+            if !ci.is_empty() {
+                answer_entry["custom"] = json!(ci);
+            }
+        }
+        let answers_json = vec![answer_entry];
 
         json!({
             "type": "client-response",

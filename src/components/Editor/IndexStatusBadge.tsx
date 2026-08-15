@@ -10,6 +10,7 @@ import { Database, Loader2, AlertTriangle, Zap, RefreshCw } from 'lucide-react';
 import { useLspUiStore } from '@/stores/lspUiStore';
 import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import type { IndexStatus } from '@/services/tauri/lspService';
 
 function formatNumber(n: number): string {
@@ -28,6 +29,7 @@ function relativeTime(ms: number | null): string {
 
 export function IndexStatusBadge() {
   const workspace = useWorkspaceStore((s) => s.getCurrentWorkspace?.()?.path);
+  const enabled = usePerformanceFlag('lspIndex');
   // 用 workspace 路径取最新状态。后端 canonicalize 后的路径可能不同——
   // 最稳妥是兜底：找最近一次 status；这里简单起见用 workspace 直接 lookup。
   const status = useLspUiStore((s) => {
@@ -61,6 +63,7 @@ export function IndexStatusBadge() {
     return () => document.removeEventListener('mousedown', onClick);
   }, [open]);
 
+  if (!enabled) return null;
   if (!workspace || !status) return null;
 
   const { icon, label, color } = visualOf(status);

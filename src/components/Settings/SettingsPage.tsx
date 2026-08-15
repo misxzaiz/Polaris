@@ -99,7 +99,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     web: ['web'],
     'personal-hub': ['personalHub'],
     'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'piCode'],
-    'model-provider': ['modelProfiles', 'activeModelProfileId'],
+    'model-provider': ['modelProfiles', 'activeModelProfileId', 'providerGroups', 'activeProviderGroupId'],
     performance: ['performance'],
   };
 

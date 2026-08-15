@@ -63,7 +63,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
   { id: 'personal-hub', icon: <BookOpen size={16} />, labelKey: 'nav.personalHub' },
-  { id: 'token-stats', icon: <BarChart3 size={16} />, labelKey: 'nav.tokenStats' },
   { id: 'performance', icon: <Gauge size={16} />, labelKey: 'nav.performance' },
   { id: 'route-log', icon: <Activity size={16} />, labelKey: 'nav.routeLog' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },

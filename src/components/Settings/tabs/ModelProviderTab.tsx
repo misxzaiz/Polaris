@@ -25,6 +25,9 @@ import type {
   ProfileTargetEngine,
   ProfileCategory,
   AuthType,
+  ProviderGroup,
+  RouteStrategy,
+  FailoverPattern,
 } from '@/types'
 import { OFFICIAL_API_PROFILE, type ConnectionTestResult, resolveAuthType, resolveTargetEngines, isProfileForEngine, ALL_ENGINES } from '@/types/modelProfile'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
@@ -51,6 +54,13 @@ import {
   EyeOff,
   Copy,
   Zap,
+  Route,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  ShieldAlert,
+  Clock,
+  RotateCcw,
 } from 'lucide-react'
 
 const log = createLogger('ModelProviderTab')
@@ -925,6 +935,492 @@ function ProfileEditorModal({
   )
 }
 
+// ---------- 供应商分组配置 ----------
+
+/** 分组路由策略选项（对应后端 RouteStrategy lowercase 序列化） */
+const STRATEGY_LABEL: Record<RouteStrategy, string> = {
+  failover: 'Failover',
+  roundrobin: 'RoundRobin',
+  weighted: 'Weighted',
+}
+
+/** 默认 failover 触发模式集（对应后端 FailoverPattern::defaults()） */
+const DEFAULT_FAILOVER_PATTERNS: FailoverPattern[] = [
+  { HttpStatus: { code: 401 } },
+  { HttpStatus: { code: 403 } },
+  { HttpStatus: { code: 429 } },
+  { HttpStatus: { code: 500 } },
+  'FirstTokenTimeout',
+  'ConnectionRefused',
+]
+
+/** 生成分组 ID */
+function generateGroupId(): string {
+  return `group_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`
+}
+
+/** failover 触发模式表单项 */
+interface FailoverPatternFormItem {
+  kind: 'HttpStatus' | 'FirstTokenTimeout' | 'ConnectionRefused' | 'StderrContains'
+  code?: string
+  pattern?: string
+}
+
+/** FailoverPattern → 表单项 */
+function patternToForm(p: FailoverPattern): FailoverPatternFormItem {
+  if (typeof p === 'string') {
+    return { kind: p }
+  }
+  if ('HttpStatus' in p) return { kind: 'HttpStatus', code: String(p.HttpStatus.code) }
+  if ('StderrContains' in p) return { kind: 'StderrContains', pattern: p.StderrContains.pattern }
+  return { kind: 'HttpStatus', code: '500' }
+}
+
+/** 表单项 → FailoverPattern（无效返回 null） */
+function formToPattern(f: FailoverPatternFormItem): FailoverPattern | null {
+  switch (f.kind) {
+    case 'HttpStatus': {
+      const code = parseInt(f.code ?? '', 10)
+      return Number.isFinite(code) ? { HttpStatus: { code } } : null
+    }
+    case 'StderrContains': {
+      const pattern = (f.pattern ?? '').trim()
+      return pattern ? { StderrContains: { pattern } } : null
+    }
+    case 'FirstTokenTimeout': return 'FirstTokenTimeout'
+    case 'ConnectionRefused': return 'ConnectionRefused'
+  }
+}
+
+/** 分组成员表单项 */
+interface MemberFormItem {
+  profileId: string
+  priority: string
+  weight: string
+}
+
+/** 分组编辑表单状态 */
+interface GroupForm {
+  id: string
+  name: string
+  strategy: RouteStrategy
+  members: MemberFormItem[]
+  failoverOn: FailoverPatternFormItem[]
+  firstTokenTimeoutSecs: string
+  maxFailoverAttempts: string
+  active: boolean
+}
+
+// ---------- 分组卡片 ----------
+
+function ProviderGroupCard({
+  group,
+  isActiveGroup,
+  profiles,
+  onEdit,
+  onDelete,
+  onSetActive,
+}: {
+  group: ProviderGroup
+  isActiveGroup: boolean
+  profiles: ModelProfile[]
+  onEdit: (g: ProviderGroup) => void
+  onDelete: (id: string) => void
+  onSetActive: (id: string) => void
+}) {
+  const memberNames = group.members
+    .map((m) => profiles.find((p) => p.id === m.profileId)?.name || '已删除')
+  const missing = group.members.filter((m) => !profiles.some((p) => p.id === m.profileId)).length
+
+  return (
+    <div
+      className={`rounded-lg border p-3 transition-all ${
+        isActiveGroup ? 'border-primary bg-primary/5' : 'border-border bg-background-surface'
+      }`}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <Route size={14} className="text-text-tertiary shrink-0" />
+        <span className="text-sm font-medium text-text-primary truncate">{group.name}</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">{STRATEGY_LABEL[group.strategy]}</span>
+        <span className="text-[9px] px-1.5 py-0.5 rounded bg-text-tertiary/10 text-text-tertiary shrink-0">{group.members.length} 成员</span>
+        {!group.active && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 shrink-0">已停用</span>
+        )}
+        {missing > 0 && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 shrink-0">{missing} 引用失效</span>
+        )}
+        {isActiveGroup && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 shrink-0">当前生效</span>
+        )}
+      </div>
+      <div className="text-xs text-text-tertiary truncate mt-1">
+        {memberNames.join(' → ') || '（空分组）'}
+      </div>
+      <div className="flex items-center gap-1 mt-2 shrink-0">
+        <button
+          onClick={() => onSetActive(group.id)}
+          title="设为当前生效分组"
+          disabled={isActiveGroup}
+          className="p-1 text-text-tertiary hover:text-green-400 transition-colors disabled:opacity-40"
+        >
+          <Check size={14} />
+        </button>
+        <button
+          onClick={() => onEdit(group)}
+          className="p-1 text-text-tertiary hover:text-primary transition-colors"
+          title="编辑分组"
+        >
+          <Pencil size={14} />
+        </button>
+        <button
+          onClick={() => onDelete(group.id)}
+          className="p-1 text-text-tertiary hover:text-red-500 transition-colors"
+          title="删除分组"
+        >
+          <Trash2 size={14} />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------- 分组编辑器弹层 ----------
+
+function ProviderGroupEditorModal({
+  initialGroup,
+  profiles,
+  onSave,
+  onClose,
+}: {
+  initialGroup: ProviderGroup | null
+  profiles: ModelProfile[]
+  onSave: (form: GroupForm) => void
+  onClose: () => void
+}) {
+  const editing = Boolean(initialGroup?.id)
+  const [form, setForm] = useState<GroupForm>(() => {
+    if (!initialGroup) {
+      return {
+        id: generateGroupId(),
+        name: '',
+        strategy: 'failover',
+        members: [],
+        failoverOn: DEFAULT_FAILOVER_PATTERNS.map(patternToForm),
+        firstTokenTimeoutSecs: '',
+        maxFailoverAttempts: '3',
+        active: true,
+      }
+    }
+    return {
+      id: initialGroup.id,
+      name: initialGroup.name,
+      strategy: initialGroup.strategy,
+      members: initialGroup.members.map((m) => ({
+        profileId: m.profileId,
+        priority: String(m.priority),
+        weight: String(m.weight),
+      })),
+      failoverOn: (initialGroup.failoverOn?.length
+        ? initialGroup.failoverOn
+        : DEFAULT_FAILOVER_PATTERNS
+      ).map(patternToForm),
+      firstTokenTimeoutSecs: initialGroup.firstTokenTimeoutSecs != null ? String(initialGroup.firstTokenTimeoutSecs) : '',
+      maxFailoverAttempts: String(initialGroup.maxFailoverAttempts ?? 3),
+      active: initialGroup.active,
+    }
+  })
+  const patch = (p: Partial<GroupForm>) => setForm((prev) => ({ ...prev, ...p }))
+
+  const canSubmit = form.name.trim().length > 0 && form.members.some((m) => m.profileId)
+
+  // 成员操作
+  const updateMember = (idx: number, p: Partial<MemberFormItem>) =>
+    patch({ members: form.members.map((m, i) => (i === idx ? { ...m, ...p } : m)) })
+  const addMember = () => {
+    const used = new Set(form.members.map((m) => m.profileId))
+    const firstFree = profiles.find((p) => !used.has(p.id))
+    patch({ members: [...form.members, { profileId: firstFree?.id ?? '', priority: '0', weight: '1' }] })
+  }
+  const removeMember = (idx: number) => patch({ members: form.members.filter((_, i) => i !== idx) })
+
+  // failover 模式操作
+  const updatePattern = (idx: number, p: Partial<FailoverPatternFormItem>) =>
+    patch({ failoverOn: form.failoverOn.map((m, i) => (i === idx ? { ...m, ...p } : m)) })
+  const addPattern = () => patch({ failoverOn: [...form.failoverOn, { kind: 'HttpStatus', code: '429' }] })
+  const removePattern = (idx: number) => patch({ failoverOn: form.failoverOn.filter((_, i) => i !== idx) })
+
+  const fieldClass =
+    'w-full px-3 py-2 text-sm bg-background-surface border border-border rounded-lg outline-none focus:border-primary'
+  const labelClass = 'block text-xs text-text-secondary mb-1'
+  const sectionClass = 'space-y-3 p-3 bg-background-surface rounded-lg border border-border'
+  const sectionTitleClass = 'text-xs font-semibold text-text-secondary uppercase tracking-wide'
+
+  return (
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+      onMouseDown={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Escape') onClose()
+      }}
+    >
+      <div className="bg-background-elevated rounded-xl w-full max-w-lg border border-border shadow-glow max-h-[88vh] flex flex-col">
+        {/* 标题栏 */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle shrink-0">
+          <h2 className="text-base font-semibold text-text-primary flex items-center gap-2">
+            <Route size={16} className="text-primary" />
+            {editing ? '编辑供应商分组' : '新建供应商分组'}
+          </h2>
+          <button
+            onClick={onClose}
+            className="p-1 text-text-tertiary hover:text-text-primary transition-colors"
+          >
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* 表单主体 */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {/* 基础信息 */}
+          <div className={sectionClass}>
+            <div className={sectionTitleClass}>基础信息</div>
+            <div>
+              <label className={labelClass}>分组名称</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => patch({ name: e.target.value })}
+                placeholder="如：主备切换 / 负载均衡"
+                className={fieldClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>路由策略</label>
+              <select
+                value={form.strategy}
+                onChange={(e) => patch({ strategy: e.target.value as RouteStrategy })}
+                className={fieldClass}
+              >
+                <option value="failover">Failover — 主备切换（priority 小优先）</option>
+                <option value="roundrobin">RoundRobin — 轮询（新会话轮转）</option>
+                <option value="weighted">Weighted — 加权随机（按 weight）</option>
+              </select>
+            </div>
+            <div>
+              <label className="flex items-center gap-2 text-xs text-text-secondary cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={form.active}
+                  onChange={(e) => patch({ active: e.target.checked })}
+                  className="accent-primary"
+                />
+                启用此分组
+              </label>
+            </div>
+          </div>
+
+          {/* 分组成员 */}
+          <div className={sectionClass}>
+            <div className={`${sectionTitleClass} flex items-center gap-1.5`}>
+              <Layers size={12} />
+              分组成员
+            </div>
+            <div className="space-y-2">
+              {form.members.map((m, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <select
+                      value={m.profileId}
+                      onChange={(e) => updateMember(idx, { profileId: e.target.value })}
+                      className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                    >
+                      <option value="">— 选择 Profile —</option>
+                      {profiles.map((p) => (
+                        <option key={p.id} value={p.id}>{p.name}（{p.model}）</option>
+                      ))}
+                    </select>
+                    {form.strategy === 'failover' && (
+                      <input
+                        type="number"
+                        min={0}
+                        value={m.priority}
+                        onChange={(e) => updateMember(idx, { priority: e.target.value })}
+                        title="优先级（数字小优先）"
+                        className="w-16 px-2 py-1.5 text-xs font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                      />
+                    )}
+                    {form.strategy === 'weighted' && (
+                      <input
+                        type="number"
+                        min={1}
+                        value={m.weight}
+                        onChange={(e) => updateMember(idx, { weight: e.target.value })}
+                        title="权重"
+                        className="w-16 px-2 py-1.5 text-xs font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                      />
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeMember(idx)}
+                      className="p-1 text-text-tertiary hover:text-red-500 transition-colors shrink-0"
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={addMember}
+              disabled={profiles.length === 0}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors disabled:opacity-40"
+            >
+              <Plus size={12} />
+              {profiles.length === 0 ? '请先在模型供应商中创建 Profile' : '添加成员'}
+            </button>
+            {form.members.length > 0 && form.members.every((m) => !m.profileId) && (
+              <p className="text-[11px] text-text-tertiary">请为每个成员选择 Profile。</p>
+            )}
+          </div>
+
+          {/* Failover 触发条件 */}
+          <div className={sectionClass}>
+            <div className={`${sectionTitleClass} flex items-center gap-1.5`}>
+              <ShieldAlert size={12} />
+              Failover 错误触发条件
+            </div>
+            <div className="space-y-2">
+              {form.failoverOn.map((p, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <select
+                    value={p.kind}
+                    onChange={(e) => updatePattern(idx, { kind: e.target.value as FailoverPatternFormItem['kind'] })}
+                    className="w-40 px-2 py-1.5 text-xs bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                  >
+                    <option value="HttpStatus">HTTP 状态码</option>
+                    <option value="FirstTokenTimeout">首字超时</option>
+                    <option value="ConnectionRefused">连接被拒</option>
+                    <option value="StderrContains">stderr 关键词</option>
+                  </select>
+                  {p.kind === 'HttpStatus' && (
+                    <input
+                      type="number"
+                      min={100}
+                      max={599}
+                      value={p.code ?? ''}
+                      onChange={(e) => updatePattern(idx, { code: e.target.value })}
+                      placeholder="如 429；500 代表 5xx 全段"
+                      className="flex-1 min-w-0 px-2.5 py-1.5 text-xs font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                    />
+                  )}
+                  {p.kind === 'StderrContains' && (
+                    <input
+                      type="text"
+                      value={p.pattern ?? ''}
+                      onChange={(e) => updatePattern(idx, { pattern: e.target.value })}
+                      placeholder="如 api key invalid（不区分大小写）"
+                      className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                    />
+                  )}
+                  {p.kind !== 'HttpStatus' && p.kind !== 'StderrContains' && (
+                    <span className="flex-1 text-[11px] text-text-tertiary">
+                      {p.kind === 'FirstTokenTimeout' ? 'spawn 后超过首字超时阈值仍未输出' : 'spawn 后立即崩溃 / 代理起不来'}
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => removePattern(idx)}
+                    className="p-1 text-text-tertiary hover:text-red-500 transition-colors shrink-0"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={addPattern}
+                className="flex items-center gap-1 text-xs text-primary hover:text-primary-hover transition-colors"
+              >
+                <Plus size={12} />
+                添加触发条件
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, failoverOn: DEFAULT_FAILOVER_PATTERNS.map(patternToForm) }))}
+                className="flex items-center gap-1 text-xs text-text-tertiary hover:text-text-primary transition-colors"
+              >
+                <RotateCcw size={12} />
+                恢复默认
+              </button>
+            </div>
+            <p className="text-[11px] text-text-tertiary">
+              默认组合：401 / 403 / 429 / 5xx / 首字超时 / 连接被拒。仅“首字前失败”会透明切换。
+            </p>
+          </div>
+
+          {/* 高级选项 */}
+          <div className={sectionClass}>
+            <div className={`${sectionTitleClass} flex items-center gap-1.5`}>
+              <Clock size={12} />
+              高级选项
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelClass}>首字超时（秒）</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.firstTokenTimeoutSecs}
+                  onChange={(e) => patch({ firstTokenTimeoutSecs: e.target.value })}
+                  placeholder="留空 = 不检测"
+                  className={fieldClass}
+                />
+              </div>
+              <div>
+                <label className={labelClass}>最大 Failover 次数</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={form.maxFailoverAttempts}
+                  onChange={(e) => patch({ maxFailoverAttempts: e.target.value })}
+                  placeholder="默认 3"
+                  className={fieldClass}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 底部操作栏 */}
+        <div className="flex items-center justify-between px-5 py-4 border-t border-border-subtle shrink-0">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary rounded-lg transition-colors"
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              onClick={() => onSave(form)}
+              disabled={!canSubmit}
+              className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {editing ? '保存' : '创建'}
+            </button>
+          </div>
+          {form.strategy === 'failover' && (
+            <span className="text-[11px] text-text-tertiary hidden sm:block">数字越小优先级越高</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ---------- 主组件 ----------
 
 interface ModelProviderTabProps {
@@ -1126,6 +1622,74 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     [success, toastError, t],
   )
 
+  // ===== 供应商分组状态 =====
+  const [groupsExpanded, setGroupsExpanded] = useState(true)
+  const [showGroupEditor, setShowGroupEditor] = useState(false)
+  const [editingGroup, setEditingGroup] = useState<ProviderGroup | null>(null)
+
+  // 从 config 读取分组列表与激活分组
+  const providerGroups = config.providerGroups || []
+  const activeGroupId = config.activeProviderGroupId
+
+  const openCreateGroup = () => {
+    setEditingGroup(null)
+    setShowGroupEditor(true)
+  }
+
+  const openEditGroup = (group: ProviderGroup) => {
+    setEditingGroup(group)
+    setShowGroupEditor(true)
+  }
+
+  const closeGroupEditor = () => {
+    setShowGroupEditor(false)
+    setEditingGroup(null)
+  }
+
+  // 保存分组（新建或更新）
+  const handleSaveGroup = (form: GroupForm) => {
+    const failoverOn = form.failoverOn
+      .map(formToPattern)
+      .filter((p): p is FailoverPattern => p !== null)
+    const group: ProviderGroup = {
+      id: form.id,
+      name: form.name.trim(),
+      strategy: form.strategy,
+      members: form.members
+        .filter((m) => m.profileId)
+        .map((m) => ({
+          profileId: m.profileId,
+          priority: parseInt(m.priority || '0', 10),
+          weight: parseInt(m.weight || '1', 10),
+        })),
+      failoverOn,
+      firstTokenTimeoutSecs: form.firstTokenTimeoutSecs ? parseInt(form.firstTokenTimeoutSecs, 10) : undefined,
+      maxFailoverAttempts: parseInt(form.maxFailoverAttempts || '3', 10),
+      active: form.active,
+    }
+    const existing = providerGroups.some((g) => g.id === group.id)
+    const nextGroups = existing
+      ? providerGroups.map((g) => (g.id === group.id ? group : g))
+      : [...providerGroups, group]
+    onConfigChange({ ...config, providerGroups: nextGroups })
+    success('供应商分组', existing ? '分组已更新' : '分组已创建')
+    closeGroupEditor()
+  }
+
+  const handleDeleteGroup = (id: string) => {
+    const nextGroups = providerGroups.filter((g) => g.id !== id)
+    onConfigChange({
+      ...config,
+      providerGroups: nextGroups,
+      // 删除的是当前生效分组 → 清除激活，回退单 Profile 路径
+      activeProviderGroupId: activeGroupId === id ? undefined : activeGroupId,
+    })
+  }
+
+  const handleSetActiveGroup = (id: string) => {
+    onConfigChange({ ...config, activeProviderGroupId: id })
+  }
+
   return (
     <div className="space-y-4">
       {/* 说明 */}
@@ -1206,6 +1770,69 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
         </div>
       )}
 
+      {/* ===== 供应商分组配置 ===== */}
+      <div className="rounded-lg border border-border-subtle overflow-hidden">
+        {/* 折叠标题栏 */}
+        <button
+          onClick={() => setGroupsExpanded((v) => !v)}
+          className="w-full flex items-center gap-2 px-3 py-2.5 bg-surface text-sm hover:bg-surface/70 transition-colors"
+        >
+          <Route size={14} className="text-primary shrink-0" />
+          <span className="text-text-primary font-medium">供应商分组路由</span>
+          <span className="text-xs text-text-tertiary">{providerGroups.length} 个分组</span>
+          {activeGroupId && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400">
+              已启用
+            </span>
+          )}
+          <span className="ml-auto text-text-tertiary">
+            {groupsExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          </span>
+        </button>
+
+        {groupsExpanded && (
+          <div className="p-3 space-y-3">
+            {/* 说明 */}
+            <p className="text-xs text-text-tertiary">
+              供应商分组路由可将多个模型 Profile 组合为 Failover、RoundRobin 或 Weighted 策略组。
+              激活分组后，新会话将通过分组路由自动选择 Profile。日志可在「路由日志」面板中查看。
+            </p>
+
+            {/* 分组列表 */}
+            {providerGroups.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <Route size={24} className="text-text-muted mb-2" />
+                <p className="text-xs text-text-tertiary">暂无供应商分组。请先创建至少一个模型 Profile，再组合为分组。</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {providerGroups.map((group) => (
+                  <ProviderGroupCard
+                    key={group.id}
+                    group={group}
+                    isActiveGroup={activeGroupId === group.id}
+                    profiles={profiles}
+                    onEdit={openEditGroup}
+                    onDelete={handleDeleteGroup}
+                    onSetActive={handleSetActiveGroup}
+                  />
+                ))}
+              </div>
+            )}
+
+            {/* 新建分组按钮 */}
+            <button
+              onClick={openCreateGroup}
+              disabled={profiles.length === 0}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-hover transition-colors shrink-0 disabled:opacity-50"
+            >
+              <Plus size={14} />
+              新建分组
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* 编辑器弹层 */}
       {showEditor && (
         <ProfileEditorModal
@@ -1214,6 +1841,17 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
           onSave={handleSave}
           onClose={closeEditor}
           allEngines={dynamicEngineList}
+        />
+      )}
+
+      {/* 分组编辑器弹层 */}
+      {showGroupEditor && (
+        <ProviderGroupEditorModal
+          key={editingGroup?.id || 'new'}
+          initialGroup={editingGroup}
+          profiles={profiles}
+          onSave={handleSaveGroup}
+          onClose={closeGroupEditor}
         />
       )}
     </div>

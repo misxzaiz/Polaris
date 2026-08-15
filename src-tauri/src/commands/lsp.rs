@@ -136,6 +136,16 @@ pub fn lsp_check_command(command: String) -> Result<LspCommandCheck> {
 
 use crate::services::lsp_index::{DirtyBuffer, IndexMatch, IndexStatus};
 
+/// 读取性能开关：lsp_index 是否启用
+fn is_lsp_index_enabled(state: &AppState) -> bool {
+    state
+        .config_store
+        .lock()
+        .ok()
+        .map(|store| store.get().performance.lsp_index)
+        .unwrap_or(false)
+}
+
 /// 索引模式：在工作区查找符号的全部引用（查应用）。
 ///
 /// `live_overrides` 是前端传入的未保存修改；同 path 的 DB 数据会被替换。
@@ -150,6 +160,11 @@ pub fn lsp_index_references(
     current_file: Option<String>,
     live_overrides: Option<Vec<DirtyBuffer>>,
 ) -> Result<Vec<IndexMatch>> {
+    // 性能开关：lspIndex=false 时跳过索引，直接走 regex_fallback
+    if !is_lsp_index_enabled(&state) {
+        return crate::services::lsp_index::find_references(&root, &symbol, &extensions);
+    }
+
     let _ = current_file;
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
@@ -175,6 +190,11 @@ pub fn lsp_index_definition(
     current_file: Option<String>,
     live_overrides: Option<Vec<DirtyBuffer>>,
 ) -> Result<Vec<IndexMatch>> {
+    // 性能开关：lspIndex=false 时跳过索引，直接走 regex_fallback
+    if !is_lsp_index_enabled(&state) {
+        return crate::services::lsp_index::find_definition(&root, &symbol, &language, &extensions);
+    }
+
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     let _ = svc.open_workspace(workspace);
@@ -232,6 +252,10 @@ pub fn lsp_index_rebuild(
     state: State<'_, AppState>,
     root: String,
 ) -> Result<()> {
+    // 性能开关关闭时静默跳过
+    if !is_lsp_index_enabled(&state) {
+        return Ok(());
+    }
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     svc.rebuild_full_async(workspace)
@@ -257,6 +281,10 @@ pub fn lsp_index_update_file(
     root: String,
     abs_path: String,
 ) -> Result<()> {
+    // 性能开关关闭时静默跳过
+    if !is_lsp_index_enabled(&state) {
+        return Ok(());
+    }
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     let abs = std::path::Path::new(&abs_path);

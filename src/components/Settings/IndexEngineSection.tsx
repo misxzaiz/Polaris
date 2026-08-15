@@ -6,10 +6,11 @@
  */
 
 import { useEffect, useState } from 'react';
-import { Database, Loader2, RefreshCw, AlertTriangle, Zap, FileCode } from 'lucide-react';
+import { Database, Loader2, RefreshCw, AlertTriangle, Zap, FileCode, ToggleLeft } from 'lucide-react';
 import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { useLspUiStore } from '@/stores/lspUiStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { usePerformanceFlag, isLspIndexEnabled } from '@/utils/performanceFeatures';
 import type { IndexStatus } from '@/services/tauri/lspService';
 
 function fmt(n: number): string {
@@ -42,10 +43,11 @@ export function IndexEngineSection() {
   const rebuild = useLspIndexStore((s) => s.rebuild);
   const ensureOpen = useLspIndexStore((s) => s.ensureOpen);
   const [acting, setActing] = useState(false);
+  const enabled = usePerformanceFlag('lspIndex');
 
   // 设置页打开时主动刷一次状态
   useEffect(() => {
-    if (workspace) {
+    if (workspace && isLspIndexEnabled()) {
       void ensureOpen(workspace);
       void refresh(workspace);
     }
@@ -59,6 +61,25 @@ export function IndexEngineSection() {
           <div className="text-sm font-medium text-text-primary">索引引擎</div>
         </div>
         <div className="text-xs text-text-muted">先打开一个工作区</div>
+      </div>
+    );
+  }
+
+  if (!enabled) {
+    return (
+      <div className="p-3 bg-surface rounded-lg border border-border-subtle space-y-2">
+        <div className="flex items-center gap-2">
+          <ToggleLeft size={14} className="text-text-tertiary" />
+          <div className="text-sm font-medium text-text-primary">索引引擎（Java）</div>
+          <span className="ml-auto px-1.5 py-0.5 rounded text-[10px] bg-text-tertiary/10 text-text-tertiary">
+            未启用
+          </span>
+        </div>
+        <div className="text-[11px] text-text-muted leading-relaxed">
+          索引引擎默认关闭（零开销）。开启后使用 tree-sitter 构建 AST 索引 + SQLite 持久化，提供精准的
+          Java 跳转与查引用；关闭状态下代码跳转/查引用降级为正则匹配，精度降低但不占资源。
+          可在「性能」设置中开启。
+        </div>
       </div>
     );
   }
