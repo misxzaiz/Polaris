@@ -308,6 +308,24 @@ impl ModelProfile {
 // 供应商分组与 failover/轮询
 // ============================================================================
 
+/// 会话级供应商选择模式
+///
+/// 状态栏「模型供应商」选择器的显式三态，配合 `ChatRequestOptions.profile_mode`
+/// 从后端区分「官方 / 分组路由 / 指定 Profile」三种转发意图：
+/// - `Official`：强制官方端点，跳过分组路由、不用 Profile。
+/// - `Group`：走供应商分组路由（结合激活分组解析首 Profile，失败自动 failover）。
+/// - `Profile`：使用指定 Profile（与 `model_profile_id` 语义一致，显式屏蔽分组）。
+///
+/// 向后兼容：`profile_mode == None` 时走旧逻辑
+/// （有 `model_profile_id` → 用该 Profile；否则若激活了分组 → 分组；否则官方）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProfileMode {
+    Official,
+    Group,
+    Profile,
+}
+
 /// 供应商分组路由策略
 ///
 /// - `Failover`：主备切换。按 `priority` 升序，主 Profile 失败自动切备；

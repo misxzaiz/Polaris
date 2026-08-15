@@ -13,6 +13,7 @@ import type {
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
+import type { ProfileMode } from '@/types/sessionConfig'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { EventRouter } from '@/services/eventRouter'
 
@@ -570,6 +571,15 @@ export interface SessionMetadata {
   /** 会话绑定的模型名（如 'sonnet'、'opus'）。undefined 时发送降级到全局 sessionConfig.model。 */
   model?: string
   /**
+   * 会话绑定的供应商选择模式（official/group/profile 三态扩展）。
+   * - `undefined`：未设置 → 发送时跟随全局 sessionConfig.profileMode（旧行为）
+   * - `'official'`：用户明确选「官方 API」→ 强制官方端点（优先于分组与 Profile）
+   * - `'group'`：用户明确选「分组路由」→ 走供应商分组
+   * - `'profile'`：用户明确选某 Profile（配合 modelProfileId）
+   * 解析见 resolveEffectiveProfileMode。
+   */
+  profileMode?: ProfileMode
+  /**
    * 会话绑定的专家 agent slug（L0 用户显式 persona 覆盖）。
    * - `undefined`：未设置 → 发送时无专家（跟随全局 sessionConfig.agent，通常为空）
    * - 非空字符串：使用该 corpus/自定义专家人格
@@ -677,6 +687,14 @@ export interface SessionManagerActions {
    * - 传 `null` → 清除会话级覆盖（回到「未设置 → 跟随全局默认」）
    */
   updateSessionModelProfile: (sessionId: string, modelProfileId: string | null) => void
+  /**
+   * 更新会话绑定的供应商选择模式。
+   * - 传具体三态值（official/group/profile）→ 写入会话级覆盖
+   * - 传 `null` → 清除会话级覆盖（回到「未设置 → 跟随全局默认」）
+   *
+   * official/group 时同步清除会话级 modelProfileId（三态互斥，防残留穿透）。
+   */
+  updateSessionProfileMode: (sessionId: string, profileMode: import('../../types/sessionConfig').ProfileMode | null) => void
   /**
    * 更新会话绑定的模型名。
    * - 传具体模型名或空串 → 写入会话级覆盖

@@ -45,6 +45,9 @@ pub enum RouteLogKind {
     Bound,
     /// 全部 Profile 不可用
     AllUnavailable,
+    /// 用户显式要求分组路由，但无激活可用分组 → 回退官方端点
+    /// （区别于 AllUnavailable：不是组内全挂，而是「组不存在 / 未激活 / 空成员」）
+    OfficialFallback,
 }
 
 /// 路由决策日志条目

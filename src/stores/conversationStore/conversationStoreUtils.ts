@@ -1,5 +1,5 @@
 import type { ChatMessage, EngineId, Workspace } from '@/types'
-import type { SessionRuntimeConfig } from '@/types/sessionConfig'
+import type { SessionRuntimeConfig, ProfileMode } from '@/types/sessionConfig'
 import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
@@ -89,6 +89,45 @@ export function resolveEffectiveProfileId(
   // 无会话级覆盖 → 降级状态栏镜像，再降级全局默认（两者按惯例只存真实 id 或空串）
   const fallback = sessionConfigProfileId || globalActiveProfileId
   return fallback && fallback !== OFFICIAL_API_PROFILE ? fallback : undefined
+}
+
+/**
+ * 解析发送 / 继续消息时最终生效的供应商选择模式（官方 / 分组 / 指定 Profile）。
+ *
+ * 数据源优先级与 [`resolveEffectiveProfileId`] 完全一致：
+ * 1. 会话级覆盖（SessionMetadata.profileMode）—— 最高优先级、三态权威
+ * 2. 状态栏镜像（sessionConfig.profileMode）
+ * 3. 兜底默认 `'profile'`（与旧行为一致：modelProfileId 为空即官方）
+ *
+ * 返回值语义（配合 resolveEffectiveProfileId 使用）：
+ * - `'official'`：强制官方端点 → 发送层必须传 modelProfileId=undefined
+ * - `'group'`：走分组路由 → 发送层必须传 modelProfileId=undefined
+ * - `'profile'`：使用 Profile → modelProfileId 由 resolveEffectiveProfileId 决定
+ * - `undefined`：跟随全局旧逻辑（不发 profileMode 字段，后端 None 向前兼容）
+ *
+ * 双函数在调用点成对使用，保证三态不冲突：
+ *   const mode = resolveEffectiveProfileMode(meta.profileMode, cfg.profileMode)
+ *   const pid = resolveEffectiveProfileId(meta.modelProfileId, cfg.modelProfileId, globalActive)
+ *   // 若 mode 为 official/group，pid 必须随 setModelProfileId 清理为空
+ */
+export function resolveEffectiveProfileMode(
+  sessionMetaProfileMode: ProfileMode | undefined,
+  sessionConfigProfileMode: ProfileMode | undefined,
+): ProfileMode | undefined {
+  // 会话级覆盖存在时以它为准
+  if (sessionMetaProfileMode !== undefined) {
+    return sessionMetaProfileMode
+  }
+  // 无会话级覆盖 → 跟随状态栏镜像（含全局默认，normalizeSessionConfig 已兜底）
+  return sessionConfigProfileMode
+}
+
+/**
+ * 判断用户是否明确选择了「官方」或「分组」——这两种模式下 modelProfileId 必须为空。
+ * 用于发送链路在传 options 前做防御性归一：避免「选官方/分组却残留 Profile 穿透」。
+ */
+export function isProfileModeWithoutProfile(mode: ProfileMode | undefined): boolean {
+  return mode === 'official' || mode === 'group'
 }
 
 /**

@@ -682,6 +682,8 @@
     "noPermission": "None",
     "officialApi": "Official API",
     "officialApiDesc": "Use the official Anthropic endpoint (no profile)",
+    "groupRoute": "Group Route",
+    "groupRouteDisabledDesc": "Activate a provider group in Settings → Model Provider → Group Route first",
     "custom": "Custom...",
     "agentTooltip": "Select Agent",
     "modelTooltip": "Select Model",

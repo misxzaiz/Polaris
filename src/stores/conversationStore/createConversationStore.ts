@@ -29,6 +29,8 @@ import {
   normalizeForInvoke,
   resolveChatError,
   resolveEffectiveProfileId,
+  resolveEffectiveProfileMode,
+  isProfileModeWithoutProfile,
 } from './conversationStoreUtils'
 import { dialogStorageService } from '@/services/dialogStorage'
 import { cancelScheduledFlush } from './eventHandler'
@@ -1504,6 +1506,16 @@ export function createConversationStore(
             sessionConfig.modelProfileId,
             getActiveModelProfile()?.id,
           )
+          // P2: 供应商模式解析（官方/分组/指定 Profile 三态）。
+          // 与 modelProfileId 成对解析；official/group 时防御性清空 modelProfileId
+          // （即使残留旧 Profile，也绝不向分组/官方请求携带，防穿透）。
+          const profileMode = resolveEffectiveProfileMode(
+            sessionMeta?.profileMode,
+            sessionConfig.profileMode,
+          )
+          const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
+            ? undefined
+            : modelProfileId
           // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
           const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
           const disabledMcpServers = getDisabledPluginMcpServers()
@@ -1545,7 +1557,8 @@ export function createConversationStore(
             allowedTools: sendOptions?.allowedTools && sendOptions.allowedTools.length > 0
               ? sendOptions.allowedTools
               : undefined,
-            modelProfileId,
+            modelProfileId: effectiveProfileId,
+            profileMode,
           }
 
           if (conversationId) {
@@ -1663,6 +1676,14 @@ export function createConversationStore(
           sessionConfig.modelProfileId,
           getActiveModelProfile()?.id,
         )
+        // P2: 供应商模式解析（官方/分组/指定 Profile 三态），与 sendMessage 路径一致。
+        const profileMode = resolveEffectiveProfileMode(
+          sessionMeta?.profileMode,
+          sessionConfig.profileMode,
+        )
+        const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
+          ? undefined
+          : modelProfileId
         // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
         const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
         const disabledMcpServers = getDisabledPluginMcpServers()
@@ -1690,7 +1711,8 @@ export function createConversationStore(
                 const merged = [...new Set([...(allowedTools ?? []), ...get().sessionAllowedTools])]
                 return merged.length > 0 ? merged : undefined
               })(),
-              modelProfileId,
+              modelProfileId: effectiveProfileId,
+              profileMode,
             },
           })
         } catch (e) {

@@ -1797,6 +1797,10 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
               供应商分组路由可将多个模型 Profile 组合为 Failover、RoundRobin 或 Weighted 策略组。
               激活分组后，新会话将通过分组路由自动选择 Profile。日志可在「路由日志」面板中查看。
             </p>
+            <p className="text-xs text-text-tertiary bg-primary/5 border border-primary/10 rounded-md px-2 py-1.5">
+              会话状态栏「模型供应商」选择器中选中「分组路由」即可启用本组；
+              未显式选择时，新会话默认跟随下方激活的全局分组。
+            </p>
 
             {/* 分组列表 */}
             {providerGroups.length === 0 ? (

@@ -681,6 +681,8 @@
     "noPermission": "不设置",
     "officialApi": "官方 API",
     "officialApiDesc": "使用官方 Anthropic 端点（不通过 Profile）",
+    "groupRoute": "分组路由",
+    "groupRouteDisabledDesc": "请先在设置 → 模型供应商 → 供应商分组路由中激活分组",
     "custom": "自定义...",
     "agentTooltip": "选择 Agent",
     "modelTooltip": "选择模型",

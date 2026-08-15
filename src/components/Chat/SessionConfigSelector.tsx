@@ -44,6 +44,16 @@ interface SessionConfigSelectorProps {
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
 
+/** 分组路由策略展示名（后端 RouteStrategy 序列化） */
+const STRATEGY_LABEL: Record<string, string> = {
+  failover: 'Failover',
+  roundrobin: 'RoundRobin',
+  weighted: 'Weighted',
+}
+
+/** 供应商选择模式：分组路由选项的哨兵值（进入 handleSelect 后映射 profileMode='group'） */
+const GROUP_ROUTE_VALUE = '__group__'
+
 /** Profile 线路协议的视觉标识（状态栏 Profile 选择器用，三协议各自区分） */
 function wireApiBadge(wireApi?: WireApi): string {
   switch (wireApi) {
@@ -95,6 +105,11 @@ export function SessionConfigSelector({
 
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
+
+  // 供应商分组 + 激活分组（三态「分组路由」项数据源）
+  const providerGroups = useConfigStore(s => s.config?.providerGroups ?? [])
+  const activeGroupId = useConfigStore(s => s.config?.activeProviderGroupId)
+  const activeGroup = providerGroups.find(g => g.id === activeGroupId && g.active)
 
   // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
   // 映射到 isProfileForEngine 的引擎参数（claude / codex / simple-ai）。
@@ -231,6 +246,20 @@ export function SessionConfigSelector({
     if (type === 'profile') {
       // 切换到官方 API 或新供应商时，清空模型选择（让用户重新选或默认）
       nextConfig.model = ''
+      // P2: 三态供应商模式（官方 / 分组路由 / 指定 Profile）
+      if (value === '') {
+        // 官方 API
+        nextConfig.profileMode = 'official'
+        nextConfig.modelProfileId = ''
+      } else if (value === '__group__') {
+        // 分组路由（激活分组可用时）
+        nextConfig.profileMode = 'group'
+        nextConfig.modelProfileId = ''
+      } else {
+        // 指定 Profile
+        nextConfig.profileMode = 'profile'
+        nextConfig.modelProfileId = value
+      }
     }
     onChange({
       ...config,
@@ -240,9 +269,20 @@ export function SessionConfigSelector({
     const activeId = sessionStoreManager.getState().activeSessionId
     if (activeId) {
       if (type === 'profile') {
-        // 空值 = 用户明确选「官方 API」：用哨兵记录，与「未设置 → 跟随全局」区分，
-        // 使会话级官方覆盖优先于全局默认（否则发送时会被静默回退到全局 Profile）。
-        sessionStoreManager.getState().updateSessionModelProfile(activeId, value || OFFICIAL_API_PROFILE)
+        // 三态供应商模式写入会话级覆盖：
+        // - 官方 → 哨兵 + profileMode=official
+        // - 分组 → profileMode=group
+        // - 指定 Profile → id + profileMode=profile
+        if (value === '') {
+          sessionStoreManager.getState().updateSessionModelProfile(activeId, OFFICIAL_API_PROFILE)
+          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'official')
+        } else if (value === '__group__') {
+          sessionStoreManager.getState().updateSessionModelProfile(activeId, null)
+          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'group')
+        } else {
+          sessionStoreManager.getState().updateSessionModelProfile(activeId, value)
+          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'profile')
+        }
       } else if (type === 'model') {
         sessionStoreManager.getState().updateSessionModel(activeId, value)
       } else if (type === 'agent') {
@@ -275,7 +315,8 @@ export function SessionConfigSelector({
   const renderDropdown = (type: SelectorType) => {
     if (openDropdown !== type) return null
 
-    const items: Array<{ value: string; label: string; description?: string }> = []
+    type DropdownItem = { value: string; label: string; description?: string; disabled?: boolean }
+    const items: DropdownItem[] = []
 
     switch (type) {
       case 'agent':
@@ -307,13 +348,28 @@ export function SessionConfigSelector({
         })))
         break
       case 'profile': {
-        // 官方 API（空 = 不使用 Profile）
+        // P2: 三区块 = 官方 API / 分组路由 / 指定 Profile
+        // 区块 1：官方 API（value='' → profileMode=official）
         items.push({
           value: '',
           label: t('sessionConfig.officialApi'),
           description: t('sessionConfig.officialApiDesc'),
         })
-        // 过滤出与当前引擎兼容的 Profile
+        // 区块 2：分组路由（value='__group__' → profileMode=group）
+        // 组未激活（无 activeGroup）时置灰 + 引导文案
+        const groupEnabled = Boolean(activeGroup)
+        const groupLabel = activeGroup
+          ? `${t('sessionConfig.groupRoute')} · ${activeGroup.name}`
+          : t('sessionConfig.groupRoute')
+        items.push({
+          value: '__group__',
+          label: groupLabel,
+          description: activeGroup
+            ? `${STRATEGY_LABEL[activeGroup.strategy]} · ${activeGroup.members.length} 个成员`
+            : t('sessionConfig.groupRouteDisabledDesc'),
+          disabled: !groupEnabled,
+        })
+        // 区块 3：指定 Profile（value=profileId → profileMode=profile）
         items.push(...compatibleProfiles.map(p => {
           const modelCount = p.modelOptions?.length || 1
           return {
@@ -322,13 +378,14 @@ export function SessionConfigSelector({
             description: p.description || `${p.baseUrl ? safeHostname(p.baseUrl) : ''} · ${modelCount} 个模型`,
           }
         }))
-        // 如果有被过滤掉的 Profile，显示提示
+        // 被当前引擎过滤掉的 Profile 提示
         const skippedCount = profiles.length - compatibleProfiles.length
         if (skippedCount > 0) {
           items.push({
             value: '__skipped__',
             label: `… 另有 ${skippedCount} 个 Profile 不适用于当前引擎`,
             description: '',
+            disabled: true,
           })
         }
         break
@@ -341,7 +398,16 @@ export function SessionConfigSelector({
         case 'model': return config.model
         case 'effort': return config.effort
         case 'permission': return config.permissionMode
-        case 'profile': return config.modelProfileId
+        case 'profile': {
+          // P2: 三态高亮。根据当前 profileMode + modelProfileId 对齐下拉项 value：
+          // - official → 高亮 '' (官方 API)
+          // - group   → 高亮 '__group__' (分组路由)
+          // - profile → 高亮对应 profileId
+          const mode = config.profileMode ?? 'profile'
+          if (mode === 'official') return ''
+          if (mode === 'group') return GROUP_ROUTE_VALUE
+          return config.modelProfileId ?? ''
+        }
         default: return undefined
       }
     }
@@ -358,11 +424,16 @@ export function SessionConfigSelector({
         {items.map((item) => (
           <button
             key={item.value}
-            onClick={() => handleSelect(type, item.value)}
+            onClick={() => !item.disabled && handleSelect(type, item.value)}
+            disabled={item.disabled}
+            title={item.disabled ? item.description : undefined}
             className={clsx(
               'w-full px-3 py-2 text-left text-xs',
-              'hover:bg-background-hover transition-colors',
+              'transition-colors',
               'flex flex-col gap-0.5',
+              item.disabled
+                ? 'opacity-50 cursor-not-allowed hover:bg-transparent'
+                : 'hover:bg-background-hover',
               currentValue === item.value && 'bg-primary/10 text-primary'
             )}
           >
@@ -415,6 +486,14 @@ export function SessionConfigSelector({
       icon: <Plug size={12} />,
       label: t('sessionConfig.provider'),
       getValue: () => {
+        // P2: 三态显示：官方 / 分组路由 / 指定 Profile
+        const mode = config.profileMode ?? 'profile'
+        if (mode === 'official') return t('sessionConfig.officialApi')
+        if (mode === 'group') {
+          return activeGroup
+            ? `${t('sessionConfig.groupRoute')} · ${activeGroup.name}`
+            : t('sessionConfig.groupRoute')
+        }
         if (!config.modelProfileId) return t('sessionConfig.noProfile')
         const profile = profiles.find(p => p.id === config.modelProfileId)
         if (!profile) return t('sessionConfig.noProfile')

@@ -41,6 +41,19 @@ export interface CLIModel {
 }
 
 /**
+ * 供应商选择模式
+ *
+ * 状态栏「模型供应商」选择器的显式三态，配套后端 `ChatRequestOptions.profile_mode`：
+ * - `official`：强制官方端点，跳过分组路由、不用 Profile。
+ * - `group`：走供应商分组路由（激活分组内按策略选 Profile，失败自动 failover）。
+ * - `profile`：使用指定 Profile（`modelProfileId` 承载 id）。
+ *
+ * 未设置（undefined）时走旧逻辑：有 modelProfileId → 该 Profile；
+ * 否则若激活了分组 → 分组；否则官方。
+ */
+export type ProfileMode = 'official' | 'group' | 'profile'
+
+/**
  * 努力级别
  *
  * 控制模型在回答时投入的努力程度
@@ -84,6 +97,8 @@ export interface SessionRuntimeConfig {
   permissionMode?: PermissionMode
   /** 模型 Profile ID（第三方端点配置） */
   modelProfileId?: string
+  /** 供应商选择模式（official / group / profile；undefined = 跟随全局旧逻辑） */
+  profileMode?: ProfileMode
 }
 
 /**
@@ -95,6 +110,7 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   effort: '',
   permissionMode: 'bypassPermissions',
   modelProfileId: '',
+  profileMode: 'profile', // 默认「指定 Profile」语义，保持旧行为（modelProfileId 为空即官方）
 }
 /**
  * 预设 Agent 列表

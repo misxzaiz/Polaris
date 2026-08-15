@@ -42,6 +42,8 @@ describe('normalizeSessionConfig', () => {
       effort: 'high',
       permissionMode: 'acceptEdits',
       modelProfileId: 'profile_abc',
+      // P2: 旧持久化数据无 profileMode → 兜底默认 'profile'（modelProfileId 为空即官方，语义与旧行为一致）
+      profileMode: 'profile',
     })
   })
 

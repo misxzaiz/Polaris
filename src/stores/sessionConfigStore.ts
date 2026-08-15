@@ -10,6 +10,7 @@ import type {
   SessionRuntimeConfig,
   EffortLevel,
   PermissionMode,
+  ProfileMode,
 } from '@/types/sessionConfig'
 import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
 
@@ -20,11 +21,15 @@ import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
  * - permissionMode 保留持久化值（默认值已为 bypassPermissions，见 DEFAULT_SESSION_CONFIG）
  */
 export function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
+  const c = config ?? {}
   return {
     ...DEFAULT_SESSION_CONFIG,
-    ...(config ?? {}),
-    effort: config?.effort === 'max' ? DEFAULT_SESSION_CONFIG.effort : config?.effort ?? DEFAULT_SESSION_CONFIG.effort,
-    permissionMode: config?.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
+    ...c,
+    effort: c.effort === 'max' ? DEFAULT_SESSION_CONFIG.effort : c.effort ?? DEFAULT_SESSION_CONFIG.effort,
+    permissionMode: c.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
+    // 旧持久化数据无 profileMode：默认「profile」语义（modelProfileId 为空即官方，
+    // 与旧行为完全一致）；显式 official/group 才区别于旧行为。
+    profileMode: c.profileMode ?? DEFAULT_SESSION_CONFIG.profileMode,
   }
 }
 
@@ -38,6 +43,7 @@ interface SessionConfigState {
   setEffort: (effort: EffortLevel) => void
   setPermissionMode: (mode: PermissionMode) => void
   setModelProfileId: (profileId: string) => void
+  setProfileMode: (mode: ProfileMode) => void
   setConfig: (config: Partial<SessionRuntimeConfig>) => void
   resetConfig: () => void
 }
@@ -74,8 +80,22 @@ export const useSessionConfig = create<SessionConfigState>()(
 
       setModelProfileId: (modelProfileId) =>
         set((state) => ({
-          config: { ...state.config, modelProfileId },
+          // 选 Profile 时同步把 mode 置为 profile（互斥清理，避免「group 却残留 profileId」穿帮）
+          config: { ...state.config, modelProfileId, profileMode: 'profile' },
         })),
+
+      /** 设置供应商模式（official/group/profile）。
+       *  mode=official|group 时清空 modelProfileId（官方/分组都不绑定单 Profile）；
+       *  mode=profile 时保留 modelProfileId（由调用方先 setModelProfileId 或随后设置）。
+       */
+      setProfileMode: (mode) =>
+        set((state) => {
+          const next: SessionRuntimeConfig = { ...state.config, profileMode: mode }
+          if (mode === 'official' || mode === 'group') {
+            next.modelProfileId = ''
+          }
+          return { config: next }
+        }),
 
       setConfig: (newConfig) =>
         set((state) => ({
@@ -118,6 +138,7 @@ export function hasCustomConfig(): boolean {
     config.model !== DEFAULT_SESSION_CONFIG.model ||
     config.effort !== DEFAULT_SESSION_CONFIG.effort ||
     config.permissionMode !== DEFAULT_SESSION_CONFIG.permissionMode ||
-    Boolean(config.modelProfileId && config.modelProfileId !== DEFAULT_SESSION_CONFIG.modelProfileId)
+    Boolean(config.modelProfileId && config.modelProfileId !== DEFAULT_SESSION_CONFIG.modelProfileId) ||
+    (config.profileMode ?? 'profile') !== DEFAULT_SESSION_CONFIG.profileMode
   )
 }

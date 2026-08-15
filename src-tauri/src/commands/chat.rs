@@ -17,7 +17,7 @@ use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 
 use crate::services::proxy::ProxyWireApi;
-use crate::models::config::{FailoverPattern, ProviderGroup};
+use crate::models::config::{FailoverPattern, ProfileMode, ProviderGroup, RouteStrategy};
 use crate::services::{FailoverError, RouteLogEntry, RouteLogKind};
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
@@ -100,6 +100,11 @@ pub struct ChatRequestOptions {
     /// 模型 Profile ID（用于查找第三方端点配置）
     #[serde(default)]
     pub model_profile_id: Option<String>,
+    /// 供应商选择模式（None = 未显式指定，走旧逻辑：
+    /// 有 model_profile_id → 该 Profile；否则若激活了分组 → 分组；否则官方）。
+    /// 与 `model_profile_id` 配合构成「官方 / 分组路由 / 指定 Profile」三态。
+    #[serde(default)]
+    pub profile_mode: Option<ProfileMode>,
 }
 
 // ============================================================================
@@ -829,6 +834,142 @@ async fn resolve_active_provider_group(
     Some((group.clone(), profiles))
 }
 
+/// 解析一次请求应使用的 Profile ID（start / continue 共用）。
+///
+/// 判定优先级（与 PRD §2.3 契约表一致）：
+/// 1. `profile_mode = Official` → 强制官方，忽略一切分组与 model_profile_id；
+/// 2. `profile_mode = Profile` → 使用 `model_profile_id`（显式指定，屏蔽分组）；
+/// 3. 激活了分组（`route_choice.is_some()`）时：
+///    - 首条（无亲和）→ `select_initial` 按策略选首个
+///    - 续聊（亲和命中）→ 复用亲和 Profile（同会话跨轮稳定）
+///    - 亲和未命中 → `select_initial`
+/// 4. 无分组（或没激活）→ 回退全局 `active_model_profile_id`。
+///
+/// `None` 返回值语义：官方端点（不绑定任何 Profile）。
+#[allow(clippy::too_many_arguments)]
+async fn resolve_profile_id_for_request(
+    profile_mode: Option<ProfileMode>,
+    model_profile_id: Option<&str>,
+    state: &crate::AppState,
+    route_choice: &Option<(ProviderGroup, Vec<crate::models::config::ModelProfile>)>,
+    session_id: &str,
+) -> Option<String> {
+    match resolve_profile_target(profile_mode, model_profile_id, route_choice.is_some()) {
+        ResolvedTarget::Official => None,
+        ResolvedTarget::ExplicitProfile(pid) => Some(pid),
+        ResolvedTarget::GlobalActive => state
+            .clone_config()
+            .ok()
+            .and_then(|c| c.active_model_profile_id),
+        ResolvedTarget::Group => {
+            let Some((group, profiles)) = route_choice else {
+                return None; // 防御：Group 目标但无激活分组
+            };
+            // 亲和优先（续聊稳定），其次 select_initial
+            if let Some(affinity_pid) = state.provider_router.get_affinity(session_id).await {
+                if profiles.iter().any(|p| p.id == affinity_pid) {
+                    return Some(affinity_pid);
+                }
+            }
+            state
+                .provider_router
+                .select_initial(group, profiles, &std::collections::HashSet::new())
+                .await
+                .map(|p| p.id)
+        }
+    }
+}
+
+/// 纯决策：一次请求应解析到的路由目标（不触碰 AppState，便于单测）。
+///
+/// 用同步纯函数承载 PRD §2.3 的整条优先级链，`resolve_profile_id_for_request`
+/// 仅负责把目标映射到具体 Profile（需要 state 的 select_initial / 亲和 / 全局激活）。
+#[derive(Debug, Clone, PartialEq)]
+enum ResolvedTarget {
+    /// 官方端点（不绑定任何 Profile）
+    Official,
+    /// 显式指定 Profile（model_profile_id 有效）
+    ExplicitProfile(String),
+    /// 走分组路由（路由目标 = 激活分组）
+    Group,
+    /// 无分组、未显式 → 回退全局 active_model_profile_id
+    GlobalActive,
+}
+
+fn resolve_profile_target(
+    profile_mode: Option<ProfileMode>,
+    model_profile_id: Option<&str>,
+    has_active_group: bool,
+) -> ResolvedTarget {
+    // 1. 强制官方
+    if profile_mode == Some(ProfileMode::Official) {
+        return ResolvedTarget::Official;
+    }
+    // 2. 显式指定 Profile（Group 模式除外 —— Group 是显式意图，忽略 model_profile_id）
+    if let Some(pid) = model_profile_id {
+        if profile_mode != Some(ProfileMode::Group) {
+            return ResolvedTarget::ExplicitProfile(pid.to_string());
+        }
+    }
+    // 3. 激活分组 → 分组路由
+    if has_active_group {
+        return ResolvedTarget::Group;
+    }
+    // 4. 无分组 → 官方（默认不指定 Profile 时无全局激活即官方）；
+    //    有全局 active_model_profile_id 时走 GlobalActive 由调用方回退。
+    ResolvedTarget::GlobalActive
+}
+
+/// 会话是否已经产生过路由日志（用于续聊轮选择日志去重：
+/// 首条已记录 InitialSelect，续聊复用亲和只记 Bound）。
+async fn attempt_log_dedup(state: &crate::AppState, session_id: &str) -> bool {
+    let logs = state.provider_router.all_logs().await;
+    logs.iter()
+        .filter(|l| l.session_id.as_deref() == Some(session_id))
+        .any(|l| l.kind == RouteLogKind::InitialSelect)
+}
+
+/// 记录「分组路由不可用，回退官方」日志。
+///
+/// `group` 为 Some 时记录真实分组；None 表示「用户指定分组但无激活分组」，
+/// group 字段兜底显示 active_provider_group_id（或"未设置分组"提示）。
+async fn record_official_fallback(
+    state: &crate::AppState,
+    group: Option<&ProviderGroup>,
+    engine: &EngineId,
+    session_id: &str,
+) {
+    let (group_id, group_name, strategy) = match group {
+        Some(g) => (g.id.clone(), g.name.clone(), g.strategy.clone()),
+        None => {
+            let label = state
+                .clone_config()
+                .ok()
+                .and_then(|c| c.active_provider_group_id)
+                .unwrap_or_else(|| "（未设置分组）".to_string());
+            ("".to_string(), label, RouteStrategy::Failover)
+        }
+    };
+    state
+        .provider_router
+        .record_log(RouteLogEntry {
+            seq: 0,
+            kind: RouteLogKind::OfficialFallback,
+            group_id,
+            group_name,
+            strategy,
+            profile_id: None,
+            profile_name: None,
+            session_id: Some(session_id.to_string()),
+            engine: Some(format!("{:?}", engine)),
+            attempt: 0,
+            error: Some("用户指定分组路由，但无激活可用分组，已回退官方端点".into()),
+            tried: vec![],
+            ts_ms: 0,
+        })
+        .await;
+}
+
 /// 判定一个 spawn 级错误是否可 failover（自动切换到下一个 Profile）。
 ///
 /// 基于分组配置的 `FailoverPattern` 判定（复用数据模型，非字符串启发式）：
@@ -1133,10 +1274,24 @@ pub async fn start_chat_inner(
 
     // 在循环外确定是否 dsh 引擎（避免 loop 内借用被 move 误判）。
     let is_dsh_engine = matches!(&engine, EngineId::Custom(ref id) if id == "dsh");
+
+    // profile_mode 显式「官方」时直接闭锁分组：不进入 failover 循环，
+    // 单轮 apply(None) → CLI 走官方端点。这与 PRD 契约一致（强制官方）。
+    let force_official = options.profile_mode == Some(ProfileMode::Official);
+    let force_group = options.profile_mode == Some(ProfileMode::Group);
+
     for attempt in 0..max_attempts {
-        let chosen_profile_id: Option<String> = if let Some(ref pid) = options.model_profile_id {
-            // 用户显式指定：始终用用户的 Profile（不分组）
-            Some(pid.clone())
+        let chosen_profile_id: Option<String> = if force_official {
+            // 官方：不使用任何 Profile（不分组）
+            None
+        } else if let Some(ref pid) = options.model_profile_id {
+            if force_group {
+                // 契约保护：Group 模式下忽略显式 model_profile_id（前端不传，防御）。
+                None
+            } else {
+                // 用户显式指定：始终用用户的 Profile（不分组）
+                Some(pid.clone())
+            }
         } else if let Some((group, profiles)) = &route_choice {
             // 分组路由：
             //   - 首轮（attempt==0 或 tried 为空）用 select_initial（按策略选首个）；
@@ -1192,12 +1347,29 @@ pub async fn start_chat_inner(
             }
             pick.map(|p| p.id)
         } else {
-            // 单 Profile 旧路径：回退到全局 active
-            state
-                .clone_config()
-                .ok()
-                .and_then(|c| c.active_model_profile_id)
+            // 无激活分组：
+            //   - force_group（用户显式要分组但没配）→ 回退官方（None）；
+            //   - 否则走单 Profile 旧路径：回退到全局 active
+            if force_group {
+                None
+            } else {
+                state
+                    .clone_config()
+                    .ok()
+                    .and_then(|c| c.active_model_profile_id)
+            }
         };
+
+        // 用户显式要求分组路由，但当前没有激活的可用分组 → 回退官方并记录日志。
+        if force_group && route_choice.is_none() {
+            tracing::warn!(
+                "[start_chat_inner] 用户指定分组路由，但无激活分组，回退官方端点 (attempt {}/{})",
+                attempt + 1,
+                max_attempts
+            );
+            record_official_fallback(&state, None, &engine, &session_id).await;
+            break;
+        }
 
         // 若分组路由本轮未选出 Profile（组内已全部尝试过），提前终止
         if chosen_profile_id.is_none() && route_choice.is_some() && attempt > 0 {
@@ -1596,9 +1768,69 @@ pub async fn continue_chat_inner(
         }
     }
 
+    // ──────────────────────────────────────────────────────
+    // 供应商分组路由（切入 continue 路径）
+    //
+    // continue_chat_inner 在续聊时与 start_chat_inner 保持同样的选路能力：
+    //   - 有显式 model_profile_id（用户指定 Profile）→ 用该 Profile；
+    //   - 否则若激活了分组 → 分组路由：
+    //       · 会话亲和表命中（首条曾绑定）→ 复用同一 Profile（同会话跨轮稳定）；
+    //       · 否则按策略 select_initial 选首个；
+    //   - 否则回退官方（apply_model_profile_options 传 None 原样返回）。
+    //
+    // 续聊不做 failover loop（P1 切入点在 start 路径已实现），但由于会话亲和，
+    // 续聊与首条保持在同一个 Profile，首条的高可用能力即可覆盖整条会话链路。
+    // ──────────────────────────────────────────────────────
+    let route_choice = resolve_active_provider_group(state).await;
+    // 与 start_chat_inner 的判定优先级一致：profile_mode 显式指定优先，
+    // 向前兼容（profile_mode=None）时 model_profile_id 优先于分组。
+    let chosen_profile_id: Option<String> = resolve_profile_id_for_request(
+        options.profile_mode,
+        options.model_profile_id.as_deref(),
+        state,
+        &route_choice,
+        &session_id,
+    )
+    .await;
+    if let Some((group, profiles)) = &route_choice {
+        if let Some(ref pid) = chosen_profile_id {
+            // 记录续聊轮的选择日志（InitialSelect / Bound），供路由日志面板追踪。
+            let kind = if attempt_log_dedup(&state, &session_id).await {
+                RouteLogKind::Bound
+            } else {
+                RouteLogKind::InitialSelect
+            };
+            state
+                .provider_router
+                .record_log(RouteLogEntry {
+                    seq: 0,
+                    kind,
+                    group_id: group.id.clone(),
+                    group_name: group.name.clone(),
+                    strategy: group.strategy.clone(),
+                    profile_id: Some(pid.clone()),
+                    profile_name: profiles
+                        .iter()
+                        .find(|p| &p.id == pid)
+                        .and_then(|p| Some(p.name.clone()))
+                        .or_else(|| Some(pid.clone())),
+                    session_id: Some(session_id.clone()),
+                    engine: Some(format!("{:?}", engine)),
+                    attempt: 0,
+                    error: None,
+                    tried: vec![],
+                    ts_ms: 0,
+                })
+                .await;
+        }
+    } else if options.profile_mode == Some(ProfileMode::Group) {
+        // 用户显式选「分组路由」但无激活分组：记录日志并回退官方（无 group 可用）。
+        record_official_fallback(&state, None, &engine, &session_id).await;
+    }
+
     session_opts = apply_model_profile_options(
         session_opts,
-        options.model_profile_id.as_ref(),
+        chosen_profile_id.as_ref(),
         &engine,
         state,
         "continue_chat_inner",
@@ -3106,5 +3338,60 @@ mod route_failover_tests {
             &AppError::ProcessError("401 unauthorized".into()),
             &g
         ));
+    }
+
+    // === resolve_profile_target（ProfileMode 三态决策，PRD B1-B5） ===
+
+    #[test]
+    fn b1_official_forces_official_even_with_active_group_and_profile() {
+        // B1: profile_mode=Official + 激活分组 + 有 model_profile_id → 强制官方
+        let target = resolve_profile_target(
+            Some(ProfileMode::Official),
+            Some("pid-A"),
+            true, // 有激活分组
+        );
+        assert_eq!(target, ResolvedTarget::Official);
+    }
+
+    #[test]
+    fn b2_group_without_active_group_falls_back_to_global_active() {
+        // B2: profile_mode=Group + 无激活分组 → 回退全局 active Profile
+        let target = resolve_profile_target(Some(ProfileMode::Group), None, false);
+        assert_eq!(target, ResolvedTarget::GlobalActive);
+    }
+
+    #[test]
+    fn b3_missing_mode_with_model_profile_id_prefers_profile_over_group() {
+        // B3: profile_mode=None + model_profile_id=A + 激活分组 → 用 A（向前兼容显式 Profile）
+        let target = resolve_profile_target(None, Some("pid-A"), true);
+        assert_eq!(target, ResolvedTarget::ExplicitProfile("pid-A".into()));
+    }
+
+    #[test]
+    fn b4_missing_mode_without_profile_uses_group() {
+        // B4: profile_mode=None + 无 model_profile_id + 激活分组 → 走分组
+        let target = resolve_profile_target(None, None, true);
+        assert_eq!(target, ResolvedTarget::Group);
+    }
+
+    #[test]
+    fn b5_profile_mode_profile_with_model_profile_id_uses_that_profile() {
+        // B5: profile_mode=Profile + model_profile_id=A → 用 A
+        let target = resolve_profile_target(Some(ProfileMode::Profile), Some("pid-A"), true);
+        assert_eq!(target, ResolvedTarget::ExplicitProfile("pid-A".into()));
+    }
+
+    #[test]
+    fn group_mode_ignores_model_profile_id() {
+        // 契约保护：profile_mode=Group + model_profile_id=A → 忽略 A，走分组
+        let target = resolve_profile_target(Some(ProfileMode::Group), Some("pid-A"), true);
+        assert_eq!(target, ResolvedTarget::Group);
+    }
+
+    #[test]
+    fn missing_mode_without_profile_without_group_uses_global_active() {
+        // profile_mode=None + 无 model_profile_id + 无激活分组 → 回退全局 active
+        let target = resolve_profile_target(None, None, false);
+        assert_eq!(target, ResolvedTarget::GlobalActive);
     }
 }

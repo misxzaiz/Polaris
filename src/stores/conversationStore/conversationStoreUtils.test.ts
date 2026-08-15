@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { resolveEffectiveProfileId } from './conversationStoreUtils'
+import {
+  resolveEffectiveProfileId,
+  resolveEffectiveProfileMode,
+  isProfileModeWithoutProfile,
+} from './conversationStoreUtils'
 import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 /**
@@ -72,5 +76,42 @@ describe('resolveEffectiveProfileId', () => {
     expect(
       resolveEffectiveProfileId(undefined, undefined, OFFICIAL_API_PROFILE),
     ).toBeUndefined()
+  })
+})
+
+/**
+ * 供应商选择模式（官方/分组/指定 Profile）三态解析。
+ *
+ * 优先级通 resolveEffectiveProfileId：会话级覆盖 > 状态栏镜像。返回 undefined
+ * 表示跟随全局旧逻辑（发请求时不带 profileMode 字段，后端 None 向前兼容）。
+ */
+describe('resolveEffectiveProfileMode', () => {
+  it('会话级覆盖优先生效', () => {
+    expect(resolveEffectiveProfileMode('group', 'profile')).toBe('group')
+    expect(resolveEffectiveProfileMode('official', 'group')).toBe('official')
+    expect(resolveEffectiveProfileMode('profile', undefined)).toBe('profile')
+  })
+
+  it('无会话覆盖时跟随状态栏镜像', () => {
+    expect(resolveEffectiveProfileMode(undefined, 'group')).toBe('group')
+    expect(resolveEffectiveProfileMode(undefined, 'official')).toBe('official')
+    // 镜像兜底默认 'profile'（normalizeSessionConfig 已保证）
+    expect(resolveEffectiveProfileMode(undefined, 'profile')).toBe('profile')
+  })
+
+  it('未设置时返回 undefined（跟随全局旧逻辑）', () => {
+    expect(resolveEffectiveProfileMode(undefined, undefined)).toBeUndefined()
+  })
+})
+
+describe('isProfileModeWithoutProfile', () => {
+  it('official/group 不绑定单 Profile', () => {
+    expect(isProfileModeWithoutProfile('official')).toBe(true)
+    expect(isProfileModeWithoutProfile('group')).toBe(true)
+  })
+
+  it('profile 与 undefined 绑定单 Profile（沿用旧逻辑）', () => {
+    expect(isProfileModeWithoutProfile('profile')).toBe(false)
+    expect(isProfileModeWithoutProfile(undefined)).toBe(false)
   })
 })

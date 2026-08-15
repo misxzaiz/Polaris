@@ -399,11 +399,22 @@ function createSessionManagerStore() {
           : (sessionOverride ?? globalDefault ?? '')
         useSessionConfig.getState().setModelProfileId(mirror)
 
+        // 全局供应商模式默认（此时镜像尚未被 setProfileMode 覆盖）。
+        // 注意不要在 profileMode 镜像时再读已覆盖后的 config，语义会串。
+        const globalProfileMode = useSessionConfig.getState().config.profileMode ?? 'profile'
+
         // 会话级模型镜像：有覆盖时用之，未设置时清空（让状态栏反映全局默认）。
         useSessionConfig.getState().setModel(targetMetadata.model ?? '')
 
         // 会话级专家镜像：有覆盖时用之，未设置时清空（让状态栏反映无专家）。
         useSessionConfig.getState().setAgent(targetMetadata.agent ?? '')
+
+        // P2: 会话级供应商模式镜像：有会话级覆盖时用之；未设置时回退全局默认。
+        // 与 modelProfileId 三态（会话覆盖 > 镜像 > 全局默认）一致。
+        // 注意：必须先读全局默认（此时 setProfileMode 尚未覆盖镜像）。
+        useSessionConfig.getState().setProfileMode(
+          targetMetadata.profileMode ?? globalProfileMode,
+        )
       }
 
       log.info('切换会话', { sessionId })
@@ -487,6 +498,31 @@ function createSessionManagerStore() {
       })
 
       log.info('更新会话 Profile', { sessionId, modelProfileId })
+    },
+
+    updateSessionProfileMode: (sessionId, profileMode) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          // null/undefined = 清除会话级覆盖（→ 跟随全局默认）；三态值原样写入。
+          profileMode: profileMode ?? undefined,
+          // official/group 不绑定单 Profile：同步清掉会话级 Profile 覆盖，避免残留穿透。
+          ...((profileMode === 'official' || profileMode === 'group')
+            ? { modelProfileId: undefined }
+            : {}),
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话供应商模式', { sessionId, profileMode })
     },
 
     updateSessionModel: (sessionId, model) => {
@@ -949,6 +985,7 @@ const cachedActions = {
   get updateSessionTitle() { return sessionStoreManager.getState().updateSessionTitle },
   get updateSessionEngine() { return sessionStoreManager.getState().updateSessionEngine },
   get updateSessionModelProfile() { return sessionStoreManager.getState().updateSessionModelProfile },
+  get updateSessionProfileMode() { return sessionStoreManager.getState().updateSessionProfileMode },
   get updateSessionModel() { return sessionStoreManager.getState().updateSessionModel },
   get updateSessionAgent() { return sessionStoreManager.getState().updateSessionAgent },
   get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },
