@@ -17,6 +17,7 @@ use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 
 use crate::services::proxy::ProxyWireApi;
+use crate::models::config::ProviderGroup;
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -802,6 +803,90 @@ async fn apply_model_profile_options(
 }
 
 // ============================================================================
+// 供应商分组路由（P1：切入点 A/B，spawn 级 failover + 会话亲和）
+//
+// 当 Config.active_provider_group_id 指向一个存在且 active 的分组时，
+// 新会话首请求走分组路由：按策略选 Profile，spawn 失败时自动切换到组内
+// 下一个 Profile。否则回退单 Profile 旧路径（向后兼容）。
+//
+// 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。
+// ============================================================================
+
+/// 解析当前激活的供应商分组。
+///
+/// 返回 None 表示不启用分组（走单 Profile 旧路径）。
+async fn resolve_active_provider_group(
+    state: &crate::AppState,
+) -> Option<(ProviderGroup, Vec<crate::models::config::ModelProfile>)> {
+    let config = state.clone_config().ok()?;
+    let group_id = config.active_provider_group_id.as_ref()?;
+    let group = config.provider_groups.iter().find(|g| g.id == *group_id && g.active)?;
+    if group.members.is_empty() {
+        return None;
+    }
+    let profiles = config.model_profiles;
+    Some((group.clone(), profiles))
+}
+
+/// 从配置中按 ID 查找 Profile。
+fn find_profile_by_id(id: &str, profiles: &[crate::models::config::ModelProfile]) -> bool {
+    profiles.iter().any(|p| p.id == id)
+}
+
+/// 判定一个 spawn 级错误是否可 failover（自动切换到下一个 Profile）。
+///
+/// 可 failover（连接/认证类，Profile 特定）：
+///   - 包含 HTTP 状态码（401/403/429/5xx）— 来自代理或引擎 stderr 上抛
+///   - 包含 "ConnectionRefused" / "connection refused" — 代理起不来
+///   - 包含 "timeout" / "timed out" — 连接超时
+///
+/// 不可 failover（请求侧硬错误，切 Profile 也不会好）：
+///   - 命令行过长 (os error 206 / 32767 字符) — 上下文过大，与 Profile 无关
+///   - "stream-json 数据包含非 UTF-8" — 消息编码错误
+///   - "启动 Claude 进程失败" 中的 IO 错误但非上述模式
+fn is_failoverable_spawn_err(err: &AppError) -> bool {
+    let msg = match err {
+        AppError::ProcessError(m) => m.as_str(),
+        AppError::ConfigError(m) => m.as_str(),
+        _ => return false,
+    };
+    let low = msg.to_lowercase();
+
+    // 不可 failover 模式（优先排除）
+    if low.contains("32767 字符")
+        || low.contains("os error 206")
+        || low.contains("命令行参数总长度")
+        || low.contains("stream-json 数据包含非 utf-8")
+        || low.contains("session 已存在")
+    {
+        return false;
+    }
+
+    // 可 failover 模式
+    let has_status = msg
+        .split_ascii_whitespace()
+        .any(|tok| tok.len() == 3 && tok.parse::<u16>().is_ok());
+    has_status
+        || low.contains("connection refused")
+        || low.contains("connectionrefused")
+        || low.contains("timed out")
+        || low.contains("timeout")
+        || low.contains("api key invalid")
+        || low.contains("auth")
+}
+
+#[derive(Debug, Clone)]
+enum RouteChoice {
+    /// 按用户选择（ChatRequestOptions.model_profile_id）或全局 active，不分组
+    SingleProfile { profile_id: Option<String> },
+    /// 走分组路由
+    Group {
+        group: ProviderGroup,
+        profiles: Vec<crate::models::config::ModelProfile>,
+    },
+}
+
+// ============================================================================
 // Inner functions (shared business logic)
 // ============================================================================
 
@@ -1006,27 +1091,136 @@ pub async fn start_chat_inner(
     // 避免按 profile_id 索引代理时跨会话互相干扰。
     let session_id = uuid::Uuid::new_v4().to_string();
 
-    session_opts = apply_model_profile_options(
-        session_opts,
-        options.model_profile_id.as_ref(),
-        &engine,
-        state,
-        "start_chat_inner",
-        &session_id,
-    )
-    .await?;
+    // ──────────────────────────────────────────────────────
+    // 供应商分组路由（切入点 A/B：spawn 级 failover）
+    //
+    // base_opts（含 callback / 工作目录 / 系统提示词 / MCP / 图片等）是请求级
+    // 常量，不随 Profile 变化，构建一次后每次重试 Clone 复用；Profile 特定
+    // 字段（settings_overlay_path / env_overrides / codex_args 等）由
+    // apply_model_profile_options 在本轮 Profile 上覆盖。
+    //
+    // 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。
+    // ──────────────────────────────────────────────────────
+    let route_choice = resolve_active_provider_group(state).await;
+    let max_attempts: usize = if route_choice.is_some() {
+        let (g, _) = route_choice.as_ref().unwrap();
+        g.max_failover_attempts.max(1) as usize
+    } else {
+        1
+    };
 
-    // DSH 引擎锁外预检查：在获取 engine_registry 锁之前完成依赖桥接准备。
-    // 首次执行约 28 秒（复制几百个依赖包），移出锁临界区避免阻塞其他引擎。
-    // 幂等，本进程内只执行一次。
-    if matches!(engine, EngineId::Custom(ref id) if id == "dsh") {
-        if let Err(e) = crate::ai::engine::dsh::prepare_dsh_bridge_standalone() {
-            tracing::warn!("[start_chat_inner] dsh 桥接预检查失败: {}", e);
+    let mut final_session_id: Option<String> = None;
+
+    // 在循环外确定是否 dsh 引擎（避免 loop 内借用被 move 误判）。
+    let is_dsh_engine = matches!(&engine, EngineId::Custom(ref id) if id == "dsh");
+    for attempt in 0..max_attempts {
+        let chosen_profile_id: Option<String> = if let Some(ref pid) = options.model_profile_id {
+            // 用户显式指定：始终用用户的 Profile（不分组）
+            Some(pid.clone())
+        } else if let Some((group, profiles)) = &route_choice {
+            // 分组路由：按策略选
+            state
+                .provider_router
+                .select_initial(group, profiles, &std::collections::HashSet::new())
+                .await
+                .map(|p| p.id)
+        } else {
+            // 单 Profile 旧路径：回退到全局 active
+            state
+                .clone_config()
+                .ok()
+                .and_then(|c| c.active_model_profile_id)
+        };
+
+        // 本回合用的 opts：从 base Clone，让 Profile 特定字段覆盖
+        let mut session_opts_for_this_attempt = session_opts.clone();
+
+        let session_opts_for_this_attempt = match apply_model_profile_options(
+            session_opts_for_this_attempt,
+            chosen_profile_id.as_ref(),
+            &engine,
+            state,
+            "start_chat_inner",
+            &session_id,
+        )
+        .await
+        {
+            Ok(o) => o,
+            Err(e) if attempt + 1 < max_attempts
+                && route_choice.is_some()
+                && is_failoverable_spawn_err(&e) =>
+            {
+                tracing::warn!(
+                    "[start_chat_inner] Profile 应用失败 (attempt {}/{}): {}",
+                    attempt + 1,
+                    max_attempts,
+                    e
+                );
+                continue;
+            }
+            Err(e) => return Err(e),
+        };
+
+        // DSH 引擎锁外预检查（幂等，保持原逻辑；用循环外确定的标志）
+        // 用 spawn_blocking 包裹：首次约 28 秒的同步文件 I/O 不阻塞 tokio worker 线程，
+        // 避免影响同 runtime 上的心跳/事件分发等 async 任务。
+        if is_dsh_engine {
+            match tokio::task::spawn_blocking(
+                crate::ai::engine::dsh::prepare_dsh_bridge_standalone,
+            )
+            .await
+            {
+                Ok(Err(e)) => tracing::warn!("[start_chat_inner] dsh 桥接预检查失败: {}", e),
+                Ok(Ok(())) => {}
+                Err(e) => tracing::warn!("[start_chat_inner] dsh 桥接预检查任务 panic: {}", e),
+            }
+        }
+
+        // spawn
+        let mut registry = state.engine_registry.lock().await;
+        match registry.start_session(Some(engine.clone()), &final_message, session_opts_for_this_attempt) {
+            Ok(temp_id) => {
+                // 成功：绑定会话亲和
+                if let Some(ref pid) = chosen_profile_id {
+                    state
+                        .provider_router
+                        .bind_affinity(&temp_id, pid)
+                        .await;
+                    tracing::info!(
+                        "[start_chat_inner] 会话 {} 绑定 Profile {} (attempt {})",
+                        temp_id,
+                        pid,
+                        attempt + 1
+                    );
+                }
+                final_session_id = Some(temp_id);
+                break;
+            }
+            Err(e) if attempt + 1 < max_attempts
+                && route_choice.is_some()
+                && is_failoverable_spawn_err(&e) =>
+            {
+                // 切入点 B：spawn 级失败，切换到下一个 Profile
+                tracing::warn!(
+                    "[start_chat_inner] spawn 失败 (attempt {}/{}, Profile {:?}): {}",
+                    attempt + 1,
+                    max_attempts,
+                    chosen_profile_id,
+                    e
+                );
+                // 清理本回合的代理（防止端口泄漏）
+                state.proxy_manager.stop_proxy(&session_id).await;
+                continue;
+            }
+            Err(e) => return Err(e),
         }
     }
 
-    let mut registry = state.engine_registry.lock().await;
-    registry.start_session(Some(engine), &final_message, session_opts)
+    final_session_id.ok_or_else(|| {
+        AppError::ProcessError(
+            "供应商分组内所有 Profile 均不可用，请检查端点配置后重试".to_string(),
+        )
+    })
 }
 
 pub async fn continue_chat_inner(
@@ -1070,6 +1264,21 @@ pub async fn continue_chat_inner(
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
+
+    // DSH 引擎锁外预检查（与 start_chat_inner 对称）：进程重启后从历史会话
+    // 续聊 dsh 时，内存标志已丢失，靠磁盘 bridge_healthy 快路径或首次复制。
+    // 必须在获取 engine_registry 锁之前完成，避免锁内 28 秒阻塞其他引擎。
+    if matches!(engine, EngineId::Custom(ref id) if id == "dsh") {
+        match tokio::task::spawn_blocking(
+            crate::ai::engine::dsh::prepare_dsh_bridge_standalone,
+        )
+        .await
+        {
+            Ok(Err(e)) => tracing::warn!("[continue_chat_inner] dsh 桥接预检查失败: {}", e),
+            Ok(Ok(())) => {}
+            Err(e) => tracing::warn!("[continue_chat_inner] dsh 桥接预检查任务 panic: {}", e),
+        }
+    }
 
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);

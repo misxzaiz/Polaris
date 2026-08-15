@@ -89,6 +89,13 @@ fn dsh_question_answers() -> &'static Mutex<HashMap<String, (String, String, Str
 /// 在获取锁之前先完成依赖桥接，避免首次约 28 秒的复制阻塞其他引擎。
 static DSH_BRIDGE_PREPARED: AtomicBool = AtomicBool::new(false);
 
+/// 桥接复制互斥锁——保证同一进程内只有一个线程执行真实复制。
+///
+/// 修复并发竞态：若两个 start_chat_inner 同时检测到 DSH_BRIDGE_PREPARED=false，
+/// 无锁保护下会同时 remove_dir_all + copy，交叉损坏 node_modules。
+/// 抢到锁的线程执行复制，其余线程等待后走 bridge_healthy 快路径。
+static DSH_BRIDGE_LOCK: Mutex<()> = Mutex::new(());
+
 /// 向 dsh 服务器提交问答案（供 answer_question Tauri 命令调用）
 ///
 /// 协议格式（dsh 源码验证）：
@@ -563,7 +570,10 @@ impl DshEngine {
         );
         if patched == src {
             tracing::warn!("[DshEngine] 未找到 ensureSymlink 定义, 跳过补丁");
-            return Ok(());
+            // 与 standalone 版一致：签名变化时返回 Err 中止，避免白跑 28 秒复制
+            return Err(AppError::ProcessError(
+                "dsh-app-boot 的 ensureSymlink 函数签名已变化，补丁无法匹配（dsh 可能已升级）".to_string(),
+            ));
         }
         fs::write(&boot, patched).map_err(|e| {
             AppError::ProcessError(format!(
@@ -2087,7 +2097,17 @@ impl DshEngine {
 /// 幂等：`DSH_BRIDGE_PREPARED` 全局标志保证本进程内只执行一次真实复制。
 /// 纯文件系统操作，线程安全。dsh 未安装时静默返回 Ok（由 start_session 做可用性检查）。
 pub fn prepare_dsh_bridge_standalone() -> Result<()> {
-    // 幂等快路径
+    // 幂等快路径（锁外无锁读取，快速返回已完成的常见情况）
+    if DSH_BRIDGE_PREPARED.load(Ordering::Acquire) {
+        return Ok(());
+    }
+
+    // 互斥锁守卫整个复制临界区，消除并发竞态：
+    // 两线程同时检测到 false 时，抢锁的执行复制，另一线程等待后
+    // 走幂等快路径，避免 remove_dir_all 与 copy 交叉损坏 node_modules。
+    let _bridge_guard = DSH_BRIDGE_LOCK.lock().unwrap();
+
+    // 拿到锁后再次检查（double-checked locking），避免重复复制
     if DSH_BRIDGE_PREPARED.load(Ordering::Acquire) {
         return Ok(());
     }
@@ -2252,7 +2272,12 @@ fn patch_ensure_symlink_standalone(dsh_node: &Path) -> Result<()> {
         "function ensureSymlink(link, target) { return; /* Polaris-bridge: no-op */",
     );
     if patched == src {
-        return Ok(());
+        // dsh-app-boot 升级后函数签名可能变化，补丁无法匹配。
+        // 返回 Err 中止桥接，避免白白执行 28 秒复制后 dsh 仍因坏 Junction 启动失败。
+        return Err(AppError::ProcessError(
+            "dsh-app-boot 的 ensureSymlink 函数签名已变化，补丁无法匹配（dsh 可能已升级）。\
+             请清理 ~/.dsh/profiles/node_modules 后重试，或检查 dsh 版本兼容性".to_string(),
+        ));
     }
     fs::write(&boot, patched).map_err(|e| {
         AppError::ProcessError(format!("写入 dsh-app-boot 补丁失败: {}", e))
