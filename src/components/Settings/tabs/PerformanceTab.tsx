@@ -5,7 +5,7 @@
  * 用户按需开启，配置变更通过 config-changed 事件热切换。
  */
 
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config, PerformanceFeatures } from '@/types';
 
@@ -84,9 +84,9 @@ const FEATURES: FeatureToggle[] = [
 
 export function PerformanceTab({ config, onConfigChange, loading }: PerformanceTabProps) {
   const { t } = useTranslation('settings');
-  const [localPerf] = useState<PerformanceFeatures>(
-    config.performance ?? {}
-  );
+  // 受控组件：直接从 config 派生，不缓存本地状态。
+  // 父组件 SettingsPage 保存后会刷新 config 传入，开关视觉状态即时跟随。
+  const localPerf: PerformanceFeatures = config.performance ?? {};
 
   const toggleFeature = useCallback((key: keyof PerformanceFeatures) => {
     const newVal = !localPerf[key];

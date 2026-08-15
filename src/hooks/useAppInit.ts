@@ -17,6 +17,7 @@ import { useAutoModeStore } from '@/stores/autoModeStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
+import { usePerformanceHotSwitch } from '@/stores/performanceHotSwitchStore';
 import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
@@ -91,6 +92,7 @@ async function syncMarkdownArtifactBaseUrl(signal?: AbortSignal): Promise<void> 
 export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
   const isInitialized = useRef(false);
   const hasCheckedWorkspaces = useRef(false);
+  const perfHotSwitchCleanupRef = useRef<(() => void) | null>(null);
 
   const { loadConfig } = useConfigStore();
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -164,6 +166,12 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
     if (signal?.aborted) return;
     isInitialized.current = true;
+
+    // 初始化性能开关热切换监听（config-changed 事件 → 停止已运行的后端守护服务）
+    // 在 config 加载后注册，确保 prev 快照准确（避免 prev 漂移导致误停止）
+    perfHotSwitchCleanupRef.current = usePerformanceHotSwitch
+      .getState()
+      .init(useConfigStore.getState().config?.performance ?? {});
 
     // 清理残留的浏览器会话（页面刷新 / HMR 重挂载时，BrowserPanel cleanup 的
     // browserSetBounds hide 调用可能被取消，导致 native WebView 子窗口残留且可见，
@@ -328,6 +336,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       const { cleanup } = useIntegrationStore.getState();
       cleanup();
       cleanupCliListeners();
+      perfHotSwitchCleanupRef.current?.();
       // 关闭所有 LSP 语言服务器进程，避免遗留子进程
       void useLspStore.getState().deactivateAll();
       disconnectTransport();

@@ -16,7 +16,7 @@ import { AIEngineTab } from './tabs/AIEngineTab';
 import { ModelProviderTab } from './tabs/ModelProviderTab';
 import { GeneralTab } from './tabs/GeneralTab';
 import { ThemeTab } from './tabs/ThemeTab';
-import { PromptSnippetTab } from './tabs/PromptSnippetTab';
+import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
 import { AutoModeTab } from './tabs/AutoModeTab';
@@ -27,6 +27,7 @@ import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { ShortcutsTab } from './tabs/ShortcutsTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
+import { RouteLogTab } from './tabs/RouteLogTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
@@ -61,6 +62,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'personal-hub': 'nav.personalHub',
   'token-stats': 'nav.tokenStats',
   'performance': 'nav.performance',
+  'route-log': 'nav.routeLog',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -76,6 +78,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   const [activeTab, setActiveTab] = useState<SettingsTabId>(initialTab || 'general');
   const [searchQuery, setSearchQuery] = useState('');
   const [webStatusRefreshKey, setWebStatusRefreshKey] = useState(0);
+  const snippetTabRef = useRef<PromptSnippetTabRef>(null);
 
   // 同步远程配置到本地：仅在首次加载时执行，避免保存后 useEffect 覆盖 localConfig
   // 保存操作由 handleSaveCurrentTab 直接管理 localConfig 和 baseConfigRef
@@ -141,6 +144,12 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
   // 保存当前分组配置
   const handleSaveCurrentTab = async () => {
+    // 快捷片段：表单打开时转发到表单保存，而非保存 Config
+    if (activeTab === 'prompt-snippet' && snippetTabRef.current?.isFormOpen) {
+      await snippetTabRef.current.saveForm();
+      return;
+    }
+
     if (!localConfig) return;
 
     try {
@@ -167,6 +176,11 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
   // 保存所有配置并关闭
   const handleSaveAndClose = async () => {
+    // 快捷片段表单打开时，先保存片段
+    if (activeTab === 'prompt-snippet' && snippetTabRef.current?.isFormOpen) {
+      await snippetTabRef.current.saveForm();
+    }
+
     if (!localConfig) return;
 
     try {
@@ -283,7 +297,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
             )}
 
             {activeTab === 'prompt-snippet' && (
-              <PromptSnippetTab />
+              <PromptSnippetTab ref={snippetTabRef} />
             )}
 
             {activeTab === 'speech' && (
@@ -341,6 +355,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
                 onConfigChange={setLocalConfig}
                 loading={loading}
               />
+            )}
+
+            {activeTab === 'route-log' && (
+              <RouteLogTab />
             )}
           </div>
 

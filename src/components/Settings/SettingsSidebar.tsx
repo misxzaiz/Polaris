@@ -11,7 +11,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge } from 'lucide-react';
+import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -31,7 +31,8 @@ export type SettingsTabId =
   | 'web'
   | 'personal-hub'
   | 'token-stats'
-  | 'performance';
+  | 'performance'
+  | 'route-log';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -64,6 +65,7 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'personal-hub', icon: <BookOpen size={16} />, labelKey: 'nav.personalHub' },
   { id: 'token-stats', icon: <BarChart3 size={16} />, labelKey: 'nav.tokenStats' },
   { id: 'performance', icon: <Gauge size={16} />, labelKey: 'nav.performance' },
+  { id: 'route-log', icon: <Activity size={16} />, labelKey: 'nav.routeLog' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

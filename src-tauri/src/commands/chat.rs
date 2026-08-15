@@ -17,7 +17,8 @@ use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 
 use crate::services::proxy::ProxyWireApi;
-use crate::models::config::ProviderGroup;
+use crate::models::config::{FailoverPattern, ProviderGroup};
+use crate::services::{FailoverError, RouteLogEntry, RouteLogKind};
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -830,16 +831,17 @@ async fn resolve_active_provider_group(
 
 /// 判定一个 spawn 级错误是否可 failover（自动切换到下一个 Profile）。
 ///
-/// 可 failover（连接/认证类，Profile 特定）：
-///   - 包含 HTTP 状态码（401/403/429/5xx）— 来自代理或引擎 stderr 上抛
-///   - 包含 "ConnectionRefused" / "connection refused" — 代理起不来
-///   - 包含 "timeout" / "timed out" — 连接超时
+/// 基于分组配置的 `FailoverPattern` 判定（复用数据模型，非字符串启发式）：
+///   - 从 `AppError` 消息中解析出结构化的 `FailoverError`（HTTP 状态码、
+///     ConnectionRefused、首字超时、stderr 原文）；
+///   - 用 `group.effective_patterns()` 逐一匹配，命中任一即可 failover。
 ///
-/// 不可 failover（请求侧硬错误，切 Profile 也不会好）：
-///   - 命令行过长 (os error 206 / 32767 字符) — 上下文过大，与 Profile 无关
+/// 不可 failover 的硬错误（与 Profile 无关，切换也不会好转）通过关键词
+/// 预过滤排除，避免误切换：
+///   - 命令行过长 (os error 206 / 32767 字符) — 上下文过大
 ///   - "stream-json 数据包含非 UTF-8" — 消息编码错误
-///   - "启动 Claude 进程失败" 中的 IO 错误但非上述模式
-fn is_failoverable_spawn_err(err: &AppError) -> bool {
+///   - "session 已存在" — 会话状态冲突
+fn is_failoverable_spawn_err(err: &AppError, group: &ProviderGroup) -> bool {
     let msg = match err {
         AppError::ProcessError(m) => m.as_str(),
         AppError::ConfigError(m) => m.as_str(),
@@ -847,7 +849,7 @@ fn is_failoverable_spawn_err(err: &AppError) -> bool {
     };
     let low = msg.to_lowercase();
 
-    // 不可 failover 模式（优先排除）
+    // 不可 failover 的硬错误（优先排除，切 Profile 也不会好）
     if low.contains("32767 字符")
         || low.contains("os error 206")
         || low.contains("命令行参数总长度")
@@ -857,28 +859,48 @@ fn is_failoverable_spawn_err(err: &AppError) -> bool {
         return false;
     }
 
-    // 可 failover 模式
-    let has_status = msg
-        .split_ascii_whitespace()
-        .any(|tok| tok.len() == 3 && tok.parse::<u16>().is_ok());
-    has_status
-        || low.contains("connection refused")
-        || low.contains("connectionrefused")
-        || low.contains("timed out")
-        || low.contains("timeout")
-        || low.contains("api key invalid")
-        || low.contains("auth")
+    // 构造结构化的 FailoverError：从消息中解析 HTTP 状态码，
+    // 并把 spawn 级失败视为 ConnectionRefused 候选。
+    let foe = FailoverError {
+        status: extract_http_status(msg),
+        first_token_timeout: low.contains("timed out") || low.contains("timeout"),
+        connection_refused: low.contains("connection refused")
+            || low.contains("connectionrefused")
+            // CLI 起不来 / 代理起不来的典型模式
+            || low.contains("no such file or directory")
+            || low.contains("command not found")
+            || low.contains("启动")
+                && (low.contains("进程失败") || low.contains("代理失败")),
+        message: msg.to_string(),
+    };
+
+    FailoverPattern::matches_any(&foe, &group.effective_patterns())
 }
 
-#[derive(Debug, Clone)]
-enum RouteChoice {
-    /// 按用户选择（ChatRequestOptions.model_profile_id）或全局 active，不分组
-    SingleProfile { profile_id: Option<String> },
-    /// 走分组路由
-    Group {
-        group: ProviderGroup,
-        profiles: Vec<crate::models::config::ModelProfile>,
-    },
+/// 从错误消息文本中提取首个 HTTP 状态码（3 位数字、语义为状态码）。
+///
+/// 仅匹配 4xx/5xx 段（1xx-3xx 不构成 failover 触发条件），
+/// 且要求前后为非数字边界，避免误抓端口号（如 "port 8080"）。
+fn extract_http_status(msg: &str) -> Option<u16> {
+    let bytes = msg.as_bytes();
+    let mut i = 0;
+    while i + 2 < bytes.len() {
+        let c = bytes[i];
+        // 只从 4 或 5 起始的 3 位数字开始（HTTP 失败状态码段）
+        if (c == b'4' || c == b'5')
+            && bytes[i + 1].is_ascii_digit()
+            && bytes[i + 2].is_ascii_digit()
+            && (i + 3 >= bytes.len() || !bytes[i + 3].is_ascii_digit())
+            && (i == 0 || !bytes[i - 1].is_ascii_digit())
+        {
+            let code = ((c - b'0') as u16) * 100
+                + ((bytes[i + 1] - b'0') as u16) * 10
+                + ((bytes[i + 2] - b'0') as u16);
+            return Some(code);
+        }
+        i += 1;
+    }
+    None
 }
 
 // ============================================================================
@@ -1106,6 +1128,9 @@ pub async fn start_chat_inner(
 
     let mut final_session_id: Option<String> = None;
 
+    // 已尝试的 Profile ID 列表（failover 时跳过）。仅分组路由下使用。
+    let mut tried_profile_ids: Vec<String> = Vec::new();
+
     // 在循环外确定是否 dsh 引擎（避免 loop 内借用被 move 误判）。
     let is_dsh_engine = matches!(&engine, EngineId::Custom(ref id) if id == "dsh");
     for attempt in 0..max_attempts {
@@ -1113,12 +1138,59 @@ pub async fn start_chat_inner(
             // 用户显式指定：始终用用户的 Profile（不分组）
             Some(pid.clone())
         } else if let Some((group, profiles)) = &route_choice {
-            // 分组路由：按策略选
-            state
-                .provider_router
-                .select_initial(group, profiles, &std::collections::HashSet::new())
-                .await
-                .map(|p| p.id)
+            // 分组路由：
+            //   - 首轮（attempt==0 或 tried 为空）用 select_initial（按策略选首个）；
+            //   - failover 重试轮用 select_next（跳过已尝试的 Profile）。
+            //   注意：RoundRobin 策略下 select_next 不推进游标，避免重试导致轮询跳号。
+            let pick = if attempt == 0 || tried_profile_ids.is_empty() {
+                state
+                    .provider_router
+                    .select_initial(group, profiles, &std::collections::HashSet::new())
+                    .await
+            } else {
+                state
+                    .provider_router
+                    .select_next(
+                        group,
+                        &tried_profile_ids,
+                        profiles,
+                        &std::collections::HashSet::new(),
+                    )
+                    .await
+            };
+            // 记录本轮尝试的 Profile（用于后续 select_next 跳过）
+            if let Some(ref p) = pick {
+                if !tried_profile_ids.contains(&p.id) {
+                    tried_profile_ids.push(p.id.clone());
+                }
+            }
+            // 埋点：记录首轮选择 / failover 切换日志
+            if let Some(ref p) = pick {
+                let kind = if attempt == 0 {
+                    RouteLogKind::InitialSelect
+                } else {
+                    RouteLogKind::FailoverSwitch
+                };
+                state
+                    .provider_router
+                    .record_log(RouteLogEntry {
+                        seq: 0,
+                        kind,
+                        group_id: group.id.clone(),
+                        group_name: group.name.clone(),
+                        strategy: group.strategy.clone(),
+                        profile_id: Some(p.id.clone()),
+                        profile_name: Some(p.name.clone()),
+                        session_id: Some(session_id.clone()),
+                        engine: Some(format!("{:?}", engine)),
+                        attempt,
+                        error: None,
+                        tried: tried_profile_ids.clone(),
+                        ts_ms: 0,
+                    })
+                    .await;
+            }
+            pick.map(|p| p.id)
         } else {
             // 单 Profile 旧路径：回退到全局 active
             state
@@ -1127,9 +1199,40 @@ pub async fn start_chat_inner(
                 .and_then(|c| c.active_model_profile_id)
         };
 
+        // 若分组路由本轮未选出 Profile（组内已全部尝试过），提前终止
+        if chosen_profile_id.is_none() && route_choice.is_some() && attempt > 0 {
+            tracing::warn!(
+                "[start_chat_inner] 分组内所有 Profile 均已尝试且不可用 (attempt {}/{})",
+                attempt + 1,
+                max_attempts
+            );
+            if let Some((group, _)) = &route_choice {
+                state
+                    .provider_router
+                    .record_log(RouteLogEntry {
+                        seq: 0,
+                        kind: RouteLogKind::AllUnavailable,
+                        group_id: group.id.clone(),
+                        group_name: group.name.clone(),
+                        strategy: group.strategy.clone(),
+                        profile_id: None,
+                        profile_name: None,
+                        session_id: Some(session_id.clone()),
+                        engine: Some(format!("{:?}", engine)),
+                        attempt,
+                        error: Some("组内所有 Profile 均已尝试且不可用".into()),
+                        tried: tried_profile_ids.clone(),
+                        ts_ms: 0,
+                    })
+                    .await;
+            }
+            break;
+        }
+
         // 本回合用的 opts：从 base Clone，让 Profile 特定字段覆盖
         let mut session_opts_for_this_attempt = session_opts.clone();
 
+        // 切入点 A 失败门控（应用 Profile 参数失败）
         let session_opts_for_this_attempt = match apply_model_profile_options(
             session_opts_for_this_attempt,
             chosen_profile_id.as_ref(),
@@ -1143,7 +1246,7 @@ pub async fn start_chat_inner(
             Ok(o) => o,
             Err(e) if attempt + 1 < max_attempts
                 && route_choice.is_some()
-                && is_failoverable_spawn_err(&e) =>
+                && is_failoverable_spawn_err(&e, &route_choice.as_ref().unwrap().0) =>
             {
                 tracing::warn!(
                     "[start_chat_inner] Profile 应用失败 (attempt {}/{}): {}",
@@ -1151,6 +1254,26 @@ pub async fn start_chat_inner(
                     max_attempts,
                     e
                 );
+                if let Some((group, _)) = &route_choice {
+                    state
+                        .provider_router
+                        .record_log(RouteLogEntry {
+                            seq: 0,
+                            kind: RouteLogKind::ApplyFailed,
+                            group_id: group.id.clone(),
+                            group_name: group.name.clone(),
+                            strategy: group.strategy.clone(),
+                            profile_id: chosen_profile_id.clone(),
+                            profile_name: None,
+                            session_id: Some(session_id.clone()),
+                            engine: Some(format!("{:?}", engine)),
+                            attempt,
+                            error: Some(format!("{:?}", e)),
+                            tried: tried_profile_ids.clone(),
+                            ts_ms: 0,
+                        })
+                        .await;
+                }
                 continue;
             }
             Err(e) => return Err(e),
@@ -1187,22 +1310,64 @@ pub async fn start_chat_inner(
                         pid,
                         attempt + 1
                     );
+                    // 埋点：成功绑定
+                    if let Some((group, _)) = &route_choice {
+                        state
+                            .provider_router
+                            .record_log(RouteLogEntry {
+                                seq: 0,
+                                kind: RouteLogKind::Bound,
+                                group_id: group.id.clone(),
+                                group_name: group.name.clone(),
+                                strategy: group.strategy.clone(),
+                                profile_id: Some(pid.clone()),
+                                profile_name: None,
+                                session_id: Some(session_id.clone()),
+                                engine: Some(format!("{:?}", engine)),
+                                attempt,
+                                error: None,
+                                tried: tried_profile_ids.clone(),
+                                ts_ms: 0,
+                            })
+                            .await;
+                    }
                 }
                 final_session_id = Some(temp_id);
                 break;
             }
             Err(e) if attempt + 1 < max_attempts
                 && route_choice.is_some()
-                && is_failoverable_spawn_err(&e) =>
+                && is_failoverable_spawn_err(&e, &route_choice.as_ref().unwrap().0) =>
             {
                 // 切入点 B：spawn 级失败，切换到下一个 Profile
                 tracing::warn!(
-                    "[start_chat_inner] spawn 失败 (attempt {}/{}, Profile {:?}): {}",
+                    "[start_chat_inner] spawn 失败 (attempt {}/{}, 已尝试 {} 个 Profile): {}",
                     attempt + 1,
                     max_attempts,
-                    chosen_profile_id,
+                    tried_profile_ids.len(),
                     e
                 );
+                // 埋点：spawn 失败
+                if let Some((group, _)) = &route_choice {
+                    state
+                        .provider_router
+                        .record_log(RouteLogEntry {
+                            seq: 0,
+                            kind: RouteLogKind::SpawnFailed,
+                            group_id: group.id.clone(),
+                            group_name: group.name.clone(),
+                            strategy: group.strategy.clone(),
+                            profile_id: chosen_profile_id.clone(),
+                            profile_name: None,
+                            session_id: Some(session_id.clone()),
+                            engine: Some(format!("{:?}", engine)),
+                            attempt,
+                            error: Some(format!("{:?}", e)),
+                            tried: tried_profile_ids.clone(),
+                            ts_ms: 0,
+                        })
+                        .await;
+                }
                 // 清理本回合的代理（防止端口泄漏）
                 state.proxy_manager.stop_proxy(&session_id).await;
                 continue;
@@ -2795,4 +2960,151 @@ pub async fn send_input(
 
     let mut registry = state.engine_registry.lock().await;
     registry.send_input(&session_id, &input)
+}
+
+// ============================================================================
+// 供应商路由日志查询（供前端"请求响应日志面板"使用）
+// ============================================================================
+
+/// 查询供应商分组路由日志。
+///
+/// - 不传 `since`：返回当前缓冲内全部日志（seq 升序）；
+/// - 传 `since`：仅返回 seq 大于该值的增量日志（前端轮询续拉）。
+///
+/// 日志由 `start_chat_inner` 的 failover 循环在各决策点写入
+/// （select_initial / select_next / apply 失败 / spawn 失败 / 绑定成功 / 全不可用）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_route_logs(
+    since: Option<u64>,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<crate::services::RouteLogEntry>> {
+    Ok(match since {
+        Some(s) => state.provider_router.logs_since(s).await,
+        None => state.provider_router.all_logs().await,
+    })
+}
+
+/// 清空路由日志缓冲。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_route_logs_clear(state: State<'_, crate::AppState>) -> Result<()> {
+    state.provider_router.clear_logs().await;
+    Ok(())
+}
+
+#[cfg(test)]
+mod route_failover_tests {
+    use super::*;
+    use crate::models::config::{
+        FailoverPattern, GroupMember, ProviderGroup, RouteStrategy,
+    };
+
+    fn group_with_defaults(members: Vec<GroupMember>) -> ProviderGroup {
+        ProviderGroup {
+            id: "g".into(),
+            name: "g".into(),
+            strategy: RouteStrategy::Failover,
+            members,
+            failover_on: vec![],
+            first_token_timeout_secs: None,
+            max_failover_attempts: 3,
+            active: true,
+        }
+    }
+
+    // === extract_http_status ===
+
+    #[test]
+    fn extract_status_4xx_5xx() {
+        assert_eq!(extract_http_status("error 401 unauthorized"), Some(401));
+        assert_eq!(extract_http_status("HTTP 502 bad gateway"), Some(502));
+        assert_eq!(extract_http_status("got 429 too many requests"), Some(429));
+    }
+
+    #[test]
+    fn extract_status_skips_port_numbers() {
+        // "8080" 是 4 位，不应被抓为状态码
+        assert_eq!(extract_http_status("port 8080 connection refused"), None);
+        // "808" 虽是 3 位但 8 开头不在 4xx/5xx 段
+        assert_eq!(extract_http_status("binding 808 failed"), None);
+    }
+
+    #[test]
+    fn extract_status_digit_boundary() {
+        // 前后须为非数字边界
+        assert_eq!(extract_http_status("port 5000 err"), None); // 500 后有 0，是 5000
+        assert_eq!(extract_http_status("code=403"), Some(403));
+    }
+
+    // === is_failoverable_spawn_err ===
+
+    #[test]
+    fn failover_on_401_with_default_patterns() {
+        let g = group_with_defaults(vec![GroupMember {
+            profile_id: "p".into(),
+            priority: 0,
+            weight: 1,
+        }]);
+        let err = AppError::ProcessError("请求失败 401 Unauthorized".into());
+        assert!(is_failoverable_spawn_err(&err, &g));
+    }
+
+    #[test]
+    fn failover_on_connection_refused() {
+        let g = group_with_defaults(vec![GroupMember {
+            profile_id: "p".into(),
+            priority: 0,
+            weight: 1,
+        }]);
+        let err = AppError::ProcessError("启动 Claude 进程失败: Connection refused".into());
+        assert!(is_failoverable_spawn_err(&err, &g));
+    }
+
+    #[test]
+    fn no_failover_on_hard_error_command_too_long() {
+        let g = group_with_defaults(vec![GroupMember {
+            profile_id: "p".into(),
+            priority: 0,
+            weight: 1,
+        }]);
+        let err = AppError::ProcessError("命令行参数总长度超过 32767 字符".into());
+        assert!(!is_failoverable_spawn_err(&err, &g));
+    }
+
+    #[test]
+    fn no_failover_on_session_exists() {
+        let g = group_with_defaults(vec![GroupMember {
+            profile_id: "p".into(),
+            priority: 0,
+            weight: 1,
+        }]);
+        let err = AppError::ProcessError("session 已存在".into());
+        assert!(!is_failoverable_spawn_err(&err, &g));
+    }
+
+    #[test]
+    fn custom_failover_patterns_respected() {
+        // 用户自定义只匹配 "api key invalid" stderr 模式
+        let g = ProviderGroup {
+            failover_on: vec![FailoverPattern::StderrContains {
+                pattern: "api key invalid".into(),
+            }],
+            ..group_with_defaults(vec![GroupMember {
+                profile_id: "p".into(),
+                priority: 0,
+                weight: 1,
+            }])
+        };
+        // 命中自定义模式
+        assert!(is_failoverable_spawn_err(
+            &AppError::ProcessError("Error: API KEY INVALID".into()),
+            &g
+        ));
+        // 不在自定义模式里 → 即使是 401 也不 failover（用户显式限定模式集）
+        assert!(!is_failoverable_spawn_err(
+            &AppError::ProcessError("401 unauthorized".into()),
+            &g
+        ));
+    }
 }

@@ -40,7 +40,8 @@
     "appUpdate": "应用更新",
     "personalHub": "个人空间",
     "tokenStats": "Token 统计",
-    "performance": "性能与资源"
+    "performance": "性能与资源",
+    "routeLog": "路由日志"
   },
   "messages": {
     "saved": "已保存",

@@ -40,7 +40,8 @@
     "web": "Web Service",
     "personalHub": "Personal Hub",
     "tokenStats": "Token Stats",
-    "performance": "Performance & Resources"
+    "performance": "Performance & Resources",
+    "routeLog": "Route Log"
   },
   "messages": {
     "saved": "Saved",

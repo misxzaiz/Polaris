@@ -17,7 +17,7 @@ P1 范围：Failover + RoundRobin + Weighted 三策略的纯决策 + 单测。
 切入点 C（async error + 首字超时）在 P2 接线。
 */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -25,6 +25,63 @@ use tokio::sync::Mutex as AsyncMutex;
 use crate::models::config::{
     FailoverPattern, GroupMember, ModelProfile, ProviderGroup, RouteStrategy,
 };
+
+/// 路由日志环形缓冲容量（保留最近 N 条决策记录）
+const ROUTE_LOG_CAPACITY: usize = 200;
+
+/// 路由决策事件类型
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum RouteLogKind {
+    /// 首轮选择 Profile（按策略 select_initial）
+    InitialSelect,
+    /// failover 切换到下一个 Profile（select_next）
+    FailoverSwitch,
+    /// Profile 应用失败（apply_model_profile_options 报错）
+    ApplyFailed,
+    /// spawn 级失败（引擎起不来）
+    SpawnFailed,
+    /// 成功启动并绑定会话亲和
+    Bound,
+    /// 全部 Profile 不可用
+    AllUnavailable,
+}
+
+/// 路由决策日志条目
+///
+/// 记录每次会话首请求的 Profile 选择 / failover 切换 / 失败原因。
+/// 供"请求响应日志面板"展示（前端 `provider_route_logs` 命令拉取 +
+/// `provider-route-log` 事件增量推送）。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteLogEntry {
+    /// 单调递增序号（前端去重/排序用）
+    pub seq: u64,
+    /// 事件类型
+    pub kind: RouteLogKind,
+    /// 分组 ID
+    pub group_id: String,
+    /// 分组名称
+    pub group_name: String,
+    /// 路由策略
+    pub strategy: RouteStrategy,
+    /// 本轮选中的 Profile ID（失败轮可能为空）
+    pub profile_id: Option<String>,
+    /// 本轮选中的 Profile 名称
+    pub profile_name: Option<String>,
+    /// 会话临时 ID（start_chat_inner 生成的 uuid，用于关联同一次请求的多条日志）
+    pub session_id: Option<String>,
+    /// 引擎 ID
+    pub engine: Option<String>,
+    /// 尝试轮次（0-based）
+    pub attempt: usize,
+    /// 失败原因（仅失败类事件有值）
+    pub error: Option<String>,
+    /// 已尝试过的 Profile ID 列表（failover 累计）
+    pub tried: Vec<String>,
+    /// 时间戳（毫秒，UNIX_EPOCH 起）
+    pub ts_ms: u64,
+}
 
 /// failover 决策所需的上游错误摘要（从 spawn 失败或 async error 提取）
 #[derive(Debug, Clone)]
@@ -75,12 +132,16 @@ impl FailoverPattern {
 
 /// 供应商路由器
 ///
-/// 持有轮询游标 + 会话亲和表 + 健康缓存。线程安全（Arc 共享）。
+/// 持有轮询游标 + 会话亲和表 + 健康缓存 + 路由日志环形缓冲。线程安全（Arc 共享）。
 pub struct ProviderRouter {
     /// 轮询游标：group_id → 原子计数器
     cursors: AsyncMutex<HashMap<String, Arc<AtomicU64>>>,
     /// 会话亲和：session_id → profile_id（P2 接线写入）
     affinity: AsyncMutex<HashMap<String, String>>,
+    /// 路由日志环形缓冲（容量 ROUTE_LOG_CAPACITY，溢出丢最旧）
+    logs: AsyncMutex<VecDeque<RouteLogEntry>>,
+    /// 日志序号（单调递增，AtomicU64 保证并发安全）
+    log_seq: AtomicU64,
 }
 
 impl ProviderRouter {
@@ -88,12 +149,56 @@ impl ProviderRouter {
         Self {
             cursors: AsyncMutex::new(HashMap::new()),
             affinity: AsyncMutex::new(HashMap::new()),
+            logs: AsyncMutex::new(VecDeque::with_capacity(ROUTE_LOG_CAPACITY)),
+            log_seq: AtomicU64::new(0),
         }
+    }
+
+    /// 记录一条路由决策日志到环形缓冲。
+    ///
+    /// 自动填充 seq 和 ts_ms。调用方提供业务字段即可。
+    /// 用于"请求响应日志面板"追踪每次会话首请求的 Profile 选择与 failover 链路。
+    pub async fn record_log(&self, mut entry: RouteLogEntry) -> RouteLogEntry {
+        entry.seq = self.log_seq.fetch_add(1, Ordering::Relaxed);
+        entry.ts_ms = now_ms();
+        let mut logs = self.logs.lock().await;
+        if logs.len() >= ROUTE_LOG_CAPACITY {
+            logs.pop_front();
+        }
+        logs.push_back(entry.clone());
+        entry
+    }
+
+    /// 返回当前缓冲内全部日志（按 seq 升序，即时间顺序）。
+    /// 供 `provider_route_logs` 命令调用，前端面板打开时全量拉取。
+    pub async fn all_logs(&self) -> Vec<RouteLogEntry> {
+        let logs = self.logs.lock().await;
+        logs.iter().cloned().collect()
+    }
+
+    /// 返回 seq 大于 `since` 的增量日志（前端轮询/续拉）。
+    pub async fn logs_since(&self, since: u64) -> Vec<RouteLogEntry> {
+        let logs = self.logs.lock().await;
+        logs.iter()
+            .filter(|e| e.seq > since)
+            .cloned()
+            .collect()
+    }
+
+    /// 清空日志缓冲。
+    pub async fn clear_logs(&self) {
+        let mut logs = self.logs.lock().await;
+        logs.clear();
     }
 
     /// 为新会话选择首个 Profile（按 strategy）
     ///
     /// `healthy_profile_ids`：外部传入的健康 Profile ID 集合（P1 可传空 = 全视为健康）
+    ///
+    /// **仅在首请求调用一次**。failover 重试必须改用 [`select_next`]：
+    /// - `select_initial` 不接收 `tried`，Failover 策略下永远返回 priority
+    ///   最低的同一个 Profile，重试会陷入"反复选同一主 Profile"死循环；
+    /// - RoundRobin 策略下 `select_initial` 会推进游标，重试调用会导致轮询跳号。
     pub async fn select_initial(
         &self,
         group: &ProviderGroup,
@@ -224,6 +329,14 @@ fn weighted_pick(
     }
     // 精度兜底
     pick_profile(&members.last()?.profile_id, profiles)
+}
+
+/// 当前 UNIX 毫秒时间戳（供 RouteLogEntry.ts_ms 填充）
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 // ============================================================================
