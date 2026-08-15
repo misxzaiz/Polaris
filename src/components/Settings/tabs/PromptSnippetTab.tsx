@@ -4,7 +4,7 @@
  * 用户自建 prompt 模板片段，支持变量注入。
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useConfigStore, useToastStore } from '@/stores';
@@ -23,6 +23,13 @@ interface SnippetFormData {
   enabled: boolean;
 }
 
+export interface PromptSnippetTabRef {
+  /** 保存表单中的片段，返回是否保存成功 */
+  saveForm: () => Promise<boolean>;
+  /** 表单是否打开 */
+  isFormOpen: boolean;
+}
+
 const EMPTY_FORM: SnippetFormData = {
   name: '',
   description: '',
@@ -31,7 +38,7 @@ const EMPTY_FORM: SnippetFormData = {
   enabled: true,
 };
 
-export function PromptSnippetTab() {
+export const PromptSnippetTab = forwardRef<PromptSnippetTabRef, object>(function PromptSnippetTab(_props, ref) {
   const { t } = useTranslation('promptSnippet');
   const { snippets, loadSnippets, createSnippet, updateSnippet, deleteSnippet } = useSnippetStore();
   const { skills, loading: skillsLoading, loadSkills } = useSkillStore();
@@ -130,6 +137,17 @@ export function PromptSnippetTab() {
     setForm(EMPTY_FORM);
     setEditingId(null);
   };
+
+  // 暴露给父组件：由设置页底部/顶部按钮触发保存
+  useImperativeHandle(ref, () => ({
+    saveForm: async () => {
+      if (!showForm) return false;
+      if (!form.name.trim() || !form.content.trim()) return false;
+      await handleSave();
+      return true;
+    },
+    isFormOpen: showForm,
+  }), [showForm, form, handleSave]);
 
   // 变量操作
   const addVariable = () => {
@@ -463,4 +481,4 @@ export function PromptSnippetTab() {
       )}
     </div>
   );
-}
+});
