@@ -107,9 +107,11 @@ export function SessionConfigSelector({
   const profiles = useModelProfileStore(s => s.profiles)
 
   // 供应商分组 + 激活分组（三态「分组路由」项数据源）
-  const providerGroups = useConfigStore(s => s.config?.providerGroups ?? [])
+  // 注意：选择器必须返回引用稳定的值（config 中的表或 undefined），
+  // 不能在这里用 `?? []`——每次返回新数组导致 useSyncExternalStore 快照不等 → 无限重渲染。
+  const providerGroups = useConfigStore(s => s.config?.providerGroups)
   const activeGroupId = useConfigStore(s => s.config?.activeProviderGroupId)
-  const activeGroup = providerGroups.find(g => g.id === activeGroupId && g.active)
+  const activeGroup = (providerGroups ?? []).find(g => g.id === activeGroupId && g.active)
 
   // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
   // 映射到 isProfileForEngine 的引擎参数（claude / codex / simple-ai）。
