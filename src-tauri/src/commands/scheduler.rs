@@ -333,6 +333,24 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
             tracing::info!("[Scheduler] 调度器启动成功，已获取锁");
 
             // 启动后台守护进程
+            // 性能开关：schedulerDaemon=false 时跳过
+            let perf_scheduler = {
+                let state = app.state::<crate::AppState>();
+                let store = state.config_store.lock()
+                    .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
+                store.get().performance.scheduler_daemon
+            };
+            if !perf_scheduler {
+                tracing::warn!("[Scheduler] 调度器守护进程已禁用（performance.schedulerDaemon=false）");
+                return Ok(SchedulerStatus {
+                    is_running: false,
+                    is_holder: false,
+                    is_locked_by_other: false,
+                    pid: std::process::id(),
+                    message: Some("调度器守护进程已禁用，请在设置中启用".to_string()),
+                });
+            }
+
             let config_dir = app.path()
                 .app_config_dir()
                 .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;

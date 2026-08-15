@@ -828,11 +828,6 @@ async fn resolve_active_provider_group(
     Some((group.clone(), profiles))
 }
 
-/// 从配置中按 ID 查找 Profile。
-fn find_profile_by_id(id: &str, profiles: &[crate::models::config::ModelProfile]) -> bool {
-    profiles.iter().any(|p| p.id == id)
-}
-
 /// 判定一个 spawn 级错误是否可 failover（自动切换到下一个 Profile）。
 ///
 /// 可 failover（连接/认证类，Profile 特定）：

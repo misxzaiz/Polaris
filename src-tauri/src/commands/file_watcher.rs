@@ -1,6 +1,7 @@
 /*! 文件系统监听命令
  *
  * 代理到 services::file_watcher::FileWatcherManager
+ * 受 performance.fileWatcher 开关控制
  */
 
 use crate::error::{AppError, Result};
@@ -14,6 +15,18 @@ pub fn fs_watch_start(
     app_handle: tauri::AppHandle,
     state: tauri::State<AppState>,
 ) -> Result<()> {
+    // 检查性能开关
+    let perf = {
+        let store = state.config_store.lock()
+            .map_err(|e| AppError::Unknown(e.to_string()))?;
+        store.get().performance.file_watcher
+    };
+    if !perf {
+        return Err(AppError::Unknown(
+            "文件监听已禁用（performance.fileWatcher=false，请在设置中启用）".to_string()
+        ));
+    }
+
     let mut manager = state
         .file_watcher_manager
         .lock()

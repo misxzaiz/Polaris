@@ -39,7 +39,8 @@
     "shortcuts": "Shortcuts",
     "web": "Web Service",
     "personalHub": "Personal Hub",
-    "tokenStats": "Token Stats"
+    "tokenStats": "Token Stats",
+    "performance": "Performance & Resources"
   },
   "messages": {
     "saved": "Saved",

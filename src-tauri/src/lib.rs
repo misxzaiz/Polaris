@@ -163,7 +163,11 @@ fn get_config(state: tauri::State<AppState>) -> Result<Config> {
 /// 更新配置
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Result<()> {
+async fn update_config(
+    config: Config,
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<()> {
     let next_config = {
         let mut store = state.config_store.lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
@@ -172,13 +176,18 @@ async fn update_config(config: Config, state: tauri::State<'_, AppState>) -> Res
     };
     cascade_active_model_profile(&next_config);
     refresh_engine_configs(&state, next_config.clone()).await;
+    emit_config_changed(&app_handle, &next_config).await;
     Ok(())
 }
 
 /// 按字段合并更新配置
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, AppState>) -> Result<Config> {
+async fn update_config_patch(
+    patch: serde_json::Value,
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<Config> {
     let saved_config = {
         let mut store = state.config_store.lock()
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
@@ -186,6 +195,7 @@ async fn update_config_patch(patch: serde_json::Value, state: tauri::State<'_, A
     };
     cascade_active_model_profile(&saved_config);
     refresh_engine_configs(&state, saved_config.clone()).await;
+    emit_config_changed(&app_handle, &saved_config).await;
     Ok(saved_config)
 }
 
@@ -231,6 +241,27 @@ fn cascade_active_model_profile(config: &Config) {
 async fn refresh_engine_configs(state: &AppState, new_config: Config) {
     let mut registry = state.engine_registry.lock().await;
     registry.refresh_all_configs(new_config);
+}
+
+/// 配置变更后广播事件，通知各模块按需调整（热切换）。
+///
+/// 事件名：`config-changed`
+/// 事件内容：`PerformanceFeatures` 的序列化 JSON，各模块订阅后自行决定
+/// 是否需要响应（例如 file_watcher 检查 `file_watcher` 字段决定是否启动/停止）。
+///
+/// 设计要点：
+/// - 仅当 `performance` 字段发生变化时才 emit（通过对比新旧配置，由调用方保证）
+/// - 目前简化处理：任何 `update_config` / `update_config_patch` 都 emit，
+///   各模块自行判断字段是否变化，避免复杂 diff 逻辑。
+#[cfg(feature = "tauri-app")]
+async fn emit_config_changed(app_handle: &tauri::AppHandle, config: &Config) {
+    use tauri::Emitter;
+    let payload = serde_json::json!({
+        "performance": config.performance,
+    });
+    if let Err(e) = app_handle.emit("config-changed", payload) {
+        tracing::debug!("emit config-changed failed: {}", e);
+    }
 }
 
 const LEGACY_WEB_PORT: u16 = 9800;

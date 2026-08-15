@@ -660,6 +660,9 @@ impl OldConfig {
             terminal_scripts: Default::default(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
+            provider_groups: Vec::new(),
+            active_provider_group_id: None,
+            performance: Default::default(),
             skill_paths: Vec::new(),
             claude_cmd: Some(claude_cmd_clone),
         }

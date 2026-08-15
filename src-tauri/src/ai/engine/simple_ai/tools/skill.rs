@@ -55,6 +55,7 @@ impl Tool for ReadSkillTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::engine::simple_ai::skill::SkillEntry;
     use std::collections::HashMap;
     use std::sync::atomic::AtomicBool;
     use std::sync::Arc;

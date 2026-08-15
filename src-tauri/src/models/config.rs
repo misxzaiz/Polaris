@@ -304,6 +304,141 @@ impl ModelProfile {
     }
 }
 
+// ============================================================================
+// 供应商分组与 failover/轮询
+// ============================================================================
+
+/// 供应商分组路由策略
+///
+/// - `Failover`：主备切换。按 `priority` 升序，主 Profile 失败自动切备；
+///   同 priority 内轮询。最贴合"超时自动切换"诉求。
+/// - `RoundRobin`：纯轮询。每次新会话轮转 Profile，会话内锁定（会话亲和）。
+/// - `Weighted`：加权随机。按 `weight` 选择，可结合成本/速率。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RouteStrategy {
+    Failover,
+    RoundRobin,
+    Weighted,
+}
+
+impl Default for RouteStrategy {
+    fn default() -> Self {
+        Self::Failover
+    }
+}
+
+/// 触发 failover 的错误模式
+///
+/// 用于判定 `start_session` 后的异步错误是否应切换到组内下一个 Profile。
+/// 只有"首字前失败"（尚未向用户输出 assistant token）才允许透明切换。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum FailoverPattern {
+    /// HTTP 状态码命中（如 401/403/429/5xx）。
+    /// `code = 500` 代表整个 5xx 段（500-599）。
+    HttpStatus { code: u16 },
+    /// 首字超时：CLI 进程已起，但在 `first_token_timeout_secs` 内未输出首段 token。
+    FirstTokenTimeout,
+    /// 连接被拒：spawn 后立即崩溃（如 CLI 路径错、代理起不来）。
+    ConnectionRefused,
+    /// stderr 关键词匹配（兜底，不同供应商错误格式不统一）。
+    StderrContains { pattern: String },
+}
+
+impl FailoverPattern {
+    /// 默认 failover 触发模式集（空 `failover_on` 时使用）。
+    pub fn defaults() -> Vec<Self> {
+        vec![
+            Self::HttpStatus { code: 401 },
+            Self::HttpStatus { code: 403 },
+            Self::HttpStatus { code: 429 },
+            Self::HttpStatus { code: 500 }, // 5xx 全段
+            Self::FirstTokenTimeout,
+            Self::ConnectionRefused,
+        ]
+    }
+}
+
+/// 分组成员：一个 Profile 在分组中的路由元数据
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupMember {
+    /// 关联的 ModelProfile ID
+    pub profile_id: String,
+    /// Failover 策略：数字小优先；同 priority 内轮询
+    #[serde(default = "default_group_priority")]
+    pub priority: u32,
+    /// Weighted 策略：权重值
+    #[serde(default = "default_group_weight")]
+    pub weight: u32,
+}
+
+fn default_group_priority() -> u32 {
+    0
+}
+fn default_group_weight() -> u32 {
+    1
+}
+
+/// 供应商分组
+///
+/// 将多个 ModelProfile 组成一个高可用/负载均衡分组。新会话首请求按策略
+/// 选择 Profile；请求失败（符合 `failover_on` 模式）时自动切换到组内下一个
+/// 可用 Profile，对用户透明（前提是尚未输出首段 token）。
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderGroup {
+    /// 唯一 ID
+    pub id: String,
+    /// 人可读名称
+    pub name: String,
+    /// 路由策略
+    #[serde(default)]
+    pub strategy: RouteStrategy,
+    /// 成员列表（Failover 策略下按 priority 升序处理）
+    pub members: Vec<GroupMember>,
+    /// 触发 failover 的错误模式。空 = 使用 `FailoverPattern::defaults()`
+    #[serde(default)]
+    pub failover_on: Vec<FailoverPattern>,
+    /// spawn 后首字超时秒数。None = 不做首字超时检测
+    #[serde(default)]
+    pub first_token_timeout_secs: Option<u64>,
+    /// 最多 failover 次数（防全死循环），默认 3
+    #[serde(default = "default_max_failover")]
+    pub max_failover_attempts: u32,
+    /// 是否启用（false = 跳过此组，回退单 Profile）
+    #[serde(default = "default_group_active")]
+    pub active: bool,
+}
+
+fn default_max_failover() -> u32 {
+    3
+}
+fn default_group_active() -> bool {
+    true
+}
+
+impl ProviderGroup {
+    /// 解析实际生效的 failover 模式（空则用默认）
+    pub fn effective_patterns(&self) -> Vec<FailoverPattern> {
+        if self.failover_on.is_empty() {
+            FailoverPattern::defaults()
+        } else {
+            self.failover_on.clone()
+        }
+    }
+
+    /// 按 strategy 返回成员的处理顺序（Failover：priority 升序；其他：原序）
+    pub fn ordered_members(&self) -> Vec<&GroupMember> {
+        let mut refs: Vec<&GroupMember> = self.members.iter().collect();
+        if matches!(self.strategy, RouteStrategy::Failover) {
+            refs.sort_by_key(|m| m.priority);
+        }
+        refs
+    }
+}
+
 /// QQ Bot 实例配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1402,14 +1537,107 @@ pub struct Config {
     #[serde(default)]
     pub active_model_profile_id: Option<String>,
 
+    /// 供应商分组（failover/轮询）。
+    ///
+    /// 当 `active_provider_group_id` 指向一个存在且 active 的分组时，走分组路由
+    /// （在新会话首请求时按策略选 Profile，失败自动切换到组内下一个 Profile）；
+    /// 否则回退到 `active_model_profile_id` 单选路径（向后兼容）。
+    #[serde(default)]
+    pub provider_groups: Vec<ProviderGroup>,
+
+    /// 当前激活的供应商分组 ID。
+    /// None 或指向不存在的分组 → 不启用分组，走单 Profile 旧路径。
+    #[serde(default)]
+    pub active_provider_group_id: Option<String>,
+
     /// Skill 读取路径列表。支持绝对路径；相对路径由前端按当前工作区解析。
     #[serde(default)]
     pub skill_paths: Vec<String>,
+
+    /// 性能与资源管理：各资源密集型功能的开关。
+    /// 所有字段默认关闭（false），用户按需开启。
+    /// 详见 docs/performance-features-default-off-plan.md。
+    #[serde(default = "default_performance_features")]
+    pub performance: PerformanceFeatures,
 
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
     pub claude_cmd: Option<String>,
+}
+
+// ============================================================================
+// PerformanceFeatures — 资源密集型功能开关
+//
+// 设计原则：
+// - 所有字段默认 false（默认关闭），用户手动开启
+// - 开关变更通过 config-changed 事件热切换，无需重启
+// - 关闭时各功能应优雅降级（如 LSP 索引关闭后走 regex_fallback）
+// ============================================================================
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceFeatures {
+    /// 文件系统监听（默认关闭）。
+    /// 开启后监听工作区文件变化，自动刷新文件树。
+    /// 关闭后需用户手动触发刷新。
+    #[serde(default)]
+    pub file_watcher: bool,
+
+    /// LSP 智能索引（默认关闭）。
+    /// 开启后使用 tree-sitter 构建 AST 索引 + SQLite 持久化，
+    /// 提供精准的 Java 代码跳转和引用查找。
+    /// 关闭后降级为正则匹配（regex_fallback），精度降低但零开销。
+    #[serde(default)]
+    pub lsp_index: bool,
+
+    /// 调度器守护进程（默认关闭）。
+    /// 开启后后台轮询定时任务，到期自动触发执行。
+    /// 关闭后定时任务不会自动执行（需手动触发）。
+    #[serde(default)]
+    pub scheduler_daemon: bool,
+
+    /// 编辑器语法高亮（默认关闭）。
+    /// 开启后代码块使用 highlight.js 着色。
+    /// 关闭后代码块以等宽字体原样展示。
+    #[serde(default)]
+    pub syntax_highlighting: bool,
+
+    /// Mermaid 图表渲染（默认关闭）。
+    /// 开启后自动将 mermaid 代码块渲染为图表。
+    /// 关闭后 mermaid 代码块以普通代码样式展示。
+    #[serde(default)]
+    pub mermaid_diagrams: bool,
+
+    /// KaTeX 数学公式渲染（默认关闭）。
+    /// 开启后自动渲染 LaTeX 数学公式。
+    /// 关闭后 LaTeX 语法原样展示。
+    #[serde(default)]
+    pub katex_math: bool,
+
+    /// 代码编辑器语言包预加载（默认关闭）。
+    /// 开启后预加载所有编程语言的高亮/自动补全支持。
+    /// 关闭后按需加载（打开文件时按扩展名 dynamic import）。
+    #[serde(default)]
+    pub code_editor_languages: bool,
+
+    /// 插件服务自动启动（默认关闭）。
+    /// 开启后应用启动时自动拉起所有已启用插件的后台服务。
+    /// 关闭后首次使用插件功能时才按需启动。
+    #[serde(default)]
+    pub plugin_auto_start: bool,
+}
+
+fn default_performance_features() -> PerformanceFeatures {
+    PerformanceFeatures {
+        file_watcher: false,
+        lsp_index: false,
+        scheduler_daemon: false,
+        syntax_highlighting: false,
+        mermaid_diagrams: false,
+        katex_math: false,
+        code_editor_languages: false,
+        plugin_auto_start: false,
+    }
 }
 
 fn default_default_engine() -> String {
@@ -1452,7 +1680,10 @@ impl Default for Config {
             terminal_scripts: BTreeMap::new(),
             model_profiles: Vec::new(),
             active_model_profile_id: None,
+            provider_groups: Vec::new(),
+            active_provider_group_id: None,
             skill_paths: Vec::new(),
+            performance: default_performance_features(),
             claude_cmd: None,
         }
     }

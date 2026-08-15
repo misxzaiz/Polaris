@@ -468,6 +468,30 @@ export interface Config {
   activeModelProfileId?: string;
   /** Skill 读取路径列表（支持全局绝对路径，工作区相对路径由应用层处理） */
   skillPaths?: string[];
+  /** 性能与资源管理：各资源密集型功能的开关。
+   *  所有字段默认关闭（false），用户按需开启。
+   *  变更通过 config-changed 事件热切换，无需重启。 */
+  performance?: PerformanceFeatures;
+}
+
+/** 性能与资源功能开关 */
+export interface PerformanceFeatures {
+  /** 文件系统监听（默认关闭） */
+  fileWatcher?: boolean;
+  /** LSP 智能索引 tree-sitter + SQLite（默认关闭） */
+  lspIndex?: boolean;
+  /** 调度器守护进程（默认关闭） */
+  schedulerDaemon?: boolean;
+  /** 编辑器语法高亮 highlight.js（默认关闭） */
+  syntaxHighlighting?: boolean;
+  /** Mermaid 图表渲染（默认关闭） */
+  mermaidDiagrams?: boolean;
+  /** KaTeX 数学公式渲染（默认关闭） */
+  katexMath?: boolean;
+  /** 代码编辑器语言包预加载（默认关闭） */
+  codeEditorLanguages?: boolean;
+  /** 插件服务自动启动（默认关闭） */
+  pluginAutoStart?: boolean;
 }
 
 /** 配置 patch：只包含要更新的顶层字段，null 用于清空可选字段 */

@@ -26,6 +26,7 @@ import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { ShortcutsTab } from './tabs/ShortcutsTab';
+import { PerformanceTab } from './tabs/PerformanceTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
@@ -59,6 +60,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'web': 'nav.web',
   'personal-hub': 'nav.personalHub',
   'token-stats': 'nav.tokenStats',
+  'performance': 'nav.performance',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -95,6 +97,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     'personal-hub': ['personalHub'],
     'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'piCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId'],
+    performance: ['performance'],
   };
 
   const hasChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
@@ -330,6 +333,14 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'token-stats' && (
               <TokenStatsTab />
+            )}
+
+            {activeTab === 'performance' && (
+              <PerformanceTab
+                config={localConfig}
+                onConfigChange={setLocalConfig}
+                loading={loading}
+              />
             )}
           </div>
 

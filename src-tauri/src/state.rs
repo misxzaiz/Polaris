@@ -289,6 +289,8 @@ pub struct AppState {
     pub web_server_handle: Arc<AsyncMutex<Option<WebServerHandle>>>,
     /// 内嵌代理管理器 — 管理 OpenAI Chat Completions 格式转换代理实例
     pub proxy_manager: crate::services::ProxyManager,
+    /// 供应商分组路由器 — failover/轮询决策层
+    pub provider_router: Arc<crate::services::ProviderRouter>,
     /// 插件服务管理器 — 管理插件声明的后台服务
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
 }
@@ -342,6 +344,7 @@ pub fn create_app_state(
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
         proxy_manager: crate::services::ProxyManager::new(),
+        provider_router: Arc::new(crate::services::ProviderRouter::new()),
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
@@ -414,6 +417,7 @@ impl AppState {
             start_time: self.start_time,
             web_server_handle: self.web_server_handle.clone(),
             proxy_manager: crate::services::ProxyManager::new(),
+            provider_router: self.provider_router.clone(),
             plugin_service_manager: self.plugin_service_manager.clone(),
         }
     }

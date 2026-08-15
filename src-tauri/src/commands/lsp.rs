@@ -7,7 +7,7 @@
 #[cfg(feature = "tauri-app")]
 use tauri::{AppHandle, State};
 
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::services::lsp_config_repository::LspServerEntry;
 use crate::AppState;
 
@@ -194,6 +194,18 @@ pub fn lsp_index_open(
     state: State<'_, AppState>,
     root: String,
 ) -> Result<IndexStatus> {
+    // 性能开关：lspIndex=false 时跳过
+    let perf_lsp_index = {
+        let store = state.config_store.lock()
+            .map_err(|e| AppError::Unknown(e.to_string()))?;
+        store.get().performance.lsp_index
+    };
+    if !perf_lsp_index {
+        return Err(AppError::Unknown(
+            "LSP 智能索引已禁用（performance.lspIndex=false）".to_string()
+        ));
+    }
+
     let svc = state.lsp_index_service.clone();
     let workspace = std::path::Path::new(&root);
     let _ = svc.open_workspace(workspace)?;

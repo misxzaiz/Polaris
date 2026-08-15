@@ -8,6 +8,7 @@ import type { FileExplorerStore, FileInfo, FsChangeEvent } from '@/types';
 import * as tauri from '@/services/tauri';
 import { searchFiles } from '@/services/fileSearch';
 import type { FileMatch } from '@/services/fileSearch';
+import { isFileWatcherEnabled } from '@/utils/performanceFeatures';
 import { createLogger } from '@/utils/logger';
 import { getParentPath, joinPath, normalizePath } from '@/utils/path';
 import { updateFolderChildren, filterFiles, countFiles, removePathFromTree } from './fileExplorerStoreUtils';
@@ -728,6 +729,10 @@ export function initFileWatcherListener(): () => void {
  * 启动文件监听
  */
 export async function startFileWatcher(rootPath: string): Promise<void> {
+  if (!isFileWatcherEnabled()) {
+    log.debug('文件监听已禁用（performance.fileWatcher=false）');
+    return;
+  }
   try {
     await tauri.fsWatchStart(rootPath);
     log.info('文件监听已启动', { rootPath });

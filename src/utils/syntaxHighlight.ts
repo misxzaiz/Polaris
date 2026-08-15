@@ -5,6 +5,7 @@
 
 import hljs from 'highlight.js'
 import { LRUCache } from '@/utils/lru-cache'
+import { isSyntaxHighlightingEnabled } from '@/utils/performanceFeatures'
 
 // 导入常用语言
 import javascript from 'highlight.js/lib/languages/javascript'
@@ -53,6 +54,9 @@ const highlightCache = new LRUCache<string, string>({ maxSize: 500 })
  */
 export function highlightCode(code: string, language: string): string {
   if (!code) return ''
+
+  // 性能开关：语法高亮关闭时返回转义后的纯文本（不应用高亮 HTML，但保留文字可见）
+  if (!isSyntaxHighlightingEnabled()) return escapeHtml(code)
 
   ensureInitialized()
 

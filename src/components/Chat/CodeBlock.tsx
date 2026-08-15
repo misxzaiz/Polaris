@@ -13,6 +13,7 @@
 
 import { memo, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import DOMPurify from 'dompurify';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
 import hljs from 'highlight.js';
@@ -201,14 +202,19 @@ export const CodeBlock = memo(function CodeBlock({ children, className }: CodeBl
   const [isCollapsed, setIsCollapsed] = useState(shouldAutoFold);
 
   // 异步语法高亮
+  const syntaxHighlightingEnabled = usePerformanceFlag('syntaxHighlighting');
   useEffect(() => {
+    if (!syntaxHighlightingEnabled) {
+      setHighlightedCode(null);
+      return;
+    }
     if (!normalizedLanguage) {
       setHighlightedCode(null);
       return;
     }
 
     return scheduleHighlight(codeString, normalizedLanguage, setHighlightedCode);
-  }, [codeString, normalizedLanguage]);
+  }, [codeString, normalizedLanguage, syntaxHighlightingEnabled]);
 
   // 复制代码
   const handleCopy = useCallback(async () => {

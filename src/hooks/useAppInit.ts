@@ -138,22 +138,28 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     }
 
     // 启动插件声明的后台服务（autoStart 服务）
-    try {
-      const pluginStates = usePluginStore.getState().pluginStates;
-      const enabledMap: Record<string, { enabled: boolean }> = {};
-      for (const plugin of pluginRegistry.listPlugins()) {
-        const state = pluginStates[plugin.id];
-        const enabled = state ? state.enabled : plugin.enabledByDefault;
-        enabledMap[plugin.id] = { enabled };
+    // 性能开关：pluginAutoStart=false 时跳过自动启动
+    const pluginAutoStart = useConfigStore.getState().config?.performance?.pluginAutoStart ?? false;
+    if (pluginAutoStart) {
+      try {
+        const pluginStates = usePluginStore.getState().pluginStates;
+        const enabledMap: Record<string, { enabled: boolean }> = {};
+        for (const plugin of pluginRegistry.listPlugins()) {
+          const state = pluginStates[plugin.id];
+          const enabled = state ? state.enabled : plugin.enabledByDefault;
+          enabledMap[plugin.id] = { enabled };
+        }
+        const statuses = await pluginServiceManager.autoStartAll(enabledMap, currentWorkspacePath);
+        if (statuses.length > 0) {
+          const store = usePluginServiceStore.getState();
+          store.updateServiceStatuses(statuses);
+          log.info('Plugin services auto-started', { count: statuses.length });
+        }
+      } catch (err) {
+        log.warn('Plugin service autostart failed', { error: String(err) });
       }
-      const statuses = await pluginServiceManager.autoStartAll(enabledMap, currentWorkspacePath);
-      if (statuses.length > 0) {
-        const store = usePluginServiceStore.getState();
-        store.updateServiceStatuses(statuses);
-        log.info('Plugin services auto-started', { count: statuses.length });
-      }
-    } catch (err) {
-      log.warn('Plugin service autostart failed', { error: String(err) });
+    } else {
+      log.debug('Plugin service auto-start skipped (performance.pluginAutoStart=false)');
     }
 
     if (signal?.aborted) return;

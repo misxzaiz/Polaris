@@ -14,6 +14,7 @@ import { sanitizeMermaidSvg } from '@/utils/sanitizeMermaidSvg';
 import { getMermaidConfig } from '@/utils/mermaid-config';
 import { useThemeStore } from '@/stores/themeStore';
 import { modKey } from '@/utils/path';
+import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import { createLogger } from '@/utils/logger';
 import {
   type ViewMode,
@@ -117,15 +118,17 @@ export const DeferredMermaidDiagram = memo(function DeferredMermaidDiagram({
   }, [code, id]);
 
   // 流式结束后自动渲染（非流式场景）
+  // 性能开关：mermaidDiagrams=false 时不自动渲染，用户手动点击
+  const mermaidEnabled = usePerformanceFlag('mermaidDiagrams');
+
   useEffect(() => {
-    if (!isStreaming && renderState === 'idle' && code?.trim()) {
-      // 延迟一小段时间，确保 DOM 稳定
+    if (!isStreaming && renderState === 'idle' && code?.trim() && mermaidEnabled) {
       const timer = setTimeout(() => {
         renderDiagram();
       }, 100);
       return () => clearTimeout(timer);
     }
-  }, [isStreaming, renderState, code, renderDiagram]);
+  }, [isStreaming, renderState, code, mermaidEnabled, renderDiagram]);
 
   // 事件处理
   const handleZoomIn = useCallback(() => {

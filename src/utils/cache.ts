@@ -5,11 +5,50 @@
 import { convertFileSrc } from '@tauri-apps/api/core';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import katex from 'katex';
 import type { FileMatch } from '@/services/fileSearch';
+import { isKatexMathEnabled } from '@/utils/performanceFeatures';
 import { createLogger } from './logger';
 
 const logger = createLogger('cache');
+
+// KaTeX 延迟加载：首次使用时才 dynamic import，避免模块加载即占用内存
+let katexModule: any = null;
+let katexLoading = false;
+async function ensureKatex(): Promise<void> {
+  if (katexLoading) return;
+  katexLoading = true;
+  try {
+    katexModule = (await import('katex')).default;
+  } catch {
+    // 加载失败，静默忽略
+  } finally {
+    katexLoading = false;
+  }
+}
+
+/**
+ * KaTeX 渲染（同步）。首次调用触发延迟加载但返回占位符，
+ * 下次调用时已加载完成即可正常渲染。
+ * 禁用时不触发加载。
+ */
+function renderKatex(math: string, displayMode: boolean): string {
+  if (!isKatexMathEnabled()) return `\\${displayMode ? '$$' : '$'}${math}\\${displayMode ? '$$' : '$'}`;
+
+  // 首次调用触发后台加载（不阻塞当前渲染）
+  if (!katexModule && !katexLoading) {
+    ensureKatex();
+  }
+
+  if (katexModule) {
+    try {
+      return katexModule.renderToString(math, { displayMode, throwOnError: false });
+    } catch {
+      return math;
+    }
+  }
+  // 加载中，返回占位符
+  return `<span class="katex-placeholder">\\${displayMode ? '$$' : '$'}${math}\\${displayMode ? '$$' : '$'}</span>`;
+}
 
 // 配置 marked
 marked.setOptions({
@@ -84,8 +123,9 @@ marked.use({
     {
       name: 'blockMath',
       level: 'block',
-      start(src: string) { return src.indexOf('$$'); },
-      tokenizer(this: marked.Tokenizer, src: string) {
+      start(src: string) { return isKatexMathEnabled() ? src.indexOf('$$') : -1; },
+      tokenizer(this: any, src: string) {
+        if (!isKatexMathEnabled()) return;
         const match = src.match(/^\x24\x24([\s\S]*?)\x24\x24/);
         if (match) {
           return {
@@ -96,18 +136,15 @@ marked.use({
         }
       },
       renderer(token: any) {
-        try {
-          return katex.renderToString(token.math, { displayMode: true, throwOnError: false });
-        } catch {
-          return token.math;
-        }
+        return renderKatex(token.math, true);
       },
     },
     {
       name: 'inlineMath',
       level: 'inline',
-      start(src: string) { return src.indexOf('$'); },
-      tokenizer(this: marked.Tokenizer, src: string) {
+      start(src: string) { return isKatexMathEnabled() ? src.indexOf('$') : -1; },
+      tokenizer(this: any, src: string) {
+        if (!isKatexMathEnabled()) return;
         const match = src.match(/^\x24([^$\n]+?)\x24/);
         if (match) {
           return {
@@ -118,11 +155,7 @@ marked.use({
         }
       },
       renderer(token: any) {
-        try {
-          return katex.renderToString(token.math, { throwOnError: false });
-        } catch {
-          return token.math;
-        }
+        return renderKatex(token.math, false);
       },
     },
   ],
