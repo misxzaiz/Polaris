@@ -149,11 +149,22 @@ P0 的实际工作是**补齐 `codeEditorLanguages` 的唯一缺口**：开关 q
 
 ## 4. 抓手 B：前端按需 import 边界
 
+### 4.0 已实施：hljs core 化（2026-08-16 提交 `259d5294`）
+
+**收益实测**（esbuild bundle 对比，minify）：
+- full `import hljs from 'highlight.js'`：**1,055 KB**
+- core + 15 种语言：**79 KB**
+- **节省 ≈ 976 KB（约 90%，gzip 后约 250 KB）**
+
+**改动**：新增 `src/utils/highlight.ts`（highlight.js/lib/core + 15 语言单次注册 + 补 yaml + 共享缓存/显示名），三处消费方（CodeBlock/MarkdownEditor/syntaxHighlight）全量 import → 都改走统一实例。消除语言清单三处漂移（yaml 此前完全未注册）。全量 import 已清零。
+
+**待办**：katex/codemirror lang 按需加载已在 P0 就位；非首屏面板路由懒加载（§4.2）尚未实施。
+
 ### 4.1 高亮/公式/图表三件套
-- `highlight.js`：`import hljs from 'highlight.js'` 改为 `highlight.js/lib/core` + 仅注册首屏常用语言（ts/js/py/rust/markdown/bash/json），其余 dynamic import。
-- `katex`：仿 Mermaid 模式，默认关 + 首个公式块出现时 dynamic import。
-- `@codemirror/lang-*`：维护 `Map<ext, Promise>` 缓存，打开文件按扩展名懒加载，不在首屏预加载 12 个包。
-- 抓手 A 的 `syntax_highlighting=false` 直接跳过 hljs，与 B 的按需注册**正交叠加**。
+- ✅ `highlight.js`：core 化完成（§4.0）。
+- ✅ `katex`：P0 已按需（`cache.ts` dynamic import + 块识别门控）。
+- ✅ `@codemirror/lang-*`：P0 已按需（`Editor.tsx` 打开文件时 dynamic import，`codeEditorLanguages` 控制 idle 预加载）。
+- ✅ 抓手 A 的 `syntax_highlighting=false` 直接跳过 hljs，与 B 的按需注册**正交叠加**。
 
 ### 4.2 路由级 / 面板级懒加载
 - `Chat`(21k)/`Settings`(13k) 是首屏外的重 chunk，但当前大概率已随主包加载。用 `React.lazy` + `Suspense` 对**非首屏面板**（GitPanel/Scheduler/Browser/PersonalHub/Diff/Agent）做路由级懒加载，首屏只留 Chat + Layout。
