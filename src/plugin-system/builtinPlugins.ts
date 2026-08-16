@@ -31,6 +31,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.fileExplorer',
         labelDefault: 'File Explorer',
         order: 10,
+        slot: 'files',
       },
       {
         id: 'git.panel',
@@ -40,6 +41,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.gitPanel',
         labelDefault: 'Git',
         order: 20,
+        slot: 'git',
       },
       {
         id: 'browser.panel',
@@ -49,6 +51,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.browserPanel',
         labelDefault: 'Browser',
         order: 30,
+        slot: 'browser',
       },
       {
         id: 'translate.panel',
@@ -58,6 +61,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.translatePanel',
         labelDefault: 'Translate',
         order: 40,
+        slot: 'translate',
       },
       {
         id: 'terminal.panel',
@@ -67,6 +71,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.terminalPanel',
         labelDefault: 'Terminal',
         order: 70,
+        slot: 'terminal',
       },
       {
         id: 'developer.panel',
@@ -76,6 +81,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.developerPanel',
         labelDefault: 'Developer',
         order: 80,
+        slot: 'developer',
       },
       {
         id: 'integration.panel',
@@ -85,6 +91,7 @@ const corePluginManifest: PolarisPluginManifest = {
         labelKey: 'labels.integrationPanel',
         labelDefault: 'Integration',
         order: 90,
+        slot: 'integration',
       },
       {
         id: 'aiConsole.panel',

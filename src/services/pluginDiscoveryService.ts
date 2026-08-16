@@ -138,6 +138,12 @@ function normalizeViews(
       labelKey,
       labelDefault: asString(item.labelDefault),
       order: typeof item.order === 'number' ? item.order : 1000,
+      slot: asString(item.slot),
+      slotMode: (() => {
+        const mode = asString(item.slotMode)
+        if (mode === 'shadow' || mode === 'chain') return mode
+        return 'append'
+      })(),
     }]
   })
 }

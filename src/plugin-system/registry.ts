@@ -293,6 +293,28 @@ class PluginRegistry {
         }))
       )
   }
+
+  /**
+   * 查询某 slot 是否被插件 shadow 覆盖（P3-T1）。
+   *
+   * 如果返回非 undefined，表示有插件声明了 `slotMode: "shadow"` 覆盖该 slot，
+   * 调用方应隐藏默认面板，改用插件面板。
+   */
+  getShadowedSlot(slotId: string): PluginViewContribution | undefined {
+    return this.listViewContributions('activityBar')
+      .find((v) => v.slot === slotId && v.slotMode === 'shadow')
+  }
+
+  /**
+   * 查询某 slot 的所有 chain 增强插件（P3-T1）。
+   *
+   * 返回声明了 `slotMode: "chain"` 且 slot 匹配的所有插件视图，
+   * 调用方可在默认面板渲染前后注入这些插件的内容。
+   */
+  getChainedSlots(slotId: string): PluginViewContribution[] {
+    return this.listViewContributions('activityBar')
+      .filter((v) => v.slot === slotId && v.slotMode === 'chain')
+  }
 }
 
 export const pluginRegistry = new PluginRegistry()

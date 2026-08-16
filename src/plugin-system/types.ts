@@ -24,6 +24,18 @@ export type PluginIconId =
 
 export type PluginLeftPanelType = string
 
+/**
+ * UI Slot 覆盖模式（P3-T1）
+ *
+ * - append（默认）：追加到 activityBar，新面板独立显示
+ * - shadow：覆盖目标 slot 的默认渲染（原面板隐藏，插件面板替代）
+ * - chain：在目标 slot 的渲染前后链式注入自定义内容
+ *
+ * slot 字段指定目标 slot id（如 "files.panel"）。
+ * 省略 slot 时等价于 append 模式（向后兼容）。
+ */
+export type PluginViewSlotMode = 'append' | 'shadow' | 'chain'
+
 export interface PluginViewContribution {
   id: string
   pluginId: PluginId
@@ -33,6 +45,10 @@ export interface PluginViewContribution {
   labelKey: string
   labelDefault?: string
   order: number
+  /** 目标 slot id（如 "files.panel"）；省略时为 append 模式 */
+  slot?: string
+  /** slot 覆盖模式，默认 append */
+  slotMode?: PluginViewSlotMode
 }
 
 export interface PluginMcpServerContribution {

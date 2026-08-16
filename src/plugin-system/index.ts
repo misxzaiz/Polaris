@@ -2,6 +2,14 @@ export { pluginRegistry } from './registry'
 export { pluginPanelRegistry } from './panelRegistry'
 export { chatCardRegistry } from './chatCardRegistry'
 export { pluginIconMap } from './icons'
+export { pluginInspector } from './inspector'
+export type {
+  PluginDiagnostics,
+  PluginInfo,
+  McpServerInfo,
+  ProviderInfo,
+  SlotOverrideInfo,
+} from './inspector'
 export {
   listEnabledPluginMcpServers,
   listPluginMcpServerStatuses,
@@ -26,6 +34,7 @@ export type {
   PluginToolProviderContribution,
   PluginViewArea,
   PluginViewContribution,
+  PluginViewSlotMode,
   PolarisPluginManifest,
 } from './types'
 
