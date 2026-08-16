@@ -105,6 +105,12 @@ pub struct ChatRequestOptions {
     /// 与 `model_profile_id` 配合构成「官方 / 分组路由 / 指定 Profile」三态。
     #[serde(default)]
     pub profile_mode: Option<ProfileMode>,
+    /// 分组路由模式下要使用的供应商分组 ID。
+    /// None = 跟随全局 `active_provider_group_id`（默认）；
+    /// Some(id) = 显式指定该分组（会话级覆盖，优先于全局激活）。
+    /// 非分组路由模式（official/profile）下忽略此字段。
+    #[serde(default)]
+    pub provider_group_id: Option<String>,
 }
 
 // ============================================================================
@@ -818,15 +824,22 @@ async fn apply_model_profile_options(
 // 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。
 // ============================================================================
 
-/// 解析当前激活的供应商分组。
+/// 解析当前生效的供应商分组。
+///
+/// `explicit_group_id`：带外指定的分组 ID（会话级覆盖，来自请求/provider_group_id）。
+/// - Some(id) → 优先查找该分组（必须是 active 且非空成员）；找不到返回 None（回退官方）。
+/// - None → 跟随全局 `active_provider_group_id`（默认行为）。
 ///
 /// 返回 None 表示不启用分组（走单 Profile 旧路径）。
 async fn resolve_active_provider_group(
     state: &crate::AppState,
+    explicit_group_id: Option<&str>,
 ) -> Option<(ProviderGroup, Vec<crate::models::config::ModelProfile>)> {
     let config = state.clone_config().ok()?;
-    let group_id = config.active_provider_group_id.as_ref()?;
-    let group = config.provider_groups.iter().find(|g| g.id == *group_id && g.active)?;
+    let group_id = explicit_group_id
+        .map(|id| id.to_string())
+        .or(config.active_provider_group_id.clone())?;
+    let group = config.provider_groups.iter().find(|g| g.id == group_id && g.active)?;
     if group.members.is_empty() {
         return None;
     }
@@ -1261,7 +1274,7 @@ pub async fn start_chat_inner(
     //
     // 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。
     // ──────────────────────────────────────────────────────
-    let route_choice = resolve_active_provider_group(state).await;
+    let route_choice = resolve_active_provider_group(state, options.provider_group_id.as_deref()).await;
     let max_attempts: usize = if route_choice.is_some() {
         let (g, _) = route_choice.as_ref().unwrap();
         g.max_failover_attempts.max(1) as usize
@@ -1812,7 +1825,7 @@ pub async fn continue_chat_inner(
     // 续聊不做 failover loop（P1 切入点在 start 路径已实现），但由于会话亲和，
     // 续聊与首条保持在同一个 Profile，首条的高可用能力即可覆盖整条会话链路。
     // ──────────────────────────────────────────────────────
-    let route_choice = resolve_active_provider_group(state).await;
+    let route_choice = resolve_active_provider_group(state, options.provider_group_id.as_deref()).await;
     // 与 start_chat_inner 的判定优先级一致：profile_mode 显式指定优先，
     // 向前兼容（profile_mode=None）时 model_profile_id 优先于分组。
     let chosen_profile_id: Option<String> = resolve_profile_id_for_request(

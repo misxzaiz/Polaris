@@ -580,6 +580,12 @@ export interface SessionMetadata {
    */
   profileMode?: ProfileMode
   /**
+   * 会话绑定的供应商分组 ID（配合 profileMode='group'）。
+   * - `undefined`/空串：未设置 → 发送时跟随后端全局 active_provider_group_id
+   * - 具体 id：使用该分组（会话级覆盖，优先于全局激活）
+   */
+  providerGroupId?: string
+  /**
    * 会话绑定的专家 agent slug（L0 用户显式 persona 覆盖）。
    * - `undefined`：未设置 → 发送时无专家（跟随全局 sessionConfig.agent，通常为空）
    * - 非空字符串：使用该 corpus/自定义专家人格
@@ -695,6 +701,12 @@ export interface SessionManagerActions {
    * official/group 时同步清除会话级 modelProfileId（三态互斥，防残留穿透）。
    */
   updateSessionProfileMode: (sessionId: string, profileMode: import('../../types/sessionConfig').ProfileMode | null) => void
+  /**
+   * 更新会话绑定的供应商分组 ID（配合 profileMode='group'）。
+   * - 传具体分组 id → 写入会话级覆盖（优先于全局 active_provider_group_id）
+   * - 传 `null`/空串 → 清除会话级覆盖（回到「未设置 → 跟随全局激活分组」）
+   */
+  updateSessionProviderGroupId: (sessionId: string, providerGroupId: string | null) => void
   /**
    * 更新会话绑定的模型名。
    * - 传具体模型名或空串 → 写入会话级覆盖

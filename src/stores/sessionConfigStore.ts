@@ -44,6 +44,7 @@ interface SessionConfigState {
   setPermissionMode: (mode: PermissionMode) => void
   setModelProfileId: (profileId: string) => void
   setProfileMode: (mode: ProfileMode) => void
+  setProviderGroupId: (groupId: string) => void
   setConfig: (config: Partial<SessionRuntimeConfig>) => void
   resetConfig: () => void
 }
@@ -101,6 +102,13 @@ export const useSessionConfig = create<SessionConfigState>()(
           }
           return { config: next }
         }),
+
+      /** 设置会话/全局选中的供应商分组 ID（配合 profileMode='group' 使用）。
+       *  不改变 profileMode（由调用方先 setProfileMode 或保持现状）。 */
+      setProviderGroupId: (providerGroupId) =>
+        set((state) => ({
+          config: { ...state.config, providerGroupId },
+        })),
 
       setConfig: (newConfig) =>
         set((state) => ({

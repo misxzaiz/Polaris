@@ -55,6 +55,16 @@ const STRATEGY_LABEL: Record<string, string> = {
 /** 供应商选择模式：分组路由选项的哨兵值（进入 handleSelect 后映射 profileMode='group'） */
 const GROUP_ROUTE_VALUE = '__group__'
 
+/** 分组条目 value 前缀：`__group__:<id>`（避免与 Profile ID 冲突） */
+const GROUP_ENTRY_PREFIX = '__group__:'
+
+/** 从带前缀的 value 解析出分组 ID */
+function groupIdFromValue(value: string): string | null {
+  return value.startsWith(GROUP_ENTRY_PREFIX)
+    ? value.slice(GROUP_ENTRY_PREFIX.length)
+    : null
+}
+
 /** Profile 线路协议的视觉标识（状态栏 Profile 选择器用，三协议各自区分） */
 function wireApiBadge(wireApi?: WireApi): string {
   switch (wireApi) {
@@ -137,9 +147,21 @@ export function SessionConfigSelector({
     return group.targetEngines.includes(currentEngine)
   }, [currentEngine])
 
-  const activeGroup = (providerGroups ?? []).find(
-    g => g.id === activeGroupId && g.active && isGroupCompatibleWithEngine(g)
+  // 所有适用于当前引擎且已启用的分组（下拉展开全部，供多分组选择）
+  const availableGroups = useMemo(
+    () => (providerGroups ?? []).filter(g => g.active && isGroupCompatibleWithEngine(g)),
+    [providerGroups, isGroupCompatibleWithEngine]
   )
+
+  // 全局激活分组（sentinel「跟随全局激活」项的语义指向它）
+  const activeGroup = availableGroups.find(g => g.id === activeGroupId)
+
+  // 当前选中/生效的分组：会话镜像 providerGroupId 优先，回退全局激活
+  // （下拉高亮用；空 = 未显式指定，跟随后端全局）
+  const selectedGroupId = config.providerGroupId || activeGroupId
+  const selectedGroup = selectedGroupId
+    ? (providerGroups ?? []).find(g => g.id === selectedGroupId && g.active)
+    : undefined
 
   const isSimpleAiEngine = currentEngine === 'simple-ai'
   useEffect(() => {
@@ -278,23 +300,37 @@ export function SessionConfigSelector({
     if (type === 'profile') {
       // 切换到官方 API 或新供应商时，清空模型选择（让用户重新选或默认）
       nextConfig.model = ''
-      // P2: 三态供应商模式（官方 / 分组路由 / 指定 Profile）
+      // 三态供应商模式（官方 / 分组路由 / 指定 Profile）
       if (value === '') {
         // 官方 API
         nextConfig.profileMode = 'official'
         nextConfig.modelProfileId = ''
-      } else if (value === '__group__') {
-        // 分组路由（激活分组可用时）
+        nextConfig.providerGroupId = ''
+      } else if (value === GROUP_ROUTE_VALUE) {
+        // 分组路由 → 跟随全局激活分组（sentinel，不绑定具体分组）
         nextConfig.profileMode = 'group'
         nextConfig.modelProfileId = ''
-        // 自动选中分组的默认模型（如果存在）
+        nextConfig.providerGroupId = ''
+        // 自动选中全局激活分组的默认模型（如果存在）
         if (activeGroup?.defaultModel) {
           nextConfig.model = activeGroup.defaultModel
+        }
+      } else if (groupIdFromValue(value)) {
+        // 分组路由 → 显式指定某个分组（value=`__group__:<id>`）
+        const gid = groupIdFromValue(value) as string
+        nextConfig.profileMode = 'group'
+        nextConfig.modelProfileId = ''
+        nextConfig.providerGroupId = gid
+        // 自动选中该分组的默认模型（如果存在）
+        const chosenGroup = availableGroups.find(g => g.id === gid)
+        if (chosenGroup?.defaultModel) {
+          nextConfig.model = chosenGroup.defaultModel
         }
       } else {
         // 指定 Profile
         nextConfig.profileMode = 'profile'
         nextConfig.modelProfileId = value
+        nextConfig.providerGroupId = ''
       }
     }
     onChange({
@@ -307,17 +343,25 @@ export function SessionConfigSelector({
       if (type === 'profile') {
         // 三态供应商模式写入会话级覆盖：
         // - 官方 → 哨兵 + profileMode=official
-        // - 分组 → profileMode=group
+        // - 分组 → profileMode=group（providerGroupId 具体分组或空=全局）
         // - 指定 Profile → id + profileMode=profile
         if (value === '') {
           sessionStoreManager.getState().updateSessionModelProfile(activeId, OFFICIAL_API_PROFILE)
           sessionStoreManager.getState().updateSessionProfileMode(activeId, 'official')
-        } else if (value === '__group__') {
+          sessionStoreManager.getState().updateSessionProviderGroupId(activeId, null)
+        } else if (value === GROUP_ROUTE_VALUE) {
           sessionStoreManager.getState().updateSessionModelProfile(activeId, null)
           sessionStoreManager.getState().updateSessionProfileMode(activeId, 'group')
+          sessionStoreManager.getState().updateSessionProviderGroupId(activeId, null)
+        } else if (groupIdFromValue(value)) {
+          const gid = groupIdFromValue(value) as string
+          sessionStoreManager.getState().updateSessionModelProfile(activeId, null)
+          sessionStoreManager.getState().updateSessionProfileMode(activeId, 'group')
+          sessionStoreManager.getState().updateSessionProviderGroupId(activeId, gid)
         } else {
           sessionStoreManager.getState().updateSessionModelProfile(activeId, value)
           sessionStoreManager.getState().updateSessionProfileMode(activeId, 'profile')
+          sessionStoreManager.getState().updateSessionProviderGroupId(activeId, null)
         }
       } else if (type === 'model') {
         sessionStoreManager.getState().updateSessionModel(activeId, value)
@@ -327,7 +371,7 @@ export function SessionConfigSelector({
       }
     }
     setOpenDropdown(null)
-  }, [config, onChange, activeGroup])
+  }, [config, onChange, activeGroup, availableGroups])
 
   const handleCustomInputConfirm = useCallback((type: SelectorType) => {
     if (!customInput || customInput.type !== type) return
@@ -383,27 +427,40 @@ export function SessionConfigSelector({
         })))
         break
       case 'profile': {
-        // P2: 三区块 = 官方 API / 分组路由 / 指定 Profile
+        // P2/P3: 区块 = 官方 API / 分组路由(多分组) / 指定 Profile
         // 区块 1：官方 API（value='' → profileMode=official）
         items.push({
           value: '',
           label: t('sessionConfig.officialApi'),
           description: t('sessionConfig.officialApiDesc'),
         })
-        // 区块 2：分组路由（value='__group__' → profileMode=group）
-        // 组未激活（无 activeGroup）时置灰 + 引导文案
-        const groupEnabled = Boolean(activeGroup)
-        const groupLabel = activeGroup
-          ? `${t('sessionConfig.groupRoute')} · ${activeGroup.name}`
-          : t('sessionConfig.groupRoute')
-        items.push({
-          value: '__group__',
-          label: groupLabel,
-          description: activeGroup
-            ? `${STRATEGY_LABEL[activeGroup.strategy]} · ${activeGroup.members.length} 个成员`
-            : t('sessionConfig.groupRouteDisabledDesc'),
-          disabled: !groupEnabled,
+        // 区块 2：分组路由 —— 展开全部分组（value=`__group__:<id>` → profileMode=group + 指定分组）
+        // 另有「跟随全局激活分组」项（value=`__group__`，不绑定具体分组，后端起用全局）。
+        const hasActiveGlobalGroup = Boolean(activeGroup)
+        if (hasActiveGlobalGroup) {
+          items.push({
+            value: GROUP_ROUTE_VALUE,
+            label: `${t('sessionConfig.groupRoute')} · ${activeGroup.name}（全局激活）`,
+            description: `${STRATEGY_LABEL[activeGroup.strategy]} · ${activeGroup.members.length} 个成员`,
+          })
+        }
+        // 全部可用分组逐个展开（含全局激活的那个，去重避免重复）
+        availableGroups.forEach(g => {
+          if (g.id === activeGroupId) return // 全局激活项已在上方
+          items.push({
+            value: `${GROUP_ENTRY_PREFIX}${g.id}`,
+            label: `${t('sessionConfig.groupRoute')} · ${g.name}`,
+            description: `${STRATEGY_LABEL[g.strategy]} · ${g.members.length} 个成员`,
+          })
         })
+        if (availableGroups.length === 0) {
+          items.push({
+            value: GROUP_ROUTE_VALUE,
+            label: t('sessionConfig.groupRoute'),
+            description: t('sessionConfig.groupRouteDisabledDesc'),
+            disabled: true,
+          })
+        }
         // 区块 3：指定 Profile（value=profileId → profileMode=profile）
         items.push(...compatibleProfiles.map(p => {
           const modelCount = p.modelOptions?.length || 1
@@ -434,13 +491,17 @@ export function SessionConfigSelector({
         case 'effort': return config.effort
         case 'permission': return config.permissionMode
         case 'profile': {
-          // P2: 三态高亮。根据当前 profileMode + modelProfileId 对齐下拉项 value：
+          // 三态高亮。根据当前 profileMode + providerGroupId/modelProfileId 对齐下拉项 value：
           // - official → 高亮 '' (官方 API)
-          // - group   → 高亮 '__group__' (分组路由)
+          // - group → 高亮具体分组（value=`__group__:<id>`）；未指定分组时高亮 sentinel（跟随全局激活）
           // - profile → 高亮对应 profileId
           const mode = config.profileMode ?? 'profile'
           if (mode === 'official') return ''
-          if (mode === 'group') return GROUP_ROUTE_VALUE
+          if (mode === 'group') {
+            return config.providerGroupId
+              ? `${GROUP_ENTRY_PREFIX}${config.providerGroupId}`
+              : GROUP_ROUTE_VALUE
+          }
           return config.modelProfileId ?? ''
         }
         default: return undefined
@@ -521,12 +582,14 @@ export function SessionConfigSelector({
       icon: <Plug size={12} />,
       label: t('sessionConfig.provider'),
       getValue: () => {
-        // P2: 三态显示：官方 / 分组路由 / 指定 Profile
+        // 三态显示：官方 / 分组路由 / 指定 Profile
         const mode = config.profileMode ?? 'profile'
         if (mode === 'official') return t('sessionConfig.officialApi')
         if (mode === 'group') {
-          return activeGroup
-            ? `${t('sessionConfig.groupRoute')} · ${activeGroup.name}`
+          // 会话级指定分组优先；未指定时跟随全局激活分组
+          const group = selectedGroup ?? activeGroup
+          return group
+            ? `${t('sessionConfig.groupRoute')} · ${group.name}`
             : t('sessionConfig.groupRoute')
         }
         if (!config.modelProfileId) return t('sessionConfig.noProfile')

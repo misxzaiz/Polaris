@@ -1925,6 +1925,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     // 新会话仍会尝试走分组但无可用分组 → 后端回退官方并记录 OfficialFallback 日志）。
     if (activeGroupId === id) {
       useSessionConfig.getState().setProfileMode('profile')
+      useSessionConfig.getState().setProviderGroupId('')
     }
   }
 
@@ -1934,8 +1935,10 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
     // 否则前端 profileMode 保持默认 'profile'，若存在全局激活单 Profile，
     // modelProfileId 会被传入后端短路分组，分组永远不会生效。
     useSessionConfig.getState().setProfileMode('group')
-    // 同步清理状态栏镜像的单 Profile（group 模式不绑定单 Profile）
+    // 同步清理状态栏镜像的单 Profile + 具体分组绑定
+    // （group + providerGroupId 空 = 跟随后端全局激活分组）
     useSessionConfig.getState().setModelProfileId('')
+    useSessionConfig.getState().setProviderGroupId('')
   }
 
   // 分组连接测试：逐一对组内成员测试连接，汇总结果

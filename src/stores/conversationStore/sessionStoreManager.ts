@@ -415,6 +415,12 @@ function createSessionManagerStore() {
         useSessionConfig.getState().setProfileMode(
           targetMetadata.profileMode ?? globalProfileMode,
         )
+
+        // 会话级供应商分组镜像：有会话级覆盖时用之；未设置时回退全局镜像。
+        // 与 modelProfileId 三态一致，配合 profileMode='group' 定位到具体分组。
+        useSessionConfig.getState().setProviderGroupId(
+          targetMetadata.providerGroupId ?? useSessionConfig.getState().config.providerGroupId ?? '',
+        )
       }
 
       log.info('切换会话', { sessionId })
@@ -523,6 +529,27 @@ function createSessionManagerStore() {
       })
 
       log.info('更新会话供应商模式', { sessionId, profileMode })
+    },
+
+    updateSessionProviderGroupId: (sessionId, providerGroupId) => {
+      const metadata = get().sessionMetadata.get(sessionId)
+      if (!metadata) {
+        log.warn('会话不存在', { sessionId })
+        return
+      }
+
+      set((state) => {
+        const newMetadata = new Map(state.sessionMetadata)
+        newMetadata.set(sessionId, {
+          ...metadata,
+          // null/undefined/空串 = 清除会话级分组覆盖（→ 跟随全局 active_provider_group_id）
+          providerGroupId: providerGroupId || undefined,
+          updatedAt: new Date().toISOString(),
+        })
+        return { sessionMetadata: newMetadata }
+      })
+
+      log.info('更新会话供应商分组', { sessionId, providerGroupId })
     },
 
     updateSessionModel: (sessionId, model) => {
@@ -986,6 +1013,7 @@ const cachedActions = {
   get updateSessionEngine() { return sessionStoreManager.getState().updateSessionEngine },
   get updateSessionModelProfile() { return sessionStoreManager.getState().updateSessionModelProfile },
   get updateSessionProfileMode() { return sessionStoreManager.getState().updateSessionProfileMode },
+  get updateSessionProviderGroupId() { return sessionStoreManager.getState().updateSessionProviderGroupId },
   get updateSessionModel() { return sessionStoreManager.getState().updateSessionModel },
   get updateSessionAgent() { return sessionStoreManager.getState().updateSessionAgent },
   get makeSessionVisible() { return sessionStoreManager.getState().makeSessionVisible },

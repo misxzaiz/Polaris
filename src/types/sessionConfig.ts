@@ -99,6 +99,9 @@ export interface SessionRuntimeConfig {
   modelProfileId?: string
   /** 供应商选择模式（official / group / profile；undefined = 跟随全局旧逻辑） */
   profileMode?: ProfileMode
+  /** 分组路由模式下选中的供应商分组 ID（会话级/全局镜像）。
+   *  空串或 undefined → 跟随后端 active_provider_group_id（全局激活分组）。 */
+  providerGroupId?: string
 }
 
 /**
@@ -111,6 +114,7 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   permissionMode: 'bypassPermissions',
   modelProfileId: '',
   profileMode: 'profile', // 默认「指定 Profile」语义，保持旧行为（modelProfileId 为空即官方）
+  providerGroupId: '',
 }
 /**
  * 预设 Agent 列表

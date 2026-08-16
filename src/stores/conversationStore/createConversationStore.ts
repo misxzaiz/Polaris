@@ -1525,6 +1525,10 @@ export function createConversationStore(
           const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
             ? undefined
             : modelProfileId
+          // 分组路由模式下生效的供应商分组 ID：会话级覆盖 > 状态栏镜像 > 全局激活（不传 = 后端回退）。
+          const effectiveProviderGroupId = profileMode === 'group'
+            ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
+            : undefined
           // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
           const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
           const disabledMcpServers = getDisabledPluginMcpServers()
@@ -1568,6 +1572,7 @@ export function createConversationStore(
               : undefined,
             modelProfileId: effectiveProfileId,
             profileMode,
+            providerGroupId: effectiveProviderGroupId,
           }
 
           if (conversationId) {
@@ -1700,6 +1705,10 @@ export function createConversationStore(
         const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
           ? undefined
           : modelProfileId
+        // 分组路由模式下生效的供应商分组 ID：会话级覆盖 > 状态栏镜像 > 全局激活（不传 = 后端回退）。
+        const effectiveProviderGroupId = profileMode === 'group'
+          ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
+          : undefined
         // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
         const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
         const disabledMcpServers = getDisabledPluginMcpServers()
@@ -1729,6 +1738,7 @@ export function createConversationStore(
               })(),
               modelProfileId: effectiveProfileId,
               profileMode,
+              providerGroupId: effectiveProviderGroupId,
             },
           })
         } catch (e) {
