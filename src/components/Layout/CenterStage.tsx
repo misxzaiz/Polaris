@@ -20,6 +20,7 @@ import { BrowserPanel } from '@/components/Browser'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
 import { getFileNameFromPath, resolveWorkspacePath } from '@/utils/path'
+import { pluginTabRendererRegistry } from '@/plugin-system/pluginTabRendererRegistry'
 import type { ComponentProps } from 'react'
 
 interface TabBarProps {
@@ -587,8 +588,23 @@ export function TabContent({ className = '' }: TabContentProps) {
         </div>
       )
 
-    default:
+    default: {
+      // P0-3: 未知 Tab 类型回退到插件注册的 Tab 渲染器
+      const PluginTabRenderer = pluginTabRendererRegistry.get(activeTab.type)
+      if (PluginTabRenderer) {
+        return (
+          <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+            <PluginTabRenderer
+              tab={activeTab}
+              onOpenDiffInTab={(diff, options) => openDiffTab(diff as never, options as never)}
+              onOpenFileInEditor={(filePath) => openEditorTab(filePath, getFileNameFromPath(filePath))}
+              className={className}
+            />
+          </div>
+        )
+      }
       return null
+    }
   }
 }
 

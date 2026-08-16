@@ -4,13 +4,13 @@ import { useFileExplorerStore, useWorkspaceStore, useCommandStore, useToastStore
 import { initFileWatcherListener, startFileWatcher, stopFileWatcher } from '@/stores/fileExplorerStore';
 import { FileTree } from './FileTree';
 import { SearchBar } from './SearchBar';
-import { GitStatusIndicator } from './GitStatusIndicator';
 import { ContextMenu } from './ContextMenu';
 import { InputDialog } from '../Common/InputDialog';
 import { IconPlus, IconFile, IconFolder } from '../Common/Icons';
 import { WorkspaceSearchInput, useWorkspaceFilter } from '../Workspace/WorkspaceSearchInput';
 import type { ContextMenuItem } from './ContextMenu';
 import { joinPath, isValidFileName } from '@/utils/path';
+import { fileExplorerToolbarSlot } from '@/plugin-system/fileExplorerToolbarSlot';
 
 export function FileExplorer() {
   const { t } = useTranslation('fileExplorer');
@@ -298,6 +298,8 @@ export function FileExplorer() {
   }, [setViewingWorkspace, workspaces, getCurrentWorkspace, load_directory, loadCustomCommands]);
 
   const currentWorkspace = getCurrentWorkspace();
+  // 插件注入的工具栏项（P0-5：插件通过 fileExplorerToolbarSlot 注册）
+  const toolbarSlotItems = useState(() => fileExplorerToolbarSlot.listItems())[0];
 
   return (
     <div
@@ -485,7 +487,10 @@ export function FileExplorer() {
                 </>
               )}
             </div>
-            <GitStatusIndicator />
+            {/* 插件注入的工具按钮（P0-5 toolbar slot） */}
+            {toolbarSlotItems.map(({ itemId, component: ItemComponent }) => (
+              <ItemComponent key={itemId} workspacePath={currentWorkspace?.path} />
+            ))}
           </div>
 
           <button

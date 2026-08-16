@@ -20,13 +20,15 @@ interface ViewState {
   showSidebar: boolean;
   showEditor: boolean;
   showDeveloperPanel: boolean;
-  showGitPanel: boolean;      // Git 面板
+  showGitPanel: boolean;      // Git 面板（已废弃，由 panelStates 替代，保留兼容）
   showSessionHistory: boolean; // 会话历史面板
   showNotificationCenter: boolean; // 消息中心面板
   sidebarWidth: number;      // 侧边栏宽度（像素）
   editorWidth: number;       // 编辑器宽度百分比（0-100）
   developerPanelWidth: number; // Developer 面板宽度（像素）
-  gitPanelWidth: number;     // Git 面板宽度（像素）
+  gitPanelWidth: number;     // Git 面板宽度（已废弃，保留兼容）
+  // 插件面板状态（key: panelType, value: { visible, width }）
+  panelStates: Record<string, { visible: boolean; width: number }>;
   // 新布局相关状态
   leftPanelType: LeftPanelType;  // 左侧面板类型
   leftPanelWidth: number;        // 左侧面板宽度
@@ -60,6 +62,11 @@ interface ViewActions {
   setEditorWidth: (width: number) => void;
   setDeveloperPanelWidth: (width: number) => void;
   setGitPanelWidth: (width: number) => void;
+  // 通用插件面板状态管理
+  togglePanel: (panelType: string) => void;
+  setPanelVisible: (panelType: string, visible: boolean) => void;
+  setPanelWidth: (panelType: string, width: number) => void;
+  getPanelState: (panelType: string) => { visible: boolean; width: number };
   // 新布局相关操作
   setLeftPanelType: (type: LeftPanelType) => void;
   toggleLeftPanel: (type: LeftPanelType) => void; // 切换左侧面板,如果已显示则隐藏
@@ -99,18 +106,24 @@ export type ViewStore = ViewState & ViewActions;
 
 export const useViewStore = create<ViewStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       // 初始状态
       showSidebar: true,
       showEditor: false,
       showDeveloperPanel: false,  // 默认关闭 Developer 面板
-      showGitPanel: false,       // 默认关闭 Git 面板
+      showGitPanel: false,       // 默认关闭 Git 面板（兼容保留）
       showSessionHistory: false,  // 默认关闭会话历史面板
       showNotificationCenter: false, // 默认关闭消息中心面板
       sidebarWidth: 240,
       editorWidth: 50,
       developerPanelWidth: 400,
       gitPanelWidth: 320,
+      panelStates: {
+        files: { visible: true, width: 280 },
+        git: { visible: false, width: 320 },
+        browser: { visible: false, width: 320 },
+        terminal: { visible: false, width: 320 },
+      },
       // 新布局初始状态
       leftPanelType: 'none' as LeftPanelType,   // 默认折叠（隐藏左侧面板）
       leftPanelWidth: 280,        // 左侧面板默认宽度
@@ -146,8 +159,17 @@ export const useViewStore = create<ViewStore>()(
       // 切换 Developer 面板
       toggleDeveloperPanel: () => set((state) => ({ showDeveloperPanel: !state.showDeveloperPanel })),
 
-      // 切换 Git 面板
-      toggleGitPanel: () => set((state) => ({ showGitPanel: !state.showGitPanel })),
+      // 切换 Git 面板（兼容保留：委托给通用 panelStates）
+      toggleGitPanel: () => set((state) => {
+        const cur = state.panelStates['git'] ?? { visible: false, width: state.gitPanelWidth };
+        return {
+          panelStates: {
+            ...state.panelStates,
+            git: { ...cur, visible: !cur.visible },
+          },
+          showGitPanel: !cur.visible,
+        };
+      }),
 
       // 切换会话历史面板
       toggleSessionHistory: () => set((state) => ({ showSessionHistory: !state.showSessionHistory })),
@@ -166,8 +188,55 @@ export const useViewStore = create<ViewStore>()(
       // 设置 Developer 面板宽度
       setDeveloperPanelWidth: (width: number) => set({ developerPanelWidth: width }),
 
-      // 设置 Git 面板宽度
-      setGitPanelWidth: (width: number) => set({ gitPanelWidth: width }),
+      // 设置 Git 面板宽度（兼容保留：委托给通用 panelStates）
+      setGitPanelWidth: (width: number) => set((state) => ({
+        gitPanelWidth: width,
+        panelStates: {
+          ...state.panelStates,
+          git: { ...(state.panelStates['git'] ?? { visible: false, width }), width },
+        },
+      })),
+
+      // === 通用插件面板状态管理 ===
+
+      // 切换插件面板可见性（点击已显示面板则隐藏）
+      togglePanel: (panelType) => set((state) => {
+        const cur = state.panelStates[panelType] ?? { visible: false, width: 320 };
+        return {
+          panelStates: {
+            ...state.panelStates,
+            [panelType]: { ...cur, visible: !cur.visible },
+          },
+        };
+      }),
+
+      // 设置插件面板可见性
+      setPanelVisible: (panelType, visible) => set((state) => {
+        const cur = state.panelStates[panelType] ?? { visible: false, width: 320 };
+        return {
+          panelStates: {
+            ...state.panelStates,
+            [panelType]: { ...cur, visible },
+          },
+        };
+      }),
+
+      // 设置插件面板宽度
+      setPanelWidth: (panelType, width) => set((state) => {
+        const cur = state.panelStates[panelType] ?? { visible: false, width: 320 };
+        return {
+          panelStates: {
+            ...state.panelStates,
+            [panelType]: { ...cur, width },
+          },
+        };
+      }),
+
+      // 获取插件面板状态（惰性初始化，未注册面板返回默认值）
+      getPanelState: (panelType) => {
+        const current = get() as ViewStore;
+        return current.panelStates[panelType] ?? { visible: false, width: 320 };
+      },
 
       // === 新布局相关操作 ===
 

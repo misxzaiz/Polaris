@@ -2,6 +2,9 @@ import type { PolarisPluginManifest } from './types'
 import { pluginRegistry } from './registry'
 import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
+import { fileExplorerToolbarSlot } from './fileExplorerToolbarSlot'
+import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator'
+import { registerGitEditorExtensions } from './editor'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
 import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
@@ -109,6 +112,8 @@ const corePluginManifest: PolarisPluginManifest = {
 
 export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
+  // Git 编辑器集成（gutter / blame / 改动导航）注册到 editor extension slot
+  registerGitEditorExtensions()
   pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
@@ -130,6 +135,13 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
+  )
+  // Git 状态指示器挂到文件树工具栏 slot（P0-5）
+  fileExplorerToolbarSlot.register(
+    'git-status',
+    'polaris.core',
+    GitStatusIndicator,
+    10,
   )
   // builtin 插件聊天卡片 loader 手动注册（无 installPath）
   // PRD 预览：mcp__polaris-prd-preview__preview_html / read_preview

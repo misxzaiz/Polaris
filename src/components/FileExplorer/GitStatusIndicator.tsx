@@ -1,7 +1,8 @@
 /**
  * Git 状态指示器组件
  *
- * 在 FileExplorer 工具栏显示 Git 分支和变更状态
+ * 在 FileExplorer 工具栏显示 Git 分支和变更状态。
+ * 通过 fileExplorerToolbarSlot 注册（P0-5），而非硬编码 import。
  */
 
 import { GitBranch } from 'lucide-react'
@@ -10,7 +11,7 @@ import { useViewStore } from '@/stores'
 
 export function GitStatusIndicator() {
   const { status } = useGitStore()
-  const { toggleGitPanel } = useViewStore()
+  const togglePanel = useViewStore((s) => s.togglePanel)
 
   if (!status || !status.branch) {
     return null
@@ -20,7 +21,7 @@ export function GitStatusIndicator() {
 
   return (
     <button
-      onClick={() => toggleGitPanel()}
+      onClick={() => togglePanel('git')}
       className="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs bg-background-surface hover:bg-background-hover transition-colors group cursor-pointer"
       title={`分支: ${status.branch}${totalChanges > 0 ? `\n未提交变更: ${totalChanges}` : ''}`}
     >

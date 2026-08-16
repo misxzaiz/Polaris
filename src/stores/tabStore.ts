@@ -11,8 +11,14 @@ import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
 import { browserClose, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
 
-/** Tab 类型 */
-export type TabType = 'editor' | 'diff' | 'preview' | 'git' | 'browser'
+/**
+ * Tab 类型
+ *
+ * 内置类型：editor / diff / preview / git / browser
+ * 插件可注册自定义 Tab 类型（如 "git-branch"），CenterStage 通过
+ * pluginTabRendererRegistry 渲染未知类型（P0-3）。
+ */
+export type TabType = 'editor' | 'diff' | 'preview' | 'git' | 'browser' | (string & {})
 
 /** Tab 数据结构 */
 export interface Tab {

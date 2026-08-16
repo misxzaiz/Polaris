@@ -29,6 +29,7 @@ import { formatDocumentForFile } from '@/services/lsp/lspFormatting';
 import { indentGuides, indentGuideTheme } from './indentGuides';
 import { trailingWhitespaceHighlight } from './trailingWhitespace';
 import { rainbowBrackets } from './rainbowBrackets';
+import { editorExtensionRegistry } from '@/plugin-system/editorExtensionRegistry';
 
 const log = createLogger('Editor');
 
@@ -346,6 +347,13 @@ export function CodeMirrorEditor({
           // LSP 激活失败不影响编辑器基础功能
           log.warn('LSP activation skipped', { filePath, error: String(err) });
         }
+      }
+
+      // 收集插件注册的编辑器扩展（如 git gutter、inline diff 等）
+      const pluginExtensions = editorExtensionRegistry.collectExtensions(filePath);
+      if (pluginExtensions.length > 0) {
+        extensions.push(...pluginExtensions);
+        log.debug(`Plugin editor extensions loaded: ${pluginExtensions.length}`);
       }
 
       // 创建编辑器状态

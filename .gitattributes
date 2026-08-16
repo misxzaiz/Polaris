@@ -1,0 +1,26 @@
+# 规范化行尾：源码统一 LF，避免 Windows autocrlf 造成无意义 diff
+* text=auto
+*.ts text eol=lf
+*.tsx text eol=lf
+*.js text eol=lf
+*.jsx text eol=lf
+*.rs text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.jsonl text eol=lf
+*.toml text eol=lf
+*.sql text eol=lf
+*.html text eol=lf
+
+# 二进制
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.zip binary
+*.wasm binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
