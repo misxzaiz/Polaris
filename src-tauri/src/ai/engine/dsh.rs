@@ -255,6 +255,9 @@ pub struct DshEngine {
     websocket_active: Arc<Mutex<HashSet<String>>>,
     /// 每个 session 的 callId → toolName 映射（per-session 隔离）
     call_id_maps: Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+    /// 每个 session 的 pending tool 调用计数（tool/call 递增，tool/result 递减）
+    /// turn/end 时只有计数为 0 才发 session_end，避免工具调用循环中提前结束
+    pending_tool_counts: Arc<Mutex<HashMap<String, usize>>>,
     /// Windows 依赖桥接是否已在本进程内完成（避免每次启动重做几百包的复制）
     ///
     /// `prepare_dsh_bridge` 首次执行后置 true，后续启动直接跳过磁盘复制；
@@ -278,6 +281,7 @@ impl DshEngine {
             session_map: Mutex::new(HashMap::new()),
             websocket_active: Arc::new(Mutex::new(HashSet::new())),
             call_id_maps: Arc::new(Mutex::new(HashMap::new())),
+            pending_tool_counts: Arc::new(Mutex::new(HashMap::new())),
             bridge_prepared: AtomicBool::new(false),
             leaked_name: Box::leak("DeepSeek Harness".to_string().into_boxed_str()),
             leaked_description: Box::leak(
@@ -962,7 +966,7 @@ impl DshEngine {
                     .post(&url)
                     .header("Content-Type", "application/json")
                     .body(body)
-                    .timeout(Duration::from_secs(60))
+                    .timeout(Duration::from_secs(300))
                     .send()
                     .map_err(|e| AppError::ProcessError(format!("RPC {} 请求失败: {}", method_str_closure, e)))?;
 
@@ -1065,6 +1069,7 @@ impl DshEngine {
         let session_id_clone = session_id.clone();
         let dsh_session_id_clone = dsh_session_id.clone();
         let call_id_maps = self.call_id_maps.clone();
+        let pending_tool_counts = self.pending_tool_counts.clone();
         let websocket_active = self.websocket_active.clone();
         // 从 ws_url 反推出 HTTP base URL（用于 /api/respond）
         let ws_url_base = base_url.trim_end_matches('/').to_string();
@@ -1152,6 +1157,7 @@ impl DshEngine {
                                         payload,
                                         &event_callback,
                                         &call_id_maps,
+                                        &pending_tool_counts,
                                     );
                                 }
                                 "approval/requested" => {
@@ -1191,6 +1197,14 @@ impl DshEngine {
                                         &session_id_clone,
                                         format!("dsh stream error: {}", error),
                                     ));
+                                    tracing::warn!(
+                                        "[DshEngine] stream/error: {}，等待 5s 后结束本轮",
+                                        error
+                                    );
+                                    // stream/error 后当前 turn 已中断，但给 dsh 5 秒窗口
+                                    // 补发 turn/end 等终止帧，避免直接终结导致前端无响应。
+                                    // 5s 后若仍无 turn/end，外层循环退出时自会发 session_end。
+                                    tokio::time::sleep(Duration::from_secs(5)).await;
                                     connected = false;
                                     break;
                                 }
@@ -1204,6 +1218,8 @@ impl DshEngine {
 
                             // turn/end = 一轮回复完成，发 session_end 让前端结束本轮
                             // 多轮对话时，下一轮 start_session 会重新连接，再次发送 CliInit
+                            // 只有在没有 pending tool calls 时才发 session_end，
+                            // 避免工具调用循环中每步 turn/end 提前终结 streaming
                             if event_type == "session/event" {
                                 if let Some(inner_type) = payload
                                     .get("event")
@@ -1211,7 +1227,16 @@ impl DshEngine {
                                     .and_then(|t| t.as_str())
                                 {
                                     if inner_type == "turn/end" {
-                                        event_callback(AIEvent::session_end(&session_id_clone));
+                                        let pending = pending_tool_counts.lock().unwrap()
+                                            .get(&session_id_clone).copied().unwrap_or(0);
+                                        if pending == 0 {
+                                            event_callback(AIEvent::session_end(&session_id_clone));
+                                        } else {
+                                            tracing::debug!(
+                                                "[DshEngine] turn/end 但仍有 {} 个 pending tool calls，推迟 session_end",
+                                                pending
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1260,6 +1285,7 @@ impl DshEngine {
         payload: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
         call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+        pending_tool_counts: &Arc<Mutex<HashMap<String, usize>>>,
     ) {
         let event = match payload.get("event") {
             Some(e) => e,
@@ -1283,10 +1309,10 @@ impl DshEngine {
                 Self::handle_user_message(session_id, event, event_callback);
             }
             "tool/call" => {
-                Self::handle_tool_call(session_id, event, event_callback, call_id_maps);
+                Self::handle_tool_call(session_id, event, event_callback, call_id_maps, pending_tool_counts);
             }
             "tool/result" => {
-                Self::handle_tool_result(session_id, event, event_callback, call_id_maps);
+                Self::handle_tool_result(session_id, event, event_callback, call_id_maps, pending_tool_counts);
             }
             "turn/start" => {
                 // 轮次内部的边界事件，前端无需额外通知
@@ -1464,6 +1490,7 @@ impl DshEngine {
         event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
         call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+        pending_tool_counts: &Arc<Mutex<HashMap<String, usize>>>,
     ) {
         let data = match event.get("data") {
             Some(d) => d,
@@ -1488,6 +1515,11 @@ impl DshEngine {
                 let session_map = maps.entry(session_id.to_string()).or_default();
                 session_map.insert(call_id.clone(), tool_name.clone());
             }
+        }
+
+        // 递增 pending tool 计数（per-session），用于 turn/end 守卫
+        if let Ok(mut counts) = pending_tool_counts.lock() {
+            *counts.entry(session_id.to_string()).or_insert(0) += 1;
         }
 
         // arguments 是 JSON 字符串，需解析为 HashMap
@@ -1527,6 +1559,7 @@ impl DshEngine {
         _event: &Value,
         event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
         call_id_maps: &Arc<Mutex<HashMap<String, HashMap<String, String>>>>,
+        pending_tool_counts: &Arc<Mutex<HashMap<String, usize>>>,
     ) {
         // 从 data.message.content[0] 提取工具结果
         let data = match _event.get("data") {
@@ -1590,6 +1623,16 @@ impl DshEngine {
             "[DshEngine] tool/result: tool={} callId={} isError={}",
             tool_name, tool_call_id, is_error
         );
+
+        // 递减 pending tool 计数（per-session），turn/end 守卫据此判断是否可结束
+        if let Ok(mut counts) = pending_tool_counts.lock() {
+            if let Some(c) = counts.get_mut(session_id) {
+                if *c > 0 {
+                    *c -= 1;
+                }
+            }
+        }
+
         event_callback(AIEvent::tool_call_end(session_id, tool_name, !is_error));
     }
 

@@ -1791,7 +1791,7 @@ pub async fn continue_chat_inner(
 
     // ──────────────────────────────────────────────────────
     // 先杀掉本会话的旧 CLI 进程，再处理代理。
-    // 仅对 CLI 类引擎（Claude/Codex）生效：它们每轮会 spawn 新进程,
+    // 仅对 CLI 类引擎（Claude/Codex/Pi）生效：它们每轮会 spawn 新进程,
     // 旧进程若有 in-flight 请求在等上游响应,代理端口被关闭时会收到
     // ConnectionRefused(见 99770ad8)。先 try_interrupt_all 杀旧进程,
     // 确保无 in-flight 请求后再安全切换代理。
@@ -1802,14 +1802,20 @@ pub async fn continue_chat_inner(
     // SimpleAI 的 continue 是复用同一会话追加消息,无需也不应先中断。
     // 注意:用户主动点"停止"走 interrupt_chat_inner,该路径仍会对 SimpleAI
     // 调 try_interrupt_all,本处只收窄 continue 路径,不影响主动停止。
+    //
+    // DSH 显式跳过:dsh 是常驻 Web 服务器 + 长生命周期 session 模型,
+    // 续聊只需复用同一 dsh session_id 发 session.prompt,不需要也不应该
+    // 重启进程。若对 dsh 调 try_interrupt_all 会触发 session.cancel,直接
+    // 取消上一轮仍可能在产出的事件流(WebSocket mux 全局),表现为
+    // "对话突然断"——根因:try_interrupt_all 遍历所有引擎,只要 dsh 的
+    // session_map 命中即返回 Ok(()) 并执行 cancel。
     // ──────────────────────────────────────────────────────
     {
         let mut registry = state.engine_registry.lock().await;
-        match engine {
-            EngineId::ClaudeCode | EngineId::Codex | EngineId::Pi | EngineId::Custom(_) => {
-                registry.try_interrupt_all(&session_id);
-            }
-            EngineId::SimpleAI => {}
+        let is_resident = matches!(engine, EngineId::SimpleAI)
+            || matches!(engine, EngineId::Custom(ref id) if id == "dsh");
+        if !is_resident {
+            registry.try_interrupt_all(&session_id);
         }
     }
 

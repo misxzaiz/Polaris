@@ -741,17 +741,14 @@ impl PiEngine {
                 if pi_line.line_type == "agent_end" || pi_line.line_type == "agent_settled" {
                     // 诊断：agent_end 时若全程无 message 事件，说明 Pi 在模型调用阶段
                     // 就直接结束（常见于 MCP 加载慢 + provider 超时），非正常完成。
+                    // 但不要直接发 error 阻断——pi 的事件可能乱序，message_* 可能
+                    // 在 agent_end 之后才到达（实测 MCP Extension 场景）。降级为
+                    // warning 日志，让 session_end 正常完成当前 turn。
                     if message_event_count == 0 {
                         tracing::warn!(
-                            "[PiEngine] agent_end 但全程 0 个 message 事件，session={}（疑似 provider 超时或模型调用失败）",
+                            "[PiEngine] agent_end 但全程 0 个 message 事件，session={}（疑似 provider 超时或模型调用失败，但已降级为 warning 不阻断）",
                             real_session_id
                         );
-                        // 发射 error 事件告知上层 LLM 调用失败，避免 IntegrationManager
-                        // 静默跳过空回复，用户收不到任何反馈。
-                        event_callback(AIEvent::error(
-                            &real_session_id,
-                            "Pi 引擎未生成任何回复：模型调用可能超时或 provider 配置有误。请检查 API Key、模型名称及网络连接。".to_string(),
-                        ));
                     }
                     break;
                 }
