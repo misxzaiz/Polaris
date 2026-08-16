@@ -42,8 +42,6 @@
     "@codemirror/search": "^6.5.11",
     "@codemirror/state": "^6.5.3",
     "@codemirror/view": "^6.39.8",
-    "@deepseek-ai/cordis": "^4.0.1",
-    "@deepseek-ai/cosmokit": "^1.8.2",
     "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
     "@lezer/lr": "^1.4.10",
