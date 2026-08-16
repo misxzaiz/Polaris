@@ -247,6 +247,32 @@ export interface PluginToolProviderContribution {
   description?: string
 }
 
+/**
+ * 样式贡献声明（manifest.contributes.styles[]）
+ *
+ * 插件通过 CSS 注入改造任意 UI 样式。CSS 片段注入到独立的
+ * `<style id="plugin-css-{pluginId}-{styleId}">` 标签，head 末尾，
+ * 优先级高于主题变量但低于用户自定义 CSS。
+ *
+ * 使用场景：改造输入框样式、调整面板布局、覆盖组件配色等。
+ * 选择器以实际 DOM 类名/属性为准（如 .chat-input-root）。
+ */
+export interface PluginStyleContribution {
+  /** 插件内唯一 id，用于生成 style 标签 id */
+  id: string
+  /** CSS 源码（可直接用选择器 + CSS 变量） */
+  css: string
+  /** 注入目标
+   * - global（默认）：注入到 head，全局生效
+   * - slot：注入到对应 slot 的面板容器内（scoped）
+   */
+  target?: 'global' | 'slot'
+  /** target=slot 时指定 slot id */
+  slotId?: string
+  /** 描述（UI 展示用） */
+  description?: string
+}
+
 export interface PluginPermissionDeclaration {
   workspaceRead?: boolean
   workspaceWrite?: boolean
@@ -287,6 +313,7 @@ export interface PolarisPluginManifest {
     chatCards?: Omit<PluginChatCardContribution, 'pluginId'>[]
     engines?: PluginEngineContribution[]
     toolProviders?: PluginToolProviderContribution[]
+    styles?: PluginStyleContribution[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata

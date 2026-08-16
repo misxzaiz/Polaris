@@ -13,6 +13,7 @@ import { usePluginStore } from '@/stores/pluginStore'
 import { usePluginServiceStore } from '@/stores/pluginServiceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { pluginRegistry } from '@/plugin-system'
+import { applyPluginStyles } from '@/plugin-system/styles'
 import { pluginServiceManager } from '@/services/pluginServiceManager'
 import { createLogger } from '@/utils/logger'
 
@@ -96,6 +97,9 @@ export function usePluginServiceSync() {
       }
 
       prevSnapshot.current = next
+
+      // 插件启用状态变化后，重新应用样式注入
+      applyPluginStyles()
     })()
   }, [pluginStates, hydratedFromBackend])
 }

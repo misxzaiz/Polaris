@@ -9,6 +9,7 @@ import type {
   PluginEngineContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
+  PluginStyleContribution,
   PluginToolProviderContribution,
   PluginViewContribution,
   PolarisPluginManifest,
@@ -297,6 +298,40 @@ function normalizeToolProviders(
   })
 }
 
+/**
+ * 归一化 styles 贡献点。
+ *
+ * 校验：每个 style 必须有非空 id 和 css；target 默认 global。
+ */
+function normalizeStyles(value: unknown, errors: string[]): PluginStyleContribution[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.styles[${index}] must be an object`)
+      return []
+    }
+
+    const id = asString(item.id)
+    const css = asString(item.css)
+    const target = asString(item.target)
+    const slotId = asString(item.slotId)
+
+    if (!id || !css) {
+      errors.push(`contributes.styles[${index}] is invalid (id and css required) and was ignored`)
+      return []
+    }
+
+    return [{
+      id,
+      css,
+      target: (target === 'slot' ? 'slot' : 'global') as PluginStyleContribution['target'],
+      slotId,
+      description: asString(item.description),
+    }]
+  })
+}
+
 function normalizeEngines(
   value: unknown,
   _errors: string[]
@@ -424,6 +459,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
         chatCards: normalizeChatCards(contributes.chatCards, ownMcpServerIds, errors),
         engines: normalizeEngines(contributes.engines, errors),
         toolProviders: normalizeToolProviders(contributes.toolProviders, ownMcpServerIds, errors),
+        styles: normalizeStyles(contributes.styles, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

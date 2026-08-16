@@ -35,6 +35,7 @@ import { currentMode } from '@/services/transport';
 import { getWebServerStatus } from '@/services/tauri/configService';
 import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
 import { pluginRegistry } from '../plugin-system';
+import { applyPluginStyles } from '../plugin-system/styles';
 import { browserClearOrphanedSessions } from '@/services/tauri/browserService';
 
 const log = createLogger('AppInit');
@@ -132,6 +133,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     try {
       const result = await discoverInstalledPlugins(currentWorkspacePath);
       await pluginRegistry.replaceInstalled(result.plugins);
+      // 插件清单加载后，注入已启用插件的样式
+      applyPluginStyles();
       if (result.errors.length > 0) {
         log.warn('Plugin discovery completed with errors', { errors: result.errors });
       }

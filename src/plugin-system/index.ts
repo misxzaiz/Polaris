@@ -3,6 +3,7 @@ export { pluginPanelRegistry } from './panelRegistry'
 export { chatCardRegistry } from './chatCardRegistry'
 export { pluginIconMap } from './icons'
 export { pluginInspector } from './inspector'
+export { applyPluginStyles, removeStyles } from './styles'
 export type {
   PluginDiagnostics,
   PluginInfo,
@@ -31,6 +32,7 @@ export type {
   PluginPanelContribution,
   PluginPanelLoader,
   PluginPermissionDeclaration,
+  PluginStyleContribution,
   PluginToolProviderContribution,
   PluginViewArea,
   PluginViewContribution,

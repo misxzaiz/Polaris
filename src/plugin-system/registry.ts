@@ -1,5 +1,6 @@
 import type {
   PluginMcpServerContribution,
+  PluginStyleContribution,
   PluginToolProviderContribution,
   PluginViewArea,
   PluginViewContribution,
@@ -314,6 +315,20 @@ class PluginRegistry {
   getChainedSlots(slotId: string): PluginViewContribution[] {
     return this.listViewContributions('activityBar')
       .filter((v) => v.slot === slotId && v.slotMode === 'chain')
+  }
+
+  /**
+   * 列出所有已启用插件的 styles 贡献点。
+   */
+  listStyleContributions(): (PluginStyleContribution & { pluginId: string })[] {
+    return this.listPlugins()
+      .filter((plugin) => plugin.enabledByDefault)
+      .flatMap((plugin) =>
+        (plugin.contributes.styles ?? []).map((style) => ({
+          ...style,
+          pluginId: plugin.id,
+        }))
+      )
   }
 }
 
