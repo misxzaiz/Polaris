@@ -8,6 +8,7 @@ pub mod error;
 pub mod models;
 pub mod services;
 pub mod commands;
+pub mod capabilities;
 mod integrations;
 pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
