@@ -167,8 +167,10 @@ P0 的实际工作是**补齐 `codeEditorLanguages` 的唯一缺口**：开关 q
 - ✅ 抓手 A 的 `syntax_highlighting=false` 直接跳过 hljs，与 B 的按需注册**正交叠加**。
 
 ### 4.2 路由级 / 面板级懒加载
-- `Chat`(21k)/`Settings`(13k) 是首屏外的重 chunk，但当前大概率已随主包加载。用 `React.lazy` + `Suspense` 对**非首屏面板**（GitPanel/Scheduler/Browser/PersonalHub/Diff/Agent）做路由级懒加载，首屏只留 Chat + Layout。
-- `manualChunks` 已修过循环依赖，新增懒加载边界时要避免重新触发 TDZ——按现有 `app-editor-settings` 合并簇的策略扩展，不另立细碎 chunk。
+- ✅ **已实施**：`App.tsx` 21 个非首屏面板全部 `React.lazy`（GitPanel/SchedulerPanel/TerminalPanel/BrowserSidebarPanel/AgentGalleryPanel/PersonalHubPanel/RequirementPanel/NotificationCenterPanel/VoiceCompanionOverlay/FocusOverlay 等）。首屏静态 import 仅 Layout/FileExplorer/TopMenuBar/Chat 核心 + 少量 overlay。
+- ✅ **mermaid/katex 隔离验证**：精确分析 main chunk（1.46MB raw），`mermaid.initialize/flowchart-v2/classDiagram`、`katex.renderToString` 等 API 特征**均 absent**——首屏未被污染。mermaid(295K)+mermaid-core(3MB) 与 katex(260K) 独立 chunk 均动态加载。
+- ✅ **stores/conversationStore**：Chat/index 导出均为聊天核心组件，无重面板拖累。
+- ⚠️ mermaid-core 3MB 偏大但已隔离在首屏外，深水区分按需图表注册（registerDiagram）留后续评估（价值：优化首次图表渲染延迟，非启动指标）。
 
 ### 4.3 风险
 - 懒加载引入首交互延迟（mermaid/hljs 动态 import 约 50–200ms），用骨架屏 + 预取(prefetch idle) 缓解。
