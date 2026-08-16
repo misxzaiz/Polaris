@@ -291,6 +291,10 @@ pub struct AppState {
     pub proxy_manager: crate::services::ProxyManager,
     /// 供应商分组路由器 — failover/轮询决策层
     pub provider_router: Arc<crate::services::ProviderRouter>,
+    /// 供应商调用统计收集器（持久化累加计数器）
+    pub profile_stats_collector: Arc<tokio::sync::Mutex<crate::services::ProfileStatsCollector>>,
+    /// 失败调用日志收集器（持久化 JSONL 缓冲）
+    pub failed_call_collector: Arc<tokio::sync::Mutex<crate::services::FailedCallCollector>>,
     /// 插件服务管理器 — 管理插件声明的后台服务
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
 }
@@ -345,6 +349,18 @@ pub fn create_app_state(
         web_server_handle: Arc::new(AsyncMutex::new(None)),
         proxy_manager: crate::services::ProxyManager::new(),
         provider_router: Arc::new(crate::services::ProviderRouter::new()),
+        profile_stats_collector: {
+            let path = data_root().root().join("provider-stats.json");
+            let collector = crate::services::ProfileStatsCollector::load_from_disk(&path);
+            tracing::info!("[ProfileStatsCollector] 已加载，共 {} 个 Profile 统计", collector.snapshot().profiles.len());
+            Arc::new(tokio::sync::Mutex::new(collector))
+        },
+        failed_call_collector: {
+            let path = data_root().root().join("provider-failed-calls.jsonl");
+            let collector = crate::services::FailedCallCollector::load_from_disk(&path);
+            tracing::info!("[FailedCallCollector] 已加载，共 {} 条失败日志", collector.list(&Default::default()).len());
+            Arc::new(tokio::sync::Mutex::new(collector))
+        },
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
@@ -418,8 +434,38 @@ impl AppState {
             web_server_handle: self.web_server_handle.clone(),
             proxy_manager: crate::services::ProxyManager::new(),
             provider_router: self.provider_router.clone(),
+            profile_stats_collector: self.profile_stats_collector.clone(),
+            failed_call_collector: self.failed_call_collector.clone(),
             plugin_service_manager: self.plugin_service_manager.clone(),
         }
+    }
+
+    /// 记录路由日志到 ProviderRouter 环形缓冲 + 同步更新统计收集器和失败日志。
+    ///
+    /// 这是所有 `record_log` 调用点的统一入口，确保统计面板数据与路由日志一致。
+    pub async fn record_route_log(&self, entry: crate::services::RouteLogEntry) -> crate::services::RouteLogEntry {
+        // 1. 记录到环形缓冲（路由日志面板）
+        let entry = self.provider_router.record_log(entry).await;
+
+        // 2. 更新统计收集器（计数器）
+        {
+            let mut collector = self.profile_stats_collector.lock().await;
+            collector.record(&entry);
+            // 写盘（计数器操作极轻，同步写盘性能可接受）
+            let path = data_root().root().join("provider-stats.json");
+            collector.save_to_disk(&path);
+        }
+
+        // 3. 更新失败日志收集器（如果是失败事件）
+        {
+            let mut collector = self.failed_call_collector.lock().await;
+            collector.record(&entry);
+            // 写盘
+            let path = data_root().root().join("provider-failed-calls.jsonl");
+            collector.save_to_disk(&path);
+        }
+
+        entry
     }
 
     // ===== 派发任务注册表 =====

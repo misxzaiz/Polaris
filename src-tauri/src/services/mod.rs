@@ -58,7 +58,13 @@ pub mod model_profile_service;
 pub use model_profile_service::{ConnectionTestResult, ModelProfileService};
 
 pub mod provider_router;
-pub use provider_router::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, TriedPair};
+pub use provider_router::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, RouteSelection, TriedPair};
+
+pub mod provider_stats_collector;
+pub use provider_stats_collector::{
+    FailedCallCollector, FailedCallFilter, FailedCallKind, FailedCallLog,
+    ProfileStatsCollector, ProviderStatsSnapshot,
+};
 
 pub mod proxy;
 pub use proxy::ProxyManager;

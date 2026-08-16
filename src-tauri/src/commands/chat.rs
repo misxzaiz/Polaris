@@ -18,7 +18,7 @@ use crate::models::AIEvent;
 
 use crate::services::proxy::ProxyWireApi;
 use crate::models::config::{FailoverPattern, ProfileMode, ProviderGroup, RouteStrategy};
-use crate::services::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, TriedPair};
+use crate::services::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, RouteSelection, TriedPair};
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -847,7 +847,7 @@ async fn resolve_active_provider_group(
     Some((group.clone(), profiles))
 }
 
-/// 解析一次请求应使用的 Profile ID（start / continue 共用）。
+/// 解析一次请求应使用的 Profile ID + Key 索引（start / continue 共用）。
 ///
 /// 判定优先级（与 PRD §2.3 契约表一致）：
 /// 1. `profile_mode = Official` → 强制官方，忽略一切分组与 model_profile_id；
@@ -859,6 +859,7 @@ async fn resolve_active_provider_group(
 /// 4. 无分组（或没激活）→ 回退全局 `active_model_profile_id`。
 ///
 /// `None` 返回值语义：官方端点（不绑定任何 Profile）。
+/// 返回 `Some((profile_id, Option<key_idx>))` 供日志点记录 Key 级信息。
 #[allow(clippy::too_many_arguments)]
 async fn resolve_profile_id_for_request(
     profile_mode: Option<ProfileMode>,
@@ -866,29 +867,30 @@ async fn resolve_profile_id_for_request(
     state: &crate::AppState,
     route_choice: &Option<(ProviderGroup, Vec<crate::models::config::ModelProfile>)>,
     session_id: &str,
-) -> Option<String> {
+) -> Option<(String, Option<usize>)> {
     match resolve_profile_target(profile_mode, model_profile_id, route_choice.is_some()) {
         ResolvedTarget::Official => None,
-        ResolvedTarget::ExplicitProfile(pid) => Some(pid),
+        ResolvedTarget::ExplicitProfile(pid) => Some((pid, None)),
         ResolvedTarget::GlobalActive => state
             .clone_config()
             .ok()
-            .and_then(|c| c.active_model_profile_id),
+            .and_then(|c| c.active_model_profile_id)
+            .map(|pid| (pid, None)),
         ResolvedTarget::Group => {
             let Some((group, profiles)) = route_choice else {
                 return None; // 防御：Group 目标但无激活分组
             };
             // 亲和优先（续聊稳定），其次 select_initial
-            if let Some((affinity_pid, _affinity_key_idx)) = state.provider_router.get_affinity(session_id).await {
+            if let Some((affinity_pid, affinity_key_idx)) = state.provider_router.get_affinity(session_id).await {
                 if profiles.iter().any(|p| p.id == affinity_pid) {
-                    return Some(affinity_pid);
+                    return Some((affinity_pid, affinity_key_idx));
                 }
             }
             state
                 .provider_router
                 .select_initial(group, profiles, &std::collections::HashSet::new())
                 .await
-                .map(|s| s.profile_id)
+                .map(|s| (s.profile_id, s.key_idx))
         }
     }
 }
@@ -964,8 +966,7 @@ async fn record_official_fallback(
         }
     };
     state
-        .provider_router
-        .record_log(RouteLogEntry {
+        .record_route_log(RouteLogEntry {
             seq: 0,
             kind: RouteLogKind::OfficialFallback,
             group_id,
@@ -1311,6 +1312,9 @@ pub async fn start_chat_inner(
     let force_official = options.profile_mode == Some(ProfileMode::Official);
     let force_group = options.profile_mode == Some(ProfileMode::Group);
 
+    // 跟踪本轮路由选择（含 key_idx），供 ApplyFailed / SpawnFailed / Bound 日志点使用。
+    let mut current_route_selection: Option<RouteSelection> = None;
+
     for attempt in 0..max_attempts {
         let chosen_profile_id: Option<String> = if force_official {
             // 官方：不使用任何 Profile（不分组）
@@ -1344,6 +1348,8 @@ pub async fn start_chat_inner(
                     )
                     .await
             };
+            // 跟踪本轮路由选择（含 key_idx），供后续失败/绑定日志点使用。
+            current_route_selection = pick.clone();
             // 记录本轮尝试的 Profile+Key（用于后续 select_next 跳过）
             if let Some(ref s) = pick {
                 if !tried_pairs.iter().any(|t| t.profile_id == s.profile_id && t.key_idx == s.key_idx) {
@@ -1361,8 +1367,7 @@ pub async fn start_chat_inner(
                     group.members.iter().find(|m| m.profile_id == s.profile_id).unwrap()
                 );
                 state
-                    .provider_router
-                    .record_log(RouteLogEntry {
+                    .record_route_log(RouteLogEntry {
                         seq: 0,
                         kind,
                         group_id: group.id.clone(),
@@ -1416,8 +1421,7 @@ pub async fn start_chat_inner(
             );
             if let Some((group, _)) = &route_choice {
                 state
-                    .provider_router
-                    .record_log(RouteLogEntry {
+                    .record_route_log(RouteLogEntry {
                         seq: 0,
                         kind: RouteLogKind::AllUnavailable,
                         group_id: group.id.clone(),
@@ -1466,8 +1470,7 @@ pub async fn start_chat_inner(
                 );
                 if let Some((group, _)) = &route_choice {
                     state
-                        .provider_router
-                        .record_log(RouteLogEntry {
+                        .record_route_log(RouteLogEntry {
                             seq: 0,
                             kind: RouteLogKind::ApplyFailed,
                             group_id: group.id.clone(),
@@ -1480,7 +1483,7 @@ pub async fn start_chat_inner(
                             attempt,
                             error: Some(format!("{:?}", e)),
                             tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
-                            key_idx: None,
+                            key_idx: current_route_selection.as_ref().and_then(|rs| rs.key_idx),
                             key_count: None,
                             ts_ms: 0,
                         })
@@ -1525,8 +1528,7 @@ pub async fn start_chat_inner(
                     // 埋点：成功绑定
                     if let Some((group, _)) = &route_choice {
                         state
-                            .provider_router
-                            .record_log(RouteLogEntry {
+                            .record_route_log(RouteLogEntry {
                                 seq: 0,
                                 kind: RouteLogKind::Bound,
                                 group_id: group.id.clone(),
@@ -1539,7 +1541,7 @@ pub async fn start_chat_inner(
                                 attempt,
                                 error: None,
                                 tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
-                                key_idx: None,
+                                key_idx: current_route_selection.as_ref().and_then(|rs| rs.key_idx),
                                 key_count: None,
                                 ts_ms: 0,
                             })
@@ -1564,8 +1566,7 @@ pub async fn start_chat_inner(
                 // 埋点：spawn 失败
                 if let Some((group, _)) = &route_choice {
                     state
-                        .provider_router
-                        .record_log(RouteLogEntry {
+                        .record_route_log(RouteLogEntry {
                             seq: 0,
                             kind: RouteLogKind::SpawnFailed,
                             group_id: group.id.clone(),
@@ -1578,7 +1579,7 @@ pub async fn start_chat_inner(
                             attempt,
                             error: Some(format!("{:?}", e)),
                             tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
-                            key_idx: None,
+                            key_idx: current_route_selection.as_ref().and_then(|rs| rs.key_idx),
                             key_count: None,
                             ts_ms: 0,
                         })
@@ -1828,7 +1829,8 @@ pub async fn continue_chat_inner(
     let route_choice = resolve_active_provider_group(state, options.provider_group_id.as_deref()).await;
     // 与 start_chat_inner 的判定优先级一致：profile_mode 显式指定优先，
     // 向前兼容（profile_mode=None）时 model_profile_id 优先于分组。
-    let chosen_profile_id: Option<String> = resolve_profile_id_for_request(
+    // 返回值包含 (profile_id, Option<key_idx>)，用于日志记录 Key 级信息。
+    let chosen_profile: Option<(String, Option<usize>)> = resolve_profile_id_for_request(
         options.profile_mode,
         options.model_profile_id.as_deref(),
         state,
@@ -1836,6 +1838,8 @@ pub async fn continue_chat_inner(
         &session_id,
     )
     .await;
+    let chosen_profile_id: Option<String> = chosen_profile.as_ref().map(|(pid, _)| pid.clone());
+    let continue_key_idx: Option<usize> = chosen_profile.as_ref().and_then(|(_, ki)| *ki);
     if let Some((group, profiles)) = &route_choice {
         if let Some(ref pid) = chosen_profile_id {
             // 记录续聊轮的选择日志（InitialSelect / Bound），供路由日志面板追踪。
@@ -1845,8 +1849,7 @@ pub async fn continue_chat_inner(
                 RouteLogKind::InitialSelect
             };
             state
-                .provider_router
-                .record_log(RouteLogEntry {
+                .record_route_log(RouteLogEntry {
                     seq: 0,
                     kind,
                     group_id: group.id.clone(),
@@ -1863,7 +1866,7 @@ pub async fn continue_chat_inner(
                     attempt: 0,
                     error: None,
                     tried: vec![],
-                    key_idx: None,
+                    key_idx: continue_key_idx,
                     key_count: None,
                     ts_ms: 0,
                 })
@@ -3268,6 +3271,47 @@ pub async fn provider_route_logs(
 #[tauri::command]
 pub async fn provider_route_logs_clear(state: State<'_, crate::AppState>) -> Result<()> {
     state.provider_router.clear_logs().await;
+    Ok(())
+}
+
+/// 获取供应商调用统计快照。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_stats(state: State<'_, crate::AppState>) -> Result<crate::services::ProviderStatsSnapshot> {
+    let collector = state.profile_stats_collector.lock().await;
+    Ok(collector.snapshot())
+}
+
+/// 清空供应商调用统计计数。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_stats_clear(state: State<'_, crate::AppState>) -> Result<()> {
+    let mut collector = state.profile_stats_collector.lock().await;
+    collector.clear();
+    let path = crate::services::data_root::data_root().root().join("provider-stats.json");
+    collector.save_to_disk(&path);
+    Ok(())
+}
+
+/// 获取失败调用日志（支持筛选 + 分页）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_failed_calls(
+    filter: crate::services::FailedCallFilter,
+    state: State<'_, crate::AppState>,
+) -> Result<Vec<crate::services::FailedCallLog>> {
+    let collector = state.failed_call_collector.lock().await;
+    Ok(collector.list(&filter))
+}
+
+/// 清空失败调用日志。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn provider_failed_calls_clear(state: State<'_, crate::AppState>) -> Result<()> {
+    let mut collector = state.failed_call_collector.lock().await;
+    collector.clear();
+    let path = crate::services::data_root::data_root().root().join("provider-failed-calls.jsonl");
+    collector.save_to_disk(&path);
     Ok(())
 }
 

@@ -28,6 +28,7 @@ import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { ShortcutsTab } from './tabs/ShortcutsTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
 import { RouteLogTab } from './tabs/RouteLogTab';
+import { ProviderStatsTab } from './tabs/ProviderStatsTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
@@ -63,6 +64,7 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'token-stats': 'nav.tokenStats',
   'performance': 'nav.performance',
   'route-log': 'nav.routeLog',
+  'provider-stats': 'nav.providerStats',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -359,6 +361,10 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'route-log' && (
               <RouteLogTab />
+            )}
+
+            {activeTab === 'provider-stats' && (
+              <ProviderStatsTab />
             )}
           </div>
 

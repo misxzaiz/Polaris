@@ -94,6 +94,8 @@ fn create_test_state() -> Arc<AppState> {
         web_server_handle: Arc::new(AsyncMutex::new(None)),
         proxy_manager: crate::services::ProxyManager::new(),
         provider_router: Arc::new(crate::services::ProviderRouter::new()),
+        profile_stats_collector: Arc::new(tokio::sync::Mutex::new(crate::services::ProfileStatsCollector::new())),
+        failed_call_collector: Arc::new(tokio::sync::Mutex::new(crate::services::FailedCallCollector::new())),
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),

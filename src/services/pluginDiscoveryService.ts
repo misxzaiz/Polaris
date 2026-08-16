@@ -9,6 +9,7 @@ import type {
   PluginEngineContribution,
   PluginPanelContribution,
   PluginPermissionDeclaration,
+  PluginToolProviderContribution,
   PluginViewContribution,
   PolarisPluginManifest,
 } from '@/plugin-system/types'
@@ -247,6 +248,49 @@ function normalizeChatCards(
   })
 }
 
+/**
+ * 归一化 toolProviders 贡献点。
+ *
+ * 安全校验：mcpServerId 必须属于本插件声明的 mcpServers[].id，否则丢弃该 Provider
+ * （防止插件劫持内置工具或其他插件的 MCP server）。
+ * capability 必须非空字符串。
+ */
+function normalizeToolProviders(
+  value: unknown,
+  ownMcpServerIds: Set<string>,
+  errors: string[]
+): PluginToolProviderContribution[] {
+  if (!Array.isArray(value)) return []
+
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`contributes.toolProviders[${index}] must be an object`)
+      return []
+    }
+
+    const capability = asString(item.capability)
+    const mcpServerId = asString(item.mcpServerId)
+
+    if (!capability || !mcpServerId) {
+      errors.push(`contributes.toolProviders[${index}] is invalid and was ignored`)
+      return []
+    }
+
+    if (!ownMcpServerIds.has(mcpServerId)) {
+      errors.push(
+        `contributes.toolProviders[${index}].mcpServerId "${mcpServerId}" is not declared in this plugin's mcpServers and was ignored`
+      )
+      return []
+    }
+
+    return [{
+      capability,
+      mcpServerId,
+      description: asString(item.description),
+    }]
+  })
+}
+
 function normalizeEngines(
   value: unknown,
   _errors: string[]
@@ -373,6 +417,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
         panel: normalizePanel(contributes.panel),
         chatCards: normalizeChatCards(contributes.chatCards, ownMcpServerIds, errors),
         engines: normalizeEngines(contributes.engines, errors),
+        toolProviders: normalizeToolProviders(contributes.toolProviders, ownMcpServerIds, errors),
       },
       permissions: normalizePermissions(raw.permissions),
       origin: normalizeOrigin(raw.origin),

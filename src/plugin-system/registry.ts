@@ -1,5 +1,6 @@
 import type {
   PluginMcpServerContribution,
+  PluginToolProviderContribution,
   PluginViewArea,
   PluginViewContribution,
   PluginPanelLoader,
@@ -270,6 +271,24 @@ class PluginRegistry {
       .flatMap((plugin) =>
         (plugin.contributes.chatCards ?? []).map((card) => ({
           ...card,
+          pluginId: plugin.id,
+        }))
+      )
+  }
+
+  /**
+   * 列出所有已启用插件的 toolProvider 贡献点。
+   *
+   * 每个 toolProvider 声明一个 capability（如 "shell"）和一个 mcpServerId，
+   * 表示该插件要用自己的 MCP server 接管该能力。后端 MCP 配置解析时
+   * 会用插件声明的 server 替换同 capability 的内置实现。
+   */
+  listToolProviderContributions(): (PluginToolProviderContribution & { pluginId: string })[] {
+    return this.listPlugins()
+      .filter((plugin) => plugin.enabledByDefault)
+      .flatMap((plugin) =>
+        (plugin.contributes.toolProviders ?? []).map((provider) => ({
+          ...provider,
           pluginId: plugin.id,
         }))
       )

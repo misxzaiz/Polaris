@@ -97,6 +97,7 @@ function App() {
   const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
+  const activityBarCollapsed = useViewStore(state => state.activityBarCollapsed);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
   const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
   const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
@@ -243,7 +244,7 @@ function App() {
                 onOpenSettings={() => useOverlayStore.getState().setSettingsOpen(true)}
                 onToggleRightPanel={toggleRightPanel}
                 rightPanelCollapsed={rightPanelCollapsed}
-                forceCollapsed={isCompact}
+                forceCollapsed={isCompact || activityBarCollapsed}
               />
 
               {!isCompact && hasLeftPanel && (

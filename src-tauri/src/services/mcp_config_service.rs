@@ -368,6 +368,8 @@ pub struct ResolvedExternalMcpServer {
 pub struct WorkspaceMcpConfigService {
     binaries: Vec<ResolvedMcpBinary>,
     external_servers: Vec<ResolvedExternalMcpServer>,
+    /// 插件声明的工具能力覆盖（capability → 插件 mcpServerId）
+    tool_providers: Vec<crate::models::plugin::PluginToolProviderManifestContribution>,
     config_dir: PathBuf,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<String>,
@@ -405,6 +407,7 @@ impl WorkspaceMcpConfigService {
         Self {
             binaries,
             external_servers: Vec::new(),
+            tool_providers: Vec::new(),
             config_dir,
             ask_listener: None,
             ask_route_session_id: None,
@@ -457,6 +460,7 @@ impl WorkspaceMcpConfigService {
         Ok(Self {
             binaries,
             external_servers: Vec::new(),
+            tool_providers: Vec::new(),
             config_dir,
             ask_listener: None,
             ask_route_session_id: None,
@@ -468,6 +472,19 @@ impl WorkspaceMcpConfigService {
         external_servers: Vec<ResolvedExternalMcpServer>,
     ) -> Self {
         self.external_servers = external_servers;
+        self
+    }
+
+    /// 注入插件声明的工具能力覆盖列表。
+    ///
+    /// 在 `resolved_simple_ai_servers` 中，每个 toolProvider 声明的 capability
+    /// 会映射到一组内置 MCP server 名（见 `capability_to_builtin_servers`），
+    /// 声明的 mcpServerId 对应的外部 server 会替换这些内置 server。
+    pub fn with_tool_providers(
+        mut self,
+        tool_providers: Vec<crate::models::plugin::PluginToolProviderManifestContribution>,
+    ) -> Self {
+        self.tool_providers = tool_providers;
         self
     }
 
@@ -776,6 +793,12 @@ impl WorkspaceMcpConfigService {
             servers.push(server.clone());
         }
 
+        // 工具能力覆盖：插件声明的 toolProvider 替换同 capability 的内置 server。
+        // 例如插件声明 capability: "computer" + mcpServerId: "my-computer"，
+        // 则找到内置 "polaris-computer" 移除，并从 external_servers 中取出
+        // mcpServerId == "my-computer" 的条目（改名为 polaris-computer）注入。
+        apply_tool_provider_overrides(&mut servers, &self.external_servers, &self.tool_providers);
+
         servers
     }
 }
@@ -961,9 +984,13 @@ pub fn resolve_workspace_mcp_runtime_service(
         ask_route_session_id.as_deref(),
     );
 
+    // 收集已启用插件的 toolProvider 声明（用于覆盖内置 MCP server）
+    let tool_providers = collect_tool_providers(&plugins, &plugin_states);
+
     Ok((
         service
             .with_external_servers(external_servers)
+            .with_tool_providers(tool_providers)
             .with_ask_listener(ask_listener)
             .with_ask_route_session_id(ask_route_session_id),
         disabled_builtin_servers,
@@ -996,6 +1023,108 @@ fn expand_external_mcp_template(
 
 fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bool {
     disabled_server_names.iter().any(|name| name == server_name)
+}
+
+/// 能力标识 → 该能力对应的内置 MCP server 名集合。
+///
+/// 插件声明 `capability: "computer"` 表示要接管电脑操作能力，
+/// 解析时用插件声明的 mcpServerId 对应的 server 替换这里列出的内置 server。
+///
+/// 未来 Phase 2 的 shell/filesystem 等 seam 也会在此映射。
+fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
+    match capability {
+        "computer" => vec![COMPUTER_MCP_SERVER_NAME],
+        "browser" => vec![BROWSER_MCP_SERVER_NAME],
+        "ask" => vec![ASK_MCP_SERVER_NAME],
+        "dispatch" => vec![DISPATCH_MCP_SERVER_NAME],
+        "todo" => vec![TODO_MCP_SERVER_NAME],
+        "requirements" => vec![REQUIREMENTS_MCP_SERVER_NAME],
+        "scheduler" => vec![SCHEDULER_MCP_SERVER_NAME],
+        "prd-preview" => vec![PRD_PREVIEW_MCP_SERVER_NAME],
+        "agnes" => vec![AGNES_MCP_SERVER_NAME],
+        "personal-hub" => vec![PH_MCP_SERVER_NAME],
+        _ => Vec::new(),
+    }
+}
+
+/// 收集已启用插件的 toolProvider 声明。
+///
+/// 仅收集已启用（enabled + mcp_enabled）插件的声明，保持与
+/// `resolve_external_plugin_mcp_servers` 的启用判定一致。
+fn collect_tool_providers(
+    plugins: &[DiscoveredPluginManifest],
+    plugin_states: &PluginStateMap,
+) -> Vec<crate::models::plugin::PluginToolProviderManifestContribution> {
+    let mut collected = Vec::new();
+    for plugin in plugins {
+        let plugin_state = plugin_states.get(&plugin.id);
+        if !is_plugin_mcp_enabled(plugin, plugin_state) {
+            continue;
+        }
+        collected.extend(plugin.contributes.tool_providers.iter().cloned());
+    }
+    collected
+}
+
+/// 在已解析的 server 列表中应用 toolProvider 覆盖。
+///
+/// 对每个 toolProvider 声明：
+/// 1. 把 capability 映射到要替换的内置 server 名集合
+/// 2. 在 external_servers 中找到 mcpServerId 对应的条目
+/// 3. 从 servers 中移除同名的内置 server
+/// 4. 把外部 server 条目改名为内置 server 名注入（替换）
+///
+/// 这样 SimpleAI 的 `mcp__polaris-computer__*` 工具调用会路由到插件的 MCP server。
+fn apply_tool_provider_overrides(
+    servers: &mut Vec<ResolvedExternalMcpServer>,
+    external_servers: &[ResolvedExternalMcpServer],
+    tool_providers: &[crate::models::plugin::PluginToolProviderManifestContribution],
+) {
+    for provider in tool_providers {
+        let builtin_names = capability_to_builtin_servers(&provider.capability);
+        if builtin_names.is_empty() {
+            tracing::info!(
+                "[MCP] toolProvider 跳过未知 capability: {}",
+                provider.capability
+            );
+            continue;
+        }
+
+        // 找到插件声明的替换 server（按 mcpServerId 匹配 external_servers）
+        let replacement = external_servers.iter().find(|s| s.server_name == provider.mcp_server_id);
+        let Some(replacement) = replacement else {
+            tracing::warn!(
+                "[MCP] toolProvider capability={} 声明的 mcpServerId={} 未在 external_servers 中找到，跳过",
+                provider.capability,
+                provider.mcp_server_id
+            );
+            continue;
+        };
+
+        for &builtin_name in &builtin_names {
+            // 移除内置同名 server（若存在）
+            let before_len = servers.len();
+            servers.retain(|s| s.server_name != builtin_name);
+            let removed = before_len - servers.len();
+
+            // 注入替换 server（改名为内置 server 名，保留插件 command/args）
+            servers.push(ResolvedExternalMcpServer {
+                plugin_id: replacement.plugin_id.clone(),
+                server_name: builtin_name.to_string(),
+                command: replacement.command.clone(),
+                args: replacement.args.clone(),
+            });
+
+            tracing::info!(
+                "[MCP] toolProvider 覆盖：capability={} 内置 {} ← 插件 {} 的 mcpServerId={}（移除 {} 个原 server）",
+                provider.capability,
+                builtin_name,
+                replacement.plugin_id,
+                provider.mcp_server_id,
+                removed
+            );
+        }
+    }
 }
 
 /// 将 MCP server 名称（如 "polaris-todo"）转换为子命令名（如 "todo"）。

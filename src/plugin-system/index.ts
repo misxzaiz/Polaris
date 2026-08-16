@@ -23,6 +23,7 @@ export type {
   PluginPanelContribution,
   PluginPanelLoader,
   PluginPermissionDeclaration,
+  PluginToolProviderContribution,
   PluginViewArea,
   PluginViewContribution,
   PolarisPluginManifest,

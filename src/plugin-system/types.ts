@@ -212,6 +212,25 @@ export interface PluginEngineContribution {
   }
 }
 
+/**
+ * 工具能力覆盖声明（manifest.contributes.toolProviders[]）
+ *
+ * 声明一个插件要接管哪个内置能力（如 shell / filesystem / compaction / subagent），
+ * 由对应的 mcpServerId 提供实现。MCP 配置解析时，插件声明的 Provider 会
+ * 替换同 capability 的内置实现。
+ *
+ * 安全约束：mcpServerId 必须属于本插件声明的 mcpServers[].id，
+ * 防止插件劫持其他插件的 MCP server。
+ */
+export interface PluginToolProviderContribution {
+  /** 能力标识（如 'shell' / 'filesystem' / 'compaction' / 'subagent'） */
+  capability: string
+  /** 提供该能力实现的 MCP server id，必须属于本插件的 mcpServers 声明 */
+  mcpServerId: string
+  /** 覆盖描述（UI 展示用） */
+  description?: string
+}
+
 export interface PluginPermissionDeclaration {
   workspaceRead?: boolean
   workspaceWrite?: boolean
@@ -251,6 +270,7 @@ export interface PolarisPluginManifest {
     panel?: PluginPanelContribution
     chatCards?: Omit<PluginChatCardContribution, 'pluginId'>[]
     engines?: PluginEngineContribution[]
+    toolProviders?: PluginToolProviderContribution[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata

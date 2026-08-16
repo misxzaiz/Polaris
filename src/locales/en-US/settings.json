@@ -41,7 +41,8 @@
     "personalHub": "Personal Hub",
     "tokenStats": "Token Stats",
     "performance": "Performance & Resources",
-    "routeLog": "Route Log"
+    "routeLog": "Route Log",
+    "providerStats": "Provider Stats"
   },
   "messages": {
     "saved": "Saved",

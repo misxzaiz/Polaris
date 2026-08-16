@@ -132,6 +132,26 @@ pub struct PluginManifestContributes {
     /// 插件声明的聊天卡片
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub chat_cards: Vec<PluginChatCardManifestContribution>,
+    /// 插件声明的工具能力覆盖（替换内置 MCP server 或硬编码工具）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tool_providers: Vec<PluginToolProviderManifestContribution>,
+}
+
+/// 插件工具能力覆盖声明
+///
+/// 声明一个插件要接管哪个内置能力（如 shell / filesystem / compaction 等），
+/// 由对应的 mcpServerId 提供实现。MCP 配置解析时，插件声明的 Provider 会
+/// 替换同 capability 的内置实现。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginToolProviderManifestContribution {
+    /// 能力标识（如 "shell" / "filesystem" / "compaction" / "subagent"）
+    pub capability: String,
+    /// 提供该能力实现的 MCP server id，必须属于本插件的 mcpServers 声明
+    pub mcp_server_id: String,
+    /// 覆盖描述（UI 展示用）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// 插件面板贡献
