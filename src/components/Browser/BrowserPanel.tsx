@@ -28,6 +28,7 @@ import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
   browserClearData,
+  browserClose,
   browserCreate,
   browserGetDiagnostics,
   browserGetMarqueeResult,
@@ -485,10 +486,10 @@ export function BrowserPanel({
         rafRef.current = null
       }
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
-      // 移出屏幕而非隐藏，避免重挂载时 hide→show 帧窗口期黑屏；
-      // 真正的遮挡隐藏由 syncBounds 的 occlusion 检测控制
-      log('BrowserPanel UNMOUNT: hiding webview', { webviewLabel })
-      browserSetBounds(webviewLabel, HIDDEN_BROWSER_BOUNDS).catch(() => undefined)
+      // 销毁 WebView 而非隐藏，释放 renderer 进程（~350MB）。
+      // 开源节流：浏览器面板不是高频切换场景，销毁重建代价远小于常驻一个 350MB/40% CPU 的进程。
+      log('BrowserPanel UNMOUNT: destroying webview', { webviewLabel })
+      browserClose(webviewLabel).catch(() => undefined)
       lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
     }
   }, [
@@ -512,6 +513,7 @@ export function BrowserPanel({
     let intervalId: number | null = null
 
     async function refreshOverlay() {
+      if (document.hidden) return
       try {
         const result = await browserSetAiOverlay(webviewLabel, aiOperationMode)
         if (cancelled) return

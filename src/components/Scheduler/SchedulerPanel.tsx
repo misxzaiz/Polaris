@@ -213,7 +213,9 @@ export function SchedulerPanel() {
 
   // 定时刷新调度器状态
   useEffect(() => {
-    const interval = setInterval(loadSchedulerStatus, 5000);
+    const interval = setInterval(() => {
+      if (!document.hidden) loadSchedulerStatus();
+    }, 5000);
     return () => clearInterval(interval);
   }, [loadSchedulerStatus]);
 

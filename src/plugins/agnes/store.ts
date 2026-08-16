@@ -121,6 +121,7 @@ const pollTimers = new Map<string, ReturnType<typeof setInterval>>()
 function startPolling(videoId: string): void {
   if (pollTimers.has(videoId)) return
   const tick = async () => {
+    if (document.hidden) return
     try {
       const task = await agnesQueryVideo(videoId)
       useAgnesMediaStore.getState()._applyVideoUpdate(videoId, task)

@@ -80,7 +80,7 @@ export const DispatchTaskCard = memo(function DispatchTaskCard({ block }: { bloc
   const running = task?.status === 'running' || task?.status === 'pending'
   useEffect(() => {
     if (!running) return
-    const timer = setInterval(() => forceTick((n) => n + 1), 1000)
+    const timer = setInterval(() => { if (!document.hidden) forceTick((n) => n + 1) }, 1000)
     return () => clearInterval(timer)
   }, [running])
 

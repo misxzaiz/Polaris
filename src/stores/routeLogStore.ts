@@ -128,6 +128,7 @@ export const useRouteLogStore = create<RouteLogState>((set, get) => ({
     // 立即拉一次全量
     get().fetchAll();
     const timer = window.setInterval(() => {
+      if (document.hidden) return;
       get().fetchIncremental();
     }, POLL_INTERVAL_MS);
     set({ pollTimer: timer, autoRefresh: true });

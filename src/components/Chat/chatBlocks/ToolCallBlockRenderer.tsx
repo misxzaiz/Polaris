@@ -291,7 +291,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   return (
     <div
       className={clsx(
-        'my-1.5 rounded-lg overflow-hidden w-full transition-all duration-200',
+        'my-1.5 rounded-lg overflow-hidden w-full transition-[border-color,background-color] duration-200',
         'border border-border bg-background-elevated',
         statusAnimationClass,
         block.status === 'failed' && 'border-error/30 bg-error/[0.06]'

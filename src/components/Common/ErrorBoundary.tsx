@@ -96,6 +96,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
     // 每秒更新心跳
     const updateHeartbeat = () => {
+      if (document.hidden) return;
       lastHeartbeat = Date.now();
       sessionStorage.setItem('heartbeat', lastHeartbeat.toString());
     };

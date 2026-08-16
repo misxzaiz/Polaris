@@ -38,6 +38,7 @@ export function PersonalHubPanel({ pluginId, onOpenSettings }: PersonalHubPanelP
   // 配置变更时（用户保存设置后切回面板）重新检测
   useEffect(() => {
     const check = () => {
+      if (document.hidden) return
       const ready = isSupabaseConfigured()
       if (ready !== configured) {
         setConfigured(ready)

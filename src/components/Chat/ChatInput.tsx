@@ -1564,7 +1564,7 @@ export function ChatInput({
       <div className="p-2 sm:p-3">
         {/* 输入框统一容器（纵向布局：附件预览 + textarea + 底部工具栏） */}
         <div
-          className="relative flex flex-col bg-background-surface border border-border rounded-lg sm:rounded-xl focus-within:ring-2 focus-within:ring-border focus-within:border-primary transition-all shadow-soft hover:shadow-medium"
+          className="relative flex flex-col bg-background-surface border border-border rounded-lg sm:rounded-xl focus-within:ring-2 focus-within:ring-border focus-within:border-primary shadow-soft hover:shadow-medium"
           onDrop={handleDrop}
           onDragOver={handleDragOver}
         >
