@@ -397,6 +397,10 @@ pub struct GroupMember {
     /// Key 级路由策略。默认 roundrobin。
     #[serde(default)]
     pub key_strategy: RouteStrategy,
+    /// Key 级权重，与 `keys` 对齐。仅 `key_strategy = Weighted` 时生效。
+    /// 长度应与 `keys` 一致；为空或长度不匹配时回退等权。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_weights: Option<Vec<u32>>,
 }
 
 fn default_group_priority() -> u32 {

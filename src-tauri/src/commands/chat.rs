@@ -3373,6 +3373,7 @@ mod route_failover_tests {
             weight: 1,
             keys: None,
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }]);
         let err = AppError::ProcessError("请求失败 401 Unauthorized".into());
         assert!(is_failoverable_spawn_err(&err, &g));
@@ -3386,6 +3387,7 @@ mod route_failover_tests {
             weight: 1,
             keys: None,
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }]);
         let err = AppError::ProcessError("启动 Claude 进程失败: Connection refused".into());
         assert!(is_failoverable_spawn_err(&err, &g));
@@ -3399,6 +3401,7 @@ mod route_failover_tests {
             weight: 1,
             keys: None,
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }]);
         let err = AppError::ProcessError("命令行参数总长度超过 32767 字符".into());
         assert!(!is_failoverable_spawn_err(&err, &g));
@@ -3412,6 +3415,7 @@ mod route_failover_tests {
             weight: 1,
             keys: None,
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }]);
         let err = AppError::ProcessError("session 已存在".into());
         assert!(!is_failoverable_spawn_err(&err, &g));
@@ -3430,6 +3434,7 @@ mod route_failover_tests {
                 weight: 1,
                 keys: None,
                 key_strategy: RouteStrategy::RoundRobin,
+                key_weights: None,
             }])
         };
         // 命中自定义模式

@@ -1001,6 +1001,8 @@ interface MemberFormItem {
   keys: string[]
   /** Key 级路由策略 */
   keyStrategy: RouteStrategy
+  /** Key 级权重（与 keys 对齐，仅 keyStrategy=weighted 生效） */
+  keyWeights: string[]
 }
 
 /** 分组编辑表单状态 */
@@ -1167,6 +1169,7 @@ function ProviderGroupEditorModal({
         weight: String(m.weight),
         keys: [...(m.keys ?? [])],
         keyStrategy: m.keyStrategy ?? 'roundrobin',
+        keyWeights: (m.keyWeights ?? []).map(String),
       })),
       failoverOn: (initialGroup.failoverOn?.length
         ? initialGroup.failoverOn
@@ -1200,7 +1203,7 @@ function ProviderGroupEditorModal({
   const addMember = () => {
     const used = new Set(form.members.map((m) => m.profileId))
     const firstFree = profiles.find((p) => !used.has(p.id))
-    patch({ members: [...form.members, { profileId: firstFree?.id ?? '', priority: '0', weight: '1', keys: [], keyStrategy: 'roundrobin' }] })
+    patch({ members: [...form.members, { profileId: firstFree?.id ?? '', priority: '0', weight: '1', keys: [], keyStrategy: 'roundrobin', keyWeights: [] }] })
   }
   const removeMember = (idx: number) => patch({ members: form.members.filter((_, i) => i !== idx) })
 
@@ -1428,7 +1431,7 @@ function ProviderGroupEditorModal({
                       >
                         <option value="roundrobin">RoundRobin — 轮转</option>
                         <option value="failover">Failover — 顺序，失败换下一个</option>
-                        <option value="weighted">Weighted — 等权随机</option>
+                        <option value="weighted">Weighted — 按权重随机</option>
                       </select>
                     </div>
                     {/* Key 列表 */}
@@ -1446,11 +1449,28 @@ function ProviderGroupEditorModal({
                             placeholder="sk-..."
                             className="flex-1 min-w-0 px-2 py-1 text-[11px] font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary"
                           />
+                          {m.keyStrategy === 'weighted' && (
+                            <input
+                              type="number"
+                              min="1"
+                              value={m.keyWeights[ki] ?? '1'}
+                              onChange={(e) => {
+                                const next = [...m.keyWeights]
+                                while (next.length <= ki) next.push('1')
+                                next[ki] = e.target.value
+                                updateMember(idx, { keyWeights: next })
+                              }}
+                              placeholder="权重"
+                              title="该 Key 的权重值"
+                              className="w-14 px-1.5 py-1 text-[11px] font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary text-center"
+                            />
+                          )}
                           <button
                             type="button"
                             onClick={() => {
                               const next = m.keys.filter((_, i) => i !== ki)
-                              updateMember(idx, { keys: next })
+                              const nextW = m.keyWeights.filter((_, i) => i !== ki)
+                              updateMember(idx, { keys: next, keyWeights: nextW })
                             }}
                             className="p-1 text-text-tertiary hover:text-red-500 transition-colors shrink-0"
                           >
@@ -1462,7 +1482,7 @@ function ProviderGroupEditorModal({
                     <div className="flex items-center gap-2 mt-1">
                       <button
                         type="button"
-                        onClick={() => updateMember(idx, { keys: [...m.keys, ''] })}
+                        onClick={() => updateMember(idx, { keys: [...m.keys, ''], keyWeights: [...m.keyWeights, '1'] })}
                         className="flex items-center gap-1 text-[10px] text-primary hover:text-primary-hover transition-colors"
                       >
                         <Plus size={10} />
@@ -1474,7 +1494,10 @@ function ProviderGroupEditorModal({
                           const paste = window.prompt('粘贴多个 Key，每行一个：')
                           if (paste) {
                             const parsed = paste.split('\n').map(s => s.trim()).filter(Boolean)
-                            updateMember(idx, { keys: [...m.keys, ...parsed] })
+                            updateMember(idx, {
+                              keys: [...m.keys, ...parsed],
+                              keyWeights: [...m.keyWeights, ...parsed.map(() => '1')],
+                            })
                           }
                         }}
                         className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary transition-colors"
@@ -1898,6 +1921,9 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
           weight: parseInt(m.weight || '1', 10),
           keys: m.keys.length > 0 ? m.keys.filter(k => k.trim().length > 0) : undefined,
           keyStrategy: m.keys.length > 0 ? m.keyStrategy : undefined,
+          keyWeights: m.keyStrategy === 'weighted' && m.keyWeights.length > 0
+            ? m.keyWeights.map(w => parseInt(w || '1', 10)).filter(n => !isNaN(n))
+            : undefined,
         })),
       failoverOn,
       firstTokenTimeoutSecs: form.firstTokenTimeoutSecs ? parseInt(form.firstTokenTimeoutSecs, 10) : undefined,

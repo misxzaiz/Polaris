@@ -54,7 +54,10 @@ pub struct ProfileStats {
     /// 绑定成功次数（引擎正常启动）
     pub bound: u64,
     /// 按 Key 的细分
-    pub key_breakdown: HashMap<Option<usize>, KeyStats>,
+    /// Map key 规则：
+    ///   - "default" = 使用 Profile.apiKey（单 Key 向后兼容）
+    ///   - "0", "1", ... = 多 Key 池中的索引
+    pub key_breakdown: HashMap<String, KeyStats>,
     /// 最后活跃时间（UNIX 毫秒）
     pub last_active_ms: u64,
 }
@@ -146,6 +149,17 @@ pub struct ProviderStatsSnapshot {
 }
 
 // ============================================================================
+// 辅助函数
+// ============================================================================
+
+/// 将 `Option<usize>` Key 索引转换为 HashMap 的 String key。
+/// - `None` → `"default"`（使用 Profile.apiKey）
+/// - `Some(i)` → `i.to_string()`
+fn key_idx_to_str(ki: Option<usize>) -> String {
+    ki.map(|i| i.to_string()).unwrap_or_else(|| "default".to_string())
+}
+
+// ============================================================================
 // ProfileStatsCollector
 // ============================================================================
 
@@ -204,7 +218,7 @@ impl ProfileStatsCollector {
                     let ps = self.profile_mut(pid, entry);
                     ps.selected += 1;
                     ps.last_active_ms = entry.ts_ms;
-                    ps.key_breakdown.entry(entry.key_idx).or_default().selected += 1;
+                    ps.key_breakdown.entry(key_idx_to_str(entry.key_idx)).or_default().selected += 1;
                 }
             }
             RouteLogKind::FailoverSwitch => {
@@ -215,7 +229,7 @@ impl ProfileStatsCollector {
                     let ps = self.profile_mut(pid, entry);
                     ps.failover_in += 1;
                     ps.last_active_ms = entry.ts_ms;
-                    ps.key_breakdown.entry(entry.key_idx).or_default().selected += 1;
+                    ps.key_breakdown.entry(key_idx_to_str(entry.key_idx)).or_default().selected += 1;
                 }
                 // 上一个失败的 Profile 记 failover_out
                 // tried 的最后一个元素是"上一个"（未包含当前选中的）
@@ -233,7 +247,7 @@ impl ProfileStatsCollector {
                     let ps = self.profile_mut(pid, entry);
                     ps.apply_failed += 1;
                     ps.last_active_ms = entry.ts_ms;
-                    ps.key_breakdown.entry(entry.key_idx).or_default().failed += 1;
+                    ps.key_breakdown.entry(key_idx_to_str(entry.key_idx)).or_default().failed += 1;
                 }
             }
             RouteLogKind::SpawnFailed => {
@@ -242,7 +256,7 @@ impl ProfileStatsCollector {
                     let ps = self.profile_mut(pid, entry);
                     ps.spawn_failed += 1;
                     ps.last_active_ms = entry.ts_ms;
-                    ps.key_breakdown.entry(entry.key_idx).or_default().failed += 1;
+                    ps.key_breakdown.entry(key_idx_to_str(entry.key_idx)).or_default().failed += 1;
                 }
             }
             RouteLogKind::Bound => {

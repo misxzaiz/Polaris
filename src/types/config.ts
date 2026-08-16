@@ -539,9 +539,14 @@ export interface GroupMember {
    * Key 级路由策略。默认 roundrobin。
    * - roundrobin：新会话轮转 Key
    * - failover：固定第一个 Key，失败时换下一个
-   * - weighted：与成员级不同，Key 级 weighted 按权重随机（所有 Key 等权）
+   * - weighted：按 keyWeights 加权随机采样；未配置权重时退化为等权随机
    */
   keyStrategy?: RouteStrategy;
+  /**
+   * Key 级权重，与 keys 对齐。仅 keyStrategy = weighted 时生效。
+   * 长度应与 keys 一致；为空或长度不匹配时回退等权。
+   */
+  keyWeights?: number[];
 }
 
 /** 供应商分组配置 */

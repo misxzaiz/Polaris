@@ -223,7 +223,7 @@ impl ProviderRouter {
                 &healthy_members[idx % healthy_members.len()]
             }
             RouteStrategy::Weighted => {
-                return self.weighted_initial(&healthy_members, profiles);
+                return self.weighted_initial(&healthy_members, profiles).await;
             }
         };
 
@@ -288,18 +288,43 @@ impl ProviderRouter {
                 Some(0)
             }
             RouteStrategy::Weighted => {
-                // Key 级等权随机
-                let seed = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_nanos() as u64)
-                    .unwrap_or(0);
-                Some((seed % keys.len() as u64) as usize)
+                // Key 级加权随机：使用 member.key_weights 做加权采样
+                let weights = member.key_weights.as_ref()
+                    .filter(|w| w.len() == keys.len())
+                    .map(|w| w.as_slice())
+                    .unwrap_or_else(|| &[]);
+                if weights.is_empty() {
+                    // 无权重配置 → 等权随机（向后兼容）
+                    let seed = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64)
+                        .unwrap_or(0);
+                    Some((seed % keys.len() as u64) as usize)
+                } else {
+                    let total: u32 = weights.iter().sum();
+                    if total == 0 {
+                        return Some(0);
+                    }
+                    let seed = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64)
+                        .unwrap_or(0);
+                    let r = (seed % total as u64) as u32;
+                    let mut acc = 0u32;
+                    for (i, w) in weights.iter().enumerate() {
+                        acc += w;
+                        if r < acc {
+                            return Some(i);
+                        }
+                    }
+                    Some(weights.len() - 1)
+                }
             }
         }
     }
 
     /// 加权策略下选择成员并返回 RouteSelection
-    fn weighted_initial(
+    async fn weighted_initial(
         &self,
         members: &[&GroupMember],
         profiles: &[ModelProfile],
@@ -317,11 +342,7 @@ impl ProviderRouter {
         for m in members {
             acc += m.weight.max(1);
             if r < acc {
-                // 异步 self.select_key 在此处无法使用（同步函数）
-                // 加权选择不做 Key 级轮转，fallback 到 failover 策略
-                let key_idx = m.keys.as_ref()
-                    .filter(|k| !k.is_empty())
-                    .map(|_| 0);
+                let key_idx = self.select_key(m).await;
                 return Some(RouteSelection {
                     profile_id: m.profile_id.clone(),
                     key_idx,
@@ -329,9 +350,7 @@ impl ProviderRouter {
             }
         }
         let last = members.last()?;
-        let key_idx = last.keys.as_ref()
-            .filter(|k| !k.is_empty())
-            .map(|_| 0);
+        let key_idx = self.select_key(last).await;
         Some(RouteSelection {
             profile_id: last.profile_id.clone(),
             key_idx,
@@ -446,6 +465,7 @@ mod tests {
             weight,
             keys: None,
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }
     }
 
@@ -457,6 +477,7 @@ mod tests {
             weight,
             keys: Some(keys.into_iter().map(|k| k.to_string()).collect()),
             key_strategy: RouteStrategy::RoundRobin,
+            key_weights: None,
         }
     }
 

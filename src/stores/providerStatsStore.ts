@@ -19,7 +19,6 @@ const log = createLogger('ProviderStatsStore');
 // ============================================================================
 
 export interface KeyStats {
-  keyIdx: number | null;
   selected: number;
   failed: number;
   lastActiveMs: number;
