@@ -16,42 +16,9 @@ import { useTranslation } from 'react-i18next';
 import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import DOMPurify from 'dompurify';
 import { Copy, Check, List, ListX, ChevronDown, ChevronUp } from 'lucide-react';
-import hljs from 'highlight.js';
-import { LRUCache } from '@/utils/lru-cache';
+import hljs, { highlightCache, LANGUAGE_DISPLAY_NAMES } from '@/utils/highlight';
 
-// 导入常用语言
-import javascript from 'highlight.js/lib/languages/javascript';
-import typescript from 'highlight.js/lib/languages/typescript';
-import python from 'highlight.js/lib/languages/python';
-import rust from 'highlight.js/lib/languages/rust';
-import go from 'highlight.js/lib/languages/go';
-import java from 'highlight.js/lib/languages/java';
-import cpp from 'highlight.js/lib/languages/cpp';
-import sql from 'highlight.js/lib/languages/sql';
-import html from 'highlight.js/lib/languages/xml';
-import css from 'highlight.js/lib/languages/css';
-import json from 'highlight.js/lib/languages/json';
-import bash from 'highlight.js/lib/languages/bash';
-import markdown from 'highlight.js/lib/languages/markdown';
-
-// 注册语言
-hljs.registerLanguage('javascript', javascript);
-hljs.registerLanguage('typescript', typescript);
-hljs.registerLanguage('python', python);
-hljs.registerLanguage('rust', rust);
-hljs.registerLanguage('go', go);
-hljs.registerLanguage('java', java);
-hljs.registerLanguage('cpp', cpp);
-hljs.registerLanguage('sql', sql);
-hljs.registerLanguage('html', html);
-hljs.registerLanguage('css', css);
-hljs.registerLanguage('json', json);
-hljs.registerLanguage('bash', bash);
-hljs.registerLanguage('markdown', markdown);
-hljs.registerLanguage('shell', bash);
-
-// 高亮结果缓存（LRU，上限 50 条）
-const highlightCache = new LRUCache<string, string>({ maxSize: 50 });
+// 高亮实现与语言清单统一在 src/utils/highlight.ts（core 模式 + 单次注册）。
 
 /** 代码行数阈值：超过此行数默认折叠 */
 const FOLD_THRESHOLD = 15;
@@ -100,23 +67,7 @@ const languageAliases: Record<string, string> = {
  * 获取显示用的语言名称
  */
 function getDisplayName(language: string): string {
-  const displayNames: Record<string, string> = {
-    'javascript': 'JavaScript',
-    'typescript': 'TypeScript',
-    'python': 'Python',
-    'rust': 'Rust',
-    'go': 'Go',
-    'java': 'Java',
-    'cpp': 'C++',
-    'sql': 'SQL',
-    'html': 'HTML',
-    'css': 'CSS',
-    'json': 'JSON',
-    'bash': 'Bash',
-    'markdown': 'Markdown',
-  };
-
-  return displayNames[language] || language.toUpperCase();
+  return LANGUAGE_DISPLAY_NAMES[language] || language.toUpperCase();
 }
 
 /**

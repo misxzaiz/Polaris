@@ -80,6 +80,54 @@ const customHighlightStyle = HighlightStyle.define([
   { tag: tags.list, color: '#58a6ff' },
 ]);
 
+// 所有支持语言的动态加载器。
+// - 默认（codeEditorLanguages=false）：打开文件时按扩展名单点 import，零预加载。
+// - 开启 codeEditorLanguages：useAppInit 调用 preloadLanguageExtensions() 在 idle 时
+//   预热全部语言包，使后续打开任意文件时 import 命中模块缓存、消除首延迟。
+// 语言键与 langMap 一致，供预加载与单点加载共用。
+export const LANGUAGE_LOADERS: Record<string, () => Promise<unknown>> = {
+  // JavaScript / TypeScript
+  javascript: () => import('@codemirror/lang-javascript'),
+  typescript: () => import('@codemirror/lang-javascript'),
+  json: () => import('@codemirror/lang-json'),
+  // Web
+  html: () => import('@codemirror/lang-html'),
+  css: () => import('@codemirror/lang-css'),
+  // Markdown
+  markdown: () => import('@codemirror/lang-markdown'),
+  // Python
+  python: () => import('@codemirror/lang-python'),
+  // Java
+  java: () => import('@codemirror/lang-java'),
+  // Rust
+  rust: () => import('@codemirror/lang-rust'),
+  // C/C++
+  c: () => import('@codemirror/lang-cpp'),
+  cpp: () => import('@codemirror/lang-cpp'),
+  // Go
+  go: () => import('@codemirror/lang-go'),
+  // SQL
+  sql: () => import('@codemirror/lang-sql'),
+  // XML
+  xml: () => import('@codemirror/lang-xml'),
+};
+
+/**
+ * 预加载全部编辑器语言包。
+ * 仅在 performance.codeEditorLanguages=true 时由 useAppInit 调用。
+ * 并行触发所有 dynamic import，不阻塞主线程；失败仅记录，不影响编辑器正常工作
+ * （单点加载路径仍兜底，预加载只是预热模块缓存）。
+ */
+export async function preloadLanguageExtensions(): Promise<void> {
+  const tasks = Object.values(LANGUAGE_LOADERS).map((loader) =>
+    loader().catch((err) => {
+      // 预加载失败不致命：打开文件时单点 import 会重试
+      console.warn('[Editor] language preload failed:', err);
+    }),
+  );
+  await Promise.allSettled(tasks);
+}
+
 // 获取语言扩展
 async function getLanguageExtension(lang: string) {
   const langMap: Record<string, () => Promise<Extension>> = {

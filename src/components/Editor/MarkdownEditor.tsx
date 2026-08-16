@@ -9,7 +9,7 @@ import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { MermaidDiagram } from '../Chat/MermaidDiagram';
 import { splitMarkdownWithMermaid, type MarkdownPart } from '@/utils/markdown';
-import hljs from 'highlight.js';
+import hljs from '@/utils/highlight';
 
 interface MarkdownEditorProps {
   /** 编辑器内容 */
