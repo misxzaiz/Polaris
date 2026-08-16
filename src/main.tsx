@@ -11,6 +11,17 @@ import { bootstrapTheme } from '@/services/themeEngine';
 ;(window as any).__POLARIS_HOST_REACT__ = React;
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 
+// 暴露当前工作区路径给外部插件面板（wheel：监听 workspace-changed 事件，
+// 初始取 localStorage 兜底。外部插件如 polaris-git 可据此自动初始化。）
+;(window as any).__POLARIS_HOST_WORKSPACE__ = '';
+window.addEventListener('workspace-changed', ((e: CustomEvent) => {
+  const ws = (e as CustomEvent<{ workspacePath?: string; path?: string }>).detail;
+  const p = ws?.workspacePath ?? ws?.path;
+  if (p) {
+    (window as any).__POLARIS_HOST_WORKSPACE__ = p;
+  }
+}) as EventListener);
+
 // 主题引导：在 React render 之前同步读取 localStorage 并注入 CSS 变量，防止首屏闪烁（FOUC）
 (() => {
   bootstrapTheme();
