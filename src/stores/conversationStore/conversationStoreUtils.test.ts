@@ -90,17 +90,30 @@ describe('resolveEffectiveProfileMode', () => {
     expect(resolveEffectiveProfileMode('group', 'profile')).toBe('group')
     expect(resolveEffectiveProfileMode('official', 'group')).toBe('official')
     expect(resolveEffectiveProfileMode('profile', undefined)).toBe('profile')
+    // 会话级覆盖优先于 defaultToGroup 兜底
+    expect(resolveEffectiveProfileMode('profile', undefined, true)).toBe('profile')
   })
 
-  it('无会话覆盖时跟随状态栏镜像', () => {
+  it('无会话覆盖且镜像非 profile 时跟随状态栏镜像', () => {
     expect(resolveEffectiveProfileMode(undefined, 'group')).toBe('group')
     expect(resolveEffectiveProfileMode(undefined, 'official')).toBe('official')
-    // 镜像兜底默认 'profile'（normalizeSessionConfig 已保证）
+    // 镜像兜底默认 'profile'
     expect(resolveEffectiveProfileMode(undefined, 'profile')).toBe('profile')
   })
 
-  it('未设置时返回 undefined（跟随全局旧逻辑）', () => {
+  it('defaultToGroup 兜底：镜像 profile 且无会话覆盖时自动补 group', () => {
+    expect(resolveEffectiveProfileMode(undefined, 'profile', true)).toBe('group')
+    // 会话覆盖存在时不触发兜底
+    expect(resolveEffectiveProfileMode('profile', 'profile', true)).toBe('profile')
+    // 镜像已是 group/official 时以镜像为准
+    expect(resolveEffectiveProfileMode(undefined, 'group', true)).toBe('group')
+    expect(resolveEffectiveProfileMode(undefined, 'official', true)).toBe('official')
+  })
+
+  it('未设置时返回 undefined（无分组兜底）', () => {
     expect(resolveEffectiveProfileMode(undefined, undefined)).toBeUndefined()
+    // 有 defaultToGroup 时 undefined → group；否则 undefined
+    expect(resolveEffectiveProfileMode(undefined, undefined, true)).toBe('group')
   })
 })
 

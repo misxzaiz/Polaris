@@ -1921,10 +1921,21 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       // 删除的是当前生效分组 → 清除激活，回退单 Profile 路径
       activeProviderGroupId: activeGroupId === id ? undefined : activeGroupId,
     })
+    // 若删除的是当前生效分组，同步切离「分组路由」模式（否则残留 group 模式，
+    // 新会话仍会尝试走分组但无可用分组 → 后端回退官方并记录 OfficialFallback 日志）。
+    if (activeGroupId === id) {
+      useSessionConfig.getState().setProfileMode('profile')
+    }
   }
 
   const handleSetActiveGroup = (id: string) => {
     onConfigChange({ ...config, activeProviderGroupId: id })
+    // 关键联动：激活分组 = 全局默认启用「分组路由」模式。
+    // 否则前端 profileMode 保持默认 'profile'，若存在全局激活单 Profile，
+    // modelProfileId 会被传入后端短路分组，分组永远不会生效。
+    useSessionConfig.getState().setProfileMode('group')
+    // 同步清理状态栏镜像的单 Profile（group 模式不绑定单 Profile）
+    useSessionConfig.getState().setModelProfileId('')
   }
 
   // 分组连接测试：逐一对组内成员测试连接，汇总结果

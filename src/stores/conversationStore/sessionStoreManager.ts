@@ -189,7 +189,7 @@ function createSessionManagerStore() {
       const deps: StoreDeps = {
         getConfig: () => {
           const state = useConfigStore.getState()
-          return state.config as { defaultEngine?: string } | null
+          return state.config as { defaultEngine?: string; activeProviderGroupId?: string } | null
         },
         getWorkspace: () => {
           // 获取【当前会话】的工作区

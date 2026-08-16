@@ -115,6 +115,18 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         }).catch(() => {})
       }
 
+      // 分组路由同理：后端已激活分组（activeProviderGroupId）时，把全局默认
+      // profileMode 同步为 'group'，确保新会话自动走分组路由。
+      // 仅当全局镜像未显式选择单 Profile 且未显式选官方时兜底（modelProfileId 为空）。
+      if (config.activeProviderGroupId && !config.activeModelProfileId) {
+        import('./sessionConfigStore').then(({ useSessionConfig }) => {
+          const sessionState = useSessionConfig.getState()
+          if (!sessionState.config.modelProfileId) {
+            sessionState.setProfileMode('group')
+          }
+        }).catch(() => {})
+      }
+
       // 异步获取动态信息（agents, auth status, version）
       import('./cliInfoStore').then(({ useCliInfoStore }) => {
         useCliInfoStore.getState().fetchAll()

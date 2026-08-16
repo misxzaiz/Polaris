@@ -153,8 +153,8 @@ export interface PromptOptimizeState {
  * 通过依赖注入解耦与全局 Store 的直接依赖
  */
 export interface StoreDeps {
-  /** 获取配置（简化版，只关心 defaultEngine） */
-  getConfig: () => { defaultEngine?: string } | null
+  /** 获取配置（defaultEngine + activeProviderGroupId，用于会话引擎与分组路由解析） */
+  getConfig: () => { defaultEngine?: string; activeProviderGroupId?: string } | null
   /** 获取当前会话的工作区 */
   getWorkspace: () => Workspace | null
   /** 获取当前会话的关联工作区 ID 列表 */

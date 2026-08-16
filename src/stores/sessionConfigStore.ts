@@ -79,10 +79,15 @@ export const useSessionConfig = create<SessionConfigState>()(
         })),
 
       setModelProfileId: (modelProfileId) =>
-        set((state) => ({
-          // 选 Profile 时同步把 mode 置为 profile（互斥清理，避免「group 却残留 profileId」穿帮）
-          config: { ...state.config, modelProfileId, profileMode: 'profile' },
-        })),
+        set((state) => {
+          // 空串 / 未传 = 仅清空单 Profile，不改变当前模式（保持 group/official 语义）。
+          //  场景：激活分组后取消勾选单 Profile，不应把 profileMode 强制覆盖回 'profile'。
+          if (!modelProfileId) {
+            return { config: { ...state.config, modelProfileId: '' } }
+          }
+          // 非空 = 选择单 Profile，同步把模式置为 profile（互斥清理，避免「group 却残留 profileId」穿帮）
+          return { config: { ...state.config, modelProfileId, profileMode: 'profile' } }
+        }),
 
       /** 设置供应商模式（official/group/profile）。
        *  mode=official|group 时清空 modelProfileId（官方/分组都不绑定单 Profile）；

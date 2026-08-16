@@ -113,13 +113,21 @@ export function resolveEffectiveProfileId(
 export function resolveEffectiveProfileMode(
   sessionMetaProfileMode: ProfileMode | undefined,
   sessionConfigProfileMode: ProfileMode | undefined,
+  defaultToGroup?: boolean,
 ): ProfileMode | undefined {
   // 会话级覆盖存在时以它为准
   if (sessionMetaProfileMode !== undefined) {
     return sessionMetaProfileMode
   }
   // 无会话级覆盖 → 跟随状态栏镜像（含全局默认，normalizeSessionConfig 已兜底）
-  return sessionConfigProfileMode
+  if (sessionConfigProfileMode !== undefined && sessionConfigProfileMode !== 'profile') {
+    return sessionConfigProfileMode
+  }
+  // 镜像为 'profile' 或未设置时：
+  // - 调用方检测到后端存在激活分组且无任何生效单 Profile → 自动走分组路由
+  //   （覆盖旧版本遗留：后端已激活分组但前端 profileMode 未同步为 group）。
+  // - 否则跟随状态栏镜像（'profile' / undefined）。
+  return defaultToGroup ? 'group' : sessionConfigProfileMode
 }
 
 /**
