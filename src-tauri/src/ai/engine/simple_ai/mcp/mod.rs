@@ -21,7 +21,7 @@ use client::McpClient;
 use types::McpTool;
 
 /// MCP 工具名前缀分隔符：`mcp__{server}__{tool}`。
-const MCP_PREFIX: &str = "mcp__";
+pub(crate) const MCP_PREFIX: &str = "mcp__";
 
 pub(crate) struct McpClientPool {
     clients: HashMap<String, Arc<McpClient>>,
@@ -130,6 +130,14 @@ impl McpClientPool {
     /// 已连接的 server 数量（诊断用）。
     pub(crate) fn connected_count(&self) -> usize {
         self.clients.len()
+    }
+
+    /// 检查某 MCP 工具名（`mcp__{srv}__{tool}`）是否已注册。
+    ///
+    /// 用于 toolProvider 覆盖检查：如果内置工具对应的虚拟 server 名在
+    /// tool_index 中有同名工具，说明该工具被插件 MCP server 接管。
+    pub(crate) fn has_tool(&self, mcp_name: &str) -> bool {
+        self.tool_index.contains_key(mcp_name)
     }
 }
 

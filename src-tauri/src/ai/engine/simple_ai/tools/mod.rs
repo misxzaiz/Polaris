@@ -189,12 +189,30 @@ impl ToolRegistry {
     }
 
     /// 按名分发执行。内置工具优先；未命中且为 `mcp__` 前缀时路由到 MCP pool；否则返回失败。
+    ///
+    /// **toolProvider 覆盖**：如果内置工具对应的虚拟 MCP server（如 `polaris-bash`）
+    /// 在 mcp_pool 中有同名工具（`mcp__polaris-bash__bash`），则优先路由到插件 MCP server，
+    /// 覆盖硬编码实现。这是 P1 toolProviders 扩展点对硬编码工具生效的机制。
     pub(super) async fn dispatch(
         &self,
         name: &str,
         args: &Value,
         ctx: &ToolContext<'_>,
     ) -> ToolOutcome {
+        // 先检查 toolProvider 覆盖：内置工具是否被插件 MCP server 接管
+        if let Some(pool) = &self.mcp_pool {
+            if let Some(virtual_server) = builtin_tool_virtual_server(name) {
+                let mcp_name = format!("{}{}__{}", super::mcp::MCP_PREFIX, virtual_server, name);
+                if pool.has_tool(&mcp_name) {
+                    tracing::info!(
+                        "[SimpleAI] 工具 {} 被 toolProvider 覆盖，路由到 {}",
+                        name, mcp_name
+                    );
+                    return pool.call(&mcp_name, args).await;
+                }
+            }
+        }
+
         match self.tools.iter().find(|t| t.name() == name) {
             Some(tool) => tool.execute(args, ctx).await,
             None => {
@@ -206,6 +224,32 @@ impl ToolRegistry {
                 ToolOutcome::fail(format!("Unknown tool: {}", name))
             }
         }
+    }
+}
+
+/// 内置工具名 → 它对应的虚拟 MCP server 名（用于 toolProvider 覆盖检查）。
+///
+/// 返回 `None` 表示该工具不可被 toolProvider 覆盖（如外部 MCP 工具）。
+/// 返回的 server 名与 `mcp_config_service::capability_to_builtin_servers`
+/// 中硬编码能力的虚拟 server 名一致：
+/// - `shell` capability → `polaris-bash` server → `bash` 工具
+/// - `filesystem` capability → `polaris-fs` server → 7 个 fs 工具
+/// - `plan` capability → `polaris-plan` server → `update_plan` 工具
+/// - `skill` capability → `polaris-skill` server → `read_skill` 工具
+/// - `subagent` capability → `polaris-subagent` server → `dispatch_agent` 工具
+fn builtin_tool_virtual_server(tool_name: &str) -> Option<&'static str> {
+    match tool_name {
+        "bash" => Some(crate::services::mcp_config_service::BUILTIN_BASH_MCP_SERVER_NAME),
+        "read_file" | "write_file" | "edit_file" | "list_directory" | "search_files"
+        | "glob" | "apply_patch" => {
+            Some(crate::services::mcp_config_service::BUILTIN_FS_MCP_SERVER_NAME)
+        }
+        "update_plan" => Some(crate::services::mcp_config_service::BUILTIN_PLAN_MCP_SERVER_NAME),
+        "read_skill" => Some(crate::services::mcp_config_service::BUILTIN_SKILL_MCP_SERVER_NAME),
+        "dispatch_agent" => {
+            Some(crate::services::mcp_config_service::BUILTIN_SUBAGENT_MCP_SERVER_NAME)
+        }
+        _ => None,
     }
 }
 

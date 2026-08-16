@@ -1030,9 +1030,14 @@ fn is_server_disabled(disabled_server_names: &[String], server_name: &str) -> bo
 /// 插件声明 `capability: "computer"` 表示要接管电脑操作能力，
 /// 解析时用插件声明的 mcpServerId 对应的 server 替换这里列出的内置 server。
 ///
-/// 未来 Phase 2 的 shell/filesystem 等 seam 也会在此映射。
+/// 两类 capability：
+/// - **内置 MCP server 能力**（computer/browser/ask/...）：替换已有同名内置 server
+/// - **硬编码工具能力**（shell/filesystem/plan/skill/subagent）：注入"虚拟 server"
+///   （polaris-bash 等），因为内置没有同名 MCP server，ToolRegistry 在 dispatch
+///   时检查这些虚拟 server 名，优先路由到插件的 MCP server 而非硬编码实现。
 fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
     match capability {
+        // 内置 MCP server 能力
         "computer" => vec![COMPUTER_MCP_SERVER_NAME],
         "browser" => vec![BROWSER_MCP_SERVER_NAME],
         "ask" => vec![ASK_MCP_SERVER_NAME],
@@ -1043,9 +1048,28 @@ fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
         "prd-preview" => vec![PRD_PREVIEW_MCP_SERVER_NAME],
         "agnes" => vec![AGNES_MCP_SERVER_NAME],
         "personal-hub" => vec![PH_MCP_SERVER_NAME],
+        // 硬编码工具能力（虚拟 server，无内置同名 MCP server）
+        "shell" => vec![BUILTIN_BASH_MCP_SERVER_NAME],
+        "filesystem" => vec![BUILTIN_FS_MCP_SERVER_NAME],
+        "plan" => vec![BUILTIN_PLAN_MCP_SERVER_NAME],
+        "skill" => vec![BUILTIN_SKILL_MCP_SERVER_NAME],
+        "subagent" => vec![BUILTIN_SUBAGENT_MCP_SERVER_NAME],
         _ => Vec::new(),
     }
 }
+
+/// 硬编码工具能力的虚拟 MCP server 名。
+///
+/// 这些 server 名在内置 MCP server 列表中不存在（对应工具是硬编码在
+/// SimpleAI 的 ToolRegistry 里）。插件声明覆盖这些 capability 时，覆盖逻辑
+/// 会注入一个改名为这些常量的插件 server；ToolRegistry 在 dispatch 时检测
+/// mcp_pool 的 tool_index 是否包含 `mcp__{这些名}__{工具名}`，是则优先路由到
+/// 插件 MCP server，从而覆盖硬编码实现。
+pub const BUILTIN_BASH_MCP_SERVER_NAME: &str = "polaris-bash";
+pub const BUILTIN_FS_MCP_SERVER_NAME: &str = "polaris-fs";
+pub const BUILTIN_PLAN_MCP_SERVER_NAME: &str = "polaris-plan";
+pub const BUILTIN_SKILL_MCP_SERVER_NAME: &str = "polaris-skill";
+pub const BUILTIN_SUBAGENT_MCP_SERVER_NAME: &str = "polaris-subagent";
 
 /// 收集已启用插件的 toolProvider 声明。
 ///
