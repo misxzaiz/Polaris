@@ -1,49 +1,16 @@
 /**
  * 语法高亮工具
- * 基于 highlight.js，提供共享的高亮函数和缓存
+ * 基于 highlight.js（core 模式），提供共享的高亮函数和缓存
+ *
+ * hljs 实例与语言注册统一在 src/utils/highlight.ts（core + 单次注册），
+ * 此处复用，不再重复 full import / 重复注册语言。
  */
 
-import hljs from 'highlight.js'
+import hljs from '@/utils/highlight'
 import { LRUCache } from '@/utils/lru-cache'
 import { isSyntaxHighlightingEnabled } from '@/utils/performanceFeatures'
 
-// 导入常用语言
-import javascript from 'highlight.js/lib/languages/javascript'
-import typescript from 'highlight.js/lib/languages/typescript'
-import python from 'highlight.js/lib/languages/python'
-import rust from 'highlight.js/lib/languages/rust'
-import go from 'highlight.js/lib/languages/go'
-import java from 'highlight.js/lib/languages/java'
-import cpp from 'highlight.js/lib/languages/cpp'
-import sql from 'highlight.js/lib/languages/sql'
-import html from 'highlight.js/lib/languages/xml'
-import css from 'highlight.js/lib/languages/css'
-import json from 'highlight.js/lib/languages/json'
-import bash from 'highlight.js/lib/languages/bash'
-import markdown from 'highlight.js/lib/languages/markdown'
-
-// 注册语言（单例，重复调用安全）
-let initialized = false
-function ensureInitialized() {
-  if (initialized) return
-  initialized = true
-  hljs.registerLanguage('javascript', javascript)
-  hljs.registerLanguage('typescript', typescript)
-  hljs.registerLanguage('python', python)
-  hljs.registerLanguage('rust', rust)
-  hljs.registerLanguage('go', go)
-  hljs.registerLanguage('java', java)
-  hljs.registerLanguage('cpp', cpp)
-  hljs.registerLanguage('sql', sql)
-  hljs.registerLanguage('html', html)
-  hljs.registerLanguage('css', css)
-  hljs.registerLanguage('json', json)
-  hljs.registerLanguage('bash', bash)
-  hljs.registerLanguage('shell', bash)
-  hljs.registerLanguage('markdown', markdown)
-}
-
-// 高亮结果缓存（LRU，上限 500 条）
+// 高亮结果缓存（LRU，上限 500 条）——markdown 渲染管线专用
 const highlightCache = new LRUCache<string, string>({ maxSize: 500 })
 
 /**
@@ -57,8 +24,6 @@ export function highlightCode(code: string, language: string): string {
 
   // 性能开关：语法高亮关闭时返回转义后的纯文本（不应用高亮 HTML，但保留文字可见）
   if (!isSyntaxHighlightingEnabled()) return escapeHtml(code)
-
-  ensureInitialized()
 
   const cacheKey = `${language}:${code}`
   const cached = highlightCache.get(cacheKey)
