@@ -37,6 +37,7 @@ import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
 import { pluginRegistry } from '../plugin-system';
 import { applyPluginStyles } from '../plugin-system/styles';
 import { browserClearOrphanedSessions } from '@/services/tauri/browserService';
+import { preloadLanguageExtensions } from '@/components/Editor/Editor';
 
 const log = createLogger('AppInit');
 const MARKDOWN_ARTIFACT_STATUS_ATTEMPTS = 5;
@@ -175,6 +176,24 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     perfHotSwitchCleanupRef.current = usePerformanceHotSwitch
       .getState()
       .init(useConfigStore.getState().config?.performance ?? {});
+
+    // 性能开关 codeEditorLanguages：开启时在 idle 预热全部编辑器语言包，
+    // 使后续打开任意文件时 dynamic import 命中模块缓存、消除首延迟。
+    // 默认关闭（零预加载，打开文件时按扩展名单点 import）。
+    if (useConfigStore.getState().config?.performance?.codeEditorLanguages) {
+      const runPreload = () => {
+        preloadLanguageExtensions().catch((e) =>
+          log.warn('Editor language preload failed', { error: String(e) }),
+        );
+      };
+      // 优先 idle 时预加载，避免与首屏渲染抢资源；不支持 requestIdleCallback 时立即降级
+      if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
+        (window as unknown as { requestIdleCallback: (cb: () => void) => number })
+          .requestIdleCallback(runPreload);
+      } else {
+        runPreload();
+      }
+    }
 
     // 清理残留的浏览器会话（页面刷新 / HMR 重挂载时，BrowserPanel cleanup 的
     // browserSetBounds hide 调用可能被取消，导致 native WebView 子窗口残留且可见，

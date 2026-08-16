@@ -109,7 +109,23 @@ function handleSwitch(prev: PerformanceFeatures, next: PerformanceFeatures): voi
     }
   }
 
+  // codeEditorLanguages：false → true 时预热全部编辑器语言包，
+  // 使后续打开任意文件时命中模块缓存、消除首延迟。
+  // true → false 无需动作（已加载的模块留在缓存，只是不再预热新的；行为自然降级）。
+  if (!prev.codeEditorLanguages && next.codeEditorLanguages) {
+    log.info('codeEditorLanguages 开启，预热编辑器语言包');
+    import('@/components/Editor/Editor')
+      .then(({ preloadLanguageExtensions }) => {
+        void preloadLanguageExtensions().catch((err) => {
+          log.warn('编辑器语言包预热失败', { error: String(err) });
+        });
+      })
+      .catch((err) => {
+        log.warn('加载 Editor 模块失败', { error: String(err) });
+      });
+  }
+
   // 其余开关（syntaxHighlighting / mermaidDiagrams / katexMath /
-  // codeEditorLanguages / pluginAutoStart）均为"下次调用时生效"型，
+  // pluginAutoStart）均为"下次调用时生效"型，
   // 无需主动停止 —— 关闭后渲染层/命令层门控会自然降级。
 }
