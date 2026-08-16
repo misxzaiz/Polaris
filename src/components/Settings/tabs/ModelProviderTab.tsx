@@ -997,6 +997,10 @@ interface MemberFormItem {
   profileId: string
   priority: string
   weight: string
+  /** 多 Key 池（可选） */
+  keys: string[]
+  /** Key 级路由策略 */
+  keyStrategy: RouteStrategy
 }
 
 /** 分组编辑表单状态 */
@@ -1004,6 +1008,10 @@ interface GroupForm {
   id: string
   name: string
   strategy: RouteStrategy
+  defaultModel: string
+  targetEngines: string[]
+  description: string
+  category: string
   members: MemberFormItem[]
   failoverOn: FailoverPatternFormItem[]
   firstTokenTimeoutSecs: string
@@ -1020,6 +1028,8 @@ function ProviderGroupCard({
   onEdit,
   onDelete,
   onSetActive,
+  onTestConnection,
+  isTesting,
 }: {
   group: ProviderGroup
   isActiveGroup: boolean
@@ -1027,6 +1037,8 @@ function ProviderGroupCard({
   onEdit: (g: ProviderGroup) => void
   onDelete: (id: string) => void
   onSetActive: (id: string) => void
+  onTestConnection?: (g: ProviderGroup) => void
+  isTesting?: boolean
 }) {
   const memberNames = group.members
     .map((m) => profiles.find((p) => p.id === m.profileId)?.name || '已删除')
@@ -1043,6 +1055,17 @@ function ProviderGroupCard({
         <span className="text-sm font-medium text-text-primary truncate">{group.name}</span>
         <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">{STRATEGY_LABEL[group.strategy]}</span>
         <span className="text-[9px] px-1.5 py-0.5 rounded bg-text-tertiary/10 text-text-tertiary shrink-0">{group.members.length} 成员</span>
+        {group.members.some(m => m.keys && m.keys.length > 0) && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 shrink-0">
+            {group.members.reduce((sum, m) => sum + (m.keys?.length ?? 0), 0)} Key
+          </span>
+        )}
+        {group.category && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 shrink-0">{group.category}</span>
+        )}
+        {group.defaultModel && (
+          <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary shrink-0">默认: {group.defaultModel}</span>
+        )}
         {!group.active && (
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-red-500/10 text-red-400 shrink-0">已停用</span>
         )}
@@ -1053,6 +1076,9 @@ function ProviderGroupCard({
           <span className="text-[9px] px-1.5 py-0.5 rounded bg-green-500/10 text-green-400 shrink-0">当前生效</span>
         )}
       </div>
+      {group.description && (
+        <div className="text-xs text-text-tertiary mt-1">{group.description}</div>
+      )}
       <div className="text-xs text-text-tertiary truncate mt-1">
         {memberNames.join(' → ') || '（空分组）'}
       </div>
@@ -1065,6 +1091,16 @@ function ProviderGroupCard({
         >
           <Check size={14} />
         </button>
+        {onTestConnection && (
+          <button
+            onClick={() => onTestConnection(group)}
+            className="p-1 text-text-tertiary hover:text-blue-400 transition-colors"
+            title="测试组内所有成员连接"
+            disabled={isTesting || missing > 0}
+          >
+            {isTesting ? <Loader2 size={14} className="animate-spin" /> : <TestTube size={14} />}
+          </button>
+        )}
         <button
           onClick={() => onEdit(group)}
           className="p-1 text-text-tertiary hover:text-primary transition-colors"
@@ -1091,11 +1127,13 @@ function ProviderGroupEditorModal({
   profiles,
   onSave,
   onClose,
+  allEngines,
 }: {
   initialGroup: ProviderGroup | null
   profiles: ModelProfile[]
   onSave: (form: GroupForm) => void
   onClose: () => void
+  allEngines: string[]
 }) {
   const editing = Boolean(initialGroup?.id)
   const [form, setForm] = useState<GroupForm>(() => {
@@ -1104,6 +1142,10 @@ function ProviderGroupEditorModal({
         id: generateGroupId(),
         name: '',
         strategy: 'failover',
+        defaultModel: '',
+        targetEngines: [],
+        description: '',
+        category: '',
         members: [],
         failoverOn: DEFAULT_FAILOVER_PATTERNS.map(patternToForm),
         firstTokenTimeoutSecs: '',
@@ -1115,10 +1157,16 @@ function ProviderGroupEditorModal({
       id: initialGroup.id,
       name: initialGroup.name,
       strategy: initialGroup.strategy,
+      defaultModel: initialGroup.defaultModel ?? '',
+      targetEngines: [...(initialGroup.targetEngines ?? [])],
+      description: initialGroup.description ?? '',
+      category: initialGroup.category ?? '',
       members: initialGroup.members.map((m) => ({
         profileId: m.profileId,
         priority: String(m.priority),
         weight: String(m.weight),
+        keys: [...(m.keys ?? [])],
+        keyStrategy: m.keyStrategy ?? 'roundrobin',
       })),
       failoverOn: (initialGroup.failoverOn?.length
         ? initialGroup.failoverOn
@@ -1131,6 +1179,19 @@ function ProviderGroupEditorModal({
   })
   const patch = (p: Partial<GroupForm>) => setForm((prev) => ({ ...prev, ...p }))
 
+  // 组内模型并集（用于默认模型下拉选项）
+  const groupModelUnion = useMemo(() => {
+    const profileIds = new Set(form.members.map((m) => m.profileId).filter(Boolean))
+    const modelSet = new Set<string>()
+    profiles.forEach((p) => {
+      if (profileIds.has(p.id)) {
+        const options = (p.modelOptions?.length ? p.modelOptions : [p.model]).filter(Boolean)
+        options.forEach((m) => modelSet.add(m))
+      }
+    })
+    return Array.from(modelSet)
+  }, [form.members, profiles])
+
   const canSubmit = form.name.trim().length > 0 && form.members.some((m) => m.profileId)
 
   // 成员操作
@@ -1139,7 +1200,7 @@ function ProviderGroupEditorModal({
   const addMember = () => {
     const used = new Set(form.members.map((m) => m.profileId))
     const firstFree = profiles.find((p) => !used.has(p.id))
-    patch({ members: [...form.members, { profileId: firstFree?.id ?? '', priority: '0', weight: '1' }] })
+    patch({ members: [...form.members, { profileId: firstFree?.id ?? '', priority: '0', weight: '1', keys: [], keyStrategy: 'roundrobin' }] })
   }
   const removeMember = (idx: number) => patch({ members: form.members.filter((_, i) => i !== idx) })
 
@@ -1218,6 +1279,86 @@ function ProviderGroupEditorModal({
                 启用此分组
               </label>
             </div>
+            {/* 默认模型 */}
+            <div>
+              <label className={labelClass}>默认模型（可选）</label>
+              <select
+                value={form.defaultModel}
+                onChange={(e) => patch({ defaultModel: e.target.value })}
+                className={fieldClass}
+              >
+                <option value="">— 不设置，用户需手动选择 —</option>
+                {groupModelUnion.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+              <p className="text-[11px] text-text-tertiary mt-1">
+                选项来自组内所有 Profile 的 modelOptions 并集。切换分组路由时自动选中此项。
+              </p>
+            </div>
+            {/* 适用引擎 */}
+            <div>
+              <label className={labelClass}>适用引擎（多选，空 = 全部引擎）</label>
+              <div className="grid grid-cols-2 gap-2">
+                {allEngines.map((engineOption) => (
+                  <button
+                    key={engineOption}
+                    type="button"
+                    onClick={() => {
+                      const selected = form.targetEngines.includes(engineOption)
+                      patch({
+                        targetEngines: selected
+                          ? form.targetEngines.filter((e) => e !== engineOption)
+                          : [...form.targetEngines, engineOption],
+                      })
+                    }}
+                    className={`px-3 py-1.5 text-xs rounded-md border transition-all ${
+                      form.targetEngines.includes(engineOption)
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background-surface text-text-tertiary hover:border-primary/30'
+                    }`}
+                  >
+                    {ALL_ENGINES.includes(engineOption)
+                      ? engineOption === 'claude' ? 'Claude'
+                        : engineOption === 'codex' ? 'Codex'
+                          : engineOption === 'simple-ai' ? 'SimpleAI'
+                            : engineOption === 'pi' ? 'Pi'
+                              : engineOption
+                      : getEngineDisplayName(engineOption)}
+                  </button>
+                ))}
+              </div>
+              {form.targetEngines.length === 0 && (
+                <p className="text-[11px] text-text-tertiary mt-1">未选择时适用于所有引擎。</p>
+              )}
+            </div>
+            {/* 描述 */}
+            <div>
+              <label className={labelClass}>描述（可选）</label>
+              <input
+                type="text"
+                value={form.description}
+                onChange={(e) => patch({ description: e.target.value })}
+                placeholder="如：主备切换至 Azure / GCP"
+                className={fieldClass}
+              />
+            </div>
+            {/* 分类 */}
+            <div>
+              <label className={labelClass}>分类标签（可选）</label>
+              <select
+                value={form.category}
+                onChange={(e) => patch({ category: e.target.value })}
+                className={fieldClass}
+              >
+                <option value="">— 不设置 —</option>
+                <option value="official">官方</option>
+                <option value="cn_official">国内官方</option>
+                <option value="aggregator">聚合平台</option>
+                <option value="third_party">第三方</option>
+                <option value="custom">自定义</option>
+              </select>
+            </div>
           </div>
 
           {/* 分组成员 */}
@@ -1226,9 +1367,10 @@ function ProviderGroupEditorModal({
               <Layers size={12} />
               分组成员
             </div>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {form.members.map((m, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
+                <div key={idx} className="border border-border rounded-lg p-2.5 space-y-2">
+                  <div className="flex items-center gap-2">
                     <select
                       value={m.profileId}
                       onChange={(e) => updateMember(idx, { profileId: e.target.value })}
@@ -1267,6 +1409,94 @@ function ProviderGroupEditorModal({
                       <Trash2 size={14} />
                     </button>
                   </div>
+                  {/* 多 Key 配置（可折叠） */}
+                  <div className="pl-1">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <KeyRound size={12} className="text-text-tertiary shrink-0" />
+                      <span className="text-[11px] text-text-tertiary">多 Key 配置</span>
+                      {m.keys.length > 0 && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary">{m.keys.length} 个 Key</span>
+                      )}
+                    </div>
+                    {/* Key 策略 */}
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span className="text-[10px] text-text-tertiary whitespace-nowrap">Key 策略:</span>
+                      <select
+                        value={m.keyStrategy}
+                        onChange={(e) => updateMember(idx, { keyStrategy: e.target.value as RouteStrategy })}
+                        className="flex-1 min-w-0 px-2 py-1 text-[10px] bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                      >
+                        <option value="roundrobin">RoundRobin — 轮转</option>
+                        <option value="failover">Failover — 顺序，失败换下一个</option>
+                        <option value="weighted">Weighted — 等权随机</option>
+                      </select>
+                    </div>
+                    {/* Key 列表 */}
+                    <div className="space-y-1">
+                      {m.keys.map((key, ki) => (
+                        <div key={ki} className="flex items-center gap-1">
+                          <input
+                            type="text"
+                            value={key}
+                            onChange={(e) => {
+                              const next = [...m.keys]
+                              next[ki] = e.target.value
+                              updateMember(idx, { keys: next })
+                            }}
+                            placeholder="sk-..."
+                            className="flex-1 min-w-0 px-2 py-1 text-[11px] font-mono bg-background-surface border border-border rounded-md outline-none focus:border-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = m.keys.filter((_, i) => i !== ki)
+                              updateMember(idx, { keys: next })
+                            }}
+                            className="p-1 text-text-tertiary hover:text-red-500 transition-colors shrink-0"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex items-center gap-2 mt-1">
+                      <button
+                        type="button"
+                        onClick={() => updateMember(idx, { keys: [...m.keys, ''] })}
+                        className="flex items-center gap-1 text-[10px] text-primary hover:text-primary-hover transition-colors"
+                      >
+                        <Plus size={10} />
+                        添加 Key
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const paste = window.prompt('粘贴多个 Key，每行一个：')
+                          if (paste) {
+                            const parsed = paste.split('\n').map(s => s.trim()).filter(Boolean)
+                            updateMember(idx, { keys: [...m.keys, ...parsed] })
+                          }
+                        }}
+                        className="flex items-center gap-1 text-[10px] text-text-tertiary hover:text-text-primary transition-colors"
+                      >
+                        <Copy size={10} />
+                        批量粘贴
+                      </button>
+                      {m.keys.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => updateMember(idx, { keys: [] })}
+                          className="text-[10px] text-text-tertiary hover:text-red-500 transition-colors ml-auto"
+                        >
+                          清空
+                        </button>
+                      )}
+                    </div>
+                    {m.keys.length === 0 && (
+                      <p className="text-[10px] text-text-tertiary/60 mt-0.5">不填多 Key 时使用 Profile 的 apiKey</p>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
             <button
@@ -1626,6 +1856,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const [groupsExpanded, setGroupsExpanded] = useState(true)
   const [showGroupEditor, setShowGroupEditor] = useState(false)
   const [editingGroup, setEditingGroup] = useState<ProviderGroup | null>(null)
+  const [testingGroupId, setTestingGroupId] = useState<string | null>(null)
 
   // 从 config 读取分组列表与激活分组
   const providerGroups = config.providerGroups || []
@@ -1655,12 +1886,18 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
       id: form.id,
       name: form.name.trim(),
       strategy: form.strategy,
+      defaultModel: form.defaultModel || undefined,
+      targetEngines: form.targetEngines.length > 0 ? form.targetEngines : undefined,
+      description: form.description.trim() || undefined,
+      category: form.category || undefined,
       members: form.members
         .filter((m) => m.profileId)
         .map((m) => ({
           profileId: m.profileId,
           priority: parseInt(m.priority || '0', 10),
           weight: parseInt(m.weight || '1', 10),
+          keys: m.keys.length > 0 ? m.keys.filter(k => k.trim().length > 0) : undefined,
+          keyStrategy: m.keys.length > 0 ? m.keyStrategy : undefined,
         })),
       failoverOn,
       firstTokenTimeoutSecs: form.firstTokenTimeoutSecs ? parseInt(form.firstTokenTimeoutSecs, 10) : undefined,
@@ -1689,6 +1926,37 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   const handleSetActiveGroup = (id: string) => {
     onConfigChange({ ...config, activeProviderGroupId: id })
   }
+
+  // 分组连接测试：逐一对组内成员测试连接，汇总结果
+  const handleTestGroupConnection = useCallback(async (group: ProviderGroup) => {
+    setTestingGroupId(group.id)
+    const results: { name: string; ok: boolean; detail?: string }[] = []
+    for (const member of group.members) {
+      const profile = profiles.find((p) => p.id === member.profileId)
+      if (!profile) {
+        results.push({ name: member.profileId, ok: false, detail: 'Profile 已删除' })
+        continue
+      }
+      try {
+        const result = await testModelProfileConnection(profile)
+        results.push({ name: profile.name, ok: result.ok, detail: result.detail })
+      } catch (err) {
+        results.push({ name: profile.name, ok: false, detail: err instanceof Error ? err.message : String(err) })
+      }
+    }
+    const okCount = results.filter((r) => r.ok).length
+    const total = results.length
+    if (okCount === total) {
+      success('供应商分组', `${group.name}：${total}/${total} 成员连接成功`)
+    } else {
+      const failDetails = results
+        .filter((r) => !r.ok)
+        .map((r) => `${r.name}：${r.detail || '未知错误'}`)
+        .join('；')
+      toastError('供应商分组', `${group.name}：${okCount}/${total} 成功，失败：${failDetails}`)
+    }
+    setTestingGroupId(null)
+  }, [profiles, success, toastError])
 
   return (
     <div className="space-y-4">
@@ -1819,6 +2087,8 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
                     onEdit={openEditGroup}
                     onDelete={handleDeleteGroup}
                     onSetActive={handleSetActiveGroup}
+                    onTestConnection={handleTestGroupConnection}
+                    isTesting={testingGroupId === group.id}
                   />
                 ))}
               </div>
@@ -1856,6 +2126,7 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
           profiles={profiles}
           onSave={handleSaveGroup}
           onClose={closeGroupEditor}
+          allEngines={dynamicEngineList}
         />
       )}
     </div>

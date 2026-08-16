@@ -18,7 +18,7 @@ use crate::models::AIEvent;
 
 use crate::services::proxy::ProxyWireApi;
 use crate::models::config::{FailoverPattern, ProfileMode, ProviderGroup, RouteStrategy};
-use crate::services::{FailoverError, RouteLogEntry, RouteLogKind};
+use crate::services::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, TriedPair};
 #[cfg(feature = "tauri-app")]
 use tauri::{Emitter, Manager, State, Window};
 #[cfg(feature = "tauri-app")]
@@ -866,7 +866,7 @@ async fn resolve_profile_id_for_request(
                 return None; // 防御：Group 目标但无激活分组
             };
             // 亲和优先（续聊稳定），其次 select_initial
-            if let Some(affinity_pid) = state.provider_router.get_affinity(session_id).await {
+            if let Some((affinity_pid, _affinity_key_idx)) = state.provider_router.get_affinity(session_id).await {
                 if profiles.iter().any(|p| p.id == affinity_pid) {
                     return Some(affinity_pid);
                 }
@@ -875,7 +875,7 @@ async fn resolve_profile_id_for_request(
                 .provider_router
                 .select_initial(group, profiles, &std::collections::HashSet::new())
                 .await
-                .map(|p| p.id)
+                .map(|s| s.profile_id)
         }
     }
 }
@@ -965,6 +965,8 @@ async fn record_official_fallback(
             attempt: 0,
             error: Some("用户指定分组路由，但无激活可用分组，已回退官方端点".into()),
             tried: vec![],
+            key_idx: None,
+            key_count: None,
             ts_ms: 0,
         })
         .await;
@@ -1267,10 +1269,26 @@ pub async fn start_chat_inner(
         1
     };
 
+    // 分组路由模式下，若 session_opts.model 未设置（用户未选模型），
+    // 用分组的 default_model 填充，实现组级默认模型（与单 Profile 的 model 字段语义一致）。
+    if session_opts.model.is_none() {
+        if let Some((ref group, _)) = route_choice {
+            if let Some(ref default_model) = group.default_model {
+                if !default_model.is_empty() {
+                    session_opts = session_opts.with_model(default_model.clone());
+                    tracing::info!(
+                        "[start_chat_inner] 使用分组默认模型: {}",
+                        default_model
+                    );
+                }
+            }
+        }
+    }
+
     let mut final_session_id: Option<String> = None;
 
-    // 已尝试的 Profile ID 列表（failover 时跳过）。仅分组路由下使用。
-    let mut tried_profile_ids: Vec<String> = Vec::new();
+    // 已尝试的 (Profile ID, Key Index) 列表（failover 时跳过）。仅分组路由下使用。
+    let mut tried_pairs: Vec<TriedPair> = Vec::new();
 
     // 在循环外确定是否 dsh 引擎（避免 loop 内借用被 move 误判）。
     let is_dsh_engine = matches!(&engine, EngineId::Custom(ref id) if id == "dsh");
@@ -1297,7 +1315,7 @@ pub async fn start_chat_inner(
             //   - 首轮（attempt==0 或 tried 为空）用 select_initial（按策略选首个）；
             //   - failover 重试轮用 select_next（跳过已尝试的 Profile）。
             //   注意：RoundRobin 策略下 select_next 不推进游标，避免重试导致轮询跳号。
-            let pick = if attempt == 0 || tried_profile_ids.is_empty() {
+            let pick = if attempt == 0 || tried_pairs.is_empty() {
                 state
                     .provider_router
                     .select_initial(group, profiles, &std::collections::HashSet::new())
@@ -1307,25 +1325,28 @@ pub async fn start_chat_inner(
                     .provider_router
                     .select_next(
                         group,
-                        &tried_profile_ids,
+                        &tried_pairs,
                         profiles,
                         &std::collections::HashSet::new(),
                     )
                     .await
             };
-            // 记录本轮尝试的 Profile（用于后续 select_next 跳过）
-            if let Some(ref p) = pick {
-                if !tried_profile_ids.contains(&p.id) {
-                    tried_profile_ids.push(p.id.clone());
+            // 记录本轮尝试的 Profile+Key（用于后续 select_next 跳过）
+            if let Some(ref s) = pick {
+                if !tried_pairs.iter().any(|t| t.profile_id == s.profile_id && t.key_idx == s.key_idx) {
+                    tried_pairs.push(TriedPair::new(&s.profile_id, s.key_idx));
                 }
             }
             // 埋点：记录首轮选择 / failover 切换日志
-            if let Some(ref p) = pick {
+            if let Some(ref s) = pick {
                 let kind = if attempt == 0 {
                     RouteLogKind::InitialSelect
                 } else {
                     RouteLogKind::FailoverSwitch
                 };
+                let key_count = ProviderRouter::member_key_count(
+                    group.members.iter().find(|m| m.profile_id == s.profile_id).unwrap()
+                );
                 state
                     .provider_router
                     .record_log(RouteLogEntry {
@@ -1334,18 +1355,20 @@ pub async fn start_chat_inner(
                         group_id: group.id.clone(),
                         group_name: group.name.clone(),
                         strategy: group.strategy.clone(),
-                        profile_id: Some(p.id.clone()),
-                        profile_name: Some(p.name.clone()),
+                        profile_id: Some(s.profile_id.clone()),
+                        profile_name: profiles.iter().find(|p| p.id == s.profile_id).map(|p| p.name.clone()),
                         session_id: Some(session_id.clone()),
                         engine: Some(format!("{:?}", engine)),
                         attempt,
                         error: None,
-                        tried: tried_profile_ids.clone(),
+                        tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
+                        key_idx: s.key_idx,
+                        key_count: if key_count > 0 { Some(key_count) } else { None },
                         ts_ms: 0,
                     })
                     .await;
             }
-            pick.map(|p| p.id)
+            pick.map(|s| s.profile_id)
         } else {
             // 无激活分组：
             //   - force_group（用户显式要分组但没配）→ 回退官方（None）；
@@ -1393,7 +1416,9 @@ pub async fn start_chat_inner(
                         engine: Some(format!("{:?}", engine)),
                         attempt,
                         error: Some("组内所有 Profile 均已尝试且不可用".into()),
-                        tried: tried_profile_ids.clone(),
+                        tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
+                        key_idx: None,
+                        key_count: None,
                         ts_ms: 0,
                     })
                     .await;
@@ -1441,7 +1466,9 @@ pub async fn start_chat_inner(
                             engine: Some(format!("{:?}", engine)),
                             attempt,
                             error: Some(format!("{:?}", e)),
-                            tried: tried_profile_ids.clone(),
+                            tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
+                            key_idx: None,
+                            key_count: None,
                             ts_ms: 0,
                         })
                         .await;
@@ -1474,7 +1501,7 @@ pub async fn start_chat_inner(
                 if let Some(ref pid) = chosen_profile_id {
                     state
                         .provider_router
-                        .bind_affinity(&temp_id, pid)
+                        .bind_affinity(&temp_id, pid, None)
                         .await;
                     tracing::info!(
                         "[start_chat_inner] 会话 {} 绑定 Profile {} (attempt {})",
@@ -1498,7 +1525,9 @@ pub async fn start_chat_inner(
                                 engine: Some(format!("{:?}", engine)),
                                 attempt,
                                 error: None,
-                                tried: tried_profile_ids.clone(),
+                                tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
+                                key_idx: None,
+                                key_count: None,
                                 ts_ms: 0,
                             })
                             .await;
@@ -1516,7 +1545,7 @@ pub async fn start_chat_inner(
                     "[start_chat_inner] spawn 失败 (attempt {}/{}, 已尝试 {} 个 Profile): {}",
                     attempt + 1,
                     max_attempts,
-                    tried_profile_ids.len(),
+                    tried_pairs.len(),
                     e
                 );
                 // 埋点：spawn 失败
@@ -1535,7 +1564,9 @@ pub async fn start_chat_inner(
                             engine: Some(format!("{:?}", engine)),
                             attempt,
                             error: Some(format!("{:?}", e)),
-                            tried: tried_profile_ids.clone(),
+                            tried: tried_pairs.iter().map(|t| t.profile_id.clone()).collect(),
+                            key_idx: None,
+                            key_count: None,
                             ts_ms: 0,
                         })
                         .await;
@@ -1819,6 +1850,8 @@ pub async fn continue_chat_inner(
                     attempt: 0,
                     error: None,
                     tried: vec![],
+                    key_idx: None,
+                    key_count: None,
                     ts_ms: 0,
                 })
                 .await;
@@ -3242,6 +3275,10 @@ mod route_failover_tests {
             first_token_timeout_secs: None,
             max_failover_attempts: 3,
             active: true,
+            default_model: None,
+            target_engines: vec![],
+            description: None,
+            category: None,
         }
     }
 
@@ -3277,6 +3314,8 @@ mod route_failover_tests {
             profile_id: "p".into(),
             priority: 0,
             weight: 1,
+            keys: None,
+            key_strategy: RouteStrategy::RoundRobin,
         }]);
         let err = AppError::ProcessError("请求失败 401 Unauthorized".into());
         assert!(is_failoverable_spawn_err(&err, &g));
@@ -3288,6 +3327,8 @@ mod route_failover_tests {
             profile_id: "p".into(),
             priority: 0,
             weight: 1,
+            keys: None,
+            key_strategy: RouteStrategy::RoundRobin,
         }]);
         let err = AppError::ProcessError("启动 Claude 进程失败: Connection refused".into());
         assert!(is_failoverable_spawn_err(&err, &g));
@@ -3299,6 +3340,8 @@ mod route_failover_tests {
             profile_id: "p".into(),
             priority: 0,
             weight: 1,
+            keys: None,
+            key_strategy: RouteStrategy::RoundRobin,
         }]);
         let err = AppError::ProcessError("命令行参数总长度超过 32767 字符".into());
         assert!(!is_failoverable_spawn_err(&err, &g));
@@ -3310,6 +3353,8 @@ mod route_failover_tests {
             profile_id: "p".into(),
             priority: 0,
             weight: 1,
+            keys: None,
+            key_strategy: RouteStrategy::RoundRobin,
         }]);
         let err = AppError::ProcessError("session 已存在".into());
         assert!(!is_failoverable_spawn_err(&err, &g));
@@ -3326,6 +3371,8 @@ mod route_failover_tests {
                 profile_id: "p".into(),
                 priority: 0,
                 weight: 1,
+                keys: None,
+                key_strategy: RouteStrategy::RoundRobin,
             }])
         };
         // 命中自定义模式

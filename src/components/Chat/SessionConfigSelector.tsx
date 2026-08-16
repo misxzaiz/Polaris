@@ -28,6 +28,7 @@ import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getEngineSelectors } from '@/utils/engineCapabilities'
+import type { ProviderGroup } from '@/types/config'
 
 interface SessionConfigSelectorProps {
   /** 当前配置 */
@@ -111,7 +112,6 @@ export function SessionConfigSelector({
   // 不能在这里用 `?? []`——每次返回新数组导致 useSyncExternalStore 快照不等 → 无限重渲染。
   const providerGroups = useConfigStore(s => s.config?.providerGroups)
   const activeGroupId = useConfigStore(s => s.config?.activeProviderGroupId)
-  const activeGroup = (providerGroups ?? []).find(g => g.id === activeGroupId && g.active)
 
   // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
   // 映射到 isProfileForEngine 的引擎参数（claude / codex / simple-ai）。
@@ -130,6 +130,17 @@ export function SessionConfigSelector({
           : activeEngineId === 'claude-code'
             ? 'claude'
             : activeEngineId
+
+  // 判断分组是否适用于当前引擎（targetEngines 为空 = 全部引擎）
+  const isGroupCompatibleWithEngine = useCallback((group: ProviderGroup) => {
+    if (!group.targetEngines || group.targetEngines.length === 0) return true
+    return group.targetEngines.includes(currentEngine)
+  }, [currentEngine])
+
+  const activeGroup = (providerGroups ?? []).find(
+    g => g.id === activeGroupId && g.active && isGroupCompatibleWithEngine(g)
+  )
+
   const isSimpleAiEngine = currentEngine === 'simple-ai'
   useEffect(() => {
     if (isSimpleAiEngine) {
@@ -166,13 +177,32 @@ export function SessionConfigSelector({
   }, [dynamicAgents, simpleAiAgents, isSimpleAiEngine, t])
 
 
-  // 模型列表：根据当前选中的 Profile 动态生成。
+  // 模型列表：根据当前选中的 Profile 或分组路由动态生成。
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：
   //   · claude：使用官方模型档位
   //   · codex：使用 Profile 模型或空（无 Profile 时显示通用项）
   //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
+  // - 分组路由模式：取组内所有 Profile 的 modelOptions 并集，去重后展示
   const modelList = useMemo(() => {
+    // 分组路由：从组内所有 Profile 取 modelOptions 并集
+    if (config.profileMode === 'group' && activeGroup) {
+      const profileIds = new Set(activeGroup.members.map(m => m.profileId))
+      const modelSet = new Set<string>()
+      profiles.forEach(p => {
+        if (profileIds.has(p.id)) {
+          const options = (p.modelOptions?.length ? p.modelOptions : [p.model]).filter(Boolean)
+          options.forEach(m => modelSet.add(m))
+        }
+      })
+      return Array.from(modelSet).map(m => ({
+        id: m,
+        name: m,
+        description: '',
+        supportsStreaming: true,
+      }))
+    }
+
     const profileId = config.modelProfileId
     if (!profileId) {
       // SimpleAI 模型完全由 Profile 驱动，无 Profile 时不可选模型
@@ -191,7 +221,7 @@ export function SessionConfigSelector({
       description: '',
       supportsStreaming: true,
     }))
-  }, [config.modelProfileId, profiles, currentEngine])
+  }, [config.modelProfileId, config.profileMode, activeGroup, profiles, currentEngine])
 
   // 按当前引擎过滤 Profile 列表
   const compatibleProfiles = useMemo(() => {
@@ -257,6 +287,10 @@ export function SessionConfigSelector({
         // 分组路由（激活分组可用时）
         nextConfig.profileMode = 'group'
         nextConfig.modelProfileId = ''
+        // 自动选中分组的默认模型（如果存在）
+        if (activeGroup?.defaultModel) {
+          nextConfig.model = activeGroup.defaultModel
+        }
       } else {
         // 指定 Profile
         nextConfig.profileMode = 'profile'
@@ -293,9 +327,8 @@ export function SessionConfigSelector({
       }
     }
     setOpenDropdown(null)
-  }, [config, onChange])
+  }, [config, onChange, activeGroup])
 
-  // 处理自定义输入确认
   const handleCustomInputConfirm = useCallback((type: SelectorType) => {
     if (!customInput || customInput.type !== type) return
     const value = customInput.value.trim()

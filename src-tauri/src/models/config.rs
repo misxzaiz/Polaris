@@ -389,6 +389,14 @@ pub struct GroupMember {
     /// Weighted 策略：权重值
     #[serde(default = "default_group_weight")]
     pub weight: u32,
+    /// 多 Key 池：同一个端点的多个 API Key。
+    /// 为空时使用 Profile.apiKey（单 Key 向后兼容）。
+    /// 非空时，路由策略在 Key 级别也生效。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<Vec<String>>,
+    /// Key 级路由策略。默认 roundrobin。
+    #[serde(default)]
+    pub key_strategy: RouteStrategy,
 }
 
 fn default_group_priority() -> u32 {
@@ -415,6 +423,21 @@ pub struct ProviderGroup {
     pub strategy: RouteStrategy,
     /// 成员列表（Failover 策略下按 priority 升序处理）
     pub members: Vec<GroupMember>,
+    /// 分组默认模型名。用户切换分组路由时自动选中此项；
+    /// 后端在 session_opts.model 为空且为分组路由时填充此项。
+    /// None / 空串 / 不在组内模型并集中 → 不自动选中，用户需手动选择。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// 分组适用的引擎列表。空数组或未设置 = 适用于所有引擎。
+    /// 非空时，仅当前引擎匹配时才在状态栏显示此分组选项。
+    #[serde(default)]
+    pub target_engines: Vec<String>,
+    /// 可选描述文案
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// 供应商分类标签（UI 展示用）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
     /// 触发 failover 的错误模式。空 = 使用 `FailoverPattern::defaults()`
     #[serde(default)]
     pub failover_on: Vec<FailoverPattern>,

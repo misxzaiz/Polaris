@@ -17,6 +17,7 @@ import {
 import { waitForMobileConfig, rebuildTransport, disconnect } from '@/services/transport';
 import { getConfig, healthCheck } from '@/services/tauri/configService';
 import { supportsQrScanning } from '@/mobile/platform';
+import { MobileConnectionProvider } from '@/mobile/MobileConnectionContext';
 import type { Config } from '@/types';
 
 interface MobileConnectionGateProps {
@@ -383,5 +384,9 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
   );
   }
 
-  return <>{children({ config, connected, serverUrl, openSettings: () => setShowSettings(true) })}</>;
+  return (
+    <MobileConnectionProvider value={{ openConnectionSettings: () => setShowSettings(true), connected }}>
+      {children({ config, connected, serverUrl, openSettings: () => setShowSettings(true) })}
+    </MobileConnectionProvider>
+  );
 }

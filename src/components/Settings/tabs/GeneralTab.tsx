@@ -4,11 +4,14 @@
  */
 
 import { useTranslation } from 'react-i18next';
+import { Smartphone, Plug, PlugZap } from 'lucide-react';
 import type { Config } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
 import { DispatchSettingsSection } from './DispatchSettingsSection';
 import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
+import { useMobileConnection } from '@/mobile/MobileConnectionContext';
+import { isMobileTauriRuntime } from '@/mobile/platform';
 
 interface GeneralTabProps {
   config: Config;
@@ -18,6 +21,8 @@ interface GeneralTabProps {
 
 export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps) {
   const { t } = useTranslation('settings');
+  const mobileConnection = useMobileConnection();
+  const isMobile = isMobileTauriRuntime();
 
   return (
     <div className="space-y-6">
@@ -176,6 +181,45 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
 
       {/* 系统提示词 */}
       <SystemPromptSection />
+
+      {/* 移动端连接管理 — 仅在移动端 Tauri 运行时显示 */}
+      {isMobile && mobileConnection && (
+        <div className="p-4 bg-surface rounded-lg border border-border">
+          <h3 className="text-sm font-medium text-text-primary mb-3 flex items-center gap-1.5">
+            <Smartphone size={14} />
+            {t('mobileConnection.title', '移动端连接管理')}
+          </h3>
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 flex-1 pr-4">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    mobileConnection.connected
+                      ? 'bg-green shadow-[0_0_6px_rgba(166,227,161,0.5)]'
+                      : 'bg-text-tertiary'
+                  }`}
+                />
+                <span className="text-sm text-text-primary">
+                  {mobileConnection.connected
+                    ? t('mobileConnection.connected', '已连接')
+                    : t('mobileConnection.disconnected', '未连接')}
+                </span>
+              </div>
+              <p className="text-xs text-text-secondary mt-1">
+                {t('mobileConnection.hint', '管理移动端与桌面端的连接，可查看状态或断开连接')}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={mobileConnection.openConnectionSettings}
+              className="shrink-0 flex items-center gap-1.5 text-xs px-3 py-2 rounded-md border border-border bg-surface text-text-secondary hover:bg-background-hover transition-colors"
+            >
+              {mobileConnection.connected ? <PlugZap size={12} /> : <Plug size={12} />}
+              {t('mobileConnection.manage', '管理连接')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

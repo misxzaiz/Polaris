@@ -529,6 +529,19 @@ export interface GroupMember {
   priority: number;
   /** Weighted 策略：权重值 */
   weight: number;
+  /**
+   * 多 Key 池：同一个端点的多个 API Key。
+   * 为空时使用 Profile.apiKey（单 Key 向后兼容）。
+   * 非空时，路由策略在 Key 级别也生效。
+   */
+  keys?: string[];
+  /**
+   * Key 级路由策略。默认 roundrobin。
+   * - roundrobin：新会话轮转 Key
+   * - failover：固定第一个 Key，失败时换下一个
+   * - weighted：与成员级不同，Key 级 weighted 按权重随机（所有 Key 等权）
+   */
+  keyStrategy?: RouteStrategy;
 }
 
 /** 供应商分组配置 */
@@ -541,6 +554,14 @@ export interface ProviderGroup {
   strategy: RouteStrategy;
   /** 成员列表 */
   members: GroupMember[];
+  /** 分组默认模型名（可选，不在组内模型并集中则不生效） */
+  defaultModel?: string;
+  /** 分组适用的引擎列表。空数组或未设置 = 适用于所有引擎 */
+  targetEngines?: string[];
+  /** 可选描述文案 */
+  description?: string;
+  /** 供应商分类标签（UI 展示用） */
+  category?: string;
   /** 触发 failover 的错误模式。空 = 使用后端默认集（401/403/429/5xx/首字超时/连接被拒） */
   failoverOn: FailoverPattern[];
   /** spawn 后首字超时秒数。undefined = 不做首字超时检测 */
