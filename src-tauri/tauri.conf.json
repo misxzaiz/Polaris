@@ -19,7 +19,6 @@
         "decorations": false,
         "hiddenTitle": true,
         "devtools": true,
-        "transparent": true,
         "additionalBrowserArgs": "--disable-features=CalculateNativeWinOcclusion --disable-gpu-vsync --disable-smooth-scrolling"
       }
     ],
