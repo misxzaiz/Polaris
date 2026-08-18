@@ -32,6 +32,8 @@ pub use ai_event::{
     PromptSuggestionEvent,
     // 用量类型
     UsageEvent, ModelUsageBreakdown,
+    // 工具调用中间输出
+    ToolCallUpdateEvent,
 };
 pub mod auto_mode;
 pub use auto_mode::{AutoModeConfig, AutoModeDefaults};

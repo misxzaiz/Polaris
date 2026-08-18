@@ -296,6 +296,10 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_reload" => Ok("reload"),
         "browser_back" => Ok("back"),
         "browser_forward" => Ok("forward"),
+        "browser_wait" => Ok("wait"),
+        "browser_scroll" => Ok("scroll"),
+        "browser_press_key" => Ok("press_key"),
+        "browser_type_text" => Ok("type_text"),
         other => Err(AppError::ValidationError(format!(
             "未知浏览器工具: {other}"
         ))),
@@ -327,6 +331,15 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "mode",
         "agentKey",
         "activate",
+        "condition",
+        "ms",
+        "timeoutMs",
+        "x",
+        "y",
+        "amount",
+        "keys",
+        "elementText",
+        "delayMs",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());

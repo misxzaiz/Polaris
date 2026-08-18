@@ -62,6 +62,23 @@ export interface ToolCallEndEvent {
 }
 
 /**
+ * 工具调用中间输出事件
+ */
+export interface ToolCallUpdateEvent {
+  type: 'tool_call_update'
+  /** 会话 ID - 用于事件路由 */
+  sessionId: string
+  /** 工具调用 ID */
+  callId?: string
+  /** 工具名称 */
+  tool: string
+  /** 当前累积的中间输出 */
+  output: string
+  /** true = 还有更多, false = 最终结果 */
+  isPartial: boolean
+}
+
+/**
  * 进度事件 - 任务进度更新
  */
 export interface ProgressEvent {
@@ -835,6 +852,8 @@ export type AIEvent =
   | ContextCompactedEvent
   // Token 用量事件
   | UsageEvent
+  // 工具调用中间输出事件
+  | ToolCallUpdateEvent
 
 /**
  * 事件监听器类型
@@ -977,6 +996,20 @@ export function isToolCallStartEvent(event: AIEvent): event is ToolCallStartEven
 
 export function isToolCallEndEvent(event: AIEvent): event is ToolCallEndEvent {
   return event.type === 'tool_call_end'
+}
+
+export function createToolCallUpdateEvent(
+  sessionId: string,
+  tool: string,
+  output: string,
+  isPartial: boolean,
+  callId?: string,
+): ToolCallUpdateEvent {
+  return { type: 'tool_call_update', sessionId, tool, output, isPartial, callId }
+}
+
+export function isToolCallUpdateEvent(event: AIEvent): event is ToolCallUpdateEvent {
+  return event.type === 'tool_call_update'
 }
 
 export function isProgressEvent(event: AIEvent): event is ProgressEvent {

@@ -178,6 +178,43 @@ impl ToolCallEndEvent {
     }
 }
 
+/// 工具调用更新事件（中间输出流）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallUpdateEvent {
+    #[serde(rename = "type")]
+    pub event_type: String,
+    /// 会话 ID - 用于事件路由
+    pub session_id: String,
+    /// 工具调用 ID
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_id: Option<String>,
+    /// 工具名称
+    pub tool: String,
+    /// 当前累积的中间输出
+    pub output: String,
+    /// true = 还有更多，false = 最终结果
+    pub is_partial: bool,
+}
+
+impl ToolCallUpdateEvent {
+    pub fn new(session_id: impl Into<String>, tool: String, output: String, is_partial: bool) -> Self {
+        Self {
+            event_type: "tool_call_update".to_string(),
+            session_id: session_id.into(),
+            call_id: None,
+            tool,
+            output,
+            is_partial,
+        }
+    }
+
+    pub fn with_call_id(mut self, call_id: String) -> Self {
+        self.call_id = Some(call_id);
+        self
+    }
+}
+
 /// 进度事件
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1571,6 +1608,8 @@ pub enum AIEvent {
     Hook(HookEvent),
     // 提示建议事件
     PromptSuggestion(PromptSuggestionEvent),
+    // 工具调用中间输出
+    ToolCallUpdate(ToolCallUpdateEvent),
 }
 
 impl AIEvent {
@@ -1607,6 +1646,7 @@ impl AIEvent {
             AIEvent::Usage(e) => &e.event_type,
             AIEvent::Hook(e) => &e.event_type,
             AIEvent::PromptSuggestion(e) => &e.event_type,
+            AIEvent::ToolCallUpdate(e) => &e.event_type,
         }
     }
 
@@ -1729,6 +1769,7 @@ impl AIEvent {
             AIEvent::Usage(e) => &e.session_id,
             AIEvent::Hook(e) => &e.session_id,
             AIEvent::PromptSuggestion(e) => &e.session_id,
+            AIEvent::ToolCallUpdate(e) => &e.session_id,
         }
     }
 

@@ -1437,6 +1437,7 @@ mod tests {
                 services: Vec::new(),
                 engines: Vec::new(),
                 chat_cards: Vec::new(),
+                tool_providers: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),

@@ -560,6 +560,19 @@ pub fn run() {
         .with_engine_registry(engine_registry_arc.clone());
 
     tauri::Builder::default()
+        // 单实例守护：必须第一个注册，重复启动时聚焦旧实例主窗口并退出自身。
+        // 根因：多个 polaris.exe 共用同一个 WebView2 UserData 目录，旧实例锁住目录后，
+        // 新实例创建 webview 会失败（0x8007139F「组或资源状态不正确」），表现为
+        // 后台服务正常但桌面窗口不显示。单实例从源头消除该竞争。
+        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::Manager;
+            // 聚焦已存在的旧实例主窗口（从最小化/后台唤起）
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -575,6 +588,59 @@ pub fn run() {
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
             commands::browser::set_browser_app_handle(app.handle().clone());
+
+            // ── 主窗口创建 ──────────────────────────────────────────────
+            // 历史根因：dev 与 release 共用同一个 WebView2 UserData 目录
+            // （%LocalAppData%\com.polaris.app\EBWebView），异常退出后留下脏锁，
+            // 导致下次创建 webview 失败（0x8007139F「组或资源状态不正确」），
+            // 日志显示 8-18 当天 44 次启动 39 次失败（≈89%）。
+            //
+            // 修复：改为代码创建主窗口，按编译模式分离 UserData 目录：
+            //   - dev ：%LocalAppData%\com.polaris.app.dev\EBWebView
+            //   - release：%LocalAppData%\com.polaris.app\EBWebView（保持兼容）
+            // 同时 additionalBrowserArgs 仅 dev 启用（release 从未传过，是它
+            // 从不报错的旁证之一）。
+            use tauri::{WebviewUrl, WebviewWindowBuilder};
+            let mut builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::App("index.html".into()))
+                .title("Polaris")
+                .inner_size(1200.0, 800.0)
+                .decorations(false)
+                .devtools(true);
+
+            // 分模式 UserData 目录：dev/release 隔离，避免脏锁交叉污染。
+            let data_dir = if cfg!(debug_assertions) {
+                // dev 构建：使用独立目录，彻底与 release 解耦
+                let base = dirs::data_local_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                base.join("com.polaris.app.dev").join("EBWebView")
+            } else {
+                // release 构建：沿用原目录，保持已安装版本的用户数据兼容
+                let base = dirs::data_local_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                base.join("com.polaris.app").join("EBWebView")
+            };
+            tracing::info!("[Window] WebView2 UserData 目录: {}", data_dir.display());
+            builder = builder.data_directory(data_dir);
+
+            // additionalBrowserArgs 仅 dev 启用（P3 性能参数；release 从未传过）。
+            // 若该参数是失败叠加因素，dev 隔离目录后可安全验证。
+            #[cfg(debug_assertions)]
+            {
+                builder = builder.additional_browser_args(
+                    "--disable-features=CalculateNativeWinOcclusion --disable-gpu-vsync --disable-smooth-scrolling"
+                );
+            }
+
+            // 创建窗口并校验：失败立即退出，杜绝"后台全绿、桌面空白"的半启动状态。
+            match builder.build() {
+                Ok(_) => {
+                    tracing::info!("[Window] 主窗口创建成功");
+                }
+                Err(e) => {
+                    tracing::error!("[Window] 主窗口创建失败: {}（UserData 目录可能被占用或脏锁）", e);
+                    std::process::exit(1);
+                }
+            }
 
             // 索引引擎 → 前端事件桥（IndexStatus 推送）
             {

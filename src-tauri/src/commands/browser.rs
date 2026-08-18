@@ -153,6 +153,8 @@ pub struct BrowserInteractiveElement {
     pub max: Option<f64>,
     #[serde(default)]
     pub step: Option<f64>,
+    #[serde(default)]
+    pub cross_origin: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1716,6 +1718,578 @@ pub async fn browser_get_history_state(app: AppHandle, label: String) -> Result<
     browser_get_history_state_with_app(&app, &label).await
 }
 
+// ── browser_wait ──────────────────────────────────────────────────────────
+/// 等待条件满足（文本出现、元素出现、URL变化、网络空闲、导航完成、固定延迟）
+#[cfg(feature = "tauri-app")]
+pub async fn browser_wait_with_app(
+    app: &AppHandle,
+    label: &str,
+    condition: &str,
+    text: Option<&str>,
+    index: Option<usize>,
+    ms: Option<u64>,
+    timeout_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    let timeout = timeout_ms.unwrap_or_else(|| match condition {
+        "network_idle" | "navigation" => 30_000,
+        _ => 15_000,
+    });
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout);
+    let poll_interval = Duration::from_millis(200);
+    let initial_url = {
+        // 先获取当前 URL
+        let script = "JSON.stringify({ url: String(location.href) });";
+        let raw = browser_eval_with_app(app, label, script, Some(DEFAULT_EVAL_TIMEOUT_MS)).await?;
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+        v.get("url").and_then(Value::as_str).unwrap_or("").to_string()
+    };
+
+    loop {
+        let check_script = build_wait_check_script(condition, text, index, ms, &initial_url);
+        let raw = browser_eval_with_app(app, label, &check_script, Some(3_500)).await?;
+        let value = parse_eval_json(&raw)?;
+        let result: BrowserInteractionResult = serde_json::from_value(value.clone())?;
+
+        if result.ok {
+            return Ok(result);
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(BrowserInteractionResult {
+                ok: false,
+                action: "wait".to_string(),
+                index: None,
+                text: condition.to_string(),
+                url: initial_url,
+                message: format!("等待条件 '{condition}' 超时 ({timeout}ms)"),
+            });
+        }
+        tokio::time::sleep(poll_interval).await;
+        if tokio::time::Instant::now() >= deadline {
+            return Ok(BrowserInteractionResult {
+                ok: false,
+                action: "wait".to_string(),
+                index: None,
+                text: condition.to_string(),
+                url: initial_url,
+                message: format!("等待条件 '{condition}' 超时 ({timeout}ms)"),
+            });
+        }
+    }
+}
+
+/// 构建 wait 检查脚本（单次检查，Rust 侧轮询）
+#[cfg(feature = "tauri-app")]
+fn build_wait_check_script(
+    condition: &str,
+    text: Option<&str>,
+    index: Option<usize>,
+    ms: Option<u64>,
+    initial_url: &str,
+) -> String {
+    let wait_text = text.unwrap_or_default();
+    let wait_index = index.map(|i| i.to_string()).unwrap_or_else(|| "null".to_string());
+    let wait_ms = ms.unwrap_or(0);
+    let escaped_initial = initial_url.replace('\'', "\\'");
+
+    format!(
+        r#"(function() {{
+            const condition = '{cond}';
+            const waitText = '{wt}';
+            const waitIndex = {wi};
+            const waitMs = {wms};
+            const initialUrl = '{init}';
+            try {{
+                let satisfied = false;
+                let detail = '';
+                switch (condition) {{
+                    case 'url_change':
+                        satisfied = String(location.href) !== initialUrl;
+                        detail = String(location.href);
+                        break;
+                    case 'text_appear':
+                        if (!waitText) {{ satisfied = true; break; }}
+                        satisfied = (document.body?.innerText || '').toLowerCase().includes(waitText.toLowerCase());
+                        detail = satisfied ? 'text found' : '';
+                        break;
+                    case 'element_appear': {{
+                        const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                        if (Number.isInteger(waitIndex) && waitIndex >= 0) {{
+                            satisfied = waitIndex < entries.length;
+                        }} else if (waitText) {{
+                            const q = waitText.toLowerCase();
+                            satisfied = entries.some(e => e.searchText.includes(q));
+                        }}
+                        break;
+                    }}
+                    case 'network_idle':
+                        satisfied = document.readyState === 'complete'
+                            && performance.getEntriesByType('resource').filter(r => !r.responseEnd).length === 0;
+                        break;
+                    case 'navigation':
+                        satisfied = document.readyState === 'complete';
+                        break;
+                    case 'timeout':
+                        satisfied = true;
+                        break;
+                    default:
+                        return JSON.stringify({{ ok: false, action: 'wait', index: null, text: condition, url: String(location.href), message: '未知等待条件: ' + condition }});
+                }}
+                return JSON.stringify({{ ok: satisfied, action: 'wait', index: {wi}, text: condition, url: String(location.href), message: satisfied ? detail : 'pending' }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'wait', index: null, text: condition, url: String(location.href), message: 'wait 检查失败: ' + e.message }});
+            }}
+        }})()"#,
+        cond = condition,
+        wt = wait_text.replace('\'', "\\'").replace('\n', "\\n"),
+        wi = wait_index,
+        wms = wait_ms,
+        init = escaped_initial,
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_wait(
+    app: AppHandle,
+    label: String,
+    condition: String,
+    text: Option<String>,
+    index: Option<usize>,
+    ms: Option<u64>,
+    timeout_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    browser_wait_with_app(&app, &label, &condition, text.as_deref(), index, ms, timeout_ms).await
+}
+
+// ── browser_scroll ────────────────────────────────────────────────────────
+/// 滚动页面到指定位置、元素或方向
+#[cfg(feature = "tauri-app")]
+pub async fn browser_scroll_with_app(
+    app: &AppHandle,
+    label: &str,
+    mode: &str,
+    index: Option<usize>,
+    text: Option<&str>,
+    x: Option<f64>,
+    y: Option<f64>,
+    amount: Option<f64>,
+) -> Result<BrowserInteractionResult> {
+    let script = build_scroll_script(mode, index, text, x, y, amount);
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器滚动结果格式错误: {e}")))
+}
+
+#[cfg(feature = "tauri-app")]
+fn build_scroll_script(
+    mode: &str,
+    index: Option<usize>,
+    text: Option<&str>,
+    x: Option<f64>,
+    y: Option<f64>,
+    amount: Option<f64>,
+) -> String {
+    let scroll_index = index.map(|i| i.to_string()).unwrap_or_else(|| "null".to_string());
+    let scroll_text = text.unwrap_or_default().replace('\'', "\\'").replace('\n', "\\n");
+    let scroll_x = x.unwrap_or(0.0);
+    let scroll_y = y.unwrap_or(0.0);
+    let scroll_amount = amount.unwrap_or(0.0);
+
+    format!(
+        r#"(function() {{
+            const mode = '{mode}';
+            const scrollIndex = {idx};
+            const scrollText = '{txt}';
+            const scrollX = {sx};
+            const scrollY = {sy};
+            const scrollAmount = {amt};
+            const behavior = 'smooth';
+            try {{
+                switch (mode) {{
+                    case 'to_element':
+                    case 'to': {{
+                        let target = null;
+                        if (Number.isInteger(scrollIndex) && scrollIndex >= 0) {{
+                            const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                            target = entries[scrollIndex]?.element || null;
+                        }}
+                        if (!target && scrollText) {{
+                            const q = scrollText.toLowerCase();
+                            const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                            const idx = entries.findIndex(e => e.searchText.includes(q));
+                            if (idx >= 0) target = entries[idx].element;
+                        }}
+                        if (target) {{
+                            target.scrollIntoView({{ behavior, block: 'center', inline: 'center' }});
+                            return JSON.stringify({{ ok: true, action: 'scroll', index: {idx}, text: '{txt}', url: String(location.href), message: '已滚动到目标元素' }});
+                        }}
+                        window.scrollTo({{ left: scrollX, top: scrollY, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: mode, url: String(location.href), message: '已滚动到 (' + scrollX + ', ' + scrollY + ')' }});
+                    }}
+                    case 'by':
+                        window.scrollBy({{ left: scrollX, top: scrollY, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: mode, url: String(location.href), message: '已滚动偏移' }});
+                    case 'top':
+                        window.scrollTo({{ top: 0, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'top', url: String(location.href), message: '已滚动到顶部' }});
+                    case 'bottom':
+                        window.scrollTo({{ top: document.body.scrollHeight, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'bottom', url: String(location.href), message: '已滚动到底部' }});
+                    case 'up': {{
+                        const amt = scrollAmount || window.innerHeight;
+                        window.scrollBy({{ top: -amt, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'up', url: String(location.href), message: '已向上滚动 ' + amt + 'px' }});
+                    }}
+                    case 'down': {{
+                        const amt = scrollAmount || window.innerHeight;
+                        window.scrollBy({{ top: amt, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'down', url: String(location.href), message: '已向下滚动 ' + amt + 'px' }});
+                    }}
+                    case 'left':
+                        window.scrollBy({{ left: -(scrollAmount || window.innerWidth), behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'left', url: String(location.href), message: '已向左滚动' }});
+                    case 'right':
+                        window.scrollBy({{ left: scrollAmount || window.innerWidth, behavior }});
+                        return JSON.stringify({{ ok: true, action: 'scroll', index: null, text: 'right', url: String(location.href), message: '已向右滚动' }});
+                    default:
+                        return JSON.stringify({{ ok: false, action: 'scroll', index: null, text: mode, url: String(location.href), message: '未知滚动模式: ' + mode }});
+                }}
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'scroll', index: null, text: mode, url: String(location.href), message: '滚动失败: ' + e.message }});
+            }}
+        }})()"#,
+        mode = mode,
+        idx = scroll_index,
+        txt = scroll_text,
+        sx = scroll_x,
+        sy = scroll_y,
+        amt = scroll_amount,
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_scroll(
+    app: AppHandle,
+    label: String,
+    mode: String,
+    index: Option<usize>,
+    text: Option<String>,
+    x: Option<f64>,
+    y: Option<f64>,
+    amount: Option<f64>,
+) -> Result<BrowserInteractionResult> {
+    browser_scroll_with_app(&app, &label, &mode, index, text.as_deref(), x, y, amount).await
+}
+
+// ── browser_press_key ─────────────────────────────────────────────────────
+/// 发送键盘快捷键到浏览器
+#[cfg(feature = "tauri-app")]
+pub async fn browser_press_key_with_app(
+    app: &AppHandle,
+    label: &str,
+    keys: &str,
+    index: Option<usize>,
+    text: Option<&str>,
+) -> Result<BrowserInteractionResult> {
+    if keys.trim().is_empty() {
+        return Err(AppError::ValidationError("press_key 需要 keys 参数".to_string()));
+    }
+    validate_keys(keys)?;
+    let script = build_press_key_script(keys, index, text);
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器按键结果格式错误: {e}")))
+}
+
+const VALID_KEY_NAMES: &[&str] = &[
+    "Enter", "Escape", "Tab", "Backspace", "Delete", "Space", " ",
+    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
+    "Home", "End", "PageUp", "PageDown", "Insert",
+    "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12",
+];
+
+const MODIFIER_NAMES: &[&str] = &["Control", "Ctrl", "Shift", "Alt", "Meta", "Command", "Cmd", "Win", "Option"];
+
+#[cfg(feature = "tauri-app")]
+fn validate_keys(keys: &str) -> Result<()> {
+    let parts: Vec<&str> = keys.split('+').map(|p| p.trim()).filter(|p| !p.is_empty()).collect();
+    if parts.is_empty() {
+        return Err(AppError::ValidationError("keys 不能为空".to_string()));
+    }
+    let non_modifiers: Vec<&&str> = parts.iter().filter(|p| !MODIFIER_NAMES.contains(p)).collect();
+    if non_modifiers.is_empty() {
+        return Err(AppError::ValidationError("keys 不能仅包含修饰键".to_string()));
+    }
+    // 检查主键是否合法
+    for nm in &non_modifiers {
+        let upper = nm.to_uppercase();
+        if upper.len() == 1 { continue; } // 单字符始终合法
+        if !VALID_KEY_NAMES.iter().any(|k| k.eq_ignore_ascii_case(nm)) {
+            return Err(AppError::ValidationError(format!("未知按键: {nm}")));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "tauri-app")]
+fn build_press_key_script(keys: &str, index: Option<usize>, text: Option<&str>) -> String {
+    let req_index = index.map(|i| i.to_string()).unwrap_or_else(|| "null".to_string());
+    let req_text = text.unwrap_or_default().replace('\'', "\\'").replace('\n', "\\n");
+    let escaped_keys = keys.replace('\'', "\\'");
+
+    format!(
+        r#"(function() {{
+            const requestedKeys = '{keys}';
+            const requestedIndex = {idx};
+            const requestedText = '{txt}';
+            try {{
+                if (Number.isInteger(requestedIndex) && requestedIndex >= 0) {{
+                    const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                    const entry = entries[requestedIndex];
+                    if (entry) {{
+                        entry.element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        entry.element.focus({{ preventScroll: true }});
+                    }}
+                }} else if (requestedText) {{
+                    const q = requestedText.toLowerCase();
+                    const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                    const idx = entries.findIndex(e => e.searchText.includes(q));
+                    if (idx >= 0) {{
+                        entries[idx].element.scrollIntoView({{ block: 'center', inline: 'center' }});
+                        entries[idx].element.focus({{ preventScroll: true }});
+                    }}
+                }}
+                const parts = requestedKeys.split('+').map(p => p.trim());
+                const modifiers = {{
+                    ctrlKey: parts.some(p => /^control$/i.test(p) || /^ctrl$/i.test(p)),
+                    shiftKey: parts.some(p => /^shift$/i.test(p)),
+                    altKey: parts.some(p => /^alt$/i.test(p) || /^option$/i.test(p)),
+                    metaKey: parts.some(p => /^meta$/i.test(p) || /^command$/i.test(p) || /^cmd$/i.test(p) || /^win$/i.test(p)),
+                }};
+                const key = parts.find(p => !/^(control|ctrl|shift|alt|option|meta|command|cmd|win)$/i.test(p)) || '';
+                const keyMap = {{
+                    'enter': 'Enter', 'escape': 'Escape', 'esc': 'Escape', 'tab': 'Tab',
+                    'backspace': 'Backspace', 'delete': 'Delete', 'del': 'Delete',
+                    'space': ' ', ' ': ' ',
+                    'arrowup': 'ArrowUp', 'arrowdown': 'ArrowDown', 'arrowleft': 'ArrowLeft', 'arrowright': 'ArrowRight',
+                    'up': 'ArrowUp', 'down': 'ArrowDown', 'left': 'ArrowLeft', 'right': 'ArrowRight',
+                    'home': 'Home', 'end': 'End', 'pageup': 'PageUp', 'pagedown': 'PageDown',
+                    'insert': 'Insert',
+                    'f1': 'F1', 'f2': 'F2', 'f3': 'F3', 'f4': 'F4', 'f5': 'F5', 'f6': 'F6',
+                    'f7': 'F7', 'f8': 'F8', 'f9': 'F9', 'f10': 'F10', 'f11': 'F11', 'f12': 'F12',
+                }};
+                const resolvedKey = keyMap[key.toLowerCase()] || key;
+                const activeEl = document.activeElement || document.body;
+                const view = ownerWindowOf(activeEl);
+                const eventOpts = {{
+                    bubbles: true, cancelable: true, view, key: resolvedKey, code: resolvedKey,
+                    ...modifiers, repeat: false, composed: true,
+                }};
+                activeEl.dispatchEvent(new KeyboardEvent('keydown', eventOpts));
+                if (resolvedKey.length === 1 && !modifiers.ctrlKey && !modifiers.altKey && !modifiers.metaKey) {{
+                    activeEl.dispatchEvent(new KeyboardEvent('keypress', {{ ...eventOpts, charCode: resolvedKey.charCodeAt(0) }}));
+                    const target = activeEl;
+                    if (target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {{
+                        const start = target.selectionStart || target.value?.length || 0;
+                        const end = target.selectionEnd || start;
+                        const newValue = (target.value || '').slice(0, start) + resolvedKey + (target.value || '').slice(end);
+                        const proto = target instanceof view.HTMLTextAreaElement ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+                        const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                        if (desc?.set) desc.set.call(target, newValue); else target.value = newValue;
+                        target.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: resolvedKey }}));
+                    }}
+                }}
+                activeEl.dispatchEvent(new KeyboardEvent('keyup', eventOpts));
+                return JSON.stringify({{ ok: true, action: 'press_key', index: {idx}, text: '{keys}', url: String(location.href), message: '已发送按键: ' + requestedKeys }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'press_key', index: {idx}, text: '{keys}', url: String(location.href), message: '按键失败: ' + e.message }});
+            }}
+        }})()"#,
+        keys = escaped_keys,
+        idx = req_index,
+        txt = req_text,
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_press_key(
+    app: AppHandle,
+    label: String,
+    keys: String,
+    index: Option<usize>,
+    text: Option<String>,
+) -> Result<BrowserInteractionResult> {
+    browser_press_key_with_app(&app, &label, &keys, index, text.as_deref()).await
+}
+
+// ── browser_type_text ─────────────────────────────────────────────────────
+/// 逐字输入文本到聚焦元素
+#[cfg(feature = "tauri-app")]
+pub async fn browser_type_text_with_app(
+    app: &AppHandle,
+    label: &str,
+    input_text: &str,
+    index: Option<usize>,
+    element_text: Option<&str>,
+    delay_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    if input_text.is_empty() {
+        return Err(AppError::ValidationError("type_text 需要 text 参数".to_string()));
+    }
+    let delay = delay_ms.unwrap_or(10).min(200);
+    let max_chars = 1000;
+    let text_slice = if input_text.len() > max_chars {
+        &input_text[..max_chars]
+    } else {
+        input_text
+    };
+
+    // 第一步：聚焦目标元素
+    let focus_script = build_type_focus_script(index, element_text);
+    let raw = browser_eval_with_app(app, label, &focus_script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    let focus_result: BrowserInteractionResult = serde_json::from_value(value.clone())?;
+    if !focus_result.ok {
+        return Ok(focus_result);
+    }
+
+    // 逐字符输入
+    for ch in text_slice.chars() {
+        let char_script = build_type_char_script(ch);
+        browser_eval_with_app(app, label, &char_script, Some(2_000)).await?;
+        if delay > 0 {
+            tokio::time::sleep(Duration::from_millis(delay)).await;
+        }
+    }
+
+    // 触发 change
+    browser_eval_with_app(app, label, r#"(function(){ try { document.activeElement?.dispatchEvent(new Event('change', { bubbles: true })); } catch {} return '{}'; })()"#, Some(2_000)).await?;
+
+    Ok(BrowserInteractionResult {
+        ok: true,
+        action: "type_text".to_string(),
+        index,
+        text: text_slice.to_string(),
+        url: String::new(),
+        message: format!("已逐字输入 {} 个字符", text_slice.chars().count()),
+    })
+}
+
+#[cfg(feature = "tauri-app")]
+fn build_type_focus_script(index: Option<usize>, element_text: Option<&str>) -> String {
+    let req_index = index.map(|i| i.to_string()).unwrap_or_else(|| "null".to_string());
+    let req_text = element_text.unwrap_or_default().replace('\'', "\\'").replace('\n', "\\n");
+
+    format!(
+        r#"(function() {{
+            const requestedIndex = {idx};
+            const requestedText = '{txt}';
+            try {{
+                let target = document.activeElement;
+                if (Number.isInteger(requestedIndex) && requestedIndex >= 0) {{
+                    const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                    const entry = entries[requestedIndex];
+                    if (entry) target = entry.element;
+                }} else if (requestedText) {{
+                    const q = requestedText.toLowerCase();
+                    const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                    const idx = entries.findIndex(e => e.searchText.includes(q));
+                    if (idx >= 0) target = entries[idx].element;
+                }}
+                if (!target || !(target.isContentEditable || target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {{
+                    if (document.activeElement && (document.activeElement.isContentEditable || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {{
+                        target = document.activeElement;
+                    }} else {{
+                        return JSON.stringify({{ ok: false, action: 'type_text', index: {idx}, text: '{txt}', url: String(location.href), message: '没有可输入的聚焦元素' }});
+                    }}
+                }}
+                target.scrollIntoView({{ block: 'center', inline: 'center' }});
+                target.focus({{ preventScroll: true }});
+                if (target.select) target.select();
+                return JSON.stringify({{ ok: true, action: 'type_text', index: {idx}, text: '{txt}', url: String(location.href), message: '已聚焦' }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'type_text', index: {idx}, text: '{txt}', url: String(location.href), message: '聚焦失败: ' + e.message }});
+            }}
+        }})()"#,
+        idx = req_index,
+        txt = req_text,
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+fn build_type_char_script(ch: char) -> String {
+    let key = match ch {
+        '\'' => "\\'",
+        '\\' => "\\\\",
+        '\n' => "\\n",
+        '\r' => "\\r",
+        '\t' => "\\t",
+        c => {
+            let s = c.to_string();
+            if s.contains('\'') || s.contains('\\') {
+                Box::leak(s.into_boxed_str())
+            } else {
+                Box::leak(s.into_boxed_str())
+            }
+        }
+    };
+
+    // 使用字符串字面量避免转义问题
+    format!(
+        r#"(function() {{
+            const key = '{key}';
+            const target = document.activeElement || document.body;
+            const view = ownerWindowOf(target);
+            target.dispatchEvent(new KeyboardEvent('keydown', {{ bubbles: true, cancelable: true, view, key, code: key.length === 1 ? 'Key' + key.toUpperCase() : key, composed: true }}));
+            if (key.length === 1) {{
+                target.dispatchEvent(new KeyboardEvent('keypress', {{ bubbles: true, cancelable: true, view, key, charCode: key.charCodeAt(0), composed: true }}));
+                if (target.isContentEditable) {{
+                    const sel = view.getSelection();
+                    if (sel && sel.rangeCount) {{
+                        const range = sel.getRangeAt(0);
+                        range.deleteContents();
+                        range.insertNode(document.createTextNode(key));
+                        range.collapse(false);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                    }} else {{
+                        target.textContent = (target.textContent || '') + key;
+                    }}
+                }} else if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') {{
+                    const start = target.selectionStart ?? target.value?.length ?? 0;
+                    const end = target.selectionEnd ?? start;
+                    const newValue = (target.value || '').slice(0, start) + key + (target.value || '').slice(end);
+                    const proto = target instanceof view.HTMLTextAreaElement ? view.HTMLTextAreaElement.prototype : view.HTMLInputElement.prototype;
+                    const desc = Object.getOwnPropertyDescriptor(proto, 'value');
+                    if (desc?.set) desc.set.call(target, newValue); else target.value = newValue;
+                    target.setSelectionRange(start + 1, start + 1);
+                }}
+                target.dispatchEvent(new InputEvent('input', {{ bubbles: true, inputType: 'insertText', data: key }}));
+            }}
+            target.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true, cancelable: true, view, key, composed: true }}));
+            return '{{}}';
+        }})()"#,
+        key = key
+    )
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_type_text(
+    app: AppHandle,
+    label: String,
+    text: String,
+    index: Option<usize>,
+    element_text: Option<String>,
+    delay_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    browser_type_text_with_app(&app, &label, &text, index, element_text.as_deref(), delay_ms).await
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -1842,6 +2416,23 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
         structuredData.push(parsed);
       } catch {}
     }
+  try {
+    // 提取列表
+    const lists = Array.from(document.querySelectorAll('ul, ol')).slice(0, 30).map((list) => ({
+      ordered: tagOf(list) === 'ol',
+      items: Array.from(list.querySelectorAll('li')).slice(0, 50).map((li) => clean(li.textContent || '', 200))
+    }));
+    // 提取表单
+    const forms = Array.from(document.querySelectorAll('form')).slice(0, 10).map((form) => ({
+      action: clean(form.getAttribute('action') || '', 300),
+      method: clean(form.getAttribute('method') || 'get', 20),
+      fields: Array.from(form.querySelectorAll('input, textarea, select')).slice(0, 60).map((field) => {
+        const tag = tagOf(field);
+        const type = field.getAttribute('type') || '';
+        const name = field.getAttribute('name') || '';
+        return clean(`${tag}${type ? `[type="${type}"]` : ''}${name ? `[name="${name}"]` : ''}`, 200);
+      })
+    }));
   } catch {}
   return JSON.stringify({
     title: clean(document.title || '', 300),
@@ -1854,7 +2445,12 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
     tables,
     codeBlocks,
     images,
-    structuredData
+    structuredData,
+    lists,
+    forms,
+    canonical,
+    ogTitle,
+    ogImage
   });
 })()
 "#;
@@ -2192,7 +2788,28 @@ const collectRoots = () => {
             const frameRect = node.getBoundingClientRect();
             visit(doc, { x: offset.x + frameRect.left, y: offset.y + frameRect.top }, depth + 1, frames.concat(node));
           }
-        } catch {}
+        } catch {
+          // 跨域 iframe，无法访问 contentDocument
+          const frameRect = node.getBoundingClientRect();
+          if (frameRect.width > 0 && frameRect.height > 0) {
+            candidates.push({
+              element: node,
+              rect: { ...frameRect, left: frameRect.left + offset.x, top: frameRect.top + offset.y },
+              label: `[跨域隔离] ${node.src || node.getAttribute('srcdoc') || 'iframe'}`,
+              searchText: `[cross-origin iframe] ${node.src || ''}`.toLowerCase(),
+              kind: 'cross-origin-iframe',
+              value: '',
+              placeholder: '',
+              href: node.src || '',
+              disabled: false,
+              fillable: false,
+              frames: [],
+              score: 0,
+              order: order++,
+              crossOrigin: true,
+            });
+          }
+        }
       }
     }
   };
@@ -2553,8 +3170,36 @@ try { target.focus({ preventScroll: true }); } catch {}
 if (target.isContentEditable) {
   target.textContent = fillValue;
 } else if (tagOf(target) === 'select') {
-  const option = Array.from(target.options).find((item) => item.value === fillValue || clean(item.textContent).includes(fillValue));
-  setNativeValue(target, option ? option.value : fillValue);
+  const findOption = (el, val) => {
+    const opts = Array.from(el.options);
+    const clean = (v, max = 220) => String(v || '').replace(/\s+/g, ' ').trim().slice(0, max);
+    // 1. 精确 value 匹配
+    let match = opts.find(o => o.value === val);
+    if (match) return match;
+    // 2. 精确 textContent 匹配
+    match = opts.find(o => clean(o.textContent) === val);
+    if (match) return match;
+    // 3. 精确 textContent 前缀匹配 (按长度降序，避免短前缀误匹配)
+    const textMatches = opts.map(o => ({ option: o, text: clean(o.textContent) }))
+      .filter(({ text }) => text.startsWith(val) || text.includes(` ${val}`) || text.includes(val));
+    textMatches.sort((a, b) => b.text.length - a.text.length);
+    if (textMatches.length > 0) return textMatches[0].option;
+    // 4. includes 模糊匹配 (最后降级)
+    match = opts.find(o => clean(o.textContent).includes(val));
+    return match || null;
+  };
+  if (target.multiple) {
+    Array.from(target.options).forEach(o => o.selected = false);
+    const selectedValues = fillValue.split(',').map(v => v.trim()).filter(Boolean);
+    for (const val of selectedValues) {
+      const opt = findOption(target, val);
+      if (opt) opt.selected = true;
+    }
+    setNativeValue(target, Array.from(target.selectedOptions).map(o => o.value).join(','));
+  } else {
+    const option = findOption(target, fillValue);
+    setNativeValue(target, option ? option.value : fillValue);
+  }
 } else if ('value' in target) {
   setNativeValue(target, fillValue);
 } else {
@@ -3354,6 +3999,52 @@ impl BrowserActionDispatcher {
             "historyState" | "history_state" => {
                 let state = browser_get_history_state_with_app(&self.app, &label).await?;
                 serde_json::to_value(state).map_err(Into::into)
+            }
+            "wait" => {
+                let condition = args.get("condition").and_then(Value::as_str).unwrap_or("navigation");
+                let text = args.get("text").and_then(Value::as_str);
+                let index = parse_action_index(args)?;
+                let ms = args.get("ms").and_then(Value::as_u64);
+                let timeout_ms = args.get("timeoutMs").or_else(|| args.get("timeout_ms")).and_then(Value::as_u64);
+                let result = browser_wait_with_app(&self.app, &label, condition, text, index, ms, timeout_ms).await?;
+                emit_browser_operation_with_app(&self.app, &label, "wait",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(), None, Some(result.url.clone()));
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "scroll" => {
+                let mode = args.get("mode").and_then(Value::as_str).unwrap_or("down");
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let x = args.get("x").and_then(Value::as_f64);
+                let y = args.get("y").and_then(Value::as_f64);
+                let amount = args.get("amount").and_then(Value::as_f64);
+                let result = browser_scroll_with_app(&self.app, &label, mode, index, text, x, y, amount).await?;
+                emit_browser_operation_with_app(&self.app, &label, "scroll",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(), None, Some(result.url.clone()));
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "press_key" | "pressKey" => {
+                let keys = args.get("keys").and_then(Value::as_str).ok_or_else(|| AppError::ValidationError("press_key 缺少 keys".to_string()))?;
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let result = browser_press_key_with_app(&self.app, &label, keys, index, text).await?;
+                emit_browser_operation_with_app(&self.app, &label, "press_key",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(), None, Some(result.url.clone()));
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "type_text" | "typeText" => {
+                let input_text = args.get("text").and_then(Value::as_str).ok_or_else(|| AppError::ValidationError("type_text 缺少 text".to_string()))?;
+                let index = parse_action_index(args)?;
+                let element_text = args.get("elementText").or_else(|| args.get("element_text")).and_then(Value::as_str);
+                let delay_ms = args.get("delayMs").or_else(|| args.get("delay_ms")).and_then(Value::as_u64);
+                let result = browser_type_text_with_app(&self.app, &label, input_text, index, element_text, delay_ms).await?;
+                emit_browser_operation_with_app(&self.app, &label, "type_text",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(), None, Some(result.url.clone()));
+                serde_json::to_value(result).map_err(Into::into)
             }
             "marquee" => {
                 let enabled = args

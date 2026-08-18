@@ -24,7 +24,7 @@
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use crate::models::{AIEvent, ModelUsageBreakdown, ToolCallStartEvent, ToolCallEndEvent};
+use crate::models::{AIEvent, ModelUsageBreakdown, ToolCallStartEvent, ToolCallEndEvent, ToolCallUpdateEvent};
 
 /// 跨 tool_execution_start/end 缓存工具名（按 tool_call_id）。
 /// OMP 的 write 包装在 tool_execution_end 时丢失 args.path 字段，
@@ -264,7 +264,33 @@ pub fn pi_line_to_ai_events(line: &PiRpcLine, current_sid: &str, engine_id: &str
             out.events.push(AIEvent::ToolCallStart(start));
         }
         "tool_execution_update" => {
-            // 工具执行进度（流式输出）；当前不透出，避免噪声
+            // 工具执行进度（流式输出）
+            let tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());
+            let output = line
+                .result
+                .as_ref()
+                .and_then(|r| r.get("output"))
+                .and_then(|v| v.as_str())
+                .or_else(|| {
+                    line.result.as_ref().and_then(|r| {
+                        r.get("content")
+                            .and_then(|c| c.as_array())
+                            .and_then(|arr| {
+                                arr.first()
+                                    .and_then(|item| item.get("text"))
+                                    .and_then(|v| v.as_str())
+                            })
+                    })
+                })
+                .unwrap_or_default()
+                .to_string();
+            if !output.is_empty() {
+                let mut update = ToolCallUpdateEvent::new(current_sid, tool, output, true);
+                if let Some(cid) = line.tool_call_id.clone() {
+                    update = update.with_call_id(cid);
+                }
+                out.events.push(AIEvent::ToolCallUpdate(update));
+            }
         }
         "tool_execution_end" => {
             let raw_tool = line.tool_name.clone().unwrap_or_else(|| "unknown".to_string());

@@ -26,14 +26,14 @@ impl Tool for BrowserTool {
             "type": "function",
             "function": {
                 "name": "browser",
-                "description": "Operate Polaris built-in browser tabs. Use acquire first when the agent needs a tab: it binds this agent to an existing label or creates a dedicated browser tab. Later actions without label use the current agent binding before falling back to the most recent tab. Supports navigation, page context, diagnostics, inspect, click, fill, reload, back, forward, historyState, marquee (user region selection), and selectRegion.",
+                "description": "Operate Polaris built-in browser tabs. Use acquire first when the agent needs a tab: it binds this agent to an existing label or creates a dedicated browser tab. Later actions without label use the current agent binding before falling back to the most recent tab. Supports navigation, page context, diagnostics, inspect, click, fill, reload, back, forward, historyState, marquee (user region selection), wait, scroll, press_key, type_text, and selectRegion.",
                 "parameters": {
                     "type": "object",
                     "required": ["action"],
                     "properties": {
                         "action": {
                             "type": "string",
-                            "enum": ["list", "acquire", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward", "historyState", "marquee", "selectRegion"]
+                            "enum": ["list", "acquire", "navigate", "context", "diagnostics", "inspect", "click", "fill", "reload", "back", "forward", "historyState", "marquee", "selectRegion", "wait", "scroll", "press_key", "type_text"]
                         },
                         "mode": {
                             "type": "string",
@@ -89,6 +89,43 @@ impl Tool for BrowserTool {
                                 "width": { "type": "number", "description": "区域宽度" },
                                 "height": { "type": "number", "description": "区域高度" }
                             }
+                        },
+                        "condition": {
+                            "type": "string",
+                            "enum": ["url_change", "text_appear", "element_appear", "network_idle", "navigation", "timeout"],
+                            "description": "wait 等待条件：url_change 等待URL变化，text_appear 等待指定文本出现，element_appear 等待元素出现，network_idle 等待网络空闲，navigation 等待页面加载完成，timeout 固定等待指定毫秒数"
+                        },
+                        "ms": {
+                            "type": "integer",
+                            "description": "timeout 模式的固定等待时间（毫秒），或 type_text 的字符间延迟（毫秒）"
+                        },
+                        "timeoutMs": {
+                            "type": "integer",
+                            "description": "wait 的超时时间（毫秒），默认 text_appear/element_appear 15s，network_idle/navigation 30s"
+                        },
+                        "x": {
+                            "type": "number",
+                            "description": "scroll 的 X 偏移或位置（px）"
+                        },
+                        "y": {
+                            "type": "number",
+                            "description": "scroll 的 Y 偏移或位置（px）"
+                        },
+                        "amount": {
+                            "type": "number",
+                            "description": "scroll up/down/left/right 的滚动量（px），默认视口高度/宽度"
+                        },
+                        "keys": {
+                            "type": "string",
+                            "description": "press_key 的按键组合：'Enter', 'Escape', 'Tab', 'Control+S', 'Control+Shift+R', 'ArrowDown', 'F5' 等"
+                        },
+                        "elementText": {
+                            "type": "string",
+                            "description": "type_text 的目标元素文本（当不知道 index 时，用可见文本模糊匹配）"
+                        },
+                        "delayMs": {
+                            "type": "integer",
+                            "description": "type_text 字符间延迟（毫秒），默认 10ms，最大 200ms"
                         }
                     },
                     "additionalProperties": false

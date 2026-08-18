@@ -4,22 +4,19 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
-  Bug,
-  Code2,
-  Copy,
-  Eraser,
-  ExternalLink,
   BoxSelect,
+  Code2,
   Globe2,
   ListTree,
   Loader2,
+  Lock,
   MousePointer2,
   PanelBottom,
   RefreshCw,
   Search,
   Send,
   Sparkles,
-  Terminal,
+  Unlock,
   X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -27,7 +24,6 @@ import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
-  browserClearData,
   browserClose,
   browserCreate,
   browserGetDiagnostics,
@@ -40,7 +36,6 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
-  browserToggleDevtools,
   formatMarqueeContext,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
@@ -235,6 +230,12 @@ export function BrowserPanel({
   const [loadProgress, setLoadProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+
+  // 统一的错误显示：设置错误状态（内联显示）+ 可选 toast
+  function showError(message: string, toastToo = false) {
+    setError(message)
+    if (toastToo) toast.error(message)
+  }
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
   const [aiPanelTab, setAiPanelTab] = useState<'context' | 'marquee' | 'log'>('context')
   const [aiOperationMode, setAiOperationMode] = useState(false)
@@ -640,8 +641,7 @@ export function BrowserPanel({
       setAiPanelTab('context')
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      setError(message)
-      toast.error(message)
+      showError(message)
     } finally {
       setContextLoading(false)
     }
@@ -664,8 +664,7 @@ export function BrowserPanel({
       setAiPanelTab('log')
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      setError(message)
-      toast.error(message)
+      showError(message)
     } finally {
       setDiagnosticsLoading(false)
     }
@@ -686,8 +685,7 @@ export function BrowserPanel({
       toast.success(t('buttons.copied'))
     } catch (e) {
       const message = e instanceof Error ? e.message : t('browser.copyFailed', { defaultValue: '复制地址失败' })
-      setError(message)
-      toast.error(message)
+      showError(message)
     }
   }, [currentUrl, t, toast])
 
@@ -714,8 +712,7 @@ export function BrowserPanel({
       await browserSetMarquee(webviewLabel, true)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      setError(message)
-      toast.error(message)
+      showError(message)
       setMarqueeMode(false)
     }
   }, [status, webviewLabel, toast])
@@ -887,8 +884,7 @@ export function BrowserPanel({
       toast.success(t('browser.marqueeSent', { defaultValue: '已发送圈选上下文给 AI' }))
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      setError(message)
-      toast.error(message)
+      showError(message)
     } finally {
       setMarqueeSending(false)
     }
@@ -937,6 +933,7 @@ export function BrowserPanel({
   return (
     <div ref={rootRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
       <div ref={toolbarWidthRef} className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
+        {/* 导航按钮组 */}
         <div className="flex items-center gap-1">
           <button
             type="button"
@@ -967,9 +964,13 @@ export function BrowserPanel({
           </button>
         </div>
 
+        {/* 地址栏：安全指示 + favicon + 加载进度 */}
         <form onSubmit={handleSubmit} className="min-w-0 flex-1">
-          <div className="flex h-8 min-w-0 items-center gap-2 rounded-md border border-border-subtle bg-background-surface px-2 text-text-tertiary focus-within:border-primary/70 focus-within:text-text-secondary">
-            <Globe2 size={15} className="shrink-0" />
+          <div className="relative flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-border-subtle bg-background-surface px-2 text-text-tertiary focus-within:border-primary/70 focus-within:text-text-secondary">
+            {/* 安全指示 */}
+            <span className="shrink-0 text-text-tertiary" title={currentUrl.startsWith('https://') ? '连接安全 (HTTPS)' : '连接不安全'}>
+              {currentUrl.startsWith('https://') ? <Lock size={12} /> : <Unlock size={12} className="text-warning" />}
+            </span>
             <input
               value={address}
               onChange={(event) => setAddress(event.target.value)}
@@ -989,10 +990,18 @@ export function BrowserPanel({
             >
               <Search size={14} />
             </button>
+            {/* 加载进度条 */}
+            {loading && (
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden rounded-full">
+                <div className="h-full w-full animate-pulse rounded-full bg-primary" />
+              </div>
+            )}
           </div>
         </form>
 
+        {/* 工具按钮组 */}
         <div className="flex items-center gap-1">
+          <div className="mx-1 h-5 w-px bg-border-subtle" />
           <button
             type="button"
             className={clsx(taskButtonClass, toolbarWidth < 680 && 'hidden')}

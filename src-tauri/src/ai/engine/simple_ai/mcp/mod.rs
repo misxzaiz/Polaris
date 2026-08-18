@@ -7,27 +7,34 @@
  */
 
 mod client;
+mod session;
+mod transport;
 mod types;
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::{json, Value};
+use tokio::sync::RwLock;
 
 use crate::services::mcp_config_service::ResolvedExternalMcpServer;
 
 use super::tools::ToolOutcome;
 use client::McpClient;
+use session::McpSessionPool;
 use types::McpTool;
 
 /// MCP 工具名前缀分隔符：`mcp__{server}__{tool}`。
 pub(crate) const MCP_PREFIX: &str = "mcp__";
 
 pub(crate) struct McpClientPool {
-    clients: HashMap<String, Arc<McpClient>>,
+    /// 已 spawn 的 client（预 spawn 路径构造后只读；懒加载路径经 session_pool 写入）。
+    clients: RwLock<HashMap<String, Arc<McpClient>>>,
+    /// 懒加载会话池（`from_servers_lazy` 用）：首次 call 到未 spawn server 时经此拉起。
+    session_pool: Option<Arc<McpSessionPool>>,
     /// `mcp__{server}__{tool}` → (server_name, tool_name)
     tool_index: HashMap<String, (String, String)>,
-    /// 已缓存的 OpenAI function spec（spawn 后固定）。
+    /// 已缓存的 OpenAI function spec（预 spawn 后固定；懒加载路径为 Vec<Arc<dyn>> 收集）。
     cached_specs: Vec<Value>,
 }
 
@@ -76,9 +83,28 @@ impl McpClientPool {
         }
 
         Self {
-            clients,
+            clients: RwLock::new(clients),
+            session_pool: None,
             tool_index,
             cached_specs,
+        }
+    }
+
+    /// 懒加载构造：预注册所有 server 定义，**不 spawn 任何进程**。
+    ///
+    /// - 无预填充 `clients`（首次 call 未命中 → 经 `session_pool` 懒 spawn）；
+    /// - `tool_index`/`cached_specs` 为空——工具在首次调用时才知晓（需 spawn 才能
+    ///   tools/list）。这是与预 spawn 的本质差异：调用方应能容忍 tool_specs 首轮为空，
+    ///   model 侧工具列表随实际调用动态补齐（MCP 2026-07-28 无状态语义）。
+    /// - 接口与 `from_servers` 一致（`with_mcp`/`call` 无需改动）。
+    pub(crate) async fn from_servers_lazy(servers: Vec<ResolvedExternalMcpServer>) -> Self {
+        let session_pool = Arc::new(McpSessionPool::new());
+        session_pool.add_servers(servers).await;
+        Self {
+            clients: RwLock::new(HashMap::new()),
+            session_pool: Some(session_pool),
+            tool_index: HashMap::new(),
+            cached_specs: Vec::new(),
         }
     }
 
@@ -93,10 +119,29 @@ impl McpClientPool {
             Some(v) => v.clone(),
             None => return ToolOutcome::fail(format!("Unknown MCP tool: {}", mcp_name)),
         };
-        let client = match self.clients.get(&server_name) {
-            Some(c) => Arc::clone(c),
+        // 已 spawn 的 client 直接用。
+        let client_opt = self.clients.read().await.get(&server_name).cloned();
+        // 未 spawn：懒加载路径经 session_pool 拉起（存在且可 spawn）。
+        let client = match client_opt {
+            Some(c) => c,
             None => {
-                return ToolOutcome::fail(format!("MCP server not connected: {}", server_name))
+                match &self.session_pool {
+                    Some(pool) => match pool.get_client_by_name(&server_name).await {
+                        Some(c) => c,
+                        None => {
+                            return ToolOutcome::fail(format!(
+                                "MCP server not connected: {}",
+                                server_name
+                            ))
+                        }
+                    },
+                    None => {
+                        return ToolOutcome::fail(format!(
+                            "MCP server not connected: {}",
+                            server_name
+                        ))
+                    }
+                }
             }
         };
         match client.call_tool(&tool_name, args).await {
@@ -129,7 +174,7 @@ impl McpClientPool {
 
     /// 已连接的 server 数量（诊断用）。
     pub(crate) fn connected_count(&self) -> usize {
-        self.clients.len()
+        self.clients.blocking_read().len()
     }
 
     /// 检查某 MCP 工具名（`mcp__{srv}__{tool}`）是否已注册。
@@ -215,10 +260,29 @@ mod tests {
         assert_eq!(pool.connected_count(), 0);
     }
 
+    #[tokio::test]
+    async fn lazy_pool_starts_without_any_connection() {
+        // 懒加载构造：不 spawn 任何进程，connected_count 为 0。
+        let servers = vec![ResolvedExternalMcpServer {
+            plugin_id: "test".to_string(),
+            server_name: "lazy-srv".to_string(),
+            command: "nonexistent-command".to_string(),
+            args: Vec::new(),
+        }];
+        let pool = McpClientPool::from_servers_lazy(servers).await;
+        assert_eq!(pool.connected_count(), 0);
+        // tool_index 为空：懒加载在首次 call 前不知道工具列表。
+        assert!(pool.tool_specs().is_empty());
+        // 未 spawn → call 返回 "not connected" 而非崩溃。
+        let outcome = pool.call("mcp__lazy-srv__any_tool", &json!({})).await;
+        assert!(!outcome.success, "未 spawn 的懒加载 pool 应返回 fail");
+    }
+
     /// 直接构造空 pool（避免 async from_servers 在测试里 spawn 子进程）。
     fn futures_executor_pool() -> McpClientPool {
         McpClientPool {
-            clients: HashMap::new(),
+            clients: RwLock::new(HashMap::new()),
+            session_pool: None,
             tool_index: HashMap::new(),
             cached_specs: Vec::new(),
         }

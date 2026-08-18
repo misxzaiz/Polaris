@@ -643,3 +643,159 @@ impl AIEngine for PluginProcessEngine {
         self.sessions.get(session_id).is_some()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// engine-v1 适配器事件帧解析：覆盖协议注释里列出的全部事件类型，
+    /// 保证「插件适配器 ↔ PluginProcessEngine」契约在生产级回归时不漂移。
+    ///
+    /// 受 [[rust-lib-test-env-limit]] 约束，本机仅编译不运行，逻辑由 CI 执行。
+
+    #[test]
+    fn parse_assistant_message_struct_variant() {
+        let frame = json!({
+            "event": "ai_event",
+            "type": "assistant_message",
+            "session_id": "s1",
+            "content": "hello",
+            "is_delta": true
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame)
+            .expect("assistant_message 应解析为 AIEvent");
+        match ev {
+            AIEvent::AssistantMessage(m) => {
+                assert_eq!(m.session_id, "s1");
+                assert_eq!(m.content, "hello");
+                assert!(m.is_delta);
+            }
+            other => panic!("期望 AssistantMessage，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_session_end_struct_variant() {
+        let frame = json!({ "event": "ai_event", "type": "session_end", "session_id": "s1" });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("session_end 应解析为 AIEvent");
+        assert!(matches!(ev, AIEvent::SessionEnd(_)));
+    }
+
+    #[test]
+    fn parse_tool_call_start_tuple_variant() {
+        let frame = json!({
+            "event": "ai_event",
+            "type": "tool_call_start",
+            "session_id": "s1",
+            "tool": "bash",
+            "args": { "cmd": "ls -la" },
+            "call_id": "c1"
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("tool_call_start 应解析为 AIEvent");
+        match ev {
+            AIEvent::ToolCallStart(e) => {
+                assert_eq!(e.session_id, "s1");
+                assert_eq!(e.tool, "bash");
+                assert_eq!(e.args.get("cmd").and_then(|v| v.as_str()), Some("ls -la"));
+                assert_eq!(e.call_id.as_deref(), Some("c1"));
+            }
+            other => panic!("期望 ToolCallStart，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_call_start_missing_args_defaults_empty() {
+        // 无 args / 无 call_id → 默认空 map / None，不 panic。
+        let frame = json!({
+            "event": "ai_event", "type": "tool_call_start",
+            "session_id": "s1", "tool": "bash"
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("缺 args 也应解析");
+        match ev {
+            AIEvent::ToolCallStart(e) => {
+                assert!(e.args.is_empty());
+                assert!(e.call_id.is_none());
+            }
+            other => panic!("期望 ToolCallStart，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_call_end_tuple_variant() {
+        let frame = json!({
+            "event": "ai_event",
+            "type": "tool_call_end",
+            "session_id": "s1",
+            "tool": "bash",
+            "success": true,
+            "result": "some output",
+            "call_id": "c1"
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("tool_call_end 应解析为 AIEvent");
+        match ev {
+            AIEvent::ToolCallEnd(e) => {
+                assert_eq!(e.session_id, "s1");
+                assert_eq!(e.tool, "bash");
+                assert!(e.success);
+                assert_eq!(e.result.as_ref().and_then(|r| r.as_str()), Some("some output"));
+                assert_eq!(e.call_id.as_deref(), Some("c1"));
+            }
+            other => panic!("期望 ToolCallEnd，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_tool_call_end_null_result_ignored() {
+        // result: null → 视为无结果，不作为 Some(null) 存储。
+        let frame = json!({
+            "event": "ai_event", "type": "tool_call_end",
+            "session_id": "s1", "tool": "bash", "success": false, "result": null
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("null result 也应解析");
+        match ev {
+            AIEvent::ToolCallEnd(e) => {
+                assert!(!e.success);
+                assert!(e.result.is_none(), "null result 应被忽略");
+            }
+            other => panic!("期望 ToolCallEnd，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_usage_tuple_variant() {
+        let frame = json!({
+            "event": "ai_event", "type": "usage",
+            "session_id": "s1",
+            "input_tokens": 100, "output_tokens": 50,
+            "cache_creation_input_tokens": 10, "cache_read_input_tokens": 20,
+            "reasoning_output_tokens": 5, "context_window": 128000,
+            "total_cost_usd": 0.0123, "actual_model": "deepseek-v3"
+        });
+        let ev = PluginProcessEngine::parse_event_frame(&frame).expect("usage 应解析为 AIEvent");
+        match ev {
+            AIEvent::Usage(u) => {
+                assert_eq!(u.session_id, "s1");
+                assert_eq!(u.input_tokens, 100);
+                assert_eq!(u.output_tokens, 50);
+                assert_eq!(u.context_window, Some(128000));
+                assert_eq!(u.actual_model.as_deref(), Some("deepseek-v3"));
+            }
+            other => panic!("期望 Usage，得到 {:?}", other),
+        }
+    }
+
+    #[test]
+    fn parse_unknown_event_type_returns_none() {
+        let frame = json!({ "event": "ai_event", "type": "no_such_event", "session_id": "s1" });
+        assert!(PluginProcessEngine::parse_event_frame(&frame).is_none());
+    }
+
+    #[test]
+    fn parse_malformed_frame_returns_none() {
+        // 非对象 / 缺 type → None，不 panic。
+        assert!(PluginProcessEngine::parse_event_frame(&json!([1, 2, 3])).is_none());
+        assert!(PluginProcessEngine::parse_event_frame(&json!({ "event": "ai_event" })).is_none());
+        assert!(PluginProcessEngine::parse_event_frame(&serde_json::Value::Null).is_none());
+    }
+}

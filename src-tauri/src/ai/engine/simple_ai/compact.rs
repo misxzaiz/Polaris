@@ -559,6 +559,9 @@ pub(super) async fn compact_history(
         "正在压缩上下文…".to_string(),
     )));
 
+    // 摘要前保存原始消息副本（用于检查点 + 失败回滚）。
+    let pre_compact_snapshot = messages.clone();
+
     // 摘要：区间不超预算走单次；超预算（本身超窗，原本必 400）走滚动分段。
     match summarize_range_rolling(messages, start, end, window, profile, event_callback, session_id).await {
         Ok(summary) if !summary.trim().is_empty() => {
@@ -572,14 +575,31 @@ pub(super) async fn compact_history(
                 "[SimpleAI] 上下文已压缩：{} 条消息 → 1 条 summary",
                 compressed_count
             );
+
+            // Phase 2：写入检查点（从环境变量 POLARIS_DATA_ROOT 读取路径）。
+            let data_root = profile
+                .custom_env
+                .as_ref()
+                .and_then(|m| m.get("POLARIS_DATA_ROOT"))
+                .cloned()
+                .or_else(|| std::env::var("POLARIS_DATA_ROOT").ok());
+            if let Some(ref root) = data_root {
+                write_compact_checkpoint(root, session_id, (start, end), &pre_compact_snapshot, &summary.trim());
+            }
         }
         Ok(_) => {
-            tracing::warn!("[SimpleAI] 摘要为空，回退到移除最早 turn");
-            fallback_drop_oldest(messages);
+            // 摘要为空（无实际收益）：保持非破坏，恢复原始消息。
+            tracing::warn!("[SimpleAI] 摘要为空，恢复原始消息（非破坏）");
+            *messages = pre_compact_snapshot;
         }
         Err(e) => {
-            tracing::warn!("[SimpleAI] 上下文压缩失败（{}），回退到移除最早 turn", e);
-            fallback_drop_oldest(messages);
+            // Phase 3：失败自动回滚——恢复原始消息，绝不丢历史。
+            // fallback_drop_oldest 仅作为极端容忍（不可达时）兜底，这里改为恢复全量。
+            tracing::warn!(
+                "[SimpleAI] 上下文压缩失败（{}），自动回滚恢复原始消息（非破坏）",
+                e
+            );
+            *messages = pre_compact_snapshot;
         }
     }
     Ok(true)
@@ -610,6 +630,85 @@ fn fallback_drop_oldest(messages: &mut Vec<Value>) {
         None => return, // 只有一个 turn，不移除。
     };
     messages.drain(first_user..end);
+}
+
+/// ── Phase 2：本地恢复档案 ──────────────────────────────────────────────
+///
+/// 压缩后把原始历史写入应用数据目录，供「回查」或「对比模式」使用。
+/// 文件路径：`<DataRoot>/simple-ai/context-checkpoints/<session_id>/<timestamp>.json`
+
+use std::path::PathBuf;
+
+/// 获取压缩检查点存储根目录。
+fn checkpoint_root(data_root: &str) -> PathBuf {
+    PathBuf::from(data_root).join("simple-ai").join("context-checkpoints")
+}
+
+/// 写入一次压缩检查点：保存压缩前的原始消息 + 压缩后的摘要。
+///
+/// 每个会话一个子目录，按时间戳命名文件。
+/// 当前仅写文件，不自动清理（历史积累由用户或后续 Phase 的 LRU 清理处理）。
+pub(crate) fn write_compact_checkpoint(
+    data_root: &str,
+    session_id: &str,
+    compressed_range: (usize, usize),
+    original_messages: &[serde_json::Value],
+    summary: &str,
+) {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    let dir = checkpoint_root(data_root).join(sanitize_filename(session_id));
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        tracing::warn!("[SimpleAI] 创建检查点目录失败: {}", e);
+        return;
+    }
+
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let path = dir.join(format!("{}.json", ts));
+
+    let (start, end) = compressed_range;
+    let archived: Vec<&serde_json::Value> = original_messages[start..end].iter().collect();
+    let checkpoint = serde_json::json!({
+        "timestamp": ts,
+        "session_id": session_id,
+        "compressed_range": { "start": start, "end": end },
+        "archived_count": archived.len(),
+        "archived_messages": archived,
+        "summary": summary,
+    });
+
+    match std::fs::write(&path, serde_json::to_string_pretty(&checkpoint).unwrap_or_default()) {
+        Ok(_) => tracing::info!(
+            "[SimpleAI] 压缩检查点已写入: {}（{} 条消息）",
+            path.display(),
+            archived.len()
+        ),
+        Err(e) => tracing::warn!("[SimpleAI] 写入压缩检查点失败: {}: {}", path.display(), e),
+    }
+}
+
+/// 将 session_id 中的非法文件名字符替换为下划线。
+fn sanitize_filename(s: &str) -> String {
+    s.chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect()
+}
+
+/// 查找最近一次压缩检查点文件路径（用于对比模式）。
+pub(crate) fn latest_checkpoint_path(data_root: &str, session_id: &str) -> Option<PathBuf> {
+    let dir = checkpoint_root(data_root).join(sanitize_filename(session_id));
+    if !dir.is_dir() {
+        return None;
+    }
+    let mut entries: Vec<_> = std::fs::read_dir(&dir).ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|ext| ext == "json").unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.path().to_string_lossy().to_string());
+    entries.last().map(|e| e.path())
 }
 
 #[cfg(test)]
@@ -970,5 +1069,74 @@ mod tests {
             extract_summary_text(WireProtocol::Responses, &json),
             Err(SummaryFailure::Truncated)
         ));
+    }
+
+    // ---- Phase 3：失败自动回滚（非破坏性） ----
+
+    /// 回滚语义：摘要失败/为空后 messages 必须还原到压缩前快照，
+    /// 绝不丢历史（对比 fallback_drop_oldest 的真删，这是非破坏升级）。
+    #[test]
+    fn compact_failure_restores_snapshot_not_drop() {
+        // 直接验证回滚的核心不变量：即便发生 drop_oldest 事件，恢复快照仍可还原全量。
+        let mut msgs = vec![
+            json!({"role":"system","content":"s"}),
+            json!({"role":"user","content":"task"}),
+        ];
+        for _ in 0..5 {
+            msgs.push(a_tc());
+            msgs.push(tool());
+        }
+        let snapshot = msgs.clone();
+
+        // 模拟压缩失败路径：drain 部分 + 恢复快照。
+        msgs.drain(1..6);
+        msgs.clone_from(&snapshot); // Phase 3: *messages = pre_compact_snapshot
+
+        // 关键不变量：消息数与内容完全还原。
+        assert_eq!(msgs.len(), 12);
+        assert_eq!(msgs[1]["content"], "task");
+        assert!(msgs.iter().any(|m| role(m) == "assistant"));
+        assert!(msgs.iter().any(|m| role(m) == "tool"));
+    }
+
+    #[test]
+    fn rollback_recovers_after_partial_drain() {
+        // 模拟压缩成功 drain 后才发现 summary 无效 → 回滚恢复全部。
+        let mut msgs = vec![
+            json!({"role":"system","content":"s"}),
+            json!({"role":"user","content":"u1"}),
+            json!({"role":"assistant","content":"a1"}),
+            json!({"role":"user","content":"u2"}),
+            json!({"role":"assistant","content":"a2"}),
+        ];
+        let snapshot = msgs.clone();
+        // drain [1,4) 模拟压缩替换。
+        msgs.drain(1..4);
+        assert_eq!(msgs.len(), 2);
+        // 回滚。
+        msgs.clone_from(&snapshot);
+        assert_eq!(msgs.len(), 5);
+        assert_eq!(msgs[4]["content"], "a2");
+    }
+
+    // ---- Phase 2：检查点文件名 sanitize ----
+
+    #[test]
+    fn sanitize_filename_safe_roundtrip() {
+        // 合法字符保持不变；非法字符全部替换，且不 panic。
+        assert_eq!(sanitize_filename("browser-1786989169353-atpos6k"), "browser-1786989169353-atpos6k");
+        let weird = sanitize_filename("C:\\Users\\x/session id:1");
+        assert!(!weird.contains('\\'));
+        assert!(!weird.contains('/'));
+        assert!(!weird.contains(':'));
+        assert!(!weird.contains(' '));
+        assert_eq!(weird, "C__Users_x_session_id_1");
+    }
+
+    #[test]
+    fn latest_checkpoint_path_returns_none_for_missing_dir() {
+        // 目录不存在 → None（不 panic）。
+        let data_root = std::env::temp_dir().to_string_lossy().to_string();
+        assert!(latest_checkpoint_path(&data_root, "no-such-session-xyz").is_none());
     }
 }

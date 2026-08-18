@@ -5,6 +5,9 @@
  *
  * 生命周期：`McpClient::spawn` 完成 initialize 握手 + tools/list 缓存；
  * `call_tool` 发 tools/call；`Drop` 时 kill 子进程。
+ *
+ * 传输层已抽象：spawn 复用 `StdioTransport::spawn_with_reader`，stdin 写入经
+ * `transport.send_line`，stdout 由后台 reader task 按 id 路由。
  */
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,12 +15,13 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::{Child, ChildStdin, ChildStdout};
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::ChildStdout;
 use tokio::sync::{oneshot, Mutex, RwLock};
 
 use crate::error::{AppError, Result};
 
+use super::transport::{McpTransport, ProtocolVersion, StdioTransport};
 use super::types::{
     InitializeResult, JsonRpcRequest, JsonRpcResponse, McpCallResult, McpTool, ToolsListResult,
 };
@@ -32,10 +36,11 @@ const MCP_CALL_TIMEOUT_SECS: u64 = 600;
 /// 单个 MCP server 的客户端连接。
 pub(crate) struct McpClient {
     server_name: String,
-    child: Child,
-    stdin: Arc<Mutex<ChildStdin>>,
+    /// 传输层（Stdio 或 HTTP）。Stdio 经后台 reader 路由，HTTP 走直连请求-响应。
+    transport: Arc<dyn McpTransport>,
     next_id: AtomicU64,
-    /// pending 请求的 response sender（按 id 路由）。
+    /// pending 请求的 response sender（按 id 路由，仅 stdio 后台 reader 使用；
+    /// HTTP 请求-响应直连不依赖）。
     pending: Arc<Mutex<std::collections::HashMap<u64, oneshot::Sender<JsonRpcResponse>>>>,
     tools: RwLock<Vec<McpTool>>,
 }
@@ -48,34 +53,10 @@ impl McpClient {
         args: &[String],
         env: &std::collections::HashMap<String, String>,
     ) -> Result<Self> {
-        let mut cmd = tokio::process::Command::new(command);
-        cmd.args(args);
-        for (k, v) in env {
-            cmd.env(k, v);
-        }
-        cmd.stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::piped());
-        #[cfg(windows)]
-        {
-            // CREATE_NO_WINDOW：避免子进程弹窗（tokio Command 在 Windows 上原生支持 creation_flags）。
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            cmd.creation_flags(CREATE_NO_WINDOW);
-        }
-        let mut child = cmd.spawn().map_err(|e| {
-            AppError::ProcessError(format!(
-                "spawn MCP server '{}' ({}) failed: {}",
-                server_name, command, e
-            ))
-        })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| AppError::ProcessError("MCP server stdin not captured".to_string()))?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| AppError::ProcessError("MCP server stdout not captured".to_string()))?;
+        // 复用 StdioTransport spawn 逻辑，避免重复的 Command 构造/CREATE_NO_WINDOW。
+        let (transport, stdout) =
+            StdioTransport::spawn_with_reader(server_name.clone(), command, args, env).await?;
+        let transport = Arc::new(transport);
 
         let pending: Arc<Mutex<std::collections::HashMap<u64, oneshot::Sender<JsonRpcResponse>>>> =
             Arc::new(Mutex::new(std::collections::HashMap::new()));
@@ -86,8 +67,7 @@ impl McpClient {
 
         let client = Self {
             server_name: server_name.clone(),
-            child,
-            stdin: Arc::new(Mutex::new(stdin)),
+            transport,
             next_id: AtomicU64::new(1),
             pending,
             tools: RwLock::new(Vec::new()),
@@ -111,8 +91,23 @@ impl McpClient {
     }
 
     async fn initialize(&self) -> Result<()> {
+        // 协议版本单一来源：ProtocolVersion::current()。
+        let version = ProtocolVersion::current();
+
+        // 2026-07-28 无状态协议：移除 initialize 握手 + notifications/initialized。
+        // needs_handshake() 控制是否握手——默认（2025-06-18）照旧握手，零行为变更；
+        // 切换 current() 到 V2026_07_28 后自动走无状态路径（跳握手/通知）。
+        if !version.needs_handshake() {
+            tracing::info!(
+                "[SimpleAI-MCP] '{}' 使用无状态协议 {}，跳过 initialize 握手",
+                self.server_name,
+                version.as_str()
+            );
+            return Ok(());
+        }
+
         let params = serde_json::json!({
-            "protocolVersion": "2025-06-18",
+            "protocolVersion": version.as_str(),
             "capabilities": {},
             "clientInfo": { "name": "polaris-simple-ai", "version": "1.0" }
         });
@@ -121,9 +116,10 @@ impl McpClient {
             .map_err(|e| AppError::ProcessError(format!("parse initialize from '{}': {}", self.server_name, e)))?;
         if let Some(pv) = init.protocol_version.as_deref() {
             tracing::info!(
-                "[SimpleAI-MCP] '{}' 协商协议版本: {}（client 请求 2025-06-18）",
+                "[SimpleAI-MCP] '{}' 协商协议版本: {}（client 请求 {}）",
                 self.server_name,
-                pv
+                pv,
+                version.as_str()
             );
         }
         // 发 notifications/initialized（无 id，无响应）。
@@ -146,21 +142,8 @@ impl McpClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| AppError::ProcessError(format!("serialize jsonrpc request: {}", e)))?;
-        {
-            let mut stdin = self.stdin.lock().await;
-            stdin
-                .write_all(line.as_bytes())
-                .await
-                .map_err(|e| AppError::ProcessError(format!("write to MCP stdin: {}", e)))?;
-            stdin
-                .write_all(b"\n")
-                .await
-                .map_err(|e| AppError::ProcessError(format!("write newline to MCP stdin: {}", e)))?;
-            stdin
-                .flush()
-                .await
-                .map_err(|e| AppError::ProcessError(format!("flush MCP stdin: {}", e)))?;
-        }
+        // 经由 transport 发送，统一 stdin 写入逻辑。
+        self.transport.send_line(&line).await?;
 
         let response = tokio::time::timeout(Duration::from_secs(MCP_CALL_TIMEOUT_SECS), rx)
             .await
@@ -206,14 +189,7 @@ impl McpClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| AppError::ProcessError(format!("serialize notification: {}", e)))?;
-        let mut stdin = self.stdin.lock().await;
-        stdin
-            .write_all(line.as_bytes())
-            .await
-            .map_err(|e| AppError::ProcessError(format!("write notification: {}", e)))?;
-        stdin.write_all(b"\n").await?;
-        stdin.flush().await?;
-        Ok(())
+        self.transport.send_line(&line).await
     }
 
     /// 调用工具。
@@ -236,8 +212,8 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        // 尽力 kill 子进程；忽略错误。
-        let _ = self.child.start_kill();
+        // 尽力终止底层资源（stdio kill 子进程；HTTP no-op）。经 transport 同步终止。
+        self.transport.shutdown_sync();
     }
 }
 
@@ -277,5 +253,52 @@ async fn reader_task(
                 let _ = tx.send(response);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// 无状态化决策：协议版本决定是否跳过 initialize 握手。
+    /// 2026-07-28 无状态 → 跳；有状态版本 → 照常握手（零行为变更）。
+    #[test]
+    fn handshake_skipped_for_stateless_protocol() {
+        assert!(ProtocolVersion::V2026_07_28.needs_handshake() == false);
+        assert!(ProtocolVersion::V2025_06_18.needs_handshake() == true);
+        assert!(ProtocolVersion::V2024_11_05.needs_handshake() == true);
+    }
+
+    #[test]
+    fn stateless_version_maps_to_string() {
+        assert_eq!(ProtocolVersion::V2026_07_28.as_str(), "2026-07-28");
+        assert_eq!(
+            ProtocolVersion::from_server("2026-07-28"),
+            ProtocolVersion::V2026_07_28
+        );
+    }
+
+    /// reader_task 的路由特征：响应帧按 id 分发到 pending oneshot。
+    /// 无 id（通知）跳过。真实 worker 由 CI 集成测试覆盖。
+    #[test]
+    fn response_id_is_routable_number() {
+        let resp: JsonRpcResponse =
+            serde_json::from_value(json!({ "id": 42, "result": { "ok": true } })).unwrap();
+        let id = resp.id.as_ref().and_then(|v| v.as_u64());
+        assert_eq!(id, Some(42));
+        assert!(resp.result.is_some());
+    }
+
+    #[test]
+    fn notification_frame_has_no_id() {
+        let notif: JsonRpcResponse = serde_json::from_value(json!({ "jsonrpc": "2.0" })).unwrap();
+        assert!(notif.id.is_none());
+
+        // 与 mock 适配器 engine.js 发送的帧一致：事件帧不带 id。
+        let event_frame: Value = json!({
+            "event": "ai_event", "type": "session_end", "session_id": "s1"
+        });
+        assert!(event_frame.get("id").is_none());
     }
 }

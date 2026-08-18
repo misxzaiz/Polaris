@@ -66,6 +66,10 @@ pub enum AppError {
     #[error("操作超时: {0}")]
     TimeoutWithMessage(String),
 
+    /// MCP 传输层超时（用于 transport.rs 的 read_line 超时场景）
+    #[error("MCP 传输超时: {0}")]
+    McpTransportTimeout(String),
+
     /// 网络错误
     #[error("Network error: {0}")]
     NetworkError(String),
@@ -127,6 +131,14 @@ pub enum AppError {
     /// 其他错误
     #[error("Unknown error: {0}")]
     Unknown(String),
+
+    /// MCP 传输层不支持（如 HTTP 传输未实现时）
+    #[error("不支持的传输层: {0}")]
+    UnsupportedTransport(String),
+
+    /// MCP 超时错误（transport.rs 专用）
+    #[error("MCP 超时: {0}")]
+    TimeoutError(String),
 }
 
 impl AppError {
@@ -144,6 +156,7 @@ impl AppError {
             AppError::InvalidPath(path) => format!("无效路径: {}", path),
             AppError::Timeout => "操作超时".to_string(),
             AppError::TimeoutWithMessage(msg) => msg.clone(),
+            AppError::McpTransportTimeout(msg) => format!("MCP 传输超时: {}", msg),
             AppError::NetworkError(e) => format!("网络错误: {}", e),
             AppError::AuthError(e) => format!("认证错误: {}", e),
             AppError::ApiError(e) => format!("API 错误: {}", e),
@@ -161,6 +174,8 @@ impl AppError {
             }
             // 业务错误码原样透传（前端按 i18n key 翻译，不加前缀）
             AppError::ClientError(code) => code.clone(),
+            AppError::UnsupportedTransport(e) => format!("不支持的传输层: {}", e),
+            AppError::TimeoutError(e) => format!("MCP 超时: {}", e),
             AppError::Unknown(e) => format!("未知错误: {}", e),
         }
     }

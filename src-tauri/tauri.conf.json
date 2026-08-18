@@ -10,18 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "Polaris",
-        "width": 1200,
-        "height": 800,
-        "decorations": false,
-        "hiddenTitle": true,
-        "devtools": true,
-        "additionalBrowserArgs": "--disable-features=CalculateNativeWinOcclusion --disable-gpu-vsync --disable-smooth-scrolling"
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

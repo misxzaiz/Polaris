@@ -21,6 +21,7 @@ import { validateCustomCss } from '@/utils/cssValidator';
 import { ColorPicker } from './ColorPicker';
 import { ThemePreview } from './ThemePreview';
 import { PRESET_AVATARS, PRESET_BACKGROUNDS } from '@/data/themeAssets';
+import { CssEditor } from './CssEditor';
 
 interface ThemeEditorProps {
   theme: ThemeDefinition;
@@ -65,7 +66,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
   const [activeColorSection, setActiveColorSection] = React.useState<string>('primary');
   const [editingColorKey, setEditingColorKey] = React.useState<string | null>(null);
   const [editingColorValue, setEditingColorValue] = React.useState<string>('');
-  const [activeTab, setActiveTab] = React.useState<'colors' | 'typography' | 'shape' | 'immersive' | 'layout' | 'css'>('colors');
+  const [activeTab, setActiveTab] = React.useState<'colors' | 'typography' | 'shape' | 'motion' | 'immersive' | 'layout' | 'css'>('colors');
   const [cssError, setCssError] = React.useState<string | null>(null);
 
   // 实时预览：每次 draft 变化时同步到 DOM（全应用变化）
@@ -120,6 +121,13 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
     }));
   };
 
+  const updateMotion = (patch: Partial<ThemeDefinition['motion']>) => {
+    setDraft((prev) => ({
+      ...prev,
+      motion: { ...(prev.motion || {}), ...patch } as ThemeDefinition['motion'],
+    }));
+  };
+
   const updateLayout = (patch: Partial<ThemeDefinition['layout']>) => {
     setDraft((prev) => ({
       ...prev,
@@ -169,6 +177,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
     { key: 'colors', label: '颜色' },
     { key: 'typography', label: '排版' },
     { key: 'shape', label: '形状' },
+    { key: 'motion', label: '动效' },
     { key: 'immersive', label: '沉浸' },
     { key: 'layout', label: '布局' },
     { key: 'css', label: '自定义CSS' },
@@ -197,7 +206,18 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && handleClose()}>
-      <div className="w-[860px] max-h-[88vh] bg-surface rounded-2xl border border-border shadow-2xl flex flex-col overflow-hidden">
+      {draft.immersive?.enabled && (
+        <div className="fixed inset-0 z-40 pointer-events-none"
+          style={{
+            background: draft.immersive?.wallpaper?.image ? `url(${draft.immersive.wallpaper.image}) center/cover no-repeat` : undefined,
+            opacity: (draft.immersive?.wallpaper?.opacity ?? 0.15) * 100 + '%',
+          }}
+        />
+      )}
+      <div className="w-[860px] max-h-[88vh] bg-surface rounded-2xl border border-border shadow-2xl flex flex-col overflow-hidden" style={{
+        backgroundColor: draft.immersive?.layerOpacity?.surface ? `rgba(30, 30, 30, ${1 - draft.immersive.layerOpacity.surface})` : undefined,
+        backdropFilter: draft.immersive?.effects?.panelBlur ? `blur(${draft.immersive.effects.panelBlur}px)` : undefined,
+      }}>
         {/* 头部 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
           <h2 className="text-base font-semibold text-text-primary">
@@ -479,6 +499,76 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                 </div>
               )}
 
+              {/* L3 动效 */}
+              {activeTab === 'motion' && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-text-primary">过渡时长</h4>
+                    <Slider label="快" value={parseInt(draft.motion?.transitionFast || '150') || 150} min={50} max={500} step={10} suffix="ms"
+                      onChange={(v) => updateMotion({ transitionFast: `${v}ms` })} />
+                    <Slider label="中" value={parseInt(draft.motion?.transitionNormal || '250') || 250} min={100} max={800} step={10} suffix="ms"
+                      onChange={(v) => updateMotion({ transitionNormal: `${v}ms` })} />
+                    <Slider label="慢" value={parseInt(draft.motion?.transitionSlow || '400') || 400} min={200} max={1500} step={50} suffix="ms"
+                      onChange={(v) => updateMotion({ transitionSlow: `${v}ms` })} />
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-text-primary">缓动函数</h4>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-text-secondary w-20 shrink-0">默认</label>
+                      <select
+                        value={draft.motion?.easeDefault || 'ease'}
+                        onChange={(e) => updateMotion({ easeDefault: e.target.value })}
+                        className="flex-1 px-2 py-1.5 text-xs bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
+                      >
+                        {EASE_PRESETS.map((e) => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-text-secondary w-20 shrink-0">进入</label>
+                      <select
+                        value={draft.motion?.easeIn || 'ease-in'}
+                        onChange={(e) => updateMotion({ easeIn: e.target.value })}
+                        className="flex-1 px-2 py-1.5 text-xs bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
+                      >
+                        {EASE_PRESETS.map((e) => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-text-secondary w-20 shrink-0">退出</label>
+                      <select
+                        value={draft.motion?.easeOut || 'ease-out'}
+                        onChange={(e) => updateMotion({ easeOut: e.target.value })}
+                        className="flex-1 px-2 py-1.5 text-xs bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
+                      >
+                        {EASE_PRESETS.map((e) => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-text-secondary w-20 shrink-0">进出</label>
+                      <select
+                        value={draft.motion?.easeInOut || 'ease-in-out'}
+                        onChange={(e) => updateMotion({ easeInOut: e.target.value })}
+                        className="flex-1 px-2 py-1.5 text-xs bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary"
+                      >
+                        {EASE_PRESETS.map((e) => <option key={e} value={e}>{e}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-medium text-text-primary">辅助功能</h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={draft.motion?.motionReduce ?? false}
+                        onChange={(e) => updateMotion({ motionReduce: e.target.checked })}
+                        className="rounded border-border-subtle"
+                      />
+                      <span className="text-xs text-text-secondary">减弱动画（尊重 prefers-reduced-motion）</span>
+                    </label>
+                  </div>
+                </div>
+              )}
+
               {/* L4 沉浸 */}
               {activeTab === 'immersive' && (
                 <div className="space-y-3">
@@ -703,12 +793,10 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
                       {cssError}
                     </div>
                   )}
-                  <textarea
+                  <CssEditor
                     value={draft.customCss ?? ''}
-                    onChange={(e) => handleCustomCssChange(e.target.value)}
-                    placeholder={'/* 示例：自定义按钮圆角 */\n:root {\n  --radius-md: 12px;\n}'}
-                    className="w-full h-48 px-3 py-2 text-xs font-mono bg-background-base border border-border rounded-lg text-text-primary outline-none focus:border-primary resize-none"
-                    style={{ fontFamily: 'var(--font-mono, monospace)' }}
+                    onChange={(v) => handleCustomCssChange(v)}
+                    onValidationError={(err) => setCssError(err)}
                   />
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] text-text-muted">

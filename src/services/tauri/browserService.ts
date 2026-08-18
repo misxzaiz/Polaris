@@ -95,6 +95,7 @@ export interface BrowserInteractiveElement {
   min?: number | null
   max?: number | null
   step?: number | null
+  crossOrigin?: boolean | null
 }
 
 export interface BrowserConsoleMessage {
@@ -252,6 +253,15 @@ export interface BrowserBounds {
   y: number
   width: number
   height: number
+}
+
+export interface BrowserInteractionResult {
+  ok: boolean
+  action: string
+  index: number | null
+  text: string
+  url: string
+  message: string
 }
 
 export function makeBrowserWebviewLabel(tabId: string): string {
@@ -415,4 +425,77 @@ export async function browserGetRegionScreenshot(
   rect: BrowserMarqueeRect,
 ): Promise<BrowserScreenshot> {
   return invoke<BrowserScreenshot>('browser_get_region_screenshot', { label, region: rect })
+}
+
+// ── 浏览器新命令（Phase 1 P0/P1） ──────────────────────────────────────
+
+export interface BrowserWaitOptions {
+  condition: 'url_change' | 'text_appear' | 'element_appear' | 'network_idle' | 'navigation' | 'timeout'
+  text?: string | null
+  index?: number | null
+  ms?: number | null
+  timeoutMs?: number | null
+}
+
+export async function browserWait(
+  label: string,
+  options: BrowserWaitOptions,
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_wait', {
+    label,
+    condition: options.condition,
+    text: options.text ?? null,
+    index: options.index ?? null,
+    ms: options.ms ?? null,
+    timeoutMs: options.timeoutMs ?? null,
+  })
+}
+
+export async function browserScroll(
+  label: string,
+  mode: 'to_element' | 'by' | 'to' | 'top' | 'bottom' | 'up' | 'down' | 'left' | 'right',
+  options?: {
+    index?: number
+    text?: string
+    x?: number
+    y?: number
+    amount?: number
+  },
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_scroll', {
+    label,
+    mode,
+    index: options?.index ?? null,
+    text: options?.text ?? null,
+    x: options?.x ?? null,
+    y: options?.y ?? null,
+    amount: options?.amount ?? null,
+  })
+}
+
+export async function browserPressKey(
+  label: string,
+  keys: string,
+  options?: { index?: number; text?: string },
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_press_key', {
+    label,
+    keys,
+    index: options?.index ?? null,
+    text: options?.text ?? null,
+  })
+}
+
+export async function browserTypeText(
+  label: string,
+  text: string,
+  options?: { index?: number; elementText?: string; delayMs?: number },
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_type_text', {
+    label,
+    text,
+    index: options?.index ?? null,
+    elementText: options?.elementText ?? null,
+    delayMs: options?.delayMs ?? null,
+  })
 }
