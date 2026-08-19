@@ -72,7 +72,7 @@ use commands::context::{
     context_remove, context_clear,
     ide_report_current_file, ide_report_file_structure, ide_report_diagnostics,
 };
-#[cfg(feature = "tauri-app")]
+#[cfg(all(feature = "tauri-app", feature = "git"))]
 use commands::git::{
     git_is_repository, git_init_repository, git_get_status, git_get_diffs,
     git_get_worktree_diff, git_get_index_diff, git_get_worktree_file_diff, git_get_index_file_diff,
@@ -643,6 +643,7 @@ pub fn run() {
             }
 
             // 索引引擎 → 前端事件桥（IndexStatus 推送）
+            #[cfg(feature = "lsp-index")]
             {
                 let app_handle = app.handle().clone();
                 state.lsp_index_service.set_status_listener(move |status| {
@@ -871,62 +872,119 @@ pub fn run() {
             ide_report_file_structure,
             ide_report_diagnostics,
             // Git 相关
+            #[cfg(feature = "git")]
             git_is_repository,
+            #[cfg(feature = "git")]
             git_init_repository,
+            #[cfg(feature = "git")]
             git_get_status,
+            #[cfg(feature = "git")]
             git_get_diffs,
+            #[cfg(feature = "git")]
             git_get_worktree_diff,
+            #[cfg(feature = "git")]
             git_get_index_diff,
+            #[cfg(feature = "git")]
             git_get_worktree_file_diff,
+            #[cfg(feature = "git")]
             git_get_index_file_diff,
+            #[cfg(feature = "git")]
             git_get_branches,
+            #[cfg(feature = "git")]
             git_create_branch,
+            #[cfg(feature = "git")]
             git_checkout_branch,
+            #[cfg(feature = "git")]
             git_delete_branch,
+            #[cfg(feature = "git")]
             git_rename_branch,
+            #[cfg(feature = "git")]
             git_merge_branch,
+            #[cfg(feature = "git")]
             git_rebase_branch,
+            #[cfg(feature = "git")]
             git_rebase_abort,
+            #[cfg(feature = "git")]
             git_rebase_continue,
+            #[cfg(feature = "git")]
             git_cherry_pick,
+            #[cfg(feature = "git")]
             git_cherry_pick_abort,
+            #[cfg(feature = "git")]
             git_cherry_pick_continue,
+            #[cfg(feature = "git")]
             git_revert,
+            #[cfg(feature = "git")]
             git_revert_abort,
+            #[cfg(feature = "git")]
             git_revert_continue,
+            #[cfg(feature = "git")]
             git_checkout_commit,
+            #[cfg(feature = "git")]
             git_reset,
+            #[cfg(feature = "git")]
             git_get_tags,
+            #[cfg(feature = "git")]
             git_create_tag,
+            #[cfg(feature = "git")]
             git_delete_tag,
+            #[cfg(feature = "git")]
             git_blame_file,
+            #[cfg(feature = "git")]
             git_get_gitignore,
+            #[cfg(feature = "git")]
             git_save_gitignore,
+            #[cfg(feature = "git")]
             git_add_to_gitignore,
+            #[cfg(feature = "git")]
             git_get_gitignore_templates,
+            #[cfg(feature = "git")]
             git_commit_changes,
+            #[cfg(feature = "git")]
             git_stage_file,
+            #[cfg(feature = "git")]
             git_unstage_file,
+            #[cfg(feature = "git")]
             git_discard_changes,
+            #[cfg(feature = "git")]
             git_get_remotes,
+            #[cfg(feature = "git")]
             git_add_remote,
+            #[cfg(feature = "git")]
             git_remove_remote,
+            #[cfg(feature = "git")]
             git_detect_host,
+            #[cfg(feature = "git")]
             git_push_branch,
+            #[cfg(feature = "git")]
             git_push_set_upstream,
+            #[cfg(feature = "git")]
             git_create_pr,
+            #[cfg(feature = "git")]
             git_get_pr_status,
+            #[cfg(feature = "git")]
             git_pull,
+            #[cfg(feature = "git")]
             git_get_log,
+            #[cfg(feature = "git")]
             git_get_commit_details,
+            #[cfg(feature = "git")]
             git_get_file_history,
+            #[cfg(feature = "git")]
             git_batch_stage,
+            #[cfg(feature = "git")]
             git_stash_save,
+            #[cfg(feature = "git")]
             git_stash_list,
+            #[cfg(feature = "git")]
             git_stash_pop,
+            #[cfg(feature = "git")]
             git_stash_drop,
+            #[cfg(feature = "git")]
             test_param_serialization,
+            #[cfg(feature = "git")]
             write_file_absolute,
+            #[cfg(feature = "git")]
             read_file_absolute,
             // 翻译相关
             baidu_translate,
@@ -1125,22 +1183,22 @@ pub fn run() {
             commands::history_index::history_search,
             commands::history_index::history_mark,
             // LSP 语言服务器相关
-            commands::lsp::lsp_start,
-            commands::lsp::lsp_send,
-            commands::lsp::lsp_stop,
-            commands::lsp::lsp_list_sessions,
-            commands::lsp::lsp_config_list,
-            commands::lsp::lsp_config_upsert,
-            commands::lsp::lsp_config_remove,
-            commands::lsp::lsp_config_toggle,
-            commands::lsp::lsp_check_command,
-            commands::lsp::lsp_index_references,
-            commands::lsp::lsp_index_definition,
-            commands::lsp::lsp_index_open,
-            commands::lsp::lsp_index_close,
-            commands::lsp::lsp_index_rebuild,
-            commands::lsp::lsp_index_status,
-            commands::lsp::lsp_index_update_file,
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
+            #[cfg(feature = "lsp-index")]
             // 模型 Profile 命令
             test_model_profile_connection,
             fetch_models_for_profile,

@@ -265,63 +265,8 @@ pub async fn handle_ipc_bridge(
         "download_file_binary" => dispatch_download_file_binary(&args).await,
 
         // ── Git ──────────────────────────────────────────────────────────────
-        "git_is_repository" => dispatch_git_is_repository(&args),
-        "git_get_status" => dispatch_git_get_status(&args),
-        "git_get_diffs" => dispatch_git_get_diffs(&args),
-        "git_get_log" => dispatch_git_get_log(&args),
-        "git_get_commit_details" => dispatch_git_get_commit_details(&args),
-        "git_get_file_history" => dispatch_git_get_file_history(&args),
-        "git_init_repository" => dispatch_git_init_repository(&args),
-        "git_commit_changes" => dispatch_git_commit_changes(&args).await,
-        "git_create_branch" => dispatch_git_create_branch(&args),
-        "git_rename_branch" => dispatch_git_rename_branch(&args),
-        "git_create_tag" => dispatch_git_create_tag(&args),
-        "git_merge_branch" => dispatch_git_merge_branch(&args),
-        "git_add_remote" => dispatch_git_add_remote(&args),
-        "git_push_branch" => dispatch_git_push_branch(&args),
-        "git_push_set_upstream" => dispatch_git_push_set_upstream(&args),
-        "git_batch_stage" => dispatch_git_batch_stage(&args),
-        "git_stash_save" => dispatch_git_stash_save(&args),
-        "git_save_gitignore" => dispatch_git_save_gitignore(&args),
-        "git_add_to_gitignore" => dispatch_git_add_to_gitignore(&args),
-        "git_create_pr" => dispatch_git_create_pr(&args).await,
-        "git_pull" => dispatch_git_pull(&args).await,
-        "git_get_gitignore_templates" => dispatch_get_gitignore_templates(),
-        // Git simple1 (workspacePath only)
-        "git_get_branches" => dispatch_git_simple1("git_get_branches", &args, crate::commands::git::git_get_branches),
-        "git_get_tags" => dispatch_git_simple1("git_get_tags", &args, crate::commands::git::git_get_tags),
-        "git_get_remotes" => dispatch_git_simple1("git_get_remotes", &args, crate::commands::git::git_get_remotes),
-        "git_get_stash_list" | "git_stash_list" => dispatch_git_simple1("git_stash_list", &args, crate::commands::git::git_stash_list),
-        "git_get_worktree_diff" => dispatch_git_simple1("git_get_worktree_diff", &args, crate::commands::git::git_get_worktree_diff),
-        "git_get_index_diff" => dispatch_git_simple1("git_get_index_diff", &args, crate::commands::git::git_get_index_diff),
-        "git_get_gitignore" => dispatch_git_simple1("git_get_gitignore", &args, crate::commands::git::git_get_gitignore),
-        "git_rebase_abort" => dispatch_git_simple1("git_rebase_abort", &args, crate::commands::git::git_rebase_abort),
-        "git_rebase_continue" => dispatch_git_simple1("git_rebase_continue", &args, crate::commands::git::git_rebase_continue),
-        "git_cherry_pick_abort" => dispatch_git_simple1("git_cherry_pick_abort", &args, crate::commands::git::git_cherry_pick_abort),
-        "git_cherry_pick_continue" => dispatch_git_simple1("git_cherry_pick_continue", &args, crate::commands::git::git_cherry_pick_continue),
-        "git_revert_abort" => dispatch_git_simple1("git_revert_abort", &args, crate::commands::git::git_revert_abort),
-        "git_revert_continue" => dispatch_git_simple1("git_revert_continue", &args, crate::commands::git::git_revert_continue),
-        // Git simple2 (workspacePath + one string arg)
-        "git_checkout_branch" => dispatch_git_simple2("git_checkout_branch", &args, crate::commands::git::git_checkout_branch),
-        "git_delete_branch" => dispatch_git_delete_branch(&args),
-        "git_delete_tag" => dispatch_git_simple2("git_delete_tag", &args, crate::commands::git::git_delete_tag),
-        "git_remove_remote" => dispatch_git_simple2("git_remove_remote", &args, crate::commands::git::git_remove_remote),
-        "git_stage_file" => dispatch_git_simple2("git_stage_file", &args, crate::commands::git::git_stage_file),
-        "git_unstage_file" => dispatch_git_simple2("git_unstage_file", &args, crate::commands::git::git_unstage_file),
-        "git_discard_changes" => dispatch_git_simple2("git_discard_changes", &args, crate::commands::git::git_discard_changes),
-        "git_rebase_branch" => dispatch_git_simple2("git_rebase_branch", &args, crate::commands::git::git_rebase_branch),
-        "git_cherry_pick" => dispatch_git_simple2("git_cherry_pick", &args, crate::commands::git::git_cherry_pick),
-        "git_revert" => dispatch_git_simple2("git_revert", &args, crate::commands::git::git_revert),
-        "git_get_worktree_file_diff" => dispatch_git_simple2("git_get_worktree_file_diff", &args, crate::commands::git::git_get_worktree_file_diff),
-        "git_get_index_file_diff" => dispatch_git_simple2("git_get_index_file_diff", &args, crate::commands::git::git_get_index_file_diff),
-        // Git commands with custom dispatch
-        "git_stash_pop" => dispatch_git_stash_pop(&args),
-        "git_stash_drop" => dispatch_git_stash_drop(&args),
-        "git_blame_file" => dispatch_git_simple2("git_blame_file", &args, crate::commands::git::git_blame_file),
-        "git_get_pr_status" => dispatch_git_get_pr_status(&args),
-        "git_detect_host" => dispatch_git_detect_host(&args),
         cmd if cmd.starts_with("git_") => {
-            Err(WebError::NotFound(format!("Git command not supported via HTTP: {}", cmd)))
+            crate::web::api::git_dispatch::dispatch_git_command(cmd, &args).await
         }
 
         // ── Todo ──────────────────────────────────────────────────────────────
@@ -1198,10 +1143,12 @@ async fn dispatch_download_file_binary(args: &Value) -> Result<Json<Value>, WebE
 // Git — generic helpers for common patterns
 // ═══════════════════════════════════════════════════════════════════════════
 
+#[cfg(feature = "git")]
 fn git_err(e: crate::models::git::GitError) -> WebError {
     WebError::Internal(e.to_string())
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_simple1<T: serde::Serialize>(
     _name: &str, args: &Value,
     f: fn(String) -> Result<T, crate::models::git::GitError>,
@@ -1211,6 +1158,7 @@ fn dispatch_git_simple1<T: serde::Serialize>(
     Ok(Json(serde_json::to_value(r).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_simple2<T: serde::Serialize>(
     _name: &str, args: &Value,
     f: fn(String, String) -> Result<T, crate::models::git::GitError>,
@@ -1224,22 +1172,26 @@ fn dispatch_git_simple2<T: serde::Serialize>(
     Ok(Json(serde_json::to_value(r).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_is_repository(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     Ok(Json(Value::Bool(crate::commands::git::git_is_repository(wp).map_err(git_err)?)))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_status(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_status(wp).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_diffs(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let base = require_string(args, "baseCommit")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_diffs(wp, base).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_log(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let limit = args
@@ -1252,12 +1204,14 @@ fn dispatch_git_get_log(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_log(wp, limit, skip, branch).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_commit_details(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let commit_sha = require_string(args, "commitSha")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_commit_details(wp, commit_sha).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_file_history(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let file_path = require_string(args, "filePath")?;
@@ -1267,12 +1221,14 @@ fn dispatch_git_get_file_history(args: &Value) -> Result<Json<Value>, WebError> 
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_file_history(wp, file_path, limit, skip, branch).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_init_repository(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let ib = args.get("initialBranch").and_then(|v| v.as_str()).map(String::from);
     Ok(Json(serde_json::to_value(crate::commands::git::git_init_repository(wp, ib).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 async fn dispatch_git_commit_changes(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let msg = require_string(args, "message")?;
@@ -1282,6 +1238,7 @@ async fn dispatch_git_commit_changes(args: &Value) -> Result<Json<Value>, WebErr
     Ok(Json(serde_json::to_value(crate::commands::git::git_commit_changes(wp, msg, stage_all, files).await.map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_create_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let name = require_string(args, "name")?;
@@ -1290,6 +1247,7 @@ fn dispatch_git_create_branch(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_create_branch(wp, name, checkout, start_point).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_rename_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let old = require_string(args, "oldName")?;
@@ -1297,6 +1255,7 @@ fn dispatch_git_rename_branch(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_rename_branch(wp, old, new).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_create_tag(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let name = require_string(args, "name")?;
@@ -1305,6 +1264,7 @@ fn dispatch_git_create_tag(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_create_tag(wp, name, commitish, message).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_merge_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let src = require_string(args, "sourceBranch")?;
@@ -1312,6 +1272,7 @@ fn dispatch_git_merge_branch(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_merge_branch(wp, src, no_ff).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_add_remote(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let name = require_string(args, "name")?;
@@ -1319,6 +1280,7 @@ fn dispatch_git_add_remote(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_add_remote(wp, name, url).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_push_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let branch = require_string(args, "branchName")?;
@@ -1328,6 +1290,7 @@ fn dispatch_git_push_branch(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_push_branch(wp, branch, remote.to_string(), force, remote_branch).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_push_set_upstream(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let branch = require_string(args, "branchName")?;
@@ -1336,6 +1299,7 @@ fn dispatch_git_push_set_upstream(args: &Value) -> Result<Json<Value>, WebError>
     Ok(Json(serde_json::to_value(crate::commands::git::git_push_set_upstream(wp, branch, remote.to_string(), remote_branch).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_batch_stage(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let files = args.get("filePaths").and_then(|v| v.as_array())
@@ -1343,6 +1307,7 @@ fn dispatch_git_batch_stage(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_batch_stage(wp, files).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_stash_save(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let msg = args.get("message").and_then(|v| v.as_str()).map(String::from);
@@ -1350,6 +1315,7 @@ fn dispatch_git_stash_save(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_stash_save(wp, msg, include_untracked).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_delete_branch(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let name = require_string(args, "name")?;
@@ -1357,12 +1323,14 @@ fn dispatch_git_delete_branch(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_delete_branch(wp, name, force).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_save_gitignore(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let content = require_string(args, "content")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_save_gitignore(wp, content).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_add_to_gitignore(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let rules = args.get("rules").and_then(|v| v.as_array())
@@ -1370,10 +1338,12 @@ fn dispatch_git_add_to_gitignore(args: &Value) -> Result<Json<Value>, WebError> 
     Ok(Json(serde_json::to_value(crate::commands::git::git_add_to_gitignore(wp, rules).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_get_gitignore_templates() -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_gitignore_templates()).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 async fn dispatch_git_create_pr(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let options: crate::models::git::CreatePROptions = serde_json::from_value(args.get("options").cloned().unwrap_or(Value::Null))
@@ -1920,6 +1890,7 @@ async fn dispatch_scheduler_update_run_status(state: &AppState, args: &Value) ->
     Ok(Json(serde_json::to_value(task).unwrap()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_pull(args: &Value) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Json<Value>, WebError>> + Send>> {
     let wp = match require_string(args, "workspacePath") {
         Ok(v) => v,
@@ -1932,12 +1903,14 @@ fn dispatch_git_pull(args: &Value) -> std::pin::Pin<Box<dyn std::future::Future<
     })
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_stash_pop(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let index = args.get("index").and_then(|v| v.as_u64()).map(|n| n as usize);
     Ok(Json(serde_json::to_value(crate::commands::git::git_stash_pop(wp, index).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_stash_drop(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let index = args.get("index").and_then(|v| v.as_u64())
@@ -1945,6 +1918,7 @@ fn dispatch_git_stash_drop(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_stash_drop(wp, index).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_get_pr_status(args: &Value) -> Result<Json<Value>, WebError> {
     let wp = require_string(args, "workspacePath")?;
     let pr_number = args.get("prNumber").and_then(|v| v.as_u64())
@@ -1952,6 +1926,7 @@ fn dispatch_git_get_pr_status(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::commands::git::git_get_pr_status(wp, pr_number).map_err(git_err)?).unwrap_or_default()))
 }
 
+#[cfg(feature = "git")]
 fn dispatch_git_detect_host(args: &Value) -> Result<Json<Value>, WebError> {
     let remote_url = require_string(args, "remoteUrl")?;
     Ok(Json(serde_json::to_value(crate::commands::git::git_detect_host(remote_url)).unwrap_or_default()))

@@ -6,6 +6,7 @@ pub mod file_clipboard;
 pub mod window;
 pub mod browser;
 pub mod context;
+#[cfg(feature = "git")]
 pub mod git;
 pub mod translate;
 pub mod plugin;
@@ -72,6 +73,7 @@ pub use workspace::get_home_dir;
 
 // 终端命令
 
+#[cfg(feature = "lsp-index")]
 pub mod lsp;
 
 pub mod auto_mode;

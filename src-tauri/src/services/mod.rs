@@ -2,6 +2,7 @@ pub mod config_store;
 pub mod data_root;
 pub mod dialog_index;
 pub mod file_watcher;
+#[cfg(feature = "git")]
 pub mod git;
 pub mod logger;
 pub mod mcp_config_service;
@@ -49,6 +50,7 @@ pub mod cli_resolver;
 
 pub mod lsp;
 pub mod lsp_config_repository;
+#[cfg(feature = "lsp-index")]
 pub mod lsp_index;
 
 pub mod mcp_manager_service;

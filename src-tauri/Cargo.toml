@@ -7,7 +7,7 @@ edition = "2021"
 default-run = "polaris"
 
 [features]
-default = ["tauri-app"]
+default = ["tauri-app", "git", "lsp-index"]
 tauri-app = [
     "dep:tauri",
     "dep:tauri-build",
@@ -21,6 +21,19 @@ tauri-app = [
 tauri-plugin-updater = ["dep:tauri-plugin-updater"]
 tauri-plugin-process = ["dep:tauri-plugin-process"]
 tauri-plugin-single-instance = ["dep:tauri-plugin-single-instance"]
+
+# ====================================================================
+# 功能域 Feature 网格（轻量化 P2）
+# 每个 feature 控制一个独立功能域，编译时可选。
+# 默认全开，向后兼容；关闭后对应功能的代码不会编入二进制。
+# 详见 docs/lightweight-refactor-plan.md §5
+# ====================================================================
+
+# Git 集成（commands::git + services::git 模块门控）
+git = []
+
+# LSP 智能索引（tree-sitter AST 解析 + SQLite 持久化）
+lsp-index = ["dep:tree-sitter", "dep:tree-sitter-java", "dep:rayon", "dep:xxhash-rust"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -119,10 +132,10 @@ notify-debouncer-mini = { version = "0.4", default-features = false, features = 
 # - rayon: 全量索引并行
 # - xxhash-rust: 文件内容 hash（mtime 不可靠时校验）
 rusqlite = { version = "0.32", features = ["bundled"] }
-tree-sitter = "0.22"
-tree-sitter-java = "0.21"
-rayon = "1.10"
-xxhash-rust = { version = "0.8", features = ["xxh3"] }
+tree-sitter = { version = "0.22", optional = true }
+tree-sitter-java = { version = "0.21", optional = true }
+rayon = { version = "1.10", optional = true }
+xxhash-rust = { version = "0.8", features = ["xxh3"], optional = true }
 tauri-plugin-updater = { version = "2.10.1", optional = true }
 tauri-plugin-process = { version = "2.3.1", optional = true }
 # 单实例守护：防止多实例共用 WebView2 UserData 目录导致创建失败（0x8007139F）。
