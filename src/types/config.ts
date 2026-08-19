@@ -476,6 +476,9 @@ export interface Config {
    *  所有字段默认关闭（false），用户按需开启。
    *  变更通过 config-changed 事件热切换，无需重启。 */
   performance?: PerformanceFeatures;
+  /** 性能开关迁移引导横幅是否已 dismiss（持久化到 config 以跨设备同步）。
+   *  首次升级到"默认全关"版本时，若未 dismiss，显示引导横幅。 */
+  perfMigrationDismissed?: boolean;
 }
 
 /** 性能与资源功能开关 */

@@ -1604,6 +1604,11 @@ pub struct Config {
     #[serde(default = "default_performance_features")]
     pub performance: PerformanceFeatures,
 
+    /// 性能开关迁移引导横幅是否已 dismiss（持久化到 config 以跨设备同步）。
+    /// 首次升级到"默认全关"版本时，若未 dismiss，设置页显示引导横幅。
+    #[serde(default)]
+    pub perf_migration_dismissed: bool,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -1728,6 +1733,7 @@ impl Default for Config {
             active_provider_group_id: None,
             skill_paths: Vec::new(),
             performance: default_performance_features(),
+            perf_migration_dismissed: false,
             claude_cmd: None,
         }
     }

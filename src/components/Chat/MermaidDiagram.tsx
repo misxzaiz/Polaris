@@ -35,6 +35,10 @@ interface MermaidDiagramProps {
   code: string;
   /** 唯一标识符（用于生成图表 ID） */
   id: string;
+  /** 是否启用自动渲染（performance.mermaidDiagrams 开关）。
+   *  默认 true（向后兼容）。false 时不自动加载 mermaid.js，
+   *  显示"点击渲染"占位，用户点击后触发渲染。 */
+  enabled?: boolean;
 }
 
 /**
@@ -65,7 +69,7 @@ type RenderState = 'idle' | 'loading' | 'success' | 'error';
  * />
  * ```
  */
-export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: MermaidDiagramProps) {
+export const MermaidDiagram = memo(function MermaidDiagram({ code, id, enabled = true }: MermaidDiagramProps) {
   const { t } = useTranslation('chat');
   const containerRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -93,7 +97,10 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
   }, [id]);
 
   // ===== 可见性检测 =====
+  // enabled=false（performance.mermaidDiagrams 关闭）时不启动自动渲染，
+  // 显示"点击渲染"占位，由用户手动触发（避免加载 mermaid.js ~1.5MB）。
   useEffect(() => {
+    if (!enabled) return;
     const container = containerRef.current;
     if (!container || hasRenderedRef.current) return;
 
@@ -112,7 +119,7 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     return () => {
       observer.disconnect();
     };
-  }, []);
+  }, [enabled]);
 
   // ===== Mermaid 渲染逻辑（只在可见时执行）=====
   useEffect(() => {
@@ -169,6 +176,14 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
   }, [isVisible, code, id]);
 
   // ===== 事件处理函数 =====
+
+  // 手动触发渲染（enabled=false 时用户点击"渲染图表"按钮调用）。
+  // 复用 isVisible → effect renderDiagram 路径，无需重复实现渲染逻辑。
+  const handleRequestRender = useCallback(() => {
+    if (hasRenderedRef.current) return;
+    hasRenderedRef.current = true;
+    setIsVisible(true);
+  }, []);
 
   // 放大
   const handleZoomIn = useCallback(() => {
@@ -438,7 +453,48 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     );
   }
 
-  // 4. 空状态/未可见状态（显示占位符）
+  // 4. 空状态/未可见状态
+  //    enabled=false：显示"点击渲染"占位（与 DeferredMermaidDiagram 一致），
+  //    不自动加载 mermaid.js；用户点击后触发渲染。
+  //    enabled=true 但未可见：纯占位（IntersectionObserver 将触发）。
+  if (!enabled) {
+    return (
+      <div
+        ref={containerRef}
+        className="my-4 bg-background-surface border border-border-subtle rounded-lg overflow-hidden"
+      >
+        <div className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-text-tertiary">
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm">{t('mermaid.diagram', '图表')}</span>
+            </div>
+            <button
+              onClick={handleRequestRender}
+              className="px-3 py-1.5 text-xs bg-primary/10 hover:bg-primary/20 text-primary rounded-md transition-colors flex items-center gap-1.5"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              {t('mermaid.clickToRender', '渲染图表')}
+            </button>
+          </div>
+          <details className="mt-3">
+            <summary className="text-xs text-text-quaternary cursor-pointer hover:text-text-tertiary transition-colors">
+              {t('mermaid.viewSourceCode', '查看源代码')}
+            </summary>
+            <pre className="mt-2 text-xs text-text-secondary bg-background-base p-2 rounded border border-border-subtle overflow-auto max-h-[200px]">
+              <code className="font-mono whitespace-pre-wrap">{code}</code>
+            </pre>
+          </details>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       ref={containerRef}
@@ -453,6 +509,11 @@ export const MermaidDiagram = memo(function MermaidDiagram({ code, id }: Mermaid
     </div>
   );
 }, (prevProps, nextProps) => {
-  // 自定义比较：只在代码或 ID 变化时重新渲染
-  return prevProps.code === nextProps.code && prevProps.id === nextProps.id;
+  // 自定义比较：在 code / id / enabled 变化时重新渲染
+  // （enabled 加入比较维度，确保 performance.mermaidDiagrams 开关切换时组件重渲染）
+  return (
+    prevProps.code === nextProps.code &&
+    prevProps.id === nextProps.id &&
+    prevProps.enabled === nextProps.enabled
+  );
 });

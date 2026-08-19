@@ -394,6 +394,74 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
     }
 }
 
+// ============================================================================
+// 启动路径共享函数
+// ============================================================================
+
+/// 应用启动时自动拉起调度器守护进程（懒激活模式）。
+///
+/// 与 `scheduler_start` 命令的区别：
+/// - 命令层（用户手动启动）：无条件 acquire 锁并启动（用户意图明确）
+/// - 本函数（setup 闭包自动启动）：**懒激活** —— 仅当
+///   1. `performance.scheduler_daemon` 开关为 true，且
+///   2. 仓库中存在 `enabled` 的定时任务
+///   时才启动。无任务则不拉起，避免空转。
+///
+/// 失败不抛错（返回 Err 由调用方记日志），不阻塞应用启动（调用方应在 tokio::spawn 内调用）。
+#[cfg(feature = "tauri-app")]
+pub async fn start_scheduler_if_needed(app: &AppHandle) -> Result<bool> {
+    use crate::services::scheduler_daemon::SchedulerDaemon;
+    use crate::state::AppState;
+
+    // 已持有锁 = 已在运行，直接返回
+    if crate::utils::is_holding_lock() {
+        return Ok(true);
+    }
+
+    // 1. 配置门控：scheduler_daemon 开关
+    let perf_enabled = {
+        let state = app.state::<AppState>();
+        let store = state.config_store.lock()
+            .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
+        store.get().performance.scheduler_daemon
+    };
+    if !perf_enabled {
+        tracing::debug!("[Startup] 调度器未自动启动（performance.schedulerDaemon=false）");
+        return Ok(false);
+    }
+
+    // 2. 懒激活：检查是否有 enabled 的定时任务
+    let config_dir = get_config_dir(app)?;
+    let repo = UnifiedSchedulerRepository::new(config_dir.clone(), None);
+    let has_active_task = repo
+        .list_tasks()
+        .map(|tasks| tasks.iter().any(|t| t.enabled))
+        .unwrap_or(false);
+    if !has_active_task {
+        tracing::debug!("[Startup] 调度器未自动启动（无启用的定时任务）");
+        return Ok(false);
+    }
+
+    // 3. 获取锁（多实例互斥）
+    if !crate::utils::acquire_and_hold_lock()? {
+        tracing::info!("[Startup] 调度器未自动启动（其他实例持有锁）");
+        return Ok(false);
+    }
+
+    // 4. 启动守护进程并存入 state
+    let mut daemon = SchedulerDaemon::new(config_dir, None);
+    daemon.start(app.clone())?;
+
+    {
+        let state = app.state::<AppState>();
+        let mut scheduler_daemon = state.scheduler_daemon.lock().await;
+        *scheduler_daemon = Some(daemon);
+    }
+
+    tracing::info!("[Startup] 调度器守护进程已自动启动（检测到活跃任务）");
+    Ok(true)
+}
+
 /// 停止调度器
 /// 1. 停止后台守护进程
 /// 2. 释放锁

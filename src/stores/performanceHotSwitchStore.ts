@@ -16,7 +16,7 @@ import { create } from 'zustand';
 import { listen } from '@/services/transport';
 import { createLogger } from '@/utils/logger';
 import { fsWatchStop } from '@/services/tauri/fileService';
-import { schedulerStop } from '@/services/tauri/schedulerService';
+import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
 import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import type { PerformanceFeatures } from '@/types';
@@ -84,6 +84,17 @@ function handleSwitch(prev: PerformanceFeatures, next: PerformanceFeatures): voi
     log.info('schedulerDaemon 关闭，停止调度器守护进程');
     schedulerStop().catch((err) => {
       log.warn('停止调度器失败', { error: String(err) });
+    });
+  }
+  // scheduler daemon：false → true 时热启动
+  // 用户开启开关 = 明确意图想要守护进程运行，直接 schedulerStart。
+  // 后端命令层会获取锁并启动；若已运行（is_holding_lock）则幂等返回。
+  // 与 setup 闭包的懒激活（无任务不启）不同 —— 热切换是用户主动开启，
+  // 即便无任务也拉起（空转开销极低：10s 一次轻查询），尊重用户意图。
+  if (!prev.schedulerDaemon && next.schedulerDaemon) {
+    log.info('schedulerDaemon 开启，热启动调度器守护进程');
+    schedulerStart().catch((err) => {
+      log.warn('热启动调度器失败', { error: String(err) });
     });
   }
 

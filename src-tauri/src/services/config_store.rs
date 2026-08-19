@@ -664,6 +664,7 @@ impl OldConfig {
             active_provider_group_id: None,
             performance: Default::default(),
             skill_paths: Vec::new(),
+            perf_migration_dismissed: false,
             claude_cmd: Some(claude_cmd_clone),
         }
     }

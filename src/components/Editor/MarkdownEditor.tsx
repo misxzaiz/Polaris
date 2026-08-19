@@ -9,6 +9,7 @@ import DOMPurify from 'dompurify';
 import { marked } from 'marked';
 import { MermaidDiagram } from '../Chat/MermaidDiagram';
 import { splitMarkdownWithMermaid, type MarkdownPart } from '@/utils/markdown';
+import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import hljs from '@/utils/highlight';
 
 interface MarkdownEditorProps {
@@ -84,6 +85,9 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
   const [showToc, setShowToc] = useState(true);
+
+  // 性能开关：mermaid 关闭时编辑器预览不自动加载 mermaid.js，显示"点击渲染"。
+  const mermaidEnabled = usePerformanceFlag('mermaidDiagrams');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
@@ -296,6 +300,7 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
                         <MermaidDiagram
                           code={part.content}
                           id={part.id || `mermaid-${index}`}
+                          enabled={mermaidEnabled}
                         />
                       </div>
                     );

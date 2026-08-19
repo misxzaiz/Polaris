@@ -8,6 +8,7 @@
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { Config, PerformanceFeatures } from '@/types';
+import { PerfMigrationBanner } from './PerfMigrationBanner';
 
 interface PerformanceTabProps {
   config: Config;
@@ -102,8 +103,25 @@ export function PerformanceTab({ config, onConfigChange, loading }: PerformanceT
   const activeCount = Object.values(localPerf).filter(Boolean).length;
   const totalCount = FEATURES.length;
 
+  // 迁移引导横幅：performance 全 false（默认关闭态）且未 dismiss 时显示。
+  // 用途：老用户升级后功能"突然关闭"，横幅引导其了解开关体系；新用户首次进入也中性引导。
+  const allOff = activeCount === 0;
+  const migrationDismissed = config.perfMigrationDismissed === true;
+  const showMigrationBanner = allOff && !migrationDismissed;
+  const dismissMigration = useCallback(() => {
+    onConfigChange({
+      ...config,
+      perfMigrationDismissed: true,
+    });
+  }, [config, onConfigChange]);
+
   return (
     <div className="space-y-4">
+      {/* 迁移引导横幅 */}
+      {showMigrationBanner && (
+        <PerfMigrationBanner onDismiss={dismissMigration} />
+      )}
+
       {/* 概览 */}
       <div className="p-4 rounded-lg bg-surface border border-border-subtle">
         <div className="flex items-center justify-between mb-2">

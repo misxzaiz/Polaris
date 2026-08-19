@@ -711,6 +711,21 @@ pub fn run() {
                 });
             }
 
+            // 调度器守护进程自动启动（懒激活）：
+            // performance.scheduler_daemon=true 且存在 enabled 定时任务时才拉起。
+            // 异步 spawn，失败仅 warn，不阻塞应用启动。
+            #[cfg(feature = "tauri-app")]
+            {
+                let app_handle = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    match commands::scheduler::start_scheduler_if_needed(&app_handle).await {
+                        Ok(true) => tracing::info!("[Startup] 调度器守护进程已自动启动"),
+                        Ok(false) => tracing::debug!("[Startup] 调度器未自动启动（开关关闭或无活跃任务）"),
+                        Err(e) => tracing::warn!("[Startup] 调度器自动启动失败: {}", e),
+                    }
+                });
+            }
+
             Ok(())
         })
         .on_window_event(|window, event| {
