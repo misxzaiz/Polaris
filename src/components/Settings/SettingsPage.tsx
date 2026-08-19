@@ -102,7 +102,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     'personal-hub': ['personalHub'],
     'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode', 'codexCode', 'piCode'],
     'model-provider': ['modelProfiles', 'activeModelProfileId', 'providerGroups', 'activeProviderGroupId'],
-    performance: ['performance'],
+    performance: ['performance', 'perfMigrationDismissed'],
   };
 
   const hasChanged = (a: unknown, b: unknown) => JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
