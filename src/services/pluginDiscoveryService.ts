@@ -79,6 +79,11 @@ const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'Bot',
   'BookOpen',
   'AlertCircle',
+  'Target',
+  'Film',
+  'Globe2',
+  'Activity',
+  'Users',
 ])
 
 
