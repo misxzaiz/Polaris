@@ -52,6 +52,7 @@
     "toolPanel": "Tool Panel",
     "developerPanel": "Developer Panel",
     "mcpPanel": "MCP Servers",
+    "engineTestPanel": "Engine Test",
     "showAIPanel": "Show AI Panel",
     "hideAIPanel": "Hide AI Panel",
     "showActivityBar": "Show Activity Bar",

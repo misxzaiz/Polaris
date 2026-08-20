@@ -257,7 +257,112 @@ impl PluginProcessEngine {
         }
     }
 
-    /// 启动后台线程读取适配器 stdout 事件
+    /// 构建 start_session / continue_session 请求参数
+///
+/// 将 SessionOptions 的完整字段映射到 JSON params，确保适配器进程收到全部配置。
+/// 适配器只读取自己需要的字段，未识别的字段被忽略（向后兼容）。
+fn build_start_params(
+    options: &SessionOptions,
+    session_id: &str,
+    message: &str,
+    is_continue: bool,
+    resume_token: Option<&str>,
+) -> serde_json::Value {
+    let mut params = serde_json::json!({
+        "session_id": session_id,
+        "message": message,
+        "is_continue": is_continue,
+    });
+
+    // 可选字段：仅当 Some/非空时写入
+    if let Some(ref dir) = options.work_dir {
+        if !dir.is_empty() {
+            params["work_dir"] = serde_json::json!(dir);
+        }
+    }
+    if let Some(ref model) = options.model {
+        if !model.is_empty() {
+            params["model"] = serde_json::json!(model);
+        }
+    }
+    if let Some(ref prompt) = options.system_prompt {
+        if !prompt.is_empty() {
+            params["system_prompt"] = serde_json::json!(prompt);
+        }
+    }
+    if let Some(ref prompt) = options.append_system_prompt {
+        if !prompt.is_empty() {
+            params["append_system_prompt"] = serde_json::json!(prompt);
+        }
+    }
+    if let Some(ref mode) = options.permission_mode {
+        if !mode.is_empty() {
+            params["permission_mode"] = serde_json::json!(mode);
+        }
+    }
+    if let Some(ref agent) = options.agent {
+        if !agent.is_empty() {
+            params["agent"] = serde_json::json!(agent);
+        }
+    }
+    if let Some(ref effort) = options.effort {
+        if !effort.is_empty() {
+            params["effort"] = serde_json::json!(effort);
+        }
+    }
+    if let Some(ref token) = resume_token {
+        if !token.is_empty() {
+            params["resume_token"] = serde_json::json!(token);
+        }
+    }
+
+    // 环境变量覆盖
+    if !options.env_overrides.is_empty() {
+        params["env_overrides"] = serde_json::json!(options.env_overrides);
+    }
+
+    // MCP servers
+    if !options.mcp_servers.is_empty() {
+        let servers: Vec<serde_json::Value> = options.mcp_servers.iter().map(|s| {
+            serde_json::json!({
+                "server_name": s.server_name,
+                "command": s.command,
+                "args": s.args,
+            })
+        }).collect();
+        params["mcp_servers"] = serde_json::json!(servers);
+    }
+
+    // 额外目录
+    if !options.additional_dirs.is_empty() {
+        params["additional_dirs"] = serde_json::json!(options.additional_dirs);
+    }
+
+    // Provider 配置
+    if let Some(ref pcfg) = options.pi_provider_config {
+        params["provider_config"] = serde_json::json!({
+            "name": pcfg.name,
+            "base_url": pcfg.base_url,
+            "api_key": pcfg.api_key,
+            "api": pcfg.api,
+            "context_window": pcfg.context_window,
+            "max_tokens": pcfg.max_tokens,
+        });
+    }
+
+    // 设置 overlay 路径
+    if let Some(ref path) = options.settings_overlay_path {
+        if !path.is_empty() {
+            params["settings_overlay_path"] = serde_json::json!(path);
+        }
+    }
+
+    params
+}
+        /// 启动后台线程读取适配器 stdout 事件
+    ///
+    /// `is_continue` 标志区分 start_session / continue_session 请求方法。
+    /// `resume_token` 是续聊令牌，由适配器在上一轮会话结束时返回。
     fn spawn_event_reader(
         &self,
         mut child: Child,
@@ -265,6 +370,8 @@ impl PluginProcessEngine {
         _pid: u32,
         options: SessionOptions,
         initial_prompt: Option<String>,
+        is_continue: bool,
+        resume_token: Option<String>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
         let event_callback = options.event_callback.clone();
@@ -308,14 +415,18 @@ impl PluginProcessEngine {
                 }
             });
 
-            // 发初始 start_session 请求（通过 stdin 转发线程）
-            let start_params = serde_json::json!({
-                "session_id": current_session_id,
-                "message": initial_prompt.unwrap_or_default(),
-            });
+            // 发初始 start_session / continue_session 请求
+            let method = if is_continue { METHOD_CONTINUE_SESSION } else { METHOD_START_SESSION };
+            let start_params = Self::build_start_params(
+                &options,
+                &current_session_id,
+                initial_prompt.as_deref().unwrap_or(""),
+                is_continue,
+                resume_token.as_deref(),
+            );
             let mut init_req = serde_json::to_string(&serde_json::json!({
                 "id": 1u64,
-                "method": METHOD_START_SESSION,
+                "method": method,
                 "params": start_params,
             })).unwrap_or_default();
             init_req.push('\n');
@@ -325,7 +436,6 @@ impl PluginProcessEngine {
             let _ = input_sender.send(init_req);
             std::thread::spawn(move || {
                 let mut stdin_writer = std::io::BufWriter::new(stdin);
-                // 初始请求已通过 input_sender 发送，这里循环转发后续命令
                 while let Ok(input) = input_receiver.recv() {
                     if let Err(e) = stdin_writer.write_all(input.as_bytes()) {
                         tracing::warn!("[PluginProcess:{}] stdin 转发失败: {}", engine_id_stdin, e);
@@ -368,7 +478,6 @@ impl PluginProcessEngine {
                         if matches!(&ev, AIEvent::AssistantMessage(_) | AIEvent::ToolCallStart(_) | AIEvent::ToolCallEnd(_)) {
                             _message_event_count += 1;
                         }
-                        // 检查是否 session_end
                         if matches!(&ev, AIEvent::SessionEnd(_)) {
                             session_ended = true;
                         }
@@ -379,11 +488,9 @@ impl PluginProcessEngine {
                 } else if val.get("id").is_some() {
                     // 响应帧
                     if val.get("result").is_some() {
-                        // 提取 resume_token
                         if let Some(rt) = val.pointer("/result/resume_token").and_then(|v| v.as_str()) {
                             if let Ok(mut map) = resume_tokens.lock() {
                                 map.insert(current_session_id.clone(), rt.to_string());
-                                // 持久化
                                 if let Some(path) = &resume_tokens_file {
                                     if let Ok(s) = serde_json::to_string_pretty(&*map) {
                                         let _ = fs::write(path, s);
@@ -553,6 +660,8 @@ impl AIEngine for PluginProcessEngine {
 
         let input_sender = self.spawn_event_reader(
             child, temp_id.clone(), pid, options, Some(message.to_string()),
+            false, // is_continue = false
+            None,  // resume_token = None
         );
         self.sessions.register_with_sender(
             temp_id.clone(), pid, engine_id.clone(), Some(input_sender),
@@ -584,23 +693,10 @@ impl AIEngine for PluginProcessEngine {
             .map_err(|e| AppError::ProcessError(format!("启动适配器进程失败: {}", e)))?;
         let pid = child.id();
 
-        let options_with_resume = SessionOptions {
-            // 将 resume_token 和 message 传给适配器，由适配器在 params 中获取
-            // 这里通过注入 session_id 和 resume_token 到 env_overrides 传给适配器
-            env_overrides: {
-                let mut env = options.env_overrides.clone();
-                if let Some(ref token) = resume_token {
-                    env.insert("POLARIS_RESUME_TOKEN".to_string(), token.clone());
-                }
-                env.insert("POLARIS_SESSION_ID".to_string(), session_id.to_string());
-                env.insert("POLARIS_MESSAGE".to_string(), message.to_string());
-                env
-            },
-            ..options
-        };
-
         let input_sender = self.spawn_event_reader(
-            child, session_id.to_string(), pid, options_with_resume, Some(message.to_string()),
+            child, session_id.to_string(), pid, options, Some(message.to_string()),
+            true, // is_continue = true
+            resume_token,
         );
         self.sessions.register_with_sender(
             session_id.to_string(), pid, engine_id.clone(), Some(input_sender),

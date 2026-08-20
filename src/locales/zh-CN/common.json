@@ -55,6 +55,7 @@
     "personalHubPanel": "个人空间",
     "agnesPanel": "Agnes 多模态",
     "aiConsolePanel": "AI 执行控制台",
+    "engineTestPanel": "引擎测试",
     "mcpPanel": "MCP 服务器",
     "showAIPanel": "显示 AI 面板",
     "hideAIPanel": "隐藏 AI 面板",
