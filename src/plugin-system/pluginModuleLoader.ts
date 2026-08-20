@@ -22,9 +22,11 @@ async function ensureReactShim(): Promise<string> {
     export const useCallback = R.useCallback;
     export const useMemo = R.useMemo;
     export const useRef = R.useRef;
+    export const memo = R.memo;
     export const createElement = R.createElement;
     export const Fragment = R.Fragment;
     export const Component = R.Component;
+    export const forwardRef = R.forwardRef;
     export default R;
     export const jsx = J.jsx;
     export const jsxs = J.jsxs;
