@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body{margin:0;background:#1a1a1a;display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888}
+.big{width:360px;height:360px}
+.row{display:flex;gap:8px;margin-top:12px}
+.mini{width:72px;height:72px}
+</style>
+</head>
+<body>
+<div id="big" class="big"></div>
+<div id="row" class="row"></div>
+<div id="log" style="font-size:12px;color:#0f0;margin-top:8px"></div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script>
+window.__POLARIS_HOST_REACT__ = window.React;
+window.__POLARIS_HOST_REACT_JSX__ = { jsx: window.React.createElement, jsxs: window.React.createElement, Fragment: window.React.Fragment };
+window.addEventListener('load', async () => {
+  const log = (m) => { document.getElementById('log').textContent += m + ' | '; };
+  try {
+    const shimUrl = URL.createObjectURL(new Blob([`
+      const R = window.__POLARIS_HOST_REACT__;
+      const J = window.__POLARIS_HOST_REACT_JSX__;
+      export const useState = R.useState; export const useEffect = R.useEffect;
+      export const useCallback = R.useCallback; export const useMemo = R.useMemo;
+      export const useRef = R.useRef; export const memo = R.memo;
+      export const createElement = R.createElement; export const Fragment = R.Fragment;
+      export const Component = R.Component; export const forwardRef = R.forwardRef;
+      export const useSyncExternalStore = R.useSyncExternalStore;
+      export default R;
+      export const jsx = J.jsx; export const jsxs = J.jsxs; export const jsx_Fragment = J.Fragment;
+    `], { type: 'application/javascript' }));
+    const blob = await (await fetch('/Polaris-plugin/plugins/emotion-ball/dist/panel.js?v=' + Date.now())).text();
+    const patched = blob.replace(/from\s*["']react["']/g, 'from "' + shimUrl + '"');
+    const mod = await import(URL.createObjectURL(new Blob([patched], { type: 'application/javascript' })));
+    log('loaded');
+    // 只渲染主球组件，不渲染整个面板（避免画廊干扰）
+    const { EmotionBallView } = mod;
+    window.ReactDOM.createRoot(document.getElementById('big')).render(
+      window.React.createElement(EmotionBallView, { emotion: '02', shape: 'blob', size: 360, gaze: false, lite: false })
+    );
+    // 几个小球
+    const ids = ['10','12','14','00','30'];
+    const row = document.getElementById('row');
+    ids.forEach(id => {
+      const c = document.createElement('div');
+      c.className = 'mini';
+      row.appendChild(c);
+      window.ReactDOM.createRoot(c).render(
+        window.React.createElement(EmotionBallView, { emotion: id, shape: 'blob', size: 72, gaze: false, lite: true })
+      );
+    });
+    log('rendered');
+  } catch (e) { log('ERR: ' + e.message); }
+});
+</script>
+</body>
+</html>
