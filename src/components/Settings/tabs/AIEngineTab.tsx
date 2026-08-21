@@ -130,6 +130,21 @@ function getTabBadge(engineId: string, status: EngineRuntimeStatus): { label: st
   return { label: '未安装', className: 'text-text-tertiary bg-text-tertiary/10 border-border' }
 }
 
+/** 稳定性徽章配置 */
+/**
+ * 引擎稳定性标识。
+ * Claude Code 为唯一稳定引擎，其余（Codex/Simple AI/Pi/DSH/插件引擎）均为不稳定版本。
+ * 仅当引擎元数据中显式声明 stable: false 时显示"不稳定"标签；
+ * stable 为 true 或未声明时不展示（Claude Code 稳定且用户已知的默认选择，不额外标注）。
+ */
+function getStabilityBadge(meta?: EngineMetadata): { label: string; className: string } | null {
+  // 仅在不稳定时显示，稳定引擎（Claude Code）不额外标注
+  if (meta?.stable === false) {
+    return { label: '不稳定', className: 'text-red-400 bg-red-400/10 border-red-400/20' }
+  }
+  return null
+}
+
 // 最多在 Tab 栏显示多少个引擎，超出部分折叠到「更多」下拉
 const MAX_VISIBLE_TABS = 5;
 
@@ -255,6 +270,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
           const meta = engineMetadatas.find(m => m.id === engine.id)
           const status = resolveEngineStatus(engine.id, healthStatus, meta);
           const badge = getTabBadge(engine.id, status);
+          const stability = getStabilityBadge(meta);
           const isDefault = config.defaultEngine === engine.id;
           const isActive = selectedId === engine.id;
           return (
@@ -273,6 +289,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
               {badge && (
                 <span className={`text-[10px] px-1.5 py-0.5 rounded border ${badge.className}`}>
                   {badge.label}
+                </span>
+              )}
+              {stability && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded border ${stability.className}`}>
+                  {stability.label}
                 </span>
               )}
               {isDefault && (
@@ -305,6 +326,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                   const meta = engineMetadatas.find(m => m.id === engine.id)
                   const status = resolveEngineStatus(engine.id, healthStatus, meta);
                   const badge = getTabBadge(engine.id, status);
+                  const stability = getStabilityBadge(meta);
                   const isDefault = config.defaultEngine === engine.id;
                   return (
                     <button
@@ -319,6 +341,11 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
                       {badge && (
                         <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${badge.className}`}>
                           {badge.label}
+                        </span>
+                      )}
+                      {stability && (
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded border shrink-0 ${stability.className}`}>
+                          {stability.label}
                         </span>
                       )}
                       {isDefault && (

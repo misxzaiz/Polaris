@@ -115,6 +115,8 @@ export interface EngineMetadata {
   npmPackage?: string
   /** 安装页面 URL（如 "https://omp.sh/install"），声明后显示「打开安装页面」按钮 */
   installUrl?: string
+  /** 是否为稳定版本（默认 false；Claude Code 为唯一稳定引擎） */
+  stable?: boolean
 }
 
 // ============================================================================

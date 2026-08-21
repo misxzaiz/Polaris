@@ -1849,6 +1849,7 @@ impl AIEngine for DshEngine {
             ),
             npm_package: Some("@deepseek-ai/dsh".to_string()),
             install_url: None,
+            stable: false,
         }
     }
 

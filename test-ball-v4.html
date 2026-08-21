@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body{margin:0;background:#0a0c10;display:flex;flex-direction:column;align-items:center;gap:16px;padding:24px;font-family:sans-serif;color:#888}
+.row{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+.item{text-align:center}
+.item .lbl{font-size:10px;margin-top:4px;color:#aaa}
+.ball{width:140px;height:140px;border-radius:8px;overflow:hidden}
+</style>
+</head>
+<body>
+<div id="log" style="font-size:11px;color:#0f0;position:fixed;top:8px;right:8px"></div>
+<div class="row">
+<div class="item"><div id="a" class="ball"></div><div class="lbl">默认（情绪色）</div></div>
+<div class="item"><div id="b" class="ball"></div><div class="lbl">蓝瞳孔+深色背景</div></div>
+<div class="item"><div id="c" class="ball"></div><div class="lbl">棕色瞳孔+暖背景</div></div>
+<div class="item"><div id="d" class="ball"></div><div class="lbl">绿色瞳孔+绿背景</div></div>
+</div>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script>
+const log = (m) => { document.getElementById('log').textContent += m + ' | '; };
+window.__POLARIS_HOST_REACT__ = window.React;
+window.__POLARIS_HOST_REACT_JSX__ = { jsx: window.React.createElement, jsxs: window.React.createElement, Fragment: window.React.Fragment };
+window.addEventListener('load', async () => {
+  try {
+    const shimUrl = URL.createObjectURL(new Blob([
+      "const R = window.__POLARIS_HOST_REACT__;\n" +
+      "const J = window.__POLARIS_HOST_REACT_JSX__;\n" +
+      "export const useState = R.useState; export const useEffect = R.useEffect;\n" +
+      "export const useCallback = R.useCallback; export const useMemo = R.useMemo;\n" +
+      "export const useRef = R.useRef; export const memo = R.memo;\n" +
+      "export const createElement = R.createElement; export const Fragment = R.Fragment;\n" +
+      "export const Component = R.Component; export const forwardRef = R.forwardRef;\n" +
+      "export const useSyncExternalStore = R.useSyncExternalStore;\n" +
+      "export default R;\n" +
+      "export const jsx = J.jsx; export const jsxs = J.jsxs; export const jsx_Fragment = J.Fragment;"
+    ], { type: 'application/javascript' }));
+    const blob = await (await fetch('/Polaris-plugin/plugins/emotion-ball/dist/panel.js?v=' + Date.now())).text();
+    const patched = blob.replace(/from\s*["']react["']/g, 'from "' + shimUrl + '"');
+    const mod = await import(URL.createObjectURL(new Blob([patched], { type: 'application/javascript' })));
+    log('loaded');
+    const { EmotionBallView } = mod;
+    const scenarios = [
+      { id: 'a', emotion: '02', appearance: null },
+      { id: 'b', emotion: '10', appearance: { background: '#0a0c10', pupil: '#4A6FA5', bodyColor: null } },
+      { id: 'c', emotion: '10', appearance: { background: '#1a1410', pupil: '#3D2B1F', bodyColor: '#FFE3B3' } },
+      { id: 'd', emotion: '10', appearance: { background: '#0e1a14', pupil: '#5B8A72', eyeWhite: '#FFFFFF' } },
+    ];
+    scenarios.forEach(({ id, emotion, appearance }) => {
+      const c = document.getElementById(id);
+      window.ReactDOM.createRoot(c).render(
+        window.React.createElement(EmotionBallView, { emotion, shape: 'blob', size: 140, gaze: false, lite: true, appearance })
+      );
+    });
+    log('rendered');
+    setTimeout(() => {
+      scenarios.forEach(({ id }) => {
+        const svg = document.getElementById(id)?.querySelector('svg');
+        if (!svg) return;
+        const pupil = svg.querySelector('circle');
+        const bg = document.getElementById(id)?.style.background;
+        log('#' + id + ': pupil=' + (pupil?.getAttribute('fill')||'?') + ' bg=' + bg);
+      });
+    }, 1500);
+  } catch (e) { log('ERR: ' + e.message); }
+});
+</script>
+</body>
+</html>

@@ -895,6 +895,7 @@ impl AIEngine for PiEngine {
             install_guide: None,
             npm_package: None,
             install_url: None,
+            stable: false,
         }
     }
 

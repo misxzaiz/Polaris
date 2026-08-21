@@ -84,6 +84,11 @@ export function EngineExpandDetail({
                   未安装
                 </span>
               )}
+              {meta?.stable === false && (
+                <span className="text-xs px-2 py-0.5 rounded bg-red-400/10 text-red-400 border border-red-400/20">
+                  不稳定
+                </span>
+              )}
             </h3>
             {uiConfig && (
               <p className="text-sm text-text-secondary mt-1">{t(uiConfig.descKey ?? '')}</p>

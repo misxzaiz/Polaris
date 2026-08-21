@@ -690,6 +690,7 @@ pub trait AIEngine: Send + Sync {
             install_guide: None,
             npm_package: None,
             install_url: None,
+            stable: false,
         }
     }
 
@@ -781,6 +782,11 @@ pub struct EngineMetadata {
     /// 适用于非 npm 分发的引擎，AI 引擎设置页显示「打开安装页面」按钮。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
+    /// 是否为稳定版本。
+    /// Claude Code 为唯一稳定引擎，其余（Codex/Simple AI/Pi/DSH/插件引擎）均为不稳定版本。
+    /// 默认值 false（#[serde(default)] 保证旧配置向后兼容）。
+    #[serde(default)]
+    pub stable: bool,
 }
 
 /// 引擎分发方式。
