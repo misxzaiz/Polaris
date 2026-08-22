@@ -84,6 +84,7 @@ const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'Globe2',
   'Activity',
   'Users',
+  'Beaker',
 ])
 
 
@@ -555,6 +556,26 @@ export async function uninstallLocalPlugin(
 ): Promise<PluginOperationResult> {
   return invoke<PluginOperationResult>('plugin_uninstall_local', {
     installPath,
+    workspacePath,
+  })
+}
+
+/**
+ * 增强卸载：先终止所有相关进程再删除目录
+ *
+ * 与 `uninstallLocalPlugin` 的区别：
+ * - 后端会先 kill 匹配的进程（taskkill /F /IM /T）
+ * - 目录删除带重试（5 次）
+ * - 需要 pluginId 以清理引擎注册表和 PluginServiceManager
+ */
+export async function uninstallPluginWithCleanup(
+  installPath: string,
+  pluginId: string,
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_uninstall_with_cleanup', {
+    installPath,
+    pluginId,
     workspacePath,
   })
 }

@@ -167,6 +167,51 @@ pub async fn plugin_uninstall_local(
     )
 }
 
+/// 增强卸载：先终止所有相关进程，再删除目录
+///
+/// 与 `plugin_uninstall_local` 的区别：
+/// - 读取 manifest 获取插件命令名，安全终止匹配进程
+/// - 目录删除带重试
+/// - 需传入 plugin_id 以清理 PluginServiceManager
+///
+/// 注意：引擎注册表清理由前端负责（前端有 engineId→pluginId 映射），
+/// 后端只做进程终止和文件清理。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_uninstall_with_cleanup(
+    state: State<'_, AppState>,
+    install_path: String,
+    plugin_id: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    // 1. 停止 PluginServiceManager 管理的服务
+    let _ = state
+        .plugin_service_manager
+        .stop_services_for_plugin(&plugin_id)
+        .await;
+
+    // 2. 终止进程 + 删除目录（带重试）
+    //    引擎注册表清理由前端在 refreshInstalledPlugins 时通过 replaceInstalled 完成
+    let result = PluginService::uninstall_plugin_with_cleanup(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&install_path),
+    );
+
+    if result.is_ok() {
+        tracing::info!(
+            plugin_id = %plugin_id,
+            "插件 {} 已完全卸载（进程已终止，目录已删除）",
+            plugin_id
+        );
+    }
+
+    result
+}
+
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_check_update(

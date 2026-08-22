@@ -21,6 +21,7 @@ export type PluginIconId =
   | 'Globe2'
   | 'Activity'
   | 'Users'
+  | 'Beaker'
 
 export type PluginLeftPanelType = string
 

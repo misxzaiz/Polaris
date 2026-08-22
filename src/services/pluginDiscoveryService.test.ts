@@ -5,6 +5,7 @@ import {
   installPluginPackage,
   installRemotePlugin,
   normalizeDiscoveredPlugin,
+  uninstallPluginWithCleanup,
   validateDiscoveredPlugin,
   validatePluginManifest,
 } from './pluginDiscoveryService'
@@ -107,7 +108,7 @@ describe('pluginDiscoveryService', () => {
             id: 'bad-view',
             area: 'activityBar',
             panelType: 'unknown',
-            icon: 'CheckSquare',
+            icon: 'NotARealIcon',
             labelKey: 'example:view',
           },
         ],
@@ -130,8 +131,8 @@ describe('pluginDiscoveryService', () => {
     expect(result.plugin?.contributes.views).toEqual([])
     expect(result.plugin?.contributes.mcpServers).toEqual([])
     expect(result.errors).toEqual([
-      'contributes.views[0] is invalid and was ignored',
       'contributes.mcpServers[0] is invalid and was ignored',
+      'contributes.views[0] is invalid and was ignored',
     ])
   })
 
@@ -165,6 +166,40 @@ describe('pluginDiscoveryService', () => {
       expect.objectContaining({
         panelType: 'demoPlugin',
         icon: 'Bot',
+      }),
+    ])
+  })
+
+  it('accepts the Beaker icon for API-style plugins', () => {
+    const plugin = normalizeDiscoveredPlugin({
+      id: 'example.polaris-api',
+      name: 'Polaris API',
+      version: '1.0.0',
+      enabledByDefault: true,
+      contributes: {
+        views: [
+          {
+            id: 'polaris-api.panel',
+            area: 'activityBar',
+            panelType: 'polarisApi',
+            icon: 'Beaker',
+            labelKey: 'plugins.polarisApi',
+            labelDefault: 'API',
+            order: 85,
+          },
+        ],
+      },
+      permissions: {},
+      source: {
+        kind: 'user',
+      },
+      installPath: 'C:\\Users\\sample\\plugins\\polaris-api',
+    })
+
+    expect(plugin?.contributes.views).toEqual([
+      expect.objectContaining({
+        panelType: 'polarisApi',
+        icon: 'Beaker',
       }),
     ])
   })
@@ -242,6 +277,47 @@ describe('pluginDiscoveryService', () => {
     expect(invokeMock).toHaveBeenCalledWith('plugin_apply_update', {
       installPath: 'D:\\plugins\\demo',
       workspacePath: undefined,
+    })
+  })
+
+  describe('uninstallPluginWithCleanup', () => {
+    it('calls the backend enhanced uninstall command with pluginId', async () => {
+      invokeMock.mockResolvedValueOnce({ success: true, message: 'Plugin uninstalled' })
+
+      const result = await uninstallPluginWithCleanup(
+        'D:\\plugins\\demo',
+        'example.demo-plugin',
+        'D:\\workspace'
+      )
+
+      expect(result).toEqual({ success: true, message: 'Plugin uninstalled' })
+      expect(invokeMock).toHaveBeenCalledWith('plugin_uninstall_with_cleanup', {
+        installPath: 'D:\\plugins\\demo',
+        pluginId: 'example.demo-plugin',
+        workspacePath: 'D:\\workspace',
+      })
+    })
+
+    it('works without workspacePath', async () => {
+      invokeMock.mockResolvedValueOnce({ success: true })
+
+      await uninstallPluginWithCleanup('D:\\plugins\\demo', 'example.demo-plugin')
+      expect(invokeMock).toHaveBeenCalledWith('plugin_uninstall_with_cleanup', {
+        installPath: 'D:\\plugins\\demo',
+        pluginId: 'example.demo-plugin',
+        workspacePath: undefined,
+      })
+    })
+
+    it('handles failure returns', async () => {
+      invokeMock.mockResolvedValueOnce({
+        success: false,
+        error: '进程仍在运行，无法删除目录',
+      })
+
+      const result = await uninstallPluginWithCleanup('D:\\plugins\\demo', 'example.demo-plugin')
+      expect(result.success).toBe(false)
+      expect(result.error).toContain('进程')
     })
   })
 })

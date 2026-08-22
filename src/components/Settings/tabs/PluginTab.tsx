@@ -21,7 +21,7 @@ import {
   installLocalPlugin,
   installPluginPackage,
   installRemotePlugin,
-  uninstallLocalPlugin,
+  uninstallPluginWithCleanup,
   type PluginDiscoveryIssue,
   type PluginInstallLocations,
   type PluginUpdateCheckResult,
@@ -636,33 +636,31 @@ export function PluginTab() {
   const handleUninstallLocalPlugin = useCallback(async (pluginId: string, installPath?: string) => {
     if (!installPath) return
     const confirmed = window.confirm(t('plugins.uninstallConfirm', {
-      defaultValue: 'Uninstall plugin {{pluginId}}? This removes its installed directory.',
+      defaultValue: 'Uninstall plugin {{pluginId}}? This removes its installed directory and kills all associated processes.',
       pluginId,
     }))
     if (!confirmed) return
 
     setPluginOperationLoading(true)
-    setPluginOperationMessage(null)
+    setPluginOperationMessage(t('plugins.uninstalling', { defaultValue: 'Stopping processes and removing plugin...' }))
 
     try {
-      // 卸载前先停止该插件的所有服务，避免文件被进程占用导致删除失败
-      try {
-        const stopped = await pluginServiceManager.stopServicesForPlugin(pluginId)
-        const serviceStore = usePluginServiceStore.getState()
-        for (const status of stopped) {
-          serviceStore.removeServiceStatus(status.pluginId, status.serviceId)
-        }
-      } catch (_err) {
-        // 即便停止失败也继续尝试卸载
-      }
-
-      const result = await uninstallLocalPlugin(installPath, currentWorkspacePath)
+      // 使用增强卸载：后端统一处理停服务、注销引擎、杀进程、删目录
+      const result = await uninstallPluginWithCleanup(installPath, pluginId, currentWorkspacePath)
       if (!result.success) {
         setPluginOperationMessage(result.error ?? t('plugins.uninstallFailed', { defaultValue: 'Plugin uninstall failed' }))
         return
       }
 
+      // 清理服务状态
+      try {
+        const serviceStore = usePluginServiceStore.getState()
+        serviceStore.clearPluginServiceStatuses(pluginId)
+      } catch (_err) { /* ignore */ }
+
+      // 清理插件状态
       resetPluginState(pluginId)
+
       setPluginOperationMessage(result.message ?? t('plugins.uninstallSucceeded', { defaultValue: 'Plugin uninstalled' }))
       await refreshInstalledPlugins()
       await refreshInstallLocations()

@@ -1,10 +1,12 @@
 //! Plugin 服务
 //!
 //! 封装 Claude CLI 的 plugin 命令调用
+//! 以及插件安装、卸载、进程清理等生命周期管理
 
 use std::fs::File;
 use std::io::{Cursor, Read, Seek};
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use std::process::Command;
 
@@ -21,6 +23,13 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+/// 重试次数（目录删除时）
+const REMOVE_DIR_RETRIES: u32 = 5;
+/// 重试间隔（毫秒）
+const REMOVE_DIR_RETRY_DELAY_MS: u64 = 500;
+/// 进程终止后的等待时间（毫秒），给 OS 释放文件句柄
+const PROCESS_KILL_WAIT_MS: u64 = 800;
+
 const VALID_PLUGIN_ICONS: &[&str] = &[
     "Files",
     "GitPullRequest",
@@ -34,8 +43,17 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "Bot",
     "BookOpen",
     "AlertCircle",
+    "Beaker",
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
+
+/// 插件命令条目（用于进程匹配）
+struct CommandEntry {
+    /// 映像文件名（如 node.exe / python3 / my-plugin-server）
+    image_name: String,
+    /// 完整命令路径（用于命令行匹配）
+    full_command: String,
+}
 
 struct PreparedPluginSource {
     path: PathBuf,
@@ -594,13 +612,344 @@ impl PluginService {
             install_path,
         )?;
 
-        std::fs::remove_dir_all(&target)?;
+        Self::remove_dir_all_with_retry(&target)?;
 
         Ok(PluginOperationResult {
             success: true,
             message: Some(format!("已卸载插件目录 {}", target.display())),
             error: None,
         })
+    }
+
+    /// 增强卸载：先终止匹配的进程，再重试删除目录
+    ///
+    /// 此方法在 `uninstall_local_plugin` 基础上增加进程终止步骤：
+    /// 1. 读取 manifest 获取插件命令名列表
+    /// 2. 按命令名 kill 匹配的进程（仅限非通用运行时，安全过滤）
+    /// 3. 按命令行的插件目录路径 kill 匹配的进程（精准匹配，安全）
+    /// 4. 等待 OS 释放句柄
+    /// 5. 重试删除目录
+    ///
+    /// ## 安全设计
+    ///
+    /// 避免误杀系统进程：
+    /// - 通用运行时（node/python/java/dotnet）不按映像名全局杀，只按命令行含插件目录来杀
+    /// - 非通用运行时（如专属二进制）才按映像名精确匹配
+    /// - 停用 `taskkill /IM` 的泛化匹配，改用 `wmic` 命令行过滤
+    pub fn uninstall_plugin_with_cleanup(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> Result<PluginOperationResult> {
+        let target = Self::canonicalize_allowed_plugin_dir(
+            app_config_dir,
+            workspace_path,
+            install_path,
+        )?;
+
+        // 1. 读取 manifest 获取插件命令和安装目录
+        let plugin_dir_str = target.to_string_lossy().to_string();
+        let command_entries = Self::collect_plugin_commands(&target);
+
+        // 2. 终止匹配进程（安全：按命令行含插件目录精准匹配）
+        if !command_entries.is_empty() {
+            Self::kill_plugin_processes_safe(&command_entries, &plugin_dir_str);
+            // 等 OS 释放文件句柄
+            std::thread::sleep(Duration::from_millis(PROCESS_KILL_WAIT_MS));
+        }
+
+        // 3. 重试删除目录
+        Self::remove_dir_all_with_retry(&target)?;
+
+        Ok(PluginOperationResult {
+            success: true,
+            message: Some(format!("已卸载插件目录 {}", target.display())),
+            error: None,
+        })
+    }
+
+    /// 通用运行时集合（按映像名全局杀危险，必须用命令行匹配）
+    const GENERIC_RUNTIMES: &[&str] = &[
+        "node", "node.exe",
+        "python", "python.exe", "python3", "python3.exe",
+        "java", "java.exe", "javaw.exe",
+        "dotnet", "dotnet.exe",
+        "ruby", "ruby.exe",
+        "deno", "deno.exe",
+        "bun", "bun.exe",
+    ];
+
+    /// 安全终止插件进程
+    ///
+    /// 策略：
+    /// 1. 如果命令名不是通用运行时 → 直接按映像名 `taskkill /F /IM /T`
+    /// 2. 如果是通用运行时 → 用 `wmic process where "commandline like '%dir%'" get processid` 找 PID 后逐个杀
+    /// 3. 始终优先用命令行包含插件目录的方式匹配
+    fn kill_plugin_processes_safe(command_entries: &[CommandEntry], plugin_dir: &str) {
+        for entry in command_entries {
+            if entry.image_name.is_empty() {
+                continue;
+            }
+
+            // 检查是否是通用运行时
+            let is_generic = Self::GENERIC_RUNTIMES
+                .iter()
+                .any(|r| r.eq_ignore_ascii_case(&entry.image_name));
+
+            if is_generic {
+                // 通用运行时：按命令行包含插件目录搜索 PID
+                Self::kill_processes_by_command_line(plugin_dir);
+            } else {
+                // 专用二进制：直接按映像名终止
+                Self::kill_processes_by_image_name(&entry.image_name);
+            }
+        }
+
+        // 额外兜底：按命令行包含插件目录搜索所有进程（确保覆盖多种可能性）
+        Self::kill_processes_by_command_line(plugin_dir);
+    }
+
+    /// 收集插件 manifest 中所有命令条目（命令名 + 完整命令）
+    fn collect_plugin_commands(plugin_dir: &Path) -> Vec<CommandEntry> {
+        let manifest_path = match Self::find_manifest_path(plugin_dir) {
+            Some(path) => path,
+            None => return Vec::new(),
+        };
+
+        let manifest = match Self::read_manifest(&manifest_path) {
+            Ok(m) => m,
+            Err(_) => return Vec::new(),
+        };
+
+        let mut entries = Vec::new();
+
+        // MCP server 命令
+        for server in &manifest.contributes.mcp_servers {
+            let cmd = server.command.trim().to_string();
+            if !cmd.is_empty() {
+                let name = Path::new(&cmd)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&cmd);
+                entries.push(CommandEntry {
+                    image_name: name.to_string(),
+                    full_command: cmd.clone(),
+                });
+            }
+        }
+
+        // 后台服务命令
+        for service in &manifest.contributes.services {
+            let cmd = service.command.trim().to_string();
+            if !cmd.is_empty() {
+                let name = Path::new(&cmd)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&cmd);
+                entries.push(CommandEntry {
+                    image_name: name.to_string(),
+                    full_command: cmd.clone(),
+                });
+            }
+        }
+
+        // 引擎 CLI 命令
+        for engine in &manifest.contributes.engines {
+            let cmd = engine.cli.command.trim().to_string();
+            if !cmd.is_empty() {
+                let name = Path::new(&cmd)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&cmd);
+                entries.push(CommandEntry {
+                    image_name: name.to_string(),
+                    full_command: cmd.clone(),
+                });
+            }
+        }
+
+        // 去重
+        entries.sort_by(|a, b| a.image_name.cmp(&b.image_name));
+        entries.dedup_by(|a, b| a.image_name == b.image_name);
+        entries
+    }
+
+    /// 按映像名终止进程（安全适用：非通用运行时）
+    ///
+    /// Windows：`taskkill /F /IM <name> /T`
+    /// Unix：`pkill -9 <name>`
+    fn kill_processes_by_image_name(image_name: &str) {
+        let result = if cfg!(windows) {
+            Command::new("taskkill")
+                .args(["/F", "/IM", image_name, "/T"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+        } else {
+            Command::new("pkill")
+                .args(["-9", "-f", image_name])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+        };
+
+        match result {
+            Ok(status) => {
+                if status.success() {
+                    tracing::info!("已终止插件进程: {} (exit: {:?})", image_name, status.code());
+                } else {
+                    tracing::debug!("未找到匹配进程: {} (exit: {:?})", image_name, status.code());
+                }
+            }
+            Err(e) => {
+                tracing::warn!("终止进程 {} 失败: {}", image_name, e);
+            }
+        }
+    }
+
+    /// 按命令行包含插件目录路径终止进程（安全匹配）
+    ///
+    /// Windows：`wmic process where "commandline like '%dir%'" get processid` → 逐个 taskkill /F /PID
+    /// Unix：`pgrep -f <dir>` → `kill -9`
+    fn kill_processes_by_command_line(plugin_dir: &str) {
+        if plugin_dir.is_empty() {
+            return;
+        }
+
+        let pids: Vec<u32> = if cfg!(windows) {
+            // Windows 用 wmic 按命令行匹配
+            // 转义 LIKE 中的特殊字符：% → [%], _ → [_]
+            let escaped = plugin_dir
+                .replace('\\', "\\\\")
+                .replace('%', "[%]")
+                .replace('_', "[_]");
+            let filter = format!("commandline like '%{}%'", escaped);
+            let output = Command::new("wmic")
+                .args([
+                    "process",
+                    "where",
+                    &filter,
+                    "get",
+                    "processid",
+                    "/format:csv",
+                ])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output();
+
+            match output {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    stdout
+                        .lines()
+                        .filter_map(|line| {
+                            let trimmed = line.trim();
+                            // CSV 格式：Node,ProcessId 或空行
+                            if trimmed.is_empty() || !trimmed.contains(',') {
+                                return None;
+                            }
+                            // 取逗号后部分（ProcessId）
+                            let pid_str = trimmed.split(',').last()?.trim();
+                            if pid_str.is_empty() || pid_str == "ProcessId" {
+                                return None;
+                            }
+                            pid_str.parse::<u32>().ok()
+                        })
+                        .collect()
+                }
+                Err(e) => {
+                    tracing::warn!("wmic 查询失败: {}", e);
+                    Vec::new()
+                }
+            }
+        } else {
+            // Unix 用 pgrep -f
+            let output = Command::new("pgrep")
+                .args(["-f", plugin_dir])
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::null())
+                .output();
+
+            match output {
+                Ok(output) => {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    stdout
+                        .lines()
+                        .filter_map(|line| line.trim().parse::<u32>().ok())
+                        .collect()
+                }
+                Err(e) => {
+                    tracing::warn!("pgrep 查询失败: {}", e);
+                    Vec::new()
+                }
+            }
+        };
+
+        if pids.is_empty() {
+            return;
+        }
+
+        tracing::info!(
+            "找到 {} 个进程匹配插件目录 {}，终止中...",
+            pids.len(),
+            plugin_dir
+        );
+
+        // 逐个 PID 终止
+        for pid in pids {
+            let result = if cfg!(windows) {
+                Command::new("taskkill")
+                    .args(["/F", "/T", "/PID", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+            } else {
+                Command::new("kill")
+                    .args(["-9", &pid.to_string()])
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
+                    .status()
+            };
+
+            match result {
+                Ok(status) => {
+                    if status.success() {
+                        tracing::info!("已终止进程 PID={} (含插件目录: {})", pid, plugin_dir);
+                    } else {
+                        tracing::debug!("终止 PID={} 失败 (exit: {:?})", pid, status.code());
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("终止 PID={} 失败: {}", pid, e);
+                }
+            }
+        }
+    }
+
+    /// 带重试的目录删除
+    ///
+    /// Windows 下进程退出后文件句柄可能延迟释放，重试 + 间隔等待。
+    fn remove_dir_all_with_retry(target: &Path) -> Result<()> {
+        let mut last_error = None;
+
+        for attempt in 0..REMOVE_DIR_RETRIES {
+            match std::fs::remove_dir_all(target) {
+                Ok(()) => return Ok(()),
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < REMOVE_DIR_RETRIES - 1 {
+                        tracing::warn!(
+                            "删除目录失败 (第{}次)，重试: {}",
+                            attempt + 1,
+                            target.display()
+                        );
+                        std::thread::sleep(Duration::from_millis(REMOVE_DIR_RETRY_DELAY_MS));
+                    }
+                }
+            }
+        }
+
+        Err(AppError::IoError(last_error.unwrap()))
     }
 
     pub async fn check_local_plugin_update(install_path: &Path) -> PluginUpdateCheckResult {

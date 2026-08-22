@@ -368,6 +368,7 @@ pub async fn handle_ipc_bridge(
         "plugin_install_package" => dispatch_plugin_install_package(&state, &args),
         "plugin_install_remote" => dispatch_plugin_install_remote(&state, &args).await,
         "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
+        "plugin_uninstall_with_cleanup" => dispatch_plugin_uninstall_with_cleanup(&state, &args).await,
         "plugin_check_update" => dispatch_plugin_check_update(&args).await,
         "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
@@ -2134,6 +2135,38 @@ async fn dispatch_plugin_check_update(args: &Value) -> Result<Json<Value>, WebEr
         .await,
     )
     .unwrap_or_default()))
+}
+
+/// 增强卸载（Web 模式）：停服务 + 杀进程 + 删除目录。
+///
+/// 与 Tauri 命令 `plugin_uninstall_with_cleanup` 同源，绕开 tauri-app cfg 门控。
+/// 引擎注册表清理由前端负责（前端有 engineId→pluginId 映射）。
+async fn dispatch_plugin_uninstall_with_cleanup(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let install_path = require_string(args, "installPath")?;
+    let plugin_id = require_string(args, "pluginId")?;
+
+    // 1. 停止 PluginServiceManager 管理的服务
+    let _ = state
+        .plugin_service_manager
+        .stop_services_for_plugin(&plugin_id)
+        .await;
+
+    // 2. 终止进程 + 删除目录（带重试）
+    let result = crate::services::plugin_service::PluginService::uninstall_plugin_with_cleanup(
+        &config_dir,
+        workspace_path.as_deref(),
+        Path::new(&install_path),
+    );
+
+    match result {
+        Ok(op) => Ok(Json(serde_json::to_value(op).unwrap_or_default())),
+        Err(e) => Err(WebError::Internal(e.to_message())),
+    }
 }
 
 async fn dispatch_plugin_apply_update(
