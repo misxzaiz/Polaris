@@ -17,6 +17,7 @@ import {
   applyPluginUpdate,
   checkPluginUpdate,
   discoverInstalledPlugins,
+  forceUninstallPlugin,
   getPluginInstallLocations,
   installLocalPlugin,
   installPluginPackage,
@@ -645,7 +646,7 @@ export function PluginTab() {
     setPluginOperationMessage(t('plugins.uninstalling', { defaultValue: 'Stopping processes and removing plugin...' }))
 
     try {
-      // 使用增强卸载：后端统一处理停服务、注销引擎、杀进程、删目录
+      // 使用增强卸载：后端统一处理停服务、杀进程、删目录
       const result = await uninstallPluginWithCleanup(installPath, pluginId, currentWorkspacePath)
       if (!result.success) {
         setPluginOperationMessage(result.error ?? t('plugins.uninstallFailed', { defaultValue: 'Plugin uninstall failed' }))
@@ -662,6 +663,43 @@ export function PluginTab() {
       resetPluginState(pluginId)
 
       setPluginOperationMessage(result.message ?? t('plugins.uninstallSucceeded', { defaultValue: 'Plugin uninstalled' }))
+      await refreshInstalledPlugins()
+      await refreshInstallLocations()
+    } catch (error) {
+      setPluginOperationMessage(error instanceof Error ? error.message : String(error))
+    } finally {
+      setPluginOperationLoading(false)
+    }
+  }, [currentWorkspacePath, refreshInstallLocations, refreshInstalledPlugins, resetPluginState, t])
+
+  const handleForceUninstallPlugin = useCallback(async (pluginId: string, installPath?: string) => {
+    if (!installPath) return
+    const confirmed = window.confirm(t('plugins.forceUninstallConfirm', {
+      defaultValue: 'Force uninstall plugin {{pluginId}}? Plugin directory may remain but will be renamed. This cannot be undone.',
+      pluginId,
+    }))
+    if (!confirmed) return
+
+    setPluginOperationLoading(true)
+    setPluginOperationMessage(t('plugins.forceUninstalling', { defaultValue: 'Force uninstalling plugin...' }))
+
+    try {
+      const result = await forceUninstallPlugin(installPath, currentWorkspacePath)
+      if (!result.success) {
+        setPluginOperationMessage(result.error ?? t('plugins.uninstallFailed', { defaultValue: 'Force uninstall failed' }))
+        return
+      }
+
+      // 清理服务状态
+      try {
+        const serviceStore = usePluginServiceStore.getState()
+        serviceStore.clearPluginServiceStatuses(pluginId)
+      } catch (_err) { /* ignore */ }
+
+      // 清理插件状态
+      resetPluginState(pluginId)
+
+      setPluginOperationMessage(result.message ?? t('plugins.forceUninstallSucceeded', { defaultValue: 'Force uninstall completed' }))
       await refreshInstalledPlugins()
       await refreshInstallLocations()
     } catch (error) {
@@ -922,6 +960,7 @@ export function PluginTab() {
             onCheckUpdate={handleCheckPluginUpdate}
             onApplyUpdate={handleApplyPluginUpdate}
             onUninstall={handleUninstallLocalPlugin}
+            onForceUninstall={handleForceUninstallPlugin}
             pluginStates={pluginStates}
             operationLoading={pluginOperationLoading}
             t={t}
@@ -956,6 +995,7 @@ interface PluginCardProps {
   onCheckUpdate: (id: string, installPath?: string) => void
   onApplyUpdate: (id: string, installPath?: string) => void
   onUninstall: (id: string, installPath?: string) => void
+  onForceUninstall: (id: string, installPath?: string) => void
   t: (key: string, options?: Record<string, unknown>) => string
 }
 
@@ -979,6 +1019,7 @@ function PluginCard({
   onCheckUpdate,
   onApplyUpdate,
   onUninstall,
+  onForceUninstall,
   t,
 }: PluginCardProps) {
   const isCorePlugin = plugin.id === 'polaris.core'
@@ -1267,6 +1308,15 @@ function PluginCard({
                 >
                   <Trash2 size={10} />
                   {t('plugins.uninstall', { defaultValue: 'Uninstall' })}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onForceUninstall(plugin.id, plugin.installPath)}
+                  disabled={operationLoading || !plugin.installPath}
+                  className="inline-flex items-center gap-1 rounded border border-warning/30 px-2 py-1 text-[11px] text-warning hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <AlertTriangle size={10} />
+                  {t('plugins.forceUninstall', { defaultValue: 'Force' })}
                 </button>
               </>
             )}

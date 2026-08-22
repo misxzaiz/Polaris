@@ -1097,6 +1097,7 @@ pub fn run() {
             commands::plugin::plugin_update,
             commands::plugin::plugin_uninstall_local,
             commands::plugin::plugin_uninstall_with_cleanup,
+            commands::plugin::plugin_force_uninstall,
             commands::plugin::plugin_uninstall,
             commands::plugin::marketplace_list,
             commands::plugin::marketplace_add,

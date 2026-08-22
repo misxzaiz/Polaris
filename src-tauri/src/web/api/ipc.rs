@@ -369,6 +369,7 @@ pub async fn handle_ipc_bridge(
         "plugin_install_remote" => dispatch_plugin_install_remote(&state, &args).await,
         "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
         "plugin_uninstall_with_cleanup" => dispatch_plugin_uninstall_with_cleanup(&state, &args).await,
+        "plugin_force_uninstall" => dispatch_plugin_force_uninstall(&state, &args),
         "plugin_check_update" => dispatch_plugin_check_update(&args).await,
         "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
@@ -2185,6 +2186,27 @@ async fn dispatch_plugin_apply_update(
         )
         .await
     )
+}
+
+/// 强制卸载（Web 模式）：尽力删除目录，失败则重命名。
+///
+/// 与 Tauri 命令 `plugin_force_uninstall` 同源，绕开 tauri-app cfg 门控。
+fn dispatch_plugin_force_uninstall(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let config_dir = get_config_dir(state)?;
+    let workspace_path = plugin_workspace_path(args);
+    let install_path = require_string(args, "installPath")?;
+
+    Ok(Json(serde_json::to_value(
+        crate::services::plugin_service::PluginService::force_uninstall_plugin(
+            &config_dir,
+            workspace_path.as_deref(),
+            Path::new(&install_path),
+        ),
+    )
+    .map_err(|e| WebError::Internal(format!("Serialization error: {}", e)))?))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

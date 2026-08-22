@@ -949,7 +949,109 @@ impl PluginService {
             }
         }
 
-        Err(AppError::IoError(last_error.unwrap()))
+        let err = last_error.unwrap();
+        // 将 Windows 文件锁错误映射为可读信息
+        let friendly_msg = match err.raw_os_error() {
+            Some(32) => format!(
+                "插件目录被进程占用，无法删除: {}。\n\
+                建议：1) 检查任务管理器是否仍有相关进程在运行；\n\
+                2) 手动关闭后重试；\n\
+                3) 使用「强制卸载」仅移除注册信息。",
+                target.display()
+            ),
+            Some(5) => format!(
+                "插件目录访问被拒绝: {}。\n\
+                建议：以管理员身份运行 Polaris 后重试。",
+                target.display()
+            ),
+            _ => format!(
+                "无法删除插件目录 {}: {}",
+                target.display(),
+                err
+            ),
+        };
+
+        Err(AppError::ConfigError(friendly_msg))
+    }
+
+    /// 强制卸载：尝试删除目录，失败时至少重命名目录使其不再被识别为插件
+    ///
+    /// 与 `uninstall_plugin_with_cleanup` 的区别：
+    /// - 不终止进程（可能已死或无法终止）
+    /// - 先尝试删除，失败则重命名目录为 `.polaris-plugin-removed-{时间戳}`
+    /// - 始终返回成功（只要插件目录不是在允许路径之外）
+    /// - 适合用户选择"强制卸载"时使用
+    pub fn force_uninstall_plugin(
+        app_config_dir: &Path,
+        workspace_path: Option<&Path>,
+        install_path: &Path,
+    ) -> PluginOperationResult {
+        let target = match Self::canonicalize_allowed_plugin_dir(
+            app_config_dir,
+            workspace_path,
+            install_path,
+        ) {
+            Ok(t) => t,
+            Err(e) => {
+                return PluginOperationResult {
+                    success: false,
+                    message: None,
+                    error: Some(format!("插件路径无效: {}", e)),
+                };
+            }
+        };
+
+        // 先尝试正常删除
+        if std::fs::remove_dir_all(&target).is_ok() {
+            return PluginOperationResult {
+                success: true,
+                message: Some(format!("强制卸载成功，已删除目录 {}", target.display())),
+                error: None,
+            };
+        }
+
+        // 删除失败 → 重命名目录（使其不再被识别为插件目录）
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let renamed = target.with_file_name(format!(
+            ".polaris-plugin-removed-{}-{}",
+            target.file_name().unwrap_or_default().to_string_lossy(),
+            timestamp
+        ));
+
+        match std::fs::rename(&target, &renamed) {
+            Ok(()) => {
+                tracing::info!(
+                    "强制卸载：目录已重命名 {} → {}",
+                    target.display(),
+                    renamed.display()
+                );
+                PluginOperationResult {
+                    success: true,
+                    message: Some(format!(
+                        "强制卸载完成。目录 {} 因被进程占用已重命名为 {}，\n\
+                        重启后系统可清理此目录。",
+                        target.display(),
+                        renamed.display()
+                    )),
+                    error: None,
+                }
+            }
+            Err(e) => {
+                tracing::warn!("强制卸载：重命名也失败: {}", e);
+                PluginOperationResult {
+                    success: true,
+                    message: Some(format!(
+                        "强制卸载完成（目录无法删除: {}）。\n\
+                        插件注册信息已移除，残留目录可手动删除。",
+                        e
+                    )),
+                    error: None,
+                }
+            }
+        }
     }
 
     pub async fn check_local_plugin_update(install_path: &Path) -> PluginUpdateCheckResult {

@@ -580,6 +580,21 @@ export async function uninstallPluginWithCleanup(
   })
 }
 
+/**
+ * 强制卸载：尽力删除目录，失败时至少重命名。
+ *
+ * 不终止进程，不等待。适合标准卸载失败后的兜底方案。
+ */
+export async function forceUninstallPlugin(
+  installPath: string,
+  workspacePath?: string
+): Promise<PluginOperationResult> {
+  return invoke<PluginOperationResult>('plugin_force_uninstall', {
+    installPath,
+    workspacePath,
+  })
+}
+
 export async function checkPluginUpdate(installPath: string): Promise<PluginUpdateCheckResult> {
   return invoke<PluginUpdateCheckResult>('plugin_check_update', { installPath })
 }

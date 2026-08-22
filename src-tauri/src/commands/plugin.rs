@@ -220,6 +220,27 @@ pub async fn plugin_check_update(
     Ok(PluginService::check_local_plugin_update(std::path::Path::new(&install_path)).await)
 }
 
+/// 强制卸载：尝试删除目录，失败时至少重命名使其不再被识别为插件
+///
+/// 与 `plugin_uninstall_with_cleanup` 的区别：不终止进程，尽力删除，
+/// 失败则重命名目录，始终返回成功（只要路径合法）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn plugin_force_uninstall(
+    state: State<'_, AppState>,
+    install_path: String,
+    workspace_path: Option<String>,
+) -> Result<PluginOperationResult> {
+    let config_dir = get_plugin_config_dir(&state)?;
+    let workspace_path = workspace_path.as_deref().map(std::path::Path::new);
+
+    Ok(PluginService::force_uninstall_plugin(
+        &config_dir,
+        workspace_path,
+        std::path::Path::new(&install_path),
+    ))
+}
+
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_apply_update(
