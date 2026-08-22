@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
 import { FileExplorer } from './components/FileExplorer';
@@ -166,6 +166,13 @@ function App() {
   const hasLeftPanel = leftPanelType !== 'none' &&
     !!activeLeftPanelContribution &&
     isPluginUiEnabled(pluginStates, activeLeftPanelContribution.pluginId);
+  // [诊断] 临时：追踪 hasLeftPanel 从 true 变 false 的时刻
+  const hasLeftPanelRef = useRef(hasLeftPanel);
+  if (hasLeftPanelRef.current && !hasLeftPanel) {
+    // eslint-disable-next-line no-console
+    console.warn(`[PanelTrace] hasLeftPanel false → leftPanelType="${leftPanelType}" contribution=${!!activeLeftPanelContribution} pluginStates keys=${Object.keys(pluginStates).length}`, new Error().stack?.split('\n').slice(2, 6).join(' | '))
+  }
+  hasLeftPanelRef.current = hasLeftPanel;
   const hasCenterStage = !isCompact && hasOpenTabs;
 
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度

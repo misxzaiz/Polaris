@@ -8,6 +8,17 @@ import { persist } from 'zustand/middleware';
 /** 左侧面板类型（内置 + 外部插件动态注册） */
 export type LeftPanelType = string
 
+// [诊断] 临时：追踪所有关闭/切换左侧面板的调用来源，用于定位"切回应用后面板消失"根因
+function tracePanelChange(label: string, from: string, to: string): void {
+  if (to === 'none' || from !== to) {
+    try {
+      const stack = new Error().stack?.split('\n').slice(2, 8).join(' | ') ?? 'no-stack'
+      // eslint-disable-next-line no-console
+      console.warn(`[PanelTrace] ${label}: "${from}" → "${to}" @ ${stack}`)
+    } catch { /* ignore */ }
+  }
+}
+
 /** 小屏模式状态 */
 export interface CompactModeState {
   isCompactMode: boolean;      // 是否处于小屏模式
@@ -241,22 +252,22 @@ export const useViewStore = create<ViewStore>()(
       // === 新布局相关操作 ===
 
       // 设置左侧面板类型
-      setLeftPanelType: (type: LeftPanelType) => set({ leftPanelType: type }),
+      setLeftPanelType: (type: LeftPanelType) => {
+        tracePanelChange('setLeftPanelType', get().leftPanelType, type)
+        set({ leftPanelType: type })
+      },
 
       // 切换左侧面板 (智能切换: 如果点击的是当前面板则隐藏, 否则显示该面板)
       toggleLeftPanel: (type: LeftPanelType) => set((state) => {
-        if (state.leftPanelType === type) {
-          // 如果点击的是当前面板,则隐藏
-          return { leftPanelType: 'none' };
-        } else {
-          // 否则切换到该面板
-          return { leftPanelType: type };
-        }
+        const next = state.leftPanelType === type ? 'none' : type
+        tracePanelChange('toggleLeftPanel', state.leftPanelType, next)
+        return { leftPanelType: next }
       }),
 
       // VSCode 风格: 切换到指定面板,如果已经是该面板则不做操作
       switchToLeftPanel: (type: LeftPanelType) => set((state) => {
         if (state.leftPanelType !== type) {
+          tracePanelChange('switchToLeftPanel', state.leftPanelType, type)
           return { leftPanelType: type };
         }
         // 如果已经是该面板,不做任何操作
@@ -264,7 +275,10 @@ export const useViewStore = create<ViewStore>()(
       }),
 
       // 关闭左侧面板
-      closeLeftPanel: () => set({ leftPanelType: 'none' }),
+      closeLeftPanel: () => {
+        tracePanelChange('closeLeftPanel', get().leftPanelType, 'none')
+        set({ leftPanelType: 'none' })
+      },
 
       // 设置左侧面板宽度
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: width }),
