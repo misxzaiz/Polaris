@@ -43,6 +43,10 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "Bot",
     "BookOpen",
     "AlertCircle",
+    "Film",
+    "Globe2",
+    "Activity",
+    "Users",
     "Beaker",
 ];
 const VALID_TRANSPORTS: &[&str] = &["stdio", "http"];
