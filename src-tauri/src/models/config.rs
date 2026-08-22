@@ -1627,6 +1627,12 @@ pub struct Config {
     #[serde(default)]
     pub perf_migration_dismissed: bool,
 
+    /// 插件配置命名空间。key 为插件 id，value 为该插件的配置对象（由
+    /// manifest.configSchema 声明的字段）。设置页按 schema 自动渲染表单，
+    /// 插件通过 MCP 工具或 TS API 读写自身配置（受 appConfigRead/Write 权限约束）。
+    #[serde(default)]
+    pub plugins: BTreeMap<String, serde_json::Value>,
+
     // === 旧字段，保持向后兼容 ===
     /// @deprecated 请使用 claude_code.cli_path
     #[serde(default)]
@@ -1752,6 +1758,7 @@ impl Default for Config {
             skill_paths: Vec::new(),
             performance: default_performance_features(),
             perf_migration_dismissed: false,
+            plugins: BTreeMap::new(),
             claude_cmd: None,
         }
     }

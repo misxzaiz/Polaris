@@ -17,6 +17,59 @@ import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 
 const log = createLogger('ConfigStore');
 
+/**
+ * 将后端 config 同步到所有下游 store 的统一副作用入口。
+ *
+ * 提取自原 loadConfig/updateConfig/updateConfigPatch/submitToken 四处手写副作用链,
+ * 消除"load 全量同步、update 仅部分同步"的不一致。新增配置项只需在此补一行。
+ *
+ * 纯派生注入(非持久化字段)在此统一处理;持久化字段由各 store 自身 persist。
+ * modelProfileId/profileMode 不从 sessionConfigStore persist 读取,由 configStore 派生注入。
+ */
+export async function applyConfig(config: Config): Promise<void> {
+  if (config.language) {
+    i18n.changeLanguage(config.language);
+  }
+  // 同步 spidermanTheme 到 localStorage（兼容旧配置）
+  if (config.spidermanTheme) {
+    saveLegacySpiderManConfig(config.spidermanTheme as unknown as Record<string, unknown>);
+  }
+  // 优先使用 activeThemeId，否则迁移旧 theme 字段
+  if (config.activeThemeId) {
+    useThemeStore.getState().applyThemeById(config.activeThemeId);
+  } else if (config.theme) {
+    const builtIn = getBuiltInThemeByShortName(config.theme);
+    if (builtIn) {
+      useThemeStore.getState().applyThemeById(builtIn.id);
+    }
+  }
+  // 同步 Model Profile 到 modelProfileStore（无 persist，依赖此注入）
+  if (config.modelProfiles?.length) {
+    const { useModelProfileStore } = await import('./modelProfileStore');
+    const store = useModelProfileStore.getState();
+    store.setProfiles(config.modelProfiles);
+    if (config.activeModelProfileId) {
+      store.setActiveProfileId(config.activeModelProfileId);
+    }
+  }
+  // 全局 activeModelProfileId 同步到 sessionConfigStore（未手动设置过状态栏 Profile 的会话兜底）
+  if (config.activeModelProfileId) {
+    const { useSessionConfig } = await import('./sessionConfigStore');
+    const sessionState = useSessionConfig.getState();
+    if (!sessionState.config.modelProfileId) {
+      sessionState.setModelProfileId(config.activeModelProfileId);
+    }
+  }
+  // 分组路由：后端已激活分组时，把全局默认 profileMode 同步为 'group'
+  if (config.activeProviderGroupId && !config.activeModelProfileId) {
+    const { useSessionConfig } = await import('./sessionConfigStore');
+    const sessionState = useSessionConfig.getState();
+    if (!sessionState.config.modelProfileId) {
+      sessionState.setProfileMode('group');
+    }
+  }
+}
+
 interface ConfigState {
   /** 当前配置 */
   config: Config | null;
@@ -73,59 +126,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       // 配置加载成功即视为连接成功，引擎可用性是后续 UI 展示的独立维度
       const connectionState = 'success';
 
-      if (config?.language) {
-        i18n.changeLanguage(config.language);
-      }
-      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
-      if (config?.spidermanTheme) {
-        saveLegacySpiderManConfig(config.spidermanTheme);
-      }
-      // 优先使用 activeThemeId，否则迁移旧 theme 字段
-      if (config?.activeThemeId) {
-        useThemeStore.getState().applyThemeById(config.activeThemeId);
-      } else if (config?.theme) {
-        const builtIn = getBuiltInThemeByShortName(config.theme);
-        if (builtIn) {
-          useThemeStore.getState().applyThemeById(builtIn.id);
-        }
-      }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
 
-      // 同步 Model Profile 到 modelProfileStore，确保重启后 Profile 仍然生效
-      // （modelProfileStore 没有 persist 中间件，依赖此初始化）
-      if (config.modelProfiles?.length) {
-        import('./modelProfileStore').then(({ useModelProfileStore }) => {
-          const store = useModelProfileStore.getState();
-          store.setProfiles(config.modelProfiles!);
-          if (config.activeModelProfileId) {
-            store.setActiveProfileId(config.activeModelProfileId);
-          }
-        }).catch(() => {})
-      }
-
-      // P0 修复：初始化时将全局 activeModelProfileId 同步到 sessionConfigStore
-      // 确保未手动设置过状态栏 Profile 的会话能使用设置页的激活配置
-      if (config.activeModelProfileId) {
-        const activeProfileId = config.activeModelProfileId
-        import('./sessionConfigStore').then(({ useSessionConfig }) => {
-          const sessionState = useSessionConfig.getState()
-          if (!sessionState.config.modelProfileId) {
-            sessionState.setModelProfileId(activeProfileId)
-          }
-        }).catch(() => {})
-      }
-
-      // 分组路由同理：后端已激活分组（activeProviderGroupId）时，把全局默认
-      // profileMode 同步为 'group'，确保新会话自动走分组路由。
-      // 仅当全局镜像未显式选择单 Profile 且未显式选官方时兜底（modelProfileId 为空）。
-      if (config.activeProviderGroupId && !config.activeModelProfileId) {
-        import('./sessionConfigStore').then(({ useSessionConfig }) => {
-          const sessionState = useSessionConfig.getState()
-          if (!sessionState.config.modelProfileId) {
-            sessionState.setProfileMode('group')
-          }
-        }).catch(() => {})
-      }
+      // 统一副作用入口：language/theme/spiderman/modelProfile/sessionConfig 同步
+      await applyConfig(config);
 
       // 异步获取动态信息（agents, auth status, version）
       import('./cliInfoStore').then(({ useCliInfoStore }) => {
@@ -158,22 +162,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       await tauri.updateConfig(config);
       // 关键：保存后重新从后端加载，确保同步
       const savedConfig = await tauri.getConfig();
-      if (savedConfig?.language) {
-        i18n.changeLanguage(savedConfig.language);
-      }
-      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
-      if (savedConfig?.spidermanTheme) {
-        saveLegacySpiderManConfig(savedConfig.spidermanTheme);
-      }
-      // 优先使用 activeThemeId，否则迁移旧 theme 字段
-      if (savedConfig?.activeThemeId) {
-        useThemeStore.getState().applyThemeById(savedConfig.activeThemeId);
-      } else if (savedConfig?.theme) {
-        const builtIn = getBuiltInThemeByShortName(savedConfig.theme);
-        if (builtIn) {
-          useThemeStore.getState().applyThemeById(builtIn.id);
-        }
-      }
+      await applyConfig(savedConfig);
       set({ config: savedConfig, loading: false });
     } catch (e) {
       set({
@@ -187,22 +176,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const savedConfig = await tauri.updateConfigPatch(patch);
-      if (savedConfig?.language) {
-        i18n.changeLanguage(savedConfig.language);
-      }
-      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
-      if (savedConfig?.spidermanTheme) {
-        saveLegacySpiderManConfig(savedConfig.spidermanTheme);
-      }
-      // 优先使用 activeThemeId，否则迁移旧 theme 字段
-      if (savedConfig?.activeThemeId) {
-        useThemeStore.getState().applyThemeById(savedConfig.activeThemeId);
-      } else if (savedConfig?.theme) {
-        const builtIn = getBuiltInThemeByShortName(savedConfig.theme);
-        if (builtIn) {
-          useThemeStore.getState().applyThemeById(builtIn.id);
-        }
-      }
+      await applyConfig(savedConfig);
       set({ config: savedConfig, loading: false });
       return savedConfig;
     } catch (e) {
@@ -343,23 +317,8 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
         tauri.healthCheck(),
       ]);
       const connectionState = 'success';
-      if (config?.language) {
-        i18n.changeLanguage(config.language);
-      }
-      // 同步 spidermanTheme 到 localStorage（兼容旧配置）
-      if (config?.spidermanTheme) {
-        saveLegacySpiderManConfig(config.spidermanTheme);
-      }
-      // 优先使用 activeThemeId，否则迁移旧 theme 字段
-      if (config?.activeThemeId) {
-        useThemeStore.getState().applyThemeById(config.activeThemeId);
-      } else if (config?.theme) {
-        const builtIn = getBuiltInThemeByShortName(config.theme);
-        if (builtIn) {
-          useThemeStore.getState().applyThemeById(builtIn.id);
-        }
-      }
       set({ config, healthStatus: health, loading: false, isConnecting: false, connectionState });
+      await applyConfig(config);
 
       // Token 认证成功后，reload 页面以触发完整初始化链路（runPostAuthInit 在
       // useAppInit useEffect[] 中内联调用），避免 React effect 链的时序竞态。

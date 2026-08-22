@@ -374,6 +374,9 @@ pub async fn handle_ipc_bridge(
         "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
+        // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
+        "plugin_get_config" => dispatch_plugin_get_config(&state, &args).await,
+        "plugin_set_config" => dispatch_plugin_set_config(&state, &args).await,
         // 插件引擎注册 / 注销（前端插件系统 contributes.engines 触发）
         "register_plugin_engine" => dispatch_register_plugin_engine(&state, &args).await,
         "unregister_plugin_engine" => dispatch_unregister_plugin_engine(&state, &args).await,
@@ -2226,6 +2229,89 @@ fn dispatch_plugin_state_save(state: &AppState, args: &Value) -> Result<Json<Val
     let service =
         crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
     json_result!(service.save(&states))
+}
+
+async fn dispatch_plugin_get_config(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let plugin_id = require_string(args, "pluginId")?;
+    // 权限校验（复用 Tauri 命令层同款逻辑）
+    check_plugin_config_permission(state, &plugin_id, false)?;
+    let value = {
+        let store = state.lock_config()?;
+        store
+            .get()
+            .plugins
+            .get(&plugin_id)
+            .cloned()
+            .unwrap_or(Value::Null)
+    };
+    Ok(Json(value))
+}
+
+async fn dispatch_plugin_set_config(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let plugin_id = require_string(args, "pluginId")?;
+    let patch = args
+        .get("patch")
+        .cloned()
+        .unwrap_or(Value::Null);
+    // 权限校验
+    check_plugin_config_permission(state, &plugin_id, true)?;
+    let patch_obj = patch.as_object().ok_or_else(|| {
+        WebError::BadRequest("插件配置 patch 必须是 JSON 对象".to_string())
+    })?;
+    let result = {
+        let mut store = state.lock_config()?;
+        let plugins = &mut store.get_mut().plugins;
+        let mut current = plugins.get(&plugin_id).cloned().unwrap_or_else(|| {
+            serde_json::json!({})
+        });
+        if let Some(obj) = current.as_object_mut() {
+            for (k, v) in patch_obj {
+                obj.insert(k.clone(), v.clone());
+            }
+        }
+        plugins.insert(plugin_id.clone(), current.clone());
+        store.save().map_err(WebError::from)?;
+        current
+    };
+    Ok(Json(result))
+}
+
+/// Web 模式插件配置权限校验（与 Tauri 命令层逻辑对齐）。
+fn check_plugin_config_permission(
+    state: &AppState,
+    plugin_id: &str,
+    write: bool,
+) -> Result<(), WebError> {
+    use crate::services::data_root::data_root;
+    use crate::services::plugin_service::PluginService;
+    let app_config_dir = data_root().config_dir();
+    let discovery = PluginService::discover_installed_plugins(&app_config_dir, None);
+    let manifest = discovery
+        .plugins
+        .iter()
+        .find(|p| p.id == plugin_id)
+        .ok_or_else(|| {
+            WebError::BadRequest(format!("插件 {} 未安装，无法校验权限", plugin_id))
+        })?;
+    let has_perm = if write {
+        manifest.permissions.app_config_write.unwrap_or(false)
+    } else {
+        manifest.permissions.app_config_read.unwrap_or(false)
+    };
+    if !has_perm {
+        let perm = if write { "appConfigWrite" } else { "appConfigRead" };
+        return Err(WebError::Forbidden(format!(
+            "插件 {} 未声明 {} 权限",
+            plugin_id, perm
+        )));
+    }
+    Ok(())
 }
 
 // ── Data Root dispatchers ───────────────────────────────────────────────────

@@ -235,20 +235,41 @@ impl ConfigStore {
 
     /// 设置工作目录
     pub fn set_work_dir(&mut self, path: Option<PathBuf>) -> Result<()> {
+        let old = self.config.clone();
         self.config.work_dir = path;
-        self.save()
+        match self.save() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.config = old;
+                Err(e)
+            }
+        }
     }
 
     /// 设置 Claude 命令路径
     pub fn set_claude_cmd(&mut self, cmd: String) -> Result<()> {
+        let old = self.config.clone();
         self.config.claude_code.cli_path = cmd;
-        self.save()
+        match self.save() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.config = old;
+                Err(e)
+            }
+        }
     }
 
     /// 设置默认引擎
     pub fn set_engine(&mut self, engine_id: EngineId) -> Result<()> {
+        let old = self.config.clone();
         self.config.set_engine_id(engine_id);
-        self.save()
+        match self.save() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.config = old;
+                Err(e)
+            }
+        }
     }
 
     /// 获取会话目录
@@ -465,8 +486,15 @@ impl ConfigStore {
     /// 设置会话目录
     pub fn set_session_dir(&mut self, path: PathBuf) -> Result<()> {
         std::fs::create_dir_all(&path)?;
+        let old = self.config.clone();
         self.config.session_dir = Some(path);
-        self.save()
+        match self.save() {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                self.config = old;
+                Err(e)
+            }
+        }
     }
 
     /// 查找所有可用的 Claude CLI 路径
@@ -665,6 +693,7 @@ impl OldConfig {
             performance: Default::default(),
             skill_paths: Vec::new(),
             perf_migration_dismissed: false,
+            plugins: std::collections::BTreeMap::new(),
             claude_cmd: Some(claude_cmd_clone),
         }
     }
@@ -759,5 +788,49 @@ mod tests {
             .unwrap();
 
         assert_eq!(saved.git_bin_path, None);
+    }
+
+    #[test]
+    fn set_engine_rollback_on_save_failure() {
+        // 验证 set_engine 在 save 失败时回滚内存配置。
+        // 用不存在的目录构造 store，save 会失败 → 内存应恢复旧值。
+        let config = Config::default();
+        // config_path 指向一个不存在的父目录，使 save 的 rename 失败
+        let config_path = std::path::PathBuf::from("/nonexistent/dir/config.json");
+        let mut store = ConfigStore::new_test(config, config_path);
+        let original_engine = store.get().default_engine.clone();
+
+        let result = store.set_engine(crate::ai::EngineId::parse_any("codex"));
+
+        // save 失败 → 返回 Err
+        assert!(result.is_err());
+        // 内存回滚 → default_engine 恢复为原值
+        assert_eq!(store.get().default_engine, original_engine);
+    }
+
+    #[test]
+    fn set_work_dir_rollback_on_save_failure() {
+        let config = Config::default();
+        let config_path = std::path::PathBuf::from("/nonexistent/dir/config.json");
+        let mut store = ConfigStore::new_test(config, config_path);
+        let original_work_dir = store.get().work_dir.clone();
+
+        let result = store.set_work_dir(Some(std::path::PathBuf::from("/tmp/test")));
+
+        assert!(result.is_err());
+        assert_eq!(store.get().work_dir, original_work_dir);
+    }
+
+    #[test]
+    fn set_claude_cmd_rollback_on_save_failure() {
+        let config = Config::default();
+        let config_path = std::path::PathBuf::from("/nonexistent/dir/config.json");
+        let mut store = ConfigStore::new_test(config, config_path);
+        let original_cli = store.get().claude_code.cli_path.clone();
+
+        let result = store.set_claude_cmd("/usr/local/bin/claude".to_string());
+
+        assert!(result.is_err());
+        assert_eq!(store.get().claude_code.cli_path, original_cli);
     }
 }

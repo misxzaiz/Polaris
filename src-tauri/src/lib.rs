@@ -1105,6 +1105,9 @@ pub fn run() {
             commands::plugin::marketplace_update,
             commands::plugin_state::plugin_state_load,
             commands::plugin_state::plugin_state_save,
+            // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
+            commands::plugin_config::plugin_get_config,
+            commands::plugin_config::plugin_set_config,
             // 插件服务管理
             commands::plugin_service::plugin_service_start,
             commands::plugin_service::plugin_service_stop,

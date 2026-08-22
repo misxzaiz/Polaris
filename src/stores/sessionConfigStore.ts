@@ -120,7 +120,18 @@ export const useSessionConfig = create<SessionConfigState>()(
     }),
     {
       name: 'polaris-session-config',
-      partialize: (state) => ({ config: state.config }),
+      // 仅持久化本机会话偏好（agent/model/effort/permissionMode）。
+      // modelProfileId/profileMode/providerGroupId 不持久化：它们派生自
+      // configStore（后端 config.json 为真相源），由 applyConfig 注入，
+      // 避免与 configStore 双写导致的状态不一致。
+      partialize: (state) => ({
+        config: {
+          agent: state.config.agent,
+          model: state.config.model,
+          effort: state.config.effort,
+          permissionMode: state.config.permissionMode,
+        }
+      }),
       // 反序列化时清洗废弃值（effort='max' / permissionMode='bypassPermissions'），
       // 并用 DEFAULT_SESSION_CONFIG 补全缺失字段（兼容旧版本持久化数据）。
       merge: (persistedState, currentState) => {

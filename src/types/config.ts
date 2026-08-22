@@ -479,6 +479,10 @@ export interface Config {
   /** 性能开关迁移引导横幅是否已 dismiss（持久化到 config 以跨设备同步）。
    *  首次升级到"默认全关"版本时，若未 dismiss，显示引导横幅。 */
   perfMigrationDismissed?: boolean;
+  /** 插件配置命名空间。key 为插件 id，value 为该插件配置对象。
+   *  由 manifest.contributes.configSchema 声明字段，设置页自动渲染表单，
+   *  插件通过 MCP 工具 / TS API 读写（受 appConfigRead/Write 权限约束）。 */
+  plugins?: Record<string, Record<string, unknown>>;
 }
 
 /** 性能与资源功能开关 */

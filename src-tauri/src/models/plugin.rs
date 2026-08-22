@@ -135,6 +135,67 @@ pub struct PluginManifestContributes {
     /// 插件声明的工具能力覆盖（替换内置 MCP server 或硬编码工具）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tool_providers: Vec<PluginToolProviderManifestContribution>,
+    /// 插件声明的样式贡献（CSS 注入）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<PluginStyleManifestContribution>,
+    /// 插件配置项 schema（参照 VSCode contributes.configuration）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub config_schema: Vec<PluginConfigFieldSchemaManifest>,
+}
+
+/// 插件配置项 schema（manifest.contributes.configSchema）
+///
+/// 纯数据描述，可跨 IPC 序列化。设置页据此自动渲染表单。
+/// 插件通过 plugin_get_config / plugin_set_config 读写（受 appConfigRead/Write 权限约束）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginConfigFieldSchemaManifest {
+    /// 字段 key（插件命名空间内唯一）
+    pub key: String,
+    /// 人可读标签
+    pub label: String,
+    /// 字段类型
+    #[serde(rename = "type")]
+    pub field_type: String,
+    /// 默认值
+    #[serde(default)]
+    pub default: serde_json::Value,
+    /// type=select 时的选项
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<PluginConfigSelectOption>,
+    /// 是否多行文本
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multiline: Option<bool>,
+    /// placeholder
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
+    /// 帮助文本
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub help: Option<String>,
+    /// 是否敏感（读取时脱敏）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sensitive: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginConfigSelectOption {
+    pub label: String,
+    pub value: serde_json::Value,
+}
+
+/// 插件样式贡献（manifest.contributes.styles）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginStyleManifestContribution {
+    pub id: String,
+    pub css: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 /// 插件工具能力覆盖声明

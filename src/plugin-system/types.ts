@@ -283,6 +283,39 @@ export interface PluginPermissionDeclaration {
   aiToolAccess?: boolean
 }
 
+/**
+ * 插件配置项 schema（参照 VSCode contributes.configuration 设计）。
+ *
+ * 插件在 manifest.contributes.configSchema 声明可配置项，Polaris 设置页
+ * 据此自动渲染表单（无需插件自己写 UI），值持久化到 config.json 的
+ * `plugins[pluginId]` 命名空间，跨设备同步。
+ *
+ * 纯数据描述（无函数），可跨 IPC 序列化。插件通过 MCP 工具
+ * `polaris_get_plugin_config` / `polaris_set_plugin_config` 或 TS API
+ * `getPluginConfig` / `setPluginConfig` 读写，权限由 manifest.permissions
+ * 的 appConfigRead/appConfigWrite 控制。
+ */
+export interface PluginConfigFieldSchema {
+  /** 字段 key（插件命名空间内唯一） */
+  key: string
+  /** 人可读标签（支持 i18n key） */
+  label: string
+  /** 字段类型 */
+  type: 'string' | 'number' | 'boolean' | 'select' | 'path' | 'secret'
+  /** 默认值 */
+  default: string | number | boolean
+  /** type=select 时的选项 */
+  options?: Array<{ label: string; value: string | number }>
+  /** 是否多行文本（type=string/secret 时生效） */
+  multiline?: boolean
+  /** placeholder */
+  placeholder?: string
+  /** 帮助文本 */
+  help?: string
+  /** 是否敏感（密钥类，读取时脱敏展示） */
+  sensitive?: boolean
+}
+
 export type PluginSourceKind = 'builtin' | 'user' | 'project'
 
 export interface PluginManifestSource {
@@ -315,6 +348,8 @@ export interface PolarisPluginManifest {
     engines?: PluginEngineContribution[]
     toolProviders?: PluginToolProviderContribution[]
     styles?: PluginStyleContribution[]
+    /** 插件配置项 schema。声明后设置页自动渲染配置表单。 */
+    configSchema?: PluginConfigFieldSchema[]
   }
   permissions: PluginPermissionDeclaration
   origin?: PluginOriginMetadata

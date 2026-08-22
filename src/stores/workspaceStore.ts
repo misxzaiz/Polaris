@@ -1,11 +1,9 @@
 /**
  * 工作区状态管理
  *
- * 工作区列表同时存储在：
- * 1. 服务端 Config（source of truth，跨桌面/Web 共享）
- * 2. 客户端 localStorage（离线缓存、快速加载）
- *
- * 初始化时从服务端同步，变更时双向写入。
+ * 工作区列表以服务端 Config 为唯一真相源（source of truth，跨桌面/Web 共享）。
+ * 本 store 不持久化 workspaces/currentWorkspaceId（由 syncFromServer 从后端加载），
+ * 仅持久化纯本机 UI 态（contextWorkspaceIds / viewingWorkspaceId）。
  */
 
 import { create } from 'zustand';
@@ -314,10 +312,12 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     }),
     {
       name: 'workspace-store',
+      // 仅持久化纯本机 UI 态（关联工作区集合、浏览工作区指针）。
+      // workspaces/currentWorkspaceId 不持久化：后端 config.json 为真相源，
+      // 由 syncFromServer 从后端加载，避免与 configStore 双写。
       partialize: (state) => ({
-        workspaces: state.workspaces,
-        currentWorkspaceId: state.currentWorkspaceId,
         contextWorkspaceIds: state.contextWorkspaceIds,
+        viewingWorkspaceId: state.viewingWorkspaceId,
       }),
     }
   )

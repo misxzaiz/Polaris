@@ -13,6 +13,7 @@ import {
   Check,
 } from 'lucide-react'
 import { listPluginMcpServerStatuses, pluginIconMap, pluginRegistry } from '@/plugin-system'
+import { PluginConfigForm } from './PluginConfigForm'
 import {
   applyPluginUpdate,
   checkPluginUpdate,
@@ -1275,6 +1276,9 @@ function PluginCard({
                 <span className="text-[11px] text-text-muted">{t('plugins.noPermissions')}</span>
               )}
             </div>
+
+            {/* 插件配置（按 manifest.configSchema 自动渲染，仅声明了 configSchema 时显示） */}
+            <PluginConfigForm manifest={plugin} />
           </div>
 
           {/* 操作按钮行 */}
