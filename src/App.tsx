@@ -137,13 +137,20 @@ function App() {
     return () => window.removeEventListener('polaris:open-settings', handler)
   }, [])
 
-  // 进入小屏模式时自动关闭左侧面板：leftPanelType 持久化且默认 'files'，
+// 进入小屏模式时自动关闭左侧面板：leftPanelType 持久化且默认 'files'，
   // 不关闭的话手机首屏会被左面板抽屉直接盖住聊天区
-  // 注意：窗口不可见时不触发（防止 Alt+Tab 切回时 resize 瞬态值误触发）
+  // 用 debounce 而非直接调用：切回应用时 WebView2 会报告小于阈值的瞬态
+  // innerWidth（document.hidden 已为 false，瞬态值 > 0），瞬时关闭会把
+  // 正常桌面用户的面板关掉。300ms 内瞬态值会消失、cleanup 清定时器。
   useEffect(() => {
-    if (isCompact && !document.hidden) {
-      closeLeftPanel();
-    }
+    if (!isCompact || document.hidden) return;
+    const timer = window.setTimeout(() => {
+      // 二次确认：防抖到期后仍在小屏模式才关闭
+      if (useViewStore.getState().leftPanelType !== 'none') {
+        closeLeftPanel();
+      }
+    }, 300);
+    return () => window.clearTimeout(timer);
   }, [isCompact, closeLeftPanel]);
 
   // === 诊断日志 ===
