@@ -4,7 +4,7 @@
  * 用于响应式布局，检测窗口尺寸变化并自动切换小屏模式
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 
 export interface WindowSize {
   width: number;
@@ -47,16 +47,29 @@ export function useWindowSize(options: UseWindowSizeOptions = {}): WindowSizeInf
     };
   });
 
+  // 用 ref 跟踪最近一次有效尺寸，处理 resize 事件中 width<=0 的瞬态值
+  const windowSizeRef = useRef(windowSize);
+
   const handleResize = useCallback(() => {
     if (!enabled) return;
 
-    const width = window.innerWidth;
+    let width = window.innerWidth;
     const height = window.innerHeight;
 
-    setWindowSize({
-      width,
-      height,
-      isCompact: width < compactThreshold,
+    // 窗口恢复/最小化/切换时，WebView2 可能短暂报告 0 宽度，
+    // 忽略这样的瞬态值，避免触发小屏模式而关闭左侧面板
+    if (width <= 0) {
+      width = windowSizeRef.current.width;
+    }
+
+    setWindowSize(() => {
+      const next: WindowSizeInfo = {
+        width,
+        height,
+        isCompact: width < compactThreshold,
+      };
+      windowSizeRef.current = next;
+      return next;
     });
   }, [compactThreshold, enabled]);
 

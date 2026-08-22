@@ -139,8 +139,9 @@ function App() {
 
   // 进入小屏模式时自动关闭左侧面板：leftPanelType 持久化且默认 'files'，
   // 不关闭的话手机首屏会被左面板抽屉直接盖住聊天区
+  // 注意：窗口不可见时不触发（防止 Alt+Tab 切回时 resize 瞬态值误触发）
   useEffect(() => {
-    if (isCompact) {
+    if (isCompact && !document.hidden) {
       closeLeftPanel();
     }
   }, [isCompact, closeLeftPanel]);
