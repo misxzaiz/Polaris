@@ -27,7 +27,6 @@ import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
 import { ShortcutsTab } from './tabs/ShortcutsTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
-import { CompanionTab } from './tabs/CompanionTab';
 import { RouteLogTab } from './tabs/RouteLogTab';
 import { ProviderStatsTab } from './tabs/ProviderStatsTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
@@ -66,7 +65,6 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'performance': 'nav.performance',
   'route-log': 'nav.routeLog',
   'provider-stats': 'nav.providerStats',
-  'companion': 'nav.companion',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -367,10 +365,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
             {activeTab === 'provider-stats' && (
               <ProviderStatsTab />
-            )}
-
-            {activeTab === 'companion' && (
-              <CompanionTab />
             )}
           </div>
 

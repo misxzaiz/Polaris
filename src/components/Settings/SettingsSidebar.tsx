@@ -11,7 +11,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity, PieChart, Bot } from 'lucide-react';
+import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity, PieChart } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -33,8 +33,7 @@ export type SettingsTabId =
   | 'token-stats'
   | 'performance'
   | 'route-log'
-  | 'provider-stats'
-  | 'companion';
+  | 'provider-stats';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -68,7 +67,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'performance', icon: <Gauge size={16} />, labelKey: 'nav.performance' },
   { id: 'route-log', icon: <Activity size={16} />, labelKey: 'nav.routeLog' },
   { id: 'provider-stats', icon: <PieChart size={16} />, labelKey: 'nav.providerStats' },
-  { id: 'companion', icon: <Bot size={16} />, labelKey: 'nav.companion' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

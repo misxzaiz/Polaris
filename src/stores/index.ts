@@ -49,5 +49,3 @@ export type {
   UsageLogEntry,
   TimeRange,
 } from './tokenAnalyticsStore';
-
-export { useCompanionStore, type CompanionCardEntry } from './companionStore';

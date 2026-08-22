@@ -17,7 +17,6 @@ import { askPluginManifest } from '@/plugins/ask/manifest'
 import { dispatchPluginManifest } from '@/plugins/dispatch/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
 import { engineTestPluginManifest } from '@/plugins/engine-test/manifest'
-import { companionPluginManifest } from '@/plugins/companion/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -128,7 +127,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(dispatchPluginManifest)
   pluginRegistry.register(browserPluginManifest)
   pluginRegistry.register(engineTestPluginManifest)
-  pluginRegistry.register(companionPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('agentGallery', 'polaris.agent-gallery', () =>
@@ -142,10 +140,6 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
-  )
-  // AI 主动陪伴助手：panelType='companion'
-  pluginPanelRegistry.register('companion', 'polaris.companion', () =>
-    import('@/components/Companion/CompanionPanel').then((m) => ({ default: m.CompanionPanel })),
   )
   // Git 状态指示器挂到文件树工具栏 slot（P0-5）
   fileExplorerToolbarSlot.register(

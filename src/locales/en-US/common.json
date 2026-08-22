@@ -19,13 +19,7 @@
   "actions": {
     "cancel": "Cancel",
     "save": "Save",
-    "saveAndClose": "Save & Close",
-    "defer": "Defer",
-    "dismiss": "Dismiss",
-    "clear": "Clear",
-    "toggleCompanion": "Toggle AI Companion",
-    "tryTrigger": "Try Now",
-    "toggleHistory": "Toggle History"
+    "saveAndClose": "Save & Close"
   },
   "status": {
     "loading": "Loading...",
@@ -63,23 +57,9 @@
     "hideAIPanel": "Hide AI Panel",
     "showActivityBar": "Show Activity Bar",
     "hideActivityBar": "Hide Activity Bar",
-    "close": "Close",
-    "companionPanel": "AI Companion",
-    "companion": "AI Companion"
-  },
-  "companion": {
-    "project_insight": "Project Insight",
-    "learning_challenge": "Learning Challenge",
-    "skill_explore": "Skill Explore",
-    "achievement_celebrate": "Achievement",
-    "tip_curiosity": "Fun Fact",
-    "daily_review": "Daily Review",
-    "learning_followup": "Learning Follow-up"
+    "close": "Close"
   },
   "messages": {
-    "companionIdle": "AI companion is on standby. It will proactively reach out based on your workflow.",
-    "companionDisabled": "AI companion is disabled. Turn it on to get proactive suggestions.",
-    "companionThinking": "Preparing something for you…",
     "noWorkspace": "Please open a workspace first",
     "confirmNewChat": "Confirm New Chat",
     "confirmNewChatMessage": "Current chat has {{count}} messages. Are you sure you want to start a new chat?",

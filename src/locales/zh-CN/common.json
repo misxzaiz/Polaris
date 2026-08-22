@@ -19,13 +19,7 @@
   "actions": {
     "cancel": "取消",
     "save": "保存",
-    "saveAndClose": "保存并关闭",
-    "defer": "推迟",
-    "dismiss": "忽略",
-    "clear": "清空",
-    "toggleCompanion": "启停 AI 陪伴",
-    "tryTrigger": "试一次",
-    "toggleHistory": "展开历史"
+    "saveAndClose": "保存并关闭"
   },
   "status": {
     "loading": "加载中...",
@@ -67,23 +61,9 @@
     "hideAIPanel": "隐藏 AI 面板",
     "showActivityBar": "显示侧边栏",
     "hideActivityBar": "隐藏侧边栏",
-    "close": "关闭",
-    "companionPanel": "AI 陪伴",
-    "companion": "AI 陪伴"
-  },
-  "companion": {
-    "project_insight": "项目洞察",
-    "learning_challenge": "学习挑战",
-    "skill_explore": "技能探索",
-    "achievement_celebrate": "成就祝贺",
-    "tip_curiosity": "趣味知识",
-    "daily_review": "每日回顾",
-    "learning_followup": "学习跟进"
+    "close": "关闭"
   },
   "messages": {
-    "companionIdle": "AI 陪伴待命中，会根据你的工作节奏主动来找你。",
-    "companionDisabled": "AI 陪伴已关闭，打开开关后会主动来找你。",
-    "companionThinking": "正在为你准备…",
     "noWorkspace": "请先打开一个工作区",
     "confirmNewChat": "确认新对话",
     "confirmNewChatMessage": "当前对话有 {{count}} 条消息，确定要开始新对话吗？",
