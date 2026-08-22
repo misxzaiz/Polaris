@@ -42,7 +42,8 @@
     "tokenStats": "Token 统计",
     "performance": "性能与资源",
     "routeLog": "路由日志",
-    "providerStats": "供应商调用统计"
+    "providerStats": "供应商调用统计",
+    "companion": "AI 陪伴"
   },
   "messages": {
     "saved": "已保存",

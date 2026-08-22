@@ -54,6 +54,7 @@ import { usePluginServiceSync } from './hooks/usePluginServiceSync';
 import { useAppEvents } from './hooks/useAppEvents';
 import { useWindowManager } from './hooks/useWindowManager';
 import { useWorkspaceSync } from './hooks/useWorkspaceSync';
+import { useCompanionInit } from './hooks/useCompanionInit';
 
 function App() {
   const { t } = useTranslation('common');
@@ -125,6 +126,9 @@ function App() {
   });
 
   useWorkspaceSync(true);
+
+  // AI 主动陪伴助手：初始化与定时触发轮询
+  useCompanionInit();
 
   // 监听 polaris:open-settings 自定义事件（从 ContextMeter 等组件触发）
   useEffect(() => {

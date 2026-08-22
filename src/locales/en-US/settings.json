@@ -42,7 +42,8 @@
     "tokenStats": "Token Stats",
     "performance": "Performance & Resources",
     "routeLog": "Route Log",
-    "providerStats": "Provider Stats"
+    "providerStats": "Provider Stats",
+    "companion": "AI Companion"
   },
   "messages": {
     "saved": "Saved",
