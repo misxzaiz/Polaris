@@ -92,8 +92,25 @@ pub(super) async fn run_chat_loop(
         registry = registry.without_tool("dispatch_agent");
     }
     // MCP 工具池（Phase 4b）：若有已启用的 MCP server，spawn 并注入工具。
+    // 加 30s 超时防止 MCP server 进程卡死阻塞整个会话启动。
     if !mcp_servers.is_empty() {
-        let pool = Arc::new(super::mcp::McpClientPool::from_servers(mcp_servers.to_vec()).await);
+        let pool_fut = super::mcp::McpClientPool::from_servers(mcp_servers.to_vec());
+        let pool = match tokio::time::timeout(
+            std::time::Duration::from_secs(30),
+            pool_fut,
+        ).await {
+            Ok(pool) => Arc::new(pool),
+            Err(_) => {
+                tracing::warn!(
+                    "[SimpleAI] MCP server 启动超时（30s），跳过 MCP 工具注入, session={session_id}"
+                );
+                let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
+                    session_id,
+                    "MCP server 启动超时，已跳过。部分工具不可用。".to_string(),
+                )));
+                Arc::new(super::mcp::McpClientPool::empty())
+            }
+        };
         tracing::info!(
             "[SimpleAI] MCP pool 就绪：{} 个 server 连接，{} 个工具",
             pool.connected_count(),
@@ -124,6 +141,13 @@ pub(super) async fn run_chat_loop(
     let mut compact_exhausted = false;
 
     let mut round: u64 = 0;
+
+    // 构建可复用的 HTTP 客户端（避免每轮循环重建，防止 TLS 会话池/连接池泄漏）。
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(request_timeout_secs))
+        .pool_max_idle_per_host(4) // 限制单 host 空闲连接数，避免资源泄漏
+        .build()
+        .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
     loop {
         // 仅当配置了正整数上限时才封顶；默认 0 = 不限制（靠模型自然终止 / 用户中断 / 流超时）。
@@ -189,19 +213,20 @@ pub(super) async fn run_chat_loop(
             );
         }
 
-        // HTTP 请求（含 429/5xx 指数退避重试，见 super::retry::send_with_retry）。
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(request_timeout_secs))
-            .build()
-            .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
-
-        // 追加 CLI 后缀衍生的 query（仅 Anthropic 协议生效，如 `?beta=true`）。
+        // 复用循环外构建的 http_client（避免每次循环重建 TLS 连接池，导致资源泄漏）。
+        // 设置请求级别超时（构建时 client 级别 timeout 已被 pool 设置覆盖，这里用 request 级别精确控制）。
         let url = if let Some(ref q) = suffix.query {
             format!("{}?{}", protocol.build_url(&profile.base_url), q)
         } else {
             protocol.build_url(&profile.base_url)
         };
-        let mut req = client.post(&url).header("Content-Type", "application/json");
+
+        // 使用 http_client 的 request 级别 timeout，替代 client 构建时的全局 timeout，
+        // 使每次 API 请求独立受控于 request_timeout_secs。
+        let mut req = http_client
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(request_timeout_secs));
         for (k, v) in protocol.auth_headers(&profile.api_key) {
             req = req.header(k, v);
         }
@@ -272,11 +297,18 @@ pub(super) async fn run_chat_loop(
                     chunk
                 }
                 _ = abort_rx.changed() => {
-                    tracing::warn!(
-                        "[SimpleAI] [DIAG] abort_rx.changed() 触发, 提前结束, session={session_id}"
-                    );
-                    let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-                    return Ok(());
+                    // 防御：changed() 在 sender 被替换/drop 时会返回 Err(RecvError)，
+                    // 此时 channel 已无 observer，应视为非中断信号，继续等待流。
+                    // 仅当 changed() 返回 Ok(true) 时才视为真正的中断请求。
+                    if abort_rx.borrow().clone() == true {
+                        tracing::warn!(
+                            "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
+                        );
+                        let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+                        return Ok(());
+                    }
+                    // 假阳性（sender 替换/关闭）：继续循环，不退出。
+                    continue;
                 }
                 _ = tokio::time::sleep(std::time::Duration::from_secs(stream_idle_secs)) => {
                     return Err(AppError::ProcessError(format!(
@@ -357,17 +389,24 @@ pub(super) async fn run_chat_loop(
                 None,
             ));
 
-            // DX: 同步写入 SQLite 用量数据库（覆盖 SimpleAI 不经过代理的路径）
+            // DX: 同步写入 SQLite 用量数据库（覆盖 SimpleAI 不经过代理的路径）。
+            // 使用 spawn_blocking 避免 std::sync::Mutex 阻塞 tokio worker 线程。
             tracing::debug!("[SimpleAI] 调用 record_usage: model={}, input={}, output={}", base_model, usage.input_tokens, usage.output_tokens);
             let request_model = Some(profile.model.as_str());
-            crate::services::usage_db::record_usage(
-                base_model,
-                request_model,
-                Some("simple-ai"),
-                usage.input_tokens as i64,
-                usage.output_tokens as i64,
-                0, 0, 0, 200, true,
-            );
+            let base_model_owned = base_model.to_string();
+            let request_model_owned = request_model.map(|s| s.to_string());
+            let input_tokens = usage.input_tokens as i64;
+            let output_tokens = usage.output_tokens as i64;
+            tokio::task::spawn_blocking(move || {
+                crate::services::usage_db::record_usage(
+                    &base_model_owned,
+                    request_model_owned.as_deref(),
+                    Some("simple-ai"),
+                    input_tokens,
+                    output_tokens,
+                    0, 0, 0, 200, true,
+                );
+            });
         }
         // 压缩效果监督计数（每完成一轮 +1；Some(1) 表示"刚压缩后的第一轮"）。
         if let Some(r) = rounds_since_compact.as_mut() {

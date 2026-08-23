@@ -108,6 +108,16 @@ impl McpClientPool {
         }
     }
 
+    /// 空池构造：所有 server 启动失败或超时后的兜底，不阻塞会话启动。
+    pub(crate) fn empty() -> Self {
+        Self {
+            clients: RwLock::new(HashMap::new()),
+            session_pool: None,
+            tool_index: HashMap::new(),
+            cached_specs: Vec::new(),
+        }
+    }
+
     /// 全部工具的 OpenAI function spec（同步，spawn 后缓存）。
     pub(crate) fn tool_specs(&self) -> &[Value] {
         &self.cached_specs
