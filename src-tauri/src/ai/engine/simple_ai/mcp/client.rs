@@ -29,9 +29,9 @@ use super::types::{
 /// 单次 MCP 请求的默认超时（秒）。
 ///
 /// 生成式工具（如 Agnes 文生图/视频）可能耗时数十秒到数分钟，
-/// 30s 过紧；统一放宽到 10 分钟兜底。控制面方法（initialize/tools/list）
-/// 实际秒回，不受影响。
-const MCP_CALL_TIMEOUT_SECS: u64 = 600;
+/// 120s 兼顾生成式工具与防挂死：插件进程挂死时不会阻塞超过 2 分钟。
+/// 控制面方法（initialize/tools/list）实际秒回，不受影响。
+const MCP_CALL_TIMEOUT_SECS: u64 = 120;
 
 /// 单个 MCP server 的客户端连接。
 pub(crate) struct McpClient {

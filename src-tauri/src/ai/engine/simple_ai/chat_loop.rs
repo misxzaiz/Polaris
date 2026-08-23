@@ -35,13 +35,15 @@ const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
 /// 可经 ModelProfile.custom_env 的 `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖。
 const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
 
-/// 工具调用轮次上限，**默认 0 = 不限制**（对齐 codex：靠模型自然终止 + 用户中断 + token
-/// 控制，而非数轮次封顶；codex `session/turn.rs` 的工具循环本身无轮次上限）。可经
-/// ModelProfile.custom_env 的 `SIMPLE_AI_MAX_TOOL_ROUNDS` 设为正整数作为防御性兜底。
+/// 工具调用轮次上限，**默认 40**（防御性兜底：超过此轮次强行终止，避免模型无限循环
+/// 调用工具导致应用卡死）。可在 ModelProfile.custom_env 中通过
+/// `SIMPLE_AI_MAX_TOOL_ROUNDS` 覆盖为 0（不限制，不推荐）或更大的值。
 ///
-/// 注意：SimpleAI 尚未实现上下文压缩(compact)，无限轮次下超长任务的 token 会单调增长，
-/// 最终可能触发 API 的上下文超限错误而终止（详见 docs/simple-ai-codex-refactor-plan.md）。
-const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
+/// 选择 40 的理由：
+/// - 典型攻坚/编码任务工具轮次约 5-20 轮，40 有充足余量；
+/// - 超过 40 轮通常意味着模型陷入循环或任务异常复杂，此时应终止让用户重新评估；
+/// - 可通过 custom_env 取消除上限（设为 0），满足极端场景。
+const DEFAULT_MAX_TOOL_ROUNDS: u64 = 40;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
 pub(super) async fn run_chat_loop(
@@ -68,8 +70,9 @@ pub(super) async fn run_chat_loop(
         read_env_u64(&profile.custom_env, "SIMPLE_AI_TIMEOUT_SECS", DEFAULT_REQUEST_TIMEOUT_SECS);
     let stream_idle_secs =
         read_env_u64(&profile.custom_env, "SIMPLE_AI_STREAM_IDLE_SECS", STREAM_IDLE_TIMEOUT_SECS);
-    // 工具调用轮次上限：0 = 不限制（默认）。这里不复用 read_env_u64（它会把 0 视为非法回退），
-    // 因为 0 对轮次而言是合法的「无限制」语义。
+    // 工具调用轮次上限：默认 40（防御性兜底）。custom_env SIMPLE_AI_MAX_TOOL_ROUNDS=0
+    // 可取消限制（不推荐，仅极端复杂场景使用）。
+    // 不复用 read_env_u64（它会把 0 视为非法回退），因为 0 有「无限制」的合法语义。
     let max_tool_rounds = profile
         .custom_env
         .as_ref()
@@ -150,7 +153,7 @@ pub(super) async fn run_chat_loop(
         .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
 
     loop {
-        // 仅当配置了正整数上限时才封顶；默认 0 = 不限制（靠模型自然终止 / 用户中断 / 流超时）。
+        // 默认 40 轮上限；custom_env 设为 0 可取消限制（不推荐）。
         if max_tool_rounds > 0 && round >= max_tool_rounds {
             let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
                 session_id,
