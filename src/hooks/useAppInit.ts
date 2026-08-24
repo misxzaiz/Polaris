@@ -13,7 +13,6 @@ import { useEffect, useRef } from 'react';
 import { useConfigStore, initPerformanceHotSwitch } from '@/stores/configStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useIntegrationStore } from '@/stores/integrationStore';
-import { useAutoModeStore } from '@/stores/autoModeStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
@@ -281,7 +280,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         useSnippetStore.getState().loadSnippets(),
         useSkillStore.getState().loadSkills(),
         useIntegrationStore.getState().loadInstances(),
-        useAutoModeStore.getState().fetchConfig(),
         // 加载 LSP 持久化配置 —— 必须在启动时执行，否则重启后用户自定义的
         // 语言服务器（如 Java）不会被加载，打开对应文件时静默失效。
         useLspStore.getState().loadFromBackend(),

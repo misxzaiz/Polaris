@@ -17,23 +17,11 @@ pub struct ClaudeSettings {
     pub enabled_plugins: Option<HashMap<String, bool>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub extra_known_marketplaces: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub auto_mode: Option<AutoModeCustomRules>,
     /// 权限规则（Claude Code 标准 permissions 字段：allow/deny/ask）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub permissions: Option<ClaudePermissions>,
     #[serde(flatten)]
     pub other: serde_json::Map<String, serde_json::Value>,
-}
-
-/// 自定义自动模式规则
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub struct AutoModeCustomRules {
-    #[serde(default)]
-    pub allow: Vec<String>,
-    #[serde(default)]
-    pub soft_deny: Vec<String>,
 }
 
 /// Claude Code 权限规则（settings.json 的 permissions 字段）。

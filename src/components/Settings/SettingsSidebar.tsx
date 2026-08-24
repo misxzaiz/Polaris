@@ -11,7 +11,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Shield, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity, PieChart } from 'lucide-react';
+import { BarChart3, Download, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity, PieChart } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -24,7 +24,6 @@ export type SettingsTabId =
   | 'speech'
   | 'lsp'
   | 'shortcuts'
-  | 'auto-mode'
   | 'app-update'
   | 'plugins'
   | 'advanced'
@@ -59,7 +58,6 @@ const NAV_ITEMS: SettingsNavItem[] = [
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
   { id: 'shortcuts', icon: <Keyboard size={16} />, labelKey: 'nav.shortcuts' },
-  { id: 'auto-mode', icon: <Shield size={16} />, labelKey: 'nav.autoMode' },
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },

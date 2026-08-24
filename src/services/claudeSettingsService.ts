@@ -5,7 +5,17 @@
  */
 
 import { invoke } from '@/services/transport'
-import type { ClaudeSettings, AutoModeCustomRules } from '@/types/autoMode';
+
+/**
+ * Claude settings.json 结构（简化版，仅包含前端使用的字段）
+ */
+export interface ClaudeSettings {
+  autoMode?: { allow: string[]; softDeny: string[] };
+  permissions?: { allow?: string[]; deny?: string[]; ask?: string[]; [key: string]: unknown };
+  model?: string;
+  env?: Record<string, string>;
+  [key: string]: unknown;
+}
 
 /**
  * 读取 Claude settings.json
@@ -26,29 +36,6 @@ export async function writeClaudeSettings(settings: ClaudeSettings): Promise<voi
  */
 export async function getClaudeSettingsPath(): Promise<string> {
   return invoke<string>('get_claude_settings_path');
-}
-
-/**
- * 从 settings 中提取自定义规则
- */
-export function extractCustomRules(settings: ClaudeSettings | null): AutoModeCustomRules {
-  if (!settings?.autoMode) {
-    return { allow: [], softDeny: [] };
-  }
-  return {
-    allow: settings.autoMode.allow || [],
-    softDeny: settings.autoMode.softDeny || [],
-  };
-}
-
-/**
- * 更新 settings 中的自定义规则
- */
-export function updateCustomRules(
-  settings: ClaudeSettings,
-  rules: AutoModeCustomRules
-): ClaudeSettings {
-  return { ...settings, autoMode: rules };
 }
 
 /**

@@ -1115,9 +1115,7 @@ pub fn run() {
             commands::plugin_service::plugin_service_list_status,
             commands::plugin_service::plugin_service_stop_for_plugin,
             commands::plugin_service::plugin_service_autostart,
-            // Auto-Mode 相关
-            commands::auto_mode::auto_mode_config,
-            commands::auto_mode::auto_mode_defaults,
+            // （Auto-Mode 已移除，移至外部插件 polaris.claude-code）
             // Agnes 多模态插件面板命令
             commands::agnes::agnes_get_config,
             commands::agnes::agnes_save_config,

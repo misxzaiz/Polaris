@@ -35,8 +35,5 @@ pub use ai_event::{
     // 工具调用中间输出
     ToolCallUpdateEvent,
 };
-pub mod auto_mode;
-pub use auto_mode::{AutoModeConfig, AutoModeDefaults};
-
 pub mod cli_info;
 pub use cli_info::{CliAgentInfo, CliAuthStatus, CliDynamicInfo};

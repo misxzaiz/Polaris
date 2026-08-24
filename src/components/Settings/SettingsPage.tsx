@@ -19,7 +19,6 @@ import { ThemeTab } from './tabs/ThemeTab';
 import { PromptSnippetTab, type PromptSnippetTabRef } from './tabs/PromptSnippetTab';
 import { SpeechTab } from './tabs/SpeechTab';
 import { AdvancedTab } from './tabs/AdvancedTab';
-import { AutoModeTab } from './tabs/AutoModeTab';
 import { AppUpdateTab } from './tabs/AppUpdateTab';
 import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
@@ -48,7 +47,6 @@ interface SettingsPageProps {
 const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'general': 'nav.general',
   'theme': 'nav.theme',
-  'auto-mode': 'nav.autoMode',
   'plugins': 'nav.plugins',
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
@@ -257,10 +255,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
             <h3 className="text-base font-medium text-text-primary mb-4">
               {t(TAB_TITLE_KEYS[activeTab])}
             </h3>
-
-            {activeTab === 'auto-mode' && (
-              <AutoModeTab />
-            )}
 
             {activeTab === 'plugins' && (
               <PluginTab />

@@ -302,8 +302,6 @@ pub async fn handle_ipc_bridge(
             Ok(Json(serde_json::to_value(metas).unwrap_or_default()))
         }
         // ── Other commands ────────────────────────────────────────────────────
-        "auto_mode_config" => dispatch_auto_mode_config(&state),
-        "auto_mode_defaults" => dispatch_auto_mode_defaults(&state),
         "cli_get_agents" => dispatch_cli_get_agents(&state),
         "cli_get_auth_status" => dispatch_cli_get_auth_status(&state),
         "cli_get_version" => dispatch_cli_get_version(&state),
@@ -1701,16 +1699,6 @@ fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebEr
 // Other common commands
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn dispatch_auto_mode_config(state: &AppState) -> Result<Json<Value>, WebError> {
-    let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
-    let svc = crate::services::auto_mode_service::AutoModeService::new(p);
-    json_result!(svc.get_config())
-}
-fn dispatch_auto_mode_defaults(state: &AppState) -> Result<Json<Value>, WebError> {
-    let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
-    let svc = crate::services::auto_mode_service::AutoModeService::new(p);
-    json_result!(svc.get_defaults())
-}
 fn dispatch_cli_get_agents(state: &AppState) -> Result<Json<Value>, WebError> {
     let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
