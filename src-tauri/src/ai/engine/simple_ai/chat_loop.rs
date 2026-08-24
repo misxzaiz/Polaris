@@ -29,11 +29,12 @@ use super::tools::{ToolContext, ToolRegistry};
 const HISTORY_ASSISTANT_TOKEN_CAP: usize = 4000;
 
 /// 默认请求总超时（秒）。可经 ModelProfile.custom_env 的 `SIMPLE_AI_TIMEOUT_SECS` 覆盖。
-const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
+/// 普通用户可接受的最长等待时间；超过此值应报错而非静默挂起。
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 60;
 
 /// 默认流空闲超时（秒）：距上一个数据块超过该时长视为流卡死。
 /// 可经 ModelProfile.custom_env 的 `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖。
-const STREAM_IDLE_TIMEOUT_SECS: u64 = 120;
+const STREAM_IDLE_TIMEOUT_SECS: u64 = 30;
 
 /// 工具调用轮次上限，**默认 40**（防御性兜底：超过此轮次强行终止，避免模型无限循环
 /// 调用工具导致应用卡死）。可在 ModelProfile.custom_env 中通过
