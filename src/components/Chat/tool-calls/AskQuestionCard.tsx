@@ -18,7 +18,7 @@ import { Check, HelpCircle, CheckCircle, X, ChevronLeft, ChevronRight, SkipForwa
 import { invoke } from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
 import { useToastStore } from '@/stores/toastStore';
-import { Button } from '../Common/Button';
+import { Button } from '../../Common/Button';
 import type { QuestionBlock, QuestionItem, QuestionOption, SubAnswer } from '@/types';
 
 const log = createLogger('AskQuestionCard');

@@ -29,7 +29,7 @@ import {
   Activity,
 } from 'lucide-react';
 import type { ToolCallBlock } from '@/types';
-import { ToolCallBlockRenderer } from './chatBlocks/ToolCallBlockRenderer';
+import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 
 // ---------- 类型 ----------
 interface FamilySnapshot {

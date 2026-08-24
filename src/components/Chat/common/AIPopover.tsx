@@ -7,8 +7,8 @@
 import { useEffect, useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X } from 'lucide-react'
-import { EnhancedChatMessages, ChatInput } from '../Chat'
-import type { EditMode } from '../Chat'
+import { EnhancedChatMessages, ChatInput } from '..'
+import type { EditMode } from '..'
 import { ErrorBanner } from './ErrorBanner'
 import { useConfigStore, useWorkspaceStore } from '@/stores'
 import {

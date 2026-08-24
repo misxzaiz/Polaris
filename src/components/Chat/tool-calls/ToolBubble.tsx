@@ -10,7 +10,7 @@ import { type ToolChatMessage } from '@/types';
 import { formatDuration } from '@/utils/toolSummary';
 import { getToolStatusIcon, getToolStatusColor } from '@/utils/toolStatusHelpers';
 import { copyToClipboard } from '@/utils/clipboard';
-import { IconChevronRight, IconCopy } from '../Common/Icons';
+import { IconChevronRight, IconCopy } from '../../Common/Icons';
 import { clsx } from 'clsx';
 
 interface ToolBubbleProps {

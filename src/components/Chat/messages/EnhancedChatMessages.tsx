@@ -28,13 +28,13 @@ import {
   getRoundScrollTargetIndex,
   groupConversationRounds,
 } from '@/utils/conversationRounds';
-import { ChatNavigator } from './ChatNavigator';
-import { ScrollToBottomButton } from './ScrollToBottomButton';
-import { useMessageSearch, MessageSearchPanel } from './MessageSearchPanel';
-import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from './chatUtils/constants';
+import { ChatNavigator } from '../session/ChatNavigator';
+import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
+import { useMessageSearch, MessageSearchPanel } from '../search/MessageSearchPanel';
+import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { renderChatMessage } from './renderChatMessage';
-import { EmptyState } from './EmptyState';
-import { ThinkingOrb } from './ThinkingOrb';
+import { EmptyState } from '../common/EmptyState';
+import { ThinkingOrb } from '../common/ThinkingOrb';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 
 // Re-export for external consumers

@@ -14,7 +14,7 @@ import { X, MessageSquare, Clock, RotateCcw, GitBranch, Loader2, FolderOpen, Arr
 import type { UnifiedHistoryItem } from '@/services/historyService'
 import { historyService } from '@/services/historyService'
 import type { ChatMessage } from '@/types'
-import { renderChatMessage } from './renderChatMessage'
+import { renderChatMessage } from '../messages/renderChatMessage'
 import { getEngineFullName } from '@/utils/engineDisplay'
 import { getPathBasename } from '@/utils/workspacePath'
 import { createLogger } from '@/utils/logger'

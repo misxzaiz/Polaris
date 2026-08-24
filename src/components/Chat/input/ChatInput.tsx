@@ -10,7 +10,7 @@
 
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { IconSend, IconStop, IconPaperclip } from '../Common/Icons'
+import { IconSend, IconStop, IconPaperclip } from '../../Common/Icons'
 import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown, Orbit } from 'lucide-react'
 import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
 import { useVoiceInputStore } from '@/stores/voiceInputStore'
@@ -29,7 +29,7 @@ import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } f
 import { AttachmentPreview } from './AttachmentPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { SnippetParamPanel } from './SnippetParamPanel'
-import { PendingBriefingCard } from './PendingBriefingCard'
+import { PendingBriefingCard } from '../compact-handoff/PendingBriefingCard'
 import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'

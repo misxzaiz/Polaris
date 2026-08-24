@@ -21,7 +21,7 @@ import { useVoiceDictation } from '@/hooks/useVoiceDictation';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
 import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from '@/types/speech';
 import { DEFAULT_TTS_CONFIG } from '@/types/speech';
-import { SessionConfigSelector } from './SessionConfigSelector';
+import { SessionConfigSelector } from '../session/SessionConfigSelector';
 import { ContextMeter } from './ContextMeter';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';

@@ -5,19 +5,19 @@
 
 import React from 'react';
 import type { ContentBlock } from '@/types';
-import { ContentBlockErrorBoundary } from '../ContentBlockErrorBoundary';
-import { AskQuestionCard } from '../AskQuestionCard';
-import { PlanModeBlockRenderer } from '../PlanModeBlockRenderer';
-import { AgentRunBlockRenderer } from '../AgentRunBlockRenderer';
-import { PermissionRequestRenderer } from '../PermissionRequestRenderer';
+import { ContentBlockErrorBoundary } from '../common/ContentBlockErrorBoundary';
+import { AskQuestionCard } from '../tool-calls/AskQuestionCard';
+import { PlanModeBlockRenderer } from '../tool-calls/PlanModeBlockRenderer';
+import { AgentRunBlockRenderer } from '../tool-calls/AgentRunBlockRenderer';
+import { PermissionRequestRenderer } from '../tool-calls/PermissionRequestRenderer';
 import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
 import { ToolCallBlockRenderer } from './ToolCallBlockRenderer';
 import { ArtifactPreviewRenderer } from './ArtifactPreviewRenderer';
 import { PluginCardHost } from './PluginCardHost';
 import { ContextCompactRenderer } from './ContextCompactRenderer';
-import { DispatchTaskCard } from '../DispatchTaskCard';
-import { AssaultResultCard, isAssaultWorkflowOutput } from '../AssaultResultCard';
+import { DispatchTaskCard } from '../dispatch/DispatchTaskCard';
+import { AssaultResultCard, isAssaultWorkflowOutput } from '../tool-calls/AssaultResultCard';
 
 /** dispatch_task 工具块渲染为专属派发卡片（实时状态/动态/操作） */
 const DISPATCH_TOOL_NAME = 'mcp__polaris-dispatch__dispatch_task';

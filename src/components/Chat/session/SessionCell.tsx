@@ -12,15 +12,15 @@ import { memo, useCallback, useState, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, ArrowUpToLine } from 'lucide-react';
-import { SessionMessagesView } from './SessionMessagesView';
+import { SessionMessagesView } from '../messages/SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
 import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { useViewStore } from '@/stores/viewStore';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
 import { getChatDisplayStyleVars } from '@/types';
-import { WorkspaceBadge } from '../Session/WorkspaceBadge';
-import { WorkspaceMenu } from '../Session/WorkspaceMenu';
+import { WorkspaceBadge } from '../../Session/WorkspaceBadge';
+import { WorkspaceMenu } from '../../Session/WorkspaceMenu';
 import { getEngineDisplayName, getEngineFullName } from '@/utils/engineDisplay';
 
 /** 状态图标映射 */

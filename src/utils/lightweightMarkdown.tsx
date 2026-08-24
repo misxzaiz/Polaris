@@ -10,7 +10,7 @@
  */
 
 import { memo, useCallback, useMemo, useState } from 'react';
-import { DeferredMermaidDiagram } from '../components/Chat/DeferredMermaidDiagram';
+import { DeferredMermaidDiagram } from '../components/Chat/common/DeferredMermaidDiagram';
 import { MarkdownRenderCache } from './cache';
 
 /** 渲染片段类型 */

@@ -217,8 +217,8 @@ export function useMessageSearch(messages: Array<{ id: string; content?: string;
         const text = msg.blocks
           .filter(block => block.type === 'text' || block.type === 'thinking')
           .map(block => {
-            if (block.type === 'text') return (block as import('../../types').TextBlock).content || '';
-            if (block.type === 'thinking') return (block as import('../../types').ThinkingBlock).content || '';
+            if (block.type === 'text') return (block as import('../../../types').TextBlock).content || '';
+            if (block.type === 'thinking') return (block as import('../../../types').ThinkingBlock).content || '';
             return '';
           })
           .join(' ');

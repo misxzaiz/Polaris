@@ -26,7 +26,7 @@ import {
   getDiagramState,
   saveDiagramState,
   removeDiagramState,
-} from './diagramState';
+} from '../messages/diagramState';
 
 const log = createLogger('MermaidDiagram');
 

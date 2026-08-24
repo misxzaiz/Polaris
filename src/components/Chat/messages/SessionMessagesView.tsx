@@ -19,8 +19,8 @@ import {
   getRoundScrollTargetIndex,
   groupConversationRounds,
 } from '@/utils/conversationRounds';
-import { ThinkingOrb } from './ThinkingOrb';
-import { ChatNavigator } from './ChatNavigator';
+import { ThinkingOrb } from '../common/ThinkingOrb';
+import { ChatNavigator } from '../session/ChatNavigator';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot

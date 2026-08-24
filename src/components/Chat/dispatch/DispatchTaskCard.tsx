@@ -34,7 +34,7 @@ import {
   handOffResultToSource,
 } from '@/services/dispatchTaskService'
 import { sessionStoreManager } from '@/stores/conversationStore'
-import { ToolCallBlockRenderer } from './chatBlocks/ToolCallBlockRenderer'
+import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer'
 
 /** 从 dispatch_task 的 tool_result JSON 解析派发标识 */
 function parseDispatchResult(output?: string): {

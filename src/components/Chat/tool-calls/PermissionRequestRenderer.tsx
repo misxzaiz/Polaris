@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
-import { Button } from '../Common/Button';
+import { Button } from '../../Common/Button';
 import type { PermissionRequestBlock, PermissionDenialBlock, PermissionScope } from '@/types';
 import { addClaudePermissionRules } from '@/services/claudeSettingsService';
 

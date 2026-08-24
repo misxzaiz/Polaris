@@ -7,11 +7,11 @@ import { useTranslation } from 'react-i18next';
 import type { AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
 import type { ProcessBlockCollapseMode } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
-import { renderBlocksWithGrouping } from '../blockGrouping';
+import { renderBlocksWithGrouping } from '../tool-calls/blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
 import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
-import { MarkdownImageSurface } from '../MarkdownImageSurface';
+import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
 import { useConfigStore } from '@/stores/configStore';
 import { useThemeStore } from '@/stores/themeStore';
 

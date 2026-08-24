@@ -13,7 +13,7 @@
 import { memo } from 'react';
 import type { TextBlock } from '@/types';
 import { ProgressiveStreamingMarkdown } from '@/utils/lightweightMarkdown';
-import { MarkdownImageSurface } from '../MarkdownImageSurface';
+import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
 
 export const TextBlockRenderer = memo(function TextBlockRenderer({
   block,

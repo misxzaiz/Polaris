@@ -19,7 +19,7 @@ import {
   ClipboardList,
 } from 'lucide-react';
 import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
-import { Button } from '../Common/Button';
+import { Button } from '../../Common/Button';
 import type { PlanModeBlock, PlanModeStatus } from '@/types';
 
 const log = createLogger('PlanModeBlock');
