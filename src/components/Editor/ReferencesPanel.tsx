@@ -1,7 +1,7 @@
 /**
  * 查找引用结果面板（查应用）—— Shift+F12 / 索引导航触发。
  *
- * 数据来自 `lspUiStore.references`（LSP 模式与索引模式共用形态）。
+ * 数据来自 `lspStore.references`（LSP 模式与索引模式共用形态）。
  *
  * 生产级特性：
  * - 文件分组 + 折叠/展开（默认折叠超过 5 个文件时）
@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, Loader2, ChevronDown, ChevronRight, Filter } from 'lucide-react';
-import { useLspUiStore, type ReferenceItem } from '@/stores/lspUiStore';
+import { useLspStore, type ReferenceItem } from '@/stores/lspStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { createLogger } from '@/utils/logger';
 
@@ -401,8 +401,8 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
 
 /** 顶层容器：订阅 store，条件渲染。在 App 根部挂载一次即可。 */
 export function ReferencesPanel() {
-  const ctx = useLspUiStore((s) => s.references);
-  const close = useLspUiStore((s) => s.closeReferences);
+  const ctx = useLspStore((s) => s.references);
+  const close = useLspStore((s) => s.closeReferences);
   if (!ctx) return null;
   return (
     <ReferencesPanelInner

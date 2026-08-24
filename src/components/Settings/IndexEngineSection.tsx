@@ -7,8 +7,7 @@
 
 import { useEffect, useState } from 'react';
 import { Database, Loader2, RefreshCw, AlertTriangle, Zap, FileCode, ToggleLeft } from 'lucide-react';
-import { useLspIndexStore } from '@/stores/lspIndexStore';
-import { useLspUiStore } from '@/stores/lspUiStore';
+import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePerformanceFlag, isLspIndexEnabled } from '@/utils/performanceFeatures';
 import type { IndexStatus } from '@/services/tauri/lspService';
@@ -29,7 +28,7 @@ function relativeTime(ms: number | null): string {
 
 export function IndexEngineSection() {
   const workspace = useWorkspaceStore((s) => s.getCurrentWorkspace?.()?.path);
-  const status = useLspUiStore((s) => {
+  const status = useLspStore((s) => {
     if (!workspace) return null;
     return (
       s.indexStatuses[workspace] ??
@@ -39,9 +38,9 @@ export function IndexEngineSection() {
       null
     );
   });
-  const refresh = useLspIndexStore((s) => s.refresh);
-  const rebuild = useLspIndexStore((s) => s.rebuild);
-  const ensureOpen = useLspIndexStore((s) => s.ensureOpen);
+  const refresh = useLspStore((s) => s.refresh);
+  const rebuild = useLspStore((s) => s.rebuild);
+  const ensureOpen = useLspStore((s) => s.ensureOpen);
   const [acting, setActing] = useState(false);
   const enabled = usePerformanceFlag('lspIndex');
 

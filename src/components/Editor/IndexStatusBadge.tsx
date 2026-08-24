@@ -7,8 +7,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Database, Loader2, AlertTriangle, Zap, RefreshCw } from 'lucide-react';
-import { useLspUiStore } from '@/stores/lspUiStore';
-import { useLspIndexStore } from '@/stores/lspIndexStore';
+import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePerformanceFlag } from '@/utils/performanceFeatures';
 import type { IndexStatus } from '@/services/tauri/lspService';
@@ -32,7 +31,7 @@ export function IndexStatusBadge() {
   const enabled = usePerformanceFlag('lspIndex');
   // 用 workspace 路径取最新状态。后端 canonicalize 后的路径可能不同——
   // 最稳妥是兜底：找最近一次 status；这里简单起见用 workspace 直接 lookup。
-  const status = useLspUiStore((s) => {
+  const status = useLspStore((s) => {
     if (!workspace) return null;
     // 直接 workspace path 找；找不到时遍历找最匹配
     return (
@@ -107,7 +106,7 @@ function IndexStatusDetail({
   workspace: string;
   onClose: () => void;
 }) {
-  const rebuild = useLspIndexStore((s) => s.rebuild);
+  const rebuild = useLspStore((s) => s.rebuild);
   const [rebuilding, setRebuilding] = useState(false);
 
   async function onRebuild() {

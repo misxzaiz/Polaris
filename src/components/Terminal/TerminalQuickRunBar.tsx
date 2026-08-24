@@ -1,5 +1,5 @@
 import { ChevronDown, ChevronUp, Play, Search, Square } from 'lucide-react';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useTerminalStore } from '@/stores/terminalStore';
 import type { TerminalScript } from '@/types/terminalScript';
 
 interface TerminalQuickRunBarProps {
@@ -23,17 +23,17 @@ function statusLabel(status?: string): string {
   }
 }
 
-function selectRecentScript(scripts: TerminalScript[], runtimes: ReturnType<typeof useTerminalScriptStore.getState>['runtimes']) {
+function selectRecentScript(scripts: TerminalScript[], runtimes: ReturnType<typeof useTerminalStore.getState>['runtimes']) {
   const running = scripts.find((script) => runtimes[script.id]?.status === 'running');
   if (running) return running;
   return [...scripts].sort((a, b) => (runtimes[b.id]?.lastRunAt ?? 0) - (runtimes[a.id]?.lastRunAt ?? 0))[0] ?? null;
 }
 
 export function TerminalQuickRunBar({ collapsed, onToggleCollapsed, onOpenRunner }: TerminalQuickRunBarProps) {
-  const scripts = useTerminalScriptStore((state) => state.scripts);
-  const runtimes = useTerminalScriptStore((state) => state.runtimes);
-  const runScript = useTerminalScriptStore((state) => state.runScript);
-  const stopScript = useTerminalScriptStore((state) => state.stopScript);
+  const scripts = useTerminalStore((state) => state.scripts);
+  const runtimes = useTerminalStore((state) => state.runtimes);
+  const runScript = useTerminalStore((state) => state.runScript);
+  const stopScript = useTerminalStore((state) => state.stopScript);
   const script = selectRecentScript(scripts, runtimes);
   const runtime = script ? runtimes[script.id] : undefined;
 

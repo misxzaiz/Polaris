@@ -32,7 +32,6 @@ export {
 export { useToastStore, type Toast, type ToastType, type NotificationRecord } from './toastStore';
 export { useSchedulerStore } from './schedulerStore';
 export { useTerminalStore } from './terminalStore';
-export { useTerminalScriptStore } from './terminalScriptStore';
 export { useRequirementStore } from './requirementStore';
 export { useVoiceInputStore } from './voiceInputStore';
 export { useModelProfileStore, getActiveModelProfile } from './modelProfileStore';

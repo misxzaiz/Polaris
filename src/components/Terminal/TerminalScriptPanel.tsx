@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { EyeOff, Play, Plus, RefreshCw, RotateCcw, Save, Square, Trash2 } from 'lucide-react';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useTerminalStore } from '@/stores/terminalStore';
 import type { TerminalScript, TerminalScriptAutoRunTrigger } from '@/types/terminalScript';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptContextMenu } from './TerminalScriptContextMenu';
@@ -51,22 +51,22 @@ function statusLabel(status?: string): string {
 }
 
 export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps) {
-  const scripts = useTerminalScriptStore((state) => state.scripts);
-  const runtimes = useTerminalScriptStore((state) => state.runtimes);
-  const hiddenDiscoveredScriptIds = useTerminalScriptStore((state) => state.hiddenDiscoveredScriptIds);
-  const loading = useTerminalScriptStore((state) => state.loading);
-  const error = useTerminalScriptStore((state) => state.error);
-  const clearError = useTerminalScriptStore((state) => state.clearError);
-  const setWorkspace = useTerminalScriptStore((state) => state.setWorkspace);
-  const refresh = useTerminalScriptStore((state) => state.refresh);
-  const runScript = useTerminalScriptStore((state) => state.runScript);
-  const stopScript = useTerminalScriptStore((state) => state.stopScript);
-  const runInExternalTerminal = useTerminalScriptStore((state) => state.runInExternalTerminal);
-  const saveScript = useTerminalScriptStore((state) => state.saveScript);
-  const createCustomScript = useTerminalScriptStore((state) => state.createCustomScript);
-  const deleteScript = useTerminalScriptStore((state) => state.deleteScript);
-  const restoreHiddenProjectScripts = useTerminalScriptStore((state) => state.restoreHiddenProjectScripts);
-  const runAutoScripts = useTerminalScriptStore((state) => state.runAutoScripts);
+  const scripts = useTerminalStore((state) => state.scripts);
+  const runtimes = useTerminalStore((state) => state.runtimes);
+  const hiddenDiscoveredScriptIds = useTerminalStore((state) => state.hiddenDiscoveredScriptIds);
+  const loading = useTerminalStore((state) => state.loading);
+  const error = useTerminalStore((state) => state.error);
+  const clearError = useTerminalStore((state) => state.clearError);
+  const setWorkspace = useTerminalStore((state) => state.setWorkspace);
+  const refresh = useTerminalStore((state) => state.refresh);
+  const runScript = useTerminalStore((state) => state.runScript);
+  const stopScript = useTerminalStore((state) => state.stopScript);
+  const runInExternalTerminal = useTerminalStore((state) => state.runInExternalTerminal);
+  const saveScript = useTerminalStore((state) => state.saveScript);
+  const createCustomScript = useTerminalStore((state) => state.createCustomScript);
+  const deleteScript = useTerminalStore((state) => state.deleteScript);
+  const restoreHiddenProjectScripts = useTerminalStore((state) => state.restoreHiddenProjectScripts);
+  const runAutoScripts = useTerminalStore((state) => state.runAutoScripts);
 
   const [tab, setTab] = useState<ScriptTab>('project');
   const [query, setQuery] = useState('');

@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { EditorView } from '@codemirror/view';
 import { Search } from 'lucide-react';
-import { useLspUiStore } from '@/stores/lspUiStore';
+import { useLspStore } from '@/stores/lspStore';
 import { createLogger } from '@/utils/logger';
 
 const log = createLogger('SymbolPalette');
@@ -351,8 +351,8 @@ function SymbolPaletteInner({
  * 顶层容器：订阅 store，条件渲染内部组件。在 App 根部挂载一次即可。
  */
 export function SymbolPalette() {
-  const ctx = useLspUiStore((s) => s.symbolPalette);
-  const close = useLspUiStore((s) => s.closeSymbolPalette);
+  const ctx = useLspStore((s) => s.symbolPalette);
+  const close = useLspStore((s) => s.closeSymbolPalette);
   if (!ctx) return null;
   return <SymbolPaletteInner view={ctx.view} client={ctx.client} uri={ctx.uri} onClose={close} />;
 }

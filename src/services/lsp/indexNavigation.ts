@@ -12,7 +12,7 @@
  */
 
 import type { EditorView } from '@codemirror/view';
-import { useLspUiStore } from '@/stores/lspUiStore';
+import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { lspIndexDefinition } from '@/services/tauri/lspService';
@@ -90,7 +90,7 @@ export async function jumpToDefinitionIndex(
 
     // 多候选 → 根据触发源决定 UI
     if (source === 'references-key') {
-      useLspUiStore.getState().openReferences({
+      useLspStore.getState().openReferences({
         symbol,
         loading: false,
         items: matchesToReferenceItems(matches),
@@ -98,7 +98,7 @@ export async function jumpToDefinitionIndex(
       });
     } else {
       const anchor = computePeekAnchor(view);
-      useLspUiStore.getState().openDefinitionPeek({
+      useLspStore.getState().openDefinitionPeek({
         symbol,
         items: matchesToReferenceItems(matches),
         anchor,
@@ -174,7 +174,7 @@ export async function smartJumpIndex(
     }
 
     const anchor = computePeekAnchor(view);
-    useLspUiStore.getState().openDefinitionPeek({
+    useLspStore.getState().openDefinitionPeek({
       symbol,
       items: matchesToReferenceItems(defs),
       anchor,

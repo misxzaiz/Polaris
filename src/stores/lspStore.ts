@@ -1,7 +1,9 @@
 /**
  * LSP 状态管理 Store
  *
- * 管理语言服务器配置、活跃的 LSP 客户端实例、连接状态。
+ * 综合管理：语言服务器配置/连接/客户端、索引引擎生命周期、UI 面板状态。
+ * 原分散在 lspStore / lspIndexStore / lspUiStore 三个文件，合并后统一入口。
+ *
  * Per-language 单例：同一语言只创建一个 LSP 客户端，多文件共享。
  */
 
@@ -13,18 +15,31 @@ import {
 } from '@codemirror/lsp-client';
 import type { Extension } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { TauriIpcTransport } from '@/services/lsp/TauriIpcTransport';
-import { lspConfigList } from '@/services/tauri/lspService';
+import {
+  lspConfigList,
+  lspIndexOpen,
+  lspIndexClose,
+  lspIndexRebuild,
+  lspIndexStatus,
+  type IndexStatus,
+} from '@/services/tauri/lspService';
 import { createLogger } from '@/utils/logger';
 import { ctrlHoverLink } from '../components/Editor/ctrlHoverLink';
 import { smartJumpLsp } from '@/services/lsp/lspNavigation';
 import { jumpToDefinitionIndex, smartJumpIndex } from '@/services/lsp/indexNavigation';
 import { runFindReferences } from '@/services/lsp/lspReferences';
-import { useLspUiStore } from './lspUiStore';
 import { useEditorSettingsStore } from './editorSettingsStore';
 import { useDiagnosticsStore, type DiagnosticItem } from './diagnosticsStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { isLspIndexEnabled } from '@/utils/performanceFeatures';
 
 const log = createLogger('LspStore');
+
+// ============================================================
+// 类型定义
+// ============================================================
 
 /** 语言服务器配置 */
 export interface LspServerConfig {
@@ -55,55 +70,122 @@ interface ActiveClient {
   transport: TauriIpcTransport;
 }
 
-/** LSP Store 状态 */
-interface LspState {
-  /** 已配置的语言服务器 */
-  servers: LspServerConfig[];
-  /** 活跃的 LSP 客户端（key = serverId） */
-  clients: Map<string, ActiveClient>;
-  /** 连接状态（key = serverId） */
-  status: Map<string, LspConnectionStatus>;
-  /** 进行中的连接 Promise（防止并发重复创建） */
-  pendingConnections: Map<string, Promise<{ client: LSPClient | null; extensions: Extension[] } | null>>;
-}
-
 export type LspConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 
-/** LSP Store 操作 */
+// --- UI 面板类型 ---
+
+interface SymbolPaletteContext {
+  view: EditorView;
+  client: LSPClient;
+  uri: string;
+}
+
+/** 引用结果中的一条（LSP 模式与索引模式统一形态） */
+export interface ReferenceItem {
+  /** 本地文件路径 */
+  path: string;
+  /** 行号（1-based） */
+  line: number;
+  /** 列号（0-based） */
+  column: number;
+  /** 该行预览文本（索引模式有；LSP 模式可能为空） */
+  preview?: string;
+  /** 符号种类（class/interface/method/...） */
+  kind?: string;
+  /** 完整限定名 */
+  fqn?: string;
+  /** 引用种类（call/type/new/...）；查应用结果用 */
+  refKind?: string;
+}
+
+/** References 面板上下文 */
+export interface ReferencesContext {
+  /** 被查询的符号名 */
+  symbol: string;
+  /** 是否加载中 */
+  loading: boolean;
+  /** 结果列表 */
+  items: ReferenceItem[];
+  /** 错误信息（查询失败时） */
+  error: string | null;
+  /** 结果是否可能被截断（达到上限） */
+  truncated?: boolean;
+}
+
+/** Definition Peek 浮窗上下文 */
+export interface DefinitionPeekContext {
+  /** 被查询的符号名 */
+  symbol: string;
+  /** 候选定义（已按相关度排序，第一项是最佳猜测） */
+  items: ReferenceItem[];
+  /** 屏幕坐标锚点（来自 view.coordsAtPos） */
+  anchor: { x: number; y: number; lineHeight: number };
+}
+
+// ============================================================
+// Store 状态与 Actions
+// ============================================================
+
+interface LspState {
+  // --- LSP 客户端 ---
+  servers: LspServerConfig[];
+  clients: Map<string, ActiveClient>;
+  status: Map<string, LspConnectionStatus>;
+  pendingConnections: Map<string, Promise<{ client: LSPClient | null; extensions: Extension[] } | null>>;
+
+  // --- 索引引擎 ---
+  currentStatus: IndexStatus | null;
+  openedWorkspaces: Set<string>;
+  unlisten: UnlistenFn | null;
+
+  // --- UI 面板 ---
+  symbolPalette: SymbolPaletteContext | null;
+  references: ReferencesContext | null;
+  definitionPeek: DefinitionPeekContext | null;
+  indexStatuses: Record<string, IndexStatus>;
+}
+
 interface LspActions {
-  /** 为指定文件激活 LSP（如已有同语言 client 则复用） */
+  // --- LSP 客户端操作 ---
   activateForFile(
     filePath: string,
     language: string,
     rootUri: string,
   ): Promise<{ client: LSPClient | null; extensions: Extension[] } | null>;
-
-  /** 断开指定服务器的连接 */
   deactivateServer(serverId: string): Promise<void>;
-
-  /** 断开所有连接 */
   deactivateAll(): Promise<void>;
-
-  /** 添加语言服务器配置 */
   addServer(config: LspServerConfig): void;
-
-  /** 移除语言服务器配置 */
   removeServer(id: string): void;
-
-  /** 切换服务器启用/禁用 */
   toggleServer(id: string): void;
-
-  /** 更新服务器配置 */
   updateServer(id: string, patch: Partial<Omit<LspServerConfig, 'id'>>): void;
-
-  /** 获取指定服务器对应语言的 CM6 extensions */
   getExtensionsForFile(filePath: string, language: string): Extension[];
-
-  /** 从后端加载配置（初始化时调用一次） */
   loadFromBackend(): Promise<void>;
+
+  // --- 索引引擎操作 ---
+  init(): Promise<void>;
+  ensureOpen(workspace: string): Promise<void>;
+  ensureClose(workspace: string): Promise<void>;
+  rebuild(workspace: string): Promise<void>;
+  refresh(workspace: string): Promise<void>;
+
+  // --- UI 面板操作 ---
+  openSymbolPalette(ctx: SymbolPaletteContext): void;
+  closeSymbolPalette(): void;
+  openReferences(ctx: ReferencesContext): void;
+  updateReferences(patch: Partial<ReferencesContext>): void;
+  closeReferences(): void;
+  openDefinitionPeek(ctx: DefinitionPeekContext): void;
+  closeDefinitionPeek(): void;
+  promoteDefinitionPeekToReferences(): void;
+  setIndexStatus(status: IndexStatus): void;
+  clearIndexStatus(workspace: string): void;
 }
 
 export type LspStore = LspState & LspActions;
+
+// ============================================================
+// 辅助函数
+// ============================================================
 
 /** 查找支持指定语言的已启用服务器配置 */
 function findServerForLanguage(
@@ -123,7 +205,15 @@ function pathToUri(filePath: string): string {
   return `file:///${normalized}`;
 }
 
-/** 内置语言服务器配置 */
+/** 后端 canonicalize 后路径会把斜杠规整化；前端要保持比较一致 */
+function normalizePath(p: string): string {
+  return p;
+}
+
+// ============================================================
+// 默认配置
+// ============================================================
+
 const DEFAULT_SERVERS: LspServerConfig[] = [
   {
     id: 'typescript-language-server',
@@ -136,14 +226,31 @@ const DEFAULT_SERVERS: LspServerConfig[] = [
   },
 ];
 
+// ============================================================
+// Store
+// ============================================================
+
 export const useLspStore = create<LspStore>()((set, get) => ({
-  // --- 状态 ---
+  // --- LSP 客户端状态 ---
   servers: [...DEFAULT_SERVERS],
   clients: new Map(),
   status: new Map(),
   pendingConnections: new Map(),
 
-  // --- 操作 ---
+  // --- 索引引擎状态 ---
+  currentStatus: null,
+  openedWorkspaces: new Set(),
+  unlisten: null,
+
+  // --- UI 面板状态 ---
+  symbolPalette: null,
+  references: null,
+  definitionPeek: null,
+  indexStatuses: {},
+
+  // ============================================================
+  // LSP 客户端操作
+  // ============================================================
 
   activateForFile: async (filePath, language, rootUri) => {
     const { servers, clients, pendingConnections } = get();
@@ -382,7 +489,164 @@ export const useLspStore = create<LspStore>()((set, get) => ({
       set({ servers: [...DEFAULT_SERVERS] });
     }
   },
+
+  // ============================================================
+  // 索引引擎操作
+  // ============================================================
+
+  init: async () => {
+    if (get().unlisten) return; // 已初始化
+
+    try {
+      const un = await listen<IndexStatus>('lsp_index:status', (event) => {
+        const status = event.payload;
+        get().setIndexStatus(status);
+        // 同步 currentStatus（仅当 workspace 与当前活跃 workspace 相同）
+        const cur = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+        if (cur && status.workspace === normalizePath(cur)) {
+          set({ currentStatus: status });
+        }
+      });
+      set({ unlisten: un });
+    } catch (err) {
+      log.warn('failed to listen lsp_index:status', { error: String(err) });
+    }
+
+    // 当前 workspace 自动打开（仅当索引引擎开启时）
+    const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+    if (ws && isLspIndexEnabled()) {
+      await get().ensureOpen(ws);
+    }
+
+    // 监听 workspace 变更（zustand v5：(state, prevState) => void）
+    let prevWorkspace: string | null =
+      useWorkspaceStore.getState().getCurrentWorkspace?.()?.path ?? null;
+    useWorkspaceStore.subscribe((state) => {
+      const cur = state.getCurrentWorkspace?.()?.path ?? null;
+      if (cur === prevWorkspace) return;
+      const old = prevWorkspace;
+      prevWorkspace = cur;
+      if (old) void get().ensureClose(old);
+      if (cur) void get().ensureOpen(cur);
+    });
+  },
+
+  ensureOpen: async (workspace) => {
+    // 性能开关：lspIndex=false 时引擎不启动（不建 DB、不起 watcher、不发起调用）
+    if (!isLspIndexEnabled()) {
+      log.debug('lspIndex 关闭，跳过索引引擎打开', { workspace });
+      return;
+    }
+    if (get().openedWorkspaces.has(workspace)) {
+      // 仍刷一次状态（DB 可能是上一次会话留下的）
+      void get().refresh(workspace);
+      return;
+    }
+    try {
+      const status = await lspIndexOpen(workspace);
+      set((s) => ({
+        openedWorkspaces: new Set([...s.openedWorkspaces, workspace]),
+        currentStatus: status,
+      }));
+      get().setIndexStatus(status);
+      // 没数据 → 自动后台构建
+      if (status.files === 0) {
+        log.debug('索引为空，触发首次后台构建', { workspace });
+        await lspIndexRebuild(workspace);
+      }
+    } catch (err) {
+      log.warn('lspIndexOpen failed', { workspace, error: String(err) });
+    }
+  },
+
+  ensureClose: async (workspace) => {
+    if (!get().openedWorkspaces.has(workspace)) return;
+    try {
+      await lspIndexClose(workspace);
+    } catch (err) {
+      log.warn('lspIndexClose failed', { workspace, error: String(err) });
+    }
+    set((s) => {
+      const next = new Set(s.openedWorkspaces);
+      next.delete(workspace);
+      return { openedWorkspaces: next };
+    });
+    get().clearIndexStatus(normalizePath(workspace));
+  },
+
+  rebuild: async (workspace) => {
+    if (!isLspIndexEnabled()) {
+      log.debug('lspIndex 关闭，跳过重建', { workspace });
+      return;
+    }
+    try {
+      await lspIndexRebuild(workspace);
+    } catch (err) {
+      log.warn('lspIndexRebuild failed', { workspace, error: String(err) });
+    }
+  },
+
+  refresh: async (workspace) => {
+    if (!isLspIndexEnabled()) {
+      return;
+    }
+    try {
+      const s = await lspIndexStatus(workspace);
+      get().setIndexStatus(s);
+      set({ currentStatus: s });
+    } catch (err) {
+      log.warn('lspIndexStatus failed', { workspace, error: String(err) });
+    }
+  },
+
+  // ============================================================
+  // UI 面板操作
+  // ============================================================
+
+  openSymbolPalette: (ctx) => set({ symbolPalette: ctx }),
+  closeSymbolPalette: () => set({ symbolPalette: null }),
+
+  openReferences: (ctx) => set({ references: ctx, definitionPeek: null }),
+  updateReferences: (patch) =>
+    set((state) =>
+      state.references ? { references: { ...state.references, ...patch } } : {},
+    ),
+  closeReferences: () => set({ references: null }),
+
+  openDefinitionPeek: (ctx) => set({ definitionPeek: ctx, references: null }),
+  closeDefinitionPeek: () => set({ definitionPeek: null }),
+  promoteDefinitionPeekToReferences: () => {
+    const peek = get().definitionPeek;
+    if (!peek) return;
+    set({
+      definitionPeek: null,
+      references: {
+        symbol: peek.symbol,
+        loading: false,
+        items: peek.items,
+        error: null,
+      },
+    });
+  },
+
+  setIndexStatus: (status) =>
+    set((state) => {
+      if (!status.workspace) return {};
+      return {
+        indexStatuses: { ...state.indexStatuses, [status.workspace]: status },
+      };
+    }),
+  clearIndexStatus: (workspace) =>
+    set((state) => {
+      const next = { ...state.indexStatuses };
+      delete next[workspace];
+      return { indexStatuses: next };
+    }),
 }));
+
+// ============================================================
+// 编辑器扩展构建函数
+// ============================================================
 
 /**
  * 从 LSPClient 构建给编辑器用的 CM6 extensions。
@@ -506,7 +770,7 @@ function makeSymbolPaletteKeymap(client: LSPClient, uri: string): Extension {
     {
       key: 'Mod-Shift-o',
       run: (view) => {
-        useLspUiStore.getState().openSymbolPalette({ view, client, uri });
+        useLspStore.getState().openSymbolPalette({ view, client, uri });
         return true;
       },
     },
@@ -555,4 +819,3 @@ function makeCtrlClickJump(client: LSPClient, currentUri: string): Extension {
     },
   });
 }
-

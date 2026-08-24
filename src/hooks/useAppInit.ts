@@ -10,19 +10,17 @@
  */
 
 import { useEffect, useRef } from 'react';
-import { useConfigStore } from '@/stores';
+import { useConfigStore, initPerformanceHotSwitch } from '@/stores/configStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useIntegrationStore } from '@/stores/integrationStore';
 import { useAutoModeStore } from '@/stores/autoModeStore';
 import { useSnippetStore } from '@/stores/snippetStore';
 import { useSkillStore } from '@/stores/skillStore';
 import { useCliInfoStore } from '@/stores/cliInfoStore';
-import { usePerformanceHotSwitch } from '@/stores/performanceHotSwitchStore';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useTerminalStore } from '@/stores/terminalStore';
 import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
-import { useLspIndexStore } from '@/stores/lspIndexStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines } from '../core/engine-bootstrap';
 import { bootstrapTools } from '../core/tool-bootstrap';
@@ -173,9 +171,9 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
     // 初始化性能开关热切换监听（config-changed 事件 → 停止已运行的后端守护服务）
     // 在 config 加载后注册，确保 prev 快照准确（避免 prev 漂移导致误停止）
-    perfHotSwitchCleanupRef.current = usePerformanceHotSwitch
-      .getState()
-      .init(useConfigStore.getState().config?.performance ?? {});
+    perfHotSwitchCleanupRef.current = initPerformanceHotSwitch(
+      useConfigStore.getState().config?.performance ?? {},
+    );
 
     // 性能开关 codeEditorLanguages：开启时在 idle 预热全部编辑器语言包，
     // 使后续打开任意文件时 dynamic import 命中模块缓存、消除首延迟。
@@ -288,7 +286,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
         // 语言服务器（如 Java）不会被加载，打开对应文件时静默失效。
         useLspStore.getState().loadFromBackend(),
         // 索引引擎初始化（事件订阅 + 当前 workspace 自动 open）
-        useLspIndexStore.getState().init(),
+        useLspStore.getState().init(),
       ]);
     } catch (error) {
       log.warn('设置数据预加载部分失败', { error: String(error) });
@@ -297,7 +295,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace();
     if (currentWorkspace?.path) {
       try {
-        await useTerminalScriptStore.getState().runAutoScripts('app_start', currentWorkspace.path);
+        await useTerminalStore.getState().runAutoScripts('app_start', currentWorkspace.path);
       } catch (error) {
         log.warn('终端脚本自动执行失败', { error: String(error) });
       }

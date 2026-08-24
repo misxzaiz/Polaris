@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Play, Plus, X } from 'lucide-react';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { createLogger } from '@/utils/logger';
 
@@ -15,9 +14,9 @@ interface TerminalRunCommandModalProps {
 
 export function TerminalRunCommandModal({ workspacePath, onClose }: TerminalRunCommandModalProps) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const scripts = useTerminalScriptStore((state) => state.scripts);
-  const runScript = useTerminalScriptStore((state) => state.runScript);
-  const createCustomScript = useTerminalScriptStore((state) => state.createCustomScript);
+  const scripts = useTerminalStore((state) => state.scripts);
+  const runScript = useTerminalStore((state) => state.runScript);
+  const createCustomScript = useTerminalStore((state) => state.createCustomScript);
   const createSession = useTerminalStore((state) => state.createSession);
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -45,7 +44,7 @@ export function TerminalRunCommandModal({ workspacePath, onClose }: TerminalRunC
       const name = window.prompt('保存为自定义命令名称', command.split(/\s+/).slice(0, 3).join(' '));
       if (!name) return;
       await createCustomScript({ name, command, cwd: workspacePath || undefined });
-      const created = useTerminalScriptStore.getState().scripts.find((script) => script.name === name && script.command === command);
+      const created = useTerminalStore.getState().scripts.find((script) => script.name === name && script.command === command);
       if (created) await runScript(created.id);
     } else {
       await createSession({

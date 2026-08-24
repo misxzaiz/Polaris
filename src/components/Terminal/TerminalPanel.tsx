@@ -12,7 +12,6 @@ import { WebLinksAddon } from '@xterm/addon-web-links';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { Plus, X, Terminal as TerminalIcon, Maximize2, Minimize2 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
@@ -248,9 +247,9 @@ export function TerminalPanel() {
   const toggleTerminalScriptPanelCollapsed = useViewStore((state) => state.toggleTerminalScriptPanelCollapsed);
   const terminalFullscreen = useViewStore((state) => state.terminalFullscreen);
   const toggleTerminalFullscreen = useViewStore((state) => state.toggleTerminalFullscreen);
-  const scripts = useTerminalScriptStore((state) => state.scripts);
-  const runScript = useTerminalScriptStore((state) => state.runScript);
-  const stopScript = useTerminalScriptStore((state) => state.stopScript);
+  const scripts = useTerminalStore((state) => state.scripts);
+  const runScript = useTerminalStore((state) => state.runScript);
+  const stopScript = useTerminalStore((state) => state.stopScript);
 
   // 获取当前工作区路径
   const currentWorkspace = getCurrentWorkspace();

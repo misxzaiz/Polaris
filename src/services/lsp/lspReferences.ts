@@ -1,7 +1,7 @@
 /**
  * 查找引用（查应用）——LSP 模式与索引模式统一入口。
  *
- * 结果通过 `lspUiStore` 喂给 ReferencesPanel 浮层展示，点击可跨文件跳转。
+ * 结果通过 `lspStore` 喂给 ReferencesPanel 浮层展示，点击可跨文件跳转。
  *
  * - LSP 模式：发 `textDocument/references` 拿语义级 Location[]。
  * - 索引模式：调后端 `lsp_index_references`（walkdir+regex 全词匹配），零常驻进程。
@@ -9,7 +9,7 @@
 
 import type { LSPClient } from '@codemirror/lsp-client';
 import type { EditorView } from '@codemirror/view';
-import { useLspUiStore, type ReferenceItem } from '@/stores/lspUiStore';
+import { useLspStore, type ReferenceItem } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { lspIndexReferences } from '@/services/tauri/lspService';
@@ -104,7 +104,7 @@ export async function runFindReferences(view: EditorView, ctx: RefCtx): Promise<
   const symbol = symbolAtCursor(view);
   if (!symbol) return false;
 
-  const ui = useLspUiStore.getState();
+  const ui = useLspStore.getState();
   ui.openReferences({ symbol, loading: true, items: [], error: null });
 
   try {
@@ -120,12 +120,12 @@ export async function runFindReferences(view: EditorView, ctx: RefCtx): Promise<
         },
       );
       const items = sortItems(locationsToItems(result));
-      useLspUiStore.getState().updateReferences({ loading: false, items });
+      useLspStore.getState().updateReferences({ loading: false, items });
       log.debug('LSP references', { symbol, count: items.length });
     } else {
       const root = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
       if (!root) {
-        useLspUiStore.getState().updateReferences({
+        useLspStore.getState().updateReferences({
           loading: false,
           error: 'no-workspace',
         });
@@ -152,7 +152,7 @@ export async function runFindReferences(view: EditorView, ctx: RefCtx): Promise<
           refKind: m.refKind,
         })),
       );
-      useLspUiStore.getState().updateReferences({
+      useLspStore.getState().updateReferences({
         loading: false,
         items,
         truncated: matches.length >= INDEX_MATCH_CAP,
@@ -160,7 +160,7 @@ export async function runFindReferences(view: EditorView, ctx: RefCtx): Promise<
       log.debug('Index references', { symbol, count: items.length });
     }
   } catch (err) {
-    useLspUiStore.getState().updateReferences({
+    useLspStore.getState().updateReferences({
       loading: false,
       error: String(err),
     });

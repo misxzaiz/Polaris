@@ -13,10 +13,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CornerDownLeft, FileCode, ChevronRight } from 'lucide-react';
 import {
-  useLspUiStore,
+  useLspStore,
   type DefinitionPeekContext,
   type ReferenceItem,
-} from '@/stores/lspUiStore';
+} from '@/stores/lspStore';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { createLogger } from '@/utils/logger';
 
@@ -71,8 +71,8 @@ interface InnerProps {
 }
 
 function PeekInner({ ctx }: InnerProps) {
-  const close = useLspUiStore((s) => s.closeDefinitionPeek);
-  const promote = useLspUiStore((s) => s.promoteDefinitionPeekToReferences);
+  const close = useLspStore((s) => s.closeDefinitionPeek);
+  const promote = useLspStore((s) => s.promoteDefinitionPeekToReferences);
   const [selectedIndex, setSelectedIndex] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -256,7 +256,7 @@ function PeekInner({ ctx }: InnerProps) {
 
 /** 顶层容器：订阅 store，条件渲染。在 App 根部挂载一次即可。 */
 export function DefinitionPeek() {
-  const ctx = useLspUiStore((s) => s.definitionPeek);
+  const ctx = useLspStore((s) => s.definitionPeek);
   if (!ctx) return null;
   return <PeekInner ctx={ctx} />;
 }

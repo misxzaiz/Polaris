@@ -14,7 +14,7 @@ import { listen } from '@/services/transport';
 import { useTabStore } from '@/stores/tabStore';
 import { useViewStore } from '@/stores/viewStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
-import { useTerminalScriptStore } from '@/stores/terminalScriptStore';
+import { useTerminalStore } from '@/stores/terminalStore';
 import { useSchedulerStore } from '@/stores/schedulerStore';
 import { useToastStore } from '@/stores/toastStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
@@ -175,7 +175,7 @@ export function useAppEvents() {
 
   // 终端脚本运行状态监听
   useEffect(() => {
-    const cleanup = useTerminalScriptStore.getState().initEventListeners();
+    const cleanup = useTerminalStore.getState().initScriptEventListeners();
     return cleanup;
   }, []);
 
@@ -194,7 +194,7 @@ export function useAppEvents() {
     const handleWorkspaceChanged = (event: Event) => {
       const workspacePath = (event as CustomEvent<{ path?: string }>).detail?.path;
       if (!workspacePath) return;
-      useTerminalScriptStore.getState().runAutoScripts('workspace_open', workspacePath)
+      useTerminalStore.getState().runAutoScripts('workspace_open', workspacePath)
         .catch((error) => log.warn('Workspace auto scripts failed', { error: String(error) }));
     };
 

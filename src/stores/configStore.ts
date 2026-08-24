@@ -4,15 +4,19 @@
 
 import { create } from 'zustand';
 import i18n from '@/i18n';
-import type { Config, ConfigPatch, HealthStatus } from '@/types';
+import type { Config, ConfigPatch, HealthStatus, PerformanceFeatures } from '@/types';
 import * as tauri from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
-import { currentMode } from '@/services/transport';
+import { currentMode, listen } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
 import { saveLegacySpiderManConfig } from '@/services/themeEngine';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
+import { fsWatchStop } from '@/services/tauri/fileService';
+import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
+import { useLspStore } from '@/stores/lspStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 
 const log = createLogger('ConfigStore');
 
@@ -365,4 +369,114 @@ function setNeedsToken(): Partial<ConfigState> {
     isConnecting: false,
     connectionState: 'needsToken' as const,
   };
+}
+
+// ============================================================
+// 性能开关热切换
+//
+// 监听后端 config-changed 事件，在性能开关从 true → false 时，
+// 停止对应的后端守护服务（file watcher / scheduler / lspIndex）。
+// 开关从 false → true 时不主动启动服务（避免非预期的后台进程拉起），
+// 由对应功能首次调用时按需启动。
+// ============================================================
+
+type UnlistenFn = () => void;
+
+const perfLog = createLogger('PerformanceHotSwitch');
+
+let _prev: PerformanceFeatures = {};
+let _listening = false;
+
+/**
+ * 初始化性能开关热切换监听。
+ * 需在应用启动时调用一次，返回 cleanup 函数。
+ */
+export function initPerformanceHotSwitch(initialPerf: PerformanceFeatures): () => void {
+  // 幂等：若已监听则仅更新 prev 快照，不重复注册
+  if (_listening) {
+    _prev = initialPerf;
+    return () => {};
+  }
+  _prev = initialPerf;
+  _listening = true;
+  let unlisten: UnlistenFn | null = null;
+
+  listen<{ performance?: PerformanceFeatures }>('config-changed', (event) => {
+    const next = event.performance ?? {};
+    handlePerfSwitch(_prev, next);
+    _prev = next;
+  }).then((fn) => {
+    unlisten = fn;
+  }).catch((err) => {
+    perfLog.warn('监听 config-changed 失败', { error: String(err) });
+    _listening = false;
+  });
+
+  return () => {
+    if (unlisten) unlisten();
+    _listening = false;
+  };
+}
+
+/**
+ * 检测开关从 true→false 的跳变，停止对应后端守护服务。
+ * false→true 不主动启动（按需启动原则）。
+ */
+function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures): void {
+  // file watcher：true → false 时停止
+  if (prev.fileWatcher && !next.fileWatcher) {
+    perfLog.info('fileWatcher 关闭，停止文件监听');
+    fsWatchStop().catch((err) => {
+      perfLog.warn('停止文件监听失败', { error: String(err) });
+    });
+  }
+
+  // scheduler daemon：true → false 时停止
+  if (prev.schedulerDaemon && !next.schedulerDaemon) {
+    perfLog.info('schedulerDaemon 关闭，停止调度器守护进程');
+    schedulerStop().catch((err) => {
+      perfLog.warn('停止调度器失败', { error: String(err) });
+    });
+  }
+  // scheduler daemon：false → true 时热启动
+  if (!prev.schedulerDaemon && next.schedulerDaemon) {
+    perfLog.info('schedulerDaemon 开启，热启动调度器守护进程');
+    schedulerStart().catch((err) => {
+      perfLog.warn('热启动调度器失败', { error: String(err) });
+    });
+  }
+
+  // lspIndex：true → false 时关闭所有 workspace 索引引擎
+  if (prev.lspIndex && !next.lspIndex) {
+    perfLog.info('lspIndex 关闭，释放索引引擎');
+    const { openedWorkspaces, ensureClose } = useLspStore.getState();
+    openedWorkspaces.forEach((ws) => {
+      void ensureClose(ws);
+    });
+    if (openedWorkspaces.size === 0) {
+      perfLog.debug('lspIndex 关闭时无已打开 workspace');
+    }
+  }
+  // lspIndex：false → true 时热开启当前 workspace
+  if (!prev.lspIndex && next.lspIndex) {
+    perfLog.info('lspIndex 开启，热启动索引引擎');
+    const ws = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
+    if (ws) {
+      void useLspStore.getState().ensureOpen(ws);
+    }
+  }
+
+  // codeEditorLanguages：false → true 时预热编辑器语言包
+  if (!prev.codeEditorLanguages && next.codeEditorLanguages) {
+    perfLog.info('codeEditorLanguages 开启，预热编辑器语言包');
+    import('@/components/Editor/Editor')
+      .then(({ preloadLanguageExtensions }) => {
+        void preloadLanguageExtensions().catch((err) => {
+          perfLog.warn('编辑器语言包预热失败', { error: String(err) });
+        });
+      })
+      .catch((err) => {
+        perfLog.warn('加载 Editor 模块失败', { error: String(err) });
+      });
+  }
 }
