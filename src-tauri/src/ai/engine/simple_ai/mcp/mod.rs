@@ -183,8 +183,8 @@ impl McpClientPool {
     }
 
     /// 已连接的 server 数量（诊断用）。
-    pub(crate) fn connected_count(&self) -> usize {
-        self.clients.blocking_read().len()
+    pub(crate) async fn connected_count(&self) -> usize {
+        self.clients.read().await.len()
     }
 
     /// 检查某 MCP 工具名（`mcp__{srv}__{tool}`）是否已注册。
@@ -263,11 +263,11 @@ mod tests {
         assert_eq!(spec["function"]["parameters"]["type"], "object");
     }
 
-    #[test]
-    fn empty_pool_has_no_specs() {
+    #[tokio::test]
+    async fn empty_pool_has_no_specs() {
         let pool = futures_executor_pool();
         assert!(pool.tool_specs().is_empty());
-        assert_eq!(pool.connected_count(), 0);
+        assert_eq!(pool.connected_count().await, 0);
     }
 
     #[tokio::test]
@@ -280,7 +280,7 @@ mod tests {
             args: Vec::new(),
         }];
         let pool = McpClientPool::from_servers_lazy(servers).await;
-        assert_eq!(pool.connected_count(), 0);
+        assert_eq!(pool.connected_count().await, 0);
         // tool_index 为空：懒加载在首次 call 前不知道工具列表。
         assert!(pool.tool_specs().is_empty());
         // 未 spawn → call 返回 "not connected" 而非崩溃。

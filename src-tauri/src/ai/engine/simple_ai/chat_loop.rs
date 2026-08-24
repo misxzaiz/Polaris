@@ -117,7 +117,7 @@ pub(super) async fn run_chat_loop(
         };
         tracing::info!(
             "[SimpleAI] MCP pool 就绪：{} 个 server 连接，{} 个工具",
-            pool.connected_count(),
+            pool.connected_count().await,
             pool.tool_specs().len()
         );
         registry = registry.with_mcp(pool);
