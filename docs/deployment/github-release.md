@@ -168,6 +168,62 @@ git push origin vx.x.x
 
 ---
 
+## v10.4.0 构建记录
+
+**构建时间**: 2026-08-24 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.4.0
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.4.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.4.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.4.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.4.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.4.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.4.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.4.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.4.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- feat(companion): AI 主动陪伴助手 Phase 0+1+2 完整闭环（真实引擎接入/事件驱动/成就桥接/设置面板/Toast 联动）
+- fix(simple-ai): 修复 connected_count 在 tokio 异步上下文中使用 blocking_read 导致 panic 卡退
+- fix(simple-ai): 缩短请求超时与流空闲超时，防止对话卡退
+- fix(simple-ai): 修复工具轮次无上限与 MCP 超时过长
+- fix(dsh/pi): 修复对话中途断流——工具循环提前终结 + agent_end 误判
+- feat(plugin-system): P1-T3 toolProviders 覆盖硬编码工具 + P3-T1/T4 UI Slot 运行时自省
+- feat(plugin-system): 样式覆盖扩展点 contributes.styles
+- feat(capabilities): P2-T1~T4 Capability Seam trait 定义 + Registry
+- fix(plugin): 卸载时安全终止 MCP/引擎进程防 OS error；友好错误信息 + 强制卸载 + Force 按钮
+- fix(plugin): 同步 Rust 端 VALID_PLUGIN_ICONS 缺少 Activity/Film/Globe2/Users
+- fix(plugin-loader): shim missing memo/forwardRef exports
+- fix(panel): 修复切换应用时左侧插件面板自动关闭
+- fix(provider-router): 修复多 Key 加权路由失效 + JSON 序列化 key 类型
+- fix(theme): 修复主题自定义页面 TypeScript 编译错误
+- feat(perf): PerformanceFeatures 生产级闭环（G1-G4 缺口补齐）+ G4 横幅 dismiss 持久化
+- perf(P0): 移除 transparent: true 窗口透明，WebView2 GPU 降 70%
+- perf: 减少 WebView2 CPU/内存占用（P1-P4）
+- feat(perf): hljs 统一 core 化 + 消除三处重复注册（P1 抓手 B）
+- feat(perf): 补齐 codeEditorLanguages 编辑器语言包预加载路径（P0）
+- feat(build): 新增 git/lsp-index 编译期 feature 网格（轻量化 P2）+ git Web IPC 统一网关
+- feat(git-plugin): 编辑器 git 集成 + 插件扩展点（Phase 0/2）+ 暴露宿主工作区
+- feat(dsh-compat): Phase 1 Cordis 运行时嵌入 + 服务桥接骨架
+- feat(engine): 引擎稳定性标识 + dev 单实例隔离修复
+- feat(engine-test): 引擎插件路径验证面板 + build_start_params 增强
+- refactor(chat): Chat 组件目录重组织
+- refactor(config): 配置持久化规范化 + 插件配置一等公民
+- chore: 移除 EngineTestPanel 及其插件注册；移除 DSH 兼容层；Phase 1 架构冗余治理（死代码删除 + Store 合并）
+- chore: 规范化多个文件行尾为 LF（.gitattributes 政策同步）
+
+---
+
 ## v10.3.2 构建记录
 
 **构建时间**: 2026-08-06 (UTC)
