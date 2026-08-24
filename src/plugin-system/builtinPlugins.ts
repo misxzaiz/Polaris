@@ -16,7 +16,6 @@ import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
 import { dispatchPluginManifest } from '@/plugins/dispatch/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
-import { engineTestPluginManifest } from '@/plugins/engine-test/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -126,14 +125,10 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(dispatchPluginManifest)
   pluginRegistry.register(browserPluginManifest)
-  pluginRegistry.register(engineTestPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('agentGallery', 'polaris.agent-gallery', () =>
     import('@/components/Agent/AgentGalleryPanel').then((m) => ({ default: m.default })),
-  )
-  pluginPanelRegistry.register('engineTest', 'polaris.engine-test', () =>
-    import('@/plugins/engine-test/EngineTestPanel').then((m) => ({ default: m.EngineTestPanel })),
   )
   pluginPanelRegistry.register('personalHub', 'polaris.personal-hub', () =>
     import('@/components/PersonalHub/PersonalHubPanel').then((m) => ({ default: m.PersonalHubPanel })),
