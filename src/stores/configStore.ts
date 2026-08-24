@@ -12,7 +12,6 @@ import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
 import { saveLegacySpiderManConfig } from '@/services/themeEngine';
-import { BUILT_IN_THEME_IDS } from '@/types/theme';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
 
 const log = createLogger('ConfigStore');

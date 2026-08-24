@@ -20,7 +20,6 @@ export function ThemeTab({ config, onConfigChange, loading }: ThemeTabProps) {
   const { t } = useTranslation('settings');
   const [showGuide, setShowGuide] = React.useState(false);
 
-  const currentTheme = config.theme ?? 'dark';
   const chatDisplay = normalizeChatDisplaySettings(config.chatDisplay);
 
   const updateChatDisplay = (patch: Partial<typeof chatDisplay>) => {

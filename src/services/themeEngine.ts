@@ -10,14 +10,11 @@
  * 合并自 spiderman-theme.ts 的全部功能（亮度检测、自适应遮罩、CSS 变量同步）
  */
 
-import { createLogger } from '@/utils/logger';
 import type { ThemeDefinition, ThemeId } from '@/types/theme';
 import { BUILT_IN_THEME_IDS } from '@/types/theme';
 import { getTheme, getActiveThemeId } from '@/services/themeService';
 import { mergeThemes } from '@/services/themeMerger';
 import { DARK_THEME } from '@/data/builtInThemes';
-
-const log = createLogger('ThemeEngine');
 
 // ============ 亮度检测（从 spiderman-theme.ts 迁移） ============
 
@@ -321,7 +318,7 @@ export async function applyTheme(id: ThemeId): Promise<void> {
 
   // 沉浸主题：异步亮度检测 + 自适应遮罩更新
   if (theme.immersive?.enabled && theme.immersive.wallpaper.image) {
-    const brightness = await detectAndCacheBrightness(theme.immersive.wallpaper.image);
+    await detectAndCacheBrightness(theme.immersive.wallpaper.image);
     const merged = mergeThemes(theme);
     const vars = flattenThemeToCSSVars(merged);
     // 重新注入（亮度已知后遮罩重新计算）
@@ -347,9 +344,9 @@ export function bootstrapTheme(): void {
   // 异步更新亮度检测
   const currentId = document.documentElement.getAttribute('data-theme') || BUILT_IN_THEME_IDS.DARK;
   const theme = getTheme(currentId);
-  if (theme?.immersive?.enabled && theme.immersive.wallpaper.image) {
+  if (theme?.immersive?.enabled && theme.immersive?.wallpaper.image) {
     requestAnimationFrame(() => {
-      detectAndCacheBrightness(theme.immersive.wallpaper.image!).then((brightness) => {
+      detectAndCacheBrightness(theme.immersive!.wallpaper.image!).then(() => {
         const merged = mergeThemes(theme);
         const vars = flattenThemeToCSSVars(merged);
         injectCSSVars(vars);

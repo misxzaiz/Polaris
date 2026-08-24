@@ -7,16 +7,7 @@
 
 import * as React from 'react'
 import { EditorState } from '@codemirror/state'
-import {
-  EditorView,
-  keymap,
-  lineNumbers,
-  highlightActiveLine,
-  highlightSpecialChars,
-  drawSelection,
-  rectangularSelection,
-  crosshairCursor,
-} from '@codemirror/view'
+import { EditorView, keymap, lineNumbers, highlightActiveLine, highlightSpecialChars, drawSelection, rectangularSelection, crosshairCursor, } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
 import {
   bracketMatching,
@@ -84,7 +75,7 @@ function cssVariableCompletions(context: CompletionContext) {
   }
 }
 
-export function CssEditor({ value, onChange, onValidationError }: CssEditorProps) {
+export function CssEditor({ value, onChange }: CssEditorProps) {
   const containerRef = React.useRef<HTMLDivElement>(null)
   const viewRef = React.useRef<EditorView | null>(null)
   const onChangeRef = React.useRef(onChange)
@@ -110,18 +101,18 @@ export function CssEditor({ value, onChange, onValidationError }: CssEditorProps
         rectangularSelection(),
         crosshairCursor(),
         history(),
-        defaultKeymap,
-        historyKeymap,
+        keymap.of(defaultKeymap),
+        keymap.of(historyKeymap),
         foldGutter(),
-        foldKeymap,
+        keymap.of(foldKeymap),
         bracketMatching(),
         closeBrackets(),
-        closeBracketsKeymap,
+        keymap.of(closeBracketsKeymap),
         indentOnInput(),
         indentUnit.of('  '),
         syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
         highlightSelectionMatches(),
-        searchKeymap,
+        keymap.of(searchKeymap),
         css(),
         autocompletion({ override: [cssVariableCompletions] }),
         EditorView.theme({

@@ -23,7 +23,6 @@ import {
   downloadThemeFile,
   importThemeFile,
   exportTheme,
-  getAllBuiltInThemes,
   getUserThemes,
   migrateLegacyConfigTheme,
 } from '@/services/themeService';

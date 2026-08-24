@@ -102,7 +102,7 @@ export function getTheme(id: ThemeId): ThemeDefinition | undefined {
   if (builtIn) return builtIn;
 
   // 再查用户
-  return readFromStorage<ThemeDefinition | null>(THEME_PREFIX + id, undefined) ?? undefined;
+  return readFromStorage<ThemeDefinition | null>(THEME_PREFIX + id, null) ?? undefined;
 }
 
 /** 保存主题（新建或更新） */

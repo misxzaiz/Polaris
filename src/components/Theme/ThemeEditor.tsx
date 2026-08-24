@@ -29,20 +29,6 @@ interface ThemeEditorProps {
   onClose: () => void;
 }
 
-/** 将 RGB 三元组转换为 hex */
-function rgbToHex(rgbStr: string): string {
-  const parts = rgbStr.trim().split(/\s+/).map(Number);
-  if (parts.length < 3 || parts.some(isNaN)) return `#${rgbStr}`;
-  return '#' + parts.slice(0, 3).map((v) => Math.round(v).toString(16).padStart(2, '0')).join('');
-}
-
-/** 将 hex 转为 RGB 三元组 */
-function hexToRgb(hex: string): string {
-  const m = hex.replace('#', '').match(/.{2}/g);
-  if (!m || m.length < 3) return hex;
-  return m.slice(0, 3).map((h) => parseInt(h, 16)).join(' ');
-}
-
 const FONT_PRESETS = [
   { label: '系统默认', value: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' },
   { label: 'Inter', value: '"Inter", system-ui, sans-serif' },
@@ -137,7 +123,12 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
 
   const updateImmersive = (path: string, value: any) => {
     setDraft((prev) => {
-      const immersive = structuredClone(prev.immersive ?? {});
+      const immersive = structuredClone(prev.immersive ?? {
+        enabled: false,
+        wallpaper: { type: 'image', image: '', opacity: 0.5, positionX: 50, positionY: 50, size: 'cover' },
+        layerOpacity: { panel: 0.5, surface: 0.5, child: 0.5 },
+        effects: { panelBlur: 0, webTexture: 0, blueAccent: 0, hoverOpacity: 0.5 },
+      }) as ThemeDefinition['immersive'];
       const parts = path.split('.');
       let obj: any = immersive;
       for (let i = 0; i < parts.length - 1; i++) {
