@@ -329,6 +329,37 @@ fn handle_tools_list() -> Value {
                     }
                 }
             }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_history_state",
+            "description": "Check whether the browser tab can go back or forward in history.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_find",
+            "description": "Find text in the current page. Returns match count and navigates to the first match.",
+            "inputSchema": { "type": "object", "required": ["query"], "properties": {
+                "label": label_property,
+                "query": { "type": "string", "description": "Text to search for on the page." },
+                "caseSensitive": { "type": "boolean", "default": false, "description": "Whether the search is case-sensitive." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_zoom",
+            "description": "Set the page zoom level (0.25 to 5.0). Uses CSS transform scaling.",
+            "inputSchema": { "type": "object", "required": ["scale"], "properties": {
+                "label": label_property,
+                "scale": { "type": "number", "minimum": 0.25, "maximum": 5.0, "description": "Zoom level (1.0 = 100%)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_network_info",
+            "description": "Get page load performance data: load time, resource count, transfer size.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -389,6 +420,9 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_history_state" => Ok("history_state"),
         "browser_marquee" => Ok("marquee"),
         "browser_select_region" => Ok("select_region"),
+        "browser_find" => Ok("find"),
+        "browser_zoom" => Ok("zoom"),
+        "browser_network_info" => Ok("network_info"),
         other => Err(AppError::ValidationError(format!(
             "未知浏览器工具: {other}"
         ))),
@@ -431,6 +465,9 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "delayMs",
         "enabled",
         "region",
+        "query",
+        "caseSensitive",
+        "scale",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
@@ -588,7 +625,7 @@ mod tests {
         assert!(names.contains(&"browser_history_state"));
         assert!(names.contains(&"browser_marquee"));
         assert!(names.contains(&"browser_select_region"));
-        assert_eq!(names.len(), 18);
+        assert_eq!(names.len(), 21);
     }
 
     #[test]

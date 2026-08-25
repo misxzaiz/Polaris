@@ -2339,17 +2339,15 @@ pub async fn browser_type_text(
 // ── browser_find / browser_find_next ────────────────────────────────────────
 /// 在页面中查找文本，返回匹配数量和首条匹配信息
 #[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn browser_find(
-    app: AppHandle,
-    label: String,
-    query: String,
-    case_sensitive: Option<bool>,
+pub async fn browser_find_with_app(
+    app: &AppHandle,
+    label: &str,
+    query: &str,
+    case_sensitive: bool,
 ) -> Result<BrowserInteractionResult> {
     if query.trim().is_empty() {
         return Err(AppError::ValidationError("find 需要非空 query".to_string()));
     }
-    let case_sensitive = case_sensitive.unwrap_or(false);
     let escaped = serde_json::to_string(&query).unwrap_or_else(|_| "\"\"".to_string());
     let script = format!(
         r#"(function() {{
@@ -2396,6 +2394,18 @@ pub async fn browser_find(
         .map_err(|e| AppError::ValidationError(format!("浏览器查找结果格式错误: {e}")))
 }
 
+/// 页面内查找（tauri::command 入口）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_find(
+    app: AppHandle,
+    label: String,
+    query: String,
+    case_sensitive: Option<bool>,
+) -> Result<BrowserInteractionResult> {
+    browser_find_with_app(&app, &label, &query, case_sensitive.unwrap_or(false)).await
+}
+
 /// 跳到下一个/上一个匹配
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -2428,10 +2438,9 @@ pub async fn browser_find_next(
 // ── browser_zoom ────────────────────────────────────────────────────────────
 /// 设置页面缩放比例（0.25 ~ 5.0）
 #[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn browser_zoom(
-    app: AppHandle,
-    label: String,
+pub async fn browser_zoom_with_app(
+    app: &AppHandle,
+    label: &str,
     scale: f64,
 ) -> Result<BrowserInteractionResult> {
     let scale = scale.clamp(0.25, 5.0);
@@ -2454,6 +2463,17 @@ pub async fn browser_zoom(
     let value = parse_eval_json(&raw)?;
     serde_json::from_value(value)
         .map_err(|e| AppError::ValidationError(format!("浏览器缩放结果格式错误: {e}")))
+}
+
+/// 页面缩放（tauri::command 入口）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_zoom(
+    app: AppHandle,
+    label: String,
+    scale: f64,
+) -> Result<BrowserInteractionResult> {
+    browser_zoom_with_app(&app, &label, scale).await
 }
 
 /// 获取页面网络信息（加载时间、资源数量、传输大小等）
@@ -2942,6 +2962,22 @@ impl BrowserActionDispatcher {
                     .map_err(|e| AppError::ValidationError(format!("region 格式错误: {e}")))?;
                 let result = browser_select_region_with_app(&self.app, &label, &rect).await?;
                 serde_json::to_value(result).map_err(Into::into)
+            }
+            "find" => {
+                let query = args.get("text").or_else(|| args.get("query")).and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("find 缺少 query".to_string()))?;
+                let case_sensitive = args.get("caseSensitive").or_else(|| args.get("case_sensitive")).and_then(Value::as_bool).unwrap_or(false);
+                let result = browser_find_with_app(&self.app, &label, query, case_sensitive).await?;
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "zoom" => {
+                let scale = args.get("scale").and_then(Value::as_f64).unwrap_or(1.0);
+                let result = browser_zoom_with_app(&self.app, &label, scale).await?;
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "network_info" | "networkInfo" => {
+                let raw = browser_eval_with_app(&self.app, &label, browser_scripts::NETWORK_INFO_SCRIPT, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("网络信息解析失败: {e}")))
             }
             other => Err(AppError::ValidationError(format!(
                 "未知 browser action: {other}"
