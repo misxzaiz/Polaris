@@ -499,3 +499,34 @@ export async function browserTypeText(
     delayMs: options?.delayMs ?? null,
   })
 }
+
+// ── 页面内查找 ──────────────────────────────────────────────────────────
+
+export interface BrowserFindResult {
+  ok: boolean
+  count: number
+  current: number
+  query: string
+}
+
+export async function browserFind(
+  label: string,
+  query: string,
+  caseSensitive?: boolean,
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_find', {
+    label,
+    query,
+    caseSensitive: caseSensitive ?? null,
+  })
+}
+
+export async function browserFindNext(
+  label: string,
+  forward?: boolean,
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_find_next', {
+    label,
+    forward: forward ?? null,
+  })
+}

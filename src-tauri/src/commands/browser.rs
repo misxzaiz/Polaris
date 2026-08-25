@@ -2334,6 +2334,95 @@ pub async fn browser_type_text(
     browser_type_text_with_app(&app, &label, &text, index, element_text.as_deref(), delay_ms).await
 }
 
+// ── browser_find / browser_find_next ────────────────────────────────────────
+/// 在页面中查找文本，返回匹配数量和首条匹配信息
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_find(
+    app: AppHandle,
+    label: String,
+    query: String,
+    case_sensitive: Option<bool>,
+) -> Result<BrowserInteractionResult> {
+    if query.trim().is_empty() {
+        return Err(AppError::ValidationError("find 需要非空 query".to_string()));
+    }
+    let case_sensitive = case_sensitive.unwrap_or(false);
+    let escaped = serde_json::to_string(&query).unwrap_or_else(|_| "\"\"".to_string());
+    let script = format!(
+        r#"(function() {{
+            const query = {escaped};
+            const caseSensitive = {cs};
+            try {{
+                window.__POLARIS_FIND_QUERY__ = query;
+                window.__POLARIS_FIND_CASE_SENSITIVE__ = caseSensitive;
+                window.__POLARIS_FIND_MATCH_COUNT__ = 0;
+                window.__POLARIS_FIND_CURRENT__ = 0;
+                const body = document.body;
+                if (!body) return JSON.stringify({{ ok: false, action: 'find', index: null, text: query, url: String(location.href), message: '没有页面内容' }});
+                let count = 0;
+                if (window.find) {{
+                    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT, null, false);
+                    let node;
+                    while (node = walker.nextNode()) {{
+                        const text = node.textContent || '';
+                        const searchText = caseSensitive ? text : text.toLowerCase();
+                        const searchQuery = caseSensitive ? query : query.toLowerCase();
+                        let idx = 0;
+                        while ((idx = searchText.indexOf(searchQuery, idx)) !== -1) {{
+                            count++;
+                            idx += searchQuery.length;
+                        }}
+                    }}
+                }}
+                window.__POLARIS_FIND_MATCH_COUNT__ = count;
+                if (count > 0) {{
+                    const found = window.find(query, caseSensitive, false, true, false, false);
+                    window.__POLARIS_FIND_CURRENT__ = found ? 1 : count;
+                }}
+                return JSON.stringify({{ ok: true, action: 'find', index: null, text: query, url: String(location.href), message: '找到 ' + count + ' 个匹配' }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'find', index: null, text: query, url: String(location.href), message: '查找失败: ' + e.message }});
+            }}
+        }})()"#,
+        escaped = escaped,
+        cs = case_sensitive,
+    );
+    let raw = browser_eval_with_app(&app, &label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器查找结果格式错误: {e}")))
+}
+
+/// 跳到下一个/上一个匹配
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_find_next(
+    app: AppHandle,
+    label: String,
+    forward: Option<bool>,
+) -> Result<BrowserInteractionResult> {
+    let is_forward = forward.unwrap_or(true);
+    let script = format!(
+        r#"(function() {{
+            const query = window.__POLARIS_FIND_QUERY__;
+            const caseSensitive = window.__POLARIS_FIND_CASE_SENSITIVE__;
+            if (!query) return JSON.stringify({{ ok: false, action: 'find_next', index: null, text: '', url: String(location.href), message: '没有查找历史' }});
+            try {{
+                const found = window.find(query, caseSensitive, {backward}, true, false, false);
+                return JSON.stringify({{ ok: !!found, action: 'find_next', index: null, text: query, url: String(location.href), message: found ? '找到下一个匹配' : '没有更多匹配' }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'find_next', index: null, text: query, url: String(location.href), message: '查找失败: ' + e.message }});
+            }}
+        }})()"#,
+        backward = if is_forward { "false" } else { "true" },
+    );
+    let raw = browser_eval_with_app(&app, &label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器查找结果格式错误: {e}")))
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]

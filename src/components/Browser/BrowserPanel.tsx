@@ -5,6 +5,8 @@ import {
   ArrowLeft,
   ArrowRight,
   BoxSelect,
+  ChevronDown,
+  ChevronUp,
   Code2,
   Globe2,
   ListTree,
@@ -26,6 +28,8 @@ import {
   browserAcquireComplete,
   browserClose,
   browserCreate,
+  browserFind,
+  browserFindNext,
   browserGetDiagnostics,
   browserGetMarqueeResult,
   browserGetPageContext,
@@ -41,7 +45,7 @@ import {
   normalizeBrowserUrl,
   type BrowserBounds,
   type BrowserDiagnostics,
-  type BrowserOperationEvent,
+  type BrowserInteractionResult,
   type BrowserPageContext,
   type BrowserRegion,
   type BrowserRegionContext,
@@ -252,6 +256,10 @@ export function BrowserPanel({
   const [marqueeSending, setMarqueeSending] = useState(false)
   const [marqueePolling, setMarqueePolling] = useState(false)
   const [toolbarWidth, setToolbarWidth] = useState(0)
+  const [findQuery, setFindQuery] = useState('')
+  const [findOpen, setFindOpen] = useState(false)
+  const findInputRef = useRef<HTMLInputElement>(null)
+  const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
@@ -890,6 +898,56 @@ export function BrowserPanel({
     }
   }, [marqueeRegions, currentWorkspace, pageTitle, currentUrl, marqueeNote, sendMessage, toast, t, status, webviewLabel])
 
+  // ── 页面内查找 (Ctrl+F) ──
+
+  const handleFind = useCallback(async (query: string) => {
+    if (!query.trim() || status !== 'ready') return
+    try {
+      const result = await browserFind(webviewLabel, query)
+      setFindResult(result)
+    } catch (e) {
+      setFindResult({ ok: false, action: 'find', index: null, text: query, url: currentUrl, message: String(e) })
+    }
+  }, [status, webviewLabel, currentUrl])
+
+  const handleFindNext = useCallback(async (forward: boolean) => {
+    if (status !== 'ready') return
+    try {
+      const result = await browserFindNext(webviewLabel, forward)
+      setFindResult(result)
+    } catch {
+      // 静默
+    }
+  }, [status, webviewLabel])
+
+  const openFind = useCallback(() => {
+    setFindOpen(true)
+    setFindQuery('')
+    setFindResult(null)
+    setTimeout(() => findInputRef.current?.focus(), 50)
+  }, [])
+
+  const closeFind = useCallback(() => {
+    setFindOpen(false)
+    setFindQuery('')
+    setFindResult(null)
+  }, [])
+
+  // Ctrl+F / Escape 快捷键
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        openFind()
+      }
+      if (e.key === 'Escape' && findOpen) {
+        closeFind()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [findOpen, openFind, closeFind])
+
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
   const taskButtonClass =
@@ -1044,6 +1102,18 @@ export function BrowserPanel({
           </button>
           <button
             type="button"
+            className={clsx(taskButtonClass, findOpen && 'border-primary/60 bg-primary/10 text-primary')}
+            onClick={findOpen ? closeFind : openFind}
+            disabled={status !== 'ready'}
+            title={t('browser.find', { defaultValue: '在页面中查找 (Ctrl+F)' })}
+          >
+            <Search size={15} />
+            <span className="hidden 2xl:inline">
+              {t('browser.find', { defaultValue: '查找' })}
+            </span>
+          </button>
+          <button
+            type="button"
             className={clsx(
               taskButtonClass,
               marqueeMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
@@ -1070,6 +1140,62 @@ export function BrowserPanel({
             onClick={() => setError(null)}
           >
             {t('buttons.close')}
+          </button>
+        </div>
+      )}
+
+      {findOpen && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3 py-1.5">
+          <Search size={13} className="shrink-0 text-text-tertiary" />
+          <input
+            ref={findInputRef}
+            value={findQuery}
+            onChange={(e) => {
+              setFindQuery(e.target.value)
+              if (e.target.value.trim()) handleFind(e.target.value)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                if (e.shiftKey) handleFindNext(false)
+                else if (findQuery.trim()) handleFind(findQuery)
+              }
+              if (e.key === 'Escape') closeFind()
+            }}
+            className="h-7 min-w-0 flex-1 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs text-text-primary outline-none placeholder:text-text-tertiary focus:border-primary/70"
+            placeholder={t('browser.findPlaceholder', { defaultValue: '在页面中查找...' })}
+          />
+          {findResult && (
+            <span className={clsx(
+              'shrink-0 text-[11px]',
+              findResult.ok ? 'text-text-secondary' : 'text-danger'
+            )}>
+              {findResult.message}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => handleFindNext(false)}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.findPrevious', { defaultValue: '上一个' })}
+          >
+            <ChevronUp size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={() => handleFindNext(true)}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.findNext', { defaultValue: '下一个' })}
+          >
+            <ChevronDown size={13} />
+          </button>
+          <button
+            type="button"
+            onClick={closeFind}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+            title={t('buttons.close')}
+          >
+            <X size={12} />
           </button>
         </div>
       )}
