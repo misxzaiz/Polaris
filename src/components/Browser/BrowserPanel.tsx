@@ -1311,9 +1311,39 @@ export function BrowserPanel({
         )}
 
         {(loading || status === 'idle') && (
-          <div className="pointer-events-none absolute left-3 top-3 flex items-center gap-2 rounded-md border border-border-subtle bg-background-elevated/95 px-2.5 py-1.5 text-xs text-text-secondary">
-            <Loader2 size={13} className="animate-spin text-primary" />
-            <span>{t('status.loading')}</span>
+          <div className="absolute inset-0 flex flex-col bg-background-base">
+            {/* 骨架屏：模拟页面结构 */}
+            <div className="flex flex-col gap-4 p-6 animate-pulse">
+              {/* 地址栏骨架 */}
+              <div className="flex items-center gap-2">
+                <div className="h-4 w-4 rounded-full bg-background-hover" />
+                <div className="h-4 flex-1 rounded-md bg-background-hover" />
+              </div>
+              {/* 导航栏骨架 */}
+              <div className="flex items-center gap-3">
+                <div className="h-3 w-16 rounded bg-background-hover" />
+                <div className="h-3 w-20 rounded bg-background-hover" />
+                <div className="h-3 w-24 rounded bg-background-hover" />
+              </div>
+              {/* 内容骨架 */}
+              <div className="flex flex-col gap-3">
+                <div className="h-4 w-3/4 rounded bg-background-hover" />
+                <div className="h-4 w-1/2 rounded bg-background-hover" />
+                <div className="h-4 w-5/6 rounded bg-background-hover" />
+                <div className="h-4 w-2/3 rounded bg-background-hover" />
+                <div className="h-4 w-4/5 rounded bg-background-hover" />
+              </div>
+              {/* 卡片骨架 */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="h-24 rounded-lg bg-background-hover" />
+                <div className="h-24 rounded-lg bg-background-hover" />
+                <div className="h-24 rounded-lg bg-background-hover" />
+              </div>
+            </div>
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-md border border-border-subtle bg-background-elevated/95 px-3 py-1.5 text-xs text-text-secondary">
+              <Loader2 size={13} className="animate-spin text-primary" />
+              <span>{t('status.loading')}</span>
+            </div>
           </div>
         )}
 
