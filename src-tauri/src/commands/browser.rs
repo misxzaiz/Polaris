@@ -1301,11 +1301,54 @@ fn capture_browser_screenshot(
 }
 
 /// 根据屏幕坐标判断所在显示器索引(Windows 多屏支持)
+///
+/// 使用 Win32 EnumDisplayMonitors 枚举所有显示器，
+/// 根据窗口中心点坐标找出包含该点的显示器索引。
 #[cfg(all(feature = "tauri-app", windows))]
-fn detect_monitor_index(_x: f64, _y: f64) -> usize {
-    // computer_control 的 screenshot 接受 monitor 索引;
-    // 简化实现:返回 0,后续可对接 Win32 EnumDisplayMonitors 精确定位
-    // 当前已有改进:不再硬编码 monitor 0,而是预留接口供扩展
+fn detect_monitor_index(x: f64, y: f64) -> usize {
+    use windows_sys::Win32::Graphics::Gdi::{
+        EnumDisplayMonitors, GetMonitorInfoW, MONITORINFOEXW, HMONITOR, HDC, MONITORENUMPROC,
+    };
+    use windows_sys::Win32::Foundation::{RECT, LPARAM, BOOL};
+
+    let mut monitor_rects: Vec<(i32, i32, i32, i32)> = Vec::new();
+    let ctx = &mut monitor_rects as *mut Vec<(i32, i32, i32, i32)>;
+
+    unsafe extern "system" fn enum_proc(
+        _hmonitor: HMONITOR,
+        _hdc: HDC,
+        _lprc_clip: *mut RECT,
+        dw_data: LPARAM,
+    ) -> BOOL {
+        let mut info: MONITORINFOEXW = std::mem::zeroed();
+        info.monitorInfo.cbSize = std::mem::size_of::<MONITORINFOEXW>() as u32;
+        if GetMonitorInfoW(_hmonitor, &mut info as *mut _ as *mut _) != 0 {
+            let rect = &info.monitorInfo.rcMonitor;
+            let rects = &mut *(dw_data as *mut Vec<(i32, i32, i32, i32)>);
+            rects.push((rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top));
+        }
+        1
+    }
+
+    // SAFETY: Win32 callback — we pass a valid pointer to a Vec
+    unsafe {
+        EnumDisplayMonitors(
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            Some(enum_proc),
+            ctx as LPARAM,
+        );
+    }
+
+    // 找到包含该点的显示器
+    let cx = x as i32;
+    let cy = y as i32;
+    for (idx, (mx, my, mw, mh)) in monitor_rects.iter().enumerate() {
+        if cx >= *mx && cx < mx + mw && cy >= *my && cy < my + mh {
+            return idx;
+        }
+    }
+
     0
 }
 
