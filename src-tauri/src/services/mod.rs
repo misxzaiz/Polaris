@@ -22,6 +22,7 @@ pub mod prd_preview_mcp_server;
 pub mod scheduler;
 pub mod scheduler_daemon;
 pub mod scheduler_mcp_server;
+pub mod executor;
 pub mod todo_mcp_server;
 pub mod unified_todo_repository;
 pub mod unified_requirement_repository;

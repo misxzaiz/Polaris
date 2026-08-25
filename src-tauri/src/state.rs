@@ -290,7 +290,7 @@ pub struct AppState {
     /// Running web server handle — allows dynamic start/stop without app restart.
     pub web_server_handle: Arc<AsyncMutex<Option<WebServerHandle>>>,
     /// 内嵌代理管理器 — 管理 OpenAI Chat Completions 格式转换代理实例
-    pub proxy_manager: crate::services::ProxyManager,
+    pub proxy_manager: Arc<crate::services::ProxyManager>,
     /// 供应商分组路由器 — failover/轮询决策层
     pub provider_router: Arc<crate::services::ProviderRouter>,
     /// 供应商调用统计收集器（持久化累加计数器）
@@ -299,6 +299,8 @@ pub struct AppState {
     pub failed_call_collector: Arc<tokio::sync::Mutex<crate::services::FailedCallCollector>>,
     /// 插件服务管理器 — 管理插件声明的后台服务
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
+    /// 通用执行器注册表 — 统一管理所有执行器（内置 + 插件自定义）
+    pub executor_registry: crate::services::executor::ExecutorRegistry,
 }
 
 /// 创建应用状态
@@ -350,7 +352,7 @@ pub fn create_app_state(
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
-        proxy_manager: crate::services::ProxyManager::new(),
+        proxy_manager: Arc::new(crate::services::ProxyManager::new()),
         provider_router: Arc::new(crate::services::ProviderRouter::new()),
         profile_stats_collector: {
             let path = data_root().root().join("provider-stats.json");
@@ -367,6 +369,7 @@ pub fn create_app_state(
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
+        executor_registry: crate::services::executor::create_builtin_registry(),
     }
 }
 
@@ -436,11 +439,12 @@ impl AppState {
             resource_dir,
             start_time: self.start_time,
             web_server_handle: self.web_server_handle.clone(),
-            proxy_manager: crate::services::ProxyManager::new(),
+            proxy_manager: self.proxy_manager.clone(),
             provider_router: self.provider_router.clone(),
             profile_stats_collector: self.profile_stats_collector.clone(),
             failed_call_collector: self.failed_call_collector.clone(),
             plugin_service_manager: self.plugin_service_manager.clone(),
+            executor_registry: self.executor_registry.clone(),
         }
     }
 

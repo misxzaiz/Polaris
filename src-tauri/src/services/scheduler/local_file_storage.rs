@@ -389,6 +389,8 @@ impl TaskStorage for LocalFileStorage {
             timeout_minutes: params.timeout_minutes,
             group: sanitize_optional_string(params.group),
             notify_on_complete: params.notify_on_complete,
+            executor_type: params.executor_type,
+            executor_params: params.executor_params,
         };
 
         data.tasks.push(task.clone());
@@ -461,6 +463,10 @@ impl TaskStorage for LocalFileStorage {
             task.last_run_at = updates.last_run_at;
         }
 
+        if updates.last_run_status.is_some() {
+            task.last_run_status = updates.last_run_status;
+        }
+
         if let Some(mode) = updates.mode {
             task.mode = mode;
         }
@@ -511,6 +517,14 @@ impl TaskStorage for LocalFileStorage {
 
         if let Some(notify_on_complete) = updates.notify_on_complete {
             task.notify_on_complete = notify_on_complete;
+        }
+
+        if let Some(ref executor_type) = updates.executor_type {
+            task.executor_type = executor_type.clone();
+        }
+
+        if updates.executor_params.is_some() {
+            task.executor_params = updates.executor_params.clone();
         }
 
         task.updated_at = Utc::now().timestamp();
@@ -825,6 +839,8 @@ fn normalize_task_item(value: &serde_json::Value) -> Option<ScheduledTask> {
         timeout_minutes: object.get("timeoutMinutes").and_then(|v| v.as_u64()).map(|n| n as u32),
         group: optional_string_field(object.get("group")),
         notify_on_complete: object.get("notifyOnComplete").and_then(|v| v.as_bool()).unwrap_or(true),
+        executor_type: optional_string_field(object.get("executorType")).unwrap_or_default(),
+        executor_params: object.get("executorParams").cloned(),
     })
 }
 

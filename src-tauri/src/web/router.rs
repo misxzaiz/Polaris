@@ -126,6 +126,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let api_routes = Router::new()
         // Chat
         .route("/chat/send", post(api::chat::handle_send_message))
+        .route("/chat/execute", post(api::chat::handle_execute))
         .route("/chat/interrupt", post(api::chat::handle_interrupt))
         .route("/chat/history/{session_id}", get(api::chat::handle_get_history))
         .route("/chat/answer-question", post(api::chat::handle_answer_question))

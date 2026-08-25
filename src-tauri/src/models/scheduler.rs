@@ -414,6 +414,13 @@ pub struct ScheduledTask {
     /// 完成通知
     #[serde(default = "default_true")]
     pub notify_on_complete: bool,
+    // === 通用执行器 ===
+    /// 执行器类型（"chat" | "command" | "http" | "plugin:<id>:<executor>"）
+    #[serde(default)]
+    pub executor_type: String,
+    /// 执行器参数（JSON，不同执行器类型结构不同）
+    #[serde(default)]
+    pub executor_params: Option<serde_json::Value>,
 }
 
 /// 创建任务参数
@@ -487,6 +494,14 @@ pub struct CreateTaskParams {
     /// 完成通知
     #[serde(default = "default_true")]
     pub notify_on_complete: bool,
+
+    // === 通用执行器 ===
+    /// 执行器类型（"chat" | "command" | "http" | "plugin:<id>:<executor>"）
+    #[serde(default)]
+    pub executor_type: String,
+    /// 执行器参数（JSON，不同执行器类型结构不同）
+    #[serde(default)]
+    pub executor_params: Option<serde_json::Value>,
 }
 
 fn default_enabled() -> bool {

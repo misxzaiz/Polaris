@@ -290,10 +290,14 @@ pub async fn handle_ipc_bridge(
         // ── Scheduler: Run & Protocol ─────────────────────────────────────────
         "scheduler_run_task" => dispatch_scheduler_run_task(&state, &args).await,
         "scheduler_update_run_status" => dispatch_scheduler_update_run_status(&state, &args).await,
-        "scheduler_start" => dispatch_scheduler_start(&state).await,
+        "scheduler_start" => dispatch_scheduler_start(state.clone()).await,
         "scheduler_stop" => dispatch_scheduler_stop(&state).await,
         "scheduler_read_protocol_documents" => Ok(Json(serde_json::json!([]))),
         "scheduler_build_protocol_prompt" => Ok(Json(Value::String(String::new()))),
+
+        // ── Executor: 通用执行器 ──────────────────────────────────────────────
+        "execute" => dispatch_execute(&state, &args).await,
+        "executor_list" => dispatch_executor_list(&state),
 
         // ── Engine Metadata ────────────────────────────────────────────────
         "get_engine_metadata_list" => {
@@ -1767,7 +1771,7 @@ fn dispatch_read_file_absolute(args: &Value) -> Result<Json<Value>, WebError> {
 // Scheduler: Run & Protocol (web-compatible implementations)
 // ═══════════════════════════════════════════════════════════════════════════
 
-async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebError> {
+async fn dispatch_scheduler_start(state: Arc<AppState>) -> Result<Json<Value>, WebError> {
     use crate::commands::scheduler::SchedulerStatus;
     let pid = std::process::id();
 
@@ -1787,9 +1791,8 @@ async fn dispatch_scheduler_start(state: &AppState) -> Result<Json<Value>, WebEr
                 .cloned()
                 .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
 
-            let event_tx = state.event_broadcast.clone();
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
-            daemon.start_with_broadcast(event_tx)
+            daemon.start(state.clone())
                 .map_err(|e| WebError::Internal(format!("启动调度器失败: {}", e)))?;
 
             let mut scheduler_daemon = state.scheduler_daemon.lock().await;
@@ -2608,4 +2611,27 @@ fn dispatch_get_local_ips() -> Result<Json<Value>, WebError> {
 
 async fn dispatch_get_web_server_status(state: &AppState) -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::to_value(crate::current_web_server_status(state).await).unwrap_or_default()))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Executor
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 通用执行器入口 — 任意插件/任务可通过此接口执行任务
+async fn dispatch_execute(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let params: crate::services::executor::ExecutorParams = serde_json::from_value(args.clone())
+        .map_err(|e| WebError::BadRequest(format!("无效的执行参数: {}", e)))?;
+
+    // 通过 clone_for_web 共享核心能力，使 ChatExecutor 可在 IPC 模式正常工作
+    let ctx = crate::services::executor::ExecutorContext::from_ref(state);
+
+    let result = state.executor_registry.execute(params, ctx).await;
+
+    Ok(Json(serde_json::to_value(result).unwrap_or_default()))
+}
+
+/// 列出已注册的执行器
+fn dispatch_executor_list(state: &AppState) -> Result<Json<Value>, WebError> {
+    let executors = state.executor_registry.list();
+    Ok(Json(serde_json::to_value(executors).unwrap_or_default()))
 }

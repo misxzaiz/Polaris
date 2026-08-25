@@ -360,7 +360,11 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
                 None, // workspace_path
             );
 
-            daemon.start(app.clone())?;
+            // 获取 ExecutorRegistry 和 ExecutorContext 给守护进程
+            let state = app.state::<crate::AppState>();
+            let executor_registry = state.executor_registry.clone();
+            let executor_ctx = crate::services::executor::ExecutorContext::from_ref(&*state);
+            daemon.start_with_ctx(executor_registry, executor_ctx)?;
 
             // 存储守护进程引用
             {
@@ -450,7 +454,12 @@ pub async fn start_scheduler_if_needed(app: &AppHandle) -> Result<bool> {
 
     // 4. 启动守护进程并存入 state
     let mut daemon = SchedulerDaemon::new(config_dir, None);
-    daemon.start(app.clone())?;
+    {
+        let state = app.state::<AppState>();
+        let executor_registry = state.executor_registry.clone();
+        let executor_ctx = crate::services::executor::ExecutorContext::from_ref(&*state);
+        daemon.start_with_ctx(executor_registry, executor_ctx)?;
+    }
 
     {
         let state = app.state::<AppState>();

@@ -35,6 +35,7 @@ pub struct TaskUpdateParams {
     pub template_id: Option<String>,
     pub next_run_at: Option<i64>,
     pub last_run_at: Option<i64>,
+    pub last_run_status: Option<TaskStatus>,
     pub mode: Option<TaskMode>,
     pub category: Option<TaskCategory>,
     pub task_path: Option<String>,
@@ -48,6 +49,8 @@ pub struct TaskUpdateParams {
     pub timeout_minutes: Option<u32>,
     pub group: Option<String>,
     pub notify_on_complete: Option<bool>,
+    pub executor_type: Option<String>,
+    pub executor_params: Option<serde_json::Value>,
 }
 
 /// Task Storage Trait

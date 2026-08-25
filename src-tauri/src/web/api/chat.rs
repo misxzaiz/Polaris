@@ -146,6 +146,57 @@ pub async fn handle_send_message(
     }
 }
 
+/// Fire-and-forget AI execution — creates a session and returns immediately.
+///
+/// Scheduler plugins (and other external tools) call this endpoint to dispatch
+/// AI tasks without waiting for the full response stream. The session runs in
+/// the background and events are delivered via WebSocket.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteRequest {
+    pub message: String,
+    pub work_dir: Option<String>,
+    pub engine_id: Option<String>,
+    pub context_id: Option<String>,
+    pub enable_mcp_tools: Option<bool>,
+    pub append_system_prompt: Option<String>,
+}
+
+/// Start an AI execution and return the session ID immediately.
+/// Events flow through the normal WebSocket event bus.
+pub async fn handle_execute(
+    State(state): State<Arc<AppState>>,
+    Json(req): Json<ExecuteRequest>,
+) -> Result<impl IntoResponse, WebError> {
+    let message = req.message.trim().to_string();
+    if message.is_empty() {
+        return Err(WebError::BadRequest("message must not be empty".to_string()));
+    }
+
+    let mut options = ChatRequestOptions {
+        work_dir: req.work_dir,
+        engine_id: req.engine_id,
+        context_id: Some(req.context_id.unwrap_or_else(|| "execute".to_string())),
+        enable_mcp_tools: req.enable_mcp_tools,
+        append_system_prompt: req.append_system_prompt,
+        ..Default::default()
+    };
+
+    let (callbacks, app_paths) = build_web_callbacks(&state, &mut options);
+
+    let session_id = start_chat_inner(message, options, &state, callbacks, &app_paths)
+        .await
+        .map_err(|e| {
+            tracing::error!("[handle_execute] 执行失败: {}", e);
+            e
+        })?;
+
+    Ok(Json(serde_json::json!({
+        "sessionId": session_id,
+        "status": "started"
+    })))
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InterruptRequest {

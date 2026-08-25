@@ -2,11 +2,10 @@
  *
  * 后台服务，负责：
  * 1. 轮询检查任务时间表
- * 2. 检测到期任务并发送事件通知前端
+ * 2. 检测到期任务并通过 ExecutorRegistry 直接执行
  * 3. 更新任务的下次执行时间
  *
- * 注意：实际的任务执行由前端通过 handleRun 完成，
- * 因为 AI 引擎执行需要复杂的事件处理。
+ * 不再依赖前端事件处理 — 到期任务直接通过 ExecutorRegistry 执行。
  */
 
 use std::path::{Path, PathBuf};
@@ -14,14 +13,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Emitter};
 use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::models::scheduler::{ScheduledTask, TriggerType};
+use crate::models::scheduler::{ScheduledTask, TaskStatus};
+use crate::services::executor::{ExecutorContext, ExecutorParams, ExecutorRegistry};
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
+use crate::AppState;
 
 /// 守护进程检查间隔（秒）
 const CHECK_INTERVAL_SECS: u64 = 10;
@@ -38,30 +37,6 @@ pub struct SchedulerDaemon {
     config_dir: PathBuf,
 }
 
-/// 任务到期事件
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskDueEvent {
-    /// 任务 ID
-    pub task_id: String,
-    /// 任务名称
-    pub task_name: String,
-    /// 引擎 ID
-    pub engine_id: String,
-    /// 工作目录
-    pub work_dir: Option<String>,
-    /// 提示词（简单模式使用）
-    pub prompt: String,
-    /// 模板 ID
-    pub template_id: Option<String>,
-    /// 任务模式
-    pub mode: String,
-    /// 协议任务路径（协议模式使用）
-    pub task_path: Option<String>,
-    /// 任务目标（协议模式使用）
-    pub mission: Option<String>,
-}
-
 impl SchedulerDaemon {
     /// 创建新的守护进程实例
     pub fn new(config_dir: PathBuf, workspace_path: Option<PathBuf>) -> Self {
@@ -73,9 +48,8 @@ impl SchedulerDaemon {
         }
     }
 
-    /// 启动守护进程（Tauri 桌面模式）
-    #[cfg(feature = "tauri-app")]
-    pub fn start(&mut self, app_handle: AppHandle) -> Result<()> {
+    /// 启动守护进程
+    pub fn start(&mut self, app_state: Arc<AppState>) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             tracing::warn!("[SchedulerDaemon] 守护进程已在运行");
             return Ok(());
@@ -86,6 +60,9 @@ impl SchedulerDaemon {
 
         let config_dir = self.config_dir.clone();
         let workspace_path = self.workspace_path.clone();
+
+        let executor_registry = app_state.executor_registry.clone();
+        let executor_ctx = ExecutorContext::from_app_state(&app_state);
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
         self.stop_signal = Some(stop_tx);
@@ -107,7 +84,8 @@ impl SchedulerDaemon {
                     break;
                 }
 
-                if let Err(e) = check_and_notify_due_tasks_tauri(&app_handle, &config_dir, &workspace_path).await {
+                let ctx = executor_ctx.clone();
+                if let Err(e) = check_and_execute_due_tasks(&executor_registry, ctx, &config_dir, &workspace_path).await {
                     tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
                 }
 
@@ -120,8 +98,8 @@ impl SchedulerDaemon {
         Ok(())
     }
 
-    /// 启动守护进程（Web-only 模式，使用 WebSocket broadcast 替代 Tauri events）
-    pub fn start_with_broadcast(&mut self, event_tx: crate::web::EventBroadcaster) -> Result<()> {
+    /// 启动守护进程（Web-only 模式，使用 ExecutorContext 替代 AppState）
+    pub fn start_with_ctx(&mut self, executor_registry: ExecutorRegistry, executor_ctx: ExecutorContext) -> Result<()> {
         if self.running.load(Ordering::SeqCst) {
             tracing::warn!("[SchedulerDaemon] 守护进程已在运行");
             return Ok(());
@@ -153,7 +131,8 @@ impl SchedulerDaemon {
                     break;
                 }
 
-                if let Err(e) = check_and_notify_due_tasks_broadcast(&event_tx, &config_dir, &workspace_path).await {
+                let ctx = executor_ctx.clone();
+                if let Err(e) = check_and_execute_due_tasks(&executor_registry, ctx, &config_dir, &workspace_path).await {
                     tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
                 }
 
@@ -175,12 +154,10 @@ impl SchedulerDaemon {
 
         tracing::info!("[SchedulerDaemon] 正在停止守护进程...");
 
-        // 发送停止信号
         if let Some(stop_tx) = self.stop_signal.take() {
             let _ = stop_tx.send(());
         }
 
-        // 设置运行状态为 false
         self.running.store(false, Ordering::SeqCst);
 
         Ok(())
@@ -192,10 +169,10 @@ impl SchedulerDaemon {
     }
 }
 
-/// 检查到期任务并发送通知（Tauri 桌面模式）
-#[cfg(feature = "tauri-app")]
-async fn check_and_notify_due_tasks_tauri(
-    app_handle: &AppHandle,
+/// 检查到期任务并通过 ExecutorRegistry 直接执行
+async fn check_and_execute_due_tasks(
+    executor_registry: &ExecutorRegistry,
+    executor_ctx: ExecutorContext,
     config_dir: &Path,
     workspace_path: &Option<PathBuf>,
 ) -> Result<()> {
@@ -215,23 +192,30 @@ async fn check_and_notify_due_tasks_tauri(
                     task.name, task.id
                 );
 
-                let event = TaskDueEvent {
-                    task_id: task.id.clone(),
-                    task_name: task.name.clone(),
-                    engine_id: task.engine_id.clone(),
-                    work_dir: task.work_dir.clone(),
-                    prompt: task.prompt.clone(),
-                    template_id: task.template_id.clone(),
-                    mode: task.mode.to_string(),
-                    task_path: task.task_path.clone(),
-                    mission: task.mission.clone(),
-                };
+                // 构建执行参数
+                let params = build_executor_params(&task);
 
-                if let Err(e) = app_handle.emit("scheduler-task-due", &event) {
-                    tracing::error!("[SchedulerDaemon] 发送事件失败: {}", e);
+                // 记录触发时间（用于 last_run_at，而非完成时间）
+                let trigger_at = chrono::Utc::now().timestamp();
+
+                // 通过 ExecutorRegistry 直接执行（不依赖前端）
+                let ctx = executor_ctx.clone();
+                let result = executor_registry.execute(params, ctx).await;
+
+                if result.success {
+                    tracing::info!(
+                        "[SchedulerDaemon] 任务执行成功: {} (session: {:?})",
+                        task.name, result.session_id
+                    );
+                } else {
+                    tracing::error!(
+                        "[SchedulerDaemon] 任务执行失败: {} (error: {:?})",
+                        task.name, result.error
+                    );
                 }
 
-                update_next_run_time(&repository, &task)?;
+                // 更新任务状态（使用触发时间戳）
+                update_task_status(&repository, &task, result.success, trigger_at)?;
             }
         }
     }
@@ -239,82 +223,56 @@ async fn check_and_notify_due_tasks_tauri(
     Ok(())
 }
 
-/// 检查到期任务并发送通知（Web 模式，通过 WebSocket broadcast）
-async fn check_and_notify_due_tasks_broadcast(
-    event_tx: &crate::web::EventBroadcaster,
-    config_dir: &Path,
-    workspace_path: &Option<PathBuf>,
-) -> Result<()> {
-    let repository = UnifiedSchedulerRepository::new(config_dir.to_path_buf(), workspace_path.clone());
-    let tasks = repository.list_tasks()?;
-    let now = chrono::Utc::now().timestamp();
-
-    for task in tasks {
-        if !task.enabled {
-            continue;
-        }
-
-        if let Some(next_run_at) = task.next_run_at {
-            if next_run_at <= now {
-                tracing::info!(
-                    "[SchedulerDaemon] 任务到期: {} (ID: {})",
-                    task.name, task.id
-                );
-
-                let event = TaskDueEvent {
-                    task_id: task.id.clone(),
-                    task_name: task.name.clone(),
-                    engine_id: task.engine_id.clone(),
-                    work_dir: task.work_dir.clone(),
-                    prompt: task.prompt.clone(),
-                    template_id: task.template_id.clone(),
-                    mode: task.mode.to_string(),
-                    task_path: task.task_path.clone(),
-                    mission: task.mission.clone(),
-                };
-
-                let ws_msg = serde_json::json!({
-                    "event": "scheduler-task-due",
-                    "payload": event,
-                });
-                if let Err(e) = event_tx.send(ws_msg.to_string()) {
-                    tracing::warn!("[SchedulerDaemon] WebSocket broadcast 发送失败: {}", e);
-                }
-
-                update_next_run_time(&repository, &task)?;
-            }
-        }
-    }
-
-    Ok(())
-}
-
-/// 更新任务的下次执行时间
-fn update_next_run_time(
-    repository: &UnifiedSchedulerRepository,
-    task: &ScheduledTask,
-) -> Result<()> {
-    let now = chrono::Utc::now().timestamp();
-
-    // AfterCompletion 模式：触发后不重算 next_run_at，等待任务完成后再计算
-    // 设为 None 防止守护进程在任务执行期间重复触发
-    let next_run_at = if task.trigger_type == TriggerType::AfterCompletion {
-        None
+/// 从 ScheduledTask 构建 ExecutorParams
+fn build_executor_params(task: &ScheduledTask) -> ExecutorParams {
+    let executor_type = if task.executor_type.is_empty() {
+        "chat".to_string()
     } else {
-        task.trigger_type.calculate_next_run(&task.trigger_value, now)
+        task.executor_type.clone()
     };
 
-    // 更新任务
+    // 如果有显式的 executor_params，使用它
+    if let Some(ref params) = task.executor_params {
+        let mut eparams: ExecutorParams = serde_json::from_value(params.clone())
+            .unwrap_or_else(|_| {
+                ExecutorParams::from_legacy(&task.prompt, &task.engine_id, task.work_dir.as_deref())
+            });
+        // 确保 executor_type 从任务字段穿透（即使 executor_params 中未设置）
+        eparams.executor_type = executor_type;
+        return eparams;
+    }
+
+    // 旧版兼容：从 prompt/engineId 构建，但保留 executor_type
+    let mut params = ExecutorParams::from_legacy(&task.prompt, &task.engine_id, task.work_dir.as_deref());
+    params.executor_type = executor_type;
+    params
+}
+
+/// 更新任务执行状态
+fn update_task_status(
+    repository: &UnifiedSchedulerRepository,
+    task: &ScheduledTask,
+    success: bool,
+    trigger_at: i64,
+) -> Result<()> {
+    let status = if success {
+        TaskStatus::Success
+    } else {
+        TaskStatus::Failed
+    };
+
+    // 使用 TaskUpdateParams 传触发时间戳，避免存储层覆盖为 now
     repository.update_task(&task.id, TaskUpdateParams {
-        next_run_at,
-        last_run_at: Some(now),
+        last_run_at: Some(trigger_at),
+        last_run_status: Some(status),
         ..Default::default()
     })?;
 
     tracing::info!(
-        "[SchedulerDaemon] 更新任务下次执行时间: {} -> {:?}",
+        "[SchedulerDaemon] 更新任务状态: {} -> {:?} (trigger_at={})",
         task.name,
-        next_run_at
+        status,
+        trigger_at
     );
 
     Ok(())
