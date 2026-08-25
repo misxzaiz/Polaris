@@ -143,3 +143,83 @@ pub fn region_select_script(rect: &BrowserRect) -> String {
     script.push_str("\n})()");
     script
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn page_context_script_is_valid_js() {
+        assert!(PAGE_CONTEXT_SCRIPT.starts_with("(() => "));
+        assert!(PAGE_CONTEXT_SCRIPT.ends_with("})()"));
+        assert!(PAGE_CONTEXT_SCRIPT.contains("document.title"));
+        assert!(PAGE_CONTEXT_SCRIPT.contains("favicon"));
+        assert!(PAGE_CONTEXT_SCRIPT.contains("return JSON.stringify"));
+    }
+
+    #[test]
+    fn interactive_collector_script_covers_modern_patterns() {
+        let script = INTERACTIVE_COLLECTOR_SCRIPT;
+        assert!(script.contains("[role=\"menuitem\"]"));
+        assert!(script.contains("label[for]"));
+        assert!(script.contains("[aria-expanded]"));
+        assert!(script.contains("[jsaction]"));
+        assert!(script.contains("shadowRoot"));
+        assert!(script.contains("contentDocument"));
+        assert!(script.contains("collectPolarisInteractiveElements"));
+        assert!(script.contains("toPolarisInteractiveElement"));
+        assert!(script.contains("toPolarisVisualElement"));
+    }
+
+    #[test]
+    fn with_collector_wraps_body() {
+        let body = "return 42;";
+        let result = with_collector(body);
+        assert!(result.starts_with("(() => {\n"));
+        assert!(result.contains(body));
+        assert!(result.ends_with("})()"));
+        assert!(result.contains("collectPolarisInteractiveElements"));
+    }
+
+    #[test]
+    fn click_element_script_includes_params() {
+        let script = click_element_script(Some(5), "Search");
+        assert!(script.contains("requestedIndex = 5"));
+        assert!(script.contains("requestedText = \"Search\""));
+        assert!(script.contains("collectPolarisInteractiveElements"));
+    }
+
+    #[test]
+    fn fill_element_script_includes_params() {
+        let script = fill_element_script(None, "Search", "Polaris");
+        assert!(script.contains("requestedIndex = null"));
+        assert!(script.contains("fillValue = \"Polaris\""));
+        assert!(script.contains("collectPolarisInteractiveElements"));
+    }
+
+    #[test]
+    fn ai_overlay_script_toggles_properly() {
+        let enabled = ai_overlay_script(true);
+        assert!(enabled.contains("overlayEnabled = true"));
+        let disabled = ai_overlay_script(false);
+        assert!(disabled.contains("overlayEnabled = false"));
+    }
+
+    #[test]
+    fn marquee_scripts_work() {
+        let enabled = marquee_overlay_script(true);
+        assert!(enabled.contains("marqueeEnabled = true"));
+        assert!(MARQUEE_GET_RESULT_SCRIPT.contains("__POLARIS_MARQUEE_RESULT__"));
+    }
+
+    #[test]
+    fn region_select_script_includes_coordinates() {
+        let rect = BrowserRect { x: 10.0, y: 20.0, width: 320.0, height: 240.0 };
+        let script = region_select_script(&rect);
+        assert!(script.contains("targetX = 10"));
+        assert!(script.contains("targetY = 20"));
+        assert!(script.contains("targetW = 320"));
+        assert!(script.contains("targetH = 240"));
+        assert!(script.contains("collectPolarisInteractiveElements"));
+    }
+}
