@@ -30,6 +30,44 @@ function fmtCost(n: number): string {
   return `$${n.toFixed(2)}`
 }
 
+// ============================================================================
+// 日期时间工具（datetime-local 字符串 ↔ Unix 秒）
+// ============================================================================
+
+/** 本地时间 → datetime-local 字符串（YYYY-MM-DDTHH:mm:ss） */
+function toLocalInput(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
+}
+
+/** 某天 00:00:00（datetime-local 格式） */
+function dayStartInput(d: Date): string {
+  return toLocalInput(d).slice(0, 11) + '00:00:00'
+}
+
+/** 某天 23:59:59（datetime-local 格式） */
+function dayEndInput(d: Date): string {
+  return toLocalInput(d).slice(0, 11) + '23:59:59'
+}
+
+/** n 天前的 Date（当天 00:00 起算） */
+function daysAgoDate(n: number): Date {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+/** datetime-local 字符串 → Unix 秒（本地时间解析；自动补全缺省部分，空串返回 undefined） */
+function inputToUnix(v: string): number | undefined {
+  if (!v) return undefined
+  let s = v
+  if (s.length === 10) s += 'T00:00:00'      // 纯日期 → 当天 0 点
+  else if (s.length === 16) s += ':00'       // YYYY-MM-DDTHH:mm → 补秒
+  const t = new Date(s).getTime()
+  return isNaN(t) ? undefined : Math.floor(t / 1000)
+}
+
 /** 从模型名推断引擎标识（兜底） */
 function inferEngine(model: string): string {
   const prefix = model.includes('-') ? model.split('-')[0] : model
@@ -86,16 +124,11 @@ function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngine
   onDateChange: (start: string, end: string) => void
   onRefresh: () => void
 }) {
-  const today = () => new Date().toISOString().slice(0, 10)
-  const daysAgo = (n: number) => {
-    const d = new Date()
-    d.setDate(d.getDate() - n)
-    return d.toISOString().slice(0, 10)
-  }
+  const now = new Date()
   const presets = [
-    { label: '今天', start: today(), end: today() },
-    { label: '近7天', start: daysAgo(6), end: today() },
-    { label: '近30天', start: daysAgo(29), end: today() },
+    { label: '今天', start: dayStartInput(now), end: dayEndInput(now) },
+    { label: '近7天', start: dayStartInput(daysAgoDate(6)), end: dayEndInput(now) },
+    { label: '近30天', start: dayStartInput(daysAgoDate(29)), end: dayEndInput(now) },
   ]
   const isActivePreset = (s: string, e: string) => startDate === s && endDate === e
   return (
@@ -122,12 +155,14 @@ function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngine
       </div>
       {/* 分隔 */}
       <span className="w-px h-4 bg-border-subtle" />
-      {/* 日期范围 */}
-      <input type="date" value={startDate} onChange={e => onDateChange(e.target.value, endDate)}
-        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[120px]" />
+      {/* 日期时间范围（支持时分秒） */}
+      <input type="datetime-local" step="1" value={startDate} onChange={e => onDateChange(e.target.value, endDate)}
+        title="起始时间（支持时分秒）"
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[180px]" />
       <span className="text-text-muted text-xs">~</span>
-      <input type="date" value={endDate} onChange={e => onDateChange(startDate, e.target.value)}
-        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[120px]" />
+      <input type="datetime-local" step="1" value={endDate} onChange={e => onDateChange(startDate, e.target.value)}
+        title="结束时间（支持时分秒）"
+        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[180px]" />
       {/* 刷新 */}
       <button onClick={onRefresh}
         className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors" title="刷新">
@@ -148,9 +183,9 @@ export function TokenStatsTab() {
   // 筛选状态
   const [engineFilter, setEngineFilter] = useState('')
   const [modelFilter, setModelFilter] = useState('')
-  // 日期范围（YYYY-MM-DD 格式，空串 = 不限）
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
+  // 日期时间范围（YYYY-MM-DDTHH:mm:ss 格式，空串 = 不限），默认今天
+  const [startDate, setStartDate] = useState(() => dayStartInput(new Date()))
+  const [endDate, setEndDate] = useState(() => dayEndInput(new Date()))
 
   // 视图切换
   const [viewMode, setViewMode] = useState<'overview' | 'model' | 'time' | 'sessions'>('overview')
@@ -167,17 +202,14 @@ export function TokenStatsTab() {
 
   const { getTopSessions, getDailyTrends } = useTokenAnalyticsStore()
 
-  // 首次加载（无筛选，默认全部）
-  useEffect(() => {
-    loadData({})
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   // 构建筛选参数
   const buildFilters = useCallback((eng: string, mdl: string, sd: string, ed: string): TokenFilterParams => {
     const f: TokenFilterParams = { engineId: eng || undefined, model: mdl || undefined }
-    if (sd && ed) {
-      f.startDate = Math.floor(new Date(sd).getTime() / 1000)
-      f.endDate = Math.floor(new Date(ed).getTime() / 1000) + 86399 // 包含当天
+    const start = sd ? inputToUnix(sd) : undefined
+    const end = ed ? inputToUnix(ed) : undefined
+    if (start !== undefined && end !== undefined) {
+      f.startDate = start
+      f.endDate = end
     }
     return f
   }, [])
@@ -190,6 +222,11 @@ export function TokenStatsTab() {
     setTopSessions([])
   }, [loadData, buildFilters])
 
+  // 首次加载（默认今天）
+  useEffect(() => {
+    applyFilters(engineFilter, modelFilter, startDate, endDate)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
   const onEngineChange = (v: string) => { setEngineFilter(v); applyFilters(v, modelFilter, startDate, endDate) }
   const onModelChange = (v: string) => { setModelFilter(v); applyFilters(engineFilter, v, startDate, endDate) }
   const onDateChange = (sd: string, ed: string) => { setStartDate(sd); setEndDate(ed); applyFilters(engineFilter, modelFilter, sd, ed) }
@@ -198,8 +235,8 @@ export function TokenStatsTab() {
   // 时间趋势（跟随全局筛选）
   useEffect(() => {
     setTrendsLoading(true)
-    const sd = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : undefined
-    const ed = endDate ? Math.floor(new Date(endDate).getTime() / 1000) + 86399 : undefined
+    const sd = startDate ? inputToUnix(startDate) : undefined
+    const ed = endDate ? inputToUnix(endDate) : undefined
     getDailyTrends('30d', engineFilter || undefined, modelFilter || undefined, sd, ed).then(data => {
       setTimeSeries({
         labels: data.map(d => d.date),
