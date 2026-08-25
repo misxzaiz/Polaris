@@ -530,3 +530,13 @@ export async function browserFindNext(
     forward: forward ?? null,
   })
 }
+
+export async function browserZoom(
+  label: string,
+  scale: number,
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_zoom', {
+    label,
+    scale,
+  })
+}

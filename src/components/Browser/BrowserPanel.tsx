@@ -12,8 +12,10 @@ import {
   ListTree,
   Loader2,
   Lock,
+  Minus,
   MousePointer2,
   PanelBottom,
+  Plus,
   RefreshCw,
   Search,
   Send,
@@ -40,6 +42,7 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
+  browserZoom,
   formatMarqueeContext,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
@@ -260,6 +263,7 @@ export function BrowserPanel({
   const [findOpen, setFindOpen] = useState(false)
   const findInputRef = useRef<HTMLInputElement>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
+  const [zoomLevel, setZoomLevel] = useState(1.0)
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
@@ -950,6 +954,36 @@ export function BrowserPanel({
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [findOpen, openFind, closeFind])
 
+  // ── 缩放控制 ──
+
+  const handleZoom = useCallback(async (newScale: number) => {
+    const clamped = Math.max(0.25, Math.min(5.0, newScale))
+    setZoomLevel(clamped)
+    if (status === 'ready') {
+      try {
+        await browserZoom(webviewLabel, clamped)
+      } catch {
+        // 静默
+      }
+    }
+  }, [status, webviewLabel])
+
+  const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
+
+  const zoomIn = useCallback(() => {
+    const next = ZOOM_STEPS.find((s) => s > zoomLevel) || zoomLevel
+    handleZoom(next)
+  }, [zoomLevel, handleZoom])
+
+  const zoomOut = useCallback(() => {
+    const prev = [...ZOOM_STEPS].reverse().find((s) => s < zoomLevel) || zoomLevel
+    handleZoom(prev)
+  }, [zoomLevel, handleZoom])
+
+  const resetZoom = useCallback(() => {
+    handleZoom(1.0)
+  }, [handleZoom])
+
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
   const taskButtonClass =
@@ -1523,6 +1557,36 @@ export function BrowserPanel({
         <span className="min-w-0 flex-1 truncate text-text-tertiary" title={currentUrl}>
           {pageTitle || currentUrl}
         </span>
+        {/* 缩放控制 */}
+        <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={() => zoomOut()}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.zoomOut', { defaultValue: '缩小' })}
+            disabled={status !== 'ready'}
+          >
+            <Minus size={12} />
+          </button>
+          <button
+            type="button"
+            onClick={resetZoom}
+            onDoubleClick={resetZoom}
+            className="min-w-[36px] rounded px-1 py-0.5 text-center text-[11px] text-text-secondary transition-colors hover:bg-background-hover"
+            title={t('browser.zoomReset', { defaultValue: '重置缩放 (100%)' })}
+          >
+            {Math.round(zoomLevel * 100)}%
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomIn()}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.zoomIn', { defaultValue: '放大' })}
+            disabled={status !== 'ready'}
+          >
+            <Plus size={12} />
+          </button>
+        </div>
       </div>
     </div>
   )

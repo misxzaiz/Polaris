@@ -863,6 +863,7 @@ pub fn run() {
             commands::browser::browser_show_overflow_menu,
             commands::browser::browser_find,
             commands::browser::browser_find_next,
+            commands::browser::browser_zoom,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

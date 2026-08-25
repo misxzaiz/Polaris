@@ -2423,6 +2423,37 @@ pub async fn browser_find_next(
         .map_err(|e| AppError::ValidationError(format!("浏览器查找结果格式错误: {e}")))
 }
 
+// ── browser_zoom ────────────────────────────────────────────────────────────
+/// 设置页面缩放比例（0.25 ~ 5.0）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_zoom(
+    app: AppHandle,
+    label: String,
+    scale: f64,
+) -> Result<BrowserInteractionResult> {
+    let scale = scale.clamp(0.25, 5.0);
+    let script = format!(
+        r#"(function() {{
+            try {{
+                const scale = {scale};
+                document.documentElement.style.transformOrigin = '0 0';
+                document.documentElement.style.transform = 'scale(' + scale + ')';
+                document.documentElement.style.width = (100 / scale) + '%';
+                document.body.style.width = (100 / scale) + '%';
+                return JSON.stringify({{ ok: true, action: 'zoom', index: null, text: String(scale), url: String(location.href), message: '缩放已设为 ' + Math.round(scale * 100) + '%' }});
+            }} catch(e) {{
+                return JSON.stringify({{ ok: false, action: 'zoom', index: null, text: String(scale), url: String(location.href), message: '缩放失败: ' + e.message }});
+            }}
+        }})()"#,
+        scale = scale,
+    );
+    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    let value = parse_eval_json(&raw)?;
+    serde_json::from_value(value)
+        .map_err(|e| AppError::ValidationError(format!("浏览器缩放结果格式错误: {e}")))
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
