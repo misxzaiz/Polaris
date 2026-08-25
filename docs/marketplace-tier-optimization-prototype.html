@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>插件商城面板优化 — 原型</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1A1A1F; color: #F8F8F8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; }
+  .container { max-width: 780px; margin: 0 auto; }
+
+  h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #8E8E93; margin-bottom: 20px; }
+
+  /* ——— 原型卡片 ——— */
+  .card { background: #25252B; border: 1px solid #3F3F46; border-radius: 10px; margin-bottom: 16px; overflow: hidden; }
+  .card-header { display: flex; align-items: center; gap: 10px; padding: 12px 14px; cursor: pointer; }
+  .card-header:hover { background: #2A2A30; }
+  .arrow { color: #6B7280; font-size: 12px; width: 14px; text-align: center; flex-shrink: 0; }
+  .card-body { flex: 1; min-width: 0; }
+  .card-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .card-name { font-size: 14px; font-weight: 500; }
+  .card-version { font-size: 10px; color: #6B7280; }
+  .card-desc { font-size: 11px; color: #8E8E93; margin-top: 2px; line-height: 1.4; }
+
+  /* ——— Tier Badges ——— */
+  .badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 7px; border-radius: 4px; letter-spacing: 0.3px; text-transform: uppercase; }
+  .badge-production { background: #065F4622; color: #34D399; border: 1px solid #065F4644; }
+  .badge-beta { background: #1E40AF22; color: #60A5FA; border: 1px solid #1E40AF44; }
+  .badge-demo { background: #3F3F4622; color: #6B7280; border: 1px solid #3F3F4644; }
+  .badge-dot { width: 5px; height: 5px; border-radius: 50%; }
+  .badge-production .badge-dot { background: #34D399; }
+  .badge-beta .badge-dot { background: #60A5FA; }
+  .badge-demo .badge-dot { background: #6B7280; }
+
+  /* ——— 标签/分类 ——— */
+  .tags { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+  .tag { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: #3F3F4633; color: #6B7280; }
+
+  /* ——— 商城头部 ——— */
+  .market-header { display: flex; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #3F3F46; }
+  .search-input { flex: 1; padding: 6px 10px; background: #1F1F24; border: 1px solid #3F3F46; border-radius: 6px; color: #F8F8F8; font-size: 12px; outline: none; }
+  .search-input:focus { border-color: #3B82F6; }
+
+  /* ——— 过滤栏 ——— */
+  .filter-bar { display: flex; gap: 6px; padding: 8px 14px; border-bottom: 1px solid #3F3F46; flex-wrap: wrap; align-items: center; }
+  .filter-chip { font-size: 10px; padding: 2px 10px; border-radius: 10px; cursor: pointer; border: 1px solid #3F3F46; background: transparent; color: #8E8E93; }
+  .filter-chip.active { background: #3B82F622; color: #3B82F6; border-color: #3B82F666; }
+  .filter-chip.tier-all { border-color: #6B728066; color: #B4B4B8; }
+  .filter-chip.tier-all.active { background: #6B728022; border-color: #6B7280; color: #D1D5DB; }
+  .filter-chip.tier-production.active { background: #065F4622; border-color: #34D39966; color: #34D399; }
+  .filter-chip.tier-beta.active { background: #1E40AF22; border-color: #60A5FA66; color: #60A5FA; }
+  .filter-chip.tier-demo.active { background: #3F3F4622; border-color: #6B728066; color: #6B7280; }
+  .filter-divider { width: 1px; height: 14px; background: #3F3F46; margin: 0 2px; }
+
+  /* ——— 商城列表项 ——— */
+  .market-list { padding: 8px 14px; }
+  .market-item { display: flex; gap: 10px; padding: 10px; border-radius: 8px; cursor: pointer; margin-bottom: 6px; border: 1px solid transparent; }
+  .market-item:hover { background: #2A2A30; }
+  .market-item.selected { background: #2D2D33; border-color: #3B82F6; }
+  .market-item-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+  .market-item-icon.production { background: #065F4622; color: #34D399; }
+  .market-item-icon.beta { background: #1E40AF22; color: #60A5FA; }
+  .market-item-icon.demo { background: #3F3F4622; color: #6B7280; }
+  .market-item-body { flex: 1; min-width: 0; }
+  .market-item-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .market-item-name { font-size: 13px; font-weight: 600; }
+  .market-item-version { font-size: 10px; color: #6B7280; }
+  .market-item-desc { font-size: 11px; color: #8E8E93; margin-top: 3px; line-height: 1.4; }
+  .market-item-meta { display: flex; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+  .market-item-category { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: #3F3F4633; color: #6B7280; }
+
+  /* ——— 详情面板 ——— */
+  .detail-panel { border-top: 1px solid #3F3F46; padding: 14px; background: #1F1F24; max-height: 260px; overflow-y: auto; }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .detail-title { font-size: 14px; font-weight: 600; }
+  .detail-id { font-size: 10px; color: #6B7280; margin-top: 2px; }
+  .detail-close { background: none; border: none; color: #8E8E93; cursor: pointer; padding: 2px 6px; font-size: 14px; }
+  .detail-desc { font-size: 12px; color: #B4B4B8; line-height: 1.5; margin-bottom: 10px; }
+  .detail-perms { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 10px; }
+  .perm-tag { font-size: 9px; padding: 1px 6px; border-radius: 4px; background: #3F3F46; color: #F8B4B8; }
+  .detail-actions { display: flex; gap: 8px; }
+  .btn { padding: 6px 14px; border-radius: 6px; border: 1px solid #3F3F46; font-size: 12px; cursor: pointer; }
+  .btn-primary { background: #3B82F6; color: #fff; border: none; }
+  .btn-ghost { background: #2D2D33; color: #F8F8F8; }
+  .btn-ghost:hover { background: #3F3F46; }
+
+  /* ——— 分隔说明 ——— */
+  .section-label { font-size: 11px; font-weight: 600; color: #6B7280; padding: 14px 14px 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* ——— 对比表 ——— */
+  .comparison { margin: 20px 0; }
+  .comparison table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .comparison th, .comparison td { padding: 8px 10px; text-align: left; border-bottom: 1px solid #2A2A30; }
+  .comparison th { color: #6B7280; font-weight: 500; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .comparison td { color: #B4B4B8; }
+  .comparison .plugin-name { color: #F8F8F8; font-weight: 500; }
+  .comparison .tier-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 9px; font-weight: 600; padding: 1px 7px; border-radius: 4px; }
+  .comparison .tier-production { background: #065F4622; color: #34D399; }
+  .comparison .tier-beta { background: #1E40AF22; color: #60A5FA; }
+  .comparison .tier-demo { background: #3F3F4622; color: #6B7280; }
+
+  /* ——— 说明卡片 ——— */
+  .note { background: #1F1F24; border: 1px solid #2A2A30; border-radius: 8px; padding: 14px; margin: 16px 0; font-size: 12px; color: #8E8E93; line-height: 1.6; }
+  .note strong { color: #B4B4B8; }
+  .note code { background: #25252B; padding: 1px 5px; border-radius: 3px; font-size: 11px; color: #F8B4B8; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>插件商城面板优化 · 规划分析</h1>
+  <div class="subtitle">tier 等级体系 + 视觉区分 + 演示/生产分流</div>
+
+  <!-- ========== 问题说明 ========== -->
+  <div class="note">
+    <strong>当前问题：</strong>商城 18 个插件中，<code>demo.*</code> 前缀的纯演示插件占 6 个，<code>omp-engine-adapter</code> 也是 mock 演示，加上 <code>emotion-ball</code> 娱乐玩具。用户打开列表一半以上是"玩具"，无法快速识别哪些真正可用。
+  </div>
+
+  <!-- ========== 原型 A：设置页插件列表（PluginTab） ========== -->
+  <div class="card" style="margin-top: 20px;">
+    <div class="card-header" style="background: #1F1F24; cursor: default;">
+      <span style="font-size: 13px; font-weight: 600; color: #B4B4B8;">原型 A · 设置页插件列表（PluginTab）</span>
+    </div>
+
+    <!-- 生产可用 -->
+    <div class="card-header">
+      <span class="arrow">▾</span>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-name">Polaris 插件商城</span>
+          <span class="card-version">v1.1.0</span>
+          <span class="badge badge-production"><span class="badge-dot"></span> Production</span>
+          <span class="badge" style="background: #3B82F622; color: #60A5FA; border: 1px solid #3B82F644; font-size: 9px;">内置</span>
+        </div>
+        <div class="card-desc">浏览、搜索并一键安装商城插件，管理与更新已装插件。提供 ActivityBar 面板与 MCP 工具。</div>
+        <div class="tags">
+          <span class="tag">1 view</span>
+          <span class="tag">1 MCP</span>
+        </div>
+      </div>
+      <input type="checkbox" checked style="accent-color: #3B82F6;" />
+    </div>
+
+    <!-- Beta -->
+    <div class="card-header" style="border-top: 1px solid #2A2A30;">
+      <span class="arrow">▸</span>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-name">Git 工作台</span>
+          <span class="card-version">v0.1.0</span>
+          <span class="badge badge-beta"><span class="badge-dot"></span> Beta</span>
+        </div>
+        <div class="card-desc">完整的 Git 工作台：状态、变更、提交、分支、合并、rebase、历史、blame、远程、stash</div>
+        <div class="tags">
+          <span class="tag">1 view</span>
+          <span class="tag">14 MCP</span>
+        </div>
+      </div>
+      <input type="checkbox" checked style="accent-color: #3B82F6;" />
+    </div>
+
+    <!-- Beta 2 -->
+    <div class="card-header" style="border-top: 1px solid #2A2A30;">
+      <span class="arrow">▸</span>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-name">RELAY DevKit</span>
+          <span class="card-version">v1.0.0</span>
+          <span class="badge badge-production"><span class="badge-dot"></span> Production</span>
+        </div>
+        <div class="card-desc">开发者工具箱：API 客户端、JSON 格式化、SQL 工具、数据库管理、时间戳转换、AI 助手</div>
+        <div class="tags">
+          <span class="tag">1 view</span>
+          <span class="tag">1 service</span>
+        </div>
+      </div>
+      <input type="checkbox" checked style="accent-color: #3B82F6;" />
+    </div>
+
+    <!-- Demo -->
+    <div class="card-header" style="border-top: 1px solid #2A2A30; opacity: 0.7;">
+      <span class="arrow">▸</span>
+      <div class="card-body">
+        <div class="card-title-row">
+          <span class="card-name">Demo Shell Override</span>
+          <span class="card-version">v0.2.0</span>
+          <span class="badge badge-demo"><span class="badge-dot"></span> Demo</span>
+        </div>
+        <div class="card-desc">演示 toolProviders 扩展点覆盖硬编码工具：接管 SimpleAI 内置 bash 工具</div>
+        <div class="tags">
+          <span class="tag">1 MCP</span>
+          <span class="tag">toolProvider: shell</span>
+        </div>
+      </div>
+      <input type="checkbox" style="accent-color: #3B82F6;" />
+    </div>
+  </div>
+
+  <!-- ========== 原型 B：商城面板（MarketplacePanel） ========== -->
+  <div class="card" style="margin-top: 20px;">
+    <div class="card-header" style="background: #1F1F24; cursor: default;">
+      <span style="font-size: 13px; font-weight: 600; color: #B4B4B8;">原型 B · 插件商城面板（MarketplacePanel）</span>
+    </div>
+
+    <!-- Tab 切换 -->
+    <div style="display: flex; border-bottom: 1px solid #3F3F46;">
+      <div style="flex: 1; padding: 10px 12px; text-align: center; font-size: 12px; font-weight: 600; color: #F8F8F8; border-bottom: 2px solid #3B82F6;">商城</div>
+      <div style="flex: 1; padding: 10px 12px; text-align: center; font-size: 12px; color: #8E8E93; border-bottom: 2px solid transparent;">已装 (3)</div>
+    </div>
+
+    <!-- 搜索栏 -->
+    <div class="market-header">
+      <input class="search-input" placeholder="搜索插件…" value="" />
+      <button style="padding: 6px 10px; border-radius: 6px; border: 1px solid #3F3F46; background: #2D2D33; color: #F8F8F8; font-size: 12px; cursor: pointer;">↻</button>
+    </div>
+
+    <!-- 等级过滤（新增） -->
+    <div class="filter-bar">
+      <span style="font-size: 10px; color: #6B7280; margin-right: 4px;">等级</span>
+      <div class="filter-chip tier-all active">全部</div>
+      <div class="filter-chip tier-production">Production</div>
+      <div class="filter-chip tier-beta">Beta</div>
+      <div class="filter-chip tier-demo">Demo</div>
+      <div class="filter-divider"></div>
+      <span style="font-size: 10px; color: #6B7280; margin-right: 4px;">分类</span>
+      <div class="filter-chip active">全部</div>
+      <div class="filter-chip">dev</div>
+      <div class="filter-chip">ai-engine</div>
+      <div class="filter-chip">fun</div>
+    </div>
+
+    <!-- 分组标题 -->
+    <div class="section-label" style="padding-top: 4px;">Production <span style="color: #34D399; font-weight: 400;">2</span></div>
+    <div class="market-list" style="padding-top: 0;">
+      <div class="market-item selected">
+        <div class="market-item-icon production">📦</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Polaris 插件商城</span>
+            <span class="market-item-version">v1.1.0</span>
+            <span class="badge badge-production"><span class="badge-dot"></span> Production</span>
+          </div>
+          <div class="market-item-desc">浏览、搜索并一键安装本商城索引中的插件；支持查看已装插件、卸载、检查与应用更新</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">productivity</span>
+            <span class="market-item-category"> marketplace</span>
+          </div>
+        </div>
+      </div>
+      <div class="market-item">
+        <div class="market-item-icon production">🔧</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">RELAY DevKit</span>
+            <span class="market-item-version">v1.0.0</span>
+            <span class="badge badge-production"><span class="badge-dot"></span> Production</span>
+          </div>
+          <div class="market-item-desc">开发者工具箱：API 客户端、JSON 格式化、SQL 工具、数据库管理、时间戳转换、AI 助手、跨域代理</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">dev</span>
+            <span class="market-item-category"> api-client</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Beta <span style="color: #60A5FA; font-weight: 400;">6</span></div>
+    <div class="market-list" style="padding-top: 0;">
+      <div class="market-item">
+        <div class="market-item-icon beta">🔵</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Git 工作台</span>
+            <span class="market-item-version">v0.1.0</span>
+            <span class="badge badge-beta"><span class="badge-dot"></span> Beta</span>
+          </div>
+          <div class="market-item-desc">完整的 Git 工作台：状态、变更、提交、分支、合并、rebase、历史、blame、远程、stash</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">dev</span>
+            <span class="market-item-category"> vcs</span>
+          </div>
+        </div>
+      </div>
+      <div class="market-item" style="opacity: 0.7;">
+        <div class="market-item-icon beta">🔵</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Polaris HTTP</span>
+            <span class="market-item-version">v1.2.0</span>
+            <span class="badge badge-beta"><span class="badge-dot"></span> Beta</span>
+          </div>
+          <div class="market-item-desc">轻量级 HTTP 客户端：多 Tab、智能响应、集合管理、cURL 导入导出、代码生成、AI 协同</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">dev</span>
+            <span class="market-item-category"> http</span>
+          </div>
+        </div>
+      </div>
+      <div class="market-item" style="opacity: 0.7;">
+        <div class="market-item-icon beta">🔵</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Polaris API Client</span>
+            <span class="market-item-version">v1.0.1</span>
+            <span class="badge badge-beta"><span class="badge-dot"></span> Beta</span>
+          </div>
+          <div class="market-item-desc">专业 HTTP 请求客户端：多 Tab、环境变量、集合管理、cURL 导入导出、跨域代理</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">dev</span>
+            <span class="market-item-category"> api-client</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Demo <span style="color: #6B7280; font-weight: 400;">7</span></div>
+    <div class="market-list" style="padding-top: 0;">
+      <div class="market-item" style="opacity: 0.5;">
+        <div class="market-item-icon demo">⚪</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Demo Shell Override</span>
+            <span class="market-item-version">v0.2.0</span>
+            <span class="badge badge-demo"><span class="badge-dot"></span> Demo</span>
+          </div>
+          <div class="market-item-desc">演示 toolProviders 扩展点覆盖硬编码工具：接管 SimpleAI 内置 bash 工具</div>
+          <div class="market-item-meta">
+            <span class="market-item-category">demo</span>
+          </div>
+        </div>
+      </div>
+      <div class="market-item" style="opacity: 0.5;">
+        <div class="market-item-icon demo">⚪</div>
+        <div class="market-item-body">
+          <div class="market-item-title">
+            <span class="market-item-name">Demo FileSystem Override</span>
+            <span class="market-item-version">v0.1.0</span>
+            <span class="badge badge-demo"><span class="badge-dot"></span> Demo</span>
+          </div>
+          <div class="market-item-meta">
+            <span class="market-item-category">demo</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 详情面板 -->
+    <div class="detail-panel">
+      <div class="detail-header">
+        <div>
+          <div class="detail-title">Polaris 插件商城 <span class="badge badge-production" style="vertical-align: middle; margin-left: 6px;"><span class="badge-dot"></span> Production</span></div>
+          <div class="detail-id">polaris.marketplace · v1.1.0</div>
+        </div>
+        <button class="detail-close">✕</button>
+      </div>
+      <div class="detail-desc">在 Polaris 内浏览、搜索并一键安装本商城索引中的插件；支持查看已装插件、卸载、检查与应用更新。提供 ActivityBar 面板与 MCP 工具。</div>
+      <div class="detail-perms">
+        <span class="perm-tag">aiToolAccess</span>
+        <span class="perm-tag">network</span>
+        <span class="perm-tag">appConfigRead</span>
+      </div>
+      <div class="detail-actions">
+        <button class="btn btn-primary">安装到 User</button>
+        <button class="btn btn-ghost">安装到 Project</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 完整分类对比表 ========== -->
+  <div class="comparison" style="margin-top: 24px;">
+    <div style="font-size: 13px; font-weight: 600; margin-bottom: 10px;">完整插件分类（18 个）</div>
+    <table>
+      <thead>
+        <tr><th>插件</th><th>版本</th><th>等级</th><th>分类</th><th>说明</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="plugin-name">Polaris 插件商城</td><td>1.1.0</td><td><span class="tier-badge tier-production">Production</span></td><td>productivity</td><td>面板 + MCP 工具，装完即用</td></tr>
+        <tr><td class="plugin-name">RELAY DevKit</td><td>1.0.0</td><td><span class="tier-badge tier-production">Production</span></td><td>dev</td><td>完整面板 + 服务，装完即用</td></tr>
+        <tr><td class="plugin-name">Polaris API</td><td>1.1.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>dev</td><td>功能完整，与 HTTP/API Client 未收敛</td></tr>
+        <tr><td class="plugin-name">Polaris HTTP</td><td>1.2.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>dev</td><td>同上，功能重叠</td></tr>
+        <tr><td class="plugin-name">Polaris API Client</td><td>1.0.1</td><td><span class="tier-badge tier-beta">Beta</span></td><td>dev</td><td>同上，功能重叠</td></tr>
+        <tr><td class="plugin-name">Git 工作台</td><td>0.1.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>dev</td><td>完整功能，与内置 Git 面板关系待确认</td></tr>
+        <tr><td class="plugin-name">禅房</td><td>0.1.2</td><td><span class="tier-badge tier-beta">Beta</span></td><td>fun</td><td>功能完整，偏娱乐非生产力</td></tr>
+        <tr><td class="plugin-name">Blender 3D 建模</td><td>0.2.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>dev</td><td>需预装 Blender 4.0+</td></tr>
+        <tr><td class="plugin-name">Oh My Pi Engine</td><td>1.1.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>ai-engine</td><td>需预装 omp CLI</td></tr>
+        <tr><td class="plugin-name">DeepSeek Harness Engine</td><td>0.1.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>ai-engine</td><td>需预装 dsh CLI</td></tr>
+        <tr><td class="plugin-name">Emotion Ball</td><td>0.4.0</td><td><span class="tier-badge tier-beta">Beta</span></td><td>fun</td><td>娱乐玩具，非工具型</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">OMP Adapter Demo</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>ai-engine</td><td>mock 回复，纯演示 adapter 协议</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo Shell Override</td><td>0.2.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo FS Override</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo UI Shadow</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>UI Slot 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo Sandbox Shell</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo S3 FS</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo Smart SubAgent</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo DSH SubAgent</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>Capability Seam 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo UI Chain</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>UI Slot 演示</td></tr>
+        <tr><td class="plugin-name" style="color: #6B7280;">Demo Style Input</td><td>0.1.0</td><td><span class="tier-badge tier-demo">Demo</span></td><td>demo</td><td>css 注入演示</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ========== 实施方案 ========== -->
+  <div class="card" style="margin-top: 24px;">
+    <div class="card-header" style="background: #1F1F24; cursor: default;">
+      <span style="font-size: 13px; font-weight: 600; color: #B4B4B8;">实施方案</span>
+    </div>
+    <div style="padding: 0 14px 14px; font-size: 12px; color: #B4B4B8; line-height: 1.7;">
+      <p><strong>Phase 1 — 数据层：tier 字段注入</strong></p>
+      <ol style="padding-left: 18px; margin-bottom: 12px;">
+        <li>修改 <code>Polaris-plugin/schemas/index.schema.json</code> — plugins.items 加 <code>tier</code> 枚举</li>
+        <li>修改 <code>Polaris-plugin/index.json</code> — 18 个插件逐个加 tier 值</li>
+        <li>修改 <code>src/plugin-system/types.ts</code> — PolarisPluginManifest 加 <code>tier?: 'production' | 'beta' | 'demo'</code></li>
+        <li>修改 <code>src-tauri/src/models/plugin.rs</code> — DiscoveredPluginManifest 加 tier 字段</li>
+      </ol>
+      <p><strong>Phase 2 — 前端渲染：PluginTab 卡片</strong></p>
+      <ol style="padding-left: 18px; margin-bottom: 12px;">
+        <li>PluginCard 折叠态 + 展开态显示 tier badge（绿色/蓝色/灰色）</li>
+        <li>折叠态摘要行增加 tier 标识</li>
+        <li>demo 插件默认 opacity 降低 0.6（视觉淡化）</li>
+      </ol>
+      <p><strong>Phase 3 — 前端渲染：MarketplacePanel 商城</strong></p>
+      <ol style="padding-left: 18px; margin-bottom: 12px;">
+        <li>商城列表按 Production → Beta → Demo 分组展示</li>
+        <li>等级过滤栏（全部 / Production / Beta / Demo）</li>
+        <li>详情面板展示 tier badge</li>
+        <li>默认隐藏 Demo 插件（需主动切换过滤才显示）</li>
+      </ol>
+      <p><strong>Phase 4 — 默认推断逻辑</strong></p>
+      <ol style="padding-left: 18px;">
+        <li>插件 id 以 <code>demo.</code> 开头且未显式设 tier → 自动视为 <code>demo</code></li>
+        <li>插件 id 以 <code>polaris.</code> 开头且未显式设 tier → 自动视为 <code>beta</code></li>
+        <li>其他未设置 → 视为 <code>beta</code>（保守 default）</li>
+      </ol>
+    </div>
+  </div>
+
+  <!-- 额外发现 -->
+  <div class="card" style="margin-top: 16px;">
+    <div class="card-header" style="background: #1F1F24; cursor: default;">
+      <span style="font-size: 13px; font-weight: 600; color: #B4B4B8;">附：发现的额外问题</span>
+    </div>
+    <div style="padding: 0 14px 14px; font-size: 12px; color: #B4B4B8; line-height: 1.7;">
+      <p><strong>API 客户端三胞胎乱象：</strong></p>
+      <ul style="padding-left: 18px; margin-bottom: 8px;">
+        <li><code>polaris-api</code> v1.1.0 — 最早版本，已重构</li>
+        <li><code>polaris-http</code> v1.2.0 — 基于 RELAY 架构重构</li>
+        <li><code>polaris-api-client</code> v1.0.1 — 又一个 API 客户端，功能高度重叠</li>
+      </ul>
+      <p>这三个插件做几乎一样的事，同时出现在活动中栏和商城中，造成视觉混乱。建议择一保留（<code>polaris-http</code> 功能最完整），其余标记 deprecated 或从 index.json 移除。</p>
+    </div>
+  </div>
+</div>
+</body>
+</html>
