@@ -219,6 +219,8 @@ pub struct BrowserPageContext {
     pub og_title: Option<String>,
     #[serde(default)]
     pub og_image: Option<String>,
+    #[serde(default)]
+    pub favicon: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

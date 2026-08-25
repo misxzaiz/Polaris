@@ -45,6 +45,7 @@ export interface BrowserPageContext {
   canonical?: string | null
   ogTitle?: string | null
   ogImage?: string | null
+  favicon?: string | null
 }
 
 export interface BrowserOperationEvent {

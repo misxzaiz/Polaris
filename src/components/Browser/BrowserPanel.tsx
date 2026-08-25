@@ -234,6 +234,7 @@ export function BrowserPanel({
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
   const [pageTitle, setPageTitle] = useState('Browser')
+  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [loadProgress, setLoadProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
@@ -1022,6 +1023,14 @@ export function BrowserPanel({
       return currentUrl
     }
   }, [currentUrl])
+  const faviconSrc = useMemo(() => {
+    try {
+      const url = new URL(currentUrl)
+      return `https://icons.duckduckgo.com/ip3/${url.hostname}.ico`
+    } catch {
+      return null
+    }
+  }, [currentUrl])
   const contextExcerpt = useMemo(() => {
     const selected = contextPreview?.selectedText.trim()
     const text = selected || contextPreview?.metaDescription || contextPreview?.text || ''
@@ -1085,7 +1094,16 @@ export function BrowserPanel({
 
         {/* 地址栏：安全指示 + favicon + 加载进度 */}
         <form onSubmit={handleSubmit} className="min-w-0 flex-1">
-          <div className="relative flex h-8 min-w-0 items-center gap-1.5 rounded-md border border-border-subtle bg-background-surface px-2 text-text-tertiary focus-within:border-primary/70 focus-within:text-text-secondary">
+          <div className="relative flex h-8 min-w-0 items-center gap-1 rounded-md border border-border-subtle bg-background-surface px-2 text-text-tertiary focus-within:border-primary/70 focus-within:text-text-secondary">
+            {/* Favicon */}
+            {faviconSrc && (
+              <img
+                src={faviconSrc}
+                alt=""
+                className="h-4 w-4 shrink-0 rounded-sm"
+                onError={(e) => { (e.target as HTMLImageElement).style.display = 'none' }}
+              />
+            )}
             {/* 安全指示 */}
             <span className="shrink-0 text-text-tertiary" title={currentUrl.startsWith('https://') ? '连接安全 (HTTPS)' : '连接不安全'}>
               {currentUrl.startsWith('https://') ? <Lock size={12} /> : <Unlock size={12} className="text-warning" />}

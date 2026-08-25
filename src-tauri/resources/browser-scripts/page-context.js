@@ -15,6 +15,13 @@
   const canonical = clean(document.querySelector('link[rel="canonical"]')?.href || '', 500) || null;
   const ogTitle = clean(document.querySelector('meta[property="og:title"]')?.content || '', 500) || null;
   const ogImage = clean(document.querySelector('meta[property="og:image"]')?.content || '', 500) || null;
+  const favicon = clean(
+    document.querySelector('link[rel="icon"]')?.href
+    || document.querySelector('link[rel="shortcut icon"]')?.href
+    || document.querySelector('link[rel="apple-touch-icon"]')?.href
+    || '',
+    500
+  ) || null;
   const articleText = document.querySelector('article')?.innerText || '';
   const bodyText = document.body?.innerText || '';
   const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,h5,h6'))
@@ -107,6 +114,7 @@
     forms,
     canonical,
     ogTitle,
-    ogImage
+    ogImage,
+    favicon
   });
 })()
