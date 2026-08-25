@@ -9,7 +9,7 @@
  *   - 底部状态栏（当前浏览器标签联动）
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { clsx } from 'clsx'
 import {
@@ -29,6 +29,7 @@ import {
   Loader2,
   Camera,
   MessageSquare,
+  Check,
 } from 'lucide-react'
 import { useTabStore, type TabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -141,6 +142,9 @@ function QuickAccessTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editLabel, setEditLabel] = useState('')
   const [editUrl, setEditUrl] = useState('')
+  const [showAddForm, setShowAddForm] = useState(false)
+  const [addUrl, setAddUrl] = useState('')
+  const [addLabel, setAddLabel] = useState('')
 
   const sorted = useMemo(
     () => [...shortcuts].sort((a, b) => a.order - b.order),
@@ -161,10 +165,11 @@ function QuickAccessTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   }
 
   const handleAdd = () => {
-    const url = prompt(t('browser.sidebar.enterUrl', { defaultValue: '输入网址：' }))
-    if (!url) return
-    const label = prompt(t('browser.sidebar.enterLabel', { defaultValue: '输入标签（可选）：' })) || undefined
-    addShortcut(normalizeBrowserUrl(url), label)
+    if (!addUrl.trim()) return
+    addShortcut(normalizeBrowserUrl(addUrl), addLabel.trim() || undefined)
+    setAddUrl('')
+    setAddLabel('')
+    setShowAddForm(false)
   }
 
   return (
@@ -217,13 +222,37 @@ function QuickAccessTab({ onNavigate }: { onNavigate: (url: string) => void }) {
             )}
           </div>
         ))}
-        <button
-          onClick={handleAdd}
-          className="flex items-center justify-center gap-1 rounded-md border border-dashed border-border-subtle bg-background-surface/50 px-2 py-1.5 text-xs text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
-        >
-          <Plus size={12} />
-          <span>{t('browser.sidebar.addShortcut', { defaultValue: '新增' })}</span>
-        </button>
+        {showAddForm ? (
+          <div className="flex flex-col gap-1 rounded-md border border-primary/60 bg-background-surface p-1.5">
+            <input
+              value={addUrl}
+              onChange={(e) => setAddUrl(e.target.value)}
+              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
+              placeholder={t('browser.sidebar.enterUrl', { defaultValue: '网址' })}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setShowAddForm(false) }}
+            />
+            <input
+              value={addLabel}
+              onChange={(e) => setAddLabel(e.target.value)}
+              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
+              placeholder={t('browser.sidebar.enterLabel', { defaultValue: '标签（可选）' })}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAdd(); if (e.key === 'Escape') setShowAddForm(false) }}
+            />
+            <div className="flex gap-1">
+              <button onClick={handleAdd} className="flex-1 rounded bg-primary/20 py-0.5 text-[10px] text-primary"><Check size={10} className="inline mr-0.5" />{t('buttons.confirm', { defaultValue: '确认' })}</button>
+              <button onClick={() => setShowAddForm(false)} className="flex-1 rounded bg-background-hover py-0.5 text-[10px] text-text-tertiary">{t('buttons.cancel', { defaultValue: '取消' })}</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="flex items-center justify-center gap-1 rounded-md border border-dashed border-border-subtle bg-background-surface/50 px-2 py-1.5 text-xs text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            <Plus size={12} />
+            <span>{t('browser.sidebar.addShortcut', { defaultValue: '新增' })}</span>
+          </button>
+        )}
       </div>
     </div>
   )
@@ -306,6 +335,11 @@ function BookmarkTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(bookmarkFolders.map((f) => f.id)))
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [renameValue, setRenameValue] = useState('')
+  const [showAddFolderForm, setShowAddFolderForm] = useState(false)
+  const [folderName, setFolderName] = useState('')
+  const [showAddBookmarkForm, setShowAddBookmarkForm] = useState(false)
+  const [bmUrl, setBmUrl] = useState('')
+  const [bmTitle, setBmTitle] = useState('')
 
   const toggleFolder = (id: string) => {
     setExpandedFolders((prev) => {
@@ -329,15 +363,19 @@ function BookmarkTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   }
 
   const handleAddFolder = () => {
-    const name = prompt(t('browser.sidebar.folderName', { defaultValue: '文件夹名称：' }))
-    if (name?.trim()) addFolder(name.trim())
+    if (folderName.trim()) {
+      addFolder(folderName.trim())
+      setFolderName('')
+      setShowAddFolderForm(false)
+    }
   }
 
   const handleAddBookmark = () => {
-    const url = prompt(t('browser.sidebar.enterUrl', { defaultValue: '输入网址：' }))
-    if (!url) return
-    const title = prompt(t('browser.sidebar.enterLabel', { defaultValue: '输入标题（可选）：' })) || url
-    addBookmark(normalizeBrowserUrl(url), title)
+    if (!bmUrl.trim()) return
+    addBookmark(normalizeBrowserUrl(bmUrl), bmTitle.trim() || bmUrl)
+    setBmUrl('')
+    setBmTitle('')
+    setShowAddBookmarkForm(false)
   }
 
   const rootBookmarks = bookmarks.filter((b) => !b.folderId)
@@ -413,21 +451,60 @@ function BookmarkTab({ onNavigate }: { onNavigate: (url: string) => void }) {
           ))}
         </>
       )}
-      <div className="mt-2 flex gap-1">
-        <button
-          onClick={handleAddFolder}
-          className="flex flex-1 items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
-        >
-          <Plus size={10} />
-          {t('browser.sidebar.newFolder', { defaultValue: '新建文件夹' })}
-        </button>
-        <button
-          onClick={handleAddBookmark}
-          className="flex flex-1 items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
-        >
-          <Plus size={10} />
-          {t('browser.sidebar.newBookmark', { defaultValue: '新建书签' })}
-        </button>
+      <div className="mt-2 flex flex-col gap-1">
+        {showAddFolderForm ? (
+          <div className="flex gap-1 rounded-md border border-primary/60 bg-background-surface p-1.5">
+            <input
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              className="h-6 flex-1 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
+              placeholder={t('browser.sidebar.folderName', { defaultValue: '文件夹名称' })}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddFolder(); if (e.key === 'Escape') { setShowAddFolderForm(false); setFolderName('') } }}
+            />
+            <button onClick={handleAddFolder} className="rounded px-1.5 py-0.5 text-[10px] text-primary"><Check size={10} className="inline" /></button>
+            <button onClick={() => { setShowAddFolderForm(false); setFolderName('') }} className="rounded px-1.5 py-0.5 text-[10px] text-text-tertiary">{t('buttons.cancel', { defaultValue: '取消' })}</button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddFolderForm(true)}
+            className="flex items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            <Plus size={10} />
+            {t('browser.sidebar.newFolder', { defaultValue: '新建文件夹' })}
+          </button>
+        )}
+        {showAddBookmarkForm ? (
+          <div className="flex flex-col gap-1 rounded-md border border-primary/60 bg-background-surface p-1.5">
+            <input
+              value={bmUrl}
+              onChange={(e) => setBmUrl(e.target.value)}
+              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
+              placeholder={t('browser.sidebar.enterUrl', { defaultValue: '网址' })}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddBookmark(); if (e.key === 'Escape') { setShowAddBookmarkForm(false); setBmUrl('') } }}
+            />
+            <input
+              value={bmTitle}
+              onChange={(e) => setBmTitle(e.target.value)}
+              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
+              placeholder={t('browser.sidebar.enterLabel', { defaultValue: '标题（可选）' })}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleAddBookmark(); if (e.key === 'Escape') { setShowAddBookmarkForm(false); setBmTitle('') } }}
+            />
+            <div className="flex gap-1">
+              <button onClick={handleAddBookmark} className="flex-1 rounded bg-primary/20 py-0.5 text-[10px] text-primary"><Check size={10} className="inline mr-0.5" />{t('buttons.confirm', { defaultValue: '确认' })}</button>
+              <button onClick={() => { setShowAddBookmarkForm(false); setBmUrl(''); setBmTitle('') }} className="flex-1 rounded bg-background-hover py-0.5 text-[10px] text-text-tertiary">{t('buttons.cancel', { defaultValue: '取消' })}</button>
+            </div>
+          </div>
+        ) : (
+          <button
+            onClick={() => setShowAddBookmarkForm(true)}
+            className="flex items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
+          >
+            <Plus size={10} />
+            {t('browser.sidebar.newBookmark', { defaultValue: '新建书签' })}
+          </button>
+        )}
       </div>
     </div>
   )
