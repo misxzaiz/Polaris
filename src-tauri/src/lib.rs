@@ -864,6 +864,7 @@ pub fn run() {
             commands::browser::browser_find,
             commands::browser::browser_find_next,
             commands::browser::browser_zoom,
+            commands::browser::browser_get_network_info,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

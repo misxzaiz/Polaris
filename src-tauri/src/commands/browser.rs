@@ -2456,6 +2456,17 @@ pub async fn browser_zoom(
         .map_err(|e| AppError::ValidationError(format!("浏览器缩放结果格式错误: {e}")))
 }
 
+/// 获取页面网络信息（加载时间、资源数量、传输大小等）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_get_network_info(
+    app: AppHandle,
+    label: String,
+) -> Result<Value> {
+    let raw = browser_eval_with_app(&app, &label, browser_scripts::NETWORK_INFO_SCRIPT, Some(2_000)).await?;
+    parse_eval_json(&raw)
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]

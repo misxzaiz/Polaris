@@ -35,6 +35,7 @@ import {
   browserFindNext,
   browserGetDiagnostics,
   browserGetMarqueeResult,
+  browserGetNetworkInfo,
   browserGetPageContext,
   browserHistory,
   browserNavigate,
@@ -271,6 +272,7 @@ export function BrowserPanel({
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
   const [zoomLevel, setZoomLevel] = useState(1.0)
+  const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
   const [loadingTimeout, setLoadingTimeout] = useState(false)
   const loadingTimeoutRef = useRef<number | null>(null)
   const LOADING_TIMEOUT_MS = 30_000
@@ -605,6 +607,24 @@ export function BrowserPanel({
       syncBounds()
     }
   }, [overlayCount, webviewLabel, syncBounds])
+
+  // 页面就绪后轮询网络信息
+  useEffect(() => {
+    if (status !== 'ready') return
+    let cancelled = false
+    const poll = async () => {
+      await new Promise((r) => setTimeout(r, 1500))
+      if (cancelled) return
+      try {
+        const info = await browserGetNetworkInfo(webviewLabel)
+        if (!cancelled) setNetworkInfo(info)
+      } catch {
+        // 静默
+      }
+    }
+    void poll()
+    return () => { cancelled = true }
+  }, [status, webviewLabel, currentUrl])
 
   const navigateTo = useCallback(
     async (rawUrl: string) => {
@@ -1722,6 +1742,13 @@ export function BrowserPanel({
         <span className="min-w-0 flex-1 truncate text-text-tertiary" title={currentUrl}>
           {pageTitle || currentUrl}
         </span>
+        {/* 网络信息 */}
+        {networkInfo && networkInfo.loadTime > 0 && (
+          <span className="hidden sm:inline shrink-0 text-[10px] text-text-tertiary" title={`${networkInfo.resourceCount} 个资源, ${networkInfo.totalSizeKB}KB`}>
+            {networkInfo.loadTime < 1000 ? `<${networkInfo.loadTime}ms` : `${(networkInfo.loadTime / 1000).toFixed(1)}s`}
+            {' · '}{networkInfo.totalSizeKB}KB
+          </span>
+        )}
         {/* 缩放控制 */}
         <div className="flex shrink-0 items-center gap-0.5">
           <button

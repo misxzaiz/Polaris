@@ -541,3 +541,16 @@ export async function browserZoom(
     scale,
   })
 }
+
+export interface BrowserNetworkInfo {
+  loadTime: number
+  domContentLoaded: number
+  resourceCount: number
+  totalSizeKB: number
+  failedResources: number
+  readyState: string
+}
+
+export async function browserGetNetworkInfo(label: string): Promise<BrowserNetworkInfo> {
+  return invoke<BrowserNetworkInfo>('browser_get_network_info', { label })
+}

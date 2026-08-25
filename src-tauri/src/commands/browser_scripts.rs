@@ -36,6 +36,9 @@ pub const MARQUEE_GET_RESULT_SCRIPT: &str =
 pub const REGION_SELECT_SCRIPT_BODY: &str =
     include_str!("../../resources/browser-scripts/region-select-body.js");
 
+pub const NETWORK_INFO_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/network-info.js");
+
 /// 嵌入的交互元素收集器代码
 pub const INTERACTIVE_COLLECTOR_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/interactive-collector.js");
