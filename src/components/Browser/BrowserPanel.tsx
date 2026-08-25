@@ -28,6 +28,7 @@ import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
+  browserClearData,
   browserClose,
   browserCreate,
   browserFind,
@@ -42,6 +43,8 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
+  browserShowOverflowMenu,
+  browserToggleDevtools,
   browserZoom,
   formatMarqueeContext,
   makeBrowserWebviewLabel,
@@ -264,6 +267,7 @@ export function BrowserPanel({
   const [findQuery, setFindQuery] = useState('')
   const [findOpen, setFindOpen] = useState(false)
   const findInputRef = useRef<HTMLInputElement>(null)
+  const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
   const [zoomLevel, setZoomLevel] = useState(1.0)
 
@@ -417,6 +421,15 @@ export function BrowserPanel({
 
           setOperationEvents((items) => [operation, ...items].slice(0, MAX_OPERATION_EVENTS))
         })
+        // 监听溢出菜单动作
+        const unlistenOverflow = await listen<{ label: string; action: string }>('browser://overflow-menu-action', (event) => {
+          const { action } = event.payload
+          if (action === 'devtools') { browserToggleDevtools(webviewLabel).catch(() => undefined) }
+          if (action === 'copyUrl') { copyUrl() }
+          if (action === 'openExternal') { openExternal() }
+          if (action === 'clearData') { browserClearData(webviewLabel).catch(() => undefined) }
+        })
+        unlistenOverflowRef.current = unlistenOverflow
 
         readyRef.current = true
         setStatus('ready')
@@ -495,6 +508,7 @@ export function BrowserPanel({
       mutationObserver?.disconnect()
       unlistenSession?.()
       unlistenOperation?.()
+      unlistenOverflowRef.current?.()
       window.removeEventListener('resize', scheduleSyncBounds)
       window.removeEventListener('scroll', scheduleSyncBounds, true)
       document.removeEventListener('animationend', scheduleSyncBounds, true)
@@ -1216,6 +1230,19 @@ export function BrowserPanel({
             <span className="hidden 2xl:inline">
               {t('browser.marquee', { defaultValue: '圈选' })}
             </span>
+          </button>
+          {/* 溢出菜单按钮 */}
+          <button
+            type="button"
+            className={toolbarButtonClass}
+            onClick={(e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              browserShowOverflowMenu(webviewLabel, rect.right, rect.bottom).catch(() => undefined)
+            }}
+            disabled={status !== 'ready'}
+            title={t('browser.more', { defaultValue: '更多' })}
+          >
+            <Code2 size={15} />
           </button>
         </div>
       </div>
