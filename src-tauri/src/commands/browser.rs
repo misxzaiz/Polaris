@@ -1309,7 +1309,7 @@ fn capture_browser_screenshot(
 #[cfg(all(feature = "tauri-app", windows))]
 fn detect_monitor_index(x: f64, y: f64) -> usize {
     use windows_sys::Win32::Graphics::Gdi::{
-        EnumDisplayMonitors, GetMonitorInfoW, MONITORINFOEXW, HMONITOR, HDC, MONITORENUMPROC,
+        EnumDisplayMonitors, GetMonitorInfoW, MONITORINFOEXW, HMONITOR, HDC,
     };
     use windows_sys::Win32::Foundation::{RECT, LPARAM, BOOL};
 
