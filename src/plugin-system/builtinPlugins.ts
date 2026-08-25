@@ -7,7 +7,6 @@ import { GitStatusIndicator } from '@/components/FileExplorer/GitStatusIndicator
 import { registerGitEditorExtensions } from './editor'
 import { computerPluginManifest } from '@/plugins/computer/manifest'
 import { requirementPluginManifest } from '@/plugins/requirement/manifest'
-import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 import { todoPluginManifest } from '@/plugins/todo/manifest'
 import { personalHubPluginManifest } from '@/plugins/personal-hub/manifest'
 import { prdPreviewPluginManifest } from '@/plugins/prd-preview/manifest'
@@ -114,7 +113,6 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(corePluginManifest)
   // Git 编辑器集成（gutter / blame / 改动导航）注册到 editor extension slot
   registerGitEditorExtensions()
-  pluginRegistry.register(schedulerPluginManifest)
   pluginRegistry.register(todoPluginManifest)
   pluginRegistry.register(requirementPluginManifest)
   pluginRegistry.register(prdPreviewPluginManifest)

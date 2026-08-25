@@ -1,6 +1,6 @@
 //! Computer MCP Server —— 电脑操作（截图 / 鼠标键盘 / Windows 控件树 / 剪贴板）。
 //!
-//! JSON-RPC over stdio，框架与 `scheduler_mcp_server` / `todo_mcp_server` 一致；
+//! JSON-RPC over stdio，框架与 `todo_mcp_server` 一致；
 //! 状态持有一个可变 [`ComputerController`]。
 
 use std::io::{self, BufRead, Write};

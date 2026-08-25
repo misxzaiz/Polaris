@@ -12,8 +12,6 @@ const TODO_MCP_SERVER_NAME: &str = "polaris-todo";
 const TODO_MCP_BIN_NAME: &str = "polaris-mcp";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
 const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-mcp";
-const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
-const SCHEDULER_MCP_BIN_NAME: &str = "polaris-mcp";
 const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
 const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
@@ -30,7 +28,6 @@ const PH_MCP_SERVER_NAME: &str = "polaris-ph";
 const PH_MCP_BIN_NAME: &str = "polaris-mcp";
 const TODO_PLUGIN_ID: &str = "polaris.todo";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
-const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
 const ASK_PLUGIN_ID: &str = "polaris.ask";
@@ -169,10 +166,6 @@ pub fn builtin_plugin_mcp_manifests() -> &'static [BuiltinPluginMcpManifest] {
             mcp_server_names: &[REQUIREMENTS_MCP_SERVER_NAME],
         },
         BuiltinPluginMcpManifest {
-            plugin_id: SCHEDULER_PLUGIN_ID,
-            mcp_server_names: &[SCHEDULER_MCP_SERVER_NAME],
-        },
-        BuiltinPluginMcpManifest {
             plugin_id: PRD_PREVIEW_PLUGIN_ID,
             mcp_server_names: &[PRD_PREVIEW_MCP_SERVER_NAME],
         },
@@ -227,19 +220,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
             "polaris-mcp",
             "src-tauri/target/debug/polaris-mcp",
             "POLARIS_REQUIREMENTS_MCP_PATH",
-            McpServerArgsMode::ConfigDirAndWorkspace,
-            false,
-        ),
-    );
-    registry.register_plugin_server(
-        SCHEDULER_PLUGIN_ID,
-        PluginMcpServerContribution::builtin(
-            SCHEDULER_MCP_SERVER_NAME,
-            SCHEDULER_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
-            "POLARIS_SCHEDULER_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
         ),
@@ -380,7 +360,6 @@ impl WorkspaceMcpConfigService {
         config_dir: PathBuf,
         todo_executable_path: PathBuf,
         requirements_executable_path: Option<PathBuf>,
-        scheduler_executable_path: Option<PathBuf>,
     ) -> Self {
         let mut binaries = vec![ResolvedMcpBinary {
             server_name: TODO_MCP_SERVER_NAME.to_string(),
@@ -391,14 +370,6 @@ impl WorkspaceMcpConfigService {
         if let Some(path) = requirements_executable_path {
             binaries.push(ResolvedMcpBinary {
                 server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
-                executable_path: path,
-                args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
-            });
-        }
-
-        if let Some(path) = scheduler_executable_path {
-            binaries.push(ResolvedMcpBinary {
-                server_name: SCHEDULER_MCP_SERVER_NAME.to_string(),
                 executable_path: path,
                 args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
             });
@@ -1044,7 +1015,6 @@ fn capability_to_builtin_servers(capability: &str) -> Vec<&'static str> {
         "dispatch" => vec![DISPATCH_MCP_SERVER_NAME],
         "todo" => vec![TODO_MCP_SERVER_NAME],
         "requirements" => vec![REQUIREMENTS_MCP_SERVER_NAME],
-        "scheduler" => vec![SCHEDULER_MCP_SERVER_NAME],
         "prd-preview" => vec![PRD_PREVIEW_MCP_SERVER_NAME],
         "agnes" => vec![AGNES_MCP_SERVER_NAME],
         "personal-hub" => vec![PH_MCP_SERVER_NAME],
@@ -1726,7 +1696,7 @@ mod tests {
     fn disabled_builtin_mcp_server_names_honors_plugin_state() {
         let mut states = PluginStateMap::new();
         states.insert(
-            SCHEDULER_PLUGIN_ID.to_string(),
+            REQUIREMENTS_PLUGIN_ID.to_string(),
             PluginState {
                 enabled: true,
                 ui_enabled: true,
@@ -1737,7 +1707,7 @@ mod tests {
 
         let disabled = disabled_builtin_mcp_server_names(&states);
 
-        assert_eq!(disabled, vec![SCHEDULER_MCP_SERVER_NAME.to_string()]);
+        assert_eq!(disabled, vec![REQUIREMENTS_MCP_SERVER_NAME.to_string()]);
     }
 
     #[test]
@@ -1824,7 +1794,7 @@ mod tests {
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&plugin_script, "demo server").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None)
+        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None)
             .with_external_servers(vec![ResolvedExternalMcpServer {
                 plugin_id: "example.demo-mcp".to_string(),
                 server_name: "example-demo-mcp".to_string(),
@@ -1875,7 +1845,7 @@ mod tests {
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&plugin_script, "demo server").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None)
+        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None)
             .with_external_servers(vec![ResolvedExternalMcpServer {
                 plugin_id: "example.demo-mcp".to_string(),
                 server_name: "example-demo-mcp".to_string(),
@@ -1912,7 +1882,7 @@ mod tests {
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
 
         let service =
-            WorkspaceMcpConfigService::new(config_dir, todo_executable_path.clone(), None, None)
+            WorkspaceMcpConfigService::new(config_dir, todo_executable_path.clone(), None)
                 .with_external_servers(vec![ResolvedExternalMcpServer {
                     plugin_id: "example.conflict".to_string(),
                     server_name: TODO_MCP_SERVER_NAME.to_string(),
@@ -1943,20 +1913,17 @@ mod tests {
         let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let requirements_executable_path =
             temp_root.join(fixture_exe("bin/polaris-mcp"));
-        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
-        std::fs::write(&scheduler_executable_path, "scheduler bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
             config_dir.clone(),
             todo_executable_path.clone(),
             Some(requirements_executable_path.clone()),
-            Some(scheduler_executable_path.clone()),
         );
         let config_path = service
             .prepare_workspace_config(workspace.to_string_lossy().as_ref())
@@ -1997,21 +1964,6 @@ mod tests {
             serde_json::Value::String(workspace.to_string_lossy().to_string())
         );
 
-        // Scheduler MCP should have two args: config_dir and workspace_path
-        let scheduler_server = &json["mcpServers"][SCHEDULER_MCP_SERVER_NAME];
-        assert_eq!(
-            scheduler_server["command"],
-            serde_json::Value::String(scheduler_executable_path.to_string_lossy().to_string())
-        );
-        assert_eq!(
-            scheduler_server["args"][0],
-            serde_json::Value::String(config_dir.to_string_lossy().to_string())
-        );
-        assert_eq!(
-            scheduler_server["args"][1],
-            serde_json::Value::String(workspace.to_string_lossy().to_string())
-        );
-
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
@@ -2024,33 +1976,29 @@ mod tests {
         let todo_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
         let requirements_executable_path =
             temp_root.join(fixture_exe("bin/polaris-mcp"));
-        let scheduler_executable_path = temp_root.join(fixture_exe("bin/polaris-mcp"));
 
         std::fs::create_dir_all(&workspace).unwrap();
         std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
         std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
-        std::fs::write(&scheduler_executable_path, "scheduler bin").unwrap();
 
         let service = WorkspaceMcpConfigService::new(
             config_dir.clone(),
             todo_executable_path.clone(),
             Some(requirements_executable_path.clone()),
-            Some(scheduler_executable_path.clone()),
         );
 
         let args = service
             .prepare_workspace_codex_config_args(workspace.to_string_lossy().as_ref())
             .unwrap();
 
-        assert_eq!(args.len(), 12);
-        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-c").count(), 6);
+        assert_eq!(args.len(), 8);
+        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-c").count(), 4);
 
         let joined = args.join("\n");
         assert!(joined.contains("mcp_servers.polaris-todo.command="));
         assert!(joined.contains("mcp_servers.polaris-requirements.command="));
-        assert!(joined.contains("mcp_servers.polaris-scheduler.command="));
         assert!(joined.contains("mcp_servers.polaris-todo.args=["));
 
         let expected_config_dir = toml_string_literal(config_dir.to_string_lossy().as_ref());
@@ -2106,7 +2054,7 @@ mod tests {
         std::fs::write(&executable_path, "bin").unwrap();
 
         let service =
-            WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None, None);
+            WorkspaceMcpConfigService::new(config_dir.clone(), executable_path.clone(), None);
         let first = service
             .prepare_workspace_config(workspace.to_string_lossy().as_ref())
             .unwrap();
@@ -2135,7 +2083,7 @@ mod tests {
         std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None);
+        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None);
 
         let config_path = service
             .prepare_workspace_config_with_disabled(
@@ -2164,7 +2112,7 @@ mod tests {
         std::fs::create_dir_all(todo_executable_path.parent().unwrap()).unwrap();
         std::fs::write(&todo_executable_path, "todo bin").unwrap();
 
-        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None, None);
+        let service = WorkspaceMcpConfigService::new(config_dir, todo_executable_path, None);
 
         let args = service
             .prepare_workspace_codex_config_args_with_disabled(
