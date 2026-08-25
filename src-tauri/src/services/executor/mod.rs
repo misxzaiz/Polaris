@@ -693,6 +693,165 @@ impl TaskExecutor for HttpExecutor {
 // 初始化
 // ============================================================================
 
+/// 插件声明执行器 — 包装插件 manifest 声明的 CLI 命令执行器
+///
+/// 插件在 plugin.json 的 `contributes.executors` 中声明，类型标识为
+/// `plugin:<plugin_id>:<executor_id>`，可在定时任务或 `execute` IPC 中引用。
+pub struct PluginExecutor {
+    plugin_id: String,
+    executor_id: String,
+    name: String,
+    description: String,
+    command: String,
+    args_template: Vec<String>,
+}
+
+impl PluginExecutor {
+    pub fn new(
+        plugin_id: &str,
+        contribution: &crate::models::plugin::PluginExecutorManifestContribution,
+        install_path: &str,
+    ) -> Self {
+        let args_template = contribution
+            .args_template
+            .iter()
+            .map(|arg| arg.replace("{{pluginDir}}", install_path))
+            .collect();
+
+        Self {
+            plugin_id: plugin_id.to_string(),
+            executor_id: contribution.id.clone(),
+            name: contribution.name.clone(),
+            description: contribution
+                .description
+                .clone()
+                .unwrap_or_else(|| format!("插件执行器: {}", contribution.name)),
+            command: contribution.command.clone(),
+            args_template,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl TaskExecutor for PluginExecutor {
+    fn executor_type(&self) -> ExecutorType {
+        ExecutorType::Plugin {
+            plugin_id: self.plugin_id.clone(),
+            executor_id: self.executor_id.clone(),
+        }
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn description(&self) -> &str {
+        &self.description
+    }
+
+    async fn execute(
+        &self,
+        params: ExecutorParams,
+        _ctx: ExecutorContext,
+    ) -> ExecutorResult {
+        // 如果 custom_params 中有 command 覆盖，使用它
+        let command = params
+            .custom_params
+            .as_ref()
+            .and_then(|p| p.get("command").and_then(|v| v.as_str()))
+            .unwrap_or(&self.command)
+            .to_string();
+
+        // 构建参数：args_template 为前缀，后接 custom_params 中的 args（若有）
+        let mut args: Vec<String> = self.args_template.clone();
+        if let Some(custom_args) = params
+            .custom_params
+            .as_ref()
+            .and_then(|p| p.get("args").and_then(|v| v.as_array()))
+        {
+            for arg in custom_args {
+                if let Some(s) = arg.as_str() {
+                    args.push(s.to_string());
+                }
+            }
+        }
+
+        let cwd = params
+            .cwd
+            .clone()
+            .or_else(|| params.work_dir.clone())
+            .unwrap_or_else(|| std::env::current_dir()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|_| ".".to_string()));
+
+        tracing::info!(
+            "[PluginExecutor] {}: {} {:#?} (cwd={})",
+            self.executor_type().as_str(),
+            command,
+            args,
+            cwd
+        );
+
+        let mut cmd = tokio::process::Command::new(&command);
+        cmd.args(&args);
+        cmd.current_dir(&cwd);
+
+        let timeout = std::time::Duration::from_secs(params.timeout_secs.unwrap_or(300));
+
+        match tokio::time::timeout(timeout, cmd.output()).await {
+            Ok(Ok(output)) => {
+                let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+                let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+
+                if output.status.success() {
+                    ExecutorResult {
+                        success: true,
+                        exit_code: output.status.code(),
+                        stdout: Some(stdout),
+                        stderr: Some(stderr),
+                        ..ExecutorResult::success()
+                    }
+                } else {
+                    ExecutorResult {
+                        success: false,
+                        exit_code: output.status.code(),
+                        stdout: Some(stdout),
+                        stderr: Some(stderr),
+                        error: Some(format!("插件执行器退出码: {:?}", output.status.code())),
+                        ..ExecutorResult::success()
+                    }
+                }
+            }
+            Ok(Err(e)) => {
+                ExecutorResult::error(format!("插件执行器执行失败: {}", e))
+            }
+            Err(_) => {
+                ExecutorResult::error("插件执行器超时")
+            }
+        }
+    }
+}
+
+/// 从插件 manifest 列表创建插件执行器并注册到注册表
+pub fn register_plugin_executors(
+    registry: &mut ExecutorRegistry,
+    plugins: &[crate::models::plugin::DiscoveredPluginManifest],
+) {
+    for plugin in plugins {
+        if plugin.contributes.executors.is_empty() {
+            continue;
+        }
+
+        let plugin_id = &plugin.id;
+        let install_path = &plugin.install_path;
+
+        for exec_contrib in &plugin.contributes.executors {
+            let executor = PluginExecutor::new(plugin_id, exec_contrib, install_path);
+            registry.register(Arc::new(executor));
+        }
+    }
+}
+
 /// 创建内置执行器注册表并注册所有内置执行器
 pub fn create_builtin_registry() -> ExecutorRegistry {
     let mut registry = ExecutorRegistry::new();

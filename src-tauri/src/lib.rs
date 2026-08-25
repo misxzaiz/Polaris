@@ -1137,6 +1137,9 @@ pub fn run() {
             commands::engine_install::engine_uninstall,
             // 引擎元数据（前端统一消费）
             commands::engine_metadata::get_engine_metadata_list,
+            // 通用执行器
+            commands::executor::executor_list,
+            commands::executor::executor_execute,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,

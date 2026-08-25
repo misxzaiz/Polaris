@@ -10,6 +10,7 @@ import { TriggerConfig } from './TriggerConfig';
 import { ProtocolTemplateSelector, TemplateParamsForm } from './ProtocolTemplateSelector';
 import { useToastStore, useWorkspaceStore, useConfigStore, useSchedulerStore } from '@/stores';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
+import { executorList, type ExecutorInfo } from '@/services/executorService';
 
 export interface TaskEditorProps {
   /** 编辑的任务（可选，不传则为新建） */
@@ -90,6 +91,16 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   const [httpBody, setHttpBody] = useState<string>(
     initialExecParams.body !== undefined ? JSON.stringify(initialExecParams.body, null, 2) : '',
   );
+
+  // 插件自定义执行器列表
+  const [pluginExecutors, setPluginExecutors] = useState<ExecutorInfo[]>([]);
+  useEffect(() => {
+    executorList().then((list) => {
+      setPluginExecutors(list.filter((e) => e.type !== 'chat' && e.type !== 'command' && e.type !== 'http'));
+    }).catch(() => {
+      // 静默失败，仅显示内置执行器
+    });
+  }, []);
 
   // 加载模板
   useEffect(() => {
@@ -190,6 +201,7 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
       }
       return Object.keys(params).length > 0 ? params : undefined;
     }
+    // 插件自定义执行器：无动态表单，透传空参数
     return undefined;
   };
 
@@ -439,6 +451,9 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
               <option value="chat">{t('editor.executorTypes.chat')}</option>
               <option value="command">{t('editor.executorTypes.command')}</option>
               <option value="http">{t('editor.executorTypes.http')}</option>
+              {pluginExecutors.map((e) => (
+                <option key={e.type} value={e.type}>{e.name}</option>
+              ))}
             </select>
             <p className="mt-1 text-xs text-text-muted">{t('editor.executorTypeHint')}</p>
           </div>

@@ -20,6 +20,7 @@ use crate::services::lsp_config_repository::LspConfigRepository;
 #[cfg(feature = "lsp-index")]
 use crate::services::lsp_index::IndexService;
 use crate::services::scheduler_daemon::SchedulerDaemon;
+use crate::services::plugin_service::PluginService;
 use crate::web::server::WebServerHandle;
 
 /// 单个问题（同一个 MCP call 可包含 1-4 个）
@@ -325,6 +326,20 @@ pub fn create_app_state(
         }
     }
 
+    // 创建内置执行器注册表并注册插件声明的执行器
+    let mut executor_registry = crate::services::executor::create_builtin_registry();
+    {
+        // 发现已安装插件（User scope），注册其 contributes.executors
+        let discovery = PluginService::discover_installed_plugins(&config_dir, None);
+        for error in &discovery.errors {
+            tracing::warn!("[ExecutorRegistry] 插件发现诊断 {}: {}", error.path, error.error);
+        }
+        crate::services::executor::register_plugin_executors(
+            &mut executor_registry,
+            &discovery.plugins,
+        );
+    }
+
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -369,7 +384,7 @@ pub fn create_app_state(
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
-        executor_registry: crate::services::executor::create_builtin_registry(),
+        executor_registry,
     }
 }
 

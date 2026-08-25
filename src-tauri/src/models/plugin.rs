@@ -141,6 +141,9 @@ pub struct PluginManifestContributes {
     /// 插件配置项 schema（参照 VSCode contributes.configuration）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub config_schema: Vec<PluginConfigFieldSchemaManifest>,
+    /// 插件声明的执行器（注册到 ExecutorRegistry）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub executors: Vec<PluginExecutorManifestContribution>,
 }
 
 /// 插件配置项 schema（manifest.contributes.configSchema）
@@ -213,6 +216,31 @@ pub struct PluginToolProviderManifestContribution {
     /// 覆盖描述（UI 展示用）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+/// 插件执行器 contribution
+///
+/// 声明一个注册到 ExecutorRegistry 的自定义执行器。执行器类型标识为
+/// `plugin:<plugin_id>:<executor_id>`，可在定时任务 executorType 中引用，
+/// 也可由任意插件/前端通过 `execute` IPC 调用。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginExecutorManifestContribution {
+    /// 执行器 ID（插件命名空间内唯一）
+    pub id: String,
+    /// 执行器名称（展示用）
+    pub name: String,
+    /// 执行器描述
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// 执行命令（如 `node`、`python`、`./run`）
+    pub command: String,
+    /// 命令参数模板，支持 {{pluginDir}} 等占位符
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args_template: Vec<String>,
+    /// 执行器参数 JSON Schema（描述 customParams 的结构，供前端渲染表单）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params_schema: Option<serde_json::Value>,
 }
 
 /// 插件面板贡献
