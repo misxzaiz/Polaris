@@ -149,7 +149,26 @@
     "providerInvalid": "当前任务的 Provider 已失效或被禁用，请重新选择引擎",
     "goConfig": "去配置",
     "protocolTemplate": "协议模板",
-    "templateParams": "模板参数"
+    "templateParams": "模板参数",
+    "executorType": "执行器",
+    "executorTypeHint": "任务如何执行（默认：AI 对话）",
+    "executorTypes": {
+      "chat": "AI 对话",
+      "command": "命令行指令",
+      "http": "HTTP 请求"
+    },
+    "executorChatPrompt": "提示词",
+    "executorChatEngine": "AI 引擎",
+    "executorCommandLine": "命令",
+    "executorCommandLinePlaceholder": "如：npm run lint",
+    "executorCommandArgs": "参数",
+    "executorCommandArgsPlaceholder": "空格分隔的参数（可选）",
+    "executorCwd": "工作目录",
+    "executorHttpUrl": "URL",
+    "executorHttpUrlPlaceholder": "如：https://api.example.com/webhook",
+    "executorHttpMethod": "方法",
+    "executorHttpBody": "请求体",
+    "executorHttpBodyPlaceholder": "JSON 请求体（可选）"
   },
 
   "template": {

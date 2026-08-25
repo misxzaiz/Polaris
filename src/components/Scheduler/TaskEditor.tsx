@@ -69,6 +69,28 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   const [retryInterval, setRetryInterval] = useState(task?.retryInterval || '');
   const [timeoutMinutes, setTimeoutMinutes] = useState<number | undefined>(task?.timeoutMinutes);
 
+  // 执行器配置
+  const [executorType, setExecutorType] = useState<string>(task?.executorType || 'chat');
+  const initialExecParams = task?.executorParams || {};
+  const [execCommand, setExecCommand] = useState<string>(
+    (initialExecParams.command as string) || '',
+  );
+  const [execArgs, setExecArgs] = useState<string>(
+    initialExecParams.commandArgs !== undefined
+      ? Array.isArray(initialExecParams.commandArgs)
+        ? (initialExecParams.commandArgs as string[]).join(' ')
+        : String(initialExecParams.commandArgs)
+      : '',
+  );
+  const [execCwd, setExecCwd] = useState<string>(
+    (initialExecParams.cwd as string) || (task?.workDir || ''),
+  );
+  const [httpUrl, setHttpUrl] = useState<string>((initialExecParams.url as string) || '');
+  const [httpMethod, setHttpMethod] = useState<string>((initialExecParams.method as string) || 'POST');
+  const [httpBody, setHttpBody] = useState<string>(
+    initialExecParams.body !== undefined ? JSON.stringify(initialExecParams.body, null, 2) : '',
+  );
+
   // 加载模板
   useEffect(() => {
     loadTemplates();
@@ -143,7 +165,32 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
       timeoutMinutes: timeoutMinutes || undefined,
       // 其他
       group: group.trim() || undefined,
+      // 执行器
+      executorType: executorType === 'chat' ? undefined : executorType,
+      executorParams: buildExecutorParams(),
     });
+  };
+
+  // 构建执行器参数
+  const buildExecutorParams = (): Record<string, unknown> | undefined => {
+    if (executorType === 'chat') return undefined;
+    if (executorType === 'command') {
+      const params: Record<string, unknown> = {};
+      if (execCommand.trim()) params.command = execCommand.trim();
+      if (execArgs.trim()) params.commandArgs = execArgs.trim().split(/\s+/);
+      if (execCwd.trim()) params.cwd = execCwd.trim();
+      return Object.keys(params).length > 0 ? params : undefined;
+    }
+    if (executorType === 'http') {
+      const params: Record<string, unknown> = {};
+      if (httpUrl.trim()) params.url = httpUrl.trim();
+      if (httpMethod.trim()) params.method = httpMethod.trim();
+      if (httpBody.trim()) {
+        try { params.body = JSON.parse(httpBody); } catch { params.body = httpBody; }
+      }
+      return Object.keys(params).length > 0 ? params : undefined;
+    }
+    return undefined;
   };
 
   // 基础引擎选择
@@ -378,6 +425,111 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
               onValueChange={setTriggerValue}
             />
           </div>
+
+          {/* 执行器类型 */}
+          <div>
+            <label className="block text-sm text-text-secondary mb-1">
+              {t('editor.executorType')}
+            </label>
+            <select
+              value={executorType}
+              onChange={(e) => setExecutorType(e.target.value)}
+              className="w-full px-3 py-2 bg-background-surface border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            >
+              <option value="chat">{t('editor.executorTypes.chat')}</option>
+              <option value="command">{t('editor.executorTypes.command')}</option>
+              <option value="http">{t('editor.executorTypes.http')}</option>
+            </select>
+            <p className="mt-1 text-xs text-text-muted">{t('editor.executorTypeHint')}</p>
+          </div>
+
+          {/* 执行器参数（按类型切换） */}
+          {executorType === 'command' && (
+            <div className="space-y-4 p-4 bg-background-surface rounded-lg border border-border-subtle">
+              <h4 className="text-sm font-medium text-text-primary">{t('editor.executorTypes.command')}</h4>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorCommandLine')}
+                </label>
+                <input
+                  type="text"
+                  value={execCommand}
+                  onChange={(e) => setExecCommand(e.target.value)}
+                  placeholder={t('editor.executorCommandLinePlaceholder')}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorCommandArgs')}
+                </label>
+                <input
+                  type="text"
+                  value={execArgs}
+                  onChange={(e) => setExecArgs(e.target.value)}
+                  placeholder={t('editor.executorCommandArgsPlaceholder')}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorCwd')}
+                </label>
+                <input
+                  type="text"
+                  value={execCwd}
+                  onChange={(e) => setExecCwd(e.target.value)}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
+          )}
+
+          {executorType === 'http' && (
+            <div className="space-y-4 p-4 bg-background-surface rounded-lg border border-border-subtle">
+              <h4 className="text-sm font-medium text-text-primary">{t('editor.executorTypes.http')}</h4>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorHttpUrl')}
+                </label>
+                <input
+                  type="text"
+                  value={httpUrl}
+                  onChange={(e) => setHttpUrl(e.target.value)}
+                  placeholder={t('editor.executorHttpUrlPlaceholder')}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorHttpMethod')}
+                </label>
+                <select
+                  value={httpMethod}
+                  onChange={(e) => setHttpMethod(e.target.value)}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+                >
+                  <option value="GET">GET</option>
+                  <option value="POST">POST</option>
+                  <option value="PUT">PUT</option>
+                  <option value="PATCH">PATCH</option>
+                  <option value="DELETE">DELETE</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm text-text-secondary mb-1">
+                  {t('editor.executorHttpBody')}
+                </label>
+                <textarea
+                  value={httpBody}
+                  onChange={(e) => setHttpBody(e.target.value)}
+                  rows={3}
+                  placeholder={t('editor.executorHttpBodyPlaceholder')}
+                  className="w-full px-3 py-2 bg-background-base border border-border-subtle rounded-lg text-text-primary resize-none font-mono text-xs focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+            </div>
+          )}
 
           {/* AI 引擎 */}
           <div>

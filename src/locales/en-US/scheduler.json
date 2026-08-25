@@ -147,9 +147,28 @@
     "noProvider": "Not Configured",
     "noProviderConfigured": "No OpenAI Provider configured",
     "providerInvalid": "Current provider is invalid or disabled, please select another engine",
-    "goConfig": "Configure",
+    "gotoConfig": "Configure",
     "protocolTemplate": "Protocol Template",
-    "templateParams": "Template Parameters"
+    "templateParams": "Template Parameters",
+    "executorType": "Executor",
+    "executorTypeHint": "How to execute this task (default: AI chat)",
+    "executorTypes": {
+      "chat": "AI Chat",
+      "command": "CLI Command",
+      "http": "HTTP Request"
+    },
+    "executorChatPrompt": "Prompt",
+    "executorChatEngine": "AI Engine",
+    "executorCommandLine": "Command",
+    "executorCommandLinePlaceholder": "e.g., npm run lint",
+    "executorCommandArgs": "Arguments",
+    "executorCommandArgsPlaceholder": "Space-separated args (optional)",
+    "executorCwd": "Working Directory",
+    "executorHttpUrl": "URL",
+    "executorHttpUrlPlaceholder": "e.g., https://api.example.com/webhook",
+    "executorHttpMethod": "Method",
+    "executorHttpBody": "Request Body",
+    "executorHttpBodyPlaceholder": "JSON body (optional)"
   },
 
   "template": {

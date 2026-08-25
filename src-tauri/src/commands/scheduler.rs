@@ -132,6 +132,9 @@ pub async fn scheduler_update_task(
         // === 其他 ===
         group: task.group,
         notify_on_complete: Some(task.notify_on_complete),
+        // === 执行器 ===
+        executor_type: Some(task.executor_type),
+        executor_params: task.executor_params,
         ..Default::default()
     })
 }

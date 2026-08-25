@@ -264,6 +264,12 @@ export interface ScheduledTask {
   group?: string;
   /** 完成通知 */
   notifyOnComplete: boolean;
+
+  // === 执行器 ===
+  /** 执行器类型（"chat" | "command" | "http" | "plugin:<id>:<executor>"） */
+  executorType?: string;
+  /** 执行器参数（JSON，不同执行器类型结构不同） */
+  executorParams?: Record<string, unknown>;
 }
 
 /** 创建任务参数 */
@@ -321,6 +327,12 @@ export interface CreateTaskParams {
   group?: string;
   /** 完成通知 */
   notifyOnComplete?: boolean;
+
+  // === 执行器 ===
+  /** 执行器类型（"chat" | "command" | "http" | "plugin:<id>:<executor>"） */
+  executorType?: string;
+  /** 执行器参数（JSON，不同执行器类型结构不同） */
+  executorParams?: Record<string, unknown>;
 }
 
 // ============ 调度器状态 ============

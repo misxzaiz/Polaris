@@ -682,6 +682,9 @@ fn dispatch_scheduler_update_task(state: &AppState, args: &Value) -> Result<Json
             timeout_minutes: task.timeout_minutes,
             group: task.group,
             notify_on_complete: Some(task.notify_on_complete),
+            // === 执行器 ===
+            executor_type: Some(task.executor_type),
+            executor_params: task.executor_params,
             ..Default::default()
         }
     ))
