@@ -277,6 +277,35 @@ export function BrowserPanel({
   const [loadingTimeout, setLoadingTimeout] = useState(false)
   const loadingTimeoutRef = useRef<number | null>(null)
   const LOADING_TIMEOUT_MS = 30_000
+  // 前端导航历史跟踪（用于长按后退按钮显示历史快照菜单）
+  const historyStackRef = useRef<string[]>([])
+  const historyIndexRef = useRef(-1)
+  const [historyDropdownOpen, setHistoryDropdownOpen] = useState(false)
+  const [historyDropdownDirection, setHistoryDropdownDirection] = useState<'back' | 'forward'>('back')
+
+  // 点击外部关闭历史下拉
+  useEffect(() => {
+    if (!historyDropdownOpen) return
+    const onClick = () => setHistoryDropdownOpen(false)
+    window.addEventListener('click', onClick)
+    return () => window.removeEventListener('click', onClick)
+  }, [historyDropdownOpen])
+
+  // 路由变化时记录历史
+  useEffect(() => {
+    const url = currentUrl
+    if (!url) return
+    const stack = historyStackRef.current
+    const idx = historyIndexRef.current
+    // 若当前 URL 与栈当前位置相同，说明是同一个条目（如 reload），跳过
+    if (stack[idx] === url) return
+    // 删除当前位置之后的所有记录（如果有，说明发生过前进）
+    stack.splice(idx + 1)
+    stack.push(url)
+    // 防止记录过多
+    if (stack.length > 100) stack.shift()
+    historyIndexRef.current = stack.length - 1
+  }, [currentUrl])
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
@@ -1131,16 +1160,15 @@ export function BrowserPanel({
             type="button"
             className={toolbarButtonClass}
             onClick={() => browserHistory(webviewLabel, 'back').catch((e) => setError(String(e)))}
-            onMouseDown={(e) => {
-              // 长按 500ms 显示历史状态
-              const timer = setTimeout(async () => {
-                try {
-                  const state = await browserGetHistoryState(webviewLabel)
-                  const msg = state.canGoBack ? t('browser.backAvailable', { defaultValue: '后退可用' }) : t('browser.cannotGoBack', { defaultValue: '无法后退' })
-                  toast.info(msg)
-                } catch { /* 静默 */ }
+            onMouseDown={() => {
+              // 长按 500ms 显示历史下拉菜单
+              const timer = window.setTimeout(() => {
+                if (historyStackRef.current.length > 0 && historyIndexRef.current > 0) {
+                  setHistoryDropdownDirection('back')
+                  setHistoryDropdownOpen(true)
+                }
               }, 500)
-              const handleMouseUp = () => { clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
+              const handleMouseUp = () => { window.clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
               document.addEventListener('mouseup', handleMouseUp)
             }}
             disabled={status !== 'ready'}
@@ -1152,6 +1180,17 @@ export function BrowserPanel({
             type="button"
             className={toolbarButtonClass}
             onClick={() => browserHistory(webviewLabel, 'forward').catch((e) => setError(String(e)))}
+            onMouseDown={() => {
+              // 长按 500ms 显示历史下拉菜单
+              const timer = window.setTimeout(() => {
+                if (historyStackRef.current.length > 0 && historyIndexRef.current < historyStackRef.current.length - 1) {
+                  setHistoryDropdownDirection('forward')
+                  setHistoryDropdownOpen(true)
+                }
+              }, 500)
+              const handleMouseUp = () => { window.clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
+              document.addEventListener('mouseup', handleMouseUp)
+            }}
             disabled={status !== 'ready'}
             title={t('browser.forward', { defaultValue: '前进' })}
           >
@@ -1308,6 +1347,42 @@ export function BrowserPanel({
           </button>
         </div>
       </div>
+
+        {/* 历史快照下拉菜单 */}
+        {historyDropdownOpen && (
+          <div
+            ref={historyDropdownRef}
+            className="absolute z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated shadow-lg"
+            style={{ top: '44px', left: '12px' }}
+            onClick={() => setHistoryDropdownOpen(false)}
+            onMouseLeave={() => setHistoryDropdownOpen(false)}
+          >
+            {(() => {
+              const stack = historyStackRef.current
+              const idx = historyIndexRef.current
+              const items = historyDropdownDirection === 'back'
+                ? stack.slice(0, idx).reverse().slice(0, 15)
+                : stack.slice(idx + 1).slice(0, 15)
+              return items.length > 0 ? items.map((url, i) => (
+                <button
+                  key={`${url}-${i}`}
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-text-secondary hover:bg-background-hover hover:text-text-primary truncate"
+                  onClick={() => {
+                    navigateTo(url)
+                    setHistoryDropdownOpen(false)
+                  }}
+                >
+                  <Globe2 size={11} className="shrink-0 text-text-tertiary" />
+                  <span className="truncate">{(() => { try { return new URL(url).hostname } catch { return url } })()}</span>
+                </button>
+              )) : (
+                <div className="px-3 py-2 text-xs text-text-tertiary text-center">
+                  {t('browser.noHistory', { defaultValue: '暂无历史记录' })}
+                </div>
+              )
+            })()}
+          </div>
+        )}
 
       {error && (
         <div className="flex shrink-0 items-center gap-2 border-b border-danger/25 bg-danger/10 px-3 py-2 text-xs text-danger">
