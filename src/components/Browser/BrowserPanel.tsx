@@ -239,6 +239,7 @@ export function BrowserPanel({
   const [pageTitle, setPageTitle] = useState('Browser')
   const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const loadingRef = useRef(false)
   const [loadProgress, setLoadProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
@@ -270,6 +271,9 @@ export function BrowserPanel({
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
   const [zoomLevel, setZoomLevel] = useState(1.0)
+  const [loadingTimeout, setLoadingTimeout] = useState(false)
+  const loadingTimeoutRef = useRef<number | null>(null)
+  const LOADING_TIMEOUT_MS = 30_000
 
   const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
@@ -389,8 +393,15 @@ export function BrowserPanel({
     }
 
     async function createNativeWebview() {
-      setLoading(true)
+      setLoading(true); loadingRef.current = true
+      setLoadingTimeout(false)
       setError(null)
+      // 30s 加载超时检测
+      loadingTimeoutRef.current = window.setTimeout(() => {
+        if (mountedRef.current && loadingRef.current) {
+          setLoadingTimeout(true)
+        }
+      }, LOADING_TIMEOUT_MS)
       try {
         const bounds = getContainerBounds() ?? { x: 0, y: 0, width: 320, height: 240 }
         log('createNativeWebview: initial bounds', { bounds, webviewLabel })
@@ -491,7 +502,7 @@ export function BrowserPanel({
         }
       } finally {
         if (!cleanup && mountedRef.current) {
-          setLoading(false)
+          setLoading(false); loadingRef.current = false
         }
       }
     }
@@ -516,6 +527,10 @@ export function BrowserPanel({
       if (rafRef.current !== null) {
         window.cancelAnimationFrame(rafRef.current)
         rafRef.current = null
+      }
+      if (loadingTimeoutRef.current !== null) {
+        window.clearTimeout(loadingTimeoutRef.current)
+        loadingTimeoutRef.current = null
       }
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
       // 销毁 WebView 而非隐藏，释放 renderer 进程（~350MB）。
@@ -594,7 +609,17 @@ export function BrowserPanel({
   const navigateTo = useCallback(
     async (rawUrl: string) => {
       const nextUrl = normalizeBrowserUrl(rawUrl)
-      setLoading(true)
+      setLoading(true); loadingRef.current = true
+      setLoadingTimeout(false)
+      // 30s 加载超时检测
+      if (loadingTimeoutRef.current !== null) {
+        window.clearTimeout(loadingTimeoutRef.current)
+      }
+      loadingTimeoutRef.current = window.setTimeout(() => {
+        if (mountedRef.current && loadingRef.current) {
+          setLoadingTimeout(true)
+        }
+      }, LOADING_TIMEOUT_MS)
       setLoadProgress(10)
       setError(null)
       setAddress(nextUrl)
@@ -618,7 +643,11 @@ export function BrowserPanel({
         setError(e instanceof Error ? e.message : String(e))
       } finally {
         window.clearInterval(progressTimer)
-        setLoading(false)
+        setLoading(false); loadingRef.current = false
+          if (loadingTimeoutRef.current !== null) {
+            window.clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null
+          }
         setTimeout(() => setLoadProgress(0), 400)
       }
     },
@@ -1374,6 +1403,19 @@ export function BrowserPanel({
           </div>
         )}
 
+        {loadingTimeout && (
+          <div className="absolute top-10 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-1.5 text-xs text-warning shadow-lg">
+            <AlertTriangle size={12} />
+            <span>{t('browser.loadingTimeout', { defaultValue: '页面加载超时，可能网络较慢或页面无响应' })}</span>
+            <button
+              type="button"
+              onClick={() => navigateTo(currentUrl)}
+              className="ml-1 rounded bg-warning/20 px-2 py-0.5 text-[11px] text-warning hover:bg-warning/30"
+            >
+              {t('browser.retryLoading', { defaultValue: '重试' })}
+            </button>
+          </div>
+        )}
         {status === 'error' && !loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background-base">
             <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center">
