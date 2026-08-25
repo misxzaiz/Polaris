@@ -34,6 +34,7 @@ import {
   browserFind,
   browserFindNext,
   browserGetDiagnostics,
+  browserGetHistoryState,
   browserGetMarqueeResult,
   browserGetNetworkInfo,
   browserGetPageContext,
@@ -1130,6 +1131,18 @@ export function BrowserPanel({
             type="button"
             className={toolbarButtonClass}
             onClick={() => browserHistory(webviewLabel, 'back').catch((e) => setError(String(e)))}
+            onMouseDown={(e) => {
+              // 长按 500ms 显示历史状态
+              const timer = setTimeout(async () => {
+                try {
+                  const state = await browserGetHistoryState(webviewLabel)
+                  const msg = state.canGoBack ? t('browser.backAvailable', { defaultValue: '后退可用' }) : t('browser.cannotGoBack', { defaultValue: '无法后退' })
+                  toast.info(msg)
+                } catch { /* 静默 */ }
+              }, 500)
+              const handleMouseUp = () => { clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
+              document.addEventListener('mouseup', handleMouseUp)
+            }}
             disabled={status !== 'ready'}
             title={t('browser.back', { defaultValue: '后退' })}
           >
