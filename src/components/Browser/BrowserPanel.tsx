@@ -1349,20 +1349,32 @@ export function BrowserPanel({
 
         {status === 'error' && !loading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background-base">
-            <div className="flex max-w-md flex-col items-center gap-3 px-6 text-center">
-              <Code2 size={36} className="text-text-tertiary" />
+            <div className="flex max-w-md flex-col items-center gap-4 px-6 text-center">
+              <div className="rounded-full bg-danger/10 p-3">
+                <Code2 size={32} className="text-danger" />
+              </div>
               <div className="text-sm font-medium text-text-primary">
                 {t('browser.nativeFailed', { defaultValue: '内置浏览器启动失败' })}
               </div>
-              <div className="text-xs text-text-tertiary">{error}</div>
-              <button
-                type="button"
-                onClick={() => navigateTo(currentUrl)}
-                className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-subtle px-3 text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
-              >
-                <RefreshCw size={13} />
-                {t('buttons.retry')}
-              </button>
+              <div className="max-w-xs text-xs text-text-tertiary leading-5">{error}</div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => navigateTo(currentUrl)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md bg-primary px-4 text-xs font-medium text-white transition-colors hover:bg-primary-hover"
+                >
+                  <RefreshCw size={13} />
+                  {t('buttons.retry')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => closeTab(tabId)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border-subtle px-3 text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
+                >
+                  <X size={13} />
+                  {t('browser.closeTab', { defaultValue: '关闭标签' })}
+                </button>
+              </div>
             </div>
           </div>
         )}
