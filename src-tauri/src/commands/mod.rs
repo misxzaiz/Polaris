@@ -5,6 +5,7 @@ pub mod file_explorer;
 pub mod file_clipboard;
 pub mod window;
 pub mod browser;
+pub mod browser_scripts;
 pub mod context;
 #[cfg(feature = "git")]
 pub mod git;
