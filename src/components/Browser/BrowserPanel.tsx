@@ -213,6 +213,7 @@ export function BrowserPanel({
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
   const addressFocusedRef = useRef(false)
+  const addressInputRef = useRef<HTMLInputElement>(null)
   const lastAppliedBoundsRef = useRef<BrowserBounds | null>(null)
   const initialUrlRef = useRef<string | null>(null)
   const webviewLabel = useMemo(() => makeBrowserWebviewLabel(tabId), [tabId])
@@ -270,6 +271,7 @@ export function BrowserPanel({
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const { sendMessage } = useActiveSessionActions()
   const currentWorkspace = useWorkspaceStore((state) => state.getCurrentWorkspace())
+  const closeTab = useTabStore((state) => state.closeTab)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
   const latestOperation = operationEvents[0]
 
@@ -939,20 +941,43 @@ export function BrowserPanel({
     setFindResult(null)
   }, [])
 
-  // Ctrl+F / Escape 快捷键
+  // 键盘快捷键：Ctrl+F(查找)/Ctrl+L(地址栏)/Ctrl+W(关闭标签)/Alt+Left(后退)/Alt+Right(前进)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault()
-        openFind()
+        if (!findOpen) openFind()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'l') {
+        e.preventDefault()
+        addressInputRef.current?.focus()
+        addressInputRef.current?.select()
+        return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'w') {
+        e.preventDefault()
+        closeTab(tabId)
+        return
+      }
+      if (e.altKey && e.key === 'ArrowLeft') {
+        e.preventDefault()
+        browserHistory(webviewLabel, 'back').catch(() => undefined)
+        return
+      }
+      if (e.altKey && e.key === 'ArrowRight') {
+        e.preventDefault()
+        browserHistory(webviewLabel, 'forward').catch(() => undefined)
+        return
       }
       if (e.key === 'Escape' && findOpen) {
         closeFind()
+        return
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel])
 
   // ── 缩放控制 ──
 
@@ -1066,6 +1091,7 @@ export function BrowserPanel({
               {currentUrl.startsWith('https://') ? <Lock size={12} /> : <Unlock size={12} className="text-warning" />}
             </span>
             <input
+              ref={addressInputRef}
               value={address}
               onChange={(event) => setAddress(event.target.value)}
               onFocus={() => {
@@ -1084,6 +1110,16 @@ export function BrowserPanel({
             >
               <Search size={14} />
             </button>
+            {address.trim() !== currentUrl && address.trim() !== '' && (
+              <button
+                type="button"
+                onClick={() => setAddress('')}
+                className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                title={t('browser.clearAddress', { defaultValue: '清除' })}
+              >
+                <X size={12} />
+              </button>
+            )}
             {/* 加载进度条 */}
             {loading && (
               <div className="absolute bottom-0 left-0 right-0 h-0.5 overflow-hidden rounded-full">
