@@ -446,8 +446,10 @@ export function BrowserPanel({
             'role',
             'style',
           ],
+          // 仅监听顶层 childList 变化（模态框/弹窗的增删），
+          // 不对所有后代元素做属性监听，避免 ~300ms/mutation 采集开销
           childList: true,
-          subtree: true,
+          subtree: false,
         })
         scheduleSyncBounds()
       } catch (e) {
