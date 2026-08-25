@@ -2408,7 +2408,10 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
       height: node.naturalHeight > 0 ? node.naturalHeight : null
     }))
     .filter((i) => i.src || i.alt);
+  const tagOfElement = (element) => String(element?.tagName || '').toLowerCase();
   const structuredData = [];
+  let lists = [];
+  let forms = [];
   try {
     for (const script of Array.from(document.querySelectorAll('script[type="application/ld+json"]')).slice(0, 20)) {
       try {
@@ -2416,18 +2419,17 @@ const PAGE_CONTEXT_SCRIPT: &str = r#"
         structuredData.push(parsed);
       } catch {}
     }
-  try {
     // 提取列表
-    const lists = Array.from(document.querySelectorAll('ul, ol')).slice(0, 30).map((list) => ({
-      ordered: tagOf(list) === 'ol',
+    lists = Array.from(document.querySelectorAll('ul, ol')).slice(0, 30).map((list) => ({
+      ordered: tagOfElement(list) === 'ol',
       items: Array.from(list.querySelectorAll('li')).slice(0, 50).map((li) => clean(li.textContent || '', 200))
     }));
     // 提取表单
-    const forms = Array.from(document.querySelectorAll('form')).slice(0, 10).map((form) => ({
+    forms = Array.from(document.querySelectorAll('form')).slice(0, 10).map((form) => ({
       action: clean(form.getAttribute('action') || '', 300),
       method: clean(form.getAttribute('method') || 'get', 20),
       fields: Array.from(form.querySelectorAll('input, textarea, select')).slice(0, 60).map((field) => {
-        const tag = tagOf(field);
+        const tag = tagOfElement(field);
         const type = field.getAttribute('type') || '';
         const name = field.getAttribute('name') || '';
         return clean(`${tag}${type ? `[type="${type}"]` : ''}${name ? `[name="${name}"]` : ''}`, 200);

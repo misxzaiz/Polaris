@@ -243,6 +243,92 @@ fn handle_tools_list() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "label": label_property
             }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_history_state",
+            "description": "Check whether the browser tab can go back or forward in history.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_wait",
+            "description": "Wait for a condition: url_change, text_appear, element_appear, network_idle, navigation, or timeout. Polls every 200ms until the condition is met or the timeout expires.",
+            "inputSchema": { "type": "object", "required": ["condition"], "properties": {
+                "label": label_property,
+                "condition": {
+                    "type": "string",
+                    "enum": ["url_change", "text_appear", "element_appear", "network_idle", "navigation", "timeout"],
+                    "description": "The condition to wait for."
+                },
+                "text": { "type": "string", "description": "Text to wait for (text_appear/element_appear)." },
+                "index": index_property,
+                "ms": { "type": "integer", "description": "Fixed delay in ms (timeout condition)." },
+                "timeoutMs": { "type": "integer", "description": "Maximum wait time in ms (default 15s, 30s for network_idle/navigation)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_scroll",
+            "description": "Scroll the page: to_element, by, to, top, bottom, up, down, left, or right.",
+            "inputSchema": { "type": "object", "required": ["mode"], "properties": {
+                "label": label_property,
+                "mode": {
+                    "type": "string",
+                    "enum": ["to_element", "by", "to", "top", "bottom", "up", "down", "left", "right"],
+                    "description": "Scroll mode."
+                },
+                "index": index_property,
+                "text": text_property,
+                "x": { "type": "number", "description": "Horizontal scroll target or offset." },
+                "y": { "type": "number", "description": "Vertical scroll target or offset." },
+                "amount": { "type": "number", "description": "Scroll amount (up/down/left/right). Defaults to viewport size." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_press_key",
+            "description": "Send a keyboard shortcut to the built-in browser. Supports modifiers (Ctrl, Shift, Alt, Meta) and key names (Enter, Escape, Tab, ArrowUp, F1-F12, etc.).",
+            "inputSchema": { "type": "object", "required": ["keys"], "properties": {
+                "label": label_property,
+                "keys": { "type": "string", "description": "Key combination, e.g. 'Ctrl+S', 'Escape', 'Ctrl+Shift+I'." },
+                "index": index_property,
+                "text": text_property
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_type_text",
+            "description": "Type text character by character into the focused element. Slower than browser_fill but triggers real keyboard events.",
+            "inputSchema": { "type": "object", "required": ["text"], "properties": {
+                "label": label_property,
+                "text": { "type": "string", "description": "Text to type." },
+                "index": index_property,
+                "elementText": text_property,
+                "delayMs": { "type": "integer", "minimum": 0, "maximum": 200, "description": "Delay between characters in ms (default 10)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_marquee",
+            "description": "Enable or disable circular selection (marquee) overlay on the built-in browser. When enabled, the user can drag to select regions. Use browser_select_region to inspect the selected area.",
+            "inputSchema": { "type": "object", "required": ["enabled"], "properties": {
+                "label": label_property,
+                "enabled": { "type": "boolean", "description": "Set true to enable the marquee overlay, false to disable." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_select_region",
+            "description": "Inspect elements inside a selected rectangular region. Returns interactive elements, HTML snippet, and text snippet within the bounds.",
+            "inputSchema": { "type": "object", "required": ["region"], "properties": {
+                "label": label_property,
+                "region": {
+                    "type": "object",
+                    "required": ["x", "y", "width", "height"],
+                    "properties": {
+                        "x": { "type": "number", "description": "Left edge of the region (viewport coordinates)." },
+                        "y": { "type": "number", "description": "Top edge of the region." },
+                        "width": { "type": "number", "minimum": 20, "description": "Width of the region." },
+                        "height": { "type": "number", "minimum": 20, "description": "Height of the region." }
+                    }
+                }
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -300,6 +386,9 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_scroll" => Ok("scroll"),
         "browser_press_key" => Ok("press_key"),
         "browser_type_text" => Ok("type_text"),
+        "browser_history_state" => Ok("history_state"),
+        "browser_marquee" => Ok("marquee"),
+        "browser_select_region" => Ok("select_region"),
         other => Err(AppError::ValidationError(format!(
             "未知浏览器工具: {other}"
         ))),
@@ -340,6 +429,8 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "keys",
         "elementText",
         "delayMs",
+        "enabled",
+        "region",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
@@ -490,6 +581,14 @@ mod tests {
         assert!(names.contains(&"browser_diagnostics"));
         assert!(names.contains(&"browser_click"));
         assert!(names.contains(&"browser_fill"));
+        assert!(names.contains(&"browser_wait"));
+        assert!(names.contains(&"browser_scroll"));
+        assert!(names.contains(&"browser_press_key"));
+        assert!(names.contains(&"browser_type_text"));
+        assert!(names.contains(&"browser_history_state"));
+        assert!(names.contains(&"browser_marquee"));
+        assert!(names.contains(&"browser_select_region"));
+        assert_eq!(names.len(), 18);
     }
 
     #[test]
