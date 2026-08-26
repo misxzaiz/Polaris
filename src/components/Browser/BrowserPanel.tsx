@@ -5,6 +5,7 @@ import {
   ArrowLeft,
   ArrowRight,
   BoxSelect,
+  Bookmark,
   ChevronDown,
   ChevronUp,
   Code2,
@@ -28,6 +29,9 @@ import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
+  browserBookmarkAdd,
+  browserBookmarkDelete,
+  browserBookmarksList,
   browserClearData,
   browserClose,
   browserCreate,
@@ -51,6 +55,7 @@ import {
   formatMarqueeContext,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
+  type BrowserBookmark,
   type BrowserBounds,
   type BrowserDiagnostics,
   type BrowserInteractionResult,
@@ -282,6 +287,74 @@ export function BrowserPanel({
   const historyIndexRef = useRef(-1)
   const [historyDropdownOpen, setHistoryDropdownOpen] = useState(false)
   const [historyDropdownDirection, setHistoryDropdownDirection] = useState<'back' | 'forward'>('back')
+
+  // 书签状态
+  const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([])
+  const [isBookmarked, setIsBookmarked] = useState(false)
+  const [bookmarkDropdownOpen, setBookmarkDropdownOpen] = useState(false)
+  const bookmarkListRef = useRef<HTMLDivElement>(null)
+
+  // 加载书签
+  useEffect(() => {
+    let cancelled = false
+    browserBookmarksList()
+      .then((items) => {
+        if (!cancelled) {
+          setBookmarks(items)
+          if (currentUrl) setIsBookmarked(items.some((b) => b.url === currentUrl))
+        }
+      })
+      .catch(() => undefined)
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // URL 变化时更新收藏态
+  useEffect(() => {
+    if (currentUrl) setIsBookmarked(bookmarks.some((b) => b.url === currentUrl))
+    else setIsBookmarked(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUrl, bookmarks])
+
+  // 点击外部关闭书签下拉
+  useEffect(() => {
+    if (!bookmarkDropdownOpen) return
+    const onClick = (event: MouseEvent) => {
+      if (bookmarkListRef.current && !bookmarkListRef.current.contains(event.target as Node)) {
+        setBookmarkDropdownOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [bookmarkDropdownOpen])
+
+  const toggleBookmark = useCallback(async () => {
+    if (!currentUrl || status !== 'ready') return
+    try {
+      if (isBookmarked) {
+        const existing = bookmarks.find((b) => b.url === currentUrl)
+        if (existing) {
+          await browserBookmarkDelete(existing.id)
+          setBookmarks((prev) => prev.filter((b) => b.id !== existing.id))
+          setIsBookmarked(false)
+        }
+      } else {
+        const added = await browserBookmarkAdd(pageTitle === 'Browser' ? '' : pageTitle, currentUrl)
+        setBookmarks((prev) => [added, ...prev.filter((b) => b.id !== added.id)])
+        setIsBookmarked(true)
+      }
+    } catch (error) {
+      setError(String(error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUrl, isBookmarked, bookmarks, pageTitle, status])
+
+  const openBookmarkDropdown = useCallback(() => {
+    setBookmarkDropdownOpen((prev) => !prev)
+  }, [])
+
 
   // 点击外部关闭历史下拉
   useEffect(() => {
@@ -1261,6 +1334,82 @@ export function BrowserPanel({
             )}
           </div>
         </form>
+
+        {/* 书签：星标切换 + 下拉列表 */}
+        <div className="relative flex items-center">
+          <button
+            type="button"
+            className={clsx(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
+              isBookmarked
+                ? 'text-amber-400 hover:bg-background-hover'
+                : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
+            )}
+            onClick={toggleBookmark}
+            disabled={status !== 'ready' || !currentUrl}
+            title={
+              isBookmarked
+                ? t('browser.removeBookmark', { defaultValue: '取消收藏' })
+                : t('browser.addBookmark', { defaultValue: '收藏当前页面' })
+            }
+          >
+            <Bookmark size={15} fill={isBookmarked ? 'currentColor' : 'none'} />
+          </button>
+          <button
+            type="button"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+            onClick={openBookmarkDropdown}
+            title={t('browser.bookmarkList', { defaultValue: '书签列表' })}
+          >
+            <ChevronDown size={14} />
+          </button>
+          {bookmarkDropdownOpen && (
+            <div
+              ref={bookmarkListRef}
+              className="absolute right-0 top-9 z-50 max-h-72 w-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
+            >
+              <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-text-secondary">
+                <span>{t('browser.bookmarkList', { defaultValue: '书签' })}</span>
+                <span className="text-[10px] text-text-tertiary">{bookmarks.length}</span>
+              </div>
+              {bookmarks.length === 0 && (
+                <div className="px-3 py-2 text-xs text-text-tertiary">
+                  {t('browser.bookmarksEmpty', { defaultValue: '暂无书签' })}
+                </div>
+              )}
+              {bookmarks.map((bookmark) => (
+                <button
+                  key={bookmark.id}
+                  type="button"
+                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover"
+                  onClick={() => {
+                    setBookmarkDropdownOpen(false)
+                    navigateTo(bookmark.url)
+                  }}
+                  title={bookmark.url}
+                >
+                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{bookmark.title || bookmark.url}</span>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="shrink-0 text-text-tertiary hover:text-danger"
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      browserBookmarkDelete(bookmark.id)
+                        .then(() => {
+                          setBookmarks((prev) => prev.filter((b) => b.id !== bookmark.id))
+                          if (currentUrl === bookmark.url) setIsBookmarked(false)
+                        })
+                        .catch((e) => setError(String(e)))
+                    }}
+                  >
+                    <X size={12} />
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* 工具按钮组 */}
         <div className="flex items-center gap-1">

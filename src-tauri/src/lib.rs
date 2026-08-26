@@ -865,6 +865,11 @@ pub fn run() {
             commands::browser::browser_find_next,
             commands::browser::browser_zoom,
             commands::browser::browser_get_network_info,
+            commands::browser::browser_bookmarks_list,
+            commands::browser::browser_bookmark_add,
+            commands::browser::browser_bookmark_delete,
+            commands::browser::browser_bookmark_set_title,
+            commands::browser::browser_bookmark_find,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

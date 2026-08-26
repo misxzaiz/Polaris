@@ -14,6 +14,7 @@ pub mod prompt_store;
 pub mod prompt_snippet_service;
 pub mod ask_mcp_server;
 pub mod ask_listener;
+pub mod browser_bookmarks;
 pub mod browser_mcp_server;
 pub mod dispatch_mcp_server;
 pub mod nexus_verdict;

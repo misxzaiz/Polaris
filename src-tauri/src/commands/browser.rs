@@ -272,6 +272,9 @@ pub struct BrowserHistoryState {
     pub can_go_forward: bool,
 }
 
+/// 书签项（复用 services::browser_bookmarks 中的类型）
+pub use crate::services::browser_bookmarks::BrowserBookmark;
+
 /// 圈选区域筛选结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -2485,6 +2488,49 @@ pub async fn browser_get_network_info(
 ) -> Result<Value> {
     let raw = browser_eval_with_app(&app, &label, browser_scripts::NETWORK_INFO_SCRIPT, Some(2_000)).await?;
     parse_eval_json(&raw)
+}
+
+// --- 书签 (Bookmarks) ---
+
+/// 列出全部书签（最新在前）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmarks_list() -> Result<Vec<BrowserBookmark>> {
+    crate::services::browser_bookmarks::browser_bookmarks_list()
+}
+
+/// 添加书签（重复 url 更新标题并置顶）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmark_add(
+    title: Option<String>,
+    url: String,
+) -> Result<BrowserBookmark> {
+    crate::services::browser_bookmarks::browser_bookmark_add(
+        title.as_deref().unwrap_or(""),
+        &url,
+    )
+}
+
+/// 删除书签
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmark_delete(id: String) -> Result<()> {
+    crate::services::browser_bookmarks::browser_bookmark_delete(&id)
+}
+
+/// 更新书签标题
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmark_set_title(id: String, title: String) -> Result<BrowserBookmark> {
+    crate::services::browser_bookmarks::browser_bookmark_set_title(&id, &title)
+}
+
+/// 查询某 URL 是否已收藏
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmark_find(url: String) -> Result<Option<BrowserBookmark>> {
+    crate::services::browser_bookmarks::browser_bookmark_find(&url)
 }
 
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。

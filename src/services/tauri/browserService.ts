@@ -554,3 +554,32 @@ export interface BrowserNetworkInfo {
 export async function browserGetNetworkInfo(label: string): Promise<BrowserNetworkInfo> {
   return invoke<BrowserNetworkInfo>('browser_get_network_info', { label })
 }
+
+// --- 书签 (Bookmarks) ---
+
+export interface BrowserBookmark {
+  id: string
+  title: string
+  url: string
+  createdAt: number
+}
+
+export function browserBookmarksList(): Promise<BrowserBookmark[]> {
+  return invoke<BrowserBookmark[]>('browser_bookmarks_list')
+}
+
+export function browserBookmarkAdd(title: string, url: string): Promise<BrowserBookmark> {
+  return invoke<BrowserBookmark>('browser_bookmark_add', { title, url })
+}
+
+export function browserBookmarkDelete(id: string): Promise<void> {
+  return invoke<void>('browser_bookmark_delete', { id })
+}
+
+export function browserBookmarkSetTitle(id: string, title: string): Promise<BrowserBookmark> {
+  return invoke<BrowserBookmark>('browser_bookmark_set_title', { id, title })
+}
+
+export function browserBookmarkFind(url: string): Promise<BrowserBookmark | null> {
+  return invoke<BrowserBookmark | null>('browser_bookmark_find', { url })
+}
