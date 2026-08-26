@@ -641,6 +641,16 @@ export function browserBookmarkFind(url: string): Promise<BrowserBookmark | null
   return invoke<BrowserBookmark | null>('browser_bookmark_find', { url })
 }
 
+/** 导出书签为可移植 JSON 字符串 */
+export function browserBookmarksExport(): Promise<string> {
+  return invoke<string>('browser_bookmarks_export')
+}
+
+/** 从导出的 JSON 导入书签，返回新增/更新条数 */
+export function browserBookmarksImport(raw: string): Promise<number> {
+  return invoke<number>('browser_bookmarks_import', { raw })
+}
+
 // --- 访问历史 (History) ---
 
 export interface BrowserHistoryEntry {
@@ -669,6 +679,16 @@ export function browserHistoryClear(): Promise<void> {
 
 export function browserHistoryRecord(title: string, url: string): Promise<BrowserHistoryEntry> {
   return invoke<BrowserHistoryEntry>('browser_history_record', { title, url })
+}
+
+/** 导出历史为可移植 JSON 字符串 */
+export function browserHistoryExport(): Promise<string> {
+  return invoke<string>('browser_history_export')
+}
+
+/** 从导出的 JSON 导入历史，返回新增/更新条数 */
+export function browserHistoryImport(raw: string): Promise<number> {
+  return invoke<number>('browser_history_import', { raw })
 }
 
 // --- 地址栏搜索建议 (Suggestions) ---

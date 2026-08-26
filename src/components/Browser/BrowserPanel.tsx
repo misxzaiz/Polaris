@@ -39,6 +39,8 @@ import {
   browserAcquireComplete,
   browserBookmarkAdd,
   browserBookmarkDelete,
+  browserBookmarksExport,
+  browserBookmarksImport,
   browserBookmarksList,
   browserClearData,
   browserClose,
@@ -53,6 +55,8 @@ import {
   browserHistory,
   browserHistoryClear,
   browserHistoryDelete,
+  browserHistoryExport,
+  browserHistoryImport,
   browserHistoryList,
   browserHistorySearch,
   browserNavigate,
@@ -84,6 +88,8 @@ import {
   type MarqueeContextBlock,
 } from '@/services/tauri/browserService'
 import { useToastStore } from '@/stores/toastStore'
+import { invoke } from '@/services/transport'
+import { readFile } from '@/services/tauri/fileService'
 import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
@@ -452,6 +458,77 @@ export function BrowserPanel({
       setError(String(error))
     }
   }, [])
+
+  // ── 书签 / 历史 导入导出 ──
+  const exportBookmarks = useCallback(async () => {
+    try {
+      const json = await browserBookmarksExport()
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const filePath = await save({
+        defaultPath: `polaris-bookmarks-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (filePath) {
+        await invoke('create_file', { path: filePath, content: json })
+        toast.success(t('browser.exported', { defaultValue: '书签已导出' }))
+      }
+    } catch (error) {
+      setError(String(error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, t])
+
+  const importBookmarks = useCallback(async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const filePath = await open({
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!filePath) return
+      const raw = await readFile(String(filePath))
+      const count = await browserBookmarksImport(raw)
+      setBookmarks(await browserBookmarksList())
+      toast.success(t('browser.imported', { defaultValue: '已导入书签 {{count}} 条', count }))
+    } catch (error) {
+      setError(String(error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, t])
+
+  const exportHistory = useCallback(async () => {
+    try {
+      const json = await browserHistoryExport()
+      const { save } = await import('@tauri-apps/plugin-dialog')
+      const filePath = await save({
+        defaultPath: `polaris-history-${new Date().toISOString().slice(0, 10)}.json`,
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (filePath) {
+        await invoke('create_file', { path: filePath, content: json })
+        toast.success(t('browser.historyExported', { defaultValue: '历史已导出' }))
+      }
+    } catch (error) {
+      setError(String(error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, t])
+
+  const importHistory = useCallback(async () => {
+    try {
+      const { open } = await import('@tauri-apps/plugin-dialog')
+      const filePath = await open({
+        filters: [{ name: 'JSON', extensions: ['json'] }],
+      })
+      if (!filePath) return
+      const raw = await readFile(String(filePath))
+      const count = await browserHistoryImport(raw)
+      setHistoryEntries(await browserHistoryList())
+      toast.success(t('browser.historyImported', { defaultValue: '已导入历史 {{count}} 条', count }))
+    } catch (error) {
+      setError(String(error))
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast, t])
 
   const formatVisitedTime = useCallback((ts: number) => {
     if (!ts) return ''
@@ -1702,7 +1779,25 @@ export function BrowserPanel({
             >
               <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-text-secondary">
                 <span>{t('browser.bookmarkList', { defaultValue: '书签' })}</span>
-                <span className="text-[10px] text-text-tertiary">{bookmarks.length}</span>
+                <span className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                    onClick={importBookmarks}
+                    title={t('browser.importBookmarks', { defaultValue: '从 JSON 导入书签' })}
+                  >
+                    <ChevronDown size={10} className="rotate-180" />{t('browser.import', { defaultValue: '导入' })}
+                  </button>
+                  <button
+                    type="button"
+                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                    onClick={exportBookmarks}
+                    title={t('browser.exportBookmarks', { defaultValue: '导出书签为 JSON' })}
+                  >
+                    {t('browser.export', { defaultValue: '导出' })}
+                  </button>
+                  <span className="text-[10px] text-text-tertiary">{bookmarks.length}</span>
+                </span>
               </div>
               {bookmarks.length === 0 && (
                 <div className="px-3 py-2 text-xs text-text-tertiary">
@@ -1771,6 +1866,22 @@ export function BrowserPanel({
                   placeholder={t('browser.historySearchPlaceholder', { defaultValue: '搜索历史' })}
                   className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
                 />
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                  onClick={importHistory}
+                  title={t('browser.importHistory', { defaultValue: '从 JSON 导入历史' })}
+                >
+                  {t('browser.import', { defaultValue: '导入' })}
+                </button>
+                <button
+                  type="button"
+                  className="shrink-0 rounded p-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+                  onClick={exportHistory}
+                  title={t('browser.exportHistory', { defaultValue: '导出历史为 JSON' })}
+                >
+                  {t('browser.export', { defaultValue: '导出' })}
+                </button>
                 {historyEntries.length > 0 && (
                   <button
                     type="button"

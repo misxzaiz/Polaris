@@ -25,6 +25,8 @@ const STORE_FILE_NAME: &str = "bookmarks.json";
 const STORE_VERSION: u32 = 1;
 const MAX_BOOKMARKS: usize = 500;
 const MAX_TITLE_CHARS: usize = 300;
+const EXPORT_APP: &str = "polaris";
+const EXPORT_KIND: &str = "bookmarks";
 
 /// 测试用存储根目录覆盖（仅 #[cfg(test)] 时可写）
 static TEST_STORE_ROOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -176,6 +178,85 @@ pub fn browser_bookmark_set_title(id: &str, title: &str) -> Result<BrowserBookma
 pub fn browser_bookmark_find(url: &str) -> Result<Option<BrowserBookmark>> {
     let clean = url.trim();
     Ok(load_store().items.into_iter().find(|b| b.url == clean))
+}
+
+/// 导出书签为可移植 JSON 字符串（含 app/kind/version 信封，供导入校验与跨版本兼容）
+pub fn browser_bookmarks_export() -> Result<String> {
+    #[derive(Serialize)]
+    struct Envelope<'a> {
+        app: &'static str,
+        kind: &'static str,
+        version: u32,
+        exported_at: u64,
+        items: &'a [BrowserBookmark],
+    }
+    let envelope = Envelope {
+        app: EXPORT_APP,
+        kind: EXPORT_KIND,
+        version: STORE_VERSION,
+        exported_at: now_ms(),
+        items: &load_store().items,
+    };
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|e| AppError::IoError(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())))
+}
+
+/// 从导出的 JSON 导入书签。按 URL 去重合并（同 URL 更新标题并保留原有 created_at），
+/// 返回实际新增/更新的条数；超过上限时返回错误。
+pub fn browser_bookmarks_import(raw: &str) -> Result<usize> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        #[serde(default)]
+        app: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
+        #[serde(default)]
+        version: Option<u32>,
+        items: Vec<BrowserBookmark>,
+    }
+    let envelope: Envelope = serde_json::from_str(raw).map_err(|e| {
+        AppError::ValidationError(format!("书签导入文件格式无效: {e}"))
+    })?;
+    // 兼容裸数组（无信封），且校验 kind 匹配
+    if let Some(kind) = &envelope.kind {
+        if kind != EXPORT_KIND {
+            return Err(AppError::ValidationError(format!(
+                "文件类型不匹配: 期望 {EXPORT_KIND}，实际 {kind}"
+            )));
+        }
+    }
+    if envelope.items.len() > MAX_BOOKMARKS {
+        return Err(AppError::ValidationError(format!(
+            "导入书签数量 {EXPORT_KIND} 超过上限 {MAX_BOOKMARKS}"
+        )));
+    }
+
+    let mut store = load_store();
+    let mut count = 0usize;
+    for item in envelope.items {
+        let url = item.url.trim().to_string();
+        if url.is_empty() {
+            continue;
+        }
+        let title = if item.title.trim().is_empty() {
+            url.clone()
+        } else {
+            sanitize_title(&item.title)
+        };
+        if let Some(existing) = store.items.iter_mut().find(|b| b.url == url) {
+            existing.title = title;
+        } else {
+            store.items.push(BrowserBookmark {
+                id: uuid::Uuid::new_v4().to_string(),
+                title,
+                url,
+                created_at: if item.created_at == 0 { now_ms() } else { item.created_at },
+            });
+        }
+        count += 1;
+    }
+    save_store(&store)?;
+    Ok(count)
 }
 
 fn load_store() -> BrowserBookmarkStore {
@@ -366,5 +447,80 @@ mod tests {
         let raw = serde_json::to_string(&store).unwrap();
         let parsed: BrowserBookmarkStore = serde_json::from_str(&raw).unwrap();
         assert_eq!(parsed.items.len(), MAX_BOOKMARKS);
+    }
+
+    #[test]
+    fn export_import_round_trip() {
+        let root = temp_root("expimp");
+        set_test_store_root(Some(&root));
+
+        browser_bookmark_add("Example", "https://example.com/").unwrap();
+        browser_bookmark_add("Rust", "https://rust-lang.org/").unwrap();
+
+        let exported = browser_bookmarks_export().unwrap();
+        assert!(exported.contains("\"app\": \"polaris\""));
+        assert!(exported.contains("\"kind\": \"bookmarks\""));
+
+        // 清空后重新导入
+        set_test_store_root(None);
+        std::fs::remove_dir_all(&root).unwrap();
+        let root2 = temp_root("expimp2");
+        set_test_store_root(Some(&root2));
+
+        let count = browser_bookmarks_import(&exported).unwrap();
+        assert_eq!(count, 2);
+        let list = browser_bookmarks_list().unwrap();
+        assert_eq!(list.len(), 2);
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn import_merges_by_url() {
+        let root = temp_root("merge");
+        set_test_store_root(Some(&root));
+
+        browser_bookmark_add("Old", "https://example.com/").unwrap();
+        browser_bookmark_add("Keep", "https://keep.example/").unwrap();
+
+        // 导入含重复 URL 与新增 URL
+        let raw = r#"{
+          "app": "polaris",
+          "kind": "bookmarks",
+          "version": 1,
+          "items": [
+            {"title": "New Title", "url": "https://example.com/", "createdAt": 999},
+            {"title": "Fresh", "url": "https://fresh.example/", "createdAt": 100}
+          ]
+        }"#;
+        let count = browser_bookmarks_import(raw).unwrap();
+        assert_eq!(count, 2); // 1 更新 + 1 新增
+
+        let list = browser_bookmarks_list().unwrap();
+        assert_eq!(list.len(), 3);
+        let example = list.iter().find(|b| b.url == "https://example.com/").unwrap();
+        assert_eq!(example.title, "New Title");
+        assert!(list.iter().any(|b| b.url == "https://fresh.example/"));
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn import_rejects_wrong_kind_and_invalid() {
+        let root = temp_root("reject");
+        set_test_store_root(Some(&root));
+
+        let wrong = r#"{"app":"polaris","kind":"history","version":1,"items":[]}"#;
+        let err = browser_bookmarks_import(wrong).expect_err("wrong kind must fail");
+        assert!(err.to_message().contains("类型不匹配"));
+
+        let invalid = "not json at all";
+        let err = browser_bookmarks_import(invalid).expect_err("invalid json must fail");
+        assert!(err.to_message().contains("格式无效"));
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

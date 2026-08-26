@@ -26,6 +26,8 @@ const STORE_FILE_NAME: &str = "history.json";
 const STORE_VERSION: u32 = 1;
 const MAX_HISTORY: usize = 2000;
 const MAX_TITLE_CHARS: usize = 300;
+const EXPORT_APP: &str = "polaris";
+const EXPORT_KIND: &str = "history";
 
 /// 测试用存储根目录覆盖（仅 #[cfg(test)] 时可写）
 static TEST_STORE_ROOT: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -190,6 +192,89 @@ pub fn browser_history_clear() -> Result<()> {
     save_store(&store)
 }
 
+/// 导出历史为可移植 JSON 字符串（含 app/kind/version 信封）
+pub fn browser_history_export() -> Result<String> {
+    #[derive(Serialize)]
+    struct Envelope<'a> {
+        app: &'static str,
+        kind: &'static str,
+        version: u32,
+        exported_at: u64,
+        items: &'a [BrowserHistoryEntry],
+    }
+    let envelope = Envelope {
+        app: EXPORT_APP,
+        kind: EXPORT_KIND,
+        version: STORE_VERSION,
+        exported_at: now_ms(),
+        items: &load_store().items,
+    };
+    serde_json::to_string_pretty(&envelope)
+        .map_err(|e| AppError::IoError(std::io::Error::new(std::io::ErrorKind::InvalidData, e.to_string())))
+}
+
+/// 从导出的 JSON 导入历史。按 URL 去重合并（同 URL 累加 visit_count、取较新时间），
+/// 返回实际新增/更新的条数；超过上限时返回错误。
+pub fn browser_history_import(raw: &str) -> Result<usize> {
+    #[derive(Deserialize)]
+    struct Envelope {
+        #[serde(default)]
+        app: Option<String>,
+        #[serde(default)]
+        kind: Option<String>,
+        #[serde(default)]
+        version: Option<u32>,
+        items: Vec<BrowserHistoryEntry>,
+    }
+    let envelope: Envelope = serde_json::from_str(raw).map_err(|e| {
+        AppError::ValidationError(format!("历史导入文件格式无效: {e}"))
+    })?;
+    if let Some(kind) = &envelope.kind {
+        if kind != EXPORT_KIND {
+            return Err(AppError::ValidationError(format!(
+                "文件类型不匹配: 期望 {EXPORT_KIND}，实际 {kind}"
+            )));
+        }
+    }
+    if envelope.items.len() > MAX_HISTORY {
+        return Err(AppError::ValidationError(format!(
+            "导入历史数量超过上限 {MAX_HISTORY}"
+        )));
+    }
+
+    let mut store = load_store();
+    let mut count = 0usize;
+    for item in envelope.items {
+        let url = item.url.trim().to_string();
+        if url.is_empty() {
+            continue;
+        }
+        let title = if item.title.trim().is_empty() {
+            url.clone()
+        } else {
+            sanitize_title(&item.title)
+        };
+        if let Some(existing) = store.items.iter_mut().find(|h| h.url == url) {
+            existing.title = title;
+            existing.visit_count = existing.visit_count.saturating_add(item.visit_count.max(1));
+            if item.visited_at > existing.visited_at {
+                existing.visited_at = item.visited_at;
+            }
+        } else {
+            store.items.push(BrowserHistoryEntry {
+                id: uuid::Uuid::new_v4().to_string(),
+                title,
+                url,
+                visited_at: if item.visited_at == 0 { now_ms() } else { item.visited_at },
+                visit_count: item.visit_count.max(1),
+            });
+        }
+        count += 1;
+    }
+    save_store(&store)?;
+    Ok(count)
+}
+
 fn load_store() -> BrowserHistoryStore {
     let path = store_path();
     if !path.exists() {
@@ -350,6 +435,79 @@ mod tests {
         }
         let list = browser_history_list().unwrap();
         assert_eq!(list.len(), MAX_HISTORY);
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn export_import_round_trip() {
+        let root = temp_root("expimp");
+        set_test_store_root(Some(&root));
+
+        browser_history_record("Example", "https://example.com/").unwrap();
+        browser_history_record("Rust", "https://rust-lang.org/").unwrap();
+
+        let exported = browser_history_export().unwrap();
+        assert!(exported.contains("\"app\": \"polaris\""));
+        assert!(exported.contains("\"kind\": \"history\""));
+
+        set_test_store_root(None);
+        std::fs::remove_dir_all(&root).unwrap();
+        let root2 = temp_root("expimp2");
+        set_test_store_root(Some(&root2));
+
+        let count = browser_history_import(&exported).unwrap();
+        assert_eq!(count, 2);
+        let list = browser_history_list().unwrap();
+        assert_eq!(list.len(), 2);
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root2);
+    }
+
+    #[test]
+    fn import_merges_history_by_url() {
+        let root = temp_root("merge");
+        set_test_store_root(Some(&root));
+
+        browser_history_record("Old", "https://example.com/").unwrap();
+
+        let raw = r#"{
+          "app": "polaris",
+          "kind": "history",
+          "version": 1,
+          "items": [
+            {"title": "Updated", "url": "https://example.com/", "visitCount": 5, "visitedAt": 9999},
+            {"title": "Fresh", "url": "https://fresh.example/", "visitCount": 3, "visitedAt": 8888}
+          ]
+        }"#;
+        let count = browser_history_import(raw).unwrap();
+        assert_eq!(count, 2);
+        let list = browser_history_list().unwrap();
+        assert_eq!(list.len(), 2);
+        let example = list.iter().find(|h| h.url == "https://example.com/").unwrap();
+        assert_eq!(example.title, "Updated");
+        // original 1 visit + imported 5 = 6
+        assert_eq!(example.visit_count, 6);
+        assert_eq!(example.visited_at, 9999);
+
+        set_test_store_root(None);
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn history_import_rejects_wrong_kind() {
+        let root = temp_root("reject");
+        set_test_store_root(Some(&root));
+
+        let wrong = r#"{"app":"polaris","kind":"bookmarks","version":1,"items":[]}"#;
+        let err = browser_history_import(wrong).expect_err("wrong kind must fail");
+        assert!(err.to_message().contains("类型不匹配"));
+
+        let invalid = "bad json";
+        let err = browser_history_import(invalid).expect_err("invalid json must fail");
+        assert!(err.to_message().contains("格式无效"));
 
         set_test_store_root(None);
         let _ = std::fs::remove_dir_all(&root);

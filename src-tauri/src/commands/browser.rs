@@ -2628,6 +2628,20 @@ pub async fn browser_bookmark_find(url: String) -> Result<Option<BrowserBookmark
     crate::services::browser_bookmarks::browser_bookmark_find(&url)
 }
 
+/// 导出书签为可移植 JSON 字符串
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmarks_export() -> Result<String> {
+    crate::services::browser_bookmarks::browser_bookmarks_export()
+}
+
+/// 从导出的 JSON 导入书签，返回新增/更新条数
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_bookmarks_import(raw: String) -> Result<usize> {
+    crate::services::browser_bookmarks::browser_bookmarks_import(&raw)
+}
+
 // --- 访问历史 (History) ---
 
 /// 列出全部访问历史（最新在前）
@@ -2666,6 +2680,20 @@ pub async fn browser_history_record(title: Option<String>, url: String) -> Resul
         title.as_deref().unwrap_or(""),
         &url,
     )
+}
+
+/// 导出历史为可移植 JSON 字符串
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_export() -> Result<String> {
+    crate::services::browser_history::browser_history_export()
+}
+
+/// 从导出的 JSON 导入历史，返回新增/更新条数
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_import(raw: String) -> Result<usize> {
+    crate::services::browser_history::browser_history_import(&raw)
 }
 
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
