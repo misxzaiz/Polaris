@@ -13,13 +13,13 @@ import {
   Clock,
   Code2,
   Globe2,
+  Keyboard,
   ListTree,
   Loader2,
   Lock,
   Maximize2,
   Minimize2,
   Minus,
-  Keyboard,
   MousePointer2,
   PanelBottom,
   Plus,
@@ -28,8 +28,6 @@ import {
   Sparkles,
   Trash2,
   Unlock,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -315,7 +313,6 @@ export function BrowserPanel({
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<BrowserNetworkInfo | null>(null)
-  const [pageInfoOpen, setPageInfoOpen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [screenshotting, setScreenshotting] = useState(false)
   const [readerMode, setReaderMode] = useState(false)
@@ -341,7 +338,6 @@ export function BrowserPanel({
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [bookmarkDropdownOpen, setBookmarkDropdownOpen] = useState(false)
   const bookmarkListRef = useRef<HTMLDivElement>(null)
-  const pageInfoRef = useRef<HTMLDivElement>(null)
 
   // 访问历史状态
   const [historyEntries, setHistoryEntries] = useState<BrowserHistoryEntry[]>([])
@@ -574,6 +570,8 @@ export function BrowserPanel({
 
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
+  const browserActionRequest = useTabStore((state) => state.browserActionRequest)
+  const browserActionSeq = useTabStore((state) => state.browserActionSeq)
   const { updateInputDraft } = useActiveSessionActions()
   const closeTab = useTabStore((state) => state.closeTab)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
@@ -657,18 +655,6 @@ export function BrowserPanel({
     window.addEventListener('click', onClick)
     return () => window.removeEventListener('click', onClick)
   }, [historyDropdownOpen])
-
-  // 点击外部关闭页面信息弹窗
-  useEffect(() => {
-    if (!pageInfoOpen) return
-    const onClick = (event: MouseEvent) => {
-      if (pageInfoRef.current && !pageInfoRef.current.contains(event.target as Node)) {
-        setPageInfoOpen(false)
-      }
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [pageInfoOpen])
 
   // 路由变化时记录历史
   useEffect(() => {
@@ -1053,6 +1039,19 @@ export function BrowserPanel({
               ? prev
               : info
           )
+          // 同步到 tabStore，供左侧边栏展示网络信息
+          updateBrowserTab(tabId, {
+            metadata: {
+              networkInfo: {
+                loadTime: info.loadTime,
+                totalSizeKB: info.totalSizeKB,
+                resourceCount: info.resourceCount,
+                failedResources: info.failedResources,
+                domContentLoaded: info.domContentLoaded,
+                readyState: info.readyState,
+              },
+            },
+          })
         } catch {
           // 静默
         }
@@ -1060,7 +1059,7 @@ export function BrowserPanel({
     }
     void poll()
     return () => { cancelled = true }
-  }, [status, webviewLabel, currentUrl])
+  }, [status, webviewLabel, currentUrl, tabId, updateBrowserTab])
 
   const handleSubmit = useCallback(
     (event: FormEvent) => {
@@ -1087,6 +1086,43 @@ export function BrowserPanel({
       markBrowserNavigationHandled(tabId, navigationRequestId)
     })
   }, [markBrowserNavigationHandled, navigateTo, navigationRequestId, navigationRequestUrl, status, tabId])
+
+  // 监听左侧浏览器侧边栏发出的工具请求（browserActionRequest），
+  // 将请求转发到对应的 BrowserPanel 操作函数。
+  const actionRef = useRef<number>(0)
+  useEffect(() => {
+    if (!browserActionRequest) return
+    if (actionRef.current === browserActionSeq) return
+    actionRef.current = browserActionSeq
+
+    const action = browserActionRequest
+    switch (action) {
+      case 'marquee':
+        if (marqueeMode) void stopMarquee()
+        else void startMarquee()
+        break
+      case 'screenshot':
+        void handleScreenshot()
+        break
+      case 'mute':
+        void toggleMute()
+        break
+      case 'reader':
+        void handleToggleReader()
+        break
+      case 'context':
+        void refreshContextPreview()
+        break
+      case 'diagnostics':
+        void refreshDiagnostics()
+        break
+      case 'shortcuts':
+        setShortcutsOpen((prev) => !prev)
+        break
+      default:
+        log('unknown browserActionRequest', action)
+    }
+  }, [browserActionRequest, browserActionSeq, marqueeMode, stopMarquee, startMarquee, handleScreenshot, toggleMute, handleToggleReader, refreshContextPreview, refreshDiagnostics])
 
   const refreshContextPreview = useCallback(async () => {
     setContextLoading(true)
@@ -1233,7 +1269,6 @@ export function BrowserPanel({
     bookmarkDropdownOpen,
     historyPanelOpen,
     historyDropdownOpen,
-    pageInfoOpen,
     shortcutsOpen,
     scheduleSyncBounds,
   ])
@@ -2032,49 +2067,9 @@ export function BrowserPanel({
           )}
         </div>
 
-        {/* 工具按钮组 */}
+        {/* 工具按钮组：精简，仅保留页面查找。其余工具（圈选/截图/静音/阅读/上下文/诊断）移至左侧浏览器侧边栏 */}
         <div className="flex items-center gap-1">
           <div className="mx-1 h-5 w-px bg-border-subtle" />
-          <button
-            type="button"
-            className={clsx(taskButtonClass, toolbarWidth < 680 && 'hidden')}
-            onClick={refreshContextPreview}
-            disabled={contextLoading}
-            title={t('browser.previewContext', { defaultValue: '预览发送给 AI 的网页上下文' })}
-          >
-            {contextLoading ? <Loader2 size={15} className="animate-spin" /> : <ListTree size={15} />}
-            <span className="hidden 2xl:inline">
-              {t('browser.contextPreview', { defaultValue: '上下文' })}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={clsx(taskButtonClass, toolbarWidth < 680 && 'hidden')}
-            onClick={refreshDiagnostics}
-            disabled={diagnosticsLoading || status !== 'ready'}
-            title={t('browser.diagnosticsHint', { defaultValue: '读取 DOM、Console 和可操作元素诊断' })}
-          >
-            {diagnosticsLoading ? <Loader2 size={15} className="animate-spin" /> : <Activity size={15} />}
-            <span className="hidden 2xl:inline">
-              {t('browser.diagnostics', { defaultValue: '诊断' })}
-            </span>
-          </button>
-          <button
-            type="button"
-            className={clsx(
-              taskButtonClass,
-              toolbarWidth < 520 && 'hidden',
-              aiOperationMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
-            )}
-            onClick={() => setAiOperationMode((enabled) => !enabled)}
-            disabled={status !== 'ready'}
-            title={t('browser.operationModeHint', { defaultValue: '显示 AI 可点击/可填写元素编号' })}
-          >
-            <MousePointer2 size={15} />
-            <span className="hidden 2xl:inline">
-              {t('browser.operationMode', { defaultValue: 'AI 操作' })}
-            </span>
-          </button>
           <button
             type="button"
             className={clsx(taskButtonClass, findOpen && 'border-primary/60 bg-primary/10 text-primary')}
@@ -2087,76 +2082,45 @@ export function BrowserPanel({
               {t('browser.find', { defaultValue: '查找' })}
             </span>
           </button>
+        </div>
+        {/* 缩放控制（紧凑） */}
+        <div className="hidden sm:flex items-center gap-0.5 pl-1 border-l border-border-subtle">
           <button
             type="button"
-            className={clsx(
-              taskButtonClass,
-              marqueeMode && 'border-primary/60 bg-primary/10 text-primary hover:text-primary'
-            )}
-            onClick={() => (marqueeMode ? stopMarquee() : startMarquee())}
+            onClick={handleToggleFullscreen}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={isFullscreen
+              ? t('browser.exitFullscreen', { defaultValue: '退出全屏 (F11)' })
+              : t('browser.fullscreen', { defaultValue: '全屏 (F11)' })}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomOut()}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.zoomOut', { defaultValue: '缩小' })}
             disabled={status !== 'ready'}
-            title={t('browser.marqueeHint', { defaultValue: '圈选页面区域发给 AI' })}
           >
-            <BoxSelect size={15} />
-            <span className="hidden 2xl:inline">
-              {t('browser.marquee', { defaultValue: '圈选' })}
-            </span>
+            <Minus size={12} />
           </button>
-          {/* 静音切换按钮 */}
           <button
             type="button"
-            className={clsx(toolbarButtonClass, isMuted && 'text-primary')}
-            onClick={toggleMute}
+            onClick={resetZoom}
+            onDoubleClick={resetZoom}
+            className="min-w-[32px] rounded px-1 py-0.5 text-center text-[11px] text-text-secondary transition-colors hover:bg-background-hover"
+            title={t('browser.zoomReset', { defaultValue: '重置缩放 (100%)' })}
+          >
+            {Math.round(zoomLevel * 100)}%
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomIn()}
+            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={t('browser.zoomIn', { defaultValue: '放大' })}
             disabled={status !== 'ready'}
-            title={isMuted
-              ? t('browser.unmuted', { defaultValue: '取消静音 (Ctrl+M)' })
-              : t('browser.muted', { defaultValue: '静音 (Ctrl+M)' })}
           >
-            {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
-          </button>
-          {/* 截图保存按钮 */}
-          <button
-            type="button"
-            className={toolbarButtonClass}
-            onClick={handleScreenshot}
-            disabled={status !== 'ready' || screenshotting}
-            title={t('browser.saveScreenshot', { defaultValue: '保存当前页面截图' })}
-          >
-            {screenshotting ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
-          </button>
-          {/* 阅读模式按钮 */}
-          <button
-            type="button"
-            className={clsx(toolbarButtonClass, readerMode && 'text-primary')}
-            onClick={handleToggleReader}
-            disabled={status !== 'ready'}
-            title={readerMode
-              ? t('browser.exitReader', { defaultValue: '退出阅读模式' })
-              : t('browser.readerMode', { defaultValue: '阅读模式' })}
-          >
-            <BookOpen size={15} />
-          </button>
-          {/* 快捷键帮助按钮 */}
-          <button
-            type="button"
-            className={toolbarButtonClass}
-            onClick={() => setShortcutsOpen((open) => !open)}
-            title={t('browser.shortcuts', { defaultValue: '快捷键 (Ctrl+Shift+/)' })}
-          >
-            <Keyboard size={15} />
-          </button>
-          {/* 溢出菜单按钮 */}
-          <button
-            type="button"
-            className={toolbarButtonClass}
-            onClick={(e) => {
-              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
-              browserShowOverflowMenu(webviewLabel, rect.right, rect.bottom).catch(() => undefined)
-            }}
-            disabled={status !== 'ready'}
-            title={t('browser.more', { defaultValue: '更多' })}
-          >
-            <Code2 size={15} />
+            <Plus size={12} />
           </button>
         </div>
       </div>
@@ -2536,151 +2500,6 @@ export function BrowserPanel({
               : t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
           </span>
         </button>
-      )}
-
-      <div className="flex h-7 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-[11px] text-text-tertiary">
-        <span
-          className={clsx(
-            'h-1.5 w-1.5 shrink-0 rounded-full',
-            status === 'ready' ? 'bg-success' : status === 'error' ? 'bg-danger' : 'bg-warning'
-          )}
-          title={
-            status === 'ready'
-              ? t('status.ready', { defaultValue: '已就绪' })
-              : status === 'error'
-                ? t('status.error', { defaultValue: '错误' })
-                : status === 'native-unavailable'
-                  ? t('browser.fallbackMode', { defaultValue: '降级模式' })
-                  : t('status.loading', { defaultValue: '加载中' })
-          }
-        />
-        <span
-          className="truncate font-medium text-text-secondary cursor-pointer hover:text-text-primary"
-          onClick={copyUrl}
-          title={currentUrl}
-        >
-          {hostText}
-        </span>
-        <span className="min-w-0 flex-1 truncate text-text-tertiary" title={currentUrl}>
-          {pageTitle || currentUrl}
-        </span>
-        {/* 网络信息 */}
-        {networkInfo && networkInfo.loadTime > 0 && (
-          <span
-            className="hidden sm:inline shrink-0 cursor-help rounded px-1 text-[10px] text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            onClick={() => setPageInfoOpen((v) => !v)}
-            title={t('browser.pageInfo', { defaultValue: '页面加载信息' })}
-          >
-            {networkInfo.loadTime < 1000 ? `<${networkInfo.loadTime}ms` : `${(networkInfo.loadTime / 1000).toFixed(1)}s`}
-            {' · '}{networkInfo.totalSizeKB}KB
-            {networkInfo.failedResources > 0 && (
-              <span className="ml-0.5 text-danger">· {networkInfo.failedResources}✕</span>
-            )}
-          </span>
-        )}
-        {/* 缩放控制 */}
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={handleToggleFullscreen}
-            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={isFullscreen
-              ? t('browser.exitFullscreen', { defaultValue: '退出全屏 (F11)' })
-              : t('browser.fullscreen', { defaultValue: '全屏 (F11)' })}
-          >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomOut()}
-            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={t('browser.zoomOut', { defaultValue: '缩小' })}
-            disabled={status !== 'ready'}
-          >
-            <Minus size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={resetZoom}
-            onDoubleClick={resetZoom}
-            className="min-w-[36px] rounded px-1 py-0.5 text-center text-[11px] text-text-secondary transition-colors hover:bg-background-hover"
-            title={t('browser.zoomReset', { defaultValue: '重置缩放 (100%)' })}
-          >
-            {Math.round(zoomLevel * 100)}%
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomIn()}
-            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={t('browser.zoomIn', { defaultValue: '放大' })}
-            disabled={status !== 'ready'}
-          >
-            <Plus size={12} />
-          </button>
-        </div>
-      </div>
-
-      {/* 页面信息弹窗 */}
-      {pageInfoOpen && networkInfo && (
-        <div ref={pageInfoRef} data-native-webview-overlay className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
-          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
-            <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
-              <Activity size={13} className="text-primary" />
-              {t('browser.pageInfo', { defaultValue: '页面信息' })}
-            </span>
-            <button
-              type="button"
-              className="rounded p-0.5 text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-              onClick={() => setPageInfoOpen(false)}
-              title={t('buttons.close')}
-            >
-              <X size={13} />
-            </button>
-          </div>
-          <div className="space-y-1.5 px-3 py-2 text-[11px]">
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.pageLoadTime', { defaultValue: '加载时间' })}</span>
-              <span className="text-text-secondary">{networkInfo.loadTime < 1000 ? `${networkInfo.loadTime}ms` : `${(networkInfo.loadTime / 1000).toFixed(2)}s`}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.domReady', { defaultValue: 'DOM 就绪' })}</span>
-              <span className="text-text-secondary">{networkInfo.domContentLoaded < 1000 ? `${networkInfo.domContentLoaded}ms` : `${(networkInfo.domContentLoaded / 1000).toFixed(2)}s`}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.resources', { defaultValue: '资源数' })}</span>
-              <span className="text-text-secondary">{networkInfo.resourceCount} 个</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.totalSize', { defaultValue: '总大小' })}</span>
-              <span className="text-text-secondary">{networkInfo.totalSizeKB}KB</span>
-            </div>
-            {networkInfo.resourceCount > 0 && (
-              <div className="flex justify-between">
-                <span className="text-text-tertiary">{t('browser.avgSize', { defaultValue: '平均大小' })}</span>
-                <span className="text-text-secondary">{(networkInfo.totalSizeKB / networkInfo.resourceCount).toFixed(1)}KB</span>
-              </div>
-            )}
-            {networkInfo.failedResources > 0 && (
-              <div className="flex justify-between">
-                <span className="text-text-tertiary">{t('browser.failedResources', { defaultValue: '失败资源' })}</span>
-                <span className="text-danger font-medium">{networkInfo.failedResources} 个</span>
-              </div>
-            )}
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.readyState', { defaultValue: '文档状态' })}</span>
-              <span className="text-text-secondary">{networkInfo.readyState || 'complete'}</span>
-            </div>
-            <hr className="border-border-subtle" />
-            <div className="flex justify-between">
-              <span className="text-text-tertiary">{t('browser.zoom', { defaultValue: '缩放' })}</span>
-              <span className="text-text-secondary">{Math.round(zoomLevel * 100)}%</span>
-            </div>
-            <div className="truncate">
-              <span className="text-text-tertiary">{t('browser.url', { defaultValue: 'URL' })}</span>
-              <span className="ml-2 text-text-secondary" title={currentUrl}>{currentUrl}</span>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* 快捷键帮助弹层 */}

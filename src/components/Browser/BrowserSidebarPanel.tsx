@@ -32,6 +32,12 @@ import {
   Check,
   Target,
   ChevronDown,
+  BoxSelect,
+  Volume2,
+  BookOpen,
+  ListTree,
+  Activity,
+  Wrench,
 } from 'lucide-react'
 import { useTabStore, type TabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -40,7 +46,7 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { useToastStore } from '@/stores/toastStore'
 import { useBrowserSidebarStore, type SidebarTabName, type ShortcutItem, type BookmarkFolder, type BookmarkItem } from '@/stores/browserSidebarStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
-import { normalizeBrowserUrl, type MarqueeContextBlock } from '@/services/tauri/browserService'
+import { normalizeBrowserUrl, type BrowserNetworkInfo, type MarqueeContextBlock } from '@/services/tauri/browserService'
 
 // ─── 常量 ───────────────────────────────────────────
 
@@ -99,6 +105,18 @@ const selectActiveBrowserUrl = (s: TabStore) => {
 const selectActiveBrowserTitle = (s: TabStore) => {
   const tab = s.tabs.find((t) => t.type === 'browser' && t.id === s.activeTabId)
   return tab?.title
+}
+
+// 当前浏览器标签的 id（用于构造 webview label 调用浏览器命令）
+const selectActiveBrowserTabId = (s: TabStore) => {
+  const tab = s.tabs.find((t) => t.type === 'browser' && t.id === s.activeTabId)
+  return tab?.id
+}
+
+// 当前浏览器标签的网络信息（BrowserPanel 轮询写入 tabStore.metadata.networkInfo）
+const selectActiveBrowserNetworkInfo = (s: TabStore) => {
+  const tab = s.tabs.find((t) => t.type === 'browser' && t.id === s.activeTabId)
+  return tab?.metadata?.networkInfo as BrowserNetworkInfo | undefined
 }
 
 // 注意：不能返回对象字面量，否则 useSyncExternalStore 的 Object.is 比较会认为每次都是新值，触发无限循环
@@ -869,6 +887,56 @@ function MarqueeSection({
   )
 }
 
+// ─── 工具 Tab ──────────────────────────────────────
+
+function ToolsTab() {
+  const { t } = useTranslation('common')
+  const currentTabId = useTabStore(selectActiveBrowserTabId)
+  const requestBrowserAction = useTabStore((s) => s.requestBrowserAction)
+  const hasTab = Boolean(currentTabId)
+
+  const handleAction = useCallback((action: string) => {
+    requestBrowserAction(action)
+  }, [requestBrowserAction])
+
+  const tools = [
+    { key: 'marquee', label: t('browser.marquee', { defaultValue: '圈选区域' }), desc: t('browser.marqueeHint', { defaultValue: '圈选页面区域发给 AI' }), icon: <BoxSelect size={14} /> },
+    { key: 'screenshot', label: t('browser.saveScreenshot', { defaultValue: '保存截图' }), desc: t('browser.screenshotHint', { defaultValue: '保存当前页面截图' }), icon: <Camera size={14} /> },
+    { key: 'mute', label: t('browser.muted', { defaultValue: '静音切换' }), desc: t('browser.muteHint', { defaultValue: '切换页面静音' }), icon: <Volume2 size={14} /> },
+    { key: 'reader', label: t('browser.readerMode', { defaultValue: '阅读模式' }), desc: t('browser.readerHint', { defaultValue: '切换阅读模式' }), icon: <BookOpen size={14} /> },
+    { key: 'context', label: t('browser.previewContext', { defaultValue: '预览上下文' }), desc: t('browser.contextPreviewDesc', { defaultValue: '查看发送给 AI 的网页上下文' }), icon: <ListTree size={14} /> },
+    { key: 'diagnostics', label: t('browser.diagnostics', { defaultValue: '诊断信息' }), desc: t('browser.diagnosticsHint', { defaultValue: '读取 DOM、Console 诊断' }), icon: <Activity size={14} /> },
+  ]
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      {tools.map((tool) => (
+        <button
+          key={tool.key}
+          type="button"
+          onClick={() => handleAction(tool.key)}
+          disabled={!hasTab}
+          className="flex w-full items-center gap-2.5 rounded-md border border-border-subtle bg-background-surface px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+          title={tool.desc}
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background-elevated text-text-tertiary">
+            {tool.icon}
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="font-medium text-text-primary">{tool.label}</div>
+            <div className="truncate text-[10px] text-text-tertiary">{tool.desc}</div>
+          </div>
+        </button>
+      ))}
+      {!hasTab && (
+        <div className="py-2 text-center text-[11px] text-text-tertiary">
+          {t('browser.sidebar.noTabToolHint', { defaultValue: '打开浏览器标签后可使用这些工具' })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── 底部状态栏 ────────────────────────────────────
 
 function BottomStatusBar({ onSendToAi }: { onSendToAi: () => void }) {
@@ -876,6 +944,7 @@ function BottomStatusBar({ onSendToAi }: { onSendToAi: () => void }) {
   // 使用原始值 selector，避免对象引用变化导致 useSyncExternalStore 无限循环
   const currentUrl = useTabStore(selectActiveBrowserUrl)
   const currentTitle = useTabStore(selectActiveBrowserTitle)
+  const networkInfo = useTabStore(selectActiveBrowserNetworkInfo)
   const currentTab = useMemo(() => {
     if (!currentUrl) return null
     return { url: currentUrl, title: currentTitle || 'Browser' }
@@ -892,49 +961,74 @@ function BottomStatusBar({ onSendToAi }: { onSendToAi: () => void }) {
     }
   }, [currentTab, toast, t])
 
+  // 网络信息内联展示（不弹窗），字段缺失时返回 '-' 占位
+  const netFields = useMemo(() => {
+    const n = networkInfo
+    return [
+      { key: 'load', label: t('browser.net.load', { defaultValue: '加载' }), value: n ? `${(n.loadTime / 1000).toFixed(2)}s` : '-' },
+      { key: 'size', label: t('browser.net.size', { defaultValue: '大小' }), value: n ? `${n.totalSizeKB.toFixed(1)}KB` : '-' },
+      { key: 'res', label: t('browser.net.resources', { defaultValue: '资源' }), value: n ? String(n.resourceCount) : '-' },
+      { key: 'fail', label: t('browser.net.failed', { defaultValue: '失败' }), value: n ? String(n.failedResources) : '-' },
+    ]
+  }, [networkInfo, t])
+
   return (
-    <div className="flex shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 py-2">
-      <span
-        className={clsx(
-          'h-1.5 w-1.5 shrink-0 rounded-full',
-          currentTab ? 'bg-success' : 'bg-text-tertiary'
-        )}
-        title={currentTab
-          ? t('status.ready', { defaultValue: '已就绪' })
-          : t('browser.sidebar.noTab', { defaultValue: '无浏览器标签' })
-        }
-      />
-      <div className="min-w-0 flex-1">
-        {currentTab ? (
-          <>
-            <div className="truncate text-xs font-medium text-text-primary">{currentTab.title}</div>
-            <div className="truncate text-[10px] text-text-tertiary">{getHostname(currentTab.url)}</div>
-          </>
-        ) : (
-          <div className="text-xs text-text-tertiary">
-            {t('browser.sidebar.noTab', { defaultValue: '暂无打开的浏览器标签' })}
-          </div>
-        )}
+    <div className="flex shrink-0 flex-col border-t border-border-subtle bg-background-elevated px-3 py-2">
+      {/* 第一行：标签 + 操作 */}
+      <div className="flex items-center gap-2">
+        <span
+          className={clsx(
+            'h-1.5 w-1.5 shrink-0 rounded-full',
+            currentTab ? 'bg-success' : 'bg-text-tertiary'
+          )}
+          title={currentTab
+            ? t('status.ready', { defaultValue: '已就绪' })
+            : t('browser.sidebar.noTab', { defaultValue: '无浏览器标签' })
+          }
+        />
+        <div className="min-w-0 flex-1">
+          {currentTab ? (
+            <>
+              <div className="truncate text-xs font-medium text-text-primary">{currentTab.title}</div>
+              <div className="truncate text-[10px] text-text-tertiary">{getHostname(currentTab.url)}</div>
+            </>
+          ) : (
+            <div className="text-xs text-text-tertiary">
+              {t('browser.sidebar.noTab', { defaultValue: '暂无打开的浏览器标签' })}
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 gap-1">
+          <button
+            onClick={handleCopyUrl}
+            disabled={!currentTab}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
+            title={t('browser.copyUrl', { defaultValue: '复制地址' })}
+          >
+            <Copy size={13} />
+          </button>
+          <button
+            onClick={onSendToAi}
+            disabled={!currentTab}
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
+            title={t('browser.sidebar.sendToAi', { defaultValue: '发送给 AI' })}
+          >
+            <Send size={11} />
+            <span className="hidden sm:inline">{t('browser.sidebar.sendToAi', { defaultValue: '发送给 AI' })}</span>
+          </button>
+        </div>
       </div>
-      <div className="flex shrink-0 gap-1">
-        <button
-          onClick={handleCopyUrl}
-          disabled={!currentTab}
-          className="flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          title={t('browser.copyUrl', { defaultValue: '复制地址' })}
-        >
-          <Copy size={13} />
-        </button>
-        <button
-          onClick={onSendToAi}
-          disabled={!currentTab}
-          className="inline-flex h-7 items-center gap-1 rounded-md bg-primary px-2 text-[11px] font-medium text-white transition-colors hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-40"
-          title={t('browser.sidebar.sendToAi', { defaultValue: '发送给 AI' })}
-        >
-          <Send size={11} />
-          <span className="hidden sm:inline">{t('browser.sidebar.sendToAi', { defaultValue: '发送给 AI' })}</span>
-        </button>
-      </div>
+      {/* 第二行：网络信息（内联展示，不弹窗） */}
+      {currentTab && (
+        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 border-t border-border-subtle pt-1.5 text-[10px] text-text-tertiary">
+          {netFields.map((f) => (
+            <span key={f.key} className="flex items-center gap-1">
+              <span>{f.label}</span>
+              <span className={clsx('font-mono', f.key === 'fail' && Number(f.value) > 0 && 'text-warning')}>{f.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -1068,6 +1162,7 @@ export function BrowserSidebarPanel() {
     { name: 'history', label: t('browser.sidebar.history', { defaultValue: '历史' }), icon: <History size={13} /> },
     { name: 'bookmark', label: t('browser.sidebar.bookmarks', { defaultValue: '书签' }), icon: <Bookmark size={13} />, count: bookmarkCount },
     { name: 'aiSource', label: t('browser.sidebar.aiSource', { defaultValue: 'AI 信息源' }), icon: <Sparkles size={13} /> },
+    { name: 'tools', label: t('browser.sidebar.tools', { defaultValue: '工具' }), icon: <Wrench size={13} /> },
   ]
 
   return (
@@ -1161,6 +1256,7 @@ export function BrowserSidebarPanel() {
             {activeTabName === 'history' && <HistoryTab onNavigate={handleNavigate} />}
             {activeTabName === 'bookmark' && <BookmarkTab onNavigate={handleNavigate} />}
             {activeTabName === 'aiSource' && <AiSourceTab onNavigate={handleNavigate} />}
+            {activeTabName === 'tools' && <ToolsTab />}
           </div>
         </>
       )}
