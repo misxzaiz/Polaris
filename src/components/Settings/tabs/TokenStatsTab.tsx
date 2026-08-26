@@ -551,7 +551,7 @@ export function TokenStatsTab() {
                   </div>
                   {/* 分页 */}
                   <div className="flex items-center justify-between px-3 py-2 border-t border-border-subtle bg-background-surface">
-                    <span className="text-[10px] text-text-muted">{t('tokenStats.pageInfo', '第 {page} 页', { page: page + 1 })}</span>
+                    <span className="text-[10px] text-text-muted">{t('tokenStats.pageInfo', '第 {{page}} 页', { page: page + 1 })}</span>
                     <div className="flex items-center gap-1">
                       <button disabled={!hasPrev} onClick={() => setPage(p => p - 1)}
                         className={clsx('flex items-center gap-0.5 px-2 py-1 text-xs rounded-md transition-colors', hasPrev ? 'text-text-primary hover:bg-background-hover' : 'text-text-muted opacity-40 cursor-not-allowed')}>
