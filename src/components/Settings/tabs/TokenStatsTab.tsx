@@ -549,7 +549,7 @@ export function TokenStatsTab() {
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-purple-400">{fmt(s.cacheReadTokens + s.cacheCreationTokens)}</td>
-                            <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">$0</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.totalCostUsd ?? 0)}</td>
                             <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
                           </tr>
                         ))}

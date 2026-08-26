@@ -60,6 +60,7 @@ export interface UsageLogEntry {
   statusCode: number
   isStreaming: boolean
   createdAt: number
+  totalCostUsd: number
 }
 
 export type TimeRange = 'today' | '1d' | '7d' | '14d' | '30d' | 'all'

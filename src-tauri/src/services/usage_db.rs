@@ -51,6 +51,8 @@ pub struct UsageLogEntry {
     pub status_code: i64,
     pub is_streaming: bool,
     pub created_at: i64,
+    /// 单条估算成本（美元），由 estimate_cost 在查询时计算
+    pub total_cost_usd: f64,
 }
 
 // ============================================================================
@@ -449,19 +451,24 @@ impl UsageDb {
 
         let rows = stmt
             .query_map(params.as_slice(), |row| {
+                let input_tokens: i64 = row.get(4)?;
+                let output_tokens: i64 = row.get(5)?;
+                let cache_read_tokens: i64 = row.get(6)?;
+                let cache_creation_tokens: i64 = row.get(7)?;
                 Ok(UsageLogEntry {
                     id: row.get(0)?,
                     model: row.get(1)?,
                     request_model: row.get(2)?,
                     engine_id: row.get(3)?,
-                    input_tokens: row.get(4)?,
-                    output_tokens: row.get(5)?,
-                    cache_read_tokens: row.get(6)?,
-                    cache_creation_tokens: row.get(7)?,
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
                     latency_ms: row.get(8)?,
                     status_code: row.get(9)?,
                     is_streaming: row.get::<_, i64>(10)? != 0,
                     created_at: row.get(11)?,
+                    total_cost_usd: estimate_cost(input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询记录失败: {}", e)))?;
