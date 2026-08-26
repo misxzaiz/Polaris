@@ -32,7 +32,6 @@ import {
   Check,
   Target,
   ChevronDown,
-  BoxSelect,
   Volume2,
   BookOpen,
   ListTree,
@@ -900,7 +899,7 @@ function ToolsTab() {
   }, [requestBrowserAction])
 
   const tools = [
-    { key: 'marquee', label: t('browser.marquee', { defaultValue: '圈选区域' }), desc: t('browser.marqueeHint', { defaultValue: '圈选页面区域发给 AI' }), icon: <BoxSelect size={14} /> },
+    // 圈选已上移到浏览器底部状态栏（核心入口），不再在此重复
     { key: 'screenshot', label: t('browser.saveScreenshot', { defaultValue: '保存截图' }), desc: t('browser.screenshotHint', { defaultValue: '保存当前页面截图' }), icon: <Camera size={14} /> },
     { key: 'mute', label: t('browser.muted', { defaultValue: '静音切换' }), desc: t('browser.muteHint', { defaultValue: '切换页面静音' }), icon: <Volume2 size={14} /> },
     { key: 'reader', label: t('browser.readerMode', { defaultValue: '阅读模式' }), desc: t('browser.readerHint', { defaultValue: '切换阅读模式' }), icon: <BookOpen size={14} /> },

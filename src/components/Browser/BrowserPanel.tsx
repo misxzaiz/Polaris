@@ -28,6 +28,7 @@ import {
   Sparkles,
   Trash2,
   Unlock,
+  Wrench,
   X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -94,6 +95,7 @@ import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSes
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useOverlayStore } from '@/stores/overlayStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
+import { useBrowserSidebarStore } from '@/stores/browserSidebarStore'
 
 
 interface BrowserPanelProps {
@@ -1087,42 +1089,32 @@ export function BrowserPanel({
     })
   }, [markBrowserNavigationHandled, navigateTo, navigationRequestId, navigationRequestUrl, status, tabId])
 
-  // 监听左侧浏览器侧边栏发出的工具请求（browserActionRequest），
-  // 将请求转发到对应的 BrowserPanel 操作函数。
-  const actionRef = useRef<number>(0)
-  useEffect(() => {
-    if (!browserActionRequest) return
-    if (actionRef.current === browserActionSeq) return
-    actionRef.current = browserActionSeq
+  // ── 圈选 (Marquee Selection) ──
 
-    const action = browserActionRequest
-    switch (action) {
-      case 'marquee':
-        if (marqueeMode) void stopMarquee()
-        else void startMarquee()
-        break
-      case 'screenshot':
-        void handleScreenshot()
-        break
-      case 'mute':
-        void toggleMute()
-        break
-      case 'reader':
-        void handleToggleReader()
-        break
-      case 'context':
-        void refreshContextPreview()
-        break
-      case 'diagnostics':
-        void refreshDiagnostics()
-        break
-      case 'shortcuts':
-        setShortcutsOpen((prev) => !prev)
-        break
-      default:
-        log('unknown browserActionRequest', action)
+  const stopMarquee = useCallback(async () => {
+    setMarqueeMode(false)
+    setMarqueePolling(false)
+    try {
+      await browserSetMarquee(webviewLabel, false)
+    } catch {
+      // 静默：overlay 清理失败不应阻塞 UI
     }
-  }, [browserActionRequest, browserActionSeq, marqueeMode, stopMarquee, startMarquee, handleScreenshot, toggleMute, handleToggleReader, refreshContextPreview, refreshDiagnostics])
+  }, [webviewLabel])
+
+  const startMarquee = useCallback(async () => {
+    if (status !== 'ready') return
+    setMarqueeRegions([])
+    marqueeRegionsRef.current = []
+    setMarqueeMode(true)
+    // 不再打开底部 AI 面板：圈选结果改为挂载到 AI 输入框上下文块 + 左侧边栏展示
+    try {
+      await browserSetMarquee(webviewLabel, true)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      showError(message)
+      setMarqueeMode(false)
+    }
+  }, [status, webviewLabel, toast])
 
   const refreshContextPreview = useCallback(async () => {
     setContextLoading(true)
@@ -1237,6 +1229,47 @@ export function BrowserPanel({
     }
   }, [status, webviewLabel])
 
+  // 监听左侧浏览器侧边栏发出的工具请求（browserActionRequest），
+  // 将请求转发到对应的 BrowserPanel 操作函数。
+  // 注意：必须放在所有被引用的回调（stopMarquee/startMarquee/handleScreenshot/
+  // toggleMute/handleToggleReader/refreshContextPreview/refreshDiagnostics）之后，
+  // 否则依赖数组求值时这些 const 仍在暂时性死区（TDZ）中，触发
+  // "Cannot access 'X' before initialization"。
+  const actionRef = useRef<number>(0)
+  useEffect(() => {
+    if (!browserActionRequest) return
+    if (actionRef.current === browserActionSeq) return
+    actionRef.current = browserActionSeq
+
+    const action = browserActionRequest
+    switch (action) {
+      case 'marquee':
+        if (marqueeMode) void stopMarquee()
+        else void startMarquee()
+        break
+      case 'screenshot':
+        void handleScreenshot()
+        break
+      case 'mute':
+        void toggleMute()
+        break
+      case 'reader':
+        void handleToggleReader()
+        break
+      case 'context':
+        void refreshContextPreview()
+        break
+      case 'diagnostics':
+        void refreshDiagnostics()
+        break
+      case 'shortcuts':
+        setShortcutsOpen((prev) => !prev)
+        break
+      default:
+        log('unknown browserActionRequest', action)
+    }
+  }, [browserActionRequest, browserActionSeq, marqueeMode, stopMarquee, startMarquee, handleScreenshot, toggleMute, handleToggleReader, refreshContextPreview, refreshDiagnostics])
+
   // 全屏：对浏览器容器使用 HTML5 Fullscreen API
   const handleToggleFullscreen = useCallback(() => {
     const el = rootRef.current
@@ -1246,6 +1279,12 @@ export function BrowserPanel({
     } else {
       document.exitFullscreen?.().catch(() => undefined)
     }
+  }, [])
+
+  // 更多工具：打开左侧浏览器管理中心（不关闭当前面板），并切到「工具」Tab
+  const openToolsSidebar = useCallback(() => {
+    useViewStore.getState().switchToLeftPanel('browser')
+    useBrowserSidebarStore.getState().setActiveTabName('tools')
   }, [])
 
   useEffect(() => {
@@ -1276,34 +1315,7 @@ export function BrowserPanel({
   // 让 mount effect 内的事件监听始终拿到最新的 handler
   actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
 
-  // ── 圈选 (Marquee Selection) ──
-
-  const stopMarquee = useCallback(async () => {
-    setMarqueeMode(false)
-    setMarqueePolling(false)
-    try {
-      await browserSetMarquee(webviewLabel, false)
-    } catch {
-      // 静默：overlay 清理失败不应阻塞 UI
-    }
-  }, [webviewLabel])
-
-  const startMarquee = useCallback(async () => {
-    if (status !== 'ready') return
-    setMarqueeRegions([])
-    marqueeRegionsRef.current = []
-    setMarqueeMode(true)
-    // 不再打开底部 AI 面板：圈选结果改为挂载到 AI 输入框上下文块 + 左侧边栏展示
-    try {
-      await browserSetMarquee(webviewLabel, true)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      showError(message)
-      setMarqueeMode(false)
-    }
-  }, [status, webviewLabel, toast])
-
-  // 圈选结果轮询：marqueeMode 开启期间，定期读取 overlay 写入的结果
+  // ── 圈选结果轮询：marqueeMode 开启期间，定期读取 overlay 写入的结果
   useEffect(() => {
     if (!marqueeMode || status !== 'ready') return
     let cancelled = false
@@ -2481,12 +2493,39 @@ export function BrowserPanel({
         </div>
       )}
 
-      {!aiPanelOpen && (
+      {/* 底部状态栏：常驻。圈选为核心入口（一键可达），AI 操作日志保留在线 */}
+      <footer className="flex h-9 shrink-0 items-center gap-1.5 border-t border-border-subtle bg-background-elevated px-2">
+        {/* 圈选按钮（主入口）：点击进入/退出圈选模式 */}
         <button
           type="button"
-          onClick={() => setAiPanelOpen(true)}
-          disabled={!latestOperation}
-          className="flex h-8 shrink-0 items-center gap-2 border-t border-border-subtle bg-background-elevated px-3 text-left text-xs text-text-secondary hover:bg-background-hover disabled:cursor-default disabled:hover:bg-background-elevated"
+          onClick={() => (marqueeMode ? void stopMarquee() : void startMarquee())}
+          disabled={status !== 'ready'}
+          className={clsx(
+            'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            marqueeMode
+              ? 'border-primary/60 bg-primary/10 text-primary'
+              : 'border-border-subtle bg-background-surface text-text-secondary hover:bg-background-hover hover:text-text-primary'
+          )}
+          title={
+            marqueeMode
+              ? t('browser.marqueeStop', { defaultValue: '取消圈选' })
+              : t('browser.marqueeStart', { defaultValue: '圈选页面区域，作为上下文发给 AI' })
+          }
+        >
+          <BoxSelect size={14} />
+          <span className="hidden md:inline">
+            {t('browser.marquee', { defaultValue: marqueeMode ? '圈选中' : '圈选' })}
+          </span>
+          {marqueeMode && <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-primary" />}
+        </button>
+
+        {/* AI 操作日志：点击展开/收起 AI 面板 */}
+        <button
+          type="button"
+          onClick={() => setAiPanelOpen((prev) => !prev)}
+          disabled={!latestOperation && !aiPanelOpen}
+          className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left text-xs text-text-secondary hover:bg-background-hover disabled:cursor-default disabled:hover:bg-background-elevated"
+          title={t('browser.operationLog', { defaultValue: 'AI 操作日志' })}
         >
           <Sparkles size={13} className={clsx('shrink-0', latestOperation ? 'text-primary' : 'text-text-tertiary')} />
           <span className="shrink-0 font-medium text-text-primary">
@@ -2499,8 +2538,19 @@ export function BrowserPanel({
                 : latestOperation.message
               : t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
           </span>
+          <ChevronUp size={12} className={clsx('shrink-0 text-text-tertiary transition-transform', aiPanelOpen && 'rotate-180')} />
         </button>
-      )}
+
+        {/* 更多工具：其它工具仍在左侧浏览器侧边栏（工具 Tab）；此处提供一键直达的溢出按钮 */}
+        <button
+          type="button"
+          onClick={openToolsSidebar}
+          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+          title={t('browser.sidebar.tools', { defaultValue: '更多工具（左侧浏览器侧边栏）' })}
+        >
+          <Wrench size={14} />
+        </button>
+      </footer>
 
       {/* 快捷键帮助弹层 */}
       {shortcutsOpen && (
