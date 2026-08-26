@@ -191,7 +191,7 @@ export function TokenStatsTab() {
   const [viewMode, setViewMode] = useState<'overview' | 'model' | 'time' | 'sessions'>('overview')
 
   // 时间趋势
-  const [timeSeries, setTimeSeries] = useState<{ labels: string[]; input: number[]; output: number[]; costUsd: number[]; sessions: number[] }>({ labels: [], input: [], output: [], costUsd: [], sessions: [] })
+  const [timeSeries, setTimeSeries] = useState<{ labels: string[]; input: number[]; output: number[]; cache: number[]; costUsd: number[]; sessions: number[] }>({ labels: [], input: [], output: [], cache: [], costUsd: [], sessions: [] })
   const [trendsLoading, setTrendsLoading] = useState(false)
 
   // 分页
@@ -242,6 +242,7 @@ export function TokenStatsTab() {
         labels: data.map(d => d.date),
         input: data.map(d => d.inputTokens),
         output: data.map(d => d.outputTokens),
+        cache: data.map(d => d.cacheReadTokens + d.cacheCreationTokens),
         costUsd: data.map(d => d.totalCostUsd),
         sessions: data.map(d => d.requestCount),
       })
@@ -267,16 +268,18 @@ export function TokenStatsTab() {
 
   // 引擎分布
   const engineDistribution = useMemo(() => {
-    const map = new Map<string, { sessions: number; input: number; output: number }>()
+    const map = new Map<string, { sessions: number; input: number; output: number; cache: number }>()
     for (const s of topSessions) {
       const eid = s.engineId || 'unknown'
+      const cache = s.cacheReadTokens + s.cacheCreationTokens
       const existing = map.get(eid)
       if (existing) {
         existing.sessions += 1
         existing.input += s.inputTokens
         existing.output += s.outputTokens
+        existing.cache += cache
       } else {
-        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens })
+        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens, cache })
       }
     }
     return Array.from(map.entries()).map(([engineId, s]) => ({ engineId, ...s })).sort((a, b) => b.input - a.input)
@@ -343,15 +346,25 @@ export function TokenStatsTab() {
                   <div className="space-y-2">
                     {modelStats.slice(0, 5).map((m, i) => {
                       const maxInput = Math.max(...modelStats.map(x => x.inputTokens))
+                      const maxCache = Math.max(...modelStats.map(x => x.cacheReadTokens + x.cacheCreationTokens), 1)
+                      const cacheTokens = m.cacheReadTokens + m.cacheCreationTokens
                       return (
                         <div key={m.model}>
                           <div className="flex items-center justify-between text-xs mb-1">
                             <span className="text-text-secondary truncate max-w-[140px]">{m.model}</span>
-                            <span className="text-text-muted tabular-nums">{fmt(m.inputTokens)}</span>
+                            <span className="text-text-muted tabular-nums">
+                              {fmt(m.inputTokens)}
+                              {cacheTokens > 0 && <span className="text-purple-400 ml-1.5" title={t('tokenStats.cache', '缓存')}>·{fmt(cacheTokens)}</span>}
+                            </span>
                           </div>
                           <div className="h-1.5 rounded-full bg-background-tertiary overflow-hidden">
                             <div className={clsx('h-full rounded-full', getColor(i))} style={{ width: `${(m.inputTokens / maxInput) * 100}%` }} />
                           </div>
+                          {cacheTokens > 0 && (
+                            <div className="h-1 rounded-full bg-background-tertiary overflow-hidden mt-0.5">
+                              <div className="h-full rounded-full bg-purple-400" style={{ width: `${(cacheTokens / maxCache) * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -367,15 +380,24 @@ export function TokenStatsTab() {
                     {engineDistribution.map((e, i) => {
                       const total = engineDistribution.reduce((s, x) => s + x.sessions, 0)
                       const pct = total > 0 ? e.sessions / total : 0
+                      const maxCache = Math.max(...engineDistribution.map(x => x.cache), 1)
                       return (
                         <div key={e.engineId}>
                           <div className="flex items-center justify-between text-xs mb-1">
                             <span className="text-text-secondary">{e.engineId}</span>
-                            <span className="text-text-muted tabular-nums">{e.sessions} {t('tokenStats.requests', '请求')} · {fmt(e.input)}</span>
+                            <span className="text-text-muted tabular-nums">
+                              {e.sessions} {t('tokenStats.requests', '请求')} · {fmt(e.input)}
+                              {e.cache > 0 && <span className="text-purple-400 ml-1" title={t('tokenStats.cache', '缓存')}>·{fmt(e.cache)}</span>}
+                            </span>
                           </div>
                           <div className="h-1.5 rounded-full bg-background-tertiary overflow-hidden">
                             <div className={clsx('h-full rounded-full', getColor(i))} style={{ width: `${pct * 100}%` }} />
                           </div>
+                          {e.cache > 0 && (
+                            <div className="h-1 rounded-full bg-background-tertiary overflow-hidden mt-0.5">
+                              <div className="h-full rounded-full bg-purple-400" style={{ width: `${(e.cache / maxCache) * 100}%` }} />
+                            </div>
+                          )}
                         </div>
                       )
                     })}
@@ -454,15 +476,17 @@ export function TokenStatsTab() {
                       <span className="text-xs font-medium text-text-primary">{t('tokenStats.input', '输入 Token')}</span>
                       <span className="flex items-center gap-1.5 text-[10px] text-text-muted"><span className="w-2 h-2 rounded-sm bg-primary" /> {t('tokenStats.input', '输入')}</span>
                       <span className="flex items-center gap-1.5 text-[10px] text-text-muted"><span className="w-2 h-2 rounded-sm bg-amber-500" /> {t('tokenStats.output', '输出')}</span>
+                      <span className="flex items-center gap-1.5 text-[10px] text-text-muted"><span className="w-2 h-2 rounded-sm bg-purple-400" /> {t('tokenStats.cache', '缓存')}</span>
                     </div>
                     <div className="flex items-end gap-1 h-32">
                       {timeSeries.labels.map((label, i) => {
-                        const maxInput = Math.max(...timeSeries.input, 1)
+                        const maxTotal = Math.max(...timeSeries.input.map((v, j) => v + timeSeries.output[j] + timeSeries.cache[j]), 1)
                         return (
                           <div key={label} className="flex-1 flex flex-col items-center gap-0.5 h-full justify-end">
                             <div className="flex flex-col-reverse items-center w-full h-full gap-0.5">
-                              <div className="w-full rounded-t-sm bg-amber-500 transition-all" style={{ height: `${Math.max((timeSeries.output[i] / maxInput) * 100, 0.5)}%` }} title={`${t('tokenStats.output', '输出')}: ${fmt(timeSeries.output[i])}`} />
-                              <div className="w-full rounded-t-sm bg-primary transition-all" style={{ height: `${Math.max((timeSeries.input[i] / maxInput) * 100, 0.5)}%` }} title={`${t('tokenStats.input', '输入')}: ${fmt(timeSeries.input[i])}`} />
+                              <div className="w-full rounded-t-sm bg-amber-500 transition-all" style={{ height: `${Math.max((timeSeries.output[i] / maxTotal) * 100, 0.5)}%` }} title={`${t('tokenStats.output', '输出')}: ${fmt(timeSeries.output[i])}`} />
+                              <div className="w-full rounded-t-sm bg-primary transition-all" style={{ height: `${Math.max((timeSeries.input[i] / maxTotal) * 100, 0.5)}%` }} title={`${t('tokenStats.input', '输入')}: ${fmt(timeSeries.input[i])}`} />
+                              <div className="w-full rounded-t-sm bg-purple-400 transition-all" style={{ height: `${Math.max((timeSeries.cache[i] / maxTotal) * 100, 0.5)}%` }} title={`${t('tokenStats.cache', '缓存')}: ${fmt(timeSeries.cache[i])}`} />
                             </div>
                           </div>
                         )

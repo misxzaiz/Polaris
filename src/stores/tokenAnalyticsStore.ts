@@ -42,6 +42,8 @@ export interface DailyUsageStats {
   requestCount: number
   inputTokens: number
   outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
   totalCostUsd: number
 }
 

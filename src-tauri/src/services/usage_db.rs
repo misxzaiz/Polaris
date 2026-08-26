@@ -87,6 +87,8 @@ pub struct DailyUsageStats {
     pub request_count: i64,
     pub input_tokens: i64,
     pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
     pub total_cost_usd: f64,
 }
 
@@ -392,6 +394,8 @@ impl UsageDb {
                     request_count,
                     input_tokens,
                     output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
                     total_cost_usd,
                 })
             })
