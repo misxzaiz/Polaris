@@ -55,6 +55,7 @@ import {
   browserSetBounds,
   browserSetMarquee,
   browserShowOverflowMenu,
+  browserSuggestions,
   browserToggleDevtools,
   browserZoom,
   makeBrowserWebviewLabel,
@@ -67,6 +68,7 @@ import {
   type BrowserPageContext,
   type BrowserRegion,
   type BrowserSessionInfo,
+  type BrowserSuggestion,
   type MarqueeContextBlock,
 } from '@/services/tauri/browserService'
 import { useToastStore } from '@/stores/toastStore'
@@ -283,6 +285,13 @@ export function BrowserPanel({
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
   const [zoomLevel, setZoomLevel] = useState(1.0)
+
+  // 地址栏搜索建议
+  const [suggestions, setSuggestions] = useState<BrowserSuggestion[]>([])
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
+  const [suggestionActive, setSuggestionActive] = useState(-1)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+  const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
   const [loadingTimeout, setLoadingTimeout] = useState(false)
   const loadingTimeoutRef = useRef<number | null>(null)
@@ -432,6 +441,51 @@ export function BrowserPanel({
     const d = new Date(ts)
     return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }, [])
+
+  // ── 地址栏搜索建议 ──
+  // 输入时从历史+书签搜索，防抖 150ms，用自增序号丢弃过期响应避免竞态
+  const loadSuggestions = useCallback((raw: string) => {
+    const q = raw.trim()
+    const reqId = ++suggestionReqRef.current
+    if (!q) {
+      setSuggestions([])
+      setSuggestionsOpen(false)
+      setSuggestionActive(-1)
+      return
+    }
+    window.setTimeout(() => {
+      browserSuggestions(q)
+        .then((items) => {
+          if (suggestionReqRef.current !== reqId) return
+          setSuggestions(items)
+          setSuggestionsOpen(items.length > 0)
+          setSuggestionActive(-1)
+        })
+        .catch(() => undefined)
+    }, 150)
+  }, [])
+
+  const closeSuggestions = useCallback(() => {
+    setSuggestionsOpen(false)
+    setSuggestionActive(-1)
+  }, [])
+
+  const pickSuggestion = useCallback((item: BrowserSuggestion) => {
+    closeSuggestions()
+    navigateTo(item.url)
+  }, [closeSuggestions, navigateTo])
+
+  // 点击外部关闭建议下拉
+  useEffect(() => {
+    if (!suggestionsOpen) return
+    const onClick = (event: MouseEvent) => {
+      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
+        closeSuggestions()
+      }
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [suggestionsOpen, closeSuggestions])
 
 
   // 点击外部关闭历史下拉
@@ -1345,16 +1399,79 @@ export function BrowserPanel({
             <input
               ref={addressInputRef}
               value={address}
-              onChange={(event) => setAddress(event.target.value)}
+              onChange={(event) => {
+                setAddress(event.target.value)
+                loadSuggestions(event.target.value)
+              }}
               onFocus={() => {
                 addressFocusedRef.current = true
+                if (address.trim()) loadSuggestions(address)
               }}
               onBlur={() => {
                 addressFocusedRef.current = false
               }}
+              onKeyDown={(event) => {
+                if (!suggestionsOpen || suggestions.length === 0) return
+                if (event.key === 'ArrowDown') {
+                  event.preventDefault()
+                  setSuggestionActive((prev) => (prev + 1) % suggestions.length)
+                } else if (event.key === 'ArrowUp') {
+                  event.preventDefault()
+                  setSuggestionActive((prev) =>
+                    prev <= 0 ? suggestions.length - 1 : prev - 1
+                  )
+                } else if (event.key === 'Enter' && suggestionActive >= 0) {
+                  event.preventDefault()
+                  const item = suggestions[suggestionActive]
+                  if (item) {
+                    pickSuggestion(item)
+                  }
+                } else if (event.key === 'Escape') {
+                  closeSuggestions()
+                }
+              }}
               className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
               placeholder={t('browser.addressPlaceholder', { defaultValue: '输入网址或搜索内容' })}
             />
+            {/* 地址栏搜索建议下拉 */}
+            {suggestionsOpen && suggestions.length > 0 && (
+              <div
+                ref={suggestionsRef}
+                className="absolute left-0 right-0 top-9 z-50 max-h-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
+              >
+                <div className="flex items-center justify-between px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
+                  <span>{t('browser.suggest', { defaultValue: '历史与书签' })}</span>
+                  <span className="text-[10px] text-text-tertiary">{suggestions.length}</span>
+                </div>
+                {suggestions.map((item, index) => (
+                  <button
+                    key={`${item.kind}-${item.url}`}
+                    type="button"
+                    className={clsx(
+                      'flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover',
+                      index === suggestionActive && 'bg-background-hover'
+                    )}
+                    onMouseDown={(event) => {
+                      // mousedown 先于 blur，阻止焦点丢失导致的建议关闭
+                      event.preventDefault()
+                    }}
+                    onClick={() => pickSuggestion(item)}
+                    title={item.url}
+                  >
+                    {item.kind === 'bookmark'
+                      ? <Bookmark size={12} className="shrink-0 text-amber-400" fill="currentColor" />
+                      : <Clock size={12} className="shrink-0 text-text-tertiary" />}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-text-primary">{item.title}</span>
+                      <span className="block truncate text-[10px] text-text-tertiary">{item.url}</span>
+                    </span>
+                    {item.kind === 'history' && item.visitCount ? (
+                      <span className="shrink-0 text-[10px] text-text-tertiary">{item.visitCount} 次</span>
+                    ) : null}
+                  </button>
+                ))}
+              </div>
+            )}
             <button
               type="submit"
               className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"

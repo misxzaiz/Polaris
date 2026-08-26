@@ -650,3 +650,70 @@ export function browserHistoryClear(): Promise<void> {
 export function browserHistoryRecord(title: string, url: string): Promise<BrowserHistoryEntry> {
   return invoke<BrowserHistoryEntry>('browser_history_record', { title, url })
 }
+
+// --- 地址栏搜索建议 (Suggestions) ---
+
+export interface BrowserSuggestion {
+  kind: 'bookmark' | 'history' | 'search'
+  title: string
+  url: string
+  /** 访问次数（历史项），书签为 0 */
+  visitCount?: number
+  /** 最近访问时间（历史项），书签为 0 */
+  visitedAt?: number
+  createdAt?: number
+}
+
+export async function browserSuggestions(query: string): Promise<BrowserSuggestion[]> {
+  const q = query.trim()
+  if (!q) return []
+  const lower = q.toLowerCase()
+
+  // 历史 + 书签并发获取，本地直读
+  const [historyItems, bookmarkItems] = await Promise.all([
+    browserHistorySearch(lower, 50).catch(() => [] as BrowserHistoryEntry[]),
+    browserBookmarksList().catch(() => [] as BrowserBookmark[]),
+  ])
+
+  const out: BrowserSuggestion[] = []
+  const seen = new Set<string>()
+
+  const add = (item: BrowserSuggestion) => {
+    if (seen.has(item.url)) return
+    seen.add(item.url)
+    out.push(item)
+  }
+
+  // 历史项优先（按访问次数排序）
+  const sortedHistory = [...historyItems].sort((a, b) => b.visitCount - a.visitCount)
+  for (const h of sortedHistory) {
+    if (
+      h.url.toLowerCase().includes(lower) ||
+      h.title.toLowerCase().includes(lower)
+    ) {
+      add({
+        kind: 'history',
+        title: h.title || h.url,
+        url: h.url,
+        visitCount: h.visitCount,
+        visitedAt: h.visitedAt,
+      })
+    }
+  }
+
+  for (const b of bookmarkItems) {
+    if (
+      b.url.toLowerCase().includes(lower) ||
+      b.title.toLowerCase().includes(lower)
+    ) {
+      add({
+        kind: 'bookmark',
+        title: b.title || b.url,
+        url: b.url,
+        createdAt: b.createdAt,
+      })
+    }
+  }
+
+  return out.slice(0, 8)
+}
