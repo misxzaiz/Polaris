@@ -1416,13 +1416,33 @@ export function BrowserPanel({
     }
   }, [marqueeMode, status, webviewLabel, pageTitle, currentUrl, updateInputDraft])
 
+  // 导航时自动结束圈选模式：页面重载后注入的 overlay 会丢失（body overflow 锁定随之消失），
+  // 但前端 marqueeMode 状态若仍为 true，轮询会持续空转。用 ref 记录上次 URL，
+  // 仅在 currentUrl 真实变化（而非 marqueeMode 自身切换）时触发清理。
+  const lastMarqueeUrlRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (!marqueeMode) {
+      lastMarqueeUrlRef.current = null
+      return
+    }
+    if (lastMarqueeUrlRef.current === null) {
+      lastMarqueeUrlRef.current = currentUrl
+      return
+    }
+    if (lastMarqueeUrlRef.current !== currentUrl) {
+      lastMarqueeUrlRef.current = currentUrl
+      setMarqueeMode(false)
+      setMarqueePolling(false)
+      void browserSetMarquee(webviewLabel, false).catch(() => undefined)
+    }
+  }, [currentUrl, webviewLabel, marqueeMode])
+
   // 监听工具栏容器宽度，用于响应式显隐
   useEffect(() => {
     const el = toolbarWidthRef.current
     if (!el) return
     const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        setToolbarWidth(entry.contentRect.width)
+      for (const entry of entries) {        setToolbarWidth(entry.contentRect.width)
       }
     })
     observer.observe(el)
