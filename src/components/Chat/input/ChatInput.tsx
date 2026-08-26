@@ -1141,7 +1141,7 @@ export function ChatInput({
     }, 0)
   }, [value, fileWorkspace, attachments, debouncedPersistDraft, resolveSnippetAutoVars, currentWorkspace, t, updateInputDraft])
 
-  const handleSend = useCallback(() => {
+  const handleSend = useCallback(async () => {
     const trimmed = value.trim()
     const hasBlocks = contextBlocksRef.current.length > 0
     if ((disabled || isStreaming) && attachments.length === 0 && !hasBlocks) return
@@ -1292,13 +1292,39 @@ export function ChatInput({
     if (editMode && onEditSend) {
       onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
     } else {
-      // 普通发送：若存在上下文块，按 kind 统一格式化后拼入消息内容（不进 attachments 通道）
-      const blocksText = formatContextBlocks(contextBlocksRef.current)
-      const messageContent = blocksText
-        ? trimmed
-          ? `${blocksText}\n\n${trimmed}`
-          : blocksText
-        : trimmed
+      // 普通发送：若存在上下文块——
+      //   有工作区 → 全文落盘为 .polaris-handoff/tcb-*.md，消息只放「引导语 + @path 引用」，
+      //              避免把圈选全文拼入消息体造成膨胀（引擎按 @path 读取文件）；
+      //   无工作区 / 落盘失败 → 降级为全文拼入（保持原行为，不丢功能）。
+      const tcbBlocks = contextBlocksRef.current
+      let messageContent = trimmed
+      if (tcbBlocks.length > 0) {
+        const workspacePath = currentWorkspace?.path
+        let usedReference = false
+        if (workspacePath) {
+          try {
+            const { packContextBlocksAsReference, buildTcbReferencePrompt } = await import('./contextBlockRegistry')
+            const { hasContent, fileRef } = await packContextBlocksAsReference(tcbBlocks, workspacePath)
+            if (hasContent) {
+              const reference = buildTcbReferencePrompt(fileRef)
+              messageContent = trimmed
+                ? `${reference}\n\n${trimmed}`
+                : reference
+              usedReference = true
+            }
+          } catch (e) {
+            log.warn('圈选上下文落盘失败，降级全文拼入', { error: String(e) })
+          }
+        }
+        if (!usedReference) {
+          const blocksText = formatContextBlocks(tcbBlocks)
+          messageContent = blocksText
+            ? trimmed
+              ? `${blocksText}\n\n${trimmed}`
+              : blocksText
+            : trimmed
+        }
+      }
       onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
       const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
