@@ -39,6 +39,9 @@ pub const REGION_SELECT_SCRIPT_BODY: &str =
 pub const NETWORK_INFO_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/network-info.js");
 
+pub const MUTE_CONTROL_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/mute-control.js");
+
 /// 嵌入的交互元素收集器代码
 pub const INTERACTIVE_COLLECTOR_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/interactive-collector.js");
@@ -127,6 +130,11 @@ pub fn marquee_overlay_script(enabled: bool) -> String {
     script.push_str(MARQUEE_OVERLAY_SCRIPT_BODY);
     script.push_str("\n})()");
     script
+}
+
+/// 媒体静音控制脚本
+pub fn mute_control_script(mute: bool) -> String {
+    format!("(() => {{\nconst muteEnabled = {mute};\n{})()", MUTE_CONTROL_SCRIPT)
 }
 
 /// 区域选择脚本（含 collector）

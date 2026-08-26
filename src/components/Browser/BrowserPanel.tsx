@@ -23,6 +23,8 @@ import {
   Sparkles,
   Trash2,
   Unlock,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -54,6 +56,7 @@ import {
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
+  browserSetMuted,
   browserShowOverflowMenu,
   browserSuggestions,
   browserToggleDevtools,
@@ -293,6 +296,13 @@ export function BrowserPanel({
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
+  const [isMuted, setIsMuted] = useState(false)
+  // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
+  const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
+    copyUrl: () => undefined,
+    toggleMute: () => undefined,
+    openExternal: () => undefined,
+  })
   const [loadingTimeout, setLoadingTimeout] = useState(false)
   const loadingTimeoutRef = useRef<number | null>(null)
   const LOADING_TIMEOUT_MS = 30_000
@@ -671,9 +681,11 @@ export function BrowserPanel({
         // 监听溢出菜单动作
         const unlistenOverflow = await listen<{ label: string; action: string }>('browser://overflow-menu-action', (event) => {
           const { action } = event.payload
+          const handlers = actionHandlersRef.current
           if (action === 'devtools') { browserToggleDevtools(webviewLabel).catch(() => undefined) }
-          if (action === 'copyUrl') { copyUrl() }
-          if (action === 'openExternal') { openExternal() }
+          if (action === 'copyUrl') { handlers.copyUrl() }
+          if (action === 'mute') { handlers.toggleMute() }
+          if (action === 'openExternal') { handlers.openExternal() }
           if (action === 'clearData') { browserClearData(webviewLabel).catch(() => undefined) }
         })
         unlistenOverflowRef.current = unlistenOverflow
@@ -1023,6 +1035,25 @@ export function BrowserPanel({
     }
   }, [currentUrl, t, toast])
 
+  const toggleMute = useCallback(async () => {
+    if (status !== 'ready') return
+    const next = !isMuted
+    setIsMuted(next)
+    try {
+      await browserSetMuted(webviewLabel, next)
+      toast.info(
+        next
+          ? t('browser.muted', { defaultValue: '已静音' })
+          : t('browser.unmuted', { defaultValue: '已取消静音' })
+      )
+    } catch {
+      setIsMuted(!next)
+    }
+  }, [status, isMuted, webviewLabel, t, toast])
+
+  // 让 mount effect 内的事件监听始终拿到最新的 handler
+  actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
+
   // ── 圈选 (Marquee Selection) ──
 
   const stopMarquee = useCallback(async () => {
@@ -1247,6 +1278,11 @@ export function BrowserPanel({
         closeTab(tabId)
         return
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'm') {
+        e.preventDefault()
+        toggleMute()
+        return
+      }
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault()
         browserHistory(webviewLabel, 'back').catch(() => undefined)
@@ -1264,7 +1300,7 @@ export function BrowserPanel({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute])
 
   // ── 缩放控制 ──
 
@@ -1746,6 +1782,18 @@ export function BrowserPanel({
             <span className="hidden 2xl:inline">
               {t('browser.marquee', { defaultValue: '圈选' })}
             </span>
+          </button>
+          {/* 静音切换按钮 */}
+          <button
+            type="button"
+            className={clsx(toolbarButtonClass, isMuted && 'text-primary')}
+            onClick={toggleMute}
+            disabled={status !== 'ready'}
+            title={isMuted
+              ? t('browser.unmuted', { defaultValue: '取消静音 (Ctrl+M)' })
+              : t('browser.muted', { defaultValue: '静音 (Ctrl+M)' })}
+          >
+            {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
           </button>
           {/* 溢出菜单按钮 */}
           <button

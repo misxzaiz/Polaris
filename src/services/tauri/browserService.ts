@@ -579,6 +579,10 @@ export async function browserZoom(
   })
 }
 
+export async function browserSetMuted(label: string, mute: boolean): Promise<boolean> {
+  return invoke<boolean>('browser_set_muted', { label, mute })
+}
+
 export interface BrowserNetworkInfo {
   loadTime: number
   domContentLoaded: number

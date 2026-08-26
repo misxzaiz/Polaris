@@ -1801,6 +1801,22 @@ pub async fn browser_toggle_devtools(app: AppHandle, label: String) -> Result<()
     browser_toggle_devtools_with_app(&app, &label)
 }
 
+/// 页面媒体静音控制：通过注入 JS 对 video/audio 元素设置 muted。
+#[cfg(feature = "tauri-app")]
+pub async fn browser_set_muted_with_app(app: &AppHandle, label: &str, mute: bool) -> Result<bool> {
+    let script = browser_scripts::mute_control_script(mute);
+    let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+    let value = parse_eval_json(&raw)?;
+    let muted = value.get("muted").and_then(Value::as_bool).unwrap_or(mute);
+    Ok(muted)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_set_muted(app: AppHandle, label: String, mute: bool) -> Result<bool> {
+    browser_set_muted_with_app(&app, &label, mute).await
+}
+
 /// 获取浏览器历史状态：通过注入 JS 读取 history.length 和 __polaris_can_go_forward__ 标记
 #[cfg(feature = "tauri-app")]
 pub async fn browser_get_history_state_with_app(app: &AppHandle, label: &str) -> Result<BrowserHistoryState> {
@@ -2657,6 +2673,9 @@ pub async fn browser_show_overflow_menu(
     let copy_url = MenuItemBuilder::with_id("browser-overflow-copyUrl", "复制地址")
         .accelerator("CmdOrCtrl+L")
         .build(&app)?;
+    let mute = MenuItemBuilder::with_id("browser-overflow-mute", "页面静音")
+        .accelerator("Ctrl+M")
+        .build(&app)?;
     let open_external =
         MenuItemBuilder::with_id("browser-overflow-openExternal", "外部浏览器打开")
             .build(&app)?;
@@ -2666,6 +2685,7 @@ pub async fn browser_show_overflow_menu(
     let menu = MenuBuilder::new(&app)
         .item(&devtools)
         .item(&copy_url)
+        .item(&mute)
         .item(&open_external)
         .separator()
         .item(&clear_data)
