@@ -1296,9 +1296,10 @@ fn capture_browser_screenshot(
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
 
     // ADR 0004 P2 #2: 检测窗口当前所在显示器而非假设 monitor 0
-    // 用窗口中心点定位所在 monitor,避免多屏坐标偏差
-    let window_center_x = (position.x as f64) + bounds.x + bounds.width / 2.0;
-    let window_center_y = (position.y as f64) + bounds.y + bounds.height / 2.0;
+    // 用窗口中心点定位所在 monitor,避免多屏坐标偏差。
+    // bounds 是逻辑像素，position 是物理像素，须乘 scale_factor 统一坐标空间。
+    let window_center_x = (position.x as f64) + (bounds.x + bounds.width / 2.0) * scale_factor;
+    let window_center_y = (position.y as f64) + (bounds.y + bounds.height / 2.0) * scale_factor;
     let monitor_index = detect_monitor_index(window_center_x, window_center_y);
 
     let x = ((position.x as f64) + bounds.x * scale_factor)
@@ -2713,6 +2714,8 @@ pub async fn browser_show_overflow_menu(
     x: f64,
     y: f64,
 ) -> Result<()> {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock};
     use tauri::menu::{MenuBuilder, MenuItemBuilder};
     use tauri::{LogicalPosition, Position};
 
@@ -2740,20 +2743,35 @@ pub async fn browser_show_overflow_menu(
         .build()?;
 
     if let Some(window) = app.get_webview_window("main") {
-        let app_clone = app.clone();
-        let label_clone = label.clone();
+        // 每个 label 只注册一次 on_menu_event，避免每次弹菜单都累积一个新 handler
+        // 造成回调链表增长与跨标签重复 emit（资源泄漏）。
+        static REGISTERED: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+        let registered = REGISTERED.get_or_init(|| Mutex::new(HashSet::new()));
+        let already = {
+            let mut guard = registered.lock().unwrap();
+            if guard.insert(label.clone()) {
+                false
+            } else {
+                true
+            }
+        };
 
-        window.on_menu_event(move |_window, event: tauri::menu::MenuEvent| {
-            let id = event.id().0.clone();
-            let action = id.replace("browser-overflow-", "");
-            let _ = app_clone.emit(
-                "browser://overflow-menu-action",
-                serde_json::json!({
-                    "label": label_clone,
-                    "action": action,
-                }),
-            );
-        });
+        if !already {
+            let app_clone = app.clone();
+            let label_clone = label.clone();
+
+            window.on_menu_event(move |_window, event: tauri::menu::MenuEvent| {
+                let id = event.id().0.clone();
+                let action = id.replace("browser-overflow-", "");
+                let _ = app_clone.emit(
+                    "browser://overflow-menu-action",
+                    serde_json::json!({
+                        "label": label_clone,
+                        "action": action,
+                    }),
+                );
+            });
+        }
 
         window.popup_menu_at(&menu, Position::Logical(LogicalPosition::new(x, y)))?;
     }
@@ -2866,14 +2884,22 @@ fn browser_get_region_screenshot_with_app(
         Some(b) => (b.x as f64, b.y as f64),
         None => (0.0, 0.0),
     };
-    let x = ((position.x as f64) + (bw + rect.x) * scale_factor).round().max(0.0) as u32;
-    let y = ((position.y as f64) + (bh + rect.y) * scale_factor).round().max(0.0) as u32;
+    let abs_x = (position.x as f64) + (bw + rect.x) * scale_factor;
+    let abs_y = (position.y as f64) + (bh + rect.y) * scale_factor;
+    let x = abs_x.round().max(0.0) as u32;
+    let y = abs_y.round().max(0.0) as u32;
     let width = (rect.width * scale_factor).round().max(1.0) as u32;
     let height = (rect.height * scale_factor).round().max(1.0) as u32;
 
+    // 用区域中心点定位所在显示器（与 capture_browser_screenshot 一致），
+    // 避免硬编码 monitor 0 在多屏时截错屏幕。
+    let center_x = abs_x + rect.width * scale_factor / 2.0;
+    let center_y = abs_y + rect.height * scale_factor / 2.0;
+    let monitor_index = detect_monitor_index(center_x, center_y);
+
     let controller_config = crate::services::computer_control::ComputerConfig::from_env();
     let controller = crate::services::computer_control::ComputerController::new(controller_config)?;
-    let shot = controller.screenshot(Some(0), Some((x, y, width, height)), Some(1.0))?;
+    let shot = controller.screenshot(Some(monitor_index), Some((x, y, width, height)), Some(1.0))?;
     Ok(BrowserScreenshot {
         mime_type: "image/png".to_string(),
         data: shot.png_base64,

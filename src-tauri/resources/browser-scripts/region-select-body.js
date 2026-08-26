@@ -11,7 +11,7 @@ const inRegion = entries.filter((e) => {
   return intersects(e.rect.left, e.rect.top, e.rect.width, e.rect.height);
 });
 const elements = inRegion.map((e, i) => ({
-  index: i,
+  index: e.order ?? i,
   kind: e.kind,
   text: clean(e.label, 240),
   rect: { x: Math.round(e.rect.left), y: Math.round(e.rect.top), width: Math.round(e.rect.width), height: Math.round(e.rect.height) },
