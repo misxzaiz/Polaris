@@ -337,6 +337,7 @@ export function BrowserPanel({
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [bookmarkDropdownOpen, setBookmarkDropdownOpen] = useState(false)
   const bookmarkListRef = useRef<HTMLDivElement>(null)
+  const pageInfoRef = useRef<HTMLDivElement>(null)
 
   // 访问历史状态
   const [historyEntries, setHistoryEntries] = useState<BrowserHistoryEntry[]>([])
@@ -652,6 +653,18 @@ export function BrowserPanel({
     window.addEventListener('click', onClick)
     return () => window.removeEventListener('click', onClick)
   }, [historyDropdownOpen])
+
+  // 点击外部关闭页面信息弹窗
+  useEffect(() => {
+    if (!pageInfoOpen) return
+    const onClick = (event: MouseEvent) => {
+      if (pageInfoRef.current && !pageInfoRef.current.contains(event.target as Node)) {
+        setPageInfoOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [pageInfoOpen])
 
   // 路由变化时记录历史
   useEffect(() => {
@@ -2526,7 +2539,7 @@ export function BrowserPanel({
 
       {/* 页面信息弹窗 */}
       {pageInfoOpen && networkInfo && (
-        <div className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+        <div ref={pageInfoRef} className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
           <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
             <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
               <Activity size={13} className="text-primary" />
