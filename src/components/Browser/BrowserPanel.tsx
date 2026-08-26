@@ -1338,9 +1338,38 @@ export function BrowserPanel({
 
   // ── 缩放控制 ──
 
+  const ZOOM_STEP_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
+
+  // ── 每站点缩放持久化（localStorage） ──
+  const ZOOM_STORE_KEY = 'polaris.browser.zoomByHost'
+
+  const getZoomForHost = useCallback((url: string): number => {
+    try {
+      const host = new URL(url).hostname
+      if (!host) return 1.0
+      const store = JSON.parse(localStorage.getItem(ZOOM_STORE_KEY) || '{}') as Record<string, number>
+      return typeof store[host] === 'number' ? store[host] : 1.0
+    } catch {
+      return 1.0
+    }
+  }, [])
+
+  const saveZoomForHost = useCallback((url: string, scale: number) => {
+    try {
+      const host = new URL(url).hostname
+      if (!host) return
+      const store = JSON.parse(localStorage.getItem(ZOOM_STORE_KEY) || '{}') as Record<string, number>
+      store[host] = scale
+      localStorage.setItem(ZOOM_STORE_KEY, JSON.stringify(store))
+    } catch {
+      // 静默
+    }
+  }, [])
+
   const handleZoom = useCallback(async (newScale: number) => {
     const clamped = Math.max(0.25, Math.min(5.0, newScale))
     setZoomLevel(clamped)
+    if (currentUrl) saveZoomForHost(currentUrl, clamped)
     if (status === 'ready') {
       try {
         await browserZoom(webviewLabel, clamped)
@@ -1348,17 +1377,28 @@ export function BrowserPanel({
         // 静默
       }
     }
-  }, [status, webviewLabel])
+  }, [currentUrl, saveZoomForHost, status, webviewLabel])
 
-  const ZOOM_STEPS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
+  // 导航到新站点时应用该站点的缩放记忆
+  useEffect(() => {
+    if (!currentUrl) return
+    const saved = getZoomForHost(currentUrl)
+    setZoomLevel(saved)
+    if (status === 'ready') {
+      // 应用站点缩放（若与记忆中不同）——站内 hash 变化不重复触发 apply
+      if (saved !== 1.0) {
+        browserZoom(webviewLabel, saved).catch(() => undefined)
+      }
+    }
+  }, [currentUrl, getZoomForHost, status, webviewLabel])
 
   const zoomIn = useCallback(() => {
-    const next = ZOOM_STEPS.find((s) => s > zoomLevel) || zoomLevel
+    const next = ZOOM_STEP_VALUES.find((s) => s > zoomLevel) || zoomLevel
     handleZoom(next)
   }, [zoomLevel, handleZoom])
 
   const zoomOut = useCallback(() => {
-    const prev = [...ZOOM_STEPS].reverse().find((s) => s < zoomLevel) || zoomLevel
+    const prev = [...ZOOM_STEP_VALUES].reverse().find((s) => s < zoomLevel) || zoomLevel
     handleZoom(prev)
   }, [zoomLevel, handleZoom])
 
