@@ -5,13 +5,8 @@
     var state = document.getElementById('polaris-reader-root');
     if (state) {
       // 已启用 → 恢复原始视图
-      var restored = state.dataset.restore;
-      if (restored) {
-        document.documentElement.innerHTML = restored;
-      } else {
-        state.remove();
-        document.body.style.display = '';
-      }
+      state.remove();
+      document.body.style.display = '';
       return JSON.stringify({ enabled: false });
     }
 
@@ -32,7 +27,6 @@
     if (text.length < 40) return JSON.stringify({ enabled: false, error: 'too-short' });
 
     // 保存原始 HTML（限大，超限则仅清 body 子节点用 display 隐藏）
-    var raw = document.documentElement.outerHTML;
 
     // 构建阅读视图
     var title = document.title || '';
@@ -41,7 +35,6 @@
 
     var container = document.createElement('div');
     container.id = 'polaris-reader-root';
-    container.setAttribute('data-restore', '');
     container.style.cssText =
       'position:fixed;inset:0;z-index:2147483000;overflow:auto;background:#fff;color:#1a1a1a;' +
       'padding:48px 24px;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;line-height:1.8;';
