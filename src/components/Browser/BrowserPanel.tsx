@@ -1,25 +1,20 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
-  Activity,
   ArrowLeft,
   ArrowRight,
-  BookOpen,
   BoxSelect,
-  Camera,
   ChevronDown,
   ChevronUp,
   Clock,
   Code2,
   Globe2,
   Keyboard,
-  ListTree,
   Loader2,
   Lock,
   Maximize2,
   Minimize2,
   Minus,
-  MousePointer2,
   PanelBottom,
   Plus,
   RefreshCw,
@@ -27,7 +22,6 @@ import {
   Sparkles,
   Trash2,
   Unlock,
-  Wrench,
   X,
 } from 'lucide-react'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -40,11 +34,9 @@ import {
   browserCreate,
   browserFind,
   browserFindNext,
-  browserGetDiagnostics,
   browserGetHistoryState,
   browserGetMarqueeResult,
   browserGetNetworkInfo,
-  browserGetPageContext,
   browserHistory,
   browserHistoryClear,
   browserHistoryDelete,
@@ -54,24 +46,19 @@ import {
   browserHistorySearch,
   browserNavigate,
   browserReload,
-  browserSaveScreenshot,
   browserSelectRegion,
   browserSetAiOverlay,
   browserSetBounds,
   browserSetMarquee,
   browserSetMuted,
-  browserShowOverflowMenu,
   browserSuggestions,
   browserToggleDevtools,
-  browserToggleReader,
   browserZoom,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
-  type BrowserDiagnostics,
   type BrowserHistoryEntry,
   type BrowserInteractionResult,
-  type BrowserPageContext,
   type BrowserMarqueeEvent,
   type BrowserNetworkInfo,
   type BrowserRegion,
@@ -87,8 +74,6 @@ import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSes
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { useOverlayStore } from '@/stores/overlayStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
-import { useBrowserSidebarStore } from '@/stores/browserSidebarStore'
-
 
 interface BrowserPanelProps {
   tabId: string
@@ -279,13 +264,8 @@ export function BrowserPanel({
     if (toastToo) toast.error(message)
   }
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
-  const [aiPanelTab, setAiPanelTab] = useState<'context' | 'log'>('context')
   const [aiOperationMode, setAiOperationMode] = useState(false)
   const [highlightCount, setHighlightCount] = useState<number | null>(null)
-  const [contextPreview, setContextPreview] = useState<BrowserPageContext | null>(null)
-  const [diagnostics, setDiagnostics] = useState<BrowserDiagnostics | null>(null)
-  const [contextLoading, setContextLoading] = useState(false)
-  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false)
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
   const [boundAgentKey, setBoundAgentKey] = useState<string | null>(null)
   const [marqueeMode, setMarqueeMode] = useState(false)
@@ -308,8 +288,6 @@ export function BrowserPanel({
   const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<BrowserNetworkInfo | null>(null)
   const [isMuted, setIsMuted] = useState(false)
-  const [screenshotting, setScreenshotting] = useState(false)
-  const [readerMode, setReaderMode] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
@@ -462,8 +440,6 @@ export function BrowserPanel({
 
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
-  const browserActionRequest = useTabStore((state) => state.browserActionRequest)
-  const browserActionSeq = useTabStore((state) => state.browserActionSeq)
   const { addContextBlock } = useActiveSessionActions()
   const closeTab = useTabStore((state) => state.closeTab)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
@@ -488,8 +464,6 @@ export function BrowserPanel({
       setAddress(nextUrl)
       setCurrentUrl(nextUrl)
       setPageTitle('Browser')
-      setDiagnostics(null)
-      setContextPreview(null)
       updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
 
       const progressTimer = window.setInterval(() => {
@@ -1006,56 +980,6 @@ export function BrowserPanel({
     }
   }, [status, webviewLabel, toast])
 
-  const refreshContextPreview = useCallback(async () => {
-    setContextLoading(true)
-    setError(null)
-    try {
-      const context = status === 'native-unavailable'
-        ? {
-            title: pageTitle || 'Browser',
-            url: currentUrl,
-            selectedText: '',
-            metaDescription: '',
-            text: '',
-            headings: [],
-            links: [],
-          }
-        : await browserGetPageContext(webviewLabel)
-
-      setContextPreview(context)
-      setAiPanelOpen(true)
-      setAiPanelTab('context')
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      showError(message)
-    } finally {
-      setContextLoading(false)
-    }
-  }, [currentUrl, pageTitle, status, toast, webviewLabel])
-
-  const refreshDiagnostics = useCallback(async () => {
-    if (status === 'native-unavailable') {
-      setAiPanelOpen(true)
-      setDiagnostics(null)
-      return
-    }
-
-    setDiagnosticsLoading(true)
-    setError(null)
-    try {
-      const result = await browserGetDiagnostics(webviewLabel, false)
-      setDiagnostics(result)
-      setContextPreview(result.context)
-      setAiPanelOpen(true)
-      setAiPanelTab('log')
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      showError(message)
-    } finally {
-      setDiagnosticsLoading(false)
-    }
-  }, [status, toast, webviewLabel])
-
   const openExternal = useCallback(async () => {
     try {
       const { openUrl } = await import('@tauri-apps/plugin-opener')
@@ -1091,75 +1015,6 @@ export function BrowserPanel({
     }
   }, [status, isMuted, webviewLabel, t, toast])
 
-  const handleScreenshot = useCallback(async () => {
-    if (status !== 'ready') return
-    setScreenshotting(true)
-    try {
-      const savedPath = await browserSaveScreenshot(webviewLabel, undefined)
-      if (savedPath) {
-        toast.success(t('browser.screenshotSaved', { defaultValue: '截图已保存' }), savedPath)
-      }
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      showError(message)
-      toast.error(t('browser.screenshotFailed', { defaultValue: '截图保存失败' }), message)
-    } finally {
-      setScreenshotting(false)
-    }
-  }, [status, webviewLabel, t, toast])
-
-  const handleToggleReader = useCallback(async () => {
-    if (status !== 'ready') return
-    try {
-      const result = await browserToggleReader(webviewLabel)
-      setReaderMode(result.enabled)
-    } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      showError(message)
-    }
-  }, [status, webviewLabel])
-
-  // 监听左侧浏览器侧边栏发出的工具请求（browserActionRequest），
-  // 将请求转发到对应的 BrowserPanel 操作函数。
-  // 注意：必须放在所有被引用的回调（stopMarquee/startMarquee/handleScreenshot/
-  // toggleMute/handleToggleReader/refreshContextPreview/refreshDiagnostics）之后，
-  // 否则依赖数组求值时这些 const 仍在暂时性死区（TDZ）中，触发
-  // "Cannot access 'X' before initialization"。
-  const actionRef = useRef<number>(0)
-  useEffect(() => {
-    if (!browserActionRequest) return
-    if (actionRef.current === browserActionSeq) return
-    actionRef.current = browserActionSeq
-
-    const action = browserActionRequest
-    switch (action) {
-      case 'marquee':
-        if (marqueeMode) void stopMarquee()
-        else void startMarquee()
-        break
-      case 'screenshot':
-        void handleScreenshot()
-        break
-      case 'mute':
-        void toggleMute()
-        break
-      case 'reader':
-        void handleToggleReader()
-        break
-      case 'context':
-        void refreshContextPreview()
-        break
-      case 'diagnostics':
-        void refreshDiagnostics()
-        break
-      case 'shortcuts':
-        setShortcutsOpen((prev) => !prev)
-        break
-      default:
-        log('unknown browserActionRequest', action)
-    }
-  }, [browserActionRequest, browserActionSeq, marqueeMode, stopMarquee, startMarquee, handleScreenshot, toggleMute, handleToggleReader, refreshContextPreview, refreshDiagnostics])
-
   // 全屏：对浏览器容器使用 HTML5 Fullscreen API
   const handleToggleFullscreen = useCallback(() => {
     const el = rootRef.current
@@ -1169,12 +1024,6 @@ export function BrowserPanel({
     } else {
       document.exitFullscreen?.().catch(() => undefined)
     }
-  }, [])
-
-  // 更多工具：打开左侧浏览器管理中心（不关闭当前面板），并切到「工具」Tab
-  const openToolsSidebar = useCallback(() => {
-    useViewStore.getState().switchToLeftPanel('browser')
-    useBrowserSidebarStore.getState().setActiveTabName('tools')
   }, [])
 
   useEffect(() => {
@@ -1566,32 +1415,6 @@ export function BrowserPanel({
       return null
     }
   }, [currentUrl])
-  const contextExcerpt = useMemo(() => {
-    const selected = contextPreview?.selectedText.trim()
-    const text = selected || contextPreview?.metaDescription || contextPreview?.text || ''
-    return text.trim().slice(0, 520)
-  }, [contextPreview])
-  const contextHeadings = useMemo(
-    () => contextPreview?.headings.filter((heading) => heading.text).slice(0, 5) ?? [],
-    [contextPreview]
-  )
-  const diagnosticsIssueCount = useMemo(
-    () =>
-      diagnostics?.consoleMessages.filter((item) =>
-        ['error', 'warn'].includes(item.level.toLowerCase())
-      ).length ?? 0,
-    [diagnostics]
-  )
-  const diagnosticsLatestIssue = useMemo(
-    () => {
-      const issues =
-        diagnostics?.consoleMessages.filter((item) =>
-          ['error', 'warn'].includes(item.level.toLowerCase())
-        ) ?? []
-      return issues[issues.length - 1]
-    },
-    [diagnostics]
-  )
 
   return (
     <div ref={rootRef} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
@@ -2153,129 +1976,33 @@ export function BrowserPanel({
             </button>
           </div>
 
-          <div className="flex gap-0 border-b border-border-subtle px-3 mt-1">
-            <TabButton
-              active={aiPanelTab === 'context'}
-              onClick={() => setAiPanelTab('context')}
-              label={t('browser.contextPreview', { defaultValue: '上下文' })}
-            />
-            <TabButton
-              active={aiPanelTab === 'log'}
-              onClick={() => setAiPanelTab('log')}
-              label={t('browser.operationLog', { defaultValue: '操作日志' })}
-            />
-          </div>
-
           <div className="px-3 py-2" style={{ minHeight: '70px' }}>
-            {aiPanelTab === 'context' && (
-              <div className="min-w-0 overflow-hidden rounded-md border border-border-subtle bg-background-surface p-2">
-                <div className="mb-1 flex min-w-0 items-center justify-between gap-2">
-                  <div className="min-w-0 truncate text-xs font-medium text-text-primary">
-                    {contextPreview?.title || pageTitle || t('browser.contextPreview', { defaultValue: '上下文' })}
-                  </div>
-                  {contextPreview?.selectedText.trim() && (
-                    <span className="shrink-0 rounded bg-primary/10 px-1.5 py-0.5 text-[11px] text-primary">
-                      {t('browser.hasSelection', { defaultValue: '已选区' })}
+            <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
+              {operationEvents.length === 0 ? (
+                <div className="text-xs text-text-tertiary">
+                  {t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
+                </div>
+              ) : (
+                operationEvents.slice(0, 4).map((operation) => (
+                  <div key={`${operation.timestamp}-${operation.action}`} className="flex min-w-0 items-center gap-2 text-xs">
+                    <span
+                      className={clsx(
+                        'h-1.5 w-1.5 shrink-0 rounded-full',
+                        operation.status === 'success'
+                          ? 'bg-success'
+                          : operation.status === 'warning'
+                            ? 'bg-warning'
+                            : 'bg-danger'
+                      )}
+                    />
+                    <span className="shrink-0 text-text-tertiary">{operation.action}</span>
+                    <span className="min-w-0 truncate text-text-secondary">
+                      {operation.target ? `${operation.message}: ${operation.target}` : operation.message}
                     </span>
-                  )}
-                </div>
-                <div className="mb-1 truncate text-[11px] text-text-tertiary">
-                  {contextPreview?.url || currentUrl}
-                </div>
-                <div className="line-clamp-2 text-xs leading-5 text-text-secondary">
-                  {contextExcerpt || t('browser.noContextPreview', { defaultValue: '还没有读取网页上下文。' })}
-                </div>
-                {contextHeadings.length > 0 && (
-                  <div className="mt-1 flex min-w-0 flex-wrap gap-1 overflow-hidden">
-                    {contextHeadings.map((heading, index) => (
-                      <span
-                        key={`${heading.level}-${heading.text}-${index}`}
-                        className="max-w-[180px] truncate rounded border border-border-subtle px-1.5 py-0.5 text-[11px] text-text-tertiary"
-                        title={heading.text}
-                      >
-                        H{heading.level} {heading.text}
-                      </span>
-                    ))}
                   </div>
-                )}
-              </div>
-            )}
-
-            {aiPanelTab === 'log' && (
-              <div>
-                {diagnostics && (
-                  <div className="mb-2 border-b border-border-subtle pb-2">
-                    <div className="mb-1 flex items-center justify-between gap-2 text-[11px]">
-                      <span className="font-medium text-text-secondary">
-                        {t('browser.diagnostics', { defaultValue: '诊断' })}
-                      </span>
-                      <span
-                        className={clsx(
-                          diagnosticsIssueCount > 0 ? 'text-warning' : 'text-success'
-                        )}
-                      >
-                        {diagnosticsIssueCount > 0
-                          ? t('browser.consoleIssues', {
-                              count: diagnosticsIssueCount,
-                              defaultValue: '{{count}} 条 Console 风险',
-                            })
-                          : t('browser.consoleClean', { defaultValue: 'Console 正常' })}
-                      </span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1 text-[11px] text-text-tertiary">
-                      <span>
-                        {t('browser.actionableCount', {
-                          count: diagnostics.elements.length,
-                          defaultValue: '可操作 {{count}}',
-                        })}
-                      </span>
-                      <span>
-                        {t('browser.visibleCount', {
-                          count: diagnostics.visual.elements.length,
-                          defaultValue: '可视 {{count}}',
-                        })}
-                      </span>
-                      <span>
-                        {diagnostics.visual.screenshot
-                          ? t('browser.screenshotReady', { defaultValue: '截图可用' })
-                          : t('browser.textOnlyDiagnostics', { defaultValue: '文本诊断' })}
-                      </span>
-                    </div>
-                    {diagnosticsLatestIssue && (
-                      <div className="mt-1 truncate text-[11px] text-text-secondary" title={diagnosticsLatestIssue.message}>
-                        {diagnosticsLatestIssue.level}: {diagnosticsLatestIssue.message}
-                      </div>
-                    )}
-                  </div>
-                )}
-                <div className="flex max-h-24 flex-col gap-1 overflow-hidden">
-                  {operationEvents.length === 0 ? (
-                    <div className="text-xs text-text-tertiary">
-                      {t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
-                    </div>
-                  ) : (
-                    operationEvents.slice(0, 4).map((operation) => (
-                      <div key={`${operation.timestamp}-${operation.action}`} className="flex min-w-0 items-center gap-2 text-xs">
-                        <span
-                          className={clsx(
-                            'h-1.5 w-1.5 shrink-0 rounded-full',
-                            operation.status === 'success'
-                              ? 'bg-success'
-                              : operation.status === 'warning'
-                                ? 'bg-warning'
-                                : 'bg-danger'
-                          )}
-                        />
-                        <span className="shrink-0 text-text-tertiary">{operation.action}</span>
-                        <span className="min-w-0 truncate text-text-secondary">
-                          {operation.target ? `${operation.message}: ${operation.target}` : operation.message}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
+                ))
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2326,16 +2053,6 @@ export function BrowserPanel({
               : t('browser.noOperationLog', { defaultValue: '暂无 AI 浏览器操作。' })}
           </span>
           <ChevronUp size={12} className={clsx('shrink-0 text-text-tertiary transition-transform', aiPanelOpen && 'rotate-180')} />
-        </button>
-
-        {/* 更多工具：其它工具仍在左侧浏览器侧边栏（工具 Tab）；此处提供一键直达的溢出按钮 */}
-        <button
-          type="button"
-          onClick={openToolsSidebar}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-          title={t('browser.sidebar.tools', { defaultValue: '更多工具（左侧浏览器侧边栏）' })}
-        >
-          <Wrench size={14} />
         </button>
       </footer>
 
@@ -2456,31 +2173,5 @@ export function BrowserLauncherPanel() {
         </button>
       </div>
     </div>
-  )
-}
-
-function TabButton({ active, onClick, label, count }: {
-  active: boolean
-  onClick: () => void
-  label: string
-  count?: number
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        'px-3 py-1.5 text-xs font-medium border-b-2 transition-colors',
-        active
-          ? 'text-primary border-primary'
-          : 'text-text-tertiary border-transparent hover:text-text-secondary'
-      )}
-    >
-      {label}
-      {count !== undefined && count > 0 && (
-        <span className="ml-1.5 rounded bg-primary/15 px-1.5 py-0.5 text-[10px] text-primary">
-          {count}
-        </span>
-      )}
-    </button>
   )
 }

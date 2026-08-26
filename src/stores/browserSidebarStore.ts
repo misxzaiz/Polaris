@@ -42,7 +42,7 @@ export interface InjectedEntry {
   timestamp: number
 }
 
-export type SidebarTabName = 'quick' | 'history' | 'aiSource' | 'tools'
+export type SidebarTabName = 'quick' | 'history' | 'aiSource'
 
 // ─── Store 类型 ─────────────────────────────────────
 

@@ -60,11 +60,6 @@ export interface OpenBrowserTabOptions {
 interface TabState {
   tabs: Tab[]
   activeTabId: string | null
-  // 浏览器工具请求通道：左侧浏览器侧边栏的工具按钮 → 递增序号并写 action，
-  // BrowserPanel 监听 seq 变化后执行对应操作（复用其内部状态机，如圈选）。
-  // 不使用 persisted 状态，partialize 已排除，每次启动重置。
-  browserActionSeq: number
-  browserActionRequest: string | null
 }
 
 interface TabActions {
@@ -91,9 +86,6 @@ interface TabActions {
   markBrowserNavigationHandled: (tabId: string, requestId: number) => void
   getDirtyTabs: () => Tab[]
   hasDirtyTabs: () => boolean
-
-  // 浏览器工具请求：侧边栏 → BrowserPanel 转发
-  requestBrowserAction: (action: string) => void
 
   // 获取操作
   getActiveTab: () => Tab | null
@@ -123,8 +115,6 @@ export const useTabStore = create<TabStore>()(
       // 初始状态
       tabs: [],
       activeTabId: null,
-      browserActionSeq: 0,
-      browserActionRequest: null,
 
       // 打开 Editor Tab
       openEditorTab: (filePath: string, title?: string) => {
@@ -529,14 +519,6 @@ export const useTabStore = create<TabStore>()(
               },
             }
           }),
-        }))
-      },
-
-      // 浏览器工具请求：侧边栏 → BrowserPanel 转发（递增 seq 触发监听）
-      requestBrowserAction: (action: string) => {
-        set((state) => ({
-          browserActionSeq: state.browserActionSeq + 1,
-          browserActionRequest: action,
         }))
       },
 

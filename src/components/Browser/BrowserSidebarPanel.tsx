@@ -28,11 +28,6 @@ import {
   Check,
   Target,
   ChevronDown,
-  Volume2,
-  BookOpen,
-  ListTree,
-  Activity,
-  Wrench,
 } from 'lucide-react'
 import { useTabStore, type TabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -100,12 +95,6 @@ const selectActiveBrowserUrl = (s: TabStore) => {
 const selectActiveBrowserTitle = (s: TabStore) => {
   const tab = s.tabs.find((t) => t.type === 'browser' && t.id === s.activeTabId)
   return tab?.title
-}
-
-// 当前浏览器标签的 id（用于构造 webview label 调用浏览器命令）
-const selectActiveBrowserTabId = (s: TabStore) => {
-  const tab = s.tabs.find((t) => t.type === 'browser' && t.id === s.activeTabId)
-  return tab?.id
 }
 
 // 当前浏览器标签的网络信息（BrowserPanel 轮询写入 tabStore.metadata.networkInfo）
@@ -662,56 +651,6 @@ function MarqueeSection({
   )
 }
 
-// ─── 工具 Tab ──────────────────────────────────────
-
-function ToolsTab() {
-  const { t } = useTranslation('common')
-  const currentTabId = useTabStore(selectActiveBrowserTabId)
-  const requestBrowserAction = useTabStore((s) => s.requestBrowserAction)
-  const hasTab = Boolean(currentTabId)
-
-  const handleAction = useCallback((action: string) => {
-    requestBrowserAction(action)
-  }, [requestBrowserAction])
-
-  const tools = [
-    // 圈选已上移到浏览器底部状态栏（核心入口），不再在此重复
-    { key: 'screenshot', label: t('browser.saveScreenshot', { defaultValue: '保存截图' }), desc: t('browser.screenshotHint', { defaultValue: '保存当前页面截图' }), icon: <Camera size={14} /> },
-    { key: 'mute', label: t('browser.muted', { defaultValue: '静音切换' }), desc: t('browser.muteHint', { defaultValue: '切换页面静音' }), icon: <Volume2 size={14} /> },
-    { key: 'reader', label: t('browser.readerMode', { defaultValue: '阅读模式' }), desc: t('browser.readerHint', { defaultValue: '切换阅读模式' }), icon: <BookOpen size={14} /> },
-    { key: 'context', label: t('browser.previewContext', { defaultValue: '预览上下文' }), desc: t('browser.contextPreviewDesc', { defaultValue: '查看发送给 AI 的网页上下文' }), icon: <ListTree size={14} /> },
-    { key: 'diagnostics', label: t('browser.diagnostics', { defaultValue: '诊断信息' }), desc: t('browser.diagnosticsHint', { defaultValue: '读取 DOM、Console 诊断' }), icon: <Activity size={14} /> },
-  ]
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      {tools.map((tool) => (
-        <button
-          key={tool.key}
-          type="button"
-          onClick={() => handleAction(tool.key)}
-          disabled={!hasTab}
-          className="flex w-full items-center gap-2.5 rounded-md border border-border-subtle bg-background-surface px-2.5 py-2 text-left text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-          title={tool.desc}
-        >
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-background-elevated text-text-tertiary">
-            {tool.icon}
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="font-medium text-text-primary">{tool.label}</div>
-            <div className="truncate text-[10px] text-text-tertiary">{tool.desc}</div>
-          </div>
-        </button>
-      ))}
-      {!hasTab && (
-        <div className="py-2 text-center text-[11px] text-text-tertiary">
-          {t('browser.sidebar.noTabToolHint', { defaultValue: '打开浏览器标签后可使用这些工具' })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ─── 底部状态栏 ────────────────────────────────────
 
 function BottomStatusBar({ onSendToAi }: { onSendToAi: () => void }) {
@@ -928,7 +867,6 @@ export function BrowserSidebarPanel() {
     { name: 'quick', label: t('browser.sidebar.quickAccess', { defaultValue: '快捷' }), icon: <Globe2 size={13} /> },
     { name: 'history', label: t('browser.sidebar.history', { defaultValue: '历史' }), icon: <History size={13} /> },
     { name: 'aiSource', label: t('browser.sidebar.aiSource', { defaultValue: 'AI 信息源' }), icon: <Sparkles size={13} /> },
-    { name: 'tools', label: t('browser.sidebar.tools', { defaultValue: '工具' }), icon: <Wrench size={13} /> },
   ]
 
   return (
@@ -1010,7 +948,6 @@ export function BrowserSidebarPanel() {
             {activeTabName === 'quick' && <QuickAccessTab onNavigate={handleNavigate} />}
             {activeTabName === 'history' && <HistoryTab onNavigate={handleNavigate} />}
             {activeTabName === 'aiSource' && <AiSourceTab onNavigate={handleNavigate} />}
-            {activeTabName === 'tools' && <ToolsTab />}
           </div>
         </>
       )}
