@@ -678,6 +678,26 @@ export function BrowserPanel({
         })
         unlistenOverflowRef.current = unlistenOverflow
 
+        // 下载内容检测：导航命中可下载类型时，内部已转外部浏览器打开，这里给用户提示
+        const unlistenDownload = await listen<{ label: string; url: string }>('browser://download-detected', (event) => {
+          if (event.payload.label !== webviewLabel) return
+          const { url } = event.payload
+          let filename = url
+          try {
+            filename = decodeURIComponent(new URL(url).pathname.split('/').pop() || url)
+          } catch {
+            // 保留原始 url
+          }
+          toast.info(t('browser.downloadStarted', { defaultValue: '检测到下载内容' }), filename)
+        })
+        unlistenOverflowRef.current = (() => {
+          const prev = unlistenOverflowRef.current
+          return () => {
+            prev?.()
+            unlistenDownload()
+          }
+        })()
+
         readyRef.current = true
         setStatus('ready')
         const nextUrl = session.url || normalizedInitialUrl

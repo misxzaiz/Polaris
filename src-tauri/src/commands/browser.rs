@@ -15,6 +15,8 @@ use tauri::{
     webview::{NewWindowResponse, WebviewBuilder},
     AppHandle, Emitter, Manager, WebviewUrl,
 };
+#[cfg(feature = "tauri-app")]
+use tauri_plugin_opener::OpenerExt;
 
 #[cfg(feature = "tauri-app")]
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -1436,6 +1438,42 @@ fn reuse_browser_webview(
 }
 
 #[cfg(feature = "tauri-app")]
+/// 判断 URL 是否指向可下载内容（而非可渲染页面）。
+/// 命中时内置浏览器不渲染，改为提示用户用外部浏览器打开/下载。
+fn is_downloadable_url(url: &str) -> bool {
+    if url.starts_with("blob:") {
+        return true;
+    }
+    // 去掉 query / fragment 后按路径扩展名判断常见下载类型
+    // 仅命中用户「明显想保存」的内容：压缩包/安装包/Office 文档/PDF。
+    // 图片、音视频、纯文本等浏览器可内联渲染的类型不拦截。
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    let lower = path.to_ascii_lowercase();
+    let last_segment = lower.rsplit('/').next().unwrap_or("");
+    let ext = last_segment
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .trim_end_matches('"');
+    if ext.len() < 1 || ext.len() > 6 || !ext.chars().all(|c| c.is_ascii_alphanumeric()) {
+        return false;
+    }
+    matches!(
+        ext,
+        "pdf"
+            | "zip" | "rar" | "7z" | "tar" | "gz" | "bz2" | "xz"
+            | "exe" | "msi" | "dmg" | "apk" | "ipa"
+            | "doc" | "docx" | "xls" | "xlsx" | "ppt" | "pptx"
+    )
+}
+
+/// 用系统默认浏览器打开外部 URL（下载/无法内嵌渲染的内容）。
+fn url_opener_plugin_open(app: &AppHandle, url: &str) -> Result<()> {
+    app.opener()
+        .open_url(url.to_string(), None::<&str>)
+        .map_err(|e| AppError::Unknown(format!("外部浏览器打开失败: {e}")))
+}
+
 fn browser_create_with_app(
     app: &AppHandle,
     label: String,
@@ -1472,16 +1510,40 @@ fn browser_create_with_app(
     let title_label = label.clone();
     let new_window_app = app.clone();
     let new_window_label = label.clone();
+    let download_app = app.clone();
+    let download_label = label.clone();
 
     let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
         .devtools(true)
         .focused(false)
         .on_navigation(move |next_url| {
+            let url_str = next_url.to_string();
+            // 下载内容判定：命中可下载扩展名 / blob / data 时，转发外部浏览器并阻止内嵌渲染
+            if is_downloadable_url(&url_str) {
+                let ext_app = download_app.clone();
+                let ext_label = download_label.clone();
+                let _ = url_opener_plugin_open(&ext_app, &url_str);
+                let _ = upsert_session_and_emit(
+                    &ext_app,
+                    ext_label.clone(),
+                    None,
+                    Some(url_str.clone()),
+                    None,
+                );
+                let _ = ext_app.emit(
+                    "browser://download-detected",
+                    serde_json::json!({
+                        "label": ext_label,
+                        "url": url_str,
+                    }),
+                );
+                return false;
+            }
             let _ = upsert_session_and_emit(
                 &nav_app,
                 nav_label.clone(),
                 None,
-                Some(next_url.to_string()),
+                Some(url_str),
                 None,
             );
             true
