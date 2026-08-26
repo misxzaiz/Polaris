@@ -1287,6 +1287,14 @@ fn capture_browser_screenshot(
         .outer_position()
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
 
+    // inner_position（客户区原点）而非 outer_position（含标题栏/边框）：
+    // bounds 是前端 getBoundingClientRect 相对 viewport 的逻辑坐标，
+    // 只有把客户区原点换算到屏幕，才能与 viewport 内坐标正确对齐。
+    // 若用 outer_position，截图区域会向标题栏方向整体偏移造成内容错位/全黑。
+    let position = window
+        .inner_position()
+        .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
+
     // ADR 0004 P2 #2: 检测窗口当前所在显示器而非假设 monitor 0
     // 用窗口中心点定位所在 monitor,避免多屏坐标偏差
     let window_center_x = (position.x as f64) + bounds.x + bounds.width / 2.0;
@@ -2846,8 +2854,10 @@ fn browser_get_region_screenshot_with_app(
         .get_window("main")
         .ok_or_else(|| AppError::ValidationError("主窗口不存在，无法截图".to_string()))?;
     let scale_factor = window.scale_factor().unwrap_or(1.0);
+    // 用 inner_position 对齐客户区原点（见 capture_browser_screenshot 注释），
+    // 避免标题栏偏移导致截图区域错位。
     let position = window
-        .outer_position()
+        .inner_position()
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
     // rect 是视口坐标(逻辑像素); WebView bounds 也是逻辑像素
     // 屏幕坐标 = window_position + (bounds + region) × scale_factor
