@@ -6,6 +6,7 @@ import {
   ArrowRight,
   BoxSelect,
   Bookmark,
+  Camera,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -52,6 +53,7 @@ import {
   browserHistorySearch,
   browserNavigate,
   browserReload,
+  browserSaveScreenshot,
   browserSelectRegion,
   browserSetAiOverlay,
   browserSetBounds,
@@ -297,6 +299,7 @@ export function BrowserPanel({
   const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
   const [isMuted, setIsMuted] = useState(false)
+  const [screenshotting, setScreenshotting] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
     copyUrl: () => undefined,
@@ -1051,6 +1054,23 @@ export function BrowserPanel({
     }
   }, [status, isMuted, webviewLabel, t, toast])
 
+  const handleScreenshot = useCallback(async () => {
+    if (status !== 'ready') return
+    setScreenshotting(true)
+    try {
+      const savedPath = await browserSaveScreenshot(webviewLabel, undefined)
+      if (savedPath) {
+        toast.success(t('browser.screenshotSaved', { defaultValue: '截图已保存' }), savedPath)
+      }
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      showError(message)
+      toast.error(t('browser.screenshotFailed', { defaultValue: '截图保存失败' }), message)
+    } finally {
+      setScreenshotting(false)
+    }
+  }, [status, webviewLabel, t, toast])
+
   // 让 mount effect 内的事件监听始终拿到最新的 handler
   actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
 
@@ -1794,6 +1814,16 @@ export function BrowserPanel({
               : t('browser.muted', { defaultValue: '静音 (Ctrl+M)' })}
           >
             {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+          </button>
+          {/* 截图保存按钮 */}
+          <button
+            type="button"
+            className={toolbarButtonClass}
+            onClick={handleScreenshot}
+            disabled={status !== 'ready' || screenshotting}
+            title={t('browser.saveScreenshot', { defaultValue: '保存当前页面截图' })}
+          >
+            {screenshotting ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
           </button>
           {/* 溢出菜单按钮 */}
           <button

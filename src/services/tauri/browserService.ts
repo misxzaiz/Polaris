@@ -583,6 +583,11 @@ export async function browserSetMuted(label: string, mute: boolean): Promise<boo
   return invoke<boolean>('browser_set_muted', { label, mute })
 }
 
+/** 保存当前页面可见区域截图，返回保存路径（用户取消返回 null） */
+export async function browserSaveScreenshot(label: string, scale?: number): Promise<string | null> {
+  return invoke<string | null>('browser_save_screenshot', { label, scale: scale ?? null })
+}
+
 export interface BrowserNetworkInfo {
   loadTime: number
   domContentLoaded: number

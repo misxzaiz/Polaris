@@ -17,6 +17,8 @@ use tauri::{
 };
 #[cfg(feature = "tauri-app")]
 use tauri_plugin_opener::OpenerExt;
+#[cfg(feature = "tauri-app")]
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(feature = "tauri-app")]
 static APP_HANDLE: OnceLock<AppHandle> = OnceLock::new();
@@ -2842,6 +2844,43 @@ fn browser_get_region_screenshot_with_app(
     Err(AppError::ValidationError(
         "当前平台暂不支持内置浏览器区域截图；Windows 平台可用 computer_control 截图".to_string(),
     ))
+}
+
+/// 保存当前页面可见区域截图：捕获 → 弹出保存对话框 → 写入 PNG。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_save_screenshot(
+    app: AppHandle,
+    label: String,
+    scale: Option<f32>,
+) -> Result<Option<String>> {
+    use base64::Engine as _;
+
+    let shot = capture_browser_screenshot(&app, &label, scale.unwrap_or(0.75))?;
+    let Some(shot) = shot else {
+        return Ok(None);
+    };
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(shot.data)
+        .map_err(|e| AppError::ValidationError(format!("截图数据解码失败: {e}")))?;
+
+    let default_name = format!("browser-{}.png", chrono::Local::now().format("%Y%m%d-%H%M%S"));
+    let file_path = app
+        .dialog()
+        .file()
+        .add_filter("PNG 图片", &["png"])
+        .set_file_name(default_name)
+        .blocking_save_file();
+
+    let Some(path) = file_path else {
+        return Ok(None); // 用户取消
+    };
+    let path_buf = path
+        .into_path()
+        .map_err(|e| AppError::ProcessError(format!("保存路径解析失败: {e}")))?;
+    std::fs::write(&path_buf, &bytes)
+        .map_err(|e| AppError::ProcessError(format!("保存截图失败: {e}")))?;
+    Ok(Some(path_buf.to_string_lossy().to_string()))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
