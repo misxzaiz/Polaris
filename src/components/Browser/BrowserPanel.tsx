@@ -1030,18 +1030,32 @@ export function BrowserPanel({
     }
   }, [overlayCount, webviewLabel, syncBounds])
 
-  // 页面就绪后轮询网络信息
+  // 页面就绪后持续轮询网络信息（状态栏实时反映页面网络状态）
   useEffect(() => {
     if (status !== 'ready') return
     let cancelled = false
     const poll = async () => {
-      await new Promise((r) => setTimeout(r, 1500))
-      if (cancelled) return
-      try {
-        const info = await browserGetNetworkInfo(webviewLabel)
-        if (!cancelled) setNetworkInfo(info)
-      } catch {
-        // 静默
+      while (!cancelled) {
+        await new Promise((r) => setTimeout(r, 2000))
+        if (cancelled) return
+        try {
+          const info = await browserGetNetworkInfo(webviewLabel)
+          if (cancelled) return
+          // 网络信息基本字段未变化时跳过，避免无意义重渲染
+          setNetworkInfo((prev) =>
+            prev &&
+            prev.loadTime === info.loadTime &&
+            prev.totalSizeKB === info.totalSizeKB &&
+            prev.resourceCount === info.resourceCount &&
+            prev.failedResources === info.failedResources &&
+            prev.domContentLoaded === info.domContentLoaded &&
+            prev.readyState === info.readyState
+              ? prev
+              : info
+          )
+        } catch {
+          // 静默
+        }
       }
     }
     void poll()

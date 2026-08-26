@@ -236,4 +236,18 @@ mod tests {
         assert!(script.contains("targetH = 240"));
         assert!(script.contains("collectPolarisInteractiveElements"));
     }
+
+    #[test]
+    fn region_select_script_temporarily_hides_overlay_for_sampling() {
+        // 圈选 overlay 以 fixed inset:0 pointer-events:auto 覆盖全屏，
+        // elementFromPoint 采样时必须临时隐藏 overlay，否则命中 overlay 自身导致上下文为空。
+        let rect = BrowserRect { x: 10.0, y: 20.0, width: 320.0, height: 240.0 };
+        let script = region_select_script(&rect);
+        // 采样前设置 pointer-events:none
+        assert!(script.contains("el.style.pointerEvents = 'none'"));
+        // 采样后恢复 pointer-events:auto
+        assert!(script.contains("el.style.pointerEvents = 'auto'"));
+        // 遍历 overlay id 隐藏
+        assert!(script.contains("POLARIS_OVERLAY_IDS"));
+    }
 }
