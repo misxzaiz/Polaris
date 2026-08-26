@@ -36,6 +36,8 @@ import { dialogStorageService } from '@/services/dialogStorage'
 import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
+import { useMarqueeStore } from '../marqueeStore'
+import type { ContextBlock } from './types'
 
 const log = createLogger('ConversationStore')
 
@@ -304,6 +306,57 @@ export function createConversationStore(
             contextBlocks: [],
           },
         })
+      },
+
+      // ===== 临时上下文块（TCB） =====
+      addContextBlock: (block) => {
+        // 校验：缺 id/kind/title 拒绝（保证渲染/格式化/发送契约可用）
+        if (!block || !block.id || !block.kind || !block.title) return false
+        const cur = get().inputDraft
+        const blocks = cur.contextBlocks ?? []
+        // 按 source + dedupeKey 去重：同源同 key 覆盖旧块（保留原位置），否则追加
+        const dupIdx = block.source && block.dedupeKey
+          ? blocks.findIndex(
+              (b) => b.source === block.source && b.dedupeKey === block.dedupeKey
+            )
+          : -1
+        if (dupIdx >= 0) {
+          const next = [...blocks]
+          next[dupIdx] = block
+          set({ inputDraft: { ...cur, contextBlocks: next } })
+          return false
+        }
+        set({ inputDraft: { ...cur, contextBlocks: [...blocks, block] } })
+        return true
+      },
+
+      removeContextBlock: (blockId) => {
+        const cur = get().inputDraft
+        const blocks = (cur.contextBlocks ?? []).filter((b) => b.id !== blockId)
+        if (blocks.length === (cur.contextBlocks ?? []).length) return // 未找到，无变更
+        set({ inputDraft: { ...cur, contextBlocks: blocks } })
+        // 同步清理跨 store 展示（浏览器圈选左侧边栏记录）
+        try {
+          useMarqueeStore.getState().removeBlock(blockId)
+        } catch {
+          // marqueeStore 不可用（测试/降级环境）时静默忽略
+        }
+      },
+
+      clearContextBlocks: () => {
+        const cur = get().inputDraft
+        if ((cur.contextBlocks ?? []).length === 0) return
+        set({ inputDraft: { ...cur, contextBlocks: [] } })
+      },
+
+      updateContextBlockNote: (blockId, note) => {
+        const cur = get().inputDraft
+        const blocks = cur.contextBlocks ?? []
+        const idx = blocks.findIndex((b) => b.id === blockId)
+        if (idx < 0) return
+        const next = [...blocks]
+        next[idx] = { ...next[idx], userNote: note }
+        set({ inputDraft: { ...cur, contextBlocks: next } })
       },
 
       setPendingBriefing: (briefing) => {

@@ -12,7 +12,7 @@ import type {
   Workspace,
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
-import type { MarqueeContextBlock } from '@/services/tauri/browserService'
+import type { MarqueeContextBlock, BrowserRegion } from '@/services/tauri/browserService'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { ProfileMode } from '@/types/sessionConfig'
 import type { StoreApi, UseBoundStore } from 'zustand'
@@ -44,6 +44,73 @@ export interface PendingToolGroup {
   timerId?: ReturnType<typeof setTimeout>
 }
 
+/**
+ * 临时上下文块（TCB）类型声明
+ */
+
+/**
+ * 上下文块（ContextBlock）· 临时上下文分类（kind）。
+ *
+ * 除内置 kinds 之外，来源方/插件可用任意字符串 kind 注册自己的渲染/格式化器；
+ * 未注册的 kind 走通用降级（仅标题 + data 摘要，发送降级为 data JSON）。
+ */
+export type ContextBlockKind =
+  | 'marquee-context' // 浏览器圈选区域
+  | 'text-selection'  // 页面文本选中（预留）
+  | 'screenshot'      // 页面截图（预留）
+  | string            // 插件/来源自定义 kind（未注册时降级渲染）
+
+/**
+ * 上下文块（TCB）· 挂在 AI 输入框的临时上下文。
+ *
+ * 与附件（image/file，走后端 process_attachments 落盘）平行但不进附件管线，
+ * 发送时由 ChatInput 摘出按 kind 转为文本拼入用户消息。绑定会话草稿、不跨会话持久化。
+ *
+ * 兼容说明：为不对现有消费方（左侧边栏 MarqueeSection 直接读 regions/browserLabel/url，
+ * 渲染链按 kind 分发读 data）造成回归，`marquee-context` 数据在顶层 `regions`/`url`/
+ * `browserLabel` 与 `data.regions`/`data.url` 两处并存（双字段兼容）。新 kind 只写 `data`。
+ */
+export interface ContextBlock {
+  /** 块唯一标识（来源方生成，列表内保证唯一） */
+  id: string
+  /** 块类型：决定渲染（可展开查看）、格式化（发送转文本）分支 */
+  kind: ContextBlockKind
+  /** 人类可读标题（折叠 chip 头部展示，可编辑） */
+  title: string
+  /** 来源标注：谁产生的（如 'browser-marquee' / 'plugin-xxx'），用于去重与溯源 */
+  source?: string
+  /** 来源方去重键（同 source 下同 key 视为同一条，addContextBlock 时覆盖旧块） */
+  dedupeKey?: string
+  /** 用户注释/意图补充说明（可编辑，发送时由各 kind formatter 拼入） */
+  userNote?: string
+  /** 来源方自定义负载（展示/格式化详情，随 kind 变化；未注册 kind 降级为 JSON 摘要） */
+  data?: Record<string, unknown>
+
+  // ── marquee-context 顶层兼容字段（双字段兼容，见类型注释）──
+  /** 【兼容】页面 URL（marquee 场景；新 kind 使用 data.url） */
+  url?: string
+  /** 【兼容】圈选区域列表（marquee 场景；新 kind 使用 data.regions） */
+  regions?: BrowserRegion[]
+  /** 【兼容】来源浏览器标签 label（marquee 场景；用于去重与边栏关联） */
+  browserLabel?: string
+}
+
+/**
+ * ContextBlock 渲染/格式化注册表条目。
+ * 由上下文块消费链路（ContextBlockPreview / ChatInput 发送）按 kind 分发调用；
+ * 未注册 kind 由注册表返回 null，调用方走通用降级。
+ */
+export interface ContextBlockKindSpec {
+  /** 折叠 chip 图标（emoji 或图标名） */
+  icon?: string
+  /** 展开态详情渲染：输入框上方预览（可读） */
+  render?: (block: ContextBlock) => import('react').ReactNode
+  /** 发送转文本格式化器（返回空串表示不参与发送拼接） */
+  format?: (block: ContextBlock) => string
+  /** 同源块去重判定（缺省 = source + dedupeKey 相等） */
+  dedupe?: (a: ContextBlock, b: ContextBlock) => boolean
+}
+
 // ============================================================================
 // 输入草稿类型
 // ============================================================================
@@ -57,10 +124,10 @@ export interface InputDraft {
   text: string
   attachments: Attachment[]
   /**
-   * 上下文块（如浏览器圈选区域）。与附件平行，发送时转为文本拼入消息，
-   * 不进入后端 process_attachments 落盘。可选字段保持向后兼容。
+   * 临时上下文块（TCB，如浏览器圈选区域）。与附件平行，发送时按 kind 转为文本
+   * 拼入消息，不进入后端 process_attachments 落盘。可选字段保持向后兼容。
    */
-  contextBlocks?: MarqueeContextBlock[]
+  contextBlocks?: ContextBlock[]
 }
 
 // ============================================================================
@@ -378,6 +445,29 @@ export interface ConversationActions {
   // ===== 输入草稿 =====
   updateInputDraft: (draft: InputDraft) => void
   clearInputDraft: () => void
+
+  // ===== 临时上下文块（TCB） =====
+  /**
+   * 接收一条临时上下文块到当前会话输入框（复用添加）。合并语义：
+   * - 按 source + dedupeKey 去重，重复则覆盖旧块（同源最新优先）；
+   * - 不修改 inputDraft.text / attachments（只增改 contextBlocks）；
+   * - 无活跃会话 / 校验失败（缺 id/kind/title）返回 false，不入列表。
+   * 来源方（浏览器圈选、插件等）应调用本入口，而非直接 updateInputDraft 整体替换草稿。
+   * @returns 是否真正新增（false = 去重覆盖 / 被拒 / 无活跃会话）
+   */
+  addContextBlock: (block: ContextBlock) => boolean
+  /**
+   * 移除一条临时上下文块。同步清理跨store展示（如 marqueeStore 对应圈选记录）。
+   * 兼容：scene 内边栏移除与输入框移除统一走本动作。
+   */
+  removeContextBlock: (blockId: string) => void
+  /** 清空全部临时上下文块（发送完成 / 全部清空时调用）。 */
+  clearContextBlocks: () => void
+  /**
+   * 就地更新临时上下文块的注释（userNote）。按 id 定位，不整体替换草稿。
+   * 与其他块编辑（改名/裁剪等）分离：本次仅注释可编辑，其余字段暂只读。
+   */
+  updateContextBlockNote: (blockId: string, note: string) => void
 
   /** 设置/清空待发送简报（压缩交接产物）；传 null 清空 */
   setPendingBriefing: (briefing: string | null) => void

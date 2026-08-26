@@ -411,6 +411,35 @@ export function useActiveSessionActions() {
         if (!store) return
         return store.clearInputDraft()
       },
+      // TCB（临时上下文块）动作：按 activeSessionId 透传，来源方/UI 统一经此接入
+      addContextBlock: (block: import('./types').ContextBlock) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return false
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return false
+        return store.addContextBlock(block)
+      },
+      removeContextBlock: (blockId: string) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.removeContextBlock(blockId)
+      },
+      clearContextBlocks: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.clearContextBlocks()
+      },
+      updateContextBlockNote: (blockId: string, note: string) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.updateContextBlockNote(blockId, note)
+      },
       setPendingBriefing: (briefing: string | null) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return

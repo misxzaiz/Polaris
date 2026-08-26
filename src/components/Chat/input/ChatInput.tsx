@@ -38,8 +38,8 @@ import type { FileMatch } from '@/services/fileSearch'
 import type { Workspace, EngineId } from '@/types'
 import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
-import type { MarqueeContextBlock } from '@/services/tauri/browserService'
-import { formatMarqueeContextBlock } from '@/services/tauri/browserService'
+import type { ContextBlock } from '@/stores/conversationStore/types'
+import { formatContextBlocks } from './contextBlockRegistry'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
@@ -185,6 +185,7 @@ export function ChatInput({
     updateInputDraft, clearInputDraft, setPromptSuggestion,
     undoPromptOptimize, redoPromptOptimize, applyPendingPromptOptimize,
     resetPromptOptimize, clearPromptOptimizeError,
+    updateContextBlockNote,
   } = useActiveSessionActions()
 
   // 提示词优化状态（per-session 版本栈）+ 优化会话流式预览
@@ -199,8 +200,8 @@ export function ChatInput({
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
-  const [localContextBlocks, setLocalContextBlocks] = useState<MarqueeContextBlock[]>([])
-  const contextBlocksRef = useRef<MarqueeContextBlock[]>([])
+  const [localContextBlocks, setLocalContextBlocks] = useState<ContextBlock[]>([])
+  const contextBlocksRef = useRef<ContextBlock[]>([])
   const [activeSnippet, setActiveSnippet] = useState<PromptSnippet | null>(null)
 
   // Prompt 历史记录（终端风格 ArrowUp 召回）
@@ -384,7 +385,7 @@ export function ChatInput({
   }, [attachments, value, debouncedPersistDraft])
 
   // ── 上下文块（如浏览器圈选区域）──
-  // 由外部组件（BrowserPanel）经 updateInputDraft 写入，这里负责移除与显示。
+  // 由外部组件（BrowserPanel）经 addContextBlock 写入，这里负责移除与显示。
   const removeContextBlock = useCallback((id: string) => {
     const blocks = contextBlocksRef.current.filter((b) => b.id !== id)
     contextBlocksRef.current = blocks
@@ -1286,11 +1287,8 @@ export function ChatInput({
     if (editMode && onEditSend) {
       onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
     } else {
-      // 普通发送：若存在上下文块，将其格式化文本拼入消息内容（不进 attachments 通道）
-      const blocksText = contextBlocksRef.current
-        .map((b) => formatMarqueeContextBlock(b))
-        .filter(Boolean)
-        .join('\n\n')
+      // 普通发送：若存在上下文块，按 kind 统一格式化后拼入消息内容（不进 attachments 通道）
+      const blocksText = formatContextBlocks(contextBlocksRef.current)
       const messageContent = blocksText
         ? trimmed
           ? `${blocksText}\n\n${trimmed}`
@@ -1625,10 +1623,11 @@ export function ChatInput({
             accept={`image/*,${ATTACHMENT_LIMITS.codeExtensions.join(',')}`}
           />
 
-          {/* 上下文块预览（浏览器圈选等，可展开核对，发送时转文本） */}
+          {/* 上下文块预览（浏览器圈选等，可展开核对，可加备注，发送时转文本） */}
           <ContextBlockPreview
             blocks={localContextBlocks}
             onRemove={removeContextBlock}
+            onUpdateNote={updateContextBlockNote}
           />
 
           {/* 附件预览（内嵌到容器顶部） */}
