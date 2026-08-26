@@ -34,6 +34,8 @@ export interface Tab {
   metadata?: Record<string, any>
   /** 文件是否有未保存的更改 */
   isDirty?: boolean
+  /** 标签是否固定（pin tab），固定后不可关闭且在左侧显示 */
+  pinned?: boolean
 }
 
 export interface OpenGitTabOptions {
@@ -75,6 +77,8 @@ interface TabActions {
   closeSavedTabs: () => void
   /** 拖拽排序：把 fromId 标签移动到 toId 标签所在位置 */
   moveTab: (fromId: string, toId: string) => void
+  /** 切换标签固定状态 */
+  togglePinTab: (tabId: string) => void
 
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
@@ -313,6 +317,8 @@ export const useTabStore = create<TabStore>()(
       closeTab: (tabId: string) => {
         set((state) => {
           const closedTab = state.tabs.find((tab) => tab.id === tabId)
+          // 固定标签不可关闭
+          if (closedTab?.pinned) return state
           const newTabs = state.tabs.filter((tab) => tab.id !== tabId)
 
           // 如果关闭的是当前激活的 Tab,需要切换到另一个 Tab
@@ -348,32 +354,34 @@ export const useTabStore = create<TabStore>()(
         set({ activeTabId: tabId })
       },
 
-      // 关闭所有 Tab
+      // 关闭所有 Tab（保留固定标签）
       closeAllTabs: () => {
-        closeBrowserResources(get().tabs)
+        const pinned = get().tabs.filter((t) => t.pinned)
+        closeBrowserResources(get().tabs.filter((t) => !t.pinned))
         set({
-          tabs: [],
-          activeTabId: null,
+          tabs: pinned,
+          activeTabId: pinned.length > 0 ? pinned[0].id : null,
         })
       },
 
-      // 关闭其他 Tab
+      // 关闭其他 Tab（保留固定标签）
       closeOtherTabs: (tabId: string) => {
-        closeBrowserResources(get().tabs.filter((tab) => tab.id !== tabId))
+        const pinned = get().tabs.filter((t) => t.pinned && t.id !== tabId)
+        closeBrowserResources(get().tabs.filter((t) => t.id !== tabId && !t.pinned))
         set((state) => ({
-          tabs: state.tabs.filter((tab) => tab.id === tabId),
+          tabs: [...pinned, ...state.tabs.filter((tab) => tab.id === tabId)],
           activeTabId: tabId,
         }))
       },
 
-      // 关闭右侧 Tab
+      // 关闭右侧 Tab（保留固定标签）
       closeRightTabs: (tabId: string) => {
         set((state) => {
           const tabIndex = state.tabs.findIndex((tab) => tab.id === tabId)
           if (tabIndex === -1) return state
 
           const kept = state.tabs.slice(0, tabIndex + 1)
-          const removed = state.tabs.slice(tabIndex + 1)
+          const removed = state.tabs.slice(tabIndex + 1).filter((t) => !t.pinned)
 
           // 清理被关闭 Tab 的缓冲区
           removed.forEach((tab) => {
@@ -389,15 +397,15 @@ export const useTabStore = create<TabStore>()(
             ? kept[kept.length - 1]?.id || null
             : state.activeTabId
 
-          return { tabs: kept, activeTabId: newActiveTabId }
+          return { tabs: [...kept, ...state.tabs.slice(tabIndex + 1).filter((t) => t.pinned)], activeTabId: newActiveTabId }
         })
       },
 
-      // 关闭已保存的 Tab
+      // 关闭已保存的 Tab（保留固定标签）
       closeSavedTabs: () => {
         set((state) => {
-          const kept = state.tabs.filter((tab) => tab.isDirty)
-          const removed = state.tabs.filter((tab) => !tab.isDirty)
+          const kept = state.tabs.filter((tab) => tab.isDirty || tab.pinned)
+          const removed = state.tabs.filter((tab) => !tab.isDirty && !tab.pinned)
 
           // 清理被关闭 Tab 的缓冲区
           removed.forEach((tab) => {
@@ -429,6 +437,22 @@ export const useTabStore = create<TabStore>()(
           const [moved] = tabs.splice(fromIndex, 1)
           tabs.splice(toIndex, 0, moved)
           return { ...state, tabs }
+        })
+      },
+
+      // 切换标签固定状态（固定区置顶，取消固定回到末尾）
+      togglePinTab: (tabId: string) => {
+        set((state) => {
+          const idx = state.tabs.findIndex((tab) => tab.id === tabId)
+          if (idx === -1) return state
+          const nextPinned = !state.tabs[idx].pinned
+          const mapped = state.tabs.map((t) =>
+            t.id === tabId ? { ...t, pinned: nextPinned } : t
+          )
+          return {
+            ...state,
+            tabs: [...mapped.filter((t) => t.pinned), ...mapped.filter((t) => !t.pinned)],
+          }
         })
       },
 

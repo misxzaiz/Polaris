@@ -4,7 +4,7 @@
 
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Pin, PinOff } from 'lucide-react'
 
 interface TabContextMenuProps {
   visible: boolean
@@ -20,6 +20,8 @@ interface TabContextMenuProps {
   onCopyRelativePath?: (tabId: string) => void
   onRevealInExplorer?: (tabId: string) => void
   onRefreshTab?: (tabId: string) => void
+  onTogglePin?: (tabId: string, pinned: boolean) => void
+  pinned?: boolean
   tabId: string
 }
 
@@ -37,6 +39,8 @@ export function TabContextMenu({
   onCopyRelativePath,
   onRevealInExplorer,
   onRefreshTab,
+  onTogglePin,
+  pinned = false,
   tabId,
 }: TabContextMenuProps) {
   const { t } = useTranslation('common')
@@ -76,6 +80,21 @@ export function TabContextMenu({
       style={{ left: `${x}px`, top: `${y}px` }}
       onContextMenu={(e) => e.preventDefault()}
     >
+      {/* 固定/取消固定 */}
+      {onTogglePin && (
+        <button
+          onClick={() => {
+            onTogglePin(tabId, pinned)
+            onClose()
+          }}
+          className="w-full px-4 py-2 text-left text-sm text-text-primary hover:bg-background-hover transition-colors flex items-center gap-2"
+        >
+          {pinned ? <PinOff size={12} /> : <Pin size={12} />}
+          <span>{pinned ? t('tabs.unpin', '取消固定') : t('tabs.pin', '固定标签')}</span>
+        </button>
+      )}
+      <div className="my-1 border-t border-border-subtle" />
+
       {/* 关闭操作 */}
       <button
         onClick={() => {

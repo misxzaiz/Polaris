@@ -6,7 +6,7 @@
 
 import { ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2 } from 'lucide-react'
+import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2, Pin } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
 import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -49,6 +49,7 @@ export function TabBar({ className = '' }: TabBarProps) {
   const closeSavedTabs = useTabStore((state) => state.closeSavedTabs)
   const switchTab = useTabStore((state) => state.switchTab)
   const moveTab = useTabStore((state) => state.moveTab)
+  const togglePinTab = useTabStore((state) => state.togglePinTab)
 
   // 拖拽排序时记录被拖动的标签 id（dataTransfer 在某些平台不可靠）
   const dragTabIdRef = useRef<string | null>(null)
@@ -279,8 +280,8 @@ export function TabBar({ className = '' }: TabBarProps) {
               draggable
               onClick={() => switchTab(tab.id)}
               onAuxClick={(e) => {
-                // 中键（鼠标按键 1）关闭标签页
-                if (e.button === 1 && tab.closable) {
+                // 中键（鼠标按键 1）关闭标签页（固定标签不关闭）
+                if (e.button === 1 && tab.closable && !tab.pinned) {
                   e.preventDefault()
                   handleClose(e, tab)
                 }
@@ -306,17 +307,23 @@ export function TabBar({ className = '' }: TabBarProps) {
                 dragTabIdRef.current = null
               }}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
-              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-md min-w-[120px] max-w-[200px] cursor-pointer transition-all select-none ${
+              className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-md min-w-[${tab.pinned ? '48' : '120'}] max-w-[200px] cursor-pointer transition-all select-none ${
                 activeTabId === tab.id
                   ? 'bg-background-base text-text-primary border-t-2 border-primary'
                   : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
               }`}
             >
               {/* 图标 */}
-              <span className="shrink-0">{getTabIcon(tab)}</span>
+              {tab.pinned ? (
+                <span className="shrink-0 text-text-tertiary" title={t('tabs.pinned', { defaultValue: '固定标签' })}>
+                  <Pin size={13} />
+                </span>
+              ) : (
+                <span className="shrink-0">{getTabIcon(tab)}</span>
+              )}
 
-              {/* 标题 */}
-              <span className="flex-1 text-xs font-medium truncate">{tab.title}</span>
+              {/* 标题（固定标签只显示图标） */}
+              {!tab.pinned && <span className="flex-1 text-xs font-medium truncate">{tab.title}</span>}
 
               {/* Dirty 指示器或关闭按钮 */}
               {tab.closable && (
@@ -347,7 +354,9 @@ export function TabBar({ className = '' }: TabBarProps) {
         x={contextMenu.x}
         y={contextMenu.y}
         tabId={contextMenu.tabId}
+        pinned={tabs.find((t) => t.id === contextMenu.tabId)?.pinned}
         onClose={() => setContextMenu({ ...contextMenu, visible: false })}
+        onTogglePin={(tabId) => togglePinTab(tabId)}
         onCloseTab={() => {
           // 右键菜单关闭也需要检查 dirty 状态
           const tab = tabs.find(t => t.id === contextMenu.tabId)
