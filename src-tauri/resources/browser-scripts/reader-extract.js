@@ -6,7 +6,9 @@
     if (state) {
       // 已启用 → 恢复原始视图
       state.remove();
-      document.body.style.display = '';
+      Array.prototype.forEach.call(document.body.children, function (child) {
+        child.style.display = '';
+      });
       return JSON.stringify({ enabled: false });
     }
 
@@ -54,9 +56,11 @@
     inner.appendChild(body);
     container.appendChild(inner);
 
-    // 覆盖到当前文档
-    document.body.style.display = 'none';
-    document.body.parentNode.appendChild(container);
+    // 覆盖到当前文档：隐藏 body 子节点，在 body 末尾追加全屏阅读容器
+    Array.prototype.forEach.call(document.body.children, function (child) {
+      child.style.display = 'none';
+    });
+    document.body.appendChild(container);
 
     return JSON.stringify({ enabled: true, title: heading });
   } catch (e) {
