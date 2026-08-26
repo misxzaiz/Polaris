@@ -76,6 +76,8 @@ import {
   type BrowserHistoryEntry,
   type BrowserInteractionResult,
   type BrowserPageContext,
+  type BrowserMarqueeEvent,
+  type BrowserNetworkInfo,
   type BrowserRegion,
   type BrowserSessionInfo,
   type BrowserSuggestion,
@@ -302,7 +304,8 @@ export function BrowserPanel({
   const [suggestionActive, setSuggestionActive] = useState(-1)
   const suggestionsRef = useRef<HTMLDivElement>(null)
   const suggestionReqRef = useRef(0)
-  const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
+  const [networkInfo, setNetworkInfo] = useState<BrowserNetworkInfo | null>(null)
+  const [pageInfoOpen, setPageInfoOpen] = useState(false)
   const [isMuted, setIsMuted] = useState(false)
   const [screenshotting, setScreenshotting] = useState(false)
   const [readerMode, setReaderMode] = useState(false)
@@ -2356,9 +2359,16 @@ export function BrowserPanel({
         </span>
         {/* 网络信息 */}
         {networkInfo && networkInfo.loadTime > 0 && (
-          <span className="hidden sm:inline shrink-0 text-[10px] text-text-tertiary" title={`${networkInfo.resourceCount} 个资源, ${networkInfo.totalSizeKB}KB`}>
+          <span
+            className="hidden sm:inline shrink-0 cursor-help rounded px-1 text-[10px] text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            onClick={() => setPageInfoOpen((v) => !v)}
+            title={t('browser.pageInfo', { defaultValue: '页面加载信息' })}
+          >
             {networkInfo.loadTime < 1000 ? `<${networkInfo.loadTime}ms` : `${(networkInfo.loadTime / 1000).toFixed(1)}s`}
             {' · '}{networkInfo.totalSizeKB}KB
+            {networkInfo.failedResources > 0 && (
+              <span className="ml-0.5 text-danger">· {networkInfo.failedResources}✕</span>
+            )}
           </span>
         )}
         {/* 缩放控制 */}
@@ -2402,6 +2412,69 @@ export function BrowserPanel({
           </button>
         </div>
       </div>
+
+      {/* 页面信息弹窗 */}
+      {pageInfoOpen && networkInfo && (
+        <div className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
+              <Activity size={13} className="text-primary" />
+              {t('browser.pageInfo', { defaultValue: '页面信息' })}
+            </span>
+            <button
+              type="button"
+              className="rounded p-0.5 text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+              onClick={() => setPageInfoOpen(false)}
+              title={t('buttons.close')}
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="space-y-1.5 px-3 py-2 text-[11px]">
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.pageLoadTime', { defaultValue: '加载时间' })}</span>
+              <span className="text-text-secondary">{networkInfo.loadTime < 1000 ? `${networkInfo.loadTime}ms` : `${(networkInfo.loadTime / 1000).toFixed(2)}s`}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.domReady', { defaultValue: 'DOM 就绪' })}</span>
+              <span className="text-text-secondary">{networkInfo.domContentLoaded < 1000 ? `${networkInfo.domContentLoaded}ms` : `${(networkInfo.domContentLoaded / 1000).toFixed(2)}s`}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.resources', { defaultValue: '资源数' })}</span>
+              <span className="text-text-secondary">{networkInfo.resourceCount} 个</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.totalSize', { defaultValue: '总大小' })}</span>
+              <span className="text-text-secondary">{networkInfo.totalSizeKB}KB</span>
+            </div>
+            {networkInfo.resourceCount > 0 && (
+              <div className="flex justify-between">
+                <span className="text-text-tertiary">{t('browser.avgSize', { defaultValue: '平均大小' })}</span>
+                <span className="text-text-secondary">{(networkInfo.totalSizeKB / networkInfo.resourceCount).toFixed(1)}KB</span>
+              </div>
+            )}
+            {networkInfo.failedResources > 0 && (
+              <div className="flex justify-between">
+                <span className="text-text-tertiary">{t('browser.failedResources', { defaultValue: '失败资源' })}</span>
+                <span className="text-danger font-medium">{networkInfo.failedResources} 个</span>
+              </div>
+            )}
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.readyState', { defaultValue: '文档状态' })}</span>
+              <span className="text-text-secondary">{networkInfo.readyState || 'complete'}</span>
+            </div>
+            <hr className="border-border-subtle" />
+            <div className="flex justify-between">
+              <span className="text-text-tertiary">{t('browser.zoom', { defaultValue: '缩放' })}</span>
+              <span className="text-text-secondary">{Math.round(zoomLevel * 100)}%</span>
+            </div>
+            <div className="truncate">
+              <span className="text-text-tertiary">{t('browser.url', { defaultValue: 'URL' })}</span>
+              <span className="ml-2 text-text-secondary" title={currentUrl}>{currentUrl}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 快捷键帮助弹层 */}
       {shortcutsOpen && (
