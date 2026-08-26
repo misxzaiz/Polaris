@@ -1819,6 +1819,16 @@ pub async fn browser_set_muted(app: AppHandle, label: String, mute: bool) -> Res
     browser_set_muted_with_app(&app, &label, mute).await
 }
 
+/// 阅读模式开关：注入 JS 提取正文并覆盖为净化视图；再次调用恢复。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_toggle_reader(app: AppHandle, label: String) -> Result<serde_json::Value> {
+    let script = browser_scripts::READER_EXTRACT_SCRIPT;
+    let raw = browser_eval_with_app(&app, &label, script, Some(5_000)).await?;
+    let value = parse_eval_json(&raw)?;
+    Ok(value)
+}
+
 /// 获取浏览器历史状态：通过注入 JS 读取 history.length 和 __polaris_can_go_forward__ 标记
 #[cfg(feature = "tauri-app")]
 pub async fn browser_get_history_state_with_app(app: &AppHandle, label: &str) -> Result<BrowserHistoryState> {
@@ -3449,5 +3459,14 @@ mod browser_script_tests {
         assert!(enabled.ends_with("})()"));
         let disabled = browser_scripts::mute_control_script(false);
         assert!(disabled.contains("const muteEnabled = false"));
+    }
+
+    #[test]
+    fn reader_script_extracts_article_and_toggles() {
+        let script = browser_scripts::READER_EXTRACT_SCRIPT;
+        assert!(script.contains("polaris-reader-root"));
+        assert!(script.contains("querySelector('article')"));
+        assert!(script.contains("JSON.stringify"));
+        assert!(script.contains("enabled"));
     }
 }

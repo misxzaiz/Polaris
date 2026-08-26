@@ -4,6 +4,7 @@ import {
   Activity,
   ArrowLeft,
   ArrowRight,
+  BookOpen,
   BoxSelect,
   Bookmark,
   Camera,
@@ -62,6 +63,7 @@ import {
   browserShowOverflowMenu,
   browserSuggestions,
   browserToggleDevtools,
+  browserToggleReader,
   browserZoom,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
@@ -300,6 +302,7 @@ export function BrowserPanel({
   const [networkInfo, setNetworkInfo] = useState<{ loadTime: number; resourceCount: number; totalSizeKB: number } | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [screenshotting, setScreenshotting] = useState(false)
+  const [readerMode, setReaderMode] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
     copyUrl: () => undefined,
@@ -1071,6 +1074,17 @@ export function BrowserPanel({
     }
   }, [status, webviewLabel, t, toast])
 
+  const handleToggleReader = useCallback(async () => {
+    if (status !== 'ready') return
+    try {
+      const result = await browserToggleReader(webviewLabel)
+      setReaderMode(result.enabled)
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e)
+      showError(message)
+    }
+  }, [status, webviewLabel])
+
   // 让 mount effect 内的事件监听始终拿到最新的 handler
   actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
 
@@ -1824,6 +1838,18 @@ export function BrowserPanel({
             title={t('browser.saveScreenshot', { defaultValue: '保存当前页面截图' })}
           >
             {screenshotting ? <Loader2 size={15} className="animate-spin" /> : <Camera size={15} />}
+          </button>
+          {/* 阅读模式按钮 */}
+          <button
+            type="button"
+            className={clsx(toolbarButtonClass, readerMode && 'text-primary')}
+            onClick={handleToggleReader}
+            disabled={status !== 'ready'}
+            title={readerMode
+              ? t('browser.exitReader', { defaultValue: '退出阅读模式' })
+              : t('browser.readerMode', { defaultValue: '阅读模式' })}
+          >
+            <BookOpen size={15} />
           </button>
           {/* 溢出菜单按钮 */}
           <button

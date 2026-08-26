@@ -42,6 +42,9 @@ pub const NETWORK_INFO_SCRIPT: &str =
 pub const MUTE_CONTROL_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/mute-control.js");
 
+pub const READER_EXTRACT_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/reader-extract.js");
+
 /// 嵌入的交互元素收集器代码
 pub const INTERACTIVE_COLLECTOR_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/interactive-collector.js");

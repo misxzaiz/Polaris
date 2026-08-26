@@ -583,6 +583,17 @@ export async function browserSetMuted(label: string, mute: boolean): Promise<boo
   return invoke<boolean>('browser_set_muted', { label, mute })
 }
 
+export interface BrowserReaderResult {
+  enabled: boolean
+  title?: string
+  error?: string
+}
+
+/** 切换阅读模式，返回 { enabled, title? } */
+export async function browserToggleReader(label: string): Promise<BrowserReaderResult> {
+  return invoke<BrowserReaderResult>('browser_toggle_reader', { label })
+}
+
 /** 保存当前页面可见区域截图，返回保存路径（用户取消返回 null） */
 export async function browserSaveScreenshot(label: string, scale?: number): Promise<string | null> {
   return invoke<string | null>('browser_save_screenshot', { label, scale: scale ?? null })
