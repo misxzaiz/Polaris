@@ -217,7 +217,8 @@ mod tests {
     use super::*;
 
     fn temp_root(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("polaris-bm-{name}-{now_ms()}"));
+        let stamp = now_ms();
+        let dir = std::env::temp_dir().join(format!("polaris-bm-{name}-{stamp}"));
         std::fs::create_dir_all(&dir).unwrap();
         dir
     }
