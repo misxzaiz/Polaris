@@ -310,6 +310,13 @@ export function createConversationStore(
 
       // ===== 临时上下文块（TCB） =====
       addContextBlock: (block) => {
+        log.info('[TCB] addContextBlock 被调用', {
+          id: block?.id,
+          kind: block?.kind,
+          title: block?.title,
+          hasSession: !!get().sessionId,
+          curBlocks: (block ? block.id : '') ? (get().inputDraft.contextBlocks ?? []).length : -1,
+        })
         // 校验：缺 id/kind/title 拒绝（保证渲染/格式化/发送契约可用）
         if (!block || !block.id || !block.kind || !block.title) return false
         const cur = get().inputDraft

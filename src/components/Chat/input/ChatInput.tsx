@@ -231,6 +231,11 @@ export function ChatInput({
   // 会话切换时同步 Store 草稿到本地 state（只在 sessionId 变化时执行）
   // inputDraft 在 sessionId 变化时才会更新，无需添加依赖
   useEffect(() => {
+    log.info('[TCB] ChatInput 同步 effect 触发', {
+      textLen: inputDraft.text?.length,
+      attachLen: inputDraft.attachments?.length,
+      blockLen: inputDraft.contextBlocks?.length ?? 0,
+    })
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
     const blocks = inputDraft.contextBlocks ?? []
