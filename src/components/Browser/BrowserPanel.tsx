@@ -19,6 +19,7 @@ import {
   Maximize2,
   Minimize2,
   Minus,
+  Keyboard,
   MousePointer2,
   PanelBottom,
   Plus,
@@ -306,6 +307,7 @@ export function BrowserPanel({
   const [screenshotting, setScreenshotting] = useState(false)
   const [readerMode, setReaderMode] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
     copyUrl: () => undefined,
@@ -1356,6 +1358,11 @@ export function BrowserPanel({
         handleToggleFullscreen()
         return
       }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '/') {
+        e.preventDefault()
+        setShortcutsOpen((open) => !open)
+        return
+      }
       if (e.key === 'Escape' && findOpen) {
         closeFind()
         return
@@ -1363,7 +1370,7 @@ export function BrowserPanel({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, handleToggleFullscreen])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, handleToggleFullscreen, setShortcutsOpen])
 
   // ── 缩放控制 ──
 
@@ -1484,7 +1491,7 @@ export function BrowserPanel({
   )
 
   return (
-    <div ref={rootRef} className="flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
+    <div ref={rootRef} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
       <div ref={toolbarWidthRef} className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
         {/* 导航按钮组 */}
         <div className="flex items-center gap-1">
@@ -1919,6 +1926,15 @@ export function BrowserPanel({
               : t('browser.readerMode', { defaultValue: '阅读模式' })}
           >
             <BookOpen size={15} />
+          </button>
+          {/* 快捷键帮助按钮 */}
+          <button
+            type="button"
+            className={toolbarButtonClass}
+            onClick={() => setShortcutsOpen((open) => !open)}
+            title={t('browser.shortcuts', { defaultValue: '快捷键 (Ctrl+Shift+/)' })}
+          >
+            <Keyboard size={15} />
           </button>
           {/* 溢出菜单按钮 */}
           <button
@@ -2386,9 +2402,50 @@ export function BrowserPanel({
           </button>
         </div>
       </div>
+
+      {/* 快捷键帮助弹层 */}
+      {shortcutsOpen && (
+        <div className="absolute right-3 top-12 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+          <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
+            <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
+              <Keyboard size={13} className="text-primary" />
+              {t('browser.shortcuts', { defaultValue: '快捷键' })}
+            </span>
+            <button
+              type="button"
+              className="rounded p-0.5 text-text-tertiary hover:bg-background-hover hover:text-text-primary"
+              onClick={() => setShortcutsOpen(false)}
+              title={t('buttons.close')}
+            >
+              <X size={13} />
+            </button>
+          </div>
+          <div className="max-h-72 overflow-y-auto px-3 py-2">
+            {SHORTCUT_LIST.map((item) => (
+              <div key={item.keys} className="flex items-center justify-between gap-3 py-1.5 text-xs">
+                <span className="text-text-secondary">{t(`browser.shortcut.${item.key}`, { defaultValue: item.label })}</span>
+                <kbd className="shrink-0 rounded border border-border-subtle bg-background-surface px-1.5 py-0.5 font-mono text-[10px] text-text-secondary">
+                  {item.keys}
+                </kbd>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+
+const SHORTCUT_LIST: { key: string; label: string; keys: string }[] = [
+  { key: 'focusAddress', label: '聚焦地址栏', keys: 'Ctrl+L' },
+  { key: 'find', label: '页面内查找', keys: 'Ctrl+F' },
+  { key: 'closeTab', label: '关闭标签', keys: 'Ctrl+W' },
+  { key: 'mute', label: '静音切换', keys: 'Ctrl+M' },
+  { key: 'back', label: '后退', keys: 'Alt+←' },
+  { key: 'forward', label: '前进', keys: 'Alt+→' },
+  { key: 'fullscreen', label: '全屏', keys: 'F11' },
+  { key: 'shortcutsHelp', label: '快捷键帮助', keys: 'Ctrl+Shift+/' },
+]
 
 export function BrowserLauncherPanel() {
   const { t } = useTranslation('common')
