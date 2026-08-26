@@ -3,6 +3,7 @@
 // 存在 ICE（core/slice/index 越界 panic），在渲染这些 warning 时会触发编译器崩溃。
 // 仅在非 tauri-app（web）模式放宽 lint；桌面 / CI 构建保留完整告警，不受影响。
 #![cfg_attr(not(feature = "tauri-app"), allow(warnings))]
+#![recursion_limit = "256"]
 
 pub mod error;
 pub mod models;

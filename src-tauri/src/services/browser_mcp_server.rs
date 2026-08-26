@@ -414,6 +414,30 @@ fn handle_tools_list() -> Value {
             "name": "history_clear",
             "description": "Clear all Polaris browser visit history.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
+        {
+            "name": "bookmark_export",
+            "description": "Export all Polaris browser bookmarks as portable JSON text (used for backup or migration).",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
+        {
+            "name": "bookmark_import",
+            "description": "Import bookmarks from exported JSON text. Merges by URL (same URL updates title); returns the number of items added/updated.",
+            "inputSchema": { "type": "object", "required": ["raw"], "properties": {
+                "raw": { "type": "string", "description": "JSON text previously produced by bookmark_export (or a bare array of bookmark objects)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "history_export",
+            "description": "Export all Polaris browser visit history as portable JSON text (used for backup or migration).",
+            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+        },
+        {
+            "name": "history_import",
+            "description": "Import visit history from exported JSON text. Merges by URL (same URL accumulates visitCount and keeps the newer time); returns the number of items added/updated.",
+            "inputSchema": { "type": "object", "required": ["raw"], "properties": {
+                "raw": { "type": "string", "description": "JSON text previously produced by history_export (or a bare array of history entry objects)." }
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -496,6 +520,19 @@ fn local_bookmark_call(name: &str, args: &Value) -> Value {
                 Err(error) => tool_error(error.to_message()),
             }
         }
+        "bookmark_export" => {
+            match browser_bookmarks::browser_bookmarks_export() {
+                Ok(json_text) => tool_success(json!({ "json": json_text })),
+                Err(error) => tool_error(error.to_message()),
+            }
+        }
+        "bookmark_import" => {
+            let raw = args.get("raw").and_then(Value::as_str).unwrap_or("");
+            match browser_bookmarks::browser_bookmarks_import(raw) {
+                Ok(count) => tool_success(json!({ "imported": count })),
+                Err(error) => tool_error(error.to_message()),
+            }
+        }
         _ => tool_error(format!("未知书签工具: {name}")),
     }
 }
@@ -532,6 +569,19 @@ fn local_history_call(name: &str, args: &Value) -> Value {
             Ok(()) => tool_success(json!({ "ok": true })),
             Err(error) => tool_error(error.to_message()),
         },
+        "history_export" => {
+            match browser_history::browser_history_export() {
+                Ok(json_text) => tool_success(json!({ "json": json_text })),
+                Err(error) => tool_error(error.to_message()),
+            }
+        }
+        "history_import" => {
+            let raw = args.get("raw").and_then(Value::as_str).unwrap_or("");
+            match browser_history::browser_history_import(raw) {
+                Ok(count) => tool_success(json!({ "imported": count })),
+                Err(error) => tool_error(error.to_message()),
+            }
+        }
         _ => tool_error(format!("未知历史工具: {name}")),
     }
 }

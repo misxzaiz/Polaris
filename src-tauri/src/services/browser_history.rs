@@ -215,6 +215,7 @@ pub fn browser_history_export() -> Result<String> {
 
 /// 从导出的 JSON 导入历史。按 URL 去重合并（同 URL 累加 visit_count、取较新时间），
 /// 返回实际新增/更新的条数；超过上限时返回错误。
+/// 兼容两种输入：带 app/kind 信封的导出格式，或裸历史数组。
 pub fn browser_history_import(raw: &str) -> Result<usize> {
     #[derive(Deserialize)]
     struct Envelope {
@@ -226,17 +227,26 @@ pub fn browser_history_import(raw: &str) -> Result<usize> {
         version: Option<u32>,
         items: Vec<BrowserHistoryEntry>,
     }
-    let envelope: Envelope = serde_json::from_str(raw).map_err(|e| {
+    let parsed: serde_json::Value = serde_json::from_str(raw).map_err(|e| {
         AppError::ValidationError(format!("历史导入文件格式无效: {e}"))
     })?;
-    if let Some(kind) = &envelope.kind {
-        if kind != EXPORT_KIND {
-            return Err(AppError::ValidationError(format!(
-                "文件类型不匹配: 期望 {EXPORT_KIND}，实际 {kind}"
-            )));
+    let items: Vec<BrowserHistoryEntry> = if let Some(arr) = parsed.as_array() {
+        serde_json::from_value(serde_json::Value::Array(arr.clone()))
+            .map_err(|e| AppError::ValidationError(format!("历史导入文件格式无效: {e}")))?
+    } else {
+        let envelope: Envelope = serde_json::from_value(parsed).map_err(|e| {
+            AppError::ValidationError(format!("历史导入文件格式无效: {e}"))
+        })?;
+        if let Some(kind) = &envelope.kind {
+            if kind != EXPORT_KIND {
+                return Err(AppError::ValidationError(format!(
+                    "文件类型不匹配: 期望 {EXPORT_KIND}，实际 {kind}"
+                )));
+            }
         }
-    }
-    if envelope.items.len() > MAX_HISTORY {
+        envelope.items
+    };
+    if items.len() > MAX_HISTORY {
         return Err(AppError::ValidationError(format!(
             "导入历史数量超过上限 {MAX_HISTORY}"
         )));
@@ -244,7 +254,7 @@ pub fn browser_history_import(raw: &str) -> Result<usize> {
 
     let mut store = load_store();
     let mut count = 0usize;
-    for item in envelope.items {
+    for item in items {
         let url = item.url.trim().to_string();
         if url.is_empty() {
             continue;
