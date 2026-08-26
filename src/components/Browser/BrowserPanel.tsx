@@ -458,6 +458,7 @@ export function BrowserPanel({
       setError(String(error))
     }
   }, [])
+  const toast = useToastStore()
 
   // ── 书签 / 历史 导入导出 ──
   const exportBookmarks = useCallback(async () => {
@@ -566,7 +567,6 @@ export function BrowserPanel({
     }, 150)
   }, [])
 
-  const toast = useToastStore()
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const { updateInputDraft } = useActiveSessionActions()
