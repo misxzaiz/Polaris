@@ -486,6 +486,62 @@ export function BrowserPanel({
     }, 150)
   }, [])
 
+  const toast = useToastStore()
+  const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
+  const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
+  const { updateInputDraft } = useActiveSessionActions()
+  const closeTab = useTabStore((state) => state.closeTab)
+  const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
+  const latestOperation = operationEvents[0]
+
+  const navigateTo = useCallback(
+    async (rawUrl: string) => {
+      const nextUrl = normalizeBrowserUrl(rawUrl)
+      setLoading(true); loadingRef.current = true
+      setLoadingTimeout(false)
+      // 30s 加载超时检测
+      if (loadingTimeoutRef.current !== null) {
+        window.clearTimeout(loadingTimeoutRef.current)
+      }
+      loadingTimeoutRef.current = window.setTimeout(() => {
+        if (mountedRef.current && loadingRef.current) {
+          setLoadingTimeout(true)
+        }
+      }, LOADING_TIMEOUT_MS)
+      setLoadProgress(10)
+      setError(null)
+      setAddress(nextUrl)
+      setCurrentUrl(nextUrl)
+      setPageTitle('Browser')
+      setDiagnostics(null)
+      setContextPreview(null)
+      updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
+
+      const progressTimer = window.setInterval(() => {
+        setLoadProgress((prev) => Math.min(prev + 15, 85))
+      }, 300)
+
+      try {
+        if (status === 'native-unavailable') {
+          return
+        }
+        await browserNavigate(webviewLabel, nextUrl)
+        setLoadProgress(100)
+      } catch (e) {
+        setError(e instanceof Error ? e.message : String(e))
+      } finally {
+        window.clearInterval(progressTimer)
+        setLoading(false); loadingRef.current = false
+          if (loadingTimeoutRef.current !== null) {
+            window.clearTimeout(loadingTimeoutRef.current);
+            loadingTimeoutRef.current = null
+          }
+        setTimeout(() => setLoadProgress(0), 400)
+      }
+    },
+    [status, tabId, updateBrowserTab, webviewLabel]
+  )
+
   const closeSuggestions = useCallback(() => {
     setSuggestionsOpen(false)
     setSuggestionActive(-1)
@@ -532,14 +588,6 @@ export function BrowserPanel({
     if (stack.length > 100) stack.shift()
     historyIndexRef.current = stack.length - 1
   }, [currentUrl])
-
-  const toast = useToastStore()
-  const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
-  const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
-  const { updateInputDraft } = useActiveSessionActions()
-  const closeTab = useTabStore((state) => state.closeTab)
-  const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
-  const latestOperation = operationEvents[0]
 
   const getContainerBounds = useCallback((): BrowserBounds | null => {
     const container = containerRef.current
@@ -902,54 +950,6 @@ export function BrowserPanel({
     void poll()
     return () => { cancelled = true }
   }, [status, webviewLabel, currentUrl])
-
-  const navigateTo = useCallback(
-    async (rawUrl: string) => {
-      const nextUrl = normalizeBrowserUrl(rawUrl)
-      setLoading(true); loadingRef.current = true
-      setLoadingTimeout(false)
-      // 30s 加载超时检测
-      if (loadingTimeoutRef.current !== null) {
-        window.clearTimeout(loadingTimeoutRef.current)
-      }
-      loadingTimeoutRef.current = window.setTimeout(() => {
-        if (mountedRef.current && loadingRef.current) {
-          setLoadingTimeout(true)
-        }
-      }, LOADING_TIMEOUT_MS)
-      setLoadProgress(10)
-      setError(null)
-      setAddress(nextUrl)
-      setCurrentUrl(nextUrl)
-      setPageTitle('Browser')
-      setDiagnostics(null)
-      setContextPreview(null)
-      updateBrowserTab(tabId, { url: nextUrl, title: 'Browser' })
-
-      const progressTimer = window.setInterval(() => {
-        setLoadProgress((prev) => Math.min(prev + 15, 85))
-      }, 300)
-
-      try {
-        if (status === 'native-unavailable') {
-          return
-        }
-        await browserNavigate(webviewLabel, nextUrl)
-        setLoadProgress(100)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      } finally {
-        window.clearInterval(progressTimer)
-        setLoading(false); loadingRef.current = false
-          if (loadingTimeoutRef.current !== null) {
-            window.clearTimeout(loadingTimeoutRef.current);
-            loadingTimeoutRef.current = null
-          }
-        setTimeout(() => setLoadProgress(0), 400)
-      }
-    },
-    [status, tabId, updateBrowserTab, webviewLabel]
-  )
 
   const handleSubmit = useCallback(
     (event: FormEvent) => {
