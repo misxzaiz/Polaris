@@ -6,6 +6,7 @@
 //! to the appropriate business logic function.
 
 use std::collections::HashMap;
+use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -17,10 +18,14 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::models::prompt_snippet::{CreateSnippetParams, UpdateSnippetParams};
+use crate::commands::scheduler::ProtocolDocuments;
 use crate::models::scheduler::{
-    CreateTaskParams, PromptTemplate, ScheduledTask, TaskCategory, TaskMode,
+    CreateProtocolTemplateParams, CreateTaskParams, PromptTemplate, ProtocolTemplate,
+    ScheduledTask, TaskCategory, TaskMode,
 };
 use crate::services::prompt_snippet_service::PromptSnippetService;
+use crate::services::scheduler::protocol_task::ProtocolTaskService;
+use crate::services::scheduler::protocol_template::ProtocolTemplateService;
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
 use crate::utils::LockStatus;
@@ -292,8 +297,48 @@ pub async fn handle_ipc_bridge(
         "scheduler_update_run_status" => dispatch_scheduler_update_run_status(&state, &args).await,
         "scheduler_start" => dispatch_scheduler_start(state.clone()).await,
         "scheduler_stop" => dispatch_scheduler_stop(&state).await,
-        "scheduler_read_protocol_documents" => Ok(Json(serde_json::json!([]))),
-        "scheduler_build_protocol_prompt" => Ok(Json(Value::String(String::new()))),
+        // ── Scheduler: Protocol Documents ───────────────────────────────────
+        "scheduler_read_protocol_documents" => {
+            dispatch_scheduler_read_protocol_documents(&args)
+        }
+        "scheduler_build_protocol_prompt" => dispatch_scheduler_build_protocol_prompt(&args),
+        "scheduler_update_protocol" => dispatch_scheduler_update_protocol(&args),
+        "scheduler_update_supplement" => dispatch_scheduler_update_supplement(&args),
+        "scheduler_update_memory_index" => dispatch_scheduler_update_memory_index(&args),
+        "scheduler_update_memory_tasks" => dispatch_scheduler_update_memory_tasks(&args),
+        "scheduler_clear_supplement" => dispatch_scheduler_clear_supplement(&args),
+        "scheduler_backup_supplement" => dispatch_scheduler_backup_supplement(&args),
+        "scheduler_backup_document" => dispatch_scheduler_backup_document(&args),
+        "scheduler_has_supplement_content" => {
+            dispatch_scheduler_has_supplement_content(&args)
+        }
+        "scheduler_needs_backup" => dispatch_scheduler_needs_backup(&args),
+        "scheduler_extract_user_content" => dispatch_scheduler_extract_user_content(&args),
+        "scheduler_render_protocol_document" => {
+            dispatch_scheduler_render_protocol_document(&args)
+        }
+        // ── Scheduler: Protocol Templates ───────────────────────────────────
+        "scheduler_list_protocol_templates" => {
+            dispatch_scheduler_list_protocol_templates(&state)
+        }
+        "scheduler_list_protocol_templates_by_category" => {
+            dispatch_scheduler_list_protocol_templates_by_category(&state, &args)
+        }
+        "scheduler_get_protocol_template" => {
+            dispatch_scheduler_get_protocol_template(&state, &args)
+        }
+        "scheduler_create_protocol_template" => {
+            dispatch_scheduler_create_protocol_template(&state, &args)
+        }
+        "scheduler_update_protocol_template" => {
+            dispatch_scheduler_update_protocol_template(&state, &args)
+        }
+        "scheduler_delete_protocol_template" => {
+            dispatch_scheduler_delete_protocol_template(&state, &args)
+        }
+        "scheduler_toggle_protocol_template" => {
+            dispatch_scheduler_toggle_protocol_template(&state, &args)
+        }
 
         // ── Executor: 通用执行器 ──────────────────────────────────────────────
         "execute" => dispatch_execute(&state, &args).await,
@@ -882,6 +927,251 @@ fn dispatch_scheduler_build_prompt(state: &AppState, args: &Value) -> Result<Jso
     let user_prompt = require_string(args, "userPrompt")?;
     let repo = get_scheduler_repo(state, args)?;
     json_result!(repo.build_prompt_with_template(&template_id, &task_name, &user_prompt))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Protocol Documents (protocol-mode task files)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 将 IO 错误转为 WebError（ BadRequest 表达"文件/路径问题"）
+fn io_to_web(e: io::Error) -> WebError {
+    WebError::BadRequest(format!("Protocol document IO error: {}", e))
+}
+
+fn dispatch_scheduler_read_protocol_documents(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let protocol = ProtocolTaskService::read_protocol(&work_dir, &task_path).map_err(io_to_web)?;
+    let supplement =
+        ProtocolTaskService::read_supplement(&work_dir, &task_path).map_err(io_to_web)?;
+    let memory_index =
+        ProtocolTaskService::read_memory_index(&work_dir, &task_path).map_err(io_to_web)?;
+    let memory_tasks =
+        ProtocolTaskService::read_memory_tasks(&work_dir, &task_path).map_err(io_to_web)?;
+    to_json(ProtocolDocuments {
+        protocol,
+        supplement,
+        memory_index,
+        memory_tasks,
+    })
+}
+
+fn dispatch_scheduler_build_protocol_prompt(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let protocol =
+        ProtocolTaskService::read_protocol(&work_dir, &task_path).map_err(io_to_web)?;
+    let supplement =
+        ProtocolTaskService::read_supplement(&work_dir, &task_path).map_err(io_to_web)?;
+    let memory_index =
+        ProtocolTaskService::read_memory_index(&work_dir, &task_path).map_err(io_to_web)?;
+    let memory_tasks =
+        ProtocolTaskService::read_memory_tasks(&work_dir, &task_path).map_err(io_to_web)?;
+    let user_content = ProtocolTaskService::extract_user_content(&supplement);
+    let prompt = format!(
+        "# 协议任务执行\n\n\
+        请按照以下协议文档执行任务。\n\n\
+        ---\n\n\
+        ## 协议文档\n\n\
+        {}\n\n\
+        ---\n\n\
+        ## 用户补充\n\n\
+        {}\n\n\
+        ---\n\n\
+        ## 记忆索引（当前进度）\n\n\
+        {}\n\n\
+        ---\n\n\
+        ## 任务队列\n\n\
+        {}\n\n\
+        ---\n\n\
+        请按照协议文档的执行规则，先检查用户补充，然后推进主任务，最后更新记忆。",
+        protocol,
+        if user_content.trim().is_empty() {
+            "（暂无用户补充）"
+        } else {
+            &user_content
+        },
+        memory_index,
+        memory_tasks
+    );
+    to_json(prompt)
+}
+
+fn dispatch_scheduler_update_protocol(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let content = require_string(args, "content")?;
+    ProtocolTaskService::update_protocol(&work_dir, &task_path, &content).map_err(io_to_web)?;
+    to_json(serde_json::json!({ "ok": true }))
+}
+
+fn dispatch_scheduler_update_supplement(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let content = require_string(args, "content")?;
+    ProtocolTaskService::update_supplement(&work_dir, &task_path, &content).map_err(io_to_web)?;
+    to_json(serde_json::json!({ "ok": true }))
+}
+
+fn dispatch_scheduler_update_memory_index(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let content = require_string(args, "content")?;
+    ProtocolTaskService::update_memory_index(&work_dir, &task_path, &content).map_err(io_to_web)?;
+    to_json(serde_json::json!({ "ok": true }))
+}
+
+fn dispatch_scheduler_update_memory_tasks(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let content = require_string(args, "content")?;
+    ProtocolTaskService::update_memory_tasks(&work_dir, &task_path, &content).map_err(io_to_web)?;
+    to_json(serde_json::json!({ "ok": true }))
+}
+
+fn dispatch_scheduler_clear_supplement(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    ProtocolTaskService::clear_supplement(&work_dir, &task_path).map_err(io_to_web)?;
+    to_json(serde_json::json!({ "ok": true }))
+}
+
+fn dispatch_scheduler_backup_supplement(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let content = require_string(args, "content")?;
+    let path =
+        ProtocolTaskService::backup_supplement(&work_dir, &task_path, &content).map_err(io_to_web)?;
+    to_json(path)
+}
+
+fn dispatch_scheduler_backup_document(args: &Value) -> Result<Json<Value>, WebError> {
+    let task_path = require_string(args, "taskPath")?;
+    let work_dir = require_string(args, "workDir")?;
+    let doc_name = require_string(args, "docName")?;
+    let content = require_string(args, "content")?;
+    let summary = optional_string(args, "summary");
+    let path = ProtocolTaskService::backup_document(
+        &work_dir,
+        &task_path,
+        &doc_name,
+        &content,
+        summary.as_deref(),
+    )
+    .map_err(io_to_web)?;
+    to_json(path)
+}
+
+fn dispatch_scheduler_has_supplement_content(args: &Value) -> Result<Json<Value>, WebError> {
+    let content = require_string(args, "content")?;
+    to_json(ProtocolTaskService::has_supplement_content(&content))
+}
+
+fn dispatch_scheduler_needs_backup(args: &Value) -> Result<Json<Value>, WebError> {
+    let content = require_string(args, "content")?;
+    to_json(ProtocolTaskService::needs_backup(&content))
+}
+
+fn dispatch_scheduler_extract_user_content(args: &Value) -> Result<Json<Value>, WebError> {
+    let content = require_string(args, "content")?;
+    to_json(ProtocolTaskService::extract_user_content(&content))
+}
+
+fn dispatch_scheduler_render_protocol_document(args: &Value) -> Result<Json<Value>, WebError> {
+    let template: ProtocolTemplate = serde_json::from_value(
+        args.get("template").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|e| WebError::BadRequest(format!("Invalid template: {}", e)))?;
+    let params = optional_string_map(args, "params")?
+        .unwrap_or_default();
+    to_json(crate::models::scheduler::generate_protocol_document(
+        &template,
+        &params,
+    ))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Protocol Templates (builtin + custom)
+// ═══════════════════════════════════════════════════════════════════════════
+
+fn get_protocol_template_service(state: &AppState) -> Result<ProtocolTemplateService, WebError> {
+    let config_dir = get_config_dir(state)?;
+    Ok(ProtocolTemplateService::new(&config_dir))
+}
+
+fn dispatch_scheduler_list_protocol_templates(
+    state: &AppState,
+) -> Result<Json<Value>, WebError> {
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.list_templates())
+}
+
+fn dispatch_scheduler_list_protocol_templates_by_category(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    // category 前端传 lowercase 字符串（与 TaskCategory serde 一致）
+    let category_str = require_string(args, "category")?;
+    let category: TaskCategory = serde_json::from_value(Value::String(category_str))
+        .map_err(|e| WebError::BadRequest(format!("Invalid category: {}", e)))?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.list_templates_by_category(category))
+}
+
+fn dispatch_scheduler_get_protocol_template(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.get_template(&id))
+}
+
+fn dispatch_scheduler_create_protocol_template(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let params: CreateProtocolTemplateParams = serde_json::from_value(
+        args.get("params").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|e| WebError::BadRequest(format!("Invalid template params: {}", e)))?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.create_template(params))
+}
+
+fn dispatch_scheduler_update_protocol_template(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let params: CreateProtocolTemplateParams = serde_json::from_value(
+        args.get("params").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|e| WebError::BadRequest(format!("Invalid template params: {}", e)))?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.update_template(&id, params))
+}
+
+fn dispatch_scheduler_delete_protocol_template(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.delete_template(&id))
+}
+
+fn dispatch_scheduler_toggle_protocol_template(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let id = require_string(args, "id")?;
+    let enabled = args
+        .get("enabled")
+        .and_then(|v| v.as_bool())
+        .ok_or_else(|| WebError::BadRequest("Missing 'enabled' field".into()))?;
+    let service = get_protocol_template_service(state)?;
+    json_result!(service.toggle_template(&id, enabled))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
