@@ -6,21 +6,15 @@ import {
   BoxSelect,
   ChevronDown,
   ChevronUp,
-  Clock,
   Code2,
   Globe2,
   Keyboard,
   Loader2,
   Lock,
-  Maximize2,
-  Minimize2,
-  Minus,
   PanelBottom,
-  Plus,
   RefreshCw,
   Search,
   Sparkles,
-  Trash2,
   Unlock,
   X,
 } from 'lucide-react'
@@ -38,12 +32,6 @@ import {
   browserGetMarqueeResult,
   browserGetNetworkInfo,
   browserHistory,
-  browserHistoryClear,
-  browserHistoryDelete,
-  browserHistoryExport,
-  browserHistoryImport,
-  browserHistoryList,
-  browserHistorySearch,
   browserNavigate,
   browserReload,
   browserSelectRegion,
@@ -51,23 +39,17 @@ import {
   browserSetBounds,
   browserSetMarquee,
   browserSetMuted,
-  browserSuggestions,
   browserToggleDevtools,
-  browserZoom,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
-  type BrowserHistoryEntry,
   type BrowserInteractionResult,
   type BrowserMarqueeEvent,
   type BrowserNetworkInfo,
   type BrowserRegion,
   type BrowserSessionInfo,
-  type BrowserSuggestion,
 } from '@/services/tauri/browserService'
 import { useToastStore } from '@/stores/toastStore'
-import { invoke } from '@/services/transport'
-import { readFile } from '@/services/tauri/fileService'
 import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
@@ -257,6 +239,7 @@ export function BrowserPanel({
   const [loadProgress, setLoadProgress] = useState(0)
   const [status, setStatus] = useState<'idle' | 'ready' | 'native-unavailable' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)
+  const toast = useToastStore()
 
   // 统一的错误显示：设置错误状态（内联显示）+ 可选 toast
   function showError(message: string, toastToo = false) {
@@ -278,17 +261,9 @@ export function BrowserPanel({
   const findInputRef = useRef<HTMLInputElement>(null)
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
-  const [zoomLevel, setZoomLevel] = useState(1.0)
 
-  // 地址栏搜索建议
-  const [suggestions, setSuggestions] = useState<BrowserSuggestion[]>([])
-  const [suggestionsOpen, setSuggestionsOpen] = useState(false)
-  const [suggestionActive, setSuggestionActive] = useState(-1)
-  const suggestionsRef = useRef<HTMLDivElement>(null)
-  const suggestionReqRef = useRef(0)
   const [networkInfo, setNetworkInfo] = useState<BrowserNetworkInfo | null>(null)
   const [isMuted, setIsMuted] = useState(false)
-  const [isFullscreen, setIsFullscreen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
@@ -305,138 +280,6 @@ export function BrowserPanel({
   const [historyDropdownOpen, setHistoryDropdownOpen] = useState(false)
   const [historyDropdownDirection, setHistoryDropdownDirection] = useState<'back' | 'forward'>('back')
 
-  // 访问历史状态
-  const [historyEntries, setHistoryEntries] = useState<BrowserHistoryEntry[]>([])
-  const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
-  const [historyQuery, setHistoryQuery] = useState('')
-  const historyPanelRef = useRef<HTMLDivElement>(null)
-
-  // 加载访问历史
-  useEffect(() => {
-    let cancelled = false
-    const loadHistory = () => {
-      const q = historyQuery.trim()
-      const req = q ? browserHistorySearch(q, 100) : browserHistoryList()
-      req
-        .then((items) => {
-          if (!cancelled) setHistoryEntries(items)
-        })
-        .catch(() => undefined)
-    }
-    loadHistory()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [historyQuery, historyPanelOpen])
-
-  // 点击外部关闭历史面板
-  useEffect(() => {
-    if (!historyPanelOpen) return
-    const onClick = (event: MouseEvent) => {
-      if (historyPanelRef.current && !historyPanelRef.current.contains(event.target as Node)) {
-        setHistoryPanelOpen(false)
-      }
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [historyPanelOpen])
-
-  const toggleHistoryPanel = useCallback(() => {
-    setHistoryPanelOpen((prev) => !prev)
-    setHistoryQuery('')
-  }, [])
-
-  const removeHistoryEntry = useCallback(async (id: string) => {
-    try {
-      await browserHistoryDelete(id)
-      setHistoryEntries((prev) => prev.filter((h) => h.id !== id))
-    } catch (error) {
-      setError(String(error))
-    }
-  }, [])
-
-  const clearAllHistory = useCallback(async () => {
-    try {
-      await browserHistoryClear()
-      setHistoryEntries([])
-    } catch (error) {
-      setError(String(error))
-    }
-  }, [])
-  const toast = useToastStore()
-
-  // ── 历史 导入导出 ──
-  const exportHistory = useCallback(async () => {
-    try {
-      const json = await browserHistoryExport()
-      const { save } = await import('@tauri-apps/plugin-dialog')
-      const filePath = await save({
-        defaultPath: `polaris-history-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (filePath) {
-        await invoke('create_file', { path: filePath, content: json })
-        toast.success(t('browser.historyExported', { defaultValue: '历史已导出' }))
-      }
-    } catch (error) {
-      setError(String(error))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, t])
-
-  const importHistory = useCallback(async () => {
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog')
-      const filePath = await open({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (!filePath) return
-      const raw = await readFile(String(filePath))
-      const count = await browserHistoryImport(raw)
-      setHistoryEntries(await browserHistoryList())
-      toast.success(t('browser.historyImported', { defaultValue: '已导入历史 {{count}} 条', count }))
-    } catch (error) {
-      setError(String(error))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, t])
-
-  const formatVisitedTime = useCallback((ts: number) => {
-    if (!ts) return ''
-    const diff = Date.now() - ts
-    const minute = 60_000
-    const hour = 60 * minute
-    const day = 24 * hour
-    if (diff < minute) return '刚刚'
-    if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
-    if (diff < day) return `${Math.floor(diff / hour)} 小时前`
-    const d = new Date(ts)
-    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-  }, [])
-
-  // ── 地址栏搜索建议 ──
-  // 输入时从历史搜索，防抖 150ms，用自增序号丢弃过期响应避免竞态
-  const loadSuggestions = useCallback((raw: string) => {
-    const q = raw.trim()
-    const reqId = ++suggestionReqRef.current
-    if (!q) {
-      setSuggestions([])
-      setSuggestionsOpen(false)
-      setSuggestionActive(-1)
-      return
-    }
-    window.setTimeout(() => {
-      browserSuggestions(q)
-        .then((items) => {
-          if (suggestionReqRef.current !== reqId) return
-          setSuggestions(items)
-          setSuggestionsOpen(items.length > 0)
-          setSuggestionActive(-1)
-        })
-        .catch(() => undefined)
-    }, 150)
-  }, [])
 
   const updateBrowserTab = useTabStore((state) => state.updateBrowserTab)
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
@@ -490,28 +333,6 @@ export function BrowserPanel({
     },
     [status, tabId, updateBrowserTab, webviewLabel]
   )
-
-  const closeSuggestions = useCallback(() => {
-    setSuggestionsOpen(false)
-    setSuggestionActive(-1)
-  }, [])
-
-  const pickSuggestion = useCallback((item: BrowserSuggestion) => {
-    closeSuggestions()
-    navigateTo(item.url)
-  }, [closeSuggestions, navigateTo])
-
-  // 点击外部关闭建议下拉
-  useEffect(() => {
-    if (!suggestionsOpen) return
-    const onClick = (event: MouseEvent) => {
-      if (suggestionsRef.current && !suggestionsRef.current.contains(event.target as Node)) {
-        closeSuggestions()
-      }
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [suggestionsOpen, closeSuggestions])
 
 
   // 点击外部关闭历史下拉
@@ -1015,27 +836,6 @@ export function BrowserPanel({
     }
   }, [status, isMuted, webviewLabel, t, toast])
 
-  // 全屏：对浏览器容器使用 HTML5 Fullscreen API
-  const handleToggleFullscreen = useCallback(() => {
-    const el = rootRef.current
-    if (!el) return
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.().catch(() => undefined)
-    } else {
-      document.exitFullscreen?.().catch(() => undefined)
-    }
-  }, [])
-
-  useEffect(() => {
-    const onFsChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement))
-      // 全屏切换会改变容器尺寸，重新同步 WebView bounds
-      scheduleSyncBounds()
-    }
-    document.addEventListener('fullscreenchange', onFsChange)
-    return () => document.removeEventListener('fullscreenchange', onFsChange)
-  }, [scheduleSyncBounds])
-
   // 任一内部浮层打开/关闭时，重新同步 WebView bounds。
   // 这些浮层带 data-native-webview-overlay 标记，遮挡检测会隐藏 webview 露出浮层；
   // 浮层关闭时恢复 webview。同步必须在浮层挂载/卸载之后进行，故用 setTimeout 延后一帧。
@@ -1043,8 +843,6 @@ export function BrowserPanel({
     const id = window.setTimeout(() => scheduleSyncBounds(), 0)
     return () => window.clearTimeout(id)
   }, [
-    suggestionsOpen,
-    historyPanelOpen,
     historyDropdownOpen,
     shortcutsOpen,
     scheduleSyncBounds,
@@ -1305,11 +1103,6 @@ export function BrowserPanel({
         browserHistory(webviewLabel, 'forward').catch(() => undefined)
         return
       }
-      if (e.key === 'F11') {
-        e.preventDefault()
-        handleToggleFullscreen()
-        return
-      }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '/') {
         e.preventDefault()
         setShortcutsOpen((open) => !open)
@@ -1322,77 +1115,9 @@ export function BrowserPanel({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, handleToggleFullscreen, setShortcutsOpen])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, setShortcutsOpen])
 
   // ── 缩放控制 ──
-
-  const ZOOM_STEP_VALUES = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0]
-
-  // ── 每站点缩放持久化（localStorage） ──
-  const ZOOM_STORE_KEY = 'polaris.browser.zoomByHost'
-
-  const getZoomForHost = useCallback((url: string): number => {
-    try {
-      const host = new URL(url).hostname
-      if (!host) return 1.0
-      const store = JSON.parse(localStorage.getItem(ZOOM_STORE_KEY) || '{}') as Record<string, number>
-      return typeof store[host] === 'number' ? store[host] : 1.0
-    } catch {
-      return 1.0
-    }
-  }, [])
-
-  const saveZoomForHost = useCallback((url: string, scale: number) => {
-    try {
-      const host = new URL(url).hostname
-      if (!host) return
-      const store = JSON.parse(localStorage.getItem(ZOOM_STORE_KEY) || '{}') as Record<string, number>
-      store[host] = scale
-      localStorage.setItem(ZOOM_STORE_KEY, JSON.stringify(store))
-    } catch {
-      // 静默
-    }
-  }, [])
-
-  const handleZoom = useCallback(async (newScale: number) => {
-    const clamped = Math.max(0.25, Math.min(5.0, newScale))
-    setZoomLevel(clamped)
-    if (currentUrl) saveZoomForHost(currentUrl, clamped)
-    if (status === 'ready') {
-      try {
-        await browserZoom(webviewLabel, clamped)
-      } catch {
-        // 静默
-      }
-    }
-  }, [currentUrl, saveZoomForHost, status, webviewLabel])
-
-  // 导航到新站点时应用该站点的缩放记忆
-  useEffect(() => {
-    if (!currentUrl) return
-    const saved = getZoomForHost(currentUrl)
-    setZoomLevel(saved)
-    if (status === 'ready') {
-      // 应用站点缩放（若与记忆中不同）——站内 hash 变化不重复触发 apply
-      if (saved !== 1.0) {
-        browserZoom(webviewLabel, saved).catch(() => undefined)
-      }
-    }
-  }, [currentUrl, getZoomForHost, status, webviewLabel])
-
-  const zoomIn = useCallback(() => {
-    const next = ZOOM_STEP_VALUES.find((s) => s > zoomLevel) || zoomLevel
-    handleZoom(next)
-  }, [zoomLevel, handleZoom])
-
-  const zoomOut = useCallback(() => {
-    const prev = [...ZOOM_STEP_VALUES].reverse().find((s) => s < zoomLevel) || zoomLevel
-    handleZoom(prev)
-  }, [zoomLevel, handleZoom])
-
-  const resetZoom = useCallback(() => {
-    handleZoom(1.0)
-  }, [handleZoom])
 
   const toolbarButtonClass =
     'flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
@@ -1493,76 +1218,16 @@ export function BrowserPanel({
               value={address}
               onChange={(event) => {
                 setAddress(event.target.value)
-                loadSuggestions(event.target.value)
               }}
               onFocus={() => {
                 addressFocusedRef.current = true
-                if (address.trim()) loadSuggestions(address)
               }}
               onBlur={() => {
                 addressFocusedRef.current = false
               }}
-              onKeyDown={(event) => {
-                if (!suggestionsOpen || suggestions.length === 0) return
-                if (event.key === 'ArrowDown') {
-                  event.preventDefault()
-                  setSuggestionActive((prev) => (prev + 1) % suggestions.length)
-                } else if (event.key === 'ArrowUp') {
-                  event.preventDefault()
-                  setSuggestionActive((prev) =>
-                    prev <= 0 ? suggestions.length - 1 : prev - 1
-                  )
-                } else if (event.key === 'Enter' && suggestionActive >= 0) {
-                  event.preventDefault()
-                  const item = suggestions[suggestionActive]
-                  if (item) {
-                    pickSuggestion(item)
-                  }
-                } else if (event.key === 'Escape') {
-                  closeSuggestions()
-                }
-              }}
               className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
               placeholder={t('browser.addressPlaceholder', { defaultValue: '输入网址或搜索内容' })}
             />
-            {/* 地址栏搜索建议下拉 */}
-            {suggestionsOpen && suggestions.length > 0 && (
-              <div
-                ref={suggestionsRef}
-                data-native-webview-overlay
-                className="absolute left-0 right-0 top-9 z-50 max-h-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
-              >
-                <div className="flex items-center justify-between px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
-                  <span>{t('browser.suggest', { defaultValue: '历史' })}</span>
-                  <span className="text-[10px] text-text-tertiary">{suggestions.length}</span>
-                </div>
-                {suggestions.map((item, index) => (
-                  <button
-                    key={`${item.kind}-${item.url}`}
-                    type="button"
-                    className={clsx(
-                      'flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover',
-                      index === suggestionActive && 'bg-background-hover'
-                    )}
-                    onMouseDown={(event) => {
-                      // mousedown 先于 blur，阻止焦点丢失导致的建议关闭
-                      event.preventDefault()
-                    }}
-                    onClick={() => pickSuggestion(item)}
-                    title={item.url}
-                  >
-                    <Clock size={12} className="shrink-0 text-text-tertiary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-text-primary">{item.title}</span>
-                      <span className="block truncate text-[10px] text-text-tertiary">{item.url}</span>
-                    </span>
-                    {item.kind === 'history' && item.visitCount ? (
-                      <span className="shrink-0 text-[10px] text-text-tertiary">{item.visitCount} 次</span>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-            )}
             <button
               type="submit"
               className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary hover:bg-background-hover hover:text-text-primary"
@@ -1589,106 +1254,6 @@ export function BrowserPanel({
           </div>
         </form>
 
-        {/* 访问历史：按钮 + 下拉面板 */}
-        <div className="relative flex items-center">
-          <button
-            type="button"
-            className={clsx(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
-              historyPanelOpen
-                ? 'border-primary/60 bg-primary/10 text-primary'
-                : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
-            )}
-            onClick={toggleHistoryPanel}
-            title={t('browser.historyPanel', { defaultValue: '浏览历史' })}
-          >
-            <Clock size={15} />
-          </button>
-          {historyPanelOpen && (
-            <div
-              ref={historyPanelRef}
-              data-native-webview-overlay
-              className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-lg"
-            >
-              <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-                <Search size={13} className="shrink-0 text-text-tertiary" />
-                <input
-                  value={historyQuery}
-                  onChange={(event) => setHistoryQuery(event.target.value)}
-                  placeholder={t('browser.historySearchPlaceholder', { defaultValue: '搜索历史' })}
-                  className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
-                />
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-                  onClick={importHistory}
-                  title={t('browser.importHistory', { defaultValue: '从 JSON 导入历史' })}
-                >
-                  {t('browser.import', { defaultValue: '导入' })}
-                </button>
-                <button
-                  type="button"
-                  className="shrink-0 rounded p-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-                  onClick={exportHistory}
-                  title={t('browser.exportHistory', { defaultValue: '导出历史为 JSON' })}
-                >
-                  {t('browser.export', { defaultValue: '导出' })}
-                </button>
-                {historyEntries.length > 0 && (
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-0.5 text-text-tertiary hover:bg-background-hover hover:text-danger"
-                    onClick={clearAllHistory}
-                    title={t('browser.clearHistory', { defaultValue: '清空历史' })}
-                  >
-                    <Trash2 size={13} />
-                  </button>
-                )}
-              </div>
-              <div className="max-h-72 overflow-y-auto py-1">
-                {historyEntries.length === 0 && (
-                  <div className="px-3 py-3 text-center text-xs text-text-tertiary">
-                    {t('browser.historyEmpty', { defaultValue: '暂无浏览历史' })}
-                  </div>
-                )}
-                {historyEntries.map((entry) => (
-                  <button
-                    key={entry.id}
-                    type="button"
-                    className="group flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover"
-                    onClick={() => {
-                      setHistoryPanelOpen(false)
-                      navigateTo(entry.url)
-                    }}
-                    title={entry.url}
-                  >
-                    <Globe2 size={12} className="shrink-0 text-text-tertiary" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm text-text-primary">{entry.title || entry.url}</span>
-                      <span className="block truncate text-[10px] text-text-tertiary">
-                        {(() => { try { return new URL(entry.url).hostname } catch { return entry.url } })()}
-                        {entry.visitCount > 1 ? ` · ${entry.visitCount} 次` : ''}
-                        {formatVisitedTime(entry.visitedAt) ? ` · ${formatVisitedTime(entry.visitedAt)}` : ''}
-                      </span>
-                    </span>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="shrink-0 text-text-tertiary opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        removeHistoryEntry(entry.id)
-                      }}
-                    >
-                      <X size={12} />
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-
         {/* 工具按钮组：精简，仅保留页面查找。其余工具（圈选/截图/静音/阅读/上下文/诊断）移至左侧浏览器侧边栏 */}
         <div className="flex items-center gap-1">
           <div className="mx-1 h-5 w-px bg-border-subtle" />
@@ -1703,46 +1268,6 @@ export function BrowserPanel({
             <span className="hidden 2xl:inline">
               {t('browser.find', { defaultValue: '查找' })}
             </span>
-          </button>
-        </div>
-        {/* 缩放控制（紧凑） */}
-        <div className="hidden sm:flex items-center gap-0.5 pl-1 border-l border-border-subtle">
-          <button
-            type="button"
-            onClick={handleToggleFullscreen}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={isFullscreen
-              ? t('browser.exitFullscreen', { defaultValue: '退出全屏 (F11)' })
-              : t('browser.fullscreen', { defaultValue: '全屏 (F11)' })}
-          >
-            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomOut()}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={t('browser.zoomOut', { defaultValue: '缩小' })}
-            disabled={status !== 'ready'}
-          >
-            <Minus size={12} />
-          </button>
-          <button
-            type="button"
-            onClick={resetZoom}
-            onDoubleClick={resetZoom}
-            className="min-w-[32px] rounded px-1 py-0.5 text-center text-[11px] text-text-secondary transition-colors hover:bg-background-hover"
-            title={t('browser.zoomReset', { defaultValue: '重置缩放 (100%)' })}
-          >
-            {Math.round(zoomLevel * 100)}%
-          </button>
-          <button
-            type="button"
-            onClick={() => zoomIn()}
-            className="flex h-7 w-7 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
-            title={t('browser.zoomIn', { defaultValue: '放大' })}
-            disabled={status !== 'ready'}
-          >
-            <Plus size={12} />
           </button>
         </div>
       </div>
@@ -2096,7 +1621,6 @@ const SHORTCUT_LIST: { key: string; label: string; keys: string }[] = [
   { key: 'mute', label: '静音切换', keys: 'Ctrl+M' },
   { key: 'back', label: '后退', keys: 'Alt+←' },
   { key: 'forward', label: '前进', keys: 'Alt+→' },
-  { key: 'fullscreen', label: '全屏', keys: 'F11' },
   { key: 'shortcutsHelp', label: '快捷键帮助', keys: 'Ctrl+Shift+/' },
 ]
 

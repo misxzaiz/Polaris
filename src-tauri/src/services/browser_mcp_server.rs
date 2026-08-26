@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
-use crate::services::browser_history;
 
 const SERVER_NAME: &str = "polaris-browser-mcp";
 const SERVER_VERSION: &str = "0.1.0";
@@ -361,43 +360,6 @@ fn handle_tools_list() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "label": label_property
             }, "additionalProperties": false }
-        },
-        {
-            "name": "history_list",
-            "description": "List recent Polaris browser visit history (newest first).",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "history_search",
-            "description": "Search Polaris browser visit history by title or URL (case-insensitive substring).",
-            "inputSchema": { "type": "object", "required": ["query"], "properties": {
-                "query": { "type": "string", "description": "Search keyword." },
-                "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Max results (default 50)." }
-            }, "additionalProperties": false }
-        },
-        {
-            "name": "history_delete",
-            "description": "Delete a single entry from Polaris browser visit history by id.",
-            "inputSchema": { "type": "object", "required": ["id"], "properties": {
-                "id": { "type": "string", "description": "History entry id from history_list." }
-            }, "additionalProperties": false }
-        },
-        {
-            "name": "history_clear",
-            "description": "Clear all Polaris browser visit history.",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "history_export",
-            "description": "Export all Polaris browser visit history as portable JSON text (used for backup or migration).",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "history_import",
-            "description": "Import visit history from exported JSON text. Merges by URL (same URL accumulates visitCount and keeps the newer time); returns the number of items added/updated.",
-            "inputSchema": { "type": "object", "required": ["raw"], "properties": {
-                "raw": { "type": "string", "description": "JSON text previously produced by history_export (or a bare array of history entry objects)." }
-            }, "additionalProperties": false }
         }
     ] })
 }
@@ -411,11 +373,6 @@ fn handle_tools_call(params: Value, config: &BrowserMcpConfig) -> Result<Value> 
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
-
-    // history_* 工具为本地存储操作，不经过浏览器桥接 TCP
-    if name.starts_with("history_") {
-        return Ok(local_history_call(name, &args));
-    }
 
     let action = tool_name_to_action(name)?;
     let frame = browser_frame(config, action, &args);
@@ -442,55 +399,6 @@ fn handle_tools_call(params: Value, config: &BrowserMcpConfig) -> Result<Value> 
 
     let result = response.get("result").cloned().unwrap_or(Value::Null);
     Ok(tool_success(result))
-}
-
-/// 本地历史操作：list / search / delete / clear，直接读写浏览器历史存储
-fn local_history_call(name: &str, args: &Value) -> Value {
-    match name {
-        "history_list" => {
-            let result = browser_history::browser_history_list();
-            match result {
-                Ok(items) => tool_success(json!({ "items": items })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "history_search" => {
-            let query = args.get("query").and_then(Value::as_str).unwrap_or("");
-            let limit = args
-                .get("limit")
-                .and_then(Value::as_u64)
-                .unwrap_or(50) as usize;
-            match browser_history::browser_history_search(query, limit) {
-                Ok(items) => tool_success(json!({ "items": items })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "history_delete" => {
-            let id = args.get("id").and_then(Value::as_str).unwrap_or("");
-            match browser_history::browser_history_delete(id) {
-                Ok(()) => tool_success(json!({ "ok": true })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "history_clear" => match browser_history::browser_history_clear() {
-            Ok(()) => tool_success(json!({ "ok": true })),
-            Err(error) => tool_error(error.to_message()),
-        },
-        "history_export" => {
-            match browser_history::browser_history_export() {
-                Ok(json_text) => tool_success(json!({ "json": json_text })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "history_import" => {
-            let raw = args.get("raw").and_then(Value::as_str).unwrap_or("");
-            match browser_history::browser_history_import(raw) {
-                Ok(count) => tool_success(json!({ "imported": count })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        _ => tool_error(format!("未知历史工具: {name}")),
-    }
 }
 
 fn tool_name_to_action(name: &str) -> Result<&'static str> {
@@ -718,51 +626,7 @@ mod tests {
         assert!(names.contains(&"browser_history_state"));
         assert!(names.contains(&"browser_marquee"));
         assert!(names.contains(&"browser_select_region"));
-        assert!(names.contains(&"history_list"));
-        assert!(names.contains(&"history_search"));
-        assert!(names.contains(&"history_delete"));
-        assert!(names.contains(&"history_clear"));
-        assert_eq!(names.len(), 28);
-    }
-
-    #[test]
-    fn local_history_call_round_trip() {
-        let root = std::env::temp_dir().join(format!(
-            "polaris-mcp-hist-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        browser_history::set_test_store_root(Some(&root));
-
-        browser_history::browser_history_record("Docs", "https://docs.example/").unwrap();
-        browser_history::browser_history_record("News", "https://news.example/").unwrap();
-
-        let listed = local_history_call("history_list", &json!({}));
-        let items = listed.pointer("/structuredContent/items").unwrap().as_array().unwrap();
-        assert_eq!(items.len(), 2);
-
-        let searched = local_history_call("history_search", &json!({ "query": "docs" }));
-        let found = searched.pointer("/structuredContent/items").unwrap().as_array().unwrap();
-        assert_eq!(found.len(), 1);
-        assert_eq!(
-            found[0].get("url").and_then(Value::as_str),
-            Some("https://docs.example/")
-        );
-
-        let id = items[0].get("id").and_then(Value::as_str).unwrap().to_string();
-        let deleted = local_history_call("history_delete", &json!({ "id": id }));
-        assert!(!deleted.get("isError").and_then(Value::as_bool).unwrap_or(false));
-
-        let cleared = local_history_call("history_clear", &json!({}));
-        assert!(!cleared.get("isError").and_then(Value::as_bool).unwrap_or(false));
-        let listed2 = local_history_call("history_list", &json!({}));
-        assert!(listed2.pointer("/structuredContent/items").unwrap().as_array().unwrap().is_empty());
-
-        browser_history::set_test_store_root(None);
-        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(names.len(), 22);
     }
 
     #[test]
