@@ -127,6 +127,7 @@ function createInitialState(sessionId: string): ConversationState {
     inputDraft: {
       text: '',
       attachments: [],
+      contextBlocks: [],
     },
 
     // 待发送简报（压缩交接产物）
@@ -300,6 +301,7 @@ export function createConversationStore(
           inputDraft: {
             text: '',
             attachments: [],
+            contextBlocks: [],
           },
         })
       },
@@ -402,7 +404,7 @@ export function createConversationStore(
             optimizeSessionId: null,
             error: null,
           },
-          inputDraft: { text, attachments: state.inputDraft.attachments },
+          inputDraft: { text, attachments: state.inputDraft.attachments, contextBlocks: state.inputDraft.contextBlocks },
         })
       },
 
@@ -455,7 +457,7 @@ export function createConversationStore(
             optimizeSessionId: null,
             error: null,
           },
-          inputDraft: { text, attachments: state.inputDraft.attachments },
+          inputDraft: { text, attachments: state.inputDraft.attachments, contextBlocks: state.inputDraft.contextBlocks },
         })
       },
 
@@ -496,7 +498,7 @@ export function createConversationStore(
             optimizeSessionId: null,
             error: null,
           },
-          inputDraft: { text: po.pendingResult, attachments: state.inputDraft.attachments },
+          inputDraft: { text: po.pendingResult, attachments: state.inputDraft.attachments, contextBlocks: state.inputDraft.contextBlocks },
         })
       },
 
@@ -531,7 +533,7 @@ export function createConversationStore(
         cursor -= 1
         set({
           promptOptimize: { ...po, history, cursor },
-          inputDraft: { text: history[cursor].text, attachments: state.inputDraft.attachments },
+          inputDraft: { text: history[cursor].text, attachments: state.inputDraft.attachments, contextBlocks: state.inputDraft.contextBlocks },
         })
       },
 
@@ -545,7 +547,7 @@ export function createConversationStore(
         const cursor = po.cursor + 1
         set({
           promptOptimize: { ...po, cursor },
-          inputDraft: { text: po.history[cursor].text, attachments: state.inputDraft.attachments },
+          inputDraft: { text: po.history[cursor].text, attachments: state.inputDraft.attachments, contextBlocks: state.inputDraft.contextBlocks },
         })
       },
 

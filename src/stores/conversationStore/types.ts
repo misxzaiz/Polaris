@@ -12,6 +12,7 @@ import type {
   Workspace,
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
+import type { MarqueeContextBlock } from '@/services/tauri/browserService'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { ProfileMode } from '@/types/sessionConfig'
 import type { StoreApi, UseBoundStore } from 'zustand'
@@ -55,6 +56,11 @@ export interface PendingToolGroup {
 export interface InputDraft {
   text: string
   attachments: Attachment[]
+  /**
+   * 上下文块（如浏览器圈选区域）。与附件平行，发送时转为文本拼入消息，
+   * 不进入后端 process_attachments 落盘。可选字段保持向后兼容。
+   */
+  contextBlocks?: MarqueeContextBlock[]
 }
 
 // ============================================================================

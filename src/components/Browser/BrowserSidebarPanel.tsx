@@ -30,6 +30,8 @@ import {
   Camera,
   MessageSquare,
   Check,
+  Target,
+  ChevronDown,
 } from 'lucide-react'
 import { useTabStore, type TabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
@@ -37,7 +39,8 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useToastStore } from '@/stores/toastStore'
 import { useBrowserSidebarStore, type SidebarTabName, type ShortcutItem, type BookmarkFolder, type BookmarkItem } from '@/stores/browserSidebarStore'
-import { normalizeBrowserUrl } from '@/services/tauri/browserService'
+import { useMarqueeStore } from '@/stores/marqueeStore'
+import { normalizeBrowserUrl, type MarqueeContextBlock } from '@/services/tauri/browserService'
 
 // ─── 常量 ───────────────────────────────────────────
 
@@ -547,6 +550,25 @@ function AiSourceTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   const [note, setNote] = useState('')
   const [sendMethod, setSendMethod] = useState<'full' | 'screenshot'>('full')
   const [sending, setSending] = useState(false)
+  const marqueeBlocks = useMarqueeStore((s) => s.blocks)
+  const removeMarqueeBlock = useMarqueeStore((s) => s.removeBlock)
+
+  // 从左侧边栏移除圈选块：同步清空活跃会话输入框中的上下文块
+  const handleRemoveMarquee = useCallback(async (id: string) => {
+    removeMarqueeBlock(id)
+    const activeSessionId = sessionStoreManager.getState().activeSessionId
+    const activeStore = activeSessionId
+      ? sessionStoreManager.getState().stores.get(activeSessionId)?.getState()
+      : null
+    if (activeStore && activeStore.inputDraft.contextBlocks?.some((b) => b.id === id)) {
+      const { useActiveSessionActions } = await import('@/stores/conversationStore/useActiveSession')
+      const { updateInputDraft } = useActiveSessionActions()
+      updateInputDraft({
+        ...activeStore.inputDraft,
+        contextBlocks: activeStore.inputDraft.contextBlocks?.filter((b) => b.id !== id) ?? [],
+      })
+    }
+  }, [removeMarqueeBlock])
 
   // 从 tabStore 获取当前浏览器标签信息
   // 使用原始值 selector，避免对象引用变化导致 useSyncExternalStore 无限循环
@@ -609,6 +631,9 @@ function AiSourceTab({ onNavigate }: { onNavigate: (url: string) => void }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {/* 圈选区域（浏览器圈选，供发送前/后复核） */}
+      {marqueeBlocks.length > 0 && <MarqueeSection blocks={marqueeBlocks} onRemove={handleRemoveMarquee} />}
+
       {/* 发送当前页面卡片 */}
       <div className="rounded-md border border-border-subtle bg-background-surface p-2.5">
         <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-text-primary">
@@ -744,6 +769,102 @@ function AiSourceTab({ onNavigate }: { onNavigate: (url: string) => void }) {
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── 圈选区域区块（AI 信息源 tab 顶部） ─────────────────
+
+function MarqueeSection({
+  blocks,
+  onRemove,
+}: {
+  blocks: MarqueeContextBlock[]
+  onRemove: (id: string) => void
+}) {
+  const { t } = useTranslation('common')
+  const [expandedMap, setExpandedMap] = useState<Record<string, boolean>>({})
+
+  return (
+    <div className="rounded-md border border-primary/25 bg-primary/5 p-2">
+      <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-primary">
+        <Target size={12} />
+        <span>{t('browser.sidebar.marqueeTitle', { defaultValue: '圈选区域' })}</span>
+        <span className="ml-auto rounded-full bg-primary/15 px-1.5 py-px text-[10px]">
+          {blocks.length}
+        </span>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        {blocks.map((block) => {
+          const expanded = expandedMap[block.id]
+          return (
+            <div key={block.id} className="rounded-md border border-border-subtle bg-background-surface">
+              <div className="flex items-center gap-1.5 px-2 py-1.5">
+                <button
+                  type="button"
+                  onClick={() => setExpandedMap((m) => ({ ...m, [block.id]: !expanded }))}
+                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                >
+                  <ChevronDown size={11} className={`shrink-0 text-text-tertiary transition-transform ${expanded ? 'rotate-180' : ''}`} />
+                  <span className="shrink-0 text-[11px] font-medium text-text-primary">
+                    {block.regions.length} 个区域
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[10px] text-text-tertiary">
+                    {block.regions.map((r) => `${Math.round(r.rect.width)}×${Math.round(r.rect.height)}`).join(' · ')}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onRemove(block.id)}
+                  className="shrink-0 rounded p-0.5 text-text-tertiary hover:text-danger"
+                  title={t('browser.sidebar.marqueeRemove', { defaultValue: '移除' })}
+                >
+                  <X size={11} />
+                </button>
+              </div>
+              {expanded && (
+                <div className="border-t border-border-subtle px-2 py-1.5">
+                  <div className="truncate text-[10px] text-text-tertiary" title={block.url}>
+                    {block.title || 'Browser'} · {block.url}
+                  </div>
+                  <div className="mt-1 flex flex-col gap-1">
+                    {block.regions.map((region, idx) => (
+                      <div key={idx} className="rounded bg-background-elevated px-1.5 py-1">
+                        <div className="flex items-center gap-1 text-[10px] font-mono text-text-tertiary">
+                          <span className="rounded bg-primary/15 px-1 font-medium text-primary">{idx + 1}</span>
+                          <span>({Math.round(region.rect.x)},{Math.round(region.rect.y)})</span>
+                          <span>{Math.round(region.rect.width)}×{Math.round(region.rect.height)}</span>
+                          <span>· {region.count} 元素</span>
+                        </div>
+                        {region.elements.length > 0 && (
+                          <div className="mt-0.5 line-clamp-1 text-[10px] text-text-secondary">
+                            {region.elements.slice(0, 3).map((e) => `${e.kind} "${e.text}"`).join(' · ')}
+                          </div>
+                        )}
+                        {region.textSnippet && (
+                          <div className="mt-0.5 line-clamp-2 whitespace-pre-wrap text-[10px] text-text-secondary">
+                            {region.textSnippet}
+                          </div>
+                        )}
+                        {region.htmlSnippet && (
+                          <pre className="mt-1 max-h-12 overflow-auto rounded bg-background-surface px-1 py-0.5 text-[9px] font-mono text-text-tertiary whitespace-pre-wrap break-all">
+                            {region.htmlSnippet}
+                          </pre>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-1.5 text-[9.5px] text-text-tertiary">
+        {t('browser.sidebar.marqueeHint', {
+          defaultValue: '圈选区已挂到 AI 输入框，发送时作为上下文附带给 AI',
+        })}
+      </div>
     </div>
   )
 }

@@ -27,6 +27,7 @@ import {
 import { useDebouncedCallback } from '@/hooks/useDebounce'
 import { UnifiedSuggestion, type SuggestionItem, type ConversationSuggestion } from './FileSuggestion'
 import { AttachmentPreview } from './AttachmentPreview'
+import { ContextBlockPreview } from './ContextBlockPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { SnippetParamPanel } from './SnippetParamPanel'
 import { PendingBriefingCard } from '../compact-handoff/PendingBriefingCard'
@@ -37,6 +38,9 @@ import type { FileMatch } from '@/services/fileSearch'
 import type { Workspace, EngineId } from '@/types'
 import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
+import type { MarqueeContextBlock } from '@/services/tauri/browserService'
+import { formatMarqueeContextBlock } from '@/services/tauri/browserService'
+import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
 import { dialogStorageService } from '@/services/dialogStorage/service'
@@ -195,6 +199,8 @@ export function ChatInput({
   // 本地 state（即时响应）
   const [localText, setLocalText] = useState('')
   const [localAttachments, setLocalAttachments] = useState<Attachment[]>([])
+  const [localContextBlocks, setLocalContextBlocks] = useState<MarqueeContextBlock[]>([])
+  const contextBlocksRef = useRef<MarqueeContextBlock[]>([])
   const [activeSnippet, setActiveSnippet] = useState<PromptSnippet | null>(null)
 
   // Prompt 历史记录（终端风格 ArrowUp 召回）
@@ -213,9 +219,10 @@ export function ChatInput({
   }, [editMode])
 
   // 创建防抖的持久化函数（300ms 延迟）
+  // 通过 ref 读取最新 contextBlocks，避免闭包过期；contextBlocks 与附件平行持久化。
   const { debounced: debouncedPersistDraft, cancel: cancelPersistDraft } = useDebouncedCallback(
     (text: string, attachments: Attachment[]) => {
-      updateInputDraft({ text, attachments })
+      updateInputDraft({ text, attachments, contextBlocks: contextBlocksRef.current })
     },
     300
   )
@@ -225,6 +232,9 @@ export function ChatInput({
   useEffect(() => {
     setLocalText(inputDraft.text)
     setLocalAttachments(inputDraft.attachments)
+    const blocks = inputDraft.contextBlocks ?? []
+    contextBlocksRef.current = blocks
+    setLocalContextBlocks(blocks)
   }, [inputDraft])
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -300,7 +310,7 @@ export function ChatInput({
       // 立即更新本地 state
       setLocalText(newText)
       // 持久化到 Store（立即，不防抖，因为是一次性追加）
-      updateInputDraft({ text: newText, attachments })
+      updateInputDraft({ text: newText, attachments, contextBlocks: contextBlocksRef.current })
       clearSpeechTranscript()
       textareaRef.current?.focus()
     }
@@ -372,6 +382,18 @@ export function ChatInput({
     // 持久化到 Store
     debouncedPersistDraft(value, newAttachments)
   }, [attachments, value, debouncedPersistDraft])
+
+  // ── 上下文块（如浏览器圈选区域）──
+  // 由外部组件（BrowserPanel）经 updateInputDraft 写入，这里负责移除与显示。
+  const removeContextBlock = useCallback((id: string) => {
+    const blocks = contextBlocksRef.current.filter((b) => b.id !== id)
+    contextBlocksRef.current = blocks
+    setLocalContextBlocks(blocks)
+    // 同步移除左侧边栏 marqueeStore 中的块，保持两处一致
+    useMarqueeStore.getState().removeBlock(id)
+    // 整体替换 draft，保留 text/attachments
+    updateInputDraft({ text: value, attachments: localAttachments, contextBlocks: blocks })
+  }, [value, localAttachments, updateInputDraft])
 
   // 处理粘贴
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
@@ -458,7 +480,7 @@ export function ChatInput({
   /** 版本栈操作前把本地文本同步进 store 草稿（消除 300ms 防抖差，保证手改判定/冲突检测基线准确） */
   const syncDraftNow = useCallback(() => {
     cancelPersistDraft()
-    updateInputDraft({ text: value, attachments })
+    updateInputDraft({ text: value, attachments, contextBlocks: contextBlocksRef.current })
   }, [cancelPersistDraft, updateInputDraft, value, attachments])
 
   /** 提示词优化配置：引擎 + 模式 + Profile + 模型（持久化到 localStorage） */
@@ -976,7 +998,7 @@ export function ChatInput({
     const applySlashReplacement = (replacement: string) => {
       const replaced = replaceSlashToken(replacement)
       setLocalText(replaced)
-      updateInputDraft({ text: replaced, attachments })
+      updateInputDraft({ text: replaced, attachments, contextBlocks: contextBlocksRef.current })
       setShowSuggestions(false)
       setSuggestionItems([])
       setTimeout(() => {
@@ -1015,7 +1037,7 @@ export function ChatInput({
       const agent = item.data as import('./FileSuggestion').AgentArgSuggestion
       const replaced = textBeforeCursor.replace(/@专家(?:\s+\S*)?$/, `@专家:${agent.slug} `) + textAfterCursor
       setLocalText(replaced)
-      updateInputDraft({ text: replaced, attachments })
+      updateInputDraft({ text: replaced, attachments, contextBlocks: contextBlocksRef.current })
       setShowSuggestions(false)
       setSuggestionItems([])
       setTimeout(() => {
@@ -1029,7 +1051,7 @@ export function ChatInput({
       const agent = item.data as import('./FileSuggestion').AgentArgSuggestion
       const replaced = agent.insertText + textAfterCursor
       setLocalText(replaced)
-      updateInputDraft({ text: replaced, attachments })
+      updateInputDraft({ text: replaced, attachments, contextBlocks: contextBlocksRef.current })
       setShowSuggestions(false)
       setSuggestionItems([])
       setTimeout(() => {
@@ -1115,8 +1137,9 @@ export function ChatInput({
 
   const handleSend = useCallback(() => {
     const trimmed = value.trim()
-    if ((disabled || isStreaming) && attachments.length === 0) return
-    if (!trimmed && attachments.length === 0) return
+    const hasBlocks = contextBlocksRef.current.length > 0
+    if ((disabled || isStreaming) && attachments.length === 0 && !hasBlocks) return
+    if (!trimmed && attachments.length === 0 && !hasBlocks) return
 
     // Polaris 本地命令：/nexus <scenario> <goal> → 组队派发（拓扑波次）
     const nexusCmd = parseNexusSlashCommand(trimmed)
@@ -1141,7 +1164,9 @@ export function ChatInput({
       })
       cancelPersistDraft()
       setLocalText('')
-      updateInputDraft({ text: '', attachments: [] })
+      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
+      contextBlocksRef.current = []
+      setLocalContextBlocks([])
       setHistoryIndex(-1)
       resetPromptOptimize()
       return
@@ -1173,7 +1198,9 @@ export function ChatInput({
       }
       cancelPersistDraft()
       setLocalText('')
-      updateInputDraft({ text: '', attachments: [] })
+      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
+      contextBlocksRef.current = []
+      setLocalContextBlocks([])
       setHistoryIndex(-1)
       resetPromptOptimize()
       return
@@ -1209,7 +1236,9 @@ export function ChatInput({
       void dispatchFromUser(dispatchCmd)
       cancelPersistDraft()
       setLocalText('')
-      updateInputDraft({ text: '', attachments: [] })
+      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
+      contextBlocksRef.current = []
+      setLocalContextBlocks([])
       setHistoryIndex(-1)
       resetPromptOptimize()
       return
@@ -1221,7 +1250,9 @@ export function ChatInput({
       cancelPersistDraft()
       setLocalText('')
       setLocalAttachments([])
-      updateInputDraft({ text: '', attachments: [] })
+      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
+      contextBlocksRef.current = []
+      setLocalContextBlocks([])
       setHistoryIndex(-1)
       resetPromptOptimize()
       onSend(assaultText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
@@ -1255,9 +1286,23 @@ export function ChatInput({
     if (editMode && onEditSend) {
       onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
     } else {
-      // 普通发送
-      onSend(trimmed, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
-      // 记录到 prompt 历史（仅普通发送，编辑模式不记录）
+      // 普通发送：若存在上下文块，将其格式化文本拼入消息内容（不进 attachments 通道）
+      const blocksText = contextBlocksRef.current
+        .map((b) => formatMarqueeContextBlock(b))
+        .filter(Boolean)
+        .join('\n\n')
+      const messageContent = blocksText
+        ? trimmed
+          ? `${blocksText}\n\n${trimmed}`
+          : blocksText
+        : trimmed
+      onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
+      const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
+      for (const id of sentBlockIds) {
+        useMarqueeStore.getState().removeBlock(id)
+      }
+      // 记录到 prompt 历史（仅普通发送，编辑模式不记录），记录用户原文
       if (trimmed) {
         const history = sentHistoryRef.current
         // 去重：如果最后一条相同则不重复添加
@@ -1271,8 +1316,10 @@ export function ChatInput({
     // 清空本地 state
     setLocalText('')
     setLocalAttachments([])
+    contextBlocksRef.current = []
+    setLocalContextBlocks([])
     // 清空 Store 草稿
-    updateInputDraft({ text: '', attachments: [] })
+    updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
     // 清空提示词优化版本栈（草稿已发出，版本历史随之失效）
     resetPromptOptimize()
     // 退出编辑模式
@@ -1418,7 +1465,7 @@ export function ChatInput({
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
-  const canSend = (value.trim() || attachments.length > 0) && !disabled && !isStreaming
+  const canSend = (value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0) && !disabled && !isStreaming
 
   return (
     <div data-theme-panel className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
@@ -1443,7 +1490,7 @@ export function ChatInput({
             setLocalText(nextText)
             setActiveSnippet(null)
             setSnippetTriggerBefore(null)
-            updateInputDraft({ text: nextText, attachments })
+            updateInputDraft({ text: nextText, attachments, contextBlocks: contextBlocksRef.current })
             setTimeout(() => textareaRef.current?.focus(), 0)
           }}
           onCancel={() => {
@@ -1576,6 +1623,12 @@ export function ChatInput({
             className="hidden"
             onChange={handleFileSelect}
             accept={`image/*,${ATTACHMENT_LIMITS.codeExtensions.join(',')}`}
+          />
+
+          {/* 上下文块预览（浏览器圈选等，可展开核对，发送时转文本） */}
+          <ContextBlockPreview
+            blocks={localContextBlocks}
+            onRemove={removeContextBlock}
           />
 
           {/* 附件预览（内嵌到容器顶部） */}

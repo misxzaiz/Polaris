@@ -249,6 +249,43 @@ export function formatMarqueeContext(context: BrowserRegionContext): string {
   ].filter(Boolean).join('\n')
 }
 
+/**
+ * MarqueeContextBlock - 圈选上下文块（挂在 AI 输入框的附着块）
+ *
+ * 与普通附件（image/file）不同，它不进入后端 process_attachments 落盘，
+ * 而是在发送时由 ChatInput 摘出并转成文本拼进用户消息。type 固定 'marquee-context'
+ * 用于 ChatInput 区分渲染（可展开查看）与发送（转文本）。
+ */
+export interface MarqueeContextBlock {
+  /** 块唯一标识 */
+  id: string
+  /** 上下文块类型（与 Attachment.type 区分开） */
+  type: 'marquee-context'
+  /** 页面标题 */
+  title: string
+  /** 页面 URL */
+  url: string
+  /** 圈选区域 */
+  regions: BrowserRegion[]
+  /** 用户补充说明（意图） */
+  userNote?: string
+  /** 来源浏览器标签 label（用于左侧边栏关联） */
+  browserLabel?: string
+}
+
+/**
+ * 将 MarqueeContextBlock 格式化为发送给 AI 的文本。
+ * 复用 formatMarqueeContext 的拼装逻辑（单/多区域模板）。
+ */
+export function formatMarqueeContextBlock(block: MarqueeContextBlock): string {
+  return formatMarqueeContext({
+    title: block.title,
+    url: block.url,
+    regions: block.regions,
+    userNote: block.userNote,
+  })
+}
+
 export interface BrowserBounds {
   x: number
   y: number
