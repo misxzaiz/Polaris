@@ -29,6 +29,17 @@ try {
     '__polaris_marquee_overlay__',
     '__polaris_ai_overlay__',
   ]);
+  // 圈选 overlay 以 fixed inset:0 pointer-events:auto 覆盖全屏，elementFromPoint 采样时
+  // 会命中 overlay 自身导致收集不到真实页面元素（"圈选看不到上下文"根因）。
+  // 采样前临时把 overlay 设为 pointer-events:none（elementFromPoint 会忽略它），采样后恢复。
+  const overlayEls = [];
+  for (const id of POLARIS_OVERLAY_IDS) {
+    const el = document.getElementById(id);
+    if (el) {
+      overlayEls.push(el);
+      el.style.pointerEvents = 'none';
+    }
+  }
   for (let px = targetRect.x; px < targetRect.x + targetRect.w; px += step) {
     for (let py = targetRect.y; py < targetRect.y + targetRect.h; py += step) {
       const el = document.elementFromPoint(px, py);
@@ -47,6 +58,10 @@ try {
         candidates.push(el);
       }
     }
+  }
+  // 采样完成，恢复 overlay 的 pointer-events
+  for (const el of overlayEls) {
+    el.style.pointerEvents = 'auto';
   }
   candidates.sort((a, b) => {
     if (a === b) return 0;

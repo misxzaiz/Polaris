@@ -1319,11 +1319,14 @@ export function BrowserPanel({
             })
           }
 
-          // 圈选完成：把完整 regions 组装成上下文块挂到 AI 输入框，再延迟关闭 overlay
+          // 圈选完成：补齐缺失的区域详情，组装上下文块挂到 AI 输入框，再延迟关闭 overlay
           if (result.done) {
             cancelled = true
             setMarqueePolling(false)
-            const finalRegions = marqueeRegionsRef.current.length === result.rects.length
+
+            // select_region 是异步的，done 时可能仍有区域详情未填充（count/elements/html 为空）。
+            // 这里主动补齐，确保发送给 AI 的上下文包含真实内容（"圈选看不到上下文"的竞争根因）。
+            const baseRegions = marqueeRegionsRef.current.length === result.rects.length
               ? marqueeRegionsRef.current
               : result.rects.map((rect, idx) => ({
                   id: idx,
@@ -1333,6 +1336,28 @@ export function BrowserPanel({
                   htmlSnippet: '',
                   textSnippet: '',
                 }))
+            const needDetail = baseRegions.filter((r) => r.elements.length === 0)
+            if (needDetail.length > 0) {
+              const filled = await Promise.all(
+                baseRegions.map(async (r) => {
+                  if (r.elements.length > 0) return r
+                  try {
+                    const region = await browserSelectRegion(webviewLabel, r.rect)
+                    return {
+                      ...r,
+                      count: region.count,
+                      elements: region.elements,
+                      htmlSnippet: region.htmlSnippet,
+                      textSnippet: region.textSnippet ?? '',
+                    }
+                  } catch {
+                    return r
+                  }
+                })
+              )
+              marqueeRegionsRef.current = filled
+            }
+            const finalRegions = marqueeRegionsRef.current
             const block: MarqueeContextBlock = {
               id: `marquee-${webviewLabel}-${Date.now()}`,
               type: 'marquee-context',
