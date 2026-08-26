@@ -3383,4 +3383,32 @@ mod browser_script_tests {
             .unwrap()
             .is_none());
     }
+
+    #[test]
+    fn downloadable_url_detection() {
+        // 命中：下载类扩展名 + blob
+        assert!(is_downloadable_url("https://example.com/file.zip"));
+        assert!(is_downloadable_url("https://example.com/a/b/report.pdf?download=1"));
+        assert!(is_downloadable_url("https://example.com/setup.exe"));
+        assert!(is_downloadable_url("https://example.com/doc.docx#section"));
+        assert!(is_downloadable_url("blob:https://example.com/abc-123"));
+        assert!(is_downloadable_url("https://example.com/x.7z"));
+        // 不命中：可内联渲染类型
+        assert!(!is_downloadable_url("https://example.com/photo.png"));
+        assert!(!is_downloadable_url("https://example.com/audio.mp3"));
+        assert!(!is_downloadable_url("https://example.com/page.html"));
+        assert!(!is_downloadable_url("https://example.com/"));
+        assert!(!is_downloadable_url("https://example.com/search?q=pdf"));
+    }
+
+    #[test]
+    fn mute_control_script_wraps_properly() {
+        let enabled = browser_scripts::mute_control_script(true);
+        assert!(enabled.starts_with("(() => {"));
+        assert!(enabled.contains("const muteEnabled = true"));
+        assert!(enabled.contains("querySelectorAll('video, audio')"));
+        assert!(enabled.ends_with("})()"));
+        let disabled = browser_scripts::mute_control_script(false);
+        assert!(disabled.contains("const muteEnabled = false"));
+    }
 }
