@@ -351,8 +351,11 @@ impl UsageDb {
 
         let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
 
+        // 按 LOCALTIME 分桶：created_at 是 UTC Unix 秒，DATE(ts,'unixepoch') 默认按 UTC 取日期，
+        // UTC+8 下本地凌晨记录会落到前一个 UTC 日，导致"今天"查询出现"昨天"的桶。
+        // 加 'localtime' 修饰让分桶对齐用户本地时区，与前端按本地时间解析出的筛选窗口一致。
         let sql = format!(
-            "SELECT DATE(created_at, 'unixepoch') as day,
+            "SELECT DATE(created_at, 'unixepoch', 'localtime') as day,
                     COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
                     COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_creation_tokens),0)
              FROM usage_logs{}
