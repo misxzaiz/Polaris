@@ -66,9 +66,10 @@ fn store_path() -> PathBuf {
     data_root().root().join("browser").join(STORE_FILE_NAME)
 }
 
-/// 测试辅助：将存储路径重定向到给定根目录（None 恢复为真实 data_root）
+/// 测试辅助：将存储路径重定向到给定根目录（None 恢复为真实 data_root）。
+/// 跨模块测试（如 browser_mcp_server）也需使用，故为 pub(crate)。
 #[cfg(test)]
-fn set_test_store_root(root: Option<&Path>) {
+pub(crate) fn set_test_store_root(root: Option<&Path>) {
     let cell = TEST_STORE_ROOT.get_or_init(|| Mutex::new(None));
     let mut guard = cell.lock().unwrap();
     *guard = root.map(Path::to_path_buf);
