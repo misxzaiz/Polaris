@@ -16,6 +16,8 @@ import {
   ListTree,
   Loader2,
   Lock,
+  Maximize2,
+  Minimize2,
   Minus,
   MousePointer2,
   PanelBottom,
@@ -303,6 +305,7 @@ export function BrowserPanel({
   const [isMuted, setIsMuted] = useState(false)
   const [screenshotting, setScreenshotting] = useState(false)
   const [readerMode, setReaderMode] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
     copyUrl: () => undefined,
@@ -1085,6 +1088,27 @@ export function BrowserPanel({
     }
   }, [status, webviewLabel])
 
+  // 全屏：对浏览器容器使用 HTML5 Fullscreen API
+  const handleToggleFullscreen = useCallback(() => {
+    const el = rootRef.current
+    if (!el) return
+    if (!document.fullscreenElement) {
+      el.requestFullscreen?.().catch(() => undefined)
+    } else {
+      document.exitFullscreen?.().catch(() => undefined)
+    }
+  }, [])
+
+  useEffect(() => {
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement))
+      // 全屏切换会改变容器尺寸，重新同步 WebView bounds
+      scheduleSyncBounds()
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    return () => document.removeEventListener('fullscreenchange', onFsChange)
+  }, [scheduleSyncBounds])
+
   // 让 mount effect 内的事件监听始终拿到最新的 handler
   actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
 
@@ -1327,6 +1351,11 @@ export function BrowserPanel({
         browserHistory(webviewLabel, 'forward').catch(() => undefined)
         return
       }
+      if (e.key === 'F11') {
+        e.preventDefault()
+        handleToggleFullscreen()
+        return
+      }
       if (e.key === 'Escape' && findOpen) {
         closeFind()
         return
@@ -1334,7 +1363,7 @@ export function BrowserPanel({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, handleToggleFullscreen])
 
   // ── 缩放控制 ──
 
@@ -2318,6 +2347,16 @@ export function BrowserPanel({
         )}
         {/* 缩放控制 */}
         <div className="flex shrink-0 items-center gap-0.5">
+          <button
+            type="button"
+            onClick={handleToggleFullscreen}
+            className="flex h-6 w-6 items-center justify-center rounded text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+            title={isFullscreen
+              ? t('browser.exitFullscreen', { defaultValue: '退出全屏 (F11)' })
+              : t('browser.fullscreen', { defaultValue: '全屏 (F11)' })}
+          >
+            {isFullscreen ? <Minimize2 size={13} /> : <Maximize2 size={13} />}
+          </button>
           <button
             type="button"
             onClick={() => zoomOut()}
