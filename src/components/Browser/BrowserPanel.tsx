@@ -189,7 +189,6 @@ function isBrowserOccludedByAppOverlay(
 
   const candidates = document.body.querySelectorAll<HTMLElement>(OCCLUDING_ELEMENT_SELECTOR)
   for (const element of candidates) {
-    if (browserRoot?.contains(element)) continue
     if (!isElementRendered(element)) continue
 
     const style = window.getComputedStyle(element)
@@ -206,6 +205,11 @@ function isBrowserOccludedByAppOverlay(
         parseZIndex(style.zIndex) >= MIN_OCCLUDING_Z_INDEX)
 
     if (!canOverlayNativeWebview) continue
+
+    // 显式标记的浮层（data-native-webview-overlay）：即使在 BrowserPanel root 内也必须
+    // 触发 webview 隐藏，否则原生 webview 窗口会盖住 React 浮层（下拉看不到的根因）。
+    // 未显式标记的内部元素才跳过，避免把 toolbar 等普通 UI 误判为遮挡。
+    if (!isExplicitOverlay && browserRoot?.contains(element)) continue
 
     if (rectIntersectsBrowserBounds(element.getBoundingClientRect(), browserBounds)) {
       log('isBrowserOccludedByAppOverlay: occluding element found', {
@@ -1204,6 +1208,22 @@ export function BrowserPanel({
     return () => document.removeEventListener('fullscreenchange', onFsChange)
   }, [scheduleSyncBounds])
 
+  // 任一内部浮层打开/关闭时，重新同步 WebView bounds。
+  // 这些浮层带 data-native-webview-overlay 标记，遮挡检测会隐藏 webview 露出浮层；
+  // 浮层关闭时恢复 webview。同步必须在浮层挂载/卸载之后进行，故用 setTimeout 延后一帧。
+  useEffect(() => {
+    const id = window.setTimeout(() => scheduleSyncBounds(), 0)
+    return () => window.clearTimeout(id)
+  }, [
+    suggestionsOpen,
+    bookmarkDropdownOpen,
+    historyPanelOpen,
+    historyDropdownOpen,
+    pageInfoOpen,
+    shortcutsOpen,
+    scheduleSyncBounds,
+  ])
+
   // 让 mount effect 内的事件监听始终拿到最新的 handler
   actionHandlersRef.current = { copyUrl: () => void copyUrl(), toggleMute: () => void toggleMute(), openExternal: () => void openExternal() }
 
@@ -1696,6 +1716,7 @@ export function BrowserPanel({
             {suggestionsOpen && suggestions.length > 0 && (
               <div
                 ref={suggestionsRef}
+                data-native-webview-overlay
                 className="absolute left-0 right-0 top-9 z-50 max-h-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
               >
                 <div className="flex items-center justify-between px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
@@ -1788,6 +1809,7 @@ export function BrowserPanel({
           {bookmarkDropdownOpen && (
             <div
               ref={bookmarkListRef}
+              data-native-webview-overlay
               className="absolute right-0 top-9 z-50 max-h-72 w-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
             >
               <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-text-secondary">
@@ -1869,6 +1891,7 @@ export function BrowserPanel({
           {historyPanelOpen && (
             <div
               ref={historyPanelRef}
+              data-native-webview-overlay
               className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-lg"
             >
               <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
@@ -2083,6 +2106,7 @@ export function BrowserPanel({
         {historyDropdownOpen && (
           <div
             ref={historyDropdownRef}
+            data-native-webview-overlay
             className="absolute z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated shadow-lg"
             style={{ top: '44px', left: '12px' }}
             onClick={() => setHistoryDropdownOpen(false)}
@@ -2539,7 +2563,7 @@ export function BrowserPanel({
 
       {/* 页面信息弹窗 */}
       {pageInfoOpen && networkInfo && (
-        <div ref={pageInfoRef} className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+        <div ref={pageInfoRef} data-native-webview-overlay className="absolute bottom-8 left-1/2 z-50 w-72 -translate-x-1/2 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
           <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
             <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
               <Activity size={13} className="text-primary" />
@@ -2602,7 +2626,7 @@ export function BrowserPanel({
 
       {/* 快捷键帮助弹层 */}
       {shortcutsOpen && (
-        <div className="absolute right-3 top-12 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+        <div data-native-webview-overlay className="absolute right-3 top-12 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
           <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
             <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
               <Keyboard size={13} className="text-primary" />
