@@ -1410,6 +1410,7 @@ mod tests {
                 tool_providers: Vec::new(),
                 styles: Vec::new(),
                 config_schema: Vec::new(),
+                executors: Vec::new(),
             },
             permissions: PluginManifestPermissions::default(),
             origin: PluginOriginMetadata::default(),

@@ -620,3 +620,33 @@ export function browserBookmarkSetTitle(id: string, title: string): Promise<Brow
 export function browserBookmarkFind(url: string): Promise<BrowserBookmark | null> {
   return invoke<BrowserBookmark | null>('browser_bookmark_find', { url })
 }
+
+// --- 访问历史 (History) ---
+
+export interface BrowserHistoryEntry {
+  id: string
+  title: string
+  url: string
+  visitedAt: number
+  visitCount: number
+}
+
+export function browserHistoryList(): Promise<BrowserHistoryEntry[]> {
+  return invoke<BrowserHistoryEntry[]>('browser_history_list')
+}
+
+export function browserHistorySearch(query: string, limit?: number): Promise<BrowserHistoryEntry[]> {
+  return invoke<BrowserHistoryEntry[]>('browser_history_search', { query, limit: limit ?? null })
+}
+
+export function browserHistoryDelete(id: string): Promise<void> {
+  return invoke<void>('browser_history_delete', { id })
+}
+
+export function browserHistoryClear(): Promise<void> {
+  return invoke<void>('browser_history_clear')
+}
+
+export function browserHistoryRecord(title: string, url: string): Promise<BrowserHistoryEntry> {
+  return invoke<BrowserHistoryEntry>('browser_history_record', { title, url })
+}

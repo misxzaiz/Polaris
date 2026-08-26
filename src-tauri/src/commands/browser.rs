@@ -275,6 +275,9 @@ pub struct BrowserHistoryState {
 /// 书签项（复用 services::browser_bookmarks 中的类型）
 pub use crate::services::browser_bookmarks::BrowserBookmark;
 
+/// 访问历史项（复用 services::browser_history 中的类型）
+pub use crate::services::browser_history::BrowserHistoryEntry;
+
 /// 圈选区域筛选结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1031,6 +1034,8 @@ fn browser_navigate_normalized_with_app(
     webview.navigate(normalized.clone())?;
     let normalized = normalized.to_string();
     let _ = upsert_session_and_emit(app, label.to_string(), None, Some(normalized.clone()), None);
+    // 记录到访问历史（标题暂用 URL，页面加载后由 context 回填）
+    let _ = crate::services::browser_history::browser_history_record(&normalized, &normalized);
     Ok(normalized)
 }
 
@@ -2531,6 +2536,46 @@ pub async fn browser_bookmark_set_title(id: String, title: String) -> Result<Bro
 #[tauri::command]
 pub async fn browser_bookmark_find(url: String) -> Result<Option<BrowserBookmark>> {
     crate::services::browser_bookmarks::browser_bookmark_find(&url)
+}
+
+// --- 访问历史 (History) ---
+
+/// 列出全部访问历史（最新在前）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_list() -> Result<Vec<BrowserHistoryEntry>> {
+    crate::services::browser_history::browser_history_list()
+}
+
+/// 按关键字搜索访问历史（标题/URL 模糊匹配，最新在前）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_search(query: String, limit: Option<usize>) -> Result<Vec<BrowserHistoryEntry>> {
+    crate::services::browser_history::browser_history_search(&query, limit.unwrap_or(50))
+}
+
+/// 删除单条访问历史
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_delete(id: String) -> Result<()> {
+    crate::services::browser_history::browser_history_delete(&id)
+}
+
+/// 清空全部访问历史
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_clear() -> Result<()> {
+    crate::services::browser_history::browser_history_clear()
+}
+
+/// 记录一次访问（供页面加载完成回填真实标题）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_history_record(title: Option<String>, url: String) -> Result<BrowserHistoryEntry> {
+    crate::services::browser_history::browser_history_record(
+        title.as_deref().unwrap_or(""),
+        &url,
+    )
 }
 
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。

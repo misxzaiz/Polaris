@@ -8,6 +8,7 @@ import {
   Bookmark,
   ChevronDown,
   ChevronUp,
+  Clock,
   Code2,
   Globe2,
   ListTree,
@@ -20,6 +21,7 @@ import {
   RefreshCw,
   Search,
   Sparkles,
+  Trash2,
   Unlock,
   X,
 } from 'lucide-react'
@@ -42,6 +44,10 @@ import {
   browserGetNetworkInfo,
   browserGetPageContext,
   browserHistory,
+  browserHistoryClear,
+  browserHistoryDelete,
+  browserHistoryList,
+  browserHistorySearch,
   browserNavigate,
   browserReload,
   browserSelectRegion,
@@ -56,6 +62,7 @@ import {
   type BrowserBookmark,
   type BrowserBounds,
   type BrowserDiagnostics,
+  type BrowserHistoryEntry,
   type BrowserInteractionResult,
   type BrowserPageContext,
   type BrowserRegion,
@@ -292,6 +299,12 @@ export function BrowserPanel({
   const [bookmarkDropdownOpen, setBookmarkDropdownOpen] = useState(false)
   const bookmarkListRef = useRef<HTMLDivElement>(null)
 
+  // 访问历史状态
+  const [historyEntries, setHistoryEntries] = useState<BrowserHistoryEntry[]>([])
+  const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
+  const [historyQuery, setHistoryQuery] = useState('')
+  const historyPanelRef = useRef<HTMLDivElement>(null)
+
   // 加载书签
   useEffect(() => {
     let cancelled = false
@@ -308,6 +321,37 @@ export function BrowserPanel({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // 加载访问历史
+  useEffect(() => {
+    let cancelled = false
+    const loadHistory = () => {
+      const q = historyQuery.trim()
+      const req = q ? browserHistorySearch(q, 100) : browserHistoryList()
+      req
+        .then((items) => {
+          if (!cancelled) setHistoryEntries(items)
+        })
+        .catch(() => undefined)
+    }
+    loadHistory()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [historyQuery, historyPanelOpen])
+
+  // 点击外部关闭历史面板
+  useEffect(() => {
+    if (!historyPanelOpen) return
+    const onClick = (event: MouseEvent) => {
+      if (historyPanelRef.current && !historyPanelRef.current.contains(event.target as Node)) {
+        setHistoryPanelOpen(false)
+      }
+    }
+    window.addEventListener('mousedown', onClick)
+    return () => window.removeEventListener('mousedown', onClick)
+  }, [historyPanelOpen])
 
   // URL 变化时更新收藏态
   useEffect(() => {
@@ -351,6 +395,42 @@ export function BrowserPanel({
 
   const openBookmarkDropdown = useCallback(() => {
     setBookmarkDropdownOpen((prev) => !prev)
+  }, [])
+
+  const toggleHistoryPanel = useCallback(() => {
+    setHistoryPanelOpen((prev) => !prev)
+    setHistoryQuery('')
+  }, [])
+
+  const removeHistoryEntry = useCallback(async (id: string) => {
+    try {
+      await browserHistoryDelete(id)
+      setHistoryEntries((prev) => prev.filter((h) => h.id !== id))
+    } catch (error) {
+      setError(String(error))
+    }
+  }, [])
+
+  const clearAllHistory = useCallback(async () => {
+    try {
+      await browserHistoryClear()
+      setHistoryEntries([])
+    } catch (error) {
+      setError(String(error))
+    }
+  }, [])
+
+  const formatVisitedTime = useCallback((ts: number) => {
+    if (!ts) return ''
+    const diff = Date.now() - ts
+    const minute = 60_000
+    const hour = 60 * minute
+    const day = 24 * hour
+    if (diff < minute) return '刚刚'
+    if (diff < hour) return `${Math.floor(diff / minute)} 分钟前`
+    if (diff < day) return `${Math.floor(diff / hour)} 小时前`
+    const d = new Date(ts)
+    return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
   }, [])
 
 
@@ -1373,6 +1453,89 @@ export function BrowserPanel({
                   </span>
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* 访问历史：按钮 + 下拉面板 */}
+        <div className="relative flex items-center">
+          <button
+            type="button"
+            className={clsx(
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
+              historyPanelOpen
+                ? 'border-primary/60 bg-primary/10 text-primary'
+                : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
+            )}
+            onClick={toggleHistoryPanel}
+            title={t('browser.historyPanel', { defaultValue: '浏览历史' })}
+          >
+            <Clock size={15} />
+          </button>
+          {historyPanelOpen && (
+            <div
+              ref={historyPanelRef}
+              className="absolute right-0 top-9 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-lg"
+            >
+              <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
+                <Search size={13} className="shrink-0 text-text-tertiary" />
+                <input
+                  value={historyQuery}
+                  onChange={(event) => setHistoryQuery(event.target.value)}
+                  placeholder={t('browser.historySearchPlaceholder', { defaultValue: '搜索历史' })}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+                />
+                {historyEntries.length > 0 && (
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-text-tertiary hover:bg-background-hover hover:text-danger"
+                    onClick={clearAllHistory}
+                    title={t('browser.clearHistory', { defaultValue: '清空历史' })}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+              <div className="max-h-72 overflow-y-auto py-1">
+                {historyEntries.length === 0 && (
+                  <div className="px-3 py-3 text-center text-xs text-text-tertiary">
+                    {t('browser.historyEmpty', { defaultValue: '暂无浏览历史' })}
+                  </div>
+                )}
+                {historyEntries.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    className="group flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover"
+                    onClick={() => {
+                      setHistoryPanelOpen(false)
+                      navigateTo(entry.url)
+                    }}
+                    title={entry.url}
+                  >
+                    <Globe2 size={12} className="shrink-0 text-text-tertiary" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-text-primary">{entry.title || entry.url}</span>
+                      <span className="block truncate text-[10px] text-text-tertiary">
+                        {(() => { try { return new URL(entry.url).hostname } catch { return entry.url } })()}
+                        {entry.visitCount > 1 ? ` · ${entry.visitCount} 次` : ''}
+                        {formatVisitedTime(entry.visitedAt) ? ` · ${formatVisitedTime(entry.visitedAt)}` : ''}
+                      </span>
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="shrink-0 text-text-tertiary opacity-0 transition-opacity hover:text-danger group-hover:opacity-100"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        removeHistoryEntry(entry.id)
+                      }}
+                    >
+                      <X size={12} />
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
           )}
         </div>

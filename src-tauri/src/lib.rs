@@ -870,6 +870,11 @@ pub fn run() {
             commands::browser::browser_bookmark_delete,
             commands::browser::browser_bookmark_set_title,
             commands::browser::browser_bookmark_find,
+            commands::browser::browser_history_list,
+            commands::browser::browser_history_search,
+            commands::browser::browser_history_delete,
+            commands::browser::browser_history_clear,
+            commands::browser::browser_history_record,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

@@ -92,13 +92,14 @@ fn create_test_state() -> Arc<AppState> {
         resource_dir: OnceLock::new(),
         start_time: Some(std::time::Instant::now()),
         web_server_handle: Arc::new(AsyncMutex::new(None)),
-        proxy_manager: crate::services::ProxyManager::new(),
+        proxy_manager: Arc::new(crate::services::ProxyManager::new()),
         provider_router: Arc::new(crate::services::ProviderRouter::new()),
         profile_stats_collector: Arc::new(tokio::sync::Mutex::new(crate::services::ProfileStatsCollector::new())),
         failed_call_collector: Arc::new(tokio::sync::Mutex::new(crate::services::FailedCallCollector::new())),
         plugin_service_manager: Arc::new(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
+        executor_registry: crate::services::executor::create_builtin_registry(),
     })
 }
 
