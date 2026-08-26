@@ -866,6 +866,10 @@ pub fn run() {
             commands::browser::browser_find_next,
             commands::browser::browser_zoom,
             commands::browser::browser_get_network_info,
+            commands::browser::browser_network_requests,
+            commands::browser::browser_storage_get,
+            commands::browser::browser_storage_set,
+            commands::browser::browser_storage_clear,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

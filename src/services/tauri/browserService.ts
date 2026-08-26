@@ -611,3 +611,87 @@ export interface BrowserNetworkInfo {
 export async function browserGetNetworkInfo(label: string): Promise<BrowserNetworkInfo> {
   return invoke<BrowserNetworkInfo>('browser_get_network_info', { label })
 }
+
+export interface BrowserNetworkRequest {
+  url: string
+  initiatorType: string
+  transferSize: number
+  duration: number
+  startTime: number
+  name: string
+}
+
+export interface BrowserNetworkRequestsResult {
+  origin: string
+  count: number
+  returned: number
+  items: BrowserNetworkRequest[]
+}
+
+export async function browserNetworkRequests(
+  label: string,
+  limit?: number,
+): Promise<BrowserNetworkRequestsResult> {
+  return invoke<BrowserNetworkRequestsResult>('browser_network_requests', { label, limit: limit ?? null })
+}
+
+export interface BrowserStorageResult {
+  origin: string
+  type: string
+  keys: Record<string, string>
+  error?: string | null
+}
+
+export async function browserStorageGet(
+  label: string,
+  type?: 'localStorage' | 'sessionStorage' | 'cookie',
+  key?: string,
+): Promise<BrowserStorageResult> {
+  return invoke<BrowserStorageResult>('browser_storage_get', {
+    label,
+    type: type ?? null,
+    key: key ?? null,
+  })
+}
+
+export interface BrowserStorageSetResult {
+  ok: boolean
+  origin?: string
+  action?: string
+  type?: string
+  key?: string | null
+  error?: string | null
+}
+
+export interface BrowserCookieOpts {
+  path?: string
+  expires?: string
+}
+
+export async function browserStorageSet(
+  label: string,
+  key: string,
+  value: string,
+  type?: 'localStorage' | 'sessionStorage' | 'cookie',
+  cookieOpts?: BrowserCookieOpts,
+): Promise<BrowserStorageSetResult> {
+  return invoke<BrowserStorageSetResult>('browser_storage_set', {
+    label,
+    key,
+    value,
+    type: type ?? null,
+    cookieOpts: cookieOpts ?? null,
+  })
+}
+
+export async function browserStorageClear(
+  label: string,
+  type?: 'localStorage' | 'sessionStorage' | 'cookie',
+  key?: string,
+): Promise<BrowserStorageSetResult> {
+  return invoke<BrowserStorageSetResult>('browser_storage_clear', {
+    label,
+    type: type ?? null,
+    key: key ?? null,
+  })
+}

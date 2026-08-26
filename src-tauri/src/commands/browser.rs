@@ -2586,6 +2586,67 @@ pub async fn browser_get_network_info(
     parse_eval_json(&raw)
 }
 
+/// 获取页面请求明细（URL/类型/传输大小/耗时等），按 limit 采样。
+/// 只返回 performance resource timing 元数据，不含请求/响应体（Phase 3 才支持）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_network_requests(
+    app: AppHandle,
+    label: String,
+    limit: Option<usize>,
+) -> Result<Value> {
+    let script = browser_scripts::network_requests_script(limit);
+    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    parse_eval_json(&raw)
+}
+
+/// 读取浏览器存储（localStorage / sessionStorage / cookie），按当前页面 origin 隔离。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_storage_get(
+    app: AppHandle,
+    label: String,
+    r#type: Option<String>,
+    key: Option<String>,
+) -> Result<Value> {
+    let args = serde_json::json!({ "type": r#type, "key": key });
+    let script = browser_scripts::storage_script(browser_scripts::STORAGE_READ_SCRIPT, &args);
+    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    parse_eval_json(&raw)
+}
+
+/// 写入浏览器存储（set），仅调试用；谨慎修改 token/cookie。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_storage_set(
+    app: AppHandle,
+    label: String,
+    r#type: Option<String>,
+    key: String,
+    value: String,
+    cookie_opts: Option<Value>,
+) -> Result<Value> {
+    let args = serde_json::json!({ "action": "set", "type": r#type, "key": key, "value": value, "cookieOpts": cookie_opts });
+    let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &args);
+    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    parse_eval_json(&raw)
+}
+
+/// 清除浏览器存储（clear）：省略 key 则清空该类型；传 key 则删除单键。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_storage_clear(
+    app: AppHandle,
+    label: String,
+    r#type: Option<String>,
+    key: Option<String>,
+) -> Result<Value> {
+    let args = serde_json::json!({ "action": "clear", "type": r#type, "key": key });
+    let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &args);
+    let raw = browser_eval_with_app(&app, &label, &script, Some(2_000)).await?;
+    parse_eval_json(&raw)
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -3145,6 +3206,35 @@ impl BrowserActionDispatcher {
             "network_info" | "networkInfo" => {
                 let raw = browser_eval_with_app(&self.app, &label, browser_scripts::NETWORK_INFO_SCRIPT, Some(2_000)).await?;
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("网络信息解析失败: {e}")))
+            }
+            "network_requests" | "networkRequests" => {
+                let limit = args.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+                let script = browser_scripts::network_requests_script(limit);
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("请求明细解析失败: {e}")))
+            }
+            "storage_get" | "storageGet" => {
+                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let key = args.get("key").and_then(Value::as_str).map(String::from);
+                let script = browser_scripts::storage_script(browser_scripts::STORAGE_READ_SCRIPT, &serde_json::json!({ "type": r#type, "key": key }));
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储读取失败: {e}")))
+            }
+            "storage_set" | "storageSet" => {
+                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let key = args.get("key").and_then(Value::as_str).ok_or_else(|| AppError::ValidationError("storage_set 缺少 key".to_string()))?;
+                let value = args.get("value").and_then(Value::as_str).unwrap_or("").to_string();
+                let cookie_opts = args.get("cookieOpts").cloned();
+                let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &serde_json::json!({ "action": "set", "type": r#type, "key": key, "value": value, "cookieOpts": cookie_opts }));
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储写入失败: {e}")))
+            }
+            "storage_clear" | "storageClear" => {
+                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let key = args.get("key").and_then(Value::as_str).map(String::from);
+                let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &serde_json::json!({ "action": "clear", "type": r#type, "key": key }));
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储清除失败: {e}")))
             }
             other => Err(AppError::ValidationError(format!(
                 "未知 browser action: {other}"

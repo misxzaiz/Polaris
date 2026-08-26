@@ -360,6 +360,46 @@ fn handle_tools_list() -> Value {
             "inputSchema": { "type": "object", "properties": {
                 "label": label_property
             }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_network_requests",
+            "description": "Get page request details (URL/initiator/transfer size/duration) sampled to limit. Returns metadata only, no request/response bodies. Each item may represent a script, style, xhr, fetch, or image load.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "limit": { "type": "integer", "minimum": 1, "maximum": 1000, "description": "Max number of most-recent requests to return (default 100)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_storage_get",
+            "description": "Read browser storage (localStorage/sessionStorage/cookie) for the current page origin. Returns all keys or a single key. Only current-origin storage is readable (SOP).",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "type": { "type": "string", "enum": ["localStorage", "sessionStorage", "cookie"], "description": "Storage type (default localStorage)." },
+                "key": { "type": "string", "description": "Optional single key to read." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_storage_set",
+            "description": "Write browser storage (localStorage/sessionStorage/cookie) for the current page origin. Debugging use only — be cautious modifying tokens/cookies.",
+            "inputSchema": { "type": "object", "required": ["key", "value"], "properties": {
+                "label": label_property,
+                "type": { "type": "string", "enum": ["localStorage", "sessionStorage", "cookie"], "description": "Storage type (default localStorage)." },
+                "key": { "type": "string", "description": "Storage key." },
+                "value": { "type": "string", "description": "Value to write." },
+                "cookieOpts": { "type": "object", "properties": {
+                    "path": { "type": "string", "description": "Cookie path (default '/')." },
+                    "expires": { "type": "string", "description": "Cookie expires (e.g. 'Wed, 21 Oct 2026 07:28:00 GMT')." }
+                }, "additionalProperties": false }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_storage_clear",
+            "description": "Clear browser storage (localStorage/sessionStorage/cookie) for the current page origin. Omit key to clear the whole type, pass key to remove a single key.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "type": { "type": "string", "enum": ["localStorage", "sessionStorage", "cookie"], "description": "Storage type (default localStorage)." },
+                "key": { "type": "string", "description": "Optional single key to remove." }
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -424,6 +464,10 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_find" => Ok("find"),
         "browser_zoom" => Ok("zoom"),
         "browser_network_info" => Ok("network_info"),
+        "browser_network_requests" => Ok("network_requests"),
+        "browser_storage_get" => Ok("storage_get"),
+        "browser_storage_set" => Ok("storage_set"),
+        "browser_storage_clear" => Ok("storage_clear"),
         other => Err(AppError::ValidationError(format!(
             "未知浏览器工具: {other}"
         ))),

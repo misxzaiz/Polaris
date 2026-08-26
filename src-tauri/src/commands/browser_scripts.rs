@@ -39,6 +39,15 @@ pub const REGION_SELECT_SCRIPT_BODY: &str =
 pub const NETWORK_INFO_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/network-info.js");
 
+pub const NETWORK_REQUESTS_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/network-requests.js");
+
+pub const STORAGE_READ_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/storage-read.js");
+
+pub const STORAGE_WRITE_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/storage-write.js");
+
 pub const MUTE_CONTROL_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/mute-control.js");
 
@@ -138,6 +147,19 @@ pub fn marquee_overlay_script(enabled: bool) -> String {
 /// 媒体静音控制脚本
 pub fn mute_control_script(mute: bool) -> String {
     format!("(() => {{\nconst muteEnabled = {mute};\n{})()", MUTE_CONTROL_SCRIPT)
+}
+
+/// 网络请求明细脚本：通过全局变量注入 limit，控制返回条数（防上下文膨胀）
+pub fn network_requests_script(limit: Option<usize>) -> String {
+    let limit_val = limit.unwrap_or(100).max(1).min(1000);
+    format!("(() => {{\nwindow.__POLARIS_NETWORK_LIMIT__ = {limit_val};\n{})()", NETWORK_REQUESTS_SCRIPT)
+}
+
+/// 存储读写脚本：通过全局对象注入 { action, type, key, value, cookieOpts }
+/// 由脚本内部从 window.__POLARIS_STORAGE_ARGS__ 读取并消费后清理。
+pub fn storage_script(body: &str, args: &serde_json::Value) -> String {
+    let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
+    format!("(() => {{\nwindow.__POLARIS_STORAGE_ARGS__ = {args_json};\n{body}\n}})()")
 }
 
 /// 区域选择脚本（含 collector）
