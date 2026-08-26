@@ -4,7 +4,7 @@
  * 包含 TabBar 和 TabContent,支持 Editor 和 DiffViewer 切换
  */
 
-import { ReactNode, useCallback, useEffect, useState } from 'react'
+import { ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, FileDiff, FileText, Image as ImageIcon, GitPullRequest, Rows3, Columns2, Globe2 } from 'lucide-react'
 import { useTabStore, Tab } from '@/stores/tabStore'
@@ -48,6 +48,10 @@ export function TabBar({ className = '' }: TabBarProps) {
   const closeRightTabs = useTabStore((state) => state.closeRightTabs)
   const closeSavedTabs = useTabStore((state) => state.closeSavedTabs)
   const switchTab = useTabStore((state) => state.switchTab)
+  const moveTab = useTabStore((state) => state.moveTab)
+
+  // 拖拽排序时记录被拖动的标签 id（dataTransfer 在某些平台不可靠）
+  const dragTabIdRef = useRef<string | null>(null)
 
   // 文件编辑器状态
   const currentFile = useFileEditorStore((state) => state.currentFile)
@@ -272,7 +276,35 @@ export function TabBar({ className = '' }: TabBarProps) {
           return (
             <div
               key={tab.id}
+              draggable
               onClick={() => switchTab(tab.id)}
+              onAuxClick={(e) => {
+                // 中键（鼠标按键 1）关闭标签页
+                if (e.button === 1 && tab.closable) {
+                  e.preventDefault()
+                  handleClose(e, tab)
+                }
+              }}
+              onDragStart={(e) => {
+                dragTabIdRef.current = tab.id
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', tab.id)
+              }}
+              onDragOver={(e) => {
+                e.preventDefault()
+                e.dataTransfer.dropEffect = 'move'
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                const fromId = dragTabIdRef.current || e.dataTransfer.getData('text/plain')
+                if (fromId && fromId !== tab.id) {
+                  moveTab(fromId, tab.id)
+                }
+                dragTabIdRef.current = null
+              }}
+              onDragEnd={() => {
+                dragTabIdRef.current = null
+              }}
               onContextMenu={(e) => handleContextMenu(e, tab.id)}
               className={`group flex items-center gap-2 px-3 py-1.5 rounded-t-md min-w-[120px] max-w-[200px] cursor-pointer transition-all select-none ${
                 activeTabId === tab.id

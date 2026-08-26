@@ -73,6 +73,8 @@ interface TabActions {
   closeOtherTabs: (tabId: string) => void
   closeRightTabs: (tabId: string) => void
   closeSavedTabs: () => void
+  /** 拖拽排序：把 fromId 标签移动到 toId 标签所在位置 */
+  moveTab: (fromId: string, toId: string) => void
 
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
@@ -412,6 +414,21 @@ export const useTabStore = create<TabStore>()(
             : state.activeTabId
 
           return { tabs: kept, activeTabId: newActiveTabId }
+        })
+      },
+
+      // 拖拽排序：把 fromId 标签移动到 toId 标签所在位置
+      moveTab: (fromId: string, toId: string) => {
+        if (fromId === toId) return
+        set((state) => {
+          const fromIndex = state.tabs.findIndex((tab) => tab.id === fromId)
+          const toIndex = state.tabs.findIndex((tab) => tab.id === toId)
+          if (fromIndex === -1 || toIndex === -1) return state
+
+          const tabs = [...state.tabs]
+          const [moved] = tabs.splice(fromIndex, 1)
+          tabs.splice(toIndex, 0, moved)
+          return { ...state, tabs }
         })
       },
 
