@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { FileCode, ChevronRight, AlertTriangle } from 'lucide-react';
 import { diffLines } from 'diff';
+import { extractRelativeDirFromPath } from '@/utils/toolInputExtractor';
 
 /** 超过此字符数时跳过 diff 计算，避免主线程卡顿（≈ 100KB 文本） */
 const MAX_DIFF_CHARS = 100_000;
@@ -150,8 +151,10 @@ export const InlineDiffView = memo(function InlineDiffView({
     return { added, removed };
   }, [displayLines]);
 
-  // 文件名
+  // 文件名（主）
   const fileName = filePath.split(/[/\\]/).pop() || filePath;
+  // 相对目录（次，去根去文件名），无目录时为空
+  const fileDir = extractRelativeDirFromPath(filePath);
 
   const handleClick = () => {
     onOpenFile?.(filePath);
@@ -163,7 +166,7 @@ export const InlineDiffView = memo(function InlineDiffView({
 
   return (
     <div className="overflow-hidden">
-      {/* 头部：文件路径 + 统计（noHeader 时跳过） */}
+      {/* 头部：文件名（主）+ 相对目录（次）+ 统计（noHeader 时跳过） */}
       {!noHeader && (
         <div
           className="flex items-center gap-2 px-3 py-1.5 bg-background-surface cursor-pointer hover:bg-background-hover transition-colors text-xs select-none"
@@ -171,9 +174,14 @@ export const InlineDiffView = memo(function InlineDiffView({
           title={filePath}
         >
           <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="text-primary hover:underline truncate flex-1 min-w-0">
+          <span className="text-primary font-medium truncate shrink-0 max-w-[45%]">
             {fileName}
           </span>
+          {fileDir && (
+            <span className="text-text-tertiary truncate flex-1 min-w-0" title={filePath}>
+              {fileDir}
+            </span>
+          )}
           {!isTooLarge && (stats.added > 0 || stats.removed > 0) && (
             <span className="flex items-center gap-1.5 shrink-0 tabular-nums">
               <span className="text-success">+{stats.added}</span>

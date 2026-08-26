@@ -7,6 +7,7 @@ import i18n from '@/i18n';
 import type { ToolCategory, ToolConfig } from './toolConfig.types';
 import {
   extractFilePath,
+  extractRelativeDir,
   extractCommand as extractCommandImpl,
   extractSearchQuery as extractSearchQueryImpl,
   extractTodoInfo as extractTodoInfoImpl,
@@ -435,6 +436,21 @@ export function extractFileName(input: Record<string, unknown> | undefined): str
   return extractFilePath(input);
 }
 
+/**
+ * 提取「文件名 + 相对目录」组合，用于头部主次展示：
+ * 文件名为主，目录作为次要信息跟随（无目录时仅返回文件名）。
+ *
+ * @example
+ * extractFileNameWithDir({ path: 'src/components/Foo.tsx' })
+ * // => 'Foo.tsx · src/components'
+ */
+export function extractFileNameWithDir(input: Record<string, unknown> | undefined): string {
+  const fileName = extractFilePath(input);
+  if (!fileName) return '';
+  const dir = extractRelativeDir(input);
+  return dir ? `${fileName} · ${dir}` : fileName;
+}
+
 export function extractCommand(input: Record<string, unknown> | undefined): string {
   return extractCommandImpl(input, 40);
 }
@@ -525,7 +541,7 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
         const p = input.pattern as string;
         return p.length > 40 ? p.slice(0, 37) + '...' : p;
       }
-      return extractFileName(input);
+      return extractFileNameWithDir(input);
     case 'execute':
     case 'git':
       return extractCommand(input);

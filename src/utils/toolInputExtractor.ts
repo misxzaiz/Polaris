@@ -171,6 +171,49 @@ export function extractFullFilePath(input: Record<string, unknown> | undefined):
 }
 
 /**
+ * 从路径字符串中提取相对目录（去盘符、去文件名、去前导分隔符）。
+ *
+ * 用于「文件名为主、路径为辅」的展示：文件名已由 extractFilePath 提取，
+ * 这里补充其归属目录（次要信息）。
+ *
+ * @example
+ * extractRelativeDirFromPath('src/components/Foo.tsx')
+ * // => 'src/components'
+ * extractRelativeDirFromPath('D:\\space\\base\\Polaris\\src\\Foo.tsx')
+ * // => 'space/base/Polaris/src'
+ * extractRelativeDirFromPath('Foo.tsx')
+ * // => ''
+ */
+export function extractRelativeDirFromPath(path: string): string {
+  if (!path) return '';
+  // 统一分隔符，便于拆分
+  const normalized = path.replace(/\\/g, '/');
+  const lastSlash = normalized.lastIndexOf('/');
+  if (lastSlash <= 0) return '';
+  let dir = normalized.slice(0, lastSlash);
+  // 去掉盘符（如 D: / C:）
+  dir = dir.replace(/^[A-Za-z]:/, '');
+  // 去掉前导分隔符
+  dir = dir.replace(/^\/+/, '');
+  return dir;
+}
+
+/**
+ * 从工具输入中提取文件的相对目录（去根、去文件名）。
+ *
+ * @param input - 工具输入参数对象
+ * @returns 相对目录字符串，如 'src/components'；无目录时返回空字符串
+ *
+ * @example
+ * extractRelativeDir({ path: 'src/components/Foo.tsx' })
+ * // => 'src/components'
+ */
+export function extractRelativeDir(input: Record<string, unknown> | undefined): string {
+  const full = extractFullFilePath(input);
+  return extractRelativeDirFromPath(full || '');
+}
+
+/**
  * 从工具输入中提取命令
  *
  * @param input - 工具输入参数对象

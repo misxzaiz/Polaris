@@ -16,6 +16,7 @@ import { clsx } from 'clsx';
 import { FileCode, AlertTriangle } from 'lucide-react';
 import { getLanguageFromPath } from '@/utils/language';
 import { highlightCode } from '@/utils/syntaxHighlight';
+import { extractRelativeDirFromPath } from '@/utils/toolInputExtractor';
 
 /** 超过此字符数时跳过语法高亮，直接渲染纯文本（≈ 100KB 文本） */
 const MAX_PREVIEW_CHARS = 100_000;
@@ -84,6 +85,8 @@ export const CodePreviewView = memo(function CodePreviewView({
 
   // 文件名（filePath 在渲染层守卫，避免 undefined.split）
   const fileName = filePath ? (filePath.split(/[/\\]/).pop() || filePath) : '';
+  // 相对目录（次，去根去文件名）
+  const fileDir = filePath ? extractRelativeDirFromPath(filePath) : '';
 
   const handleClick = () => {
     onOpenFile?.(filePath);
@@ -106,7 +109,7 @@ export const CodePreviewView = memo(function CodePreviewView({
 
   return (
     <div className="overflow-hidden">
-      {/* 头部：文件路径 + 语言标签（noHeader 时跳过） */}
+      {/* 头部：文件名（主）+ 相对目录（次）+ 语言标签（noHeader 时跳过） */}
       {!noHeader && (
         <div
           className={clsx(
@@ -117,9 +120,14 @@ export const CodePreviewView = memo(function CodePreviewView({
           title={filePath}
         >
           <FileCode className="w-3.5 h-3.5 text-primary shrink-0" />
-          <span className="text-primary hover:underline truncate flex-1 min-w-0">
+          <span className="text-primary font-medium truncate shrink-0 max-w-[45%]">
             {fileName}
           </span>
+          {fileDir && (
+            <span className="text-text-tertiary truncate flex-1 min-w-0" title={filePath}>
+              {fileDir}
+            </span>
+          )}
           <span className="text-[10px] px-1.5 py-0.5 rounded bg-background-secondary text-text-tertiary shrink-0">
             {language}
           </span>
