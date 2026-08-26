@@ -4,7 +4,6 @@
  * 替代原有的 BrowserLauncherPanel，提供：
  *   - 快捷访问（可编辑网格）
  *   - 历史记录（自动追踪，按时间线分组）
- *   - 书签管理（文件夹 + CRUD）
  *   - AI 信息源（一键发送给 AI + 项目信息源预设）
  *   - 底部状态栏（当前浏览器标签联动）
  */
@@ -21,10 +20,7 @@ import {
   Send,
   Copy,
   X,
-  ChevronRight,
   Star,
-  Trash2,
-  Edit3,
   Search,
   Loader2,
   Camera,
@@ -43,7 +39,7 @@ import { useViewStore } from '@/stores/viewStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useToastStore } from '@/stores/toastStore'
-import { useBrowserSidebarStore, type SidebarTabName, type ShortcutItem, type BookmarkFolder, type BookmarkItem } from '@/stores/browserSidebarStore'
+import { useBrowserSidebarStore, type SidebarTabName, type ShortcutItem } from '@/stores/browserSidebarStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { normalizeBrowserUrl, type BrowserNetworkInfo, type MarqueeContextBlock } from '@/services/tauri/browserService'
 
@@ -341,217 +337,6 @@ function HistoryTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   )
 }
 
-// ─── 书签 Tab ──────────────────────────────────────
-
-function BookmarkTab({ onNavigate }: { onNavigate: (url: string) => void }) {
-  const { t } = useTranslation('common')
-  const bookmarkFolders = useBrowserSidebarStore((s) => s.bookmarkFolders)
-  const bookmarks = useBrowserSidebarStore((s) => s.bookmarks)
-  const addBookmark = useBrowserSidebarStore((s) => s.addBookmark)
-  const removeBookmark = useBrowserSidebarStore((s) => s.removeBookmark)
-  const addFolder = useBrowserSidebarStore((s) => s.addFolder)
-  const removeFolder = useBrowserSidebarStore((s) => s.removeFolder)
-  const renameFolder = useBrowserSidebarStore((s) => s.renameFolder)
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set(bookmarkFolders.map((f) => f.id)))
-  const [renamingId, setRenamingId] = useState<string | null>(null)
-  const [renameValue, setRenameValue] = useState('')
-  const [showAddFolderForm, setShowAddFolderForm] = useState(false)
-  const [folderName, setFolderName] = useState('')
-  const [showAddBookmarkForm, setShowAddBookmarkForm] = useState(false)
-  const [bmUrl, setBmUrl] = useState('')
-  const [bmTitle, setBmTitle] = useState('')
-
-  const toggleFolder = (id: string) => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  const handleStartRename = (folder: BookmarkFolder) => {
-    setRenamingId(folder.id)
-    setRenameValue(folder.name)
-  }
-
-  const handleSaveRename = () => {
-    if (renamingId && renameValue.trim()) {
-      renameFolder(renamingId, renameValue.trim())
-    }
-    setRenamingId(null)
-  }
-
-  const handleAddFolder = () => {
-    if (folderName.trim()) {
-      addFolder(folderName.trim())
-      setFolderName('')
-      setShowAddFolderForm(false)
-    }
-  }
-
-  const handleAddBookmark = () => {
-    if (!bmUrl.trim()) return
-    addBookmark(normalizeBrowserUrl(bmUrl), bmTitle.trim() || bmUrl)
-    setBmUrl('')
-    setBmTitle('')
-    setShowAddBookmarkForm(false)
-  }
-
-  const rootBookmarks = bookmarks.filter((b) => !b.folderId)
-  const sortedFolders = [...bookmarkFolders].sort((a, b) => a.order - b.order)
-
-  return (
-    <div className="flex flex-col gap-0.5">
-      {sortedFolders.length === 0 && rootBookmarks.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-8 text-center">
-          <Bookmark size={24} className="text-text-tertiary" />
-          <div className="text-xs text-text-tertiary">
-            {t('browser.sidebar.noBookmarks', { defaultValue: '收藏常用页面，方便快速访问' })}
-          </div>
-        </div>
-      ) : (
-        <>
-          {sortedFolders.map((folder) => {
-            const folderBookmarks = bookmarks.filter((b) => b.folderId === folder.id)
-            const isExpanded = expandedFolders.has(folder.id)
-            return (
-              <div key={folder.id}>
-                <div className="group flex items-center gap-1 rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-background-hover">
-                  <button
-                    onClick={() => toggleFolder(folder.id)}
-                    className="flex items-center gap-1 min-w-0 flex-1"
-                  >
-                    <ChevronRight
-                      size={12}
-                      className={clsx('shrink-0 transition-transform', isExpanded && 'rotate-90')}
-                    />
-                    <span className="truncate">{folder.name}</span>
-                    <span className="shrink-0 rounded bg-background-surface px-1.5 text-[10px] text-text-tertiary">
-                      {folderBookmarks.length}
-                    </span>
-                  </button>
-                  <div className="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100">
-                    <button
-                      onClick={() => handleStartRename(folder)}
-                      className="rounded p-0.5 text-text-tertiary hover:text-text-primary"
-                      title={t('buttons.rename')}
-                    >
-                      <Edit3 size={10} />
-                    </button>
-                    <button
-                      onClick={() => removeFolder(folder.id)}
-                      className="rounded p-0.5 text-text-tertiary hover:text-danger"
-                      title={t('buttons.remove')}
-                    >
-                      <Trash2 size={10} />
-                    </button>
-                  </div>
-                </div>
-                {renamingId === folder.id && (
-                  <div className="flex gap-1 px-4 pb-1">
-                    <input
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      className="h-6 flex-1 rounded bg-background-surface px-1.5 text-xs text-text-primary outline-none"
-                      autoFocus
-                      onKeyDown={(e) => { if (e.key === 'Enter') handleSaveRename(); if (e.key === 'Escape') setRenamingId(null) }}
-                    />
-                    <button onClick={handleSaveRename} className="rounded px-1.5 py-0.5 text-[10px] text-primary">保存</button>
-                  </div>
-                )}
-                {isExpanded && folderBookmarks.map((bm) => (
-                  <BookmarkRow key={bm.id} bookmark={bm} onNavigate={onNavigate} onRemove={removeBookmark} />
-                ))}
-              </div>
-            )
-          })}
-          {rootBookmarks.map((bm) => (
-            <BookmarkRow key={bm.id} bookmark={bm} onNavigate={onNavigate} onRemove={removeBookmark} />
-          ))}
-        </>
-      )}
-      <div className="mt-2 flex flex-col gap-1">
-        {showAddFolderForm ? (
-          <div className="flex gap-1 rounded-md border border-primary/60 bg-background-surface p-1.5">
-            <input
-              value={folderName}
-              onChange={(e) => setFolderName(e.target.value)}
-              className="h-6 flex-1 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
-              placeholder={t('browser.sidebar.folderName', { defaultValue: '文件夹名称' })}
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddFolder(); if (e.key === 'Escape') { setShowAddFolderForm(false); setFolderName('') } }}
-            />
-            <button onClick={handleAddFolder} className="rounded px-1.5 py-0.5 text-[10px] text-primary"><Check size={10} className="inline" /></button>
-            <button onClick={() => { setShowAddFolderForm(false); setFolderName('') }} className="rounded px-1.5 py-0.5 text-[10px] text-text-tertiary">{t('buttons.cancel', { defaultValue: '取消' })}</button>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddFolderForm(true)}
-            className="flex items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            <Plus size={10} />
-            {t('browser.sidebar.newFolder', { defaultValue: '新建文件夹' })}
-          </button>
-        )}
-        {showAddBookmarkForm ? (
-          <div className="flex flex-col gap-1 rounded-md border border-primary/60 bg-background-surface p-1.5">
-            <input
-              value={bmUrl}
-              onChange={(e) => setBmUrl(e.target.value)}
-              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
-              placeholder={t('browser.sidebar.enterUrl', { defaultValue: '网址' })}
-              autoFocus
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddBookmark(); if (e.key === 'Escape') { setShowAddBookmarkForm(false); setBmUrl('') } }}
-            />
-            <input
-              value={bmTitle}
-              onChange={(e) => setBmTitle(e.target.value)}
-              className="h-6 rounded bg-background-base px-1.5 text-xs text-text-primary outline-none"
-              placeholder={t('browser.sidebar.enterLabel', { defaultValue: '标题（可选）' })}
-              onKeyDown={(e) => { if (e.key === 'Enter') handleAddBookmark(); if (e.key === 'Escape') { setShowAddBookmarkForm(false); setBmTitle('') } }}
-            />
-            <div className="flex gap-1">
-              <button onClick={handleAddBookmark} className="flex-1 rounded bg-primary/20 py-0.5 text-[10px] text-primary"><Check size={10} className="inline mr-0.5" />{t('buttons.confirm', { defaultValue: '确认' })}</button>
-              <button onClick={() => { setShowAddBookmarkForm(false); setBmUrl(''); setBmTitle('') }} className="flex-1 rounded bg-background-hover py-0.5 text-[10px] text-text-tertiary">{t('buttons.cancel', { defaultValue: '取消' })}</button>
-            </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setShowAddBookmarkForm(true)}
-            className="flex items-center justify-center gap-1 rounded border border-dashed border-border-subtle px-2 py-1 text-[11px] text-text-tertiary transition-colors hover:border-primary/40 hover:text-primary"
-          >
-            <Plus size={10} />
-            {t('browser.sidebar.newBookmark', { defaultValue: '新建书签' })}
-          </button>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function BookmarkRow({ bookmark, onNavigate, onRemove }: {
-  bookmark: BookmarkItem
-  onNavigate: (url: string) => void
-  onRemove: (id: string) => void
-}) {
-  return (
-    <div
-      className="group ml-5 flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-secondary transition-colors hover:bg-background-hover"
-      onClick={() => onNavigate(bookmark.url)}
-    >
-      <Globe2 size={12} className="shrink-0 text-text-tertiary" />
-      <span className="min-w-0 flex-1 truncate">{bookmark.title}</span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onRemove(bookmark.id) }}
-        className="shrink-0 rounded p-0.5 text-text-tertiary opacity-0 group-hover:opacity-100 hover:text-danger"
-      >
-        <X size={10} />
-      </button>
-    </div>
-  )
-}
-
 // ─── AI 信息源 Tab ─────────────────────────────────
 
 function AiSourceTab({ onNavigate }: { onNavigate: (url: string) => void }) {
@@ -570,21 +355,12 @@ function AiSourceTab({ onNavigate }: { onNavigate: (url: string) => void }) {
   const marqueeBlocks = useMarqueeStore((s) => s.blocks)
   const removeMarqueeBlock = useMarqueeStore((s) => s.removeBlock)
 
-  // 从左侧边栏移除圈选块：同步清空活跃会话输入框中的上下文块
+  // 从左侧边栏移除圈选块：同步清空活跃会话输入框中的上下文块（统一走 removeContextBlock）
   const handleRemoveMarquee = useCallback(async (id: string) => {
     removeMarqueeBlock(id)
-    const activeSessionId = sessionStoreManager.getState().activeSessionId
-    const activeStore = activeSessionId
-      ? sessionStoreManager.getState().stores.get(activeSessionId)?.getState()
-      : null
-    if (activeStore && activeStore.inputDraft.contextBlocks?.some((b) => b.id === id)) {
-      const { useActiveSessionActions } = await import('@/stores/conversationStore/useActiveSession')
-      const { updateInputDraft } = useActiveSessionActions()
-      updateInputDraft({
-        ...activeStore.inputDraft,
-        contextBlocks: activeStore.inputDraft.contextBlocks?.filter((b) => b.id !== id) ?? [],
-      })
-    }
+    const { useActiveSessionActions } = await import('@/stores/conversationStore/useActiveSession')
+    const { removeContextBlock } = useActiveSessionActions()
+    removeContextBlock(id)
   }, [removeMarqueeBlock])
 
   // 从 tabStore 获取当前浏览器标签信息
@@ -1046,7 +822,7 @@ function SearchBar({ onSearch }: { onSearch: (query: string) => void }) {
           value={query}
           onChange={(e) => { setQuery(e.target.value); onSearch(e.target.value) }}
           className="h-7 min-w-0 flex-1 bg-transparent text-xs text-text-primary outline-none placeholder:text-text-tertiary"
-          placeholder={t('browser.sidebar.searchPlaceholder', { defaultValue: '搜索网址、书签、历史...' })}
+          placeholder={t('browser.sidebar.searchPlaceholder', { defaultValue: '搜索网址、历史...' })}
         />
         {query && (
           <button
@@ -1067,7 +843,6 @@ export function BrowserSidebarPanel() {
   const { t } = useTranslation('common')
   const activeTabName = useBrowserSidebarStore((s) => s.activeTabName)
   const setActiveTabName = useBrowserSidebarStore((s) => s.setActiveTabName)
-  const bookmarks = useBrowserSidebarStore((s) => s.bookmarks)
   const addHistory = useBrowserSidebarStore((s) => s.addHistory)
   const openBrowserTab = useTabStore((s) => s.openBrowserTab)
   const closeLeftPanel = useViewStore((s) => s.closeLeftPanel)
@@ -1135,7 +910,6 @@ export function BrowserSidebarPanel() {
   // 搜索过滤 — 使用 selector 替代 getState()，确保与 React 渲染周期一致
   const allShortcuts = useBrowserSidebarStore((s) => s.shortcuts)
   const allHistory = useBrowserSidebarStore((s) => s.history)
-  const allBookmarks = useBrowserSidebarStore((s) => s.bookmarks)
 
   const filteredResults = useMemo(() => {
     if (!searchQuery.trim()) return null
@@ -1147,19 +921,12 @@ export function BrowserSidebarPanel() {
       history: allHistory.filter(
         (h) => h.title.toLowerCase().includes(q) || h.url.toLowerCase().includes(q)
       ),
-      bookmarks: allBookmarks.filter(
-        (b) => b.title.toLowerCase().includes(q) || b.url.toLowerCase().includes(q)
-      ),
     }
-  }, [searchQuery, allShortcuts, allHistory, allBookmarks])
-
-  // 书签总数
-  const bookmarkCount = bookmarks.length
+  }, [searchQuery, allShortcuts, allHistory])
 
   const tabs: { name: SidebarTabName; label: string; icon: React.ReactNode; count?: number }[] = [
     { name: 'quick', label: t('browser.sidebar.quickAccess', { defaultValue: '快捷' }), icon: <Globe2 size={13} /> },
     { name: 'history', label: t('browser.sidebar.history', { defaultValue: '历史' }), icon: <History size={13} /> },
-    { name: 'bookmark', label: t('browser.sidebar.bookmarks', { defaultValue: '书签' }), icon: <Bookmark size={13} />, count: bookmarkCount },
     { name: 'aiSource', label: t('browser.sidebar.aiSource', { defaultValue: 'AI 信息源' }), icon: <Sparkles size={13} /> },
     { name: 'tools', label: t('browser.sidebar.tools', { defaultValue: '工具' }), icon: <Wrench size={13} /> },
   ]
@@ -1215,18 +982,7 @@ export function BrowserSidebarPanel() {
               ))}
             </div>
           )}
-          {filteredResults.bookmarks.length > 0 && (
-            <div className="mb-2">
-              <div className="mb-1 text-[11px] font-medium text-text-tertiary">书签</div>
-              {filteredResults.bookmarks.map((b) => (
-                <div key={b.id} className="flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-xs text-text-secondary hover:bg-background-hover" onClick={() => handleNavigate(b.url)}>
-                  <Bookmark size={12} className="shrink-0" />
-                  <span className="truncate">{b.title}</span>
-                </div>
-              ))}
-            </div>
-          )}
-          {!filteredResults.shortcuts.length && !filteredResults.history.length && !filteredResults.bookmarks.length && (
+          {!filteredResults.shortcuts.length && !filteredResults.history.length && (
             <div className="flex items-center justify-center py-8 text-xs text-text-tertiary">
               {t('browser.sidebar.noSearchResults', { defaultValue: '未找到匹配结果' })}
             </div>
@@ -1253,7 +1009,6 @@ export function BrowserSidebarPanel() {
           <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
             {activeTabName === 'quick' && <QuickAccessTab onNavigate={handleNavigate} />}
             {activeTabName === 'history' && <HistoryTab onNavigate={handleNavigate} />}
-            {activeTabName === 'bookmark' && <BookmarkTab onNavigate={handleNavigate} />}
             {activeTabName === 'aiSource' && <AiSourceTab onNavigate={handleNavigate} />}
             {activeTabName === 'tools' && <ToolsTab />}
           </div>

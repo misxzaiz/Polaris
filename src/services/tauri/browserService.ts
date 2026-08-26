@@ -612,45 +612,6 @@ export async function browserGetNetworkInfo(label: string): Promise<BrowserNetwo
   return invoke<BrowserNetworkInfo>('browser_get_network_info', { label })
 }
 
-// --- 书签 (Bookmarks) ---
-
-export interface BrowserBookmark {
-  id: string
-  title: string
-  url: string
-  createdAt: number
-}
-
-export function browserBookmarksList(): Promise<BrowserBookmark[]> {
-  return invoke<BrowserBookmark[]>('browser_bookmarks_list')
-}
-
-export function browserBookmarkAdd(title: string, url: string): Promise<BrowserBookmark> {
-  return invoke<BrowserBookmark>('browser_bookmark_add', { title, url })
-}
-
-export function browserBookmarkDelete(id: string): Promise<void> {
-  return invoke<void>('browser_bookmark_delete', { id })
-}
-
-export function browserBookmarkSetTitle(id: string, title: string): Promise<BrowserBookmark> {
-  return invoke<BrowserBookmark>('browser_bookmark_set_title', { id, title })
-}
-
-export function browserBookmarkFind(url: string): Promise<BrowserBookmark | null> {
-  return invoke<BrowserBookmark | null>('browser_bookmark_find', { url })
-}
-
-/** 导出书签为可移植 JSON 字符串 */
-export function browserBookmarksExport(): Promise<string> {
-  return invoke<string>('browser_bookmarks_export')
-}
-
-/** 从导出的 JSON 导入书签，返回新增/更新条数 */
-export function browserBookmarksImport(raw: string): Promise<number> {
-  return invoke<number>('browser_bookmarks_import', { raw })
-}
-
 // --- 访问历史 (History) ---
 
 export interface BrowserHistoryEntry {
@@ -694,14 +655,13 @@ export function browserHistoryImport(raw: string): Promise<number> {
 // --- 地址栏搜索建议 (Suggestions) ---
 
 export interface BrowserSuggestion {
-  kind: 'bookmark' | 'history' | 'search'
+  kind: 'history' | 'search'
   title: string
   url: string
-  /** 访问次数（历史项），书签为 0 */
+  /** 访问次数（历史项） */
   visitCount?: number
-  /** 最近访问时间（历史项），书签为 0 */
+  /** 最近访问时间（历史项） */
   visitedAt?: number
-  createdAt?: number
 }
 
 export async function browserSuggestions(query: string): Promise<BrowserSuggestion[]> {
@@ -709,20 +669,11 @@ export async function browserSuggestions(query: string): Promise<BrowserSuggesti
   if (!q) return []
   const lower = q.toLowerCase()
 
-  // 历史 + 书签并发获取，本地直读
-  const [historyItems, bookmarkItems] = await Promise.all([
-    browserHistorySearch(lower, 50).catch(() => [] as BrowserHistoryEntry[]),
-    browserBookmarksList().catch(() => [] as BrowserBookmark[]),
-  ])
+  // 历史直读，本地查询
+  const historyItems = await browserHistorySearch(lower, 50).catch(() => [] as BrowserHistoryEntry[])
 
   const out: BrowserSuggestion[] = []
   const seen = new Set<string>()
-
-  const add = (item: BrowserSuggestion) => {
-    if (seen.has(item.url)) return
-    seen.add(item.url)
-    out.push(item)
-  }
 
   // 历史项优先（按访问次数排序）
   const sortedHistory = [...historyItems].sort((a, b) => b.visitCount - a.visitCount)
@@ -731,26 +682,15 @@ export async function browserSuggestions(query: string): Promise<BrowserSuggesti
       h.url.toLowerCase().includes(lower) ||
       h.title.toLowerCase().includes(lower)
     ) {
-      add({
+      const url = h.url
+      if (seen.has(url)) continue
+      seen.add(url)
+      out.push({
         kind: 'history',
         title: h.title || h.url,
         url: h.url,
         visitCount: h.visitCount,
         visitedAt: h.visitedAt,
-      })
-    }
-  }
-
-  for (const b of bookmarkItems) {
-    if (
-      b.url.toLowerCase().includes(lower) ||
-      b.title.toLowerCase().includes(lower)
-    ) {
-      add({
-        kind: 'bookmark',
-        title: b.title || b.url,
-        url: b.url,
-        createdAt: b.createdAt,
       })
     }
   }

@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
-use crate::services::browser_bookmarks;
 use crate::services::browser_history;
 
 const SERVER_NAME: &str = "polaris-browser-mcp";
@@ -364,33 +363,6 @@ fn handle_tools_list() -> Value {
             }, "additionalProperties": false }
         },
         {
-            "name": "bookmark_list",
-            "description": "List saved Polaris browser bookmarks (newest first).",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "bookmark_add",
-            "description": "Save a URL to the Polaris browser bookmarks. Re-adding an existing URL updates its title and moves it to the front.",
-            "inputSchema": { "type": "object", "required": ["url"], "properties": {
-                "url": { "type": "string", "description": "URL to bookmark (http/https/file)." },
-                "title": { "type": "string", "description": "Optional display title; falls back to the URL." }
-            }, "additionalProperties": false }
-        },
-        {
-            "name": "bookmark_delete",
-            "description": "Delete a Polaris browser bookmark by id.",
-            "inputSchema": { "type": "object", "required": ["id"], "properties": {
-                "id": { "type": "string", "description": "Bookmark id from bookmark_list." }
-            }, "additionalProperties": false }
-        },
-        {
-            "name": "bookmark_find",
-            "description": "Check whether a URL is already bookmarked in the Polaris browser.",
-            "inputSchema": { "type": "object", "required": ["url"], "properties": {
-                "url": { "type": "string", "description": "URL to look up." }
-            }, "additionalProperties": false }
-        },
-        {
             "name": "history_list",
             "description": "List recent Polaris browser visit history (newest first).",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
@@ -414,18 +386,6 @@ fn handle_tools_list() -> Value {
             "name": "history_clear",
             "description": "Clear all Polaris browser visit history.",
             "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "bookmark_export",
-            "description": "Export all Polaris browser bookmarks as portable JSON text (used for backup or migration).",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "bookmark_import",
-            "description": "Import bookmarks from exported JSON text. Merges by URL (same URL updates title); returns the number of items added/updated.",
-            "inputSchema": { "type": "object", "required": ["raw"], "properties": {
-                "raw": { "type": "string", "description": "JSON text previously produced by bookmark_export (or a bare array of bookmark objects)." }
-            }, "additionalProperties": false }
         },
         {
             "name": "history_export",
@@ -452,10 +412,7 @@ fn handle_tools_call(params: Value, config: &BrowserMcpConfig) -> Result<Value> 
         .cloned()
         .unwrap_or_else(|| json!({}));
 
-    // bookmark_* 与 history_* 工具为本地存储操作，不经过浏览器桥接 TCP
-    if name.starts_with("bookmark_") {
-        return Ok(local_bookmark_call(name, &args));
-    }
+    // history_* 工具为本地存储操作，不经过浏览器桥接 TCP
     if name.starts_with("history_") {
         return Ok(local_history_call(name, &args));
     }
@@ -485,56 +442,6 @@ fn handle_tools_call(params: Value, config: &BrowserMcpConfig) -> Result<Value> 
 
     let result = response.get("result").cloned().unwrap_or(Value::Null);
     Ok(tool_success(result))
-}
-
-/// 本地书签操作：list / add / delete / find，直接读写浏览器书签存储
-fn local_bookmark_call(name: &str, args: &Value) -> Value {
-    match name {
-        "bookmark_list" => {
-            let result = browser_bookmarks::browser_bookmarks_list();
-            match result {
-                Ok(items) => tool_success(json!({ "items": items })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "bookmark_add" => {
-            let title = args.get("title").and_then(Value::as_str).unwrap_or("");
-            let url = args.get("url").and_then(Value::as_str).unwrap_or("");
-            match browser_bookmarks::browser_bookmark_add(title, url) {
-                Ok(bookmark) => tool_success(json!(bookmark)),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "bookmark_delete" => {
-            let id = args.get("id").and_then(Value::as_str).unwrap_or("");
-            match browser_bookmarks::browser_bookmark_delete(id) {
-                Ok(()) => tool_success(json!({ "ok": true })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "bookmark_find" => {
-            let url = args.get("url").and_then(Value::as_str).unwrap_or("");
-            match browser_bookmarks::browser_bookmark_find(url) {
-                Ok(Some(bookmark)) => tool_success(json!({ "found": true, "bookmark": bookmark })),
-                Ok(None) => tool_success(json!({ "found": false })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "bookmark_export" => {
-            match browser_bookmarks::browser_bookmarks_export() {
-                Ok(json_text) => tool_success(json!({ "json": json_text })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        "bookmark_import" => {
-            let raw = args.get("raw").and_then(Value::as_str).unwrap_or("");
-            match browser_bookmarks::browser_bookmarks_import(raw) {
-                Ok(count) => tool_success(json!({ "imported": count })),
-                Err(error) => tool_error(error.to_message()),
-            }
-        }
-        _ => tool_error(format!("未知书签工具: {name}")),
-    }
 }
 
 /// 本地历史操作：list / search / delete / clear，直接读写浏览器历史存储
@@ -811,58 +718,11 @@ mod tests {
         assert!(names.contains(&"browser_history_state"));
         assert!(names.contains(&"browser_marquee"));
         assert!(names.contains(&"browser_select_region"));
-        assert!(names.contains(&"bookmark_list"));
-        assert!(names.contains(&"bookmark_add"));
-        assert!(names.contains(&"bookmark_delete"));
-        assert!(names.contains(&"bookmark_find"));
         assert!(names.contains(&"history_list"));
         assert!(names.contains(&"history_search"));
         assert!(names.contains(&"history_delete"));
         assert!(names.contains(&"history_clear"));
-        assert_eq!(names.len(), 29);
-    }
-
-    #[test]
-    fn local_bookmark_add_and_list_round_trip() {
-        let root = std::env::temp_dir().join(format!(
-            "polaris-mcp-bm-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map(|d| d.as_millis())
-                .unwrap_or(0)
-        ));
-        std::fs::create_dir_all(&root).unwrap();
-        browser_bookmarks::set_test_store_root(Some(&root));
-
-        let added = local_bookmark_call(
-            "bookmark_add",
-            &json!({ "title": "Docs", "url": "https://docs.example/" }),
-        );
-        assert!(!added.get("isError").and_then(Value::as_bool).unwrap_or(false));
-        assert_eq!(
-            added.pointer("/structuredContent/title").and_then(Value::as_str),
-            Some("Docs")
-        );
-
-        let listed = local_bookmark_call("bookmark_list", &json!({}));
-        let items = listed.pointer("/structuredContent/items").unwrap().as_array().unwrap();
-        assert_eq!(items.len(), 1);
-
-        let found = local_bookmark_call("bookmark_find", &json!({ "url": "https://docs.example/" }));
-        assert_eq!(
-            found.pointer("/structuredContent/found").and_then(Value::as_bool),
-            Some(true)
-        );
-
-        let id = items[0].get("id").and_then(Value::as_str).unwrap().to_string();
-        let deleted = local_bookmark_call("bookmark_delete", &json!({ "id": id }));
-        assert!(!deleted.get("isError").and_then(Value::as_bool).unwrap_or(false));
-
-        let listed2 = local_bookmark_call("bookmark_list", &json!({}));
-        assert!(listed2.pointer("/structuredContent/items").unwrap().as_array().unwrap().is_empty());
-
-        browser_bookmarks::set_test_store_root(None);
-        let _ = std::fs::remove_dir_all(&root);
+        assert_eq!(names.len(), 28);
     }
 
     #[test]

@@ -6,7 +6,6 @@ import {
   ArrowRight,
   BookOpen,
   BoxSelect,
-  Bookmark,
   Camera,
   ChevronDown,
   ChevronUp,
@@ -36,11 +35,6 @@ import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
-  browserBookmarkAdd,
-  browserBookmarkDelete,
-  browserBookmarksExport,
-  browserBookmarksImport,
-  browserBookmarksList,
   browserClearData,
   browserClose,
   browserCreate,
@@ -73,7 +67,6 @@ import {
   browserZoom,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
-  type BrowserBookmark,
   type BrowserBounds,
   type BrowserDiagnostics,
   type BrowserHistoryEntry,
@@ -84,7 +77,6 @@ import {
   type BrowserRegion,
   type BrowserSessionInfo,
   type BrowserSuggestion,
-  type MarqueeContextBlock,
 } from '@/services/tauri/browserService'
 import { useToastStore } from '@/stores/toastStore'
 import { invoke } from '@/services/transport'
@@ -92,7 +84,7 @@ import { readFile } from '@/services/tauri/fileService'
 import { useTabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSession'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import type { ContextBlock } from '@/stores/conversationStore/types'
 import { useOverlayStore } from '@/stores/overlayStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { useBrowserSidebarStore } from '@/stores/browserSidebarStore'
@@ -335,34 +327,11 @@ export function BrowserPanel({
   const [historyDropdownOpen, setHistoryDropdownOpen] = useState(false)
   const [historyDropdownDirection, setHistoryDropdownDirection] = useState<'back' | 'forward'>('back')
 
-  // 书签状态
-  const [bookmarks, setBookmarks] = useState<BrowserBookmark[]>([])
-  const [isBookmarked, setIsBookmarked] = useState(false)
-  const [bookmarkDropdownOpen, setBookmarkDropdownOpen] = useState(false)
-  const bookmarkListRef = useRef<HTMLDivElement>(null)
-
   // 访问历史状态
   const [historyEntries, setHistoryEntries] = useState<BrowserHistoryEntry[]>([])
   const [historyPanelOpen, setHistoryPanelOpen] = useState(false)
   const [historyQuery, setHistoryQuery] = useState('')
   const historyPanelRef = useRef<HTMLDivElement>(null)
-
-  // 加载书签
-  useEffect(() => {
-    let cancelled = false
-    browserBookmarksList()
-      .then((items) => {
-        if (!cancelled) {
-          setBookmarks(items)
-          if (currentUrl) setIsBookmarked(items.some((b) => b.url === currentUrl))
-        }
-      })
-      .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // 加载访问历史
   useEffect(() => {
@@ -395,50 +364,6 @@ export function BrowserPanel({
     return () => window.removeEventListener('mousedown', onClick)
   }, [historyPanelOpen])
 
-  // URL 变化时更新收藏态
-  useEffect(() => {
-    if (currentUrl) setIsBookmarked(bookmarks.some((b) => b.url === currentUrl))
-    else setIsBookmarked(false)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUrl, bookmarks])
-
-  // 点击外部关闭书签下拉
-  useEffect(() => {
-    if (!bookmarkDropdownOpen) return
-    const onClick = (event: MouseEvent) => {
-      if (bookmarkListRef.current && !bookmarkListRef.current.contains(event.target as Node)) {
-        setBookmarkDropdownOpen(false)
-      }
-    }
-    window.addEventListener('mousedown', onClick)
-    return () => window.removeEventListener('mousedown', onClick)
-  }, [bookmarkDropdownOpen])
-
-  const toggleBookmark = useCallback(async () => {
-    if (!currentUrl || status !== 'ready') return
-    try {
-      if (isBookmarked) {
-        const existing = bookmarks.find((b) => b.url === currentUrl)
-        if (existing) {
-          await browserBookmarkDelete(existing.id)
-          setBookmarks((prev) => prev.filter((b) => b.id !== existing.id))
-          setIsBookmarked(false)
-        }
-      } else {
-        const added = await browserBookmarkAdd(pageTitle === 'Browser' ? '' : pageTitle, currentUrl)
-        setBookmarks((prev) => [added, ...prev.filter((b) => b.id !== added.id)])
-        setIsBookmarked(true)
-      }
-    } catch (error) {
-      setError(String(error))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUrl, isBookmarked, bookmarks, pageTitle, status])
-
-  const openBookmarkDropdown = useCallback(() => {
-    setBookmarkDropdownOpen((prev) => !prev)
-  }, [])
-
   const toggleHistoryPanel = useCallback(() => {
     setHistoryPanelOpen((prev) => !prev)
     setHistoryQuery('')
@@ -463,42 +388,7 @@ export function BrowserPanel({
   }, [])
   const toast = useToastStore()
 
-  // ── 书签 / 历史 导入导出 ──
-  const exportBookmarks = useCallback(async () => {
-    try {
-      const json = await browserBookmarksExport()
-      const { save } = await import('@tauri-apps/plugin-dialog')
-      const filePath = await save({
-        defaultPath: `polaris-bookmarks-${new Date().toISOString().slice(0, 10)}.json`,
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (filePath) {
-        await invoke('create_file', { path: filePath, content: json })
-        toast.success(t('browser.exported', { defaultValue: '书签已导出' }))
-      }
-    } catch (error) {
-      setError(String(error))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, t])
-
-  const importBookmarks = useCallback(async () => {
-    try {
-      const { open } = await import('@tauri-apps/plugin-dialog')
-      const filePath = await open({
-        filters: [{ name: 'JSON', extensions: ['json'] }],
-      })
-      if (!filePath) return
-      const raw = await readFile(String(filePath))
-      const count = await browserBookmarksImport(raw)
-      setBookmarks(await browserBookmarksList())
-      toast.success(t('browser.imported', { defaultValue: '已导入书签 {{count}} 条', count }))
-    } catch (error) {
-      setError(String(error))
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast, t])
-
+  // ── 历史 导入导出 ──
   const exportHistory = useCallback(async () => {
     try {
       const json = await browserHistoryExport()
@@ -548,7 +438,7 @@ export function BrowserPanel({
   }, [])
 
   // ── 地址栏搜索建议 ──
-  // 输入时从历史+书签搜索，防抖 150ms，用自增序号丢弃过期响应避免竞态
+  // 输入时从历史搜索，防抖 150ms，用自增序号丢弃过期响应避免竞态
   const loadSuggestions = useCallback((raw: string) => {
     const q = raw.trim()
     const reqId = ++suggestionReqRef.current
@@ -574,7 +464,7 @@ export function BrowserPanel({
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const browserActionRequest = useTabStore((state) => state.browserActionRequest)
   const browserActionSeq = useTabStore((state) => state.browserActionSeq)
-  const { updateInputDraft } = useActiveSessionActions()
+  const { addContextBlock } = useActiveSessionActions()
   const closeTab = useTabStore((state) => state.closeTab)
   const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
   const latestOperation = operationEvents[0]
@@ -1305,7 +1195,6 @@ export function BrowserPanel({
     return () => window.clearTimeout(id)
   }, [
     suggestionsOpen,
-    bookmarkDropdownOpen,
     historyPanelOpen,
     historyDropdownOpen,
     shortcutsOpen,
@@ -1419,7 +1308,7 @@ export function BrowserPanel({
               marqueeRegionsRef.current = filled
             }
             const finalRegions = marqueeRegionsRef.current
-            const block: MarqueeContextBlock = {
+            const block: ContextBlock & { type: 'marquee-context' } = {
               id: `marquee-${webviewLabel}-${Date.now()}`,
               type: 'marquee-context',
               title: pageTitle || 'Browser',
@@ -1427,22 +1316,17 @@ export function BrowserPanel({
               regions: finalRegions,
               userNote: undefined,
               browserLabel: webviewLabel,
+              // 统一 TCB 结构：kind + data + source/dedupeKey（data 与顶层兼容字段并存，见 ContextBlock 类型注释）
+              // type 字段保留给 marqueeStore（MarqueeContextBlock）消费；kind 字段给统一输入框（ContextBlock）消费。
+              kind: 'marquee-context',
+              source: 'browser-marquee',
+              dedupeKey: webviewLabel,
+              data: { url: currentUrl, regions: finalRegions, browserLabel: webviewLabel },
             }
             useMarqueeStore.getState().upsertBlock(block)
-            // 读取当前活跃会话草稿，合并上下文块（按浏览器标签去重，避免重复挂载）
-            const activeSessionId = sessionStoreManager.getState().activeSessionId
-            const activeStore = activeSessionId
-              ? sessionStoreManager.getState().stores.get(activeSessionId)?.getState()
-              : null
-            if (activeStore) {
-              const cur = activeStore.inputDraft
-              const existing = (cur.contextBlocks ?? []).filter(
-                (b) => !(b.browserLabel && b.browserLabel === webviewLabel)
-              )
-              updateInputDraft({ ...cur, contextBlocks: [...existing, block] })
-            } else {
-              updateInputDraft({ text: '', attachments: [], contextBlocks: [block] })
-            }
+            // 统一入口挂载到活跃会话输入框（内部按 source+dedupeKey 去重合并）。
+            // 不再自读 activeSessionId + 整体替换草稿（消除会话切换竞态与散落逻辑）。
+            addContextBlock(block)
             // 延迟关闭 overlay，确保 select_region 能读到最终数据
             setTimeout(() => {
               void browserSetMarquee(webviewLabel, false).catch(() => undefined)
@@ -1461,7 +1345,7 @@ export function BrowserPanel({
       cancelled = true
       setMarqueePolling(false)
     }
-  }, [marqueeMode, status, webviewLabel, pageTitle, currentUrl, updateInputDraft])
+  }, [marqueeMode, status, webviewLabel, pageTitle, currentUrl, addContextBlock])
 
   // 导航时自动结束圈选模式：页面重载后注入的 overlay 会丢失（body overflow 锁定随之消失），
   // 但前端 marqueeMode 状态若仍为 true，轮询会持续空转。用 ref 记录上次 URL，
@@ -1826,7 +1710,7 @@ export function BrowserPanel({
                 className="absolute left-0 right-0 top-9 z-50 max-h-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
               >
                 <div className="flex items-center justify-between px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-text-tertiary">
-                  <span>{t('browser.suggest', { defaultValue: '历史与书签' })}</span>
+                  <span>{t('browser.suggest', { defaultValue: '历史' })}</span>
                   <span className="text-[10px] text-text-tertiary">{suggestions.length}</span>
                 </div>
                 {suggestions.map((item, index) => (
@@ -1844,9 +1728,7 @@ export function BrowserPanel({
                     onClick={() => pickSuggestion(item)}
                     title={item.url}
                   >
-                    {item.kind === 'bookmark'
-                      ? <Bookmark size={12} className="shrink-0 text-amber-400" fill="currentColor" />
-                      : <Clock size={12} className="shrink-0 text-text-tertiary" />}
+                    <Clock size={12} className="shrink-0 text-text-tertiary" />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm text-text-primary">{item.title}</span>
                       <span className="block truncate text-[10px] text-text-tertiary">{item.url}</span>
@@ -1883,101 +1765,6 @@ export function BrowserPanel({
             )}
           </div>
         </form>
-
-        {/* 书签：星标切换 + 下拉列表 */}
-        <div className="relative flex items-center">
-          <button
-            type="button"
-            className={clsx(
-              'flex h-8 w-8 shrink-0 items-center justify-center rounded-md transition-colors',
-              isBookmarked
-                ? 'text-amber-400 hover:bg-background-hover'
-                : 'text-text-tertiary hover:bg-background-hover hover:text-text-primary'
-            )}
-            onClick={toggleBookmark}
-            disabled={status !== 'ready' || !currentUrl}
-            title={
-              isBookmarked
-                ? t('browser.removeBookmark', { defaultValue: '取消收藏' })
-                : t('browser.addBookmark', { defaultValue: '收藏当前页面' })
-            }
-          >
-            <Bookmark size={15} fill={isBookmarked ? 'currentColor' : 'none'} />
-          </button>
-          <button
-            type="button"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-            onClick={openBookmarkDropdown}
-            title={t('browser.bookmarkList', { defaultValue: '书签列表' })}
-          >
-            <ChevronDown size={14} />
-          </button>
-          {bookmarkDropdownOpen && (
-            <div
-              ref={bookmarkListRef}
-              data-native-webview-overlay
-              className="absolute right-0 top-9 z-50 max-h-72 w-72 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated py-1 shadow-lg"
-            >
-              <div className="flex items-center justify-between px-3 py-1.5 text-xs font-medium text-text-secondary">
-                <span>{t('browser.bookmarkList', { defaultValue: '书签' })}</span>
-                <span className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-                    onClick={importBookmarks}
-                    title={t('browser.importBookmarks', { defaultValue: '从 JSON 导入书签' })}
-                  >
-                    <ChevronDown size={10} className="rotate-180" />{t('browser.import', { defaultValue: '导入' })}
-                  </button>
-                  <button
-                    type="button"
-                    className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-text-tertiary hover:bg-background-hover hover:text-text-primary"
-                    onClick={exportBookmarks}
-                    title={t('browser.exportBookmarks', { defaultValue: '导出书签为 JSON' })}
-                  >
-                    {t('browser.export', { defaultValue: '导出' })}
-                  </button>
-                  <span className="text-[10px] text-text-tertiary">{bookmarks.length}</span>
-                </span>
-              </div>
-              {bookmarks.length === 0 && (
-                <div className="px-3 py-2 text-xs text-text-tertiary">
-                  {t('browser.bookmarksEmpty', { defaultValue: '暂无书签' })}
-                </div>
-              )}
-              {bookmarks.map((bookmark) => (
-                <button
-                  key={bookmark.id}
-                  type="button"
-                  className="flex w-full items-center gap-2 px-3 py-1.5 text-left hover:bg-background-hover"
-                  onClick={() => {
-                    setBookmarkDropdownOpen(false)
-                    navigateTo(bookmark.url)
-                  }}
-                  title={bookmark.url}
-                >
-                  <span className="min-w-0 flex-1 truncate text-sm text-text-primary">{bookmark.title || bookmark.url}</span>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="shrink-0 text-text-tertiary hover:text-danger"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      browserBookmarkDelete(bookmark.id)
-                        .then(() => {
-                          setBookmarks((prev) => prev.filter((b) => b.id !== bookmark.id))
-                          if (currentUrl === bookmark.url) setIsBookmarked(false)
-                        })
-                        .catch((e) => setError(String(e)))
-                    }}
-                  >
-                    <X size={12} />
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
 
         {/* 访问历史：按钮 + 下拉面板 */}
         <div className="relative flex items-center">

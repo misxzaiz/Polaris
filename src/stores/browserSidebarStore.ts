@@ -1,7 +1,7 @@
 /**
  * BrowserSidebarStore - 左侧边栏浏览器面板状态管理
  *
- * 管理快捷访问、历史记录、书签、AI 信息源等数据的持久化。
+ * 管理快捷访问、历史记录、AI 信息源等数据的持久化。
  */
 
 import { create } from 'zustand'
@@ -24,22 +24,6 @@ export interface HistoryEntry {
   timestamp: number
 }
 
-export interface BookmarkFolder {
-  id: string
-  name: string
-  parentId: string | null
-  order: number
-}
-
-export interface BookmarkItem {
-  id: string
-  url: string
-  title: string
-  folderId: string | null
-  order: number
-  createdAt: number
-}
-
 export interface AiSource {
   id: string
   url: string
@@ -58,15 +42,13 @@ export interface InjectedEntry {
   timestamp: number
 }
 
-export type SidebarTabName = 'quick' | 'history' | 'bookmark' | 'aiSource' | 'tools'
+export type SidebarTabName = 'quick' | 'history' | 'aiSource' | 'tools'
 
 // ─── Store 类型 ─────────────────────────────────────
 
 interface BrowserSidebarState {
   shortcuts: ShortcutItem[]
   history: HistoryEntry[]
-  bookmarkFolders: BookmarkFolder[]
-  bookmarks: BookmarkItem[]
   aiSources: AiSource[]
   injectedHistory: InjectedEntry[]
   activeTabName: SidebarTabName
@@ -83,14 +65,6 @@ interface BrowserSidebarActions {
   addHistory: (url: string, title: string) => void
   clearHistory: () => void
   removeHistoryEntry: (id: string) => void
-
-  // 书签
-  addBookmark: (url: string, title: string, folderId?: string) => void
-  removeBookmark: (id: string) => void
-  updateBookmark: (id: string, data: Partial<BookmarkItem>) => void
-  addFolder: (name: string, parentId?: string) => void
-  removeFolder: (id: string) => void
-  renameFolder: (id: string, name: string) => void
 
   // AI 信息源
   addAiSource: (url: string, title: string, autoReference?: boolean) => void
@@ -128,11 +102,6 @@ export const useBrowserSidebarStore = create<BrowserSidebarStore>()(
       // ── 初始状态 ──
       shortcuts: DEFAULT_SHORTCUTS,
       history: [],
-      bookmarkFolders: [
-        { id: nextId(), name: '开发工具', parentId: null, order: 0 },
-        { id: nextId(), name: '文档', parentId: null, order: 1 },
-      ],
-      bookmarks: [],
       aiSources: [],
       injectedHistory: [],
       activeTabName: 'quick',
@@ -202,67 +171,6 @@ export const useBrowserSidebarStore = create<BrowserSidebarStore>()(
         }))
       },
 
-      // ── 书签 ──
-      addBookmark: (url, title, folderId) => {
-        set((s) => {
-          // 去重
-          if (s.bookmarks.some((b) => b.url === url)) return s
-          const newItem: BookmarkItem = {
-            id: nextId(),
-            url,
-            title: title || url,
-            folderId: folderId ?? null,
-            order: s.bookmarks.length,
-            createdAt: Date.now(),
-          }
-          return { bookmarks: [...s.bookmarks, newItem] }
-        })
-      },
-
-      removeBookmark: (id) => {
-        set((s) => ({
-          bookmarks: s.bookmarks.filter((b) => b.id !== id),
-        }))
-      },
-
-      updateBookmark: (id, data) => {
-        set((s) => ({
-          bookmarks: s.bookmarks.map((b) =>
-            b.id === id ? { ...b, ...data } : b
-          ),
-        }))
-      },
-
-      addFolder: (name, parentId) => {
-        set((s) => {
-          const newFolder: BookmarkFolder = {
-            id: nextId(),
-            name,
-            parentId: parentId ?? null,
-            order: s.bookmarkFolders.length,
-          }
-          return { bookmarkFolders: [...s.bookmarkFolders, newFolder] }
-        })
-      },
-
-      removeFolder: (id) => {
-        set((s) => ({
-          bookmarkFolders: s.bookmarkFolders.filter((f) => f.id !== id),
-          // 将文件夹内的书签移到根目录
-          bookmarks: s.bookmarks.map((b) =>
-            b.folderId === id ? { ...b, folderId: null } : b
-          ),
-        }))
-      },
-
-      renameFolder: (id, name) => {
-        set((s) => ({
-          bookmarkFolders: s.bookmarkFolders.map((f) =>
-            f.id === id ? { ...f, name } : f
-          ),
-        }))
-      },
-
       // ── AI 信息源 ──
       addAiSource: (url, title, autoReference = false) => {
         set((s) => {
@@ -312,8 +220,6 @@ export const useBrowserSidebarStore = create<BrowserSidebarStore>()(
       partialize: (state) => ({
         shortcuts: state.shortcuts,
         history: state.history,
-        bookmarkFolders: state.bookmarkFolders,
-        bookmarks: state.bookmarks,
         aiSources: state.aiSources,
         injectedHistory: state.injectedHistory,
       }),
