@@ -37,6 +37,16 @@ export interface ModelUsageStats {
   totalCostUsd: number
 }
 
+export interface EngineUsageStats {
+  engineId: string
+  requestCount: number
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheCreationTokens: number
+  totalCostUsd: number
+}
+
 export interface DailyUsageStats {
   date: string
   requestCount: number
@@ -105,6 +115,7 @@ export interface TokenFilterParams {
 interface TokenAnalyticsState {
   cachedSummary: UsageSummary | null
   cachedModelStats: ModelUsageStats[] | null
+  cachedEngineStats: EngineUsageStats[] | null
   cachedTopSessions: UsageLogEntry[] | null
   loaded: boolean
   /** 当前筛选参数 */
@@ -115,6 +126,7 @@ interface TokenAnalyticsState {
 
   getSummary: () => UsageSummary
   getModelStats: () => ModelUsageStats[]
+  getEngineStats: () => EngineUsageStats[]
   getTopSessions: (limit?: number, offset?: number) => Promise<UsageLogEntry[]>
   getDailyTrends: (range: TimeRange, engineId?: string, model?: string, startDate?: number, endDate?: number) => Promise<DailyUsageStats[]>
 }
@@ -133,6 +145,7 @@ function filterToInvokeArgs(filters: TokenFilterParams) {
 export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => ({
   cachedSummary: null,
   cachedModelStats: null,
+  cachedEngineStats: null,
   cachedTopSessions: null,
   loaded: false,
   filterParams: { timeRange: '30d' },
@@ -142,13 +155,15 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
     if (filters) set({ filterParams: filters })
     const args = filterToInvokeArgs(f)
     try {
-      const [summary, modelStats] = await Promise.all([
+      const [summary, modelStats, engineStats] = await Promise.all([
         invoke<UsageSummary>('get_usage_summary', args),
         invoke<ModelUsageStats[]>('get_usage_model_stats', { startDate: args.startDate, endDate: args.endDate, engineId: args.engineId }),
+        invoke<EngineUsageStats[]>('get_usage_engine_stats', { startDate: args.startDate, endDate: args.endDate, model: args.model }),
       ])
       set({
         cachedSummary: summary,
         cachedModelStats: modelStats,
+        cachedEngineStats: engineStats,
         cachedTopSessions: null, // 分页数据单独加载
         loaded: true,
       })
@@ -160,7 +175,7 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
   },
 
   refreshData: async (filters?: TokenFilterParams) => {
-    set({ cachedSummary: null, cachedModelStats: null, cachedTopSessions: null, loaded: false })
+    set({ cachedSummary: null, cachedModelStats: null, cachedEngineStats: null, cachedTopSessions: null, loaded: false })
     return get().loadData(filters)
   },
 
@@ -172,6 +187,8 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
   },
 
   getModelStats: () => get().cachedModelStats ?? [],
+
+  getEngineStats: () => get().cachedEngineStats ?? [],
 
   getTopSessions: async (limit = 20, offset = 0) => {
     const f = get().filterParams

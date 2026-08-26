@@ -4,7 +4,7 @@
 //! 数据来源：UsageDb 全局单例（代理 handler 在转发响应时写入）。
 
 use crate::error::AppError;
-use crate::services::usage_db::{self, UsageSummary, ModelUsageStats, DailyUsageStats, UsageLogEntry};
+use crate::services::usage_db::{self, UsageSummary, ModelUsageStats, EngineUsageStats, DailyUsageStats, UsageLogEntry};
 
 /// 获取用量汇总（按时间范围/模型/引擎筛选）
 #[tauri::command]
@@ -29,6 +29,19 @@ pub fn get_usage_model_stats(
     let db = usage_db::get_usage_db()
         .ok_or_else(|| AppError::StateError("用量数据库未初始化".to_string()))?;
     db.get_model_stats(start_date, end_date, engine_id.as_deref())
+}
+
+/// 按引擎分组统计
+#[tauri::command]
+pub fn get_usage_engine_stats(
+    start_date: Option<i64>,
+    end_date: Option<i64>,
+    model: Option<String>,
+    engine_id: Option<String>,
+) -> Result<Vec<EngineUsageStats>, AppError> {
+    let db = usage_db::get_usage_db()
+        .ok_or_else(|| AppError::StateError("用量数据库未初始化".to_string()))?;
+    db.get_engine_stats(start_date, end_date, model.as_deref(), engine_id.as_deref())
 }
 
 /// 按天统计趋势

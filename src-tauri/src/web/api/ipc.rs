@@ -455,6 +455,7 @@ pub async fn handle_ipc_bridge(
         // 参数为 camelCase（前端 invoke 直接透传），这里转成后端函数的 snake_case。
         "get_usage_summary" => dispatch_get_usage_summary(&args),
         "get_usage_model_stats" => dispatch_get_usage_model_stats(&args),
+        "get_usage_engine_stats" => dispatch_get_usage_engine_stats(&args),
         "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
         "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
 
@@ -2821,6 +2822,16 @@ fn dispatch_get_usage_model_stats(args: &Value) -> Result<Json<Value>, WebError>
     let end_date = opt_i64(args, "endDate");
     let engine_id = optional_string(args, "engineId");
     json_result!(db.get_model_stats(start_date, end_date, engine_id.as_deref()))
+}
+
+fn dispatch_get_usage_engine_stats(args: &Value) -> Result<Json<Value>, WebError> {
+    let db = crate::services::usage_db::get_usage_db()
+        .ok_or_else(|| WebError::Internal("用量数据库未初始化".into()))?;
+    let start_date = opt_i64(args, "startDate");
+    let end_date = opt_i64(args, "endDate");
+    let model = optional_string(args, "model");
+    let engine_id = optional_string(args, "engineId");
+    json_result!(db.get_engine_stats(start_date, end_date, model.as_deref(), engine_id.as_deref()))
 }
 
 fn dispatch_get_usage_daily_trends(args: &Value) -> Result<Json<Value>, WebError> {

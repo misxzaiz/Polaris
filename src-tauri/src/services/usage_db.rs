@@ -84,6 +84,18 @@ pub struct ModelUsageStats {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct EngineUsageStats {
+    pub engine_id: String,
+    pub request_count: i64,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub cache_creation_tokens: i64,
+    pub total_cost_usd: f64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DailyUsageStats {
     pub date: String,
     pub request_count: i64,
@@ -336,6 +348,74 @@ impl UsageDb {
         for row in rows {
             result.push(
                 row.map_err(|e| AppError::StateError(format!("读取模型统计行失败: {}", e)))?,
+            );
+        }
+        Ok(result)
+    }
+
+    /// 按引擎分组统计
+    pub fn get_engine_stats(
+        &self,
+        start_date: Option<i64>,
+        end_date: Option<i64>,
+        model_filter: Option<&str>,
+        engine_filter: Option<&str>,
+    ) -> Result<Vec<EngineUsageStats>, AppError> {
+        let conn = self.conn.lock().map_err(|e| {
+            AppError::StateError(format!("获取数据库锁失败: {}", e))
+        })?;
+
+        let (where_clause, param_values) = build_where_clause(start_date, end_date, model_filter, engine_filter);
+
+        // COALESCE(engine_id,'unknown') 兜底迁移前的历史 NULL 数据
+        let sql = format!(
+            "SELECT COALESCE(engine_id, 'unknown'), COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+                    COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_creation_tokens),0)
+             FROM usage_logs{}
+             GROUP BY COALESCE(engine_id, 'unknown')
+             ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC",
+            where_clause
+        );
+
+        let params: Vec<&dyn rusqlite::types::ToSql> = param_values
+            .iter()
+            .map(|v| v as &dyn rusqlite::types::ToSql)
+            .collect();
+
+        let mut stmt = conn
+            .prepare(&sql)
+            .map_err(|e| AppError::StateError(format!("准备引擎统计查询失败: {}", e)))?;
+
+        let rows = stmt
+            .query_map(params.as_slice(), |row| {
+                let engine_id: String = row.get(0)?;
+                let request_count: i64 = row.get(1)?;
+                let input_tokens: i64 = row.get(2)?;
+                let output_tokens: i64 = row.get(3)?;
+                let cache_read_tokens: i64 = row.get(4)?;
+                let cache_creation_tokens: i64 = row.get(5)?;
+                let total_cost_usd = estimate_cost(
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                );
+                Ok(EngineUsageStats {
+                    engine_id,
+                    request_count,
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                    total_cost_usd,
+                })
+            })
+            .map_err(|e| AppError::StateError(format!("查询引擎统计失败: {}", e)))?;
+
+        let mut result = Vec::new();
+        for row in rows {
+            result.push(
+                row.map_err(|e| AppError::StateError(format!("读取引擎统计行失败: {}", e)))?,
             );
         }
         Ok(result)

@@ -178,7 +178,7 @@ function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngine
 
 export function TokenStatsTab() {
   const { t } = useTranslation('settings')
-  const { loaded, loadData, refreshData, getSummary, getModelStats, filterParams } = useTokenAnalyticsStore()
+  const { loaded, loadData, refreshData, getSummary, getModelStats, getEngineStats, filterParams } = useTokenAnalyticsStore()
 
   // 筛选状态
   const [engineFilter, setEngineFilter] = useState('')
@@ -266,24 +266,17 @@ export function TokenStatsTab() {
 
   const isEmpty = loaded && summary.totalRequests === 0
 
-  // 引擎分布
+  // 引擎分布（全量聚合，由后端 get_usage_engine_stats 返回）
+  const engineStats = getEngineStats()
   const engineDistribution = useMemo(() => {
-    const map = new Map<string, { sessions: number; input: number; output: number; cache: number }>()
-    for (const s of topSessions) {
-      const eid = s.engineId || 'unknown'
-      const cache = s.cacheReadTokens + s.cacheCreationTokens
-      const existing = map.get(eid)
-      if (existing) {
-        existing.sessions += 1
-        existing.input += s.inputTokens
-        existing.output += s.outputTokens
-        existing.cache += cache
-      } else {
-        map.set(eid, { sessions: 1, input: s.inputTokens, output: s.outputTokens, cache })
-      }
-    }
-    return Array.from(map.entries()).map(([engineId, s]) => ({ engineId, ...s })).sort((a, b) => b.input - a.input)
-  }, [topSessions])
+    return engineStats.map(e => ({
+      engineId: e.engineId,
+      sessions: e.requestCount,
+      input: e.inputTokens,
+      output: e.outputTokens,
+      cache: e.cacheReadTokens + e.cacheCreationTokens,
+    })).sort((a, b) => b.input - a.input)
+  }, [engineStats])
 
   const hasPrev = page > 0
   const hasNext = topSessions.length >= PAGE_SIZE

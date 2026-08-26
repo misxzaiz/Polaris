@@ -866,13 +866,6 @@ pub fn run() {
             commands::browser::browser_find_next,
             commands::browser::browser_zoom,
             commands::browser::browser_get_network_info,
-            commands::browser::browser_history_list,
-            commands::browser::browser_history_search,
-            commands::browser::browser_history_delete,
-            commands::browser::browser_history_clear,
-            commands::browser::browser_history_record,
-            commands::browser::browser_history_export,
-            commands::browser::browser_history_import,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,
@@ -1223,6 +1216,7 @@ pub fn run() {
             // 用量统计命令
             commands::usage::get_usage_summary,
             commands::usage::get_usage_model_stats,
+            commands::usage::get_usage_engine_stats,
             commands::usage::get_usage_daily_trends,
             commands::usage::get_usage_recent_logs,
             // 文件下载
