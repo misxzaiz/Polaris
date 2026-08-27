@@ -9,9 +9,11 @@
 
 import { useEffect, useState, useMemo, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useTokenAnalyticsStore, type TimeRange, type UsageLogEntry, type TokenFilterParams } from '@/stores/tokenAnalyticsStore'
+import { useTokenAnalyticsStore, type UsageLogEntry, type TokenFilterParams } from '@/stores/tokenAnalyticsStore'
 import { Loader2, RefreshCw, BarChart3, PieChart, TrendingUp, Database, ChevronLeft, ChevronRight } from 'lucide-react'
 import { clsx } from 'clsx'
+import { TimeRangePicker } from '@/components/Common/TimeRangePicker'
+import { presetRange, dateToUnixSeconds, startOfDay, endOfDay } from '@/utils/timeRange'
 
 // ============================================================================
 // 数字格式化
@@ -31,42 +33,8 @@ function fmtCost(n: number): string {
 }
 
 // ============================================================================
-// 日期时间工具（datetime-local 字符串 ↔ Unix 秒）
+// 引擎选项（时间范围计算见 utils/timeRange.ts）
 // ============================================================================
-
-/** 本地时间 → datetime-local 字符串（YYYY-MM-DDTHH:mm:ss） */
-function toLocalInput(d: Date): string {
-  const p = (n: number) => String(n).padStart(2, '0')
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
-}
-
-/** 某天 00:00:00（datetime-local 格式） */
-function dayStartInput(d: Date): string {
-  return toLocalInput(d).slice(0, 11) + '00:00:00'
-}
-
-/** 某天 23:59:59（datetime-local 格式） */
-function dayEndInput(d: Date): string {
-  return toLocalInput(d).slice(0, 11) + '23:59:59'
-}
-
-/** n 天前的 Date（当天 00:00 起算） */
-function daysAgoDate(n: number): Date {
-  const d = new Date()
-  d.setDate(d.getDate() - n)
-  d.setHours(0, 0, 0, 0)
-  return d
-}
-
-/** datetime-local 字符串 → Unix 秒（本地时间解析；自动补全缺省部分，空串返回 undefined） */
-function inputToUnix(v: string): number | undefined {
-  if (!v) return undefined
-  let s = v
-  if (s.length === 10) s += 'T00:00:00'      // 纯日期 → 当天 0 点
-  else if (s.length === 16) s += ':00'       // YYYY-MM-DDTHH:mm → 补秒
-  const t = new Date(s).getTime()
-  return isNaN(t) ? undefined : Math.floor(t / 1000)
-}
 
 /** 从模型名推断引擎标识（兜底） */
 function inferEngine(model: string): string {
@@ -114,23 +82,53 @@ function TabBtn({ active, onClick, icon, label }: { active: boolean; onClick: ()
 }
 
 // ============================================================================
+// 快捷时间预设配置（按组渲染）
+// ============================================================================
+
+type PresetGroup = 'day' | 'rolling' | 'period' | 'all'
+interface PresetConfig {
+  id: string
+  labelKey: string
+  group: PresetGroup
+}
+
+/** 预设顺序即渲染顺序 */
+const PRESETS: PresetConfig[] = [
+  { id: 'today', labelKey: 'tokenStats.preset.today', group: 'day' },
+  { id: 'yesterday', labelKey: 'tokenStats.preset.yesterday', group: 'day' },
+  { id: 'dayBefore', labelKey: 'tokenStats.preset.dayBefore', group: 'day' },
+  { id: 'rolling7', labelKey: 'tokenStats.preset.rolling7', group: 'rolling' },
+  { id: 'rolling30', labelKey: 'tokenStats.preset.rolling30', group: 'rolling' },
+  { id: 'lastWeek', labelKey: 'tokenStats.preset.lastWeek', group: 'period' },
+  { id: 'lastMonth', labelKey: 'tokenStats.preset.lastMonth', group: 'period' },
+  { id: 'all', labelKey: 'tokenStats.preset.all', group: 'all' },
+]
+
+const PRESET_GROUP_LABEL: Record<PresetGroup, string> = {
+  day: 'tokenStats.presetGroup.day',
+  rolling: 'tokenStats.presetGroup.rolling',
+  period: 'tokenStats.presetGroup.period',
+  all: 'tokenStats.presetGroup.all',
+}
+
+// ============================================================================
 // 筛选栏
 // ============================================================================
 
-function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngineChange, onModelChange, onDateChange, onRefresh }: {
-  engineId: string; model: string; startDate: string; endDate: string
+function FilterBar({ engineId, model, start, end, activePreset, modelOptions, onEngineChange, onModelChange, onPreset, onRangeChange, onRefresh }: {
+  engineId: string; model: string; start: Date | null; end: Date | null; activePreset: string | null
   modelOptions: string[]
   onEngineChange: (v: string) => void; onModelChange: (v: string) => void
-  onDateChange: (start: string, end: string) => void
+  onPreset: (id: string) => void
+  onRangeChange: (start: Date | null, end: Date | null) => void
   onRefresh: () => void
 }) {
-  const now = new Date()
-  const presets = [
-    { label: '今天', start: dayStartInput(now), end: dayEndInput(now) },
-    { label: '近7天', start: dayStartInput(daysAgoDate(6)), end: dayEndInput(now) },
-    { label: '近30天', start: dayStartInput(daysAgoDate(29)), end: dayEndInput(now) },
-  ]
-  const isActivePreset = (s: string, e: string) => startDate === s && endDate === e
+  const { t } = useTranslation('settings')
+  // 按组聚合预设
+  const groups = useMemo(() => {
+    const order: PresetGroup[] = ['day', 'rolling', 'period', 'all']
+    return order.map(g => ({ group: g, items: PRESETS.filter(p => p.group === g) })).filter(g => g.items.length > 0)
+  }, [])
   return (
     <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-lg bg-background-surface border border-border-subtle">
       {/* 引擎 */}
@@ -141,31 +139,33 @@ function FilterBar({ engineId, model, startDate, endDate, modelOptions, onEngine
       {/* 模型 */}
       <select value={model} onChange={e => onModelChange(e.target.value)}
         className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary max-w-[160px]">
-        <option value="">全部模型</option>
+        <option value="">{t('tokenStats.allModels', '全部模型')}</option>
         {modelOptions.map(m => <option key={m} value={m}>{m}</option>)}
       </select>
-      {/* 快捷预设 */}
-      <div className="flex items-center gap-0.5">
-        {presets.map(p => (
-          <button key={p.label} onClick={() => onDateChange(p.start, p.end)}
-            className={clsx('px-2 py-1 text-xs rounded-md transition-colors', isActivePreset(p.start, p.end) ? 'bg-primary/10 text-primary font-medium' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover')}>
-            {p.label}
-          </button>
-        ))}
-      </div>
       {/* 分隔 */}
       <span className="w-px h-4 bg-border-subtle" />
-      {/* 日期时间范围（支持时分秒） */}
-      <input type="datetime-local" step="1" value={startDate} onChange={e => onDateChange(e.target.value, endDate)}
-        title="起始时间（支持时分秒）"
-        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[180px]" />
-      <span className="text-text-muted text-xs">~</span>
-      <input type="datetime-local" step="1" value={endDate} onChange={e => onDateChange(startDate, e.target.value)}
-        title="结束时间（支持时分秒）"
-        className="text-xs px-2 py-1 rounded-md border border-border-subtle bg-background-surface text-text-primary outline-none focus:border-primary w-[180px]" />
+      {/* 快捷预设（按组） */}
+      {groups.map((g, gi) => (
+        <div key={g.group} className="flex items-center">
+          {gi > 0 && <span className="w-px h-4 bg-border-subtle mr-2" />}
+          <div className="flex items-center gap-0.5">
+            <span className="text-[10px] text-text-tertiary mr-1 select-none uppercase tracking-wide">{t(PRESET_GROUP_LABEL[g.group])}</span>
+            {g.items.map(p => (
+              <button key={p.id} onClick={() => onPreset(p.id)}
+                className={clsx('px-2 py-1 text-xs rounded-md transition-colors', activePreset === p.id ? 'bg-primary/10 text-primary font-medium' : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover')}>
+                {t(p.labelKey)}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
+      {/* 分隔 */}
+      <span className="w-px h-4 bg-border-subtle" />
+      {/* 自定义时间范围（联动日历） */}
+      <TimeRangePicker start={start} end={end} onChange={onRangeChange} />
       {/* 刷新 */}
-      <button onClick={onRefresh}
-        className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors" title="刷新">
+      <button onClick={onRefresh} title={t('tokenStats.refresh', '刷新')}
+        className="flex items-center gap-1 px-2 py-1 text-xs rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors">
         <RefreshCw size={13} />
       </button>
     </div>
@@ -183,9 +183,11 @@ export function TokenStatsTab() {
   // 筛选状态
   const [engineFilter, setEngineFilter] = useState('')
   const [modelFilter, setModelFilter] = useState('')
-  // 日期时间范围（YYYY-MM-DDTHH:mm:ss 格式，空串 = 不限），默认今天
-  const [startDate, setStartDate] = useState(() => dayStartInput(new Date()))
-  const [endDate, setEndDate] = useState(() => dayEndInput(new Date()))
+  // 时间范围（Date；null = 不限），默认今天
+  const [start, setStart] = useState<Date | null>(() => startOfDay(new Date()))
+  const [end, setEnd] = useState<Date | null>(() => endOfDay(new Date()))
+  // 当前命中的快捷预设 id（自定义范围时为 null）
+  const [activePreset, setActivePreset] = useState<string | null>('today')
 
   // 视图切换
   const [viewMode, setViewMode] = useState<'overview' | 'model' | 'time' | 'sessions'>('overview')
@@ -203,20 +205,18 @@ export function TokenStatsTab() {
   const { getTopSessions, getDailyTrends } = useTokenAnalyticsStore()
 
   // 构建筛选参数
-  const buildFilters = useCallback((eng: string, mdl: string, sd: string, ed: string): TokenFilterParams => {
+  const buildFilters = useCallback((eng: string, mdl: string, s: Date | null, e: Date | null): TokenFilterParams => {
     const f: TokenFilterParams = { engineId: eng || undefined, model: mdl || undefined }
-    const start = sd ? inputToUnix(sd) : undefined
-    const end = ed ? inputToUnix(ed) : undefined
-    if (start !== undefined && end !== undefined) {
-      f.startDate = start
-      f.endDate = end
+    if (s && e) {
+      f.startDate = dateToUnixSeconds(s)
+      f.endDate = dateToUnixSeconds(e)
     }
     return f
   }, [])
 
   // 筛选变化时重新加载
-  const applyFilters = useCallback(async (eng: string, mdl: string, sd: string, ed: string) => {
-    const filters = buildFilters(eng, mdl, sd, ed)
+  const applyFilters = useCallback(async (eng: string, mdl: string, s: Date | null, e: Date | null) => {
+    const filters = buildFilters(eng, mdl, s, e)
     await loadData(filters)
     setPage(0)
     setTopSessions([])
@@ -224,19 +224,36 @@ export function TokenStatsTab() {
 
   // 首次加载（默认今天）
   useEffect(() => {
-    applyFilters(engineFilter, modelFilter, startDate, endDate)
+    applyFilters(engineFilter, modelFilter, start, end)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const onEngineChange = (v: string) => { setEngineFilter(v); applyFilters(v, modelFilter, startDate, endDate) }
-  const onModelChange = (v: string) => { setModelFilter(v); applyFilters(engineFilter, v, startDate, endDate) }
-  const onDateChange = (sd: string, ed: string) => { setStartDate(sd); setEndDate(ed); applyFilters(engineFilter, modelFilter, sd, ed) }
-  const onRefresh = () => refreshData(buildFilters(engineFilter, modelFilter, startDate, endDate))
+  const onEngineChange = (v: string) => { setEngineFilter(v); applyFilters(v, modelFilter, start, end) }
+  const onModelChange = (v: string) => { setModelFilter(v); applyFilters(engineFilter, v, start, end) }
+  // 快捷预设
+  const onPreset = (id: string) => {
+    setActivePreset(id)
+    const r = presetRange(id)
+    if (r) {
+      setStart(r[0]); setEnd(r[1])
+      applyFilters(engineFilter, modelFilter, r[0], r[1])
+    } else {
+      setStart(null); setEnd(null)
+      applyFilters(engineFilter, modelFilter, null, null)
+    }
+  }
+  // 自定义范围（联动日历）——清除快捷高亮
+  const onRangeChange = (s: Date | null, e: Date | null) => {
+    setStart(s); setEnd(e)
+    setActivePreset(null)
+    applyFilters(engineFilter, modelFilter, s, e)
+  }
+  const onRefresh = () => refreshData(buildFilters(engineFilter, modelFilter, start, end))
 
   // 时间趋势（跟随全局筛选）
   useEffect(() => {
     setTrendsLoading(true)
-    const sd = startDate ? inputToUnix(startDate) : undefined
-    const ed = endDate ? inputToUnix(endDate) : undefined
+    const sd = start ? dateToUnixSeconds(start) : undefined
+    const ed = end ? dateToUnixSeconds(end) : undefined
     getDailyTrends('30d', engineFilter || undefined, modelFilter || undefined, sd, ed).then(data => {
       setTimeSeries({
         labels: data.map(d => d.date),
@@ -248,7 +265,7 @@ export function TokenStatsTab() {
       })
       setTrendsLoading(false)
     })
-  }, [startDate, endDate, engineFilter, modelFilter, getDailyTrends])
+  }, [start, end, engineFilter, modelFilter, getDailyTrends])
 
   // 分页加载 Top 请求
   useEffect(() => {
@@ -284,8 +301,8 @@ export function TokenStatsTab() {
   return (
     <div className="space-y-4">
       {/* 筛选栏 */}
-      <FilterBar engineId={engineFilter} model={modelFilter} startDate={startDate} endDate={endDate} modelOptions={modelOptions}
-        onEngineChange={onEngineChange} onModelChange={onModelChange} onDateChange={onDateChange} onRefresh={onRefresh} />
+      <FilterBar engineId={engineFilter} model={modelFilter} start={start} end={end} activePreset={activePreset} modelOptions={modelOptions}
+        onEngineChange={onEngineChange} onModelChange={onModelChange} onPreset={onPreset} onRangeChange={onRangeChange} onRefresh={onRefresh} />
 
       {/* 加载中 */}
       {!loaded && (

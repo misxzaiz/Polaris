@@ -68,7 +68,32 @@
     "noSessions": "暂无请求数据",
     "pageInfo": "第 {{page}} 页",
     "prev": "上一页",
-    "next": "下一页"
+    "next": "下一页",
+    "allModels": "全部模型",
+    "refresh": "刷新",
+    "preset": {
+      "today": "今天",
+      "yesterday": "昨天",
+      "dayBefore": "前天",
+      "rolling7": "近7天",
+      "rolling30": "近30天",
+      "lastWeek": "上周",
+      "lastMonth": "上月",
+      "all": "全部"
+    },
+    "presetGroup": {
+      "day": "单日",
+      "rolling": "区间",
+      "period": "周期",
+      "all": "全部"
+    },
+    "timeRange": {
+      "placeholder": "选择时间范围",
+      "clear": "清空",
+      "pickStart": "点击开始日期，再点结束日期",
+      "pickEnd": "已选开始 {{date}}，请点结束日期",
+      "weekdays": ["一", "二", "三", "四", "五", "六", "日"]
+    }
   },
   "messages": {
     "saved": "已保存",

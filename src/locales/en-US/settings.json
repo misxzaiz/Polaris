@@ -69,7 +69,32 @@
     "noSessions": "No request data",
     "pageInfo": "Page {{page}}",
     "prev": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "allModels": "All models",
+    "refresh": "Refresh",
+    "preset": {
+      "today": "Today",
+      "yesterday": "Yesterday",
+      "dayBefore": "Day before",
+      "rolling7": "Last 7 days",
+      "rolling30": "Last 30 days",
+      "lastWeek": "Last week",
+      "lastMonth": "Last month",
+      "all": "All"
+    },
+    "presetGroup": {
+      "day": "Day",
+      "rolling": "Range",
+      "period": "Period",
+      "all": "All"
+    },
+    "timeRange": {
+      "placeholder": "Select time range",
+      "clear": "Clear",
+      "pickStart": "Click start date, then end date",
+      "pickEnd": "Start {{date}} selected, click end date",
+      "weekdays": ["M", "T", "W", "T", "F", "S", "S"]
+    }
   },
   "messages": {
     "saved": "Saved",
