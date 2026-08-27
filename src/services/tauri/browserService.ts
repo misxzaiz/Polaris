@@ -694,3 +694,44 @@ export async function browserStorageClear(
     key: key ?? null,
   })
 }
+
+/** 操作校验：断言期望结果出现，给 AI 一个"操作后校验"入口，防静默失败 */
+export async function browserAssert(
+  label: string,
+  kind: 'url_change' | 'url_contains' | 'element_exists' | 'text_exists' | 'no_error' | 'login_ok',
+  options?: {
+    text?: string
+    index?: number
+    timeoutMs?: number
+  },
+): Promise<BrowserInteractionResult> {
+  return invoke<BrowserInteractionResult>('browser_assert', {
+    label,
+    kind,
+    text: options?.text ?? null,
+    index: options?.index ?? null,
+    timeoutMs: options?.timeoutMs ?? null,
+  })
+}
+
+export type BrowserPageStatus =
+  | 'normal'
+  | 'blank'
+  | 'need_login'
+  | 'captcha'
+  | 'request_error'
+  | 'loading'
+  | 'unknown'
+
+export interface BrowserStatusResult {
+  status: BrowserPageStatus
+  url: string
+  message: string
+  readyState?: string
+  textPreview?: string
+}
+
+/** 页面状态白话检测：返回 normal/blank/need_login/captcha/request_error/loading */
+export async function browserStatus(label: string): Promise<BrowserStatusResult> {
+  return invoke<BrowserStatusResult>('browser_status', { label })
+}

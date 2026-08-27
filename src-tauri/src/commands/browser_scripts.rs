@@ -48,6 +48,12 @@ pub const STORAGE_READ_SCRIPT: &str =
 pub const STORAGE_WRITE_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/storage-write.js");
 
+pub const ASSERT_CHECK_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/assert-check.js");
+
+pub const BROWSER_STATUS_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/browser-status.js");
+
 pub const MUTE_CONTROL_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/mute-control.js");
 
@@ -160,6 +166,19 @@ pub fn network_requests_script(limit: Option<usize>) -> String {
 pub fn storage_script(body: &str, args: &serde_json::Value) -> String {
     let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
     format!("(() => {{\nwindow.__POLARIS_STORAGE_ARGS__ = {args_json};\n{body}\n}})()")
+}
+
+/// 断言检查脚本：注入 { kind, text, index, initialUrl } 到全局，内含交互元素收集器。
+pub fn assert_check_script(args: &serde_json::Value) -> String {
+    let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
+    let mut script = String::from("(() => {\nwindow.__POLARIS_ASSERT_ARGS__ = ");
+    script.push_str(&args_json);
+    script.push_str(";\n");
+    script.push_str(INTERACTIVE_COLLECTOR_SCRIPT);
+    script.push('\n');
+    script.push_str(ASSERT_CHECK_SCRIPT);
+    script.push_str("\n})()");
+    script
 }
 
 /// 区域选择脚本（含 collector）

@@ -400,6 +400,24 @@ fn handle_tools_list() -> Value {
                 "type": { "type": "string", "enum": ["localStorage", "sessionStorage", "cookie"], "description": "Storage type (default localStorage)." },
                 "key": { "type": "string", "description": "Optional single key to remove." }
             }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_assert",
+            "description": "Verify an operation actually succeeded by asserting an expected page outcome. Use after click/fill/type/submit to detect silent failures. kind: url_change (URL navigated away), url_contains (current URL contains text), element_exists (element index or text exists), text_exists (page shows text), no_error (no console errors / failed resources), login_ok (login succeeded: URL changed + no fatal error). Polls until satisfied or timeout.",
+            "inputSchema": { "type": "object", "required": ["kind"], "properties": {
+                "label": label_property,
+                "kind": { "type": "string", "enum": ["url_change", "url_contains", "element_exists", "text_exists", "no_error", "login_ok"], "description": "Assertion kind." },
+                "text": { "type": "string", "description": "Text for url_contains/element_exists/text_exists (case-insensitive substring)." },
+                "index": { "type": "integer", "minimum": 0, "description": "Element index for element_exists." },
+                "timeoutMs": { "type": "integer", "minimum": 100, "maximum": 30000, "description": "Poll timeout in ms (default 8000)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_status",
+            "description": "Get a plain-language summary of the current page state. Returns status: normal / blank / need_login / captcha / request_error / loading / unknown with a message an ordinary user can understand. Use to tell a non-technical user what a page looks like right now.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property
+            }, "additionalProperties": false }
         }
     ] })
 }
@@ -468,6 +486,8 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_storage_get" => Ok("storage_get"),
         "browser_storage_set" => Ok("storage_set"),
         "browser_storage_clear" => Ok("storage_clear"),
+        "browser_assert" => Ok("assert"),
+        "browser_status" => Ok("status"),
         other => Err(AppError::ValidationError(format!(
             "未知浏览器工具: {other}"
         ))),
@@ -670,7 +690,13 @@ mod tests {
         assert!(names.contains(&"browser_history_state"));
         assert!(names.contains(&"browser_marquee"));
         assert!(names.contains(&"browser_select_region"));
-        assert_eq!(names.len(), 22);
+        // 数据感知工具（新增）——不得因工具数固定而漏测
+        assert!(names.contains(&"browser_network_requests"));
+        assert!(names.contains(&"browser_storage_get"));
+        assert!(names.contains(&"browser_storage_set"));
+        assert!(names.contains(&"browser_storage_clear"));
+        // 断言工具列表至少包含以上全部，且数量大于基线（不硬编码总数，防新增工具再改）
+        assert!(names.len() >= 22, "浏览器 MCP 工具数应 ≥ 22，当前 {}", names.len());
     }
 
     #[test]

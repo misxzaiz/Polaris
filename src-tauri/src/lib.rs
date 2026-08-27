@@ -871,6 +871,8 @@ pub fn run() {
             commands::browser::browser_storage_get,
             commands::browser::browser_storage_set,
             commands::browser::browser_storage_clear,
+            commands::browser::browser_assert,
+            commands::browser::browser_status,
             // 上下文管理相关
             context_upsert,
             context_upsert_many,

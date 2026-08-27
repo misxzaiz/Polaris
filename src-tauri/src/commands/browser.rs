@@ -1878,7 +1878,7 @@ pub async fn browser_wait_with_app(
     timeout_ms: Option<u64>,
 ) -> Result<BrowserInteractionResult> {
     let timeout = timeout_ms.unwrap_or_else(|| match condition {
-        "network_idle" | "navigation" => 30_000,
+        "network_idle" | "navigation" | "page_loaded" | "button_enabled" => 30_000,
         _ => 15_000,
     });
     let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout);
@@ -1940,6 +1940,7 @@ fn build_wait_check_script(
 
     format!(
         r#"(function() {{
+            {collector}
             const condition = '{cond}';
             const waitText = '{wt}';
             const waitIndex = {wi};
@@ -1975,6 +1976,52 @@ fn build_wait_check_script(
                     case 'navigation':
                         satisfied = document.readyState === 'complete';
                         break;
+                    case 'page_loaded': {{
+                        // 比 navigation 更严：DOM 完全 + 无未完成资源
+                        satisfied = document.readyState === 'complete'
+                            && performance.getEntriesByType('resource').filter(r => !r.responseEnd).length === 0;
+                        // 异步请求传播中（提交后等接口回落）：若采集层打点存在且仍有 in-flight，视为未就绪
+                        if (satisfied && window.__POLARIS_INFLIGHT__ !== undefined && window.__POLARIS_INFLIGHT__ > 0) {{
+                            satisfied = false;
+                        }}
+                        detail = satisfied ? 'page fully loaded' : 'loading';
+                        break;
+                    }}
+                    case 'button_enabled': {{
+                        // 等待指定 index 按钮变为可点（抢购/秒杀场景：按钮从灰变亮）
+                        if (Number.isInteger(waitIndex) && waitIndex >= 0) {{
+                            const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                            const el = entries[waitIndex];
+                            if (el) {{
+                                const disabled = el.disabled === true;
+                                satisfied = !disabled;
+                                detail = disabled ? 'button disabled' : 'button enabled';
+                            }}
+                        }} else if (waitText) {{
+                            const q = waitText.toLowerCase();
+                            const entries = collectPolarisInteractiveElements({{ viewportOnly: false, maxElements: 240 }});
+                            const el = entries.find(e => (e.searchText || '').toLowerCase().includes(q));
+                            if (el) {{
+                                const disabled = el.disabled === true;
+                                satisfied = !disabled;
+                                detail = disabled ? 'button disabled' : 'button enabled';
+                            }}
+                        }}
+                        break;
+                    }}
+                    case 'error_present': {{
+                        // 检测页面出现错误信号：console error + 资源加载失败
+                        const consoleErrors = (window.__POLARIS_BROWSER_CONSOLE__ || [])
+                            .filter(c => c.level === 'error').length;
+                        const failedResources = performance.getEntriesByType('resource')
+                            .filter(r => r.transferSize === 0 && r.responseEnd > 0);
+                        const inflightBad = window.__POLARIS_NET_FAIL__ && window.__POLARIS_NET_FAIL__ > 0;
+                        if (consoleErrors > 0 || failedResources.length > 0 || inflightBad) {{
+                            satisfied = true;
+                            detail = 'consoleErrors=' + consoleErrors + ', failedResources=' + failedResources.length;
+                        }}
+                        break;
+                    }}
                     case 'timeout':
                         satisfied = true;
                         break;
@@ -1991,6 +2038,7 @@ fn build_wait_check_script(
         wi = wait_index,
         wms = wait_ms,
         init = escaped_initial,
+        collector = browser_scripts::INTERACTIVE_COLLECTOR_SCRIPT,
     )
 }
 
@@ -2649,6 +2697,87 @@ pub async fn browser_storage_clear(
     parse_eval_json(&raw)
 }
 
+/// 操作校验核心实现：断言期望结果是否出现（URL 变化 / 元素存在 / 文本出现 / 无错误 / 登录成功）。
+/// 给 AI 一个"操作后校验"的单一入口，避免盲目相信动作已成功（静默失败解药）。
+/// kind 支持：url_change / url_contains / element_exists / text_exists / no_error / login_ok
+#[cfg(feature = "tauri-app")]
+pub async fn browser_assert_with_app(
+    app: &AppHandle,
+    label: &str,
+    kind: &str,
+    text: Option<&str>,
+    index: Option<usize>,
+    timeout_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    // 先取当前 URL 作为"变化前"基准（login_ok / url_change 需要）
+    let initial_url = {
+        let raw = browser_eval_with_app(app, label, "JSON.stringify({ url: String(location.href) });", Some(2_000)).await?;
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap_or_default();
+        v.get("url").and_then(Value::as_str).unwrap_or("").to_string()
+    };
+
+    let timeout = timeout_ms.unwrap_or(8_000).min(30_000);
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(timeout);
+    let poll_interval = Duration::from_millis(300);
+
+    loop {
+        let args = serde_json::json!({
+            "kind": kind,
+            "text": text,
+            "index": index.map(|v| v as i64),
+            "initialUrl": initial_url,
+        });
+        let script = browser_scripts::assert_check_script(&args);
+        let raw = browser_eval_with_app(app, label, &script, Some(3_500)).await?;
+        let value = parse_eval_json(&raw)?;
+        let result: BrowserInteractionResult = serde_json::from_value(value.clone())
+            .map_err(|e| AppError::ValidationError(format!("断言结果格式错误: {e}")))?;
+
+        if result.ok || tokio::time::Instant::now() >= deadline {
+            let message = if result.ok {
+                result.message.clone()
+            } else {
+                format!("断言 '{kind}' 在 {timeout}ms 内未满足: {}", result.message)
+            };
+            return Ok(BrowserInteractionResult {
+                ok: result.ok,
+                action: "assert".to_string(),
+                index: result.index,
+                text: kind.to_string(),
+                url: result.url,
+                message,
+            });
+        }
+        tokio::time::sleep(poll_interval).await;
+    }
+}
+
+/// 操作校验：断言期望结果是否出现（tauri::command 入口）
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_assert(
+    app: AppHandle,
+    label: String,
+    kind: String,
+    text: Option<String>,
+    index: Option<usize>,
+    timeout_ms: Option<u64>,
+) -> Result<BrowserInteractionResult> {
+    browser_assert_with_app(&app, &label, &kind, text.as_deref(), index, timeout_ms).await
+}
+
+/// 页面状态大白话检测：聚合然后返回 normal / blank / need_login / captcha / request_error / loading。
+/// 给 AI 一个"这页面现在是怎么了"的单一入口，用大白话转译底层信号。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn browser_status(
+    app: AppHandle,
+    label: String,
+) -> Result<Value> {
+    let raw = browser_eval_with_app(&app, &label, browser_scripts::BROWSER_STATUS_SCRIPT, Some(3_000)).await?;
+    parse_eval_json(&raw)
+}
+
 /// 在指定屏幕坐标位置弹出原生上下文菜单，显示在 WebView 之上。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -3237,6 +3366,18 @@ impl BrowserActionDispatcher {
                 let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &serde_json::json!({ "action": "clear", "type": r#type, "key": key }));
                 let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储清除失败: {e}")))
+            }
+            "assert" | "assertAction" => {
+                let kind = args.get("kind").and_then(Value::as_str).ok_or_else(|| AppError::ValidationError("assert 缺少 kind".to_string()))?.to_string();
+                let text = args.get("text").and_then(Value::as_str).map(String::from);
+                let index = parse_action_index(args)?;
+                let timeout_ms = args.get("timeoutMs").or_else(|| args.get("timeout_ms")).and_then(Value::as_u64);
+                let result = browser_assert_with_app(&self.app, &label, &kind, text.as_deref(), index, timeout_ms).await?;
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "status" | "getStatus" => {
+                let raw = browser_eval_with_app(&self.app, &label, browser_scripts::BROWSER_STATUS_SCRIPT, Some(3_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("页面状态解析失败: {e}")))
             }
             other => Err(AppError::ValidationError(format!(
                 "未知 browser action: {other}"
