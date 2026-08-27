@@ -21,14 +21,16 @@
       });
     }
 
-    // 3. 需要登录：常见登录墙特征
-    const loginHints = ['登录', '请先登录', 'login', 'sign in', 'signin', '登录后查看', '需要登录'];
-    const needLogin = loginHints.some(h => bodyText.toLowerCase().includes(h.toLowerCase()));
-    // 登录页判定（URL 或标题特征）
-    const loginUrlHint = /(login|signin|sign-in|passport|auth|account\/login)/.test(url);
+    // 3. 需要登录：仅当出现明确"登录墙"拦截语时才判定（避免导航栏/页脚单字"登录"造成误报）
+    // 注意：不做单字"登录"匹配——普通页面导航/页脚常含"登录"链接
+    const loginWallHints = ['请先登录', '登录后继续', '登录后查看', '需要登录', '登录后才能', 'sign in to continue', 'please sign in', 'log in to', 'login to continue', '请登录'];
+    const needLogin = loginWallHints.some(h => bodyText.toLowerCase().includes(h.toLowerCase()));
+    // 登录页判定（URL 或标题特征）——同样用较强的 URL 模式，避免误伤含 account/auth 参数的普通页
+    const loginUrlHint = /^\/(login|signin|sign-in|passport|auth)\b|\/(login|signin|sign-in|passport|auth)(\/|\?|$)/.test(url)
+      || /^https?:\/\/[^/]*(login|signin|sign-in|passport|auth)\.[^/]*\//.test(url);
 
-    // 4. 验证码 / 风控拦截
-    const captchaHints = ['验证码', 'captcha', '人机验证', '安全验证', '完成验证', '滑块', 'recaptcha', '滑动验证'];
+    // 4. 验证码 / 风控拦截：用明确的"人机验证"拦截语，避免注册表单"验证码输入框"误报
+    const captchaHints = ['人机验证', '安全验证', '完成验证', '滑动验证', '拖动滑块', '请完成验证码', '图形验证码', 'recaptcha', 'reCAPTCHA', '智能验证', '点击并按住验证', 'slider captcha'];
     const captcha = captchaHints.some(h => bodyText.toLowerCase().includes(h.toLowerCase()));
 
     // 5. 请求/渲染错误
