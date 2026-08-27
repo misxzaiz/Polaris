@@ -224,6 +224,46 @@ git push origin vx.x.x
 
 ---
 
+## v10.4.1 构建记录
+
+**构建时间**: 2026-08-27 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.4.1
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.4.1_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.4.1_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.4.1_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.4.1-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.4.1_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.4.1-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.4.1-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.4.1-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 修复的问题
+
+- feat(browser): 内置浏览器大幅增强 — 标签页固定/中键关闭/拖拽排序、全屏 (F11)、每站点缩放持久化、阅读模式、页面内查找、静音控制、下载检测 + 外部浏览器打开、当前页面截图、浏览历史面板 + 持久化 + MCP 工具、地址栏搜索建议、键盘快捷键帮助面板、favicon、页面加载骨架屏、错误状态恢复 UI、溢出菜单、长按后退/前进历史快照菜单、网络信息状态栏持续轮询（2s）
+- feat(browser): 书签收藏系统 — 内置书签 + MCP 工具（bookmark_list/add/delete/find）+ 导入导出 + 多显示器检测
+- feat(browser): 页面信息弹窗 + 导航超时检测提示 + 阅读模式脚本重构
+- feat(browser): 圈选上下文 — MCP 工具扩展到 21 个 + 重构 with_app 提取
+- feat(chat): 圈选上下文改为输入框临时上下文块（TCB）统一接收入口 + 请求明细与浏览器存储读写；圈选结果改为 AI 输入框上下文块 + 左侧信息源展示
+- fix(browser): 圈选看不到上下文的采样竞态 — elementFromPoint 采样前临时关闭 overlay 拦截 + done 分支主动补齐区域详情；截图坐标改用 inner_position 对齐客户区原点修复标题栏偏移错位/全黑；多屏截图 monitor 检测 + 溢出菜单回调泄漏 + 区域元素索引修复；导航时自动结束圈选模式
+- fix(browser): 内部浮层加 data-native-webview-overlay 标记，修复下拉被原生 webview 盖住；阅读模式恢复逻辑改用隐藏/显示 body 子节点
+- refactor(browser): 移除内置浏览器书签/浏览历史/AI 信息源/全屏与缩放/左侧边栏工具列冗余入口；清理阅读模式脚本死代码 + 替换 prompt() 为内联表单
+- feat(token-stats): 快捷时间预设分组 + 联动日历范围选择器；默认今天日期范围，支持时分秒精确查询；i18n 翻译补齐；Top 请求视图花费列显示真实成本；概览与按时间视图补缓存用量维度（紫色区分）；引擎分布改用全量聚合消除样本偏差；趋势图按本地时区分桶
+- feat(executor): 通用执行器抽象 ExecutorRegistry（Chat/Command/Http）+ 定时任务插件无状态化；插件 manifest executors 声明支持 + 前端 executor 下拉菜单；移除内置 scheduler MCP server 声明
+- feat(chat): edit/write 工具卡片文件名为主、路径为辅展示
+- refactor(config): 移除 auto-mode 设置，迁移至 polaris.claude-code 插件
+
+---
+
 ## v10.3.2 构建记录
 
 **构建时间**: 2026-08-06 (UTC)
