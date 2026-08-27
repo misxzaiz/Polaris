@@ -25,6 +25,7 @@ use services::config_store::ConfigStore;
 use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
 use commands::chat::{start_chat, continue_chat, interrupt_chat, provider_route_logs, provider_route_logs_clear};
+#[cfg(feature = "tauri-app")]
 use commands::chat::{
     provider_stats, provider_stats_clear, provider_failed_calls, provider_failed_calls_clear,
 };

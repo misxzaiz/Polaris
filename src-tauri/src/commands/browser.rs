@@ -1471,12 +1471,14 @@ fn is_downloadable_url(url: &str) -> bool {
 }
 
 /// 用系统默认浏览器打开外部 URL（下载/无法内嵌渲染的内容）。
+#[cfg(feature = "tauri-app")]
 fn url_opener_plugin_open(app: &AppHandle, url: &str) -> Result<()> {
     app.opener()
         .open_url(url.to_string(), None::<&str>)
         .map_err(|e| AppError::Unknown(format!("外部浏览器打开失败: {e}")))
 }
 
+#[cfg(feature = "tauri-app")]
 fn browser_create_with_app(
     app: &AppHandle,
     label: String,
