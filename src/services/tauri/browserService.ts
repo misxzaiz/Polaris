@@ -218,7 +218,7 @@ export function formatMarqueeContext(context: BrowserRegionContext): string {
   if (isMulti) {
     const regionBlocks = regions.map(formatRegion).join('\n\n')
     return [
-      '我正在用 Polaris 内置浏览器查看一个页面，圈选了多个区域，请根据圈选区域的内容协助我修改项目。',
+      '我正在用 Polaris 内置浏览器查看一个页面，圈选了多个区域，请根据圈选区域的内容协助我处理。',
       '',
       `标题: ${title || 'Untitled'}`,
       `URL: ${url}`,
@@ -227,7 +227,6 @@ export function formatMarqueeContext(context: BrowserRegionContext): string {
       '',
       regionBlocks,
       '',
-      '请按区域分别定位到项目中对应的组件或文件，再给出修改方案；如果信息足够，可以直接实施修改。',
     ].filter(Boolean).join('\n')
   }
 
