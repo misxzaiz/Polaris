@@ -529,8 +529,19 @@ impl TaskStorage for LocalFileStorage {
 
         task.updated_at = Utc::now().timestamp();
 
+        // next_run_at 重算规则:
+        // - 显式传了 next_run_at(Some) → 用传入值
+        // - AfterCompletion + 当前状态为 Running → 不重算(等完成时再算),
+        //   保持 None 防止语义混乱(Running 期间 next_run_at 无意义)
+        // - 其他情况(None 且非 Running) → 重算为 now+interval
         if updates.next_run_at.is_none() {
-            task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, task.updated_at);
+            let is_running = task.last_run_status == Some(TaskStatus::Running);
+            if task.trigger_type == TriggerType::AfterCompletion && is_running {
+                // AfterCompletion 执行期间不重算 next_run_at
+                task.next_run_at = None;
+            } else {
+                task.next_run_at = task.trigger_type.calculate_next_run(&task.trigger_value, task.updated_at);
+            }
         }
 
         let result = task.clone();

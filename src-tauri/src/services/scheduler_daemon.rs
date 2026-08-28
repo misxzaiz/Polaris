@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::models::scheduler::{ScheduledTask, TaskStatus, TriggerType};
+use crate::models::scheduler::{ScheduledTask, TaskStatus};
 use crate::services::executor::{ExecutorContext, ExecutorParams, ExecutorRegistry};
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
@@ -32,6 +32,18 @@ use crate::AppState;
 
 /// 守护进程检查间隔（秒）
 const CHECK_INTERVAL_SECS: u64 = 10;
+
+/// 未设置 timeout_minutes 时，Running 卡死的自愈阈值（秒，默认 30 分钟）
+const STALE_RUNNING_SECS: i64 = 30 * 60;
+
+/// 守护循环的「桌面事件出口」参数类型。
+///
+/// Web-only 构建没有 Tauri AppHandle，用一个空类型占位以复用同一段循环代码，
+/// 避免两份几乎相同的轮询循环（历史上两份循环已经分叉出过 bug）。
+#[cfg(feature = "tauri-app")]
+type DaemonAppHandle = Option<AppHandle>;
+#[cfg(not(feature = "tauri-app"))]
+type DaemonAppHandle = Option<()>;
 
 /// 任务到期事件（发给前端，由 handleTaskDue 消费）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -63,6 +75,9 @@ pub struct SchedulerDaemon {
     running: Arc<AtomicBool>,
     /// 停止信号
     stop_signal: Option<tokio::sync::oneshot::Sender<()>>,
+    /// 守护任务句柄。用于区分「已正常停止」与「任务 panic 退出」——
+    /// 后者会把 `running` 永久留在 true，形成持有锁的僵尸状态。
+    handle: Option<tokio::task::JoinHandle<()>>,
     /// 工作区路径
     workspace_path: Option<PathBuf>,
     /// 配置目录
@@ -75,6 +90,7 @@ impl SchedulerDaemon {
         Self {
             running: Arc::new(AtomicBool::new(false)),
             stop_signal: None,
+            handle: None,
             workspace_path,
             config_dir,
         }
@@ -105,39 +121,17 @@ impl SchedulerDaemon {
         tracing::info!("[SchedulerDaemon] 启动守护进程(桌面)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
         let app_handle = app.clone();
-        tokio::spawn(async move {
-            let mut stop_rx = stop_rx;
-
-            loop {
-                if !running.load(Ordering::SeqCst) {
-                    tracing::info!("[SchedulerDaemon] 收到停止信号，退出循环");
-                    break;
-                }
-
-                if stop_rx.try_recv().is_ok() {
-                    tracing::info!("[SchedulerDaemon] 收到停止请求，退出循环");
-                    running.store(false, Ordering::SeqCst);
-                    break;
-                }
-
-                let ctx = executor_ctx.clone();
-                let bcast = event_broadcast.clone();
-                if let Err(e) = check_and_execute_due_tasks(
-                    &executor_registry,
-                    ctx,
-                    &config_dir,
-                    &workspace_path,
-                    Some(&app_handle),
-                    Some(&bcast),
-                ).await {
-                    tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
-                }
-
-                sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
-            }
-
-            tracing::info!("[SchedulerDaemon] 守护进程已停止");
-        });
+        let event_broadcast = Arc::new(event_broadcast);
+        self.handle = Some(tokio::spawn(run_daemon_loop(
+            running,
+            stop_rx,
+            executor_registry,
+            executor_ctx,
+            config_dir,
+            workspace_path,
+            Some(app_handle),
+            Some(event_broadcast),
+        )));
 
         Ok(())
     }
@@ -165,39 +159,17 @@ impl SchedulerDaemon {
 
         tracing::info!("[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
-        tokio::spawn(async move {
-            let mut stop_rx = stop_rx;
-
-            loop {
-                if !running.load(Ordering::SeqCst) {
-                    tracing::info!("[SchedulerDaemon] 收到停止信号，退出循环");
-                    break;
-                }
-
-                if stop_rx.try_recv().is_ok() {
-                    tracing::info!("[SchedulerDaemon] 收到停止请求，退出循环");
-                    running.store(false, Ordering::SeqCst);
-                    break;
-                }
-
-                let ctx = executor_ctx.clone();
-                let bcast = event_broadcast.clone();
-                if let Err(e) = check_and_execute_due_tasks(
-                    &executor_registry,
-                    ctx,
-                    &config_dir,
-                    &workspace_path,
-                    None,
-                    Some(&bcast),
-                ).await {
-                    tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
-                }
-
-                sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
-            }
-
-            tracing::info!("[SchedulerDaemon] 守护进程已停止");
-        });
+        let event_broadcast = Arc::new(event_broadcast);
+        self.handle = Some(tokio::spawn(run_daemon_loop(
+            running,
+            stop_rx,
+            executor_registry,
+            executor_ctx,
+            config_dir,
+            workspace_path,
+            None,
+            Some(event_broadcast),
+        )));
 
         Ok(())
     }
@@ -224,6 +196,74 @@ impl SchedulerDaemon {
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
+
+    /// 守护任务是否已终止（正常停止或异常退出）。
+    ///
+    /// `running` 标志由循环体负责重置，但循环本身尚未被 Join 时两者会短暂不一致；
+    /// 状态查询可用此判断是否需要重新拉起守护进程。
+    pub fn task_terminated(&self) -> bool {
+        match self.handle.as_ref() {
+            Some(handle) => handle.is_finished(),
+            None => false,
+        }
+    }
+}
+
+/// 守护进程主循环（桌面 / Web 共用）。
+///
+/// 退出语义：正常退出时 `running` 已为 false；若在 `running` 仍为 true 时异常
+/// 结束（如 `check_and_execute_due_tasks` panic 导致 task 被 drop、`stop_rx` 被
+/// 丢弃），则重置为 false 并告警。否则 `running` 永久卡在 true，配合外部持有的
+/// 文件锁会形成「锁定但无人轮询」的僵尸状态，任务将永远不再触发。
+async fn run_daemon_loop(
+    running: Arc<AtomicBool>,
+    mut stop_rx: tokio::sync::oneshot::Receiver<()>,
+    executor_registry: ExecutorRegistry,
+    executor_ctx: ExecutorContext,
+    config_dir: PathBuf,
+    workspace_path: Option<PathBuf>,
+    app_handle: DaemonAppHandle,
+    event_broadcast: Option<Arc<crate::web::EventBroadcaster>>,
+) {
+    loop {
+        if !running.load(Ordering::SeqCst) {
+            tracing::info!("[SchedulerDaemon] 收到停止信号，退出循环");
+            break;
+        }
+
+        if stop_rx.try_recv().is_ok() {
+            tracing::info!("[SchedulerDaemon] 收到停止请求，退出循环");
+            running.store(false, Ordering::SeqCst);
+            break;
+        }
+
+        let ctx = executor_ctx.clone();
+        let bcast = event_broadcast.as_deref();
+        #[cfg(feature = "tauri-app")]
+        let app_handle_ref = app_handle.as_ref();
+        #[cfg(not(feature = "tauri-app"))]
+        let app_handle_ref = app_handle.as_ref();
+
+        if let Err(e) = check_and_execute_due_tasks(
+            &executor_registry,
+            ctx,
+            &config_dir,
+            &workspace_path,
+            app_handle_ref,
+            bcast,
+        )
+        .await
+        {
+            tracing::error!("[SchedulerDaemon] 检查任务失败: {}", e);
+        }
+
+        sleep(Duration::from_secs(CHECK_INTERVAL_SECS)).await;
+    }
+
+    if running.swap(false, Ordering::SeqCst) {
+        tracing::warn!("[SchedulerDaemon] 守护循环在 running=true 状态下退出（异常路径），已重置运行标志");
+    }
+    tracing::info!("[SchedulerDaemon] 守护进程已停止");
 }
 
 /// 检查到期任务并执行/通知
@@ -256,7 +296,28 @@ async fn check_and_execute_due_tasks(
         // AfterCompletion 触发后设 last_run_status=Running,等前端 session_end 回调
         // updateRunStatus(Success/Failed) 后才解除。存储层 update_task 对
         // next_run_at=None 会重算(now+interval),故不能靠 next_run_at=None 防重复。
+        //
+        // 自愈兜底:session_end 丢失(断网/应用重启/AI 崩溃)时 Running 会永久残留,
+        // 任务永久不再触发。超过 timeout_minutes(默认 30 分钟)未回收则重置为
+        // Failed 并允许重新触发。next_run_at 由存储层在非 Running 时自动重算。
         if task.last_run_status == Some(TaskStatus::Running) {
+            if let Some(last_run_at) = task.last_run_at {
+                let stale_secs = task.timeout_minutes.map(|m| (m as i64) * 60).unwrap_or(STALE_RUNNING_SECS);
+                if now.saturating_sub(last_run_at) > stale_secs {
+                    tracing::warn!(
+                        "[SchedulerDaemon] 自愈: 任务 '{}' (ID: {}) 卡死 Running {}s(阈值 {}s),重置为 Failed",
+                        task.name, task.id,
+                        now - last_run_at, stale_secs
+                    );
+                    if let Err(e) = repository.update_task(&task.id, TaskUpdateParams {
+                        last_run_status: Some(TaskStatus::Failed),
+                        ..Default::default()
+                    }) {
+                        tracing::error!("[SchedulerDaemon] 自愈重置失败: {} (ID: {})", e, task.id);
+                    }
+                    continue;
+                }
+            }
             continue;
         }
 

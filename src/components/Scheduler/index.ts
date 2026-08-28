@@ -1,5 +1,4 @@
 export { SchedulerPanel, default } from './SchedulerPanel';
-export { SchedulerControl } from './SchedulerControl';
 export { TaskCard } from './TaskCard';
 export type { TaskCardProps } from './TaskCard';
 export { TaskEditor } from './TaskEditor';

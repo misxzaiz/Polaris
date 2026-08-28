@@ -15,6 +15,7 @@ import { agentGalleryPluginManifest } from '@/plugins/agent-gallery/manifest'
 import { askPluginManifest } from '@/plugins/ask/manifest'
 import { dispatchPluginManifest } from '@/plugins/dispatch/manifest'
 import { browserPluginManifest } from '@/plugins/browser/manifest'
+import { schedulerPluginManifest } from '@/plugins/scheduler/manifest'
 
 const corePluginManifest: PolarisPluginManifest = {
   id: 'polaris.core',
@@ -123,6 +124,7 @@ export function registerBuiltinPlugins(): void {
   pluginRegistry.register(askPluginManifest)
   pluginRegistry.register(dispatchPluginManifest)
   pluginRegistry.register(browserPluginManifest)
+  pluginRegistry.register(schedulerPluginManifest)
 
   // builtin 插件无 installPath，registry 不会自动注册 panel，需手动注册懒加载入口
   pluginPanelRegistry.register('agentGallery', 'polaris.agent-gallery', () =>
@@ -133,6 +135,9 @@ export function registerBuiltinPlugins(): void {
   )
   pluginPanelRegistry.register('agnes', 'polaris.agnes', () =>
     import('@/plugins/agnes/AgnesPanel').then((m) => ({ default: m.default })),
+  )
+  pluginPanelRegistry.register('scheduler', 'polaris.scheduler', () =>
+    import('@/components/Scheduler/SchedulerPanel').then((m) => ({ default: m.default })),
   )
   // Git 状态指示器挂到文件树工具栏 slot（P0-5）
   fileExplorerToolbarSlot.register(

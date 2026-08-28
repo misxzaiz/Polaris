@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invoke } from '@/services/transport';
-import { Clock, MoreVertical, Search, Plus, FileText, ScrollText, Activity } from 'lucide-react';
+import { Clock, MoreVertical, Search, Plus, FileText, ScrollText, Activity, Loader2, AlertCircle, Circle } from 'lucide-react';
 import { useSchedulerStore, useToastStore } from '@/stores';
 import type { ScheduledTask, CreateTaskParams, TriggerType } from '@/types/scheduler';
 import { createLogger } from '@/utils/logger';
@@ -418,11 +418,26 @@ export function SchedulerPanel() {
           <Clock size={16} className="text-text-secondary shrink-0" />
           <h1 className="text-sm font-medium text-text-primary truncate">{t('title')}</h1>
           <span className="text-xs text-text-muted shrink-0">({tasks.length})</span>
-          {/* 调度器状态指示器 */}
-          {schedulerStatus?.isRunning && (
+          {/* 调度器状态指示器 — 三态常驻显示 */}
+          {statusLoading ? (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-background-hover text-text-muted text-xs rounded shrink-0">
+              <Loader2 size={12} className="animate-spin" />
+              <span className="hidden sm:inline">{t('control.starting', '启动中')}</span>
+            </div>
+          ) : schedulerStatus?.isRunning ? (
             <div className="flex items-center gap-1 px-2 py-0.5 bg-success-faint text-success text-xs rounded shrink-0">
-              <Activity size={12} />
+              <Activity size={12} className="animate-pulse" />
               <span className="hidden sm:inline">{t('control.running')}</span>
+            </div>
+          ) : schedulerStatus?.isLockedByOther ? (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-warning-faint text-warning text-xs rounded shrink-0">
+              <AlertCircle size={12} />
+              <span className="hidden sm:inline">{t('control.lockedByOther')}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 px-2 py-0.5 bg-background-hover text-text-muted text-xs rounded shrink-0">
+              <Circle size={12} />
+              <span className="hidden sm:inline">{t('control.stopped')}</span>
             </div>
           )}
         </div>

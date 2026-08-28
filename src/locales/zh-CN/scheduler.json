@@ -38,6 +38,7 @@
   "control": {
     "running": "调度器运行中",
     "stopped": "调度器已停止",
+    "starting": "启动中",
     "lockedByOther": "其他实例正在运行",
     "scheduler": "调度器",
     "start": "启动",

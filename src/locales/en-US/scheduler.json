@@ -38,6 +38,7 @@
   "control": {
     "running": "Scheduler Running",
     "stopped": "Scheduler Stopped",
+    "starting": "Starting",
     "lockedByOther": "Another instance is running",
     "scheduler": "Scheduler",
     "start": "Start",

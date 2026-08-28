@@ -32,6 +32,7 @@ use polaris_lib::services::{
     personal_hub_mcp_server::run_ph_mcp_server,
     prd_preview_mcp_server::run_prd_preview_mcp_server,
     requirements_mcp_server::run_requirements_mcp_server,
+    scheduler_mcp_server::run_scheduler_mcp_server,
     todo_mcp_server::run_todo_mcp_server,
 };
 use polaris_lib::{AppError, Result};
@@ -86,6 +87,10 @@ fn main_impl() -> Result<()> {
         "computer" => {
             run_computer_mcp(sub_args)
         }
+        "scheduler" => {
+            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "scheduler")?;
+            run_scheduler_mcp_server(&config_dir, workspace_path)
+        }
 
         // ── Bridge MCP server（AskListener 模式） ──────────────────
         "ask" => {
@@ -110,7 +115,7 @@ fn main_impl() -> Result<()> {
         }
 
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：todo, requirements, prd-preview, agnes, ph, computer, ask, browser, dispatch"
+            "未知子命令：{other}。可用子命令：todo, requirements, prd-preview, agnes, ph, computer, scheduler, ask, browser, dispatch"
         ))),
     }
 }
