@@ -1330,7 +1330,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
             config_dir,
             None,
         );
-        if let Err(e) = scheduler_daemon.start(state) {
+        // Web standalone 模式:无 AppHandle,用 start_with_ctx + WS broadcast
+        let executor_registry = state.executor_registry.clone();
+        let executor_ctx = services::executor::ExecutorContext::from_app_state(&state);
+        if let Err(e) = scheduler_daemon.start_with_ctx(executor_registry, executor_ctx) {
             tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
         } else {
             tracing::info!("[Polaris-Web] 调度器守护进程已启动");

@@ -2,7 +2,8 @@
  * 性能功能开关查询
  *
  * 从 configStore 读取 performance 配置，各组件按需调用。
- * 所有开关默认关闭（false），用户手动开启后即时生效。
+ * 大多数开关默认关闭（false），用户手动开启后即时生效。
+ * 例外：schedulerDaemon 默认启用（定时任务是核心功能）。
  *
  * 为避免循环依赖，核心查询函数接受 config 对象作为参数，
  * 而非直接 import configStore。

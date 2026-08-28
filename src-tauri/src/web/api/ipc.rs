@@ -695,7 +695,30 @@ fn dispatch_scheduler_create_task(state: &AppState, args: &Value) -> Result<Json
     )
     .map_err(|e| WebError::BadRequest(format!("Invalid create params: {}", e)))?;
     let repo = get_scheduler_repo(state, args)?;
-    json_result!(repo.create_task(params))
+
+    // 协议模式:创建任务文档结构(对齐桌面端 commands/scheduler.rs:78-95)
+    let mut task = repo.create_task(params.clone())
+        .map_err(|e| WebError::Internal(format!("创建任务失败: {}", e)))?;
+
+    if params.mode == TaskMode::Protocol {
+        let work_dir = params.work_dir.clone().unwrap_or_else(|| ".".to_string());
+        let mission = task.mission.clone().unwrap_or_else(|| task.name.clone());
+
+        let task_path = ProtocolTaskService::create_task_structure(
+            &work_dir,
+            &task.id,
+            &mission,
+            None,
+        ).map_err(|e| WebError::Internal(format!("创建协议文档失败: {}", e)))?;
+
+        // 回填 task_path
+        task = repo.update_task(&task.id, TaskUpdateParams {
+            task_path: Some(task_path),
+            ..Default::default()
+        }).map_err(|e| WebError::Internal(format!("回填 task_path 失败: {}", e)))?;
+    }
+
+    to_json(task)
 }
 
 fn dispatch_scheduler_update_task(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
@@ -718,6 +741,7 @@ fn dispatch_scheduler_update_task(state: &AppState, args: &Value) -> Result<Json
             mode: Some(task.mode),
             category: Some(task.category),
             mission: task.mission,
+            task_path: task.task_path,
             template_id: task.template_id,
             template_params: task.template_params,
             max_runs: task.max_runs,
@@ -2086,7 +2110,10 @@ async fn dispatch_scheduler_start(state: Arc<AppState>) -> Result<Json<Value>, W
                 .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
 
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir, None);
-            daemon.start(state.clone())
+            // Web 模式:无 AppHandle,用 start_with_ctx + WS broadcast
+            let executor_registry = state.executor_registry.clone();
+            let executor_ctx = crate::services::executor::ExecutorContext::from_app_state(&state);
+            daemon.start_with_ctx(executor_registry, executor_ctx)
                 .map_err(|e| WebError::Internal(format!("启动调度器失败: {}", e)))?;
 
             let mut scheduler_daemon = state.scheduler_daemon.lock().await;

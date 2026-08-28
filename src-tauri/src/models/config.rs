@@ -1663,10 +1663,11 @@ pub struct PerformanceFeatures {
     #[serde(default)]
     pub lsp_index: bool,
 
-    /// 调度器守护进程（默认关闭）。
-    /// 开启后后台轮询定时任务，到期自动触发执行。
-    /// 关闭后定时任务不会自动执行（需手动触发）。
-    #[serde(default)]
+    /// 调度器守护进程（默认启用）。
+    /// 定时任务是核心功能,不是可选性能优化 — 默认启动守护进程。
+    /// 开启后后台轮询定时任务,到期自动触发执行。
+    /// 关闭后定时任务不会自动执行(需手动触发)。
+    #[serde(default = "default_true")]
     pub scheduler_daemon: bool,
 
     /// 编辑器语法高亮（默认关闭）。
@@ -1700,11 +1701,14 @@ pub struct PerformanceFeatures {
     pub plugin_auto_start: bool,
 }
 
+fn default_true() -> bool { true }
+
 fn default_performance_features() -> PerformanceFeatures {
     PerformanceFeatures {
         file_watcher: false,
         lsp_index: false,
-        scheduler_daemon: false,
+        // 定时任务是核心功能,不是可选性能优化 — 默认启用守护进程
+        scheduler_daemon: true,
         syntax_highlighting: false,
         mermaid_diagrams: false,
         katex_math: false,
