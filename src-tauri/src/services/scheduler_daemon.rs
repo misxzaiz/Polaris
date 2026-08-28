@@ -73,8 +73,9 @@ pub struct TaskDueEvent {
 pub struct SchedulerDaemon {
     /// 是否正在运行
     running: Arc<AtomicBool>,
-    /// 停止信号
-    stop_signal: Option<tokio::sync::oneshot::Sender<()>>,
+    /// 停止信号。用 Mutex 包裹以便 `Arc` 共享后仍能发出停止请求——
+    /// Web standalone 模式同时持有本地关停句柄与 state 槽位，两处都需调用 stop。
+    stop_signal: Arc<std::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     /// 守护任务句柄。用于区分「已正常停止」与「任务 panic 退出」——
     /// 后者会把 `running` 永久留在 true，形成持有锁的僵尸状态。
     handle: Option<tokio::task::JoinHandle<()>>,
@@ -89,7 +90,7 @@ impl SchedulerDaemon {
     pub fn new(config_dir: PathBuf, workspace_path: Option<PathBuf>) -> Self {
         Self {
             running: Arc::new(AtomicBool::new(false)),
-            stop_signal: None,
+            stop_signal: Arc::new(std::sync::Mutex::new(None)),
             handle: None,
             workspace_path,
             config_dir,
@@ -116,7 +117,7 @@ impl SchedulerDaemon {
         let workspace_path = self.workspace_path.clone();
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        self.stop_signal = Some(stop_tx);
+        self.stop_signal.lock().ok().map(|mut g| *g = Some(stop_tx));
 
         tracing::info!("[SchedulerDaemon] 启动守护进程(桌面)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
@@ -155,7 +156,7 @@ impl SchedulerDaemon {
         let event_broadcast = executor_ctx.event_broadcast.clone();
 
         let (stop_tx, stop_rx) = tokio::sync::oneshot::channel();
-        self.stop_signal = Some(stop_tx);
+        self.stop_signal.lock().ok().map(|mut g| *g = Some(stop_tx));
 
         tracing::info!("[SchedulerDaemon] 启动守护进程 (web mode)，检查间隔: {}秒", CHECK_INTERVAL_SECS);
 
@@ -175,7 +176,9 @@ impl SchedulerDaemon {
     }
 
     /// 停止守护进程
-    pub fn stop(&mut self) -> Result<()> {
+    ///
+    /// `&self` 签名：state 槽位与本地句柄共享同一份 `Arc`，必须支持只读引用下发停止。
+    pub fn stop(&self) -> Result<()> {
         if !self.running.load(Ordering::SeqCst) {
             tracing::info!("[SchedulerDaemon] 守护进程未在运行");
             return Ok(());
@@ -183,7 +186,7 @@ impl SchedulerDaemon {
 
         tracing::info!("[SchedulerDaemon] 正在停止守护进程...");
 
-        if let Some(stop_tx) = self.stop_signal.take() {
+        if let Some(stop_tx) = self.stop_signal.lock().ok().and_then(|mut g| g.take()) {
             let _ = stop_tx.send(());
         }
 
@@ -206,6 +209,21 @@ impl SchedulerDaemon {
             Some(handle) => handle.is_finished(),
             None => false,
         }
+    }
+
+    /// 守护进程是否健康：标志位为运行中且任务尚未退出。
+    ///
+    /// 只有「锁被持有」不足以说明任务真的在轮询——任务可能已 panic 退出。
+    /// 状态查询与启动健康检查都应以本方法为准。
+    pub fn is_healthy(&self) -> bool {
+        self.running.load(Ordering::SeqCst) && !self.task_terminated()
+    }
+
+    /// 启动失败时的清理：重置运行标志并丢弃失效的任务句柄，
+    /// 使 `is_healthy()` 回到 false，调用方可安全重试。
+    pub fn reset_after_failure(&mut self) {
+        self.running.store(false, Ordering::SeqCst);
+        self.handle = None;
     }
 }
 

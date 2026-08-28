@@ -266,8 +266,9 @@ pub struct AppState {
     pub ask_listener: Arc<OnceLock<crate::services::ask_listener::AskListenerHandle>>,
     /// 待审批计划映射：planId -> PendingPlan
     pub pending_plans: Arc<Mutex<HashMap<String, PendingPlan>>>,
-    /// 调度器守护进程
-    pub scheduler_daemon: AsyncMutex<Option<SchedulerDaemon>>,
+    /// 调度器守护进程。用 Arc 包裹以便 Web standalone 模式同时持有本地
+    /// 关停句柄与 state 槽位，两者共享同一份运行态供健康探测读取。
+    pub scheduler_daemon: AsyncMutex<Option<Arc<SchedulerDaemon>>>,
     /// LSP 语言服务器管理器
     pub lsp_manager: Mutex<LspManager>,
     /// LSP 配置持久化

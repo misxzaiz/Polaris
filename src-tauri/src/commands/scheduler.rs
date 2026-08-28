@@ -290,19 +290,46 @@ pub struct SchedulerStatus {
     pub message: Option<String>,
 }
 
-/// 获取调度器完整状态（锁 + 运行状态）
+/// 守护进程健康探测：读取 AppState 中的守护进程引用，判断其是否真正在轮询。
+///
+/// 只看文件锁不足以判断——锁可能仍被持有但守护任务已 panic 退出（僵尸状态）。
+/// 桌面与 Web 路径统一通过本函数取得真实运行态。
+pub async fn daemon_healthy(state: &crate::state::AppState) -> bool {
+    let guard = state.scheduler_daemon.lock().await;
+    guard.as_ref().map(|d| d.is_healthy()).unwrap_or(false)
+}
+
+/// 获取调度器完整状态（锁 + 守护进程存活探测）
+///
+/// `app` 参数仅在 `tauri-app` 特性下注入（Tauri command 的 state 提取器）；
+/// Web standalone 构建直接调 Web 侧 `dispatch_scheduler_get_status`，不走本签名。
 #[cfg_attr(feature = "tauri-app", tauri::command)]
-pub fn scheduler_get_status() -> Result<SchedulerStatus> {
+pub async fn scheduler_get_status(
+    #[cfg(feature = "tauri-app")] app: AppHandle,
+) -> Result<SchedulerStatus> {
+    let healthy = {
+        #[cfg(feature = "tauri-app")]
+        {
+            let state = app.state::<crate::state::AppState>();
+            daemon_healthy(&state).await
+        }
+        #[cfg(not(feature = "tauri-app"))]
+        {
+            false
+        }
+    };
     let lock_status = crate::utils::get_lock_status();
     let pid = std::process::id();
 
     Ok(SchedulerStatus {
-        is_running: lock_status.is_holder,
+        is_running: healthy,
         is_holder: lock_status.is_holder,
         is_locked_by_other: lock_status.is_locked_by_other,
         pid,
-        message: if lock_status.is_holder {
+        message: if healthy {
             Some("调度器正在运行".to_string())
+        } else if lock_status.is_holder {
+            Some("守护进程未运行（锁已持有，守护任务未启动或已退出）".to_string())
         } else if lock_status.is_locked_by_other {
             Some("其他实例正在运行调度器".to_string())
         } else {
@@ -320,15 +347,21 @@ pub fn scheduler_get_status() -> Result<SchedulerStatus> {
 pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
     let pid = std::process::id();
 
-    // 检查是否已经在运行
+    // 检查是否已经在运行：锁被持有不代表守护任务还活着（任务可能已 panic 退出），
+    // 因此以 daemon_healthy() 为权威判断。不健康则释放孤儿锁并重新拉起。
     if crate::utils::is_holding_lock() {
-        return Ok(SchedulerStatus {
-            is_running: true,
-            is_holder: true,
-            is_locked_by_other: false,
-            pid,
-            message: Some("调度器已在运行".to_string()),
-        });
+        let state = app.state::<crate::AppState>();
+        if daemon_healthy(&state).await {
+            return Ok(SchedulerStatus {
+                is_running: true,
+                is_holder: true,
+                is_locked_by_other: false,
+                pid,
+                message: Some("调度器已在运行".to_string()),
+            });
+        }
+        tracing::warn!("[Scheduler] 检测到孤儿锁（锁被持有但守护任务未运行），释放后重新启动");
+        let _ = crate::utils::release_held_lock();
     }
 
     // 尝试获取锁
@@ -370,7 +403,7 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
             {
                 let state = app.state::<crate::AppState>();
                 let mut scheduler_daemon = state.scheduler_daemon.lock().await;
-                *scheduler_daemon = Some(daemon);
+                *scheduler_daemon = Some(std::sync::Arc::new(daemon));
             }
 
             Ok(SchedulerStatus {
@@ -459,11 +492,101 @@ pub async fn start_scheduler_if_needed(app: &AppHandle) -> Result<bool> {
     {
         let state = app.state::<AppState>();
         let mut scheduler_daemon = state.scheduler_daemon.lock().await;
-        *scheduler_daemon = Some(daemon);
+        *scheduler_daemon = Some(std::sync::Arc::new(daemon));
     }
 
     tracing::info!("[Startup] 调度器守护进程已自动启动（检测到活跃任务）");
     Ok(true)
+}
+
+/// 守护进程健康监控周期（秒）
+pub const DAEMON_HEALTH_CHECK_SECS: u64 = 60;
+
+/// 启动守护进程健康监控：周期性探测「锁被本进程持有但守护任务已退出」的僵尸状态，
+/// 自动释放孤儿锁并重新拉起守护进程。
+///
+/// 触发条件严格限定为**僵尸态**：`scheduler_daemon` 槽位有值 + `is_healthy()==false`
+/// + 本进程持有锁。用户手动 `scheduler_stop` 会先把槽位置 None 再释放锁，因此不会
+/// 误触发自动重启；其他实例持有锁时也绝不抢占。
+#[cfg(feature = "tauri-app")]
+pub fn spawn_scheduler_health_monitor(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        use crate::services::scheduler_daemon::SchedulerDaemon;
+        use crate::state::AppState;
+
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(DAEMON_HEALTH_CHECK_SECS)).await;
+
+            let state = app.state::<AppState>();
+
+            // 性能开关关闭时不做任何干预
+            let perf_enabled = {
+                let store = state.config_store.lock().ok();
+                store.map(|s| s.get().performance.scheduler_daemon).unwrap_or(false)
+            };
+            if !perf_enabled {
+                continue;
+            }
+
+            // 只处理「槽位有守护进程但已不健康」的僵尸态；槽位为空说明是正常停止或未启动
+            let zombie = {
+                let guard = state.scheduler_daemon.lock().await;
+                guard.as_ref().map(|d| !d.is_healthy()).unwrap_or(false)
+            };
+            if !zombie || !crate::utils::is_holding_lock() {
+                continue;
+            }
+
+            tracing::warn!(
+                "[SchedulerHealth] 检测到僵尸守护进程（槽位存在但不健康且锁被持有），清理后重新拉起"
+            );
+
+            // 1. 丢弃失效的守护进程实例（stop 幂等，任务已退出时为空操作）
+            {
+                let mut guard = state.scheduler_daemon.lock().await;
+                if let Some(mut dead) = guard.take() {
+                    dead.stop().ok();
+                }
+            }
+
+            // 2. 释放孤儿锁（daemon 循环退出时未走到释放路径）
+            let _ = crate::utils::release_held_lock();
+
+            // 3. 重新拉起
+            let config_dir = match get_config_dir(&app) {
+                Ok(d) => d,
+                Err(e) => {
+                    tracing::error!("[SchedulerHealth] 重新拉起失败（配置目录）: {}", e);
+                    continue;
+                }
+            };
+            let has_active_task = UnifiedSchedulerRepository::new(config_dir.clone(), None)
+                .list_tasks()
+                .map(|tasks| tasks.iter().any(|t| t.enabled))
+                .unwrap_or(false);
+            if !has_active_task {
+                tracing::info!("[SchedulerHealth] 无启用的定时任务，跳过重新拉起");
+                continue;
+            }
+            if !crate::utils::acquire_and_hold_lock().unwrap_or(false) {
+                tracing::info!("[SchedulerHealth] 其他实例持有锁，跳过重新拉起");
+                continue;
+            }
+
+            let mut daemon = SchedulerDaemon::new(config_dir, None);
+            if let Err(e) = daemon.start(app.clone()) {
+                tracing::error!("[SchedulerHealth] 重新拉起失败: {}", e);
+                daemon.reset_after_failure();
+                let _ = crate::utils::release_held_lock();
+                continue;
+            }
+            {
+                let mut guard = state.scheduler_daemon.lock().await;
+                *guard = Some(std::sync::Arc::new(daemon));
+            }
+            tracing::info!("[SchedulerHealth] 守护进程已重新拉起");
+        }
+    });
 }
 
 /// 停止调度器

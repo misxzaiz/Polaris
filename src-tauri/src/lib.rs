@@ -727,6 +727,8 @@ pub fn run() {
                         Err(e) => tracing::warn!("[Startup] 调度器自动启动失败: {}", e),
                     }
                 });
+                // 健康监控：周期性探测「锁被持有但守护任务已退出」的僵尸态并自动拉起
+                commands::scheduler::spawn_scheduler_health_monitor(app.handle().clone());
             }
 
             Ok(())
@@ -1244,6 +1246,71 @@ pub fn run() {
 /// Token 默认不检查（WebConfig.token = None），可通过 Web UI Settings 页面配置。
 ///
 /// 参数优先级: cli_* > 环境变量 > 配置文件
+///
+/// Web standalone 模式的守护进程健康监控（无 AppHandle 版本）。
+///
+/// 与 `commands::scheduler::spawn_scheduler_health_monitor` 同构，但重建守护进程时
+/// 走 `start_with_ctx`（WS broadcast 通道），而非桌面端的 Tauri emit 通道。
+async fn web_scheduler_health_monitor(
+    state: Arc<AppState>,
+    executor_registry: crate::services::executor::ExecutorRegistry,
+    executor_ctx: crate::services::executor::ExecutorContext,
+    config_dir: std::path::PathBuf,
+) {
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(
+            commands::scheduler::DAEMON_HEALTH_CHECK_SECS,
+        ))
+        .await;
+
+        // 性能开关关闭时不做任何干预
+        if !state.config_store.lock().ok().map(|s| s.get().performance.scheduler_daemon).unwrap_or(false) {
+            continue;
+        }
+
+        // 只处理「槽位有守护进程但已不健康」的僵尸态；槽位为空说明是正常停止
+        let zombie = {
+            let guard = state.scheduler_daemon.lock().await;
+            guard.as_ref().map(|d| !d.is_healthy()).unwrap_or(false)
+        };
+        if !zombie {
+            continue;
+        }
+
+        tracing::warn!("[SchedulerHealth] Web 模式检测到僵尸守护进程，清理后重新拉起");
+        {
+            let mut guard = state.scheduler_daemon.lock().await;
+            if let Some(dead) = guard.take() {
+                dead.stop().ok();
+            }
+        }
+
+        let has_active_task = services::unified_scheduler_repository::UnifiedSchedulerRepository::new(
+            config_dir.clone(),
+            None,
+        )
+        .list_tasks()
+        .map(|tasks| tasks.iter().any(|t| t.enabled))
+        .unwrap_or(false);
+        if !has_active_task {
+            tracing::info!("[SchedulerHealth] Web 模式无启用的定时任务，跳过重新拉起");
+            continue;
+        }
+
+        let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(config_dir.clone(), None);
+        match daemon.start_with_ctx(executor_registry.clone(), executor_ctx.clone()) {
+            Ok(()) => {
+                *state.scheduler_daemon.lock().await = Some(Arc::new(daemon));
+                tracing::info!("[SchedulerHealth] Web 模式守护进程已重新拉起");
+            }
+            Err(e) => {
+                tracing::error!("[SchedulerHealth] Web 模式重新拉起失败: {}", e);
+                daemon.reset_after_failure();
+            }
+        }
+    }
+}
+
 pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token: Option<String>) {
     // 初始化配置存储
     let mut config_store = ConfigStore::new()
@@ -1337,6 +1404,27 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
             tracing::warn!("[Polaris-Web] 调度器守护进程启动失败: {}", e);
         } else {
             tracing::info!("[Polaris-Web] 调度器守护进程已启动");
+            // 存入 state：scheduler_get_status 的健康探测依赖该槽位，
+            // 否则 Web 模式下状态会误报「未运行」。调度器自身无法 Clone
+            // （JoinHandle 不实现 Clone），故只把已启动的那一份包进 Arc。
+            *state.scheduler_daemon.lock().await =
+                Some(std::sync::Arc::new(scheduler_daemon));
+
+            // 健康监控：与桌面端同构，探测「守护任务已退出」的僵尸态并自动拉起
+            let health_state = state.clone();
+            let health_registry = health_state.executor_registry.clone();
+            let health_ctx = services::executor::ExecutorContext::from_app_state(&health_state);
+            let health_config_dir = health_state
+                .app_config_dir
+                .get()
+                .cloned()
+                .unwrap_or_else(|| crate::services::data_root::data_root().config_dir());
+            tokio::spawn(web_scheduler_health_monitor(
+                health_state,
+                health_registry,
+                health_ctx,
+                health_config_dir,
+            ));
         }
 
         let handle = web_server
@@ -1346,7 +1434,13 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
         // 等待 Ctrl+C 信号以优雅关停
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");
-        scheduler_daemon.stop().ok();
+        // 守护进程已移入 state 槽位，通过槽位引用下发停止
+        {
+            let guard = state.scheduler_daemon.lock().await;
+            if let Some(daemon) = guard.as_ref() {
+                daemon.stop().ok();
+            }
+        }
         handle.shutdown.cancel();
         let _ = handle.task.await;
     });

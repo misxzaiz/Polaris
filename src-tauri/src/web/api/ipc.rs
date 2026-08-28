@@ -199,11 +199,11 @@ pub async fn handle_ipc_bridge(
         "scheduler_validate_trigger" => dispatch_scheduler_validate_trigger(&args),
         "scheduler_parse_interval" => dispatch_scheduler_parse_interval(&args),
 
-        // ── Scheduler: Lock & Status (no repo needed) ──────────────────────
+        // ── Scheduler: Lock & Status ───────────────────────────────────────
         "scheduler_get_lock_status" => dispatch_scheduler_lock_status(),
         "scheduler_acquire_lock" => dispatch_scheduler_acquire_lock(),
         "scheduler_release_lock" => dispatch_scheduler_release_lock(),
-        "scheduler_get_status" => dispatch_scheduler_get_status(),
+        "scheduler_get_status" => dispatch_scheduler_get_status(&state).await,
 
         // ── Scheduler: Templates ───────────────────────────────────────────
         "scheduler_list_templates" => dispatch_scheduler_list_templates(&state, &args),
@@ -861,16 +861,26 @@ fn dispatch_scheduler_release_lock() -> Result<Json<Value>, WebError> {
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-fn dispatch_scheduler_get_status() -> Result<Json<Value>, WebError> {
+async fn dispatch_scheduler_get_status(state: &AppState) -> Result<Json<Value>, WebError> {
     use crate::commands::scheduler::SchedulerStatus;
     let lock_status = crate::utils::get_lock_status();
+    // 与桌面端同源：锁只代表「本进程持有」，守护任务可能已 panic 退出。
+    let healthy = crate::commands::scheduler::daemon_healthy(state).await;
     let pid = std::process::id();
     let status = SchedulerStatus {
-        is_running: lock_status.is_holder,
+        is_running: healthy,
         is_holder: lock_status.is_holder,
         is_locked_by_other: lock_status.is_locked_by_other,
         pid,
-        message: None,
+        message: if healthy {
+            Some("调度器正在运行".to_string())
+        } else if lock_status.is_holder {
+            Some("守护进程未运行（锁已持有，守护任务未启动或已退出）".to_string())
+        } else if lock_status.is_locked_by_other {
+            Some("其他实例正在运行调度器".to_string())
+        } else {
+            Some("调度器未运行".to_string())
+        },
     };
     Ok(Json(serde_json::to_value(status).unwrap()))
 }
@@ -2093,13 +2103,31 @@ async fn dispatch_scheduler_start(state: Arc<AppState>) -> Result<Json<Value>, W
     use crate::commands::scheduler::SchedulerStatus;
     let pid = std::process::id();
 
+    // 与桌面端同源的启动前判断：锁被持有不代表守护任务还活着。
+    // 不健康时释放孤儿锁并继续重新启动。
     if crate::utils::is_holding_lock() {
+        let healthy = crate::commands::scheduler::daemon_healthy(&state).await;
+        if healthy {
+            return Ok(Json(serde_json::to_value(SchedulerStatus {
+                is_running: true,
+                is_holder: true,
+                is_locked_by_other: false,
+                pid,
+                message: Some("调度器已在运行".to_string()),
+            }).unwrap()));
+        }
+        tracing::warn!("[Scheduler] Web 启动检测到孤儿锁，释放后重新启动");
+        let _ = crate::utils::release_held_lock();
+    }
+
+    // 性能开关：与桌面端一致，避免 Web 侧绕过 schedulerDaemon 门控
+    if !state.config_store.lock().ok().map(|s| s.get().performance.scheduler_daemon).unwrap_or(false) {
         return Ok(Json(serde_json::to_value(SchedulerStatus {
-            is_running: true,
-            is_holder: true,
+            is_running: false,
+            is_holder: false,
             is_locked_by_other: false,
             pid,
-            message: Some("调度器已在运行".to_string()),
+            message: Some("调度器守护进程已禁用，请在设置中启用".to_string()),
         }).unwrap()));
     }
 
@@ -2117,7 +2145,7 @@ async fn dispatch_scheduler_start(state: Arc<AppState>) -> Result<Json<Value>, W
                 .map_err(|e| WebError::Internal(format!("启动调度器失败: {}", e)))?;
 
             let mut scheduler_daemon = state.scheduler_daemon.lock().await;
-            *scheduler_daemon = Some(daemon);
+            *scheduler_daemon = Some(std::sync::Arc::new(daemon));
 
             Ok(Json(serde_json::to_value(SchedulerStatus {
                 is_running: true,
