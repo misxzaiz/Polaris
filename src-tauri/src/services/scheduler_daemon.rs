@@ -24,7 +24,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::time::sleep;
 
 use crate::error::Result;
-use crate::models::scheduler::{ScheduledTask, TriggerType};
+use crate::models::scheduler::{ScheduledTask, TaskStatus, TriggerType};
 use crate::services::executor::{ExecutorContext, ExecutorParams, ExecutorRegistry};
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
@@ -252,6 +252,14 @@ async fn check_and_execute_due_tasks(
             continue;
         }
 
+        // 正在执行中的任务跳过(防止重复触发)。
+        // AfterCompletion 触发后设 last_run_status=Running,等前端 session_end 回调
+        // updateRunStatus(Success/Failed) 后才解除。存储层 update_task 对
+        // next_run_at=None 会重算(now+interval),故不能靠 next_run_at=None 防重复。
+        if task.last_run_status == Some(TaskStatus::Running) {
+            continue;
+        }
+
         if let Some(next_run_at) = task.next_run_at {
             if next_run_at <= now {
                 tracing::info!(
@@ -392,31 +400,28 @@ fn build_executor_params(task: &ScheduledTask) -> ExecutorParams {
 
 /// 更新任务的下次执行时间（非终态，仅用于 chat 类型发事件后）
 ///
-/// AfterCompletion → next_run_at = None（Running 锁，防执行期间重复触发，
-/// 等前端 updateRunStatus 在任务完成时重算）
-/// 其他类型 → next_run_at = now + interval
+/// 设 last_run_status=Running 防止 daemon 重复触发(存储层对 next_run_at=None
+/// 会重算为 now+interval,不能靠 None 防重复,故用 Running 标志)。
+/// next_run_at 交给存储层重算(Interval→now+interval;AfterCompletion 在
+/// 前端 updateRunStatus 完成时重算)。终态由前端 updateRunStatus 驱动。
 fn update_next_run_time(
     repository: &UnifiedSchedulerRepository,
     task: &ScheduledTask,
 ) -> Result<()> {
     let now = chrono::Utc::now().timestamp();
 
-    let next_run_at = if task.trigger_type == TriggerType::AfterCompletion {
-        None
-    } else {
-        task.trigger_type.calculate_next_run(&task.trigger_value, now)
-    };
-
     repository.update_task(&task.id, TaskUpdateParams {
-        next_run_at,
         last_run_at: Some(now),
+        last_run_status: Some(TaskStatus::Running),
+        // next_run_at 不设(传 None),存储层重算:
+        // AfterCompletion → now+interval(但被 Running 标志跳过,等完成后再算);
+        // Interval → now+interval
         ..Default::default()
     })?;
 
     tracing::info!(
-        "[SchedulerDaemon] 更新任务下次执行时间: {} -> {:?}",
-        task.name,
-        next_run_at
+        "[SchedulerDaemon] 更新任务状态为 Running(发事件后): {} (ID: {})",
+        task.name, task.id
     );
 
     Ok(())
@@ -429,8 +434,6 @@ fn update_task_status(
     success: bool,
     trigger_at: i64,
 ) -> Result<()> {
-    use crate::models::scheduler::TaskStatus;
-
     let status = if success {
         TaskStatus::Success
     } else {
