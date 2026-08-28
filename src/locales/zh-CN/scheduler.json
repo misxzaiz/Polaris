@@ -73,7 +73,10 @@
     "mode": "模式",
     "category": "分类",
     "viewProtocol": "协议文档",
-    "viewProtocolHint": "查看协议文档"
+    "viewProtocolHint": "查看协议文档",
+    "afterCompletion": "完成后 {{value}}",
+    "afterCompletionPending": "运行中 · 完成后 {{value}}",
+    "afterCompletionHint": "该任务在上一轮执行结束后再计时，运行期间不显示具体时间点"
   },
 
   "filter": {

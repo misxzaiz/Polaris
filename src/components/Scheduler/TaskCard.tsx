@@ -68,17 +68,42 @@ export function TaskCard({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   const isEnabled = task.enabled;
+  const isAfterCompletion = task.triggerType === 'after_completion';
   const triggerDisplay =
-    task.triggerType === 'interval' || task.triggerType === 'after_completion'
+    task.triggerType === 'interval' || isAfterCompletion
       ? `${t(`triggerTypes.${task.triggerType}`)} ${task.triggerValue}`
       : task.triggerType === 'cron'
         ? `Cron ${task.triggerValue.slice(0, 8)}`
         : t('triggerTypes.once');
 
+  // 下次执行提示：after_completion 的 nextRunAt 在运行期间无意义
+  // （完成时刻未知，存储层保持 None），故该类型改显示「完成后 X」。
+  const nextRunNode = (() => {
+    if (!task.enabled) return null;
+    if (isAfterCompletion) {
+      const isPending = isRunning || task.lastRunStatus === 'running';
+      return (
+        <span
+          className={isPending ? 'text-info' : ''}
+          title={t('card.afterCompletionHint')}
+        >
+          {isPending ? t('card.afterCompletionPending', { value: task.triggerValue }) : t('card.afterCompletion', { value: task.triggerValue })}
+        </span>
+      );
+    }
+    return task.nextRunAt ? (
+      <span>{formatRelativeTime(task.nextRunAt)}</span>
+    ) : null;
+  })();
+
   return (
     <div
-      className={`relative bg-background-surface rounded-lg border border-border-subtle transition-colors ${
-        isEnabled ? 'hover:border-primary/30' : 'opacity-60'
+      className={`relative bg-background-surface rounded-lg border transition-colors ${
+        isRunning
+          ? 'border-info/40 ring-1 ring-info/20'
+          : isEnabled
+            ? 'border-border-subtle hover:border-primary/30'
+            : 'border-border-subtle opacity-60'
       } ${showMoreMenu ? 'z-30' : ''}`}
       onMouseEnter={() => setShowActions(true)}
       onMouseLeave={() => {
@@ -90,18 +115,22 @@ export function TaskCard({
     >
       {/* 主内容行 - h-12 (48px) */}
       <div className="h-12 px-3 flex items-center justify-between">
-        {/* 左侧：状态 + 名称 */}
+        {/* 左侧：状态 + 名称 + 执行中徽标 */}
         <div className="flex items-center gap-2 min-w-0 flex-1">
           <StatusIcon status={task.lastRunStatus} isRunning={isRunning} />
           <span className="text-sm font-medium text-text-primary truncate">{task.name}</span>
+          {isRunning && (
+            <span className="inline-flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium text-info bg-info/10">
+              <span className="w-1 h-1 rounded-full bg-info animate-pulse" />
+              {t('card.running')}
+            </span>
+          )}
         </div>
 
         {/* 右侧：触发方式 + 下次执行（hover 时隐藏给操作按钮留空间） */}
         <div className={`flex items-center gap-3 text-xs text-text-muted shrink-0 ml-2 transition-opacity ${showActions ? 'opacity-0' : ''}`}>
           <span className="max-w-20 truncate">{triggerDisplay}</span>
-          {task.enabled && task.nextRunAt && (
-            <span>{formatRelativeTime(task.nextRunAt)}</span>
-          )}
+          {nextRunNode}
           {!task.enabled && (
             <span className="text-text-muted">{t('card.disabled')}</span>
           )}

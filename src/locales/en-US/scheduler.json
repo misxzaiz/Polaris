@@ -73,7 +73,10 @@
     "mode": "Mode",
     "category": "Category",
     "viewProtocol": "Protocol",
-    "viewProtocolHint": "View protocol documents"
+    "viewProtocolHint": "View protocol documents",
+    "afterCompletion": "In {{value}} after run",
+    "afterCompletionPending": "Running · {{value}} after",
+    "afterCompletionHint": "This task counts down only after the previous run finishes, so no timestamp is shown while it is running"
   },
 
   "filter": {
