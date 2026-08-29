@@ -9,7 +9,7 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
-import type { PluginCardBlock, ChatMessage } from '@/types'
+import type { PluginCardBlock, ChatMessage, TaskBoardItem } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -20,6 +20,45 @@ import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
+
+/** 判定是否为 Task 家族工具（TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop） */
+function isTaskFamilyTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n === 'taskcreate' || n === 'taskupdate' || n === 'tasklist'
+    || n === 'taskget' || n === 'taskoutput' || n === 'taskstop'
+}
+
+/** 从 TaskCreate 输入解析任务项 */
+function parseTaskCreateItem(args: Record<string, unknown>): TaskBoardItem | null {
+  const subject = args.subject as string | undefined
+  if (!subject) return null
+  return {
+    id: (args.taskId as string) || generateUUID(),
+    subject,
+    activeForm: args.activeForm as string | undefined,
+    status: 'pending',
+    description: args.description as string | undefined,
+  }
+}
+
+/** 从 TaskList 输出解析任务项快照 */
+function parseTaskListOutput(output: string): TaskBoardItem[] | null {
+  try {
+    const parsed = JSON.parse(output)
+    const arr = Array.isArray(parsed) ? parsed : parsed?.tasks || parsed?.items
+    if (!Array.isArray(arr)) return null
+    return arr.map((t: Record<string, unknown>) => ({
+      id: String(t.id ?? t.taskId ?? generateUUID()),
+      subject: String(t.subject ?? t.content ?? ''),
+      activeForm: t.activeForm as string | undefined,
+      status: (t.status as TaskBoardItem['status']) || 'pending',
+      blockedBy: Array.isArray(t.blockedBy) ? (t.blockedBy as string[]) : undefined,
+      description: t.description as string | undefined,
+    })).filter(i => i.subject)
+  } catch {
+    return null
+  }
+}
 
 /** 会话实际模型集合去重合并（保序）。中转站动态路由时逐轮可能不同（如 glm-5.2 → deepseek-v4-flash） */
 function mergeActualModels(
@@ -158,6 +197,28 @@ export function handleAIEvent(
     case 'tool_call_start': {
       const toolName = event.tool
       const callId = event.callId || generateUUID()
+      // Task 家族工具 → 路由到任务板（不创建普通 tool_call block）
+      if (isTaskFamilyTool(toolName) && event.args) {
+        const boardId = state.ensureTaskBoard(callId)
+        const lower = toolName.toLowerCase()
+        if (lower === 'taskcreate') {
+          const item = parseTaskCreateItem(event.args)
+          if (item) state.upsertTaskBoardItem(boardId, item)
+        } else if (lower === 'taskupdate') {
+          // TaskUpdate: 从 args 提取 taskId + status，幂等 patch
+          const taskId = (event.args.taskId || event.args.task_id) as string | undefined
+          const status = event.args.status as TaskBoardItem['status'] | undefined
+          if (taskId) {
+            state.patchTaskBoardItem(boardId, String(taskId), {
+              ...(status ? { status } : {}),
+              ...(event.args.subject ? { subject: String(event.args.subject) } : {}),
+              ...(event.args.activeForm ? { activeForm: String(event.args.activeForm) } : {}),
+            })
+          }
+        }
+        // TaskList 在 tool_call_end 用 output 快照校准
+        break
+      }
       state.appendToolCallBlock(callId, toolName, event.args)
       break
     }
@@ -169,6 +230,18 @@ export function handleAIEvent(
       const output = typeof event.result === 'string'
         ? event.result
         : (event.result ? JSON.stringify(event.result, null, 2) : undefined)
+
+      // Task 家族工具 → 更新任务板（不创建普通 tool_call block）
+      // TaskList: 用 output 快照校准看板;TaskGet/Output/Stop 仅标记完成(板已存在)
+      if (isTaskFamilyTool(event.tool)) {
+        const { activeTaskBoardId } = get()
+        if (activeTaskBoardId && output && event.tool.toLowerCase() === 'tasklist') {
+          const snapshot = parseTaskListOutput(output)
+          if (snapshot) state.syncTaskBoardFromList(activeTaskBoardId, snapshot)
+        }
+        break
+      }
+
       state.updateToolCallBlock(
         callId,
         event.success ? 'completed' : 'failed',
@@ -527,6 +600,15 @@ export function handleAIEvent(
     case 'task_completed':
     case 'task_canceled':
       break
+
+    case 'tool_call_update': {
+      // 流式工具中间输出（如 Bash 长命令逐行返回）
+      const callId = event.callId || ''
+      if (callId) {
+        state.updateToolCallBlock(callId, 'running', event.output)
+      }
+      break
+    }
 
     // Todo 事件 - 由 TodoStore 处理，不在 ConversationStore 范围内
     case 'todo_created':

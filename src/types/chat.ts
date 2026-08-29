@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | TaskBoardBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -394,6 +394,50 @@ export interface AgentRunBlock {
 }
 
 /** ========================================
+ * TaskBoard 相关类型
+ * ======================================== */
+
+/** 任务板单项状态（扩展 TodoWrite，增加 blocked/stopped） */
+export type TaskItemStatus = 'pending' | 'in_progress' | 'completed' | 'blocked' | 'stopped';
+
+/** 任务板单项 */
+export interface TaskBoardItem {
+  /** 任务 ID（taskId） */
+  id: string;
+  /** 任务标题 */
+  subject: string;
+  /** 进行中描述（比 subject 更适合做进行中展示） */
+  activeForm?: string;
+  /** 状态 */
+  status: TaskItemStatus;
+  /** 依赖的任务 ID 列表 */
+  blockedBy?: string[];
+  /** 该行被 TaskUpdate 触过的次数 */
+  updateCount?: number;
+  /** 任务详情描述 */
+  description?: string;
+}
+
+/** 任务板内容块 - TaskCreate/Update/List 聚合展示（run 级单板，幂等合并） */
+export interface TaskBoardBlock {
+  type: 'task_board';
+  /** 板 ID（run 级唯一，首个 Task 工具 callId） */
+  id: string;
+  /** 任务列表 */
+  items: TaskBoardItem[];
+  /** 已完成数 */
+  completed: number;
+  /** 进行中数 */
+  inProgress: number;
+  /** 阻塞数 */
+  blocked: number;
+  /** 总数 */
+  total: number;
+  /** 更新时间戳 */
+  updatedAt: string;
+}
+
+/** ========================================
  * ToolGroup 相关类型
  * ======================================== */
 
@@ -666,6 +710,11 @@ export function isPlanModeBlock(block: ContentBlock): block is PlanModeBlock {
 /** 类型守卫：判断是否为 Agent 运行块 */
 export function isAgentRunBlock(block: ContentBlock): block is AgentRunBlock {
   return block.type === 'agent_run';
+}
+
+/** 类型守卫：判断是否为任务板块 */
+export function isTaskBoardBlock(block: ContentBlock): block is TaskBoardBlock {
+  return block.type === 'task_board';
 }
 
 /** 类型守卫：判断是否为工具组块 */

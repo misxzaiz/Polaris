@@ -10,7 +10,7 @@ import { subscribeWithSelector } from 'zustand/middleware'
 import { invoke } from '@/services/tauri'
 import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
-import type { ContentBlock, EngineId, ChatMessage } from '@/types'
+import type { ContentBlock, EngineId, ChatMessage, TaskBoardBlock, TaskBoardItem } from '@/types'
 import { handleAIEvent } from './eventHandler'
 import { sessionStoreManager } from './sessionStoreManager'
 import { parseWorkspaceReferences } from '@/services/workspaceReference'
@@ -91,6 +91,24 @@ function isDispatchReportInjectionEnabled(): boolean {
 export type ConversationStoreInstance = UseBoundStore<StoreApi<ConversationStore>>
 
 /**
+ * 重算任务板统计（completed/inProgress/blocked/total），返回新 block（不可变）
+ */
+function recomputeTaskBoard(block: TaskBoardBlock, items: TaskBoardItem[]): TaskBoardBlock {
+  const completed = items.filter(i => i.status === 'completed').length
+  const inProgress = items.filter(i => i.status === 'in_progress').length
+  const blocked = items.filter(i => i.status === 'blocked').length
+  return {
+    ...block,
+    items,
+    completed,
+    inProgress,
+    blocked,
+    total: items.length,
+    updatedAt: new Date().toISOString(),
+  }
+}
+
+/**
  * 初始状态工厂
  */
 function createInitialState(sessionId: string): ConversationState {
@@ -107,6 +125,9 @@ function createInitialState(sessionId: string): ConversationState {
     activePlanId: null,
     agentRunBlockMap: new Map(),
     activeTaskId: null,
+    // TaskBoard: boardId → blocks 索引，run 级单板
+    taskBoardBlockMap: new Map(),
+    activeTaskBoardId: null,
     toolGroupBlockMap: new Map(),
     pendingToolGroup: null,
     permissionRequestBlockMap: new Map(),
@@ -256,6 +277,8 @@ export function createConversationStore(
           activePlanId: null,
           agentRunBlockMap: new Map(),
           activeTaskId: null,
+          taskBoardBlockMap: new Map(),
+          activeTaskBoardId: null,
           toolGroupBlockMap: new Map(),
           pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
@@ -1152,6 +1175,126 @@ export function createConversationStore(
 
       setActiveTask: (taskId) => set({ activeTaskId: taskId }),
 
+      // ===== TaskBoard（TaskCreate/Update/List 聚合，run 级单板幂等合并） =====
+      ensureTaskBoard: (callId) => {
+        const { currentMessage, taskBoardBlockMap, activeTaskBoardId, streamingUpdateCounter } = get()
+        // 已有活动板则复用
+        if (activeTaskBoardId && taskBoardBlockMap.has(activeTaskBoardId)) {
+          return activeTaskBoardId
+        }
+        const boardId = callId
+        const block: TaskBoardBlock = {
+          type: 'task_board',
+          id: boardId,
+          items: [],
+          completed: 0,
+          inProgress: 0,
+          blocked: 0,
+          total: 0,
+          updatedAt: new Date().toISOString(),
+        }
+        const newMap = new Map(taskBoardBlockMap)
+        if (!currentMessage) {
+          newMap.set(boardId, 0)
+          set({
+            currentMessage: createCurrentAssistantMessage([block]),
+            taskBoardBlockMap: newMap,
+            activeTaskBoardId: boardId,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        } else {
+          const blocks = [...currentMessage.blocks, block]
+          newMap.set(boardId, blocks.length - 1)
+          set({
+            currentMessage: { ...currentMessage, blocks },
+            taskBoardBlockMap: newMap,
+            activeTaskBoardId: boardId,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        }
+        return boardId
+      },
+
+      upsertTaskBoardItem: (boardId, item) => {
+        const { currentMessage, taskBoardBlockMap } = get()
+        if (!currentMessage) return
+        const idx = taskBoardBlockMap.get(boardId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        const block = blocks[idx]
+        if (block?.type !== 'task_board') return
+        const items = [...block.items]
+        const existingIdx = items.findIndex(it => it.id === item.id)
+        if (existingIdx >= 0) {
+          // 幂等合并：保留已有 updateCount/description，patch 新字段
+          const prev = items[existingIdx]
+          items[existingIdx] = {
+            ...prev,
+            ...item,
+            updateCount: (prev.updateCount ?? 0) + 1,
+            description: item.description ?? prev.description,
+          }
+        } else {
+          items.push({ ...item, updateCount: 0 })
+        }
+        blocks[idx] = recomputeTaskBoard(block, items)
+        set({ currentMessage: { ...currentMessage, blocks } })
+      },
+
+      patchTaskBoardItem: (boardId, taskId, patch) => {
+        const { currentMessage, taskBoardBlockMap } = get()
+        if (!currentMessage) return
+        const idx = taskBoardBlockMap.get(boardId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        const block = blocks[idx]
+        if (block?.type !== 'task_board') return
+        const items = [...block.items]
+        const existingIdx = items.findIndex(it => it.id === taskId)
+        if (existingIdx >= 0) {
+          const prev = items[existingIdx]
+          items[existingIdx] = {
+            ...prev,
+            ...patch,
+            updateCount: (prev.updateCount ?? 0) + 1,
+          }
+        } else {
+          // 未知 id：降级新建为 pending（PRD 验收 E1）
+          items.push({
+            id: taskId,
+            subject: patch.subject ?? patch.activeForm ?? taskId,
+            status: patch.status ?? 'pending',
+            ...patch,
+            updateCount: 0,
+          })
+        }
+        blocks[idx] = recomputeTaskBoard(block, items)
+        set({ currentMessage: { ...currentMessage, blocks } })
+      },
+
+      syncTaskBoardFromList: (boardId, snapshotItems) => {
+        const { currentMessage, taskBoardBlockMap } = get()
+        if (!currentMessage) return
+        const idx = taskBoardBlockMap.get(boardId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        const block = blocks[idx]
+        if (block?.type !== 'task_board') return
+        // 校准：不覆盖已有更精确状态（in_progress/completed 优先于快照）
+        const items = [...block.items]
+        for (const snap of snapshotItems) {
+          const existingIdx = items.findIndex(it => it.id === snap.id)
+          if (existingIdx >= 0) {
+            // 仅在快照状态更靠后时才更新
+            items[existingIdx] = { ...items[existingIdx], ...snap }
+          } else {
+            items.push({ ...snap, updateCount: 0 })
+          }
+        }
+        blocks[idx] = recomputeTaskBoard(block, items)
+        set({ currentMessage: { ...currentMessage, blocks } })
+      },
+
       // ===== ToolGroup =====
       appendToolGroupBlock: (groupId, tools, summary) => {
         const { currentMessage, toolGroupBlockMap, streamingUpdateCounter } = get()
@@ -1544,6 +1687,8 @@ export function createConversationStore(
           error: null,
           currentMessage: null,
           toolBlockMap: new Map(),
+          taskBoardBlockMap: new Map(),
+          activeTaskBoardId: null,
         })
 
         try {

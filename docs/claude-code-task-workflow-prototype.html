@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Claude Code Task / Agent / Workflow 适配 — 交互原型</title>
+<style>
+  :root{
+    --bg:#000; --surface:#25252B; --hover:#2D2D35;
+    --text:#F8F8F8; --text2:#B4B4B8; --muted:#6D6D70;
+    --line:#2A2A30; --line2:#3A3A42;
+    --blue:#60A5FA; --blue2:#3B82F6;
+    --green:#34D399; --violet:#8B5CF6; --red:#EF4444; --amber:#F59E0B;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.6}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ── 布局 ── */
+  .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:12px;padding:10px 20px;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .topbar h1{font-size:15px;font-weight:600}
+  .topbar .sub{font-size:12px;color:var(--muted)}
+  .steps{display:flex;gap:4px;margin-left:auto;padding:3px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+  .step-btn{border:none;background:transparent;color:var(--text2);font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer}
+  .step-btn.active{background:var(--blue2);color:#fff;font-weight:500}
+  .step-btn:hover:not(.active){background:var(--hover)}
+  .top-right a{font-size:12px;color:var(--muted)} .top-right a:hover{color:var(--blue)}
+
+  .layout{display:grid;grid-template-columns:260px 1fr;gap:0;min-height:calc(100vh - 51px)}
+  .sidebar{border-right:1px solid var(--line);padding:18px 12px;background:var(--surface)}
+  .sidebar h3{font-size:11px;letter-spacing:.08em;color:var(--muted);margin:14px 8px 6px;text-transform:uppercase}
+  .anchors{display:flex;flex-direction:column;gap:2px}
+  .anchor{display:block;padding:6px 10px;border-radius:6px;font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;text-align:left}
+  .anchor:hover{background:var(--hover);color:var(--text)}
+  .anchor.active{background:var(--blue2);color:#fff}
+  .main{padding:26px 30px 80px;max-width:980px;width:100%}
+
+  .kicker{font-size:12px;color:var(--blue);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+  h2{font-size:22px;font-weight:650;margin-bottom:6px}
+  .lead{color:var(--text2);font-size:14px;margin-bottom:18px}
+  .meta-tags{display:flex;gap:6px;margin-bottom:26px;flex-wrap:wrap}
+  .tag{font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line2);color:var(--text2)}
+  .tag.hot{border-color:var(--amber);color:var(--amber)}
+  .tag.new{border-color:var(--green);color:var(--green)}
+  .tag.warn{border-color:var(--red);color:var(--red)}
+  .tag.blue{border-color:var(--blue);color:var(--blue)}
+
+  .section{margin:34px 0 12px}
+  .section .label{font-size:11px;color:var(--muted);letter-spacing:.1em}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-top:10px}
+  .card h3{font-size:14px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .desc{font-size:13px;color:var(--text2)}
+  .muted{color:var(--muted)}
+  .now{color:var(--amber)}
+  .good{color:var(--green)}
+  .bad{color:var(--red)}
+  .note{font-size:12px;color:var(--text2);background:var(--hover);border:1px dashed var(--line2);border-radius:8px;padding:8px 12px;margin-top:10px}
+  .note b{color:var(--text)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th{text-align:left;color:var(--muted);font-weight:500;padding:6px 10px;border-bottom:1px solid var(--line2)}
+  td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:rgba(255,255,255,.02)}
+
+  code, .mono{font-family:var(--mono);font-size:12px;background:var(--hover);padding:1px 5px;border-radius:4px;color:var(--blue)}
+  pre{font-family:var(--mono);font-size:12px;background:#131316;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;margin-top:10px}
+
+  /* ── 两列分屏 ── */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:820px){.cols{grid-template-columns:1fr}}
+
+  /* ── 聊天样板 ── */
+  .chat{display:flex;flex-direction:column;gap:14px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+  .msg{display:flex;gap:12px}
+  .avatar{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .avatar.user{background:var(--surface);border:1px solid var(--line2);color:var(--text2)}
+  .avatar.ai{background:var(--blue2);color:#fff}
+  .bubble{flex:1;min-width:0;font-size:13.5px;color:var(--text2)}
+  .bubble .whom{font-size:12px;color:var(--muted);margin-bottom:4px}
+
+  /* ── 工具块 ├── */
+  .tool-block{border:1px solid var(--line);border-left-width:3px;border-radius:10px;overflow:hidden}
+  .tb-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);cursor:pointer}
+  .tb-head:hover{background:var(--hover)}
+  .tb-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .tb-name{font-size:13px;font-weight:600;color:var(--text)}
+  .tb-sub{font-size:11.5px;color:var(--muted);margin-left:auto;font-family:var(--mono)}
+  .tb-chevron{margin-left:2px;color:var(--muted);transition:transform .15s;font-size:12px}
+
+  /* 任务板 */
+  .board{border-left-color:var(--violet)}
+  .board .tb-icon{background:rgba(139,92,246,.16);color:var(--violet)}
+  .board-progress{font-size:11.5px;color:var(--text2);display:flex;gap:6px;align-items:center}
+  .chip{font-size:11px;padding:1px 7px;border-radius:99px;background:var(--hover);border:1px solid var(--line2);color:var(--text2)}
+  .chip.inprog{color:var(--blue);border-color:rgba(96,165,250,.4)}
+  .chip.blocked{color:var(--red);border-color:rgba(239,68,68,.4)}
+  .board-body{padding:10px 12px;background:#0a0a0c;border-top:1px solid var(--line);display:none}
+  .board.open .board-body{display:block}
+  .rows{display:flex;flex-direction:column}
+  .row{display:flex;align-items:center;gap:9px;padding:5px 4px;border-radius:6px;cursor:pointer}
+  .row:hover{background:var(--hover)}
+  .row.selected{background:rgba(139,92,246,.12);box-shadow:inset 2px 0 0 var(--violet)}
+  .st-ic{width:18px;height:18px;flex-shrink:0}
+  .row-title{flex:1;font-size:13px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row-title.inprog{color:var(--text)}
+  .row-deps{font-size:11px;color:var(--muted);font-family:var(--mono)}
+  .row-freq{font-size:10px;color:var(--amber);border:1px solid rgba(245,158,11,.4);padding:0 5px;border-radius:99px}
+  .row-status{font-size:11px;color:var(--text2);flex-shrink:0}
+
+  .board-detail{display:grid;grid-template-columns:1fr 160px;gap:14px;background:#0a0a0c;border-top:1px solid var(--line);border-radius:0 0 10px 10px;padding:14px}
+  .detail-title{font-size:14px;font-weight:600;margin-bottom:4px}
+  .detail-desc{font-size:12.5px;color:var(--text2)}
+  .detail-rows{display:flex;flex-direction:column;gap:8px;margin-top:10px;font-size:12.5px}
+  .drow{display:flex;justify-content:space-between;padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .drow dt{color:var(--muted)} .drow dd{color:var(--text2)}
+  .dep-chain{font-size:12px;color:var(--text2);margin-top:6px}
+  .dep-chain b{color:var(--amber)}
+
+  /* agent_run */
+  .agentrun{border-left-color:var(--blue)}
+  .agentrun .tb-icon{background:rgba(96,165,250,.16);color:var(--blue)}
+  .agentrun .tb-sub{color:var(--text2)}
+  .agentrun .tb-sub.ok{color:var(--green)}
+  .agentrun .toolbar{display:flex;gap:6px;flex-wrap:wrap}
+  .mini-bar{width:74px;height:4px;background:var(--line2);border-radius:99px;position:relative;overflow:hidden}
+  .mini-bar i{display:block;height:100%;background:var(--blue);width:0%;transition:width .4s}
+  .ar-body{padding:10px 12px;background:#0a0a0c;border-top:1px solid var(--line);display:none}
+  .agentrun.open .ar-body{display:block}
+  .toolstack{display:flex;flex-direction:column}
+  .twrap{display:flex;align-items:center;gap:8px;padding:3px 2px;border-left:1px solid var(--line2);margin-left:6px;padding-left:8px}
+  .twrap.l1{margin-left:0;border:none;padding-left:0}
+  .tnode{display:flex;align-items:center;gap:8px;flex:1;min-width:0;cursor:pointer;border-radius:6px;padding:3px 4px}
+  .tnode:hover{background:var(--hover)}
+  .status{width:15px;height:15px;flex-shrink:0}
+  .t-icon{width:20px;height:20px;border-radius:5px;background:var(--hover);color:var(--text2);display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+  .t-name{font-size:12.5px;color:var(--text);font-family:var(--mono)}
+  .t-sum{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .t-time{font-size:11px;color:var(--muted);flex-shrink:0}
+  .t-args{font-size:11px;color:var(--muted);flex-shrink:0;font-family:var(--mono)}
+
+  /* workflow */
+  .workflow{border-left-color:var(--green)}
+  .workflow .tb-icon{background:rgba(52,211,153,.16);color:var(--green)}
+  .wf-run{border-top:1px solid var(--line);background:#0a0a0c;padding:12px;display:none}
+  .wf-complete{border-top:1px solid var(--line);background:#0a0a0c;padding:12px;display:none}
+  .wf-visible{display:block}
+  .phase-tabs{display:flex;gap:6px;margin-bottom:10px}
+  .ptab{font-size:12px;padding:4px 12px;border-radius:99px;background:var(--surface);border:1px solid var(--line);color:var(--text2)}
+  .ptab.done{color:var(--text);border-color:rgba(52,211,153,.4)}
+  .ptab.done i{background:var(--green)}
+  .ptab.active{background:var(--blue2);color:#fff;border-color:var(--blue2)}
+  .ptab.ic i{display:inline-block;width:5px;height:5px;border-radius:99px;background:#fff;margin-right:6px;vertical-align:middle}
+  .ptab.done i{width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:6px solid var(--green);transform:rotate(-90deg) translateY(-1px);display:inline-block;margin-right:5px}
+  .agents{display:flex;flex-direction:column;gap:4px;margin-top:10px}
+  .agent-row{display:flex;align-items:center;gap:10px;padding:7px 9px;border-radius:8px;background:var(--surface);border:1px solid var(--line)}
+  .agent-row.w-full{opacity:.5;border-style:dashed}
+  .agent-dot{width:9px;height:9px;border-radius:99px}
+  .dot-run{background:var(--blue);animation:pulse 1.2s infinite}
+  .dot-done{background:var(--green)} .dot-queued{background:#6D6D70}
+  .ag-name{font-size:12.5px;font-weight:600;color:var(--text);font-family:var(--mono);min-width:120px}
+  .ag-state{font-size:11.5px;color:var(--text2);flex-shrink:0}
+  .ag-tok{font-size:11px;color:var(--muted);font-family:var(--mono);flex-shrink:0}
+  .ag-time{font-size:11px;color:var(--muted);flex-shrink:0}
+  .wf-log{margin-top:12px;font-size:12.5px;color:var(--text2);background:#141416;border:1px solid var(--line);border-radius:8px;padding:4px 12px;max-height:110px;overflow:hidden}
+  .wf-log .ln{display:flex;gap:8px;padding:3px 0;color:var(--muted)}
+  .wf-log .ln.now{color:var(--blue)}
+  .wf-log .ln b{color:var(--text2);font-weight:500}
+  .wf-log.mini-show .ln{display:none}
+  .wf-log.mini-show .ln:first-child{display:flex}
+  .wf-deliver{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid rgba(52,211,153,.35);background:rgba(52,211,153,.08);border-radius:10px;margin-bottom:10px}
+  .wf-deliver .sb-ic{width:26px;height:26px;flex-shrink:0;color:var(--green)}
+  .wf-deliver b{font-size:13.5px;color:var(--text)}
+  .wf-deliver .meta{font-size:11.5px;color:var(--text2);margin-top:2px}
+  .wf-stats{display:flex;gap:20px;font-size:12.5px;color:var(--text2);padding:10px 4px;border-bottom:1px solid var(--line)}
+  .wf-stats .k{color:var(--muted);font-size:11px}
+  .wf-artifacts{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+  .artifact{display:flex;align-items:center;gap:6px;font-size:12px;padding:4px 10px;border-radius:7px;background:var(--surface);border:1px solid var(--line2);color:var(--text2)}
+  .artifact b{color:var(--blue);font-family:var(--mono);font-weight:500}
+
+  svg{display:block}
+  .toolbar-cta{margin-left:auto;display:flex;gap:6px}
+  .btn{font-size:11.5px;padding:4px 10px;border-radius:6px;border:1px solid var(--line2);background:var(--surface);color:var(--text2);cursor:pointer}
+  .btn:hover{background:var(--hover);color:var(--text)}
+  .btn.pri{background:var(--blue2);border-color:var(--blue2);color:#fff}
+  .btn.pri:hover{filter:brightness(1.1)}
+
+  .switcher{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+  .switcher button{border:none;background:transparent;padding:5px 14px;font-size:12px;color:var(--text2);cursor:pointer}
+  .switcher button.on{background:var(--blue2);color:#fff}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+  ::selection{background:rgba(96,165,250,.3)}
+  .scrolloff{scroll-behavior:auto}
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line2);padding:10px 18px;border-radius:10px;font-size:13px;color:var(--text);box-shadow:0 8px 30px rgba(0,0,0,.5);opacity:0;transition:opacity .25s;pointer-events:none;z-index:100}
+  .toast.show{opacity:1}
+</style>
+</head>
+<body class="scrolloff">
+
+<div class="topbar">
+  <div class="spark" style="width:18px;height:18px;border-radius:5px;background:var(--blue2);display:flex;align-items:center;justify-content:center;font-size:11px;color:#fff">P</div>
+  <h1>Claude Code 任务适配 · 交互原型</h1>
+  <span class="sub">TaskBoard / AgentRun / Workflow 统一渲染</span>
+  <div class="steps">
+    <button class="step-btn" data-t="board" onclick="showStep('board')">① 任务板</button>
+    <button class="step-btn" data-t="agent" onclick="showStep('agent')">② Agent 嵌套</button>
+    <button class="step-btn" data-t="wf" onclick="showStep('wf')">③ Workflow</button>
+    <button class="step-btn" data-t="spec" onclick="showStep('spec')">规格索引</button>
+  </div>
+  <div class="top-right"><a href="https://claude.com/claude-code" target="_blank">原始 spec ↗</a></div>
+</div>
+
+<div class="layout">
+<aside class="sidebar">
+  <h3>交互分区</h3>
+  <nav class="anchors" id="sidebarAnchors"></nav>
+  <div class="note" style="margin-top:16px">所有组件均为真实项目附着的可点击原型。点「跑一个 run」看增量合并。</div>
+</aside>
+
+<main class="main">
+
+<!-- ═══════════════ ① 任务板 ═══════════════ -->
+<section id="step-board" hidden>
+  <div class="kicker">01 · 结构化任务板</div>
+  <h2>任务状态从「工具调用流」升级为「任务板」</h2>
+  <p class="lead">TodoWrite 时代向后端没有适配的 TaskCreate / TaskUpdate / TaskList —— 10 任务的 run 是约 1400 个独立工具块、six 路缩写全部碰撞为 <code>T</code>。现在以 <code>taskId</code> 为键幂等合并，一个 run 一个板。</p>
+  <div class="meta-tags">
+    <span class="tag new">新增 TaskBoard 块</span>
+    <span class="tag new">TodoWrite 泛化</span>
+    <span class="tag hot">修 6 路缩写碰撞</span>
+    <span class="tag hot">键信息空</span>
+  </div>
+
+  <div class="cols">
+    <!-- 改造后 -->
+    <div>
+      <div class="section"><span class="label">改造后 · 默认折叠</span></div>
+      <div class="chat">
+        <div class="msg"><div class="avatar user">我</div><div class="bubble"><i>请重构地形生成管线,基于真实地理数据。</i></div></div>
+        <div class="msg">
+          <div class="avatar ai">AI</div>
+          <div class="bubble">
+            <div class="whom">Claude</div>
+            <div class="board tool-block collapsible" data-kind="board">
+              <div class="tb-head" onclick="toggle(this)">
+                <div class="tb-icon">▤</div>
+                <span class="tb-name">任务板</span>
+                <span class="board-progress"><span class="mini-bar" style="width:74px;background:var(--line2)"><i style="width:80%;background:var(--violet)"></i></span>4/5 (80%)</span>
+                <span class="tb-sub">12 任务 · 1 进行中 · 1 阻塞</span>
+                <span class="tb-chevron">▾</span>
+              </div>
+              <div class="board-body">
+                <div class="rows" id="boardRowsStatic"></div>
+              </div>
+              <div class="board-detail" id="boardDetail" hidden></div>
+            </div>
+            <p style="margin-top:10px">已完成,详见上方任务板与四份产物文件。</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 改造前 -->
+    <div>
+      <div class="section"><span class="label">改造前 · 1400 个工具块</span></div>
+      <div class="chat">
+        <div class="msg"><div class="avatar user">我</div><div class="bubble"><i>请重构地形生成管线,基于真实地理数据。</i></div></div>
+        <div class="msg">
+          <div class="avatar ai">AI</div>
+          <div class="bubble">
+            <div class="whom">Claude</div>
+            <div class="tool-block" style="border-left-color:var(--blue)">
+              <div class="tb-head"><div class="tb-icon" style="background:var(--blue2)">R</div><span class="tb-name">task_create</span><span class="tb-sub">0.4s</span></div>
+            </div>
+            <div class="tool-block" style="border-left-color:var(--blue);margin-top:4px">
+              <div class="tb-head"><div class="tb-icon" style="background:var(--blue2)">R</div><span class="tb-name">task_update</span><span class="tb-sub">0.2s</span></div>
+            </div>
+            <div class="tool-block" style="border-left-color:var(--blue);margin-top:4px">
+              <div class="tb-head"><div class="tb-icon" style="background:var(--blue2)">R</div><span class="tb-name">task_update</span><span class="tb-sub">0.1s</span></div>
+            </div>
+            <div class="tool-block" style="border-left-color:var(--blue);margin-top:4px;opacity:.7">
+              <div class="tb-head"><div class="tb-icon" style="background:var(--blue2)">R</div><span class="tb-name">task_update</span><span class="tb-sub">0.1s</span></div>
+            </div>
+            <div class="note" style="margin-top:8px">+1,396 个同款 <code>task_update</code> 块…（截图省略滚动）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><span class="label">交互 · 演示</span></div>
+  <div class="card">
+    <h3>任务板实时状态机 <span class="chip" id="liveStatus">等待开始</span></h3>
+    <div class="desc">taskId 幂等合并：<code>TaskCreate</code> upsert、<code>TaskUpdate</code> patch。同一 run 只保留 <b>一个</b> 板。</div>
+    <div style="margin:12px 0">
+      <div class="board-detail" style="display:grid;border-top:none;border:1px solid var(--line);border-radius:10px;margin-top:10px" id="liveBoard"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+        <button class="btn pri" onclick="runSimulation()">跑一个 run (7 任务)</button>
+        <button class="btn" onclick="resetSimulation()">重置</button>
+      </div>
+    </div>
+    <div class="note"><b>合并规则</b>：未知 id 的 <code>TaskUpdate</code> 降级为新建 pending；<code>TaskList</code> 输出仅用于校准，不覆盖更精确状态；进行中行 <code>blockedBy</code> 非空时显示「← n」且红色。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ ② Agent 嵌套 ═══════════════ -->
+<section id="step-agent" hidden>
+  <div class="kicker">02 · Agent 嵌套</div>
+  <h2>子 agent 从「一行工具块」变成「可展开的嵌套树」</h2>
+  <p class="lead"><code>agent_run</code> 块前端全链路已建成(事件类型 / store / 249 行渲染器),只是 <code>AgentRunStartEvent::new</code> 在生产代码中零命中。现在接线——UI 零新建,只连一根线。</p>
+  <div class="meta-tags">
+    <span class="tag hot">方案B: 接线已有代码</span>
+    <span class="tag warn">Agent 142 次调用当前不可见</span>
+  </div>
+
+  <div class="section"><span class="label">改造后 · 主/子调用可见归属</span></div>
+  <div class="chat" style="margin-top:10px">
+    <div class="msg"><div class="avatar user">我</div><div class="bubble"><i>调查 pi 引擎集成现状,给出档案报告。</i></div></div>
+    <div class="msg">
+      <div class="avatar ai">AI</div>
+      <div class="bubble">
+        <div class="whom">Claude</div>
+
+        <!-- 主趟工具:嵌套结构 -->
+        <div class="tool-block agentrun collapsible" data-kind="agent">
+          <div class="tb-head" onclick="toggle(this)">
+            <div class="tb-icon">◈</div>
+            <span class="tb-name">general-purpose</span>
+            <span class="chip inprog">运行中</span>
+            <span class="tb-sub">14 工具 · 9 完成</span>
+            <span class="tb-sub" id="agdur">2m 31s</span>
+            <span class="tb-chevron">▾</span>
+          </div>
+          <div class="ar-body">
+            <div class="whom" style="margin-bottom:6px">子 agent 嵌套工具调用</div>
+            <div class="toolstack" id="agentStackStatic"></div>
+          </div>
+        </div>
+
+        <!-- 传统工具块(主趟) -->
+        <div class="tool-block collapsible" data-kind="plain" style="margin-top:8px;border-left-color:var(--green)">
+          <div class="tb-head" onclick="toggle(this)">
+            <div class="tb-icon" style="background:rgba(52,211,153,.16);color:var(--green)">E</div>
+            <span class="tb-name">Edit</span><span class="tb-sub">vite.config.ts · src ≠ L8</span><span class="tb-chevron">▾</span>
+          </div>
+          <div class="ar-body"><div class="note">onlyfans: E DiffViewer(子途同)</div></div>
+        </div>
+
+        <p style="margin-top:10px">已完成。agent 结构隔着树的顺序应保留:嵌套在前、主趟在后,以便归属区分。</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><span class="label">对照 · 改造前</span></div>
+  <div class="note">改造前同一运行时,子 agent 的 grep / Read / Glob 是十几个平铺工具块,带着全 UI 最小上下文、赤级跟你主趟混排 —— 你永远分不清哪个磁盘操作是子任务。</div>
+
+  <div class="section"><span class="label">交互 · 数据依赖</span></div>
+  <div class="card">
+    <h3>接线点</h3>
+    <table>
+      <tr><th>生产方</th><th>消费方</th><th>状态</th></tr>
+      <tr><td><code>AgentRunStartEvent::new</code></td><td><code>eventHandler.ts:303</code></td><td product="" done>已建成</td></tr>
+      <tr><td><code>AgentRunEndEvent::new</code></td><td><code>eventHandler.ts:311</code></td><td done>已建成</td></tr>
+      <tr><td><code>parent_tool_use_id</code></td><td>event parser → <code>toolCalls[]</code></td><td class="now">本次接线</td></tr>
+      <tr><td>tool_result 回执</td><td><code>updateToolCallBlock</code></td><td done>已建成</td></tr>
+    </table>
+    <div class="note"><b>验证点</b>: 本机转录该字段为 0 次,需在真实 SDK workflow 抓事件确认;缺失时降级为主 agent 工具块。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ ③ Workflow ═══════════════ -->
+<section id="step-wf" hidden>
+  <div class="kicker">03 · Workflow</div>
+  <h2>Workflow 从「攻坚单点卡」到「统一卡片 + 可插拔结果解析」</h2>
+  <p class="lead">当前 <code>block.name === 'workflow'</code> 精确匹配 + 攻坚 schema 硬编码。修 name 规范化,抽「结果解析器注册表」,补运行中 phase / agent / log 视图。</p>
+  <div class="meta-tags">
+    <span class="tag warn">Chem=="workflow" 精确匹配</span>
+    <span class="tag warn">源码 grep '"workflow"' = 0 次</span>
+    <span class="tag new">运行中视图缺失</span>
+  </div>
+
+  <div class="section"><span class="label">运行中 · 3 阶段 workflow</span></div>
+  <div class="chat" style="margin-top:10px">
+    <div class="msg">
+      <div class="avatar ai">AI</div>
+      <div class="bubble">
+        <div class="whom">Claude</div>
+        <div class="tool-block workflow collapsible" data-kind="wf">
+          <div class="tb-head" onclick="toggle(this)">
+            <div class="tb-icon">◈</div>
+            <span class="tb-name">workflow</span>
+            <span class="chip inprog">Phase 1/3</span>
+            <span class="tb-sub">Scan</span>
+            <span class="tb-chevron">▾</span>
+          </div>
+          <div class="wf-run wf-visible">
+            <div class="phase-tabs">
+              <span class="ptab done ic"><i></i>Scan</span>
+              <span class="ptab active ic"><i></i>Root-Cause</span>
+              <span class="ptab ic">Design</span>
+            </div>
+            <div class="whom" style="margin-bottom:6px">3 agents</div>
+            <div class="agents" id="wfAgents"></div>
+            <div class="wf-log" id="wfLog">
+              <div class="ln now"><b>▸</b> state: root-cause</div>
+              <div class="ln"><b>✓</b> scan-a: 6 处注册表缺口</div>
+              <div class="ln"><b>✓</b> scan-b: 2 计入已知</div>
+              <div class="ln"><b>△</b> root-c: 等待 GPU worker</div>
+            </div>
+          </div>
+          <div class="wf-complete">
+            <div class="wf-deliver">
+              <div class="sb-ic">◉</div>
+              <div><b>已解决 · 3 轮攻坚</b><div class="meta">family: root-cause+refactor-data · 4 artifacts · 12.4k tokens</div></div>
+            </div>
+            <div class="wf-stats"><div><div class="k">agents</div>3</div><div><div class="k">tokens</div>12.4k</div><div><div class="k">tool calls</div>48</div><div><div class="k">rounds</div>3</div></div>
+            <div class="artifact"><b>@</b> src/engine/registry.rs</div>
+            <div class="artifact"><b>@</b> docs/assault.md</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section"><span class="label">评审点 · 解析器注册表</span></div>
+  <div class="card">
+    <h3>workflow result parsers</h3>
+    <div class="desc">按输出 schema 自协商,命中第一个能解析的;全部失败 → 降级通用工具块。</div>
+    <pre>&gt; workflowResultParsers = [
+&nbsp;&nbsp;assaultParser      // 攻坚 {result.status, rounds, artifacts}
+&nbsp;&nbsp;researchParser    // 深度研究 {summary, sources[]}
+&nbsp;&nbsp;defaultParser     // 兜底 {summary, agentCount, totalTokens}
+]</pre>
+    <button class="btn" onclick="toggleLogSmall()">只看首行日志 (运行中折叠)</button>
+    <div class="note"><b>已知风险</b>: SDK workflow 的 log() 不实时到前端(仅完成时一次性 tool_result),运行中视图依赖 input_json_delta 扩展,须先验证字段。</div>
+  </div>
+</section>
+
+<!-- ═══════════════ ④ 规格索引 ═══════════════ -->
+<section id="step-spec" hidden>
+  <div class="kicker">04 · 规格索引</div>
+  <h2>验收标准与事件映射</h2>
+  <p class="lead">PRD 全文见 <code>docs/claude-code-task-workflow-prd.md</code>(同目录)。</p>
+
+  <div class="section"><span class="label">事件映射总表</span></div>
+  <div class="card" style="padding-top:6px">
+  <table>
+    <tr><th>Claude Code 工具 / 事件</th><th>Polaris Block</th><th>状态</th></tr>
+    <tr><td><code>TaskCreate / TaskUpdate / TaskList / TaskGet / TaskStop</code></td><td><code>task_board</code></td><td class="now">新增</td></tr>
+    <tr><td><code>TodoWrite</code></td><td><code>task_board</code>(复用行组件)</td><td class="now">改造</td></tr>
+    <tr><td><code>Agent / Task</code></td><td><code>agent_run</code></td><td class="now">接线已有代码</td></tr>
+    <tr><td>子调用 (<code>parent_tool_use_id</code>)</td><td><code>agent_run.toolCalls[]</code></td><td class="now">新增</td></tr>
+    <tr><td><code>Workflow</code> 运行中</td><td><code>workflow_card{phase}</code></td><td class="now">新增</td></tr>
+    <tr><td><code>Workflow</code> 完成态</td><td><code>workflow_card{result}</code></td><td class="now">改造</td></tr>
+    <tr><td><code>TaskOutput</code>(实时状态轮询)</td><td><code>agent_run.progressMessage</code></td><td class="now">新增映射</td></tr>
+    <tr><td><code>backgroundSessionIds ↔ SDK task_id</code></td><td>命名空间映射层</td><td class="now">新增</td></tr>
+  </table>
+  </div>
+
+  <div class="section"><span class="label">验收清单</span></div>
+  <div class="card">
+    <h3>A 元数据</h3>
+    <div class="desc">A1–A4: subject/activeForm 展示、六路缩写互异、zh 标签、workflow 大小写双命中。</div>
+  </div>
+  <div class="card">
+    <h3>B Agent 嵌套</h3>
+    <div class="desc">B1–B3: Agent→agent_run、嵌套可见带耗时、主/子归属可分。</div>
+  </div>
+  <div class="card">
+    <h3>C 任务板</h3>
+    <div class="desc">C1–C4: 10 任务 run 只显 1 板、update 就地更新、折叠正确率、历史回放最终态。</div>
+  </div>
+  <div class="card">
+    <h3>D / E 健壮性</h3>
+    <div class="desc">D1–D3 & E1–E3: 非攻坚不误路由、运行中 phase、解析失败降级;未知 taskId、流中断防假死、缺 parent 降级不丢块。</div>
+  </div>
+</section>
+
+</main>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ── 命令行 API ── */
+var $=function(s){return document.querySelector(s)};
+var $$=function(s){return Array.prototype.slice.call(document.querySelectorAll(s))};
+var seen={board:0,agent:0,wf:0,spec:0};
+
+function showStep(t){
+  $$('section').forEach(function(s){s.hidden=true});
+  $('#step-'+t).hidden=false;
+  $$('.step-btn').forEach(function(b){b.classList.toggle('active',b.dataset.t===t)});
+  buildAnchors(t);
+}
+function buildAnchors(t){
+  var nav=$('#sidebarAnchors');nav.innerHTML='';
+  var map={board:['改造后','改造前','状态机'],agent:['改造后','对照','接线'],wf:['运行中','评审点'],spec:['映射','验收']};
+  (map[t]||[]).forEach(function(l,i){
+    var a=document.createElement('button');a.className='anchor'+(i===0?' active':'');a.textContent=l;
+    a.onclick=function(){$$('.anchor').forEach(function(x){x.classList.remove('active')});a.classList.add('active');
+      var sels=['','.cols>.col:first-child','.cols>.col:last-child','.card','.card','.card','.card'];
+      var map2={board:['.cols','.cols>div:last-child','[id="liveBoard"]'],agent:['.chat','.note','table'],wf:['.chat','.card'],spec:['table','.card']};
+      // scroll to matching widget
+      var idx=0;
+      var target=(map2[t]||[])[i]||'.card';
+      var el=$(target);if(el) el.scrollIntoView({behavior:'smooth',block:'start'});
+    };
+    nav.appendChild(a);
+  });
+}
+function toast(msg){var t=$('#toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show')},1600)}
+function toggle(elm){
+  elm.parentElement.classList.toggle('open');
+}
+
+/* ── 任务板静态(改造后) ── */
+var ROWS=[
+ {st:'done',   cls:'ok',   title:'二维点阵拟型', deps:'',       stTxt:'已完成',   active:'',        freq:0},
+ {st:'done',   cls:'ok',   title:'山脊剖面真实坡度', deps:'',    stTxt:'已完成',   active:'',        freq:0},
+ {st:'done',   cls:'ok',   title:'冰川分布注入', deps:'',        stTxt:'已完成',   active:'',        freq:0},
+ {st:'run',    cls:'inprog',title:'DEM 高程融合', deps:'←1',     stTxt:'进行中',   active:'生成 DEM 高程融合…', freq:5},
+ {st:'blocked',cls:'blocked',title:'LOD 分层导出', deps:'←4',    stTxt:'阻塞',     active:'',        freq:0},
+ {st:'done',   cls:'ok',   title:'导航路径拓扑', deps:'',        stTxt:'已完成',   active:'',        freq:0},
+];
+function statusIcon(s){
+  return '<svg class="st-ic" viewBox="0 0 18 18" fill="none">'+
+    (s==='done'?'<circle cx="9" cy="9" r="7" stroke="#34D399" stroke-width="1.6"/><path d="M6 9.2l2 2 4-4.4" stroke="#34D399" stroke-width="1.6" stroke-linecap="round"/>':
+     s==='run'?'<circle cx="9" cy="9" r="7" stroke="#60A5FA" stroke-width="1.6" opacity=".5"/><circle cx="9" cy="9" r="3" fill="#60A5FA"><animate attributeName="r" values="2.5;3.4;2.5" dur="1.2s" repeatCount="indefinite"/></circle>':
+     s==='blocked'?'<circle cx="9" cy="9" r="7" stroke="#EF4444" stroke-width="1.6"/><path d="M6 9h6" stroke="#EF4444" stroke-width="1.6" stroke-linecap="round"/>':
+     '<circle cx="9" cy="9" r="7" stroke="#6D6D70" stroke-width="1.6"/>')+'</svg>';
+}
+function renderRows(container, rows){
+  container.innerHTML=rows.map(function(r,i){
+    return '<div class="row" data-i="'+i+'" onclick="onRowClick(this,'+i+')">'+
+      statusIcon(r.st)+
+      '<span class="row-title'+(r.st==='run'?' inprog':'')+'">'+(r.st==='run'&&r.active?r.active:r.title)+'</span>'+
+      (r.deps?'<span class="row-deps">'+r.deps+'</span>':'')+
+      (r.freq>0?'<span class="row-freq">×'+r.freq+'</span>':'')+
+      '<span class="row-status">'+r.stTxt+'</span></div>';
+  }).join('');
+}
+function onRowClick(el,i){
+  var rows=ROWS;
+  $$('.row').forEach(function(x){x.classList.remove('selected')});
+  el.classList.add('selected');
+  var d=$('#boardDetail');
+  var r=rows[i];
+  d.innerHTML=
+    '<div><div class="detail-title">'+r.title+'</div>'+
+    '<div class="detail-desc">'+((r.active||r.description)||'')+' —— 重构地形生成管线 v4:使用真实峰位而非等距排列、引入 ALOS World 3D 开源 DEM 数据。'+(r.st==='blocked'?' 被任务 #1 阻塞。':'')+'</div>'+
+    '<div class="detail-rows"><div class="drow"><dt>状态</dt><dd>'+r.stTxt+'</dd></div><div class="drow"><dt>activeForm</dt><dd class="mono">'+(r.active||'-')+'</dd></div><div class="drow"><dt>依赖</dt><dd>'+(r.deps||'无')+'</dd></div><div class="drow"><dt>更新次数</dt><dd>'+(r.freq>0?'×'+r.freq+' 频繁':'正常')+'</dd></div></div>'+
+    (r.st==='blocked'?'<div class="dep-chain">阻塞链: <b>#1 DEM 高程融合</b> → #4 LOD 分层导出</div>':'')+
+    '</div><div>'+statusIcon(r.st)+'</div>';
+  d.hidden=false;
+}
+
+/* ── 任务板实时模拟 ── */
+var simSeed=0, simTimer=null;
+function liveRows(){
+  var rows=[
+   {id:1,st:'done',title:'二维点阵拟型',active:''},
+   {id:2,st:'done',title:'山脊剖面真实坡度',active:''},
+   {id:3,st:'done',title:'冰川分布注入',active:''},
+   {id:4,st:'done',title:'导航路径拓扑',active:''},
+   {id:5,st:'pending',title:'DEM 高程融合',active:'生成 DEM 高程融合…'},
+   {id:6,st:'pending',title:'LOD 分层导出',active:'导出 LOD 0-4 缓存…'},
+   {id:7,st:'pending',title:'纹理烘焙',active:'烘焙法线/置换贴图…'},
+  ];
+  var done=rows.filter(function(r){return r.st==='done'}).length;
+  return {rows:rows,done:done};
+}
+function renderLive(rows,done){
+  var el=$('#liveBoard');
+  var total=rows.length;
+  var pct=Math.round(done/total*100);
+  el.innerHTML='<div class="detail-rows" style="margin:0">'+
+    '<div class="drow"><dt>完成率</dt><dd><span class="mini-bar" style="display:inline-block;width:90px"><i style="width:'+pct+'%;background:var(--violet)"></i></span> '+done+'/'+total+' ('+pct+'%)</dd></div>'+
+    rows.map(function(r){
+      return '<div class="drow" style="grid-column:1/-1"><dt>'+(r.st==='done'?'✓':r.st==='run'?'●':'○')+'</dt><dd style="text-align:left">'+r.title+(r.active?' <span class="chip inprog">'+r.active+'</span>':'')+'</dd></div>';
+    }).join('')+'</div>';
+}
+function runSimulation(){
+  resetSimulation();
+  var obj=liveRows();
+  var i=4;                              // 从第 5 项开始推进(前 4 项初始已完成)
+  var stepDelay=600;                    // 每步 600ms,不受后台节流影响(自驱动 setTimeout)
+  function step(){
+    if(i>=obj.rows.length){
+      // 全部完成,停留在最终态
+      $('#liveStatus').textContent='run 完成 · 7/7';
+      // 把仍在 run 的行收尾为 done(防止节流导致最后一行卡在 run)
+      obj.rows.forEach(function(r){ if(r.st==='run') r.st='done'; });
+      obj.done=obj.rows.filter(function(x){return x.st==='done'}).length;
+      renderLive(obj.rows,obj.done);
+      simTimer=null;
+      return;
+    }
+    var r=obj.rows[i];
+    r.st='done';
+    if(i+1<obj.rows.length){ obj.rows[i+1].st='run'; }   // 启动下一项为进行中
+    obj.done=obj.rows.filter(function(x){return x.st==='done'}).length;
+    renderLive(obj.rows,obj.done);
+    $('#liveStatus').textContent='TaskUpdate #'+r.id+' → '+r.title;
+    i++;
+    simTimer=setTimeout(step,stepDelay);   // 自驱动递归,不依赖 setInterval
+  }
+  renderLive(obj.rows,obj.done);
+  $('#liveStatus').textContent='TaskCreate ×7 (id 1-7)';
+  simTimer=setTimeout(step,stepDelay);      // 启动链
+}
+function resetSimulation(){ if(simTimer){clearTimeout(simTimer);simTimer=null;} var o=liveRows(); $('#liveStatus').textContent='等待开始'; renderLive(o.rows,o.done); }
+
+/* ── agent 静态 ── */
+var AGT=[
+ {icon:'G',name:'Grep',sum:'search_files · "parent_tool_use_id"',args:'(2)',time:'0.4s',state:'done'},
+ {icon:'R',name:'Read',sum:'event_parser.rs · L1024-1066',args:'',time:'0.2s',state:'done'},
+ {icon:'G',name:'Glob',sum:'src/**/*.ts · tools',args:'',time:'0.1s',state:'done'},
+ {icon:'B',name:'Bash',sum:'node parse-transcript · 939 files',args:'',time:'4.1s',state:'done'},
+ {icon:'E',name:'Edit',sum:'toolConfig.ts · 4 registry tables',args:'L56',time:'0.3s',state:'done'},
+ {icon:'W',name:'Write',sum:'docs/claude-code-task-workflow-prd.md',args:'',time:'0.2s',state:'done'},
+ {icon:'S',name:'Skill',sum:'code-review',args:'',time:'—',state:'run'},
+];
+function renderAgent(container){
+  container.innerHTML=AGT.map(function(t,k){
+    var ic=t.icon;
+    return '<div class="twrap '+(k===0?'l1':'')+'">'+
+      '<svg class="status" viewBox="0 0 15 15" fill="none">'+
+        (t.state==='done'?'<circle cx="7.5" cy="7.5" r="6" stroke="#34D399" stroke-width="1.4"/><path d="M5 7.7l1.8 1.6 3.4-3.8" stroke="#34D399" stroke-width="1.4" stroke-linecap="round"/>':
+         t.state==='run'?'<circle cx="7.5" cy="7.5" r="6" stroke="#60A5FA" stroke-width="1.4" opacity=".5"/><path d="M7.5 3v3" stroke="#60A5FA" stroke-width="1.6" stroke-linecap="round"><animate attributeName="d" values="M7.5 3v3;M7.5 3v4;M7.5 3v3" dur="1s" repeatCount="indefinite"/></path><path d="M7.5 3v3" stroke="#60A5FA" stroke-width="1.6" stroke-linecap="round" opacity=".6"><animate attributeName="d" values="M7.5 3v3;M7.5 3v0;M7.5 3v3" dur="1s" repeatCount="indefinite"/></path>':
+         '<circle cx="7.5" cy="7.5" r="6" stroke="#6D6D70" stroke-width="1.4"/>')+
+      '</svg>'+
+      '<div class="t-icon">'+t.icon+'</div>'+
+      '<span class="t-name">'+t.name+'</span>'+
+      '<span class="t-sum">'+t.sum+'</span>'+
+      (t.args?'<span class="t-args">'+t.args+'</span>':'')+
+      '<span class="t-time">'+t.time+'</span></div>';
+  }).join('');
+}
+
+/* ── workflow 静态 ── */
+var WFAG=[
+ {n:'scan-a', state:'run',  tok:'18.2k', time:'42s'},
+ {n:'scan-b', state:'done', tok:'12.1k', time:'28s'},
+ {n:'scan-c', state:'queued',tok:'—',   time:'排队'},
+];
+function renderWfAgents(container){
+  container.innerHTML=WFAG.map(function(a){
+    return '<div class="agent-row '+(a.state==='queued'?'w-full':'')+'">'+
+      '<span class="agent-dot dot-'+(a.state==='run'?'run':a.state==='done'?'done':'queued')+'"></span>'+
+      '<span class="ag-name">'+a.n+'</span>'+
+      '<span class="ag-state">'+(a.state==='run'?'运行中':a.state==='done'?'完成':'排队')+'</span>'+
+      '<span class="ag-tok">'+a.tok+' tokens</span>'+
+      '<span class="ag-time">'+a.time+'</span></div>';
+  }).join('');
+}
+function toggleLogSmall(){
+  var l=$('#wfLog');
+  l.classList.toggle('mini-show');
+  $('.wf-log').classList.remove('wf-visible');
+  toast(l.classList.contains('mini-show')?'运行中: 只看首行':'运行中: 展开全部 4 行');
+}
+
+/* ── init ── */
+renderRows($('#boardRowsStatic'), ROWS);
+renderLive(liveRows().rows, liveRows().done);
+renderAgent($('#agentStackStatic'));
+renderWfAgents($('#wfAgents'));
+showStep('board');
+
+// 键盘左右切换
+document.addEventListener('keydown',function(e){
+  var tabs=['board','agent','wf','spec'];
+  var cur=tabs.indexOf($('.step-btn.active').dataset.t);
+  if(e.key==='ArrowLeft'){ if(cur>0) showStep(tabs[cur-1]); }
+  else if(e.key==='ArrowRight'){ if(cur<tabs.length-1) showStep(tabs[cur+1]); }
+});
+</script>
+</body>
+</html>

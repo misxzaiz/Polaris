@@ -9,6 +9,7 @@ import { ContentBlockErrorBoundary } from '../common/ContentBlockErrorBoundary';
 import { AskQuestionCard } from '../tool-calls/AskQuestionCard';
 import { PlanModeBlockRenderer } from '../tool-calls/PlanModeBlockRenderer';
 import { AgentRunBlockRenderer } from '../tool-calls/AgentRunBlockRenderer';
+import { TaskBoardRenderer } from './TaskBoardRenderer';
 import { PermissionRequestRenderer } from '../tool-calls/PermissionRequestRenderer';
 import { TextBlockRenderer } from './TextBlockRenderer';
 import { ThinkingBlockRenderer } from './ThinkingBlockRenderer';
@@ -88,6 +89,11 @@ export function renderContentBlock(
     case 'agent_run':
       return wrapWithErrorBoundary(
         <AgentRunBlockRenderer block={block} />,
+        block.id
+      );
+    case 'task_board':
+      return wrapWithErrorBoundary(
+        <TaskBoardRenderer block={block} />,
         block.id
       );
     case 'permission_request':

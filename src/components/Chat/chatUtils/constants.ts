@@ -2,7 +2,7 @@
  * 聊天组件共享常量配置
  */
 
-import { Check, XCircle, Loader2, AlertTriangle, Circle } from 'lucide-react';
+import { Check, XCircle, Loader2, AlertTriangle, Circle, Square } from 'lucide-react';
 
 /** 工具调用折叠配置 */
 export const TOOL_COLLAPSE_CONFIG = {
@@ -36,4 +36,15 @@ export const TODO_STATUS_CONFIG = {
   completed: { icon: Check, color: 'text-green-500', bg: 'bg-green-500/10', labelKey: 'status.completed' },
   in_progress: { icon: Loader2, color: 'text-violet-500', bg: 'bg-violet-500/10', labelKey: 'status.running' },
   pending: { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10', labelKey: 'status.pending' },
+} as const;
+
+/**
+ * TaskBoard 任务状态配置（扩展 TodoWrite，增加 blocked/stopped）
+ */
+export const TASK_STATUS_CONFIG = {
+  completed: { icon: Check, color: 'text-green-500', bg: 'bg-green-500/10', labelKey: 'status.completed' },
+  in_progress: { icon: Loader2, color: 'text-blue-500', bg: 'bg-blue-500/10', labelKey: 'status.running' },
+  pending: { icon: Circle, color: 'text-gray-400', bg: 'bg-gray-500/10', labelKey: 'status.pending' },
+  blocked: { icon: AlertTriangle, color: 'text-red-500', bg: 'bg-red-500/10', labelKey: 'status.blocked' },
+  stopped: { icon: Square, color: 'text-gray-500', bg: 'bg-gray-500/10', labelKey: 'status.stopped' },
 } as const;

@@ -363,6 +363,10 @@ export interface ConversationState {
   activePlanId: string | null
   agentRunBlockMap: Map<string, number>
   activeTaskId: string | null
+  /** TaskBoard: boardId → blocks 索引，run 级单板 */
+  taskBoardBlockMap: Map<string, number>
+  /** 当前 run 的活动任务板 ID */
+  activeTaskBoardId: string | null
   toolGroupBlockMap: Map<string, number>
   pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
@@ -556,6 +560,16 @@ export interface ConversationActions {
   appendAgentToolCall: (taskId: string, toolId: string, toolName: string) => void
   updateAgentToolCallStatus: (taskId: string, toolId: string, status: 'pending' | 'running' | 'completed' | 'failed', summary?: string) => void
   setActiveTask: (taskId: string | null) => void
+
+  // ===== TaskBoard（TaskCreate/Update/List 聚合，run 级单板幂等合并） =====
+  /** 确保 run 级任务板存在（首个 Task 工具调用时创建锚点 block），返回板 ID */
+  ensureTaskBoard: (callId: string) => string
+  /** upsert 任务项（TaskCreate 新建 / TaskUpdate 未知 id 新建 pending） */
+  upsertTaskBoardItem: (boardId: string, item: import('../../types/chat').TaskBoardItem) => void
+  /** patch 任务项状态（TaskUpdate 已知 id） */
+  patchTaskBoardItem: (boardId: string, taskId: string, patch: Partial<import('../../types/chat').TaskBoardItem>) => void
+  /** 用 TaskList 输出快照校准看板（不覆盖已有更精确状态） */
+  syncTaskBoardFromList: (boardId: string, items: import('../../types/chat').TaskBoardItem[]) => void
 
   // ===== ToolGroup =====
   appendToolGroupBlock: (groupId: string, tools: Array<{ id: string; name: string; status: 'pending' | 'running' | 'completed' | 'failed'; startedAt: string }>, summary: string) => void

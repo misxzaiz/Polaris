@@ -186,52 +186,100 @@ jobs:
       # 两个硬性断言，任一不通过即失败，避免「绿色流水线却打出错误产物」：
       # 1. 签名指纹必须等于 release keystore 的指纹 —— 否则覆盖安装会被 Android 拒绝
       # 2. versionCode 必须等于 major*1000000+minor*1000+patch —— 否则系统/商店不认它是新版
+      # 注意：本步骤 set -o pipefail，因此所有「仅用于打印」的管道都必须容错，
+      # 否则 grep 无匹配就会中断步骤（诊断行不是断言，不应让构建失败）。
       - name: Verify signature and version
         shell: bash
         run: |
           set -euo pipefail
           APK="release-artifacts/polaris-mobile-${VERSION}.apk"
           APKSIGNER="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/lib/apksigner.jar"
+          AAPT2="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/aapt2"
 
           echo "APK: $APK"
           ls -lh "$APK"
 
-          echo "=== Contents ==="
-          unzip -l "$APK" | grep -E "(index\.html|assets/main-|\.so)"
+          echo "=== Contents (诊断信息，非断言) ==="
+          unzip -l "$APK" | grep -E "(lib/.*\.so|classes.*\.dex|tauri\.conf\.json)" | head -15 || true
 
-          echo "=== Contents: index.html 必须存在（否则前端没打进 APK） ==="
-          unzip -l "$APK" | grep -q 'index.html' || { echo "APK 中缺少 index.html"; exit 1; }
+          echo "=== Package identity (诊断信息，非断言) ==="
+          java -jar "$APKSIGNER" verify --print-certs "$APK" 2>&1 || true
 
-          echo "=== Package identity ==="
-          java -jar "$APKSIGNER" verify --print-certs "$APK"
+          echo "=== versionCode / versionName (诊断信息，非断言) ==="
+          "$AAPT2" dump badging "$APK" 2>&1 | grep -E "^package:|sdkVersion|targetSdkVersion" || true
 
-          # 断言 1：签名指纹与 release keystore 一致（两边都归一化成小写无分隔 hex）
-          # keytool 输出形如 "SHA256: 5E:91:C8..."，需先剥掉 SHA256: 前缀再取 hex
+          # ---- 断言 1：前端产物确实被打进 APK ----
+          # Tauri v2 在 Android 上把前端压缩后嵌入 libpolaris_mobile_lib.so（不在 assets/ 下），
+          # 所以检查 .so 是否含 Tauri 运行时标记，而不是找 assets/index.html。
+          # 注意：unzip 的 glob 行为跨平台不一致，故整包解压后用 find 定位，不做路径模式匹配。
+          SO_COUNT=$(unzip -l "$APK" | grep -ac 'libpolaris_mobile_lib\.so' || true)
+          echo "libpolaris_mobile_lib.so 条目数: $SO_COUNT"
+          if [ "${SO_COUNT:-0}" -lt 1 ]; then
+            echo "FAIL: APK 缺少 libpolaris_mobile_lib.so（前端未打包）"
+            exit 1
+          fi
+
+          APKDIR=$(mktemp -d)
+          unzip -q -o "$APK" -d "$APKDIR" || { echo "FAIL: 解压 APK 失败"; exit 1; }
+          SO_FILE=$(find "$APKDIR" -name 'libpolaris_mobile_lib.so' | head -1)
+          if [ -z "$SO_FILE" ]; then
+            echo "FAIL: 解压后未找到 libpolaris_mobile_lib.so"
+            exit 1
+          fi
+          echo "libpolaris_mobile_lib.so 大小: $(wc -c < "$SO_FILE") bytes"
+
+          if ! grep -aq '__TAURI_INTERNALS__' "$SO_FILE"; then
+            echo "FAIL: .so 内无 Tauri 运行时标记（前端未打包，APK 装上去会是空壳）"
+            rm -rf "$APKDIR"
+            exit 1
+          fi
+          echo "PASS: 前端已打包进 APK（含 Tauri 运行时标记）"
+          rm -rf "$APKDIR"
+
+          # ---- 断言 2：签名指纹与 release keystore 一致 ----
+          # keytool 输出形如 "SHA256: 5E:91:C8..."，先剥前缀再取纯 hex
           EXPECTED_FP=$(keytool -list -v -keystore "$POLARIS_KEYSTORE_FILE" \
               -storepass "$POLARIS_KEYSTORE_PASSWORD" \
               -keypass "$POLARIS_KEY_PASSWORD" 2>/dev/null \
               | grep -aE 'SHA256:' | head -1 \
               | sed -E 's/.*SHA256:[[:space:]]*//' \
-              | tr -d ' :\n' | tr 'A-F' 'a-f')
+              | tr -d ' :\n' | tr 'A-F' 'a-f' || true)
           ACTUAL_FP=$(java -jar "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
-              | grep -aE 'Signer #1 certificate SHA-256 digest' | sed 's/.*digest: //' | tr 'A-F' 'a-f' || true)
-          echo "expected fingerprint: $EXPECTED_FP"
-          echo "actual   fingerprint: $ACTUAL_FP"
-          test -n "$EXPECTED_FP" || { echo "无法从 keystore 取得 SHA256（检查密码/格式）"; exit 1; }
-          test "$EXPECTED_FP" = "$ACTUAL_FP" || { echo "签名指纹不匹配，此 APK 无法覆盖安装"; exit 1; }
-          echo "OK: 签名指纹与 release keystore 一致"
+              | grep -aE 'Signer #1 certificate SHA-256 digest' \
+              | sed 's/.*digest: //' | tr 'A-F' 'a-f' || true)
 
-          # 断言 2：versionCode 与 semver 推导值一致
-          EXPECTED_VC=$(echo "$VERSION" | python3 -c "import sys;m,n,p=sys.stdin.read().strip().split('.');print(int(m)*1000000+int(n)*1000+int(p))")
-          AAPT2="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/aapt2"
-          echo "=== versionCode / versionName ==="
-          "$AAPT2" dump badging "$APK" | grep -E "^package:|sdkVersion|targetSdkVersion|application-label:"
-          ACTUAL_VC=$("$AAPT2" dump badging "$APK" | grep '^package:' | sed "s/.*versionCode='\([0-9]*\)'.*/\1/")
+          echo "expected fingerprint: ${EXPECTED_FP:-<empty>}"
+          echo "actual   fingerprint: ${ACTUAL_FP:-<empty>}"
+          if [ -z "$EXPECTED_FP" ]; then
+            echo "FAIL: 无法从 keystore 读取 SHA256（检查 keystore 格式与密码）"
+            exit 1
+          fi
+          if [ -z "$ACTUAL_FP" ]; then
+            echo "FAIL: APK 未通过 apksigner 校验（可能未签名或已损坏）"
+            exit 1
+          fi
+          if [ "$EXPECTED_FP" != "$ACTUAL_FP" ]; then
+            echo "FAIL: 签名指纹不匹配，此 APK 无法覆盖安装（证书漂移）"
+            exit 1
+          fi
+          echo "PASS: 签名指纹与 release keystore 一致"
+
+          # ---- 断言 3：versionCode 与 semver 推导值一致 ----
+          EXPECTED_VC=$(python3 -c "m,n,p='$VERSION'.split('.');print(int(m)*1000000+int(n)*1000+int(p))")
+          ACTUAL_VC=$("$AAPT2" dump badging "$APK" 2>/dev/null \
+              | grep '^package:' \
+              | sed "s/.*versionCode='\([0-9]*\)'.*/\1/" | head -1 || true)
           echo "expected versionCode: $EXPECTED_VC"
-          echo "actual   versionCode: $ACTUAL_VC"
-          test -n "$ACTUAL_VC" || { echo "无法从 APK 取得 versionCode"; exit 1; }
-          test "$EXPECTED_VC" = "$ACTUAL_VC" || { echo "versionCode 不匹配，覆盖发布会被拒"; exit 1; }
-          echo "OK: versionCode 与版本一致"
+          echo "actual   versionCode: ${ACTUAL_VC:-<empty>}"
+          if [ -z "$ACTUAL_VC" ]; then
+            echo "FAIL: 无法从 APK 读取 versionCode"
+            exit 1
+          fi
+          if [ "$EXPECTED_VC" != "$ACTUAL_VC" ]; then
+            echo "FAIL: versionCode 不匹配，覆盖发布会被拒"
+            exit 1
+          fi
+          echo "PASS: versionCode 与版本一致"
 
       # ---- Upload artifact（始终保留，便于测试时从 Actions 页面下载） ----
       - name: Upload artifact

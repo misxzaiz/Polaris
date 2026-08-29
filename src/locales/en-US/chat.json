@@ -167,7 +167,9 @@
     "running": "Running",
     "completed": "Completed",
     "failed": "Failed",
-    "partial": "Partial"
+    "partial": "Partial",
+    "blocked": "Blocked",
+    "stopped": "Stopped"
   },
   "welcome": {
     "title": "Polaris",
@@ -721,6 +723,11 @@
       "manual": "Context compacted",
       "auto": "Context auto-compacted",
       "tokens": "{{pre}} → {{post}} tokens"
+    },
+    "task": {
+      "taskBoard": "Task Board",
+      "items": "items",
+      "frequent": "frequent"
     }
   }
 }
