@@ -88,18 +88,21 @@ git push origin vx.x.x
 
 ### 步骤五：获取产物
 
-打包完成后，在仓库的 **Releases** 页面自动创建新版本，包含以下产物：
+打包完成后，在仓库的 **Releases** 页面自动创建新版本（草稿状态，需手动发布），包含以下产物：
 
 | 产物 | 说明 |
 |---|---|
-| `polaris_x.x.x_x64Setup.exe` | Windows 安装程序 |
-| `polaris_x.x.x_amd64.AppImage` | Linux 便携版 |
+| `polaris_x.x.x_x64-setup.exe` | Windows 安装程序（NSIS） |
+| `polaris_x.x.x_x64_en-US.msi` | Windows 安装程序（MSI） |
 | `polaris_x.x.x_amd64.deb` | Debian/Ubuntu 安装包 |
+| `polaris-x.x.x-1.x86_64.rpm` | Red Hat/Fedora 安装包 |
+| `polaris_x.x.x_amd64.AppImage` | Linux 便携版 |
 | `polaris-web-x.x.x-win-x64.zip` | Windows Web 版 |
-| `polaris-web-x.x.x-linux-x64.tar.gz` | Linux Web 版 |
-| `polaris-web-x.x.x-macos-x64.tar.gz` | macOS Web 版 |
+| `polaris-web-x.x.x-linux-x86_64.tar.gz` | Linux Web 版 |
+| `polaris-web-x.x.x-macos-arm64.tar.gz` | macOS ARM64 Web 版 |
 | `polaris-mobile-x.x.x.apk` | Android APK (arm64-v8a) |
-| `latest.json` | 自动更新元数据 |
+
+> 说明：`bundle.createUpdaterArtifacts` 当前为 `false`，不生成 `latest.json` 与 `.sig`，桌面端自动更新不可用。详见各版本构建记录中的「自动更新说明」。
 
 ## 完整命令参考
 
@@ -281,11 +284,16 @@ git push origin vx.x.x
 | `polaris-web-10.4.2-win-x64.zip` | - | Windows x64 | Web 独立服务 |
 | `polaris-web-10.4.2-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
 | `polaris-web-10.4.2-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
-| `latest.json` | - | - | 自动更新元数据 |
+| `polaris-mobile-10.4.2.apk` | - | Android arm64-v8a | Android APK |
 
-### 签名文件
+### 自动更新说明
 
-所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，工作流也未生成 `latest.json` 与 `.sig` 文件，因此**本版本不支持 Tauri 自动更新**。updater 插件的 `endpoints` 仍指向
+`https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，该文件不存在，客户端检查更新会得到空结果。
+
+如需恢复自动更新：将 `createUpdaterArtifacts` 改为 `true`，并确认 `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` 两个 Secret 已配置且与 `plugins.updater.pubkey` 匹配。
+
+> 注：v10.4.2 及之前各版本均未附带 `.sig` 签名文件，历史上文档中「所有安装包均附带 `.sig` 签名文件」的描述与实际产物不符。
 
 ### 变更内容
 
