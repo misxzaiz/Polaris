@@ -99,3 +99,8 @@ ngrok
 nul
 test_*.html
 xhs_browser_region.png
+
+# --- Android 签名密钥库：任何情况下都不得提交（泄露=任何人可冒充应用覆盖安装用户） ---
+secrets/
+*.jks
+*.keystore
