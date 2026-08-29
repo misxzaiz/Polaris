@@ -749,7 +749,7 @@ export function renderBlocksWithGrouping(
   // 如果没有分组，直接渲染
   if (groups.length === 0) {
     return blocks.map((block, index) => (
-      <div key={`block-${index}`}>
+      <div key={`block-${index}`} data-block-index={index}>
         {renderContentBlock(block, isStreaming)}
       </div>
     ));
@@ -786,13 +786,13 @@ export function renderBlocksWithGrouping(
         const blockIndex = group.indices[i];
         if (b.type === 'thinking') {
           result.push(
-            <div key={`block-${blockIndex}`}>
+            <div key={`block-${blockIndex}`} data-block-index={blockIndex}>
               <ThinkingBlockRenderer block={b as ThinkingBlock} isStreaming={isStreaming} />
             </div>
           );
         } else {
           result.push(
-            <div key={`block-${blockIndex}`}>
+            <div key={`block-${blockIndex}`} data-block-index={blockIndex}>
               <ToolCallBlockRenderer block={b as ToolCallBlock} isStreaming={isStreaming} />
             </div>
           );
@@ -801,7 +801,7 @@ export function renderBlocksWithGrouping(
       });
     } else {
       result.push(
-        <div key={`block-${index}`}>
+        <div key={`block-${index}`} data-block-index={index}>
           {renderContentBlock(block, isStreaming)}
         </div>
       );
