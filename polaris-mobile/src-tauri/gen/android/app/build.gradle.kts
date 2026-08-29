@@ -1,6 +1,12 @@
 import java.io.File
 import java.util.Properties
 
+plugins {
+    id("com.android.application")
+    id("org.jetbrains.kotlin.android")
+    id("rust")
+}
+
 // Release 签名：环境变量齐备时读取固定 keystore，否则回退 debug 签名（本地开发/临时打包可用）。
 // keystore 由 CI 从 GitHub Secrets 解码而来（POLARIS_KEYSTORE_BASE64），因此证书恒定，可覆盖安装。
 // 注：signingConfigs 只在 android {} 作用域内可用，故声明必须放在 android { } 块内。
