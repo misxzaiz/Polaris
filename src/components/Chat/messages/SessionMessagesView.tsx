@@ -12,7 +12,6 @@ import { useConfigStore } from '@/stores/configStore';
 import { renderChatMessage } from './EnhancedChatMessages';
 import type { MessageScrollActions, MessageActions } from './EnhancedChatMessages';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
-import type { ProcessBlockCollapseMode } from '@/types';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
   findCurrentRoundIndexForRange,
@@ -21,6 +20,7 @@ import {
 } from '@/utils/conversationRounds';
 import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
+import { DynamicIsland } from '../dynamic-island';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -257,8 +257,41 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     return onEditMessage ? { onEdit: onEditMessage } : undefined;
   }, [onEditMessage]);
 
+  // 灵动岛定位跳转：blockIndex 是 currentMessage.blocks 中的索引，
+  // 滚动到该消息后用 DOM querySelector 定位块并 ring 高亮 1.8s。
+  const handleIslandLocate = useCallback((blockIndex: number) => {
+    if (!currentMessage) return;
+    const msgIndex = displayMessages.findIndex(m => m.id === currentMessage.id);
+    if (msgIndex < 0 || !virtuosoRef.current) return;
+
+    virtuosoRef.current.scrollToIndex({
+      index: msgIndex,
+      align: 'start',
+      behavior: 'smooth',
+    });
+    autoScrollRef.current = false;
+
+    // 延迟一帧等消息进入视口后定位块并高亮
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.querySelector<HTMLElement>(
+          `[data-block-index="${blockIndex}"]`
+        );
+        if (!el) return;
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.classList.add('island-locate-highlight');
+        setTimeout(() => {
+          el.classList.remove('island-locate-highlight');
+        }, 1800);
+      });
+    });
+  }, [currentMessage, displayMessages]);
+
   return (
     <div className="h-full w-full relative">
+      {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
+      <DynamicIsland sessionId={sessionId} onLocate={handleIslandLocate} />
+
       {isEmpty ? (
         <EmptyState />
       ) : (

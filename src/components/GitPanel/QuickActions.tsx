@@ -130,13 +130,13 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
           </Button>
         </div>
 
-        {status?.ahead && status.ahead > 0 && (
+        {status && status.ahead > 0 && (
           <div className="mt-2 flex items-center gap-1 text-xs text-text-tertiary">
             <ArrowUp size={12} className="text-primary" />
             <span>{t('sync.ahead', { count: status.ahead })}</span>
           </div>
         )}
-        {status?.behind && status.behind > 0 && (
+        {status && status.behind > 0 && (
           <div className="mt-1 flex items-center gap-1 text-xs text-text-tertiary">
             <ArrowDown size={12} className="text-warning" />
             <span>{t('sync.behind', { count: status.behind })}</span>
