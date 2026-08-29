@@ -5,13 +5,28 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'APK 版本（semver，须与 tag 一致；留空则取 tag，无 tag 时用 tauri.conf.json 当前版本）'
+        required: false
+        default: ''
+        type: string
+      upload:
+        description: '上传到 GitHub Release（手动触发默认 false，便于只跑构建+签名校验）'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
 
 env:
   NDK_VERSION: '26.1.10909125'
+  # API level 用于 platforms;android-XX
   ANDROID_API: 35
+  # build-tools 必须带补丁号：android-actions 安装 build-tools;35.0.0 生成的目录是 build-tools/35.0.0，
+  # 写成 build-tools/35 会找不到 apksigner.jar
+  ANDROID_BUILD_TOOLS: 35.0.0
   RUST_ANDROID_TARGETS: 'aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android'
 
 jobs:
@@ -57,7 +72,7 @@ jobs:
         uses: android-actions/setup-android@v3
         with:
           accept-android-sdk-licenses: true
-          packages: platform-tools build-tools;35.0.0 platforms;android-${{ env.ANDROID_API }} ndk;${{ env.NDK_VERSION }}
+          packages: platform-tools build-tools;${{ env.ANDROID_BUILD_TOOLS }} platforms;android-${{ env.ANDROID_API }} ndk;${{ env.NDK_VERSION }}
 
       # ---- Fix NDK version (pre-installed NDK 29 may conflict) ----
       - name: Set NDK version
@@ -67,6 +82,64 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/${{ env.NDK_VERSION }}" >> "$GITHUB_ENV"
           echo "Using NDK: $ANDROID_HOME/ndk/${{ env.NDK_VERSION }}"
           ls -la "$ANDROID_HOME/ndk/"
+
+      # ---- Setup: 固定签名密钥库 ----
+      # keystore 存于 Secrets（base64）。每次 CI 都在全新 runner 上，必须回灌这把固定密钥，
+      # 否则 AGP 只能现场生成临时 debug keystore，证书每次漂移 -> Android 拒绝覆盖安装。
+      # keytool -list 在构建前先校验 keystore 可读且密码正确，失败即早停。
+      - name: Decode release keystore
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${{ secrets.POLARIS_KEYSTORE_BASE64 }}" || { echo "Missing secret POLARIS_KEYSTORE_BASE64"; exit 1; }
+          echo "${{ secrets.POLARIS_KEYSTORE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/polaris-release.jks"
+          chmod 600 "$RUNNER_TEMP/polaris-release.jks"
+
+          echo "=== Release keystore fingerprint (must be identical across runs) ==="
+          keytool -list -v -keystore "$RUNNER_TEMP/polaris-release.jks" \
+            -storepass "${{ secrets.POLARIS_KEYSTORE_PASSWORD }}" \
+            -keypass "${{ secrets.POLARIS_KEY_PASSWORD }}" \
+            | grep -E "Alias name|Valid from|Signature algorithm|SHA256:"
+
+          echo "POLARIS_KEYSTORE_FILE=$RUNNER_TEMP/polaris-release.jks" >> "$GITHUB_ENV"
+          echo "POLARIS_KEYSTORE_PASSWORD=${{ secrets.POLARIS_KEYSTORE_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "POLARIS_KEY_ALIAS=${{ secrets.POLARIS_KEY_ALIAS }}" >> "$GITHUB_ENV"
+          echo "POLARIS_KEY_PASSWORD=${{ secrets.POLARIS_KEY_PASSWORD }}" >> "$GITHUB_ENV"
+
+      # ---- Setup: 版本号 ----
+      # versionName 与 versionCode 均由 tauri 在构建期从 tauri.conf.json 的 version 写入 tauri.properties
+      # （versionCode = major*1000000 + minor*1000 + patch，见 tauri-cli generate_tauri_properties）。
+      # 不改这里，APK 内部版本号就永远是 1000/1.0.0，而文件名里的 tag 只会制造「有更新」的错觉。
+      - name: Inject version
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.version }}" ]; then
+            VERSION="${{ inputs.version }}"
+          elif [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            VERSION="$(python3 -c "import json;print(json.load(open('polaris-mobile/src-tauri/tauri.conf.json'))['version'])")"
+          fi
+          VERSION="${VERSION#v}"
+          python3 - "$VERSION" <<'PY'
+          import json, sys
+          v = sys.argv[1]
+          parts = v.split('.')
+          if len(parts) != 3 or not all(x.isdigit() for x in parts):
+              raise SystemExit(f"version 必须是 semver（如 10.4.2），当前值: {v}")
+          major, minor, patch = (int(x) for x in parts)
+          p = 'polaris-mobile/src-tauri/tauri.conf.json'
+          with open(p, encoding='utf-8') as f:
+              cfg = json.load(f)
+          cfg['version'] = v
+          with open(p, 'w', encoding='utf-8') as f:
+              json.dump(cfg, f, ensure_ascii=False, indent=2)
+              f.write('\n')
+          print(f"tauri.conf.json version -> {v}")
+          print(f"expected versionCode -> {major*1000000 + minor*1000 + patch}")
+          PY
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       # ---- Build: Frontend ----
       - name: Install frontend dependencies
@@ -98,7 +171,6 @@ jobs:
       - name: Rename APK with version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p release-artifacts
           APK_PATH=$(find polaris-mobile/src-tauri/gen/android/app/build/outputs/apk -name '*.apk' -not -name '*signed*' -not -name '*unsigned*' | sort -V | tail -1)
           if [ -z "$APK_PATH" ]; then
@@ -107,22 +179,76 @@ jobs:
             exit 1
           fi
           echo "Found APK: $APK_PATH"
+          echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
           cp "$APK_PATH" "release-artifacts/polaris-mobile-${VERSION}.apk"
 
-      # ---- Verify APK ----
-      - name: Verify APK contents
+      # ---- Verify signature and version ----
+      # 两个硬性断言，任一不通过即失败，避免「绿色流水线却打出错误产物」：
+      # 1. 签名指纹必须等于 release keystore 的指纹 —— 否则覆盖安装会被 Android 拒绝
+      # 2. versionCode 必须等于 major*1000000+minor*1000+patch —— 否则系统/商店不认它是新版
+      - name: Verify signature and version
         shell: bash
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          echo "APK: polaris-mobile-${VERSION}.apk"
-          ls -lh "release-artifacts/polaris-mobile-${VERSION}.apk"
-          unzip -l "release-artifacts/polaris-mobile-${VERSION}.apk" | grep -E "(index\.html|assets/main-|\.so)"
+          set -euo pipefail
+          APK="release-artifacts/polaris-mobile-${VERSION}.apk"
+          APKSIGNER="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/lib/apksigner.jar"
+
+          echo "APK: $APK"
+          ls -lh "$APK"
+
+          echo "=== Contents ==="
+          unzip -l "$APK" | grep -E "(index\.html|assets/main-|\.so)"
+
+          echo "=== Contents: index.html 必须存在（否则前端没打进 APK） ==="
+          unzip -l "$APK" | grep -q 'index.html' || { echo "APK 中缺少 index.html"; exit 1; }
+
+          echo "=== Package identity ==="
+          java -jar "$APKSIGNER" verify --print-certs "$APK"
+
+          # 断言 1：签名指纹与 release keystore 一致（两边都归一化成小写无分隔 hex）
+          # keytool 输出形如 "SHA256: 5E:91:C8..."，需先剥掉 SHA256: 前缀再取 hex
+          EXPECTED_FP=$(keytool -list -v -keystore "$POLARIS_KEYSTORE_FILE" \
+              -storepass "$POLARIS_KEYSTORE_PASSWORD" \
+              -keypass "$POLARIS_KEY_PASSWORD" 2>/dev/null \
+              | grep -aE 'SHA256:' | head -1 \
+              | sed -E 's/.*SHA256:[[:space:]]*//' \
+              | tr -d ' :\n' | tr 'A-F' 'a-f')
+          ACTUAL_FP=$(java -jar "$APKSIGNER" verify --print-certs "$APK" 2>/dev/null \
+              | grep -aE 'Signer #1 certificate SHA-256 digest' | sed 's/.*digest: //' | tr 'A-F' 'a-f' || true)
+          echo "expected fingerprint: $EXPECTED_FP"
+          echo "actual   fingerprint: $ACTUAL_FP"
+          test -n "$EXPECTED_FP" || { echo "无法从 keystore 取得 SHA256（检查密码/格式）"; exit 1; }
+          test "$EXPECTED_FP" = "$ACTUAL_FP" || { echo "签名指纹不匹配，此 APK 无法覆盖安装"; exit 1; }
+          echo "OK: 签名指纹与 release keystore 一致"
+
+          # 断言 2：versionCode 与 semver 推导值一致
+          EXPECTED_VC=$(echo "$VERSION" | python3 -c "import sys;m,n,p=sys.stdin.read().strip().split('.');print(int(m)*1000000+int(n)*1000+int(p))")
+          AAPT2="${ANDROID_HOME}/build-tools/${ANDROID_BUILD_TOOLS}/aapt2"
+          echo "=== versionCode / versionName ==="
+          "$AAPT2" dump badging "$APK" | grep -E "^package:|sdkVersion|targetSdkVersion|application-label:"
+          ACTUAL_VC=$("$AAPT2" dump badging "$APK" | grep '^package:' | sed "s/.*versionCode='\([0-9]*\)'.*/\1/")
+          echo "expected versionCode: $EXPECTED_VC"
+          echo "actual   versionCode: $ACTUAL_VC"
+          test -n "$ACTUAL_VC" || { echo "无法从 APK 取得 versionCode"; exit 1; }
+          test "$EXPECTED_VC" = "$ACTUAL_VC" || { echo "versionCode 不匹配，覆盖发布会被拒"; exit 1; }
+          echo "OK: versionCode 与版本一致"
+
+      # ---- Upload artifact（始终保留，便于测试时从 Actions 页面下载） ----
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: polaris-mobile-${VERSION}
+          path: release-artifacts/polaris-mobile-${VERSION}.apk
+          retention-days: 30
 
       # ---- Upload to Release ----
+      # 仅 tag 推送或显式勾选 upload 时才创建 Release；手动触发默认只构建+校验。
       - name: Upload APK to Release
+        if: startsWith(github.ref, 'refs/tags/') || inputs.upload == true
         uses: softprops/action-gh-release@v2
         with:
           files: release-artifacts/polaris-mobile-*.apk
           tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
