@@ -37,7 +37,6 @@ import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
-import type { ContextBlock } from './types'
 
 const log = createLogger('ConversationStore')
 
@@ -128,6 +127,7 @@ function createInitialState(sessionId: string): ConversationState {
     // TaskBoard: boardId → blocks 索引，run 级单板
     taskBoardBlockMap: new Map(),
     activeTaskBoardId: null,
+    pendingTaskCreates: [],
     toolGroupBlockMap: new Map(),
     pendingToolGroup: null,
     permissionRequestBlockMap: new Map(),
@@ -279,6 +279,7 @@ export function createConversationStore(
           activeTaskId: null,
           taskBoardBlockMap: new Map(),
           activeTaskBoardId: null,
+          pendingTaskCreates: [],
           toolGroupBlockMap: new Map(),
           pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
@@ -1295,6 +1296,29 @@ export function createConversationStore(
         set({ currentMessage: { ...currentMessage, blocks } })
       },
 
+      queueTaskCreate: (boardId, entry) => {
+        const { pendingTaskCreates } = get()
+        set({ pendingTaskCreates: [...pendingTaskCreates, { boardId, entry }] })
+      },
+
+      flushTaskCreate: (boardId, taskId) => {
+        const { pendingTaskCreates } = get()
+        if (!pendingTaskCreates.length) return
+        const idx = pendingTaskCreates.findIndex(e => e.boardId === boardId)
+        if (idx < 0) return
+        const entry = pendingTaskCreates[idx]
+        set({ pendingTaskCreates: pendingTaskCreates.filter((_, i) => i !== idx) })
+        // 无真实 id 时降级为 uuid（PRD 验收 E1 健壮性）
+        const item: TaskBoardItem = {
+          id: taskId || generateUUID(),
+          subject: entry.entry.subject,
+          activeForm: entry.entry.activeForm,
+          description: entry.entry.description,
+          status: 'pending',
+        }
+        get().upsertTaskBoardItem(boardId, item)
+      },
+
       // ===== ToolGroup =====
       appendToolGroupBlock: (groupId, tools, summary) => {
         const { currentMessage, toolGroupBlockMap, streamingUpdateCounter } = get()
@@ -1689,6 +1713,7 @@ export function createConversationStore(
           toolBlockMap: new Map(),
           taskBoardBlockMap: new Map(),
           activeTaskBoardId: null,
+          pendingTaskCreates: [],
         })
 
         try {

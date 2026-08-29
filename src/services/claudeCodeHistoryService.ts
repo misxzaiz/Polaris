@@ -7,7 +7,7 @@ import { generateUUID } from '@/utils/uuid';
  */
 
 import { invoke } from '@/services/tauri'
-import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock } from '@/types'
+import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock, TaskBoardBlock, TaskBoardItem } from '@/types'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ClaudeCodeHistoryService')
@@ -281,7 +281,7 @@ export class ClaudeCodeHistoryService {
           chatMessages.push({
             id: generateUUID(),
             type: 'assistant',
-            blocks: accumulatedBlocks,
+            blocks: this.aggregateTaskBlocks(accumulatedBlocks),
             timestamp: accumulatedTimestamp,
             isStreaming: false,
           } as AssistantChatMessage)
@@ -313,7 +313,7 @@ export class ClaudeCodeHistoryService {
           chatMessages.push({
             id: generateUUID(),
             type: 'assistant',
-            blocks: accumulatedBlocks,
+            blocks: this.aggregateTaskBlocks(accumulatedBlocks),
             timestamp: accumulatedTimestamp,
             isStreaming: false,
           } as AssistantChatMessage)
@@ -335,7 +335,7 @@ export class ClaudeCodeHistoryService {
       chatMessages.push({
         id: generateUUID(),
         type: 'assistant',
-        blocks: accumulatedBlocks,
+        blocks: this.aggregateTaskBlocks(accumulatedBlocks),
         timestamp: accumulatedTimestamp,
         isStreaming: false,
       } as AssistantChatMessage)
@@ -520,6 +520,168 @@ export class ClaudeCodeHistoryService {
     }
 
     return ''
+  }
+
+  /**
+   * 将 blocks 中的 Task 家族工具块(TaskCreate/Update/List/Get/Output/Stop)
+   * 聚合为单个 task_board block(最终态),使历史回放呈现任务板而非一堆工具块。
+   *
+   * 策略:扫描所有 Task 工具块,按 taskId 幂等合并为最终态;
+   * 首个 Task 块的位置替换为聚合 board,其余 Task 块删除。非 Task 块原样保留。
+   * 无 Task 块则原样返回。
+   */
+  private aggregateTaskBlocks(blocks: ContentBlock[]): ContentBlock[] {
+    // TaskStop/TaskOutput 排除:实测其 task_id 是后台 shell id 空间(如 'b8wcfdfju'),
+    // 与任务板数字 id 无关,聚合会错挂。仅聚合任务板四工具。
+    const taskTools = new Set(['taskcreate', 'taskupdate', 'tasklist', 'taskget'])
+    // 收集 Task 块索引 + 是否存在
+    const taskIndices: number[] = []
+    let hasTask = false
+    for (let i = 0; i < blocks.length; i++) {
+      const b = blocks[i]
+      if (b.type === 'tool_call' && taskTools.has(b.name.toLowerCase())) {
+        taskIndices.push(i)
+        hasTask = true
+      }
+    }
+    if (!hasTask) return blocks
+
+    // 按 taskId 幂等合并(最终态:后出现的覆盖前面)
+    const itemMap = new Map<string, TaskBoardItem>()
+    let listSnapshot: TaskBoardItem[] | null = null
+    let boardId = 'taskboard-history'
+    for (const idx of taskIndices) {
+      const block = blocks[idx] as ToolCallBlock
+      const lower = block.name.toLowerCase()
+      const input = block.input || {}
+      if (lower === 'taskcreate') {
+        // TaskCreate 的 taskId 由系统分配,在 tool_result output 回传,不在 input。
+        // 取 output 中的 taskId 作 id,使 TaskUpdate 的 input.taskId 能匹配合并。
+        boardId = block.id // 用首个 TaskCreate 的 callId 作 boardId
+        const id = this.extractTaskIdFromOutput(block.output) || generateUUID()
+        const item: TaskBoardItem = {
+          id,
+          subject: (input.subject as string) || (input.activeForm as string) || id,
+          activeForm: input.activeForm as string | undefined,
+          status: 'pending',
+          description: input.description as string | undefined,
+        }
+        itemMap.set(id, item)
+      } else if (lower === 'taskupdate') {
+        const id = (input.taskId as string) || (input.task_id as string)
+        // deleted 状态:实测 "Updated task #N deleted",对应项从板中剔除
+        if (id && input.status === 'deleted') {
+          itemMap.delete(id)
+          continue
+        }
+        if (id) {
+          const existing = itemMap.get(id)
+          const patch: Partial<TaskBoardItem> = {}
+          if (input.status) patch.status = input.status as TaskBoardItem['status']
+          if (input.subject) patch.subject = input.subject as string
+          if (input.activeForm) patch.activeForm = input.activeForm as string
+          if (existing) {
+            itemMap.set(id, { ...existing, ...patch, updateCount: (existing.updateCount ?? 0) + 1 })
+          } else {
+            // 未知 id(出现在 TaskCreate 之前):降级新建 pending
+            itemMap.set(id, {
+              id,
+              subject: patch.subject || patch.activeForm || id,
+              status: patch.status || 'pending',
+              ...patch,
+              updateCount: 0,
+            })
+          }
+        }
+      } else if (lower === 'tasklist') {
+        // 解析 output 快照校准(不覆盖已有更精确状态)
+        const snapshot = this.parseTaskListOutput(block.output)
+        if (snapshot) listSnapshot = snapshot
+      }
+      // TaskGet/Output/Stop:仅标记,不影响 board 内容(Stop 可改 status)
+      if (lower === 'taskstop') {
+        const id = (input.taskId as string) || (input.task_id as string)
+        if (id && itemMap.has(id)) {
+          const it = itemMap.get(id)!
+          itemMap.set(id, { ...it, status: 'stopped' })
+        }
+      }
+    }
+
+    // 用 TaskList 快照校准(补充 TaskCreate 未覆盖的项,不覆盖已有状态)
+    if (listSnapshot) {
+      for (const snap of listSnapshot) {
+        if (!itemMap.has(snap.id)) {
+          itemMap.set(snap.id, { ...snap, updateCount: 0 })
+        }
+      }
+    }
+
+    const items = [...itemMap.values()]
+    const completed = items.filter(i => i.status === 'completed').length
+    const inProgress = items.filter(i => i.status === 'in_progress').length
+    const blocked = items.filter(i => i.status === 'blocked').length
+    const board: TaskBoardBlock = {
+      type: 'task_board',
+      id: boardId,
+      items,
+      completed,
+      inProgress,
+      blocked,
+      total: items.length,
+      updatedAt: new Date().toISOString(),
+    }
+
+    // 重组:首个 Task 块位置放 board,其余 Task 块删除
+    const result: ContentBlock[] = []
+    let boardInserted = false
+    const taskIdxSet = new Set(taskIndices)
+    for (let i = 0; i < blocks.length; i++) {
+      if (taskIdxSet.has(i)) {
+        if (!boardInserted) {
+          result.push(board)
+          boardInserted = true
+        }
+        // 其余 Task 块跳过
+      } else {
+        result.push(blocks[i])
+      }
+    }
+    // 若所有块都是 Task(board 未插入),补一个
+    if (!boardInserted) result.push(board)
+    return result
+  }
+
+  /** 解析 TaskList 的 tool_result output 为任务项快照 */
+  /** 从 TaskCreate 的 tool_result 提取真实 taskId。
+   *  实测形状为纯文本 "Task #1 created successfully: <subject>"(非 JSON),
+   *  从 #(\d+) 提取数字;TaskUpdate 的 input.taskId 也是该数字字符串。 */
+  private extractTaskIdFromOutput(output?: string): string | null {
+    if (!output) return null
+    const m = output.match(/#\s*(\d+)/)
+    return m ? m[1] : null
+  }
+
+  private parseTaskListOutput(output?: string): TaskBoardItem[] | null {
+    if (!output) return null
+    // 实测为纯文本多行 "#1 [completed] 标题"(JSON.parse 14/14 全失败),按行正则提取
+    const items: TaskBoardItem[] = []
+    for (const line of output.split('
+')) {
+      const m = line.match(/^\s*#\s*(\d+)\s*\[([A-Za-z_]+)\]\s*(.*)$/)
+      if (!m) continue
+      const raw = m[2]
+      let status: TaskBoardItem['status'] = 'pending'
+      if (raw === 'completed' || raw === 'in_progress' || raw === 'blocked' || raw === 'stopped') {
+        status = raw
+      } else if (raw === 'deleted') {
+        continue // 已删除项不入板
+      }
+      const subject = m[3].trim()
+      if (!subject) continue
+      items.push({ id: m[1], subject, status })
+    }
+    return items.length > 0 ? items : null
   }
 
   /**

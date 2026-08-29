@@ -21,43 +21,54 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
-/** 判定是否为 Task 家族工具（TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop） */
-function isTaskFamilyTool(toolName: string): boolean {
+/** 判定是否为任务板工具（TaskCreate/TaskUpdate/TaskList/TaskGet）。
+ *  TaskStop/TaskOutput 排除:实测其 task_id 是后台 shell id 空间(如 'b8wcfdfju'),
+ *  与任务板数字 id 无关,应保持普通工具块渲染。 */
+function isTaskBoardTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
-  return n === 'taskcreate' || n === 'taskupdate' || n === 'tasklist'
-    || n === 'taskget' || n === 'taskoutput' || n === 'taskstop'
+  return n === 'taskcreate' || n === 'taskupdate' || n === 'tasklist' || n === 'taskget'
 }
 
-/** 从 TaskCreate 输入解析任务项 */
-function parseTaskCreateItem(args: Record<string, unknown>): TaskBoardItem | null {
+/** 从 TaskCreate 输入解析任务项(无 id,流式路径延迟到 tool_call_end 用 output 回传 taskId) */
+function parseTaskCreateItem(args: Record<string, unknown>): { subject: string; activeForm?: string; description?: string } | null {
   const subject = args.subject as string | undefined
   if (!subject) return null
   return {
-    id: (args.taskId as string) || generateUUID(),
     subject,
     activeForm: args.activeForm as string | undefined,
-    status: 'pending',
     description: args.description as string | undefined,
   }
 }
 
-/** 从 TaskList 输出解析任务项快照 */
+/** 从 TaskCreate 的 tool_result output 提取真实 taskId。
+ *  实测形状为纯文本 "Task #1 created successfully: <subject>"(非 JSON),
+ *  从 #(\d+) 提取数字 taskId;TaskUpdate 的 input.taskId 也是该数字字符串。 */
+function extractTaskIdFromOutput(output: string): string | null {
+  const m = output.match(/#\s*(\d+)/)
+  return m ? m[1] : null
+}
+
+/** 从 TaskList 输出解析任务项快照。
+ *  实测形状为纯文本多行 "#1 [completed] 标题"(非 JSON,939 转录实测 JSON.parse 14/14 全失败),
+ *  按行正则提取;TaskUpdate 还会下发 deleted 状态(实测 11 次),对应剔除该项。 */
 function parseTaskListOutput(output: string): TaskBoardItem[] | null {
-  try {
-    const parsed = JSON.parse(output)
-    const arr = Array.isArray(parsed) ? parsed : parsed?.tasks || parsed?.items
-    if (!Array.isArray(arr)) return null
-    return arr.map((t: Record<string, unknown>) => ({
-      id: String(t.id ?? t.taskId ?? generateUUID()),
-      subject: String(t.subject ?? t.content ?? ''),
-      activeForm: t.activeForm as string | undefined,
-      status: (t.status as TaskBoardItem['status']) || 'pending',
-      blockedBy: Array.isArray(t.blockedBy) ? (t.blockedBy as string[]) : undefined,
-      description: t.description as string | undefined,
-    })).filter(i => i.subject)
-  } catch {
-    return null
+  if (!output) return null
+  const items: TaskBoardItem[] = []
+  for (const line of output.split('\n')) {
+    const m = line.match(/^\s*#\s*(\d+)\s*\[([A-Za-z_]+)\]\s*(.*)$/)
+    if (!m) continue
+    const rawStatus = m[2]
+    let status: TaskBoardItem['status'] = 'pending'
+    if (rawStatus === 'completed' || rawStatus === 'in_progress' || rawStatus === 'blocked' || rawStatus === 'stopped') {
+      status = rawStatus
+    } else if (rawStatus === 'deleted') {
+      continue // 已删除项不入板
+    }
+    const subject = m[3].trim()
+    if (!subject) continue
+    items.push({ id: m[1], subject, status })
   }
+  return items.length > 0 ? items : null
 }
 
 /** 会话实际模型集合去重合并（保序）。中转站动态路由时逐轮可能不同（如 glm-5.2 → deepseek-v4-flash） */
@@ -198,12 +209,14 @@ export function handleAIEvent(
       const toolName = event.tool
       const callId = event.callId || generateUUID()
       // Task 家族工具 → 路由到任务板（不创建普通 tool_call block）
-      if (isTaskFamilyTool(toolName) && event.args) {
+      if (isTaskBoardTool(toolName) && event.args) {
         const boardId = state.ensureTaskBoard(callId)
         const lower = toolName.toLowerCase()
         if (lower === 'taskcreate') {
+          // TaskCreate 的真实 taskId 由系统分配,在 tool_result output 回传(纯文本 "Task #N"),
+          // 此时拿不到 id。先缓存到队列,tool_call_end 用 output 解析 id 后 flush 入板。
           const item = parseTaskCreateItem(event.args)
-          if (item) state.upsertTaskBoardItem(boardId, item)
+          if (item) state.queueTaskCreate(boardId, item)
         } else if (lower === 'taskupdate') {
           // TaskUpdate: 从 args 提取 taskId + status，幂等 patch
           const taskId = (event.args.taskId || event.args.task_id) as string | undefined
@@ -233,11 +246,19 @@ export function handleAIEvent(
 
       // Task 家族工具 → 更新任务板（不创建普通 tool_call block）
       // TaskList: 用 output 快照校准看板;TaskGet/Output/Stop 仅标记完成(板已存在)
-      if (isTaskFamilyTool(event.tool)) {
+      if (isTaskBoardTool(event.tool)) {
         const { activeTaskBoardId } = get()
-        if (activeTaskBoardId && output && event.tool.toLowerCase() === 'tasklist') {
-          const snapshot = parseTaskListOutput(output)
-          if (snapshot) state.syncTaskBoardFromList(activeTaskBoardId, snapshot)
+        const lower = event.tool.toLowerCase()
+        if (activeTaskBoardId && output) {
+          if (lower === 'tasklist') {
+            // TaskList: 用 output 快照校准看板
+            const snapshot = parseTaskListOutput(output)
+            if (snapshot) state.syncTaskBoardFromList(activeTaskBoardId, snapshot)
+          } else if (lower === 'taskcreate') {
+            // TaskCreate: tool_result 回传真实 taskId(纯文本 "Task #N")，flush 入板
+            const taskId = extractTaskIdFromOutput(output)
+            state.flushTaskCreate(activeTaskBoardId, taskId)
+          }
         }
         break
       }

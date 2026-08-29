@@ -12,7 +12,7 @@ import type {
   Workspace,
 } from '@/types'
 import type { Attachment } from '@/types/attachment'
-import type { MarqueeContextBlock, BrowserRegion } from '@/services/tauri/browserService'
+import type { BrowserRegion } from '@/services/tauri/browserService'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { ProfileMode } from '@/types/sessionConfig'
 import type { StoreApi, UseBoundStore } from 'zustand'
@@ -367,6 +367,8 @@ export interface ConversationState {
   taskBoardBlockMap: Map<string, number>
   /** 当前 run 的活动任务板 ID */
   activeTaskBoardId: string | null
+  /** TaskCreate 待 flush 队列（start 时无真实 taskId，end 用 tool_result 回传 id 后 upsert） */
+  pendingTaskCreates: Array<{ boardId: string; entry: { subject: string; activeForm?: string; description?: string } }>
   toolGroupBlockMap: Map<string, number>
   pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
@@ -570,6 +572,10 @@ export interface ConversationActions {
   patchTaskBoardItem: (boardId: string, taskId: string, patch: Partial<import('../../types/chat').TaskBoardItem>) => void
   /** 用 TaskList 输出快照校准看板（不覆盖已有更精确状态） */
   syncTaskBoardFromList: (boardId: string, items: import('../../types/chat').TaskBoardItem[]) => void
+  /** TaskCreate start 时缓存（无真实 taskId，由系统分配），end 时 flush */
+  queueTaskCreate: (boardId: string, entry: { subject: string; activeForm?: string; description?: string }) => void
+  /** 用 tool_result 回传的真实 taskId flush 队列中的 pending create */
+  flushTaskCreate: (boardId: string, taskId: string | null) => void
 
   // ===== ToolGroup =====
   appendToolGroupBlock: (groupId: string, tools: Array<{ id: string; name: string; status: 'pending' | 'running' | 'completed' | 'failed'; startedAt: string }>, summary: string) => void
