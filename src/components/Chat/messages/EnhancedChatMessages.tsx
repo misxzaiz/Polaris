@@ -35,6 +35,7 @@ import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants'
 import { renderChatMessage } from './renderChatMessage';
 import { EmptyState } from '../common/EmptyState';
 import { ThinkingOrb } from '../common/ThinkingOrb';
+import { DynamicIsland } from '../dynamic-island';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 
 // Re-export for external consumers
@@ -309,6 +310,22 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     scrollToBottom,
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
+  // 灵动岛定位跳转：blockIndex 是 currentMessage.blocks 中的索引，
+  // 当前阶段先滚动到该消息；I2 将扩展为块级 ring 高亮。
+  const handleIslandLocate = useCallback((blockIndex: number) => {
+    if (!currentMessage) return;
+    void blockIndex;
+    const msgIndex = displayMessages.findIndex(m => m.id === currentMessage.id);
+    if (msgIndex >= 0) {
+      virtuosoRef.current?.scrollToIndex({
+        index: msgIndex,
+        align: 'start',
+        behavior: 'smooth',
+      });
+      setAutoScroll(false);
+    }
+  }, [currentMessage, displayMessages]);
+
   // 「加载更早」头部：磁盘上还有未加载的更早消息时出现（尾部优先恢复）
   const hasEarlier = !!historyPaging?.hasMore;
   const LoadEarlierHeader = useMemo(() => {
@@ -331,6 +348,9 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative">
+        {/* 灵动岛：顶部居中浮动进度指示器，per-session */}
+        <DynamicIsland sessionId={sessionId} onLocate={handleIslandLocate} />
+
         <div className="relative h-full">
           {isEmpty ? (
             <EmptyState />

@@ -1,0 +1,393 @@
+/**
+ * 灵动岛（Dynamic Island）样式
+ *
+ * 使用 Polaris 暗色主题 CSS 变量（与原型一致）：
+ * --c-bg-surface / --c-text-primary / --c-primary / --c-status-success / --c-status-danger / --c-accent-ai
+ *
+ * 挂载点：消息区容器顶部居中 absolute，z-index 高于消息流、低于模态。
+ * 不推挤消息流（absolute 定位），空闲时不渲染。
+ */
+
+/* ====== 容器 ====== */
+.island-root {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  width: min(440px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: auto;
+}
+
+.island-root .island-compact,
+.island-root .island-panel {
+  width: 100%;
+  border-radius: 16px;
+  background: rgba(var(--c-bg-surface, 37 37 43), 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(var(--c-border, 255 255 255), 0.1);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 2px 8px rgba(0,0,0,0.3);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.island-root.island-expanded .island-compact,
+.island-root.island-expanded .island-panel {
+  border-radius: 20px;
+}
+
+/* 淡出退场 */
+.island-root.island-exiting {
+  opacity: 0;
+  transform: translateX(-50%) translateY(-8px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+/* ====== 折叠态 ====== */
+.island-compact {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  min-height: 38px;
+}
+
+.island-collapsed .island-compact {
+  padding: 6px 14px;
+}
+
+/* 状态点 */
+.island-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  position: relative;
+}
+.island-collapsed .island-dot {
+  width: 6px;
+  height: 6px;
+}
+
+.island-dot-running {
+  background: rgb(var(--c-primary, 59 130 246));
+}
+.island-dot-running::after {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 2px solid rgba(var(--c-primary, 59 130 246), 0.4);
+  animation: island-pulse 1.6s ease-out infinite;
+}
+
+.island-dot-done {
+  background: rgb(var(--c-status-success, 52 211 153));
+}
+
+.island-dot-fail {
+  background: rgb(var(--c-status-danger, 248 113 113));
+}
+
+@keyframes island-pulse {
+  0% { transform: scale(0.7); opacity: 1; }
+  100% { transform: scale(1.6); opacity: 0; }
+}
+
+/* 主区域 */
+.island-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.island-seg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.island-seg-label {
+  color: var(--c-text-tertiary, #8e8e93);
+}
+.island-seg-val {
+  color: var(--c-text-primary, #f8f8f8);
+  font-weight: 500;
+}
+
+.island-tiny-bar {
+  display: inline-block;
+  width: 40px;
+  height: 4px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.island-tiny-bar > i {
+  display: block;
+  height: 100%;
+  background: rgb(var(--c-primary, 59 130 246));
+  border-radius: 2px;
+}
+
+.island-time {
+  color: var(--c-text-tertiary, #8e8e93);
+  font-size: 11px;
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.island-collapsed .island-time,
+.island-time-done {
+  color: rgb(var(--c-status-success, 52 211 153));
+}
+
+.island-chev {
+  color: var(--c-text-muted, #6d6d70);
+  flex-shrink: 0;
+  transition: transform 0.25s;
+}
+.island-chev-open {
+  transform: rotate(180deg);
+}
+
+/* collapsed 降级记录条 */
+.island-collapsed-bar {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.island-check {
+  color: rgb(var(--c-status-success, 52 211 153));
+  font-weight: 600;
+}
+.island-collapsed-text {
+  color: var(--c-text-secondary, #b4b4b8);
+}
+
+.island-muted {
+  color: var(--c-text-muted, #6d6d70);
+  font-size: 12px;
+}
+
+/* ====== 展开态面板 ====== */
+.island-panel {
+  max-height: 0;
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  border-top: 1px solid rgba(var(--c-border, 255 255 255), 0.06);
+}
+.island-expanded .island-panel {
+  max-height: 520px;
+}
+
+.island-panel-inner {
+  padding: 4px 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.island-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px 6px;
+  border-bottom: 1px solid rgba(var(--c-border, 255 255 255), 0.05);
+  margin-bottom: 4px;
+}
+.island-panel-title {
+  font-size: 11px;
+  color: var(--c-text-muted, #6d6d70);
+  flex: 1;
+}
+.island-panel-time {
+  font-size: 11px;
+  color: var(--c-text-tertiary, #8e8e93);
+  font-variant-numeric: tabular-nums;
+}
+.island-close {
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  color: var(--c-text-muted, #6d6d70);
+  font-size: 12px;
+  transition: background 0.12s;
+}
+.island-close:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.island-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--c-text-muted, #6d6d70);
+  font-size: 12px;
+}
+
+/* ====== 运行态卡片 ====== */
+.island-rcard {
+  border: 1px solid rgba(var(--c-border, 255 255 255), 0.08);
+  border-radius: 10px;
+  padding: 9px 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: rgba(var(--c-bg-elevated, 26 26 31), 0.4);
+}
+.island-rcard:hover {
+  background: rgba(var(--c-border, 255 255 255), 0.06);
+  border-color: rgba(var(--c-border, 255 255 255), 0.15);
+}
+
+.island-rcard-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.island-rcard-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  flex-shrink: 0;
+  background: rgba(255,255,255,0.1);
+}
+.island-rcard-icon-task { color: rgb(var(--c-primary, 59 130 246)); }
+.island-rcard-icon-agent { color: rgb(var(--c-accent-ai, 167 139 250)); }
+.island-rcard-icon-workflow { color: rgb(var(--c-status-info, 96 165 250)); }
+.island-rcard-icon-progress { color: var(--c-text-tertiary, #8e8e93); }
+.island-rcard-icon-done { color: rgb(var(--c-status-success, 52 211 153)); }
+.island-rcard-icon-fail { color: rgb(var(--c-status-danger, 248 113 113)); }
+
+.island-rcard-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--c-text-primary, #f8f8f8);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.island-locate {
+  font-size: 11px;
+  color: rgb(var(--c-primary, 59 130 246));
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.island-rcard:hover .island-locate {
+  opacity: 1;
+}
+
+.island-rcard-bar {
+  height: 4px;
+  background: rgba(255,255,255,0.08);
+  border-radius: 2px;
+  overflow: hidden;
+  margin: 6px 0 4px;
+}
+.island-rcard-bar > i {
+  display: block;
+  height: 100%;
+  border-radius: 2px;
+  background: rgb(var(--c-primary, 59 130 246));
+  transition: width 0.5s;
+}
+.island-rcard-bar > i.island-rcard-bar-done {
+  background: rgb(var(--c-status-success, 52 211 153));
+}
+
+.island-rcard-detail {
+  font-size: 11px;
+  color: var(--c-text-secondary, #b4b4b8);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.island-rcard-detail-fail {
+  color: rgb(var(--c-status-danger, 248 113 113));
+}
+.island-rcard-detail-done {
+  color: var(--c-text-tertiary, #8e8e93);
+}
+
+/* 已完成卡片淡化 */
+.island-rcard-done {
+  opacity: 0.7;
+}
+.island-rcard-done:hover {
+  opacity: 1;
+}
+
+/* ====== 已完成分组 ====== */
+.island-done-group {
+  margin-top: 4px;
+  border-top: 1px solid rgba(var(--c-border, 255 255 255), 0.06);
+  padding-top: 4px;
+}
+.island-done-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: var(--c-text-muted, #6d6d70);
+  cursor: pointer;
+  border-radius: 6px;
+  background: transparent;
+  border: none;
+  transition: background 0.12s;
+  width: 100%;
+}
+.island-done-head:hover {
+  background: rgba(255,255,255,0.04);
+}
+.island-done-chev {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+.island-done-chev-open {
+  transform: rotate(90deg);
+}
+.island-done-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+/* ====== 响应式：窄窗口折叠态截断 ====== */
+@media (max-width: 500px) {
+  .island-root {
+    width: calc(100% - 24px);
+  }
+  .island-main {
+    font-size: 11px;
+  }
+  .island-tiny-bar {
+    width: 28px;
+  }
+}
