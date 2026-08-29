@@ -586,6 +586,23 @@ impl EventParser {
                 ToolCallStartEvent::new(&self.session_id, tc.name.clone(), tc.args.clone())
                     .with_call_id(tc.id.clone())
             ));
+
+            // Agent 工具开始 → 发 AgentRunStart 事件(接线已建成的 AgentRunBlockRenderer)
+            // task_id 用 tool_use_id;agent_type 取 args.subagent_type(兼容 description 回退);
+            // capabilities 暂不透传(SDK CLI 模式无该字段)
+            if tc.name.eq_ignore_ascii_case("agent") || tc.name.eq_ignore_ascii_case("task") {
+                let agent_type = tc.args.get("subagent_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("general-purpose")
+                    .to_string();
+                results.push(AIEvent::AgentRunStart(
+                    crate::models::AgentRunStartEvent::new(
+                        &self.session_id,
+                        tc.id.clone(),
+                        agent_type,
+                    )
+                ));
+            }
         }
 
         // 完整 assistant 消息代表本 turn 输出结束，重置流式 turn 状态
@@ -645,14 +662,32 @@ impl EventParser {
                         ) {
                             // 找到了对应的工具调用
                             let status_emoji = if success { "✅" } else { "❌" };
+                            let tc_name = tc.name.clone();
                             results.push(AIEvent::Progress(ProgressEvent::new(
-                                &self.session_id, format!("{} {}", status_emoji, tc.name)
+                                &self.session_id, format!("{} {}", status_emoji, tc_name)
                             )));
                             results.push(AIEvent::ToolCallEnd(
-                                ToolCallEndEvent::new(&self.session_id, tc.name, success)
-                                    .with_call_id(tool_use_id)
-                                    .with_result(serde_json::Value::String(output))
+                                ToolCallEndEvent::new(&self.session_id, tc_name.clone(), success)
+                                    .with_call_id(tool_use_id.clone())
+                                    .with_result(serde_json::Value::String(output.clone()))
                             ));
+
+                            // Agent 工具结束 → 发 AgentRunEnd 事件(接线已建成的 AgentRunBlockRenderer)
+                            // task_id 用 tool_use_id,与 Start 对应;result 取输出摘要
+                            if tc_name.eq_ignore_ascii_case("agent") || tc_name.eq_ignore_ascii_case("task") {
+                                let result_summary = if output.len() > 200 {
+                                    format!("{}...", &output[..200])
+                                } else {
+                                    output.clone()
+                                };
+                                results.push(AIEvent::AgentRunEnd(
+                                    crate::models::AgentRunEndEvent::new(
+                                        &self.session_id,
+                                        tool_use_id.clone(),
+                                        success,
+                                    ).with_result(result_summary)
+                                ));
+                            }
                         } else {
                             // 找不到对应的工具调用（可能是 assistant 消息中的 tool_use 未被正确记录）
                             // 仍然发送事件，但工具名称为空
@@ -734,13 +769,30 @@ impl EventParser {
             args.clone(),
         );
 
-        vec![
+        let mut events = vec![
             AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("🔧 {}", tool_name))),
             AIEvent::ToolCallStart(
-                ToolCallStartEvent::new(&self.session_id, tool_name, args)
-                    .with_call_id(tool_use_id)
+                ToolCallStartEvent::new(&self.session_id, tool_name.clone(), args.clone())
+                    .with_call_id(tool_use_id.clone())
             ),
-        ]
+        ];
+
+        // Agent 工具开始 → 发 AgentRunStart 事件(流式路径)
+        if tool_name.eq_ignore_ascii_case("agent") || tool_name.eq_ignore_ascii_case("task") {
+            let agent_type = args.get("subagent_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("general-purpose")
+                .to_string();
+            events.push(AIEvent::AgentRunStart(
+                crate::models::AgentRunStartEvent::new(
+                    &self.session_id,
+                    tool_use_id.clone(),
+                    agent_type,
+                )
+            ));
+        }
+
+        events
     }
 
     /// 解析工具结束事件
@@ -751,19 +803,39 @@ impl EventParser {
         output: Option<String>,
     ) -> Vec<AIEvent> {
         let success = output.is_some();
+        // 预提取输出摘要(供 Agent End 事件使用),避免 output 被 move 后无法借用
+        let agent_result_summary = output.as_deref().map(|s| {
+            if s.len() > 200 { format!("{}...", &s[..200]) } else { s.to_string() }
+        });
         let result = output.map(serde_json::Value::String);
 
         // 更新工具调用状态
         if let Some(tc) = self.tool_call_manager.end_tool_call(&tool_use_id, result.clone(), success) {
             let status_emoji = if success { "✅" } else { "❌" };
-            return vec![
-                AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, tc.name))),
+            let tc_name = tc.name.clone();
+            let mut events = vec![
+                AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, tc_name))),
                 AIEvent::ToolCallEnd(
-                    ToolCallEndEvent::new(&self.session_id, tc.name, success)
-                        .with_call_id(tool_use_id)
+                    ToolCallEndEvent::new(&self.session_id, tc_name.clone(), success)
+                        .with_call_id(tool_use_id.clone())
                         .with_result(result.unwrap_or(serde_json::Value::Null))
                 ),
             ];
+
+            // Agent 工具结束 → 发 AgentRunEnd 事件(流式路径)
+            if tc_name.eq_ignore_ascii_case("agent") || tc_name.eq_ignore_ascii_case("task") {
+                let mut end_evt = crate::models::AgentRunEndEvent::new(
+                    &self.session_id,
+                    tool_use_id.clone(),
+                    success,
+                );
+                if let Some(summary) = agent_result_summary {
+                    end_evt = end_evt.with_result(summary);
+                }
+                events.push(AIEvent::AgentRunEnd(end_evt));
+            }
+
+            return events;
         }
 
         // 如果找不到 tool_use_id，尝试通过工具名称查找
@@ -772,14 +844,29 @@ impl EventParser {
                 let tc_id = tc.id.clone();
                 self.tool_call_manager.end_tool_call(&tc_id, result.clone(), success);
                 let status_emoji = if success { "✅" } else { "❌" };
-                return vec![
+                let mut events = vec![
                     AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("{} {}", status_emoji, name))),
                     AIEvent::ToolCallEnd(
                         ToolCallEndEvent::new(&self.session_id, name.clone(), success)
-                            .with_call_id(tc_id)
+                            .with_call_id(tc_id.clone())
                             .with_result(result.unwrap_or(serde_json::Value::Null))
                     ),
                 ];
+
+                // Agent 工具结束 → 发 AgentRunEnd 事件(名称回退路径)
+                if name.eq_ignore_ascii_case("agent") || name.eq_ignore_ascii_case("task") {
+                    let mut end_evt = crate::models::AgentRunEndEvent::new(
+                        &self.session_id,
+                        tc_id.clone(),
+                        success,
+                    );
+                    if let Some(summary) = agent_result_summary {
+                        end_evt = end_evt.with_result(summary);
+                    }
+                    events.push(AIEvent::AgentRunEnd(end_evt));
+                }
+
+                return events;
             }
         }
 

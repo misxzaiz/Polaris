@@ -34,6 +34,8 @@ pub use ai_event::{
     UsageEvent, ModelUsageBreakdown,
     // 工具调用中间输出
     ToolCallUpdateEvent,
+    // AgentRun 类型
+    AgentRunStartEvent, AgentRunEndEvent,
 };
 pub mod cli_info;
 pub use cli_info::{CliAgentInfo, CliAuthStatus, CliDynamicInfo};
