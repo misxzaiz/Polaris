@@ -45,6 +45,12 @@ import {
   Cpu,
   Layers,
   Sparkles,
+  ListPlus,
+  RefreshCw,
+  ClipboardList,
+  ScrollText,
+  Square,
+  Workflow as WorkflowIcon,
 } from 'lucide-react';
 
 const t = (key: string, options?: Record<string, unknown>) => i18n.t(key, { ns: 'tools', ...options });
@@ -90,6 +96,15 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
   'delete_file': 'D',
   'Analyze': 'Z',
   'analyze': 'Z',
+
+  // Claude Code Task 工具家族（双字符，避开与 TodoWrite 的 'T' 碰撞）
+  'TaskCreate': 'TC',
+  'TaskUpdate': 'TU',
+  'TaskList': 'TL',
+  'TaskGet': 'TG',
+  'TaskOutput': 'TO',
+  'TaskStop': 'TS',
+  'Workflow': 'WF',
 
   // Pi 引擎工具（全小写）
   'read': 'R',
@@ -174,6 +189,15 @@ const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = 
   'skill': Layers,
   'AskUserQuestion': Sparkles,
   'ask_user_question': Sparkles,
+
+  // Claude Code Task 工具家族
+  'TaskCreate': ListPlus,
+  'TaskUpdate': RefreshCw,
+  'TaskList': ClipboardList,
+  'TaskGet': Search,
+  'TaskOutput': ScrollText,
+  'TaskStop': Square,
+  'Workflow': WorkflowIcon,
 
   // Pi 引擎工具（全小写）
   'read': FileText,
@@ -329,6 +353,15 @@ const TOOL_CATEGORY: Record<string, ToolCategory> = {
   'AskUserQuestion': 'other',
   'ask_user_question': 'other',
 
+  // Claude Code Task 工具家族
+  'TaskCreate': 'manage',
+  'TaskUpdate': 'manage',
+  'TaskList': 'manage',
+  'TaskGet': 'manage',
+  'TaskOutput': 'manage',
+  'TaskStop': 'manage',
+  'Workflow': 'agent',
+
   // Pi 引擎工具（全小写）
   'read': 'read',
   'edit': 'edit',
@@ -395,6 +428,15 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   'web_fetch': 'labels.webRequest',
   'AskUserQuestion': 'labels.ask',
   'ask_user_question': 'labels.ask',
+
+  // Claude Code Task 工具家族
+  'TaskCreate': 'labels.taskCreate',
+  'TaskUpdate': 'labels.taskUpdate',
+  'TaskList': 'labels.taskList',
+  'TaskGet': 'labels.taskGet',
+  'TaskOutput': 'labels.taskOutput',
+  'TaskStop': 'labels.taskStop',
+  'Workflow': 'labels.workflow',
 
   // Pi 引擎工具（全小写）
   'read': 'labels.read',
@@ -479,8 +521,10 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     }
   }
 
-  // Task/Agent 工具：提取 prompt 参数
-  if ((toolName.toLowerCase() === 'task' || toolName.toLowerCase() === 'agent') && input) {
+  // Task/Agent 工具：提取 prompt/description 参数
+  // 覆盖 Agent、Task 旧名，以及 Task 家族（TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop）
+  const lowerName = toolName.toLowerCase();
+  if ((lowerName === 'task' || lowerName === 'agent') && input) {
     const prompt = input.prompt as string | undefined;
     if (prompt) {
       return prompt.length > 50 ? prompt.slice(0, 47) + '...' : prompt;
@@ -490,6 +534,33 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     if (description) {
       return description.length > 50 ? description.slice(0, 47) + '...' : description;
     }
+  }
+
+  // Task 家族工具：按工具语义提取关键参数
+  if (lowerName.startsWith('task') && lowerName !== 'task' && input) {
+    // TaskCreate：优先 activeForm（进行中描述），次选 subject
+    if (lowerName === 'taskcreate') {
+      const activeForm = input.activeForm as string | undefined;
+      if (activeForm) return activeForm.length > 50 ? activeForm.slice(0, 47) + '...' : activeForm;
+      const subject = input.subject as string | undefined;
+      if (subject) return subject.length > 50 ? subject.slice(0, 47) + '...' : subject;
+      return '';
+    }
+    // TaskUpdate：taskId + 新状态
+    if (lowerName === 'taskupdate') {
+      const taskId = input.taskId as string | undefined;
+      const status = input.status as string | undefined;
+      if (taskId && status) return `#${taskId} → ${status}`;
+      if (taskId) return `#${taskId}`;
+      return status ? `→ ${status}` : '';
+    }
+    // TaskGet / TaskOutput / TaskStop：task_id（或 taskId）
+    if (lowerName === 'taskget' || lowerName === 'taskoutput' || lowerName === 'taskstop') {
+      const taskId = (input.task_id || input.taskId) as string | undefined;
+      return taskId ? `#${taskId}` : '';
+    }
+    // TaskList：无参数
+    if (lowerName === 'tasklist') return '';
   }
 
   // AskUserQuestion 工具：提取问题标题
