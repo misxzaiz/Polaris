@@ -1,24 +1,20 @@
 /**
  * AgentRun 块渲染器组件
  *
- * 用于展示 Agent 任务运行状态、嵌套工具调用和输出
+ * 精简设计：agent 运行态由动态岛（Dynamic Island）接管实时展示，
+ * 消息流内仅保留极简历史行（状态点 + agentType + 工具数 + 耗时），
+ * 不再渲染大面板，避免与动态岛重复、降低信息密度。
+ *
+ * 可展开查看嵌套工具列表（折叠态单行）。
  */
 
-import { memo, useState, useCallback, useRef, useMemo } from 'react';
+import { memo, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import type { AgentRunBlock } from '@/types';
-import {
-  formatDuration,
-  calculateDuration,
-} from '@/utils/toolSummary';
-import { Check, XCircle, Loader2, AlertTriangle, ChevronDown, Circle, ListChecks, Play } from 'lucide-react';
+import { formatDuration, calculateDuration } from '@/utils/toolSummary';
+import { Check, XCircle, Loader2, Circle, ChevronDown, Play } from 'lucide-react';
 
-// ========================================
-// AgentRun 渲染器
-// ========================================
-
-/** AgentRun 状态配置 */
 const AGENT_STATUS_CONFIG = {
   pending: { icon: Loader2, className: 'animate-spin text-yellow-500', labelKey: 'status.pending' },
   running: { icon: Loader2, className: 'animate-spin text-blue-500', labelKey: 'status.running' },
@@ -27,197 +23,95 @@ const AGENT_STATUS_CONFIG = {
   canceled: { icon: XCircle, className: 'text-gray-500', labelKey: 'status.canceled' },
 } as const;
 
-/** 嵌套工具调用状态配置 */
 const NESTED_TOOL_STATUS_CONFIG = {
-  pending: { icon: Circle, color: 'text-gray-400' },
+  pending: { icon: Circle, color: 'text-text-muted' },
   running: { icon: Loader2, color: 'text-blue-500 animate-spin' },
   completed: { icon: Check, color: 'text-green-500' },
   failed: { icon: XCircle, color: 'text-red-500' },
 } as const;
 
-export interface AgentRunBlockRendererProps {
-  block: AgentRunBlock;
-}
-
-/**
- * AgentRun 块组件 - 用于 Agent 任务聚合展示
- */
 export const AgentRunBlockRenderer = memo(function AgentRunBlockRenderer({
   block,
-}: AgentRunBlockRendererProps) {
+}: { block: AgentRunBlock }) {
   const { t } = useTranslation('chat');
   const [isExpanded, setIsExpanded] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const statusConfig = AGENT_STATUS_CONFIG[block.status];
   const StatusIcon = statusConfig.icon;
-
-  // 计算耗时
-  const duration = useMemo(() => {
-    if (block.duration) return formatDuration(block.duration);
-    const calculated = calculateDuration(block.startedAt, block.completedAt);
-    return calculated ? formatDuration(calculated) : '';
-  }, [block.duration, block.startedAt, block.completedAt]);
-
-  // 工具调用统计
-  const toolStats = useMemo(() => {
-    const total = block.toolCalls.length;
-    const completed = block.toolCalls.filter(tc => tc.status === 'completed').length;
-    const failed = block.toolCalls.filter(tc => tc.status === 'failed').length;
-    return { total, completed, failed };
-  }, [block.toolCalls]);
-
-  // 是否正在运行
   const isRunning = block.status === 'running';
-
-  // 是否有嵌套工具
   const hasToolCalls = block.toolCalls.length > 0;
 
-  // 键盘导航处理
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      setIsExpanded(prev => !prev);
-    }
-  }, []);
+  const duration = useMemo(() => {
+    if (block.duration) return formatDuration(block.duration);
+    const calc = calculateDuration(block.startedAt, block.completedAt);
+    return calc ? formatDuration(calc) : isRunning ? '运行中' : '';
+  }, [block.duration, block.startedAt, block.completedAt, isRunning]);
+
+  const toolDone = block.toolCalls.filter(tc => tc.status === 'completed').length;
 
   return (
-    <div
-      ref={containerRef}
-      role="region"
-      aria-label={t('agent.agentRunAriaLabel', { type: block.agentType })}
-      className={clsx(
-        'my-2 rounded-lg border overflow-hidden',
-        block.status === 'error'
-          ? 'bg-error-faint border-error/30'
-          : isRunning
-            ? 'bg-primary-faint border-primary/30'
-            : 'bg-success-faint border-success/30'
-      )}
-    >
-      {/* 头部 */}
-      <div
-        role="button"
-        tabIndex={0}
-        aria-expanded={isExpanded}
-        aria-label={t('agent.toggleDetails')}
+    <div className={clsx(
+      'my-1 rounded-md border overflow-hidden',
+      block.status === 'error' ? 'border-error/30 bg-error-faint/30' : 'border-border-subtle/40 bg-surface/40',
+    )}>
+      {/* 精简单行 */}
+      <button
+        onClick={() => hasToolCalls && setIsExpanded(v => !v)}
         className={clsx(
-          'flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-inherit/50',
-          'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset',
-          isRunning && 'animate-pulse-subtle'
+          'flex items-center gap-2 w-full px-2.5 py-1.5 transition-colors',
+          hasToolCalls && 'hover:bg-surface/60 cursor-pointer',
         )}
-        onClick={() => setIsExpanded(!isExpanded)}
-        onKeyDown={handleKeyDown}
       >
-        {/* Agent 图标 */}
-        <div className={clsx(
-          'p-1.5 rounded-md',
-          isRunning ? 'bg-primary/20' : block.status === 'error' ? 'bg-error/20' : 'bg-success/20'
-        )}>
-          <StatusIcon className={clsx('w-4 h-4', statusConfig.className)} />
-        </div>
-
-        {/* Agent 信息 */}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 text-sm">
-            <span className="text-text-primary font-medium">{block.agentType}</span>
-            <span className={clsx(
-              'text-xs px-1.5 py-0.5 rounded',
-              isRunning ? 'bg-primary/20 text-primary' :
-              block.status === 'error' ? 'bg-error/20 text-error' : 'bg-success/20 text-success'
-            )}>
-              {t(statusConfig.labelKey)}
-            </span>
-          </div>
-          {/* 进度信息 */}
-          {isRunning && block.progressMessage && (
-            <div className="text-xs text-text-tertiary mt-0.5 truncate">
-              {block.progressMessage}
-            </div>
-          )}
-          {/* 工具调用摘要 */}
-          {hasToolCalls && !isExpanded && (
-            <div className="text-xs text-text-tertiary mt-0.5">
-              {t('agent.toolCount', { count: toolStats.total })}
-              {toolStats.completed > 0 && ` (${toolStats.completed} ${t('agent.completed')})`}
-            </div>
-          )}
-        </div>
-
-        {/* 进度条 */}
-        {isRunning && block.progressPercent !== undefined && (
-          <div className="w-20 flex items-center gap-2">
-            <div className="flex-1 bg-bg-secondary rounded-full h-1.5 overflow-hidden">
-              <div
-                className="bg-primary h-full transition-all duration-300"
-                style={{ width: `${block.progressPercent}%` }}
-              />
-            </div>
-            <span className="text-xs text-text-tertiary">{block.progressPercent}%</span>
-          </div>
+        <Play size={11} className={clsx('shrink-0', isRunning ? 'text-primary' : 'text-text-muted')} />
+        <StatusIcon className={clsx('w-3 h-3 shrink-0', statusConfig.className)} />
+        <span className="text-xs text-text-secondary truncate flex-1 text-left">
+          {block.agentType}
+        </span>
+        {/* 工具数 */}
+        {hasToolCalls && (
+          <span className="text-[10px] text-text-muted shrink-0 tabular-nums">
+            {toolDone}/{block.toolCalls.length}
+          </span>
         )}
-
         {/* 耗时 */}
         {duration && (
-          <span className="text-xs text-text-tertiary shrink-0">{duration}</span>
+          <span className="text-[10px] text-text-tertiary shrink-0 tabular-nums">{duration}</span>
         )}
-
-        {/* 展开/收起 */}
+        {/* 错误标记 */}
+        {block.status === 'error' && (
+          <span className="text-[10px] text-danger shrink-0">{t('status.failed')}</span>
+        )}
         {hasToolCalls && (
           <ChevronDown
-            className={clsx(
-              'w-4 h-4 text-text-muted transition-transform shrink-0',
-              isExpanded && 'rotate-180'
-            )}
+            size={11}
+            className={clsx('text-text-muted shrink-0 transition-transform', isExpanded && 'rotate-180')}
           />
         )}
-      </div>
+      </button>
 
-      {/* 嵌套工具调用列表 */}
+      {/* 展开态：嵌套工具列表 */}
       {isExpanded && hasToolCalls && (
-        <div className="px-4 py-2 bg-bg-secondary/30 border-t border-inherit">
-          <div className="text-xs text-text-muted mb-2 flex items-center gap-1.5">
-            <ListChecks className="w-3 h-3" />
-            {t('agent.toolCalls')}
-          </div>
-          <div className="space-y-1">
-            {block.toolCalls.map((toolCall) => {
-              const toolConfig = NESTED_TOOL_STATUS_CONFIG[toolCall.status];
-              const ToolIcon = toolConfig.icon;
-              return (
-                <div
-                  key={toolCall.id}
-                  className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-bg-secondary/50"
-                >
-                  <ToolIcon className={clsx('w-3 h-3', toolConfig.color)} />
-                  <span className="text-text-secondary">{toolCall.name}</span>
-                  {toolCall.summary && (
-                    <span className="text-text-tertiary truncate flex-1">{toolCall.summary}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+        <div className="px-2 pb-1.5 pt-0.5 border-t border-border-subtle/30 space-y-0.5">
+          {block.toolCalls.map(tc => {
+            const cfg = NESTED_TOOL_STATUS_CONFIG[tc.status];
+            const ToolIcon = cfg.icon;
+            return (
+              <div key={tc.id} className="flex items-center gap-2 px-1.5 py-0.5 rounded hover:bg-background-hover/50">
+                <ToolIcon className={clsx('w-2.5 h-2.5 shrink-0', cfg.color)} />
+                <span className="text-[11px] text-text-tertiary truncate flex-1">{tc.name}</span>
+                {tc.summary && (
+                  <span className="text-[10px] text-text-muted truncate max-w-[50%]">{tc.summary}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
 
-      {/* 错误信息 */}
+      {/* 错误详情（仅失败时） */}
       {block.status === 'error' && block.error && (
-        <div className="px-3 py-2 border-t border-error/20 bg-error/5">
-          <div className="text-xs text-error flex items-start gap-1.5">
-            <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
-            <span className="break-all">{block.error}</span>
-          </div>
-        </div>
-      )}
-
-      {/* 输出内容 */}
-      {block.output && isExpanded && (
-        <div className="px-3 py-2 border-t border-inherit bg-inherit/30">
-          <div className="text-xs text-text-muted mb-1">{t('agent.output')}</div>
-          <pre className="text-xs text-text-secondary bg-bg-secondary rounded p-2 max-h-48 overflow-y-auto whitespace-pre-wrap">
-            {block.output}
-          </pre>
+        <div className="px-2.5 pb-1.5 text-[11px] text-danger/80 break-all border-t border-error/15">
+          {block.error}
         </div>
       )}
     </div>
@@ -226,20 +120,15 @@ export const AgentRunBlockRenderer = memo(function AgentRunBlockRenderer({
 
 /** 简化版 AgentRun 渲染器 - 用于归档层 */
 export const SimplifiedAgentRunRenderer = memo(function SimplifiedAgentRunRenderer({ block }: { block: AgentRunBlock }) {
-  const { t } = useTranslation('chat');
   const statusConfig = AGENT_STATUS_CONFIG[block.status];
   const StatusIcon = statusConfig.icon;
-
   return (
-    <div
-      className="my-1 flex items-center gap-2 text-xs text-text-tertiary"
-      aria-label={t('agent.agentRunAriaLabel', { type: block.agentType })}
-    >
-      <StatusIcon className={clsx('w-3 h-3', statusConfig.className)} aria-hidden="true" />
-      <Play className="w-3 h-3 text-primary" aria-hidden="true" />
+    <div className="my-0.5 flex items-center gap-1.5 text-[11px] text-text-tertiary">
+      <StatusIcon className={clsx('w-2.5 h-2.5', statusConfig.className)} aria-hidden="true" />
+      <Play className="w-2.5 h-2.5 text-text-muted" aria-hidden="true" />
       <span className="truncate">{block.agentType}</span>
       {block.toolCalls.length > 0 && (
-        <span className="text-text-secondary">{block.toolCalls.length}</span>
+        <span className="text-text-muted">{block.toolCalls.length}</span>
       )}
     </div>
   );

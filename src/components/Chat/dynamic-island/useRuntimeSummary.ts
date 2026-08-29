@@ -12,7 +12,7 @@
  * 订阅对应 session store（与 SessionMessagesView 同构）。
  */
 
-import { useRef, useSyncExternalStore } from 'react';
+import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { sessionStoreManager, useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager';
 import type { ConversationState, ConversationStoreInstance } from '@/stores/conversationStore/types';
@@ -306,6 +306,9 @@ export function deriveRuntimeSummary(
  * 订阅指定 session store 的运行态摘要。
  * - sessionId 为 null 时订阅活跃会话
  * - 与 SessionMessagesView 同构，多窗口各自独立
+ *
+ * 计时策略：elapsedMs 由独立的 1s tick state 驱动，不放进 getSnapshot，
+ * 避免 Date.now() 导致快照引用每次都变 → useSyncExternalStore 循环重渲染。
  */
 export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
   const activeId = useActiveSessionId();
@@ -313,11 +316,14 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
   const stores = useStore(sessionStoreManager, (state) => state.stores);
   const store = targetId ? stores.get(targetId) : null;
 
-  // 引用稳定的缓存
+  // 1s tick：驱动 elapsedMs 更新（仅当有运行中活动时才计时）
+  const [tick, setTick] = useState(0);
+  const tickStartRef = useRef<number>(0);
+  tickStartRef.current = tick;
+
+  // getSnapshot 必须纯净：不能调 Date.now()（否则引用每次都变 → 循环重渲染）
   const cachedRef = useRef<RuntimeSummary>(EMPTY_SUMMARY);
   const cachedStoreRef = useRef<typeof store>(null);
-  // 计时 tick：每秒更新 elapsedMs（仅当有运行中活动时）
-  const tickRef = useRef(0);
 
   const getSnapshot = () => {
     if (!store) {
@@ -328,11 +334,8 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     const blocks = state.currentMessage?.blocks ?? [];
     const pm = state.progressMessage;
     const interrupting = !!state.isInterrupting;
-    // 仅在有运行中活动时驱动计时更新
-    if (state.isStreaming || blocks.some(b => b.type === 'agent_run' && (b as AgentRunBlock).status === 'running')) {
-      tickRef.current = Date.now();
-    }
-    const now = tickRef.current || Date.now();
+    // now 用 tick（稳定），而非 Date.now()
+    const now = tickStartRef.current;
     const next = deriveRuntimeSummary(blocks, pm, now, interrupting);
     if (
       cachedStoreRef.current === store &&
@@ -352,6 +355,23 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
 
   // eslint-disable-next-line react-hooks/rules-of-hooks
   const summary = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_SUMMARY);
+
+  // 计时 effect：仅当有运行中活动时，每秒推进 tick
+  useEffect(() => {
+    if (!summary.hasRunning && !summary.isInterrupting) return;
+    const timer = setInterval(() => {
+      setTick(t => (t === 0 ? Date.now() : t + 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [summary.hasRunning, summary.isInterrupting]);
+
+  // 运行态开始时记录起始 tick
+  useEffect(() => {
+    if (summary.hasRunning && tickStartRef.current === 0) {
+      setTick(Date.now());
+    }
+  }, [summary.hasRunning]);
+
   return summary;
 }
 
