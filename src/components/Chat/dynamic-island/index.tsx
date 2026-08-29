@@ -45,12 +45,12 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
   const [collapsedExiting, setCollapsedExiting] = useState(false);
   const collapsedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { hasRunning, hasFailed, slides, cards, doneCount } = summary;
+  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount } = summary;
 
   // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、有已完成卡片
-  const isCollapsed = !hasRunning && !hasFailed && doneCount > 0;
-  // 是否完全空闲
-  const isIdle = !hasRunning && !hasFailed && doneCount === 0;
+  const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && doneCount > 0;
+  // 是否完全空闲（中断态保持可见 1s）
+  const isIdle = !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
 
   // 重置轮播索引当 slides 变化
   useEffect(() => {
@@ -106,6 +106,16 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
   const toggleExpanded = useCallback(() => {
     setExpanded(prev => !prev);
   }, []);
+
+  // 流式中断：显示「⏹ 已中断」1s 后收起
+  useEffect(() => {
+    if (!isInterrupting) return;
+    setExpanded(false);
+    const t = setTimeout(() => {
+      // 1s 后若仍无运行中活动则自然收起（交由 collapsed/idle 状态机）
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [isInterrupting]);
 
   // 点击外部收起
   const islandRef = useRef<HTMLDivElement>(null);
@@ -183,6 +193,15 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
             <span className="island-collapsed-text">完成 · {doneCount} 项</span>
             <span className="island-time island-time-done">{formatDuration(summary.elapsedMs)}</span>
           </div>
+        ) : isInterrupting ? (
+          <>
+            <div className="island-main">
+              <span className="island-seg">
+                <span className="island-interrupt-icon">⏹</span>
+                <span className="island-interrupt-text">已中断</span>
+              </span>
+            </div>
+          </>
         ) : (
           <>
             <div className="island-main">

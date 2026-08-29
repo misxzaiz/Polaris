@@ -61,6 +61,8 @@ export interface RuntimeSummary {
   hasRunning: boolean;
   /** 是否有失败 */
   hasFailed: boolean;
+  /** 用户主动中断中 */
+  isInterrupting: boolean;
   /** 运行中卡片数 */
   runningCount: number;
   /** 已完成卡片数 */
@@ -78,6 +80,7 @@ export interface RuntimeSummary {
 const EMPTY_SUMMARY: RuntimeSummary = {
   hasRunning: false,
   hasFailed: false,
+  isInterrupting: false,
   runningCount: 0,
   doneCount: 0,
   slides: [],
@@ -112,11 +115,12 @@ export function deriveRuntimeSummary(
   blocks: ContentBlock[],
   progressMessage: string | null,
   now: number,
+  isInterrupting: boolean = false,
 ): RuntimeSummary {
   if (!blocks || blocks.length === 0) {
     return progressMessage
-      ? { ...EMPTY_SUMMARY, progressMessage, hasRunning: true, runningCount: 1, slides: [{ kind: 'progress', label: '进度', value: truncate(progressMessage, 32) }], cards: [{ blockIndex: -1, kind: 'progress', running: true, failed: false, summary: truncate(progressMessage, 48), detail: progressMessage, blockId: '__progress__' }], elapsedMs: 0 }
-      : EMPTY_SUMMARY;
+      ? { ...EMPTY_SUMMARY, isInterrupting, progressMessage, hasRunning: true, runningCount: 1, slides: [{ kind: 'progress', label: '进度', value: truncate(progressMessage, 32) }], cards: [{ blockIndex: -1, kind: 'progress', running: true, failed: false, summary: truncate(progressMessage, 48), detail: progressMessage, blockId: '__progress__' }], elapsedMs: 0 }
+      : { ...EMPTY_SUMMARY, isInterrupting };
   }
 
   const cards: RuntimeCard[] = [];
@@ -284,6 +288,7 @@ export function deriveRuntimeSummary(
   return {
     hasRunning,
     hasFailed,
+    isInterrupting,
     runningCount: runningCards.length,
     doneCount: doneCards.length,
     slides,
@@ -322,12 +327,13 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     const state = store.getState() as ConversationState;
     const blocks = state.currentMessage?.blocks ?? [];
     const pm = state.progressMessage;
+    const interrupting = !!state.isInterrupting;
     // 仅在有运行中活动时驱动计时更新
     if (state.isStreaming || blocks.some(b => b.type === 'agent_run' && (b as AgentRunBlock).status === 'running')) {
       tickRef.current = Date.now();
     }
     const now = tickRef.current || Date.now();
-    const next = deriveRuntimeSummary(blocks, pm, now);
+    const next = deriveRuntimeSummary(blocks, pm, now, interrupting);
     if (
       cachedStoreRef.current === store &&
       shallowEqualSummary(cachedRef.current, next)
@@ -353,6 +359,7 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
 function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.hasRunning !== b.hasRunning) return false;
   if (a.hasFailed !== b.hasFailed) return false;
+  if (a.isInterrupting !== b.isInterrupting) return false;
   if (a.runningCount !== b.runningCount) return false;
   if (a.doneCount !== b.doneCount) return false;
   if (a.elapsedMs !== b.elapsedMs) return false;

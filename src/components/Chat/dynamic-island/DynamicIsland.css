@@ -181,6 +181,16 @@
   font-size: 12px;
 }
 
+/* 中断态指示器 */
+.island-interrupt-icon {
+  color: rgb(var(--c-status-danger, 248 113 113));
+  font-size: 13px;
+}
+.island-interrupt-text {
+  color: var(--c-text-secondary, #b4b4b8);
+  font-weight: 500;
+}
+
 /* ====== 展开态面板 ====== */
 .island-panel {
   max-height: 0;
