@@ -264,6 +264,43 @@ git push origin vx.x.x
 
 ---
 
+## v10.4.2 构建记录
+
+**构建时间**: 2026-08-29 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.4.2
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.4.2_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.4.2_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.4.2_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.4.2-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.4.2_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.4.2-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.4.2-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.4.2-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `latest.json` | - | - | 自动更新元数据 |
+
+### 签名文件
+
+所有安装包均附带 `.sig` 签名文件，用于 Tauri 自动更新验证。
+
+### 变更内容
+
+- fix(scheduler): Running 标志防重复触发 — 存储层对 `next_run_at=None` 重算导致每 10s 循环触发
+- fix(scheduler): 恢复 daemon 发事件模式 + 协议模式三处断裂修复 + 守护进程默认启用
+- fix(scheduler): 守护进程存活探测 + 僵尸锁自动恢复
+- feat(scheduler): 定时任务内置插件化 + daemon 自愈与存活探测
+- feat(scheduler): TaskCard 执行态高亮 + AfterCompletion 触发提示语义修正
+- feat(browser): 双出口 — 操作校验断言与白话页面状态
+- fix(browser): `browser_status` 登录墙/验证码判定收紧，消除导航栏误报
+- fix(build): Web 模式编译门控补齐 — `browser_create_with_app` / `url_opener_plugin_open` 与 provider 统计 import 缺失 `tauri-app` cfg
+- docs(plans): 新增新一代插件化通用应用平台架构设计 v1
+
+---
+
 ## v10.3.2 构建记录
 
 **构建时间**: 2026-08-06 (UTC)
