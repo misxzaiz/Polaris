@@ -87,53 +87,6 @@ impl CliInfoService {
         Ok(output.trim().to_string())
     }
 
-    /// 运行 ultrareview 云端多 agent 代码审查
-    ///
-    /// 在指定工作区目录下执行
-    /// `claude ultrareview [target] --timeout <mins> [--json]`。
-    /// `target` 为空时审查当前分支，也可传 PR 号或 base 分支名。
-    ///
-    /// 注意：云端审查可能耗时数分钟至数十分钟。本方法为同步阻塞调用，
-    /// 调用方（Tauri 命令）应放入 `tokio::task::spawn_blocking` 执行，
-    /// 避免阻塞 async runtime。CLI 自带 `--timeout` 会在超时后自行退出，
-    /// 无需在 Rust 侧额外计时。
-    pub fn run_ultrareview(
-        &self,
-        workspace_dir: &str,
-        target: Option<&str>,
-        timeout_mins: u32,
-        json: bool,
-    ) -> Result<String> {
-        let mut cmd = self.build_command();
-        // ultrareview 审查的是"当前仓库/分支"，必须在工作区目录下执行
-        cmd.current_dir(workspace_dir);
-        cmd.arg("ultrareview");
-        if let Some(t) = target {
-            let t = t.trim();
-            if !t.is_empty() {
-                cmd.arg(t);
-            }
-        }
-        cmd.arg("--timeout").arg(timeout_mins.to_string());
-        if json {
-            cmd.arg("--json");
-        }
-
-        let output = cmd.output().map_err(|e| {
-            AppError::ProcessError(format!("执行 claude ultrareview 失败: {}", e))
-        })?;
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(AppError::ProcessError(format!(
-                "claude ultrareview 执行失败: {}",
-                stderr.trim()
-            )));
-        }
-
-        Ok(String::from_utf8_lossy(&output.stdout).to_string())
-    }
-
     /// 调用 Claude CLI 进行结构化提取（`--json-schema`）
     ///
     /// 以自然语言 `prompt` 为输入（经 **stdin** 传入，规避命令行长度限制），

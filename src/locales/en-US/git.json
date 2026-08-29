@@ -475,16 +475,5 @@
     "changedFiles": "Changed Files",
     "files": "files",
     "showingLines": "Showing {{count}} of {{total}} lines"
-  },
-  "ultraReview": {
-    "button": "AI Review",
-    "title": "AI Code Review",
-    "reviewing": "Reviewing…",
-    "reviewingHint": "Running a cloud multi-agent review on the current branch. This may take a few minutes, please wait.",
-    "currentBranch": "Current branch: {{branch}}",
-    "empty": "No issues found, or no output.",
-    "failed": "AI review failed",
-    "close": "Close",
-    "rerun": "Re-run review"
   }
 }
