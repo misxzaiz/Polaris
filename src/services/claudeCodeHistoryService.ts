@@ -666,8 +666,7 @@ export class ClaudeCodeHistoryService {
     if (!output) return null
     // 实测为纯文本多行 "#1 [completed] 标题"(JSON.parse 14/14 全失败),按行正则提取
     const items: TaskBoardItem[] = []
-    for (const line of output.split('
-')) {
+    for (const line of output.split('\n')) {
       const m = line.match(/^\s*#\s*(\d+)\s*\[([A-Za-z_]+)\]\s*(.*)$/)
       if (!m) continue
       const raw = m[2]
