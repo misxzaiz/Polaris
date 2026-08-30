@@ -55,14 +55,6 @@ export function DynamicIslandExpanded({
   return (
     <div className="island-panel">
       <div className="island-panel-inner">
-        {/* 面板头 */}
-        <div className="island-panel-head">
-          <span className="island-panel-title">运行进度</span>
-          <span className="island-panel-time">{formatDuration(elapsedMs)}</span>
-          <button className="island-close" onClick={onClose} aria-label="收起">
-            <X />
-          </button>
-        </div>
 
         {/* 需要你：最优先 */}
         {urgent.length > 0 && (
