@@ -28,6 +28,7 @@ import type {
   ThinkingBlock,
   ToolCallBlock,
 } from '@/types';
+import { parseWorkflowResult } from '../tool-calls/workflowParsers';
 
 /** 运行态类型 */
 export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'progress';
@@ -74,12 +75,16 @@ export interface RuntimeCard {
   meta?: string;
   /** 详情文案 */
   detail: string;
+  /** 原始输出（已完成卡展开查看，workflow/agent 的 output） */
+  output?: string;
   /** 进度百分比 0-100（可选） */
   percent?: number;
   /** 任务清单（仅 task 卡） */
   items?: TaskRow[];
   /** 折叠态轮播段（仅运行中卡；null 则不轮播该卡） */
   slide?: CompactSlide | null;
+  /** 聚合计数（同类完成卡合并） */
+  count?: number;
 }
 
 /** 折叠态轮播段 */
@@ -252,6 +257,41 @@ function deriveThinking(blocks: ContentBlock[]): string | null {
   return null;
 }
 
+/**
+ * 从 workflow 工具调用的 input 防御式提取任务描述。
+ * 不臆测单一字段名：尝试 prompt/command/task/description/goal/query，
+ * 全部缺失则回退 null（由调用方决定回退文案）。
+ */
+function deriveWorkflowLabel(input: Record<string, unknown> | undefined): string | null {
+  if (!input) return null;
+  const fields = ['prompt', 'command', 'task', 'description', 'goal', 'query', 'message'];
+  for (const f of fields) {
+    const v = input[f];
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/**
+ * 从 workflow 工具调用的 output 解析可展示详情。
+ * 复用 workflowParsers.parseWorkflowResult，零臆测字段名。
+ */
+function deriveWorkflowDetail(output: string | undefined, running: boolean, failed: boolean): string {
+  if (failed) return '工作流出错';
+  if (running) return 'Workflow 执行中';
+  if (!output) return '已完成';
+  const parsed = parseWorkflowResult(output);
+  if (parsed.kind === 'generic' && parsed.data.summary) {
+    return truncate(parsed.data.summary, 48);
+  }
+  if (parsed.kind === 'generic' && parsed.data.workflowProgress?.length) {
+    const first = parsed.data.workflowProgress[0];
+    const label = first.label || first.phaseTitle || first.resultPreview;
+    if (label) return truncate(label, 48);
+  }
+  return '已完成';
+}
+
 /** 任务清单行状态 → 展示状态 */
 function taskRowStatus(status: TaskBoardBlock['items'][number]['status']): TaskRowStatus {
   switch (status) {
@@ -378,16 +418,20 @@ export function deriveRuntimeSummary(
       const percent = ar.progressPercent != null
         ? ar.progressPercent
         : toolTotal > 0 ? Math.round((toolDone / toolTotal) * 100) : undefined;
+      // summary 优先用 progressMessage（更友好），回退 agentType
+      const agentLabel = ar.progressMessage || ar.agentType;
+      const isDone = done || failed;
       cards.push({
         kind: 'agent',
         running: running && !failed,
         failed,
-        summary: truncate(ar.agentType, 24),
+        summary: truncate(agentLabel, 24),
         meta,
         detail,
+        output: isDone ? ar.output : undefined,
         percent,
         slide: running && !failed
-          ? { kind: 'agent', label: truncate(ar.agentType, 20), value: meta, barPercent: percent }
+          ? { kind: 'agent', label: truncate(agentLabel, 20), value: meta, barPercent: percent }
           : null,
       });
       if (running && !failed && ar.startedAt) {
@@ -407,19 +451,22 @@ export function deriveRuntimeSummary(
       const failed = tc.status === 'failed';
       const done = tc.status === 'completed';
       const meta = failed ? '失败' : done ? '完成' : '运行中';
-      const detail = failed
-        ? truncate(tc.error || '工作流出错', 48)
-        : running
-          ? 'Workflow 执行中'
-          : '已完成';
+      // summary 从 input 防御式提取任务描述，回退 'Workflow'
+      const wfLabel = deriveWorkflowLabel(tc.input);
+      const summary = wfLabel ? `Workflow · ${truncate(wfLabel, 24)}` : 'Workflow';
+      // detail 从 output 解析（复用 workflowParsers），回退状态文案
+      const detail = deriveWorkflowDetail(tc.output, running, failed);
       cards.push({
         kind: 'workflow',
         running: running && !failed,
         failed,
-        summary: 'Workflow',
+        summary,
         meta,
         detail,
-        slide: running && !failed ? { kind: 'workflow', label: 'Workflow', value: '运行中' } : null,
+        output: done ? tc.output : undefined,
+        slide: running && !failed
+          ? { kind: 'workflow', label: summary, value: '运行中' }
+          : null,
       });
       if (running && !failed && tc.startedAt) {
         const ts = new Date(tc.startedAt).getTime();
@@ -445,9 +492,31 @@ export function deriveRuntimeSummary(
 
   const runningCards = cards.filter(c => c.running && !c.failed);
   const failedCards = cards.filter(c => c.failed);
-  const doneCards = cards.filter(c => !c.running && !c.failed);
+  const rawDoneCards = cards.filter(c => !c.running && !c.failed);
   const hasRunning = runningCards.length > 0;
   const hasFailed = failedCards.length > 0;
+
+  // 已完成同类卡聚合：同 kind+summary 合并，detail 累积 + count
+  const doneCards: RuntimeCard[] = [];
+  const doneGroupMap = new Map<string, number>();
+  for (const c of rawDoneCards) {
+    const key = `${c.kind}:${c.summary}`;
+    const idx = doneGroupMap.get(key);
+    if (idx === undefined) {
+      doneGroupMap.set(key, doneCards.length);
+      doneCards.push({ ...c, count: 1 });
+    } else {
+      const prev = doneCards[idx];
+      prev.count = (prev.count || 1) + 1;
+      // 累积详情：合并多张卡的 detail/output
+      if (c.detail && c.detail !== prev.detail) {
+        prev.detail = prev.detail ? `${prev.detail}\n${c.detail}` : c.detail;
+      }
+      if (c.output && c.output !== prev.output) {
+        prev.output = prev.output ? `${prev.output}\n---\n${c.output}` : c.output;
+      }
+    }
+  }
 
   // 折叠态轮播段：仅运行中（非失败），直接复用卡上的 slide
   const slides: CompactSlide[] = runningCards
@@ -598,6 +667,8 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
     if (ca.meta !== cb.meta) return false;
     if (ca.detail !== cb.detail) return false;
     if (ca.percent !== cb.percent) return false;
+    if (ca.count !== cb.count) return false;
+    if (ca.output !== cb.output) return false;
     if ((ca.items?.length || 0) !== (cb.items?.length || 0)) return false;
     if (ca.items) {
       for (let j = 0; j < ca.items.length; j++) {

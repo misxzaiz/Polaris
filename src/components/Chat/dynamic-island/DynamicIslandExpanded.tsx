@@ -8,6 +8,7 @@
  * 全部图标使用 lucide-react 组件，无 emoji。
  */
 
+import { useState } from 'react';
 import { clsx } from 'clsx';
 import {
   ListTodo,
@@ -237,8 +238,9 @@ function TaskRow({ item }: { item: TaskRow }) {
   );
 }
 
-/** 已完成单行（折叠列表内） */
+/** 已完成单行（折叠列表内，可展开看 detail/output） */
 function DoneRow({ card }: { card: RuntimeCard }) {
+  const [open, setOpen] = useState(false);
   const Icon =
     card.kind === 'task'
       ? ListTodo
@@ -247,12 +249,36 @@ function DoneRow({ card }: { card: RuntimeCard }) {
         : card.kind === 'workflow'
           ? Workflow
           : LoaderCircle;
+  // 有无展开内容：detail 或 output 任一存在且非空
+  const hasExpand = !!(card.detail || card.output);
 
   return (
-    <div className="island-done-row">
-      <span className="d-ico"><Icon /></span>
-      <span className="d-title">{card.summary}</span>
-      {card.meta && <span className="d-meta">{card.meta}</span>}
+    <div className="island-done-row-wrap">
+      <button
+        className={clsx('island-done-row', hasExpand && 'island-done-row-click')}
+        onClick={() => hasExpand && setOpen(v => !v)}
+        type="button"
+      >
+        <span className="d-ico"><Icon /></span>
+        <span className="d-title">{card.summary}</span>
+        {card.count != null && card.count > 1 && (
+          <span className="island-agg-count">×{card.count}</span>
+        )}
+        {card.meta && <span className="d-meta">{card.meta}</span>}
+        {hasExpand && (
+          <span className={clsx('island-done-chev', open && 'island-done-chev-open')}>
+            <ChevronRight />
+          </span>
+        )}
+      </button>
+      {open && hasExpand && (
+        <div className="island-done-detail">
+          {card.detail && <div className="island-done-detail-text">{card.detail}</div>}
+          {card.output && (
+            <pre className="island-done-detail-output">{card.output}</pre>
+          )}
+        </div>
+      )}
     </div>
   );
 }

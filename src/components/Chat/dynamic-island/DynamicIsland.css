@@ -593,14 +593,29 @@
   padding-top: 4px;
 }
 
-/* 已完成卡片（列表内） */
+/* 已完成卡片（列表内，可展开） */
+.island-done-row-wrap {
+  border: 1px solid rgba(var(--c-border), 0.05);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.015);
+  overflow: hidden;
+}
 .island-done-row {
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 4px 10px;
+  border: none;
+  background: transparent;
   border-radius: 6px;
   opacity: 0.85;
+  cursor: default;
+  font: inherit;
+  text-align: left;
+}
+.island-done-row-click {
+  cursor: pointer;
 }
 .island-done-row:hover {
   background: rgba(255, 255, 255, 0.03);
@@ -632,6 +647,44 @@
   color: rgb(var(--c-text-muted));
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
+}
+
+/* 聚合计数标记 */
+.island-agg-count {
+  font-size: 10px;
+  padding: 1px 6px;
+  background: rgba(var(--c-primary), 0.15);
+  border-radius: 4px;
+  color: rgb(var(--c-primary));
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 已完成展开详情 */
+.island-done-detail {
+  border-top: 1px solid rgba(var(--c-border), 0.05);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 6px 10px 8px 28px;
+  max-height: 140px;
+  overflow-y: auto;
+}
+.island-done-detail-text {
+  font-size: 11px;
+  color: rgb(var(--c-text-secondary));
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.island-done-detail-output {
+  font-size: 10px;
+  color: rgb(var(--c-text-muted));
+  font-family: var(--c-font-mono, "SF Mono", "JetBrains Mono", Consolas, monospace);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-top: 4px;
+  max-height: 100px;
+  overflow-y: auto;
 }
 
 /* 空态 */
