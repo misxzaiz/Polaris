@@ -13,7 +13,7 @@ import { useEffect, useRef } from 'react';
 import { listen } from '@/services/transport';
 import { useTabStore } from '@/stores/tabStore';
 import { useViewStore } from '@/stores/viewStore';
-import { useNarrowEditorStore } from '@/stores/narrowEditorStore';
+import { useNarrowTabStore } from '@/stores/narrowTabStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useSchedulerStore } from '@/stores/schedulerStore';
@@ -93,16 +93,16 @@ export function useAppEvents() {
 
   // file:opened → 创建 Editor Tab
   // 窄窗口（isCompact）下 CenterStage 被门控不渲染，tab 静默创建无反馈。
-  // 此时同步打开窄窗口编辑器覆盖层，让用户能看到文件内容。
-  // 宽窗口下 narrowEditorFile 不被消费（App.tsx 的覆盖层分支由 isCompact 门控），
-  // 不影响内联 CenterStage 渲染。
+  // 此时同步打开窄窗口 tab 覆盖层（信号为 tabId，覆盖层按 tab.type 分流渲染），
+  // 让用户能看到文件内容。宽窗口下 narrowTabId 不被消费（App.tsx 的覆盖层分支
+  // 由 isCompact 门控），不影响内联 CenterStage 渲染。
   useEffect(() => {
     const unlistenPromise = listen<{ path: string; name: string }>('file:opened', (payload) => {
       const { path, name } = payload;
       log.info('file:opened event', { path, name });
-      useTabStore.getState().openEditorTab(path, name);
+      const tabId = useTabStore.getState().openEditorTab(path, name);
       if (useViewStore.getState().compactMode.isCompactMode) {
-        useNarrowEditorStore.getState().openNarrowEditor(path);
+        useNarrowTabStore.getState().openNarrowTab(tabId);
       }
     });
 

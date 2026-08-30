@@ -3,7 +3,7 @@
  */
 
 export { EditorPanel } from './EditorPanel';
-export { EditorOverlay } from './EditorOverlay';
+export { NarrowTabOverlay } from './NarrowTabOverlay';
 export { CodeMirrorEditor } from './Editor';
 export { EditorHeader } from './EditorHeader';
 export { BreadcrumbBar } from './BreadcrumbBar';
