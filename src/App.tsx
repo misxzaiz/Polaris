@@ -49,6 +49,7 @@ import './App.css';
 
 // 拆分后的 Hooks
 import { useAppInit } from './hooks/useAppInit';
+import { useBrowserVisibilityGuard } from './hooks/useBrowserVisibilityGuard';
 import { usePluginServiceSync } from './hooks/usePluginServiceSync';
 import { useAppEvents } from './hooks/useAppEvents';
 import { useWindowManager } from './hooks/useWindowManager';
@@ -114,6 +115,11 @@ function App() {
       useOverlayStore.getState().increment();
     }, []),
   });
+
+  // 内置浏览器 WebView 可见性全局守护：非激活 browser tab 的 native webview
+  // 主动隐藏 + 重试关闭，防止 BrowserPanel unmount 的 fire-and-forget close 失败后
+  // WebView 残留置顶盖住界面（"关不掉"问题）。
+  useBrowserVisibilityGuard();
 
   usePluginServiceSync();
 

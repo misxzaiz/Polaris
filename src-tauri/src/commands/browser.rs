@@ -1642,7 +1642,27 @@ pub async fn browser_set_ai_overlay(
 #[tauri::command]
 pub async fn browser_close(app: AppHandle, label: String) -> Result<()> {
     if let Some(webview) = app.get_webview(&label) {
-        let _ = webview.close();
+        // 先隐藏再销毁：避免 WebView2 销毁失败/延迟时仍 visible 置顶盖住界面。
+        // apply_webview_bounds(width<1) 内部调 webview.hide()，是已验证的隐藏路径。
+        if let Err(error) = apply_webview_bounds(&webview, BrowserBounds {
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        }) {
+            tracing::warn!(
+                "[Browser] browser_close: pre-hide failed label={} err={}",
+                label,
+                error
+            );
+        }
+        if let Err(error) = webview.close() {
+            tracing::warn!(
+                "[Browser] browser_close: close failed label={} err={}",
+                label,
+                error
+            );
+        }
     }
     forget_browser_session_state(&label)
 }
