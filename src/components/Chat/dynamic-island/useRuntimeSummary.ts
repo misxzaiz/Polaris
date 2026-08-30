@@ -1,12 +1,13 @@
 /**
  * 灵动岛运行态摘要 - 从 session store 派生
  *
- * 数据源全部现成（无后端改动）：
- * - 任务板进度：currentMessage.blocks 中最新 task_board 块
- * - Agent 运行态：最新 agent_run 块（status=running）
- * - Workflow 阶段：最新 workflow 工具块（status=running/pending）
- * - 兜底文案：store.progressMessage
- * - run 时长：活动块 startedAt 至今（前端计时）
+ * v2 按「紧急度分层」组织：
+ *   1. 需要你（urgent）：permission_request / question / plan_mode 待处理
+ *   2. 正在运行（running）：task / agent / workflow
+ *   3. 已完成（done）：折叠分组
+ *   4. 上下文水位（water）：usageStats 派生底部条
+ *
+ * 定位能力已移除（v2 用户反馈：悬浮岛无需定位，展开直接看具体信息）。
  *
  * 多窗口：岛是 per-session 的，本 hook 接收 sessionId，
  * 订阅对应 session store（与 SessionMessagesView 同构）。
@@ -16,9 +17,13 @@ import { useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useStore } from 'zustand';
 import { sessionStoreManager, useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager';
 import type { ConversationState, ConversationStoreInstance } from '@/stores/conversationStore/types';
+import type { UsageStats } from '@/stores/conversationStore/types';
 import type {
   AgentRunBlock,
   ContentBlock,
+  PermissionRequestBlock,
+  PlanModeBlock,
+  QuestionBlock,
   TaskBoardBlock,
   ToolCallBlock,
 } from '@/types';
@@ -26,23 +31,54 @@ import type {
 /** 运行态类型 */
 export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'progress';
 
-/** 运行态卡片（展开态用） */
+/** 需要你（urgent）类型 */
+export type UrgentKind = 'permission' | 'question' | 'plan';
+
+/** 任务清单行状态 */
+export type TaskRowStatus = 'done' | 'active' | 'pending' | 'blocked';
+
+/** 任务清单行（task 卡展开后直接列出，替代 v1 的「只看数量」） */
+export interface TaskRow {
+  id: string;
+  /** 展示文案（activeForm || subject） */
+  label: string;
+  status: TaskRowStatus;
+}
+
+/** 需要你（urgent）卡片 */
+export interface UrgentCard {
+  kind: UrgentKind;
+  /** 块 id（操作透传 key） */
+  id: string;
+  /** 会话 id（审批 / 答案提交目标） */
+  sessionId: string;
+  /** 标题 */
+  summary: string;
+  /** 详情正文 */
+  detail: string;
+  /** 子项数（question 多题 / permission 多工具；仅 >1 时展示） */
+  count?: number;
+}
+
+/** 运行态卡片（展开态用，无定位字段） */
 export interface RuntimeCard {
-  /** 块在 currentMessage.blocks 中的索引（定位跳转用） */
-  blockIndex: number;
   kind: RuntimeKind;
   /** 运行中还是已完成 */
   running: boolean;
   /** 是否有失败 */
   failed: boolean;
-  /** 摘要文案 */
+  /** 主标题（任务卡：任务板；agent：类型名） */
   summary: string;
+  /** 副信息 meta（如 "4/10 · 2 运行"、"2m 31s"） */
+  meta?: string;
   /** 详情文案 */
   detail: string;
   /** 进度百分比 0-100（可选） */
   percent?: number;
-  /** 活动块 id（定位高亮 key） */
-  blockId: string;
+  /** 任务清单（仅 task 卡） */
+  items?: TaskRow[];
+  /** 折叠态轮播段（仅运行中卡；null 则不轮播该卡） */
+  slide?: CompactSlide | null;
 }
 
 /** 折叠态轮播段 */
@@ -53,6 +89,16 @@ export interface CompactSlide {
   value: string;
   /** 微型进度条百分比（可选） */
   barPercent?: number;
+}
+
+/** 上下文水位条 */
+export interface ContextWater {
+  /** 已用 token（input + cacheCreation + cacheRead） */
+  used: number;
+  /** 上下文窗口大小 */
+  window: number;
+  /** 0-100；window 缺失（0）时为 null，仅显示数字 */
+  percent: number | null;
 }
 
 /** 运行态摘要 */
@@ -67,6 +113,10 @@ export interface RuntimeSummary {
   runningCount: number;
   /** 已完成卡片数 */
   doneCount: number;
+  /** 需要你（最优先级，常驻） */
+  urgent: UrgentCard[];
+  /** 上下文水位（null = 无用量数据） */
+  water: ContextWater | null;
   /** 折叠态轮播段（仅运行中，3s 一换） */
   slides: CompactSlide[];
   /** 展开态卡片（运行中在上，已完成在下） */
@@ -83,6 +133,8 @@ const EMPTY_SUMMARY: RuntimeSummary = {
   isInterrupting: false,
   runningCount: 0,
   doneCount: 0,
+  urgent: [],
+  water: null,
   slides: [],
   cards: [],
   elapsedMs: 0,
@@ -107,6 +159,91 @@ export function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
+/** 格式化 token 数 → "12.4k" / "89" */
+export function formatTokens(n: number): string {
+  if (!n || n <= 0) return '0';
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+}
+
+/** 派生需要你（urgent）卡片 */
+function deriveUrgent(blocks: ContentBlock[]): UrgentCard[] {
+  const urgent: UrgentCard[] = [];
+
+  for (const block of blocks) {
+    // 权限请求：待处理才显示
+    if (block.type === 'permission_request') {
+      const pr = block as PermissionRequestBlock;
+      if (pr.status !== 'pending') continue;
+      const pendingDenials = (pr.denials || []).filter(d => !d.status || d.status === 'pending');
+      const toolName = pendingDenials[0]?.toolName;
+      urgent.push({
+        kind: 'permission',
+        id: pr.id,
+        sessionId: pr.sessionId,
+        summary: toolName ? `需要授权 · ${truncate(toolName, 24)}` : '需要授权',
+        detail: pendingDenials[0]?.reason || (pendingDenials.length > 0 ? '工具调用等待批准' : '等待批准'),
+        count: pendingDenials.length > 1 ? pendingDenials.length : undefined,
+      });
+      continue;
+    }
+
+    // 提问：待回答才显示
+    if (block.type === 'question') {
+      const q = block as QuestionBlock;
+      if (q.status !== 'pending' || q.declined) continue;
+      const first = q.questions?.[0];
+      urgent.push({
+        kind: 'question',
+        id: q.id,
+        sessionId: q.sessionId || '',
+        summary: first?.header || q.header || '提问',
+        detail: first?.question || q.header || '等待回答',
+        count: (q.questions?.length || 1) > 1 ? q.questions?.length : undefined,
+      });
+      continue;
+    }
+
+    // 计划审批：pending_approval 才显示
+    if (block.type === 'plan_mode') {
+      const pm = block as PlanModeBlock;
+      if (pm.status !== 'pending_approval') continue;
+      urgent.push({
+        kind: 'plan',
+        id: pm.id,
+        sessionId: pm.sessionId,
+        summary: '等待审批 · 执行计划',
+        detail: pm.title || pm.description || '计划等待批准后执行',
+      });
+    }
+  }
+
+  return urgent;
+}
+
+/** 派生上下文水位条 */
+function deriveWater(usageStats: UsageStats | null): ContextWater | null {
+  if (!usageStats) return null;
+  const used = (usageStats.input || 0) + (usageStats.cacheCreation || 0) + (usageStats.cacheRead || 0);
+  const window = usageStats.contextWindow || 0;
+  return {
+    used,
+    window,
+    percent: window > 0 ? Math.min(100, Math.round((used / window) * 100)) : null,
+  };
+}
+
+/** 任务清单行状态 → 展示状态 */
+function taskRowStatus(status: TaskBoardBlock['items'][number]['status']): TaskRowStatus {
+  switch (status) {
+    case 'completed': return 'done';
+    case 'in_progress': return 'active';
+    case 'blocked': return 'blocked';
+    default: return 'pending';
+  }
+}
+
 /**
  * 从 currentMessage.blocks 派生运行态摘要。
  * 纯函数，便于测试与 memo。
@@ -116,11 +253,33 @@ export function deriveRuntimeSummary(
   progressMessage: string | null,
   now: number,
   isInterrupting: boolean = false,
+  usageStats: UsageStats | null = null,
 ): RuntimeSummary {
+  const water = deriveWater(usageStats);
+  const urgent = deriveUrgent(blocks || []);
+
   if (!blocks || blocks.length === 0) {
-    return progressMessage
-      ? { ...EMPTY_SUMMARY, isInterrupting, progressMessage, hasRunning: true, runningCount: 1, slides: [{ kind: 'progress', label: '进度', value: truncate(progressMessage, 32) }], cards: [{ blockIndex: -1, kind: 'progress', running: true, failed: false, summary: truncate(progressMessage, 48), detail: progressMessage, blockId: '__progress__' }], elapsedMs: 0 }
-      : { ...EMPTY_SUMMARY, isInterrupting };
+    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water };
+    const card: RuntimeCard = {
+      kind: 'progress',
+      running: true,
+      failed: false,
+      summary: truncate(progressMessage, 48),
+      detail: progressMessage,
+      slide: { kind: 'progress', label: '进度', value: truncate(progressMessage, 32) },
+    };
+    return {
+      ...EMPTY_SUMMARY,
+      isInterrupting,
+      urgent,
+      water,
+      hasRunning: true,
+      runningCount: 1,
+      slides: [card.slide!],
+      cards: [card],
+      elapsedMs: 0,
+      progressMessage,
+    };
   }
 
   const cards: RuntimeCard[] = [];
@@ -142,18 +301,22 @@ export function deriveRuntimeSummary(
       // 当前进行中项
       const activeItem = tb.items.find(it => it.status === 'in_progress') || tb.items.find(it => it.status === 'blocked');
       const activeLabel = activeItem?.activeForm || activeItem?.subject;
-      const detail = activeLabel
-        ? `${activeItem?.status === 'blocked' ? '⛔' : '◐'} ${truncate(activeLabel, 28)} ← #${activeItem?.id}`
-        : `${completed}/${total} 已完成`;
+      const meta = `${completed}/${total}${inProgress > 0 ? ` · ${inProgress} 运行` : ''}${blocked > 0 ? ` · ${blocked} 阻塞` : ''}`;
+      const items: TaskRow[] = tb.items.map(it => ({
+        id: it.id,
+        label: truncate(it.activeForm || it.subject, 36),
+        status: taskRowStatus(it.status),
+      }));
       cards.push({
-        blockIndex: i,
         kind: 'task',
         running,
         failed: blocked > 0 && inProgress === 0,
-        summary: `${completed}/${total}${inProgress > 0 ? ` · ${inProgress} 运行` : ''}${blocked > 0 ? ` · ${blocked} 阻塞` : ''}`,
-        detail,
+        summary: '任务板',
+        meta,
+        detail: activeLabel ? truncate(activeLabel, 28) : `${completed}/${total} 已完成`,
         percent,
-        blockId: tb.id,
+        items,
+        slide: running ? { kind: 'task', label: '任务', value: `${completed}/${total}`, barPercent: percent } : null,
       });
       if (running && tb.updatedAt) {
         const ts = new Date(tb.updatedAt).getTime();
@@ -172,11 +335,11 @@ export function deriveRuntimeSummary(
       const done = ar.status === 'success' || ar.status === 'canceled';
       const toolTotal = ar.toolCalls?.length || 0;
       const toolDone = ar.toolCalls?.filter(t => t.status === 'completed').length || 0;
-      const summary = failed
-        ? `失败 · ${ar.duration ? formatDuration(ar.duration) : ''}`
+      const meta = failed
+        ? '失败'
         : done
           ? `完成 · ${ar.duration ? formatDuration(ar.duration) : ''}`
-          : `${ar.duration ? formatDuration(ar.duration) : '运行中'}${toolTotal > 0 ? ` · ${toolDone}/${toolTotal} 工具` : ''}`;
+          : ar.duration ? formatDuration(ar.duration) : '运行中';
       const detail = failed
         ? truncate(ar.error || '运行出错', 48)
         : ar.progressMessage
@@ -184,15 +347,20 @@ export function deriveRuntimeSummary(
           : toolTotal > 0
             ? `${toolDone}/${toolTotal} 工具完成`
             : ar.agentType;
+      const percent = ar.progressPercent != null
+        ? ar.progressPercent
+        : toolTotal > 0 ? Math.round((toolDone / toolTotal) * 100) : undefined;
       cards.push({
-        blockIndex: i,
         kind: 'agent',
         running: running && !failed,
         failed,
-        summary,
+        summary: truncate(ar.agentType, 24),
+        meta,
         detail,
-        percent: toolTotal > 0 ? Math.round((toolDone / toolTotal) * 100) : undefined,
-        blockId: ar.id,
+        percent,
+        slide: running && !failed
+          ? { kind: 'agent', label: truncate(ar.agentType, 20), value: meta, barPercent: percent }
+          : null,
       });
       if (running && !failed && ar.startedAt) {
         const ts = new Date(ar.startedAt).getTime();
@@ -210,24 +378,20 @@ export function deriveRuntimeSummary(
       const running = tc.status === 'running' || tc.status === 'pending';
       const failed = tc.status === 'failed';
       const done = tc.status === 'completed';
-      const summary = failed
-        ? '失败'
-        : done
-          ? '完成'
-          : '运行中';
+      const meta = failed ? '失败' : done ? '完成' : '运行中';
       const detail = failed
         ? truncate(tc.error || '工作流出错', 48)
         : running
-          ? `${tc.name} 运行中`
+          ? 'Workflow 执行中'
           : '已完成';
       cards.push({
-        blockIndex: i,
         kind: 'workflow',
         running: running && !failed,
         failed,
-        summary,
+        summary: 'Workflow',
+        meta,
         detail,
-        blockId: tc.id,
+        slide: running && !failed ? { kind: 'workflow', label: 'Workflow', value: '运行中' } : null,
       });
       if (running && !failed && tc.startedAt) {
         const ts = new Date(tc.startedAt).getTime();
@@ -242,13 +406,12 @@ export function deriveRuntimeSummary(
   // 兜底 progressMessage（仅当没有任何运行态卡片时作为独立卡片）
   if (cards.length === 0 && progressMessage) {
     cards.push({
-      blockIndex: -1,
       kind: 'progress',
       running: true,
       failed: false,
       summary: truncate(progressMessage, 48),
       detail: progressMessage,
-      blockId: '__progress__',
+      slide: { kind: 'progress', label: '进度', value: truncate(progressMessage, 32) },
     });
   }
 
@@ -258,27 +421,12 @@ export function deriveRuntimeSummary(
   const hasRunning = runningCards.length > 0;
   const hasFailed = failedCards.length > 0;
 
-  // 折叠态轮播段：仅运行中（非失败）
-  const slides: CompactSlide[] = runningCards.map(c => {
-    if (c.kind === 'task') {
-      const tb = blocks[c.blockIndex] as TaskBoardBlock;
-      const total = tb.total || tb.items.length;
-      const completed = tb.completed || 0;
-      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
-      return { kind: 'task', label: '任务', value: `${completed}/${total}`, barPercent: percent };
-    }
-    if (c.kind === 'agent') {
-      const ar = blocks[c.blockIndex] as AgentRunBlock;
-      return { kind: 'agent', label: `◈ ${truncate(ar.agentType, 20)}`, value: c.summary };
-    }
-    if (c.kind === 'workflow') {
-      return { kind: 'workflow', label: '⚙ workflow', value: c.summary };
-    }
-    return { kind: 'progress', label: truncate(c.detail, 24), value: '' };
-  });
+  // 折叠态轮播段：仅运行中（非失败），直接复用卡上的 slide
+  const slides: CompactSlide[] = runningCards
+    .map(c => c.slide)
+    .filter((s): s is CompactSlide => !!s);
 
-  // 展开态排序：失败置顶 → 运行中（按开始时间倒序，最新在上）→ 已完成折叠
-  // 这里保持失败+运行中在上，已完成在下的顺序，由渲染层分组
+  // 展开态排序：失败置顶 → 运行中 → 已完成折叠（由渲染层分组）
   const orderedCards = [...failedCards, ...runningCards, ...doneCards];
 
   const elapsedMs = earliestRunningStartedAt !== null
@@ -291,6 +439,8 @@ export function deriveRuntimeSummary(
     isInterrupting,
     runningCount: runningCards.length,
     doneCount: doneCards.length,
+    urgent,
+    water,
     slides,
     cards: orderedCards,
     elapsedMs,
@@ -334,9 +484,10 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     const blocks = state.currentMessage?.blocks ?? [];
     const pm = state.progressMessage;
     const interrupting = !!state.isInterrupting;
+    const usage = state.usageStats;
     // now 用 tick（稳定），而非 Date.now()
     const now = tickStartRef.current;
-    const next = deriveRuntimeSummary(blocks, pm, now, interrupting);
+    const next = deriveRuntimeSummary(blocks, pm, now, interrupting, usage);
     if (
       cachedStoreRef.current === store &&
       shallowEqualSummary(cachedRef.current, next)
@@ -386,6 +537,20 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.progressMessage !== b.progressMessage) return false;
   if (a.slides.length !== b.slides.length) return false;
   if (a.cards.length !== b.cards.length) return false;
+  if (a.urgent.length !== b.urgent.length) return false;
+  if (a.water?.used !== b.water?.used) return false;
+  if (a.water?.window !== b.water?.window) return false;
+  // urgent 内容比较
+  for (let i = 0; i < a.urgent.length; i++) {
+    const ua = a.urgent[i];
+    const ub = b.urgent[i];
+    if (!ua || !ub) return false;
+    if (ua.kind !== ub.kind) return false;
+    if (ua.id !== ub.id) return false;
+    if (ua.summary !== ub.summary) return false;
+    if (ua.detail !== ub.detail) return false;
+    if (ua.count !== ub.count) return false;
+  }
   // slides 内容比较
   for (let i = 0; i < a.slides.length; i++) {
     if (a.slides[i].label !== b.slides[i].label) return false;
@@ -394,11 +559,23 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   }
   // cards 关键字段比较
   for (let i = 0; i < a.cards.length; i++) {
-    if (a.cards[i].running !== b.cards[i].running) return false;
-    if (a.cards[i].failed !== b.cards[i].failed) return false;
-    if (a.cards[i].summary !== b.cards[i].summary) return false;
-    if (a.cards[i].detail !== b.cards[i].detail) return false;
-    if (a.cards[i].percent !== b.cards[i].percent) return false;
+    const ca = a.cards[i];
+    const cb = b.cards[i];
+    if (!ca || !cb) return false;
+    if (ca.running !== cb.running) return false;
+    if (ca.failed !== cb.failed) return false;
+    if (ca.summary !== cb.summary) return false;
+    if (ca.meta !== cb.meta) return false;
+    if (ca.detail !== cb.detail) return false;
+    if (ca.percent !== cb.percent) return false;
+    if ((ca.items?.length || 0) !== (cb.items?.length || 0)) return false;
+    if (ca.items) {
+      for (let j = 0; j < ca.items.length; j++) {
+        if (ca.items[j].id !== cb.items?.[j]?.id) return false;
+        if (ca.items[j].label !== cb.items?.[j]?.label) return false;
+        if (ca.items[j].status !== cb.items?.[j]?.status) return false;
+      }
+    }
   }
   return true;
 }

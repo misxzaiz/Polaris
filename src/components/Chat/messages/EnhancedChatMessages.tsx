@@ -310,36 +310,6 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     scrollToBottom,
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
-  // 灵动岛定位跳转：blockIndex 是 currentMessage.blocks 中的索引，
-  // 滚动到该消息后用 DOM querySelector 定位块并 ring 高亮 1.8s。
-  const handleIslandLocate = useCallback((blockIndex: number) => {
-    if (!currentMessage) return;
-    const msgIndex = displayMessages.findIndex(m => m.id === currentMessage.id);
-    if (msgIndex < 0) return;
-
-    virtuosoRef.current?.scrollToIndex({
-      index: msgIndex,
-      align: 'start',
-      behavior: 'smooth',
-    });
-    setAutoScroll(false);
-
-    // 延迟一帧等消息进入视口后定位块并高亮
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        const el = document.querySelector<HTMLElement>(
-          `[data-block-index="${blockIndex}"]`
-        );
-        if (!el) return;
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        el.classList.add('island-locate-highlight');
-        setTimeout(() => {
-          el.classList.remove('island-locate-highlight');
-        }, 1800);
-      });
-    });
-  }, [currentMessage, displayMessages]);
-
   // 「加载更早」头部：磁盘上还有未加载的更早消息时出现（尾部优先恢复）
   const hasEarlier = !!historyPaging?.hasMore;
   const LoadEarlierHeader = useMemo(() => {
@@ -363,7 +333,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
       {/* 消息列表 */}
       <div className="flex-1 min-h-0 relative">
         {/* 灵动岛：顶部居中浮动进度指示器，per-session */}
-        <DynamicIsland sessionId={sessionId} onLocate={handleIslandLocate} />
+        <DynamicIsland sessionId={sessionId} />
 
         <div className="relative h-full">
           {isEmpty ? (

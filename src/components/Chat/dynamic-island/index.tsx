@@ -1,29 +1,33 @@
 /**
- * 灵动岛（Dynamic Island）进度浮层
+ * 灵动岛（Dynamic Island）v2 —— 会话运行态中枢
  *
  * 状态机：hidden → compact → expanded → collapsed（已完成降级）→ hidden
  *
- * I1 阶段：岛组件骨架 + compact 折叠态。
- * - 订阅 useRuntimeSummary 派生运行态
- * - hidden：无运行态时不渲染
- * - compact：单行胶囊，运行中活动优先轮播（3s 一换，hover 暂停）
- * - expanded/collapsed：I2/I3 阶段实现
+ * v2 变更（用户反馈驱动）：
+ * - 贴顶小形态（top:0 只留底部圆角，compact 28px），背景亮两档与暗背景形成反差
+ * - 移除定位跳转：展开即详情，不再滚动消息流
+ * - 紧急度分层：需要你（urgent）→ 运行中 / 失败 → 已完成（折叠）→ 底部水位条
+ * - urgent 卡内联审批（批准 / 拒绝 / 跳过），无需回到消息流
+ * - 全部图标使用 lucide-react，无 emoji
+ * - 任务板展开直接显示任务清单 items
  *
- * 挂载点：EnhancedChatMessages.tsx 消息区容器顶部居中 absolute。
+ * 挂载点：EnhancedChatMessages.tsx / SessionMessagesView.tsx 消息区容器顶部居中 absolute。
  * per-session：接收 sessionId，订阅对应 session store。
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { useRuntimeSummary, formatDuration, type CompactSlide } from './useRuntimeSummary';
+import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
+import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { invoke } from '@/services/tauri';
+import type { PermissionRequestBlock, QuestionBlock } from '@/types/chat';
 import './DynamicIsland.css';
 
 export interface DynamicIslandProps {
   /** 会话 ID（null = 活跃会话） */
   sessionId?: string | null;
-  /** 定位跳转回调：滚动到 blockIndex 对应消息并高亮 */
-  onLocate?: (blockIndex: number) => void;
 }
 
 /** 轮播间隔 */
@@ -31,7 +35,7 @@ const CAROUSEL_INTERVAL = 3000;
 /** collapsed 退场停留 */
 const COLLAPSED_HOLD = 5000;
 
-export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps) {
+export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const summary = useRuntimeSummary(sessionId);
   const [expanded, setExpanded] = useState(false);
   const [doneGroupOpen, setDoneGroupOpen] = useState(false);
@@ -45,12 +49,12 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
   const [collapsedExiting, setCollapsedExiting] = useState(false);
   const collapsedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount } = summary;
+  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent } = summary;
 
-  // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、有已完成卡片
-  const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && doneCount > 0;
-  // 是否完全空闲（中断态保持可见 1s）
-  const isIdle = !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
+  // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、无 urgent、有已完成卡片
+  const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && urgent.length === 0 && doneCount > 0;
+  // 是否完全空闲（urgent 常驻可见；中断态保持可见 1s）
+  const isIdle = urgent.length === 0 && !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
 
   // 重置轮播索引当 slides 变化
   useEffect(() => {
@@ -59,8 +63,8 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
 
   // 轮播定时器
   useEffect(() => {
-    if (expanded || slides.length <= 1 || hoverRef.current) {
-      // 展开或 hover 时暂停
+    if (expanded || slides.length <= 1 || hoverRef.current || urgent.length > 0) {
+      // 展开、hover 或存在 urgent 时暂停
       if (carouselTimerRef.current) {
         clearTimeout(carouselTimerRef.current);
         carouselTimerRef.current = null;
@@ -76,7 +80,7 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
         carouselTimerRef.current = null;
       }
     };
-  }, [expanded, slides.length, carouselIdx]);
+  }, [expanded, slides.length, carouselIdx, urgent.length]);
 
   // collapsed 退场：进入 collapsed 态后停留 5s，无交互则淡出
   useEffect(() => {
@@ -90,8 +94,8 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
         setCollapsedExiting(true);
         // 淡出动画后不渲染（交由 isIdle 自然卸载）
       }, COLLAPSED_HOLD);
-    } else if (hasRunning) {
-      // 恢复运行态时取消退场
+    } else if (hasRunning || urgent.length > 0) {
+      // 恢复运行态或出现 urgent 时取消退场
       setCollapsedExiting(false);
     }
     return () => {
@@ -100,14 +104,14 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
         collapsedTimerRef.current = null;
       }
     };
-  }, [isCollapsed, expanded, hasRunning]);
+  }, [isCollapsed, expanded, hasRunning, urgent.length]);
 
   // 切换展开
   const toggleExpanded = useCallback(() => {
     setExpanded(prev => !prev);
   }, []);
 
-  // 流式中断：显示「⏹ 已中断」1s 后收起
+  // 流式中断：显示「已中断」1s 后收起
   useEffect(() => {
     if (!isInterrupting) return;
     setExpanded(false);
@@ -140,32 +144,78 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
     return () => window.removeEventListener('keydown', handleKey);
   }, [expanded]);
 
-  // 定位跳转
-  const handleLocate = useCallback((blockIndex: number) => {
-    setExpanded(false);
-    if (blockIndex >= 0 && onLocate) {
-      // 延迟一帧让面板收起后再滚动
-      requestAnimationFrame(() => onLocate(blockIndex));
-    }
-  }, [onLocate]);
+  // ===== urgent 内联决策（权限 / 计划 / 提问） =====
+  const handleUrgentDecision = useCallback((card: UrgentCard, approved: boolean) => {
+    void (async () => {
+      try {
+        const store = sessionStoreManager.getState().getStoreByConversationId(card.sessionId);
+        if (!store) return;
+        const blocks = store.currentMessage?.blocks ?? [];
+        const block = blocks.find(b => 'id' in b && b.id === card.id);
+        if (!block) return;
+
+        // 工具权限：先 continueChat（可失败），成功后再落库决策
+        if (card.kind === 'permission' && block.type === 'permission_request') {
+          const pr = block as PermissionRequestBlock;
+          const toolNames = [...new Set((pr.denials ?? []).map(d => d.toolName))];
+          await store.continueChat(
+            approved ? `[已授权] ${toolNames.join(', ')}` : '[权限确认] 用户拒绝了操作',
+            approved && toolNames.length > 0 ? toolNames : undefined,
+          );
+          store.resolvePermissionRequest(
+            pr.id,
+            pr.denials.map(() => ({ status: approved ? ('approved' as const) : ('denied' as const) })),
+          );
+          if (approved && toolNames.length > 0) store.addSessionAllowedTools(toolNames);
+          return;
+        }
+
+        // 计划审批
+        if (card.kind === 'plan' && block.type === 'plan_mode') {
+          await store.continueChat(
+            approved ? '[已授权] 计划已批准，请继续执行。' : '[权限确认] 用户拒绝了操作',
+            undefined,
+          );
+          return;
+        }
+
+        // 提问：跳过（默认 declined）
+        if (card.kind === 'question' && block.type === 'question') {
+          const q = block as QuestionBlock;
+          await invoke('answer_question', {
+            sessionId: q.sessionId || card.sessionId,
+            callId: q.id,
+            answer: { answers: [], declined: !approved },
+          });
+        }
+      } catch {
+        // 决策失败交由消息流兜底，此处静默
+      }
+    })();
+  }, []);
 
   // 空闲：不渲染
   if (isIdle) return null;
 
-  // 状态点颜色
-  const dotClass = hasFailed
-    ? 'island-dot-fail'
-    : isCollapsed
-      ? 'island-dot-done'
-      : 'island-dot-running';
+  // 状态点颜色：urgent 最优先 → 失败 → 已完成 → 运行中
+  const dotClass = urgent.length > 0
+    ? 'island-dot-warn'
+    : hasFailed
+      ? 'island-dot-fail'
+      : isCollapsed
+        ? 'island-dot-done'
+        : 'island-dot-running';
 
   // 当前轮播段
   const activeSlide = slides[carouselIdx] || slides[0];
 
-  // 已完成卡片（折叠到底部）
+  // 展开面板卡片分组（urgent 单独传）
   const runningCards = cards.filter(c => c.running && !c.failed);
   const failedCards = cards.filter(c => c.failed);
   const doneCards = cards.filter(c => !c.running && !c.failed);
+
+  // compact urgent 提示（多条时取第一条）
+  const firstUrgent = urgent[0];
 
   return (
     <div
@@ -186,21 +236,34 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
       >
         <span className={clsx('island-dot', dotClass)} />
 
-        {/* collapsed 降级态：显示完成记录条 */}
-        {isCollapsed && !expanded ? (
-          <div className="island-collapsed-bar">
-            <span className="island-check">✓</span>
-            <span className="island-collapsed-text">完成 · {doneCount} 项</span>
-            <span className="island-time island-time-done">{formatDuration(summary.elapsedMs)}</span>
+        {/* urgent 优先：需要你 */}
+        {urgent.length > 0 && !expanded ? (
+          <div className="island-main">
+            <span className="island-seg">
+              <span className="island-seg-ico island-seg-ico-warn"><TriangleAlert /></span>
+              <span className="island-seg-lbl">需要你</span>
+              <span className="island-seg-val">{firstUrgent?.summary}</span>
+              {urgent.length > 1 && <span className="island-seg-count">{urgent.length}</span>}
+            </span>
           </div>
         ) : isInterrupting ? (
           <>
             <div className="island-main">
               <span className="island-seg">
-                <span className="island-interrupt-icon">⏹</span>
-                <span className="island-interrupt-text">已中断</span>
+                <span className="island-interrupt-ico"><Square /></span>
+                <span>已中断</span>
               </span>
             </div>
+          </>
+        ) : isCollapsed ? (
+          <>
+            <div className="island-main">
+              <span className="island-seg">
+                <span className="island-seg-ico island-seg-ico-done"><CircleCheck /></span>
+                <span className="island-seg-lbl">完成 · {doneCount} 项</span>
+              </span>
+            </div>
+            <span className="island-time">{formatDuration(summary.elapsedMs)}</span>
           </>
         ) : (
           <>
@@ -211,20 +274,24 @@ export function DynamicIsland({ sessionId = null, onLocate }: DynamicIslandProps
           </>
         )}
 
-        <span className={clsx('island-chev', expanded && 'island-chev-open')}>▾</span>
+        <span className={clsx('island-chev', expanded && 'island-chev-open')}>
+          <ChevronDown />
+        </span>
       </div>
 
       {/* 展开态面板 */}
       {expanded && (
         <DynamicIslandExpanded
+          urgent={urgent}
           runningCards={runningCards}
           failedCards={failedCards}
           doneCards={doneCards}
           doneGroupOpen={doneGroupOpen}
           onToggleDoneGroup={() => setDoneGroupOpen(prev => !prev)}
-          onLocate={handleLocate}
           onClose={() => setExpanded(false)}
           elapsedMs={summary.elapsedMs}
+          water={summary.water}
+          onUrgentDecision={handleUrgentDecision}
         />
       )}
     </div>
@@ -238,10 +305,10 @@ function Carousel({ slide }: { slide: CompactSlide }) {
   }
   return (
     <span className="island-seg">
-      <span className="island-seg-label">{slide.label}</span>
+      <span className="island-seg-lbl">{slide.label}</span>
       {slide.value && <span className="island-seg-val">{slide.value}</span>}
       {slide.barPercent != null && (
-        <span className="island-tiny-bar">
+        <span className="island-mini-bar">
           <i style={{ width: `${slide.barPercent}%` }} />
         </span>
       )}

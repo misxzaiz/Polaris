@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris 灵动岛 v2 · 交互原型</title>
+<style>
+:root {
+  --bg-base: 8 8 11;
+  --bg-surface: 24 24 30;
+  --bg-elevated: 38 38 46;
+  --bg-hover: 48 48 56;
+  --border: 255 255 255;
+  --text-primary: 248 248 248;
+  --text-secondary: 168 168 176;
+  --text-tertiary: 120 120 128;
+  --text-muted: 90 90 96;
+  --primary: 96 165 250;
+  --primary-soft: 59 130 246;
+  --success: 52 211 153;
+  --warning: 251 191 36;
+  --danger: 248 113 113;
+  --accent: 167 139 250;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font); font-size: 13px;
+  background: rgb(var(--bg-base)); color: rgb(var(--text-primary));
+  overflow: hidden; user-select: none; -webkit-font-smoothing: antialiased;
+}
+.app { display: flex; height: 100vh; }
+/* 模拟应用骨架 */
+.sidebar { width: 48px; background: rgb(var(--bg-base)); border-right: 1px solid rgba(var(--border),0.05); }
+.main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.topbar {
+  height: 38px; padding: 0 14px; display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid rgba(var(--border),0.05); background: rgb(var(--bg-base));
+  font-size: 12px; color: var(--text-secondary);
+}
+.topbar .live { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--success)); }
+
+/* 消息区（岛挂载点） */
+.msg-area { flex: 1; min-height: 0; position: relative; background: rgb(var(--bg-base)); overflow: hidden; }
+.msg-scroll { height: 100%; overflow-y: auto; padding: 16px 0 80px; scroll-behavior: smooth; }
+.msg-scroll::-webkit-scrollbar { width: 8px; }
+.msg-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 4px; }
+.msg { max-width: 720px; margin: 0 auto 12px; padding: 0 24px; line-height: 1.6; }
+.msg.user .bubble { display: inline-block; background: rgba(var(--primary),0.10); border-radius: 10px; padding: 8px 12px; font-size: 13px; }
+.msg.ai .bubble { color: var(--text-primary); font-size: 13px; }
+.msg.ai .think { color: var(--text-tertiary); font-size: 12px; font-style: italic; margin-bottom: 4px; }
+
+/* 消息流内嵌的运行态块（任务板/agent 行） */
+.block { max-width: 720px; margin: 6px auto; padding: 0 24px; }
+.block-card {
+  border: 1px solid rgba(var(--border),0.06); border-radius: 8px;
+  background: rgba(var(--bg-surface),0.5); padding: 8px 10px;
+  transition: box-shadow .3s, border-color .3s;
+}
+.block-card.highlight { border-color: rgb(var(--primary)); box-shadow: 0 0 0 2px rgba(var(--primary),0.3); }
+
+/* ============================================
+   灵动岛 v2 —— 贴顶形态
+   ============================================ */
+.island {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 50;
+  width: min(440px, calc(100% - 32px));
+  border-radius: 0 0 14px 14px;
+  /* 亮两档 + 内高光 + 阴影分离背景 */
+  background: rgb(var(--bg-elevated));
+  border: 1px solid rgba(var(--border),0.14);
+  border-top: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  transition: width .28s cubic-bezier(.4,0,.2,1), border-radius .28s, box-shadow .2s;
+  overflow: hidden;
+}
+.island.expanded { border-radius: 0 0 18px 18px; }
+
+/* compact 条：26px 高，三段式 */
+.island-bar {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 12px; cursor: pointer;
+}
+/* 状态点 */
+.dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; position: relative; }
+.dot.run { background: rgb(var(--primary)); }
+.dot.run::after {
+  content:''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1.5px solid rgba(var(--primary),0.5); animation: pulse 1.5s ease-out infinite;
+}
+.dot.warn { background: rgb(var(--warning)); }
+.dot.warn::after { content:''; position:absolute; inset:-3px; border-radius:50%; border:1.5px solid rgba(var(--warning),0.5); animation: pulse 1.5s ease-out infinite; }
+.dot.done { background: rgb(var(--success)); }
+.dot.fail { background: rgb(var(--danger)); }
+@keyframes pulse { 0%{transform:scale(.7);opacity:1} 100%{transform:scale(1.7);opacity:0} }
+
+/* 主文案区 */
+.island-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.seg { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; }
+.seg .ico { width: 13px; height: 13px; flex-shrink: 0; color: var(--text-secondary); }
+.seg .lbl { color: var(--text-secondary); }
+.seg .val { color: var(--text-primary); font-weight: 500; }
+.seg .active { color: var(--primary); }
+.mini-bar { width: 32px; height: 3px; background: rgba(255,255,255,0.10); border-radius: 2px; overflow: hidden; }
+.mini-bar > i { display: block; height: 100%; background: rgb(var(--primary)); border-radius: 2px; }
+
+/* 轮播：fade 过渡 */
+.carousel { position: relative; flex: 1; min-width: 0; height: 16px; overflow: hidden; }
+.slide {
+  position: absolute; inset: 0; display: flex; align-items: center; gap: 6px;
+  opacity: 0; transform: translateY(4px); transition: opacity .35s, transform .35s; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.slide.on { opacity: 1; transform: translateY(0); pointer-events: auto; }
+
+/* 时间 + chev */
+.island-time { color: var(--text-tertiary); font-size: 11px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.chev { color: var(--text-muted); flex-shrink: 0; transition: transform .25s; }
+.island.expanded .chev { transform: rotate(180deg); }
+
+/* collapsed 降级（全部完成） */
+.island.collapsed .island-bar { height: 24px; }
+.island.collapsed .dot { width: 6px; height: 6px; }
+.island.collapsed .island-time { color: rgb(var(--success)); }
+.island.exiting { opacity: 0; transform: translateX(-50%) translateY(-6px); transition: opacity .5s, transform .5s; }
+
+/* ============================================
+   展开面板 —— 按紧急度分层
+   ============================================ */
+.panel {
+  max-height: 0; overflow: hidden;
+  transition: max-height .32s cubic-bezier(.4,0,.2,1);
+}
+.island.expanded .panel { max-height: 540px; }
+.panel-inner { padding: 0 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+
+/* 区段标题 */
+.sec-head {
+  display: flex; align-items: center; gap: 6px;
+  padding: 4px 8px 2px; font-size: 10px; color: var(--text-muted);
+  letter-spacing: 0.03em; text-transform: uppercase;
+}
+.sec-head .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* 需要你：强调卡片 */
+.card.urgent {
+  border: 1px solid rgba(var(--warning),0.35); background: rgba(var(--warning),0.08);
+  border-radius: 8px; padding: 8px 10px;
+}
+.card.urgent .u-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.card.urgent .u-ico { width: 16px; height: 16px; color: rgb(var(--warning)); flex-shrink: 0; }
+.card.urgent .u-title { font-size: 12px; font-weight: 500; color: var(--text-primary); flex: 1; }
+.card.urgent .u-desc { font-size: 11px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 6px; }
+.card.urgent .u-actions { display: flex; gap: 6px; }
+.btn { font-size: 11px; padding: 3px 10px; border-radius: 6px; border: 1px solid rgba(var(--border),0.12); background: transparent; color: var(--text-secondary); cursor: pointer; transition: all .12s; }
+.btn:hover { background: rgba(255,255,255,0.06); color: var(--text-primary); }
+.btn.primary { background: rgb(var(--primary)); border-color: rgb(var(--primary)); color: #fff; }
+.btn.primary:hover { background: rgb(var(--primary-soft)); }
+
+/* 运行态卡片 */
+.card.run {
+  border: 1px solid rgba(var(--border),0.07); border-radius: 8px;
+  padding: 7px 10px; background: rgba(var(--bg-surface),0.4);
+}
+.card.run .r-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.card.run .r-ico { width: 14px; height: 14px; flex-shrink: 0; }
+.card.run .r-title { font-size: 12px; font-weight: 500; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card.run .r-meta { font-size: 10px; color: var(--text-tertiary); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.card.run .r-bar { height: 3px; background: rgba(255,255,255,0.08); border-radius: 2px; overflow: hidden; margin: 4px 0 3px; }
+.card.run .r-bar > i { display: block; height: 100%; border-radius: 2px; background: rgb(var(--primary)); transition: width .4s; }
+.card.run .r-detail { font-size: 11px; color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 任务详情：直接显示清单 */
+.task-list { display: flex; flex-direction: column; gap: 1px; margin-top: 4px; }
+.task-row { display: flex; align-items: center; gap: 7px; padding: 2px 4px; border-radius: 4px; }
+.task-row .t-dot { width: 12px; height: 12px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.task-row .t-txt { font-size: 11px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-row .t-txt.done { color: var(--text-muted); text-decoration: line-through; }
+.task-row .t-txt.active { color: var(--primary); }
+.task-row .t-txt.pending { color: var(--text-secondary); }
+.task-row .t-num { font-size: 10px; color: var(--text-muted); font-family: var(--mono); flex-shrink: 0; }
+.task-more { font-size: 10px; color: var(--text-muted); padding: 2px 4px 0; }
+
+/* 已完成分组 */
+.done-group { border-top: 1px solid rgba(var(--border),0.05); padding-top: 6px; }
+.done-head {
+  display: flex; align-items: center; gap: 6px; padding: 3px 8px;
+  font-size: 10px; color: var(--text-muted); cursor: pointer; border-radius: 6px;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.done-head:hover { background: rgba(255,255,255,0.03); }
+.done-chev { transition: transform .2s; }
+.done-chev.open { transform: rotate(90deg); }
+.done-list { display: flex; flex-direction: column; gap: 4px; padding-top: 4px; }
+.card.done .r-title { color: var(--text-tertiary); }
+.card.done { opacity: 0.85; }
+
+/* 失败卡 */
+.card.fail { border-color: rgba(var(--danger),0.3); background: rgba(var(--danger),0.06); }
+.card.fail .r-detail { color: rgb(var(--danger)); }
+
+/* 底部水位条（未来扩展位） */
+.foot-bar {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px 0;
+  border-top: 1px solid rgba(var(--border),0.05); margin-top: 2px;
+  font-size: 10px; color: var(--text-muted);
+}
+.foot-bar .water { flex: 1; height: 3px; background: rgba(255,255,255,0.06); border-radius: 2px; overflow: hidden; }
+.foot-bar .water > i { display: block; height: 100%; background: rgb(var(--accent)); }
+.foot-bar .water.warn > i { background: rgb(var(--warning)); }
+
+/* 演示控制 */
+.demo { position: fixed; bottom: 0; left: 0; right: 0; height: 40px; background: rgb(var(--bg-surface)); border-top: 1px solid rgba(var(--border),0.08); display: flex; align-items: center; gap: 6px; padding: 0 14px; z-index: 100; font-size: 11px; }
+.demo .lbl { color: var(--text-muted); margin-right: 2px; }
+.db { padding: 3px 9px; border-radius: 6px; background: rgba(255,255,255,0.04); color: var(--text-secondary); cursor: pointer; border: 1px solid rgba(var(--border),0.08); transition: all .12s; font-size: 11px; }
+.db:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
+.db.on { background: rgba(var(--primary),0.18); color: rgb(var(--primary)); border-color: rgba(var(--primary),0.3); }
+.demo .sp { flex: 1; }
+
+.input-bar { height: 48px; padding: 6px 14px; border-top: 1px solid rgba(var(--border),0.05); background: rgb(var(--bg-base)); display: flex; align-items: center; gap: 8px; }
+.input-bar .field { flex: 1; height: 34px; border-radius: 9px; background: rgba(255,255,255,0.04); border: 1px solid rgba(var(--border),0.08); padding: 0 12px; display: flex; align-items: center; color: var(--text-muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar"></div>
+  <div class="main">
+    <div class="topbar"><span class="live"></span><span>Polaris · 灵动岛 v2 原型</span></div>
+    <div class="msg-area">
+      <!-- 灵动岛 -->
+      <div class="island" id="island">
+        <div class="island-bar" onclick="toggle()">
+          <span class="dot run" id="dot"></span>
+          <div class="island-main"><div class="carousel" id="car"></div></div>
+          <span class="island-time" id="time">2m</span>
+          <svg class="chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+        </div>
+        <div class="panel"><div class="panel-inner" id="pinner"></div></div>
+      </div>
+      <!-- 消息流 -->
+      <div class="msg-scroll" id="scroll">
+        <div class="msg user"><div class="bubble">重构会话历史模块，迁移到 JSONL，保留 FTS5 trigram 索引。</div></div>
+        <div class="msg ai"><div class="bubble"><div class="think">分析 session_storage.rs 写入路径与索引结构...</div>分三步：迁移写入路径、重建 FTS、补续聊兼容层。先建任务板。</div></div>
+        <div class="block"><div class="block-card" id="b-task">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-tertiary)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            <span>任务板 4/10 · 40%</span>
+          </div>
+        </div></div>
+        <div class="msg ai"><div class="bubble">派一个 Explore subagent 并行验证 FTS5 在 JSONL 上的兼容性。</div></div>
+        <div class="block"><div class="block-card" id="b-agent">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-tertiary)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg>
+            <span>Explore · 运行中 · 14 工具 (9 完成)</span>
+          </div>
+        </div></div>
+        <div class="msg ai"><div class="bubble">subagent 在分析 extract_tool_calls。同时启动 workflow 做对抗审计。</div></div>
+        <div class="block"><div class="block-card" id="b-wf">
+          <div style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-tertiary)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><path d="M7 11l4 4"/><rect width="8" height="8" x="13" y="13" rx="2"/></svg>
+            <span>Workflow · Phase 2/3 对抗审计</span>
+          </div>
+        </div></div>
+        <div class="msg ai"><div class="bubble">写入路径迁移完成，FTS 索引重建中。trigram 兼容性验证通过。</div></div>
+        <div class="msg ai"><div class="bubble" style="color:var(--text-tertiary)">（向下滚动，注意顶部灵动岛始终可见——这是它的核心价值。）</div></div>
+        <div class="msg ai"><div class="bubble">兼容层接入完成。fork 关系字段正确保留，Git/PR 关联透传。</div></div>
+        <div class="msg user"><div class="bubble">跑回归测试。</div></div>
+        <div class="msg ai"><div class="bubble">cargo test --lib。Tauri DLL 限制用 cargo check 验证编译，单测在 CI 跑。</div></div>
+        <div class="msg ai"><div class="bubble">编译通过，零错误。提交：fix(session): OPFS→JSONL 迁移。</div></div>
+      </div>
+    </div>
+    <div class="input-bar"><div class="field">输入消息，或 / 触发命令...</div></div>
+  </div>
+</div>
+<div class="demo">
+  <span class="lbl">场景</span>
+  <div class="db on" data-s="run" onclick="setScene('run')">运行中</div>
+  <div class="db" data-s="urgent" onclick="setScene('urgent')">需要你（权限/问题）</div>
+  <div class="db" data-s="mixed" onclick="setScene('mixed')">混合（运行+完成折叠）</div>
+  <div class="db" data-s="fail" onclick="setScene('fail')">有失败</div>
+  <div class="db" data-s="done" onclick="setScene('done')">刚完成（降级退场）</div>
+  <div class="sp"></div>
+  <span class="lbl">点击岛展开 · 展开即详情 · 无定位按钮 · 全 lucide 图标</span>
+</div>
+
+<!-- 隐藏的 SVG 图标库（用 use 引用避免重复） -->
+<svg width="0" height="0" style="position:absolute"><defs>
+  <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></symbol>
+  <symbol id="i-bot" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="10" x="3" y="11" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4"/></symbol>
+  <symbol id="i-wf" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="8" x="3" y="3" rx="2"/><rect width="8" height="8" x="13" y="13" rx="2"/><path d="M7 11l4 4"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1 1 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></symbol>
+  <symbol id="i-loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-square" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></symbol>
+</defs></svg>
+
+<script>
+// ====== 场景数据 ======
+const SCENES = {
+  run: {
+    dot: 'run', time: '2m 31s',
+    slides: [
+      { ico:'i-list', lbl:'任务', val:'4/10', bar:40 },
+      { ico:'i-bot', lbl:'Explore', val:'14 工具', active:true },
+      { ico:'i-wf', lbl:'Workflow', val:'Phase 2/3' },
+    ],
+    urgent: null,
+    running: [
+      { kind:'task', ico:'i-list', title:'任务板 4/10', meta:'40%', bar:40, color:'var(--primary)',
+        tasks:[
+          {st:'done', txt:'迁移写入路径 OPFS→JSONL', n:'1'},
+          {st:'done', txt:'重建 FTS5 trigram 索引', n:'2'},
+          {st:'active', txt:'续聊工作台兼容层接入', n:'3'},
+          {st:'pending', txt:'回归测试 cargo check', n:'4'},
+          {st:'pending', txt:'提交并更新 MEMORY', n:'5'},
+        ], taskMore:'+5 项未展开' },
+      { kind:'agent', ico:'i-bot', title:'Explore · general-purpose', meta:'2m 31s', color:'var(--accent)',
+        detail:'正在读取 event_parser.rs:1024-1066 · 9/14 工具完成' },
+      { kind:'wf', ico:'i-wf', title:'Workflow · 对抗审计', meta:'Phase 2/3', color:'var(--primary)',
+        detail:'scan-a 完成 · scan-b 运行 18.2k tok · scan-c 排队' },
+    ],
+    done: [],
+    water: { pct: 34, label: '128k / 1M', warn:false },
+  },
+  urgent: {
+    dot: 'warn', time: '1m 12s',
+    slides: [ { ico:'i-shield', lbl:'需要授权', val:'Bash 命令', active:true } ],
+    urgent: { ico:'i-shield', title:'请求执行权限', desc:'Bash: cargo test --lib\n工作区: D:\\space\\base\\Polaris\n模型希望运行测试套件验证迁移。', primary:'批准', secondary:'拒绝' },
+    running: [
+      { kind:'task', ico:'i-list', title:'任务板 7/10', meta:'70%', bar:70, color:'var(--primary)',
+        tasks:[
+          {st:'done', txt:'迁移写入路径', n:'1'},
+          {st:'done', txt:'重建 FTS5 索引', n:'2'},
+          {st:'active', txt:'等待权限批准后跑回归测试', n:'4'},
+        ], taskMore:'+4 项' },
+    ],
+    done: [],
+    water: { pct: 41, label: '156k / 1M', warn:false },
+  },
+  mixed: {
+    dot: 'run', time: '4m 18s',
+    slides: [
+      { ico:'i-list', lbl:'任务', val:'7/10', bar:70 },
+      { ico:'i-bot', lbl:'Explore', val:'运行中', active:true },
+    ],
+    urgent: null,
+    running: [
+      { kind:'task', ico:'i-list', title:'任务板 7/10', meta:'70%', bar:70, color:'var(--primary)',
+        tasks:[
+          {st:'done', txt:'迁移写入路径 OPFS→JSONL', n:'1'},
+          {st:'done', txt:'重建 FTS5 trigram 索引', n:'2'},
+          {st:'done', txt:'续聊工作台兼容层接入', n:'3'},
+          {st:'active', txt:'回归测试 cargo check', n:'4'},
+        ], taskMore:'+3 项' },
+      { kind:'agent', ico:'i-bot', title:'Explore · general-purpose', meta:'4m 18s', color:'var(--accent)',
+        detail:'正在读取 event_parser.rs · 6/9 工具完成' },
+    ],
+    done: [
+      { kind:'wf', ico:'i-check', title:'Workflow · 对抗审计', meta:'完成 · 2m 03s', color:'var(--success)',
+        detail:'对抗审计完成 · 1 survivor · 0 refuted' },
+    ],
+    water: { pct: 52, label: '208k / 1M', warn:false },
+  },
+  fail: {
+    dot: 'fail', time: '3m 02s',
+    slides: [
+      { ico:'i-alert', lbl:'Agent 失败', val:'Read 超时', active:true },
+      { ico:'i-list', lbl:'任务', val:'7/10', bar:70 },
+    ],
+    urgent: null,
+    running: [
+      { kind:'agent', ico:'i-bot', title:'Explore · general-purpose', meta:'失败 · 3m 02s', color:'var(--danger)', fail:true,
+        detail:'Read tool_use_id 不匹配 — tool_result 回填找不到对应 tool_use' },
+      { kind:'task', ico:'i-list', title:'任务板 7/10', meta:'70%', bar:70, color:'var(--primary)',
+        tasks:[ {st:'active', txt:'重建 FTS 索引', n:'5'} ], taskMore:'+5 项' },
+    ],
+    done: [],
+    water: { pct: 48, label: '192k / 1M', warn:false },
+  },
+  done: {
+    dot: 'done', time: '3m 42s', collapsed: true,
+    slides: [ { ico:'i-check', lbl:'完成', val:'3 项 · 3m 42s' } ],
+    urgent: null,
+    running: [],
+    done: [
+      { kind:'task', ico:'i-check', title:'任务板 10/10', meta:'全部完成', bar:100, color:'var(--success)',
+        detail:'迁移写入路径 · 重建索引 · 兼容层' },
+      { kind:'agent', ico:'i-check', title:'Explore · general-purpose', meta:'完成 · 2m 31s', color:'var(--success)',
+        detail:'14 工具全部完成' },
+      { kind:'wf', ico:'i-check', title:'Workflow · 对抗审计', meta:'完成 · 2m 03s', color:'var(--success)',
+        detail:'1 survivor · 0 refuted' },
+    ],
+    water: { pct: 30, label: '120k / 1M', warn:false },
+  },
+};
+
+let cur = 'run', expanded = false, carIdx = 0, carTimer = null, exitTimer = null;
+
+function svgUse(id, cls) {
+  return `<svg class="${cls||''}" width="14" height="14"><use href="#${id}"/></svg>`;
+}
+
+function renderSlides(slides) {
+  const car = document.getElementById('car');
+  if (!slides.length) { car.innerHTML = '<span style="color:var(--text-muted);font-size:11px">空闲</span>'; carIdx=0; return; }
+  car.innerHTML = slides.map((s,i) => {
+    const bar = s.bar!=null ? `<span class="mini-bar"><i style="width:${s.bar}%"></i></span>` : '';
+    const valCls = s.active ? 'val active' : 'val';
+    return `<div class="slide ${i===0?'on':''}">
+      <svg class="ico" width="13" height="13"><use href="#${s.ico}"/></svg>
+      <span class="lbl">${s.lbl}</span><span class="${valCls}">${s.val}</span>${bar}
+    </div>`;
+  }).join('');
+  carIdx = 0;
+}
+
+function renderCard(c) {
+  const bar = c.bar!=null ? `<div class="r-bar"><i style="width:${c.bar}%;background:${c.color}"></i></div>` : '';
+  let body = '';
+  if (c.tasks) {
+    body = `<div class="task-list">${c.tasks.map(t => {
+      const dotMap = {done:'i-check', active:'i-loader', pending:'i-circle'};
+      const cls = t.st;
+      return `<div class="task-row">
+        <span class="t-dot" style="color:${t.st==='done'?'var(--success)':t.st==='active'?'var(--primary)':'var(--text-muted)'}">
+          <svg width="12" height="12" style="${t.st==='active'?'animation:spin 1s linear infinite':''}"><use href="#${dotMap[t.st]}"/></svg>
+        </span>
+        <span class="t-txt ${cls}">${t.txt}</span>
+        <span class="t-num">#${t.n}</span>
+      </div>`;
+    }).join('')}</div>${c.taskMore?`<div class="task-more">${c.taskMore}</div>`:''}`;
+  } else {
+    body = `<div class="r-detail" style="${c.fail?'color:var(--danger)':''}">${c.detail||''}</div>`;
+  }
+  const failCls = c.fail ? ' fail' : '';
+  return `<div class="card run${failCls}">
+    <div class="r-top">
+      <svg class="r-ico" width="14" height="14" style="color:${c.color}"><use href="#${c.ico}"/></svg>
+      <span class="r-title">${c.title}</span>
+      <span class="r-meta">${c.meta||''}</span>
+    </div>
+    ${bar}${body}
+  </div>`;
+}
+
+function renderPanel(s) {
+  const p = document.getElementById('pinner');
+  let html = '';
+  // 需要你
+  if (s.urgent) {
+    const u = s.urgent;
+    html += `<div class="sec-head">需要你</div>`;
+    html += `<div class="card urgent">
+      <div class="u-top">
+        <svg class="u-ico" width="16" height="16"><use href="#${u.ico}"/></svg>
+        <span class="u-title">${u.title}</span>
+      </div>
+      <div class="u-desc">${u.desc.replace(/\n/g,'<br>')}</div>
+      <div class="u-actions">
+        <button class="btn primary" onclick="alert('已批准')">${u.primary}</button>
+        <button class="btn" onclick="alert('已拒绝')">${u.secondary}</button>
+      </div>
+    </div>`;
+  }
+  // 正在跑
+  if (s.running.length) {
+    html += `<div class="sec-head">正在运行<span class="count">${s.running.length}</span></div>`;
+    s.running.forEach(c => html += renderCard(c));
+  }
+  // 已完成（折叠）
+  if (s.done.length) {
+    html += `<div class="done-group">
+      <div class="done-head" onclick="toggleDone()">
+        <svg class="done-chev" id="dchev" width="10" height="10"><use href="#i-chev-r"/></svg>
+        <span>已完成 ${s.done.length}</span>
+      </div>
+      <div class="done-list" id="dlist" style="display:none">
+        ${s.done.map(c => `<div class="card run done">${renderCard(c).replace('card run','card run done')}</div>`).join('')}
+      </div>
+    </div>`;
+  }
+  // 水位条（未来扩展位）
+  if (s.water) {
+    html += `<div class="foot-bar">
+      <svg width="11" height="11" style="color:var(--text-muted)"><use href="#i-circle"/></svg>
+      <span>上下文 ${s.water.label}</span>
+      <div class="water ${s.water.warn?'warn':''}"><i style="width:${s.water.pct}%"></i></div>
+      <span>${s.water.pct}%</span>
+    </div>`;
+  }
+  if (!html) html = '<div style="padding:14px;text-align:center;color:var(--text-muted);font-size:12px">当前无运行态</div>';
+  p.innerHTML = html;
+}
+
+function toggleDone() {
+  const list = document.getElementById('dlist');
+  const chev = document.getElementById('dchev');
+  if (!list) return;
+  const open = list.style.display !== 'none';
+  list.style.display = open ? 'none' : 'block';
+  if (chev) chev.classList.toggle('open', !open);
+}
+
+function startCar(slides) {
+  stopCar();
+  if (slides.length <= 1) return;
+  carTimer = setInterval(() => {
+    const els = document.querySelectorAll('#car .slide');
+    if (!els.length) return;
+    els[carIdx].classList.remove('on');
+    carIdx = (carIdx + 1) % els.length;
+    els[carIdx].classList.add('on');
+  }, 3000);
+}
+function stopCar() { if (carTimer) { clearInterval(carTimer); carTimer = null; } }
+
+function setScene(name) {
+  cur = name;
+  document.querySelectorAll('.db').forEach(b => b.classList.toggle('on', b.dataset.s === name));
+  const s = SCENES[name];
+  const island = document.getElementById('island');
+  const dot = document.getElementById('dot');
+  dot.className = 'dot ' + s.dot;
+  document.getElementById('time').textContent = s.time;
+  island.classList.toggle('collapsed', s.collapsed === true);
+  // 重置退场
+  island.classList.remove('exiting');
+  island.style.opacity = ''; island.style.transform = '';
+  if (exitTimer) { clearTimeout(exitTimer); exitTimer = null; }
+  renderSlides(s.slides);
+  renderPanel(s);
+  startCar(s.slides);
+  island.classList.toggle('idle', name === 'idle');
+  if (name === 'done') {
+    exitTimer = setTimeout(() => {
+      if (cur === 'done') {
+        island.classList.add('exiting');
+        setTimeout(() => { if (cur === 'done') island.style.display = 'none'; }, 500);
+      }
+    }, 5000);
+  } else {
+    island.style.display = '';
+  }
+}
+
+function toggle() {
+  expanded = !expanded;
+  document.getElementById('island').classList.toggle('expanded', expanded);
+  if (expanded) stopCar();
+  else if (SCENES[cur].slides.length > 1) startCar(SCENES[cur].slides);
+}
+
+// spin 动画 keyframe（loader 用）
+const st = document.createElement('style');
+st.textContent = '@keyframes spin { from{transform:rotate(0)} to{transform:rotate(360deg)} }';
+document.head.appendChild(st);
+
+setScene('run');
+</script>
+</body>
+</html>
