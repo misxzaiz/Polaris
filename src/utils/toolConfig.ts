@@ -130,6 +130,33 @@ export function getToolShortName(toolName: string): string {
   return TOOL_SHORT_NAMES[toolName] || toolName.charAt(0).toUpperCase();
 }
 
+/** 工具分类中文描述（岛卡 detail 用，与 summary 的关键参数不重复） */
+const CATEGORY_DESCRIPTIONS: Record<ToolCategory, string> = {
+  read: '读取文件',
+  edit: '编辑文件',
+  write: '写入文件',
+  execute: '执行命令',
+  search: '搜索内容',
+  list: '浏览文件',
+  git: 'Git 操作',
+  delete: '删除文件',
+  manage: '任务管理',
+  analyze: '代码分析',
+  network: '网络请求',
+  agent: '调用代理',
+  other: '执行操作',
+};
+
+/** 获取工具分类 */
+export function getToolCategory(toolName: string): ToolCategory {
+  return TOOL_CATEGORY[toolName] || 'other';
+}
+
+/** 获取工具分类描述文案 */
+export function getToolCategoryDescription(toolName: string): string {
+  return CATEGORY_DESCRIPTIONS[getToolCategory(toolName)] || '执行操作';
+}
+
 const TOOL_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   'read_file': FileText,
   'Read': FileText,
@@ -509,6 +536,18 @@ function extractUrl(input: Record<string, unknown> | undefined): string {
   return extractUrlImpl(input, 30);
 }
 
+// prompt 类字段序列提取（Task/Agent/Workflow 家族通用），与灵动岛 deriveWorkflowLabel 同构
+function extractPromptLike(input: Record<string, unknown> | undefined, maxLen = 50): string {
+  if (!input) return '';
+  for (const key of ['prompt', 'task', 'description', 'goal', 'query']) {
+    const v = input[key];
+    if (typeof v === 'string' && v.trim()) {
+      return v.length > maxLen ? v.slice(0, maxLen - 3) + '...' : v;
+    }
+  }
+  return '';
+}
+
 export function extractToolKeyInfo(toolName: string, input: Record<string, unknown> | undefined): string {
   const category = TOOL_CATEGORY[toolName];
 
@@ -521,19 +560,13 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     }
   }
 
-  // Task/Agent 工具：提取 prompt/description 参数
-  // 覆盖 Agent、Task 旧名，以及 Task 家族（TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop）
+  // Task/Agent/Workflow 工具：提取 prompt/description 等指令字段
+  // 覆盖 Agent、Task 旧名，Task 家族（TaskCreate/TaskUpdate/TaskList/TaskGet/TaskOutput/TaskStop），
+  // 以及 Workflow / dispatch_agent / read_skill 等 agent 类工具
   const lowerName = toolName.toLowerCase();
   if ((lowerName === 'task' || lowerName === 'agent') && input) {
-    const prompt = input.prompt as string | undefined;
-    if (prompt) {
-      return prompt.length > 50 ? prompt.slice(0, 47) + '...' : prompt;
-    }
-    // 尝试 description 参数
-    const description = input.description as string | undefined;
-    if (description) {
-      return description.length > 50 ? description.slice(0, 47) + '...' : description;
-    }
+    const info = extractPromptLike(input);
+    if (info) return info;
   }
 
   // Task 家族工具：按工具语义提取关键参数
@@ -629,6 +662,9 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
       return extractUrl(input) || extractSearchQuery(input);
     case 'analyze':
       return extractFileName(input) || extractSearchQuery(input);
+    case 'agent':
+      // Workflow / dispatch_agent / read_skill 等：提取指令字段，退化为技能名/查询词
+      return extractPromptLike(input) || extractSearchQuery(input);
     default:
       return extractFileName(input) || extractCommand(input) || extractSearchQuery(input) || '';
   }

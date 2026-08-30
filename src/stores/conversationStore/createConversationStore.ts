@@ -803,6 +803,23 @@ export function createConversationStore(
         if (_textBuffer) get()._flushTextBuffer()
 
         const { currentMessage, toolBlockMap, streamingUpdateCounter } = get()
+
+        // 幂等守卫：流式与快照双路径会对同一 toolId 重发 ToolCallStart，
+        // 已存在时仅回填缺失的 input，不追加重复块
+        const existingIdx = toolBlockMap.get(toolId)
+        if (existingIdx !== undefined && currentMessage) {
+          const existing = currentMessage.blocks[existingIdx]
+          if (existing?.type === 'tool_call') {
+            const hasInput = existing.input && Object.keys(existing.input).length > 0
+            if (!hasInput && input && Object.keys(input).length > 0) {
+              const blocks = [...currentMessage.blocks]
+              blocks[existingIdx] = { ...existing, input }
+              set({ currentMessage: { ...currentMessage, blocks } })
+            }
+          }
+          return
+        }
+
         const block = {
           type: 'tool_call' as const,
           id: toolId,
@@ -1100,6 +1117,12 @@ export function createConversationStore(
       // ===== AgentRun =====
       appendAgentRunBlock: (taskId, agentType, capabilities?) => {
         const { currentMessage, agentRunBlockMap, streamingUpdateCounter } = get()
+
+        // 幂等守卫：流式与快照双路径会对同一 taskId 重发 AgentRunStart，不追加重复块
+        if (agentRunBlockMap.has(taskId)) {
+          return
+        }
+
         const block = {
           type: 'agent_run' as const,
           id: taskId,

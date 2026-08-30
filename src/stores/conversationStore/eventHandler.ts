@@ -314,9 +314,28 @@ export function handleAIEvent(
       break
     }
 
-    case 'progress':
-      set({ progressMessage: event.message || null })
+    case 'progress': {
+      const msg = event.message || null
+      // 工具结束态 progress（✅/❌ 前缀）只用于更新工具卡状态，
+      // 不应作为 progressMessage 残留——否则工具完成后岛仍转圈显示已完成文案。
+      // 仅真正"进行中"的进度（🔧 前缀 / 无状态前缀）才进 progressMessage。
+      const isTerminal = msg && (msg.startsWith('✅') || msg.startsWith('❌'))
+      if (isTerminal) {
+        // 终态文案：若 progressMessage 恰好是同工具的 🔧 文案，清掉它
+        const prev = get().progressMessage
+        if (prev && prev.startsWith('🔧')) {
+          // 提取工具名比较（🔧 Glob → 与 ✅ Glob 同名则清空）
+          const prevName = prev.replace(/^🔧\s*/, '').trim()
+          const termName = msg!.replace(/^[✅❌]\s*/, '').trim()
+          if (prevName === termName || termName.startsWith(prevName)) {
+            set({ progressMessage: null })
+          }
+        }
+        break
+      }
+      set({ progressMessage: msg })
       break
+    }
 
     case 'error':
       if (get().isInterrupting) {

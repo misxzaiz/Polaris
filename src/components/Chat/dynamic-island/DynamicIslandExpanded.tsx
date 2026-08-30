@@ -14,6 +14,7 @@ import {
   ListTodo,
   Bot,
   Workflow,
+  Wrench,
   LoaderCircle,
   CircleAlert,
   CircleCheck,
@@ -162,7 +163,7 @@ function UrgentCardItem({
   );
 }
 
-/** 运行态卡片（任务 / agent / workflow / progress） */
+/** 运行态卡片（任务 / agent / workflow / tool / progress） */
 function RuntimeCardItem({ card, failed = false }: { card: RuntimeCard; failed?: boolean }) {
   const Icon =
     card.kind === 'task'
@@ -171,7 +172,9 @@ function RuntimeCardItem({ card, failed = false }: { card: RuntimeCard; failed?:
         ? Bot
         : card.kind === 'workflow'
           ? Workflow
-          : LoaderCircle;
+          : card.kind === 'tool'
+            ? Wrench
+            : LoaderCircle;
 
   const iconCls =
     card.kind === 'agent'
@@ -180,13 +183,15 @@ function RuntimeCardItem({ card, failed = false }: { card: RuntimeCard; failed?:
         ? 'r-ico-task'
         : card.kind === 'workflow'
           ? 'r-ico-workflow'
-          : 'r-ico-progress';
+          : card.kind === 'tool'
+            ? 'r-ico-tool'
+            : 'r-ico-progress';
 
   return (
     <div className={clsx('island-card', failed && 'island-fail')}>
       <div className="r-top">
         <span className={clsx('r-ico', iconCls)}>
-          <Icon className={card.kind === 'progress' && !failed ? 'island-spin' : undefined} />
+          <Icon />
         </span>
         <span className="r-title">{card.summary}</span>
         {card.meta && <span className="r-meta">{card.meta}</span>}
@@ -222,7 +227,7 @@ function TaskRow({ item }: { item: TaskRow }) {
   return (
     <div className="island-task-row">
       <span className={clsx('t-dot', `t-dot-${item.status}`)}>
-        <Icon className={item.status === 'active' ? 'island-spin' : undefined} />
+        <Icon />
       </span>
       <span className={clsx('t-txt', `t-txt-${item.status}`)}>{item.label}</span>
       <span className="t-num">{item.id}</span>
@@ -240,7 +245,9 @@ function DoneRow({ card }: { card: RuntimeCard }) {
         ? Bot
         : card.kind === 'workflow'
           ? Workflow
-          : LoaderCircle;
+          : card.kind === 'tool'
+            ? Wrench
+            : LoaderCircle;
   // 有无展开内容：detail 或 output 任一存在且非空
   const hasExpand = !!(card.detail || card.output);
 

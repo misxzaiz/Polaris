@@ -29,9 +29,10 @@ import type {
   ToolCallBlock,
 } from '@/types';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
+import { extractToolKeyInfo, getToolCategoryDescription } from '@/utils/toolConfig';
 
 /** 运行态类型 */
-export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'progress';
+export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'progress';
 
 /** 需要你（urgent）类型 */
 export type UrgentKind = 'permission' | 'question' | 'plan';
@@ -151,6 +152,21 @@ const EMPTY_SUMMARY: RuntimeSummary = {
 };
 
 const WORKFLOW_TOOL_NAME = 'workflow';
+
+/** progressMessage 是否为工具终态文案（✅/❌ 前缀） */
+function isTerminalProgress(msg: string | null): boolean {
+  return !!msg && (msg.startsWith('✅') || msg.startsWith('❌'));
+}
+
+/** progressMessage 是否为失败终态 */
+function isFailedProgress(msg: string | null): boolean {
+  return !!msg && msg.startsWith('❌');
+}
+
+/** 从 progressMessage 去掉 emoji 前缀，得到纯文案 */
+function stripEmoji(msg: string): string {
+  return msg.replace(/^[✅❌🔧⚠️🗑️]\s*/, '').trim() || msg;
+}
 
 /** 截断到 max 字符，超出加 … */
 function truncate(s: string, max: number): string {
@@ -319,13 +335,20 @@ export function deriveRuntimeSummary(
 
   if (!blocks || blocks.length === 0) {
     if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking };
+    // 终态进度文案不转圈（工具已结束），非终态才作为 running 进度卡
+    const terminal = isTerminalProgress(progressMessage);
+    const failed = isFailedProgress(progressMessage);
+    const summary = truncate(stripEmoji(progressMessage), 48);
     const card: RuntimeCard = {
       kind: 'progress',
-      running: true,
-      failed: false,
-      summary: truncate(progressMessage, 48),
-      detail: progressMessage,
-      slide: { kind: 'progress', label: '进度', value: truncate(progressMessage, 32) },
+      running: !terminal,
+      failed,
+      // summary 已是去掉 emoji 的纯文案，detail 不再重复同一文本
+      summary,
+      detail: '',
+      slide: terminal
+        ? null
+        : { kind: 'progress', label: '进度', value: truncate(stripEmoji(progressMessage), 32) },
     };
     return {
       ...EMPTY_SUMMARY,
@@ -333,9 +356,9 @@ export function deriveRuntimeSummary(
       urgent,
       water,
       thinking,
-      hasRunning: true,
-      runningCount: 1,
-      slides: [card.slide!],
+      hasRunning: !terminal,
+      runningCount: terminal ? 0 : 1,
+      slides: card.slide ? [card.slide] : [],
       cards: [card],
       elapsedMs: 0,
       progressMessage,
@@ -446,7 +469,34 @@ export function deriveRuntimeSummary(
     // Workflow 工具块
     if (block.type === 'tool_call') {
       const tc = block as ToolCallBlock;
-      if (tc.name.toLowerCase() !== WORKFLOW_TOOL_NAME) continue;
+      const isWorkflow = tc.name.toLowerCase() === WORKFLOW_TOOL_NAME;
+
+      // 运行中的普通工具调用 → 独立工具卡（岛卡此前只覆盖 task/agent/workflow，
+      // bash 等常规工具只有后端 ProgressEvent 兜底文本，看不到命令/路径等具体内容）
+      if (!isWorkflow && (tc.status === 'running' || tc.status === 'pending')) {
+        const info = extractToolKeyInfo(tc.name, tc.input);
+        const label = tc.name;
+        // detail 用工具分类描述（如"执行命令"），与 summary 的关键参数不重复
+        const detail = getToolCategoryDescription(tc.name);
+        cards.push({
+          kind: 'tool',
+          running: true,
+          failed: false,
+          summary: info ? `${label} · ${truncate(info, 24)}` : label,
+          meta: '运行中',
+          detail,
+          slide: { kind: 'tool', label, value: truncate(info || detail, 32) },
+        });
+        if (tc.startedAt) {
+          const ts = new Date(tc.startedAt).getTime();
+          if (!Number.isNaN(ts) && (earliestRunningStartedAt === null || ts < earliestRunningStartedAt)) {
+            earliestRunningStartedAt = ts;
+          }
+        }
+        continue;
+      }
+
+      if (!isWorkflow) continue;
       const running = tc.status === 'running' || tc.status === 'pending';
       const failed = tc.status === 'failed';
       const done = tc.status === 'completed';
@@ -480,13 +530,17 @@ export function deriveRuntimeSummary(
 
   // 兜底 progressMessage（仅当没有任何运行态卡片时作为独立卡片）
   if (cards.length === 0 && progressMessage) {
+    const terminal = isTerminalProgress(progressMessage);
+    const failed = isFailedProgress(progressMessage);
     cards.push({
       kind: 'progress',
-      running: true,
-      failed: false,
-      summary: truncate(progressMessage, 48),
-      detail: progressMessage,
-      slide: { kind: 'progress', label: '进度', value: truncate(progressMessage, 32) },
+      running: !terminal,
+      failed,
+      summary: truncate(stripEmoji(progressMessage), 48),
+      detail: '',
+      slide: terminal
+        ? null
+        : { kind: 'progress', label: '进度', value: truncate(stripEmoji(progressMessage), 32) },
     });
   }
 

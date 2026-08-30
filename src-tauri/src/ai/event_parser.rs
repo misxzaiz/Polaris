@@ -99,6 +99,10 @@ pub struct EventParser {
     streamed_text_this_turn: bool,
     /// 本 turn 是否已通过 stream_event 流式过 thinking
     streamed_thinking_this_turn: bool,
+    /// 本 turn 已通过流式路径发出 ToolCallStart/AgentRunStart 的 call_id 集合。
+    /// 完整 assistant 快照到达时按 call_id 去重（快照与流式的工具集合可能不一致，
+    /// 故用集合而非整体布尔：只跳过已流式发出的，快照新增的照常发出）。
+    streamed_tool_call_ids: std::collections::HashSet<String>,
     /// 最近观测的响应侧实际模型名（message_start / assistant 消息的 message.model）。
     /// 中转站动态路由时逐轮可能变化（如 glm-5.2 → deepseek-v4-flash），随 turn 快照
     /// 与 cumulative 用量事件透传给前端。跨轮保留最近值，不随 turn 状态重置。
@@ -114,6 +118,7 @@ impl EventParser {
             thinking_buffer: String::new(),
             streamed_text_this_turn: false,
             streamed_thinking_this_turn: false,
+            streamed_tool_call_ids: std::collections::HashSet::new(),
             stream_model: None,
         }
     }
@@ -537,6 +542,7 @@ impl EventParser {
         self.thinking_buffer.clear();
         self.streamed_text_this_turn = false;
         self.streamed_thinking_this_turn = false;
+        self.streamed_tool_call_ids.clear();
     }
 
     /// 解析助手消息事件
@@ -581,7 +587,17 @@ impl EventParser {
         }
 
         // 发出工具调用开始事件
+        // 若某 tool_use 的 call_id 已在本 turn 通过流式路径发出过，则跳过重发
+        // （前端会按 call_id 追加块，重发导致消息流出现重复工具卡/灵动岛双卡）。
+        // 注意：仅跳过事件发射，tool_call_manager 的注册在 extract_tool_calls 中
+        // 已完成，后续 tool_result 仍可正常匹配。
         for tc in &tool_calls {
+            if !tc.id.is_empty() && self.streamed_tool_call_ids.contains(&tc.id) {
+                continue;
+            }
+            if !tc.id.is_empty() {
+                self.streamed_tool_call_ids.insert(tc.id.clone());
+            }
             results.push(AIEvent::ToolCallStart(
                 ToolCallStartEvent::new(&self.session_id, tc.name.clone(), tc.args.clone())
                     .with_call_id(tc.id.clone())
@@ -768,6 +784,11 @@ impl EventParser {
             tool_use_id.clone(),
             args.clone(),
         );
+
+        // 登记本 turn 已流式发出的 call_id，供完整 assistant 快照去重
+        if !tool_use_id.is_empty() {
+            self.streamed_tool_call_ids.insert(tool_use_id.clone());
+        }
 
         let mut events = vec![
             AIEvent::Progress(ProgressEvent::new(&self.session_id, format!("🔧 {}", tool_name))),

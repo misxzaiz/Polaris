@@ -373,6 +373,7 @@
 .island-card .r-ico-task { color: rgb(var(--c-primary)); }
 .island-card .r-ico-agent { color: rgb(var(--c-accent-ai)); }
 .island-card .r-ico-workflow { color: rgb(var(--c-primary)); }
+.island-card .r-ico-tool { color: rgb(var(--c-text-secondary)); }
 .island-card .r-ico-progress { color: rgb(var(--c-text-tertiary)); }
 
 /* ========== 需要你：强调卡 ========== */
@@ -760,13 +761,7 @@
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
-/* 旋转加载图标 */
-.island-spin {
-  animation: island-spin 0.9s linear infinite;
-}
-@keyframes island-spin {
-  to { transform: rotate(360deg); }
-}
+/* island-spin 已废弃：用户要求岛卡图标一律不转圈 */
 
 /* ========== V3：Minimal 思考跑马灯态 ========== */
 /* Minimal 态宽度上限：思考跑马灯胶囊，过宽变横幅 */
