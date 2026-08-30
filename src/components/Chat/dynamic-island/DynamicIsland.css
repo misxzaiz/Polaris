@@ -16,7 +16,10 @@
   left: 50%;
   transform: translateX(-50%);
   z-index: 50;
-  width: min(440px, calc(100% - 32px));
+  /* 宽度自适配：内容驱动，不再固定 440px */
+  width: fit-content;
+  min-width: 120px;
+  max-width: min(440px, calc(100% - 32px));
   border-radius: 0 0 14px 14px;
   /* 亮两档浮层 + 内高光 + 阴影，与背景分离 */
   background: rgb(38 38 46);
@@ -24,10 +27,15 @@
   border-top: none;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   overflow: hidden;
-  transition: border-radius 0.28s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s;
+  transition:
+    border-radius 0.4s cubic-bezier(0.34, 1.56, 0.64, 1),
+    box-shadow 0.2s,
+    width 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 .island-root.island-expanded {
   border-radius: 0 0 18px 18px;
+  /* 展开态固定宽度，不被 fit-content 压窄 */
+  width: min(440px, calc(100% - 32px));
 }
 .island-root.island-exiting {
   opacity: 0;
@@ -90,8 +98,8 @@
   background: rgb(var(--c-status-danger));
 }
 @keyframes island-pulse {
-  0% { transform: scale(0.7); opacity: 1; }
-  100% { transform: scale(1.7); opacity: 0; }
+  0% { transform: scale(0.85); opacity: 1; }
+  100% { transform: scale(1.4); opacity: 0; }
 }
 
 /* 主文案区 + 轮播 */
@@ -702,4 +710,53 @@
 }
 @keyframes island-spin {
   to { transform: rotate(360deg); }
+}
+
+/* ========== V3：Minimal 思考跑马灯态 ========== */
+/* Minimal 态宽度上限：思考跑马灯胶囊，过宽变横幅 */
+.island-root.island-minimal {
+  max-width: min(260px, calc(100% - 24px));
+}
+.island-minimal .island-compact {
+  height: 30px;
+}
+
+/* 思考态状态点：呼吸（紫），替代脉冲环 */
+.island-dot-thinking {
+  background: rgb(var(--c-accent-ai));
+  animation: island-breathe 1.8s ease-in-out infinite;
+}
+@keyframes island-breathe {
+  0%, 100% { opacity: 0.55; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+/* 跑马灯视口：左右渐隐遮罩 */
+.island-marquee-wrap {
+  /* 让 marquee 视口占满 main 区 */
+}
+.island-marquee {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  align-items: center;
+  mask-image: linear-gradient(90deg, transparent, #000 10px, #000 calc(100% - 10px), transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 10px, #000 calc(100% - 10px), transparent);
+}
+.island-marquee-text {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 12px;
+  color: rgb(var(--c-accent-ai));
+  /* 默认静止（短文本），加 .island-marquee-scroll 才滚动 */
+}
+.island-marquee-scroll {
+  animation: island-marquee linear infinite;
+  /* animation-duration 由 inline style 注入（按文本长度算） */
+}
+@keyframes island-marquee {
+  0% { transform: translateX(100%); }
+  100% { transform: translateX(-100%); }
 }

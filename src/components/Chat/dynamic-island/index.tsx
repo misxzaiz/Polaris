@@ -49,12 +49,16 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const [collapsedExiting, setCollapsedExiting] = useState(false);
   const collapsedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent } = summary;
+  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent, thinking } = summary;
 
   // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、无 urgent、有已完成卡片
   const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && urgent.length === 0 && doneCount > 0;
   // 是否完全空闲（urgent 常驻可见；中断态保持可见 1s）
   const isIdle = urgent.length === 0 && !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
+  // Minimal 思考态：有 thinking block 文本，且无运行卡片、无 urgent、未中断
+  // 思考时 blocks 里有 thinking block（content 流式累积），但无 task/agent 卡片 → hasRunning=false、slides=[]
+  // Minimal 态正是补这个缺口，接 deriveThinking 数据源
+  const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting;
 
   // 重置轮播索引当 slides 变化
   useEffect(() => {
@@ -63,8 +67,8 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
 
   // 轮播定时器
   useEffect(() => {
-    if (expanded || slides.length <= 1 || hoverRef.current || urgent.length > 0) {
-      // 展开、hover 或存在 urgent 时暂停
+    if (expanded || slides.length <= 1 || hoverRef.current || urgent.length > 0 || isThinking) {
+      // 展开、hover、存在 urgent 或思考态时暂停
       if (carouselTimerRef.current) {
         clearTimeout(carouselTimerRef.current);
         carouselTimerRef.current = null;
@@ -80,7 +84,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         carouselTimerRef.current = null;
       }
     };
-  }, [expanded, slides.length, carouselIdx, urgent.length]);
+  }, [expanded, slides.length, carouselIdx, urgent.length, isThinking]);
 
   // collapsed 退场：进入 collapsed 态后停留 5s，无交互则淡出
   useEffect(() => {
@@ -194,6 +198,24 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     })();
   }, []);
 
+  // Minimal 跑马灯：思考文本滚动时长按文本长度算（替代固定 3s 轮播）
+  // 必须在 early return 之前调用，否则 isIdle 切换会导致 hook 数量不一致
+  const marqueeRef = useRef<HTMLSpanElement>(null);
+  const [marqueeScroll, setMarqueeScroll] = useState(true);
+  useEffect(() => {
+    const el = marqueeRef.current;
+    if (!el) return;
+    // 文本宽度 <= 视口宽度时不滚动
+    if (el.scrollWidth <= el.clientWidth) {
+      setMarqueeScroll(false);
+    } else {
+      setMarqueeScroll(true);
+    }
+  }, [thinking]);
+  const marqueeDuration = thinking
+    ? Math.max(6, Math.min(20, thinking.length / 8))
+    : 14;
+
   // 空闲：不渲染
   if (isIdle) return null;
 
@@ -204,7 +226,9 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
       ? 'island-dot-fail'
       : isCollapsed
         ? 'island-dot-done'
-        : 'island-dot-running';
+        : isThinking
+          ? 'island-dot-thinking'
+          : 'island-dot-running';
 
   // 当前轮播段
   const activeSlide = slides[carouselIdx] || slides[0];
@@ -224,6 +248,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         'island-root',
         expanded && 'island-expanded',
         isCollapsed && !expanded && 'island-collapsed',
+        isThinking && !expanded && 'island-minimal',
         collapsedExiting && 'island-exiting',
       )}
     >
@@ -236,8 +261,19 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
       >
         <span className={clsx('island-dot', dotClass)} />
 
-        {/* urgent 优先：需要你 */}
-        {urgent.length > 0 && !expanded ? (
+        {/* Minimal 思考跑马灯：思考文本右→左滚动 */}
+        {isThinking && !expanded ? (
+          <div className="island-main island-marquee-wrap">
+            <span className="island-marquee" ref={marqueeRef}>
+              <span
+                className={clsx('island-marquee-text', marqueeScroll && 'island-marquee-scroll')}
+                style={{ animationDuration: `${marqueeDuration}s` }}
+              >
+                {thinking}
+              </span>
+            </span>
+          </div>
+        ) : urgent.length > 0 && !expanded ? (
           <div className="island-main">
             <span className="island-seg">
               <span className="island-seg-ico island-seg-ico-warn"><TriangleAlert /></span>

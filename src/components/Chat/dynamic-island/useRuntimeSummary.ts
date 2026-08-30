@@ -25,6 +25,7 @@ import type {
   PlanModeBlock,
   QuestionBlock,
   TaskBoardBlock,
+  ThinkingBlock,
   ToolCallBlock,
 } from '@/types';
 
@@ -125,6 +126,8 @@ export interface RuntimeSummary {
   elapsedMs: number;
   /** 兜底进度文案（无任何块时） */
   progressMessage: string | null;
+  /** AI 思考文本（最后一个 thinking block.content，流式累积） */
+  thinking: string | null;
 }
 
 const EMPTY_SUMMARY: RuntimeSummary = {
@@ -139,6 +142,7 @@ const EMPTY_SUMMARY: RuntimeSummary = {
   cards: [],
   elapsedMs: 0,
   progressMessage: null,
+  thinking: null,
 };
 
 const WORKFLOW_TOOL_NAME = 'workflow';
@@ -234,6 +238,20 @@ function deriveWater(usageStats: UsageStats | null): ContextWater | null {
   };
 }
 
+/**
+ * 派生 AI 思考文本（Minimal 跑马灯态数据源）。
+ * 取最后一个 thinking block 的 content（appendThinkingBlock 流式累积）。
+ */
+function deriveThinking(blocks: ContentBlock[]): string | null {
+  if (!blocks || blocks.length === 0) return null;
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    if (blocks[i].type === 'thinking') {
+      return (blocks[i] as ThinkingBlock).content || null;
+    }
+  }
+  return null;
+}
+
 /** 任务清单行状态 → 展示状态 */
 function taskRowStatus(status: TaskBoardBlock['items'][number]['status']): TaskRowStatus {
   switch (status) {
@@ -257,9 +275,10 @@ export function deriveRuntimeSummary(
 ): RuntimeSummary {
   const water = deriveWater(usageStats);
   const urgent = deriveUrgent(blocks || []);
+  const thinking = deriveThinking(blocks || []);
 
   if (!blocks || blocks.length === 0) {
-    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water };
+    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking };
     const card: RuntimeCard = {
       kind: 'progress',
       running: true,
@@ -273,6 +292,7 @@ export function deriveRuntimeSummary(
       isInterrupting,
       urgent,
       water,
+      thinking,
       hasRunning: true,
       runningCount: 1,
       slides: [card.slide!],
@@ -316,7 +336,15 @@ export function deriveRuntimeSummary(
         detail: activeLabel ? truncate(activeLabel, 28) : `${completed}/${total} 已完成`,
         percent,
         items,
-        slide: running ? { kind: 'task', label: '任务', value: `${completed}/${total}`, barPercent: percent } : null,
+        slide: running
+          ? {
+              kind: 'task',
+              label: '任务',
+              // 进行中任务文案塞进轮播，岛上可滚动展示当前任务内容
+              value: activeLabel ? `${truncate(activeLabel, 32)} · ${completed}/${total}` : `${completed}/${total}`,
+              barPercent: percent,
+            }
+          : null,
       });
       if (running && tb.updatedAt) {
         const ts = new Date(tb.updatedAt).getTime();
@@ -445,6 +473,7 @@ export function deriveRuntimeSummary(
     cards: orderedCards,
     elapsedMs,
     progressMessage,
+    thinking,
   };
 }
 
@@ -535,6 +564,7 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.doneCount !== b.doneCount) return false;
   if (a.elapsedMs !== b.elapsedMs) return false;
   if (a.progressMessage !== b.progressMessage) return false;
+  if (a.thinking !== b.thinking) return false;
   if (a.slides.length !== b.slides.length) return false;
   if (a.cards.length !== b.cards.length) return false;
   if (a.urgent.length !== b.urgent.length) return false;
