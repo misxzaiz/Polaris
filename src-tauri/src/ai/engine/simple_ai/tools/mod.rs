@@ -253,6 +253,41 @@ fn builtin_tool_virtual_server(tool_name: &str) -> Option<&'static str> {
     }
 }
 
+/// 为测试提供 ToolContext 的便捷构造器。
+///
+/// 所有底层分配均通过 `Box::leak` 故意泄漏到进程结束，
+/// 以保证返回的 `ToolContext<'static>` 引用在测试全程有效。
+#[cfg(test)]
+#[allow(dead_code)]
+pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
+    let work_dir: &'static str = Box::leak(workdir.to_string().into_boxed_str());
+    let session_id: &'static str = Box::leak("test".to_string().into_boxed_str());
+    let plan_id: &'static str = Box::leak("test-plan".to_string().into_boxed_str());
+    let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = Arc::new(|_: AIEvent| {});
+    let event_callback: &'static Arc<dyn Fn(AIEvent) + Send + Sync> = Box::leak(Box::new(cb));
+    let plan_started: &'static AtomicBool = Box::leak(Box::new(AtomicBool::new(false)));
+    let skills: &'static HashMap<String, SkillEntry> = Box::leak(Box::new(HashMap::new()));
+    let profile: &'static crate::models::config::ModelProfile =
+        Box::leak(Box::new(crate::models::config::ModelProfile::default()));
+    let mcp_servers: &'static [crate::services::mcp_config_service::ResolvedExternalMcpServer] =
+        Box::leak(Vec::new().into_boxed_slice());
+    let (_abort_tx, abort_rx) = tokio::sync::watch::channel(false);
+    // tx 丢弃后 rx 仅表现为通道关闭，读取方按"未中断"处理即可
+    let abort_rx: &'static watch::Receiver<bool> = Box::leak(Box::new(abort_rx));
+    ToolContext {
+        work_dir,
+        session_id,
+        event_callback,
+        plan_id,
+        plan_started,
+        skills,
+        profile,
+        mcp_servers,
+        subagent_depth: 0,
+        abort_rx,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
