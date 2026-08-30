@@ -149,10 +149,13 @@ export function ToolSwitcher({
 
   if (!isOpen) return null
 
+  // z-[65]：作为全局导航浮层须高于内容区覆盖层（NarrowTabOverlay/Artifact 预览等 z-[60]），
+  // 低于全屏接管层（VoiceCompanion z-[70]、Dialog z-[100]+）。z-50 会被窄窗口
+  // 编辑器覆盖层 z-[60] 盖住（覆盖层挂在 DOM 靠后，同层级按 DOM 序反压）。
   return (
     <div
       ref={menuRef}
-      className={`fixed z-50 ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-in fade-in duration-150`}
+      className={`fixed z-[65] ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-in fade-in duration-150`}
       style={{ maxHeight: 'min(70dvh, calc(100dvh - 64px))' }}
       role="dialog"
       aria-label={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
