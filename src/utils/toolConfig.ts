@@ -43,6 +43,7 @@ import {
   Database,
   Wrench,
   Cpu,
+  Boxes,
   Layers,
   Sparkles,
   ListPlus,
@@ -127,7 +128,197 @@ const TOOL_SHORT_NAMES: Record<string, string> = {
 
 /** 获取工具缩写名称 */
 export function getToolShortName(toolName: string): string {
-  return TOOL_SHORT_NAMES[toolName] || toolName.charAt(0).toUpperCase();
+  const exact = TOOL_SHORT_NAMES[toolName];
+  if (exact) return exact;
+
+  // MCP 工具：取 server 名首字母（如 mcp__polaris-api__send_message → 'p'），
+  // 比整串原始名首字母更有辨识度
+  const mcp = parseMcpToolName(toolName);
+  if (mcp) return mcp.server.charAt(0).toUpperCase();
+
+  return toolName.charAt(0).toUpperCase();
+}
+
+// ========================================
+// 未注册工具名解析层（MCP 前缀 + 启发式友好名）
+// ========================================
+
+/**
+ * 解析 MCP 工具完整名 `mcp__{server}__{tool}`。
+ * 非 MCP 工具返回 null。
+ */
+export function parseMcpToolName(toolName: string): { server: string; tool: string } | null {
+  if (!toolName.startsWith('mcp__')) return null;
+  const rest = toolName.slice('mcp__'.length);
+  const idx = rest.indexOf('__');
+  if (idx <= 0) return null;
+  const server = rest.slice(0, idx);
+  const tool = rest.slice(idx + 2);
+  if (!server || !tool) return null;
+  return { server, tool };
+}
+
+/** snake_case / kebab-case → 空格分词 */
+function splitNameWords(raw: string): string[] {
+  return raw
+    .replace(/[_-]+/g, ' ')
+    // camelCase 边界（含连续大写后接小写，如 HTTPRequest → HTTP Request）
+    .replace(/([a-z\d])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+/** 常见动词/名词的中文词典（未注册工具的启发式友好名） */
+const NAME_WORD_ZH: Record<string, string> = {
+  send: '发送',
+  message: '消息',
+  msg: '消息',
+  read: '读取',
+  write: '写入',
+  edit: '编辑',
+  create: '创建',
+  delete: '删除',
+  remove: '移除',
+  update: '更新',
+  get: '获取',
+  set: '设置',
+  list: '列出',
+  search: '搜索',
+  find: '查找',
+  query: '查询',
+  run: '运行',
+  exec: '执行',
+  execute: '执行',
+  call: '调用',
+  fetch: '抓取',
+  open: '打开',
+  close: '关闭',
+  start: '启动',
+  stop: '停止',
+  restart: '重启',
+  check: '检查',
+  wait: '等待',
+  upload: '上传',
+  download: '下载',
+  copy: '复制',
+  move: '移动',
+  rename: '重命名',
+  generate: '生成',
+  save: '保存',
+  load: '加载',
+  parse: '解析',
+  convert: '转换',
+  test: '测试',
+  install: '安装',
+  uninstall: '卸载',
+  status: '状态',
+  file: '文件',
+  files: '文件',
+  dir: '目录',
+  directory: '目录',
+  image: '图片',
+  video: '视频',
+  audio: '音频',
+  text: '文本',
+  content: '内容',
+  data: '数据',
+  config: '配置',
+  task: '任务',
+  todo: '待办',
+  plan: '计划',
+  session: '会话',
+  history: '历史',
+  log: '日志',
+  report: '报告',
+  url: '链接',
+  web: '网页',
+  page: '页面',
+  browser: '浏览器',
+  tab: '标签页',
+  git: 'Git',
+  commit: '提交',
+  push: '推送',
+  pull: '拉取',
+  branch: '分支',
+  merge: '合并',
+  diff: '差异',
+  code: '代码',
+  repo: '仓库',
+  prompt: '提示词',
+  agent: '代理',
+  skill: '技能',
+  tool: '工具',
+  server: '服务器',
+  client: '客户端',
+  api: 'API',
+  http: 'HTTP',
+  db: '数据库',
+  database: '数据库',
+  sql: 'SQL',
+};
+
+/**
+ * 启发式生成未注册工具的中文友好名：
+ * 取分词后词典命中的词拼接（最多 2 个），如
+ * 'send_message' → '发送消息'、'read_file_chunk' → '读取文件'。
+ * 全部未命中时返回空字符串（由调用方回退原始名）。
+ */
+function heuristicFriendlyName(toolName: string): string {
+  const words = splitNameWords(toolName);
+  const hits: string[] = [];
+  for (const w of words) {
+    const zh = NAME_WORD_ZH[w.toLowerCase()];
+    if (zh && !hits.includes(zh)) hits.push(zh);
+    if (hits.length >= 2) break;
+  }
+  return hits.join('');
+}
+
+/**
+ * 获取工具显示名（统一入口）。
+ *
+ * 优先级：
+ * 1. 精确映射（TOOL_LABEL_KEYS，已注册内置工具，行为不变）
+ * 2. MCP 前缀解析 → `{server 词典名} · {tool 启发式名/原名}`
+ * 3. 启发式分词词典（snake/camel 工具名 → 中文）
+ * 4. 原始名兜底
+ */
+export function getToolDisplayName(toolName: string): string {
+  const exact = TOOL_LABEL_KEYS[toolName];
+  if (exact) return t(exact);
+
+  const mcp = parseMcpToolName(toolName);
+  if (mcp) {
+    const serverZh = NAME_WORD_ZH[mcp.server.toLowerCase()] || mcp.server;
+    const toolZh = heuristicFriendlyName(mcp.tool);
+    return toolZh ? `${serverZh} · ${toolZh}` : `${serverZh} · ${mcp.tool}`;
+  }
+
+  const heur = heuristicFriendlyName(toolName);
+  if (heur && heur.length >= 2) return heur;
+
+  return toolName;
+}
+
+/** 按工具名关键词推断未注册工具的分类（供 MCP/未知工具回退使用） */
+function inferCategory(toolName: string): ToolCategory {
+  const n = toolName.toLowerCase();
+  if (n.includes('send') || n.includes('message') || n.includes('notify') || n.includes('chat')) return 'network';
+  if (n.includes('git') || n.includes('commit') || n.includes('branch')) return 'git';
+  if (n.includes('delete') || n.includes('remove')) return 'delete';
+  if (n.includes('search') || n.includes('query') || n.includes('find')) return 'search';
+  if (n.includes('web') || n.includes('http') || n.includes('fetch') || n.includes('url')) return 'network';
+  if (n.includes('bash') || n.includes('command') || n.includes('execute') || n.includes('run')) return 'execute';
+  if (n.includes('edit') || n.includes('patch') || n.includes('modify')) return 'edit';
+  if (n.includes('write') || n.includes('create') || n.includes('save')) return 'write';
+  if (n.includes('read') || n.includes('view') || n.includes('open')) return 'read';
+  if (n.includes('list') || n.includes('ls') || n.includes('tree')) return 'list';
+  if (n.includes('task') || n.includes('todo') || n.includes('plan')) return 'manage';
+  if (n.includes('agent') || n.includes('skill')) return 'agent';
+  if (n.includes('analyze') || n.includes('check') || n.includes('lint')) return 'analyze';
+  return 'other';
 }
 
 /** 工具分类中文描述（岛卡 detail 用，与 summary 的关键参数不重复） */
@@ -147,9 +338,9 @@ const CATEGORY_DESCRIPTIONS: Record<ToolCategory, string> = {
   other: '执行操作',
 };
 
-/** 获取工具分类 */
+/** 获取工具分类（未注册工具按名称关键词推断，MCP 工具取 tool 部分推断） */
 export function getToolCategory(toolName: string): ToolCategory {
-  return TOOL_CATEGORY[toolName] || 'other';
+  return TOOL_CATEGORY[toolName] || inferCategory(toolName);
 }
 
 /** 获取工具分类描述文案 */
@@ -484,12 +675,46 @@ const TOOL_LABEL_KEYS: Record<string, string> = {
   'computer': 'labels.computer',
 };
 
+/** 按分类回退图标（未注册工具 / MCP 工具的图标推断） */
+const CATEGORY_FALLBACK_ICONS: Record<ToolCategory, React.ComponentType<{ className?: string }>> = {
+  read: FileText,
+  write: Save,
+  edit: Edit2,
+  execute: Terminal,
+  search: Search,
+  list: List,
+  git: GitBranch,
+  delete: Trash2,
+  manage: ListChecks,
+  analyze: ScanSearch,
+  network: Globe2,
+  agent: Cpu,
+  other: Wrench,
+};
+
+/** 未注册工具的图标推断：先按分类回退，再按名称关键词微调 */
+function inferIcon(toolName: string): React.ComponentType<{ className?: string }> | undefined {
+  const category = inferCategory(toolName);
+  const fallback = CATEGORY_FALLBACK_ICONS[category];
+  if (fallback && fallback !== Wrench) return fallback;
+
+  // 'other' 分类下再按特征细分
+  const n = toolName.toLowerCase();
+  const mcp = parseMcpToolName(toolName);
+  const bare = (mcp ? mcp.tool : toolName).toLowerCase();
+  if (n.includes('image') || bare.includes('image')) return FileSearch;
+  if (n.includes('browser') || bare.includes('browser') || bare.includes('web')) return Globe2;
+  if (n.includes('database') || n.includes('_db') || bare.includes('db')) return Database;
+  if (n.startsWith('mcp__')) return Boxes; // MCP 通用兜底：组件箱
+  return undefined;
+}
+
 export function getToolConfig(toolName: string): ToolConfig {
-  const category = TOOL_CATEGORY[toolName] || 'other';
+  const category = getToolCategory(toolName);
   const categoryStyle = CATEGORY_CONFIG[category];
-  const IconComponent = TOOL_ICONS[toolName] ?? TOOL_ICONS['default'] ?? Wrench;
+  const IconComponent = TOOL_ICONS[toolName] ?? inferIcon(toolName) ?? TOOL_ICONS['default'] ?? Wrench;
   const labelKey = TOOL_LABEL_KEYS[toolName];
-  const label = labelKey ? t(labelKey) : toolName;
+  const label = labelKey ? t(labelKey) : getToolDisplayName(toolName);
 
   return {
     icon: IconComponent,

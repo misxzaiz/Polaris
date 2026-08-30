@@ -22,6 +22,7 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { Button } from '../../Common/Button';
 import type { PermissionRequestBlock, PermissionDenialBlock, PermissionScope } from '@/types';
 import { addClaudePermissionRules } from '@/services/claudeSettingsService';
+import { getToolDisplayName } from '@/utils/toolConfig';
 
 const log = createLogger('PermissionRequest');
 
@@ -465,7 +466,11 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
                   </span>
                   <span className="min-w-0">
                     <span className="font-mono text-xs font-semibold text-text-primary flex items-center gap-1.5">
-                      {denial.toolName}
+                      {getToolDisplayName(denial.toolName)}
+                      {/* MCP/未注册工具的显示名与原始名不同时，补一行原始名便于授权判断 */}
+                      {getToolDisplayName(denial.toolName) !== denial.toolName && (
+                        <span className="font-normal text-[10px] text-text-tertiary truncate">({denial.toolName})</span>
+                      )}
                       {isRiskyTool(denial.toolName) && <AlertTriangle className="w-3 h-3 text-warning shrink-0" />}
                     </span>
                     <span className="block font-mono text-[11px] text-text-tertiary truncate">{getSummary(denial)}</span>

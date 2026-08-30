@@ -7,6 +7,7 @@
 
 import i18n from '@/i18n';
 import type { ToolStatus } from '@/types';
+import { getToolDisplayName } from './toolConfig';
 import {
   extractFilePath,
   extractCommand,
@@ -64,8 +65,10 @@ const TOOL_NAME_MAP: Record<string, string> = {
 };
 
 function getToolFriendlyName(toolName: string): string {
+  // 精确映射未命中时走统一解析层（MCP 前缀解析 + 启发式分词），
+  // 避免未注册工具（如 send_message、mcp__server__tool）直接露出原始名
   const key = TOOL_NAME_MAP[toolName];
-  return key ? t(key) : toolName;
+  return key ? t(key) : getToolDisplayName(toolName);
 }
 
 export function generateToolSummary(

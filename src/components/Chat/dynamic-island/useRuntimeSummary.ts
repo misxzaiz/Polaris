@@ -29,7 +29,7 @@ import type {
   ToolCallBlock,
 } from '@/types';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
-import { extractToolKeyInfo, getToolCategoryDescription } from '@/utils/toolConfig';
+import { extractToolKeyInfo, getToolCategoryDescription, getToolDisplayName } from '@/utils/toolConfig';
 
 /** 运行态类型 */
 export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'progress';
@@ -203,11 +203,12 @@ function deriveUrgent(blocks: ContentBlock[]): UrgentCard[] {
       if (pr.status !== 'pending') continue;
       const pendingDenials = (pr.denials || []).filter(d => !d.status || d.status === 'pending');
       const toolName = pendingDenials[0]?.toolName;
+      const toolDisplay = toolName ? getToolDisplayName(toolName) : '';
       urgent.push({
         kind: 'permission',
         id: pr.id,
         sessionId: pr.sessionId,
-        summary: toolName ? `需要授权 · ${truncate(toolName, 24)}` : '需要授权',
+        summary: toolDisplay ? `需要授权 · ${truncate(toolDisplay, 24)}` : '需要授权',
         detail: pendingDenials[0]?.reason || (pendingDenials.length > 0 ? '工具调用等待批准' : '等待批准'),
         count: pendingDenials.length > 1 ? pendingDenials.length : undefined,
       });
@@ -475,7 +476,8 @@ export function deriveRuntimeSummary(
       // bash 等常规工具只有后端 ProgressEvent 兜底文本，看不到命令/路径等具体内容）
       if (!isWorkflow && (tc.status === 'running' || tc.status === 'pending')) {
         const info = extractToolKeyInfo(tc.name, tc.input);
-        const label = tc.name;
+        // 显示名走统一解析层：MCP 工具（mcp__server__tool）与未注册工具显示友好名而非原始名
+        const label = getToolDisplayName(tc.name);
         // detail 用工具分类描述（如"执行命令"），与 summary 的关键参数不重复
         const detail = getToolCategoryDescription(tc.name);
         cards.push({
