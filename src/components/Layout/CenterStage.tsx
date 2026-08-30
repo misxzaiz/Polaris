@@ -668,9 +668,13 @@ export function CenterStage({ children, className = '' }: CenterStageProps) {
     return null
   }
 
-  // CenterStage 本身就有 flex-1，始终填充可用空间
+  // CenterStage 本身就有 flex-1，始终填充可用空间。
+  // min-w-0 是必需的：flex 子项默认 min-width:auto（收缩到 min-content），
+  // CodeMirror 中一条不可断的长行会把 min-content 撑到远超可用宽度，导致本组件
+  // 无法被压缩，整行溢出后被外层 overflow-hidden 静默裁剪——窄窗口下表现为
+  // "编辑器打不开"（实际是被挤压成 0 宽）。
   return (
-    <main className={`flex flex-col flex-1 overflow-hidden bg-background-base ${className}`}>
+    <main className={`flex flex-col flex-1 min-w-0 overflow-hidden bg-background-base ${className}`}>
       <TabBar />
       <BreadcrumbBar />
       <TabContent />

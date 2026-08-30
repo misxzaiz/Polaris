@@ -146,8 +146,10 @@ export const modernDarkTheme = EditorView.theme({
   },
 
   '.cm-gutterElement': {
-    padding: '0 12px 0 16px',  // 右侧留白，左侧更多
-    minWidth: '40px',
+    // 收窄 padding：原 0 12px 0 16px 共 28px 内边距，窄窗口下过宽
+    padding: '0 6px 0 4px',
+    // 删除 minWidth: 40px：让 CM 按行号位数自适应宽度
+    // 短文件（1-2 位数）行号槽收窄，长文件（4 位+）自动扩展不被截断
     textAlign: 'right',
     fontFamily: 'inherit',
   },

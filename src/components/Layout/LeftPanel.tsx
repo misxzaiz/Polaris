@@ -5,8 +5,8 @@
  * 由 ActivityBar 控制面板的显示/隐藏和切换
  */
 
-import { ReactNode, useEffect, useRef } from 'react'
-import { X } from 'lucide-react'
+import { ReactNode, useEffect, useRef, useState } from 'react'
+import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
@@ -79,17 +79,23 @@ interface LeftPanelDrawerProps {
 export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
   const { t } = useTranslation('common')
   const drawerRef = useRef<HTMLElement>(null)
+  const [expanded, setExpanded] = useState(false)
 
   // Escape 键关闭
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onClose()
+        // 优先退出全屏展开态，再次 Escape 才关闭抽屉
+        if (expanded) {
+          setExpanded(false)
+        } else {
+          onClose()
+        }
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
+  }, [onClose, expanded])
 
   // 打开时将焦点移入抽屉
   useEffect(() => {
@@ -109,19 +115,29 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
         onClick={onClose}
       />
 
-      {/* 抽屉面板 */}
+      {/* 抽屉面板
+          默认 min(85vw, 360px)，可全屏展开至 100vw —— 文件树半遮挡够用，
+          Git 历史/Diff/终端等宽内容面板需要全屏。展开态 width 过渡 0.3s。 */}
       <aside
         ref={drawerRef}
         tabIndex={-1}
-        className="absolute inset-y-0 left-0 flex flex-col bg-background-elevated border-r border-border shadow-xl animate-in slide-in-from-left duration-200 outline-none"
-        style={{ width: 'min(85vw, 360px)' }}
+        className="absolute inset-y-0 left-0 flex flex-col bg-background-elevated border-r border-border shadow-xl animate-in slide-in-from-left duration-200 outline-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        style={{ width: expanded ? '100%' : 'min(85vw, 360px)' }}
       >
-        {/* 顶部关闭栏 */}
-        <div className="flex items-center justify-end h-9 px-2 border-b border-border shrink-0">
+        {/* 顶部操作栏：展开/还原 + 关闭 */}
+        <div className="flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0">
+          <button
+            onClick={() => setExpanded(e => !e)}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
+            aria-label={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
+            title={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
+          >
+            {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+          </button>
           <button
             onClick={onClose}
             className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-      aria-label="导航面板"
+            aria-label="导航面板"
             title={t('buttons.close')}
           >
             <X className="w-4 h-4" />

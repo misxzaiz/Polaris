@@ -17,7 +17,6 @@ import { defaultKeymap, history, historyKeymap, addCursorAbove, addCursorBelow }
 import { bracketMatching, indentOnInput, syntaxHighlighting, HighlightStyle, foldGutter, foldKeymap, indentUnit } from '@codemirror/language';
 import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete';
 import { searchKeymap, highlightSelectionMatches, gotoLine } from '@codemirror/search';
-import { lintGutter } from '@codemirror/lint';
 import { tags } from '@lezer/highlight';
 import { createLogger } from '@/utils/logger';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
@@ -355,7 +354,8 @@ export function CodeMirrorEditor({
         keymap.of(searchKeymap),
         keymap.of([{ key: 'Mod-g', run: gotoLine }]),
         zoomKeymap,
-        lintGutter(),
+        // 不启用 lintGutter()：诊断已有行内波浪线 + 悬停提示呈现，
+        // 独立 gutter 列在无诊断时是纯空白占位（与 VS Code 默认行为一致）
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             const newValue = update.state.doc.toString();

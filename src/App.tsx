@@ -8,6 +8,7 @@ const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
+import { EditorOverlay } from './components/Editor';
 import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactHandoffButton, DispatchCenterButton, CompactHandoffProgress, ErrorBanner } from './components/Chat';
 import type { EditMode } from './components/Chat';
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
@@ -39,6 +40,7 @@ const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/Voi
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
+import { useNarrowEditorStore } from './stores/narrowEditorStore';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
@@ -103,6 +105,8 @@ function App() {
   const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
   const toggleNotificationCenter = useViewStore(state => state.toggleNotificationCenter);
   const multiSessionMode = useViewStore(state => state.multiSessionMode);
+  const narrowEditorFile = useNarrowEditorStore(state => state.narrowEditorFile);
+  const closeNarrowEditor = useNarrowEditorStore(state => state.closeNarrowEditor);
   const openDiffTab = useTabStore(state => state.openDiffTab);
   const openGitTab = useTabStore(state => state.openGitTab);
   const openEditorTab = useTabStore(state => state.openEditorTab);
@@ -277,6 +281,16 @@ function App() {
                 <LeftPanelDrawer onClose={closeLeftPanel}>
                   {leftPanelContent}
                 </LeftPanelDrawer>
+              )}
+
+              {/* 小屏模式：编辑器覆盖层 —— CenterStage 被 !isCompact 门控不渲染，
+                  窄窗口下打开文件由 EditorOverlay 承接，与 LeftPanelDrawer 同构。
+                  关闭只清信号，不销毁 tab；窗口拖宽后 CenterStage 接管同一批 tab。 */}
+              {isCompact && narrowEditorFile && (
+                <EditorOverlay
+                  filePath={narrowEditorFile}
+                  onClose={closeNarrowEditor}
+                />
               )}
 
               {/* 终端全屏时让位，不渲染编辑器 */}
