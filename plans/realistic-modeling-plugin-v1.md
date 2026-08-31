@@ -1,6 +1,6 @@
 # 真实三维建模插件（realistic-house）规划 v1
 
-> 任务ID: be2c94b2 | 创建: 2026-08-31 | 状态: 起草中（调研回填后定稿）
+> 任务ID: be2c94b2 | 创建: 2026-08-31 | 状态: **已定稿**（两路网络调研回填完成，进入阶段1）
 > 验收标准: **成功建模一个老房子**——headless 生成 GLB，多材质 PBR，结构完整可辨（墙/坡屋顶/门窗/瓦/木构件），并带老化细节。
 
 ## 0. 环境事实（已实测验证）
@@ -28,6 +28,71 @@
 | C. 建筑 CAD/参数族（IfcOpenShell/BIM） | 工程级 | 高但偏工程感 | 低 | 重依赖 | ❌ 与"老房子风化感"不符 |
 | D. 图生 3D（TripoSR 等 AI 重建） | 单图出模 | 低（糊） | 极低 | GPU/在线 API | ❌ 不可复现 |
 
+## 1.5 网络调研回填（2026-08-31，两子代理已完成，关键项已 API 实测核实）
+
+### A. 几何手法（可落地的 bpy 方案）
+
+**门窗开洞首选「预切面」而非 boolean**（ranjian0/building_tools 的做法）：先在墙面按洞口网格细分出四边形 → `bmesh.ops.inset_region(thickness=洞宽, use_even_offset=True)` → `extrude_face_region` 内推形成框。零 boolean、零碎面；`btools/building/window/frame.py::add_frame_depth()`（face-hash 追踪挤出前后归属）可直接参考。boolean 仅作兜底，已知坑：cutter 必须穿出墙面≥0.001 且洞口四边比洞大 0.001（frame 遮缝）、transform_apply(scale=True) 防非均匀缩放坏法线、墙体须封闭实体、先 remove_doubles(1e-4)+normals_make_consistent；EXACT 失败换 FAST。
+
+**屋顶分层构造**：椽条（cylinder r=0.025 + Array modifier, use_object_offset, 椽档 0.24m）→ 望板（坡向剖面 extrude + Solidify 0.015~0.02）→ 挂瓦条（方料 Array，间距=瓦露明 0.15m）→ 瓦。屋面坡度由剖面顶点 y=±tan(27°)·(进深/2+出檐) 统一定义，各层共用同一坡面基准防角度漂移。
+
+**小青瓦铺设三法取舍**：Array modifier 最快但无随机抖动；**纯 bmesh 拷贝（推荐终稿）**——模板瓦一次 from_object，循环 `bmesh.ops.duplicate` + matrix=基准@Row_i@Col_j，顺手加 ±2° 转角/±5mm 高差随机（单瓦 24~64 tri，100m² ≈3300 片 ≈ 8~21 万 tri，预算内）；Geometry Nodes 仅编辑期 instance、导出前才 realize。面数超预算时降为 24 tri 低模 + normal map。
+
+**木构架**：柱 cylinder r=0.12（柱高/10），梁/檩用穿插盒体不建真榫头，柱头 inset_region 收分；重复构件用 Collection Instance（不复制 mesh 数据）。
+
+### B. 开源参考（全部 GitHub API 核实真实存在）
+
+| 仓库 | 可借鉴点 | 许可证 |
+|---|---|---|
+| [ranjian0/building_tools](https://github.com/ranjian0/building_tools) 1504★ | `create_gable_roof`（extrude_and_outset+inset_region 做挑檐）、门窗框 face-hash 追踪 | MIT |
+| [s-leger/archipack](https://github.com/s-leger/archipack) 381★ | 参数化属性↔自动重建 bmesh 的驱动骨架 | GPL-3.0 |
+| [roberlarues/Roofeus](https://github.com/roberlarues/Roofeus) | 2D 模板瓦 UV 投影贴任意坡面——小青瓦直接可用 | MIT |
+| [lsimic/ProceduralBuildingGenerator](https://github.com/lsimic/ProceduralBuildingGenerator) | random.seed 可复现的模块化门窗排布 | GPL-3.0 |
+| [bijoor/wadi](https://github.com/bijoor/wadi) | 参数→bpy→Web 预览整链路参考 | MIT |
+| blender-procedural-room-generator (KuzeyKayraEyioglu) | 预切面开洞思路印证 | MIT |
+
+中文古建 bpy 专项搜索：**无成熟可抄仓库**（已搜索核实），需自建。
+
+### C. 老房子默认参数表（写进代码的初值；多为行业通例，已标注未核实）
+
+| 参数 | 默认值 |
+|---|---|
+| 开间（明间/次间） | 3.6 / 3.3 m（范围 3.0~3.9，未核实） |
+| 进深 | 4.8 m（未核实） |
+| 檐柱高 | 2.8 m（未核实） |
+| 屋面坡度 | 27°（五举惯例，未核实） |
+| 标准砖 | 240×115×53mm，灰缝 10mm（未核实标准号） |
+| 小青瓦 | 长 200 / 宽 155~180 / 厚 10mm；纵向搭接后露明 150~160mm；垄步距 200mm（未核实） |
+| 出檐 | 0.6m（飞椽 +0.2m）；椽档 0.24m；望板厚 0.015m；苫背 0.03~0.08m；柱径 0.24m |
+
+### D. 材质/做旧节点手法（bpy 节点结构，headless bake 正好用 Cycles 的 Pointiness）
+
+1. **污渍/edge wear**：`Geometry.Pointiness → ColorRamp(0.45~0.55 收窄)` → 驱动 Mix 污渍色与边缘磨损亮色
+2. **色斑+粗糙度**：Noise(3-6, detail 8-16) → ColorRamp → Mix 双色斑；Voronoi(F1, 8-15) → ColorRamp ×0.4 → Roughness
+3. **青苔只长朝上面**：`Geometry.Normal.Z → Map Range(0.55→1.0)` × Noise(20) → mask → Mix 深绿 + Bump + Roughness 0.9
+4. **水渍流挂**：Object Z → ColorRamp(顶部强) × Noise(Mapping.Scale=(1,1,12)) → 暗色 + Roughness+0.2
+5. **漆皮剥落**：Noise(2, 6) 二值化 mask → 两层 Mix（漆色/底层木色）+ Pointiness 边缘高光 + Bump 台阶
+
+### E. CC0 材质清单（PolyHaven id 全部经 API 核实，均含官方 gltf 贴图包）
+
+| 用途 | 已核实 asset_id |
+|---|---|
+| 清水砖墙 | brick_wall_006 / castle_brick_02_red / mossy_brick |
+| 抹灰/土坯墙 | clay_plaster / worn_mossy_plasterwall / peeling_painted_wall |
+| 屋面瓦 | clay_roof_tiles_02 / ceramic_roof_01 / roof_tiles_14 |
+| 旧木 | weathered_planks / wood_peeling_paint_weathered / beam_wall_01 / moss_wood |
+| 地面泥土 | dirt_floor / park_dirt / brown_mud_dry |
+| 青苔/灰尘 | PolyHaven 无纯苔藓/dust（已核实）→ ambientCG Moss002 / SurfaceImperfections014 替代（id 已核实） |
+
+### F. GLB 导出关键结论（决策依据）
+
+- **程序化节点图无法进 GLB**（已核实 Blender 4.2 官方文档）：glTF 2.0 材质是固定参数块，导出器只识别 Principled BSDF 直连的 Image Texture；程序化做旧效果**必须 bake**。
+- **headless Cycles bake 最小集**：engine=CYCLES, samples=1, CPU → `bake(DIFFUSE, pass_filter={COLOR})`（关直/间接光防 AO 混入）、`ROUGHNESS`、`NORMAL`、`AO`；numpy 从 pixels 合成 **ORM**（R=AO, G=Rough, B=0）→ 每材质 3 张：BaseColor/Normal/ORM。
+- **AO 不烘进 Diffuse**（动态光下双重变暗），走独立 occlusion 通道。
+- **预算**：主立面/屋面 2048，次要 1024；10~12 材质 × 3 ≈ 30~36 张，PNG 80~120MB → KTX2(ETC1S/UASTC) 可压至 15~25MB；UV 用 Smart UV Project，bake margin ≥8px。
+- **不 bake 的省钱替代**：程序化 mask 在 CPU 端写入**顶点色**（mesh.color_attributes，RGBA 存苔藓/污渍/剥落三通道）→ GLB 原生导出 COLOR_0 → three.js 端混色，大平面效果最划算。
+- **建议路线**：静态构件 bake 三张图；苔藓/流挂大尺度 mask 走顶点色。
+
 ## 2. 老房子建模拆解（中国乡土老宅方向）
 
 ```
@@ -48,12 +113,12 @@
 
 ## 3. 实施计划
 
-- [x] 阶段0 调研（网络+本地验证）— 本文 §0/§1
-- [ ] 阶段0.5 定稿选型 + 参数 schema 设计（回填调研结论）
-- [ ] 阶段1 `realistic_house.py`：几何骨架（墙/顶/门窗）→ 先出无纹理白模验证结构
-- [ ] 阶段1.5 材质系统：纹理缓存管线 + PBR 节点组 + 老化混合
-- [ ] 阶段2 `mcp/server.js` 注册 `house_generate_3d`（或直接复用 `blender_generate_3d` 自动索引）
-- [ ] 阶段3 headless 生成 → 预览 → 真实感迭代（多轮）→ 验收
+- [x] 阶段0 调研（网络+本地验证）— 本文 §0/§1.5（两路子代理调研已回填定稿）
+- [x] 阶段0.5 定稿选型 + 材质方案（路线A；GLB 走 bake 三张图 + 顶点色 mask，见 §1.5-F）
+- [ ] 阶段1 `realistic_house.py`：几何骨架（预切面开洞/分层屋顶/bmesh 瓦阵列）→ 先出无纹理白模验证结构
+- [ ] 阶段1.5 材质系统：纹理缓存管线（cache/textures/<asset_id>/）+ PBR 节点组（§1.5-D）+ Cycles bake 三张图（§1.5-F）+ 顶点色做旧 mask
+- [ ] 阶段2 插件接入（scripts/ 自动索引即成 MCP 工具，必要时独立工具名）
+- [ ] 阶段3 headless 生成 → 预览 → 真实感多轮迭代 → 验收"成功建模一个老房子"
 
 ## 4. 风险与对策
 
