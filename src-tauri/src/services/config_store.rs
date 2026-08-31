@@ -450,7 +450,7 @@ impl ConfigStore {
         Command::new(cmd).arg("--version").output()
     }
 
-    /// 获取健康状态
+    /// 获取健康状态（同步版）。
     pub fn health_status(&self) -> HealthStatus {
         let claude_version = self.detect_claude();
         let claude_available = claude_version.is_some();
@@ -471,6 +471,50 @@ impl ConfigStore {
                 .work_dir
                 .as_ref()
                 .and_then(|p| p.to_str().map(|s| s.to_string())),
+            config_valid: true,
+        }
+    }
+
+    /// 异步并行版健康检测。
+    ///
+    /// 在独立线程池中同时 spawn claude / codex / pi 三个子进程，各加 5s 超时，
+    /// 总耗时从 O(T_c + T_codex + T_pi) 降为 O(max(T_c, T_codex, T_pi, 5s))。
+    pub async fn health_status_async(config: Config) -> HealthStatus {
+        let claude_path = config.claude_code.cli_path.clone();
+        let codex_path = config.codex_code.cli_path.clone();
+        let pi_path = config.pi_code.cli_path.clone();
+        let work_dir = config.work_dir.as_ref().and_then(|p| p.to_str().map(|s| s.to_string()));
+
+        // 将三次 CLI 探测以 spawn_blocking 并发提交，各带 5s 超时。
+        // 任何单 CLI 超时/异常均降级为 unavailable，不阻塞其它 CLI 的结果。
+        let c1_fut = tokio::task::spawn_blocking(move || {
+            Self::detect_cli_version(&claude_path, "detect_claude")
+        });
+        let c2_fut = tokio::task::spawn_blocking(move || {
+            Self::detect_cli_version(&codex_path, "detect_codex")
+        });
+        let c3_fut = tokio::task::spawn_blocking(move || {
+            Self::detect_cli_version(&pi_path, "detect_pi")
+        });
+
+        let c1 = match tokio::time::timeout(std::time::Duration::from_secs(5), c1_fut).await {
+            Ok(Ok(r)) => r,
+            _ => None,
+        };
+        let c2 = match tokio::time::timeout(std::time::Duration::from_secs(5), c2_fut).await {
+            Ok(Ok(r)) => r,
+            _ => None,
+        };
+        let c3 = match tokio::time::timeout(std::time::Duration::from_secs(5), c3_fut).await {
+            Ok(Ok(r)) => r,
+            _ => None,
+        };
+
+        HealthStatus {
+            claude_available: c1.is_some(), claude_version: c1,
+            codex_available:  c2.is_some(), codex_version: c2,
+            pi_available:     c3.is_some(), pi_version:   c3,
+            work_dir,
             config_valid: true,
         }
     }

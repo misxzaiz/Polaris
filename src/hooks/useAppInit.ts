@@ -99,10 +99,13 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
   // Token 鉴权通过后的初始化逻辑（工作区同步、引擎引导、集成初始化等）
   const runPostAuthInit = useRef(async (signal?: AbortSignal) => {
+    const { setInitPhase } = useConfigStore.getState();
+    setInitPhase('正在连接 AI 引擎...');
     await usePluginStore.getState().loadPluginStates();
 
     // 从服务端 Config 同步工作区列表（桌面端和 Web 端共享）
     try {
+      setInitPhase('正在同步工作区...');
       await useWorkspaceStore.getState().syncFromServer();
     } catch (err) {
       log.warn('Workspace sync failed, using local cache', { error: String(err) });
@@ -129,6 +132,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
     const currentWorkspacePath = useWorkspaceStore.getState().getCurrentWorkspace()?.path;
     try {
+      setInitPhase('正在加载插件...');
       const result = await discoverInstalledPlugins(currentWorkspacePath);
       await pluginRegistry.replaceInstalled(result.plugins);
       // 插件清单加载后，注入已启用插件的样式
@@ -212,6 +216,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     await sessionStoreManager.getState().initialize();
     log.info('SessionStoreManager initialized', { defaultEngine });
 
+    setInitPhase('正在初始化 AI 引擎...');
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine);
 
@@ -276,6 +281,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
 // 预加载设置相关数据
     try {
+      setInitPhase('正在预加载语言包...');
       await Promise.all([
         useSnippetStore.getState().loadSnippets(),
         useSkillStore.getState().loadSkills(),
@@ -293,6 +299,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace();
     if (currentWorkspace?.path) {
       try {
+        setInitPhase('正在检查终端脚本...');
         await useTerminalStore.getState().runAutoScripts('app_start', currentWorkspace.path);
       } catch (error) {
         log.warn('终端脚本自动执行失败', { error: String(error) });
@@ -304,6 +311,7 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       maybeAutoMigrateOpfs(),
     );
 
+    setInitPhase('准备就绪');
     // 专家/专家团数据预加载(全局存储,启动即可加载)
     if (currentMode === 'tauri' || currentMode === 'http') {
       void import('@/stores/agentStore')

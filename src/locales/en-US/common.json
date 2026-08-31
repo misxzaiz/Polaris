@@ -217,7 +217,8 @@
     "tokenRequiredHint": "This server requires a token to access",
     "tokenPrompt": "Please enter the token configured on the server",
     "tokenPlaceholder": "Enter token",
-    "tokenSubmit": "Verify & Connect"
+    "tokenSubmit": "Verify & Connect",
+    "connectingTitle": "Connecting to AI Engine"
   },
   "errorBoundary": {
     "title": "Application Error",

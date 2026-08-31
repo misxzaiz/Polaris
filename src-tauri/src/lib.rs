@@ -495,15 +495,19 @@ fn validate_claude_path(path: String) -> PathValidationResult {
 }
 
 
-/// 健康检查
+/// 健康检查（异步版）。
+///
+/// 并行 spawn claude/codex/pi 三个子进程，总耗时 O(max(T)) 而非 O(sum(T))。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-fn health_check(state: tauri::State<AppState>) -> HealthStatus {
-    let store = state.config_store.lock()
-        .unwrap_or_else(|e| {
-            e.into_inner()
-        });
-    store.health_status()
+async fn health_check(state: tauri::State<'_, AppState>) -> Result<HealthStatus> {
+    let config = {
+        let store = state.config_store.lock()
+            .unwrap_or_else(|e| e.into_inner());
+        store.get().clone()
+    };
+    // store 在此作用域结束时已释放，不会跨越 await
+    Ok(ConfigStore::health_status_async(config).await)
 }
 
 /// 检测 Claude CLI

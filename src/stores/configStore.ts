@@ -84,6 +84,8 @@ interface ConfigState {
   isConnecting: boolean;
   /** 连接状态 */
   connectionState: 'connecting' | 'success' | 'failed' | 'needsToken';
+  /** 初始化阶段，用于蒙板显示真实进度 */
+  initPhase: string;
   /** 错误 */
   error: string | null;
 
@@ -104,6 +106,8 @@ interface ConfigState {
 
   /** 刷新健康状态 */
   refreshHealth: () => Promise<void>;
+  /** 设置初始化阶段文案（蒙板实时进度显示） */
+  setInitPhase: (phase: string) => void;
   /** 重新连接并更新路径 */
   retryConnection: (cliPath?: string) => Promise<void>;
   /** Submit token in web mode (MD5-then-store, then retry loadConfig) */
@@ -116,11 +120,14 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   loading: false,
   isConnecting: true,  // 默认为 true，显示连接蒙板
   connectionState: 'connecting',
+  initPhase: '正在初始化...',
   error: null,
 
   loadConfig: async () => {
     set({ loading: true, isConnecting: true, error: null, connectionState: 'connecting' });
     try {
+      // 分阶段上报：加载配置 / 检测引擎 —— 让蒙板有真实进度
+      useConfigStore.getState().setInitPhase('正在加载配置...');
       const [config, health] = await Promise.all([
         tauri.getConfig(),
         tauri.healthCheck(),
@@ -263,6 +270,10 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
       log.error(i18n.t('errors:refreshHealthFailed'), e instanceof Error ? e : new Error(String(e)));
       set({ connectionState: 'failed' });
     }
+  },
+
+  setInitPhase: (phase: string) => {
+    set({ initPhase: phase });
   },
 
   retryConnection: async (cliPath?: string) => {

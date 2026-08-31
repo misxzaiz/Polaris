@@ -35,15 +35,8 @@ const CAROUSEL_MESSAGES = [
 
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
-  const { connectionState, submitToken } = useConfigStore();
+  const { connectionState, submitToken, initPhase } = useConfigStore();
   const [tokenInput, setTokenInput] = useState('');
-
-  // 动态文字轮播状态
-  const [statusIndex, setStatusIndex] = useState(0);
-  const [carouselIndex, setCarouselIndex] = useState(0);
-
-  // 前向进度条（只增不减）
-  const [progress, setProgress] = useState(8);
 
   // 连接中时启动文字轮播
   const isConnecting = connectionState === 'connecting';
@@ -51,18 +44,8 @@ export function ConnectingOverlay() {
 
   useEffect(() => {
     if (!isConnecting) {
-      setStatusIndex(0);
-      setCarouselIndex(0);
       return;
     }
-
-    const statusTimer = setInterval(() => {
-      setStatusIndex((i) => (i + 1) % STATUS_MESSAGES.length);
-    }, 2000);
-
-    const carouselTimer = setInterval(() => {
-      setCarouselIndex((i) => (i + 1) % CAROUSEL_MESSAGES.length);
-    }, 2200);
 
     // 前向进度条：每 800ms 推进，增量递减
     const progressTimer = setInterval(() => {
@@ -76,8 +59,6 @@ export function ConnectingOverlay() {
     }, 800);
 
     return () => {
-      clearInterval(statusTimer);
-      clearInterval(carouselTimer);
       clearInterval(progressTimer);
     };
   }, [isConnecting]);
@@ -96,8 +77,6 @@ export function ConnectingOverlay() {
 
   // ========== 连接中：增强动画 ==========
   if (isConnecting) {
-    const currentStatus = STATUS_MESSAGES[statusIndex];
-
     return (
       <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
         <div className="w-[360px] flex flex-col items-center gap-7">
@@ -119,11 +98,11 @@ export function ConnectingOverlay() {
 
           {/* 动态标题 */}
           <div className="text-center">
-            <h2 className="text-lg font-semibold text-text-primary min-h-[28px] transition-opacity duration-300">
-              {currentStatus.title}
+            <h2 className="text-lg font-semibold text-text-primary min-h-[28px]">
+              {t('connection.connectingTitle')}
             </h2>
             <div className="flex items-center justify-center gap-1 mt-2 text-sm text-text-secondary min-h-[20px]">
-              <span key={statusIndex} className="transition-opacity duration-300">{currentStatus.detail}</span>
+              <span>{initPhase}</span>
               <span className="inline-flex gap-0.5">
                 <span className="w-1 h-1 rounded-full bg-primary/60" style={{ animation: 'polaris-blink 1.2s infinite' }} />
                 <span className="w-1 h-1 rounded-full bg-primary/60" style={{ animation: 'polaris-blink 1.2s infinite 0.2s' }} />
@@ -132,13 +111,10 @@ export function ConnectingOverlay() {
             </div>
           </div>
 
-          {/* 消息条：淡入淡出切换，无滚动 */}
+          {/* 消息条：显示真实阶段 */}
           <div className="w-full h-9 bg-background-surface/50 border border-border-subtle rounded-lg flex items-center justify-center">
-            <span
-              key={carouselIndex}
-              className="text-xs text-text-muted transition-opacity duration-300"
-            >
-              · {CAROUSEL_MESSAGES[carouselIndex]}
+            <span className="text-xs text-text-muted">
+              · {initPhase}
             </span>
           </div>
 

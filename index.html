@@ -5,10 +5,8 @@
     <link rel="icon" type="image/svg+xml" href="/tauri.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Polaris</title>
-    <!-- JetBrains Mono - 现代化等宽字体 -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <!-- 使用系统等宽字体，避免外部字体加载阻塞首帧渲染 -->
+    <!-- Windows: Cascadia Code (Win11) / Consolas；macOS: SF Mono；Linux: Fira Code / monospace -->
   </head>
 
   <body>

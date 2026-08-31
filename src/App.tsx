@@ -9,8 +9,11 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
 import { NarrowTabOverlay } from './components/Editor';
-import { EnhancedChatMessages, ChatInput, ChatStatusBar, SessionHistoryPanel, MultiSessionGrid, MultiWindowMenu, NewSessionButton, CompactHandoffButton, DispatchCenterButton, CompactHandoffProgress, ErrorBanner } from './components/Chat';
+import { EnhancedChatMessages, ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
+// 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
+const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
+const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
 import { OverlayGuard } from './components/Browser/OverlayGuard';
 import { SelectionContextMenu } from './components/Translate';
@@ -309,7 +312,7 @@ function App() {
                   {error && <ErrorBanner error={error} />}
 
                   {multiSessionMode ? (
-                    <MultiSessionGrid onEditMessage={handleEditMessage} />
+                    <MultiSessionGridLazy onEditMessage={handleEditMessage} />
                   ) : (
                     <EnhancedChatMessages onEditMessage={handleEditMessage} />
                   )}
@@ -373,7 +376,7 @@ function App() {
               className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
               style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
             >
-              <SessionHistoryPanel onClose={toggleSessionHistory} />
+              <SessionHistoryPanelLazy onClose={toggleSessionHistory} />
             </div>
           </OverlayGuard>
         )}
