@@ -15,28 +15,12 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ConnectingOverlay');
 
-/** 连接中轮播的状态消息 */
-const STATUS_MESSAGES = [
-  { title: '正在连接 AI 引擎', detail: '正在检测引擎路径' },
-  { title: '正在连接 AI 引擎', detail: '验证 CLI 版本' },
-  { title: '正在连接 AI 引擎', detail: '加载配置文件' },
-  { title: '正在连接 AI 引擎', detail: '引擎就绪' },
-];
-
-/** 连接中轮播的详情消息（纯文本，无 emoji） */
-const CAROUSEL_MESSAGES = [
-  '检测引擎 CLI 路径',
-  '验证 CLI 版本兼容性',
-  '加载应用配置文件',
-  '扫描已安装插件',
-  '同步工作区数据',
-  '准备就绪',
-];
-
 export function ConnectingOverlay() {
   const { t } = useTranslation('common');
   const { connectionState, submitToken, initPhase } = useConfigStore();
   const [tokenInput, setTokenInput] = useState('');
+  // 前向进度条（只增不减）：进度条提供环境动效，真实进度由 initPhase 文案承载
+  const [progress, setProgress] = useState(8);
 
   // 连接中时启动文字轮播
   const isConnecting = connectionState === 'connecting';
