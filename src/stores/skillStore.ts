@@ -11,12 +11,16 @@
  *   - 当前工作区下 .polaris/skills、.polaris/agents
  *   - 数据存储根目录（DataRoot）下 skills、agents
  *     这样用户放在全局存储路径下的 Skill 也能被自动发现，不必每个工作区都复制一份。
+ *   - 已安装外部插件的 <installPath>/skills/
+ *     插件自带 Skill 文件即可自动出现在 / 命令建议里，无需用户手配路径，
+ *     随插件安装/卸载自动出现/消失。内置插件无 installPath，由 host 内嵌，不在此列。
  */
 
 import { create } from 'zustand';
 import * as tauri from '@/services/tauri';
 import { getDataRootInfo } from '@/services/dataRootService';
 import type { SkillItem } from '@/types/skill';
+import { pluginRegistry } from '@/plugin-system/registry';
 import { useConfigStore } from './configStore';
 import { useWorkspaceStore } from './workspaceStore';
 import { createLogger } from '@/utils/logger';
@@ -220,7 +224,17 @@ export const useSkillStore = create<SkillState>((set, get) => ({
       await _collectAndDedup(absPath, seenIds, allSkills);
     }
 
-const allPaths = [...workspaceRelativePaths, ...dataRootRelativePaths, ...absolutePaths];
+    // 7. 扫描已安装外部插件的 skills/ 目录（插件自带 Skill 即自动出现在 / 命令里，
+    //    随插件安装/卸载自动出现/消失，无需用户手配路径）。
+    //    仅外部插件有 installPath；内置插件由 host 内嵌，不在此列。
+    for (const plugin of pluginRegistry.listPlugins()) {
+      const installPath = plugin.installPath;
+      if (!installPath) continue;
+      const skillsDir = `${installPath.replace(/[\\/]$/, '')}/skills`;
+      await _collectAndDedup(skillsDir, seenIds, allSkills);
+    }
+
+    const allPaths = [...workspaceRelativePaths, ...dataRootRelativePaths, ...absolutePaths];
     log.info('Skill 加载完成', { count: allSkills.length, paths: allPaths });
     set({ skills: allSkills, loading: false, lastLoadedAt: Date.now() });
   },
