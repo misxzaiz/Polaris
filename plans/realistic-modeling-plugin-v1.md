@@ -1,6 +1,6 @@
 # 真实三维建模插件（realistic-house）规划 v1
 
-> 任务ID: be2c94b2 | 创建: 2026-08-31 | 状态: **已定稿**（两路网络调研回填完成，进入阶段1）
+> 任务ID: be2c94b2 | 创建: 2026-08-31 | 状态: **全部完成**（阶段1几何 → 1.5材质 → 2插件接入 → 3真实感迭代，验收达成）
 > 验收标准: **成功建模一个老房子**——headless 生成 GLB，多材质 PBR，结构完整可辨（墙/坡屋顶/门窗/瓦/木构件），并带老化细节。
 
 ## 0. 环境事实（已实测验证）
@@ -115,10 +115,28 @@
 
 - [x] 阶段0 调研（网络+本地验证）— 本文 §0/§1.5（两路子代理调研已回填定稿）
 - [x] 阶段0.5 定稿选型 + 材质方案（路线A；GLB 走 bake 三张图 + 顶点色 mask，见 §1.5-F）
-- [ ] 阶段1 `realistic_house.py`：几何骨架（预切面开洞/分层屋顶/bmesh 瓦阵列）→ 先出无纹理白模验证结构
-- [ ] 阶段1.5 材质系统：纹理缓存管线（cache/textures/<asset_id>/）+ PBR 节点组（§1.5-D）+ Cycles bake 三张图（§1.5-F）+ 顶点色做旧 mask
-- [ ] 阶段2 插件接入（scripts/ 自动索引即成 MCP 工具，必要时独立工具名）
-- [ ] 阶段3 headless 生成 → 预览 → 真实感多轮迭代 → 验收"成功建模一个老房子"
+- [x] 阶段1 `realistic_house.py`：几何骨架（预切面开洞/分层屋顶/bmesh 瓦阵列）→ 先出无纹理白模验证结构
+  - ✅ 4面墙 + 台基（预切面拼装开洞：1门 + 4窗，未走 Boolean solver——headless 下逐面墙按开洞拆条状网格更稳，洞口自带规整环边）
+  - ✅ 坡屋顶分层：椽条阵列(44×2) + 望板 + 挂瓦条(16×2) + 小青瓦(~2003片，带随机抖动/少量缺失)
+  - ✅ 屋脊 + 脊端收头
+  - ✅ 木构架：8柱 + 3檩（前/后/中）
+  - ✅ 附件：烟囱 + 台阶(3级) + 门槛
+  - ✅ 顶点色通道预留（苔藓/污渍/剥落三通道）
+  - 📦 输出：`docs/ai-3d-modeling/poc/output/house_white.glb`（510KB, 252 meshes, 13 materials）
+- [x] 阶段1.5 材质系统：纹理缓存管线（cache/textures/<asset_id>/）+ PBR 节点组（§1.5-D）+ Cycles bake 三张图（§1.5-F）+ 顶点色做旧 mask
+  - ✅ `bake_house.py`：导入白模 → 按材质合并 8 物体 → Smart UV → PolyHaven 下载缓存 → Cycles bake DIFFUSE/ROUGHNESS/NORMAL/AO(16spp) → numpy 合成 ORM（R=AO G=Rough）→ 顶点色做旧 → GLB 导出（JPEG q85）
+  - ✅ 实测与计划差异：bake 分辨率提到 4096（主材质 brick/plaster/tile）+ 2048（其余 5 材质），单材质 3 张图改为 Diffuse/Normal/ORM 3 张内嵌（计划 §1.5-F 预估 30~36 张 PNG 80~120MB 未发生）；8 材质全部单 Principled + 3 图，GLB 体积 28.9MB（未走 KTX2，JPEG 内嵌已达标上限附近）
+  - ⚠️ 遗留优化：瓦面 bake 图 93.5% 黑（UV 岛稀疏浪费）；KTX2 压缩可再省 ~60%
+- [x] 阶段2 插件接入（scripts/ 自动索引即成 MCP 工具，必要时独立工具名）
+  - ✅ bake_house.py 自动扫描注册为 `blender_generate_3d` 可选 script，9 参数 schema 暴露给 AI
+  - ⚠️ 接入踩坑三则（已修）：params_schema 末属性尾逗号致解析静默失败；server.js 超时钳制 600s 不够完整 bake（已提到 1800s，实测 1135s）；stdout 须显式 print `Created N objects` 供 partsMatch 统计
+- [x] 阶段3 headless 生成 → 预览 → 真实感多轮迭代 → 验收"成功建模一个老房子"
+  - ✅ MCP 真实调用 `blender_generate_3d(script=bake_house, timeout=1200000)` 全链路 1135s 产出 27.8MB GLB（170460 v · 90832 tri · 8 材质）
+  - ✅ 迭代1（色彩）：bake DIFFUSE 以 Non-Color 存盘被 three.js 按 sRGB 读 → 整体过暗 ~2.2 次方；修复为存盘前置 sRGB（save_bake_image）
+  - ✅ 迭代2（做旧 mask 失效）：POINT/FLOAT_COLOR 域 + glTF 导出→导入循环污染 datablock 隐藏状态 → forced 白 COLOR_0 + aging 挤进 COLOR_1（three.js 只读 COLOR_0）→ 整栋土黄。修复：while 循环删净旧 color 属性 + CORNER/BYTE_COLOR + export_vertex_color='ACTIVE' + rebuild_mesh_datablock 全新 datablock 直通
+  - ✅ 迭代3（苔藓分布）：屋顶 27° 坡整面 nz≈0.89 均过"朝上"判定 → 整坡全绿；叠加物体高度衰减（檐口浓/脊部淡）+ 噪声阈值 0.42→0.52，斑块占比降至 ~1/3
+  - ✅ 浏览器 ON/OFF 对比验收：结构齐全（墙/坡屋顶/门窗/窗棂/瓦/木构件/烟囱/台基/台阶）、砖墙亮度恢复源图、苔斑/污渍/剥落自然分布
+  - 📦 产物：`generated/realistic_house_textured.glb`（28.9MB）；预览 `generated/index_textured.html`（PolyHaven PBR + bake + 顶点色做旧开关）
 
 ## 4. 风险与对策
 
