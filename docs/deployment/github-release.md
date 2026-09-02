@@ -309,6 +309,41 @@ git push origin vx.x.x
 
 ---
 
+## v10.4.6 构建记录
+
+**构建时间**: 2026-09-02 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.4.6
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.4.6_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.4.6_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.4.6_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.4.6-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.4.6_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.4.6-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.4.6-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.4.6-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(workspace): 工作区管理面板宿主支持
+- fix(startup): 修复 ConnectingOverlay progress 未定义导致首帧崩溃
+- feat(startup): 并行 health_check + 真实阶段进度蒙板
+- feat(modeling): 真实三维建模插件阶段 1 几何骨架完成（老房子白模 GLB 导出）
+- feat(store): skillStore 扫描已安装插件 skills/ 目录
+- feat(tools): 未注册工具与 MCP 工具显示名统一解析层
+- fix(view): 临时禁用小屏模式自动关闭左侧面板
+- docs: 新增 AI 使用教程——先验证再修复的范式转换
+
+---
+
 ## v10.3.2 构建记录
 
 **构建时间**: 2026-08-06 (UTC)
