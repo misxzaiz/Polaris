@@ -7,12 +7,17 @@ import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
 import { bootstrapTheme } from '@/services/themeEngine';
 import { invoke } from '@/services/transport';
+import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 
 // 暴露宿主 React 给外部插件面板使用
 ;(window as any).__POLARIS_HOST_REACT__ = React;
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 // 暴露后端 invoke 给外部插件面板使用（无状态调用，零服务进程）
 ;(window as any).__POLARIS_HOST_INVOKE__ = invoke;
+// 暴露工作区宿主 API 给外部插件面板（如 workspace-manager）。
+// 所有工作区变更委托主应用 workspaceStore 执行：持久化、事件派发、
+// 全 UI 响应式刷新由 store 自带，主应用工作区绑定天然更新。
+;(window as any).__POLARIS_WORKSPACE_API__ = createHostWorkspaceApi();
 
 // 暴露当前工作区路径给外部插件面板（wheel：监听 workspace-changed 事件，
 // 初始取 localStorage 兜底。外部插件如 polaris-git 可据此自动初始化。）

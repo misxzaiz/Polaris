@@ -18,6 +18,7 @@ import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
 import { useTerminalStore } from '@/stores/terminalStore';
 import { useSchedulerStore } from '@/stores/schedulerStore';
 import { useToastStore } from '@/stores/toastStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
 import { initDispatchTaskListener } from '@/services/dispatchTaskService';
@@ -211,6 +212,32 @@ export function useAppEvents() {
     return () => {
       window.removeEventListener('workspace-switched', handleWorkspaceSwitched);
       window.removeEventListener('workspace-changed', handleWorkspaceChanged);
+    };
+  }, []);
+
+  // 外部 config 变更时重新同步工作区列表（另一窗口 / 插件直写 update_config_patch /
+  // 手动编辑 config.json 等场景）。workspaceStore 自身写路径也会触发同一事件，
+  // 以本地写入时间戳防回环：刚写入的变更不需要再拉取。
+  useEffect(() => {
+    let lastLocalWriteAt = 0;
+    const markLocalWrite = () => { lastLocalWriteAt = Date.now(); };
+    window.addEventListener('workspace-switched', markLocalWrite);
+
+    let unlisten: (() => void) | null = null;
+    let unlistenPromise = listen('config-changed', () => {
+      // 后端 emit 的 payload 仅含 performance；把事件当作"拉取信号"而非数据源。
+      if (Date.now() - lastLocalWriteAt < 800) return; // 本地写入防抖（避免回环拉取）
+      log.debug('config-changed → syncing workspaces from server');
+      useWorkspaceStore.getState().syncFromServer().catch((error) =>
+        log.warn('workspace sync after config-changed failed', { error: String(error) })
+      );
+    });
+    unlistenPromise.then((fn) => { unlisten = fn; }).catch(() => { /* transport 不可用时静默 */ });
+
+    return () => {
+      window.removeEventListener('workspace-switched', markLocalWrite);
+      unlistenPromise.then((fn) => fn()).catch(() => { /* noop */ });
+      unlisten?.();
     };
   }, []);
 }

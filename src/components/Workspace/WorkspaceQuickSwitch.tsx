@@ -8,8 +8,10 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Check, Plus, Trash2, ChevronDown } from 'lucide-react'
+import { Check, Plus, Trash2, ChevronDown, LayoutGrid } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useViewStore } from '@/stores/viewStore'
+import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
 import { CreateWorkspaceModal } from './CreateWorkspaceModal'
 import { WorkspaceSearchInput, useWorkspaceFilter } from './WorkspaceSearchInput'
 import { createLogger } from '@/utils/logger'
@@ -90,6 +92,17 @@ export function WorkspaceQuickSwitch() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  // 打开工作区管理面板（插件贡献；未安装该插件时入口隐藏）
+  const handleOpenManager = () => {
+    const MANAGER_PANEL_TYPE = 'workspaceManager'
+    if (!pluginPanelRegistry.has(MANAGER_PANEL_TYPE)) {
+      log.warn('workspace-manager 插件面板未注册')
+      return
+    }
+    setShowDropdown(false)
+    useViewStore.getState().switchToLeftPanel(MANAGER_PANEL_TYPE)
   }
 
   // 无工作区时不显示
@@ -220,6 +233,19 @@ export function WorkspaceQuickSwitch() {
               <span>{t('selector.createWorkspace')}</span>
             </button>
           </div>
+
+          {/* 管理工作区（插件面板；未注册时隐藏） */}
+          {pluginPanelRegistry.has('workspaceManager') && (
+            <div className="p-1 pt-0">
+              <button
+                onClick={handleOpenManager}
+                className="w-full flex items-center gap-2 px-2 py-2 text-sm text-text-secondary hover:text-primary hover:bg-background-hover transition-colors rounded-lg"
+              >
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>{t('selector.manageWorkspaces')}</span>
+              </button>
+            </div>
+          )}
 
           {/* 删除确认弹窗（内嵌） */}
           {showDeleteConfirm && (

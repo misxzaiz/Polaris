@@ -31,7 +31,8 @@
     "deleteWorkspace": "删除工作区",
     "deleteWorkspaceTitle": "删除工作区",
     "confirmDelete": "确定要删除 \"{{name}}\" 吗？",
-    "deleteHint": "此操作不可撤销。"
+    "deleteHint": "此操作不可撤销。",
+    "manageWorkspaces": "管理工作区"
   },
   "createModal": {
     "title": "创建新工作区",

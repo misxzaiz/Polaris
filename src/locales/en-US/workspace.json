@@ -31,7 +31,8 @@
     "deleteWorkspace": "Delete Workspace",
     "deleteWorkspaceTitle": "Delete Workspace",
     "confirmDelete": "Are you sure you want to delete \"{{name}}\"?",
-    "deleteHint": "This action cannot be undone."
+    "deleteHint": "This action cannot be undone.",
+    "manageWorkspaces": "Manage Workspaces"
   },
   "createModal": {
     "title": "Create New Workspace",
