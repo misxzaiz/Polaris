@@ -136,7 +136,7 @@ tree-sitter = { version = "0.22", optional = true }
 tree-sitter-java = { version = "0.21", optional = true }
 rayon = { version = "1.10", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"], optional = true }
-tauri-plugin-updater = { version = "2.10.1", optional = true }
+tauri-plugin-updater = { version = "=2.11.0", optional = true }
 tauri-plugin-process = { version = "2.3.1", optional = true }
 # 单实例守护：防止多实例共用 WebView2 UserData 目录导致创建失败（0x8007139F）。
 # 必须是注册的第一个插件，以便尽早拦截重复启动。
