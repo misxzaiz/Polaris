@@ -68,6 +68,22 @@ pub const NET_HOOK_INIT_SCRIPT: &str =
 pub const NET_LOG_READ_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/net-log-read.js");
 
+/// 控制台消息读取脚本（eval 时调用，从 __POLARIS_CONSOLE_ARGS__ 读参）
+pub const CONSOLE_READ_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/console-read.js");
+
+/// 批量填表 body（依赖 collector）
+pub const FILL_FORM_SCRIPT_BODY: &str =
+    include_str!("../../resources/browser-scripts/fill-form-body.js");
+
+/// 悬停元素 body（依赖 collector）
+pub const HOVER_ELEMENT_SCRIPT_BODY: &str =
+    include_str!("../../resources/browser-scripts/hover-element-body.js");
+
+/// 原生对话框拦截/应答脚本（从 __POLARIS_DIALOG_ARGS__ 读参）
+pub const DIALOG_HANDLE_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/dialog-handle.js");
+
 /// 嵌入的交互元素收集器代码
 pub const INTERACTIVE_COLLECTOR_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/interactive-collector.js");
@@ -174,6 +190,47 @@ pub fn network_requests_script(limit: Option<usize>) -> String {
 pub fn storage_script(body: &str, args: &serde_json::Value) -> String {
     let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
     format!("(() => {{\nwindow.__POLARIS_STORAGE_ARGS__ = {args_json};\n{body}\n}})()")
+}
+
+/// 控制台读取脚本：注入 { limit, clear } 到 window.__POLARIS_CONSOLE_ARGS__ 后执行。
+pub fn console_read_script(limit: Option<usize>, clear: bool) -> String {
+    let limit_val = limit.unwrap_or(100).max(1).min(500);
+    format!("(() => {{\nwindow.__POLARIS_CONSOLE_ARGS__ = {{ limit: {limit_val}, clear: {clear} }};\n{CONSOLE_READ_SCRIPT}\n}})()")
+}
+
+/// 批量填表脚本：注入 items 数组后执行 body（含 collector）。
+pub fn fill_form_script(items: &serde_json::Value) -> String {
+    let items_json = serde_json::to_string(items).unwrap_or_else(|_| "[]".to_string());
+    let mut script = String::from("(() => {\nwindow.__POLARIS_FILL_FORM_ITEMS__ = ");
+    script.push_str(&items_json);
+    script.push_str(";\n");
+    script.push_str(INTERACTIVE_COLLECTOR_SCRIPT);
+    script.push('\n');
+    script.push_str(FILL_FORM_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+/// 悬停脚本（含 collector）
+pub fn hover_element_script(index: Option<usize>, text: &str) -> String {
+    let index_str = index.map(|v| v.to_string()).unwrap_or_else(|| "null".to_string());
+    let text_str = serde_json::to_string(text).unwrap_or_else(|_| "\"\"".to_string());
+    let mut script = String::from("(() => {\nconst requestedIndex = ");
+    script.push_str(&index_str);
+    script.push_str(";\nconst requestedText = ");
+    script.push_str(&text_str);
+    script.push_str(";\n");
+    script.push_str(INTERACTIVE_COLLECTOR_SCRIPT);
+    script.push('\n');
+    script.push_str(HOVER_ELEMENT_SCRIPT_BODY);
+    script.push_str("\n})()");
+    script
+}
+
+/// 对话框操作脚本：注入 { op, accept, promptText } 到 window.__POLARIS_DIALOG_ARGS__。
+pub fn dialog_script(args: &serde_json::Value) -> String {
+    let args_json = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
+    format!("(() => {{\nwindow.__POLARIS_DIALOG_ARGS__ = {args_json};\n{DIALOG_HANDLE_SCRIPT}\n}})()")
 }
 
 /// 断言检查脚本：注入 { kind, text, index, initialUrl } 到全局，内含交互元素收集器。
@@ -298,5 +355,50 @@ mod tests {
         assert!(script.contains("el.style.pointerEvents = 'auto'"));
         // 遍历 overlay id 隐藏
         assert!(script.contains("POLARIS_OVERLAY_IDS"));
+    }
+
+    #[test]
+    fn console_read_script_injects_args() {
+        let script = console_read_script(Some(50), true);
+        assert!(script.contains("window.__POLARIS_CONSOLE_ARGS__ = { limit: 50, clear: true }"));
+        assert!(script.contains("__POLARIS_BROWSER_CONSOLE__"));
+    }
+
+    #[test]
+    fn fill_form_script_injects_items_and_collector() {
+        let items = serde_json::json!([{ "index": 1, "value": "hello" }]);
+        let script = fill_form_script(&items);
+        assert!(script.contains("window.__POLARIS_FILL_FORM_ITEMS__ = [{"));
+        assert!(script.contains("collectPolarisInteractiveElements"));
+        assert!(script.contains("__POLARIS_FILL_FORM_ITEMS__"));
+    }
+
+    #[test]
+    fn hover_element_script_includes_params() {
+        let script = hover_element_script(Some(3), "Submit");
+        assert!(script.contains("requestedIndex = 3"));
+        assert!(script.contains("requestedText = \"Submit\""));
+        assert!(script.contains("pointerover"));
+    }
+
+    #[test]
+    fn dialog_script_injects_op() {
+        let script = dialog_script(&serde_json::json!({ "op": "respond", "accept": false }));
+        assert!(script.contains("window.__POLARIS_DIALOG_ARGS__"));
+        assert!(script.contains("\"op\":\"respond\""));
+        assert!(script.contains("__POLARIS_DIALOG_QUEUE__"));
+    }
+
+    #[test]
+    fn body_scripts_are_not_double_wrapped() {
+        // IIFE 双包回归守护：这些 body 必须是不含 IIFE 的裸语句序列，
+        // 由 with_collector / diagnostics_script / assert_check_script 统一包裹。
+        // 若文件里又写回 `(() => { ... })()`，外层 return 会被内层 IIFE 吞掉，eval 返回 null。
+        assert!(!INTERACTIVE_ELEMENTS_SCRIPT_BODY.trim_start().starts_with("(() =>"));
+        assert!(!DIAGNOSTICS_SCRIPT_BODY.trim_start().starts_with("(() =>"));
+        assert!(!ASSERT_CHECK_SCRIPT.trim_start().starts_with("(() =>"));
+        assert!(INTERACTIVE_ELEMENTS_SCRIPT_BODY.contains("return JSON.stringify"));
+        assert!(DIAGNOSTICS_SCRIPT_BODY.contains("return JSON.stringify"));
+        assert!(ASSERT_CHECK_SCRIPT.contains("return JSON.stringify"));
     }
 }

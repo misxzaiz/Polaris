@@ -1522,6 +1522,10 @@ fn browser_create_with_app(
         .devtools(true)
         .focused(false)
         .initialization_script(browser_scripts::NET_HOOK_INIT_SCRIPT)
+        // console 持久捕获：页面加载前注入，保证从头开始收集 console 消息
+        .initialization_script(browser_scripts::CONSOLE_CAPTURE_SCRIPT)
+        // 原生对话框拦截：页面加载前安装 alert/confirm/prompt 收集器
+        .initialization_script(browser_scripts::dialog_script(&serde_json::json!({ "op": "install" })))
         .on_navigation(move |next_url| {
             let url_str = next_url.to_string();
             // 下载内容判定：命中可下载扩展名 / blob / data 时，转发外部浏览器并阻止内嵌渲染
@@ -2114,6 +2118,7 @@ fn build_scroll_script(
 
     format!(
         r#"(function() {{
+            {collector}
             const mode = '{mode}';
             const scrollIndex = {idx};
             const scrollText = '{txt}';
@@ -2181,6 +2186,7 @@ fn build_scroll_script(
         sx = scroll_x,
         sy = scroll_y,
         amt = scroll_amount,
+        collector = browser_scripts::INTERACTIVE_COLLECTOR_SCRIPT,
     )
 }
 
@@ -2257,7 +2263,9 @@ fn build_press_key_script(keys: &str, index: Option<usize>, text: Option<&str>) 
     let escaped_keys = keys.replace('\'', "\\'");
 
     format!(
-        r#"(function() {{
+        r#"(() => {{
+{collector}
+(function() {{
             const requestedKeys = '{keys}';
             const requestedIndex = {idx};
             const requestedText = '{txt}';
@@ -2323,10 +2331,12 @@ fn build_press_key_script(keys: &str, index: Option<usize>, text: Option<&str>) 
             }} catch(e) {{
                 return JSON.stringify({{ ok: false, action: 'press_key', index: {idx}, text: '{keys}', url: String(location.href), message: '按键失败: ' + e.message }});
             }}
-        }})()"#,
+        }})()
+}})()"#,
         keys = escaped_keys,
         idx = req_index,
         txt = req_text,
+        collector = browser_scripts::INTERACTIVE_COLLECTOR_SCRIPT,
     )
 }
 
@@ -2402,6 +2412,7 @@ fn build_type_focus_script(index: Option<usize>, element_text: Option<&str>) -> 
 
     format!(
         r#"(function() {{
+            {collector}
             const requestedIndex = {idx};
             const requestedText = '{txt}';
             try {{
@@ -2433,6 +2444,7 @@ fn build_type_focus_script(index: Option<usize>, element_text: Option<&str>) -> 
         }})()"#,
         idx = req_index,
         txt = req_text,
+        collector = browser_scripts::INTERACTIVE_COLLECTOR_SCRIPT,
     )
 }
 
@@ -2457,6 +2469,7 @@ fn build_type_char_script(ch: char) -> String {
     // 使用字符串字面量避免转义问题
     format!(
         r#"(function() {{
+            {collector}
             const key = '{key}';
             const target = document.activeElement || document.body;
             const view = ownerWindowOf(target);
@@ -2489,7 +2502,8 @@ fn build_type_char_script(ch: char) -> String {
             target.dispatchEvent(new KeyboardEvent('keyup', {{ bubbles: true, cancelable: true, view, key, composed: true }}));
             return '{{}}';
         }})()"#,
-        key = key
+        key = key,
+        collector = browser_scripts::INTERACTIVE_COLLECTOR_SCRIPT,
     )
 }
 
@@ -3404,6 +3418,90 @@ impl BrowserActionDispatcher {
                 }
                 let raw = browser_eval_with_app(&self.app, &label, browser_scripts::NET_LOG_READ_SCRIPT, Some(3_000)).await?;
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("网络日志解析失败: {e}")))
+            }
+            "console_log" | "consoleLog" => {
+                let limit = args.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+                let clear = args.get("clear").and_then(Value::as_bool).unwrap_or(false);
+                let script = browser_scripts::console_read_script(limit, clear);
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(3_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("控制台日志解析失败: {e}")))
+            }
+            "fill_form" | "fillForm" => {
+                let items = args.get("items").cloned()
+                    .ok_or_else(|| AppError::ValidationError("fill_form 缺少 items".to_string()))?;
+                let script = browser_scripts::fill_form_script(&items);
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(8_000)).await?;
+                let value = parse_eval_json(&raw)?;
+                emit_browser_operation_with_app(&self.app, &label, "fill_form", "success",
+                    format!("{source_label} 批量填写表单"), None, None);
+                Ok(value)
+            }
+            "hover" => {
+                let index = parse_action_index(args)?;
+                let text = args.get("text").and_then(Value::as_str);
+                let script = browser_scripts::hover_element_script(index, text.unwrap_or_default());
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(3_500)).await?;
+                let value = parse_eval_json(&raw)?;
+                let result: BrowserInteractionResult = serde_json::from_value(value)
+                    .map_err(|e| AppError::ValidationError(format!("浏览器悬停结果格式错误: {e}")))?;
+                emit_browser_operation_with_app(&self.app, &label, "hover",
+                    if result.ok { "success" } else { "warning" },
+                    result.message.clone(), non_empty_target(&result.text), Some(result.url.clone()));
+                serde_json::to_value(result).map_err(Into::into)
+            }
+            "dialog" | "dialogHandle" | "handle_dialog" => {
+                let op = args.get("op").and_then(Value::as_str).unwrap_or("list");
+                let accept = args.get("accept").and_then(Value::as_bool);
+                let prompt_text = args.get("promptText").or_else(|| args.get("prompt_text")).and_then(Value::as_str);
+                let script = browser_scripts::dialog_script(&serde_json::json!({
+                    "op": op, "accept": accept, "promptText": prompt_text,
+                }));
+                let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("对话框操作解析失败: {e}")))
+            }
+            "screenshot" | "take_screenshot" | "takeScreenshot" => {
+                let scale = args.get("scale").and_then(Value::as_f64).map(|v| v as f32).unwrap_or(0.75);
+                match capture_browser_screenshot(&self.app, &label, scale.clamp(0.1, 1.0)) {
+                    Ok(Some(shot)) => serde_json::to_value(json!({
+                        "ok": true,
+                        "visual": { "screenshot": shot }
+                    })).map_err(Into::into),
+                    Ok(None) => Err(AppError::ValidationError("当前平台暂不支持内置浏览器区域截图".to_string())),
+                    Err(e) => Err(e),
+                }
+            }
+            "close" | "close_page" | "closePage" => {
+                if let Some(webview) = self.app.get_webview(&label) {
+                    let _ = apply_webview_bounds(&webview, BrowserBounds { x: 0.0, y: 0.0, width: 0.0, height: 0.0 });
+                    if let Err(error) = webview.close() {
+                        tracing::warn!("[Browser] dispatch close failed label={} err={}", label, error);
+                    }
+                }
+                forget_browser_session_state(&label)?;
+                emit_browser_operation_with_app(&self.app, &label, "close", "success",
+                    format!("{source_label} 关闭了浏览器标签页"), None, None);
+                Ok(json!({ "ok": true, "label": label, "closed": true }))
+            }
+            "evaluate" | "evaluateScript" | "evaluate_script" => {
+                let script = args.get("script").and_then(Value::as_str)
+                    .ok_or_else(|| AppError::ValidationError("evaluate 缺少 script".to_string()))?;
+                let timeout_ms = args.get("timeoutMs").or_else(|| args.get("timeout_ms")).and_then(Value::as_u64);
+                let raw = browser_eval_with_app(&self.app, &label, script, timeout_ms).await?;
+                // 返回结构化结果：能解析 JSON 就给 value，否则给原始字符串
+                match serde_json::from_str::<Value>(raw.trim()) {
+                    Ok(v) => {
+                        // 双重 JSON 包装解包
+                        if let Some(inner) = v.as_str() {
+                            match serde_json::from_str::<Value>(inner) {
+                                Ok(inner_v) => Ok(json!({ "ok": true, "value": inner_v })),
+                                Err(_) => Ok(json!({ "ok": true, "value": inner })),
+                            }
+                        } else {
+                            Ok(json!({ "ok": true, "value": v }))
+                        }
+                    }
+                    Err(_) => Ok(json!({ "ok": true, "value": raw })),
+                }
             }
             "status" | "getStatus" => {
                 let raw = browser_eval_with_app(&self.app, &label, browser_scripts::BROWSER_STATUS_SCRIPT, Some(3_000)).await?;

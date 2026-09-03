@@ -1,5 +1,8 @@
-(() => {
-  try {
+/**
+ * 断言检查 body：从 window.__POLARIS_ASSERT_ARGS__ 读参数，依赖 collector。
+ * 此文件是 body（不含 IIFE），由 assert_check_script() 组合包裹执行。
+ */
+try {
     const args = window.__POLARIS_ASSERT_ARGS__ || {};
     const kind = args.kind || '';
     const text = args.text || '';
@@ -52,4 +55,3 @@
   } catch (e) {
     return JSON.stringify({ ok: false, kind: '', text: '', url: String(location.href), message: '断言检查失败: ' + (e && e.message) });
   }
-})()

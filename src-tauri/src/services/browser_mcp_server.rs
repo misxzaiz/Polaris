@@ -421,6 +421,78 @@ fn handle_tools_list() -> Value {
             }, "additionalProperties": false }
         },
         {
+            "name": "browser_console_log",
+            "description": "Read console messages (log/info/warn/error/debug) captured since page load. Includes uncaught errors and unhandled promise rejections. Pass clear=true to drain the buffer after reading.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "limit": { "type": "integer", "minimum": 1, "maximum": 500, "description": "Max number of most-recent messages to return (default 100)." },
+                "clear": { "type": "boolean", "default": false, "description": "Clear the console buffer after reading." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_evaluate_script",
+            "description": "Execute arbitrary JavaScript in the page context and return the result. The script should return a value (or JSON.stringify it); returned values are JSON-decoded when possible. Use for custom extraction, DOM queries, or driving page logic not covered by dedicated tools.",
+            "inputSchema": { "type": "object", "required": ["script"], "properties": {
+                "label": label_property,
+                "script": { "type": "string", "description": "JavaScript source to evaluate. An IIFE with a return value is recommended, e.g. (() => { return document.title; })()." },
+                "timeoutMs": { "type": "integer", "minimum": 100, "description": "Max execution time in ms (default 8000)." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_fill_form",
+            "description": "Fill multiple form fields in one call. Each item targets an element by inspect index or visible text and provides the value to set. Returns per-field results plus a summary.",
+            "inputSchema": { "type": "object", "required": ["items"], "properties": {
+                "label": label_property,
+                "items": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "index": { "type": "integer", "minimum": 0, "description": "Element index from browser_inspect." },
+                            "text": { "type": "string", "description": "Visible text/placeholder/label to fuzzy-match when index is unknown." },
+                            "value": { "type": "string", "description": "Value to set. For multi-select, comma-separated values." }
+                        }
+                    },
+                    "description": "Fields to fill. Each must have index or text."
+                }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_hover",
+            "description": "Hover over an element: dispatches pointerover/mouseover/mouseenter/mousemove so hover styles, tooltips, and dropdown menus appear. Use before inspecting hover-revealed content.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "index": index_property,
+                "text": text_property
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_dialog",
+            "description": "Read or answer native dialogs (alert/confirm/prompt). Dialogs are auto-recorded since page load and do not block the page. op: list (default) shows recorded dialogs; respond answers the next pending dialog (accept=false to dismiss, promptText for prompt); clear empties the queue.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "op": { "type": "string", "enum": ["list", "respond", "clear"], "default": "list", "description": "Operation." },
+                "accept": { "type": "boolean", "default": true, "description": "For respond: true=accept, false=dismiss." },
+                "promptText": { "type": "string", "description": "For respond on prompt dialogs: text to enter." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_screenshot",
+            "description": "Capture a screenshot of the built-in browser region. Returns the image as MCP image content. Windows only.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "scale": { "type": "number", "minimum": 0.1, "maximum": 1.0, "default": 0.75, "description": "Downscale factor (0.1-1.0). Smaller = less tokens." }
+            }, "additionalProperties": false }
+        },
+        {
+            "name": "browser_close",
+            "description": "Close a built-in browser tab and release its session. Use when a task is finished to keep the tab list clean.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property
+            }, "additionalProperties": false }
+        },
+        {
             "name": "browser_status",
             "description": "Get a plain-language summary of the current page state. Returns status: normal / blank / need_login / captcha / request_error / loading / unknown with a message an ordinary user can understand. Use to tell a non-technical user what a page looks like right now.",
             "inputSchema": { "type": "object", "properties": {
@@ -495,6 +567,13 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_storage_set" => Ok("storage_set"),
         "browser_storage_clear" => Ok("storage_clear"),
         "browser_network_log" => Ok("network_log"),
+        "browser_console_log" => Ok("console_log"),
+        "browser_evaluate_script" => Ok("evaluate"),
+        "browser_fill_form" => Ok("fill_form"),
+        "browser_hover" => Ok("hover"),
+        "browser_dialog" => Ok("dialog"),
+        "browser_screenshot" => Ok("screenshot"),
+        "browser_close" => Ok("close"),
         "browser_assert" => Ok("assert"),
         "browser_status" => Ok("status"),
         other => Err(AppError::ValidationError(format!(
@@ -543,6 +622,12 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "caseSensitive",
         "scale",
         "limit",
+        "clear",
+        "script",
+        "items",
+        "op",
+        "accept",
+        "promptText",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
@@ -706,8 +791,15 @@ mod tests {
         assert!(names.contains(&"browser_storage_get"));
         assert!(names.contains(&"browser_storage_set"));
         assert!(names.contains(&"browser_storage_clear"));
+        assert!(names.contains(&"browser_console_log"));
+        assert!(names.contains(&"browser_evaluate_script"));
+        assert!(names.contains(&"browser_fill_form"));
+        assert!(names.contains(&"browser_hover"));
+        assert!(names.contains(&"browser_dialog"));
+        assert!(names.contains(&"browser_screenshot"));
+        assert!(names.contains(&"browser_close"));
         // 断言工具列表至少包含以上全部，且数量大于基线（不硬编码总数，防新增工具再改）
-        assert!(names.len() >= 22, "浏览器 MCP 工具数应 ≥ 22，当前 {}", names.len());
+        assert!(names.len() >= 29, "浏览器 MCP 工具数应 ≥ 29，当前 {}", names.len());
     }
 
     #[test]
