@@ -209,7 +209,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
   }
 
   return (
-    <div data-theme-panel className="flex-1 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
+    <div data-theme-panel className="flex-1 min-h-0 flex flex-col overflow-hidden bg-background-elevated animate-in fade-in duration-150">
       {/* 顶部标题栏 */}
       <div className="flex items-center justify-between px-3 sm:px-6 py-3 sm:py-4 border-b border-border-subtle">
         <h2 className="text-lg font-semibold text-text-primary">{t('title')}</h2>
@@ -232,7 +232,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
       </div>
 
       {/* 主体内容 */}
-      <div className="flex flex-col sm:flex-row flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-col sm:flex-row flex-1 overflow-hidden">
         {/* 左侧导航 */}
         <SettingsSidebar
           activeTab={activeTab}
@@ -242,7 +242,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
         />
 
         {/* 右侧内容区域 */}
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="min-h-0 flex-1 flex flex-col overflow-hidden">
           {/* 错误提示 */}
           {error && (
             <div className="mx-4 mt-4 p-3 bg-danger-faint border border-danger/30 rounded-lg text-danger text-sm">

@@ -205,7 +205,7 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
           }}
         />
       )}
-      <div className="w-[860px] max-h-[88vh] bg-surface rounded-2xl border border-border shadow-2xl flex flex-col overflow-hidden" style={{
+      <div className="w-full md:w-[860px] max-h-[88vh] bg-surface rounded-2xl border border-border shadow-2xl flex flex-col overflow-hidden" style={{
         backgroundColor: draft.immersive?.layerOpacity?.surface ? `rgba(30, 30, 30, ${1 - draft.immersive.layerOpacity.surface})` : undefined,
         backdropFilter: draft.immersive?.effects?.panelBlur ? `blur(${draft.immersive.effects.panelBlur}px)` : undefined,
       }}>
@@ -223,10 +223,10 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
           </button>
         </div>
 
-        {/* 主体：左右分栏 */}
-        <div className="flex flex-1 overflow-hidden">
+        {/* 主体：桌面左右分栏，手机上下堆叠 */}
+        <div className="flex flex-1 overflow-hidden flex-col md:flex-row">
           {/* 左侧：编辑区 */}
-          <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 flex flex-col overflow-hidden min-h-0">
             {/* Tab 切换 */}
             <div className="flex gap-1 px-5 pt-3 pb-2 border-b border-border-subtle">
               {tabs.map((tab) => (
@@ -806,8 +806,8 @@ export function ThemeEditor({ theme: initialTheme, onSave, onClose }: ThemeEdito
             </div>
           </div>
 
-          {/* 右侧：预览区 */}
-          <div className="w-[300px] shrink-0 border-l border-border-subtle p-4 overflow-y-auto bg-background-base">
+          {/* 右侧：预览区 — 手机全宽堆叠，桌面固定300px */}
+          <div className="w-full md:w-[300px] shrink-0 border-t md:border-t-0 md:border-l border-border-subtle p-4 overflow-y-auto bg-background-base">
             <h3 className="text-xs font-semibold text-text-tertiary uppercase tracking-wider mb-3">
               实时预览
             </h3>
