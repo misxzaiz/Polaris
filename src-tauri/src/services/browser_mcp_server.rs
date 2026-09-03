@@ -413,6 +413,14 @@ fn handle_tools_list() -> Value {
             }, "additionalProperties": false }
         },
         {
+            "name": "browser_network_log",
+            "description": "Read captured network requests with full request/response bodies. Requires the built-in browser to have been opened after the network hook was injected (page load). Returns up to 'limit' most recent entries.",
+            "inputSchema": { "type": "object", "properties": {
+                "label": label_property,
+                "limit": { "type": "integer", "minimum": 1, "maximum": 200, "description": "Max number of most-recent entries to return (default 50)." }
+            }, "additionalProperties": false }
+        },
+        {
             "name": "browser_status",
             "description": "Get a plain-language summary of the current page state. Returns status: normal / blank / need_login / captcha / request_error / loading / unknown with a message an ordinary user can understand. Use to tell a non-technical user what a page looks like right now.",
             "inputSchema": { "type": "object", "properties": {
@@ -486,6 +494,7 @@ fn tool_name_to_action(name: &str) -> Result<&'static str> {
         "browser_storage_get" => Ok("storage_get"),
         "browser_storage_set" => Ok("storage_set"),
         "browser_storage_clear" => Ok("storage_clear"),
+        "browser_network_log" => Ok("network_log"),
         "browser_assert" => Ok("assert"),
         "browser_status" => Ok("status"),
         other => Err(AppError::ValidationError(format!(
@@ -533,6 +542,7 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "query",
         "caseSensitive",
         "scale",
+        "limit",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
@@ -692,6 +702,7 @@ mod tests {
         assert!(names.contains(&"browser_select_region"));
         // 数据感知工具（新增）——不得因工具数固定而漏测
         assert!(names.contains(&"browser_network_requests"));
+        assert!(names.contains(&"browser_network_log"));
         assert!(names.contains(&"browser_storage_get"));
         assert!(names.contains(&"browser_storage_set"));
         assert!(names.contains(&"browser_storage_clear"));

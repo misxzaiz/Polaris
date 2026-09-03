@@ -60,6 +60,14 @@ pub const MUTE_CONTROL_SCRIPT: &str =
 pub const READER_EXTRACT_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/reader-extract.js");
 
+/// 网络请求拦截初始化脚本（页面加载前注入）
+pub const NET_HOOK_INIT_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/net-hook-init.js");
+
+/// 网络日志读取脚本（eval 时调用）
+pub const NET_LOG_READ_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/net-log-read.js");
+
 /// 嵌入的交互元素收集器代码
 pub const INTERACTIVE_COLLECTOR_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/interactive-collector.js");

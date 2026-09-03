@@ -1521,6 +1521,7 @@ fn browser_create_with_app(
     let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
         .devtools(true)
         .focused(false)
+        .initialization_script(browser_scripts::NET_HOOK_INIT_SCRIPT)
         .on_navigation(move |next_url| {
             let url_str = next_url.to_string();
             // 下载内容判定：命中可下载扩展名 / blob / data 时，转发外部浏览器并阻止内嵌渲染
@@ -3394,6 +3395,15 @@ impl BrowserActionDispatcher {
                 let timeout_ms = args.get("timeoutMs").or_else(|| args.get("timeout_ms")).and_then(Value::as_u64);
                 let result = browser_assert_with_app(&self.app, &label, &kind, text.as_deref(), index, timeout_ms).await?;
                 serde_json::to_value(result).map_err(Into::into)
+            }
+            "network_log" | "networkLog" => {
+                let limit = args.get("limit").and_then(Value::as_u64).map(|v| v as usize);
+                if let Some(limit) = limit {
+                    let set_limit_script = format!("window.__POLARIS_NET_LOG_LIMIT__ = {};", limit);
+                    let _ = browser_eval_with_app(&self.app, &label, &set_limit_script, Some(1_000)).await;
+                }
+                let raw = browser_eval_with_app(&self.app, &label, browser_scripts::NET_LOG_READ_SCRIPT, Some(3_000)).await?;
+                serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("网络日志解析失败: {e}")))
             }
             "status" | "getStatus" => {
                 let raw = browser_eval_with_app(&self.app, &label, browser_scripts::BROWSER_STATUS_SCRIPT, Some(3_000)).await?;
