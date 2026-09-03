@@ -63,7 +63,6 @@ import {
 } from '@/services/cliSlashCommands'
 import { parseDispatchSlashCommand, dispatchFromUser } from '@/services/dispatchTaskService'
 import { parseAgentSlashCommand, rewriteDispatchPromptWithAgent, parseNexusSlashCommand, NEXUS_SCENARIOS } from '@/services/agentSlashCommand'
-import { handleHereCommand } from '@/services/companionCommand'
 import { invoke as transportInvoke } from '@/services/transport'
 import { useAgentStore } from '@/stores/agentStore'
 import { useSessionConfig } from '@/stores/sessionConfigStore'
@@ -1263,28 +1262,6 @@ export function ChatInput({
       setHistoryIndex(-1)
       resetPromptOptimize()
       onSend(assaultText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
-      return
-    }
-
-    // Polaris 本地命令：/here → 心灵伙伴主动找你
-    if (trimmed === '/here' || trimmed === '/here ') {
-      const sid = activeSessionId || sessionStoreManager.getState().activeSessionId || ''
-      if (!sid) {
-        useToastStore.getState().info(
-          t('chat:companion.noSession', '💜'),
-          t('chat:companion.noSessionDesc', '先开一个会话再来找我吧')
-        )
-        return
-      }
-      // 清空输入框
-      cancelPersistDraft()
-      setLocalText('')
-      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
-      contextBlocksRef.current = []
-      setLocalContextBlocks([])
-      setHistoryIndex(-1)
-      resetPromptOptimize()
-      void handleHereCommand(sid)
       return
     }
 
