@@ -24,6 +24,10 @@ if (!window.__POLARIS_BROWSER_CONSOLE__) {
       return original[level]?.apply(this, args);
     };
   });
+  console.clear = function() {
+    buffer.length = 0;
+    return original.clear?.apply(this, arguments);
+  };
   window.addEventListener('error', (event) => {
     push('error', [event.message || 'Script error', event.filename || '', event.lineno || '']);
   });

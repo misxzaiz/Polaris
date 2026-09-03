@@ -50,6 +50,10 @@
       item.promptText = def == null ? '' : String(def);
       return item.promptText;
     };
+    // beforeunload 只记录不阻止（阻止会破坏正常导航）
+    window.addEventListener('beforeunload', (event) => {
+      record('beforeunload', event.returnValue || '页面尝试离开');
+    });
     window.__POLARIS_DIALOG_INSTALLED__ = true;
     return JSON.stringify({ ok: true, installed: true, message: '对话框拦截已安装（alert/confirm/prompt 将被记录而非弹出）' });
   }
