@@ -36,6 +36,7 @@ export const CLI_SUGGESTED_COMMANDS: CliSlashCommandMeta[] = [
   { name: 'model', descKey: 'model' },
   { name: 'recap', descKey: 'recap' },
   { name: 'assault', argumentHint: '<profile> <problem>', descKey: 'assault' },
+  { name: 'here', descKey: 'here' },
 ]
 
 /**

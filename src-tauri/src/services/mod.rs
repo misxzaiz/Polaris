@@ -32,6 +32,9 @@ pub mod agnes_mcp_server;
 pub mod personal_hub_crypto;
 pub mod personal_hub_mcp_server;
 
+// 心灵伙伴核心模块（Phase 0：/here 命令驱动）
+pub mod companion_agent;
+
 pub mod usage_db;
 pub use usage_db::UsageDb;
 

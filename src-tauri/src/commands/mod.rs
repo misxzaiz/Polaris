@@ -110,3 +110,7 @@ pub use model_profile::{test_model_profile_connection, fetch_models_for_profile}
 pub mod executor;
 #[cfg(feature = "tauri-app")]
 pub use executor::{executor_list, executor_execute};
+
+pub mod companion;
+#[cfg(feature = "tauri-app")]
+pub use companion::companion_here;

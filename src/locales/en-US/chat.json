@@ -1,4 +1,12 @@
 {
+  "companion": {
+    "noSession": "💜",
+    "noSessionDesc": "Open a session first, then come find me",
+    "noResponse": "💜",
+    "noResponseDesc": "Nothing to say right now, see you next time",
+    "error": "💜",
+    "errorDesc": "Companion unavailable: {{error}}"
+  },
   "dispatch": {
     "defaultTitle": "Dispatched Task",
     "cardTitle": "Dispatched Task",
@@ -714,6 +722,7 @@
       "model": "Show the current model",
       "recap": "Generate a one-line session recap",
       "assault": "Hard problem assault: 5-family analysis + adversarial audit",
+      "here": "Call your companion — let AI come find you",
       "spec": "Spec-driven dev: read spec → implement → verify ACs",
       "custom": "CLI custom command"
     },

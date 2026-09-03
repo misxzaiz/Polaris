@@ -1157,6 +1157,8 @@ pub fn run() {
             // 通用执行器
             commands::executor::executor_list,
             commands::executor::executor_execute,
+            // 心灵伙伴（/here）
+            commands::companion::companion_here,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,
