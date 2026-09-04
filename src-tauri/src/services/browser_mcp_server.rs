@@ -628,10 +628,20 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
         "op",
         "accept",
         "promptText",
+        // ── 以下字段为 assert / storage 系列必传，缺失会导致动作不执行 ──
+        "kind",
+        "key",
+        "cookieOpts",
     ] {
         if let Some(value) = args.get(key) {
             frame.insert(key.to_string(), value.clone());
         }
+    }
+
+    // storage 系列的存储类型参数名为 `type`，与 frame 路由键 `type:"browser"` 冲突。
+    // 透传时重命名为 `storageType`，由命令层兼容读取，避免覆盖帧类型标记。
+    if let Some(value) = args.get("type") {
+        frame.insert("storageType".to_string(), value.clone());
     }
 
     Value::Object(frame)
@@ -640,15 +650,27 @@ fn browser_frame(config: &BrowserMcpConfig, action: &str, args: &Value) -> Value
 /// Ensure a value is a JSON object. If it is an array (e.g. `browser_list`
 /// returns `[]`), wrap it as `{ "items": [...] }` so that `structuredContent`
 /// always satisfies the MCP protocol requirement of being an object.
+/// String / Null 也需兜底：status、network_info 返回字符串，storage_get、
+/// network_requests、storage_clear 在无数据时返回 null，均非 object，
+/// 直接放入 structuredContent 会触发 schema 校验失败。统一包装为 object。
 fn ensure_object(value: Value) -> Value {
-    if let Value::Array(arr) = value {
-        Value::Object({
+    match value {
+        Value::Array(arr) => Value::Object({
             let mut map = Map::new();
             map.insert("items".to_string(), Value::Array(arr));
             map
-        })
-    } else {
-        value
+        }),
+        Value::String(s) => Value::Object({
+            let mut map = Map::new();
+            map.insert("text".to_string(), Value::String(s));
+            map
+        }),
+        Value::Null => Value::Object({
+            let mut map = Map::new();
+            map.insert("value".to_string(), Value::Null);
+            map
+        }),
+        other => other,
     }
 }
 
@@ -851,5 +873,84 @@ mod tests {
         let result = tool_success(json!({"label": "test", "url": "https://example.com"}));
         let sc = result.get("structuredContent").unwrap();
         assert_eq!(sc.get("label").and_then(Value::as_str).unwrap(), "test");
+    }
+
+    // ── 根因 C 回归：String / Null 必须被包成 object，否则 schema 校验失败 ──
+
+    #[test]
+    fn ensure_object_wraps_string_into_text() {
+        let result = ensure_object(json!("页面正常"));
+        assert!(result.is_object());
+        assert_eq!(
+            result.get("text").and_then(Value::as_str).unwrap(),
+            "页面正常"
+        );
+    }
+
+    #[test]
+    fn ensure_object_wraps_null_into_value() {
+        let result = ensure_object(Value::Null);
+        assert!(result.is_object());
+        assert!(result.get("value").is_some());
+        assert!(result.get("value").unwrap().is_null());
+    }
+
+    #[test]
+    fn tool_success_wraps_string_result_as_object() {
+        // status / network_info 返回字符串 → structuredContent 必须是 object
+        let result = tool_success(json!("页面正常"));
+        let sc = result.get("structuredContent").unwrap();
+        assert!(sc.is_object());
+        assert_eq!(sc.get("text").and_then(Value::as_str).unwrap(), "页面正常");
+    }
+
+    #[test]
+    fn tool_success_wraps_null_result_as_object() {
+        // storage_clear / network_requests 无数据时返回 null → structuredContent 必须是 object
+        let result = tool_success(Value::Null);
+        let sc = result.get("structuredContent").unwrap();
+        assert!(sc.is_object());
+        assert!(sc.get("value").unwrap().is_null());
+    }
+
+    // ── 根因 A 回归：assert / storage 必传字段必须被转发到主进程 ──
+
+    fn frame_action_for(args: &Value, action: &str) -> Value {
+        let config = BrowserMcpConfig {
+            port: 0,
+            token: "tok".to_string(),
+            session_id: Some("sess".to_string()),
+        };
+        browser_frame(&config, action, args)
+    }
+
+    #[test]
+    fn browser_frame_forwards_assert_kind() {
+        let args = json!({ "kind": "text_exists", "text": "登录成功", "timeoutMs": 5000 });
+        let frame = frame_action_for(&args, "assert");
+        assert_eq!(frame.get("action").and_then(Value::as_str).unwrap(), "assert");
+        assert_eq!(frame.get("kind").and_then(Value::as_str).unwrap(), "text_exists");
+        assert_eq!(frame.get("text").and_then(Value::as_str).unwrap(), "登录成功");
+        // 帧路由键 type 必须仍是 "browser"，绝不被业务参数覆盖
+        assert_eq!(frame.get("type").and_then(Value::as_str).unwrap(), "browser");
+    }
+
+    #[test]
+    fn browser_frame_forwards_storage_set_key_and_renames_type() {
+        let args = json!({ "key": "token", "value": "abc", "type": "localStorage", "cookieOpts": { "path": "/" } });
+        let frame = frame_action_for(&args, "storage_set");
+        assert_eq!(frame.get("key").and_then(Value::as_str).unwrap(), "token");
+        assert_eq!(frame.get("cookieOpts").and_then(Value::as_object).unwrap().get("path").unwrap(), "/");
+        // storage 的 type 须重命名为 storageType，不得覆盖帧 type
+        assert_eq!(frame.get("storageType").and_then(Value::as_str).unwrap(), "localStorage");
+        assert_eq!(frame.get("type").and_then(Value::as_str).unwrap(), "browser");
+    }
+
+    #[test]
+    fn browser_frame_forwards_storage_clear_type_renamed() {
+        let args = json!({ "type": "cookie", "key": "sess" });
+        let frame = frame_action_for(&args, "storage_clear");
+        assert_eq!(frame.get("storageType").and_then(Value::as_str).unwrap(), "cookie");
+        assert_eq!(frame.get("type").and_then(Value::as_str).unwrap(), "browser");
     }
 }

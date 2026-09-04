@@ -1045,8 +1045,8 @@ pub fn browser_reload_with_app(app: &AppHandle, label: &str) -> Result<()> {
 #[cfg(feature = "tauri-app")]
 pub fn browser_history_with_app(app: &AppHandle, label: &str, direction: &str) -> Result<()> {
     let script = match direction {
-        "back" => "history.back();",
-        "forward" => "history.forward();",
+        "back" => "history.back(); try { sessionStorage.setItem('__polaris_nav_dir__', 'back'); } catch(e) {}",
+        "forward" => "history.forward(); try { sessionStorage.setItem('__polaris_nav_dir__', 'forward'); } catch(e) {}",
         other => {
             return Err(AppError::ValidationError(format!(
                 "未知浏览器历史方向: {other}"
@@ -1857,17 +1857,24 @@ pub async fn browser_toggle_reader(app: AppHandle, label: String) -> Result<serd
     Ok(value)
 }
 
-/// 获取浏览器历史状态：通过注入 JS 读取 history.length 和 __polaris_can_go_forward__ 标记
+/// 获取浏览器历史状态：通过注入 JS 读取 history.length 判断可后退/前进。
+/// WebView2 跨 origin 导航后 history.length 仍累计栈条目，作主信号；
+/// 同时读 sessionStorage 维护的导航方向标记作辅助（同 origin 持久）。
 #[cfg(feature = "tauri-app")]
 pub async fn browser_get_history_state_with_app(app: &AppHandle, label: &str) -> Result<BrowserHistoryState> {
     let script = r#"
       (() => {
         try {
-          // history.length 为当前导航栈中页面数
-          return JSON.stringify({
-            canGoBack: history.length > 1,
-            canGoForward: window.__polaris_can_go_forward__ === true
-          });
+          const len = window.history.length || 1;
+          // 后退/前进命令会在 sessionStorage 留下方向标记（同 origin 间生效）
+          const lastDir = sessionStorage.getItem('__polaris_nav_dir__') || '';
+          // canGoBack：历史栈长度 > 1 表示存在可后退的条目
+          // canGoForward：栈长度 > 1 且最近一次操作是 back（同 origin 场景）
+          // 跨 origin 时 sessionStorage 不共享，canGoForward 可能漏判，
+          // 降级为 false 优于错误标记 true。
+          const canGoBack = len > 1;
+          const canGoForward = len > 1 && lastDir === 'back';
+          return JSON.stringify({ canGoBack, canGoForward });
         } catch { return '{"canGoBack":false,"canGoForward":false}'; }
       })();
     "#;
@@ -2265,7 +2272,7 @@ fn build_press_key_script(keys: &str, index: Option<usize>, text: Option<&str>) 
     format!(
         r#"(() => {{
 {collector}
-(function() {{
+return (function() {{
             const requestedKeys = '{keys}';
             const requestedIndex = {idx};
             const requestedText = '{txt}';
@@ -3380,14 +3387,14 @@ impl BrowserActionDispatcher {
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("请求明细解析失败: {e}")))
             }
             "storage_get" | "storageGet" => {
-                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let r#type = args.get("storageType").or_else(|| args.get("storage_type")).and_then(Value::as_str).map(String::from);
                 let key = args.get("key").and_then(Value::as_str).map(String::from);
                 let script = browser_scripts::storage_script(browser_scripts::STORAGE_READ_SCRIPT, &serde_json::json!({ "type": r#type, "key": key }));
                 let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储读取失败: {e}")))
             }
             "storage_set" | "storageSet" => {
-                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let r#type = args.get("storageType").or_else(|| args.get("storage_type")).and_then(Value::as_str).map(String::from);
                 let key = args.get("key").and_then(Value::as_str).ok_or_else(|| AppError::ValidationError("storage_set 缺少 key".to_string()))?;
                 let value = args.get("value").and_then(Value::as_str).unwrap_or("").to_string();
                 let cookie_opts = args.get("cookieOpts").cloned();
@@ -3396,7 +3403,7 @@ impl BrowserActionDispatcher {
                 serde_json::from_str::<Value>(&raw).map_err(|e| AppError::ValidationError(format!("存储写入失败: {e}")))
             }
             "storage_clear" | "storageClear" => {
-                let r#type = args.get("type").and_then(Value::as_str).map(String::from);
+                let r#type = args.get("storageType").or_else(|| args.get("storage_type")).and_then(Value::as_str).map(String::from);
                 let key = args.get("key").and_then(Value::as_str).map(String::from);
                 let script = browser_scripts::storage_script(browser_scripts::STORAGE_WRITE_SCRIPT, &serde_json::json!({ "action": "clear", "type": r#type, "key": key }));
                 let raw = browser_eval_with_app(&self.app, &label, &script, Some(2_000)).await?;
