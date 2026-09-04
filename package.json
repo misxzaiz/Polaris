@@ -65,7 +65,7 @@
     "html5-qrcode": "^2.3.8",
     "i18next": "^24.2.3",
     "katex": "^0.18.1",
-    "lucide-react": "^0.562.0",
+    "lucide-react": "^1.31.0",
     "marked": "^17.0.1",
     "mermaid": "^11.12.2",
     "postcss": "^8.5.6",
