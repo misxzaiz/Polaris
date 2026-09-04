@@ -309,6 +309,42 @@ git push origin vx.x.x
 
 ---
 
+## v10.4.7 构建记录
+
+**构建时间**: 2026-09-04 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.4.7
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.4.7_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.4.7_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.4.7_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.4.7-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.4.7_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.4.7-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.4.7-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.4.7-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.4.7.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(browser): 内置浏览器 MCP 能力大扩展 — console 消息/eval 执行/批量填表 fill_form/hover 悬停/dialog 对话框处理/screenshot 截图/close 关闭页面；修复 IIFE 双包 bug
+- feat(browser): 内置浏览器网络请求拦截 + network_log 工具
+- feat(browser): console.clear 拦截 + beforeunload 记录补丁
+- feat(companion): 心灵伙伴 /here 命令 Phase 0
+- revert(companion): 撤回 /here Phase 0 幻影实现（保留协议）
+- docs(companion): 心灵伙伴协议 v2.3 — 基于真实用户痛点调研打磨
+- refactor(engine-install): Web 模式解耦事件推送为回调注入
+- fix(theme): 修复设置面板挤压 + 编辑器响应式布局
+
+---
+
 ## v10.4.6 构建记录
 
 **构建时间**: 2026-09-02 (UTC)
