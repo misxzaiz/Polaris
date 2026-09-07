@@ -954,13 +954,16 @@ impl IntegrationManager {
         // 统一 MCP 配置准备（使用 SessionLauncher）
         let mcp_config = match &work_dir {
             Some(dir) if !dir.trim().is_empty() => {
-                #[cfg(feature = "tauri-app")]
-                let config_dir = app_handle.path().app_config_dir().ok();
+                // 统一 MCP 配置目录为数据存储根（DataRoot），与 ConfigStore、
+                // 桌面 MCP 注入一致。历史用 app_handle.path().app_config_dir()
+                // （com.polaris.app），导致 integrations 场景的 {{appConfigDir}}
+                // 与配置落盘目录分裂。
+                let config_dir = Some(
+                    crate::services::data_root::data_root().config_dir(),
+                );
+
                 #[cfg(feature = "tauri-app")]
                 let resource_dir = app_handle.path().resource_dir().ok();
-
-                #[cfg(not(feature = "tauri-app"))]
-                let config_dir: Option<std::path::PathBuf> = None;
                 #[cfg(not(feature = "tauri-app"))]
                 let resource_dir: Option<std::path::PathBuf> = None;
 

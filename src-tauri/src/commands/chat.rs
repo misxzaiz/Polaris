@@ -2008,10 +2008,9 @@ pub async fn start_chat(
     options: ChatRequestOptions,
 ) -> Result<String> {
     let app_paths = AppPaths {
-        config_dir: window
-            .path()
-            .app_config_dir()
-            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        // 统一到数据存储根（DataRoot），与 ConfigStore 一致；
+        // 历史用 window.path().app_config_dir()（com.polaris.app）导致配置写读分离。
+        config_dir: crate::services::data_root::data_root().config_dir(),
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();
@@ -2040,10 +2039,8 @@ pub async fn continue_chat(
     options: ChatRequestOptions,
 ) -> Result<()> {
     let app_paths = AppPaths {
-        config_dir: window
-            .path()
-            .app_config_dir()
-            .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?,
+        // 统一到数据存储根（DataRoot），与 ConfigStore 一致
+        config_dir: crate::services::data_root::data_root().config_dir(),
         resource_dir: window.path().resource_dir().ok(),
     };
     let window_clone = window.clone();

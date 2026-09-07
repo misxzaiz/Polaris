@@ -316,6 +316,32 @@ pub fn scan_legacy_data() -> Vec<LegacySource> {
         }
     }
 
+    // Tauri 遗留配置目录（%APPDATA%/com.polaris.app）中的「逻辑数据」子目录。
+    //
+    // 桌面 Tauri 模式的历史实现把插件、配置等逻辑数据写入 Tauri app_config_dir
+    // （com.polaris.app），与 DataRoot（%APPDATA%/Polaris）分裂。统一到 DataRoot
+    // 后，这里是遗留数据源。此处只注册**可迁移的逻辑子目录**，每个作为独立源，
+    // 迁移时经 map_legacy_subpath 同名映射合并到 DataRoot；
+    // EBWebView/browser/config/data/cache 等 Tauri 运行时或结构不对应的目录不注册。
+    if let Some(base) = dirs::config_dir() {
+        let legacy_root = base.join("com.polaris.app");
+        if legacy_root.exists() {
+            for name in ["plugins", "requirements", "scheduler", "todo", "agnes"] {
+                let sub = legacy_root.join(name);
+                if sub.exists() {
+                    let (size, count) = dir_stats(&sub);
+                    results.push(LegacySource {
+                        path: sub.clone(),
+                        label: format!("Tauri 遗留目录 · {}", name),
+                        size_bytes: size,
+                        file_count: count,
+                        exists: true,
+                    });
+                }
+            }
+        }
+    }
+
     results
 }
 

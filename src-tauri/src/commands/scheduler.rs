@@ -20,10 +20,9 @@ use crate::utils::LockStatus;
 // ============================================================================
 
 #[cfg(feature = "tauri-app")]
-fn get_config_dir(app: &AppHandle) -> Result<PathBuf> {
-    app.path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))
+fn get_config_dir(_app: &AppHandle) -> Result<PathBuf> {
+    // 统一到数据存储根（DataRoot），与 Web 端调度器一致
+    Ok(crate::services::data_root::data_root().config_dir())
 }
 
 #[cfg(feature = "tauri-app")]
@@ -388,9 +387,8 @@ pub async fn scheduler_start(app: AppHandle) -> Result<SchedulerStatus> {
                 });
             }
 
-            let config_dir = app.path()
-                .app_config_dir()
-                .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+            // 统一到数据存储根（DataRoot），与 Web 端调度器一致
+            let config_dir = crate::services::data_root::data_root().config_dir();
 
             let mut daemon = crate::services::scheduler_daemon::SchedulerDaemon::new(
                 config_dir,

@@ -663,10 +663,14 @@ pub fn run() {
                 });
             }
 
-            // Store application paths for consistent path resolution across Tauri & Web API
-            if let Ok(config_dir) = app.path().app_config_dir() {
-                let _ = state.app_config_dir.set(config_dir);
-            }
+            // 统一应用配置目录为数据存储根（DataRoot）。
+            // 历史用 app.path().app_config_dir()（= %APPDATA%/com.polaris.app），
+            // 与 ConfigStore（永远 data_root().config_dir() = %APPDATA%/Polaris）分裂，
+            // 导致 MCP 注入目录、插件发现目录与配置落盘目录不一致（配置写读分离）。
+            // 统一到 DataRoot 后，MCP/插件/配置全跟随「设置→通用→数据存储」。
+            let _ = state.app_config_dir.set(
+                crate::services::data_root::data_root().config_dir(),
+            );
             let _ = state.resource_dir.set(app.path().resource_dir().ok());
 
             // 加载历史派发任务注册表（上次运行未结束的任务标记为中断）

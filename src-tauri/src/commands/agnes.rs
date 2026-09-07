@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 #[cfg(feature = "tauri-app")]
-use tauri::{Manager, State, Window};
+use tauri::{State, Window};
 
 use crate::error::{AppError, Result};
 use crate::services::agnes_mcp_server::{
@@ -76,11 +76,10 @@ pub struct AgnesVideoTask {
 // ============================================================================
 
 #[cfg(feature = "tauri-app")]
-fn config_dir_from_window(window: &Window) -> Result<PathBuf> {
-    window
-        .path()
-        .app_config_dir()
-        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {e}")))
+fn config_dir_from_window(_window: &Window) -> Result<PathBuf> {
+    // 统一到数据存储根（DataRoot），与 ConfigStore 一致；
+    // 历史用 window.path().app_config_dir() 导致配置分裂。
+    Ok(crate::services::data_root::data_root().config_dir())
 }
 
 #[cfg(feature = "tauri-app")]

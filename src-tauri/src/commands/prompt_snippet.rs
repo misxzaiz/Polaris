@@ -1,19 +1,17 @@
 //! 快捷片段 Tauri 命令
 
-use crate::error::{AppError, Result};
+use crate::error::Result;
 use crate::models::prompt_snippet::{
     CreateSnippetParams, PromptSnippet, UpdateSnippetParams,
 };
 use crate::services::prompt_snippet_service::PromptSnippetService;
 #[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[cfg(feature = "tauri-app")]
-fn get_snippet_service(app: &AppHandle) -> Result<PromptSnippetService> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+fn get_snippet_service(_app: &AppHandle) -> Result<PromptSnippetService> {
+    // 统一到数据存储根（DataRoot），与 ConfigStore 一致
+    let config_dir = crate::services::data_root::data_root().config_dir();
     Ok(PromptSnippetService::new(&config_dir))
 }
 
