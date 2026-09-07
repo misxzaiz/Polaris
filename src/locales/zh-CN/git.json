@@ -62,6 +62,16 @@
     "success": "Git 仓库初始化成功",
     "failed": "初始化失败"
   },
+  "multiRepo": {
+    "found": "在工作区下发现 {{count}} 个 Git 仓库",
+    "scanning": "正在扫描工作区下的 Git 仓库...",
+    "emptyRepo": "空仓库（无提交）",
+    "backToList": "返回仓库列表",
+    "pinned": "已置顶",
+    "allRepositories": "全部仓库",
+    "pin": "置顶",
+    "unpin": "取消置顶"
+  },
   "suggestion": {
     "rootTitle": "Git 上下文",
     "diffTitle": "Git 差异",

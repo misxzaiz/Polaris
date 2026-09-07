@@ -62,6 +62,16 @@
     "success": "Git repository initialized successfully",
     "failed": "Initialization failed"
   },
+  "multiRepo": {
+    "found": "Found {{count}} Git repositories in this workspace",
+    "scanning": "Scanning workspace for Git repositories...",
+    "emptyRepo": "Empty repository (no commits)",
+    "backToList": "Back to repository list",
+    "pinned": "Pinned",
+    "allRepositories": "All repositories",
+    "pin": "Pin",
+    "unpin": "Unpin"
+  },
   "suggestion": {
     "rootTitle": "Git Context",
     "diffTitle": "Git Diff",

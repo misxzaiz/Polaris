@@ -45,6 +45,21 @@ export interface GitRepositoryStatus {
 }
 
 /**
+ * 扫描到的子仓库信息（聚合工作区场景）
+ *
+ * 工作区本身非 git、下含多个并行 git 子项目时，
+ * GitPanel 调用 git_discover_repositories 列出子仓库供用户选择。
+ */
+export interface GitDiscoveredRepo {
+  path: string                   // 仓库绝对路径
+  name: string                   // 目录名（展示用）
+  branch: string                 // 当前分支名（空仓库时为空串）
+  shortCommit: string            // 短 SHA（空仓库时为空串）
+  isEmpty: boolean               // 是否为空仓库
+  hasChanges: boolean            // 是否有未提交变更
+}
+
+/**
  * Git Diff 变更类型
  */
 export type DiffChangeType = 'added' | 'deleted' | 'modified' | 'renamed' | 'copied'

@@ -21,7 +21,7 @@ mod reset;
 mod gitignore;
 
 // 重导出公共 API
-pub use executor::{init_repository, is_repository};
+pub use executor::{init_repository, is_repository, discover_repositories};
 pub use status::get_status;
 pub use diff::{
     get_diff, get_worktree_diff, get_index_diff, get_worktree_file_diff,
@@ -46,7 +46,7 @@ use std::path::Path;
 
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
-    GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry, GitIgnoreResult,
+    GitCommit, GitCommitDetails, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
     GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
     GitServiceError, PullRequest,
@@ -71,6 +71,11 @@ impl GitService {
     /// 初始化 Git 仓库
     pub fn init_repository(path: &Path, initial_branch: Option<&str>) -> Result<String, GitServiceError> {
         init_repository(path, initial_branch)
+    }
+
+    /// 扫描根目录下所有嵌套 Git 仓库（聚合工作区场景）
+    pub fn discover_repositories(root: &Path, max_depth: usize) -> Result<Vec<GitDiscoveredRepo>, GitServiceError> {
+        discover_repositories(root, max_depth)
     }
 
     // ========================================================================

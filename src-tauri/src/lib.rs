@@ -76,7 +76,7 @@ use commands::context::{
 };
 #[cfg(all(feature = "tauri-app", feature = "git"))]
 use commands::git::{
-    git_is_repository, git_init_repository, git_get_status, git_get_diffs,
+    git_is_repository, git_discover_repositories, git_init_repository, git_get_status, git_get_diffs,
     git_get_worktree_diff, git_get_index_diff, git_get_worktree_file_diff, git_get_index_file_diff,
     git_get_branches,
     git_create_branch, git_checkout_branch, git_delete_branch, git_rename_branch, git_merge_branch, git_commit_changes,
@@ -895,6 +895,8 @@ pub fn run() {
             // Git 相关
             #[cfg(feature = "git")]
             git_is_repository,
+            #[cfg(feature = "git")]
+            git_discover_repositories,
             #[cfg(feature = "git")]
             git_init_repository,
             #[cfg(feature = "git")]

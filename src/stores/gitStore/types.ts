@@ -7,6 +7,7 @@
 import type { StateCreator } from 'zustand'
 import type {
   GitRepositoryStatus,
+  GitDiscoveredRepo,
   GitDiffEntry,
   GitBranch,
   GitRemote,
@@ -73,6 +74,12 @@ export interface StatusState {
   error: string | null
   selectedFilePath: string | null
   selectedDiff: GitDiffEntry | null
+  /** 工作区下扫描到的子仓库（聚合工作区场景） */
+  discoveredRepos: GitDiscoveredRepo[]
+  /** 子仓库扫描进行中 */
+  isDiscovering: boolean
+  /** 当前工作区下用户置顶的子仓库路径（持久化到 localStorage） */
+  pinnedRepos: string[]
   // 内部状态（用于防抖和请求管理）
   _refreshPromises: Map<string, Promise<void>>
   _refreshTimeouts: Map<string, NodeJS.Timeout>
@@ -136,6 +143,14 @@ export interface StatusActions {
   getIndexDiff: (workspacePath: string) => Promise<void>
   getWorktreeFileDiff: (workspacePath: string, filePath: string) => Promise<GitDiffEntry>
   getIndexFileDiff: (workspacePath: string, filePath: string) => Promise<GitDiffEntry>
+  /** 扫描工作区下所有嵌套 Git 子仓库（聚合工作区场景） */
+  discoverRepositories: (workspacePath: string, maxDepth?: number) => Promise<GitDiscoveredRepo[]>
+  /** 切换某子仓库的置顶状态（持久化到 localStorage） */
+  togglePinnedRepo: (workspacePath: string, repoPath: string) => void
+  /** 查询某子仓库是否已置顶 */
+  isPinnedRepo: (repoPath: string) => boolean
+  /** 为指定工作区加载置顶列表（从 localStorage） */
+  loadPinnedRepos: (workspacePath: string) => void
   clearError: () => void
   clearAll: () => void
   hasChanges: () => boolean

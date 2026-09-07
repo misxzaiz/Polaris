@@ -7,7 +7,7 @@
 import { invoke } from '@/services/transport'
 import type { StatusSlice } from './types'
 import { parseGitError } from './types'
-import type { GitDiffEntry } from '@/types/git'
+import type { GitDiffEntry, GitDiscoveredRepo } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -25,6 +25,9 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
   error: null,
   selectedFilePath: null,
   selectedDiff: null,
+  discoveredRepos: [],
+  isDiscovering: false,
+  pinnedRepos: [],
   _refreshPromises: new Map(),
   _refreshTimeouts: new Map(),
 
@@ -173,6 +176,58 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
     }
   },
 
+  // 扫描工作区下所有嵌套 Git 子仓库
+  async discoverRepositories(workspacePath: string, maxDepth?: number) {
+    set({ isDiscovering: true })
+    try {
+      const repos = await invoke<GitDiscoveredRepo[]>('git_discover_repositories', {
+        workspacePath,
+        maxDepth,
+      })
+      set({ discoveredRepos: repos, isDiscovering: false })
+      return repos
+    } catch (err) {
+      const message = parseGitError(err)
+      log.error('git_discover_repositories failed', err instanceof Error ? err : new Error(String(err)), {
+        workspacePath,
+      })
+      set({ isDiscovering: false, discoveredRepos: [], error: message })
+      return []
+    }
+  },
+
+  // 切换某子仓库的置顶状态
+  togglePinnedRepo(workspacePath: string, repoPath: string) {
+    const STORAGE_KEY = `polaris:git:pinned-repos:${workspacePath}`
+    const current = get().pinnedRepos
+    const next = current.includes(repoPath)
+      ? current.filter((p) => p !== repoPath)
+      : [...current, repoPath]
+    set({ pinnedRepos: next })
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // localStorage 不可用时静默降级（仅内存态）
+    }
+  },
+
+  // 查询某子仓库是否已置顶
+  isPinnedRepo(repoPath: string) {
+    return get().pinnedRepos.includes(repoPath)
+  },
+
+  // 从 localStorage 加载指定工作区的置顶列表
+  loadPinnedRepos(workspacePath: string) {
+    const STORAGE_KEY = `polaris:git:pinned-repos:${workspacePath}`
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY)
+      const arr = raw ? (JSON.parse(raw) as string[]) : []
+      set({ pinnedRepos: Array.isArray(arr) ? arr : [] })
+    } catch {
+      set({ pinnedRepos: [] })
+    }
+  },
+
   // 清除错误
   clearError() {
     set({ error: null })
@@ -199,6 +254,9 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
       error: null,
       selectedFilePath: null,
       selectedDiff: null,
+      discoveredRepos: [],
+      isDiscovering: false,
+      pinnedRepos: [],
       _refreshPromises: new Map(),
       _refreshTimeouts: new Map(),
     })

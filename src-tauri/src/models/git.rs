@@ -686,3 +686,29 @@ pub struct GitIgnoreTemplate {
     /// 规则列表
     pub rules: Vec<String>,
 }
+
+// ============================================================================
+// 仓库发现（聚合工作区场景）
+// ============================================================================
+
+/// 扫描到的子仓库信息
+///
+/// 用于"工作区本身非 git、下含多个并行 git 子项目"的场景。
+/// GitPanel 在主仓库打开失败时调用 `git_discover_repositories`，
+/// 列出子仓库供用户选择，选中后以该 path 作为 workspacePath 走原有流程。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiscoveredRepo {
+    /// 仓库绝对路径
+    pub path: String,
+    /// 目录名（展示用）
+    pub name: String,
+    /// 当前分支名（空仓库时为空串）
+    pub branch: String,
+    /// 短 SHA（空仓库时为空串）
+    pub short_commit: String,
+    /// 是否为空仓库（无任何提交）
+    pub is_empty: bool,
+    /// 是否有未提交变更（工作树或索引有改动）
+    pub has_changes: bool,
+}

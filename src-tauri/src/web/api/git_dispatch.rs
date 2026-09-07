@@ -81,6 +81,11 @@ pub async fn dispatch_git_command(cmd: &str, args: &Value) -> Result<Json<Value>
             let wp = require_string(args, "workspacePath")?;
             Ok(Json(Value::Bool(git_is_repository(wp).map_err(git_err)?)))
         }
+        "git_discover_repositories" => {
+            let wp = require_string(args, "workspacePath")?;
+            let max_depth = args.get("maxDepth").and_then(|v| v.as_u64()).map(|n| n as usize);
+            Ok(Json(serde_json::to_value(git_discover_repositories(wp, max_depth).map_err(git_err)?).unwrap_or_default()))
+        }
         "git_get_status" => {
             let wp = require_string(args, "workspacePath")?;
             Ok(Json(serde_json::to_value(git_get_status(wp).map_err(git_err)?).unwrap_or_default()))

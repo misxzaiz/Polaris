@@ -2,9 +2,9 @@
  * Git 面板主组件
  */
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2 } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2, Star } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
@@ -55,7 +55,7 @@ export function GitPanel({
   variant = 'sidebar',
 }: GitPanelProps) {
   const { t } = useTranslation('git')
-  const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository } = useGitStore()
+  const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => {
     // 优先使用文件浏览器的 viewingWorkspaceId，如果没有则使用 currentWorkspaceId
     const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
@@ -63,6 +63,13 @@ export function GitPanel({
     return workspaces.find(w => w.id === targetId) || null
   })
   const toast = useToastStore()
+
+  // 多仓库模式：聚合工作区（本身非 git）下选中的子仓库路径
+  // 非空时，所有 Git 操作以该路径作为 workspacePath
+  const [selectedRepoPath, setSelectedRepoPath] = useState<string | null>(null)
+
+  // 实际生效的仓库路径：选中子仓库时用子仓库；否则用当前工作区
+  const effectivePath = selectedRepoPath ?? currentWorkspace?.path ?? ''
 
   const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'changes')
   const [selectedDiff, setSelectedDiff] = useState<GitDiffEntry | null>(null)
@@ -88,7 +95,7 @@ export function GitPanel({
   } | null>(null)
 
   const handleFileClick = async (file: GitFileChange, type: 'staged' | 'unstaged') => {
-    if (!currentWorkspace) return
+    if (!effectivePath) return
 
     logger.debug('[GitPanel] handleFileClick 被调用:', {
       filePath: file.path,
@@ -99,8 +106,8 @@ export function GitPanel({
     setIsDiffLoading(true)
     try {
       const diff = type === 'staged'
-        ? await getIndexFileDiff(currentWorkspace.path, file.path)
-        : await getWorktreeFileDiff(currentWorkspace.path, file.path)
+        ? await getIndexFileDiff(effectivePath, file.path)
+        : await getWorktreeFileDiff(effectivePath, file.path)
 
       logger.debug('[GitPanel] 获取到 diff:', {
         filePath: diff.file_path,
@@ -125,11 +132,11 @@ export function GitPanel({
   }
 
   const handleUntrackedFileClick = async (filePath: string) => {
-    if (!currentWorkspace) return
+    if (!effectivePath) return
 
     setIsDiffLoading(true)
     try {
-      const diff = await getWorktreeFileDiff(currentWorkspace.path, filePath)
+      const diff = await getWorktreeFileDiff(effectivePath, filePath)
 
       if (onOpenDiffInTab) {
         onOpenDiffInTab(diff)
@@ -198,7 +205,7 @@ export function GitPanel({
   }, [status])
 
   const handleBatchStage = useCallback(async () => {
-    if (!currentWorkspace || selectedFiles.size === 0) return
+    if (!effectivePath || selectedFiles.size === 0) return
 
     setIsBatchOperating(true)
     try {
@@ -211,25 +218,25 @@ export function GitPanel({
 
       for (let i = 0; i < stageablePaths.length; i++) {
         const path = stageablePaths[i]
-        await stageFile(currentWorkspace.path, path)
+        await stageFile(effectivePath, path)
         setBatchProgress({ current: i + 1, total: stageablePaths.length })
       }
 
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(effectivePath)
       setSelectedFiles(new Set())
       toast.success(t('batchStageSuccess'))
     } catch (err) {
       toast.error(t('errors.batchStageFailed'), err instanceof Error ? err.message : String(err))
       // 操作失败后刷新状态
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(effectivePath)
     } finally {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, stageFile, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, stageFile, refreshStatus, toast, t])
 
   const handleBatchUnstage = useCallback(async () => {
-    if (!currentWorkspace || selectedFiles.size === 0) return
+    if (!effectivePath || selectedFiles.size === 0) return
 
     setIsBatchOperating(true)
     try {
@@ -241,25 +248,25 @@ export function GitPanel({
 
       for (let i = 0; i < unstageablePaths.length; i++) {
         const path = unstageablePaths[i]
-        await unstageFile(currentWorkspace.path, path)
+        await unstageFile(effectivePath, path)
         setBatchProgress({ current: i + 1, total: unstageablePaths.length })
       }
 
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(effectivePath)
       setSelectedFiles(new Set())
       toast.success(t('batchUnstageSuccess'))
     } catch (err) {
       toast.error(t('errors.batchUnstageFailed'), err instanceof Error ? err.message : String(err))
       // 操作失败后刷新状态
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(effectivePath)
     } finally {
       setIsBatchOperating(false)
       setBatchProgress(null)
     }
-  }, [currentWorkspace, selectedFiles, status, unstageFile, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, unstageFile, refreshStatus, toast, t])
 
   const handleBatchDiscard = useCallback(() => {
-    if (!currentWorkspace || selectedFiles.size === 0) return
+    if (!effectivePath || selectedFiles.size === 0) return
 
     const discardablePaths = Array.from(selectedFiles).filter(path => {
       return status?.unstaged.some(f => f.path === path)
@@ -283,27 +290,27 @@ export function GitPanel({
 
           for (let i = 0; i < discardablePaths.length; i++) {
             const path = discardablePaths[i]
-            await discardChanges(currentWorkspace.path, path)
+            await discardChanges(effectivePath, path)
             setBatchProgress({ current: i + 1, total: discardablePaths.length })
           }
 
-          await refreshStatus(currentWorkspace.path)
+          await refreshStatus(effectivePath)
           setSelectedFiles(new Set())
           toast.success(t('batchDiscardSuccess'))
         } catch (err) {
           toast.error(t('errors.batchDiscardFailed'), err instanceof Error ? err.message : String(err))
           // 操作失败后刷新状态
-          await refreshStatus(currentWorkspace.path)
+          await refreshStatus(effectivePath)
         } finally {
           setIsBatchOperating(false)
           setBatchProgress(null)
         }
       }
     })
-  }, [currentWorkspace, selectedFiles, status, discardChanges, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, discardChanges, refreshStatus, toast, t])
 
   const handleBatchDelete = useCallback(() => {
-    if (!currentWorkspace || selectedFiles.size === 0) return
+    if (!effectivePath || selectedFiles.size === 0) return
 
     const deletablePaths = Array.from(selectedFiles).filter(path => {
       return status?.unstaged.some(f => f.path === path) ||
@@ -328,23 +335,23 @@ export function GitPanel({
 
           for (let i = 0; i < deletablePaths.length; i++) {
             const path = deletablePaths[i]
-            await deleteFile(resolveWorkspacePath(currentWorkspace.path, path))
+            await deleteFile(resolveWorkspacePath(effectivePath, path))
             setBatchProgress({ current: i + 1, total: deletablePaths.length })
           }
 
-          await refreshStatus(currentWorkspace.path)
+          await refreshStatus(effectivePath)
           setSelectedFiles(new Set())
           toast.success(t('batchDeleteSuccess'))
         } catch (err) {
           toast.error(t('errors.batchDeleteFailed'), err instanceof Error ? err.message : String(err))
-          await refreshStatus(currentWorkspace.path)
+          await refreshStatus(effectivePath)
         } finally {
           setIsBatchOperating(false)
           setBatchProgress(null)
         }
       }
     })
-  }, [currentWorkspace, selectedFiles, status, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, refreshStatus, toast, t])
 
   const handleInitRepository = useCallback(async () => {
     if (!currentWorkspace) return
@@ -372,8 +379,8 @@ export function GitPanel({
 
   const handleOpenSelectedDiffFile = useCallback(() => {
     if (!selectedDiff || selectedDiff.change_type === 'deleted') return
-    onOpenFileInEditor?.(resolveWorkspacePath(currentWorkspace?.path, selectedDiff.file_path))
-  }, [currentWorkspace?.path, onOpenFileInEditor, selectedDiff])
+    onOpenFileInEditor?.(resolveWorkspacePath(effectivePath, selectedDiff.file_path))
+  }, [effectivePath, onOpenFileInEditor, selectedDiff])
 
   useEffect(() => {
     if (!initialTab) return
@@ -381,18 +388,42 @@ export function GitPanel({
     setSelectedDiff(null)
   }, [focusToken, initialTab])
 
+  // 工作区切换：重置多仓库选中态与本地选择
   useEffect(() => {
-    if (currentWorkspace) {
-      refreshStatus(currentWorkspace.path)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshStatus triggers on workspace change
-  }, [currentWorkspace?.path])
-
-  useEffect(() => {
+    setSelectedRepoPath(null)
     setSelectedFiles(new Set())
     setSelectedDiff(null)
     setTargetCommitSha(null)
   }, [currentWorkspace?.path])
+
+  // 生效路径变化（工作区或选中子仓库）：刷新仓库状态
+  useEffect(() => {
+    if (effectivePath) {
+      refreshStatus(effectivePath)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshStatus triggers on path change
+  }, [effectivePath])
+
+  // 当前工作区不是 git 仓库且未选中子仓库时：扫描子仓库（聚合工作区场景）
+  useEffect(() => {
+    if (!currentWorkspace?.path) return
+    // status 为 null 表示当前 effectivePath 不是 git 仓库
+    if (status !== null) return
+    if (selectedRepoPath) return
+    // 先加载该工作区的置顶偏好，再扫描
+    loadPinnedRepos(currentWorkspace.path)
+    discoverRepositories(currentWorkspace.path).catch(() => {
+      // 错误已由 store 写入 error 状态，这里静默
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentWorkspace?.path, status, selectedRepoPath])
+
+  // 排序后的子仓库列表：置顶的在上，其余按原序
+  const sortedRepos = useMemo(() => {
+    const pinned = discoveredRepos.filter((r) => pinnedRepos.includes(r.path))
+    const rest = discoveredRepos.filter((r) => !pinnedRepos.includes(r.path))
+    return [...pinned, ...rest]
+  }, [discoveredRepos, pinnedRepos])
 
   useEffect(() => {
     if (!status) {
@@ -429,6 +460,8 @@ export function GitPanel({
   ]
 
   if (!status) {
+    // 多仓库模式：工作区本身非 git 但发现子仓库时，展示子仓库卡片列表
+    const hasDiscovered = discoveredRepos.length > 0
     return (
       <div className={`h-full flex flex-col ${className}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
@@ -447,69 +480,164 @@ export function GitPanel({
             </button>
           )}
         </div>
-        <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 gap-4">
-          <FolderGit2 size={48} className="text-text-tertiary opacity-50" />
-          <div className="text-text-tertiary text-sm text-center">{t('notGitRepo')}</div>
-          {error && (
-            <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg p-3 text-center max-w-full break-all">
-              {error}
+
+        {hasDiscovered ? (
+          <div className="flex-1 overflow-y-auto px-3 py-3">
+            <div className="flex items-center gap-2 px-1 pb-2">
+              <FolderGit2 size={14} className="text-text-tertiary" />
+              <span className="text-xs text-text-secondary">
+                {t('multiRepo.found', { count: sortedRepos.length })}
+              </span>
             </div>
-          )}
-          {currentWorkspace && (
-            <>
-              <div className="text-xs text-text-tertiary break-all text-center max-w-full">
-                {t('workspacePath')}: {currentWorkspace.path}
+            {pinnedRepos.length > 0 && sortedRepos.some((r) => pinnedRepos.includes(r.path)) && (
+              <div className="px-1 pt-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-quaternary flex items-center gap-1">
+                <Star size={10} className="fill-current" />
+                {t('multiRepo.pinned')}
               </div>
-              
-              {!showInitPrompt ? (
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={() => setShowInitPrompt(true)}
-                  className="mt-2"
-                >
-                  <GitBranch size={14} className="mr-1" />
-                  {t('init.button')}
-                </Button>
-              ) : (
-                <div className="w-full max-w-[280px] bg-background-surface border border-border rounded-lg p-3 mt-2">
-                  <div className="text-xs text-text-secondary mb-2">{t('init.title')}</div>
-                  <div className="flex items-center gap-2 mb-3">
-                    <input
-                      type="text"
-                      value={initBranchName}
-                      onChange={(e) => setInitBranchName(e.target.value)}
-                      placeholder="main"
-                      className="flex-1 px-2 py-1 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
-                    />
-                  </div>
-                  <div className="text-xs text-text-tertiary mb-3">{t('init.branchHint')}</div>
-                  <div className="flex items-center justify-end gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setShowInitPrompt(false)
-                        setInitBranchName('main')
-                      }}
-                      disabled={isInitializing}
+            )}
+            <div className="flex flex-col gap-1.5">
+              {sortedRepos.map((repo) => {
+                const pinned = pinnedRepos.includes(repo.path)
+                const showPinnedDivider = !pinned && pinnedRepos.length > 0 && sortedRepos.indexOf(repo) === sortedRepos.findIndex((r) => !pinnedRepos.includes(r.path))
+                return (
+                  <div key={repo.path}>
+                    {showPinnedDivider && (
+                      <div className="px-1 pt-2 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-quaternary flex items-center gap-1">
+                        {t('multiRepo.allRepositories')}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRepoPath(repo.path)}
+                      className={`w-full text-left bg-background-surface hover:bg-background-hover border rounded-lg px-3 py-2.5 transition-colors group ${pinned ? 'border-primary/40 bg-primary/5' : 'border-border'}`}
                     >
-                      {t('init.cancel')}
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={handleInitRepository}
-                      disabled={isInitializing || !initBranchName.trim()}
-                    >
-                      {isInitializing ? t('init.initializing') : t('init.confirm')}
-                    </Button>
+                      <div className="flex items-center gap-2 mb-1">
+                        <FolderGit2 size={14} className="text-primary shrink-0" />
+                        <span className="text-sm font-medium text-text-primary truncate flex-1">
+                          {repo.name}
+                        </span>
+                        {repo.hasChanges && (
+                          <span className="shrink-0 inline-flex items-center justify-center min-w-[16px] h-4 px-1 text-[10px] bg-primary/20 text-primary rounded-full">
+                            •
+                          </span>
+                        )}
+                        <span
+                          role="button"
+                          tabIndex={-1}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            if (currentWorkspace?.path) togglePinnedRepo(currentWorkspace.path, repo.path)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.stopPropagation()
+                              if (currentWorkspace?.path) togglePinnedRepo(currentWorkspace.path, repo.path)
+                            }
+                          }}
+                          className={`shrink-0 p-1 rounded transition-colors ${pinned ? 'text-warning fill-warning' : 'text-text-quaternary hover:text-text-secondary'}`}
+                          title={pinned ? t('multiRepo.unpin') : t('multiRepo.pin')}
+                        >
+                          <Star size={13} className={pinned ? 'fill-current' : ''} />
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-text-tertiary">
+                        {repo.branch ? (
+                          <>
+                            <GitBranch size={11} className="shrink-0" />
+                            <span className="truncate">{repo.branch}</span>
+                          </>
+                        ) : (
+                          <span className="truncate">{t('multiRepo.emptyRepo')}</span>
+                        )}
+                        {repo.shortCommit && (
+                          <span className="font-mono text-text-quaternary truncate">
+                            {repo.shortCommit}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-text-quaternary truncate mt-0.5" title={repo.path}>
+                        {repo.path}
+                      </div>
+                    </button>
                   </div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+                )
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center py-12 px-4 gap-4">
+            {isDiscovering ? (
+              <>
+                <FolderGit2 size={48} className="text-text-tertiary opacity-50 animate-pulse" />
+                <div className="text-text-tertiary text-sm text-center">{t('multiRepo.scanning')}</div>
+              </>
+            ) : (
+              <>
+                <FolderGit2 size={48} className="text-text-tertiary opacity-50" />
+                <div className="text-text-tertiary text-sm text-center">{t('notGitRepo')}</div>
+                {error && (
+                  <div className="text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg p-3 text-center max-w-full break-all">
+                    {error}
+                  </div>
+                )}
+                {currentWorkspace && (
+                  <>
+                    <div className="text-xs text-text-tertiary break-all text-center max-w-full">
+                      {t('workspacePath')}: {currentWorkspace.path}
+                    </div>
+
+                    {!showInitPrompt ? (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => setShowInitPrompt(true)}
+                        className="mt-2"
+                      >
+                        <GitBranch size={14} className="mr-1" />
+                        {t('init.button')}
+                      </Button>
+                    ) : (
+                      <div className="w-full max-w-[280px] bg-background-surface border border-border rounded-lg p-3 mt-2">
+                        <div className="text-xs text-text-secondary mb-2">{t('init.title')}</div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <input
+                            type="text"
+                            value={initBranchName}
+                            onChange={(e) => setInitBranchName(e.target.value)}
+                            placeholder="main"
+                            className="flex-1 px-2 py-1 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <div className="text-xs text-text-tertiary mb-3">{t('init.branchHint')}</div>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => {
+                              setShowInitPrompt(false)
+                              setInitBranchName('main')
+                            }}
+                            disabled={isInitializing}
+                          >
+                            {t('init.cancel')}
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={handleInitRepository}
+                            disabled={isInitializing || !initBranchName.trim()}
+                          >
+                            {isInitializing ? t('init.initializing') : t('init.confirm')}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+              </>
+            )}
+          </div>
+        )}
       </div>
     )
   }
@@ -517,9 +645,27 @@ export function GitPanel({
   return (
     <div className={`h-full flex flex-col ${className}`}>
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
-        <div className="flex items-center gap-2">
-          <GitPullRequest size={16} className="text-primary" />
-          <span className="text-sm font-medium text-text-primary">{t('title')}</span>
+        <div className="flex items-center gap-2 min-w-0">
+          {selectedRepoPath && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedRepoPath(null)
+              }}
+              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all shrink-0"
+              title={t('multiRepo.backToList')}
+            >
+              <ChevronRight size={14} className="rotate-180" />
+            </button>
+          )}
+          <GitPullRequest size={16} className="text-primary shrink-0" />
+          {selectedRepoPath ? (
+            <span className="text-sm font-medium text-text-primary truncate" title={selectedRepoPath}>
+              {selectedRepoPath.split(/[/\\]/).pop() || selectedRepoPath}
+            </span>
+          ) : (
+            <span className="text-sm font-medium text-text-primary">{t('title')}</span>
+          )}
         </div>
         <div className="flex items-center gap-1">
           {showWorkbenchButton && (
@@ -662,7 +808,7 @@ export function GitPanel({
               <GitStatusHeader
                 status={status}
                 isLoading={isLoading}
-                onRefresh={() => currentWorkspace && refreshStatus(currentWorkspace.path)}
+                onRefresh={() => effectivePath && refreshStatus(effectivePath)}
               />
 
               {selectedFiles.size > 0 && (() => {
@@ -743,7 +889,7 @@ export function GitPanel({
                 staged={status.staged}
                 unstaged={status.unstaged}
                 untracked={status.untracked}
-                workspacePath={currentWorkspace?.path || ''}
+                workspacePath={effectivePath}
                 onFileClick={handleFileClick}
                 onUntrackedFileClick={handleUntrackedFileClick}
                 onBlame={(filePath) => {

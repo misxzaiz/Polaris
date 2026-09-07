@@ -14,6 +14,20 @@ pub fn git_is_repository(workspacePath: String) -> Result<bool, GitError> {
     Ok(GitService::is_repository(&path))
 }
 
+/// 扫描工作区下所有嵌套 Git 子仓库
+///
+/// 用于"聚合工作区"场景：工作区本身非 git，下含多个并行 git 子项目。
+/// 递归最多 `maxDepth` 层（默认 4），跳过 node_modules/target/dist 等。
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub fn git_discover_repositories(
+    workspacePath: String,
+    maxDepth: Option<usize>,
+) -> Result<Vec<GitDiscoveredRepo>, GitError> {
+    let path = PathBuf::from(workspacePath);
+    let depth = maxDepth.unwrap_or(4);
+    GitService::discover_repositories(&path, depth).map_err(GitError::from)
+}
+
 /// 初始化 Git 仓库
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub fn git_init_repository(
