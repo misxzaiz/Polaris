@@ -56,6 +56,9 @@ function usePreviewablePlugins(): PreviewablePlugin[] {
   }, [])
 }
 
+/** 已知安装目录兜底：扫描 dev/prod 配置目录下已装插件的 plugin.json */
+// 注：浏览器/Tauri web 模式下无法直接扫目录，手动路径模式作为兜底入口
+
 /** iframe 内置 HTML 壳：提供 React shim + 消息处理 + 错兜底 */
 const IFRAME_SRCDOC = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
   html,body{margin:0;height:100%;background:#fff;color:#111;font-family:system-ui,sans-serif}
@@ -163,6 +166,8 @@ const IFRAME_SRCDOC = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
 export function PluginPreviewPanel() {
   const plugins = usePreviewablePlugins()
   const [selectedKey, setSelectedKey] = useState<string>('')
+  const [manualPath, setManualPath] = useState<string>('')
+  const [useManual, setUseManual] = useState<boolean>(false)
   const [propsText, setPropsText] = useState<string>('{}')
   const [loadKey, setLoadKey] = useState(0)
   const [status, setStatus] = useState<string>('')
@@ -176,12 +181,15 @@ export function PluginPreviewPanel() {
     [plugins, selectedKey],
   )
 
-  // 默认选第一个
+  // 手动模式：直接用 manualPath 作为完整 panel.js 路径
+  const manualEntryPath = manualPath.trim() || null
+
+  // 默认选第一个（registry 有插件时）
   useEffect(() => {
-    if (!selectedKey && plugins.length > 0) {
+    if (!selectedKey && plugins.length > 0 && !useManual) {
       setSelectedKey(`${plugins[0].id}::${plugins[0].panelType}`)
     }
-  }, [plugins, selectedKey])
+  }, [plugins, selectedKey, useManual])
 
   const sendReactShim = useCallback(() => {
     const iframe = iframeRef.current
@@ -228,22 +236,36 @@ export function PluginPreviewPanel() {
     return () => window.removeEventListener('message', onMsg)
   }, [sendLoadPanel])
 
-  // 加载逻辑：选中的插件变化 或 loadKey 变化 → 读文件 → 注入
+  // 加载逻辑：选中的插件变化 / 手动路径 / loadKey 变化 → 读文件 → 注入
   useEffect(() => {
-    if (!selected) {
+    // 确定要加载的文件路径和显示标签
+    let fullPath: string
+    let label: string
+    if (useManual) {
+      if (!manualEntryPath) {
+        setError(null)
+        setStatus('手动模式：输入 panel.js 完整路径后回车加载')
+        return
+      }
+      fullPath = manualEntryPath.replace(/\\/g, '/')
+      label = manualEntryPath.split(/[\\/]/).pop() || manualEntryPath
+    } else if (selected) {
+      fullPath = `${selected.installPath.replace(/\\/g, '/')}/${selected.entry.replace(/^\.\//, '')}`
+      label = `${selected.name} / ${selected.panelType}`
+    } else {
       setError(null)
-      setStatus('没有可预览的插件')
+      setStatus(plugins.length === 0 ? '无可预览插件（registry 空），切手动模式输入路径' : '请选择插件')
       return
     }
+
     let cancelled = false
     setError(null)
-    setStatus(`读取 ${selected.entry}…`)
+    setStatus(`读取 ${label}…`)
 
-    const fullPath = `${selected.installPath.replace(/\\/g, '/')}/${selected.entry.replace(/^\.\//, '')}`
     readFile(fullPath)
       .then((code) => {
         if (cancelled) return
-        setStatus(`已加载: ${selected.name} / ${selected.panelType}`)
+        setStatus(`已加载: ${label}`)
         // 解析 props
         let props: unknown = {}
         try {
@@ -267,7 +289,7 @@ export function PluginPreviewPanel() {
     return () => {
       cancelled = true
     }
-  }, [selected, loadKey, propsText, sendLoadPanel])
+  }, [selected, useManual, manualEntryPath, loadKey, plugins.length, propsText, sendLoadPanel])
 
   const handleReload = useCallback(() => {
     setLoadKey((k) => k + 1)
@@ -282,23 +304,50 @@ export function PluginPreviewPanel() {
 
   return (
     <div className="flex h-full flex-col bg-background">
+      {/* 模式切换：registry / 手动路径 */}
+      <div className="flex items-center gap-1 border-b border-border px-2 py-1 shrink-0 text-[11px]">
+        <button
+          type="button"
+          onClick={() => setUseManual(false)}
+          className={`px-1.5 py-0.5 rounded ${!useManual ? 'bg-accent text-background' : 'text-text-secondary hover:bg-background-hover'}`}
+        >
+          已注册插件
+        </button>
+        <button
+          type="button"
+          onClick={() => setUseManual(true)}
+          className={`px-1.5 py-0.5 rounded ${useManual ? 'bg-accent text-background' : 'text-text-secondary hover:bg-background-hover'}`}
+        >
+          手动路径
+        </button>
+      </div>
+
       {/* 工具栏 */}
       <div className="flex items-center gap-1.5 border-b border-border px-2 py-1.5 shrink-0">
-        <div className="relative flex-1 min-w-0">
-          <select
-            value={selectedKey}
-            onChange={(e) => setSelectedKey(e.target.value)}
-            className="w-full appearance-none rounded-md border border-border-subtle bg-background px-2 py-1 pr-7 text-xs text-text-primary outline-none hover:border-border focus:border-accent"
-          >
-            {plugins.length === 0 && <option value="">无可预览插件</option>}
-            {plugins.map((p) => (
-              <option key={`${p.id}::${p.panelType}`} value={`${p.id}::${p.panelType}`}>
-                {p.name} · {p.panelType}
-              </option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-muted" />
-        </div>
+        {useManual ? (
+          <input
+            value={manualPath}
+            onChange={(e) => setManualPath(e.target.value)}
+            placeholder="panel.js 完整路径，如 C:/Users/.../relay-devkit/dist/panel.js"
+            className="flex-1 min-w-0 rounded-md border border-border-subtle bg-background px-2 py-1 text-xs font-mono text-text-primary outline-none focus:border-accent"
+          />
+        ) : (
+          <div className="relative flex-1 min-w-0">
+            <select
+              value={selectedKey}
+              onChange={(e) => setSelectedKey(e.target.value)}
+              className="w-full appearance-none rounded-md border border-border-subtle bg-background px-2 py-1 pr-7 text-xs text-text-primary outline-none hover:border-border focus:border-accent"
+            >
+              {plugins.length === 0 && <option value="">无可预览插件</option>}
+              {plugins.map((p) => (
+                <option key={`${p.id}::${p.panelType}`} value={`${p.id}::${p.panelType}`}>
+                  {p.name} · {p.panelType}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={12} className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-text-muted" />
+          </div>
+        )}
         <button
           type="button"
           onClick={handleReload}
