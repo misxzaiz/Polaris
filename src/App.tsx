@@ -37,6 +37,7 @@ const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel'
 const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
+const PluginPreviewPanel = lazy(() => import('./components/Plugins/PluginPreviewPanel').then(m => ({ default: m.PluginPreviewPanel })));
 const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
 const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
 const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/VoiceCompanionOverlay').then(m => ({ default: m.VoiceCompanionOverlay })));
@@ -179,8 +180,9 @@ function App() {
     .listViewContributions('activityBar')
     .find(view => view.panelType === leftPanelType);
   const hasLeftPanel = leftPanelType !== 'none' &&
-    !!activeLeftPanelContribution &&
-    isPluginUiEnabled(pluginStates, activeLeftPanelContribution.pluginId);
+    (leftPanelType === 'pluginPreview' ||
+      (!!activeLeftPanelContribution &&
+        isPluginUiEnabled(pluginStates, activeLeftPanelContribution.pluginId)));
   // [诊断] 临时：追踪 hasLeftPanel 从 true 变 false 的时刻
   const hasLeftPanelRef = useRef(hasLeftPanel);
   if (hasLeftPanelRef.current && !hasLeftPanel) {
@@ -247,6 +249,7 @@ function App() {
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
+      pluginPreviewContent={<Suspense fallback={loadingFallback}><PluginPreviewPanel /></Suspense>}
     />
   );
 

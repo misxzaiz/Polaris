@@ -158,6 +158,7 @@ export function LeftPanelContent({
   integrationContent,
   demoPluginContent,
   aiConsoleContent,
+  pluginPreviewContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -172,6 +173,7 @@ export function LeftPanelContent({
   integrationContent?: ReactNode
   demoPluginContent?: ReactNode
   aiConsoleContent?: ReactNode
+  pluginPreviewContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -202,6 +204,8 @@ export function LeftPanelContent({
     return <>{demoPluginContent}</>
   } else if (type === 'aiConsole') {
     return <>{aiConsoleContent}</>
+  } else if (type === 'pluginPreview') {
+    return <>{pluginPreviewContent}</>
   } else if (pluginPanelRegistry.has(type)) {
     return <PluginPanelHost panelType={type} />
   }
