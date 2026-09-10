@@ -127,6 +127,17 @@ impl Transaction for SqliteTransaction {
 
 ---
 
+## 4.5 落地状态（阶段 A）
+
+**2026-09-11 阶段 A 已完成并验证**：
+
+- 新增 `src-tauri/src/services/storage/sqlite.rs`（约 470 行）：按域分库 + 内嵌 `domain_audit` 审计表 + 真实 query（`json_extract` WHERE + 字段名白名单防注入）+ 真实事务（`BEGIN IMMEDIATE`，跨域连接统一 commit/rollback，Drop 未 finish 自动回滚）+ FTS5 可丢弃重建索引。
+- 挂载：`services/mod.rs` 新增 `pub mod storage;`，`storage/mod.rs` 导出 `SqliteStorage`。
+- 单测：同文件 `#[cfg(test)] mod tests` 共 11 个场景（store/load roundtrip、filter string/numeric、limit、delete、commit→审计落库、rollback→审计回滚、commit 后二次写审计保留、Drop→自动回滚、FTS 重建、字段名注入拒绝）。
+- **Tauri 环境限制**（`cargo test --lib` 无法启动，0xc0000139）：测试经独立 crate `/tmp/storage-verify`（复制 contracts + sqlite.rs，rusqlite 0.32 bundled）实际运行，**11 passed / 0 failed**；主项目 `cargo check --tests` 通过、sqlite.rs 零 warning。
+
+**验收 1、2 达成**（`cargo check` 通过、单测真实运行通过）；验收 3、4（切换后回归）属阶段 B。
+
 ## 5. 影响面
 
 | 维度 | 影响 | 说明 |
