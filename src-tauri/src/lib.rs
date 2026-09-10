@@ -10,6 +10,7 @@ pub mod models;
 pub mod services;
 pub mod commands;
 pub mod capabilities;
+pub mod contracts; // 重构第一步：核心契约冻结（Envelope/Source/6+1 trait）
 mod integrations;
 pub mod ai;  // 公开 ai 模块以支持适配层测试
 mod state;
