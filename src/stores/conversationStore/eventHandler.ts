@@ -360,21 +360,33 @@ export function handleAIEvent(
 
     case 'user_message': {
       // 多设备同步：消费后端广播的 user_message 事件，使 B 设备能看到 A 发送的用户消息。
-      // 幂等防重：A 设备自己 sendMessage 时已 addMessage，后端广播回来的 user_message
-      // 不能重复渲染。用 content 末尾匹配去重（同一轮 user 消息内容相同且时序相邻）。
+      //
+      // 幂等去重（A 设备本机已 addMessage，广播回来的同一消息不能重复渲染）：
+      // 优先用 clientMessageId 精确匹配——sendMessage 生成的消息 id 经后端透传回来，
+      // 命中本机已有消息即为本机回显。ID 判重不受消息内容归一化影响
+      // （后端会对 content 做工作区引用展开、系统提示拼接等改写，字符串比对不可靠），
+      // 也不受时序影响（不必依赖"最后一条 user 消息"）。
+      // clientMessageId 缺失时回退 content 比对，兼容未透传 ID 的引擎。
       const content = (event as { content?: string }).content
       if (!content) break
+
+      const clientId = (event as { clientMessageId?: string }).clientMessageId
       const existing = state.messages
-      const lastUser = [...existing].reverse().find((m) => m.type === 'user') as
-        | { content?: string }
-        | undefined
-      if (lastUser && lastUser.content === content) {
-        // 本机已存在相同内容的 user 消息（A 设备自己发的）→ 跳过，不重复渲染
+      const isLocalEcho = clientId
+        ? existing.some((m) => m.id === clientId)
+        : [...existing].reverse()
+            .find((m) => m.type === 'user')
+            ?.content === content
+
+      if (isLocalEcho) {
+        // 本机已存在这条消息（A 设备自己发的）→ 跳过，不重复渲染
         break
       }
-      // B 设备：本机没有这条 user 消息 → 追加渲染
+
+      // B 设备：本机没有这条 user 消息 → 追加渲染。
+      // 用 clientId 作为消息 id，保证多设备间消息标识一致（便于后续跨设备对齐）。
       state.addMessage({
-        id: generateUUID(),
+        id: clientId || generateUUID(),
         type: 'user',
         content,
         timestamp: new Date().toISOString(),

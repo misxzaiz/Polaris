@@ -107,6 +107,13 @@ pub struct EventParser {
     /// 中转站动态路由时逐轮可能变化（如 glm-5.2 → deepseek-v4-flash），随 turn 快照
     /// 与 cumulative 用量事件透传给前端。跨轮保留最近值，不随 turn 状态重置。
     stream_model: Option<String>,
+    /// 本 run 是否已出现过 assistant 消息。
+    /// stream-json 协议下 CLI 对用户输入的回显必然早于任何 assistant 输出；
+    /// 出现 assistant 输出之后的 user 事件属于下一轮，parse_user_event 据此跳过。
+    has_assistant_output: bool,
+    /// 前端生成的用户消息 ID（透传至 UserMessageEvent.client_message_id，本机回显去重用）。
+    /// 由调用方在构造后设置；仅当 user 事件确认为输入回显时才随事件发出。
+    client_message_id: Option<String>,
 }
 
 impl EventParser {
@@ -120,12 +127,19 @@ impl EventParser {
             streamed_thinking_this_turn: false,
             streamed_tool_call_ids: std::collections::HashSet::new(),
             stream_model: None,
+            has_assistant_output: false,
+            client_message_id: None,
         }
     }
 
     /// 设置会话 ID
     pub fn set_session_id(&mut self, session_id: impl Into<String>) {
         self.session_id = session_id.into();
+    }
+
+    /// 设置前端生成的用户消息 ID（透传至 UserMessageEvent.client_message_id）
+    pub fn set_client_message_id(&mut self, id: String) {
+        self.client_message_id = Some(id);
     }
 
     /// 解析原始事件为 AIEvent 数组
@@ -137,6 +151,9 @@ impl EventParser {
                 self.parse_system_event(subtype, extra)
             }
             StreamEvent::Assistant { message } => {
+                // 一旦出现过 assistant 输出，本轮用户输入的回显就已结束；
+                // 之后的 user 事件属于下一轮，parse_user_event 据此跳过。
+                self.has_assistant_output = true;
                 self.parse_assistant_event(message)
             }
             StreamEvent::User { message } => {
@@ -656,8 +673,20 @@ impl EventParser {
     fn parse_user_event(&mut self, message: serde_json::Value) -> Vec<AIEvent> {
         let mut results = Vec::new();
 
+        let content = message.get("content").and_then(|c| c.as_array());
+
+        // 判定：含 tool_result 块的 user 事件是工具执行结果回传，不是用户输入
+        let has_tool_result = content.map_or(false, |blocks| {
+            blocks.iter().any(|item| {
+                item.as_object()
+                    .and_then(|o| o.get("type"))
+                    .and_then(|v| v.as_str())
+                    == Some("tool_result")
+            })
+        });
+
         // 1. 提取 tool_result 块，生成 ToolCallEnd 事件
-        if let Some(content) = message.get("content").and_then(|c| c.as_array()) {
+        if let Some(content) = content {
             for item in content {
                 if let Some(obj) = item.as_object() {
                     if obj.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
@@ -723,12 +752,38 @@ impl EventParser {
             }
         }
 
-        // 2. 提取文本内容
-        let text = self.extract_text_content(&message);
-        if !text.is_empty() {
-            results.push(AIEvent::UserMessage(UserMessageEvent::new(&self.session_id, text)));
+        // 2. 提取文本内容。
+        //
+        // 判定规则（两条都成立才发出 UserMessage 事件）：
+        // a) 内容非纯 tool_result —— 含 tool_result 的 user 事件是工具执行结果回传
+        //    （纯 tool_result 或 tool_result 混 text 块，如 system-reminder / 任务通知），
+        //    不是用户输入，不应作为用户消息渲染。
+        // b) 本 run 尚未出现过 assistant 消息 —— stream-json 协议下 CLI 对用户输入的
+        //    回显必然早于任何 assistant 输出；出现 assistant 输出之后的 user 事件
+        //    属于下一轮，不应在本轮重复渲染。
+        //
+        // 此前此处无差别发出，导致工具结果回传被当作用户消息渲染并落盘，
+        // 进而劫持会话标题（buildDialogMetaInput 取首条 user 消息）并在
+        // regenerateResponse 时静默截断其后历史。
+        if has_tool_result {
+            // 工具结果回传：text 部分为系统注入的上下文提示，不作为用户消息
+            return results;
         }
 
+        if self.has_assistant_output {
+            // 已出现 assistant 输出 → 后续 user 事件属于下一轮，跳过
+            return results;
+        }
+
+        let text = self.extract_text_content(&message);
+        if text.is_empty() {
+            return results;
+        }
+        let mut event = UserMessageEvent::new(&self.session_id, text);
+        if let Some(ref id) = self.client_message_id {
+            event = event.with_client_message_id(id.clone());
+        }
+        results.push(AIEvent::UserMessage(event));
         results
     }
 

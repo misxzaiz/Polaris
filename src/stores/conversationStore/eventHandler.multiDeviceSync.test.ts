@@ -194,6 +194,120 @@ describe('多设备消息同步验证（修复后）', () => {
     })
   })
 
+  describe('clientMessageId 幂等去重（替代 content 字符串比对）', () => {
+    it('A 设备：content 经后端归一化改写后仍不重复（ID 命中本机消息）', () => {
+      // 后端会对 content 做换行归一化、工作区引用展开、系统提示拼接等改写，
+      // 字符串比对在此场景下必然失效；ID 判重不受影响。
+      const { set, get, store } = makeStore()
+      store.addMessage({
+        id: 'uuid-abc-123',
+        type: 'user',
+        content: '第一行\n第二行',
+        timestamp: new Date().toISOString(),
+      } as unknown as ChatMessage)
+
+      // 后端广播回来的回显：content 已被归一化，但 clientMessageId 透传回来
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: '第一行\\n第二行',
+        clientMessageId: 'uuid-abc-123',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(1) // 内容不同但 ID 命中 → 去重生效
+    })
+
+    it('B 设备：收到本机不存在的 clientMessageId → 追加，且沿用该 ID', () => {
+      const { set, get } = makeStore()
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: '来自 A 设备的消息',
+        clientMessageId: 'uuid-remote-789',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(1)
+      // 沿用远端 ID，保证多设备间消息标识一致
+      expect(userMsgs[0].id).toBe('uuid-remote-789')
+    })
+
+    it('同一 clientMessageId 重复到达 → 只渲染一次（幂等）', () => {
+      const { set, get } = makeStore()
+      const makeEvent = (): AIEvent =>
+        ({
+          type: 'user_message',
+          sessionId: 's1',
+          content: 'A 发的消息',
+          clientMessageId: 'uuid-abc-123',
+        } as AIEvent)
+
+      handleAIEvent(makeEvent(), set as never, get as never)
+      handleAIEvent(makeEvent(), set as never, get as never)
+
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(1)
+    })
+
+    it('clientMessageId 缺失时回退 content 比对（兼容未透传 ID 的引擎）', () => {
+      const { set, get, store } = makeStore()
+      store.addMessage({
+        id: 'local-1',
+        type: 'user',
+        content: 'A 发的消息',
+        timestamp: new Date().toISOString(),
+      } as unknown as ChatMessage)
+
+      // 不带 clientMessageId 的回显 → 走 content 比对回退路径
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: 'A 发的消息',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(1)
+    })
+
+    it('ID 命中非最后一条本机消息也能去重（不依赖时序相邻）', () => {
+      // content 比对只检查"最后一条 user 消息"，中间插入后失效；
+      // ID 判重扫描全量消息，与时序无关。
+      const { set, get, store } = makeStore()
+      store.addMessage({
+        id: 'uuid-first',
+        type: 'user',
+        content: '第一条',
+        timestamp: new Date().toISOString(),
+      } as unknown as ChatMessage)
+      store.addMessage({
+        id: 'uuid-other',
+        type: 'user',
+        content: '中间的其他消息',
+        timestamp: new Date().toISOString(),
+      } as unknown as ChatMessage)
+
+      // 第一条消息的回显姗姗来迟，此时最后一条 user 消息已是"中间的其他消息"
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: '第一条',
+        clientMessageId: 'uuid-first',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(2)
+    })
+  })
+
   describe('存储层验证：RemoteBackend 跨设备共享（不是根因）', () => {
     it('RemoteBackend 通过 invoke 调用后端命令（不隔离设备）', async () => {
       const { RemoteBackend } = await import('@/services/dialogStorage/dialogBackend')

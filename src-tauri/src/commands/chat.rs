@@ -111,6 +111,9 @@ pub struct ChatRequestOptions {
     /// 非分组路由模式（official/profile）下忽略此字段。
     #[serde(default)]
     pub provider_group_id: Option<String>,
+    /// 前端生成的用户消息 ID（透传至 UserMessageEvent，本机回显去重用）
+    #[serde(default)]
+    pub client_message_id: Option<String>,
 }
 
 // ============================================================================
@@ -1220,6 +1223,9 @@ pub async fn start_chat_inner(
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
     }
+    if let Some(ref id) = options.client_message_id {
+        session_opts.client_message_id = Some(id.clone());
+    }
     // 统一 MCP 注入
     launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);
     if let Some(ref dirs) = options.additional_dirs {
@@ -1750,6 +1756,9 @@ pub async fn continue_chat_inner(
     }
     if let Some(ref prompt) = options.append_system_prompt {
         session_opts = session_opts.with_append_system_prompt(prompt.clone());
+    }
+    if let Some(ref id) = options.client_message_id {
+        session_opts.client_message_id = Some(id.clone());
     }
     // 统一 MCP 注入
     launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);

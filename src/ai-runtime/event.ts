@@ -148,6 +148,8 @@ export interface UserMessageEvent {
   content: string
   /** 关联的文件 */
   files?: string[]
+  /** 前端生成的用户消息 ID（透传，用于本机回显去重） */
+  clientMessageId?: string
 }
 
 /**
@@ -952,9 +954,10 @@ export type SessionEndReason = 'completed' | 'aborted' | 'error'
 export function createUserMessageEvent(
   sessionId: string,
   content: string,
-  files?: string[]
+  files?: string[],
+  clientMessageId?: string
 ): UserMessageEvent {
-  return { type: 'user_message', sessionId, content, files }
+  return { type: 'user_message', sessionId, content, files, clientMessageId }
 }
 
 /**

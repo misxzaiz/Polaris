@@ -445,6 +445,10 @@ pub struct SessionOptions {
     /// Pi 引擎专用：已剥离 CLI 私有后缀（如 `[1m]`）的纯模型名。
     /// 非 None 时 PiEngine 用此值替代 `model` 字段传给 `--model`。
     pub pi_model: Option<String>,
+
+    /// 前端生成的用户消息 ID（透传至 UserMessageEvent.client_message_id，
+    /// 用于本机回显去重与多设备消息对齐）
+    pub client_message_id: Option<String>,
 }
 
 /// Pi 引擎通过 `~/.pi/agent/models.json` 注册自定义 provider 的配置。
@@ -511,6 +515,7 @@ impl SessionOptions {
             env_overrides: HashMap::new(),
             pi_provider_config: None,
             pi_model: None,
+            client_message_id: None,
         }
     }
 

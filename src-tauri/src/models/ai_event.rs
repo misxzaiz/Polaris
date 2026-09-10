@@ -378,6 +378,9 @@ pub struct UserMessageEvent {
     /// 关联的文件
     #[serde(skip_serializing_if = "Option::is_none")]
     pub files: Option<Vec<String>>,
+    /// 前端生成的用户消息 ID（透传，用于本机回显去重）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_message_id: Option<String>,
 }
 
 impl UserMessageEvent {
@@ -387,11 +390,18 @@ impl UserMessageEvent {
             session_id: session_id.into(),
             content: content.into(),
             files: None,
+            client_message_id: None,
         }
     }
 
     pub fn with_files(mut self, files: Vec<String>) -> Self {
         self.files = Some(files);
+        self
+    }
+
+    /// 附带前端生成的消息 ID（本机回显去重用）
+    pub fn with_client_message_id(mut self, id: String) -> Self {
+        self.client_message_id = Some(id);
         self
     }
 }

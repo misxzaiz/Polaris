@@ -1828,6 +1828,7 @@ export function createConversationStore(
             modelProfileId: effectiveProfileId,
             profileMode,
             providerGroupId: effectiveProviderGroupId,
+            clientMessageId: userMessage.id,
           }
 
           if (conversationId) {

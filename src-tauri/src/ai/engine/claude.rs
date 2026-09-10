@@ -861,6 +861,7 @@ impl ClaudeEngine {
         let on_complete = options.on_complete.clone();
         let on_error = options.on_error.clone();
         let on_session_id_update = options.on_session_id_update.clone();
+        let client_message_id = options.client_message_id.clone();
         let mut current_session_id = temp_id.clone();
 
         // 创建 stdin 输入 channel
@@ -963,6 +964,9 @@ impl ClaudeEngine {
 
             // 创建事件解析器
             let mut parser = EventParser::new(&current_session_id);
+            if let Some(ref id) = client_message_id {
+                parser.set_client_message_id(id.clone());
+            }
             let sender_for_update = input_sender.clone();
 
             // 判断是否为 fork 模式：

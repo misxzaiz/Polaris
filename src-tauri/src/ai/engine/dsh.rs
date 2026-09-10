@@ -1473,6 +1473,13 @@ impl DshEngine {
     ) {
         // dsh 的 mux 流会回显 user/message 事件，但消息已由 Polaris 前端发送，
         // 重复发送 AIEvent::UserMessage 会导致前端重复渲染，故跳过。
+        //
+        // 多设备同步的代价：B 设备（Web/App 远程）在 dsh 会话下看不到本机的用户消息。
+        // 要补齐需给 user_message 事件透传 clientMessageId（前端已支持），但 dsh 的
+        // WebSocket 读取器跨轮常驻（continue_session 复用同一连接，见
+        // spawn_websocket_reader），静态 ID 只在首轮有效，需引入共享可变状态
+        // 沿 start_session → 常驻读取器 → handle_user_message 传递。
+        // 当前 dsh 仍在外迁阶段，缺端到端验证保障，故保留跳过，待其稳定后补。
     }
 
     /// 处理 tool/call 事件

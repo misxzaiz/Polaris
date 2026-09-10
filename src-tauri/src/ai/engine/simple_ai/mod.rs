@@ -301,10 +301,13 @@ impl AIEngine for SimpleAIEngine {
         let _ = (options.event_callback)(AIEvent::SessionStart(SessionStartEvent::new(
             &session_id,
         )));
-        let _ = (options.event_callback)(AIEvent::UserMessage(UserMessageEvent::new(
-            &session_id,
-            message.to_string(),
-        )));
+        let user_msg_event = if let Some(ref id) = options.client_message_id {
+            UserMessageEvent::new(&session_id, message.to_string())
+                .with_client_message_id(id.clone())
+        } else {
+            UserMessageEvent::new(&session_id, message.to_string())
+        };
+        let _ = (options.event_callback)(AIEvent::UserMessage(user_msg_event));
 
         // 创建会话：初始即带上 system + 历史 + 首轮 user 消息，并标记运行中。
         // 这样即便运行期间用户触发 continue_session，也能读到完整初始上下文而非空历史。
@@ -412,10 +415,13 @@ impl AIEngine for SimpleAIEngine {
             list.into_iter().map(|s| (s.name.clone(), s)).collect()
         };
 
-        let _ = (options.event_callback)(AIEvent::UserMessage(UserMessageEvent::new(
-            session_id,
-            message.to_string(),
-        )));
+        let user_msg_event = if let Some(ref id) = options.client_message_id {
+            UserMessageEvent::new(session_id, message.to_string())
+                .with_client_message_id(id.clone())
+        } else {
+            UserMessageEvent::new(session_id, message.to_string())
+        };
+        let _ = (options.event_callback)(AIEvent::UserMessage(user_msg_event));
 
         let sessions = Arc::clone(&self.sessions);
         let sid = session_id.to_string();
