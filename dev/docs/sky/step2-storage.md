@@ -129,12 +129,18 @@ impl Transaction for SqliteTransaction {
 
 ## 4.5 落地状态（阶段 A）
 
-**2026-09-11 阶段 A 已完成并验证**：
+**2026-09-11 阶段 A 已完成并验证**（含复审修订，见下）：
 
-- 新增 `src-tauri/src/services/storage/sqlite.rs`（约 470 行）：按域分库 + 内嵌 `domain_audit` 审计表 + 真实 query（`json_extract` WHERE + 字段名白名单防注入）+ 真实事务（`BEGIN IMMEDIATE`，跨域连接统一 commit/rollback，Drop 未 finish 自动回滚）+ FTS5 可丢弃重建索引。
+- 新增 `src-tauri/src/services/storage/sqlite.rs`（约 700 行）：按域分库 + 内嵌 `domain_audit` 审计表 + 真实 query（`json_extract` WHERE + 字段名白名单防注入）+ 真实事务（`BEGIN IMMEDIATE`，跨域连接统一 commit/rollback，Drop 未 finish 自动回滚）+ FTS5 可丢弃重建索引。
+- 连接 PRAGMA 对齐既有惯例（`dialog_index.rs`）：`journal_mode=WAL` + `synchronous=NORMAL` + `busy_timeout=5s`。
+- 审计 `source` 落库存变体名（Bootstrap/Remote/Plugin），**不存 token 明文**（脱敏）。
 - 挂载：`services/mod.rs` 新增 `pub mod storage;`，`storage/mod.rs` 导出 `SqliteStorage`。
-- 单测：同文件 `#[cfg(test)] mod tests` 共 11 个场景（store/load roundtrip、filter string/numeric、limit、delete、commit→审计落库、rollback→审计回滚、commit 后二次写审计保留、Drop→自动回滚、FTS 重建、字段名注入拒绝）。
-- **Tauri 环境限制**（`cargo test --lib` 无法启动，0xc0000139）：测试经独立 crate `/tmp/storage-verify`（复制 contracts + sqlite.rs，rusqlite 0.32 bundled）实际运行，**11 passed / 0 failed**；主项目 `cargo check --tests` 通过、sqlite.rs 零 warning。
+- 单测：同文件 `#[cfg(test)] mod tests` 共 **12** 个场景（store/load roundtrip、filter string/numeric、limit、delete、commit→审计落库、rollback→审计回滚、commit 后二次写审计保留、Drop→自动回滚、FTS 重建、字段名注入拒绝、**审计 source 不存 token**）。
+- **Tauri 环境限制**（`cargo test --lib` 无法启动，0xc0000139）：测试经独立 crate `/tmp/storage-verify`（复制 contracts + sqlite.rs，rusqlite 0.32 bundled）实际运行，**12 passed / 0 failed**；主项目 `cargo check --tests` 通过、sqlite.rs 零 warning。
+
+**已知缺口（阶段 B 处理）**：
+1. **审计与业务写不同事务**：契约红线「同库同事务天然原子」此处仅达成「同库」——审计写走事务连接，业务写（`store`/`delete`）走连接池 autocommit，两者不同事务。trait 仅暴露 `append_audit`、无事务内业务写方法，结构性受限。阶段 B 接线时评估：给 `Transaction` 增加事务内业务写，或接受「审计自成一个事务」并同步修订契约。
+2. **FTS 无查询路径**：`rebuild_fts` 重建索引但无 `Storage` 查询方法触达 FTS，后续做全文检索时补。
 
 **验收 1、2 达成**（`cargo check` 通过、单测真实运行通过）；验收 3、4（切换后回归）属阶段 B。
 

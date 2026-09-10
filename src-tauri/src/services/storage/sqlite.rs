@@ -4,8 +4,8 @@
 //!
 //! 沿用 sky 成熟部分：
 //! - 按域分库 `stores/<domain>.db`（不是一个大库，域间隔离）
-//! - `domain_audit` 表内嵌各域 DB（同库同事务天然原子）
-//! - WAL 模式（每域连接自持）
+//! - `domain_audit` 表内嵌各域 DB（同库；审计写走事务连接）
+//! - WAL 模式 + `synchronous NORMAL` + busy_timeout（对齐 dialog_index 惯例）
 //! - FTS5 外部内容表，可丢弃可重建（绝不做增量索引）
 //!
 //! 补全 sky 骨架缺失（生产级）：
@@ -16,6 +16,16 @@
 //!   此处用真实 `BEGIN IMMEDIATE`：事务持有独立连接（惰性按域开启），
 //!   `append_audit` 写入该连接，`commit` 落库 / `rollback` 全回滚（含审计），
 //!   Drop 未收尾则自动 ROLLBACK 防悬挂。
+//!
+//! # 已知缺口（阶段 B 处理）
+//!
+//! - **审计与业务写不同事务**：契约红线「同库同事务天然原子」此处仅达成
+//!   「同库」——审计写走事务连接，业务写（`store`/`delete`）走连接池 autocommit，
+//!   两者不同事务。trait 仅暴露 `append_audit`、无事务内业务写方法，结构性受限。
+//!   阶段 B 接线统一仓库时评估：给 `Transaction` 增加事务内业务写，或接受「审计
+//!   自成一个事务」的语义并同步修订契约。
+//! - **FTS 无查询路径**：`rebuild_fts` 重建索引但无 `Storage` 查询方法触达 FTS，
+//!   后续做全文检索时补。
 
 use crate::contracts::{AuditEntry, Id, Item, Query, Storage, Transaction};
 use rusqlite::params;
@@ -65,14 +75,21 @@ impl SqliteStorage {
         self.root_path.join("stores").join(format!("{}.db", domain))
     }
 
-    /// 打开一个域的连接（建目录 + 设 WAL + 建表）。
+    /// 打开一个域的连接（建目录 + 设 WAL/synchronous/busy_timeout + 建表）。
     /// 连接池与事务连接都走这里，保证 schema 一致。
+    ///
+    /// busy_timeout 设为 5s：事务连接持 `BEGIN IMMEDIATE` 写锁期间，
+    /// 连接池对同域写入会等待而非立即 `SQLITE_BUSY`（rusqlite 默认 0）。
     fn open_domain_conn(&self, domain: &str) -> Result<Connection, String> {
         let db_path = self.get_domain_db_path(domain);
         let conn = Connection::open(&db_path)
             .map_err(|e| format!("打开 {} 数据库失败: {}", domain, e))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| format!("设置 WAL 失败: {}", e))?;
+        conn.pragma_update(None, "synchronous", "NORMAL")
+            .map_err(|e| format!("设置 synchronous=NORMAL 失败: {}", e))?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))
+            .map_err(|e| format!("设置 busy_timeout 失败: {}", e))?;
         conn.execute_batch(SCHEMA_SQL)
             .map_err(|e| format!("建表失败: {}", e))?;
         Ok(conn)
@@ -173,6 +190,15 @@ impl SqliteStorage {
             .map_err(|e| format!("重建 FTS 索引失败: {}", e))?;
             Ok(())
         })
+    }
+
+    /// 审计 source 落库用变体名，不存 token 明文（`Remote { token }` 脱敏）
+    fn source_kind(source: &crate::contracts::Source) -> &'static str {
+        match source {
+            crate::contracts::Source::Bootstrap => "Bootstrap",
+            crate::contracts::Source::Remote { .. } => "Remote",
+            crate::contracts::Source::Plugin { .. } => "Plugin",
+        }
     }
 }
 
@@ -285,9 +311,12 @@ impl Storage for SqliteStorage {
 
 /// SQLite 事务（借用生命周期，对齐契约 `Box<dyn Transaction + '_>`）
 ///
-/// 关键：事务连接不与连接池共享——`append_audit` 在独立连接上执行
-/// `BEGIN IMMEDIATE` → 写入 `domain_audit`，与连接池业务写的隔离由 WAL
-/// 保证一致性。commit/rollback 控制该连接上所有审计的同事务原子性。
+/// 事务连接不与连接池共享：`append_audit` 在独立连接上执行
+/// `BEGIN IMMEDIATE` → 写入 `domain_audit`。commit/rollback 控制该连接上
+/// 所有审计的同事务原子性。与连接池业务写的隔离由 WAL 快照隔离提供
+/// （事务连接开启期间的并发写仍可落库，见测试 audit_rollback_reverts_after_writes）。
+/// 注意：业务写（`store`/`delete`）走连接池 autocommit，**不在本事务内**——
+/// 契约红线「审计与业务写同库同事务」此处仅达成「同库」，缺口见模块头部。
 pub struct SqliteTransaction<'a> {
     storage: &'a SqliteStorage,
     /// 已开启事务的域连接（惰性创建）
@@ -337,6 +366,7 @@ impl Transaction for SqliteTransaction<'_> {
     }
 
     fn append_audit(&mut self, domain: &str, entry: &AuditEntry) -> Result<(), String> {
+        let source_kind = SqliteStorage::source_kind(&entry.source);
         let conn = self.tx_conn(domain)?;
         conn.execute(
             "INSERT INTO domain_audit (timestamp_ms, capability, source, action, prev_hash)
@@ -344,7 +374,7 @@ impl Transaction for SqliteTransaction<'_> {
             params![
                 entry.timestamp_ms as i64,
                 entry.capability.0,
-                serde_json::to_string(&entry.source).unwrap_or_default(),
+                source_kind,
                 entry.action,
                 entry.prev_hash,
             ],
@@ -633,6 +663,30 @@ mod tests {
             .unwrap();
         assert!(storage.rebuild_fts("fts_domain").is_ok());
         assert!(storage.rebuild_fts("fts_domain").is_ok());
+    }
+
+    #[test]
+    fn audit_source_kind_not_token() {
+        let (_tmp, storage) = setup_storage();
+        let mut txn = storage.begin().unwrap();
+        let entry = AuditEntry {
+            timestamp_ms: 1000,
+            capability: CapabilityId("cap.echo".into()),
+            source: Source::Remote { token: "SECRET_TOKEN".into() },
+            action: "store".into(),
+            prev_hash: "0".repeat(64),
+        };
+        txn.append_audit("audit_src", &entry).unwrap();
+        txn.commit().unwrap();
+
+        let stored: String = storage
+            .with_conn("audit_src", |conn| {
+                conn.query_row("SELECT source FROM domain_audit", [], |r| r.get(0))
+                    .map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert_eq!(stored, "Remote", "审计 source 应存变体名，不存 token");
+        assert!(!stored.contains("SECRET_TOKEN"));
     }
 
     #[test]
