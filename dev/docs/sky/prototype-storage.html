@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris 存储重构 · 交互原型</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #21262d; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-2: #bc8cff;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --cyan: #39c5cf;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; padding-bottom: 40px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+  header { border-bottom: 1px solid var(--border); padding: 22px 0 18px; margin-bottom: 24px; }
+  header .badge { display: inline-block; font-size: 11px; letter-spacing: .08em; color: var(--accent); border: 1px solid var(--accent); border-radius: 20px; padding: 2px 10px; margin-bottom: 10px; text-transform: uppercase; }
+  h1 { font-size: 26px; font-weight: 650; }
+  header .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  header .sub code { color: var(--cyan); background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 24px; font-weight: 650; margin-top: 4px; font-family: var(--mono); }
+  .stat .value.good { color: var(--green); } .stat .value.warn { color: var(--amber); } .stat .value.bad { color: var(--red); }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 10px; background: var(--panel-2); color: var(--accent-2); border-radius: 10px; padding: 2px 8px; font-weight: 400; }
+  .card .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  /* 按域分库 */
+  .domains { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .domain-card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color .15s; }
+  .domain-card:hover { border-color: var(--accent); }
+  .domain-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .domain-card .dname { font-family: var(--mono); font-size: 13px; font-weight: 600; }
+  .domain-card .dpath { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-top: 3px; word-break: break-all; }
+  .domain-card .dtag { display: inline-block; font-size: 10px; margin-top: 6px; border-radius: 8px; padding: 1px 7px; }
+  .tag-blue { background: rgba(88,166,255,.12); color: var(--accent); }
+  .tag-purple { background: rgba(188,140,255,.12); color: var(--accent-2); }
+  .tag-green { background: rgba(63,185,80,.12); color: var(--green); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .sql { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; color: var(--cyan); overflow-x: auto; white-space: pre; }
+
+  /* 控件 */
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: #79c0ff; }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: rgba(248,81,73,.12); }
+  .btn.green { border-color: var(--green); color: var(--green); }
+  .btn.green:hover { background: rgba(63,185,80,.12); }
+  input[type=text] { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: var(--mono); font-size: 12px; width: 220px; }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: inherit; font-size: 12px; }
+  label.lbl { color: var(--muted); font-size: 12px; }
+
+  .log { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 12px; min-height: 100px; max-height: 240px; overflow-y: auto; }
+  .log .line { padding: 2px 0; }
+  .log .ok { color: var(--green); } .log .err { color: var(--red); } .log .info { color: var(--muted); } .log .sql { color: var(--cyan); }
+  .log .accent { color: var(--accent-2); }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compare .col { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .compare .col h3 { font-size: 13px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .compare .col.json h3 { color: var(--amber); }
+  .compare .col.sql h3 { color: var(--green); }
+  .compare ul { list-style: none; }
+  .compare li { font-size: 12px; color: var(--muted); padding: 5px 0; border-bottom: 1px dashed var(--border); display: flex; align-items: center; gap: 8px; }
+  .compare li .ok-mark { color: var(--green); }
+  .compare li .no-mark { color: var(--red); }
+  .compare li .partial-mark { color: var(--amber); }
+
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="badge">Polaris 重构 · 第二步</span>
+  <h1>存储实现 · 交互原型</h1>
+  <div class="sub">借 sky <code>Storage</code> 骨架 · 不照抄未完成实现 · 命令层零改动</div>
+</header>
+
+<!-- 概览指标 -->
+<div class="stats">
+  <div class="stat"><div class="label">目标存储</div><div class="value good">Sqlite</div></div>
+  <div class="stat"><div class="label">替换仓库</div><div class="value">3</div></div>
+  <div class="stat"><div class="label">命令层改动</div><div class="value good">0</div></div>
+  <div class="stat"><div class="label">数据迁移</div><div class="value warn">无</div></div>
+  <div class="stat"><div class="label">域 (domain)</div><div class="value">按需</div></div>
+</div>
+
+<!-- 区块 1：按域分库 -->
+<div class="card">
+  <h2>① 按域分库 <span class="tag">每个 domain 一个 .db</span></h2>
+  <div class="desc">不是一个大库。每个域独立 <code>stores/&lt;domain&gt;.db</code>，域内两张表：<code>items</code>（业务）+ <code>domain_audit</code>（审计，内嵌同库 → 天然同事务）。点击查看表结构。</div>
+  <div class="domains" id="domains"></div>
+  <div class="sql" id="ddl"></div>
+</div>
+
+<!-- 区块 2：Filter 查询 -->
+<div class="card">
+  <h2>② Filter 查询 <span class="tag">补全 sky 的 query 全扫描</span></h2>
+  <div class="desc">sky 的 <code>query()</code> 只全扫描 + limit，忽略 filter。Polaris 要补全：把 <code>q.filter</code> 解析成真实 WHERE。选一个域，输入 filter 看生成的 SQL。</div>
+  <div class="row">
+    <label class="lbl">域</label>
+    <select id="qDomain">
+      <option value="todo">todo</option>
+      <option value="requirement">requirement</option>
+      <option value="scheduler">scheduler</option>
+    </select>
+    <label class="lbl">filter (JSON)</label>
+    <input type="text" id="qFilter" value='{"status":"open"}' style="width:280px">
+    <button class="btn primary" onclick="runQuery()">生成 SQL</button>
+  </div>
+  <div class="sql" id="querySql">-- 生成后展示 WHERE 子句</div>
+  <div class="log" id="queryLog" style="margin-top:12px"></div>
+</div>
+
+<!-- 区块 3：事务与审计 -->
+<div class="card">
+  <h2>③ 事务与审计 <span class="tag">补全 sky 的事务空操作</span></h2>
+  <div class="desc">sky 的 <code>begin()</code> 是空操作（commit/rollback 不真生效）。Polaris 要真实事务：<code>BEGIN IMMEDIATE</code>，审计在事务内写入，rollback 则审计也不落库。</div>
+  <div class="row">
+    <label class="lbl">域</label>
+    <select id="txDomain">
+      <option value="todo">todo</option>
+      <option value="requirement">requirement</option>
+    </select>
+    <button class="btn primary" onclick="txBegin()">BEGIN</button>
+    <button class="btn" onclick="txWrite()">写一条 + 审计</button>
+    <button class="btn green" onclick="txCommit()">COMMIT</button>
+    <button class="btn danger" onclick="txRollback()">ROLLBACK</button>
+    <button class="btn" onclick="txReset()">重置演示</button>
+  </div>
+  <div class="log" id="txLog"></div>
+</div>
+
+<!-- 区块 4：仓库替换对比 -->
+<div class="card">
+  <h2>④ 仓库替换 <span class="tag">命令层零改动</span></h2>
+  <div class="desc">三个 unified 仓库（todo/requirement/scheduler）内部从 JSON 文件切到 <code>SqliteStorage</code>，公开 API（<code>new(config_dir, workspace)</code> + list/get/create/update/delete）<strong>不变</strong> → 命令层无感知。</div>
+  <div class="compare">
+    <div class="col json">
+      <h3>🔶 现状（JSON 文件）</h3>
+      <ul id="jsonList"></ul>
+    </div>
+    <div class="col sql">
+      <h3>🟢 目标（SqliteStorage）</h3>
+      <ul id="sqlList"></ul>
+    </div>
+  </div>
+</div>
+
+<footer>Polaris 重构 · dev/docs/sky/prototype-storage.html · 交互原型（纯前端，不接后端）</footer>
+
+</div>
+
+<script>
+/* ============================================================================
+ * ① 按域分库
+ * ============================================================================ */
+const domains = [
+  { name: 'todo',        path: 'stores/todo.db',        tag: '替换目标', cls: 'tag-blue',   tables: ['items (id TEXT PK, data TEXT)', 'domain_audit (timestamp_ms, capability, source, action, prev_hash)'] },
+  { name: 'requirement', path: 'stores/requirement.db', tag: '替换目标', cls: 'tag-blue',   tables: ['items (id TEXT PK, data TEXT)', 'domain_audit (… 同构)'] },
+  { name: 'scheduler',   path: 'stores/scheduler.db',   tag: '替换目标', cls: 'tag-blue',   tables: ['items (id TEXT PK, data TEXT)', 'domain_audit (… 同构)'] },
+  { name: 'dialogs',     path: 'dialogs/index.db',      tag: '已有索引', cls: 'tag-green',  tables: ['sessions', 'messages', 'sessions_fts (FTS5 trigram)'] },
+  { name: 'config',      path: 'config.json',           tag: '沿用',    cls: 'tag-purple', tables: ['— 单一真源 JSON，不替换'] },
+];
+
+const DDL_TEMPLATE = (d) => `-- ${d.name} · ${d.path}\n` + d.tables.map(t =>
+  t === 'items (id TEXT PK, data TEXT)'
+    ? `CREATE TABLE IF NOT EXISTS items (\n  id   TEXT PRIMARY KEY,\n  data TEXT NOT NULL\n);`
+    : t === 'domain_audit (timestamp_ms, capability, source, action, prev_hash)'
+      ? `CREATE TABLE IF NOT EXISTS domain_audit (\n  id INTEGER PRIMARY KEY AUTOINCREMENT,\n  timestamp_ms INTEGER NOT NULL,\n  capability   TEXT NOT NULL,\n  source       TEXT NOT NULL,\n  action       TEXT NOT NULL,\n  prev_hash    TEXT NOT NULL  -- tamper-evident 链\n);`
+      : `-- ${t}`
+).join('\n\n') + `\n\n-- journal_mode=WAL (每域连接)`;
+
+let activeDomain = 0;
+function renderDomains() {
+  const box = document.getElementById('domains');
+  box.innerHTML = domains.map((d, i) => `
+    <div class="domain-card ${i===activeDomain?'active':''}" onclick="selectDomain(${i})">
+      <div class="dname">${d.name}</div>
+      <div class="dpath">${d.path}</div>
+      <span class="dtag ${d.cls}">${d.tag}</span>
+    </div>`).join('');
+  renderDDL();
+}
+function selectDomain(i) { activeDomain = i; renderDomains(); }
+function renderDDL() {
+  const d = domains[activeDomain];
+  document.getElementById('ddl').textContent = DDL_TEMPLATE(d);
+}
+renderDomains();
+
+/* ============================================================================
+ * ② Filter 查询
+ * ============================================================================ */
+const FILTER_MAP = {
+  'todo':        { fields: { status: 'status TEXT', workspace: 'workspace_path TEXT', priority: 'priority TEXT' } },
+  'requirement': { fields: { status: 'status TEXT', workspace: 'workspace_path TEXT' } },
+  'scheduler':   { fields: { enabled: 'enabled INTEGER', engineId: 'engine_id TEXT' } },
+};
+
+function sqlWhere(filter, fields) {
+  if (!filter || Object.keys(filter).length === 0) return '-- filter 为空 → 全扫描 (SELECT id,data FROM items)';
+  const cols = Object.keys(filter);
+  const wheres = cols.map(k => {
+    if (!(k in fields)) return `-- ⚠️ 字段 "${k}" 不在 schema（${Object.keys(fields).join('/')}）`;
+    const v = filter[k];
+    return typeof v === 'string'
+      ? `${k} = '${v}'`
+      : `${k} = ${JSON.stringify(v)}`;
+  });
+  return `SELECT id, data FROM items\nWHERE ${wheres.join('\n  AND ')}`;
+}
+
+function runQuery() {
+  const dom = document.getElementById('qDomain').value;
+  const raw = document.getElementById('qFilter').value;
+  const log = document.getElementById('queryLog');
+  let filter;
+  try { filter = JSON.parse(raw || '{}'); }
+  catch { log.innerHTML = '<div class="line err">❌ filter 不是合法 JSON</div>'; return; }
+
+  const fields = FILTER_MAP[dom]?.fields || {};
+  const sql = sqlWhere(filter, fields);
+  document.getElementById('querySql').textContent = sql;
+  log.innerHTML = `
+    <div class="line info">› 域: <span class="accent">${dom}</span> · filter: <span class="accent">${raw}</span></div>
+    <div class="line sql">${sql.replace(/</g,'&lt;')}</div>
+    <div class="line ok">✓ 已解析为 WHERE 子句（sky 只做全扫描，此处补全）</div>`;
+}
+
+/* ============================================================================
+ * ③ 事务与审计
+ * ============================================================================ */
+let txState = { active: false, dom: 'todo', written: false, audited: false };
+
+function txAppend(html) {
+  const log = document.getElementById('txLog');
+  log.innerHTML += `<div class="line ${html.cls||'info'}">${html.text}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+function txReset() {
+  txState = { active: false, dom: 'todo', written: false, audited: false };
+  document.getElementById('txLog').innerHTML = '<div class="line info">演示重置。流程：BEGIN → 写 + 审计 → COMMIT（审计落库）或 ROLLBACK（审计回滚）</div>';
+}
+txReset();
+
+function txBegin() {
+  if (txState.active) { txAppend({ cls:'err', text:'⚠️ 事务已在进行，需先 COMMIT 或 ROLLBACK' }); return; }
+  txState.active = true; txState.dom = document.getElementById('txDomain').value;
+  txState.written = false; txState.audited = false;
+  txAppend({ cls:'accent', text:`▶ BEGIN IMMEDIATE  (域: ${txState.dom})` });
+}
+function txWrite() {
+  if (!txState.active) { txAppend({ cls:'err', text:'⚠️ 未 BEGIN，先点 BEGIN' }); return; }
+  if (txState.written) { txAppend({ cls:'info', text:'· 已写过一条（可再写）' }); }
+  txState.written = true;
+  txAppend({ cls:'sql', text:`· INSERT INTO items (id,data) VALUES ('t-${Date.now()%100000}','{...}')` });
+  txAppend({ cls:'sql', text:'· INSERT INTO domain_audit (…, action=&#39;create&#39;)  — 同事务内' });
+  txState.audited = true;
+}
+function txCommit() {
+  if (!txState.active) { txAppend({ cls:'err', text:'⚠️ 无进行中事务' }); return; }
+  txAppend({ cls:'ok', text:'✔ COMMIT → 业务行 + 审计行都落库（同事务原子）' });
+  txState.active = false;
+}
+function txRollback() {
+  if (!txState.active) { txAppend({ cls:'err', text:'⚠️ 无进行中事务' }); return; }
+  txAppend({ cls:'err', text:'✖ ROLLBACK → 业务行 + 审计行都回滚（审计不残留）' });
+  txState.active = false;
+}
+
+/* ============================================================================
+ * ④ 仓库替换对比
+ * ============================================================================ */
+document.getElementById('jsonList').innerHTML = [
+  '无并发保护（全量读入→改→写回）',
+  '无索引，检索全扫描',
+  '无审计（改了不知道）',
+  '手动 JSON 解析，易坏',
+].map(x => `<li><span class="no-mark">✗</span> ${x}</li>`).join('');
+
+document.getElementById('sqlList').innerHTML = [
+  '每域一 .db，WAL 并发安全',
+  'Filter 解析成 WHERE（补全）',
+  'domain_audit 内嵌同库，同事务',
+  'serde 序列化，类型安全',
+  '公开 API 不变 → 命令层零改动',
+].map(x => `<li><span class="ok-mark">✓</span> ${x}</li>`).join('');
+</script>
+</body>
+</html>

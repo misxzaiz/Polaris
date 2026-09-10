@@ -8,6 +8,8 @@
 | 文档 | 内容 |
 |---|---|
 | [step1-contracts.md](step1-contracts.md) | **第一步：契约冻结** 完整实施规划（交付清单/边界/影响面/验收） |
+| [step2-storage.md](step2-storage.md) | **第二步：存储实现** 规划（借 sky 骨架 + 补全生产能力） |
+| [prototype-storage.html](prototype-storage.html) | 第二步可视化交互原型（按域分库 / Filter 查询 / 事务审计 / 仓库替换） |
 
 ## 关联
 
