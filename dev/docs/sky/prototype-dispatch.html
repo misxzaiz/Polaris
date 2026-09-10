@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris 转发重构 · 交互原型</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #21262d; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-2: #bc8cff;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --cyan: #39c5cf;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; padding-bottom: 40px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+  header { border-bottom: 1px solid var(--border); padding: 22px 0 18px; margin-bottom: 24px; }
+  header .badge { display: inline-block; font-size: 11px; letter-spacing: .08em; color: var(--accent); border: 1px solid var(--accent); border-radius: 20px; padding: 2px 10px; margin-bottom: 10px; text-transform: uppercase; }
+  h1 { font-size: 26px; font-weight: 650; }
+  header .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  header .sub code { color: var(--cyan); background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 24px; font-weight: 650; margin-top: 4px; font-family: var(--mono); }
+  .stat .value.good { color: var(--green); } .stat .value.warn { color: var(--amber); } .stat .value.bad { color: var(--red); }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 10px; background: var(--panel-2); color: var(--accent-2); border-radius: 10px; padding: 2px 8px; font-weight: 400; }
+  .card .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  /* 流程管道 */
+  .pipeline { display: flex; flex-direction: column; gap: 0; margin-bottom: 16px; }
+  .pstep { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); position: relative; }
+  .pstep:not(:last-child)::after { content: '↓'; position: absolute; left: 26px; bottom: -14px; color: var(--muted); z-index: 1; }
+  .pstep .idx { width: 26px; height: 26px; border-radius: 50%; background: var(--bg); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; color: var(--accent); flex-shrink: 0; }
+  .pstep.active .idx { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 700; }
+  .pstep .body { flex: 1; }
+  .pstep .title { font-size: 13px; font-weight: 600; }
+  .pstep .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+  .pstep .code { font-family: var(--mono); font-size: 11px; color: var(--cyan); background: var(--bg); border-radius: 4px; padding: 2px 6px; }
+  .pstep .arrow { font-size: 18px; color: var(--accent); }
+
+  /* 能力注册表 */
+  .caps { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .cap { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 12px; cursor: pointer; transition: border-color .15s; }
+  .cap:hover { border-color: var(--accent); }
+  .cap.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .cap .cid { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+  .cap .ctag { display: inline-block; font-size: 10px; border-radius: 8px; padding: 1px 7px; margin-top: 6px; }
+  .cap .cdesc { color: var(--muted); font-family: var(--mono); font-size: 11px; margin-top: 4px; word-break: break-all; }
+  .tag-blue { background: rgba(88,166,255,.12); color: var(--accent); }
+  .tag-green { background: rgba(63,185,80,.12); color: var(--green); }
+  .tag-purple { background: rgba(188,140,255,.12); color: var(--accent-2); }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: #79c0ff; }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: rgba(248,81,73,.12); }
+  select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: inherit; font-size: 12px; }
+  input[type=text] { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: var(--mono); font-size: 12px; width: 280px; }
+  input[type=text]:focus { outline: none; border-color: var(--accent); }
+  label.lbl { color: var(--muted); font-size: 12px; }
+
+  .log { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 12px; min-height: 120px; max-height: 320px; overflow-y: auto; }
+  .log .line { padding: 2px 0; }
+  .log .ok { color: var(--green); } .log .err { color: var(--red); } .log .info { color: var(--muted); } .log .sql { color: var(--cyan); }
+  .log .accent { color: var(--accent-2); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  footer { color: var(--muted); font-size: 12px; text-align: center; margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="badge">Polaris 重构 · 第三步</span>
+  <h1>转发 dispatch · 交互原型</h1>
+  <div class="sub">复用已有 <code>EventBroadcaster</code> · 补统一 dispatch 骨干 · 命令层零改动</div>
+</header>
+
+<!-- 概览指标 -->
+<div class="stats">
+  <div class="stat"><div class="label">目标骨架</div><div class="value good">RouterBus</div></div>
+  <div class="stat"><div class="label">现有命令</div><div class="value">382</div></div>
+  <div class="stat"><div class="label">命令层改动</div><div class="value good">0</div></div>
+  <div class="stat"><div class="label">事件广播</div><div class="value warn">复用</div></div>
+  <div class="stat"><div class="label">Source</div><div class="value">无 local</div></div>
+</div>
+
+<!-- 区块 1：dispatch 全链路 -->
+<div class="card">
+  <h2>① dispatch 全链路 <span class="tag">所有调用统一走一条总线</span></h2>
+  <div class="desc">所有调用（IPC / Web / 插件间）构造 <code>Envelope</code> 走 <code>RouterBus::dispatch</code>。权限 gate 是唯一入口，Source 由传输层注入、调用方不可自填。点击步骤查看说明，或点"运行一次"看全链路。</div>
+  <div class="pipeline" id="pipeline"></div>
+  <div class="row">
+    <button class="btn primary" onclick="runDispatch()">▶ 运行一次 dispatch</button>
+    <button class="btn" onclick="resetPipeline()">重置高亮</button>
+  </div>
+</div>
+
+<!-- 区块 2：能力注册表 + dispatch 测试台 -->
+<div class="card">
+  <h2>② 能力注册表 + dispatch 测试台 <span class="tag">路由键是能力 id，不是插件名</span></h2>
+  <div class="desc">RouterBus 持有 handles 注册表。选一个能力、选来源、填 payload，看权限裁决与 Reply。权限 gate 对 <code>Source::Remote</code> 严格（token 默认开）。</div>
+  <div class="caps" id="caps"></div>
+  <div class="row">
+    <label class="lbl">来源</label>
+    <select id="srcSel">
+      <option value="Bootstrap">Bootstrap（Core 内部）</option>
+      <option value="Remote">Remote（HTTP/WS，带 token）</option>
+      <option value="Plugin" selected>Plugin（插件间调用）</option>
+    </select>
+    <label class="lbl">payload</label>
+    <input type="text" id="payload" value='{"msg":"hello"}' style="width:220px">
+    <button class="btn primary" onclick="dispatchOne()">dispatch</button>
+    <button class="btn" onclick="clearLog()">清空</button>
+  </div>
+  <div class="log" id="testLog"></div>
+</div>
+
+<!-- 区块 3：事件流 -->
+<div class="card">
+  <h2>③ 事件流（复用 EventBroadcaster）<span class="tag">不照抄 sky，它抄的是我们</span></h2>
+  <div class="desc">dispatch 全程广播 <code>dispatch.start</code> → <code>dispatch.end</code>（或 <code>dispatch.deny</code>）。事件经现有 <code>EventBroadcaster</code>（2000 条/8MB 双上限 + gap 检测）注入 <code>seq</code> 后推送到 WS。这里展示订阅 <code>Filter</code> 只收到匹配事件。</div>
+  <div class="row">
+    <label class="lbl">Filter kind</label>
+    <select id="filterKind">
+      <option value="">（全部）</option>
+      <option value="dispatch.start">dispatch.start</option>
+      <option value="dispatch.end">dispatch.end</option>
+      <option value="dispatch.deny">dispatch.deny</option>
+    </select>
+    <button class="btn primary" onclick="runDispatch()">▶ 再跑一次（看过滤）</button>
+  </div>
+  <div class="log" id="eventLog"></div>
+</div>
+
+<!-- 区块 4：现状 vs 目标 -->
+<div class="card">
+  <h2>④ 现状 vs 目标 <span class="tag">一块块替换</span></h2>
+  <div class="desc">本步只是让 <code>RouterBus</code> 骨架先存在并单测验证，382 个 command 不动。第四步才一块块把命令迁到 dispatch。</div>
+  <table>
+    <tr><th>维度</th><th>现状（分散）</th><th>目标（统一）</th></tr>
+    <tr><td>调用入口</td><td>382 个 command + IPC bridge + executor</td><td>一条总线 <code>dispatch(Envelope)</code></td></tr>
+    <tr><td>权限 gate</td><td>分散（plugin_config.rs 一处）</td><td><code>dispatch()</code> 唯一入口统一裁决</td></tr>
+    <tr><td>Source 标注</td><td>无（调用方无法证明来源）</td><td>传输层注入，无 local 变体</td></tr>
+    <tr><td>审计</td><td>无（改了不知道）</td><td>dispatch 落 AuditSink tamper-evident 链</td></tr>
+    <tr><td>事件广播</td><td>生产级（2000 条/8MB）</td><td><strong>复用</strong>，加薄适配层</td></tr>
+  </table>
+</div>
+
+<footer>Polaris 重构 · dev/docs/sky/prototype-dispatch.html · 交互原型（纯前端，不接后端）</footer>
+
+</div>
+
+<script>
+/* ============================================================================
+ * ① dispatch 全链路
+ * ============================================================================ */
+const STEPS = [
+  { title: '构造 Envelope', sub: '调用方（IPC/WS/插件）打包请求', code: '{ id, source, target, payload, trace }', arrow: '→' },
+  { title: '广播 dispatch.start', sub: '全链路可观测，trace 贯穿', code: 'broadcast(dispatch.start)', arrow: '→' },
+  { title: '权限 gate', sub: 'dispatch 是唯一入口，所有调用统一过 gate', code: 'permission.check(req)', arrow: '→' },
+  { title: '找句柄', sub: '按能力 id 匹配，路由键不是插件名', code: 'handles[target]', arrow: '→' },
+  { title: 'invoke', sub: '普通能力同步调用；流式能力走 invoke_stream → 逐 token 广播', code: 'cap.invoke(params, ctx)', arrow: '→' },
+  { title: '广播 dispatch.end', sub: '含 status ok/error；权限拒绝广播 dispatch.deny', code: 'broadcast(dispatch.end)', arrow: '→' },
+  { title: '返回 Reply', sub: 'msg_id / result / trace 回给调用方', code: 'Reply { result }', arrow: '' },
+];
+
+function renderPipeline() {
+  document.getElementById('pipeline').innerHTML = STEPS.map((s, i) => `
+    <div class="pstep" id="ps${i}">
+      <div class="idx">${i + 1}</div>
+      <div class="body">
+        <div class="title">${s.title}</div>
+        <div class="sub">${s.sub} · <span class="code">${s.code}</span></div>
+      </div>
+      ${s.arrow ? `<div class="arrow">${s.arrow}</div>` : ''}
+    </div>`).join('');
+}
+renderPipeline();
+
+let pipeIdx = -1;
+function resetPipeline() {
+  pipeIdx = -1;
+  document.querySelectorAll('.pstep').forEach(el => el.classList.remove('active'));
+}
+function stepThrough() {
+  if (pipeIdx >= 0) document.getElementById(`ps${pipeIdx}`).classList.remove('active');
+  pipeIdx++;
+  if (pipeIdx >= STEPS.length) { pipeIdx = -1; return; }
+  document.getElementById(`ps${pipeIdx}`).classList.add('active');
+  setTimeout(stepThrough, 450);
+}
+function runDispatch() {
+  resetPipeline();
+  setTimeout(stepThrough, 200);
+  appendEvent('▶ dispatch 全链路开始');
+}
+
+/* ============================================================================
+ * ② 能力注册表 + dispatch 测试台
+ * ============================================================================ */
+const CAPS = [
+  { id: 'cap.echo',    tag: 'demo',       cls: 'tag-green',  desc: '原样返回 payload（阶段 C demo 能力）' },
+  { id: 'cap.todo.list', tag: 'todo 仓库', cls: 'tag-blue',  desc: 'list_todos 命令（第四步迁入）' },
+  { id: 'cap.scheduler.run', tag: 'scheduler', cls: 'tag-purple', desc: 'scheduler_run_task 命令（第四步迁入）' },
+];
+
+let activeCap = 0;
+function renderCaps() {
+  document.getElementById('caps').innerHTML = CAPS.map((c, i) => `
+    <div class="cap ${i===activeCap?'active':''}" onclick="selectCap(${i})">
+      <div class="cid">${c.id}</div>
+      <span class="ctag ${c.cls}">${c.tag}</span>
+      <div class="cdesc">${c.desc}</div>
+    </div>`).join('');
+}
+function selectCap(i) { activeCap = i; renderCaps(); }
+renderCaps();
+
+function appendTest(html, cls = 'info') {
+  const log = document.getElementById('testLog');
+  log.innerHTML += `<div class="line ${cls}">${html}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+function dispatchOne() {
+  const cap = CAPS[activeCap];
+  const src = document.getElementById('srcSel').value;
+  const payload = document.getElementById('payload').value || 'null';
+  const srcTxt = src === 'Plugin' ? 'Plugin{caller: cap.ai}' : src === 'Remote' ? 'Remote{token: tok-***}' : 'Bootstrap';
+
+  appendTest(`<span class="accent">›</span> Envelope → target: <span class="accent">${cap.id}</span> · source: <span class="accent">${srcTxt}</span> · payload: ${payload.replace(/</g,'&lt;')}`, 'info');
+
+  // 权限 gate
+  if (src === 'Remote') {
+    appendTest('⛔ permission.check → <span class="err">Deny</span>（Remote 默认拒绝动态请求）', 'err');
+    appendTest('· audit.append(dispatch.deny) → tamper-evident 链', 'info');
+    appendTest('⏹ Reply { result: <span class="err">Err("需用户审批")</span> }', 'err');
+  } else {
+    appendTest('✓ permission.check → <span class="ok">Allow</span>', 'ok');
+    appendTest('· dispatch.start 已广播 · handles 匹配 <span class="accent">' + cap.id + '</span>', 'info');
+    appendTest('· invoke → <span class="ok">Ok</span>', 'ok');
+    appendTest('· dispatch.end(status=ok) 已广播 · audit.append(dispatch.ok)', 'info');
+    appendTest('✔ Reply { result: <span class="ok">' + payload.replace(/</g,'&lt;') + '</span> }', 'ok');
+  }
+}
+
+function clearLog() {
+  document.getElementById('testLog').innerHTML = '';
+  appendEvent('（日志已清空）', 'info');
+}
+
+/* ============================================================================
+ * ③ 事件流
+ * ============================================================================ */
+let evtSeq = 0;
+let eventBuf = [];
+function pushEvent(kind, trace) {
+  const e = { seq: ++evtSeq, kind, trace };
+  eventBuf.push(e);
+  if (eventBuf.length > 5) eventBuf.shift();
+  return e;
+}
+function appendEvent(msg, cls = 'info') {
+  const log = document.getElementById('eventLog');
+  log.innerHTML += `<div class="line ${cls}">${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+function emitAll() {
+  pushEvent('dispatch.start', 't-1');
+  pushEvent('dispatch.end', 't-1');
+  pushEvent('chat-event', 't-2');
+  pushEvent('dispatch.start', 't-3');
+  pushEvent('dispatch.end', 't-3');
+  const fk = document.getElementById('filterKind').value;
+  const filtered = eventBuf.filter(e => !fk || e.kind === fk);
+  appendEvent(`<span class="accent">›</span> Filter{kind: ${fk || '（全部）'}} 收到 ${filtered.length} 条：`);
+  filtered.forEach(e => appendEvent(`&nbsp;&nbsp;<span class="sql">seq=${e.seq}</span> <span class="accent">${e.kind}</span> · trace=${e.trace}`, 'info'));
+}
+// 每次跑 dispatch 都联动事件流
+const origRun = runDispatch;
+runDispatch = function() { origRun(); setTimeout(emitAll, 2000); };
+</script>
+</body>
+</html>

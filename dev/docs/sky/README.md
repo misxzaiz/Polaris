@@ -10,6 +10,8 @@
 | [step1-contracts.md](step1-contracts.md) | **第一步：契约冻结** 完整实施规划（交付清单/边界/影响面/验收） |
 | [step2-storage.md](step2-storage.md) | **第二步：存储实现** 规划（借 sky 骨架 + 补全生产能力） |
 | [prototype-storage.html](prototype-storage.html) | 第二步可视化交互原型（按域分库 / Filter 查询 / 事务审计 / 仓库替换） |
+| [step3-dispatch.md](step3-dispatch.md) | **第三步：转发 dispatch** 规划（复用已有 EventBroadcaster + 补统一 dispatch 骨干） |
+| [prototype-dispatch.html](prototype-dispatch.html) | 第三步可视化交互原型（dispatch 全链路 / 能力注册表 / 权限 gate / 事件过滤） |
 
 ## 关联
 
