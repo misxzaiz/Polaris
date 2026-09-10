@@ -263,7 +263,7 @@ Port is configurable via `polaris.conf` or environment variable `POLARIS_WEB_POR
 
 ```rust
 fn static_files_or_proxy() -> impl IntoResponse {
-    // Development: proxy to vite dev server at localhost:1420
+    // Development: proxy to vite dev server at localhost:9827
     // Production: ServeDir("dist") with SPA fallback — all non-/api, non-asset paths
     // serve index.html for client-side routing
     ServeDir::new("../dist")

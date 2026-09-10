@@ -5,7 +5,7 @@
   "identifier": "com.polaris.app",
   "build": {
     "beforeDevCommand": "pnpm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:9827",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

@@ -75,14 +75,26 @@ export default defineConfig(async () => ({
   clearScreen: false,
   // 2. tauri expects a fixed port, fail if that port is not available
   server: {
-    port: 1420,
+    port: 9827,
     strictPort: true,
-    host: host || false,
+    host: host || true,
+    // Dev-only: 把 /api 与 /api/ws 代理到后端 Web server。
+    // 开发时浏览器打开 9827（vite dev server），页面里的 `/api/*` 请求经此转发到
+    // 后端（tauri 内置 web server，`pnpm tauri:dev:web` 用 POLARIS_WEB_PORT 固定 9829），
+    // WebSocket 一并升级代理。桌面 Tauri 端走 IPC 不经此；生产部署由 polaris-web
+    // 前后端同源托管（同 9829），也不走 vite。
+    proxy: {
+      '/api': {
+        target: `http://localhost:${process.env.POLARIS_WEB_PORT || '9829'}`,
+        changeOrigin: true,
+        ws: true,
+      },
+    },
     hmr: host
       ? {
           protocol: "ws",
           host,
-          port: 1421,
+          port: 9827,
         }
       : undefined,
     watch: {

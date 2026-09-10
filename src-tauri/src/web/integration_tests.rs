@@ -623,7 +623,7 @@ async fn cors_options_ok() {
     let req = Request::builder()
         .method(Method::OPTIONS)
         .uri("/api/auth/verify")
-        .header("origin", "http://localhost:1420")
+        .header("origin", "http://localhost:9827")
         .header("access-control-request-method", "GET")
         .body(Body::empty())
         .unwrap();

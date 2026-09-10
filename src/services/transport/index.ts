@@ -100,7 +100,7 @@ export const rebuildTransport = rebuildHttpTransport;
 
 // Dev-only: 后端发现文件就绪后重建 HTTP transport。
 // 首次模块初始化时 fetch('/.polaris-dev/server.json') 可能尚未返回，
-// getServerUrl() 会回退到页面 origin(1420)；发现文件到达后需重建以指向真实后端。
+// getServerUrl() 会回退到页面 origin(9827)；发现文件到达后需重建以指向真实后端。
 // 仅 dev + VITE_FORCE_HTTP=1 时该事件会被 auth.ts 派发，线上不受影响。
 if (typeof window !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_FORCE_HTTP === '1') {
   window.addEventListener('polaris:dev-discovery-ready', () => {
