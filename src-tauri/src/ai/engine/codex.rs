@@ -1182,9 +1182,9 @@ HKEY_CURRENT_USER\Environment
 
         let config_args = vec![
             "-c".to_string(),
-            "mcp_servers.polaris-todo.command=\"todo\"".to_string(),
+            "mcp_servers.polaris-requirements.command=\"requirements\"".to_string(),
             "-c".to_string(),
-            "mcp_servers.polaris-todo.args=[\"config\",\"workspace\"]".to_string(),
+            "mcp_servers.polaris-requirements.args=[\"config\",\"workspace\"]".to_string(),
         ];
 
         let cmd = engine
@@ -1210,10 +1210,10 @@ HKEY_CURRENT_USER\Environment
 
         assert!(first_config_index < session_index);
         assert!(session_index < message_index);
-        assert!(args.contains(&"mcp_servers.polaris-todo.command=\"todo\"".to_string()));
-        assert!(
-            args.contains(&"mcp_servers.polaris-todo.args=[\"config\",\"workspace\"]".to_string())
-        );
+        assert!(args.contains(&"mcp_servers.polaris-requirements.command=\"requirements\"".to_string()));
+        assert!(args.contains(
+            &"mcp_servers.polaris-requirements.args=[\"config\",\"workspace\"]".to_string()
+        ));
     }
 
     #[test]

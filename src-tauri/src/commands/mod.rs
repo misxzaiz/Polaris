@@ -49,8 +49,6 @@ pub mod scheduler;
 pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;
-pub mod diagnostics;
-pub mod todo;
 pub mod requirement;
 pub mod prompt_snippet;
 pub mod agnes;

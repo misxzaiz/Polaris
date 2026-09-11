@@ -218,8 +218,8 @@ mod tests {
     #[test]
     fn parse_tool_name_extracts_server_and_tool() {
         assert_eq!(
-            McpClientPool::parse_tool_name("mcp__polaris-todo__create_todo"),
-            Some(("polaris-todo".to_string(), "create_todo".to_string()))
+            McpClientPool::parse_tool_name("mcp__polaris-requirements__create_requirement"),
+            Some(("polaris-requirements".to_string(), "create_requirement".to_string()))
         );
         assert_eq!(
             McpClientPool::parse_tool_name("mcp__bb-browser__site_google_search"),

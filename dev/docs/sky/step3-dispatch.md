@@ -75,18 +75,44 @@
 ### ✅ 第四步闭环替换第一块（P4）：cap.todo —— 真实业务域搬上 dispatch
 
 - `services/router/todo_capability.rs` — `cap.todo` 真实业务能力：经 `ctx.storage()`
-  读写 SqliteStorage（domain=`todo`，数据落 `<DataRoot>/stores/todo.db`），**存取格式与
-  `UnifiedTodoRepository` 字节一致**（命令层能读出 cap.todo 写的数据，反之亦然）。动作协议：
+  读写 SqliteStorage（domain=`todo`，数据落 `<DataRoot>/stores/todo.db`），动作协议：
   list / get / create / update / delete / start / complete / breakdown。
 - `state.rs` — `create_app_state` 注册 `register_handle(Box::new(TodoCapability))`。
-- **闭环语义**：命令层"list_todos/create_todo/..."与 cap.todo 双轨并存（旧通道照常），
-  cap.todo 复用 TodoItem/TodoCreateParams/TodoUpdateParams/TodoStatus 模型 + RFC3339 毫秒
-  时间戳（与 `UnifiedTodoRepository::now_iso` 一致），业务逻辑零重写。
+- `services/simpleTodoService.ts` — 全部方法改走 `router_dispatch("cap.todo", ...)`，
+  前端面板 + AI 工具（todoTools.ts）统一经此通道。
+- `services/router/todo_capability.rs` 11 个单元测试覆盖 workspace 过滤 / limit /
+  sanitize / completed_at 语义 / 全字段 update / delete 返回 item / breakdown 分组 /
+  状态流转 / 动作错误。
 
 **验证**：独立 crate `/tmp/todo-verify` 实际运行 **55 passed / 0 failed**（47 既有 + 8 cap.todo
 新增）+ 端到端 main（dispatch→cap.todo→SqliteStorage 落库 / create→get→list→update→start
 →complete→breakdown→delete / 未注册 Err / cap.todo 已注册）全链路真实跑通。
 `cargo check --lib` / `--tests` / `--no-default-features --bin polaris-web` 全绿零回归。
+
+### ✅ 第四步延续：摘旧通道（彻底移除 todo 旧命令层 / MCP / 工厂）
+
+用户决策：**不做兼容保留，彻底移除**。cap.todo 成为 todo 存储的**唯一入口**。
+
+- **删除文件**：`commands/todo.rs`、`commands/diagnostics.rs`、`services/mcp_diagnostics_service.rs`、
+  `services/unified_todo_repository.rs`、`services/todo_mcp_server.rs`。
+- **lib.rs** — 移除 7 个 `list_todos/create_todo/...` 命令注册 + `get_todo_mcp_diagnostics`
+  注册；顺带修复 `use commands::prompt_snippet` 缺 `#[cfg(feature = "tauri-app")]` 门控
+  （web-only 编译既有 bug，一并修复）。
+- **ipc.rs** — 移除 7 个 todo 分支 + 整个 Todo section（`get_todo_repo`/`dispatch_*_todo` 等）。
+- **polaris_mcp.rs** — 移除 `todo` 子命令分支（MCP 二进制从 11 个 server 变 10 个）。
+- **mcp_config_service.rs** — `WorkspaceMcpConfigService::new` 移除 `todo_executable_path`
+  首参（改为 requirements-only，纯测试入口）；删 `capability_to_builtin_servers` 的
+  `"todo"` 分支；删 todo 相关常量；8 个测试调用点全部改 requirements fixture。
+- **前端 manifest.ts** — todo 插件删除 `contributes.mcpServers`（`polaris-todo` / 
+  `polaris_todo_mcp` 已无对应二进制）；mcp.test.ts / pluginStore.test.ts 相关断言改 requirements。
+- **注释清理** — computer/requirements MCP server、simple_ai MCP 客户端/类型注释中
+  引用 `todo_mcp_server` 的改为 requirements_mcp_server。
+
+**验证**：`cargo check --lib` / `--tests` / `--no-default-features --bin polaris-web` 全绿；
+前端 `vitest run` plugin-system + pluginStore **41 passed**；`tsc --noEmit` todo 相关 0 error；
+`grep` 全库确认 `TODO_MCP_SERVER_NAME` / `list_todos` / `create_todo` / `unified_todo` /
+`todo_mcp` 等旧通道标识**零残留**（保留的仅 todo_capability.rs 顶部历史说明 + AI 工具名
+`create_todo`/`list_todos` 等，走 cap.todo）。
 
 ---
 

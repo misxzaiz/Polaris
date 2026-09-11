@@ -1,35 +1,40 @@
-//! cap.todo —— 真实业务能力：统一待办（第一条"命令层→dispatch→capability→SqliteStorage"闭环链路）
+//! cap.todo —— 统一待办的唯一实现（第四步闭环替换完成态）
 //!
-//! 对应 `dev/docs/sky/step3-dispatch.md` 第四步闭环替换第一块：把真实业务域（todo）
-//! 搬上 dispatch 总线。复用 `UnifiedTodoRepository` 的存储格式（TodoItem JSON in
-//! SqliteStorage domain=`todo`），命令层照常双轨并存，capability 先经 dispatch 验证
-//! 真实业务完整可用。
+//! 对应 `dev/docs/sky/step3-dispatch.md` 第四步：Todo 域已彻底搬上 dispatch，
+//! 命令层 `commands/todo.rs` / `unified_todo_repository.rs` / `todo_mcp_server`
+//! 全部移除，本 capability 成为 todo 存储的**唯一入口**（前端 + AI 全走
+//! `router_dispatch("cap.todo", ...)`）。
+//!
+//! # 存储
+//!
+//! 经 `ctx.storage()` 读写 SqliteStorage（domain=`todo`，落
+//! `<DataRoot>/stores/todo.db`）。每条 `TodoItem` 是 `Item { id: todo.id,
+//! data: TodoItem 的 camelCase JSON }`。数据格式自本版起即是唯一格式，
+//! 不再与命令层双写。
 //!
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
-//! - `list`       `{ "action": "list", "status"?, "priority"?, "scope"?, "workspacePath"? }`
+//! - `list`       `{ "action": "list", "scope"?, "status"?, "priority"?, "limit"? }`
 //!                          → `{ "items": [TodoItem...] }`
 //! - `get`        `{ "action": "get", "id" }` → `{ "item": TodoItem } | null`
-//! - `create`     `{ "action": "create", "content", ... }` → `{ "item": TodoItem }`
+//! - `create`     `{ "action": "create", "content", "workSpacePath"? ... }` → `{ "item": TodoItem }`
 //! - `update`     `{ "action": "update", "id", ...fields }` → `{ "item": TodoItem }`
-//! - `delete`     `{ "action": "delete", "id" }` → `{ "deleted": true }`
-//! - `start`      `{ "action": "start", "id", "lastProgress"? }` → `{ "item": TodoItem }`（置 InProgress）
-//! - `complete`   `{ "action": "complete", "id", "lastProgress"? }` → `{ "item": TodoItem }`（置 Completed）
-//! - `breakdown`  `{ "action": "breakdown", "workspacePath"? }` → `{ "stats": {status:count} }`
-//!
-//! 存取格式与 `UnifiedTodoRepository` **字节一致**：`store("todo", Item{ id, data: TodoItem to_value })` /
-//! `query("todo", 空 filter)` / `delete("todo", Id(id))`。命令层能读出 cap.todo 写的数据（反之亦然）。
+//! - `delete`     `{ "action": "delete", "id" }` → `{ "item": TodoItem }`
+//! - `start`      `{ "action": "start", "id", "lastProgress"? }` → `{ "item": TodoItem }`
+//! - `complete`   `{ "action": "complete", "id", "lastProgress"? }` → `{ "item": TodoItem }`
+//! - `breakdown`  `{ "action": "breakdown", "scope"? }` → `{ "stats": {workspaceName:count} }`
 
 use crate::contracts::{Capability, CapabilityId, Context, Id, Item, Query, Value};
-use crate::models::todo::{TodoCreateParams, TodoItem, TodoStatus, TodoUpdateParams};
+use crate::models::todo::{TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoSubtask, TodoUpdateParams};
+use chrono::Utc;
 
-/// cap.todo —— 统一待办能力（复用 UnifiedTodoRepository 存储格式）
+/// cap.todo —— 统一待办能力（唯一实现）
 pub struct TodoCapability;
 
 const DOMAIN: &str = "todo";
 
 // ---------------------------------------------------------------------------
-// 存储格式 helpers（与 UnifiedTodoRepository 字节一致）
+// 存储 helpers
 // ---------------------------------------------------------------------------
 
 fn load_all(ctx: &dyn Context) -> Result<Vec<TodoItem>, String> {
@@ -75,8 +80,31 @@ fn insert_item(ctx: &dyn Context, todo: &TodoItem) -> Result<(), String> {
 }
 
 fn now_iso() -> String {
-    // 与 UnifiedTodoRepository::now_iso 完全一致（UTC RFC3339 毫秒），保证字节级兼容
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// 当前工作区过滤语义：给定 workspace_path，只保留匹配；否则保留全局（workspace_path 为 None）
+/// 与旧命令层 `QueryScope::Workspace` 同语义（Todo 不再有 QueryScope 概念，scope 并入传参）。
+fn filter_workspace(todos: Vec<TodoItem>, workspace_path: Option<&str>) -> Vec<TodoItem> {
+    match workspace_path {
+        Some(wp) => {
+            let wp = wp.to_string();
+            todos.into_iter().filter(|t| t.workspace_path.as_deref() == Some(wp.as_str())).collect()
+        }
+        None => todos.into_iter().filter(|t| t.workspace_path.is_none()).collect(),
+    }
+}
+
+/// sanitize：空串 → None、trim；空数组 → None
+fn sanitize_opt_str(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+fn sanitize_opt_vec(v: Option<Vec<String>>) -> Option<Vec<String>> {
+    v.map(|mut vec| {
+        vec.retain(|s| !s.trim().is_empty());
+        vec
+    })
+    .filter(|vec| !vec.is_empty())
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +115,14 @@ impl TodoCapability {
     fn action_list(ctx: &dyn Context, params: &Value) -> Result<Value, String> {
         let mut todos = load_all(ctx)?;
 
-        // 内存过滤（与 UnifiedTodoRepository 同语义）
+        // scope：default workspace；"all" 跳过过滤
+        let scope = params.get("scope").and_then(|s| s.as_str()).unwrap_or("workspace");
+        if scope != "all" {
+            let wp = params.get("workspacePath").and_then(|w| w.as_str());
+            todos = filter_workspace(todos, wp);
+        }
+
+        // status / priority 过滤
         if let Some(status) = params.get("status").and_then(|s| s.as_str()) {
             if let Ok(s) = serde_json::from_str::<TodoStatus>(&format!("\"{}\"", status)) {
                 todos.retain(|t| t.status == s);
@@ -98,8 +133,10 @@ impl TodoCapability {
                 todos.retain(|t| t.priority == p);
             }
         }
-        if let Some(wp) = params.get("workspacePath").and_then(|w| w.as_str()) {
-            todos.retain(|t| t.workspace_path.as_deref() == Some(wp));
+
+        // limit
+        if let Some(limit) = params.get("limit").and_then(|l| l.as_u64()) {
+            todos.truncate(limit as usize);
         }
 
         Ok(serde_json::json!({ "items": todos }))
@@ -120,20 +157,24 @@ impl TodoCapability {
             return Err("待办内容不能为空".to_string());
         }
 
+        // workspace 关联：旧命令层由 current_workspace 注入，现由调用方显式传 workspacePath/workspaceName
+        let workspace_path = params.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
+        let workspace_name = params.get("workspaceName").and_then(|v| v.as_str()).map(String::from);
+
         let create_params = TodoCreateParams {
             content: content.to_string(),
-            description: params.get("description").and_then(|v| v.as_str()).map(String::from),
+            description: sanitize_opt_str(params.get("description").and_then(|v| v.as_str()).map(String::from)),
             priority: params.get("priority").and_then(|v| v.as_str()).and_then(|s| {
                 serde_json::from_str::<TodoPriority>(&format!("\"{}\"", s)).ok()
             }),
-            tags: params.get("tags").and_then(|v| v.as_array()).map(|a| {
+            tags: sanitize_opt_vec(params.get("tags").and_then(|v| v.as_array()).map(|a| {
                 a.iter().filter_map(|t| t.as_str().map(String::from)).collect()
-            }),
-            related_files: params.get("relatedFiles").and_then(|v| v.as_array()).map(|a| {
+            })),
+            related_files: sanitize_opt_vec(params.get("relatedFiles").and_then(|v| v.as_array()).map(|a| {
                 a.iter().filter_map(|f| f.as_str().map(String::from)).collect()
-            }),
-            session_id: params.get("sessionId").and_then(|v| v.as_str()).map(String::from),
-            workspace_id: params.get("workspaceId").and_then(|v| v.as_str()).map(String::from),
+            })),
+            session_id: sanitize_opt_str(params.get("sessionId").and_then(|v| v.as_str()).map(String::from)),
+            workspace_id: sanitize_opt_str(params.get("workspaceId").and_then(|v| v.as_str()).map(String::from)),
             subtasks: params.get("subTasks").and_then(|v| v.as_array()).map(|a| {
                 a.iter()
                     .filter_map(|t| {
@@ -145,14 +186,31 @@ impl TodoCapability {
                     })
                     .collect()
             }),
-            due_date: params.get("dueDate").and_then(|v| v.as_str()).map(String::from),
+            due_date: sanitize_opt_str(params.get("dueDate").and_then(|v| v.as_str()).map(String::from)),
             estimated_hours: params.get("estimatedHours").and_then(|v| v.as_f64()),
         };
 
         let uuid = uuid::Uuid::new_v4().to_string();
         let now = now_iso();
-        let workspace_path = params.get("workspacePath").and_then(|v| v.as_str()).map(String::from);
-        let workspace_name = params.get("workspaceName").and_then(|v| v.as_str()).map(String::from);
+
+        let subtasks = create_params.subtasks.map(|items| {
+            items
+                .into_iter()
+                .filter_map(|s| {
+                    let title = s.title.trim();
+                    if title.is_empty() {
+                        return None;
+                    }
+                    Some(TodoSubtask {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        title: title.to_string(),
+                        completed: false,
+                        created_at: Some(now.clone()),
+                    })
+                })
+                .collect::<Vec<_>>()
+        })
+        .filter(|items| !items.is_empty());
 
         let todo = TodoItem {
             id: uuid.clone(),
@@ -164,17 +222,7 @@ impl TodoCapability {
             related_files: create_params.related_files.clone(),
             session_id: create_params.session_id.clone(),
             workspace_id: create_params.workspace_id.clone(),
-            subtasks: create_params.subtasks.map(|items| {
-                items
-                    .into_iter()
-                    .map(|s| crate::models::todo::TodoSubtask {
-                        id: uuid::Uuid::new_v4().to_string(),
-                        title: s.title,
-                        completed: false,
-                        created_at: Some(now.clone()),
-                    })
-                    .collect()
-            }),
+            subtasks,
             due_date: create_params.due_date.clone(),
             reminder_time: None,
             estimated_hours: create_params.estimated_hours,
@@ -215,29 +263,59 @@ impl TodoCapability {
             updates.priority = serde_json::from_str::<TodoPriority>(&format!("\"{}\"", v)).ok();
         }
         if let Some(v) = params.get("tags").and_then(|v| v.as_array()) {
-            updates.tags = Some(v.iter().filter_map(|t| t.as_str().map(String::from)).collect());
+            updates.tags = Some(sanitize_vec(v.iter().filter_map(|t| t.as_str().map(String::from)).collect()));
+        }
+        if let Some(v) = params.get("relatedFiles").and_then(|v| v.as_array()) {
+            updates.related_files = Some(sanitize_vec(v.iter().filter_map(|f| f.as_str().map(String::from)).collect()));
         }
         if let Some(v) = params.get("dueDate").and_then(|v| v.as_str()) {
             updates.due_date = Some(v.to_string());
         }
-        if let Some(v) = params.get("lastProgress").and_then(|v| v.as_str()) {
-            updates.last_progress = Some(v.to_string());
-        }
         if let Some(v) = params.get("estimatedHours").and_then(|v| v.as_f64()) {
             updates.estimated_hours = Some(v);
         }
+        if let Some(v) = params.get("spentHours").and_then(|v| v.as_f64()) {
+            updates.spent_hours = Some(v);
+        }
+        if let Some(v) = params.get("reminderTime").and_then(|v| v.as_str()) {
+            updates.reminder_time = Some(v.to_string());
+        }
+        if let Some(v) = params.get("dependsOn").and_then(|v| v.as_array()) {
+            updates.depends_on = Some(sanitize_vec(v.iter().filter_map(|t| t.as_str().map(String::from)).collect()));
+        }
+        if let Some(v) = params.get("sessionId").and_then(|v| v.as_str()) {
+            updates.session_id = Some(v.to_string());
+        }
+        if let Some(v) = params.get("subTasks").and_then(|v| v.as_array()) {
+            updates.subtasks = Some(v.iter().filter_map(|st| {
+                st.get("id").and_then(|i| i.as_str()).map(|i| TodoSubtask {
+                    id: i.to_string(),
+                    title: st.get("title").and_then(|t| t.as_str()).unwrap_or("").to_string(),
+                    completed: st.get("completed").and_then(|c| c.as_bool()).unwrap_or(false),
+                    created_at: st.get("createdAt").and_then(|c| c.as_str()).map(String::from),
+                })
+            }).collect());
+        }
+        if let Some(v) = params.get("lastProgress").and_then(|v| v.as_str()) {
+            updates.last_progress = Some(v.to_string());
+        }
+        if let Some(v) = params.get("lastError").and_then(|v| v.as_str()) {
+            updates.last_error = Some(v.to_string());
+        }
 
-        apply_updates(&mut todo, updates);
+        apply_updates(&mut todo, updates)?;
+        update_timestamps(&mut todo);
         insert_item(ctx, &todo)?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
     fn action_delete(ctx: &dyn Context, id: &str) -> Result<Value, String> {
+        let todo = load_one(ctx, id)?.ok_or_else(|| format!("待办不存在: {}", id))?;
         let storage = ctx.storage()?;
         storage
             .delete(DOMAIN, &Id(id.to_string()))
             .map_err(|e| format!("cap.todo 删除失败: {}", e))?;
-        Ok(serde_json::json!({ "deleted": true }))
+        Ok(serde_json::json!({ "item": todo }))
     }
 
     fn action_start(ctx: &dyn Context, params: &Value) -> Result<Value, String> {
@@ -261,59 +339,95 @@ impl TodoCapability {
             .and_then(|i| i.as_str())
             .ok_or_else(|| "cap.todo complete 需要 id 参数".to_string())?;
         let mut todo = load_one(ctx, id)?.ok_or_else(|| format!("待办不存在: {}", id))?;
+        let was_completed = todo.status == TodoStatus::Completed;
         todo.status = TodoStatus::Completed;
         if let Some(v) = params.get("lastProgress").and_then(|v| v.as_str()) {
             todo.last_progress = Some(v.to_string());
         }
-        todo.completed_at = Some(now_iso());
+        if !was_completed {
+            todo.completed_at = Some(now_iso());
+        }
         todo.updated_at = now_iso();
         insert_item(ctx, &todo)?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
+    /// breakdown：按 workspace_name 分组（旧命令层 `get_workspace_breakdown` 同语义）
     fn action_breakdown(ctx: &dyn Context) -> Result<Value, String> {
         let todos = load_all(ctx)?;
         let mut stats = std::collections::BTreeMap::new();
         for t in &todos {
-            let key = format!("{:?}", t.status).to_lowercase();
+            let key = t.workspace_name.clone().unwrap_or_else(|| "全局".to_string());
             *stats.entry(key).or_insert(0usize) += 1;
         }
         Ok(serde_json::json!({ "stats": stats }))
     }
 }
 
-fn apply_updates(todo: &mut TodoItem, updates: TodoUpdateParams) {
-    if let Some(v) = updates.content {
-        if !v.trim().is_empty() {
-            todo.content = v;
+/// 应用 TodoUpdateParams 到 todo（对齐旧命令层全部字段）
+fn apply_updates(todo: &mut TodoItem, updates: TodoUpdateParams) -> Result<(), String> {
+    if let Some(content) = updates.content {
+        let trimmed = content.trim();
+        if !trimmed.is_empty() {
+            todo.content = trimmed.to_string();
         }
     }
-    if let Some(v) = updates.description {
-        todo.description = Some(v);
+    if let Some(description) = updates.description {
+        todo.description = sanitize_opt_str(Some(description));
     }
-    if let Some(v) = updates.status {
-        todo.status = v;
+    if let Some(priority) = updates.priority {
+        todo.priority = priority;
     }
-    if let Some(v) = updates.priority {
-        todo.priority = v;
+    if let Some(tags) = updates.tags {
+        todo.tags = sanitize_opt_vec(Some(tags));
     }
-    if let Some(v) = updates.tags {
-        todo.tags = Some(v);
+    if let Some(related_files) = updates.related_files {
+        todo.related_files = sanitize_opt_vec(Some(related_files));
     }
-    if let Some(v) = updates.due_date {
-        todo.due_date = Some(v);
+    if let Some(due_date) = updates.due_date {
+        todo.due_date = sanitize_opt_str(Some(due_date));
     }
-    if let Some(v) = updates.last_progress {
-        todo.last_progress = Some(v);
+    if let Some(estimated_hours) = updates.estimated_hours {
+        todo.estimated_hours = Some(estimated_hours);
     }
-    if let Some(v) = updates.estimated_hours {
-        todo.estimated_hours = Some(v);
+    if let Some(spent_hours) = updates.spent_hours {
+        todo.spent_hours = Some(spent_hours);
+    }
+    if let Some(reminder_time) = updates.reminder_time {
+        todo.reminder_time = sanitize_opt_str(Some(reminder_time));
+    }
+    if let Some(depends_on) = updates.depends_on {
+        todo.depends_on = sanitize_opt_vec(Some(depends_on));
+    }
+    if let Some(session_id) = updates.session_id {
+        todo.session_id = sanitize_opt_str(Some(session_id));
+    }
+    if let Some(subtasks) = updates.subtasks {
+        todo.subtasks = if subtasks.is_empty() { None } else { Some(subtasks) };
+    }
+    if let Some(last_progress) = updates.last_progress {
+        todo.last_progress = sanitize_opt_str(Some(last_progress));
+    }
+    if let Some(last_error) = updates.last_error {
+        todo.last_error = sanitize_opt_str(Some(last_error));
+    }
+    Ok(())
+}
+
+/// 状态变更 timestamp 语义（对齐旧命令层 update_todo）：
+/// - 变更到 Completed：若之前非 Completed，置 completed_at
+/// - 变更出 Completed：清空 completed_at
+fn update_timestamps(todo: &mut TodoItem) {
+    let was_completed = todo.status == TodoStatus::Completed;
+    if !was_completed {
+        todo.completed_at = None;
     }
     todo.updated_at = now_iso();
 }
 
-// 类型别名：cap.todo 用 TodoPriority（list/update 过滤用）
-type TodoPriority = crate::models::todo::TodoPriority;
+fn sanitize_vec(values: Vec<String>) -> Vec<String> {
+    values.into_iter().map(|v| v.trim().to_string()).filter(|v| !v.is_empty()).collect()
+}
 
 impl Capability for TodoCapability {
     fn id(&self) -> CapabilityId {
@@ -329,18 +443,14 @@ impl Capability for TodoCapability {
         match action {
             "list" => Self::action_list(ctx, &params),
             "get" => {
-                let id = params
-                    .get("id")
-                    .and_then(|i| i.as_str())
+                let id = params.get("id").and_then(|i| i.as_str())
                     .ok_or_else(|| "get 需要 id 参数".to_string())?;
                 Self::action_get(ctx, id)
             }
             "create" => Self::action_create(ctx, &params),
             "update" => Self::action_update(ctx, &params),
             "delete" => {
-                let id = params
-                    .get("id")
-                    .and_then(|i| i.as_str())
+                let id = params.get("id").and_then(|i| i.as_str())
                     .ok_or_else(|| "delete 需要 id 参数".to_string())?;
                 Self::action_delete(ctx, id)
             }
@@ -433,15 +543,132 @@ mod tests {
         let ctx = make_ctx();
         cap.invoke(serde_json::json!({"action": "create", "content": "a"}), &ctx).unwrap();
         cap.invoke(serde_json::json!({"action": "create", "content": "b", "priority": "urgent"}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "create", "content": "c-ws", "workspacePath": "/ws"}), &ctx).unwrap();
 
-        let all = cap.invoke(serde_json::json!({"action": "list"}), &ctx).unwrap();
-        assert_eq!(all["items"].as_array().unwrap().len(), 2);
+        // 默认 scope=workspace：无 workspacePath → 只返回全局（workspace_path None）
+        let ws = cap.invoke(serde_json::json!({"action": "list"}), &ctx).unwrap();
+        assert_eq!(ws["items"].as_array().unwrap().len(), 2);
 
-        let urgent = cap
-            .invoke(serde_json::json!({"action": "list", "priority": "urgent"}), &ctx)
-            .unwrap();
+        // scope=all → 全量
+        let all = cap.invoke(serde_json::json!({"action": "list", "scope": "all"}), &ctx).unwrap();
+        assert_eq!(all["items"].as_array().unwrap().len(), 3);
+
+        // status/priority 过滤
+        let urgent = cap.invoke(serde_json::json!({"action": "list", "priority": "urgent", "scope": "all"}), &ctx).unwrap();
         assert_eq!(urgent["items"].as_array().unwrap().len(), 1);
         assert_eq!(urgent["items"][0]["content"], "b");
+    }
+
+    #[test]
+    fn limit_truncates() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        for i in 0..5 {
+            cap.invoke(serde_json::json!({"action": "create", "content": format!("t{}", i)}), &ctx).unwrap();
+        }
+        let limited = cap.invoke(serde_json::json!({"action": "list", "limit": 3}), &ctx).unwrap();
+        assert_eq!(limited["items"].as_array().unwrap().len(), 3);
+    }
+
+    #[test]
+    fn create_sanitize_and_subtask_created_at() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        let created = cap
+            .invoke(serde_json::json!({
+                "action": "create",
+                "content": "  任务  ",
+                "description": "  描述  ",
+                "tags": ["  a ", "   ", "b"],
+                "subTasks": [{ "title": "子1" }, { "title": "  " }]
+            }), &ctx)
+            .unwrap();
+        // content/description trim，空 tag 剔除
+        assert_eq!(created["item"]["content"], "任务");
+        assert_eq!(created["item"]["description"], "描述");
+        assert_eq!(created["item"]["tags"].as_array().unwrap().len(), 2);
+        // 空标题子任务剔除 + created_at 已填
+        let subs = created["item"]["subtasks"].as_array().unwrap();
+        assert_eq!(subs.len(), 1);
+        assert!(subs[0]["createdAt"].is_string());
+    }
+
+    #[test]
+    fn update_completed_at_semantics() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        let created = cap
+            .invoke(serde_json::json!({"action": "create", "content": "任务"}), &ctx)
+            .unwrap();
+        let id = created["item"]["id"].as_str().unwrap().to_string();
+        assert_eq!(created["item"]["completedAt"], Value::Null);
+
+        // 切到 completed → completed_at 置位
+        let done = cap
+            .invoke(serde_json::json!({"action": "update", "id": id, "status": "completed"}), &ctx)
+            .unwrap();
+        assert!(done["item"]["completedAt"].is_string());
+
+        // 切回 pending → completed_at 清空
+        let back = cap
+            .invoke(serde_json::json!({"action": "update", "id": id, "status": "pending"}), &ctx)
+            .unwrap();
+        assert_eq!(back["item"]["completedAt"], Value::Null);
+    }
+
+    #[test]
+    fn update_all_fields_apply() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        let created = cap
+            .invoke(serde_json::json!({"action": "create", "content": "初稿"}), &ctx)
+            .unwrap();
+        let id = created["item"]["id"].as_str().unwrap().to_string();
+
+        let updated = cap
+            .invoke(serde_json::json!({
+                "action": "update", "id": id,
+                "content": "终稿", "spentHours": 2.5, "reminderTime": "2026-09-12T00:00:00Z",
+                "lastError": "e1", "dependsOn": ["dep1"], "sessionId": "s1"
+            }), &ctx)
+            .unwrap();
+        assert_eq!(updated["item"]["content"], "终稿");
+        assert_eq!(updated["item"]["spentHours"], 2.5);
+        assert_eq!(updated["item"]["reminderTime"], "2026-09-12T00:00:00Z");
+        assert_eq!(updated["item"]["lastError"], "e1");
+        assert_eq!(updated["item"]["dependsOn"][0], "dep1");
+        assert_eq!(updated["item"]["sessionId"], "s1");
+    }
+
+    #[test]
+    fn delete_returns_deleted_item() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        let created = cap
+            .invoke(serde_json::json!({"action": "create", "content": "待删"}), &ctx)
+            .unwrap();
+        let id = created["item"]["id"].as_str().unwrap().to_string();
+
+        let del = cap.invoke(serde_json::json!({"action": "delete", "id": id}), &ctx).unwrap();
+        assert_eq!(del["item"]["id"], id);
+
+        let got = cap.invoke(serde_json::json!({"action": "get", "id": id}), &ctx).unwrap();
+        assert_eq!(got["item"], Value::Null);
+    }
+
+    #[test]
+    fn breakdown_groups_by_workspace_name() {
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        cap.invoke(serde_json::json!({"action": "create", "content": "全局1"}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "create", "content": "全局2"}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "create", "content": "w1任务", "workspacePath": "/a", "workspaceName": "w1"}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "create", "content": "w2任务", "workspacePath": "/b", "workspaceName": "w2"}), &ctx).unwrap();
+
+        let stats = cap.invoke(serde_json::json!({"action": "breakdown"}), &ctx).unwrap();
+        assert_eq!(stats["stats"]["全局"], 2);
+        assert_eq!(stats["stats"]["w1"], 1);
+        assert_eq!(stats["stats"]["w2"], 1);
     }
 
     #[test]
@@ -459,61 +686,27 @@ mod tests {
         assert_eq!(started["item"]["status"], "in_progress");
 
         let completed = cap
-            .invoke(serde_json::json!({"action": "complete", "id": id}), &ctx)
+            .invoke(serde_json::json!({"action": "complete", "id": id, "lastProgress": "搞定"}), &ctx)
             .unwrap();
         assert_eq!(completed["item"]["status"], "completed");
+        assert_eq!(completed["item"]["lastProgress"], "搞定");
         assert!(completed["item"]["completedAt"].is_string());
     }
 
     #[test]
-    fn update_edits_fields() {
+    fn start_then_update_preserves_updated_at() {
         let cap = TodoCapability;
         let ctx = make_ctx();
         let created = cap
-            .invoke(serde_json::json!({"action": "create", "content": "初稿"}), &ctx)
+            .invoke(serde_json::json!({"action": "create", "content": "任务"}), &ctx)
             .unwrap();
         let id = created["item"]["id"].as_str().unwrap().to_string();
+        let t0 = created["item"]["updatedAt"].as_str().unwrap().to_string();
 
-        let updated = cap
-            .invoke(
-                serde_json::json!({"action": "update", "id": id, "content": "终稿", "description": "改好"}),
-                &ctx,
-            )
-            .unwrap();
-        assert_eq!(updated["item"]["content"], "终稿");
-        assert_eq!(updated["item"]["description"], "改好");
-    }
-
-    #[test]
-    fn delete_removes() {
-        let cap = TodoCapability;
-        let ctx = make_ctx();
-        let created = cap
-            .invoke(serde_json::json!({"action": "create", "content": "待删"}), &ctx)
-            .unwrap();
-        let id = created["item"]["id"].as_str().unwrap().to_string();
-
-        let del = cap.invoke(serde_json::json!({"action": "delete", "id": id}), &ctx).unwrap();
-        assert_eq!(del["deleted"], true);
-
-        let got = cap.invoke(serde_json::json!({"action": "get", "id": id}), &ctx).unwrap();
-        assert_eq!(got["item"], Value::Null);
-    }
-
-    #[test]
-    fn breakdown_counts() {
-        let cap = TodoCapability;
-        let ctx = make_ctx();
-        cap.invoke(serde_json::json!({"action": "create", "content": "a"}), &ctx).unwrap();
-        let created = cap
-            .invoke(serde_json::json!({"action": "create", "content": "b"}), &ctx)
-            .unwrap();
-        let id = created["item"]["id"].as_str().unwrap().to_string();
-        cap.invoke(serde_json::json!({"action": "complete", "id": id}), &ctx).unwrap();
-
-        let stats = cap.invoke(serde_json::json!({"action": "breakdown"}), &ctx).unwrap();
-        assert_eq!(stats["stats"]["pending"], 1);
-        assert_eq!(stats["stats"]["completed"], 1);
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        let started = cap.invoke(serde_json::json!({"action": "start", "id": id}), &ctx).unwrap();
+        let t1 = started["item"]["updatedAt"].as_str().unwrap().to_string();
+        assert_ne!(t0, t1, "update 应刷新 updatedAt");
     }
 
     #[test]

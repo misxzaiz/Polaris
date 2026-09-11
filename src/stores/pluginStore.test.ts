@@ -51,12 +51,12 @@ describe('pluginStore', () => {
   })
 
   it('can disable one MCP server while keeping the plugin MCP surface enabled', async () => {
-    usePluginStore.getState().setPluginMcpServerEnabled(pluginId, 'polaris-todo', false)
+    usePluginStore.getState().setPluginMcpServerEnabled(pluginId, 'polaris-requirements', false)
     await Promise.resolve()
 
     const states = usePluginStore.getState().pluginStates
     expect(isPluginMcpEnabled(states, pluginId)).toBe(true)
-    expect(isPluginMcpServerEnabled(states, pluginId, 'polaris-todo')).toBe(false)
+    expect(isPluginMcpServerEnabled(states, pluginId, 'polaris-requirements')).toBe(false)
     expect(mockedSavePluginStates).toHaveBeenCalledWith(states)
   })
 

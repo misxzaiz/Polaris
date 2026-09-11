@@ -364,7 +364,7 @@ pub fn create_app_state(
         ));
         let _ = bus.register_handle(Box::new(KvCapability));
         // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
-        // <DataRoot>/stores/todo.db，复用 UnifiedTodoRepository 存储格式字节兼容）
+        // <DataRoot>/stores/todo.db，旧命令层已全部移除，本 capability 是唯一入口）
         let _ = bus.register_handle(Box::new(TodoCapability));
         bus
     };

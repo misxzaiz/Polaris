@@ -139,8 +139,6 @@ use commands::terminal::{
 #[cfg(feature = "tauri-app")]
 use commands::terminal_script::terminal_discover_scripts;
 #[cfg(feature = "tauri-app")]
-use commands::diagnostics::get_todo_mcp_diagnostics;
-#[cfg(feature = "tauri-app")]
 use commands::prompt_snippet::{
     snippet_list, snippet_get, snippet_create, snippet_update, snippet_delete,
 };
@@ -778,7 +776,6 @@ pub fn run() {
             health_check,
             detect_claude,
             // MCP 诊断
-            get_todo_mcp_diagnostics,
             // Prompt Snippet 快捷片段
             snippet_list,
             snippet_get,
@@ -1093,14 +1090,6 @@ pub fn run() {
             terminal_get,
             terminal_discover_scripts,
             terminal_open_in_external,
-            // Todo 相关
-            commands::todo::list_todos,
-            commands::todo::create_todo,
-            commands::todo::update_todo,
-            commands::todo::delete_todo,
-            commands::todo::start_todo,
-            commands::todo::complete_todo,
-            commands::todo::get_todo_workspace_breakdown,
             // Requirement 相关
             commands::requirement::list_requirements,
             commands::requirement::create_requirement,

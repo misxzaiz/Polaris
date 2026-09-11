@@ -1,7 +1,9 @@
 /**
  * 统一待办服务
  *
- * 调用后端 Tauri 命令，支持全局和工作区双模式
+ * 走 RouterBus dispatch（cap.todo 能力），支持全局和工作区双模式。
+ * 命令层 list_todos/create_todo/... 已移除，所有 todo 操作经
+ * `router_dispatch("cap.todo", ...)` 进入统一总线。
  */
 
 import { invoke } from '@/services/transport'
@@ -9,6 +11,17 @@ import type { TodoItem, TodoPriority, TodoStatus } from '@/types'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('SimpleTodoService')
+
+/**
+ * router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应）
+ */
+interface DispatchResponse {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
 
 /**
  * 统一待办服务
@@ -66,16 +79,35 @@ export class SimpleTodoService {
   }
 
   /**
+   * 构造 dispatch 信封并调用 RouterBus（cap.todo）
+   */
+  private async dispatch(action: string, payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const res = await invoke<DispatchResponse>('router_dispatch', {
+      req: {
+        target: 'cap.todo',
+        payload: {
+          action,
+          ...payload,
+        },
+      },
+    })
+
+    if (!res.ok) {
+      throw new Error(res.error || `cap.todo ${action} 失败`)
+    }
+    return res.result || {}
+  }
+
+  /**
    * 从后端加载待办
    */
   private async loadTodos(): Promise<void> {
     try {
-      this.todos = await invoke('list_todos', {
-        params: {
-          scope: this.scope,
-          workspacePath: this.workspacePath,
-        }
+      const result = await this.dispatch('list', {
+        scope: this.scope,
+        workspacePath: this.workspacePath,
       })
+      this.todos = (result.items as TodoItem[]) || []
       this.notifyListeners()
     } catch (error) {
       log.error('加载失败', error instanceof Error ? error : new Error(String(error)))
@@ -120,22 +152,20 @@ export class SimpleTodoService {
     estimatedHours?: number
     subtasks?: { title: string }[]
   }): Promise<TodoItem> {
-    const todo = await invoke<TodoItem>('create_todo', {
-      params: {
-        content: params.content,
-        description: params.description,
-        priority: params.priority,
-        tags: params.tags,
-        relatedFiles: params.relatedFiles,
-        dueDate: params.dueDate,
-        estimatedHours: params.estimatedHours,
-        subtasks: params.subtasks,
-        workspacePath: this.workspacePath,
-      }
+    const result = await this.dispatch('create', {
+      content: params.content,
+      description: params.description,
+      priority: params.priority,
+      tags: params.tags,
+      relatedFiles: params.relatedFiles,
+      dueDate: params.dueDate,
+      estimatedHours: params.estimatedHours,
+      subTasks: params.subtasks,
+      workspacePath: this.workspacePath,
     })
 
     await this.loadTodos()
-    return todo
+    return result.item as TodoItem
   }
 
   /**
@@ -155,12 +185,11 @@ export class SimpleTodoService {
     lastError?: string
     subtasks?: { id: string; title: string; completed: boolean; createdAt?: string }[]
   }): Promise<void> {
-    await invoke('update_todo', {
-      params: {
-        id,
-        ...updates,
-        workspacePath: this.workspacePath,
-      }
+    const { subtasks, ...rest } = updates
+    await this.dispatch('update', {
+      id,
+      ...rest,
+      subTasks: subtasks as { id: string; title: string; completed: boolean; createdAt?: string }[] | undefined,
     })
 
     await this.loadTodos()
@@ -170,13 +199,7 @@ export class SimpleTodoService {
    * 删除待办
    */
   async deleteTodo(id: string): Promise<void> {
-    await invoke('delete_todo', {
-      params: {
-        id,
-        workspacePath: this.workspacePath,
-      }
-    })
-
+    await this.dispatch('delete', { id })
     await this.loadTodos()
   }
 
@@ -184,14 +207,7 @@ export class SimpleTodoService {
    * 开始待办
    */
   async startTodo(id: string, lastProgress?: string): Promise<void> {
-    await invoke('start_todo', {
-      params: {
-        id,
-        lastProgress,
-        workspacePath: this.workspacePath,
-      }
-    })
-
+    await this.dispatch('start', { id, lastProgress })
     await this.loadTodos()
   }
 
@@ -199,14 +215,7 @@ export class SimpleTodoService {
    * 完成待办
    */
   async completeTodo(id: string, lastProgress?: string): Promise<void> {
-    await invoke('complete_todo', {
-      params: {
-        id,
-        lastProgress,
-        workspacePath: this.workspacePath,
-      }
-    })
-
+    await this.dispatch('complete', { id, lastProgress })
     await this.loadTodos()
   }
 
@@ -268,14 +277,11 @@ export class SimpleTodoService {
   }
 
   /**
-   * 获取工作区分布
+   * 获取工作区分布（cap.todo breakdown → {workspaceName: count}）
    */
   async getWorkspaceBreakdown(): Promise<Record<string, number>> {
-    return await invoke('get_todo_workspace_breakdown', {
-      params: {
-        workspacePath: this.workspacePath,
-      }
-    })
+    const result = await this.dispatch('breakdown', {})
+    return (result.stats as Record<string, number>) || {}
   }
 }
 

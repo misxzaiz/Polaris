@@ -720,7 +720,7 @@ mod tests {
         );
     }
 
-    // Document a known spec edge case: see todo_mcp_server.rs for full notes.
+    // Document a known spec edge case: see unified_requirement_repository.rs for storage notes.
     #[test]
     fn explicit_null_id_collapses_to_none_by_serde_default() {
         let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;

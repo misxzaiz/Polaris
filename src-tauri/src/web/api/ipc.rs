@@ -276,15 +276,6 @@ pub async fn handle_ipc_bridge(
             crate::web::api::git_dispatch::dispatch_git_command(cmd, &args).await
         }
 
-        // ── Todo ──────────────────────────────────────────────────────────────
-        "list_todos" => dispatch_list_todos(&state, &args),
-        "create_todo" => dispatch_create_todo(&state, &args),
-        "update_todo" => dispatch_update_todo(&state, &args),
-        "delete_todo" => dispatch_delete_todo(&state, &args),
-        "start_todo" => dispatch_start_todo(&state, &args),
-        "complete_todo" => dispatch_complete_todo(&state, &args),
-        "get_todo_workspace_breakdown" => dispatch_todo_workspace_breakdown(&state, &args),
-
         // ── Requirement ───────────────────────────────────────────────────────
         "list_requirements" => dispatch_list_requirements(&state, &args),
         "create_requirement" => dispatch_create_requirement(&state, &args),
@@ -1478,118 +1469,6 @@ async fn dispatch_read_commands(args: &Value) -> Result<Json<Value>, WebError> {
 async fn dispatch_download_file_binary(args: &Value) -> Result<Json<Value>, WebError> {
     let path = require_string(args, "path")?;
     json_result!(crate::commands::file_explorer::download_file_binary(path).await)
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Todo — uses UnifiedTodoRepository
-// ═══════════════════════════════════════════════════════════════════════════
-
-fn get_todo_repo(state: &AppState, args: &Value) -> Result<crate::services::unified_todo_repository::UnifiedTodoRepository, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let wp = args.get("workspacePath")
-        .or_else(|| args.get("params").and_then(|p| p.get("workspacePath")))
-        .and_then(|v| v.as_str()).filter(|s| !s.trim().is_empty()).map(std::path::PathBuf::from);
-    let repo = crate::services::unified_todo_repository::UnifiedTodoRepository::new(config_dir, wp);
-    repo.register_workspace().ok();
-    Ok(repo)
-}
-
-/// Extract a required string field from args, checking both top-level and nested `params`.
-fn todo_string(args: &Value, key: &str) -> Result<String, WebError> {
-    args.get(key).and_then(|v| v.as_str()).map(String::from)
-        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
-        .ok_or_else(|| WebError::BadRequest(format!("Missing required field: {}", key)))
-}
-
-/// Extract an optional string field from args, checking both top-level and nested `params`.
-fn todo_opt_string(args: &Value, key: &str) -> Option<String> {
-    args.get(key).and_then(|v| v.as_str()).map(String::from)
-        .or_else(|| args.get("params").and_then(|p| p.get(key)).and_then(|v| v.as_str()).map(String::from))
-}
-
-fn dispatch_list_todos(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_todo_repo(state, args)?;
-    let scope = match args.get("scope").and_then(|v| v.as_str()).unwrap_or("workspace") {
-        "all" => crate::models::todo::QueryScope::All, _ => crate::models::todo::QueryScope::Workspace,
-    };
-    let mut todos = repo.list_todos(scope)?;
-    if let Some(s) = args.get("status").and_then(|v| v.as_str()) {
-        if let Ok(st) = serde_json::from_value(serde_json::Value::String(s.to_string())) {
-            todos.retain(|t| t.status == st);
-        }
-    }
-    if let Some(p) = args.get("priority").and_then(|v| v.as_str()) {
-        if let Ok(pr) = serde_json::from_value(serde_json::Value::String(p.to_string())) {
-            todos.retain(|t| t.priority == pr);
-        }
-    }
-    if let Some(l) = args.get("limit").and_then(|v| v.as_u64()) { todos.truncate(l as usize); }
-    Ok(Json(serde_json::to_value(todos).unwrap_or_default()))
-}
-
-fn dispatch_create_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let _repo = get_todo_repo(state, args)?;
-    let params: crate::commands::todo::CreateTodoParams = serde_json::from_value(args.get("params").cloned().unwrap_or(Value::Null))
-        .map_err(|e| WebError::BadRequest(format!("Invalid params: {}", e)))?;
-    let priority = params.priority
-        .and_then(|p| serde_json::from_value(serde_json::Value::String(p)).ok())
-        .unwrap_or_default();
-    let wp = params.workspace_path.clone()
-        .filter(|p| !p.trim().is_empty())
-        .map(std::path::PathBuf::from);
-    let repo = crate::services::unified_todo_repository::UnifiedTodoRepository::new(get_config_dir(state)?, wp);
-    if params.workspace_path.is_some() { repo.register_workspace().ok(); }
-    let cp = crate::models::todo::TodoCreateParams {
-        content: params.content, description: params.description, priority: Some(priority),
-        tags: params.tags, related_files: params.related_files, due_date: params.due_date,
-        estimated_hours: params.estimated_hours,
-        subtasks: params.subtasks.map(|i| i.into_iter().map(|s| crate::models::todo::TodoCreateSubtask { title: s.title }).collect()),
-        ..Default::default()
-    };
-    json_result!(repo.create_todo(cp))
-}
-
-fn dispatch_update_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let repo = get_todo_repo(state, args)?;
-    let params: crate::commands::todo::UpdateTodoParams = serde_json::from_value(args.get("params").cloned().unwrap_or(Value::Null))
-        .map_err(|e| WebError::BadRequest(format!("Invalid params: {}", e)))?;
-    let status = params.status.and_then(|s| serde_json::from_value(serde_json::Value::String(s)).ok());
-    let priority = params.priority.and_then(|p| serde_json::from_value(serde_json::Value::String(p)).ok());
-    let up = crate::models::todo::TodoUpdateParams {
-        content: params.content, description: params.description,
-        status, priority,
-        tags: params.tags, related_files: params.related_files, due_date: params.due_date,
-        estimated_hours: params.estimated_hours, spent_hours: params.spent_hours,
-        last_progress: params.last_progress, last_error: params.last_error,
-        ..Default::default()
-    };
-    json_result!(repo.update_todo(&params.id, up))
-}
-
-fn dispatch_delete_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = todo_string(args, "id")?;
-    json_result!(get_todo_repo(state, args)?.delete_todo(&id))
-}
-fn dispatch_start_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = todo_string(args, "id")?;
-    let p = todo_opt_string(args, "lastProgress");
-    json_result!(get_todo_repo(state, args)?.update_todo(&id, crate::models::todo::TodoUpdateParams {
-        status: Some(crate::models::todo::TodoStatus::InProgress),
-        last_progress: p,
-        ..Default::default()
-    }))
-}
-fn dispatch_complete_todo(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = todo_string(args, "id")?;
-    let p = todo_opt_string(args, "lastProgress");
-    json_result!(get_todo_repo(state, args)?.update_todo(&id, crate::models::todo::TodoUpdateParams {
-        status: Some(crate::models::todo::TodoStatus::Completed),
-        last_progress: p,
-        ..Default::default()
-    }))
-}
-fn dispatch_todo_workspace_breakdown(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    json_result!(get_todo_repo(state, args)?.get_workspace_breakdown())
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

@@ -1,6 +1,6 @@
 /*! MCP 类型定义（Phase 4b）
  *
- * 镜像 Polaris 现有 MCP server（todo_mcp_server.rs 等）的 JSON-RPC 2.0 帧格式。
+ * 镜像 Polaris 现有 MCP server（requirements_mcp_server.rs 等）的 JSON-RPC 2.0 帧格式。
  * 协议版本 2025-06-18（client 请求；握手时读 server 返回的 protocolVersion 降级兼容）。
  */
 

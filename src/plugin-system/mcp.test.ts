@@ -34,14 +34,13 @@ describe('plugin MCP contributions', () => {
 
     // 废弃插件默认不启用
     expect(servers).not.toEqual(expect.arrayContaining([
-      expect.objectContaining({ id: 'polaris-todo' }),
       expect.objectContaining({ id: 'polaris-requirements' }),
     ]))
   })
 
-  it('filters Todo MCP when its plugin MCP surface is disabled', () => {
+  it('filters Requirements MCP when its plugin MCP surface is disabled', () => {
     const pluginStates: PluginStateMap = {
-      'polaris.todo': {
+      'polaris.requirements': {
         enabled: true,
         uiEnabled: true,
         mcpEnabled: false,
@@ -51,21 +50,21 @@ describe('plugin MCP contributions', () => {
     expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-todo',
+          id: 'polaris-requirements',
         }),
       ])
     )
     expect(listPluginMcpServerStatuses(pluginStates)).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        id: 'polaris-todo',
+        id: 'polaris-requirements',
         enabled: false,
       }),
     ]))
   })
 
-  it('filters Todo MCP when the whole plugin is disabled', () => {
+  it('filters Requirements MCP when the whole plugin is disabled', () => {
     const pluginStates: PluginStateMap = {
-      'polaris.todo': {
+      'polaris.requirements': {
         enabled: false,
         uiEnabled: true,
         mcpEnabled: true,
@@ -75,7 +74,7 @@ describe('plugin MCP contributions', () => {
     expect(listEnabledPluginMcpServers(pluginStates)).not.toEqual(
       expect.arrayContaining([
         expect.objectContaining({
-          id: 'polaris-todo',
+          id: 'polaris-requirements',
         }),
       ])
     )
@@ -134,7 +133,6 @@ describe('plugin MCP contributions', () => {
   })
 
   it.each([
-    ['polaris.todo', 'polaris-todo', 'polaris_todo_mcp'],
     ['polaris.requirements', 'polaris-requirements', 'polaris_requirements_mcp'],
     ['polaris.scheduler', 'polaris-scheduler', 'polaris_scheduler_mcp'],
     ['polaris.prd-preview', 'polaris-prd-preview', 'polaris_prd_preview_mcp'],

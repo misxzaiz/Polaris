@@ -1,13 +1,12 @@
 //! Unified MCP Binary Entry Point
 //!
-//! 将 11 个独立的 MCP server 二进制合并为一个，通过子命令调度。
-//! 大幅减少编译目标数（11→1），降低链接时间与磁盘占用。
+//! 将 10 个独立的 MCP server 二进制合并为一个，通过子命令调度。
+//! 大幅减少编译目标数（10→1），降低链接时间与磁盘占用。
 //!
 //! # 用法
 //!
 //! ## 独立 MCP server（直接处理请求）
 //! ```shell
-//! polaris-mcp todo <config_dir> [workspace_path]
 //! polaris-mcp requirements <config_dir> [workspace_path]
 //! polaris-mcp prd-preview <config_dir> [workspace_path]
 //! polaris-mcp agnes <config_dir> [workspace_path]
@@ -33,7 +32,6 @@ use polaris_lib::services::{
     prd_preview_mcp_server::run_prd_preview_mcp_server,
     requirements_mcp_server::run_requirements_mcp_server,
     scheduler_mcp_server::run_scheduler_mcp_server,
-    todo_mcp_server::run_todo_mcp_server,
 };
 use polaris_lib::{AppError, Result};
 
@@ -55,7 +53,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：todo, requirements, prd-preview, agnes, ph, computer, ask, browser, dispatch"
+             可用子命令：requirements, prd-preview, agnes, ph, computer, ask, browser, dispatch"
                 .to_string(),
         )
     })?;
@@ -64,10 +62,6 @@ fn main_impl() -> Result<()> {
 
     match subcommand.as_str() {
         // ── 独立 MCP server（ConfigDirAndWorkspace 模式） ──────────
-        "todo" => {
-            let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "todo")?;
-            run_todo_mcp_server(&config_dir, workspace_path)
-        }
         "requirements" => {
             let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "requirements")?;
             run_requirements_mcp_server(&config_dir, workspace_path)
@@ -115,7 +109,7 @@ fn main_impl() -> Result<()> {
         }
 
         other => Err(AppError::ValidationError(format!(
-            "未知子命令：{other}。可用子命令：todo, requirements, prd-preview, agnes, ph, computer, scheduler, ask, browser, dispatch"
+            "未知子命令：{other}。可用子命令：requirements, prd-preview, agnes, ph, computer, scheduler, ask, browser, dispatch"
         ))),
     }
 }

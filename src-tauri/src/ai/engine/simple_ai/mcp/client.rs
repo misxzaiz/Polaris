@@ -1,7 +1,7 @@
 /*! stdio MCP 客户端（Phase 4b）
  *
  * spawn 子进程，通过 stdin/stdout 交换换行分隔的 JSON-RPC 2.0 消息。
- * 镜像 Polaris 现有 server（`todo_mcp_server.rs` 等）的帧格式：每行一条 JSON。
+ * 镜像 Polaris 现有 server（`requirements_mcp_server.rs` 等）的帧格式：每行一条 JSON。
  *
  * 生命周期：`McpClient::spawn` 完成 initialize 握手 + tools/list 缓存；
  * `call_tool` 发 tools/call；`Drop` 时 kill 子进程。
