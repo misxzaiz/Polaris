@@ -72,6 +72,22 @@
 零回归）；`tsc --noEmit` 我的文件 0 error；`eslint` 面板 0 error 0 warning。
 （既有 BrowserPanel.tsx TS 错误为历史遗留，与本次无关）
 
+### ✅ 第四步闭环替换第一块（P4）：cap.todo —— 真实业务域搬上 dispatch
+
+- `services/router/todo_capability.rs` — `cap.todo` 真实业务能力：经 `ctx.storage()`
+  读写 SqliteStorage（domain=`todo`，数据落 `<DataRoot>/stores/todo.db`），**存取格式与
+  `UnifiedTodoRepository` 字节一致**（命令层能读出 cap.todo 写的数据，反之亦然）。动作协议：
+  list / get / create / update / delete / start / complete / breakdown。
+- `state.rs` — `create_app_state` 注册 `register_handle(Box::new(TodoCapability))`。
+- **闭环语义**：命令层"list_todos/create_todo/..."与 cap.todo 双轨并存（旧通道照常），
+  cap.todo 复用 TodoItem/TodoCreateParams/TodoUpdateParams/TodoStatus 模型 + RFC3339 毫秒
+  时间戳（与 `UnifiedTodoRepository::now_iso` 一致），业务逻辑零重写。
+
+**验证**：独立 crate `/tmp/todo-verify` 实际运行 **55 passed / 0 failed**（47 既有 + 8 cap.todo
+新增）+ 端到端 main（dispatch→cap.todo→SqliteStorage 落库 / create→get→list→update→start
+→complete→breakdown→delete / 未注册 Err / cap.todo 已注册）全链路真实跑通。
+`cargo check --lib` / `--tests` / `--no-default-features --bin polaris-web` 全绿零回归。
+
 ---
 
 ## 0. 承接前两步

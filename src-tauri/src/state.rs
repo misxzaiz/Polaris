@@ -350,7 +350,7 @@ pub fn create_app_state(
     let event_broadcast = crate::web::EventBroadcaster::new(256);
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
-        use crate::services::router::{EventAdapter, KvCapability, RouterBus, StaticPermission};
+        use crate::services::router::{EventAdapter, KvCapability, RouterBus, StaticPermission, TodoCapability};
         use crate::services::storage::SqliteStorage;
 
         let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
@@ -363,6 +363,9 @@ pub fn create_app_state(
             None, // AuditSink 阶段 A 未接线
         ));
         let _ = bus.register_handle(Box::new(KvCapability));
+        // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
+        // <DataRoot>/stores/todo.db，复用 UnifiedTodoRepository 存储格式字节兼容）
+        let _ = bus.register_handle(Box::new(TodoCapability));
         bus
     };
 
