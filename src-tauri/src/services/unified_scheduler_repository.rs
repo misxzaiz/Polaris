@@ -11,8 +11,8 @@ use crate::models::scheduler::{
     CreateTaskParams, CreateTemplateParams, PromptTemplate, ScheduledTask, TaskCategory, TaskMode,
     TaskStatus,
 };
-use crate::services::scheduler::local_file_storage::LocalFileStorage;
 use crate::services::scheduler::storage::{TaskStorage, TaskUpdateParams, WorkspaceInfo};
+use crate::services::scheduler::SqliteTaskStorage;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
@@ -30,7 +30,7 @@ pub struct UnifiedSchedulerRepository {
 }
 
 impl UnifiedSchedulerRepository {
-    /// Create a new unified scheduler repository with local file storage
+    /// Create a new unified scheduler repository with SQLite storage backend
     pub fn new(config_dir: PathBuf, current_workspace: Option<PathBuf>) -> Self {
         let current_workspace_name = current_workspace
             .as_ref()
@@ -38,10 +38,15 @@ impl UnifiedSchedulerRepository {
             .and_then(|n| n.to_str())
             .map(|s| s.to_string());
 
-        let storage_dir = config_dir.join("scheduler");
+        // 裁决2：默认使用契约 `Storage`（SqliteStorage）后端。
+        // config_dir 作为 data_root，在其下建 `stores/scheduler.db`。
+        // 不在此处调 data_root()——MCP 独立进程可能未初始化全局 DataRoot。
+        let storage = SqliteTaskStorage::new(config_dir)
+            .map(|s| Box::new(s) as Box<dyn TaskStorage>)
+            .unwrap_or_else(|e| panic!("SqliteTaskStorage 初始化失败: {}", e));
 
         Self {
-            storage: Box::new(LocalFileStorage::new(storage_dir)),
+            storage,
             current_workspace,
             current_workspace_name,
         }

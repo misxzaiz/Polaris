@@ -9,10 +9,12 @@
 
 pub mod storage;
 pub mod local_file_storage;
+pub mod sqlite_task_storage;
 pub mod protocol_task;
 pub mod protocol_template;
 
 // Re-export main types for convenience
 pub use storage::{TaskStorage, TaskUpdateParams, WorkspaceInfo, StorageBackend};
 pub use local_file_storage::LocalFileStorage;
+pub use sqlite_task_storage::SqliteTaskStorage;
 pub use protocol_template::ProtocolTemplateService;

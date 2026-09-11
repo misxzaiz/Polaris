@@ -139,13 +139,8 @@ pub trait TaskStorage: Send + Sync {
 pub enum StorageBackend {
     /// Local file system storage
     LocalFile,
-    // Future backends can be added here:
-    // /// SQLite database storage
-    // SQLite,
-    // /// PostgreSQL database storage
-    // PostgreSQL,
-    // /// Cloud storage (S3, etc.)
-    // Cloud,
+    /// SQLite database storage（契约 `Storage` 的 SqliteStorage）
+    Sqlite,
 }
 
 #[cfg(test)]

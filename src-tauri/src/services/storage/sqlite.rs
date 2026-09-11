@@ -17,15 +17,15 @@
 //!   `append_audit` 写入该连接，`commit` 落库 / `rollback` 全回滚（含审计），
 //!   Drop 未收尾则自动 ROLLBACK 防悬挂。
 //!
-//! # 已知缺口（阶段 B 处理）
+//! # 已知缺口（阶段 B 后）→ 已解决
 //!
-//! - **审计与业务写不同事务**：契约红线「同库同事务天然原子」此处仅达成
-//!   「同库」——审计写走事务连接，业务写（`store`/`delete`）走连接池 autocommit，
-//!   两者不同事务。trait 仅暴露 `append_audit`、无事务内业务写方法，结构性受限。
-//!   阶段 B 接线统一仓库时评估：给 `Transaction` 增加事务内业务写，或接受「审计
-//!   自成一个事务」的语义并同步修订契约。
+//! - **审计与业务写同库同事务**（裁决1已定）：`Transaction` trait 增加
+//!   `store`/`delete`（事务内业务写），`SqliteTransaction` 在同一事务连接上
+//!   执行业务写 + 审计写，commit 落库 / rollback 全回滚（含审计）——红线
+//!   「同库同事务天然原子」达成。见测试 `txn_business_write_and_audit_commit_together`
+//!   与 `txn_rollback_reverts_business_and_audit_together`。
 //! - **FTS 无查询路径**：`rebuild_fts` 重建索引但无 `Storage` 查询方法触达 FTS，
-//!   后续做全文检索时补。
+//!   后续做全文检索时补（阶段 B 外待办）。
 
 use crate::contracts::{AuditEntry, Id, Item, Query, Storage, Transaction};
 use rusqlite::params;
@@ -382,6 +382,28 @@ impl Transaction for SqliteTransaction<'_> {
         .map_err(|e| format!("审计写入失败: {}", e))?;
         Ok(())
     }
+
+    fn store(&mut self, domain: &str, item: &Item) -> Result<Id, String> {
+        // 复用 tx_conn：在同一事务连接上写 items 表 → 与 append_audit 同事务
+        let conn = self.tx_conn(domain)?;
+        let data = serde_json::to_string(&item.data)
+            .map_err(|e| format!("序列化业务数据失败: {}", e))?;
+        conn.execute(
+            "INSERT INTO items (id, data) VALUES (?1, ?2)
+             ON CONFLICT(id) DO UPDATE SET data = excluded.data",
+            params![item.id.0, data],
+        )
+        .map_err(|e| format!("事务业务写失败: {}", e))?;
+        Ok(item.id.clone())
+    }
+
+    fn delete(&mut self, domain: &str, id: &Id) -> Result<(), String> {
+        // 同一事务连接上的业务删 → 与 append_audit 同事务
+        let conn = self.tx_conn(domain)?;
+        conn.execute("DELETE FROM items WHERE id = ?1", params![id.0])
+            .map_err(|e| format!("事务业务删失败: {}", e))?;
+        Ok(())
+    }
 }
 
 impl Drop for SqliteTransaction<'_> {
@@ -710,5 +732,78 @@ mod tests {
             },
         );
         assert!(r.is_err());
+    }
+
+    // =========================================================================
+    // 裁决1：审计与业务写「同事务」（Transaction::store/delete）
+    // =========================================================================
+
+    /// 业务数据是否存在于 items 表
+    fn item_exists(storage: &SqliteStorage, domain: &str, id: &str) -> bool {
+        storage
+            .with_conn(domain, |conn| {
+                conn.query_row("SELECT COUNT(*) FROM items WHERE id = ?1", params![id], |r| {
+                    r.get::<_, i64>(0)
+                })
+                .map_err(|e| e.to_string())
+            })
+            .unwrap()
+            > 0
+    }
+
+    #[test]
+    fn txn_business_write_and_audit_commit_together() {
+        let (_tmp, storage) = setup_storage();
+        let entry = AuditEntry {
+            timestamp_ms: 2000,
+            capability: CapabilityId("cap.todo.create".into()),
+            source: Source::Bootstrap,
+            action: "store".into(),
+            prev_hash: "0".repeat(64),
+        };
+        let item = Item {
+            id: Id("t1".into()),
+            data: serde_json::json!({"content": "一起提交"}),
+        };
+
+        // 同一事务：业务写 + 审计写，commit 后都落库
+        let mut txn = storage.begin().unwrap();
+        txn.store("txn_domain", &item).unwrap();
+        txn.append_audit("txn_domain", &entry).unwrap();
+        txn.commit().unwrap();
+
+        assert!(item_exists(&storage, "txn_domain", "t1"), "业务写应已落库");
+        let audit: i64 = storage
+            .with_conn("txn_domain", |conn| {
+                conn.query_row("SELECT COUNT(*) FROM domain_audit", [], |r| r.get(0))
+                    .map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert_eq!(audit, 1, "审计应已落库");
+    }
+
+    #[test]
+    fn txn_rollback_reverts_business_and_audit_together() {
+        let (_tmp, storage) = setup_storage();
+        let entry = make_entry();
+        let item = Item {
+            id: Id("t2".into()),
+            data: serde_json::json!({"content": "一起回滚"}),
+        };
+
+        // 同一事务：业务写 + 审计写，rollback 后都消失
+        let mut txn = storage.begin().unwrap();
+        txn.store("txn_rb", &item).unwrap();
+        txn.append_audit("txn_rb", &entry).unwrap();
+        txn.rollback().unwrap();
+
+        assert!(!item_exists(&storage, "txn_rb", "t2"), "业务写应已回滚");
+        let audit: i64 = storage
+            .with_conn("txn_rb", |conn| {
+                conn.query_row("SELECT COUNT(*) FROM domain_audit", [], |r| r.get(0))
+                    .map_err(|e| e.to_string())
+            })
+            .unwrap();
+        assert_eq!(audit, 0, "审计应已回滚（同事务，不留残留）");
     }
 }

@@ -1,30 +1,45 @@
-//! Unified Requirement Repository
+//! Unified Requirement Repository（SqliteStorage 后端）
 //!
-//! Single storage for all requirements in config_dir/requirements/requirements.json.
-//! Workspace filtering via workspacePath field.
+//! 保持公开 API（`new(config_dir, workspace)` + list/get/create/update/delete +
+//! register_workspace + save_prototype/read_prototype + get_workspace_breakdown）不变，
+//! 命令层零改动。
+//!
+//! 存储后端：契约 `Storage::SqliteStorage`（domain=`requirement`）。每个 `RequirementItem`
+//! 是一条 `Item { id: req.id, data: RequirementItem 的 camelCase JSON }`，存于
+//! `<config_dir>/stores/requirement.db` 的 `items` 表（SqliteStorage 以传入 config_dir
+//! 为 data_root，在其下建 stores/）。
+//!
+//! 关键设计（裁决3：blob 落盘 + 存引用路径）：
+//! - requirement 元数据（含 executeConfig 等嵌套）→ SQLite `items` 表。
+//! - 原型 HTML 属于大 blob，不入 SQLite 单表 `data TEXT`，继续落盘到
+//!   `<config_dir>/requirements/prototypes/<id>.html`，SQLite 只存 `prototypePath` 引用。
+//! - `workspaces.json` 注册逻辑保留原实现。
+//! - workspace 过滤保留原内存过滤语义。
 
+use crate::contracts::{Id as ContractId, Item as ContractItem, Query as ContractQuery, Storage};
 use crate::error::{AppError, Result};
 use crate::models::requirement::{
-    QueryScope, RequirementCreateParams, RequirementExecuteConfig, RequirementFileData,
-    RequirementItem, RequirementPriority, RequirementSource, RequirementStatus,
-    RequirementUpdateParams,
+    QueryScope, RequirementCreateParams, RequirementExecuteConfig, RequirementItem,
+    RequirementSource, RequirementStatus, RequirementUpdateParams,
 };
+use crate::services::storage::SqliteStorage;
 use chrono::Utc;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
-const REQUIREMENTS_FILE_NAME: &str = "requirements.json";
-const PROTOTYPES_DIR_NAME: &str = "prototypes";
 const REQUIREMENTS_FILE_VERSION: &str = "1.0.0";
+const PROTOTYPES_DIR_NAME: &str = "prototypes";
 const WORKSPACES_FILE_NAME: &str = "workspaces.json";
 
 /// Unified repository for managing requirements in a single global storage
 pub struct UnifiedRequirementRepository {
-    /// Global storage directory (config_dir/requirements)
+    /// 全局存储目录（config_dir/requirements）——保留字段以维持原型落盘与 workspaces.json 落点
     storage_dir: PathBuf,
-    /// Prototypes directory
+    /// Prototypes directory（blob 落盘目录，不入 SQLite）
     prototypes_dir: PathBuf,
+    /// 契约 Storage 抽象（当前实现 SqliteStorage，domain=requirement）
+    storage: Box<dyn Storage>,
     /// Current workspace path (optional, for filtering)
     current_workspace: Option<PathBuf>,
     /// Current workspace name (for display)
@@ -48,6 +63,13 @@ struct WorkspacesFile {
 
 impl UnifiedRequirementRepository {
     /// Create a new unified requirement repository
+    ///
+    /// # Arguments
+    /// * `config_dir` - 应用配置根（命令层传 app_config_dir / MCP 传外部显式路径）。
+    ///   SqliteStorage 以它为 data_root，在其下建 `stores/requirement.db`；
+    ///   原型 HTML 落盘到 `<config_dir>/requirements/prototypes/`。
+    ///   保持此参数语义不变 → 命令层零改动。
+    /// * `current_workspace` - Current workspace path (optional, for filtering)
     pub fn new(config_dir: PathBuf, current_workspace: Option<PathBuf>) -> Self {
         let current_workspace_name = current_workspace
             .as_ref()
@@ -58,15 +80,23 @@ impl UnifiedRequirementRepository {
         let storage_dir = config_dir.join("requirements");
         let prototypes_dir = storage_dir.join(PROTOTYPES_DIR_NAME);
 
+        // 存储根：尊重调用方传入的 config_dir 作为 data_root（SqliteStorage 内部建 stores/）。
+        // 不在此处调 data_root()——MCP 独立进程可能未初始化全局 DataRoot，会 panic。
+        let storage: Box<dyn Storage> = Box::new(
+            SqliteStorage::new(&config_dir)
+                .expect("SqliteStorage 初始化失败（config_dir 不可用）"),
+        );
+
         Self {
             storage_dir,
             prototypes_dir,
+            storage,
             current_workspace,
             current_workspace_name,
         }
     }
 
-    /// Register current workspace in the workspaces list
+    /// Register current workspace in the workspaces list（保留原实现）
     pub fn register_workspace(&self) -> Result<()> {
         let Some(workspace) = &self.current_workspace else {
             return Ok(());
@@ -94,7 +124,7 @@ impl UnifiedRequirementRepository {
 
     /// List requirements based on scope
     pub fn list_requirements(&self, scope: QueryScope) -> Result<Vec<RequirementItem>> {
-        let all_requirements = self.read_file_data()?.requirements;
+        let all_requirements = self.read_all_requirements()?;
 
         let filtered = match scope {
             QueryScope::Workspace => {
@@ -119,8 +149,15 @@ impl UnifiedRequirementRepository {
 
     /// Get a single requirement by ID
     pub fn get_requirement(&self, id: &str) -> Result<Option<RequirementItem>> {
-        let data = self.read_file_data()?;
-        Ok(data.requirements.into_iter().find(|req| req.id == id))
+        let item = self.storage.load("requirement", &ContractId(id.to_string()));
+        match item {
+            Ok(item) => {
+                let req: RequirementItem = serde_json::from_value(item.data)
+                    .map_err(|e| AppError::ValidationError(format!("反序列化需求失败: {}", e)))?;
+                Ok(Some(req))
+            }
+            Err(_) => Ok(None),
+        }
     }
 
     /// Create a new requirement
@@ -135,8 +172,12 @@ impl UnifiedRequirementRepository {
             return Err(AppError::ValidationError("需求描述不能为空".to_string()));
         }
 
-        let mut data = self.read_file_data()?;
-        if data.requirements.iter().any(|item| item.title.trim() == title) {
+        // 同名标题校验（保留原语义）
+        if self
+            .read_all_requirements()?
+            .iter()
+            .any(|item| item.title.trim() == title)
+        {
             return Err(AppError::ValidationError(format!("已存在同名需求: {}", title)));
         }
 
@@ -182,18 +223,14 @@ impl UnifiedRequirementRepository {
             workspace_name,
         };
 
-        data.requirements.push(item.clone());
-        self.write_file_data(&mut data)?;
+        self.insert_item(&item)?;
         Ok(item)
     }
 
     /// Update a requirement
     pub fn update_requirement(&self, id: &str, updates: RequirementUpdateParams) -> Result<RequirementItem> {
-        let mut data = self.read_file_data()?;
-        let requirement = data
-            .requirements
-            .iter_mut()
-            .find(|item| item.id == id)
+        let mut requirement = self
+            .get_requirement(id)?
             .ok_or_else(|| AppError::ValidationError(format!("需求不存在: {}", id)))?;
 
         if let Some(title) = updates.title.clone() {
@@ -213,7 +250,7 @@ impl UnifiedRequirementRepository {
         if let Some(status) = updates.status.clone() {
             let previous = requirement.status.clone();
             requirement.status = status.clone();
-            apply_status_side_effects(requirement, &previous, &status);
+            apply_status_side_effects(&mut requirement, &previous, &status);
         }
 
         if let Some(priority) = updates.priority {
@@ -261,33 +298,32 @@ impl UnifiedRequirementRepository {
 
         requirement.updated_at = now_millis();
         let result = requirement.clone();
-        self.write_file_data(&mut data)?;
+        self.insert_item(&requirement)?;
         Ok(result)
     }
 
     /// Delete a requirement
     pub fn delete_requirement(&self, id: &str) -> Result<RequirementItem> {
-        let mut data = self.read_file_data()?;
-        let index = data
-            .requirements
-            .iter()
-            .position(|item| item.id == id)
+        let requirement = self
+            .get_requirement(id)?
             .ok_or_else(|| AppError::ValidationError(format!("需求不存在: {}", id)))?;
-        let removed = data.requirements.remove(index);
-        self.write_file_data(&mut data)?;
+
+        self.storage
+            .delete("requirement", &ContractId(id.to_string()))
+            .map_err(|e| AppError::ValidationError(format!("删除失败: {}", e)))?;
 
         // Also delete prototype file if exists
-        if let Some(prototype_path) = &removed.prototype_path {
+        if let Some(prototype_path) = &requirement.prototype_path {
             let full_path = self.storage_dir.join(prototype_path);
             if full_path.exists() {
                 let _ = std::fs::remove_file(&full_path);
             }
         }
 
-        Ok(removed)
+        Ok(requirement)
     }
 
-    /// Save prototype HTML
+    /// Save prototype HTML（blob 落盘，不入 SQLite）
     pub fn save_prototype(&self, id: &str, html: &str) -> Result<String> {
         std::fs::create_dir_all(&self.prototypes_dir)?;
 
@@ -319,7 +355,7 @@ impl UnifiedRequirementRepository {
 
     /// Get workspace breakdown summary
     pub fn get_workspace_breakdown(&self) -> Result<BTreeMap<String, usize>> {
-        let requirements = self.read_file_data()?.requirements;
+        let requirements = self.read_all_requirements()?;
         let mut breakdown = BTreeMap::new();
 
         for req in requirements {
@@ -331,36 +367,38 @@ impl UnifiedRequirementRepository {
     }
 
     // =========================================================================
-    // Private helpers
+    // Private helpers（SqliteStorage 后端）
     // =========================================================================
 
-    fn read_file_data(&self) -> Result<RequirementFileData> {
-        let file_path = self.storage_dir.join(REQUIREMENTS_FILE_NAME);
+    /// 读全部 requirement（domain=requirement 的 items 全表）
+    fn read_all_requirements(&self) -> Result<Vec<RequirementItem>> {
+        let items = self
+            .storage
+            .query("requirement", &ContractQuery { filter: serde_json::json!({}), limit: None })
+            .map_err(|e| AppError::ValidationError(format!("读取需求失败: {}", e)))?;
 
-        if !file_path.exists() {
-            let mut empty = create_empty_requirement_file_data();
-            self.write_file_data(&mut empty)?;
-            return Ok(empty);
+        let mut requirements = Vec::with_capacity(items.len());
+        for item in items {
+            if let Ok(req) = serde_json::from_value::<RequirementItem>(item.data) {
+                requirements.push(req);
+            }
         }
-
-        let content = std::fs::read_to_string(&file_path)?;
-        let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
-
-        Ok(normalize_file_data(raw_json))
+        Ok(requirements)
     }
 
-    fn write_file_data(&self, data: &mut RequirementFileData) -> Result<()> {
-        let file_path = self.storage_dir.join(REQUIREMENTS_FILE_NAME);
-
-        data.version = REQUIREMENTS_FILE_VERSION.to_string();
-        data.updated_at = now_iso();
-
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let content = serde_json::to_string_pretty(data)?;
-        std::fs::write(&file_path, format!("{}\n", content))?;
+    /// 写入 / 更新一个 requirement 项（INSERT OR REPLACE）
+    fn insert_item(&self, requirement: &RequirementItem) -> Result<()> {
+        let data = serde_json::to_value(requirement)
+            .map_err(|e| AppError::ValidationError(format!("序列化需求失败: {}", e)))?;
+        self.storage
+            .store(
+                "requirement",
+                &ContractItem {
+                    id: ContractId(requirement.id.clone()),
+                    data,
+                },
+            )
+            .map_err(|e| AppError::ValidationError(format!("写入失败: {}", e)))?;
         Ok(())
     }
 
@@ -389,100 +427,8 @@ impl UnifiedRequirementRepository {
 }
 
 // =========================================================================
-// Helper functions
+// Helper functions（保留原 sanitize / normalize / side effects 逻辑）
 // =========================================================================
-
-fn create_empty_requirement_file_data() -> RequirementFileData {
-    RequirementFileData {
-        version: REQUIREMENTS_FILE_VERSION.to_string(),
-        updated_at: now_iso(),
-        requirements: Vec::new(),
-    }
-}
-
-fn normalize_file_data(raw_json: serde_json::Value) -> RequirementFileData {
-    let version = raw_json
-        .get("version")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(REQUIREMENTS_FILE_VERSION)
-        .to_string();
-
-    let updated_at = raw_json
-        .get("updatedAt")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(str::to_string)
-        .unwrap_or_else(now_iso);
-
-    let requirements = raw_json
-        .get("requirements")
-        .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(normalize_requirement_item).collect())
-        .unwrap_or_default();
-
-    RequirementFileData {
-        version,
-        updated_at,
-        requirements,
-    }
-}
-
-fn normalize_requirement_item(raw: &serde_json::Value) -> Option<RequirementItem> {
-    let object = raw.as_object()?;
-    let id = object.get("id")?.as_str()?.trim();
-    if id.is_empty() {
-        return None;
-    }
-
-    let now = now_millis();
-    let title = object.get("title").and_then(|value| value.as_str()).unwrap_or(id).trim().to_string();
-    let description = object.get("description").and_then(|value| value.as_str()).unwrap_or_default().to_string();
-
-    Some(RequirementItem {
-        id: id.to_string(),
-        title,
-        description,
-        status: object.get("status").and_then(parse_status).unwrap_or_default(),
-        priority: object.get("priority").and_then(parse_priority).unwrap_or_default(),
-        tags: object
-            .get("tags")
-            .and_then(|value| value.as_array())
-            .map(|items| {
-                items
-                    .iter()
-                    .filter_map(|item| item.as_str().map(str::trim).filter(|s| !s.is_empty()).map(str::to_string))
-                    .collect()
-            })
-            .unwrap_or_default(),
-        prototype_path: object.get("prototypePath").and_then(|value| value.as_str()).map(str::to_string),
-        has_prototype: object.get("hasPrototype").and_then(|value| value.as_bool()).unwrap_or(false),
-        generated_by: object.get("generatedBy").and_then(parse_source).unwrap_or_default(),
-        generated_at: object.get("generatedAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        generator_task_id: object.get("generatorTaskId").and_then(|value| value.as_str()).map(str::to_string),
-        reviewed_at: object.get("reviewedAt").and_then(|value| value.as_i64()),
-        review_note: object.get("reviewNote").and_then(|value| value.as_str()).map(str::to_string),
-        execute_config: object.get("executeConfig").and_then(normalize_execute_config),
-        execute_log: object.get("executeLog").and_then(|value| value.as_str()).map(str::to_string),
-        executed_at: object.get("executedAt").and_then(|value| value.as_i64()),
-        completed_at: object.get("completedAt").and_then(|value| value.as_i64()),
-        session_id: object.get("sessionId").and_then(|value| value.as_str()).map(str::to_string),
-        execute_error: object.get("executeError").and_then(|value| value.as_str()).map(str::to_string),
-        created_at: object.get("createdAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        updated_at: object.get("updatedAt").and_then(|value| value.as_i64()).unwrap_or(now),
-        workspace_path: object.get("workspacePath").and_then(|value| value.as_str()).map(str::to_string),
-        workspace_name: object.get("workspaceName").and_then(|value| value.as_str()).map(str::to_string),
-    })
-}
-
-fn normalize_execute_config(raw: &serde_json::Value) -> Option<RequirementExecuteConfig> {
-    let object = raw.as_object()?;
-    Some(RequirementExecuteConfig {
-        scheduled_at: object.get("scheduledAt").and_then(|value| value.as_i64()),
-        engine_id: object.get("engineId").and_then(|value| value.as_str()).map(str::to_string),
-        work_dir: object.get("workDir").and_then(|value| value.as_str()).map(str::to_string),
-    })
-}
 
 fn apply_status_side_effects(
     requirement: &mut RequirementItem,
@@ -530,37 +476,6 @@ fn sanitize_execute_config(config: RequirementExecuteConfig) -> RequirementExecu
     }
 }
 
-fn parse_status(value: &serde_json::Value) -> Option<RequirementStatus> {
-    match value.as_str()? {
-        "draft" => Some(RequirementStatus::Draft),
-        "pending" => Some(RequirementStatus::Pending),
-        "approved" => Some(RequirementStatus::Approved),
-        "rejected" => Some(RequirementStatus::Rejected),
-        "executing" => Some(RequirementStatus::Executing),
-        "completed" => Some(RequirementStatus::Completed),
-        "failed" => Some(RequirementStatus::Failed),
-        _ => None,
-    }
-}
-
-fn parse_priority(value: &serde_json::Value) -> Option<RequirementPriority> {
-    match value.as_str()? {
-        "low" => Some(RequirementPriority::Low),
-        "normal" => Some(RequirementPriority::Normal),
-        "high" => Some(RequirementPriority::High),
-        "urgent" => Some(RequirementPriority::Urgent),
-        _ => None,
-    }
-}
-
-fn parse_source(value: &serde_json::Value) -> Option<RequirementSource> {
-    match value.as_str()? {
-        "ai" => Some(RequirementSource::Ai),
-        "user" => Some(RequirementSource::User),
-        _ => None,
-    }
-}
-
 fn now_millis() -> i64 {
     Utc::now().timestamp_millis()
 }
@@ -572,19 +487,37 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::requirement::RequirementPriority;
 
     fn temp_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("polaris-req-{}-{}", name, Uuid::new_v4()))
     }
 
+    /// 测试构造：直接注入临时 config_dir 作 data_root（避开全局 data_root()）
+    fn make_repo(workspace: Option<PathBuf>) -> UnifiedRequirementRepository {
+        let config_dir = temp_dir("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let current_workspace_name = workspace
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string());
+        UnifiedRequirementRepository {
+            storage_dir: config_dir.join("requirements"),
+            prototypes_dir: config_dir.join("requirements").join(PROTOTYPES_DIR_NAME),
+            storage: Box::new(SqliteStorage::new(&config_dir).unwrap()),
+            current_workspace: workspace,
+            current_workspace_name,
+        }
+    }
+
     #[test]
     fn creates_and_lists_requirements() {
-        let config_dir = temp_dir("config");
+        let _tmp = temp_dir("list");
         let workspace = temp_dir("workspace");
-        std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&workspace).unwrap();
 
-        let repo = UnifiedRequirementRepository::new(config_dir.clone(), Some(workspace.clone()));
+        let repo = make_repo(Some(workspace.clone()));
         repo.register_workspace().unwrap();
 
         let created = repo
@@ -604,17 +537,34 @@ mod tests {
 
         let all_reqs = repo.list_requirements(QueryScope::All).unwrap();
         assert_eq!(all_reqs.len(), 1);
+    }
 
-        let _ = std::fs::remove_dir_all(&config_dir);
-        let _ = std::fs::remove_dir_all(&workspace);
+    #[test]
+    fn rejects_duplicate_title() {
+        let _tmp = temp_dir("dup");
+        let repo = make_repo(None);
+
+        repo.create_requirement(RequirementCreateParams {
+            title: "唯一标题".to_string(),
+            description: "描述".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let err = repo
+            .create_requirement(RequirementCreateParams {
+                title: "唯一标题".to_string(),
+                description: "另一个描述".to_string(),
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert!(err.to_string().contains("同名"));
     }
 
     #[test]
     fn saves_and_reads_prototype() {
-        let config_dir = temp_dir("prototype");
-        std::fs::create_dir_all(&config_dir).unwrap();
-
-        let repo = UnifiedRequirementRepository::new(config_dir.clone(), None);
+        let _tmp = temp_dir("prototype");
+        let repo = make_repo(None);
 
         let created = repo
             .create_requirement(RequirementCreateParams {
@@ -631,6 +581,45 @@ mod tests {
         let read_html = repo.read_prototype(&path).unwrap();
         assert_eq!(read_html, html);
 
-        let _ = std::fs::remove_dir_all(&config_dir);
+        // 原型落盘目录存在
+        assert!(repo.prototypes_dir.join(format!("{}.html", created.id)).exists());
+    }
+
+    #[test]
+    fn status_side_effects_apply() {
+        let _tmp = temp_dir("status");
+        let repo = make_repo(None);
+
+        let created = repo
+            .create_requirement(RequirementCreateParams {
+                title: "状态测试".to_string(),
+                description: "描述".to_string(),
+                ..Default::default()
+            })
+            .unwrap();
+
+        // Ai 生成 → Pending；approve → 副作用置 reviewed_at
+        let approved = repo
+            .update_requirement(
+                &created.id,
+                RequirementUpdateParams {
+                    status: Some(RequirementStatus::Approved),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(approved.reviewed_at.is_some());
+
+        // complete → completed_at
+        let completed = repo
+            .update_requirement(
+                &created.id,
+                RequirementUpdateParams {
+                    status: Some(RequirementStatus::Completed),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert!(completed.completed_at.is_some());
     }
 }

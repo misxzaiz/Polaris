@@ -1,26 +1,39 @@
-//! Unified Todo Repository
+//! Unified Todo Repository（SqliteStorage 后端）
 //!
-//! Single storage for all todos in config_dir/todo/todos.json.
-//! Workspace filtering via workspacePath field.
+//! 保持公开 API（`new(config_dir, workspace)` + list/get/create/update/delete +
+//! register_workspace + get_workspace_breakdown）不变，命令层零改动。
+//!
+//! 存储后端：契约 `Storage::SqliteStorage`（domain=`todo`）。每个 `TodoItem`
+//! 是一条 `Item { id: todo.id, data: TodoItem 的 camelCase JSON }`，存于
+//! `<config_dir>/stores/todo.db` 的 `items` 表（SqliteStorage 以传入 config_dir
+//! 为 data_root，在其下建 stores/）。
+//!
+//! 关键设计：
+//! - 尊重调用方传入的 `config_dir` 作 data_root，**不在内部调 data_root()**——
+//!   MCP 独立服务进程可能未初始化全局 DataRoot，无条件调用会 panic。
+//! - `workspaces.json` 注册逻辑保留原实现（工作区注册元数据，独立于待办项）。
+//! - workspace 过滤保留原内存过滤语义（todo 数据量小，全量读入过滤足够）。
 
+use crate::contracts::{Id as ContractId, Item as ContractItem, Query as ContractQuery, Storage};
 use crate::error::{AppError, Result};
 use crate::models::todo::{
-    QueryScope, TodoCreateParams, TodoFileData, TodoItem, TodoPriority, TodoStatus,
-    TodoSubtask, TodoUpdateParams,
+    QueryScope, TodoCreateParams, TodoItem, TodoStatus, TodoSubtask, TodoUpdateParams,
 };
+use crate::services::storage::SqliteStorage;
 use chrono::Utc;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use uuid::Uuid;
 
-const TODO_FILE_NAME: &str = "todos.json";
 const TODO_FILE_VERSION: &str = "1.0.0";
 const WORKSPACES_FILE_NAME: &str = "workspaces.json";
 
 /// Unified repository for managing todos in a single global storage
 pub struct UnifiedTodoRepository {
-    /// Global storage directory (config_dir/todo)
+    /// 全局存储目录（config_dir/todo）——保留字段以维持 `workspaces.json` 落点
     storage_dir: PathBuf,
+    /// 契约 Storage 抽象（当前实现 SqliteStorage，domain=todo）
+    storage: Box<dyn Storage>,
     /// Current workspace path (optional, for filtering)
     current_workspace: Option<PathBuf>,
     /// Current workspace name (for display)
@@ -46,7 +59,9 @@ impl UnifiedTodoRepository {
     /// Create a new unified todo repository
     ///
     /// # Arguments
-    /// * `config_dir` - Application config directory for storage
+    /// * `config_dir` - 应用配置根（命令层传 app_config_dir / MCP 传外部显式路径）。
+    ///   SqliteStorage 以它为 data_root，在其下建 `stores/todo.db`。
+    ///   保持此参数语义不变 → 命令层零改动；用户可通过 DataRoot 锚点影响命令层取值。
     /// * `current_workspace` - Current workspace path (optional, for filtering)
     pub fn new(config_dir: PathBuf, current_workspace: Option<PathBuf>) -> Self {
         let current_workspace_name = current_workspace
@@ -55,14 +70,22 @@ impl UnifiedTodoRepository {
             .and_then(|n| n.to_str())
             .map(|s| s.to_string());
 
+        // 存储根：尊重调用方传入的 config_dir 作为 data_root（SqliteStorage 内部建 stores/）。
+        // 不在此处调 data_root()——MCP 独立进程可能未初始化全局 DataRoot，会 panic。
+        let storage: Box<dyn Storage> = Box::new(
+            SqliteStorage::new(&config_dir)
+                .expect("SqliteStorage 初始化失败（config_dir 不可用）"),
+        );
+
         Self {
             storage_dir: config_dir.join("todo"),
+            storage,
             current_workspace,
             current_workspace_name,
         }
     }
 
-    /// Register current workspace in the workspaces list
+    /// Register current workspace in the workspaces list（保留原实现）
     pub fn register_workspace(&self) -> Result<()> {
         let Some(workspace) = &self.current_workspace else {
             return Ok(());
@@ -91,7 +114,7 @@ impl UnifiedTodoRepository {
 
     /// List todos based on scope
     pub fn list_todos(&self, scope: QueryScope) -> Result<Vec<TodoItem>> {
-        let all_todos = self.read_file_data()?.todos;
+        let all_todos = self.read_all_todos()?;
 
         let filtered = match scope {
             QueryScope::Workspace => {
@@ -118,8 +141,15 @@ impl UnifiedTodoRepository {
 
     /// Get a single todo by ID
     pub fn get_todo(&self, id: &str) -> Result<Option<TodoItem>> {
-        let data = self.read_file_data()?;
-        Ok(data.todos.into_iter().find(|todo| todo.id == id))
+        let item = self.storage.load("todo", &ContractId(id.to_string()));
+        match item {
+            Ok(item) => {
+                let todo: TodoItem = serde_json::from_value(item.data)
+                    .map_err(|e| AppError::ValidationError(format!("反序列化待办失败: {}", e)))?;
+                Ok(Some(todo))
+            }
+            Err(_) => Ok(None),
+        }
     }
 
     /// Create a new todo
@@ -129,7 +159,6 @@ impl UnifiedTodoRepository {
             return Err(AppError::ValidationError("待办内容不能为空".to_string()));
         }
 
-        let mut data = self.read_file_data()?;
         let now = now_iso();
 
         // Determine workspace info
@@ -185,18 +214,14 @@ impl UnifiedTodoRepository {
             workspace_name,
         };
 
-        data.todos.push(todo.clone());
-        self.write_file_data(&mut data)?;
+        self.insert_item(&todo)?;
         Ok(todo)
     }
 
     /// Update a todo
     pub fn update_todo(&self, id: &str, updates: TodoUpdateParams) -> Result<TodoItem> {
-        let mut data = self.read_file_data()?;
-        let todo = data
-            .todos
-            .iter_mut()
-            .find(|todo| todo.id == id)
+        let mut todo = self
+            .get_todo(id)?
             .ok_or_else(|| AppError::ValidationError(format!("待办不存在: {}", id)))?;
 
         if let Some(content) = updates.content {
@@ -276,26 +301,24 @@ impl UnifiedTodoRepository {
 
         todo.updated_at = now_iso();
         let result = todo.clone();
-        self.write_file_data(&mut data)?;
+        self.insert_item(&todo)?;
         Ok(result)
     }
 
     /// Delete a todo
     pub fn delete_todo(&self, id: &str) -> Result<TodoItem> {
-        let mut data = self.read_file_data()?;
-        let index = data
-            .todos
-            .iter()
-            .position(|todo| todo.id == id)
+        let todo = self
+            .get_todo(id)?
             .ok_or_else(|| AppError::ValidationError(format!("待办不存在: {}", id)))?;
-        let removed = data.todos.remove(index);
-        self.write_file_data(&mut data)?;
-        Ok(removed)
+        self.storage
+            .delete("todo", &ContractId(id.to_string()))
+            .map_err(|e| AppError::ValidationError(format!("删除失败: {}", e)))?;
+        Ok(todo)
     }
 
     /// Get workspace breakdown summary
     pub fn get_workspace_breakdown(&self) -> Result<BTreeMap<String, usize>> {
-        let todos = self.read_file_data()?.todos;
+        let todos = self.read_all_todos()?;
         let mut breakdown = BTreeMap::new();
 
         for todo in todos {
@@ -307,36 +330,38 @@ impl UnifiedTodoRepository {
     }
 
     // =========================================================================
-    // Private helpers
+    // Private helpers（SqliteStorage 后端）
     // =========================================================================
 
-    fn read_file_data(&self) -> Result<TodoFileData> {
-        let file_path = self.storage_dir.join(TODO_FILE_NAME);
+    /// 读全部 todo（domain=todo 的 items 全表）
+    fn read_all_todos(&self) -> Result<Vec<TodoItem>> {
+        let items = self
+            .storage
+            .query("todo", &ContractQuery { filter: serde_json::json!({}), limit: None })
+            .map_err(|e| AppError::ValidationError(format!("读取待办失败: {}", e)))?;
 
-        if !file_path.exists() {
-            let mut empty = create_empty_todo_file_data();
-            self.write_file_data(&mut empty)?;
-            return Ok(empty);
+        let mut todos = Vec::with_capacity(items.len());
+        for item in items {
+            if let Ok(todo) = serde_json::from_value::<TodoItem>(item.data) {
+                todos.push(todo);
+            }
         }
-
-        let content = std::fs::read_to_string(&file_path)?;
-        let raw_json: serde_json::Value = serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}));
-
-        Ok(normalize_file_data(raw_json))
+        Ok(todos)
     }
 
-    fn write_file_data(&self, data: &mut TodoFileData) -> Result<()> {
-        let file_path = self.storage_dir.join(TODO_FILE_NAME);
-
-        data.version = TODO_FILE_VERSION.to_string();
-        data.updated_at = now_iso();
-
-        if let Some(parent) = file_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-
-        let content = serde_json::to_string_pretty(data)?;
-        std::fs::write(&file_path, format!("{}\n", content))?;
+    /// 写入 / 更新一个 todo 项（INSERT OR REPLACE）
+    fn insert_item(&self, todo: &TodoItem) -> Result<()> {
+        let data = serde_json::to_value(todo)
+            .map_err(|e| AppError::ValidationError(format!("序列化待办失败: {}", e)))?;
+        self.storage
+            .store(
+                "todo",
+                &ContractItem {
+                    id: ContractId(todo.id.clone()),
+                    data,
+                },
+            )
+            .map_err(|e| AppError::ValidationError(format!("写入失败: {}", e)))?;
         Ok(())
     }
 
@@ -365,182 +390,8 @@ impl UnifiedTodoRepository {
 }
 
 // =========================================================================
-// Helper functions
+// Helper functions（保留原 sanitize / normalize 逻辑）
 // =========================================================================
-
-fn create_empty_todo_file_data() -> TodoFileData {
-    TodoFileData {
-        version: TODO_FILE_VERSION.to_string(),
-        updated_at: now_iso(),
-        todos: Vec::new(),
-    }
-}
-
-fn normalize_file_data(raw_json: serde_json::Value) -> TodoFileData {
-    let version = raw_json
-        .get("version")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or(TODO_FILE_VERSION)
-        .to_string();
-
-    let updated_at = raw_json
-        .get("updatedAt")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(now_iso);
-
-    let todos = raw_json
-        .get("todos")
-        .and_then(|value| value.as_array())
-        .map(|items| items.iter().filter_map(normalize_todo_item).collect::<Vec<_>>())
-        .unwrap_or_default();
-
-    TodoFileData {
-        version,
-        updated_at,
-        todos,
-    }
-}
-
-fn normalize_todo_item(value: &serde_json::Value) -> Option<TodoItem> {
-    let object = value.as_object()?;
-    let content = object.get("content")?.as_str()?.trim().to_string();
-    if content.is_empty() {
-        return None;
-    }
-
-    let created_at = object
-        .get("createdAt")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(now_iso);
-
-    let updated_at = object
-        .get("updatedAt")
-        .and_then(|value| value.as_str())
-        .filter(|value| !value.trim().is_empty())
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| created_at.clone());
-
-    Some(TodoItem {
-        id: object
-            .get("id")
-            .and_then(|value| value.as_str())
-            .filter(|value| !value.trim().is_empty())
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| Uuid::new_v4().to_string()),
-        content,
-        description: optional_string_field(object.get("description")),
-        status: parse_status(object.get("status")).unwrap_or_default(),
-        priority: parse_priority(object.get("priority")).unwrap_or_default(),
-        tags: optional_string_array(object.get("tags")),
-        related_files: optional_string_array(object.get("relatedFiles")),
-        session_id: optional_string_field(object.get("sessionId")),
-        workspace_id: optional_string_field(object.get("workspaceId")),
-        subtasks: normalize_subtasks(object.get("subtasks")),
-        due_date: optional_string_field(object.get("dueDate")),
-        reminder_time: optional_string_field(object.get("reminderTime")),
-        estimated_hours: object.get("estimatedHours").and_then(|value| value.as_f64()),
-        spent_hours: object.get("spentHours").and_then(|value| value.as_f64()),
-        depends_on: optional_string_array(object.get("dependsOn")),
-        blockers: optional_string_array(object.get("blockers")),
-        completed_at: optional_string_field(object.get("completedAt")),
-        last_progress: optional_string_field(object.get("lastProgress")),
-        last_error: optional_string_field(object.get("lastError")),
-        created_at,
-        updated_at,
-        workspace_path: optional_string_field(object.get("workspacePath")),
-        workspace_name: optional_string_field(object.get("workspaceName")),
-    })
-}
-
-fn normalize_subtasks(value: Option<&serde_json::Value>) -> Option<Vec<TodoSubtask>> {
-    let subtasks = value
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| {
-                    let object = item.as_object()?;
-                    let title = object.get("title")?.as_str()?.trim().to_string();
-                    if title.is_empty() {
-                        return None;
-                    }
-
-                    Some(TodoSubtask {
-                        id: object
-                            .get("id")
-                            .and_then(|value| value.as_str())
-                            .filter(|value| !value.trim().is_empty())
-                            .map(|value| value.to_string())
-                            .unwrap_or_else(|| Uuid::new_v4().to_string()),
-                        title,
-                        completed: object.get("completed").and_then(|value| value.as_bool()).unwrap_or(false),
-                        created_at: optional_string_field(object.get("createdAt")),
-                    })
-                })
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if subtasks.is_empty() {
-        None
-    } else {
-        Some(subtasks)
-    }
-}
-
-fn parse_status(value: Option<&serde_json::Value>) -> Option<TodoStatus> {
-    match value.and_then(|value| value.as_str()) {
-        Some("pending") => Some(TodoStatus::Pending),
-        Some("in_progress") => Some(TodoStatus::InProgress),
-        Some("completed") => Some(TodoStatus::Completed),
-        Some("cancelled") => Some(TodoStatus::Cancelled),
-        _ => None,
-    }
-}
-
-fn parse_priority(value: Option<&serde_json::Value>) -> Option<TodoPriority> {
-    match value.and_then(|value| value.as_str()) {
-        Some("low") => Some(TodoPriority::Low),
-        Some("normal") => Some(TodoPriority::Normal),
-        Some("high") => Some(TodoPriority::High),
-        Some("urgent") => Some(TodoPriority::Urgent),
-        _ => None,
-    }
-}
-
-fn optional_string_field(value: Option<&serde_json::Value>) -> Option<String> {
-    value
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .map(|value| value.to_string())
-}
-
-fn optional_string_array(value: Option<&serde_json::Value>) -> Option<Vec<String>> {
-    let values = value
-        .and_then(|value| value.as_array())
-        .map(|items| {
-            items
-                .iter()
-                .filter_map(|item| item.as_str())
-                .map(str::trim)
-                .filter(|item| !item.is_empty())
-                .map(|item| item.to_string())
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_default();
-
-    if values.is_empty() {
-        None
-    } else {
-        Some(values)
-    }
-}
 
 fn sanitize_optional_string(value: Option<String>) -> Option<String> {
     value.and_then(sanitize_string_value)
@@ -579,19 +430,36 @@ fn now_iso() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::todo::TodoPriority;
 
     fn temp_dir(name: &str) -> PathBuf {
         std::env::temp_dir().join(format!("polaris-todo-{}-{}", name, Uuid::new_v4()))
     }
 
+    /// 测试构造：直接注入临时 config_dir 作 data_root（避开全局 data_root()）
+    fn make_repo(workspace: Option<PathBuf>) -> UnifiedTodoRepository {
+        let config_dir = temp_dir("config");
+        std::fs::create_dir_all(&config_dir).unwrap();
+        let current_workspace_name = workspace
+            .as_ref()
+            .and_then(|p| p.file_name())
+            .and_then(|n| n.to_str())
+            .map(|s| s.to_string());
+        UnifiedTodoRepository {
+            storage_dir: config_dir.join("todo"),
+            storage: Box::new(SqliteStorage::new(&config_dir).unwrap()),
+            current_workspace: workspace,
+            current_workspace_name,
+        }
+    }
+
     #[test]
     fn creates_and_lists_todos() {
-        let config_dir = temp_dir("config");
+        let _tmp = temp_dir("root");
         let workspace = temp_dir("workspace");
-        std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&workspace).unwrap();
 
-        let repo = UnifiedTodoRepository::new(config_dir.clone(), Some(workspace.clone()));
+        let repo = make_repo(Some(workspace.clone()));
         repo.register_workspace().unwrap();
 
         // Create todo
@@ -613,22 +481,17 @@ mod tests {
         // List with all scope
         let all_todos = repo.list_todos(QueryScope::All).unwrap();
         assert_eq!(all_todos.len(), 1);
-
-        let _ = std::fs::remove_dir_all(&config_dir);
-        let _ = std::fs::remove_dir_all(&workspace);
     }
 
     #[test]
     fn filters_by_workspace() {
-        let config_dir = temp_dir("filter");
         let workspace_a = temp_dir("ws-a");
         let workspace_b = temp_dir("ws-b");
-        std::fs::create_dir_all(&config_dir).unwrap();
         std::fs::create_dir_all(&workspace_a).unwrap();
         std::fs::create_dir_all(&workspace_b).unwrap();
 
         // Create todo in workspace A
-        let repo_a = UnifiedTodoRepository::new(config_dir.clone(), Some(workspace_a.clone()));
+        let repo_a = make_repo(Some(workspace_a.clone()));
         repo_a.create_todo(TodoCreateParams {
             content: "Workspace A todo".to_string(),
             ..Default::default()
@@ -636,7 +499,7 @@ mod tests {
         .unwrap();
 
         // Create todo in workspace B
-        let repo_b = UnifiedTodoRepository::new(config_dir.clone(), Some(workspace_b.clone()));
+        let repo_b = make_repo(Some(workspace_b.clone()));
         repo_b.create_todo(TodoCreateParams {
             content: "Workspace B todo".to_string(),
             ..Default::default()
@@ -644,7 +507,7 @@ mod tests {
         .unwrap();
 
         // Both todos should be in the same file
-        let repo_all = UnifiedTodoRepository::new(config_dir.clone(), None);
+        let repo_all = make_repo(None);
         let all = repo_all.list_todos(QueryScope::All).unwrap();
         assert_eq!(all.len(), 2);
 
@@ -652,18 +515,12 @@ mod tests {
         let a_todos = repo_a.list_todos(QueryScope::Workspace).unwrap();
         assert_eq!(a_todos.len(), 1);
         assert_eq!(a_todos[0].content, "Workspace A todo");
-
-        let _ = std::fs::remove_dir_all(&config_dir);
-        let _ = std::fs::remove_dir_all(&workspace_a);
-        let _ = std::fs::remove_dir_all(&workspace_b);
     }
 
     #[test]
     fn updates_and_deletes() {
-        let config_dir = temp_dir("update");
-        std::fs::create_dir_all(&config_dir).unwrap();
-
-        let repo = UnifiedTodoRepository::new(config_dir.clone(), None);
+        let _tmp = temp_dir("update");
+        let repo = make_repo(None);
 
         let created = repo
             .create_todo(TodoCreateParams {
@@ -692,7 +549,5 @@ mod tests {
 
         let all = repo.list_todos(QueryScope::All).unwrap();
         assert!(all.is_empty());
-
-        let _ = std::fs::remove_dir_all(&config_dir);
     }
 }

@@ -253,6 +253,20 @@ pub trait Transaction: Send {
     fn rollback(&mut self) -> Result<(), String>;
     /// 在事务内追加审计（写入 domain_audit 表）
     fn append_audit(&mut self, domain: &str, entry: &AuditEntry) -> Result<(), String>;
+
+    /// 事务内业务写（INSERT OR REPLACE，同事务连接）
+    ///
+    /// 契约红线「审计与业务写同库同事务」：业务写务必与 append_audit 在同一
+    /// 事务连接上执行，commit 落库 / rollback 全回滚（含审计）。
+    /// 默认实现返回未实现，旧实现直接生效（向后兼容）；生产实现应覆盖。
+    fn store(&mut self, _domain: &str, _item: &Item) -> Result<Id, String> {
+        Err("Transaction::store 未实现：请使用连接池 Storage::store 或覆盖本方法".into())
+    }
+
+    /// 事务内业务删（同事务连接）
+    fn delete(&mut self, _domain: &str, _id: &Id) -> Result<(), String> {
+        Err("Transaction::delete 未实现：请使用连接池 Storage::delete 或覆盖本方法".into())
+    }
 }
 
 /// 审计条目
