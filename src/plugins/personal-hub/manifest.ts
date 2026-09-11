@@ -19,6 +19,14 @@ export const personalHubPluginManifest: PolarisPluginManifest = {
         order: 65,
       },
     ],
+    mcpServers: [
+      {
+        id: 'polaris-ph',
+        transport: 'stdio',
+        command: 'polaris_ph_mcp',
+        argsTemplate: ['{{appConfigDir}}', '{{workspacePath}}'],
+      },
+    ],
   },
   permissions: {
     network: true,
