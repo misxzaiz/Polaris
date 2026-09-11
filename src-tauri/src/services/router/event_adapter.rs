@@ -31,8 +31,16 @@ pub struct EventAdapter {
 impl EventAdapter {
     /// 创建适配层（`channel_capacity` 传给现有广播器与 in-proc channel）
     pub fn new(channel_capacity: usize) -> Self {
+        Self::from_broadcaster(EventBroadcaster::new(channel_capacity))
+    }
+
+    /// 从现有广播器构造适配层（复用其底层 seq + 环形缓冲 + broadcast channel）。
+    ///
+    /// 用于在现有 WS 通道（AppState.event_broadcast）之上叠加契约事件广播：
+    /// 同一事件既走 in-proc 订阅者，也走进现有字符串广播器（前端 WS 可见）。
+    pub fn from_broadcaster(broadcaster: EventBroadcaster) -> Self {
         Self {
-            inner: EventBroadcaster::new(channel_capacity),
+            inner: broadcaster,
             subscribers: Mutex::new(Vec::new()),
         }
     }

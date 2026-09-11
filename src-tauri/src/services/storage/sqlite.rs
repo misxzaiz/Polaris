@@ -313,10 +313,15 @@ impl Storage for SqliteStorage {
 ///
 /// 事务连接不与连接池共享：`append_audit` 在独立连接上执行
 /// `BEGIN IMMEDIATE` → 写入 `domain_audit`。commit/rollback 控制该连接上
-/// 所有审计的同事务原子性。与连接池业务写的隔离由 WAL 快照隔离提供
-/// （事务连接开启期间的并发写仍可落库，见测试 audit_rollback_reverts_after_writes）。
-/// 注意：业务写（`store`/`delete`）走连接池 autocommit，**不在本事务内**——
-/// 契约红线「审计与业务写同库同事务」此处仅达成「同库」，缺口见模块头部。
+/// 所有写入的同事务原子性。与连接池业务写的隔离由 WAL 快照隔离提供
+/// （事务连接开启期间，连接池对该域的并发写仍可见，见测试
+/// audit_rollback_reverts_after_writes）。
+///
+/// 契约红线「审计与业务写同库同事务」：`Transaction::store`/`delete` 在同一
+/// 事务连接上执行业务写（`tx_conn` 复用），commit 落库 / rollback 全回滚
+/// （含审计）。业务写与审计完全同事务，见测试
+/// txn_business_write_and_audit_commit_together 与
+/// txn_rollback_reverts_business_and_audit_together。
 pub struct SqliteTransaction<'a> {
     storage: &'a SqliteStorage,
     /// 已开启事务的域连接（惰性创建）

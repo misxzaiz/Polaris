@@ -303,6 +303,9 @@ pub struct AppState {
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
     /// 通用执行器注册表 — 统一管理所有执行器（内置 + 插件自定义）
     pub executor_registry: crate::services::executor::ExecutorRegistry,
+    /// 统一转发总线（第三步 RouterBus）— dispatch 唯一入口，共享现有 WS 广播
+    /// 通道（event_broadcast），终端命令与 Web API 经同一总线访问契约能力。
+    pub router: Arc<crate::services::router::RouterBus>,
 }
 
 /// 创建应用状态
@@ -341,6 +344,28 @@ pub fn create_app_state(
         );
     }
 
+    // 统一转发总线（第三步 RouterBus）：复用现有 WS 广播通道 + 契约 SqliteStorage。
+    // cap.kv 是第一个真实能力（经 ctx.storage() 读写 <DataRoot>/stores/kv.db）。
+    // 审计通道（AuditSink）阶段 A 保持 None，Bootstrap 直管通道后置接线。
+    let event_broadcast = crate::web::EventBroadcaster::new(256);
+    let router = {
+        use crate::contracts::Router as _; // dispatch / register_handle / subscribe
+        use crate::services::router::{EventAdapter, KvCapability, RouterBus, StaticPermission};
+        use crate::services::storage::SqliteStorage;
+
+        let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
+        let storage: Arc<dyn crate::contracts::Storage> =
+            Arc::new(SqliteStorage::new(&config_dir).expect("SqliteStorage 初始化失败"));
+        let bus = Arc::new(RouterBus::new(
+            adapter,
+            Box::new(StaticPermission),
+            Some(storage),
+            None, // AuditSink 阶段 A 未接线
+        ));
+        let _ = bus.register_handle(Box::new(KvCapability));
+        bus
+    };
+
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -361,7 +386,7 @@ pub fn create_app_state(
         lsp_config: Mutex::new(LspConfigRepository::new(&config_dir)),
         #[cfg(feature = "lsp-index")]
         lsp_index_service: IndexService::new(),
-        event_broadcast: crate::web::EventBroadcaster::new(256),
+        event_broadcast: event_broadcast,
         #[cfg(feature = "tauri-app")]
         app_handle: OnceLock::new(),
         app_config_dir: OnceLock::new(),
@@ -386,6 +411,7 @@ pub fn create_app_state(
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
         executor_registry,
+        router,
     }
 }
 
@@ -461,6 +487,7 @@ impl AppState {
             failed_call_collector: self.failed_call_collector.clone(),
             plugin_service_manager: self.plugin_service_manager.clone(),
             executor_registry: self.executor_registry.clone(),
+            router: self.router.clone(),
         }
     }
 

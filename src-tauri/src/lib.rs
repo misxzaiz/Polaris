@@ -1167,6 +1167,9 @@ pub fn run() {
             // 通用执行器
             commands::executor::executor_list,
             commands::executor::executor_execute,
+            // 统一转发总线（第三步 RouterBus）——契约能力 dispatch
+            commands::router::router_dispatch,
+            commands::router::router_list_caps,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,

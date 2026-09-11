@@ -15,9 +15,11 @@
 
 mod demo_capability;
 mod event_adapter;
+mod kv_capability;
 
 pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
+pub use kv_capability::KvCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;

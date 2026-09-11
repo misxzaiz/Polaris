@@ -100,6 +100,17 @@ fn create_test_state() -> Arc<AppState> {
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
         executor_registry: crate::services::executor::create_builtin_registry(),
+        router: {
+            use crate::contracts::Router as _;
+            use crate::services::router::{EventAdapter, RouterBus, StaticPermission};
+            let adapter = Arc::new(EventAdapter::new(256));
+            Arc::new(RouterBus::new(
+                adapter,
+                Box::new(StaticPermission),
+                None,
+                None,
+            ))
+        },
     })
 }
 

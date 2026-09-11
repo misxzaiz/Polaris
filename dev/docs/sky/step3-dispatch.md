@@ -32,12 +32,28 @@
 | `cargo check --lib` | ✅ 全绿，router 零告警 |
 | `cargo check --tests` | ✅ 全绿（含 11 个 router 单测编译） |
 | 命令层零改动 | ✅ 外部零引用 router（纯新增骨架） |
-| 单测运行 | ⚠️ 受 `0xc0000139`（Tauri DLL 环境限制）挡，实测不可运行 |
+| 单测运行 | ⚠️ 受 `0xc0000139`（Tauri DLL 环境限制）挡，实测不可运行；改经独立 crate `/tmp/dispatch-verify`（复制 contracts+sqlite+router，rusqlite bundled）实际运行 **47 passed / 0 failed** |
 
 ### 遗留（阶段 C / 第四步）
-- ❌ 面板阶段 B（已注册能力列表 / dispatch 测试台）— 前置：面板 → 后端新命令
+- ❌ 面板阶段 C（已注册能力列表 / dispatch 测试台）— 前置：面板 → 后端新命令
 - ❌ 命令层迁移到 dispatch（第四步闭环替换）
-- ❌ 路由 dispatch 直连 SqliteStorage（阶段 B storage=None，ctx.storage 返回 Err）
+- ❌ 路由 dispatch 直连 SqliteStorage（阶段 B storage=None，ctx.storage 返回 Err）→ **已解决（P2）**
+
+### ✅ 阶段 C 前置（P2）：第一个真实能力 cap.kv 接线
+
+- `services/router/kv_capability.rs` — `cap.kv` 真实能力（非 demo）：经 `ctx.storage()`
+  读写 SqliteStorage（domain=`kv`，数据落 `<DataRoot>/stores/kv.db`），动作协议：
+  get/set/delete/list。
+- `state.rs` — `AppState` 新增 `router: Arc<RouterBus>`；`create_app_state` 接线：
+  `EventAdapter::from_broadcaster(event_broadcast)` 复用现有 WS 通道 + `StaticPermission` +
+  `SqliteStorage` + 注册 cap.kv。`clone_for_web` 共享 router。
+- `commands/router.rs` — `router_dispatch`（构造 Envelope 走 dispatch 全链路）+
+  `router_list_caps`（已注册能力列表）。`lib.rs` invoke_handler 注册。
+- `EventAdapter::from_broadcaster` — 复用现有广播器构造适配层（不重 new）。
+
+**验证**：独立 crate `/tmp/dispatch-verify` 实际运行 47 passed / 0 failed + 端到端 main
+（dispatch→cap.kv→SqliteStorage 落库 / 事件广播 / 未注册能力 Err）全链路真实跑通。
+`cargo check --lib` / `--tests` 全绿。
 
 ---
 
