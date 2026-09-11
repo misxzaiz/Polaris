@@ -5,12 +5,18 @@
  * - 契约清单：展示 6+1 核心 trait + Bootstrap 直管 trait 的结构化说明
  * - Envelope/Source roundtrip 测试台：可视化序列化→反序列化→比对
  *
- * 阶段 B（第 3 步 RouterBus 实现后）：接已注册能力表 / 依赖图 / 事件追踪。
+ * 阶段 C（RouterBus 接线后）：接已注册能力列表 + dispatch 测试台。
+ * - 已注册能力列表：调 `router_list_caps`，点选可直接填入测试台
+ * - dispatch 测试台：选能力 → 填 payload → 经统一总线 dispatch →
+ *   看 Reply（ok / result / error / trace）
+ *
+ * 桌面端走 Tauri IPC，Web/HTTP 端走 `/api/router-*`（统一 `invoke` 自动适配）。
  */
 
-import { useState } from 'react'
-import { CheckCircle2, Circle, Play, RotateCcw, TerminalSquare, GitBranch, Boxes, Database, Plug, ShieldCheck, CalendarClock, Layers } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CheckCircle2, Circle, Play, RotateCcw, TerminalSquare, GitBranch, Boxes, Database, Plug, ShieldCheck, CalendarClock, Layers, RefreshCw, XCircle } from 'lucide-react'
 import { createLogger } from '@/utils/logger'
+import { invoke } from '@/services/transport'
 
 const log = createLogger('ContractExplorerPanel')
 
@@ -178,6 +184,256 @@ const sourcePresets: { label: string; desc: string; make: () => Source }[] = [
   { label: 'Plugin', desc: '插件间调用，caller 由 ctx 注入', make: () => ({ kind: 'Plugin' as const, caller: 'cap.ai' }) },
 ]
 
+/* ============================================================================
+ * 阶段 C：已注册能力列表 + dispatch 测试台
+ * 后端：router_list_caps / router_dispatch（桌面 Tauri IPC / Web HTTP 统一 invoke）
+ * ============================================================================ */
+
+interface CapabilityInfo {
+  id: string
+}
+
+interface DispatchReply {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
+
+/** 已注册能力列表（点击直接填入测试台） */
+function CapabilityList({ onSelect }: { onSelect: (id: string) => void }) {
+  const [caps, setCaps] = useState<CapabilityInfo[]>([])
+  const [loading, setLoading] = useState(false)
+
+  const refresh = async () => {
+    setLoading(true)
+    try {
+      const list = await invoke<CapabilityInfo[]>('router_list_caps')
+      setCaps(Array.isArray(list) ? list : [])
+    } catch (e) {
+      log.error('router_list_caps 失败', e)
+      setCaps([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 首次挂载拉一次
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] p-4">
+      <div className="flex items-center gap-2">
+        <Plug size={16} />
+        <span className="text-sm font-medium">已注册能力</span>
+        <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-500">
+          {caps.length}
+        </span>
+        <button
+          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          onClick={() => void refresh()}
+          title="刷新"
+          disabled={loading}
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 刷新
+        </button>
+      </div>
+
+      {caps.length === 0 ? (
+        <p className="text-[11px] text-[var(--color-text-secondary)]">
+          尚未加载到能力（RouterBus 未接线，或后端不可达）。点击刷新重试。
+        </p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {caps.map((c) => (
+            <button
+              key={c.id}
+              className="rounded-md border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 font-mono text-[11px] text-[var(--color-text)] transition-colors hover:border-blue-500/50 hover:bg-blue-500/5"
+              onClick={() => onSelect(c.id)}
+              title={`点击填入 dispatch 测试台`}
+            >
+              {c.id}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** dispatch 测试台（经统一总线真实调用后端能力） */
+function DispatchTestBench({
+  selectTarget,
+}: {
+  /** 外部（能力列表点选）注入的目标能力 id —— 每次变化会让测试台跟随 */
+  selectTarget?: string | null
+}) {
+  const [caps, setCaps] = useState<CapabilityInfo[]>([])
+  const [target, setTarget] = useState('cap.kv')
+  const [payloadText, setPayloadText] = useState('{\n  "action": "list"\n}')
+  const [source, setSource] = useState<'bootstrap' | 'remote'>('bootstrap')
+  const [loading, setLoading] = useState(false)
+  const [reply, setReply] = useState<DispatchReply | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  // 外部点选能力 → 同步测试台
+  useEffect(() => {
+    if (!selectTarget) return
+    setTarget(selectTarget)
+    if (selectTarget === 'cap.kv') {
+      setPayloadText('{\n  "action": "get",\n  "key": "greeting"\n}')
+    }
+  }, [selectTarget])
+
+  // 加载能力列表做下拉
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      try {
+        const list = await invoke<CapabilityInfo[]>('router_list_caps')
+        if (!cancelled) setCaps(Array.isArray(list) ? list : [])
+      } catch (e) {
+        if (!cancelled) log.error('router_list_caps 失败', e)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
+
+  const run = async () => {
+    setLoading(true)
+    setErr(null)
+    try {
+      let payload: unknown
+      try {
+        payload = JSON.parse(payloadText)
+      } catch (e) {
+        setErr(`payload 不是合法 JSON: ${e instanceof Error ? e.message : String(e)}`)
+        return
+      }
+      const res = await invoke<DispatchReply>('router_dispatch', {
+        req: { target, payload, source },
+      })
+      setReply(res)
+    } catch (e) {
+      setErr(`dispatch 调用失败: ${e instanceof Error ? e.message : String(e)}`)
+      setReply(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] p-4">
+      <div className="flex items-center gap-2">
+        <TerminalSquare size={16} />
+        <span className="text-sm font-medium">dispatch 测试台</span>
+        <button
+          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          onClick={() => {
+            setTarget('cap.kv')
+            setPayloadText('{\n  "action": "list"\n}')
+            setSource('bootstrap')
+            setReply(null)
+            setErr(null)
+          }}
+          title="重置"
+        >
+          <RotateCcw size={12} /> 重置
+        </button>
+      </div>
+
+      {/* 目标能力 + 来源 */}
+      <div className="grid grid-cols-2 gap-3 text-xs">
+        <label className="flex flex-col gap-1">
+          <span className="text-[var(--color-text-secondary)]">目标能力（cap id）</span>
+          <div className="flex gap-1.5">
+            <input
+              className="flex-1 rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 font-mono outline-none focus:border-blue-500"
+              value={target}
+              list="cap-datalist"
+              onChange={(e) => setTarget(e.target.value)}
+              placeholder="如 cap.kv"
+            />
+            <datalist id="cap-datalist">
+              {caps.map((c) => (
+                <option key={c.id} value={c.id} />
+              ))}
+            </datalist>
+            <select
+              className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 outline-none focus:border-blue-500"
+              value={source}
+              onChange={(e) => setSource(e.target.value as 'bootstrap' | 'remote')}
+              title="来源标注"
+            >
+              <option value="bootstrap">Bootstrap</option>
+              <option value="remote">Remote</option>
+            </select>
+          </div>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[var(--color-text-secondary)]">说明</span>
+          <div className="flex h-full items-center rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
+            {source === 'bootstrap' ? 'Bootstrap：Core 内部调用（测试台默认，模拟内部来源）' : 'Remote：HTTP/WS 来源，token 由后端注入'}
+          </div>
+        </label>
+      </div>
+
+      {/* payload JSON */}
+      <label className="flex flex-col gap-1 text-xs">
+        <span className="text-[var(--color-text-secondary)]">payload (JSON)</span>
+        <textarea
+          className="min-h-[80px] resize-y rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 font-mono text-[11px] outline-none focus:border-blue-500"
+          value={payloadText}
+          onChange={(e) => setPayloadText(e.target.value)}
+          placeholder='{"action": "list"}'
+        />
+      </label>
+
+      {/* 运行 */}
+      <button
+        className="flex items-center justify-center gap-2 rounded bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => void run()}
+        disabled={loading}
+      >
+        <Play size={12} /> {loading ? 'dispatch 进行中…' : '运行 dispatch'}
+      </button>
+
+      {/* 错误 */}
+      {err && (
+        <div className="flex items-start gap-1.5 rounded border border-red-500/30 bg-red-500/5 p-3 text-xs">
+          <XCircle size={14} className="mt-0.5 shrink-0 text-red-500" />
+          <div className="break-all font-mono text-[11px] text-red-500">{err}</div>
+        </div>
+      )}
+
+      {/* 结果 */}
+      {reply && (
+        <div className={`rounded border p-3 text-xs ${reply.ok ? 'border-green-500/30 bg-green-500/5' : 'border-amber-500/30 bg-amber-500/5'}`}>
+          <div className="mb-1 flex items-center gap-1.5">
+            {reply.ok
+              ? <CheckCircle2 size={14} className="text-green-500" />
+              : <Circle size={14} className="text-amber-500" />}
+            <span className={reply.ok ? 'text-green-500' : 'text-amber-500'}>
+              {reply.ok ? '✅ ok' : '❌ rejected / error'}
+            </span>
+            <span className="ml-auto font-mono text-[10px] text-[var(--color-text-secondary)]">
+              {reply.msgId} · trace {reply.trace}
+            </span>
+          </div>
+          <div className="mt-1 break-all whitespace-pre-wrap rounded bg-[var(--color-surface)] p-2 font-mono text-[10px] text-[var(--color-text)]">
+            {reply.ok
+              ? JSON.stringify(reply.result, null, 2)
+              : `error: ${reply.error ?? '(unknown)'}`}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** Source 语义卡（核心：无 local 变体） */
 function SourceSemantics() {
   return (
@@ -220,7 +476,8 @@ function EnvelopeTestBench() {
 
   const selectSource = (idx: number) => {
     setSourceIdx(idx)
-    setEnv((e) => ({ ...e, source: sourcePresets[idx]!.make() }))
+    const preset = sourcePresets[idx]
+    if (preset) setEnv((e) => ({ ...e, source: preset.make() }))
   }
 
   return (
@@ -357,8 +614,13 @@ function TraitCatalog() {
 
 /** 面板主组件 */
 export default function ContractExplorerPanel() {
+  // 共享"点选能力"状态：能力列表点选 → 联动 dispatch 测试台
+  const [selectedCap, setSelectedCap] = useState<string | null>(null)
+
   return (
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
+      <DispatchTestBench selectTarget={selectedCap} />
+      <CapabilityList onSelect={setSelectedCap} />
       <SourceSemantics />
       <EnvelopeTestBench />
       <TraitCatalog />

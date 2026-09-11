@@ -23,6 +23,8 @@ use crate::models::scheduler::{
     CreateProtocolTemplateParams, CreateTaskParams, PromptTemplate, ProtocolTemplate,
     ScheduledTask, TaskCategory, TaskMode,
 };
+use crate::commands::router::RouterDispatchRequest;
+use crate::contracts::Router as _; // dispatch
 use crate::services::prompt_snippet_service::PromptSnippetService;
 use crate::services::scheduler::protocol_task::ProtocolTaskService;
 use crate::services::scheduler::protocol_template::ProtocolTemplateService;
@@ -339,6 +341,10 @@ pub async fn handle_ipc_bridge(
         "scheduler_toggle_protocol_template" => {
             dispatch_scheduler_toggle_protocol_template(&state, &args)
         }
+
+        // ── Contract Router: 统一转发总线（契约第三步 P2）───────────────
+        "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
+        "router_list_caps" => dispatch_router_list_caps(&state),
 
         // ── Executor: 通用执行器 ──────────────────────────────────────────────
         "execute" => dispatch_execute(&state, &args).await,
@@ -2739,4 +2745,56 @@ async fn dispatch_execute(state: &AppState, args: &Value) -> Result<Json<Value>,
 fn dispatch_executor_list(state: &AppState) -> Result<Json<Value>, WebError> {
     let executors = state.executor_registry.list();
     Ok(Json(serde_json::to_value(executors).unwrap_or_default()))
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Contract Router
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// 统一转发总线 dispatch（契约第三/四步：前端经 HTTP 调 dispatch 全链路）
+///
+/// 安全铁律：Web/HTTP 前端调用一律 `Source::Remote`，不可自声明 `Bootstrap`
+/// （那是 Core 内部专用）。token 由传输层鉴权后注入，此处阶段 A 空 token 占位。
+async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let req: RouterDispatchRequest = serde_json::from_value(
+        args.get("req").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|e| WebError::BadRequest(format!("无效的 dispatch 请求: {}", e)))?;
+
+    let env = crate::contracts::Envelope {
+        id: crate::contracts::MsgId(format!("web-{}", uuid::Uuid::new_v4())),
+        source: crate::contracts::Source::Remote { token: String::new() },
+        target: crate::contracts::CapabilityId(req.target),
+        payload: req.payload,
+        trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+    };
+
+    let reply = state
+        .router
+        .dispatch(env)
+        .map_err(|e| WebError::Internal(e))?;
+
+    let (ok, result, error) = match reply.result {
+        Ok(v) => (true, Some(v), None),
+        Err(e) => (false, None, Some(e)),
+    };
+
+    Ok(Json(serde_json::json!({
+        "msgId": reply.msg_id.0,
+        "ok": ok,
+        "result": result,
+        "error": error,
+        "trace": reply.trace.0,
+    })))
+}
+
+/// 列出已注册能力（契约测试面板用）
+fn dispatch_router_list_caps(state: &AppState) -> Result<Json<Value>, WebError> {
+    let caps = state
+        .router
+        .list_capabilities()
+        .into_iter()
+        .map(|id| serde_json::json!({ "id": id.0 }))
+        .collect::<Vec<_>>();
+    Ok(Json(serde_json::to_value(caps).unwrap_or_default()))
 }

@@ -55,6 +55,23 @@
 （dispatch→cap.kv→SqliteStorage 落库 / 事件广播 / 未注册能力 Err）全链路真实跑通。
 `cargo check --lib` / `--tests` 全绿。
 
+### ✅ 阶段 C（P3）：契约测试面板接 RouterBus —— 已注册能力 + dispatch 测试台
+
+- `web/api/ipc.rs` — Web/HTTP 桥接：`/api/router-dispatch` / `/api/router-list-caps`
+  走 catch-all IPC bridge 分发，**Web 模式强制 `Source::Remote`**（Shell 永不获得
+  Bootstrap；桌面 tauri 命令 `map_source` 保留 Bootstrap 给本地可信测试）。
+- `ContractExplorerPanel.tsx` — 面板新增两块（阶段 C 落地）：
+  - **dispatch 测试台**：选能力（datalist 下拉）→ 填 payload JSON → 调
+    `router_dispatch` → 显示 Reply（ok / result / error / trace），支持
+    Bootstrap/Remote 来源标注。
+  - **已注册能力列表**：调 `router_list_caps` 展示，点击直接填入测试台（联动）。
+- 安全铁律：Web 前端即使传 `source: bootstrap` 也会被后端强制 `Remote`，不可自声明
+  Core 专用来源。
+
+**验证**：`cargo check --lib` ✅ + `--no-default-features --bin polaris-web` ✅（web-only
+零回归）；`tsc --noEmit` 我的文件 0 error；`eslint` 面板 0 error 0 warning。
+（既有 BrowserPanel.tsx TS 错误为历史遗留，与本次无关）
+
 ---
 
 ## 0. 承接前两步
