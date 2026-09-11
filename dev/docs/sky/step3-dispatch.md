@@ -1,9 +1,43 @@
 # Polaris 重构 · 第三步：转发 dispatch 规划
 
-> 状态：规划定稿，待实施
-> 日期：2026-09-10
+> 状态：阶段 A+B 已实施（RouterBus 骨架 + 事件适配层 + demo capability，单测编译全绿）
+> 日期：2026-09-10（规划定稿）/ 2026-09-11（阶段 A+B 落地）
 > 目标目录：`dev/docs/sky/` 记录规划
 > 原则：**先实现新骨架，再一块块替换，不着急**。旧命令照常运行，不迁移。
+
+---
+
+## ⏩ 实施进展（2026-09-11）
+
+### ✅ 阶段 A：RouterBus 转发骨架
+- `src-tauri/src/services/router/mod.rs` — `RouterBus` 实现契约 `Router` trait
+  - `dispatch` 全链路：广播 `dispatch.start` → 权限 gate（Allow/Deny/Prompt 安全失败）→ 找句柄 → invoke → 广播 `dispatch.end`
+  - `register_handle` / `subscribe` / `list_capabilities` / `plugin_config_for`（三段匹配）
+  - `RealContext`：Source 由传输层注入（调用方不可自填），storage 阶段 A 可 None
+  - `StaticPermission`：静态授权默认实现
+- 单测：echo 往返 / 未注册 / Remote 拒绝 / Prompt 安全失败 / allow+deny 审计 / plugin_config 三段匹配 / dispatch start+end 广播
+
+### ✅ 阶段 B：事件适配层 + demo capability
+- `event_adapter.rs` — 契约 `Event` ↔ 现有生产级广播器：
+  - `encode_event`：Contract `Event` → `{"event":<kind>,"payload":<payload>}`（seq 由广播器注入）
+  - `broadcast`：编码交给 `web/EventBroadcaster`（2000 条/8MB 双上限 + 重放缓冲）+ in-proc 订阅（Filter 过滤）
+  - `subscribe`：返回 `mpsc::Receiver<Event>`，同步可用
+  - **不改 `web/event_broadcaster.rs`**（现有 WS 通道零回归）
+- `demo_capability.rs`：`EchoCapability`（cap.echo）+ `FaultyCapability`（cap.faulty error 分支）
+- 单测：encode 形态 / broadcast 推送匹配订阅者 / subscribe 只收匹配 kind / dispatch start+end trace
+
+### 验证状态
+| 项 | 状态 |
+|---|---|
+| `cargo check --lib` | ✅ 全绿，router 零告警 |
+| `cargo check --tests` | ✅ 全绿（含 11 个 router 单测编译） |
+| 命令层零改动 | ✅ 外部零引用 router（纯新增骨架） |
+| 单测运行 | ⚠️ 受 `0xc0000139`（Tauri DLL 环境限制）挡，实测不可运行 |
+
+### 遗留（阶段 C / 第四步）
+- ❌ 面板阶段 B（已注册能力列表 / dispatch 测试台）— 前置：面板 → 后端新命令
+- ❌ 命令层迁移到 dispatch（第四步闭环替换）
+- ❌ 路由 dispatch 直连 SqliteStorage（阶段 B storage=None，ctx.storage 返回 Err）
 
 ---
 
