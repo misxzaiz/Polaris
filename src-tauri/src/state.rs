@@ -253,6 +253,9 @@ pub struct AppState {
     /// 由 ask_listener 注册，由 answer_question 取出并 send 触发同回合回填
     pub ask_answer_senders:
         Arc<Mutex<HashMap<String, crate::services::ask_listener::AskAnswerEntry>>>,
+    /// 待提交表单映射：formId -> FormHold（表单工具生成 hold 时注册，
+    /// form_submit 动作提交时取走）。字段原文只在服务端流转。
+    pub form_holds: Arc<Mutex<HashMap<String, crate::services::form_flow::FormHold>>>,
     /// 待回答插件交互卡片映射：interactionId -> PendingPluginCard
     pub pending_plugin_cards: Arc<Mutex<HashMap<String, PendingPluginCard>>>,
     /// 插件交互卡片应答通道映射：interactionId -> PluginCardAnswerEntry
@@ -426,6 +429,7 @@ pub fn create_app_state(
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
         pending_questions: Arc::new(Mutex::new(HashMap::new())),
         ask_answer_senders: Arc::new(Mutex::new(HashMap::new())),
+        form_holds: Arc::new(Mutex::new(HashMap::new())),
         pending_plugin_cards: Arc::new(Mutex::new(HashMap::new())),
         plugin_card_answer_senders: Arc::new(Mutex::new(HashMap::new())),
         dispatched_tasks: Arc::new(Mutex::new(HashMap::new())),
@@ -510,6 +514,7 @@ impl AppState {
             file_watcher_manager: Mutex::new(FileWatcherManager::new()),
             pending_questions: self.pending_questions.clone(),
             ask_answer_senders: self.ask_answer_senders.clone(),
+            form_holds: self.form_holds.clone(),
             pending_plugin_cards: self.pending_plugin_cards.clone(),
             plugin_card_answer_senders: self.plugin_card_answer_senders.clone(),
             dispatched_tasks: self.dispatched_tasks.clone(),

@@ -29,6 +29,7 @@ pub mod requirements_mcp_server;
 pub mod ai_chat_core;
 pub mod context_core;
 pub mod form_core;
+pub mod form_flow;
 pub mod ai_history_core;
 pub mod router;
 pub mod agnes_mcp_server;

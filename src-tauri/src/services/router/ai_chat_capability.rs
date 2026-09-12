@@ -209,6 +209,41 @@ impl Capability for AiChatCapability {
                             .map_err(|e| e.to_message())?;
                         Ok(serde_json::json!({ "ok": true }))
                     }
+                    "form_submit" => {
+                        // 表单工具回填：按 formId 取 hold，原文转发目标能力，回执喂回前端/引擎。
+                        // 信任边界：AI 与前端都只见 build_receipt 的产物，原始 values 只在服务端流转。
+                        let form_id = get("formId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if form_id.is_empty() {
+                            return Err("cap.ai.chat form_submit 需要 formId 参数".to_string());
+                        }
+                        let values = get("values").cloned().unwrap_or(Value::Null);
+                        let hold = {
+                            let mut holds = s.form_holds.lock().ok().ok_or_else(|| {
+                                "表单存储已损坏（form_holds 锁中毒）".to_string()
+                            })?;
+                            holds.remove(&form_id)
+                        };
+                        let Some(hold) = hold else {
+                            // 迟到/重复提交：hold 已被取走或超时清理 → 表单失效
+                            return Err("表单已失效（不存在或已提交），请让 AI 重新发起".to_string());
+                        };
+                        let (receipt, ok, reply) =
+                            crate::services::form_flow::submit_form(&hold, &values, &*s.router);
+                        // 前端 FormCard 依据 form-answered 事件切提交态（receipt 是安全回执）
+                        self.event_adapter.broadcast(make_event(
+                            "form-answered",
+                            serde_json::json!({
+                                "formId": hold.form_id,
+                                "sessionId": hold.session_id,
+                                "ok": ok,
+                                "receipt": receipt,
+                            }),
+                        ));
+                        match reply {
+                            Ok(reply) => Ok(reply),
+                            Err(e) => Err(format!("目标能力执行失败: {}", e)),
+                        }
+                    }
                     "register_pending_question" => {
                         let options: Vec<crate::state::QuestionOption> = get("options")
                             .cloned()

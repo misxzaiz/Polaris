@@ -1,7 +1,7 @@
 # Polaris 重构 · 第九步：表单工具支持（阻断式 form + schema 驱动面板）
 
-> 状态：规划定稿，实施中（阶段 A 完成）
-> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）
+> 状态：规划定稿，实施中（阶段 B 完成）
+> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）
 > 目标目录：`dev/docs/sky/`
 > 承接：第八步（`step8-config.md`）之后；对应审借分析 §2.4/§2.5（`plans/sky-refactor-borrow-analysis.md`）
 > 原则：**给 AI 一个「拉起 → 挂起 → 提交 → 回填」的结构化输入闭环，复用既有会话桥，不新增旁路通道。**
@@ -20,8 +20,22 @@
   - 独立验证 crate（`scripts/tmp/scaffold-form-verify.mjs` 生成，绕 Tauri DLL 0xc0000139）
     用主 crate 的 form_core 替换后 **13 测试全绿**（8 个 form_core + 5 个桥），证明移植无偏移
 
-### 下一阶段：阶段 B（cap.ai.chat 新增 form_submit 同步动作 + 桥）
-待阶段 A 验收后按 §8 实施顺序推进。
+### ✅ 阶段 B：cap.ai.chat 新增 form_submit 同步动作 + 桥（已落地）
+
+- `src-tauri/src/services/form_flow.rs` —— `FormHold`（formId/sessionId/target/action/read/fields/created_at）+
+  `build_hold` / `submit_form` / `cleanup_expired` + 4 个单测
+- `src-tauri/src/state.rs` —— 新增 `form_holds: Arc<Mutex<HashMap<String, FormHold>>>`，
+  三装配点（main / clone_for_web / integration_tests）补齐
+- `src-tauri/src/services/router/ai_chat_capability.rs` —— 同步动作表新增 `"form_submit"` 分支：
+  按 `formId` 取 hold（不存在/迟到 → 「表单已失效，请让 AI 重新发起」）→ `submit_form`
+  拿到 hold 元数据 build payload → **原文转发目标能力**（`&*s.router` dispatch）→
+  `build_receipt` 生成安全回执 → 广播 `form-answered` 事件（前端 FormCard 切提交态）
+  → 返回目标能力执行 reply
+- 验证：`cargo check --lib` 编译通过（exit 0）
+- 信任边界闭环：原始 values 只在服务端 flow 经手，AI / 前端只见 receipt
+
+### 下一阶段：阶段 C（前端 FormCard + question 块分发 hook）
+待阶段 B 验收后按 §8 实施顺序推进。
 
 ---
 
