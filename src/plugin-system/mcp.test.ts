@@ -32,9 +32,14 @@ describe('plugin MCP contributions', () => {
       }),
     ]))
 
-    // 废弃插件默认不启用
-    expect(servers).not.toEqual(expect.arrayContaining([
+    // requirement 已恢复默认启用（plans/plugin-visibility-plan.md §6 裁决）
+    expect(servers).toEqual(expect.arrayContaining([
       expect.objectContaining({ id: 'polaris-requirements' }),
+    ]))
+
+    // 废弃插件（agnes，enabledByDefault=false）默认不启用
+    expect(servers).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'polaris-agnes' }),
     ]))
   })
 

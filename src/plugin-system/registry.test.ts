@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { pluginRegistry } from './registry'
+import { isPluginUiEnabled, usePluginStore } from '../stores/pluginStore'
 import type { PolarisPluginManifest } from './types'
 
 function createManifest(overrides: Partial<PolarisPluginManifest> = {}): PolarisPluginManifest {
@@ -128,7 +129,7 @@ describe('PluginRegistry', () => {
       expect(views[1].id).toBe('view-2')
     })
 
-    it('应该只返回启用的插件的视图', () => {
+    it('enabledByDefault=false 的插件视图不再被注册表丢弃（可见性由 isPluginUiEnabled 统一裁决）', () => {
       pluginRegistry.register(createManifest({
         id: 'disabled',
         enabledByDefault: false,
@@ -137,8 +138,17 @@ describe('PluginRegistry', () => {
         },
       }))
 
+      // 单一权威源修复（plans/plugin-visibility-plan.md）：registry 不再硬过滤，
+      // 视图保留在贡献列表里；可见性由 pluginStore 的运行时门决定——
+      // 无用户记录时按 manifest 默认值（uiEnabled=false → 不可见，开关生效）
       const views = pluginRegistry.listViewContributions('sidebar')
-      expect(views).toHaveLength(0)
+      expect(views).toHaveLength(1)
+      expect(views[0].pluginId).toBe('disabled')
+
+      expect(isPluginUiEnabled(usePluginStore.getState().pluginStates, 'disabled')).toBe(false)
+      usePluginStore.getState().setPluginUiEnabled('disabled', true)
+      expect(isPluginUiEnabled(usePluginStore.getState().pluginStates, 'disabled')).toBe(true)
+      usePluginStore.getState().resetPluginState('disabled')
     })
 
     it('应该包含 pluginId', () => {

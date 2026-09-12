@@ -53,11 +53,40 @@ export const DEFAULT_PLUGIN_STATE: PluginState = {
   mcpEnabled: true,
 }
 
+/**
+ * 插件可见性默认值（来自 manifest `enabledByDefault`，由 pluginRegistry 注册）。
+ *
+ * 语义（单一权威源修复，见 plans/plugin-visibility-plan.md）：
+ * `enabledByDefault` 只表达"无用户记录时的初始 uiEnabled 默认值"，
+ * 不再是注册表硬过滤。运行时唯一可见性门 = `isPluginUiEnabled`。
+ * 无用户记录时：插件功能/MCP 默认启用，仅 UI 贡献按 manifest 默认值。
+ */
+const manifestDefaultUi = new Map<string, boolean>()
+
+/** 注册插件 manifest 的 `enabledByDefault` 默认值（registry 注册清单时调用） */
+export function registerPluginDefaultUi(pluginId: string, enabledByDefault: boolean): void {
+  manifestDefaultUi.set(pluginId, enabledByDefault)
+}
+
+/** 清除插件默认值（卸载/替换时调用，防陈旧） */
+export function clearPluginDefaultUi(pluginId: string): void {
+  manifestDefaultUi.delete(pluginId)
+}
+
+/** 读取插件可见性默认值（未注册默认 true，与历史行为一致） */
+export function getPluginDefaultUi(pluginId: string): boolean {
+  return manifestDefaultUi.get(pluginId) ?? true
+}
+
 export function getEffectivePluginState(
   pluginStates: PluginStateMap,
   pluginId: string
 ): PluginState {
-  return pluginStates[pluginId] ?? DEFAULT_PLUGIN_STATE
+  const record = pluginStates[pluginId]
+  if (record) return record
+  // 无用户记录：回退到 manifest enabledByDefault（仅约束 UI 贡献可见性）
+  const uiEnabled = getPluginDefaultUi(pluginId)
+  return { enabled: true, uiEnabled, mcpEnabled: true }
 }
 
 export function isPluginUiEnabled(pluginStates: PluginStateMap, pluginId: string): boolean {

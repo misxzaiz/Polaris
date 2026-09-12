@@ -16,7 +16,7 @@ import { loadModuleFromFile, resolvePluginEntryPath } from './pluginModuleLoader
 import { invoke } from '@/services/transport'
 import { createLogger } from '@/utils/logger'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
-import { usePluginStore } from '@/stores/pluginStore'
+import { usePluginStore, registerPluginDefaultUi, clearPluginDefaultUi } from '@/stores/pluginStore'
 
 const log = createLogger('PluginRegistry')
 
@@ -37,6 +37,9 @@ class PluginRegistry {
 
   register(manifest: PolarisPluginManifest): void {
     this.manifests.set(manifest.id, manifest)
+    // 可见性默认值（enabledByDefault 仅作初始默认，运行时门 = isPluginUiEnabled，
+    // 单一权威源修复见 plans/plugin-visibility-plan.md）
+    registerPluginDefaultUi(manifest.id, manifest.enabledByDefault)
     this.registerPanel(manifest)
     this.registerChatCards(manifest)
     this.registerEngines(manifest)
@@ -51,6 +54,7 @@ class PluginRegistry {
 
       const registered = { ...manifest, builtin: false }
       this.manifests.set(manifest.id, registered)
+      registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
       this.registerChatCards(registered)
       this.registerEngines(registered)
@@ -63,6 +67,7 @@ class PluginRegistry {
     for (const [pluginId, manifest] of this.manifests) {
       if (!manifest.builtin) {
         this.manifests.delete(pluginId)
+        clearPluginDefaultUi(pluginId)
         pluginPanelRegistry.unregisterAll(pluginId)
         chatCardRegistry.unregisterAll(pluginId)
         this.clearEngineMapping(pluginId)
@@ -79,6 +84,7 @@ class PluginRegistry {
 
       const registered = { ...manifest, builtin: false }
       this.manifests.set(manifest.id, registered)
+      registerPluginDefaultUi(registered.id, registered.enabledByDefault)
       this.registerPanel(registered)
       this.registerChatCards(registered)
       engineConfigs.push(registered)
@@ -244,7 +250,6 @@ class PluginRegistry {
 
   listViewContributions(area: PluginViewArea): PluginViewContribution[] {
     return this.listPlugins()
-      .filter((plugin) => plugin.enabledByDefault)
       .flatMap((plugin) =>
         (plugin.contributes.views ?? [])
           .filter((view) => view.area === area)
@@ -268,7 +273,6 @@ class PluginRegistry {
 
   listChatCardContributions(): PluginChatCardContribution[] {
     return this.listPlugins()
-      .filter((plugin) => plugin.enabledByDefault)
       .flatMap((plugin) =>
         (plugin.contributes.chatCards ?? []).map((card) => ({
           ...card,
@@ -286,7 +290,6 @@ class PluginRegistry {
    */
   listToolProviderContributions(): (PluginToolProviderContribution & { pluginId: string })[] {
     return this.listPlugins()
-      .filter((plugin) => plugin.enabledByDefault)
       .flatMap((plugin) =>
         (plugin.contributes.toolProviders ?? []).map((provider) => ({
           ...provider,
@@ -322,7 +325,6 @@ class PluginRegistry {
    */
   listStyleContributions(): (PluginStyleContribution & { pluginId: string })[] {
     return this.listPlugins()
-      .filter((plugin) => plugin.enabledByDefault)
       .flatMap((plugin) =>
         (plugin.contributes.styles ?? []).map((style) => ({
           ...style,
