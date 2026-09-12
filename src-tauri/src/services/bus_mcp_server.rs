@@ -200,6 +200,7 @@ fn tool_def(name: &str, description: &str, required: &[&str], properties: Value)
 fn handle_tools_list() -> Value {
     json!({
         "tools": [
+            tool_def("bus_help", "查询总线能力与工具说明：已注册的能力（cap.*）、本 server 全部工具及入参、bus_dispatch 白名单、域迁移路线图。首次使用请先调用本工具", &[], json!({})),
             tool_def("todo_list", "列出待办（支持 scope/status/priority/limit 过滤；scope 默认 workspace，传 all 返回全部）", &[], json!({
                 "scope": { "type": "string", "enum": ["workspace", "all"] },
                 "workspacePath": { "type": "string" },
@@ -248,6 +249,10 @@ fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
     let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
 
     let target = match name {
+        "bus_help" => {
+            // 统一 MCP tools/call 返回形态（content 文本承载 JSON）
+            return Ok(tool_text(&handle_bus_help(router).to_string()));
+        }
         "todo_list" | "todo_get" | "todo_create" | "todo_update" | "todo_complete"
         | "todo_delete" => "cap.todo",
         "bus_dispatch" => {
@@ -303,6 +308,43 @@ fn tool_error(message: String) -> Value {
     json!({
         "content": [{ "type": "text", "text": message }],
         "isError": true
+    })
+}
+
+/// bus_help：总线能力与工具的说明（发现/文档工具）
+///
+/// 返回：本 server 全部工具及入参、总线上已注册的能力、bus_dispatch 白名单、
+/// 各业务域的迁移状态与可用入口（主应用 dispatch / 本 server 工具）。
+fn handle_bus_help(router: &RouterBus) -> Value {
+    let tools = handle_tools_list();
+    let registered: Vec<String> = router
+        .list_capabilities()
+        .iter()
+        .map(|c| c.0.clone())
+        .collect();
+
+    json!({
+        "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": PROTOCOL_VERSION },
+        "tools": tools["tools"],
+        "capabilities": {
+            "registered_here": registered,
+            "dispatch_whitelist": DISPATCH_WHITELIST,
+            "说明": "registered_here = 本进程总线已注册能力；dispatch_whitelist = bus_dispatch 可转发的目标（按阶段 C 权限策略逐域放开）"
+        },
+        "modules": [
+            { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
+              "tools": ["todo_list", "todo_get", "todo_create", "todo_update", "todo_complete", "todo_delete", "bus_dispatch→cap.todo"],
+              "状态": "✅ 本 server 可用" },
+            { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "主应用总线（流式 + 同步）", "状态": "🚚 仅主应用进程；MCP 侧待接" },
+            { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "🚚 仅主应用进程；内存不跨进程，MCP 侧不提供" },
+            { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "🚚 仅主应用进程" },
+            { "domain": "dialog / requirement / scheduler / browser / config 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
+        ],
+        "usage_examples": [
+            { "tool": "todo_create", "arguments": { "content": "完成代码评审", "priority": "high" } },
+            { "tool": "todo_list", "arguments": { "scope": "all", "status": "pending" } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all" } } }
+        ]
     })
 }
 
