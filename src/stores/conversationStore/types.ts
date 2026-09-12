@@ -359,6 +359,7 @@ export interface ConversationState {
   // ===== 流式构建映射 =====
   toolBlockMap: Map<string, number>
   questionBlockMap: Map<string, number>
+  formBlockMap: Map<string, number>
   planBlockMap: Map<string, number>
   activePlanId: string | null
   agentRunBlockMap: Map<string, number>
@@ -541,6 +542,13 @@ export interface ConversationActions {
       answers?: import('../../types/chat').SubAnswer[]
       declined?: boolean
     }
+  ) => void
+
+  // ===== Form（表单工具） =====
+  appendFormBlock: (block: import('../../types/chat').FormBlock) => void
+  updateFormBlock: (
+    formId: string,
+    updates: Partial<import('../../types/chat').FormBlock>
   ) => void
 
   // ===== PlanMode =====

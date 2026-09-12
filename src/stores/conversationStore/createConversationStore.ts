@@ -120,6 +120,7 @@ function createInitialState(sessionId: string): ConversationState {
     // 流式构建映射
     toolBlockMap: new Map(),
     questionBlockMap: new Map(),
+    formBlockMap: new Map(),
     planBlockMap: new Map(),
     activePlanId: null,
     agentRunBlockMap: new Map(),
@@ -273,6 +274,7 @@ export function createConversationStore(
           currentMessage: null,
           toolBlockMap: new Map(),
           questionBlockMap: new Map(),
+          formBlockMap: new Map(),
           planBlockMap: new Map(),
           activePlanId: null,
           agentRunBlockMap: new Map(),
@@ -985,6 +987,49 @@ export function createConversationStore(
         }
       },
 
+      // ===== Form（表单工具） =====
+      appendFormBlock: (block) => {
+        if (_textBuffer) get()._flushTextBuffer()
+
+        const { currentMessage, formBlockMap, streamingUpdateCounter } = get()
+        const newMap = new Map(formBlockMap)
+
+        // 幂等：同 id 表单不重复追加（拉起帧与历史恢复可能并发）
+        if (currentMessage?.blocks.some((b) => b.type === 'form' && b.id === block.id)) {
+          return
+        }
+
+        if (!currentMessage) {
+          newMap.set(block.id, 0)
+          set({
+            currentMessage: createCurrentAssistantMessage([block]),
+            formBlockMap: newMap,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        } else {
+          const blocks = [...currentMessage.blocks, block]
+          newMap.set(block.id, blocks.length - 1)
+          set({
+            currentMessage: { ...currentMessage, blocks },
+            formBlockMap: newMap,
+            streamingUpdateCounter: streamingUpdateCounter + 1,
+          })
+        }
+      },
+
+      updateFormBlock: (formId, updates) => {
+        const { currentMessage, formBlockMap } = get()
+        if (!currentMessage) return
+        const idx = formBlockMap.get(formId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        if (blocks[idx]?.type === 'form') {
+          const existing = blocks[idx] as import('../../types/chat').FormBlock
+          blocks[idx] = { ...existing, ...updates }
+          set({ currentMessage: { ...currentMessage, blocks } })
+        }
+      },
+
       // ===== PluginCard =====
       appendPluginCardBlock: (block) => {
         if (_textBuffer) get()._flushTextBuffer()
@@ -1634,6 +1679,17 @@ export function createConversationStore(
             ) {
               modified = true
               return { ...block, status: 'declined' as const }
+            }
+            // 历史恢复：仍 pending 的表单一律置为失效（进程重启后 form_holds 已清空，
+            // 迟到的 form_submit 会被服务端拒绝）。展示为只读失败回执，提示重新发起。
+            if (block.type === 'form' && block.status === 'pending') {
+              modified = true
+              return {
+                ...block,
+                status: 'submitted' as const,
+                ok: false,
+                receipt: '表单已失效（会话中断或超时），请让 AI 重新发起',
+              }
             }
             return block
           })

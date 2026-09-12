@@ -65,7 +65,7 @@ export interface PermissionRequest {
  */
 
 /** 内容块类型 - 用于 Assistant 消息的内容分段 */
-export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | PlanModeBlock | AgentRunBlock | TaskBoardBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
+export type ContentBlock = TextBlock | ThinkingBlock | ToolCallBlock | ArtifactPreviewBlock | QuestionBlock | FormBlock | PlanModeBlock | AgentRunBlock | TaskBoardBlock | ToolGroupBlock | PermissionRequestBlock | PluginCardBlock | ContextCompactBlock;
 
 /** 文本内容块 */
 export interface TextBlock {
@@ -277,6 +277,62 @@ export interface QuestionBlock {
   allowCustomInput?: boolean;
   /** @deprecated 旧字段：用户答案（首题摘要） */
   answer?: QuestionAnswer;
+}
+
+/** ========================================
+ * Form（表单工具）相关类型
+ * ======================================== */
+
+/** 表单字段类型（schema 驱动面板支持的控件） */
+export type FormFieldType =
+  | 'string'
+  | 'number'
+  | 'boolean'
+  | 'textarea'
+  | 'select'
+  | 'secret';
+
+/** 表单字段 schema（由 AI 声明的 form 工具参数，前端据此渲染控件） */
+export interface FormFieldSchema {
+  name: string;
+  type?: FormFieldType;
+  label?: string;
+  placeholder?: string;
+  /** select 字段的可选项（type=select 必需） */
+  options?: string[];
+  /** 是否必填 */
+  required?: boolean;
+  /** 默认值 */
+  default?: string | number | boolean;
+  /** secret 字段：值在服务端强制掩码，AI 上下文与前端回执都不可见原文 */
+  secret?: boolean;
+}
+
+/** 表单内容块 - 用于 form 工具（schema 驱动面板，read 信任边界由服务端强制） */
+export interface FormBlock {
+  type: 'form';
+  /** 表单 ID（与 form_submit 的 formId 对应） */
+  id: string;
+  /** 后端/路由会话 ID */
+  sessionId?: string;
+  /** 表单标题 */
+  title?: string;
+  /** read 模式：full=AI 可见字段值；none=仅字段名（值不写入 DOM） */
+  read: 'full' | 'none';
+  /** 目标能力（付给 form_submit） */
+  target: string;
+  /** 目标动作 */
+  action: string;
+  /** 字段 schema（前端渲染控件） */
+  fields: FormFieldSchema[];
+  /** 提交状态 */
+  status: 'pending' | 'submitted';
+  /** 服务端回执（read=none 时不含字段值） */
+  receipt?: string;
+  /** 提交是否成功 */
+  ok?: boolean;
+  /** 创建时间（ISO 8601） */
+  createdAt: string;
 }
 
 /** ========================================
@@ -700,6 +756,11 @@ export function isArtifactPreviewBlock(block: ContentBlock): block is ArtifactPr
 /** 类型守卫：判断是否为问题块 */
 export function isQuestionBlock(block: ContentBlock): block is QuestionBlock {
   return block.type === 'question';
+}
+
+/** 类型守卫：判断是否为表单块 */
+export function isFormBlock(block: ContentBlock): block is FormBlock {
+  return block.type === 'form';
 }
 
 /** 类型守卫：判断是否为计划模式块 */

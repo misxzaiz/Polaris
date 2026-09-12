@@ -7,6 +7,7 @@ import React from 'react';
 import type { ContentBlock } from '@/types';
 import { ContentBlockErrorBoundary } from '../common/ContentBlockErrorBoundary';
 import { AskQuestionCard } from '../tool-calls/AskQuestionCard';
+import { FormCard } from './FormCard';
 import { PlanModeBlockRenderer } from '../tool-calls/PlanModeBlockRenderer';
 import { AgentRunBlockRenderer } from '../tool-calls/AgentRunBlockRenderer';
 import { TaskBoardRenderer } from './TaskBoardRenderer';
@@ -89,6 +90,12 @@ export function renderContentBlock(
     case 'question':
       return wrapWithErrorBoundary(
         <AskQuestionCard block={block} />,
+        block.id
+      );
+    case 'form':
+      // 表单工具（schema 驱动面板）：form 拉起事件 → FormCard，提交走 form_submit
+      return wrapWithErrorBoundary(
+        <FormCard block={block} />,
         block.id
       );
     case 'plan_mode':

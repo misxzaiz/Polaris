@@ -403,6 +403,55 @@ export interface PluginCardAnsweredEvent {
 }
 
 // ========================================
+// Form 相关事件（表单工具）
+// ========================================
+
+/**
+ * 表单字段 schema（AI 声明的 form 工具参数）
+ */
+export interface FormFieldData {
+  name: string
+  type?: 'string' | 'number' | 'boolean' | 'textarea' | 'select' | 'secret'
+  label?: string
+  placeholder?: string
+  options?: string[]
+  required?: boolean
+  default?: string | number | boolean
+  secret?: boolean
+}
+
+/**
+ * Form 事件 - form 工具拉起表单（schema 驱动面板）
+ */
+export interface FormEvent {
+  type: 'form'
+  sessionId: string
+  formId: string
+  title?: string
+  /** read 模式：full=AI 可见字段值；none=仅字段名 */
+  read?: 'full' | 'none'
+  /** 目标能力（付给 form_submit） */
+  target: string
+  /** 目标动作 */
+  action: string
+  /** 字段 schema */
+  fields: FormFieldData[]
+}
+
+/**
+ * FormAnswered 事件 - 表单已提交（服务端回执）
+ */
+export interface FormAnsweredEvent {
+  type: 'form-answered'
+  sessionId: string
+  formId: string
+  /** 提交是否成功 */
+  ok: boolean
+  /** 服务端回执（read=none 时不含字段值） */
+  receipt: string
+}
+
+// ========================================
 // Todo 相关事件
 // ========================================
 
@@ -831,6 +880,8 @@ export type AIEvent =
   | QuestionAnsweredEvent
   | PluginCardEvent
   | PluginCardAnsweredEvent
+  | FormEvent
+  | FormAnsweredEvent
   | TodoCreatedEvent
   | TodoUpdatedEvent
   | TodoDeletedEvent

@@ -666,6 +666,42 @@ export function handleAIEvent(
       })
       break
 
+    case 'form': {
+      // form 工具拉起：schema 驱动面板。read=none 时服务端只回执字段名，
+      // 前端不持有原始值，仅渲染控件（值由用户提交时直达服务端）。
+      state.appendFormBlock({
+        type: 'form',
+        id: event.formId,
+        sessionId: event.sessionId,
+        title: event.title,
+        read: event.read ?? 'full',
+        target: event.target,
+        action: event.action,
+        fields: (event.fields ?? []).map((f) => ({
+          name: f.name,
+          type: f.type ?? 'string',
+          label: f.label,
+          placeholder: f.placeholder,
+          options: f.options,
+          required: f.required,
+          default: f.default,
+          secret: f.secret,
+        })),
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      })
+      break
+    }
+
+    case 'form-answered':
+      // 服务端回执落回表单块（ok/receipt），FormCard 据此切换提交态
+      state.updateFormBlock(event.formId, {
+        status: 'submitted',
+        ok: event.ok,
+        receipt: event.receipt,
+      })
+      break
+
     // Task 事件 - 由 TaskStore 处理，不在 ConversationStore 范围内
     case 'task_metadata':
     case 'task_progress':

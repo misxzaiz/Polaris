@@ -1,7 +1,7 @@
 # Polaris 重构 · 第九步：表单工具支持（阻断式 form + schema 驱动面板）
 
-> 状态：规划定稿，实施中（阶段 B 完成）
-> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）
+> 状态：规划定稿，实施中（阶段 C 完成）
+> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）/ 阶段 C（2026-09-13）
 > 目标目录：`dev/docs/sky/`
 > 承接：第八步（`step8-config.md`）之后；对应审借分析 §2.4/§2.5（`plans/sky-refactor-borrow-analysis.md`）
 > 原则：**给 AI 一个「拉起 → 挂起 → 提交 → 回填」的结构化输入闭环，复用既有会话桥，不新增旁路通道。**
@@ -34,8 +34,24 @@
 - 验证：`cargo check --lib` 编译通过（exit 0）
 - 信任边界闭环：原始 values 只在服务端 flow 经手，AI / 前端只见 receipt
 
-### 下一阶段：阶段 C（前端 FormCard + question 块分发 hook）
-待阶段 B 验收后按 §8 实施顺序推进。
+### ✅ 阶段 C：前端 FormCard + question 块分发（已落地）
+
+- `src/types/chat.ts` —— 新增 `FormBlock` / `FormFieldSchema` / `FormFieldType` + `isFormBlock` guard，并入 `ContentBlock` union
+- `src/ai-runtime/event.ts` —— 新增 `FormEvent` / `FormAnsweredEvent` + `FormFieldData`，并入 `AIEvent` union
+- `src/stores/conversationStore/`
+  - `types.ts`：`formBlockMap` + `appendFormBlock` / `updateFormBlock` 签名
+  - `createConversationStore.ts`：实现两个方法（幂等追加 + 索引定位更新）；历史恢复规整——仍 pending 的 form 块置为失效（hold 已丢，提示重新发起）
+  - `eventHandler.ts`：`case 'form'`（schema 驱动拉起 FormBlock）+ `case 'form-answered'`（回填 ok/receipt）
+- `src/components/Chat/chatBlocks/FormCard.tsx` —— schema 驱动面板（string/number/boolean/textarea/select/secret）；
+  read=none 用非受控控件 + ref 收集，值不进入 React state；secret 恒密码框；必填前端兜底；
+  提交走 `aiChatDispatch({ action:'form_submit', formId, values })`；回执态展示
+- `src/components/Chat/chatBlocks/index.tsx` —— `case 'form'` 分发 FormCard
+- `src/stores/conversationStore/formBlock.test.ts` —— 4 单测（拉起渲染 / read=none+回填 / 历史恢复失效 / 幂等）
+- 验证：tsc 零新增错误（42 存量基线不变）；4 单测全过；conversationStore 108 通过（3 存量网络失败）；
+  `vite build` 成功（52s）
+
+### 下一阶段：阶段 D（form 工具进 polaris-ask MCP）
+待阶段 C 验收后按 §8 实施顺序推进。
 
 ---
 
