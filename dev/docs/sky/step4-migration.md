@@ -173,7 +173,7 @@ ai-runtime 清理，本次未动（记入 backlog，见 §6）。
 | 2 | **cap.requirement** | `services/requirementService.ts` | 7 | `RequirementPanel.tsx`、requirementStore | 与 polaris.requirement 插件去留裁决联动（§插件可见性计划）；裁决保留则迁 |
 | 3 | **cap.history** | `services/historyService.ts` | 5 | SessionTree / SessionHistoryPanel 等 4 处 | 只读+删除为主，低风险 |
 | 4 | **cap.context** | `services/tauri/contextService.ts` | 9 | contextStore（AI 上下文注入链） | upsert/query 语义与 Storage 契约贴合 |
-| 5 | **cap.config** | `services/tauri/configService.ts` | 15 | SettingsPage、useAppInit、MobileConnectionGate | **管理面域**：必须在第五步阶段 B（Remote 策略）之后迁，作为第一个权限敏感迁移样本——Remote 默认 deny 写 |
+| 5 | **cap.config** | `services/tauri/configService.ts` | 15 | SettingsPage、useAppInit、MobileConnectionGate | **管理面域**：✅ 前置已解锁（第五步阶段 C PolicyPermission 已落地），**下一迁移块首选**——作为第一个权限敏感迁移样本，迁完即具备启用 `cap.config* remote deny` 规则的条件 |
 | 6 | **cap.dialog** | `services/dialogStorage/dialogBackend.ts` | 8 | 会话持久化全链 | 高价值高风险（聊天数据），建议攒到模板熟练后 |
 | — | cap.scheduler / cap.browser / cap.lsp / cap.integration | 48 / 39 / 16 / 20 命令 | — | — | 大域，等小域把模板与权限地基磨稳后批量做 |
 
