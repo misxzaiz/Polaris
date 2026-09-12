@@ -40,6 +40,12 @@ const PROTOCOL_VERSION: &str = "2024-11-05";
 const CALLER: &str = "polaris-bus-mcp";
 
 /// bus_dispatch 白名单：AI 可经通用转发触达的能力（逐域放开，见 step7 阶段 C）
+///
+/// 边界规则（与 polaris-dispatch MCP 的职责切分，防工具冲突）：
+/// - 本 server = 应用数据域（持久化数据 CRUD，全局视角，与会话无关）
+/// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
+/// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
+///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
 const DISPATCH_WHITELIST: &[&str] = &["cap.todo"];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
@@ -201,7 +207,7 @@ fn handle_tools_list() -> Value {
     json!({
         "tools": [
             tool_def("bus_help", "查询总线能力与工具说明：已注册的能力（cap.*）、本 server 全部工具及入参、bus_dispatch 白名单、域迁移路线图。首次使用请先调用本工具", &[], json!({})),
-            tool_def("bus_dispatch", "通用总线转发：把 payload 发给白名单内的能力（当前仅 cap.todo）。供高级用法；日常请用 todo_* 工具", &["target", "payload"], json!({
+            tool_def("bus_dispatch", "读写 Polaris 应用持久化数据（当前仅待办 cap.todo）。注意：这是数据读写工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
                 "target": { "type": "string", "enum": ["cap.todo"] },
                 "payload": { "type": "object" }
             })),

@@ -121,40 +121,43 @@ impl Capability for AiChatCapability {
                     }
                 };
                 match action.as_str() {
-                    "start" => {
-                        let options: core::ChatRequestOptions = serde_json::from_value(params.clone())
-                            .map_err(|e| format!("请求参数非法: {}", e))?;
-                        let sid = core::start_chat_inner(
-                            get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
-                            options,
-                            s,
-                            chat_callbacks(None),
-                            &core::AppPaths {
-                                config_dir: crate::services::data_root::data_root().config_dir(),
-                                resource_dir: s.resource_dir.get().cloned().flatten(),
-                            },
-                        )
-                        .await
-                        .map_err(|e| e.to_message())?;
-                        Ok(serde_json::json!(sid))
-                    }
-                    "continue" => {
-                        let options: core::ChatRequestOptions = serde_json::from_value(params.clone())
-                            .map_err(|e| format!("请求参数非法: {}", e))?;
-                        core::continue_chat_inner(
-                            sid(),
-                            get("message").and_then(|m| m.as_str()).unwrap_or("").to_string(),
-                            options,
-                            s,
-                            chat_callbacks(None),
-                            &core::AppPaths {
-                                config_dir: crate::services::data_root::data_root().config_dir(),
-                                resource_dir: s.resource_dir.get().cloned().flatten(),
-                            },
-                        )
-                        .await
-                        .map_err(|e| e.to_message())?;
-                        Ok(serde_json::json!({ "ok": true }))
+                    "start" | "continue" => {
+                        // 前端 options 嵌套在 "options" 字段下（{action, message, options}）；
+                        // 兼容顶层平铺。修复：此前直接反序列化整个 payload 导致
+                        // contextId/workDir 等全部丢失 → 事件落 "main" 触发新建会话窗口。
+                        let options: core::ChatRequestOptions = if get("options").is_some() {
+                            serde_json::from_value(get("options").cloned().unwrap_or(Value::Null))
+                                .map_err(|e| format!("options 参数非法: {}", e))?
+                        } else {
+                            let mut flat = params.clone();
+                            if let Some(obj) = flat.as_object_mut() {
+                                obj.remove("action");
+                                obj.remove("sessionId");
+                            }
+                            serde_json::from_value(flat)
+                                .map_err(|e| format!("请求参数非法: {}", e))?
+                        };
+                        let message = get("message").and_then(|m| m.as_str()).unwrap_or("").to_string();
+                        if message.trim().is_empty() {
+                            return Err("cap.ai.chat 需要 message 参数".to_string());
+                        }
+                        let callbacks = chat_callbacks(None);
+                        let app_paths = core::AppPaths {
+                            config_dir: crate::services::data_root::data_root().config_dir(),
+                            resource_dir: s.resource_dir.get().cloned().flatten(),
+                        };
+                        if action == "start" {
+                            let sid = core::start_chat_inner(message, options, s, callbacks, &app_paths)
+                                .await
+                                .map_err(|e| e.to_message())?;
+                            Ok(serde_json::json!(sid))
+                        } else {
+                            let sid = sid();
+                            core::continue_chat_inner(sid, message, options, s, callbacks, &app_paths)
+                                .await
+                                .map_err(|e| e.to_message())?;
+                            Ok(serde_json::json!({ "ok": true }))
+                        }
                     }
                     "interrupt" => {
                         let engine_id = get("engineId").and_then(|v| v.as_str()).map(String::from);
