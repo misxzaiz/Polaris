@@ -24,6 +24,7 @@
 use std::path::PathBuf;
 
 use polaris_lib::services::{
+    bus_mcp_server::run_bus_mcp_server,
     agnes_mcp_server::run_agnes_mcp_server,
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
@@ -53,7 +54,7 @@ fn main_impl() -> Result<()> {
     let subcommand = args.get(1).ok_or_else(|| {
         AppError::ValidationError(
             "缺少子命令。用法：polaris-mcp <subcommand> [args...]\n\
-             可用子命令：requirements, prd-preview, agnes, ph, computer, ask, browser, dispatch"
+             可用子命令：requirements, prd-preview, agnes, ph, computer, bus, scheduler, ask, browser, dispatch"
                 .to_string(),
         )
     })?;
@@ -80,6 +81,18 @@ fn main_impl() -> Result<()> {
         }
         "computer" => {
             run_computer_mcp(sub_args)
+        }
+        // ── Bus MCP server（第七步阶段 E：总线能力 → AI 工具面） ──────────
+        "bus" => {
+            let config_dir = if sub_args.is_empty() {
+                polaris_lib::services::data_root::data_root()
+                    .config_dir()
+                    .to_string_lossy()
+                    .to_string()
+            } else {
+                parse_config_dir_args(sub_args, "bus")?.0
+            };
+            polaris_lib::services::bus_mcp_server::run_bus_mcp_server(&config_dir)
         }
         "scheduler" => {
             let (config_dir, workspace_path) = parse_config_dir_args(sub_args, "scheduler")?;

@@ -8,6 +8,14 @@ export const todoPluginManifest: PolarisPluginManifest = {
   builtin: true,
   enabledByDefault: true,
   contributes: {
+    mcpServers: [
+      {
+        id: 'polaris-bus',
+        transport: 'stdio',
+        command: 'polaris-mcp',
+        argsTemplate: ['bus', '{{appConfigDir}}'],
+      },
+    ],
     views: [
       {
         id: 'todo.panel',

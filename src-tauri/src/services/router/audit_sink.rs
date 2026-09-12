@@ -87,6 +87,14 @@ pub fn audit_file_path() -> PathBuf {
         .join("dispatch.jsonl")
 }
 
+/// 具名审计文件路径（跨进程来源隔离：bus-mcp 用独立链文件，避免哈希链竞争）
+pub fn audit_file_path_named(name: &str) -> PathBuf {
+    crate::services::data_root::data_root()
+        .root()
+        .join("audit")
+        .join(name)
+}
+
 /// 文件型审计通道（Bootstrap 直管，dispatch allow/deny 都经这里追加）
 pub struct FileAuditSink {
     inner: Mutex<SinkState>,
