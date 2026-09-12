@@ -6,8 +6,7 @@ export const todoPluginManifest: PolarisPluginManifest = {
   version: '0.1.0',
   description: '提供工作区待办面板能力。待办数据经 cap.todo capability 读写，不再提供独立 MCP server。',
   builtin: true,
-  enabledByDefault: false,
-  deprecated: true,
+  enabledByDefault: true,
   contributes: {
     views: [
       {

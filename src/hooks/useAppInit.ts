@@ -22,7 +22,6 @@ import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { bootstrapEngines } from '../core/engine-bootstrap';
-import { bootstrapTools } from '../core/tool-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
 import { pluginServiceManager } from '@/services/pluginServiceManager';
@@ -219,9 +218,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     setInitPhase('正在初始化 AI 引擎...');
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine);
-
-    // 注册 AI 工具
-    bootstrapTools();
 
     // 恢复窗口透明度
     if (config?.window) {
