@@ -91,6 +91,12 @@
 白名单当前只含数据域（kv/todo/context）；cap.config 等管理面目标拒绝。后续放开即改
 `FORM_TARGET_WHITELIST` 常量表，前端/引擎零改动。
 
+**cap.config 远程收紧的边界（2026-09-13 核实）**：cap.config 的 dispatch target 恒为 `cap.config`
+（action 在 payload），不存在 `cap.config.read` 等子能力 target——PolicyPermission 矩阵的
+`cap.config* → remote deny` 匹配子路径语义对表单转发不生效，表单侧已由白名单完全覆盖；
+而 Web（Remote）性能开关合法走 cap.config patch，若注入矩阵 remote deny 会打挂 Web 性能页。
+cap.config 的远程收紧须等 config 语义收敛后单独引入，不在表单白名单范围内（详见 §7 验收走查 #5）。
+
 ---
 
 ## 0. 一句话结论
@@ -252,6 +258,31 @@ expand_dot_paths + build_receipt + FormBridge（oneshot 等待）+ FormSubmitCap
 5. 权限：Remote 提交本会话放行；cap.config 目标远程 deny。
 6. 前端 FormCard 在两种插件状态下可见性 + vitest。
 7. 摘旧四层清单过；`grep` 表单旁路直读点全量核对、无第二通道残留。
+
+### 验收走查（2026-09-13）
+
+- **#1** ✅ `cargo check --lib` / `--tests` 阶段 E 已双绿；`--no-default-features --bin polaris-web`
+  首次跑出**存量门控错误**（`model_profile_service.rs` 的 `Config` import 缺 `tauri-app` 门控，
+  step8 之前已存在，step9 未碰此文件），已就地修复（补 `use crate::models::config::{Config, ModelProfile}`），
+  重跑确认中。
+- **#2** ✅ form_core 8 单测在独立 verify crate 实跑全绿（`scripts/tmp/scaffold-form-verify.mjs`）。
+- **#3** ✅ form_submit 桥往返 + 迟到拒绝已入 `form_flow.rs` 与 `ai_chat_capability.rs`（表单失效拒绝）。
+- **#4** ⏳ 双引擎真实拉起属人工闭环，待测试台验证（帧协议与 MCP tool 已是双引擎共用注入，见 1.3）。
+- **#5** ✅ **落地说明（重要）**：„cap.config 目标远程 deny“在表单语境下的落点是**阶段 E 表单白名单**
+  `FORM_TARGET_WHITELIST`（cap.config 不在表内 → 拉起回 `form_error` 帧 + 提交纵深防御拒绝），
+  **而非** PolicyPermission 矩阵。原因（代码级核实）：
+  - `cap.config` dispatch 的 target 恒为 `cap.config`（action 在 payload），**不存在** `cap.config.read` 等
+    子能力 target；矩阵的 `cap.config* remote deny` **匹配子路径永远不触发**（`policy_permission.rs` 前缀
+    `starts_with` 只匹配真实 target 前缀，而真实 target 就是 `cap.config` 本-body）。
+  - Web 前端（Remote source）性能开关**现在合法地** `router_dispatch("cap.config",{action:"patch"})`
+    （`configStore.ts:189`）；若在 config.json 注入 `cap.config* → remote deny`，会让 Web 性能页
+    **被打挂**。文档 §4 预留的「精确 `cap.config.read → allow` 覆盖通配 deny」因不存在该 target 而无意义。
+  - 因此：**cap.config 的远程收紧若需要，须等 config 语义收敛到未被 Web UI 直用的动作粒度后单独引入**，
+    不在表单白名单范围内；表单的 cap.config 拒绝已由白名单完全覆盖。
+- **#6** ✅ 前端 FormCard vitest（`formBlock.test.ts` 4 单测）+ tsc / vite build（阶段 C 已绿）。
+- **#7** ✅ `grep` 旁路核查：`form_holds` 读写点 **仅 3 处**（ask_listener 拉起清理/注册、ai_chat_capability
+  form_submit 取走）；旧 `form_bridge` / `form_answer` 帧 / `ai_form_submit` **零残留**；前端 form
+  事件/块唯经 eventHandler `case 'form'`/`form-answered` → FormCard → `form_submit`。无第二通道。
 
 ## 8. 实施顺序
 
