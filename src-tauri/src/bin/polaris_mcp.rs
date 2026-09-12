@@ -24,7 +24,6 @@
 use std::path::PathBuf;
 
 use polaris_lib::services::{
-    bus_mcp_server::run_bus_mcp_server,
     agnes_mcp_server::run_agnes_mcp_server,
     ask_mcp_server::{run_ask_mcp_server, AskMcpConfig},
     browser_mcp_server::{run_browser_mcp_server, BrowserMcpConfig},
