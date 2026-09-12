@@ -421,11 +421,15 @@ pub fn create_app_state(
         // cap.context —— 第七步阶段 B1：上下文唯一入口（内存存储同源）
         let _ = bus.register_handle(Box::new(ContextCapability::new(state_context_store.clone())));
         // cap.config —— 第八步：系统配置统一入口（性能开关试点）。
-        // on_patch 回调暂为空（副作用链 cascade/refresh/emit 由调用方 tauri command /
-        // Web API 在收到 patch 结果后触发，与现有 update_config_patch 同构）。
+        // on_patch：cascade（级联激活 Profile 凭证写 Claude settings.json，同步、无 Tauri
+        // 依赖，桌面/Web 跨模式可用）。refresh/emit 由调用方 tauri command / Web API 补
+        // （桌面 `config_patch_via_bus` 有 AppHandle 全量副作用；Web 桥无 AppHandle，emit 缺
+        // 与 handle_update_settings 现状一致）。
         let _ = bus.register_handle(Box::new(ConfigCapability::new(
             config_store_arc.clone(),
-            Box::new(|_| {}),
+            Box::new(|config: &crate::models::config::Config| {
+                crate::services::ModelProfileService::cascade_active_profile_to_claude(config);
+            }),
         )));
         // 第六步：流式能力（平行表，走 dispatch_stream）
         // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）

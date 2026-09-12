@@ -186,8 +186,6 @@
 
 ### 遗留（后续阶段）
 
-- **B**：副作用链接线（`on_patch` 注入 cascade/refresh/emit）——试点性能开关不改引擎配置，
-  `syncPerfHotSwitch` 已覆盖热切换，故暂不阻塞。
 - **D**：摘旧四层清单（lib.rs `update_config_patch` / settings.rs / httpTransport 映射）。
   试点阶段旧通道保留（双写并存，cap.config 已收敛性能段）。
 - Web 模式 `dispatch_router_dispatch` source=Remote，默认权限全放行可写；预埋
@@ -231,11 +229,17 @@
 
 ### 9.3.1 A2 实施清单
 
-- [ ] **后端**：新增 `config_patch_via_bus` tauri command（`lib.rs`）
+- [x] **后端**：新增 `config_patch_via_bus` tauri command（`lib.rs`）
   - `req: RouterDispatchRequest`（target=cap.config, action=patch, section, value）
   - 经 `state.router.dispatch` 走总线（权限 gate + audit + 白名单 + 深层合并）
   - 成功后补 `refresh_engine_configs` + `emit_config_changed`（桌面 AppHandle）
   - 注册进 `generate_handler!`
-- [ ] **后端**：cap.config `on_patch` 补 cascade（能力内同步，桌面/Web 通用）
-- [ ] **前端**：桌面模式走 `config_patch_via_bus`，Web 模式走 `router_dispatch`（`configPatch` 分流）
-- [ ] **验证**：verify crate 副作用顺序测试扩展（cascade 在 patch 后）仍绿；双模式 cargo check；tsc
+- [x] **后端**：cap.config `on_patch` 补 cascade（能力内同步，桌面/Web 通用）
+  - `model_profile_service.rs` 新增 `cascade_active_profile_to_claude(&Config)`（无 Tauri 依赖）
+  - `lib.rs` `cascade_active_model_profile` 委托为 services 版（单一真源，消除双份）
+  - `state.rs` `on_patch` 注入该函数
+- [x] **前端**：桌面模式走 `config_patch_via_bus`，Web 模式走 `router_dispatch`（`configPatch` 分流）
+- [x] **验证**：verify crate 114 绿（副作用顺序未破坏）；双模式 cargo check（`--no-default-features
+  --bin polaris-web` / `--features tauri-app`）均 EXIT=0；tsc 对改动文件（configDispatchService/
+  configStore）零错误；隔离实例冒烟复验 cap.config 机制零回归（get/patch 深层合并/白名单拒绝/
+  持久化）

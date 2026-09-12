@@ -177,38 +177,64 @@ async fn update_config_patch(
     Ok(saved_config)
 }
 
+/// 经 RouterBus 走 cap.config 的配置补丁保存（第八步 A2：桌面参数经总线 + 全量副作用）。
+///
+/// 与 `update_config_patch`（直写 ConfigStore）的区别：
+/// - 走 `state.router.dispatch` 总线：权限 gate + 审计 + 白名单 schema + 深层合并
+/// - 成功后补全量副作用链（cascade → refresh → emit），与旧命令对齐
+///
+/// 入参 `req.target` 应恒为 `cap.config`（payload 需含 `action=patch` / `section` / `value`）。
+/// 桌面主窗口 Source=Bootstrap（`resolve_ipc_source` 按 webview label 判定），不受远程限制。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+async fn config_patch_via_bus(
+    req: crate::commands::router::RouterDispatchRequest,
+    app_handle: tauri::AppHandle,
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, AppState>,
+) -> Result<Config> {
+    use crate::contracts::Router as _; // dispatch
+    use crate::commands::router::resolve_ipc_source;
+
+    let env = crate::contracts::Envelope {
+        id: crate::contracts::MsgId(format!("cbus-{}", uuid::Uuid::new_v4())),
+        // Source 由传输层（Tauri IPC 通道）注入，前端不可自填；主窗口 → Bootstrap
+        source: resolve_ipc_source(window.label()),
+        target: crate::contracts::CapabilityId(req.target),
+        payload: req.payload,
+        trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+    };
+    let reply = state
+        .router
+        .dispatch(env)
+        .map_err(|e| error::AppError::Unknown(e))?;
+
+    let saved = reply
+        .result
+        .map_err(|e| error::AppError::Unknown(e))?;
+
+    // 反序列化完整 Config（与旧命令返回对齐），成功则触发副作用链
+    let saved_config: Config =
+        serde_json::from_value(saved.clone()).map_err(|e| error::AppError::Unknown(e.to_string()))?;
+
+    cascade_active_model_profile(&saved_config);
+    refresh_engine_configs(&state, saved_config.clone()).await;
+    emit_config_changed(&app_handle, &saved_config).await;
+
+    Ok(saved_config)
+}
+
 /// 配置保存后将激活的 ModelProfile 凭证级联写入 agent 原生配置文件。
 ///
 /// 仅处理当前激活的 Profile（`active: true` 且 target_engine 适用于 Claude Code）。
 /// 级联失败不中断保存流程（仅记录警告日志），因为级联本质是便利功能：
 /// 即使写入失败，下次会话启动时仍会通过 settings overlay 注入环境变量。
+///
+/// 实现委托 `ModelProfileService::cascade_active_profile_to_claude`（services 层，
+/// 桌面/Web 跨模式共用），避免 cap.config `on_patch` 与旧命令双份重复漂移。
 #[cfg(feature = "tauri-app")]
 fn cascade_active_model_profile(config: &Config) {
-    let active_profile = config.model_profiles.iter().find(|p| p.active);
-    let Some(profile) = active_profile else {
-        return;
-    };
-
-    // 仅当 Profile 适用于 Claude Code 时才写入 Claude settings.json
-    let engines = profile.resolve_target_engines();
-    if !engines.is_empty() && !engines.contains(&"claude".to_string()) {
-        return;
-    }
-
-    if let Err(e) =
-        crate::services::ModelProfileService::cascade_to_claude_settings(profile)
-    {
-        tracing::warn!(
-            "[update_config] 级联写入 Claude settings.json 失败 (Profile {}): {}",
-            profile.id,
-            e
-        );
-    } else {
-        tracing::info!(
-            "[update_config] 已级联写入 Claude settings.json (Profile: {})",
-            profile.id
-        );
-    }
+    crate::services::ModelProfileService::cascade_active_profile_to_claude(config)
 }
 
 /// 把最新配置同步到所有已注册 AI 引擎(失效缓存).
@@ -812,6 +838,7 @@ pub fn run() {
             get_config,
             update_config,
             update_config_patch,
+            config_patch_via_bus,
             apply_web_server,
             get_web_server_status,
             get_local_ips,

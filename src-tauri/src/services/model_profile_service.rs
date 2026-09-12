@@ -7,7 +7,7 @@
 
 use crate::ai::EnvKeyMapping;
 use crate::error::Result;
-use crate::models::config::ModelProfile;
+use crate::models::config::{Config, ModelProfile};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -617,6 +617,36 @@ impl ModelProfileService {
 
         tracing::info!("[ModelProfileService] 已清除 Claude settings.json 中的 Polaris env 配置");
         Ok(())
+    }
+
+    /// 将激活的 ModelProfile 凭证级联写入 Claude settings.json（跨模式，无 Tauri 依赖）。
+    ///
+    /// 供 cap.config 的 `on_patch` 副作用注入（state.rs 装配时），桌面/Web 通用。
+    /// 仅处理当前激活的 Profile（`active: true` 且 target_engine 适用于 Claude Code）。
+    /// 级联失败不中断（仅告警）——级联是便利功能，下次会话仍经 settings overlay 兜底。
+    pub fn cascade_active_profile_to_claude(config: &Config) {
+        let active_profile = config.model_profiles.iter().find(|p| p.active);
+        let Some(profile) = active_profile else {
+            return;
+        };
+
+        // 仅当 Profile 适用于 Claude Code 时才写入 Claude settings.json
+        let engines = profile.resolve_target_engines();
+        if !engines.is_empty() && !engines.contains(&"claude".to_string()) {
+            return;
+        }
+
+        match Self::cascade_to_claude_settings(profile) {
+            Err(e) => tracing::warn!(
+                "[ModelProfileService] 级联写入 Claude settings.json 失败 (Profile {}): {}",
+                profile.id,
+                e
+            ),
+            Ok(()) => tracing::info!(
+                "[ModelProfileService] 已级联写入 Claude settings.json (Profile: {})",
+                profile.id
+            ),
+        }
     }
 
     /// 清理指定 Profile 的 settings overlay 临时文件
