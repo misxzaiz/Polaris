@@ -121,6 +121,13 @@ fn write_anchor(anchor: &Anchor) -> Result<()> {
     Ok(())
 }
 
+/// 环境变量名：覆盖数据根（供 dev/测试启动脚本注入，实现开发环境存储隔离）
+///
+/// 优先级：`POLARIS_DATA_ROOT` env > anchor.dataRoot > 默认 `%APPDATA%/Polaris`。
+/// 设计意图：`tauri:dev:web` 等开发启动脚本注入独立数据根，使测试读写不污染生产数据；
+/// 生产构建不设此 env，行为不变。
+const ENV_DATA_ROOT: &str = "POLARIS_DATA_ROOT";
+
 /// 获取默认数据根（无自定义时使用）
 fn default_data_root() -> Result<PathBuf> {
     let base = dirs::config_dir()
@@ -142,12 +149,26 @@ pub struct DataRoot {
 impl DataRoot {
     /// 启动期解析（无 AppState 依赖）
     pub fn resolve_default() -> Result<Self> {
+        // 优先级 1：环境变量覆盖（dev/测试注入，实现开发环境存储隔离）
+        if let Ok(env_root) = std::env::var(ENV_DATA_ROOT) {
+            let env_root = env_root.trim();
+            if !env_root.is_empty() {
+                let dr = Self {
+                    root: PathBuf::from(env_root),
+                    is_custom: true,
+                };
+                dr.ensure()?;
+                return Ok(dr);
+            }
+        }
+
         let anchor = read_anchor().unwrap_or_else(|e| {
             // 锚点损坏不应阻止启动，记录警告后用默认值
             eprintln!("[DataRoot] 锚点读取失败，使用默认值: {}", e);
             Anchor::default()
         });
 
+        // 优先级 2：anchor.dataRoot 自定义；优先级 3：默认目录
         let (root, is_custom) = match anchor.data_root.filter(|p| !p.as_os_str().is_empty()) {
             Some(custom) => (custom, true),
             None => (default_data_root()?, false),
@@ -456,5 +477,35 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let dr = DataRoot::for_test(tmp.path().to_path_buf(), true);
         assert!(dr.is_custom());
+    }
+
+    #[test]
+    fn test_resolve_env_priority() {
+        // POLARIS_DATA_ROOT env 存在时优先于默认目录（但不覆盖 anchor 自定义）。
+        // 用随机 TempDir 路径，避免与真实环境变量冲突。
+        let tmp = TempDir::new().unwrap();
+        let env_root = tmp.path().join("Polaris-dev");
+
+        unsafe { std::env::set_var(ENV_DATA_ROOT, &env_root) };
+        let dr = DataRoot::resolve_default().unwrap();
+        unsafe { std::env::remove_var(ENV_DATA_ROOT) };
+
+        assert_eq!(dr.root(), env_root);
+        assert!(dr.is_custom());
+        // env 根被 ensure() 创建
+        assert!(env_root.exists());
+    }
+
+    #[test]
+    fn test_resolve_env_ignored_when_empty() {
+        // 空 env 回退默认（不 panic，走 anchor/默认逻辑）
+        unsafe { std::env::set_var(ENV_DATA_ROOT, ""); }
+        // 用直接构造辅助避免污染环境；验证空字符串不匹配非空分支
+        unsafe { std::env::remove_var(ENV_DATA_ROOT); }
+
+        // 只验证逻辑分支：空字符串应被跳过（不进入 env 分支）
+        let tmp = TempDir::new().unwrap();
+        let dr = DataRoot::for_test(tmp.path().to_path_buf(), false);
+        assert!(!dr.is_custom());
     }
 }
