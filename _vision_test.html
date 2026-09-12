@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Polaris 图片识别测试</title>
+<style>
+  body { font-family: "Segoe UI", "Microsoft YaHei", sans-serif; background: #f5f6fa; margin: 0; padding: 24px; }
+  h1 { color: #1e293b; text-align: center; }
+  .row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; margin-top: 16px; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.1); width: 240px; text-align: center; }
+  .card h3 { margin: 0 0 8px; color: #475569; }
+  .bars div { height: 40px; border-radius: 6px; margin: 6px 0; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; }
+  .answer { font-size: 42px; font-weight: 800; color: #dc2626; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>Polaris 图片识别测试 🧪</h1>
+  <div class="row">
+    <div class="card">
+      <h3>色条</h3>
+      <div class="bars">
+        <div style="background:#ef4444;">红 RED</div>
+        <div style="background:#22c55e;">绿 GREEN</div>
+        <div style="background:#3b82f6;">蓝 BLUE</div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>SVG 笑脸</h3>
+      <svg width="160" height="160" viewBox="0 0 160 160">
+        <circle cx="80" cy="80" r="70" fill="#fde047"/>
+        <circle cx="55" cy="65" r="10" fill="#1e293b"/>
+        <circle cx="105" cy="65" r="10" fill="#1e293b"/>
+        <path d="M 40 95 Q 80 135 120 95" stroke="#1e293b" stroke-width="8" fill="none" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="card">
+      <h3>神秘答案</h3>
+      <div class="answer">42</div>
+      <p>The answer to life</p>
+    </div>
+    <div class="card">
+      <h3>真实照片</h3>
+      <img src="https://picsum.photos/240/160?grayscale" style="width:100%; border-radius:8px;" alt="照片">
+      <p style="color:#64748b;">图片来源 picsum.photos</p>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris 重构改造 · 实施方案交互演示</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #21262d; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-2: #bc8cff;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --cyan: #39c5cf;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; padding-bottom: 40px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+  header { border-bottom: 1px solid var(--border); padding: 22px 0 18px; margin-bottom: 24px; }
+  header .badge { display: inline-block; font-size: 11px; letter-spacing: .08em; color: var(--accent); border: 1px solid var(--accent); border-radius: 20px; padding: 2px 10px; margin-bottom: 10px; text-transform: uppercase; }
+  h1 { font-size: 26px; font-weight: 650; }
+  header .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  header .sub code { color: var(--cyan); background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .card h2 .tag { font-size: 10px; background: var(--panel-2); color: var(--accent-2); border-radius: 10px; padding: 2px 8px; font-weight: 400; }
+  .card .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .btn.green { border-color: var(--green); color: var(--green); }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.small { padding: 4px 10px; font-size: 11px; }
+
+  code { color: var(--cyan); background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+  .sql { font-family: var(--mono); font-size: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 14px; color: var(--cyan); white-space: pre-wrap; word-break: break-all; }
+  .log { max-height: 220px; overflow-y: auto; font-family: var(--mono); font-size: 12px; line-height: 1.7; }
+  .log .line { padding: 4px 8px; border-radius: 4px; }
+  .log .line.info { color: var(--muted); }
+  .log .line.ok { color: var(--green); }
+  .log .line.err { color: var(--red); }
+  .log .line.accent { color: var(--accent); }
+  .log .line.sql { color: var(--cyan); }
+  .accent { color: var(--accent); } .ok { color: var(--green); } .err { color: var(--red); } .amber { color: var(--amber); }
+
+  /* 状态徽标 */
+  .state { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; border-radius: 10px; padding: 2px 9px; font-weight: 500; }
+  .state::before { content: '●'; font-size: 8px; }
+  .state.done { background: rgba(63,185,80,.12); color: var(--green); }
+  .state.warn { background: rgba(210,153,34,.12); color: var(--amber); }
+  .state.todo { background: rgba(88,166,255,.12); color: var(--accent); }
+  .state.none { background: rgba(248,81,73,.12); color: var(--red); }
+
+  /* ① 四步走总览 */
+  .steps { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .step { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 12px; cursor: pointer; transition: all .15s; opacity: .75; }
+  .step:hover { border-color: var(--accent); }
+  .step.active { opacity: 1; border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .step .shead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+  .step .sid { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+  .step .sname { font-size: 13px; font-weight: 600; }
+  .step .sline { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .step .sdetail { font-size: 12px; color: var(--muted); margin-top: 6px; line-height: 1.5; }
+
+  /* ② 孤岛诊断 */
+  .islands { display: grid; grid-template-columns: 1fr 90px 1fr; gap: 0; align-items: center; margin-bottom: 6px; }
+  .island { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .island .ititle { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .island .isub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .conn { text-align: center; color: var(--muted); font-family: var(--mono); font-size: 11px; }
+  .conn .x { color: var(--red); font-size: 16px; }
+
+  /* ③⑤ 仓库 / 阶段卡片 */
+  .repos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  .repo { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; cursor: pointer; transition: all .15s; }
+  .repo:hover { border-color: var(--accent); }
+  .repo.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .repo.disabled { opacity: .45; pointer-events: none; }
+  .repo .rname { font-size: 13px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .repo .rnow { font-family: var(--mono); font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .repo .rnext { font-family: var(--mono); font-size: 11px; color: var(--green); margin-top: 2px; }
+  .repo .rrisk { font-family: var(--mono); font-size: 10px; color: var(--amber); margin-top: 6px; line-height: 1.4; }
+  .chips { display: flex; gap: 5px; }
+  .chip { font-size: 10px; border-radius: 8px; padding: 1px 7px; }
+  .chip.json { background: rgba(210,153,34,.12); color: var(--amber); }
+  .chip.sql { background: rgba(63,185,80,.12); color: var(--green); }
+  .chip.trait { background: rgba(57,197,207,.12); color: var(--cyan); }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+  .col { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .col h3 { font-size: 12px; margin-bottom: 10px; font-weight: 600; }
+  .col.json { background: rgba(210,153,34,.05); }
+  .col.sql { background: rgba(63,185,80,.05); }
+  .col ul { list-style: none; }
+  .col li { font-family: var(--mono); font-size: 12px; color: var(--text); padding: 4px 0; }
+  .col li .mark { margin-right: 5px; }
+  .ok-mark { color: var(--green); } .no-mark { color: var(--red); } .warn-mark { color: var(--amber); }
+
+  /* ④ 决策点 */
+  .decisions { display: flex; flex-direction: column; gap: 14px; }
+  .decision { border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .decision .dhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .decision .dtitle { font-size: 13px; font-weight: 600; }
+  .decision .ddesc { font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .opt { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; font-size: 12px; cursor: pointer; font-family: var(--mono); transition: all .15s; }
+  .opt:hover { border-color: var(--accent); }
+  .opt.selected { border-color: var(--accent-2); background: rgba(188,140,255,.1); color: var(--accent-2); }
+  .opt .pref { opacity: .6; font-size: 10px; }
+  .decision .dout { margin-top: 10px; font-size: 12px; border-top: 1px dashed var(--border); padding-top: 10px; color: var(--muted); min-height: 20px; }
+  .decision .dout b { color: var(--accent-2); font-weight: 600; }
+
+  /* ⑥ 路线图 */
+  .roadmap { display: flex; flex-direction: column; gap: 0; margin-bottom: 8px; }
+  .rm { display: flex; gap: 12px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); margin-bottom: 8px; }
+  .rm .prio { width: 42px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-family: var(--mono); font-size: 12px; font-weight: 700; flex-shrink: 0; margin-top: 2px; }
+  .prio.p0 { background: var(--red); color: #0d1117; }
+  .prio.p1 { background: var(--amber); color: #0d1117; }
+  .prio.p2 { background: var(--accent); color: #0d1117; }
+  .prio.p3 { background: var(--accent-2); color: #0d1117; }
+  .prio.p4 { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
+  .rm .body { flex: 1; }
+  .rm .rtitle { font-size: 13px; font-weight: 600; }
+  .rm .raccept { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  .rm .raccept code { font-size: 11px; }
+  .rm .rstate { margin-left: auto; align-self: center; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  td code { font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="badge">Polaris Refactor · Plan Prototype</div>
+  <h1>Polaris 重构改造 · 实施方案交互演示</h1>
+  <div class="sub">当前状态 → 阶段 B 仓库替换 → RouterBus 接线 → 待裁决项 → 优先级路线图。纯前端演示，风格对齐 <code>prototype-storage.html</code> / <code>prototype-dispatch.html</code>。</div>
+</header>
+
+<!-- ① 改造总览：四步走 -->
+<div class="card">
+  <h2>① 改造总览 <span class="tag">四步走 · 实时状态</span></h2>
+  <div class="desc">契约已立、存储孤岛、转发空白、替换未动——点击任一步查看实施边界与验收。下方四步的数字是实测代码行数/依赖关系，非估算。</div>
+  <div class="steps" id="steps"></div>
+  <div id="stepDetail" class="sql"></div>
+</div>
+
+<!-- ② 孤岛诊断 -->
+<div class="card">
+  <h2>② 当前状态诊断 <span class="tag">SqliteStorage 是无人消费的孤岛</span></h2>
+  <div class="desc">契约层（597 行）与 <code>SqliteStorage</code>（713 行，12 测试绿）已就位，但 <strong>全库只有 sqlite.rs 引用契约</strong>；三个仓库仍走 JSON 文件。第二/三步还没接线，是"骨架已立、替换未动"。</div>
+  <div class="islands">
+    <div class="island">
+      <div class="ititle">⬛ 契约层 <span class="state done">已完成</span></div>
+      <div class="isub">Envelope / Source / Storage / Router 7+ trait（597 行）</div>
+      <div class="isub" style="margin-top:6px">消费方：仅 storage/sqlite.rs</div>
+    </div>
+    <div class="conn">◀ <span class="x">✕</span> ▶<br><span style="font-size:10px">未接线</span></div>
+    <div class="island" style="text-align:right">
+      <div class="ititle">SqliteStorage <span class="state warn">孤岛</span></div>
+      <div class="isub">713 行 / 12 测试绿 / 无人消费</div>
+      <div class="isub" style="margin-top:6px">3 仓库 仍走 JSON</div>
+    </div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button class="btn" onclick="toggleIsland()">展开 / 收起接线缺口</button>
+  </div>
+  <div class="log" id="islandLog" style="display:none">
+    <div class="line err">✗ 全库引用 contracts:: 的文件仅 1 个 —— storage/sqlite.rs（接线确认为零）</div>
+    <div class="line err">✗ unified_todo_repository  → 仍读 config_dir/todo/todos.json</div>
+    <div class="line err">✗ unified_requirement_repository → 仍读 requirements/requirements.json</div>
+    <div class="line err">✗ unified_scheduler_repository → 已有 TaskStorage trait + LocalFileStorage（双轨待裁决）</div>
+    <div class="line ok">✓ contracts 层 0 依赖业务模块（规划"零改动现有代码"达成）</div>
+  </div>
+</div>
+
+<!-- ③ 阶段 B：三仓库对称替换 -->
+<div class="card">
+  <h2>③ 阶段 B · 三仓库对称替换 <span class="tag">P0 · 命令层零改动</span></h2>
+  <div class="desc">逐个把 todo / requirement / scheduler 从 JSON 切到 <code>SqliteStorage(domain)</code>。公开 API（<code>new(config_dir, workspace)</code> + list/get/create/update/delete）<strong>不变</strong> → 命令层无感知。点卡片看每库的切换对比与其专属风险。</div>
+  <div class="repos" id="repos"></div>
+  <div id="repoCompare"></div>
+</div>
+
+<!-- ④ 三处待裁决项 -->
+<div class="card">
+  <h2>④ 待裁决项 <span class="tag">阶段 B / P3 前必须定</span></h2>
+  <div class="desc">这三处是规划文档明确标注"阶段 B 评估"的选项，接线前不定会导致返工。点选方案看后果与建议。</div>
+  <div class="decisions" id="decisions"></div>
+</div>
+
+<!-- ⑤ RouterBus 接线动线 -->
+<div class="card">
+  <h2>⑤ RouterBus 转发接线动线 <span class="tag">P1 · P2 · 复用生产级广播器</span></h2>
+  <div class="desc">第三步从零立 <code>services/router/</code>：先骨架与单测验证，再接线命令层，最后上面板。决策点继承自 step3-dispatch.md（校验已做）。点阶段查看交付物与验收。</div>
+  <div class="repos" id="routerStages"></div>
+  <div id="routerOut" class="sql"></div>
+</div>
+
+<!-- ⑥ 实施路线图 -->
+<div class="card">
+  <h2>⑥ 实施路线图 <span class="tag">P0 → P3 → 闭环替换</span></h2>
+  <div class="desc">建议路径：先补"规划内第一步"缺口（阶段B 接线），再推进度。每步有代码级验收（生死线），不通过不进下一步。</div>
+  <div class="roadmap" id="roadmap"></div>
+  <div style="margin-top:10px; font-size:12px; color:var(--muted)">
+    做完以上后进入 <strong>第四步闭环替换</strong>：调度 → Todo → AI → 浏览器，一块块搬，每块独立验证后摘除旧通道。
+  </div>
+</div>
+
+<footer style="color:var(--muted); font-size:12px; margin-top:8px">Polaris 重构 · dev/docs/sky/prototype-refactor-plan.html · 交互原型（纯前端，不接后端）</footer>
+</div>
+
+<script>
+/* ============================================================================
+ * ① 四步走总览
+ * ============================================================================ */
+const STEP_DATA = {
+  s1: { name: '契约冻结', state: 'done', stateTxt: '已完成', line: 'contracts/mod.rs · 597 行',
+        detail: '7+ 核心契约（Context/Plugin/Capability/Storage/Router/Permission/Session/Scheduler）+ Envelope/Source/审计类型。\n- 零依赖业务 · cargo check ✅ · 284 命令零改动 ✅' },
+  s2: { name: '存储实现', state: 'warn', stateTxt: '阶段A完成', line: 'services/storage/sqlite.rs · 713 行',
+        detail: '阶段A：SqliteStorage 生产级落地（按域分库/真实事务/FTS5/审计脱敏，12 测试绿）。\n- 阶段B（三仓库对称替换）：0% —— 三仓库仍走 JSON（验收 3、4 未达成）' },
+  s3: { name: '转发 dispatch', state: 'none', stateTxt: '0 行', line: 'services/router/ 不存在',
+        detail: 'RouterBus + 权限 gate + 审计 + demo cap.echo 均未实现。\n- 规划完全复用的 EventBroadcaster（2000 条/8MB）是 Polaris 既有资产，本步只加薄适配层' },
+  s4: { name: '闭环替换', state: 'none', stateTxt: '未开始', line: '调度→Todo→AI→浏览器',
+        detail: '第四步：一块块把旧命令迁到 dispatch。每块独立验证后摘除旧通道。\n- 前置：二、三步全部完成' },
+};
+const STEP_ORDER = ['s1','s2','s3','s4'];
+
+function stateClass(s) {
+  return { done:'done', warn:'warn', none:'none', todo:'todo' }[s];
+}
+function renderSteps() {
+  document.getElementById('steps').innerHTML = STEP_ORDER.map((k,i) => {
+    const d = STEP_DATA[k];
+    return `<div class="step" id="step-${k}" onclick="selectStep('${k}')">
+      <div class="shead"><span class="sid">STEP ${i+1}</span><span class="state ${stateClass(d.state)}">${d.stateTxt}</span></div>
+      <div class="sname">${d.name}</div>
+      <div class="sline">${d.line}</div>
+      <div class="sdetail">${d.detail.split('\n')[0]}</div>
+    </div>`;
+  }).join('');
+}
+function selectStep(k) {
+  document.querySelectorAll('.step').forEach(el => el.classList.remove('active'));
+  document.getElementById('step-'+k).classList.add('active');
+  document.getElementById('stepDetail').textContent = `STEP ${STEP_DATA[k].name} · 实施边界 / 验收\n` +
+    STEP_DATA[k].detail.replace(/\n/g, '\n') +
+    (STEP_DATA[k].state==='done' ? '\n\n〔本步已完成〕' : STEP_DATA[k].state==='warn' ? '\n\n〔完成一半——下一步往下做〕' : '');
+}
+renderSteps();
+// 初始聚焦步骤 2（存储：阶段A完成，正待阶段B）；点步骤看边界/验收
+selectStep('s2');
+
+/* ============================================================================
+ * ② 孤岛诊断展开
+ * ============================================================================ */
+function toggleIsland() {
+  const l = document.getElementById('islandLog');
+  l.style.display = l.style.display === 'none' ? 'block' : 'none';
+}
+
+/* ============================================================================
+ * ③ 阶段 B：三仓库对称替换
+ * ============================================================================ */
+const REPOS = [
+  { name: 'todo',        kind: '纯 JSON 全量写回', chip: 'json', now: 'config_dir/todo/todos.json',         next: 'SqliteStorage(domain="todo")',
+    risk: '',
+    cur: ['全量读入内存 → 改 → 全量写回，无并发保护', '无索引、无事务、无审计', '公开 API：new(config_dir, workspace) + CRUD'],
+    nxt: ['INSERT OR REPLACE / SELECT / DELETE（每域一连接）', 'filter → WHERE，limit 下推', 'API 签名不变 → 命令层零改动',
+          '<warning>最多两个文件改动 + 一组回归测试</warning>'] },
+  { name: 'requirement', kind: 'JSON + prototype blob', chip: 'json', now: 'config_dir/requirements/requirements.json', next: 'SqliteStorage(domain="requirement")',
+    risk: '⚠ 含 prototype 文件（需求原型/草图），SQLite 单表 data TEXT 装不下 blob → 需 blob 落盘引用（见④裁决3）',
+    cur: ['JSON 文件存储，同 Todo 模式', '无并发保护、无审计', '原型/草图存放为独立文件'],
+    nxt: ['业务字段进 items，blob 落盘 + 存引用路径', '同库审计入 domain_audit', 'API 不变 → 命令层零改动'] },
+  { name: 'scheduler',   kind: 'TaskStorage trait + LocalFileStorage', chip: 'trait', now: 'scheduler/tasks.json via TaskStorage', next: '与契约 Storage 双轨裁决（见④裁决2）',
+    risk: '⚠ 已有 TaskStorage trait（含 template/status/状态机），与契约 Storage 语义重叠但互不相通 → 接线前必须先裁决抽象关系',
+    cur: ['TaskStorage trait + LocalFileStorage 实现（模板/状态机绑定）', '命令层已抽象出 trait，后端仍 JSON', 'reverse index 等扩展字段'],
+    nxt: ['裁决：吸附到契约 Storage 或双抽象共存', '选型后再切后端，API 不变', '若吸附：TaskStorage → SqliteStorage 适配层'] },
+];
+
+let activeRepo = 0;
+function renderRepos(containerId, list, activeIdx, cb) {
+  document.getElementById(containerId).innerHTML = list.map((r, i) => `
+    <div class="repo ${i===activeIdx?'active':''}" onclick="${cb}(${i})">
+      <div class="rname">${r.name} <span class="chip ${r.chip}">${r.kind.split(' ')[0]}</span></div>
+      <div class="rnow">now → ${r.now}</div>
+      <div class="rnext">next → ${r.next}</div>
+      ${r.risk ? `<div class="rrisk">${r.risk}</div>` : ''}
+    </div>`).join('');
+}
+function renderRepoCompare() {
+  const r = REPOS[activeRepo];
+  const curItems = r.cur.map(x => `<li><span class="mark ${x.startsWith('API')||x.startsWith('公开')||x.startsWith('业务')?'ok-mark':'no-mark'}">${(x.startsWith('API')||x.startsWith('公开')||x.startsWith('业务'))?'≈':'✗'}</span>${x}</li>`).join('');
+  const nxtItems = r.nxt.map(x => {
+    if (x.startsWith('<warning>'))
+      return `<li><span class="mark warn-mark">⚠</span>${x.replace(/<\/?warning>/g,'').replace(/`/g,'')}</li>`;
+    return `<li><span class="mark ok-mark">✓</span>${x.replace(/`/g,'')}</li>`;
+  }).join('');
+  document.getElementById('repoCompare').innerHTML = `
+    <div class="compare">
+      <div class="col json"><h3>🔶 现状 · ${r.name}（${r.kind}）</h3><ul>${curItems}</ul></div>
+      <div class="col sql"><h3>🟢 目标 · ${r.name}（SqliteStorage）</h3><ul>${nxtItems}</ul></div>
+    </div>
+    ${r.risk ? `<div class="log" style="margin-top:10px"><div class="line accent">⚠ 该库切换风险：</div><div class="line warn">${r.risk}</div></div>` : ''}`;
+}
+function selectRepo(i) { activeRepo = i; renderRepos('repos', REPOS, activeRepo, 'selectRepo'); renderRepoCompare(); }
+renderRepos('repos', REPOS, activeRepo, 'selectRepo');
+renderRepoCompare();
+
+/* ============================================================================
+ * ④ 待裁决项
+ * ============================================================================ */
+const DECISIONS = [
+  { title: '裁决 1 · 审计「同事务」红线如何落地', desc: '契约红线要求「审计与业务写同库同事务」，但 trait 只暴露 append_audit、无事务内业务写方法，结构性受限。',
+    opts: [
+      { v: 'A', label: '给 Transaction 加事务内业务写', pref: '推荐', out: '完全满足红线：业务写 + 审计写同一事务内原子。代价是改契约（加 begin→写→commit 的写方法），波及所有 Storage 实现与单测。' },
+      { v: 'B', label: '接受「审计自成一个事务」', pref: '', out: '守住 trait 现状：审计单独成事务，业务写走 autocommit，两者不再强绑定。需同步修订契约红线措辞（诚实，但降了审计强度）。' },
+    ] },
+  { title: '裁决 2 · scheduler 双轨抽象关系', desc: '现有 TaskStorage trait（模板/状态机绑定）+ LocalFileStorage，与契约 Storage 语义重叠但互不相通。',
+    opts: [
+      { v: 'A', label: 'TaskStorage 吸附到契约 Storage', pref: '推荐', out: '长远最统一：TaskStorage 变适配层，后端切 SqliteStorage，命令层与未来 dispatch 共用一套持久化。风险：模板/状态机字段需设计映射，本次改造范围扩大。' },
+      { v: 'B', label: '保留双抽象共存', pref: '', out: '保守不改架构：TaskStorage 继续独立，本次只补它到 SqliteStorage 的后端实现。契约 Storage 留作新能力用。改造风险最低，但双轨继续。' },
+    ] },
+  { title: '裁决 3 · requirement 的 prototype/blob 存储', desc: '需求仓库含原型/草图等二进制内容，SQLite 单表 data TEXT 无法直接装 blob。',
+    opts: [
+      { v: 'A', label: 'blob 落盘 + 存引用路径', pref: '推荐', out: '符合现有 DataRoot 分层：blobs/ 目录按 sha256 分片存二进制，items.data 存引用路径。性能好、备份简单，是 sky 骨架既有设计。' },
+      { v: 'B', label: 'data 内联 base64', pref: '', out: '免加目录，但 items 表膨胀、JSON 反序列化变慢，违背存储纪律。仅适合极小内容。' },
+    ] },
+];
+function renderDecisions() {
+  document.getElementById('decisions').innerHTML = DECISIONS.map((d, i) => `
+    <div class="decision">
+      <div class="dhead"><div class="dtitle">${d.title}</div><span class="chip trait">待裁决 · 接线前必定</span></div>
+      <div class="ddesc">${d.desc}</div>
+      <div class="opts">${d.opts.map((o, j) => `
+        <div class="opt" id="opt-${i}-${j}" onclick="pickOpt(${i},${j})">${o.pref ? `<span class="pref">★ </span>` : ''}${o.v} · ${o.label}</div>`).join('')}</div>
+      <div class="dout" id="out-${i}">（点选方案查看影响与建议）</div>
+    </div>`).join('');
+  // 默认选中推荐项
+  DECISIONS.forEach((d, i) => {
+    const rec = d.opts.findIndex(o => o.pref === '推荐');
+    if (rec >= 0) pickOpt(i, rec, true);
+  });
+}
+function pickOpt(i, j, silent) {
+  DECISIONS[i].opts.forEach((o, k) => {
+    const el = document.getElementById(`opt-${i}-${k}`);
+    if (k === j) el.classList.add('selected'); else el.classList.remove('selected');
+  });
+  const picked = DECISIONS[i].opts[j];
+  document.getElementById(`out-${i}`).innerHTML = `<b>选 ${picked.v} · ${picked.label}</b><br>${picked.out}${picked.pref ? ' <span class="ok">【推荐】</span>' : ''}`;
+  if (!silent && j === DECISIONS[i].opts.findIndex(o => o.pref === '推荐')) {
+    document.getElementById(`out-${i}`).classList.remove('warn');
+  }
+}
+renderDecisions();
+
+/* ============================================================================
+ * ⑤ RouterBus 转发接线动线
+ * ============================================================================ */
+const RSTAGES = [
+  { name: '阶段 A', kind: 'RouterBus 核心', sub: 'services/router/ 骨架 + 单测', tag: 'P1',
+    lines: ['新增 RouterBus：handles 注册表 + dispatch 全链路（dispatch.start → 权限 gate → 找句柄 → invoke → dispatch.end）', 'Source 由传输层注入，调用方不可自填', '权限 gate：dispatch 是唯一入口，统一裁决（Allow/Deny/Prompt，动态请求安全失败 Deny）', '审计：dispatch deny/allow 均写 AuditSink tamper-evident 链（Bootstrap 直管，不经 Storage trait）', '单测：echo → 返回原样；未注册能力 → Err；Remote + Deny → 拒绝 + 审计'] },
+  { name: '阶段 B', kind: '事件适配层 + demo', sub: '复用 EventBroadcaster', tag: 'P2',
+    lines: ['事件适配层：契约层 Event { seq, kind, payload, trace } → 现有 {"seq","event","payload"} 字符串（薄转换）', '订阅：Filter → 订阅并过滤 → mpsc::Receiver<Event>', 'demo 能力 cap.echo：验证 dispatch 全链路端到端', '不改 web/event_broadcaster.rs（现有 WS 通道 0 回归）', '单测：Filter 只收匹配 kind；StreamingCapability 逐 token 广播'] },
+  { name: '阶段 C', kind: '面板接线', sub: 'ContractExplorerPanel · dispatch 测试台', tag: '后置',
+    lines: ['面板阶段 B（规划 D）：已注册能力列表', 'dispatch 测试台：选能力、填 payload、看 Reply 与事件流', '前置：面板 → 后端新命令 router_dispatch / router_list_caps / router_replay', '验收：面板到后端全链路可演示'] },
+];
+let activeRs = 0;
+function renderRs(containerId, list, activeIdx, cb) {
+  document.getElementById(containerId).innerHTML = list.map((r, i) => `
+    <div class="repo ${i===activeIdx?'active':''}" onclick="${cb}(${i})">
+      <div class="rname">${r.name} <span class="chip trait">${r.tag}</span></div>
+      <div class="rnow">${r.kind}</div>
+      <div class="rnext">${r.sub}</div>
+    </div>`).join('');
+}
+function renderRsOut() {
+  document.getElementById('routerOut').textContent = RSTAGES[activeRs].lines.join('\n');
+}
+function selectRs(i) { activeRs = i; renderRs('routerStages', RSTAGES, activeRs, 'selectRs'); renderRsOut(); }
+renderRs('routerStages', RSTAGES, activeRs, 'selectRs');
+renderRsOut();
+
+/* ============================================================================
+ * ⑥ 实施路线图
+ * ============================================================================ */
+const ROADMAP = [
+  { prio: 'P0', title: '阶段 B · 三仓库对称替换', prioCls: 'p0', state: 'warn', stateTxt: '下一件事',
+    accept: '逐个切 todo → requirement → scheduler；命令层零改动回归；scheduler 先裁决双轨（裁决2）' },
+  { prio: 'P1', title: 'RouterBus 阶段 A（转发骨架）', prioCls: 'p1', state: 'todo', stateTxt: '待开始',
+    accept: 'services/router/ 立起 · dispatch 全链路单测绿 · 未授权被拒 · 现有 382 命令零改动' },
+  { prio: 'P2', title: 'RouterBus 阶段 B（事件适配 + demo）', prioCls: 'p2', state: 'todo', stateTxt: '待开始',
+    accept: '事件适配层单测绿 · Filter 过滤正确 · 复用 EventBroadcaster 不改底线' },
+  { prio: 'P3', title: '议而未决项落地', prioCls: 'p3', state: 'todo', stateTxt: '决策后',
+    accept: '审计同事务（裁决1）· FTS 查询路径 · blob 存储（裁决3）· 契约修订注明' },
+  { prio: '后置', title: '第四步闭环替换', prioCls: 'p4', state: 'none', stateTxt: '后置',
+    accept: '调度 → Todo/AI → 浏览器 逐块搬，每块验证后摘除旧通道' },
+];
+document.getElementById('roadmap').innerHTML = ROADMAP.map(r => `
+  <div class="rm">
+    <div class="prio ${r.prioCls}">${r.prio}</div>
+    <div class="body">
+      <div class="rtitle">${r.title}</div>
+      <div class="raccept">验收：${r.accept}</div>
+    </div>
+    <span class="state ${stateClass(r.state)}">${r.stateTxt}</span>
+  </div>`).join('');
+</script>
+</body>
+</html>

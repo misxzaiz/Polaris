@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PRD-0307 · user_message 事件消费 — 影响面复核</title>
+<style>
+  :root{
+    --bg:#0d1117; --bg2:#151b23; --bg3:#1c232c; --line:#2a323d;
+    --fg:#e6edf3; --fg2:#9aa7b4; --fg3:#6b7884;
+    --red:#f85149; --red-bg:rgba(248,81,73,.09);
+    --amber:#d29922; --amber-bg:rgba(210,153,34,.1);
+    --green:#3fb950; --green-bg:rgba(63,185,80,.09);
+    --blue:#58a6ff; --blue-bg:rgba(88,166,255,.09);
+    --purple:#bc8cff;
+    --mono:"Cascadia Code",Consolas,"JetBrains Mono",monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--fg);
+    font:14px/1.65 -apple-system,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    padding:48px 24px 96px;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+
+  /* ── header ── */
+  .meta{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;font-family:var(--mono);font-size:11.5px}
+  .tag{padding:3px 9px;border:1px solid var(--line);border-radius:4px;color:var(--fg2);background:var(--bg2)}
+  .tag.rev{border-color:var(--red);color:var(--red)}
+  h1{font-size:23px;font-weight:650;letter-spacing:-.2px;line-height:1.35;margin-bottom:6px}
+  .sub{color:var(--fg2);font-size:13.5px;margin-bottom:30px}
+
+  /* ── verdict ── */
+  .verdict{background:var(--red-bg);border:1px solid rgba(248,81,73,.32);border-left:3px solid var(--red);border-radius:7px;padding:18px 20px;margin-bottom:36px}
+  .verdict h2{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--red);margin-bottom:10px;font-weight:700}
+  .verdict p{font-size:14.5px;line-height:1.72;margin-bottom:9px}
+  .verdict p:last-child{margin-bottom:0}
+  .verdict strong{color:#fff}
+  .verdict code{background:rgba(248,81,73,.14);color:#ffb4af;padding:1px 5px;border-radius:3px;font-family:var(--mono);font-size:12.5px}
+
+  /* ── sections ── */
+  section{margin-bottom:38px}
+  h2.sec{font-size:16px;font-weight:650;padding-bottom:9px;border-bottom:1px solid var(--line);margin-bottom:18px;display:flex;align-items:center;gap:9px}
+  h2.sec .n{font-family:var(--mono);font-size:12px;color:var(--fg3);font-weight:400}
+  h3{font-size:14px;font-weight:620;margin:18px 0 9px}
+
+  /* ── callout ── */
+  .note{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:13px 16px;margin:14px 0;font-size:13.5px;color:var(--fg2);line-height:1.7}
+  .note b{color:var(--fg)}
+  .note.warn{border-left:3px solid var(--amber)}
+  .note.key{border-left:3px solid var(--blue)}
+
+  /* ── code ── */
+  code,pre{font-family:var(--mono)}
+  code{background:var(--bg3);padding:1.5px 5px;border-radius:3px;font-size:12.5px;color:#d6de81}
+  pre{background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:15px 17px;overflow-x:auto;font-size:12.5px;line-height:1.62;margin:12px 0}
+  pre .cm{color:var(--fg3)}
+  pre .ad{color:var(--red);text-decoration:line-through;opacity:.62}
+  pre .ad2{color:var(--fg3);text-decoration:line-through;opacity:.5}
+  pre .ad3{color:var(--fg3);opacity:.5}
+  pre .hi{color:#ff8b80;background:rgba(248,81,73,.13);padding:0 3px;border-radius:2px}
+  pre .hl{color:var(--green)}
+  pre .bl{color:var(--blue)}
+  pre .pu{color:var(--purple)}
+  pre .amb{color:var(--amber)}
+
+  /* ── path list ── */
+  .paths{display:flex;flex-direction:column;gap:10px;margin:14px 0}
+  .path{background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:13px 16px}
+  .path .hd{display:flex;align-items:center;gap:9px;margin-bottom:7px;font-size:13.5px;font-weight:620}
+  .path .hd .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .path .body{font-size:12.8px;color:var(--fg2);line-height:1.66;padding-left:16px}
+  .path .body code{font-size:11.8px}
+  .sev{font-family:var(--mono);font-size:10.5px;padding:2px 7px;border-radius:3px;letter-spacing:.04em;margin-left:auto;flex:none}
+
+  /* ── flow ── */
+  .flow{background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:18px;margin:14px 0;overflow-x:auto}
+  .frow{display:flex;align-items:stretch;gap:0;font-family:var(--mono);font-size:12px}
+  .fstep{flex:1;min-width:112px;background:var(--bg3);border:1px solid var(--line);border-radius:5px;padding:9px 10px;text-align:center}
+  .fstep.bad{border-color:rgba(248,81,73,.5);background:rgba(248,81,73,.07)}
+  .fstep.bad .t{color:var(--red)}
+  .fstep .t{font-weight:600;color:var(--fg);margin-bottom:3px}
+  .fstep .d{color:var(--fg3);font-size:10.5px;line-height:1.4}
+  .farr{flex:none;width:26px;display:flex;align-items:center;justify-content:center;color:var(--fg3)}
+  .farr.bad{color:var(--red)}
+
+  /* ── table ── */
+  table{width:100%;border-collapse:collapse;font-size:12.8px;margin:14px 0}
+  th,td{text-align:left;padding:9px 11px;border-bottom:1px solid var(--line);vertical-align:top;line-height:1.58}
+  th{color:var(--fg3);font-weight:600;font-size:11.5px;letter-spacing:.04em;text-transform:uppercase}
+  td code{font-size:11.5px}
+  tr:hover td{background:rgba(255,255,255,.018)}
+  .yes{color:var(--green);font-weight:600}
+  .no{color:var(--red);font-weight:600}
+
+  /* ── option cards ── */
+  .opts{display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin:16px 0}
+  .opt{background:var(--bg2);border:1px solid var(--line);border-radius:7px;padding:16px;display:flex;flex-direction:column}
+  .opt.rec{border-color:var(--green);background:rgba(63,185,80,.045)}
+  .opt .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--fg3);margin-bottom:6px}
+  .opt.rec .lbl{color:var(--green)}
+  .opt .tt{font-size:14px;font-weight:640;margin-bottom:10px;line-height:1.4}
+  .opt .dc{font-size:12.5px;color:var(--fg2);line-height:1.62;flex:1}
+  .opt .dc code{font-size:11.5px}
+  .opt .ft{margin-top:12px;padding-top:11px;border-top:1px solid var(--line);font-size:11.8px;color:var(--fg3);line-height:1.55}
+  .opt .ft b{color:var(--fg2)}
+
+  /* ── checks ── */
+  .checks{display:flex;flex-direction:column;gap:8px;margin:14px 0}
+  .chk{display:flex;gap:11px;align-items:flex-start;background:var(--bg2);border:1px solid var(--line);border-radius:6px;padding:11px 14px;font-size:12.8px;line-height:1.6}
+  .chk .box{flex:none;width:16px;height:16px;border:1.5px solid var(--fg3);border-radius:3px;margin-top:2px;position:relative}
+  .chk .body b{color:var(--fg)}
+  .chk .body{color:var(--fg2)}
+
+  /* ── gap list ── */
+  .gap{display:flex;gap:11px;align-items:flex-start;padding:12px 14px;border:1px dashed var(--amber);border-radius:6px;margin-bottom:9px;background:var(--amber-bg);font-size:12.8px;line-height:1.66}
+  .gap .mk{color:var(--amber);font-family:var(--mono);font-weight:700;flex:none}
+  .gap b{color:var(--fg)}
+
+  @media(max-width:800px){
+    .opts{grid-template-columns:1fr}
+    .frow{flex-direction:column}
+    .farr{width:auto;height:18px;transform:rotate(90deg)}
+    .path .hd{flex-wrap:wrap}
+    .sev{margin-left:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="meta">
+    <span class="tag">commit 307b841f</span>
+    <span class="tag">src/stores/conversationStore/eventHandler.ts</span>
+    <span class="tag">2026-09-10</span>
+    <span class="tag rev">复核结论：标题误导</span>
+  </div>
+
+  <h1>user_message 事件消费 — 影响面复核</h1>
+  <div class="sub">提交自称「多设备同步」，实际改动的是 claude CLI 引擎的本地渲染行为，且引入会话标题劫持与静默历史截断两条更严重的副作用。</div>
+
+  <!-- ═══════════ VERDICT ═══════════ -->
+  <div class="verdict">
+    <h2>核心结论</h2>
+    <p><strong>这不是一个多设备问题。</strong><code>event_parser.rs:729</code> 无条件把 claude CLI 回流的任何 user-role text 块发成 <code>UserMessageEvent</code>；前端改成消费之后，<strong>单台设备本地会话里</strong> Claude Code 自己的内部消息就被渲染成用户气泡。跨设备同步只是同一个 bug 的另一面。</p>
+    <p><strong>更严重的是它已经落盘。</strong>假用户消息经 <code>saveDialog</code> 写进 JSONL，而 <code>buildDialogMetaInput</code> / <code>extractFirstUserText</code> 用 <code>messages.find(m=&gt;m.type==='user')</code> 取<strong>会话标题</strong>——假消息会劫持标题。另外 <code>regenerateResponse</code> / <code>editAndResend</code> 会把假消息之后的历史 <code>slice</code> 掉，点击"重新生成"即静默截断历史。</p>
+    <p><strong>去重逻辑在任何真实输入下都失效。</strong>本地存原始 content，后端回传的是 <code>normalizeForInvoke(processedMessage)</code> 的结果——换行、工作区引用、附件三种常见场景下字符串必然不等，去重分支永远走不到。</p>
+  </div>
+
+  <!-- ═══════════ 01 ROOT CAUSE ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">01</span>根因：输入与回流的语义被合并</h2>
+
+    <p style="color:var(--fg2);font-size:13.5px;line-height:1.7;margin-bottom:4px">claude 引擎以 <code>--input-format stream-json</code> 走 stdin 输入，CLI 会把用户消息原样回显到 stdout，两者在解析侧是同一个 <code>StreamEvent::User</code>，无法区分。</p>
+
+    <pre><span class="cm">// claude.rs:736 — 输入（Polaris 主动写入 stdin）</span>
+<span class="hl">stdin.write_all:</span> {"type":"user","message":{"role":"user","content":[{"type":"text","text":message}]}}
+
+<span class="cm">// claude.rs:1037 — 回流（CLI 写 stdout，同一个 StreamEvent::User）</span>
+for ai_event in parser.parse(raw_event) { event_callback(ai_event) }
+
+<span class="cm">// event_parser.rs:656 — parse_user_event：对 text 块无差别处理</span>
+<span class="ad2">// 1. tool_result 块 → ToolCallEnd      ← 这一步有语义判断</span>
+<span class="ad">for item in content { if item.type == "tool_result" { ...ToolCallEnd... } }</span>
+
+<span class="cm">// 2. 文本内容 —— 没有任何来源判定，无差别发出</span>
+<span class="hi">let text = self.extract_text_content(&amp;message);</span>   <span class="cm">// join 所有 type:"text"</span>
+<span class="hi">if !text.is_empty() { results.push(UserMessageEvent::new(...)) }</span></pre>
+
+    <div class="note key"><b>结构不对称</b>：同一个函数里，<code>tool_result</code> 分支有明确的类型判断并路由到正确的事件；紧跟其后的 text 分支却没有任何判断就直接当作"用户消息"发出。注释里的编号 <code>// 2. 提取文本内容</code> 也说明作者只把它当作"顺手提取"，而非一个语义决策点。这一处是整个缺陷的源头——它决定了 <code>user_message</code> 事件同时承载"真实用户输入"和"claude CLI 的 user-role 回流"两个不可分辨的语义。</div>
+  </section>
+
+  <!-- ═══════════ 02 DEDUPE FAILURE ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">02</span>去重为何必然失效</h2>
+
+    <pre><span class="cm">// eventHandler.ts:368 — 提交新增的去重</span>
+<span class="hi">const lastUser = [...existing].reverse().find((m) =&gt; m.type === 'user')</span>
+<span class="hi">if (lastUser &amp;&amp; lastUser.content === content) break</span>   <span class="cm">// 仅比对最后一条，且要求完全相等</span></pre>
+
+    <p style="color:var(--fg2);font-size:13px;margin:10px 0 4px">本地 <code>addMessage</code> 存的是原始 <code>content</code>（<code>createConversationStore.ts:1706</code>）；发给后端的是 <code>normalizeForInvoke(processedMessage)</code>（<code>:1841</code>），后端再原样塞进事件。三条路径各自改写字符串：</p>
+
+    <div class="paths">
+      <div class="path">
+        <div class="hd"><span class="dot" style="background:var(--red)"></span>含换行的消息<span class="sev" style="background:var(--red-bg);color:var(--red)">最常见</span></div>
+        <div class="body"><code>normalizeForInvoke</code>（<code>conversationStoreUtils.ts:238</code>）执行 <code>text.replace(/\n/g, '\\n')</code>——把真实换行替换成字面反斜杠-n，并 <code>.trim()</code>。本地存真实 <code>\n</code>，后端回传字面 <code>\\n</code>，必然不等。</div>
+      </div>
+      <div class="path">
+        <div class="hd"><span class="dot" style="background:var(--amber)"></span>工作区引用<span class="sev" style="background:var(--amber-bg);color:var(--amber)">高频</span></div>
+        <div class="body"><code>parseWorkspaceReferences</code> 把 <code>@name:src/App.tsx</code> / <code>@/src/App.tsx</code> 改写成绝对路径 <code>@D:/space/base/Polaris/src/App.tsx</code>。本地存原始写法。</div>
+      </div>
+      <div class="path">
+        <div class="hd"><span class="dot" style="background:var(--purple)"></span>带附件<span class="sev" style="background:rgba(188,140,255,.12);color:var(--purple)">条件触发</span></div>
+        <div class="body"><code>build_message_with_attachments</code>（<code>commands/chat.rs:347</code>）把消息包成「嵌入内容 + 原文 + 文件引用列表」，用 <code>\n\n</code> 拼接。</div>
+      </div>
+    </div>
+
+    <div class="note warn"><b>第二个结构性缺陷</b>：<code>find</code> 只在<strong>最后一条</strong> user 消息上比对。即使内容碰巧相等，只要中间插入了另一条 user 消息，去重即失效。而假消息的注入恰恰会插入 user 消息。</div>
+  </section>
+
+  <!-- ═══════════ 03 BLAST RADIUS ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">03</span>爆炸半径：type==='user' 被当作语义真值源</h2>
+
+    <p style="color:var(--fg2);font-size:13.5px;line-height:1.7;margin-bottom:4px">全仓 13 处依赖 <code>m.type === 'user'</code> 做推断。新增的这条消息会让它们全部把内部回流误认为用户输入：</p>
+
+    <table>
+      <thead><tr><th style="width:34%">受影响逻辑</th><th>位置</th><th>后果</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>会话标题</b></td>
+          <td><code>eventHandler.ts:711</code><br><code>jsonlCodec.ts:23</code></td>
+          <td><code>messages.find(m=&gt;m.type==='user').content.slice(0,50)</code> 生成标题。假消息排在前面的话，<span class="no">标题被劫持</span>，且在会话列表里可见</td>
+        </tr>
+        <tr>
+          <td><b>重新生成</b></td>
+          <td><code>createConversationStore.ts:2024</code></td>
+          <td>向前找最近 <code>type==='user'</code> 并 <code>slice(0, userMessageIndex)</code>。<span class="no">点击"重新生成"静默删掉假气泡之后的全部历史</span></td>
+        </tr>
+        <tr>
+          <td><b>编辑重发</b></td>
+          <td><code>createConversationStore.ts:2092</code></td>
+          <td>同样 <code>slice</code>。假气泡可被编辑/删除，操作后果与 regenerateResponse 一致</td>
+        </tr>
+        <tr>
+          <td><b>持久化</b></td>
+          <td><code>eventHandler.ts:865</code><br><code>service.ts:112</code></td>
+          <td><code>saveDialog</code> 合并保护只按 <code>m.id</code> 比对且仅救 <code>isCompacted</code> 条目，对新加条目无效。<span class="no">假消息写入 JSONL，重载后仍在</span></td>
+        </tr>
+        <tr>
+          <td><b>导出</b></td>
+          <td><code>chatExport.ts:64</code><br><code>sessionExport.ts:61</code><br><code>conversationPackager:99</code></td>
+          <td>统一标记为 <code>## 用户</code>。导出的 Markdown / 会话包包含伪造的用户发言</td>
+        </tr>
+        <tr>
+          <td><b>提示词优化</b></td>
+          <td><code>promptOptimizeService.ts:197</code></td>
+          <td><code>msg.type === 'user' ? 'User' : 'Assistant'</code>。内部回流被当作"用户偏好样本"参与优化</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note warn"><b>持久化路径没有兜底。</b>假消息既不是压缩态也没有对应磁盘版本，所以 <code>saveConversation</code> 的合并保护（<code>service.ts:152</code>）完全不会触发。一旦写入，需要手动清理 JSONL。</div>
+  </section>
+
+  <!-- ═══════════ 04 ENGINE DIVERGENCE ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">04</span>三个引擎各走各的</h2>
+
+    <table>
+      <thead><tr><th style="width:20%">引擎</th><th style="width:26%">UserMessage 来源</th><th>现状</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>simple_ai</b></td>
+          <td><code>simple_ai/mod.rs:304</code><br><code>:415</code></td>
+          <td><span class="yes">语义正确</span>：仅真实用户输入，1 次/轮。本提交的"多设备同步"只对这条路径成立</td>
+        </tr>
+        <tr>
+          <td><b>claude CLI</b></td>
+          <td><code>event_parser.rs:729</code></td>
+          <td><span class="no">语义污染</span>：任意带 text 块的 user 事件都发事件，无来源判定</td>
+        </tr>
+        <tr>
+          <td><b>dsh</b></td>
+          <td><code>dsh.rs:1469</code> 空实现</td>
+          <td><span class="no">丢失</span>：不发事件，B 设备收不到用户消息。注释「重复发送会导致前端重复渲染，故跳过」引用的是<strong>旧契约</strong>——前端改成消费后这条注释已过期</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="note"><b>continueChat 完全缺位。</b><code>continueChat</code>（<code>createConversationStore.ts:1909</code>）整条路径没有 <code>addMessage</code>，也不产生 <code>UserMessageEvent</code>。走 continue 路径的轮次，B 设备一条用户消息都收不到。全仓 <code>addMessage</code> 只有 <code>:1721</code> 一处调用（<code>sendMessage</code>）。本提交未触及此路径。</div>
+  </section>
+
+  <!-- ═══════════ 05 TEST ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">05</span>测试为何全绿</h2>
+
+    <p style="color:var(--fg2);font-size:13.5px;line-height:1.7;margin-bottom:4px">7 个用例全部构造「本地 content 与事件 content <strong>完全相同</strong>」的输入——恰好绕过了第 02 节全部三条失效路径。测试验证的是"当两个字符串相等时不重复"，而真实场景里它们从不相等。</p>
+
+    <pre><span class="cm">// multiDeviceSync.test.ts 的实际断言</span>
+store.addMessage({ content: <span class="hl">'A 发的消息'</span>, ... })
+const event = { type: <span class="hl">'user_message'</span>, content: <span class="hl">'A 发的消息'</span> }  <span class="cm">// ← 与本地逐字相同</span></pre>
+
+    <p style="color:var(--fg2);font-size:12.8px;line-height:1.68">另：<code>makeStore</code> 替身用 <code>Object.assign</code> 模拟 store，与真实 <code>set((state)&gt;…)</code> 的响应式契约脱节；「存储层验证」那个用例只断言 <code>backend.kind === 'remote'</code>，不验证任何与修复相关的行为。这些测试对真实 store 的契约无约束力。</p>
+  </section>
+
+  <!-- ═══════════ 06 SOLUTION ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">06</span>方案对比</h2>
+
+    <div class="opts">
+      <div class="opt">
+        <div class="lbl">方案 A</div>
+        <div class="tt">前端收口：加来源标记字段</div>
+        <div class="dc"><code>UserMessageEvent</code> 增 <code>source</code>（<code>client</code> / <code>echo</code> / <code>internal</code>），前端仅渲染 <code>source==='client'</code>；删除现有 content 去重。</div>
+        <div class="ft"><b>代价</b>：改后端 3 处产生点 + 前端 1 处。<b>遗留</b>：claude 侧仍需在 <code>parse_user_event</code> 判定"这条是不是真用户输入"，否则 echo 与 internal 无法区分。</div>
+      </div>
+      <div class="opt rec">
+        <div class="lbl">方案 B · 推荐</div>
+        <div class="tt">产生端消歧 + 首条回显去重</div>
+        <div class="dc">在 <code>parse_user_event</code> 判定：含 <code>tool_result</code> 的 user 事件不发 text 事件；text 与 <code>tool_result</code> 混合时不发；仅 <code>text</code> 块且为本轮首个 user 事件时发。claude 引擎的"首条 user 事件即回显的用户输入"是稳定可判定的边界。</div>
+        <div class="ft"><b>代价</b>：只改 <code>event_parser.rs</code> 一处。<b>顺带</b>：前端 content 去重可以整段删除，不再需要猜字符串相等。<b>风险</b>：依赖"Claude Code stream-json 模式下首条 user 事件即输入回显"这一行为，需实测锁定。</div>
+      </div>
+      <div class="opt">
+        <div class="lbl">方案 C</div>
+        <div class="tt">语义拆分：新增 system 类型消息</div>
+        <div class="dc">把内部回流渲染为 <code>type:'system'</code> 的折叠提示，保留可观测性。</div>
+        <div class="ft"><b>阻塞</b>：<code>ChatMessageType</code> 虽定义 <code>'system'</code>，但全仓<strong>无任何代码生产 system 消息</strong>——无渲染器、无历史恢复、无导出分支。走这条路要先补整套基础设施，不是加一个 case 能解决的。</div>
+      </div>
+    </div>
+
+    <div class="note key"><b>推荐 B，并同步删掉前端去重。</b>去重逻辑的失败不是实现粗糙，而是它承担的职责不该由它承担——"哪条消息属于用户"必须由产生端声明，消费端猜字符串等长在这条链路上没有收敛路径。方案 C 保留了可观测性但基础设施缺口大，可作为 B 落地后的二期。</div>
+  </section>
+
+  <!-- ═══════════ 07 ACCEPTANCE ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">07</span>验收标准</h2>
+    <div class="checks">
+      <div class="chk"><div class="box"></div><div class="body"><b>含换行的用户消息</b>：claude 引擎下本地不出现第二条气泡，重载会话后仍为一条</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>工作区引用消息</b>：<code>@workspace:path</code> 改写后本地与回流内容不一致，仍不重复渲染</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>带附件消息</b>：<code>build_message_with_attachments</code> 包装后，用户气泡只出现一次</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>工具调用轮次</b>：含 <code>tool_result</code> 的 user 事件不产生任何用户气泡（这是最直接的回归验证点）</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>会话标题</b>：长会话中插入多次工具轮次后，标题仍取真实首条用户输入</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>重新生成</b>：对任意一条 AI 回复点击重新生成，假气泡前后历史完整保留，不发生截断</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>JSONL 无假条目</b>：会话文件里 <code>type:"user"</code> 条数等于真实发送轮数</div></div>
+      <div class="chk"><div class="box"></div><div class="body"><b>simple_ai 路径</b>：提交原有的多设备同步能力不回退（B 设备可见 A 的消息）</div></div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 08 GAPS ═══════════ -->
+  <section>
+    <h2 class="sec"><span class="n">08</span>我尚未验证的部分</h2>
+
+    <div class="gap"><span class="mk">?</span><div><b>Claude Code stream-json 模式下 user 回流的实际形态。</b>上述链路的推导基于 <code>send_stream_json_message</code> 的输入格式与 <code>StreamEvent::User</code> 的匹配关系，但仓库里没有 system-reminder / task-notification 相关的测试夹具，我无法确认这些内部提示是否真的以 <code>{"type":"user","message":{"content":[{type:"text"}]}}</code> 回流，还是走 <code>system</code> 事件被 <code>parse_system_event</code> 吞掉。<strong>这决定了方案 B 的判定条件是否正确</strong>——如果回流走 system，那污染源就不是 <code>parse_user_event</code>，而是 <code>parse_system_event</code> 的兜底分支。</div></div>
+
+    <div class="gap"><span class="mk">?</span><div><b>实际触发频率。</b>代码结构上缺陷确定成立，但"多久出现一次"取决于 Claude Code 的版本行为与工具调用模式。需要跑一轮真实的 claude 引擎会话，抓 stdout 全量 JSONL 才能量化。</div></div>
+
+    <div class="gap"><span class="mk">?</span><div><b>存量污染规模。</b>JSONL 里已经写入了多少条假用户消息，需要扫描现有会话文件统计。这部分不会随修复自动清理。</div></div>
+
+    <div class="gap"><span class="mk">?</span><div><b>你观察到的具体是哪一类消息。</b>这个信息能立刻定位是 <code>parse_user_event</code> 还是 <code>parse_system_event</code> 的兜底分支——是 task-notification、compact 交接简报、hook response，还是别的？</div></div>
+  </section>
+
+</div>
+</body>
+</html>
