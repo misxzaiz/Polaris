@@ -127,12 +127,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Chat
         // Artifacts
         .route("/artifacts/codex-images/{thread_id}/{file_name}", get(api::artifacts::handle_codex_image_artifact))
-        // Sessions
-        .route("/sessions", get(api::session::handle_list_sessions).post(api::session::handle_create_session))
-        .route("/sessions/{id}", delete(api::session::handle_delete_session))
-        // Legacy Claude Code session endpoints (return flat arrays, not PagedResult)
-        .route("/claude-sessions", get(api::session::handle_list_claude_sessions))
-        .route("/claude-sessions/{session_id}/history", get(api::session::handle_get_claude_session_history))
         // Settings
         .route("/settings", get(api::settings::handle_get_settings).patch(api::settings::handle_update_settings))
         // Auth

@@ -25,14 +25,8 @@ const HTTP_TIMEOUT_MS = 600_000; // 10 分钟，适配弱网/跨地域远程连�
 /** Tauri 命令名 → HTTP 路由映射 (module-level constant, avoids repeated allocation) */
 const COMMAND_ROUTE_MAP: Record<string, string> = {
   // Chat
-  get_session_history: '/api/chat/history',
   // Legacy Claude Code session history commands — dedicated endpoints returning flat arrays
-  get_claude_code_session_history: '/api/claude-sessions',
-  list_claude_code_sessions: '/api/claude-sessions',
   // Sessions (paginated)
-  list_sessions: '/api/sessions',
-  create_session: '/api/sessions',
-  delete_session: '/api/sessions',
   // Settings
   get_config: '/api/settings',
   update_config: '/api/settings',
@@ -52,7 +46,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
  * "list sessions" endpoint and returning session metadata instead of messages — which
  * silently breaks session restore in Web mode.
  */
-const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'list_sessions', 'health_check', 'list_claude_code_sessions']);
+const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'health_check']);
 
 function commandToPath(command: string): string {
   if (command in COMMAND_ROUTE_MAP) {
@@ -71,11 +65,6 @@ function bearerTokenFromMd5(tokenMd5: string): string {
 /** 判断命令是否使用 GET（只读操作，无 URL 参数） */
 function isGetCommand(command: string): boolean {
   return GET_COMMANDS.has(command);
-}
-
-/** 判断命令是否使用 DELETE */
-function isDeleteCommand(command: string, args?: Record<string, unknown>): boolean {
-  return command === 'delete_session' && !!args?.sessionId;
 }
 
 function serializeRequestBody(command: string, args?: Record<string, unknown>): string {
@@ -394,27 +383,6 @@ export function createHttpTransport(
           const qs = params.toString();
           if (qs) url = `${url}?${qs}`;
         }
-      } else if (isDeleteCommand(command, args)) {
-        method = 'DELETE';
-        // delete_session 需要在 URL 中带 id，可选 engine_id
-        const sessionId = encodeURIComponent((args as { sessionId: string }).sessionId);
-        const engineId = (args as { engineId?: string })?.engineId;
-        const queryStr = engineId ? `?engineId=${encodeURIComponent(engineId)}` : '';
-        url = `${baseUrl}/api/sessions/${sessionId}${queryStr}`;
-      } else if (command === 'get_claude_code_session_history' && args?.sessionId) {
-        // Legacy endpoint: returns flat array (not PagedResult)
-        method = 'GET';
-        url = `${baseUrl}/api/claude-sessions/${encodeURIComponent(args.sessionId as string)}/history`;
-      } else if (command === 'get_session_history' && args?.sessionId) {
-        method = 'GET';
-        const params = new URLSearchParams();
-        for (const [key, val] of Object.entries(args)) {
-          if (key !== 'sessionId' && val != null && val !== '') {
-            params.set(key, String(val));
-          }
-        }
-        const qs = params.toString();
-        url = `${baseUrl}/api/chat/history/${encodeURIComponent(args.sessionId as string)}${qs ? `?${qs}` : ''}`;
       } else if (command === 'update_config' || command === 'update_config_patch') {
         method = 'PATCH';
       }

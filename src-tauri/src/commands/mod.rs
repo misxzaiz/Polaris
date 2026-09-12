@@ -5,15 +5,12 @@ pub mod file_clipboard;
 pub mod window;
 pub mod browser;
 pub mod browser_scripts;
-pub mod context;
 #[cfg(feature = "git")]
 pub mod git;
 pub mod translate;
 pub mod plugin;
 #[cfg(feature = "tauri-app")]
 pub mod provider_diagnostics;
-#[cfg(feature = "tauri-app")]
-pub mod session_history;
 pub mod plugin_state;
 pub mod plugin_service;
 pub mod plugin_config;

@@ -5,6 +5,27 @@
 
 import { invoke } from '@/services/transport';
 
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface ContextDispatchResponse {
+  msgId: string
+  ok: boolean
+  result: unknown
+  error: string | null
+  trace: string
+}
+
+/** 经统一总线调用 cap.context（第七步阶段 B1：context 命令层已摘除） */
+async function contextDispatch<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<ContextDispatchResponse>('router_dispatch', {
+    req: { target: 'cap.context', payload: { action, ...payload } },
+  });
+  if (!res.ok) {
+    throw new Error(res.error || ('cap.context ' + action + ' 失败'));
+  }
+  return res.result as T;
+}
+
+
 // ============================================================================
 // 类型定义
 // ============================================================================
@@ -114,32 +135,32 @@ export interface ContextSummary {
 
 /** 查询上下文 */
 export async function queryContext(request: ContextQueryRequest): Promise<ContextQueryResult> {
-  return invoke('context_query', { request });
+  return contextDispatch('query', { request });
 }
 
 /** 添加或更新上下文 */
 export async function upsertContext(entry: ContextEntry): Promise<void> {
-  return invoke('context_upsert', { entry });
+  return contextDispatch('upsert', { entry });
 }
 
 /** 批量添加或更新上下文 */
 export async function upsertContextMany(entries: ContextEntry[]): Promise<void> {
-  return invoke('context_upsert_many', { entries });
+  return contextDispatch('upsert_many', { entries });
 }
 
 /** 获取所有上下文 */
 export async function getAllContext(): Promise<ContextEntry[]> {
-  return invoke('context_get_all');
+  return (contextDispatch('get_all') as unknown as { entries: ContextEntry[] }).entries;
 }
 
 /** 移除上下文 */
 export async function removeContext(id: string): Promise<void> {
-  return invoke('context_remove', { id });
+  return contextDispatch('remove', { id });
 }
 
 /** 清空上下文 */
 export async function clearContext(): Promise<void> {
-  return invoke('context_clear');
+  return contextDispatch('clear');
 }
 
 /** IDE 上报当前文件 */
@@ -150,7 +171,7 @@ export async function ideReportCurrentFile(context: {
   language: string;
   cursor_offset: number;
 }): Promise<void> {
-  return invoke('ide_report_current_file', { context });
+  return contextDispatch('ide_report_current_file', { context });
 }
 
 /** IDE 上报文件结构 */
@@ -159,7 +180,7 @@ export async function ideReportFileStructure(structure: {
   file_path: string;
   symbols: ContextSymbol[];
 }): Promise<void> {
-  return invoke('ide_report_file_structure', { structure });
+  return contextDispatch('ide_report_file_structure', { structure });
 }
 
 /** IDE 上报诊断信息 */
@@ -168,5 +189,5 @@ export async function ideReportDiagnostics(diagnostics: {
   file_path: string;
   diagnostics: ContextDiagnostic[];
 }): Promise<void> {
-  return invoke('ide_report_diagnostics', { diagnostics });
+  return contextDispatch('ide_report_diagnostics', { diagnostics });
 }

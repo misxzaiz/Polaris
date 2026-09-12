@@ -1,12 +1,14 @@
+/*! 上下文业务核（第七步阶段 B1：自 commands/context.rs 抽出，存储为内存
+ *  ContextMemoryStore——与原命令层完全同源）。入口：cap.context（同步 dispatch）。
+ */
+
 /*! 上下文管理 Tauri 命令
  * 供 IDE 插件调用的上下文管理接口
  */
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
-#[cfg(feature = "tauri-app")]
-use tauri::State;
+use std::sync::Mutex;
 
 // ========================================
 // 辅助函数
@@ -376,164 +378,3 @@ impl Default for ContextMemoryStore {
     }
 }
 
-// ========================================
-// Tauri 命令
-// ========================================
-
-/// 添加或更新上下文条目
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_upsert(
-    entry: ContextEntry,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-    guard.upsert(entry);
-    Ok(())
-}
-
-/// 批量添加或更新上下文条目
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_upsert_many(
-    entries: Vec<ContextEntry>,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-    for entry in entries {
-        guard.upsert(entry);
-    }
-    Ok(())
-}
-
-/// 查询上下文
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_query(
-    request: ContextQueryRequest,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<ContextQueryResult, String> {
-    let guard = store.lock().map_err(|e| e.to_string())?;
-    Ok(guard.query(&request))
-}
-
-/// 获取所有上下文条目
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_get_all(
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<Vec<ContextEntry>, String> {
-    let guard = store.lock().map_err(|e| e.to_string())?;
-    Ok(guard.get_all())
-}
-
-/// 移除指定的上下文条目
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_remove(
-    id: String,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-    guard.remove(&id);
-    Ok(())
-}
-
-/// 清空所有上下文
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn context_clear(
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-    guard.clear();
-    Ok(())
-}
-
-/// IDE 插件上报当前文件上下文
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn ide_report_current_file(
-    context: IdeFileContext,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-
-    // 创建文件上下文条目
-    let entry = ContextEntry {
-        id: format!("ide:current_file:{}", context.file_path),
-        source: ContextSource::Ide,
-        type_: ContextType::File,
-        priority: 4,
-        content: ContextContent::File(FileContent {
-            path: context.file_path.clone(),
-            content: context.content,
-            language: context.language,
-        }),
-        workspace_id: Some(context.workspace_id),
-        created_at: now_timestamp(),
-        expires_at: None,
-        estimated_tokens: 500, // 简化估算
-    };
-
-    guard.upsert(entry);
-    Ok(())
-}
-
-/// IDE 插件上报文件结构
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn ide_report_file_structure(
-    structure: IdeFileStructure,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-
-    let entry = ContextEntry {
-        id: format!("ide:structure:{}", structure.file_path),
-        source: ContextSource::Ide,
-        type_: ContextType::FileStructure,
-        priority: 3,
-        content: ContextContent::FileStructure(FileStructureContent {
-            path: structure.file_path.clone(),
-            symbols: structure.symbols,
-            summary: None,
-        }),
-        workspace_id: Some(structure.workspace_id),
-        created_at: now_timestamp(),
-        expires_at: None,
-        estimated_tokens: 100,
-    };
-
-    guard.upsert(entry);
-    Ok(())
-}
-
-/// IDE 插件上报诊断信息
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn ide_report_diagnostics(
-    diagnostics: IdeDiagnostics,
-    store: State<'_, Arc<Mutex<ContextMemoryStore>>>,
-) -> Result<(), String> {
-    let mut guard = store.lock().map_err(|e| e.to_string())?;
-
-    let entry = ContextEntry {
-        id: format!("ide:diagnostics:{}", diagnostics.file_path),
-        source: ContextSource::Diagnostics,
-        type_: ContextType::Diagnostics,
-        priority: 2,
-        content: ContextContent::Diagnostics(DiagnosticsContent {
-            path: Some(diagnostics.file_path.clone()),
-            items: diagnostics.diagnostics,
-            summary: None,
-        }),
-        workspace_id: Some(diagnostics.workspace_id),
-        created_at: now_timestamp(),
-        expires_at: None,
-        estimated_tokens: 50,
-    };
-
-    guard.upsert(entry);
-    Ok(())
-}

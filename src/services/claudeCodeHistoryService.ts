@@ -6,7 +6,7 @@ import { generateUUID } from '@/utils/uuid';
  * 即 ~/.claude/projects/{项目名}/sessions-index.json
  */
 
-import { invoke } from '@/services/tauri'
+import { aiHistoryDispatch } from '@/services/aiHistoryDispatch'
 import type { Message, ChatMessage, ContentBlock, UserChatMessage, AssistantChatMessage, SystemChatMessage, ToolCallBlock, TaskBoardBlock, TaskBoardItem } from '@/types'
 import { createLogger } from '@/utils/logger'
 
@@ -112,8 +112,9 @@ export class ClaudeCodeHistoryService {
    */
   async listSessions(projectPath?: string): Promise<ClaudeCodeSessionMeta[]> {
     try {
-      const sessions = await invoke<ClaudeCodeSessionMeta[]>('list_claude_code_sessions', {
-        projectPath,
+      const sessions = await aiHistoryDispatch<ClaudeCodeSessionMeta[]>({
+        action: 'list_claude_sessions',
+        workDir: projectPath,
       })
       return sessions
     } catch (e) {
@@ -131,7 +132,8 @@ export class ClaudeCodeHistoryService {
     workDir?: string | null
   }): Promise<PagedResult<SessionMetaResponse>> {
     try {
-      const result = await invoke<PagedResult<SessionMetaResponse>>('list_sessions', {
+      const result = await aiHistoryDispatch<PagedResult<SessionMetaResponse>>({
+        action: 'list_sessions',
         engineId: 'claude-code',
         page: options.page ?? 1,
         pageSize: options.pageSize ?? 20,
@@ -149,7 +151,8 @@ export class ClaudeCodeHistoryService {
    */
   async getSessionHistory(sessionId: string, projectPath?: string): Promise<ClaudeCodeMessage[]> {
     try {
-      const messages = await invoke<ClaudeCodeMessage[]>('get_claude_code_session_history', {
+      const messages = await aiHistoryDispatch<ClaudeCodeMessage[]>({
+        action: 'get_claude_history',
         sessionId,
         projectPath,
       })

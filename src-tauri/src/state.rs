@@ -8,7 +8,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 use tokio::sync::Mutex as AsyncMutex;
 
 use crate::ai::EngineRegistry;
-use crate::commands::context::ContextMemoryStore;
+use crate::services::context_core::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::services::config_store::ConfigStore;
@@ -348,13 +348,14 @@ pub fn create_app_state(
     // cap.kv / cap.todo 经 ctx.storage() 读写 <DataRoot>/stores/*.db。
     // 第五步：PolicyPermission 权限 gate（config.json permissions 段覆盖，缺省全放行
     // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
+    let state_context_store: Arc<Mutex<ContextMemoryStore>> = Arc::new(Mutex::new(ContextMemoryStore::new()));
     let event_broadcast = crate::web::EventBroadcaster::new(256);
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
             EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
-            PromptSnippetCapability, RouterBus, StreamEchoCapability, TodoCapability, audit_sink,
-            prompt_snippet_capability,
+            ContextCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
+            TodoCapability, audit_sink, prompt_snippet_capability,
         };
         use crate::services::storage::SqliteStorage;
 
@@ -406,6 +407,8 @@ pub fn create_app_state(
             Err(e) => tracing::warn!("[cap.prompt_snippet] 旧片段导入失败（跳过，不阻塞启动）: {}", e),
         }
         let _ = bus.register_handle(Box::new(PromptSnippetCapability));
+        // cap.context —— 第七步阶段 B1：上下文唯一入口（内存存储同源）
+        let _ = bus.register_handle(Box::new(ContextCapability::new(state_context_store.clone())));
         // 第六步：流式能力（平行表，走 dispatch_stream）
         // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）
         let _ = bus.register_streaming(Arc::new(StreamEchoCapability));
@@ -416,7 +419,7 @@ pub fn create_app_state(
     AppState {
         config_store: Arc::new(Mutex::new(config_store)),
         sessions: Arc::new(Mutex::new(HashMap::new())),
-        context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
+        context_store: state_context_store.clone(),
         integration_manager: AsyncMutex::new(integration_manager),
         engine_registry,
             terminal_manager: Mutex::new(TerminalManager::new()),

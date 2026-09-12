@@ -15,6 +15,8 @@
 
 mod ai_chat_capability;
 pub mod audit_sink;
+mod context_capability;
+mod history_capability;
 mod demo_capability;
 mod event_adapter;
 mod kv_capability;
@@ -25,6 +27,8 @@ mod todo_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
+pub use context_capability::ContextCapability;
+pub use history_capability::HistoryCapability;
 pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
 pub use kv_capability::KvCapability;

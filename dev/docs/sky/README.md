@@ -15,7 +15,7 @@
 | [step4-migration.md](step4-migration.md) | **第四步：闭环替换（持续迁移主文档）** 迁移 playbook + 摘旧复盘 + backlog（cap.todo / cap.prompt_snippet 已闭环） |
 | [step5-permission-audit.md](step5-permission-audit.md) | **第五步：权限与审计生产化** ✅ 已实施（Source 收紧 / FileAuditSink 哈希链 / PolicyPermission / domain_audit 同事务） |
 | [step6-ai-streaming.md](step6-ai-streaming.md) | **第六步：AI 流式能力上总线** ✅ 已实施（流式平行表 + 泵任务 / cap.ai.chat / chat-event 兼容通道 / token 真实注入） |
-| [step7-consolidation.md](step7-consolidation.md) | **第七步：完全重构 · 单一入口收敛** ✅ 阶段 A 已实施（C2 AI 聊天上总线，chat.rs 3518 行摘除）；B-E 待启动 |
+| [step7-consolidation.md](step7-consolidation.md) | **第七步：完全重构 · 单一入口收敛** ✅ 阶段 A 已实施（C2 AI 聊天上总线）；阶段 B1/B2 已实施（cap.context + cap.history，session.rs 摘除）；C-E 待启动 |
 
 ## 关联
 

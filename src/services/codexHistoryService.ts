@@ -6,6 +6,7 @@
 
 import { generateUUID } from '@/utils/uuid'
 import { invoke } from '@/services/tauri'
+import { aiHistoryDispatch } from '@/services/aiHistoryDispatch'
 import type { AssistantChatMessage, ChatMessage, SystemChatMessage, UserChatMessage } from '@/types'
 import type { PagedResult, SessionMetaResponse } from './claudeCodeHistoryService'
 import { createLogger } from '@/utils/logger'
@@ -26,7 +27,8 @@ export class CodexHistoryService {
     workDir?: string | null
   }): Promise<PagedResult<SessionMetaResponse>> {
     try {
-      return await invoke<PagedResult<SessionMetaResponse>>('list_sessions', {
+      return await aiHistoryDispatch({
+        action: 'list_sessions',
         engineId: 'codex',
         page: options.page ?? 1,
         pageSize: options.pageSize ?? 20,

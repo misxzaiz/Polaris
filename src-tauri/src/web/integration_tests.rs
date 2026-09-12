@@ -8,7 +8,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use tower::ServiceExt;
 
 use crate::ai::EngineRegistry;
-use crate::commands::context::ContextMemoryStore;
+use crate::services::context_core::ContextMemoryStore;
 use crate::commands::terminal::TerminalManager;
 use crate::integrations::IntegrationManager;
 use crate::models::config::{Config, WebConfig};

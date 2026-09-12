@@ -52,12 +52,6 @@ use commands::file_clipboard::{
 use commands::file_watcher::{
     fs_watch_start, fs_watch_stop, fs_watch_status,
 };
-#[cfg(feature = "tauri-app")]
-use commands::context::{
-    context_upsert, context_upsert_many, context_query, context_get_all,
-    context_remove, context_clear,
-    ide_report_current_file, ide_report_file_structure, ide_report_diagnostics,
-};
 #[cfg(all(feature = "tauri-app", feature = "git"))]
 use commands::git::{
     git_is_repository, git_discover_repositories, git_init_repository, git_get_status, git_get_diffs,
@@ -600,8 +594,14 @@ pub fn run() {
                 let _ = state
                     .router
                     .register_streaming(Arc::new(
-                        crate::services::router::AiChatCapability::with_state(chat_state),
+                        crate::services::router::AiChatCapability::with_state(chat_state.clone()),
                     ));
+                use crate::contracts::Router as _;
+                let _ = state
+                    .router
+                    .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
+                        chat_state,
+                    )));
                 let _ = state
                     .router
                     .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
@@ -911,15 +911,6 @@ pub fn run() {
             commands::browser::browser_assert,
             commands::browser::browser_status,
             // 上下文管理相关
-            context_upsert,
-            context_upsert_many,
-            context_query,
-            context_get_all,
-            context_remove,
-            context_clear,
-            ide_report_current_file,
-            ide_report_file_structure,
-            ide_report_diagnostics,
             // Git 相关
             #[cfg(feature = "git")]
             git_is_repository,
@@ -1187,11 +1178,6 @@ pub fn run() {
             commands::router::router_list_caps,
             commands::router::audit_tail,
             commands::router::audit_verify,
-            commands::session_history::list_sessions,
-            commands::session_history::get_session_history,
-            commands::session_history::delete_session,
-            commands::session_history::list_claude_code_sessions,
-            commands::session_history::get_claude_code_session_history,
             commands::provider_diagnostics::provider_route_logs,
             commands::provider_diagnostics::provider_route_logs_clear,
             commands::provider_diagnostics::provider_stats,
@@ -1438,6 +1424,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
+    use crate::contracts::Router as _;
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
+            state.clone(),
+        )));
     let web_server = web::server::WebServer::new(state.clone());
 
     tracing::info!("[Polaris-Web] Starting standalone web server on {}:{}", host, port);

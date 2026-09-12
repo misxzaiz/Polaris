@@ -219,7 +219,6 @@ pub async fn handle_ipc_bridge(
         }
 
         // ── Context Memory ─────────────────────────────────────────────────
-        "context_get_all" => dispatch_context_get_all(&state, &args),
 
         // ── Config ──────────────────────────────────────────────────────────
         "get_config" => {
@@ -1219,11 +1218,6 @@ async fn dispatch_get_all_integration_status(state: &AppState) -> Result<Json<Va
 // Context Memory
 // ═══════════════════════════════════════════════════════════════════════════
 
-fn dispatch_context_get_all(_state: &AppState, _args: &Value) -> Result<Json<Value>, WebError> {
-    // ContextMemoryStore is an IDE-specific in-memory feature (Tauri managed state),
-    // not accessible from web mode. Return empty list.
-    Ok(Json(serde_json::json!([])))
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Config helpers

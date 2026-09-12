@@ -13,6 +13,7 @@
 import type { ChatMessage, EngineId } from '@/types'
 import { createLogger } from '@/utils/logger'
 import { invoke } from '@/services/transport'
+import { aiHistoryDispatch } from '@/services/aiHistoryDispatch'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useViewStore } from '@/stores/index'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
@@ -607,9 +608,9 @@ export const historyService = {
 
     // 4. 插件引擎原生（通过后端 get_session_history 拉取 JSONL 消息）
     if (engineId && !['claude-code', 'codex', 'simple-ai', 'pi'].includes(engineId)) {
-      const { invoke } = await import('../services/tauri')
       try {
-        const result = await invoke<{ items: { role: string; content: string; messageId?: string; timestamp?: string }[] }>('get_session_history', {
+        const result = await aiHistoryDispatch<{ items: { role: string; content: string; messageId?: string; timestamp?: string }[] }>({
+          action: 'get_session_history',
           sessionId,
           engineId,
           page: 1,
@@ -700,8 +701,8 @@ export const historyService = {
       }
 
       // 引擎原生
-      const { invoke } = await import('../services/tauri')
-      await invoke('delete_session', {
+      await aiHistoryDispatch({
+        action: 'delete_session',
         sessionId,
         engineId: engineId || (
           source === 'codex-native' ? 'codex'
