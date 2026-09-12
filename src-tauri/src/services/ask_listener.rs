@@ -22,6 +22,7 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::services::form_flow;
 use crate::state::{
     AppState, DispatchedTask, PendingPluginCard, PendingQuestion, PluginCardStatus, QuestionItem,
     QuestionOption, QuestionStatus, SubAnswer,
@@ -172,6 +173,7 @@ async fn handle_connection(
 
     match kind {
         "ask" => handle_ask_frame(&mut stream, frame, state, &expected_token).await,
+        "form" => handle_form_frame(&mut stream, frame, state, &expected_token).await,
         "card" => handle_card_frame(&mut stream, frame, state, &expected_token).await,
         #[cfg(feature = "tauri-app")]
         "browser" => handle_browser_frame(&mut stream, frame, &expected_token).await,
@@ -299,6 +301,145 @@ async fn handle_ask_frame(
     state.take_ask_answer_sender(&call_id);
 
     Ok(())
+}
+
+/// 处理 `form` 帧：AI 经 polaris-ask MCP 拉起结构化表单（非阻塞）。
+///
+/// 与 `ask` 的关键差异：**不挂起会话**。流程为
+///   1. token 校验 → 2. 解析 formId/title/read/target/action/fields/sessionId
+///   3. `build_hold` 校验 fields schema（非法 → 回写 `form_error` 帧）
+///   4. 注册 `AppState.form_holds`（formId -> FormHold）
+///   5. 广播 `form` chat-event（前端 FormCard 拉起渲染）
+///   6. 立即回写 `form_ack` 帧 → AI 的 tool_result = "表单已拉起，等待用户提交"
+///
+/// 用户提交走 `cap.ai.chat` 的 `form_submit` 同步动作（阶段 B），不走本通道；
+/// 超时由 `form_holds` 的清理逻辑处理。原始 fields 只在服务端流转。
+async fn handle_form_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    // Auth — 与 ask 帧同一令牌。
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    // 顺手清一次超时 hold（表单有 600s 存活窗口）。
+    if let Ok(mut holds) = state.form_holds.lock() {
+        form_flow::cleanup_expired(&mut holds);
+    }
+
+    // 解析字段 —— 全部由 MCP 侧生成/透传。
+    let session_id = frame
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let form_id = frame
+        .get("callId")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let title = frame
+        .get("title")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let read = frame
+        .get("read")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let target = frame
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let action = frame
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let fields = frame.get("fields").cloned().unwrap_or_else(|| json!([]));
+
+    // formId 复用 callId 字段（引擎侧 UUID）。缺 target 直接失败。
+    if form_id.is_empty() {
+        return Err(AppError::ValidationError("form 帧缺少 callId(formId)".into()));
+    }
+    let hold = match form_flow::build_hold(
+        &form_id,
+        &session_id,
+        &target,
+        &action,
+        &read,
+        &fields,
+        &title,
+    ) {
+        Ok(hold) => hold,
+        Err(msg) => {
+            // schema 非法 → 回写错误帧，AI 的 tool_result 会带上失败原因。
+            write_frame(
+                stream,
+                &json!({
+                    "type": "form_error",
+                    "formId": form_id,
+                    "message": msg,
+                }),
+            )
+            .await?;
+            let _ = stream.shutdown().await;
+            return Ok(());
+        }
+    };
+
+    // 注册 hold —— 用户提交时由 form_submit 动作取走。
+    if let Ok(mut holds) = state.form_holds.lock() {
+        holds.insert(form_id.clone(), hold.clone());
+    }
+
+    // 广播 form chat-event（前端 FormCard 依据该事件拉起面板）。
+    emit_form_event(&state, &hold);
+
+    // 立即回写 ack —— AI 不挂起，直接拿到"已拉起"结果继续运行。
+    write_frame(
+        stream,
+        &json!({
+            "type": "form_ack",
+            "formId": form_id,
+            "read": hold.read,
+            "status": "waiting",
+        }),
+    )
+    .await?;
+    let _ = stream.shutdown().await;
+
+    Ok(())
+}
+
+/// 广播 `form` chat-event（前端 FormCard 拉起）。字段 schema 携带给前端渲染，
+/// 但**不包含任何用户值**——值只在用户提交时才出现。
+fn emit_form_event(state: &AppState, hold: &form_flow::FormHold) {
+    let event = wrap_question_route_event(
+        &hold.session_id,
+        json!({
+            "type": "form",
+            "sessionId": hold.session_id,
+            "formId": hold.form_id,
+            "title": hold.title,
+            "read": hold.read,
+            "target": hold.target,
+            "action": hold.action,
+            "fields": hold.fields,
+        }),
+    );
+    emit_chat_event(state, &event);
 }
 
 async fn handle_card_frame(

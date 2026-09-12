@@ -22,6 +22,8 @@ pub const FORM_WAIT_TIMEOUT_SECS: u64 = 600;
 #[derive(Debug, Clone)]
 pub struct FormHold {
     pub form_id: String,
+    /// 用户可见表单标题（可能为空）
+    pub title: String,
     /// 定位会话 / 前端事件路由（可能为空，未绑定时提交降级拒绝）
     pub session_id: String,
     /// 目标能力（cap.todo / cap.kv / cap.context …）
@@ -46,6 +48,7 @@ pub fn build_hold(
     action: &str,
     read: &str,
     fields: &Value,
+    title: &str,
 ) -> Result<FormHold, String> {
     if target.trim().is_empty() {
         return Err("缺少 target 参数（dispatch 目标 capability）".into());
@@ -61,6 +64,7 @@ pub fn build_hold(
     };
     Ok(FormHold {
         form_id: form_id.to_string(),
+        title: title.to_string(),
         session_id: session_id.to_string(),
         target: target.trim().to_string(),
         action: action.to_string(),
@@ -129,9 +133,8 @@ mod tests {
 
     #[test]
     fn build_hold_rejects_bad_fields() {
-        let err = build_hold("f1", "s1", "cap.todo", "create", "full", &json!([]));
-        assert!(err.is_err());
-        assert!(err.unwrap_err().contains("fields"));
+        let err = build_hold("f1", "s1", "cap.todo", "create", "full", &json!([]), "标题").unwrap_err();
+        assert!(err.contains("fields"));
     }
 
     #[test]
@@ -139,6 +142,7 @@ mod tests {
         let h = build_hold(
             "f2", "s1", "cap.todo", "create", "none",
             &json!([{"name": "content", "type": "string"}]),
+            "标题",
         ).unwrap();
         assert_eq!(h.target, "cap.todo");
         assert_eq!(h.read, "none");
@@ -147,16 +151,16 @@ mod tests {
 
     #[test]
     fn build_hold_read_defaults_full() {
-        let h = build_hold("f3", "", "cap.kv", "", "", &json!([{"name": "a"}])).unwrap();
+        let h = build_hold("f3", "", "cap.kv", "", "", &json!([{"name": "a"}]), "标题").unwrap();
         assert_eq!(h.read, "full");
     }
 
     #[test]
     fn cleanup_removes_expired_only() {
         let mut holds = std::collections::HashMap::new();
-        let mut old = build_hold("old", "", "cap.todo", "", "full", &json!([{"name": "a"}])).unwrap();
+        let mut old = build_hold("old", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题").unwrap();
         old.created_at = Instant::now() - Duration::from_secs(601);
-        let mut fresh = build_hold("fresh", "", "cap.todo", "", "full", &json!([{"name": "a"}])).unwrap();
+        let mut fresh = build_hold("fresh", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题").unwrap();
         // fresh 保留
         holds.insert("old".into(), old);
         holds.insert("fresh".into(), fresh);

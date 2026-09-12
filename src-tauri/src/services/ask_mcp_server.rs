@@ -29,6 +29,10 @@ const SERVER_NAME: &str = "polaris-ask-mcp";
 const SERVER_VERSION: &str = "0.1.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const TOOL_NAME: &str = "ask_user_question";
+const FORM_TOOL_NAME: &str = "form";
+/// form ack 读取超时（秒）。form 拉起非阻塞，正常 ack 远快于此；超时兜底防
+/// listener 卡死拖住模型 turn。
+const FORM_ACK_TIMEOUT_SECS: u64 = 30;
 
 /// Server-level configuration, parsed from CLI args.
 pub struct AskMcpConfig {
@@ -144,70 +148,147 @@ fn handle_initialize() -> Value {
     })
 }
 
-/// Tool schema — kept 100% aligned with Claude's native AskUserQuestion:
-/// questions[1..=4], options[2..=4], header maxLength 12.
+/// Tool schema — 两个工具：
+/// 1. `ask_user_question`：与 Claude 原生 AskUserQuestion 100% 对齐（阻塞）。
+/// 2. `form`：拉起结构化表单（非阻塞）。schema 含 `panel: {tag:"polaris-form"}`，
+///    前端按 panel.tag 分发 rendering FormCard；字段值不回传 AI（信任边界）。
 fn handle_tools_list() -> Value {
     json!({
-        "tools": [{
-            "name": TOOL_NAME,
-            "description": concat!(
-                "Ask the user a multiple-choice question to clarify requirements ",
-                "or get a decision. Use this when you cannot resolve a choice from ",
-                "the request, the code, or sensible defaults. Each question presents ",
-                "options to the user; the user selects one (or several when ",
-                "multiSelect=true) and/or provides custom text. The user can always ",
-                "decline. Returned as a JSON array of answers in the same order."
-            ),
-            "inputSchema": {
-                "type": "object",
-                "required": ["questions"],
-                "properties": {
-                    "questions": {
-                        "type": "array",
-                        "minItems": 1,
-                        "maxItems": 4,
-                        "description": "Questions to ask the user (1-4 questions).",
-                        "items": {
-                            "type": "object",
-                            "required": ["question", "header", "options"],
-                            "properties": {
-                                "question": {
-                                    "type": "string",
-                                    "description": "Full question text shown to the user."
-                                },
-                                "header": {
-                                    "type": "string",
-                                    "maxLength": 12,
-                                    "description": "Short label (max 12 chars) shown as a tag."
-                                },
-                                "multiSelect": {
-                                    "type": "boolean",
-                                    "default": false,
-                                    "description": "Allow selecting multiple options."
-                                },
-                                "options": {
-                                    "type": "array",
-                                    "minItems": 2,
-                                    "maxItems": 4,
-                                    "description": "Available choices (2-4 options).",
-                                    "items": {
-                                        "type": "object",
-                                        "required": ["label"],
-                                        "properties": {
-                                            "label": { "type": "string" },
-                                            "description": { "type": "string" }
-                                        },
-                                        "additionalProperties": false
+        "tools": [
+            {
+                "name": TOOL_NAME,
+                "description": concat!(
+                    "Ask the user a multiple-choice question to clarify requirements ",
+                    "or get a decision. Use this when you cannot resolve a choice from ",
+                    "the request, the code, or sensible defaults. Each question presents ",
+                    "options to the user; the user selects one (or several when ",
+                    "multiSelect=true) and/or provides custom text. The user can always ",
+                    "decline. Returned as a JSON array of answers in the same order."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["questions"],
+                    "properties": {
+                        "questions": {
+                            "type": "array",
+                            "minItems": 1,
+                            "maxItems": 4,
+                            "description": "Questions to ask the user (1-4 questions).",
+                            "items": {
+                                "type": "object",
+                                "required": ["question", "header", "options"],
+                                "properties": {
+                                    "question": {
+                                        "type": "string",
+                                        "description": "Full question text shown to the user."
+                                    },
+                                    "header": {
+                                        "type": "string",
+                                        "maxLength": 12,
+                                        "description": "Short label (max 12 chars) shown as a tag."
+                                    },
+                                    "multiSelect": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Allow selecting multiple options."
+                                    },
+                                    "options": {
+                                        "type": "array",
+                                        "minItems": 2,
+                                        "maxItems": 4,
+                                        "description": "Available choices (2-4 options).",
+                                        "items": {
+                                            "type": "object",
+                                            "required": ["label"],
+                                            "properties": {
+                                                "label": { "type": "string" },
+                                                "description": { "type": "string" }
+                                            },
+                                            "additionalProperties": false
+                                        }
                                     }
-                                }
-                            },
-                            "additionalProperties": false
+                                },
+                                "additionalProperties": false
+                            }
                         }
-                    }
-                },
-                "additionalProperties": false
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": FORM_TOOL_NAME,
+                "description": concat!(
+                    "Present a structured form to the user and wait for submission. ",
+                    "The form is rendered as a schema-driven panel in the Polaris UI; ",
+                    "the user fills and submits it, and the values are forwarded to a ",
+                    "target capability through the capability bus. This call is ",
+                    "non-blocking: it returns immediately after the form is shown, and ",
+                    "the model continues its turn. The tool_result carries only a ",
+                    "receipt — raw submitted values never come back into the model ",
+                    "context. Fields: 'target' (capability id, e.g. cap.todo), 'action' ",
+                    "(capability action, e.g. create), 'title' (user-visible title), ",
+                    "'read' ('full' | 'none' — none hides all field names' values from ",
+                    "the model), and 'fields' (array of {name,type,label?,placeholder?,",
+                    "options?,required?,default?,secret?}). Field types: string, number, ",
+                    "boolean, textarea, select, secret."
+                ),
+                // 扩展元数据：供前端按工具分发通用表单面板（当前 FormCard 由
+                // `form` chat-event 驱动，panel 仅为未来按 tag 分发的自由预留）。
+                "panel": { "tag": "polaris-form", "interactive": true },
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["target", "action", "fields"],
+                    "properties": {
+                        "target": {
+                            "type": "string",
+                            "description": "Target capability id on the bus (e.g. cap.todo, cap.kv, cap.context)."
+                        },
+                        "action": {
+                            "type": "string",
+                            "description": "Action to dispatch to the target capability (e.g. create, set)."
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Optional user-visible form title."
+                        },
+                        "read": {
+                            "type": "string",
+                            "enum": ["full", "none"],
+                            "default": "full",
+                            "description": "'full' lets the model see field values in the receipt; 'none' hides them."
+                        },
+                        "fields": {
+                            "type": "array",
+                            "minItems": 1,
+                            "description": "Field schemas rendered as form controls.",
+                            "items": {
+                                "type": "object",
+                                "required": ["name", "type"],
+                                "properties": {
+                                    "name": { "type": "string" },
+                                    "type": {
+                                        "type": "string",
+                                        "enum": ["string", "number", "boolean", "textarea", "select", "secret"]
+                                    },
+                                    "label": { "type": "string" },
+                                    "placeholder": { "type": "string" },
+                                    "options": {
+                                        "type": "array",
+                                        "items": { "type": "string" },
+                                        "description": "Required when type='select'."
+                                    },
+                                    "required": { "type": "boolean", "default": false },
+                                    "default": { "type": "string" },
+                                    "secret": { "type": "boolean", "default": false }
+                                },
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "additionalProperties": false
+                }
             }
-        }]
+        ]
     })
 }
 
@@ -217,10 +298,16 @@ fn handle_tools_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
         .and_then(Value::as_str)
         .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".into()))?;
 
-    if name != TOOL_NAME {
-        return Err(AppError::ValidationError(format!("未知工具: {}", name)));
+    if name == TOOL_NAME {
+        return handle_ask_call(params, config);
     }
+    if name == FORM_TOOL_NAME {
+        return handle_form_call(params, config);
+    }
+    Err(AppError::ValidationError(format!("未知工具: {}", name)))
+}
 
+fn handle_ask_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     let arguments = params
         .get("arguments")
         .cloned()
@@ -266,6 +353,66 @@ fn handle_tools_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     }))
 }
 
+/// Dispatch a `form` tool call: send a non-blocking form frame, read the ack.
+fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
+    if config.session_id.is_none() {
+        // 未绑定会话时 form 工具无路径回填（需 forward to frontend session）。
+        return Ok(json!({
+            "isError": true,
+            "content": [{
+                "type": "text",
+                "text": "form 工具需要绑定会话后才能使用"
+            }]
+        }));
+    }
+
+    let arguments = params
+        .get("arguments")
+        .cloned()
+        .unwrap_or_else(|| json!({}));
+    let target = arguments.get("target").and_then(Value::as_str).unwrap_or_default();
+    let action = arguments.get("action").and_then(Value::as_str).unwrap_or_default();
+    let title = arguments.get("title").and_then(Value::as_str).unwrap_or_default();
+    let read = arguments.get("read").and_then(Value::as_str).unwrap_or("full");
+    let fields = arguments
+        .get("fields")
+        .cloned()
+        .unwrap_or_else(|| json!([]));
+
+    // formId = 新 UUID，走 callId 字段（ask 帧同款模式）。
+    let form_id = uuid::Uuid::new_v4().to_string();
+
+    let form_frame = json!({
+        "type": "form",
+        "token": config.token,
+        "sessionId": config.session_id.clone().unwrap_or_default(),
+        "callId": form_id,
+        "title": title,
+        "read": read,
+        "target": target,
+        "action": action,
+        "fields": fields,
+    });
+
+    let ack = match request_form_ack_via_tcp(config.port, &form_frame) {
+        Ok(value) => value,
+        Err(error) => {
+            return Ok(json!({
+                "isError": true,
+                "content": [{
+                    "type": "text",
+                    "text": format!("Failed to present form to Polaris UI: {}", error.to_message())
+                }]
+            }));
+        }
+    };
+    // ack 就是 tool_result —— 只含 formId/status，不含任何字段值。
+    let body = serde_json::to_string(&ack).unwrap_or_else(|_| "{}".to_string());
+    Ok(json!({
+        "content": [{ "type": "text", "text": body }]
+    }))
+}
+
 /// Connect to the main process, send the ask frame, block reading the answer.
 fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
     let addr = format!("127.0.0.1:{}", port);
@@ -288,6 +435,35 @@ fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
     // Close gracefully so the listener side knows we're done.
     let _ = stream.shutdown(Shutdown::Both);
     Ok(answer)
+}
+
+/// Connect, send a non-blocking `form` frame, read the `form_ack`/`form_error`.
+///
+/// The listener registers the hold, emits the UI event, and replies immediately —
+/// we only wait for that ack, never for user submission. A read timeout bounds the
+/// wait so a stuck listener doesn't hang the model turn.
+fn request_form_ack_via_tcp(port: u16, form_frame: &Value) -> Result<Value> {
+    let addr = format!("127.0.0.1:{}", port);
+    let mut stream = TcpStream::connect_timeout(
+        &addr
+            .parse()
+            .map_err(|e| AppError::ProcessError(format!("无效地址 {}: {}", addr, e)))?,
+        Duration::from_secs(5),
+    )
+    .map_err(|e| AppError::ProcessError(format!("无法连接 {}: {}", addr, e)))?;
+
+    stream
+        .set_read_timeout(Some(Duration::from_secs(FORM_ACK_TIMEOUT_SECS)))
+        .ok();
+    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
+
+    write_frame(&mut stream, form_frame)?;
+
+    let ack = read_frame(&mut stream)?;
+
+    // Close gracefully so the listener side knows we're done.
+    let _ = stream.shutdown(Shutdown::Both);
+    Ok(ack)
 }
 
 /// Write a length-prefixed JSON frame: u32 LE length + UTF-8 bytes.
@@ -336,7 +512,7 @@ mod tests {
     fn tools_list_returns_ask_user_question() {
         let v = handle_tools_list();
         let tools = v.get("tools").and_then(|t| t.as_array()).unwrap();
-        assert_eq!(tools.len(), 1);
+        assert_eq!(tools.len(), 2);
         assert_eq!(tools[0].get("name").and_then(|s| s.as_str()), Some(TOOL_NAME));
         let schema = tools[0].get("inputSchema").unwrap();
         let q = schema
@@ -349,6 +525,48 @@ mod tests {
         assert_eq!(opts.get("maxItems").and_then(|v| v.as_u64()), Some(4));
         let header = q.pointer("/items/properties/header").unwrap();
         assert_eq!(header.get("maxLength").and_then(|v| v.as_u64()), Some(12));
+    }
+
+    #[test]
+    fn tools_list_exposes_form_tool_with_panel_tag() {
+        let v = handle_tools_list();
+        let tools = v.get("tools").and_then(|t| t.as_array()).unwrap();
+        let form_tool = tools
+            .iter()
+            .find(|t| t.get("name").and_then(|s| s.as_str()) == Some(FORM_TOOL_NAME))
+            .expect("form tool present");
+        let schema = form_tool.get("inputSchema").unwrap();
+        // 关键契约：fields / target / action 是必填。
+        let required = schema.get("required").and_then(|r| r.as_array()).unwrap();
+        assert!(required.iter().any(|v| v.as_str() == Some("fields")));
+        assert!(required.iter().any(|v| v.as_str() == Some("target")));
+        assert!(required.iter().any(|v| v.as_str() == Some("action")));
+        let fields = schema.pointer("/properties/fields").unwrap();
+        assert_eq!(fields.get("minItems").and_then(|v| v.as_u64()), Some(1));
+        // 扩展 panel 标签：工具顶层带 panel 元数据（前端可据此按 tag 分发）。
+        assert_eq!(
+            form_tool.pointer("/panel/tag").and_then(|v| v.as_str()),
+            Some("polaris-form")
+        );
+    }
+
+    #[test]
+    fn form_tool_without_session_is_rejected() {
+        let params = json!({
+            "name": FORM_TOOL_NAME,
+            "arguments": {
+                "target": "cap.todo",
+                "action": "create",
+                "fields": [{ "name": "content", "type": "string" }]
+            }
+        });
+        let cfg = AskMcpConfig {
+            port: 0,
+            token: "t".into(),
+            session_id: None,
+        };
+        let resp = handle_tools_call(params, &cfg).unwrap();
+        assert_eq!(resp.get("isError").and_then(|v| v.as_bool()), Some(true));
     }
 
     #[test]

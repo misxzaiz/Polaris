@@ -1,7 +1,7 @@
 # Polaris 重构 · 第九步：表单工具支持（阻断式 form + schema 驱动面板）
 
-> 状态：规划定稿，实施中（阶段 C 完成）
-> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）/ 阶段 C（2026-09-13）
+> 状态：规划定稿，实施中（阶段 D 完成）
+> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）/ 阶段 C（2026-09-13）/ 阶段 D（2026-09-13）
 > 目标目录：`dev/docs/sky/`
 > 承接：第八步（`step8-config.md`）之后；对应审借分析 §2.4/§2.5（`plans/sky-refactor-borrow-analysis.md`）
 > 原则：**给 AI 一个「拉起 → 挂起 → 提交 → 回填」的结构化输入闭环，复用既有会话桥，不新增旁路通道。**
@@ -50,8 +50,31 @@
 - 验证：tsc 零新增错误（42 存量基线不变）；4 单测全过；conversationStore 108 通过（3 存量网络失败）；
   `vite build` 成功（52s）
 
-### 下一阶段：阶段 D（form 工具进 polaris-ask MCP）
-待阶段 C 验收后按 §8 实施顺序推进。
+### ✅ 阶段 D：form 工具进 polaris-ask MCP + ask_listener 帧（已落地）
+
+- `src-tauri/src/services/ask_mcp_server.rs` —— 新增 `form` 工具（schema 含 `panel: {tag:"polaris-form"}`
+  扩展元数据；`fields/target/action` 必填；read 三态；无会话绑定拒绝）。`handle_tools_call`
+  分派 `form` 名称 → `handle_form_call`（构造 form 帧 → TCP 发送 → 读 `form_ack`/`form_error`）。
+- `src-tauri/src/services/ask_listener.rs` —— 帧分发新增 `"form"` 分支 → `handle_form_frame`：
+  token 校验 → 顺手清理超时 hold → `build_hold` 校验 schema（非法回写 `form_error` 帧）→
+  注册 `AppState.form_holds` → 广播 `form` chat-event（前端 FormCard 拉起）→ **立即回写
+  `form_ack` 帧（非阻塞，AI 不挂起）**。`emit_form_event` 复用 `emit_chat_event` 双通道
+  （WS + tauri emit）。
+- `src-tauri/src/services/form_flow.rs` —— `FormHold` 新增 `title` 字段（用户可见标题随
+  hold 存储，`emit_form_event` 携带给前端）。`build_hold` 签名加 `title` 参数。
+- 验证：`cargo check --lib` exit 0（37 存量 warnings）；独立 verify crate 实跑 **20 测试全绿**
+  （form_core 8 + form_flow 5[含 title 字段] + form_tool_schema 7）；主 crate 单测编译通过。
+
+**⚠️ 非阻塞决策（对 §3 帧协议的修正）**：文档原 §3 的「回填帧 form_answer（declined/receipt）」
+**不适用于本实现**。form 工具是**非阻塞**的——MCP 侧发 form 帧后立即读回 `form_ack`
+（`{type:"form_ack", formId, read, status:"waiting"}`），AI 拿到 ack 继续运行，**不挂起会话**。
+用户提交走阶段 B 的 `cap.ai.chat form_submit` 动作（复用 answer 回填机制），服务端广播
+`form-answered` 事件让前端 FormCard 切提交态；AI 上下文只见 `build_receipt`，原始 values
+不回流。即：**拉起帧/ack 走 MCP 通道，提交/回填走 cap.ai.chat 通道**，两条通道在服务端
+`form_holds` 交汇。
+
+### 下一阶段：阶段 E（目标能力白名单逐个放开）
+阶段 D 验收后按 §8 实施顺序推进（kv → todo → context → … → config 后续）。
 
 ---
 
