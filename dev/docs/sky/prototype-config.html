@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris 配置存储改造 · cap.config 上总线（交互原型）</title>
+<style>
+  :root {
+    --bg: #0d1117; --panel: #161b22; --panel-2: #21262d; --border: #30363d;
+    --text: #e6edf3; --muted: #8b949e; --accent: #58a6ff; --accent-2: #bc8cff;
+    --green: #3fb950; --red: #f85149; --amber: #d29922; --cyan: #39c5cf;
+    --mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.5; padding-bottom: 40px; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 20px; }
+
+  header { border-bottom: 1px solid var(--border); padding: 22px 0 18px; margin-bottom: 24px; }
+  header .badge { display: inline-block; font-size: 11px; letter-spacing: .08em; color: var(--accent); border: 1px solid var(--accent); border-radius: 20px; padding: 2px 10px; margin-bottom: 10px; text-transform: uppercase; }
+  h1 { font-size: 26px; font-weight: 650; }
+  header .sub { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  header .sub code { color: var(--cyan); background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12px; }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .stat { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 24px; font-weight: 650; margin-top: 4px; font-family: var(--mono); }
+  .stat .value.good { color: var(--green); } .stat .value.warn { color: var(--amber); } .stat .value.bad { color: var(--red); }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+  .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .card h2 .tag { font-size: 10px; background: var(--panel-2); color: var(--accent-2); border-radius: 10px; padding: 2px 8px; font-weight: 400; }
+  .card h2 .tag.red { color: var(--red); border: 1px solid rgba(248,81,73,.3); }
+  .card .desc { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .card .diag { color: var(--amber); font-size: 12px; margin-bottom: 12px; padding: 8px 10px; background: rgba(210,153,34,.08); border-left: 3px solid var(--amber); border-radius: 4px; }
+
+  /* 通道 */
+  .channels { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; margin: 12px 0; }
+  .chan { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; transition: border-color .15s; }
+  .chan .cname { font-family: var(--mono); font-size: 13px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; }
+  .chan .cname .tag { font-size: 10px; border-radius: 8px; padding: 1px 7px; }
+  .chan .cdesc { color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .chan .cfile { font-family: var(--mono); font-size: 10px; color: var(--cyan); margin-top: 8px; word-break: break-all; }
+  .tag-red { background: rgba(248,81,73,.15); color: var(--red); }
+  .tag-purple { background: rgba(188,140,255,.15); color: var(--accent-2); }
+  .tag-green { background: rgba(63,185,80,.15); color: var(--green); }
+  .tag-amber { background: rgba(210,153,34,.15); color: var(--amber); }
+  .tag-blue { background: rgba(88,166,255,.15); color: var(--accent); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th { text-align: left; color: var(--muted); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid var(--border); color: var(--text); vertical-align: top; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  .sql { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font-family: var(--mono); font-size: 12px; color: var(--cyan); overflow-x: auto; white-space: pre; }
+
+  /* 控件 */
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  .btn { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 7px 14px; font-size: 12px; cursor: pointer; font-family: inherit; transition: all .15s; }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #0d1117; border-color: var(--accent); font-weight: 600; }
+  .btn.primary:hover { background: #79c0ff; }
+  .btn.danger { border-color: var(--red); color: var(--red); }
+  .btn.danger:hover { background: rgba(248,81,73,.12); }
+  .btn.green { border-color: var(--green); color: var(--green); }
+  .btn.green:hover { background: rgba(63,185,80,.12); }
+  input[type=text], textarea { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: var(--mono); font-size: 12px; }
+  input[type=text]:focus, textarea:focus { outline: none; border-color: var(--accent); }
+  select { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 7px 10px; color: var(--text); font-family: inherit; font-size: 12px; }
+  .cb { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .cb input { accent-color: var(--accent); }
+
+  .log { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px; font-family: var(--mono); font-size: 12px; min-height: 100px; max-height: 240px; overflow-y: auto; }
+  .log .line { padding: 2px 0; }
+  .log .ok { color: var(--green); } .log .err { color: var(--red); } .log .info { color: var(--muted); } .log .accent { color: var(--accent-2); }
+
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .compare .col { border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .compare .col h3 { font-size: 13px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .compare .col.json h3 { color: var(--amber); }
+  .compare .col.sql h3 { color: var(--green); }
+  .compare ul { list-style: none; }
+  .compare li { font-size: 12px; color: var(--muted); padding: 5px 0; border-bottom: 1px dashed var(--border); display: flex; align-items: center; gap: 8px; }
+  .compare li .ok-mark { color: var(--green); }
+
+  .matrix { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
+  .cell { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+  .cell .v { font-size: 13px; font-weight: 600; }
+  .cell .v.allow { color: var(--green); } .cell .v.deny { color: var(--red); } .cell .v.mix { color: var(--amber); }
+  .cell .l { font-size: 10px; color: var(--muted); margin-top: 3px; }
+
+  .kv { display: flex; gap: 12px; margin-top: 14px; }
+  .kv .kv-l { flex: 1; }
+  .kv .kv-r { flex: 1; }
+  .pile { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+  .pile-item { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 12px; }
+  .pile-item .k { font-family: var(--mono); font-weight: 600; color: var(--accent); }
+  .pile-item .d { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .pill { display: inline-block; font-size: 10px; border-radius: 8px; padding: 1px 7px; margin-left: 6px; }
+  .pill.rw { background: rgba(63,185,80,.15); color: var(--green); }
+  .pill.ro { background: rgba(210,153,34,.15); color: var(--amber); }
+  .pill.lock { background: rgba(248,81,73,.15); color: var(--red); }
+
+  .tabs { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 18px; }
+  .tab { padding: 8px 16px; cursor: pointer; color: var(--muted); font-size: 13px; border-bottom: 2px solid transparent; }
+  .tab:hover { color: var(--text); }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .tab-sec { display: none; }
+  .tab-sec.active { display: block; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <span class="badge">step8 · 规划复审版</span>
+    <h1>配置存储改造 · cap.config 上总线</h1>
+    <div class="sub">管理面收敛 —— config 维持 <code>config.json</code> 单一真源 · 不切 SqliteStorage · 收敛四通道 + 权限门 + 审计</div>
+  </header>
+
+  <div class="stats">
+    <div class="stat"><div class="label">Config 顶层字段</div><div class="value warn" data-stat="fields">41</div></div>
+    <div class="stat"><div class="label">当前 config 读写通道</div><div class="value bad" data-stat="channels">4</div></div>
+    <div class="stat"><div class="label">旁路直读 config_store</div><div class="value warn" data-stat="bypass">5+</div></div>
+    <div class="stat"><div class="label">摘旧后唯一入口</div><div class="value good" data-stat="final">1</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="t1">01 · 四通道现状</div>
+    <div class="tab" data-tab="t2">02 · cap.config 能力</div>
+    <div class="tab" data-tab="t3">03 · 权限矩阵</div>
+    <div class="tab" data-tab="t4">04 · 摘旧四层清单</div>
+  </div>
+
+  <!-- Tab 1: 四通道现状 -->
+  <section class="tab-sec active" id="t1">
+    <div class="card">
+      <h2>现状：config 读写的多个入口 <span class="tag red">扩散面</span></h2>
+      <div class="desc">config 是 <code>config.json</code> 单一真源，但写它的通道不止一条。每多一条通道，就多一份语义漂移风险。</div>
+      <div class="channels" id="channels"></div>
+      <div class="diag">⚠️ 不只三份，是 <b>四通道</b>：<code>httpTransport.ts:31-33</code> 把 get_config/update_config/update_config_patch 统一映射到 <code>/api/settings</code>（GET / PATCH 双方法），摘旧时这条映射必须一并切 dispatch，否则 Web 端 config 读写整条断裂。</div>
+    </div>
+    <div class="card">
+      <h2>非命令壳但直读 config_store <span class="tag amber">隐藏漂移源</span></h2>
+      <div class="desc">这些点不是命令壳，不随「摘旧」一起消失 —— 摘壳后若不逐个核对，旁路直读仍在，双通道并未真正关闭。</div>
+      <table>
+        <thead><tr><th>位置</th><th>读取场景</th><th>是否随命令壳消失</th></tr></thead>
+        <tbody id="bypass-tbl"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Tab 2: cap.config 能力 -->
+  <section class="tab-sec" id="t2">
+    <div class="card">
+      <h2>cap.config —— 管理面唯一入口 <span class="tag">同步能力</span></h2>
+      <div class="desc">注册于 state.rs 装配点（与 cap.kv/todo/context 并列）。动作协议一次定稿，payload 即契约。</div>
+      <div class="kv">
+        <div class="kv-l">
+          <h3 style="font-size:13px;color:var(--muted);margin-bottom:8px">动作面</h3>
+          <div class="pile" id="actions"></div>
+        </div>
+        <div class="kv-r">
+          <h3 style="font-size:13px;color:var(--muted);margin-bottom:8px">副作用链（sky 没有，Polaris 必须做）</h3>
+          <div class="log" id="sideeffect-log" style="min-height:200px"></div>
+        </div>
+      </div>
+      <div class="diag" style="margin-top:14px">⚠️ <b>cap.config 与 sky ConfigTool 的本质差异</b>：sky 写后不热更新（需重启），Polaris 的 patch 必须顺序触发「级联 settings.json → 刷新引擎缓存 → emit config-changed → 启停 web」。副作用链断一环，config 的「改即生效」语义就丢。</div>
+    </div>
+    <div class="card">
+      <h2>白名单 schema 模型 <span class="tag">单一真源</span></h2>
+      <div class="desc">复用 sky 的 <code>field_schemas()/apply_patch()</code> 双端一致性范式，但 sections 从 sky 的 4 字段扩为可写 section 建模 —— 41 个顶层字段不能全部开放写。</div>
+      <table>
+        <thead><tr><th>section</th><th class="type-col">类型</th><th>权限</th><th>说明</th></tr></thead>
+        <tbody id="section-tbl"></tbody>
+      </table>
+      <div class="diag" style="margin-top:12px">敏感字段读路脱敏（复用 <code>mask_key</code>：`${ENV}`→`env:&lt;NAME&gt;`，≤4 字符全遮，否则 `****&lt;后4字符&gt;`）；Secret/Path 型写走独立动作或二次授权；dispatch 审计沿用「source 只落变体名」惯例，永不落明文。</div>
+    </div>
+  </section>
+
+  <!-- Tab 3: 权限矩阵 -->
+  <section class="tab-sec" id="t3">
+    <div class="card">
+      <h2>PolicyPermission 权限矩阵 <span class="tag green">阶段 C 启用</span></h2>
+      <div class="desc">第五步已预埋 <code>cap.config → remote deny</code>（<code>policy_permission.rs:236-272</code>）。Bootstrap（桌面主窗口）不受限；Remote（Web/browser）对管理面拒绝；精确规则 <code>cap.config.read</code> 可覆盖通配 deny 放行只读。</div>
+      <div class="matrix" id="matrix"></div>
+    </div>
+    <div class="card">
+      <h2>实验台</h2>
+      <div class="desc">选择来源与动作，看 dispatch 全链路如何裁决。</div>
+      <div class="row">
+        <label class="lbl">来源</label>
+        <select id="src-sel">
+          <option value="bootstrap">Bootstrap（桌面主窗口）</option>
+          <option value="remote" selected>Remote（Web / builtin browser）</option>
+        </select>
+        <label class="lbl">动作</label>
+        <select id="act-sel">
+          <option value="cap.config" selected>cap.config（patch 写）</option>
+          <option value="cap.config.read">cap.config.read（get 读）</option>
+          <option value="cap.config.apply_web">cap.config.apply_web</option>
+          <option value="cap.config.reset_cli">cap.config.reset_cli</option>
+          <option value="cap.todo">cap.todo（对照：数据域）</option>
+        </select>
+        <button class="btn primary" id="perm-run">Dispatch</button>
+      </div>
+      <div class="log" id="perm-log"></div>
+    </div>
+  </section>
+
+  <!-- Tab 4: 摘旧四层清单 -->
+  <section class="tab-sec" id="t4">
+    <div class="card">
+      <h2>摘旧四层验证清单 <span class="tag">每迁移块必过</span></h2>
+      <div class="desc">摘旧不只是删文件，四层全过才算闭环（cap.todo 复盘后升级的清单 v2）。</div>
+      <table>
+        <thead><tr><th>层</th><th>检查</th><th>cap.todo 的教训</th></tr></thead>
+        <tbody id="ripped-tbl"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h2>实施顺序 <span class="tag">先立骨架再替换</span></h2>
+      <div class="pile" id="order"></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+// Tab switching
+document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.tab-sec').forEach(x=>x.classList.remove('active'));
+  t.classList.add('active');
+  document.getElementById(t.dataset.tab).classList.add('active');
+}));
+
+/* ===== Tab 1: 四通道现状 ===== */
+const CHANNELS = [
+  { name:'命令层', tag:'通道①', cls:'tag-red', desc:'get_config/update_config/update_config_patch/set_work_dir/set_claude_cmd/reset_cli_config/find_claude_paths/health_check…', file:'lib.rs:134-495（generate_handler:810）' },
+  { name:'Web 桥', tag:'通道②', cls:'tag-purple', desc:'ipc.rs 逐命令复刻；set_work_dir 实现已分叉（手写 clone→update 而非复用 ConfigStore）', file:'web/api/ipc.rs:224,240-244,353-355,390-391' },
+  { name:'settings.rs 第三份', tag:'通道③', cls:'tag-amber', desc:'handle_update_settings 注释自承认「Web 模式无 app_handle，不广播 config-changed」', file:'web/api/settings.rs:23' },
+  { name:'httpTransport 路由映射', tag:'通道④', cls:'tag-blue', desc:'get_config/update_config/update_config_patch → /api/settings（GET_COMMANDS 含 get_config）——切 dispatch 必牵动此表', file:'httpTransport.ts:31-33' },
+];
+document.getElementById('channels').innerHTML = CHANNELS.map(c=>`
+  <div class="chan">
+    <div class="cname">${c.name} <span class="tag ${c.cls}">${c.tag}</span></div>
+    <div class="cdesc">${c.desc}</div>
+    <div class="cfile">${c.file}</div>
+  </div>`).join('');
+
+const BYPASS = [
+  { file:'lib.rs:730', scene:'web server 启动判定（读 config.web）', gone:'否 — 平台启动逻辑' },
+  { file:'lib.rs:1298', scene:'守护进程健康监控（读 performance.scheduler_daemon）', gone:'否 — 运行时守护' },
+  { file:'lib.rs:1356', scene:'Web token 注入（写入 config.web.token）', gone:'否 — 启动段' },
+  { file:'integration.rs:290', scene:'直写 config_store.patch（qqbot/feishu/dingtalk 三段）', gone:'否 — 独立命令层' },
+  { file:'personal_hub_mcp_server.rs:36-45', scene:'旁路 std::fs read_to_string 直读 config.json（不共享 ConfigStore 锁/迁移）', gone:'否 — MCP 子进程' },
+  { file:'mcp_manager.rs:19 / plugin.rs:20 / logging.rs', scene:'读 config_store 锁', gone:'否 — 各自命令层' },
+];
+document.getElementById('bypass-tbl').innerHTML = BYPASS.map((r,i)=>`
+  <tr><td>${r.file}</td><td>${r.scene}</td><td style="color:${i===4?'var(--red)':'var(--muted)'}">${r.gone}</td></tr>`).join('');
+
+/* ===== Tab 2: cap.config 能力 ===== */
+const ACTIONS = [
+  { k:'get', d:'读指定 section（缺省=白名单全部）；只暴露白名单，不泄露 model_profiles 全量；api_key/web.token/session_token → mask_key 脱敏' },
+  { k:'patch', d:'按 section 合并写 + 持久化 + 顺序副作用链（见右）' },
+  { k:'schema', d:'纯声明，不读 config.json；前端据此渲染控件（sky 已验证）' },
+  { k:'apply_web', d:'复用 apply_web_server 语义，Web 配置保存后即时生效' },
+  { k:'reset_cli', d:'复用 reset_cli_config 语义' },
+];
+document.getElementById('actions').innerHTML = ACTIONS.map(a=>`
+  <div class="pile-item"><span class="k">${a.k}</span> — <span class="d">${a.d}</span></div>`).join('');
+
+const SIDE = [
+  { i:0, t:'0ms', m:'patch 落盘 config.json（原子写 tmp+rename，0600）', c:'sql' },
+  { i:1, t:'+0ms', m:'cascade_active_model_profile → 激活 Profile 凭证级联写 Claude settings.json（失败仅 warn）', c:'info' },
+  { i:2, t:'+0ms', m:'refresh_engine_configs → engine_registry.refresh_all_configs 失效缓存', c:'accent' },
+  { i:3, t:'+0ms', m:'emit_config_changed → 广播 "config-changed"（payload performance）', c:'accent' },
+  { i:4, t:'+0ms', m:'apply_web_server（web section 变化时）→ 启停 Web 服务', c:'info' },
+];
+function renderSide() {
+  document.getElementById('sideeffect-log').innerHTML = SIDE.map(s=>`
+    <div class="line ${s.c}"><span class="info">[${s.t}]</span> → ${s.m}</div>`).join('');
+}
+renderSide();
+
+const SECTIONS = [
+  { s:'core', t:'default_engine / language / theme / work_dir / session_dir / web…', p:'rw', d:'核心运行配置：部分可写' },
+  { s:'claude_code / codex_code / pi_code', t:'CLI 路径', p:'rw', d:'set_claude_cmd 语义' },
+  { s:'model_profiles / provider_groups', t:'ModelProfile 复杂嵌套含 api_key 明文', p:'ro', d:'读路脱敏；写拆独立动作或独立域慢迁' },
+  { s:'plugins / permissions', t:'插件配置 + 权限规则', p:'lock', d:'由独立命令/装配层管，不经 config 写' },
+  { s:'runtime（port/bind/tls）', t:'服务可达性关键', p:'ror', d:'只读锁——改端口导致服务不可达，须独立动作' },
+];
+document.getElementById('section-tbl').innerHTML = SECTIONS.map(s=>`
+  <tr>
+    <td>${s.s}</td>
+    <td class="type-col" style="color:var(--muted)">${s.t}</td>
+    <td><span class="pill ${s.p}">${s.p==='rw'?'可写':s.p==='ro'?'只读':'锁定'}</span></td>
+    <td style="color:var(--muted)">${s.d}</td>
+  </tr>`).join('');
+
+/* ===== Tab 3: 权限矩阵 ===== */
+const MATRIX = [
+  { cap:'cap.config（patch 写）', bs:'allow', rm:'deny', pv:'deny', d:'管理面写，远程拒绝' },
+  { cap:'cap.config.read', bs:'allow', rm:'allow', pv:'allow', d:'精确覆盖通配 deny，只读放开' },
+  { cap:'cap.config.apply_web', bs:'allow', rm:'deny', pv:'deny', d:'Web 服务启停是管理面' },
+  { cap:'cap.config.reset_cli', bs:'allow', rm:'deny', pv:'deny', d:'重置 CLI 是管理面' },
+  { cap:'cap.todo（数据域对照）', bs:'allow', rm:'allow', pv:'allow', d:'数据域远程放行' },
+];
+document.getElementById('matrix').innerHTML = MATRIX.map(m=>`
+  <div class="cell">
+    <div class="v ${m.bs}">Bootstrap</div>
+    <div class="l" style="margin:6px 0">${m.cap}</div>
+    <div class="v ${m.rm}">Remote</div>
+    <div class="l">${m.d}</div>
+  </div>`).join('');
+
+const permLog = document.getElementById('perm-log');
+function logPerm(m, cls='info') {
+  const div = document.createElement('div'); div.className = 'line ' + cls; div.textContent = m;
+  permLog.appendChild(div); permLog.scrollTop = permLog.scrollHeight;
+}
+function verdictMatrix() {
+  const src = document.getElementById('src-sel').value;
+  const act = document.getElementById('act-sel').value;
+  const remote = src==='remote';
+  if (remote && act==='cap.config') return { v:'deny', msg:'Deny — Remote 命中 cap.config 通配 deny，dispatch 拒绝 + 审计落盘（source=Remote 脱敏）' };
+  if (remote && act==='cap.config.apply_web') return { v:'deny', msg:'Deny — Remote 命中 cap.config.apply_web deny' };
+  if (remote && act==='cap.config.reset_cli') return { v:'deny', msg:'Deny — Remote 命中 cap.config.reset_cli deny' };
+  if (remote && act==='cap.config.read') return { v:'allow', msg:'Allow — 精确 cap.config.read 特异性 2 > 通配 deny 1，只读放行' };
+  if (remote && act==='cap.todo') return { v:'allow', msg:'Allow — cap.todo 是数据域，Remote 放行' };
+  if (src==='bootstrap') return { v:'allow', msg:'Allow — Bootstrap（桌面主窗口）不受限' };
+  return { v:'allow', msg:'Allow' };
+}
+document.getElementById('perm-run').addEventListener('click',()=>{
+  const act = document.getElementById('act-sel').value;
+  const v = verdictMatrix();
+  logPerm(`dispatch.start → ${act}`);
+  logPerm(v.msg, v.v==='deny'?'err':'ok');
+  logPerm(`audit: {capability:${act}, source:${document.getElementById('src-sel').value}, verdict:${v.v.toUpperCase()}, prev_hash:0x${Math.random().toString(16).slice(2,8)}…}`, v.v==='deny'?'err':'accent');
+  logPerm('———', 'info');
+});
+
+/* ===== Tab 4: 摘旧四层清单 ===== */
+const RIPPED = [
+  { l:'① 代码标识', c:'grep 旧命令名/常量/服务名零残留', lesson:'已覆盖，无遗漏' },
+  { l:'② 持久化配置', c:'已落盘的 mcp.json / config 副本是否残留指向已删二进制的条目', lesson:'漏了：3 份历史 mcp.json 残留 polaris-todo' },
+  { l:'③ 用户可见性', c:'相关面板/入口在两种插件状态下都实际出现/消失', lesson:'漏了：面板从未打开验证' },
+  { l:'④ AI 工具消费方', c:'AI 工具名是否有真实 execute 调用链', lesson:'前提就错了：todoTools.ts 从未被调用' },
+];
+document.getElementById('ripped-tbl').innerHTML = RIPPED.map(r=>`
+  <tr><td>${r.l}</td><td>${r.c}</td><td style="color:var(--amber)">${r.lesson}</td></tr>`).join('');
+
+const ORDER = [
+  { k:'A', d:'config_capability.rs + 白名单 schema + 脱敏 + 单测（先做，独立验证）' },
+  { k:'B', d:'副作用链接线 + 单测（验证顺序；副作用链未稳前不摘旧）' },
+  { k:'C', d:'state.rs 装配 + 权限规则启用 + Web 桥 / httpTransport 映射切换' },
+  { k:'D', d:'前端 service 切换 → 摘旧四通道 → 四层清单 → 24h 用户可见性回访' },
+];
+document.getElementById('order').innerHTML = ORDER.map(o=>`
+  <div class="pile-item"><span class="k">${o.k}</span> — <span class="d">${o.d}</span></div>`).join('');
+</script>
+</body>
+</html>
