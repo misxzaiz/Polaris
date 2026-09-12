@@ -69,7 +69,12 @@ impl EventAdapter {
 
     /// 订阅契约事件流（in-proc，Filter 过滤）
     pub fn subscribe(&self, filter: Filter) -> mpsc::Receiver<Event> {
-        let (tx, rx) = mpsc::channel(64);
+        self.subscribe_with_capacity(64, filter)
+    }
+
+    /// 订阅（自定义容量：高频流（如 chat-event 中继）用大缓冲防丢事件）
+    pub fn subscribe_with_capacity(&self, capacity: usize, filter: Filter) -> mpsc::Receiver<Event> {
+        let (tx, rx) = mpsc::channel(capacity);
         self.subscribers.lock().unwrap().push(Subscriber {
             filter,
             sender: tx,

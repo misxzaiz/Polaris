@@ -9,7 +9,8 @@ import type { AISessionConfig } from '@/ai-runtime'
 import type { AITask, AIEvent } from '@/ai-runtime'
 import { BaseSession } from '@/ai-runtime/base'
 import { createEventIterable } from '@/ai-runtime/base'
-import { invoke, listen } from '@/services/tauri'
+import { listen } from '@/services/tauri'
+import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('CodexSession')
@@ -67,7 +68,7 @@ export class CodexSession extends BaseSession {
       return
     }
 
-    invoke('interrupt_chat', { sessionId: this.id, engineId: 'codex' })
+    aiChatDispatch({ action: 'interrupt', sessionId: this.id, engineId: 'codex' })
       .catch((error) => {
         log.error('Failed to abort:', error instanceof Error ? error : new Error(String(error)))
       })
@@ -109,7 +110,7 @@ export class CodexSession extends BaseSession {
     const message = this.buildPrompt(task)
 
     try {
-      await invoke('start_chat', {
+      await aiChatDispatch({ action: 'start',
         message,
         options: {
           engineId: 'codex',
@@ -141,7 +142,7 @@ export class CodexSession extends BaseSession {
     }
 
     try {
-      await invoke('continue_chat', {
+      await aiChatDispatchStream({ action: 'continue',
         sessionId: this.id,
         message: prompt,
         options: {

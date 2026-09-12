@@ -106,7 +106,7 @@ impl RouterBus {
         }
         let mut table = self.streaming_caps.write().unwrap();
         if table.contains_key(&id) {
-            return Err(format!("流式能力 {} 已注册", id.0));
+            return Ok(()); // 幂等：多入口（桌面/独立 Web）重复注册无害
         }
         table.insert(id, cap);
         Ok(())
@@ -115,6 +115,15 @@ impl RouterBus {
     /// 目标是否为已注册的流式能力
     pub fn is_streaming(&self, target: &CapabilityId) -> bool {
         self.streaming_caps.read().unwrap().contains_key(target)
+    }
+
+    /// 大容量订阅（桌面 chat-event 中继用：高频 token 流防丢）
+    pub fn subscribe_with_capacity(
+        &self,
+        capacity: usize,
+        filter: Filter,
+    ) -> tokio::sync::mpsc::Receiver<Event> {
+        self.broadcaster.subscribe_with_capacity(capacity, filter)
     }
 
     /// 流式 dispatch（第六步：事件经 EventAdapter 推送，立即返回 StreamAck）
@@ -397,15 +406,26 @@ impl Router for RouterBus {
                 })
             }
             None => {
-                // 防误用：目标在流式平行表 → 指引正确入口
-                let is_streaming = self.streaming_caps.read().unwrap().contains_key(&env.target);
-                if is_streaming {
+                // 流式平行表回退：混合型能力（cap.ai.chat 有同步动作）走 invoke
+                let stream_cap = self.streaming_caps.read().unwrap().get(&env.target).cloned();
+                if let Some(cap) = stream_cap {
+                    let plugin_config = self.plugin_config_for(&env.target);
+                    let ctx = RealContext::new(env.source.clone(), self.storage.clone(), plugin_config);
+                    let result = cap.invoke(env.payload, &ctx);
+                    self.broadcaster.broadcast(Event {
+                        seq: 0,
+                        kind: "dispatch.end".into(),
+                        payload: serde_json::json!({
+                            "msg_id": env.id.0,
+                            "target": env.target.0,
+                            "status": if result.is_ok() { "ok" } else { "error" },
+                            "sync": true,
+                        }),
+                        trace: env.trace.clone(),
+                    });
                     return Ok(Reply {
                         msg_id: env.id,
-                        result: Err(format!(
-                            "能力 {} 是流式能力，请走 dispatch_stream",
-                            env.target.0
-                        )),
+                        result,
                         trace: env.trace,
                     });
                 }
@@ -862,9 +882,10 @@ mod tests {
         let (router, _) = make_router(Box::new(AllowAllPermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
         let r = router.register_streaming(Arc::new(StreamEchoCapability));
-        // cap.stream.echo 与 cap.echo 不同 id —— 改为验证同 id 冲突：重新注册同 id
+        // cap.stream.echo 与 cap.echo 不同 id —— 注册成功
         assert!(r.is_ok());
+        // 幂等：同 id 重复注册（桌面/独立 Web 双入口）返回 Ok
         let r2 = router.register_streaming(Arc::new(StreamEchoCapability));
-        assert!(r2.is_err(), "重复注册同 id 流式能力应拒绝");
+        assert!(r2.is_ok(), "重复注册同 id 流式能力应幂等");
     }
 }

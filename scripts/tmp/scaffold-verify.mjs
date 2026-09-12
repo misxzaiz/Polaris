@@ -34,7 +34,6 @@ for (const rel of [
   'services/router/policy_permission.rs',
   'services/router/prompt_snippet_capability.rs',
   'services/router/stream_echo_capability.rs',
-  'services/router/ai_chat_capability.rs',
   'services/router/todo_capability.rs',
   'web/event_broadcaster.rs',
 ]) cp(rel)
@@ -94,6 +93,16 @@ pub struct PermissionPolicyConfig {
 `)
 
 write('src/services/mod.rs', 'pub mod data_root;\npub mod router;\npub mod storage;\n')
+
+// router/mod.rs 剥离 ai_chat_capability（依赖 AppState，verify crate 不复制该文件）
+{
+  const rp = path.join(DST, 'src', 'services', 'router', 'mod.rs')
+  let rs = fs.readFileSync(rp, 'utf8')
+  rs = rs
+    .replace('mod ai_chat_capability;\n', '')
+    .replace('pub use ai_chat_capability::AiChatCapability;\n', '')
+  fs.writeFileSync(rp, rs)
+}
 
 write('src/services/data_root.rs', `//! 最小 shim：验证 crate 的数据根（进程内唯一临时目录）
 use std::path::PathBuf;

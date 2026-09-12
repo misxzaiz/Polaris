@@ -9,7 +9,8 @@ import type { AISessionConfig } from '@/ai-runtime'
 import type { AITask, AIEvent } from '@/ai-runtime'
 import { BaseSession } from '@/ai-runtime/base'
 import { createEventIterable } from '@/ai-runtime/base'
-import { invoke, listen } from '@/services/tauri'
+import { listen } from '@/services/tauri'
+import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('ClaudeCodeSession')
@@ -88,7 +89,7 @@ export class ClaudeCodeSession extends BaseSession {
     }
 
     // 调用 Tauri 后端中断 CLI 进程
-    invoke('interrupt_chat', { sessionId: this.id })
+    aiChatDispatch({ action: 'interrupt', sessionId: this.id })
       .catch((error) => {
         log.error('Failed to abort:', error instanceof Error ? error : new Error(String(error)))
       })
@@ -149,7 +150,11 @@ export class ClaudeCodeSession extends BaseSession {
     }
 
     try {
-      await invoke('start_chat', args)
+      await aiChatDispatch({
+        action: 'start',
+        message: args.message,
+        options: { workDir: args.workspaceDir },
+      })
     } catch (error) {
       log.error('Failed to start Claude process:', error instanceof Error ? error : new Error(String(error)))
       throw error
@@ -221,7 +226,8 @@ export class ClaudeCodeSession extends BaseSession {
     }
 
     try {
-      await invoke('continue_chat', {
+      await aiChatDispatchStream({
+        action: 'continue',
         sessionId: this.id,
         message: prompt,
       })

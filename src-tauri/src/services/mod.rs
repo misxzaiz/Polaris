@@ -25,6 +25,8 @@ pub mod executor;
 pub mod unified_requirement_repository;
 pub mod unified_scheduler_repository;
 pub mod requirements_mcp_server;
+pub mod ai_chat_core;
+pub mod ai_history_core;
 pub mod router;
 pub mod agnes_mcp_server;
 pub mod personal_hub_crypto;

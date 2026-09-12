@@ -51,7 +51,12 @@ describe('dispatchTaskService', () => {
     vi.clearAllMocks()
     resetEventRouter()
     resetManager()
-    invokeMock.mockResolvedValue('backend-conv-1')
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === 'router_dispatch' || cmd === 'router_dispatch_stream') {
+        return Promise.resolve({ msgId: 'm', ok: true, result: 'backend-conv-1', error: null, trace: 't' })
+      }
+      return Promise.resolve('backend-conv-1')
+    })
   })
 
   it('creates a silent background session and starts chat with dispatch contextId', async () => {
@@ -75,9 +80,9 @@ describe('dispatchTaskService', () => {
     expect(state.backgroundSessionIds).toContain('dispatch-1-abc12345')
 
     // start_chat 参数
-    const startCall = invokeMock.mock.calls.find((c) => c[0] === 'start_chat')
+    const startCall = invokeMock.mock.calls.find((c) => c[0] === 'router_dispatch')
     expect(startCall).toBeDefined()
-    const [, payload] = startCall as [string, { message: string; options: Record<string, unknown> }]
+    const payload = (startCall as [string, { req: { payload: { message: string; options: Record<string, unknown> } } }])[1].req.payload
     expect(payload.message).toBe('跑一遍回归测试')
     expect(payload.options.contextId).toBe('dispatch-1-abc12345')
     expect(payload.options.workDir).toBe('D:/work/demo')
@@ -108,8 +113,8 @@ describe('dispatchTaskService', () => {
       prompt: '做点事',
     })
 
-    const startCall = invokeMock.mock.calls.find((c) => c[0] === 'start_chat')
-    const [, payload] = startCall as [string, { options: Record<string, unknown> }]
+    const startCall = invokeMock.mock.calls.find((c) => c[0] === 'router_dispatch')
+    const payload = (startCall as [string, { req: { payload: { options: Record<string, unknown> } } }])[1].req.payload
     expect(payload.options.engineId).toBe('codex')
     expect(payload.options.workDir).toBe('D:/work/source-ws')
   })
@@ -209,13 +214,13 @@ describe('dispatchTaskService', () => {
     expect(useDispatchStore.getState().getTask('d-7')?.status).toBe('completed')
 
     invokeMock.mockClear()
-    invokeMock.mockResolvedValue(null)
+    invokeMock.mockResolvedValue({ ok: false, error: 'gone' })
     const ok = await continueDispatchedTask('d-7', '再复测一遍')
     expect(ok).toBe(true)
 
-    const continueCall = invokeMock.mock.calls.find((c) => c[0] === 'continue_chat')
+    const continueCall = invokeMock.mock.calls.find((c) => c[0] === 'router_dispatch_stream')
     expect(continueCall).toBeDefined()
-    const [, payload] = continueCall as [string, { sessionId: string; message: string; options: Record<string, unknown> }]
+    const payload = (continueCall as [string, { req: { payload: { sessionId: string; message: string; options: Record<string, unknown> } } }])[1].req.payload
     expect(payload.sessionId).toBe('backend-conv-7')
     expect(payload.message).toBe('再复测一遍')
     expect(payload.options.contextId).toBe('dispatch-1-fff66666')
@@ -238,7 +243,7 @@ describe('dispatchTaskService', () => {
 
   it('reports failed when start_chat throws', async () => {
     invokeMock.mockImplementation((cmd: unknown) => {
-      if (cmd === 'start_chat') return Promise.reject(new Error('engine boom'))
+      if (cmd === 'router_dispatch') return Promise.reject(new Error('engine boom'))
       return Promise.resolve(null)
     })
 

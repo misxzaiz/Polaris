@@ -21,7 +21,7 @@ import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
 import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
-import { invoke } from '@/services/tauri';
+import { aiChatDispatch } from '@/services/aiChatDispatch'
 import type { PermissionRequestBlock, QuestionBlock } from '@/types/chat';
 import './DynamicIsland.css';
 
@@ -186,7 +186,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         // 提问：跳过（默认 declined）
         if (card.kind === 'question' && block.type === 'question') {
           const q = block as QuestionBlock;
-          await invoke('answer_question', {
+          await aiChatDispatch({ action: 'answer_question',
             sessionId: q.sessionId || card.sessionId,
             callId: q.id,
             answer: { answers: [], declined: !approved },

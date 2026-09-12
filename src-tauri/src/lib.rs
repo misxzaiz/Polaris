@@ -25,23 +25,6 @@ use models::config::{Config, HealthStatus};
 use services::config_store::ConfigStore;
 use services::logger::Logger;
 #[cfg(feature = "tauri-app")]
-use commands::chat::{start_chat, continue_chat, interrupt_chat, provider_route_logs, provider_route_logs_clear};
-#[cfg(feature = "tauri-app")]
-use commands::chat::{
-    provider_stats, provider_stats_clear, provider_failed_calls, provider_failed_calls_clear,
-};
-#[cfg(feature = "tauri-app")]
-use commands::chat::{
-    list_sessions, get_session_history, delete_session,
-    list_claude_code_sessions, get_claude_code_session_history,
-    register_pending_question, answer_question, get_pending_questions, clear_answered_questions,
-    respond_plugin_card,
-    // PlanMode 相关
-    register_pending_plan, approve_plan, reject_plan, get_pending_plans, clear_processed_plans,
-    // stdin 输入
-    send_input,
-};
-#[cfg(feature = "tauri-app")]
 use commands::dispatch::{dispatch_report_status, dispatch_create_task, dispatch_list_tasks, dispatch_delete_task};
 #[cfg(feature = "tauri-app")]
 use commands::{
@@ -146,7 +129,7 @@ use tokio::sync::Mutex as AsyncMutex;
 use ai::EngineRegistry;
 use integrations::IntegrationManager;
 #[cfg(feature = "tauri-app")]
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 // ============================================================================
 // Tauri Commands
@@ -608,6 +591,60 @@ pub fn run() {
             // Store AppHandle in AppState for dual emission (Web API → Tauri webview)
             let state = app.state::<AppState>();
             let _ = state.app_handle.set(app.handle().clone());
+
+            // ── 第七步阶段 A2：cap.ai.chat 注册（AI 会话唯一入口）─────────────
+            // 业务核需要 &AppState；此处以 clone_for_web 的 Arc 持有
+            // （全部业务字段与本源 Arc 共享）。幂等：独立 Web 模式重复注册无害。
+            {
+                let chat_state = Arc::new(state.inner().clone_for_web());
+                let _ = state
+                    .router
+                    .register_streaming(Arc::new(
+                        crate::services::router::AiChatCapability::with_state(chat_state),
+                    ));
+                let _ = state
+                    .router
+                    .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
+
+                // 桌面 chat-event 中继：订阅广播通道（总线流式与同步直发两条路径
+                // 都经同一 EventBroadcaster），→ Tauri emit + 完成桌面通知。
+                // 旧命令层的 window.emit 双发语义由此承接（step7 §A2）。
+                {
+                    let mut raw_rx = state.event_broadcast.subscribe();
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            match raw_rx.recv().await {
+                                Ok(msg) => {
+                                    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) else { continue };
+                                    if parsed.get("event").and_then(|e| e.as_str()) != Some("chat-event") {
+                                        continue;
+                                    }
+                                    let Some(payload) = parsed.get("payload") else { continue };
+                                    let _ = handle.emit("chat-event", payload);
+                                    let is_session_end = payload
+                                        .get("payload")
+                                        .and_then(|p| p.get("type"))
+                                        .and_then(|t| t.as_str())
+                                        == Some("session_end");
+                                    if is_session_end {
+                                        use tauri_plugin_notification::NotificationExt;
+                                        let _ = handle
+                                            .notification()
+                                            .builder()
+                                            .title("Polaris")
+                                            .body("AI 回复已完成")
+                                            .show();
+                                    }
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(_) => break,
+                            }
+                        }
+                    });
+                }
+            }
+
             commands::browser::set_browser_app_handle(app.handle().clone());
 
             // ── 主窗口创建 ──────────────────────────────────────────────
@@ -791,36 +828,17 @@ pub fn run() {
             // MCP 诊断
             // Prompt Snippet 快捷片段
             // 聊天相关（统一接口）
-            start_chat,
-            continue_chat,
-            interrupt_chat,
-            provider_route_logs,
-            provider_route_logs_clear,
-            provider_stats,
-            provider_stats_clear,
-            provider_failed_calls,
-            provider_failed_calls_clear,
+            commands::provider_diagnostics::provider_route_logs,
+            commands::provider_diagnostics::provider_route_logs_clear,
+            commands::provider_diagnostics::provider_stats,
+            commands::provider_diagnostics::provider_stats_clear,
+            commands::provider_diagnostics::provider_failed_calls,
+            commands::provider_diagnostics::provider_failed_calls_clear,
             // 统一会话历史接口（支持分页）
-            list_sessions,
-            get_session_history,
-            delete_session,
             // Claude Code 原生会话历史相关（旧接口，保留兼容）
-            list_claude_code_sessions,
-            get_claude_code_session_history,
             // AskUserQuestion 相关
-            register_pending_question,
-            answer_question,
-            respond_plugin_card,
-            get_pending_questions,
-            clear_answered_questions,
             // PlanMode 相关
-            register_pending_plan,
-            approve_plan,
-            reject_plan,
-            get_pending_plans,
-            clear_processed_plans,
             // stdin 输入
-            send_input,
             // 派发任务（dispatch_task MCP）状态回报
             dispatch_report_status,
             dispatch_create_task,
@@ -1169,6 +1187,17 @@ pub fn run() {
             commands::router::router_list_caps,
             commands::router::audit_tail,
             commands::router::audit_verify,
+            commands::session_history::list_sessions,
+            commands::session_history::get_session_history,
+            commands::session_history::delete_session,
+            commands::session_history::list_claude_code_sessions,
+            commands::session_history::get_claude_code_session_history,
+            commands::provider_diagnostics::provider_route_logs,
+            commands::provider_diagnostics::provider_route_logs_clear,
+            commands::provider_diagnostics::provider_stats,
+            commands::provider_diagnostics::provider_stats_clear,
+            commands::provider_diagnostics::provider_failed_calls,
+            commands::provider_diagnostics::provider_failed_calls_clear,
             commands::router::router_dispatch_stream,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
@@ -1400,6 +1429,15 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let host = cli_host
         .unwrap_or_else(|| config.web.host.clone());
     let state = Arc::new(app_state);
+    // 第七步阶段 A2：cap.ai.chat / cap.stream.echo 注册（独立 Web 模式）
+    let _ = state
+        .router
+        .register_streaming(Arc::new(crate::services::router::AiChatCapability::with_state(
+            state.clone(),
+        )));
+    let _ = state
+        .router
+        .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
     let web_server = web::server::WebServer::new(state.clone());
 
     tracing::info!("[Polaris-Web] Starting standalone web server on {}:{}", host, port);

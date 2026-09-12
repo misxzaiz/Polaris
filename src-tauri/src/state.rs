@@ -352,7 +352,7 @@ pub fn create_app_state(
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
-            AiChatCapability, EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
+            EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
             PromptSnippetCapability, RouterBus, StreamEchoCapability, TodoCapability, audit_sink,
             prompt_snippet_capability,
         };
@@ -409,8 +409,7 @@ pub fn create_app_state(
         // 第六步：流式能力（平行表，走 dispatch_stream）
         // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）
         let _ = bus.register_streaming(Arc::new(StreamEchoCapability));
-        // cap.ai.chat —— 第一个真实流式能力：引擎句柄自持，chat-event 兼容事件泵
-        let _ = bus.register_streaming(Arc::new(AiChatCapability::new(engine_registry.clone())));
+        // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）
         bus
     };
 

@@ -1,6 +1,5 @@
 pub mod artifacts;
 pub mod auth;
-pub mod chat;
 pub mod git_dispatch;
 pub mod health;
 pub mod ipc;

@@ -14,6 +14,7 @@
  */
 
 import { listen, invoke } from '@/services/transport'
+import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import { getEventRouter } from '@/services/eventRouter'
 import { sessionStoreManager } from '@/stores/conversationStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
@@ -291,7 +292,7 @@ export async function handleDispatchTaskRequest(
   const unsubscribe = attachDispatchSessionHandler(dispatchId, sessionId)
 
   try {
-    const conversationId = await invoke<string>('start_chat', {
+    const conversationId = await aiChatDispatch<string>({
       message: prompt,
       options: {
         workDir,
@@ -501,7 +502,7 @@ export async function interruptDispatchedTask(dispatchId: string): Promise<void>
   }
   const engineId = sessionStoreManager.getState().sessionMetadata.get(task.sessionId)?.engineId
   try {
-    await invoke('interrupt_chat', { sessionId: conversationId, engineId })
+    await aiChatDispatch({ action: 'interrupt', sessionId: conversationId, engineId })
     log.info('派发任务已中断', { dispatchId })
   } catch (e) {
     log.error('中断派发任务失败', e instanceof Error ? e : new Error(String(e)), { dispatchId })
@@ -565,7 +566,7 @@ export async function continueDispatchedTask(
   const unsubscribe = attachDispatchSessionHandler(dispatchId, task.sessionId)
 
   try {
-    await invoke('continue_chat', {
+    await aiChatDispatchStream({
       sessionId: conversationId,
       message: trimmed,
       options: {

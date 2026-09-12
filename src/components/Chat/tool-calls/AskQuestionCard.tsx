@@ -15,7 +15,7 @@ import { memo, useReducer, useCallback, useEffect, useMemo, useRef } from 'react
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Check, HelpCircle, CheckCircle, X, ChevronLeft, ChevronRight, SkipForward } from 'lucide-react';
-import { invoke } from '@/services/tauri';
+import { aiChatDispatch } from '@/services/aiChatDispatch'
 import { createLogger } from '@/utils/logger';
 import { useToastStore } from '@/stores/toastStore';
 import { Button } from '../../Common/Button';
@@ -208,7 +208,7 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
       dispatch({ type: 'BEGIN_SUBMIT' });
       try {
         if (kind === 'decline-all') {
-          await invoke('answer_question', {
+          await aiChatDispatch({ action: 'answer_question',
             sessionId: block.sessionId,
             callId: block.id,
             answer: { answers: [], declined: true },
@@ -219,7 +219,7 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
             customInput: s.declined ? undefined : s.customInput.trim() || undefined,
             declined: s.declined,
           }));
-          await invoke('answer_question', {
+          await aiChatDispatch({ action: 'answer_question',
             sessionId: block.sessionId,
             callId: block.id,
             answer: { answers, declined: false },

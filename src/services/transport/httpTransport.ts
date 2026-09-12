@@ -25,14 +25,7 @@ const HTTP_TIMEOUT_MS = 600_000; // 10 分钟，适配弱网/跨地域远程连�
 /** Tauri 命令名 → HTTP 路由映射 (module-level constant, avoids repeated allocation) */
 const COMMAND_ROUTE_MAP: Record<string, string> = {
   // Chat
-  start_chat: '/api/chat/send',
-  continue_chat: '/api/chat/send',
-  interrupt_chat: '/api/chat/interrupt',
   get_session_history: '/api/chat/history',
-  answer_question: '/api/chat/answer-question',
-  respond_plugin_card: '/api/chat/respond-plugin-card',
-  approve_plan: '/api/chat/approve-plan',
-  reject_plan: '/api/chat/reject-plan',
   // Legacy Claude Code session history commands — dedicated endpoints returning flat arrays
   get_claude_code_session_history: '/api/claude-sessions',
   list_claude_code_sessions: '/api/claude-sessions',

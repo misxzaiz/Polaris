@@ -1,4 +1,3 @@
-pub mod chat;
 pub mod dispatch;
 pub mod workspace;
 pub mod file_explorer;
@@ -11,6 +10,10 @@ pub mod context;
 pub mod git;
 pub mod translate;
 pub mod plugin;
+#[cfg(feature = "tauri-app")]
+pub mod provider_diagnostics;
+#[cfg(feature = "tauri-app")]
+pub mod session_history;
 pub mod plugin_state;
 pub mod plugin_service;
 pub mod plugin_config;

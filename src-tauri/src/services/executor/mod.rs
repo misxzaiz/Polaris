@@ -443,7 +443,7 @@ impl TaskExecutor for ChatExecutor {
             .clone()
             .or_else(|| Some(format!("exec-{}", uuid::Uuid::new_v4())));
 
-        let options = crate::commands::chat::ChatRequestOptions {
+        let options = crate::services::ai_chat_core::ChatRequestOptions {
             work_dir: params.work_dir.clone(),
             engine_id: Some(engine_id),
             context_id,
@@ -451,7 +451,7 @@ impl TaskExecutor for ChatExecutor {
             ..Default::default()
         };
 
-        let app_paths = crate::commands::chat::AppPaths {
+        let app_paths = crate::services::ai_chat_core::AppPaths {
             config_dir: ctx.config_dir.clone(),
             resource_dir: ctx.resource_dir.clone(),
         };
@@ -467,7 +467,7 @@ impl TaskExecutor for ChatExecutor {
             }
         });
 
-        let callbacks = crate::commands::chat::ChatCallbacks {
+        let callbacks = crate::services::ai_chat_core::ChatCallbacks {
             emit_event,
             notify_complete: Arc::new(|| {}),
         };
@@ -475,7 +475,7 @@ impl TaskExecutor for ChatExecutor {
         // 如果有 AppState，用它执行；否则使用轻量上下文
         match ctx.app_state {
             Some(ref state) => {
-                match crate::commands::chat::start_chat_inner(prompt, options, state, callbacks, &app_paths).await {
+                match crate::services::ai_chat_core::start_chat_inner(prompt, options, state, callbacks, &app_paths).await {
                     Ok(session_id) => {
                         tracing::info!("[ChatExecutor] 任务已执行: session_id={}", session_id);
                         ExecutorResult {

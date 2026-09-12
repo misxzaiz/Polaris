@@ -4,7 +4,8 @@
 
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { invoke } from '@/services/transport';
+import {} from '@/services/transport';
+import { aiChatDispatch } from '@/services/aiChatDispatch'
 import { Clock, MoreVertical, Search, Plus, FileText, ScrollText, Activity, Loader2, AlertCircle, Circle } from 'lucide-react';
 import { useSchedulerStore, useToastStore } from '@/stores';
 import type { ScheduledTask, CreateTaskParams, TriggerType } from '@/types/scheduler';
@@ -359,7 +360,8 @@ export function SchedulerPanel() {
 
       // 调用 AI 引擎
       const engineId = task.engineId || 'claude-code';
-      const sessionId = await invoke<string>('start_chat', {
+      const sessionId = await aiChatDispatch<string>({
+        action: 'start',
         message: finalPrompt,
         options: {
           workDir: task.workDir,

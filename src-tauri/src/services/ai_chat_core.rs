@@ -1,8 +1,18 @@
+/*! AI 聊天业务核（第七步阶段 A1：自 commands/chat.rs 抽出，传输无关）
+ *
+ * 全部函数仅依赖 '&crate::AppState' 与回调参数（ChatCallbacks/AppPaths），
+ * 不含任何 Tauri 类型；事件经 'broadcast_chat_event'（EventBroadcaster）出站，
+ * 桌面 Tauri 事件由 lib.rs 的 chat-event 中继任务镜像（见 step7-consolidation.md）。
+ *
+ * 入口：cap.ai.chat（dispatch/dispatch_stream）——命令层包装已摘除。
+ */
+
 /*! 聊天命令模块
  *
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
+use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -15,14 +25,11 @@ use crate::ai::{
 use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
+use crate::state::{PendingQuestion, QuestionAnswer, QuestionOption, QuestionStatus};
 
 use crate::services::proxy::ProxyWireApi;
 use crate::models::config::{FailoverPattern, ProfileMode, ProviderGroup, RouteStrategy};
 use crate::services::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, RouteSelection, TriedPair};
-#[cfg(feature = "tauri-app")]
-use tauri::{Emitter, Manager, State, Window};
-#[cfg(feature = "tauri-app")]
-use tauri_plugin_notification::NotificationExt;
 
 // ============================================================================
 // 附件相关结构体
@@ -1986,7 +1993,6 @@ pub async fn interrupt_chat_inner(
 /// 未包 envelope 的裸事件会被 Web 客户端静默丢弃 —— 桌面端发起的会话
 /// 在手机/浏览器端将完全看不到流式输出。格式与 `web::api::chat::dual_emit`
 /// 的 WebSocket 分支保持一致。
-#[cfg(feature = "tauri-app")]
 fn broadcast_chat_event(tx: &crate::web::EventBroadcaster, event: &serde_json::Value) {
     let ws_msg = serde_json::json!({
         "event": "chat-event",
@@ -1995,7 +2001,6 @@ fn broadcast_chat_event(tx: &crate::web::EventBroadcaster, event: &serde_json::V
     let _ = tx.send(ws_msg.to_string());
 }
 
-#[cfg(feature = "tauri-app")]
 fn wrap_session_routed_event(session_id: &str, payload: serde_json::Value) -> serde_json::Value {
     if session_id.trim().is_empty() {
         payload
@@ -2008,772 +2013,6 @@ fn wrap_session_routed_event(session_id: &str, payload: serde_json::Value) -> se
 }
 
 /// 启动聊天会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn start_chat(
-    message: String,
-    window: Window,
-    state: State<'_, crate::AppState>,
-    options: ChatRequestOptions,
-) -> Result<String> {
-    let app_paths = AppPaths {
-        // 统一到数据存储根（DataRoot），与 ConfigStore 一致；
-        // 历史用 window.path().app_config_dir()（com.polaris.app）导致配置写读分离。
-        config_dir: crate::services::data_root::data_root().config_dir(),
-        resource_dir: window.path().resource_dir().ok(),
-    };
-    let window_clone = window.clone();
-    let broadcast_tx = state.event_broadcast.clone();
-    let callbacks = ChatCallbacks {
-        emit_event: Arc::new(move |json: serde_json::Value| {
-            let _ = window_clone.emit("chat-event", &json);
-            broadcast_chat_event(&broadcast_tx, &json);
-        }),
-        notify_complete: Arc::new(move || {
-            notify_ai_reply_complete(&window);
-        }),
-    };
-
-    start_chat_inner(message, options, &state, callbacks, &app_paths).await
-}
-
-/// 继续聊天会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn continue_chat(
-    session_id: String,
-    message: String,
-    window: Window,
-    state: State<'_, crate::AppState>,
-    options: ChatRequestOptions,
-) -> Result<()> {
-    let app_paths = AppPaths {
-        // 统一到数据存储根（DataRoot），与 ConfigStore 一致
-        config_dir: crate::services::data_root::data_root().config_dir(),
-        resource_dir: window.path().resource_dir().ok(),
-    };
-    let window_clone = window.clone();
-    let broadcast_tx = state.event_broadcast.clone();
-    let callbacks = ChatCallbacks {
-        emit_event: Arc::new(move |json: serde_json::Value| {
-            let _ = window_clone.emit("chat-event", &json);
-            broadcast_chat_event(&broadcast_tx, &json);
-        }),
-        notify_complete: Arc::new(move || {
-            notify_ai_reply_complete(&window);
-        }),
-    };
-
-    continue_chat_inner(session_id, message, options, &state, callbacks, &app_paths).await
-}
-
-/// 中断聊天会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn interrupt_chat(
-    session_id: String,
-    engine_id: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<()> {
-    interrupt_chat_inner(session_id, engine_id, &state).await
-}
-
-// ============================================================================
-// 辅助函数
-// ============================================================================
-
-#[cfg(feature = "tauri-app")]
-fn notify_ai_reply_complete(window: &Window) {
-    let _ = window
-        .notification()
-        .builder()
-        .title("Polaris")
-        .body("已完成本轮回复")
-        .show();
-}
-
-// ============================================================================
-// 统一会话历史接口（支持分页）
-// ============================================================================
-
-/// 列出会话（统一接口，支持分页）
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn list_sessions(
-    engine_id: String,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    work_dir: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<PagedResult<SessionMeta>> {
-    tracing::info!("[list_sessions] 引擎: {}, 页码: {:?}", engine_id, page);
-
-    let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
-
-    let config_store = state
-        .config_store
-        .lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-    let config = config_store.get().clone();
-
-    match engine_id.as_str() {
-        "claude" | "claude-code" => {
-            let provider = ClaudeHistoryProvider::new(config);
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }
-        engine => {
-            // 插件引擎走通用历史提供者
-            let provider = PluginHistoryProvider::new(engine, engine);
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }
-    }
-}
-
-/// 获取会话历史（统一接口，支持分页）
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_session_history(
-    session_id: String,
-    engine_id: String,
-    page: Option<usize>,
-    page_size: Option<usize>,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<PagedResult<HistoryMessage>> {
-    tracing::info!(
-        "[get_session_history] 会话: {}, 页码: {:?}",
-        session_id,
-        page
-    );
-
-    let pagination = Pagination::new(page.unwrap_or(1), page_size.unwrap_or(50));
-
-    let config_store = state
-        .config_store
-        .lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-    let config = config_store.get().clone();
-
-    match engine_id.as_str() {
-        "claude" | "claude-code" => {
-            let provider = ClaudeHistoryProvider::new(config);
-            provider.get_session_history(&session_id, pagination)
-        }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
-            provider.get_session_history(&session_id, pagination)
-        }
-        engine => {
-            let provider = PluginHistoryProvider::new(engine, engine);
-            provider.get_session_history(&session_id, pagination)
-        }
-    }
-}
-
-/// 删除会话
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn delete_session(
-    session_id: String,
-    engine_id: String,
-    state: tauri::State<'_, crate::AppState>,
-) -> Result<()> {
-    tracing::info!("[delete_session] 删除会话: {}", session_id);
-
-    let config_store = state
-        .config_store
-        .lock()
-        .map_err(|e| AppError::Unknown(e.to_string()))?;
-    let config = config_store.get().clone();
-
-    match engine_id.as_str() {
-        "claude" | "claude-code" => {
-            let provider = ClaudeHistoryProvider::new(config);
-            provider.delete_session(&session_id)
-        }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
-            provider.delete_session(&session_id)
-        }
-        engine => {
-            let provider = PluginHistoryProvider::new(engine, engine);
-            provider.delete_session(&session_id)
-        }
-    }
-}
-
-// ============================================================================
-// Claude Code 会话历史（旧接口，保留向后兼容）
-// ============================================================================
-
-use std::io::{BufRead, BufReader};
-
-/// PR 关联信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LinkedPR {
-    pub number: u32,
-    pub url: Option<String>,
-    pub title: Option<String>,
-    pub state: Option<String>, // "open" | "merged" | "closed"
-}
-
-/// Claude Code 会话元数据
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeSessionMeta {
-    pub session_id: String,
-    /// 真实工作区路径（用于前端匹配/创建工作区）
-    pub project_path: String,
-    /// Claude Code 目录名（用于定位 jsonl 文件）
-    pub claude_project_name: String,
-    pub first_prompt: Option<String>,
-    pub message_count: usize,
-    pub created: Option<String>,
-    pub modified: Option<String>,
-    pub file_path: String,
-    pub file_size: u64,
-
-    // === Fork 关系字段 ===
-    /// 父会话 ID（fork 来源，通过消息指纹推断）
-    #[serde(default)]
-    pub parent_session_id: Option<String>,
-    /// 子会话 ID 列表
-    #[serde(default)]
-    pub child_session_ids: Vec<String>,
-
-    // === Git/PR 关联字段 ===
-    /// Git 分支名称（从会话文件中提取）
-    #[serde(default)]
-    pub git_branch: Option<String>,
-    /// PR 关联信息（通过 git branch 推断）
-    #[serde(default)]
-    pub linked_pr: Option<LinkedPR>,
-}
-
-/// 从 git 分支名称中提取 PR 编号
-///
-/// 支持的分支命名格式：
-/// - pr-123, pr/123
-/// - 123-feature-description
-fn extract_pr_from_branch(branch_name: &str) -> Option<LinkedPR> {
-    // 规则 1: pr-123 或 pr/123
-    let pr_pattern = regex::Regex::new(r"(?i)pr[-/](\d+)").ok()?;
-    if let Some(caps) = pr_pattern.captures(branch_name) {
-        if let Some(num_str) = caps.get(1) {
-            if let Ok(number) = num_str.as_str().parse::<u32>() {
-                return Some(LinkedPR {
-                    number,
-                    url: None,
-                    title: None,
-                    state: None,
-                });
-            }
-        }
-    }
-
-    // 规则 2: 123-feature-description（数字开头）
-    let number_prefix = regex::Regex::new(r"^(\d+)-").ok()?;
-    if let Some(caps) = number_prefix.captures(branch_name) {
-        if let Some(num_str) = caps.get(1) {
-            if let Ok(number) = num_str.as_str().parse::<u32>() {
-                return Some(LinkedPR {
-                    number,
-                    url: None,
-                    title: None,
-                    state: None,
-                });
-            }
-        }
-    }
-
-    None
-}
-
-/// Claude Code 历史消息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ClaudeHistoryMessage {
-    pub role: String,
-    /// 内容可能是字符串或数组（包含 text、tool_use、tool_result 等）
-    pub content: serde_json::Value,
-    pub timestamp: Option<String>,
-}
-
-/// 解析会话文件获取元数据（包括真实工作区路径 cwd 和 gitBranch）
-fn parse_session_metadata(
-    file_path: &PathBuf,
-) -> (
-    Option<String>,
-    usize,
-    Option<String>,
-    Option<String>,
-    Option<String>,
-) {
-    let mut first_prompt: Option<String> = None;
-    let mut message_count = 0usize;
-    let mut created: Option<String> = None;
-    let mut cwd: Option<String> = None;
-    let mut git_branch: Option<String> = None;
-
-    if let Ok(file) = std::fs::File::open(file_path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().map_while(|r| r.ok()) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
-                    if msg_type == "user" {
-                        message_count += 1;
-                        // 获取第一条用户消息作为标题
-                        if first_prompt.is_none() {
-                            if let Some(content) =
-                                json.get("message").and_then(|m| m.get("content"))
-                            {
-                                let prompt_text = if let Some(text) = content.as_str() {
-                                    // 字符串格式
-                                    Some(text.to_string())
-                                } else if let Some(arr) = content.as_array() {
-                                    // 数组格式，提取第一个 text 类型
-                                    let mut found = None;
-                                    for item in arr {
-                                        if item.get("type").and_then(|t| t.as_str()) == Some("text")
-                                        {
-                                            if let Some(text) =
-                                                item.get("text").and_then(|t| t.as_str())
-                                            {
-                                                found = Some(text.to_string());
-                                                break;
-                                            }
-                                        }
-                                    }
-                                    found
-                                } else {
-                                    None
-                                };
-
-                                if let Some(text) = prompt_text {
-                                    // 截取前 100 个字符作为标题（使用 chars() 正确处理 Unicode）
-                                    let title = if text.chars().count() > 100 {
-                                        format!("{}...", text.chars().take(100).collect::<String>())
-                                    } else {
-                                        text
-                                    };
-                                    first_prompt = Some(title);
-                                }
-                            }
-                        }
-                        // 获取创建时间（第一条消息的时间戳）
-                        if created.is_none() {
-                            created = json
-                                .get("timestamp")
-                                .and_then(|t| t.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        // 获取真实工作区路径（cwd）
-                        if cwd.is_none() {
-                            cwd = json
-                                .get("cwd")
-                                .and_then(|c| c.as_str())
-                                .map(|s| s.to_string());
-                        }
-                        // 获取 git 分支（gitBranch）
-                        if git_branch.is_none() {
-                            git_branch = json
-                                .get("gitBranch")
-                                .and_then(|b| b.as_str())
-                                .map(|s| s.to_string());
-                        }
-                    } else if msg_type == "assistant" {
-                        message_count += 1;
-                        // assistant 消息也可能有 gitBranch
-                        if git_branch.is_none() {
-                            git_branch = json
-                                .get("gitBranch")
-                                .and_then(|b| b.as_str())
-                                .map(|s| s.to_string());
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    (first_prompt, message_count, created, cwd, git_branch)
-}
-
-/// 列出 Claude Code 会话（旧接口）
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn list_claude_code_sessions(
-    _state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<ClaudeSessionMeta>> {
-    tracing::info!("[list_claude_code_sessions] 获取 Claude Code 会话列表");
-
-    let claude_dir = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-            .map(|p| PathBuf::from(p).join(".claude").join("projects"))
-            .unwrap_or_else(|_| PathBuf::from(".claude").join("projects"))
-    } else {
-        std::env::var("HOME")
-            .map(|p| PathBuf::from(p).join(".claude").join("projects"))
-            .unwrap_or_else(|_| PathBuf::from(".claude").join("projects"))
-    };
-
-    let mut sessions = Vec::new();
-
-    if let Ok(entries) = std::fs::read_dir(&claude_dir) {
-        for entry in entries.flatten() {
-            if entry.path().is_dir() {
-                let project_name = entry.file_name().to_string_lossy().to_string();
-
-                if let Ok(session_entries) = std::fs::read_dir(entry.path()) {
-                    for session_entry in session_entries.flatten() {
-                        let path = session_entry.path();
-                        if path.extension().map(|e| e == "jsonl").unwrap_or(false) {
-                            let session_id = path
-                                .file_stem()
-                                .map(|s| s.to_string_lossy().to_string())
-                                .unwrap_or_default();
-
-                            // 获取文件元数据
-                            let file_size = std::fs::metadata(&path).map(|m| m.len()).unwrap_or(0);
-
-                            let modified = std::fs::metadata(&path)
-                                .ok()
-                                .and_then(|m| m.modified().ok())
-                                .map(|t| {
-                                    let datetime: chrono::DateTime<chrono::Utc> = t.into();
-                                    datetime.to_rfc3339()
-                                });
-
-                            // 解析会话内容获取详细信息
-                            let (first_prompt, message_count, created, real_cwd, git_branch) =
-                                parse_session_metadata(&path);
-
-                            // claude_project_name: Claude Code 目录名（用于定位 jsonl 文件）
-                            let claude_project_name = project_name.clone();
-                            // project_path: 真实工作区路径（用于前端匹配/创建工作区）
-                            let project_path = real_cwd.unwrap_or_else(|| project_name.clone());
-
-                            // 从 git_branch 推断 PR 关联
-                            let linked_pr = git_branch
-                                .as_ref()
-                                .and_then(|branch| extract_pr_from_branch(branch));
-
-                            sessions.push(ClaudeSessionMeta {
-                                session_id,
-                                project_path,
-                                claude_project_name,
-                                first_prompt,
-                                message_count,
-                                created,
-                                modified,
-                                file_path: path.to_string_lossy().to_string(),
-                                file_size,
-                                parent_session_id: None, // 后续通过 fork 检测算法填充
-                                child_session_ids: Vec::new(),
-                                git_branch,
-                                linked_pr,
-                            });
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // 按修改时间排序（最新的在前）
-    sessions.sort_by(|a, b| {
-        let time_a = a
-            .modified
-            .as_ref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
-        let time_b = b
-            .modified
-            .as_ref()
-            .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok());
-        time_b.cmp(&time_a)
-    });
-
-    // === Fork 检测算法 ===
-    // 基于消息指纹推断 fork 关系
-    infer_fork_relationships(&mut sessions);
-
-    Ok(sessions)
-}
-
-/// 会话消息指纹（用于 fork 检测）
-#[derive(Debug, Clone)]
-#[allow(dead_code)]
-struct SessionFingerprint {
-    session_id: String,
-    /// 前 N 条消息的内容哈希
-    message_hashes: Vec<String>,
-    /// 创建时间戳
-    created_at: i64,
-}
-
-/// 计算消息内容的简单哈希（用于指纹匹配）
-fn simple_hash(content: &str) -> String {
-    // 使用简单的哈希算法：取前 200 字符的字节和
-    let bytes = content.as_bytes();
-    let sample = &bytes[..bytes.len().min(200)];
-    let hash: u64 = sample
-        .iter()
-        .enumerate()
-        .map(|(i, &b)| (i as u64 + 1) * b as u64)
-        .sum();
-    format!("{:016x}", hash)
-}
-
-/// 从会话文件中提取消息指纹
-fn compute_session_fingerprint(
-    file_path: &PathBuf,
-    session_id: &str,
-) -> Option<SessionFingerprint> {
-    let mut message_hashes = Vec::new();
-    let mut created_at: i64 = 0;
-
-    if let Ok(file) = std::fs::File::open(file_path) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().map_while(|r| r.ok()) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
-                    if msg_type == "user" || msg_type == "assistant" {
-                        // 提取消息内容
-                        if let Some(content) = json.get("message").and_then(|m| m.get("content")) {
-                            let content_str = if let Some(text) = content.as_str() {
-                                text.to_string()
-                            } else if let Some(arr) = content.as_array() {
-                                // 数组格式，拼接所有 text
-                                arr.iter()
-                                    .filter_map(|item| item.get("text").and_then(|t| t.as_str()))
-                                    .collect::<Vec<_>>()
-                                    .join("")
-                            } else {
-                                String::new()
-                            };
-
-                            // 只取前 5 条消息
-                            if message_hashes.len() < 5 && !content_str.is_empty() {
-                                message_hashes.push(simple_hash(&content_str));
-                            }
-                        }
-
-                        // 获取创建时间
-                        if created_at == 0 {
-                            if let Some(ts) = json.get("timestamp").and_then(|t| t.as_str()) {
-                                created_at = chrono::DateTime::parse_from_rfc3339(ts)
-                                    .map(|dt| dt.timestamp())
-                                    .unwrap_or(0);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if message_hashes.is_empty() {
-        None
-    } else {
-        Some(SessionFingerprint {
-            session_id: session_id.to_string(),
-            message_hashes,
-            created_at,
-        })
-    }
-}
-
-/// 推断 fork 关系
-///
-/// 算法：
-/// 1. 计算每个会话的消息指纹（前 5 条消息的哈希）
-/// 2. 按创建时间排序
-/// 3. 对于每个会话，检查是否有更早的会话与其共享消息前缀
-/// 4. 如果找到共享前缀 >= 80%，则认为该会话是 fork
-fn infer_fork_relationships(sessions: &mut [ClaudeSessionMeta]) {
-    use std::collections::HashMap;
-
-    // 计算所有会话的指纹
-    let fingerprints: HashMap<String, SessionFingerprint> = sessions
-        .iter()
-        .filter_map(|s| {
-            compute_session_fingerprint(&PathBuf::from(&s.file_path), &s.session_id)
-                .map(|fp| (s.session_id.clone(), fp))
-        })
-        .collect();
-
-    // 按创建时间排序的会话 ID 列表
-    let mut sorted_ids: Vec<String> = sessions.iter().map(|s| s.session_id.clone()).collect();
-    sorted_ids.sort_by_key(|id| fingerprints.get(id).map(|fp| fp.created_at).unwrap_or(0));
-
-    // 构建父子关系映射
-    let mut parent_map: HashMap<String, String> = HashMap::new();
-
-    for (i, session_id) in sorted_ids.iter().enumerate() {
-        if let Some(fp) = fingerprints.get(session_id) {
-            // 检查所有更早的会话
-            for earlier_id in sorted_ids.iter().take(i) {
-                if let Some(earlier_fp) = fingerprints.get(earlier_id) {
-                    // 检查消息前缀匹配
-                    if has_common_prefix(&fp.message_hashes, &earlier_fp.message_hashes) {
-                        // 找到父会话
-                        parent_map.insert(session_id.clone(), earlier_id.clone());
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    // 更新会话的 parent_session_id 和 child_session_ids
-    for session in sessions.iter_mut() {
-        if let Some(parent_id) = parent_map.get(&session.session_id) {
-            session.parent_session_id = Some(parent_id.clone());
-        }
-    }
-
-    // 构建子会话列表
-    let mut child_map: HashMap<String, Vec<String>> = HashMap::new();
-    for (child_id, parent_id) in &parent_map {
-        child_map
-            .entry(parent_id.clone())
-            .or_default()
-            .push(child_id.clone());
-    }
-
-    for session in sessions.iter_mut() {
-        if let Some(children) = child_map.get(&session.session_id) {
-            session.child_session_ids = children.clone();
-        }
-    }
-}
-
-/// 检查两个消息哈希列表是否有共同前缀
-fn has_common_prefix(hashes1: &[String], hashes2: &[String]) -> bool {
-    let min_len = hashes1.len().min(hashes2.len());
-    if min_len < 2 {
-        return false;
-    }
-
-    let match_count = hashes1
-        .iter()
-        .zip(hashes2.iter())
-        .take(min_len)
-        .filter(|(a, b)| a == b)
-        .count();
-
-    // 至少 80% 的前缀匹配
-    match_count as f64 / min_len as f64 >= 0.8
-}
-
-/// 获取 Claude Code 会话历史（旧接口）
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn get_claude_code_session_history(
-    session_id: String,
-    project_path: Option<String>,
-    _state: tauri::State<'_, crate::AppState>,
-) -> Result<Vec<ClaudeHistoryMessage>> {
-    tracing::info!(
-        "[get_claude_code_session_history] 获取会话历史: {}",
-        session_id
-    );
-
-    let claude_dir = if cfg!(windows) {
-        std::env::var("USERPROFILE")
-            .map(|p| PathBuf::from(p).join(".claude").join("projects"))
-            .unwrap_or_else(|_| PathBuf::from(".claude").join("projects"))
-    } else {
-        std::env::var("HOME")
-            .map(|p| PathBuf::from(p).join(".claude").join("projects"))
-            .unwrap_or_else(|_| PathBuf::from(".claude").join("projects"))
-    };
-
-    let session_file = if let Some(project) = &project_path {
-        claude_dir
-            .join(project)
-            .join(format!("{}.jsonl", session_id))
-    } else {
-        let mut found = None;
-        if let Ok(entries) = std::fs::read_dir(&claude_dir) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    let candidate = entry.path().join(format!("{}.jsonl", session_id));
-                    if candidate.exists() {
-                        found = Some(candidate);
-                        break;
-                    }
-                }
-            }
-        }
-        found.unwrap_or_else(|| claude_dir.join(format!("{}.jsonl", session_id)))
-    };
-
-    if !session_file.exists() {
-        return Err(AppError::ValidationError(format!(
-            "会话文件不存在: {:?}",
-            session_file
-        )));
-    }
-
-    let mut messages = Vec::new();
-
-    if let Ok(file) = std::fs::File::open(&session_file) {
-        let reader = BufReader::new(file);
-        for line in reader.lines().map_while(|r| r.ok()) {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line) {
-                if let Some(msg_type) = json.get("type").and_then(|t| t.as_str()) {
-                    match msg_type {
-                        "user" => {
-                            // 用户消息：content 可能是字符串或数组
-                            if let Some(message) = json.get("message") {
-                                if let Some(content) = message.get("content") {
-                                    messages.push(ClaudeHistoryMessage {
-                                        role: "user".to_string(),
-                                        content: content.clone(),
-                                        timestamp: json
-                                            .get("timestamp")
-                                            .and_then(|t| t.as_str())
-                                            .map(|s| s.to_string()),
-                                    });
-                                }
-                            }
-                        }
-                        "assistant" => {
-                            // 助手消息：content 通常是数组（包含 text、tool_use 等）
-                            if let Some(message) = json.get("message") {
-                                if let Some(content) = message.get("content") {
-                                    messages.push(ClaudeHistoryMessage {
-                                        role: "assistant".to_string(),
-                                        content: content.clone(),
-                                        timestamp: json
-                                            .get("timestamp")
-                                            .and_then(|t| t.as_str())
-                                            .map(|s| s.to_string()),
-                                    });
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(messages)
-}
-
-// ============================================================================
-// AskUserQuestion 相关命令
-// ============================================================================
-
-use crate::state::{PendingQuestion, QuestionAnswer, QuestionOption, QuestionStatus};
-
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginCardResponse {
@@ -2786,8 +2025,6 @@ pub struct PluginCardResponse {
 /// 注册待回答问题
 ///
 /// 当收到 ask_user_question 工具调用时调用此函数
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn register_pending_question(
     session_id: String,
     call_id: String,
@@ -2795,7 +2032,7 @@ pub fn register_pending_question(
     multi_select: bool,
     options: Vec<QuestionOption>,
     allow_custom_input: bool,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[register_pending_question] 注册问题: session={}, call={}, header={}",
@@ -2831,14 +2068,11 @@ pub fn register_pending_question(
 /// 用户提交答案后调用此函数。会做两件事：
 ///   1. 取出 ask_listener 注册的 oneshot::Sender，触发同回合 tool_result 回填
 ///   2. emit `question_answered` 让前端把卡片切到已答态
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub async fn answer_question(
     session_id: String,
     call_id: String,
     answer: QuestionAnswer,
-    window: Window,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[answer_question] 回答问题: session={}, call={}, sub_answers={}, declined={}",
@@ -2907,10 +2141,6 @@ pub async fn answer_question(
 
     let routed_event = wrap_session_routed_event(&session_id, event);
 
-    window
-        .emit("chat-event", &routed_event)
-        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
-
     // Dual emission: also broadcast to WebSocket clients
     broadcast_chat_event(&state.event_broadcast, &routed_event);
 
@@ -2923,14 +2153,11 @@ pub async fn answer_question(
 ///
 /// 取出 ask_listener 注册的 oneshot::Sender，将结果回填给插件 MCP server，
 /// 再广播 `plugin_card_answered` 让前端卡片切换到已处理状态。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub async fn respond_plugin_card(
     session_id: String,
     interaction_id: String,
     response: PluginCardResponse,
-    window: Window,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[respond_plugin_card] 回答插件卡片: session={}, interaction={}, declined={}",
@@ -2983,21 +2210,15 @@ pub async fn respond_plugin_card(
         "result": result,
     });
     let routed_event = wrap_session_routed_event(&session_id, event);
-
-    window
-        .emit("chat-event", &routed_event)
-        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
     broadcast_chat_event(&state.event_broadcast, &routed_event);
 
     Ok(())
 }
 
 /// 获取待回答问题列表
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn get_pending_questions(
     session_id: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<Vec<PendingQuestion>> {
     let pending = state
         .pending_questions
@@ -3021,9 +2242,7 @@ pub fn get_pending_questions(
 }
 
 /// 清除已回答的问题
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn clear_answered_questions(state: tauri::State<'_, crate::AppState>) -> Result<usize> {
+pub fn clear_answered_questions(state: &crate::AppState) -> Result<usize> {
     let mut pending = state
         .pending_questions
         .lock()
@@ -3048,14 +2267,12 @@ use crate::state::{PendingPlan, PlanApprovalStatus};
 /// 注册待审批计划
 ///
 /// 当收到 plan_approval_request 事件时调用此函数
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn register_pending_plan(
     session_id: String,
     plan_id: String,
     title: Option<String>,
     description: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[register_pending_plan] 注册计划: session={}, plan={}, title={:?}",
@@ -3085,13 +2302,10 @@ pub fn register_pending_plan(
 /// 批准计划
 ///
 /// 用户批准计划后调用此函数
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub async fn approve_plan(
     session_id: String,
     plan_id: String,
-    window: Window,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[approve_plan] 批准计划: session={}, plan={}",
@@ -3120,9 +2334,6 @@ pub async fn approve_plan(
         "contextId": "main",
         "payload": event
     });
-    window
-        .emit("chat-event", &payload)
-        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
     broadcast_chat_event(&state.event_broadcast, &payload);
@@ -3135,14 +2346,11 @@ pub async fn approve_plan(
 /// 拒绝计划
 ///
 /// 用户拒绝计划后调用此函数
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub async fn reject_plan(
     session_id: String,
     plan_id: String,
     feedback: Option<String>,
-    window: Window,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<()> {
     tracing::info!(
         "[reject_plan] 拒绝计划: session={}, plan={}, feedback={:?}",
@@ -3173,9 +2381,6 @@ pub async fn reject_plan(
         "contextId": "main",
         "payload": event
     });
-    window
-        .emit("chat-event", &payload)
-        .map_err(|e| AppError::ProcessError(format!("发送事件失败: {}", e)))?;
 
     // Dual emission: also broadcast to WebSocket clients
     broadcast_chat_event(&state.event_broadcast, &payload);
@@ -3186,11 +2391,9 @@ pub async fn reject_plan(
 }
 
 /// 获取待审批计划列表
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub fn get_pending_plans(
     session_id: Option<String>,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<Vec<PendingPlan>> {
     let pending = state
         .pending_plans
@@ -3214,9 +2417,7 @@ pub fn get_pending_plans(
 }
 
 /// 清除已处理的计划
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn clear_processed_plans(state: tauri::State<'_, crate::AppState>) -> Result<usize> {
+pub fn clear_processed_plans(state: &crate::AppState) -> Result<usize> {
     let mut pending = state
         .pending_plans
         .lock()
@@ -3238,12 +2439,10 @@ pub fn clear_processed_plans(state: tauri::State<'_, crate::AppState>) -> Result
 /// 向会话发送输入
 ///
 /// 通过 stdin 向运行中的会话发送输入数据
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
 pub async fn send_input(
     session_id: String,
     input: String,
-    state: tauri::State<'_, crate::AppState>,
+    state: &crate::AppState,
 ) -> Result<bool> {
     tracing::info!(
         "[send_input] 向会话 {} 发送输入: {} bytes",
@@ -3253,78 +2452,6 @@ pub async fn send_input(
 
     let mut registry = state.engine_registry.lock().await;
     registry.send_input(&session_id, &input)
-}
-
-// ============================================================================
-// 供应商路由日志查询（供前端"请求响应日志面板"使用）
-// ============================================================================
-
-/// 查询供应商分组路由日志。
-///
-/// - 不传 `since`：返回当前缓冲内全部日志（seq 升序）；
-/// - 传 `since`：仅返回 seq 大于该值的增量日志（前端轮询续拉）。
-///
-/// 日志由 `start_chat_inner` 的 failover 循环在各决策点写入
-/// （select_initial / select_next / apply 失败 / spawn 失败 / 绑定成功 / 全不可用）。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_route_logs(
-    since: Option<u64>,
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<crate::services::RouteLogEntry>> {
-    Ok(match since {
-        Some(s) => state.provider_router.logs_since(s).await,
-        None => state.provider_router.all_logs().await,
-    })
-}
-
-/// 清空路由日志缓冲。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_route_logs_clear(state: State<'_, crate::AppState>) -> Result<()> {
-    state.provider_router.clear_logs().await;
-    Ok(())
-}
-
-/// 获取供应商调用统计快照。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_stats(state: State<'_, crate::AppState>) -> Result<crate::services::ProviderStatsSnapshot> {
-    let collector = state.profile_stats_collector.lock().await;
-    Ok(collector.snapshot())
-}
-
-/// 清空供应商调用统计计数。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_stats_clear(state: State<'_, crate::AppState>) -> Result<()> {
-    let mut collector = state.profile_stats_collector.lock().await;
-    collector.clear();
-    let path = crate::services::data_root::data_root().root().join("provider-stats.json");
-    collector.save_to_disk(&path);
-    Ok(())
-}
-
-/// 获取失败调用日志（支持筛选 + 分页）。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_failed_calls(
-    filter: crate::services::FailedCallFilter,
-    state: State<'_, crate::AppState>,
-) -> Result<Vec<crate::services::FailedCallLog>> {
-    let collector = state.failed_call_collector.lock().await;
-    Ok(collector.list(&filter))
-}
-
-/// 清空失败调用日志。
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub async fn provider_failed_calls_clear(state: State<'_, crate::AppState>) -> Result<()> {
-    let mut collector = state.failed_call_collector.lock().await;
-    collector.clear();
-    let path = crate::services::data_root::data_root().root().join("provider-failed-calls.jsonl");
-    collector.save_to_disk(&path);
-    Ok(())
 }
 
 #[cfg(test)]
@@ -3516,3 +2643,4 @@ mod route_failover_tests {
         assert_eq!(target, ResolvedTarget::GlobalActive);
     }
 }
+

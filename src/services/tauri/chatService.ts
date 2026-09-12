@@ -11,6 +11,29 @@ const log = createLogger('ChatService');
 // Lazy-load Tauri dialog plugin
 const isTauriEnv = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface DispatchResponse {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
+
+/** 经统一总线调用 cap.ai.chat（第七步阶段 A3：chat 命令层已摘除） */
+async function chatDispatch(action: string, payload: Record<string, unknown> = {}): Promise<Record<string, unknown>> {
+  const res = await invoke<DispatchResponse>('router_dispatch', {
+    req: { target: 'cap.ai.chat', payload: { action, ...payload } },
+  });
+  if (!res.ok) {
+    throw new Error(res.error || ('cap.ai.chat ' + action + ' 失败'));
+  }
+  return res.result || {};
+}
+
+// Lazy-load Tauri dialog plugin
+
+
 // ============================================================================
 // AskUserQuestion 相关命令
 // ============================================================================
@@ -53,7 +76,7 @@ export async function registerPendingQuestion(
   options: QuestionOption[],
   allowCustomInput: boolean
 ): Promise<void> {
-  return invoke('register_pending_question', {
+    await chatDispatch('register_pending_question', {
     sessionId,
     callId,
     header,
@@ -69,7 +92,7 @@ export async function answerQuestion(
   callId: string,
   answer: QuestionAnswer
 ): Promise<void> {
-  return invoke('answer_question', {
+    await chatDispatch('answer_question', {
     sessionId,
     callId,
     answer,
@@ -83,7 +106,7 @@ export async function respondPluginCard(
   result: unknown,
   declined = false
 ): Promise<void> {
-  return invoke('respond_plugin_card', {
+    await chatDispatch('respond_plugin_card', {
     sessionId,
     interactionId,
     response: {
@@ -95,12 +118,12 @@ export async function respondPluginCard(
 
 /** 获取待回答问题列表 */
 export async function getPendingQuestions(sessionId?: string): Promise<PendingQuestion[]> {
-  return invoke<PendingQuestion[]>('get_pending_questions', { sessionId });
+    return (await chatDispatch('get_pending_questions', { sessionId })) as unknown as PendingQuestion[];
 }
 
 /** 清除已回答的问题 */
 export async function clearAnsweredQuestions(): Promise<number> {
-  return invoke<number>('clear_answered_questions');
+  return (await chatDispatch('clear_answered_questions')).removed as number;
 }
 
 // ============================================================================
@@ -127,7 +150,7 @@ export async function registerPendingPlan(
   title?: string,
   description?: string
 ): Promise<void> {
-  return invoke('register_pending_plan', {
+  await chatDispatch('register_pending_plan', {
     sessionId,
     planId,
     title,
@@ -140,7 +163,7 @@ export async function approvePlan(
   sessionId: string,
   planId: string
 ): Promise<void> {
-  return invoke('approve_plan', {
+    await chatDispatch('approve_plan', {
     sessionId,
     planId,
   });
@@ -152,7 +175,7 @@ export async function rejectPlan(
   planId: string,
   feedback?: string
 ): Promise<void> {
-  return invoke('reject_plan', {
+    await chatDispatch('reject_plan', {
     sessionId,
     planId,
     feedback,
@@ -161,12 +184,12 @@ export async function rejectPlan(
 
 /** 获取待审批计划列表 */
 export async function getPendingPlans(sessionId?: string): Promise<PendingPlan[]> {
-  return invoke<PendingPlan[]>('get_pending_plans', { sessionId });
+  return (await chatDispatch('get_pending_plans', { sessionId })) as unknown as PendingPlan[];
 }
 
 /** 清除已处理的计划 */
 export async function clearProcessedPlans(): Promise<number> {
-  return invoke<number>('clear_processed_plans');
+  return (await chatDispatch('clear_processed_plans')).removed as number;
 }
 
 // ============================================================================
@@ -185,7 +208,7 @@ export async function sendInput(
   sessionId: string,
   input: string
 ): Promise<boolean> {
-  return invoke<boolean>('send_input', { sessionId, input });
+  return (await chatDispatch('send_input', { sessionId, input })).delivered as boolean;
 }
 
 // ============================================================================

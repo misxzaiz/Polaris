@@ -5,11 +5,12 @@ use serde::Deserialize;
 use std::sync::Arc;
 
 use crate::ai::{CodexHistoryProvider, PluginHistoryProvider, SessionHistoryProvider};
-use crate::commands::chat::{ChatRequestOptions, start_chat_inner};
-use crate::web::api::chat::{run_claude_blocking, build_web_callbacks};
+use crate::services::ai_chat_core::{ChatRequestOptions, start_chat_inner};
 use crate::web::error::ok_response;
 use crate::web::{validate_session_id, PaginationQuery, parse_pagination};
 use crate::AppState;
+#[cfg(feature = "tauri-app")]
+use tauri::Emitter;
 use super::WebError;
 
 /// Validate that the engine_id is supported. Returns the normalized engine string.
@@ -209,4 +210,75 @@ pub async fn handle_get_claude_session_history(
     }).await?;
     // Return only the items array, not the PagedResult wrapper
     Ok(Json(result.items))
+}
+
+// ============================================================================
+// 会话/聊天 web 辅助（第七步阶段 A4：自 web/api/chat.rs 收敛至此）
+// ============================================================================
+
+pub fn resolve_app_paths(state: &AppState) -> crate::services::ai_chat_core::AppPaths {
+    let config_dir = state.app_config_dir.get()
+        .cloned()
+        .unwrap_or_else(|| {
+            let fallback = crate::services::data_root::data_root().config_dir();
+            tracing::debug!("app_config_dir not set, using DataRoot fallback: {:?}", fallback);
+            fallback
+        });
+    let resource_dir = state.resource_dir.get().and_then(|p| p.clone());
+    crate::services::ai_chat_core::AppPaths { config_dir, resource_dir }
+}
+
+fn dual_emit(state: &AppState, event: &serde_json::Value) {
+    let ws_msg = serde_json::json!({
+        "event": "chat-event",
+        "payload": event,
+    });
+    if let Err(e) = state.event_broadcast.send(ws_msg.to_string()) {
+        tracing::warn!("WebSocket broadcast send failed (no active receivers): {}", e);
+    }
+    #[cfg(feature = "tauri-app")]
+    if let Some(handle) = state.app_handle.get() {
+        if let Err(e) = handle.emit("chat-event", event) {
+            tracing::warn!("Tauri webview emit failed: {}", e);
+        }
+    }
+}
+
+pub fn create_emit_callback(
+    state: Arc<AppState>,
+) -> Arc<dyn Fn(serde_json::Value) + Send + Sync> {
+    Arc::new(move |json: serde_json::Value| {
+        dual_emit(&state, &json);
+    })
+}
+
+pub fn build_web_callbacks(
+    state: &Arc<AppState>,
+    options: &mut crate::services::ai_chat_core::ChatRequestOptions,
+) -> (crate::services::ai_chat_core::ChatCallbacks, crate::services::ai_chat_core::AppPaths) {
+    if options.context_id.is_none() {
+        options.context_id = Some("web".to_string());
+    }
+    let emit_event = create_emit_callback(state.clone());
+    let notify_complete = Arc::new(|| {});
+    let app_paths = resolve_app_paths(state);
+    (crate::services::ai_chat_core::ChatCallbacks { emit_event, notify_complete }, app_paths)
+}
+
+pub async fn run_claude_blocking<F, T>(
+    state: &AppState,
+    f: F,
+) -> Result<T, WebError>
+where
+    F: FnOnce(crate::ai::ClaudeHistoryProvider) -> crate::error::Result<T> + Send + 'static,
+    T: Send + 'static,
+{
+    let config = state.clone_config_web()?;
+    tokio::task::spawn_blocking(move || {
+        let provider = crate::ai::ClaudeHistoryProvider::new(config);
+        f(provider)
+    })
+    .await
+    .map_err(|e| WebError::Internal(e.to_string()))?
+    .map_err(WebError::from)
 }

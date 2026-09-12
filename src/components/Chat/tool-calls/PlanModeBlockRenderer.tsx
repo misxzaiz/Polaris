@@ -10,7 +10,7 @@
 import { memo, useState, useCallback, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { invoke } from '@/services/tauri';
+import { aiChatDispatch } from '@/services/aiChatDispatch'
 import { createLogger } from '@/utils/logger';
 import {
   Check,
@@ -245,7 +245,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
 
     setIsSubmitting(true);
     try {
-      await invoke('approve_plan', {
+      await aiChatDispatch({ action: 'approve_plan',
         sessionId: conversationId,
         planId: block.id,
       });
@@ -268,7 +268,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
 
     setIsSubmitting(true);
     try {
-      await invoke('reject_plan', {
+      await aiChatDispatch({ action: 'reject_plan',
         sessionId: conversationId,
         planId: block.id,
         feedback: rejectFeedback || undefined,

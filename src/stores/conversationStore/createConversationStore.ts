@@ -7,7 +7,7 @@ import { generateUUID } from '@/utils/uuid';
 
 import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
-import { invoke } from '@/services/tauri'
+import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
 import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ContentBlock, EngineId, ChatMessage, TaskBoardBlock, TaskBoardItem } from '@/types'
@@ -1832,7 +1832,8 @@ export function createConversationStore(
           }
 
           if (conversationId) {
-            await invoke('continue_chat', {
+            await aiChatDispatchStream({
+              action: 'continue',
               sessionId: conversationId,
               message: normalizeForInvoke(processedMessage),
               options: chatOptions,
@@ -1841,7 +1842,8 @@ export function createConversationStore(
             const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(sessionId)
             const forkSessionId = sessionMeta?.forkFromId
 
-            const newSessionId = await invoke<string>('start_chat', {
+            const newSessionId = await aiChatDispatch<string>({
+              action: 'start',
               message: normalizeForInvoke(processedMessage),
               options: {
                 ...chatOptions,
@@ -1879,7 +1881,7 @@ export function createConversationStore(
         set({ isInterrupting: true })
 
         try {
-          await invoke('interrupt_chat', {
+          await aiChatDispatch({ action: 'interrupt',
             sessionId: conversationId,
             engineId: engine,
           })
@@ -1970,7 +1972,7 @@ export function createConversationStore(
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {
-          await invoke('continue_chat', {
+          await aiChatDispatchStream({
             sessionId: conversationId,
             message: normalizeForInvoke(prompt),
             options: {
