@@ -192,3 +192,50 @@
   试点阶段旧通道保留（双写并存，cap.config 已收敛性能段）。
 - Web 模式 `dispatch_router_dispatch` source=Remote，默认权限全放行可写；预埋
   `cap.config* → remote deny` 规则待运行时需要在 config.json permissions.rules 注入。
+
+---
+
+## 9. B 副作用链分析（2026-09-13，方案 A 落文档）
+
+### 9.1 现状对照（三路径副作用）
+
+| 路径 | cascade(Claude settings) | refresh(引擎缓存) | emit(config-changed) | apply_web |
+|---|---|---|---|---|
+| 桌面 `update_config_patch`（lib.rs:164） | ✅ `cascade_active_model_profile` | ✅ `refresh_engine_configs` | ✅ `emit_config_changed`（同步 `AppHandle`） | 分开命令 |
+| Web `handle_update_settings`（settings.rs） | ❌ 缺 | ✅（内联 registry.refresh_all_configs） | ❌ 缺（注释自承认「Web 无 app_handle」） | 分开命令 |
+| **cap.config `on_patch`（当前为空）** | ❌ | ❌ | ❌ | ❌ |
+
+### 9.2 核心约束
+
+`ConfigCapability::on_patch` 签名是 **`Box<dyn Fn(&Config) + Send + Sync>`**（同步、无 `AppState`/`AppHandle`）。但副作用需：
+
+| 副作用 | 依赖 | 与签名兼容 |
+|---|---|---|
+| `cascade_active_model_profile(&config)` | 仅 `&Config` | ✅ 同步可做 |
+| `refresh_engine_configs(&state, config)` | `&AppState`、异步 | ❌ |
+| `emit_config_changed(&app_handle, config)` | `&tauri::AppHandle`、异步 | ❌ |
+
+**emit 依赖 AppHandle**：桌面模式由 `lib.rs:587` `state.app_handle.set(app.handle().clone())` 填充，**Web 模式 AppState.app_handle 为空**（integration_tests.rs:860 `get().is_none()`）。即 **Web 下 emit 客观不可行**，与现状一致。
+
+### 9.3 方案 A（选定 A2 —— 桌面走总线 + 全量副作用）
+
+**capability 保持纯逻辑可测，副作用分两层**：
+
+- **capability 内**：`on_patch` 只做**同步可做的 cascade**（`cascade_active_model_profile(&config)`）。
+- **调用方**：桌面侧**新增 tauri command `config_patch_via_bus`** 包装 cap.config patch，成功后补 **refresh + emit**（桌面有 `AppHandle`，全量副作用）；Web 桥保留现状（refresh 已有、emit 无 AppHandle 不可行，与 `handle_update_settings` 一致）。
+
+**前端分流事实**：`updateConfigPatch` 仍被 SettingsPage/ChatStatusBar/PromptSnippetTab/ThemeManager 大量消费（非 performance 键）。A2 下：
+- **桌面模式**：新增 `config_patch_via_bus`（cap.config 包装）——前端桌面线走它，补全量副作用
+- **Web 模式**：走 `router_dispatch`（既有的 cap.config Web 桥），refresh 已有
+- 旧 `update_config_patch` **保留**（非 performance 字段消费方仍依赖，cascade+refresh+emit 原样，作为非 performance 通道）
+
+### 9.3.1 A2 实施清单
+
+- [ ] **后端**：新增 `config_patch_via_bus` tauri command（`lib.rs`）
+  - `req: RouterDispatchRequest`（target=cap.config, action=patch, section, value）
+  - 经 `state.router.dispatch` 走总线（权限 gate + audit + 白名单 + 深层合并）
+  - 成功后补 `refresh_engine_configs` + `emit_config_changed`（桌面 AppHandle）
+  - 注册进 `generate_handler!`
+- [ ] **后端**：cap.config `on_patch` 补 cascade（能力内同步，桌面/Web 通用）
+- [ ] **前端**：桌面模式走 `config_patch_via_bus`，Web 模式走 `router_dispatch`（`configPatch` 分流）
+- [ ] **验证**：verify crate 副作用顺序测试扩展（cascade 在 patch 后）仍绿；双模式 cargo check；tsc
