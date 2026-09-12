@@ -258,10 +258,27 @@ fn merge_section_value(config: &Config, section: &str, patch_val: &Value) -> Res
     }
 }
 
-/// `get`：读指定 section（缺省=白名单全部）；只暴露白名单字段，敏感字段脱敏
+/// `get`：读指定 section（缺省=白名单全部）；只暴露白名单字段，敏感字段脱敏。
+///
+/// D 阶段扩展：`section=full` 返回**完整 config**（含非白名单顶层 key），
+/// 敏感字段仍脱敏。仅 Bootstrap 本地源可用（`invoke` 中按 ctx.source() 限制，
+/// 远程源拒绝）——前端 configStore 需要完整 config 驱动 UI，完整读是本地可信行为。
 fn do_get(config: &Config, section: &str) -> Result<Value, String> {
     let full = serde_json::to_value(config).map_err(|e| e.to_string())?;
     let full_obj = full.as_object().unwrap();
+
+    // full：返回完整 config（所有顶层 key，敏感字段脱敏）
+    if section == "full" {
+        let mut out = serde_json::Map::new();
+        for (k, v) in full_obj {
+            let mut v = v.clone();
+            if k == "web" || k == "modelProfiles" || k == "providerGroups" {
+                apply_masks(k, &mut v);
+            }
+            out.insert(k.clone(), v);
+        }
+        return Ok(Value::Object(out));
+    }
 
     if section != "all" {
         let schema = schema_named(section).ok_or_else(|| format!("未知 section: {}", section))?;
@@ -292,12 +309,31 @@ fn do_get(config: &Config, section: &str) -> Result<Value, String> {
     Ok(Value::Object(out))
 }
 
-/// `patch`：白名单 section 深层合并 → 经 ConfigStore.patch 持久化
+/// `patch`：白名单 section 深层合并 → 经 ConfigStore.patch 持久化。
+///
+/// D 阶段扩展：section 若**不在白名单 schema**（即「顶层自由 key」，如
+/// `workspaces`/`chatDisplay`），走**透传**路径 —— `store.patch` 对该顶层
+/// key 整体替换（`merge_json_object` 只并第一层，等价旧 `update_config_patch`
+/// 行为）。这样前端旧 `updateConfigPatch({...顶层对象...})` 的所有字段都能被
+/// cap.config 统一承载，同时白名单 section 仍保持严格校验（越权/字段拒绝）。
 fn do_patch(
     config_store: &Arc<Mutex<crate::services::config_store::ConfigStore>>,
     section: &str,
     patch_val: &Value,
 ) -> Result<Value, String> {
+    // 0. 未知顶层自由 key → 透传整体替换（兼容旧 update_config_patch 语义）
+    if schema_named(section).is_none() {
+        let mut store = config_store
+            .lock()
+            .map_err(|e| format!("config 锁获取失败: {}", e))?;
+        let mut top_patch = serde_json::Map::new();
+        top_patch.insert(section.to_string(), patch_val.clone());
+        let saved = store
+            .patch(Value::Object(top_patch))
+            .map_err(|e| format!("config patch 失败: {}", e))?;
+        return Ok(serde_json::to_value(saved).map_err(|e| e.to_string())?);
+    }
+
     // 1. 白名单 section 校验（ReadOnly/Locked 拒绝）
     let schema = schema_named(section).ok_or_else(|| format!("未知 section: {}", section))?;
     if matches!(schema.kind, SectionKind::ReadOnly | SectionKind::Locked) {
@@ -338,6 +374,8 @@ impl Capability for ConfigCapability {
                     .get("section")
                     .and_then(|s| s.as_str())
                     .unwrap_or("all");
+                // full 完整读：任何已认证源可用（token/apiKey 已脱敏，读取本身安全，
+                // 前端 configStore 驱动 UI 必需完整 config；Web/远程源也依赖此读）。
                 let config = self
                     .config_store
                     .lock()
