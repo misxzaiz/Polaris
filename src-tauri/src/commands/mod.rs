@@ -50,7 +50,6 @@ pub mod terminal;
 pub mod terminal_script;
 pub mod file_watcher;
 pub mod requirement;
-pub mod prompt_snippet;
 pub mod agnes;
 #[cfg(feature = "tauri-app")]
 pub use agnes::{

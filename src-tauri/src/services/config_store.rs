@@ -699,6 +699,7 @@ impl OldConfig {
         Config {
             default_engine: "claude-code".to_string(),
             auxiliary_engine: None,
+            permissions: None,
             language: None,
             theme: None,
             active_theme_id: None,

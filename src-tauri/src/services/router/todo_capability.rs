@@ -24,7 +24,9 @@
 //! - `complete`   `{ "action": "complete", "id", "lastProgress"? }` → `{ "item": TodoItem }`
 //! - `breakdown`  `{ "action": "breakdown", "scope"? }` → `{ "stats": {workspaceName:count} }`
 
-use crate::contracts::{Capability, CapabilityId, Context, Id, Item, Query, Value};
+use crate::contracts::{
+    AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, Value,
+};
 use crate::models::todo::{TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoSubtask, TodoUpdateParams};
 use chrono::Utc;
 
@@ -32,6 +34,7 @@ use chrono::Utc;
 pub struct TodoCapability;
 
 const DOMAIN: &str = "todo";
+const CAP_ID: &str = "cap.todo";
 
 // ---------------------------------------------------------------------------
 // 存储 helpers
@@ -69,14 +72,44 @@ fn load_one(ctx: &dyn Context, id: &str) -> Result<Option<TodoItem>, String> {
     }
 }
 
-fn insert_item(ctx: &dyn Context, todo: &TodoItem) -> Result<(), String> {
+/// 构造域审计条目（第五步阶段 D：业务写与审计同库同事务）
+fn audit_entry(ctx: &dyn Context, action: &str) -> AuditEntry {
+    AuditEntry {
+        timestamp_ms: Utc::now().timestamp_millis().max(0) as u64,
+        capability: CapabilityId(CAP_ID.to_string()),
+        source: ctx.source().clone(),
+        action: action.to_string(),
+        // 哈希链由 FileAuditSink（Bootstrap 直管）维护；domain_audit 是域内轨迹
+        prev_hash: String::new(),
+    }
+}
+
+/// 事务写：业务写 + 域审计同库同事务（commit 落库 / 失败全回滚）
+fn write_with_audit(ctx: &dyn Context, todo: &TodoItem, action: &str) -> Result<(), String> {
     let storage = ctx.storage()?;
-    let data = serde_json::to_value(todo)
-        .map_err(|e| format!("cap.todo 序列化待办失败: {}", e))?;
-    storage
-        .store(DOMAIN, &Item { id: Id(todo.id.clone()), data })
-        .map(|_| ())
-        .map_err(|e| format!("cap.todo 写入失败: {}", e))
+    let data =
+        serde_json::to_value(todo).map_err(|e| format!("cap.todo 序列化待办失败: {}", e))?;
+    let mut txn = storage
+        .begin()
+        .map_err(|e| format!("cap.todo 开启事务失败: {}", e))?;
+    txn.store(DOMAIN, &Item { id: Id(todo.id.clone()), data })
+        .map_err(|e| format!("cap.todo 写入失败: {}", e))?;
+    txn.append_audit(DOMAIN, &audit_entry(ctx, action))
+        .map_err(|e| format!("cap.todo 审计写入失败: {}", e))?;
+    txn.commit().map_err(|e| format!("cap.todo 事务提交失败: {}", e))
+}
+
+/// 事务删：业务删 + 域审计同库同事务
+fn delete_with_audit(ctx: &dyn Context, id: &str, action: &str) -> Result<(), String> {
+    let storage = ctx.storage()?;
+    let mut txn = storage
+        .begin()
+        .map_err(|e| format!("cap.todo 开启事务失败: {}", e))?;
+    txn.delete(DOMAIN, &Id(id.to_string()))
+        .map_err(|e| format!("cap.todo 删除失败: {}", e))?;
+    txn.append_audit(DOMAIN, &audit_entry(ctx, action))
+        .map_err(|e| format!("cap.todo 审计写入失败: {}", e))?;
+    txn.commit().map_err(|e| format!("cap.todo 事务提交失败: {}", e))
 }
 
 fn now_iso() -> String {
@@ -238,7 +271,7 @@ impl TodoCapability {
             workspace_name,
         };
 
-        insert_item(ctx, &todo)?;
+        write_with_audit(ctx, &todo, "todo.create")?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
@@ -303,18 +336,17 @@ impl TodoCapability {
             updates.last_error = Some(v.to_string());
         }
 
+        // 捕获更新前状态（completed_at 流转语义需要）
+        let was_completed_before = todo.status == TodoStatus::Completed;
         apply_updates(&mut todo, updates)?;
-        update_timestamps(&mut todo);
-        insert_item(ctx, &todo)?;
+        update_timestamps(&mut todo, was_completed_before);
+        write_with_audit(ctx, &todo, "todo.update")?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
     fn action_delete(ctx: &dyn Context, id: &str) -> Result<Value, String> {
         let todo = load_one(ctx, id)?.ok_or_else(|| format!("待办不存在: {}", id))?;
-        let storage = ctx.storage()?;
-        storage
-            .delete(DOMAIN, &Id(id.to_string()))
-            .map_err(|e| format!("cap.todo 删除失败: {}", e))?;
+        delete_with_audit(ctx, id, "todo.delete")?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
@@ -329,7 +361,7 @@ impl TodoCapability {
             todo.last_progress = Some(v.to_string());
         }
         todo.updated_at = now_iso();
-        insert_item(ctx, &todo)?;
+        write_with_audit(ctx, &todo, "todo.start")?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
@@ -348,7 +380,7 @@ impl TodoCapability {
             todo.completed_at = Some(now_iso());
         }
         todo.updated_at = now_iso();
-        insert_item(ctx, &todo)?;
+        write_with_audit(ctx, &todo, "todo.complete")?;
         Ok(serde_json::json!({ "item": todo }))
     }
 
@@ -411,15 +443,22 @@ fn apply_updates(todo: &mut TodoItem, updates: TodoUpdateParams) -> Result<(), S
     if let Some(last_error) = updates.last_error {
         todo.last_error = sanitize_opt_str(Some(last_error));
     }
+    // 状态流转（status 字段此前从未被应用——修复：update 改状态生效）
+    if let Some(status) = updates.status {
+        todo.status = status;
+    }
     Ok(())
 }
 
 /// 状态变更 timestamp 语义（对齐旧命令层 update_todo）：
 /// - 变更到 Completed：若之前非 Completed，置 completed_at
 /// - 变更出 Completed：清空 completed_at
-fn update_timestamps(todo: &mut TodoItem) {
-    let was_completed = todo.status == TodoStatus::Completed;
-    if !was_completed {
+/// - 状态未变：completed_at 保持不动，仅刷新 updated_at
+fn update_timestamps(todo: &mut TodoItem, was_completed_before: bool) {
+    let is_completed = todo.status == TodoStatus::Completed;
+    if is_completed && !was_completed_before {
+        todo.completed_at = Some(now_iso());
+    } else if !is_completed && was_completed_before {
         todo.completed_at = None;
     }
     todo.updated_at = now_iso();
@@ -475,7 +514,7 @@ mod tests {
 
     /// 用临时目录建 SqliteStorage，构造一个提供 storage 的测试 Context
     struct TestCtx {
-        storage: Arc<dyn Storage>,
+        storage: Arc<SqliteStorage>,
         caller: crate::contracts::PluginId,
     }
     impl Context for TestCtx {
@@ -510,7 +549,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(name);
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&tmp).unwrap());
+        let storage = Arc::new(SqliteStorage::new(&tmp).unwrap());
         TestCtx {
             storage,
             caller: crate::contracts::PluginId("cap.todo".into()),
@@ -707,6 +746,24 @@ mod tests {
         let started = cap.invoke(serde_json::json!({"action": "start", "id": id}), &ctx).unwrap();
         let t1 = started["item"]["updatedAt"].as_str().unwrap().to_string();
         assert_ne!(t0, t1, "update 应刷新 updatedAt");
+    }
+
+    #[test]
+    fn writes_leave_domain_audit() {
+        // 第五步阶段 D：create/start/complete/delete 各落一条域审计（同事务）
+        let cap = TodoCapability;
+        let ctx = make_ctx();
+        let created = cap
+            .invoke(serde_json::json!({"action": "create", "content": "审计"}), &ctx)
+            .unwrap();
+        let id = created["item"]["id"].as_str().unwrap().to_string();
+        cap.invoke(serde_json::json!({"action": "start", "id": id}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "complete", "id": id}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "delete", "id": id}), &ctx).unwrap();
+        assert_eq!(ctx.storage.audit_count("todo").unwrap(), 4);
+        // 读路径（list）不落审计
+        cap.invoke(serde_json::json!({"action": "list", "scope": "all"}), &ctx).unwrap();
+        assert_eq!(ctx.storage.audit_count("todo").unwrap(), 4);
     }
 
     #[test]

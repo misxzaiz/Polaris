@@ -345,27 +345,66 @@ pub fn create_app_state(
     }
 
     // 统一转发总线（第三步 RouterBus）：复用现有 WS 广播通道 + 契约 SqliteStorage。
-    // cap.kv 是第一个真实能力（经 ctx.storage() 读写 <DataRoot>/stores/kv.db）。
-    // 审计通道（AuditSink）阶段 A 保持 None，Bootstrap 直管通道后置接线。
+    // cap.kv / cap.todo 经 ctx.storage() 读写 <DataRoot>/stores/*.db。
+    // 第五步：PolicyPermission 权限 gate（config.json permissions 段覆盖，缺省全放行
+    // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
     let event_broadcast = crate::web::EventBroadcaster::new(256);
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
-        use crate::services::router::{EventAdapter, KvCapability, RouterBus, StaticPermission, TodoCapability};
+        use crate::services::router::{
+            EventAdapter, FileAuditSink, KvCapability, PolicyPermission, PromptSnippetCapability,
+            RouterBus, TodoCapability, audit_sink, prompt_snippet_capability,
+        };
         use crate::services::storage::SqliteStorage;
 
         let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
         let storage: Arc<dyn crate::contracts::Storage> =
             Arc::new(SqliteStorage::new(&config_dir).expect("SqliteStorage 初始化失败"));
+
+        // 权限 gate：config.json `permissions.rules` 覆盖（装配时载入，缺省全放行）
+        let initial_permissions = config_store.get().permissions.clone();
+        let permission = Box::new(PolicyPermission::from_config(
+            initial_permissions.as_ref(),
+        ));
+
+        // 审计通道：Bootstrap 直管 JSONL（<DataRoot>/audit/dispatch.jsonl），
+        // 打开失败不阻塞启动（审计缺失可见可查，不允许崩溃主流程）
+        let audit: Option<Arc<dyn crate::contracts::AuditSink>> =
+            match FileAuditSink::open(&audit_sink::audit_file_path()) {
+                Ok(sink) => {
+                    tracing::info!(
+                        "[AuditSink] dispatch 审计已接线（{} 条历史记录，链尾续接）",
+                        sink.count()
+                    );
+                    Some(Arc::new(sink))
+                }
+                Err(e) => {
+                    tracing::warn!("[AuditSink] 审计通道打开失败，dispatch 审计暂不落盘: {}", e);
+                    None
+                }
+            };
+
         let bus = Arc::new(RouterBus::new(
             adapter,
-            Box::new(StaticPermission),
-            Some(storage),
-            None, // AuditSink 阶段 A 未接线
+            permission,
+            Some(storage.clone()),
+            audit,
         ));
         let _ = bus.register_handle(Box::new(KvCapability));
         // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
         // <DataRoot>/stores/todo.db，旧命令层已全部移除，本 capability 是唯一入口）
         let _ = bus.register_handle(Box::new(TodoCapability));
+        // cap.prompt_snippet —— 第四步迁移第二块：快捷片段唯一入口。
+        // 装配时一次性只读导入旧 prompt-snippets.json（domain 为空才导入，旧文件保留）
+        match prompt_snippet_capability::import_legacy_store(
+            storage.as_ref(),
+            &config_dir.join("prompt-snippets.json"),
+        ) {
+            Ok(n) if n > 0 => tracing::info!("[cap.prompt_snippet] 已从旧 prompt-snippets.json 导入 {} 条片段", n),
+            Ok(_) => {}
+            Err(e) => tracing::warn!("[cap.prompt_snippet] 旧片段导入失败（跳过，不阻塞启动）: {}", e),
+        }
+        let _ = bus.register_handle(Box::new(PromptSnippetCapability));
         bus
     };
 

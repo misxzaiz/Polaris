@@ -13,14 +13,20 @@
 //! - 审计：deny/allow 均经 `AuditSink`（阶段 A 可 None，Bootstrap 直管注入）。
 //! - resolve_handle 保持 pub(crate)，防插件旁路直调（契约注释铁律）。
 
+pub mod audit_sink;
 mod demo_capability;
 mod event_adapter;
 mod kv_capability;
+mod policy_permission;
+pub mod prompt_snippet_capability;
 mod todo_capability;
 
+pub use audit_sink::FileAuditSink;
 pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
 pub use kv_capability::KvCapability;
+pub use policy_permission::PolicyPermission;
+pub use prompt_snippet_capability::PromptSnippetCapability;
 pub use todo_capability::TodoCapability;
 
 use crate::contracts::*;

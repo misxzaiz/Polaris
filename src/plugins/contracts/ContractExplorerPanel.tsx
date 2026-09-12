@@ -193,6 +193,9 @@ interface CapabilityInfo {
   id: string
 }
 
+/** 演示/链路验证能力（非真实业务域，见 step4-migration.md §5） */
+const DEMO_CAPS = new Set(['cap.kv', 'cap.echo', 'cap.faulty'])
+
 interface DispatchReply {
   msgId: string
   ok: boolean
@@ -212,7 +215,7 @@ function CapabilityList({ onSelect }: { onSelect: (id: string) => void }) {
       const list = await invoke<CapabilityInfo[]>('router_list_caps')
       setCaps(Array.isArray(list) ? list : [])
     } catch (e) {
-      log.error('router_list_caps 失败', e)
+      log.error('router_list_caps 失败', e instanceof Error ? e : undefined)
       setCaps([])
     } finally {
       setLoading(false)
@@ -256,6 +259,9 @@ function CapabilityList({ onSelect }: { onSelect: (id: string) => void }) {
               title={`点击填入 dispatch 测试台`}
             >
               {c.id}
+              {DEMO_CAPS.has(c.id) && (
+                <span className="ml-1 rounded bg-amber-500/10 px-1 py-px text-[9px] text-amber-500">demo</span>
+              )}
             </button>
           ))}
         </div>
@@ -274,7 +280,6 @@ function DispatchTestBench({
   const [caps, setCaps] = useState<CapabilityInfo[]>([])
   const [target, setTarget] = useState('cap.kv')
   const [payloadText, setPayloadText] = useState('{\n  "action": "list"\n}')
-  const [source, setSource] = useState<'bootstrap' | 'remote'>('bootstrap')
   const [loading, setLoading] = useState(false)
   const [reply, setReply] = useState<DispatchReply | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -296,7 +301,7 @@ function DispatchTestBench({
         const list = await invoke<CapabilityInfo[]>('router_list_caps')
         if (!cancelled) setCaps(Array.isArray(list) ? list : [])
       } catch (e) {
-        if (!cancelled) log.error('router_list_caps 失败', e)
+        if (!cancelled) log.error('router_list_caps 失败', e instanceof Error ? e : undefined)
       }
     })()
     return () => { cancelled = true }
@@ -314,7 +319,7 @@ function DispatchTestBench({
         return
       }
       const res = await invoke<DispatchReply>('router_dispatch', {
-        req: { target, payload, source },
+        req: { target, payload },
       })
       setReply(res)
     } catch (e) {
@@ -335,7 +340,6 @@ function DispatchTestBench({
           onClick={() => {
             setTarget('cap.kv')
             setPayloadText('{\n  "action": "list"\n}')
-            setSource('bootstrap')
             setReply(null)
             setErr(null)
           }}
@@ -362,21 +366,18 @@ function DispatchTestBench({
                 <option key={c.id} value={c.id} />
               ))}
             </datalist>
-            <select
-              className="rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 outline-none focus:border-blue-500"
-              value={source}
-              onChange={(e) => setSource(e.target.value as 'bootstrap' | 'remote')}
-              title="来源标注"
+            <span
+              className="flex items-center rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 text-[10px] text-[var(--color-text-secondary)]"
+              title="来源由后端按调用通道判定（第五步阶段 A）：桌面主窗口 = Bootstrap；Web/HTTP = Remote"
             >
-              <option value="bootstrap">Bootstrap</option>
-              <option value="remote">Remote</option>
-            </select>
+              来源：后端判定
+            </span>
           </div>
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[var(--color-text-secondary)]">说明</span>
           <div className="flex h-full items-center rounded border border-[var(--color-border)] bg-[var(--color-surface)] px-2 py-1 text-[11px] text-[var(--color-text-secondary)]">
-            {source === 'bootstrap' ? 'Bootstrap：Core 内部调用（测试台默认，模拟内部来源）' : 'Remote：HTTP/WS 来源，token 由后端注入'}
+            Source 由传输层注入、调用方不可自填（契约铁律）：桌面主窗口 = Bootstrap，Web/HTTP 与内置浏览器 = Remote。前端自报来源已被后端忽略。
           </div>
         </label>
       </div>
@@ -578,6 +579,117 @@ function EnvelopeTestBench() {
   )
 }
 
+/** 审计链视图（第五步阶段 B：dispatch 审计落盘 <DataRoot>/audit/dispatch.jsonl） */
+interface AuditVerifyReply {
+  ok: boolean
+  brokenLine: number | null
+  total: number
+}
+
+function AuditChainView() {
+  const [lines, setLines] = useState<string[]>([])
+  const [total, setTotal] = useState(0)
+  const [verify, setVerify] = useState<AuditVerifyReply | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+
+  const refresh = async () => {
+    setLoading(true)
+    setErr(null)
+    try {
+      const tail = await invoke<{ lines: string[]; total: number }>('audit_tail', { count: 12 })
+      setLines(Array.isArray(tail?.lines) ? tail.lines : [])
+      setTotal(tail?.total ?? 0)
+      const v = await invoke<AuditVerifyReply>('audit_verify')
+      setVerify(v)
+    } catch (e) {
+      setErr(`审计读取失败: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    void refresh()
+  }, [])
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-border)] p-4">
+      <div className="flex items-center gap-2">
+        <Boxes size={16} />
+        <span className="text-sm font-medium">审计链（dispatch.jsonl）</span>
+        <span className="rounded-full bg-blue-500/10 px-2 py-0.5 text-[11px] text-blue-500">
+          共 {total} 条
+        </span>
+        {verify && (
+          <span
+            className={`rounded-full px-2 py-0.5 text-[11px] ${
+              verify.ok
+                ? 'bg-green-500/10 text-green-500'
+                : 'bg-red-500/10 text-red-500'
+            }`}
+            title={verify.ok ? 'sha256 链逐条校验通过' : `第 ${verify.brokenLine} 行被篡改`}
+          >
+            {verify.ok ? '✅ 链完整' : `❌ 第 ${verify.brokenLine} 行被篡改`}
+          </span>
+        )}
+        <button
+          className="ml-auto flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-surface-hover)]"
+          onClick={() => void refresh()}
+          title="刷新（读取尾部 12 条 + 全链校验）"
+          disabled={loading}
+        >
+          <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 刷新
+        </button>
+      </div>
+
+      {err && (
+        <div className="break-all rounded border border-red-500/30 bg-red-500/5 p-2 font-mono text-[11px] text-red-500">
+          {err}
+        </div>
+      )}
+
+      {lines.length === 0 && !err ? (
+        <p className="text-[11px] text-[var(--color-text-secondary)]">
+          暂无审计记录。经 dispatch 面板或待办面板发起一次调用后，这里会出现
+          dispatch.start/end 与 deny 轨迹（tamper-evident 哈希链）。
+        </p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {lines.map((line, i) => {
+            let action = ''
+            let cap = ''
+            let ts = ''
+            try {
+              const parsed = JSON.parse(line) as { action?: string; capability?: string; timestampMs?: number }
+              action = parsed.action ?? ''
+              cap = parsed.capability ?? ''
+              ts = parsed.timestampMs ? new Date(parsed.timestampMs).toLocaleTimeString() : ''
+            } catch {
+              action = '(无法解析)'
+            }
+            const deny = action.includes('deny')
+            return (
+              <div
+                key={i}
+                className={`flex items-center gap-2 rounded border px-2 py-1 font-mono text-[10px] ${
+                  deny
+                    ? 'border-red-500/30 bg-red-500/5 text-red-500'
+                    : 'border-[var(--color-border)] bg-[var(--color-surface)] text-[var(--color-text-secondary)]'
+                }`}
+              >
+                <span>{ts}</span>
+                <span className="text-[var(--color-text)]">{cap}</span>
+                <span className="truncate">{action}</span>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
+  )
+}
+
 /** 契约清单卡片 */
 function TraitCatalog() {
   return (
@@ -621,6 +733,7 @@ export default function ContractExplorerPanel() {
     <div className="flex h-full flex-col gap-3 overflow-y-auto p-3">
       <DispatchTestBench selectTarget={selectedCap} />
       <CapabilityList onSelect={setSelectedCap} />
+      <AuditChainView />
       <SourceSemantics />
       <EnvelopeTestBench />
       <TraitCatalog />

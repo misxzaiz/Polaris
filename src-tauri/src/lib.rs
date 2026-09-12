@@ -139,10 +139,6 @@ use commands::terminal::{
 #[cfg(feature = "tauri-app")]
 use commands::terminal_script::terminal_discover_scripts;
 #[cfg(feature = "tauri-app")]
-use commands::prompt_snippet::{
-    snippet_list, snippet_get, snippet_create, snippet_update, snippet_delete,
-};
-#[cfg(feature = "tauri-app")]
 use commands::{test_model_profile_connection, fetch_models_for_profile};
 
 use std::sync::Arc;
@@ -777,11 +773,6 @@ pub fn run() {
             detect_claude,
             // MCP 诊断
             // Prompt Snippet 快捷片段
-            snippet_list,
-            snippet_get,
-            snippet_create,
-            snippet_update,
-            snippet_delete,
             // 聊天相关（统一接口）
             start_chat,
             continue_chat,
@@ -1159,6 +1150,8 @@ pub fn run() {
             // 统一转发总线（第三步 RouterBus）——契约能力 dispatch
             commands::router::router_dispatch,
             commands::router::router_list_caps,
+            commands::router::audit_tail,
+            commands::router::audit_verify,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,

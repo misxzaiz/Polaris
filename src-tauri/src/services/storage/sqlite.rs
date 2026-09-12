@@ -200,6 +200,14 @@ impl SqliteStorage {
             crate::contracts::Source::Plugin { .. } => "Plugin",
         }
     }
+
+    /// 某域审计表行数（诊断/测试用：capability 同事务审计的验证入口）
+    pub fn audit_count(&self, domain: &str) -> Result<i64, String> {
+        self.with_conn(domain, |conn| {
+            conn.query_row("SELECT COUNT(*) FROM domain_audit", [], |r| r.get(0))
+                .map_err(|e| format!("审计计数失败: {}", e))
+        })
+    }
 }
 
 impl Storage for SqliteStorage {

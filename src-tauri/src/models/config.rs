@@ -1462,6 +1462,30 @@ pub struct SpiderManThemeConfig {
     pub hover_opacity: Option<f64>,
 }
 
+/// dispatch 权限策略规则（第五步 PolicyPermission 的 config 覆盖来源）
+///
+/// - `capability`：能力 id，精确（`cap.config`）或前缀通配（`cap.config*`）
+/// - `source`：`bootstrap` | `remote` | `plugin`
+/// - `verdict`：`allow` | `deny` | `prompt`（prompt 由 dispatch 安全失败）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionRuleConfig {
+    pub capability: String,
+    pub source: String,
+    pub verdict: String,
+}
+
+/// 权限策略（config.json `permissions` 段）
+///
+/// 缺省（字段不存在 / 空 rules）= 全放行，与历史行为等价；收紧规则显式启用。
+/// 装配时载入一次，运行中改动需重启生效。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionPolicyConfig {
+    #[serde(default)]
+    pub rules: Vec<PermissionRuleConfig>,
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1477,6 +1501,10 @@ pub struct Config {
     /// 用于将辅助任务路由到更便宜的引擎以降本。
     #[serde(default)]
     pub auxiliary_engine: Option<String>,
+
+    /// dispatch 权限策略（第五步 PolicyPermission 覆盖规则；缺省 = 全放行）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<PermissionPolicyConfig>,
 
     /// 界面语言
     #[serde(default)]
@@ -1726,6 +1754,7 @@ impl Default for Config {
         Self {
             default_engine: default_default_engine(),
             auxiliary_engine: None,
+            permissions: None,
             language: None,
             theme: None,
             active_theme_id: None,

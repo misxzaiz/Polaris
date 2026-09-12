@@ -25,7 +25,6 @@ use crate::models::scheduler::{
 };
 use crate::commands::router::RouterDispatchRequest;
 use crate::contracts::Router as _; // dispatch
-use crate::services::prompt_snippet_service::PromptSnippetService;
 use crate::services::scheduler::protocol_task::ProtocolTaskService;
 use crate::services::scheduler::protocol_template::ProtocolTemplateService;
 use crate::services::scheduler::TaskUpdateParams;
@@ -70,11 +69,6 @@ pub async fn handle_ipc_bridge(
         "path_exists" => dispatch_path_exists(&args),
 
         // ── Snippets ───────────────────────────────────────────────────────
-        "snippet_list" => dispatch_snippet_list(&state),
-        "snippet_get" => dispatch_snippet_get(&state, &args),
-        "snippet_create" => dispatch_snippet_create(&state, &args),
-        "snippet_update" => dispatch_snippet_update(&state, &args),
-        "snippet_delete" => dispatch_snippet_delete(&state, &args),
 
         // ── Dispatched tasks (dispatch_task MCP) ───────────────────────────
         "dispatch_report_status" => dispatch_report_dispatch_status(&state, &args),
@@ -335,6 +329,8 @@ pub async fn handle_ipc_bridge(
 
         // ── Contract Router: 统一转发总线（契约第三步 P2）───────────────
         "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
+        "audit_tail" => dispatch_audit_tail(&args),
+        "audit_verify" => dispatch_audit_verify(),
         "router_list_caps" => dispatch_router_list_caps(&state),
 
         // ── Executor: 通用执行器 ──────────────────────────────────────────────
@@ -512,12 +508,6 @@ fn get_scheduler_repo(state: &AppState, args: &Value) -> Result<UnifiedScheduler
     Ok(UnifiedSchedulerRepository::new(config_dir, workspace))
 }
 
-/// Create a PromptSnippetService from state.
-fn get_snippet_service(state: &AppState) -> Result<PromptSnippetService, WebError> {
-    let config_dir = get_config_dir(state)?;
-    Ok(PromptSnippetService::new(&config_dir))
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // Workspace
 // ═══════════════════════════════════════════════════════════════════════════
@@ -559,17 +549,6 @@ fn dispatch_path_exists(args: &Value) -> Result<Json<Value>, WebError> {
 // ═══════════════════════════════════════════════════════════════════════════
 // Snippets
 // ═══════════════════════════════════════════════════════════════════════════
-
-fn dispatch_snippet_list(state: &AppState) -> Result<Json<Value>, WebError> {
-    let service = get_snippet_service(state)?;
-    json_result!(service.list_all_snippets())
-}
-
-fn dispatch_snippet_get(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let service = get_snippet_service(state)?;
-    json_result!(service.get_snippet(&id))
-}
 
 fn to_json<T: serde::Serialize>(value: T) -> Result<Json<Value>, WebError> {
     serde_json::to_value(value)
@@ -644,31 +623,6 @@ fn dispatch_create_dispatch_task(
     let value = serde_json::to_value(task)
         .map_err(|e| WebError::Internal(format!("序列化派发任务失败: {}", e)))?;
     Ok(Json(value))
-}
-
-fn dispatch_snippet_create(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let params: CreateSnippetParams = serde_json::from_value(
-        args.get("params").cloned().unwrap_or(Value::Null),
-    )
-    .map_err(|e| WebError::BadRequest(format!("Invalid snippet params: {}", e)))?;
-    let service = get_snippet_service(state)?;
-    json_result!(service.create_snippet(params))
-}
-
-fn dispatch_snippet_update(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let params: UpdateSnippetParams = serde_json::from_value(
-        args.get("params").cloned().unwrap_or(Value::Null),
-    )
-    .map_err(|e| WebError::BadRequest(format!("Invalid update params: {}", e)))?;
-    let service = get_snippet_service(state)?;
-    json_result!(service.update_snippet(&id, params))
-}
-
-fn dispatch_snippet_delete(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let id = require_string(args, "id")?;
-    let service = get_snippet_service(state)?;
-    json_result!(service.delete_snippet(&id))
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2665,6 +2619,28 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
         "error": error,
         "trace": reply.trace.0,
     })))
+}
+
+/// 审计链尾部（第五步阶段 B：契约测试面板审计链块用）
+fn dispatch_audit_tail(args: &Value) -> Result<Json<Value>, WebError> {
+    let count = args.get("count").and_then(Value::as_u64).unwrap_or(20) as usize;
+    let path = crate::services::router::audit_sink::audit_file_path();
+    let (lines, total) = crate::services::router::audit_sink::tail_lines(&path, count)
+        .map_err(WebError::Internal)?;
+    Ok(Json(serde_json::json!({ "lines": lines, "total": total })))
+}
+
+/// 审计链校验（逐条重算 sha256 链，篡改定位到行号）
+fn dispatch_audit_verify() -> Result<Json<Value>, WebError> {
+    let path = crate::services::router::audit_sink::audit_file_path();
+    match crate::services::router::audit_sink::verify_chain(&path) {
+        Ok(total) => Ok(Json(serde_json::json!({ "ok": true, "brokenLine": Value::Null, "total": total }))),
+        Err(broken) => Ok(Json(serde_json::json!({
+            "ok": false,
+            "brokenLine": broken as u64,
+            "total": broken as u64
+        }))),
+    }
 }
 
 /// 列出已注册能力（契约测试面板用）

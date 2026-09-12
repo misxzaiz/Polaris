@@ -13,7 +13,7 @@
 //! 底层：经 `ctx.storage()` 访问契约 `Storage`（接线为 SqliteStorage，domain=`kv`），
 //! 数据落在 `<DataRoot>/stores/kv.db`。`Source`/权限/审计由 RouterBus dispatch 统一把关。
 
-use crate::contracts::{Capability, CapabilityId, Context, Id, Item, Query, Value};
+use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, Value};
 
 /// cap.kv —— 键值存储能力（真实业务，非 demo）
 pub struct KvCapability;
@@ -30,19 +30,46 @@ impl KvCapability {
         }
     }
 
+    /// 构造域审计条目（第五步阶段 D：业务写与审计同库同事务）
+    fn audit_entry(ctx: &dyn Context, action: &str) -> AuditEntry {
+        AuditEntry {
+            timestamp_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            capability: CapabilityId("cap.kv".into()),
+            source: ctx.source().clone(),
+            action: action.to_string(),
+            // 哈希链由 FileAuditSink（Bootstrap 直管）维护；domain_audit 是域内轨迹
+            prev_hash: String::new(),
+        }
+    }
+
+    /// 事务写：业务写 + 域审计同库同事务
     fn do_set(ctx: &dyn Context, key: &str, value: Value) -> Result<Value, String> {
         let storage = ctx.storage()?;
         let item = Item {
             id: Id(key.to_string()),
             data: value,
         };
-        let id = storage.store(DOMAIN, &item)?;
-        Ok(serde_json::json!({ "id": id.0 }))
+        let mut txn = storage.begin().map_err(|e| format!("cap.kv 开启事务失败: {}", e))?;
+        txn.store(DOMAIN, &item)
+            .map_err(|e| format!("cap.kv 写入失败: {}", e))?;
+        txn.append_audit(DOMAIN, &Self::audit_entry(ctx, "kv.set"))
+            .map_err(|e| format!("cap.kv 审计写入失败: {}", e))?;
+        txn.commit().map_err(|e| format!("cap.kv 事务提交失败: {}", e))?;
+        Ok(serde_json::json!({ "id": item.id.0 }))
     }
 
+    /// 事务删：业务删 + 域审计同库同事务
     fn do_delete(ctx: &dyn Context, key: &str) -> Result<Value, String> {
         let storage = ctx.storage()?;
-        storage.delete(DOMAIN, &Id(key.to_string()))?;
+        let mut txn = storage.begin().map_err(|e| format!("cap.kv 开启事务失败: {}", e))?;
+        txn.delete(DOMAIN, &Id(key.to_string()))
+            .map_err(|e| format!("cap.kv 删除失败: {}", e))?;
+        txn.append_audit(DOMAIN, &Self::audit_entry(ctx, "kv.delete"))
+            .map_err(|e| format!("cap.kv 审计写入失败: {}", e))?;
+        txn.commit().map_err(|e| format!("cap.kv 事务提交失败: {}", e))?;
         Ok(serde_json::json!({ "deleted": true }))
     }
 
@@ -113,7 +140,7 @@ mod tests {
 
     /// 用临时目录建 SqliteStorage，构造一个提供 storage 的测试 Context
     struct TestCtx {
-        storage: Arc<dyn Storage>,
+        storage: Arc<SqliteStorage>,
         caller: crate::contracts::PluginId,
     }
     impl Context for TestCtx {
@@ -148,7 +175,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(name);
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let storage: Arc<dyn Storage> = Arc::new(SqliteStorage::new(&tmp).unwrap());
+        let storage = Arc::new(SqliteStorage::new(&tmp).unwrap());
         TestCtx {
             storage,
             caller: crate::contracts::PluginId("cap.kv".into()),
@@ -201,6 +228,19 @@ mod tests {
         let keys: Vec<_> = list["keys"].as_array().unwrap().iter().map(|k| k.as_str().unwrap()).collect();
         assert!(keys.contains(&"a"));
         assert!(keys.contains(&"b"));
+    }
+
+    #[test]
+    fn set_and_delete_write_domain_audit() {
+        // 第五步阶段 D：写路径与域审计同库同事务
+        let cap = KvCapability;
+        let ctx = make_ctx();
+        cap.invoke(serde_json::json!({"action": "set", "key": "k", "value": 1}), &ctx).unwrap();
+        cap.invoke(serde_json::json!({"action": "delete", "key": "k"}), &ctx).unwrap();
+        assert_eq!(ctx.storage.audit_count("kv").unwrap(), 2, "set+delete 各应落一条域审计");
+        // 读路径不落审计
+        cap.invoke(serde_json::json!({"action": "get", "key": "k"}), &ctx).unwrap();
+        assert_eq!(ctx.storage.audit_count("kv").unwrap(), 2);
     }
 
     #[test]
