@@ -525,8 +525,25 @@ fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
 #[cfg(feature = "tauri-app")]
 pub fn run() {
     // 初始化配置存储
-    let config_store = ConfigStore::new()
+    let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
+
+    // Dev-only: 环境变量覆盖 Web 鉴权 token（仅内存，不持久化）。
+    // `tauri:dev:web` 注入 POLARIS_DEV_WEB_TOKEN=98279829++，使 dev 桌面端 Web server
+    // 用固定 token 鉴权，浏览器访问 9827 时登录 token 稳定为 98279829++。
+    // 已安装版（release 构建，debug_assertions=false）物理剔除此逻辑，继续用
+    // config.json 的 web.token，互不影响。
+    #[cfg(debug_assertions)]
+    {
+        if let Ok(dev_token) = std::env::var("POLARIS_DEV_WEB_TOKEN") {
+            if !dev_token.is_empty() {
+                config_store.get_mut().web.token = Some(dev_token);
+                tracing::info!(
+                    "[Dev] Web token overridden by POLARIS_DEV_WEB_TOKEN (not persisted to config.json)"
+                );
+            }
+        }
+    }
 
     // 启用日志系统（使用 RUST_LOG 环境变量控制日志级别）
     // 开发: RUST_LOG=polaris=debug

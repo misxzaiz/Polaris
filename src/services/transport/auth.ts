@@ -38,7 +38,14 @@ const DEV_DISCOVERY_MAX_AGE = 5 * 60 * 1000;
 /** 是否启用 dev 强制 HTTP 自发现 */
 function isDevHttpDiscoveryEnabled(): boolean {
   try {
-    return Boolean(import.meta.env.DEV) && import.meta.env.VITE_FORCE_HTTP === '1';
+    if (!import.meta.env.DEV) return false;
+    if (typeof window === 'undefined') return false;
+    // 强制 HTTP 开关：显式开启则启用发现。
+    if (import.meta.env.VITE_FORCE_HTTP === '1') return true;
+    // vite dev server 环境（页面托管于 9827）：无论是否显式强制，
+    // 只要非 Tauri 桌面（套件含内置浏览器等 HTTP 场景），就启用 dev 发现 ——
+    // 这样内置浏览器在无 VITE_FORCE_HTTP 时也能自动拿到后端端口 + token md5。
+    return !('__TAURI_INTERNALS__' in window);
   } catch {
     return false;
   }
