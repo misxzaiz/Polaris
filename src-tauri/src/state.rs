@@ -352,8 +352,9 @@ pub fn create_app_state(
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
-            EventAdapter, FileAuditSink, KvCapability, PolicyPermission, PromptSnippetCapability,
-            RouterBus, TodoCapability, audit_sink, prompt_snippet_capability,
+            AiChatCapability, EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
+            PromptSnippetCapability, RouterBus, StreamEchoCapability, TodoCapability, audit_sink,
+            prompt_snippet_capability,
         };
         use crate::services::storage::SqliteStorage;
 
@@ -405,6 +406,11 @@ pub fn create_app_state(
             Err(e) => tracing::warn!("[cap.prompt_snippet] 旧片段导入失败（跳过，不阻塞启动）: {}", e),
         }
         let _ = bus.register_handle(Box::new(PromptSnippetCapability));
+        // 第六步：流式能力（平行表，走 dispatch_stream）
+        // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）
+        let _ = bus.register_streaming(Arc::new(StreamEchoCapability));
+        // cap.ai.chat —— 第一个真实流式能力：引擎句柄自持，chat-event 兼容事件泵
+        let _ = bus.register_streaming(Arc::new(AiChatCapability::new(engine_registry.clone())));
         bus
     };
 

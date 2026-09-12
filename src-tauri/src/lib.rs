@@ -1169,6 +1169,7 @@ pub fn run() {
             commands::router::router_list_caps,
             commands::router::audit_tail,
             commands::router::audit_verify,
+            commands::router::router_dispatch_stream,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,

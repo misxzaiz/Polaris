@@ -94,6 +94,42 @@ pub async fn router_dispatch(
     })
 }
 
+/// 流式 dispatch 应答（第六步：token 经事件通道推送，此处仅 ack）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouterDispatchStreamResponse {
+    pub msg_id: String,
+    pub trace: String,
+}
+
+/// 经统一总线流式 dispatch（第六步：cap.ai.chat / cap.stream.echo 等流式能力）
+///
+/// 事件流走既有广播通道（`chat-event` 等 kind 经 EventAdapter → WS），
+/// 流结束时广播 `dispatch.end(stream)`。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn router_dispatch_stream(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, crate::AppState>,
+    req: RouterDispatchRequest,
+) -> Result<RouterDispatchStreamResponse> {
+    let env = Envelope {
+        id: MsgId(format!("ipc-{}", uuid::Uuid::new_v4())),
+        source: resolve_ipc_source(window.label()),
+        target: CapabilityId(req.target),
+        payload: req.payload,
+        trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+    };
+    let ack = state
+        .router
+        .dispatch_stream(env)
+        .map_err(|e| AppError::Unknown(e))?;
+    Ok(RouterDispatchStreamResponse {
+        msg_id: ack.msg_id.0,
+        trace: ack.trace.0,
+    })
+}
+
 /// 列出已注册能力（契约测试面板用）
 #[cfg(feature = "tauri-app")]
 #[tauri::command]

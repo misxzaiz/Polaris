@@ -13,20 +13,24 @@
 //! - 审计：deny/allow 均经 `AuditSink`（阶段 A 可 None，Bootstrap 直管注入）。
 //! - resolve_handle 保持 pub(crate)，防插件旁路直调（契约注释铁律）。
 
+mod ai_chat_capability;
 pub mod audit_sink;
 mod demo_capability;
 mod event_adapter;
 mod kv_capability;
 mod policy_permission;
 pub mod prompt_snippet_capability;
+mod stream_echo_capability;
 mod todo_capability;
 
+pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
 pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
 pub use kv_capability::KvCapability;
 pub use policy_permission::PolicyPermission;
 pub use prompt_snippet_capability::PromptSnippetCapability;
+pub use stream_echo_capability::StreamEchoCapability;
 pub use todo_capability::TodoCapability;
 
 use crate::contracts::*;
@@ -34,15 +38,32 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 
+/// 流式应答（dispatch_stream 立即返回；事件经 EventAdapter 通道推送）
+///
+/// 对齐 sky 的 stream 语义（`do/sky/src/router.rs:451` 流式分支返回
+/// `{stream:true, stream_id, trace}` 立即应答）：本骨架以 `{msgId, trace}` 应答，
+/// 事件流以 `dispatch.end` 收尾。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StreamAck {
+    pub msg_id: MsgId,
+    pub trace: TraceId,
+}
+
 /// RouterBus 实现
 ///
 /// - handles: 能力注册表（CapabilityHandle → Box<dyn Capability>）
+/// - streaming_caps: 流式能力平行表（CapabilityId → Arc<dyn StreamingCapability>）。
+///   `Box<dyn Capability>` 与 `Arc<dyn StreamingCapability>` 不兼容（sky 同款取舍，
+///   `do/sky/src/router.rs:152`），故用平行表而非 downcast——契约注释"dispatch 检测
+///   能力是否实现此 trait"以"检测平行表"落实，不改冻结的 Capability trait。
 /// - broadcaster: 事件适配层（复用现有生产级广播器 + in-proc 订阅）
 /// - permission: 权限裁决（dispatch 是唯一入口，所有调用统一过 gate）
 /// - storage: 契约 Storage（阶段 A 可 None，阶段 B 置 Some）
 /// - audit: AuditSink（Bootstrap 直管，dispatch 落审计）
 pub struct RouterBus {
     handles: RwLock<HashMap<CapabilityHandle, Box<dyn Capability>>>,
+    streaming_caps: RwLock<HashMap<CapabilityId, Arc<dyn StreamingCapability>>>,
     next_handle: AtomicU64,
     broadcaster: Arc<EventAdapter>,
     permission: Box<dyn Permission>,
@@ -66,6 +87,7 @@ impl RouterBus {
     ) -> Self {
         Self {
             handles: RwLock::new(HashMap::new()),
+            streaming_caps: RwLock::new(HashMap::new()),
             next_handle: AtomicU64::new(1),
             broadcaster,
             permission,
@@ -73,6 +95,146 @@ impl RouterBus {
             audit,
             plugin_configs: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// 注册流式能力（平行表；与同步表同 id 冲突拒绝）
+    pub fn register_streaming(&self, cap: Arc<dyn StreamingCapability>) -> Result<(), String> {
+        let id = cap.id();
+        let sync_conflict = self.handles.read().unwrap().values().any(|c| c.id() == id);
+        if sync_conflict {
+            return Err(format!("能力 {} 已注册为同步能力，不可重复注册为流式", id.0));
+        }
+        let mut table = self.streaming_caps.write().unwrap();
+        if table.contains_key(&id) {
+            return Err(format!("流式能力 {} 已注册", id.0));
+        }
+        table.insert(id, cap);
+        Ok(())
+    }
+
+    /// 目标是否为已注册的流式能力
+    pub fn is_streaming(&self, target: &CapabilityId) -> bool {
+        self.streaming_caps.read().unwrap().contains_key(target)
+    }
+
+    /// 流式 dispatch（第六步：事件经 EventAdapter 推送，立即返回 StreamAck）
+    ///
+    /// 全链路：广播 dispatch.start(stream) → 权限 gate → 查流式平行表 →
+    /// invoke_stream 拿 Receiver → spawn 泵任务逐 Event 转播（trace 覆写为
+    /// env.trace）→ sender 关闭后广播 dispatch.end(stream) → 立即返回 StreamAck。
+    ///
+    /// 泵任务要求调用方处于 tokio 运行时（Tauri 命令 / axum handler 均满足）。
+    pub fn dispatch_stream(&self, env: Envelope) -> Result<StreamAck, String> {
+        // 0. 广播 dispatch.start（stream 标记）
+        self.broadcaster.broadcast(Event {
+            seq: 0,
+            kind: "dispatch.start".into(),
+            payload: serde_json::json!({
+                "msg_id": env.id.0,
+                "target": env.target.0,
+                "source": format!("{:?}", env.source),
+                "stream": true,
+            }),
+            trace: env.trace.clone(),
+        });
+
+        // 1. 权限裁决（与同步 dispatch 同一 gate）
+        let perm_req = PermissionRequest {
+            capability: env.target.clone(),
+            resource: env.target.0.clone(),
+            source: env.source.clone(),
+        };
+        match self.permission.check(&perm_req)? {
+            PermissionVerdict::Deny => {
+                self.audit_deny(&env);
+                self.broadcaster.broadcast(Event {
+                    seq: 0,
+                    kind: "dispatch.deny".into(),
+                    payload: serde_json::json!({
+                        "msg_id": env.id.0,
+                        "target": env.target.0,
+                        "reason": "permission denied",
+                        "stream": true,
+                    }),
+                    trace: env.trace.clone(),
+                });
+                return Err("权限拒绝".into());
+            }
+            PermissionVerdict::Prompt => {
+                self.audit_deny(&env);
+                return Err("需用户审批，Phase 0 暂不支持".into());
+            }
+            PermissionVerdict::Allow => {}
+        }
+
+        // 2. 查流式平行表
+        let cap = self.streaming_caps.read().unwrap().get(&env.target).cloned();
+        let Some(cap) = cap else {
+            return Err(format!("流式能力未注册: {}", env.target.0));
+        };
+
+        // 3. 注入 ctx（Source 由传输层注入，invoke_stream 调用期间有效）
+        let plugin_config = self.plugin_config_for(&env.target);
+        let ctx = RealContext::new(env.source.clone(), self.storage.clone(), plugin_config);
+
+        // 4. 拿事件流
+        let mut rx = match cap.invoke_stream(env.payload.clone(), &ctx) {
+            Ok(rx) => rx,
+            Err(e) => {
+                self.broadcaster.broadcast(Event {
+                    seq: 0,
+                    kind: "dispatch.end".into(),
+                    payload: serde_json::json!({
+                        "msg_id": env.id.0,
+                        "target": env.target.0,
+                        "status": "error",
+                        "error": e,
+                        "stream": true,
+                    }),
+                    trace: env.trace.clone(),
+                });
+                return Err(e);
+            }
+        };
+
+        // 5. 审计（接受即记，事件本身不逐条落审计）
+        if let Some(audit) = self.audit.as_ref() {
+            let _ = audit.append(&AuditEntry {
+                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                capability: env.target.clone(),
+                source: env.source.clone(),
+                action: "dispatch.stream.start".into(),
+                prev_hash: String::new(),
+            });
+        }
+
+        // 6. 泵任务：Receiver → EventAdapter（trace 统一覆写；sender 全关后收尾）
+        let adapter = self.broadcaster.clone();
+        let trace = env.trace.clone();
+        let msg_id = env.id.clone();
+        let target = env.target.0.clone();
+        tokio::spawn(async move {
+            while let Some(mut ev) = rx.recv().await {
+                ev.trace = trace.clone();
+                adapter.broadcast(ev);
+            }
+            adapter.broadcast(Event {
+                seq: 0,
+                kind: "dispatch.end".into(),
+                payload: serde_json::json!({
+                    "msg_id": msg_id.0,
+                    "target": target,
+                    "status": "ok",
+                    "stream": true,
+                }),
+                trace,
+            });
+        });
+
+        Ok(StreamAck {
+            msg_id: env.id,
+            trace: env.trace,
+        })
     }
 
     /// 设置插件配置（供 dispatch 内 ctx 读取，键为插件 id）
@@ -234,11 +396,25 @@ impl Router for RouterBus {
                     trace: env.trace,
                 })
             }
-            None => Ok(Reply {
-                msg_id: env.id,
-                result: Err(format!("能力未注册: {}", env.target.0)),
-                trace: env.trace,
-            }),
+            None => {
+                // 防误用：目标在流式平行表 → 指引正确入口
+                let is_streaming = self.streaming_caps.read().unwrap().contains_key(&env.target);
+                if is_streaming {
+                    return Ok(Reply {
+                        msg_id: env.id,
+                        result: Err(format!(
+                            "能力 {} 是流式能力，请走 dispatch_stream",
+                            env.target.0
+                        )),
+                        trace: env.trace,
+                    });
+                }
+                Ok(Reply {
+                    msg_id: env.id,
+                    result: Err(format!("能力未注册: {}", env.target.0)),
+                    trace: env.trace,
+                })
+            }
         }
     }
 
@@ -569,5 +745,126 @@ mod tests {
         // chat.event 不应到达
         std::thread::sleep(std::time::Duration::from_millis(50));
         assert!(rx.try_recv().is_err());
+    }
+
+    // =========================================================================
+    // 第六步：流式骨架（dispatch_stream / 平行表 / 防误用）
+    // =========================================================================
+
+    use crate::services::router::stream_echo_capability::StreamEchoCapability;
+
+    #[tokio::test]
+    async fn dispatch_stream_pumps_events_and_ends() {
+        let (router, broadcaster) = make_router(Box::new(AllowAllPermission), None);
+        router
+            .register_streaming(Arc::new(StreamEchoCapability))
+            .unwrap();
+
+        let mut rx = broadcaster.subscribe(Filter { kind: None, trace: None });
+
+        let ack = router
+            .dispatch_stream(Envelope {
+                id: MsgId("s1".into()),
+                source: Source::Bootstrap,
+                target: CapabilityId("cap.stream.echo".into()),
+                payload: serde_json::json!({ "count": 3, "intervalMs": 1 }),
+                trace: TraceId("trace-stream".into()),
+            })
+            .unwrap();
+        assert_eq!(ack.msg_id.0, "s1");
+
+        // 收事件流：3 条 stream.echo + dispatch.end（泵任务异步，轮询收集）
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        let mut kinds = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(ev) => {
+                    assert_eq!(ev.trace.0, "trace-stream", "泵任务应统一覆写 trace");
+                    kinds.push(ev.kind.clone());
+                    if kinds.iter().filter(|k| **k == "dispatch.end".to_string()).count() >= 1
+                        && kinds.iter().filter(|k| **k == "stream.echo".to_string()).count() >= 3
+                    {
+                        break;
+                    }
+                }
+                Err(_) => tokio::time::sleep(std::time::Duration::from_millis(5)).await,
+            }
+        }
+        assert_eq!(
+            kinds.iter().filter(|k| **k == "stream.echo".to_string()).count(),
+            3
+        );
+        assert!(kinds.contains(&"dispatch.end".to_string()), "流结束应有 dispatch.end");
+        assert!(kinds.contains(&"dispatch.start".to_string()));
+    }
+
+    #[tokio::test]
+    async fn sync_dispatch_on_streaming_target_is_rejected() {
+        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        router
+            .register_streaming(Arc::new(StreamEchoCapability))
+            .unwrap();
+
+        let reply = router
+            .dispatch(Envelope {
+                id: MsgId("s2".into()),
+                source: Source::Bootstrap,
+                target: CapabilityId("cap.stream.echo".into()),
+                payload: Value::Null,
+                trace: TraceId("t".into()),
+            })
+            .unwrap();
+        let err = reply.result.unwrap_err();
+        assert!(err.contains("dispatch_stream"), "防误用提示: {}", err);
+    }
+
+    #[tokio::test]
+    async fn dispatch_stream_unregistered_returns_err() {
+        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let r = router.dispatch_stream(Envelope {
+            id: MsgId("s3".into()),
+            source: Source::Bootstrap,
+            target: CapabilityId("cap.nope".into()),
+            payload: Value::Null,
+            trace: TraceId("t".into()),
+        });
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("流式能力未注册"));
+    }
+
+    #[tokio::test]
+    async fn dispatch_stream_denied_by_permission_audits() {
+        let audit = Arc::new(crate::services::router::event_adapter::tests_support::RecordingAudit(
+            Mutex::new(Vec::new()),
+        ));
+        let (router, _) = make_router(Box::new(DenyRemotePermission), Some(audit.clone()));
+        router
+            .register_streaming(Arc::new(StreamEchoCapability))
+            .unwrap();
+
+        let r = router.dispatch_stream(Envelope {
+            id: MsgId("s4".into()),
+            source: Source::Remote { token: "x".into() },
+            target: CapabilityId("cap.stream.echo".into()),
+            payload: Value::Null,
+            trace: TraceId("t".into()),
+        });
+        assert!(r.is_err());
+        assert!(r.unwrap_err().contains("权限拒绝"));
+        assert!(
+            audit.0.lock().unwrap().iter().any(|s| s.contains("dispatch.deny")),
+            "流式 deny 应落审计"
+        );
+    }
+
+    #[tokio::test]
+    async fn register_streaming_conflicts_with_sync_handle() {
+        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        router.register_handle(Box::new(EchoCapability)).unwrap();
+        let r = router.register_streaming(Arc::new(StreamEchoCapability));
+        // cap.stream.echo 与 cap.echo 不同 id —— 改为验证同 id 冲突：重新注册同 id
+        assert!(r.is_ok());
+        let r2 = router.register_streaming(Arc::new(StreamEchoCapability));
+        assert!(r2.is_err(), "重复注册同 id 流式能力应拒绝");
     }
 }

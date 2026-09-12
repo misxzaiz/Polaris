@@ -17,7 +17,6 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::models::prompt_snippet::{CreateSnippetParams, UpdateSnippetParams};
 use crate::commands::scheduler::ProtocolDocuments;
 use crate::models::scheduler::{
     CreateProtocolTemplateParams, CreateTaskParams, PromptTemplate, ProtocolTemplate,
@@ -329,6 +328,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Contract Router: 统一转发总线（契约第三步 P2）───────────────
         "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
+        "router_dispatch_stream" => dispatch_router_dispatch_stream(&state, &args).await,
         "audit_tail" => dispatch_audit_tail(&args),
         "audit_verify" => dispatch_audit_verify(),
         "router_list_caps" => dispatch_router_list_caps(&state),
@@ -2584,6 +2584,17 @@ fn dispatch_executor_list(state: &AppState) -> Result<Json<Value>, WebError> {
 // Contract Router
 // ═══════════════════════════════════════════════════════════════════════════
 
+/// 阶段 D（step6）：把已鉴权调用的配置 token 填入 Source::Remote，
+/// 替换历史空占位——审计仍只落变体名，不泄露 token。
+fn authenticated_remote_token(state: &AppState) -> crate::contracts::Source {
+    let token = state
+        .clone_config()
+        .ok()
+        .and_then(|cfg| cfg.web.token)
+        .unwrap_or_default();
+    crate::contracts::Source::Remote { token }
+}
+
 /// 统一转发总线 dispatch（契约第三/四步：前端经 HTTP 调 dispatch 全链路）
 ///
 /// 安全铁律：Web/HTTP 前端调用一律 `Source::Remote`，不可自声明 `Bootstrap`
@@ -2596,7 +2607,7 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
 
     let env = crate::contracts::Envelope {
         id: crate::contracts::MsgId(format!("web-{}", uuid::Uuid::new_v4())),
-        source: crate::contracts::Source::Remote { token: String::new() },
+        source: authenticated_remote_token(state),
         target: crate::contracts::CapabilityId(req.target),
         payload: req.payload,
         trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
@@ -2641,6 +2652,32 @@ fn dispatch_audit_verify() -> Result<Json<Value>, WebError> {
             "total": broken as u64
         }))),
     }
+}
+
+/// 统一转发总线流式 dispatch（第六步：cap.ai.chat / cap.stream.echo）
+async fn dispatch_router_dispatch_stream(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+    let req: crate::commands::router::RouterDispatchRequest = serde_json::from_value(
+        args.get("req").cloned().unwrap_or(Value::Null),
+    )
+    .map_err(|e| WebError::BadRequest(format!("无效的流式 dispatch 请求: {}", e)))?;
+
+    let env = crate::contracts::Envelope {
+        id: crate::contracts::MsgId(format!("web-{}", uuid::Uuid::new_v4())),
+        source: authenticated_remote_token(state),
+        target: crate::contracts::CapabilityId(req.target),
+        payload: req.payload,
+        trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+    };
+
+    let ack = state
+        .router
+        .dispatch_stream(env)
+        .map_err(|e| WebError::Internal(e))?;
+
+    Ok(Json(serde_json::json!({
+        "msgId": ack.msg_id.0,
+        "trace": ack.trace.0,
+    })))
 }
 
 /// 列出已注册能力（契约测试面板用）

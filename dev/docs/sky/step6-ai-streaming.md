@@ -1,10 +1,56 @@
 # Polaris 重构 · 第六步：AI 流式能力上总线（StreamingCapability 生产化）
 
-> 状态：规划定稿（未实施）
-> 日期：2026-09-12
+> 状态：✅ 已实施（阶段 A/B/C1/D 全部落地，2026-09-12）
+> 日期：2026-09-12（规划定稿）/ 2026-09-12（四阶段实施 + Web/WS 实测）
 > 原则：**先实现新骨架，再一块块替换，不着急**。流式骨架 + demo 先行；AI 薄包装（C1）作为
 > 第一个真实流式能力并行于现有聊天链路，不碰现有前端；chat.rs 全量上总线（C2）不在本步。
-> 配套可视化原型：动工前补（沿用第三/四步节奏）。
+> 配套可视化原型：待补（沿用第三/四步节奏）。
+
+---
+
+## ⏩ 实施进展（2026-09-12）
+
+### ✅ 阶段 A：RouterBus 流式骨架
+- `services/router/mod.rs` — `streaming_caps` 平行流式注册表（sky 同款取舍：
+  `Box<dyn Capability>` 与 `Arc<dyn StreamingCapability>` 不兼容）+ `register_streaming`
+  （与同步表同 id 冲突拒绝）+ `dispatch_stream(env) -> StreamAck{msgId,trace}`：
+  dispatch.start(stream) → 同一权限 gate → invoke_stream → spawn 泵任务
+  （Receiver → EventAdapter 转播，trace 统一覆写为 env.trace；sender 全关后广播
+  `dispatch.end(stream)`）→ 立即应答。接受即落审计 `dispatch.stream.start`。
+- 同步 `dispatch` 对流式目标返回防误用错误（"请走 dispatch_stream"）。
+- 单测：全链路泵送+收尾、trace 贯通、防误用、未注册、deny 落审计、重复注册拒绝（6 例）。
+
+### ✅ 阶段 B：cap.stream.echo
+- `stream_echo_capability.rs` — `{count, intervalMs, prefix}` 按间隔发
+  `Event{kind:"stream.echo"}` 后关流；std::thread + try_send 重试（不要求调用方
+  处于 tokio 运行时）。单测 3 例（时序/关流/clamp）。
+
+### ✅ 阶段 C1：cap.ai.chat（薄包装）
+- `ai_chat_capability.rs` — 状态化能力，注册点自持 `engine_registry` Arc
+  （tokio Mutex 工作线程 blocking_lock）；动作 start/continue/interrupt；
+  事件泵与 chat.rs 的 chat-event 信封逐字节同形（SessionStart 注入 engineId、
+  session_id_update 合成 session_start 均对齐）；SessionEnd / 引擎错误（on_complete/
+  on_error）经事件门 gate.take() 关流。
+- **凭证/配置透传参数**：`envOverrides` / `settingsOverlayPath` / `mcpConfigPath`
+  （薄管道无逻辑——Profile 解析仍属 C2 范围，调用方显式传入）。
+- C1 不含项维持 §2.C 清单：pending_plans / failover / usage_db 挂钩等。
+
+### ✅ 阶段 D：安全配套
+- `web/api/ipc.rs` — `authenticated_remote_token`：把已鉴权调用的配置 token 填入
+  `Source::Remote{token}`（替换空占位；审计仍只落变体名）。
+- `router_dispatch_stream` 双通道（Tauri 命令带 webview 判定 + Web 桥分支）。
+- 收紧规则候选维持文档记录（启用时机单独裁决）。
+
+### 验证状态（2026-09-12 实测）
+
+| 项 | 结果 |
+|---|---|
+| cargo check（lib / tests / web-only） | ✅ 全绿 |
+| 独立 crate sky-verify | ✅ **93 passed / 0 failed**（新增 13：骨架 6 + echo 3 + ai.chat 参数校验/未知引擎报错 4；ai 模块为最小 shim） |
+| WS E2E：cap.stream.echo | ✅ dispatch.start(stream) → stream.echo×3 → dispatch.end(stream)，trace 全程贯通 |
+| WS E2E：cap.ai.chat 真实引擎 | ✅ 真实 claude CLI 进程经 Profile 凭证调第三方端点，模型回复"收到"经 chat-event 同形事件送达，SessionEnd 关流 → dispatch.end(stream)；审计 17 条 `dispatch.stream.start`（source=Remote） |
+| token 增量说明 | 部分中转端点不返回 delta（整段 assistant_message），前端两形态本就都消费；granular 流由 echo 场景证明 |
+| 现有聊天回归 | ✅ 零改动（start_chat 路径 / EventRouter / conversationStore 未触碰） |
 
 ---
 
