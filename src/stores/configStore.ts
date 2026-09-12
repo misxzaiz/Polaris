@@ -17,6 +17,7 @@ import { fsWatchStop } from '@/services/tauri/fileService';
 import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
 import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { configPatch } from '@/services/configDispatchService';
 
 const log = createLogger('ConfigStore');
 
@@ -185,8 +186,29 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   updateConfigPatch: async (patch) => {
     set({ loading: true, error: null });
     try {
-      const savedConfig = await tauri.updateConfigPatch(patch);
+      // 第八步试点：性能段（performance）走 cap.config 总线（白名单 + 深层合并 +
+      // 统一审计），其余字段仍走旧顶层 patch 通道。
+      // 拆分的意义：cap.config 只认白名单 section（performance），不放行
+      // perfMigrationDismissed 等非配置字段；分开保存各自正确。
+      const patchObj = patch as Record<string, unknown>;
+      const perfValue = patchObj.performance;
+      const prevPerf = get().config?.performance;
+      if (perfValue !== undefined) {
+        // 深层合并：cap.config 先读现值再合入字段，不会丢其它开关
+        await configPatch('performance', perfValue as Record<string, unknown>);
+      }
+      const restKeys = Object.keys(patchObj).filter(k => k !== 'performance');
+      if (restKeys.length > 0) {
+        const restPatch = restKeys.reduce((acc, k) => ({ ...acc, [k]: patchObj[k] }), {});
+        await tauri.updateConfigPatch(restPatch as ConfigPatch);
+      }
+      // 权威回读：两通道（cap.config + 旧 patch）分别落盘后，以最新完整 config 为真源
+      const savedConfig = await tauri.getConfig();
       await applyConfig(savedConfig);
+      // 性能段走 cap.config 后无 config-changed 事件，手动应用热切换（与事件路径同构）
+      if (perfValue !== undefined) {
+        syncPerfHotSwitch(prevPerf, savedConfig.performance);
+      }
       set({ config: savedConfig, loading: false });
       return savedConfig;
     } catch (e) {
@@ -490,4 +512,22 @@ function handlePerfSwitch(prev: PerformanceFeatures, next: PerformanceFeatures):
         perfLog.warn('加载 Editor 模块失败', { error: String(err) });
       });
   }
+}
+
+/**
+ * 手动触发性能开关热切换（第八步 cap.config 分流后调用）。
+ *
+ * 背景：性能开关保存改走 cap.config（router_dispatch）后，后端 tauri command 的
+ * `config-changed` 广播不再经过（cap.config 只落盘不 emit，广播职责在旧命令侧）。
+ * 因此本方法在 patch 成功后**手动对比新旧 performance 并应用热切换**，
+ * 与 `initPerformanceHotSwitch` 的 config-changed 监听共用 `handlePerfSwitch`，
+ * 保证两条路径（旧命令 emit vs cap.config 分流）行为一致。
+ */
+export function syncPerfHotSwitch(
+  prev: PerformanceFeatures | undefined,
+  next: PerformanceFeatures | undefined,
+): void {
+  if (!prev || !next) return;
+  handlePerfSwitch(prev, next);
+  _prev = next; // 与事件监听快照保持一致，避免后续事件重复触发
 }

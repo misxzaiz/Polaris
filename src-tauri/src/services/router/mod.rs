@@ -15,6 +15,7 @@
 
 mod ai_chat_capability;
 pub mod audit_sink;
+mod config_capability;
 mod context_capability;
 mod history_capability;
 mod demo_capability;
@@ -27,6 +28,7 @@ mod todo_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
+pub use config_capability::ConfigCapability;
 pub use context_capability::ContextCapability;
 pub use history_capability::HistoryCapability;
 pub use demo_capability::{EchoCapability, FaultyCapability};

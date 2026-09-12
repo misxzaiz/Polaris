@@ -319,6 +319,9 @@ pub fn create_app_state(
 ) -> AppState {
     let config_dir = data_root().config_dir();
 
+    // Arc 化配置存储，供 RouterBus 的 cap.config 与 AppState 共享同一实例
+    let config_store_arc: Arc<Mutex<ConfigStore>> = Arc::new(Mutex::new(config_store));
+
     // 初始化用量数据库全局单例（proxy handler 通过 record_usage 全局函数访问）
     {
         let db_path = data_root().dialogs_dir().join("usage.db");
@@ -357,7 +360,7 @@ pub fn create_app_state(
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
             EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
-            ContextCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
+            ContextCapability, ConfigCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
             TodoCapability, audit_sink, prompt_snippet_capability,
         };
         use crate::services::storage::SqliteStorage;
@@ -367,7 +370,12 @@ pub fn create_app_state(
             Arc::new(SqliteStorage::new(&config_dir).expect("SqliteStorage 初始化失败"));
 
         // 权限 gate：config.json `permissions.rules` 覆盖（装配时载入，缺省全放行）
-        let initial_permissions = config_store.get().permissions.clone();
+        let initial_permissions = config_store_arc
+            .lock()
+            .unwrap()
+            .get()
+            .permissions
+            .clone();
         let permission = Box::new(PolicyPermission::from_config(
             initial_permissions.as_ref(),
         ));
@@ -412,6 +420,13 @@ pub fn create_app_state(
         let _ = bus.register_handle(Box::new(PromptSnippetCapability));
         // cap.context —— 第七步阶段 B1：上下文唯一入口（内存存储同源）
         let _ = bus.register_handle(Box::new(ContextCapability::new(state_context_store.clone())));
+        // cap.config —— 第八步：系统配置统一入口（性能开关试点）。
+        // on_patch 回调暂为空（副作用链 cascade/refresh/emit 由调用方 tauri command /
+        // Web API 在收到 patch 结果后触发，与现有 update_config_patch 同构）。
+        let _ = bus.register_handle(Box::new(ConfigCapability::new(
+            config_store_arc.clone(),
+            Box::new(|_| {}),
+        )));
         // 第六步：流式能力（平行表，走 dispatch_stream）
         // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）
         let _ = bus.register_streaming(Arc::new(StreamEchoCapability));
@@ -420,7 +435,7 @@ pub fn create_app_state(
     };
 
     AppState {
-        config_store: Arc::new(Mutex::new(config_store)),
+        config_store: config_store_arc.clone(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: state_context_store.clone(),
         integration_manager: AsyncMutex::new(integration_manager),
