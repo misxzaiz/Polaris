@@ -201,42 +201,11 @@ fn handle_tools_list() -> Value {
     json!({
         "tools": [
             tool_def("bus_help", "查询总线能力与工具说明：已注册的能力（cap.*）、本 server 全部工具及入参、bus_dispatch 白名单、域迁移路线图。首次使用请先调用本工具", &[], json!({})),
-            tool_def("todo_list", "列出待办（支持 scope/status/priority/limit 过滤；scope 默认 workspace，传 all 返回全部）", &[], json!({
-                "scope": { "type": "string", "enum": ["workspace", "all"] },
-                "workspacePath": { "type": "string" },
-                "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] },
-                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                "limit": { "type": "integer" }
-            })),
-            tool_def("todo_get", "获取单个待办详情", &["id"], json!({
-                "id": { "type": "string", "minLength": 1 }
-            })),
-            tool_def("todo_create", "创建待办", &["content"], json!({
-                "content": { "type": "string", "minLength": 1 },
-                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                "description": { "type": "string" },
-                "workspacePath": { "type": "string" },
-                "workspaceName": { "type": "string" },
-                "tags": { "type": "array", "items": { "type": "string" } }
-            })),
-            tool_def("todo_update", "更新待办（部分字段）", &["id"], json!({
-                "id": { "type": "string", "minLength": 1 },
-                "content": { "type": "string" },
-                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                "description": { "type": "string" },
-                "status": { "type": "string", "enum": ["pending", "in_progress", "completed"] }
-            })),
-            tool_def("todo_complete", "完成待办（置 completed_at）", &["id"], json!({
-                "id": { "type": "string", "minLength": 1 },
-                "lastProgress": { "type": "string" }
-            })),
-            tool_def("todo_delete", "删除待办", &["id"], json!({
-                "id": { "type": "string", "minLength": 1 }
-            })),
             tool_def("bus_dispatch", "通用总线转发：把 payload 发给白名单内的能力（当前仅 cap.todo）。供高级用法；日常请用 todo_* 工具", &["target", "payload"], json!({
                 "target": { "type": "string", "enum": ["cap.todo"] },
                 "payload": { "type": "object" }
             })),
+
         ]
     })
 }
@@ -253,8 +222,6 @@ fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
             // 统一 MCP tools/call 返回形态（content 文本承载 JSON）
             return Ok(tool_text(&handle_bus_help(router).to_string()));
         }
-        "todo_list" | "todo_get" | "todo_create" | "todo_update" | "todo_complete"
-        | "todo_delete" => "cap.todo",
         "bus_dispatch" => {
             let target = arguments
                 .get("target")
@@ -272,20 +239,7 @@ fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
         }
     };
 
-    let payload = match name {
-        "bus_dispatch" => arguments.get("payload").cloned().unwrap_or(json!({})),
-        "todo_list" | "todo_get" | "todo_create" | "todo_update" | "todo_complete"
-        | "todo_delete" => {
-            let mut p = arguments.clone();
-            if let Some(obj) = p.as_object_mut() {
-                let action = name.trim_start_matches("todo_");
-                obj.insert("action".into(), json!(action));
-                // 工具名 → 能力动作语义对齐：complete → complete 已一致
-            }
-            p
-        }
-        _ => json!({}),
-    };
+    let payload = arguments.get("payload").cloned().unwrap_or(json!({}));
 
     let env = Envelope {
         id: MsgId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
@@ -333,17 +287,29 @@ fn handle_bus_help(router: &RouterBus) -> Value {
         },
         "modules": [
             { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
-              "tools": ["todo_list", "todo_get", "todo_create", "todo_update", "todo_complete", "todo_delete", "bus_dispatch→cap.todo"],
-              "状态": "✅ 本 server 可用" },
+              "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）" },
             { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "主应用总线（流式 + 同步）", "状态": "🚚 仅主应用进程；MCP 侧待接" },
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "🚚 仅主应用进程；内存不跨进程，MCP 侧不提供" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "🚚 仅主应用进程" },
             { "domain": "dialog / requirement / scheduler / browser / config 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
+        "protocol": {
+            "说明": "bus_dispatch 的 payload = { \"action\": <动作>, ...动作参数 }。各白名单能力的动作协议如下（与能力实现逐一对应）",
+            "cap.todo": {
+                "list":      { "参数": { "scope": "workspace|all（默认 workspace）", "workspacePath": "string?", "status": "pending|in_progress|completed", "priority": "low|normal|high|urgent", "limit": "int?" }, "返回": "{ items: TodoItem[] }" },
+                "get":       { "参数": { "id": "string（必填）" }, "返回": "{ item: TodoItem|null }" },
+                "create":    { "参数": { "content": "string（必填，非空）", "priority": "low|normal|high|urgent?", "description": "string?", "tags": "string[]?", "workspacePath": "string?", "workspaceName": "string?", "dueDate": "string?", "estimatedHours": "number?" }, "返回": "{ item: TodoItem }" },
+                "update":    { "参数": { "id": "string（必填）", "content/status/priority/description/tags/dueDate/spentHours/lastProgress 等": "均可选部分更新" }, "返回": "{ item: TodoItem }" },
+                "start":     { "参数": { "id": "string（必填）", "lastProgress": "string?" }, "返回": "{ item }（status→in_progress）" },
+                "complete":  { "参数": { "id": "string（必填）", "lastProgress": "string?" }, "返回": "{ item }（置 completed_at）" },
+                "delete":    { "参数": { "id": "string（必填）" }, "返回": "{ item }（被删条目）" },
+                "breakdown": { "参数": {}, "返回": "{ stats: {工作区名: 数量} }" }
+            }
+        },
         "usage_examples": [
-            { "tool": "todo_create", "arguments": { "content": "完成代码评审", "priority": "high" } },
-            { "tool": "todo_list", "arguments": { "scope": "all", "status": "pending" } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all" } } }
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "create", "content": "完成代码评审", "priority": "high" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all", "status": "pending" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } }
         ]
     })
 }
