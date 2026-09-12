@@ -373,6 +373,25 @@ async fn handle_form_frame(
     if form_id.is_empty() {
         return Err(AppError::ValidationError("form 帧缺少 callId(formId)".into()));
     }
+    // 白名单拉起时拦截（阶段 E）：target 不在白名单 → AI 立即拿到失败原因，
+    // 不落 hold、不给用户渲染表单。白名单是 form 工具层的默认拒绝兜底。
+    if !form_flow::target_allowed(&target) {
+        write_frame(
+            stream,
+            &json!({
+                "type": "form_error",
+                "formId": form_id,
+                "message": format!(
+                    "目标能力 {} 不在表单白名单（{}）",
+                    target,
+                    form_flow::FORM_TARGET_WHITELIST.join(" / ")
+                ),
+            }),
+        )
+        .await?;
+        let _ = stream.shutdown().await;
+        return Ok(());
+    }
     let hold = match form_flow::build_hold(
         &form_id,
         &session_id,

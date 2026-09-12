@@ -1,7 +1,7 @@
 # Polaris 重构 · 第九步：表单工具支持（阻断式 form + schema 驱动面板）
 
-> 状态：规划定稿，实施中（阶段 D 完成）
-> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）/ 阶段 C（2026-09-13）/ 阶段 D（2026-09-13）
+> 状态：规划定稿，实施完成（阶段 A-E 全部落地）
+> 日期：2026-09-12（复审后定稿）/ 阶段 A（2026-09-12）/ 阶段 B（2026-09-12）/ 阶段 C（2026-09-13）/ 阶段 D（2026-09-13）/ 阶段 E（2026-09-13）
 > 目标目录：`dev/docs/sky/`
 > 承接：第八步（`step8-config.md`）之后；对应审借分析 §2.4/§2.5（`plans/sky-refactor-borrow-analysis.md`）
 > 原则：**给 AI 一个「拉起 → 挂起 → 提交 → 回填」的结构化输入闭环，复用既有会话桥，不新增旁路通道。**
@@ -73,8 +73,23 @@
 不回流。即：**拉起帧/ack 走 MCP 通道，提交/回填走 cap.ai.chat 通道**，两条通道在服务端
 `form_holds` 交汇。
 
-### 下一阶段：阶段 E（目标能力白名单逐个放开）
-阶段 D 验收后按 §8 实施顺序推进（kv → todo → context → … → config 后续）。
+### ✅ 阶段 E：目标能力白名单逐个放开（已落地）
+
+- `src-tauri/src/services/form_flow.rs` —— 新增 `FORM_TARGET_WHITELIST: &[&str] = &["cap.kv","cap.todo","cap.context"]`
+  + `target_allowed(&str) -> bool`（精确匹配）。**语义：默认拒绝、仅白名单放行**——与全局
+  权限矩阵（默认放行）方向相反，作为 form 工具层的独立兜底；放开即改表，不动架构。
+- `src-tauri/src/services/ask_listener.rs` —— `handle_form_frame` 拉起时拦截：target 不在
+  白名单 → 回写 `form_error` 帧（AI 立即拿到失败原因，不渲染表单、不落 hold）。
+- `src-tauri/src/services/form_flow.rs` —— `submit_form` 提交时纵深防御：即使 hold 被篡改为
+  非白名单 target，提交也拒绝（回执失败，不转发）。防绕过拉起校验。
+- `src-tauri/src/services/router/ai_chat_capability.rs` —— `form_submit` 分支错误措辞细化
+  （带 formId，白名单拒绝语境通顺）。
+- 验证：`cargo check --lib` / `--tests` 双绿；form_flow 新增 3 单测（白名单精确匹配 /
+  trim 容错 / 非白名单提交拒绝[DummyRouter 兜底不触发 dispatch]）。
+
+### 阶段 E 收尾说明
+白名单当前只含数据域（kv/todo/context）；cap.config 等管理面目标拒绝。后续放开即改
+`FORM_TARGET_WHITELIST` 常量表，前端/引擎零改动。
 
 ---
 

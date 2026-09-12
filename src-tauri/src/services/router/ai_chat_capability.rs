@@ -241,7 +241,10 @@ impl Capability for AiChatCapability {
                         ));
                         match reply {
                             Ok(reply) => Ok(reply),
-                            Err(e) => Err(format!("目标能力执行失败: {}", e)),
+                            Err(e) => Err(format!(
+                                "表单目标能力执行失败（formId={}）: {}",
+                                hold.form_id, e
+                            )),
                         }
                     }
                     "register_pending_question" => {
