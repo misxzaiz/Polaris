@@ -74,6 +74,45 @@ export async function configGet(section: string = 'all'): Promise<Record<string,
 }
 
 /**
+ * 读取完整 config（D 阶段摘旧：前端 configStore 驱动 UI 需要全量）。
+ * 等价旧 `get_config`；敏感字段仍脱敏。桌面走 router_dispatch（Bootstrap），
+ * Web 走 HTTP router_dispatch（Remote，已认证）——cap.config get full 不限源。
+ */
+export async function configGetFull(): Promise<Config> {
+  const res = await dispatchConfig('get', { section: 'full' })
+  return res as unknown as Config
+}
+
+/**
+ * 顶层对象 patch（D 阶段摘旧：前端 updateConfigPatch 切换后的协议）。
+ * `patch` 内可混含白名单 section（严格深层合并）与自由顶层 key（透传
+ * store.patch 整体替换），一次落盘全部。返回完整 Config。
+ */
+export async function configPatchTop(patch: Record<string, unknown>): Promise<Config> {
+  try {
+    // 桌面：config_patch_via_bus（补 emit 热切换广播）
+    if (currentMode === 'tauri') {
+      const res = await invoke<DispatchResponse>('config_patch_via_bus', {
+        req: {
+          target: 'cap.config',
+          payload: { action: 'patch', patch },
+        },
+      })
+      if (!res.ok) {
+        throw new Error(res.error || `cap.config patch 失败`)
+      }
+      return (res.result || {}) as unknown as Config
+    }
+    // Web：router_dispatch（现状，无 emit）
+    const res = await dispatchConfig('patch', { patch })
+    return res as unknown as Config
+  } catch (e) {
+    log.warn('cap.config patchTop 失败', { error: String(e), mode: currentMode })
+    throw e
+  }
+}
+
+/**
  * patch 指定 section。多字段 section 内部先读现值再深层合并，
  * 不会丢其它字段。返回完整 Config（与旧 update_config_patch 对齐）。
  *

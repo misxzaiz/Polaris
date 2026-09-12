@@ -17,7 +17,6 @@ import { fsWatchStop } from '@/services/tauri/fileService';
 import { schedulerStop, schedulerStart } from '@/services/tauri/schedulerService';
 import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
-import { configPatch } from '@/services/configDispatchService';
 
 const log = createLogger('ConfigStore');
 
@@ -186,26 +185,15 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
   updateConfigPatch: async (patch) => {
     set({ loading: true, error: null });
     try {
-      // 第八步试点：性能段（performance）走 cap.config 总线（白名单 + 深层合并 +
-      // 统一审计），其余字段仍走旧顶层 patch 通道。
-      // 拆分的意义：cap.config 只认白名单 section（performance），不放行
-      // perfMigrationDismissed 等非配置字段；分开保存各自正确。
-      const patchObj = patch as Record<string, unknown>;
-      const perfValue = patchObj.performance;
+      // D 阶段：统一走 cap.config 顶层对象 patch（白名单 section 严格深层合并 +
+      // 自由 key 透传），Rust 端一次落盘全部；不再分 performance / rest 双通道。
+      // cap.config 共享同一 ConfigStore 锁，多 key 顺序写仍原子于单请求。
+      const perfValue = (patch as Record<string, unknown>).performance;
       const prevPerf = get().config?.performance;
-      if (perfValue !== undefined) {
-        // 深层合并：cap.config 先读现值再合入字段，不会丢其它开关
-        await configPatch('performance', perfValue as Record<string, unknown>);
-      }
-      const restKeys = Object.keys(patchObj).filter(k => k !== 'performance');
-      if (restKeys.length > 0) {
-        const restPatch = restKeys.reduce((acc, k) => ({ ...acc, [k]: patchObj[k] }), {});
-        await tauri.updateConfigPatch(restPatch as ConfigPatch);
-      }
-      // 权威回读：两通道（cap.config + 旧 patch）分别落盘后，以最新完整 config 为真源
-      const savedConfig = await tauri.getConfig();
+      const savedConfig = await tauri.updateConfigPatch(patch);
       await applyConfig(savedConfig);
-      // 性能段走 cap.config 后无 config-changed 事件，手动应用热切换（与事件路径同构）
+      // performance 变更：手动补热切换（cap.config 写路径不广播 config-changed，
+      // 与后端事件路径差异化；syncPerfHotSwitch 与事件监听共享 handlePerfSwitch）
       if (perfValue !== undefined) {
         syncPerfHotSwitch(prevPerf, savedConfig.performance);
       }

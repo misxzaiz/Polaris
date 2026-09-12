@@ -1,9 +1,14 @@
 /**
  * 配置相关 Tauri 命令
+ *
+ * D 阶段摘旧：getConfig/updateConfig/updateConfigPatch 三个「config 读写」出口
+ * 改走 cap.config 总线（configDispatchService），统一权限 gate + 审计 + 白名单
+ * + 深层合并；其余命令（web/路径/CLI 生命周期）仍走原生 invoke。
  */
 
 import { invoke } from '@/services/transport';
 import type { Config, ConfigPatch, HealthStatus } from '@/types';
+import { configGetFull, configPatchTop } from '@/services/configDispatchService';
 
 export interface WebServerStatus {
   running: boolean;
@@ -12,19 +17,19 @@ export interface WebServerStatus {
   url?: string | null;
 }
 
-/** 获取配置 */
+/** 获取配置（经 cap.config get full，等价旧 get_config） */
 export async function getConfig(): Promise<Config> {
-  return invoke<Config>('get_config');
+  return configGetFull();
 }
 
-/** 更新配置 */
+/** 更新配置（整对象 → cap.config patch 逐顶层 key 覆盖） */
 export async function updateConfig(config: Config): Promise<void> {
-  return invoke('update_config', { config });
+  await configPatchTop(config as unknown as Record<string, unknown>);
 }
 
-/** 按字段合并更新配置 */
+/** 按字段合并更新配置（cap.config patch 顶层对象：白名单严格 + 自由 key 透传） */
 export async function updateConfigPatch(patch: ConfigPatch): Promise<Config> {
-  return invoke<Config>('update_config_patch', { patch });
+  return configPatchTop(patch as unknown as Record<string, unknown>);
 }
 
 export async function applyWebServer(): Promise<WebServerStatus> {

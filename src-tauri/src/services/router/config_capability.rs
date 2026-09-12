@@ -383,10 +383,27 @@ impl Capability for ConfigCapability {
                 do_get(config.get(), section)
             }
             "patch" => {
+                // 顶层对象形态：{ "patch": { key: value, ... } } —— 前端
+                // updateConfigPatch 切换后走此协议（一次 patch 多个顶层 key，
+                // 白名单 section 严格深层合并 / 自由 key 透传 store.patch）。
+                if let Some(top_patch) = params.get("patch") {
+                    let top_obj = top_patch.as_object().ok_or_else(|| {
+                        "cap.config patch 的 patch 参数必须是对象".to_string()
+                    })?;
+                    let mut saved = Value::Null;
+                    for (k, v) in top_obj {
+                        saved = do_patch(&self.config_store, k, v)?;
+                        // 副作用链回调（每个顶层 key 落盘后都触发；on_patch 幂等）
+                        if let Ok(config) = serde_json::from_value::<Config>(saved.clone()) {
+                            (self.on_patch)(&config);
+                        }
+                    }
+                    return Ok(saved);
+                }
                 let section = params
                     .get("section")
                     .and_then(|s| s.as_str())
-                    .ok_or_else(|| "patch 需要 section 参数".to_string())?;
+                    .ok_or_else(|| "patch 需要 section 或 patch 参数".to_string())?;
                 let value = params
                     .get("value")
                     .ok_or_else(|| "patch 需要 value 参数".to_string())?;

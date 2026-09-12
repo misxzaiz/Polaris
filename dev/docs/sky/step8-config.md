@@ -122,7 +122,7 @@
 2. `cap.config`：`get/patch/schema/apply_web/reset_cli` 全链路 + 白名单越权拒绝 + 脱敏快照。
 3. **副作用链验证**：patch 后 Claude settings.json 级联更新、引擎缓存失效、`config-changed` 广播。
 4. 权限：Web 测试台传 `cap.config` → Deny 落审计；桌面主窗口 → Allow；`cap.config.read` 精确放行生效。
-5. 摘旧四层清单全过（代码标识 / 持久化配置 / 用户可见性 / AI 工具消费方）；`grep get_config|update_config_patch|handle_update_settings` 零残留；**httpTransport 三命令映射已切 dispatch**；**`config_store` 旁路直读点（lib.rs:730/1298/1356、integration.rs:290 等）全量核对、无第二通道残留**。
+5. 摘旧四层清单全过（代码标识 / 持久化配置 / 用户可见性 / AI 工具消费方）；`grep get_config|update_config_patch|handle_update_settings` 零残留；**httpTransport 三命令映射已切 dispatch**；**`config_store` 旁路直读点（lib.rs:730/1298/1356、integration.rs:290 等）全量核对、无第二通道残留**。✅ **D 阶段完成（2026-09-13）**，见 §8.1。
 6. 24h 用户可见性回访：Settings 各 Tab 保存/热生效 / Web 开关 / ModelProfile 切换 / 局域网访问全回归。
 
 ## 5. 影响面
@@ -186,10 +186,65 @@
 
 ### 遗留（后续阶段）
 
-- **D**：摘旧四层清单（lib.rs `update_config_patch` / settings.rs / httpTransport 映射）。
-  试点阶段旧通道保留（双写并存，cap.config 已收敛性能段）。
+- **D：摘旧四层清单（lib.rs `update_config_patch` / settings.rs / httpTransport 映射）已完成，
+  见 §8.1**。试点阶段旧通道现已全摘（cap.config 收敛全部 config 读写）。
 - Web 模式 `dispatch_router_dispatch` source=Remote，默认权限全放行可写；预埋
   `cap.config* → remote deny` 规则待运行时需要在 config.json permissions.rules 注入。
+
+---
+
+## 8.1 D 阶段：摘旧四层完成记录（2026-09-13）
+
+同步 §2.C 交付清单，D 三个阶段（D0 前置分析 → D1 Web 侧切换 → D2 摘除）全部落地。
+
+### 四层摘除清单（对应 §2.C）
+
+| 复刻 | 文件 | D 后状态 |
+|---|---|---|
+| 命令层 | `lib.rs` `get_config` / `update_config` / `update_config_patch` | ✅ 三个命令壳全摘；新增 `config_patch_via_bus`（桌面经总线 + 补副作用） |
+| Web 桥 | `web/api/ipc.rs` `get_config` 直读分支 | ✅ 分支摘除改为 `router_dispatch cap.config`；注释标 D 阶段 |
+| 第三份 | `web/api/settings.rs` | ✅ 重写为恒走 `router_dispatch`（`dispatch_config`），不再直读 ConfigStore |
+| 路由映射 | `src/services/transport/httpTransport.ts` | ✅ `COMMAND_ROUTE_MAP` settings 项删除 + GET 特例清理；`serializeRequestBody(args?)` 简化 |
+
+### D 阶段新增
+
+1. **cap.config `get full`** —— 完整 config 读取（40 顶层 key），敏感字段脱敏
+   （`web.token`/`modelProfiles[].apiKey`/`providerGroups[].apiKey` → `****…`）。
+   任何已认证源可用（读取本身安全，前端 configStore 驱动 UI 必需完整 config）。
+2. **cap.config `patch` 顶层对象形态** `{ patch: { key: value, ... } }` —— 前端
+   `updateConfigPatch` 切换后走此协议，一次 patch 多个顶层 key。
+3. **passthrough 透传** —— 非白名单顶层自由 key（`chatDisplay`/`workspaces`/`currentWorkspaceId`
+   等）经 `store.patch` 透传整体替换，与旧 `update_config_patch` 行为完全对齐（浅层合并 +
+   serde default 补全）；白名单 section（core/performance/web）仍严格字段校验 + 深层合并，
+   ReadOnly（modelProfiles）/Locked（permissions）拒绝。
+
+### 前端分层
+
+- `configDispatchService.ts`：新增 `configGetFull()`（`get full`）与 `configPatchTop(patch)`
+  （桌面 `config_patch_via_bus` / Web `router_dispatch`）。
+- `tauri/configService.ts`：`getConfig → configGetFull()`；`updateConfig → configPatchTop(config)`；
+  `updateConfigPatch → configPatchTop(patch)`。全部出口收敛到 cap.config。
+- `stores/configStore.ts`：`updateConfigPatch` 单一 `configPatchTop` 通道；保留
+  `syncPerfHotSwitch` 手动热切换。
+
+### 验证证据（D3 全量）
+
+1. verify crate **119 tests / 0 failed**（Tauri DLL 绕行独立 crate，含 `get_full_masks_sensitive`、
+   `patch_passthrough_triggers_side_effects`、`patch_top_object_mixed`、`patch_top_object_side_effect_order`）。
+2. cargo check **双模式全绿**：`--no-default-features --bin polaris-web` / `--features tauri-app`
+   （EXIT=0，37 存量 warnings）。
+3. `npx tsc --noEmit`：D 改动文件（configService/configDispatchService/configStore/httpTransport）
+   **零错误**（42 个存量基线未变）。
+4. **残留 grep 零壳**：`get_config` / `update_config` / `update_config_patch` / `handle_update_settings`
+   均无命令壳残留（`get_config_dir`/`agnes_get_config`/MCP 工具名等无害例外）。
+5. **旁路安全核对**：39 个 `config_store.lock()` 直读点全量检查 —— 全部为**独立业务命令**
+   （cli_info 读路径、file_watcher 启停、logging 开关、lsp 索引、plugin 配置、scheduler、health），
+   非 config 读写壳；写点 `logging.rs:77`（enable_logging）/ `integration.rs:290`（qqbot/feishu/dingtalk）
+   属业务命令写自己的 section，且均**不在 cap.config 白名单**，保留正确。
+6. **隔离实例冒烟**（重编译含 D2 改动）：get full 40 key 脱敏 / 多 key 顶层 patch 全生效 /
+   modelProfiles ReadOnly 拒绝 / permissions Locked 拒绝 / performance 字段级拒绝 spyware /
+   config.json 持久化（fileWatcher=true、chatDisplay.contentWidth=90、深层字段 serde default）/
+   junkField 未知 key 静默丢弃（对齐旧命令）。
 
 ---
 

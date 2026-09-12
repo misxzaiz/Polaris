@@ -221,13 +221,8 @@ pub async fn handle_ipc_bridge(
         // ── Context Memory ─────────────────────────────────────────────────
 
         // ── Config ──────────────────────────────────────────────────────────
-        "get_config" => {
-            let store = state.lock_config()?;
-            let config = store.get().clone();
-            serde_json::to_value(config)
-                .map(Json)
-                .map_err(|e| WebError::Internal(format!("序列化失败: {e}")))
-        }
+        // D 阶段：config 读写统一走 router_dispatch cap.config（get full / patch 顶层对象）。
+        // 旧 get_config 直读分支已摘除（前端 configService → configDispatchService）。
         "health_check" => {
             let store = state.lock_config()?;
             let status = store.health_status();

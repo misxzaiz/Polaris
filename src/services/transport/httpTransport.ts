@@ -27,10 +27,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
   // Chat
   // Legacy Claude Code session history commands — dedicated endpoints returning flat arrays
   // Sessions (paginated)
-  // Settings
-  get_config: '/api/settings',
-  update_config: '/api/settings',
-  update_config_patch: '/api/settings',
+  // Settings (D 阶段：config 读写已切 cap.config 总线 router_dispatch，不再映射 /api/settings)
   // Auth
   health_check: '/api/health',
 };
@@ -46,7 +43,7 @@ const COMMAND_ROUTE_MAP: Record<string, string> = {
  * "list sessions" endpoint and returning session metadata instead of messages — which
  * silently breaks session restore in Web mode.
  */
-const GET_COMMANDS: ReadonlySet<string> = new Set(['get_config', 'health_check']);
+const GET_COMMANDS: ReadonlySet<string> = new Set(['health_check']);
 
 function commandToPath(command: string): string {
   if (command in COMMAND_ROUTE_MAP) {
@@ -67,20 +64,8 @@ function isGetCommand(command: string): boolean {
   return GET_COMMANDS.has(command);
 }
 
-function serializeRequestBody(command: string, args?: Record<string, unknown>): string {
-  const payload = command === 'update_config'
-    && args
-    && Object.prototype.hasOwnProperty.call(args, 'config')
-    && args.config !== undefined
-    ? args.config
-    : command === 'update_config_patch'
-      && args
-      && Object.prototype.hasOwnProperty.call(args, 'patch')
-      && args.patch !== undefined
-      ? args.patch
-    : (args ?? {});
-
-  return JSON.stringify(payload);
+function serializeRequestBody(args?: Record<string, unknown>): string {
+  return JSON.stringify(args ?? {});
 }
 
 /** Compute backoff delay with exponential increase and jitter */
@@ -383,8 +368,6 @@ export function createHttpTransport(
           const qs = params.toString();
           if (qs) url = `${url}?${qs}`;
         }
-      } else if (command === 'update_config' || command === 'update_config_patch') {
-        method = 'PATCH';
       }
 
       const fetchOpts: RequestInit = {
@@ -393,7 +376,7 @@ export function createHttpTransport(
         signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
       };
       if (method !== 'GET' && method !== 'DELETE') {
-        fetchOpts.body = serializeRequestBody(command, args);
+        fetchOpts.body = serializeRequestBody(args);
       }
 
       let res: Response;

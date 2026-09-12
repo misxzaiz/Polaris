@@ -129,54 +129,6 @@ use tauri::{Emitter, Manager};
 // Tauri Commands
 // ============================================================================
 
-/// 获取配置
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-fn get_config(state: tauri::State<AppState>) -> Result<Config> {
-    let store = state.config_store.lock()
-        .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-    Ok(store.get().clone())
-}
-
-/// 更新配置
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-async fn update_config(
-    config: Config,
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<()> {
-    let next_config = {
-        let mut store = state.config_store.lock()
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        store.update(config)?;
-        store.get().clone()
-    };
-    cascade_active_model_profile(&next_config);
-    refresh_engine_configs(&state, next_config.clone()).await;
-    emit_config_changed(&app_handle, &next_config).await;
-    Ok(())
-}
-
-/// 按字段合并更新配置
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-async fn update_config_patch(
-    patch: serde_json::Value,
-    app_handle: tauri::AppHandle,
-    state: tauri::State<'_, AppState>,
-) -> Result<Config> {
-    let saved_config = {
-        let mut store = state.config_store.lock()
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        store.patch(patch)?
-    };
-    cascade_active_model_profile(&saved_config);
-    refresh_engine_configs(&state, saved_config.clone()).await;
-    emit_config_changed(&app_handle, &saved_config).await;
-    Ok(saved_config)
-}
-
 /// 经 RouterBus 走 cap.config 的配置补丁保存（第八步 A2：桌面参数经总线 + 全量副作用）。
 ///
 /// 与 `update_config_patch`（直写 ConfigStore）的区别：
@@ -834,10 +786,7 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
-            // 配置相关
-            get_config,
-            update_config,
-            update_config_patch,
+            // 配置相关（读写统一走 cap.config 总线；config_patch_via_bus 桌面经总线补副作用）
             config_patch_via_bus,
             apply_web_server,
             get_web_server_status,
