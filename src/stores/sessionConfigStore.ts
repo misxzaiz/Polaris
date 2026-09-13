@@ -120,16 +120,26 @@ export const useSessionConfig = create<SessionConfigState>()(
     }),
     {
       name: 'polaris-session-config',
-      // 仅持久化本机会话偏好（agent/model/effort/permissionMode）。
-      // modelProfileId/profileMode/providerGroupId 不持久化：它们派生自
-      // configStore（后端 config.json 为真相源），由 applyConfig 注入，
-      // 避免与 configStore 双写导致的状态不一致。
+      // 持久化本机会话偏好：agent/model/effort/permissionMode + 供应商三态
+      // （modelProfileId/profileMode/providerGroupId）。
+      //
+      // 背景：三字段此前刻意不持久化（派生自 configStore 后端 config.json，由 applyConfig
+      // 注入），但代价是「状态栏手动切换」只存在于内存镜像，刷新即丢。方案 A 将其加回，
+      // 让状态栏手动选择（Profile/分组/官方）刷新后保留。
+      //
+      // 与后端 config.json 的双写一致性由两条路径保证：
+      // - 设置页激活（ModelProviderTab.handleActivate）双向同步：写镜像 + 写后端 activeModelProfileId
+      // - 状态栏切换（SessionConfigSelector.handleSelect）写镜像 + 会话 metadata
+      // 两者都更新镜像，镜像始终反映「最近的全局默认或手动选择」。
       partialize: (state) => ({
         config: {
           agent: state.config.agent,
           model: state.config.model,
           effort: state.config.effort,
           permissionMode: state.config.permissionMode,
+          modelProfileId: state.config.modelProfileId,
+          profileMode: state.config.profileMode,
+          providerGroupId: state.config.providerGroupId,
         }
       }),
       // 反序列化时清洗废弃值（effort='max' / permissionMode='bypassPermissions'），

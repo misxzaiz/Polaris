@@ -55,11 +55,24 @@ export async function applyConfig(config: Config): Promise<void> {
       store.setActiveProfileId(config.activeModelProfileId);
     }
   }
-  // 全局 activeModelProfileId 同步到 sessionConfigStore（未手动设置过状态栏 Profile 的会话兜底）
+  // 全局 activeModelProfileId 同步到 sessionConfigStore（未手动设置过状态栏 Profile 的会话兜底）。
+  // 镜像持久化（方案 A）后，需处理「悬空镜像」：跨窗口删除 Profile 后，本窗口镜像残留该
+  // Profile ID，若不清理会遮蔽后端新默认，发送时命中 notFoundRuntime。故：
+  // - 镜像为空 → 注入后端默认（保持原语义）
+  // - 镜像非空但 Profile 已不存在 → 清空镜像，回退后端默认
+  //
+  // 判断 Profile 是否存在直接用后端 config.modelProfiles（真相源），而非 modelProfileStore：
+  // 后者仅在 config.modelProfiles?.length 非空时才被 setProfiles 灌入，空列表时会残留旧值
+  // 导致误判。
   if (config.activeModelProfileId) {
     const { useSessionConfig } = await import('./sessionConfigStore');
     const sessionState = useSessionConfig.getState();
-    if (!sessionState.config.modelProfileId) {
+    const mirrorId = sessionState.config.modelProfileId;
+    const profiles = config.modelProfiles ?? [];
+    const mirrorProfileExists = mirrorId
+      ? profiles.some((p) => p.id === mirrorId)
+      : false;
+    if (!mirrorId || !mirrorProfileExists) {
       sessionState.setModelProfileId(config.activeModelProfileId);
     }
   }
