@@ -1091,40 +1091,15 @@ pub fn run() {
             commands::requirement::save_requirement_prototype,
             commands::requirement::read_requirement_prototype,
             commands::requirement::get_requirement_workspace_breakdown,
-            // Plugin 相关
-            commands::plugin::plugin_list,
-            commands::plugin::plugin_discover,
-            commands::plugin::plugin_install_locations,
-            commands::plugin::plugin_validate_manifest,
-            commands::plugin::plugin_install_local,
-            commands::plugin::plugin_install_package,
-            commands::plugin::plugin_install_remote,
-            commands::plugin::plugin_check_update,
-            commands::plugin::plugin_apply_update,
-            commands::plugin::plugin_install,
-            commands::plugin::plugin_enable,
-            commands::plugin::plugin_disable,
-            commands::plugin::plugin_update,
-            commands::plugin::plugin_uninstall_local,
-            commands::plugin::plugin_uninstall_with_cleanup,
-            commands::plugin::plugin_force_uninstall,
-            commands::plugin::plugin_uninstall,
-            commands::plugin::marketplace_list,
-            commands::plugin::marketplace_add,
-            commands::plugin::marketplace_remove,
-            commands::plugin::marketplace_update,
+            // Plugin 相关：管理面已上总线（cap.pluginDiscovery + cap.pluginServiceManager，
+            // 见 services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
+            // 旧命令层 commands/plugin.rs + commands/plugin_service.rs 已整体删除，不再注册
+            // Tauri 命令。plugin_state/plugin_config 为独立域保留。
             commands::plugin_state::plugin_state_load,
             commands::plugin_state::plugin_state_save,
             // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
             commands::plugin_config::plugin_get_config,
             commands::plugin_config::plugin_set_config,
-            // 插件服务管理
-            commands::plugin_service::plugin_service_start,
-            commands::plugin_service::plugin_service_stop,
-            commands::plugin_service::plugin_service_restart,
-            commands::plugin_service::plugin_service_list_status,
-            commands::plugin_service::plugin_service_stop_for_plugin,
-            commands::plugin_service::plugin_service_autostart,
             // （Auto-Mode 已移除，移至外部插件 polaris.claude-code）
             // Agnes 多模态插件面板命令
             commands::agnes::agnes_get_config,
@@ -1178,13 +1153,9 @@ pub fn run() {
             commands::claude_settings::write_claude_settings,
             commands::claude_settings::get_claude_settings_path,
             commands::claude_settings::add_claude_permission_rules,
-            // 数据根（DataRoot）相关
-            commands::data_root_cmd::get_data_root_info,
-            commands::data_root_cmd::scan_legacy_data_cmd,
+            // 数据根（DataRoot）—— 管理面已上总线（cap.data_root）；仅保留
+            // open_path_in_explorer 平台壳命令（step7 §3：资源管理器不进总线）
             commands::data_root_cmd::open_path_in_explorer,
-            commands::data_root_cmd::migrate_legacy_data,
-            commands::data_root_cmd::validate_data_root_target,
-            commands::data_root_cmd::set_data_root,
             // 专家/专家团(自定义 + 用户自建,内置 corpus 已移除)
             commands::agent_corpus::simple_ai_list_agents,
             commands::nexus::nexus_start_roster,

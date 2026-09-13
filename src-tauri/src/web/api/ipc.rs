@@ -394,18 +394,10 @@ pub async fn handle_ipc_bridge(
         "send_integration_message" => Err(WebError::BadRequest("send_integration_message requires local runtime".into())),
 
         // ── Plugin ─────────────────────────────────────────────────────────
-        "plugin_list" => dispatch_plugin_list(&state, &args),
-        "plugin_discover" => dispatch_plugin_discover(&state, &args),
-        "plugin_install_locations" => dispatch_plugin_install_locations(&state, &args),
-        "plugin_validate_manifest" => dispatch_plugin_validate_manifest(&args),
-        "plugin_install_local" => dispatch_plugin_install_local(&state, &args),
-        "plugin_install_package" => dispatch_plugin_install_package(&state, &args),
-        "plugin_install_remote" => dispatch_plugin_install_remote(&state, &args).await,
-        "plugin_uninstall_local" => dispatch_plugin_uninstall_local(&state, &args),
-        "plugin_uninstall_with_cleanup" => dispatch_plugin_uninstall_with_cleanup(&state, &args).await,
-        "plugin_force_uninstall" => dispatch_plugin_force_uninstall(&state, &args),
-        "plugin_check_update" => dispatch_plugin_check_update(&args).await,
-        "plugin_apply_update" => dispatch_plugin_apply_update(&state, &args).await,
+        // 管理面（plugin_list ~ plugin_apply_update）已上总线（cap.pluginDiscovery），
+        // 走 router_dispatch；旧 HTTP dispatcher 已删除。以下为独立域保留：
+        // plugin_state_*（前端记忆）、plugin_get/set_config（插件配置）、
+        // register/unregister_plugin_engine（引擎注册表）。
         "plugin_state_load" => dispatch_plugin_state_load(&state),
         "plugin_state_save" => dispatch_plugin_state_save(&state, &args),
         // 插件配置读写（受 appConfigRead/appConfigWrite 权限约束）
@@ -416,12 +408,8 @@ pub async fn handle_ipc_bridge(
         "unregister_plugin_engine" => dispatch_unregister_plugin_engine(&state, &args).await,
 
         // ── Data Root ──────────────────────────────────────────────────────
-        "get_data_root_info" => dispatch_get_data_root_info(),
-        "scan_legacy_data_cmd" => dispatch_scan_legacy_data(),
+        // 管理面已上总线（cap.data_root）；仅保留 open_path_in_explorer 平台壳命令
         "open_path_in_explorer" => dispatch_open_path_in_explorer(&args),
-        "migrate_legacy_data" => dispatch_migrate_legacy_data(&args),
-        "validate_data_root_target" => dispatch_validate_data_root_target(&args),
-        "set_data_root" => dispatch_set_data_root(&args),
 
         // ── Dialog Storage ─────────────────────────────────────────────────
         "dialog_list" => dispatch_dialog_list(),
@@ -1910,222 +1898,6 @@ async fn dispatch_unregister_plugin_engine(
         .map_err(bad_request)?;
     Ok(Json(Value::Null))
 }
-
-fn dispatch_plugin_list(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let available = args.get("available").and_then(|v| v.as_bool()).unwrap_or(false);
-    let claude_path = {
-        let store = state.lock_config()?;
-        store.get().claude_code.cli_path.clone()
-    };
-    if claude_path.is_empty() {
-        return Ok(Json(serde_json::json!({ "installed": [], "available": [] })));
-    }
-    let service = crate::services::plugin_service::PluginService::new(claude_path);
-    json_result!(service.list_plugins(available))
-}
-
-fn dispatch_plugin_discover(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = args
-        .get("workspacePath")
-        .and_then(|value| value.as_str())
-        .filter(|path| !path.trim().is_empty())
-        .map(std::path::PathBuf::from);
-
-    Ok(Json(serde_json::to_value(
-        crate::services::plugin_service::PluginService::discover_installed_plugins(
-            &config_dir,
-            workspace_path.as_deref(),
-        ),
-    )
-    .unwrap_or_default()))
-}
-
-fn plugin_workspace_path(args: &Value) -> Option<std::path::PathBuf> {
-    args.get("workspacePath")
-        .and_then(|value| value.as_str())
-        .filter(|path| !path.trim().is_empty())
-        .map(std::path::PathBuf::from)
-}
-
-fn dispatch_plugin_install_locations(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-
-    Ok(Json(serde_json::to_value(
-        crate::services::plugin_service::PluginService::install_locations(
-            &config_dir,
-            workspace_path.as_deref(),
-        ),
-    )
-    .unwrap_or_default()))
-}
-
-fn dispatch_plugin_validate_manifest(args: &Value) -> Result<Json<Value>, WebError> {
-    let source_path = require_string(args, "sourcePath")?;
-    Ok(Json(serde_json::to_value(
-        crate::services::plugin_service::PluginService::validate_plugin_manifest(
-            Path::new(&source_path),
-        ),
-    )
-    .unwrap_or_default()))
-}
-
-fn dispatch_plugin_install_local(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let source_path = require_string(args, "sourcePath")?;
-    let scope = match args.get("scope").and_then(|value| value.as_str()) {
-        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
-        _ => crate::models::plugin::PluginManifestSourceKind::User,
-    };
-
-    json_result!(crate::services::plugin_service::PluginService::install_local_plugin(
-        &config_dir,
-        workspace_path.as_deref(),
-        Path::new(&source_path),
-        scope,
-    ))
-}
-
-fn dispatch_plugin_install_package(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let package_path = require_string(args, "packagePath")?;
-    let scope = match args.get("scope").and_then(|value| value.as_str()) {
-        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
-        _ => crate::models::plugin::PluginManifestSourceKind::User,
-    };
-
-    json_result!(crate::services::plugin_service::PluginService::install_plugin_package(
-        &config_dir,
-        workspace_path.as_deref(),
-        Path::new(&package_path),
-        scope,
-    ))
-}
-
-async fn dispatch_plugin_install_remote(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let source_url = require_string(args, "sourceUrl")?;
-    let scope = match args.get("scope").and_then(|value| value.as_str()) {
-        Some("project") => crate::models::plugin::PluginManifestSourceKind::Project,
-        _ => crate::models::plugin::PluginManifestSourceKind::User,
-    };
-
-    json_result!(
-        crate::services::plugin_service::PluginService::install_remote_plugin(
-            &config_dir,
-            workspace_path.as_deref(),
-            &source_url,
-            scope,
-        )
-        .await
-    )
-}
-
-fn dispatch_plugin_uninstall_local(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let install_path = require_string(args, "installPath")?;
-
-    json_result!(crate::services::plugin_service::PluginService::uninstall_local_plugin(
-        &config_dir,
-        workspace_path.as_deref(),
-        Path::new(&install_path),
-    ))
-}
-
-async fn dispatch_plugin_check_update(args: &Value) -> Result<Json<Value>, WebError> {
-    let install_path = require_string(args, "installPath")?;
-
-    Ok(Json(serde_json::to_value(
-        crate::services::plugin_service::PluginService::check_local_plugin_update(
-            Path::new(&install_path),
-        )
-        .await,
-    )
-    .unwrap_or_default()))
-}
-
-/// 增强卸载（Web 模式）：停服务 + 杀进程 + 删除目录。
-///
-/// 与 Tauri 命令 `plugin_uninstall_with_cleanup` 同源，绕开 tauri-app cfg 门控。
-/// 引擎注册表清理由前端负责（前端有 engineId→pluginId 映射）。
-async fn dispatch_plugin_uninstall_with_cleanup(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let install_path = require_string(args, "installPath")?;
-    let plugin_id = require_string(args, "pluginId")?;
-
-    // 1. 停止 PluginServiceManager 管理的服务
-    let _ = state
-        .plugin_service_manager
-        .stop_services_for_plugin(&plugin_id)
-        .await;
-
-    // 2. 终止进程 + 删除目录（带重试）
-    let result = crate::services::plugin_service::PluginService::uninstall_plugin_with_cleanup(
-        &config_dir,
-        workspace_path.as_deref(),
-        Path::new(&install_path),
-    );
-
-    match result {
-        Ok(op) => Ok(Json(serde_json::to_value(op).unwrap_or_default())),
-        Err(e) => Err(WebError::Internal(e.to_message())),
-    }
-}
-
-async fn dispatch_plugin_apply_update(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let install_path = require_string(args, "installPath")?;
-
-    json_result!(
-        crate::services::plugin_service::PluginService::apply_local_plugin_update(
-            &config_dir,
-            workspace_path.as_deref(),
-            Path::new(&install_path),
-        )
-        .await
-    )
-}
-
-/// 强制卸载（Web 模式）：尽力删除目录，失败则重命名。
-///
-/// 与 Tauri 命令 `plugin_force_uninstall` 同源，绕开 tauri-app cfg 门控。
-fn dispatch_plugin_force_uninstall(
-    state: &AppState,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let config_dir = get_config_dir(state)?;
-    let workspace_path = plugin_workspace_path(args);
-    let install_path = require_string(args, "installPath")?;
-
-    Ok(Json(serde_json::to_value(
-        crate::services::plugin_service::PluginService::force_uninstall_plugin(
-            &config_dir,
-            workspace_path.as_deref(),
-            Path::new(&install_path),
-        ),
-    )
-    .map_err(|e| WebError::Internal(format!("Serialization error: {}", e)))?))
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // MCP Manager
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2229,18 +2001,7 @@ fn check_plugin_config_permission(
 }
 
 // ── Data Root dispatchers ───────────────────────────────────────────────────
-
-fn dispatch_get_data_root_info() -> Result<Json<Value>, WebError> {
-    let info = crate::commands::data_root_cmd::data_root_info_inner()
-        .map_err(|e| WebError::Internal(format!("get_data_root_info 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(info).unwrap()))
-}
-
-fn dispatch_scan_legacy_data() -> Result<Json<Value>, WebError> {
-    let list = crate::commands::data_root_cmd::scan_legacy_data_inner()
-        .map_err(|e| WebError::Internal(format!("scan_legacy_data 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(list).unwrap()))
-}
+// 管理面已上总线（cap.data_root）；仅保留 open_path_in_explorer 平台壳命令
 
 fn dispatch_open_path_in_explorer(args: &Value) -> Result<Json<Value>, WebError> {
     let path = args
@@ -2250,45 +2011,6 @@ fn dispatch_open_path_in_explorer(args: &Value) -> Result<Json<Value>, WebError>
     crate::commands::data_root_cmd::open_path_in_explorer_inner(std::path::PathBuf::from(path))
         .map_err(|e| WebError::Internal(format!("open_path 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
-}
-
-fn dispatch_migrate_legacy_data(args: &Value) -> Result<Json<Value>, WebError> {
-    let options = args
-        .get("options")
-        .cloned()
-        .unwrap_or_else(|| args.clone());
-    let parsed: crate::commands::data_root_cmd::MigrateOptions =
-        serde_json::from_value(options)
-            .map_err(|e| WebError::BadRequest(format!("迁移参数解析失败: {}", e)))?;
-    let report = crate::commands::data_root_cmd::migrate_legacy_data_inner(parsed)
-        .map_err(|e| WebError::Internal(format!("迁移失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(report).unwrap()))
-}
-
-fn dispatch_validate_data_root_target(args: &Value) -> Result<Json<Value>, WebError> {
-    let options = args
-        .get("options")
-        .cloned()
-        .unwrap_or_else(|| args.clone());
-    let parsed: crate::commands::data_root_cmd::SetDataRootOptions =
-        serde_json::from_value(options)
-            .map_err(|e| WebError::BadRequest(format!("参数解析失败: {}", e)))?;
-    let result = crate::commands::data_root_cmd::validate_target_inner(&parsed)
-        .map_err(|e| WebError::Internal(format!("校验失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(result).unwrap()))
-}
-
-fn dispatch_set_data_root(args: &Value) -> Result<Json<Value>, WebError> {
-    let options = args
-        .get("options")
-        .cloned()
-        .unwrap_or_else(|| args.clone());
-    let parsed: crate::commands::data_root_cmd::SetDataRootOptions =
-        serde_json::from_value(options)
-            .map_err(|e| WebError::BadRequest(format!("参数解析失败: {}", e)))?;
-    let report = crate::commands::data_root_cmd::set_data_root_inner(parsed)
-        .map_err(|e| WebError::Internal(format!("切换失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(report).unwrap()))
 }
 
 // ── Dialog Storage dispatchers ──────────────────────────────────────────────

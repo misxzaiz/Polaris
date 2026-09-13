@@ -1,8 +1,9 @@
 /**
  * 插件服务管理器（前端门面）
  *
- * 通过 Tauri IPC 调用后端 plugin_service_* 命令。
- * 后端负责真实的进程拉起 / 健康检查 / 自动重启。
+ * 第七步阶段 C：插件服务管理上总线（router_dispatch → cap.pluginServiceManager）。
+ * 业务函数签名保持与旧命令层 invoke 一致（消费方零改动），内部改走 RouterBus dispatch，
+ * 获得统一权限 gate + 审计。
  */
 
 import { invoke } from '@/services/transport'
@@ -16,6 +17,39 @@ import { createLogger } from '@/utils/logger'
 const log = createLogger('PluginServiceManager')
 
 type RawContribution = Omit<PluginServiceContribution, 'pluginId'>
+
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface DispatchResponse {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
+
+/**
+ * 经 RouterBus dispatch 调用 cap.pluginServiceManager。
+ * payload 需携带 action + 业务参数（与 capability invoke 的 `{ action, ... }` 对齐）。
+ */
+async function dispatchPluginServiceManager(
+  action: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await invoke<DispatchResponse>('router_dispatch', {
+    req: {
+      target: 'cap.pluginServiceManager',
+      payload: {
+        action,
+        ...payload,
+      },
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(res.error || `cap.pluginServiceManager ${action} 失败`)
+  }
+  return res.result || {}
+}
 
 /**
  * 懒激活去重 Map：`${pluginId}:${serviceId}` -> 进行中的启动 Promise。
@@ -54,31 +88,31 @@ export const pluginServiceManager = {
     workspacePath?: string,
   ): Promise<PluginServiceStatus> {
     log.info('Starting plugin service', { pluginId, serviceId: contribution.id })
-    return invoke<PluginServiceStatus>('plugin_service_start', {
+    return (await dispatchPluginServiceManager('start', {
       pluginId,
       installPath,
       contribution: toBackendContribution(contribution),
       workspacePath: workspacePath ?? null,
-    })
+    })) as unknown as PluginServiceStatus
   },
 
   async stopService(pluginId: PluginId, serviceId: string): Promise<PluginServiceStatus> {
     log.info('Stopping plugin service', { pluginId, serviceId })
-    return invoke<PluginServiceStatus>('plugin_service_stop', { pluginId, serviceId })
+    return (await dispatchPluginServiceManager('stop', { pluginId, serviceId })) as unknown as PluginServiceStatus
   },
 
   async restartService(pluginId: PluginId, serviceId: string): Promise<PluginServiceStatus> {
     log.info('Restarting plugin service', { pluginId, serviceId })
-    return invoke<PluginServiceStatus>('plugin_service_restart', { pluginId, serviceId })
+    return (await dispatchPluginServiceManager('restart', { pluginId, serviceId })) as unknown as PluginServiceStatus
   },
 
   async listStatus(): Promise<PluginServiceStatus[]> {
-    return invoke<PluginServiceStatus[]>('plugin_service_list_status')
+    return (await dispatchPluginServiceManager('list_status', {})) as unknown as PluginServiceStatus[]
   },
 
   async stopServicesForPlugin(pluginId: PluginId): Promise<PluginServiceStatus[]> {
     log.info('Stopping all services for plugin', { pluginId })
-    return invoke<PluginServiceStatus[]>('plugin_service_stop_for_plugin', { pluginId })
+    return (await dispatchPluginServiceManager('stop_for_plugin', { pluginId })) as unknown as PluginServiceStatus[]
   },
 
   /** 应用启动或插件状态批量变更时调用 */
@@ -89,10 +123,10 @@ export const pluginServiceManager = {
     log.info('Auto-starting all plugin services', {
       pluginCount: Object.keys(pluginStates).length,
     })
-    return invoke<PluginServiceStatus[]>('plugin_service_autostart', {
+    return (await dispatchPluginServiceManager('autostart', {
       pluginStates,
       workspacePath: workspacePath ?? null,
-    })
+    })) as unknown as PluginServiceStatus[]
   },
 
   /**

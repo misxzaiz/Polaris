@@ -1,15 +1,27 @@
 /**
  * 数据根（DataRoot）服务
  *
- * 封装数据存储相关的后端命令调用：
- * - 查询当前数据根信息
- * - 扫描旧版残留数据
- * - 在系统资源管理器中打开路径
+ * 第七步阶段 C：数据根管理上总线（router_dispatch → cap.data_root）。
+ * 业务函数签名保持与旧命令层 invoke 一致（消费方零改动），内部改走
+ * RouterBus dispatch，获得统一权限 gate + 审计。
  *
- * P1 阶段仅查询接口；P2/P3 后续会扩展迁移与切换路径接口。
+ * 唯一例外：`openPathInExplorer` 属平台壳命令（step7 §3 边界：资源管理器
+ * 不进总线），保留直接 invoke。
  */
 
 import { invoke } from '@/services/transport'
+import { createLogger } from '@/utils/logger'
+
+const log = createLogger('DataRootService')
+
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface DispatchResponse {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
 
 /** 数据根子目录信息 */
 export interface SubdirInfo {
@@ -53,17 +65,56 @@ export interface LegacySource {
   exists: boolean
 }
 
+// ============================================================================
+// 统一 dispatch 封装（cap.data_root）
+// ============================================================================
+
+/**
+ * 经 RouterBus dispatch 调用 cap.data_root
+ */
+async function dispatchDataRoot(
+  action: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await invoke<DispatchResponse>('router_dispatch', {
+    req: {
+      target: 'cap.data_root',
+      payload: {
+        action,
+        ...payload,
+      },
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(res.error || `cap.data_root ${action} 失败`)
+  }
+  return res.result || {}
+}
+
 /** 获取数据根信息 */
 export async function getDataRootInfo(): Promise<DataRootInfo> {
-  return invoke<DataRootInfo>('get_data_root_info')
+  try {
+    const res = await dispatchDataRoot('get_info', {})
+    return res as unknown as DataRootInfo
+  } catch (e) {
+    log.warn('cap.data_root get_info 失败', { error: String(e) })
+    throw e
+  }
 }
 
 /** 扫描旧版数据 */
 export async function scanLegacyData(): Promise<LegacySource[]> {
-  return invoke<LegacySource[]>('scan_legacy_data_cmd')
+  try {
+    const res = await dispatchDataRoot('scan_legacy', {})
+    return res as unknown as LegacySource[]
+  } catch (e) {
+    log.warn('cap.data_root scan_legacy 失败', { error: String(e) })
+    throw e
+  }
 }
 
-/** 在系统资源管理器中打开路径 */
+/** 在系统资源管理器中打开路径（平台壳命令，直接 invoke） */
 export async function openPathInExplorer(path: string): Promise<void> {
   await invoke<void>('open_path_in_explorer', { path })
 }
@@ -102,7 +153,15 @@ export async function migrateLegacyData(
   sources: string[],
   overwrite = false,
 ): Promise<MigrateReport> {
-  return invoke<MigrateReport>('migrate_legacy_data', { options: { sources, overwrite } })
+  try {
+    const res = await dispatchDataRoot('migrate', {
+      options: { sources, overwrite },
+    })
+    return res as unknown as MigrateReport
+  } catch (e) {
+    log.warn('cap.data_root migrate 失败', { error: String(e) })
+    throw e
+  }
 }
 
 // ============================================================================
@@ -146,11 +205,23 @@ export interface SetDataRootReport {
 export async function validateDataRootTarget(
   options: SetDataRootOptions,
 ): Promise<TargetValidation> {
-  return invoke<TargetValidation>('validate_data_root_target', { options })
+  try {
+    const res = await dispatchDataRoot('validate_target', { options })
+    return res as unknown as TargetValidation
+  } catch (e) {
+    log.warn('cap.data_root validate_target 失败', { error: String(e) })
+    throw e
+  }
 }
 
 export async function setDataRoot(options: SetDataRootOptions): Promise<SetDataRootReport> {
-  return invoke<SetDataRootReport>('set_data_root', { options })
+  try {
+    const res = await dispatchDataRoot('set_root', { options })
+    return res as unknown as SetDataRootReport
+  } catch (e) {
+    log.warn('cap.data_root set_root 失败', { error: String(e) })
+    throw e
+  }
 }
 
 /** 字节数格式化（人类可读） */

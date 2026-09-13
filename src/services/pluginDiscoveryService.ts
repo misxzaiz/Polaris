@@ -1,3 +1,11 @@
+/**
+ * 插件发现（PluginDiscovery）服务
+ *
+ * 第七步阶段 C：插件发现/安装/卸载/市场管理上总线（router_dispatch → cap.pluginDiscovery）。
+ * 业务函数签名保持与旧命令层 invoke 一致（消费方零改动），内部改走 RouterBus dispatch，
+ * 获得统一权限 gate + 审计。
+ */
+
 import { invoke } from './transport'
 import type {
   PluginIconId,
@@ -61,6 +69,39 @@ export interface PluginUpdateCheckResult {
 export interface PluginDiscoveryResult {
   plugins: PolarisPluginManifest[]
   errors: PluginDiscoveryIssue[]
+}
+
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface DispatchResponse {
+  msgId: string
+  ok: boolean
+  result: Record<string, unknown> | null
+  error: string | null
+  trace: string
+}
+
+/**
+ * 经 RouterBus dispatch 调用 cap.pluginDiscovery。
+ * payload 需携带 action + 业务参数（与 capability invoke 的 `{ action, ... }` 对齐）。
+ */
+async function dispatchPluginDiscovery(
+  action: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await invoke<DispatchResponse>('router_dispatch', {
+    req: {
+      target: 'cap.pluginDiscovery',
+      payload: {
+        action,
+        ...payload,
+      },
+    },
+  })
+
+  if (!res.ok) {
+    throw new Error(res.error || `cap.pluginDiscovery ${action} 失败`)
+  }
+  return res.result || {}
 }
 
 const VALID_VIEW_AREAS = new Set(['activityBar'])
@@ -477,7 +518,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
 }
 
 export async function discoverInstalledPlugins(workspacePath?: string): Promise<PluginDiscoveryResult> {
-  const result = await invoke<BackendPluginDiscoveryResult>('plugin_discover', { workspacePath })
+  const result = (await dispatchPluginDiscovery('discover', { workspacePath })) as unknown as BackendPluginDiscoveryResult
   const normalized = Array.isArray(result.plugins)
     ? result.plugins.map((raw) => ({
       raw,
@@ -505,13 +546,13 @@ export async function discoverInstalledPlugins(workspacePath?: string): Promise<
 export async function getPluginInstallLocations(
   workspacePath?: string
 ): Promise<PluginInstallLocations> {
-  return invoke<PluginInstallLocations>('plugin_install_locations', { workspacePath })
+  return (await dispatchPluginDiscovery('install_locations', { workspacePath })) as unknown as PluginInstallLocations
 }
 
 export async function validatePluginManifest(
   sourcePath: string
 ): Promise<PluginManifestValidationResult> {
-  return invoke<PluginManifestValidationResult>('plugin_validate_manifest', { sourcePath })
+  return (await dispatchPluginDiscovery('validate_manifest', { sourcePath })) as unknown as PluginManifestValidationResult
 }
 
 export async function installLocalPlugin(
@@ -519,11 +560,11 @@ export async function installLocalPlugin(
   scope: 'user' | 'project',
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_install_local', {
+  return (await dispatchPluginDiscovery('install_local', {
     sourcePath,
     scope,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 export async function installPluginPackage(
@@ -531,11 +572,11 @@ export async function installPluginPackage(
   scope: 'user' | 'project',
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_install_package', {
+  return (await dispatchPluginDiscovery('install_package', {
     packagePath,
     scope,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 export async function installRemotePlugin(
@@ -543,21 +584,21 @@ export async function installRemotePlugin(
   scope: 'user' | 'project',
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_install_remote', {
+  return (await dispatchPluginDiscovery('install_remote', {
     sourceUrl,
     scope,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 export async function uninstallLocalPlugin(
   installPath: string,
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_uninstall_local', {
+  return (await dispatchPluginDiscovery('uninstall_local', {
     installPath,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 /**
@@ -573,11 +614,11 @@ export async function uninstallPluginWithCleanup(
   pluginId: string,
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_uninstall_with_cleanup', {
+  return (await dispatchPluginDiscovery('uninstall_with_cleanup', {
     installPath,
     pluginId,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 /**
@@ -589,19 +630,19 @@ export async function forceUninstallPlugin(
   installPath: string,
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_force_uninstall', {
+  return (await dispatchPluginDiscovery('force_uninstall', {
     installPath,
     workspacePath,
-  })
+  })) as unknown as PluginOperationResult
 }
 
 export async function checkPluginUpdate(installPath: string): Promise<PluginUpdateCheckResult> {
-  return invoke<PluginUpdateCheckResult>('plugin_check_update', { installPath })
+  return (await dispatchPluginDiscovery('check_update', { installPath })) as unknown as PluginUpdateCheckResult
 }
 
 export async function applyPluginUpdate(
   installPath: string,
   workspacePath?: string
 ): Promise<PluginOperationResult> {
-  return invoke<PluginOperationResult>('plugin_apply_update', { installPath, workspacePath })
+  return (await dispatchPluginDiscovery('apply_update', { installPath, workspacePath })) as unknown as PluginOperationResult
 }

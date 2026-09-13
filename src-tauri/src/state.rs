@@ -356,11 +356,16 @@ pub fn create_app_state(
     // 与历史 StaticPermission 等价）+ FileAuditSink 审计落盘（tamper-evident 哈希链）。
     let state_context_store: Arc<Mutex<ContextMemoryStore>> = Arc::new(Mutex::new(ContextMemoryStore::new()));
     let event_broadcast = crate::web::EventBroadcaster::new(256);
+    // 插件服务管理器：router block 的 cap.pluginDiscovery 需要注入，AppState 构造也需要
+    // （plugin_uninstall_with_cleanup 会先停 PluginServiceManager 服务）；提前创建一次共享。
+    let plugin_service_manager =
+        Arc::new(crate::services::plugin_service_manager::PluginServiceManager::new());
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
             EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
-            ContextCapability, ConfigCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
+            ContextCapability, ConfigCapability, DataRootCapability, PluginDiscoveryCapability,
+            PluginServiceManagerCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
             TodoCapability, audit_sink, prompt_snippet_capability,
         };
         use crate::services::storage::SqliteStorage;
@@ -420,6 +425,24 @@ pub fn create_app_state(
         let _ = bus.register_handle(Box::new(PromptSnippetCapability));
         // cap.context —— 第七步阶段 B1：上下文唯一入口（内存存储同源）
         let _ = bus.register_handle(Box::new(ContextCapability::new(state_context_store.clone())));
+        // cap.data_root —— 第七步阶段 C：数据根管理唯一入口（抽核自命令层，
+        // open_path_in_explorer 属平台壳命令保留在命令层）。管理面域：远程收紧规则
+        // `cap.data_root* remote deny` 在 config.json permissions.rules 注入。
+        let _ = bus.register_handle(Box::new(DataRootCapability));
+        // cap.pluginDiscovery —— 第七步阶段 C：插件发现/安装/卸载/市场管理唯一入口。
+        // 注入 config_store（claude CLI 路径）+ config_dir + plugin_service_manager
+        let _ = bus.register_handle(Box::new(PluginDiscoveryCapability::new(
+            config_store_arc.clone(),
+            config_dir.clone(),
+            plugin_service_manager.clone(),
+        )));
+        // cap.pluginServiceManager —— 第七步阶段 C：插件服务管理入口。
+        // 注入 plugin_service_manager（进程拉起/状态）+ config_dir（StartContext）。
+        // 管理面域：远程收紧规则 `cap.plugin_* remote deny` 同批覆盖。
+        let _ = bus.register_handle(Box::new(PluginServiceManagerCapability::new(
+            plugin_service_manager.clone(),
+            config_dir.clone(),
+        )));
         // cap.config —— 第八步：系统配置统一入口（性能开关试点）。
         // on_patch：cascade（级联激活 Profile 凭证写 Claude settings.json，同步、无 Tauri
         // 依赖，桌面/Web 跨模式可用）。refresh/emit 由调用方 tauri command / Web API 补
@@ -480,9 +503,7 @@ pub fn create_app_state(
             tracing::info!("[FailedCallCollector] 已加载，共 {} 条失败日志", collector.list(&Default::default()).len());
             Arc::new(tokio::sync::Mutex::new(collector))
         },
-        plugin_service_manager: Arc::new(
-            crate::services::plugin_service_manager::PluginServiceManager::new(),
-        ),
+        plugin_service_manager: plugin_service_manager.clone(),
         executor_registry,
         router,
     }

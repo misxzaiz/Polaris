@@ -8,15 +8,17 @@ pub mod browser_scripts;
 #[cfg(feature = "git")]
 pub mod git;
 pub mod translate;
-pub mod plugin;
+// plugin.rs（PluginDiscovery 管理面命令层）+ plugin_service.rs（PluginServiceManager
+// 命令层）已整体删除，管理面迁入 cap.pluginDiscovery / cap.pluginServiceManager
+// （services/router/plugin_discovery_capability.rs / plugin_service_manager_capability.rs）。
+// plugin_state/plugin_config 为独立域保留。
 #[cfg(feature = "tauri-app")]
 pub mod provider_diagnostics;
 pub mod plugin_state;
-pub mod plugin_service;
 pub mod plugin_config;
 pub mod data_root_cmd;
 #[cfg(feature = "tauri-app")]
-pub use data_root_cmd::{get_data_root_info, scan_legacy_data_cmd, open_path_in_explorer};
+pub use data_root_cmd::open_path_in_explorer;
 
 pub mod agent_corpus;
 pub mod nexus;
