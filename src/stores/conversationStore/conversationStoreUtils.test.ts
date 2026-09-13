@@ -4,7 +4,105 @@ import {
   resolveEffectiveProfileMode,
   isProfileModeWithoutProfile,
 } from './conversationStoreUtils'
-import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
+import {
+  OFFICIAL_API_PROFILE,
+  profileModelOptions,
+  normalizeModelForProfile,
+} from '@/types/modelProfile'
+
+/**
+ * Profile 模型归一化：
+ * `model` 与 `modelProfileId` 是两个独立持久化字段。用户从官方 API 切到第三方
+ * Profile 时，`config.model` 可能残留 Claude CLI 官方别名（opus/sonnet/haiku），
+ * 而别名只有官方端点认——第三方端点直接返回
+ * `{"type":"invalid_request_error","message":"unknown provider for model opus"}`。
+ * 发送前必须校验「选的模型」是否属于「选的 Profile」，不属于就清空（后端会回退
+ * profile.model 默认，请求仍可发出）。
+ */
+describe('profileModelOptions', () => {
+  it('modelOptions 有值时优先使用', () => {
+    expect(profileModelOptions({ model: 'a', modelOptions: ['a', 'b'] })).toEqual(['a', 'b'])
+  })
+
+  it('modelOptions 为空/未设置时回退到 [model]（与 UI 下拉构造口径一致）', () => {
+    expect(profileModelOptions({ model: 'agnes-2.5-flash', modelOptions: [] })).toEqual([
+      'agnes-2.5-flash',
+    ])
+    expect(profileModelOptions({ model: 'agnes-2.5-flash' })).toEqual(['agnes-2.5-flash'])
+  })
+
+  it('过滤空串', () => {
+    expect(profileModelOptions({ model: 'a', modelOptions: ['a', '', 'b', ''] })).toEqual(['a', 'b'])
+    // 回退口径：model 本身为空时也不产出空串
+    expect(profileModelOptions({ model: '' })).toEqual([])
+  })
+
+  it('保留带空白的条目（不 trim，与 modelList 的 filter(Boolean) 口径一致）', () => {
+    expect(profileModelOptions({ model: 'a', modelOptions: ['b '] })).toEqual(['b '])
+  })
+})
+
+describe('normalizeModelForProfile', () => {
+  const thirdParty = {
+    model: 'deepseek-v4-flash',
+    modelOptions: [
+      'deepseek-v4-flash',
+      'agnes-2.5-flash[1m]',
+      'claude-fable-5-dd-orp-5.2-senga',
+    ],
+  }
+
+  // ===== 无 Profile（官方 API / 分组路由 / 未选）：别名合法，原样透传 =====
+
+  it('profile 为 null/undefined 时模型原样透传（官方端点认 opus）', () => {
+    expect(normalizeModelForProfile('opus', undefined)).toBe('opus')
+    expect(normalizeModelForProfile('opus', null)).toBe('opus')
+    expect(normalizeModelForProfile('claude-opus-4-8', null)).toBe('claude-opus-4-8')
+  })
+
+  it('profile 存在但模型为空时原样透传（未设置 = 走默认）', () => {
+    expect(normalizeModelForProfile('', thirdParty)).toBe('')
+    expect(normalizeModelForProfile(undefined, thirdParty)).toBeUndefined()
+  })
+
+  // ===== 命中 Profile 可选列表：保留 =====
+
+  it('模型在 modelOptions 内时原样保留', () => {
+    expect(normalizeModelForProfile('deepseek-v4-flash', thirdParty)).toBe('deepseek-v4-flash')
+    expect(normalizeModelForProfile('claude-fable-5-dd-orp-5.2-senga', thirdParty)).toBe(
+      'claude-fable-5-dd-orp-5.2-senga',
+    )
+  })
+
+  it('保留长上下文后缀变体（[1m] 等）', () => {
+    expect(normalizeModelForProfile('agnes-2.5-flash[1m]', thirdParty)).toBe('agnes-2.5-flash[1m]')
+  })
+
+  it('modelOptions 为空时以 profile.model 为唯一合法值', () => {
+    expect(normalizeModelForProfile('deepseek-v4-flash', { model: 'deepseek-v4-flash' })).toBe(
+      'deepseek-v4-flash',
+    )
+    expect(normalizeModelForProfile('opus', { model: 'deepseek-v4-flash' })).toBeUndefined()
+  })
+
+  // ===== 未命中：清空，回退 profile.model 默认 =====
+
+  it('【回归】Claude 官方别名发给第三方 Profile 时清空（复现 unknown provider for model opus）', () => {
+    expect(normalizeModelForProfile('opus', thirdParty)).toBeUndefined()
+    expect(normalizeModelForProfile('sonnet', thirdParty)).toBeUndefined()
+    expect(normalizeModelForProfile('haiku', thirdParty)).toBeUndefined()
+  })
+
+  it('大小写敏感：拼写偏差视为无效并清空', () => {
+    expect(normalizeModelForProfile('DeepSeek-V4-Flash', thirdParty)).toBeUndefined()
+  })
+
+  it('历史残留的其他供应商模型名清空（跨 Profile 切换）', () => {
+    // 用户从 Profile A 切到 Profile B，config.model 仍是 A 的模型
+    const profileB = { model: 'glm-4.7', modelOptions: ['glm-4.7', 'glm-4.6'] }
+    expect(normalizeModelForProfile('deepseek-v4-flash', profileB)).toBeUndefined()
+  })
+})
 
 /**
  * 会话级模型 Profile 的三态解析。

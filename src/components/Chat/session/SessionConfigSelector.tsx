@@ -24,7 +24,7 @@ import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useAgentStore } from '@/stores/agentStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
-import { isProfileForEngine, OFFICIAL_API_PROFILE, type WireApi } from '@/types/modelProfile'
+import { isProfileForEngine, OFFICIAL_API_PROFILE, profileModelOptions, type WireApi } from '@/types/modelProfile'
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getEngineSelectors } from '@/utils/engineCapabilities'
@@ -244,6 +244,21 @@ export function SessionConfigSelector({
       supportsStreaming: true,
     }))
   }, [config.modelProfileId, config.profileMode, activeGroup, profiles, currentEngine])
+
+  // 切换供应商（Profile）后，清掉不属于该 Profile 的残留模型选择。
+  // config.model 是跨 Profile 持久化的：从官方 API（opus/sonnet/haiku）切到第三方
+  // Profile 时，下拉会因「保留当前已选」而继续显示并发送那个 CLI 官方别名，第三方端点
+  // 不认 → 400 invalid_request_error: unknown provider for model opus。
+  // 清空（而非选默认）让用户显式选择；发送层另有 normalizeModelForProfile 兜底，
+  // 空 model 会回退到 profile.model 默认模型，请求仍可正常发出。
+  useEffect(() => {
+    if (disabled || config.profileMode !== 'profile' || !config.modelProfileId) return
+    const profile = profiles.find(p => p.id === config.modelProfileId)
+    if (!profile || !config.model) return
+    if (profileModelOptions(profile).includes(config.model)) return
+    onChange({ ...config, model: '' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅依赖 Profile 变更触发，config 整体读用（见上注释）
+  }, [profiles, config.modelProfileId, config.profileMode, disabled])
 
   // 按当前引擎过滤 Profile 列表
   const compatibleProfiles = useMemo(() => {

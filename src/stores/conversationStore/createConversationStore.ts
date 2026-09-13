@@ -18,7 +18,8 @@ import i18n from 'i18next'
 import { MessageCompactor, isCompacted } from '@/utils/messageCompactor'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { getSessionConfig } from '../sessionConfigStore'
-import { getActiveModelProfile } from '../modelProfileStore'
+import { getActiveModelProfile, getModelProfileById } from '../modelProfileStore'
+import { normalizeModelForProfile } from '@/types/modelProfile'
 import { createLogger } from '@/utils/logger'
 import {
   resolveSessionEngine,
@@ -1883,8 +1884,15 @@ export function createConversationStore(
           const effectiveProviderGroupId = profileMode === 'group'
             ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
             : undefined
+          // 当前生效 Profile 的完整配置，用于归一化模型名（见 normalizeModelForProfile）
+          const effectiveProfile = getModelProfileById(effectiveProfileId)
           // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
-          const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
+          // Profile 归一化：选了 Profile 但模型是它不认的 Claude 别名（opus/sonnet/haiku）时清空，
+          // 回退 profile.model 默认；官方 API 与分组路由路径 effectiveProfile 为空，别名不受影响。
+          const resolvedModel = normalizeModelForProfile(
+            sessionMeta?.model ?? runtimeConfig.model,
+            effectiveProfile,
+          )
           const disabledMcpServers = getDisabledPluginMcpServers()
 
           // 一次性系统提示（语音伙伴人格等）：经 appendSystemPrompt 通道注入，
@@ -2066,8 +2074,15 @@ export function createConversationStore(
         const effectiveProviderGroupId = profileMode === 'group'
           ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
           : undefined
+        // 当前生效 Profile 的完整配置，用于归一化模型名（见 normalizeModelForProfile）
+        const effectiveProfile = getModelProfileById(effectiveProfileId)
         // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
-        const resolvedModel = sessionMeta?.model ?? runtimeConfig.model
+        // Profile 归一化：选了 Profile 但模型是它不认的 Claude 别名（opus/sonnet/haiku）时清空，
+        // 回退 profile.model 默认；官方 API 与分组路由路径 effectiveProfile 为空，别名不受影响。
+        const resolvedModel = normalizeModelForProfile(
+          sessionMeta?.model ?? runtimeConfig.model,
+          effectiveProfile,
+        )
         const disabledMcpServers = getDisabledPluginMcpServers()
 
         try {

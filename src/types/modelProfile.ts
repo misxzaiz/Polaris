@@ -318,6 +318,51 @@ export function isProfileForEngine(
   return engines.length === 0 || engines.includes(engine)
 }
 
+/**
+ * 取 Profile 实际可选的模型列表。
+ *
+ * `modelOptions` 为空/未设置时回退到 `[model]`（与 UI 下拉的三个构造点
+ * SessionConfigSelector / ChatInput / ModelProviderTab 一致），并过滤空串。
+ * 集中在此，避免各调用点各写一份回退逻辑。
+ *
+ * 注意：过滤口径与 modelList 的 `.filter(Boolean)` 一致——**不做 trim**，
+ * 这样下拉里展示的条目（含可能带空白的历史配置）不会被归一化误判为无效。
+ */
+export function profileModelOptions(
+  profile: Pick<ModelProfile, 'modelOptions' | 'model'>,
+): string[] {
+  const base = profile.modelOptions?.length ? profile.modelOptions : [profile.model]
+  return base.filter((m) => Boolean(m))
+}
+
+/**
+ * 校验「选定的模型」是否属于「选定的 Profile」，不属于则清空。
+ *
+ * 背景：`model` 与 `modelProfileId` 是两个独立持久化字段。用户从官方 API 切到
+ * 第三方 Profile 时，`config.model` 可能残留 Claude CLI 官方别名（opus/sonnet/haiku）——
+ * 这些别名只有官方端点认，发给第三方端点会得到
+ * `{"type":"invalid_request_error","message":"unknown provider for model opus"}`。
+ *
+ * 清空而非报错是有意的：后端 `apply_model_profile_options` 实现「前端优先、Profile 兜底」，
+ * 收到空 model 会回退到 `profile.model` 默认模型，请求仍可正常发出。
+ *
+ * - `profile` 为空（官方 API / 分组路由 / 未选 Profile）：别名对官方端点合法，原样透传。
+ * - 命中 Profile 的可选列表（含 `[1m]` 长上下文变体等后缀）：原样保留。
+ *
+ * 放在本模块（零依赖叶子）而非 conversationStoreUtils：后者处于
+ * conversationStoreUtils ↔ sessionStoreManager ↔ createConversationStore 环中，
+ * 而本函数同时被 UI 组件（SessionConfigSelector）与发送链路复用，
+ * 放这里可避免 UI 侧引入第二个环入口。
+ */
+export function normalizeModelForProfile(
+  model: string | undefined,
+  profile: Pick<ModelProfile, 'modelOptions' | 'model'> | null | undefined,
+): string | undefined {
+  if (!profile) return model
+  if (!model) return model
+  return profileModelOptions(profile).includes(model) ? model : undefined
+}
+
 /** 获取 Profile 的 category 显示名称 */
 export function getCategoryLabel(category?: ProfileCategory): string {
   const labels: Record<ProfileCategory, string> = {

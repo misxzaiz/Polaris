@@ -41,6 +41,8 @@ interface ModelProfileState {
   activateProfile: (id: string | null) => void
   /** 获取当前激活的 Profile */
   getActiveProfile: () => ModelProfile | undefined
+  /** 按 ID 查找 Profile */
+  getProfileById: (id: string | null | undefined) => ModelProfile | undefined
   /** 根据引擎筛选 Profile */
   getProfilesByEngine: (engine: 'claude' | 'codex' | 'simple-ai') => ModelProfile[]
   /** 重置状态 */
@@ -145,6 +147,11 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
     return profiles.find((p) => p.id === activeProfileId)
   },
 
+  getProfileById: (id) => {
+    if (!id) return undefined
+    return get().profiles.find((p) => p.id === id)
+  },
+
   getProfilesByEngine: (engine) => {
     const { profiles } = get()
     return profiles.filter((p) => isProfileForEngine(p, engine))
@@ -160,6 +167,13 @@ export const useModelProfileStore = create<ModelProfileState>()((set, get) => ({
  */
 export function getActiveModelProfile(): ModelProfile | undefined {
   return useModelProfileStore.getState().getActiveProfile()
+}
+
+/**
+ * 按 ID 查找 Profile（公开 store 方法供外部使用）
+ */
+export function getModelProfileById(id: string | null | undefined): ModelProfile | undefined {
+  return useModelProfileStore.getState().getProfileById(id)
 }
 
 /**
