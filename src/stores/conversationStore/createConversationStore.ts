@@ -1018,15 +1018,58 @@ export function createConversationStore(
       },
 
       updateFormBlock: (formId, updates) => {
-        const { currentMessage, formBlockMap } = get()
-        if (!currentMessage) return
-        const idx = formBlockMap.get(formId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        if (blocks[idx]?.type === 'form') {
-          const existing = blocks[idx] as import('../../types/chat').FormBlock
-          blocks[idx] = { ...existing, ...updates }
-          set({ currentMessage: { ...currentMessage, blocks } })
+        const { currentMessage, messages, formBlockMap } = get()
+        if (!currentMessage && messages.length === 0) return
+
+        // 优先走 formBlockMap 定位（form 事件在 currentMessage 中追加时记录）
+        // 但 form 事件若在流结束后到达（AI 回复已完成 → currentMessage 归档到 messages），
+        // formBlockMap 里的 idx 已失效；此时需跨 messages[] + currentMessage 搜索。
+        const applyToBlocks = (
+          blocks: import('../../types/chat').ChatMessageBlock[]
+        ): { next: typeof blocks; changed: boolean } => {
+          const next = blocks.map((b) => {
+            if (b.type === 'form' && b.id === formId) {
+              return { ...b, ...updates } as typeof b
+            }
+            return b
+          })
+          const changed = next.some((b, i) => b !== blocks[i])
+          return { next, changed }
+        }
+
+        // 先查 currentMessage
+        if (currentMessage) {
+          const idx = formBlockMap.get(formId)
+          if (
+            idx !== undefined &&
+            currentMessage.blocks[idx]?.type === 'form' &&
+            currentMessage.blocks[idx]?.id === formId
+          ) {
+            const blocks = [...currentMessage.blocks]
+            const existing = blocks[idx] as import('../../types/chat').FormBlock
+            blocks[idx] = { ...existing, ...updates }
+            set({ currentMessage: { ...currentMessage, blocks } })
+            return
+          }
+          // currentMessage 里没有，但表单可能已归档到 messages
+          const { next, changed } = applyToBlocks(currentMessage.blocks)
+          if (changed) {
+            set({ currentMessage: { ...currentMessage, blocks: next } })
+            return
+          }
+        }
+
+        // 跨 messages[] 搜索（消息归档后常见路径）
+        let touched = false
+        const newMessages = messages.map((msg) => {
+          if (msg.type !== 'assistant' || !msg.blocks) return msg
+          const { next, changed } = applyToBlocks(msg.blocks)
+          if (!changed) return msg
+          touched = true
+          return { ...msg, blocks: next }
+        })
+        if (touched) {
+          set({ messages: newMessages })
         }
       },
 
