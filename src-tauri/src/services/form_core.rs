@@ -131,6 +131,83 @@ pub fn build_receipt(
     lines.join("\n")
 }
 
+/// 目标能力 `cap.todo` 的契约参数别名表。
+///
+/// form 的字段名（`field.name`）由 AI 声明且无强制约束（见 form 工具 schema
+/// 描述），AI 常生成中文/自然语言字段名（如「标题」「截止日期」）而非契约参数名
+/// （`content`/`dueDate`）。submit_form 转发前用本表把常见别名归一化到
+/// `TodoCreateParams` 的契约字段名，避免「需要 content 参数」类校验拒绝。
+///
+/// 仅供 `normalize_payload_for_target` 内部使用；新增能力时在此扩展。
+const TODO_PARAM_ALIASES: &[(&str, &[&str])] = &[
+    ("content", &["标题", "内容", "title", "text", "name"]),
+    ("description", &["描述", "详情", "备注", "说明", "desc", "note", "remark"]),
+    ("dueDate", &["截止日期", "截止", "期限", "到期", "due", "deadline", "due_time", "due_date"]),
+    ("priority", &["优先级", "重要程度", "pri", "priority"]),
+];
+
+/// 表单提交字段归一化：把 AI 声明的自由字段名映射到目标能力的契约参数名。
+///
+/// 两层策略（纯函数，可独立单测）：
+/// 1. **schema label→name 修正**：提交的 key 若等于某字段的 `label`（而非 `name`），
+///    换用该字段的 `name`——覆盖「AI 写了 name+label，但前端/F fromCard 提交 label」
+///    的情况（当前 FormCard 用 name 作 key，此处为纵深防御）。
+/// 2. **per-target 别名映射**：按目标能力的已知别名表，把中文/自然语言 key 归一化
+///    到契约参数名。未命中别名的 key 原样保留（向后兼容，不丢字段）。
+pub fn normalize_payload_for_target(
+    target: &str,
+    payload: &Value,
+    fields: &[Value],
+) -> Value {
+    let obj = match payload.as_object() {
+        Some(o) => o,
+        None => return payload.clone(),
+    };
+
+    // 1. 收集 label→name 映射（fields schema 声明的关系）
+    use std::collections::HashMap;
+    let mut label_to_name: HashMap<&str, &str> = HashMap::new();
+    for f in fields {
+        let name = f.get("name").and_then(|n| n.as_str());
+        let label = f.get("label").and_then(|l| l.as_str());
+        if let (Some(name), Some(label)) = (name, label) {
+            if !name.trim().is_empty() && !label.trim().is_empty() && label != name {
+                label_to_name.insert(label, name);
+            }
+        }
+    }
+
+    // 2. target 专属别名表声明：`normalize_payload_for_target` 无状态，别名来自常数表。
+    //    当前首个版本只覆盖 cap.todo（表单白名单数据域中唯一有「content 必填」契约的能力）。
+    let target_aliases: &[(&str, &[&str])] = match target.trim() {
+        "cap.todo" => TODO_PARAM_ALIASES,
+        _ => &[],
+    };
+
+    let mut out = serde_json::Map::new();
+    for (k, v) in obj {
+        // 优先 label→name（schema 声明的显式关系，最强意图）
+        let normalized = label_to_name
+            .get(k.as_str())
+            .copied()
+            .map(str::to_string)
+            .unwrap_or_else(|| {
+                // 其次 target 别名表：命中则归一化到契约名
+                for (canonical, aliases) in target_aliases {
+                    if aliases
+                        .iter()
+                        .any(|a| a.eq_ignore_ascii_case(k.as_str()))
+                    {
+                        return (*canonical).to_string();
+                    }
+                }
+                k.clone()
+            });
+        out.insert(normalized, v.clone());
+    }
+    Value::Object(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -213,5 +290,62 @@ mod tests {
         let receipt = build_receipt("full", fields.as_array().unwrap(), &json!({"a": "1"}), &Err("base_url 不能为空".into()));
         assert!(receipt.contains("执行失败"));
         assert!(receipt.contains("base_url 不能为空"));
+    }
+
+    #[test]
+    fn normalize_todo_maps_chinese_aliases() {
+        // AI 生成中文字段名（本会话实测形态）：标题/截止日期/优先级
+        let fields = json!([{"name": "标题"}, {"name": "截止日期"}, {"name": "优先级"}]);
+        let payload = json!({
+            "标题": "验证 form 链路待办",
+            "截止日期": "2026-09-30",
+            "优先级": "高",
+        });
+        let out = normalize_payload_for_target("cap.todo", &payload, fields.as_array().unwrap());
+        assert_eq!(out.get("content"), Some(&json!("验证 form 链路待办")), "标题→content");
+        assert_eq!(out.get("dueDate"), Some(&json!("2026-09-30")), "截止日期→dueDate");
+        assert_eq!(out.get("priority"), Some(&json!("高")), "优先级→priority");
+        assert!(out.get("标题").is_none(), "原始中文 key 应被归一化移除");
+    }
+
+    #[test]
+    fn normalize_keeps_unknown_keys_and_contract_names() {
+        let fields = json!([{"name": "content"}]);
+        // 已是契约参数名 + 未知 key 都应原样保留
+        let payload = json!({
+            "content": "已有正确契约名",
+            "customField": "未知字段",
+            "描述": "描述别名→description",
+        });
+        let out = normalize_payload_for_target("cap.todo", &payload, fields.as_array().unwrap());
+        assert_eq!(out.get("content"), Some(&json!("已有正确契约名")), "契约名不动");
+        assert_eq!(out.get("customField"), Some(&json!("未知字段")), "未知 key 保留");
+        assert_eq!(out.get("description"), Some(&json!("描述别名→description")), "描述→description");
+    }
+
+    #[test]
+    fn normalize_label_maps_to_name() {
+        // 若提交 key 是字段的 label（非 name），归一化到 name
+        let fields = json!([{"name": "content", "label": "任务标题"}]);
+        let payload = json!({"任务标题": "通过 label 提交"});
+        let out = normalize_payload_for_target("cap.todo", &payload, fields.as_array().unwrap());
+        assert_eq!(out.get("content"), Some(&json!("通过 label 提交")), "label→name");
+    }
+
+    #[test]
+    fn normalize_non_todo_target_keeps_payload() {
+        // 非 cap.todo 目标不做别名映射，仅保留 schema label→name 修正
+        let fields = json!([{"name": "key", "label": "键"}]);
+        let payload = json!({"键": "v", "other": 1});
+        let out = normalize_payload_for_target("cap.kv", &payload, fields.as_array().unwrap());
+        assert_eq!(out.get("key"), Some(&json!("v")), "label→name 仍生效");
+        assert_eq!(out.get("other"), Some(&json!(1)), "其他字段保留");
+    }
+
+    #[test]
+    fn normalize_non_object_payload_passthrough() {
+        let fields = json!([]);
+        let out = normalize_payload_for_target("cap.todo", &json!("just-a-string"), fields.as_array().unwrap());
+        assert_eq!(out, json!("just-a-string"));
     }
 }

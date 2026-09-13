@@ -230,7 +230,13 @@ fn handle_tools_list() -> Value {
                     "'read' ('full' | 'none' — none hides all field names' values from ",
                     "the model), and 'fields' (array of {name,type,label?,placeholder?,",
                     "options?,required?,default?,secret?}). Field types: string, number, ",
-                    "boolean, textarea, select, secret."
+                    "boolean, textarea, select, secret. IMPORTANT: each field's 'name' ",
+                    "MUST be the target capability's canonical parameter name (e.g. for ",
+                    "cap.todo create: content, description, dueDate, priority, tags, ",
+                    "relatedFiles, subtasks, estimatedHours, sessionId) — the submitted ",
+                    "values are forwarded with the 'name' as the key. Use 'label' for the ",
+                    "human-readable text shown to the user (e.g. name=\"content\", ",
+                    "label=\"任务标题\"). Never use display text as the 'name'."
                 ),
                 // 扩展元数据：供前端按工具分发通用表单面板（当前 FormCard 由
                 // `form` chat-event 驱动，panel 仅为未来按 tag 分发的自由预留）。

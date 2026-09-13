@@ -421,6 +421,16 @@ async fn handle_form_frame(
     // 注册 hold —— 用户提交时由 form_submit 动作取走。
     if let Ok(mut holds) = state.form_holds.lock() {
         holds.insert(form_id.clone(), hold.clone());
+        tracing::info!(
+            "[Form] hold 已注册 formId={} target={} action={} sessionId={} holds 总数={}",
+            form_id,
+            hold.target,
+            hold.action,
+            hold.session_id,
+            holds.len()
+        );
+    } else {
+        tracing::error!("[Form] form_holds 锁获取失败（中毒），formId={} 未注册", form_id);
     }
 
     // 广播 form chat-event（前端 FormCard 依据该事件拉起面板）。
@@ -457,6 +467,12 @@ fn emit_form_event(state: &AppState, hold: &form_flow::FormHold) {
             "action": hold.action,
             "fields": hold.fields,
         }),
+    );
+    tracing::info!(
+        "[Form] 广播 form 事件 formId={} sessionId={} fields={}",
+        hold.form_id,
+        hold.session_id,
+        hold.fields.len()
     );
     emit_chat_event(state, &event);
 }

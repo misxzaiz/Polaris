@@ -13,7 +13,9 @@
 use std::time::{Duration, Instant};
 
 use crate::contracts::Value;
-use crate::services::form_core::{build_receipt, expand_dot_paths, validate_fields};
+use crate::services::form_core::{
+    build_receipt, expand_dot_paths, normalize_payload_for_target, validate_fields,
+};
 
 /// 表单存活时长：超时后桥清理，迟到的提交被拒绝。
 pub const FORM_WAIT_TIMEOUT_SECS: u64 = 600;
@@ -110,8 +112,9 @@ pub fn submit_form(
         return (receipt, false, exec_result);
     }
 
-    // 1. 点路径展开 + 注入 action
+    // 1. 点路径展开 + 字段名归一化（AI 声明的自由名 → 目标能力契约参数名）+ 注入 action
     let mut payload = expand_dot_paths(values);
+    payload = normalize_payload_for_target(&hold.target, &payload, &hold.fields);
     if !hold.action.is_empty() {
         if let Some(obj) = payload.as_object_mut() {
             obj.insert("action".into(), Value::String(hold.action.clone()));

@@ -221,6 +221,12 @@ impl Capability for AiChatCapability {
                             let mut holds = s.form_holds.lock().ok().ok_or_else(|| {
                                 "表单存储已损坏（form_holds 锁中毒）".to_string()
                             })?;
+                            tracing::info!(
+                                "[Form] form_submit 请求 formId={} 当前 holds 数={} holds keys={:?}",
+                                form_id,
+                                holds.len(),
+                                holds.keys().collect::<Vec<_>>()
+                            );
                             holds.remove(&form_id)
                         };
                         let Some(hold) = hold else {
@@ -229,15 +235,41 @@ impl Capability for AiChatCapability {
                         };
                         let (receipt, ok, reply) =
                             crate::services::form_flow::submit_form(&hold, &values, &*s.router);
-                        // 前端 FormCard 依据 form-answered 事件切提交态（receipt 是安全回执）
-                        self.event_adapter.broadcast(make_event(
-                            "form-answered",
+                        tracing::info!(
+                            "[Form] submit_form 返回 formId={} ok={} receipt={}",
+                            hold.form_id,
+                            ok,
+                            receipt.replace('\n', " ")
+                        );
+                        // 前端 FormCard 依据 form-answered 事件切提交态（receipt 是安全回执）。
+                        // 走 chat-event 通道（与 ask_listener::emit_form_event 同结构）：
+                        //   {"event":"chat-event","payload":{"contextId":"session-<id>","payload":{type:form-answered,...}}}
+                        // 前端 EventRouter 只订阅 chat-event，独立 kind（form-answered）会被
+                        // WS should_send 过滤掉 → FormCard 永远收不到回执卡在加载态。
+                        let form_answered_inner = serde_json::json!({
+                            "type": "form-answered",
+                            "formId": hold.form_id,
+                            "sessionId": hold.session_id.clone(),
+                            "ok": ok,
+                            "receipt": receipt.clone(),
+                        });
+                        let form_answered_event = if hold.session_id.trim().is_empty() {
+                            form_answered_inner
+                        } else {
                             serde_json::json!({
-                                "formId": hold.form_id,
-                                "sessionId": hold.session_id,
-                                "ok": ok,
-                                "receipt": receipt,
-                            }),
+                                "contextId": format!("session-{}", hold.session_id),
+                                "payload": form_answered_inner,
+                            })
+                        };
+                        tracing::info!(
+                            "[Form] 广播 form-answered 事件 formId={} ok={} sessionId={}",
+                            hold.form_id,
+                            ok,
+                            hold.session_id
+                        );
+                        self.event_adapter.broadcast(make_event(
+                            "chat-event",
+                            form_answered_event,
                         ));
                         match reply {
                             Ok(reply) => Ok(reply),
