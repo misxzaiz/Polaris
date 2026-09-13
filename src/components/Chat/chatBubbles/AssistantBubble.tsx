@@ -195,8 +195,11 @@ export const AssistantBubble = memo(function AssistantBubble({
   // blocks 数量不同，需要更新
   if (prevBlocks.length !== nextBlocks.length) return false;
 
-  // 对于流式消息，检查最后一个文本块的内容长度
-  if (nextProps.message.isStreaming && prevBlocks.length > 0) {
+  if (nextProps.message.isStreaming) {
+    // 流式消息：保留精细比较（避免每次 token 追加都整条重渲染）。
+    // 引用变化时仍需检查最后一个文本/思考块是否真正增长。
+    if (prevBlocks === nextBlocks) return true;
+
     const lastPrev = prevBlocks[prevBlocks.length - 1];
     const lastNext = nextBlocks[nextBlocks.length - 1];
 
@@ -218,8 +221,12 @@ export const AssistantBubble = memo(function AssistantBubble({
         if (pb.output !== nb.output) return false;
       }
     }
+
+    return true;
   }
 
-  // 非流式消息，认为没有变化
-  return true;
+  // 非流式消息：blocks 引用变化即视为内容已更新
+  // （form / plugin_card 等异步回填块会在非流式消息上更新 status/ok/receipt，
+  //  必须放行重渲染；引用相同才算无变化）。
+  return prevBlocks === nextBlocks;
 });
