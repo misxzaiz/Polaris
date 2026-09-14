@@ -152,6 +152,22 @@ impl PolicyPermission {
                 });
             }
         }
+        // 首批内置收紧（安全基线）：管理面能力禁止远程（Web/HTTP/Remote 会话）触碰。
+        // 追加在 config 规则之后 → `best_match` 同特异性后者覆盖前者，
+        // 用户在 config 显式 allow（精确规则特异性更高）可覆盖内置 deny。
+        // step7 §4 验收：规则固化为代码内置默认，config 缺省也生效，部署/换机不丢。
+        for (cap_prefix, wildcard) in [
+            ("cap.config", true),
+            ("cap.data_root", true),
+            ("cap.plugin", true),
+        ] {
+            rules.push(CompiledRule {
+                capability: cap_prefix.to_string(),
+                wildcard,
+                source: SourceClass::Remote,
+                verdict: RuleVerdict::Deny,
+            });
+        }
         Self {
             rules: RwLock::new(rules),
         }
@@ -313,7 +329,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        assert_eq!(p.rule_count(), 1, "三条非法规则应被跳过");
+        // 1 条合法 config 规则 + 3 条内置收紧（cap.config*/cap.data_root*/cap.plugin* remote deny）
+        assert_eq!(p.rule_count(), 4, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -322,6 +339,54 @@ mod tests {
         assert_eq!(
             p.check(&req("cap.other", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn builtin_rules_deny_remote_management_caps() {
+        // config 缺省（from_config(None)）也收紧管理面：内置默认规则生效
+        let p = PolicyPermission::from_config(None);
+        for cap in ["cap.config", "cap.config.write", "cap.data_root", "cap.data_root.get_info",
+                    "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo"] {
+            assert_eq!(
+                p.check(&req(cap, Source::Remote { token: "t".into() })).unwrap(),
+                PermissionVerdict::Deny,
+                "管理面 {cap} 应被内置规则拒绝（Remote）"
+            );
+        }
+        // 未管理面能力不受影响
+        assert_eq!(
+            p.check(&req("cap.kv", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Allow
+        );
+        // Bootstrap / Plugin source 不受内置 deny 影响
+        assert_eq!(
+            p.check(&req("cap.data_root", Source::Bootstrap)).unwrap(),
+            PermissionVerdict::Allow
+        );
+        assert_eq!(
+            p.check(&req("cap.pluginDiscovery", Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) })).unwrap(),
+            PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn user_config_can_relax_builtin() {
+        // config 显式 allow（精确规则特异性更高）可覆盖内置前缀 deny
+        let p = policy_from(serde_json::json!({
+            "rules": [
+                { "capability": "cap.pluginDiscovery", "source": "remote", "verdict": "allow" }
+            ]
+        }));
+        assert_eq!(
+            p.check(&req("cap.pluginDiscovery", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Allow,
+            "config 精确 allow 覆盖内置通配 deny"
+        );
+        // 未被覆盖的相邻前缀仍受内置 deny
+        assert_eq!(
+            p.check(&req("cap.pluginServiceManager", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Deny
         );
     }
 }
