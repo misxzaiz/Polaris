@@ -44,11 +44,208 @@ impl Tool for BashTool {
         let command = args["command"].as_str().unwrap_or("").to_string();
         let workdir_override = args["workdir"].as_str().map(String::from);
         let default_dir = ctx.work_dir.to_string();
-        tokio::task::spawn_blocking(move || {
-            run_bash(&command, workdir_override.as_deref(), &default_dir)
-        })
-        .await
-        .unwrap_or_else(|e| ToolOutcome::fail(format!("bash task panicked: {}", e)))
+        // 以 tokio::process::Command 运行 + 轮询 abort 信号，使 bash 可被用户中断：
+        // 避免「命令跑 20s 且页面上点停止无效」的长阻塞窗口。
+        run_bash_async(&command, workdir_override.as_deref(), &default_dir, ctx).await
+    }
+}
+
+/// 异步执行 bash：spawn 子进程 → 每 200ms 轮询 abort → 置位则 kill。
+async fn run_bash_async(
+    command: &str,
+    workdir: Option<&str>,
+    default_dir: &str,
+    ctx: &ToolContext<'_>,
+) -> ToolOutcome {
+    let cwd = workdir.unwrap_or(default_dir);
+
+    let (shell_name, shell_path) = detect_shell();
+    let shell_exe = shell_path.as_deref().unwrap_or(shell_name);
+
+    let mut cmd = tokio::process::Command::new(shell_exe);
+    cmd.current_dir(cwd);
+
+    let (is_bash_shell, uses_powershell_cmd) = if shell_name == "git_bash" {
+        cmd.arg("-l").arg("-c").arg(command);
+        (true, false)
+    } else if shell_name == "sh" {
+        cmd.arg("-c").arg(command);
+        (true, false)
+    } else if shell_name == "pwsh" {
+        cmd.arg("-Command").arg(command);
+        (false, true)
+    } else if shell_name == "cmd" {
+        cmd.arg("/C").arg(command);
+        (false, false)
+    } else {
+        (false, false)
+    };
+
+    // 非 Bash shell：执行前检测 Bash 语法并给出前置提示（逻辑与 run_bash 一致）。
+    let syntax_hint = if !is_bash_shell && has_bash_syntax(command) {
+        let hint = if uses_powershell_cmd {
+            "[Shell hint] The auto-detected shell is PowerShell 5.1, which does not support \
+             Bash syntax (&&, ||, 2>/dev/null, $(), etc.).\n\
+             Consider: (1) rewrite using PowerShell syntax (-and, -or, 2>$null, Get-Content, \
+             Select-String); or (2) use dedicated tools (search_files, glob, read_file, edit_file)\
+             which work across all shells.\n\
+             ---\n\
+             Command: "
+        } else {
+            "[Shell hint] The auto-detected shell is cmd.exe, which does not support \
+             Bash syntax (&&, ||, 2>/dev/null, $(), etc.).\n\
+             Consider using dedicated tools (search_files, glob, read_file, edit_file) for \
+             file operations, or install Git Bash for POSIX command support.\n\
+             ---\n\
+             Command: "
+        };
+        Some(format!("{}\n{}", hint, truncate_chars(command, 512)))
+    } else {
+        None
+    };
+
+    #[cfg(windows)]
+    {
+        use crate::utils::CREATE_NO_WINDOW;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    // 子进程的 stdout/stderr 需随时可读：用 piped 管道捕获。
+    cmd.stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            return ToolOutcome::fail(format!(
+                "Failed to execute command with {}: {}",
+                shell_name, e
+            ))
+        }
+    };
+
+    // 取管道句柄（spawn 成功后一定存在）。
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+
+    // 中断轮询 + 超时上限：与「等待子进程」放在同一个 select! 中竞速，
+    // 不 move child（避免借用逃逸），abort 置位或超时则 kill 子进程并视为失败。
+    // 超时默认 10 分钟（防脚本死循环），可用 SIMPLE_AI_BASH_TIMEOUT_SECS 覆盖。
+    let bash_timeout = ctx
+        .profile
+        .custom_env
+        .as_ref()
+        .and_then(|m| m.get("SIMPLE_AI_BASH_TIMEOUT_SECS"))
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(600);
+
+    // abort_rx 在 ToolContext 中为不可变引用，`watch::Receiver::changed()` 需 `&mut`，
+    // 故用 200ms 轮询检查当前值（与子进程 wait 竞速）。中断响应由 18s 级降至 200ms 级。
+    let mut abort_poll = tokio::time::interval(std::time::Duration::from_millis(200));
+    abort_poll.tick().await; // 首拍立即触发，避免多等一个周期
+
+    let status = loop {
+        tokio::select! {
+            status = child.wait() => {
+                // 子进程自然结束（wait 可能返回 Err —— 罕见，视为结束）
+                break Some(status.ok());
+            }
+            _ = abort_poll.tick() => {
+                // abort 信号已置位（用户点击中断）
+                if *ctx.abort_rx.borrow() {
+                    let _ = child.kill().await;
+                    tracing::warn!("[SimpleAI] bash 工具被中断，子进程已 kill");
+                    break None;
+                }
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(bash_timeout)) => {
+                let _ = child.kill().await;
+                tracing::warn!(
+                    "[SimpleAI] bash 工具超时（{}s），子进程已 kill",
+                    bash_timeout
+                );
+                break None;
+            }
+        }
+    };
+
+    // 读取捕获的输出（等子进程结束后 read_to_end 才能拿全）。
+    let (stdout_bytes, stderr_bytes) = match (stdout, stderr) {
+        (Some(mut so), Some(mut se)) => {
+            use tokio::io::AsyncReadExt;
+            let mut ob = Vec::new();
+            let mut eb = Vec::new();
+            let _ = so.read_to_end(&mut ob).await;
+            let _ = se.read_to_end(&mut eb).await;
+            (ob, eb)
+        }
+        _ => (Vec::new(), Vec::new()),
+    };
+
+    // 组装结果（与 run_bash 相同的解读逻辑）。
+    let stdout_s = decode_windows_output(&stdout_bytes);
+    let stderr_s = decode_windows_output(&stderr_bytes);
+    let exit_code = status
+        .flatten()
+        .map(|s| s.code().unwrap_or(-1))
+        .unwrap_or(-1);
+
+    let mut result = if let Some(hint) = syntax_hint {
+        hint
+    } else {
+        String::new()
+    };
+
+    if !stdout_s.is_empty() {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&stdout_s);
+    }
+    if !stderr_s.is_empty() {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("[stderr]\n{}", stderr_s));
+    }
+
+    // 退出码解读：根据实际 shell 生成针对性提示（避免写死 "cmd.exe" 误导 LLM）
+    let cmd_not_found_hint = if shell_name == "git_bash" || shell_name == "sh" {
+        format!("[Shell hint] Exit code 127: command not found. The shell is {}, but the \
+         command may use cmd.exe or PowerShell syntax (e.g. dir→ls, type→cat, \
+         findstr→grep, Get-Content→read_file tool). \
+         Use dedicated tools (search_files, glob, read_file, edit_file) for file operations.]",
+            shell_name)
+    } else if shell_name == "pwsh" {
+        "[Shell hint] Exit code 127: command not found. The shell is PowerShell 5.1. \
+         Use PowerShell syntax (Get-Content, Select-String, Get-ChildItem) or \
+         dedicated tools (search_files, glob, read_file, edit_file).]".to_string()
+    } else {
+        "[Shell hint] Exit code 127: command not found. The shell is cmd.exe; \
+         POSIX commands are not available. Use dedicated tools or install Git Bash.]".to_string()
+    };
+    if exit_code == 127 {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("\n{}", cmd_not_found_hint));
+    } else if exit_code != 0 {
+        if !result.is_empty() {
+            result.push('\n');
+        }
+        result.push_str(&format!("[exit code: {}]", exit_code));
+    }
+
+    let content = if result.is_empty() {
+        "(no output)".to_string()
+    } else {
+        truncate_chars(&result, 32_768)
+    };
+
+    if exit_code == 0 {
+        ToolOutcome::ok(content)
+    } else {
+        ToolOutcome::fail(content)
     }
 }
 

@@ -289,7 +289,9 @@ async fn request_summary_once(
     }
     let req = req.body(body.to_string());
     // 摘要请求也走重试（2 次，基数 500ms）。
-    let response = retry::send_with_retry(req, 2, 500)
+    // 注：摘要请求无会话级 abort_rx（compact 内部独立小请求），传入 None ——
+    // 不打断其退避，但主对话循环在 compact 前后的 abort 检查已保证整体可中断。
+    let response = retry::send_with_retry(req, 2, 500, None)
         .await
         .map_err(SummaryFailure::Other)?;
     let json: Value = response

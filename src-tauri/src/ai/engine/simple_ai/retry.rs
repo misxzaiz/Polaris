@@ -14,9 +14,14 @@
 - `send_with_retry` 是循环胶水：try_clone 请求 → send → 按状态/错误决策 → sleep 或返回。
 - 重试需要 `RequestBuilder::try_clone`；SimpleAI 的请求体是 JSON 字符串，可克隆。
 - 退避无抖动（确定性，便于测试）；生产可后续加 `rand` 抖动。
+- **中断可取消（对外部只读）**：每次 `send` 与每次退避 `sleep` 都用 `tokio::select!`
+  与 `abort_rx.changed()` 竞速。中断信号置位时立即返回 `AppError::Interrupted`，
+  让外层对话循环感知用户中止而非死等 `10s/30s/60s` 的限流退避。
  */
 
 use std::time::Duration;
+
+use tokio::sync::watch;
 
 use crate::error::{AppError, Result};
 
@@ -59,10 +64,13 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
 /// 带重试地发送请求。
 ///
 /// 成功（2xx）返回 `Response`；不可重试错误或达上限后返回最后一次错误。
+/// 第 5 个参数 `abort_rx` 为可选中止信号：置位时立即返回 `Interrupted`，
+/// 不再等退避 sleep（否则 429 长退避 10s/30s/60s 会让「页面上点停止」形同失效）。
 pub(super) async fn send_with_retry(
     req: reqwest::RequestBuilder,
     max_attempts: u32,
     base_ms: u64,
+    mut abort_rx: Option<&mut watch::Receiver<bool>>,
 ) -> Result<reqwest::Response> {
     // max_attempts 至少为 1（首次尝试）。
     let max_attempts = max_attempts.max(1);
@@ -73,7 +81,20 @@ pub(super) async fn send_with_retry(
         let cloned = req.try_clone().ok_or_else(|| {
             AppError::ProcessError("request body is not cloneable for retry".to_string())
         })?;
-        match cloned.send().await {
+        let resp = match abort_rx.as_mut() {
+            Some(rx) => {
+                tokio::select! {
+                    // 请求发送中也可被中断（若底层 send 极慢/挂在连接上，
+                    // reqwest 有 request 级超时兜底；这里再叠加用户主动取消）。）
+                    r = cloned.send() => r,
+                    _ = rx.changed() => {
+                        return Err(AppError::Interrupted)
+                    }
+                }
+            }
+            None => cloned.send().await,
+        };
+        match resp {
             Ok(resp) if resp.status().is_success() => return Ok(resp),
             Ok(resp) => {
                 let status = resp.status().as_u16();
@@ -103,7 +124,7 @@ pub(super) async fn send_with_retry(
                     attempt,
                     max_attempts
                 );
-                tokio::time::sleep(delay).await;
+                wait_interruptible(delay, &mut abort_rx).await;
             }
             Err(e) => {
                 let err = format!("API request failed: {}", e);
@@ -118,9 +139,26 @@ pub(super) async fn send_with_retry(
                     attempt,
                     max_attempts
                 );
-                tokio::time::sleep(delay).await;
+                wait_interruptible(delay, &mut abort_rx).await;
             }
         }
+    }
+}
+
+/// 可中断地睡眠：`delay` 期间 abort 信号置位则立即返回。
+/// `abort_rx` 为 None（外层 Option）时等价于普通 `tokio::time::sleep`。
+async fn wait_interruptible(
+    delay: std::time::Duration,
+    abort_rx: &mut Option<&mut watch::Receiver<bool>>,
+) {
+    match abort_rx.as_mut() {
+        Some(rx) => {
+            tokio::select! {
+                _ = tokio::time::sleep(delay) => {}
+                _ = rx.changed() => {}
+            }
+        }
+        None => tokio::time::sleep(delay).await,
     }
 }
 

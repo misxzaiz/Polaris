@@ -275,7 +275,9 @@ pub(super) async fn run_chat_loop(
             profile.model,
             retry_max
         );
-        let response = super::retry::send_with_retry(req, retry_max, retry_base_ms).await?;
+        // 传入 abort_rx：中断信号可在发送等待与 429 长退避期间立即打断，
+        // 否则「页面上点停止」在限流重试窗口内形同失效。
+        let response = super::retry::send_with_retry(req, retry_max, retry_base_ms, Some(abort_rx)).await?;
         tracing::info!("[SimpleAI] API 响应状态: {}", response.status());
 
         // 流式解析 SSE
@@ -518,6 +520,16 @@ pub(super) async fn run_chat_loop(
 
         // 3. 执行工具并收集结果
         for tc in &tool_calls {
+            // 工具执行前 abort 检查（快速路径：下一批工具尚未启动即可停下）。
+            // 若模型一次返回多个 tool_call，用户中断后不再执行余下工具。
+            if *abort_rx.borrow() {
+                tracing::warn!(
+                    "[SimpleAI] 工具执行前收到中断, 提前结束, session={session_id}"
+                );
+                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+                return Ok(());
+            }
+
             let call_id = tc["id"].as_str().unwrap_or("").to_string();
             let tool_name = tc["function"]["name"].as_str().unwrap_or("unknown");
             let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
@@ -536,6 +548,17 @@ pub(super) async fn run_chat_loop(
                 abort_rx,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
+
+            // 工具执行完成后 abort 检查：若执行期间用户已中断，
+            // 丢弃本工具结果（不 push tool 消息），下一轮顶部检查点会自然退出。
+            // 注意：不 push 半截 tool 消息可避免把「未回灌的工具结果」误发给模型。
+            if *abort_rx.borrow() {
+                tracing::warn!(
+                    "[SimpleAI] 工具执行完成但已收到中断, 提前结束, session={session_id}"
+                );
+                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
+                return Ok(());
+            }
 
             let mut end_event =
                 ToolCallEndEvent::new(session_id, tool_name.to_string(), outcome.success);

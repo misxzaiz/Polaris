@@ -1995,6 +1995,27 @@ export function createConversationStore(
           log.info('Session interrupted, waiting for backend session_end to finalize', {
             conversationId,
           })
+
+          // 超时兜底：后端协作式中断可能一直不消费（罕见但存在——如无限递归、死循环），
+          // session_end 永不到达时 isStreaming/isInterrupting 会卡死 UI。
+          // 5s 后仍处于流式状态则强制结束（本地 isStreaming=false + finishMessage，
+          // 与 session_end 到达时的收尾一致，避免半截消息）。
+          setTimeout(() => {
+            const st = get()
+            // 代际校验：中断等待期间用户可能已切会话/开新会话，conversationId 变化则失效，
+            // 避免误杀新一轮流式。
+            if (st.conversationId !== conversationId) return
+            if (st.isStreaming || st.isInterrupting) {
+              log.warn('Interrupt timeout fallback: backend session_end not received, force-finishing streaming', {
+                conversationId,
+                isStreaming: st.isStreaming,
+                isInterrupting: st.isInterrupting,
+                hasCurrentMessage: !!st.currentMessage,
+              })
+              set({ isStreaming: false, isInterrupting: false })
+              get().finishMessage()
+            }
+          }, 5000)
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
           log.error('Interrupt failed', err, { conversationId, engine })

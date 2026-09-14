@@ -364,6 +364,14 @@ impl AIEngine for SimpleAIEngine {
                         c(0);
                     }
                 }
+                // 用户主动中断：优雅结束，不当作错误（不发红色 ErrorEvent）。
+                Err(AppError::Interrupted) => {
+                    tracing::info!("[SimpleAI] 对话循环被用户中断, session={}", sid);
+                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
+                }
                 Err(e) => {
                     tracing::error!("[SimpleAI] 对话循环失败, session={}, error={}", sid, e);
                     let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
@@ -497,6 +505,14 @@ impl AIEngine for SimpleAIEngine {
                         c(0);
                     }
                 }
+                // 用户主动中断：优雅结束，不当作错误（不发红色 ErrorEvent）。
+                Err(AppError::Interrupted) => {
+                    tracing::info!("[SimpleAI] continue 被用户中断, session={}", sid);
+                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    if let Some(ref c) = on_complete {
+                        c(0);
+                    }
+                }
                 Err(e) => {
                     tracing::error!("[SimpleAI] continue 失败, session={}, error={}", sid, e);
                     let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
@@ -512,20 +528,34 @@ impl AIEngine for SimpleAIEngine {
     }
 
     fn interrupt(&mut self, session_id: &str) -> Result<()> {
-        let sessions = Arc::clone(&self.sessions);
-        let sid = session_id.to_string();
-
-        tokio::spawn(async move {
-            let guard = sessions.lock().await;
-            if let Some(session) = guard.get(&sid) {
-                let _ = session.abort_tx.send(true);
-                tracing::info!("[SimpleAI] Interrupt signal sent for session {}", sid);
-            } else {
-                tracing::warn!("[SimpleAI] Session {} not found for interrupt", sid);
+        // 同步路径：tokio::Mutex::try_lock 立即返回；不竞争锁时即时完成。
+        // 返回真实结果：session 不存在或锁被占用时向上返回 Err，让前端能感知「中断未生效」。
+        match self.sessions.try_lock() {
+            Ok(guard) => {
+                if let Some(session) = guard.get(session_id) {
+                    let _ = session.abort_tx.send(true);
+                    tracing::info!("[SimpleAI] Interrupt signal sent for session {}", session_id);
+                    Ok(())
+                } else {
+                    tracing::warn!("[SimpleAI] Session {} not found for interrupt", session_id);
+                    Err(AppError::ProcessError(format!(
+                        "会话不存在或已结束: {}",
+                        session_id
+                    )))
+                }
             }
-        });
-
-        Ok(())
+            Err(_) => {
+                // 锁被占用：可能正持有锁做长任务，无法立即中断。返回 Err 让上层重试/兜底。
+                tracing::warn!(
+                    "[SimpleAI] sessions 锁被占用, interrupt 无法立即执行, session={}",
+                    session_id
+                );
+                Err(AppError::ProcessError(format!(
+                    "中断信号发送失败（引擎繁忙）: {}",
+                    session_id
+                )))
+            }
+        }
     }
 
     fn active_session_count(&self) -> usize {

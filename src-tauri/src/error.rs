@@ -62,6 +62,10 @@ pub enum AppError {
     #[error("Operation timed out")]
     Timeout,
 
+    /// 用户主动中断（协作式中断被消费后向上传播；无需展示为错误）
+    #[error("Interrupted by user")]
+    Interrupted,
+
     /// 超时（带详细描述，用于需要给用户指导的场景）
     #[error("操作超时: {0}")]
     TimeoutWithMessage(String),
@@ -155,6 +159,8 @@ impl AppError {
             AppError::PermissionDenied(e) => format!("权限被拒绝: {}", e),
             AppError::InvalidPath(path) => format!("无效路径: {}", path),
             AppError::Timeout => "操作超时".to_string(),
+            // 用户主动中断：静默（不展示为红色错误，仅作流程终止信号）
+            AppError::Interrupted => "已中断".to_string(),
             AppError::TimeoutWithMessage(msg) => msg.clone(),
             AppError::McpTransportTimeout(msg) => format!("MCP 传输超时: {}", msg),
             AppError::NetworkError(e) => format!("网络错误: {}", e),
