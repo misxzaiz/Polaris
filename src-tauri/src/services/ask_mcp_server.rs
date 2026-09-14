@@ -30,9 +30,6 @@ const SERVER_VERSION: &str = "0.1.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
 const TOOL_NAME: &str = "ask_user_question";
 const FORM_TOOL_NAME: &str = "form";
-/// form ack 读取超时（秒）。form 拉起非阻塞，正常 ack 远快于此；超时兜底防
-/// listener 卡死拖住模型 turn。
-const FORM_ACK_TIMEOUT_SECS: u64 = 30;
 
 /// Server-level configuration, parsed from CLI args.
 pub struct AskMcpConfig {
@@ -150,8 +147,9 @@ fn handle_initialize() -> Value {
 
 /// Tool schema — 两个工具：
 /// 1. `ask_user_question`：与 Claude 原生 AskUserQuestion 100% 对齐（阻塞）。
-/// 2. `form`：拉起结构化表单（非阻塞）。schema 含 `panel: {tag:"polaris-form"}`，
+/// 2. `form`：拉起结构化表单（阻塞，等待提交）。schema 含 `panel: {tag:"polaris-form"}`，
 ///    前端按 panel.tag 分发 rendering FormCard；字段值不回传 AI（信任边界）。
+///    提交后 tool_result 返回回执（build_receipt），AI 在同一回合继续。
 fn handle_tools_list() -> Value {
     json!({
         "tools": [
@@ -218,14 +216,16 @@ fn handle_tools_list() -> Value {
             {
                 "name": FORM_TOOL_NAME,
                 "description": concat!(
-                    "Present a structured form to the user and wait for submission. ",
+                    "Present a structured form to the user and wait for its submission. ",
                     "The form is rendered as a schema-driven panel in the Polaris UI; ",
                     "the user fills and submits it, and the values are forwarded to a ",
-                    "target capability through the capability bus. This call is ",
-                    "non-blocking: it returns immediately after the form is shown, and ",
-                    "the model continues its turn. The tool_result carries only a ",
-                    "receipt — raw submitted values never come back into the model ",
-                    "context. Fields: 'target' (capability id, e.g. cap.todo), 'action' ",
+                    "target capability through the capability bus. This call BLOCKS the ",
+                    "current turn until the user submits the form (or the 600s hold ",
+                    "window expires). The tool_result is the submission receipt — raw ",
+                    "submitted values never come back into the model context. Use this ",
+                    "when you need structured input from the user before you can ",
+                    "continue (analogous to ask_user_question, but for fill-in forms). ",
+                    "Fields: 'target' (capability id, e.g. cap.todo), 'action' ",
                     "(capability action, e.g. create), 'title' (user-visible title), ",
                     "'read' ('full' | 'none' — none hides all field names' values from ",
                     "the model), and 'fields' (array of {name,type,label?,placeholder?,",
@@ -359,7 +359,7 @@ fn handle_ask_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     }))
 }
 
-/// Dispatch a `form` tool call: send a non-blocking form frame, read the ack.
+/// Dispatch a `form` tool call: send a blocking form frame, read the result.
 fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     if config.session_id.is_none() {
         // 未绑定会话时 form 工具无路径回填（需 forward to frontend session）。
@@ -443,11 +443,14 @@ fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
     Ok(answer)
 }
 
-/// Connect, send a non-blocking `form` frame, read the `form_ack`/`form_error`.
+/// Connect, send a `form` frame, block reading the `form_result`/`form_error`.
 ///
-/// The listener registers the hold, emits the UI event, and replies immediately —
-/// we only wait for that ack, never for user submission. A read timeout bounds the
-/// wait so a stuck listener doesn't hang the model turn.
+/// The listener registers the hold, emits the UI event, and **blocks** until the
+/// user submits (or the 600s hold window expires). No read timeout here — the
+/// listener bounds the wait; a stuck listener is bounded by the socket.
+/// (Formerly non-blocking: it read only an immediate `form_ack` and never waited
+/// for submission. The legacy 30s ack-read cap is removed so a form open
+/// longer than 30s doesn't error the drill — see form_flow::FORM_WAIT_TIMEOUT_SECS.)
 fn request_form_ack_via_tcp(port: u16, form_frame: &Value) -> Result<Value> {
     let addr = format!("127.0.0.1:{}", port);
     let mut stream = TcpStream::connect_timeout(
@@ -458,9 +461,8 @@ fn request_form_ack_via_tcp(port: u16, form_frame: &Value) -> Result<Value> {
     )
     .map_err(|e| AppError::ProcessError(format!("无法连接 {}: {}", addr, e)))?;
 
-    stream
-        .set_read_timeout(Some(Duration::from_secs(FORM_ACK_TIMEOUT_SECS)))
-        .ok();
+    // No read timeout — block as long as the user takes to submit.
+    stream.set_read_timeout(None).ok();
     stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
     write_frame(&mut stream, form_frame)?;

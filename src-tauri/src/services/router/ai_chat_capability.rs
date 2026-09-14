@@ -217,6 +217,13 @@ impl Capability for AiChatCapability {
                             return Err("cap.ai.chat form_submit 需要 formId 参数".to_string());
                         }
                         let values = get("values").cloned().unwrap_or(Value::Null);
+                        // 用户私密提交：由前端 FormCard 的"私密提交"开关决定；未显式传时
+                        // 跟随 AI 声明的 read===none。服务端强制脱敏，不信任 AI 的 read。
+                        let private = get("private")
+                            .and_then(|v| v.as_bool())
+                            .unwrap_or_else(|| {
+                                get("read").and_then(|v| v.as_str()) == Some("none")
+                            });
                         let hold = {
                             let mut holds = s.form_holds.lock().ok().ok_or_else(|| {
                                 "表单存储已损坏（form_holds 锁中毒）".to_string()
@@ -234,7 +241,7 @@ impl Capability for AiChatCapability {
                             return Err("表单已失效（不存在或已提交），请让 AI 重新发起".to_string());
                         };
                         let (receipt, ok, reply) =
-                            crate::services::form_flow::submit_form(&hold, &values, &*s.router);
+                            crate::services::form_flow::submit_form(&hold, &values, &*s.router, private);
                         tracing::info!(
                             "[Form] submit_form 返回 formId={} ok={} receipt={}",
                             hold.form_id,
@@ -271,6 +278,17 @@ impl Capability for AiChatCapability {
                             "chat-event",
                             form_answered_event,
                         ));
+
+                        // 把回执喂给挂起的 form 工具调用（handle_form_frame 等一个 oneshot）：
+                        // 用户提交完成 → 引擎的 tool_result 拿到 receipt，AI 在同一回合继续跑。
+                        if let Some(entry) = s.take_form_answer_sender(&hold.form_id) {
+                            if entry.sender.send(receipt.clone()).is_err() {
+                                tracing::info!(
+                                    "[Form] formId={} answer sender 已关闭，回执未送达（用户可能已取消）",
+                                    hold.form_id
+                                );
+                            }
+                        }
                         match reply {
                             Ok(reply) => Ok(reply),
                             Err(e) => Err(format!(

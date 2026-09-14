@@ -303,17 +303,18 @@ async fn handle_ask_frame(
     Ok(())
 }
 
-/// 处理 `form` 帧：AI 经 polaris-ask MCP 拉起结构化表单（非阻塞）。
+/// 处理 `form` 帧：AI 经 polaris-ask MCP 拉起结构化表单（阻塞等待提交）。
 ///
-/// 与 `ask` 的关键差异：**不挂起会话**。流程为
+/// 与 `ask` 采用同一挂起骨架，差异只在回执来源：
 ///   1. token 校验 → 2. 解析 formId/title/read/target/action/fields/sessionId
 ///   3. `build_hold` 校验 fields schema（非法 → 回写 `form_error` 帧）
-///   4. 注册 `AppState.form_holds`（formId -> FormHold）
+///   4. 注册 `AppState.form_holds` 与 `AppState.form_answer_senders`
 ///   5. 广播 `form` chat-event（前端 FormCard 拉起渲染）
-///   6. 立即回写 `form_ack` 帧 → AI 的 tool_result = "表单已拉起，等待用户提交"
+///   6. **挂起等待**用户提交 —— `form_submit` 动作转发目标能力后 send receipt 唤醒
+///   7. 回写 `form_result` 帧 → AI 的 tool_result = receipt（含目标能力执行结果）
 ///
-/// 用户提交走 `cap.ai.chat` 的 `form_submit` 同步动作（阶段 B），不走本通道；
-/// 超时由 `form_holds` 的清理逻辑处理。原始 fields 只在服务端流转。
+/// 超时（`FORM_WAIT_TIMEOUT_SECS`）或连接断开按超时收尾，AI 拿到一条状态文案。
+/// 原始 fields 只在服务端流转；前端与 AI 都只见 build_receipt 的产物。
 async fn handle_form_frame(
     stream: &mut TcpStream,
     frame: Value,
@@ -331,9 +332,29 @@ async fn handle_form_frame(
         ));
     }
 
-    // 顺手清一次超时 hold（表单有 600s 存活窗口）。
+    // 顺手清一次超时 hold（表单有 600s 存活窗口）。超时 hold 被移除时，
+    // 其挂起的 form_answer_sender 一并移除：让那条等 600s 的循环立即醒来
+    // 拿超时文案，而不是空等。
     if let Ok(mut holds) = state.form_holds.lock() {
+        // 先收集超时的 formId，再连 sender 一起清。
+        let now = std::time::Instant::now();
+        let expired: Vec<String> = holds
+            .iter()
+            .filter(|(_, h)| {
+                now.duration_since(h.created_at)
+                    >= std::time::Duration::from_secs(form_flow::FORM_WAIT_TIMEOUT_SECS)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
         form_flow::cleanup_expired(&mut holds);
+        for id in expired {
+            if let Some(entry) = state.take_form_answer_sender(&id) {
+                let _ = entry.sender.send(format!(
+                    "表单等待超时（{}s），请让 AI 重新拉起",
+                    form_flow::FORM_WAIT_TIMEOUT_SECS
+                ));
+            }
+        }
     }
 
     // 解析字段 —— 全部由 MCP 侧生成/透传。
@@ -436,17 +457,63 @@ async fn handle_form_frame(
     // 广播 form chat-event（前端 FormCard 依据该事件拉起面板）。
     emit_form_event(&state, &hold);
 
-    // 立即回写 ack —— AI 不挂起，直接拿到"已拉起"结果继续运行。
+    // 阻塞等待用户提交（对标 ask/card 骨架）：注册 oneshot sender 后挂起，
+    // 不立即回 ack。提交 —— `form_submit` 动作 send receipt 唤醒本循环，
+    // 回写 result 帧作为引擎的 tool_result —— AI 拿到回执后在同一套接字
+    // 继续下一轮；超时（FORM_WAIT_TIMEOUT_SECS）或连接断开则按超时收尾。
+    //
+    // 与 ask 的差异：ask 的 oneshot 由 answer_question 取出后 send；这里
+    // 由 form_submit 的 dispatch 分支 send。双方都经 AppState.form_answer_senders。
+    let (tx, rx) = oneshot::channel::<String>();
+    state.register_form_answer_sender(&form_id, tx);
+    let receipt = match tokio::time::timeout(
+        std::time::Duration::from_secs(form_flow::FORM_WAIT_TIMEOUT_SECS),
+        rx,
+    )
+    .await
+    {
+        Ok(Ok(response)) => {
+            tracing::info!(
+                "[Form] 收到提交回执 formId={} 唤醒，回写引擎 tool_result",
+                form_id
+            );
+            response
+        }
+        Ok(Err(_recv_err)) => {
+            // oneshot 被丢弃（如 form_submit 已把 sender 拿走但未 send）。按超时处理。
+            tracing::info!(
+                "[Form] formId={} oneshot 被丢弃，按超时收尾",
+                form_id
+            );
+            String::from("用户表单提交失败：应答通道已断开")
+        }
+        Err(_elapsed) => {
+            tracing::info!(
+                "[Form] formId={} 等待提交超时（{}s）",
+                form_id,
+                form_flow::FORM_WAIT_TIMEOUT_SECS
+            );
+            String::from(format!(
+                "表单等待超时（{}s），请让 AI 重新拉起",
+                form_flow::FORM_WAIT_TIMEOUT_SECS
+            ))
+        }
+    };
+
+    // 回写 result 帧（引擎的 tool_result 语义）：含回执文本。对于已经提交的
+    // 表单，这是回喂给 AI 的正式结果；超时/断连则是一段让 AI 感知状态的文案。
     write_frame(
         stream,
-        &json!({
-            "type": "form_ack",
+        &serde_json::json!({
+            "type": "form_result",
             "formId": form_id,
-            "read": hold.read,
-            "status": "waiting",
+            "receipt": receipt,
         }),
     )
     .await?;
+
+    // 无论哪种路径，此刻 sender 已被消费或超时 —— 依 form_id 清理。
+    state.take_form_answer_sender(&form_id);
     let _ = stream.shutdown().await;
 
     Ok(())
@@ -1879,6 +1946,16 @@ pub struct PluginCardAnswerEntry {
     pub sender: oneshot::Sender<PluginCardOutcome>,
 }
 
+/// Internal entry stored in `AppState.form_answer_senders`.
+///
+/// See [`handle_form_frame`] for the blocking loop: the sender is `await`ed
+/// until the user submits the form (via `form_submit`), the hold expires, or
+/// the connection drops.
+pub struct FormAnswerEntry {
+    /// oneshot results in the receipt text the engine sees as tool_result.
+    pub sender: oneshot::Sender<String>,
+}
+
 impl AppState {
     /// Register a oneshot answer sender keyed by call_id.
     pub(crate) fn register_ask_answer_sender(
@@ -1916,6 +1993,22 @@ impl AppState {
             .ok()?
             .remove(interaction_id)
     }
+
+    /// Register a form answer sender keyed by form_id.
+    pub(crate) fn register_form_answer_sender(
+        &self,
+        form_id: &str,
+        sender: oneshot::Sender<String>,
+    ) {
+        if let Ok(mut map) = self.form_answer_senders.lock() {
+            map.insert(form_id.to_string(), FormAnswerEntry { sender });
+        }
+    }
+
+    /// Remove and return the form answer entry for a form_id, if present.
+    pub fn take_form_answer_sender(&self, form_id: &str) -> Option<FormAnswerEntry> {
+        self.form_answer_senders.lock().ok()?.remove(form_id)
+    }
 }
 
 /// Build a `QuestionOutcome` from the user-submitted multi-answer payload.
@@ -1947,6 +2040,21 @@ pub fn build_outcome_for_multiple_answers(
 mod dispatch_tests {
     use super::*;
     use crate::models::config::{Config, DispatchPreset, ModelProfile};
+
+    #[test]
+    fn form_answer_sender_roundtrip() {
+        // FormAnswerEntry 的 oneshot 传输语义：form_submit 侧注册时取出 sender，
+        // send receipt 后，handle_form_frame 挂起的 rx 应能收到同一份回执文本。
+        // 这是阻塞回喂闭环的最小可用性验证。
+        let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+        let entry = FormAnswerEntry { sender: tx };
+        let receipt = "用户已提交表单\n执行结果: {\"ok\":true}".to_string();
+        let _ = entry.sender.send(receipt.clone());
+        let got = rx
+            .blocking_recv()
+            .expect("oneshot 应收到回执");
+        assert_eq!(got, receipt);
+    }
 
     #[test]
     fn dispatch_depth_parsing() {

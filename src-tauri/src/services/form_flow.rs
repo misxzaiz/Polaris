@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 
 use crate::contracts::Value;
 use crate::services::form_core::{
-    build_receipt, expand_dot_paths, normalize_payload_for_target, validate_fields,
+    expand_dot_paths, normalize_payload_for_target, validate_fields,
 };
 
 /// 表单存活时长：超时后桥清理，迟到的提交被拒绝。
@@ -93,12 +93,16 @@ pub fn build_hold(
 
 /// 提交表单：组 payload、转发目标、生成回执。
 ///
+/// `private = true`（用户私密提交）：强制以 `read=none` 构建回执并脱敏 exec，
+/// 忽略 AI 声明的 `hold.read` —— 用户填写的字段值在任何情况下都不回喂 AI。
+///
 /// 返回 `(receipt, ok, reply)`——receipt 是可以安全喂给 AI 的文本，
 /// reply 是目标能力的执行结果。调用方负责把 receipt 回显给 AI / 前端。
 pub fn submit_form(
     hold: &FormHold,
     values: &Value,
     router: &dyn crate::contracts::Router,
+    private: bool,
 ) -> (String, bool, Result<Value, String>) {
     // 0. 白名单纵深防御：拉起时可能被绕过（如 hold 被篡改），提交时再兜底一次。
     //    不在白名单 → 构造失败回执，不转发目标能力。
@@ -139,8 +143,20 @@ pub fn submit_form(
         }
     };
 
-    // 3. 生成回执（信任边界：AI 只见这份文本）
-    let receipt = build_receipt(&hold.read, &hold.fields, values, &exec_result);
+    // 3. 生成回执（信任边界：AI 只见这份文本）。用户私密提交时强制
+    //    read=none + 脱敏 exec —— 字段值与目标能力返回原文都不回喂 AI。
+    let allowed_read = if private {
+        "none"
+    } else {
+        &hold.read[..]
+    };
+    let receipt = crate::services::form_core::build_receipt_opts(
+        allowed_read,
+        &hold.fields,
+        values,
+        &exec_result,
+        private,
+    );
     let ok = exec_result.is_ok();
     (receipt, ok, exec_result)
 }
@@ -211,7 +227,7 @@ mod tests {
             }
         }
 
-        let (receipt, ok, reply) = submit_form(&hold, &json!({"a": "1"}), &DummyRouter);
+        let (receipt, ok, reply) = submit_form(&hold, &json!({"a": "1"}), &DummyRouter, false);
         assert!(!ok, "非白名单提交必须失败");
         assert!(reply.is_err());
         assert!(receipt.contains("cap.config"), "回执应指明被拒目标: {}", receipt);
@@ -254,5 +270,119 @@ mod tests {
         assert_eq!(removed, 1);
         assert!(!holds.contains_key("old"));
         assert!(holds.contains_key("fresh"));
+    }
+
+    #[test]
+    fn private_submit_never_returns_field_value_to_ai() {
+        // 隐私泄漏实证：AI 声明 read=full，但用户勾选私密提交(private=true)。
+        // 目标能力 cap.todo 的 create 返回值含 content(=用户填的正文原文)——
+        // 若不脱敏 exec，即使 read=none 也会经 `执行结果:` 把原文透回 AI。
+        // 此处用一个假 router 返回 { "item": { "content": "机密正文" } } 复现。
+        struct EchoRouter;
+        impl crate::contracts::Router for EchoRouter {
+            fn dispatch(
+                &self,
+                env: crate::contracts::Envelope,
+            ) -> Result<crate::contracts::Reply, String> {
+                use crate::contracts::Reply;
+                Ok(Reply {
+                    msg_id: env.id,
+                    result: Ok(serde_json::json!({ "item": { "content": "机密正文" } })),
+                    trace: env.trace,
+                })
+            }
+            fn subscribe(
+                &self,
+                _filter: crate::contracts::Filter,
+            ) -> tokio::sync::mpsc::Receiver<crate::contracts::Event> {
+                unreachable!()
+            }
+            fn register_handle(
+                &self,
+                _cap: Box<dyn crate::contracts::Capability>,
+            ) -> Result<crate::contracts::CapabilityHandle, String> {
+                unreachable!()
+            }
+        }
+
+        // AI 声明 read=full（默认往 AI 上下文透值），但用户 forced private。
+        let hold = build_hold(
+            "f-private", "s1", "cap.todo", "create", "full",
+            &json!([{"name": "content", "type": "string"}]),
+            "私密表单",
+        ).unwrap();
+
+        let (receipt, ok, reply) =
+            submit_form(&hold, &json!({"content": "机密正文"}), &EchoRouter, true);
+
+        assert!(ok, "目标能力执行应成功,失败={:?}", reply);
+        assert!(
+            !receipt.contains("机密正文"),
+            "私密提交不得把用户填入的字段值回喂 AI: {}",
+            receipt
+        );
+        assert!(
+            !receipt.contains("\"content\""),
+            "私密提交不得把 target 返回值(cap.todo item.content)透出: {}",
+            receipt
+        );
+        assert!(receipt.contains("执行结果"), "应保有执行结果概要: {}", receipt);
+        // 脱敏后不应出现具体的成功值 JSON
+        assert!(
+            !receipt.contains("\"item\""),
+            "私密提交 exec 脱敏后不应出现 target 返回对象: {}",
+            receipt
+        );
+    }
+
+    #[test]
+    fn private_submit_sanitizes_failure_detail() {
+        // 提交失败 + 用户私密提交：失败详情应脱敏，但 AI 仍能感知"失败"（可据此重新拉起）。
+        struct FailRouter;
+        impl crate::contracts::Router for FailRouter {
+            fn dispatch(
+                &self,
+                _env: crate::contracts::Envelope,
+            ) -> Result<crate::contracts::Reply, String> {
+                Err("cap.todo 需要 content（你填的是: xxx）".to_string())
+            }
+            fn subscribe(
+                &self,
+                _filter: crate::contracts::Filter,
+            ) -> tokio::sync::mpsc::Receiver<crate::contracts::Event> {
+                unreachable!()
+            }
+            fn register_handle(
+                &self,
+                _cap: Box<dyn crate::contracts::Capability>,
+            ) -> Result<crate::contracts::CapabilityHandle, String> {
+                unreachable!()
+            }
+        }
+
+        let hold = build_hold(
+            "f-fail", "s1", "cap.todo", "create", "full", // AI 声明 full
+            &json!([{"name": "content", "type": "string"}]),
+            "私密失败表单",
+        ).unwrap();
+        let (receipt, ok, _) =
+            submit_form(&hold, &json!({"content": "机密正文"}), &FailRouter, true);
+
+        assert!(!ok, "应失败");
+        assert!(
+            receipt.contains("执行失败"),
+            "隐私模式下 AI 仍应感知失败: {}",
+            receipt
+        );
+        assert!(
+            !receipt.contains("机密正文"),
+            "失败详情不得带用户填的字段值: {}",
+            receipt
+        );
+        assert!(
+            !receipt.contains("xxx"),
+            "失败详情原文（可能含字段值）应被脱敏: {}",
+            receipt
+        );
     }
 }

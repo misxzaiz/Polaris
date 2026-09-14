@@ -84,8 +84,11 @@ pub fn expand_dot_paths(flat: &Value) -> Value {
 /// 生成回执（信任边界所在 —— AI 只能看到这份文本）
 ///
 /// 规则：
-/// - `read = "none"`：只列字段名，值全部不出现
-/// - `read = "full"`（默认）：完整字段值；但 secret 类型字段**无论模式**一律掩码
+/// - `read_mode = "none"`：只列字段名，值全部不出现
+/// - `read_mode = "full"`（默认）：完整字段值；但 secret 类型字段**无论模式**一律掩码
+/// - `sanitize_exec = true`（用户私密提交）：exec_line 脱敏——成功只回"执行成功"，
+///   失败只回"执行失败"，不携带目标能力返回/错误文案（否则 cap.todo 等的返回值会把
+///   用户填写原文透出，见 form-隐私 回归测试）
 /// - 附带 target capability 的执行结果
 pub fn build_receipt(
     read_mode: &str,
@@ -93,15 +96,34 @@ pub fn build_receipt(
     values: &Value,
     exec_result: &Result<Value, String>,
 ) -> String {
+    build_receipt_opts(read_mode, fields, values, exec_result, false)
+}
+
+/// `build_receipt` 的隐私版：`sanitize_exec` 打开时脱敏执行结果，不透出字段原文。
+pub fn build_receipt_opts(
+    read_mode: &str,
+    fields: &[Value],
+    values: &Value,
+    exec_result: &Result<Value, String>,
+    sanitize_exec: bool,
+) -> String {
     let secret_names: Vec<&str> = fields
         .iter()
         .filter(|f| f.get("type").and_then(|t| t.as_str()) == Some("secret"))
         .filter_map(|f| f.get("name").and_then(|n| n.as_str()))
         .collect();
 
-    let exec_line = match exec_result {
-        Ok(v) => format!("执行结果: {}", serde_json::to_string(v).unwrap_or_default()),
-        Err(e) => format!("执行失败: {}", e),
+    let exec_line = if sanitize_exec {
+        // 用户私密提交：不透出目标能力返回值/错误详情，仅回报成败。
+        match exec_result {
+            Ok(_) => "执行结果: 成功".to_string(),
+            Err(_) => "执行失败: 目标能力拒绝或内部错误（详情已隐藏）".to_string(),
+        }
+    } else {
+        match exec_result {
+            Ok(v) => format!("执行结果: {}", serde_json::to_string(v).unwrap_or_default()),
+            Err(e) => format!("执行失败: {}", e),
+        }
     };
 
     let mut lines = Vec::new();

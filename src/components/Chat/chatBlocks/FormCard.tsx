@@ -37,6 +37,9 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
   // 提交瞬间构造 values 对象发服务端 → 引用于提交后即弃，无持久化原文。
   // read=full：受控 state（服务端按 read 决定是否回填值，secret 仍掩码）。
   const readNone = block.read === 'none';
+  // 私密提交开关：用户一键把填写内容锁在 AI 上下文之外。read=none 时默认勾选；
+  // read=full 时用户可手动勾选（服务端强制脱敏，不信任 AI 声明的 read）。
+  const [privateSubmit, setPrivateSubmit] = useState<boolean>(readNone);
   const [rawValues, setRawValues] = useState<FieldValues>(() => {
     if (readNone) return {};
     const init: FieldValues = {};
@@ -115,6 +118,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
         sessionId: block.sessionId,
         formId: block.id,
         values,
+        private: privateSubmit,
       });
       // 成功后无需本地改状态：form-answered 事件会经 eventHandler 更新 block
     } catch (error) {
@@ -129,7 +133,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [block, isSubmitted, submitting, collectValues, t]);
+  }, [block, isSubmitted, submitting, privateSubmit, collectValues, t]);
 
   // ===== 已提交态：展示服务端回执（read=none 时回执不含字段值） =====
   if (isSubmitted) {
@@ -224,14 +228,30 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
         ))}
       </div>
 
-      {/* 底部：提交 */}
+      {/* 底部：私密开关 + 提交 */}
       <div className="shrink-0 px-3 py-2 border-t border-accent/20 bg-background-elevated/50 flex items-center gap-2">
+        <label
+          className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none mr-auto"
+          title={t(
+            'form.privateHint',
+            '勾选后，你填写的内容与提交结果都不会进入 AI 的上下文'
+          )}
+        >
+          <input
+            type="checkbox"
+            checked={privateSubmit}
+            onChange={(e) => setPrivateSubmit(e.target.checked)}
+            disabled={submitting}
+            className="accent-accent w-3.5 h-3.5"
+          />
+          {t('form.privateSubmit', '私密提交 · AI 不可见')}
+        </label>
         <Button
           variant="primary"
           size="sm"
           onClick={() => void submit()}
           disabled={submitting}
-          className="ml-auto"
+          className="ml-4"
         >
           {submitting ? (
             <span className="flex items-center gap-1.5">
