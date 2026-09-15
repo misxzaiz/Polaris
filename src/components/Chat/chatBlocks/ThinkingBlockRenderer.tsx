@@ -8,7 +8,7 @@
  * - 流式结束后自动折叠，展示内容预览
  */
 
-import { memo, useState, useEffect } from 'react';
+import { memo, useState, useEffect, useRef } from 'react';
 import { Brain, ChevronDown } from 'lucide-react';
 import type { ThinkingBlock } from '@/types';
 
@@ -31,6 +31,24 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
       setIsCollapsed(true);
     }
   }, [isStreaming]);
+
+  // 展开态内容容器：限高滚动 + 流式期间"钉在底部才自动滚"（用户上滑回溯时不被拉走）
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [pinnedToBottom, setPinnedToBottom] = useState(true);
+
+  // 用户滚动展开区时重新判定是否在底部（24px 容差）
+  const handleBodyScroll = () => {
+    const el = bodyRef.current;
+    if (!el) return;
+    setPinnedToBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 24);
+  };
+
+  // 流式内容增长：仅在用户仍钉在底部时跟随滚动
+  useEffect(() => {
+    if (!isStreaming || !pinnedToBottom) return;
+    const el = bodyRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [block.content, isStreaming, pinnedToBottom]);
 
   // 折叠时预览文本（内容前 60 字）
   const previewText = block.content.length > 60
@@ -101,10 +119,14 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
           </div>
         )}
 
-        {/* 展开时显示完整内容 */}
+        {/* 展开时显示完整内容（限高滚动） */}
         {!isCollapsed && (
           <div className="px-3 pb-2.5 pl-9 border-t border-white/5 pt-2">
-            <div className="text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed">
+            <div
+              ref={bodyRef}
+              onScroll={handleBodyScroll}
+              className="max-h-[40vh] overflow-y-auto overscroll-contain pr-1 text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed"
+            >
               {block.content}
               {/* 流式打字光标 */}
               {isStreaming && (
