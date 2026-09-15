@@ -12,6 +12,8 @@
 import { memo, useCallback, useMemo, useState } from 'react';
 import { DeferredMermaidDiagram } from '../components/Chat/common/DeferredMermaidDiagram';
 import { MarkdownRenderCache } from './cache';
+import DOMPurify from 'dompurify';
+import { highlightCode } from './syntaxHighlight';
 
 /** 渲染片段类型 */
 interface RenderPart {
@@ -482,14 +484,24 @@ export function splitByCodeBlocks(content: string): Array<{
 
 /**
  * 流式阶段的代码块渲染
- * 显示代码块标记但不高亮
+ *
+ * 显示代码块标记与复制按钮；仅在 `completed` 为 true（代码块已闭合）
+ * 时启用语法高亮，避免流式追加过程中的重复 highlight 开销。
+ *
+ * 高亮管线复用 `highlightCode`（`src/utils/syntaxHighlight.ts`）：
+ * - 已接入 performance.syntaxHighlighting 开关，关闭时返回转义纯文本
+ * - 自带 LRU 缓存，`completed` 后一次性高亮，不会反复计算
+ * - 语言未注册 / 高亮失败时自动回退 highlightAuto，再失败则纯文本
  */
 export const StreamingCodeBlock = memo(function StreamingCodeBlock({
   content,
   language,
+  completed = false,
 }: {
   content: string;
   language?: string;
+  /** 代码块是否已闭合（来自 splitByCodeBlocks 的 completed 标记） */
+  completed?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
 
@@ -499,6 +511,13 @@ export const StreamingCodeBlock = memo(function StreamingCodeBlock({
       setTimeout(() => setCopied(false), 1500);
     });
   }, [content]);
+
+  // 仅在高亮开关开启且代码块已闭合时执行高亮；
+  // 流式阶段（completed=false）保持纯文本，避免高频追加触发重复 highlight。
+  const highlightedHtml = useMemo(() => {
+    if (!completed) return null;
+    return highlightCode(content, language || '');
+  }, [content, language, completed]);
 
   return (
     <div className="rounded-lg overflow-hidden bg-background-base border border-border-subtle group relative">
@@ -513,8 +532,14 @@ export const StreamingCodeBlock = memo(function StreamingCodeBlock({
         </button>
       </div>
       <pre className="code-block-pre p-3 overflow-x-auto">
-        <code className="text-sm text-text-secondary font-mono whitespace-pre">
-          {content}
+        <code className={`text-sm font-mono whitespace-pre${highlightedHtml ? ' hljs' : ' text-text-secondary'}`}>
+          {highlightedHtml ? (
+            // highlightCode 返回 hljs 生成的 span/class 结构（或转义纯文本），
+            // 与 CodeBlock.tsx 保持一致：仅放行 span + class，避免 XSS 面。
+            <span dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(highlightedHtml, { ALLOWED_TAGS: ['span'], ALLOWED_ATTR: ['class'] }) }} />
+          ) : (
+            content
+          )}
         </code>
       </pre>
     </div>
@@ -650,6 +675,7 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
                 key={`code-${index}`}
                 content={part.content}
                 language={part.language}
+                completed={part.completed}
               />
             );
           }

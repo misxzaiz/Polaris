@@ -2,7 +2,7 @@
  * 轻量级 Markdown 渲染器测试
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   hasOpenCodeBlock,
   splitByCodeBlocks,
@@ -15,6 +15,65 @@ import {
 // 从模块中提取测试函数
 import { LightweightMarkdown } from './lightweightMarkdown';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { StreamingCodeBlock } from './lightweightMarkdown';
+import { useConfigStore } from '@/stores/configStore';
+
+/**
+ * 高亮受 performance.syntaxHighlighting 开关控制（默认关闭）。
+ * 测试中直接注入 config 状态，避免依赖后端 tauri。
+ */
+function setSyntaxHighlighting(enabled: boolean) {
+  useConfigStore.setState({
+    config: {
+      ...(useConfigStore.getState().config ?? {}),
+      performance: {
+        ...(useConfigStore.getState().config?.performance ?? {}),
+        syntaxHighlighting: enabled,
+      },
+    },
+  } as never);
+}
+
+describe('StreamingCodeBlock 语法高亮', () => {
+  afterEach(() => setSyntaxHighlighting(false));
+
+  it('completed=true 时对已注册语言（java）应用 hljs 高亮结构', () => {
+    setSyntaxHighlighting(true);
+    const source = 'public class Hi {\n  String s = "x";\n}';
+    const html = renderToStaticMarkup(
+      <StreamingCodeBlock content={source} language="java" completed />
+    );
+    // hljs 输出 span + class 结构，并被 <code class="... hljs"> 包裹
+    expect(html).toContain('hljs');
+    expect(html).toMatch(/<span class="hljs-[a-z_]+">/);
+  });
+
+  it('completed=false 时（流式阶段）保持纯文本，不做高亮', () => {
+    setSyntaxHighlighting(true);
+    const html = renderToStaticMarkup(
+      <StreamingCodeBlock content={'public class Hi {\n  String s = "x";'} language="java" />
+    );
+    expect(html).not.toMatch(/<span class="hljs-[a-z_]+">/);
+  });
+
+  it('未传 language 时回退 highlightAuto，仍产出高亮结构', () => {
+    setSyntaxHighlighting(true);
+    const html = renderToStaticMarkup(
+      <StreamingCodeBlock content={'public class Hi {\n  String s = "x";\n}'} completed />
+    );
+    expect(html).toContain('hljs');
+  });
+
+  it('performance.syntaxHighlighting 关闭时不输出高亮结构（性能开关生效）', () => {
+    setSyntaxHighlighting(false);
+    const html = renderToStaticMarkup(
+      <StreamingCodeBlock content={'public class Hi {\n  String s = "x";\n}'} language="java" completed />
+    );
+    expect(html).not.toMatch(/<span class="hljs-[a-z_]+">/);
+  });
+});
+
+
 
 describe('parseInlineMarkdown (via LightweightMarkdown)', () => {
   describe('plain text', () => {
