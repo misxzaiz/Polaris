@@ -21,6 +21,9 @@ use crate::contracts::Value;
 /// - 每个字段必须有非空 name
 /// - select 类型必须带非空 options 数组
 /// - 未知 type 不报错（前端回落 string 渲染）
+/// - `hidden = true` 字段（值不进入 AI 上下文）与 `secret` 互斥：
+///   secret 是「服务端掩码 + 前端密码框」，hidden 是「回执隐藏但值仍参与转发」。
+///   两者语义不同，同时声明视为 schema 错误，避免歧义。
 pub fn validate_fields(fields: &Value) -> Result<(), String> {
     let arr = fields
         .as_array()
@@ -48,8 +51,31 @@ pub fn validate_fields(fields: &Value) -> Result<(), String> {
                 return Err(format!("fields[{}] type=select 需要 options 数组", i));
             }
         }
+        // hidden 与 secret 互斥：secret 是服务端掩码 + 前端密码框，hidden 是
+        // 「回执隐藏但值仍参与转发」——语义不同，同时声明视为歧义，拒绝 schema。
+        let is_secret = ty == "secret" || f.get("secret").and_then(|v| v.as_bool()) == Some(true);
+        let is_hidden = f.get("hidden").and_then(|v| v.as_bool()) == Some(true);
+        if is_secret && is_hidden {
+            return Err(format!(
+                "fields[{}] (name={}) hidden 与 secret 互斥：secret 值前端即不可见，hidden 用于「值可转发但 AI 不可读」",
+                i, name
+            ));
+        }
     }
     Ok(())
+}
+
+/// 收集 `hidden = true` 字段的 name 列表（回执掩码用）。
+///
+/// 隐藏字段的值仍随 payload 转发给目标能力（脚本 / 命令可读取原文），
+/// 但 `build_receipt_opts` 在 `full` 模式下对这些字段显示 `<已隐藏>`，
+/// AI 上下文拿不到原文。这是「隐藏值不进 AI 上下文」信任边界的服务端强制点。
+pub fn hidden_field_names(fields: &[Value]) -> Vec<&str> {
+    fields
+        .iter()
+        .filter(|f| f.get("hidden").and_then(|v| v.as_bool()) == Some(true))
+        .filter_map(|f| f.get("name").and_then(|n| n.as_str()))
+        .collect()
 }
 
 /// 点路径展开：`{"a.b": 1, "a.c": 2, "d": 3}` → `{"a": {"b": 1, "c": 2}, "d": 3}`
@@ -100,6 +126,12 @@ pub fn build_receipt(
 }
 
 /// `build_receipt` 的隐私版：`sanitize_exec` 打开时脱敏执行结果，不透出字段原文。
+///
+/// 字段级隐藏（`hidden = true`）在 `full` 模式下按 secret 同款掩码处理——
+/// 值仍随 payload 转发给目标能力（脚本 / 命令可读取原文），但回执中只显示
+/// `<已隐藏>`，AI 上下文拿不到原文。这是方向 2「隐藏值不进 AI 上下文」的核心：
+/// 信任边界与 `read="none"` 一致，但只针对 AI 声明的特定字段生效，其余字段
+/// 仍可全量回显，便于 AI 知道哪些参数已收齐。
 pub fn build_receipt_opts(
     read_mode: &str,
     fields: &[Value],
@@ -112,6 +144,9 @@ pub fn build_receipt_opts(
         .filter(|f| f.get("type").and_then(|t| t.as_str()) == Some("secret"))
         .filter_map(|f| f.get("name").and_then(|n| n.as_str()))
         .collect();
+
+    // hidden 字段：值仍参与转发，回执按已隐藏处理。
+    let hidden_names: Vec<&str> = hidden_field_names(fields);
 
     let exec_line = if sanitize_exec {
         // 用户私密提交：不透出目标能力返回值/错误详情，仅回报成败。
@@ -142,6 +177,8 @@ pub fn build_receipt_opts(
                 for (k, v) in obj {
                     if secret_names.iter().any(|s| k.contains(s)) {
                         lines.push(format!("- {}: <secret 已掩码>", k));
+                    } else if hidden_names.iter().any(|s| k.contains(s)) {
+                        lines.push(format!("- {}: <已隐藏>", k));
                     } else {
                         lines.push(format!("- {}: {}", k, v));
                     }
@@ -262,6 +299,85 @@ mod tests {
         // 未知 type 不报错——前端回落普通输入框
         let fields = json!([{"name": "x", "type": "color"}]);
         assert!(validate_fields(&fields).is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_hidden_field() {
+        // hidden 字段：值可转发但回执掩码——合法声明
+        let fields = json!([{"name": "script", "type": "string", "hidden": true}]);
+        assert!(validate_fields(&fields).is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_hidden_and_secret_conflict() {
+        // hidden 与 secret 语义冲突，必须拒绝
+        let fields = json!([{"name": "x", "type": "secret", "hidden": true}]);
+        let err = validate_fields(&fields).unwrap_err();
+        assert!(err.contains("互斥"), "应提示互斥: {}", err);
+
+        // type=secret + hidden=true 也算冲突
+        let fields2 = json!([{"name": "y", "type": "string", "secret": true, "hidden": true}]);
+        let err2 = validate_fields(&fields2).unwrap_err();
+        assert!(err2.contains("互斥"), "应提示互斥: {}", err2);
+    }
+
+    #[test]
+    fn hidden_field_names_collects_hidden_only() {
+        let fields = json!([
+            {"name": "a", "type": "string"},
+            {"name": "b", "type": "string", "hidden": true},
+            {"name": "c", "type": "secret"},
+            {"name": "d", "hidden": false}
+        ]);
+        let names = hidden_field_names(fields.as_array().unwrap());
+        assert_eq!(names, vec!["b"], "仅收集 hidden=true 字段");
+    }
+
+    #[test]
+    fn receipt_full_mode_masks_hidden_fields() {
+        // 核心回归：hidden 字段值不得出现在回执里，普通字段正常回显
+        let fields = json!([
+            {"name": "project", "type": "string"},
+            {"name": "api_token", "type": "string", "hidden": true},
+            {"name": "count", "type": "number"}
+        ]);
+        let values = json!({
+            "project": "my-app",
+            "api_token": "sk-SECRET-9999",
+            "count": 3
+        });
+        let receipt = build_receipt(
+            "full",
+            fields.as_array().unwrap(),
+            &values,
+            &Ok(json!({"ok": true})),
+        );
+        assert!(receipt.contains("my-app"), "普通字段应回显: {}", receipt);
+        assert!(receipt.contains("count"), "数字字段应回显: {}", receipt);
+        assert!(!receipt.contains("sk-SECRET"), "hidden 值不得泄露: {}", receipt);
+        assert!(receipt.contains("api_token"), "字段名应保留");
+        assert!(receipt.contains("已隐藏"), "应标记已隐藏: {}", receipt);
+    }
+
+    #[test]
+    fn receipt_hidden_value_still_in_payload() {
+        // hidden 只影响回执，不影响转发 payload——值仍进 target 能力
+        let fields = json!([{"name": "cmd", "type": "string", "hidden": true}]);
+        let values = json!({"cmd": "deploy --secret=x"});
+        // 回执不含原文
+        let receipt = build_receipt("full", fields.as_array().unwrap(), &values, &Ok(json!({})));
+        assert!(!receipt.contains("deploy"), "回执不得含原文: {}", receipt);
+        // 但 values 本身仍是原文（转发用）
+        assert_eq!(values["cmd"], "deploy --secret=x");
+    }
+
+    #[test]
+    fn receipt_none_mode_ignores_hidden() {
+        // read=none 时全部隐藏，hidden 声明无额外影响
+        let fields = json!([{"name": "a", "hidden": true}, {"name": "b"}]);
+        let receipt = build_receipt("none", fields.as_array().unwrap(), &json!({"a": "1", "b": "2"}), &Ok(json!({})));
+        assert!(!receipt.contains("1"));
+        assert!(!receipt.contains("2"));
     }
 
     #[test]

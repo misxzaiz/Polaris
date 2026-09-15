@@ -3,18 +3,19 @@
  *
  * 设计原则（对齐 step9-forms.md §2.D / §5 隐私边界）：
  *   - 字段由 AI 声明的 schema（FormBlock.fields）驱动渲染：string / number /
- *     boolean / textarea / select / secret
+ *     boolean / textarea / select / secret / date / time / datetime / month / week
  *   - read="full"（默认）：AI 可见字段值；secret 字段服务端强制掩码
  *   - read="none"：值不写入 DOM / 状态，控件仅展示字段名（值由用户填写后
  *     直接构造对象发服务端，前端不持久化原文）
  *   - 提交走 router_dispatch("cap.ai.chat", { action:"form_submit", formId, values })
- *   - 服务端回执经 form-answered 事件落回 block（ok/receipt），本卡据此切提交态
+ *   - 跳过走 router_dispatch("cap.ai.chat", { action:"form_skip", formId })
+ *   - 服务端回执经 form-answered / form-skipped 事件落回 block，本卡据此切状态
  */
 
 import { memo, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { CheckCircle, CircleX, ClipboardList, Loader2, Send } from 'lucide-react';
+import { CheckCircle, CircleX, ClipboardList, Loader2, Send, XCircle } from 'lucide-react';
 import { aiChatDispatch } from '@/services/aiChatDispatch';
 import { createLogger } from '@/utils/logger';
 import { useToastStore } from '@/stores/toastStore';
@@ -51,8 +52,10 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
   // read=none 用非受控控件，提交时从 DOM ref 收集
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [skipping, setSkipping] = useState(false);
 
   const isSubmitted = block.status === 'submitted';
+  const isSkipped = block.status === 'skipped';
 
   const registerRef = useCallback(
     (name: string) =>
@@ -87,7 +90,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
   }, [readNone, rawValues, block.fields]);
 
   const submit = useCallback(async () => {
-    if (isSubmitted || submitting) return;
+    if (isSubmitted || isSkipped || submitting) return;
     if (!block.sessionId) {
       useToastStore.getState().error(
         t('form.noSession', '表单未绑定会话，无法提交'),
@@ -133,10 +136,36 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
     } finally {
       setSubmitting(false);
     }
-  }, [block, isSubmitted, submitting, privateSubmit, collectValues, t]);
+  }, [block, isSubmitted, isSkipped, submitting, privateSubmit, collectValues, t]);
 
-  // ===== 已提交态：展示服务端回执（read=none 时回执不含字段值） =====
-  if (isSubmitted) {
+  // 跳过：用户主动放弃填写。服务端把「已跳过」回执喂给挂起的 form 工具调用，
+  // AI 感知后自行决定是否重拉。服务端会广播 form-skipped 事件 → block 置 skipped。
+  const skip = useCallback(async () => {
+    if (isSubmitted || isSkipped || submitting || skipping) return;
+    if (!block.sessionId) return;
+    setSkipping(true);
+    try {
+      await aiChatDispatch({
+        action: 'form_skip',
+        sessionId: block.sessionId,
+        formId: block.id,
+      });
+    } catch (error) {
+      log.error(
+        '表单跳过失败:',
+        error instanceof Error ? error : new Error(String(error))
+      );
+      useToastStore.getState().error(
+        t('form.submitFailed', '跳过失败'),
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      setSkipping(false);
+    }
+  }, [block, isSubmitted, isSkipped, submitting, skipping, t]);
+
+  // ===== 已提交/已跳过态：展示服务端回执（read=none 时回执不含字段值） =====
+  if (isSubmitted || isSkipped) {
     return (
       <div
         role="group"
@@ -145,12 +174,16 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
         <div
           className={clsx(
             'flex items-center gap-2 px-3 py-2 border-b',
-            block.ok
-              ? 'bg-success-faint/40 border-success/20'
-              : 'bg-error-faint/40 border-error/20'
+            isSkipped
+              ? 'bg-text-tertiary/10 border-text-tertiary/20'
+              : block.ok
+                ? 'bg-success-faint/40 border-success/20'
+                : 'bg-error-faint/40 border-error/20'
           )}
         >
-          {block.ok ? (
+          {isSkipped ? (
+            <XCircle className="w-4 h-4 text-text-tertiary shrink-0" aria-hidden="true" />
+          ) : block.ok ? (
             <CheckCircle className="w-4 h-4 text-success shrink-0" aria-hidden="true" />
           ) : (
             <CircleX className="w-4 h-4 text-error shrink-0" aria-hidden="true" />
@@ -158,12 +191,14 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
           <span
             className={clsx(
               'text-sm font-medium',
-              block.ok ? 'text-success' : 'text-error'
+              isSkipped ? 'text-text-tertiary' : block.ok ? 'text-success' : 'text-error'
             )}
           >
-            {block.ok
-              ? t('form.submitted', '已提交')
-              : t('form.submitFailed', '提交失败')}
+            {isSkipped
+              ? t('form.skipped', '已跳过')
+              : block.ok
+                ? t('form.submitted', '已提交')
+                : t('form.submitFailed', '提交失败')}
           </span>
           {block.read !== 'none' && (
             <span className="ml-auto text-[11px] text-text-tertiary">
@@ -171,8 +206,13 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
             </span>
           )}
         </div>
-        {block.receipt && (
+        {!isSkipped && block.receipt && (
           <pre className="p-3 text-xs text-text-secondary whitespace-pre-wrap break-words font-mono max-h-64 overflow-auto">
+            {block.receipt}
+          </pre>
+        )}
+        {isSkipped && block.receipt && (
+          <pre className="p-3 text-xs text-text-tertiary whitespace-pre-wrap break-words font-mono max-h-64 overflow-auto">
             {block.receipt}
           </pre>
         )}
@@ -188,7 +228,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
     );
   }
 
-  // ===== 未提交态：schema 驱动 + 隐私边界 =====
+  // ===== 未提交态：schema 驱动 + 隐私边界 + 跳过 =====
 
   return (
     <div
@@ -202,15 +242,29 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
         <span id={`form-title-${block.id}`} className="text-sm font-medium text-text-primary">
           {block.title || t('form.label', '表单')}
         </span>
-        {readNone ? (
-          <span className="ml-auto text-[11px] text-text-tertiary px-1.5 py-0.5 rounded bg-background-elevated/60">
-            {t('form.readNone', '隐私模式 · 值不保留')}
-          </span>
-        ) : (
-          <span className="ml-auto text-[11px] text-text-tertiary px-1.5 py-0.5 rounded bg-background-elevated/60">
-            {t('form.to', '目标')}: {block.target}
-          </span>
-        )}
+        <span className="ml-auto flex items-center gap-1">
+          {readNone && (
+            <span className="text-[11px] text-text-tertiary px-1.5 py-0.5 rounded bg-background-elevated/60">
+              {t('form.readNone', '隐私模式 · 值不保留')}
+            </span>
+          )}
+          {block.mode === 'collect' ? (
+            <span className="text-[11px] text-accent px-1.5 py-0.5 rounded bg-accent-faint/60">
+              {t('form.modeCollect', '参数收集')}
+            </span>
+          ) : (
+            !readNone && (
+              <span className="text-[11px] text-text-tertiary px-1.5 py-0.5 rounded bg-background-elevated/60">
+                {t('form.to', '目标')}: {block.target}
+              </span>
+            )
+          )}
+          {block.template?.name && (
+            <span className="text-[10px] text-text-tertiary px-1.5 py-0.5 rounded bg-background-elevated/60">
+              {t('form.templateFrom', '来自模板')}: {block.template.name}
+            </span>
+          )}
+        </span>
       </div>
 
       {/* 字段列表 */}
@@ -222,13 +276,13 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
             uncontrolled={readNone}
             value={readNone ? undefined : rawValues[field.name]}
             controlRef={registerRef(field.name)}
-            disabled={submitting}
+            disabled={submitting || skipping}
             onChange={(v) => setValue(field.name, v)}
           />
         ))}
       </div>
 
-      {/* 底部：私密开关 + 提交 */}
+      {/* 底部：私密开关 + 跳过 + 提交 */}
       <div className="shrink-0 px-3 py-2 border-t border-accent/20 bg-background-elevated/50 flex items-center gap-2">
         <label
           className="flex items-center gap-1.5 text-[11px] text-text-tertiary cursor-pointer select-none mr-auto"
@@ -241,17 +295,35 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
             type="checkbox"
             checked={privateSubmit}
             onChange={(e) => setPrivateSubmit(e.target.checked)}
-            disabled={submitting}
+            disabled={submitting || skipping}
             className="accent-accent w-3.5 h-3.5"
           />
           {t('form.privateSubmit', '私密提交 · AI 不可见')}
         </label>
         <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void skip()}
+          disabled={submitting || skipping || isSkipped}
+          className="ml-4"
+        >
+          {skipping ? (
+            <span className="flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+              {t('form.submitting')}
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5">
+              <XCircle className="w-3.5 h-3.5" aria-hidden="true" />
+              {t('form.skip', '跳过')}
+            </span>
+          )}
+        </Button>
+        <Button
           variant="primary"
           size="sm"
           onClick={() => void submit()}
-          disabled={submitting}
-          className="ml-4"
+          disabled={submitting || skipping}
         >
           {submitting ? (
             <span className="flex items-center gap-1.5">
@@ -318,6 +390,18 @@ function FormField({ field, uncontrolled, value, controlRef, disabled, onChange 
         />
       );
     }
+
+    // 时间类控件：date / time / datetime-local / month / week 都是原生 input，
+    // 值一律作为 string 提交（服务端 target 能力按需解析）。min/max/step 透传。
+    const temporalTypes = ['date', 'time', 'datetime', 'month', 'week'] as const;
+    const nativeInputType: Record<(typeof temporalTypes)[number], string> = {
+      date: 'date',
+      time: 'time',
+      datetime: 'datetime-local',
+      month: 'month',
+      week: 'week',
+    };
+
     switch (type) {
       case 'number':
         return (
@@ -385,6 +469,28 @@ function FormField({ field, uncontrolled, value, controlRef, disabled, onChange 
             ))}
           </select>
         );
+      case 'date':
+      case 'time':
+      case 'datetime':
+      case 'month':
+      case 'week': {
+        const inputType = nativeInputType[type];
+        return (
+          <input
+            id={id}
+            type={inputType}
+            ref={controlRef}
+            defaultValue={uncontrolled && typeof value !== 'boolean' ? (value as string) ?? '' : undefined}
+            value={!uncontrolled && typeof value === 'string' ? value : undefined}
+            onChange={(e) => !uncontrolled && onChange(e.target.value)}
+            min={field.min}
+            max={field.max}
+            step={field.step}
+            disabled={disabled}
+            className={inputCls}
+          />
+        );
+      }
       case 'string':
       default:
         return (
@@ -411,6 +517,11 @@ function FormField({ field, uncontrolled, value, controlRef, disabled, onChange 
         {isSecret && (
           <span className="ml-1.5 text-[10px] text-text-tertiary">
             {t('form.secretTag', '保密')}
+          </span>
+        )}
+        {!isSecret && field.hidden && (
+          <span className="ml-1.5 text-[10px] text-warning/80" title={t('form.hiddenHint', '值会参与处理，但不会进入 AI 上下文')}>
+            {t('form.hiddenTag', 'AI 不可见')}
           </span>
         )}
       </label>

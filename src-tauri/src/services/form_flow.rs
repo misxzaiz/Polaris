@@ -12,6 +12,8 @@
 
 use std::time::{Duration, Instant};
 
+use serde_json::json;
+
 use crate::contracts::Value;
 use crate::services::form_core::{
     expand_dot_paths, normalize_payload_for_target, validate_fields,
@@ -51,6 +53,14 @@ pub struct FormHold {
     pub read: String,
     /// 字段 schema（AI 声明，前端据此渲染控件）
     pub fields: Vec<Value>,
+    /// 表单模式：`dispatch`（默认，收集后转发给目标能力）或 `collect`
+    /// （仅收集参数，不转发；值经回执回喂 AI 自行处理，不受白名单限制）。
+    pub mode: String,
+    /// AI 声明的样式（可选）：accent/卡片背景/字段网格/间距。
+    /// 服务端不校验样式内容，前端 FormCard 按白名单的键应用。
+    pub style: Value,
+    /// 模板引用（可选）：AI 声明从模板套用，前端据此预填 + 显示「来自模板 X」。
+    pub template: Value,
     /// 创建时刻（超时清理用）
     pub created_at: Instant,
 }
@@ -58,6 +68,10 @@ pub struct FormHold {
 /// 从 form 工具参数构造 hold。
 ///
 /// 返回 Err 时携带给 AI 的可读失败信息（字段 schema 非法等）。
+///
+/// `mode`：`dispatch`（默认，收集后转发给目标能力）/ `collect`
+/// （仅收集参数，不转发）。collect 模式不做白名单校验——字段值只回喂 AI
+/// 自行处理（如启动项目、创建文件所需的参数收集）。
 pub fn build_hold(
     form_id: &str,
     session_id: &str,
@@ -66,10 +80,10 @@ pub fn build_hold(
     read: &str,
     fields: &Value,
     title: &str,
+    mode: &str,
+    style: &Value,
+    template: &Value,
 ) -> Result<FormHold, String> {
-    if target.trim().is_empty() {
-        return Err("缺少 target 参数（dispatch 目标 capability）".into());
-    }
     validate_fields(fields)?;
     let fields_vec = fields
         .as_array()
@@ -79,6 +93,17 @@ pub fn build_hold(
         "none" => "none",
         _ => "full",
     };
+    // mode：collect 不需要 target（仅收集参数）；dispatch 必须声明 target。
+    let mode_norm = match mode {
+        "collect" => "collect",
+        _ => "dispatch",
+    };
+    if mode_norm == "dispatch" && target.trim().is_empty() {
+        return Err(
+            "缺少 target 参数（dispatch 模式需要声明 dispatch 目标 capability；若仅需收集参数不转发，请用 mode=collect）"
+                .into(),
+        );
+    }
     Ok(FormHold {
         form_id: form_id.to_string(),
         title: title.to_string(),
@@ -87,6 +112,9 @@ pub fn build_hold(
         action: action.to_string(),
         read: read_mode.to_string(),
         fields: fields_vec,
+        mode: mode_norm.to_string(),
+        style: style.clone(),
+        template: template.clone(),
         created_at: Instant::now(),
     })
 }
@@ -104,8 +132,23 @@ pub fn submit_form(
     router: &dyn crate::contracts::Router,
     private: bool,
 ) -> (String, bool, Result<Value, String>) {
-    // 0. 白名单纵深防御：拉起时可能被绕过（如 hold 被篡改），提交时再兜底一次。
-    //    不在白名单 → 构造失败回执，不转发目标能力。
+    // 0a. collect 模式：仅收集参数，不转发目标能力，不做白名单校验。
+    //     字段值经回执回喂 AI 自行处理（启动项目 / 创建文件等场景需要的参数）。
+    //     信任边界仍由 read 模式 + hidden 字段 + private 开关强制。
+    if hold.mode == "collect" {
+        let allowed_read = if private { "none" } else { &hold.read[..] };
+        let receipt = crate::services::form_core::build_receipt_opts(
+            allowed_read,
+            &hold.fields,
+            values,
+            &Ok(json!({"collected": true})),
+            private,
+        );
+        return (receipt, true, Ok(json!({"collected": true})));
+    }
+
+    // 0b. dispatch 模式：白名单纵深防御——拉起时可能被绕过（如 hold 被篡改），
+    //     提交时再兜底一次。不在白名单 → 构造失败回执，不转发目标能力。
     if !target_allowed(&hold.target) {
         let receipt = format!(
             "提交拒绝：目标能力 {} 不在表单白名单（{}）",
@@ -172,6 +215,25 @@ pub fn cleanup_expired(
     before - holds.len()
 }
 
+/// 构造「跳过」回执（用户主动跳过 / 超时自动跳过）。
+///
+/// 信任边界与 `build_receipt` 一致：不携带任何字段值，AI 只见跳过状态 +
+/// 目标信息。reason 区分用户主动跳过（user）与超时自动跳过（timeout），
+/// AI 可据此决定是否重拉表单。
+pub fn build_skip_receipt(hold: &FormHold, reason: &str) -> String {
+    let reason_text = match reason {
+        "timeout" => format!("用户未在 {}s 内提交，表单已超时自动跳过", FORM_WAIT_TIMEOUT_SECS),
+        _ => "用户跳过了该表单".to_string(),
+    };
+    let mut lines = vec![reason_text];
+    lines.push(format!("目标: {}", hold.target));
+    if !hold.action.is_empty() {
+        lines.push(format!("动作: {}", hold.action));
+    }
+    lines.push("未提交任何字段值".to_string());
+    lines.join("\n")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -200,6 +262,7 @@ mod tests {
             "f-evil", "s1", "cap.config", "write", "full",
             &json!([{"name": "a", "type": "string"}]),
             "恶意表单",
+            "dispatch", &json!({}), &json!(null),
         ).unwrap();
         // build_hold 只校验 schema 与 target 非空，不校验白名单（拉起是校验点）。
         assert_eq!(hold.target, "cap.config");
@@ -235,7 +298,7 @@ mod tests {
 
     #[test]
     fn build_hold_rejects_bad_fields() {
-        let err = build_hold("f1", "s1", "cap.todo", "create", "full", &json!([]), "标题").unwrap_err();
+        let err = build_hold("f1", "s1", "cap.todo", "create", "full", &json!([]), "标题", "dispatch", &json!({}), &json!(null)).unwrap_err();
         assert!(err.contains("fields"));
     }
 
@@ -245,6 +308,7 @@ mod tests {
             "f2", "s1", "cap.todo", "create", "none",
             &json!([{"name": "content", "type": "string"}]),
             "标题",
+            "dispatch", &json!({}), &json!(null),
         ).unwrap();
         assert_eq!(h.target, "cap.todo");
         assert_eq!(h.read, "none");
@@ -253,16 +317,16 @@ mod tests {
 
     #[test]
     fn build_hold_read_defaults_full() {
-        let h = build_hold("f3", "", "cap.kv", "", "", &json!([{"name": "a"}]), "标题").unwrap();
+        let h = build_hold("f3", "", "cap.kv", "", "", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
         assert_eq!(h.read, "full");
     }
 
     #[test]
     fn cleanup_removes_expired_only() {
         let mut holds = std::collections::HashMap::new();
-        let mut old = build_hold("old", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题").unwrap();
+        let mut old = build_hold("old", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
         old.created_at = Instant::now() - Duration::from_secs(601);
-        let mut fresh = build_hold("fresh", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题").unwrap();
+        let mut fresh = build_hold("fresh", "", "cap.todo", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
         // fresh 保留
         holds.insert("old".into(), old);
         holds.insert("fresh".into(), fresh);
@@ -310,6 +374,7 @@ mod tests {
             "f-private", "s1", "cap.todo", "create", "full",
             &json!([{"name": "content", "type": "string"}]),
             "私密表单",
+            "dispatch", &json!({}), &json!(null),
         ).unwrap();
 
         let (receipt, ok, reply) =
@@ -333,6 +398,33 @@ mod tests {
             "私密提交 exec 脱敏后不应出现 target 返回对象: {}",
             receipt
         );
+    }
+
+    #[test]
+    fn build_skip_receipt_never_leaks_values() {
+        // 跳过回执的信任边界：无论 AI 声明的 read 模式，跳过都不携带任何字段值。
+        let hold = build_hold(
+            "f-skip", "s1", "cap.todo", "create", "full",
+            &json!([{"name": "content", "type": "string"}]),
+            "跳过表单",
+            "dispatch", &json!({}), &json!(null),
+        ).unwrap();
+        let user_receipt = build_skip_receipt(&hold, "user");
+        assert!(user_receipt.contains("跳过"));
+        assert!(user_receipt.contains("cap.todo"));
+        assert!(user_receipt.contains("create"));
+        assert!(!user_receipt.contains("content"), "跳过不得携带字段名/值");
+
+        let timeout_receipt = build_skip_receipt(&hold, "timeout");
+        assert!(timeout_receipt.contains("超时"));
+        assert!(timeout_receipt.contains("600"));
+    }
+
+    #[test]
+    fn skip_receipt_unknown_reason_defaults_user() {
+        let hold = build_hold("f-s", "", "cap.kv", "", "full", &json!([{"name": "a"}]), "标题", "dispatch", &json!({}), &json!(null)).unwrap();
+        let r = build_skip_receipt(&hold, "whatever");
+        assert!(r.contains("跳过"));
     }
 
     #[test]
@@ -364,6 +456,7 @@ mod tests {
             "f-fail", "s1", "cap.todo", "create", "full", // AI 声明 full
             &json!([{"name": "content", "type": "string"}]),
             "私密失败表单",
+            "dispatch", &json!({}), &json!(null),
         ).unwrap();
         let (receipt, ok, _) =
             submit_form(&hold, &json!({"content": "机密正文"}), &FailRouter, true);

@@ -43,6 +43,23 @@ export interface Message {
   };
 }
 
+/**
+ * 待发送队列消息（流式回复期间的预输入/多行拆分入队项）。
+ *
+ * 纯前端内存态、绑定会话生命周期，不落盘、不进入 messages 流。
+ * 由 ConversationStore.pendingQueue 持有，session_end 后自动逐条发送。
+ */
+export interface PendingMessage {
+  /** 队列项唯一标识（crypto.randomUUID） */
+  id: string;
+  /** 消息文本（单条，多行拆分后逐条入队） */
+  text: string;
+  /** 附件（可选项；入队消息通常仅文本） */
+  attachments?: import('./attachment').Attachment[];
+  /** 入队时间戳（毫秒） */
+  createdAt: number;
+}
+
 /** 权限拒绝详情 */
 export interface PermissionDenial {
   toolName: string;
@@ -290,7 +307,12 @@ export type FormFieldType =
   | 'boolean'
   | 'textarea'
   | 'select'
-  | 'secret';
+  | 'secret'
+  | 'date'
+  | 'time'
+  | 'datetime'
+  | 'month'
+  | 'week';
 
 /** 表单字段 schema（由 AI 声明的 form 工具参数，前端据此渲染控件） */
 export interface FormFieldSchema {
@@ -306,6 +328,17 @@ export interface FormFieldSchema {
   default?: string | number | boolean;
   /** secret 字段：值在服务端强制掩码，AI 上下文与前端回执都不可见原文 */
   secret?: boolean;
+  /** 隐藏字段：值仍参与转发/回喂，但回执中显示为 <已隐藏>（方向 2 信任边界由服务端强制） */
+  hidden?: boolean;
+  /** 时间类字段的可选约束（date/time/datetime 类型） */
+  min?: string;
+  max?: string;
+  /** 时间步进（仅 time/datetime，单位与 input step 对齐） */
+  step?: number;
+  /** 占位提示行（小字，显示在控件下方） */
+  help?: string;
+  /** 栅格跨列数（1-4；配合 form style.gridCols 使用） */
+  col?: number;
 }
 
 /** 表单内容块 - 用于 form 工具（schema 驱动面板，read 信任边界由服务端强制） */
@@ -319,14 +352,20 @@ export interface FormBlock {
   title?: string;
   /** read 模式：full=AI 可见字段值；none=仅字段名（值不写入 DOM） */
   read: 'full' | 'none';
-  /** 目标能力（付给 form_submit） */
+  /** 目标能力（付给 form_submit）；collect 模式无目标，可为空 */
   target: string;
-  /** 目标动作 */
+  /** 目标动作；collect 模式无动作，可为空 */
   action: string;
+  /** 表单模式：dispatch（默认，转发目标能力）/ collect（仅收集参数，不转发） */
+  mode: 'dispatch' | 'collect';
+  /** AI 声明的样式（accent/bg/gridCols/gap/radius），前端按白名单键应用 */
+  style?: Record<string, string | number>;
+  /** 模板引用（name/version），显示「来自模板 X」 */
+  template?: { name: string; version?: string };
   /** 字段 schema（前端渲染控件） */
   fields: FormFieldSchema[];
   /** 提交状态 */
-  status: 'pending' | 'submitted';
+  status: 'pending' | 'submitted' | 'skipped';
   /** 服务端回执（read=none 时不含字段值） */
   receipt?: string;
   /** 提交是否成功 */

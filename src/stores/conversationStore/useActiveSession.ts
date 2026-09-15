@@ -32,6 +32,7 @@ import type { ChatMessage } from '@/types/chat'
 // ============================================================================
 const EMPTY_MESSAGES: ChatMessage[] = []
 const EMPTY_INPUT_DRAFT: InputDraft = { text: '', attachments: [] }
+const EMPTY_PENDING_QUEUE: import('../../types/chat').PendingMessage[] = []
 const EMPTY_BLOCK_MAP: Map<string, number> = new Map()
 const EMPTY_PROMPT_OPTIMIZE: PromptOptimizeState = {
   status: 'idle',
@@ -286,6 +287,16 @@ export function useActiveSessionPendingBriefing() {
 }
 
 /**
+ * 获取活跃会话的待发送队列（流式预输入 / 多行拆分入队项）
+ */
+export function useActiveSessionPendingQueue() {
+  return useActiveSessionSelector(
+    useCallback((state: ConversationState) => state.pendingQueue, []),
+    EMPTY_PENDING_QUEUE
+  )
+}
+
+/**
  * 获取活跃会话的下一步提示建议（--prompt-suggestions）
  */
 export function useActiveSessionPromptSuggestion() {
@@ -465,6 +476,35 @@ export function useActiveSessionActions() {
         const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
         if (!store) return
         return store.setPendingBriefing(briefing)
+      },
+      // 待发送队列操作
+      enqueuePending: (message: import('../../types/chat').PendingMessage) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.enqueuePending(message)
+      },
+      removePending: (id: string) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.removePending(id)
+      },
+      clearPendingQueue: () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.clearPendingQueue()
+      },
+      dispatchNextPending: async () => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.dispatchNextPending()
       },
       setPromptSuggestion: (suggestion: string | null) => {
         const sessionId = sessionStoreManager.getState().activeSessionId

@@ -132,11 +132,73 @@ pub async fn spawn_ask_listener(state: Arc<AppState>) -> Result<AskListenerHandl
     tracing::info!("[AskListener] 绑定 127.0.0.1:{}", port);
 
     let token_for_loop = token.clone();
+    let state_for_sweeper = state.clone();
     tokio::spawn(async move {
         accept_loop(listener, state, token_for_loop).await;
     });
 
+    // 表单超时清扫：后台周期扫描超时 hold，广播 form-skipped(timeout) 事件并
+    // 唤醒挂起的 form 工具调用。这是表单"超时自动跳过"的驱动源——不依赖 AI
+    // 再次调用 form 工具才触发清理，超时后前端面板也能同步关闭。
+    spawn_form_timeout_sweeper(state_for_sweeper);
+
     Ok(AskListenerHandle { port, token })
+}
+
+/// 周期清扫超时表单。超时 hold 被移除时：
+/// 1. 广播 `form-skipped`（reason=timeout）chat-event → 前端 FormCard 置 skipped
+/// 2. 唤醒挂起的 form 工具调用（handle_form_frame 等一个 oneshot），回写超时回执
+///
+/// 间隔取超时窗口的 1/10，既保证及时性又不至于高频空扫。
+fn spawn_form_timeout_sweeper(state: Arc<AppState>) {
+    const SWEEP_INTERVAL_SECS: u64 = 10;
+    tokio::spawn(async move {
+        let mut ticker = tokio::time::interval(std::time::Duration::from_secs(SWEEP_INTERVAL_SECS));
+        loop {
+            ticker.tick().await;
+            let expired: Vec<(String, form_flow::FormHold)> = {
+                let Ok(mut holds) = state.form_holds.lock() else {
+                    continue;
+                };
+                let now = std::time::Instant::now();
+                let mut gone: Vec<(String, form_flow::FormHold)> = Vec::new();
+                holds.retain(|id, h| {
+                    if now.duration_since(h.created_at)
+                        >= std::time::Duration::from_secs(form_flow::FORM_WAIT_TIMEOUT_SECS)
+                    {
+                        gone.push((id.clone(), h.clone()));
+                        false
+                    } else {
+                        true
+                    }
+                });
+                gone
+            };
+            for (form_id, hold) in expired {
+                tracing::info!(
+                    "[Form] 后台清扫超时表单 formId={} target={} action={} sessionId={}",
+                    form_id,
+                    hold.target,
+                    hold.action,
+                    hold.session_id
+                );
+                // 广播 form-skipped(timeout) → 前端关闭面板
+                let inner = serde_json::json!({
+                    "type": "form-skipped",
+                    "formId": form_id,
+                    "sessionId": hold.session_id.clone(),
+                    "reason": "timeout",
+                });
+                let event = wrap_question_route_event(&hold.session_id, inner);
+                emit_chat_event(&state, &event);
+                // 唤醒挂起的 form 工具调用（等 600s 的循环立即拿超时回执）
+                if let Some(entry) = state.take_form_answer_sender(&form_id) {
+                    let receipt = form_flow::build_skip_receipt(&hold, "timeout");
+                    let _ = entry.sender.send(receipt);
+                }
+            }
+        }
+    });
 }
 
 async fn accept_loop(listener: TcpListener, state: Arc<AppState>, expected_token: String) {
@@ -391,14 +453,26 @@ async fn handle_form_frame(
         .unwrap_or_default()
         .to_string();
     let fields = frame.get("fields").cloned().unwrap_or_else(|| json!([]));
+    // 表单模式：collect（仅收集参数，不转发）/ dispatch（默认，转发目标能力）。
+    // collect 模式不受白名单限制——字段值只回喂 AI 自行处理。
+    let mode = frame
+        .get("mode")
+        .and_then(Value::as_str)
+        .unwrap_or("dispatch")
+        .to_string();
+    // AI 声明的样式（可选，前端 FormCard 按白名单键应用）。
+    let style = frame.get("style").cloned().unwrap_or_else(|| json!({}));
+    // 模板引用（可选，前端据此预填 + 显示「来自模板 X」）。
+    let template = frame.get("template").cloned().unwrap_or_else(|| json!(null));
 
     // formId 复用 callId 字段（引擎侧 UUID）。缺 target 直接失败。
     if form_id.is_empty() {
         return Err(AppError::ValidationError("form 帧缺少 callId(formId)".into()));
     }
-    // 白名单拉起时拦截（阶段 E）：target 不在白名单 → AI 立即拿到失败原因，
-    // 不落 hold、不给用户渲染表单。白名单是 form 工具层的默认拒绝兜底。
-    if !form_flow::target_allowed(&target) {
+    // 白名单拉起时拦截（阶段 E）：dispatch 模式下 target 不在白名单 → AI 立即拿到失败原因，
+    // 不落 hold、不给用户渲染表单。collect 模式不转发目标能力，无需白名单。
+    let mode_is_collect = mode == "collect";
+    if !mode_is_collect && !form_flow::target_allowed(&target) {
         write_frame(
             stream,
             &json!({
@@ -423,6 +497,9 @@ async fn handle_form_frame(
         &read,
         &fields,
         &title,
+        &mode,
+        &style,
+        &template,
     ) {
         Ok(hold) => hold,
         Err(msg) => {
@@ -534,13 +611,17 @@ fn emit_form_event(state: &AppState, hold: &form_flow::FormHold) {
             "read": hold.read,
             "target": hold.target,
             "action": hold.action,
+            "mode": hold.mode,
+            "style": hold.style,
+            "template": hold.template,
             "fields": hold.fields,
         }),
     );
     tracing::info!(
-        "[Form] 广播 form 事件 formId={} sessionId={} fields={}",
+        "[Form] 广播 form 事件 formId={} sessionId={} mode={} fields={}",
         hold.form_id,
         hold.session_id,
+        hold.mode,
         hold.fields.len()
     );
     emit_chat_event(state, &event);

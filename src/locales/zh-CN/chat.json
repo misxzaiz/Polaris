@@ -53,7 +53,13 @@
     "attachmentCount": "{{count}} 个附件",
     "readyToSend": "可直接发送",
     "editingMessage": "正在编辑消息",
-    "cancelEdit": "取消"
+    "cancelEdit": "取消",
+    "sendToQueue": "发送到队列",
+    "pendingQueue": "待发送",
+    "pendingCount": "{{n}} 条待发送",
+    "queuedHint": "回复结束后自动发送",
+    "clearQueue": "清空队列",
+    "removePending": "取消此条"
   },
   "promptOptimize": {
     "sessionTitle": "提示词优化",
@@ -266,6 +272,32 @@
     "answerBelow": "请在下方回答",
     "selectAndSend": "选择并发送",
     "pendingQuestion": "待回答问题"
+  },
+  "form": {
+    "label": "表单",
+    "submit": "提交",
+    "submitting": "提交中...",
+    "submitted": "已提交",
+    "submitFailed": "提交失败",
+    "skip": "跳过",
+    "skipped": "已跳过",
+    "skippedByUser": "已跳过",
+    "skippedByTimeout": "已超时自动跳过",
+    "readNone": "隐私模式 · 值不保留",
+    "privateSubmit": "私密提交 · AI 不可见",
+    "privateHint": "勾选后，你填写的内容与提交结果都不会进入 AI 的上下文",
+    "secretTag": "保密",
+    "secretPlaceholder": "输入保密值……",
+    "selectPlaceholder": "请选择……",
+    "yesNo": "是",
+    "to": "目标",
+    "empty": "空表单块",
+    "noSession": "表单未绑定会话，无法提交",
+    "missingRequired": "必填项未填写",
+    "modeCollect": "参数收集",
+    "templateFrom": "来自模板",
+    "hiddenTag": "AI 不可见",
+    "hiddenHint": "值会参与处理，但不会进入 AI 上下文"
   },
   "plan": {
     "defaultTitle": "执行计划",

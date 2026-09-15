@@ -297,6 +297,65 @@ impl Capability for AiChatCapability {
                             )),
                         }
                     }
+                    "form_skip" => {
+                        // 表单跳过：用户主动放弃填写（FormCard「跳过」按钮触发）。
+                        // 语义与 form_submit 对齐：按 formId 取 hold，构造跳过回执
+                        // 唤醒挂起的 form 工具调用（AI 感知后自行决定是否重拉），
+                        // 并广播 form-skipped 事件让前端 FormCard 切 skipped 态。
+                        let form_id = get("formId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if form_id.is_empty() {
+                            return Err("cap.ai.chat form_skip 需要 formId 参数".to_string());
+                        }
+                        let hold = {
+                            let mut holds = s.form_holds.lock().ok().ok_or_else(|| {
+                                "表单存储已损坏（form_holds 锁中毒）".to_string()
+                            })?;
+                            holds.remove(&form_id)
+                        };
+                        let Some(hold) = hold else {
+                            // 迟到/重复跳过：hold 已被取走或超时清理 → 表单已失效。
+                            return Err("表单已失效（不存在或已提交），请让 AI 重新发起".to_string());
+                        };
+                        // 跳过回执的信任边界与提交一致：不携带任何字段值。
+                        let receipt =
+                            crate::services::form_flow::build_skip_receipt(&hold, "user");
+                        tracing::info!(
+                            "[Form] form_skip formId={} target={} action={} sessionId={}",
+                            hold.form_id,
+                            hold.target,
+                            hold.action,
+                            hold.session_id
+                        );
+                        // 广播 form-skipped 事件 → 前端 FormCard 置 skipped
+                        let form_skipped_inner = serde_json::json!({
+                            "type": "form-skipped",
+                            "formId": hold.form_id,
+                            "sessionId": hold.session_id.clone(),
+                            "reason": "user",
+                        });
+                        let form_skipped_event = if hold.session_id.trim().is_empty() {
+                            form_skipped_inner
+                        } else {
+                            serde_json::json!({
+                                "contextId": format!("session-{}", hold.session_id),
+                                "payload": form_skipped_inner,
+                            })
+                        };
+                        self.event_adapter.broadcast(make_event(
+                            "chat-event",
+                            form_skipped_event,
+                        ));
+                        // 唤醒挂起的 form 工具调用（与 form_submit 同通道）
+                        if let Some(entry) = s.take_form_answer_sender(&hold.form_id) {
+                            if entry.sender.send(receipt.clone()).is_err() {
+                                tracing::info!(
+                                    "[Form] form_skip formId={} answer sender 已关闭，回执未送达",
+                                    hold.form_id
+                                );
+                            }
+                        }
+                        Ok(serde_json::json!({ "ok": true }))
+                    }
                     "register_pending_question" => {
                         let options: Vec<crate::state::QuestionOption> = get("options")
                             .cloned()

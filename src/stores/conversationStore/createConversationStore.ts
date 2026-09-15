@@ -158,6 +158,10 @@ function createInitialState(sessionId: string): ConversationState {
     // 待发送简报（压缩交接产物）
     pendingBriefing: null,
 
+    // 待发送队列（流式预输入 / 多行拆分入队）
+    pendingQueue: [],
+    queueDispatching: false,
+
     // 提示词优化（版本栈内存态，不持久化）
     promptOptimize: {
       status: 'idle',
@@ -288,6 +292,8 @@ export function createConversationStore(
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
           pluginCardBlockMap: new Map(),
+          // 清空会话消息时同步清空待发送队列（语义一致：都视为会话内容重置）
+          pendingQueue: [],
         })
       },
 
@@ -1724,13 +1730,14 @@ export function createConversationStore(
               modified = true
               return { ...block, status: 'declined' as const }
             }
-            // 历史恢复：仍 pending 的表单一律置为失效（进程重启后 form_holds 已清空，
-            // 迟到的 form_submit 会被服务端拒绝）。展示为只读失败回执，提示重新发起。
+            // 历史恢复：仍 pending 的表单一律置为已跳过（进程重启后 form_holds
+            // 已清空，迟到的 form_submit/form_skip 会被服务端拒绝）。展示为只读
+            // 跳过回执，提示重新发起。
             if (block.type === 'form' && block.status === 'pending') {
               modified = true
               return {
                 ...block,
-                status: 'submitted' as const,
+                status: 'skipped' as const,
                 ok: false,
                 receipt: '表单已失效（会话中断或超时），请让 AI 重新发起',
               }
@@ -1757,6 +1764,8 @@ export function createConversationStore(
           persistedConversationId: conversationId,
           // 尾部优先恢复：记录向上翻页游标（无分页信息 = 已全量在内存）
           historyPaging: paging ?? null,
+          // 历史恢复 = 会话内容重置，清空待发送队列（避免上一会话残留）
+          pendingQueue: [],
         })
       },
 
@@ -1764,6 +1773,39 @@ export function createConversationStore(
       handleAIEvent: (event) => handleAIEvent(event, set, get),
 
       // ===== 主动操作 =====
+
+      // ===== 待发送队列（流式预输入 / 多行拆分入队） =====
+      // 纯前端内存态、绑定会话生命周期。AI 流式回复期间用户提交的消息入队，
+      // session_end 后由 dispatchNextPending 自动逐条发送；不落盘、不进入 messages 流。
+      enqueuePending: (message) => {
+        set((state) => ({ pendingQueue: [...state.pendingQueue, message] }))
+      },
+      removePending: (id) => {
+        set((state) => ({ pendingQueue: state.pendingQueue.filter((m) => m.id !== id) }))
+      },
+      clearPendingQueue: () => {
+        set({ pendingQueue: [] })
+      },
+      dispatchNextPending: async () => {
+        const st = get()
+        // 幂等守卫：正在流式 / 已有队列消息在派发 / 队列为空时直接返回
+        if (st.isStreaming || st.queueDispatching || st.pendingQueue.length === 0) return
+
+        const [next, ...rest] = st.pendingQueue
+        set({ pendingQueue: rest, queueDispatching: true })
+        try {
+          // 走真实发送链路（内部会 set isStreaming=true，启动新一轮流式）
+          await get().sendMessage(next.text, undefined, next.attachments)
+        } finally {
+          set({ queueDispatching: false })
+          // 若发送失败（sendMessage catch 内已把 isStreaming 置 false），
+          // 或队列中还有剩余且当前已空闲，继续发送下一条
+          const after = get()
+          if (after.pendingQueue.length > 0 && !after.isStreaming) {
+            void get().dispatchNextPending()
+          }
+        }
+      },
 
       sendMessage: async (content, workspaceDir?, attachments?, sendOptions?) => {
         const { conversationId, sessionId, messages } = get()
@@ -2014,6 +2056,8 @@ export function createConversationStore(
               })
               set({ isStreaming: false, isInterrupting: false })
               get().finishMessage()
+              // 中断兜底强制收尾后，若有待发送队列则继续派发（session_end 不会到达此路径）
+              void get().dispatchNextPending()
             }
           }, 5000)
         } catch (e) {
@@ -2024,6 +2068,8 @@ export function createConversationStore(
           // 前端需主动结束流式状态避免 UI 卡死。
           set({ isStreaming: false, isInterrupting: false })
           get().finishMessage()
+          // 中断失败兜底收尾后，若有待发送队列则继续派发
+          void get().dispatchNextPending()
 
           // 用户可见提示
           try {

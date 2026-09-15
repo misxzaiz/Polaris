@@ -15,7 +15,7 @@ import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, Chevro
 import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
 import { useVoiceInputStore } from '@/stores/voiceInputStore'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize } from '@/stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize, useActiveSessionPendingQueue } from '@/stores/conversationStore/useActiveSession'
 import {
   runPromptOptimize,
   cancelPromptOptimize,
@@ -31,6 +31,7 @@ import { ContextBlockPreview } from './ContextBlockPreview'
 import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { SnippetParamPanel } from './SnippetParamPanel'
 import { PendingBriefingCard } from '../compact-handoff/PendingBriefingCard'
+import { PendingQueueCard } from './PendingQueueCard'
 import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'
@@ -186,7 +187,9 @@ export function ChatInput({
     undoPromptOptimize, redoPromptOptimize, applyPendingPromptOptimize,
     resetPromptOptimize, clearPromptOptimizeError,
     updateContextBlockNote,
+    enqueuePending,
   } = useActiveSessionActions()
+  const pendingQueue = useActiveSessionPendingQueue()
 
   // 提示词优化状态（per-session 版本栈）+ 优化会话流式预览
   const promptOptimize = useActiveSessionPromptOptimize()
@@ -1144,8 +1147,82 @@ export function ChatInput({
   const handleSend = useCallback(async () => {
     const trimmed = value.trim()
     const hasBlocks = contextBlocksRef.current.length > 0
-    if ((disabled || isStreaming) && attachments.length === 0 && !hasBlocks) return
+    if (disabled && attachments.length === 0 && !hasBlocks) return
     if (!trimmed && attachments.length === 0 && !hasBlocks) return
+
+    // 流式回复中：不直接发送，整条入队，session_end / 中断后自动逐条发送
+    if (isStreaming) {
+      // 本地斜杠命令在流式中忽略（保持原行为：流式中本地命令不执行、不入队）
+      if (
+        trimmed.startsWith('/nexus') ||
+        trimmed.startsWith('/agent') ||
+        trimmed.startsWith('/dispatch') ||
+        trimmed.startsWith('/assault')
+      ) {
+        return
+      }
+      // 上下文块：有工作区 → 落盘引用；无 → 全文拼入（与空闲分支同逻辑）
+      const tcbBlocks = contextBlocksRef.current
+      let messageContent = trimmed
+      if (tcbBlocks.length > 0) {
+        const workspacePath = currentWorkspace?.path
+        let usedReference = false
+        if (workspacePath) {
+          try {
+            const { packContextBlocksAsReference, buildTcbReferencePrompt } = await import('./contextBlockRegistry')
+            const { hasContent, fileRef } = await packContextBlocksAsReference(tcbBlocks, workspacePath)
+            if (hasContent) {
+              const reference = buildTcbReferencePrompt(fileRef)
+              messageContent = trimmed
+                ? `${reference}\n\n${trimmed}`
+                : reference
+              usedReference = true
+            }
+          } catch (e) {
+            log.warn('圈选上下文落盘失败，降级全文拼入', { error: String(e) })
+          }
+        }
+        if (!usedReference) {
+          const blocksText = formatContextBlocks(tcbBlocks)
+          messageContent = blocksText
+            ? trimmed
+              ? `${blocksText}\n\n${trimmed}`
+              : blocksText
+            : trimmed
+        }
+      }
+      enqueuePending({
+        id: crypto.randomUUID(),
+        text: messageContent,
+        attachments: attachments.length > 0 ? attachments : undefined,
+        createdAt: Date.now(),
+      })
+      // 上下文块已随消息入队，清除左侧边栏对应的圈选记录
+      const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
+      for (const id of sentBlockIds) {
+        useMarqueeStore.getState().removeBlock(id)
+      }
+      // 记录到 prompt 历史（记录用户原文）
+      if (trimmed) {
+        const history = sentHistoryRef.current
+        if (history.length === 0 || history[0] !== trimmed) {
+          history.unshift(trimmed)
+          if (history.length > 100) history.length = 100
+        }
+      }
+      // 清空本地 state 与草稿
+      cancelPersistDraft()
+      setLocalText('')
+      setLocalAttachments([])
+      contextBlocksRef.current = []
+      setLocalContextBlocks([])
+      updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
+      resetPromptOptimize()
+      setHistoryIndex(-1)
+      setSpeechWakeActive(false)
+      voiceNotificationService.notifySendConfirm()
+      return
+    }
 
     // Polaris 本地命令：/nexus <scenario> <goal> → 组队派发（拓扑波次）
     const nexusCmd = parseNexusSlashCommand(trimmed)
@@ -1325,7 +1402,22 @@ export function ChatInput({
             : trimmed
         }
       }
-      onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      // 多行拆分（场景 B）：纯文本、无附件/上下文块时，若含多行则发送首行、其余入队。
+      // 每行作为独立消息依次发送，避免一次提交堆叠上下文；编辑模式不参与拆分。
+      const plainLines = attachments.length === 0 && tcbBlocks.length === 0
+        ? trimmed.split(/\n+/).filter((l) => l.trim().length > 0)
+        : [messageContent]
+      const [first, ...rest] = plainLines
+      if (rest.length > 0) {
+        for (const line of rest) {
+          enqueuePending({
+            id: crypto.randomUUID(),
+            text: line,
+            createdAt: Date.now(),
+          })
+        }
+      }
+      onSend(first, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
       const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
       for (const id of sentBlockIds) {
@@ -1359,7 +1451,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -1494,12 +1586,14 @@ export function ChatInput({
     return () => document.removeEventListener('click', handleClickOutside)
   }, [])
 
-  const canSend = (value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0) && !disabled && !isStreaming
+  const canSend = (value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0) && !disabled
 
   return (
     <div data-theme-panel className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
       {/* 待发送简报卡片（压缩交接产物，随下一条消息作为上下文发出） */}
       <PendingBriefingCard />
+      {/* 待发送队列胶囊（流式预输入 / 多行拆分入队项） */}
+      <PendingQueueCard />
       {/* 片段变量填写浮窗 */}
       {activeSnippet && (
         <SnippetParamPanel
@@ -1962,13 +2056,32 @@ export function ChatInput({
               )}
               {/* 发送/中断按钮 */}
               {isStreaming && onInterrupt ? (
-                <button
-                  onClick={onInterrupt}
-                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors shadow-soft"
-                  title={t('input.interrupt')}
-                >
-                  <IconStop size={16} />
-                </button>
+                <>
+                  {/* 流式中：主按钮 = 发送到队列（含待发数量角标）；中断降级为次要图标 */}
+                  <button
+                    onClick={handleSend}
+                    disabled={!canSend}
+                    className="shrink-0 flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-soft"
+                    title={t('input.sendToQueue')}
+                  >
+                    <IconSend size={14} />
+                    <span className="text-xs font-medium whitespace-nowrap hidden min-[420px]:inline">
+                      {t('input.sendToQueue')}
+                    </span>
+                    {pendingQueue.length > 0 && (
+                      <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-white/25 text-[11px] font-semibold tabular-nums">
+                        {pendingQueue.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={onInterrupt}
+                    className="shrink-0 p-1.5 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 transition-colors"
+                    title={t('input.interrupt')}
+                  >
+                    <IconStop size={16} />
+                  </button>
+                </>
               ) : (
                 <button
                   onClick={handleSend}

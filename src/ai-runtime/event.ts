@@ -411,13 +411,23 @@ export interface PluginCardAnsweredEvent {
  */
 export interface FormFieldData {
   name: string
-  type?: 'string' | 'number' | 'boolean' | 'textarea' | 'select' | 'secret'
+  type?: 'string' | 'number' | 'boolean' | 'textarea' | 'select' | 'secret' | 'date' | 'time' | 'datetime' | 'month' | 'week'
   label?: string
   placeholder?: string
   options?: string[]
   required?: boolean
   default?: string | number | boolean
   secret?: boolean
+  /** 隐藏字段：值仍参与转发/回喂，但回执中显示为 <已隐藏>（方向 2 信任边界由服务端强制） */
+  hidden?: boolean
+  /** 时间类字段约束 */
+  min?: string
+  max?: string
+  step?: number
+  /** 占位提示行（小字，显示在控件下方） */
+  help?: string
+  /** 栅格跨列数（1-4；配合 form style.gridCols 使用） */
+  col?: number
 }
 
 /**
@@ -430,10 +440,16 @@ export interface FormEvent {
   title?: string
   /** read 模式：full=AI 可见字段值；none=仅字段名 */
   read?: 'full' | 'none'
-  /** 目标能力（付给 form_submit） */
+  /** 目标能力（付给 form_submit）；collect 模式无目标 */
   target: string
-  /** 目标动作 */
+  /** 目标动作；collect 模式无动作 */
   action: string
+  /** 表单模式：dispatch（默认，转发目标能力）/ collect（仅收集参数，不转发） */
+  mode?: 'dispatch' | 'collect'
+  /** AI 声明的样式（accent/bg/gridCols/gap/radius） */
+  style?: Record<string, string | number>
+  /** 模板引用（name/version），显示「来自模板 X」 */
+  template?: { name: string; version?: string }
   /** 字段 schema */
   fields: FormFieldData[]
 }
@@ -449,6 +465,17 @@ export interface FormAnsweredEvent {
   ok: boolean
   /** 服务端回执（read=none 时不含字段值） */
   receipt: string
+}
+
+/**
+ * FormSkipped 事件 - 表单已跳过/超时自动跳过
+ */
+export interface FormSkippedEvent {
+  type: 'form-skipped'
+  sessionId: string
+  formId: string
+  /** 跳过原因：user=用户主动跳过；timeout=超时自动跳过 */
+  reason: 'user' | 'timeout'
 }
 
 // ========================================
@@ -882,6 +909,7 @@ export type AIEvent =
   | PluginCardAnsweredEvent
   | FormEvent
   | FormAnsweredEvent
+  | FormSkippedEvent
   | TodoCreatedEvent
   | TodoUpdatedEvent
   | TodoDeletedEvent

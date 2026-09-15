@@ -218,40 +218,64 @@ fn handle_tools_list() -> Value {
                 "description": concat!(
                     "Present a structured form to the user and wait for its submission. ",
                     "The form is rendered as a schema-driven panel in the Polaris UI; ",
-                    "the user fills and submits it, and the values are forwarded to a ",
-                    "target capability through the capability bus. This call BLOCKS the ",
-                    "current turn until the user submits the form (or the 600s hold ",
-                    "window expires). The tool_result is the submission receipt — raw ",
-                    "submitted values never come back into the model context. Use this ",
-                    "when you need structured input from the user before you can ",
-                    "continue (analogous to ask_user_question, but for fill-in forms). ",
-                    "Fields: 'target' (capability id, e.g. cap.todo), 'action' ",
-                    "(capability action, e.g. create), 'title' (user-visible title), ",
-                    "'read' ('full' | 'none' — none hides all field names' values from ",
-                    "the model), and 'fields' (array of {name,type,label?,placeholder?,",
-                    "options?,required?,default?,secret?}). Field types: string, number, ",
-                    "boolean, textarea, select, secret. IMPORTANT: each field's 'name' ",
-                    "MUST be the target capability's canonical parameter name (e.g. for ",
-                    "cap.todo create: content, description, dueDate, priority, tags, ",
-                    "relatedFiles, subtasks, estimatedHours, sessionId) — the submitted ",
-                    "values are forwarded with the 'name' as the key. Use 'label' for the ",
-                    "human-readable text shown to the user (e.g. name=\"content\", ",
-                    "label=\"任务标题\"). Never use display text as the 'name'."
+                    "the user fills and submits it. Two modes: ",
+                    "(1) 'mode':'dispatch' (default) — values are forwarded to a target ",
+                    "capability on the bus; 'target' and 'action' are required and the ",
+                    "target must be on the whitelist (cap.todo/cap.kv/cap.context). ",
+                    "(2) 'mode':'collect' — values are collected ONLY and returned to ",
+                    "you via the receipt; no capability is dispatched, no whitelist ",
+                    "check. Use collect when you need parameters to drive your own next ",
+                    "action (start a project, create a file, run a script) — you then ",
+                    "call the appropriate tools with the collected values. ",
+                    "This call BLOCKS the current turn until the user submits (or the ",
+                    "600s hold window expires; auto-skips on timeout with a 'skipped' ",
+                    "receipt). raw submitted values never come back into the model ",
+                    "context except via the receipt. ",
+                    "Fields: 'read' ('full' | 'none' — none hides ALL values from the ",
+                    "model), and per-field 'hidden':true (the value is still forwarded ",
+                    "to the target capability or returned in collect mode, but masked as ",
+                    "'<已隐藏>' in the receipt — use this to hide a value from YOU while ",
+                    "a downstream script/capability can still read it). ",
+                    "Also supports 'style' (optional object with 'accent','bg','gridCols',",
+                    "'gap','radius' keys — applied to the panel by the UI) and 'template' ",
+                    "(optional object with 'name','version' — shown to the user as ",
+                    "'来自模板 X' and used for pre-fill). ",
+                    "'fields' is an array of {name,type,label?,placeholder?,options?,",
+                    "required?,default?,secret?,hidden?,min?,max?,step?,help?,col?}. ",
+                    "Field types: string, number, boolean, textarea, select, secret, ",
+                    "date, time, datetime, month, week. Use date/time/datetime (with ",
+                    "optional min/max/step) for date and time picking; the submitted ",
+                    "value is the native input string (e.g. '2026-09-15' or '14:30'). ",
+                    "'col' optionally spans grid columns (1|2). 'help' is a small hint ",
+                    "line below the field. ",
+                    "The user can SKIP the form — the tool_result then reports 'skipped' ",
+                    "with no values. ",
+                    "IMPORTANT for mode=dispatch: each field's 'name' MUST be the target ",
+                    "capability's canonical parameter name (e.g. cap.todo create: ",
+                    "content, description, dueDate, priority, tags, relatedFiles, ",
+                    "subtasks, estimatedHours, sessionId). Use 'label' for the ",
+                    "human-readable text shown to the user. Never use display text as ",
+                    "the 'name'."
                 ),
                 // 扩展元数据：供前端按工具分发通用表单面板（当前 FormCard 由
                 // `form` chat-event 驱动，panel 仅为未来按 tag 分发的自由预留）。
                 "panel": { "tag": "polaris-form", "interactive": true },
                 "inputSchema": {
                     "type": "object",
-                    "required": ["target", "action", "fields"],
                     "properties": {
                         "target": {
                             "type": "string",
-                            "description": "Target capability id on the bus (e.g. cap.todo, cap.kv, cap.context)."
+                            "description": "Target capability id on the bus (e.g. cap.todo, cap.kv, cap.context). Required for mode=dispatch."
                         },
                         "action": {
                             "type": "string",
-                            "description": "Action to dispatch to the target capability (e.g. create, set)."
+                            "description": "Action to dispatch to the target capability (e.g. create, set). Required for mode=dispatch."
+                        },
+                        "mode": {
+                            "type": "string",
+                            "enum": ["dispatch", "collect"],
+                            "default": "dispatch",
+                            "description": "dispatch (default): forward values to target capability. collect: only collect values, no dispatch (use for parameters to drive your own next tools)."
                         },
                         "title": {
                             "type": "string",
@@ -262,6 +286,45 @@ fn handle_tools_list() -> Value {
                             "enum": ["full", "none"],
                             "default": "full",
                             "description": "'full' lets the model see field values in the receipt; 'none' hides them."
+                        },
+                        "style": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Optional visual customization applied by the UI panel.",
+                            "properties": {
+                                "accent": {
+                                    "type": "string",
+                                    "description": "Accent CSS color (hex or named), e.g. '#6366f1'."
+                                },
+                                "bg": {
+                                    "type": "string",
+                                    "description": "Panel background CSS color or CSS gradient."
+                                },
+                                "gridCols": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 4,
+                                    "default": 1,
+                                    "description": "Number of columns for the fields grid."
+                                },
+                                "gap": {
+                                    "type": "string",
+                                    "description": "Gap between fields, e.g. '12px'."
+                                },
+                                "radius": {
+                                    "type": "string",
+                                    "description": "Corner radius, e.g. '12px'."
+                                }
+                            }
+                        },
+                        "template": {
+                            "type": "object",
+                            "additionalProperties": false,
+                            "description": "Optional template reference — shown to the user as '来自模板 X' and used for pre-fill.",
+                            "properties": {
+                                "name": { "type": "string", "description": "Template name shown to user." },
+                                "version": { "type": "string", "description": "Optional version tag." }
+                            }
                         },
                         "fields": {
                             "type": "array",
@@ -274,10 +337,12 @@ fn handle_tools_list() -> Value {
                                     "name": { "type": "string" },
                                     "type": {
                                         "type": "string",
-                                        "enum": ["string", "number", "boolean", "textarea", "select", "secret"]
+                                        "enum": ["string", "number", "boolean", "textarea", "select", "secret", "date", "time", "datetime", "month", "week"]
                                     },
                                     "label": { "type": "string" },
                                     "placeholder": { "type": "string" },
+                                    "help": { "type": "string", "description": "Small hint line shown below the field." },
+                                    "col": { "type": "integer", "minimum": 1, "maximum": 4, "description": "Span this many grid columns (default 1)." },
                                     "options": {
                                         "type": "array",
                                         "items": { "type": "string" },
@@ -285,12 +350,44 @@ fn handle_tools_list() -> Value {
                                     },
                                     "required": { "type": "boolean", "default": false },
                                     "default": { "type": "string" },
-                                    "secret": { "type": "boolean", "default": false }
+                                    "secret": { "type": "boolean", "default": false },
+                                    "hidden": {
+                                        "type": "boolean",
+                                        "default": false,
+                                        "description": "Value is still forwarded/returned but masked as '<已隐藏>' in the receipt — hide from the model while a downstream script/capability can still read it. Mutually exclusive with secret."
+                                    },
+                                    "min": {
+                                        "type": "string",
+                                        "description": "Temporal range lower bound for date/time/datetime fields (e.g. '2026-01-01', '09:00')."
+                                    },
+                                    "max": {
+                                        "type": "string",
+                                        "description": "Temporal range upper bound for date/time/datetime fields."
+                                    },
+                                    "step": {
+                                        "type": "number",
+                                        "description": "Temporal stepping for time/datetime fields (seconds, e.g. 900 for 15-min steps)."
+                                    }
                                 },
                                 "additionalProperties": false
                             }
                         }
                     },
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": { "mode": { "const": "collect" } },
+                                "required": ["mode"]
+                            },
+                            "then": { "required": ["fields"] }
+                        },
+                        {
+                            "if": {
+                                "not": { "properties": { "mode": { "const": "collect" } }, "required": ["mode"] }
+                            },
+                            "then": { "required": ["target", "action", "fields"] }
+                        }
+                    ],
                     "additionalProperties": false
                 }
             }

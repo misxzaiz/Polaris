@@ -400,6 +400,13 @@ export interface ConversationState {
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成
 
+  // ===== 待发送队列（流式预输入 / 多行拆分入队） =====
+  /** 待发送队列：AI 流式回复期间用户提交的消息，回复结束后自动逐条发送 */
+  pendingQueue: import('../../types/chat').PendingMessage[]
+  /** 是否有队列消息正在派发（防 dispatchNextPending 重入） */
+  queueDispatching: boolean
+
+
   // ===== 输入草稿 =====
   inputDraft: InputDraft
 
@@ -478,6 +485,20 @@ export interface ConversationActions {
 
   /** 设置/清空待发送简报（压缩交接产物）；传 null 清空 */
   setPendingBriefing: (briefing: string | null) => void
+
+  // ===== 待发送队列 =====
+  /** 追加一条待发送消息（流式回复期间调用；isStreaming 时 sendMessage 内部会自动入队） */
+  enqueuePending: (message: import('../../types/chat').PendingMessage) => void
+  /** 从队列中移除一条（按 id 精确匹配，用于逐条取消） */
+  removePending: (id: string) => void
+  /** 清空整个待发送队列（中断保留时的"清空"操作） */
+  clearPendingQueue: () => void
+  /**
+   * 尝试发送队列中的下一条（队首出队 → 走真实 sendMessage）。
+   * 幂等：isStreaming / queueDispatching / 空队列时直接返回。
+   * 由 session_end 处理尾部、以及用户空闲时手动点发送触发。
+   */
+  dispatchNextPending: () => Promise<void>
 
   // ===== 提示词优化（版本栈） =====
   /**

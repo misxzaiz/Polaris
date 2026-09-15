@@ -54,7 +54,13 @@
     "readyToSend": "ready to send",
     "editingMessage": "Editing message",
     "cancelEdit": "Cancel",
-    "promptSuggestionHint": "Click to fill the input"
+    "promptSuggestionHint": "Click to fill the input",
+    "sendToQueue": "Queue",
+    "pendingQueue": "Queued",
+    "pendingCount": "{{n}} queued",
+    "queuedHint": "Sent automatically after reply",
+    "clearQueue": "Clear queue",
+    "removePending": "Remove"
   },
   "promptOptimize": {
     "sessionTitle": "Prompt Optimization",
@@ -267,6 +273,32 @@
     "answerBelow": "Answer below",
     "selectAndSend": "Select & Send",
     "pendingQuestion": "Pending Question"
+  },
+  "form": {
+    "label": "Form",
+    "submit": "Submit",
+    "submitting": "Submitting...",
+    "submitted": "Submitted",
+    "submitFailed": "Submit failed",
+    "skip": "Skip",
+    "skipped": "Skipped",
+    "skippedByUser": "Skipped",
+    "skippedByTimeout": "Skipped (timed out)",
+    "readNone": "Privacy mode · values not kept",
+    "privateSubmit": "Private submit · hidden from AI",
+    "privateHint": "When checked, your entries and the submit result never enter the AI context",
+    "secretTag": "Secret",
+    "secretPlaceholder": "Enter secret value…",
+    "selectPlaceholder": "Select…",
+    "yesNo": "Yes",
+    "to": "Target",
+    "empty": "Empty form block",
+    "noSession": "Form not bound to a session, cannot submit",
+    "missingRequired": "Required fields missing",
+    "modeCollect": "Param collection",
+    "templateFrom": "From template",
+    "hiddenTag": "AI-hidden",
+    "hiddenHint": "Value is processed but never enters the AI context"
   },
   "plan": {
     "defaultTitle": "Execution Plan",

@@ -185,6 +185,13 @@ export function handleAIEvent(
       // 必须用 get() 取 finishMessage() 之后的最新 state，否则会丢失最后一条 AI 回复
       saveDialog(get, set)
 
+      // 待发送队列：本轮回复结束 → 自动发送下一条（幂等，内部会检查 isStreaming / 队列空）
+      // 放在 saveDialog 之后，确保队列消费从最新 state 出发；isStreaming 此时已为 false
+      // 防御：历史 mock 未注入队列动作时跳过，避免破坏既有测试
+      if (typeof get().dispatchNextPending === 'function') {
+        void get().dispatchNextPending()
+      }
+
       log.info('Session ended', {
         sessionId: state.sessionId,
         reason: event.reason,
@@ -677,6 +684,9 @@ export function handleAIEvent(
         read: event.read ?? 'full',
         target: event.target,
         action: event.action,
+        mode: event.mode ?? 'dispatch',
+        style: event.style,
+        template: event.template,
         fields: (event.fields ?? []).map((f) => ({
           name: f.name,
           type: f.type ?? 'string',
@@ -686,6 +696,9 @@ export function handleAIEvent(
           required: f.required,
           default: f.default,
           secret: f.secret,
+          hidden: f.hidden,
+          help: f.help,
+          col: f.col,
         })),
         status: 'pending',
         createdAt: new Date().toISOString(),
@@ -701,6 +714,21 @@ export function handleAIEvent(
         receipt: event.receipt,
       })
       break
+
+    case 'form-skipped': {
+      // 用户跳过 / 超时自动跳过：表单块置 skipped，控件禁用。
+      // reason=timeout 时可能表单已因提交被取走 → 幂等忽略（找不到 block 不报错）。
+      const reasonText =
+        event.reason === 'timeout'
+          ? '表单等待超时，已自动跳过'
+          : '用户已跳过该表单'
+      state.updateFormBlock(event.formId, {
+        status: 'skipped',
+        ok: false,
+        receipt: reasonText,
+      })
+      break
+    }
 
     // Task 事件 - 由 TaskStore 处理，不在 ConversationStore 范围内
     case 'task_metadata':
