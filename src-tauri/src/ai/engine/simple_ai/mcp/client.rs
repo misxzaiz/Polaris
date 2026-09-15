@@ -33,6 +33,12 @@ use super::types::{
 /// 控制面方法（initialize/tools/list）实际秒回，不受影响。
 const MCP_CALL_TIMEOUT_SECS: u64 = 120;
 
+/// 需放宽调用超时的工具：阻塞等待用户交互（form 表单等待用户填写提交）。
+/// 对齐表单持有窗口 `form_flow::FORM_WAIT_TIMEOUT_SECS`（600s）+ 30s 缓冲，
+/// 避免 MCP client 先把工具调用判超时、用户提交却找不到 hold 的悬挂。
+const TOOLS_WITH_LONG_TIMEOUT: &[&str] = &["form"];
+const LONG_TOOL_TIMEOUT_SECS: u64 = 630;
+
 /// 单个 MCP server 的客户端连接。
 pub(crate) struct McpClient {
     server_name: String,
@@ -76,7 +82,13 @@ impl McpClient {
         // initialize 握手（协议 2025-06-18，读 server 返回的 protocolVersion 降级）。
         client.initialize().await?;
         // 拉 tools/list 缓存。
-        let tools_list = client.call_method("tools/list", None).await?;
+        let tools_list = client
+            .call_method(
+                "tools/list",
+                None,
+                Duration::from_secs(MCP_CALL_TIMEOUT_SECS),
+            )
+            .await?;
         let result: ToolsListResult = serde_json::from_value(tools_list).map_err(|e| {
             AppError::ProcessError(format!("parse tools/list from '{}': {}", server_name, e))
         })?;
@@ -111,7 +123,13 @@ impl McpClient {
             "capabilities": {},
             "clientInfo": { "name": "polaris-simple-ai", "version": "1.0" }
         });
-        let result_value = self.call_method("initialize", Some(params)).await?;
+        let result_value = self
+            .call_method(
+                "initialize",
+                Some(params),
+                Duration::from_secs(MCP_CALL_TIMEOUT_SECS),
+            )
+            .await?;
         let init: InitializeResult = serde_json::from_value(result_value)
             .map_err(|e| AppError::ProcessError(format!("parse initialize from '{}': {}", self.server_name, e)))?;
         if let Some(pv) = init.protocol_version.as_deref() {
@@ -128,8 +146,14 @@ impl McpClient {
         Ok(())
     }
 
-    /// 发请求并等响应（默认 10 分钟超时，见 `MCP_CALL_TIMEOUT_SECS`）。
-    async fn call_method(&self, method: &str, params: Option<Value>) -> Result<Value> {
+    /// 发请求并等响应。`timeout` 为单次请求上限（默认 `MCP_CALL_TIMEOUT_SECS`，
+    /// 阻塞型工具由 `call_tool` 放宽，见 `TOOLS_WITH_LONG_TIMEOUT`）。
+    async fn call_method(
+        &self,
+        method: &str,
+        params: Option<Value>,
+        timeout: Duration,
+    ) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
         let (tx, rx) = oneshot::channel();
         self.pending.lock().await.insert(id, tx);
@@ -145,7 +169,7 @@ impl McpClient {
         // 经由 transport 发送，统一 stdin 写入逻辑。
         self.transport.send_line(&line).await?;
 
-        let response = tokio::time::timeout(Duration::from_secs(MCP_CALL_TIMEOUT_SECS), rx)
+        let response = tokio::time::timeout(timeout, rx)
             .await
             .map_err(|_| {
                 // 超时时清理 pending，避免 sender 泄漏。
@@ -156,7 +180,9 @@ impl McpClient {
                 });
                 AppError::ProcessError(format!(
                     "MCP '{}' method '{}' timeout ({}s)",
-                    self.server_name, method, MCP_CALL_TIMEOUT_SECS
+                    self.server_name,
+                    method,
+                    timeout.as_secs()
                 ))
             })?
             .map_err(|_| {
@@ -192,10 +218,17 @@ impl McpClient {
         self.transport.send_line(&line).await
     }
 
-    /// 调用工具。
+    /// 调用工具。form 等阻塞型工具放宽超时，其余沿用 `MCP_CALL_TIMEOUT_SECS`。
     pub(crate) async fn call_tool(&self, name: &str, args: &Value) -> Result<McpCallResult> {
         let params = serde_json::json!({ "name": name, "arguments": args });
-        let result = self.call_method("tools/call", Some(params)).await?;
+        let timeout = if TOOLS_WITH_LONG_TIMEOUT.contains(&name) {
+            Duration::from_secs(LONG_TOOL_TIMEOUT_SECS)
+        } else {
+            Duration::from_secs(MCP_CALL_TIMEOUT_SECS)
+        };
+        let result = self
+            .call_method("tools/call", Some(params), timeout)
+            .await?;
         serde_json::from_value(result).map_err(|e| {
             AppError::ProcessError(format!(
                 "parse tools/call result from '{}': {}",

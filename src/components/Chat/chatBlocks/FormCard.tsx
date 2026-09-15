@@ -13,9 +13,10 @@
  */
 
 import { memo, useCallback, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { CheckCircle, CircleX, ClipboardList, Loader2, Send, XCircle } from 'lucide-react';
+import { CheckCircle, CircleX, ClipboardList, Loader2, Save, Send, XCircle } from 'lucide-react';
 import { aiChatDispatch } from '@/services/aiChatDispatch';
 import { createLogger } from '@/utils/logger';
 import { useToastStore } from '@/stores/toastStore';
@@ -26,6 +27,41 @@ const log = createLogger('FormCard');
 
 /** 单个字段的提交值（原文只在提交瞬间构造） */
 type FieldValues = Record<string, string | number | boolean>;
+
+/** AI 可声明的样式键（白名单）：accent/bg/radius → 卡片；gridCols/gap → 字段栅格。 */
+/**
+ * 把 AI 声明的 style 转成可落地的 CSS（仅白名单键）。
+ * 拆两层避免外层容器 display:grid 破坏其 flex 布局：
+ *  - buildCardStyle → 卡片外层（accent/bg/radius）
+ *  - buildGridStyle → 字段栅格（gridCols/gap）
+ */
+const buildCardStyle = (style?: Record<string, string | number>): CSSProperties => {
+  if (!style) return {};
+  const out: CSSProperties = {};
+  const accent = style.accent;
+  const bg = style.bg;
+  const radius = style.radius;
+  if (typeof accent === 'string') {
+    out.accentColor = accent;
+    (out as Record<string, string | number>)['--form-accent'] = accent;
+  }
+  if (typeof bg === 'string') out.background = bg;
+  if (typeof radius === 'string' || typeof radius === 'number') out.borderRadius = String(radius);
+  return out;
+};
+
+const buildGridStyle = (style?: Record<string, string | number>): CSSProperties => {
+  if (!style) return {};
+  const out: CSSProperties = {};
+  const gridCols = style.gridCols !== undefined ? Number(style.gridCols) : undefined;
+  const gap = style.gap;
+  if (gridCols && gridCols >= 1 && gridCols <= 4) {
+    out.display = 'grid';
+    out.gridTemplateColumns = `repeat(${gridCols}, minmax(0, 1fr))`;
+  }
+  if (typeof gap === 'string' || typeof gap === 'number') out.gap = String(gap);
+  return out;
+};
 
 export interface FormCardProps {
   block: FormBlock;
@@ -53,6 +89,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
   const fieldRefs = useRef<Record<string, HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement | null>>({});
   const [submitting, setSubmitting] = useState(false);
   const [skipping, setSkipping] = useState(false);
+  const [savingTemplate, setSavingTemplate] = useState(false);
 
   const isSubmitted = block.status === 'submitted';
   const isSkipped = block.status === 'skipped';
@@ -164,6 +201,36 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
     }
   }, [block, isSubmitted, isSkipped, submitting, skipping, t]);
 
+  // 保存为模板（方向 4）：把当前表单结构（fields/style/mode/title）存成模板，
+  // 供 AI 以后用 template 引用复用。不提交填写值——只有结构。
+  const saveAsTemplate = useCallback(async () => {
+    if (savingTemplate || !block.sessionId) return;
+    setSavingTemplate(true);
+    try {
+      const res = await aiChatDispatch<{ name: string }>({
+        action: 'form_template_save',
+        sessionId: block.sessionId,
+        formId: block.id,
+        templateName: block.title,
+      });
+      useToastStore.getState().success(
+        t('form.templateSaved', '模板已保存'),
+        res.name || ''
+      );
+    } catch (error) {
+      log.error(
+        '保存模板失败:',
+        error instanceof Error ? error : new Error(String(error))
+      );
+      useToastStore.getState().error(
+        t('form.templateSaveFailed', '保存模板失败'),
+        error instanceof Error ? error.message : String(error)
+      );
+    } finally {
+      setSavingTemplate(false);
+    }
+  }, [savingTemplate, block, t]);
+
   // ===== 已提交/已跳过态：展示服务端回执（read=none 时回执不含字段值） =====
   if (isSubmitted || isSkipped) {
     return (
@@ -235,6 +302,7 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
       role="form"
       aria-labelledby={`form-title-${block.id}`}
       className="my-2 rounded-lg border overflow-hidden flex flex-col bg-accent-faint/30 border-accent/30"
+      style={buildCardStyle(block.style)}
     >
       {/* 顶部：标题 + read 模式 */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-accent/20 bg-accent-faint/50">
@@ -267,18 +335,29 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
         </span>
       </div>
 
-      {/* 字段列表 */}
-      <div className="p-3 space-y-3">
+      {/* 字段列表（style.gridCols 驱动栅格布局；field.col 控制单字段跨列） */}
+      <div
+        className="p-3"
+        style={buildGridStyle(block.style)}
+      >
         {block.fields.map((field) => (
-          <FormField
+          <div
             key={field.name}
-            field={field}
-            uncontrolled={readNone}
-            value={readNone ? undefined : rawValues[field.name]}
-            controlRef={registerRef(field.name)}
-            disabled={submitting || skipping}
-            onChange={(v) => setValue(field.name, v)}
-          />
+            style={
+              field.col && field.col > 1
+                ? { gridColumn: `span ${Math.min(field.col, 4)} / span ${Math.min(field.col, 4)}` }
+                : undefined
+            }
+          >
+            <FormField
+              field={field}
+              uncontrolled={readNone}
+              value={readNone ? undefined : rawValues[field.name]}
+              controlRef={registerRef(field.name)}
+              disabled={submitting || skipping}
+              onChange={(v) => setValue(field.name, v)}
+            />
+          </div>
         ))}
       </div>
 
@@ -300,6 +379,20 @@ export const FormCard = memo(function FormCard({ block }: FormCardProps) {
           />
           {t('form.privateSubmit', '私密提交 · AI 不可见')}
         </label>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => void saveAsTemplate()}
+          disabled={submitting || skipping || savingTemplate}
+          title={t('form.saveTemplateHint', '把表单结构保存为模板，供 AI 以后复用')}
+        >
+          {savingTemplate ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+          ) : (
+            <Save className="w-3.5 h-3.5" aria-hidden="true" />
+          )}
+          <span className="ml-1">{t('form.saveTemplate', '存为模板')}</span>
+        </Button>
         <Button
           variant="ghost"
           size="sm"
@@ -526,6 +619,9 @@ function FormField({ field, uncontrolled, value, controlRef, disabled, onChange 
         )}
       </label>
       {renderControl()}
+      {field.help && (
+        <p className="mt-1 text-[11px] text-text-tertiary">{field.help}</p>
+      )}
     </div>
   );
 }

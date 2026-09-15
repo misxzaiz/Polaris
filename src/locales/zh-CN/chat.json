@@ -297,7 +297,11 @@
     "modeCollect": "参数收集",
     "templateFrom": "来自模板",
     "hiddenTag": "AI 不可见",
-    "hiddenHint": "值会参与处理，但不会进入 AI 上下文"
+    "hiddenHint": "值会参与处理，但不会进入 AI 上下文",
+    "saveTemplate": "存为模板",
+    "saveTemplateHint": "把表单结构保存为模板，供 AI 以后复用",
+    "templateSaved": "模板已保存",
+    "templateSaveFailed": "保存模板失败"
   },
   "plan": {
     "defaultTitle": "执行计划",

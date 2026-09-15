@@ -356,6 +356,86 @@ impl Capability for AiChatCapability {
                         }
                         Ok(serde_json::json!({ "ok": true }))
                     }
+                    "form_template_save" => {
+                        // 方向 4：把当前表单保存为模板（用户侧入口，FormCard「保存为模板」）。
+                        // 从 form_holds 读副本（不删 hold，表单仍可继续填写/提交），
+                        // 用其 fields/style/mode/title 构造模板结构存到 DataRoot。
+                        // 模板只存结构不存值——字段值任何情况都不落盘。
+                        let form_id = get("formId").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                        if form_id.is_empty() {
+                            return Err("cap.ai.chat form_template_save 需要 formId 参数".to_string());
+                        }
+                        let hold_opt = {
+                            let holds = s.form_holds.lock().ok().ok_or_else(|| {
+                                "表单存储已损坏（form_holds 锁中毒）".to_string()
+                            })?;
+                            holds.get(&form_id).cloned()
+                        };
+                        let hold = hold_opt.ok_or_else(|| {
+                            "表单不存在或已提交，无法保存为模板".to_string()
+                        })?;
+                        // 模板名：显式 templateName > 表单标题 > formId 前缀
+                        let name = get("templateName")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty())
+                            .or_else(|| {
+                                let t = hold.title.trim();
+                                if t.is_empty() {
+                                    None
+                                } else {
+                                    Some(t.to_string())
+                                }
+                            })
+                            .unwrap_or_else(|| {
+                                let id = &hold.form_id;
+                                id[..id.len().min(12)].to_string()
+                            });
+                        let version = get("version")
+                            .and_then(|v| v.as_str())
+                            .map(String::from)
+                            .or_else(|| Some("v1".to_string()));
+                        // 只取结构字段（fields/style/mode/title），不含 fields 原始值。
+                        let source = serde_json::json!({
+                            "name": name,
+                            "version": version,
+                            "title": hold.title,
+                            "mode": hold.mode,
+                            "style": hold.style,
+                            "fields": hold.fields,
+                        });
+                        let root = crate::services::data_root::data_root().root().to_path_buf();
+                        let saved =
+                            crate::services::form_template::save_template(&root, &source)
+                                .map_err(|e| format!("保存模板失败: {}", e))?;
+                        // saved.name 是最终落盘名（可能已 slug 化/唯一化）
+                        let saved_name = saved
+                            .get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(&name)
+                            .to_string();
+                        tracing::info!(
+                            "[Form] 保存模板 name={} formId={} fields={}",
+                            saved_name,
+                            hold.form_id,
+                            hold.fields.len()
+                        );
+                        Ok(serde_json::json!({
+                            "ok": true,
+                            "name": saved_name,
+                            "version": version,
+                            // 落盘名与展示标题分离：模板文件用 slug 名，UI 仍显示中文标题
+                            "title": hold.title,
+                            "slugified": saved_name != name,
+                        }))
+                    }
+                    "form_template_list" => {
+                        // 方向 4：列出已保存模板（元信息，不含字段值）。
+                        let root = crate::services::data_root::data_root().root().to_path_buf();
+                        let templates = crate::services::form_template::list_templates(&root)
+                            .map_err(|e| format!("读取模板列表失败: {}", e))?;
+                        Ok(serde_json::json!({ "templates": templates }))
+                    }
                     "register_pending_question" => {
                         let options: Vec<crate::state::QuestionOption> = get("options")
                             .cloned()

@@ -13,6 +13,7 @@
 //! - `secret` 字段无论模式一律掩码
 
 use crate::contracts::Value;
+use serde_json::json;
 
 /// 校验 fields schema（纯函数，供表单工具与单测复用）
 ///
@@ -105,6 +106,120 @@ pub fn expand_dot_paths(flat: &Value) -> Value {
         cur.insert(segments[segments.len() - 1].to_string(), v.clone());
     }
     Value::Object(root)
+}
+
+/// 模板结构（form-templates/<name>.json 的落地格式）。
+///
+/// `fields` 是完整字段 schema（不含值——模板不存值，存结构），
+/// `style` / `mode` / `title` 为可复用展示元数据。
+#[derive(Debug, Clone)]
+pub struct FormTemplate {
+    pub name: String,
+    pub version: Option<String>,
+    pub title: Option<String>,
+    pub mode: Option<String>,
+    pub style: Value,
+    pub fields: Value,
+}
+
+impl FormTemplate {
+    /// 从服务端收到的模板定义对象构造（容错缺失字段）。
+    pub fn from_value(v: &Value) -> Option<Self> {
+        let name = v
+            .get("name")
+            .and_then(Value::as_str)?
+            .trim()
+            .to_string();
+        if name.is_empty() {
+            return None;
+        }
+        Some(Self {
+            name,
+            version: v
+                .get("version")
+                .and_then(Value::as_str)
+                .map(String::from),
+            title: v.get("title").and_then(Value::as_str).map(String::from),
+            mode: v.get("mode").and_then(Value::as_str).map(String::from),
+            style: v.get("style").cloned().unwrap_or_else(|| json!({})),
+            fields: v
+                .get("fields")
+                .cloned()
+                .unwrap_or_else(|| json!([])),
+        })
+    }
+
+    /// 校验模板字段（复用 validate_fields 规则）。
+    pub fn validate(&self) -> Result<(), String> {
+        validate_fields(&self.fields)
+    }
+}
+
+/// 把模板展开的元数据与 AI 本次声明的参数合并。
+///
+/// 规则（AI 显式声明 > 模板默认，避免模板喧宾夺主）：
+/// - `fields`：模板提供 baseline，AI 本次传入的字段**按 name 覆盖/追加**
+/// - `title`：AI 传了用 AI 的，否则用模板的
+/// - `style`：AI 传了用 AI 的，否则用模板的
+/// - `mode`：AI 传了用 AI 的，否则用模板的
+///
+/// 返回合并后的 `{ title, mode, style, fields }`，供 form_frame 组装用。
+pub fn merge_template_defaults(
+    template: Option<&FormTemplate>,
+    ai_title: Option<&str>,
+    ai_mode: Option<&str>,
+    ai_style: &Value,
+    ai_fields: &Value,
+) -> Value {
+    let t = match template {
+        Some(t) => t,
+        None => {
+            // 无模板：直取 AI 声明（缺省 title/mode/style）
+            return json!({
+                "title": ai_title.unwrap_or(""),
+                "mode": ai_mode.unwrap_or("dispatch"),
+                "style": ai_style,
+                "fields": ai_fields,
+            });
+        }
+    };
+    // 模板字段 + AI 覆盖字段
+    let mut merged: Vec<Value> = t
+        .fields
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    if let Some(ai_arr) = ai_fields.as_array() {
+        for ai_field in ai_arr {
+            let ai_name = ai_field
+                .get("name")
+                .and_then(Value::as_str)
+                .map(String::from);
+            match ai_name {
+                Some(n) => {
+                    if let Some(idx) = merged.iter().position(|f| {
+                        f.get("name").and_then(Value::as_str) == Some(n.as_str())
+                    }) {
+                        merged[idx] = ai_field.clone();
+                    } else {
+                        merged.push(ai_field.clone());
+                    }
+                }
+                // AI 传了无名字段：直接追加（宽松处理）
+                None => merged.push(ai_field.clone()),
+            }
+        }
+    }
+    json!({
+        "title": ai_title.map(String::from).or_else(|| t.title.clone()).unwrap_or_default(),
+        "mode": ai_mode.map(String::from).or_else(|| t.mode.clone()).unwrap_or_else(|| "dispatch".to_string()),
+        "style": if ai_style.as_object().map(|o| !o.is_empty()).unwrap_or(false) {
+            ai_style
+        } else {
+            &t.style
+        },
+        "fields": merged,
+    })
 }
 
 /// 生成回执（信任边界所在 —— AI 只能看到这份文本）
@@ -485,5 +600,82 @@ mod tests {
         let fields = json!([]);
         let out = normalize_payload_for_target("cap.todo", &json!("just-a-string"), fields.as_array().unwrap());
         assert_eq!(out, json!("just-a-string"));
+    }
+
+    // ===== 方向 4：模板合并 =====
+
+    fn sample_template() -> FormTemplate {
+        FormTemplate::from_value(&json!({
+            "name": "project-bootstrap",
+            "version": "v1",
+            "title": "项目启动",
+            "mode": "collect",
+            "style": { "gridCols": 2 },
+            "fields": [
+                { "name": "name", "type": "string", "label": "项目名", "required": true },
+                { "name": "engine", "type": "select", "options": ["ts", "rs"], "label": "引擎" },
+            ],
+        }))
+        .expect("sample template parses")
+    }
+
+    #[test]
+    fn template_from_value_parses() {
+        let t = sample_template();
+        assert_eq!(t.name, "project-bootstrap");
+        assert_eq!(t.mode.as_deref(), Some("collect"));
+        assert_eq!(t.style.get("gridCols"), Some(&json!(2)));
+        assert_eq!(t.fields.as_array().map(|a| a.len()), Some(2));
+        t.validate().expect("valid template passes");
+    }
+
+    #[test]
+    fn template_from_value_rejects_missing_name() {
+        assert!(FormTemplate::from_value(&json!({ "fields": [] })).is_none());
+        assert!(FormTemplate::from_value(&json!({ "name": "" })).is_none());
+    }
+
+    #[test]
+    fn merge_without_template_uses_ai_declaration() {
+        let tmpl = None;
+        let merged = merge_template_defaults(tmpl, Some("my title"), Some("dispatch"), &json!({"accent": "#f00"}), &json!([{"name": "a"}]));
+        assert_eq!(merged.get("title").and_then(Value::as_str), Some("my title"));
+        assert_eq!(merged.get("mode").and_then(Value::as_str), Some("dispatch"));
+        assert_eq!(merged["style"]["accent"], json!("#f00"));
+        assert_eq!(merged["fields"].as_array().map(|a| a.len()), Some(1));
+    }
+
+    #[test]
+    fn merge_uses_template_when_ai_empty() {
+        let tmpl = Some(&sample_template());
+        let merged = merge_template_defaults(tmpl, None, None, &json!({}), &json!([]));
+        assert_eq!(merged.get("title").and_then(Value::as_str), Some("项目启动"));
+        assert_eq!(merged.get("mode").and_then(Value::as_str), Some("collect"));
+        assert_eq!(merged["style"]["gridCols"], json!(2));
+        assert_eq!(merged["fields"].as_array().map(|a| a.len()), Some(2), "模板字段成为 baseline");
+    }
+
+    #[test]
+    fn merge_ai_overrides_template_by_name() {
+        let tmpl = Some(&sample_template());
+        // AI 覆盖 name 字段 + 追加新字段；style 用 AI 的
+        let merged = merge_template_defaults(
+            tmpl,
+            Some("自定义标题"),
+            Some("dispatch"),
+            &json!({"accent": "#0af"}),
+            &json!([
+                { "name": "name", "type": "string", "label": "改名" },
+                { "name": "extra", "type": "number" },
+            ]),
+        );
+        assert_eq!(merged.get("title").and_then(Value::as_str), Some("自定义标题"), "AI 标题优先");
+        assert_eq!(merged.get("mode").and_then(Value::as_str), Some("dispatch"), "AI 模式优先");
+        assert_eq!(merged["style"]["accent"], json!("#0af"), "AI 样式优先");
+        let fields = merged["fields"].as_array().unwrap();
+        let name_field = fields.iter().find(|f| f.get("name").and_then(Value::as_str) == Some("name")).unwrap();
+        assert_eq!(name_field.get("label").and_then(Value::as_str), Some("改名"), "字段按 name 覆盖");
+        assert!(fields.iter().any(|f| f.get("name").and_then(Value::as_str) == Some("extra")), "新字段追加");
+        assert!(fields.iter().any(|f| f.get("name").and_then(Value::as_str) == Some("engine")), "模板未覆盖字段保留");
     }
 }

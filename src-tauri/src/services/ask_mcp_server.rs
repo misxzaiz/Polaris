@@ -239,7 +239,11 @@ fn handle_tools_list() -> Value {
                     "Also supports 'style' (optional object with 'accent','bg','gridCols',",
                     "'gap','radius' keys — applied to the panel by the UI) and 'template' ",
                     "(optional object with 'name','version' — shown to the user as ",
-                    "'来自模板 X' and used for pre-fill). ",
+                    "'来自模板 X' and used for pre-fill). A 'template' reference ",
+                    "loads the saved template's title/style/fields as baseline and ",
+                    "merges your explicit fields by name (yours win). Templates are ",
+                    "saved by the user from a rendered form; referencing an unknown ",
+                    "name is an error. ",
                     "'fields' is an array of {name,type,label?,placeholder?,options?,",
                     "required?,default?,secret?,hidden?,min?,max?,step?,help?,col?}. ",
                     "Field types: string, number, boolean, textarea, select, secret, ",
@@ -477,6 +481,9 @@ fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
     let action = arguments.get("action").and_then(Value::as_str).unwrap_or_default();
     let title = arguments.get("title").and_then(Value::as_str).unwrap_or_default();
     let read = arguments.get("read").and_then(Value::as_str).unwrap_or("full");
+    let mode = arguments.get("mode").and_then(Value::as_str).unwrap_or("dispatch").to_string();
+    let style = arguments.get("style").cloned().unwrap_or_else(|| json!({}));
+    let template = arguments.get("template").cloned().unwrap_or_else(|| json!(null));
     let fields = arguments
         .get("fields")
         .cloned()
@@ -494,6 +501,9 @@ fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
         "read": read,
         "target": target,
         "action": action,
+        "mode": mode,
+        "style": style,
+        "template": template,
         "fields": fields,
     });
 

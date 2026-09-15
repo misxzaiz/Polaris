@@ -22,7 +22,9 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::services::form_core::{merge_template_defaults, FormTemplate};
 use crate::services::form_flow;
+use crate::services::form_template as form_tpl;
 use crate::state::{
     AppState, DispatchedTask, PendingPluginCard, PendingQuestion, PluginCardStatus, QuestionItem,
     QuestionOption, QuestionStatus, SubAnswer,
@@ -465,13 +467,73 @@ async fn handle_form_frame(
     // 模板引用（可选，前端据此预填 + 显示「来自模板 X」）。
     let template = frame.get("template").cloned().unwrap_or_else(|| json!(null));
 
+    // 方向 4：模板展开。若 AI/前端传了 `template: {name}`，从工作区 DataRoot
+    // 加载对应模板，用模板的 title/mode/style/fields 作为 baseline，再与本次
+    // 声明的字段按 name 合并（AI 显式字段优先）。模板加载失败是硬错误——AI
+    // 引用了不存在的模板应立即知道，而不是渲染空表单。
+    let template_name = template
+        .get("name")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_string();
+    let mut declared_title = title.clone();
+    let mut declared_mode = mode.clone();
+    let mut declared_style = style.clone();
+    let mut declared_fields = fields.clone();
+    if !template_name.is_empty() {
+        let root = crate::services::data_root::data_root().root().to_path_buf();
+        match form_tpl::load_template(&root, &template_name) {
+            Ok(t) => {
+                let merged = merge_template_defaults(
+                    Some(&t),
+                    if declared_title.is_empty() { None } else { Some(&declared_title) },
+                    if declared_mode.is_empty() { None } else { Some(&declared_mode) },
+                    &declared_style,
+                    &declared_fields,
+                );
+                // 合并结果回填到声明变量（build_hold 仍用这些变量）
+                declared_title = merged
+                    .get("title")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                declared_mode = merged
+                    .get("mode")
+                    .and_then(Value::as_str)
+                    .unwrap_or("dispatch")
+                    .to_string();
+                declared_style = merged.get("style").cloned().unwrap_or(json!({}));
+                declared_fields = merged.get("fields").cloned().unwrap_or(json!([]));
+                tracing::info!(
+                    "[Form] 模板「{}」展开 merged_fields={}",
+                    template_name,
+                    declared_fields.as_array().map(|a| a.len()).unwrap_or(0)
+                );
+            }
+            Err(e) => {
+                write_frame(
+                    stream,
+                    &json!({
+                        "type": "form_error",
+                        "formId": form_id,
+                        "message": e,
+                    }),
+                )
+                .await?;
+                let _ = stream.shutdown().await;
+                return Ok(());
+            }
+        }
+    }
+
     // formId 复用 callId 字段（引擎侧 UUID）。缺 target 直接失败。
     if form_id.is_empty() {
         return Err(AppError::ValidationError("form 帧缺少 callId(formId)".into()));
     }
     // 白名单拉起时拦截（阶段 E）：dispatch 模式下 target 不在白名单 → AI 立即拿到失败原因，
     // 不落 hold、不给用户渲染表单。collect 模式不转发目标能力，无需白名单。
-    let mode_is_collect = mode == "collect";
+    // 用 declared_mode（模板可提供 collect），不用原始 mode。
+    let mode_is_collect = declared_mode == "collect";
     if !mode_is_collect && !form_flow::target_allowed(&target) {
         write_frame(
             stream,
@@ -495,10 +557,10 @@ async fn handle_form_frame(
         &target,
         &action,
         &read,
-        &fields,
-        &title,
-        &mode,
-        &style,
+        &declared_fields,
+        &declared_title,
+        &declared_mode,
+        &declared_style,
         &template,
     ) {
         Ok(hold) => hold,
