@@ -506,6 +506,13 @@ export function useActiveSessionActions() {
         if (!store) return
         return store.dispatchNextPending()
       },
+      sendPendingNow: async (id: string) => {
+        const sessionId = sessionStoreManager.getState().activeSessionId
+        if (!sessionId) return
+        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
+        if (!store) return
+        return store.sendPendingNow(id)
+      },
       setPromptSuggestion: (suggestion: string | null) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return

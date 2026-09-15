@@ -60,7 +60,9 @@
     "pendingCount": "{{n}} queued",
     "queuedHint": "Sent automatically after reply",
     "clearQueue": "Clear queue",
-    "removePending": "Remove"
+    "removePending": "Remove",
+    "sendNow": "Send now",
+    "sendNowHint": "Interrupt current reply and send this now"
   },
   "promptOptimize": {
     "sessionTitle": "Prompt Optimization",

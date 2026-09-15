@@ -109,6 +109,21 @@ function recomputeTaskBoard(block: TaskBoardBlock, items: TaskBoardItem[]): Task
 }
 
 /**
+ * 轮询等待条件成立（100ms 间隔，超时兜底返回）。
+ * 用于 sendPendingNow 等待中断后的 session_end 收尾（服务端异步，无法 await）。
+ */
+function waitFor(cond: () => boolean, timeoutMs: number): Promise<void> {
+  return new Promise((resolve) => {
+    const start = Date.now()
+    const tick = () => {
+      if (cond() || Date.now() - start > timeoutMs) resolve()
+      else setTimeout(tick, 100)
+    }
+    tick()
+  })
+}
+
+/**
  * 初始状态工厂
  */
 function createInitialState(sessionId: string): ConversationState {
@@ -1805,6 +1820,23 @@ export function createConversationStore(
             void get().dispatchNextPending()
           }
         }
+      },
+
+      // 立即发送队列中的指定条目（PendingQueueCard 点击「立即发送」）。
+      // 从队列取出该条；若正在流式则先中断并等待本轮收尾（session_end / 5s 兜底），
+      // 再走 sendMessage 开启新一轮。与自动派发（dispatchNextPending）互补，可随时提前发。
+      sendPendingNow: async (id) => {
+        const st = get()
+        const target = st.pendingQueue.find((m) => m.id === id)
+        if (!target || st.queueDispatching) return
+        // 先从队列移除（防止中断收尾触发 dispatchNextPending 时又被自动发出而乱序）
+        set({ pendingQueue: st.pendingQueue.filter((m) => m.id !== id) })
+        // 流式中：先中断当前回复，等待本轮回流真正结束（interrupt 有 5s 兜底）
+        if (st.isStreaming) {
+          await get().interrupt()
+          await waitFor(() => !get().isStreaming, 7000)
+        }
+        await get().sendMessage(target.text, undefined, target.attachments)
       },
 
       sendMessage: async (content, workspaceDir?, attachments?, sendOptions?) => {

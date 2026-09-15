@@ -59,7 +59,9 @@
     "pendingCount": "{{n}} 条待发送",
     "queuedHint": "回复结束后自动发送",
     "clearQueue": "清空队列",
-    "removePending": "取消此条"
+    "removePending": "取消此条",
+    "sendNow": "立即发送",
+    "sendNowHint": "中断当前回复并立即发送此条"
   },
   "promptOptimize": {
     "sessionTitle": "提示词优化",

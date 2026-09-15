@@ -4,11 +4,12 @@
  * 流式回复期间的预输入 / 多行拆分的入队项，以胶囊形式挂在输入框上方。
  * 折叠态只占一行（计数徽标 + 清空）；展开可逐条查看、取消。
  * 队列由 ConversationStore.pendingQueue 持有，session_end / 中断后自动逐条发送。
+ * 点击某一条 = 立即发送（流式中先中断当前回复再发）。
  */
 
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ListTodo, ChevronDown, X, Trash2 } from 'lucide-react'
+import { ListTodo, ChevronDown, X, Trash2, Send } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   useActiveSessionPendingQueue,
@@ -18,7 +19,7 @@ import {
 export const PendingQueueCard = memo(function PendingQueueCard() {
   const { t } = useTranslation('chat')
   const pendingQueue = useActiveSessionPendingQueue()
-  const { removePending, clearPendingQueue } = useActiveSessionActions()
+  const { removePending, clearPendingQueue, sendPendingNow } = useActiveSessionActions()
   const [expanded, setExpanded] = useState(false)
 
   if (pendingQueue.length === 0) return null
@@ -56,7 +57,7 @@ export const PendingQueueCard = memo(function PendingQueueCard() {
         </button>
       </div>
 
-      {/* 展开体：逐条查看 / 取消 */}
+      {/* 展开体：逐条查看 / 点击立即发送 / 取消 */}
       {expanded && (
         <div className="px-2 pb-2 max-h-[220px] overflow-y-auto flex flex-col gap-1">
           {pendingQueue.map((msg, i) => (
@@ -67,9 +68,21 @@ export const PendingQueueCard = memo(function PendingQueueCard() {
               <span className="text-[10px] text-text-tertiary tabular-nums shrink-0 w-5 text-right">
                 {i + 1}
               </span>
-              <span className="flex-1 min-w-0 text-xs text-text-secondary truncate" title={msg.text}>
-                {msg.text}
-              </span>
+              {/* 点击整条 = 立即发送 */}
+              <button
+                type="button"
+                onClick={() => void sendPendingNow(msg.id)}
+                className="flex-1 min-w-0 flex items-center gap-1.5 text-left group"
+                title={t('input.sendNowHint')}
+              >
+                <span className="flex-1 min-w-0 text-xs text-text-secondary truncate" title={msg.text}>
+                  {msg.text}
+                </span>
+                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-text-tertiary group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                  <Send size={10} />
+                  {t('input.sendNow')}
+                </span>
+              </button>
               {msg.attachments && msg.attachments.length > 0 && (
                 <span className="text-[10px] text-text-tertiary shrink-0">
                   {t('input.attachmentCount', { count: msg.attachments.length })}

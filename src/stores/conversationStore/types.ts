@@ -499,6 +499,12 @@ export interface ConversationActions {
    * 由 session_end 处理尾部、以及用户空闲时手动点发送触发。
    */
   dispatchNextPending: () => Promise<void>
+  /**
+   * 立即发送队列中的指定条目（PedingQueueCard 点击「立即发送」）。
+   * 语义：从队列取出该条 → 若正在流式则先中断并等待本轮收尾 → 立即走 sendMessage。
+   * 与自动派发（session_end 后逐条发）互补：用户可随时把某条提前发出。
+   */
+  sendPendingNow: (id: string) => Promise<void>
 
   // ===== 提示词优化（版本栈） =====
   /**

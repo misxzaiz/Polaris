@@ -187,7 +187,7 @@ export function ChatInput({
     undoPromptOptimize, redoPromptOptimize, applyPendingPromptOptimize,
     resetPromptOptimize, clearPromptOptimizeError,
     updateContextBlockNote,
-    enqueuePending,
+    enqueuePending, sendPendingNow,
   } = useActiveSessionActions()
   const pendingQueue = useActiveSessionPendingQueue()
 
@@ -1148,6 +1148,11 @@ export function ChatInput({
     const trimmed = value.trim()
     const hasBlocks = contextBlocksRef.current.length > 0
     if (disabled && attachments.length === 0 && !hasBlocks) return
+    // 输入为空但有待发送队列：Enter 直接发送队首（立即优先；流式中自动中断当前回复再发）
+    if (!trimmed && !editMode && pendingQueue.length > 0 && attachments.length === 0 && !hasBlocks) {
+      void sendPendingNow(pendingQueue[0].id)
+      return
+    }
     if (!trimmed && attachments.length === 0 && !hasBlocks) return
 
     // 流式回复中：不直接发送，整条入队，session_end / 中断后自动逐条发送
@@ -1451,7 +1456,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -2056,32 +2061,13 @@ export function ChatInput({
               )}
               {/* 发送/中断按钮 */}
               {isStreaming && onInterrupt ? (
-                <>
-                  {/* 流式中：主按钮 = 发送到队列（含待发数量角标）；中断降级为次要图标 */}
-                  <button
-                    onClick={handleSend}
-                    disabled={!canSend}
-                    className="shrink-0 flex items-center gap-1.5 h-8 px-2.5 sm:px-3 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-soft"
-                    title={t('input.sendToQueue')}
-                  >
-                    <IconSend size={14} />
-                    <span className="text-xs font-medium whitespace-nowrap hidden min-[420px]:inline">
-                      {t('input.sendToQueue')}
-                    </span>
-                    {pendingQueue.length > 0 && (
-                      <span className="min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-white/25 text-[11px] font-semibold tabular-nums">
-                        {pendingQueue.length}
-                      </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={onInterrupt}
-                    className="shrink-0 p-1.5 rounded-full text-text-tertiary hover:text-danger hover:bg-danger/10 transition-colors"
-                    title={t('input.interrupt')}
-                  >
-                    <IconStop size={16} />
-                  </button>
-                </>
+                <button
+                  onClick={onInterrupt}
+                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors shadow-soft"
+                  title={t('input.interrupt')}
+                >
+                  <IconStop size={16} />
+                </button>
               ) : (
                 <button
                   onClick={handleSend}
