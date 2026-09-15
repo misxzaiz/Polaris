@@ -1407,22 +1407,10 @@ export function ChatInput({
             : trimmed
         }
       }
-      // 多行拆分（场景 B）：纯文本、无附件/上下文块时，若含多行则发送首行、其余入队。
-      // 每行作为独立消息依次发送，避免一次提交堆叠上下文；编辑模式不参与拆分。
-      const plainLines = attachments.length === 0 && tcbBlocks.length === 0
-        ? trimmed.split(/\n+/).filter((l) => l.trim().length > 0)
-        : [messageContent]
-      const [first, ...rest] = plainLines
-      if (rest.length > 0) {
-        for (const line of rest) {
-          enqueuePending({
-            id: crypto.randomUUID(),
-            text: line,
-            createdAt: Date.now(),
-          })
-        }
-      }
-      onSend(first, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      // 整段文本作为一条消息发送，保留用户输入的换行/空行格式。
+      // （待发送队列仅用于「流式回复期间预输入」，见上方 isStreaming 分支；
+      //   空闲时不再按换行拆分，避免用户写长消息按回车换行被误拆成多条排队。）
+      onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
       // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
       const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
       for (const id of sentBlockIds) {
