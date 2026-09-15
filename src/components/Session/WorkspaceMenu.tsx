@@ -282,7 +282,25 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
           </div>
         ) : (
           <div className="px-3 py-2 text-xs text-text-tertiary text-center">
-            点击工作区右侧的 + 添加关联
+            {effectiveWorkspaceId ? '无关联工作区' : '点击工作区右侧的 + 添加关联'}
+          </div>
+        )}
+
+        {/* 转自由会话：有主工作区即可降级（显式操作覆盖创建时的锁定） */}
+        {effectiveWorkspaceId && (
+          <div className="border-t border-border-subtle p-1.5">
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                log.debug('Detach workspace -> free session', { sessionId })
+                updateSessionWorkspace(sessionId, null)
+              }}
+              className="w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs text-text-tertiary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+              title="移除此工作区，转为自由会话（会覆盖创建时的锁定）"
+            >
+              <X className="w-3 h-3" />
+              移除此工作区（自由会话）
+            </button>
           </div>
         )}
       </div>

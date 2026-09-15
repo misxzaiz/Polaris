@@ -60,9 +60,9 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   const showSearch = sortedWorkspaces.length > 3
   const filteredWorkspaces = useWorkspaceFilter(sortedWorkspaces, showSearch ? searchQuery : '')
 
-  // 默认选中当前工作区
+  // 默认选中当前工作区（仅当尚未选择；严格区分 null=未选 与 ''=自由会话）
   useEffect(() => {
-    if (currentWorkspaceId && !primaryWorkspaceId) {
+    if (currentWorkspaceId && primaryWorkspaceId === null) {
       setPrimaryWorkspaceId(currentWorkspaceId)
     }
   }, [currentWorkspaceId, primaryWorkspaceId])
@@ -128,7 +128,10 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
 
   // 创建会话
   const handleCreate = async () => {
-    if (!primaryWorkspaceId) {
+    // 哨兵 '' 表示"自由会话"（不绑定工作区）
+    const isFreeMode = primaryWorkspaceId === ''
+
+    if (!isFreeMode && !primaryWorkspaceId) {
       setError(t('createSessionModal.selectPrimary'))
       return
     }
@@ -137,15 +140,24 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     setError(null)
 
     try {
-      const sessionId = createSession({
-        type: 'project',
-        workspaceId: primaryWorkspaceId,
-        contextWorkspaceIds,
-        workspaceLocked: true, // 创建时锁定主工作区
-        engineId,
-      })
+      const sessionId = createSession(
+        isFreeMode
+          ? {
+              type: 'free',
+              workspaceId: undefined,
+              contextWorkspaceIds: [],
+              engineId,
+            }
+          : {
+              type: 'project',
+              workspaceId: primaryWorkspaceId,
+              contextWorkspaceIds,
+              workspaceLocked: true, // 创建时锁定主工作区
+              engineId,
+            }
+      )
 
-      log.info('创建会话成功', { sessionId, primaryWorkspaceId, contextWorkspaceIds, engineId })
+      log.info('创建会话成功', { sessionId, primaryWorkspaceId, isFreeMode, contextWorkspaceIds, engineId })
       onCreated?.(sessionId)
       onClose()
     } catch (err) {
@@ -155,7 +167,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     }
   }
 
-  // 按钮状态
+  // 按钮状态：自由会话（哨兵 ''）或已选主工作区都允许创建
   const canCreate = primaryWorkspaceId !== null && !isLoading
 
   // 使用 Portal 渲染到 body
@@ -184,8 +196,23 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
 
         {/* 无工作区时的提示 */}
         {sortedWorkspaces.length === 0 ? (
-          <div className="py-8 text-center">
-            <p className="text-text-secondary mb-4">{t('createSessionModal.noWorkspace')}</p>
+          <div className="py-6 text-center space-y-3">
+            <p className="text-text-secondary">{t('createSessionModal.noWorkspace')}</p>
+            {/* 自由会话：即使无工作区也可创建 */}
+            <button
+              type="button"
+              onClick={() => setPrimaryWorkspaceId('')}
+              className={cn(
+                'w-full max-w-xs mx-auto flex items-center justify-center gap-2 px-3 py-2 text-sm rounded-lg border transition-colors',
+                primaryWorkspaceId === ''
+                  ? 'bg-primary/10 text-primary border-primary/30'
+                  : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
+              )}
+            >
+              <Bot className="w-4 h-4" />
+              自由会话（不绑定工作区）
+            </button>
+            <div className="text-xs text-text-tertiary">或先创建专属工作区</div>
             <Button variant="primary" onClick={() => setShowCreateWorkspaceModal(true)}>
               {t('createSessionModal.createWorkspaceFirst')}
             </Button>
@@ -224,6 +251,29 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
               <label className="block text-sm font-medium text-text-secondary mb-2">
                 {t('createSessionModal.primaryWorkspaceLabel')} *
               </label>
+              {/* 自由会话选项 */}
+              <button
+                type="button"
+                onClick={() => setPrimaryWorkspaceId('')}
+                className={cn(
+                  'w-full text-left px-3 py-2 text-sm rounded-lg border mb-2 transition-colors',
+                  primaryWorkspaceId === ''
+                    ? 'bg-primary/10 text-primary border-primary/30'
+                    : 'text-text-secondary border-border-subtle hover:text-text-primary hover:bg-background-hover'
+                )}
+              >
+                <div className="flex items-center gap-2">
+                  {primaryWorkspaceId === '' && <Check className="w-4 h-4 shrink-0" />}
+                  <Bot className="w-4 h-4 shrink-0 text-text-muted" />
+                  <span>自由会话（不绑定工作区）</span>
+                </div>
+                <div className={cn(
+                  'text-xs truncate mt-0.5',
+                  primaryWorkspaceId === '' ? 'text-primary/70' : 'text-text-tertiary'
+                )}>
+                  AI 不注入任何工作区上下文
+                </div>
+              </button>
               {showSearch && (
                 <WorkspaceSearchInput
                   value={searchQuery}
@@ -270,8 +320,8 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
               </button>
             </div>
 
-            {/* 关联工作区选择区（可选，有多个工作区时显示） */}
-            {sortedWorkspaces.length > 1 && (
+            {/* 关联工作区选择区（可选，有多个工作区且非自由会话时显示） */}
+            {sortedWorkspaces.length > 1 && primaryWorkspaceId !== '' && (
               <div className="pt-4 border-t border-border-subtle">
                 <label className="block text-sm font-medium text-text-secondary mb-2">
                   {t('createSessionModal.contextWorkspaceLabel')}
@@ -330,7 +380,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
           <Button
             variant="primary"
             onClick={handleCreate}
-            disabled={!canCreate || sortedWorkspaces.length === 0}
+            disabled={!canCreate || (sortedWorkspaces.length === 0 && primaryWorkspaceId !== '')}
           >
             {isLoading ? t('createSessionModal.creating') : t('createSessionModal.create')}
           </Button>

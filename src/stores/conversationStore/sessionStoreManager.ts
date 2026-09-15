@@ -193,7 +193,7 @@ function createSessionManagerStore() {
         },
         getWorkspace: () => {
           // 获取【当前会话】的工作区
-          // 优先级：metadata.workspaceId（支持用户后续更新）> 初始 options.workspaceId > 全局工作区
+          // 优先级：metadata.workspaceId（支持用户后续更新）> 初始 options.workspaceId
           // 注意：这里使用创建时绑定的 sessionId，而不是 activeSessionId
           // 确保每个会话使用自己的工作区，不受会话切换影响
           const workspaceState = useWorkspaceStore.getState()
@@ -213,7 +213,15 @@ function createSessionManagerStore() {
             }
           }
 
-          // 回退到全局工作区
+          // 自由会话（无显式绑定）不静默回退全局工作区：
+          // 全局工作区是"行为与展示不一致"的漂移源（UI 标签显示无工作区，实际却注入全局 workDir + 系统提示词）。
+          // free 会话应语义上就是"无工作区"。有显式绑定的会话（project）已在上方命中返回。
+          // 历史恢复（createSessionFromHistory）的 free 会话本质上仍是自由会话语义，同样不回退。
+          if (metadata?.type === 'free') {
+            return null
+          }
+
+          // 回退到全局工作区（仅非 free 会话，如默认会话/旧数据）
           return workspaceState.getCurrentWorkspace()
         },
         getContextWorkspaceIds: () => {
@@ -246,6 +254,12 @@ function createSessionManagerStore() {
           activeSessionId: options.silentMode ? state.activeSessionId : sessionId,
         }
       })
+
+      // 同步 ConversationStore 的 workspaceId（与 updateSessionWorkspace 行为对齐）。
+      // createInitialState 硬编码 workspaceId: null，若不在这里同步，
+      // useActiveSessionWorkspace() 对任何新建会话恒返回 null，
+      // 会话级工作区感知（ChatInput 内嵌等）从创建起就是失效的。
+      conversationStore.setState({ workspaceId: metadata.workspaceId })
 
       log.info('创建会话', { sessionId })
 
@@ -904,6 +918,8 @@ function createSessionManagerStore() {
         workspaceId,
         workspaceName,
         type: workspaceId ? 'project' : 'free',
+        // 解除主工作区 = 解锁（转为自由会话，允许再次绑定）
+        workspaceLocked: workspaceId === null ? false : metadata.workspaceLocked,
         updatedAt: new Date().toISOString(),
       }
 
@@ -980,10 +996,22 @@ function createSessionManagerStore() {
 
       // 如果没有会话，创建默认会话
       if (state.stores.size === 0) {
-        get().createSession({
-          type: 'free',
-          title: '新对话',
-        })
+        // 有全局工作区时，默认会话绑定全局工作区（project 语义）；
+        // 无全局工作区时创建自由会话（free，不强制工作区）。
+        const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
+        get().createSession(
+          currentWorkspace
+            ? {
+                type: 'project',
+                title: '新对话',
+                workspaceId: currentWorkspace.id,
+                workspaceLocked: false,
+              }
+            : {
+                type: 'free',
+                title: '新对话',
+              }
+        )
         log.info('已创建默认会话')
       }
 

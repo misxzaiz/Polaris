@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
 import { FileExplorer } from './components/FileExplorer';
@@ -48,6 +48,7 @@ import { useNarrowTabStore } from './stores/narrowTabStore';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
+import { useSessionMetadataList, useActiveSessionId } from './stores/conversationStore/sessionStoreManager';
 import { useOverlayStore } from './stores/overlayStore';
 import { getFileNameFromPath } from './utils/path';
 import './index.css';
@@ -69,6 +70,13 @@ function App() {
   const isStreaming = useActiveSessionStreaming();
   const error = useActiveSessionError();
   const { sendMessage, interrupt: interruptChat, editAndResend } = useActiveSessionActions();
+  const activeSessionId = useActiveSessionId();
+  // 活跃会话是否为"自由会话"（无工作区）。free 会话即使无全局工作区也应可发送。
+  const sessionMetadataList = useSessionMetadataList();
+  const activeSessionIsFree = useMemo(
+    () => sessionMetadataList.some((s) => s.id === activeSessionId && s.type === 'free'),
+    [sessionMetadataList, activeSessionId]
+  );
 
   // 编辑模式状态
   const [editMode, setEditMode] = useState<EditMode | null>(null);
@@ -316,7 +324,7 @@ function App() {
                 <ChatInput
                   onSend={sendMessage}
                   onInterrupt={interruptChat}
-                  disabled={!currentWorkspace}
+                  disabled={!currentWorkspace && !activeSessionIsFree}
                   isStreaming={isStreaming}
                   editMode={editMode}
                   onCancelEdit={handleCancelEdit}
