@@ -39,15 +39,15 @@ const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 60;
 /// 300s 仍能兜死真僵死连接，又避开绝大多数正常长沉默。
 const STREAM_IDLE_TIMEOUT_SECS: u64 = 300;
 
-/// 工具调用轮次上限，**默认 40**（防御性兜底：超过此轮次强行终止，避免模型无限循环
-/// 调用工具导致应用卡死）。可在 ModelProfile.custom_env 中通过
-/// `SIMPLE_AI_MAX_TOOL_ROUNDS` 覆盖为 0（不限制，不推荐）或更大的值。
+/// 工具调用轮次上限，**默认 0 = 不限制**。可在 ModelProfile.custom_env 中通过
+/// `SIMPLE_AI_MAX_TOOL_ROUNDS` 覆盖为 0（不限制）或正数（防御性兜底：超过该轮次
+/// 强行终止，避免模型无限循环调用工具导致应用卡死）。
 ///
-/// 选择 40 的理由：
-/// - 典型攻坚/编码任务工具轮次约 5-20 轮，40 有充足余量；
-/// - 超过 40 轮通常意味着模型陷入循环或任务异常复杂，此时应终止让用户重新评估；
-/// - 可通过 custom_env 取消除上限（设为 0），满足极端场景。
-const DEFAULT_MAX_TOOL_ROUNDS: u64 = 40;
+/// 默认不限制的原因：
+/// - 极长攻坚/编码任务可能超过 40 轮，截断会破坏任务的连续性；
+/// - 模型自然终止 + 用户中断 + token 成本已是自然的收敛约束；
+/// - 有需要的用户仍可通过 custom_env 设置正数恢复兜底。
+const DEFAULT_MAX_TOOL_ROUNDS: u64 = 0;
 
 /// 发起 OpenAI Chat Completions 流式请求，执行工具调用循环
 pub(super) async fn run_chat_loop(
@@ -74,8 +74,8 @@ pub(super) async fn run_chat_loop(
         read_env_u64(&profile.custom_env, "SIMPLE_AI_TIMEOUT_SECS", DEFAULT_REQUEST_TIMEOUT_SECS);
     let stream_idle_secs =
         read_env_u64(&profile.custom_env, "SIMPLE_AI_STREAM_IDLE_SECS", STREAM_IDLE_TIMEOUT_SECS);
-    // 工具调用轮次上限：默认 40（防御性兜底）。custom_env SIMPLE_AI_MAX_TOOL_ROUNDS=0
-    // 可取消限制（不推荐，仅极端复杂场景使用）。
+    // 工具调用轮次上限：默认 0 = 不限制。custom_env SIMPLE_AI_MAX_TOOL_ROUNDS
+    // 可设为正数恢复防御性兜底（例如 40）。
     // 不复用 read_env_u64（它会把 0 视为非法回退），因为 0 有「无限制」的合法语义。
     let max_tool_rounds = profile
         .custom_env
