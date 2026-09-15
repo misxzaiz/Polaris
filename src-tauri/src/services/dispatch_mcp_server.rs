@@ -46,6 +46,10 @@ const SAVE_AGENT_TOOL_NAME: &str = "save_agent";
 const DELETE_AGENT_TOOL_NAME: &str = "delete_agent";
 const LIST_AGENTS_TOOL_NAME: &str = "list_agents";
 const SAVE_ROSTER_TOOL_NAME: &str = "save_roster";
+/// 通用总线能力调用工具：经主进程 RouterBus 转发到任意已注册 cap.* 能力。
+const CAP_DISPATCH_TOOL_NAME: &str = "cap_dispatch";
+/// 能力发现工具：列出主进程总线上已注册的全部能力及动作协议。
+const CAP_LIST_TOOL_NAME: &str = "cap_list";
 
 /// Server-level configuration, parsed from CLI args.
 pub struct DispatchMcpConfig {
@@ -450,6 +454,47 @@ fn handle_tools_list() -> Value {
                     },
                     "additionalProperties": false
                 }
+            },
+            {
+                "name": CAP_DISPATCH_TOOL_NAME,
+                "description": concat!(
+                    "调用 Polaris 主进程总线上任意已注册能力（cap.*）——AI 会话的",
+                    "统一入口。target 取能力 id（如 cap.ai.chat / cap.history / ",
+                    "cap.todo / cap.kv / cap.prompt_snippet / cap.context / ",
+                    "cap.config / cap.data_root / cap.pluginDiscovery / ",
+                    "cap.pluginServiceManager）。payload 为动作命令：{ action, ...参数 }。",
+                    "先调 cap_list 了解每个能力支持的动作与字段，再用本工具调用。",
+                    "管理面能力（cap.config / cap.data_root / cap.plugin*）会改动全局",
+                    "配置或插件，调用需谨慎——请先确认用户意图。"
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "required": ["target", "payload"],
+                    "properties": {
+                        "target": {
+                            "type": "string",
+                            "description": "能力 id，如 cap.ai.chat / cap.history / cap.todo 等。用 cap_list 查看全部可用能力。"
+                        },
+                        "payload": {
+                            "type": "object",
+                            "description": "动作命令：{ action: string, ...动作参数 }。不同能力动作协议见 cap_list 返回。cap.ai.chat 支持 start/continue/interrupt/send_input/approve_plan/reject_plan/answer_question/respond_plugin_card/register_pending_question/register_pending_plan/get_pending_plans/get_pending_questions/clear_processed_plans/clear_answered_questions 等。"
+                        }
+                    },
+                    "additionalProperties": false
+                }
+            },
+            {
+                "name": CAP_LIST_TOOL_NAME,
+                "description": concat!(
+                    "列出 Polaris 总线上当前已注册的全部 cap.* 能力及其动作协议，",
+                    "供 cap_dispatch 精确构造 payload。首次调用 cap_dispatch 前请先",
+                    "调用本工具，避免传错 action/参数。返回每个能力的 id 与动作清单。"
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "additionalProperties": false
+                }
             }
         ]
     })
@@ -493,6 +538,11 @@ fn handle_tools_call(params: Value, config: &DispatchMcpConfig) -> Result<Value>
         DELETE_AGENT_TOOL_NAME => build_agent_delete_frame(&arguments, config)?,
         LIST_AGENTS_TOOL_NAME => build_agent_list_frame(config),
         SAVE_ROSTER_TOOL_NAME => build_roster_save_frame(&arguments, config)?,
+        CAP_DISPATCH_TOOL_NAME => build_cap_dispatch_frame(&arguments, config)?,
+        CAP_LIST_TOOL_NAME => json!({
+            "type": "cap_list",
+            "token": config.token,
+        }),
         other => return Err(AppError::ValidationError(format!("未知工具: {}", other))),
     };
 
@@ -594,6 +644,23 @@ fn build_continue_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result
         "token": config.token,
         "dispatchId": dispatch_id,
         "prompt": prompt,
+    }))
+}
+
+fn build_cap_dispatch_frame(arguments: &Value, config: &DispatchMcpConfig) -> Result<Value> {
+    let target = arguments
+        .get("target")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .ok_or_else(|| AppError::ValidationError("cap_dispatch 缺少 target 参数".into()))?;
+    let payload = arguments.get("payload").cloned().unwrap_or_else(|| json!({}));
+
+    Ok(json!({
+        "type": "cap",
+        "token": config.token,
+        "target": target,
+        "payload": payload,
     }))
 }
 
@@ -786,7 +853,7 @@ mod tests {
     fn tools_list_returns_all_tools() {
         let v = handle_tools_list();
         let tools = v.get("tools").and_then(|t| t.as_array()).unwrap();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 12);
         let names: Vec<&str> = tools
             .iter()
             .map(|t| t.get("name").and_then(|s| s.as_str()).unwrap_or(""))
@@ -801,6 +868,8 @@ mod tests {
         assert!(names.contains(&DELETE_AGENT_TOOL_NAME));
         assert!(names.contains(&LIST_AGENTS_TOOL_NAME));
         assert!(names.contains(&SAVE_ROSTER_TOOL_NAME));
+        assert!(names.contains(&CAP_DISPATCH_TOOL_NAME));
+        assert!(names.contains(&CAP_LIST_TOOL_NAME));
         let dispatch = tools
             .iter()
             .find(|t| t.get("name").and_then(|s| s.as_str()) == Some(DISPATCH_TOOL_NAME))
@@ -965,5 +1034,52 @@ mod tests {
             frame.get("members").and_then(Value::as_array).map(|a| a.len()),
             Some(2)
         );
+    }
+
+    #[test]
+    fn cap_dispatch_frame_requires_target() {
+        let cfg = DispatchMcpConfig {
+            port: 0,
+            token: "tok".into(),
+            session_id: None,
+        };
+        // 缺 target
+        let err = build_cap_dispatch_frame(&json!({ "payload": {} }), &cfg).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+        // 空白 target
+        let err = build_cap_dispatch_frame(&json!({ "target": "  " }), &cfg).unwrap_err();
+        assert!(matches!(err, AppError::ValidationError(_)));
+        // 完整帧：type/token/target/payload 全部透传
+        let frame = build_cap_dispatch_frame(
+            &json!({ "target": "cap.todo", "payload": { "action": "list", "scope": "all" } }),
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(frame.get("type").and_then(Value::as_str), Some("cap"));
+        assert_eq!(frame.get("token").and_then(Value::as_str), Some("tok"));
+        assert_eq!(
+            frame.get("target").and_then(Value::as_str),
+            Some("cap.todo")
+        );
+        let payload = frame.pointer("/payload/action").and_then(Value::as_str);
+        assert_eq!(payload, Some("list"));
+        // payload 缺省时回退为空对象
+        let frame = build_cap_dispatch_frame(&json!({ "target": "cap.kv" }), &cfg).unwrap();
+        assert_eq!(frame.get("payload").and_then(Value::as_object), Some(&json!({}).as_object().unwrap().clone()));
+    }
+
+    #[test]
+    fn cap_list_frame_carries_token() {
+        let cfg = DispatchMcpConfig {
+            port: 0,
+            token: "tok".into(),
+            session_id: None,
+        };
+        let frame = json!({
+            "type": "cap_list",
+            "token": cfg.token,
+        });
+        assert_eq!(frame.get("type").and_then(Value::as_str), Some("cap_list"));
+        assert_eq!(frame.get("token").and_then(Value::as_str), Some("tok"));
     }
 }

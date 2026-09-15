@@ -1420,6 +1420,28 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
             ));
         }
 
+        // 启动 AskUserQuestion / cap 桥监听器（TCP 127.0.0.1:N）。
+        // 与桌面端同构：dispatch MCP 的 cap_dispatch/cap_list 工具依赖此监听器
+        // 转发到主进程 RouterBus。Web 独立模式同样启用，保证两种模式下 AI 都能
+        // 经 cap_dispatch 触达全部已注册能力。
+        {
+            let state_arc = state.clone();
+            tokio::spawn(async move {
+                match services::ask_listener::spawn_ask_listener(state_arc.clone()).await {
+                    Ok(handle) => {
+                        tracing::info!(
+                            "[Polaris-Web] AskListener 已绑定 port={}",
+                            handle.port
+                        );
+                        let _ = state_arc.ask_listener.set(handle);
+                    }
+                    Err(e) => {
+                        tracing::error!("[Polaris-Web] AskListener 启动失败: {}", e);
+                    }
+                }
+            });
+        }
+
         let handle = web_server
             .start_on_available_port(&host, port)
             .await

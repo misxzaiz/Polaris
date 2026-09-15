@@ -206,7 +206,7 @@ fn tool_def(name: &str, description: &str, required: &[&str], properties: Value)
 fn handle_tools_list() -> Value {
     json!({
         "tools": [
-            tool_def("bus_help", "查询总线能力与工具说明：已注册的能力（cap.*）、本 server 全部工具及入参、bus_dispatch 白名单、域迁移路线图。首次使用请先调用本工具", &[], json!({})),
+            tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
             tool_def("bus_dispatch", "读写 Polaris 应用持久化数据（当前仅待办 cap.todo）。注意：这是数据读写工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
                 "target": { "type": "string", "enum": ["cap.todo"] },
                 "payload": { "type": "object" }
@@ -293,12 +293,18 @@ fn handle_bus_help(router: &RouterBus) -> Value {
         },
         "modules": [
             { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
-              "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）" },
-            { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "主应用总线（流式 + 同步）", "状态": "🚚 仅主应用进程；MCP 侧待接" },
-            { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "🚚 仅主应用进程；内存不跨进程，MCP 侧不提供" },
-            { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "🚚 仅主应用进程" },
-            { "domain": "dialog / requirement / scheduler / browser / config 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
+              "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）；主应用亦经 cap_dispatch 触达" },
+            { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
+            { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
+            { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
+            { "domain": "kv / prompt_snippet / config / data_root / pluginDiscovery / pluginServiceManager", "入口": "主进程总线 cap_dispatch", "状态": "✅ 可触达；config/data_root/plugin* 属管理面，改动全局配置需谨慎（先确认用户意图）" },
+            { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
+        "cap_dispatch": {
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 仍是应用数据域白名单（当前仅 cap.todo），两 server 职责不重叠",
+            "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
+            "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
+        },
         "protocol": {
             "说明": "bus_dispatch 的 payload = { \"action\": <动作>, ...动作参数 }。各白名单能力的动作协议如下（与能力实现逐一对应）",
             "cap.todo": {
@@ -315,7 +321,10 @@ fn handle_bus_help(router: &RouterBus) -> Value {
         "usage_examples": [
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "create", "content": "完成代码评审", "priority": "high" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all", "status": "pending" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } }
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
+            { "tool": "cap_list", "arguments": {} },
+            { "tool": "cap_dispatch", "arguments": { "target": "cap.history", "payload": { "action": "list_sessions" } } },
+            { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "prompt": "<用户消息>", "stream": false } } }
         ]
     })
 }

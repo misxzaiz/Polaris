@@ -194,6 +194,8 @@ async fn handle_connection(
             Ok(())
         }
         "dispatch" => handle_dispatch_frame(&mut stream, frame, state, &expected_token).await,
+        "cap" => handle_cap_frame(&mut stream, frame, state, &expected_token).await,
+        "cap_list" => handle_cap_list_frame(&mut stream, frame, state, &expected_token).await,
         "dispatch_status" => {
             handle_dispatch_status_frame(&mut stream, frame, state, &expected_token).await
         }
@@ -1004,6 +1006,110 @@ async fn handle_dispatch_frame(
         }
         Err(message) => dispatch_error_reply("dispatch_result", &message),
     };
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 cap 帧：通用总线能力转发 —— 经主进程 RouterBus.dispatch 调任意已注册
+/// 能力（cap.ai.chat / cap.history / cap.todo / cap.kv / cap.config 等），返回能力
+/// 执行结果。帧协议：{ type:"cap", token, target:"cap.*", payload:{action,...} }。
+///
+/// 权限：以 Source::Plugin 注入（bus 桥的既定身份），走主进程 PolicyPermission gate。
+/// 管理面能力（cap.config/cap.data_root/cap.plugin*）内置 remote-deny 不拦 Plugin，
+/// 但工具描述已标注「需谨慎」。
+async fn handle_cap_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    let target = frame
+        .get("target")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .trim()
+        .to_string();
+    let payload = frame.get("payload").cloned().unwrap_or_else(|| json!({}));
+
+    let reply = if target.is_empty() {
+        dispatch_error_reply("cap_result", "cap 帧缺少 target")
+    } else if !target.starts_with("cap.") {
+        dispatch_error_reply(
+            "cap_result",
+            &format!("target 必须是 cap.* 能力 id（收到 {target}）"),
+        )
+    } else {
+        use crate::contracts::Router as _;
+        let env = crate::contracts::Envelope {
+            id: crate::contracts::MsgId(format!("cap-mcp-{}", uuid::Uuid::new_v4())),
+            source: crate::contracts::Source::Plugin {
+                caller: crate::contracts::PluginId("polaris-dispatch".into()),
+            },
+            target: crate::contracts::CapabilityId(target.clone()),
+            payload,
+            trace: crate::contracts::TraceId(format!("cap-mcp-{}", uuid::Uuid::new_v4())),
+        };
+        match state.router.dispatch(env) {
+            Ok(reply) => match reply.result {
+                Ok(value) => json!({
+                    "type": "cap_result",
+                    "ok": true,
+                    "target": target,
+                    "result": value,
+                }),
+                Err(error) => dispatch_error_reply("cap_result", &error),
+            },
+            Err(error) => dispatch_error_reply("cap_result", &error),
+        }
+    };
+
+    write_frame(stream, &reply).await?;
+    let _ = stream.shutdown().await;
+    Ok(())
+}
+
+/// 处理 cap_list 帧：返回主进程总线上已注册的全部能力 id。
+async fn handle_cap_list_frame(
+    stream: &mut TcpStream,
+    frame: Value,
+    state: Arc<AppState>,
+    expected_token: &str,
+) -> Result<()> {
+    let token = frame
+        .get("token")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if token != expected_token {
+        return Err(AppError::ValidationError(
+            "ask_listener token 不匹配".into(),
+        ));
+    }
+
+    use crate::contracts::Router as _;
+    let ids: Vec<String> = state
+        .router
+        .list_capabilities()
+        .iter()
+        .map(|c| c.0.clone())
+        .collect();
+    let reply = json!({
+        "type": "cap_list_result",
+        "ok": true,
+        "capabilities": ids,
+        "note": "用 cap_dispatch(target, payload) 调用其中任意能力；cap.ai.chat 为流式能力，start/continue 需经 Web/WS 订阅事件。",
+    });
 
     write_frame(stream, &reply).await?;
     let _ = stream.shutdown().await;
