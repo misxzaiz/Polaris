@@ -8,6 +8,12 @@ default-run = "polaris"
 
 [features]
 default = ["tauri-app", "git", "lsp-index"]
+
+# 测试包 profile（polaris-dev）：
+# 编译期切换数据根为 %APPDATA%/Polaris-dev，与正式版（%APPDATA%/Polaris）完全隔离。
+# 由 `pnpm tauri:build:test` 启用（tauri build --features test-profile）。
+# 产出的 exe 不依赖任何运行时 env，双击即隔离，可与正式版同时安装/运行。
+test-profile = []
 tauri-app = [
     "dep:tauri",
     "dep:tauri-build",

@@ -643,12 +643,20 @@ pub fn run() {
                 .decorations(false)
                 .devtools(true);
 
-            // 分模式 UserData 目录：dev/release 隔离，避免脏锁交叉污染。
+            // 分模式 UserData 目录：dev/release/test-profile 隔离，避免脏锁交叉污染。
+            //   - dev（debug 构建）           ：com.polaris.app.dev
+            //   - test-profile（release 测试包）：com.polaris.app.test（与正式版隔离，
+            //                                      允许 polaris-dev 测试包与正式版同时运行）
+            //   - release（正式版）            ：com.polaris.app（保持兼容）
             let data_dir = if cfg!(debug_assertions) {
                 // dev 构建：使用独立目录，彻底与 release 解耦
                 let base = dirs::data_local_dir()
                     .unwrap_or_else(|| std::path::PathBuf::from("."));
                 base.join("com.polaris.app.dev").join("EBWebView")
+            } else if cfg!(feature = "test-profile") {
+                let base = dirs::data_local_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                base.join("com.polaris.app.test").join("EBWebView")
             } else {
                 // release 构建：沿用原目录，保持已安装版本的用户数据兼容
                 let base = dirs::data_local_dir()

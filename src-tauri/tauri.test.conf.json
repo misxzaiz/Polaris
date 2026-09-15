@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "polaris-dev",
+  "version": "10.4.9-1",
+  "identifier": "com.polaris.app.dev",
+  "build": {
+    "beforeBuildCommand": "pnpm run build"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "msi",
+    "createUpdaterArtifacts": false,
+    "resources": [
+      "../dist"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJGOUIyRUY5MDdBQ0JBNjYKUldSbXVxd0grUzZidjc5OUE5VU5QY0NCNGxCSDd0eVE2U0oyWlF2QWF2bDlGc2FJeFNxNHJXaXAK",
+      "endpoints": [
+        "https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

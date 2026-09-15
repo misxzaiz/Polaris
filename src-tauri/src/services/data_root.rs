@@ -45,13 +45,25 @@ use serde::{Deserialize, Serialize};
 use crate::error::{AppError, Result};
 
 /// 应用名（新版默认目录）
+///
+/// test-profile 编译期切换为 `Polaris-dev`：数据根落在 %APPDATA%/Polaris-dev，
+/// 与正式版 %APPDATA%/Polaris 完全隔离（详见 Cargo.toml [features] test-profile）。
+#[cfg(not(feature = "test-profile"))]
 pub const APP_NAME: &str = "Polaris";
+#[cfg(feature = "test-profile")]
+pub const APP_NAME: &str = "Polaris-dev";
 
 /// 旧应用名（仅用于 scan_legacy_data 扫描，不参与默认解析）
 pub const LEGACY_APP_NAME: &str = "claude-code-pro";
 
 /// 锚点目录名（永远在 OS 标准 config_dir 下，永不跟随自定义路径）
+///
+/// 必须与 APP_NAME 同步切换：否则正式版 anchor.json 里残留的自定义 dataRoot
+/// 会把 dev 测试包也导走，数据根隔离将失效。
+#[cfg(not(feature = "test-profile"))]
 const ANCHOR_DIR_NAME: &str = "Polaris";
+#[cfg(feature = "test-profile")]
+const ANCHOR_DIR_NAME: &str = "Polaris-dev";
 
 /// 锚点文件名
 const ANCHOR_FILE: &str = "anchor.json";
