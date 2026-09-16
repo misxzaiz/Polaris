@@ -65,9 +65,10 @@ fn create_test_state() -> Arc<AppState> {
         port: 9830,
         token: Some(TEST_TOKEN.to_string()),
     };
-    let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
+let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
+    let config_store_arc = Arc::new(Mutex::new(config_store));
     Arc::new(AppState {
-        config_store: Arc::new(Mutex::new(config_store)),
+        config_store: config_store_arc.clone(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
         context_store: Arc::new(Mutex::new(ContextMemoryStore::new())),
         integration_manager: AsyncMutex::new(IntegrationManager::new()),
@@ -102,16 +103,27 @@ fn create_test_state() -> Arc<AppState> {
             crate::services::plugin_service_manager::PluginServiceManager::new(),
         ),
         executor_registry: crate::services::executor::create_builtin_registry(),
-        router: {
+router: {
             use crate::contracts::Router as _;
-            use crate::services::router::{EventAdapter, RouterBus, StaticPermission};
+            // 测试使用与生产装配一致的 PolicyPermission（含内置管理面收紧规则），
+            // 避免 StaticPermission 全放行掩盖 cap.config 远程拒绝回归。
+            use crate::services::router::{ConfigCapability, EventAdapter, PolicyPermission, RouterBus};
             let adapter = Arc::new(EventAdapter::new(256));
-            Arc::new(RouterBus::new(
+            let bus = Arc::new(RouterBus::new(
                 adapter,
-                Box::new(StaticPermission),
+                Box::new(PolicyPermission::from_config(None)),
                 None,
                 None,
-            ))
+            ));
+            // 注册 cap.config（与 state.rs 生产装配对齐；on_patch 无 AppHandle，仅 cascade）
+            {
+                use crate::contracts::Router as _;
+                let _ = bus.register_handle(Box::new(ConfigCapability::new(
+                    config_store_arc.clone(),
+                    Box::new(|_cfg: &Config| {}),
+                )));
+            }
+            bus
         },
     })
 }
@@ -382,6 +394,54 @@ async fn settings_update_saves() {
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
     assert_eq!(res.status(), StatusCode::OK);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// 回归：cap.config 远程读写权限（v10.5.0 移动端/Web 连接「权限拒绝」修复）
+//
+// Web/移动端（Source::Remote）走 PolicyPermission（内置管理面收紧）。
+// cap.config **读**（GET /api/settings）必须放行 —— 连接前第一步；
+// cap.config 的**写**（PATCH /api/settings）由 ConfigCapability 内 source 校验拒绝。
+// ═══════════════════════════════════════════════════════════════════════════
+
+#[tokio::test]
+async fn remote_get_settings_with_policy_permission_allowed() {
+    // 回归用例：生产 PolicyPermission 下远程 GET 配置必须 200（曾因内置
+    // cap.config*+remote deny 被误伤为「权限拒绝」，导致移动端/Web 无法连接）。
+    let app = test_app();
+    let req = Request::builder()
+        .method(Method::GET)
+        .uri("/api/settings")
+        .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
+        .body(Body::empty())
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn remote_patch_settings_with_policy_permission_rejected() {
+    // 安全性：远程写仍被能力内 source 校验拒绝（403），读可写不可。
+    let state = create_test_state();
+    let app = create_router(state.clone());
+
+    let updated = {
+        let store = state.config_store.lock().unwrap();
+        let mut c = store.get().clone();
+        c.language = Some("en-US".to_string());
+        c
+    };
+    let body = serde_json::to_string(&updated).unwrap();
+
+let req = Request::builder()
+        .method(Method::PATCH)
+        .uri("/api/settings")
+        .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(body))
+        .unwrap();
+    let res = app.oneshot(req).await.unwrap();
+    assert_eq!(res.status(), StatusCode::FORBIDDEN);
 }
 
 // ============================================================================

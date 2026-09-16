@@ -90,18 +90,15 @@ export async function configGetFull(): Promise<Config> {
  */
 export async function configPatchTop(patch: Record<string, unknown>): Promise<Config> {
   try {
-    // 桌面：config_patch_via_bus（补 emit 热切换广播）
+    // 桌面：config_patch_via_bus（补 emit 热切换广播）。该命令返回裸 Config
+    // （Rust `Result<Config>`），不是 router_dispatch 的 {ok,result,error} 信封。
     if (currentMode === 'tauri') {
-      const res = await invoke<DispatchResponse>('config_patch_via_bus', {
+      return await invoke<Config>('config_patch_via_bus', {
         req: {
           target: 'cap.config',
           payload: { action: 'patch', patch },
         },
       })
-      if (!res.ok) {
-        throw new Error(res.error || `cap.config patch 失败`)
-      }
-      return (res.result || {}) as unknown as Config
     }
     // Web：router_dispatch（现状，无 emit）
     const res = await dispatchConfig('patch', { patch })
@@ -112,31 +109,19 @@ export async function configPatchTop(patch: Record<string, unknown>): Promise<Co
   }
 }
 
-/**
- * patch 指定 section。多字段 section 内部先读现值再深层合并，
- * 不会丢其它字段。返回完整 Config（与旧 update_config_patch 对齐）。
- *
- * A2：桌面（tauri）走 `config_patch_via_bus`（经 RouterBus 补全量副作用
- * cascade→refresh→emit）；Web（http）走 `router_dispatch`（无 AppHandle，
- * emit 缺，与 handle_update_settings 现状一致，前端 applyConfig 兜底）。
- */
 export async function configPatch(
   section: string,
   value: Record<string, unknown>,
 ): Promise<Config> {
   try {
-    // 桌面：config_patch_via_bus（补 emit 热切换广播）
+    // 桌面：config_patch_via_bus（补 emit 热切换广播）。同上，返回裸 Config。
     if (currentMode === 'tauri') {
-      const res = await invoke<DispatchResponse>('config_patch_via_bus', {
+      return await invoke<Config>('config_patch_via_bus', {
         req: {
           target: 'cap.config',
           payload: { action: 'patch', section, value },
         },
       })
-      if (!res.ok) {
-        throw new Error(res.error || `cap.config patch 失败`)
-      }
-      return (res.result || {}) as unknown as Config
     }
     // Web：router_dispatch（现状，无 emit）
     const res = await dispatchConfig('patch', { section, value })
@@ -147,9 +132,6 @@ export async function configPatch(
   }
 }
 
-/**
- * 白名单 schema（纯声明，前端据此渲染配置控件）。
- */
 export async function configSchema(): Promise<{ schemaVersion: number; sections: ConfigSectionSchema[] }> {
   try {
     return (await dispatchConfig('schema', {})) as unknown as {

@@ -68,14 +68,14 @@ pub struct CapabilityInfo {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn router_dispatch(
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     state: tauri::State<'_, crate::AppState>,
     req: RouterDispatchRequest,
 ) -> Result<RouterDispatchResponse> {
     let env = Envelope {
         id: MsgId(format!("ipc-{}", uuid::Uuid::new_v4())),
         // Source 由传输层（此处 = Tauri IPC 通道）注入，前端不可自填
-        source: resolve_ipc_source(window.label()),
+        source: resolve_ipc_source(webview.label()),
         target: CapabilityId(req.target),
         payload: req.payload,
         trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
@@ -109,13 +109,13 @@ pub struct RouterDispatchStreamResponse {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn router_dispatch_stream(
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     state: tauri::State<'_, crate::AppState>,
     req: RouterDispatchRequest,
 ) -> Result<RouterDispatchStreamResponse> {
     let env = Envelope {
         id: MsgId(format!("ipc-{}", uuid::Uuid::new_v4())),
-        source: resolve_ipc_source(window.label()),
+        source: resolve_ipc_source(webview.label()),
         target: CapabilityId(req.target),
         payload: req.payload,
         trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),

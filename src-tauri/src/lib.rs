@@ -142,7 +142,7 @@ use tauri::{Emitter, Manager};
 async fn config_patch_via_bus(
     req: crate::commands::router::RouterDispatchRequest,
     app_handle: tauri::AppHandle,
-    window: tauri::WebviewWindow,
+    webview: tauri::Webview,
     state: tauri::State<'_, AppState>,
 ) -> Result<Config> {
     use crate::contracts::Router as _; // dispatch
@@ -151,7 +151,7 @@ async fn config_patch_via_bus(
     let env = crate::contracts::Envelope {
         id: crate::contracts::MsgId(format!("cbus-{}", uuid::Uuid::new_v4())),
         // Source 由传输层（Tauri IPC 通道）注入，前端不可自填；主窗口 → Bootstrap
-        source: resolve_ipc_source(window.label()),
+        source: resolve_ipc_source(webview.label()),
         target: crate::contracts::CapabilityId(req.target),
         payload: req.payload,
         trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),

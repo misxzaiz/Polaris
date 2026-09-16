@@ -36,7 +36,13 @@ fn dispatch_config(state: &AppState, payload: serde_json::Value) -> Result<serde
         .router
         .dispatch(env)
         .map_err(WebError::Internal)?;
-    reply.result.map_err(WebError::Internal)
+    match reply.result {
+        Ok(v) => Ok(v),
+        // cap.config 写保护（远程拒绝）→ Forbidden；其余业务错误 → Internal。
+        // 错误消息约定见 ConfigCapability::ensure_writable_source。
+        Err(e) if e.contains("不允许远程来源") => Err(WebError::Forbidden(e)),
+        Err(e) => Err(WebError::Internal(e)),
+    }
 }
 
 /// Get current application configuration.

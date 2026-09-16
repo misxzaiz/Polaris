@@ -20,8 +20,9 @@
 //!
 //! # 信号脱敏（读路径）
 //!
-//! - `web.token` → 掩码
-//! - `modelProfiles[].apiKey` / `providerGroups[].apiKey` → 掩码
+//! - `web.token` → 掩码（get full / get all 均脱敏）
+//! - `modelProfiles[].apiKey` / `providerGroups[].apiKey` → **仅 get all 脱敏**；
+//!   get full 不脱敏（前端编辑表单需原始 apiKey，回写透传整体替换不污染密钥）
 //!
 //! 掩码规则（复用 mask_key 形态）：`${ENV}` → `env:<NAME>`；长度 ≤4 → `****`；
 //! 否则保留后 4 字符 → `****<last4>`。
@@ -34,6 +35,17 @@
 //!                      → 完整 config（与现有 update_config_patch 返回对齐）
 //! - `schema`  `{ "action": "schema" }` → 白名单纯声明
 //! - `reset_cli`  `{ "action": "reset_cli" }` → `{ "reset": true }`（占位，后续专用动作）
+//!
+//! # 写保护（source 校验，下沉到能力内）
+//!
+//! `cap.config` 不在 `PolicyPermission` 内置 deny 里（远程**读**是 Web/移动端
+//! 连接与驱动刚需），因此**写动作**（`patch` / `reset_cli`）在 `invoke` 内按
+//! `ctx.source()` 校验：
+//! - `Source::Bootstrap`（桌面主窗口 IPC）→ 放行
+//! - `Source::Plugin`（MCP 桥 `polaris-dispatch` 等，`ask_listener` 注入）→ 放行
+//! - `Source::Remote`（Web/移动端 HTTP）→ 拒绝，返回 `远程不可写配置`
+//!
+//! 读动作（`get` / `schema`）全源放行（token 已由传输层鉴权 + 脱敏）。
 
 use crate::contracts::{Capability, CapabilityId, Context, Value};
 use crate::models::config::Config;
@@ -53,6 +65,21 @@ impl ConfigCapability {
         on_patch: Box<dyn Fn(&Config) + Send + Sync>,
     ) -> Self {
         Self { config_store, on_patch }
+    }
+
+    /// 写动作（patch/reset_cli）的来源校验：Bootstrap & Plugin 放行，Remote 拒绝。
+    ///
+    /// 说明：策略矩阵按 `(source, capability)` 无法区分同一能力内的读/写动作，
+    /// 且 `cap.config` 远程**读**是 Web/移动端刚需（见模块文档），因此写保护
+    /// 下沉到能力内按 action 粒度校验。
+    fn ensure_writable_source(&self, source: &crate::contracts::Source) -> Result<(), String> {
+        match source {
+            crate::contracts::Source::Bootstrap => Ok(()),
+            crate::contracts::Source::Plugin { .. } => Ok(()),
+            crate::contracts::Source::Remote { .. } => {
+                Err("cap.config 写操作不允许远程来源（仅桌面端与插件桥可写）".to_string())
+            }
+        }
     }
 }
 
@@ -114,16 +141,13 @@ fn config_schema() -> Vec<SectionSchema> {
             fields: &["enabled", "host", "port"],
             // token 属敏感（Locked 语义），写走独立动作（后续 apply_web）
         },
-        SectionSchema {
-            name: "modelProfiles",
-            kind: SectionKind::ReadOnly,
-            fields: &[],
-        },
-        SectionSchema {
-            name: "providerGroups",
-            kind: SectionKind::ReadOnly,
-            fields: &[],
-        },
+        // modelProfiles / providerGroups 不列入白名单：patch 走透传整体替换
+        //（do_patch 第 0 步，与摘旧前 update_config_patch 行为对齐）。
+        // 原因：这两 section 含 apiKey 敏感字段，若列入白名单走深层合并，
+        // 前端从 get full 拿到的是脱敏掩码，回写会污染密钥；透传整体替换
+        // 则由前端始终提交完整列表（含原始 apiKey），不触发部分合并。
+        // get full 对这两 section 的 apiKey 仍脱敏（只读展示场景），
+        // 但 ModelProviderTab 编辑表单需原始 apiKey —— 见 get full 例外。
         SectionSchema {
             name: "permissions",
             kind: SectionKind::Locked,
@@ -260,19 +284,22 @@ fn merge_section_value(config: &Config, section: &str, patch_val: &Value) -> Res
 
 /// `get`：读指定 section（缺省=白名单全部）；只暴露白名单字段，敏感字段脱敏。
 ///
-/// D 阶段扩展：`section=full` 返回**完整 config**（含非白名单顶层 key），
-/// 敏感字段仍脱敏。仅 Bootstrap 本地源可用（`invoke` 中按 ctx.source() 限制，
-/// 远程源拒绝）——前端 configStore 需要完整 config 驱动 UI，完整读是本地可信行为。
+/// D 阶段扩展：`section=full` 返回**完整 config**（含非白名单顶层 key）。
+/// 脱敏策略：`web.token` 脱敏；`modelProfiles`/`providerGroups` 的 apiKey
+/// **不脱敏**（前端编辑表单需原始值，回写透传整体替换不污染密钥，
+/// 与摘旧前 get_config 行为对齐）。
 fn do_get(config: &Config, section: &str) -> Result<Value, String> {
     let full = serde_json::to_value(config).map_err(|e| e.to_string())?;
     let full_obj = full.as_object().unwrap();
 
-    // full：返回完整 config（所有顶层 key，敏感字段脱敏）
+    // full：返回完整 config（web.token 脱敏；modelProfiles/providerGroups
+    // 的 apiKey 不脱敏——前端 ModelProviderTab 编辑表单需原始 apiKey，
+    // 透传整体替换回写才不污染密钥；与摘旧前 get_config 行为对齐）。
     if section == "full" {
         let mut out = serde_json::Map::new();
         for (k, v) in full_obj {
             let mut v = v.clone();
-            if k == "web" || k == "modelProfiles" || k == "providerGroups" {
+            if k == "web" {
                 apply_masks(k, &mut v);
             }
             out.insert(k.clone(), v);
@@ -340,7 +367,7 @@ fn do_patch(
         return Err(format!("section {} 只读/锁定，不可写", section));
     }
 
-    // 2. 持锁：读当前 → 嵌套合并 → 顶层整体写
+// 2. 持锁：读当前 → 嵌套合并 → 顶层整体写
     let mut store = config_store
         .lock()
         .map_err(|e| format!("config 锁获取失败: {}", e))?;
@@ -362,7 +389,7 @@ impl Capability for ConfigCapability {
         CapabilityId(CAP_ID.into())
     }
 
-    fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
+    fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")
             .and_then(|a| a.as_str())
@@ -374,8 +401,9 @@ impl Capability for ConfigCapability {
                     .get("section")
                     .and_then(|s| s.as_str())
                     .unwrap_or("all");
-                // full 完整读：任何已认证源可用（token/apiKey 已脱敏，读取本身安全，
-                // 前端 configStore 驱动 UI 必需完整 config；Web/远程源也依赖此读）。
+                // full 完整读：任何已认证源可用（web.token 已脱敏；
+                // modelProfiles/providerGroups 的 apiKey 不脱敏——前端编辑表单
+                // 需原始值。前端 configStore 驱动 UI 必需完整 config；Web/远程源也依赖此读）。
                 let config = self
                     .config_store
                     .lock()
@@ -383,6 +411,8 @@ impl Capability for ConfigCapability {
                 do_get(config.get(), section)
             }
             "patch" => {
+                // 写保护：远程源（Web/移动端）不可写配置（读已放行，见模块文档）
+                self.ensure_writable_source(ctx.source())?;
                 // 顶层对象形态：{ "patch": { key: value, ... } } —— 前端
                 // updateConfigPatch 切换后走此协议（一次 patch 多个顶层 key，
                 // 白名单 section 严格深层合并 / 自由 key 透传 store.patch）。
@@ -434,7 +464,11 @@ impl Capability for ConfigCapability {
                     "sections": sections,
                 }))
             }
-            "reset_cli" => Ok(serde_json::json!({ "reset": true })),
+            "reset_cli" => {
+                // 写保护：与 patch 同源校验
+                self.ensure_writable_source(ctx.source())?;
+                Ok(serde_json::json!({ "reset": true }))
+            }
             other => Err(format!("cap.config 不支持动作: {}", other)),
         }
     }

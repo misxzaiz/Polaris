@@ -10,7 +10,16 @@
 //! - 无匹配规则 → Allow（默认等价）；收紧规则由 config 显式启用。
 //! - `prompt` 裁决原样返回 `PermissionVerdict::Prompt`，由 dispatch 统一安全失败
 //!   （Phase 0 无审批 UI，见契约注释）。
-
+//!
+//! # cap.config 不在内置 deny 的原因
+//!
+//! `cap.config` **读**是 Web/移动端（`Source::Remote`）连接与驱动的刚需
+//! （`configService.getConfig` → `cap.config get full`，连接前第一步），
+//! 曾内置 `cap.config*` + Remote deny，导致移动端/Web 连接即「权限拒绝」。
+//! `cap.config` 的**写保护**下沉到 `ConfigCapability::invoke` 内部按 source
+//! 校验（Remote 拒绝写，Bootstrap / Plugin 放行），因为能力 id 是扁平的，
+//! 策略矩阵按 `(source, capability)` 无法区分同能力内的读/写动作。
+//! 内置 deny 仅保留能力级「远程完全不可用」域：`cap.data_root*` / `cap.plugin*`。
 use crate::contracts::{Permission, PermissionRequest, PermissionVerdict, Source};
 use crate::models::config::PermissionPolicyConfig;
 use std::sync::RwLock;
@@ -156,8 +165,9 @@ impl PolicyPermission {
         // 追加在 config 规则之后 → `best_match` 同特异性后者覆盖前者，
         // 用户在 config 显式 allow（精确规则特异性更高）可覆盖内置 deny。
         // step7 §4 验收：规则固化为代码内置默认，config 缺省也生效，部署/换机不丢。
+        // 注意：cap.config 不在其中 —— 见模块文档，远程读是 Web/移动端刚需，
+        // 写保护下沉到 ConfigCapability::invoke 内按 source 校验。
         for (cap_prefix, wildcard) in [
-            ("cap.config", true),
             ("cap.data_root", true),
             ("cap.plugin", true),
         ] {
@@ -172,6 +182,8 @@ impl PolicyPermission {
             rules: RwLock::new(rules),
         }
     }
+
+    /// 当前生效规则数（诊断用）
 
     /// 当前生效规则数（诊断用）
     pub fn rule_count(&self) -> usize {
@@ -319,7 +331,7 @@ mod tests {
         );
     }
 
-    #[test]
+#[test]
     fn invalid_rules_are_skipped() {
         let p = policy_from(serde_json::json!({
             "rules": [
@@ -329,8 +341,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 3 条内置收紧（cap.config*/cap.data_root*/cap.plugin* remote deny）
-        assert_eq!(p.rule_count(), 4, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 2 条内置收紧（cap.data_root*/cap.plugin* remote deny）
+        assert_eq!(p.rule_count(), 3, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -346,7 +358,18 @@ mod tests {
     fn builtin_rules_deny_remote_management_caps() {
         // config 缺省（from_config(None)）也收紧管理面：内置默认规则生效
         let p = PolicyPermission::from_config(None);
-        for cap in ["cap.config", "cap.config.write", "cap.data_root", "cap.data_root.get_info",
+        // cap.config 读是 Web/移动端刚需 → 策略层放行（写保护下沉到能力内）
+        assert_eq!(
+            p.check(&req("cap.config", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Allow,
+            "cap.config 策略层放行（读必需；写由能力内 source 校验）"
+        );
+        assert_eq!(
+            p.check(&req("cap.config.write", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Allow,
+            "cap.config* 不再内置 deny"
+        );
+        for cap in ["cap.data_root", "cap.data_root.get_info",
                     "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo"] {
             assert_eq!(
                 p.check(&req(cap, Source::Remote { token: "t".into() })).unwrap(),
