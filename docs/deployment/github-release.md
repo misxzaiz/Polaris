@@ -880,6 +880,44 @@ cd polaris-web
 - feat(editor): 文件搜索钉住 + 拖拽，钉住态记住历史选择；浮窗初始位置与模态一致、钉住时避免位置跳变
 - feat(dev): dev HTTP 模式 — 发现文件自发现动态端口，供 AI 自动化测试
 - fix(layout): 合并 RightPanel/LeftPanel 双分支消除子树重建闪白；RightPanel 折叠改隐藏不卸载
-- fix(settings): 设置页改层叠覆盖，消除开关设置时聊天区闪白 + 位置丢失
 - fix(chat): 修复面板切换/resize 后 AI 对话滚动位置丢失
 - docs(plans): 远程 AI 引擎支持详细设计方案
+
+---
+
+## v10.5.0 构建记录
+
+**构建时间**: 2026-09-16 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.0
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.0_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.0_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.0_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.0-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.0_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.0-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.0-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.0-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.0.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(session): 自由会话一等公民——创建/降级/不静默回退全局工作区
+- feat(dispatch): 经 MCP 桥暴露全部 cap.* 能力（cap_dispatch/cap_list）
+- feat(form): 模板化复用 + AI 可声明样式；表单双模式增强
+- feat(input): 待发送队列交互优化——队列直发 + 中断按钮回归；移除空闲时多行拆分，整段文本作为一条消息发送
+- feat(thinking): 展开态限高滚动，流式期间仅在钉底时跟随
+- feat(chat): 代码块闭合后启用语法高亮（受 performance 开关控制）
+- feat(simpleai): 工具轮次默认不限制，custom_env 可正数恢复兜底
+- fix(simpleai): 页面中断失效——429 退避与工具执行不可中断窗口修复
+- feat(build): polaris-dev 测试 MSI 编译期隔离（test-profile）
+- chore(workspace): pnpm 采用 hoisted 链接模式
+- docs(plan): 全局语音唤醒需求分析稿（v2）
