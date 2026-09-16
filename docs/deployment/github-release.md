@@ -915,9 +915,38 @@ cd polaris-web
 - feat(form): 模板化复用 + AI 可声明样式；表单双模式增强
 - feat(input): 待发送队列交互优化——队列直发 + 中断按钮回归；移除空闲时多行拆分，整段文本作为一条消息发送
 - feat(thinking): 展开态限高滚动，流式期间仅在钉底时跟随
-- feat(chat): 代码块闭合后启用语法高亮（受 performance 开关控制）
 - feat(simpleai): 工具轮次默认不限制，custom_env 可正数恢复兜底
 - fix(simpleai): 页面中断失效——429 退避与工具执行不可中断窗口修复
 - feat(build): polaris-dev 测试 MSI 编译期隔离（test-profile）
 - chore(workspace): pnpm 采用 hoisted 链接模式
 - docs(plan): 全局语音唤醒需求分析稿（v2）
+
+---
+
+## v10.5.1 构建记录
+
+**构建时间**: 2026-09-17 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.1
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.1_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.1_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.1_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.1-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.1_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.1-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.1-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.1-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.1.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- fix(config): cap.config 写保护下沉到能力内，恢复远程读权限
+- fix(simple-ai): 流式错误附带请求诊断上下文（url/protocol/model/round）
