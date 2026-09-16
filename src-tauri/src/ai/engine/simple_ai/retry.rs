@@ -61,9 +61,21 @@ fn parse_retry_after(value: Option<&str>) -> Option<Duration> {
     value?.parse::<u64>().ok().map(Duration::from_secs)
 }
 
+/// 脱敏 URL：剥离 query/fragment，避免在错误消息中泄露可能含 token/密钥的 query 参数。
+/// 诊断信息只展示 origin + path（host 与具体接口足够定位问题）。
+pub(super) fn sanitize_url(url: &str) -> String {
+    let without_query = url.split_once('?').map(|(base, _)| base).unwrap_or(url);
+    let without_frag = without_query
+        .split_once('#')
+        .map(|(base, _)| base)
+        .unwrap_or(without_query);
+    without_frag.to_string()
+}
+
 /// 带重试地发送请求。
 ///
 /// 成功（2xx）返回 `Response`；不可重试错误或达上限后返回最后一次错误。
+/// `url` 仅用于错误诊断（脱敏后拼进错误消息，便于前端直接看到请求目标）。
 /// 第 5 个参数 `abort_rx` 为可选中止信号：置位时立即返回 `Interrupted`，
 /// 不再等退避 sleep（否则 429 长退避 10s/30s/60s 会让「页面上点停止」形同失效）。
 pub(super) async fn send_with_retry(
@@ -71,6 +83,7 @@ pub(super) async fn send_with_retry(
     max_attempts: u32,
     base_ms: u64,
     mut abort_rx: Option<&mut watch::Receiver<bool>>,
+    url: &str,
 ) -> Result<reqwest::Response> {
     // max_attempts 至少为 1（首次尝试）。
     let max_attempts = max_attempts.max(1);
@@ -104,7 +117,12 @@ pub(super) async fn send_with_retry(
                         .and_then(|v| v.to_str().ok()),
                 );
                 let body = resp.text().await.unwrap_or_default();
-                let err = format!("API error ({}): {}", status, body);
+                let err = format!(
+                    "API error ({}): {} (url={})",
+                    status,
+                    body,
+                    sanitize_url(url)
+                );
                 if !is_retryable_status(status) || attempt >= max_attempts {
                     return Err(AppError::ProcessError(err));
                 }
@@ -127,7 +145,7 @@ pub(super) async fn send_with_retry(
                 wait_interruptible(delay, &mut abort_rx).await;
             }
             Err(e) => {
-                let err = format!("API request failed: {}", e);
+                let err = format!("API request failed: {} (url={})", e, sanitize_url(url));
                 if attempt >= max_attempts {
                     return Err(AppError::ProcessError(err));
                 }
@@ -222,5 +240,23 @@ mod tests {
         assert_eq!(parse_retry_after(Some("not-a-number")), None);
         // HTTP 日期格式不支持
         assert_eq!(parse_retry_after(Some("Wed, 21 Oct 2025 07:28:00 GMT")), None);
+    }
+
+    #[test]
+    fn sanitize_url_strips_query_and_fragment() {
+        assert_eq!(sanitize_url("https://api.example.com/v1/messages"), "https://api.example.com/v1/messages");
+        // query 可能含密钥，必须剥掉
+        assert_eq!(
+            sanitize_url("https://api.example.com/v1/messages?beta=true&key=secret"),
+            "https://api.example.com/v1/messages"
+        );
+        assert_eq!(
+            sanitize_url("https://api.example.com/chat/completions#frag"),
+            "https://api.example.com/chat/completions"
+        );
+        assert_eq!(
+            sanitize_url("http://localhost:8080/v1/chat/completions?beta=1"),
+            "http://localhost:8080/v1/chat/completions"
+        );
     }
 }

@@ -277,7 +277,15 @@ pub(super) async fn run_chat_loop(
         );
         // 传入 abort_rx：中断信号可在发送等待与 429 长退避期间立即打断，
         // 否则「页面上点停止」在限流重试窗口内形同失效。
-        let response = super::retry::send_with_retry(req, retry_max, retry_base_ms, Some(abort_rx)).await?;
+        // url 仅用于错误诊断（脱敏后拼进错误消息，便于前端直接看到请求目标）。
+        let response = super::retry::send_with_retry(
+            req,
+            retry_max,
+            retry_base_ms,
+            Some(abort_rx),
+            &url,
+        )
+        .await?;
         tracing::info!("[SimpleAI] API 响应状态: {}", response.status());
 
         // 流式解析 SSE
@@ -334,8 +342,12 @@ pub(super) async fn run_chat_loop(
                     );
                     if assistant_content.is_empty() {
                         return Err(AppError::ProcessError(format!(
-                            "Stream idle timeout: no data for {}s",
-                            stream_idle_secs
+                            "Stream idle timeout: no data for {}s (url={}, protocol={}, model={}, round={})",
+                            stream_idle_secs,
+                            super::retry::sanitize_url(&url),
+                            protocol.as_str(),
+                            base_model,
+                            round
                         )));
                     }
                     let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
@@ -365,7 +377,11 @@ pub(super) async fn run_chat_loop(
                     );
                     if assistant_content.is_empty() {
                         return Err(AppError::ProcessError(format!(
-                            "Stream error: {e}"
+                            "Stream error: {e} (url={}, protocol={}, model={}, round={})",
+                            super::retry::sanitize_url(&url),
+                            protocol.as_str(),
+                            base_model,
+                            round
                         )));
                     }
                     let _ = event_callback(AIEvent::Progress(ProgressEvent::new(
