@@ -77,7 +77,7 @@ describe('conversation tool call pairing', () => {
     })
   })
 
-  it('renders ask_user_question as a separate question block after the tool block', () => {
+  it('skips tool_call block for ask_user_question and renders only the question block', () => {
     const store = createConversationStore('session-1', createDeps())
 
     store.getState().handleAIEvent({
@@ -93,6 +93,10 @@ describe('conversation tool call pairing', () => {
         }],
       },
     } satisfies AIEvent)
+
+    // ask 是交互型工具：不创建普通 tool_call block，仅由 question 事件渲染专用卡片
+    let blocks = store.getState().currentMessage?.blocks
+    expect(blocks).toBeUndefined()
 
     store.getState().handleAIEvent({
       type: 'question',
@@ -113,13 +117,9 @@ describe('conversation tool call pairing', () => {
       }],
     } satisfies AIEvent)
 
-    const blocks = store.getState().currentMessage?.blocks
-    expect(blocks).toHaveLength(2)
+    blocks = store.getState().currentMessage?.blocks
+    expect(blocks).toHaveLength(1)
     expect(blocks?.[0]).toMatchObject({
-      type: 'tool_call',
-      id: 'tool_ask_1',
-    })
-    expect(blocks?.[1]).toMatchObject({
       type: 'question',
       id: 'ask-call-1',
       sessionId: 'frontend-session-1',
@@ -127,17 +127,61 @@ describe('conversation tool call pairing', () => {
     })
   })
 
+  it('dedupes duplicate question events (dual-channel delivery) so only one panel renders', () => {
+    const store = createConversationStore('session-1', createDeps())
+
+    const questionEvent = {
+      type: 'question',
+      sessionId: 'frontend-session-1',
+      questionId: 'ask-call-dup',
+      header: 'Pick a mode',
+      options: [
+        { value: 'Fast', label: 'Fast' },
+        { value: 'Careful', label: 'Careful' },
+      ],
+      questions: [{
+        question: 'Pick a mode',
+        header: 'Mode',
+        options: [
+          { value: 'Fast', label: 'Fast' },
+          { value: 'Careful', label: 'Careful' },
+        ],
+      }],
+    } satisfies AIEvent
+
+    // 桌面模式：同一 question 事件经 Tauri 直发 + 广播中继双通道各到达一次
+    store.getState().handleAIEvent(questionEvent)
+    store.getState().handleAIEvent(questionEvent)
+
+    const blocks = store.getState().currentMessage?.blocks
+    expect(blocks).toHaveLength(1)
+    expect(blocks?.[0]).toMatchObject({
+      type: 'question',
+      id: 'ask-call-dup',
+      status: 'pending',
+    })
+
+    // 已答态也只作用于唯一 block，不产生第二个
+    store.getState().handleAIEvent({
+      type: 'question_answered',
+      sessionId: 'frontend-session-1',
+      questionId: 'ask-call-dup',
+      answers: [{ selected: ['Fast'] }],
+      declined: false,
+    } satisfies AIEvent)
+
+    expect(store.getState().currentMessage?.blocks).toHaveLength(1)
+    expect(store.getState().currentMessage?.blocks?.[0]).toMatchObject({
+      type: 'question',
+      id: 'ask-call-dup',
+      status: 'answered',
+    })
+  })
+
   it('updates the separate ask question block by questionId', () => {
     const store = createConversationStore('session-1', createDeps())
 
-    store.getState().handleAIEvent({
-      type: 'tool_call_start',
-      sessionId: 'backend-session',
-      callId: 'tool_ask_1',
-      tool: 'mcp__polaris-ask__ask_user_question',
-      args: {},
-    } satisfies AIEvent)
-
+    // ask 交互工具不产生 tool_call block，question 块是 blocks[0]
     store.getState().handleAIEvent({
       type: 'question',
       sessionId: 'frontend-session-1',
@@ -157,7 +201,7 @@ describe('conversation tool call pairing', () => {
       declined: false,
     } satisfies AIEvent)
 
-    const block = store.getState().currentMessage?.blocks[1]
+    const block = store.getState().currentMessage?.blocks[0]
     expect(block).toMatchObject({
       type: 'question',
       id: 'ask-call-1',

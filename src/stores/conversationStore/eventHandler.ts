@@ -29,6 +29,14 @@ function isTaskBoardTool(toolName: string): boolean {
   return n === 'taskcreate' || n === 'taskupdate' || n === 'tasklist' || n === 'taskget'
 }
 
+/** 判定是否为交互型工具（ask/form 家族）：后端会独立 emit `question`/`form`
+ *  chat-event 渲染专用卡片（AskQuestionCard / FormCard），tool_call 块只会造成
+ *  "工具卡 + 交互卡"双面板冗余。命中后跳过普通 tool_call 块的创建与更新。 */
+function isInteractiveTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n.includes('ask_user_question') || n.includes('askuserquestion') || n === 'form' || n.includes('__form')
+}
+
 /** 从 TaskCreate 输入解析任务项(无 id,流式路径延迟到 tool_call_end 用 output 回传 taskId) */
 function parseTaskCreateItem(args: Record<string, unknown>): { subject: string; activeForm?: string; description?: string } | null {
   const subject = args.subject as string | undefined
@@ -215,6 +223,11 @@ export function handleAIEvent(
     case 'tool_call_start': {
       const toolName = event.tool
       const callId = event.callId || generateUUID()
+      // 交互型工具（ask/form）→ 由 question/form chat-event 渲染专用卡片，
+      // 不创建普通 tool_call block（避免与 AskQuestionCard/FormCard 双面板并存）
+      if (isInteractiveTool(toolName)) {
+        break
+      }
       // Task 家族工具 → 路由到任务板（不创建普通 tool_call block）
       if (isTaskBoardTool(toolName) && event.args) {
         const boardId = state.ensureTaskBoard(callId)
@@ -245,12 +258,16 @@ export function handleAIEvent(
 
     case 'tool_call_end': {
       const callId = event.callId || ''
+      // 交互型工具（ask/form）→ 无普通 tool_call block，跳过更新
+      // （question/form 卡由 question_answered / form-* 事件驱动状态）
+      if (isInteractiveTool(event.tool)) {
+        break
+      }
       // event.result 经 Rust IPC 传递后已是 JS string，直接使用；
       // 仅当 result 为对象时才 JSON.stringify
       const output = typeof event.result === 'string'
         ? event.result
         : (event.result ? JSON.stringify(event.result, null, 2) : undefined)
-
       // Task 家族工具 → 更新任务板（不创建普通 tool_call block）
       // TaskList: 用 output 快照校准看板;TaskGet/Output/Stop 仅标记完成(板已存在)
       if (isTaskBoardTool(event.tool)) {

@@ -32,7 +32,7 @@ import { parseWorkflowResult } from '../tool-calls/workflowParsers';
 import { extractToolKeyInfo, getToolCategoryDescription, getToolDisplayName } from '@/utils/toolConfig';
 
 /** 运行态类型 */
-export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'progress';
+export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'plan' | 'progress';
 
 /** 需要你（urgent）类型 */
 export type UrgentKind = 'permission' | 'question' | 'plan';
@@ -309,6 +309,73 @@ function deriveWorkflowDetail(output: string | undefined, running: boolean, fail
   return '已完成';
 }
 
+/**
+ * 将 plan 块扁平化为任务清单行。
+ * 兼容两种结构（与 PlanModeBlockRenderer 同一语义）：
+ * 1. stages[].tasks[] 嵌套格式
+ * 2. stage 本身即一个扁平步骤（stage.name）
+ */
+function flattenPlanTasks(pm: PlanModeBlock): TaskRow[] {
+  const rows: TaskRow[] = [];
+  for (const stage of pm.stages || []) {
+    if (stage.tasks && stage.tasks.length > 0) {
+      for (const task of stage.tasks) {
+        rows.push({
+          id: task.taskId,
+          label: truncate(task.description || stage.name, 36),
+          status: taskRowStatus(task.status as TaskBoardBlock['items'][number]['status']),
+        });
+      }
+    } else {
+      rows.push({
+        id: stage.stageId,
+        label: truncate(stage.name, 36),
+        // failed 不在 TaskItemStatus，映射为 blocked（与失败视觉一致）
+        status: taskRowStatus(stage.status === 'failed' ? 'blocked' : (stage.status as TaskBoardBlock['items'][number]['status'])),
+      });
+    }
+  }
+  return rows;
+}
+
+/** plan 完成/总数（与 PlanModeBlockRenderer 同一口径：task 计 task，无 task 的 stage 计 1） */
+function planTaskCount(pm: PlanModeBlock): { total: number; completed: number } {
+  let total = 0;
+  let completed = 0;
+  for (const stage of pm.stages || []) {
+    if (stage.tasks && stage.tasks.length > 0) {
+      total += stage.tasks.length;
+      completed += stage.tasks.filter(t => t.status === 'completed').length;
+    } else {
+      total += 1;
+      if (stage.status === 'completed') completed += 1;
+    }
+  }
+  return { total, completed };
+}
+
+/** 是否含失败任务（executing 期间某步骤失败） */
+function planHasFailedStage(pm: PlanModeBlock): boolean {
+  return (pm.stages || []).some(
+    s => s.status === 'failed' || s.tasks?.some(t => t.status === 'failed'),
+  );
+}
+
+/** plan 运行中/失败/完成状态映射 */
+/**
+ * plan 运行中/失败/完成状态映射。
+ * 返回 'skip' 表示不该出现在运行/完成卡（如 pending_approval，由 urgent 层处理）。
+ */
+function planRunStatus(pm: PlanModeBlock): 'running' | 'failed' | 'done' | 'skip' {
+  if (pm.status === 'pending_approval') return 'skip';
+  if (pm.status === 'completed' || pm.status === 'canceled' || pm.status === 'rejected') return 'done';
+  if (pm.status === 'executing' || pm.status === 'drafting' || pm.status === 'approved') {
+    // executing 中某步骤失败 → 失败态
+    return planHasFailedStage(pm) ? 'failed' : 'running';
+  }
+  return 'skip';
+}
+
 /** 任务清单行状态 → 展示状态 */
 function taskRowStatus(status: TaskBoardBlock['items'][number]['status']): TaskRowStatus {
   switch (status) {
@@ -414,6 +481,54 @@ export function deriveRuntimeSummary(
         const ts = new Date(tb.updatedAt).getTime();
         if (!Number.isNaN(ts) && (earliestRunningStartedAt === null || ts < earliestRunningStartedAt)) {
           earliestRunningStartedAt = ts;
+        }
+      }
+      continue;
+    }
+
+    // PlanMode（SimpleAI update_plan 计划面板）
+    if (block.type === 'plan_mode') {
+      const pm = block as PlanModeBlock;
+      const runStatus = planRunStatus(pm);
+      // pending_approval 等由 urgent 层处理，不进运行/完成卡
+      if (runStatus === 'skip') continue;
+      const running = runStatus === 'running';
+      const failed = runStatus === 'failed';
+      const { total, completed } = planTaskCount(pm);
+      const percent = total > 0 ? Math.round((completed / total) * 100) : 0;
+      // 当前进行中任务（任务级优先，其次进行中 stage 内首个任务）
+      const activeRow = flattenPlanTasks(pm).find(r => r.status === 'active');
+      const activeLabel = activeRow?.label;
+      const meta = total > 0
+        ? `${completed}/${total}${running ? ' · 执行中' : ''}${failed ? ' · 失败' : ''}`
+        : running ? '执行中' : failed ? '失败' : '已完成';
+      const detail = failed
+        ? '计划步骤失败'
+        : running
+          ? (activeLabel ? truncate(activeLabel, 28) : '计划执行中')
+          : `${completed}/${total} 已完成`;
+      cards.push({
+        kind: 'plan',
+        running,
+        failed,
+        summary: truncate(pm.title || '执行计划', 24),
+        meta,
+        detail,
+        percent,
+        items: flattenPlanTasks(pm),
+        slide: running
+          ? {
+              kind: 'plan',
+              label: '计划',
+              value: activeLabel ? `${truncate(activeLabel, 32)} · ${completed}/${total}` : `${completed}/${total}`,
+              barPercent: percent,
+            }
+          : null,
+      });
+      if (running) {
+        // plan 无 startedAt 字段：以 now（tick）为起始近似，保证 getSnapshot 纯净（不调 Date.now）
+        if (earliestRunningStartedAt === null) {
+          earliestRunningStartedAt = now;
         }
       }
       continue;

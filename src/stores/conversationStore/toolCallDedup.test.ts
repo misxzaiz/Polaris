@@ -117,6 +117,135 @@ describe('conversation duplicate event dedup', () => {
     expect(blocks?.filter((b) => b.type === 'tool_call')).toHaveLength(2)
     expect(blocks?.filter((b) => b.type === 'agent_run')).toHaveLength(2)
   })
+
+  it('does not append a duplicate question block for the same questionId', () => {
+    const store = createConversationStore('session-1', createDeps())
+
+    const question = {
+      type: 'question',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      header: '这是一个测试问题，你想选择哪个选项？',
+      options: [
+        { value: 'A', label: '测试选项 A' },
+        { value: 'B', label: '测试选项 B' },
+        { value: 'C', label: '测试选项 C' },
+      ],
+      questions: [{
+        question: '这是一个测试问题，你想选择哪个选项？',
+        header: '测试',
+        options: [
+          { value: 'A', label: '测试选项 A' },
+          { value: 'B', label: '测试选项 B' },
+          { value: 'C', label: '测试选项 C' },
+        ],
+        allowCustomInput: true,
+      }],
+    } satisfies AIEvent
+
+    // ask 拉起帧 + 快照/重连重发同一 questionId
+    store.getState().handleAIEvent(question)
+    store.getState().handleAIEvent({ ...question })
+
+    const blocks = store.getState().currentMessage?.blocks
+    expect(blocks?.filter((b) => b.type === 'question' && b.id === 'ask-call-1')).toHaveLength(1)
+  })
+
+  it('question_answered still marks the deduped block answered', () => {
+    const store = createConversationStore('session-1', createDeps())
+
+    const question = {
+      type: 'question',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      header: 'Pick a mode',
+      options: [{ value: 'Fast', label: 'Fast' }],
+    } satisfies AIEvent
+
+    store.getState().handleAIEvent(question)
+    store.getState().handleAIEvent({ ...question })
+
+    store.getState().handleAIEvent({
+      type: 'question_answered',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      answers: [{ selected: ['Fast'] }],
+      declined: false,
+    } satisfies AIEvent)
+
+    const questionBlocks = store.getState().currentMessage?.blocks?.filter(
+      (b) => b.type === 'question' && b.id === 'ask-call-1'
+    )
+    expect(questionBlocks).toHaveLength(1)
+    expect(questionBlocks?.[0]).toMatchObject({ status: 'answered' })
+  })
+
+  it('does not append a duplicate question block when the first frame was archived (re-emit after finishMessage)', () => {
+    const store = createConversationStore('session-1', createDeps())
+
+    const question = {
+      type: 'question',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      header: 'Pick a mode',
+      options: [{ value: 'Fast', label: 'Fast' }],
+    } satisfies AIEvent
+
+    // 1. 首帧 → currentMessage 挂卡片
+    store.getState().handleAIEvent(question)
+    expect(store.getState().currentMessage?.blocks?.filter((b) => b.type === 'question')).toHaveLength(1)
+
+    // 2. 本轮回复结束 → 卡片随消息归档到 messages[]，currentMessage 清空
+    store.getState().finishMessage()
+    expect(store.getState().currentMessage).toBeNull()
+    expect(store.getState().messages).toHaveLength(1)
+
+    // 3. 重连/快照补发同一 questionId（此前只查 currentMessage 会再追加一张 → 双卡 bug）
+    store.getState().handleAIEvent({ ...question })
+
+    // 全量统计：messages[] + currentMessage 里同 id 的 question 块必须只有 1 个
+    const allBlocks = [
+      ...store.getState().messages.flatMap((m) => (m.type === 'assistant' ? m.blocks : [])),
+      ...(store.getState().currentMessage?.blocks ?? []),
+    ]
+    expect(allBlocks.filter((b) => b.type === 'question' && b.id === 'ask-call-1')).toHaveLength(1)
+    // 补发帧不应创建新的 currentMessage
+    expect(store.getState().currentMessage).toBeNull()
+  })
+
+  it('question_answered updates the archived question block across messages[]', () => {
+    const store = createConversationStore('session-1', createDeps())
+
+    const question = {
+      type: 'question',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      header: 'Pick a mode',
+      options: [{ value: 'Fast', label: 'Fast' }],
+    } satisfies AIEvent
+
+    store.getState().handleAIEvent(question)
+    // 归档：卡片进入 messages[0]
+    store.getState().finishMessage()
+
+    // 用户提交 → question_answered 在归档后到达（服务端回执往返延迟）
+    store.getState().handleAIEvent({
+      type: 'question_answered',
+      sessionId: 'backend-session',
+      questionId: 'ask-call-1',
+      answers: [{ selected: ['Fast'] }],
+      declined: false,
+    } satisfies AIEvent)
+
+    const msgs = store.getState().messages
+    expect(msgs).toHaveLength(1)
+    expect(msgs[0].type).toBe('assistant')
+    const archived = msgs[0].type === 'assistant'
+      ? msgs[0].blocks.find((b) => b.type === 'question' && b.id === 'ask-call-1')
+      : undefined
+    expect(archived).toMatchObject({ status: 'answered', answers: [{ selected: ['Fast'] }] })
+    expect(store.getState().currentMessage).toBeNull()
+  })
 })
 
 /**

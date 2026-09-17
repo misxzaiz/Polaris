@@ -948,7 +948,26 @@ export function createConversationStore(
 
       // ===== 问题块 =====
       appendQuestionBlock: (questionId, sessionId, questions) => {
-        const { currentMessage, questionBlockMap, streamingUpdateCounter } = get()
+        // 幂等守卫：桌面模式 ask 事件经直发 + 广播中继双通道送达，同一 questionId
+        // 可能收到两次（ask 拉起帧与快照/重连双路径也可能重发 `question` 事件）。
+        // 重复追加会让消息流出现两张相同的 AskQuestionCard，且 questionBlockMap 只
+        // 指向最后一张导致前一张无法置为已答。与 form / plugin_card 的同 id 守卫一致。
+        //
+        // 注意：必须跨 messages[] + currentMessage 全局查重——若首帧已随本轮回复
+        // 归档到 messages（finishMessage），重连/快照补发的同 id 帧会落到新的
+        // currentMessage，只查 currentMessage 会再次追加一张卡片（实测复现双卡）。
+        const { currentMessage, messages, questionBlockMap, streamingUpdateCounter } = get()
+        const alreadyExists = !!currentMessage?.blocks.some(
+          (b) => b.type === 'question' && b.id === questionId,
+        ) || messages.some(
+          (m) => m.type === 'assistant' && m.blocks?.some(
+            (b) => b.type === 'question' && b.id === questionId,
+          ),
+        )
+        if (alreadyExists) {
+          return
+        }
+
         // 兼容字段：填充首题摘要供旧消费方使用
         const first = questions[0]
         const block = {
@@ -984,28 +1003,71 @@ export function createConversationStore(
       },
 
       updateQuestionBlock: (questionId, payload) => {
-        const { currentMessage, questionBlockMap } = get()
-        if (!currentMessage) return
-        const idx = questionBlockMap.get(questionId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        if (blocks[idx]?.type === 'question') {
-          const existing = blocks[idx] as import('../../types/chat').QuestionBlock
-          const first = payload.answers?.[0]
-          blocks[idx] = {
-            ...existing,
-            answers: payload.answers,
-            declined: payload.declined,
-            status: 'answered' as const,
-            // 兼容字段：首题摘要
-            answer: first
-              ? {
-                  selected: first.selected,
-                  customInput: first.customInput,
-                }
-              : existing.answer,
+        const { currentMessage, messages, questionBlockMap } = get()
+        if (!currentMessage && messages.length === 0) return
+
+        // 优先走 questionBlockMap 定位（question 事件在 currentMessage 中追加时记录）
+        // 但 question 卡片若已随本轮回复归档到 messages（finishMessage 后用户才提交），
+        // questionBlockMap 里的 idx 已失效；此时需跨 messages[] 搜索更新，
+        // 与 updateFormBlock 的归档后回填模式一致。
+        const applyToBlocks = (
+          blocks: import('../../types/chat').ContentBlock[]
+        ): { next: typeof blocks; changed: boolean } => {
+          const next = blocks.map((b) => {
+            if (b.type === 'question' && b.id === questionId) {
+              const existing = b as import('../../types/chat').QuestionBlock
+              const first = payload.answers?.[0]
+              return {
+                ...existing,
+                answers: payload.answers,
+                declined: payload.declined,
+                status: 'answered' as const,
+                // 兼容字段：首题摘要
+                answer: first
+                  ? {
+                      selected: first.selected,
+                      customInput: first.customInput,
+                    }
+                  : existing.answer,
+              } as typeof b
+            }
+            return b
+          })
+          const changed = next.some((b, i) => b !== blocks[i])
+          return { next, changed }
+        }
+
+        // 先查 currentMessage（含 map 定位与全文搜索兜底）
+        if (currentMessage) {
+          const idx = questionBlockMap.get(questionId)
+          if (
+            idx !== undefined &&
+            currentMessage.blocks[idx]?.type === 'question' &&
+            currentMessage.blocks[idx]?.id === questionId
+          ) {
+            const blocks = [...currentMessage.blocks]
+            blocks[idx] = applyToBlocks(blocks).next[idx]!
+            set({ currentMessage: { ...currentMessage, blocks } })
+            return
           }
-          set({ currentMessage: { ...currentMessage, blocks } })
+          const { next, changed } = applyToBlocks(currentMessage.blocks)
+          if (changed) {
+            set({ currentMessage: { ...currentMessage, blocks: next } })
+            return
+          }
+        }
+
+        // 跨 messages[] 搜索（卡片归档后用户提交的常见路径）
+        let touched = false
+        const newMessages = messages.map((msg) => {
+          if (msg.type !== 'assistant' || !msg.blocks) return msg
+          const { next, changed } = applyToBlocks(msg.blocks)
+          if (!changed) return msg
+          touched = true
+          return { ...msg, blocks: next }
+        })
+        if (touched) {
+          set({ messages: newMessages })
         }
       },
 

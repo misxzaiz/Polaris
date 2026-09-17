@@ -174,7 +174,9 @@ function RuntimeCardItem({ card, failed = false }: { card: RuntimeCard; failed?:
           ? Workflow
           : card.kind === 'tool'
             ? Wrench
-            : LoaderCircle;
+            : card.kind === 'plan'
+              ? ListTodo
+              : LoaderCircle;
 
   const iconCls =
     card.kind === 'agent'
@@ -185,7 +187,9 @@ function RuntimeCardItem({ card, failed = false }: { card: RuntimeCard; failed?:
           ? 'r-ico-workflow'
           : card.kind === 'tool'
             ? 'r-ico-tool'
-            : 'r-ico-progress';
+            : card.kind === 'plan'
+              ? 'r-ico-plan'
+              : 'r-ico-progress';
 
   return (
     <div className={clsx('island-card', failed && 'island-fail')}>
@@ -247,7 +251,9 @@ function DoneRow({ card }: { card: RuntimeCard }) {
           ? Workflow
           : card.kind === 'tool'
             ? Wrench
-            : LoaderCircle;
+            : card.kind === 'plan'
+              ? ListTodo
+              : LoaderCircle;
   // 有无展开内容：detail 或 output 任一存在且非空
   const hasExpand = !!(card.detail || card.output);
 

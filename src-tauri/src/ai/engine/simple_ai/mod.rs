@@ -26,6 +26,7 @@ mod prompt;
 mod retry;
 mod session;
 mod skill;
+mod store;
 mod tools;
 
 // Agent preset（Phase 4d）：需在 mod 声明后引用，单独放此。
@@ -74,11 +75,48 @@ pub struct SimpleAIEngine {
 
 impl SimpleAIEngine {
     pub fn new(config: Config) -> Self {
-        Self {
+        let engine = Self {
             config,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             session_counter: std::sync::atomic::AtomicU64::new(0),
+        };
+        engine.restore_persisted_sessions();
+        engine
+    }
+
+    /// 从 `<DataRoot>/simple-ai/sessions/` 恢复历史会话（进程重启后 continue 不丢上下文）。
+    ///
+    /// 恢复的会话 is_running=false、abort 信号复位；继续会话时 `continue_session`
+    /// 会重新标记运行并替换 watch channel。
+    fn restore_persisted_sessions(&self) {
+        use crate::services::data_root;
+        let root = data_root::data_root().root().to_path_buf();
+        let records = store::load_all_sessions(&root);
+        if records.is_empty() {
+            return;
         }
+        let mut guard = match self.sessions.try_lock() {
+            Ok(g) => g,
+            Err(_) => {
+                tracing::warn!("[SimpleAI] 启动恢复时 sessions 锁被占用，跳过恢复");
+                return;
+            }
+        };
+        let mut max_counter = 0u64;
+        for (sid, work_dir, messages) in records {
+            if guard.contains_key(&sid) {
+                continue;
+            }
+            let mut session = session::SimpleAISession::new(work_dir.clone());
+            session.messages = messages;
+            guard.insert(sid.clone(), session);
+            // 依据会话 ID 中的自增计数器推进 session_counter，避免恢复后新会话 ID 冲突。
+            if let Some(counter) = parse_session_counter(&sid) {
+                max_counter = max_counter.max(counter);
+            }
+            tracing::info!("[SimpleAI] 已恢复会话: {} (work_dir={})", sid, work_dir);
+        }
+        self.session_counter.store(max_counter + 1, std::sync::atomic::Ordering::Relaxed);
     }
 
     fn next_session_id(&self) -> String {
@@ -112,6 +150,21 @@ impl SimpleAIEngine {
 
         profiles.iter().find(|p| p.active)
     }
+}
+
+/// 从会话 ID `simple-ai-<ts>-<counter>` 解析自增计数器（恢复时推进 session_counter 用）。
+fn parse_session_counter(session_id: &str) -> Option<u64> {
+    let last = session_id.rsplit('-').next()?;
+    last.parse::<u64>().ok()
+}
+
+/// 将会话（消息历史 + 工作目录）落盘，供进程重启后恢复。
+/// 同步 IO 且仅在每轮结束时调用一次，量级很小，不做异步化。
+fn persist_session_to_disk(sid: &str, work_dir: &str, messages: &[Value]) {
+    use crate::services::data_root;
+    let root = data_root::data_root().root().to_path_buf();
+    let record = store::SessionRecord::from_memory(sid, work_dir, messages);
+    store::save_session(&root, &record);
 }
 
 // ============================================================================
@@ -348,6 +401,7 @@ impl AIEngine for SimpleAIEngine {
             .await;
 
             // 回写完整历史并清除运行标记，供后续 continue_session 续接上下文。
+            persist_session_to_disk(&sid, &work_dir, &messages);
             {
                 let mut guard = sessions.lock().await;
                 if let Some(s) = guard.get_mut(&sid) {
@@ -489,6 +543,7 @@ impl AIEngine for SimpleAIEngine {
             .await;
 
             // 更新会话历史
+            persist_session_to_disk(&sid, &work_dir, &existing_messages);
             {
                 let mut guard = sessions.lock().await;
                 if let Some(session) = guard.get_mut(&sid) {
