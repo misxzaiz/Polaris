@@ -161,6 +161,7 @@ mod tests {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
+        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -171,6 +172,7 @@ mod tests {
             plan_id: "s1-plan",
             plan_started: &started,
             skills: &skills,
+            file_states: &file_states,
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
@@ -208,6 +210,7 @@ mod tests {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
+        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -218,14 +221,15 @@ mod tests {
             plan_id: "s1-plan",
             plan_started: &started,
             skills: &skills,
+            file_states: &file_states,
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
             abort_rx: &{ watch::channel(false).1 }
         };
         let first = json!({ "plan": [{"step": "a", "status": "in_progress"}] });
-        UpdatePlanTool.execute(&first, &ctx).await;
         let second = json!({ "plan": [{"step": "a", "status": "completed"}] });
+        UpdatePlanTool.execute(&first, &ctx).await;
         UpdatePlanTool.execute(&second, &ctx).await;
 
         let evs = events.lock().unwrap();
@@ -245,6 +249,7 @@ mod tests {
         let (_events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
+        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -255,6 +260,7 @@ mod tests {
             plan_id: "s1-plan",
             plan_started: &started,
             skills: &skills,
+            file_states: &file_states,
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,

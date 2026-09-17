@@ -15,6 +15,7 @@ mod bash;
 mod browser;
 #[cfg(windows)]
 mod computer;
+mod file_state;
 mod fs;
 mod plan;
 mod search;
@@ -29,18 +30,17 @@ use serde_json::Value;
 use tokio::sync::watch;
 
 use crate::models::AIEvent;
-
 use agent::DispatchAgentTool;
 use apply_patch::ApplyPatchTool;
 pub(crate) use bash::detect_shell;
 use bash::BashTool;
 #[cfg(feature = "tauri-app")]
 use browser::BrowserTool;
+pub(crate) use file_state::{FileStateRegistry, file_mtime_ms};
 use fs::{EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool};
 use plan::UpdatePlanTool;
 use search::{GlobTool, SearchFilesTool};
 use skill::ReadSkillTool;
-
 use super::skill::SkillEntry;
 
 // ============================================================================
@@ -79,6 +79,8 @@ pub(crate) struct ToolContext<'a> {
     pub plan_started: &'a AtomicBool,
     /// 已加载的 skill 索引（Phase 4c：read_skill 工具按名查全文）
     pub skills: &'a HashMap<String, SkillEntry>,
+    /// 会话级文件状态缓存（read-before-write + mtime 冲突检测的单一事实源）
+    pub file_states: &'a FileStateRegistry,
     /// 当前会话的 ModelProfile（Phase 5：dispatch_agent 子会话复用）
     pub profile: &'a crate::models::config::ModelProfile,
     /// 当前会话的 MCP server 列表（Phase 5：子会话复用父 pool 输入）
@@ -89,7 +91,6 @@ pub(crate) struct ToolContext<'a> {
     pub abort_rx: &'a watch::Receiver<bool>,
 }
 
-/// 子代理最大递归深度（Phase 5）。
 pub(crate) const SUBAGENT_MAX_DEPTH: u32 = 3;
 
 /// 工具 trait。无状态（unit struct 实现），便于后续并行执行。
@@ -274,6 +275,7 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
     let (_abort_tx, abort_rx) = tokio::sync::watch::channel(false);
     // tx 丢弃后 rx 仅表现为通道关闭，读取方按"未中断"处理即可
     let abort_rx: &'static watch::Receiver<bool> = Box::leak(Box::new(abort_rx));
+    let file_states: &'static FileStateRegistry = Box::leak(Box::new(FileStateRegistry::new()));
     ToolContext {
         work_dir,
         session_id,
@@ -281,6 +283,7 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
         plan_id,
         plan_started,
         skills,
+        file_states,
         profile,
         mcp_servers,
         subagent_depth: 0,
@@ -347,6 +350,7 @@ mod tests {
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = Arc::new(|_| ());
         let started = AtomicBool::new(false);
         let skills = HashMap::new();
+        let file_states = FileStateRegistry::new();
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -358,6 +362,7 @@ mod tests {
             plan_id: "s-plan",
             plan_started: &started,
             skills: &skills,
+            file_states: &file_states,
             profile: &profile,
             mcp_servers: &mcp_servers,
             subagent_depth: 0,

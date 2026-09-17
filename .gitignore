@@ -107,3 +107,4 @@ xhs_browser_region.png
 secrets/
 *.jks
 *.keystore
+/src-tauri/target-test/

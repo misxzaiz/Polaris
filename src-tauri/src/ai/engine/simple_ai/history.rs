@@ -56,10 +56,72 @@ fn truncate_to_token_cap(text: &str, token_cap: usize) -> String {
     )
 }
 
+/// 清洗历史末尾不完整的工具调用轮次（孤儿 `assistant.tool_calls` / 无配对结果的 tool）。
+///
+/// 中断可能发生在工具执行循环的任意检查点（见 chat_loop.rs 的 abort 提前退出），
+/// 此时历史末尾可能残留两类不完整状态，若原样随历史重发会被 API 拒绝：
+/// - `assistant(tool_calls)` 消息而无对应 `role:"tool"` 结果：
+///   OpenAI Chat / Responses 报 400；Anthropic 的 `tool_use` block 也要求配对 `tool_result`；
+/// - 同批次多个 tool_call 只执行了一部分：末尾出现 `[assistant(tool_calls a,b), tool(a)]`，
+///   缺失 b 的结果，同样违反配对约束。
+///
+/// 规则（仅操作尾部，中间已配对消息一律不动）：
+/// 1. 若末尾是 `role:"tool"`，连同其前的 `assistant(tool_calls)` 一并回退删除（该批未执行完）；
+/// 2. 若末尾是孤立 `assistant(tool_calls)`，有文本 content 则降级为纯文本消息，
+///    否则整条删除；
+/// 3. 重复以上两步直至尾部不再是「孤立的 tool / tool_calls」。
+/// 该清洗保证中断后可继续对话（continue_session 复用历史时不会触发协议 400）。
+pub(super) fn sanitize_tool_pairs(messages: &mut Vec<Value>) {
+    loop {
+        let len = messages.len();
+        if len == 0 {
+            return;
+        }
+        let last = &messages[len - 1];
+        let last_role = last.get("role").and_then(Value::as_str).unwrap_or("");
+
+        if last_role == "tool" {
+            // 末尾 tool 无配对（或配对批次未执行完）：连同其前最近的 assistant(tool_calls) 一起删。
+            messages.pop();
+            if let Some(prev) = messages.last() {
+                if prev.get("role").and_then(Value::as_str) == Some("assistant")
+                    && prev.get("tool_calls").is_some()
+                {
+                    messages.pop();
+                }
+            }
+            continue;
+        }
+
+        if last_role == "assistant" && last.get("tool_calls").is_some() {
+            // 孤立 assistant(tool_calls)：保留文本内容（若有），移除 tool_calls 降级为纯文本。
+            if last.get("content").and_then(Value::as_str).map_or(false, |t| !t.is_empty()) {
+                if let Some(obj) = messages[len - 1].as_object_mut() {
+                    obj.remove("tool_calls");
+                }
+            } else {
+                messages.pop();
+            }
+            continue;
+        }
+
+        // 尾部已是正常消息（user / 纯文本 assistant / 其他），清洗完成。
+        return;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+
+    fn orphan_tool_calls_assistant(id: &str) -> Value {
+        json!({
+            "role": "assistant",
+            "content": Value::Null,
+            "tool_calls": [{ "id": id, "function": { "name": "bash", "arguments": "{}" } }]
+        })
+    }
 
     #[test]
     fn approx_token_count_is_chars_over_four_rounded_up() {
@@ -124,5 +186,112 @@ mod tests {
         })];
         truncate_history_assistant_outputs(&mut msgs, 1);
         assert_eq!(msgs[0]["content"], Value::Null);
+    }
+
+    #[test]
+    fn sanitize_removes_orphan_tool_calls_assistant_at_end() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            orphan_tool_calls_assistant("a"),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], json!("user"));
+    }
+
+    #[test]
+    fn sanitize_downgrades_orphan_assistant_with_text_to_plain_text() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({
+                "role": "assistant",
+                "content": "I will check",
+                "tool_calls": [{ "id": "a", "function": { "name": "bash", "arguments": "{}" } }]
+            }),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[1]["role"], json!("assistant"));
+        assert!(msgs[1].get("tool_calls").is_none());
+        assert_eq!(msgs[1]["content"], json!("I will check"));
+    }
+
+    #[test]
+    fn sanitize_keeps_paired_tool_messages() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            orphan_tool_calls_assistant("a"),
+            json!({ "role": "tool", "tool_call_id": "a", "content": "ok" }),
+            json!({ "role": "assistant", "content": "done" }),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        assert_eq!(msgs.len(), 4);
+    }
+
+    #[test]
+    fn sanitize_only_affects_tail_not_middle() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            orphan_tool_calls_assistant("a"),
+            json!({ "role": "tool", "tool_call_id": "a", "content": "ok" }),
+            orphan_tool_calls_assistant("b"),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        // 末尾孤儿 b 被移除，a 的配对保持完整
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2]["role"], json!("tool"));
+        assert_eq!(msgs[2]["tool_call_id"], json!("a"));
+    }
+
+    #[test]
+    fn sanitize_multiple_orphans_at_tail() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            orphan_tool_calls_assistant("a"),
+            json!({ "role": "tool", "tool_call_id": "a", "content": "ok" }),
+            orphan_tool_calls_assistant("b"),
+            orphan_tool_calls_assistant("c"),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        // b、c 均为末尾孤儿，全部移除；a 的配对完整保留
+        assert_eq!(msgs.len(), 3);
+        assert_eq!(msgs[2]["role"], json!("tool"));
+        assert_eq!(msgs[2]["tool_call_id"], json!("a"));
+    }
+
+    #[test]
+    fn sanitize_removes_partially_executed_batch() {
+        // 同批次两个 tool_call，仅 a 执行完（有 tool 结果），b 的结果缺失。
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            json!({
+                "role": "assistant",
+                "content": Value::Null,
+                "tool_calls": [
+                    { "id": "a", "function": { "name": "bash", "arguments": "{}" } },
+                    { "id": "b", "function": { "name": "bash", "arguments": "{}" } }
+                ]
+            }),
+            json!({ "role": "tool", "tool_call_id": "a", "content": "ok" }),
+        ];
+        sanitize_tool_pairs(&mut msgs);
+        // 不完整的批次整体移除，避免缺失 b 结果的 400
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0]["role"], json!("user"));
+    }
+
+    #[test]
+    fn sanitize_is_idempotent_on_clean_history() {
+        let mut msgs = vec![
+            json!({ "role": "user", "content": "hi" }),
+            orphan_tool_calls_assistant("a"),
+            json!({ "role": "tool", "tool_call_id": "a", "content": "ok" }),
+            json!({ "role": "assistant", "content": "done" }),
+        ];
+        let snapshot = msgs.clone();
+        sanitize_tool_pairs(&mut msgs);
+        sanitize_tool_pairs(&mut msgs);
+        sanitize_tool_pairs(&mut msgs);
+        assert_eq!(msgs, snapshot);
     }
 }

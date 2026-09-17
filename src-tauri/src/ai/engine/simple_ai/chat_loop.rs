@@ -129,7 +129,8 @@ pub(super) async fn run_chat_loop(
     // update_plan 的计划面板状态：每轮首次调用先发 plan_start。
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
-
+    // 会话级文件状态缓存：read_file 登记，写工具 read-before-write + mtime 校验。
+    let file_states = super::tools::FileStateRegistry::new();
     // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
     // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 180K。
     let context_window = profile
@@ -299,6 +300,9 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                 );
+                // 防御：清掉历史末尾不完整的工具轮次（孤儿 tool_calls / 缺结果批次），
+                // 保证中断后 continue_session 复用历史不会被协议层 400 拒绝。
+                history::sanitize_tool_pairs(messages);
                 let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                 return Ok(());
             }
@@ -321,6 +325,8 @@ pub(super) async fn run_chat_loop(
                         tracing::warn!(
                             "[SimpleAI] [DIAG] abort_rx 被置为 true, 提前结束, session={session_id}"
                         );
+                        // 防御：同上，清洗不完整工具轮次（当前轮可能已 push tool_calls/tool 消息）。
+                        history::sanitize_tool_pairs(messages);
                         let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                         return Ok(());
                     }
@@ -542,6 +548,9 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] 工具执行前收到中断, 提前结束, session={session_id}"
                 );
+                // 本批 assistant(tool_calls) 已入历史但结果未齐，清洗掉不完整批次，
+                // 否则 continue 时 OpenAI/Anthropic 协议会因缺配对结果而 400。
+                history::sanitize_tool_pairs(messages);
                 let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                 return Ok(());
             }
@@ -558,13 +567,13 @@ pub(super) async fn run_chat_loop(
                 plan_id: &plan_id,
                 plan_started: &plan_started,
                 skills,
+                file_states: &file_states,
                 profile,
                 mcp_servers,
                 subagent_depth: depth,
                 abort_rx,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
-
             // 工具执行完成后 abort 检查：若执行期间用户已中断，
             // 丢弃本工具结果（不 push tool 消息），下一轮顶部检查点会自然退出。
             // 注意：不 push 半截 tool 消息可避免把「未回灌的工具结果」误发给模型。
@@ -572,6 +581,9 @@ pub(super) async fn run_chat_loop(
                 tracing::warn!(
                     "[SimpleAI] 工具执行完成但已收到中断, 提前结束, session={session_id}"
                 );
+                // 本工具结果已丢弃（未 push tool 消息），但 assistant(tool_calls) 已入历史，
+                // 清洗掉不完整批次，保证 continue 可正常续接。
+                history::sanitize_tool_pairs(messages);
                 let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
                 return Ok(());
             }

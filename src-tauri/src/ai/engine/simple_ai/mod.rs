@@ -524,8 +524,12 @@ impl AIEngine for SimpleAIEngine {
                     )
                 }
             };
-
             existing_messages.push(json!({ "role": "user", "content": msg }));
+
+            // 防御：历史可能是旧版残留或中断恢复的存档，末尾若有不完整的工具轮次
+            // （孤儿 assistant.tool_calls / 缺结果的 tool 批次），直接重发会被协议层 400 拒绝。
+            // 进入循环前清洗一次，保证 continue 始终可用。
+            crate::ai::engine::simple_ai::history::sanitize_tool_pairs(&mut existing_messages);
 
             let result = run_chat_loop(
                 &sid,

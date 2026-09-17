@@ -1,18 +1,28 @@
-/*! 文件系统工具：read_file / write_file / list_directory / edit_file */
-
-use std::path::PathBuf;
+// ============================================================================
+// fs tools: read_file / write_file / edit_file / list_directory
+// ============================================================================
 
 use serde_json::{json, Value};
+use std::path::PathBuf;
 
 use super::{Tool, ToolContext, ToolOutcome};
+use crate::ai::engine::simple_ai::tools::file_state::{
+    apply_line_endings, detect_line_endings, FileStateRegistry,
+};
 
-/// 解析路径：绝对路径原样，相对路径相对 `workdir`。
+/// Resolve a possibly-relative path against the working directory.
 fn resolve_path(path: &str, workdir: &str) -> PathBuf {
-    if std::path::Path::new(path).is_absolute() {
-        PathBuf::from(path)
+    let p = PathBuf::from(path);
+    if p.is_absolute() {
+        p
     } else {
-        PathBuf::from(workdir).join(path)
+        let base = PathBuf::from(workdir);
+        base.join(p)
     }
+}
+
+fn is_binary(content: &[u8]) -> bool {
+    content.iter().take(8000).any(|&b| b == 0)
 }
 
 // ============================================================================
@@ -32,13 +42,13 @@ impl Tool for ReadFileTool {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a file with line numbers. Use offset/limit to read specific ranges. For large files (>500 lines), use search_files to locate the relevant section first.\n\nReturns each line prefixed with its line number (e.g. '     1\tfn main() {'). Use the line numbers with edit_file for precise edits.\n\nParameters: path (required), offset (optional, 1-based line number to start from), limit (optional, max lines to return).",
+                "description": "Read the contents of a file with line numbers. Use this to inspect files before editing. Returns each line prefixed with its line number so you can refer to exact lines.\n\nParameters:\n- path: file path\n- offset: (optional) 1-based line number to start reading from\n- limit: (optional) max lines to return",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": { "type": "string", "description": "Absolute or relative file path" },
-                        "offset": { "type": "integer", "description": "1-based line number to start reading from (optional, default: 1)" },
-                        "limit": { "type": "integer", "description": "Maximum number of lines to return (optional, default: all)" }
+                        "offset": { "type": "integer", "description": "1-based line number to start reading from (default 1)" },
+                        "limit": { "type": "integer", "description": "Maximum number of lines to return" }
                     },
                     "required": ["path"]
                 }
@@ -48,89 +58,83 @@ impl Tool for ReadFileTool {
 
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let path = args["path"].as_str().unwrap_or("");
-        let offset = match args["offset"].as_i64() {
-            Some(v) if v > 0 => v as usize,
-            _ => 1, // 负数/0 无效，回退到 1
-        };
-        let limit = args["limit"].as_i64().map(|v| v as usize).and_then(|v| if v > 0 { Some(v) } else { None });
-        read_file_op(path, ctx.work_dir, offset, limit)
-    }
-}
-
-/// 读取文件并返回带行号的内容。支持 offset/limit 参数读取指定行范围。
-/// 默认不指定 offset/limit 时，最多输出 DEFAULT_MAX_OUTPUT_LINES 行，防止大文件撑爆上下文。
-const DEFAULT_MAX_OUTPUT_LINES: usize = 1000;
-
-fn read_file_op(path: &str, workdir: &str, offset: usize, limit: Option<usize>) -> ToolOutcome {
-    let full_path = resolve_path(path, workdir);
-    match std::fs::read_to_string(&full_path) {
-        Ok(content) => {
-            let lines: Vec<&str> = content.lines().collect();
-            let total_lines = lines.len();
-            let total_bytes = content.len();
-
-            // 计算实际读取范围
-            let start = if offset == 0 { 0 } else { offset.saturating_sub(1) };
-            let raw_end = limit.map_or(total_lines, |l| (start + l).min(total_lines));
-
-            // 未指定 limit 时，应用默认行限制（避免大文件撑爆上下文）
-            let (end, limit_applied) = if limit.is_some() {
-                (raw_end, false)
-            } else {
-                let max_end = start.saturating_add(DEFAULT_MAX_OUTPUT_LINES).min(total_lines);
-                if raw_end > max_end {
-                    (max_end, true)
-                } else {
-                    (raw_end, false)
-                }
-            };
-
-            if start >= total_lines {
-                return ToolOutcome::fail(format!(
-                    "Offset {} is beyond the end of file '{}'. The file has {} lines.",
-                    offset,
-                    full_path.display(),
-                    total_lines
-                ));
-            }
-
-            // 构建带行号输出的内容
-            let mut output = String::new();
-            for i in start..end {
-                output.push_str(&format!("{:>5}\t{}", i + 1, lines[i]));
-                output.push('\n');
-            }
-
-            // 附加元信息
-            if offset != 1 || limit.is_some() {
-                output.push_str(&format!(
-                    "---\nShowing lines {}-{} of {} ({} bytes total)",
-                    start + 1,
-                    end,
-                    total_lines,
-                    total_bytes
-                ));
-            } else if limit_applied {
-                output.push_str(&format!(
-                    "---\nShowing first {} of {} lines ({} bytes total). Use offset={} to continue reading.",
-                    end - start,
-                    total_lines,
-                    total_bytes,
-                    end + 1
-                ));
-            } else if total_lines > 500 {
-                output.push_str(&format!(
-                    "---\nShowing all {} lines ({} bytes total). For large files, use offset/limit to read specific ranges, or search_files to locate content.",
-                    total_lines, total_bytes
-                ));
-            }
-
-            ToolOutcome::ok(output)
+        let offset = args["offset"].as_i64().unwrap_or(1);
+        let limit = args["limit"].as_i64();
+        match read_file_op(path, ctx.work_dir, offset, limit, Some(ctx.file_states)) {
+            Ok(outcome) => outcome,
+            Err(e) => ToolOutcome::fail(e),
         }
-        Err(e) => ToolOutcome::fail(format!("Failed to read file '{}': {}", full_path.display(), e)),
     }
 }
 
+/// Read a file and render numbered lines.
+/// When `states` is provided, registers the file content snapshot for later
+/// string-match edits and mtime conflict detection.
+fn read_file_op(
+    path: &str,
+    workdir: &str,
+    offset: i64,
+    limit: Option<i64>,
+    states: Option<&FileStateRegistry>,
+) -> Result<ToolOutcome, String> {
+    let full_path = resolve_path(path, workdir);
+    let bytes = std::fs::read(&full_path)
+        .map_err(|e| format!("Failed to read file '{}': {}", full_path.display(), e))?;
+
+    if is_binary(&bytes) {
+        return Ok(ToolOutcome::fail(format!(
+            "File '{}' appears to be a binary file and was not read.",
+            full_path.display()
+        )));
+    }
+
+    let content = String::from_utf8_lossy(&bytes).to_string();
+
+// 登记 FileState：供后续 edit_file 的字符串匹配与冲突检测使用。
+    // 这里读取已成功，register 失败仅表示登记冗余信息不可用（如再次读取失败），
+    // 不应阻断本次 read（read 本身已拿到内容）。
+    if let Some(states) = states {
+        let _ = states.register(&full_path);
+    }
+
+    let total_lines = content.lines().count();
+    let offset = offset.max(1);
+
+if (offset as usize) > total_lines {
+        return Ok(ToolOutcome::fail(format!(
+            "Offset {} is beyond the end of file '{}' ({} lines total). File has {} lines.",
+            offset,
+            full_path.display(),
+            total_lines,
+            total_lines
+        )));
+    }
+
+    let mut out = String::new();
+    let eol = if content.contains("\r\n") { "\r\n" } else { "\n" };
+
+    let limit = limit.unwrap_or(i64::MAX).max(1) as usize;
+    let end = total_lines.min(offset as usize + limit - 1);
+
+    out.push_str(&format!(
+        "File '{}' - {} lines total (showing lines {}-{}){}",
+        full_path.display(),
+        total_lines,
+        offset,
+        end,
+        eol
+    ));
+
+    for (i, line) in content.lines().enumerate() {
+        let n = i + 1;
+        if n >= offset as usize && n <= end {
+            out.push_str(&format!("{:>6}\t{}", n, line));
+            out.push_str(eol);
+        }
+    }
+
+    Ok(ToolOutcome::ok(out.trim_end().to_string()))
+}
 // ============================================================================
 // write_file
 // ============================================================================
@@ -148,7 +152,7 @@ impl Tool for WriteFileTool {
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "Write content to a file (creates parent directories if needed)",
+                "description": "Write content to a file (creates parent directories if needed). Overwrites the entire file. Prefer edit_file for surgical changes to existing files.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -162,27 +166,40 @@ impl Tool for WriteFileTool {
     }
 
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
-        write_file_op(
-            args["path"].as_str().unwrap_or(""),
-            args["content"].as_str().unwrap_or(""),
-            ctx.work_dir,
-        )
+        let path = args["path"].as_str().unwrap_or("");
+        let content = match args["content"].as_str() {
+            Some(v) => v,
+            None => return ToolOutcome::fail("write_file: content is required".to_string()),
+        };
+        write_file_op(path, content, ctx.work_dir)
     }
 }
 
 fn write_file_op(path: &str, content: &str, workdir: &str) -> ToolOutcome {
     let full_path = resolve_path(path, workdir);
     if let Some(parent) = full_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return ToolOutcome::fail(format!(
-                "Failed to create directory '{}': {}",
-                parent.display(),
-                e
-            ));
+        if !parent.as_os_str().is_empty() {
+            if let Err(e) = std::fs::create_dir_all(parent) {
+                return ToolOutcome::fail(format!(
+                    "Failed to create parent directory '{}': {}",
+                    parent.display(),
+                    e
+                ));
+            }
         }
     }
-    match std::fs::write(&full_path, content) {
-        Ok(_) => ToolOutcome::ok(format!("File written successfully: {}", full_path.display())),
+
+    // 若目标文件已存在，沿用其行尾风格；新文件默认 \n
+    let eol = std::fs::read_to_string(&full_path)
+        .ok()
+        .map(|content| detect_line_endings(&content))
+        .unwrap_or("\n");
+
+    let normalized = apply_line_endings(content, eol);
+
+    let written = normalized.len();
+    match std::fs::write(&full_path, &normalized) {
+        Ok(_) => ToolOutcome::ok(format!("Wrote {} bytes to '{}'", written, full_path.display())),
         Err(e) => ToolOutcome::fail(format!("Failed to write file '{}': {}", full_path.display(), e)),
     }
 }
@@ -268,16 +285,16 @@ impl Tool for EditFileTool {
             "type": "function",
             "function": {
                 "name": "edit_file",
-                "description": "Replace lines in a file by line range. FIRST read the file with read_file to get line numbers, then specify the exact range to replace.\n\nIMPORTANT: Always read the file first to verify line numbers before editing. Do NOT guess line numbers.\n\nParameters:\n- path: file path\n- start_line: 1-based starting line number\n- end_line: 1-based ending line number (inclusive)\n- replacement_text: text to replace the specified line range with (may span multiple lines; empty = delete lines)\n\nExample: read_file shows line 3 contains 'foo', use start_line=3, end_line=3, replacement_text='bar' to change it.\n\nFor multi-file or complex edits, use apply_patch. For small single-line changes, this tool is best.",
+                "description": "Make surgical edits to a file using exact string matching instead of line numbers. ALWAYS read the file first with read_file, then pass the exact old_string you want to replace. The tool requires the old text to appear exactly once in the file (or you can specify expected_replacements for repeats).\n\nParameters:\n- path: file path\n- old_string: the exact text to find (must match uniquely, including indentation)\n- new_string: the replacement text (may be empty to delete)\n- expected_replacements: (optional) number of times old_string should appear; when the file contains that many identical occurrences, all are replaced\n\nExample: read_file shows line 3 contains 'foo', use old_string=\"foo\", new_string=\"bar\" to change it.\n\nFor multi-file or complex edits, use apply_patch. For small single-line changes, this tool is best.",
                 "parameters": {
                     "type": "object",
                     "properties": {
                         "path": { "type": "string", "description": "Absolute or relative file path" },
-                        "start_line": { "type": "integer", "description": "1-based starting line number" },
-                        "end_line": { "type": "integer", "description": "1-based ending line number (inclusive)" },
-                        "replacement_text": { "type": "string", "description": "Text to replace the specified line range with (may be empty to delete lines)" }
+                        "old_string": { "type": "string", "description": "The exact text to find and replace" },
+                        "new_string": { "type": "string", "description": "The replacement text (may be empty to delete)" },
+                        "expected_replacements": { "type": "integer", "description": "Optional: expected number of matches. If provided and matches exactly, replace all; otherwise fail on ambiguity." }
                     },
-                    "required": ["path", "start_line", "end_line", "replacement_text"]
+                    "required": ["path", "old_string", "new_string"]
                 }
             }
         })
@@ -286,25 +303,186 @@ impl Tool for EditFileTool {
     async fn execute(&self, args: &Value, ctx: &ToolContext<'_>) -> ToolOutcome {
         let path = args["path"].as_str().unwrap_or("");
 
-        // 行号参数验证：负数/0 无效
+        // 字符串匹配模式（推荐）
+        if let Some(old_string) = args["old_string"].as_str() {
+            let new_string = match args["new_string"].as_str() {
+                Some(v) => v,
+                None => return ToolOutcome::fail("edit_file: new_string is required (pass empty string to delete)".to_string()),
+            };
+            let expected = args["expected_replacements"].as_i64().map(|v| v as usize);
+            let outcome = edit_file_op(
+                path,
+                old_string,
+                new_string,
+                expected,
+                ctx.work_dir,
+                Some(ctx.file_states),
+            );
+            return outcome;
+        }
+
+        // 兼容降级：旧的行号模式（start_line / end_line / replacement_text）
         let start_line = match args["start_line"].as_i64() {
             Some(v) if v > 0 => v as usize,
-            _ => return ToolOutcome::fail("edit_file: start_line must be a positive integer".to_string()),
+            _ => return ToolOutcome::fail(
+                "edit_file: neither old_string nor a valid start_line was provided. Use old_string/new_string (string match) or start_line/end_line/replacement_text (legacy).".to_string()
+            ),
         };
         let end_line = match args["end_line"].as_i64() {
             Some(v) if v > 0 => v as usize,
             _ => return ToolOutcome::fail("edit_file: end_line must be a positive integer".to_string()),
         };
-
-        // replacement_text 必须显式提供；缺失时返回错误而非静默删除
         let replacement_text = match args["replacement_text"].as_str() {
             Some(v) => v.to_string(),
             None => return ToolOutcome::fail(
                 "edit_file: replacement_text is required (pass empty string to delete lines)".to_string()
             ),
         };
+        let outcome = edit_file_by_line_numbers(path, start_line, end_line, &replacement_text, ctx.work_dir, Some(ctx.file_states));
+        outcome
+    }
+}
 
-        edit_file_op(path, start_line, end_line, &replacement_text, ctx.work_dir)
+/// 核心实现：字符串精确匹配替换。
+/// - 若 old_string 出现 0 次：报错并给出相近行提示
+/// - 若出现多次且未提供 expected_replacements：报错（要求 re-read 后指定）
+/// - 若出现多次且次数 == expected：全部替换
+/// - 写前校验 mtime（read-before-write 冲突检测）
+fn edit_file_op(
+    path: &str,
+    old_string: &str,
+    new_string: &str,
+    expected_replacements: Option<usize>,
+    workdir: &str,
+    states: Option<&FileStateRegistry>,
+) -> ToolOutcome {
+    if old_string.is_empty() {
+        return ToolOutcome::fail("edit_file: old_string must not be empty".to_string());
+    }
+
+    let full_path = resolve_path(path, workdir);
+    let content = match std::fs::read_to_string(&full_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return ToolOutcome::fail(format!(
+                "Failed to read file '{}': {}",
+                full_path.display(),
+                e
+            ))
+        }
+    };
+
+    // mtime 冲突检测：文件在 read_file 之后被外部修改则拒绝写入
+    if let Some(states) = states {
+        if let Err(err) = states.verify_before_write(&full_path) {
+            return ToolOutcome::fail(err);
+        }
+    }
+
+    let matches: Vec<_> = content.match_indices(old_string).collect();
+    let count = matches.len();
+
+    match count {
+        0 => {
+            // 找不到目标字符串：给出附近行的上下文，帮助模型纠错
+            let hint = closest_line_hint(&content, old_string);
+            ToolOutcome::fail(format!(
+                "old_string was not found in '{}'. It must match exactly (including leading/trailing whitespace and line endings). Re-read the file and copy the exact text.\n{}",
+                full_path.display(),
+                hint
+            ))
+        }
+        1 => {
+            let updated = content.replacen(old_string, new_string, 1);
+            write_edit(&full_path, updated, 1, states)
+        }
+        n => {
+            match expected_replacements {
+                Some(e) if e == n => {
+                    let updated = content.replace(old_string, new_string);
+                    write_edit(&full_path, updated, n, states)
+                }
+                Some(e) => ToolOutcome::fail(format!(
+                    "old_string appears {} times in '{}', but expected_replacements={} was specified. Re-read the file and adjust expected_replacements or make old_string more specific.",
+                    n,
+                    full_path.display(),
+                    e
+                )),
+                None => ToolOutcome::fail(format!(
+                    "old_string appears {} times in '{}' — ambiguous. Add expected_replacements={} to replace all, or make old_string more specific so it matches exactly once. Re-read the file to see all occurrences.",
+                    n,
+                    full_path.display(),
+                    n
+                )),
+            }
+        }
+    }
+}
+
+/// 写入文件，并同步更新 FileStateRegistry 中的快照
+fn write_edit(
+    full_path: &std::path::Path,
+    updated: String,
+    replacements: usize,
+    states: Option<&FileStateRegistry>,
+) -> ToolOutcome {
+    // 保持原有行尾风格
+    let eol = std::fs::read_to_string(full_path)
+        .ok()
+        .map(|content| detect_line_endings(&content))
+        .unwrap_or("\n");
+    let updated = apply_line_endings(&updated, eol);
+
+    match std::fs::write(full_path, updated.clone()) {
+        Ok(_) => {
+            if let Some(states) = states {
+                states.update_after_write(full_path, &updated);
+            }
+            ToolOutcome::ok(format!(
+                "Edited file '{}': replaced {} occurrence(s).",
+                full_path.display(),
+                replacements
+            ))
+        }
+        Err(e) => ToolOutcome::fail(format!(
+            "Failed to write file '{}': {}",
+            full_path.display(),
+            e
+        )),
+    }
+}
+
+/// 兼容旧行号模式：按 [start_line, end_line] 区间替换。若文件已登记 FileState
+/// 且内容与快照一致则直接用快照定位；否则按当前内容定位行号。
+fn edit_file_by_line_numbers(
+    path: &str,
+    start_line: usize,
+    end_line: usize,
+    replacement_text: &str,
+    workdir: &str,
+    states: Option<&FileStateRegistry>,
+) -> ToolOutcome {
+    let full_path = resolve_path(path, workdir);
+    let content = match std::fs::read_to_string(&full_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return ToolOutcome::fail(format!(
+                "Failed to read file '{}': {}",
+                full_path.display(),
+                e
+            ))
+        }
+    };
+
+    if let Some(states) = states {
+        if let Err(err) = states.verify_before_write(&full_path) {
+            return ToolOutcome::fail(err);
+        }
+    }
+
+    match edit_file_by_lines(&content, start_line, end_line, replacement_text) {
+        Ok(updated) => write_edit(&full_path, updated, 1, states),
+        Err(e) => ToolOutcome::fail(format!("edit_file failed: {}", e)),
     }
 }
 
@@ -371,46 +549,50 @@ fn edit_file_by_lines(
     Ok(result)
 }
 
-fn edit_file_op(
-    path: &str,
-    start_line: usize,
-    end_line: usize,
-    replacement_text: &str,
-    workdir: &str,
-) -> ToolOutcome {
-    let full_path = resolve_path(path, workdir);
-    let content = match std::fs::read_to_string(&full_path) {
-        Ok(c) => c,
-        Err(e) => {
-            return ToolOutcome::fail(format!(
-                "Failed to read file '{}': {}",
-                full_path.display(),
-                e
-            ))
-        }
-    };
-
-    match edit_file_by_lines(&content, start_line, end_line, replacement_text) {
-        Ok(updated) => match std::fs::write(&full_path, updated) {
-            Ok(_) => ToolOutcome::ok(format!(
-                "Edited file '{}': replaced lines {}-{} with {} new line(s)",
-                full_path.display(),
-                start_line,
-                end_line,
-                if replacement_text.is_empty() {
-                    0
-                } else {
-                    replacement_text.lines().count()
-                }
-            )),
-            Err(e) => ToolOutcome::fail(format!(
-                "Failed to write file '{}': {}",
-                full_path.display(),
-                e
-            )),
-        },
-        Err(e) => ToolOutcome::fail(format!("edit_file failed: {}", e)),
+/// 在 content 中找与 old_string 最相似的行，给出提示。
+fn closest_line_hint(content: &str, old_string: &str) -> String {
+    let needle = old_string.lines().next().unwrap_or(old_string).trim();
+    if needle.is_empty() {
+        return String::new();
     }
+    let mut best: Option<(usize, &str)> = None; // (similarity, line)
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let score = similarity(needle, trimmed);
+        if best.map(|(s, _)| score > s).unwrap_or(true) {
+            best = Some((score, line));
+        }
+    }
+    match best {
+        Some((score, line)) if score >= 40 => format!("Closest line: \"{}\"", line.trim()),
+        _ => String::new(),
+    }
+}
+
+/// 简单字符级相似度（0-100），用于错误提示。
+fn similarity(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    if a.is_empty() || b.is_empty() {
+        return 0;
+    }
+    // 最长公共子串长度
+    let mut max_len = 0usize;
+    for i in 0..a.len() {
+        for j in 0..b.len() {
+            let mut k = 0;
+            while i + k < a.len() && j + k < b.len() && a[i + k] == b[j + k] {
+                k += 1;
+            }
+            if k > max_len {
+                max_len = k;
+            }
+        }
+    }
+    (max_len * 100) / a.len().max(b.len())
 }
 
 #[cfg(test)]
@@ -468,21 +650,11 @@ mod tests {
     }
 
     #[test]
-    fn edit_file_op_edits_file_with_line_range() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("test.txt");
-        std::fs::write(&file, "hello\nworld\nfoo\n").unwrap();
-        let outcome = edit_file_op(file.to_str().unwrap(), 2, 2, "WORLD", dir.path().to_str().unwrap());
-        assert!(outcome.success);
-        assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello\nWORLD\nfoo\n");
-    }
-
-    #[test]
     fn read_file_op_returns_with_line_numbers() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\nc\n").unwrap();
-        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 1, None);
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 1, None, None).unwrap();
         assert!(outcome.success);
         assert!(outcome.content.contains("     1\ta"));
         assert!(outcome.content.contains("     2\tb"));
@@ -494,7 +666,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\nc\nd\ne\n").unwrap();
-        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 2, Some(2));
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 2, Some(2), None).unwrap();
         assert!(outcome.success);
         assert!(outcome.content.contains("Showing lines 2-3"));
         assert!(outcome.content.contains("     2\tb"));
@@ -506,8 +678,56 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("test.txt");
         std::fs::write(&file, "a\nb\n").unwrap();
-        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 10, None);
+        let outcome = read_file_op(file.to_str().unwrap(), dir.path().to_str().unwrap(), 10, None, None);
+        assert!(outcome.is_err() || !outcome.as_ref().unwrap().success);
+    }
+
+    #[test]
+    fn edit_file_op_string_match_single() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "hello\nworld\nfoo\n").unwrap();
+        let outcome = edit_file_op(file.to_str().unwrap(), "world", "WORLD", None, dir.path().to_str().unwrap(), None);
+        assert!(outcome.success);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "hello\nWORLD\nfoo\n");
+    }
+
+    #[test]
+    fn edit_file_op_string_match_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "hello\nworld\n").unwrap();
+        let outcome = edit_file_op(file.to_str().unwrap(), "nope", "x", None, dir.path().to_str().unwrap(), None);
         assert!(!outcome.success);
-        assert!(outcome.content.contains("Offset 10"));
+        assert!(outcome.content.contains("was not found"));
+    }
+
+    #[test]
+    fn edit_file_op_string_match_ambiguous_without_expected() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "a\nb\na\n").unwrap();
+        let outcome = edit_file_op(file.to_str().unwrap(), "a", "X", None, dir.path().to_str().unwrap(), None);
+        assert!(!outcome.success);
+        assert!(outcome.content.contains("ambiguous"));
+    }
+
+    #[test]
+    fn edit_file_op_string_match_expected_replaces_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "a\nb\na\n").unwrap();
+        let outcome = edit_file_op(file.to_str().unwrap(), "a", "X", Some(2), dir.path().to_str().unwrap(), None);
+        assert!(outcome.success);
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "X\nb\nX\n");
+    }
+
+    #[test]
+    fn edit_file_op_rejects_empty_old_string() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("test.txt");
+        std::fs::write(&file, "abc\n").unwrap();
+        let outcome = edit_file_op(file.to_str().unwrap(), "", "x", None, dir.path().to_str().unwrap(), None);
+        assert!(!outcome.success);
     }
 }

@@ -324,7 +324,7 @@ fn handle_bus_help(router: &RouterBus) -> Value {
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
             { "tool": "cap_list", "arguments": {} },
             { "tool": "cap_dispatch", "arguments": { "target": "cap.history", "payload": { "action": "list_sessions" } } },
-            { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "prompt": "<用户消息>", "stream": false } } }
+            { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "message": "<用户消息>" } } },
         ]
     })
 }
