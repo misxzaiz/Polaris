@@ -1,8 +1,8 @@
 /*! dispatch_agent 工具（Phase 5）：subagent 委派
  *
  * 模型调用后 spawn 一个子 SimpleAI 会话（独立 context + agent 定义作为 system prompt，
- * 复用父会话的 profile / MCP server 列表 / skills），完成后取最后一条 assistant 文本
- * 作为结果返回给父会话。对齐 Claude Code 的 Task 工具。
+ * 复用父会话的 profile / MCP server 列表 / skills / 文件状态登记），完成后取最后一条
+ * assistant 文本作为结果返回给父会话。对齐 Claude Code 的 Task 工具。
  *
  * 约束：
  * - 深度限制 `SUBAGENT_MAX_DEPTH`（默认 3）防递归失控。
@@ -110,6 +110,7 @@ impl Tool for DispatchAgentTool {
             &mut child_abort_rx,
             ctx.mcp_servers,
             &child_skills,
+            ctx.file_states,
             ctx.subagent_depth + 1,
             &agent_def.tools,
         )

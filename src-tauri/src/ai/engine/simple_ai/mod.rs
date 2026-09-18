@@ -368,7 +368,7 @@ impl AIEngine for SimpleAIEngine {
         session.messages = messages.clone();
         session.is_running = true;
         let mut abort_rx = session.abort_rx.clone();
-
+        let file_states = session.file_states.clone();
         // 启动后台任务：先插入会话，再跑对话循环，结束后回写完整历史。
         //
         // 合并为单个 spawn 的关键原因：
@@ -395,11 +395,11 @@ impl AIEngine for SimpleAIEngine {
                 &mut abort_rx,
                 &mcp_servers,
                 &skills_map,
+                &file_states,
                 0,
                 &agent_allowed_tools,
             )
             .await;
-
             // 回写完整历史并清除运行标记，供后续 continue_session 续接上下文。
             persist_session_to_disk(&sid, &work_dir, &messages);
             {
@@ -497,7 +497,7 @@ impl AIEngine for SimpleAIEngine {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
 
             // 获取会话历史与中断接收端，并标记运行中（单次加锁完成）。
-            let (mut existing_messages, mut abort_rx) = {
+            let (mut existing_messages, mut abort_rx, file_states) = {
                 let mut guard = sessions.lock().await;
                 if let Some(session) = guard.get_mut(&sid) {
                     session.is_running = true;
@@ -513,7 +513,7 @@ impl AIEngine for SimpleAIEngine {
                     session.abort_tx = new_tx;
                     let task_rx = new_rx.clone();
                     session.abort_rx = new_rx;
-                    (session.messages.clone(), task_rx)
+                    (session.messages.clone(), task_rx, session.file_states.clone())
                 } else {
                     // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
                     let system_prompt = build_system_prompt();
@@ -521,6 +521,9 @@ impl AIEngine for SimpleAIEngine {
                     (
                         vec![json!({ "role": "system", "content": system_prompt })],
                         rx,
+                        std::sync::Arc::new(
+                            crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
+                        ),
                     )
                 }
             };
@@ -540,6 +543,7 @@ impl AIEngine for SimpleAIEngine {
                 &mut abort_rx,
                 &mcp_servers,
                 &skills_map,
+                &file_states,
                 0,
                 // continue 路径未保留 agent 定义,不过滤(白名单仅首轮生效的已知限制)
                 &[],

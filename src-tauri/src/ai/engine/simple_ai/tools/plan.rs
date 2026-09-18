@@ -161,7 +161,9 @@ mod tests {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
-        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
+let file_states = std::sync::Arc::new(
+            crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
+        );
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -210,7 +212,9 @@ mod tests {
         let (events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
-        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
+let file_states = std::sync::Arc::new(
+            crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
+        );
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
@@ -249,8 +253,11 @@ mod tests {
         let (_events, cb) = collector();
         let started = AtomicBool::new(false);
         let skills = std::collections::HashMap::new();
-        let file_states = crate::ai::engine::simple_ai::tools::FileStateRegistry::new();
+        let file_states = std::sync::Arc::new(
+            crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
+        );
         let profile = crate::models::config::ModelProfile::default();
+let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
         let ctx = ToolContext {

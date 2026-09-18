@@ -60,7 +60,7 @@ impl Tool for ReadFileTool {
         let path = args["path"].as_str().unwrap_or("");
         let offset = args["offset"].as_i64().unwrap_or(1);
         let limit = args["limit"].as_i64();
-        match read_file_op(path, ctx.work_dir, offset, limit, Some(ctx.file_states)) {
+        match read_file_op(path, ctx.work_dir, offset, limit, Some(ctx.file_states.as_ref())) {
             Ok(outcome) => outcome,
             Err(e) => ToolOutcome::fail(e),
         }
@@ -316,7 +316,7 @@ impl Tool for EditFileTool {
                 new_string,
                 expected,
                 ctx.work_dir,
-                Some(ctx.file_states),
+                Some(ctx.file_states.as_ref()),
             );
             return outcome;
         }
@@ -338,7 +338,7 @@ impl Tool for EditFileTool {
                 "edit_file: replacement_text is required (pass empty string to delete lines)".to_string()
             ),
         };
-        let outcome = edit_file_by_line_numbers(path, start_line, end_line, &replacement_text, ctx.work_dir, Some(ctx.file_states));
+        let outcome = edit_file_by_line_numbers(path, start_line, end_line, &replacement_text, ctx.work_dir, Some(ctx.file_states.as_ref()));
         outcome
     }
 }

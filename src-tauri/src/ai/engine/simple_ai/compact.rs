@@ -291,9 +291,17 @@ async fn request_summary_once(
     // 摘要请求也走重试（2 次，基数 500ms）。
     // 注：摘要请求无会话级 abort_rx（compact 内部独立小请求），传入 None ——
     // 不打断其退避，但主对话循环在 compact 前后的 abort 检查已保证整体可中断。
-    let response = retry::send_with_retry(req, 2, 500, None, &url)
-        .await
-        .map_err(SummaryFailure::Other)?;
+    // header_timeout 传 COMPACT_TIMEOUT_SECS：摘要为非流式请求，该超时等效覆盖全请求。
+    let response = retry::send_with_retry(
+        req,
+        2,
+        500,
+        None,
+        &url,
+        Some(std::time::Duration::from_secs(COMPACT_TIMEOUT_SECS)),
+    )
+    .await
+    .map_err(SummaryFailure::Other)?;
     let json: Value = response
         .json()
         .await

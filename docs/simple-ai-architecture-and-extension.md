@@ -586,10 +586,12 @@ Profile 的 `custom_env` 字段（设置 → 模型供应商 → 编辑 Profile 
 | 键 | 默认 | 作用 |
 |---|---|---|
 | `SIMPLE_AI_TIMEOUT_SECS` | 300 | 请求总超时（秒） |
-| `SIMPLE_AI_STREAM_IDLE_SECS` | 120 | 流空闲超时（秒） |
+| `SIMPLE_AI_STREAM_IDLE_SECS` | 300 | 流空闲超时（秒） |
 | `SIMPLE_AI_MAX_TOOL_ROUNDS` | 0=不限 | 工具调用轮次上限（设正数可恢复兜底） |
-| `SIMPLE_AI_RETRY_MAX` | 3 | 重试次数（含首次；设 1 = 不重试） |
+| `SIMPLE_AI_RETRY_MAX` | 4 | 重试次数（含首次；设 1 = 不重试） |
 | `SIMPLE_AI_RETRY_BASE_MS` | 500 | 退避基数（毫秒） |
+| `SIMPLE_AI_CONTEXT_WINDOW` | 180000 | 上下文窗口（达 75% 触发 compact） |
+| `SIMPLE_AI_DISABLE_SUBAGENT` | 0 | 1 = 移除 dispatch_agent 工具 |
 | `SIMPLE_AI_CONTEXT_WINDOW` | 128000 | 上下文窗口（达 75% 触发 compact） |
 | `SIMPLE_AI_DISABLE_SUBAGENT` | 0 | 1 = 移除 dispatch_agent 工具 |
 

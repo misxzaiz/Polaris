@@ -29,8 +29,18 @@ use super::tools::{ToolContext, ToolRegistry};
 const HISTORY_ASSISTANT_TOKEN_CAP: usize = 4000;
 
 /// 默认请求总超时（秒）。可经 ModelProfile.custom_env 的 `SIMPLE_AI_TIMEOUT_SECS` 覆盖。
-/// 普通用户可接受的最长等待时间；超过此值应报错而非静默挂起。
-const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 60;
+///
+/// 语义：**建连 + 等待响应头** 的上限（由 `send_with_retry` 返回后、读 body 前的
+/// `tokio::select!` 兜底）。注意 reqwest 的 `.timeout()` 是「连接开始 → 响应体读完」
+/// 的总超时，流式(SSE)读取期间计时器持续走——若用它设总时长，长分析/长报告这类
+/// 单轮输出超过该时长的任务会被直接掐断。因此这里**不设请求级总超时**：
+/// - 建连：`reqwest` `connect_timeout`（30s）兜底；
+/// - 首字节/响应头：本常量兜底（默认 300s，对齐文档承诺）；
+/// - 流式 body：由 `STREAM_IDLE_TIMEOUT_SECS` 逐 chunk 空闲检测兜底，无总时长限制。
+const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 300;
+
+/// 默认建连超时（秒）：建立 TCP/TLS 连接的上限。
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 
 /// 默认流空闲超时（秒）：距上一个数据块超过该时长视为流卡死。
 /// 可经 ModelProfile.custom_env 的 `SIMPLE_AI_STREAM_IDLE_SECS` 覆盖。
@@ -59,6 +69,7 @@ pub(super) async fn run_chat_loop(
     abort_rx: &mut watch::Receiver<bool>,
     mcp_servers: &[crate::services::mcp_config_service::ResolvedExternalMcpServer],
     skills: &std::collections::HashMap<String, super::skill::SkillEntry>,
+    file_states: &std::sync::Arc<super::tools::FileStateRegistry>,
     depth: u32,
     allowed_tools: &[String],
 ) -> Result<()> {
@@ -129,10 +140,9 @@ pub(super) async fn run_chat_loop(
     // update_plan 的计划面板状态：每轮首次调用先发 plan_start。
     let plan_id = format!("{}-plan", session_id);
     let plan_started = AtomicBool::new(false);
-    // 会话级文件状态缓存：read_file 登记，写工具 read-before-write + mtime 校验。
-    let file_states = super::tools::FileStateRegistry::new();
+    // 会话级文件状态缓存由调用方持有（SimpleAISession.file_states），
+    // 保证 continue / 子 agent 共享同一份 read 登记（read-before-write + mtime 校验）。
     // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
-    // 窗口三级优先：ModelProfile.context_window > custom_env SIMPLE_AI_CONTEXT_WINDOW > 默认 180K。
     let context_window = profile
         .context_window
         .filter(|v| *v > 0)
@@ -151,8 +161,11 @@ pub(super) async fn run_chat_loop(
     let mut round: u64 = 0;
 
     // 构建可复用的 HTTP 客户端（避免每轮循环重建，防止 TLS 会话池/连接池泄漏）。
+    // 注意：**不设 request 级总超时**（reqwest 的 timeout 覆盖流式 body 读取全程，
+    // 会掐断长分析/长报告）。建连超时用 connect_timeout 兜底；等待响应头用
+    // request_timeout_secs（见发送段 select）；流式 body 由 stream_idle 逐 chunk 兜底。
     let http_client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(request_timeout_secs))
+        .connect_timeout(std::time::Duration::from_secs(DEFAULT_CONNECT_TIMEOUT_SECS))
         .pool_max_idle_per_host(4) // 限制单 host 空闲连接数，避免资源泄漏
         .build()
         .map_err(|e| AppError::ProcessError(format!("HTTP client error: {}", e)))?;
@@ -220,21 +233,20 @@ pub(super) async fn run_chat_loop(
                 protocol.as_str()
             );
         }
-
         // 复用循环外构建的 http_client（避免每次循环重建 TLS 连接池，导致资源泄漏）。
-        // 设置请求级别超时（构建时 client 级别 timeout 已被 pool 设置覆盖，这里用 request 级别精确控制）。
+        // 请求地址：追加 CLI 后缀衍生的 query（仅 Anthropic 协议生效，如 `?beta=true`）。
         let url = if let Some(ref q) = suffix.query {
             format!("{}?{}", protocol.build_url(&profile.base_url), q)
         } else {
             protocol.build_url(&profile.base_url)
         };
 
-        // 使用 http_client 的 request 级别 timeout，替代 client 构建时的全局 timeout，
-        // 使每次 API 请求独立受控于 request_timeout_secs。
         let mut req = http_client
             .post(&url)
-            .header("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(request_timeout_secs));
+            .header("Content-Type", "application/json");
+        // 注意：不设 `.timeout()`——reqwest 的 timeout 覆盖「连接 → 响应体读完」全程，
+        // 流式(SSE)读取期间计时器持续走，长分析/长报告单轮输出超过该时长会被直接掐断。
+        // 响应头等待上限由下方发送段的 tokio::select! 处理；流式 body 由 stream_idle 兜底。
         for (k, v) in protocol.auth_headers(&profile.api_key) {
             req = req.header(k, v);
         }
@@ -285,6 +297,9 @@ pub(super) async fn run_chat_loop(
             retry_base_ms,
             Some(abort_rx),
             &url,
+            // header 等待超时：仅覆盖「发请求 → 收到响应头」。响应头返回后进入流式
+            // body 读取，由 STREAM_IDLE_TIMEOUT_SECS 逐 chunk 兜底，不受总时长限制。
+            Some(std::time::Duration::from_secs(request_timeout_secs)),
         )
         .await?;
         tracing::info!("[SimpleAI] API 响应状态: {}", response.status());
@@ -567,7 +582,7 @@ pub(super) async fn run_chat_loop(
                 plan_id: &plan_id,
                 plan_started: &plan_started,
                 skills,
-                file_states: &file_states,
+                file_states,
                 profile,
                 mcp_servers,
                 subagent_depth: depth,

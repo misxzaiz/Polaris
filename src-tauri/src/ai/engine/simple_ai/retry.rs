@@ -72,18 +72,50 @@ pub(super) fn sanitize_url(url: &str) -> String {
     without_frag.to_string()
 }
 
+/// 发送请求并等待响应头返回。
+///
+/// 超时语义：`header_timeout` 仅覆盖「发请求 → 收到响应头」这一段。响应头返回后即进入
+/// 流式 body 读取，由调用方按流空闲/中断兜底，**不受本超时约束**——这保证长分析、长报告
+/// 这类单轮输出很久的流式任务不会被 reqwest 的全局 total timeout 掐断。
+///
+/// 注意：不能调用 `reqwest::Error::new`（其为 pub(crate)），因此超时以
+/// `AppError::ProcessError` 表达，消息含脱敏 URL 便于诊断。
+async fn send_await_headers(
+    req: reqwest::RequestBuilder,
+    header_timeout: Option<std::time::Duration>,
+    url: &str,
+) -> Result<reqwest::Response> {
+    match header_timeout {
+        Some(d) => match tokio::time::timeout(d, req.send()).await {
+            Ok(resp) => resp.map_err(|e| {
+                AppError::ProcessError(format!("API request failed: {} (url={})", e, sanitize_url(url)))
+            }),
+            Err(_) => Err(AppError::ProcessError(format!(
+                "timed out waiting for response headers after {}s (url={})",
+                d.as_secs(),
+                sanitize_url(url)
+            ))),
+        },
+        None => req.send().await.map_err(|e| {
+            AppError::ProcessError(format!("API request failed: {} (url={})", e, sanitize_url(url)))
+        }),
+    }
+}
+
 /// 带重试地发送请求。
 ///
 /// 成功（2xx）返回 `Response`；不可重试错误或达上限后返回最后一次错误。
 /// `url` 仅用于错误诊断（脱敏后拼进错误消息，便于前端直接看到请求目标）。
 /// 第 5 个参数 `abort_rx` 为可选中止信号：置位时立即返回 `Interrupted`，
 /// 不再等退避 sleep（否则 429 长退避 10s/30s/60s 会让「页面上点停止」形同失效）。
+/// `header_timeout` 见 `send_await_headers`（None = 不限制等待响应头）。
 pub(super) async fn send_with_retry(
     req: reqwest::RequestBuilder,
     max_attempts: u32,
     base_ms: u64,
     mut abort_rx: Option<&mut watch::Receiver<bool>>,
     url: &str,
+    header_timeout: Option<std::time::Duration>,
 ) -> Result<reqwest::Response> {
     // max_attempts 至少为 1（首次尝试）。
     let max_attempts = max_attempts.max(1);
@@ -94,18 +126,20 @@ pub(super) async fn send_with_retry(
         let cloned = req.try_clone().ok_or_else(|| {
             AppError::ProcessError("request body is not cloneable for retry".to_string())
         })?;
-        let resp = match abort_rx.as_mut() {
+        // 发送并等待响应头。header_timeout 仅覆盖「发请求 → 收到响应头」：响应头返回后
+        // 即进入 body 流式读取，由调用方按流空闲兜底，不受本超时约束。
+        let resp: std::result::Result<reqwest::Response, AppError> = match abort_rx.as_mut() {
             Some(rx) => {
+                let fut = send_await_headers(cloned, header_timeout, url);
                 tokio::select! {
-                    // 请求发送中也可被中断（若底层 send 极慢/挂在连接上，
-                    // reqwest 有 request 级超时兜底；这里再叠加用户主动取消）。）
-                    r = cloned.send() => r,
+                    // 请求发送中也可被中断（若底层 send 极慢/挂在连接上）。
+                    r = fut => r,
                     _ = rx.changed() => {
                         return Err(AppError::Interrupted)
                     }
                 }
             }
-            None => cloned.send().await,
+            None => send_await_headers(cloned, header_timeout, url).await,
         };
         match resp {
             Ok(resp) if resp.status().is_success() => return Ok(resp),

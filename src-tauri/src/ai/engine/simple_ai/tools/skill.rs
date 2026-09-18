@@ -69,9 +69,9 @@ mod tests {
         mcp_servers: &'a [crate::services::mcp_config_service::ResolvedExternalMcpServer],
     ) -> ToolContext<'a> {
         let abort_rx = Box::leak(Box::new(watch::channel(false).1));
-        let file_states = Box::leak(Box::new(
+let file_states = Box::leak(Box::new(std::sync::Arc::new(
             crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
-        ));
+        )));
         ToolContext {
             work_dir: ".",
             session_id: "s",

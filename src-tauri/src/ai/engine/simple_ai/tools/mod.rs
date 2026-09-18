@@ -79,8 +79,9 @@ pub(crate) struct ToolContext<'a> {
     pub plan_started: &'a AtomicBool,
     /// 已加载的 skill 索引（Phase 4c：read_skill 工具按名查全文）
     pub skills: &'a HashMap<String, SkillEntry>,
-    /// 会话级文件状态缓存（read-before-write + mtime 冲突检测的单一事实源）
-    pub file_states: &'a FileStateRegistry,
+/// 会话级文件状态缓存（read-before-write + mtime 冲突检测的单一事实源）。
+    /// Arc 便于 dispatch_agent 子会话共享同一份登记。
+    pub file_states: &'a std::sync::Arc<FileStateRegistry>,
     /// 当前会话的 ModelProfile（Phase 5：dispatch_agent 子会话复用）
     pub profile: &'a crate::models::config::ModelProfile,
     /// 当前会话的 MCP server 列表（Phase 5：子会话复用父 pool 输入）
@@ -275,7 +276,8 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
     let (_abort_tx, abort_rx) = tokio::sync::watch::channel(false);
     // tx 丢弃后 rx 仅表现为通道关闭，读取方按"未中断"处理即可
     let abort_rx: &'static watch::Receiver<bool> = Box::leak(Box::new(abort_rx));
-    let file_states: &'static FileStateRegistry = Box::leak(Box::new(FileStateRegistry::new()));
+    let file_states: &'static std::sync::Arc<FileStateRegistry> =
+        Box::leak(Box::new(Arc::new(FileStateRegistry::new())));
     ToolContext {
         work_dir,
         session_id,
@@ -350,7 +352,7 @@ mod tests {
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = Arc::new(|_| ());
         let started = AtomicBool::new(false);
         let skills = HashMap::new();
-        let file_states = FileStateRegistry::new();
+        let file_states = std::sync::Arc::new(FileStateRegistry::new());
         let profile = crate::models::config::ModelProfile::default();
         let mcp_servers: Vec<crate::services::mcp_config_service::ResolvedExternalMcpServer> =
             Vec::new();
