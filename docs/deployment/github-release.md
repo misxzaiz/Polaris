@@ -950,3 +950,35 @@ cd polaris-web
 
 - fix(config): cap.config 写保护下沉到能力内，恢复远程读权限
 - fix(simple-ai): 流式错误附带请求诊断上下文（url/protocol/model/round）
+
+---
+
+## v10.5.3 构建记录
+
+**构建时间**: 2026-09-19 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.3
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.3_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.3_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.3_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.3-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.3_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.3-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.3-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.3-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.3.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(simple-ai): 文件状态管理（read-before-write + mtime 冲突检测）— 会话级 FileStateRegistry + edit_file/write_file 前置校验
+- fix(simple-ai): 会话级文件状态登记 + 流式请求超时语义重构 — 子会话共享 read 登记；移除总超时改用 connect/header/stream idle 分层兜底
+- fix(chat): 兼容 simpleai edit_file 显示层 diff 提取与折叠统计（isEditTool/extractEditDiff/toolSummary/toolConfig + 测试）
+- chore: 清理临时调试脚本 .tmp-monitor-off.ps1
