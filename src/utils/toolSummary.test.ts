@@ -6,6 +6,7 @@ import {
   escapeRegExp,
   calculateToolGroupStatus,
   parseGrepMatches,
+  generateCollapsedSummary,
 } from './toolSummary'
 
 describe('formatDuration', () => {
@@ -122,5 +123,49 @@ describe('parseGrepMatches', () => {
     const result = parseGrepMatches(output)
     expect(result).not.toBeNull()
     expect(result!.matches[0].line).toBe(10)
+  })
+})
+
+describe('generateCollapsedSummary - edit_file', () => {
+  it('字符串形态：统计 old/new 行数差', () => {
+    const result = generateCollapsedSummary('edit_file', {
+      path: '/src/a.ts',
+      old_string: 'line1\nline2',
+      new_string: 'line1\nline2\nline3',
+    }, 'Edited file ... replaced 1 occurrence(s).', 'completed')
+    expect(result.summaryType).toBe('diff')
+    expect(result.summary).toBe('+3 -2')
+  })
+
+  it('行号形态：按区间统计删除行数', () => {
+    const result = generateCollapsedSummary('edit_file', {
+      path: '/src/a.ts',
+      start_line: 5,
+      end_line: 7,
+      replacement_text: 'x\ny',
+    }, 'Edited file ...', 'completed')
+    expect(result.summaryType).toBe('diff')
+    expect(result.summary).toBe('+2 -3')
+  })
+
+  it('行号形态：空 replacement_text 表示删除', () => {
+    const result = generateCollapsedSummary('edit_file', {
+      path: '/src/a.ts',
+      start_line: 5,
+      end_line: 7,
+      replacement_text: '',
+    }, 'Edited file ...', 'completed')
+    expect(result.summaryType).toBe('diff')
+    expect(result.summary).toBe('+0 -3')
+  })
+
+  it('output 带 diff 统计时优先用 output', () => {
+    const result = generateCollapsedSummary('edit_file', {
+      path: '/src/a.ts',
+      start_line: 1,
+      end_line: 1,
+      replacement_text: 'x',
+    }, 'diff: +1 -1', 'completed')
+    expect(result.summary).toBe('+1 -1')
   })
 })

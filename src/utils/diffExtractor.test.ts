@@ -25,10 +25,17 @@ describe('isEditTool', () => {
     expect(isEditTool('str_replace')).toBe(true)
   })
 
+  it('应该识别 SimpleAI edit_file 工具', () => {
+    expect(isEditTool('edit_file')).toBe(true)
+    expect(isEditTool('EDIT_FILE')).toBe(true)
+  })
+
   it('应该拒绝非编辑工具', () => {
     expect(isEditTool('Read')).toBe(false)
     expect(isEditTool('Write')).toBe(false)
     expect(isEditTool('Bash')).toBe(false)
+    expect(isEditTool('write_file')).toBe(false)
+    expect(isEditTool('apply_patch')).toBe(false)
   })
 })
 
@@ -105,6 +112,58 @@ describe('extractEditDiff', () => {
     expect(result?.newContent).toBe('new')
   })
 
+  it('edit_file 字符串形态：应该提取 old_string/new_string', () => {
+    const block = createToolCallBlock({
+      name: 'edit_file',
+      input: {
+        path: '/src/test.ts',
+        old_string: 'const a = 1;',
+        new_string: 'const a = 2;',
+      },
+    })
+
+    const result = extractEditDiff(block)
+    expect(result).toEqual({
+      filePath: '/src/test.ts',
+      oldContent: 'const a = 1;',
+      newContent: 'const a = 2;',
+      firstChangedLine: undefined,
+    })
+  })
+
+  it('edit_file 行号形态：应该提取 replacement_text 作为 newContent + firstChangedLine', () => {
+    const block = createToolCallBlock({
+      name: 'edit_file',
+      input: {
+        path: '/src/test.ts',
+        start_line: 3,
+        end_line: 5,
+        replacement_text: 'new line\nanother',
+      },
+    })
+
+    const result = extractEditDiff(block)
+    expect(result?.filePath).toBe('/src/test.ts')
+    expect(result?.newContent).toBe('new line\nanother')
+    expect(result?.firstChangedLine).toBe(3)
+  })
+
+  it('edit_file 行号形态：replacement_text 为空串也能识别（删除行）', () => {
+    const block = createToolCallBlock({
+      name: 'edit_file',
+      input: {
+        path: '/src/test.ts',
+        start_line: 3,
+        end_line: 5,
+        replacement_text: '',
+      },
+    })
+
+    const result = extractEditDiff(block)
+    expect(result?.filePath).toBe('/src/test.ts')
+    expect(result?.newContent).toBe('')
+  })
+
   it('应该返回 null 当不是编辑工具', () => {
     const block = createToolCallBlock({ name: 'Read' })
     expect(extractEditDiff(block)).toBeNull()
@@ -114,6 +173,14 @@ describe('extractEditDiff', () => {
     const block = createToolCallBlock({
       name: 'Edit',
       input: { file_path: '/src/test.ts' },
+    })
+    expect(extractEditDiff(block)).toBeNull()
+  })
+
+  it('edit_file 缺少 path 时应返回 null', () => {
+    const block = createToolCallBlock({
+      name: 'edit_file',
+      input: { old_string: 'a', new_string: 'b' },
     })
     expect(extractEditDiff(block)).toBeNull()
   })

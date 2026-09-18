@@ -726,6 +726,13 @@ export function getToolConfig(toolName: string): ToolConfig {
   };
 }
 
+/**
+ * 实际文本行数（去除末尾单个换行的影响，空串视为 0 行）。
+ */
+function countLines(s: string): number {
+  return s === '' ? 0 : s.replace(/\n$/, '').split('\n').length;
+}
+
 export function extractFileName(input: Record<string, unknown> | undefined): string {
   return extractFilePath(input);
 }
@@ -833,16 +840,24 @@ export function extractToolKeyInfo(toolName: string, input: Record<string, unkno
     }
   }
 
-  // SimpleAI edit_file：提取路径 + 行号范围
+  // SimpleAI edit_file：提取路径 + 行号范围（old_string 形态优先，行号形态兜底）
   if (toolName === 'edit_file' && input) {
     const path = input.path as string | undefined;
+    const fileName = path ? path.split('/').pop() || path.split('\\').pop() || path : '';
+    if (!fileName) return '';
+    // 字符串精确匹配形态：old_string → new_string
+    const oldStr = input.old_string as string | undefined;
+    const newStr = input.new_string as string | undefined;
+    if (typeof oldStr === 'string' && typeof newStr === 'string') {
+      return `${fileName} L${countLines(oldStr)}→L${countLines(newStr)}`;
+    }
+    // 行号区间形态
     const startLine = input.start_line as number | undefined;
     const endLine = input.end_line as number | undefined;
-    const fileName = path ? path.split('/').pop() || path.split('\\').pop() || path : '';
-    if (fileName && startLine && endLine) {
+    if (startLine && endLine) {
       return `${fileName} L${startLine}-L${endLine}`;
     }
-    if (fileName) return fileName;
+    return fileName;
   }
 
   // SimpleAI apply_patch：从补丁信封提取文件数

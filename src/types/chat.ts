@@ -30,6 +30,29 @@ export interface ToolCall {
   };
 }
 
+/** 编辑工具的 Diff 数据（引擎无关统一展示模型）
+ *
+ * - 字符串形态（old_string/new_string）：oldContent 为被替换片段，可为实际内容
+ * - 行号形态（start_line/end_line/replacement_text）：无法恢复被替换片段，
+ *   oldContent 为 undefined，仍提供 newContent 与 firstChangedLine
+ */
+export interface DiffData {
+  /** 修改前的文件内容（仅被替换的部分）；行号形态无法恢复时为 undefined */
+  oldContent?: string;
+  /** 修改后的文件内容（仅被替换的部分） */
+  newContent: string;
+  /** 文件路径 */
+  filePath: string;
+  /** 原始 edits 数组（用于统一展示，引擎无关） */
+  edits?: Array<{ oldText: string; newText: string }>;
+  /** 引擎已计算好的 diff 字符串（如 Pi 引擎的 details.diff） */
+  diffString?: string;
+  /** 引擎已计算好的 patch 字符串 */
+  patchString?: string;
+  /** 首个变更行号（用于编辑器导航） */
+  firstChangedLine?: number;
+}
+
 /** 聊天消息 */
 export interface Message {
   id: string;
@@ -129,16 +152,7 @@ export interface ToolCallBlock {
   completedAt?: string;
   duration?: number;
   /** Diff 数据（用于 Edit 工具显示差异） */
-  diffData?: {
-    /** 修改前的文件内容（仅被替换的部分） */
-    oldContent: string;
-    /** 修改后的文件内容（仅被替换的部分） */
-    newContent: string;
-    /** 文件路径 */
-    filePath: string;
-    /** AI 修改前的完整文件内容（用于精确撤销） */
-    fullOldContent?: string;
-  };
+  diffData?: DiffData;
   /** 补丁数据（用于 apply_patch 多文件补丁渲染） */
   patchData?: {
     type: 'add' | 'update' | 'delete';

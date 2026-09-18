@@ -5,21 +5,9 @@
  */
 
 import type { ToolCallBlock } from '@/types/chat';
+import type { DiffData } from '@/types/chat';
 
-/** Diff 数据 */
-export interface DiffData {
-  oldContent: string;
-  newContent: string;
-  filePath: string;
-  /** 原始 edits 数组（用于统一展示，引擎无关） */
-  edits?: Array<{ oldText: string; newText: string }>;
-  /** 引擎已计算好的 diff 字符串（如 Pi 引擎的 details.diff） */
-  diffString?: string;
-  /** 引擎已计算好的 patch 字符串 */
-  patchString?: string;
-  /** 首个变更行号（用于编辑器导航） */
-  firstChangedLine?: number;
-}
+export type { DiffData } from '@/types/chat';
 
 /**
  * 判断是否为 Edit 工具
@@ -28,6 +16,7 @@ export function isEditTool(toolName: string): boolean {
   const normalized = toolName.toLowerCase();
   return normalized === 'str_replace_editor' ||
          normalized === 'edit' ||
+         normalized === 'edit_file' ||
          normalized.includes('str_replace');
 }
 
@@ -45,13 +34,21 @@ export function isWriteTool(toolName: string): boolean {
 /**
  * 从 Edit 工具的输入中提取 Diff 数据
  *
- * 支持两种输入格式：
+ * 支持四种输入格式：
  *
  * 1. Claude Code（str_replace_editor）：
  *   { file_path: string, old_string: string, new_string: string }
  *
  * 2. Pi 引擎（edit）：
  *   { path: string, edits: [{ oldText: string, newText: string }] }
+ *
+ * 3. SimpleAI edit_file（字符串精确匹配，推荐）：
+ *   { path: string, old_string: string, new_string: string }
+ *
+ * 4. SimpleAI edit_file（行号兼容兜底）：
+ *   { path: string, start_line: number, end_line: number, replacement_text: string }
+ *   行号形态无法恢复被替换的旧内容，仅能给出替换后的内容（newContent）；
+ *   保留 edits 占位 + firstChangedLine 供展示层定位。
  */
 export function extractEditDiff(block: ToolCallBlock): DiffData | null {
   if (!isEditTool(block.name)) {
@@ -63,7 +60,7 @@ export function extractEditDiff(block: ToolCallBlock): DiffData | null {
   // 支持多种命名格式
   const filePath = (input.file_path || input.path || input.filePath) as string;
 
-  // Claude Code 格式：old_string / new_string
+  // Claude Code / SimpleAI 格式：old_string / new_string
   let oldContent = (input.old_string || input.old_str || input.oldContent) as string;
   let newContent = (input.new_string || input.new_str || input.newContent) as string;
 
@@ -78,22 +75,37 @@ export function extractEditDiff(block: ToolCallBlock): DiffData | null {
     }
   }
 
-  // 验证必需字段
-  if (!filePath || typeof oldContent !== 'string' || typeof newContent !== 'string') {
+  // SimpleAI edit_file 行号形态：被替换的旧内容不可从入参恢复，
+  // 仅提供 replacement_text 作为 newContent（展示层据此给出 +N 提示）。
+  const lineNumberForm =
+    typeof input.start_line === 'number' && typeof input.end_line === 'number' &&
+    typeof input.replacement_text === 'string';
+  let firstChangedLine: number | undefined;
+  if (lineNumberForm && !oldContent && !newContent) {
+    newContent = input.replacement_text as string;
+    if (typeof input.start_line === 'number' && input.start_line > 0) {
+      firstChangedLine = input.start_line;
+    }
+  }
+
+  // 验证必需字段：行号形态允许 oldContent 缺失（旧内容无法从入参恢复）
+  if (!filePath || typeof newContent !== 'string') {
+    return null;
+  }
+  if (!lineNumberForm && typeof oldContent !== 'string') {
     return null;
   }
 
   // 尝试从 Pi 引擎的 output 中解析 details.diff / details.patch
   let diffString: string | undefined;
   let patchString: string | undefined;
-  let firstChangedLine: number | undefined;
   if (block.output) {
     try {
       const parsed = JSON.parse(block.output);
       if (parsed && typeof parsed === 'object') {
         diffString = parsed.diff ?? parsed.details?.diff;
         patchString = parsed.patch ?? parsed.details?.patch;
-        firstChangedLine = parsed.firstChangedLine ?? parsed.details?.firstChangedLine;
+        firstChangedLine = parsed.firstChangedLine ?? parsed.details?.firstChangedLine ?? firstChangedLine;
       }
     } catch {
       // 非 JSON 输出（如 Claude 的纯文本 "File has been updated."），忽略

@@ -86,6 +86,7 @@ export function generateToolSummary(
   switch (toolName) {
     case 'str_replace_editor':
     case 'Edit':
+    case 'edit_file':
       if (filePath) {
         return isRunning ? `${t('actions.editing')} ${filePath}` : `${filePath} ${t('actions.edited')}`;
       }
@@ -376,13 +377,16 @@ export function generateCollapsedSummary(
     // 优先从 output 解析 diff 统计
     let diffStats = parseDiffStats(output);
 
+    // 实际文本行数（去除末尾单个换行的影响，空串视为 0 行）
+    const countLines = (s: string) => (s === '' ? 0 : s.replace(/\n$/, '').split('\n').length);
+
     // output 解析失败时，从 input 的 old_string/new_string 计算行数差
     if (!diffStats && input) {
       const oldStr = (input.old_string || input.old_str) as string | undefined
       const newStr = (input.new_string || input.new_str) as string | undefined
       if (typeof oldStr === 'string' && typeof newStr === 'string') {
-        const removed = oldStr.split('\n').length
-        const added = newStr.split('\n').length
+        const removed = countLines(oldStr)
+        const added = countLines(newStr)
         diffStats = `+${added} -${removed}`
       }
     }
@@ -394,7 +398,7 @@ export function generateCollapsedSummary(
       const replacement = (input.replacement_text) as string | undefined
       if (typeof startLine === 'number' && typeof endLine === 'number' && typeof replacement === 'string') {
         const removed = endLine - startLine + 1
-        const added = replacement === '' ? 0 : replacement.split('\n').length
+        const added = countLines(replacement)
         diffStats = `+${added} -${removed}`
       }
     }
