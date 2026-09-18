@@ -1,7 +1,7 @@
 {
   "name": "polaris",
   "private": true,
-  "version": "10.5.2",
+  "version": "10.5.3",
   "scripts": {
     "dev": "vite",
     "dev:http": "node scripts/dev-http.mjs",
