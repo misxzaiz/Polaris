@@ -1154,10 +1154,6 @@ pub async fn start_chat_inner(
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
-                ask_mcp_enabled: state
-                    .clone_config()
-                    .map(|c| c.interaction.ask_mcp_enabled)
-                    .unwrap_or(true),
             })?
         } else {
             McpSessionConfig::default()
@@ -1688,10 +1684,6 @@ pub async fn continue_chat_inner(
                 ask_listener: state.ask_listener.get().cloned(),
                 ask_route_session_id,
                 disabled_mcp_servers: options.disabled_mcp_servers.as_deref().unwrap_or(&[]),
-                ask_mcp_enabled: state
-                    .clone_config()
-                    .map(|c| c.interaction.ask_mcp_enabled)
-                    .unwrap_or(true),
             })?
         } else {
             McpSessionConfig::default()

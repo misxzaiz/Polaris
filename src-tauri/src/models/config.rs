@@ -1337,28 +1337,6 @@ pub struct WorkspaceTerminalScripts {
     pub hidden_discovered_script_ids: Vec<String>,
 }
 
-/// 交互配置（AskUserQuestion 等同回合交互能力）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct InteractionConfig {
-    /// 是否允许 AI 在对话中通过 polaris-ask MCP 弹出问题卡片。
-    /// 关闭后将不向 CLI 注入 polaris-ask server，AI 不再能主动提问。
-    #[serde(default = "default_interaction_ask_enabled")]
-    pub ask_mcp_enabled: bool,
-}
-
-impl Default for InteractionConfig {
-    fn default() -> Self {
-        Self {
-            ask_mcp_enabled: true,
-        }
-    }
-}
-
-fn default_interaction_ask_enabled() -> bool {
-    true
-}
-
 /// 派发队员预设：用户预定义"角色 → 引擎/供应商/模型/职责提示词"组合，
 /// AI 派发时按角色名引用（dispatch_task 的 role 参数），成本与安全由用户掌控。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -1591,10 +1569,6 @@ pub struct Config {
     #[serde(default)]
     pub web: WebConfig,
 
-    /// 交互配置（AskUserQuestion 等）
-    #[serde(default)]
-    pub interaction: InteractionConfig,
-
     /// 派发任务配置（dispatch_task MCP 策略/结果注入/队员预设）
     #[serde(default)]
     pub dispatch: DispatchConfig,
@@ -1777,7 +1751,6 @@ impl Default for Config {
             voice_notification: None,
             voice_commands: None,
             web: WebConfig::default(),
-            interaction: InteractionConfig::default(),
             dispatch: DispatchConfig::default(),
             spiderman_theme: None,
             chat_display: ChatDisplaySettings::default(),

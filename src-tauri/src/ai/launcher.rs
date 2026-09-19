@@ -48,7 +48,6 @@ pub struct McpConfigParams<'a> {
     pub ask_listener: Option<AskListenerHandle>,
     pub ask_route_session_id: Option<String>,
     pub disabled_mcp_servers: &'a [String],
-    pub ask_mcp_enabled: bool,
 }
 
 /// 统一 MCP 配置准备入口。
@@ -78,13 +77,6 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
             disabled_servers.push(server_name.clone());
         }
     }
-    // InteractionConfig 门控：只作用于 polaris-ask 本身
-    if !params.ask_mcp_enabled
-        && !disabled_servers.iter().any(|name| name == "polaris-ask")
-    {
-        disabled_servers.push("polaris-ask".to_string());
-    }
-
     // 为所有引擎准备配置（一次 resolve，多引擎复用）
     let claude_config_path = service
         .prepare_workspace_config_with_disabled(params.work_dir, &disabled_servers)

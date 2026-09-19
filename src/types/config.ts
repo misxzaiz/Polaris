@@ -343,12 +343,6 @@ export interface WebConfig {
   token?: string;
 }
 
-/** 交互配置（AskUserQuestion 等同回合交互能力） */
-export interface InteractionConfig {
-  /** 是否允许 AI 弹出问题卡片（通过 polaris-ask MCP） */
-  askMcpEnabled?: boolean;
-}
-
 /** 派发队员预设：角色 → 引擎/供应商/模型/职责提示词 */
 export interface DispatchPreset {
   id: string;
@@ -450,8 +444,6 @@ export interface Config {
   voiceCommands?: VoiceCommandEntry[];
   /** Web 服务配置 */
   web?: WebConfig;
-  /** 交互配置（AskUserQuestion 等） */
-  interaction?: InteractionConfig;
   /** 派发任务配置（策略/结果注入/队员预设） */
   dispatch?: DispatchConfig;
   /** AI 对话窗口显示设置 */

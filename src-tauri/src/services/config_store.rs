@@ -724,7 +724,6 @@ impl OldConfig {
             voice_notification: None,
             voice_commands: None,
             web: Default::default(),
-            interaction: Default::default(),
             dispatch: Default::default(),
             spiderman_theme: None,
             chat_display: Default::default(),

@@ -981,7 +981,6 @@ impl IntegrationManager {
                             ask_listener: None, // integrations 场景无人类交互通道
                             ask_route_session_id: None,
                             disabled_mcp_servers: &[],
-                            ask_mcp_enabled: true,
                         }) {
                             Ok(config) => {
                                 tracing::info!(
