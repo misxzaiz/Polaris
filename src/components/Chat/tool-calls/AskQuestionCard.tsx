@@ -20,6 +20,7 @@ import { createLogger } from '@/utils/logger';
 import { useToastStore } from '@/stores/toastStore';
 import { Button } from '../../Common/Button';
 import type { QuestionBlock, QuestionItem, QuestionOption, SubAnswer } from '@/types';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 
 const log = createLogger('AskQuestionCard');
 
@@ -205,27 +206,41 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
       if (!block.sessionId) return;
       if (kind === 'answer' && !anyAnswered) return;
 
+      // 先算好最终答案，乐观更新与提交/回滚三处复用
+      const finalAnswers: SubAnswer[] =
+        kind === 'decline-all'
+          ? []
+          : state.per.map(s => ({
+              selected: s.declined ? [] : s.selected,
+              customInput: s.declined ? undefined : s.customInput.trim() || undefined,
+              declined: s.declined,
+            }));
+
       dispatch({ type: 'BEGIN_SUBMIT' });
+      // 乐观更新：立即把卡片切到已答态。
+      // 后端 `question_answered` 事件回来时是幂等覆盖，不会造成抖动。
+      const store = sessionStoreManager.getState().stores.get(block.sessionId)?.getState();
+      store?.updateQuestionBlock(block.id, {
+        answers: finalAnswers,
+        declined: kind === 'decline-all',
+      });
       try {
-        if (kind === 'decline-all') {
-          await aiChatDispatch({ action: 'answer_question',
-            sessionId: block.sessionId,
-            callId: block.id,
-            answer: { answers: [], declined: true },
-          });
-        } else {
-          const answers: SubAnswer[] = state.per.map(s => ({
-            selected: s.declined ? [] : s.selected,
-            customInput: s.declined ? undefined : s.customInput.trim() || undefined,
-            declined: s.declined,
-          }));
-          await aiChatDispatch({ action: 'answer_question',
-            sessionId: block.sessionId,
-            callId: block.id,
-            answer: { answers, declined: false },
-          });
-        }
+        // 提交到后端（router_dispatch → answer_question → oneshot 唤醒 MCP companion）
+        await aiChatDispatch({ action: 'answer_question',
+          sessionId: block.sessionId,
+          callId: block.id,
+          answer: {
+            answers: finalAnswers,
+            declined: kind === 'decline-all',
+          },
+        });
       } catch (error) {
+        // 提交失败 → 回滚乐观状态，允许用户重试
+        store?.updateQuestionBlock(block.id, {
+          status: 'pending',
+          answers: undefined,
+          declined: undefined,
+        });
         log.error(
           '提交答案失败:',
           error instanceof Error ? error : new Error(String(error))

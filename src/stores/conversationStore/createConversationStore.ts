@@ -1021,7 +1021,7 @@ export function createConversationStore(
                 ...existing,
                 answers: payload.answers,
                 declined: payload.declined,
-                status: 'answered' as const,
+                status: payload.status ?? ('answered' as const),
                 // 兼容字段：首题摘要
                 answer: first
                   ? {

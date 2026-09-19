@@ -568,6 +568,8 @@ export interface ConversationActions {
     payload: {
       answers?: import('../../types/chat').SubAnswer[]
       declined?: boolean
+      /** 显式覆盖 status；缺省写入 'answered'。乐观更新失败时可用 'pending' 回滚 */
+      status?: import('../../types/chat').QuestionStatus
     }
   ) => void
 
