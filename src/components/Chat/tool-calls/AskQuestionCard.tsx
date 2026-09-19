@@ -220,10 +220,17 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
       // 乐观更新：立即把卡片切到已答态。
       // 后端 `question_answered` 事件回来时是幂等覆盖，不会造成抖动。
       const store = sessionStoreManager.getState().stores.get(block.sessionId)?.getState();
-      store?.updateQuestionBlock(block.id, {
-        answers: finalAnswers,
-        declined: kind === 'decline-all',
-      });
+      // decline-all 场景下无逐题答案，不写 answers 让 store 明确"没有答案"
+      if (kind === 'decline-all') {
+        store?.updateQuestionBlock(block.id, {
+          declined: true,
+        });
+      } else {
+        store?.updateQuestionBlock(block.id, {
+          answers: finalAnswers,
+          declined: false,
+        });
+      }
       try {
         // 提交到后端（router_dispatch → answer_question → oneshot 唤醒 MCP companion）
         await aiChatDispatch({ action: 'answer_question',
@@ -236,10 +243,9 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
         });
       } catch (error) {
         // 提交失败 → 回滚乐观状态，允许用户重试
+        // 只写 status；answers/declined 走 store 的 ?? existing 分支保留原值
         store?.updateQuestionBlock(block.id, {
           status: 'pending',
-          answers: undefined,
-          declined: undefined,
         });
         log.error(
           '提交答案失败:',

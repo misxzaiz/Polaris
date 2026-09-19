@@ -1019,8 +1019,9 @@ export function createConversationStore(
               const first = payload.answers?.[0]
               return {
                 ...existing,
-                answers: payload.answers,
-                declined: payload.declined,
+                // 只有 payload 显式传入时才覆盖，避免回滚时把既有 answers 抹成 undefined
+                answers: payload.answers ?? existing.answers,
+                declined: payload.declined ?? existing.declined,
                 status: payload.status ?? ('answered' as const),
                 // 兼容字段：首题摘要
                 answer: first

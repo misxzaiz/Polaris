@@ -653,16 +653,26 @@ export function handleAIEvent(
 
     case 'question_answered': {
       // 新版携带 answers[] 数组；老路径只有顶层 selected/customInput
-      const answers = event.answers && event.answers.length > 0
-        ? event.answers
-        : [{
+      if (event.declined) {
+        // decline-all 场景：无逐题答案，仅切换 declined 与 status
+        state.updateQuestionBlock(event.questionId, {
+          declined: true,
+        })
+      } else if (event.answers && event.answers.length > 0) {
+        state.updateQuestionBlock(event.questionId, {
+          answers: event.answers,
+          declined: false,
+        })
+      } else {
+        // 老路径 fallback：仅顶层 selected/customInput
+        state.updateQuestionBlock(event.questionId, {
+          answers: [{
             selected: event.selected || [],
             customInput: event.customInput,
-          }]
-      state.updateQuestionBlock(event.questionId, {
-        answers,
-        declined: event.declined,
-      })
+          }],
+          declined: false,
+        })
+      }
       break
     }
 

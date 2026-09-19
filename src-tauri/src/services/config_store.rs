@@ -34,6 +34,13 @@ impl ConfigStore {
 
         let mut config = Self::load_from_file(&config_path)?;
 
+        // 迁移：老版本 interaction.askMcpEnabled=false 被 General 设置开关控制；
+        // v10.5.3 起该开关归属 polaris.ask 插件，需要一次性映射到插件禁用状态。
+        let legacy_ask_disabled = Self::detect_legacy_ask_disabled(&config_path);
+        if legacy_ask_disabled {
+            Self::migrate_legacy_ask_disabled_to_plugin(&config_dir);
+        }
+
         // 验证配置
         config.validate();
 
@@ -170,6 +177,104 @@ impl ConfigStore {
 
         std::fs::rename(&temp_path, &self.config_path)?;
         Ok(())
+    }
+
+    /// 检测旧版配置里 `interaction.askMcpEnabled=false` 是否出现过。
+    ///
+    /// v10.5.3 起该开关被移除，语义下沉到 polaris.ask 插件禁用状态；
+    /// 若不迁移，曾显式关闭 AI 提问的用户会在升级后"无声"重开，属于体验回归。
+    /// 用 `Value` 宽松读取，因为新 `Config` 类型已不含该字段，serde 会忽略。
+    fn detect_legacy_ask_disabled(path: &Path) -> bool {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => return false,
+        };
+        let value: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+        value
+            .get("interaction")
+            .and_then(|v| v.get("askMcpEnabled"))
+            .and_then(|v| v.as_bool())
+            == Some(false)
+    }
+
+    /// 一次性迁移：把老 `interaction.askMcpEnabled=false` 映射到 polaris.ask 插件禁用。
+    ///
+    /// 幂等：
+    ///   1. 覆盖 plugin_states["polaris.ask"] 的启用状态，其余字段按插件默认值补齐
+    ///   2. 清理 config.json 里的 `interaction.askMcpEnabled` 字段，避免下次启动重复迁移
+    /// 老 `interaction` 整个 block 若空则删除，非空则保留其余字段（防御未来扩展）。
+    fn migrate_legacy_ask_disabled_to_plugin(config_dir: &Path) {
+        let state_service = crate::services::plugin_state_service::PluginStateService::new(
+            config_dir.to_path_buf(),
+        );
+        let mut states = match state_service.load() {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("[ConfigStore] 迁移 ask 开关：读取插件状态失败 {}", e);
+                return;
+            }
+        };
+        use crate::models::plugin_state::PluginState;
+        let entry = states.entry("polaris.ask".to_string()).or_insert(PluginState {
+            enabled: true,
+            ui_enabled: true,
+            mcp_enabled: true,
+            mcp_servers: Default::default(),
+        });
+        let already_disabled = !entry.enabled;
+        entry.enabled = false;
+        entry.mcp_enabled = false;
+        if state_service.save(&states).is_err() {
+            return;
+        }
+        if !already_disabled {
+            eprintln!(
+                "[ConfigStore] 已把 legacy interaction.askMcpEnabled=false 迁移到 polaris.ask 插件禁用"
+            );
+        }
+
+        // 清理 config.json 里的老字段，避免每次启动重复迁移
+        Self::remove_legacy_ask_field_from_config(config_dir);
+    }
+
+    /// 从 config.json 里删除 `interaction.askMcpEnabled`。
+    /// 若 `interaction` block 清空则整个删除；解析失败静默跳过。
+    fn remove_legacy_ask_field_from_config(config_dir: &Path) {
+        let path = config_dir.join("config.json");
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let mut value: serde_json::Value = match serde_json::from_str(&content) {
+            Ok(v) => v,
+            Err(_) => return,
+        };
+        let interaction_obj = match value.get_mut("interaction") {
+            Some(v) => v.as_object_mut(),
+            None => return,
+        };
+        let interaction = match interaction_obj {
+            Some(obj) => obj,
+            None => return,
+        };
+        interaction.remove("askMcpEnabled");
+        if interaction.is_empty() {
+            if let Some(obj) = value.as_object_mut() {
+                obj.remove("interaction");
+            }
+        }
+        let new_content = match serde_json::to_string_pretty(&value) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let tmp_path = path.with_extension("json.tmp");
+        if std::fs::write(&tmp_path, &new_content).is_err() {
+            return;
+        }
+        let _ = std::fs::rename(&tmp_path, &path);
     }
 
     /// 获取配置
