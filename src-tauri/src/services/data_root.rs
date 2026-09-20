@@ -226,39 +226,82 @@ impl DataRoot {
     ///
     /// 历史代码大量依赖 `config_dir.join("scheduler")`、`config_dir.join("plugins")`
     /// 等模式，DataRoot 不再强制下沉到 `<root>/config/` 子目录，避免破坏现有布局。
+    ///
+    /// **多实例语义**：`config_dir()` 始终指向共享层。它是 25+ 处下游代码的
+    /// 入口（plugins / agents / skills / scheduler），整体下沉到实例层会把
+    /// 共享资源一起搬走。实例专属数据请改用下面的 `*_dir()` 实例层方法。
     pub fn config_dir(&self) -> PathBuf {
         self.root.clone()
     }
 
+    /// 共享层下的子目录（所有实例共用）
+    fn shared(&self, name: &str) -> PathBuf {
+        self.root.join(name)
+    }
+
+    /// 实例层下的子目录。实例 0 退回共享层原路径（零数据迁移）。
+    ///
+    /// 实例 0：`<root>/<name>`
+    /// 实例 n：`<root>/instances/<n>/<name>`
+    fn scoped(&self, name: &str) -> PathBuf {
+        match crate::services::instance::instance_subdir() {
+            Some(sub) => self.root.join(sub).join(name),
+            None => self.root.join(name),
+        }
+    }
+
+    /// 日志目录（实例层）
+    ///
+    /// 按实例隔离：多实例同时启动时各自写各自的日志文件。文件名另按实例
+    /// 后缀区分（`instance::log_filename`），见 `services/logger.rs`。
     pub fn logs_dir(&self) -> PathBuf {
-        self.root.join("logs")
+        self.scoped("logs")
     }
 
+    /// 会话索引目录（实例层）
+    ///
+    /// 按实例隔离：`dialogs/index.db` 是会话历史索引，两个实例共享同一份会
+    /// 让会话列表互相污染。SQLite 已开 WAL，但跨进程写仍需 `busy_timeout`
+    /// （见 `dialog_index::tune_pragmas`）。
     pub fn dialogs_dir(&self) -> PathBuf {
-        self.root.join("dialogs")
+        self.scoped("dialogs")
     }
 
-    /// 调度器子目录（沿用历史约定 `<root>/scheduler/`）
-    pub fn scheduler_dir(&self) -> PathBuf {
-        self.root.join("scheduler")
-    }
-
-    /// 插件子目录（沿用历史约定 `<root>/plugins/`）
-    pub fn plugins_dir(&self) -> PathBuf {
-        self.root.join("plugins")
-    }
-
-    pub fn cache_dir(&self) -> PathBuf {
-        self.root.join("cache")
-    }
-
-    pub fn meta_dir(&self) -> PathBuf {
-        self.root.join(".meta")
-    }
-
-    /// 内置浏览器下载落盘目录（`<root>/downloads`）
+    /// 下载目录（实例层）
+    ///
+    /// 按实例隔离：内置浏览器的下载归属具体窗口，实例间应互不可见。
     pub fn downloads_dir(&self) -> PathBuf {
-        self.root.join("downloads")
+        self.scoped("downloads")
+    }
+
+    /// 调度器子目录（**共享层**）
+    ///
+    /// 已知限制：调度任务不随实例隔离。`commands/scheduler.rs` 通过
+    /// `data_root().config_dir()` 解析路径，而 `config_dir()` 被 25+ 处
+    /// 插件/agents/skills 代码复用——若把 `config_dir()` 整体下沉到实例层，
+    /// 会把插件与 agents 一起搬走，而它们是明确定义的共享资源。
+    /// 因此调度器跟随共享层，多实例下定时任务只有一份。
+    /// 见 `plans/multi-instance-support-plan.md` §6。
+    pub fn scheduler_dir(&self) -> PathBuf {
+        self.shared("scheduler")
+    }
+
+    /// 插件子目录（共享层：插件包只安装一份）
+    pub fn plugins_dir(&self) -> PathBuf {
+        self.shared("plugins")
+    }
+
+    /// 缓存目录（共享层）
+    pub fn cache_dir(&self) -> PathBuf {
+        self.shared("cache")
+    }
+
+    /// 元数据目录（**共享层**）
+    ///
+    /// 存放数据根迁移/重定位审计日志（`migration-*.json`、`relocation-*.json`、
+    /// `superseded-*.json`）。这些是全局性操作记录，不属于任何单个实例。
+    pub fn meta_dir(&self) -> PathBuf {
+        self.shared(".meta")
     }
 
     /// 写入新的锚点 dataRoot；为 None 表示恢复默认

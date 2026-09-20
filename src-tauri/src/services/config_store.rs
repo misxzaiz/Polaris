@@ -161,8 +161,24 @@ impl ConfigStore {
         }
     }
 
-    /// 保存配置到文件（原子写入）
+    /// 保存配置到文件（原子写入 + 跨进程互斥）
+    ///
+    /// 多实例下 config.json 由所有 polaris.exe 共享。原子写只保证内容完整，
+    /// 不保证互斥——两个实例同时写会静默覆盖。写入前获取 sidecar 锁
+    /// `config.json.lock`，超时（3s）后打 warn 并降级为直接写入。
     pub fn save(&self) -> Result<()> {
+        let lock_path = self.config_path.with_extension("json.lock");
+        let _lock = CrossProcessLock::acquire(
+            &lock_path,
+            std::time::Duration::from_secs(3),
+        );
+        if _lock.is_none() {
+            tracing::warn!(
+                "[Config] 配置写锁等待超时（3s），降级为无锁写入，跨实例配置可能被覆盖: {}",
+                self.config_path.display()
+            );
+        }
+
         // 原子写入：先写临时文件，再重命名
         let temp_path = self.config_path.with_extension("json.tmp");
         let content = serde_json::to_string_pretty(&self.config)?;
@@ -787,6 +803,147 @@ fn merge_json_object(target: &mut serde_json::Value, patch: &serde_json::Value) 
     }
 }
 
+// ============================================================================
+// 跨进程配置写锁
+// ============================================================================
+//
+// 多实例下 config.json 是所有 polaris.exe 共享的同一份文件。原子写（tmp +
+// rename）只保证文件内容完整，**不保证互斥**：两个实例同时 save() 会静默地
+// 后写覆盖先写，配置漂移且无痕迹。
+//
+// 这里用一个 sidecar 锁文件 + 内核级锁实现跨进程互斥：
+// - Windows：`CreateFileW` + `LockFileEx`（排他锁）
+// - Unix：    `flock(LOCK_EX)`
+//
+// 锁等待 3 秒。超时后**打 warn 并继续写入**（降级不静默）——配置写入必须
+// 响应，宁可偶尔竞态也不能让设置页卡死。锁本身是 best-effort 的。
+
+#[cfg(windows)]
+pub struct CrossProcessLock {
+    handle: std::os::windows::raw::HANDLE,
+}
+
+#[cfg(windows)]
+impl CrossProcessLock {
+    /// 尝试获取排他锁，最多等待 `timeout`。
+    /// 成功返回 `Some(lock)`；超时返回 `None`（调用方应自行告警）。
+    pub fn acquire(path: &Path, timeout: std::time::Duration) -> Option<Self> {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::Foundation::{
+            CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
+        };
+        use windows_sys::Win32::Storage::FileSystem::{
+            CREATE_ALWAYS, CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, LOCKFILE_EXCLUSIVE_LOCK, LockFileEx,
+        };
+
+        let wpath: Vec<u16> = path
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+
+        let handle = unsafe {
+            CreateFileW(
+                wpath.as_ptr(),
+                GENERIC_READ | GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null_mut(),
+                CREATE_ALWAYS,
+                0,
+                INVALID_HANDLE_VALUE,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE || handle == std::ptr::null_mut() {
+            let err = std::io::Error::last_os_error();
+            tracing::warn!(
+                "[Config] 打开配置锁文件失败 {} ({})",
+                path.display(),
+                err
+            );
+            return None;
+        }
+
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let ok = unsafe {
+                LockFileEx(
+                    handle,
+                    LOCKFILE_EXCLUSIVE_LOCK,
+                    0,
+                    0,
+                    0,
+                    std::ptr::null_mut(),
+                )
+            };
+            if ok != 0 {
+                return Some(Self { handle });
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+
+        let _ = unsafe { CloseHandle(handle) };
+        None
+    }
+}
+
+#[cfg(windows)]
+impl Drop for CrossProcessLock {
+    fn drop(&mut self) {
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
+        let _ = unsafe { UnlockFileEx(self.handle, 0, 0, 0, std::ptr::null_mut()) };
+        let _ = unsafe { CloseHandle(self.handle) };
+    }
+}
+
+/// Unix 实现：`flock(LOCK_EX)` 跨进程排他锁。
+#[cfg(unix)]
+pub struct CrossProcessLock {
+    file: std::fs::File,
+}
+
+#[cfg(unix)]
+impl CrossProcessLock {
+    /// 尝试获取锁，最多等待 `timeout`。
+    pub fn acquire(path: &Path, timeout: std::time::Duration) -> Option<Self> {
+        let file = match std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+        {
+            Ok(f) => f,
+            Err(e) => {
+                tracing::warn!("[Config] 打开配置锁文件失败 {}: {}", path.display(), e);
+                return None;
+            }
+        };
+
+        let deadline = std::time::Instant::now() + timeout;
+        let poll = std::time::Duration::from_millis(50);
+        loop {
+            if libc::flock(file.as_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 {
+                return Some(Self { file });
+            }
+            if std::time::Instant::now() >= deadline {
+                break;
+            }
+            std::thread::sleep(poll);
+        }
+        None
+    }
+}
+
+#[cfg(unix)]
+impl Drop for CrossProcessLock {
+    fn drop(&mut self) {
+        let _ = libc::flock(self.file.as_fd(), libc::LOCK_UN);
+    }
+}
 /// 旧版配置格式（用于迁移）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

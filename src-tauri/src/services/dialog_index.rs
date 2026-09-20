@@ -139,6 +139,10 @@ fn open_connection() -> Result<Connection> {
 fn tune_pragmas(conn: &Connection) {
     let _ = conn.pragma_update(None, "journal_mode", "WAL");
     let _ = conn.pragma_update(None, "synchronous", "NORMAL");
+    // 多实例：两个 polaris.exe 同时写同一份 index.db 时，WAL 允许读写并发，
+    // 但写-写冲突仍需等待对方提交。无 busy_timeout 时会立即返回
+    // `database is locked`，因此显式设置重试窗口。
+    let _ = conn.pragma_update(None, "busy_timeout", 5000);
 }
 
 fn read_schema_version(conn: &Connection) -> Result<i64> {

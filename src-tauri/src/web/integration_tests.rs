@@ -106,7 +106,7 @@ let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/
 router: {
             use crate::contracts::Router as _;
             // 测试使用与生产装配一致的 PolicyPermission（含内置管理面收紧规则），
-            // 避免 StaticPermission 全放行掩盖 cap.config 远程拒绝回归。
+            // 避免 StaticPermission 全放行掩盖 cap.config 远程读写行为回归。
             use crate::services::router::{ConfigCapability, EventAdapter, PolicyPermission, RouterBus};
             let adapter = Arc::new(EventAdapter::new(256));
             let bus = Arc::new(RouterBus::new(
@@ -401,7 +401,8 @@ async fn settings_update_saves() {
 //
 // Web/移动端（Source::Remote）走 PolicyPermission（内置管理面收紧）。
 // cap.config **读**（GET /api/settings）必须放行 —— 连接前第一步；
-// cap.config 的**写**（PATCH /api/settings）由 ConfigCapability 内 source 校验拒绝。
+// cap.config 的**写**（PATCH /api/settings）也已放开（产品决策：远程可写，
+// 鉴权依赖传输层 token；白名单 schema 校验仍生效）。
 // ═══════════════════════════════════════════════════════════════════════════
 
 #[tokio::test]
@@ -420,8 +421,9 @@ async fn remote_get_settings_with_policy_permission_allowed() {
 }
 
 #[tokio::test]
-async fn remote_patch_settings_with_policy_permission_rejected() {
-    // 安全性：远程写仍被能力内 source 校验拒绝（403），读可写不可。
+async fn remote_patch_settings_with_policy_permission_allowed() {
+    // 放开远程写后：PATCH /api/settings 经 cap.config patch（Remote 源）→ 200。
+    // 鉴权由传输层 token 保证；白名单 schema 校验仍拦截未列入字段。
     let state = create_test_state();
     let app = create_router(state.clone());
 
@@ -433,7 +435,7 @@ async fn remote_patch_settings_with_policy_permission_rejected() {
     };
     let body = serde_json::to_string(&updated).unwrap();
 
-let req = Request::builder()
+    let req = Request::builder()
         .method(Method::PATCH)
         .uri("/api/settings")
         .header(AUTHORIZATION, format!("Bearer {}", md5_of(TEST_TOKEN)))
@@ -441,7 +443,7 @@ let req = Request::builder()
         .body(Body::from(body))
         .unwrap();
     let res = app.oneshot(req).await.unwrap();
-    assert_eq!(res.status(), StatusCode::FORBIDDEN);
+    assert_eq!(res.status(), StatusCode::OK);
 }
 
 // ============================================================================

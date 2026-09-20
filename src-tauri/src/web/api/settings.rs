@@ -38,8 +38,8 @@ fn dispatch_config(state: &AppState, payload: serde_json::Value) -> Result<serde
         .map_err(WebError::Internal)?;
     match reply.result {
         Ok(v) => Ok(v),
-        // cap.config 写保护（远程拒绝）→ Forbidden；其余业务错误 → Internal。
-        // 错误消息约定见 ConfigCapability::ensure_writable_source。
+        // 注：cap.config 写保护已移除（远程可写），此 Forbidden 分支保留以防
+        // 未来重新引入按源拒写（错误消息约定见 ConfigCapability::ensure_writable_source）。
         Err(e) if e.contains("不允许远程来源") => Err(WebError::Forbidden(e)),
         Err(e) => Err(WebError::Internal(e)),
     }

@@ -16,9 +16,8 @@
 //! `cap.config` **读**是 Web/移动端（`Source::Remote`）连接与驱动的刚需
 //! （`configService.getConfig` → `cap.config get full`，连接前第一步），
 //! 曾内置 `cap.config*` + Remote deny，导致移动端/Web 连接即「权限拒绝」。
-//! `cap.config` 的**写保护**下沉到 `ConfigCapability::invoke` 内部按 source
-//! 校验（Remote 拒绝写，Bootstrap / Plugin 放行），因为能力 id 是扁平的，
-//! 策略矩阵按 `(source, capability)` 无法区分同能力内的读/写动作。
+//! 写保护曾下沉到 `ConfigCapability::invoke` 内部按 source 校验（Remote 拒绝写），
+//! 产品决策已放开：远程（Web/移动端）可写，鉴权依赖传输层 token。
 //! 内置 deny 仅保留能力级「远程完全不可用」域：`cap.data_root*` / `cap.plugin*`。
 use crate::contracts::{Permission, PermissionRequest, PermissionVerdict, Source};
 use crate::models::config::PermissionPolicyConfig;
@@ -165,8 +164,7 @@ impl PolicyPermission {
         // 追加在 config 规则之后 → `best_match` 同特异性后者覆盖前者，
         // 用户在 config 显式 allow（精确规则特异性更高）可覆盖内置 deny。
         // step7 §4 验收：规则固化为代码内置默认，config 缺省也生效，部署/换机不丢。
-        // 注意：cap.config 不在其中 —— 见模块文档，远程读是 Web/移动端刚需，
-        // 写保护下沉到 ConfigCapability::invoke 内按 source 校验。
+        // 注意：cap.config 不在其中 —— 见模块文档，远程读写均为 Web/移动端刚需。
         for (cap_prefix, wildcard) in [
             ("cap.data_root", true),
             ("cap.plugin", true),
@@ -358,11 +356,11 @@ mod tests {
     fn builtin_rules_deny_remote_management_caps() {
         // config 缺省（from_config(None)）也收紧管理面：内置默认规则生效
         let p = PolicyPermission::from_config(None);
-        // cap.config 读是 Web/移动端刚需 → 策略层放行（写保护下沉到能力内）
+        // cap.config 远程读写均放行（读是 Web/移动端刚需；写也已放开，能力内不再拒写）
         assert_eq!(
             p.check(&req("cap.config", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Allow,
-            "cap.config 策略层放行（读必需；写由能力内 source 校验）"
+            "cap.config 策略层放行（远程读写均不拒）"
         );
         assert_eq!(
             p.check(&req("cap.config.write", Source::Remote { token: "t".into() })).unwrap(),

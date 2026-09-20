@@ -26,8 +26,10 @@ impl Logger {
         let log_dir = Self::log_dir();
         std::fs::create_dir_all(&log_dir).ok();
 
-        // 创建日志文件（按天轮转）
-        let file_appender = rolling::daily(&log_dir, "app.log");
+        // 创建日志文件（按天轮转）。
+        // 文件名按实例区分：多实例同时运行时各自写各自的日志文件。
+        let log_file = crate::services::instance::log_filename();
+        let file_appender = rolling::daily(&log_dir, &log_file);
         let (non_blocking_appender, guard) = non_blocking(file_appender);
 
         // 配置订阅者
@@ -61,7 +63,7 @@ impl Logger {
 
     /// 获取当前日志文件路径
     pub fn current_log_file() -> PathBuf {
-        Self::log_dir().join("app.log")
+        Self::log_dir().join(crate::services::instance::log_filename())
     }
 
     /// 清空日志文件

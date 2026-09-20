@@ -36,16 +36,16 @@
 //! - `schema`  `{ "action": "schema" }` → 白名单纯声明
 //! - `reset_cli`  `{ "action": "reset_cli" }` → `{ "reset": true }`（占位，后续专用动作）
 //!
-//! # 写保护（source 校验，下沉到能力内）
+//! # 写权限（全源放行）
 //!
 //! `cap.config` 不在 `PolicyPermission` 内置 deny 里（远程**读**是 Web/移动端
-//! 连接与驱动刚需），因此**写动作**（`patch` / `reset_cli`）在 `invoke` 内按
-//! `ctx.source()` 校验：
-//! - `Source::Bootstrap`（桌面主窗口 IPC）→ 放行
-//! - `Source::Plugin`（MCP 桥 `polaris-dispatch` 等，`ask_listener` 注入）→ 放行
-//! - `Source::Remote`（Web/移动端 HTTP）→ 拒绝，返回 `远程不可写配置`
+//! 连接与驱动刚需），**写动作**（`patch` / `reset_cli`）也对全部来源放行：
+//! - `Source::Bootstrap`（桌面主窗口 IPC）
+//! - `Source::Plugin`（MCP 桥 `polaris-dispatch` 等，`ask_listener` 注入）
+//! - `Source::Remote`（Web/移动端 HTTP，token 已由传输层鉴权 + 脱敏）
 //!
-//! 读动作（`get` / `schema`）全源放行（token 已由传输层鉴权 + 脱敏）。
+//! 安全说明：远程写不再按来源拒绝，鉴权完全依赖传输层 token；配置白名单
+//! schema 校验（未列入字段/section 拒绝）与敏感字段脱敏仍然生效。
 
 use crate::contracts::{Capability, CapabilityId, Context, Value};
 use crate::models::config::Config;
@@ -67,19 +67,12 @@ impl ConfigCapability {
         Self { config_store, on_patch }
     }
 
-    /// 写动作（patch/reset_cli）的来源校验：Bootstrap & Plugin 放行，Remote 拒绝。
+    /// 写动作（patch/reset_cli）的源校验——全源放行（含 Remote）。
     ///
-    /// 说明：策略矩阵按 `(source, capability)` 无法区分同一能力内的读/写动作，
-    /// 且 `cap.config` 远程**读**是 Web/移动端刚需（见模块文档），因此写保护
-    /// 下沉到能力内按 action 粒度校验。
-    fn ensure_writable_source(&self, source: &crate::contracts::Source) -> Result<(), String> {
-        match source {
-            crate::contracts::Source::Bootstrap => Ok(()),
-            crate::contracts::Source::Plugin { .. } => Ok(()),
-            crate::contracts::Source::Remote { .. } => {
-                Err("cap.config 写操作不允许远程来源（仅桌面端与插件桥可写）".to_string())
-            }
-        }
+    /// 曾按 source 拒绝远程写（仅 Bootstrap/Plugin 可写），产品决策放开：
+    /// 移动端/Web 需要远程写入配置。鉴权完全依赖传输层 token 注入。
+    fn ensure_writable_source(&self, _source: &crate::contracts::Source) -> Result<(), String> {
+        Ok(())
     }
 }
 
@@ -411,8 +404,8 @@ impl Capability for ConfigCapability {
                 do_get(config.get(), section)
             }
             "patch" => {
-                // 写保护：远程源（Web/移动端）不可写配置（读已放行，见模块文档）
-                self.ensure_writable_source(ctx.source())?;
+                // 全源放行（含远程 Web/移动端）：写保护已移除，鉴权靠传输层 token。
+                // 白名单 schema 校验 + 敏感脱敏仍在 do_patch / do_get 内生效。
                 // 顶层对象形态：{ "patch": { key: value, ... } } —— 前端
                 // updateConfigPatch 切换后走此协议（一次 patch 多个顶层 key，
                 // 白名单 section 严格深层合并 / 自由 key 透传 store.patch）。
@@ -465,7 +458,7 @@ impl Capability for ConfigCapability {
                 }))
             }
             "reset_cli" => {
-                // 写保护：与 patch 同源校验
+                // 与 patch 同：全源放行（占位动作）
                 self.ensure_writable_source(ctx.source())?;
                 Ok(serde_json::json!({ "reset": true }))
             }

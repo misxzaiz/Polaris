@@ -199,6 +199,52 @@ async fn refresh_engine_configs(state: &AppState, new_config: Config) {
     registry.refresh_all_configs(new_config);
 }
 
+/// 单实例/多实例注册点（扩展 trait）。
+///
+/// `#[cfg]` 无法用在方法链中间，因此把该步做成 `Builder` 的扩展方法，并按
+/// feature 编译出两种实现（`#[cfg_attr]` 挂不同的 trait 定义），调用方
+/// `.with_single_instance_guard()` 无需感知。
+///
+/// - `multi-instance`（默认）：允许同时运行多个 polaris.exe。每个实例使用
+///   独立的 WebView2 UserData 目录（`services::instance::webview_data_dir`），
+///   从根本上规避 `0x8007139F`。
+/// - 其余情况（仅 `tauri-plugin-single-instance`）：注册单实例守护，重复启动
+///   时聚焦旧实例主窗口并退出自身。这是紧急回退路径，编译命令见 Cargo.toml
+///   的 `multi-instance` feature 注释。
+#[cfg(all(feature = "tauri-app", not(feature = "tauri-plugin-single-instance")))]
+#[cfg_attr(test, allow(dead_code))]
+trait SingleInstanceGuard {
+    fn with_single_instance_guard(self) -> Self;
+}
+
+#[cfg(all(feature = "tauri-app", not(feature = "tauri-plugin-single-instance")))]
+impl<R: tauri::Runtime> SingleInstanceGuard for tauri::Builder<R> {
+    fn with_single_instance_guard(self) -> Self {
+        self
+    }
+}
+
+#[cfg(all(feature = "tauri-app", feature = "tauri-plugin-single-instance"))]
+#[cfg_attr(test, allow(dead_code))]
+trait SingleInstanceGuard {
+    fn with_single_instance_guard(self) -> Self;
+}
+
+#[cfg(all(feature = "tauri-app", feature = "tauri-plugin-single-instance"))]
+impl<R: tauri::Runtime> SingleInstanceGuard for tauri::Builder<R> {
+    fn with_single_instance_guard(self) -> Self {
+        self.plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+            use tauri::Manager;
+            // 聚焦已存在的旧实例主窗口（从最小化/后台唤起）
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+        }))
+    }
+}
+
 /// 配置变更后广播事件，通知各模块按需调整（热切换）。
 ///
 /// 事件名：`config-changed`
@@ -535,20 +581,16 @@ pub fn run() {
     let integration_manager = IntegrationManager::new()
         .with_engine_registry(engine_registry_arc.clone());
 
+    // 实例身份：必须先于任何路径解析调用。`data_root()` 是懒初始化的
+    // `OnceLock`，一旦有路径被解析，实例号就固定下来。
+    let instance_id = services::instance::resolve();
+    tracing::info!(
+        "[Instance] 实例号 = {}（WebView2 UserData 目录与实例数据层据此隔离）",
+        instance_id
+    );
+
     tauri::Builder::default()
-        // 单实例守护：必须第一个注册，重复启动时聚焦旧实例主窗口并退出自身。
-        // 根因：多个 polaris.exe 共用同一个 WebView2 UserData 目录，旧实例锁住目录后，
-        // 新实例创建 webview 会失败（0x8007139F「组或资源状态不正确」），表现为
-        // 后台服务正常但桌面窗口不显示。单实例从源头消除该竞争。
-        .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            use tauri::Manager;
-            // 聚焦已存在的旧实例主窗口（从最小化/后台唤起）
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
-        }))
+        .with_single_instance_guard()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -643,28 +685,27 @@ pub fn run() {
                 .decorations(false)
                 .devtools(true);
 
-            // 分模式 UserData 目录：dev/release/test-profile 隔离，避免脏锁交叉污染。
-            //   - dev（debug 构建）           ：com.polaris.app.dev
-            //   - test-profile（release 测试包）：com.polaris.app.test（与正式版隔离，
-            //                                      允许 polaris-dev 测试包与正式版同时运行）
-            //   - release（正式版）            ：com.polaris.app（保持兼容）
-            let data_dir = if cfg!(debug_assertions) {
-                // dev 构建：使用独立目录，彻底与 release 解耦
-                let base = dirs::data_local_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
-                base.join("com.polaris.app.dev").join("EBWebView")
-            } else if cfg!(feature = "test-profile") {
-                let base = dirs::data_local_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
-                base.join("com.polaris.app.test").join("EBWebView")
-            } else {
-                // release 构建：沿用原目录，保持已安装版本的用户数据兼容
-                let base = dirs::data_local_dir()
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
-                base.join("com.polaris.app").join("EBWebView")
-            };
-            tracing::info!("[Window] WebView2 UserData 目录: {}", data_dir.display());
+            // 分模式 + 分实例 UserData 目录，避免脏锁交叉污染。
+            //
+            //   - dev（debug 构建）           ：com.polaris.app.dev[.inst<n>]
+            //   - test-profile（release 测试包）：com.polaris.app.test[.inst<n>]
+            //                                      （与正式版隔离，允许 polaris-dev
+            //                                       测试包与正式版同时运行）
+            //   - release（正式版）            ：com.polaris.app[.inst<n>]
+            //
+            // `.inst<n>` 后缀是多实例的硬隔离：多个 polaris.exe 共用同一个
+            // WebView2 UserData 目录时，旧实例锁住目录，新实例创建 webview 会
+            // 失败（0x8007139F），表现为后台服务正常但桌面窗口不显示。
+            let data_dir = services::instance::webview_data_dir();
+            tracing::info!(
+                "[Window] WebView2 UserData 目录: {}（实例 {}）",
+                data_dir.display(),
+                services::instance::id()
+            );
             builder = builder.data_directory(data_dir);
+
+            // 窗口标题按实例区分（正式版=多实例显示 "Polaris 2"；dev 带 -dev）。
+            builder = builder.title(services::instance::app_title());
 
             // additionalBrowserArgs 仅 dev 启用（P3 性能参数；release 从未传过）。
             // 若该参数是失败叠加因素，dev 隔离目录后可安全验证。
