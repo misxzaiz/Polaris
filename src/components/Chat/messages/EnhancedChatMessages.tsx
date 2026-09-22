@@ -136,7 +136,28 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
   const prevDisplayMessagesRef = useRef<ChatMessage[]>([]);
-  const lastContentRef = useRef<{ id: string; contentLen: number; blockCount: number } | null>(null);
+  const lastContentRef = useRef<{ id: string; contentLen: number; blockCount: number; interactiveSig: string } | null>(null);
+
+  /** 交互块状态指纹：question/form 等异步回填块在流式期间内部 status/answers 会变化，
+   *  而这些变化不反映在 contentLen/blockCount 上，必须纳入短路检测，否则提交答案后
+   *  卡片要等 AI 继续输出（或 session_end）才切到已答态。 */
+  const computeInteractiveSig = useCallback((blocks: import('@/types').ContentBlock[]): string => {
+    let sig = '';
+    for (const b of blocks) {
+      if (b.type === 'question') {
+        sig += `${b.id}:q${(b as import('@/types').QuestionBlock).status};`;
+      } else if (b.type === 'form') {
+        sig += `${b.id}:f${(b as import('@/types').FormBlock).status};`;
+      } else if (b.type === 'plugin_card') {
+        sig += `${b.id}:p${(b as import('@/types').PluginCardBlock).status};`;
+      } else if (b.type === 'tool_call') {
+        sig += `${b.id}:t${(b as import('@/types').ToolCallBlock).status};`;
+      } else if (b.type === 'plan_mode') {
+        sig += `${b.id}:m${(b as import('@/types').PlanModeBlock).status};`;
+      }
+    }
+    return sig;
+  }, []);
 
   const displayMessages = useMemo(() => {
     if (!currentMessage || !isStreaming) {
@@ -152,16 +173,18 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
         ? (lastBlock as ThinkingBlock).content?.length || 0
         : 0;
     const currentBlockCount = currentMessage.blocks.length;
+    const interactiveSig = computeInteractiveSig(currentMessage.blocks);
 
     if (
       lastContentRef.current?.id === currentMessage.id &&
       lastContentRef.current?.contentLen === currentContentLen &&
-      lastContentRef.current?.blockCount === currentBlockCount
+      lastContentRef.current?.blockCount === currentBlockCount &&
+      lastContentRef.current?.interactiveSig === interactiveSig
     ) {
       return prevDisplayMessagesRef.current;
     }
 
-    lastContentRef.current = { id: currentMessage.id, contentLen: currentContentLen, blockCount: currentBlockCount };
+    lastContentRef.current = { id: currentMessage.id, contentLen: currentContentLen, blockCount: currentBlockCount, interactiveSig };
 
     const existingIndex = messages.findIndex(m => m.id === currentMessage.id);
 

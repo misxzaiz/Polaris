@@ -220,6 +220,23 @@ export const AssistantBubble = memo(function AssistantBubble({
         if (pb.status !== nb.status) return false;
         if (pb.output !== nb.output) return false;
       }
+      // 交互块（question/form/plugin_card/plan_mode）：内部 status/answers 异步回填，
+      // 引用变化但类型不变时若 status 变化必须放行重渲染（否则提交答案后卡片停在未答态）。
+      if (pb.type === 'question' && nb.type === 'question') {
+        if (pb.status !== nb.status) return false;
+        if (pb.declined !== nb.declined) return false;
+        if (JSON.stringify(pb.answers) !== JSON.stringify(nb.answers)) return false;
+      }
+      if (pb.type === 'form' && nb.type === 'form') {
+        if (pb.status !== nb.status) return false;
+        if (pb.ok !== nb.ok) return false;
+      }
+      if (pb.type === 'plugin_card' && nb.type === 'plugin_card') {
+        if (pb.status !== nb.status) return false;
+      }
+      if (pb.type === 'plan_mode' && nb.type === 'plan_mode') {
+        if (pb.status !== nb.status) return false;
+      }
     }
 
     return true;

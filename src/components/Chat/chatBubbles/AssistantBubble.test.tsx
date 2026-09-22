@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import React from 'react';
 import { render } from '@testing-library/react';
 import { AssistantBubble } from './AssistantBubble';
-import type { AssistantChatMessage, FormBlock } from '@/types';
+import type { AssistantChatMessage, FormBlock, QuestionBlock } from '@/types';
 
 /** 构造一条含 form 块的 assistant 消息 */
 function makeAssistantMessage(
@@ -40,6 +40,24 @@ function makeFormBlock(status: 'pending' | 'submitted'): FormBlock {
     ok: status === 'submitted',
     receipt: status === 'submitted' ? '待办已创建' : undefined,
     createdAt: '2026-09-13T00:00:00.000Z',
+  };
+}
+
+/** 构造一个 pending / answered 的 question 块 */
+function makeQuestionBlock(status: 'pending' | 'answered'): QuestionBlock {
+  return {
+    type: 'question',
+    id: 'q-1',
+    sessionId: 'session-1',
+    status,
+    questions: [{
+      question: '是否继续？',
+      header: '测试',
+      multiSelect: false,
+      options: [{ value: 'yes', label: '是' }, { value: 'no', label: '否' }],
+      allowCustomInput: false,
+    }],
+    answers: status === 'answered' ? [{ selected: ['yes'], customInput: undefined }] : [],
   };
 }
 
@@ -90,5 +108,49 @@ describe('AssistantBubble memo comparator', () => {
     // 仍为 pending：表单面板存在，无 success 条
     expect(readFormStatus(container).pendingForm).toBe(true);
     expect(readFormStatus(container).submitted).toBe(false);
+  });
+
+  it('流式消息 question 块 status 变化时重渲染（提交答案后立即切已答态）', () => {
+    // 构造 pending 态 question 块，isStreaming=true（AI 等待答案期间）
+    const pendingMsg = makeAssistantMessage([makeQuestionBlock('pending')]) as AssistantChatMessage & { isStreaming: boolean };
+    pendingMsg.isStreaming = true;
+
+    const { container, rerender } = render(<AssistantBubble message={pendingMsg} />);
+
+    // pending 态：存在 AskQuestionCard（未答态，有"提交"按钮）
+    const pendingCard = container.querySelector('[role="group"][aria-labelledby^="askq-title-"]');
+    expect(pendingCard).toBeTruthy();
+
+    // 模拟提交答案：updateQuestionBlock → 新 blocks 引用 + question status='answered'
+    const answeredMsg = makeAssistantMessage([makeQuestionBlock('answered')]) as AssistantChatMessage & { isStreaming: boolean };
+    answeredMsg.isStreaming = true;
+
+    rerender(<AssistantBubble message={answeredMsg} />);
+
+    // 修复后应重渲染：已答态卡片（success 样式条出现，原交互按钮消失）
+    const successBar = container.querySelector('[class*="bg-success-faint"]');
+    expect(successBar).toBeTruthy();
+    // 已答态标题（i18n key 在测试环境未解析，但 key 文本本身应出现）
+    expect(container.textContent).toContain('question.answeredCount');
+    // 已答态展示答案内容（不再有提交按钮）
+    expect(container.textContent).toContain('yes');
+  });
+
+  it('流式消息 question 块 status 相同时不重渲染（DOM 不变）', () => {
+    const pendingMsg = makeAssistantMessage([makeQuestionBlock('pending')]) as AssistantChatMessage & { isStreaming: boolean };
+    pendingMsg.isStreaming = true;
+
+    const { container, rerender } = render(<AssistantBubble message={pendingMsg} />);
+    const before = container.querySelector('[role="group"][aria-labelledby^="askq-title-"]');
+    expect(before).toBeTruthy();
+
+    // 同引用重新渲染（status 不变）
+    rerender(<AssistantBubble message={pendingMsg} />);
+
+    // 仍为 pending：交互卡片仍在
+    const after = container.querySelector('[role="group"][aria-labelledby^="askq-title-"]');
+    expect(after).toBeTruthy();
+    // 无 success 条（未切已答态）
+    expect(container.querySelector('[class*="bg-success-faint"]')).toBeFalsy();
   });
 });
