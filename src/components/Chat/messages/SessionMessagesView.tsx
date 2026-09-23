@@ -4,7 +4,8 @@
  * 直接使用 zustand store 订阅特定 session 的状态，避免复杂的 hook 链
  */
 
-import { memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import type { ComponentProps, MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -22,6 +23,7 @@ import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
+import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -108,9 +110,6 @@ function useSessionStoreSubscription<T>(
 
 export const SessionMessagesView = memo(function SessionMessagesView({ sessionId, onEditMessage }: SessionMessagesViewProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const autoScrollRef = useRef(true);
-  // 首帧忽略标记：与 EnhancedChatMessages 同构，防止冷启动测量后误判"在底部"
-  const firstAtBottomCallbackRef = useRef(true);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const collapseMode = useConfigStore((s) => s.config?.chatDisplay?.processBlockCollapse ?? 'auto');
 
@@ -187,6 +186,23 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     ? Math.min(visibleRange.start, displayMessages.length - 1)
     : displayMessages.length - 1;
 
+  // ===== 锚点模式自动滚动（useMessageAutoScroll，与 EnhancedChatMessages 同构）=====
+  // 消灭 150px 死区（atBottomThreshold→4），followOutput 回调精确跟随：
+  // 流式期间始终贴底（内容向上生长），非流式仅在「跟随态&&贴底」时跟随；
+  // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；
+  // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
+  const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming, initialAutoScroll: atBottomOnMount });
+  const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef } = scrollState;
+
+  // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）
+  useEffect(() => {
+    if (!isStreaming && autoScroll) {
+      compensateScroll();
+    }
+    // 依赖 displayMessages 末尾消息内容长度：流式结束归档后补偿
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming]);
+
   // 对话轮次分组
   const conversationRounds = useMemo(() => {
     return groupConversationRounds(displayMessages);
@@ -212,18 +228,9 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
       behavior: 'smooth',
     });
 
-    autoScrollRef.current = false;
+    setAutoScroll(false);
     setCurrentRoundIndex(roundIndex);
-  }, [conversationRounds]);
-
-  // 自动滚动到底部
-  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
-    if (firstAtBottomCallbackRef.current) {
-      firstAtBottomCallbackRef.current = false;
-      return;
-    }
-    autoScrollRef.current = atBottom;
-  }, []);
+  }, [conversationRounds, setAutoScroll]);
 
   // 滚动到指定消息
   const scrollToMessage = useCallback((index: number) => {
@@ -233,8 +240,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
       align: 'start',
       behavior: 'smooth',
     });
-    autoScrollRef.current = false;
-  }, []);
+    setAutoScroll(false);
+  }, [setAutoScroll]);
 
   // 滚动到顶部
   const scrollToTop = useCallback(() => {
@@ -244,8 +251,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
       align: 'start',
       behavior: 'smooth',
     });
-    autoScrollRef.current = false;
-  }, []);
+    setAutoScroll(false);
+  }, [setAutoScroll]);
 
   // 滚动到底部
   const scrollToBottom = useCallback(() => {
@@ -254,8 +261,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
       top: Number.MAX_SAFE_INTEGER,
       behavior: 'smooth',
     });
-    autoScrollRef.current = true;
-  }, []);
+    setAutoScroll(true);
+  }, [setAutoScroll]);
 
   // 消息滚动操作集合
   const scrollActions = useMemo<MessageScrollActions>(() => ({
@@ -264,28 +271,32 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     scrollToBottom,
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
-  // 挂载时根据上次可见区域校准 autoScroll：用户停在中间时不应贴底跟随，
-  // 避免 followOutput 在 resize/重挂载后把位置拉回末尾。
-  useEffect(() => {
-    autoScrollRef.current = atBottomOnMount;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // streaming 时自动滚动到底部
-  useEffect(() => {
-    if (isStreaming && autoScrollRef.current && virtuosoRef.current) {
-      virtuosoRef.current.scrollToIndex({
-        index: displayMessages.length - 1,
-        align: 'end',
-        behavior: 'smooth',
-      });
-    }
-  }, [isStreaming, displayMessages.length]);
-
   // 消息操作
   const messageActions = useMemo<MessageActions | undefined>(() => {
     return onEditMessage ? { onEdit: onEditMessage } : undefined;
   }, [onEditMessage]);
+
+  // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
+  // （组件内自持，稳定引用避免 Virtuoso 重渲染时整树卸载）
+  // react-virtuoso 会给 Scroller 传 ref（内部 scrollerRef），须 forwardRef 转发，
+  // 否则 virtuoso 拿不到 DOM（scrollerRef.current=null → 渲染崩溃）。
+  const Scroller = useMemo(() => {
+    const Scroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(
+      ({ onWheel: _ignoredWheel, ...props }, ref) => (
+        <div
+          {...props}
+          ref={(node) => {
+            if (typeof ref === 'function') ref(node);
+            else if (ref) (ref as MutableRefObject<HTMLDivElement | null>).current = node;
+            setScrollerRef(node);
+          }}
+          onWheel={handleWheel}
+        />
+      )
+    );
+    Scroller.displayName = 'AutoScrollScroller';
+    return Scroller;
+  }, [handleWheel, setScrollerRef]);
 
   return (
     <div className="h-full w-full relative">
@@ -302,6 +313,8 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
         components={{
           // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
           EmptyPlaceholder: EmptyState,
+          // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
+          Scroller: Scroller,
           Footer: () => (
             <>
               {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
@@ -312,9 +325,9 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
             </>
           ),
         }}
-        followOutput={autoScrollRef.current ? (isStreaming ? true : 'smooth') : false}
+        followOutput={followOutput}
         atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={150}
+        atBottomThreshold={AUTO_SCROLL_THRESHOLD}
         rangeChanged={handleRangeChange}
         increaseViewportBy={VIEWPORT_EXTENSION}
         initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}

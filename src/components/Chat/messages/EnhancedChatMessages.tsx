@@ -15,7 +15,8 @@
  * - compact: 可选，compact 模式隐藏导航器和搜索面板
  */
 
-import { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import { forwardRef, useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import type { ComponentProps, MutableRefObject } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import type { ChatMessage, AssistantChatMessage, TextBlock, ThinkingBlock } from '@/types';
 import { getChatDisplayStyleVars } from '@/types';
@@ -33,6 +34,7 @@ import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
 import { useMessageSearch, MessageSearchPanel } from '../search/MessageSearchPanel';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { renderChatMessage } from './renderChatMessage';
+import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
 import { EmptyState } from '../common/EmptyState';
 import { ThinkingOrb } from '../common/ThinkingOrb';
 import { DynamicIsland } from '../dynamic-island';
@@ -231,8 +233,25 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     : displayMessages.length - 1;
 
   const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const [autoScroll, setAutoScroll] = useState(atBottomOnMount);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
+
+  // ===== 锚点模式自动滚动（useMessageAutoScroll）=====
+  // 消灭 150px 死区（atBottomThreshold→4），followOutput 回调精确跟随：
+  // 流式期间始终贴底（内容向上生长），非流式仅在「跟随态&&贴底」时跟随；
+  // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；
+  // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
+  const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming, initialAutoScroll: atBottomOnMount });
+  // 注意：scrollToBottom 用组件自身实现（含 scrollActions 引用），不从 hook 解构以避免重复声明
+  const { autoScroll, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef } = scrollState;
+
+  // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）
+  useEffect(() => {
+    if (!isStreaming && autoScroll) {
+      compensateScroll();
+    }
+    // 依赖 displayMessages 末尾消息内容长度：流式结束归档后补偿
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming]);
 
   const conversationRounds = useMemo(() => {
     return groupConversationRounds(displayMessages);
@@ -278,18 +297,6 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [openSearch]);
 
-  // 首帧忽略标记：Virtuoso 冷启动测量完成后的第一次 atBottomStateChange
-  // 落点可能因估算高度误差而误判为"在底部"，导致 followOutput 把恢复位置拉回底部。
-  // 忽略挂载后第一次回调，之后的回调才是用户真实滚动行为。
-  const firstAtBottomCallbackRef = useRef(true);
-  const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
-    if (firstAtBottomCallbackRef.current) {
-      firstAtBottomCallbackRef.current = false;
-      return;
-    }
-    setAutoScroll(atBottom);
-  }, []);
-
   // 监听可见范围变化
   const handleRangeChange = useCallback((range: { startIndex: number; endIndex: number }) => {
     const { startIndex, endIndex } = range;
@@ -317,7 +324,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
 
     setAutoScroll(false);
     setCurrentRoundIndex(roundIndex);
-  }, [conversationRounds]);
+  }, [conversationRounds, setAutoScroll]);
 
   const scrollToBottom = useCallback(() => {
     if (!virtuosoRef.current) return;
@@ -326,7 +333,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
       behavior: 'smooth',
     });
     setAutoScroll(true);
-  }, []);
+  }, [setAutoScroll]);
 
   const scrollToTop = useCallback(() => {
     if (!virtuosoRef.current) return;
@@ -336,7 +343,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
       behavior: 'smooth',
     });
     setAutoScroll(false);
-  }, []);
+  }, [setAutoScroll]);
 
   const scrollToMessage = useCallback((index: number) => {
     if (!virtuosoRef.current) return;
@@ -346,7 +353,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
       behavior: 'smooth',
     });
     setAutoScroll(false);
-  }, []);
+  }, [setAutoScroll]);
 
   const scrollActions = useMemo<MessageScrollActions>(() => ({
     scrollToMessage,
@@ -372,6 +379,29 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
     return Header;
   }, [hasEarlier, loadingEarlier, handleLoadEarlier]);
 
+  // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随；ref 交给 hook 用于流式补偿观察
+  // 注意：react-virtuoso 会给 Scroller 传 ref（内部 scrollerRef）用于测量/滚动，函数组件必须 forwardRef
+  // 接收并转发，否则 virtuoso 拿不到 scroller DOM（scrollerRef.current=null → 渲染崩溃）。
+  const CustomScroller = useMemo(() => {
+    const Scroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(
+      ({ onWheel: _ignoredWheel, ...props }, ref) => (
+        <div
+          {...props}
+          ref={(node) => {
+            // 转发 virtuoso 的 ref（callback ref，可能为 null）
+            if (typeof ref === 'function') ref(node);
+            else if (ref) (ref as MutableRefObject<HTMLDivElement | null>).current = node;
+            // 同时挂自己的补偿观察 ref
+            setScrollerRef(node);
+          }}
+          onWheel={handleWheel}
+        />
+      )
+    );
+    Scroller.displayName = 'AutoScrollScroller';
+    return Scroller;
+  }, [handleWheel, setScrollerRef]);
+
   return (
     <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
       {/* 消息列表 */}
@@ -390,6 +420,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
             components={{
               // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
               EmptyPlaceholder: EmptyState,
+              Scroller: CustomScroller,
               Footer: () => (
                 <>
                   {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
@@ -401,9 +432,9 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               ),
               ...(LoadEarlierHeader ? { Header: LoadEarlierHeader } : {}),
             }}
-            followOutput={autoScroll ? (isStreaming ? true : 'smooth') : false}
+            followOutput={scrollState.followOutput}
             atBottomStateChange={handleAtBottomStateChange}
-            atBottomThreshold={150}
+            atBottomThreshold={AUTO_SCROLL_THRESHOLD}
             rangeChanged={handleRangeChange}
             startReached={hasEarlier ? handleLoadEarlier : undefined}
             increaseViewportBy={VIEWPORT_EXTENSION}
