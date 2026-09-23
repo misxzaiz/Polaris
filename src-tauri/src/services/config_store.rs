@@ -164,20 +164,16 @@ impl ConfigStore {
     /// 保存配置到文件（原子写入 + 跨进程互斥）
     ///
     /// 多实例下 config.json 由所有 polaris.exe 共享。原子写只保证内容完整，
-    /// 不保证互斥——两个实例同时写会静默覆盖。写入前获取 sidecar 锁
-    /// `config.json.lock`，超时（3s）后打 warn 并降级为直接写入。
+    /// 不保证互斥——两个实例同时写会静默覆盖。写入前获取命名 Mutex
+    /// 锁，超时（3s）后打 warn 并降级为直接写入。
     pub fn save(&self) -> Result<()> {
+        // 跨进程配置写锁：命名 Mutex（内核级），进程崩溃自动释放。
+        // 超时（3s）降级为无锁写入并告警（见 CrossProcessLock::acquire）。
         let lock_path = self.config_path.with_extension("json.lock");
         let _lock = CrossProcessLock::acquire(
             &lock_path,
             std::time::Duration::from_secs(3),
         );
-        if _lock.is_none() {
-            tracing::warn!(
-                "[Config] 配置写锁等待超时（3s），降级为无锁写入，跨实例配置可能被覆盖: {}",
-                self.config_path.display()
-            );
-        }
 
         // 原子写入：先写临时文件，再重命名
         let temp_path = self.config_path.with_extension("json.tmp");
@@ -811,9 +807,11 @@ fn merge_json_object(target: &mut serde_json::Value, patch: &serde_json::Value) 
 // rename）只保证文件内容完整，**不保证互斥**：两个实例同时 save() 会静默地
 // 后写覆盖先写，配置漂移且无痕迹。
 //
-// 这里用一个 sidecar 锁文件 + 内核级锁实现跨进程互斥：
-// - Windows：`CreateFileW` + `LockFileEx`（排他锁）
-// - Unix：    `flock(LOCK_EX)`
+// 这里用内核级互斥原语实现跨进程互斥：
+// - Windows：命名 Mutex（`CreateMutexW`）。与调度器锁（utils/mod.rs 的
+//   `SchedulerLock`）同源，动态加载 kernel32 调用，不涉及文件句柄/OVERLAPPED。
+//   进程崩溃时内核自动释放锁，比文件锁更健壮。
+// - Unix：    `flock(LOCK_EX)`（sidecar 锁文件）
 //
 // 锁等待 3 秒。超时后**打 warn 并继续写入**（降级不静默）——配置写入必须
 // 响应，宁可偶尔竞态也不能让设置页卡死。锁本身是 best-effort 的。
@@ -829,63 +827,79 @@ impl CrossProcessLock {
     /// 成功返回 `Some(lock)`；超时返回 `None`（调用方应自行告警）。
     pub fn acquire(path: &Path, timeout: std::time::Duration) -> Option<Self> {
         use std::os::windows::ffi::OsStrExt;
-        use windows_sys::Win32::Foundation::{
-            CloseHandle, GENERIC_READ, GENERIC_WRITE, INVALID_HANDLE_VALUE,
-        };
-        use windows_sys::Win32::Storage::FileSystem::{
-            CREATE_ALWAYS, CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, LOCKFILE_EXCLUSIVE_LOCK, LockFileEx,
-        };
 
-        let wpath: Vec<u16> = path
-            .as_os_str()
+        // 命名 Mutex 名称按锁文件路径派生：取锁文件路径的文件名（含扩展名）
+        // 作为命名空间段，避免路径分隔符问题，也保证不同配置路径互不干扰。
+        let stem = path
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "config.json.lock".to_string());
+        let name = format!("PolarisConfigWrite_{}", stem);
+        let wide_name: Vec<u16> = std::ffi::OsStr::new(&name)
             .encode_wide()
             .chain(std::iter::once(0))
             .collect();
 
-        let handle = unsafe {
-            CreateFileW(
-                wpath.as_ptr(),
-                GENERIC_READ | GENERIC_WRITE,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                std::ptr::null_mut(),
-                CREATE_ALWAYS,
-                0,
-                INVALID_HANDLE_VALUE,
-            )
-        };
-        if handle == INVALID_HANDLE_VALUE || handle == std::ptr::null_mut() {
+        // 动态加载 kernel32.dll，获取 CreateMutexW / GetLastError / WaitForSingleObject
+        // libloading 的 new/get 均为 unsafe（动态库符号解析的调用约定风险）
+        let kernel32 = unsafe { libloading::Library::new("kernel32.dll").ok()? };
+        let create_mutex: libloading::Symbol<
+            unsafe extern "system" fn(
+                *mut std::ffi::c_void,
+                i32,
+                *const u16,
+            ) -> *mut std::ffi::c_void,
+        > = unsafe { kernel32.get(b"CreateMutexW").ok()? };
+        let get_last_error: libloading::Symbol<unsafe extern "system" fn() -> u32> =
+            unsafe { kernel32.get(b"GetLastError").ok()? };
+
+        let handle = unsafe { create_mutex(std::ptr::null_mut(), 0, wide_name.as_ptr()) };
+        if handle.is_null() {
             let err = std::io::Error::last_os_error();
-            tracing::warn!(
-                "[Config] 打开配置锁文件失败 {} ({})",
-                path.display(),
-                err
-            );
+            tracing::warn!("[Config] 创建配置写锁 Mutex 失败 ({}): {}", name, err);
             return None;
         }
 
-        let deadline = std::time::Instant::now() + timeout;
-        loop {
-            let ok = unsafe {
-                LockFileEx(
-                    handle,
-                    LOCKFILE_EXCLUSIVE_LOCK,
-                    0,
-                    0,
-                    0,
-                    std::ptr::null_mut(),
-                )
-            };
-            if ok != 0 {
-                return Some(Self { handle });
-            }
-            if std::time::Instant::now() >= deadline {
-                break;
-            }
-            std::thread::sleep(std::time::Duration::from_millis(50));
+        // ERROR_ALREADY_EXISTS(183)：Mutex 已存在——要么是其他实例持有，
+        // 要么是本进程已创建过（再次 CreateMutexW 返回同一句柄）。
+        let already_exists = unsafe { get_last_error() } == 183;
+
+        // 等待锁：最多 `timeout`。WaitForSingleObject 返回 WAIT_OBJECT_0(0) 表示获得。
+        let wait_for_single_object: libloading::Symbol<
+            unsafe extern "system" fn(*mut std::ffi::c_void, u32) -> u32,
+        > = unsafe { kernel32.get(b"WaitForSingleObject").ok()? };
+
+        // 将 timeout 转为 ms（最小 1ms；0 则只做非阻塞尝试）
+        let wait_ms = u32::try_from(timeout.as_millis()).unwrap_or(u32::MAX).max(1);
+
+        let wait_result = unsafe { wait_for_single_object(handle, wait_ms) };
+
+        if wait_result == 0 {
+            // WAIT_OBJECT_0：获得锁
+            // 若 already_exists 且是我们本次新建的 Mutex（非本进程此前持有），
+            // 说明锁被其他进程占用——但 WaitForSingleObject 成功说明其已释放，
+            // 我们即为当前持有者。二者统一：现在持有锁。
+            tracing::info!(
+                "[Config] 获得配置写锁 {}（已存在={}）",
+                name,
+                already_exists
+            );
+            return Some(Self { handle });
         }
 
-        let _ = unsafe { CloseHandle(handle) };
+        // WAIT_TIMEOUT(258) 或失败：释放句柄并返回 None（调用方降级写入）
+        let close_handle: libloading::Symbol<
+            unsafe extern "system" fn(*mut std::ffi::c_void) -> i32,
+        > = match unsafe { kernel32.get(b"CloseHandle") } {
+            Ok(sym) => sym,
+            Err(_) => return None,
+        };
+        unsafe { close_handle(handle) };
+        tracing::warn!(
+            "[Config] 配置写锁等待超时（{}ms），降级为无锁写入: {}",
+            wait_ms,
+            path.display()
+        );
         None
     }
 }
@@ -893,10 +907,24 @@ impl CrossProcessLock {
 #[cfg(windows)]
 impl Drop for CrossProcessLock {
     fn drop(&mut self) {
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::Storage::FileSystem::UnlockFileEx;
-        let _ = unsafe { UnlockFileEx(self.handle, 0, 0, 0, std::ptr::null_mut()) };
-        let _ = unsafe { CloseHandle(self.handle) };
+        use libloading::Library;
+        // 释放 Mutex：ReleaseMutex + CloseHandle（libloading new/get 为 unsafe）
+        if let Ok(kernel32) = unsafe { Library::new("kernel32.dll") } {
+            if let Ok(release_mutex) = unsafe {
+                kernel32.get::<unsafe extern "system" fn(*mut std::ffi::c_void) -> i32>(
+                    b"ReleaseMutex",
+                )
+            } {
+                unsafe { release_mutex(self.handle) };
+            }
+            if let Ok(close_handle) = unsafe {
+                kernel32.get::<unsafe extern "system" fn(*mut std::ffi::c_void) -> i32>(
+                    b"CloseHandle",
+                )
+            } {
+                unsafe { close_handle(self.handle) };
+            }
+        }
     }
 }
 
