@@ -280,11 +280,14 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   // （组件内自持，稳定引用避免 Virtuoso 重渲染时整树卸载）
   // react-virtuoso 会给 Scroller 传 ref（内部 scrollerRef），须 forwardRef 转发，
   // 否则 virtuoso 拿不到 DOM（scrollerRef.current=null → 渲染崩溃）。
+  // paddingBottom 由这里承担（原 Footer 120px spacer 下沉为容器 padding），让 align:'end' 贴的是
+  // 真实最后一条消息底，而非 Footer 占位——否则消息离视口底始终有 ~120px 空隙。
   const Scroller = useMemo(() => {
     const Scroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(
-      ({ onWheel: _ignoredWheel, ...props }, ref) => (
+      ({ onWheel: _ignoredWheel, style, ...props }, ref) => (
         <div
           {...props}
+          style={{ ...style, paddingBottom: FOOTER_SPACER_STYLE.height }}
           ref={(node) => {
             if (typeof ref === 'function') ref(node);
             else if (ref) (ref as MutableRefObject<HTMLDivElement | null>).current = node;
@@ -318,10 +321,11 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           Footer: () => (
             <>
               {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
+              {/* 底部呼吸间距由 Scroller paddingBottom 承担，不再用 spacer 占位，
+                  避免锚点 align:'end' 贴到 Footer 而非最后一条消息 */}
               {isPending && (
                 <ThinkingOrb isPending={isPending} compact={true} />
               )}
-              <div style={FOOTER_SPACER_STYLE} />
             </>
           ),
         }}
