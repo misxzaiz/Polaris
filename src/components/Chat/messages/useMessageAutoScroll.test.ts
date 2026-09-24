@@ -94,11 +94,11 @@ function lastRo() {
 
 describe('useMessageAutoScroll', () => {
   describe('followOutput 状态机', () => {
-    it('流式 + 跟随态 → false（由 ResizeObserver 补偿接管，留 STREAM_BOTTOM_BUFFER 缓冲）', () => {
+    it('流式 + 跟随态 → true（立即贴底，内容向上生长不中断）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
-      expect(result.current.followOutput(true)).toBe(false);
-      expect(result.current.followOutput(false)).toBe(false);
+      expect(result.current.followOutput(true)).toBe(true);
+      expect(result.current.followOutput(false)).toBe(true);
     });
 
     it('非流式 + 跟随态 + 贴底 → smooth', () => {
@@ -179,7 +179,7 @@ describe('useMessageAutoScroll', () => {
   // 流式中途贴底增强（本次 bug 修复）
   // ============================================================
   describe('流式中途贴底增强', () => {
-    it('跟随态 + 流式中 + 距底超阈值 → 自动贴底（scrollTo 留 STREAM_BOTTOM_BUFFER 缓冲）', () => {
+    it('跟随态 + 流式中 + 距底超阈值 → 自动贴底（scrollToIndex LAST）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
 
@@ -190,9 +190,9 @@ describe('useMessageAutoScroll', () => {
       // 内容高度变化触发 ResizeObserver
       act(() => lastRo().fire());
 
-      // 流式补偿用 scrollTo（留缓冲），目标 top = sh - ch - buffer
-      expect(ref.current?.scrollTo).toHaveBeenCalledWith({
-        top: 500 - 100 - 48, // STREAM_BOTTOM_BUFFER=48
+      expect(ref.current?.scrollToIndex).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
         behavior: 'auto',
       });
     });
@@ -246,7 +246,7 @@ describe('useMessageAutoScroll', () => {
       act(() => lastRo().fire());
 
       // rAF 合并：scheduleCompensate 在 rAF 未执行前防重入
-      expect(ref.current?.scrollTo).toHaveBeenCalledTimes(1);
+      expect(ref.current?.scrollToIndex).toHaveBeenCalledTimes(1);
     });
 
     it('流式结束后仍处跟随态 → compensateScroll 补偿贴底（smooth）', () => {

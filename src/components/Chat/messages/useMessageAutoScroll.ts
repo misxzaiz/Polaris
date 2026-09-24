@@ -40,12 +40,6 @@ export const AUTO_SCROLL_THRESHOLD = 4;
 /** 流式期间距底超过该值就触发补偿贴底（px）。取视口高度级别，避免内容仅微增就抖动。 */
 const STREAM_COMPENSATE_OFFSET = 40;
 
-/** 流式实时输出时距视口底保留的缓冲（px）——留约两行呼吸距离，
- *  让正在打字的那行不紧贴底，与新输出留两行空白。
- *  Scroller paddingBottom 不参与流式补偿（scrollTo 基于 scrollHeight/clientHeight，
- *  padding 已含在 clientHeight 内），此值即最终视觉距底距离。 */
-const STREAM_BOTTOM_BUFFER = 48;
-
 export interface MessageAutoScroll {
   autoScroll: boolean;
   /** 与 react-virtuoso FollowOutputScalarType 一致：boolean(true=立即) | 'auto' | 'smooth' */
@@ -136,12 +130,6 @@ export function useMessageAutoScroll(
   /**
    * 内部：无条件调度一次贴底滚动（rAF 合并）。
    * 不检查 autoScroll —— 调用方负责判断跟随态。
-   *
-   * 流式期间不直接用 scrollToIndex('LAST', align:'end')：那会把正在增长的那条消息
-   * 钉到距视口底 paddingBottom 处，正在打字的光标紧贴底，缺乏呼吸感。
-   * 改用 scrollTo 手动定位到「scrollHeight - clientHeight - STREAM_BOTTOM_BUFFER」，
-   * 让最新输出距视口底保留约两行缓冲。
-   * 非流式结束补偿仍用 scrollToIndex align:'end'（smooth 贴到真实最后一条底）。
    */
   const scheduleCompensate = useCallback(() => {
     if (compensateRafRef.current !== null) return; // 已调度
@@ -151,19 +139,12 @@ export function useMessageAutoScroll(
       if (!compensatePendingRef.current) return;
       compensatePendingRef.current = false;
       const cur = virtuosoRef.current;
-      if (!cur) return;
-      if (stateRef.current.isStreaming) {
-        // 流式：手动定位，留两行缓冲
-        const scroller = scrollerElRef.current;
-        if (scroller) {
-          const targetTop = scroller.scrollHeight - scroller.clientHeight - STREAM_BOTTOM_BUFFER;
-          cur.scrollTo({ top: Math.max(0, targetTop), behavior: 'auto' });
-          return;
-        }
-        // scroller 未就绪回退
-        cur.scrollToIndex({ index: 'LAST' as never, align: 'end', behavior: 'auto' });
-      } else {
-        cur.scrollToIndex({ index: 'LAST' as never, align: 'end', behavior: 'smooth' });
+      if (cur) {
+        cur.scrollToIndex({
+          index: 'LAST' as never,
+          align: 'end',
+          behavior: stateRef.current.isStreaming ? 'auto' : 'smooth',
+        });
       }
     });
   }, [virtuosoRef]);
@@ -233,15 +214,13 @@ export function useMessageAutoScroll(
 
   /**
    * followOutput 回调：精确控制跟随时机。
-   *  - 跟随态 + 流式   → false：不交给 Virtuoso 内部 align:'end'（它用 paddingBottom 贴底，
-   *    会把缓冲钉死成 paddingBottom 而非我们想要的 STREAM_BOTTOM_BUFFER）。改由
-   *    ResizeObserver 补偿统一接管，用 scrollTo 留 STREAM_BOTTOM_BUFFER 缓冲。
+   *  - 跟随态 + 流式   → true（auto 立即贴底，内容向上生长不中断）
    *  - 跟随态 + 非流式 → 贴底时 'smooth'，离开则不滚
    *  - 非跟随态        → false（用户已离开，绝不被拉回）
    */
   const followOutput = useCallback<MessageAutoScroll['followOutput']>((isAtBottom) => {
     if (!autoScroll) return false;
-    if (isStreaming) return false;
+    if (isStreaming) return true;
     return isAtBottom ? 'smooth' : false;
   }, [autoScroll, isStreaming]);
 
@@ -261,24 +240,6 @@ export function useMessageAutoScroll(
       scrollerElRef.current = null;
     };
   }, []);
-
-  /**
-   * 流式开始时主动贴底一次（冷启动保险）。
-   * followOutput 流式返回 false 后，首条消息出现时 ResizeObserver 可能尚未挂上，
-   * 这里在 isStreaming 翻转为 true 且仍处跟随态时立即调度一次补偿，保证流式起步位置正确。
-   * 跳过首次挂载（mount 时 isStreaming 已 true 但 scroller 可能未就绪，由 ResizeObserver 接管）。
-   */
-  const streamingStartSkipRef = useRef(true);
-  useEffect(() => {
-    if (streamingStartSkipRef.current) {
-      streamingStartSkipRef.current = false;
-      if (isStreaming) return; // mount 时已在流式，跳过
-    }
-    if (isStreaming && autoScroll) {
-      scheduleCompensate();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isStreaming]);
 
   return {
     autoScroll,
