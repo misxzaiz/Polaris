@@ -40,6 +40,15 @@ export const AUTO_SCROLL_THRESHOLD = 4;
 /** 流式期间距底超过该值就触发补偿贴底（px）。取视口高度级别，避免内容仅微增就抖动。 */
 const STREAM_COMPENSATE_OFFSET = 40;
 
+/** 程序化滚动保护窗口（ms）：compensateScroll / scrollToIndex 触发 scrollTop 变化的
+ *  那一段时间内，忽略 handleScroll 的采样，避免把"我们自己贴底"误判为"用户上拉离开"。 */
+const PROGRAMMATIC_SCROLL_GUARD_MS = 220;
+
+/** 流式结束后仍允许 ResizeObserver 补偿贴底一次的窗口（ms）。
+ *  内容最后一次测量常常在 isStreaming 翻 false 之后到达，此窗口内允许补偿一次，
+ *  避免用户停在略高于底部的位置。 */
+const STREAM_END_COMPENSATE_WINDOW_MS = 1000;
+
 export interface MessageAutoScroll {
   autoScroll: boolean;
   /** 与 react-virtuoso FollowOutputScalarType 一致：boolean(true=立即) | 'auto' | 'smooth' */
@@ -47,6 +56,11 @@ export interface MessageAutoScroll {
   handleAtBottomStateChange: (atBottom: boolean) => void;
   /** 绑定到 Virtuoso Scroller 的 onWheel：向上滚动=用户主动离开，停止跟随 */
   handleWheel: (e: { deltaY: number }) => void;
+  /** 绑定到 Virtuoso Scroller 的 onScroll：兜底捕获键盘/触摸/程序化滚动，仅流式中且
+   *  在程序化滚动保护窗口之外才判定为"用户主动离开"。 */
+  handleScroll: () => void;
+  /** 绑定到容器 keydown：PageUp/Home/ArrowUp 视为用户主动离开，停止跟随。 */
+  handleKeyDown: (e: React.KeyboardEvent) => void;
   scrollToBottom: () => void;
   setAutoScroll: (v: boolean) => void;
   /** 内容测量完成后调用一次，若仍处跟随态则补偿贴底滚动 */
@@ -70,6 +84,14 @@ export function useMessageAutoScroll(
   const compensateRafRef = useRef<number | null>(null);
   const compensatePendingRef = useRef(false);
 
+  // 程序化滚动保护窗口：scheduleCompensate / scrollToBottom 触发的 scrollTop 变化不
+  // 应被视为"用户主动离开"。补偿窗口结束时清一次。
+  const programmaticUntilRef = useRef(0);
+
+  // 流式结束补偿窗口：isStreaming 翻 false 后的短暂时间内允许 ResizeObserver 补偿
+  // 一次（最终测量往往滞后于 isStreaming 翻转）。窗口结束置 false。
+  const streamingEndPendingRef = useRef(false);
+
   // ===== 流式中途贴底增强：scroller DOM + ResizeObserver =====
   // Virtuoso 的 followOutput 在内容大幅增长后（atBottom 翻 false）就不再跟随，
   // 这里直接观察内容高度变化，不依赖 Virtuoso 内部状态机。
@@ -83,6 +105,7 @@ export function useMessageAutoScroll(
   stateRef.current.isStreaming = !!isStreaming;
 
   const setAutoScroll = useCallback((v: boolean) => {
+    console.log('[AutoScroll:setAutoScroll]', v, new Error('stack').stack?.split('\n')[2]?.trim());
     setAutoScrollState(v);
   }, []);
 
@@ -93,6 +116,7 @@ export function useMessageAutoScroll(
    *    导致的瞬时离底不应误判为用户离开（由 handleWheel 处理真正的主动离开）。
    */
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    console.log('[AutoScroll:atBottomStateChange]', { atBottom, isStreaming, autoScroll: stateRef.current.autoScroll });
     if (firstAtBottomCallbackRef.current) {
       firstAtBottomCallbackRef.current = false;
       return;
@@ -101,6 +125,7 @@ export function useMessageAutoScroll(
       setAutoScrollState(true);
     } else if (!isStreaming) {
       // 非流式：离开底部=用户主动（内容不再增长），停止跟随
+      console.log('[AutoScroll:atBottomStateChange] 非流式且离底，停止跟随');
       setAutoScrollState(false);
     }
     // 流式且 atBottom=false：忽略，靠 followOutput + wheel + 流式补偿维持正确跟随
@@ -112,6 +137,36 @@ export function useMessageAutoScroll(
    */
   const handleWheel = useCallback((e: { deltaY: number }) => {
     if (e.deltaY < 0) {
+      console.log('[AutoScroll:handleWheel] 检测到向上滚动，停止跟随', { deltaY: e.deltaY });
+      setAutoScrollState(false);
+    }
+  }, []);
+
+  /**
+   * 滚动事件兜底检测：wheel 事件无法覆盖键盘 PageUp / 触摸板 / 触控屏 / 程序化跳转。
+   * 通过采样 scrollTop 变化方向 + 距底阈值联合判定：
+   *   - 保护窗口内：跳过（我们自己触发的 scrollTop 变化）
+   *   - 非流式：跳过（非流式的"离开底部"由 handleAtBottomStateChange 兜底）
+   *   - 流式中 + scrollTop 变小 + 距底超过阈值 → 用户主动向上，停止跟随
+   */
+  const handleScroll = useCallback(() => {
+    const { isStreaming: streaming } = stateRef.current;
+    if (!streaming) return; // 非流式交给 handleAtBottomStateChange
+    if (performance.now() < programmaticUntilRef.current) return;
+    const scroller = scrollerElRef.current;
+    if (!scroller) return;
+    const distFromBottom = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
+    if (distFromBottom <= AUTO_SCROLL_THRESHOLD) return;
+    setAutoScrollState(false);
+  }, []);
+
+  /**
+   * 键盘上拉检测：PageUp / Home / ArrowUp 视为用户主动向上浏览，停止跟随。
+   * 仅在流式期间生效，其他时间由 handleAtBottomStateChange 处理。
+   */
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (!stateRef.current.isStreaming) return;
+    if (e.key === 'PageUp' || e.key === 'Home' || e.key === 'ArrowUp') {
       setAutoScrollState(false);
     }
   }, []);
@@ -138,6 +193,8 @@ export function useMessageAutoScroll(
       compensateRafRef.current = null;
       if (!compensatePendingRef.current) return;
       compensatePendingRef.current = false;
+      // 打开保护窗口：接下来的 scrollTop 变化来自我们自己的 scrollToIndex
+      programmaticUntilRef.current = performance.now() + PROGRAMMATIC_SCROLL_GUARD_MS;
       const cur = virtuosoRef.current;
       if (cur) {
         cur.scrollToIndex({
@@ -148,6 +205,25 @@ export function useMessageAutoScroll(
       }
     });
   }, [virtuosoRef]);
+
+  // 侦听 isStreaming 下降沿：打开一次性的补偿窗口（仅 true→false 边沿）
+  const prevIsStreamingRef = useRef(!!isStreaming);
+  useEffect(() => {
+    const prev = prevIsStreamingRef.current;
+    prevIsStreamingRef.current = !!isStreaming;
+    if (isStreaming) {
+      streamingEndPendingRef.current = false;
+      return;
+    }
+    // 仅在从流式翻转到非流式时开启窗口；初始挂载 / 一直是 false 都不触发
+    if (prev !== true) return;
+    // 刚结束流式：给 ResizeObserver 最后一次补偿的机会（最终测量通常滞后几十 ms）
+    streamingEndPendingRef.current = true;
+    const timer = setTimeout(() => {
+      streamingEndPendingRef.current = false;
+    }, STREAM_END_COMPENSATE_WINDOW_MS);
+    return () => clearTimeout(timer);
+  }, [isStreaming]);
 
   /**
    * 补偿滚动：内容测量完成后，若仍处跟随态，主动贴底一次。
@@ -165,13 +241,18 @@ export function useMessageAutoScroll(
    * 流式中途补偿触发：ResizeObserver 回调。
    * 距底超过 STREAM_COMPENSATE_OFFSET 时（内容暴增把视口甩开）才补偿，
    * 微增不抖动。仅在跟随态 + 流式中生效。
+   * 流式结束补偿窗口内也允许补偿一次，避免最终测量延迟导致停在略高于底部的位置。
    */
   const handleListResize = useCallback(() => {
     const { autoScroll: follow, isStreaming: streaming } = stateRef.current;
     const scroller = scrollerElRef.current;
-    if (!follow || !streaming || !scroller) return;
+    if (!follow || !scroller) return;
+    const allowCompensate = streaming || streamingEndPendingRef.current;
+    if (!allowCompensate) return;
     const distFromBottom = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
     if (distFromBottom > STREAM_COMPENSATE_OFFSET) {
+      // 一次性闸门：补偿后关闭，避免流式结束后内容继续增长反复拉回
+      if (!streaming) streamingEndPendingRef.current = false;
       scheduleCompensate();
     }
   }, [scheduleCompensate]);
@@ -246,6 +327,8 @@ export function useMessageAutoScroll(
     followOutput,
     handleAtBottomStateChange,
     handleWheel,
+    handleScroll,
+    handleKeyDown,
     scrollToBottom,
     setAutoScroll,
     compensateScroll,

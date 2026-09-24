@@ -248,9 +248,12 @@ function renderPart(part: RenderPart, index: number): React.ReactNode {
  * 专为流式渲染优化，只处理行内格式
  */
 export const LightweightMarkdown = memo(function LightweightMarkdown({
-  content
+  content,
+  caret = false,
 }: {
-  content: string
+  content: string;
+  /** 是否在末尾显示打字光标（仅流式中最后一段传入 true） */
+  caret?: boolean;
 }) {
   // 标准化：将单个换行符替换为空格（与 Markdown 规范一致）
   // 段落内的单个 \n 应视为连续文本，不应产生视觉换行
@@ -261,6 +264,7 @@ export const LightweightMarkdown = memo(function LightweightMarkdown({
   return (
     <span className="break-words">
       {parts.map((part, index) => renderPart(part, index))}
+      {caret && <span aria-hidden className="streaming-caret" />}
     </span>
   );
 });
@@ -555,23 +559,61 @@ export default LightweightMarkdown;
 /** 流式渲染专用 Markdown 缓存实例（50 条上限，1 分钟 TTL，提高命中率） */
 const streamingMdCache = new MarkdownRenderCache(50);
 
+/** 打字光标 HTML 片段 */
+const STREAMING_CARET_HTML =
+  '<span class="streaming-caret" aria-hidden="true"></span>';
+
+/** 把 caret 注入到 marked 渲染结果中最后一个块级元素的末尾，
+ * 让 caret 视觉上出现在最后一行文字的字符尾部（而非块下方）。
+ *
+ * 策略：找到最后一个 `</p>` `</li>` `</blockquote>` `</td>` `</th>` `</h1-6>` `</summary>`
+ * 闭合标签，在其**前面**插入 caret，保持闭合标签原位。若没有块级闭合标签
+ * （极少见的空 markdown），退化到 HTML 末尾追加。
+ * 导出以便单测。 */
+export function injectCaretIntoLastBlock(html: string): string {
+  const blockCloseRe =
+    /<\/(p|li|blockquote|td|th|h[1-6]|summary)>/g;
+  let lastIdx = -1;
+  let m: RegExpExecArray | null;
+  while ((m = blockCloseRe.exec(html)) !== null) {
+    lastIdx = m.index;
+  }
+  if (lastIdx === -1) {
+    return html + STREAMING_CARET_HTML;
+  }
+  // 在闭合标签起始位置插入 caret，闭合标签整体保留
+  return (
+    html.slice(0, lastIdx) +
+    STREAMING_CARET_HTML +
+    html.slice(lastIdx)
+  );
+}
+
 /**
  * 已完成文本块渲染器（单一容器）
  *
  * 所有段落渲染在同一容器中，<p> margin 正确折叠，避免独立 div 包裹导致间距翻倍。
  * 使用 CSS contain: content 限制重排范围。
+ * caret=true 时把 caret 注入到最后一个块级元素内部，让它紧贴最后一行文字末尾。
  */
 const CompletedTextBlock = memo(function CompletedTextBlock({
   content,
+  caret = false,
+  blockIndex,
 }: {
   content: string;
   blockIndex?: number;
+  /** 是否在末尾追加打字光标（仅流式中最后一段为 true） */
+  caret?: boolean;
 }) {
+  // blockIndex 保留以兼容旧调用点；当前渲染路径未直接使用。
+  void blockIndex;
   const html = useMemo(() => {
     if (!content.trim()) return null;
     // 使用缓存渲染，提高性能
-    return streamingMdCache.render(content);
-  }, [content]);
+    const rendered = streamingMdCache.render(content);
+    return caret ? injectCaretIntoLastBlock(rendered) : rendered;
+  }, [content, caret]);
 
   if (!html) return null;
 
@@ -627,9 +669,9 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       if (paragraphs.length <= 1) {
         // 流式最后一段含块级元素 → 走 marked 完整渲染
         if (hasBlockElement(content)) {
-          return <CompletedTextBlock content={content} />;
+          return <CompletedTextBlock content={content} caret />;
         }
-        return <LightweightMarkdown content={content} />;
+        return <LightweightMarkdown content={content} caret />;
       }
 
       // 已完成段落合并渲染 + 最后一段轻量渲染
@@ -642,9 +684,9 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           <div className="break-words" style={{ contain: 'content' }}
             dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedContent) }} />
           {hasBlockElement(lastPara) ? (
-            <CompletedTextBlock content={lastPara} />
+            <CompletedTextBlock content={lastPara} caret />
           ) : (
-            <LightweightMarkdown content={lastPara} />
+            <LightweightMarkdown content={lastPara} caret />
           )}
         </>
       );
@@ -707,9 +749,9 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           if (paragraphs.length <= 1) {
             // 流式最后一段含块级元素 → 走 marked 完整渲染
             if (hasBlockElement(part.content)) {
-              return <CompletedTextBlock key={`ctext-${index}`} content={part.content} />;
+              return <CompletedTextBlock key={`ctext-${index}`} content={part.content} caret />;
             }
-            return <LightweightMarkdown key={`ltext-${index}`} content={part.content} />;
+            return <LightweightMarkdown key={`ltext-${index}`} content={part.content} caret />;
           }
 
           // 已完成段落合并 + 最后一段轻量
@@ -721,9 +763,9 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
               <div className="break-words" style={{ contain: 'content' }}
                 dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedParasContent) }} />
               {hasBlockElement(lastPara) ? (
-                <CompletedTextBlock content={lastPara} />
+                <CompletedTextBlock content={lastPara} caret />
               ) : (
-                <LightweightMarkdown content={lastPara} />
+                <LightweightMarkdown content={lastPara} caret />
               )}
             </span>
           );
