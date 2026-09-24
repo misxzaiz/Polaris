@@ -12,6 +12,9 @@ use std::os::windows::process::CommandExt;
 #[cfg(windows)]
 use crate::utils::CREATE_NO_WINDOW;
 
+#[cfg(unix)]
+use std::os::fd::AsFd;
+
 /// 配置存储管理器
 pub struct ConfigStore {
     config: Config,
