@@ -349,9 +349,7 @@ mod tests {
         fn name(&self) -> &'static str {
             match &self.id {
                 EngineId::ClaudeCode => "MockClaude",
-                EngineId::Codex => "MockCodex",
                 EngineId::SimpleAI => "MockSimpleAI",
-                EngineId::Pi => "MockPi",
                 EngineId::Custom(_) => "MockCustom",
             }
         }
@@ -393,8 +391,6 @@ mod tests {
         let mut registry = EngineRegistry::new();
         // Claude 引擎持有 "claude-sess"
         registry.register(MockEngine::new(EngineId::ClaudeCode, &["claude-sess"]));
-        // Codex 引擎持有 "codex-sess"
-        registry.register(MockEngine::new(EngineId::Codex, &["codex-sess"]));
         registry
     }
 
@@ -405,10 +401,9 @@ mod tests {
         assert!(registry
             .interrupt(&EngineId::ClaudeCode, "claude-sess")
             .is_ok());
-        assert!(registry.interrupt(&EngineId::Codex, "codex-sess").is_ok());
     }
 
-    /// 路由错配场景: 用 Claude 引擎中断 Codex session 必须失败.
+    /// 路由错配场景: 用 SimpleAI 引擎中断 Claude session 必须失败.
     ///
     /// 这是 per-session 多引擎改造后的核心风险点:前端 metadata.engineId 与后端
     /// 实际引擎错配时,直接路由会找不到 session.
@@ -416,7 +411,7 @@ mod tests {
     fn interrupt_with_wrong_engine_fails() {
         let mut registry = build_registry();
         let err = registry
-            .interrupt(&EngineId::ClaudeCode, "codex-sess")
+            .interrupt(&EngineId::SimpleAI, "claude-sess")
             .unwrap_err();
         assert!(
             matches!(err, AppError::ProcessError(_)),
@@ -432,10 +427,6 @@ mod tests {
     #[test]
     fn try_interrupt_all_finds_session_in_any_engine() {
         let mut registry = build_registry();
-        assert!(
-            registry.try_interrupt_all("codex-sess"),
-            "try_interrupt_all 应能在 Codex 引擎中找到 codex-sess"
-        );
         assert!(
             registry.try_interrupt_all("claude-sess"),
             "try_interrupt_all 应能在 Claude 引擎中找到 claude-sess"
@@ -458,19 +449,19 @@ mod tests {
     fn fallback_flow_recovers_misrouted_interrupt() {
         let mut registry = build_registry();
 
-        // 步骤 1: 误把 codex-sess 当作 claude-code 的 session 中断
-        let primary = registry.interrupt(&EngineId::ClaudeCode, "codex-sess");
+        // 步骤 1: 误把 claude-sess 当作 simple-ai 的 session 中断
+        let primary = registry.interrupt(&EngineId::SimpleAI, "claude-sess");
         assert!(primary.is_err(), "误路由应失败");
 
         // 步骤 2: 兜底应能找到并中断
         assert!(
-            registry.try_interrupt_all("codex-sess"),
-            "兜底应在 Codex 引擎中找到并中断"
+            registry.try_interrupt_all("claude-sess"),
+            "兜底应在 Claude 引擎中找到并中断"
         );
 
         // 步骤 3: session 已被消费,再次兜底应返回 false
         assert!(
-            !registry.try_interrupt_all("codex-sess"),
+            !registry.try_interrupt_all("claude-sess"),
             "已中断过的 session 再次兜底应返回 false"
         );
     }

@@ -11,7 +11,6 @@
 
 import { getEngineRegistry } from '@/ai-runtime'
 import { ClaudeCodeEngine } from '../engines/claude-code'
-import { CodexEngine } from '../engines/codex'
 import { createLogger } from '@/utils/logger'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 
@@ -22,11 +21,10 @@ let bootstrapped = false
 /**
  * 前端引擎工厂映射。
  * 只有有前端实现的引擎才需要注册工厂。
- * 无前端实现的引擎（SimpleAI、Pi）的实际 AI 调用由后端直接处理。
+ * 无前端实现的引擎（SimpleAI 等）的实际 AI 调用由后端直接处理。
  */
 const ENGINE_FACTORIES: Record<string, () => import('@/ai-runtime').AIEngine> = {
   'claude-code': () => new ClaudeCodeEngine(),
-  codex: () => new CodexEngine(),
 }
 
 /**

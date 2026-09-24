@@ -48,7 +48,7 @@ export function SessionTabContextMenu({
   // 从 registry 动态读取已注册引擎（registry 未就绪时回退全量，避免菜单空）
   const engineOptions = useMemo<EngineId[]>(() => {
     const registered = new Set(getEngineRegistry().list().map(d => d.id))
-    const preferredOrder = ['claude-code', 'codex', 'simple-ai', 'pi'] as EngineId[]
+    const preferredOrder = ['claude-code', 'simple-ai'] as EngineId[]
     // 已知引擎按偏好顺序，其余（插件引擎）追加到末尾
     const known = preferredOrder.filter(id => registered.has(id))
     const plugin = registered.size > 0

@@ -556,30 +556,6 @@ fn collect_claude_files(out: &mut Vec<NativeFile>) {
     }
 }
 
-fn collect_codex_files(out: &mut Vec<NativeFile>) {
-    let dir = crate::ai::history_codex::CodexHistoryProvider::get_codex_sessions_dir();
-    let mut files: Vec<PathBuf> = Vec::new();
-    crate::ai::history_codex::CodexHistoryProvider::collect_jsonl_files(&dir, &mut files);
-    for path in files {
-        let Ok(md) = std::fs::metadata(&path) else { continue };
-        let id = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        if id.is_empty() {
-            continue;
-        }
-        out.push(NativeFile {
-            id,
-            engine_id: "codex".to_string(),
-            source: "codex-native".to_string(),
-            path,
-            mtime: md.modified().map(systemtime_to_epoch_ms).unwrap_or(0),
-            size: md.len() as i64,
-        });
-    }
-}
-
 /// 收集插件引擎的会话文件
 ///
 /// 扫描 `<DataRoot>/plugin-sessions/<engine-id>/` 目录下的 JSONL 文件。
@@ -664,7 +640,6 @@ fn run_native_scan() {
     let start = std::time::Instant::now();
     let mut files: Vec<NativeFile> = Vec::new();
     collect_claude_files(&mut files);
-    collect_codex_files(&mut files);
     collect_plugin_files(&mut files);
 
     let result = (|| {
@@ -781,15 +756,7 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
                     )
                 }
                 _ if f.source == "codex-native" => {
-                    let (summary, count, created, cwd, _sid) =
-                        crate::ai::history_codex::CodexHistoryProvider::parse_metadata(&f.path);
-                    (
-                        summary.unwrap_or_else(|| "Codex 对话".to_string()),
-                        count as i64,
-                        created.map(|c| iso_to_epoch_ms(&c)).unwrap_or(0),
-                        cwd,
-                        None,
-                    )
+                    (String::new(), 0_i64, 0_i64, None::<String>, None::<String>)
                 }
                 "plugin-native" => {
                     let (p_title, p_count, p_created, p_cwd, _) =

@@ -12,9 +12,9 @@
     "builtinAgents": "Built-in",
     "pluginAgents": "Plugin",
     "resetCliTitle": "Reset CLI Configuration",
-    "resetCliDescription": "Resets Claude/Codex CLI paths to defaults and invalidates engine caches. Useful for testing the first-launch detection flow. If no CLI is found on PATH, you'll return to the initial connection screen.",
+    "resetCliDescription": "Resets Claude CLI path to default and invalidates engine caches. Useful for testing the first-launch detection flow. If no CLI is found on PATH, you'll return to the initial connection screen.",
     "resetCliAction": "Reset Now",
-    "resetCliConfirm": "This resets Claude/Codex CLI paths to defaults and triggers re-detection. If the CLI isn't on PATH, the app returns to the initial connection screen. Continue?",
+    "resetCliConfirm": "This resets the Claude CLI path to default and triggers re-detection. If the CLI isn't on PATH, the app returns to the initial connection screen. Continue?",
     "resetting": "Resetting..."
   },
   "currentGroup": "Current group: {{name}}",
@@ -154,27 +154,9 @@
       "name": "Claude Code",
       "description": "Official Anthropic CLI tool"
     },
-    "codex": {
-      "name": "OpenAI Codex",
-      "description": "OpenAI Codex CLI — full permissions"
-    },
     "simpleAi": {
       "name": "Simple AI",
       "description": "Lightweight AI assistant — uses model provider config, built-in bash/file tools, no CLI required"
-    },
-    "pi": {
-      "name": "Pi",
-      "description": "earendil-works pi-coding-agent CLI - multi-provider terminal coding assistant with bidirectional RPC protocol",
-      "title": "Pi Configuration",
-      "cliPath": "Pi CLI Path",
-      "notAvailable": "Not available"
-    },
-    "dsh": {
-      "name": "DeepSeek Harness",
-      "description": "DeepSeek Harness — open-source agent orchestration framework via HTTP RPC + WebSocket event stream",
-      "title": "DeepSeek Harness Configuration",
-      "cliPath": "dsh CLI Path",
-      "notAvailable": "Not available"
     }
   },
   "modelProfile": {
@@ -204,7 +186,7 @@
     "testNotFound": "Endpoint not found (HTTP {{status}}). Check the Base URL and path",
     "testServerError": "Endpoint server error (HTTP {{status}}). Try again later",
     "testBadStatus": "Endpoint returned an unexpected status (HTTP {{status}})",
-    "tabDescription": "Manage third-party model provider endpoints. Route Claude Code / Codex to endpoints compatible with the Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses protocol.",
+    "tabDescription": "Manage third-party model provider endpoints. Route Claude Code / Simple AI to endpoints compatible with the Anthropic Messages, OpenAI Chat Completions, or OpenAI Responses protocol.",
     "searchPlaceholder": "Search by name, model, or endpoint…",
     "noMatchingProfiles": "No matching profiles",
     "cascadeTitle": "Auto-synced",
@@ -245,9 +227,7 @@
     "filter": {
       "all": "All",
       "claude": "Claude",
-      "codex": "Codex",
-      "simple-ai": "Simple AI",
-      "pi": "Pi"
+      "simple-ai": "Simple AI"
     },
     "authType": {
       "label": "Authentication",
@@ -265,9 +245,7 @@
     "targetEngine": {
       "label": "Target Engine",
       "claude": "Claude Code",
-      "codex": "Codex CLI",
       "simple-ai": "Simple AI",
-      "pi": "Pi",
       "selectAll": "Select All",
       "allEngines": "Applies to all engines"
     },
@@ -292,11 +270,6 @@
   "claudeCode": {
     "title": "Claude Code Configuration",
     "cliPath": "Claude CLI Path",
-    "notAvailable": "Not Installed"
-  },
-  "codex": {
-    "title": "OpenAI Codex Configuration",
-    "cliPath": "Codex CLI Path",
     "notAvailable": "Not Installed"
   },
   "language": {
@@ -414,16 +387,6 @@
       "name": "Claude Code",
       "placeholder": "Enter the full path to Claude CLI",
       "example": "e.g., C:\\Users\\...\\claude.cmd (Windows) or /usr/local/bin/claude (macOS/Linux)"
-    },
-    "codex": {
-      "name": "OpenAI Codex",
-      "placeholder": "Enter the full path or command name for Codex CLI",
-      "example": "e.g., codex, C:\\Users\\...\\codex.cmd (Windows), or /usr/local/bin/codex (macOS/Linux)"
-    },
-    "pi": {
-      "name": "Pi",
-      "placeholder": "Enter the full path or command name for Pi CLI",
-      "example": "e.g., pi, C:\\Users\\...\\pi.cmd (Windows), or /usr/local/bin/pi (macOS/Linux)"
     }
   },
   "validation": {

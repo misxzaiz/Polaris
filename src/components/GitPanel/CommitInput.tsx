@@ -8,7 +8,7 @@
 
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Send, Sparkles, Loader2, Bot, Cpu, Zap, Check, MessageSquare, Orbit } from 'lucide-react'
+import { Send, Sparkles, Loader2, Bot, Zap, Check, MessageSquare } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
@@ -27,9 +27,7 @@ const COMMIT_ENGINE_STORAGE_KEY = 'polaris.git.commitEngine'
 /** 引擎显示图标映射（已知引擎映射到专属图标，插件引擎统一用 Bot） */
 const KNOWN_ENGINE_ICONS: Record<string, typeof Bot> = {
   'claude-code': Bot,
-  codex: Cpu,
   'simple-ai': Zap,
-  pi: Orbit,
 }
 
 function readStoredEngine(defaultEngine: EngineId): EngineId {
@@ -79,9 +77,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
     }
     return [
       { id: 'claude-code', label: 'Claude', Icon: Bot },
-      { id: 'codex', label: 'Codex', Icon: Cpu },
       { id: 'simple-ai', label: 'Simple', Icon: Zap },
-      { id: 'pi', label: 'Pi', Icon: Orbit },
     ]
   }, [metadatas])
 

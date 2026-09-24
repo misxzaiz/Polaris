@@ -103,7 +103,7 @@ describe('dispatchTaskService', () => {
       id: 'source-session',
       type: 'project',
       workspaceId: 'ws-1',
-      engineId: 'codex',
+      engineId: 'simple-ai',
     })
 
     await handleDispatchTaskRequest({
@@ -115,7 +115,7 @@ describe('dispatchTaskService', () => {
 
     const startCall = invokeMock.mock.calls.find((c) => c[0] === 'router_dispatch')
     const payload = (startCall as [string, { req: { payload: { options: Record<string, unknown> } } }])[1].req.payload
-    expect(payload.options.engineId).toBe('codex')
+    expect(payload.options.engineId).toBe('simple-ai')
     expect(payload.options.workDir).toBe('D:/work/source-ws')
   })
 

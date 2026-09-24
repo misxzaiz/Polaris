@@ -11,7 +11,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { IconSend, IconStop, IconPaperclip } from '../../Common/Icons'
-import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Cpu, Zap, ChevronDown, Orbit } from 'lucide-react'
+import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Zap, ChevronDown } from 'lucide-react'
 import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
 import { useVoiceInputStore } from '@/stores/voiceInputStore'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -82,9 +82,7 @@ const log = createLogger('ChatInput')
 /** 提示词优化可选引擎（与 CommitInput 的引擎浮层保持一致） */
 const OPTIMIZE_ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> = [
   { id: 'claude-code', label: 'Claude', Icon: Bot },
-  { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'pi', label: 'Pi', Icon: Orbit },
 ]
 
 /** 提示词优化模式选项（标签/提示语走 i18n） */
@@ -115,7 +113,7 @@ const OPTIMIZE_ITERATION_OPTIONS = [1, 2, 3, 4, 5] as const
 function toProfileEngine(engineId: string): string {
   const e = normalizeEngineId(engineId)
   // 已知引擎映射到其别名，插件引擎直接透传
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : e === 'claude-code' ? 'claude' : e
+  return e === 'simple-ai' ? 'simple-ai' : e === 'claude-code' ? 'claude' : e
 }
 
 export interface EditMode {

@@ -1,11 +1,10 @@
 /**
  * 模型 Profile 类型定义
  *
- * Model Profile 允许将 Claude Code CLI 或 Codex CLI 的请求路由到
+ * Model Profile 允许将 Claude Code CLI 的请求路由到
  * 第三方代理端点，从而使用非官方模型。
  *
  * Claude 使用 --settings 临时文件 + 环境变量覆盖。
- * Codex 使用 model_provider 配置，要求端点兼容 Responses API。
  *
  * 当 wireApi 为 'openai-chat-completions' 时，Polaris 内嵌代理会透明地
  * 将 Claude CLI 的 Anthropic Messages 请求转换为 OpenAI Chat Completions
@@ -26,19 +25,17 @@ export type AuthType = 'auth_token' | 'api_key' | 'custom_env' | 'none'
 
 /** Profile 适用的引擎（多选）
  * - 'claude': 适用于 Claude Code 引擎
- * - 'codex': 适用于 Codex CLI 引擎
  * - 'simple-ai': 适用于 Simple AI 引擎
- * - 'pi': 适用于 Pi 引擎
  * - 任意字符串: 适用于插件注册的动态引擎（如 'omp'）
  *
  * 历史兼容：旧数据使用 `targetEngine?: ProfileTargetEngine` 单值字段，
  * 由 `resolveTargetEngines()` 做回退迁移，不再新增。
  */
-export type ProfileTargetEngine = 'claude' | 'codex' | 'simple-ai' | 'pi' | (string & NonNullable<unknown>)
+export type ProfileTargetEngine = 'claude' | 'simple-ai' | (string & NonNullable<unknown>)
 
 /** 全部可用引擎列表 — 用于「全选/取消全选」等场景。
  *  注意：此常量只包含已知引擎，插件引擎由运行时动态补充。 */
-export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'pi']
+export const ALL_ENGINES: ProfileTargetEngine[] = ['claude', 'simple-ai']
 
 /** 供应商分类 — 决定预设引导和提示文案
  * - 'official': 官方直连（Anthropic / OpenAI）
@@ -98,7 +95,7 @@ export interface ModelProfile {
    */
   targetEngines?: ProfileTargetEngine[]
   /** 历史兼容字段（仅用于读取旧数据，不再写入）。
- * 旧值可能为 'both' / 'all' / 'claude' / 'codex' / 'simple-ai'。
+ * 旧值可能为 'both' / 'all' / 'claude' / 'simple-ai'。
  * 由 `resolveTargetEngines()` 做回退迁移。
  * @deprecated 使用 `targetEngines` 替代
  */

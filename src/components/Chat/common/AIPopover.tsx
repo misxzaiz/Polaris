@@ -83,9 +83,7 @@ export function AIPopover({ isOpen, onClose }: AIPopoverProps) {
     }
     return [
       { id: 'claude-code' as EngineId, name: 'Claude Code' },
-      { id: 'codex' as EngineId, name: 'OpenAI Codex' },
       { id: 'simple-ai' as EngineId, name: 'Simple AI' },
-      { id: 'pi' as EngineId, name: 'Pi' },
     ]
   }, [metadatas])
 

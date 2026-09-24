@@ -45,7 +45,7 @@ export interface DiffData {
   filePath: string;
   /** 原始 edits 数组（用于统一展示，引擎无关） */
   edits?: Array<{ oldText: string; newText: string }>;
-  /** 引擎已计算好的 diff 字符串（如 Pi 引擎的 details.diff） */
+  /** 引擎已计算好的 diff 字符串（如引擎输出的 details.diff） */
   diffString?: string;
   /** 引擎已计算好的 patch 字符串 */
   patchString?: string;

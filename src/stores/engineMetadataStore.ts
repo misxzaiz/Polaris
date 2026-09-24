@@ -80,7 +80,6 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
       // 从 name 中提取简短显示名（如 "Claude Code" → "Claude"）
       const name = meta.name
       if (name === 'Claude Code') return 'Claude'
-      if (name === 'OpenAI Codex') return 'Codex'
       return name
     }
     // 降级：用 engineId 本身

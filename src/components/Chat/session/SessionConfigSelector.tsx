@@ -124,22 +124,18 @@ export function SessionConfigSelector({
   const activeGroupId = useConfigStore(s => s.config?.activeProviderGroupId)
 
   // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
-  // 映射到 isProfileForEngine 的引擎参数（claude / codex / simple-ai）。
+  // 映射到 isProfileForEngine 的引擎参数（claude / simple-ai）。
   const activeSessionId = useActiveSessionId()
   const sessionMetadataList = useSessionMetadataList()
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
   const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
   const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
   const currentEngine: string =
-    activeEngineId === 'codex'
-      ? 'codex'
-      : activeEngineId === 'simple-ai'
-        ? 'simple-ai'
-        : activeEngineId === 'pi'
-          ? 'pi'
-          : activeEngineId === 'claude-code'
-            ? 'claude'
-            : activeEngineId
+    activeEngineId === 'simple-ai'
+      ? 'simple-ai'
+      : activeEngineId === 'claude-code'
+        ? 'claude'
+        : activeEngineId
 
   // 判断分组是否适用于当前引擎（targetEngines 为空 = 全部引擎）
   const isGroupCompatibleWithEngine = useCallback((group: ProviderGroup) => {
@@ -202,7 +198,6 @@ export function SessionConfigSelector({
   // 模型列表：根据当前选中的 Profile 或分组路由动态生成。
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：
   //   · claude：使用官方模型档位
-  //   · codex：使用 Profile 模型或空（无 Profile 时显示通用项）
   //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
   // - 分组路由模式：取组内所有 Profile 的 modelOptions 并集，去重后展示

@@ -12,9 +12,9 @@ import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 export interface SelectedEngineHealth {
   engineId: EngineId
   name: string
-  /** health 字段前缀（如 "claude"、"codex"、"pi"） */
+  /** health 字段前缀（如 "claude"、"simple-ai"） */
   healthPrefix: string
-  /** CLI 命令名称（如 "claude"、"codex"、"pi"） */
+  /** CLI 命令名称（如 "claude"） */
   command: string
   cliPath: string
   available: boolean
@@ -23,7 +23,7 @@ export interface SelectedEngineHealth {
 
 /**
  * 从 HealthStatus 中获取指定引擎的可用性。
- * 根据引擎 ID 动态查找对应的 health 字段（如 pi → piAvailable / piVersion）。
+ * 根据引擎 ID 动态查找对应的 health 字段。
  */
 function resolveEngineHealthFromStatus(
   engineId: string,
@@ -34,8 +34,6 @@ function resolveEngineHealthFromStatus(
   // 根据引擎 ID 映射到 HealthStatus 字段名
   const fieldMap: Record<string, { available: string; version: string }> = {
     'claude-code': { available: 'claudeAvailable', version: 'claudeVersion' },
-    codex: { available: 'codexAvailable', version: 'codexVersion' },
-    pi: { available: 'piAvailable', version: 'piVersion' },
   }
 
   const fields = fieldMap[engineId]
@@ -76,14 +74,12 @@ export function getSelectedEngineHealth(
   const status = resolveEngineHealthFromStatus(engineId, health)
 
   // 获取 CLI 路径
-  const cliConfig = config?.[engineId === 'claude-code' ? 'claudeCode' : engineId === 'codex' ? 'codexCode' : 'piCode' as keyof Config] as { cliPath?: string } | undefined
+  const cliConfig = config?.[engineId === 'claude-code' ? 'claudeCode' : (engineId as keyof Config)] as { cliPath?: string } | undefined
   const cliPath = cliConfig?.cliPath || ''
 
   // CLI 命令名映射
   const commandMap: Record<string, string> = {
     'claude-code': 'claude',
-    codex: 'codex',
-    pi: 'pi',
   }
 
   return {
@@ -108,7 +104,7 @@ export function hasAnyEngineAvailable(
     const hasSimpleAI = (config?.modelProfiles ?? []).some(
       p => p.baseUrl && p.apiKey && p.model,
     )
-    return Boolean(health?.claudeAvailable || health?.codexAvailable || health?.piAvailable || hasSimpleAI)
+    return Boolean(health?.claudeAvailable || hasSimpleAI)
   }
 
   for (const meta of metadatas) {

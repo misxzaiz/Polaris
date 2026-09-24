@@ -40,7 +40,7 @@ function fmtCost(n: number): string {
 function inferEngine(model: string): string {
   const prefix = model.includes('-') ? model.split('-')[0] : model
   const engineMap: Record<string, string> = {
-    claude: 'claude', gpt: 'codex', o1: 'codex',
+    claude: 'claude',
     deepseek: 'simple', glm: 'simple', qwen: 'simple', yi: 'simple',
   }
   return engineMap[prefix] || prefix
@@ -63,9 +63,7 @@ function getColor(i: number) { return CHART_COLORS[i % CHART_COLORS.length] }
 const ENGINE_OPTIONS = [
   { value: '', label: '全部引擎' },
   { value: 'claude', label: 'Claude' },
-  { value: 'codex', label: 'Codex' },
   { value: 'simple-ai', label: 'Simple AI' },
-  { value: 'pi', label: 'Pi' },
   { value: 'omp', label: 'OMP' },
 ]
 

@@ -26,7 +26,7 @@ use std::sync::Arc;
 /// ## 序列化格式
 ///
 /// 自定义 Serialize/Deserialize，始终序列化为纯字符串（kebab-case）：
-/// - 已知引擎：`"claude-code"` / `"codex"` / `"simple-ai"` / `"pi"`
+/// - 已知引擎：`"claude-code"` / `"simple-ai"`
 /// - 动态引擎：`"omp"` 等任意字符串
 ///
 /// ## 向后兼容
@@ -37,12 +37,8 @@ use std::sync::Arc;
 pub enum EngineId {
     /// Claude Code 引擎（Anthropic 官方 CLI）
     ClaudeCode,
-    /// OpenAI Codex CLI 引擎
-    Codex,
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
     SimpleAI,
-    /// Pi 引擎（earendil-works pi-coding-agent CLI）
-    Pi,
     /// 插件注册的动态引擎（运行时发现）
     Custom(String),
 }
@@ -71,9 +67,7 @@ impl EngineId {
     pub fn as_serialized_str(&self) -> &str {
         match self {
             Self::ClaudeCode => "claude-code",
-            Self::Codex => "codex",
             Self::SimpleAI => "simple-ai",
-            Self::Pi => "pi",
             Self::Custom(_) => "custom",
         }
     }
@@ -85,7 +79,7 @@ impl EngineId {
 
     /// 从字符串解析已知引擎 ID。
     ///
-    /// 仅识别已知引擎别名（claude/codex/pi/simple-ai），未知字符串返回 None。
+    /// 仅识别已知引擎别名（claude/simple-ai），未知字符串返回 None。
     /// 想要接受动态（Custom）引擎的场景请使用 `parse_any`。
     /// 解析不区分大小写，兼容历史格式。
     pub fn parse(s: &str) -> Option<Self> {
@@ -114,8 +108,6 @@ impl EngineId {
     pub fn known() -> &'static [EngineId] {
         &[
             EngineId::ClaudeCode,
-            EngineId::Codex,
-            EngineId::Pi,
             EngineId::SimpleAI,
         ]
     }
@@ -124,8 +116,6 @@ impl EngineId {
     pub fn aliases(&self) -> Vec<&str> {
         match self {
             Self::ClaudeCode => vec!["claude", "claude-code", "claudecode"],
-            Self::Codex => vec!["codex", "openai-codex", "openai_codex"],
-            Self::Pi => vec!["pi", "pi-coding-agent", "piagent"],
             Self::SimpleAI => vec!["simple-ai", "simpleai", "simple_ai"],
             Self::Custom(id) => vec![id.as_str()],
         }
@@ -135,9 +125,7 @@ impl EngineId {
     pub fn as_str(&self) -> String {
         match self {
             Self::ClaudeCode => "claude-code".to_string(),
-            Self::Codex => "codex".to_string(),
             Self::SimpleAI => "simple-ai".to_string(),
-            Self::Pi => "pi".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -146,9 +134,7 @@ impl EngineId {
     pub fn display_name(&self) -> String {
         match self {
             Self::ClaudeCode => "Claude Code".to_string(),
-            Self::Codex => "OpenAI Codex".to_string(),
             Self::SimpleAI => "Simple AI".to_string(),
-            Self::Pi => "Pi".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -160,7 +146,7 @@ impl EngineId {
 
     /// 判断是否为已知引擎（非 Custom）
     pub fn is_known(&self) -> bool {
-        matches!(self, Self::ClaudeCode | Self::Codex | Self::Pi | Self::SimpleAI)
+        matches!(self, Self::ClaudeCode | Self::SimpleAI)
     }
 }
 
@@ -431,19 +417,16 @@ pub struct SessionOptions {
     /// Settings overlay 文件路径（--settings 参数值）
     /// 由 model_profile_service 根据当前激活的 Profile 生成
     pub settings_overlay_path: Option<String>,
-    /// Codex CLI 配置参数（-c key=value），用于动态注入 MCP 等配置
-    pub codex_config_args: Vec<String>,
     /// 环境变量覆盖（ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等）
     /// 用于将请求路由到第三方 Anthropic 兼容端点
     pub env_overrides: HashMap<String, String>,
 
-    /// Pi 引擎专用：写入 `~/.pi/agent/models.json` 的 provider 配置。
-    /// 非 None 时，PiEngine 会在启动前写入/更新 models.json，
-    /// 并通过 `--provider <name>` 让 pi 使用该端点。
+    /// 插件引擎专用：写入 provider 配置文件（如 ~/.omp/agent/models.yml）的配置。
+    /// 非 None 时，插件引擎会在启动前写入 provider 配置，并通过 CLI 参数选择该端点。
     pub pi_provider_config: Option<PiProviderConfig>,
 
-    /// Pi 引擎专用：已剥离 CLI 私有后缀（如 `[1m]`）的纯模型名。
-    /// 非 None 时 PiEngine 用此值替代 `model` 字段传给 `--model`。
+    /// 插件引擎专用：已剥离 CLI 私有后缀（如 `[1m]`）的纯模型名。
+    /// 非 None 时插件引擎用此值替代 `model` 字段传给模型参数。
     pub pi_model: Option<String>,
 
     /// 前端生成的用户消息 ID（透传至 UserMessageEvent.client_message_id，
@@ -451,16 +434,16 @@ pub struct SessionOptions {
     pub client_message_id: Option<String>,
 }
 
-/// Pi 引擎通过 `~/.pi/agent/models.json` 注册自定义 provider 的配置。
+/// 插件引擎通过 provider 配置文件（如 `~/.omp/agent/models.yml`）注册自定义 provider 的配置。
 #[derive(Debug, Clone, Default)]
 pub struct PiProviderConfig {
-    /// 在 models.json 中使用的 provider 标识名（需唯一，通常用 Profile 名 + id）
+    /// 在配置文件中使用的 provider 标识名（需唯一，通常用 Profile 名 + id）
     pub name: String,
     /// 端点 URL（如 `http://120.79.164.155:9850/v1`）
     pub base_url: String,
     /// 用于 `--api-key` 的 API key
     pub api_key: String,
-    /// pi 的 API 类型（`openai-completions` / `anthropic-messages` / 等）
+    /// 引擎的 API 类型（`openai-completions` / `anthropic-messages` / 等）
     pub api: String,
     /// 上下文窗口（用于注册模型元数据）
     pub context_window: u64,
@@ -511,7 +494,6 @@ impl SessionOptions {
             image_attachments: Vec::new(),
             fork_session_id: None,
             settings_overlay_path: None,
-            codex_config_args: Vec::new(),
             env_overrides: HashMap::new(),
             pi_provider_config: None,
             pi_model: None,
@@ -633,25 +615,19 @@ impl SessionOptions {
         self
     }
 
-    /// 设置 Codex CLI 配置参数
-    pub fn with_codex_config_args(mut self, args: Vec<String>) -> Self {
-        self.codex_config_args = args;
-        self
-    }
-
     /// 设置环境变量覆盖
     pub fn with_env_overrides(mut self, overrides: HashMap<String, String>) -> Self {
         self.env_overrides = overrides;
         self
     }
 
-    /// 设置 Pi provider 配置（写入 models.json）
+    /// 设置插件引擎 provider 配置（写入 provider 配置文件）
     pub fn with_pi_provider_config(mut self, config: PiProviderConfig) -> Self {
         self.pi_provider_config = Some(config);
         self
     }
 
-    /// 设置 Pi 纯模型名（已剥离 CLI 私有后缀）
+    /// 设置插件引擎纯模型名（已剥离 CLI 私有后缀）
     pub fn with_pi_model(mut self, model: impl Into<String>) -> Self {
         self.pi_model = Some(model.into());
         self
@@ -788,7 +764,7 @@ pub struct EngineMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub install_url: Option<String>,
     /// 是否为稳定版本。
-    /// Claude Code 为唯一稳定引擎，其余（Codex/Simple AI/Pi/DSH/插件引擎）均为不稳定版本。
+    /// Claude Code 为唯一稳定引擎，其余（Simple AI/插件引擎）均为不稳定版本。
     /// 默认值 false（#[serde(default)] 保证旧配置向后兼容）。
     #[serde(default)]
     pub stable: bool,

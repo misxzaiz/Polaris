@@ -21,31 +21,12 @@ describe('getSelectedEngineHealth', () => {
     expect(result.version).toBe('1.0.0')
   })
 
-  it('应该返回 Codex 引擎健康状态', () => {
-    const config = {
-      defaultEngine: 'codex' as const,
-      codexCode: { cliPath: '/usr/bin/codex' },
-    }
-    const health = {
-      codexAvailable: true,
-      codexVersion: '2.0.0',
-    }
-
-    const result = getSelectedEngineHealth(config, health)
-    expect(result.engineId).toBe('codex')
-    expect(result.name).toBe('OpenAI Codex')
-    expect(result.command).toBe('codex')
-    expect(result.cliPath).toBe('/usr/bin/codex')
-    expect(result.available).toBe(true)
-    expect(result.version).toBe('2.0.0')
-  })
-
   it('应该使用 engineOverride', () => {
     const config = { defaultEngine: 'claude-code' as const }
-    const health = { codexAvailable: true }
+    const health = { claudeAvailable: true }
 
-    const result = getSelectedEngineHealth(config, health, 'codex')
-    expect(result.engineId).toBe('codex')
+    const result = getSelectedEngineHealth(config, health, 'simple-ai')
+    expect(result.engineId).toBe('simple-ai')
   })
 
   it('应该使用默认 CLI 路径', () => {
@@ -71,19 +52,25 @@ describe('getSelectedEngineHealth', () => {
 
 describe('hasAnyEngineAvailable', () => {
   it('应该返回 true 当 Claude 可用', () => {
-    expect(hasAnyEngineAvailable({ claudeAvailable: true, codexAvailable: false })).toBe(true)
+    expect(hasAnyEngineAvailable({ claudeAvailable: true })).toBe(true)
   })
 
-  it('应该返回 true 当 Codex 可用', () => {
-    expect(hasAnyEngineAvailable({ claudeAvailable: false, codexAvailable: true })).toBe(true)
+  it('应该返回 true 当 Simple AI 配置了模型 Profile', () => {
+    const config = {
+      modelProfiles: [{ baseUrl: 'https://x', apiKey: 'k', model: 'm' }],
+    }
+    expect(hasAnyEngineAvailable({ claudeAvailable: false }, config as never)).toBe(true)
   })
 
   it('应该返回 true 当两者都可用', () => {
-    expect(hasAnyEngineAvailable({ claudeAvailable: true, codexAvailable: true })).toBe(true)
+    const config = {
+      modelProfiles: [{ baseUrl: 'https://x', apiKey: 'k', model: 'm' }],
+    }
+    expect(hasAnyEngineAvailable({ claudeAvailable: true }, config as never)).toBe(true)
   })
 
-  it('应该返回 false 当两者都不可用', () => {
-    expect(hasAnyEngineAvailable({ claudeAvailable: false, codexAvailable: false })).toBe(false)
+  it('应该返回 false 当都不可用', () => {
+    expect(hasAnyEngineAvailable({ claudeAvailable: false })).toBe(false)
   })
 
   it('应该返回 false 当输入为 null', () => {

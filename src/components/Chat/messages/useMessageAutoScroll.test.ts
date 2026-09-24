@@ -14,6 +14,14 @@ import { useRef } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
 
+/** 让 performance.now 可控 */
+const nowMock = { value: 0 };
+vi.stubGlobal('performance', { now: () => nowMock.value });
+
+beforeEach(() => {
+  nowMock.value = 0;
+});
+
 // ============================================================
 // 全局 mock
 // ============================================================
@@ -172,6 +180,157 @@ describe('useMessageAutoScroll', () => {
       const { result } = renderHook(() => useMessageAutoScroll(ref));
       act(() => result.current.handleWheel({ deltaY: 1 }));
       expect(result.current.autoScroll).toBe(true);
+    });
+  });
+
+  describe('handleScroll（滚动事件兜底：覆盖键盘/触摸板/程序化滚动）', () => {
+    it('流式中 + 距底超阈值 + scrollTop 变化 → 停止跟随', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // scroller 尺寸模拟：scrollHeight=800, clientHeight=200, scrollTop=100 → 距底 500
+      const scroller = makeScroller({ scrollHeight: 800, scrollTop: 100, clientHeight: 200 });
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => result.current.handleScroll());
+      expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('非流式 → 忽略 handleScroll（交给 atBottomStateChange 判定）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      act(() => result.current.handleScroll());
+      expect(result.current.autoScroll).toBe(true);
+    });
+
+    it('非流式初始挂载 → end-pending 窗口不打开，ResizeObserver 不触发补偿', () => {
+      // 回归保护：之前修复的 bug —— 只挂一次 isStreaming=false 不应开启 end-pending 窗口
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => lastRo().fire());
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('handleKeyDown（键盘上拉兜底）', () => {
+    it('流式中 PageUp → 停止跟随', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      act(() => result.current.handleKeyDown({ key: 'PageUp' } as KeyboardEvent));
+      expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('流式中 Home → 停止跟随', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      act(() => result.current.handleKeyDown({ key: 'Home' } as KeyboardEvent));
+      expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('流式中 ArrowUp → 停止跟随', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      act(() => result.current.handleKeyDown({ key: 'ArrowUp' } as KeyboardEvent));
+      expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('流式中 ArrowDown / Enter 等 → 不影响', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      act(() => result.current.handleKeyDown({ key: 'Enter' } as KeyboardEvent));
+      act(() => result.current.handleKeyDown({ key: 'ArrowDown' } as KeyboardEvent));
+      expect(result.current.autoScroll).toBe(true);
+    });
+
+    it('非流式 → 键盘事件忽略', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      act(() => result.current.handleKeyDown({ key: 'PageUp' } as KeyboardEvent));
+      expect(result.current.autoScroll).toBe(true);
+    });
+  });
+
+  describe('流式结束补偿窗口（true→false 边沿）', () => {
+    it('true→false 边沿后 ResizeObserver 仍补偿一次', () => {
+      const ref = makeVirtuosoRef();
+      const { result, rerender } = renderHook(
+        ({ s }: { s: boolean }) => useMessageAutoScroll(ref, { isStreaming: s }),
+        { initialProps: { s: true } }
+      );
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+
+      // 切到非流式（模拟流式结束）
+      act(() => rerender({ s: false }));
+
+      // ResizeObserver 触发（模拟内容最终测量完成）
+      act(() => lastRo().fire());
+
+      // 应该补偿
+      expect(ref.current?.scrollToIndex).toHaveBeenCalledWith({
+        index: 'LAST',
+        align: 'end',
+        behavior: 'smooth',
+      });
+    });
+
+    it('补偿窗口超时后 ResizeObserver 不再补偿', () => {
+      vi.useFakeTimers();
+      try {
+        const ref = makeVirtuosoRef();
+        const { result, rerender } = renderHook(
+          ({ s }: { s: boolean }) => useMessageAutoScroll(ref, { isStreaming: s }),
+          { initialProps: { s: true } }
+        );
+        const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+        act(() => result.current.setScrollerRef(scroller));
+
+        // 切到非流式（end-pending 打开）
+        act(() => rerender({ s: false }));
+        // 推进时间超过窗口
+        vi.advanceTimersByTime(1500);
+
+        act(() => lastRo().fire());
+
+        expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('初次挂载即 isStreaming=false → 无窗口，ResizeObserver 不补偿', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => lastRo().fire());
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+    });
+
+    it('true→false 边沿后再切回 true → 窗口关闭', () => {
+      const ref = makeVirtuosoRef();
+      const { result, rerender } = renderHook(
+        ({ s }: { s: boolean }) => useMessageAutoScroll(ref, { isStreaming: s }),
+        { initialProps: { s: true } }
+      );
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+
+      // 触发一次补偿（打开保护窗口，避免后续被误判为离开）
+      act(() => lastRo().fire());
+      // 推进时间越过保护窗口
+      nowMock.value += 500;
+
+      // 切 false（end-pending 打开）
+      act(() => rerender({ s: false }));
+      // 立即补偿一次，闸门应该关闭
+      act(() => lastRo().fire());
+      // 再触发一次 resize：闸门已关，不再补偿
+      act(() => lastRo().fire());
+
+      const calls = ref.current?.scrollToIndex.mock.calls ?? [];
+      // 第一次补偿 + 一次 end-pending 补偿 = 2 次；第三次不补偿
+      expect(calls.length).toBeLessThanOrEqual(2);
     });
   });
 

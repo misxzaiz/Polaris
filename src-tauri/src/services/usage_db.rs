@@ -9,7 +9,7 @@
 //!   id              INTEGER PRIMARY KEY AUTOINCREMENT,
 //!   model           TEXT NOT NULL,       -- 模型名（如 claude-sonnet-4-5）
 //!   request_model   TEXT,                -- 请求侧模型名（中转站别名）
-//!   engine_id       TEXT,                -- 引擎标识（claude/codex/simple-ai/pi）
+//!   engine_id       TEXT,                -- 引擎标识（claude/simple-ai/插件引擎）
 //!   input_tokens    INTEGER NOT NULL DEFAULT 0,
 //!   output_tokens   INTEGER NOT NULL DEFAULT 0,
 //!   cache_read_tokens    INTEGER NOT NULL DEFAULT 0,

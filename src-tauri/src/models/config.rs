@@ -18,47 +18,6 @@ impl Default for ClaudeCodeConfig {
     }
 }
 
-/// OpenAI Codex 引擎配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CodexCodeConfig {
-    /// Codex CLI 命令路径
-    pub cli_path: String,
-}
-
-impl Default for CodexCodeConfig {
-    fn default() -> Self {
-        Self {
-            cli_path: "codex".to_string(),
-        }
-    }
-}
-
-/// Pi Code 引擎配置（earendil-works pi-coding-agent）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PiCodeConfig {
-    /// Pi CLI 命令路径
-    #[serde(alias = "cli_path")]
-    pub cli_path: String,
-    /// 是否启用 Pi MCP 桥接（Pi Extension 桥接）。
-    /// 开启后，Polaris 会把 MCP server 列表写入
-    /// `~/.pi/agent/extensions/polaris-mcp-bridge/`，并通过显式 `--extension`
-    /// 注入 Pi，让 Pi 通过 Extension 桥接消费 Polaris MCP 工具生态。
-    /// 默认关闭：需用户显式确认。
-    #[serde(default, alias = "enable_extensions")]
-    pub enable_extensions: bool,
-}
-
-impl Default for PiCodeConfig {
-    fn default() -> Self {
-        Self {
-            cli_path: "pi".to_string(),
-            enable_extensions: false,
-        }
-    }
-}
-
 // EngineId 的定义统一在 crate::ai::EngineId（ai/traits.rs）。
 // 此处仅做兼容性重导出，避免破坏现有引用路径。
 //
@@ -1500,14 +1459,6 @@ pub struct Config {
     #[serde(default)]
     pub claude_code: ClaudeCodeConfig,
 
-    /// OpenAI Codex 引擎配置
-    #[serde(default)]
-    pub codex_code: CodexCodeConfig,
-
-    /// Pi Code 引擎配置（earendil-works pi-coding-agent）
-    #[serde(default)]
-    pub pi_code: PiCodeConfig,
-
     /// 工作目录
     pub work_dir: Option<PathBuf>,
 
@@ -1733,8 +1684,6 @@ impl Default for Config {
             theme: None,
             active_theme_id: None,
             claude_code: ClaudeCodeConfig::default(),
-            codex_code: CodexCodeConfig::default(),
-            pi_code: PiCodeConfig::default(),
             work_dir: None,
             session_dir: None,
             git_bin_path: None,
@@ -1781,16 +1730,6 @@ impl Config {
         }
         // 使用新字段
         self.claude_code.cli_path.clone()
-    }
-
-    /// 获取 Codex CLI 命令路径
-    pub fn get_codex_cmd(&self) -> String {
-        self.codex_code.cli_path.clone()
-    }
-
-    /// 获取 Pi CLI 命令路径
-    pub fn get_pi_cmd(&self) -> String {
-        self.pi_code.cli_path.clone()
     }
 
     /// 确保 default_engine 与显示设置有效
@@ -1841,22 +1780,6 @@ pub struct HealthStatus {
 
     /// Claude 版本
     pub claude_version: Option<String>,
-
-    /// Codex CLI 是否可用
-    #[serde(default)]
-    pub codex_available: bool,
-
-    /// Codex 版本
-    #[serde(default)]
-    pub codex_version: Option<String>,
-
-    /// Pi CLI 是否可用
-    #[serde(default)]
-    pub pi_available: bool,
-
-    /// Pi 版本
-    #[serde(default)]
-    pub pi_version: Option<String>,
 
     /// 工作目录
     pub work_dir: Option<String>,

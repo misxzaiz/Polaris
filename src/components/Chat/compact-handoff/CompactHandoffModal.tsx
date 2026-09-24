@@ -12,7 +12,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, X, ChevronDown, Bot, Cpu, Zap, Orbit } from 'lucide-react'
+import { Archive, X, ChevronDown, Bot, Zap } from 'lucide-react'
 import { OverlayGuard } from '@/components/Browser/OverlayGuard'
 import { clsx } from 'clsx'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
@@ -45,15 +45,13 @@ interface SelectOption {
 /** AI 引擎选项（与 NewSessionButton 保持一致） */
 const ENGINE_OPTIONS: Array<{ id: EngineId; label: string; Icon: typeof Bot }> = [
   { id: 'claude-code', label: 'Claude', Icon: Bot },
-  { id: 'codex', label: 'Codex', Icon: Cpu },
   { id: 'simple-ai', label: 'Simple', Icon: Zap },
-  { id: 'pi', label: 'Pi', Icon: Orbit },
 ]
 
 /** 将引擎 id 映射到 Profile 过滤用的引擎类别 */
 function toProfileEngine(engineId: string): string {
   const e = normalizeEngineId(engineId)
-  return e === 'codex' ? 'codex' : e === 'simple-ai' ? 'simple-ai' : e === 'pi' ? 'pi' : e === 'claude-code' ? 'claude' : e
+  return e === 'simple-ai' ? 'simple-ai' : e === 'claude-code' ? 'claude' : e
 }
 
 /** 引擎单选段（图标 + 名称，四选一横向排列） */

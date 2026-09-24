@@ -481,6 +481,25 @@ body {
   line-height: var(--chat-line-height);
 }
 
+/* 流式打字光标：紧跟在最后一段文本末尾的 blink 光标。
+   用 caret 视觉（细竖条 blink）而非 bounce，贴近"正在打字"的直觉。
+   opacity transition 让流式结束瞬间（span 从 DOM 移除）有短促淡出。 */
+.chat-prose .streaming-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: currentColor;
+  opacity: 0.8;
+  animation: streaming-caret-blink 1s steps(1, end) infinite;
+}
+
+@keyframes streaming-caret-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+
 .chat-prose p {
   line-height: var(--chat-line-height);
 }

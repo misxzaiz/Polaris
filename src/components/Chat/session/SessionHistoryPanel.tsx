@@ -37,10 +37,8 @@ const log = createLogger('SessionHistoryPanel')
 
 function getHistoryEngines(filter: 'all' | EngineId): string[] {
   if (filter === 'all') return [] // 不传引擎参数，后端返回所有引擎
-  if (filter === 'codex') return ['codex']
   if (filter === 'claude-code') return ['claude-code']
   if (filter === 'simple-ai') return ['simple-ai']
-  if (filter === 'pi') return ['pi']
   // 插件引擎（元数据中已知的引擎）
   return [filter]
 }
@@ -494,22 +492,10 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
   // 获取引擎徽标信息
   const getEngineInfo = (engineId: EngineId) => {
-    if (engineId === 'codex') {
-      return {
-        name: getEngineFullName(engineId),
-        bgColor: 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-300',
-      }
-    }
     if (engineId === 'simple-ai') {
       return {
         name: getEngineFullName(engineId),
         bgColor: 'bg-orange-100 text-orange-600 dark:bg-orange-900 dark:text-orange-300',
-      }
-    }
-    if (engineId === 'pi') {
-      return {
-        name: getEngineFullName(engineId),
-        bgColor: 'bg-cyan-100 text-cyan-600 dark:bg-cyan-900 dark:text-cyan-300',
       }
     }
     return {

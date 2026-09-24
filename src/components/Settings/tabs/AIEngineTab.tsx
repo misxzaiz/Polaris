@@ -28,7 +28,7 @@ interface AIEngineTabProps {
 // 引擎 UI 专属配置
 // ============================================================================
 
-export type CliField = 'claudeCode' | 'codexCode' | 'piCode';
+export type CliField = 'claudeCode';
 
 export interface EngineUiConfig {
   id: EngineId
@@ -49,34 +49,11 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     defaultCli: 'claude',
     npmPackage: '@anthropic-ai/claude-code',
   },
-  codex: {
-    id: 'codex',
-    nameKey: 'engines.codex.name',
-    descKey: 'engines.codex.description',
-    cliField: 'codexCode',
-    defaultCli: 'codex',
-    npmPackage: '@openai/codex',
-  },
-  pi: {
-    id: 'pi',
-    nameKey: 'engines.pi.name',
-    descKey: 'engines.pi.description',
-    cliField: 'piCode',
-    defaultCli: 'pi',
-    npmPackage: '@earendil-works/pi-coding-agent',
-  },
   'simple-ai': {
     id: 'simple-ai',
     nameKey: 'engines.simpleAi.name',
     descKey: 'engines.simpleAi.description',
     builtin: true,
-  },
-  dsh: {
-    id: 'dsh',
-    nameKey: 'engines.dsh.name',
-    descKey: 'engines.dsh.description',
-    defaultCli: 'dsh',
-    npmPackage: '@deepseek-ai/dsh',
   },
 }
 
@@ -94,12 +71,9 @@ function resolveEngineStatus(
   if (uiConfig?.builtin) return { available: true }
 
   // 已知引擎：用 healthStatus 的 CLI 检测结果
-  const fieldMap: Record<string, { available: string; version: string }> = {
-    'claude-code': { available: 'claudeAvailable', version: 'claudeVersion' },
-    codex: { available: 'codexAvailable', version: 'codexVersion' },
-    pi: { available: 'piAvailable', version: 'piVersion' },
-  }
-  const fields = fieldMap[engineId]
+  const fields = engineId === 'claude-code'
+    ? { available: 'claudeAvailable', version: 'claudeVersion' }
+    : null
   if (fields && health) {
     return {
       available: !!(health as any)[fields.available],
@@ -133,7 +107,7 @@ function getTabBadge(engineId: string, status: EngineRuntimeStatus): { label: st
 /** 稳定性徽章配置 */
 /**
  * 引擎稳定性标识。
- * Claude Code 为唯一稳定引擎，其余（Codex/Simple AI/Pi/DSH/插件引擎）均为不稳定版本。
+ * Claude Code 为唯一稳定引擎，其余（Simple AI/插件引擎）均为不稳定版本。
  * 仅当引擎元数据中显式声明 stable: false 时显示"不稳定"标签；
  * stable 为 true 或未声明时不展示（Claude Code 稳定且用户已知的默认选择，不额外标注）。
  */
@@ -231,18 +205,12 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
   const handleCliPathChange = (field: CliField, cmd: string) => {
     if (field === 'claudeCode') {
       onConfigChange({ ...config, claudeCode: { ...config.claudeCode, cliPath: cmd } });
-    } else if (field === 'codexCode') {
-      onConfigChange({ ...config, codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath: cmd } });
-    } else if (field === 'piCode') {
-      onConfigChange({ ...config, piCode: { ...(config.piCode || { cliPath: 'pi' }), cliPath: cmd } });
     }
   };
 
   const getCliPath = (engineId: string): string => {
     const uiConfig = ENGINE_UI_MAP[engineId]
     if (uiConfig?.cliField === 'claudeCode') return config.claudeCode?.cliPath || uiConfig.defaultCli || 'claude';
-    if (uiConfig?.cliField === 'codexCode') return config.codexCode?.cliPath || uiConfig.defaultCli || 'codex';
-    if (uiConfig?.cliField === 'piCode') return config.piCode?.cliPath || uiConfig.defaultCli || 'pi';
     return '';
   };
 
@@ -366,8 +334,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         meta={selectedMeta}
         uiConfig={selectedUiConfig}
         status={selectedStatus}
-        config={config}
-        onConfigChange={onConfigChange}
         onCliPathChange={handleCliPathChange}
         getCliPath={getCliPath}
         loading={loading}

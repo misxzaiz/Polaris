@@ -8,16 +8,14 @@ import { EngineInstallActions } from './EngineInstallActions';
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import { pluginRegistry } from '@/plugin-system';
 import { openInDefaultApp } from '@/services/tauri/windowService';
-import type { EngineCapabilities, EngineMetadata, Config, EngineId } from '@/types';
-import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './AIEngineTab';
+import type { EngineCapabilities, EngineMetadata, EngineId } from '@/types';
+import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './tabs/AIEngineTab';
 
 interface EngineExpandDetailProps {
   engineId: EngineId;
   meta: EngineMetadata | undefined;
   uiConfig: EngineUiConfig | undefined;
   status: EngineRuntimeStatus;
-  config: Config;
-  onConfigChange: (config: Config) => void;
   onCliPathChange: (field: CliField, cmd: string) => void;
   getCliPath: (id: string) => string;
   loading: boolean;
@@ -50,8 +48,6 @@ export function EngineExpandDetail({
   meta,
   uiConfig,
   status,
-  config,
-  onConfigChange,
   onCliPathChange,
   getCliPath,
   loading,
@@ -213,42 +209,6 @@ export function EngineExpandDetail({
               {t('aiEngine.openInstallPage', { defaultValue: '打开安装页面' })}
             </button>
           )}
-        </div>
-      )}
-
-      {/* ====== Pi 引擎专属：MCP 桥接 ====== */}
-      {engineId === 'pi' && (
-        <div className="bg-surface border border-amber-500/25 rounded-lg p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h4 className="text-xs font-medium text-amber-600 dark:text-amber-400">
-                {t('aiEngine.piMcpBridge', { defaultValue: 'MCP 桥接（实验性）' })}
-              </h4>
-              <p className="text-xs text-text-secondary mt-1">
-                {t('aiEngine.piMcpBridgeHint', {
-                  defaultValue: '开启后移除 --no-extensions，把 Polaris MCP server 写入 pi auth.json extensions，让 pi 引擎能使用浏览器/电脑操作等 MCP 工具。',
-                })}
-              </p>
-            </div>
-            <label className="shrink-0 inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={config.piCode?.enableExtensions ?? false}
-                onChange={(e) =>
-                  onConfigChange({
-                    ...config,
-                    piCode: {
-                      ...(config.piCode || { cliPath: 'pi' }),
-                      enableExtensions: e.target.checked,
-                    },
-                  })
-                }
-                disabled={loading}
-                className="sr-only peer"
-              />
-              <span className="relative w-9 h-5 bg-border rounded-full peer-checked:bg-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:w-4 after:h-4 after:rounded-full after:transition-transform peer-checked:after:translate-x-4" />
-            </label>
-          </div>
         </div>
       )}
 

@@ -596,114 +596,6 @@ impl WorkspaceMcpConfigService {
         Ok(config_path)
     }
 
-    pub fn prepare_workspace_codex_config_args(&self, workspace_path: &str) -> Result<Vec<String>> {
-        self.prepare_workspace_codex_config_args_with_disabled(workspace_path, &[])
-    }
-
-    pub fn prepare_workspace_codex_config_args_with_disabled(
-        &self,
-        workspace_path: &str,
-        disabled_server_names: &[String],
-    ) -> Result<Vec<String>> {
-        let normalized_workspace = workspace_path.trim();
-        if normalized_workspace.is_empty() {
-            return Err(AppError::ValidationError(
-                "workspace_path 不能为空".to_string(),
-            ));
-        }
-
-        let mut args = Vec::new();
-        let mut registered_names = BTreeSet::new();
-        for binary in &self.binaries {
-            if is_server_disabled(disabled_server_names, &binary.server_name) {
-                tracing::info!("[MCP] 跳过已禁用 Codex MCP server: {}", binary.server_name);
-                continue;
-            }
-
-            if !binary.executable_path.exists() {
-                tracing::warn!(
-                    "[MCP] 跳过 Codex MCP server {}，可执行文件不存在: {}",
-                    binary.server_name,
-                    binary.executable_path.display()
-                );
-                continue;
-            }
-
-            if matches!(binary.args_mode, McpServerArgsMode::AskListener)
-                && self.ask_listener.is_none()
-            {
-                tracing::info!(
-                    "[MCP] 跳过 Codex {}：ask_listener 未就绪",
-                    binary.server_name
-                );
-                continue;
-            }
-
-            let server_args = build_mcp_server_args(
-                binary.args_mode,
-                &binary.server_name,
-                &self.config_dir,
-                normalized_workspace,
-                self.ask_listener.as_ref(),
-                self.ask_route_session_id.as_deref(),
-            );
-
-            registered_names.insert(binary.server_name.clone());
-            args.push("-c".to_string());
-            args.push(format!(
-                "mcp_servers.{}.command={}",
-                binary.server_name,
-                toml_string(&strip_unc_prefix(&binary.executable_path.to_string_lossy()))?
-            ));
-            args.push("-c".to_string());
-            args.push(format!(
-                "mcp_servers.{}.args={}",
-                binary.server_name,
-                toml_string_array(&server_args)?
-            ));
-        }
-
-        for server in &self.external_servers {
-            if is_server_disabled(disabled_server_names, &server.server_name) {
-                tracing::info!(
-                    "[MCP] 跳过已禁用 Codex 外部插件 MCP server: {}",
-                    server.server_name
-                );
-                continue;
-            }
-
-            if registered_names.contains(&server.server_name) {
-                tracing::warn!(
-                    "[MCP] 跳过 Codex 外部插件 MCP server {}，名称与已有 server 冲突",
-                    server.server_name
-                );
-                continue;
-            }
-
-            registered_names.insert(server.server_name.clone());
-            args.push("-c".to_string());
-            args.push(format!(
-                "mcp_servers.{}.command={}",
-                server.server_name,
-                toml_string(&strip_unc_prefix(&server.command))?
-            ));
-            args.push("-c".to_string());
-            args.push(format!(
-                "mcp_servers.{}.args={}",
-                server.server_name,
-                toml_string_array(
-                    &server
-                        .args
-                        .iter()
-                        .map(|arg| strip_unc_prefix(arg))
-                        .collect::<Vec<_>>()
-                )?
-            ));
-        }
-
-        Ok(args)
-    }
-
     /// 返回 SimpleAI 直接消费的 MCP server 列表（**内置 + 外部插件**合并，已过滤 disabled）。
     ///
     /// 与 `prepare_workspace_config`（写 .mcp.json 给 Claude CLI）对齐：内置 MCP 走 binary
@@ -1834,46 +1726,6 @@ mod tests {
     }
 
     #[test]
-    fn external_plugin_mcp_server_is_written_to_codex_args() {
-        let temp_root =
-            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
-        let workspace = temp_root.join("workspace-external-codex");
-        let config_dir = temp_root.join("config");
-        let plugin_script = config_dir
-            .join("plugins")
-            .join("example.demo-mcp")
-            .join("mcp")
-            .join("demo-mcp-server.js");
-
-        std::fs::create_dir_all(&workspace).unwrap();
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(plugin_script.parent().unwrap()).unwrap();
-        std::fs::write(&plugin_script, "demo server").unwrap();
-
-        let service = WorkspaceMcpConfigService::new(config_dir, None)
-            .with_external_servers(vec![ResolvedExternalMcpServer {
-                plugin_id: "example.demo-mcp".to_string(),
-                server_name: "example-demo-mcp".to_string(),
-                command: "node".to_string(),
-                args: vec![
-                    plugin_script.to_string_lossy().to_string(),
-                    workspace.to_string_lossy().to_string(),
-                ],
-            }]);
-
-        let args = service
-            .prepare_workspace_codex_config_args(workspace.to_string_lossy().as_ref())
-            .unwrap();
-        let joined = args.join("\n");
-
-        assert!(joined.contains("mcp_servers.example-demo-mcp.command='node'"));
-        assert!(joined.contains("mcp_servers.example-demo-mcp.args="));
-        assert!(joined.contains(plugin_script.to_string_lossy().as_ref()));
-
-        let _ = std::fs::remove_dir_all(&temp_root);
-    }
-
-    #[test]
     fn external_plugin_mcp_server_does_not_override_builtin_server() {
         let temp_root =
             std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
@@ -1956,59 +1808,7 @@ mod tests {
     }
 
     #[test]
-    fn prepares_workspace_codex_config_args() {
-        let temp_root =
-            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
-        let workspace = temp_root.join("workspace-c");
-        let config_dir = temp_root.join("config");
-        let requirements_executable_path =
-            temp_root.join(fixture_exe("bin/polaris-mcp"));
-
-        std::fs::create_dir_all(&workspace).unwrap();
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(requirements_executable_path.parent().unwrap()).unwrap();
-        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
-
-        let service = WorkspaceMcpConfigService::new(
-            config_dir.clone(),
-            Some(requirements_executable_path.clone()),
-        );
-
-        let args = service
-            .prepare_workspace_codex_config_args(workspace.to_string_lossy().as_ref())
-            .unwrap();
-
-        assert_eq!(args.len(), 4);
-        assert_eq!(args.iter().filter(|arg| arg.as_str() == "-c").count(), 2);
-
-        let joined = args.join("\n");
-        assert!(joined.contains("mcp_servers.polaris-requirements.command="));
-        assert!(joined.contains("mcp_servers.polaris-requirements.args=["));
-
-        let expected_config_dir = toml_string_literal(config_dir.to_string_lossy().as_ref());
-        let expected_workspace = toml_string_literal(workspace.to_string_lossy().as_ref());
-        let expected_requirements_command =
-            toml_string_literal(requirements_executable_path.to_string_lossy().as_ref());
-        let expected_args = format!("[{},{}]", expected_config_dir, expected_workspace);
-
-        assert!(joined.contains(&format!(
-            "mcp_servers.polaris-requirements.command={}",
-            expected_requirements_command
-        )));
-        assert!(joined.contains(&format!(
-            "mcp_servers.polaris-requirements.args={}",
-            expected_args
-        )));
-        assert!(
-            !joined.contains("\\\""),
-            "Codex -c values must be TOML, not JSON-escaped strings"
-        );
-
-        let _ = std::fs::remove_dir_all(&temp_root);
-    }
-
-    #[test]
-    fn codex_toml_literals_handle_windows_paths_and_quotes() {
+    fn toml_literals_handle_windows_paths_and_quotes() {
         assert_eq!(
             toml_string_literal(r"D:\app\polaris\polaris-mcp.exe"),
             r"'D:\app\polaris\polaris-mcp.exe'"
@@ -2092,34 +1892,4 @@ mod tests {
         let _ = std::fs::remove_dir_all(&temp_root);
     }
 
-    #[test]
-    fn prepare_workspace_codex_config_args_skips_disabled_servers() {
-        let temp_root =
-            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
-        let workspace = temp_root.join("workspace-disabled-codex");
-        let config_dir = temp_root.join("config");
-        let requirements_executable_path =
-            temp_root.join(fixture_exe("bin/polaris-mcp"));
-
-        std::fs::create_dir_all(&workspace).unwrap();
-        std::fs::create_dir_all(&config_dir).unwrap();
-        std::fs::create_dir_all(requirements_executable_path.parent().unwrap()).unwrap();
-        std::fs::write(&requirements_executable_path, "requirements bin").unwrap();
-
-        let service = WorkspaceMcpConfigService::new(
-            config_dir,
-            Some(requirements_executable_path),
-        );
-
-        let args = service
-            .prepare_workspace_codex_config_args_with_disabled(
-                workspace.to_string_lossy().as_ref(),
-                &[REQUIREMENTS_MCP_SERVER_NAME.to_string()],
-            )
-            .unwrap();
-
-        assert!(args.is_empty());
-
-        let _ = std::fs::remove_dir_all(&temp_root);
-    }
 }

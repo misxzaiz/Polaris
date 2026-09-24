@@ -344,42 +344,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_switch_provider_pi() {
-        // Pi 引擎切换
-        let cmd = CommandParser::parse("/pi");
-        assert!(matches!(
-            cmd,
-            Some(BotCommand::SwitchProvider {
-                provider: EngineId::Pi,
-                custom_prompt: None,
-                replace_mode: false
-            })
-        ));
-
-        // Pi 带提示词
-        let cmd = CommandParser::parse("/pi 你是专家");
-        assert!(matches!(
-            cmd,
-            Some(BotCommand::SwitchProvider {
-                provider: EngineId::Pi,
-                custom_prompt: Some(_),
-                replace_mode: false
-            })
-        ));
-
-        // Pi 别名
-        let cmd = CommandParser::parse("/piagent");
-        assert!(matches!(
-            cmd,
-            Some(BotCommand::SwitchProvider {
-                provider: EngineId::Pi,
-                custom_prompt: None,
-                replace_mode: false
-            })
-        ));
-    }
-
-    #[test]
     fn test_parse_switch_provider_simple_ai() {
         // SimpleAI 引擎切换
         let cmd = CommandParser::parse("/simple-ai");
@@ -445,16 +409,6 @@ mod tests {
             cmd,
             Some(BotCommand::SwitchProvider {
                 provider: EngineId::ClaudeCode,
-                custom_prompt: Some(_),
-                replace_mode: true
-            })
-        ));
-
-        let cmd = CommandParser::parse("/codex -r 你是Rust专家");
-        assert!(matches!(
-            cmd,
-            Some(BotCommand::SwitchProvider {
-                provider: EngineId::Codex,
                 custom_prompt: Some(_),
                 replace_mode: true
             })
@@ -617,9 +571,9 @@ mod tests {
         state.ai_session_id = Some("claude-session".to_string());
         state.pending_resume = true;
 
-        state.switch_engine(&EngineId::Codex);
+        state.switch_engine(&EngineId::SimpleAI);
 
-        assert_eq!(state.engine_id, "codex");
+        assert_eq!(state.engine_id, "simple-ai");
         assert!(state.ai_session_id.is_none());
         assert!(!state.pending_resume);
     }

@@ -12,7 +12,7 @@ import { createLogger } from '@/utils/logger';
 
 const log = createLogger('ClaudePathSelector');
 
-type EngineType = 'claude-code' | 'codex' | 'simple-ai' | 'pi';
+type EngineType = 'claude-code' | 'simple-ai' | (string & {});
 
 interface ClaudePathSelectorProps {
   /** 当前路径值 */
@@ -48,7 +48,7 @@ export function ClaudePathSelector({
     name: t(`pathSelector.${type}.name`),
     placeholder: t(`pathSelector.${type}.placeholder`),
     example: t(`pathSelector.${type}.example`),
-    command: type === 'codex' ? 'codex' : type === 'pi' ? 'pi' : 'claude',
+    command: type === 'claude-code' ? 'claude' : type,
   });
   
   const config = getConfig(engineType);

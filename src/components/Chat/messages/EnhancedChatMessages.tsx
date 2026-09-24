@@ -135,6 +135,27 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
 
   // PENDING 状态：已发送消息、正在等待首 token
   const isPending = isStreaming && !currentMessage;
+  // ThinkingOrb 挂载/显示两态分离，避免 isPending 硬切导致视觉瞬断：
+  //  - `orbMounted`：DOM 挂载标记，控制是否渲染 <ThinkingOrb>
+  //  - `orbVisible`：opacity 目标，控制视觉可见性
+  // 首次挂载若已经 pending，两个都是 true；否则都是 false，等待 pending 上升沿激活。
+  const [orbMounted, setOrbMounted] = useState(isPending);
+  const [orbVisible, setOrbVisible] = useState(isPending);
+  const wasPendingRef = useRef(isPending);
+  useEffect(() => {
+    const wasPending = wasPendingRef.current;
+    wasPendingRef.current = isPending;
+    if (!isPending) {
+      if (!wasPending) return; // 初始就是非 pending，无需退出动画
+      // 上次是 pending，这次 false → 触发淡出过渡
+      setOrbVisible(false);
+      const t = setTimeout(() => setOrbMounted(false), 300);
+      return () => clearTimeout(t);
+    }
+    // 上升沿或已 pending：确保挂载 & 可见
+    setOrbMounted(true);
+    setOrbVisible(true);
+  }, [isPending]);
 
   // 性能优化：流式阶段合并 currentMessage 到消息列表
   const prevDisplayMessagesRef = useRef<ChatMessage[]>([]);
@@ -242,7 +263,7 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
   // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
   const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming, initialAutoScroll: atBottomOnMount });
   // 注意：scrollToBottom 用组件自身实现（含 scrollActions 引用），不从 hook 解构以避免重复声明
-  const { autoScroll, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef } = scrollState;
+  const { autoScroll, handleAtBottomStateChange, handleWheel, handleScroll, handleKeyDown, setAutoScroll, compensateScroll, setScrollerRef } = scrollState;
 
   // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）
   useEffect(() => {
@@ -395,12 +416,14 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
             setScrollerRef(node);
           }}
           onWheel={handleWheel}
+          onScroll={handleScroll}
+          onKeyDown={handleKeyDown}
         />
       )
     );
     Scroller.displayName = 'AutoScrollScroller';
     return Scroller;
-  }, [handleWheel, setScrollerRef]);
+  }, [handleWheel, handleScroll, handleKeyDown, setScrollerRef]);
 
   return (
     <div className="chat-display-root flex-1 overflow-hidden flex flex-col" style={chatDisplayStyle}>
@@ -423,9 +446,12 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               Scroller: CustomScroller,
               Footer: () => (
                 <>
-                  {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
-                  {isPending && (
-                    <ThinkingOrb isPending={isPending} compact={compact} />
+                  {orbMounted && (
+                    /* 用外部 wrapper 控制 opacity 实现淡出过渡；
+                       ThinkingOrb 内部 isPending 固定传 true，视觉可见性由 wrapper 决定 */
+                    <div style={{ opacity: orbVisible ? 1 : 0, transition: 'opacity 250ms ease-in-out' }}>
+                      <ThinkingOrb isPending={true} compact={compact} />
+                    </div>
                   )}
                   <div style={FOOTER_SPACER_STYLE} />
                 </>

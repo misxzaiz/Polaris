@@ -18,7 +18,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ai::{
-    ClaudeHistoryProvider, CodexHistoryProvider, PluginHistoryProvider,
+    ClaudeHistoryProvider, PluginHistoryProvider,
     HistoryMessage, SessionHistoryProvider,
     SessionMeta, launcher::{self, McpSessionConfig, McpConfigParams},
 };
@@ -447,9 +447,7 @@ async fn apply_model_profile_options(
     // 检查 Profile 是否适用于当前引擎。
     let expected_engine = match engine {
         EngineId::ClaudeCode => "claude",
-        EngineId::Codex => "codex",
         EngineId::SimpleAI => "simple-ai",
-        EngineId::Pi => "pi",
         EngineId::Custom(id) => id.as_str(),
     };
     if !profile.is_for_engine(expected_engine) {
@@ -579,77 +577,6 @@ async fn apply_model_profile_options(
                 session_opts = session_opts.with_env_overrides(env_overrides);
             }
         }
-        EngineId::Codex => {
-            let wire = profile.wire_api.as_deref();
-            let use_codex_proxy = matches!(wire, Some("openai-chat-completions"));
-
-            if use_codex_proxy {
-                tracing::info!(
-                    "[{}] Profile {} 使用 Codex Responses→Chat 代理转换模式",
-                    log_scope,
-                    profile.name
-                );
-
-                match state
-                    .proxy_manager
-                    .start_proxy(
-                        session_id,
-                        &format!("codex:{}", profile.id),
-                        &profile.base_url,
-                        &profile.api_key,
-                        ProxyWireApi::CodexResponsesToChatCompletions,
-                        profile.custom_headers.clone().unwrap_or_default(),
-                    )
-                    .await
-                {
-                    Ok(proxy_addr) => {
-                        // 写入 Codex 模型目录，避免 "Model metadata not found" 警告
-                        if let Err(e) =
-                            crate::services::ModelProfileService::write_codex_proxy_model_catalog(
-                                profile,
-                            )
-                        {
-                            tracing::warn!("[{}] 写入 Codex 模型目录失败: {}", log_scope, e);
-                        }
-
-                        let codex_args =
-                            crate::services::ModelProfileService::generate_codex_proxy_config_args(
-                                profile, proxy_addr,
-                            );
-                        session_opts.codex_config_args.extend(codex_args);
-
-                        let env_overrides = crate::services::ModelProfileService::generate_codex_proxy_env_overrides(profile);
-                        session_opts.env_overrides.extend(env_overrides);
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            "[{}] 启动 Codex Responses 代理失败，回退到直连: {}",
-                            log_scope,
-                            e
-                        );
-                        let codex_args =
-                            crate::services::ModelProfileService::generate_codex_config_args(
-                                profile,
-                            );
-                        session_opts.codex_config_args.extend(codex_args);
-
-                        let env_overrides =
-                            crate::services::ModelProfileService::generate_codex_env_overrides(
-                                profile,
-                            );
-                        session_opts.env_overrides.extend(env_overrides);
-                    }
-                }
-            } else {
-                let codex_args =
-                    crate::services::ModelProfileService::generate_codex_config_args(profile);
-                session_opts.codex_config_args.extend(codex_args);
-
-                let env_overrides =
-                    crate::services::ModelProfileService::generate_codex_env_overrides(profile);
-                session_opts.env_overrides.extend(env_overrides);
-            }
-        }
         EngineId::SimpleAI => {
             // SimpleAI 引擎直接使用 profile 的 baseUrl/apiKey/model
             // 通过 env_overrides 传递 profile ID，让 SimpleAI 可以精确查找 Profile
@@ -663,76 +590,6 @@ async fn apply_model_profile_options(
             );
             let mut env_overrides = std::collections::HashMap::new();
             env_overrides.insert("__simple_ai_profile_id".to_string(), profile.id.clone());
-            session_opts = session_opts.with_env_overrides(env_overrides);
-        }
-        EngineId::Pi => {
-            // Pi 引擎: 通过 `~/.pi/agent/models.json` 注册自定义 provider，
-            // 使用 `--provider <name> --model <model>` 驱动。
-            // 前端 profile 的 baseUrl/apiKey/wireApi 转换为 pi models.json 条目。
-            tracing::info!(
-                "[{}] Pi 引擎使用 Profile: {} (model={}, wireApi={:?})",
-                log_scope,
-                profile.name,
-                profile.model,
-                profile.wire_api
-            );
-
-            // 确定传给 pi 的纯模型名（剥离 CLI 私有后缀如 `[1m]`）。
-            // 优先用前端传入的 model（用户状态栏选择的 Profile 多模型选项），
-            // 前端未传时回退到 Profile 默认模型。
-            // 注意：pi_model 字段在 PiEngine.build_command 中优先于 model 字段
-            // （pi.rs: final_model = pi_model.or(model)），因此 pi_model 必须承载
-            // 用户选择的最终模型，否则用户在状态栏选的模型会被 Profile 默认模型覆盖。
-            let source_model = session_opts.model.clone()
-                .unwrap_or_else(|| profile.model.clone());
-            let stripped = crate::ai::engine::simple_ai_protocol::strip_cli_model_suffix(&source_model);
-            let clean_model = stripped.base_model.clone().unwrap_or_else(|| source_model);
-
-            // 确定 pi 的 api 类型
-            let pi_api = match profile.wire_api.as_deref() {
-                Some("openai-chat-completions") => "openai-completions",
-                Some("openai-responses") => "openai-responses",
-                _ => "anthropic-messages", // 默认 Anthropic Messages
-            };
-
-            // 构建 provider 名称（用 Profile name + id 保证唯一）
-            let provider_name = format!("polaris-{}", profile.id);
-
-            // 设置 pi_provider_config（PiEngine 据此写 models.json + 传 --provider）
-            let ctx_window = profile.context_window.unwrap_or(128000);
-            session_opts = session_opts.with_pi_provider_config(
-                crate::ai::PiProviderConfig {
-                    name: provider_name,
-                    base_url: profile.base_url.clone(),
-                    api_key: profile.api_key.clone(),
-                    api: pi_api.to_string(),
-                    context_window: ctx_window,
-                    max_tokens: 16384,
-                }
-            );
-
-            // 传剥离后的纯模型名（pi 的 --model 不接受 `[1m]` 后缀）
-            session_opts = session_opts.with_pi_model(clean_model);
-
-            // 同时注入环境变量兜底（pi 也读 env）
-            let mut env_overrides = std::collections::HashMap::new();
-            if let Some(custom) = &profile.custom_env {
-                for (k, v) in custom {
-                    env_overrides.insert(k.clone(), v.clone());
-                }
-            }
-            if !profile.api_key.is_empty() {
-                // openai 线路 → OPENAI_API_KEY，否则 ANTHROPIC_API_KEY
-                let env_name = match profile.wire_api.as_deref() {
-                    Some("openai-chat-completions" | "openai-responses") => "OPENAI_API_KEY",
-                    _ => "ANTHROPIC_API_KEY",
-                };
-                env_overrides.entry(env_name.to_string())
-                    .or_insert_with(|| profile.api_key.clone());
-                // 也注入通用 key 变量作为兜底
-                env_overrides.entry("ANTHROPIC_API_KEY".to_string())
-                    .or_insert_with(|| profile.api_key.clone());
-            }
             session_opts = session_opts.with_env_overrides(env_overrides);
         }
         // 插件引擎（Custom）：复用 Pi 的 provider 配置逻辑。
@@ -1313,9 +1170,6 @@ pub async fn start_chat_inner(
     // 已尝试的 (Profile ID, Key Index) 列表（failover 时跳过）。仅分组路由下使用。
     let mut tried_pairs: Vec<TriedPair> = Vec::new();
 
-    // 在循环外确定是否 dsh 引擎（避免 loop 内借用被 move 误判）。
-    let is_dsh_engine = matches!(&engine, EngineId::Custom(ref id) if id == "dsh");
-
     // profile_mode 显式「官方」时直接闭锁分组：不进入 failover 循环，
     // 单轮 apply(None) → CLI 走官方端点。这与 PRD 契约一致（强制官方）。
     let force_official = options.profile_mode == Some(ProfileMode::Official);
@@ -1503,21 +1357,6 @@ pub async fn start_chat_inner(
             Err(e) => return Err(e),
         };
 
-        // DSH 引擎锁外预检查（幂等，保持原逻辑；用循环外确定的标志）
-        // 用 spawn_blocking 包裹：首次约 28 秒的同步文件 I/O 不阻塞 tokio worker 线程，
-        // 避免影响同 runtime 上的心跳/事件分发等 async 任务。
-        if is_dsh_engine {
-            match tokio::task::spawn_blocking(
-                crate::ai::engine::dsh::prepare_dsh_bridge_standalone,
-            )
-            .await
-            {
-                Ok(Err(e)) => tracing::warn!("[start_chat_inner] dsh 桥接预检查失败: {}", e),
-                Ok(Ok(())) => {}
-                Err(e) => tracing::warn!("[start_chat_inner] dsh 桥接预检查任务 panic: {}", e),
-            }
-        }
-
         // spawn
         let mut registry = state.engine_registry.lock().await;
         match registry.start_session(Some(engine.clone()), &final_message, session_opts_for_this_attempt) {
@@ -1650,21 +1489,6 @@ pub async fn continue_chat_inner(
         .ok_or_else(|| AppError::ValidationError("必须提供有效的 engine_id".to_string()))?;
 
     tracing::info!("[continue_chat_inner] 使用引擎: {:?}", engine);
-
-    // DSH 引擎锁外预检查（与 start_chat_inner 对称）：进程重启后从历史会话
-    // 续聊 dsh 时，内存标志已丢失，靠磁盘 bridge_healthy 快路径或首次复制。
-    // 必须在获取 engine_registry 锁之前完成，避免锁内 28 秒阻塞其他引擎。
-    if matches!(engine, EngineId::Custom(ref id) if id == "dsh") {
-        match tokio::task::spawn_blocking(
-            crate::ai::engine::dsh::prepare_dsh_bridge_standalone,
-        )
-        .await
-        {
-            Ok(Err(e)) => tracing::warn!("[continue_chat_inner] dsh 桥接预检查失败: {}", e),
-            Ok(Ok(())) => {}
-            Err(e) => tracing::warn!("[continue_chat_inner] dsh 桥接预检查任务 panic: {}", e),
-        }
-    }
 
     // 统一 MCP 配置准备
     let enable_mcp = options.enable_mcp_tools.unwrap_or(false);
@@ -1799,29 +1623,21 @@ pub async fn continue_chat_inner(
 
     // ──────────────────────────────────────────────────────
     // 先杀掉本会话的旧 CLI 进程，再处理代理。
-    // 仅对 CLI 类引擎（Claude/Codex/Pi）生效：它们每轮会 spawn 新进程,
+    // 仅对 CLI 类引擎（Claude/Simple AI/插件引擎）生效：它们每轮会 spawn 新进程,
     // 旧进程若有 in-flight 请求在等上游响应,代理端口被关闭时会收到
     // ConnectionRefused(见 99770ad8)。先 try_interrupt_all 杀旧进程,
     // 确保无 in-flight 请求后再安全切换代理。
-    //
+    // ──────────────────────────────────────────────────────
     // SimpleAI 显式跳过:它的会话是单进程复用,中断走 watch::channel latch,
     // 一旦拨到 true 不可逆 —— 后续 continue 会在 run_chat_loop 首个检查点
     // 立即 SessionEnd 不输出任何内容(即"无法继续对话"根因)。
     // SimpleAI 的 continue 是复用同一会话追加消息,无需也不应先中断。
     // 注意:用户主动点"停止"走 interrupt_chat_inner,该路径仍会对 SimpleAI
     // 调 try_interrupt_all,本处只收窄 continue 路径,不影响主动停止。
-    //
-    // DSH 显式跳过:dsh 是常驻 Web 服务器 + 长生命周期 session 模型,
-    // 续聊只需复用同一 dsh session_id 发 session.prompt,不需要也不应该
-    // 重启进程。若对 dsh 调 try_interrupt_all 会触发 session.cancel,直接
-    // 取消上一轮仍可能在产出的事件流(WebSocket mux 全局),表现为
-    // "对话突然断"——根因:try_interrupt_all 遍历所有引擎,只要 dsh 的
-    // session_map 命中即返回 Ok(()) 并执行 cancel。
     // ──────────────────────────────────────────────────────
     {
         let mut registry = state.engine_registry.lock().await;
-        let is_resident = matches!(engine, EngineId::SimpleAI)
-            || matches!(engine, EngineId::Custom(ref id) if id == "dsh");
+        let is_resident = matches!(engine, EngineId::SimpleAI);
         if !is_resident {
             registry.try_interrupt_all(&session_id);
         }
@@ -2090,20 +1906,11 @@ pub async fn answer_question(
             "[answer_question] 无 ask_listener sender，按 legacy 路径处理: {}",
             call_id
         );
-        // 尝试 dsh 引擎问题回答
-        let first = answer.answers.first().cloned().unwrap_or_default();
-        let selected = first.selected.clone();
-        let custom_input = first.custom_input.clone();
-        match crate::ai::engine::dsh::submit_answer(
-            &call_id,
-            &selected,
-            custom_input.as_deref(),
-            answer.declined,
-        ) {
-            Ok(true) => tracing::debug!("[answer_question] dsh 问题回答已提交: {}", call_id),
-            Ok(false) => {} // 不是 dsh 的问题，忽略
-            Err(e) => tracing::warn!("[answer_question] dsh 问题回答失败: {}", e),
-        }
+        // legacy 路径：无 ask_listener 引擎，问题回答走通用流程
+        tracing::debug!(
+            "[answer_question] legacy 路径下无引擎可提交答案: {}",
+            call_id
+        );
     }
 
     // 2. 清理 pending_questions（ask_listener 也会清理，这里做幂等）

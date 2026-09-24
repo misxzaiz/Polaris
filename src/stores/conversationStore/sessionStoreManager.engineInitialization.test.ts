@@ -22,7 +22,7 @@ describe('SessionStoreManager engine initialization', () => {
 
   it('uses the loaded default engine when creating the default session', async () => {
     useConfigStore.setState({
-      config: { defaultEngine: 'codex' } as Config,
+      config: { defaultEngine: 'simple-ai' } as Config,
     })
 
     await sessionStoreManager.getState().initialize()
@@ -30,7 +30,7 @@ describe('SessionStoreManager engine initialization', () => {
     const state = sessionStoreManager.getState()
     const activeSessionId = state.activeSessionId
     expect(activeSessionId).toBeTruthy()
-    expect(state.sessionMetadata.get(activeSessionId!)?.engineId).toBe('codex')
+    expect(state.sessionMetadata.get(activeSessionId!)?.engineId).toBe('simple-ai')
   })
 
   it('falls back to Claude Code when config is not loaded', async () => {
@@ -49,11 +49,11 @@ describe('SessionStoreManager engine initialization', () => {
 
     const sessionId = sessionStoreManager.getState().createSession({
       type: 'free',
-      title: 'Codex window',
-      engineId: 'codex',
+      title: 'Simple AI window',
+      engineId: 'simple-ai',
     })
 
-    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('simple-ai')
   })
 
   it('only allows changing engine before a session has content', () => {
@@ -62,8 +62,8 @@ describe('SessionStoreManager engine initialization', () => {
       title: 'Empty session',
     })
 
-    expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'codex')).toBe(true)
-    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+    expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'simple-ai')).toBe(true)
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('simple-ai')
 
     const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
     store?.addMessage({
@@ -74,6 +74,6 @@ describe('SessionStoreManager engine initialization', () => {
     })
 
     expect(sessionStoreManager.getState().updateSessionEngine(sessionId, 'claude-code')).toBe(false)
-    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('codex')
+    expect(sessionStoreManager.getState().sessionMetadata.get(sessionId)?.engineId).toBe('simple-ai')
   })
 })

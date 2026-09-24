@@ -21,9 +21,7 @@ interface DispatchSettingsSectionProps {
 
 const ENGINE_OPTIONS = [
   { id: 'claude-code', label: 'Claude Code' },
-  { id: 'codex', label: 'Codex' },
   { id: 'simple-ai', label: 'SimpleAI' },
-  { id: 'pi', label: 'Pi' },
 ];
 
 const PERMISSION_OPTIONS = ['', 'default', 'acceptEdits', 'bypassPermissions', 'plan'];
@@ -72,9 +70,9 @@ export function DispatchSettingsSection({ config, onConfigChange, loading }: Dis
       setFormError(t('dispatch.errors.nameDuplicated', '角色名已存在'));
       return;
     }
-    // pi 不支持模型 Profile（强制官方端点 / auth.json 认证）
-    if (draft.engineId.startsWith('pi') && draft.modelProfileId) {
-      setFormError(t('dispatch.errors.piNoProfile', '该引擎不支持模型 Profile，请选择官方端点'));
+    // SimpleAI 不支持模型 Profile（强制官方端点 / 模型供应商配置）
+    if (draft.engineId === 'simple-ai' && draft.modelProfileId) {
+      setFormError(t('dispatch.errors.simpleAiNoProfile', '该引擎不支持模型 Profile，请选择官方端点'));
       return;
     }
 

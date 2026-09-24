@@ -411,18 +411,6 @@ impl ConfigStore {
         Self::detect_cli_version(&cmd, "detect_claude")
     }
 
-    /// 检测 Codex CLI 是否可用
-    pub fn detect_codex(&self) -> Option<String> {
-        let cmd = self.config.get_codex_cmd();
-        Self::detect_cli_version(&cmd, "detect_codex")
-    }
-
-    /// 检测 Pi CLI 是否可用
-    pub fn detect_pi(&self) -> Option<String> {
-        let cmd = self.config.get_pi_cmd();
-        Self::detect_cli_version(&cmd, "detect_pi")
-    }
-
     fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
         eprintln!("[{}] 尝试执行: {} --version", log_prefix, cmd);
 
@@ -574,18 +562,10 @@ impl ConfigStore {
     pub fn health_status(&self) -> HealthStatus {
         let claude_version = self.detect_claude();
         let claude_available = claude_version.is_some();
-        let codex_version = self.detect_codex();
-        let codex_available = codex_version.is_some();
-        let pi_version = self.detect_pi();
-        let pi_available = pi_version.is_some();
 
         HealthStatus {
             claude_available,
             claude_version,
-            codex_available,
-            codex_version,
-            pi_available,
-            pi_version,
             work_dir: self
                 .config
                 .work_dir
@@ -597,43 +577,24 @@ impl ConfigStore {
 
     /// 异步并行版健康检测。
     ///
-    /// 在独立线程池中同时 spawn claude / codex / pi 三个子进程，各加 5s 超时，
-    /// 总耗时从 O(T_c + T_codex + T_pi) 降为 O(max(T_c, T_codex, T_pi, 5s))。
+    /// 检测 Claude CLI 是否可用（带 5s 超时）。
     pub async fn health_status_async(config: Config) -> HealthStatus {
         let claude_path = config.claude_code.cli_path.clone();
-        let codex_path = config.codex_code.cli_path.clone();
-        let pi_path = config.pi_code.cli_path.clone();
         let work_dir = config.work_dir.as_ref().and_then(|p| p.to_str().map(|s| s.to_string()));
 
-        // 将三次 CLI 探测以 spawn_blocking 并发提交，各带 5s 超时。
-        // 任何单 CLI 超时/异常均降级为 unavailable，不阻塞其它 CLI 的结果。
+        // 将 Claude CLI 探测以 spawn_blocking 并发提交，带 5s 超时。
+        // 任何单 CLI 超时/异常均降级为 unavailable。
         let c1_fut = tokio::task::spawn_blocking(move || {
             Self::detect_cli_version(&claude_path, "detect_claude")
-        });
-        let c2_fut = tokio::task::spawn_blocking(move || {
-            Self::detect_cli_version(&codex_path, "detect_codex")
-        });
-        let c3_fut = tokio::task::spawn_blocking(move || {
-            Self::detect_cli_version(&pi_path, "detect_pi")
         });
 
         let c1 = match tokio::time::timeout(std::time::Duration::from_secs(5), c1_fut).await {
             Ok(Ok(r)) => r,
             _ => None,
         };
-        let c2 = match tokio::time::timeout(std::time::Duration::from_secs(5), c2_fut).await {
-            Ok(Ok(r)) => r,
-            _ => None,
-        };
-        let c3 = match tokio::time::timeout(std::time::Duration::from_secs(5), c3_fut).await {
-            Ok(Ok(r)) => r,
-            _ => None,
-        };
 
         HealthStatus {
             claude_available: c1.is_some(), claude_version: c1,
-            codex_available:  c2.is_some(), codex_version: c2,
-            pi_available:     c3.is_some(), pi_version:   c3,
             work_dir,
             config_valid: true,
         }
@@ -1002,8 +963,6 @@ impl OldConfig {
             claude_code: crate::models::config::ClaudeCodeConfig {
                 cli_path: self.claude_cmd,
             },
-            codex_code: Default::default(),
-            pi_code: Default::default(),
             qqbot: Default::default(),
             feishu: Default::default(),
             dingtalk: Default::default(),
@@ -1066,13 +1025,13 @@ mod tests {
         let appdata = temp_root.path().join("Roaming");
         let npm_dir = appdata.join("npm");
         std::fs::create_dir_all(&npm_dir).unwrap();
-        let shim = npm_dir.join("codex.cmd");
+        let shim = npm_dir.join("claude.cmd");
         std::fs::write(&shim, "@echo off").unwrap();
 
         let previous = std::env::var("APPDATA").ok();
         std::env::set_var("APPDATA", &appdata);
 
-        let resolved = ConfigStore::resolve_windows_cmd_shim("codex");
+        let resolved = ConfigStore::resolve_windows_cmd_shim("claude");
 
         if let Some(value) = previous {
             std::env::set_var("APPDATA", value);
@@ -1086,8 +1045,8 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn does_not_resolve_windows_cmd_shim_for_explicit_paths() {
-        assert!(ConfigStore::resolve_windows_cmd_shim("C:\\tools\\codex").is_none());
-        assert!(ConfigStore::resolve_windows_cmd_shim("codex.exe").is_none());
+        assert!(ConfigStore::resolve_windows_cmd_shim("C:\\tools\\claude").is_none());
+        assert!(ConfigStore::resolve_windows_cmd_shim("claude.exe").is_none());
     }
 
     #[test]
@@ -1096,19 +1055,17 @@ mod tests {
         let config_path = temp_dir.path().join("config.json");
         let mut config = Config::default();
         config.default_engine = "claude-code".to_string();
-        config.codex_code.cli_path = "custom-codex".to_string();
         config.window.normal_opacity = 70;
 
         let mut store = ConfigStore::new_test(config, config_path);
 
         let saved = store
             .patch(serde_json::json!({
-                "defaultEngine": "codex"
+                "defaultEngine": "simple-ai"
             }))
             .unwrap();
 
-        assert_eq!(saved.default_engine, "codex");
-        assert_eq!(saved.codex_code.cli_path, "custom-codex");
+        assert_eq!(saved.default_engine, "simple-ai");
         assert_eq!(saved.window.normal_opacity, 70);
     }
 

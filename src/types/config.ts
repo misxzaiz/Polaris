@@ -8,7 +8,7 @@ import type { ModelProfile } from './modelProfile'
 import type { WorkspaceTerminalScripts } from './terminalScript'
 
 /**  引擎 ID（支持动态插件引擎） */
-export type EngineId = 'claude-code' | 'codex' | 'simple-ai' | 'pi' | (string & NonNullable<unknown>)
+export type EngineId = 'claude-code' | 'simple-ai' | (string & NonNullable<unknown>)
 
 /** 支持的语言 */
 export type Language = 'zh-CN' | 'en-US'
@@ -397,21 +397,6 @@ export interface Config {
     /** Claude CLI 命令路径 */
     cliPath: string;
   };
-  /** OpenAI Codex 引擎配置 */
-  codexCode: {
-    /** Codex CLI 命令路径 */
-    cliPath: string;
-  };
-  /** Pi Code 引擎配置（earendil-works pi-coding-agent） */
-  piCode: {
-    /** Pi CLI 命令路径 */
-    cliPath: string;
-    /** 是否启用 Pi MCP 桥接（Pi Extension 桥接）。
-     *  开启后，Polaris 会把 MCP server 列表写入 ~/.pi/agent/extensions/polaris-mcp-bridge/，
-     *  通过 Pi Extension 桥接消费 Polaris MCP 工具生态。
-     *  默认关闭：需用户显式确认。 */
-    enableExtensions?: boolean;
-  };
   /** 工作目录 */
   workDir?: string;
   /** 会话保存路径 */
@@ -587,14 +572,6 @@ export interface HealthStatus {
   claudeAvailable: boolean;
   /** Claude 版本 */
   claudeVersion?: string;
-  /** Codex CLI 是否可用 */
-  codexAvailable?: boolean;
-  /** Codex 版本 */
-  codexVersion?: string;
-  /** Pi CLI 是否可用 */
-  piAvailable?: boolean;
-  /** Pi 版本 */
-  piVersion?: string;
   /** 工作目录 */
   workDir?: string;
   /** 配置是否有效 */

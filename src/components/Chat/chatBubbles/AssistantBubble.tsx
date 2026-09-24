@@ -112,7 +112,7 @@ export const AssistantBubble = memo(function AssistantBubble({
               {new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
             </span>
             {/* Hover 操作栏：复制 + 重新生成（与用户消息「复制 + 编辑」对称） */}
-            {!message.isStreaming && (messageText || onRegenerate) && (
+            {(messageText || (!message.isStreaming && onRegenerate)) && (
               <div className="ml-auto flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 {messageText && (
                   <button
@@ -123,7 +123,7 @@ export const AssistantBubble = memo(function AssistantBubble({
                     {copied ? <Check size={14} className="text-green-500" /> : <Copy size={14} />}
                   </button>
                 )}
-                {onRegenerate && (
+                {!message.isStreaming && onRegenerate && (
                   <button
                     onClick={handleRegenerate}
                     className="p-1 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -151,16 +151,8 @@ export const AssistantBubble = memo(function AssistantBubble({
             </MarkdownImageSurface>
           ) : null}
 
-          {/* 流式光标 */}
-          {message.isStreaming && (
-            <span className="inline-flex ml-1">
-              <span className="flex gap-0.5 items-end h-4">
-                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <span className="w-1 h-1 bg-text-muted rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </span>
-            </span>
-          )}
+          {/* 流式光标 —— 已移到 ProgressiveStreamingMarkdown 里"最后一段"的字符末尾。
+              气泡层不再显示，避免与字符末尾 caret 重复。 */}
         </div>
       </div>
 

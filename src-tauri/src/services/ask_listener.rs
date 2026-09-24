@@ -1577,7 +1577,7 @@ async fn handle_dispatch_targets_frame(
         "type": "dispatch_targets_result",
         "ok": true,
         "roles": roles,
-        "engines": ["claude-code", "codex", "simple-ai"],
+        "engines": ["claude-code", "simple-ai"],
         "providers": providers,
         "note": "role 优先于 provider/model；均省略时继承来源会话配置",
     });

@@ -1,7 +1,7 @@
 import { memo, useCallback, useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Plus, Folder, Check, Bot, Cpu, Search, Zap, Link, Orbit } from 'lucide-react';
+import { Plus, Folder, Check, Bot, Search, Zap, Link } from 'lucide-react';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
 import {
   useSessionMetadataList,
@@ -99,9 +99,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
     }
     return [
       { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
-      { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
       { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
-      { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
     ]
   }, [engineMetadatas]);
 

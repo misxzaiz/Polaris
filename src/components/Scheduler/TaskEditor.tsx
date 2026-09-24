@@ -563,9 +563,7 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
                 : (
                   <>
                     <option value="claude-code">Claude Code</option>
-                    <option value="codex">OpenAI Codex</option>
                     <option value="simple-ai">Simple AI</option>
-                    <option value="pi">Pi</option>
                   </>
                 )
               }

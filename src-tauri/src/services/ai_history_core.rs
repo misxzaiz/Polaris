@@ -5,7 +5,7 @@
  * 入口：commands/session_history.rs 壳命令（cap.history 迁移在阶段 B）。
  */
 
-use crate::ai::{ClaudeHistoryProvider, CodexHistoryProvider, PluginHistoryProvider, HistoryMessage, PagedResult, Pagination, SessionHistoryProvider, SessionMeta};
+use crate::ai::{ClaudeHistoryProvider, PluginHistoryProvider, HistoryMessage, PagedResult, Pagination, SessionHistoryProvider, SessionMeta};
 use crate::error::{AppError, Result};
 use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
@@ -30,10 +30,6 @@ pub async fn list_sessions(
     match engine_id.as_str() {
         "claude" | "claude-code" => {
             let provider = ClaudeHistoryProvider::new(config);
-            provider.list_sessions(work_dir.as_deref(), pagination)
-        }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
             provider.list_sessions(work_dir.as_deref(), pagination)
         }
         engine => {
@@ -71,10 +67,6 @@ pub async fn get_session_history(
             let provider = ClaudeHistoryProvider::new(config);
             provider.get_session_history(&session_id, pagination)
         }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
-            provider.get_session_history(&session_id, pagination)
-        }
         engine => {
             let provider = PluginHistoryProvider::new(engine, engine);
             provider.get_session_history(&session_id, pagination)
@@ -99,10 +91,6 @@ pub async fn delete_session(
     match engine_id.as_str() {
         "claude" | "claude-code" => {
             let provider = ClaudeHistoryProvider::new(config);
-            provider.delete_session(&session_id)
-        }
-        "codex" | "openai-codex" => {
-            let provider = CodexHistoryProvider::new(config);
             provider.delete_session(&session_id)
         }
         engine => {

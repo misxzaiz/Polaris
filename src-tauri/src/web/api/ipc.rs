@@ -1237,7 +1237,6 @@ async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebE
         let mut store = state.lock_config()?;
         let mut config = store.get().clone();
         config.claude_code.cli_path = "claude".to_string();
-        config.codex_code.cli_path = "codex".to_string();
         store
             .update(config)
             .map_err(|e| WebError::Internal(e.to_string()))?;

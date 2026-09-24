@@ -9,7 +9,6 @@ import * as tauri from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
 import { currentMode, listen } from '@/services/transport';
 import { storeTokenMd5, md5Hex } from '@/services/transport/auth';
-import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useThemeStore } from './themeStore';
 import { saveLegacySpiderManConfig } from '@/services/themeEngine';
 import { getBuiltInThemeByShortName } from '@/data/builtInThemes';
@@ -304,18 +303,7 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     try {
       let config = get().config || await tauri.getConfig();
       if (cliPath) {
-        const engineId = normalizeEngineId(config.defaultEngine);
-        if (engineId === 'codex') {
-          await tauri.updateConfigPatch({
-            codexCode: { ...(config.codexCode || { cliPath: 'codex' }), cliPath },
-          });
-        } else if (engineId === 'pi') {
-          await tauri.updateConfigPatch({
-            piCode: { ...(config.piCode || { cliPath: 'pi' }), cliPath },
-          });
-        } else {
-          await tauri.setClaudeCmd(cliPath);
-        }
+        await tauri.setClaudeCmd(cliPath);
         config = await tauri.getConfig();
         set({ config });
       }

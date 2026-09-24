@@ -9,7 +9,7 @@ import { useState, useEffect, useRef, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
-import { Bot, Check, Cpu, Zap, Orbit } from 'lucide-react'
+import { Bot, Check, Zap } from 'lucide-react'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useConfigStore } from '@/stores/configStore'
 import { useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager'
@@ -82,9 +82,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     }
     return [
       { id: 'claude-code' as EngineId, label: 'Claude', Icon: Bot },
-      { id: 'codex' as EngineId, label: 'Codex', Icon: Cpu },
       { id: 'simple-ai' as EngineId, label: 'Simple', Icon: Zap },
-      { id: 'pi' as EngineId, label: 'Pi', Icon: Orbit },
     ]
   }, [engineMetadatas])
 

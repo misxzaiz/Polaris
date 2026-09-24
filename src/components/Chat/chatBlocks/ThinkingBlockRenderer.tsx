@@ -125,6 +125,7 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
             <div
               ref={bodyRef}
               onScroll={handleBodyScroll}
+              onWheel={(e) => e.stopPropagation()}
               className="max-h-[40vh] overflow-y-auto overscroll-contain pr-1 text-sm text-text-secondary whitespace-pre-wrap break-words leading-relaxed"
             >
               {block.content}

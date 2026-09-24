@@ -12,9 +12,9 @@
     "builtinAgents": "内置",
     "pluginAgents": "插件",
     "resetCliTitle": "重置 CLI 配置",
-    "resetCliDescription": "将 Claude/Codex CLI 路径恢复为默认值并失效引擎缓存,用于测试首次启动检测流程.若 PATH 中没有 CLI,会自动回到初始连接界面.",
+    "resetCliDescription": "将 Claude CLI 路径恢复为默认值并失效引擎缓存,用于测试首次启动检测流程.若 PATH 中没有 CLI,会自动回到初始连接界面.",
     "resetCliAction": "一键重置",
-    "resetCliConfirm": "将 Claude/Codex CLI 路径重置为默认值,并触发重新检测.若 PATH 中没有对应 CLI,会回到初始连接界面.确认继续?",
+    "resetCliConfirm": "将 Claude CLI 路径重置为默认值,并触发重新检测.若 PATH 中没有对应 CLI,会回到初始连接界面.确认继续?",
     "resetting": "重置中..."
   },
   "currentGroup": "当前分组：{{name}}",
@@ -153,27 +153,9 @@
       "name": "Claude Code",
       "description": "Anthropic 官方 CLI 工具"
     },
-    "codex": {
-      "name": "OpenAI Codex",
-      "description": "OpenAI Codex CLI — 全部操作权限"
-    },
     "simpleAi": {
       "name": "Simple AI",
-      "description": "轻量级 AI 助手 — 用于安装ClaudeCode、Codex，简单对话"
-    },
-    "pi": {
-      "name": "Pi",
-      "description": "earendil-works pi-coding-agent CLI - 多提供商终端编码助手，支持 RPC 双向协议",
-      "title": "Pi 配置",
-      "cliPath": "Pi CLI 路径",
-      "notAvailable": "不可用"
-    },
-    "dsh": {
-      "name": "DeepSeek Harness",
-      "description": "DeepSeek Harness — 开源 Agent 编排框架，HTTP RPC + WebSocket 事件流",
-      "title": "DeepSeek Harness 配置",
-      "cliPath": "dsh CLI 路径",
-      "notAvailable": "不可用"
+      "description": "轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具，无需安装 CLI"
     }
   },
   "modelProfile": {
@@ -203,7 +185,7 @@
     "testNotFound": "端点不存在（HTTP {{status}}），请检查 Base URL 与路径",
     "testServerError": "端点服务异常（HTTP {{status}}），请稍后重试",
     "testBadStatus": "端点返回异常状态（HTTP {{status}}）",
-    "tabDescription": "管理第三方模型供应商端点，可将 Claude Code / Codex 路由到兼容 Anthropic Messages、OpenAI Chat Completions 或 OpenAI Responses 协议的端点。",
+    "tabDescription": "管理第三方模型供应商端点，可将 Claude Code / Simple AI 路由到兼容 Anthropic Messages、OpenAI Chat Completions 或 OpenAI Responses 协议的端点。",
     "searchPlaceholder": "搜索名称、模型或端点…",
     "noMatchingProfiles": "没有匹配的 Profile",
     "cascadeTitle": "已自动同步",
@@ -244,9 +226,7 @@
     "filter": {
       "all": "全部",
       "claude": "Claude",
-      "codex": "Codex",
-      "simple-ai": "Simple AI",
-      "pi": "Pi"
+      "simple-ai": "Simple AI"
     },
     "authType": {
       "label": "认证方式",
@@ -264,9 +244,7 @@
     "targetEngine": {
       "label": "适用引擎",
       "claude": "Claude Code",
-      "codex": "Codex CLI",
       "simple-ai": "Simple AI",
-      "pi": "Pi",
       "selectAll": "全选",
       "allEngines": "适用于所有引擎"
     },
@@ -291,11 +269,6 @@
   "claudeCode": {
     "title": "Claude Code 配置",
     "cliPath": "Claude CLI 命令路径",
-    "notAvailable": "未安装"
-  },
-  "codex": {
-    "title": "OpenAI Codex 配置",
-    "cliPath": "Codex CLI 命令路径",
     "notAvailable": "未安装"
   },
   "language": {
@@ -413,16 +386,6 @@
       "name": "Claude Code",
       "placeholder": "请输入 Claude CLI 的完整路径",
       "example": "例如: C:\\Users\\...\\claude.cmd (Windows) 或 /usr/local/bin/claude (macOS/Linux)"
-    },
-    "codex": {
-      "name": "OpenAI Codex",
-      "placeholder": "请输入 Codex CLI 的完整路径或命令名",
-      "example": "例如: codex、C:\\Users\\...\\codex.cmd (Windows) 或 /usr/local/bin/codex (macOS/Linux)"
-    },
-    "pi": {
-      "name": "Pi",
-      "placeholder": "请输入 Pi CLI 的完整路径或命令名",
-      "example": "例如: pi、C:\\Users\\...\\pi.cmd (Windows) 或 /usr/local/bin/pi (macOS/Linux)"
     }
   },
   "validation": {

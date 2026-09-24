@@ -438,7 +438,7 @@ async fn set_claude_cmd(cmd: String, state: tauri::State<'_, AppState>) -> Resul
 }
 
 /// 重置 CLI 路径(测试/调试用):
-/// 将 claude_code.cli_path / codex_code.cli_path 重置为默认占位符,
+/// 将 claude_code.cli_path 重置为默认占位符,
 /// 并刷新引擎缓存.前端随后调用 health_check 可触发"初始检测"流程.
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
@@ -448,7 +448,6 @@ async fn reset_cli_config(state: tauri::State<'_, AppState>) -> Result<Config> {
             .map_err(|e| error::AppError::Unknown(e.to_string()))?;
         let mut config = store.get().clone();
         config.claude_code.cli_path = "claude".to_string();
-        config.codex_code.cli_path = "codex".to_string();
         store.update(config)?;
         store.get().clone()
     };
@@ -496,7 +495,7 @@ fn validate_claude_path(path: String) -> PathValidationResult {
 
 /// 健康检查（异步版）。
 ///
-/// 并行 spawn claude/codex/pi 三个子进程，总耗时 O(max(T)) 而非 O(sum(T))。
+/// 并行 spawn claude/simple-ai 子进程，总耗时 O(max(T)) 而非 O(sum(T))。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 async fn health_check(state: tauri::State<'_, AppState>) -> Result<HealthStatus> {
@@ -558,17 +557,8 @@ pub fn run() {
     // 注册 Claude CLI 引擎
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
 
-    // 注册 Codex CLI 引擎
-    engine_registry.register(ai::CodexEngine::new(config.clone()));
-
     // 注册 Simple AI 引擎（轻量级备用引擎，使用模型供应商配置）
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
-
-    // 注册 Pi 引擎（earendil-works pi-coding-agent CLI）
-    engine_registry.register(ai::PiEngine::new(config.clone()));
-
-    // 注册 DeepSeek Harness 引擎（HTTP RPC + WebSocket 事件流）
-    engine_registry.register(ai::DshEngine::new(config.clone()));
 
     // 设置默认引擎（parse_any 支持自定义/插件引擎）
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
@@ -1357,10 +1347,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let config = config_store.get().clone();
     let mut engine_registry = EngineRegistry::new();
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
-    engine_registry.register(ai::CodexEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
-    engine_registry.register(ai::PiEngine::new(config.clone()));
-    engine_registry.register(ai::DshEngine::new(config.clone()));
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));

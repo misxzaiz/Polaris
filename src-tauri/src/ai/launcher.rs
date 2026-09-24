@@ -32,9 +32,7 @@ use crate::services::mcp_config_service::{
 pub struct McpSessionConfig {
     /// Claude Code：JSON 配置文件路径（.polaris/claude/mcp.json）
     pub claude_config_path: Option<String>,
-    /// Codex CLI：-c key=value 参数列表
-    pub codex_config_args: Vec<String>,
-    /// SimpleAI / Pi：直接消费的 MCP server 列表
+    /// SimpleAI：直接消费的 MCP server 列表
     pub mcp_servers: Vec<ResolvedExternalMcpServer>,
 }
 
@@ -83,11 +81,6 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
         .map(|p| p.to_string_lossy().to_string())
         .ok();
 
-    let codex_config_args = service
-        .prepare_workspace_codex_config_args_with_disabled(params.work_dir, &disabled_servers)
-        .ok()
-        .unwrap_or_default();
-
     let mut mcp_servers = service.resolved_simple_ai_servers(params.work_dir, &disabled_servers);
 
     // aiToolAccess 门控：内置总暴露，外部插件检查 aiToolAccess
@@ -122,7 +115,6 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
 
     Ok(McpSessionConfig {
         claude_config_path,
-        codex_config_args,
         mcp_servers,
     })
 }
@@ -131,9 +123,7 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
 ///
 /// 不同引擎消费 MCP 配置的方式不同：
 /// - ClaudeCode → mcp_config_path（JSON 文件路径，通过 --mcp-config 传递）
-/// - Codex      → codex_config_args（-c key=value 参数）
 /// - SimpleAI   → mcp_servers（直接注入 function calling schema）
-/// - Pi         → mcp_servers（同 SimpleAI，通过 Extension 桥接）
 /// - Custom(_)  → mcp_servers（注入后由 PluginEngineRunner 根据自身
 ///   mcp_consumption 策略决定如何桥接，如 PiExtension 写 JS Extension + --extension）
 pub fn inject_mcp_into_session_opts(
@@ -148,15 +138,6 @@ pub fn inject_mcp_into_session_opts(
                 tracing::debug!("[SessionLauncher] 注入 Claude MCP 配置: {}", path);
             }
         }
-        EngineId::Codex => {
-            if !mcp.codex_config_args.is_empty() {
-                opts.codex_config_args = mcp.codex_config_args.clone();
-                tracing::debug!(
-                    "[SessionLauncher] 注入 Codex MCP 配置: {} 个参数",
-                    mcp.codex_config_args.len()
-                );
-            }
-        }
         EngineId::SimpleAI => {
             if !mcp.mcp_servers.is_empty() {
                 opts.mcp_servers = mcp.mcp_servers.clone();
@@ -166,7 +147,7 @@ pub fn inject_mcp_into_session_opts(
                 );
             }
         }
-        EngineId::Pi | EngineId::Custom(_) => {
+        EngineId::Custom(_) => {
             if !mcp.mcp_servers.is_empty() {
                 opts.mcp_servers = mcp.mcp_servers.clone();
                 tracing::debug!(

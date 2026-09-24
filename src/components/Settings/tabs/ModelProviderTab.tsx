@@ -73,7 +73,7 @@ const CONTEXT_WINDOW_PRESETS: Record<string, string> = {
   '1m': '1000000',
 };
 
-type EngineFilter = 'all' | 'claude' | 'codex' | 'simple-ai' | 'pi' | (string & NonNullable<unknown>)
+type EngineFilter = 'all' | 'claude' | 'simple-ai' | (string & NonNullable<unknown>)
 
 /** 键值对（用于 customHeaders / customEnv 的表单态） */
 interface KeyValuePair {
@@ -301,19 +301,9 @@ function ProfileCard({
               Claude
             </span>
           ) : null}
-          {engineList.length === 0 || engineList.includes('codex') ? (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 shrink-0">
-              Codex
-            </span>
-          ) : null}
           {engineList.length === 0 || engineList.includes('simple-ai') ? (
             <span className="text-[9px] px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-400 shrink-0">
               Simple
-            </span>
-          ) : null}
-          {engineList.length === 0 || engineList.includes('pi') ? (
-            <span className="text-[9px] px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-400 shrink-0">
-              Pi
             </span>
           ) : null}
           {wire === 'openai-chat-completions' && (
@@ -1323,10 +1313,8 @@ function ProviderGroupEditorModal({
                   >
                     {ALL_ENGINES.includes(engineOption)
                       ? engineOption === 'claude' ? 'Claude'
-                        : engineOption === 'codex' ? 'Codex'
-                          : engineOption === 'simple-ai' ? 'SimpleAI'
-                            : engineOption === 'pi' ? 'Pi'
-                              : engineOption
+                        : engineOption === 'simple-ai' ? 'SimpleAI'
+                          : engineOption
                       : getEngineDisplayName(engineOption)}
                   </button>
                 ))}
@@ -1705,10 +1693,10 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
   // 动态引擎列表：已知引擎 + 插件引擎（来自 engineMetadataStore）
   const engineMetaIds = useEngineMetadataStore(s => s.metadatas)
   const dynamicEngineList = useMemo<ProfileTargetEngine[]>(() => {
-    const known: ProfileTargetEngine[] = ['claude', 'codex', 'simple-ai', 'pi']
+    const known: ProfileTargetEngine[] = ['claude', 'simple-ai']
     // 插件引擎的 id（如 "omp"）映射为 profile 引擎名
     const pluginIds = engineMetaIds
-      .filter(m => !['claude-code', 'codex', 'simple-ai', 'pi'].includes(m.id))
+      .filter(m => !['claude-code', 'simple-ai'].includes(m.id))
       .map(m => m.id as ProfileTargetEngine)
     return [...known, ...pluginIds]
   }, [engineMetaIds])
@@ -2028,8 +2016,8 @@ export function ModelProviderTab({ config, onConfigChange }: ModelProviderTabPro
 
         {/* 引擎筛选 */}
         <div className="flex flex-wrap gap-1 shrink-0">
-          {(['all', 'claude', 'codex', 'simple-ai', 'pi'] as EngineFilter[]).concat(
-  dynamicEngineList.filter(e => !['claude', 'codex', 'simple-ai', 'pi'].includes(e))
+          {(['all', 'claude', 'simple-ai'] as EngineFilter[]).concat(
+  dynamicEngineList.filter(e => !['claude', 'simple-ai'].includes(e))
 ).map((f) => (
             <button
               key={f}

@@ -44,7 +44,7 @@ interface ModelProfileState {
   /** 按 ID 查找 Profile */
   getProfileById: (id: string | null | undefined) => ModelProfile | undefined
   /** 根据引擎筛选 Profile */
-  getProfilesByEngine: (engine: 'claude' | 'codex' | 'simple-ai') => ModelProfile[]
+  getProfilesByEngine: (engine: 'claude' | 'simple-ai') => ModelProfile[]
   /** 重置状态 */
   reset: () => void
 }
@@ -179,6 +179,6 @@ export function getModelProfileById(id: string | null | undefined): ModelProfile
 /**
  * 根据引擎筛选 Profile（公开 store 方法供外部使用）
  */
-export function getProfilesByEngine(engine: 'claude' | 'codex' | 'simple-ai'): ModelProfile[] {
+export function getProfilesByEngine(engine: 'claude' | 'simple-ai'): ModelProfile[] {
   return useModelProfileStore.getState().getProfilesByEngine(engine)
 }
