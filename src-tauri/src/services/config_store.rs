@@ -13,7 +13,7 @@ use std::os::windows::process::CommandExt;
 use crate::utils::CREATE_NO_WINDOW;
 
 #[cfg(unix)]
-use std::os::fd::AsFd;
+use std::os::fd::AsRawFd;
 
 /// 配置存储管理器
 pub struct ConfigStore {
@@ -957,7 +957,7 @@ impl CrossProcessLock {
         let deadline = std::time::Instant::now() + timeout;
         let poll = std::time::Duration::from_millis(50);
         loop {
-            if libc::flock(file.as_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 {
+            if libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 {
                 return Some(Self { file });
             }
             if std::time::Instant::now() >= deadline {
@@ -972,7 +972,7 @@ impl CrossProcessLock {
 #[cfg(unix)]
 impl Drop for CrossProcessLock {
     fn drop(&mut self) {
-        let _ = libc::flock(self.file.as_fd(), libc::LOCK_UN);
+        let _ = libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
     }
 }
 /// 旧版配置格式（用于迁移）
