@@ -15,9 +15,8 @@ export const TOOL_COLLAPSE_CONFIG = {
 /** Virtuoso 视口扩展常量（避免每次渲染创建新对象） */
 export const VIEWPORT_EXTENSION = { top: 100, bottom: 150 };
 
-/** Virtuoso 底部间距（锚点模式下作为 Scroller paddingBottom，让 align:'end' 贴真实最后一条消息底，
- *  视觉上留两行呼吸距离；原 120px 会让消息离底过远） */
-export const FOOTER_SPACER_STYLE = { height: '48px' } as const;
+/** Virtuoso 底部间距 */
+export const FOOTER_SPACER_STYLE = { height: '120px' } as const;
 
 /**
  * 状态图标配置

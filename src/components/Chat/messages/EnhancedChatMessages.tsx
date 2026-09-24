@@ -382,14 +382,11 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
   // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随；ref 交给 hook 用于流式补偿观察
   // 注意：react-virtuoso 会给 Scroller 传 ref（内部 scrollerRef）用于测量/滚动，函数组件必须 forwardRef
   // 接收并转发，否则 virtuoso 拿不到 scroller DOM（scrollerRef.current=null → 渲染崩溃）。
-  // paddingBottom 由这里承担（原 Footer 120px spacer 下沉为容器 padding），让 align:'end' 贴的是
-  // 真实最后一条消息底，而非 Footer 占位——否则消息离视口底始终有 ~120px 空隙。
   const CustomScroller = useMemo(() => {
     const Scroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(
-      ({ onWheel: _ignoredWheel, style, ...props }, ref) => (
+      ({ onWheel: _ignoredWheel, ...props }, ref) => (
         <div
           {...props}
-          style={{ ...style, paddingBottom: FOOTER_SPACER_STYLE.height }}
           ref={(node) => {
             // 转发 virtuoso 的 ref（callback ref，可能为 null）
             if (typeof ref === 'function') ref(node);
@@ -427,11 +424,10 @@ export function EnhancedChatMessages({ sessionId, compact = false, onEditMessage
               Footer: () => (
                 <>
                   {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
-                  {/* 底部呼吸间距由 Scroller paddingBottom 承担，不再用 spacer 占位，
-                      避免锚点 align:'end' 贴到 Footer 而非最后一条消息 */}
                   {isPending && (
                     <ThinkingOrb isPending={isPending} compact={compact} />
                   )}
+                  <div style={FOOTER_SPACER_STYLE} />
                 </>
               ),
               ...(LoadEarlierHeader ? { Header: LoadEarlierHeader } : {}),
