@@ -957,7 +957,9 @@ impl CrossProcessLock {
         let deadline = std::time::Instant::now() + timeout;
         let poll = std::time::Duration::from_millis(50);
         loop {
-            if libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 {
+            // SAFETY: file 在调用期间保持有效且未释放（acquire 持有所有权），
+            // flock 仅对打开的 fd 加锁/解锁，不引入内存安全问题。
+            if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
                 return Some(Self { file });
             }
             if std::time::Instant::now() >= deadline {
@@ -972,7 +974,8 @@ impl CrossProcessLock {
 #[cfg(unix)]
 impl Drop for CrossProcessLock {
     fn drop(&mut self) {
-        let _ = libc::flock(self.file.as_raw_fd(), libc::LOCK_UN);
+        // SAFETY: self.file 尚未被 drop（Drop 内部），fd 有效，仅解锁。
+        let _ = unsafe { libc::flock(self.file.as_raw_fd(), libc::LOCK_UN) };
     }
 }
 /// 旧版配置格式（用于迁移）
