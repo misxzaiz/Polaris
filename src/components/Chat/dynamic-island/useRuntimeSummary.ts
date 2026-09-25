@@ -20,6 +20,7 @@ import type { ConversationState, ConversationStoreInstance } from '@/stores/conv
 import type { UsageStats } from '@/stores/conversationStore/types';
 import type {
   AgentRunBlock,
+  ArtifactPreviewBlock,
   ContentBlock,
   PermissionRequestBlock,
   PlanModeBlock,
@@ -30,6 +31,7 @@ import type {
 } from '@/types';
 import { parseWorkflowResult } from '../tool-calls/workflowParsers';
 import { extractToolKeyInfo, getToolCategoryDescription, getToolDisplayName } from '@/utils/toolConfig';
+import { extractArtifacts } from '../chatUtils/runArtifacts';
 
 /** 运行态类型 */
 export type RuntimeKind = 'task' | 'agent' | 'workflow' | 'tool' | 'plan' | 'progress';
@@ -134,6 +136,8 @@ export interface RuntimeSummary {
   progressMessage: string | null;
   /** AI 思考文本（最后一个 thinking block.content，流式累积） */
   thinking: string | null;
+  /** 产物预览（与底部操作区共享数据源；展开态内嵌 iframe 渲染） */
+  artifacts: ArtifactPreviewBlock[];
 }
 
 const EMPTY_SUMMARY: RuntimeSummary = {
@@ -149,6 +153,7 @@ const EMPTY_SUMMARY: RuntimeSummary = {
   elapsedMs: 0,
   progressMessage: null,
   thinking: null,
+  artifacts: [],
 };
 
 const WORKFLOW_TOOL_NAME = 'workflow';
@@ -397,12 +402,16 @@ export function deriveRuntimeSummary(
   isInterrupting: boolean = false,
   usageStats: UsageStats | null = null,
 ): RuntimeSummary {
+  const safeBlocks = blocks || [];
   const water = deriveWater(usageStats);
-  const urgent = deriveUrgent(blocks || []);
-  const thinking = deriveThinking(blocks || []);
+  const urgent = deriveUrgent(safeBlocks);
+  const thinking = deriveThinking(safeBlocks);
+  const artifacts = extractArtifacts(safeBlocks);
 
-  if (!blocks || blocks.length === 0) {
-    if (!progressMessage) return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking };
+  if (safeBlocks.length === 0) {
+    if (!progressMessage) {
+      return { ...EMPTY_SUMMARY, isInterrupting, urgent, water, thinking, artifacts };
+    }
     // 终态进度文案不转圈（工具已结束），非终态才作为 running 进度卡
     const terminal = isTerminalProgress(progressMessage);
     const failed = isFailedProgress(progressMessage);
@@ -424,6 +433,7 @@ export function deriveRuntimeSummary(
       urgent,
       water,
       thinking,
+      artifacts,
       hasRunning: !terminal,
       runningCount: terminal ? 0 : 1,
       slides: card.slide ? [card.slide] : [],
@@ -714,6 +724,7 @@ export function deriveRuntimeSummary(
     elapsedMs,
     progressMessage,
     thinking,
+    artifacts,
   };
 }
 
@@ -750,13 +761,18 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
       return EMPTY_SUMMARY;
     }
     const state = store.getState() as ConversationState;
-    const blocks = state.currentMessage?.blocks ?? [];
+    // 合并历史消息 + 流式当前消息的 assistant 块（与底部操作区同一数据源）
+    const allBlocks: ContentBlock[] = [];
+    for (const m of state.messages ?? []) {
+      if (m.type === 'assistant' && m.blocks) allBlocks.push(...m.blocks);
+    }
+    if (state.currentMessage?.blocks) allBlocks.push(...state.currentMessage.blocks);
     const pm = state.progressMessage;
     const interrupting = !!state.isInterrupting;
     const usage = state.usageStats;
     // now 用 tick（稳定），而非 Date.now()
     const now = tickStartRef.current;
-    const next = deriveRuntimeSummary(blocks, pm, now, interrupting, usage);
+    const next = deriveRuntimeSummary(allBlocks, pm, now, interrupting, usage);
     if (
       cachedStoreRef.current === store &&
       shallowEqualSummary(cachedRef.current, next)
@@ -808,6 +824,17 @@ function shallowEqualSummary(a: RuntimeSummary, b: RuntimeSummary): boolean {
   if (a.slides.length !== b.slides.length) return false;
   if (a.cards.length !== b.cards.length) return false;
   if (a.urgent.length !== b.urgent.length) return false;
+  if (a.artifacts.length !== b.artifacts.length) return false;
+  // artifacts 内容比较（previewId + title + version 关键字段）
+  for (let i = 0; i < a.artifacts.length; i++) {
+    const aa = a.artifacts[i];
+    const ab = b.artifacts[i];
+    if (!aa || !ab) return false;
+    if (aa.previewId !== ab.previewId) return false;
+    if (aa.title !== ab.title) return false;
+    if (aa.version !== ab.version) return false;
+    if (aa.versionLabel !== ab.versionLabel) return false;
+  }
   if (a.water?.used !== b.water?.used) return false;
   if (a.water?.window !== b.water?.window) return false;
   // urgent 内容比较

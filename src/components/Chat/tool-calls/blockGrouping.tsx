@@ -2,11 +2,11 @@
  * 可折叠块分组逻辑 + 渲染器
  */
 
-import { memo, useState, useEffect, useMemo, useCallback } from 'react';
+import { memo, useState, useEffect, useMemo } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ChevronRight, ChevronUp, FileText, FilePlus, Brain, ChevronDown } from 'lucide-react';
+import { ChevronRight, ChevronUp, FileText, Brain } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { ProcessBlockCollapseMode } from '@/types';
 import type { CollapsibleBlockGroup } from '../chatUtils/types';
@@ -15,30 +15,6 @@ import { isEmptyTextBlock } from '../chatUtils/helpers';
 import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 import { ThinkingBlockRenderer } from '../chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from '../chatBlocks';
-import { InlineDiffView } from '../chatBlocks/InlineDiffView';
-import { CodePreviewView } from '../chatBlocks/CodePreviewView';
-import { extractEditDiff, extractWriteInfo, type DiffData } from '@/utils/diffExtractor';
-import { diffLines } from 'diff';
-import { useFileEditorStore } from '@/stores/fileEditorStore';
-
-/** 计算 Edit diff 的 +N/-M 统计（added/removed 行数） */
-function computeDiffStats(diffData: DiffData): { added: number; removed: number } {
-  let added = 0;
-  let removed = 0;
-  if (diffData.diffString) {
-    for (const line of diffData.diffString.split('\n')) {
-      if (line.startsWith('+') && !line.startsWith('+++')) added++;
-      else if (line.startsWith('-') && !line.startsWith('---')) removed++;
-    }
-  } else if (diffData.oldContent !== undefined && diffData.newContent !== undefined) {
-    const changes = diffLines(diffData.oldContent, diffData.newContent);
-    for (const part of changes) {
-      if (part.added) added += part.value.replace(/\n$/, '').split('\n').length;
-      else if (part.removed) removed += part.value.replace(/\n$/, '').split('\n').length;
-    }
-  }
-  return { added, removed };
-}
 
 /**
  * 块分类枚举。
@@ -78,87 +54,6 @@ function categorizeBlock(block: ContentBlock): BlockCategory {
       // 未知/新增块类型：归为 result 兜底渲染，避免内容丢失
       return 'result';
   }
-}
-
-/** 变更文件信息（从工具调用块中提取） */
-interface FileChange {
-  /** 完整路径（用于打开编辑器 + 去重 key） */
-  fullPath: string;
-  /** 仅文件名（用于展示） */
-  fileName: string;
-  /** 目录路径（用于展示的次要信息） */
-  dirPath: string;
-  /** 变更类型 */
-  changeType: 'modified' | 'created' | 'deleted';
-  /** Edit 工具的 diff 数据（modified 时有） */
-  diffData?: DiffData;
-  /** Write 工具的新内容（created 时有） */
-  newContent?: string;
-}
-
-/** 从完整路径中拆分文件名和目录 */
-function splitFilePath(filePath: string): { fileName: string; dirPath: string } {
-  const parts = filePath.split(/[/\\]/).filter(Boolean);
-  const fileName = parts.pop() || filePath;
-  const dirPath = parts.join('/') + (parts.length ? '/' : '');
-  return { fileName, dirPath };
-}
-
-/**
- * 从工具调用块中提取变更文件列表。
- * - Edit 工具：diffData.filePath → modified（含 diff 数据）
- * - Write 工具：input.file_path/path → created（含新内容）
- * - apply_patch：patchData[] 多文件 → modified / deleted
- * 复用 diffExtractor，去重（同一文件多次修改只记一次，优先保留 diff 数据）。
- */
-function extractFileChanges(blocks: ContentBlock[]): FileChange[] {
-  const seen = new Map<string, FileChange>();
-  const add = (fullPath: string, changeType: FileChange['changeType'], data?: Partial<FileChange>) => {
-    const { fileName, dirPath } = splitFilePath(fullPath);
-    const existing = seen.get(fullPath);
-    if (existing) {
-      // 已存在：合并 diff/内容数据（保留已有，补充缺失）
-      seen.set(fullPath, {
-        ...existing,
-        ...data,
-        changeType,
-        fileName: existing.fileName || fileName,
-        dirPath: existing.dirPath || dirPath,
-      });
-      return;
-    }
-    seen.set(fullPath, {
-      fullPath,
-      fileName,
-      dirPath,
-      changeType,
-      ...data,
-    });
-  };
-
-  for (const b of blocks) {
-    if (b.type !== 'tool_call' || b.status !== 'completed') continue;
-
-    // apply_patch：多文件补丁（Claude Code 主要改文件工具）
-    if (b.name === 'apply_patch' && b.patchData && b.patchData.length > 0) {
-      for (const p of b.patchData) {
-        if (!p.filePath) continue;
-        add(p.filePath, p.type === 'delete' ? 'deleted' : 'modified');
-      }
-      continue;
-    }
-
-    const edit = extractEditDiff(b);
-    if (edit?.filePath) {
-      add(edit.filePath, 'modified', { diffData: edit });
-      continue;
-    }
-    const write = extractWriteInfo(b);
-    if (write?.filePath) {
-      add(write.filePath, 'created', { newContent: write.newContent });
-    }
-  }
-  return Array.from(seen.values());
 }
 
 /**
@@ -259,18 +154,18 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
  * 过程块折叠汇总条组件（仅 Claude Code 引擎非流式时使用）
  *
  * 展现形式：
- * 1. 汇总条（一行）：运行过程已折叠 [思考 1] [工具 3] [计划 1]
- * 2. 变更文件列表（始终可见，可点击跳转编辑器）
- * 3. 展开后按类型分组紧凑列表 + 逐行展开
+ * 1. 汇总块（一行）：运行过程已折叠 [思考 1] [工具 3] [计划 1]
+ * 2. 展开后按类型分组紧凑列表 + 逐行展开
+ *
+ * 变更文件列表已移交底部操作区（SessionOperationBar），此处不再内嵌。
  */
-const ProcessBlockSummary = memo(function ProcessBlockSummary({
+const RunProcessSummary = memo(function RunProcessSummary({
   processBlocks,
 }: {
   processBlocks: ContentBlock[];
 }) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
-  const openFile = useFileEditorStore((s) => s.openFile);
 
   // 按类型统计数量
   const counts = useMemo(() => {
@@ -290,9 +185,6 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
     return { thinking, tool, plan, perm, agent, question, compact, text };
   }, [processBlocks]);
 
-  // 提取变更文件
-  const fileChanges = useMemo(() => extractFileChanges(processBlocks), [processBlocks]);
-
   // 生成 chips 标签
   const chips = useMemo(() => {
     const items: React.ReactNode[] = [];
@@ -311,30 +203,8 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
     if (counts.agent)    add('agent', t('summary.chipAgent', { count: counts.agent }), 'text-blue-400');
     if (counts.question) add('question', t('summary.chipQuestion', { count: counts.question }), 'text-purple-400');
     if (counts.compact)  add('compact', t('summary.chipCompact', { count: counts.compact }), 'text-yellow-400');
-    if (fileChanges.length > 0) {
-      add('file', t('summary.chipFile', { count: fileChanges.length }), 'text-green-400');
-    }
     return items;
-  }, [counts, fileChanges, t]);
-
-  // 打开文件
-  const handleOpenFile = useCallback((filePath: string) => {
-    const fileName = filePath.split(/[/\\]/).pop() || filePath;
-    openFile(filePath, fileName);
-  }, [openFile]);
-
-  // 文件行展开/折叠状态
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-  const toggleFile = useCallback((fullPath: string, e: React.MouseEvent) => {
-    // 点击文件名区域时不要切换展开/折叠
-    if ((e.target as HTMLElement).closest('[data-file-open]')) return;
-    setExpandedFiles(prev => {
-      const next = new Set(prev);
-      if (next.has(fullPath)) next.delete(fullPath);
-      else next.add(fullPath);
-      return next;
-    });
-  }, []);
+  }, [counts, t]);
 
   return (
     <>
@@ -370,134 +240,6 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
         )}
       </div>
 
-      {/* 变更文件列表（始终可见，可展开查看具体内容，超长时滚动） */}
-      {fileChanges.length > 0 && (
-        <div className="border border-border rounded-lg bg-background-surface" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
-          <div className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-text-secondary border-b border-border bg-background-elevated">
-            {t('summary.fileChangesTitle')}
-            <span className="ml-auto text-[11px] font-normal text-text-muted">
-              {t('summary.fileChangesCount', { count: fileChanges.length })}
-            </span>
-          </div>
-          {fileChanges.map((fc, i) => (
-            <React.Fragment key={fc.fullPath}>
-              {/* 文件行 */}
-              <div
-                className={clsx(
-                  'flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors',
-                  'hover:bg-background-hover',
-                  i < fileChanges.length - 1 && !expandedFiles.has(fc.fullPath) && 'border-b border-border',
-                  expandedFiles.has(fc.fullPath) && 'bg-background-hover'
-                )}
-                onClick={(e) => toggleFile(fc.fullPath, e)}
-                role="button"
-                tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    setExpandedFiles(prev => {
-                      const next = new Set(prev);
-                      if (next.has(fc.fullPath)) next.delete(fc.fullPath);
-                      else next.add(fc.fullPath);
-                      return next;
-                    });
-                  }
-                }}
-                aria-expanded={expandedFiles.has(fc.fullPath)}
-              >
-                {fc.changeType === 'created' ? (
-                  <FilePlus className="w-3.5 h-3.5 shrink-0 text-green-400" />
-                ) : (
-                  <FileText className={clsx('w-3.5 h-3.5 shrink-0', fc.changeType === 'deleted' ? 'text-red-400' : 'text-orange-400')} />
-                )}
-                {/* 文件名（粗体） */}
-                <span
-                  className="text-xs font-medium text-text-primary hover:text-primary hover:underline shrink-0 cursor-pointer"
-                  data-file-open
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleOpenFile(fc.fullPath);
-                  }}
-                  title={fc.fullPath}
-                >
-                  {fc.fileName}
-                </span>
-                {/* 目录路径（次要灰色） */}
-                <span className="text-[11px] text-text-muted/60 flex-1 min-w-0 truncate" title={fc.fullPath}>
-                  {fc.dirPath}
-                </span>
-                {/* 统计：modified 显示 +N −M，created 显示 +N */}
-                {fc.changeType === 'modified' && fc.diffData && (() => {
-                  const { added, removed } = computeDiffStats(fc.diffData);
-                  if (added === 0 && removed === 0) return null;
-                  return (
-                    <span className="text-[10px] tabular-nums shrink-0 text-text-muted">
-                      {added > 0 && <span className="text-success">+{added}</span>}
-                      {removed > 0 && <span className="text-error"> −{removed}</span>}
-                    </span>
-                  );
-                })()}
-                {fc.changeType === 'created' && fc.newContent && (
-                  <span className="text-[10px] tabular-nums shrink-0 text-text-muted">
-                    <span className="text-success">+{fc.newContent.replace(/\n$/, '').split('\n').length}</span>
-                  </span>
-                )}
-                <span className={clsx(
-                  'shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-                  fc.changeType === 'created'
-                    ? 'bg-green-500/10 text-green-400'
-                    : fc.changeType === 'deleted'
-                      ? 'bg-red-500/10 text-red-400'
-                      : 'bg-orange-500/10 text-orange-400'
-                )}>
-                  {fc.changeType === 'created' ? t('summary.fileCreated')
-                    : fc.changeType === 'deleted' ? t('summary.fileDeleted')
-                    : t('summary.fileModified')}
-                </span>
-                <ChevronDown className={clsx(
-                  'w-3 h-3 shrink-0 text-text-muted transition-transform duration-150',
-                  expandedFiles.has(fc.fullPath) && 'rotate-180'
-                )} />
-              </div>
-              {/* 展开内容：diff 或 newContent */}
-              {expandedFiles.has(fc.fullPath) && (
-                <div className="border-b border-border bg-background-base">
-                  <div className="px-3 py-2">
-                    {fc.changeType === 'modified' && fc.diffData ? (
-                      <InlineDiffView
-                        filePath={fc.fileName}
-                        oldContent={fc.diffData.oldContent}
-                        newContent={fc.diffData.newContent}
-                        diffString={fc.diffData.diffString}
-                        onOpenFile={() => handleOpenFile(fc.fullPath)}
-                        maxHeight="300px"
-                        noHeader
-                      />
-                    ) : fc.changeType === 'created' && fc.newContent ? (
-                      <CodePreviewView
-                        filePath={fc.fileName}
-                        content={fc.newContent}
-                        onOpenFile={() => handleOpenFile(fc.fullPath)}
-                        maxHeight="300px"
-                        noHeader
-                      />
-                    ) : fc.changeType === 'deleted' ? (
-                      <div className="text-xs text-text-muted italic py-4 text-center">
-                        {t('summary.fileDeleted')}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-text-muted italic py-4 text-center">
-                        {t('summary.fileChangesTitle')}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </React.Fragment>
-          ))}
-        </div>
-      )}
-
       {/* 展开态：过程块分组列表 */}
       {expanded && (
         <ProcessBlockGroupedList processBlocks={processBlocks} />
@@ -511,7 +253,7 @@ const ProcessBlockSummary = memo(function ProcessBlockSummary({
  * - 按类型分组（思考 / 工具调用 / 计划 / 权限…）
  * - 所有块直接完整渲染，限高滚动
  */
-const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
+export const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
   processBlocks,
 }: {
   processBlocks: ContentBlock[];
@@ -723,7 +465,7 @@ const AutoModeRenderer = memo(function AutoModeRenderer({
   // 汇总条（自身管理展开/折叠，展开后原位置显示所有折叠块）
   if (foldedBlocks.length > 0) {
     children.push(
-      <ProcessBlockSummary key="process-summary" processBlocks={foldedBlocks} />
+      <RunProcessSummary key="process-summary" processBlocks={foldedBlocks} />
     );
   }
 

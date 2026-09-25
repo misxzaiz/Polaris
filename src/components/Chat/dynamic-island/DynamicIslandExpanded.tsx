@@ -25,8 +25,11 @@ import {
   X,
   Check,
   Circle,
+  FileText,
 } from 'lucide-react';
 import { formatDuration, formatTokens, type ContextWater, type RuntimeCard, type TaskRow, type UrgentCard } from './useRuntimeSummary';
+import type { ArtifactPreviewBlock } from '@/types';
+import { ArtifactPreviewRenderer } from '../chatBlocks/ArtifactPreviewRenderer';
 
 interface DynamicIslandExpandedProps {
   urgent: UrgentCard[];
@@ -38,6 +41,7 @@ interface DynamicIslandExpandedProps {
   onClose: () => void;
   elapsedMs: number;
   water: ContextWater | null;
+  artifacts: ArtifactPreviewBlock[];
   onUrgentDecision: (card: UrgentCard, approved: boolean) => void;
 }
 
@@ -51,11 +55,21 @@ export function DynamicIslandExpanded({
   onClose,
   elapsedMs,
   water,
+  artifacts,
   onUrgentDecision,
 }: DynamicIslandExpandedProps) {
   return (
     <div className="island-panel">
       <div className="island-panel-inner">
+
+        {/* 面板头：标题 + 时长 + 关闭 */}
+        <div className="island-panel-head">
+          <span className="island-panel-title">运行详情</span>
+          {elapsedMs > 0 && <span className="island-panel-time">{formatDuration(elapsedMs)}</span>}
+          <button type="button" className="island-close" title="收起" onClick={onClose}>
+            <X />
+          </button>
+        </div>
 
         {/* 需要你：最优先 */}
         {urgent.length > 0 && (
@@ -106,6 +120,24 @@ export function DynamicIslandExpanded({
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* 产物预览（与底部操作区共享数据源） */}
+        {artifacts.length > 0 && (
+          <div className="island-artifacts">
+            <div className="island-sec-head">
+              <span className="island-sec-head-ico"><FileText /></span>
+              <span>产物</span>
+              <span className="island-sec-head-count">{artifacts.length}</span>
+            </div>
+            <div className="island-artifacts-list">
+              {artifacts.map(a => (
+                <div key={a.previewId} className="island-artifact">
+                  <ArtifactPreviewRenderer block={a} />
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

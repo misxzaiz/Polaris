@@ -256,6 +256,14 @@
     "toolbarTitle": "Process",
     "toolbarBlockCount": "{{count}} blocks"
   },
+  "operationBar": {
+    "processTab": "Process",
+    "filesTab": "Files",
+    "artifactsTab": "Artifacts",
+    "processEmpty": "No process blocks yet",
+    "filesEmpty": "No file changes yet",
+    "artifactsEmpty": "No artifacts yet"
+  },
   "thinking": {
     "title": "Thinking",
     "streaming": "Thinking...",

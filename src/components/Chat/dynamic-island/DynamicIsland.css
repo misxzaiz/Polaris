@@ -812,3 +812,33 @@
   0% { transform: translateX(100%); }
   100% { transform: translateX(-100%); }
 }
+
+/* ========== V4：展开态内嵌产物预览 ========== */
+.island-artifacts {
+  border-top: 1px solid rgba(var(--c-border), 0.05);
+  padding-top: 6px;
+}
+.island-artifacts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+}
+/* 岛内产物卡压缩：标题区收窄，iframe 高度降低（岛面板限高 540px） */
+.island-artifact {
+  overflow: hidden;
+}
+.island-artifact .my-2 {
+  margin: 0;
+}
+.island-artifact section {
+  border-radius: 8px;
+}
+.island-artifact header {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.island-artifact .h-\[420px\] {
+  height: 240px;
+  min-height: 180px;
+}

@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>会话区 UI 改造原型 · 底部 tab 操作区 + 常驻灵动岛</title>
+<style>
+/* ============================================================
+   真实主题 token —— 直接取自 src/index.css :root (Dark)
+   ============================================================ */
+:root {
+  color-scheme: dark;
+  --window-opacity: 1.0;
+
+  --c-primary: 59 130 246;
+  --c-primary-hover: 37 99 235;
+  --c-primary-400: 96 165 250;
+  --c-primary-500: 59 130 246;
+  --c-primary-600: 37 99 235;
+  --c-primary-700: 29 78 216;
+  --c-primary-100: 219 234 254;
+
+  --c-bg-base: 0 0 0;
+  --c-bg-elevated: 26 26 31;
+  --c-bg-surface: 37 37 43;
+  --c-bg-hover: 45 45 53;
+  --c-bg-active: 53 53 61;
+  --c-bg-tertiary: 33 38 45;
+  --c-bg-secondary: 22 27 34;
+
+  --c-border: 255 255 255;
+
+  --c-text-primary: 248 248 248;
+  --c-text-secondary: 180 180 184;
+  --c-text-tertiary: 142 142 147;
+  --c-text-muted: 109 109 112;
+
+  --c-status-warning: 251 191 36;
+  --c-status-success: 52 211 153;
+  --c-status-danger: 248 113 113;
+  --c-status-info: 96 165 250;
+  --c-status-done: 16 185 129;
+  --c-status-failed: 239 68 68;
+  --c-status-neutral: 156 163 175;
+
+  --c-accent-ai: 167 139 250;
+  --c-accent-prototype: 34 211 238;
+  --c-accent-workspace: 251 191 36;
+
+  --c-on-primary: 255 255 255;
+  --c-shadow: 0 0 0;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace;
+
+  --radius-sm: 4px; --radius-md: 8px; --radius-lg: 12px; --radius-xl: 16px;
+  --chat-bubble-radius: 16px;
+  --chat-bubble-padding-x: 16px; --chat-bubble-padding-y: 12px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  background-color: rgb(var(--c-bg-base));
+  color: rgb(var(--c-text-primary));
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 细滚动条（照抄 index.css） */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+.chat-display-root ::-webkit-scrollbar { width: 4px; height: 4px; }
+.chat-display-root ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 2px; }
+
+/* ============================================================
+   应用骨架（贴合 App.tsx 真实布局）
+   ============================================================ */
+#root { display: flex; flex-direction: column; height: 100vh; }
+.topbar {
+  height: 40px; flex-shrink: 0;
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 14px;
+  background: rgb(var(--c-bg-elevated));
+  border-bottom: 1px solid rgba(var(--c-border), 0.15);
+}
+.topbar .logo { width: 22px; height: 22px; border-radius: 6px;
+  background: linear-gradient(135deg, rgb(var(--c-primary)), rgb(var(--c-accent-ai)));
+  display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: #fff; }
+.topbar .title { font-size: 13px; font-weight: 600; }
+.topbar .crumbs { font-size: 11px; color: rgb(var(--c-text-tertiary)); }
+
+.main { flex: 1; min-height: 0; display: flex; }
+
+/* 左侧会话列表（简化） */
+.session-list {
+  width: 216px; flex-shrink: 0; border-right: 1px solid rgba(var(--c-border), 0.15);
+  background: rgb(var(--c-bg-elevated));
+  display: flex; flex-direction: column;
+}
+.session-list .sl-head {
+  padding: 10px 12px 6px; font-size: 11px; font-weight: 600;
+  color: rgb(var(--c-text-tertiary)); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.session-list .sl-item {
+  margin: 0 8px 4px; padding: 8px 10px; border-radius: var(--radius-md);
+  display: flex; align-items: center; gap: 8px; font-size: 12px;
+  color: rgb(var(--c-text-secondary)); cursor: pointer;
+}
+.session-list .sl-item:hover { background: rgb(var(--c-bg-hover)); }
+.session-list .sl-item.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+.session-list .sl-item .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.session-list .sl-item.active .dot { background: rgb(var(--c-primary)); box-shadow: 0 0 6px rgb(var(--c-primary) / 0.6); }
+.session-list .sl-item .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-list .sl-foot { margin-top: auto; padding: 10px 12px; font-size: 11px; color: rgb(var(--c-text-muted)); }
+
+/* ============================================================
+   会话格（贴合 SessionCell）
+   ============================================================ */
+.grid-area { flex: 1; min-width: 0; padding: 12px; display: flex; align-items: stretch; }
+.cell {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(var(--c-primary), 0.35);
+  box-shadow: 0 8px 24px rgb(var(--c-shadow) / 0.2), 0 0 24px rgb(var(--c-primary) / 0.12);
+  background: rgb(var(--c-bg-elevated));
+  overflow: hidden;
+}
+.cell-head {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px;
+  background: rgb(var(--c-primary) / 0.10);
+  border-bottom: 1px solid rgb(var(--c-primary) / 0.20);
+  flex-shrink: 0;
+}
+.cell-head .c-title { font-size: 12px; font-weight: 500; color: rgb(var(--c-primary)); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell-head .c-engine {
+  flex-shrink: 0; padding: 2px 6px; border-radius: 4px;
+  border: 1px solid rgb(var(--c-primary) / 0.30); background: rgb(var(--c-primary) / 0.10);
+  font-size: 10px; color: rgb(var(--c-primary));
+}
+.cell-head .c-spacer { flex: 1; }
+.cell-head .c-btn {
+  flex-shrink: 0; padding: 2px; border-radius: 4px; border: none; background: transparent;
+  color: rgb(var(--c-text-muted)); cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.cell-head .c-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.cell-head .c-stream-dot { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--c-primary)); animation: pulse 1.5s ease-out infinite; flex-shrink: 0; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgb(var(--c-primary) / 0.5);} 100% { box-shadow: 0 0 0 6px rgb(var(--c-primary) / 0);} }
+
+/* 消息显示区（chat-display-root） */
+.chat-display-root {
+  position: relative;
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  background: rgb(var(--c-bg-base));
+  overflow: hidden;
+}
+
+/* ============================================================
+   灵动岛 v2 —— 真实样式照抄 DynamicIsland.css（贴顶）
+   ============================================================ */
+.island-root {
+  position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  z-index: 45;
+  width: fit-content; min-width: 120px; max-width: min(440px, calc(100% - 32px));
+  border-radius: 0 0 14px 14px;
+  background: rgb(38 38 46);
+  border: 1px solid rgba(var(--c-border), 0.16);
+  border-top: none;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+  overflow: hidden;
+  transition: border-radius 0.4s cubic-bezier(0.34,1.56,0.64,1), box-shadow 0.2s, width 0.45s cubic-bezier(0.34,1.56,0.64,1);
+}
+.island-root.island-expanded { border-radius: 0 0 18px 18px; width: min(440px, calc(100% - 32px)); }
+.island-root.island-hidden { display: none; }
+
+.island-compact {
+  display: flex; align-items: center; gap: 8px;
+  height: 28px; padding: 0 12px; cursor: pointer; user-select: none;
+}
+.island-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; position: relative; }
+.island-dot-done { background: rgb(var(--c-status-success)); }
+.island-dot-run { background: rgb(var(--c-primary)); }
+.island-dot-run::after {
+  content: ''; position: absolute; inset: -3px; border-radius: 50%;
+  border: 1.5px solid rgb(var(--c-primary) / 0.5);
+  animation: island-pulse 1.5s ease-out infinite;
+}
+@keyframes island-pulse { 0% { transform: scale(0.85); opacity: 1; } 100% { transform: scale(1.4); opacity: 0; } }
+
+.island-main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.island-seg { display: flex; align-items: center; gap: 5px; white-space: nowrap; overflow: hidden; min-width: 0; }
+.island-seg-ico { width: 13px; height: 13px; flex-shrink: 0; color: rgb(var(--c-text-secondary)); display: flex; align-items: center; justify-content: center; }
+.island-seg-lbl { color: rgb(var(--c-text-secondary)); }
+.island-seg-val { color: rgb(var(--c-text-primary)); font-weight: 500; }
+.island-seg-active { color: rgb(var(--c-primary)); }
+.island-time { color: rgb(var(--c-text-tertiary)); font-size: 11px; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.island-chev { color: rgb(var(--c-text-muted)); flex-shrink: 0; display: flex; align-items: center; transition: transform 0.25s; }
+.island-expanded .island-chev { transform: rotate(180deg); }
+
+.island-panel { max-height: 0; overflow: hidden; transition: max-height 0.32s cubic-bezier(0.4,0,0.2,1); }
+.island-expanded .island-panel { max-height: 540px; }
+.island-panel-inner { padding: 0 8px 10px; display: flex; flex-direction: column; gap: 8px; }
+
+.island-panel-head { display: flex; align-items: center; gap: 8px; padding: 6px 8px 2px; }
+.island-panel-title { flex: 1; font-size: 11px; color: rgb(var(--c-text-tertiary)); font-weight: 500; letter-spacing: 0.03em; }
+.island-panel-time { font-size: 10px; color: rgb(var(--c-text-tertiary)); font-variant-numeric: tabular-nums; }
+.island-close {
+  width: 18px; height: 18px; border: none; border-radius: 5px; background: transparent;
+  color: rgb(var(--c-text-tertiary)); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.island-close:hover { background: rgba(255,255,255,0.08); color: rgb(var(--c-text-primary)); }
+
+.island-sec-head {
+  display: flex; align-items: center; gap: 6px; padding: 4px 8px 2px;
+  font-size: 10px; color: rgb(var(--c-text-muted)); letter-spacing: 0.03em; text-transform: uppercase;
+}
+.island-sec-head .count { margin-left: auto; font-variant-numeric: tabular-nums; }
+
+.island-card { border: 1px solid rgba(var(--c-border), 0.07); border-radius: 8px; padding: 7px 10px; background: rgb(var(--c-bg-surface) / 0.4); }
+.island-card .r-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.island-card .r-ico { width: 14px; height: 14px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: rgb(var(--c-primary)); }
+.island-card .r-title { font-size: 12px; font-weight: 500; color: rgb(var(--c-text-primary)); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.island-card .r-meta { font-size: 10px; color: rgb(var(--c-text-tertiary)); flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.island-card .r-detail { font-size: 11px; color: rgb(var(--c-text-secondary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 灵动岛展开态：产物预览区 */
+.island-artifact {
+  border: 1px solid rgba(var(--c-border), 0.08); border-radius: 8px; overflow: hidden;
+  background: rgb(var(--c-bg-surface) / 0.4);
+}
+.island-artifact .af-head { display: flex; align-items: center; gap: 6px; padding: 5px 8px; }
+.island-artifact .af-ico { width: 14px; height: 14px; color: rgb(34 211 238); flex-shrink: 0; }
+.island-artifact .af-title { flex: 1; min-width: 0; font-size: 11px; font-weight: 500; color: rgb(var(--c-text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.island-artifact .af-actions { display: flex; align-items: center; gap: 4px; }
+.island-artifact .af-btn {
+  border: none; background: transparent; color: rgb(var(--c-text-tertiary)); cursor: pointer;
+  width: 20px; height: 20px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px;
+}
+.island-artifact .af-btn:hover { background: rgba(255,255,255,0.08); color: rgb(var(--c-text-primary)); }
+.island-artifact .af-frame { height: 190px; background: #fff; }
+
+/* ============================================================
+   消息流（改造后：只留文本，产物/运行过程已移入底部操作区）
+   ============================================================ */
+.stream { flex: 1; min-height: 0; overflow-y: auto; padding: 48px 20px 12px; display: flex; flex-direction: column; gap: 10px; }
+
+.msg { display: flex; flex-direction: column; }
+.msg.user { align-items: flex-end; }
+.msg.assistant { align-items: flex-start; }
+
+.user-bubble {
+  max-width: 85%;
+  padding: var(--chat-bubble-padding-y) var(--chat-bubble-padding-x);
+  border-radius: var(--chat-bubble-radius);
+  font-size: 14px; line-height: 1.55;
+  background: linear-gradient(to bottom right, rgb(var(--c-primary)), rgb(var(--c-primary-600)));
+  color: #fff;
+  box-shadow: 0 0 24px rgb(var(--c-primary) / 0.15);
+  white-space: pre-wrap; word-break: break-word;
+}
+.assistant-card {
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.12);
+  padding: 12px 16px;
+  font-size: 14px; line-height: 1.55;
+}
+.assistant-card .p { color: rgb(var(--c-text-secondary)); margin: 0; }
+.assistant-card .p + .p { margin-top: 4px; }
+.assistant-card code { background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1); color: rgb(var(--c-status-info)); padding: 2px 6px; border-radius: 6px; font-size: 13px; font-family: var(--font-mono); }
+
+/* 消息内遗留的「已移入底部」轻提示（展示改造效果） */
+.moved-note {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; color: rgb(var(--c-text-muted));
+  border: 1px dashed rgba(var(--c-border), 0.2);
+  border-radius: var(--radius-md);
+  padding: 4px 10px; margin-top: 8px;
+  background: rgb(var(--c-bg-base) / 0.4);
+}
+.moved-note b { color: rgb(var(--c-status-info)); font-weight: 500; }
+
+/* ============================================================
+   底部操作区（改造核心：常驻消息区底部 · tab 化）
+   ============================================================ */
+.op-dock {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(var(--c-border), 0.15);
+  background: rgb(var(--c-bg-elevated));
+  display: flex; flex-direction: column;
+  max-height: 46%;
+  transition: max-height 0.25s ease;
+}
+.op-dock.dock-collapsed { max-height: 42px; }
+
+/* tab 栏 */
+.op-tabs {
+  display: flex; align-items: center; gap: 2px;
+  padding: 4px 10px 0;
+  border-bottom: 1px solid rgba(var(--c-border), 0.12);
+  background: rgb(var(--c-bg-elevated));
+  flex-shrink: 0;
+  min-height: 38px;
+}
+.op-tab {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: none; background: transparent;
+  font-size: 12px; color: rgb(var(--c-text-tertiary));
+  cursor: pointer; border-radius: 6px 6px 0 0;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.op-tab:hover { color: rgb(var(--c-text-primary)); background: rgb(var(--c-bg-hover)); }
+.op-tab.active { color: rgb(var(--c-primary)); border-bottom-color: rgb(var(--c-primary)); background: rgb(var(--c-primary) / 0.06); }
+.op-tab .badge {
+  font-size: 10px; font-variant-numeric: tabular-nums;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-secondary));
+}
+.op-tab.active .badge { background: rgb(var(--c-primary) / 0.15); color: rgb(var(--c-primary)); }
+.op-tabs .spacer { flex: 1; }
+.op-collapse-btn {
+  border: none; background: transparent; color: rgb(var(--c-text-muted)); cursor: pointer;
+  width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 12px;
+}
+.op-collapse-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+/* tab 内容区 */
+.op-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 12px; }
+.op-body.hidden { display: none; }
+
+/* —— 运行过程：照抄 ProcessBlockGroupedList —— */
+.proc-group { border: 1px solid rgba(var(--c-border), 0.15); border-radius: var(--radius-md); overflow: hidden; margin-bottom: 8px; }
+.proc-toolbar {
+  display: flex; align-items: center; gap: 8px; padding: 5px 12px;
+  background: rgb(var(--c-bg-surface)); border-bottom: 1px solid rgba(var(--c-border), 0.15);
+  position: sticky; top: 0; z-index: 2;
+}
+.proc-toolbar .tt { font-size: 12px; font-weight: 500; color: rgb(var(--c-text-secondary)); }
+.proc-toolbar .tc { font-size: 11px; color: rgb(var(--c-text-muted)); }
+.proc-group-head {
+  display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+  background: rgb(var(--c-bg-base)); border-bottom: 1px solid rgba(var(--c-border), 0.12);
+  font-size: 11px; font-weight: 600; color: rgb(var(--c-text-muted)); text-transform: uppercase; letter-spacing: 0.04em;
+}
+.proc-group-head .g-ico { width: 14px; height: 14px; }
+.proc-group-head .g-n { margin-left: 2px; font-size: 10px; font-weight: 400; color: rgb(var(--c-text-muted)); }
+.proc-row { display: flex; align-items: flex-start; gap: 8px; padding: 7px 12px; border-bottom: 1px solid rgba(var(--c-border), 0.08); font-size: 12px; }
+.proc-row:last-child { border-bottom: none; }
+.proc-row .dot { width: 12px; height: 12px; margin-top: 1px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; }
+.proc-row .dot.done { color: rgb(var(--c-status-success)); }
+.proc-row .dot.active { color: rgb(var(--c-primary)); }
+.proc-row .dot.pending { color: rgb(var(--c-text-muted)); }
+.proc-row .txt { flex: 1; min-width: 0; color: rgb(var(--c-text-secondary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.proc-row .txt.done { color: rgb(var(--c-text-muted)); text-decoration: line-through; }
+.proc-row .txt.active { color: rgb(var(--c-primary)); }
+.proc-row .num { font-size: 10px; color: rgb(var(--c-text-muted)); font-family: var(--font-mono); flex-shrink: 0; }
+
+/* —— 变更文件：照抄 blockGrouping fileChanges —— */
+.file-box { border: 1px solid rgba(var(--c-border), 0.15); border-radius: var(--radius-lg); background: rgb(var(--c-bg-surface)); overflow: hidden; }
+.file-box-head {
+  display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  font-size: 12px; font-weight: 500; color: rgb(var(--c-text-secondary));
+  border-bottom: 1px solid rgba(var(--c-border), 0.15); background: rgb(var(--c-bg-elevated));
+}
+.file-box-head .cnt { margin-left: auto; font-size: 11px; font-weight: 400; color: rgb(var(--c-text-muted)); }
+.file-row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: 12px;
+  cursor: pointer; border-bottom: 1px solid rgba(var(--c-border), 0.1);
+  transition: background 0.15s;
+}
+.file-row:hover { background: rgb(var(--c-bg-hover)); }
+.file-row .f-ico { width: 14px; height: 14px; flex-shrink: 0; }
+.file-row .f-ico.created { color: rgb(var(--c-status-success)); }
+.file-row .f-ico.modified { color: rgb(251 146 60); }
+.file-row .f-name { font-weight: 500; color: rgb(var(--c-text-primary)); flex-shrink: 0; cursor: pointer; }
+.file-row .f-name:hover { color: rgb(var(--c-primary)); text-decoration: underline; }
+.file-row .f-dir { flex: 1; min-width: 0; font-size: 11px; color: rgb(var(--c-text-muted)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-row .f-stats { font-size: 10px; font-variant-numeric: tabular-nums; flex-shrink: 0; color: rgb(var(--c-text-muted)); }
+.file-row .f-stats .add { color: rgb(var(--c-status-success)); }
+.file-row .f-stats .del { color: rgb(var(--c-status-danger)); }
+.file-row .f-badge {
+  flex-shrink: 0; font-size: 10px; padding: 1px 6px; border-radius: 999px; font-weight: 500;
+}
+.f-badge.created { background: rgb(var(--c-status-success) / 0.12); color: rgb(var(--c-status-success)); }
+.f-badge.modified { background: rgb(251 146 60 / 0.12); color: rgb(251 146 60); }
+.f-badge.deleted { background: rgb(var(--c-status-danger) / 0.12); color: rgb(var(--c-status-danger)); }
+.file-row .chev { width: 12px; height: 12px; flex-shrink: 0; color: rgb(var(--c-text-muted)); transition: transform 0.15s; }
+.file-row.open .chev { transform: rotate(180deg); }
+.file-diff { display: none; border-bottom: 1px solid rgba(var(--c-border), 0.1); background: rgb(var(--c-bg-base)); padding: 10px 12px; }
+.file-row.open + .file-diff { display: block; }
+.file-diff pre {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.6; color: rgb(var(--c-text-secondary));
+  max-height: 180px; overflow: auto; white-space: pre-wrap; word-break: break-word;
+}
+.diff-add { color: rgb(var(--c-status-success)); background: rgb(var(--c-status-success) / 0.12); border-radius: 2px; }
+.diff-del { color: rgb(var(--c-status-danger)); background: rgb(var(--c-status-danger) / 0.12); border-radius: 2px; }
+
+/* —— 产物：照抄 ArtifactPreviewRenderer —— */
+.artifact-card {
+  width: 100%; overflow: hidden; border-radius: var(--radius-lg);
+  border: 1px solid rgba(var(--c-border), 0.15); background: rgb(var(--c-bg-elevated));
+}
+.artifact-head {
+  display: flex; align-items: center; gap: 8px;
+  border-bottom: 1px solid rgba(var(--c-border), 0.15);
+  background: rgb(var(--c-bg-surface));
+  padding: 8px 12px;
+}
+.artifact-head .a-ico {
+  width: 28px; height: 28px; flex-shrink: 0; border-radius: var(--radius-md);
+  background: rgb(34 211 238 / 0.10); color: rgb(34 211 238);
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+}
+.artifact-head .a-info { min-width: 0; flex: 1; }
+.artifact-head .a-title { font-size: 14px; font-weight: 500; color: rgb(var(--c-text-primary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-head .a-desc { font-size: 11px; color: rgb(var(--c-text-secondary)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 2px; }
+.artifact-head .a-meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgb(var(--c-text-tertiary)); margin-top: 3px; }
+.artifact-head .a-meta .sep { width: 3px; height: 3px; border-radius: 50%; background: rgb(var(--c-text-muted)); }
+.artifact-head .a-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.a-btn {
+  width: 28px; height: 28px; border: none; background: transparent; border-radius: var(--radius-md);
+  color: rgb(var(--c-text-tertiary)); cursor: pointer;
+  display: flex; align-items: center; justify-content: center; font-size: 13px;
+  transition: all 0.12s;
+}
+.a-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.a-btn.primary {
+  display: inline-flex; align-items: center; gap: 4px;
+  width: auto; padding: 0 10px; font-size: 11px; font-weight: 500;
+  background: rgb(var(--c-primary)); border-color: rgb(var(--c-primary)); color: #fff;
+}
+.a-btn.primary:hover { background: rgb(var(--c-status-info)); color: #fff; }
+.artifact-body { background: rgb(var(--c-bg-base)); padding: 8px; }
+.artifact-frame { height: 420px; min-height: 320px; overflow: hidden; border-radius: var(--radius-md); border: 1px solid rgba(var(--c-border), 0.15); background: #fff; }
+
+/* 版本切换条 */
+.version-bar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-top: 1px solid rgba(var(--c-border), 0.12); background: rgb(var(--c-bg-surface)); }
+.version-bar .v-label { font-size: 11px; color: rgb(var(--c-text-tertiary)); }
+.version-bar .v-pills { display: flex; gap: 4px; }
+.version-bar .v-pill {
+  font-size: 11px; padding: 2px 8px; border-radius: 999px; cursor: pointer;
+  border: 1px solid rgba(var(--c-border), 0.15); background: transparent; color: rgb(var(--c-text-tertiary));
+}
+.version-bar .v-pill:hover { color: rgb(var(--c-text-primary)); }
+.version-bar .v-pill.active { background: rgb(var(--c-primary) / 0.15); border-color: rgb(var(--c-primary) / 0.4); color: rgb(var(--c-primary)); }
+
+/* 空态提示 */
+.empty-hint { padding: 24px 0; text-align: center; font-size: 12px; color: rgb(var(--c-text-muted)); }
+
+/* ============================================================
+   输入区（照抄 ChatInput：chat-input-root border-t border-border bg-background-elevated）
+   ============================================================ */
+.chat-input-root {
+  flex-shrink: 0;
+  border-top: 1px solid rgba(var(--c-border), 0.15);
+  background: rgb(var(--c-bg-elevated));
+  padding: 10px 16px 12px;
+}
+.chat-input-root .input-box {
+  display: flex; align-items: flex-end; gap: 8px;
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.15);
+  border-radius: var(--radius-lg);
+  padding: 6px 6px 6px 12px;
+}
+.chat-input-root textarea {
+  flex: 1; min-height: 38px; max-height: 120px; resize: none;
+  background: transparent; border: none; outline: none;
+  color: rgb(var(--c-text-primary));
+  font-size: 14px; line-height: 1.5; font-family: var(--font-sans);
+}
+.chat-input-root textarea::placeholder { color: rgb(var(--c-text-muted)); }
+.send-btn {
+  width: 32px; height: 32px; border: none; border-radius: var(--radius-md); cursor: pointer;
+  background: rgb(var(--c-primary)); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
+  transition: all 0.15s ease-out; flex-shrink: 0;
+}
+.send-btn:hover { transform: scale(1.02); box-shadow: 0 0 16px rgb(var(--c-primary) / 0.4); }
+.send-btn:active { transform: scale(0.98); }
+.input-tools { display: flex; gap: 4px; margin-top: 8px; }
+.input-tool {
+  border: 1px solid rgba(var(--c-border), 0.12); background: transparent;
+  color: rgb(var(--c-text-tertiary)); font-size: 11px;
+  padding: 3px 10px; border-radius: 999px; cursor: pointer;
+}
+.input-tool:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+/* 标注条（原型说明，非真实 UI） */
+.proto-note {
+  position: fixed; left: 12px; bottom: 12px; z-index: 60;
+  font-size: 11px; color: rgb(var(--c-text-tertiary));
+  background: rgb(38 38 46 / 0.92); border: 1px solid rgba(var(--c-border), 0.16);
+  border-radius: 10px; padding: 8px 12px; max-width: 300px; line-height: 1.5;
+}
+.proto-note b { color: rgb(var(--c-status-info)); font-weight: 600; }
+</style>
+</head>
+<body>
+<div id="root">
+
+  <!-- 顶栏 -->
+  <div class="topbar">
+    <div class="logo">✦</div>
+    <span class="title">Polaris</span>
+    <span class="crumbs">工作区 · base · 会话：UI 布局改造</span>
+  </div>
+
+  <div class="main">
+    <!-- 左：会话列表 -->
+    <div class="session-list">
+      <div class="sl-head">会话</div>
+      <div class="sl-item active"><span class="dot"></span><span class="name">UI 布局改造</span></div>
+      <div class="sl-item"><span class="dot"></span><span class="name">需求库同步</span></div>
+      <div class="sl-item"><span class="dot"></span><span class="name">Bug 排查</span></div>
+      <div class="sl-item"><span class="dot"></span><span class="name">阅读模式原型</span></div>
+      <div class="sl-foot">+ 新建会话</div>
+    </div>
+
+    <!-- 中：会话格 -->
+    <div class="grid-area">
+      <div class="cell">
+        <div class="cell-head">
+          <span class="c-title">UI 布局改造</span>
+          <span class="c-engine">claude</span>
+          <span class="c-spacer"></span>
+          <span class="c-stream-dot"></span>
+          <button class="c-btn" title="展开">⤢</button>
+          <button class="c-btn" title="前置">↥</button>
+          <button class="c-btn" title="关闭">✕</button>
+        </div>
+
+        <!-- 消息显示区 -->
+        <div class="chat-display-root">
+
+          <!-- 灵动岛：贴顶常驻（完成态，不自动消失） -->
+          <div class="island-root island-expanded" id="island">
+            <div class="island-compact" onclick="toggleIsland()">
+              <span class="island-dot island-dot-done"></span>
+              <div class="island-main">
+                <span class="island-seg">
+                  <span class="island-seg-ico">✓</span>
+                  <span class="island-seg-lbl">已完成</span>
+                </span>
+                <span class="island-seg">
+                  <span class="island-seg-val">12 步骤 · 3 文件 · 1 产物</span>
+                </span>
+              </div>
+              <span class="island-time">14:32</span>
+              <span class="island-chev">▾</span>
+            </div>
+            <div class="island-panel">
+              <div class="island-panel-inner">
+                <div class="island-panel-head">
+                  <span class="island-panel-title">运行摘要 · COMPLETED</span>
+                  <span class="island-panel-time">14:32</span>
+                  <button class="island-close" onclick="closeIsland()">✕</button>
+                </div>
+                <!-- 运行状态 -->
+                <div class="island-sec-head">运行过程 <span class="count">2 组 · 8 步</span></div>
+                <div class="island-card">
+                  <div class="r-top">
+                    <span class="r-ico">🔧</span>
+                    <span class="r-title">工具调用</span>
+                    <span class="r-meta">5</span>
+                  </div>
+                  <div class="r-detail">read_file · search_files · glob … 全部成功</div>
+                </div>
+                <div class="island-card">
+                  <div class="r-top">
+                    <span class="r-ico">💭</span>
+                    <span class="r-title">思考</span>
+                    <span class="r-meta">2</span>
+                  </div>
+                  <div class="r-detail">已折叠 · 点击底部操作区查看</div>
+                </div>
+                <!-- 产物预览（内嵌 iframe，与底部操作区共享数据源） -->
+                <div class="island-sec-head">产物预览 <span class="count">v2</span></div>
+                <div class="island-artifact">
+                  <div class="af-head">
+                    <span class="af-ico">📄</span>
+                    <span class="af-title">会话区布局改造 · PRD v2</span>
+                    <span class="af-actions">
+                      <button class="af-btn" title="浏览器打开">↗</button>
+                      <button class="af-btn" title="全屏">⛶</button>
+                    </span>
+                  </div>
+                  <div class="af-frame">
+                    <iframe srcdoc='&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style="margin:0;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a"&gt;&lt;div style="padding:16px"&gt;&lt;h2 style="margin:0 0 6px;font-size:15px"&gt;会话区布局改造 · v2&lt;/h2&gt;&lt;p style="font-size:12px;color:#475569"&gt;底部 tab 操作区：运行过程 / 变更文件 / 产物&lt;/p&gt;&lt;div style="display:flex;gap:6px;margin-top:10px"&gt;&lt;span style="font-size:11px;background:#6366f1;color:#fff;padding:2px 8px;border-radius:999px"&gt;TAB&lt;/span&gt;&lt;span style="font-size:11px;background:#0ea5e9;color:#fff;padding:2px 8px;border-radius:999px"&gt;DOCK&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;' style="width:100%;height:100%;border:none"></iframe>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 消息流（改造后：产物大卡 / 汇总条已移入底部操作区） -->
+          <div class="stream">
+            <div class="msg user">
+              <div class="user-bubble">帮我把会话区的产物大卡、运行过程汇总条和变更文件列表统一收进一个常驻底部操作区，用 tab 切换。</div>
+            </div>
+            <div class="msg assistant">
+              <div class="assistant-card">
+                <p class="p">好的，我来规划这个改造。核心思路：</p>
+                <p class="p">① 产物大卡 + <code>ProcessBlockSummary</code> 汇总条 + 变更文件列表，从消息流整体移出；</p>
+                <p class="p">② 在消息区底部（Virtuoso 之外）挂一个常驻 <b style="color:rgb(var(--c-primary))">操作区</b>，用 <code>运行过程 / 变更文件 / 产物</code> 三个 tab 切换；</p>
+                <p class="p">③ 灵动岛完成态改为常驻，展开态内嵌产物 iframe 预览。</p>
+                <div class="moved-note">已移入底部操作区 → <b>运行过程</b> · <b>变更文件</b> · <b>产物</b></div>
+              </div>
+            </div>
+            <div class="msg user">
+              <div class="user-bubble">好，产物先做成 v1 的样式，运行过程按原来的分组展示。</div>
+            </div>
+            <div class="msg assistant">
+              <div class="assistant-card">
+                <p class="p">收到。底部操作区已按你的要求重建：</p>
+                <p class="p">「产物」tab 复用 <code>ArtifactPreviewRenderer</code> 的 420px iframe 大卡，支持复制 / 源码 / 下载 / 全屏 / 浏览器打开与版本切换；</p>
+                <p class="p">「运行过程」tab 按 <code>思考 / 工具 / 计划</code> 分组完整展示。</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 底部操作区：常驻 tab 化 -->
+          <div class="op-dock" id="dock">
+            <div class="op-tabs">
+              <button class="op-tab active" data-tab="proc" onclick="switchTab('proc')">
+                运行过程 <span class="badge">8</span>
+              </button>
+              <button class="op-tab" data-tab="files" onclick="switchTab('files')">
+                变更文件 <span class="badge">3</span>
+              </button>
+              <button class="op-tab" data-tab="artifacts" onclick="switchTab('artifacts')">
+                产物 <span class="badge">1</span>
+              </button>
+              <span class="spacer"></span>
+              <button class="op-collapse-btn" id="dockToggle" onclick="toggleDock()" title="折叠/展开">▾</button>
+            </div>
+
+            <!-- tab: 运行过程 -->
+            <div class="op-body" id="tab-proc">
+              <div class="proc-group">
+                <div class="proc-toolbar"><span class="tt">运行过程</span><span class="tc">12 个块 · 按类型分组</span></div>
+                <div class="proc-group-head">💭 思考 <span class="g-n">2</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">分析现有 SessionMessagesView 布局结构</span><span class="num">1</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">确定底部操作区挂载点（Virtuoso 之外）</span><span class="num">2</span></div>
+                <div class="proc-group-head">🔧 工具 <span class="g-n">5</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">glob 查找 tailwind.config.js 与 index.css</span><span class="num">3</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">read_file 核实主题 token（--c-bg-surface 等）</span><span class="num">4</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">read_file DynamicIsland.css 真实样式</span><span class="num">5</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">read_file ArtifactPreviewRenderer / blockGrouping 结构</span><span class="num">6</span></div>
+                <div class="proc-row"><span class="dot done">✓</span><span class="txt done">重建贴合项目的 HTML 原型</span><span class="num">7</span></div>
+                <div class="proc-group-head">📋 计划 <span class="g-n">1</span></div>
+                <div class="proc-row"><span class="dot active">●</span><span class="txt active">等待用户确认原型 → 再实施代码改造</span><span class="num">8</span></div>
+              </div>
+            </div>
+
+            <!-- tab: 变更文件 -->
+            <div class="op-body hidden" id="tab-files">
+              <div class="file-box">
+                <div class="file-box-head">变更文件 <span class="cnt">3 个文件</span></div>
+                <div class="file-row" onclick="toggleFile(this)">
+                  <span class="f-ico created">＋</span>
+                  <span class="f-name">prototype-session-layout.html</span>
+                  <span class="f-dir">/D:/space/base/Polaris</span>
+                  <span class="f-stats"><span class="add">+680</span></span>
+                  <span class="f-badge created">新建</span>
+                  <span class="chev">▾</span>
+                </div>
+                <div class="file-diff"><pre><span class="diff-add">+ &lt;!DOCTYPE html&gt;  // 贴合项目真实 token 的高保真原型</span></pre></div>
+                <div class="file-row open" onclick="toggleFile(this)">
+                  <span class="f-ico modified">✎</span>
+                  <span class="f-name">SessionMessagesView.tsx</span>
+                  <span class="f-dir">/src/components/Chat/messages</span>
+                  <span class="f-stats"><span class="add">+12</span><span class="del"> −6</span></span>
+                  <span class="f-badge modified">修改</span>
+                  <span class="chev">▾</span>
+                </div>
+                <div class="file-diff"><pre><span class="diff-add">+ &lt;OpDock sessionId={sessionId} /&gt;  // 挂在 Virtuoso 之外</span>
+<span class="diff-del">- &lt;DynamicIsland autoDismiss /&gt;</span>
+<span class="diff-add">+ &lt;DynamicIsland persistent /&gt;     // 完成态常驻，仅手动关闭</span></pre></div>
+                <div class="file-row" onclick="toggleFile(this)">
+                  <span class="f-ico modified">✎</span>
+                  <span class="f-name">blockGrouping.tsx</span>
+                  <span class="f-dir">/src/components/Chat/tool-calls</span>
+                  <span class="f-stats"><span class="add">+4</span><span class="del"> −2</span></span>
+                  <span class="f-badge modified">修改</span>
+                  <span class="chev">▾</span>
+                </div>
+                <div class="file-diff"><pre><span class="diff-add">+ // AutoModeRenderer 不再渲染产物大卡与汇总条，</span>
+<span class="diff-add">+ // 由 OpDock 统一消费 runtimeSummary 数据源</span></pre></div>
+              </div>
+            </div>
+
+            <!-- tab: 产物 -->
+            <div class="op-body hidden" id="tab-artifacts">
+              <div class="artifact-card">
+                <div class="artifact-head">
+                  <div class="a-ico">📄</div>
+                  <div class="a-info">
+                    <div class="a-title">会话区布局改造 · PRD 原型</div>
+                    <div class="a-desc">底部 tab 操作区 + 常驻灵动岛 · 高保真 HTML 原型</div>
+                    <div class="a-meta">
+                      <span>HTML</span><span class="sep"></span><span>28.4 KB</span><span class="sep"></span><span>v2</span><span class="sep"></span><span>07/14 14:32</span><span class="sep"></span><span>req_ui_layout</span>
+                    </div>
+                  </div>
+                  <div class="a-actions">
+                    <button class="a-btn" title="复制 HTML">⧉</button>
+                    <button class="a-btn" title="查看源码">&lt;/&gt;</button>
+                    <button class="a-btn" title="下载">↓</button>
+                    <button class="a-btn" title="全屏">⛶</button>
+                    <button class="a-btn primary" title="浏览器打开">↗ 打开</button>
+                  </div>
+                </div>
+                <div class="artifact-body">
+                  <div class="artifact-frame">
+                    <iframe srcdoc='&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style="margin:0;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a"&gt;&lt;div style="padding:20px"&gt;&lt;h2 style="margin:0 0 8px;font-size:17px"&gt;会话区布局改造 · PRD&lt;/h2&gt;&lt;p style="font-size:13px;color:#475569"&gt;1. 底部操作区 tab 化（运行过程 / 变更文件 / 产物）&lt;br&gt;2. 灵动岛完成态常驻，仅手动 ✕ 关闭&lt;br&gt;3. 灵动岛展开态内嵌产物 iframe 预览，与操作区共享数据源&lt;/p&gt;&lt;div style="display:flex;gap:8px;margin-top:14px"&gt;&lt;span style="font-size:12px;background:#0ea5e9;color:#fff;padding:4px 10px;border-radius:999px"&gt;TAB 运行过程&lt;/span&gt;&lt;span style="font-size:12px;background:#8b5cf6;color:#fff;padding:4px 10px;border-radius:999px"&gt;TAB 变更文件&lt;/span&gt;&lt;span style="font-size:12px;background:#22c55e;color:#fff;padding:4px 10px;border-radius:999px"&gt;TAB 产物&lt;/span&gt;&lt;/div&gt;&lt;div style="margin-top:16px;font-size:12px;color:#64748b"&gt;版本：&lt;b style="color:#0f172a"&gt;v2&lt;/b&gt;（贴合项目真实 token 重建）&lt;/div&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;' style="width:100%;height:100%;border:none"></iframe>
+                  </div>
+                </div>
+                <div class="version-bar">
+                  <span class="v-label">版本</span>
+                  <div class="v-pills">
+                    <button class="v-pill" onclick="setVersion(this,'v1')">v1</button>
+                    <button class="v-pill active" onclick="setVersion(this,'v2')">v2</button>
+                    <button class="v-pill" onclick="setVersion(this,'v3')">v3</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 输入区 -->
+  <div class="chat-input-root">
+    <div class="input-box">
+      <textarea placeholder="输入消息…" rows="1"></textarea>
+      <button class="send-btn">➤</button>
+    </div>
+    <div class="input-tools">
+      <button class="input-tool">+ 附件</button>
+      <button class="input-tool">@ 上下文</button>
+      <button class="input-tool">⌘ K</button>
+    </div>
+  </div>
+
+  <!-- 原型说明 -->
+  <div class="proto-note">
+    <b>原型说明</b>（非真实 UI）：改造后消息流只留文本；<b>底部操作区</b>常驻 tab 切换运行过程/变更文件/产物；<b>灵动岛</b>完成态常驻、展开态内嵌产物 iframe 预览。可交互：切换 tab · 折叠操作区 · 展开灵动岛 · 切产物版本 · 展开文件 diff。
+  </div>
+</div>
+
+<script>
+/* 灵动岛 */
+function toggleIsland() {
+  document.getElementById('island').classList.toggle('island-expanded');
+}
+function closeIsland() {
+  document.getElementById('island').classList.add('island-hidden');
+}
+
+/* 底部操作区 tab */
+function switchTab(name) {
+  document.querySelectorAll('.op-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.op-body').forEach(b => b.classList.add('hidden'));
+  document.getElementById('tab-' + name).classList.remove('hidden');
+  document.getElementById('dock').classList.remove('dock-collapsed');
+  document.getElementById('dockToggle').textContent = '▾';
+}
+function toggleDock() {
+  const dock = document.getElementById('dock');
+  dock.classList.toggle('dock-collapsed');
+  document.getElementById('dockToggle').textContent = dock.classList.contains('dock-collapsed') ? '▴' : '▾';
+}
+
+/* 变更文件 diff 展开 */
+function toggleFile(row) {
+  row.classList.toggle('open');
+}
+
+/* 产物版本切换：更新两个 iframe（灵动岛 + 操作区）共享数据源 */
+function setVersion(btn, ver) {
+  document.querySelectorAll('.v-pill').forEach(b => b.classList.toggle('active', b === btn));
+  const versions = {
+    v1: '&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style="margin:0;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a"&gt;&lt;div style="padding:20px"&gt;&lt;h2 style="margin:0 0 8px;font-size:17px"&gt;会话区布局改造 · v1&lt;/h2&gt;&lt;p style="font-size:13px;color:#475569"&gt;初版：仅产物大卡移入底部操作区&lt;/p&gt;&lt;div style="display:flex;gap:8px;margin-top:14px"&gt;&lt;span style="font-size:12px;background:#0ea5e9;color:#fff;padding:4px 10px;border-radius:999px"&gt;产物&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;',
+    v2: '&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style="margin:0;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a"&gt;&lt;div style="padding:20px"&gt;&lt;h2 style="margin:0 0 8px;font-size:17px"&gt;会话区布局改造 · v2&lt;/h2&gt;&lt;p style="font-size:13px;color:#475569"&gt;贴合项目真实 token 重建：底部 tab 操作区 + 常驻灵动岛&lt;/p&gt;&lt;div style="display:flex;gap:8px;margin-top:14px"&gt;&lt;span style="font-size:12px;background:#0ea5e9;color:#fff;padding:4px 10px;border-radius:999px"&gt;运行过程&lt;/span&gt;&lt;span style="font-size:12px;background:#8b5cf6;color:#fff;padding:4px 10px;border-radius:999px"&gt;变更文件&lt;/span&gt;&lt;span style="font-size:12px;background:#22c55e;color:#fff;padding:4px 10px;border-radius:999px"&gt;产物&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;',
+    v3: '&lt;!DOCTYPE html&gt;&lt;html&gt;&lt;body style="margin:0;font-family:Segoe UI,sans-serif;background:#f8fafc;color:#0f172a"&gt;&lt;div style="padding:20px"&gt;&lt;h2 style="margin:0 0 8px;font-size:17px"&gt;会话区布局改造 · v3&lt;/h2&gt;&lt;p style="font-size:13px;color:#475569"&gt;终版：灵动岛展开态内嵌 iframe，与操作区共享同一数据源&lt;/p&gt;&lt;div style="display:flex;gap:8px;margin-top:14px"&gt;&lt;span style="font-size:12px;background:#0ea5e9;color:#fff;padding:4px 10px;border-radius:999px"&gt;灵动岛 iframe&lt;/span&gt;&lt;span style="font-size:12px;background:#22c55e;color:#fff;padding:4px 10px;border-radius:999px"&gt;操作区 iframe&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/body&gt;&lt;/html&gt;'
+  };
+  // 更新操作区 iframe
+  const frame = document.querySelector('#tab-artifacts .artifact-frame iframe');
+  if (frame) frame.srcdoc = versions[ver];
+}
+</script>
+</body>
+</html>
