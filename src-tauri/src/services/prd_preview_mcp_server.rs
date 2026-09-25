@@ -251,13 +251,14 @@ fn exec_preview_html(args: &Value, repository: &PreviewRepository) -> Result<Val
     let version_label =
         optional_trimmed_string(args.get("versionLabel")).unwrap_or_else(|| format!("v{version}"));
     let created_at = now_iso();
-
     let preview_id = Uuid::new_v4().to_string();
     let dir = repository.preview_dir(&preview_id)?;
+
+    // 所有可能失败的计算（版本号、目录解析）都已在上面完成；
+    // 从这里开始才触碰文件系统，且校验已前置，失败不再留下脏目录。
+    let index_path = dir.join("index.html");
     fs::create_dir_all(&dir)
         .map_err(|e| AppError::ProcessError(format!("创建预览目录失败: {}", e)))?;
-
-    let index_path = dir.join("index.html");
     fs::write(&index_path, html.as_bytes())
         .map_err(|e| AppError::ProcessError(format!("写入预览 HTML 失败: {}", e)))?;
 
@@ -477,7 +478,8 @@ impl PreviewRepository {
 fn validate_html_size(html: &str) -> Result<()> {
     if html.len() > MAX_HTML_BYTES {
         return Err(AppError::ValidationError(format!(
-            "HTML 过大，最大允许 {} bytes",
+            "HTML 过大，当前 {} bytes，最大允许 {} bytes。请精简或分段传入",
+            html.len(),
             MAX_HTML_BYTES
         )));
     }
@@ -485,11 +487,18 @@ fn validate_html_size(html: &str) -> Result<()> {
 }
 
 fn require_str<'a>(args: &'a Value, key: &str) -> Result<&'a str> {
-    args.get(key)
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| AppError::ValidationError(format!("缺少字符串参数: {key}")))
+    let Some(raw) = args.get(key).and_then(Value::as_str) else {
+        return Err(AppError::ValidationError(format!(
+            "缺少字符串参数: {key}，请重新调用 preview_html 并传入完整 {key}"
+        )));
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::ValidationError(format!(
+            "参数 {key} 为空，请传入非空内容"
+        )));
+    }
+    Ok(trimmed)
 }
 
 fn optional_trimmed_string(value: Option<&Value>) -> Option<String> {
@@ -609,5 +618,56 @@ mod tests {
         assert!(previews
             .iter()
             .any(|preview| preview["version"] == Value::from(2)));
+    }
+
+    #[test]
+    fn rejects_missing_html_argument() {
+        let config_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = tempfile::tempdir().unwrap();
+        let repository = PreviewRepository::new(
+            config_dir.path().to_str().unwrap(),
+            Some(workspace_dir.path().to_str().unwrap()),
+        )
+        .unwrap();
+
+        let error = exec_preview_html(&json!({ "title": "No HTML" }), &repository).unwrap_err();
+        let message = error.to_message();
+        assert!(message.contains("缺少字符串参数: html"), "实际: {message}");
+        assert!(message.contains("重新调用"), "实际: {message}");
+    }
+
+    #[test]
+    fn rejects_empty_html_argument() {
+        let config_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = tempfile::tempdir().unwrap();
+        let repository = PreviewRepository::new(
+            config_dir.path().to_str().unwrap(),
+            Some(workspace_dir.path().to_str().unwrap()),
+        )
+        .unwrap();
+
+        let error =
+            exec_preview_html(&json!({ "html": "   " }), &repository).unwrap_err();
+        let message = error.to_message();
+        assert!(message.contains("参数 html 为空"), "实际: {message}");
+    }
+
+    #[test]
+    fn rejects_oversized_html_before_creating_directory() {
+        let config_dir = tempfile::tempdir().unwrap();
+        let workspace_dir = tempfile::tempdir().unwrap();
+        let repository = PreviewRepository::new(
+            config_dir.path().to_str().unwrap(),
+            Some(workspace_dir.path().to_str().unwrap()),
+        )
+        .unwrap();
+
+        let oversized = "x".repeat(MAX_HTML_BYTES + 1);
+        let error = exec_preview_html(&json!({ "html": oversized }), &repository).unwrap_err();
+        let message = error.to_message();
+        assert!(message.contains("HTML 过大"), "实际: {message}");
+        // 校验失败后不得留下任何预览目录
+        let entries = fs::read_dir(&repository.root).unwrap().collect::<Vec<_>>();
+        assert!(entries.is_empty(), "超限失败不应留下脏目录");
     }
 }
