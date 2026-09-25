@@ -45,14 +45,15 @@ const RING_RADIUS = 9;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 function fmt(n: number): string {
-  if (n >= 1000) return (n / 1000).toFixed(n >= 100000 ? 0 : 1) + 'k';
-  return String(n);
+  return formatTokensStrict(n);
 }
 
 function fmtCost(n: number | undefined): string {
   if (n == null || n === 0) return '';
   return `$${n.toFixed(4)}`;
 }
+
+import { formatTokensStrict } from '@/utils/formatTokens';
 
 /**
  * 判断焦点相关目标是否仍在 anchor 或 card 区域内。用于 anchor.onBlur 白检，
@@ -109,7 +110,7 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
   const wc = Math.min((usage.cacheCreation / cw) * 100, 100);
   const wr = Math.min((usage.cacheRead / cw) * 100, 100);
 
-  const winLabel = cw >= 1e6 ? `${cw / 1e6}m` : `${Math.round(cw / 1000)}k`;
+  const winLabel = formatTokensStrict(cw);
   const percentLabel = `${Math.round(pct * 100)}%`;
   const mainLabel = labelMode === 'full'
     ? `${fmt(used)}/${winLabel}`

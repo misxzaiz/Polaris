@@ -561,15 +561,24 @@ pub enum StreamDelta {
 
 /// 单轮请求的 token 使用量（三协议统一表示）。
 ///
-/// - OpenAIChat：末包 `usage{prompt_tokens, completion_tokens, total_tokens}`。
+/// - OpenAIChat：末包 `usage{prompt_tokens, completion_tokens, total_tokens}`，
+///   缓存读取取 `prompt_tokens_details.cached_tokens`（DeepSeek/GLM 变体
+///   `prompt_cache_hit_tokens`）。
 /// - Anthropic：`message_start.message.usage.input_tokens` +
-///   `message_delta.usage.output_tokens`（分两次累积）。
-/// - Responses：`response.completed.response.usage`。
+///   `message_delta.usage.output_tokens`（分两次累积）；缓存字段
+///   `cache_creation_input_tokens` / `cache_read_input_tokens` 在 start/delta
+///   的 usage 中按需出现，后到覆盖先到。
+/// - Responses：`response.completed.response.usage`，缓存读取取
+///   `input_tokens_details.cached_tokens`。
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Usage {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub total_tokens: u64,
+    /// 命中缓存读取的输入 token（供应商以更低单价计费）。
+    pub cache_read: u64,
+    /// 写入缓存的输入 token（缓存创建）。
+    pub cache_creation: u64,
 }
 
 /// 累积中的工具调用（统一中间表示）。
@@ -593,6 +602,9 @@ pub struct StreamState {
     /// 累积的 token usage（流末出现；Anthropic 的 input_tokens 在 message_start，
     /// output_tokens 在 message_delta，分两次更新）。
     usage: Option<Usage>,
+    /// 累积中的响应侧实际模型名（OpenAI 顶层 `model`、Anthropic `message.model`、
+    /// Responses `response.model`；逐 chunk 覆盖取最近值）。
+    stream_model: Option<String>,
     /// 流末终止原因（统一为 OpenAI 语义：stop / length / tool_calls / ...）。
     /// Anthropic 的 max_tokens、Responses 的 incomplete(max_output_tokens) 归一化为 "length"。
     finish_reason: Option<String>,
@@ -606,6 +618,7 @@ impl StreamState {
             block_index: HashMap::new(),
             item_index: HashMap::new(),
             usage: None,
+            stream_model: None,
             finish_reason: None,
         }
     }
@@ -649,6 +662,12 @@ impl StreamState {
     /// 取出本轮累积的 token usage（流末有效）。
     pub fn finish_usage(&self) -> Option<Usage> {
         self.usage
+    }
+
+    /// 取出累积的响应侧实际模型名（透传模型名时可能与请求模型不同）。
+    /// 未在响应中观测到时为 `None`（上游/MCP 网关不回填 `model` 字段的场景）。
+    pub fn finish_actual_model(&self) -> Option<String> {
+        self.stream_model.clone()
     }
 
     /// 取出流末终止原因（统一 OpenAI 语义；"length" 表示被 max_tokens 截断）。
@@ -717,11 +736,31 @@ impl StreamState {
         }
         // OpenAIChat：末包带 usage（需请求 stream_options.include_usage）。
         if let Some(u) = chunk.get("usage").filter(|v| v.is_object()) {
+            // 缓存读取：标准 `prompt_tokens_details.cached_tokens`；兼容 DeepSeek/GLM
+            // 等 `prompt_cache_hit_tokens` 变体（部分网关仅回填其一）。
+            let cache_read = u["prompt_tokens_details"]["cached_tokens"]
+                .as_u64()
+                .or_else(|| u["prompt_cache_hit_tokens"].as_u64())
+                .unwrap_or(0);
+            // 缓存写入：`prompt_tokens_details.cached_tokens` 无此分类，部分网关回填
+            // `prompt_cache_miss_tokens`（未命中即写入缓存的输入）；无则记 0。
+            let cache_creation = u["prompt_tokens_details"]["cache_creation_tokens"]
+                .as_u64()
+                .or_else(|| u["prompt_cache_miss_tokens"].as_u64())
+                .unwrap_or(0);
             self.usage = Some(Usage {
                 input_tokens: u["prompt_tokens"].as_u64().unwrap_or(0),
                 output_tokens: u["completion_tokens"].as_u64().unwrap_or(0),
                 total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+                cache_read,
+                cache_creation,
             });
+        }
+        // 响应侧实际模型：OpenAI 兼容流式末包顶层携带 `model`（非流式变体亦然）。
+        if let Some(m) = chunk.get("model").and_then(|v| v.as_str()) {
+            if !m.is_empty() {
+                self.stream_model = Some(m.to_string());
+            }
         }
     }
 
@@ -773,13 +812,28 @@ impl StreamState {
                 }
             }
             "message_start" => {
-                let input = chunk
-                    .pointer("/message/usage/input_tokens")
+                let msg = &chunk["message"];
+                let input = msg
+                    .pointer("/usage/input_tokens")
                     .and_then(|v| v.as_u64())
                     .unwrap_or(0);
                 let mut usage = self.usage.unwrap_or_default();
                 usage.input_tokens = input;
+                // 缓存字段在 start/delta 的 usage 中按需出现（无命中时省略）。
+                // 与 output_tokens 类似跨事件累积，后到覆盖先到。
+                if let Some(c) = msg.pointer("/usage/cache_creation_input_tokens").and_then(|v| v.as_u64()) {
+                    usage.cache_creation = c;
+                }
+                if let Some(c) = msg.pointer("/usage/cache_read_input_tokens").and_then(|v| v.as_u64()) {
+                    usage.cache_read = c;
+                }
                 self.usage = Some(usage);
+                // 响应侧实际模型：Anthropic message_start.message.model。
+                if let Some(m) = msg.get("model").and_then(|v| v.as_str()) {
+                    if !m.is_empty() {
+                        self.stream_model = Some(m.to_string());
+                    }
+                }
             }
             "message_delta" => {
                 let output = chunk
@@ -789,6 +843,14 @@ impl StreamState {
                 let mut usage = self.usage.unwrap_or_default();
                 usage.output_tokens = output;
                 usage.total_tokens = usage.input_tokens + usage.output_tokens;
+                // 部分端点把 cache_read/cache_creation 放在 message_delta.usage
+                // （而非 message_start），同样覆盖式累积。
+                if let Some(c) = chunk.pointer("/usage/cache_creation_input_tokens").and_then(|v| v.as_u64()) {
+                    usage.cache_creation = c;
+                }
+                if let Some(c) = chunk.pointer("/usage/cache_read_input_tokens").and_then(|v| v.as_u64()) {
+                    usage.cache_read = c;
+                }
                 self.usage = Some(usage);
                 // stop_reason 归一化为 OpenAI 语义（max_tokens → length）。
                 if let Some(sr) = chunk.pointer("/delta/stop_reason").and_then(|v| v.as_str()) {
@@ -856,11 +918,27 @@ impl StreamState {
                     .pointer("/response/usage")
                     .filter(|v| v.is_object())
                 {
+                    // 缓存读取：OpenAI Responses 在 `input_tokens_details.cached_tokens`。
+                    // 缓存写入无标准字段，部分网关回填 `cache_creation_input_tokens`。
+                    let cache_read = u["input_tokens_details"]["cached_tokens"]
+                        .as_u64()
+                        .unwrap_or(0);
+                    let cache_creation = u["cache_creation_input_tokens"]
+                        .as_u64()
+                        .unwrap_or(0);
                     self.usage = Some(Usage {
                         input_tokens: u["input_tokens"].as_u64().unwrap_or(0),
                         output_tokens: u["output_tokens"].as_u64().unwrap_or(0),
                         total_tokens: u["total_tokens"].as_u64().unwrap_or(0),
+                        cache_read,
+                        cache_creation,
                     });
+                }
+                // 响应侧实际模型：Responses response.completed.response.model。
+                if let Some(m) = chunk.pointer("/response/model").and_then(|v| v.as_str()) {
+                    if !m.is_empty() {
+                        self.stream_model = Some(m.to_string());
+                    }
                 }
                 if self.finish_reason.is_none() {
                     self.finish_reason = Some("stop".to_string());
@@ -912,28 +990,69 @@ mod tests {
     fn openai_chat_usage_parsed_from_final_chunk() {
         let mut s = StreamState::new(WireProtocol::OpenAIChat);
         let chunk = json!({
+            "model": "deepseek-v4-real",
             "choices": [],
-            "usage": { "prompt_tokens": 120, "completion_tokens": 30, "total_tokens": 150 }
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "total_tokens": 150,
+                "prompt_tokens_details": { "cached_tokens": 80 }
+            }
         });
         let _ = s.feed(&chunk);
         let usage = s.finish_usage().expect("usage");
         assert_eq!(usage.input_tokens, 120);
         assert_eq!(usage.output_tokens, 30);
         assert_eq!(usage.total_tokens, 150);
+        assert_eq!(usage.cache_read, 80);
+        assert_eq!(usage.cache_creation, 0);
+        // 响应侧实际模型（OpenAI 顶层层 model）。
+        assert_eq!(s.finish_actual_model().as_deref(), Some("deepseek-v4-real"));
+    }
+
+    #[test]
+    fn openai_chat_usage_parses_deepseek_cache_variants() {
+        // DeepSeek openrouter 风格：缓存读取在 prompt_cache_hit_tokens，
+        // 缓存写入在 prompt_cache_miss_tokens。
+        let mut s = StreamState::new(WireProtocol::OpenAIChat);
+        let chunk = json!({
+            "choices": [],
+            "usage": {
+                "prompt_tokens": 200,
+                "completion_tokens": 40,
+                "total_tokens": 240,
+                "prompt_cache_hit_tokens": 150,
+                "prompt_cache_miss_tokens": 50
+            }
+        });
+        let _ = s.feed(&chunk);
+        let usage = s.finish_usage().expect("usage");
+        assert_eq!(usage.cache_read, 150);
+        assert_eq!(usage.cache_creation, 50);
     }
 
     #[test]
     fn anthropic_usage_accumulated_across_messages() {
         let mut s = StreamState::new(WireProtocol::Anthropic);
-        // message_start 携带 input_tokens。
+        // message_start 携带 input_tokens 与缓存明细、实际模型。
         let start = json!({
             "type": "message_start",
-            "message": { "usage": { "input_tokens": 200 } }
+            "message": {
+                "model": "claude-sonnet-real",
+                "usage": {
+                    "input_tokens": 200,
+                    "cache_creation_input_tokens": 100,
+                    "cache_read_input_tokens": 60
+                }
+            }
         });
         let _ = s.feed(&start);
         let mid = s.finish_usage().expect("usage after start");
         assert_eq!(mid.input_tokens, 200);
         assert_eq!(mid.output_tokens, 0);
+        assert_eq!(mid.cache_creation, 100);
+        assert_eq!(mid.cache_read, 60);
+        assert_eq!(s.finish_actual_model().as_deref(), Some("claude-sonnet-real"));
 
         // message_delta 携带 output_tokens；total 由二者相加。
         let delta = json!({
@@ -945,6 +1064,8 @@ mod tests {
         assert_eq!(final_usage.input_tokens, 200);
         assert_eq!(final_usage.output_tokens, 80);
         assert_eq!(final_usage.total_tokens, 280);
+        assert_eq!(final_usage.cache_creation, 100);
+        assert_eq!(final_usage.cache_read, 60);
     }
 
     #[test]
@@ -953,7 +1074,13 @@ mod tests {
         let chunk = json!({
             "type": "response.completed",
             "response": {
-                "usage": { "input_tokens": 50, "output_tokens": 25, "total_tokens": 75 }
+                "model": "o4-mini-real",
+                "usage": {
+                    "input_tokens": 50,
+                    "output_tokens": 25,
+                    "total_tokens": 75,
+                    "input_tokens_details": { "cached_tokens": 30 }
+                }
             }
         });
         let _ = s.feed(&chunk);
@@ -961,6 +1088,10 @@ mod tests {
         assert_eq!(usage.input_tokens, 50);
         assert_eq!(usage.output_tokens, 25);
         assert_eq!(usage.total_tokens, 75);
+        assert_eq!(usage.cache_read, 30);
+        assert_eq!(usage.cache_creation, 0);
+        // 响应侧实际模型（Responses response.model）。
+        assert_eq!(s.finish_actual_model().as_deref(), Some("o4-mini-real"));
     }
 
     #[test]

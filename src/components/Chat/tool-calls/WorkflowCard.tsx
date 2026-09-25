@@ -10,6 +10,7 @@
 
 import { memo, useState } from 'react';
 import { clsx } from 'clsx';
+import { formatTokensStrict } from '@/utils/formatTokens';
 import {
   Workflow as WorkflowIcon,
   Loader2,
@@ -45,7 +46,7 @@ function AgentRow({ agent }: { agent: NonNullable<WorkflowGenericOutput['workflo
         <span className="text-text-muted truncate max-w-[30%]">{agent.phaseTitle}</span>
       )}
       {agent.tokens != null && (
-        <span className="text-text-muted shrink-0">{Math.round(agent.tokens / 1000)}k</span>
+        <span className="text-text-muted shrink-0">{formatTokensStrict(agent.tokens)}</span>
       )}
       {agent.durationMs != null && (
         <span className="text-text-muted shrink-0">{formatDuration(agent.durationMs)}</span>
@@ -103,7 +104,7 @@ export const WorkflowCard = memo(function WorkflowCard({
             <span className="flex items-center gap-1"><Activity size={11} /> {data.agentCount} agents</span>
           )}
           {data.totalTokens != null && (
-            <span className="flex items-center gap-1"><Coins size={11} /> {Math.round(data.totalTokens / 1000)}k tokens</span>
+            <span className="flex items-center gap-1"><Coins size={11} /> {formatTokensStrict(data.totalTokens)} tokens</span>
           )}
           {data.totalToolCalls != null && (
             <span className="flex items-center gap-1"><Cpu size={11} /> {data.totalToolCalls} 工具调用</span>

@@ -14,15 +14,14 @@ import { Loader2, RefreshCw, BarChart3, PieChart, TrendingUp, Database, ChevronL
 import { clsx } from 'clsx'
 import { TimeRangePicker } from '@/components/Common/TimeRangePicker'
 import { presetRange, dateToUnixSeconds, startOfDay, endOfDay } from '@/utils/timeRange'
+import { formatTokensStrict } from '@/utils/formatTokens'
 
 // ============================================================================
 // 数字格式化
 // ============================================================================
 
 function fmt(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M'
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k'
-  return String(n)
+  return formatTokensStrict(n)
 }
 
 function fmtCost(n: number): string {

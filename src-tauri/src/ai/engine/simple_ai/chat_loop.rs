@@ -17,6 +17,7 @@ use crate::ai::engine::simple_ai_protocol::{
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
     ProgressEvent, SessionEndEvent, ThinkingEvent, TokenEvent, ToolCallEndEvent, ToolCallStartEvent,
+    UsageEvent,
 };
 use crate::models::AIEvent;
 
@@ -461,42 +462,60 @@ pub(super) async fn run_chat_loop(
         // 流处理完毕
         let mut tool_calls = stream_state.finish_tool_calls();
         // token usage（Phase 3.1）：三协议在流末解析。日志上报 + 发送 UsageEvent 供前端计算上下文水位。
-        // SimpleAI 协议目前无缓存分类，cacheCreation/cacheRead 传 None，前端水位退化为 input+output。
+        // 三协议统一携带缓存分类（cache_creation / cache_read）与响应侧实际模型（actual_model）。
+        // 双口径：SimpleAI 每轮即单次 API 调用快照，scope="turn" —— 前端水位直接以
+        // input+cacheCreation+cacheRead 为分子，成本明细按事件逐条累加（scope 缺省时
+        // 前端也按 cumulative 兜底累加，语义等价）。
         if let Some(usage) = stream_state.finish_usage() {
             usage_acc.add(usage.input_tokens);
+            let actual_model = stream_state.finish_actual_model();
             tracing::info!(
-                "[SimpleAI] token usage: input={}, output={}, total={} (累计 input={})",
+                "[SimpleAI] token usage: input={}, output={}, total={} (缓存读={}, 缓存写={}, 实际模型={:?}) (累计 input={})",
                 usage.input_tokens,
                 usage.output_tokens,
                 usage.total_tokens,
+                usage.cache_read,
+                usage.cache_creation,
+                actual_model,
                 usage_acc.total_input
             );
-            let _ = event_callback(AIEvent::usage(
+            let mut usage_event = UsageEvent::new(
                 session_id,
                 usage.input_tokens,
-                None,
-                None,
+                Some(usage.cache_creation),
+                Some(usage.cache_read),
                 usage.output_tokens,
                 None,
-                None,
-            ));
+                Some(context_window),
+            );
+            usage_event = usage_event
+                .with_scope("turn")
+                .with_actual_model(actual_model.clone());
+            let _ = event_callback(AIEvent::Usage(usage_event));
 
             // DX: 同步写入 SQLite 用量数据库（覆盖 SimpleAI 不经过代理的路径）。
             // 使用 spawn_blocking 避免 std::sync::Mutex 阻塞 tokio worker 线程。
-            tracing::debug!("[SimpleAI] 调用 record_usage: model={}, input={}, output={}", base_model, usage.input_tokens, usage.output_tokens);
+            tracing::debug!("[SimpleAI] 调用 record_usage: model={}, input={}, output={}, cache_read={}, cache_creation={}", base_model, usage.input_tokens, usage.output_tokens, usage.cache_read, usage.cache_creation);
             let request_model = Some(profile.model.as_str());
+            // 落库口径：model = 响应侧实际模型（动态路由时权威），request_model = 请求侧配置别名。
+            // 响应未回填实际模型时退化到请求侧 base_model，避免统计落到空模型。
+            let model_owned = actual_model.unwrap_or_else(|| base_model.to_string());
             let base_model_owned = base_model.to_string();
             let request_model_owned = request_model.map(|s| s.to_string());
             let input_tokens = usage.input_tokens as i64;
             let output_tokens = usage.output_tokens as i64;
+            let cache_read_tokens = usage.cache_read as i64;
+            let cache_creation_tokens = usage.cache_creation as i64;
             tokio::task::spawn_blocking(move || {
                 crate::services::usage_db::record_usage(
-                    &base_model_owned,
+                    &model_owned,
                     request_model_owned.as_deref(),
                     Some("simple-ai"),
                     input_tokens,
                     output_tokens,
-                    0, 0, 0, 200, true,
+                    cache_read_tokens,
+                    cache_creation_tokens,
+                    0, 200, true,
                 );
             });
         }

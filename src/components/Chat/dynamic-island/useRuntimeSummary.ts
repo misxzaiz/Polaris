@@ -189,14 +189,6 @@ export function formatDuration(ms: number): string {
   return `${s}s`;
 }
 
-/** 格式化 token 数 → "12.4k" / "89" */
-export function formatTokens(n: number): string {
-  if (!n || n <= 0) return '0';
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
-  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-}
-
 /** 派生需要你（urgent）卡片 */
 function deriveUrgent(blocks: ContentBlock[]): UrgentCard[] {
   const urgent: UrgentCard[] = [];

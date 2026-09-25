@@ -6,18 +6,13 @@
 
 import { useTranslation } from 'react-i18next';
 import type { ContextCompactBlock } from '@/types';
-
-function formatTokens(n?: number): string | null {
-  if (n === undefined || n === null) return null;
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
-}
+import { formatTokens } from '@/utils/formatTokens';
 
 export function ContextCompactRenderer({ block }: { block: ContextCompactBlock }) {
   const { t } = useTranslation('chat');
 
-  const pre = formatTokens(block.preTokens);
-  const post = formatTokens(block.postTokens);
+  const pre = block.preTokens != null ? formatTokens(block.preTokens) : null;
+  const post = block.postTokens != null ? formatTokens(block.postTokens) : null;
   const label = block.trigger === 'auto'
     ? t('cliCommand.compactDivider.auto')
     : t('cliCommand.compactDivider.manual');

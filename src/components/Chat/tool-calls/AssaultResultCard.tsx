@@ -29,6 +29,7 @@ import {
   Activity,
 } from 'lucide-react';
 import type { ToolCallBlock } from '@/types';
+import { formatTokensStrict } from '@/utils/formatTokens';
 import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 
 // ---------- 类型 ----------
@@ -168,6 +169,15 @@ export const AssaultResultCard = memo(function AssaultResultCard({ block }: { bl
   const [familiesExpanded, setFamiliesExpanded] = useState(true);
   const [timelineExpanded, setTimelineExpanded] = useState(true);
 
+  // 最新快照:从 logs 找最后一个 STATE_SNAPSHOT
+  const events = useMemo(() => extractTimelineEvents(wf?.logs || []), [wf?.logs]);
+  const lastSnapshot = useMemo(() => {
+    for (let i = events.length - 1; i >= 0; i--) {
+      if (events[i].type === 'snapshot') return parseSnapshot(events[i].text);
+    }
+    return [];
+  }, [events]);
+
   // 降级:解析失败走通用工具块
   if (!wf) {
     return <ToolCallBlockRenderer block={block} />;
@@ -177,15 +187,6 @@ export const AssaultResultCard = memo(function AssaultResultCard({ block }: { bl
   const isRunning = block.status === 'running' || block.status === 'pending';
   const isSolved = result?.status === 'solved';
   const needsReview = result?.needsHumanReview === true;
-
-  // 最新快照:从 logs 找最后一个 STATE_SNAPSHOT
-  const events = useMemo(() => extractTimelineEvents(wf.logs || []), [wf.logs]);
-  const lastSnapshot = useMemo(() => {
-    for (let i = events.length - 1; i >= 0; i--) {
-      if (events[i].type === 'snapshot') return parseSnapshot(events[i].text);
-    }
-    return [];
-  }, [events]);
 
   const survivors = events.filter((e) => e.type === 'survivor');
   const refuted = events.filter((e) => e.type === 'refuted');
@@ -255,7 +256,7 @@ export const AssaultResultCard = memo(function AssaultResultCard({ block }: { bl
             <span className="flex items-center gap-1"><Activity size={11} /> {wf.agentCount} agents</span>
           )}
           {wf.totalTokens != null && (
-            <span>{Math.round(wf.totalTokens / 1000)}k tokens</span>
+            <span>{formatTokensStrict(wf.totalTokens)} tokens</span>
           )}
           {survivors.length > 0 && (
             <span className="flex items-center gap-1 text-success"><CheckCircle2 size={11} /> {survivors.length} survivor</span>

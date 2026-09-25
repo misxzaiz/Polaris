@@ -27,7 +27,8 @@ import {
   Circle,
   FileText,
 } from 'lucide-react';
-import { formatDuration, formatTokens, type ContextWater, type RuntimeCard, type TaskRow, type UrgentCard } from './useRuntimeSummary';
+import { formatDuration, type ContextWater, type RuntimeCard, type TaskRow, type UrgentCard } from './useRuntimeSummary';
+import { formatTokens } from '@/utils/formatTokens';
 import type { ArtifactPreviewBlock } from '@/types';
 import { ArtifactPreviewRenderer } from '../chatBlocks/ArtifactPreviewRenderer';
 

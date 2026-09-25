@@ -52,8 +52,9 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && urgent.length === 0 && doneCount > 0;
   // 是否完全空闲（urgent 常驻可见；手动 ✕ 关闭后也视为空闲消失）
   const isIdle = urgent.length === 0 && !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
-  // Minimal 思考态：有 thinking block 文本，且无运行卡片、无 urgent、未中断
-  const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting;
+  // Minimal 思考态：有 thinking block 文本，且无运行卡片、无 urgent、未中断、无已完成卡片
+  // （完成态常驻优先于思考态：历史 thinking 块不应顶替"完成 · N 项"摘要）
+  const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting && doneCount === 0;
 
   // 新活动出现时自动恢复（清除手动关闭标记）
   useEffect(() => {

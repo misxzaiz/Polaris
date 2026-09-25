@@ -10,11 +10,11 @@ import { Database, Loader2, AlertTriangle, Zap, RefreshCw } from 'lucide-react';
 import { useLspStore } from '@/stores/lspStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { usePerformanceFlag } from '@/utils/performanceFeatures';
+import { formatTokensStrict } from '@/utils/formatTokens';
 import type { IndexStatus } from '@/services/tauri/lspService';
 
 function formatNumber(n: number): string {
-  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
-  return String(n);
+  return formatTokensStrict(n);
 }
 
 function relativeTime(ms: number | null): string {

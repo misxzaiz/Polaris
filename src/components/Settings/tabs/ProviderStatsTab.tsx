@@ -15,6 +15,7 @@
 import { useEffect, useState } from 'react';
 import { useProviderStatsStore, type ProfileStats, type FailedCallKind } from '@/stores/providerStatsStore';
 import { clsx } from 'clsx';
+import { formatTokensStrict } from '@/utils/formatTokens';
 import {
   RefreshCw, Trash2, PieChart, BarChart3, TrendingUp, Activity,
   ChevronDown, ChevronRight, XCircle, Database,
@@ -47,9 +48,7 @@ function fmtTs(tsMs: number): string {
 }
 
 function fmtNum(n: number): string {
-  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
-  return String(n);
+  return formatTokensStrict(n);
 }
 
 function fmtRelative(tsMs: number): string {

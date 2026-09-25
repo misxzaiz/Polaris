@@ -18,7 +18,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 // Mock ToolCallBlockRenderer(降级路径)
-vi.mock('./chatBlocks/ToolCallBlockRenderer', () => ({
+vi.mock('../chatBlocks/ToolCallBlockRenderer', () => ({
   ToolCallBlockRenderer: ({ block }: { block: ToolCallBlock }) => (
     <div data-testid="fallback-renderer">fallback:{block.id}</div>
   ),
@@ -69,7 +69,7 @@ describe('AssaultResultCard', () => {
     expect(screen.getByText(/survivor 方法族/)).toBeTruthy();
     expect(screen.getAllByText('race').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/9 agents/)).toBeTruthy();
-    expect(screen.getByText(/217k tokens/)).toBeTruthy();
+    expect(screen.getByText(/21.7万 tokens/)).toBeTruthy();
     expect(screen.getByText(/1 survivor/)).toBeTruthy();
     expect(screen.getByText(/1 blocked/)).toBeTruthy();
   });

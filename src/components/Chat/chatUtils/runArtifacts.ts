@@ -106,6 +106,12 @@ export function extractFileChanges(blocks: ContentBlock[]): FileChange[] {
       add(edit.filePath, 'modified', { diffData: edit });
       continue;
     }
+    // 实时流已回填块级 diffData（updateToolCallBlockDiff）时直接从块取，
+    // 避免与 input 推导结果不一致（历史恢复 setMessagesFromHistory 回填同源）
+    if (b.diffData?.filePath) {
+      add(b.diffData.filePath, 'modified', { diffData: b.diffData });
+      continue;
+    }
     const write = extractWriteInfo(b);
     if (write?.filePath) {
       add(write.filePath, 'created', { newContent: write.newContent });
