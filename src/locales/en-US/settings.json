@@ -24,7 +24,6 @@
     "theme": "Theme",
     "systemPrompt": "System Prompt",
     "promptSnippet": "Prompt Snippets",
-    "window": "Window",
     "aiEngine": "AI Engine",
     "modelProvider": "Model Providers",
     "translate": "Translate",
@@ -364,14 +363,6 @@
     "previewAssistant": "These settings affect AI replies, user messages, the input box, and code blocks so the conversation stays readable across screen densities.",
     "previewListOne": "Markdown paragraphs and lists follow the selected line height and spacing.",
     "previewListTwo": "Code size is controlled separately to keep long snippets legible."
-  },
-  "window": {
-    "title": "Window Settings",
-    "opacityTitle": "Window Opacity",
-    "normalOpacity": "Normal Mode Opacity",
-    "normalOpacityHint": "Opacity for normal window size",
-    "compactOpacity": "Compact Mode Opacity",
-    "compactOpacityHint": "Opacity for compact chat mode"
   },
   "baiduTranslate": {
     "title": "Baidu Translate",

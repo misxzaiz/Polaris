@@ -171,15 +171,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine);
 
-    // 恢复窗口透明度
-    if (config?.window) {
-      const initialOpacity = (config.window.normalOpacity ?? 100) / 100;
-      if (initialOpacity < 1.0) {
-        document.documentElement.style.setProperty('--window-opacity', String(initialOpacity));
-        log.info(`窗口透明度已恢复: ${initialOpacity}`);
-      }
-    }
-
     // 初始化集成管理器
     const qqbotConfig = config?.qqbot ?? null;
     const feishuConfig = config?.feishu ?? null;

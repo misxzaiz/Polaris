@@ -500,7 +500,6 @@ pub(super) async fn run_chat_loop(
             // 落库口径：model = 响应侧实际模型（动态路由时权威），request_model = 请求侧配置别名。
             // 响应未回填实际模型时退化到请求侧 base_model，避免统计落到空模型。
             let model_owned = actual_model.unwrap_or_else(|| base_model.to_string());
-            let base_model_owned = base_model.to_string();
             let request_model_owned = request_model.map(|s| s.to_string());
             let input_tokens = usage.input_tokens as i64;
             let output_tokens = usage.output_tokens as i64;

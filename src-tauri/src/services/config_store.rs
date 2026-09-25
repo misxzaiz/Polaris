@@ -946,7 +946,6 @@ impl OldConfig {
             floating_window: Default::default(),
             baidu_translate: None,
             personal_hub: Default::default(),
-            window: Default::default(),
             speech: Default::default(),
             tts: Default::default(),
             wake_word: None,
@@ -1029,7 +1028,7 @@ mod tests {
         let config_path = temp_dir.path().join("config.json");
         let mut config = Config::default();
         config.default_engine = "claude-code".to_string();
-        config.window.normal_opacity = 70;
+        config.git_bin_path = Some("D:\\Git\\bin".to_string());
 
         let mut store = ConfigStore::new_test(config, config_path);
 
@@ -1040,7 +1039,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(saved.default_engine, "simple-ai");
-        assert_eq!(saved.window.normal_opacity, 70);
+        assert_eq!(saved.git_bin_path.as_deref(), Some("D:\\Git\\bin"));
     }
 
     #[test]

@@ -323,14 +323,6 @@ export const DEFAULT_SPIDERMAN_THEME: SpiderManThemeConfig = {
   blueAccent: 0.5,
 };
 
-/** 窗口设置 */
-export interface WindowSettings {
-  /** 大窗模式透明度 (0 - 100) */
-  normalOpacity: number;
-  /** 小屏模式透明度 (0 - 100) */
-  compactOpacity: number;
-}
-
 /** Web 服务配置 */
 export interface WebConfig {
   /** 是否启用 Web 服务 */
@@ -413,8 +405,6 @@ export interface Config {
   feishu?: FeishuConfig;
   /** DingTalk 集成配置 */
   dingtalk?: DingTalkConfig;
-  /** 窗口设置 */
-  window?: WindowSettings;
   /** Spider-Man 沉浸主题配置 */
   spidermanTheme?: SpiderManThemeConfig;
   /** 语音输入配置 */

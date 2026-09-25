@@ -867,36 +867,6 @@ impl Default for FloatingWindowConfig {
     }
 }
 
-/// 窗口设置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowSettings {
-    /// 大窗模式透明度 (0 - 100)
-    #[serde(default = "default_normal_opacity")]
-    pub normal_opacity: u8,
-
-    /// 小屏模式透明度 (0 - 100)
-    #[serde(default = "default_compact_opacity")]
-    pub compact_opacity: u8,
-}
-
-fn default_normal_opacity() -> u8 {
-    100
-}
-
-fn default_compact_opacity() -> u8 {
-    100
-}
-
-impl Default for WindowSettings {
-    fn default() -> Self {
-        Self {
-            normal_opacity: default_normal_opacity(),
-            compact_opacity: default_compact_opacity(),
-        }
-    }
-}
-
 /// 对话显示密度
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -1491,10 +1461,6 @@ pub struct Config {
     #[serde(default)]
     pub dingtalk: DingTalkConfig,
 
-    /// 窗口设置
-    #[serde(default)]
-    pub window: WindowSettings,
-
     /// 语音输入配置
     #[serde(default)]
     pub speech: SpeechConfig,
@@ -1692,7 +1658,6 @@ impl Default for Config {
             qqbot: QQBotConfig::default(),
             feishu: FeishuConfig::default(),
             dingtalk: DingTalkConfig::default(),
-            window: WindowSettings::default(),
             speech: SpeechConfig::default(),
             tts: TTSConfig::default(),
             wake_word: None,

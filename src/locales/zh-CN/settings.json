@@ -24,7 +24,6 @@
     "theme": "主题",
     "systemPrompt": "系统提示词",
     "promptSnippet": "快捷片段",
-    "window": "窗口",
     "aiEngine": "AI 引擎",
     "modelProvider": "模型供应商",
     "translate": "翻译",
@@ -363,14 +362,6 @@
     "previewAssistant": "当前设置会同步影响 AI 回复、用户消息、输入框和代码块，适合在不同屏幕密度下保持清晰。",
     "previewListOne": "Markdown 段落和列表会跟随行高与段落间距。",
     "previewListTwo": "代码字号独立控制，避免长代码过挤。"
-  },
-  "window": {
-    "title": "窗口设置",
-    "opacityTitle": "窗口透明度",
-    "normalOpacity": "大窗模式透明度",
-    "normalOpacityHint": "普通窗口尺寸时的透明度",
-    "compactOpacity": "小屏模式透明度",
-    "compactOpacityHint": "小屏对话模式时的透明度"
   },
   "baiduTranslate": {
     "title": "百度翻译",

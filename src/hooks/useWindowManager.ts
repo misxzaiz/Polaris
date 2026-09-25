@@ -35,7 +35,6 @@ export function useWindowManager({
   isCreateSessionModalOpen,
 }: UseWindowManagerOptions) {
   const { t } = useTranslation('chat');
-  const config = useConfigStore(state => state.config);
   const compactMode = useViewStore(state => state.compactMode);
   const updateCompactMode = useViewStore(state => state.updateCompactMode);
 
@@ -53,18 +52,6 @@ export function useWindowManager({
       });
     }
   }, [isCompact, windowWidth, windowHeight, compactMode, updateCompactMode]);
-
-  // 窗口透明度
-  useEffect(() => {
-    const windowSettings = config?.window;
-    if (!windowSettings) return;
-
-    const opacityValue = isCompact
-      ? (windowSettings.compactOpacity ?? 100) / 100
-      : (windowSettings.normalOpacity ?? 100) / 100;
-
-    document.documentElement.style.setProperty('--window-opacity', String(opacityValue));
-  }, [config?.window, isCompact]);
 
   // F12 + Shift+Ctrl+R 快捷键
   useEffect(() => {
