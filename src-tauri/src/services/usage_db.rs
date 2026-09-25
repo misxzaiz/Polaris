@@ -53,6 +53,8 @@ pub struct UsageLogEntry {
     pub created_at: i64,
     /// 单条估算成本（美元），由 estimate_cost 在查询时计算
     pub total_cost_usd: f64,
+    /// 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0
+    pub cache_hit_rate: f64,
 }
 
 // ============================================================================
@@ -68,6 +70,8 @@ pub struct UsageSummary {
     pub total_cache_read_tokens: i64,
     pub total_cache_creation_tokens: i64,
     pub total_cost_usd: f64,
+    /// 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0
+    pub cache_hit_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -80,6 +84,8 @@ pub struct ModelUsageStats {
     pub cache_read_tokens: i64,
     pub cache_creation_tokens: i64,
     pub total_cost_usd: f64,
+    /// 缓存命中率（成本口径 B），0~1；分母为 0 时为 0
+    pub cache_hit_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -92,6 +98,8 @@ pub struct EngineUsageStats {
     pub cache_read_tokens: i64,
     pub cache_creation_tokens: i64,
     pub total_cost_usd: f64,
+    /// 缓存命中率（成本口径 B），0~1；分母为 0 时为 0
+    pub cache_hit_rate: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -104,6 +112,8 @@ pub struct DailyUsageStats {
     pub cache_read_tokens: i64,
     pub cache_creation_tokens: i64,
     pub total_cost_usd: f64,
+    /// 缓存命中率（成本口径 B），0~1；分母为 0 时为 0
+    pub cache_hit_rate: f64,
 }
 
 // ============================================================================
@@ -123,6 +133,17 @@ fn estimate_cost(input: i64, output: i64, cache_read: i64, cache_creation: i64) 
     let cache_read_cost = cache_read as f64 / 1_000_000.0 * DEFAULT_CACHE_READ_COST_PER_M;
     let cache_creation_cost = cache_creation as f64 / 1_000_000.0 * DEFAULT_CACHE_CREATION_COST_PER_M;
     input_cost + output_cost + cache_read_cost + cache_creation_cost
+}
+
+/// 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0。
+/// 统一口径：输入部分中被缓存命中的比例（与 cost 计算直接相关），各域（会话水位/持久化/面板）复算一致。
+fn estimate_cache_hit_rate(input: i64, cache_read: i64) -> f64 {
+    let denominator = input + cache_read;
+    if denominator <= 0 {
+        0.0
+    } else {
+        cache_read as f64 / denominator as f64
+    }
 }
 
 // ============================================================================
@@ -280,6 +301,7 @@ impl UsageDb {
                     total_cache_read_tokens,
                     total_cache_creation_tokens,
                     total_cost_usd,
+                    cache_hit_rate: estimate_cache_hit_rate(total_input_tokens, total_cache_read_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询用量汇总失败: {}", e)))?;
@@ -340,6 +362,7 @@ impl UsageDb {
                     cache_read_tokens,
                     cache_creation_tokens,
                     total_cost_usd,
+                    cache_hit_rate: estimate_cache_hit_rate(input_tokens, cache_read_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询模型统计失败: {}", e)))?;
@@ -408,6 +431,7 @@ impl UsageDb {
                     cache_read_tokens,
                     cache_creation_tokens,
                     total_cost_usd,
+                    cache_hit_rate: estimate_cache_hit_rate(input_tokens, cache_read_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询引擎统计失败: {}", e)))?;
@@ -479,6 +503,7 @@ impl UsageDb {
                     cache_read_tokens,
                     cache_creation_tokens,
                     total_cost_usd,
+                    cache_hit_rate: estimate_cache_hit_rate(input_tokens, cache_read_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询趋势失败: {}", e)))?;
@@ -549,6 +574,7 @@ impl UsageDb {
                     is_streaming: row.get::<_, i64>(10)? != 0,
                     created_at: row.get(11)?,
                     total_cost_usd: estimate_cost(input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens),
+                    cache_hit_rate: estimate_cache_hit_rate(input_tokens, cache_read_tokens),
                 })
             })
             .map_err(|e| AppError::StateError(format!("查询记录失败: {}", e)))?;
@@ -647,5 +673,28 @@ fn build_where_clause(
         ("".to_string(), params)
     } else {
         (format!(" WHERE {}", conditions.join(" AND ")), params)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 口径 B：cacheRead / (input + cacheRead)，输出不参与分母
+    #[test]
+    fn cache_hit_rate_tracks_input_and_cache_read() {
+        assert!((estimate_cache_hit_rate(900, 100) - 0.1).abs() < 1e-9);
+        assert!((estimate_cache_hit_rate(3000, 3000) - 0.5).abs() < 1e-9);
+        assert!((estimate_cache_hit_rate(0, 500) - 1.0).abs() < 1e-9);
+        // 输出与缓存写入不影响命中率（成本口径 B 的定义）
+        let _ = estimate_cost(900, 1000, 100, 200);
+    }
+
+    /// 分母为 0（input 与 cacheRead 均 0）时退化为 0，避免除零/NaN
+    #[test]
+    fn cache_hit_rate_zero_denominator_is_zero() {
+        assert_eq!(estimate_cache_hit_rate(0, 0), 0.0);
+        // 仅缓存写入的场景也无命中
+        assert_eq!(estimate_cache_hit_rate(0, 0), 0.0);
     }
 }
