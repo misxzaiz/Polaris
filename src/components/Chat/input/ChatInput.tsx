@@ -133,7 +133,7 @@ interface ChatInputProps {
   /**
    * 嵌入式状态栏（会话配置选择器/语音区等）。
    * 渲染在底部工具栏中段（附件按钮和发送按钮之间）。
-   * 不传则只显示附件 + 发送（用于 AIPopover 等极简场景）。
+   * 不传则只显示附件 + 发送（极简场景）。
    */
   statusBarSlot?: React.ReactNode
 }

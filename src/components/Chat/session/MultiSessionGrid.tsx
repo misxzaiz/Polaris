@@ -49,7 +49,6 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
   function MultiSessionGrid({ onEditMessage }, ref) {
     const { t } = useTranslation('chat');
     const multiSessionIds = useViewStore(state => state.multiSessionIds);
-    const multiSessionMode = useViewStore(state => state.multiSessionMode);
     const multiSessionRows = useViewStore(state => state.multiSessionRows);
     const multiSessionCellWidth = useViewStore(state => state.multiSessionCellWidth);
     const expandSessionId = useViewStore(state => state.expandSessionId);
@@ -121,11 +120,6 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
     const handleToggleExpand = useCallback((sessionId: string) => {
       setExpandSessionId(expandSessionId === sessionId ? null : sessionId);
     }, [expandSessionId, setExpandSessionId]);
-
-    // 如果未开启多会话模式，返回 null
-    if (!multiSessionMode) {
-      return null;
-    }
 
     // 展开模式：只显示展开的会话
     if (expandSessionId) {

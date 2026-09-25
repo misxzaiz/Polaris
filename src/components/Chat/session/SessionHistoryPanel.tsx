@@ -20,7 +20,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import { useViewStore, useToastStore } from '@/stores/index'
+import { useToastStore } from '@/stores/index'
 import { createLogger } from '@/utils/logger'
 import {
   Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown,
@@ -445,7 +445,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
       log.info('Fork created', { newSessionId, sourceId: item.id, branchName, isClaudeNative, workspaceId })
 
-      if (useViewStore.getState().multiSessionMode && prevActiveId) {
+      if (prevActiveId) {
         sessionStoreManager.getState().switchSession(prevActiveId)
       }
 

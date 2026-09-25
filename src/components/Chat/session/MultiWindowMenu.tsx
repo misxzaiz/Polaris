@@ -1,8 +1,7 @@
 /**
  * MultiWindowMenu - 多窗口设置上拉菜单
  *
- * 合并功能：
- * - 多窗口模式开关
+ * 只保留多窗口模式（无单窗口开关）：
  * - 布局（1行/2行）
  * - 格子宽度调整
  */
@@ -10,9 +9,8 @@
 import { memo, useCallback, useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Grid3x3, RowsIcon, ColumnsIcon, Minus, Plus, Check } from 'lucide-react';
+import { Grid3x3, RowsIcon, ColumnsIcon, Minus, Plus } from 'lucide-react';
 import { useViewStore } from '@/stores';
-import { useActiveSessionId } from '@/stores/conversationStore/sessionStoreManager';
 
 /** 预设宽度选项 */
 const WIDTH_PRESETS = [250, 450, 650, 850];
@@ -22,16 +20,11 @@ const WIDTH_PRESETS = [250, 450, 650, 850];
  */
 export const MultiWindowMenu = memo(function MultiWindowMenu() {
   const { t } = useTranslation('chat');
-  const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const multiSessionRows = useViewStore(state => state.multiSessionRows);
   const multiSessionCellWidth = useViewStore(state => state.multiSessionCellWidth);
 
-  const toggleMultiSessionMode = useViewStore(state => state.toggleMultiSessionMode);
-  const setMultiSessionIds = useViewStore(state => state.setMultiSessionIds);
   const setMultiSessionRows = useViewStore(state => state.setMultiSessionRows);
   const setMultiSessionCellWidth = useViewStore(state => state.setMultiSessionCellWidth);
-
-  const activeSessionId = useActiveSessionId();
 
   const [isOpen, setIsOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -55,14 +48,6 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
-
-  // 切换多窗口模式
-  const handleToggleMode = useCallback(() => {
-    if (!multiSessionMode && activeSessionId) {
-      setMultiSessionIds([activeSessionId]);
-    }
-    toggleMultiSessionMode();
-  }, [multiSessionMode, activeSessionId, toggleMultiSessionMode, setMultiSessionIds]);
 
   // 调整宽度
   const handleAdjustWidth = useCallback((delta: number) => {
@@ -106,111 +91,89 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
           )}
           role="menu"
         >
-          {/* Section 1: 开关 */}
-          <button
-            onClick={handleToggleMode}
-            className={clsx(
-              'w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded',
-              'text-sm transition-colors',
-              multiSessionMode
-                ? 'text-primary bg-primary/10'
-                : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-            )}
-            role="menuitemcheckbox"
-            aria-checked={multiSessionMode}
-          >
-            <span>{t('multiWindow.mode')}</span>
-            {multiSessionMode && <Check className="w-4 h-4" />}
-          </button>
+          {/* 分隔线 */}
+          <div className="my-2 border-t border-border-subtle" />
 
-          {/* Section 2-3: 仅多窗口时显示 */}
-          {multiSessionMode && (
-            <>
-              {/* 分隔线 */}
-              <div className="my-2 border-t border-border-subtle" />
+          {/* 布局 */}
+          <div className="mb-3">
+            <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.layout')}</div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setMultiSessionRows(1)}
+                className={clsx(
+                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-sm',
+                  'transition-colors',
+                  multiSessionRows === 1
+                    ? 'bg-primary text-white'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                )}
+                role="menuitemradio"
+                aria-checked={multiSessionRows === 1}
+              >
+                <RowsIcon className="w-3.5 h-3.5" />
+                <span>{t('multiWindow.row1')}</span>
+              </button>
+              <button
+                onClick={() => setMultiSessionRows(2)}
+                className={clsx(
+                  'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-sm',
+                  'transition-colors',
+                  multiSessionRows === 2
+                    ? 'bg-primary text-white'
+                    : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
+                )}
+                role="menuitemradio"
+                aria-checked={multiSessionRows === 2}
+              >
+                <ColumnsIcon className="w-3.5 h-3.5" />
+                <span>{t('multiWindow.row2')}</span>
+              </button>
+            </div>
+          </div>
 
-              {/* Section 2: 布局 */}
-              <div className="mb-3">
-                <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.layout')}</div>
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => setMultiSessionRows(1)}
-                    className={clsx(
-                      'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-sm',
-                      'transition-colors',
-                      multiSessionRows === 1
-                        ? 'bg-primary text-white'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                    )}
-                    role="menuitemradio"
-                    aria-checked={multiSessionRows === 1}
-                  >
-                    <RowsIcon className="w-3.5 h-3.5" />
-                    <span>{t('multiWindow.row1')}</span>
-                  </button>
-                  <button
-                    onClick={() => setMultiSessionRows(2)}
-                    className={clsx(
-                      'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-sm',
-                      'transition-colors',
-                      multiSessionRows === 2
-                        ? 'bg-primary text-white'
-                        : 'text-text-secondary hover:text-text-primary hover:bg-background-hover'
-                    )}
-                    role="menuitemradio"
-                    aria-checked={multiSessionRows === 2}
-                  >
-                    <ColumnsIcon className="w-3.5 h-3.5" />
-                    <span>{t('multiWindow.row2')}</span>
-                  </button>
-                </div>
+          {/* 格子宽度 */}
+          <div>
+            <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.cellWidth')}</div>
+
+            {/* 步进调整 */}
+            <div className="flex items-center gap-2 mb-2">
+              <button
+                onClick={() => handleAdjustWidth(-25)}
+                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
+                aria-label={t('multiWindow.decreaseWidth')}
+              >
+                <Minus className="w-3.5 h-3.5" />
+              </button>
+              <div className="flex-1 text-center text-sm font-medium tabular-nums">
+                {multiSessionCellWidth}px
               </div>
+              <button
+                onClick={() => handleAdjustWidth(25)}
+                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
+                aria-label={t('multiWindow.increaseWidth')}
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </div>
 
-              {/* Section 3: 格子宽度 */}
-              <div>
-                <div className="text-xs text-text-muted mb-1.5 px-1">{t('multiWindow.cellWidth')}</div>
-
-                {/* 步进调整 */}
-                <div className="flex items-center gap-2 mb-2">
-                  <button
-                    onClick={() => handleAdjustWidth(-25)}
-                    className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
-                    aria-label={t('multiWindow.decreaseWidth')}
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <div className="flex-1 text-center text-sm font-medium tabular-nums">
-                    {multiSessionCellWidth}px
-                  </div>
-                  <button
-                    onClick={() => handleAdjustWidth(25)}
-                    className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-background-hover"
-                    aria-label={t('multiWindow.increaseWidth')}
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* 预设按钮 */}
-                <div className="flex gap-1">
-                  {WIDTH_PRESETS.map((width) => (
-                    <button
-                      key={width}
-                      onClick={() => handleSelectPreset(width)}
-                      className={clsx(
-                        'flex-1 px-1 py-1 text-xs rounded transition-colors',
-                        width === multiSessionCellWidth
-                          ? 'bg-primary text-white'
-                          : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
-                      )}
-                    >
-                      {width}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </>
-          )}
+            {/* 预设按钮 */}
+            <div className="flex gap-1">
+              {WIDTH_PRESETS.map((width) => (
+                <button
+                  key={width}
+                  onClick={() => handleSelectPreset(width)}
+                  className={clsx(
+                    'flex-1 px-1 py-1 text-xs rounded transition-colors',
+                    width === multiSessionCellWidth
+                      ? 'bg-primary text-white'
+                      : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                  )}
+                >
+                  {width}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

@@ -9,7 +9,7 @@ const log = createLogger('App');
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
 import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
 import { NarrowTabOverlay } from './components/Editor';
-import { EnhancedChatMessages, ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
+import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
 // 条件渲染的重组件统一懒加载，避免首帧解析 400+ 模块的 Chat barrel 传递依赖
 const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
@@ -116,7 +116,6 @@ function App() {
   const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
   const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
   const toggleNotificationCenter = useViewStore(state => state.toggleNotificationCenter);
-  const multiSessionMode = useViewStore(state => state.multiSessionMode);
   const narrowTabId = useNarrowTabStore(state => state.narrowTabId);
   const openNarrowTab = useNarrowTabStore(state => state.openNarrowTab);
   const openDiffTab = useTabStore(state => state.openDiffTab);
@@ -274,7 +273,7 @@ function App() {
         />
 
         <div className="flex flex-1 overflow-hidden relative">
-          {/* 主布局常驻：EnhancedChatMessages/Virtuoso 实例不随设置页开关卸载，
+          {/* 主布局常驻：对话网格（MultiSessionGrid/Virtuoso 实例）不随设置页开关卸载，
               避免冷启动闪白 + 滚动位置丢失。设置页以层叠方式覆盖在上。
               showSettings 时 inert 禁用背后交互（Tab 聚焦/点击），防止焦点跳入聊天区。 */}
           <div className="flex flex-1 overflow-hidden" inert={showSettings}>
@@ -310,16 +309,12 @@ function App() {
             {!isCompact && hasCenterStage && !terminalFullscreen && <CenterStage fillRemaining={!rightPanelCollapsed} />}
 
             {/* RightPanel 始终渲染（除终端全屏），折叠状态由 RightPanel 内部 hidden 处理，
-                避免折叠/展开时 EnhancedChatMessages 卸载重建导致闪白+位置丢失 */}
+                避免折叠/展开时多窗口消息组件卸载重建导致闪白+位置丢失 */}
             {(isCompact || !terminalFullscreen) && (
               <RightPanel fillRemaining={rightPanelFillRemaining} forceShow={isCompact}>
                 {error && <ErrorBanner error={error} />}
 
-                {multiSessionMode ? (
-                  <MultiSessionGridLazy onEditMessage={handleEditMessage} />
-                ) : (
-                  <EnhancedChatMessages onEditMessage={handleEditMessage} />
-                )}
+                <MultiSessionGridLazy onEditMessage={handleEditMessage} />
 
                 <ChatInput
                   onSend={sendMessage}

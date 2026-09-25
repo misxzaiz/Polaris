@@ -11,7 +11,7 @@
  * - 全部图标使用 lucide-react，无 emoji
  * - 任务板展开直接显示任务清单 items
  *
- * 挂载点：EnhancedChatMessages.tsx / SessionMessagesView.tsx 消息区容器顶部居中 absolute。
+ * 挂载点：SessionMessagesView.tsx 消息区容器顶部居中 absolute。
  * per-session：接收 sessionId，订阅对应 session store。
  */
 

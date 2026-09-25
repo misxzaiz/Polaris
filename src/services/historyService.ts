@@ -473,9 +473,7 @@ export const historyService = {
         paged: !!loaded.paging,
       })
 
-      if (useViewStore.getState().multiSessionMode) {
-        useViewStore.getState().addToMultiView(newSessionId)
-      }
+      useViewStore.getState().addToMultiView(newSessionId)
 
       return true
     } catch (e) {

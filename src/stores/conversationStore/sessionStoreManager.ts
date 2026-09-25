@@ -275,8 +275,8 @@ function createSessionManagerStore() {
         set({ stores: evicted.stores, sessionMetadata: evicted.sessionMetadata })
       }
 
-      // 非静默模式且开启多窗口模式时，自动加入多窗口视图
-      if (!options.silentMode && useViewStore.getState().multiSessionMode) {
+      // 非静默模式时自动加入多窗口视图
+      if (!options.silentMode) {
         useViewStore.getState().addToMultiView(sessionId)
       }
 
@@ -395,10 +395,8 @@ function createSessionManagerStore() {
 
       // 多窗口模式协调：确保目标会话在网格中，并请求滚动
       const viewState = useViewStore.getState()
-      if (viewState.multiSessionMode) {
-        viewState.addToMultiView(sessionId)
-        viewState.requestScrollToSession(sessionId)
-      }
+      viewState.addToMultiView(sessionId)
+      viewState.requestScrollToSession(sessionId)
 
       // P1: 切换会话时，把该会话的生效 Profile 与模型同步到状态栏镜像。
       // 生效值 = 会话覆盖 ?? 全局默认；这样无覆盖会话显示并使用全局默认，与发送逻辑一致。

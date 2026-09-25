@@ -36,7 +36,6 @@ vi.mock('../stores/workspaceStore', () => ({
 vi.mock('../stores/index', () => ({
   useViewStore: {
     getState: () => ({
-      multiSessionMode: false,
       addToMultiView: addToMultiViewMock,
     }),
   },

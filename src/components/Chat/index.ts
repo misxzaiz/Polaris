@@ -17,7 +17,6 @@
 
 export { ChatInput } from './input/ChatInput';
 export type { EditMode } from './input/ChatInput';
-export { AIPopover } from './common/AIPopover';
 export { ChatStatusBar } from './common/ChatStatusBar';
 export { ErrorBanner } from './common/ErrorBanner';
 export { SessionHistoryPanel } from './session/SessionHistoryPanel';
@@ -26,7 +25,6 @@ export { CompactHandoffProgress } from './compact-handoff/CompactHandoffProgress
 export { PendingBriefingCard } from './compact-handoff/PendingBriefingCard';
 
 // 分层对话流组件
-export { EnhancedChatMessages } from './messages/EnhancedChatMessages';
 export { ToolBubble } from './tool-calls/ToolBubble';
 export { ToolGroupBubble } from './tool-calls/ToolGroupBubble';
 

@@ -31,13 +31,13 @@ export function RightPanel({ children, fillRemaining = false, forceShow = false 
     setWidth(newWidth)
   }
 
-  // 折叠时 hidden 隐藏而非卸载：EnhancedChatMessages/Virtuoso 实例保留，
+  // 折叠时 hidden 隐藏而非卸载：对话网格（MultiSessionGrid/Virtuoso 实例）保留，
   // 展开时不闪白、不丢滚动位置。App.tsx 门控已改为不卸载 RightPanel。
   const hidden = collapsed && !forceShow
 
   // 关键：fillRemaining 切换时保持同一 <aside> 根，只变 className/style/ResizeHandle，
   // 避免 React 因顶层类型/结构变化（Fragment vs aside）卸载整棵子树——
-  // 否则 EnhancedChatMessages 内的 Virtuoso 会冷启动，视觉上"闪一下空白"。
+  // 否则多窗口格子内的 Virtuoso 会冷启动，视觉上"闪一下空白"。
   return (
     <>
       {!fillRemaining && !hidden && (

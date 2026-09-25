@@ -51,8 +51,7 @@ interface ViewState {
   // 小屏模式状态
   compactMode: CompactModeState; // 小屏模式
   schedulerLogDrawerHeight: number; // 日志抽屉高度
-  // 多会话窗口模式
-  multiSessionMode: boolean;     // 是否开启多会话窗口模式
+  // 多会话窗口模式（只保留多窗口，无单窗口开关）
   multiSessionIds: string[];     // 多会话窗口中显示的会话 ID 列表（最多 16 个）
   multiSessionRows: 1 | 2;       // 行数配置：1 行或 2 行
   multiSessionCellWidth: number; // 每个格子的统一宽度（像素）
@@ -96,7 +95,6 @@ interface ViewActions {
   // 日志抽屉高度
   setSchedulerLogDrawerHeight: (height: number) => void;
   // 多会话窗口操作
-  toggleMultiSessionMode: () => void;
   setMultiSessionIds: (ids: string[]) => void;
   addToMultiView: (sessionId: string) => void;
   removeFromMultiView: (sessionId: string) => void;
@@ -151,7 +149,6 @@ export const useViewStore = create<ViewStore>()(
       },
       schedulerLogDrawerHeight: 128, // 默认 128px
       // 多会话窗口初始状态
-      multiSessionMode: true,       // 默认多会话模式
       multiSessionIds: [],          // 默认空列表
       multiSessionRows: 1,          // 默认 1 行
       multiSessionCellWidth: 350,   // 默认格子宽度 350px
@@ -317,15 +314,6 @@ export const useViewStore = create<ViewStore>()(
 
       // === 多会话窗口操作 ===
 
-      // 切换多会话窗口模式
-      toggleMultiSessionMode: () => set((state) => ({
-        multiSessionMode: !state.multiSessionMode,
-        // 开启时，如果列表为空则默认显示当前活跃会话
-        multiSessionIds: !state.multiSessionMode && state.multiSessionIds.length === 0
-          ? [] // 由外部负责填充当前活跃会话
-          : state.multiSessionIds
-      })),
-
       // 设置多会话窗口中的会话列表
       setMultiSessionIds: (ids: string[]) => set({ multiSessionIds: ids }),
 
@@ -380,10 +368,15 @@ export const useViewStore = create<ViewStore>()(
         const { pendingScrollToId: _pendingScrollToId, ...rest } = state;
         return rest;
       },
-      // 兼容旧持久化值：移除 Problems 面板后，将遗留的面板类型回退到文件浏览器
+      // 兼容旧持久化值：
+      // - 移除 Problems 面板后，将遗留的面板类型回退到文件浏览器
+      // - 只保留多窗口模式：剔除遗留的 multiSessionMode 字段（旧版本可持久化为 false）
       onRehydrateStorage: () => (state) => {
         if (state && (state.leftPanelType as string) === 'problems') {
           state.leftPanelType = 'files';
+        }
+        if (state && 'multiSessionMode' in state) {
+          delete (state as Record<string, unknown>).multiSessionMode;
         }
       },
     }

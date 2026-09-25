@@ -10,8 +10,8 @@ import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { useConfigStore } from '@/stores/configStore';
-import { renderChatMessage } from './EnhancedChatMessages';
-import type { MessageScrollActions, MessageActions } from './EnhancedChatMessages';
+import { renderChatMessage } from './renderChatMessage';
+import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
 import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
@@ -132,7 +132,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     false
   );
 
-  // 可见区域锚点（滚动位置恢复用，与 EnhancedChatMessages 同构）
+  // 可见区域锚点（滚动位置恢复用）
   const visibleRange = useSessionStoreSubscription(
     sessionId,
     useCallback((state) => state.visibleRange, []),
@@ -180,13 +180,13 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   // PENDING 状态：已发送消息、正在等待首 token
   const isPending = isStreaming && !currentMessage;
 
-  // ===== 滚动位置恢复锚点（与 EnhancedChatMessages 同构）=====
+  // ===== 滚动位置恢复锚点 =====
   const atBottomOnMount = !visibleRange || visibleRange.end >= displayMessages.length - 1;
   const restoreIndex = visibleRange && !atBottomOnMount
     ? Math.min(visibleRange.start, displayMessages.length - 1)
     : displayMessages.length - 1;
 
-  // ===== 锚点模式自动滚动（useMessageAutoScroll，与 EnhancedChatMessages 同构）=====
+  // ===== 锚点模式自动滚动（useMessageAutoScroll）=====
   // 消灭 150px 死区（atBottomThreshold→4），followOutput 回调精确跟随：
   // 流式期间始终贴底（内容向上生长），非流式仅在「跟随态&&贴底」时跟随；
   // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；

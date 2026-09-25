@@ -2,7 +2,7 @@
  * SessionCell 组件 - 多会话窗口中的单个会话格子
  *
  * 功能：
- * - 渲染单个会话的消息列表（复用 EnhancedChatMessages）
+ * - 渲染单个会话的消息列表（复用 SessionMessagesView）
  * - 显示会话标题和状态
  * - 支持点击切换活跃会话
  * - 支持展开/关闭操作
