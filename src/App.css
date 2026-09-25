@@ -972,3 +972,28 @@
   align-items: center;
   gap: 3px;
 }
+/* ========================================
+   SessionOperationBar - 会话结尾操作卡
+   ======================================== */
+
+/* 操作卡内产物压缩：标题收窄、iframe 限高，适配卡片形态（卡片本身 max-height 滚动） */
+.op-artifact {
+  overflow: hidden;
+}
+.op-artifact section {
+  border-radius: 8px;
+}
+.op-artifact header {
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.op-artifact header .my-2 {
+  margin: 0;
+}
+.op-artifact .h-\[420px\] {
+  height: 240px;
+  min-height: 180px;
+}
+.op-artifact .h-\[420px\] iframe {
+  height: 100% !important;
+}

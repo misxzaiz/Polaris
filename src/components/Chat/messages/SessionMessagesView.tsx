@@ -4,14 +4,16 @@
  * 直接使用 zustand store 订阅特定 session 的状态，避免复杂的 hook 链
  */
 
-import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState } from 'react';
+import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
 import type { ComponentProps, MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
+import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { useConfigStore } from '@/stores/configStore';
 import { renderChatMessage } from './renderChatMessage';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
+import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
   findCurrentRoundIndexForRange,
   getRoundScrollTargetIndex,
@@ -20,10 +22,8 @@ import {
 import { ThinkingOrb } from '../common/ThinkingOrb';
 import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
-import { SessionOperationBar } from '../session/SessionOperationBar';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
-import { useSessionStoreSubscription } from './useSessionStoreSubscription';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -46,6 +46,66 @@ interface SessionMessagesViewProps {
   sessionId: string;
   /** 编辑消息回调 */
   onEditMessage?: (messageId: string, content: string) => void;
+}
+
+/**
+ * 直接订阅 session store 的 hook
+ * 关键：当 store 存在时，订阅 store 本身而不是 sessionStoreManager
+ */
+function useSessionStoreSubscription<T>(
+  sessionId: string,
+  selector: (state: ConversationState) => T,
+  defaultValue: T
+): T {
+  // 缓存 store 实例，避免频繁查找
+  const storeRef = useRef<ConversationStoreInstance | null>(null);
+  const cacheRef = useRef<T>(defaultValue);
+
+  // 获取 store 实例
+  const getStore = useCallback(() => {
+    return sessionStoreManager.getState().stores.get(sessionId);
+  }, [sessionId]);
+
+  // 初始化/更新 store ref
+  useEffect(() => {
+    const store = getStore();
+    if (store && storeRef.current !== store) {
+      storeRef.current = store;
+      cacheRef.current = defaultValue; // store 变化时重置缓存
+    }
+  }, [getStore, defaultValue]);
+
+  // subscribe 函数：订阅正确的 store
+  const subscribe = useCallback((onChange: () => void) => {
+    const store = getStore();
+    if (store) {
+      // 直接订阅 session store
+      return store.subscribe(onChange);
+    } else {
+      // store 不存在时，订阅 sessionStoreManager 等待 store 创建
+      return sessionStoreManager.subscribe(onChange);
+    }
+  }, [getStore]);
+
+  // getSnapshot：获取当前值
+  const getSnapshot = useCallback(() => {
+    const store = storeRef.current || getStore();
+    if (!store) return defaultValue;
+
+    const newValue = selector(store.getState());
+
+    // 引用稳定性检查
+    if (cacheRef.current === newValue) {
+      return cacheRef.current;
+    }
+
+    cacheRef.current = newValue;
+    return newValue;
+  }, [getStore, selector, defaultValue]);
+
+  const getServerSnapshot = useCallback(() => defaultValue, [defaultValue]);
+
+  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
 }
 
 export const SessionMessagesView = memo(function SessionMessagesView({ sessionId, onEditMessage }: SessionMessagesViewProps) {
@@ -239,56 +299,52 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   }, [handleWheel, setScrollerRef]);
 
   return (
-    <div className="h-full w-full relative flex flex-col">
+    <div className="h-full w-full relative">
       {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
       <DynamicIsland sessionId={sessionId} />
 
-      {/* 消息滚动区 */}
-      <div className="relative flex-1 min-h-0">
-        <Virtuoso
-          ref={virtuosoRef}
-          style={{ height: '100%' }}
-          data={displayMessages}
-          itemContent={(index, item) => {
-            return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
-          }}
-          components={{
-            // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
-            EmptyPlaceholder: EmptyState,
-            // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
-            Scroller: Scroller,
-            Footer: () => (
-              <>
-                {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
-                {isPending && (
-                  <ThinkingOrb isPending={isPending} compact={true} />
-                )}
-                <div style={FOOTER_SPACER_STYLE} />
-              </>
-            ),
-          }}
-          followOutput={followOutput}
-          atBottomStateChange={handleAtBottomStateChange}
-          atBottomThreshold={AUTO_SCROLL_THRESHOLD}
-          rangeChanged={handleRangeChange}
-          increaseViewportBy={VIEWPORT_EXTENSION}
-          initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}
+      <Virtuoso
+        ref={virtuosoRef}
+        style={{ height: '100%' }}
+        data={displayMessages}
+        itemContent={(index, item) => {
+          return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
+        }}
+        components={{
+          // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
+          EmptyPlaceholder: EmptyState,
+          // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
+          Scroller: Scroller,
+          Footer: () => (
+            <>
+              {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
+              {isPending && (
+                <ThinkingOrb isPending={isPending} compact={true} />
+              )}
+              <div style={FOOTER_SPACER_STYLE} />
+            </>
+          ),
+        }}
+        followOutput={followOutput}
+        atBottomStateChange={handleAtBottomStateChange}
+        atBottomThreshold={AUTO_SCROLL_THRESHOLD}
+        rangeChanged={handleRangeChange}
+        increaseViewportBy={VIEWPORT_EXTENSION}
+        initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}
+      />
+
+      {/* 对话导航时间线 */}
+      {!isEmpty && conversationRounds.length > 1 && (
+        <ChatNavigator
+          variant="timeline"
+          rounds={conversationRounds}
+          currentRoundIndex={currentRoundIndex}
+          onScrollToBottom={scrollToBottom}
+          onScrollToRound={scrollToRound}
         />
+      )}
 
-        {/* 对话导航时间线 */}
-        {!isEmpty && conversationRounds.length > 1 && (
-          <ChatNavigator
-            variant="timeline"
-            rounds={conversationRounds}
-            currentRoundIndex={currentRoundIndex}
-            onScrollToBottom={scrollToBottom}
-            onScrollToRound={scrollToRound}
-          />
-        )}
-      </div>
 
-      {/* 底部操作区：运行过程 / 变更文件 / 产物 */}
-      <SessionOperationBar sessionId={sessionId} />
     </div>
   );
 });

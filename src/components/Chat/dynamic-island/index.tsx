@@ -1,7 +1,7 @@
 /**
  * 灵动岛（Dynamic Island）v2 —— 会话运行态中枢
  *
- * 状态机：hidden → compact → expanded
+ * 状态机：hidden → compact → expanded → collapsed（已完成降级）→ hidden
  *
  * v2 变更（用户反馈驱动）：
  * - 贴顶小形态（top:0 只留底部圆角，compact 28px），背景亮两档与暗背景形成反差
@@ -10,7 +10,6 @@
  * - urgent 卡内联审批（批准 / 拒绝 / 跳过），无需回到消息流
  * - 全部图标使用 lucide-react，无 emoji
  * - 任务板展开直接显示任务清单 items
- * - 完成态常驻不自动淡出，仅手动 ✕ 关闭；展开态内嵌产物预览 iframe
  *
  * 挂载点：SessionMessagesView.tsx 消息区容器顶部居中 absolute。
  * per-session：接收 sessionId，订阅对应 session store。
@@ -18,7 +17,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { clsx } from 'clsx';
-import { ChevronDown, Square, TriangleAlert, CircleCheck, X } from 'lucide-react';
+import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
 import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
@@ -33,35 +32,33 @@ export interface DynamicIslandProps {
 
 /** 轮播间隔 */
 const CAROUSEL_INTERVAL = 3000;
+/** collapsed 退场停留 */
+const COLLAPSED_HOLD = 5000;
 
 export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const summary = useRuntimeSummary(sessionId);
   const [expanded, setExpanded] = useState(false);
   const [doneGroupOpen, setDoneGroupOpen] = useState(false);
-  // 完成态常驻：仅手动 ✕ 关闭后消失；有新的运行/urgent 活动时自动恢复
-  const [dismissed, setDismissed] = useState(false);
 
   // 轮播
   const [carouselIdx, setCarouselIdx] = useState(0);
   const carouselTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hoverRef = useRef(false);
 
-  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent, thinking, artifacts } = summary;
+  // collapsed 退场状态
+  const [collapsedExiting, setCollapsedExiting] = useState(false);
+  const collapsedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const { hasRunning, hasFailed, isInterrupting, slides, cards, doneCount, urgent, thinking } = summary;
 
   // 判断是否处于 collapsed（已完成降级）态：无运行中、无失败、无 urgent、有已完成卡片
   const isCollapsed = !hasRunning && !hasFailed && !isInterrupting && urgent.length === 0 && doneCount > 0;
-  // 是否完全空闲（urgent 常驻可见；手动 ✕ 关闭后也视为空闲消失）
+  // 是否完全空闲（urgent 常驻可见；中断态保持可见 1s）
   const isIdle = urgent.length === 0 && !hasRunning && !hasFailed && !isInterrupting && doneCount === 0;
-  // Minimal 思考态：有 thinking block 文本，且无运行卡片、无 urgent、未中断、无已完成卡片
-  // （完成态常驻优先于思考态：历史 thinking 块不应顶替"完成 · N 项"摘要）
-  const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting && doneCount === 0;
-
-  // 新活动出现时自动恢复（清除手动关闭标记）
-  useEffect(() => {
-    if (hasRunning || hasFailed || isInterrupting || urgent.length > 0) {
-      setDismissed(false);
-    }
-  }, [hasRunning, hasFailed, isInterrupting, urgent.length]);
+  // Minimal 思考态：有 thinking block 文本，且无运行卡片、无 urgent、未中断
+  // 思考时 blocks 里有 thinking block（content 流式累积），但无 task/agent 卡片 → hasRunning=false、slides=[]
+  // Minimal 态正是补这个缺口，接 deriveThinking 数据源
+  const isThinking = !!thinking && !hasRunning && urgent.length === 0 && !isInterrupting;
 
   // 重置轮播索引当 slides 变化
   useEffect(() => {
@@ -88,6 +85,30 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
       }
     };
   }, [expanded, slides.length, carouselIdx, urgent.length, isThinking]);
+
+  // collapsed 退场：进入 collapsed 态后停留 5s，无交互则淡出
+  useEffect(() => {
+    if (collapsedTimerRef.current) {
+      clearTimeout(collapsedTimerRef.current);
+      collapsedTimerRef.current = null;
+    }
+    if (isCollapsed && !expanded) {
+      setCollapsedExiting(false);
+      collapsedTimerRef.current = setTimeout(() => {
+        setCollapsedExiting(true);
+        // 淡出动画后不渲染（交由 isIdle 自然卸载）
+      }, COLLAPSED_HOLD);
+    } else if (hasRunning || urgent.length > 0) {
+      // 恢复运行态或出现 urgent 时取消退场
+      setCollapsedExiting(false);
+    }
+    return () => {
+      if (collapsedTimerRef.current) {
+        clearTimeout(collapsedTimerRef.current);
+        collapsedTimerRef.current = null;
+      }
+    };
+  }, [isCollapsed, expanded, hasRunning, urgent.length]);
 
   // 切换展开
   const toggleExpanded = useCallback(() => {
@@ -195,11 +216,8 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
     ? Math.max(6, Math.min(20, thinking.length / 8))
     : 14;
 
-  // 手动关闭：仅完成态（collapsed）可关闭；运行中 / urgent / 失败常驻不可关
-  const canDismiss = isCollapsed && !expanded;
-
-  // 空闲：不渲染；完成态被手动关闭也不渲染
-  if (isIdle || (isCollapsed && dismissed)) return null;
+  // 空闲：不渲染
+  if (isIdle) return null;
 
   // 状态点颜色：urgent 最优先 → 失败 → 已完成 → 运行中
   const dotClass = urgent.length > 0
@@ -231,6 +249,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
         expanded && 'island-expanded',
         isCollapsed && !expanded && 'island-collapsed',
         isThinking && !expanded && 'island-minimal',
+        collapsedExiting && 'island-exiting',
       )}
     >
       {/* 折叠态 */}
@@ -291,21 +310,6 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
           </>
         )}
 
-        {/* 手动关闭：仅完成态可见；点击不冒泡（避免触发展开） */}
-        {canDismiss && (
-          <button
-            type="button"
-            className="island-close"
-            title="关闭灵动岛"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDismissed(true);
-            }}
-          >
-            <X />
-          </button>
-        )}
-
         <span className={clsx('island-chev', expanded && 'island-chev-open')}>
           <ChevronDown />
         </span>
@@ -323,7 +327,6 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
           onClose={() => setExpanded(false)}
           elapsedMs={summary.elapsedMs}
           water={summary.water}
-          artifacts={artifacts}
           onUrgentDecision={handleUrgentDecision}
         />
       )}
