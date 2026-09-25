@@ -15,6 +15,7 @@ import { isEmptyTextBlock } from '../chatUtils/helpers';
 import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 import { ThinkingBlockRenderer } from '../chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from '../chatBlocks';
+import { extractEditDiff, extractWriteInfo, type DiffData } from '@/utils/diffExtractor';
 
 /**
  * 块分类枚举。
@@ -54,6 +55,96 @@ function categorizeBlock(block: ContentBlock): BlockCategory {
       // 未知/新增块类型：归为 result 兜底渲染，避免内容丢失
       return 'result';
   }
+}
+
+/**
+ * 提取过程块（与 categorizeBlock 的 process 分类一致）。
+ * 供补充卡片（SessionSummaryCard）"运行过程" tab 复用，
+ * 与 AutoModeRenderer 的折叠块集合保持同一语义。
+ */
+export function extractProcessBlocks(blocks: ContentBlock[]): ContentBlock[] {
+  return blocks.filter((b) => categorizeBlock(b) === 'process');
+}
+
+/** 变更文件信息（从工具调用块中提取） */
+interface FileChange {
+  /** 完整路径（用于打开编辑器 + 去重 key） */
+  fullPath: string;
+  /** 仅文件名（用于展示） */
+  fileName: string;
+  /** 目录路径（用于展示的次要信息） */
+  dirPath: string;
+  /** 变更类型 */
+  changeType: 'modified' | 'created' | 'deleted';
+  /** Edit 工具的 diff 数据（modified 时有） */
+  diffData?: DiffData;
+  /** Write 工具的新内容（created 时有） */
+  newContent?: string;
+}
+
+/** 从完整路径中拆分文件名和目录 */
+function splitFilePath(filePath: string): { fileName: string; dirPath: string } {
+  const parts = filePath.split(/[/\\]/).filter(Boolean);
+  const fileName = parts.pop() || filePath;
+  const dirPath = parts.join('/') + (parts.length ? '/' : '');
+  return { fileName, dirPath };
+}
+
+/**
+ * 从工具调用块中提取变更文件列表。
+ * - Edit 工具：diffData.filePath → modified（含 diff 数据）
+ * - Write 工具：input.file_path/path → created（含新内容）
+ * - apply_patch：patchData[] 多文件 → modified / deleted
+ * 复用 diffExtractor，去重（同一文件多次修改只记一次，优先保留 diff 数据）。
+ */
+export function extractFileChanges(blocks: ContentBlock[]): FileChange[] {
+  const seen = new Map<string, FileChange>();
+  const add = (fullPath: string, changeType: FileChange['changeType'], data?: Partial<FileChange>) => {
+    const { fileName, dirPath } = splitFilePath(fullPath);
+    const existing = seen.get(fullPath);
+    if (existing) {
+      // 已存在：合并 diff/内容数据（保留已有，补充缺失）
+      seen.set(fullPath, {
+        ...existing,
+        ...data,
+        changeType,
+        fileName: existing.fileName || fileName,
+        dirPath: existing.dirPath || dirPath,
+      });
+      return;
+    }
+    seen.set(fullPath, {
+      fullPath,
+      fileName,
+      dirPath,
+      changeType,
+      ...data,
+    });
+  };
+
+  for (const b of blocks) {
+    if (b.type !== 'tool_call' || b.status !== 'completed') continue;
+
+    // apply_patch：多文件补丁（Claude Code 主要改文件工具）
+    if (b.name === 'apply_patch' && b.patchData && b.patchData.length > 0) {
+      for (const p of b.patchData) {
+        if (!p.filePath) continue;
+        add(p.filePath, p.type === 'delete' ? 'deleted' : 'modified');
+      }
+      continue;
+    }
+
+    const edit = extractEditDiff(b);
+    if (edit?.filePath) {
+      add(edit.filePath, 'modified', { diffData: edit });
+      continue;
+    }
+    const write = extractWriteInfo(b);
+    if (write?.filePath) {
+      add(write.filePath, 'created', { newContent: write.newContent });
+    }
+  }
+  return Array.from(seen.values());
 }
 
 /**
@@ -150,113 +241,21 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
   );
 });
 
-/**
- * 过程块折叠汇总条组件（仅 Claude Code 引擎非流式时使用）
- *
- * 展现形式：
- * 1. 汇总块（一行）：运行过程已折叠 [思考 1] [工具 3] [计划 1]
- * 2. 展开后按类型分组紧凑列表 + 逐行展开
- *
- * 变更文件列表已移交底部操作区（SessionOperationBar），此处不再内嵌。
- */
-const RunProcessSummary = memo(function RunProcessSummary({
-  processBlocks,
-}: {
-  processBlocks: ContentBlock[];
-}) {
-  const { t } = useTranslation('chat');
-  const [expanded, setExpanded] = useState(false);
-
-  // 按类型统计数量
-  const counts = useMemo(() => {
-    let thinking = 0, tool = 0, plan = 0, perm = 0, agent = 0, question = 0, compact = 0, text = 0;
-    for (const b of processBlocks) {
-      switch (b.type) {
-        case 'thinking': thinking++; break;
-        case 'tool_call': tool++; break;
-        case 'plan_mode': plan++; break;
-        case 'permission_request': perm++; break;
-        case 'agent_run': agent++; break;
-        case 'question': question++; break;
-        case 'context_compact': compact++; break;
-        case 'text': text++; break;
-      }
-    }
-    return { thinking, tool, plan, perm, agent, question, compact, text };
-  }, [processBlocks]);
-
-  // 生成 chips 标签
-  const chips = useMemo(() => {
-    const items: React.ReactNode[] = [];
-    const add = (key: string, label: string, className: string) => {
-      items.push(
-        <span key={key} className={clsx('text-[11px] px-2 py-0.5 rounded-full', 'bg-background-elevated text-text-muted', className)}>
-          {label}
-        </span>
-      );
-    };
-    if (counts.thinking) add('think', t('summary.chipThinking', { count: counts.thinking }), 'text-purple-400');
-    if (counts.text)      add('text', t('summary.chipText', { count: counts.text }), 'text-text-secondary');
-    if (counts.tool)     add('tool', t('summary.chipTool', { count: counts.tool }), 'text-blue-400');
-    if (counts.plan)     add('plan', t('summary.chipPlan', { count: counts.plan }), 'text-yellow-400');
-    if (counts.perm)     add('perm', t('summary.chipPermission', { count: counts.perm }), 'text-red-400');
-    if (counts.agent)    add('agent', t('summary.chipAgent', { count: counts.agent }), 'text-blue-400');
-    if (counts.question) add('question', t('summary.chipQuestion', { count: counts.question }), 'text-purple-400');
-    if (counts.compact)  add('compact', t('summary.chipCompact', { count: counts.compact }), 'text-yellow-400');
-    return items;
-  }, [counts, t]);
-
-  return (
-    <>
-      {/* 汇总条：点击展开/折叠下方内容 */}
-      <div
-        className={clsx(
-          'flex items-center gap-1.5 px-3 py-2 my-1',
-          'bg-background-surface border border-dashed border-border rounded-md',
-          'cursor-pointer text-xs text-text-secondary',
-          'hover:bg-background-hover hover:border-primary hover:text-primary',
-          'transition-all duration-150',
-          'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-base'
-        )}
-        onClick={() => setExpanded(!expanded)}
-        role="button"
-        tabIndex={0}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            setExpanded(!expanded);
-          }
-        }}
-        aria-expanded={expanded}
-      >
-        <span className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-          {t('summary.collapsedLabel')}
-          {chips}
-        </span>
-        {expanded ? (
-          <ChevronUp className="w-3.5 h-3.5 shrink-0" />
-        ) : (
-          <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-        )}
-      </div>
-
-      {/* 展开态：过程块分组列表 */}
-      {expanded && (
-        <ProcessBlockGroupedList processBlocks={processBlocks} />
-      )}
-    </>
-  );
-});
 
 /**
  * 过程块全部展开列表组件
  * - 按类型分组（思考 / 工具调用 / 计划 / 权限…）
  * - 所有块直接完整渲染，限高滚动
+ *
+ * 导出供 SessionSummaryCard 展开态复用（渲染该消息被折叠的过程块）。
  */
 export const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
   processBlocks,
+  bare = false,
 }: {
   processBlocks: ContentBlock[];
+  /** bare 模式：去掉外层边框与顶部工具条（供补充卡片 tab 内扁平渲染，避免嵌套边框） */
+  bare?: boolean;
 }) {
   const { t } = useTranslation('chat');
 
@@ -282,18 +281,20 @@ export const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
 
   return (
     <div
-      className="flex flex-col border border-border rounded-md overflow-hidden"
+      className={clsx('flex flex-col overflow-hidden', !bare && 'border border-border rounded-md')}
       style={{ maxHeight: '60vh', overflowY: 'auto' }}
     >
-      {/* 顶部工具条 */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-background-surface border-b border-border sticky top-0 z-10">
-        <span className="text-xs font-medium text-text-secondary">
-          {t('summary.toolbarTitle')}
-        </span>
-        <span className="text-[11px] text-text-muted">
-          {t('summary.toolbarBlockCount', { count: processBlocks.length })}
-        </span>
-      </div>
+      {/* 顶部工具条（bare 模式下隐藏，由外层 tab 栏表明语义） */}
+      {!bare && (
+        <div className="flex items-center gap-2 px-3 py-1.5 bg-background-surface border-b border-border sticky top-0 z-10">
+          <span className="text-xs font-medium text-text-secondary">
+            {t('summary.toolbarTitle')}
+          </span>
+          <span className="text-[11px] text-text-muted">
+            {t('summary.toolbarBlockCount', { count: processBlocks.length })}
+          </span>
+        </div>
+      )}
 
       {/* 分组列表：全部展开，直接渲染完整卡片 */}
       {groups.map(group => (
@@ -446,8 +447,9 @@ const AutoModeRenderer = memo(function AutoModeRenderer({
           foldedBlocks.push(block);
         }
       } else {
-        // artifact_preview / plugin_card → 始终保留
-        resultBlocks.push(block);
+        // artifact_preview / plugin_card：不再于消息正文直出，
+        // 统一由补充卡片（SessionSummaryCard）"预览" tab 承载，避免双份。
+        foldedBlocks.push(block);
       }
     }
     // skip（空文本）→ 不渲染也不折叠
@@ -455,20 +457,16 @@ const AutoModeRenderer = memo(function AutoModeRenderer({
 
   const children: React.ReactNode[] = [];
 
-  // 结果块（最终文本 + PRD/artifact 预览）始终可见
+  // 结果块（最终文本）始终可见
   resultBlocks.forEach((block, index) => {
     children.push(
       <div key={`result-${index}`}>{renderContentBlock(block, false)}</div>
     );
   });
 
-  // 汇总条（自身管理展开/折叠，展开后原位置显示所有折叠块）
-  if (foldedBlocks.length > 0) {
-    children.push(
-      <RunProcessSummary key="process-summary" processBlocks={foldedBlocks} />
-    );
-  }
-
+  // 折叠块不再于消息内渲染"运行过程已折叠"汇总条：
+  // 统一由 AssistantBubble 后的补充卡片（SessionSummaryCard）承载
+  // （含运行过程 / 变更文件 / 预览 三 tab），避免双份冗余。
   return <>{children}</>;
 });
 

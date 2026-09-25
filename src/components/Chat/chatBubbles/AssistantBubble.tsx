@@ -9,6 +9,7 @@ import type { ProcessBlockCollapseMode } from '@/types';
 import { formatContent, extractAssistantText } from '../chatUtils/helpers';
 import { renderBlocksWithGrouping } from '../tool-calls/blockGrouping';
 import { MessageContextMenu } from './MessageContextMenu';
+import { SessionSummaryCard } from './SessionSummaryCard';
 import { Bot, RefreshCw, Copy, Check } from 'lucide-react';
 import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
@@ -153,6 +154,9 @@ export const AssistantBubble = memo(function AssistantBubble({
 
           {/* 流式光标 —— 已移到 ProgressiveStreamingMarkdown 里"最后一段"的字符末尾。
               气泡层不再显示，避免与字符末尾 caret 重复。 */}
+
+          {/* 会话补充卡片：与正文同宽同左缘（在 chat-assistant-content 内部） */}
+          <SessionSummaryCard blocks={message.blocks} />
         </div>
       </div>
 
@@ -211,6 +215,10 @@ export const AssistantBubble = memo(function AssistantBubble({
       if (pb.type === 'tool_call' && nb.type === 'tool_call') {
         if (pb.status !== nb.status) return false;
         if (pb.output !== nb.output) return false;
+      }
+      // 思考块折叠状态变化（完成自动折叠）必须放行重渲染
+      if (pb.type === 'thinking' && nb.type === 'thinking') {
+        if (pb.collapsed !== nb.collapsed) return false;
       }
       // 交互块（question/form/plugin_card/plan_mode）：内部 status/answers 异步回填，
       // 引用变化但类型不变时若 status 变化必须放行重渲染（否则提交答案后卡片停在未答态）。

@@ -255,13 +255,9 @@
     "toolbarTitle": "运行过程",
     "toolbarBlockCount": "{{count}} 个块"
   },
-  "operationBar": {
-    "processTab": "运行过程",
-    "filesTab": "变更文件",
-    "artifactsTab": "产物",
-    "processEmpty": "暂无运行过程",
-    "filesEmpty": "暂无文件变更",
-    "artifactsEmpty": "暂无产物"
+  "summaryCard": {
+    "tabPreview": "预览",
+    "chipPreview": "预览 {{count}}"
   },
   "thinking": {
     "title": "思考",

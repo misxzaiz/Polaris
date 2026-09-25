@@ -257,6 +257,21 @@ export function createConversationStore(
   // 不放入 Zustand state（内部可变状态，不需要触发渲染）
   const compactor = new MessageCompactor()
 
+  // 思考阶段结束标记：把 blocks 中已有的 thinking 块全部折叠。
+  // 触发时机：正文(text)、工具(tool_call) 或连续新思考块出现，意味着上一个思考已完成。
+  // 不改动已是 true 的 collapsed（避免覆盖用户手动展开后又被拉回）。
+  const foldThinkingBlocks = (blocks: ContentBlock[]): ContentBlock[] => {
+    let touched = false
+    const next = blocks.map((b) => {
+      if (b.type === 'thinking' && !b.collapsed) {
+        touched = true
+        return { ...b, collapsed: true }
+      }
+      return b
+    })
+    return touched ? next : blocks
+  }
+
   const store = create<ConversationStore>()(
     subscribeWithSelector((set, get) => ({
       ...initialState,
@@ -324,7 +339,7 @@ export function createConversationStore(
             id: currentMessage.id,
             type: 'assistant' as const,
             engineId: currentMessage.engineId,
-            blocks: currentMessage.blocks,
+            blocks: foldThinkingBlocks(currentMessage.blocks),
             timestamp: new Date().toISOString(),
             isStreaming: false,
           }
@@ -677,6 +692,22 @@ export function createConversationStore(
       // 3. 超时保护：200ms 内没有段落结束也 flush
       // 效果：渲染更像"事件级"，一个段落一次渲染，减少视觉跳动
       appendTextBlock: (content) => {
+        // 正文开始出现：若此前有 thinking 且尚未折叠，立即折叠（思考阶段结束）。
+        // 首段正文 token 一到即收起思考面板；fold 幂等，仅在有未折叠 thinking 时产出新数组并 set。
+        const preState = get()
+        if (preState.currentMessage) {
+          const hasUncollapsed = preState.currentMessage.blocks.some((b) => b.type === 'thinking' && !b.collapsed)
+          if (hasUncollapsed) {
+            const folded = foldThinkingBlocks(preState.currentMessage.blocks)
+            if (folded !== preState.currentMessage.blocks) {
+              set({
+                currentMessage: { ...preState.currentMessage, blocks: folded },
+                streamingUpdateCounter: preState.streamingUpdateCounter + 1,
+              })
+            }
+          }
+        }
+
         // 追加到闭包级 buffer（O(1），不触发 Zustand）
         _textBuffer += content
 
@@ -774,12 +805,13 @@ export function createConversationStore(
             }
           }
         } else {
-          // 更新最后一个文本块
-          const blocks = [...state.currentMessage.blocks]
+          // 更新最后一个文本块（思考阶段结束 → 正文开始出现，折叠此前的思考块）
+          let blocks = [...state.currentMessage.blocks]
           const lastBlock = blocks[blocks.length - 1]
           if (lastBlock?.type === 'text') {
             blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + bufferToFlush }
           } else if (bufferToFlush) {
+            blocks = foldThinkingBlocks(blocks)
             blocks.push({ type: 'text', content: bufferToFlush })
           }
           set({
@@ -804,13 +836,17 @@ export function createConversationStore(
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
-          const blocks = [...currentMessage.blocks]
-          const lastBlock = blocks[blocks.length - 1]
-          if (lastBlock?.type === 'thinking') {
-            blocks[blocks.length - 1] = { ...lastBlock, content: lastBlock.content + content }
-          } else {
-            blocks.push(block)
-          }
+          const blocks = (() => {
+            const lastBlock = currentMessage.blocks[currentMessage.blocks.length - 1]
+            if (lastBlock?.type === 'thinking') {
+              // 同一思考流：合并内容，保持自身展开
+              const merged = [...currentMessage.blocks]
+              merged[merged.length - 1] = { ...lastBlock, content: lastBlock.content + content }
+              return merged
+            }
+            // 新增思考块 = 上一阶段已完成，折叠此前的思考块
+            return [...foldThinkingBlocks(currentMessage.blocks), block]
+          })()
           set({
             currentMessage: { ...currentMessage, blocks },
             streamingUpdateCounter: streamingUpdateCounter + 1,
@@ -857,7 +893,8 @@ export function createConversationStore(
             streamingUpdateCounter: streamingUpdateCounter + 1,
           })
         } else {
-          const blocks = [...currentMessage.blocks, block]
+          // 新增工具块 = 思考阶段结束，折叠此前的思考块
+          const blocks = [...foldThinkingBlocks(currentMessage.blocks), block]
           newMap.set(toolId, blocks.length - 1)
           set({
             currentMessage: { ...currentMessage, blocks },

@@ -32,6 +32,14 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
     }
   }, [isStreaming]);
 
+  // store 标记思考完成（collapsed=true）时自动折叠。
+  // 触发时机：正文/tool_call 开始出现或整条消息归档（见 createConversationStore.foldThinkingBlocks）。
+  useEffect(() => {
+    if (block.collapsed === true) {
+      setIsCollapsed(true);
+    }
+  }, [block.collapsed]);
+
   // 展开态内容容器：限高滚动 + 流式期间"钉在底部才自动滚"（用户上滑回溯时不被拉走）
   const bodyRef = useRef<HTMLDivElement>(null);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
