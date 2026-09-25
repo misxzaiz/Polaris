@@ -593,29 +593,4 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
   );
 });
 
-/**
- * 简化版权限请求渲染器（归档/失效态紧凑展示）
- */
-export const SimplifiedPermissionRequestRenderer = memo(function SimplifiedPermissionRequestRenderer({ block }: PermissionRequestRendererProps) {
-  const { t } = useTranslation('chat');
-
-  const approved = block.status === 'approved';
-  const expired = block.status === 'expired';
-  const Icon = approved ? ShieldCheck : expired ? Clock : ShieldX;
-  const iconClass = approved ? 'text-success' : expired ? 'text-text-muted' : 'text-danger';
-
-  return (
-    <div
-      className="my-1 flex items-center gap-2 px-3 py-2 rounded bg-background-secondary text-sm"
-      role="region"
-      aria-label={t('permissionRequest.permissionRequest', '权限请求')}
-      aria-hidden="true"
-    >
-      <Icon className={clsx('w-4 h-4 shrink-0', iconClass)} />
-      <span className="text-text-tertiary">{t('permissionRequest.permissionRequest', '权限请求')}</span>
-      <span className="text-xs text-text-muted ml-auto">{block.denials.length} {t('permissionRequest.items', '项')}</span>
-    </div>
-  );
-});
-
 export default PermissionRequestRenderer;

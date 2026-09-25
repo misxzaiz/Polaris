@@ -118,20 +118,4 @@ export const AgentRunBlockRenderer = memo(function AgentRunBlockRenderer({
   );
 });
 
-/** 简化版 AgentRun 渲染器 - 用于归档层 */
-export const SimplifiedAgentRunRenderer = memo(function SimplifiedAgentRunRenderer({ block }: { block: AgentRunBlock }) {
-  const statusConfig = AGENT_STATUS_CONFIG[block.status];
-  const StatusIcon = statusConfig.icon;
-  return (
-    <div className="my-0.5 flex items-center gap-1.5 text-[11px] text-text-tertiary">
-      <StatusIcon className={clsx('w-2.5 h-2.5', statusConfig.className)} aria-hidden="true" />
-      <Play className="w-2.5 h-2.5 text-text-muted" aria-hidden="true" />
-      <span className="truncate">{block.agentType}</span>
-      {block.toolCalls.length > 0 && (
-        <span className="text-text-muted">{block.toolCalls.length}</span>
-      )}
-    </div>
-  );
-});
-
 export default AgentRunBlockRenderer;

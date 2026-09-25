@@ -16,7 +16,6 @@ import {
   Check,
   XCircle,
   Loader2,
-  ClipboardList,
 } from 'lucide-react';
 import { useActiveSessionConversationId, useActiveSessionActions } from '@/stores/conversationStore/useActiveSession';
 import { Button } from '../../Common/Button';
@@ -488,46 +487,6 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
         <div className="px-2.5 py-1 border-t border-border-subtle bg-red-500/5">
           <div className="text-[11px] text-red-400">{block.feedback}</div>
         </div>
-      )}
-    </div>
-  );
-});
-
-// ========================================
-// 简化版渲染器
-// ========================================
-
-/** 简化版计划渲染器 - 用于归档层 */
-export const SimplifiedPlanModeRenderer = memo(function SimplifiedPlanModeRenderer({
-  block,
-}: {
-  block: PlanModeBlock;
-}) {
-  const { t } = useTranslation('chat');
-
-  // 计算进度
-  let totalTasks = 0;
-  let completedTasks = 0;
-
-  block.stages.forEach(stage => {
-    if (stage.tasks && stage.tasks.length > 0) {
-      totalTasks += stage.tasks.length;
-      completedTasks += stage.tasks.filter(t => t.status === 'completed').length;
-    } else {
-      totalTasks++;
-      if (stage.status === 'completed') completedTasks++;
-    }
-  });
-
-  return (
-    <div
-      className="my-1 flex items-center gap-2 text-xs text-text-tertiary"
-      aria-label={t('plan.planModeAriaLabel', { title: block.title || t('plan.defaultTitle') })}
-    >
-      <ClipboardList className="w-3 h-3 text-violet-500" aria-hidden="true" />
-      <span className="truncate">{block.title || t('plan.defaultTitle')}</span>
-      {totalTasks > 0 && (
-        <span className="text-text-secondary">{completedTasks}/{totalTasks}</span>
       )}
     </div>
   );

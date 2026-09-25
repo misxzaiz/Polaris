@@ -340,15 +340,6 @@
     "agentRunAriaLabel": "Agent Run: {{type}}",
     "toggleDetails": "Toggle details"
   },
-  "toolGroup": {
-    "tools": "tools",
-    "completed": "completed",
-    "running": "running",
-    "failed": "failed",
-    "showAll": "Show all {{count}} tools",
-    "ariaLabel": "Tool group, {{count}} tools",
-    "toggleLabel": "Expand or collapse tool list"
-  },
   "permissionRequest": {
     "title": "Permission Request",
     "approved": "Approved",
@@ -493,14 +484,6 @@
     "toolCalls": "Tool Calls",
     "input": "Input",
     "output": "Output",
-    "copy": "Copy"
-  },
-  "toolBubble": {
-    "collapseDetails": "Collapse details",
-    "expandDetails": "Expand details",
-    "inputParams": "Input Parameters",
-    "outputResult": "Output Result",
-    "noOutput": "Command executed successfully (no output)",
     "copy": "Copy"
   },
   "codeBlock": {

@@ -24,10 +24,6 @@ export { CompactHandoffButton } from './compact-handoff/CompactHandoffButton';
 export { CompactHandoffProgress } from './compact-handoff/CompactHandoffProgress';
 export { PendingBriefingCard } from './compact-handoff/PendingBriefingCard';
 
-// 分层对话流组件
-export { ToolBubble } from './tool-calls/ToolBubble';
-export { ToolGroupBubble } from './tool-calls/ToolGroupBubble';
-
 // 多会话窗口组件
 export { MultiSessionGrid } from './session/MultiSessionGrid';
 export { MultiWindowMenu } from './session/MultiWindowMenu';

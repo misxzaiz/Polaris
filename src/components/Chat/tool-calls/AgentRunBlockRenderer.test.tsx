@@ -10,7 +10,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { AgentRunBlockRenderer, SimplifiedAgentRunRenderer } from './AgentRunBlockRenderer';
+import { AgentRunBlockRenderer } from './AgentRunBlockRenderer';
 import type { AgentRunBlock, AgentNestedToolCall } from '../../types';
 
 // Mock react-i18next
@@ -370,41 +370,3 @@ describe('AgentRunBlockRenderer', () => {
   });
 });
 
-describe('SimplifiedAgentRunRenderer', () => {
-  it('应该显示简化版 Agent 信息', () => {
-    const block = createAgentRunBlock({ agentType: 'SimplifiedAgent' });
-    render(<SimplifiedAgentRunRenderer block={block} />);
-
-    expect(screen.getByText('SimplifiedAgent')).toBeInTheDocument();
-  });
-
-  it('应该显示工具调用数量', () => {
-    const block = createAgentRunBlock({
-      toolCalls: [
-        createNestedToolCall({ id: 'tool-1' }),
-        createNestedToolCall({ id: 'tool-2' }),
-        createNestedToolCall({ id: 'tool-3' }),
-      ],
-    });
-    render(<SimplifiedAgentRunRenderer block={block} />);
-
-    expect(screen.getByText('3')).toBeInTheDocument();
-  });
-
-  it('无工具调用时不显示数量', () => {
-    const block = createAgentRunBlock({ toolCalls: [] });
-    render(<SimplifiedAgentRunRenderer block={block} />);
-
-    // 不应该有数字显示
-    const container = screen.getByText('TestAgent').closest('div');
-    expect(container?.textContent).not.toMatch(/\d+/);
-  });
-
-  it('应该有 aria-label 属性', () => {
-    const block = createAgentRunBlock({ agentType: 'AccessibleAgent' });
-    render(<SimplifiedAgentRunRenderer block={block} />);
-
-    const element = screen.getByText('AccessibleAgent').closest('div');
-    expect(element).toHaveAttribute('aria-label', 'Agent: AccessibleAgent');
-  });
-});

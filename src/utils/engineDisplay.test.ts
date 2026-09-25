@@ -16,7 +16,7 @@ describe('normalizeEngineId', () => {
     expect(normalizeEngineId(undefined)).toBe('claude-code')
   })
 
-  it('应该返回 claude-code 当输入为其他值（已移除的引擎降级）', () => {
+  it('应该返回 claude-code 当输入为其他值（未知/已移除引擎降级）', () => {
     expect(normalizeEngineId('codex')).toBe('claude-code')
     expect(normalizeEngineId('pi')).toBe('claude-code')
     expect(normalizeEngineId('dsh')).toBe('claude-code')

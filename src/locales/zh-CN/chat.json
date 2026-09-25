@@ -339,15 +339,6 @@
     "agentRunAriaLabel": "Agent 运行: {{type}}",
     "toggleDetails": "展开或折叠详情"
   },
-  "toolGroup": {
-    "tools": "个工具",
-    "completed": "完成",
-    "running": "进行中",
-    "failed": "失败",
-    "showAll": "查看全部 {{count}} 个工具",
-    "ariaLabel": "工具组，共 {{count}} 个工具",
-    "toggleLabel": "展开或折叠工具列表"
-  },
   "permissionRequest": {
     "title": "权限请求",
     "approved": "已批准",
@@ -492,14 +483,6 @@
     "toolCalls": "工具调用",
     "input": "输入",
     "output": "输出",
-    "copy": "复制"
-  },
-  "toolBubble": {
-    "collapseDetails": "收起详情",
-    "expandDetails": "展开详情",
-    "inputParams": "输入参数",
-    "outputResult": "执行结果",
-    "noOutput": "命令执行成功（无输出）",
     "copy": "复制"
   },
   "codeBlock": {

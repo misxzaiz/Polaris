@@ -687,30 +687,4 @@ export const AskQuestionCard = memo(function AskQuestionCard({ block }: AskQuest
   );
 });
 
-/** 归档层简化渲染 */
-export const SimplifiedAskQuestionCard = memo(function SimplifiedAskQuestionCard({
-  block,
-}: { block: QuestionBlock }) {
-  const { t } = useTranslation('chat');
-  const isAnswered = block.status === 'answered';
-  const N = block.questions?.length ?? (block.options ? 1 : 0);
-  const firstText = block.questions?.[0]?.question || block.header || '';
-  return (
-    <div
-      className="my-1 flex items-center gap-2 text-xs text-text-tertiary"
-      aria-label={isAnswered ? t('question.answered') : t('question.pendingAnswer')}
-    >
-      {isAnswered ? (
-        <CheckCircle className="w-3 h-3 text-success" aria-hidden="true" />
-      ) : (
-        <HelpCircle className="w-3 h-3 text-accent" aria-hidden="true" />
-      )}
-      <span className="truncate">
-        {firstText}
-        {N > 1 && ` (+${N - 1})`}
-      </span>
-    </div>
-  );
-});
-
 export default AskQuestionCard;

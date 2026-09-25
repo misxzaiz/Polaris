@@ -12,7 +12,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import {
   PlanModeBlockRenderer,
-  SimplifiedPlanModeRenderer,
   PLAN_STATUS_CONFIG,
   PLAN_TASK_STATUS_CONFIG,
 } from './PlanModeBlockRenderer';
@@ -419,38 +418,6 @@ describe('PlanModeBlockRenderer', () => {
       fireEvent.keyDown(stageButton, { key: 'Enter' });
 
       expect(screen.getByText('任务 1')).toBeInTheDocument();
-    });
-  });
-
-  describe('SimplifiedPlanModeRenderer', () => {
-    it('应显示计划标题和状态', () => {
-      const block = createPlanModeBlock({ title: '简化计划', status: 'completed' });
-      render(<SimplifiedPlanModeRenderer block={block} />);
-
-      expect(screen.getByText('简化计划')).toBeInTheDocument();
-    });
-
-    it('应显示任务进度', () => {
-      const block = createPlanModeBlock({
-        stages: [
-          createPlanStage({
-            tasks: [
-              { taskId: 't1', description: '任务1', status: 'completed' },
-              { taskId: 't2', description: '任务2', status: 'pending' },
-            ],
-          }),
-        ],
-      });
-      render(<SimplifiedPlanModeRenderer block={block} />);
-
-      expect(screen.getByText('1/2')).toBeInTheDocument();
-    });
-
-    it('应有 aria-label', () => {
-      const block = createPlanModeBlock({ title: '测试计划' });
-      render(<SimplifiedPlanModeRenderer block={block} />);
-
-      expect(screen.getByLabelText('计划: 测试计划')).toBeInTheDocument();
     });
   });
 

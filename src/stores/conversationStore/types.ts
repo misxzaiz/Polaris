@@ -26,24 +26,6 @@ export interface CurrentAssistantMessage {
   isStreaming: true
 }
 
-/** 待聚合的工具组 */
-export interface PendingToolGroup {
-  groupId: string
-  tools: Array<{
-    id: string
-    name: string
-    input?: Record<string, unknown>
-    status: 'pending' | 'running' | 'completed' | 'failed'
-    startedAt: string
-    completedAt?: string
-    output?: string
-    summary?: string
-  }>
-  startedAt: string
-  lastToolAt: number
-  timerId?: ReturnType<typeof setTimeout>
-}
-
 /**
  * 临时上下文块（TCB）类型声明
  */
@@ -370,8 +352,6 @@ export interface ConversationState {
   activeTaskBoardId: string | null
   /** TaskCreate 待 flush 队列（start 时无真实 taskId，end 用 tool_result 回传 id 后 upsert） */
   pendingTaskCreates: Array<{ boardId: string; entry: { subject: string; activeForm?: string; description?: string } }>
-  toolGroupBlockMap: Map<string, number>
-  pendingToolGroup: PendingToolGroup | null
   permissionRequestBlockMap: Map<string, number>
   activePermissionRequestId: string | null
   pluginCardBlockMap: Map<string, number>
@@ -613,14 +593,6 @@ export interface ConversationActions {
   queueTaskCreate: (boardId: string, entry: { subject: string; activeForm?: string; description?: string }) => void
   /** 用 tool_result 回传的真实 taskId flush 队列中的 pending create */
   flushTaskCreate: (boardId: string, taskId: string | null) => void
-
-  // ===== ToolGroup =====
-  appendToolGroupBlock: (groupId: string, tools: Array<{ id: string; name: string; status: 'pending' | 'running' | 'completed' | 'failed'; startedAt: string }>, summary: string) => void
-  updateToolGroupBlock: (groupId: string, updates: Partial<import('../../types/chat').ToolGroupBlock>) => void
-  updateToolInGroup: (groupId: string, toolId: string, updates: { status?: 'pending' | 'running' | 'completed' | 'failed'; output?: string; summary?: string }) => void
-  setPendingToolGroup: (group: PendingToolGroup | null) => void
-  addToolToPendingGroup: (tool: { id: string; name: string; input?: Record<string, unknown>; startedAt: string }) => void
-  finalizePendingToolGroup: () => void
 
   // ===== PermissionRequest =====
   appendPermissionRequestBlock: (requestId: string, sessionId: string, denials: Array<{ toolName: string; reason: string; toolInput?: Record<string, unknown>; toolUseId?: string; extra?: Record<string, unknown> }>) => void

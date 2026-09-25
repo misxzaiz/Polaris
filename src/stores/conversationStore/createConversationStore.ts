@@ -145,8 +145,6 @@ function createInitialState(sessionId: string): ConversationState {
     taskBoardBlockMap: new Map(),
     activeTaskBoardId: null,
     pendingTaskCreates: [],
-    toolGroupBlockMap: new Map(),
-    pendingToolGroup: null,
     permissionRequestBlockMap: new Map(),
     activePermissionRequestId: null,
     pluginCardBlockMap: new Map(),
@@ -302,8 +300,6 @@ export function createConversationStore(
           taskBoardBlockMap: new Map(),
           activeTaskBoardId: null,
           pendingTaskCreates: [],
-          toolGroupBlockMap: new Map(),
-          pendingToolGroup: null,
           permissionRequestBlockMap: new Map(),
           activePermissionRequestId: null,
           pluginCardBlockMap: new Map(),
@@ -1513,101 +1509,6 @@ export function createConversationStore(
           status: 'pending',
         }
         get().upsertTaskBoardItem(boardId, item)
-      },
-
-      // ===== ToolGroup =====
-      appendToolGroupBlock: (groupId, tools, summary) => {
-        const { currentMessage, toolGroupBlockMap, streamingUpdateCounter } = get()
-        const toolNames = tools.map(t => t.name)
-        const block = {
-          type: 'tool_group' as const,
-          id: groupId,
-          tools,
-          toolNames,
-          status: 'running' as const,
-          summary,
-          startedAt: new Date().toISOString(),
-        }
-        const newMap = new Map(toolGroupBlockMap)
-        if (!currentMessage) {
-          newMap.set(groupId, 0)
-          set({
-            currentMessage: createCurrentAssistantMessage([block]),
-            toolGroupBlockMap: newMap,
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
-        } else {
-          const blocks = [...currentMessage.blocks, block]
-          newMap.set(groupId, blocks.length - 1)
-          set({
-            currentMessage: { ...currentMessage, blocks },
-            toolGroupBlockMap: newMap,
-            streamingUpdateCounter: streamingUpdateCounter + 1,
-          })
-        }
-      },
-
-      updateToolGroupBlock: (groupId, updates) => {
-        const { currentMessage, toolGroupBlockMap } = get()
-        if (!currentMessage) return
-        const idx = toolGroupBlockMap.get(groupId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        if (blocks[idx]?.type === 'tool_group') {
-          blocks[idx] = { ...blocks[idx], ...updates }
-          set({ currentMessage: { ...currentMessage, blocks } })
-        }
-      },
-
-      updateToolInGroup: (groupId, toolId, updates) => {
-        const { currentMessage, toolGroupBlockMap } = get()
-        if (!currentMessage) return
-        const idx = toolGroupBlockMap.get(groupId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        const block = blocks[idx]
-        if (block?.type !== 'tool_group') return
-        blocks[idx] = { ...block, tools: block.tools.map((t) => (t.id === toolId ? { ...t, ...updates } : t)) }
-        set({ currentMessage: { ...currentMessage, blocks } })
-      },
-
-      setPendingToolGroup: (group) => set({ pendingToolGroup: group }),
-
-      addToolToPendingGroup: (tool) => {
-        const { pendingToolGroup } = get()
-        if (!pendingToolGroup) return
-        set({
-          pendingToolGroup: {
-            ...pendingToolGroup,
-            tools: [...pendingToolGroup.tools, { ...tool, status: 'running' }],
-            lastToolAt: Date.now(),
-          },
-        })
-      },
-
-      finalizePendingToolGroup: () => {
-        const { pendingToolGroup, currentMessage, toolGroupBlockMap, streamingUpdateCounter } = get()
-        if (!pendingToolGroup || !currentMessage) return
-        const summary = `执行了 ${pendingToolGroup.tools.length} 个工具`
-        const toolNames = pendingToolGroup.tools.map(t => t.name)
-        const block = {
-          type: 'tool_group' as const,
-          id: pendingToolGroup.groupId,
-          tools: pendingToolGroup.tools,
-          toolNames,
-          status: 'completed' as const,
-          summary,
-          startedAt: pendingToolGroup.tools[0]?.startedAt ?? new Date().toISOString(),
-        }
-        const newMap = new Map(toolGroupBlockMap)
-        const blocks = [...currentMessage.blocks, block]
-        newMap.set(pendingToolGroup.groupId, blocks.length - 1)
-        set({
-          currentMessage: { ...currentMessage, blocks },
-          toolGroupBlockMap: newMap,
-          pendingToolGroup: null,
-          streamingUpdateCounter: streamingUpdateCounter + 1,
-        })
       },
 
       // ===== PermissionRequest =====
