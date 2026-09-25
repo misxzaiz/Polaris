@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="theme-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原型 D · 分段折叠式（默认只开思考）</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="demo-D">
+
+<div class="topbar">
+  <h1>原型 D · 分段折叠式</h1>
+  <span class="sub">大卡片 + 独立可折叠分区 · 默认只展开"理解分析"</span>
+  <label class="switch"><input type="checkbox" onchange="themeSw(this.checked)">Light 主题</label>
+</div>
+
+<div class="note">
+  <b>特点：</b>B 的变体：进入即见"理解分析"（最常想看的），文件 / 产物保持折叠，需要时点开。
+  三区全部默认折叠也行 —— 复选"默认全折"对比。
+</div>
+
+<div class="chat-col">
+  <div class="artifact-card" style="border-radius:10px">
+    <div class="artifact-body" style="padding:10px 14px;font-size:13px;color:var(--text-secondary);line-height:1.7" data-assistant></div>
+  </div>
+
+  <!-- 补充卡片 D -->
+  <div class="summary-card">
+    <div class="card-head" data-card-toggle>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>
+      <span style="font-size:12px;font-weight:500">回复摘要</span>
+      <span class="chip purple">思考 1</span>
+      <span class="chip green">文件 4</span>
+      <span class="chip blue">预览 1</span>
+      <span class="chip orange">MCP 2</span>
+      <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </div>
+
+    <div class="card-body">
+      <!-- ① 理解分析（默认开） -->
+      <div class="section">
+        <div class="section-title open" data-toggle data-default-open>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple-400)"><path d="M9 3a3 3 0 0 1 6 0M12 5a7 7 0 0 1 7 7v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2a7 7 0 0 1 7-7Z"/><path d="M9 20a3 3 0 0 0 6 0"/></svg>
+          理解分析 <span class="cnt">思考 1</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body" data-body><div id="thinkingD"></div></div>
+      </div>
+
+      <!-- ② 变更文件（默认折） -->
+      <div class="section">
+        <div class="section-title" data-toggle>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--green-400)"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+          变更文件 <span class="cnt">4 个文件</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body hidden" data-body><div class="file-list" id="filesD"></div></div>
+      </div>
+
+      <!-- ③ 产物预览（默认折） -->
+      <div class="section">
+        <div class="section-title" data-toggle>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--cyan-400)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/></svg>
+          产物预览 <span class="cnt">1 PRD · 2 MCP</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body hidden" data-body>
+          <div id="prdD" style="margin-bottom:6px"></div>
+          <div class="file-list" id="mcpD"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<label class="switch" style="margin-top:16px">
+  <input type="checkbox" id="allCollapsed" onchange="toggleAll(this.checked)"> 对比：三区全部默认折叠
+</label>
+
+<script src="data.js"></script>
+<script src="common.js"></script>
+<script>
+renderAssistant();
+renderThinking(document.getElementById('thinkingD'), true);
+renderFiles(document.getElementById('filesD'));
+renderPRD(document.getElementById('prdD'), true);
+renderMCP(document.getElementById('mcpD'));
+bindSectionToggles();
+
+/* 整卡折叠/展开 */
+const head = document.querySelector('[data-card-toggle]');
+head.addEventListener('click', ()=>{
+  head.classList.toggle('open');
+  const body = head.parentElement.querySelector('.card-body');
+  body.classList.toggle('hidden');
+});
+
+/* 默认全折对比 */
+window.toggleAll = function(collapsed){
+  document.querySelectorAll('.summary-card .section-title[data-toggle]').forEach(h=>{
+    if(collapsed){
+      h.classList.remove('open');
+      h.parentElement.querySelector('[data-body]').classList.add('hidden');
+    } else {
+      h.classList.add('open');
+      h.parentElement.querySelector('[data-body]').classList.remove('hidden');
+    }
+  });
+};
+</script>
+</body>
+</html>

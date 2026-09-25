@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="theme-dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>原型 A · 延续式（汇总条 → 分区列表）</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body class="demo-A">
+
+<div class="topbar">
+  <h1>原型 A · 延续式</h1>
+  <span class="sub">汇总条（同"运行过程已折叠"语言）→ 点击展开分区列表</span>
+  <label class="switch"><input type="checkbox" id="themeSw">Light 主题</label>
+</div>
+
+<div class="note">
+  <b>特点：</b>与现有"运行过程已折叠"卡片同一血脉 —— 一行浅色虚线汇总条，点击展开成纵向分区列表。宽度与消息正文严格一致，无手写缩进。
+  分区：<b>理解分析</b>（思考块逐条）/ <b>变更文件</b>（可展开 diff、点击跳转编辑器）/ <b>产物预览</b>（PRD iframe + MCP 卡片）。空区自动隐藏。
+</div>
+
+<div class="chat-col">
+  <!-- 上文：助手回复正文 -->
+  <div class="artifact-card" style="border-radius:10px">
+    <div class="artifact-body" style="padding:10px 14px;font-size:13px;color:var(--text-secondary);line-height:1.7">
+      <div style="color:var(--text-primary);font-weight:500;margin-bottom:4px">🤖 Assistant</div>
+      <span id="assistantText"></span>
+    </div>
+  </div>
+
+  <!-- 补充卡片：汇总条 -->
+  <div class="bar" id="barA">
+    <span class="label">
+      <span style="display:inline-flex;align-items:center;gap:6px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--primary)"><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/><circle cx="12" cy="12" r="3"/></svg>
+        回复摘要
+      </span>
+      <span class="chip purple">思考 1</span>
+      <span class="chip green">文件 4</span>
+      <span class="chip blue">预览 1</span>
+      <span class="chip orange">MCP 2</span>
+    </span>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+  </div>
+
+  <!-- 展开内容：分区列表 -->
+  <div class="expand-wrap hidden" id="expandA">
+    <div class="expand-body">
+
+      <!-- ① 理解分析 -->
+      <div class="section" data-section="thinking">
+        <div class="section-title" data-toggle>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--purple-400)"><path d="M9 3a3 3 0 0 1 6 0M12 5a7 7 0 0 1 7 7v2a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-2a7 7 0 0 1 7-7Z"/><path d="M9 20a3 3 0 0 0 6 0"/></svg>
+          理解分析
+          <span class="cnt">思考 1</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body hidden" data-body>
+          <!-- 逐条 thinking 块 -->
+          <div class="thinking-block">
+            <div class="thinking-header">
+              <span class="dot"></span>
+              思考
+              <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </div>
+            <div class="thinking-body" id="thinkingBody"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ② 变更文件 -->
+      <div class="section" data-section="files">
+        <div class="section-title" data-toggle>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--green-400)"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+          变更文件
+          <span class="cnt">4 个文件</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body hidden" data-body>
+          <div class="file-list" id="fileList"></div>
+        </div>
+      </div>
+
+      <!-- ③ 产物预览（PRD + MCP） -->
+      <div class="section" data-section="artifacts">
+        <div class="section-title" data-toggle>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--cyan-400)"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/></svg>
+          产物预览
+          <span class="cnt">1 PRD · 2 MCP</span>
+          <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="section-body hidden" data-body>
+          <div style="display:flex;flex-direction:column;gap:6px">
+            <!-- PRD 预览卡片 -->
+            <div class="artifact-card" id="prdCardA"></div>
+            <!-- MCP 产物 -->
+            <div class="artifact-card" id="mcpListA"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="data.js"></script>
+<script>
+/* ---------- 通用交互 ---------- */
+function toggle(el){ el.classList.toggle('open'); }
+document.querySelectorAll('[data-toggle]').forEach(h=>{
+  h.addEventListener('click', ()=>{
+    toggle(h);
+    const body = h.parentElement.querySelector('[data-body]');
+    if(body) body.classList.toggle('hidden');
+  });
+});
+document.querySelectorAll('.thinking-header').forEach(h=>{
+  h.addEventListener('click', ()=>{ toggle(h); const b=h.parentElement.querySelector('.thinking-body'); if(b) b.classList.toggle('hidden'); });
+});
+
+/* 汇总条展开/收起 */
+const barA = document.getElementById('barA');
+const expandA = document.getElementById('expandA');
+barA.addEventListener('click', ()=>{
+  toggle(barA);
+  expandA.classList.toggle('hidden');
+});
+
+/* 主题切换 */
+document.getElementById('themeSw').addEventListener('change', e=>{
+  document.documentElement.className = e.target.checked ? 'theme-light' : 'theme-dark';
+});
+
+/* ---------- ���染数据 ---------- */
+const D = window.DEMO_DATA;
+document.getElementById('assistantText').textContent = D.assistantText;
+document.getElementById('thinkingBody').textContent = D.thinking.join('\n\n');
+
+/* 文件列表 */
+const fileList = document.getElementById('fileList');
+D.files.forEach(f=>{
+  const row = document.createElement('div');
+  row.className = 'file-row';
+  const icon = f.changeType==='created' ? '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 13h6M9 17h6"/>'
+    : f.changeType==='deleted' ? '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M9 15l3-3 3 3M12 12v6"/>'
+    : '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
+  row.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:${f.changeType==='created'?'var(--green-400)':f.changeType==='deleted'?'var(--red-400)':'var(--orange-400)'}">${icon}</svg>
+    <span class="fname">${f.name}</span>
+    <span class="fdir" title="点击在编辑器中打开">${f.dir}</span>
+    <span class="badge ${f.changeType}">${f.changeType==='created'?'新建':f.changeType==='deleted'?'已删除':'已修改'}</span>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+  `;
+  row.addEventListener('click', ()=>{
+    row.classList.toggle('open');
+    let diffEl = row.querySelector('.file-diff');
+    if(diffEl){ diffEl.remove(); return; }
+    const body = f.diff ? f.diff : (f.content ? '（新文件内容占位）\n'+f.content : '');
+    diffEl = document.createElement('div');
+    diffEl.className = 'file-diff';
+    diffEl.innerHTML = (f.diff||'').split('\n').map(l=>{
+      if(l.startsWith('+')) return '<span class="add">'+l+'</span>';
+      if(l.startsWith('-')) return '<span class="del">'+l+'</span>';
+      return '<span class="ctx">'+l+'</span>';
+    }).join('\n');
+    row.appendChild(diffEl);
+  });
+  fileList.appendChild(row);
+});
+
+/* PRD 预览卡片 */
+function prdCardHTML(d){
+  return `
+  <div class="artifact-header">
+    <div class="artifact-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></div>
+    <div style="min-width:0">
+      <div class="artifact-title">${d.title}</div>
+      <div class="artifact-meta">
+        <span>HTML</span><span style="width:3px;height:3px;border-radius:99px;background:var(--text-muted)"></span>
+        <span>${d.size}</span><span style="width:3px;height:3px;border-radius:99px;background:var(--text-muted)"></span>
+        <span>${d.version}</span><span style="width:3px;height:3px;border-radius:99px;background:var(--text-muted)"></span>
+        <span>${d.createdAt}</span>
+      </div>
+    </div>
+    <div class="artifact-actions">
+      <button class="icon-btn" title="全屏预览"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></svg></button>
+      <button class="icon-btn" title="下载 HTML"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg></button>
+      <button class="icon-btn" title="查看源码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m8 8-5 4 5 4M16 8l5 4-5 4M13 4l-2 16"/></svg></button>
+    </div>
+  </div>
+  <div class="artifact-body">
+    <iframe class="artifact-frame" srcdoc="${d.html.replace(/"/g,'&quot;')}" sandbox="allow-scripts allow-forms allow-popups allow-modals"></iframe>
+  </div>
+  <div class="artifact-collapsed" data-prd-toggle>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--cyan-400)"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>
+    <span class="sum">${d.description}</span>
+    <span class="pct">预览已折叠 · 点击展开</span>
+    <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+  </div>
+  `;
+}
+const prdA = document.getElementById('prdCardA');
+prdA.innerHTML = prdCardHTML(D.prd);
+prdA.querySelector('[data-prd-toggle]').addEventListener('click', function(){
+  toggle(this);
+  const body = this.parentElement.querySelector('.artifact-frame');
+  body.classList.toggle('hidden');
+});
+
+/* MCP 产物列表 */
+const mcpA = document.getElementById('mcpListA');
+D.mcp.forEach(m=>{
+  const row = document.createElement('div');
+  row.className = 'file-row';
+  const color = m.color==='green' ? 'var(--green-400)' : 'var(--cyan-400)';
+  row.innerHTML = `
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;color:${color}"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M12 22V12"/><path d="m3.3 7 8.7 5 8.7-5"/></svg>
+    <span class="fname">${m.name}</span>
+    <span class="fdir" title="${m.summary}">${m.summary}</span>
+  `;
+  mcpA.appendChild(row);
+});
+</script>
+</body>
+</html>

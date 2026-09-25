@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>原型 A · 延续式（回复摘要卡片）</title>
+<style>
+  /* ===== 主题 token（dark 主题真实值）=====
+     --c-bg-base: 0 0 0       → rgb(0 0 0)
+     --c-bg-elevated: 26 26 31 → rgb(26 26 31)
+     --c-bg-surface: 37 37 43  → rgb(37 37 43)
+     --c-bg-hover: 45 45 53    → rgb(45 45 53)
+     --c-border: 255 255 255   → rgb(255 255 255 / 0.38)
+     --c-text-primary: 248 248 248
+     --c-text-secondary: 180 180 184
+     --c-text-muted: 109 109 112
+     --c-primary: 59 130 246
+  ============================================ */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #000;
+    color: #f8f8f8;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 40px 16px;
+  }
+  .page { max-width: 760px; margin: 0 auto; }
+
+  .proto-tag {
+    font-size: 11px; color: #6d6d70; margin-bottom: 20px; letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+  .proto-tag b { color: #60a5fa; }
+
+  /* ===== 模拟消息正文（缩略）===== */
+  .chat-bubble {
+    display: flex; gap: 8px; padding: 8px; border-radius: 12px;
+    background: rgba(37, 37, 43, .55);
+  }
+  .avatar {
+    width: 20px; height: 20px; border-radius: 50%; flex-shrink: 0; margin-top: 2px;
+    background: rgba(59, 130, 246, .15); display: flex; align-items: center; justify-content: center;
+  }
+  .avatar svg { width: 14px; height: 14px; }
+  .bubble-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .bubble-text {
+    font-size: 14px; color: #f8f8f8; white-space: pre-wrap;
+  }
+  .bubble-text .dim { color: #6d6d70; font-size: 13px; }
+
+  /* ===== 卡片公共 ===== */
+  .card {
+    background: rgb(37 37 43);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  .chip {
+    font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    background: rgb(26 26 31); color: #6d6d70; white-space: nowrap;
+  }
+  .chip.purple { color: #c084fc; }
+  .chip.blue   { color: #60a5fa; }
+  .chip.green  { color: #4ade80; }
+  .chip.cyan   { color: #22d3ee; }
+  .sec-title {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: #6d6d70; padding: 10px 12px 6px; border-top: 1px solid rgba(255,255,255,.08);
+  }
+  .sec-title .line { flex: 1; height: 1px; background: rgba(255,255,255,.08); }
+
+  /* ===== 思考块（复用 ThinkingBlockRenderer 语言）===== */
+  .thinking {
+    border: 1px solid rgba(59,130,246,.35); border-radius: 8px; margin: 0 12px 10px;
+    background: rgba(26,26,31,.5);
+  }
+  .thinking-head {
+    display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer;
+    color: #b4b4b8; user-select: none;
+  }
+  .thinking-head .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: #60a5fa;
+    box-shadow: 0 0 6px rgba(96,165,250,.9);
+  }
+  .thinking-head .name { font-size: 12px; color: #60a5fa; }
+  .thinking-head .chev { margin-left: auto; color: #6d6d70; transition: transform .15s; }
+  .thinking-body {
+    padding: 2px 10px 10px; font-size: 12.5px; color: #b4b4b8;
+    max-height: 30vh; overflow: auto;
+  }
+  details[open] .chev { transform: rotate(180deg); }
+
+  /* ===== 文件列表 ===== */
+  .files { margin: 0 12px 10px; }
+  .file-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 8px; border-radius: 6px; cursor: pointer;
+    color: #f8f8f8; font-size: 12.5px;
+  }
+  .file-row:hover { background: rgb(45 45 53); }
+  .f-icon { width: 16px; height: 16px; flex-shrink: 0; }
+  .f-icon .mod { color: #fb923c; } .f-icon .add { color: #4ade80; } .f-icon .del { color: #f87171; }
+  .fname { font-weight: 500; color: #f8f8f8; white-space: nowrap; }
+  .fdir { color: #6d6d70; font-size: 12px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge {
+    font-size: 10px; padding: 2px 6px; border-radius: 999px; font-weight: 500; flex-shrink: 0;
+  }
+  .badge.mod { background: rgba(251,146,60,.12); color: #fb923c; }
+  .badge.add { background: rgba(74,222,128,.12); color: #4ade80; }
+  .badge.del { background: rgba(248,113,113,.12); color: #f87171; }
+
+  /* ===== 产物 ===== */
+  .artifact { margin: 0 12px 12px; border: 1px solid rgba(255,255,255,.12); border-radius: 10px; overflow: hidden; }
+  .artifact-head {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+    background: rgba(26,26,31,.6); cursor: pointer; user-select: none;
+  }
+  .artifact-ic {
+    width: 24px; height: 24px; border-radius: 6px; flex-shrink: 0;
+    background: rgba(34,211,238,.1); display: flex; align-items: center; justify-content: center;
+  }
+  .artifact-ic svg { width: 14px; height: 14px; }
+  .artifact-title { font-size: 13px; font-weight: 500; color: #f8f8f8; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+  .artifact-meta { font-size: 11px; color: #6d6d70; display: flex; gap: 6px; align-items: center; }
+  .artifact-prev { height: 120px; background: #f8f9fa; display: flex; align-items: center; justify-content: center; color: #94a3b8; }
+  .artifact-prev .ph { text-align: center; font-size: 12px; }
+  .artifact-prev .ph b { display: block; font-size: 15px; color: #64748b; margin-bottom: 4px; }
+
+  /* ===== 汇总条（虚线小条，延续"运行过程已折叠"）===== */
+  .summary-bar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px; cursor: pointer; user-select: none;
+    background: rgb(37 37 43);
+    border: 1px dashed rgba(255,255,255,.38);
+    border-radius: 6px;
+    color: #b4b4b8; font-size: 12.5px;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .summary-bar:hover { background: rgb(45 45 53); border-color: #3b82f6; color: #3b82f6; }
+  .summary-bar .chev { margin-left: auto; color: #6d6d70; transition: transform .15s; }
+  details[open] .summary-bar .chev { transform: rotate(180deg); }
+  .summary-panel { margin-top: 6px; }
+  .my-1 { margin: 6px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="proto-tag">原型 <b>A</b> · 延续式 —— 汇总条（同"运行过程已折叠"语言）→ 展开为纵向分区列表</div>
+
+  <!-- 模拟一条 AI 回复：消息正文 -->
+  <div class="chat-bubble">
+    <div class="avatar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2"><path d="M12 8V4H8"/><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M8 6H4v4"/></svg>
+    </div>
+    <div class="bubble-body">
+      <div class="bubble-text">已修复日志模块的路径拼接问题，并新增设置页头部组件。<span class="dim">（最终回复文本预览，正文之上无卡片）</span></div>
+    </div>
+  </div>
+
+  <!-- 方案 A 卡片：虚线汇总条 + 展开分区列表 -->
+  <div class="my-1">
+    <details>
+      <summary class="summary-bar" style="list-style:none">
+        <span class="chip purple">思考 1</span>
+        <span class="chip green">文件 3</span>
+        <span class="chip cyan">预览 1</span>
+        <span style="flex:1;min-width:0"></span>
+        <span class="chev">▾</span>
+      </summary>
+      <div class="summary-panel card">
+        <!-- ① 理解分析 -->
+        <div class="sec-title">理解分析 <span class="line"></span></div>
+        <details open>
+          <summary class="thinking-head" style="list-style:none">
+            <span class="dot"></span><span class="name">思考</span>
+            <span class="chev">▾</span>
+          </summary>
+          <div class="thinking-body">
+            用户反馈日志路径在 Windows 下拼接错误：使用 join 时混入了反斜杠与正斜杠。
+            根因是 normalizePath 未对后端返回路径做统一替换。建议对 filePath 统一转成正斜杠存储，
+            仅在展示层做平台适配。同时 Header 组件的无障碍焦点样式缺失，一并补齐。
+          </div>
+        </details>
+
+        <!-- ② 变更文件 -->
+        <div class="sec-title">变更文件 <span class="line"></span></div>
+        <div class="files">
+          <div class="file-row">
+            <span class="f-icon mod">✎</span>
+            <span class="fname">log.ts</span>
+            <span class="fdir">src/utils/</span>
+            <span class="badge mod">已修改</span>
+          </div>
+          <div class="file-row">
+            <span class="f-icon add">＋</span>
+            <span class="fname">Header.tsx</span>
+            <span class="fdir">src/components/</span>
+            <span class="badge add">新建</span>
+          </div>
+          <div class="file-row">
+            <span class="f-icon del">✕</span>
+            <span class="fname">legacy.css</span>
+            <span class="fdir">src/styles/</span>
+            <span class="badge del">已删除</span>
+          </div>
+        </div>
+
+        <!-- ③ 产物 / PRD 预览 -->
+        <div class="sec-title">产物 / 预览 <span class="line"></span></div>
+        <div class="artifact">
+          <details>
+            <summary class="artifact-head" style="list-style:none">
+              <span class="artifact-ic"><svg viewBox="0 0 24 24" fill="none" stroke="#22d3ee" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg></span>
+              <span class="artifact-title">PRD 原型 · 设置页 v2</span>
+              <span class="artifact-meta"><span class="chip cyan">HTML</span> 48KB · v2</span>
+              <span class="chev" style="color:#6d6d70">▾</span>
+            </summary>
+            <div class="artifact-prev">
+              <div class="ph"><b>原型预览 iframe</b>（ArtifactPreviewRenderer，沙箱 srcDoc）<br>全屏 / 下载 / 源码按钮在此</div>
+            </div>
+          </details>
+        </div>
+      </div>
+    </details>
+  </div>
+
+</div>
+</body>
+</html>
