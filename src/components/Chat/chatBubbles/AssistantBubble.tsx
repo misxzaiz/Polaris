@@ -155,8 +155,9 @@ export const AssistantBubble = memo(function AssistantBubble({
           {/* 流式光标 —— 已移到 ProgressiveStreamingMarkdown 里"最后一段"的字符末尾。
               气泡层不再显示，避免与字符末尾 caret 重复。 */}
 
-          {/* 会话补充卡片：与正文同宽同左缘（在 chat-assistant-content 内部） */}
-          <SessionSummaryCard blocks={message.blocks} />
+          {/* 会话补充卡片：与正文同宽同左缘（在 chat-assistant-content 内部）。
+              流式输出期间不展示，回复结束后（isStreaming=false）再出现。 */}
+          {!message.isStreaming && <SessionSummaryCard blocks={message.blocks} />}
         </div>
       </div>
 

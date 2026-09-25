@@ -45,7 +45,7 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
 }) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
-  const [tab, setTab] = useState<SummaryTab>('process');
+  const [tab, setTab] = useState<SummaryTab>('preview');
   const openFile = useFileEditorStore((s) => s.openFile);
 
   // ① 运行过程：过程块（与 AutoModeRenderer 折叠集合同一语义）
@@ -98,11 +98,11 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
     openFile(filePath, fileName);
   }, [openFile]);
 
-  // Tab 定义：空白自动隐藏
+  // Tab 定义：空白自动隐藏。顺序：预览等其它在前 → 变更文件 → 运行过程（最后）
   const tabs: { key: SummaryTab; label: string; icon: React.ReactNode; visible: boolean }[] = [
-    { key: 'process', label: t('summary.toolbarTitle'), icon: <Layers className="w-3.5 h-3.5" />, visible: processBlocks.length > 0 },
-    { key: 'files', label: t('summary.fileChangesTitle'), icon: <FileText className="w-3.5 h-3.5" />, visible: fileChanges.length > 0 },
     { key: 'preview', label: t('summaryCard.tabPreview'), icon: <Inbox className="w-3.5 h-3.5" />, visible: previews.length > 0 },
+    { key: 'files', label: t('summary.fileChangesTitle'), icon: <FileText className="w-3.5 h-3.5" />, visible: fileChanges.length > 0 },
+    { key: 'process', label: t('summary.toolbarTitle'), icon: <Layers className="w-3.5 h-3.5" />, visible: processBlocks.length > 0 },
   ];
   const visibleTabs = tabs.filter((x) => x.visible);
 
