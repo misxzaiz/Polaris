@@ -982,3 +982,43 @@ cd polaris-web
 - fix(simple-ai): 会话级文件状态登记 + 流式请求超时语义重构 — 子会话共享 read 登记；移除总超时改用 connect/header/stream idle 分层兜底
 - fix(chat): 兼容 simpleai edit_file 显示层 diff 提取与折叠统计（isEditTool/extractEditDiff/toolSummary/toolConfig + 测试）
 - chore: 清理临时调试脚本 .tmp-monitor-off.ps1
+
+---
+
+## v10.5.5 构建记录
+
+**构建时间**: 2026-09-26 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.5
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.5_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.5_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.5_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.5-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.5_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.5-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.5-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.5-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.5.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- fix(build): config_store unix flock 三连修复 — unsafe 块包裹 + `as_raw_fd` + `AsFd` trait 作用域
+- refactor(engine): 移除 dsh / pi / codex 引擎实现与 UI 入口及残留死路径
+- refactor: 移除 AI 对话单窗口模式，只保留多窗口
+- fix(chat): 修复流式渲染光标位置、上滑跟随退出 & 加诊断日志
+- fix(mcp): prd-preview 参数校验拆分缺参/空参并前置校验防脏目录
+- feat(chat): 会话底部操作区 tab 化（过程/文件/产物）+ 灵动岛完成态常驻，后随 v4 回退恢复运行过程已折叠卡片
+- feat(chat): token usage 携带缓存分类与实际模型 + 统一中文 token 格式化
+- refactor(settings): 移除窗口透明度设置并清理未使用变量
+- feat(chat): AI 回复后追加补充卡片（运行过程/变更文件/预览三 tab）+ tab 顺序调整与回复结束后展示
+- feat(engine): 模型名后缀推导上下文窗口驱动压缩阈值
+- feat(usage): 用量库输出缓存命中率（成本口径 B）
+- chore(proto): 回复补充卡片回复原型（理解分析/变更文件/产物预览）
