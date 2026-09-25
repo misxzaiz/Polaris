@@ -16,7 +16,7 @@ fn get_claude_path(state: &State<'_, AppState>) -> Result<String> {
         .config_store
         .lock()
         .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
-    Ok(store.get().get_claude_cmd())
+    Ok(store.get().resolve_claude_cmd())
 }
 
 /// 列出所有 MCP 服务器（聚合配置 + 健康状态）

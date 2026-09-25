@@ -1,7 +1,7 @@
 /**
  * TauriCommandEngine - Tauri 命令型引擎公共基类
  *
- * 适用于通过 Tauri invoke 命令与后端进程通信的引擎（如 Claude Code、Codex）。
+ * 适用于通过 Tauri invoke 命令与后端进程通信的引擎（如 Claude Code）。
  * 子类只需提供 id、name、capabilities、sessionFactory 和 sessionIdPrefix。
  */
 
@@ -15,7 +15,7 @@ export abstract class TauriCommandEngine implements AIEngine {
   /** 子类提供会话工厂 */
   protected abstract sessionFactory(sessionId: string, config?: AISessionConfig): AISession
 
-  /** 子类提供会话 ID 前缀（如 'claude'、'codex'） */
+  /** 子类提供会话 ID 前缀（如 'claude'） */
   protected abstract get sessionIdPrefix(): string
 
   private sessions = new Map<string, AISession>()

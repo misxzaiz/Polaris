@@ -381,6 +381,8 @@ impl AIEngine for SimpleAIEngine {
         let on_complete = options.on_complete.clone();
         let mcp_servers = options.mcp_servers.clone();
         let skills_map = skills_map.clone();
+        // 思考努力级别：透传给 run_chat_loop（经 build_request_body 映射为协议思考参数）。
+        let effort = options.effort.clone();
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
             sessions.lock().await.insert(sid.clone(), session);
@@ -390,6 +392,7 @@ impl AIEngine for SimpleAIEngine {
                 &sid,
                 &mut messages,
                 &profile,
+                effort.as_deref(),
                 &work_dir,
                 &cb,
                 &mut abort_rx,
@@ -492,6 +495,8 @@ impl AIEngine for SimpleAIEngine {
         let on_complete = options.on_complete.clone();
         let mcp_servers = options.mcp_servers.clone();
         let skills_map = skills_map.clone();
+        // 思考努力级别：continue 也透传（保持会话内 effort 一致）。
+        let effort = options.effort.clone();
 
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
@@ -538,6 +543,7 @@ impl AIEngine for SimpleAIEngine {
                 &sid,
                 &mut existing_messages,
                 &profile,
+                effort.as_deref(),
                 &work_dir,
                 &cb,
                 &mut abort_rx,

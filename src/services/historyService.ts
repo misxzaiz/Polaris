@@ -6,7 +6,7 @@
  *
  * 数据源：
  * - 自有存储（self）：JSONL 文件，整存整取、无损、保序，默认数据源
- * - 引擎原生（claude-code-native / codex-native）：读取 AI 引擎自身的会话文件
+ * - 引擎原生（claude-code-native）：读取 AI 引擎自身的会话文件
  * - localStorage（local）：旧版轻量历史，作为降级兜底
  */
 
@@ -18,7 +18,6 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useViewStore } from '@/stores/index'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
-import { getCodexHistoryService } from './codexHistoryService'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 import { dialogStorageService } from './dialogStorage'
@@ -52,7 +51,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'self' | 'local' | 'claude-code-native' | 'codex-native' | 'plugin-native'
+  source: 'self' | 'local' | 'claude-code-native' | 'plugin-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -122,7 +121,7 @@ export interface PagedHistoryResult {
 
 /** 历史查询范围 */
 export type HistoryScope = 'workspace' | 'global'
-export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'codex' | 'simple-ai' | 'pi'>
+export type HistoryEngineFilter = Extract<EngineId, 'claude-code' | 'simple-ai'>
 
 // ============================================================================
 // 工具函数
@@ -141,7 +140,7 @@ function withAssistantEngineId(messages: ChatMessage[], engineId: EngineId): Cha
 
 interface IndexSessionRow {
   id: string
-  source: 'self' | 'claude-native' | 'codex-native' | string
+  source: 'self' | 'claude-native' | string
   engineId: string
   title: string
   workspacePath: string | null
@@ -172,11 +171,9 @@ function indexRowToItem(row: IndexSessionRow): UnifiedHistoryItem {
   const source: UnifiedHistoryItem['source'] =
     row.source === 'claude-native'
       ? 'claude-code-native'
-      : row.source === 'codex-native'
-        ? 'codex-native'
-        : row.source === 'plugin-native'
-          ? 'plugin-native'
-          : 'self'
+      : row.source === 'plugin-native'
+        ? 'plugin-native'
+        : 'self'
   return {
     id: row.id,
     title: row.title || '未命名会话',
@@ -376,7 +373,6 @@ export const historyService = {
   ): Promise<PagedHistoryResult> {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
     const includeClaudeCode = engines.includes('claude-code')
-    const includeCodex = engines.includes('codex')
 
     // 1. localStorage 轻量条目
     const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
@@ -398,12 +394,9 @@ export const historyService = {
     const workDir = targetWorkDir ??
       (scope === 'workspace' ? currentWorkspace?.path ?? null : null)
     const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
-    const [claudePagedResult, codexPagedResult] = await Promise.all([
+    const [claudePagedResult] = await Promise.all([
       includeClaudeCode
         ? getClaudeCodeHistoryService().listSessionsPaged({ page, pageSize, workDir })
-        : Promise.resolve(emptyPagedResult),
-      includeCodex
-        ? getCodexHistoryService().listSessionsPaged({ page, pageSize, workDir })
         : Promise.resolve(emptyPagedResult),
     ])
 
@@ -422,24 +415,13 @@ export const historyService = {
       gitBranch: s.gitBranch,
       linkedPr: s.linkedPr,
     }))
-    const codexNativeItems: UnifiedHistoryItem[] = codexPagedResult.items.map((s) => ({
-      id: s.sessionId,
-      title: s.summary || 'Codex 对话',
-      timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
-      messageCount: s.messageCount ?? 0,
-      engineId: 'codex' as const,
-      source: 'codex-native' as const,
-      fileSize: s.fileSize,
-      projectPath: s.projectPath,
-    }))
-
-    const nativeItems = [...claudeNativeItems, ...codexNativeItems]
+    const nativeItems = claudeNativeItems
     const nativeIdSet = new Set(nativeItems.map((n) => n.id))
     const uniqueLocalItems = localItems.filter((l) => !nativeIdSet.has(l.id))
     const merged = [...uniqueLocalItems, ...nativeItems]
     merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
-    const total = claudePagedResult.total + codexPagedResult.total + uniqueLocalItems.length
+    const total = claudePagedResult.total + uniqueLocalItems.length
     const totalPages = Math.ceil(total / pageSize)
 
     return { items: merged, total, page, pageSize, totalPages, hasMore: page < totalPages }
@@ -467,8 +449,7 @@ export const historyService = {
         titleHint,
       )
 
-      // 2. codex 允许空消息裸 resume（后端 continue 已有会话）；其他引擎空消息视为失败
-      if (loaded.messages.length === 0 && loaded.engineId !== 'codex') {
+      if (loaded.messages.length === 0) {
         log.warn('无法从历史加载消息', { sessionId, engineId })
         return false
       }
@@ -554,25 +535,7 @@ export const historyService = {
     const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
     const localSession = localHistory.find((h) => h.id === sessionId)
 
-    // 2.1 Codex 原生（需要主动拉取消息）
-    if (engineId === 'codex') {
-      const codexService = getCodexHistoryService()
-      const codexMessages = await codexService.getSessionHistory(sessionId)
-      const messages = codexMessages.length > 0
-        ? withAssistantEngineId(codexService.convertToChatMessages(codexMessages), 'codex')
-        : []
-      return {
-        messages,
-        title: localSession?.title || titleHint || '恢复的 Codex 会话',
-        engineId: 'codex',
-        externalSessionId: sessionId,
-        workspacePath: null,
-        source: 'codex-native',
-        paging: null,
-      }
-    }
-
-    // 2.2 localStorage 命中
+    // 2.1 localStorage 命中
     if (localSession) {
       const restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
       return {
@@ -607,7 +570,7 @@ export const historyService = {
     }
 
     // 4. 插件引擎原生（通过后端 get_session_history 拉取 JSONL 消息）
-    if (engineId && !['claude-code', 'codex', 'simple-ai', 'pi'].includes(engineId)) {
+    if (engineId && !['claude-code', 'simple-ai'].includes(engineId)) {
       try {
         const result = await aiHistoryDispatch<{ items: { role: string; content: string; messageId?: string; timestamp?: string }[] }>({
           action: 'get_session_history',
@@ -705,8 +668,7 @@ export const historyService = {
         action: 'delete_session',
         sessionId,
         engineId: engineId || (
-          source === 'codex-native' ? 'codex'
-          : source === 'plugin-native' ? source
+          source === 'plugin-native' ? source
           : 'claude-code'),
       })
     } catch (e) {

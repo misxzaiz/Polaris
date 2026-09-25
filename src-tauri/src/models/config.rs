@@ -147,7 +147,6 @@ impl Default for PersonalHubConfig {
 /// 模型 Profile — 描述一个第三方模型端点配置
 ///
 /// Claude Code 通过 --settings 临时文件 + 环境变量覆盖路由到 Anthropic 兼容端点。
-/// Codex CLI 通过 model_provider 配置路由到 Responses API 兼容端点。
 ///
 /// 当 `wire_api` 为 `"openai-chat-completions"` 时，Polaris 内嵌代理会透明地
 /// 将 Claude CLI 的 Anthropic Messages 请求转换为 OpenAI Chat Completions
@@ -180,7 +179,7 @@ pub struct ModelProfile {
     /// 适用的引擎（多选）。
     /// - `None` 或空数组：适用于所有引擎
     /// - 非空数组：仅适用于列出的引擎
-    /// - 引擎标识：`"claude"` / `"codex"` / `"simple-ai"`
+    /// - 引擎标识：`"claude"` / `"simple-ai"`
     ///
     /// 历史兼容：旧数据使用 `target_engine: Option<String>` 单值字段，
     /// 由 `resolve_target_engines()` 做回退迁移。
@@ -1730,6 +1729,25 @@ impl Config {
         }
         // 使用新字段
         self.claude_code.cli_path.clone()
+    }
+
+    /// 解析实际可用的 Claude CLI 路径。
+    ///
+    /// 配置值为空或默认占位符（"claude"）时视为"未手动指定"，
+    /// 自动检测 PATH/常见安装位置（`ConfigStore::find_claude_paths`）取首个有效路径；
+    /// 仍找不到则回退到配置值（交由调用方按命令名执行，由系统 PATH 解析）。
+    pub fn resolve_claude_cmd(&self) -> String {
+        let configured = self.get_claude_cmd();
+        let trimmed = configured.trim();
+        let is_placeholder = trimmed.is_empty() || trimmed == "claude";
+        if is_placeholder {
+            if let Some(found) =
+                crate::services::config_store::ConfigStore::find_claude_paths().into_iter().next()
+            {
+                return found;
+            }
+        }
+        configured
     }
 
     /// 确保 default_engine 与显示设置有效

@@ -92,13 +92,13 @@ impl PluginDiscoveryCapability {
         }
     }
 
-    /// claude_code.cli_path（与旧命令层 get_claude_path 同源）
+    /// claude_code.cli_path（自动解析，未手动指定时走 PATH/常见位置检测）
     fn claude_path(&self) -> crate::error::Result<String> {
         let store = self
             .config_store
             .lock()
             .map_err(|e| crate::error::AppError::Unknown(e.to_string()))?;
-        Ok(store.get().get_claude_cmd())
+        Ok(store.get().resolve_claude_cmd())
     }
 
     /// 插件安装基础目录（与旧命令层 get_plugin_config_dir 同源）

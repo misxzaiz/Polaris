@@ -27,6 +27,18 @@ export const NewSessionButton = memo(function NewSessionButton() {
   const { config } = useConfigStore();
   const defaultEngineId = normalizeEngineId(config?.defaultEngine);
 
+  // 新建会话引擎记忆：localStorage 持久化「上次选择的引擎」，下次打开面板恢复。
+  const LAST_NEW_SESSION_ENGINE_KEY = 'polaris-last-new-session-engine';
+  const rememberEngine = (engineId: EngineId) => {
+    try { window.localStorage.setItem(LAST_NEW_SESSION_ENGINE_KEY, engineId); } catch { /* 静默 */ }
+  };
+  const recallEngine = (): EngineId | null => {
+    try {
+      const last = window.localStorage.getItem(LAST_NEW_SESSION_ENGINE_KEY);
+      return last ? normalizeEngineId(last) : null;
+    } catch { return null; }
+  };
+
   // 工作区列表 - 直接订阅原始数据，避免函数调用导致无限循环
   const workspaces = useWorkspaceStore(state => state.workspaces);
   const currentWorkspaceId = useWorkspaceStore(state => state.currentWorkspaceId);
@@ -43,7 +55,12 @@ export const NewSessionButton = memo(function NewSessionButton() {
 
   // 下拉菜单状态
   const [isOpen, setIsOpen] = useState(false);
-  const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(defaultEngineId);
+  // 新建会话引擎：打开时优先恢复上次选择（localStorage），无记录则跟随全局默认引擎。
+  const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(() => {
+    const recalled = recallEngine();
+    // 记住的引擎仍存在（在可用选项中）才恢复，否则回退全局默认。
+    return recalled ?? defaultEngineId;
+  });
   const [searchQuery, setSearchQuery] = useState('');
   // 主工作区 + 关联工作区待定状态（两步式选择）
   const [pendingPrimaryId, setPendingPrimaryId] = useState<string | null>(null);
@@ -103,14 +120,21 @@ export const NewSessionButton = memo(function NewSessionButton() {
     ]
   }, [engineMetadatas]);
 
+  // 记住的引擎已不可用（被移除/插件卸载）时回退全局默认。
+  useEffect(() => {
+    if (!engineOptions.some(o => o.id === selectedEngineId)) {
+      setSelectedEngineId(defaultEngineId);
+    }
+  }, [engineOptions, selectedEngineId, defaultEngineId]);
+
   useEffect(() => {
     if (!isOpen) {
-      setSelectedEngineId(defaultEngineId);
+      // 不重置 selectedEngineId：保留上次选择（会话引擎记忆）。
       setSearchQuery('');
       setPendingPrimaryId(null);
       setPendingContextIds([]);
     }
-  }, [defaultEngineId, isOpen]);
+  }, [isOpen]);
 
   // 点击外部关闭
   useEffect(() => {
@@ -143,6 +167,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
   // 创建会话（带主+关联工作区）
   const handleCreateWithWorkspace = useCallback(() => {
     if (!pendingPrimaryId) return;
+    rememberEngine(selectedEngineId);
     const newSessionId = createSession({
       type: 'project',
       title: t('newSession.newChat', { number: allSessionMetadata.length + 1 }),
@@ -157,6 +182,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
 
   // 无工作区快路径（free 会话，点选即建）
   const handleCreateNoWorkspace = useCallback(() => {
+    rememberEngine(selectedEngineId);
     const newSessionId = createSession({
       type: 'free',
       title: t('newSession.newChat', { number: allSessionMetadata.length + 1 }),
@@ -208,7 +234,10 @@ export const NewSessionButton = memo(function NewSessionButton() {
               {engineOptions.map(({ id, label, Icon }) => (
                 <button
                   key={id}
-                  onClick={() => setSelectedEngineId(id)}
+                  onClick={() => {
+                    setSelectedEngineId(id);
+                    rememberEngine(id);
+                  }}
                   className={clsx(
                     'flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors',
                     selectedEngineId === id

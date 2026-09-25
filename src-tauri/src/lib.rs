@@ -42,7 +42,7 @@ use commands::file_explorer::{
     read_directory, get_file_content, create_file, create_directory,
     delete_file, rename_file, path_exists, read_commands, search_files,
     search_file_contents, search_file_contents_detailed,
-    copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes, save_codex_image_artifact,
+    copy_path, move_path, copy_path_to_directory, move_path_to_directory, save_dropped_file_to_directory, save_image_bytes,
 };
 #[cfg(feature = "tauri-app")]
 use commands::file_clipboard::{
@@ -421,20 +421,6 @@ fn set_work_dir(path: Option<String>, state: tauri::State<AppState>) -> Result<(
         .map_err(|e| error::AppError::Unknown(e.to_string()))?;
     let path_buf = path.map(|p| p.into());
     store.set_work_dir(path_buf)
-}
-
-/// 设置 Claude 命令路径
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-async fn set_claude_cmd(cmd: String, state: tauri::State<'_, AppState>) -> Result<()> {
-    let next_config = {
-        let mut store = state.config_store.lock()
-            .map_err(|e| error::AppError::Unknown(e.to_string()))?;
-        store.set_claude_cmd(cmd)?;
-        store.get().clone()
-    };
-    refresh_engine_configs(&state, next_config).await;
-    Ok(())
 }
 
 /// 重置 CLI 路径(测试/调试用):
@@ -833,7 +819,6 @@ pub fn run() {
             get_server_config,
             set_server_config,
             set_work_dir,
-            set_claude_cmd,
             reset_cli_config,
             find_claude_paths,
             validate_claude_path,
@@ -868,7 +853,6 @@ pub fn run() {
             get_file_content,
             create_file,
             save_image_bytes,
-            save_codex_image_artifact,
             create_directory,
             delete_file,
             rename_file,

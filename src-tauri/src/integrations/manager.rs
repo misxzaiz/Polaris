@@ -528,7 +528,7 @@ impl IntegrationManager {
                     lines.push("⚠️ 引擎注册表未初始化".to_string());
                 }
 
-                lines.push("\n💡 使用 `/claude [提示词]` 或 `/codex [提示词]` 切换引擎".to_string());
+                lines.push("\n💡 使用 `/claude [提示词]` 或 `/simple-ai [提示词]` 切换引擎".to_string());
                 Some(lines.join("\n"))
             }
 

@@ -84,6 +84,7 @@ let file_states = Box::leak(Box::new(std::sync::Arc::new(
             mcp_servers,
             subagent_depth: 0,
             abort_rx,
+            effort: None,
         }
     }
 

@@ -93,7 +93,15 @@
       "clear": "Clear",
       "pickStart": "Click start date, then end date",
       "pickEnd": "Start {{date}} selected, click end date",
-      "weekdays": ["M", "T", "W", "T", "F", "S", "S"]
+      "weekdays": [
+        "M",
+        "T",
+        "W",
+        "T",
+        "F",
+        "S",
+        "S"
+      ]
     }
   },
   "messages": {
@@ -374,20 +382,6 @@
     "secretKeyPlaceholder": "Baidu Translate Secret Key",
     "applyHint": "Apply at",
     "platform": "Baidu Translate Platform"
-  },
-  "pathSelector": {
-    "manualInput": "Manual Input",
-    "autoDetect": "Auto Detect",
-    "selectPath": "Select {{name}} CLI path",
-    "redetect": "Redetect",
-    "notDetected": "{{name}} CLI not detected. Please confirm installation or try manual input",
-    "detectedCount": "{{count}} available paths detected",
-    "pathValid": "Path is valid and ready to use",
-    "claudeCode": {
-      "name": "Claude Code",
-      "placeholder": "Enter the full path to Claude CLI",
-      "example": "e.g., C:\\Users\\...\\claude.cmd (Windows) or /usr/local/bin/claude (macOS/Linux)"
-    }
   },
   "validation": {
     "fileNotFound": "File not found",

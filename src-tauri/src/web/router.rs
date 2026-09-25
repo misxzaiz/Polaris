@@ -125,8 +125,6 @@ pub fn create_router(state: Arc<AppState>) -> Router {
 
     let api_routes = Router::new()
         // Chat
-        // Artifacts
-        .route("/artifacts/codex-images/{thread_id}/{file_name}", get(api::artifacts::handle_codex_image_artifact))
         // Settings
         .route("/settings", get(api::settings::handle_get_settings).patch(api::settings::handle_update_settings))
         // Auth

@@ -195,33 +195,6 @@ fn ensure_image_destination(path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn is_safe_codex_artifact_segment(value: &str) -> bool {
-    !value.is_empty()
-        && value
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.')
-        && !value.contains("..")
-}
-
-fn codex_generated_image_path(thread_id: &str, file_name: &str) -> Result<std::path::PathBuf> {
-    if !is_safe_codex_artifact_segment(thread_id) || !is_safe_codex_artifact_segment(file_name) {
-        return Err(AppError::InvalidPath("无效的图片路径".to_string()));
-    }
-
-    if !is_supported_image_path(Path::new(file_name)) {
-        return Err(AppError::InvalidPath("不支持的图片类型".to_string()));
-    }
-
-    let home = dirs::home_dir()
-        .ok_or_else(|| AppError::InvalidPath("无法获取用户目录".to_string()))?;
-
-    Ok(home
-        .join(".codex")
-        .join("generated_images")
-        .join(thread_id)
-        .join(file_name))
-}
-
 /// 保存前端传入的图片二进制数据
 #[cfg_attr(feature = "tauri-app", tauri::command)]
 pub async fn save_image_bytes(path: String, data_base64: String) -> Result<String> {
@@ -234,25 +207,6 @@ pub async fn save_image_bytes(path: String, data_base64: String) -> Result<Strin
 
     fs::write(path_obj, bytes)?;
     Ok(path)
-}
-
-/// 保存 Codex 生成图片 artifact
-#[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn save_codex_image_artifact(
-    thread_id: String,
-    file_name: String,
-    destination: String,
-) -> Result<String> {
-    let source = codex_generated_image_path(&thread_id, &file_name)?;
-    if !source.exists() || !source.is_file() {
-        return Err(AppError::InvalidPath("图片不存在".to_string()));
-    }
-
-    let destination_path = Path::new(&destination);
-    ensure_image_destination(destination_path)?;
-
-    fs::copy(source, destination_path)?;
-    Ok(destination)
 }
 
 /// 创建目录

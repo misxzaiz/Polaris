@@ -152,7 +152,7 @@ describe('usage 事件双口径分流', () => {
     expect(u.totalOutput).toBe(668)
   })
 
-  it('cumulative 到达且无快照（scope 缺省，Codex/SimpleAI 兼容）：累计值兜底水位', () => {
+  it('cumulative 到达且无快照（scope 缺省，SimpleAI 兼容）：累计值兜底水位', () => {
     const store = makeStore()
     handleAIEvent(cumulativeEvent(26430, 33), store.set, store.get)
 

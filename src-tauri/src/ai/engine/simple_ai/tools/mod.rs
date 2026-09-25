@@ -90,6 +90,8 @@ pub(crate) struct ToolContext<'a> {
     pub subagent_depth: u32,
     /// 父会话的中断信号接收端（Phase 6：subagent 联动用）
     pub abort_rx: &'a watch::Receiver<bool>,
+    /// 会话级思考努力级别（Phase 7：dispatch_agent 子会话继承父 effort）
+    pub effort: Option<&'a str>,
 }
 
 pub(crate) const SUBAGENT_MAX_DEPTH: u32 = 3;
@@ -290,6 +292,7 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
         mcp_servers,
         subagent_depth: 0,
         abort_rx,
+        effort: None,
     }
 }
 
@@ -369,6 +372,7 @@ mod tests {
             mcp_servers: &mcp_servers,
             subagent_depth: 0,
             abort_rx: &abort_rx,
+            effort: None,
         };
         let out = reg
             .dispatch("nonexistent_tool", &serde_json::json!({}), &ctx)

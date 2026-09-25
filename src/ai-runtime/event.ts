@@ -122,7 +122,7 @@ export interface SessionStartEvent {
   type: 'session_start'
   /** 会话 ID */
   sessionId: string
-  /** 引擎 ID（如 "pi"、"claude-code"），用于自动创建会话时绑定正确引擎 */
+  /** 引擎 ID（如 "claude-code"、插件引擎），用于自动创建会话时绑定正确引擎 */
   engineId?: string
 }
 
@@ -849,7 +849,7 @@ export interface ModelUsageBreakdown {
  *   是上下文水位的准确基准。
  * - 'cumulative'：本次 run 内所有 API 调用的累计（result.modelUsage 求和），多轮
  *   工具调用时远大于真实水位，仅用于成本/按模型明细。
- * - 缺省（Codex/SimpleAI 等其余引擎）：按 cumulative 兜底处理。
+ * - 缺省（SimpleAI 等其余引擎）：按 cumulative 兜底处理。
  */
 export interface UsageEvent {
   type: 'usage'
@@ -863,7 +863,7 @@ export interface UsageEvent {
   cacheReadInputTokens?: number
   /** 输出 token */
   outputTokens: number
-  /** 推理输出 token（Codex 有；其余引擎可能无） */
+  /** 推理输出 token（部分引擎有；其余可能无） */
   reasoningOutputTokens?: number
   /** 上下文窗口大小；缺省时前端从 ModelProfile 取 */
   contextWindow?: number

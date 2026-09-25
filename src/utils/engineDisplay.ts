@@ -26,7 +26,7 @@ export function normalizeEngineId(engineId?: string | null): EngineId {
 }
 
 /**
- * 获取引擎简短显示名称（如 "Claude"、"Codex"、"Simple AI"、"Pi"）
+ * 获取引擎简短显示名称（如 "Claude"、"Simple AI"）
  */
 export function getEngineDisplayName(engineId?: string | null): string {
   const id = normalizeEngineId(engineId)
@@ -34,7 +34,7 @@ export function getEngineDisplayName(engineId?: string | null): string {
 }
 
 /**
- * 获取引擎完整显示名称（如 "Claude Code"、"OpenAI Codex"）
+ * 获取引擎完整显示名称（如 "Claude Code"）
  */
 export function getEngineFullName(engineId?: string | null): string {
   const id = normalizeEngineId(engineId)

@@ -229,8 +229,6 @@
     "retryDetection": "Retry Detection",
     "setClaudePath": "Set Claude Path",
     "setCliPath": "Set {{name}} Path",
-    "pathSelectorHint": "Select or enter Claude CLI path",
-    "pathSelectorHintEngine": "Select or enter {{name}} CLI path",
     "saveAndRetry": "Save & Retry",
     "tokenRequired": "Authentication Required",
     "tokenRequiredHint": "This server requires a token to access",

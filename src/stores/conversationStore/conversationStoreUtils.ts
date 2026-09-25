@@ -32,8 +32,6 @@ export function resolveAuxiliaryEngine(config?: { auxiliaryEngine?: string; defa
   return normalizeEngineId(config?.defaultEngine)
 }
 
-const CLAUDE_MODEL_ALIASES = new Set(['opus', 'sonnet', 'haiku'])
-
 export function resolveRuntimeConfigForEngine(
   sessionConfig: SessionRuntimeConfig,
   engineId: EngineId
@@ -44,13 +42,17 @@ export function resolveRuntimeConfigForEngine(
     // agent persona 透传：
     // - claude-code：经 --agent 透传 CLI（注：当前 corpus 未暴露给 CLI，U2-4 待补）
     // - simple-ai：经 SessionOptions.agent 注入 corpus persona（见 simple_ai/mod.rs start_session）
-    // - codex：CLI 无对应参数，暂不透传
     agent: (engineId === 'claude-code' || engineId === 'simple-ai')
       ? sessionConfig.agent || undefined
       : undefined,
-    // Claude 模型别名（opus/sonnet/haiku）对 codex 无意义，codex 有自己的模型名
-    model: (engineId === 'codex') && model && CLAUDE_MODEL_ALIASES.has(model) ? undefined : model,
-    effort: engineId === 'claude-code' ? sessionConfig.effort || undefined : undefined,
+    model,
+    // effort 透传：
+    // - claude-code：经 --effort 传给 CLI
+    // - simple-ai：经 SessionOptions.effort 注入请求体（OpenAIChat → reasoning_effort /
+    //   Anthropic → thinking.budget_tokens / Responses → reasoning.effort，见 simple_ai_protocol.rs）
+    effort: (engineId === 'claude-code' || engineId === 'simple-ai')
+      ? sessionConfig.effort || undefined
+      : undefined,
     permissionMode: sessionConfig.permissionMode || undefined,
   }
 }

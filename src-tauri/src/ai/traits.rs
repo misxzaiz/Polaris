@@ -31,7 +31,7 @@ use std::sync::Arc;
 ///
 /// ## 向后兼容
 ///
-/// `parse()` 接受旧格式（"claude"、"openai_codex" 等），
+/// `parse()` 接受旧格式（"claude" 等），
 /// 确保存量会话数据和旧版配置文件不受影响。
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum EngineId {

@@ -249,6 +249,7 @@ async fn request_summary_once(
         &messages,
         &[],
         Some(max_tokens),
+        None, // 压缩摘要请求不注入思考级别（内部辅助请求，跟随模型默认）
     );
     // 非流式：去掉 stream/tools 相关字段。
     if let Some(obj) = body.as_object_mut() {

@@ -4,7 +4,7 @@ import type { StoreDeps } from './types'
 
 function createDeps(): StoreDeps {
   return {
-    getConfig: () => ({ defaultEngine: 'codex' }),
+    getConfig: () => ({ defaultEngine: 'custom-engine' }),
     getWorkspace: () => null,
     getContextWorkspaceIds: () => [],
     getAllWorkspaces: () => [],
@@ -39,7 +39,7 @@ describe('promptOptimize 版本栈', () => {
   it('回滚/重做：cursor 移动并同步草稿；redo 越界为 no-op', () => {
     const store = createStore()
     store.getState().updateInputDraft({ text: 'v1', attachments: [] })
-    store.getState().beginPromptOptimize('v1', { engineId: 'codex', optimizeSessionId: 'opt-1' })
+    store.getState().beginPromptOptimize('v1', { engineId: 'custom-engine', optimizeSessionId: 'opt-1' })
     store.getState().completePromptOptimize('v2')
 
     store.getState().undoPromptOptimize()
@@ -123,7 +123,7 @@ describe('promptOptimize 版本栈', () => {
   it('手改后 redo 为 no-op（防覆盖）；失败/取消保留版本栈；reset 清空', () => {
     const store = createStore()
     store.getState().updateInputDraft({ text: 'v1', attachments: [] })
-    store.getState().beginPromptOptimize('v1', { engineId: 'codex', optimizeSessionId: 'opt-1' })
+    store.getState().beginPromptOptimize('v1', { engineId: 'custom-engine', optimizeSessionId: 'opt-1' })
     store.getState().completePromptOptimize('v2')
     store.getState().undoPromptOptimize()
 
@@ -134,7 +134,7 @@ describe('promptOptimize 版本栈', () => {
     expect(store.getState().promptOptimize.cursor).toBe(0)
 
     // 失败：状态回 idle，栈保留
-    store.getState().beginPromptOptimize('v1-手改', { engineId: 'codex', optimizeSessionId: 'opt-2' })
+    store.getState().beginPromptOptimize('v1-手改', { engineId: 'custom-engine', optimizeSessionId: 'opt-2' })
     store.getState().failPromptOptimize('boom')
     let po = store.getState().promptOptimize
     expect(po.status).toBe('idle')

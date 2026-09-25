@@ -553,7 +553,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
   const renderItemRow = (item: UnifiedHistoryItem, index: number) => {
     const isRestoring = restoring === item.id
     const canDelete =
-      item.source === 'self' || item.source === 'local' || item.source === 'codex-native'
+      item.source === 'self' || item.source === 'local'
     const engineInfo = getEngineInfo(item.engineId)
 
     return (

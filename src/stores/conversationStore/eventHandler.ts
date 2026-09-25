@@ -554,7 +554,7 @@ export function handleAIEvent(
       // token 用量双口径分流（详见 UsageStats 注释）：
       // - turn（message_delta 单轮快照）：只刷新水位三元组，与 CLI /context 一致；
       //   同一 run 内每轮覆盖一次，水位随流式实时更新。
-      // - cumulative（result 累计）/ 缺省（Codex/SimpleAI）：更新成本与明细组、
+      // - cumulative（result 累计）/ 缺省（SimpleAI）：更新成本与明细组、
       //   累加会话总量；仅当本 run 未收到过 turn 快照时才兜底覆盖水位
       //   （防多轮累计虚高污染）。turnSnapshotSeen 在 run 启动（cli_init）时复位，
       //   而非在此消费——单 run 可能有多条 result（task-notification 续跑）。

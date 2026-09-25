@@ -45,50 +45,13 @@ export async function setWorkDir(path: string | null): Promise<void> {
   return invoke('set_work_dir', { path });
 }
 
-/** 设置 Claude 命令路径 */
-export async function setClaudeCmd(cmd: string): Promise<void> {
-  return invoke('set_claude_cmd', { cmd });
-}
-
 /**
- * 重置 CLI 配置(将 Claude/Codex 的 cli_path 重置为默认占位符).
+ * 重置 CLI 配置(将 Claude 的 cli_path 重置为默认占位符).
  * 用于测试/调试:可让应用回到"初始检测"状态,触发首启动检测流程.
  * 同时会刷新所有引擎缓存,避免引擎实例继续使用旧路径.
  */
 export async function resetCliConfig(): Promise<Config> {
   return invoke<Config>('reset_cli_config');
-}
-
-/** 路径验证结果 */
-export interface PathValidationResult {
-  valid: boolean;
-  error?: string;
-  version?: string;
-}
-
-/** 查找所有可用的 Claude CLI 路径 */
-export async function findClaudePaths(): Promise<string[]> {
-  return invoke<string[]>('find_claude_paths');
-}
-
-/** 验证 Claude CLI 路径 */
-export async function validateClaudePath(path: string): Promise<PathValidationResult> {
-  return invoke<PathValidationResult>('validate_claude_path', { path });
-}
-
-/** 检查指定 CLI 是否可用 */
-export async function checkCliInstalled(cliName: string): Promise<boolean> {
-  return invoke<boolean>('cli_check_installed', { cliName });
-}
-
-/** 查找指定 CLI 的所有可用完整路径（where/which 解析） */
-export async function findCliPaths(cliName: string): Promise<string[]> {
-  return invoke<string[]>('cli_find_paths', { cliName });
-}
-
-/** 获取指定 CLI 版本 */
-export async function getCliVersionFor(cliName: string): Promise<string> {
-  return invoke<string>('cli_get_version_for', { cliName });
 }
 
 /** 健康检查 */

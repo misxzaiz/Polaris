@@ -1,6 +1,6 @@
 //! 引擎安装 / 卸载 / 检测 Tauri 命令
 //!
-//! 面向「npm / npx 分发」的 AI 引擎（Claude Code、Codex），提供：
+//! 面向「npm / npx 分发」的 AI 引擎（Claude Code），提供：
 //! - `engine_detect_version`：检测本地是否已安装及版本
 //! - `engine_install`：`npm install -g <pkg>[@version]`（流式日志）
 //! - `engine_uninstall`：`npm uninstall -g <pkg>`（流式日志）
@@ -43,7 +43,7 @@ pub struct InstallEvent {
     pub line: String,
 }
 
-/// 检测引擎本地安装状态（命令名传入 `claude` / `codex`）
+/// 检测引擎本地安装状态（命令名传入 `claude`）
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn engine_detect_version(cli_name: String) -> EngineInstallStatus {

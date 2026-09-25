@@ -11,9 +11,6 @@ use axum::{
 };
 use serde_json::{json, Value};
 
-use super::codex_chat::{
-    chat_sse_to_codex_responses_sse, chat_to_codex_response, codex_responses_to_chat,
-};
 use super::forwarder::{
     forward_raw_response, ForwarderConfig, ProxyWireApi, RequestPassthrough,
 };
@@ -58,7 +55,6 @@ fn wire_api_to_engine(wire_api: ProxyWireApi) -> &'static str {
         ProxyWireApi::AnthropicMessages => "claude",
         ProxyWireApi::ChatCompletions => "claude",
         ProxyWireApi::Responses => "claude",
-        ProxyWireApi::CodexResponsesToChatCompletions => "codex",
     }
 }
 
@@ -133,7 +129,6 @@ pub async fn handle_messages(
             ProxyWireApi::AnthropicMessages => "anthropic",
             ProxyWireApi::ChatCompletions => "chat",
             ProxyWireApi::Responses => "responses",
-            ProxyWireApi::CodexResponsesToChatCompletions => "codex",
         };
         let debug_path = std::env::temp_dir()
             .join(format!("polaris-proxy-{}-request-debug.json", wire_tag));
@@ -192,12 +187,6 @@ pub async fn handle_messages(
         ProxyWireApi::Responses => anthropic_to_responses(anthropic_body),
         ProxyWireApi::ChatCompletions => anthropic_to_openai(anthropic_body),
         ProxyWireApi::AnthropicMessages => unreachable!("handled above"),
-        ProxyWireApi::CodexResponsesToChatCompletions => {
-            return error_response(
-                StatusCode::BAD_REQUEST,
-                "Codex Responses 代理模式请使用 /v1/responses 入口",
-            );
-        }
     };
     let openai_body = match upstream_result {
         Ok(v) => v,
@@ -372,153 +361,6 @@ async fn handle_anthropic_passthrough(
     }
 }
 
-/// 处理 Codex/OpenAI Responses API 请求
-///
-/// `POST /v1/responses` 或 `POST /responses`
-pub async fn handle_responses(
-    State(state): State<ProxyState>,
-    _headers: HeaderMap,
-    body: String,
-) -> Response {
-    if state.forwarder.wire_api != ProxyWireApi::CodexResponsesToChatCompletions {
-        return error_response(
-            StatusCode::BAD_REQUEST,
-            "当前代理不是 Codex Responses 转 Chat Completions 模式",
-        );
-    }
-
-    let responses_body: Value = match serde_json::from_str(&body) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("[Proxy] Codex Responses JSON 解析失败: {}", e);
-            return error_response(StatusCode::BAD_REQUEST, &format!("无效的 JSON 请求: {}", e));
-        }
-    };
-
-    let is_streaming = responses_body
-        .get("stream")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-
-    let chat_body = match codex_responses_to_chat(responses_body) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("[Proxy] Codex Responses 转 Chat 失败: {}", e);
-            return error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                &format!("格式转换失败: {}", e),
-            );
-        }
-    };
-
-    tracing::info!(
-        "[Proxy] Codex Responses 转 Chat: model={}, stream={}, messages={}, tools={}",
-        chat_body
-            .get("model")
-            .and_then(|v| v.as_str())
-            .unwrap_or("?"),
-        is_streaming,
-        chat_body
-            .get("messages")
-            .and_then(|m| m.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0),
-        chat_body
-            .get("tools")
-            .and_then(|t| t.as_array())
-            .map(|a| a.len())
-            .unwrap_or(0)
-    );
-
-    if is_streaming {
-        handle_codex_streaming(state, chat_body).await
-    } else {
-        handle_codex_non_streaming(state, chat_body).await
-    }
-}
-
-async fn handle_codex_non_streaming(state: ProxyState, chat_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &chat_body, None).await {
-        Ok(response) => match response.text().await {
-            Ok(body_text) => match serde_json::from_str::<Value>(&body_text) {
-                Ok(chat_response) => {
-                    // DX: 记录用量 - Codex 上游 Chat Completions 响应
-                    let request_model = chat_body.get("model").and_then(|v| v.as_str());
-                    record_openai_usage(&chat_response, request_model, Some("codex"), 0, 200, false);
-
-                    match chat_to_codex_response(chat_response) {
-                        Ok(responses_response) => Response::builder()
-                            .status(StatusCode::OK)
-                            .header("Content-Type", "application/json")
-                            .body(Body::from(
-                                serde_json::to_string(&responses_response).unwrap_or_default(),
-                            ))
-                            .unwrap_or_else(|_| {
-                                error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建响应失败")
-                            }),
-                        Err(e) => {
-                            tracing::error!("[Proxy] Chat 响应转 Codex Responses 失败: {}", e);
-                            error_response(
-                                StatusCode::INTERNAL_SERVER_ERROR,
-                                &format!("响应格式转换失败: {}", e),
-                            )
-                        }
-                    }
-                },
-                Err(e) => {
-                    tracing::error!("[Proxy] Codex 上游 Chat 响应 JSON 解析失败: {}", e);
-                    error_response(
-                        StatusCode::BAD_GATEWAY,
-                        &format!("上游响应无效 JSON: {}", e),
-                    )
-                }
-            },
-            Err(e) => error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e)),
-        },
-        Err(e) => {
-            tracing::error!("[Proxy] Codex 上游请求失败: {}", e);
-            let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            match e.upstream_body() {
-                Some(body) => upstream_error_response(status, body, None),
-                None => error_response(status, &format!("上游请求失败: {}", e)),
-            }
-        }
-    }
-}
-
-async fn handle_codex_streaming(state: ProxyState, chat_body: Value) -> Response {
-    match forward_raw_response(&state.forwarder, &chat_body, None).await {
-        Ok(response) => match response.bytes().await {
-            Ok(body_bytes) => {
-                let body_str = String::from_utf8_lossy(&body_bytes);
-                tracing::info!(
-                    "[CodexStreaming] 上游 SSE 体: {}bytes, 前 500 字符: {:?}",
-                    body_bytes.len(),
-                    &body_str[..body_str.len().min(500)]
-                );
-                let sse_body = chat_sse_to_codex_responses_sse(&body_str);
-                Response::builder()
-                    .status(StatusCode::OK)
-                    .header("Content-Type", "text/event-stream")
-                    .header("Cache-Control", "no-cache")
-                    .body(Body::from(sse_body))
-                    .unwrap_or_else(|_| {
-                        error_response(StatusCode::INTERNAL_SERVER_ERROR, "构建流式响应失败")
-                    })
-            }
-            Err(e) => error_response(StatusCode::BAD_GATEWAY, &format!("读取上游响应失败: {}", e)),
-        },
-        Err(e) => {
-            tracing::error!("[Proxy] Codex 上游流式请求失败: {}", e);
-            let status = StatusCode::from_u16(e.status_code()).unwrap_or(StatusCode::BAD_GATEWAY);
-            match e.upstream_body() {
-                Some(body) => upstream_error_response(status, body, None),
-                None => error_response(status, &format!("上游请求失败: {}", e)),
-            }
-        }
-    }
-}
-
 /// 处理非流式请求
 async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response {
     match forward_raw_response(&state.forwarder, &openai_body, None).await {
@@ -538,12 +380,6 @@ async fn handle_non_streaming(state: ProxyState, openai_body: Value) -> Response
                                 return error_response(
                                     StatusCode::BAD_REQUEST,
                                     "Anthropic 直通代理模式不应进入 OpenAI 响应转换",
-                                );
-                            }
-                            ProxyWireApi::CodexResponsesToChatCompletions => {
-                                return error_response(
-                                    StatusCode::BAD_REQUEST,
-                                    "Codex Responses 代理模式请使用 /v1/responses 入口",
                                 );
                             }
                         };
@@ -674,12 +510,6 @@ async fn handle_streaming(state: ProxyState, openai_body: Value) -> Response {
                     return error_response(
                         StatusCode::BAD_REQUEST,
                         "Anthropic 直通代理模式不应进入 OpenAI 流式转换",
-                    );
-                }
-                ProxyWireApi::CodexResponsesToChatCompletions => {
-                    return error_response(
-                        StatusCode::BAD_REQUEST,
-                        "Codex Responses 代理模式请使用 /v1/responses 入口",
                     );
                 }
             };

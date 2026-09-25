@@ -308,7 +308,7 @@ export interface UsageStats {
   cacheRead: number
   /** 本次 run 输出 token（cumulative 口径） */
   output: number
-  /** 推理输出 token（Codex 有） */
+  /** 推理输出 token（部分引擎有） */
   reasoning?: number
   /** 上下文窗口大小；缺省时由 UI 从 ModelProfile 取 */
   contextWindow?: number
@@ -337,7 +337,7 @@ export interface UsageStats {
    * 本 run 已计入 sessionTotals/totalOutput 的贡献值，用于同 run 多条 result 的幂等
    * 替换（modelUsage 是 CLI 进程累计，后到 result 是前一条的超集，直接累加会重复计数）。
    * run 启动（cli_init）时复位 null。仅 scope='cumulative'（Claude 引擎）参与替换；
-   * scope 缺省引擎（Codex/SimpleAI）无 run 边界信号，维持逐事件累加旧语义。
+   * scope 缺省引擎（SimpleAI）无 run 边界信号，维持逐事件累加旧语义。
    */
   runContribution?: {
     input: number

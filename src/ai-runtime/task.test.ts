@@ -18,9 +18,9 @@ describe('createTask', () => {
   })
 
   it('应该使用提供的 engineId', () => {
-    const task = createTask('chat', { prompt: 'hello' }, { engineId: 'codex' })
+    const task = createTask('chat', { prompt: 'hello' }, { engineId: 'custom-engine' })
 
-    expect(task.engineId).toBe('codex')
+    expect(task.engineId).toBe('custom-engine')
   })
 
   it('应该支持所有任务类型', () => {

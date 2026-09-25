@@ -64,6 +64,7 @@ pub(super) async fn run_chat_loop(
     session_id: &str,
     messages: &mut Vec<Value>,
     profile: &crate::models::config::ModelProfile,
+    effort: Option<&str>,
     work_dir: &str,
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     abort_rx: &mut watch::Receiver<bool>,
@@ -223,7 +224,8 @@ pub(super) async fn run_chat_loop(
             .unwrap_or_else(|| profile.model.as_str());
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）—— 用剥离后的纯模型名。
-        let body = build_request_body(protocol, base_model, messages, &tools, profile.max_tokens);
+        // effort 来自会话配置（状态栏选择），映射为协议内思考参数（见 simple_ai_protocol.rs）。
+        let body = build_request_body(protocol, base_model, messages, &tools, profile.max_tokens, effort);
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
@@ -587,6 +589,7 @@ pub(super) async fn run_chat_loop(
                 mcp_servers,
                 subagent_depth: depth,
                 abort_rx,
+                effort,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
             // 工具执行完成后 abort 检查：若执行期间用户已中断，

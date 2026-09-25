@@ -75,7 +75,7 @@ describe('replaceInstalled 异步竞态 (ca1056de)', () => {
 // ============================================================
 describe('isProfileForEngine 插件引擎兼容性 (15455c1d)', () => {
   it('应接受插件引擎 ID（如 omp）作为运行时参数', () => {
-    // TypeScript 类型签名是 'claude'|'codex'|'simple-ai'|'pi'，
+    // TypeScript 类型签名是 'claude-code'|'simple-ai'|(string)，
     // 但 JS 运行时不会检查类型，所以需要验证字符串比较逻辑
     const profile = {
       id: 'test-profile',

@@ -1136,7 +1136,7 @@ pub async fn start_chat_inner(
     //
     // base_opts（含 callback / 工作目录 / 系统提示词 / MCP / 图片等）是请求级
     // 常量，不随 Profile 变化，构建一次后每次重试 Clone 复用；Profile 特定
-    // 字段（settings_overlay_path / env_overrides / codex_args 等）由
+    // 字段（settings_overlay_path / env_overrides 等）由
     // apply_model_profile_options 在本轮 Profile 上覆盖。
     //
     // 切入点 C（async error + 首字超时）在 P2 接入 claude.rs。

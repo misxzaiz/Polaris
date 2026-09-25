@@ -1,7 +1,7 @@
 /*! IM 机器人命令解析和处理
  *
  * 支持的命令：
- * - 模型切换: /claude, /codex
+ * - 模型切换: /claude, /simple-ai（及动态注册的插件引擎）
  * - 引擎信息: /agent, /engines
  * - 提示词预设: /preset <preset_id>, /preset list, /preset default
  * - 中断对话: /stop, /end, /停止
@@ -31,7 +31,7 @@ pub enum PromptMode {
 /// IM 机器人命令类型
 #[derive(Debug, Clone)]
 pub enum BotCommand {
-    /// 切换模型（/claude, /codex）
+    /// 切换模型（/claude, /simple-ai 及插件引擎）
     SwitchProvider {
         provider: EngineId,
         custom_prompt: Option<String>,
@@ -280,7 +280,7 @@ impl ConversationState {
         self.engine_id = engine_id.as_str().to_string();
     }
 
-    /// 切换引擎。跨引擎切换时清除旧 AI 会话，避免用 Claude session 续接 Codex 或反向续接。
+    /// 切换引擎。跨引擎切换时清除旧 AI 会话，避免用某引擎 session 续接到另一引擎。
     pub fn switch_engine(&mut self, engine_id: &EngineId) {
         if self.get_engine_id() != *engine_id {
             self.ai_session_id = None;
@@ -314,7 +314,6 @@ pub fn get_help_text() -> String {
 **模型**
 {engine_help}• 添加 `-r` 参数替换默认提示词
 • 示例: `/claude 你是Python专家 -r`
-• 示例: `/codex 你是Rust专家 -r`
 
 **提示词预设**
 `/preset <预设名>` - 切换提示词预设

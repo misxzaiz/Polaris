@@ -1,7 +1,7 @@
 //! 电脑操作核心（截图 / 鼠标键盘 / Windows 控件树 / 剪贴板）。
 //!
 //! 供两处共用，避免逻辑重复：
-//! - `polaris-computer-mcp` 独立 MCP server（Claude Code / codex 引擎通过 MCP 调用）
+//! - `polaris-computer-mcp` 独立 MCP server（Claude Code 引擎通过 MCP 调用）
 //! - SimpleAI 引擎的 `computer` 原生工具（主进程内直接调用）
 //!
 //! 安全模型（默认开启 + failsafe）：

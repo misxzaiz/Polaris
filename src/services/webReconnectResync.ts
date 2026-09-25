@@ -6,7 +6,7 @@
  * 永久丢失。此时对仍处于流式状态的会话执行全量恢复：
  *
  * 1. 查询后端会话进程是否仍在运行（is_chat_session_running）；
- * 2. 重新拉取引擎落盘的会话历史（Claude Code / Codex JSONL），
+ * 2. 重新拉取引擎落盘的会话历史（Claude Code JSONL），
  *    覆盖本地消息，补回断线期间丢失的内容；
  * 3. 按后端真实状态恢复 isStreaming —— 仍在运行则继续接收后续
  *    实时事件，已结束则正常收尾（避免转圈卡死）。
@@ -20,7 +20,6 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
-import { getCodexHistoryService } from './codexHistoryService'
 import { currentMode, invoke, manualReconnect } from './transport'
 
 const log = createLogger('WebReconnectResync')
@@ -161,11 +160,6 @@ async function loadHistoryMessages(
   conversationId: string,
   engineId: EngineId,
 ): Promise<ChatMessage[]> {
-  if (engineId === 'codex') {
-    const svc = getCodexHistoryService()
-    const history = await svc.getSessionHistory(conversationId)
-    return history.length > 0 ? svc.convertToChatMessages(history) : []
-  }
   if (engineId === 'claude-code') {
     const svc = getClaudeCodeHistoryService()
     const history = await svc.getSessionHistory(conversationId)

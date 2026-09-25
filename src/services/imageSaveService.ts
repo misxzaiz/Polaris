@@ -2,11 +2,6 @@ import { invoke } from '@/services/transport';
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif'];
 
-interface CodexImageArtifactRef {
-  threadId: string;
-  fileName: string;
-}
-
 function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
@@ -54,21 +49,6 @@ function fileNameFromImageSrc(src: string, suggestedName?: string): string {
     return ensureImageExtension(fileName);
   } catch {
     return ensureImageExtension(suggested || 'image.png');
-  }
-}
-
-function parseCodexImageArtifact(src: string): CodexImageArtifactRef | null {
-  try {
-    const url = new URL(src, window.location.origin);
-    const match = url.pathname.match(/^\/api\/artifacts\/codex-images\/([^/]+)\/([^/]+)$/);
-    if (!match) return null;
-
-    return {
-      threadId: decodeURIComponent(match[1]),
-      fileName: decodeURIComponent(match[2]),
-    };
-  } catch {
-    return null;
   }
 }
 
@@ -124,20 +104,6 @@ async function pickImageSavePath(defaultPath: string): Promise<string | null> {
   });
 }
 
-async function saveCodexArtifactImage(
-  artifact: CodexImageArtifactRef,
-  defaultFileName: string,
-): Promise<string | null> {
-  const destination = await pickImageSavePath(defaultFileName);
-  if (!destination) return null;
-
-  return invoke<string>('save_codex_image_artifact', {
-    threadId: artifact.threadId,
-    fileName: artifact.fileName,
-    destination,
-  });
-}
-
 async function saveGenericImageWithTauri(src: string, defaultFileName: string): Promise<string | null> {
   const blob = await fetchImageBlob(src);
   const extension = extensionFromContentType(blob.type) ?? extensionFromFileName(defaultFileName) ?? 'png';
@@ -158,16 +124,9 @@ async function saveImageWithBrowserDownload(src: string, defaultFileName: string
 }
 
 export async function saveMarkdownImage(src: string, suggestedName?: string): Promise<string | null> {
-  const artifact = parseCodexImageArtifact(src);
-  const defaultFileName = artifact?.fileName
-    ? sanitizeFileName(artifact.fileName)
-    : fileNameFromImageSrc(src, suggestedName);
+  const defaultFileName = fileNameFromImageSrc(src, suggestedName);
 
   if (isTauriRuntime()) {
-    if (artifact) {
-      return saveCodexArtifactImage(artifact, defaultFileName);
-    }
-
     return saveGenericImageWithTauri(src, defaultFileName);
   }
 

@@ -66,8 +66,7 @@ fn is_auth_skipped_path(path: &str) -> bool {
             | "/auth/verify"
             | "/api/auth/token"
             | "/auth/token"
-    ) || path.starts_with("/api/artifacts/codex-images/")
-        || path.starts_with("/artifacts/codex-images/")
+    )
 }
 
 /// Extract the token value from an `Authorization: Bearer <value>` header.

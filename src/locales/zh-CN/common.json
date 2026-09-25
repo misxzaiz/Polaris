@@ -230,8 +230,6 @@
     "retryDetection": "重新检测",
     "setClaudePath": "设置 Claude 路径",
     "setCliPath": "设置 {{name}} 路径",
-    "pathSelectorHint": "选择或输入 Claude CLI 的路径",
-    "pathSelectorHintEngine": "选择或输入 {{name}} CLI 的路径",
     "saveAndRetry": "保存并重试",
     "tokenRequired": "需要身份验证",
     "tokenRequiredHint": "此服务需要 Token 才能访问",

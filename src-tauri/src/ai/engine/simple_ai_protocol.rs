@@ -256,17 +256,37 @@ pub fn tools_for_protocol(protocol: WireProtocol, openai_tools: &[Value]) -> Vec
 /// `max_tokens`：单次输出上限（来自 ModelProfile.max_tokens 或调用方显式指定）。
 /// - `None`：OpenAIChat 不发该字段（供应商默认）；Anthropic/Responses 回退 `DEFAULT_MAX_TOKENS`。
 /// - `Some(v)`：三协议均显式携带（OpenAIChat=`max_tokens`，Responses=`max_output_tokens`）。
+///
+/// `effort`：思考努力级别（来自前端状态栏 effort 选择，经 SessionOptions.effort 透传）。
+/// - `None` / 空串：不发思考参数，使用供应商/模型默认。
+/// - `Some(v)`：按线路协议映射——
+///   - OpenAIChat → 顶层 `reasoning_effort`
+///   - Anthropic → `thinking: { type: "enabled", budget_tokens: N }`（budget 随级别缩放）
+///   - Responses → `reasoning: { effort }`
 pub fn build_request_body(
     protocol: WireProtocol,
     model: &str,
     messages: &[Value],
     openai_tools: &[Value],
     max_tokens: Option<u64>,
+    effort: Option<&str>,
 ) -> Value {
     match protocol {
-        WireProtocol::OpenAIChat => build_openai_chat_body(model, messages, openai_tools, max_tokens),
-        WireProtocol::Anthropic => build_anthropic_body(model, messages, openai_tools, max_tokens),
-        WireProtocol::Responses => build_responses_body(model, messages, openai_tools, max_tokens),
+        WireProtocol::OpenAIChat => build_openai_chat_body(model, messages, openai_tools, max_tokens, effort),
+        WireProtocol::Anthropic => build_anthropic_body(model, messages, openai_tools, max_tokens, effort),
+        WireProtocol::Responses => build_responses_body(model, messages, openai_tools, max_tokens, effort),
+    }
+}
+
+/// Anthropic `thinking.budget_tokens` 随努力级别的建议值。
+/// 参考 Claude Code 的 --effort 语义：xhigh/max 更深入，low 更轻量。
+fn thinking_budget_for_effort(effort: &str) -> u64 {
+    match effort {
+        "max" | "xhigh" => 32000,
+        "high" => 16000,
+        "medium" => 8000,
+        "low" => 2048,
+        _ => 8000, // 未知级别回退中等预算
     }
 }
 
@@ -275,6 +295,7 @@ fn build_openai_chat_body(
     messages: &[Value],
     tools: &[Value],
     max_tokens: Option<u64>,
+    effort: Option<&str>,
 ) -> Value {
     let mut body = json!({
         "model": model,
@@ -291,6 +312,12 @@ fn build_openai_chat_body(
         body["tools"] = json!(tools);
         body["tool_choice"] = json!("auto");
     }
+    // effort → reasoning_effort（OpenAI Chat 协议：o1/o3/gpt-5 系推理模型）。
+    if let Some(e) = effort {
+        if !e.is_empty() {
+            body["reasoning_effort"] = json!(e);
+        }
+    }
     body
 }
 
@@ -305,6 +332,7 @@ fn build_anthropic_body(
     messages: &[Value],
     openai_tools: &[Value],
     max_tokens: Option<u64>,
+    effort: Option<&str>,
 ) -> Value {
     let mut system_parts: Vec<String> = Vec::new();
     let mut out: Vec<Value> = Vec::new();
@@ -414,6 +442,15 @@ fn build_anthropic_body(
     if !tools.is_empty() {
         body["tools"] = json!(tools);
     }
+    // effort → thinking 块（Anthropic Messages 协议：显式开启思考并给出 token 预算）。
+    if let Some(e) = effort {
+        if !e.is_empty() {
+            body["thinking"] = json!({
+                "type": "enabled",
+                "budget_tokens": thinking_budget_for_effort(e),
+            });
+        }
+    }
     body
 }
 
@@ -427,6 +464,7 @@ fn build_responses_body(
     messages: &[Value],
     openai_tools: &[Value],
     max_tokens: Option<u64>,
+    effort: Option<&str>,
 ) -> Value {
     let mut instructions_parts: Vec<String> = Vec::new();
     let mut input: Vec<Value> = Vec::new();
@@ -498,6 +536,12 @@ fn build_responses_body(
     let tools = tools_for_protocol(WireProtocol::Responses, openai_tools);
     if !tools.is_empty() {
         body["tools"] = json!(tools);
+    }
+    // effort → reasoning 块（OpenAI Responses 协议：reasoning.effort）。
+    if let Some(e) = effort {
+        if !e.is_empty() {
+            body["reasoning"] = json!({ "effort": e });
+        }
     }
     body
 }
@@ -1004,7 +1048,7 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "toolu_1", "content": "file.txt" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &sample_tools(), None);
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &sample_tools(), None, None);
 
         assert_eq!(body["system"], "You are helpful");
         assert_eq!(body["max_tokens"], DEFAULT_MAX_TOKENS);
@@ -1036,7 +1080,7 @@ mod tests {
             }),
             json!({ "role": "tool", "tool_call_id": "call_1", "content": "done" }),
         ];
-        let body = build_request_body(WireProtocol::Responses, "gpt-x", &messages, &sample_tools(), None);
+        let body = build_request_body(WireProtocol::Responses, "gpt-x", &messages, &sample_tools(), None, None);
 
         assert_eq!(body["instructions"], "sys");
         assert_eq!(body["max_output_tokens"], DEFAULT_MAX_TOKENS);
@@ -1130,7 +1174,7 @@ mod tests {
             json!({ "role": "user", "content": "# Project instructions\nrules" }),
             json!({ "role": "user", "content": "actual question" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None);
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None, None);
         let msgs = body["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 1);
         assert_eq!(msgs[0]["role"], "user");
@@ -1147,7 +1191,7 @@ mod tests {
             json!({ "role": "tool", "tool_call_id": "t1", "content": "result" }),
             json!({ "role": "user", "content": "follow-up" }),
         ];
-        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None);
+        let body = build_request_body(WireProtocol::Anthropic, "claude-x", &messages, &[], None, None);
         let msgs = body["messages"].as_array().unwrap();
         assert_eq!(msgs.len(), 1);
         let arr = msgs[0]["content"].as_array().unwrap();
@@ -1224,16 +1268,40 @@ mod tests {
     fn max_tokens_injection_per_protocol() {
         let messages = vec![json!({ "role": "user", "content": "hi" })];
         // OpenAIChat：None 不发，Some 显式携带。
-        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None);
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None, None);
         assert!(body.get("max_tokens").is_none());
-        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], Some(16384));
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], Some(16384), None);
         assert_eq!(body["max_tokens"], 16384);
         // Anthropic：None 回退默认，Some 覆盖。
-        let body = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], Some(4096));
+        let body = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], Some(4096), None);
         assert_eq!(body["max_tokens"], 4096);
         // Responses：Some 覆盖 max_output_tokens。
-        let body = build_request_body(WireProtocol::Responses, "m", &messages, &[], Some(2048));
+        let body = build_request_body(WireProtocol::Responses, "m", &messages, &[], Some(2048), None);
         assert_eq!(body["max_output_tokens"], 2048);
+    }
+
+    #[test]
+    fn effort_injected_per_protocol() {
+        let messages = vec![json!({ "role": "user", "content": "hi" })];
+        // OpenAIChat：effort → reasoning_effort。
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None, Some("high"));
+        assert_eq!(body["reasoning_effort"], "high");
+        // Anthropic：effort → thinking.budget_tokens（随级别缩放）。
+        let body = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], None, Some("high"));
+        assert_eq!(body["thinking"]["type"], "enabled");
+        assert_eq!(body["thinking"]["budget_tokens"], 16000);
+        let body_low = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], None, Some("low"));
+        assert_eq!(body_low["thinking"]["budget_tokens"], 2048);
+        // Responses：effort → reasoning.effort。
+        let body = build_request_body(WireProtocol::Responses, "m", &messages, &[], None, Some("medium"));
+        assert_eq!(body["reasoning"]["effort"], "medium");
+        // None / 空串：不注入思考参数。
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None, None);
+        assert!(body.get("reasoning_effort").is_none());
+        let body = build_request_body(WireProtocol::OpenAIChat, "m", &messages, &[], None, Some(""));
+        assert!(body.get("reasoning_effort").is_none());
+        let body = build_request_body(WireProtocol::Anthropic, "m", &messages, &[], None, None);
+        assert!(body.get("thinking").is_none());
     }
 
     #[test]

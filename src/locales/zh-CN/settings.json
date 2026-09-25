@@ -92,7 +92,15 @@
       "clear": "清空",
       "pickStart": "点击开始日期，再点结束日期",
       "pickEnd": "已选开始 {{date}}，请点结束日期",
-      "weekdays": ["一", "二", "三", "四", "五", "六", "日"]
+      "weekdays": [
+        "一",
+        "二",
+        "三",
+        "四",
+        "五",
+        "六",
+        "日"
+      ]
     }
   },
   "messages": {
@@ -373,20 +381,6 @@
     "secretKeyPlaceholder": "百度翻译密钥",
     "applyHint": "在",
     "platform": "百度翻译开放平台"
-  },
-  "pathSelector": {
-    "manualInput": "手动输入",
-    "autoDetect": "自动检测",
-    "selectPath": "请选择 {{name}} CLI 路径",
-    "redetect": "重新检测",
-    "notDetected": "未检测到 {{name}} CLI，请确认已安装或尝试手动输入路径",
-    "detectedCount": "检测到 {{count}} 个可用路径",
-    "pathValid": "路径有效，可以正常使用",
-    "claudeCode": {
-      "name": "Claude Code",
-      "placeholder": "请输入 Claude CLI 的完整路径",
-      "example": "例如: C:\\Users\\...\\claude.cmd (Windows) 或 /usr/local/bin/claude (macOS/Linux)"
-    }
   },
   "validation": {
     "fileNotFound": "文件不存在",

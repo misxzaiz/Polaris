@@ -10,7 +10,7 @@
  * - message-history 仅 simple-ai 目标（直注 SessionOptions.message_history，管线未接，暂降级 summary）
  *
  * 复用现成能力，无后端改动：
- * - 取内容：loadConversationMessages（按引擎分流：claude-code/codex 原生历史 + self JSONL + 内存兜底）
+ * - 取内容：loadConversationMessages（按引擎分流：claude-code 原生历史 + self JSONL + 内存兜底）
  * - 写文件：ConversationPackager.packToFile / packToSummary（create_file 自动创建父目录）
  * - 建会话：sessionStoreManager.createSession（forkFromId → 首条消息时 --fork-session）
  * - 预填：updateInputDraft（切换后 ChatInput 自动恢复草稿）
@@ -22,7 +22,6 @@ import { createLogger } from '@/utils/logger'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
-import { getCodexHistoryService } from './codexHistoryService'
 import { dialogStorageService } from './dialogStorage/service'
 import type { UnifiedHistoryItem } from './historyService'
 import type { ChatMessage, EngineId } from '@/types'
@@ -273,7 +272,7 @@ async function createHandoffSession(params: CreateHandoffParams): Promise<Handof
 /**
  * 按引擎加载源会话完整消息（不受前端消息压缩影响）
  *
- * - claude-code / codex：从 CLI 原生历史文件读完整原文
+ * - claude-code：从 CLI 原生历史文件读完整原文
  * - simple-ai：从 self JSONL 读完整原文
  * - 加载失败或无 conversationId：回退内存消息（可能已被压缩，记 warn）
  *
@@ -288,10 +287,6 @@ export async function loadConversationMessages(
     try {
       if (engineId === 'claude-code') {
         const service = getClaudeCodeHistoryService()
-        const raw = await service.getSessionHistory(conversationId)
-        if (raw.length > 0) return withAssistantEngineId(service.convertToChatMessages(raw), engineId)
-      } else if (engineId === 'codex') {
-        const service = getCodexHistoryService()
         const raw = await service.getSessionHistory(conversationId)
         if (raw.length > 0) return withAssistantEngineId(service.convertToChatMessages(raw), engineId)
       } else {
@@ -314,7 +309,7 @@ export async function loadConversationMessages(
 /**
  * 按历史项 source/engineId 加载完整消息
  *
- * - claude-code-native / codex-native：CLI 原生历史
+ * - claude-code-native：CLI 原生历史
  * - self：self JSONL
  * - local：localStorage 旧版轻量历史
  */
@@ -333,11 +328,6 @@ async function loadHistoryChatMessages(item: UnifiedHistoryItem): Promise<ChatMe
     if (engineId === 'claude-code') {
       const service = getClaudeCodeHistoryService()
       const messages = await service.getSessionHistory(item.id, item.claudeProjectName)
-      return messages.length > 0 ? withAssistantEngineId(service.convertToChatMessages(messages), engineId) : []
-    }
-    if (engineId === 'codex') {
-      const service = getCodexHistoryService()
-      const messages = await service.getSessionHistory(item.id)
       return messages.length > 0 ? withAssistantEngineId(service.convertToChatMessages(messages), engineId) : []
     }
     // simple-ai：self JSONL（externalId = item.id）

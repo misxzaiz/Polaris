@@ -105,6 +105,7 @@ impl Tool for DispatchAgentTool {
             &child_session_id,
             &mut child_messages,
             &profile,
+            ctx.effort,
             ctx.work_dir,
             ctx.event_callback,
             &mut child_abort_rx,

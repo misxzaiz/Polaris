@@ -32,7 +32,6 @@ import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
 import { currentMode } from '@/services/transport';
-import { setMarkdownArtifactBaseUrl } from '@/utils/cache';
 import type { Config, ConfigPatch } from '@/types';
 
 const log = createLogger('SettingsPage');
@@ -137,8 +136,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
 
   const applyWebServerIfNeeded = async (shouldApply: boolean) => {
     if (!shouldApply || currentMode !== 'tauri') return;
-    const status = await applyWebServer();
-    setMarkdownArtifactBaseUrl(status.running && status.url ? status.url : null);
+    await applyWebServer();
     setWebStatusRefreshKey((key) => key + 1);
   };
 

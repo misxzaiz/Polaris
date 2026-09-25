@@ -233,7 +233,6 @@ pub async fn handle_ipc_bridge(
 
         // ── Config helpers ─────────────────────────────────────────────────
         "set_work_dir" => dispatch_set_work_dir(&state, &args),
-        "set_claude_cmd" => dispatch_set_claude_cmd(&state, &args).await,
         "reset_cli_config" => dispatch_reset_cli_config(&state).await,
         "set_personal_hub_session" => dispatch_set_personal_hub_session(&state, &args),
         "get_personal_hub_session_token" => dispatch_get_personal_hub_session_token(&state),
@@ -1217,21 +1216,6 @@ fn dispatch_set_work_dir(state: &AppState, args: &Value) -> Result<Json<Value>, 
     Ok(Json(serde_json::json!({ "status": "ok" })))
 }
 
-async fn dispatch_set_claude_cmd(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
-    let cmd = require_string(args, "cmd")?;
-    let next_config = {
-        let mut store = state.lock_config()?;
-        store
-            .set_claude_cmd(cmd)
-            .map_err(|e| WebError::Internal(e.to_string()))?;
-        store.get().clone()
-    };
-    let mut registry = state.engine_registry.lock().await;
-    registry.refresh_all_configs(next_config);
-    drop(registry);
-    Ok(Json(serde_json::json!({ "status": "ok" })))
-}
-
 async fn dispatch_reset_cli_config(state: &AppState) -> Result<Json<Value>, WebError> {
     let next_config = {
         let mut store = state.lock_config()?;
@@ -1635,17 +1619,17 @@ fn dispatch_terminal_open_in_external(args: &Value) -> Result<Json<Value>, WebEr
 // ═══════════════════════════════════════════════════════════════════════════
 
 fn dispatch_cli_get_agents(state: &AppState) -> Result<Json<Value>, WebError> {
-    let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+    let p = state.lock_config()?.get().resolve_claude_cmd();
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_agents())
 }
 fn dispatch_cli_get_auth_status(state: &AppState) -> Result<Json<Value>, WebError> {
-    let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+    let p = state.lock_config()?.get().resolve_claude_cmd();
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_auth_status())
 }
 fn dispatch_cli_get_version(state: &AppState) -> Result<Json<Value>, WebError> {
-    let p = state.lock_config()?.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string());
+    let p = state.lock_config()?.get().resolve_claude_cmd();
     let svc = crate::services::cli_info_service::CliInfoService::new(p);
     json_result!(svc.get_version())
 }
@@ -2209,7 +2193,7 @@ fn dispatch_get_usage_recent_logs(args: &Value) -> Result<Json<Value>, WebError>
 fn get_mcp_service(state: &AppState) -> Result<crate::services::mcp_manager_service::McpManagerService, WebError> {
     let claude_path = {
         let store = state.lock_config()?;
-        store.get().claude_cmd.clone().unwrap_or_else(|| "claude".to_string())
+        store.get().resolve_claude_cmd()
     };
     Ok(crate::services::mcp_manager_service::McpManagerService::new(claude_path))
 }

@@ -1,7 +1,7 @@
 /**
  * 补丁解析器
  *
- * 解析 SimpleAI apply_patch 工具的 Codex V4A 补丁信封格式，
+ * 解析 SimpleAI apply_patch 工具的 V4A 补丁信封格式，
  * 提取文件级变更信息用于前端 Diff 渲染。
  *
  * 信封格式：

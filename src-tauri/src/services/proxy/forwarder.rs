@@ -33,8 +33,6 @@ pub enum ProxyWireApi {
     ChatCompletions,
     /// OpenAI Responses（/v1/responses）
     Responses,
-    /// Codex 客户端使用 Responses，本地代理转换到上游 Chat Completions
-    CodexResponsesToChatCompletions,
 }
 
 impl ProxyWireApi {
@@ -174,7 +172,7 @@ fn build_upstream_url(base_url: &str, wire_api: ProxyWireApi) -> String {
                 format!("{}/v1/responses", base)
             }
         }
-        ProxyWireApi::ChatCompletions | ProxyWireApi::CodexResponsesToChatCompletions => {
+        ProxyWireApi::ChatCompletions => {
             if base.ends_with("/chat/completions") {
                 base.to_string()
             } else if base.ends_with("/v1") {

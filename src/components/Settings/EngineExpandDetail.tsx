@@ -3,21 +3,18 @@
  */
 import { useTranslation } from 'react-i18next';
 import { Package, Check, Puzzle, ExternalLink } from 'lucide-react';
-import { ClaudePathSelector } from '../Common';
 import { EngineInstallActions } from './EngineInstallActions';
 import { getCapabilityLabels, getDistributionLabel } from '@/types/engineMetadata';
 import { pluginRegistry } from '@/plugin-system';
 import { openInDefaultApp } from '@/services/tauri/windowService';
 import type { EngineCapabilities, EngineMetadata, EngineId } from '@/types';
-import type { EngineRuntimeStatus, EngineUiConfig, CliField } from './tabs/AIEngineTab';
+import type { EngineRuntimeStatus, EngineUiConfig } from './tabs/AIEngineTab';
 
 interface EngineExpandDetailProps {
   engineId: EngineId;
   meta: EngineMetadata | undefined;
   uiConfig: EngineUiConfig | undefined;
   status: EngineRuntimeStatus;
-  onCliPathChange: (field: CliField, cmd: string) => void;
-  getCliPath: (id: string) => string;
   loading: boolean;
   refreshHealth: () => void;
   /** 当前引擎是否为默认引擎 */
@@ -48,8 +45,6 @@ export function EngineExpandDetail({
   meta,
   uiConfig,
   status,
-  onCliPathChange,
-  getCliPath,
   loading,
   refreshHealth,
   isDefault,
@@ -118,19 +113,6 @@ export function EngineExpandDetail({
 
         {meta && <CapabilityTags capabilities={meta.capabilities} />}
       </div>
-
-      {/* ====== CLI 路径（非内置引擎） ====== */}
-      {uiConfig?.cliField && (
-        <div className="bg-surface border border-border rounded-lg p-4">
-          <label className="block text-xs text-text-secondary mb-1.5">CLI 路径</label>
-          <ClaudePathSelector
-            value={getCliPath(engineId)}
-            onChange={(cmd) => onCliPathChange(uiConfig.cliField!, cmd)}
-            engineType={engineId}
-            disabled={loading}
-          />
-        </div>
-      )}
 
       {/* ====== 安装/卸载（npx/二进制分发引擎） ====== */}
       {!uiConfig?.builtin && uiConfig?.npmPackage && (

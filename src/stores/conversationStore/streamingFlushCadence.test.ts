@@ -15,7 +15,7 @@ import type { TextBlock } from '@/types'
 
 function createDeps(): StoreDeps {
   return {
-    getConfig: () => ({ defaultEngine: 'codex' }),
+    getConfig: () => ({ defaultEngine: 'custom-engine' }),
     getWorkspace: () => null,
     getContextWorkspaceIds: () => [],
     getAllWorkspaces: () => [],

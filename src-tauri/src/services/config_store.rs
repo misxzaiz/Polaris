@@ -49,23 +49,9 @@ impl ConfigStore {
 
         eprintln!("当前引擎: {}", config.default_engine);
         eprintln!("当前 claude_code.cli_path: {}", config.claude_code.cli_path);
-
-        // 如果 claude_code.cli_path 是默认值，尝试解析完整路径
-        if config.claude_code.cli_path == "claude" {
-            eprintln!("尝试解析 Claude 路径...");
-            if let Some(full_path) = Self::resolve_claude_path() {
-                config.claude_code.cli_path = full_path.clone();
-                eprintln!("找到 Claude 路径: {}", full_path);
-                // 立即保存配置
-                if let Err(e) = Self::save_config_to_path(&config, &config_path) {
-                    eprintln!("保存配置失败: {}", e);
-                } else {
-                    eprintln!("Claude 路径已解析并保存: {}", full_path);
-                }
-            } else {
-                eprintln!("无法解析 Claude 路径");
-            }
-        }
+        // 说明：不再在启动时将占位符"claude"改写为绝对路径并写回配置。
+        // CLI 路径统一由 `Config::resolve_claude_cmd()` 运行时解析
+        // （未手动指定时自动检测 PATH/常见安装位置），避免持久化可能过期的路径。
 
         Ok(Self {
             config,
@@ -366,19 +352,6 @@ impl ConfigStore {
         }
     }
 
-    /// 设置 Claude 命令路径
-    pub fn set_claude_cmd(&mut self, cmd: String) -> Result<()> {
-        let old = self.config.clone();
-        self.config.claude_code.cli_path = cmd;
-        match self.save() {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                self.config = old;
-                Err(e)
-            }
-        }
-    }
-
     /// 设置默认引擎
     pub fn set_engine(&mut self, engine_id: EngineId) -> Result<()> {
         let old = self.config.clone();
@@ -407,7 +380,7 @@ impl ConfigStore {
 
     /// 检测 Claude CLI 是否可用
     pub fn detect_claude(&self) -> Option<String> {
-        let cmd = self.config.get_claude_cmd();
+        let cmd = self.config.resolve_claude_cmd();
         Self::detect_cli_version(&cmd, "detect_claude")
     }
 
@@ -578,8 +551,9 @@ impl ConfigStore {
     /// 异步并行版健康检测。
     ///
     /// 检测 Claude CLI 是否可用（带 5s 超时）。
+    /// CLI 路径经 `resolve_claude_cmd` 自动解析（未手动指定时走 PATH/常见位置检测）。
     pub async fn health_status_async(config: Config) -> HealthStatus {
-        let claude_path = config.claude_code.cli_path.clone();
+        let claude_path = config.resolve_claude_cmd();
         let work_dir = config.work_dir.as_ref().and_then(|p| p.to_str().map(|s| s.to_string()));
 
         // 将 Claude CLI 探测以 spawn_blocking 并发提交，带 5s 超时。
@@ -1097,7 +1071,7 @@ mod tests {
         let mut store = ConfigStore::new_test(config, config_path);
         let original_engine = store.get().default_engine.clone();
 
-        let result = store.set_engine(crate::ai::EngineId::parse_any("codex"));
+        let result = store.set_engine(crate::ai::EngineId::SimpleAI);
 
         // save 失败 → 返回 Err
         assert!(result.is_err());
@@ -1116,18 +1090,5 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(store.get().work_dir, original_work_dir);
-    }
-
-    #[test]
-    fn set_claude_cmd_rollback_on_save_failure() {
-        let config = Config::default();
-        let config_path = std::path::PathBuf::from("/nonexistent/dir/config.json");
-        let mut store = ConfigStore::new_test(config, config_path);
-        let original_cli = store.get().claude_code.cli_path.clone();
-
-        let result = store.set_claude_cmd("/usr/local/bin/claude".to_string());
-
-        assert!(result.is_err());
-        assert_eq!(store.get().claude_code.cli_path, original_cli);
     }
 }

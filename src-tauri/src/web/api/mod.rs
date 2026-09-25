@@ -1,4 +1,3 @@
-pub mod artifacts;
 pub mod auth;
 pub mod git_dispatch;
 pub mod health;

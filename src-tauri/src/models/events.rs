@@ -48,7 +48,7 @@ pub enum StreamEvent {
         input: serde_json::Value,
     },
 
-    /// 思考过程（Codex reasoning）
+    /// 思考过程（reasoning）
     #[serde(rename = "thinking")]
     Thinking {
         id: String,

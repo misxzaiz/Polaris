@@ -172,7 +172,7 @@ describe('dialogStorageService - 列表分页', () => {
     for (let i = 1; i <= 5; i++) {
       await dialogStorageService.saveConversation({
         externalId: `conv-${i}`,
-        engineId: i % 2 === 0 ? 'codex' : 'claude-code',
+        engineId: i % 2 === 0 ? 'custom-engine' : 'claude-code',
         title: `会话${i}`,
         messages: [userMsg(`u${i}`, `消息${i}`)],
       })

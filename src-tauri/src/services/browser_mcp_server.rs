@@ -1,7 +1,7 @@
 //! Browser MCP Server
 //!
 //! Stdio JSON-RPC 2.0 server exposing Polaris built-in browser tools to
-//! Claude/Codex-style MCP clients. Tool calls connect back to the main Polaris
+//! Claude-style MCP clients. Tool calls connect back to the main Polaris
 //! process through the token-protected local listener started by `ask_listener`.
 
 use std::io::{self, BufRead, BufReader, Read, Write};

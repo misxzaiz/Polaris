@@ -28,15 +28,11 @@ interface AIEngineTabProps {
 // 引擎 UI 专属配置
 // ============================================================================
 
-export type CliField = 'claudeCode';
-
 export interface EngineUiConfig {
   id: EngineId
   nameKey: string
   descKey: string
   builtin?: boolean
-  cliField?: CliField
-  defaultCli?: string
   npmPackage?: string
 }
 
@@ -45,8 +41,6 @@ const ENGINE_UI_MAP: Record<string, EngineUiConfig> = {
     id: 'claude-code',
     nameKey: 'engines.claudeCode.name',
     descKey: 'engines.claudeCode.description',
-    cliField: 'claudeCode',
-    defaultCli: 'claude',
     npmPackage: '@anthropic-ai/claude-code',
   },
   'simple-ai': {
@@ -202,18 +196,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
     onConfigChange({ ...config, auxiliaryEngine: engineId || undefined });
   };
 
-  const handleCliPathChange = (field: CliField, cmd: string) => {
-    if (field === 'claudeCode') {
-      onConfigChange({ ...config, claudeCode: { ...config.claudeCode, cliPath: cmd } });
-    }
-  };
-
-  const getCliPath = (engineId: string): string => {
-    const uiConfig = ENGINE_UI_MAP[engineId]
-    if (uiConfig?.cliField === 'claudeCode') return config.claudeCode?.cliPath || uiConfig.defaultCli || 'claude';
-    return '';
-  };
-
   const handleResetCliConfig = async () => {
     const confirmed = window.confirm(t('aiEngine.resetCliConfirm'));
     if (!confirmed) return;
@@ -334,8 +316,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         meta={selectedMeta}
         uiConfig={selectedUiConfig}
         status={selectedStatus}
-        onCliPathChange={handleCliPathChange}
-        getCliPath={getCliPath}
         loading={loading}
         refreshHealth={refreshHealth}
         isDefault={config.defaultEngine === selectedId}

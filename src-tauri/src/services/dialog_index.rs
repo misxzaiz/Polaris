@@ -2,7 +2,7 @@
  *
  * `<DataRoot>/dialogs/index.db`——历史面板的统一查询层：
  * - **JSONL / 引擎原生文件是事实源**，本索引是可丢弃、可重建的派生数据；
- * - sessions 表：自有(self) + 引擎原生(claude/codex) 会话统一成行，含用户标注
+ * - sessions 表：自有(self) + 引擎原生(claude/plugin) 会话统一成行，含用户标注
  *   （星标/置顶/归档/标签/备注——原生文件不可写，标注只存在索引里）；
  * - sessions_fts（FTS5, trigram）：全文搜索标题 + 消息正文，CJK 友好；
  * - 写路径挂钩 dialog_write/append/delete 增量维护；native 目录按 (mtime,size)
@@ -33,7 +33,7 @@ const FTS_CONTENT_CAP: usize = 200_000;
 const SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS sessions (
   id             TEXT PRIMARY KEY,
-  source         TEXT NOT NULL,            -- 'self' | 'claude-native' | 'codex-native'
+  source         TEXT NOT NULL,            -- 'self' | 'claude-native' | 'plugin-native'
   engine_id      TEXT NOT NULL,
   title          TEXT NOT NULL DEFAULT '',
   workspace_path TEXT,
@@ -507,7 +507,7 @@ pub fn on_self_delete(name: &str) {
 }
 
 // ============================================================================
-// native 扫描（claude / codex，(mtime,size) 失效增量）
+// native 扫描（claude / plugin，(mtime,size) 失效增量）
 // ============================================================================
 
 struct NativeFile {
@@ -755,9 +755,6 @@ fn scan_into(conn: &Connection, files: &[NativeFile]) -> Result<usize> {
                         branch,
                     )
                 }
-                _ if f.source == "codex-native" => {
-                    (String::new(), 0_i64, 0_i64, None::<String>, None::<String>)
-                }
                 "plugin-native" => {
                     let (p_title, p_count, p_created, p_cwd, _) =
                         crate::ai::history_plugin::parse_plugin_metadata(&f.path);
@@ -880,7 +877,7 @@ pub struct HistoryQueryParams {
     pub pinned: Option<bool>,
     /// 归档过滤：None → 排除归档；Some(true) → 只看归档；Some(false) → 排除归档
     pub archived: Option<bool>,
-    /// 来源过滤：'self' | 'claude-native' | 'codex-native'
+    /// 来源过滤：'self' | 'claude-native' | 'plugin-native'
     pub source: Option<String>,
     /// 强制立即扫描 native（手动刷新）
     pub force_scan: Option<bool>,

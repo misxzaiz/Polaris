@@ -48,7 +48,7 @@ describe('createHttpTransport', () => {
   it('sends the raw patch object for update_config_patch in HTTP mode', async () => {
     const transport = createHttpTransport('http://127.0.0.1:9800');
     const patch = {
-      defaultEngine: 'codex',
+      defaultEngine: 'custom-engine',
       gitBinPath: null,
     };
 

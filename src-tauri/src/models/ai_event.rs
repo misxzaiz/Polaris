@@ -1369,7 +1369,7 @@ impl ModelUsageBreakdown {
 /// - `"cumulative"`：本次 run 内所有 API 调用的累计值，来自 `result.modelUsage`
 ///   （退化到顶层 `usage`）。多轮工具调用时为各轮之和（实测 sum(message_delta)
 ///   == result，精确相等），远大于真实水位，仅用于成本/按模型明细展示。
-/// - `None`（Codex/SimpleAI 等其余引擎）：前端视为 cumulative 兜底处理。
+/// - `None`（SimpleAI 等其余引擎）：前端视为 cumulative 兜底处理。
 ///
 /// `raw_payload` 保留原始 result 事件报文，供前端"查看原始请求/响应"调试链路使用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1389,7 +1389,7 @@ pub struct UsageEvent {
     pub cache_read_input_tokens: Option<u64>,
     /// 输出 token
     pub output_tokens: u64,
-    /// 推理输出 token（Codex 有；其余引擎可能无）
+    /// 推理输出 token（部分引擎有；其余可能无）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_output_tokens: Option<u64>,
     /// 上下文窗口大小；后端已知则填，否则前端从 ModelProfile 取

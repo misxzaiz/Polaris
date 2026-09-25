@@ -111,17 +111,13 @@ interface ConfigState {
   updateConfigPatch: (patch: ConfigPatch) => Promise<Config>;
   /** 设置工作目录 */
   setWorkDir: (path: string | null) => Promise<void>;
-  /** 设置 Claude 命令 */
-  setClaudeCmd: (cmd: string) => Promise<void>;
-  /** 重置 CLI 配置(测试用):将 Claude/Codex 路径重置为默认值并触发重新检测 */
+  /** 重置 CLI 配置(测试用):将 Claude 路径重置为默认值并触发重新检测 */
   resetCliConfig: () => Promise<void>;
 
   /** 刷新健康状态 */
   refreshHealth: () => Promise<void>;
   /** 设置初始化阶段文案（蒙板实时进度显示） */
   setInitPhase: (phase: string) => void;
-  /** 重新连接并更新路径 */
-  retryConnection: (cliPath?: string) => Promise<void>;
   /** Submit token in web mode (MD5-then-store, then retry loadConfig) */
   submitToken: (rawToken: string) => Promise<void>;
 }
@@ -235,20 +231,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
     }
   },
 
-  setClaudeCmd: async (cmd) => {
-    set({ loading: true, error: null });
-    try {
-      await tauri.setClaudeCmd(cmd);
-      const config = await tauri.getConfig();
-      set({ config, loading: false });
-    } catch (e) {
-      set({
-        error: e instanceof Error ? e.message : i18n.t('errors:setClaudeCmdFailed'),
-        loading: false
-      });
-    }
-  },
-
   resetCliConfig: async () => {
     set({ loading: true, error: null });
     try {
@@ -296,39 +278,6 @@ export const useConfigStore = create<ConfigState>((set, get) => ({
 
   setInitPhase: (phase: string) => {
     set({ initPhase: phase });
-  },
-
-  retryConnection: async (cliPath?: string) => {
-    set({ loading: true, error: null, connectionState: 'connecting' });
-    try {
-      let config = get().config || await tauri.getConfig();
-      if (cliPath) {
-        await tauri.setClaudeCmd(cliPath);
-        config = await tauri.getConfig();
-        set({ config });
-      }
-
-      const health = await tauri.healthCheck();
-      set({
-        healthStatus: health,
-        loading: false,
-        connectionState: 'success',
-        error: null
-      });
-    } catch (e: unknown) {
-      // In web mode, detect 401 auth error → show token input
-      log.error('retryConnection failed', e instanceof Error ? e : new Error(String(e)), { isWebAuth: isWebAuthError(e) });
-      if (isWebAuthError(e)) {
-        log.info('retryConnection → needsToken');
-        set(setNeedsToken());
-        return;
-      }
-      set({
-        error: e instanceof Error ? e.message : i18n.t('errors:connectionFailed'),
-        loading: false,
-        connectionState: 'failed'
-      });
-    }
   },
 
   submitToken: async (rawToken: string) => {
