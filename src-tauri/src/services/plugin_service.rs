@@ -338,7 +338,6 @@ impl PluginService {
             let workspace = workspace_path.to_string_lossy().to_string();
             for root in [
                 workspace_path.join(".polaris").join("plugins"),
-                workspace_path.join(".codex").join("plugins"),
             ] {
                 Self::scan_plugin_root(
                     &root,
@@ -372,13 +371,6 @@ impl PluginService {
             discovery_paths.push(
                 workspace_path
                     .join(".polaris")
-                    .join("plugins")
-                    .to_string_lossy()
-                    .to_string(),
-            );
-            discovery_paths.push(
-                workspace_path
-                    .join(".codex")
                     .join("plugins")
                     .to_string_lossy()
                     .to_string(),
@@ -1335,7 +1327,6 @@ impl PluginService {
         let mut allowed_roots = vec![app_config_dir.join("plugins")];
         if let Some(workspace_path) = workspace_path {
             allowed_roots.push(workspace_path.join(".polaris").join("plugins"));
-            allowed_roots.push(workspace_path.join(".codex").join("plugins"));
         }
 
         let is_allowed = allowed_roots.iter().any(|root| {
