@@ -28,14 +28,14 @@ use crate::models::AIEvent;
 
 use super::retry;
 
-/// 默认上下文窗口（token）。优先级：`ModelProfile.context_window` > custom_env
-/// `SIMPLE_AI_CONTEXT_WINDOW` > 本值。
+/// 默认上下文窗口（token）。优先级：`ModelProfile.context_window` > 模型名后缀推导
+/// （如 `[1m]`→1M、`[200k]`→200K）> custom_env `SIMPLE_AI_CONTEXT_WINDOW` > 本值。
 ///
-/// ⚠️ 窗口错配陷阱：默认值已从 1M 调整为 180K，更贴合多数第三方供应商的真实窗口。
+/// ⚠️ 窗口错配陷阱：默认值取 200K，贴合多数第三方供应商的真实窗口。
 /// 若通过中转站/聚合代理/自部署网关使用模型，上游真实窗口可能远小于此（如 256K
 /// 甚至 128K），此时必须在 Model Profile 中显式设置 contextWindow 为真实窗口，否则
 /// 压缩阈值（window × 0.75）估算不准 → 压缩请求可能被上游 400 拒绝。
-pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 180_000;
+pub(super) const DEFAULT_CONTEXT_WINDOW: u64 = 200_000;
 /// 触发压缩的阈值比例（最近一轮 input / window）。
 const COMPACT_THRESHOLD: f64 = 0.75;
 /// 压缩请求超时（秒）。摘要请求应比对话快。

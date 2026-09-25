@@ -51,7 +51,15 @@ pub struct CliModelSuffix {
     pub beta_tokens: Option<Vec<String>>,
     /// 应追加到上游 URL 的 query（如 `?beta=true`），仅 Anthropic 协议使用。
     pub query: Option<String>,
+    /// 由后缀推导的上下文窗口（token），与线路协议无关。
+    /// 仅当后缀可解析为数值（如 `[1m]`/`[200k]`/`[128000]`）时才有值；
+    /// 驱动 SimpleAI 压缩触发阈值，详见 `chat_loop` 的窗口优先级。
+    pub context_window: Option<u64>,
 }
+
+/// 数值后缀解析出的窗口上限（token）：防 `[1000000m]` 这类无意义超大值。
+/// 覆盖 1M/4M/8M 等已知大窗口后仍留余量。
+const MAX_SUFFIX_CONTEXT_WINDOW: u64 = 16_000_000;
 
 /// 内置的 Anthropic 1M 上下文 beta 头片段与 query。
 /// 取自 Claude CLI 实际发送值（见 docs/proxy-anthropic-passthrough-headers-fix.md）。
@@ -65,16 +73,20 @@ const CONTEXT_1M_QUERY: &str = "beta=true";
 /// 剥离模型名中的 CLI 私有后缀，解析附带的协议信号。
 ///
 /// 输入示例：
-/// - `"claude-fable-5[1m]"` → base=`claude-fable-5`, beta=[context-1m,...], query=`beta=true`
-/// - `"glm-5.2[1m]"`        → base=`glm-5.2`,   beta=None(未知后缀), query=None
+/// - `"claude-fable-5[1m]"` → base=`claude-fable-5`, beta=[context-1m,...], query=`beta=true`,
+///   context_window=1_000_000
+/// - `"glm-5.2[1m]"`        → base=`glm-5.2`, beta=[context-1m,...], query=`beta=true`（现状不变），
+///   context_window=1_000_000（窗口信号与线路无关）
 /// - `"deepseek-v3"`        → base=`deepseek-v3`, 无变更
 /// - `"gpt-4o[thinking]"`   → base=`gpt-4o`, 无变更(未知后缀)
+/// - `"claude-4[200k]"`     → base=`claude-4`, beta=None(仅 `[1m]` 注入 beta 头), context_window=200_000
 pub fn strip_cli_model_suffix(model: &str) -> CliModelSuffix {
     let Some((base, suffix_part)) = model.split_once('[') else {
         return CliModelSuffix {
             base_model: Some(model.to_string()),
             beta_tokens: None,
             query: None,
+            context_window: None,
         };
     };
 
@@ -87,9 +99,12 @@ pub fn strip_cli_model_suffix(model: &str) -> CliModelSuffix {
             base_model: Some(model.to_string()),
             beta_tokens: None,
             query: None,
+            context_window: None,
         };
     }
 
+    // 仅 CLI 实际使用的 `[1m]`（小写）在 Anthropic 线路注入 beta 头/query；
+    // 其余可解析数值后缀只推导 context_window，不注入 beta（见上注释）。
     let (beta_tokens, query) = if suffix == "1m" {
         (
             Some(CONTEXT_1M_BETA_TOKENS.iter().map(|s| s.to_string()).collect()),
@@ -103,7 +118,49 @@ pub fn strip_cli_model_suffix(model: &str) -> CliModelSuffix {
         base_model: Some(base.to_string()),
         beta_tokens,
         query,
+        context_window: parse_suffix_window(suffix),
     }
+}
+
+/// 解析数值后缀为上下文窗口（token）。大小写不敏感，支持 m/k 单位与纯数值：
+/// - `1m`/`1M` → 1_000_000
+/// - `200k`/`200K` → 200_000
+/// - `128000` → 128_000
+/// - `0.2m` → 200_000（小数结果四舍五入到整数）
+/// 不可解析（`thinking`、空、负数、超上限等）→ `None`，仅剥离不报错。
+fn parse_suffix_window(suffix: &str) -> Option<u64> {
+    let s = suffix.trim();
+    if s.is_empty() {
+        return None;
+    }
+    let (num_part, mult) = match s.chars().last() {
+        Some('m' | 'M') => (&s[..s.len() - 1], 1_000_000u64),
+        Some('k' | 'K') => (&s[..s.len() - 1], 1_000u64),
+        _ => (s, 1u64),
+    };
+    let num_part = num_part.trim();
+    if num_part.is_empty() {
+        return None;
+    }
+    // 纯整数或小数；小数带单位时在浮点域完成换算并取整（如 0.2m → 200_000）。
+    let window = if let Ok(v) = num_part.parse::<u64>() {
+        v.saturating_mul(mult)
+    } else if let Ok(v) = num_part.parse::<f64>() {
+        if !v.is_finite() || v < 0.0 {
+            return None;
+        }
+        let scaled = v * (mult as f64);
+        if scaled > (MAX_SUFFIX_CONTEXT_WINDOW as f64) {
+            return None;
+        }
+        scaled.round() as u64
+    } else {
+        return None;
+    };
+    if window == 0 || window > MAX_SUFFIX_CONTEXT_WINDOW {
+        return None;
+    }
+    Some(window)
 }
 
 /// 构建：等价于 `strip_cli_model_suffix(model)`，提供 `::new` 调用点。
@@ -1458,19 +1515,74 @@ mod tests {
         assert!(s.beta_tokens.as_ref().unwrap().contains(&"context-1m-2025-08-07".to_string()));
         assert!(s.query.is_some());
         assert_eq!(s.query.as_ref().unwrap(), "beta=true");
+        assert_eq!(s.context_window, Some(1_000_000));
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_k_m_units_yield_window() {
+        // 大小写不敏感的单位后缀：仅窗口信号，不注入 beta。
+        let s = strip_cli_model_suffix("claude-4[200k]");
+        assert_eq!(s.base_model, Some("claude-4".to_string()));
+        assert!(s.beta_tokens.is_none());
+        assert!(s.query.is_none());
+        assert_eq!(s.context_window, Some(200_000));
+
+        let s = strip_cli_model_suffix("claude-4[200K]");
+        assert_eq!(s.context_window, Some(200_000));
+
+        let s = strip_cli_model_suffix("claude-4[1M]");
+        assert_eq!(s.base_model, Some("claude-4".to_string()));
+        assert!(s.beta_tokens.is_none());
+        assert_eq!(s.context_window, Some(1_000_000));
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_pure_number_and_decimal() {
+        // 纯数值后缀：原值。
+        let s = strip_cli_model_suffix("model-x[128000]");
+        assert_eq!(s.base_model, Some("model-x".to_string()));
+        assert!(s.beta_tokens.is_none());
+        assert_eq!(s.context_window, Some(128_000));
+
+        // 小数 + 单位：四舍五入。
+        let s = strip_cli_model_suffix("model-x[0.2m]");
+        assert_eq!(s.context_window, Some(200_000));
+        let s = strip_cli_model_suffix("model-x[1.5k]");
+        assert_eq!(s.context_window, Some(1500));
+    }
+
+    #[test]
+    fn strip_cli_model_suffix_unparseable_window_none() {
+        // 不可解析后缀：仅剥离，窗口信号为 None（现状不变）。
+        for model in [
+            "glm-5.2[1m]",     // 可解析（1M），见下
+            "gpt-4o[thinking]",
+            "gpt-4o[128000m]",
+        ] {
+            let s = strip_cli_model_suffix(model);
+            assert!(s.base_model.is_some());
+        }
+        let s = strip_cli_model_suffix("gpt-4o[thinking]");
+        assert_eq!(s.context_window, None);
+        let s = strip_cli_model_suffix("gpt-4o[0]");
+        assert_eq!(s.context_window, None);
+        let s = strip_cli_model_suffix("gpt-4o[1000000m]");
+        assert_eq!(s.context_window, None); // 超上限 16M
     }
 
     #[test]
     fn strip_cli_model_suffix_unknown_suffix_stripped_but_no_beta() {
-        // 未知后缀（如从 CLI 复制的 glm-5.2[1m]）：剥离但不注入 beta。
+        // 未知后缀（如从 CLI 复制的 glm-5.2[1m]）：剥离；[1m] 仍注入 beta（现状）。
         let s = strip_cli_model_suffix("glm-5.2[1m]");
         assert_eq!(s.base_model, Some("glm-5.2".to_string()));
-        assert!(s.beta_tokens.is_none());
-        assert!(s.query.is_none());
+        assert!(s.beta_tokens.is_some());
+        assert!(s.query.is_some());
+        assert_eq!(s.context_window, Some(1_000_000));
 
         let s = strip_cli_model_suffix("gpt-4o[thinking]");
         assert_eq!(s.base_model, Some("gpt-4o".to_string()));
         assert!(s.beta_tokens.is_none());
+        assert!(s.context_window.is_none());
     }
 
     #[test]
@@ -1479,6 +1591,7 @@ mod tests {
         let s = strip_cli_model_suffix("[1m]");
         assert_eq!(s.base_model, Some("[1m]".to_string()));
         assert!(s.beta_tokens.is_none());
+        assert!(s.context_window.is_none());
 
         let s = strip_cli_model_suffix("model[");
         assert_eq!(s.base_model, Some("model".to_string()));
@@ -1490,5 +1603,6 @@ mod tests {
         let s = strip_cli_model_suffix("claude-fable-5 [1m]");
         assert_eq!(s.base_model, Some("claude-fable-5".to_string()));
         assert!(s.beta_tokens.is_some());
+        assert_eq!(s.context_window, Some(1_000_000));
     }
 }

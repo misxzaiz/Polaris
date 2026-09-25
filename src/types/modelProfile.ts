@@ -123,9 +123,10 @@ export interface ModelProfile {
   maxTokens?: number
   /**
    * 上下文窗口（token），驱动 SimpleAI 压缩触发阈值（window × 0.75）。
-   * 留空：custom_env SIMPLE_AI_CONTEXT_WINDOW（兼容）→ 默认 180,000。
+   * 留空：模型名后缀推导（如 `[1m]`→1M、`[200k]`→200K）→ custom_env
+   * SIMPLE_AI_CONTEXT_WINDOW（兼容）→ 默认 200,000。
    * ⚠️ 通过中转站/聚合代理时务必填写上游真实窗口（如 256K 代理填 262144）；
-   * 否则压缩触发按 180K 估算，时机不对，压缩请求自身会被上游 400 拒绝。
+   * 否则压缩触发按 200K 估算，时机不对，压缩请求自身会被上游 400 拒绝。
    */
   contextWindow?: number
   /** 上次从端点拉取的模型列表（仅前端 UI 缓存用） */

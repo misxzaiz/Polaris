@@ -145,9 +145,14 @@ pub(super) async fn run_chat_loop(
     // 会话级文件状态缓存由调用方持有（SimpleAISession.file_states），
     // 保证 continue / 子 agent 共享同一份 read 登记（read-before-write + mtime 校验）。
     // 上下文压缩配置（Phase 3.3）：最近一轮 input 达窗口 75% 时触发摘要压缩。
+    // 窗口优先级：ModelProfile.context_window（显式配置，最权威，保护聚合代理场景）
+    //   > 模型名后缀推导（如 `[1m]`→1M、`[200k]`→200K，与线路协议无关）
+    //   > custom_env SIMPLE_AI_CONTEXT_WINDOW（向后兼容）
+    //   > 默认 200K。
     let context_window = profile
         .context_window
         .filter(|v| *v > 0)
+        .or_else(|| CliModelSuffix::new(&profile.model).context_window)
         .unwrap_or_else(|| {
             read_env_u64(
                 &profile.custom_env,
