@@ -56,7 +56,7 @@ export function NarrowTabOverlay() {
 
   return (
     <div
-      className="polaris-editor-overlay absolute inset-0 z-[60] flex flex-col bg-background-base animate-in slide-in-from-bottom duration-280 [&_.cm-foldGutter]:hidden"
+      className="polaris-editor-overlay absolute inset-0 z-[60] flex flex-col bg-background-base animate-drawer-in-bottom [&_.cm-foldGutter]:hidden"
       role="dialog"
       aria-modal="true"
       aria-label={title}

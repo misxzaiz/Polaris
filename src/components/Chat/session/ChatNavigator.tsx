@@ -285,7 +285,7 @@ export function ChatNavigator({
               ? 'w-auto bg-background-elevated'
               : 'w-56 bg-background-elevated',
             'border border-border/80 rounded-lg shadow-lg shadow-black/20',
-            'overflow-hidden animate-in fade-in zoom-in-95 duration-150',
+            'overflow-hidden animate-dialog-in',
             'pointer-events-auto flex flex-col',
             'absolute z-50'
           )}

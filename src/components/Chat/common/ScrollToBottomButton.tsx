@@ -43,7 +43,7 @@ export const ScrollToBottomButton = memo(function ScrollToBottomButton({
         'shadow-lg shadow-black/20 hover:shadow-xl',
         'pointer-events-auto cursor-pointer',
         'transition-all duration-150 hover:scale-105',
-        'animate-in fade-in zoom-in-95 duration-200'
+        'animate-dialog-in-fast'
       )}
     >
       <ArrowDown className="w-4 h-4" />

@@ -6,7 +6,7 @@
  * 组件本身只负责「输入 → 提取 → 预览 → 确认」的交互骨架与状态管理。
  */
 
-import { useState, useEffect, type ReactNode } from 'react'
+import { useState, useEffect, useRef, type ReactNode } from 'react'
 import { X, Sparkles, Loader2 } from 'lucide-react'
 
 export interface AiExtractDialogLabels {
@@ -58,6 +58,12 @@ export function AiExtractDialog<T>({
   const [confirming, setConfirming] = useState(false)
   const [result, setResult] = useState<T | null>(null)
   const [error, setError] = useState<string | null>(null)
+  // 受控 open：内部接管「渲染 + 退场延迟」——
+  // open=true 时重建 DOM 触发进场动画；关闭先退场，180ms 后真正 onClose
+  const [render, setRender] = useState(false)
+  const [exiting, setExiting] = useState(false)
+  const onCloseRef = useRef(onClose)
+  onCloseRef.current = onClose
 
   // 打开时重置全部状态
   useEffect(() => {
@@ -67,20 +73,37 @@ export function AiExtractDialog<T>({
       setConfirming(false)
       setResult(null)
       setError(null)
+      setExiting(false)
+      setRender(true)
     }
   }, [open])
 
+  // 退场：动画结束后卸载并通知父组件
+  useEffect(() => {
+    if (!exiting) return
+    const t = setTimeout(() => {
+      setRender(false)
+      onCloseRef.current?.()
+    }, 180)
+    return () => clearTimeout(t)
+  }, [exiting])
+
   // Esc 关闭
   useEffect(() => {
-    if (!open) return
+    if (!open || !render) return
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape') handleClose()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, onClose])
+  }, [open, render, exiting])
 
-  if (!open) return null
+  const handleClose = () => {
+    if (extracting || confirming || exiting) return
+    setExiting(true)
+  }
+
+  if (!open || !render) return null
 
   const hasResult = result !== null && !isEmpty(result)
 
@@ -110,7 +133,8 @@ export function AiExtractDialog<T>({
     setError(null)
     try {
       await onConfirm(result)
-      onClose()
+      setConfirming(false)
+      handleClose()
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
       setConfirming(false)
@@ -122,10 +146,10 @@ export function AiExtractDialog<T>({
       role="dialog"
       aria-modal="true"
       aria-label={labels.title}
-      className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
+      className={`fixed inset-0 bg-overlay flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
     >
       <div
-        className="bg-background-elevated rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col"
+        className={`bg-background-elevated rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col ${exiting ? 'animate-dialog-out' : 'animate-dialog-in'}`}
         onClick={e => e.stopPropagation()}
       >
         {/* 头部 */}
@@ -135,7 +159,7 @@ export function AiExtractDialog<T>({
             {labels.title}
           </h2>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="p-1 rounded hover:bg-background-hover text-text-secondary hover:text-text-primary transition-all"
             aria-label={labels.cancel}
           >
@@ -175,7 +199,7 @@ export function AiExtractDialog<T>({
         {/* 底部按钮 */}
         <div className="px-4 py-3 border-t border-border flex justify-end gap-2">
           <button
-            onClick={onClose}
+            onClick={handleClose}
             disabled={confirming}
             className="px-3 py-1.5 text-sm bg-background-surface border border-border rounded-lg hover:bg-background-hover text-text-secondary transition-all disabled:opacity-60"
           >

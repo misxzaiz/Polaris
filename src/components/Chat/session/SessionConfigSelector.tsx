@@ -525,7 +525,7 @@ export function SessionConfigSelector({
         'absolute bottom-full left-0 mb-1',
         'bg-background-elevated border border-border rounded-lg shadow-lg',
         'min-w-[180px] max-h-[240px] overflow-y-auto',
-        'z-50 animate-in fade-in slide-in-from-bottom-1 duration-150'
+        'z-50 animate-panel-in'
       )}>
         {items.map((item) => (
           <button

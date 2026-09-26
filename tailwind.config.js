@@ -170,6 +170,81 @@ module.exports = {
           '0%, 100%': { transform: 'translate(0, 0) scale(1)' },
           '50%': { transform: 'translate(-10%, -8%) scale(1.08)' },
         },
+        // 面板/浮层：进入（淡入 + 轻微上移）
+        'panel-in': {
+          '0%': { opacity: '0', transform: 'translateY(4px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
+        // 面板/浮层：退出（淡出 + 轻微下移）
+        'panel-out': {
+          '0%': { opacity: '1', transform: 'translateY(0)' },
+          '100%': { opacity: '0', transform: 'translateY(4px)' },
+        },
+        // 弹窗：缩放 + 淡入（带轻微上移，spring 过冲）
+        'dialog-in': {
+          '0%': { opacity: '0', transform: 'translateY(12px) scale(0.94)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        // 弹窗：缩放 + 淡出（快收）
+        'dialog-out': {
+          '0%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+          '100%': { opacity: '0', transform: 'translateY(8px) scale(0.95)' },
+        },
+        // 抽屉：左侧滑入
+        'drawer-in-left': {
+          '0%': { transform: 'translateX(-100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+        // 抽屉：左侧滑出
+        'drawer-out-left': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-100%)' },
+        },
+        // 浮层：右侧滑入
+        'drawer-in-right': {
+          '0%': { transform: 'translateX(100%)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+        // 浮层：右侧滑出
+        'drawer-out-right': {
+          '0%': { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(100%)' },
+        },
+        // 窄窗/底部覆盖层：自下而上滑入
+        'drawer-in-bottom': {
+          '0%': { transform: 'translateY(100%)' },
+          '100%': { transform: 'translateY(0)' },
+        },
+        // 窄窗/底部覆盖层：向下滑出
+        'drawer-out-bottom': {
+          '0%': { transform: 'translateY(0)' },
+          '100%': { transform: 'translateY(100%)' },
+        },
+        // 遮罩：淡入
+        'mask-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        // 遮罩：淡出
+        'mask-out': {
+          '0%': { opacity: '1' },
+          '100%': { opacity: '0' },
+        },
+        // 列表：逐条滑入（stagger 用 transition-delay 交错）
+        'list-item-in': {
+          '0%': { opacity: '0', transform: 'translateX(-8px)' },
+          '100%': { opacity: '1', transform: 'translateX(0)' },
+        },
+        // 胶囊：自下浮入
+        'capsule-in': {
+          '0%': { opacity: '0', transform: 'translateY(16px) scale(0.96)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        // 胶囊：向下浮出
+        'capsule-out': {
+          '0%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+          '100%': { opacity: '0', transform: 'translateY(16px) scale(0.96)' },
+        },
       },
       animation: {
         'shake-once': 'shake-once 0.5s ease-in-out',
@@ -180,6 +255,23 @@ module.exports = {
         'voice-bar': 'voice-bar 1s ease-in-out infinite',
         'aurora-drift-1': 'aurora-drift-1 22s ease-in-out infinite',
         'aurora-drift-2': 'aurora-drift-2 28s ease-in-out infinite',
+        // 面板/浮层（时长梯度：微交互 140 / 浮层 260 / 形变 380）
+        'panel-in-fast': 'panel-in 140ms cubic-bezier(.32,.72,0,1)',
+        'panel-in': 'panel-in 260ms cubic-bezier(.32,.72,0,1)',
+        'panel-out': 'panel-out 140ms cubic-bezier(.4,0,1,1)',
+        'dialog-in': 'dialog-in 260ms cubic-bezier(.34,1.56,.64,1)',
+        'dialog-out': 'dialog-out 140ms cubic-bezier(.4,0,1,1)',
+        'drawer-in-left': 'drawer-in-left 260ms cubic-bezier(.32,.72,0,1)',
+        'drawer-out-left': 'drawer-out-left 220ms cubic-bezier(.4,0,1,1)',
+        'drawer-in-right': 'drawer-in-right 260ms cubic-bezier(.32,.72,0,1)',
+        'drawer-out-right': 'drawer-out-right 220ms cubic-bezier(.4,0,1,1)',
+        'drawer-in-bottom': 'drawer-in-bottom 260ms cubic-bezier(.32,.72,0,1)',
+        'drawer-out-bottom': 'drawer-out-bottom 220ms cubic-bezier(.4,0,1,1)',
+        'mask-in': 'mask-in 200ms ease',
+        'mask-out': 'mask-out 180ms ease',
+        'list-item-in': 'list-item-in 220ms cubic-bezier(.32,.72,0,1)',
+        'capsule-in': 'capsule-in 260ms cubic-bezier(.32,.72,0,1)',
+        'capsule-out': 'capsule-out 220ms cubic-bezier(.4,0,1,1)',
       },
     },
   },

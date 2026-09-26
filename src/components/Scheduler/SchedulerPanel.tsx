@@ -522,7 +522,7 @@ export function SchedulerPanel() {
 
       {/* 可折叠筛选栏 */}
       {filterExpanded && (
-        <div className="px-3 py-2 border-b border-border-subtle bg-background-base animate-in slide-in-from-top-2 duration-200">
+        <div className="px-3 py-2 border-b border-border-subtle bg-background-base animate-panel-in">
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text"

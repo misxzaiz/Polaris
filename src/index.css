@@ -2074,3 +2074,18 @@ html.focus-mode .chat-prose:hover > blockquote:not(:hover) {
   opacity: 1;
 }
 
+/* === 全局无障碍：减少动态效果 ===
+ * 系统开启「减少动态效果」时，所有 transition/animation 降级为瞬时切换。
+ * 不依赖具体类名，全局统一兜底（含内联动画）。 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+

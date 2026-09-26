@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { OverlayGuard } from '@/components/Browser/OverlayGuard';
 import { Save, FileText } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
+import { useTransitionState } from '@/hooks/useTransitionState';
 
 const log = createLogger('UnsavedDialog');
 
@@ -34,38 +35,65 @@ export function UnsavedDialog({
 }: UnsavedDialogProps) {
   const { t } = useTranslation('common');
   const saveButtonRef = useRef<HTMLButtonElement>(null);
+  // 进出场动画：cancel/dontSave/保存成功 先退场，结束后再执行真实回调
+  const { mounted, phase, exit } = useTransitionState({
+    duration: 180,
+    onExited: () => {
+      pendingAction.current?.();
+      pendingAction.current = null;
+    },
+  });
+  const pendingAction = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     // 默认聚焦保存按钮
-    if (saveButtonRef.current) {
+    if (mounted && saveButtonRef.current) {
       saveButtonRef.current.focus();
     }
-  }, []);
+  }, [mounted]);
+
+  const handleCancel = () => {
+    pendingAction.current = onCancel;
+    exit();
+  };
+
+  const handleDontSave = () => {
+    pendingAction.current = onDontSave;
+    exit();
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      handleCancel();
     }
   };
 
   const handleSave = async () => {
     try {
       await onSave();
+      // 保存成功后退场（父组件由 onExited 卸载）
+      pendingAction.current = onCancel;
+      exit();
     } catch (error) {
       // 保存失败时保持对话框打开，由调用方处理错误
       log.error('Save failed:', error instanceof Error ? error : new Error(String(error)));
     }
   };
 
+  if (!mounted) return null;
+
+  const exiting = phase === 'exiting';
+
   return (
     <OverlayGuard label="UnsavedDialog">
       <div
-        className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+        className={`fixed inset-0 flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+        style={{ background: 'rgba(0,0,0,0.5)' }}
         onKeyDown={handleKeyDown}
       >
       <div
-        className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow"
+        className={`bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-glow ${exiting ? 'animate-dialog-out' : 'animate-dialog-in'}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="unsaved-dialog-title"
@@ -93,7 +121,7 @@ export function UnsavedDialog({
           {/* 取消 */}
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             disabled={isSaving}
             className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors disabled:opacity-50"
           >
@@ -103,7 +131,7 @@ export function UnsavedDialog({
           {/* 不保存 */}
           <button
             type="button"
-            onClick={onDontSave}
+            onClick={handleDontSave}
             disabled={isSaving}
             className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors disabled:opacity-50"
           >

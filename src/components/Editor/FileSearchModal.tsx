@@ -605,7 +605,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
     >
       <div
         ref={modalRef}
-        className="bg-background-elevated rounded-xl w-full max-w-lg border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-background-elevated rounded-xl w-full max-w-lg border border-border shadow-glow overflow-hidden animate-dialog-in"
         onKeyDown={handleKeyDown}
       >
         {/* 钉住按钮 */}

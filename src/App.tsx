@@ -15,7 +15,7 @@ import type { EditMode } from './components/Chat';
 const SessionHistoryPanelLazy = lazy(() => import('./components/Chat/session/SessionHistoryPanel').then(m => ({ default: m.SessionHistoryPanel })));
 const MultiSessionGridLazy = lazy(() => import('./components/Chat/session/MultiSessionGrid').then(m => ({ default: m.MultiSessionGrid })));
 import type { SettingsTabId } from './components/Settings/SettingsSidebar';
-import { OverlayGuard } from './components/Browser/OverlayGuard';
+import { RightSlideOver } from './components/Common/RightSlideOver';
 import { SelectionContextMenu } from './components/Translate';
 
 // 懒加载大型组件，减少初始 bundle 大小
@@ -94,11 +94,51 @@ function App() {
   // UI 状态
   const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false);
+  // 设置页关闭退场：showSettings 置 false 后保留渲染 200ms 播退出动画
+  const [settingsKept, setSettingsKept] = useState(false);
+  // 左面板（桌面）关闭退场：hasLeftPanel 变 false 后保留渲染 150ms 播淡出
+  const [leftPanelKept, setLeftPanelKept] = useState(false);
 
   // OverlayStore 状态（替代 useState）
   const showSettings = useOverlayStore(s => s.settingsOpen);
+  // 实际渲染标志：打开立即渲染；关闭延迟 200ms 退场后再真正移除
+  const settingsRendering = showSettings || settingsKept;
   const showCreateSession = useOverlayStore(s => s.createSessionOpen);
   const showFileSearch = useOverlayStore(s => s.fileSearchOpen);
+  // 会话历史/消息中心后退场保活：先播滑出动画 260ms 再卸载
+  const [sessionHistoryKept, setSessionHistoryKept] = useState(false);
+  const [notificationCenterKept, setNotificationCenterKept] = useState(false);
+
+  // 关闭会话历史：立即翻转 store（播退场信号），同时保留渲染直到退场结束
+  const closeSessionHistory = useCallback(() => {
+    if (useViewStore.getState().showSessionHistory) {
+      useViewStore.getState().toggleSessionHistory();
+    }
+    setSessionHistoryKept(true);
+  }, []);
+  const sessionHistoryExited = useCallback(() => {
+    setSessionHistoryKept(false);
+  }, []);
+  // 关闭消息中心：同上
+  const closeNotificationCenter = useCallback(() => {
+    if (useViewStore.getState().showNotificationCenter) {
+      useViewStore.getState().toggleNotificationCenter();
+    }
+    setNotificationCenterKept(true);
+  }, []);
+  const notificationCenterExited = useCallback(() => {
+    setNotificationCenterKept(false);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    useOverlayStore.getState().setSettingsOpen(false);
+    // 先播退场动画，200ms 后再移除 DOM
+    setSettingsKept(true);
+    window.setTimeout(() => {
+      setSettingsKept(false);
+      setSettingsInitialTab(undefined);
+    }, 200);
+  }, []);
 
   // Store 状态
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -113,9 +153,7 @@ function App() {
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const activityBarCollapsed = useViewStore(state => state.activityBarCollapsed);
   const showSessionHistory = useViewStore(state => state.showSessionHistory);
-  const toggleSessionHistory = useViewStore(state => state.toggleSessionHistory);
   const showNotificationCenter = useViewStore(state => state.showNotificationCenter);
-  const toggleNotificationCenter = useViewStore(state => state.toggleNotificationCenter);
   const narrowTabId = useNarrowTabStore(state => state.narrowTabId);
   const openNarrowTab = useNarrowTabStore(state => state.openNarrowTab);
   const openDiffTab = useTabStore(state => state.openDiffTab);
@@ -197,6 +235,20 @@ function App() {
     console.warn(`[PanelTrace] hasLeftPanel false → leftPanelType="${leftPanelType}" contribution=${!!activeLeftPanelContribution} pluginStates keys=${Object.keys(pluginStates).length}`, new Error().stack?.split('\n').slice(2, 6).join(' | '))
   }
   hasLeftPanelRef.current = hasLeftPanel;
+  // 左面板关闭退场：hasLeftPanel true→false 时保留渲染 150ms 播淡出
+  // 注意：不能依赖 hasLeftPanelRef（渲染期已更新为当前值），用上次渲染值对比
+  const prevHasLeftPanel = useRef(hasLeftPanel);
+  useEffect(() => {
+    if (prevHasLeftPanel.current && !hasLeftPanel) {
+      setLeftPanelKept(true);
+      const t = window.setTimeout(() => setLeftPanelKept(false), 150);
+      prevHasLeftPanel.current = hasLeftPanel;
+      return () => window.clearTimeout(t);
+    }
+    prevHasLeftPanel.current = hasLeftPanel;
+  }, [hasLeftPanel]);
+  const leftPanelRendering = hasLeftPanel || leftPanelKept;
+  const leftPanelLeaving = !hasLeftPanel && leftPanelKept;
   const hasCenterStage = !isCompact && hasOpenTabs;
 
   // 右侧面板填充模式：无编辑器时自适应填充，有编辑器时固定宽度
@@ -281,11 +333,16 @@ function App() {
               onOpenSettings={() => useOverlayStore.getState().setSettingsOpen(true)}
               onToggleRightPanel={toggleRightPanel}
               rightPanelCollapsed={rightPanelCollapsed}
-              forceCollapsed={isCompact || activityBarCollapsed}
+              forceCollapsed={isCompact}
+              collapsed={activityBarCollapsed}
             />
 
-            {!isCompact && hasLeftPanel && (
-              <LeftPanel fillRemaining={leftPanelFillRemaining} fullscreen={terminalFullscreen}>
+            {!isCompact && leftPanelRendering && (
+              <LeftPanel
+                fillRemaining={leftPanelFillRemaining}
+                fullscreen={terminalFullscreen}
+                leaving={leftPanelLeaving}
+              >
                 {leftPanelContent}
               </LeftPanel>
             )}
@@ -338,12 +395,16 @@ function App() {
           </div>
 
           {/* 设置页层叠覆盖（absolute inset-0，z-50），主布局在下方常驻保活 */}
-          {showSettings && (
-            <div className="absolute inset-0 z-50 flex flex-col" role="dialog" aria-modal="true">
+          {settingsRendering && (
+            <div
+              className={`absolute inset-0 z-50 flex flex-col ${showSettings ? 'animate-panel-in-fast' : 'animate-panel-out'}`}
+              role="dialog"
+              aria-modal="true"
+            >
               <Suspense fallback={loadingFallback}>
                 <SettingsPage
                   initialTab={settingsInitialTab as SettingsTabId | undefined}
-                  onClose={() => { useOverlayStore.getState().setSettingsOpen(false); setSettingsInitialTab(undefined); }}
+                  onClose={handleCloseSettings}
                 />
               </Suspense>
             </div>
@@ -380,29 +441,27 @@ function App() {
           </Suspense>
         )}
 
-        {showSessionHistory && (
-          <OverlayGuard>
-            <div
-              className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-              style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
-            >
-              <SessionHistoryPanelLazy onClose={toggleSessionHistory} />
-            </div>
-          </OverlayGuard>
+        {(showSessionHistory || sessionHistoryKept) && (
+          <RightSlideOver
+            open={showSessionHistory || sessionHistoryKept}
+            exiting={!showSessionHistory && sessionHistoryKept}
+            onExited={sessionHistoryExited}
+          >
+            <SessionHistoryPanelLazy onClose={closeSessionHistory} />
+          </RightSlideOver>
         )}
 
         {/* 全局消息中心：右侧滑出，复用会话历史面板的浮层范式 */}
-        {showNotificationCenter && (
-          <OverlayGuard>
-            <div
-              className="fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl animate-in slide-in-from-right duration-200"
-              style={{ top: '10%', right: '0', height: '80%', width: 'min(400px, 90vw)' }}
-            >
-              <Suspense fallback={null}>
-                <NotificationCenterPanel onClose={toggleNotificationCenter} />
-              </Suspense>
-            </div>
-          </OverlayGuard>
+        {(showNotificationCenter || notificationCenterKept) && (
+          <RightSlideOver
+            open={showNotificationCenter || notificationCenterKept}
+            exiting={!showNotificationCenter && notificationCenterKept}
+            onExited={notificationCenterExited}
+          >
+            <Suspense fallback={null}>
+              <NotificationCenterPanel onClose={closeNotificationCenter} />
+            </Suspense>
+          </RightSlideOver>
         )}
 
         <SelectionContextMenu />

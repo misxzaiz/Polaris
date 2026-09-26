@@ -237,7 +237,7 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
       }}
     >
       <div
-        className="bg-background-elevated rounded-xl w-full max-w-3xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col"
+        className="bg-background-elevated rounded-xl w-full max-w-3xl border border-border shadow-glow overflow-hidden animate-dialog-in flex flex-col"
         style={{ maxHeight: '78vh' }}
         onKeyDown={handleKeyDown}
         tabIndex={-1}

@@ -5,6 +5,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { OverlayGuard } from '@/components/Browser/OverlayGuard';
+import { useTransitionState } from '@/hooks/useTransitionState';
 
 interface InputDialogProps {
   title: string;
@@ -29,13 +30,22 @@ export function InputDialog({
   const [value, setValue] = useState(defaultValue);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 进出场动画：confirm/cancel 先退场，结束后再执行真实回调
+  const { mounted, phase, exit } = useTransitionState({
+    duration: 180,
+    onExited: () => {
+      pendingAction.current?.();
+      pendingAction.current = null;
+    },
+  });
+  const pendingAction = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    if (inputRef.current) {
+    if (mounted && inputRef.current) {
       inputRef.current.focus();
       inputRef.current.select();
     }
-  }, []);
+  }, [mounted]);
 
   const handleConfirm = () => {
     if (validate) {
@@ -46,7 +56,13 @@ export function InputDialog({
       }
     }
 
-    onConfirm(value.trim());
+    pendingAction.current = () => onConfirm(value.trim());
+    exit();
+  };
+
+  const handleCancel = () => {
+    pendingAction.current = onCancel;
+    exit();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -55,7 +71,7 @@ export function InputDialog({
       handleConfirm();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      onCancel();
+      handleCancel();
     }
   };
 
@@ -64,10 +80,17 @@ export function InputDialog({
     setError(null);
   };
 
+  if (!mounted) return null;
+
+  const exiting = phase === 'exiting';
+
   return (
     <OverlayGuard label="InputDialog">
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-md border border-border shadow-glow">
+      <div
+        className={`fixed inset-0 flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+        style={{ background: 'rgba(0,0,0,0.5)' }}
+      >
+      <div className={`bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-md border border-border shadow-glow ${exiting ? 'animate-dialog-out' : 'animate-dialog-in'}`}>
         <h2 className="text-lg font-semibold text-text-primary mb-2">
           {title}
         </h2>
@@ -101,7 +124,7 @@ export function InputDialog({
         <div className="flex justify-end gap-2 mt-6">
           <button
             type="button"
-            onClick={onCancel}
+            onClick={handleCancel}
             className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary hover:bg-background-hover rounded-lg transition-colors"
           >
             {t('buttons.cancel')}

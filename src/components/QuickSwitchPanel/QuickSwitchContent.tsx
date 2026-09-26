@@ -181,7 +181,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
         // 阴影
         'shadow-2xl shadow-black/30',
         // 入场动画
-        'animate-in fade-in-0 slide-in-from-right-2 duration-200',
+        'animate-drawer-in-right',
         // 内容布局
         'overflow-hidden'
       )}
@@ -478,7 +478,7 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
         className={cn(
           'z-50 bg-background-elevated border border-border rounded-xl',
           'shadow-xl overflow-hidden',
-          'animate-in fade-in-0 zoom-in-95 duration-150'
+          'animate-dialog-in'
         )}
       >
         {/* 锁定提示 */}

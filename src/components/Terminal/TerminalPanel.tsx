@@ -247,6 +247,18 @@ export function TerminalPanel() {
   const toggleTerminalScriptPanelCollapsed = useViewStore((state) => state.toggleTerminalScriptPanelCollapsed);
   const terminalFullscreen = useViewStore((state) => state.terminalFullscreen);
   const toggleTerminalFullscreen = useViewStore((state) => state.toggleTerminalFullscreen);
+  // 全屏切换形变动画：仅在切换瞬间触发（避免挂载时对初始态播动画）
+  const [animateFullscreen, setAnimateFullscreen] = useState(false);
+  const prevFullscreenRef = useRef(terminalFullscreen);
+  useEffect(() => {
+    if (prevFullscreenRef.current !== terminalFullscreen) {
+      setAnimateFullscreen(true);
+      const t = setTimeout(() => setAnimateFullscreen(false), 300);
+      prevFullscreenRef.current = terminalFullscreen;
+      return () => clearTimeout(t);
+    }
+    prevFullscreenRef.current = terminalFullscreen;
+  }, [terminalFullscreen]);
   const scripts = useTerminalStore((state) => state.scripts);
   const runScript = useTerminalStore((state) => state.runScript);
   const stopScript = useTerminalStore((state) => state.stopScript);
@@ -309,7 +321,11 @@ export function TerminalPanel() {
   }, [terminalFullscreen, toggleTerminalFullscreen]);
 
   return (
-    <div className="flex flex-col h-full bg-background-base">
+    <div
+      className={`flex flex-col h-full bg-background-base ${
+        animateFullscreen ? 'animate-panel-in' : ''
+      }`}
+    >
       <TerminalQuickRunBar
         collapsed={terminalScriptPanelCollapsed}
         onToggleCollapsed={toggleTerminalScriptPanelCollapsed}

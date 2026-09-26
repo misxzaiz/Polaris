@@ -18,7 +18,7 @@ export const ContextChips = memo(function ContextChips({ chips, onRemove }: Cont
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 px-1 animate-in fade-in slide-in-from-top-2 duration-200">
+    <div className="flex flex-wrap items-center gap-2 px-1 animate-panel-in">
       {chips.map(chip => (
         <ContextChip key={chip.id} chip={chip} onRemove={() => onRemove(chip)} />
       ))}

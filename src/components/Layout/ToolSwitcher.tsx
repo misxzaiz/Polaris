@@ -156,7 +156,7 @@ export function ToolSwitcher({
   return (
     <div
       ref={menuRef}
-      className={`fixed z-[65] ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-in fade-in duration-150`}
+      className={`fixed z-[65] ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-panel-in`}
       style={{ maxHeight: 'min(70dvh, calc(100dvh - 64px))' }}
       role="dialog"
       aria-label={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}

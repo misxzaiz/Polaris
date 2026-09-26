@@ -5,13 +5,14 @@
  * 由 ActivityBar 控制面板的显示/隐藏和切换
  */
 
-import { ReactNode, useEffect, useRef, useState } from 'react'
+import { ReactNode, useEffect, useRef, useState, useCallback } from 'react'
 import { X, Maximize2, Minimize2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useViewStore, LeftPanelType } from '@/stores/viewStore'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
 import { PluginPanelHost } from '../Plugins/PluginPanelHost'
 import { ResizeHandle } from '../Common'
+import { useTransitionState } from '@/hooks/useTransitionState'
 
 interface LeftPanelProps {
   children?: ReactNode
@@ -20,6 +21,8 @@ interface LeftPanelProps {
   fillRemaining?: boolean
   /** 是否全屏（撑满除 ActivityBar 外全部横向空间，不显示拖拽条） */
   fullscreen?: boolean
+  /** 是否正在退场（关闭时淡出动画，由父组件延迟卸载） */
+  leaving?: boolean
 }
 
 /**
@@ -27,8 +30,9 @@ interface LeftPanelProps {
  * - fullscreen: flex-1 撑满除 ActivityBar 外全部横向空间，无拖拽条（终端全屏）
  * - fillRemaining: flex-1 自适应填充，无拖拽条（终端激活且无编辑器时）
  * - 默认: 固定宽度 + 拖拽条
+ * - leaving: 关闭退场时淡出（父组件负责延迟卸载）
  */
-export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false }: LeftPanelProps) {
+export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false, leaving = false }: LeftPanelProps) {
   const width = useViewStore((state) => state.leftPanelWidth)
   const setWidth = useViewStore((state) => state.setLeftPanelWidth)
 
@@ -45,7 +49,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
     <>
       <aside
         data-theme-panel
-        className={`flex flex-col bg-background-elevated border-r border-border relative transition-[width] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${isFlexible ? 'flex-1 min-w-[200px]' : 'shrink-0'} ${className}`}
+        className={`flex flex-col bg-background-elevated border-r border-border relative transition-[width,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${isFlexible ? 'flex-1 min-w-[200px]' : 'shrink-0'} ${className}`}
         style={isFlexible ? undefined : { width: `${width}px` }}
       >
         <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
@@ -71,6 +75,16 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
   const { t } = useTranslation('common')
   const drawerRef = useRef<HTMLElement>(null)
   const [expanded, setExpanded] = useState(false)
+  // 进出场动画：exit() 触发退场，结束后再调 onClose 卸载
+  const { mounted, phase, exit } = useTransitionState({
+    duration: 240,
+    onExited: onClose,
+  })
+
+  // 关闭：先退场动画，结束后由 onExited 真正关闭
+  const handleClose = useCallback(() => {
+    exit()
+  }, [exit])
 
   // Escape 键关闭
   useEffect(() => {
@@ -80,18 +94,24 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
         if (expanded) {
           setExpanded(false)
         } else {
-          onClose()
+          handleClose()
         }
       }
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose, expanded])
+  }, [expanded, handleClose])
 
   // 打开时将焦点移入抽屉
   useEffect(() => {
-    drawerRef.current?.focus()
-  }, [])
+    if (mounted) {
+      drawerRef.current?.focus()
+    }
+  }, [mounted])
+
+  if (!mounted) return null
+
+  const exiting = phase === 'exiting'
 
   return (
     <div
@@ -100,19 +120,20 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
       aria-modal="true"
       aria-label={t('buttons.close')}
     >
-      {/* 遮罩：点击关闭 */}
+      {/* 遮罩：点击关闭（淡入/淡出） */}
       <div
-        className="absolute inset-0 bg-black/50 animate-in fade-in duration-200"
-        onClick={onClose}
+        className={`absolute inset-0 bg-black/50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+        onClick={handleClose}
       />
 
       {/* 抽屉面板
           默认 min(85vw, 360px)，可全屏展开至 100vw —— 文件树半遮挡够用，
-          Git 历史/Diff/终端等宽内容面板需要全屏。展开态 width 过渡 0.3s。 */}
+          Git 历史/Diff/终端等宽内容面板需要全屏。展开态 width 过渡 0.3s。
+          进出场：左侧滑入/滑出。 */}
       <aside
         ref={drawerRef}
         tabIndex={-1}
-        className="absolute inset-y-0 left-0 flex flex-col bg-background-elevated border-r border-border shadow-xl animate-in slide-in-from-left duration-200 outline-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        className={`absolute inset-y-0 left-0 flex flex-col bg-background-elevated border-r border-border shadow-xl outline-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${exiting ? 'animate-drawer-out-left' : 'animate-drawer-in-left'}`}
         style={{ width: expanded ? '100%' : 'min(85vw, 360px)' }}
       >
         {/* 顶部操作栏：展开/还原 + 关闭 */}
@@ -126,7 +147,7 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
             {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
           </button>
           <button
-            onClick={onClose}
+            onClick={handleClose}
             className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
             aria-label="导航面板"
             title={t('buttons.close')}

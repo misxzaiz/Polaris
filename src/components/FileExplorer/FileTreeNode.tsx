@@ -453,7 +453,7 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
       </div>
       
       {file.is_dir && isExpanded && hasChildren && (
-        <div className="animate-in slide-in-from-top-1 duration-200">
+        <div className="animate-panel-in">
           {file.children?.map(child => (
             <FileTreeNode
               key={child.path}

@@ -263,7 +263,7 @@ function SymbolPaletteInner({
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="bg-background-elevated rounded-xl w-full max-w-xl border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+        className="bg-background-elevated rounded-xl w-full max-w-xl border border-border shadow-glow overflow-hidden animate-dialog-in"
         onKeyDown={handleKeyDown}
       >
         {/* 标题 */}

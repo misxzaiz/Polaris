@@ -93,7 +93,7 @@ export function MessageSearchPanel({
         'border border-border shadow-lg',
         isCompact ? undefined : 'rounded-lg',
         'flex items-center gap-2 p-2',
-        'animate-in fade-in zoom-in-95 duration-150'
+        'animate-dialog-in'
       )}
     >
       {/* 搜索图标 */}

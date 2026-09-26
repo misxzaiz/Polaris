@@ -182,7 +182,7 @@ function PeekInner({ ctx }: InnerProps) {
         width: PEEK_WIDTH,
         zIndex: 60,
       }}
-      className="bg-background-elevated rounded-lg border border-border shadow-glow overflow-hidden animate-in fade-in zoom-in-95 duration-100"
+      className="bg-background-elevated rounded-lg border border-border shadow-glow overflow-hidden animate-dialog-in-fast"
     >
       {/* 头部 */}
       <div className="px-3 py-1.5 border-b border-border text-[10px] text-text-tertiary uppercase tracking-wide flex items-center gap-2">
