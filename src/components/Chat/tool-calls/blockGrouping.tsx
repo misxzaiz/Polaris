@@ -6,7 +6,7 @@ import { memo, useState, useEffect, useMemo } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ChevronRight, ChevronUp, FileText, Brain } from 'lucide-react';
+import { ChevronRight, ChevronUp, FileText, Brain, Check, XCircle, Wrench, ListTodo } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { ProcessBlockCollapseMode } from '@/types';
 import type { CollapsibleBlockGroup } from '../chatUtils/types';
@@ -16,6 +16,8 @@ import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 import { ThinkingBlockRenderer } from '../chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from '../chatBlocks';
 import { extractEditDiff, extractWriteInfo, type DiffData } from '@/utils/diffExtractor';
+import { extractToolKeyInfo } from '@/utils/toolConfig';
+import { calculateDuration, formatDuration } from '@/utils/toolSummary';
 
 /**
  * 块分类枚举。
@@ -243,84 +245,168 @@ const CollapsibleBlockGroupRenderer = memo(function CollapsibleBlockGroupRendere
 
 
 /**
- * 过程块全部展开列表组件
- * - 按类型分组（思考 / 工具调用 / 计划 / 权限…）
- * - 所有块直接完整渲染，限高滚动
+ * 过程块段落折叠列表（v3 段落折叠式）
  *
- * 导出供 SessionSummaryCard 展开态复用（渲染该消息被折叠的过程块）。
+ * 按类型分组为独立可折叠段落，每段有：
+ * - 头部行：图标 + 标题 + 一行摘要 + 计数 + 折叠箭头
+ * - 展开内容：精炼卡片（tool_call 一行式，thinking 预览+展开）
+ *
+ * 导出供 SessionSummaryCard 段落复用。
+ * bare 模式：无外层边框（嵌入卡片内部，由卡片提供边框）。
  */
 export const ProcessBlockGroupedList = memo(function ProcessBlockGroupedList({
   processBlocks,
   bare = false,
 }: {
   processBlocks: ContentBlock[];
-  /** bare 模式：去掉外层边框与顶部工具条（供补充卡片 tab 内扁平渲染，避免嵌套边框） */
   bare?: boolean;
 }) {
   const { t } = useTranslation('chat');
 
-  // 按类型分组
+  // 按类型分组（保持出现顺序）
   const groups = useMemo(() => {
-    const map = new Map<string, { type: string; label: string; blocks: ContentBlock[] }>();
-    for (let i = 0; i < processBlocks.length; i++) {
-      const block = processBlocks[i];
-      const groupKey = getBlockGroupKey(block);
-      if (!map.has(groupKey)) {
-        map.set(groupKey, { type: groupKey, label: getBlockGroupLabel(groupKey, t), blocks: [] });
-      }
-      map.get(groupKey)!.blocks.push(block);
-    }
-    // 按出现的顺序排序
+    const map = new Map<string, ContentBlock[]>();
     const order: string[] = [];
     for (const b of processBlocks) {
       const key = getBlockGroupKey(b);
-      if (!order.includes(key)) order.push(key);
+      if (!map.has(key)) { map.set(key, []); order.push(key); }
+      map.get(key)!.push(b);
     }
-    return order.map(k => map.get(k)!).filter(Boolean);
+    return order.map(k => ({ key: k, label: getBlockGroupLabel(k, t), blocks: map.get(k)! }));
   }, [processBlocks, t]);
 
   return (
-    <div
-      className={clsx('flex flex-col overflow-hidden', !bare && 'border border-border rounded-md')}
-      style={{ maxHeight: '60vh', overflowY: 'auto' }}
-    >
-      {/* 顶部工具条（bare 模式下隐藏，由外层 tab 栏表明语义） */}
-      {!bare && (
-        <div className="flex items-center gap-2 px-3 py-1.5 bg-background-surface border-b border-border sticky top-0 z-10">
-          <span className="text-xs font-medium text-text-secondary">
-            {t('summary.toolbarTitle')}
-          </span>
-          <span className="text-[11px] text-text-muted">
-            {t('summary.toolbarBlockCount', { count: processBlocks.length })}
-          </span>
-        </div>
-      )}
-
-      {/* 分组列表：全部展开，直接渲染完整卡片 */}
+    <div className={clsx('flex flex-col', !bare && 'border border-border rounded-md overflow-hidden')}>
       {groups.map(group => (
-        <div key={group.type} className="flex flex-col">
-          {/* 分组 header */}
-          <div className="flex items-center gap-1.5 px-3 py-1 bg-background-base border-b border-border sticky top-8 z-10">
-            {getGroupIcon(group.type)}
-            <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wider">
-              {group.label}
-            </span>
-            <span className="text-[10px] text-text-muted/60 font-normal">
-              {group.blocks.length}
-            </span>
-          </div>
-
-          {/* 全部展开，直接渲染每个块的原始内容 */}
-          {group.blocks.map((block, idx) => (
-            <div key={idx} className="border-b border-border">
-              {renderContentBlock(block, false)}
-            </div>
-          ))}
-        </div>
+        <ProcessSection key={group.key} groupKey={group.key} label={group.label} blocks={group.blocks} />
       ))}
     </div>
   );
 });
+
+/** 单个过程段落（可折叠） */
+const ProcessSection = memo(function ProcessSection({
+  groupKey, label, blocks,
+}: {
+  groupKey: string;
+  label: string;
+  blocks: ContentBlock[];
+}) {
+  const [open, setOpen] = useState(false);
+
+  // 一行摘要：取第一个块的关键信息
+  const summary = useMemo(() => deriveSectionSummary(blocks), [blocks]);
+
+  return (
+    <div className="border-b border-border last:border-b-0">
+      {/* 段落头部 */}
+      <button
+        className={clsx(
+          'flex items-center gap-2 w-full px-3 py-2 text-left',
+          'transition-colors hover:bg-background-hover min-h-[44px]'
+        )}
+        onClick={() => setOpen(o => !o)}
+      >
+        {getGroupIcon(groupKey)}
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider flex-shrink-0">
+          {label}
+        </span>
+        <span className="text-[11px] text-text-tertiary flex-1 min-w-0 truncate">{summary}</span>
+        <span className="text-[10px] text-text-muted flex-shrink-0">{blocks.length}</span>
+        <ChevronRight className={clsx('w-3 h-3 text-text-muted flex-shrink-0 transition-transform', open && 'rotate-90')} />
+      </button>
+
+      {/* 段落展开内容：精炼卡片列表 */}
+      {open && (
+        <div className="max-h-[50vh] overflow-y-auto">
+          {blocks.map((block, idx) => (
+            <ProcessBlockItem key={idx} block={block} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** 过程块精炼渲染（替代 renderContentBlock 全展开） */
+const ProcessBlockItem = memo(function ProcessBlockItem({
+  block,
+}: {
+  block: ContentBlock;
+}) {
+  // thinking：复用 ThinkingBlockRenderer（自带折叠+预览）
+  if (block.type === 'thinking') {
+    return (
+      <div className="px-2 py-1">
+        <ThinkingBlockRenderer block={block as ThinkingBlock} />
+      </div>
+    );
+  }
+  // tool_call：一行式精炼卡片
+  if (block.type === 'tool_call') {
+    return <ToolCallLite block={block as ToolCallBlock} />;
+  }
+  // 其余类型：回退到完整渲染器（plan_mode / agent_run 等有专用渲染器）
+  return (
+    <div className="border-b border-border last:border-b-0">
+      {renderContentBlock(block, false)}
+    </div>
+  );
+});
+
+/** tool_call 精炼一行卡片 */
+const ToolCallLite = memo(function ToolCallLite({ block }: { block: ToolCallBlock }) {
+  const [open, setOpen] = useState(false);
+  const info = useMemo(() => {
+    try { return extractToolKeyInfo(block.name, block.input); } catch { return ''; }
+  }, [block.name, block.input]);
+  const duration = useMemo(() => {
+    if (block.startedAt && block.completedAt) {
+      const ms = calculateDuration(block.startedAt, block.completedAt);
+      return ms != null ? formatDuration(ms) : '';
+    }
+    return '';
+  }, [block.startedAt, block.completedAt]);
+  const ok = block.status === 'completed';
+  const failed = block.status === 'failed';
+
+  return (
+    <div className="border-b border-border last:border-b-0">
+      <button
+        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
+        onClick={() => setOpen(o => !o)}
+      >
+        <Wrench className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
+        <span className="text-xs font-medium text-text-secondary flex-shrink-0">{block.name}</span>
+        {info && <span className="text-[11px] text-text-muted flex-1 min-w-0 truncate font-mono">{info}</span>}
+        {ok && <span className="text-[10px] text-green-400 flex-shrink-0"><Check className="w-3 h-3" /></span>}
+        {failed && <span className="text-[10px] text-red-400 flex-shrink-0"><XCircle className="w-3 h-3" /></span>}
+        {duration && <span className="text-[10px] text-text-muted flex-shrink-0">{duration}</span>}
+        <ChevronRight className={clsx('w-3 h-3 text-text-muted flex-shrink-0 transition-transform', open && 'rotate-90')} />
+      </button>
+      {open && (
+        <div className="px-3 py-2 bg-background-base border-t border-border max-h-[180px] overflow-y-auto">
+          <ToolCallBlockRenderer block={block} />
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** 段落一行摘要 */
+function deriveSectionSummary(blocks: ContentBlock[]): string {
+  if (blocks.length === 0) return '';
+  const names = blocks.map(b => {
+    if (b.type === 'tool_call') return b.name;
+    if (b.type === 'thinking') return 'thinking';
+    return b.type;
+  });
+  // 去重统计
+  const counts = new Map<string, number>();
+  for (const n of names) counts.set(n, (counts.get(n) || 0) + 1);
+  const parts = [...counts.entries()].map(([n, c]) => c > 1 ? `${n} ×${c}` : n);
+  return parts.join(' · ');
+}
 
 /** 获取块的分组 key */
 function getBlockGroupKey(block: ContentBlock): string {
@@ -341,9 +427,9 @@ function getBlockGroupKey(block: ContentBlock): string {
 /** 获取分组显示标签 */
 function getBlockGroupLabel(key: string, t: (key: string) => string): string {
   switch (key) {
-    case 'thinking': return t('thinking.title');
-    case 'tools': return 'Tools';
-    case 'plan': return 'Plan';
+    case 'thinking': return t('summary.sectionThinking');
+    case 'tools': return t('summary.sectionTools');
+    case 'plan': return t('summary.sectionPlan');
     case 'permission': return 'Permission';
     case 'agent': return 'Agent';
     case 'question': return 'Question';
@@ -360,7 +446,13 @@ function getGroupIcon(key: string): React.ReactNode {
     case 'thinking':
       return <Brain className={clsx(className, 'text-purple-400')} />;
     case 'tools':
-      return <FileText className={clsx(className, 'text-blue-400')} />;
+      return <Wrench className={clsx(className, 'text-blue-400')} />;
+    case 'plan':
+      return <ListTodo className={clsx(className, 'text-yellow-400')} />;
+    case 'permission':
+      return <FileText className={clsx(className, 'text-orange-400')} />;
+    case 'agent':
+      return <FileText className={clsx(className, 'text-cyan-400')} />;
     default:
       return <FileText className={clsx(className, 'text-text-muted')} />;
   }

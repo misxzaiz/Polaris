@@ -1,17 +1,14 @@
 /**
- * SessionSummaryCard - 回复摘要卡片
+ * SessionSummaryCard - 回复摘要卡片（v3 段落折叠 + 筛选式 chips）
  *
- * 延续"运行过程已折叠"卡片语言（一行汇总条 + 点击展开），
- * 挂载于每条 AI 回复（AssistantBubble）正文之后，作为消息流内的补充内容。
- * 消息内（AutoModeRenderer）不再渲染"运行过程已折叠"，统一由本卡片承载。
+ * 形态：一行汇总条 + 点击展开 → 段落折叠式卡片体内
+ * - 折叠态：chips 纯计数标签（不可点）
+ * - 展开态：chips 变可点击筛选器 → 点击某 chip 只渲染对应段落，其余从 DOM 消失
+ * - 再点同一 chip → 取消筛选，恢复全部段落
  *
- * 展开后为三 tab 切换（均从 message.blocks 派生，复用现有渲染器）：
- * ① 运行过程 → ProcessBlockGroupedList（thinking / tool_call / plan_mode …）
- * ② 变更文件 → 文件列表（extractFileChanges），点击跳转编辑器
- * ③ 预览     → artifact_preview / plugin_card(result) 渲染（PRD 预览 / MCP 产物）
- *
- * 空白 tab 自动隐藏；仅剩一个 tab 时不显示 tab 栏。
- * 无任何内容的回复整卡不渲染。宽度由容器（chat-assistant-content）约束。
+ * 段落顺序：计划 → 理解分析(运行过程) → 工具调用 → 变更文件 → 产物预览
+ * 每段落独立可折叠，有头部行（图标+标题+一行摘要+计数+箭头）。
+ * 空白段落（无内容）自动隐藏。
  */
 
 import { memo, useMemo, useState, useCallback } from 'react';
@@ -19,11 +16,10 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   ChevronRight,
-  ChevronUp,
+  Layers,
   FileText,
   FilePlus,
   Inbox,
-  Layers,
 } from 'lucide-react';
 import type { ContentBlock } from '@/types';
 import {
@@ -35,215 +31,304 @@ import { ArtifactPreviewRenderer } from '../chatBlocks/ArtifactPreviewRenderer';
 import { PluginCardHost } from '../chatBlocks/PluginCardHost';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 
-type SummaryTab = 'process' | 'files' | 'preview';
+/** 段落类型 */
+type SectionType = 'process' | 'files' | 'preview';
 
 export const SessionSummaryCard = memo(function SessionSummaryCard({
   blocks,
 }: {
-  /** 该条 AI 消息的全部内容块（用于派生卡片数据） */
   blocks: ContentBlock[];
 }) {
   const { t } = useTranslation('chat');
   const [expanded, setExpanded] = useState(false);
-  const [tab, setTab] = useState<SummaryTab>('preview');
+  /** 筛选激活的段落类型（null = 无筛选，全部段落可见） */
+  const [activeFilter, setActiveFilter] = useState<SectionType | null>(null);
   const openFile = useFileEditorStore((s) => s.openFile);
 
-  // ① 运行过程：过程块（与 AutoModeRenderer 折叠集合同一语义）
+  // ① 运行过程：过程块
   const processBlocks = useMemo(() => extractProcessBlocks(blocks), [blocks]);
 
-  // ② 变更文件：从 tool_call 派生
+  // ② 变更文件
   const fileChanges = useMemo(() => extractFileChanges(blocks), [blocks]);
 
-  // ③ 预览：artifact_preview + plugin_card（result 模式）
+  // ③ 预览
   const previews = useMemo(
     () => blocks.filter((b) => b.type === 'artifact_preview' || b.type === 'plugin_card'),
     [blocks]
   );
 
-  // 空卡片判定：三类内容全空则不渲染（置于所有 hooks 之后，避免条件 hook 调用）
-  const hasContent = processBlocks.length > 0 || fileChanges.length > 0 || previews.length > 0;
-
-  // 按类型统计数量（chips，复用"运行过程已折叠"同款统计）
-  const counts = useMemo(() => {
-    let thinking = 0, tool = 0, plan = 0;
-    for (const b of processBlocks) {
-      if (b.type === 'thinking') thinking++;
-      else if (b.type === 'tool_call') tool++;
-      else if (b.type === 'plan_mode') plan++;
-    }
-    return { thinking, tool, plan };
-  }, [processBlocks]);
-
-  // 汇总条 chips
+  // chips 数据
   const chips = useMemo(() => {
-    const items: React.ReactNode[] = [];
-    const add = (key: string, label: string, className: string) => {
-      items.push(
-        <span key={key} className={clsx('text-[11px] px-2 py-0.5 rounded-full', 'bg-background-elevated text-text-muted', className)}>
-          {label}
-        </span>
-      );
-    };
-    if (counts.thinking) add('think', t('summary.chipThinking', { count: counts.thinking }), 'text-purple-400');
-    if (counts.tool)     add('tool', t('summary.chipTool', { count: counts.tool }), 'text-blue-400');
-    if (counts.plan)     add('plan', t('summary.chipPlan', { count: counts.plan }), 'text-yellow-400');
-    if (fileChanges.length) add('file', t('summary.chipFile', { count: fileChanges.length }), 'text-green-400');
-    if (previews.length)     add('preview', t('summaryCard.chipPreview', { count: previews.length }), 'text-cyan-400');
+    const items: { type: SectionType; label: string; color: string; count: number }[] = [];
+    if (processBlocks.length > 0)
+      items.push({ type: 'process', label: t('summary.chipThinking', { count: processBlocks.length }), color: 'purple', count: processBlocks.length });
+    if (fileChanges.length > 0)
+      items.push({ type: 'files', label: t('summary.chipFile', { count: fileChanges.length }), color: 'green', count: fileChanges.length });
+    if (previews.length > 0)
+      items.push({ type: 'preview', label: t('summaryCard.chipPreview', { count: previews.length }), color: 'cyan', count: previews.length });
     return items;
-  }, [counts, fileChanges, previews, t]);
+  }, [processBlocks.length, fileChanges.length, previews.length, t]);
 
-  // 打开文件
+  const hasContent = chips.length > 0;
+
+  // chip 点击：筛选切换
+  const handleChipClick = useCallback((type: SectionType) => {
+    setActiveFilter(prev => prev === type ? null : type);
+  }, []);
+
+  // 段落是否可见（受筛选控制）
+  const isSectionVisible = (type: SectionType) => activeFilter === null || activeFilter === type;
+
+  // 折叠时清除筛选
+  const handleToggleExpand = useCallback(() => {
+    setExpanded(prev => {
+      if (prev) setActiveFilter(null); // 折叠时清除
+      return !prev;
+    });
+  }, []);
+
   const handleOpenFile = useCallback((filePath: string) => {
     const fileName = filePath.split(/[/\\]/).pop() || filePath;
     openFile(filePath, fileName);
   }, [openFile]);
 
-  // Tab 定义：空白自动隐藏。顺序：预览等其它在前 → 变更文件 → 运行过程（最后）
-  const tabs: { key: SummaryTab; label: string; icon: React.ReactNode; visible: boolean }[] = [
-    { key: 'preview', label: t('summaryCard.tabPreview'), icon: <Inbox className="w-3.5 h-3.5" />, visible: previews.length > 0 },
-    { key: 'files', label: t('summary.fileChangesTitle'), icon: <FileText className="w-3.5 h-3.5" />, visible: fileChanges.length > 0 },
-    { key: 'process', label: t('summary.toolbarTitle'), icon: <Layers className="w-3.5 h-3.5" />, visible: processBlocks.length > 0 },
-  ];
-  const visibleTabs = tabs.filter((x) => x.visible);
-
-  // 当前 tab 失活（内容变化后隐藏）时回退到第一个可见 tab
-  const activeTab: SummaryTab = visibleTabs.some((x) => x.key === tab) ? tab : (visibleTabs[0]?.key ?? 'process');
-
-  // 空卡片：三类内容全空则不渲染
   if (!hasContent) return null;
 
   return (
-    <>
-      {/* 外层容器：折叠时为虚线卡片，展开后为实线整体（汇总条 + tab 内容同框，边框连贯） */}
+    <div
+      className={clsx(
+        'flex flex-col my-1 rounded-md bg-background-surface',
+        'border transition-colors',
+        expanded ? 'border-border' : 'border-dashed border-border',
+      )}
+    >
+      {/* 汇总条（卡片头部） */}
       <div
         className={clsx(
-          'flex flex-col my-1 rounded-md bg-background-surface',
-          expanded ? 'border border-border' : 'border border-dashed border-border'
+          'flex items-center gap-1.5 px-3 py-2 min-h-[44px]',
+          'cursor-pointer text-xs text-text-secondary rounded-md',
+          'transition-all duration-150',
+          expanded ? 'border-b border-border' : 'hover:bg-background-hover hover:border-primary hover:text-primary',
+          !expanded && 'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-base'
         )}
+        onClick={handleToggleExpand}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handleToggleExpand();
+          }
+        }}
+        aria-expanded={expanded}
       >
-        {/* 汇总条 */}
-        <div
-          className={clsx(
-            'flex items-center gap-1.5 px-3 py-2',
-            'cursor-pointer text-xs text-text-secondary rounded-md',
-            'transition-all duration-150',
-            expanded ? 'border-b border-border' : 'hover:bg-background-hover hover:border-primary hover:text-primary',
-            !expanded &&
-              'focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background-base'
-          )}
-          onClick={() => setExpanded(!expanded)}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              setExpanded(!expanded);
-            }
-          }}
-          aria-expanded={expanded}
-        >
-          <span className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
-            {t('summary.collapsedLabel')}
-            {chips}
-          </span>
-          {expanded ? (
-            <ChevronUp className="w-3.5 h-3.5 shrink-0" />
-          ) : (
-            <ChevronRight className="w-3.5 h-3.5 shrink-0" />
-          )}
-        </div>
-
-        {/* 展开态：三 tab 切换（与汇总条同框） */}
-        {expanded && (
-          <>
-            {/* Tab 栏：仅当多于一个 tab 时显示 */}
-            {visibleTabs.length > 1 && (
-              <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border bg-background-elevated">
-                {visibleTabs.map((tb) => (
-                  <button
-                    key={tb.key}
-                    onClick={() => setTab(tb.key)}
-                    className={clsx(
-                      'flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors',
-                      activeTab === tb.key
-                        ? 'bg-background-base text-text-primary font-medium shadow-sm'
-                        : 'text-text-muted hover:text-text-secondary hover:bg-background-hover'
-                    )}
-                  >
-                    {tb.icon}
-                    {tb.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Tab 内容：扁平化渲染（无嵌套边框/顶栏，由 tab 栏表明语义） */}
-            <div>
-              {activeTab === 'process' && processBlocks.length > 0 && (
-                <ProcessBlockGroupedList processBlocks={processBlocks} bare />
+        <Layers className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+        <span className="text-xs font-medium text-text-secondary flex-shrink-0">
+          {t('summary.collapsedLabel')}
+        </span>
+        {/* chips：折叠态纯标签，展开态可点击筛选 */}
+        <span className="flex-1 min-w-0 flex items-center gap-1 flex-wrap">
+          {chips.map(chip => (
+            <span
+              key={chip.type}
+              className={clsx(
+                'text-[11px] px-2 py-0.5 rounded-full font-medium transition-all border',
+                expanded ? 'cursor-pointer' : 'cursor-default',
+                activeFilter === chip.type
+                  ? chipColorActive(chip.color)
+                  : chipColorIdle(chip.color),
               )}
-
-            {activeTab === 'files' && fileChanges.length > 0 && (
-              <div className="flex flex-col" style={{ maxHeight: '40vh', overflowY: 'auto' }}>
-                {fileChanges.map((fc, i) => (
-                  <div
-                    key={fc.fullPath}
-                    className={clsx(
-                      'flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer transition-colors hover:bg-background-hover border-b border-border last:border-b-0',
-                      i < fileChanges.length - 1 && 'border-b border-border'
-                    )}
-                    onClick={() => handleOpenFile(fc.fullPath)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        handleOpenFile(fc.fullPath);
-                      }
-                    }}
-                    title={fc.fullPath}
-                  >
-                    {fc.changeType === 'created' ? (
-                      <FilePlus className="w-3.5 h-3.5 shrink-0 text-green-400" />
-                    ) : (
-                      <FileText className={clsx('w-3.5 h-3.5 shrink-0', fc.changeType === 'deleted' ? 'text-red-400' : 'text-orange-400')} />
-                    )}
-                    <span className="text-xs font-medium text-text-primary truncate">{fc.fileName}</span>
-                    <span className="text-[11px] text-text-muted/60 flex-1 min-w-0 truncate">{fc.dirPath}</span>
-                    <span className={clsx(
-                      'shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium',
-                      fc.changeType === 'created'
-                        ? 'bg-green-500/10 text-green-400'
-                        : fc.changeType === 'deleted'
-                          ? 'bg-red-500/10 text-red-400'
-                          : 'bg-orange-500/10 text-orange-400'
-                    )}>
-                      {fc.changeType === 'created' ? t('summary.fileCreated')
-                        : fc.changeType === 'deleted' ? t('summary.fileDeleted')
-                        : t('summary.fileModified')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {activeTab === 'preview' && previews.length > 0 && (
-              <div className="flex flex-col gap-2 p-2">
-                {previews.map((b) => (
-                  <div key={b.type === 'artifact_preview' ? b.previewId : b.id}>
-                    {b.type === 'artifact_preview' ? (
-                      <ArtifactPreviewRenderer block={b} />
-                    ) : (
-                      <PluginCardHost block={b} />
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            </div>
-          </>
+              onClick={expanded ? (e) => { e.stopPropagation(); handleChipClick(chip.type); } : undefined}
+            >
+              {chip.label}
+            </span>
+          ))}
+        </span>
+        {expanded ? (
+          <ChevronRight className="w-3.5 h-3.5 shrink-0 rotate-90 transition-transform" />
+        ) : (
+          <ChevronRight className="w-3.5 h-3.5 shrink-0 transition-transform" />
         )}
       </div>
-    </>
+
+      {/* 展开态：段落折叠式卡片体 */}
+      {expanded && (
+        <div className="flex flex-col">
+          {/* 段落：运行过程 */}
+          {isSectionVisible('process') && processBlocks.length > 0 && (
+            <ProcessBlockGroupedList processBlocks={processBlocks} bare />
+          )}
+
+          {/* 段落：变更文件 */}
+          {isSectionVisible('files') && fileChanges.length > 0 && (
+            <FilesSection
+              fileChanges={fileChanges}
+              onOpenFile={handleOpenFile}
+              t={t}
+            />
+          )}
+
+          {/* 段落：产物预览 */}
+          {isSectionVisible('preview') && previews.length > 0 && (
+            <PreviewSection previews={previews} />
+          )}
+        </div>
+      )}
+    </div>
   );
 });
+
+// ============================================================
+// 变更文件段落
+// ============================================================
+const FilesSection = memo(function FilesSection({
+  fileChanges, onOpenFile, t,
+}: {
+  fileChanges: ReturnType<typeof extractFileChanges>;
+  onOpenFile: (path: string) => void;
+  t: (key: string, opts?: Record<string, unknown>) => string;
+}) {
+  const [open, setOpen] = useState(false);
+  const summary = useMemo(() => {
+    const names = fileChanges.map(f => f.fileName);
+    return names.slice(0, 3).join(' · ') + (names.length > 3 ? ' …' : '');
+  }, [fileChanges]);
+
+  return (
+    <div className="border-t border-border first:border-t-0">
+      <button
+        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
+        onClick={() => setOpen(o => !o)}
+      >
+        <FileText className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider flex-shrink-0">
+          {t('summary.fileChangesTitle')}
+        </span>
+        <span className="text-[11px] text-text-tertiary flex-1 min-w-0 truncate">{summary}</span>
+        <span className="text-[10px] text-text-muted flex-shrink-0">{fileChanges.length}</span>
+        <ChevronRight className={clsx('w-3 h-3 text-text-muted flex-shrink-0 transition-transform', open && 'rotate-90')} />
+      </button>
+      {open && (
+        <div className="max-h-[40vh] overflow-y-auto">
+          {fileChanges.map((fc) => (
+            <div
+              key={fc.fullPath}
+              className="flex items-center gap-2 px-3 py-2 text-xs cursor-pointer hover:bg-background-hover border-b border-border last:border-b-0 min-h-[44px]"
+              onClick={() => onOpenFile(fc.fullPath)}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onOpenFile(fc.fullPath);
+                }
+              }}
+              title={fc.fullPath}
+            >
+              {fc.changeType === 'created' ? (
+                <FilePlus className="w-3.5 h-3.5 shrink-0 text-green-400" />
+              ) : (
+                <FileText className={clsx('w-3.5 h-3.5 shrink-0', fc.changeType === 'deleted' ? 'text-red-400' : 'text-orange-400')} />
+              )}
+              <span className="text-xs font-medium text-text-primary truncate">{fc.fileName}</span>
+              <span className="text-[11px] text-text-muted/60 flex-1 min-w-0 truncate">{fc.dirPath}</span>
+              <span className={clsx(
+                'shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium',
+                fc.changeType === 'created'
+                  ? 'bg-green-500/10 text-green-400'
+                  : fc.changeType === 'deleted'
+                    ? 'bg-red-500/10 text-red-400'
+                    : 'bg-orange-500/10 text-orange-400'
+              )}>
+                {fc.changeType === 'created' ? t('summary.fileCreated')
+                  : fc.changeType === 'deleted' ? t('summary.fileDeleted')
+                  : t('summary.fileModified')}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ============================================================
+// 产物预览段落
+// ============================================================
+const PreviewSection = memo(function PreviewSection({
+  previews,
+}: {
+  previews: ContentBlock[];
+}) {
+  const { t } = useTranslation('chat');
+  const [open, setOpen] = useState(false);
+  const summary = useMemo(() => {
+    const titles = previews.map(b => {
+      if (b.type === 'artifact_preview') return b.title || t('summaryCard.tabPreview');
+      return t('summaryCard.tabPreview');
+    });
+    return titles.slice(0, 3).join(' · ');
+  }, [previews, t]);
+
+  return (
+    <div className="border-t border-border first:border-t-0">
+      <button
+        className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
+        onClick={() => setOpen(o => !o)}
+      >
+        <Inbox className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
+        <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider flex-shrink-0">
+          {t('summaryCard.tabPreview')}
+        </span>
+        <span className="text-[11px] text-text-tertiary flex-1 min-w-0 truncate">{summary}</span>
+        <span className="text-[10px] text-text-muted flex-shrink-0">{previews.length}</span>
+        <ChevronRight className={clsx('w-3 h-3 text-text-muted flex-shrink-0 transition-transform', open && 'rotate-90')} />
+      </button>
+      {open && (
+        <div className="flex flex-col gap-2 p-2">
+          {previews.map((b) => {
+            if (b.type === 'artifact_preview') {
+              return (
+                <div key={b.previewId}>
+                  <ArtifactPreviewRenderer block={b} />
+                </div>
+              );
+            }
+            if (b.type === 'plugin_card') {
+              return (
+                <div key={b.id}>
+                  <PluginCardHost block={b} />
+                </div>
+              );
+            }
+            return null;
+          })}
+        </div>
+      )}
+    </div>
+  );
+});
+
+// ============================================================
+// 辅助
+// ============================================================
+
+/** chip 激活态样式（实心背景） */
+function chipColorActive(color: string): string {
+  switch (color) {
+    case 'purple': return 'bg-purple-400 text-white border-purple-400';
+    case 'green': return 'bg-green-400 text-black border-green-400';
+    case 'cyan': return 'bg-cyan-400 text-black border-cyan-400';
+    default: return 'bg-primary text-white border-primary';
+  }
+}
+
+/** chip 非激活态样式（半透明） */
+function chipColorIdle(color: string): string {
+  switch (color) {
+    case 'purple': return 'bg-background-elevated text-purple-400 border-transparent';
+    case 'green': return 'bg-background-elevated text-green-400 border-transparent';
+    case 'cyan': return 'bg-background-elevated text-cyan-400 border-transparent';
+    default: return 'bg-background-elevated text-text-muted border-transparent';
+  }
+}

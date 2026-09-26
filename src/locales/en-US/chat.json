@@ -254,7 +254,12 @@
     "fileModified": "Modified",
     "fileDeleted": "Deleted",
     "toolbarTitle": "Process",
-    "toolbarBlockCount": "{{count}} blocks"
+    "toolbarBlockCount": "{{count}} blocks",
+    "sectionThinking": "Analysis",
+    "sectionTools": "Tool Calls",
+    "sectionPlan": "Execution Plan",
+    "sectionFiles": "Changed Files",
+    "sectionPreview": "Previews"
   },
   "summaryCard": {
     "tabPreview": "Preview",

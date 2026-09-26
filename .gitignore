@@ -108,3 +108,6 @@ secrets/
 *.jks
 *.keystore
 /src-tauri/target-test/
+
+# Local scratch (debug dumps etc.)
+scripts/tmp/

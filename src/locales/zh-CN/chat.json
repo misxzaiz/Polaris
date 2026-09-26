@@ -253,7 +253,12 @@
     "fileModified": "已修改",
     "fileDeleted": "已删除",
     "toolbarTitle": "运行过程",
-    "toolbarBlockCount": "{{count}} 个块"
+    "toolbarBlockCount": "{{count}} 个块",
+    "sectionThinking": "理解分析",
+    "sectionTools": "工具调用",
+    "sectionPlan": "执行计划",
+    "sectionFiles": "变更文件",
+    "sectionPreview": "产物预览"
   },
   "summaryCard": {
     "tabPreview": "预览",
