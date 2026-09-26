@@ -1022,3 +1022,34 @@ cd polaris-web
 - feat(engine): 模型名后缀推导上下文窗口驱动压缩阈值
 - feat(usage): 用量库输出缓存命中率（成本口径 B）
 - chore(proto): 回复补充卡片回复原型（理解分析/变更文件/产物预览）
+
+---
+
+## v10.5.6 构建记录
+
+**构建时间**: 2026-09-26 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.6
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.6_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.6_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.6_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.6-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.6_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.6-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.6-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.6-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.6.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(chat): 运行过程补充卡片改为段落折叠+精炼卡片，chips 筛选式交互
+- feat(usage): 缓存命中率统一成本口径 B（cacheRead/(input+cacheRead)），Token 统计面板展示命中率
+- fix(chat): 补充卡片精炼化与滚动闪动修复 — 渲染器 compact 变体、blockGrouping 去重、suspendFollow 交互豁免窗口、chips 按过程类型细分、文件变更段落展开豁免 + 相对路径转绝对修复跳转
