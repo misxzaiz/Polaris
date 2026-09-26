@@ -10,14 +10,18 @@
 
 import { memo, useState, useEffect, useRef } from 'react';
 import { Brain, ChevronDown } from 'lucide-react';
+import { clsx } from 'clsx';
 import type { ThinkingBlock } from '@/types';
 
 export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
   block,
-  isStreaming = false
+  isStreaming = false,
+  compact = false,
 }: {
   block: ThinkingBlock;
   isStreaming?: boolean;
+  /** 精炼模式：供补充卡片段落列表使用，去掉呼吸光晕卡片壳，保留折叠/预览/展开逻辑 */
+  compact?: boolean;
 }) {
   // 流式期间展开显示思考内容，结束后折叠
   const [isCollapsed, setIsCollapsed] = useState(() => {
@@ -83,12 +87,16 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
         }
       `}</style>
       <div
-        className={`my-2 rounded-lg overflow-hidden border transition-colors bg-background-surface ${
-          isStreaming
-            ? 'bg-[#0f1117]'
-            : 'border-border bg-background-elevated'
-        }`}
-        style={isStreaming ? {
+        className={
+          compact
+            ? 'border-b border-border last:border-b-0'
+            : `my-2 rounded-lg overflow-hidden border transition-colors bg-background-surface ${
+                isStreaming
+                  ? 'bg-[#0f1117]'
+                  : 'border-border bg-background-elevated'
+              }`
+        }
+        style={!compact && isStreaming ? {
           animation: 'think-glow 2s ease-in-out infinite',
           borderColor: 'rgba(59, 130, 246, 0.15)',
         } : {}}
@@ -96,7 +104,10 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
         {/* 头部 - 可点击折叠 */}
         <button
           onClick={() => setIsCollapsed(!isCollapsed)}
-          className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-white/[0.03] transition-colors"
+          className={clsx(
+            'w-full flex items-center gap-2 text-left hover:bg-white/[0.03] transition-colors',
+            compact ? 'px-3 py-2 min-h-[44px]' : 'px-3 py-2'
+          )}
         >
           {/* 脉冲圆点 */}
           {isStreaming && (

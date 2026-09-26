@@ -65,6 +65,9 @@ export interface MessageAutoScroll {
   setAutoScroll: (v: boolean) => void;
   /** 内容测量完成后调用一次，若仍处跟随态则补偿贴底滚动 */
   compensateScroll: () => boolean;
+  /** 开启交互豁免窗口（默认 350ms）：卡片展开/折叠、chips 筛选等内部交互导致的
+   *  列表高度变化不驱动滚动跟随/补偿/恢复，避免消息位置闪动。 */
+  suspendFollow: (ms?: number) => void;
   /** 绑定到 Virtuoso Scroller div 的 ref：拿到滚动容器，供流式期间 ResizeObserver 监听 */
   setScrollerRef: (ref: HTMLElement | null) => void;
 }
@@ -91,6 +94,22 @@ export function useMessageAutoScroll(
   // 流式结束补偿窗口：isStreaming 翻 false 后的短暂时间内允许 ResizeObserver 补偿
   // 一次（最终测量往往滞后于 isStreaming 翻转）。窗口结束置 false。
   const streamingEndPendingRef = useRef(false);
+
+  // 交互豁免窗口：卡片内展开/筛选导致的列表高度变化不驱动滚动跟随。
+  // 由 suspendFollow(ms) 开启；窗口内 followOutput / RO 补偿 / compensateScroll /
+  // atBottom 翻转均被抑制，避免「点 chips 后消息位置闪动」。
+  const suspendUntilRef = useRef(0);
+
+  // 是否处于交互豁免窗口内
+  const isSuspended = useCallback(() => {
+    return performance.now() < suspendUntilRef.current;
+  }, []);
+
+  // 开启交互豁免窗口：卡片展开/折叠、chips 筛选等内部交互导致列表高度变化时调用，
+  // 窗口内不跟随、不补偿、不恢复 autoScroll，用户视角位置保持不动。
+  const suspendFollow = useCallback((ms = 350) => {
+    suspendUntilRef.current = performance.now() + ms;
+  }, []);
 
   // ===== 流式中途贴底增强：scroller DOM + ResizeObserver =====
   // Virtuoso 的 followOutput 在内容大幅增长后（atBottom 翻 false）就不再跟随，
@@ -122,6 +141,8 @@ export function useMessageAutoScroll(
       return;
     }
     if (atBottom) {
+      // 交互豁免窗口内：高度变化翻转 atBottom 不应恢复跟随（避免点 chips 后拉回）
+      if (isSuspended()) return;
       setAutoScrollState(true);
     } else if (!isStreaming) {
       // 非流式：离开底部=用户主动（内容不再增长），停止跟随
@@ -230,12 +251,13 @@ export function useMessageAutoScroll(
    * 返回是否执行/调度了补偿。rAF 合并高频调用。
    */
   const compensateScroll = useCallback((): boolean => {
-    if (!autoScroll) return false;
+    // 交互豁免窗口内：卡片内部交互导致的高度变化不补偿贴底
+    if (!autoScroll || isSuspended()) return false;
     const ref = virtuosoRef.current;
     if (!ref) return false;
     scheduleCompensate();
     return true;
-  }, [autoScroll, virtuosoRef, scheduleCompensate]);
+  }, [autoScroll, virtuosoRef, scheduleCompensate, isSuspended]);
 
   /**
    * 流式中途补偿触发：ResizeObserver 回调。
@@ -246,7 +268,8 @@ export function useMessageAutoScroll(
   const handleListResize = useCallback(() => {
     const { autoScroll: follow, isStreaming: streaming } = stateRef.current;
     const scroller = scrollerElRef.current;
-    if (!follow || !scroller) return;
+    // 交互豁免窗口内：卡片展开/折叠导致的尺寸变化不驱动补偿贴底
+    if (!follow || !scroller || isSuspended()) return;
     const allowCompensate = streaming || streamingEndPendingRef.current;
     if (!allowCompensate) return;
     const distFromBottom = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
@@ -301,9 +324,11 @@ export function useMessageAutoScroll(
    */
   const followOutput = useCallback<MessageAutoScroll['followOutput']>((isAtBottom) => {
     if (!autoScroll) return false;
+    // 交互豁免窗口内：卡片展开/筛选的高度变化不触发 smooth 跟随（避免消息位置闪动）
+    if (isSuspended()) return false;
     if (isStreaming) return true;
     return isAtBottom ? 'smooth' : false;
-  }, [autoScroll, isStreaming]);
+  }, [autoScroll, isStreaming, isSuspended]);
 
   // 卸载时清理 rAF + observers
   useEffect(() => {
@@ -333,5 +358,6 @@ export function useMessageAutoScroll(
     setAutoScroll,
     compensateScroll,
     setScrollerRef,
+    suspendFollow,
   };
 }

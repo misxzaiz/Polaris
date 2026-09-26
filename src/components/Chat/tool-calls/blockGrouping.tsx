@@ -6,7 +6,7 @@ import { memo, useState, useEffect, useMemo } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { ChevronRight, ChevronUp, FileText, Brain, Check, XCircle, Wrench, ListTodo } from 'lucide-react';
+import { ChevronRight, ChevronUp, FileText, Brain, Wrench, ListTodo } from 'lucide-react';
 import type { ContentBlock, ThinkingBlock, ToolCallBlock } from '@/types';
 import type { ProcessBlockCollapseMode } from '@/types';
 import type { CollapsibleBlockGroup } from '../chatUtils/types';
@@ -16,8 +16,6 @@ import { ToolCallBlockRenderer } from '../chatBlocks/ToolCallBlockRenderer';
 import { ThinkingBlockRenderer } from '../chatBlocks/ThinkingBlockRenderer';
 import { renderContentBlock } from '../chatBlocks';
 import { extractEditDiff, extractWriteInfo, type DiffData } from '@/utils/diffExtractor';
-import { extractToolKeyInfo } from '@/utils/toolConfig';
-import { calculateDuration, formatDuration } from '@/utils/toolSummary';
 
 /**
  * 块分类枚举。
@@ -334,41 +332,27 @@ const ProcessBlockItem = memo(function ProcessBlockItem({
 }: {
   block: ContentBlock;
 }) {
-  // thinking：复用 ThinkingBlockRenderer（自带折叠+预览）
+  // thinking：compact 精炼（去掉呼吸光晕卡片壳，保留折叠+预览+限高展开）
   if (block.type === 'thinking') {
-    return (
-      <div className="px-2 py-1">
-        <ThinkingBlockRenderer block={block as ThinkingBlock} />
-      </div>
-    );
+    return <ThinkingBlockRenderer block={block as ThinkingBlock} compact />;
   }
-  // tool_call：一行式精炼卡片
+  // tool_call：compact 精炼卡片，工具专属内容（diff/补丁/grep/todo/输出/错误）全部保留
   if (block.type === 'tool_call') {
-    return <ToolCallLite block={block as ToolCallBlock} />;
+    return <ToolCallBlockRenderer block={block as ToolCallBlock} compact />;
   }
-  // 其余类型：回退到完整渲染器（plan_mode / agent_run 等有专用渲染器）
-  return (
-    <div className="border-b border-border last:border-b-0">
-      {renderContentBlock(block, false)}
-    </div>
-  );
+  // 其余类型（plan_mode / agent_run / permission / question / context_compact 等）：
+  // 统一精炼容器，避免完整大卡片嵌套
+  return <FallbackBlockItem block={block} />;
 });
 
-/** tool_call 精炼一行卡片 */
-const ToolCallLite = memo(function ToolCallLite({ block }: { block: ToolCallBlock }) {
+/** fallback 精炼容器：图标 + 类型标签 + 可折叠内容（内部复用 renderContentBlock） */
+const FallbackBlockItem = memo(function FallbackBlockItem({
+  block,
+}: {
+  block: ContentBlock;
+}) {
+  const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
-  const info = useMemo(() => {
-    try { return extractToolKeyInfo(block.name, block.input); } catch { return ''; }
-  }, [block.name, block.input]);
-  const duration = useMemo(() => {
-    if (block.startedAt && block.completedAt) {
-      const ms = calculateDuration(block.startedAt, block.completedAt);
-      return ms != null ? formatDuration(ms) : '';
-    }
-    return '';
-  }, [block.startedAt, block.completedAt]);
-  const ok = block.status === 'completed';
-  const failed = block.status === 'failed';
 
   return (
     <div className="border-b border-border last:border-b-0">
@@ -376,17 +360,16 @@ const ToolCallLite = memo(function ToolCallLite({ block }: { block: ToolCallBloc
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
         onClick={() => setOpen(o => !o)}
       >
-        <Wrench className="w-3.5 h-3.5 text-blue-400 flex-shrink-0" />
-        <span className="text-xs font-medium text-text-secondary flex-shrink-0">{block.name}</span>
-        {info && <span className="text-[11px] text-text-muted flex-1 min-w-0 truncate font-mono">{info}</span>}
-        {ok && <span className="text-[10px] text-green-400 flex-shrink-0"><Check className="w-3 h-3" /></span>}
-        {failed && <span className="text-[10px] text-red-400 flex-shrink-0"><XCircle className="w-3 h-3" /></span>}
-        {duration && <span className="text-[10px] text-text-muted flex-shrink-0">{duration}</span>}
+        <FileText className="w-3.5 h-3.5 text-text-muted flex-shrink-0" />
+        <span className="text-xs font-medium text-text-secondary flex-shrink-0 uppercase tracking-wide">
+          {getBlockGroupLabel(getBlockGroupKey(block), t)}
+        </span>
+        <span className="flex-1" />
         <ChevronRight className={clsx('w-3 h-3 text-text-muted flex-shrink-0 transition-transform', open && 'rotate-90')} />
       </button>
       {open && (
-        <div className="px-3 py-2 bg-background-base border-t border-border max-h-[180px] overflow-y-auto">
-          <ToolCallBlockRenderer block={block} />
+        <div className="px-2 py-2 bg-background-base border-t border-border">
+          {renderContentBlock(block, false)}
         </div>
       )}
     </div>

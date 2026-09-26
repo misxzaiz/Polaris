@@ -432,4 +432,64 @@ describe('useMessageAutoScroll', () => {
       expect(disconnectSpy).toHaveBeenCalled();
     });
   });
+
+  describe('suspendFollow 交互豁免窗口', () => {
+    it('窗口内 followOutput 一律 false（流式/非流式、贴底与否都不跟随）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      act(() => result.current.suspendFollow(350));
+      expect(result.current.followOutput(true)).toBe(false);
+      expect(result.current.followOutput(false)).toBe(false);
+    });
+
+    it('窗口内 compensateScroll 不滚动（返回 false 且不调度）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      act(() => result.current.suspendFollow(350));
+      expect(result.current.compensateScroll()).toBe(false);
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+    });
+
+    it('窗口内 ResizeObserver 高度变化不补偿贴底', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+
+      act(() => result.current.suspendFollow(350));
+      act(() => lastRo().fire());
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+    });
+
+    it('窗口内 atBottom 翻 true 不恢复跟随', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      // 先触发一次首帧回调，进入正常状态机
+      act(() => result.current.handleAtBottomStateChange(false));
+      // 用户离开
+      act(() => result.current.handleAtBottomStateChange(false));
+      expect(result.current.autoScroll).toBe(false);
+
+      // 交互豁免窗口内高度变化 → atBottom=true 也不恢复
+      act(() => result.current.suspendFollow(350));
+      act(() => result.current.handleAtBottomStateChange(true));
+      expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('窗口结束后恢复正常跟随', () => {
+      // performance mock 在顶层 stub 后会被 afterEach 还原，本测试需重新 stub
+      // 以便推进虚拟时间越过豁免窗口
+      vi.stubGlobal('performance', { now: () => nowMock.value });
+      nowMock.value = 0;
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
+      act(() => result.current.suspendFollow(50));
+      // 窗口内不跟随
+      expect(result.current.followOutput(true)).toBe(false);
+
+      // 时间推进越过窗口
+      nowMock.value = 100;
+      expect(result.current.followOutput(true)).toBe('smooth');
+    });
+  });
 });

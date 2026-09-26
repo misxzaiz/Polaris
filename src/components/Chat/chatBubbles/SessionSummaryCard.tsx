@@ -30,6 +30,8 @@ import {
 import { ArtifactPreviewRenderer } from '../chatBlocks/ArtifactPreviewRenderer';
 import { PluginCardHost } from '../chatBlocks/PluginCardHost';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
+import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useChatScrollActions } from '../messages/ChatScrollContext';
 
 /** 段落类型 */
 type SectionType = 'process' | 'files' | 'preview';
@@ -44,6 +46,12 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
   /** 筛选激活的段落类型（null = 无筛选，全部段落可见） */
   const [activeFilter, setActiveFilter] = useState<SectionType | null>(null);
   const openFile = useFileEditorStore((s) => s.openFile);
+  const currentWorkspace = useWorkspaceStore((s) => {
+    const { workspaces, currentWorkspaceId } = s;
+    return workspaces.find(w => w.id === currentWorkspaceId) || null;
+  });
+  /** 滚动豁免：卡片展开/折叠、chips 筛选改变列表高度时禁用跟随，避免消息闪动 */
+  const { suspendFollow } = useChatScrollActions();
 
   // ① 运行过程：过程块
   const processBlocks = useMemo(() => extractProcessBlocks(blocks), [blocks]);
@@ -57,40 +65,72 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
     [blocks]
   );
 
-  // chips 数据
+  // 运行过程段落按类型细分（思考/工具/计划/权限…），供 chips 展示与筛选
+  const processTypeGroups = useMemo(() => {
+    const map = new Map<string, ContentBlock[]>();
+    for (const b of processBlocks) {
+      const key = getProcessChipKey(b);
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(b);
+    }
+    return [...map.entries()];
+  }, [processBlocks]);
+
+  // chips 数据：过程块按类型细分 chip（标签区分思考/工具/计划…），
+  // 点击筛选仍归到 process 段落（筛选粒度=段落，段落内再按类型分组折叠）
   const chips = useMemo(() => {
     const items: { type: SectionType; label: string; color: string; count: number }[] = [];
-    if (processBlocks.length > 0)
-      items.push({ type: 'process', label: t('summary.chipThinking', { count: processBlocks.length }), color: 'purple', count: processBlocks.length });
+
+    // 每个过程类型一个 chip（用 summary.chip* 文案），不再笼统归为"思考"
+    for (const [key, blocks] of processTypeGroups) {
+      const cfg = PROCESS_CHIP_CONFIG[key];
+      if (!cfg) continue;
+      items.push({
+        type: 'process',
+        label: t(cfg.labelKey, { count: blocks.length }),
+        color: cfg.color,
+        count: blocks.length,
+      });
+    }
+
     if (fileChanges.length > 0)
       items.push({ type: 'files', label: t('summary.chipFile', { count: fileChanges.length }), color: 'green', count: fileChanges.length });
     if (previews.length > 0)
       items.push({ type: 'preview', label: t('summaryCard.chipPreview', { count: previews.length }), color: 'cyan', count: previews.length });
     return items;
-  }, [processBlocks.length, fileChanges.length, previews.length, t]);
+  }, [processTypeGroups, fileChanges.length, previews.length, t]);
 
   const hasContent = chips.length > 0;
 
-  // chip 点击：筛选切换
+  // chip 点击：筛选切换（列表高度将变化 → 豁免窗口内不跟随）
   const handleChipClick = useCallback((type: SectionType) => {
+    suspendFollow();
     setActiveFilter(prev => prev === type ? null : type);
-  }, []);
+  }, [suspendFollow]);
 
   // 段落是否可见（受筛选控制）
   const isSectionVisible = (type: SectionType) => activeFilter === null || activeFilter === type;
 
-  // 折叠时清除筛选
+  // 折叠时清除筛选（列表高度将变化 → 豁免窗口内不跟随）
   const handleToggleExpand = useCallback(() => {
+    suspendFollow();
     setExpanded(prev => {
       if (prev) setActiveFilter(null); // 折叠时清除
       return !prev;
     });
-  }, []);
+  }, [suspendFollow]);
 
   const handleOpenFile = useCallback((filePath: string) => {
-    const fileName = filePath.split(/[/\\]/).pop() || filePath;
-    openFile(filePath, fileName);
-  }, [openFile]);
+    // 相对路径 → 绝对路径（复用 workspace 根路径合成），与 ToolCallBlockRenderer 一致
+    const isAbsolute = filePath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(filePath);
+    const absolutePath = isAbsolute
+      ? filePath
+      : currentWorkspace
+        ? (currentWorkspace.path.replace(/[\\/]+$/, '') + '/' + filePath.replace(/^[\\/]+/, ''))
+        : filePath;
+    const fileName = absolutePath.split(/[/\\]/).pop() || absolutePath;
+    openFile(absolutePath, fileName);
+  }, [openFile, currentWorkspace]);
 
   if (!hasContent) return null;
 
@@ -189,16 +229,23 @@ const FilesSection = memo(function FilesSection({
   t: (key: string, opts?: Record<string, unknown>) => string;
 }) {
   const [open, setOpen] = useState(false);
+  const { suspendFollow } = useChatScrollActions();
   const summary = useMemo(() => {
     const names = fileChanges.map(f => f.fileName);
     return names.slice(0, 3).join(' · ') + (names.length > 3 ? ' …' : '');
   }, [fileChanges]);
 
+  // 展开/收起会改变列表项高度 → 豁免窗口内不跟随，防止内容被滚走
+  const handleToggle = useCallback(() => {
+    suspendFollow();
+    setOpen(o => !o);
+  }, [suspendFollow]);
+
   return (
     <div className="border-t border-border first:border-t-0">
       <button
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggle}
       >
         <FileText className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
         <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider flex-shrink-0">
@@ -262,6 +309,7 @@ const PreviewSection = memo(function PreviewSection({
 }) {
   const { t } = useTranslation('chat');
   const [open, setOpen] = useState(false);
+  const { suspendFollow } = useChatScrollActions();
   const summary = useMemo(() => {
     const titles = previews.map(b => {
       if (b.type === 'artifact_preview') return b.title || t('summaryCard.tabPreview');
@@ -270,11 +318,17 @@ const PreviewSection = memo(function PreviewSection({
     return titles.slice(0, 3).join(' · ');
   }, [previews, t]);
 
+  // 展开/收起会改变列表项高度 → 豁免窗口内不跟随，防止内容被滚走
+  const handleToggle = useCallback(() => {
+    suspendFollow();
+    setOpen(o => !o);
+  }, [suspendFollow]);
+
   return (
     <div className="border-t border-border first:border-t-0">
       <button
         className="flex items-center gap-2 w-full px-3 py-2 text-left hover:bg-background-hover transition-colors min-h-[44px]"
-        onClick={() => setOpen(o => !o)}
+        onClick={handleToggle}
       >
         <Inbox className="w-3.5 h-3.5 text-cyan-400 flex-shrink-0" />
         <span className="text-[11px] font-semibold text-text-secondary uppercase tracking-wider flex-shrink-0">
@@ -313,12 +367,44 @@ const PreviewSection = memo(function PreviewSection({
 // 辅助
 // ============================================================
 
+/** 过程块 → chip 细分 key（与 blockGrouping 的分组 key 对齐） */
+function getProcessChipKey(block: ContentBlock): string {
+  switch (block.type) {
+    case 'thinking': return 'thinking';
+    case 'tool_call':
+    case 'tool_group': return 'tools';
+    case 'plan_mode': return 'plan';
+    case 'permission_request': return 'permission';
+    case 'agent_run': return 'agent';
+    case 'question': return 'question';
+    case 'context_compact': return 'compact';
+    default: return 'other';
+  }
+}
+
+/** 过程 chip 配置：文案 key + 颜色 */
+const PROCESS_CHIP_CONFIG: Record<string, { labelKey: string; color: string }> = {
+  thinking: { labelKey: 'summary.chipThinking', color: 'purple' },
+  tools: { labelKey: 'summary.chipTool', color: 'blue' },
+  plan: { labelKey: 'summary.chipPlan', color: 'yellow' },
+  permission: { labelKey: 'summary.chipPermission', color: 'orange' },
+  agent: { labelKey: 'summary.chipAgent', color: 'cyan' },
+  question: { labelKey: 'summary.chipQuestion', color: 'red' },
+  compact: { labelKey: 'summary.chipCompact', color: 'grey' },
+  other: { labelKey: 'summary.chipText', color: 'grey' },
+};
+
 /** chip 激活态样式（实心背景） */
 function chipColorActive(color: string): string {
   switch (color) {
     case 'purple': return 'bg-purple-400 text-white border-purple-400';
     case 'green': return 'bg-green-400 text-black border-green-400';
     case 'cyan': return 'bg-cyan-400 text-black border-cyan-400';
+    case 'blue': return 'bg-blue-400 text-white border-blue-400';
+    case 'yellow': return 'bg-yellow-400 text-black border-yellow-400';
+    case 'orange': return 'bg-orange-400 text-black border-orange-400';
+    case 'red': return 'bg-red-400 text-white border-red-400';
+    case 'grey': return 'bg-text-muted text-white border-text-muted';
     default: return 'bg-primary text-white border-primary';
   }
 }
@@ -329,6 +415,11 @@ function chipColorIdle(color: string): string {
     case 'purple': return 'bg-background-elevated text-purple-400 border-transparent';
     case 'green': return 'bg-background-elevated text-green-400 border-transparent';
     case 'cyan': return 'bg-background-elevated text-cyan-400 border-transparent';
+    case 'blue': return 'bg-background-elevated text-blue-400 border-transparent';
+    case 'yellow': return 'bg-background-elevated text-yellow-400 border-transparent';
+    case 'orange': return 'bg-background-elevated text-orange-400 border-transparent';
+    case 'red': return 'bg-background-elevated text-red-400 border-transparent';
+    case 'grey': return 'bg-background-elevated text-text-muted border-transparent';
     default: return 'bg-background-elevated text-text-muted border-transparent';
   }
 }

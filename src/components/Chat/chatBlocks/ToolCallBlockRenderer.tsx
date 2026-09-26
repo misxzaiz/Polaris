@@ -32,7 +32,16 @@ import { CodePreviewView } from './CodePreviewView';
 import { highlightCode } from '@/utils/syntaxHighlight';
 import { ansiToHtml } from '@/utils/ansiToHtml';
 
-export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block, isStreaming }: { block: ToolCallBlock; isStreaming?: boolean }) {
+export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
+  block,
+  isStreaming,
+  compact = false,
+}: {
+  block: ToolCallBlock;
+  isStreaming?: boolean;
+  /** 精炼模式：供补充卡片段落列表使用，去掉外层卡片壳（圆角/底色/色条），保留全部工具专属内容 */
+  compact?: boolean;
+}) {
   const { t } = useTranslation('chat');
   // edit/write 工具流式期间默认展开，方便查看 diff/预览
   const [isExpanded, setIsExpanded] = useState(() =>
@@ -291,17 +300,19 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
   return (
     <div
       className={clsx(
-        'my-1.5 rounded-lg overflow-hidden w-full transition-[border-color,background-color] duration-200',
-        'border border-border bg-background-elevated',
-        statusAnimationClass,
-        block.status === 'failed' && 'border-error/30 bg-error/[0.06]'
+        compact
+          ? 'w-full border-b border-border last:border-b-0'
+          : 'my-1.5 rounded-lg overflow-hidden w-full transition-[border-color,background-color] duration-200 border border-border bg-background-elevated',
+        compact ? '' : statusAnimationClass,
+        compact ? '' : (block.status === 'failed' && 'border-error/30 bg-error/[0.06]')
       )}
     >
       {/* 统一头部 - 折叠和展开共用 */}
       <div
         className={clsx(
-          'group flex items-center gap-2 px-2.5 py-1.5 cursor-pointer hover:bg-background-hover transition-colors',
-          'border-l-2',
+          'group flex items-center gap-2 cursor-pointer hover:bg-background-hover transition-colors',
+          compact ? 'px-3 py-2 min-h-[44px]' : 'px-2.5 py-1.5',
+          !compact && 'border-l-2',
           toolConfig.borderColor
         )}
         onClick={() => canExpand && setIsExpanded(!isExpanded)}
@@ -386,7 +397,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({ block
 
       {/* 展开时显示详情区域：单层背景，透明融入外层 elevated，避免嵌套色阶 */}
       {isExpanded && (
-        <div className="px-4 py-3 border-t border-border">
+        <div className={clsx('border-t border-border', compact ? 'px-3 py-2' : 'px-4 py-3')}>
           {/* 工具名称和时间：始终显示起止时间，帮助用户判断最新活动与AI是否还在执行 */}
           <div className="flex items-center justify-between mb-3">
             <span className="text-xs text-text-muted font-mono">{block.name}</span>

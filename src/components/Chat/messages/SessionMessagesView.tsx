@@ -24,6 +24,7 @@ import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
+import { ChatScrollContext } from './ChatScrollContext';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
 // 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
@@ -192,7 +193,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；
   // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
   const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming, initialAutoScroll: atBottomOnMount });
-  const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef } = scrollState;
+  const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef, suspendFollow } = scrollState;
 
   // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）
   useEffect(() => {
@@ -299,52 +300,53 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   }, [handleWheel, setScrollerRef]);
 
   return (
-    <div className="h-full w-full relative">
-      {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
-      <DynamicIsland sessionId={sessionId} />
+    <ChatScrollContext.Provider value={{ suspendFollow }}>
+      <div className="h-full w-full relative">
+        {/* 灵动岛：顶部居中浮动进度指示器，per-session（多窗口各自独立） */}
+        <DynamicIsland sessionId={sessionId} />
 
-      <Virtuoso
-        ref={virtuosoRef}
-        style={{ height: '100%' }}
-        data={displayMessages}
-        itemContent={(index, item) => {
-          return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
-        }}
-        components={{
-          // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
-          EmptyPlaceholder: EmptyState,
-          // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
-          Scroller: Scroller,
-          Footer: () => (
-            <>
-              {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
-              {isPending && (
-                <ThinkingOrb isPending={isPending} compact={true} />
-              )}
-              <div style={FOOTER_SPACER_STYLE} />
-            </>
-          ),
-        }}
-        followOutput={followOutput}
-        atBottomStateChange={handleAtBottomStateChange}
-        atBottomThreshold={AUTO_SCROLL_THRESHOLD}
-        rangeChanged={handleRangeChange}
-        increaseViewportBy={VIEWPORT_EXTENSION}
-        initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}
-      />
-
-      {/* 对话导航时间线 */}
-      {!isEmpty && conversationRounds.length > 1 && (
-        <ChatNavigator
-          variant="timeline"
-          rounds={conversationRounds}
-          currentRoundIndex={currentRoundIndex}
-          onScrollToBottom={scrollToBottom}
-          onScrollToRound={scrollToRound}
+        <Virtuoso
+          ref={virtuosoRef}
+          style={{ height: '100%' }}
+          data={displayMessages}
+          itemContent={(index, item) => {
+            return renderChatMessage(item, index, scrollActions, messageActions, collapseMode);
+          }}
+          components={{
+            // 空态用 EmptyPlaceholder 承接，避免 isEmpty 三元分支导致 Virtuoso 整树卸载重建
+            EmptyPlaceholder: EmptyState,
+            // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
+            Scroller: Scroller,
+            Footer: () => (
+              <>
+                {/* PENDING 状态：在用户消息下方显示 Polaris 旋转图标 + 轮播文案 */}
+                {isPending && (
+                  <ThinkingOrb isPending={isPending} compact={true} />
+                )}
+                <div style={FOOTER_SPACER_STYLE} />
+              </>
+            ),
+          }}
+          followOutput={followOutput}
+          atBottomStateChange={handleAtBottomStateChange}
+          atBottomThreshold={AUTO_SCROLL_THRESHOLD}
+          rangeChanged={handleRangeChange}
+          increaseViewportBy={VIEWPORT_EXTENSION}
+          initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}
         />
-      )}
 
+        {/* 对话导航时间线 */}
+        {!isEmpty && conversationRounds.length > 1 && (
+          <ChatNavigator
+            variant="timeline"
+            rounds={conversationRounds}
+            currentRoundIndex={currentRoundIndex}
+            onScrollToBottom={scrollToBottom}
+            onScrollToRound={scrollToRound}
+          />
+        )}
 
-    </div>
+      </div>
+    </ChatScrollContext.Provider>
   );
 });
