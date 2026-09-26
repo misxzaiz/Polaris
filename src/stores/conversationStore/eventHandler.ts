@@ -90,6 +90,15 @@ function mergeActualModels(
 }
 
 /**
+ * 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），跨域统一口径。
+ * 分母为 0 时为 0（无请求数据）；仅在调用方有命中数据时才对外展示。
+ */
+function computeCacheHitRate(input: number, cacheRead: number): number {
+  const denom = input + cacheRead
+  return denom > 0 ? cacheRead / denom : 0
+}
+
+/**
  * 解析 MCP 工具结果为插件卡片数据。
  *
  * 优先级：
@@ -616,6 +625,11 @@ export function handleAIEvent(
               output: (prevTotals?.output ?? 0) - (rc?.output ?? 0) + contribution.output,
               costUsd: (prevTotals?.costUsd ?? 0) - (rc?.costUsd ?? 0) + contribution.costUsd,
               runs: (prevTotals?.runs ?? 0) + (rc ? 0 : 1),
+              // 成本口径 B：cacheRead / (input + cacheRead)，跨域统一
+              cacheHitRate: computeCacheHitRate(
+                (prevTotals?.input ?? 0) - (rc?.input ?? 0) + contribution.input,
+                (prevTotals?.cacheRead ?? 0) - (rc?.cacheRead ?? 0) + contribution.cacheRead,
+              ),
             },
             contextSource: snap ? snap.contextSource : 'cumulative',
             turnSnapshotSeen: prev?.turnSnapshotSeen ?? false,
@@ -860,6 +874,7 @@ function buildDialogMetaInput(state: ConversationStore, messages: ChatMessage[])
       cacheCreation: totals.cacheCreation,
       cacheRead: totals.cacheRead,
       costUsd: totals.costUsd,
+      cacheHitRate: totals.cacheHitRate,
       modelBreakdown,
     }
   }

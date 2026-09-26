@@ -221,4 +221,34 @@ describe('usage 事件双口径分流', () => {
     handleAIEvent(cumulativeEvent(21872, 73, 'cumulative', { modelCost: 0.111185 }), store.set, store.get)
     expect(store.usage()!.sessionTotals!.costUsd).toBeCloseTo(0.111185, 10)
   })
+
+  it('sessionTotals.cacheHitRate 按成本口径 B（cacheRead / (input + cacheRead)）计算，输出不参与分母', () => {
+    const store = makeStore()
+    // 两轮 cumulative：input 3000+5000、cacheRead 1000+1500 → 命中率 2500/10500
+    handleAIEvent(cliInitEvent(), store.set, store.get)
+    handleAIEvent(
+      { type: 'usage', sessionId: 's1', inputTokens: 3000, cacheReadInputTokens: 1000, cacheCreationInputTokens: 200, outputTokens: 90, scope: 'cumulative' },
+      store.set, store.get,
+    )
+    handleAIEvent(cliInitEvent(), store.set, store.get)
+    handleAIEvent(
+      { type: 'usage', sessionId: 's1', inputTokens: 5000, cacheReadInputTokens: 1500, cacheCreationInputTokens: 0, outputTokens: 40, scope: 'cumulative' },
+      store.set, store.get,
+    )
+
+    const t = store.usage()!.sessionTotals!
+    expect(t.input).toBe(8000)
+    expect(t.cacheRead).toBe(2500)
+    expect(t.cacheHitRate).toBeCloseTo(2500 / 10500, 10)
+  })
+
+  it('sessionTotals.cacheHitRate 分母为 0（无 input 无 cacheRead）时为 0', () => {
+    const store = makeStore()
+    handleAIEvent(cliInitEvent(), store.set, store.get)
+    handleAIEvent(
+      { type: 'usage', sessionId: 's1', inputTokens: 0, cacheReadInputTokens: 0, outputTokens: 5, scope: 'cumulative' },
+      store.set, store.get,
+    )
+    expect(store.usage()!.sessionTotals!.cacheHitRate).toBe(0)
+  })
 })

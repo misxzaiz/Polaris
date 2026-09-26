@@ -25,6 +25,8 @@ export interface UsageSummary {
   totalCacheReadTokens: number
   totalCacheCreationTokens: number
   totalCostUsd: number
+  /** 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0 */
+  cacheHitRate: number
 }
 
 export interface ModelUsageStats {
@@ -35,6 +37,8 @@ export interface ModelUsageStats {
   cacheReadTokens: number
   cacheCreationTokens: number
   totalCostUsd: number
+  /** 缓存命中率（成本口径 B），0~1 */
+  cacheHitRate: number
 }
 
 export interface EngineUsageStats {
@@ -45,6 +49,8 @@ export interface EngineUsageStats {
   cacheReadTokens: number
   cacheCreationTokens: number
   totalCostUsd: number
+  /** 缓存命中率（成本口径 B），0~1 */
+  cacheHitRate: number
 }
 
 export interface DailyUsageStats {
@@ -55,6 +61,8 @@ export interface DailyUsageStats {
   cacheReadTokens: number
   cacheCreationTokens: number
   totalCostUsd: number
+  /** 缓存命中率（成本口径 B），0~1 */
+  cacheHitRate: number
 }
 
 export interface UsageLogEntry {
@@ -71,6 +79,8 @@ export interface UsageLogEntry {
   isStreaming: boolean
   createdAt: number
   totalCostUsd: number
+  /** 缓存命中率（成本口径 B），0~1 */
+  cacheHitRate: number
 }
 
 export type TimeRange = 'today' | '1d' | '7d' | '14d' | '30d' | 'all'
@@ -182,7 +192,7 @@ export const useTokenAnalyticsStore = create<TokenAnalyticsState>((set, get) => 
   getSummary: () => {
     return get().cachedSummary ?? {
       totalRequests: 0, totalInputTokens: 0, totalOutputTokens: 0,
-      totalCacheReadTokens: 0, totalCacheCreationTokens: 0, totalCostUsd: 0,
+      totalCacheReadTokens: 0, totalCacheCreationTokens: 0, totalCostUsd: 0, cacheHitRate: 0,
     }
   },
 

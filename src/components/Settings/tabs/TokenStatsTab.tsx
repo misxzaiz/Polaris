@@ -330,6 +330,11 @@ export function TokenStatsTab() {
               <div key={c.label} className="rounded-lg border border-border-subtle bg-background-surface p-3">
                 <div className="text-[10px] uppercase tracking-wide text-text-muted mb-1">{c.label}</div>
                 <div className={clsx('text-base font-mono tabular-nums font-semibold', c.color)}>{c.value}</div>
+                {c.label === t('tokenStats.totalCache', '缓存') && summary.cacheHitRate > 0 && (
+                  <div className="text-[10px] text-text-muted mt-0.5" title={t('tokenStats.cacheHitRateHint', '缓存命中率 = 缓存读取 / (输入 + 缓存读取)，成本口径')}>
+                    {t('tokenStats.cacheHitRate', '缓存命中')} {Math.round(summary.cacheHitRate * 100)}%
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -428,6 +433,7 @@ export function TokenStatsTab() {
                       <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
                       <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
                       <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cache', '缓存')}</th>
+                      <th className="text-right py-2 px-2 font-medium" title={t('tokenStats.cacheHitRateHint', '缓存命中率 = 缓存读取 / (输入 + 缓存读取)')}>{t('tokenStats.cacheHitRateShort', '命中率')}</th>
                       <th className="text-right py-2 pl-2 font-medium">{t('tokenStats.cost', '花费')}</th>
                     </tr>
                   </thead>
@@ -450,6 +456,9 @@ export function TokenStatsTab() {
                           <td className="text-right py-2 px-2 font-mono tabular-nums text-text-secondary">{fmt(m.inputTokens)}</td>
                           <td className="text-right py-2 px-2 font-mono tabular-nums text-text-muted">{fmt(m.outputTokens)}</td>
                           <td className="text-right py-2 px-2 font-mono tabular-nums text-text-muted">{fmt(m.cacheReadTokens + m.cacheCreationTokens)}</td>
+                          <td className="text-right py-2 px-2 font-mono tabular-nums text-purple-400">
+                            {m.cacheReadTokens > 0 ? `${Math.round(m.cacheHitRate * 100)}%` : '—'}
+                          </td>
                           <td className="text-right py-2 pl-2 font-mono tabular-nums">
                             <span className={m.totalCostUsd > 0.01 ? 'text-green-500' : 'text-text-muted'}>{fmtCost(m.totalCostUsd)}</span>
                             {maxCost > 0 && (
@@ -543,6 +552,7 @@ export function TokenStatsTab() {
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.input', '输入')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.output', '输出')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cache', '缓存')}</th>
+                          <th className="text-right py-2 px-2 font-medium" title={t('tokenStats.cacheHitRateHint', '缓存命中率 = 缓存读取 / (输入 + 缓存读取)')}>{t('tokenStats.cacheHitRateShort', '命中率')}</th>
                           <th className="text-right py-2 px-2 font-medium">{t('tokenStats.cost', '花费')}</th>
                           <th className="text-right py-2 pl-2 font-medium">{t('tokenStats.time', '时间')}</th>
                         </tr>
@@ -556,6 +566,9 @@ export function TokenStatsTab() {
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-secondary">{fmt(s.inputTokens)}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-text-muted">{fmt(s.outputTokens)}</td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-purple-400">{fmt(s.cacheReadTokens + s.cacheCreationTokens)}</td>
+                            <td className="py-2 px-2 text-right font-mono tabular-nums text-purple-400">
+                              {s.cacheReadTokens > 0 ? `${Math.round(s.cacheHitRate * 100)}%` : '—'}
+                            </td>
                             <td className="py-2 px-2 text-right font-mono tabular-nums text-green-500">{fmtCost(s.totalCostUsd ?? 0)}</td>
                             <td className="py-2 pl-2 text-right text-text-muted text-nowrap">{new Date(s.createdAt * 1000).toLocaleString()}</td>
                           </tr>

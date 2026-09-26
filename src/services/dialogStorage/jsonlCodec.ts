@@ -257,6 +257,7 @@ function normalizeMeta(obj: Record<string, unknown>): DialogMeta {
         cacheCreation: (t.cacheCreation as number) ?? 0,
         cacheRead: (t.cacheRead as number) ?? 0,
         costUsd: (t.costUsd as number) ?? 0,
+        cacheHitRate: typeof t.cacheHitRate === 'number' ? t.cacheHitRate : undefined,
         modelBreakdown: t.modelBreakdown && typeof t.modelBreakdown === 'object'
           ? (t.modelBreakdown as Record<string, { input: number; output: number; cacheCreation: number; cacheRead: number; costUsd: number }>)
           : undefined,

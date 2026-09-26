@@ -82,7 +82,12 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
   const used = usage.input + usage.cacheCreation + usage.cacheRead;
   const pct = cw > 0 ? used / cw : 0;
   const pctClamped = Math.min(Math.max(pct, 0), 1);
-  const hitRate = used > 0 ? Math.round((usage.cacheRead / used) * 100) : 0;
+  // 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)，跨域统一）。
+  // 仅当存在缓存读取数据时才展示，避免「无缓存数据」误显示 0%。
+  const hitRateDenom = usage.input + usage.cacheRead;
+  const hitRate = hitRateDenom > 0 && usage.cacheRead > 0
+    ? Math.round((usage.cacheRead / hitRateDenom) * 100)
+    : null;
 
   const modelUsage = usage.modelUsage;
   const modelCount = modelUsage ? Object.keys(modelUsage).length : 0;
@@ -237,9 +242,14 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                 )}
                 <MeterRow color="bg-text-tertiary" label="输出(本轮)" value={usage.output} dim />
               </div>
-              {usage.cacheRead > 0 && (
+              {hitRate != null && (
                 <div className="mt-2.5 pt-2.5 border-t border-border-subtle flex items-center justify-between">
-                  <span className="text-[11px] text-text-muted">缓存命中率</span>
+                  <span
+                    className="text-[11px] text-text-muted"
+                    title="缓存命中率 = 缓存读取 / (输入 + 缓存读取)，成本口径；与全局 Token 统计面板一致"
+                  >
+                    缓存命中率
+                  </span>
                   <span className="font-mono text-[12px] text-purple-400">{hitRate}%</span>
                 </div>
               )}

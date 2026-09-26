@@ -33,6 +33,8 @@ export interface TokenUsageSummary {
   cacheRead: number
   /** 花费（美元） */
   costUsd: number
+  /** 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0 */
+  cacheHitRate?: number
   /** 按模型维度的用量（key=模型名，value=该模型用量） */
   modelBreakdown?: Record<string, {
     input: number

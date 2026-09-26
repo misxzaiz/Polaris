@@ -268,6 +268,8 @@ export interface SessionUsageTotals {
   costUsd: number
   /** 已完成的 run（用户消息）数 */
   runs: number
+  /** 缓存命中率（成本口径 B：cacheRead / (input + cacheRead)），0~1；分母为 0 时为 0。跨域统一口径 */
+  cacheHitRate?: number
 }
 
 /**
