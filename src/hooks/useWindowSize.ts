@@ -56,6 +56,22 @@ export function useWindowSize(options: UseWindowSizeOptions = {}): WindowSizeInf
     let width = window.innerWidth;
     const height = window.innerHeight;
 
+    // [临时诊断] 最小化/恢复验证：记录每次 resize 的原始值、document.hidden 状态、
+    // 以及是否触发 isCompact 翻转。确认后删除本块。
+    // eslint-disable-next-line no-console
+    console.log(
+      '[DiagResize]',
+      JSON.stringify({
+        t: new Date().toISOString().slice(17, 23),
+        rawWidth: window.innerWidth,
+        rawHeight: window.innerHeight,
+        hidden: document.hidden,
+        prevWidth: windowSizeRef.current.width,
+        wouldFlipCompact: window.innerWidth < compactThreshold,
+        prevIsCompact: windowSizeRef.current.isCompact,
+      }),
+    );
+
     // 窗口恢复/最小化/切换时，WebView2 可能短暂报告 0 宽度，
     // 忽略这样的瞬态值，避免触发小屏模式而关闭左侧面板
     if (width <= 0) {

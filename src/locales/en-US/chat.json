@@ -238,7 +238,7 @@
     "openInEditor": "Open in editor"
   },
   "summary": {
-    "collapsedLabel": "Process collapsed",
+    "collapsedLabel": "Process",
     "chipThinking": "{{count}} thinking",
     "chipText": "{{count}} intermediate",
     "chipTool": "{{count}} tools",

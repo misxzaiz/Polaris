@@ -237,7 +237,7 @@
     "openInEditor": "在编辑器中打开"
   },
   "summary": {
-    "collapsedLabel": "运行过程已折叠",
+    "collapsedLabel": "运行过程",
     "chipThinking": "思考 {{count}}",
     "chipText": "中间文本 {{count}}",
     "chipTool": "工具 {{count}}",
