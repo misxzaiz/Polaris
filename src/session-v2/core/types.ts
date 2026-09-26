@@ -247,3 +247,91 @@ export interface ReconcileResult {
   /** 后端真实状态 */
   serverStatus: SessionStatus
 }
+
+// ============================================================================
+// 插件扩展点（Extension Points）
+// ============================================================================
+
+/**
+ * 加载阶段（借鉴 Minecraft PRE_INIT / INIT / POST_INIT）
+ */
+export type LoadPhase = 'register' | 'wire' | 'run'
+
+/**
+ * 插件 hook：会话创建前
+ * 可修改 record（如注入 metadata），返回 null 阻止创建
+ */
+export type BeforeCreateSessionHook = (
+  record: Omit<SessionRecord, 'version' | 'createdAt' | 'updatedAt'>,
+) => Omit<SessionRecord, 'version' | 'createdAt' | 'updatedAt'> | null
+
+/**
+ * 插件 hook：消息追加前
+ * 可修改 entry（如过滤敏感信息），返回 null 阻止追加
+ */
+export type BeforeAppendMessageHook = (
+  entry: MessageEntry,
+) => MessageEntry | null
+
+/**
+ * 插件 hook：会话状态变化
+ * 支持异步（标题生成、TTS 等真实场景）
+ */
+export type OnSessionStatusChangeHook = (
+  conversationId: string,
+  old: SessionStatus,
+  next: SessionStatus,
+) => void | Promise<void>
+
+/**
+ * 插件 hook：会话开始请求前（仲裁前）
+ * 可注入自定义仲裁逻辑，返回 false 拒绝
+ */
+export type BeforeRequestStartHook = (
+  conversationId: string,
+  deviceId: string,
+) => boolean
+
+/**
+ * 会话插件接口
+ *
+ * 借鉴 Minecraft 模组：引擎不知道插件存在，只通过 hook 通信。
+ * 插件可选实现任意子集的 hook。
+ */
+export interface SessionPlugin {
+  /** 插件 ID（全局唯一） */
+  id: string
+  /** 依赖的其他插件 ID（加载排序用） */
+  dependencies?: string[]
+  /** 会话创建前 */
+  beforeCreateSession?: BeforeCreateSessionHook
+  /** 消息追加前 */
+  beforeAppendMessage?: BeforeAppendMessageHook
+  /** 会话状态变化 */
+  onSessionStatusChange?: OnSessionStatusChangeHook
+  /** 会话开始请求前 */
+  beforeRequestStart?: BeforeRequestStartHook
+}
+
+/**
+ * 插件上下文：插件可访问的核心组件
+ */
+export interface PluginContext {
+  messageLog: MessageLogStorage
+  eventLog: SessionEventLog
+  arbiter: StateArbiter
+}
+
+/**
+ * 插件宿主接口
+ */
+export interface PluginHost {
+  /** 注册插件（仅 register 阶段允许） */
+  register(plugin: SessionPlugin): void
+  /** 进入下一加载阶段 */
+  advancePhase(): void
+  /** 当前加载阶段 */
+  readonly phase: LoadPhase
+  /** 获取已注册插件列表 */
+  listPlugins(): SessionPlugin[]
+}
