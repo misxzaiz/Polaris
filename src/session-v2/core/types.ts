@@ -147,6 +147,39 @@ export interface SessionRegistry {
 // ============================================================================
 
 /**
+ * 会话事件类型（用于状态计算的事件日志）
+ *
+ * 这些是影响会话运行状态的事件，与 AIEvent 的 session_start/session_end/error 对齐。
+ * 事件日志是 append-only 的，一旦写入不可修改。
+ */
+export type SessionEventType = 'session_start' | 'session_end' | 'error'
+
+/**
+ * 会话事件条目（append-only 事件日志）
+ *
+ * 借鉴银行账本：日志即真相。
+ * 会话的 running 状态是从事件日志计算的结果，不是存储值。
+ */
+export interface SessionEventEntry {
+  /** 全局唯一事件 ID */
+  id: string
+  /** 所属会话 ID（= 后端 conversationId） */
+  conversationId: string
+  /** 事件类型 */
+  type: SessionEventType
+  /** 事件发生时间（epoch ms） */
+  timestamp: number
+  /** 触发方设备 ID */
+  deviceId: string
+  /** 全局递增序号（由后端分配，用于因果排序） */
+  seq: number
+  /** 结束原因（仅 session_end） */
+  reason?: 'completed' | 'aborted' | 'error'
+  /** 错误信息（仅 error / session_end reason=error） */
+  errorMessage?: string
+}
+
+/**
  * 会话运行状态（从事件日志计算，不是存储值）
  */
 export interface SessionStatus {
@@ -158,13 +191,38 @@ export interface SessionStatus {
   lastEventSeq: number
   /** 错误信息（如果有） */
   error: string | null
+  /** 运行开始时间（running=true 时有值） */
+  startedAt: number | null
+  /** 运行结束时间（running=false 时有值） */
+  endedAt: number | null
+  /** 发起方设备 ID（running=true 时有值） */
+  startedByDevice: string | null
+}
+
+/**
+ * 会话事件日志接口（append-only）
+ */
+export interface SessionEventLog {
+  /** 追加事件（幂等：相同 id 重复追加跳过） */
+  append(event: SessionEventEntry): Promise<boolean>
+  /** 读取会话的所有事件（按 seq 升序） */
+  read(conversationId: string): Promise<SessionEventEntry[]>
+  /** 读取指定 seq 之后的事件（用于 resume） */
+  readAfterSeq(seq: number): Promise<SessionEventEntry[]>
+  /** 当前最大 seq */
+  currentSeq(): number
+  /** 删除会话的所有事件 */
+  deleteByConversation(conversationId: string): Promise<void>
 }
 
 /**
  * 状态仲裁器接口（后端权威）
+ *
+ * 借鉴操作系统内核仲裁：所有状态查询/修改请求都经仲裁器，
+ * 仲裁器从事件日志计算结果，不存储状态值。
  */
 export interface StateArbiter {
-  /** 查询会话状态（从日志计算） */
+  /** 查询会话状态（从事件日志计算） */
   getStatus(conversationId: string): Promise<SessionStatus>
   /** 请求开始（仲裁：已 running 则拒绝） */
   requestStart(conversationId: string, deviceId: string): Promise<{ ok: boolean; reason?: string }>
