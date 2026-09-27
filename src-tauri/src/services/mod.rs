@@ -4,6 +4,7 @@ pub mod instance;
 pub mod dialog_index;
 pub mod file_watcher;
 pub mod session_db;
+pub mod session_state;
 #[cfg(feature = "git")]
 pub mod git;
 pub mod logger;

@@ -21,12 +21,12 @@ use crate::services::session_db::{MessageEntry, SessionMessageDb};
 static SESSION_DB: Mutex<Option<Arc<SessionMessageDb>>> = Mutex::new(None);
 
 /// 消息库文件路径（与 dialogs/ 隔离的独立目录）
-fn messages_db_path() -> std::path::PathBuf {
+pub(crate) fn messages_db_path() -> std::path::PathBuf {
     data_root().root().join("session-v2").join("messages.db")
 }
 
 /// 获取（或懒初始化）消息库实例
-fn db() -> Result<Arc<SessionMessageDb>> {
+pub(crate) fn db() -> Result<Arc<SessionMessageDb>> {
     let mut guard = SESSION_DB
         .lock()
         .map_err(|e| crate::error::AppError::StateError(format!("锁会话消息库失败: {}", e)))?;
@@ -36,6 +36,12 @@ fn db() -> Result<Arc<SessionMessageDb>> {
         *guard = Some(Arc::new(SessionMessageDb::open(&path)?));
     }
     Ok(guard.as_ref().unwrap().clone())
+}
+
+/// 测试辅助：注入临时库实例（重置全局单例）
+#[cfg(test)]
+pub(crate) fn set_test_db_for_testing(db: SessionMessageDb) {
+    *SESSION_DB.lock().unwrap() = Some(Arc::new(db));
 }
 
 // ============================================================================

@@ -427,6 +427,23 @@ pub async fn handle_ipc_bridge(
         "message_get_latest" => dispatch_message_get_latest(&args),
         "message_delete_by_conversation" => dispatch_message_delete_by_conversation(&args),
 
+        // ── Session State（session-v2 阶段 2，状态权威）────────────────────
+        "session_get_status" => dispatch_session_get_status(&args),
+        "session_request_start" => dispatch_session_request_start(&args),
+        "session_request_interrupt" => dispatch_session_request_interrupt(&args),
+        "session_event_append" => dispatch_session_event_append(&args),
+        "session_event_read" => dispatch_session_event_read(&args),
+        "session_event_read_after_seq" => dispatch_session_event_read_after_seq(&args),
+        "session_event_current_seq" => dispatch_session_event_current_seq(&args),
+        "session_event_delete_by_conversation" => dispatch_session_event_delete_by_conversation(&args),
+        "session_reconcile" => dispatch_session_reconcile(&args),
+        "session_register" => dispatch_session_register(&args),
+        "session_get" => dispatch_session_get(&args),
+        "session_list" => dispatch_session_list(&args),
+        "session_append_message" => dispatch_session_append_message(&args),
+        "session_update_metadata" => dispatch_session_update_metadata(&args),
+        "session_delete" => dispatch_session_delete(&args),
+
         // ── History Index ──────────────────────────────────────────────────
         "history_query" => dispatch_history_query(&args),
         "history_search" => dispatch_history_search(&args),
@@ -2164,6 +2181,201 @@ fn dispatch_message_delete_by_conversation(args: &Value) -> Result<Json<Value>, 
         .to_string();
     crate::commands::session_messages::message_delete_by_conversation_inner(conversation_id)
         .map_err(|e| WebError::Internal(format!("message_delete_by_conversation 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+// ── Session State dispatchers（session-v2 阶段 2）────────────────────────────
+
+fn dispatch_session_get_status(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let status = crate::commands::session_state_commands::session_get_status_inner(conversation_id)
+        .map_err(|e| WebError::Internal(format!("session_get_status 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(status).unwrap()))
+}
+
+fn dispatch_session_request_start(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let device_id = args
+        .get("deviceId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let r = crate::commands::session_state_commands::session_request_start_inner(conversation_id, device_id)
+        .map_err(|e| WebError::Internal(format!("session_request_start 失败: {}", e)))?;
+    Ok(Json(r))
+}
+
+fn dispatch_session_request_interrupt(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let device_id = args
+        .get("deviceId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
+    let r = crate::commands::session_state_commands::session_request_interrupt_inner(conversation_id, device_id)
+        .map_err(|e| WebError::Internal(format!("session_request_interrupt 失败: {}", e)))?;
+    Ok(Json(r))
+}
+
+fn dispatch_session_event_append(args: &Value) -> Result<Json<Value>, WebError> {
+    let event: crate::services::session_state::SessionEventEntry = serde_json::from_value(args.clone())
+        .map_err(|e| WebError::BadRequest(format!("session_event_append 参数解析失败: {}", e)))?;
+    let ok = crate::commands::session_state_commands::session_event_append_inner(event)
+        .map_err(|e| WebError::Internal(format!("session_event_append 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(ok).unwrap()))
+}
+
+fn dispatch_session_event_read(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let events = crate::commands::session_state_commands::session_event_read_inner(conversation_id)
+        .map_err(|e| WebError::Internal(format!("session_event_read 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(events).unwrap()))
+}
+
+fn dispatch_session_event_read_after_seq(args: &Value) -> Result<Json<Value>, WebError> {
+    let seq = args
+        .get("seq")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| WebError::BadRequest("seq 参数缺失".to_string()))?;
+    let events = crate::commands::session_state_commands::session_event_read_after_seq_inner(seq)
+        .map_err(|e| WebError::Internal(format!("session_event_read_after_seq 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(events).unwrap()))
+}
+
+fn dispatch_session_event_current_seq(_args: &Value) -> Result<Json<Value>, WebError> {
+    let seq = crate::commands::session_state_commands::session_event_current_seq_inner()
+        .map_err(|e| WebError::Internal(format!("session_event_current_seq 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(seq).unwrap()))
+}
+
+fn dispatch_session_event_delete_by_conversation(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    crate::commands::session_state_commands::session_event_delete_by_conversation_inner(conversation_id)
+        .map_err(|e| WebError::Internal(format!("session_event_delete_by_conversation 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+fn dispatch_session_reconcile(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let client_messages: Vec<crate::services::session_db::MessageEntry> = args
+        .get("clientMessages")
+        .cloned()
+        .and_then(|v| serde_json::from_value(v).ok())
+        .unwrap_or_default();
+    let client_running = args
+        .get("clientRunning")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let r = crate::commands::session_state_commands::session_reconcile_inner(
+        conversation_id,
+        client_messages,
+        client_running,
+    )
+    .map_err(|e| WebError::Internal(format!("session_reconcile 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(r).unwrap()))
+}
+
+fn dispatch_session_register(args: &Value) -> Result<Json<Value>, WebError> {
+    let record: crate::services::session_state::SessionRecord = serde_json::from_value(args.clone())
+        .map_err(|e| WebError::BadRequest(format!("session_register 参数解析失败: {}", e)))?;
+    let rec = crate::commands::session_state_commands::session_register_inner(record)
+        .map_err(|e| WebError::Internal(format!("session_register 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(rec).unwrap()))
+}
+
+fn dispatch_session_get(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let rec = crate::commands::session_state_commands::session_get_inner(id)
+        .map_err(|e| WebError::Internal(format!("session_get 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(rec).unwrap()))
+}
+
+fn dispatch_session_list(_args: &Value) -> Result<Json<Value>, WebError> {
+    let recs = crate::commands::session_state_commands::session_list_inner()
+        .map_err(|e| WebError::Internal(format!("session_list 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(recs).unwrap()))
+}
+
+fn dispatch_session_append_message(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let message_id = args
+        .get("messageId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("messageId 参数缺失".to_string()))?
+        .to_string();
+    let expected_version = args
+        .get("expectedVersion")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| WebError::BadRequest("expectedVersion 参数缺失".to_string()))?;
+    let rec = crate::commands::session_state_commands::session_append_message_inner(
+        id,
+        message_id,
+        expected_version,
+    )
+    .map_err(|e| WebError::Internal(format!("session_append_message 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(rec).unwrap()))
+}
+
+fn dispatch_session_update_metadata(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let patch = args.get("patch").cloned().unwrap_or(serde_json::json!({}));
+    let expected_version = args
+        .get("expectedVersion")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| WebError::BadRequest("expectedVersion 参数缺失".to_string()))?;
+    let rec = crate::commands::session_state_commands::session_update_metadata_inner(
+        id,
+        patch,
+        expected_version,
+    )
+    .map_err(|e| WebError::Internal(format!("session_update_metadata 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(rec).unwrap()))
+}
+
+fn dispatch_session_delete(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    crate::commands::session_state_commands::session_delete_inner(id)
+        .map_err(|e| WebError::Internal(format!("session_delete 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
 }
 

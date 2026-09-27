@@ -49,6 +49,15 @@ pub use session_messages::{
     message_read_history, message_revise,
 };
 
+pub mod session_state_commands;
+#[cfg(feature = "tauri-app")]
+pub use session_state_commands::{
+    session_append_message, session_delete, session_event_append, session_event_current_seq,
+    session_event_delete_by_conversation, session_event_read, session_event_read_after_seq,
+    session_get, session_get_status, session_list, session_reconcile, session_register,
+    session_request_interrupt, session_request_start, session_update_metadata,
+};
+
 pub mod history_index;
 #[cfg(feature = "tauri-app")]
 pub use history_index::{history_mark, history_query, history_search};

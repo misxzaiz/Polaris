@@ -37,6 +37,7 @@ export type {
 export { InMemoryMessageLog } from './core/in-memory-log'
 export { V2MessageLog } from './core/v2-message-log'
 export { InMemorySessionEventLog, InMemoryStateArbiter } from './core/in-memory-state'
+export { V2SessionEventLog, V2StateArbiter } from './core/v2-session-event-log'
 export { reconcile } from './core/reconcile'
 export { InMemoryPluginHost } from './core/plugin-host'
 
