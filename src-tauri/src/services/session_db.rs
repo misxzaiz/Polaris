@@ -108,13 +108,15 @@ impl SessionMessageDb {
     }
 
     fn tune_pragmas(conn: &Connection) -> Result<()> {
+        // busy_timeout 必须先于 journal_mode=WAL 设置：WAL 切换需独占锁，
+        // 多连接/多进程并发首次 open（双设备冷启动）时后到者靠 busy 等待
+        // 拿锁（否则直接报 database is locked）。
+        conn.pragma_update(None, "busy_timeout", 5000)
+            .map_err(|e| AppError::StateError(format!("设置 busy_timeout 失败: {}", e)))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| AppError::StateError(format!("设置 WAL 失败: {}", e)))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| AppError::StateError(format!("设置 synchronous 失败: {}", e)))?;
-        // 多实例（双设备）同时写同一库：写-写冲突等待对方提交
-        conn.pragma_update(None, "busy_timeout", 5000)
-            .map_err(|e| AppError::StateError(format!("设置 busy_timeout 失败: {}", e)))?;
         Ok(())
     }
 

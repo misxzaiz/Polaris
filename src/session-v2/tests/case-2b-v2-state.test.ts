@@ -315,6 +315,38 @@ describe('V2 状态权威影子验证（后端事件日志 + 仲裁 + 对账）'
     expect(r.ok).toBe(false)
   })
 
+  it('双设备连续轮次：A 占位 → end 释放 → B 可继续 → end 释放 → A 再可继续', async () => {
+    const CONV = 'conv-rounds'
+    // 轮次 1：A 请求获准
+    const r1 = await arbiter.requestStart(CONV, 'A')
+    expect(r1.ok).toBe(true)
+    // dispatch 链路占位写入（session_try_start 事务语义：获准即写 session_start）
+    await eventLog.append(makeEvent(CONV, 'session_start', 'A', 1000))
+    // B 被拒（running 中）
+    const r2 = await arbiter.requestStart(CONV, 'B')
+    expect(r2.ok).toBe(false)
+    // A 结束释放
+    await eventLog.append(makeEvent(CONV, 'session_end', 'A', 2000, { reason: 'completed' }))
+    // 轮次 2：B 可继续（锁释放）
+    const r3 = await arbiter.requestStart(CONV, 'B')
+    expect(r3.ok).toBe(true)
+    await eventLog.append(makeEvent(CONV, 'session_start', 'B', 3000))
+    const status = await arbiter.getStatus(CONV)
+    expect(status.running).toBe(true)
+    expect(status.startedByDevice).toBe('B')
+  })
+
+  it('跨设备中断权限：running 由 A 发起，B 可 interrupt（与发起方解耦）', async () => {
+    // 排他锁只约束 active 写（start），interrupt 是配对关闭，任何设备可发起
+    await eventLog.append(makeEvent('conv-intr', 'session_start', 'A', 1000))
+    const r = await arbiter.requestInterrupt('conv-intr', 'B')
+    expect(r.ok).toBe(true)
+    // interrupt 后仍由发起方 B 写 end → 状态收敛 idle
+    await eventLog.append(makeEvent('conv-intr', 'session_end', 'B', 2000, { reason: 'aborted' }))
+    const status = await arbiter.getStatus('conv-intr')
+    expect(status.running).toBe(false)
+  })
+
   // ==========================================================================
   // 事件日志接口（幂等 / seq / resume / 隔离）
   // ==========================================================================

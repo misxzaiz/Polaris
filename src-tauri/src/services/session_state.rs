@@ -198,13 +198,15 @@ impl SessionStateDb {
     }
 
     fn tune_pragmas(conn: &Connection) -> Result<()> {
+        // busy_timeout 必须先于 journal_mode=WAL 设置：WAL 切换需独占锁，
+        // 多连接/多进程并发首次 open（双设备冷启动）时后到者靠 busy 等待
+        // 拿锁（否则直接报 database is locked）。
+        conn.pragma_update(None, "busy_timeout", 5000)
+            .map_err(|e| AppError::StateError(format!("设置 busy_timeout 失败: {}", e)))?;
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(|e| AppError::StateError(format!("设置 WAL 失败: {}", e)))?;
         conn.pragma_update(None, "synchronous", "NORMAL")
             .map_err(|e| AppError::StateError(format!("设置 synchronous 失败: {}", e)))?;
-        // 多实例（双设备）同时写同一库：写-写冲突等待对方提交
-        conn.pragma_update(None, "busy_timeout", 5000)
-            .map_err(|e| AppError::StateError(format!("设置 busy_timeout 失败: {}", e)))?;
         Ok(())
     }
 
@@ -254,12 +256,39 @@ impl SessionStateDb {
         // Immediate 事务：开启即抢写锁。双设备并发时后到者在此等待（busy_timeout），
         // 前者的「检查 + 写入」原子完成后，后到者重读到 running → 被拒。
         // deferred 事务会先读后写，读检查不拿写锁 → 两请求都可能通过检查再写 → 双 start。
-        let tx = conn
-            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
-            .map_err(|e| AppError::StateError(format!("开启仲裁事务失败: {}", e)))?;
+        //
+        // 手写 BEGIN IMMEDIATE（而非 Transaction 对象）：tx 对象会借用 conn 贯穿函数，
+        // 导致 busy 降级分支无法释放 conn guard 重读状态。execute_batch 失败即 busy，
+        // 无借用残留，可安全 drop(conn) 后走降级路径。
+        if let Err(busy_err) = conn.execute_batch("BEGIN IMMEDIATE") {
+            if matches!(
+                busy_err.sqlite_error_code(),
+                Some(rusqlite::ErrorCode::DatabaseBusy)
+            ) {
+                // 极端场景：busy_timeout 内未拿到写锁（长事务持有）。
+                // 降级为「重读状态」——若已 running 则优雅拒绝（Ok(Some(reason))），
+                // 避免把并发拒绝变成 Err 使 dispatch 直接失败。
+                drop(conn);
+                let status = self.compute_status(conversation_id)?;
+                return Ok(if status.running {
+                    Some(format!(
+                        "会话已在运行中（由设备 {} 于 {} 启动）",
+                        status.started_by_device.as_deref().unwrap_or("?"),
+                        status.started_at.map(|t| t.to_string()).unwrap_or_else(|| "?".into()),
+                    ))
+                } else {
+                    tracing::info!(
+                        "[try_start_conversation] busy 等待超时但状态已 idle（{}），重试一次",
+                        busy_err
+                    );
+                    return self.try_start_conversation(conversation_id, device_id, timestamp);
+                });
+            }
+            return Err(AppError::StateError(format!("开启仲裁事务失败: {}", busy_err)));
+        }
 
         let events = {
-            let mut stmt = tx
+            let mut stmt = conn
                 .prepare(
                     "SELECT id, conversation_id, type, timestamp_ms, device_id, seq, reason, error_message
                        FROM session_events WHERE conversation_id = ?1
@@ -298,11 +327,11 @@ impl SessionStateDb {
                 status.started_by_device.as_deref().unwrap_or("?"),
                 status.started_at.map(|t| t.to_string()).unwrap_or_else(|| "?".into()),
             );
-            tx.rollback().ok();
+            conn.execute_batch("ROLLBACK").ok();
             return Ok(Some(reason));
         }
 
-        let next: i64 = tx
+        let next: i64 = conn
             .query_row("SELECT COALESCE(MAX(seq), 0) FROM session_events", [], |r| r.get(0))
             .map_err(|e| AppError::StateError(format!("读取仲裁 seq 失败: {}", e)))?;
         let id = format!(
@@ -310,14 +339,14 @@ impl SessionStateDb {
             conversation_id,
             uuid::Uuid::new_v4()
         );
-        tx.execute(
+        conn.execute(
             "INSERT OR IGNORE INTO session_events
                (id, conversation_id, type, timestamp_ms, device_id, seq, reason, error_message)
              VALUES (?1, ?2, 'session_start', ?3, ?4, ?5, NULL, NULL)",
             params![id, conversation_id, timestamp, device_id, next + 1],
         )
         .map_err(|e| AppError::StateError(format!("写入仲裁占位事件失败: {}", e)))?;
-        tx.commit()
+        conn.execute_batch("COMMIT")
             .map_err(|e| AppError::StateError(format!("提交仲裁事务失败: {}", e)))?;
         Ok(None)
     }
