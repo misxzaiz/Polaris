@@ -1024,6 +1024,32 @@ pub async fn start_chat_inner(
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
+        // 阶段 4 批次 4：dispatch 链路附加写入 session_events（影子，失败不阻断）。
+        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
+        match &event {
+            AIEvent::SessionStart(start) => {
+                append_session_event(
+                    &start.session_id,
+                    crate::services::session_state::SessionEventType::SessionStart,
+                    None,
+                    None,
+                );
+            }
+            AIEvent::SessionEnd(end) => {
+                let reason = end.reason.as_ref().map(|r| match r {
+                    crate::models::SessionEndReason::Completed => "completed".to_string(),
+                    crate::models::SessionEndReason::Aborted => "aborted".to_string(),
+                    crate::models::SessionEndReason::Error => "error".to_string(),
+                });
+                append_session_event(
+                    &end.session_id,
+                    crate::services::session_state::SessionEventType::SessionEnd,
+                    reason,
+                    None,
+                );
+            }
+            _ => {}
+        }
         // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
         let enriched = match &event {
             AIEvent::SessionStart(_) => {
@@ -1521,6 +1547,32 @@ pub async fn continue_chat_inner(
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
+        // 阶段 4 批次 4：dispatch 链路附加写入 session_events（影子，失败不阻断）。
+        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
+        match &event {
+            AIEvent::SessionStart(start) => {
+                append_session_event(
+                    &start.session_id,
+                    crate::services::session_state::SessionEventType::SessionStart,
+                    None,
+                    None,
+                );
+            }
+            AIEvent::SessionEnd(end) => {
+                let reason = end.reason.as_ref().map(|r| match r {
+                    crate::models::SessionEndReason::Completed => "completed".to_string(),
+                    crate::models::SessionEndReason::Aborted => "aborted".to_string(),
+                    crate::models::SessionEndReason::Error => "error".to_string(),
+                });
+                append_session_event(
+                    &end.session_id,
+                    crate::services::session_state::SessionEventType::SessionEnd,
+                    reason,
+                    None,
+                );
+            }
+            _ => {}
+        }
         // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
         let enriched = match &event {
             AIEvent::SessionStart(_) => {
@@ -1787,6 +1839,13 @@ pub async fn interrupt_chat_inner(
             session_id
         )));
     }
+    // 阶段 4 批次 4：中断成功 → 写 session_end(reason=aborted)（影子写入，失败不阻断）
+    append_session_event(
+        &session_id,
+        crate::services::session_state::SessionEventType::SessionEnd,
+        Some("aborted".to_string()),
+        None,
+    );
     tracing::info!("[interrupt_chat_inner] 会话已中断: {}", session_id);
     Ok(())
 }
@@ -1818,6 +1877,49 @@ fn wrap_session_routed_event(session_id: &str, payload: serde_json::Value) -> se
             "payload": payload,
         })
     }
+}
+
+// ============================================================================
+// 阶段 4 批次 4：dispatch 链路附加 session_events 写入（影子运行）
+// ============================================================================
+
+/// 后端内部路径的设备标识（dispatch 链路由后端自身触发，无前端 deviceId）
+const SESSION_EVENT_DEVICE_ID: &str = "core";
+
+/// 追加一条 session_state 事件（影子写入；失败仅告警不阻断主流程）。
+///
+/// 依据 `07-阶段4实施方案.md` 批次 4：`router_dispatch_stream` start/continue 时
+/// 写 `session_start`，session_end 时写 `session_end`（带 reason）。旧业务路径零改动，
+/// 事件日志仅作后端权威状态的输入，不参与引擎控制流。
+pub fn append_session_event(
+    conversation_id: &str,
+    event_type: crate::services::session_state::SessionEventType,
+    reason: Option<String>,
+    error_message: Option<String>,
+) {
+    if conversation_id.trim().is_empty() {
+        return
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_else(|_| 0);
+    let event = crate::services::session_state::SessionEventEntry {
+        id: format!(
+            "core-{}-{}",
+            event_type.as_str(),
+            uuid::Uuid::new_v4()
+        ),
+        conversation_id: conversation_id.to_string(),
+        event_type,
+        timestamp: ts,
+        device_id: SESSION_EVENT_DEVICE_ID.to_string(),
+        seq: 0, // 占位；由底层 next_seq 分配
+        reason,
+        error_message,
+    };
+    // seq 分配与写入封装在命令层 inner（next_seq + append_event 事务一致）
+    let _ = crate::commands::session_state_commands::session_event_append_with_seq_inner(&event);
 }
 
 /// 启动聊天会话

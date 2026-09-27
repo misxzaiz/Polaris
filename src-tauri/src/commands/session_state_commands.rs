@@ -94,6 +94,22 @@ pub fn session_event_append_inner(event: SessionEventEntry) -> Result<bool> {
     db()?.append_event(&event)
 }
 
+/// 追加会话事件（自动分配 seq，事务一致）— 阶段 4 批次 4 dispatch 链路附加写入用。
+///
+/// 与 `session_event_append_inner` 的区别：调用方不预分配 seq，由底层
+/// `next_seq` 在事务内取 MAX+1（多进程安全）。事件 id 由调用方生成（幂等键）。
+pub fn session_event_append_with_seq_inner(event: &SessionEventEntry) -> Result<bool> {
+    let db = db()?;
+    if event.seq <= 0 {
+        // 调用方未指定 seq（占位 0）：底层分配
+        let mut ev = event.clone();
+        ev.seq = db.next_seq()?;
+        db.append_event(&ev)
+    } else {
+        db.append_event(event)
+    }
+}
+
 /// 读取会话的所有事件（按 seq 升序）
 pub fn session_event_read_inner(conversation_id: String) -> Result<Vec<SessionEventEntry>> {
     db()?.read_events(&conversation_id)
@@ -435,5 +451,33 @@ mod tests {
 
         session_delete_inner("S1".into()).unwrap();
         assert!(session_get_inner("S1".into()).unwrap().is_none());
+    }
+
+    #[test]
+    fn append_with_seq_auto_assigns_increasing_seq() {
+        setup_temp_db();
+        // 调用方不指定 seq（占位 0）→ 底层自动分配递增 seq
+        let mut e1 = make_event("E1", "conv-1", SessionEventType::SessionStart, 1000, 0);
+        let mut e2 = make_event("E2", "conv-1", SessionEventType::SessionEnd, 2000, 0);
+        assert!(session_event_append_with_seq_inner(&e1).unwrap());
+        assert!(session_event_append_with_seq_inner(&e2).unwrap());
+
+        let events = session_event_read_inner("conv-1".into()).unwrap();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].seq, 1);
+        assert_eq!(events[1].seq, 2);
+
+        // 状态推导：start+end → idle
+        let s = session_get_status_inner("conv-1".into()).unwrap();
+        assert!(!s.running);
+        assert_eq!(s.last_event_seq, 2);
+
+        // 幂等：相同 id 重复追加跳过
+        assert!(!session_event_append_with_seq_inner(&e1).unwrap());
+        // 指定 seq 的调用直接透传
+        e1.seq = 99;
+        assert!(session_event_append_with_seq_inner(&e1).unwrap());
+        let r = session_event_read_inner("conv-1".into()).unwrap();
+        assert!(r.iter().any(|ev| ev.seq == 99));
     }
 }

@@ -55,6 +55,23 @@ export function useAppEvents() {
     };
   }, []);
 
+  // 阶段 4 批次 4：页面加载 → 重建会话注册表反向索引（重启恢复）。
+  // 后端 Session Registry 记录会话 conversationId；restoreRegistry 为被
+  // LRU 驱逐/尚未创建的会话重建 store 壳 + conversationIdToStoreId 映射，
+  // 保证后端续传事件能路由回正确会话（消除「重启后事件路由断裂」根因）。
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { getKernel } = await import('@/session-v2/kernel/registry');
+        const kernel = await getKernel();
+        const restored = await kernel.restoreRegistry();
+        log.info('启动恢复：会话注册表已重建', { restored });
+      } catch (e) {
+        log.warn('启动恢复失败（不影响页面加载）', { error: String(e) });
+      }
+    })();
+  }, []);
+
   // AI 执行控制台：App 级安装集成执行监听（面板未打开也累计历史）
   useEffect(() => {
     initExecutionConsoleListeners().catch((e) =>
