@@ -72,8 +72,13 @@ export function useWindowSize(options: UseWindowSizeOptions = {}): WindowSizeInf
       }),
     );
 
-    // 窗口恢复/最小化/切换时，WebView2 可能短暂报告 0 宽度，
-    // 忽略这样的瞬态值，避免触发小屏模式而关闭左侧面板
+    // 窗口最小化/隐藏时，WebView2 可能报告极小或 0 宽度，
+    // 导致 isCompact 误翻转 → CenterStage 卸载 → BrowserPanel 销毁 WebView → 恢复后重新加载。
+    // document.hidden 为 true 时跳过更新，保留恢复前的有效尺寸。
+    if (document.hidden) {
+      return;
+    }
+    // 兜底：窗口恢复瞬间也可能短暂报告 0 宽度，忽略这样的瞬态值
     if (width <= 0) {
       width = windowSizeRef.current.width;
     }
