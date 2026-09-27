@@ -21,6 +21,9 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { currentMode, invoke, manualReconnect } from './transport'
+// 批次 3 类 4：恢复触发源从「前端 isStreaming」切到 kernel 后端权威状态，
+// 消除「页面重载/断线后前端 isStreaming 丢失 → 活跃会话漏恢复」的根因。
+import { getKernel } from '@/session-v2/kernel/registry'
 
 const log = createLogger('WebReconnectResync')
 
@@ -28,8 +31,11 @@ const log = createLogger('WebReconnectResync')
 let resyncInFlight = false
 
 /**
- * 对所有「本地认为仍在流式输出」的会话执行全量恢复。
+ * 对所有「后端权威判定仍在流式输出」的会话执行全量恢复。
  * 幂等：并发触发时仅执行一次。
+ *
+ * 批次 3 类 4：触发条件不再依赖前端 store.isStreaming（页面重载/断线后
+ * 该标记必然丢失），改为 kernel 后端状态批量查询（session_get_status）。
  */
 export async function resyncAfterResumeGap(): Promise<void> {
   if (resyncInFlight) {
@@ -42,9 +48,29 @@ export async function resyncAfterResumeGap(): Promise<void> {
     const manager = sessionStoreManager.getState()
     const jobs: Promise<void>[] = []
 
+    // 恢复候选判定：kernel 后端权威状态（session_get_status）。
+    // 前端本地 isStreaming 不作为触发源——页面重载/断线后该标记必然丢失，
+    // 会导致活跃会话漏恢复（PRD 根因 2/4/6）。
+    const backendRunning = new Map<string, boolean>()
+    const kernel = await getKernel()
+    await Promise.all(
+      [...manager.stores.keys()].map(async (sessionId) => {
+        const store = manager.stores.get(sessionId)
+        if (!store) return
+        try {
+          const state = await kernel.getSessionState(sessionId)
+          backendRunning.set(sessionId, state.state === 'running' || state.isStreaming)
+        } catch {
+          // 后端查询失败：保守恢复（本地 isStreaming 兜底，保证既有恢复不失效）
+          backendRunning.set(sessionId, store.getState().isStreaming)
+        }
+      }),
+    )
+
     for (const [sessionId, store] of manager.stores) {
       const state = store.getState()
-      if (!state.conversationId || !state.isStreaming) continue
+      if (!state.conversationId) continue
+      if (!backendRunning.get(sessionId)) continue
 
       const engineId = normalizeEngineId(manager.sessionMetadata.get(sessionId)?.engineId)
       jobs.push(resyncSession(sessionId, store, state.conversationId, engineId))

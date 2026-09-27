@@ -292,13 +292,23 @@ export type ResyncStrategy = 'merge' | 'full-snapshot'
 
 /**
  * 发送消息输入（对齐现有 SendMessageInput 的关键字段）
+ *
+ * 批次 3：完整透传 store.sendMessage 的 4 参签名
+ * `(content, workspaceDir?, attachments?, options?)`，消除「改走 kernel
+ * 丢附件 / 工作区 / 发送选项」的透传缺陷。
  */
 export interface SendMessageInput {
   /** 会话 ID（前端生成的本地 ID） */
   sessionId: string
   /** 用户消息内容 */
   content: string
-  /** 关联文件 */
+  /** 工作区目录（透传 store.sendMessage 第 2 参） */
+  workspaceDir?: string
+  /** 附件（透传 store.sendMessage 第 3 参） */
+  attachments?: import('../../types/attachment').Attachment[]
+  /** 发送选项（透传 store.sendMessage 第 4 参：一次性系统提示 / 运行时覆盖等） */
+  sendOptions?: import('../../stores/conversationStore/types').SendMessageOptions
+  /** 关联文件（保留：兼容早期 kernel 契约） */
   files?: string[]
   /** 前端生成的用户消息 ID（透传，用于本机回显去重） */
   clientMessageId?: string
@@ -328,6 +338,8 @@ export interface ContinueOptions {
   prompt?: string
   /** 附加上下文 */
   extraContext?: string
+  /** 允许的工具列表（透传 store.continueChat 第 2 参） */
+  allowedTools?: string[]
 }
 
 /**

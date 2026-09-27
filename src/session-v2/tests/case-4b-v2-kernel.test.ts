@@ -55,11 +55,16 @@ class FakeConversationStore {
   get error() { return this.state.error }
   get messages() { return this.state.messages }
 
-  async sendMessage(content: string) {
-    this.calls.push({ method: 'sendMessage', args: [content] })
+  async sendMessage(
+    content: string,
+    workspaceDir?: string,
+    attachments?: unknown[],
+    options?: unknown,
+  ) {
+    this.calls.push({ method: 'sendMessage', args: [content, workspaceDir, attachments, options] })
   }
-  async continueChat(prompt?: string) {
-    this.calls.push({ method: 'continueChat', args: [prompt] })
+  async continueChat(prompt?: string, allowedTools?: string[]) {
+    this.calls.push({ method: 'continueChat', args: [prompt, allowedTools] })
   }
   async interrupt() {
     this.calls.push({ method: 'interrupt', args: [] })
@@ -218,6 +223,34 @@ describe('V2SessionKernel 后端权威验证（阶段 4）', () => {
     const store = manager.getStore(sid)!
     await kernel.continueChat(sid, '继续', { extraContext: '上下文' })
     expect(store.calls.some((c) => c.method === 'continueChat' && c.args[0] === '继续\n\n上下文')).toBe(true)
+  })
+
+  it('批次 3：sendMessage 完整透传 workspaceDir / attachments / sendOptions 4 参', async () => {
+    const sid = manager.createSession({ type: 'free' })
+    const store = manager.getStore(sid)!
+    const attachments = [{ id: 'a1', type: 'image', fileName: 'x.png', fileSize: 1, mimeType: 'image/png' }]
+    const sendOptions = { oneTimeSystemPrompt: '人格', runtimeOverride: { permissionMode: 'bypassPermissions' } }
+    await kernel.sendMessage({
+      sessionId: sid,
+      content: '带附件',
+      workspaceDir: '/ws',
+      attachments,
+      sendOptions,
+    })
+    const call = store.calls.find((c) => c.method === 'sendMessage')
+    expect(call?.args[0]).toBe('带附件')
+    expect(call?.args[1]).toBe('/ws')
+    expect(call?.args[2]).toEqual(attachments)
+    expect(call?.args[3]).toEqual(sendOptions)
+  })
+
+  it('批次 3：continueChat 透传 allowedTools', async () => {
+    const sid = manager.createSession({ type: 'free' })
+    const store = manager.getStore(sid)!
+    await kernel.continueChat(sid, '继续', { allowedTools: ['bash', 'read'] })
+    const call = store.calls.find((c) => c.method === 'continueChat')
+    expect(call?.args[0]).toBe('继续')
+    expect(call?.args[1]).toEqual(['bash', 'read'])
   })
 
   it('interrupt / regenerate / editAndResend 委托对应方法', async () => {

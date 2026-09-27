@@ -132,10 +132,14 @@ export class V2SessionKernel
       return { ok: false, reason: `会话不存在: ${input.sessionId}`, retryable: false }
     }
     try {
-      // files（路径数组）：Legacy 路径对附件的处理在 UI 层完成（Attachment 对象），
-      // 桥接层不包装——内容已含文件引用时透传即可。与现有
-      // sendMessage(content, workspaceDir?, attachments?, options?) 第一参契约对齐。
-      await store.sendMessage(input.content)
+      // 批次 3：完整透传 store.sendMessage 4 参签名——workDir / 附件 / 发送选项
+      // （一次性系统提示、runtimeOverride 等）不再丢失，与 UI 直调行为一致。
+      await store.sendMessage(
+        input.content,
+        input.workspaceDir,
+        input.attachments,
+        input.sendOptions,
+      )
       return { ok: true, conversationId: store.conversationId ?? undefined }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
@@ -148,7 +152,8 @@ export class V2SessionKernel
     if (!store) return
     // opts.extraContext 附加上下文：追加为消息内容的一部分（Legacy continueChat 无独立上下文槽位）
     const message = opts?.extraContext ? `${prompt}\n\n${opts.extraContext}` : prompt
-    await store.continueChat(message)
+    // 批次 3：透传 allowedTools（权限授权后继续的第 2 参，控制后端工具集）
+    await store.continueChat(message, opts?.allowedTools)
   }
 
   async interrupt(sessionId: string): Promise<void> {

@@ -27,6 +27,7 @@ import { useTabStore, type TabStore } from '@/stores/tabStore'
 import { useViewStore } from '@/stores/viewStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { getKernel } from '@/session-v2/kernel/registry'
 import { useToastStore } from '@/stores/toastStore'
 import { useBrowserSidebarStore, type SidebarTabName, type ShortcutItem } from '@/stores/browserSidebarStore'
 import { useBrowserDownloadStore, selectActiveCount, selectTotalCount, type BrowserDownloadItem } from '@/stores/browserDownloadStore'
@@ -593,14 +594,15 @@ export function BrowserSidebarPanel() {
   }, [openBrowserTab, closeLeftPanel])
 
   const handleSendToAi = useCallback(async () => {
-    // 直接通过 sessionStoreManager 获取 sendMessage，避免顶层调用 useActiveSessionActions
+    // 批次 3 类 1：写入口统一走 kernel（完整透传 workDir），不再经 store 直调
     const sessionId = sessionStoreManager.getState().activeSessionId
     if (!sessionId) {
       toast.error(t('browser.sidebar.noSession', { defaultValue: '请先创建一个 AI 会话' }))
       return
     }
-    const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-    if (!store?.sendMessage) {
+    const kernel = await getKernel()
+    const exists = await kernel.getSessionState(sessionId)
+    if (exists.state === 'none') {
       toast.error(t('browser.sidebar.sessionNotReady', { defaultValue: 'AI 会话尚未就绪，请稍后再试' }))
       return
     }
@@ -622,7 +624,11 @@ export function BrowserSidebarPanel() {
     const message = `📤 来自浏览器：${title}\n${url}`
 
     try {
-      await store.sendMessage(message, currentWorkspace.path)
+      await kernel.sendMessage({
+        sessionId,
+        content: message,
+        workspaceDir: currentWorkspace.path,
+      })
       toast.success(t('browser.sidebar.sentToAi', { defaultValue: '已发送给 AI' }))
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

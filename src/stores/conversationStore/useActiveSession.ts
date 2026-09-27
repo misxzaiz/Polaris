@@ -17,6 +17,7 @@ import {
   useActiveSessionId,
 } from './sessionStoreManager'
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
+import { getKernel } from '@/session-v2/kernel/registry'
 import { useWorkspaceStore } from '../workspaceStore'
 import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft, PromptOptimizeState } from './types'
 import type { ContentBlock } from '@/types'
@@ -399,23 +400,28 @@ export function useActiveSessionActions() {
       sendMessage: async (...args: Parameters<ConversationStore['sendMessage']>) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.sendMessage(...args)
+        // 批次 3 类 1：UI 写入口收口到 kernel（统一写路径，行为与 store 直调一致——
+        // kernel 完整透传 workspaceDir/attachments/sendOptions 4 参）。
+        const kernel = await getKernel()
+        await kernel.sendMessage({
+          sessionId,
+          content: args[0],
+          workspaceDir: args[1],
+          attachments: args[2],
+          sendOptions: args[3],
+        })
       },
       interrupt: async () => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.interrupt()
+        const kernel = await getKernel()
+        await kernel.interrupt(sessionId)
       },
       continueChat: async (prompt?: string, allowedTools?: string[]) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.continueChat(prompt, allowedTools)
+        const kernel = await getKernel()
+        await kernel.continueChat(sessionId, prompt ?? '', { allowedTools })
       },
       deleteMessage: (messageId: string) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
@@ -427,16 +433,14 @@ export function useActiveSessionActions() {
       editAndResend: async (messageId: string, newContent: string) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.editAndResend(messageId, newContent)
+        const kernel = await getKernel()
+        await kernel.editAndResend(sessionId, messageId, newContent)
       },
       regenerateResponse: async (messageId: string) => {
         const sessionId = sessionStoreManager.getState().activeSessionId
         if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.regenerateResponse(messageId)
+        const kernel = await getKernel()
+        await kernel.regenerate(sessionId, messageId)
       },
       // Input draft actions
       updateInputDraft: (draft: import('./types').InputDraft) => {
