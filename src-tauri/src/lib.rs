@@ -1199,6 +1199,13 @@ pub fn run() {
             commands::dialog_storage::dialog_write,
             commands::dialog_storage::dialog_append,
             commands::dialog_storage::dialog_delete,
+            // 会话消息 SQLite 命令层（session-v2 阶段 1b）
+            commands::session_messages::message_append,
+            commands::session_messages::message_revise,
+            commands::session_messages::message_read,
+            commands::session_messages::message_read_history,
+            commands::session_messages::message_get_latest,
+            commands::session_messages::message_delete_by_conversation,
             // 会话历史索引（统一时间线 / 全文搜索 / 标注）
             commands::history_index::history_query,
             commands::history_index::history_search,

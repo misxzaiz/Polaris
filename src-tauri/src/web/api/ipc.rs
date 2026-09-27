@@ -419,6 +419,14 @@ pub async fn handle_ipc_bridge(
         "dialog_append" => dispatch_dialog_append(&args),
         "dialog_delete" => dispatch_dialog_delete(&args),
 
+        // ── Session Messages（session-v2 阶段 1b，SQLite append-only）────────
+        "message_append" => dispatch_message_append(&args),
+        "message_revise" => dispatch_message_revise(&args),
+        "message_read" => dispatch_message_read(&args),
+        "message_read_history" => dispatch_message_read_history(&args),
+        "message_get_latest" => dispatch_message_get_latest(&args),
+        "message_delete_by_conversation" => dispatch_message_delete_by_conversation(&args),
+
         // ── History Index ──────────────────────────────────────────────────
         "history_query" => dispatch_history_query(&args),
         "history_search" => dispatch_history_search(&args),
@@ -2076,6 +2084,86 @@ fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
         .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
     crate::commands::dialog_storage::dialog_delete_inner(name)
         .map_err(|e| WebError::Internal(format!("dialog_delete 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+// ── Session Messages dispatchers（session-v2 阶段 1b）────────────────────────
+
+/// 解析完整消息条目（camelCase，对齐后端 MessageEntry 反序列化）
+fn parse_message_entry(args: &Value) -> Result<crate::services::session_db::MessageEntry, WebError> {
+    serde_json::from_value(args.clone())
+        .map_err(|e| WebError::BadRequest(format!("message_append 参数解析失败: {}", e)))
+}
+
+fn dispatch_message_append(args: &Value) -> Result<Json<Value>, WebError> {
+    let entry = parse_message_entry(args)?;
+    let inserted = crate::commands::session_messages::message_append_inner(entry)
+        .map_err(|e| WebError::Internal(format!("message_append 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(inserted).unwrap()))
+}
+
+fn dispatch_message_revise(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let content = args
+        .get("content")
+        .ok_or_else(|| WebError::BadRequest("content 参数缺失".to_string()))?
+        .clone();
+    let version = crate::commands::session_messages::message_revise_inner(id, content)
+        .map_err(|e| WebError::Internal(format!("message_revise 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(version).unwrap()))
+}
+
+fn dispatch_message_read(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let after_timestamp = args.get("afterTimestamp").and_then(|v| v.as_i64());
+    let limit = args.get("limit").and_then(|v| v.as_i64());
+    let msgs = crate::commands::session_messages::message_read_inner(
+        conversation_id,
+        after_timestamp,
+        limit,
+    )
+    .map_err(|e| WebError::Internal(format!("message_read 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(msgs).unwrap()))
+}
+
+fn dispatch_message_read_history(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let msgs = crate::commands::session_messages::message_read_history_inner(id)
+        .map_err(|e| WebError::Internal(format!("message_read_history 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(msgs).unwrap()))
+}
+
+fn dispatch_message_get_latest(args: &Value) -> Result<Json<Value>, WebError> {
+    let id = args
+        .get("id")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("id 参数缺失".to_string()))?
+        .to_string();
+    let msg = crate::commands::session_messages::message_get_latest_inner(id)
+        .map_err(|e| WebError::Internal(format!("message_get_latest 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(msg).unwrap()))
+}
+
+fn dispatch_message_delete_by_conversation(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    crate::commands::session_messages::message_delete_by_conversation_inner(conversation_id)
+        .map_err(|e| WebError::Internal(format!("message_delete_by_conversation 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
 }
 

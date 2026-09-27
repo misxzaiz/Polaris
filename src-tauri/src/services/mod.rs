@@ -3,6 +3,7 @@ pub mod data_root;
 pub mod instance;
 pub mod dialog_index;
 pub mod file_watcher;
+pub mod session_db;
 #[cfg(feature = "git")]
 pub mod git;
 pub mod logger;

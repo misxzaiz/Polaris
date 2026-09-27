@@ -42,6 +42,13 @@ pub use dialog_storage::{
     dialog_write,
 };
 
+pub mod session_messages;
+#[cfg(feature = "tauri-app")]
+pub use session_messages::{
+    message_append, message_delete_by_conversation, message_get_latest, message_read,
+    message_read_history, message_revise,
+};
+
 pub mod history_index;
 #[cfg(feature = "tauri-app")]
 pub use history_index::{history_mark, history_query, history_search};
