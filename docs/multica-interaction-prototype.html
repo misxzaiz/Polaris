@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Multica 交互原型 — 人类 + AI Agent 团队协作</title>
+<style>
+  :root{
+    --bg:#0B0D10; --surface:#15181E; --surface2:#1C2028; --hover:#222730;
+    --text:#EDEFF2; --text2:#A6ADB8; --muted:#6B7280;
+    --line:#232833; --line2:#2F3642;
+    --blue:#5B8DEF; --blue2:#3D6FE0; --cyan:#4FD1C5;
+    --green:#3ECF8E; --violet:#8B5CF6; --red:#F1657A; --amber:#F5A623;
+    --mono: ui-monospace, "SF Mono", "Cascadia Code", Consolas, monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;line-height:1.6}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  /* ── 顶栏 ── */
+  .topbar{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:14px;padding:10px 22px;background:rgba(11,13,16,.9);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  .logo{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--blue),var(--cyan));display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff;font-size:15px}
+  .topbar h1{font-size:15px;font-weight:650}
+  .topbar .sub{font-size:12px;color:var(--muted)}
+  .steps{display:flex;gap:4px;margin-left:auto;padding:3px;background:var(--surface);border:1px solid var(--line);border-radius:8px}
+  .step-btn{border:none;background:transparent;color:var(--text2);font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer}
+  .step-btn.active{background:var(--blue2);color:#fff;font-weight:500}
+  .step-btn:hover:not(.active){background:var(--hover)}
+
+  /* ── 主布局 ── */
+  .layout{display:grid;grid-template-columns:250px 1fr;min-height:calc(100vh - 49px)}
+  .sidebar{border-right:1px solid var(--line);padding:16px 12px;background:var(--surface)}
+  .sidebar h3{font-size:11px;letter-spacing:.08em;color:var(--muted);margin:14px 8px 6px;text-transform:uppercase}
+  .anchors{display:flex;flex-direction:column;gap:2px}
+  .anchor{display:block;padding:6px 10px;border-radius:6px;font-size:13px;color:var(--text2);cursor:pointer;border:none;background:transparent;text-align:left}
+  .anchor:hover{background:var(--hover);color:var(--text)}
+  .anchor.active{background:var(--blue2);color:#fff}
+  .main{padding:26px 30px 80px;max-width:1080px;width:100%}
+
+  .kicker{font-size:12px;color:var(--blue);letter-spacing:.05em;text-transform:uppercase;margin-bottom:6px}
+  h2{font-size:22px;font-weight:650;margin-bottom:6px}
+  .lead{color:var(--text2);font-size:14px;margin-bottom:16px}
+  .meta-tags{display:flex;gap:6px;margin-bottom:22px;flex-wrap:wrap}
+  .tag{font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line2);color:var(--text2)}
+  .tag.hot{border-color:var(--amber);color:var(--amber)}
+  .tag.new{border-color:var(--green);color:var(--green)}
+  .tag.warn{border-color:var(--red);color:var(--red)}
+  .tag.blue{border-color:var(--blue);color:var(--blue)}
+  .tag.violet{border-color:var(--violet);color:var(--violet)}
+
+  .section{margin:36px 0 12px}
+  .section .label{font-size:11px;color:var(--muted);letter-spacing:.1em}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-top:10px}
+  .card h3{font-size:14px;font-weight:600;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .desc{font-size:13px;color:var(--text2)}
+  .muted{color:var(--muted)}
+  .now{color:var(--amber)}
+  .good{color:var(--green)}
+  .bad{color:var(--red)}
+  .note{font-size:12px;color:var(--text2);background:var(--hover);border:1px dashed var(--line2);border-radius:8px;padding:8px 12px;margin-top:10px}
+  .note b{color:var(--text)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px}
+  th{text-align:left;color:var(--muted);font-weight:500;padding:6px 10px;border-bottom:1px solid var(--line2)}
+  td{padding:7px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:rgba(255,255,255,.02)}
+
+  code,.mono{font-family:var(--mono);font-size:12px;background:var(--hover);padding:1px 5px;border-radius:4px;color:var(--cyan)}
+  pre{font-family:var(--mono);font-size:12px;background:#0e1114;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow-x:auto;margin-top:10px;color:var(--text2)}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:820px){.cols{grid-template-columns:1fr}}
+
+  /* ── 分屏对比 ── */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  @media(max-width:820px){.compare{grid-template-columns:1fr}}
+  .compare .col h4{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px}
+
+  /* ── 看板 ── */
+  .board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:10px}
+  @media(max-width:820px){.board{grid-template-columns:1fr 1fr}}
+  .bcol{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px;min-height:180px}
+  .bcol h5{font-size:11px;color:var(--muted);letter-spacing:.05em;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+  .bcol h5 .cnt{font-size:10px;background:var(--hover);border:1px solid var(--line2);border-radius:99px;padding:0 6px;color:var(--text2)}
+  .tcard{background:var(--surface);border:1px solid var(--line2);border-radius:8px;padding:9px 10px;margin-bottom:8px;font-size:12px}
+  .tcard:hover{border-color:var(--blue)}
+  .tcard .tc-title{font-weight:600;color:var(--text);margin-bottom:4px}
+  .tcard .tc-sub{font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .agent-chip{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;background:var(--hover);border:1px solid var(--line2);border-radius:99px;padding:1px 8px;color:var(--text2)}
+  .agent-chip .dot{width:6px;height:6px;border-radius:99px;background:var(--green)}
+  .agent-chip.ai .dot{background:var(--violet)}
+  .agent-chip.wait .dot{background:var(--amber)}
+  .tcard .pri{font-size:10px;color:var(--amber);border:1px solid rgba(245,166,35,.35);border-radius:4px;padding:0 4px}
+  .tcard .pri.high{color:var(--red);border-color:rgba(241,101,122,.4)}
+  .tcard .tag-row{margin-top:6px;display:flex;gap:4px;flex-wrap:wrap}
+
+  /* ── 聊天区 ── */
+  .chat{display:flex;flex-direction:column;gap:14px;padding:18px;background:var(--surface);border:1px solid var(--line);border-radius:14px}
+  .msg{display:flex;gap:12px}
+  .avatar{width:30px;height:30px;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700}
+  .avatar.user{background:var(--surface2);border:1px solid var(--line2);color:var(--text2)}
+  .avatar.ai{background:var(--blue2);color:#fff}
+  .avatar.agent{background:var(--violet);color:#fff}
+  .avatar.bot{background:var(--cyan);color:#0B0D10}
+  .bubble{flex:1;min-width:0;font-size:13.5px;color:var(--text2)}
+  .bubble .whom{font-size:12px;color:var(--muted);margin-bottom:4px}
+  .bubble p{margin-bottom:8px}
+  .bubble p:last-child{margin-bottom:0}
+  .bubble .me{color:var(--text)}
+
+  /* ── 工具块（Run 卡片） ── */
+  .tool-block{border:1px solid var(--line);border-left-width:3px;border-radius:10px;overflow:hidden;margin-top:6px}
+  .tb-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--surface);cursor:pointer}
+  .tb-head:hover{background:var(--hover)}
+  .tb-icon{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:12px}
+  .tb-name{font-size:13px;font-weight:600;color:var(--text)}
+  .tb-sub{font-size:11.5px;color:var(--muted);margin-left:auto;font-family:var(--mono)}
+  .tb-chevron{margin-left:2px;color:var(--muted);transition:transform .15s;font-size:12px}
+  .run{border-left-color:var(--violet)}
+  .run .tb-icon{background:rgba(139,92,246,.16);color:var(--violet)}
+  .run-body{padding:10px 12px;background:#0e1114;border-top:1px solid var(--line);display:none}
+  .run.open .run-body{display:block}
+  .run-steps{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--text2)}
+  .rstep{display:flex;gap:8px;align-items:flex-start}
+  .rstep .st{flex-shrink:0;width:18px;height:18px;border-radius:99px;background:var(--hover);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:10px;margin-top:1px}
+  .rstep.done .st{background:rgba(62,207,142,.15);border-color:var(--green);color:var(--green)}
+  .rstep.run .st{background:rgba(91,141,239,.15);border-color:var(--blue);color:var(--blue)}
+  .rstep .txt b{color:var(--text)}
+
+  .status-pill{font-size:11px;padding:2px 9px;border-radius:99px;font-weight:500}
+  .status-pill.queued{background:rgba(245,166,35,.12);color:var(--amber);border:1px solid rgba(245,166,35,.3)}
+  .status-pill.running{background:rgba(91,141,239,.12);color:var(--blue);border:1px solid rgba(91,141,239,.35)}
+  .status-pill.done{background:rgba(62,207,142,.12);color:var(--green);border:1px solid rgba(62,207,142,.35)}
+  .status-pill.failed{background:rgba(241,101,122,.12);color:var(--red);border:1px solid rgba(241,101,122,.35)}
+
+  /* ── 架构图 ── */
+  .arch{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:10px}
+  @media(max-width:820px){.arch{grid-template-columns:1fr}}
+  .arch-side{padding:16px}
+  .arch-side.records{background:var(--surface);border-right:1px solid var(--line)}
+  .arch-side.exec{background:var(--surface2)}
+  .arch-side h4{font-size:12px;letter-spacing:.05em;margin-bottom:10px;display:flex;align-items:center;gap:6px}
+  .arch-side.records h4{color:var(--blue)}
+  .arch-side.exec h4{color:var(--violet)}
+  .arch-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text2);padding:6px 8px;border-radius:6px;margin-bottom:4px;background:var(--hover)}
+  .arch-item b{color:var(--text)}
+  .arch-item .ic{width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0}
+  .arch-item.rec .ic{background:rgba(91,141,239,.15);color:var(--blue)}
+  .arch-item.ex .ic{background:rgba(139,92,246,.15);color:var(--violet)}
+  .arch-arrow{text-align:center;color:var(--muted);font-size:11px;padding:8px 0;border-top:1px solid var(--line)}
+
+  /* ── 流程步骤 ── */
+  .flow{display:flex;flex-direction:column;gap:0;margin-top:10px;counter-reset:step}
+  .fstep{display:flex;gap:14px;position:relative;padding-bottom:18px}
+  .fstep::before{content:"";position:absolute;left:17px;top:34px;bottom:0;width:2px;background:var(--line2)}
+  .fstep:last-child::before{display:none}
+  .fnum{width:34px;height:34px;border-radius:99px;background:var(--surface2);border:1px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:var(--blue);flex-shrink:0;z-index:1}
+  .fstep.done .fnum{background:rgba(62,207,142,.15);border-color:var(--green);color:var(--green)}
+  .fbody{flex:1;padding-top:4px}
+  .fbody h5{font-size:14px;font-weight:600;margin-bottom:4px}
+  .fbody p{font-size:13px;color:var(--text2)}
+
+  /* ── 触发方式 ── */
+  .triggers{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+  @media(max-width:820px){.triggers{grid-template-columns:1fr}}
+  .trigger{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .trigger .t-icon{font-size:20px;margin-bottom:8px}
+  .trigger h5{font-size:13px;font-weight:600;margin-bottom:4px}
+  .trigger p{font-size:12px;color:var(--text2)}
+  .trigger code{font-size:11px}
+
+  /* ── 数据边界 ── */
+  .boundary{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-top:10px}
+  @media(max-width:820px){.boundary{grid-template-columns:1fr}}
+  .bcol{background:var(--surface);padding:16px}
+  .bcol:first-child{border-right:1px solid var(--line)}
+  .bcol h4{font-size:12px;color:var(--muted);letter-spacing:.05em;margin-bottom:10px}
+  .bcol ul{list-style:none}
+  .bcol li{font-size:12.5px;color:var(--text2);padding:5px 0;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+  .bcol li:last-child{border-bottom:none}
+  .bcol li .ic{flex-shrink:0;width:18px;height:18px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:11px}
+  .bcol.records li .ic{background:rgba(91,141,239,.15);color:var(--blue)}
+  .bcol.exec li .ic{background:rgba(139,92,246,.15);color:var(--violet)}
+</style>
+</head>
+<body>
+
+<!-- ══════════ 顶栏 ══════════ -->
+<div class="topbar">
+  <div class="logo">M</div>
+  <h1>Multica 交互学习原型</h1>
+  <span class="sub">人类 + AI Agent 团队协作工作台 · 静态演示，无服务器</span>
+  <div class="steps">
+    <button class="step-btn active" data-step="1">核心概念</button>
+    <button class="step-btn" data-step="2">看板</button>
+    <button class="step-btn" data-step="3">Run 生命周期</button>
+    <button class="step-btn" data-step="4">触发与数据边界</button>
+    <button class="step-btn" data-step="5">Polaris 结合点</button>
+  </div>
+</div>
+
+<div class="layout">
+  <!-- ══════════ 侧边栏 ══════════ -->
+  <div class="sidebar">
+    <h3>Multica 概念</h3>
+    <div class="anchors">
+      <button class="anchor active" data-anchor="concept">① 是什么</button>
+      <button class="anchor" data-anchor="objects">② 核心对象</button>
+      <button class="anchor" data-anchor="flow">③ 一次 Run 全流程</button>
+    </div>
+    <h3>交互演示</h3>
+    <div class="anchors">
+      <button class="anchor" data-anchor="board">④ 团队看板</button>
+      <button class="anchor" data-anchor="chat">⑤ 会话与 @提及</button>
+      <button class="anchor" data-anchor="triggers">⑥ 4 种触发方式</button>
+    </div>
+    <h3>架构与结合</h3>
+    <div class="anchors">
+      <button class="anchor" data-anchor="boundary">⑦ 数据边界</button>
+      <button class="anchor" data-anchor="polaris">⑧ 与 Polaris 的结合</button>
+    </div>
+  </div>
+
+  <!-- ══════════ 主内容 ══════════ -->
+  <div class="main">
+
+    <!-- ── 步骤 1：核心概念 ── -->
+    <section id="concept">
+      <div class="kicker">Learning · 01</div>
+      <h2>Multica 是什么？</h2>
+      <p class="lead">一个让人类和 AI Agent <b>像同一支团队</b>协作的开源项目 — 本质是「项目管理的界面 + 你电脑上的 AI 编码工具」的组合。</p>
+      <div class="meta-tags">
+        <span class="tag hot">开源</span>
+        <span class="tag new">可自托管</span>
+        <span class="tag blue">20+ AI 工具</span>
+        <span class="tag violet">人类 + Agent 混编</span>
+      </div>
+
+      <div class="card">
+        <h3>一句话理解</h3>
+        <div class="desc">
+          把 <b>Claude Code / Codex 等 AI 编程工具</b>，当成可以分配任务、认领任务、汇报进度的<b>团队成员</b>。
+          你在看板上建 Issue → 分配给某个 Agent → 它在你自己的电脑上执行 → 结果回写到 Issue。
+        </div>
+        <div class="note"><b>核心心法：</b>Multica 只负责「记录 + 协调」，真正干活（改代码、跑命令）发生在<b>连接到你账号的某台电脑</b>上。</div>
+      </div>
+
+      <div class="compare">
+        <div class="col">
+          <h4>类似</h4>
+          <div class="card">
+            <div class="desc">
+              GitHub Issues / Jira / 飞书项目 的项目管理界面
+              <br />＋
+              <br />按「团队成员」方式驱动本地 AI 编程 CLI
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <h4>不像</h4>
+          <div class="card">
+            <div class="desc">
+              不是又一个 ChatGPT 聊天框
+              <br />不是云端帮你写代码的 IDE
+              <br />不是模型路由/推理网关
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 核心对象 ── -->
+    <section id="objects" class="section">
+      <div class="section"><span class="label">Learning · 02</span></div>
+      <h2>核心对象（5 个）</h2>
+      <p class="lead">理解这 5 个词，Multica 的交互就全通了。</p>
+      <table>
+        <tr><th style="width:140px">对象</th><th>作用</th><th>类比</th></tr>
+        <tr><td><b>Workspace</b></td><td>一个协作空间，隔离项目/团队</td><td>Jira 项目 / 飞书群</td></tr>
+        <tr><td><b>Issue</b></td><td>一条要完成的工作，含描述 + 讨论 + 负责人</td><td>GitHub Issue / 工单</td></tr>
+        <tr><td><b>Agent</b></td><td>一个 AI 成员配置：用什么工具、什么模型、什么指令</td><td>团队里的一个成员</td></tr>
+        <tr><td><b>Run</b></td><td>Agent 认领 Issue 后的一次执行（排队 → 执行 → 回写）</td><td>一次构建 / 一次任务执行</td></tr>
+        <tr><td><b>Runtime</b></td><td>连接到你电脑的执行端（daemon + 本地 AI 工具）</td><td>CI 的 runner</td></tr>
+      </table>
+      <div class="note"><b>关系链：</b>Workspace 里有多个 Issue；Issue 分配给 Agent；Agent 触发一次 Run；Run 由某台电脑的 Runtime 认领执行。</div>
+    </section>
+
+    <!-- ── 一次 Run 全流程 ── -->
+    <section id="flow" class="section">
+      <div class="section"><span class="label">Learning · 03</span></div>
+      <h2>一次 Run 的完整路径</h2>
+      <p class="lead">Multica 官方文档的「How a run works」交互化演示。</p>
+      <div class="flow">
+        <div class="fstep done">
+          <div class="fnum">1</div>
+          <div class="fbody"><h5>Issue 提供上下文</h5><p>Issue 里装着工作描述、讨论、负责人。分配给 Agent 时，系统读取该 Agent 的指令、模型、技能、runtime 配置。</p></div>
+        </div>
+        <div class="fstep done">
+          <div class="fnum">2</div>
+          <div class="fbody"><h5>Multica 创建 Run</h5><p>Run 进入队列。如果没有 runtime 在线，就<code>等待</code>在那里。</p></div>
+        </div>
+        <div class="fstep done">
+          <div class="fnum">3</div>
+          <div class="fbody"><h5>Runtime 认领 Run</h5><p>一台在线电脑的 runtime 认领 Run，调用该 Agent 配置的 AI 编码工具（如 Claude Code）。</p></div>
+        </div>
+        <div class="fstep done">
+          <div class="fnum">4</div>
+          <div class="fbody"><h5>AI 工具在本地执行</h5><p>工具读取工作目录、跑命令、产出结果 — 全都在<b>你自己电脑上</b>。</p></div>
+        </div>
+        <div class="fstep done">
+          <div class="fnum">5</div>
+          <div class="fbody"><h5>结果回写 Issue</h5><p>进度、评论、结果出现在 Issue 的时间线和执行日志里。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 看板 ── -->
+    <section id="board" class="section">
+      <div class="section"><span class="label">Interactive · 04</span></div>
+      <h2>团队看板</h2>
+      <p class="lead">人和 Agent 的卡片在同一块板上流转 — 这是 Multica 最直观的界面。</p>
+      <div class="board">
+        <div class="bcol">
+          <h5>📥 待办 <span class="cnt">3</span></h5>
+          <div class="tcard"><div class="tc-title">修复登录超时 bug</div><div class="tc-sub"><span class="agent-chip ai"><span class="dot"></span>codex</span><span class="pri high">P1</span></div></div>
+          <div class="tcard"><div class="tc-title">重构会话存储</div><div class="tc-sub"><span class="agent-chip ai"><span class="dot"></span>claude</span><span class="pri">P2</span></div></div>
+          <div class="tcard"><div class="tc-title">评审 PR #42</div><div class="tc-sub"><span class="agent-chip"><span class="dot"></span>小明</span><span class="pri">P2</span></div></div>
+        </div>
+        <div class="bcol">
+          <h5>🚧 进行中 <span class="cnt">2</span></h5>
+          <div class="tcard"><div class="tc-title">实现 MCP 网关</div><div class="tc-sub"><span class="agent-chip ai"><span class="dot"></span>claude</span><span class="status-pill running">RUNNING</span></div></div>
+          <div class="tcard"><div class="tc-title">UI 暗色主题</div><div class="tc-sub"><span class="agent-chip"><span class="dot"></span>阿杰</span></div></div>
+        </div>
+        <div class="bcol">
+          <h5>🔍 待验证 <span class="cnt">1</span></h5>
+          <div class="tcard"><div class="tc-title">网关性能基准</div><div class="tc-sub"><span class="agent-chip ai"><span class="dot wait"></span>qa</span><span class="status-pill queued">QUEUED</span></div></div>
+        </div>
+        <div class="bcol">
+          <h5>✅ 已完成 <span class="cnt">2</span></h5>
+          <div class="tcard"><div class="tc-title">脚手架搭建</div><div class="tc-sub"><span class="agent-chip ai"><span class="dot"></span>codex</span><span class="status-pill done">DONE</span></div></div>
+          <div class="tcard"><div class="tc-title">数据模型设计</div><div class="tc-sub"><span class="agent-chip"><span class="dot"></span>团队</span></div></div>
+        </div>
+      </div>
+      <div class="note"><b>关键点：</b>同一块板上既有人的卡片（小明 / 阿杰），也有 Agent 的卡片（claude / codex / qa）。拖动卡片换列 = 改状态。</div>
+    </section>
+
+    <!-- ── 会话与 @提及 ── -->
+    <section id="chat" class="section">
+      <div class="section"><span class="label">Interactive · 05</span></div>
+      <h2>会话：@提及 Agent</h2>
+      <p class="lead">在 Issue 评论里 <code>@agent</code> 就能让 Agent 干活，像 @同事 一样自然。</p>
+      <div class="chat">
+        <div class="msg">
+          <div class="avatar user">我</div>
+          <div class="bubble">
+            <div class="whom">@forrest</div>
+            <p class="me">@claude 帮我看下 MCP 网关的流式响应，为什么偶尔会超时？</p>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="avatar bot">M</div>
+          <div class="bubble">
+            <div class="whom">Multica · 分配器</div>
+            <p>已为 <b>@claude</b> 创建 Run 并加入队列（等待 runtime 认领）…</p>
+          </div>
+        </div>
+        <div class="tool-block run open">
+          <div class="tb-head">
+            <div class="tb-icon">▶</div>
+            <span class="tb-name">Run · 排查网关流式超时</span>
+            <span class="status-pill running">RUNNING</span>
+            <span class="tb-chevron">▾</span>
+          </div>
+          <div class="run-body">
+            <div class="run-steps">
+              <div class="rstep done"><span class="st">✓</span><span class="txt"><b>认领</b> — 由桌面端 runtime 认领，调用 Claude Code</span></div>
+              <div class="rstep done"><span class="st">✓</span><span class="txt"><b>读取</b> — 工作目录 <code>src-tauri/src/services</code></span></div>
+              <div class="rstep run"><span class="st">●</span><span class="txt"><b>执行</b> — 复现 + 加日志定位超时点…</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="msg">
+          <div class="avatar agent">C</div>
+          <div class="bubble">
+            <div class="whom">@claude · 运行中</div>
+            <p>已复现：<code>router_dispatch_stream</code> 在并发下偶发丢包，正在补并发测试。</p>
+          </div>
+        </div>
+      </div>
+      <div class="note"><b>4 种触发方式（见下节）：</b>① 分配 Issue ② 评论里 @提及 ③ 直接和 Agent 聊天 ④ Autopilot 自动触发。</div>
+    </section>
+
+    <!-- ── 触发方式 ── -->
+    <section id="triggers" class="section">
+      <div class="section"><span class="label">Interactive · 06</span></div>
+      <h2>4 种触发 Agent 的方式</h2>
+      <p class="lead">Agent 永远不会自己开始干活 — 每一次 Run 都由显式动作触发。</p>
+      <div class="triggers">
+        <div class="trigger">
+          <div class="t-icon">📋</div>
+          <h5>分配 Issue</h5>
+          <p>最常用的方式。把 Issue 指派给 Agent，Multica 自动创建 Run。</p>
+        </div>
+        <div class="trigger">
+          <div class="t-icon">💬</div>
+          <h5>@提及</h5>
+          <p>在评论里 <code>@claude</code>，像 @同事 一样让其参与讨论或干活。</p>
+        </div>
+        <div class="trigger">
+          <div class="t-icon">🗨️</div>
+          <h5>直接聊天</h5>
+          <p>打开与某个 Agent 的会话，直接发消息（单轮或多轮追问）。</p>
+        </div>
+        <div class="trigger">
+          <div class="t-icon">🤖</div>
+          <h5>Autopilot</h5>
+          <p>预定义规则自动触发（如 Issue 状态变化时自动派 QA 复验）。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── 数据边界 ── -->
+    <section id="boundary" class="section">
+      <div class="section"><span class="label">Architecture · 07</span></div>
+      <h2>数据边界：记录 vs 执行</h2>
+      <p class="lead">Multica 官方安全模型的核心 — 也是它和 Polaris 结合最自然的地方。</p>
+      <div class="boundary">
+        <div class="bcol records">
+          <h4>📍 Multica（服务器 / 云端）</h4>
+          <ul>
+            <li><span class="ic">📄</span>Workspaces / Issues / 评论 / 状态</li>
+            <li><span class="ic">⚙️</span>Agent 配置与 Skills</li>
+            <li><span class="ic">📊</span>Run 状态、记录、结果</li>
+          </ul>
+        </div>
+        <div class="bcol exec">
+          <h4>💻 连接的电脑</h4>
+          <ul>
+            <li><span class="ic">🔑</span>AI 工具及其凭证</li>
+            <li><span class="ic">📁</span>代码目录与本地文件</li>
+            <li><span class="ic">⚡</span>实际文件修改与命令执行</li>
+          </ul>
+        </div>
+      </div>
+      <div class="note"><b>云版和自托管边界相同。</b>唯一例外：写入 Agent 的 <code>custom_env</code> 会存到 Multica 服务器，执行时再下发 — 所以密钥类内容不要放 custom_env。</div>
+    </section>
+
+    <!-- ── 与 Polaris 结合 ── -->
+    <section id="polaris" class="section">
+      <div class="section"><span class="label">Integration · 08</span></div>
+      <h2>与 Polaris 的结合点</h2>
+      <p class="lead">Polaris 已经是「多引擎本地执行环境」，Multica 是「团队协作协调层」— 两者天然咬合。</p>
+
+      <div class="arch">
+        <div class="arch-side records">
+          <h4>Multica — 记录 / 协调</h4>
+          <div class="arch-item rec"><span class="ic">📋</span><span><b>Issue / Run 队列</b> — 团队协作前端</span></div>
+          <div class="arch-item rec"><span class="ic">🧠</span><span><b>Agent 配置</b> — 谁、用什么工具、什么模型</span></div>
+          <div class="arch-item rec"><span class="ic">🔔</span><span><b>触发</b> — 分配 / @提及 / 聊天 / Autopilot</span></div>
+        </div>
+        <div class="arch-side exec">
+          <h4>Polaris — 执行（Runtime 角色）</h4>
+          <div class="arch-item ex"><span class="ic">⚙️</span><span><b>多引擎</b> — Claude Code / Codex / 插件引擎</span></div>
+          <div class="arch-item ex"><span class="ic">🧩</span><span><b>富工具</b> — 浏览器 / MCP / 插件</span></div>
+          <div class="arch-item ex"><span class="ic">📱</span><span><b>移动端</b> — 随时监控 Agent 进度</span></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:14px">
+        <h3>4 种结合路径（按投入排序）</h3>
+        <table>
+          <tr><th>方向</th><th>做法</th><th>投入</th><th>收益</th></tr>
+          <tr><td><b>1. 理念借鉴</b></td><td>把 Issue 持久化 + 全局看板搬进 Polaris 现有 dispatch 体系</td><td>低</td><td>内部多智能体协作体验对齐</td></tr>
+          <tr><td><b>2. MCP 集成</b></td><td>Polaris 会话通过 MCP 操作 Multica 的 workspace/issue/run</td><td>中</td><td>Agent 能读 Multica 上下文并回写</td></tr>
+          <tr><td><b>3. 当 Runtime</b></td><td>Polaris 桌面端作为 Multica 的执行端，认领 Run 用本地引擎干</td><td>中高</td><td>双向增益：Multica 获得富执行，Polaris 获得团队前端</td></tr>
+          <tr><td><b>4. 合并移植</b></td><td>把 Multica 模型整体并入 Polaris</td><td>高</td><td>⚠️ 与已有 dispatch/roster 重叠，不推荐</td></tr>
+        </table>
+        <div class="note"><b>当前会话改造（session-v2）顺带同向：</b>Polaris 正在把「状态权威」从前端内存搬到后端数据库 — 这恰好把地基打成了「将来当 Multica Runtime」的样子，但两者目前是独立的两条线。</div>
+      </div>
+    </section>
+
+  </div>
+</div>
+
+<script>
+  // ── 步骤切换 ──
+  const stepBtns = document.querySelectorAll('.step-btn')
+  const anchors = document.querySelectorAll('.anchor')
+  const sections = document.querySelectorAll('.main section')
+
+  function activateStep(n){
+    stepBtns.forEach(b=>b.classList.toggle('active', b.dataset.step===String(n)))
+  }
+  stepBtns.forEach(b=>b.addEventListener('click',()=>{
+    activateStep(b.dataset.step)
+    const map = {'1':'concept','2':'board','3':'flow','4':'triggers','5':'polaris'}
+    scrollToId(map[b.dataset.step] || 'concept')
+  }))
+
+  // ── 侧边栏锚点 ──
+  function scrollToId(id){
+    const el = document.getElementById(id)
+    if(!el) return
+    el.scrollIntoView({behavior:'smooth', block:'start'})
+    anchors.forEach(a=>a.classList.toggle('active', a.dataset.anchor===id))
+  }
+  anchors.forEach(a=>a.addEventListener('click',()=>scrollToId(a.dataset.anchor)))
+
+  // ── 工具块展开 ──
+  document.querySelectorAll('.tb-head').forEach(head=>{
+    head.addEventListener('click',()=>{
+      head.parentElement.classList.toggle('open')
+    })
+  })
+</script>
+</body>
+</html>

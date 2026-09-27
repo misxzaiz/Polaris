@@ -55,7 +55,19 @@ pub fn session_get_status_inner(conversation_id: String) -> Result<SessionStatus
 
 // ── 仲裁 ──────────────────────────────────────────────────────────────────
 
-/// 请求开始（仲裁：已 running 则拒绝）
+/// 事务化「仲裁 + 占位」（阶段 2 排他锁，cap.ai.chat dispatch 入口强制接入）。
+///
+/// 与 `session_request_start_inner` 的区别：running 检查与 session_start 占位写入
+/// 在同一事务内完成，多设备并发时先到者胜出，杜绝「都通过检查后再各自写入」的
+/// 竞态窗口。返回 `Ok(None)` = 已占位成功；`Ok(Some(reason))` = 会话已 running 被拒。
+pub fn session_try_start_inner(
+    conversation_id: &str,
+    device_id: &str,
+) -> Result<Option<String>> {
+    db()?.try_start_conversation(conversation_id, device_id, chrono::Utc::now().timestamp_millis())
+}
+
+/// 请求开始（仲裁：已 running 则拒绝。纯检查，不写入占位——由调用方决定）
 pub fn session_request_start_inner(
     conversation_id: String,
     _device_id: String,

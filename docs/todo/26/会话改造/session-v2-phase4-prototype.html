@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polaris session-v2 · 阶段 4 交互原型</title>
+<style>
+/* ====== Polaris 真实主题 token（对齐 dynamic-island-prototype） ====== */
+:root {
+  --c-bg-base: 0 0 0;
+  --c-bg-elevated: 26 26 31;
+  --c-bg-surface: 37 37 43;
+  --c-bg-hover: 45 45 53;
+  --c-bg-active: 53 53 61;
+  --c-border: 255 255 255;
+  --c-text-primary: 248 248 248;
+  --c-text-secondary: 180 180 184;
+  --c-text-tertiary: 142 142 147;
+  --c-text-muted: 109 109 112;
+  --c-primary: 59 130 246;
+  --c-primary-hover: 37 99 235;
+  --c-status-success: 52 211 153;
+  --c-status-danger: 248 113 113;
+  --c-status-info: 96 165 250;
+  --c-status-warning: 251 191 36;
+  --c-accent-ai: 167 139 250;
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "Fira Code", "SF Mono", Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  background: rgb(var(--c-bg-base));
+  color: rgb(var(--c-text-primary));
+  overflow-x: hidden;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* ====== 顶部栏 ====== */
+.topbar {
+  position: sticky; top: 0; z-index: 50;
+  height: 48px; padding: 0 16px;
+  display: flex; align-items: center; gap: 10px;
+  background: rgba(var(--c-bg-elevated), 0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(var(--c-border), 0.06);
+}
+.topbar .logo { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; }
+.topbar .logo .accent { color: rgb(var(--c-accent-ai)); }
+.topbar .tag {
+  font-size: 11px; padding: 3px 8px; border-radius: 6px;
+  background: rgba(var(--c-accent-ai), 0.15); color: rgb(var(--c-accent-ai));
+  font-weight: 600;
+}
+.topbar .spacer { flex: 1; }
+.topbar .hint { font-size: 12px; color: rgb(var(--c-text-tertiary)); }
+.topbar .badge {
+  font-size: 11px; padding: 4px 10px; border-radius: 999px;
+  background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success));
+  font-weight: 600;
+}
+
+/* ====== 场景导航 ====== */
+.scene-nav {
+  display: flex; gap: 8px; padding: 12px 16px;
+  border-bottom: 1px solid rgba(var(--c-border), 0.06);
+  flex-wrap: wrap;
+  background: rgb(var(--c-bg-base));
+}
+.scene-btn {
+  font-size: 13px; padding: 7px 14px; border-radius: 8px;
+  background: rgb(var(--c-bg-surface));
+  color: rgb(var(--c-text-secondary));
+  cursor: pointer; border: 1px solid rgba(var(--c-border), 0.08);
+  transition: all .15s; font-family: var(--font-sans);
+}
+.scene-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.scene-btn.active {
+  background: rgba(var(--c-primary), 0.15); color: rgb(var(--c-primary));
+  border-color: rgba(var(--c-primary), 0.4);
+}
+
+/* ====== 主内容 ====== */
+.container { max-width: 960px; margin: 0 auto; padding: 24px 20px 80px; }
+.scene { display: none; }
+.scene.active { display: block; animation: fadeIn .25s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+.scene-title { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.scene-desc { font-size: 13px; color: rgb(var(--c-text-tertiary)); margin-bottom: 20px; line-height: 1.6; }
+
+/* ====== 面板 ====== */
+.panel {
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.06);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+.panel h3 {
+  font-size: 13px; font-weight: 600; color: rgb(var(--c-text-secondary));
+  margin-bottom: 12px; display: flex; align-items: center; gap: 8px;
+}
+.panel h3 .icon { font-size: 14px; }
+.panel-row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.col { flex: 1; min-width: 240px; }
+
+/* ====== 状态机可视化 ====== */
+.sm-flow {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  font-size: 12px; padding: 8px 0;
+}
+.sm-node {
+  padding: 6px 12px; border-radius: 8px; font-weight: 600;
+  background: rgb(var(--c-bg-active));
+  color: rgb(var(--c-text-tertiary));
+  border: 1px solid rgba(var(--c-border), 0.1);
+  transition: all .2s;
+  font-family: var(--font-mono);
+}
+.sm-node.active { background: rgba(var(--c-primary), 0.18); color: rgb(var(--c-primary)); border-color: rgba(var(--c-primary), 0.5); box-shadow: 0 0 12px rgba(var(--c-primary), 0.15); }
+.sm-node.done { background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success)); border-color: rgba(var(--c-status-success), 0.3); }
+.sm-node.rejected { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); border-color: rgba(var(--c-status-danger), 0.4); }
+.sm-node.running-state { background: rgba(var(--c-status-warning), 0.15); color: rgb(var(--c-status-warning)); border-color: rgba(var(--c-status-warning), 0.4); }
+.sm-arrow { color: rgb(var(--c-text-muted)); font-size: 12px; }
+.sm-arrow.rejected { color: rgb(var(--c-status-danger)); }
+
+/* ====== 按钮 ====== */
+.btn {
+  font-size: 13px; padding: 7px 14px; border-radius: 8px;
+  background: rgb(var(--c-primary)); color: #fff; cursor: pointer;
+  border: none; transition: all .15s; font-family: var(--font-sans);
+  font-weight: 500;
+}
+.btn:hover { background: rgb(var(--c-primary-hover)); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn.secondary {
+  background: rgb(var(--c-bg-active)); color: rgb(var(--c-text-secondary));
+  border: 1px solid rgba(var(--c-border), 0.1);
+}
+.btn.secondary:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.btn.danger { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); border: 1px solid rgba(var(--c-status-danger), 0.3); }
+.btn.danger:hover { background: rgba(var(--c-status-danger), 0.25); }
+.btn.small { font-size: 12px; padding: 5px 10px; }
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ====== 日志/控制台 ====== */
+.log {
+  background: rgb(var(--c-bg-base));
+  border: 1px solid rgba(var(--c-border), 0.08);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  max-height: 220px;
+  overflow-y: auto;
+  line-height: 1.7;
+  color: rgb(var(--c-text-secondary));
+}
+.log .line { white-space: pre-wrap; word-break: break-all; }
+.log .ok { color: rgb(var(--c-status-success)); }
+.log .err { color: rgb(var(--c-status-danger)); }
+.log .info { color: rgb(var(--c-status-info)); }
+.log .warn { color: rgb(var(--c-status-warning)); }
+.log .dim { color: rgb(var(--c-text-muted)); }
+
+/* ====== 设备模拟 ====== */
+.device-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 720px) { .device-grid { grid-template-columns: 1fr; } }
+.device {
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.06);
+  border-radius: 12px;
+  padding: 14px;
+}
+.device .dev-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.device .dev-dot { width: 8px; height: 8px; border-radius: 50%; background: rgb(var(--c-status-success)); }
+.device .dev-dot.offline { background: rgb(var(--c-text-muted)); }
+.device .dev-name { font-size: 13px; font-weight: 600; }
+.device .dev-status { font-size: 11px; color: rgb(var(--c-text-tertiary)); margin-left: auto; }
+.device .msg-list { display: flex; flex-direction: column; gap: 6px; min-height: 60px; }
+.device .msg {
+  font-size: 12px; padding: 8px 10px; border-radius: 8px; line-height: 1.5;
+  background: rgb(var(--c-bg-base)); border: 1px solid rgba(var(--c-border), 0.06);
+  animation: fadeIn .2s ease;
+}
+.device .msg.user-msg { border-left: 2px solid rgb(var(--c-primary)); }
+.device .msg.ai-msg { border-left: 2px solid rgb(var(--c-accent-ai)); }
+.device .msg .role { font-size: 10px; color: rgb(var(--c-text-muted)); font-family: var(--font-mono); display: block; margin-bottom: 2px; }
+.device .msg .streaming-cursor { color: rgb(var(--c-status-warning)); animation: blink 0.8s infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.device .state-chip {
+  display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 999px;
+  font-family: var(--font-mono); font-weight: 600;
+  background: rgba(var(--c-text-muted), 0.15); color: rgb(var(--c-text-tertiary));
+}
+.device .state-chip.running { background: rgba(var(--c-status-warning), 0.15); color: rgb(var(--c-status-warning)); }
+.device .state-chip.idle { background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success)); }
+.device .state-chip.error { background: rgba(var(--c-status-danger), 0.15); color: rgb(var(--c-status-danger)); }
+
+/* ====== 消费方表格 ====== */
+table.cf { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.cf th, table.cf td { text-align: left; padding: 9px 10px; border-bottom: 1px solid rgba(var(--c-border), 0.06); vertical-align: top; }
+table.cf th { color: rgb(var(--c-text-tertiary)); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; }
+table.cf td .code { font-family: var(--font-mono); font-size: 11px; background: rgb(var(--c-bg-base)); padding: 2px 6px; border-radius: 4px; color: rgb(var(--c-text-secondary)); }
+table.cf td .before { color: rgb(var(--c-status-danger)); }
+table.cf td .after { color: rgb(var(--c-status-success)); }
+.chip { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+.chip.old { background: rgba(var(--c-status-danger), 0.12); color: rgb(var(--c-status-danger)); }
+.chip.new { background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success)); }
+.chip.mid { background: rgba(var(--c-status-warning), 0.12); color: rgb(var(--c-status-warning)); }
+
+/* ====== 指标卡 ====== */
+.metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.metric {
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.06);
+  border-radius: 10px; padding: 12px;
+}
+.metric .label { font-size: 11px; color: rgb(var(--c-text-tertiary)); }
+.metric .value { font-size: 22px; font-weight: 700; font-family: var(--font-mono); margin-top: 4px; }
+.metric .value.ok { color: rgb(var(--c-status-success)); }
+.metric .value.warn { color: rgb(var(--c-status-warning)); }
+.metric .value.danger { color: rgb(var(--c-status-danger)); }
+
+/* ====== 根因对照 ====== */
+.roots { display: flex; flex-direction: column; gap: 10px; }
+.root {
+  display: flex; gap: 12px; align-items: flex-start;
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.06);
+  border-radius: 10px; padding: 12px 14px;
+}
+.root .state { flex-shrink: 0; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; font-family: var(--font-mono); }
+.root .state.done { background: rgba(var(--c-status-success), 0.12); color: rgb(var(--c-status-success)); }
+.root .state.phase4 { background: rgba(var(--c-status-warning), 0.15); color: rgb(var(--c-status-warning)); }
+.root .state.pending { background: rgba(var(--c-text-muted), 0.12); color: rgb(var(--c-text-muted)); }
+.root .body { flex: 1; }
+.root .body .title { font-size: 13px; font-weight: 600; }
+.root .body .desc { font-size: 12px; color: rgb(var(--c-text-tertiary)); margin-top: 3px; line-height: 1.5; }
+
+/* ====== 流程步骤（批次） ====== */
+.steps { display: flex; flex-direction: column; gap: 8px; }
+.step {
+  display: flex; gap: 12px; align-items: center;
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgba(var(--c-border), 0.06);
+  border-radius: 10px; padding: 10px 14px;
+}
+.step .num {
+  width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; font-family: var(--font-mono);
+  background: rgba(var(--c-primary), 0.15); color: rgb(var(--c-primary));
+}
+.step .body { flex: 1; }
+.step .body .t { font-size: 13px; font-weight: 600; }
+.step .body .d { font-size: 12px; color: rgb(var(--c-text-tertiary)); margin-top: 2px; }
+.step .badge2 {
+  font-size: 10px; padding: 3px 8px; border-radius: 999px; font-weight: 600;
+  background: rgba(var(--c-status-info), 0.12); color: rgb(var(--c-status-info));
+}
+
+/* ====== 互动提示 ====== */
+.kbd {
+  font-family: var(--font-mono); font-size: 11px;
+  background: rgb(var(--c-bg-active)); border: 1px solid rgba(var(--c-border), 0.12);
+  border-radius: 4px; padding: 1px 5px; color: rgb(var(--c-text-secondary));
+}
+.tip { font-size: 12px; color: rgb(var(--c-text-tertiary)); margin-top: 8px; line-height: 1.6; }
+
+.footer { text-align: center; font-size: 11px; color: rgb(var(--c-text-muted)); padding: 24px 0 12px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">Polaris <span class="accent">session-v2</span></div>
+  <div class="tag">阶段 4 · 交互原型</div>
+  <div class="spacer"></div>
+  <div class="hint">纯前端模拟 V2 内核 · 无需后端</div>
+  <div class="badge">5 场景可交互</div>
+</div>
+
+<div class="scene-nav" id="sceneNav">
+  <button class="scene-btn active" data-scene="scene1">① 消息状态机</button>
+  <button class="scene-btn" data-scene="scene2">② 会话状态 + 排他锁</button>
+  <button class="scene-btn" data-scene="scene3">③ 双设备同步</button>
+  <button class="scene-btn" data-scene="scene4">④ 断线恢复 · 对账</button>
+  <button class="scene-btn" data-scene="scene5">⑤ 8 消费方改造</button>
+</div>
+
+<div class="container">
+
+<!-- ==================== 场景 1：消息状态机 ==================== -->
+<div class="scene active" id="scene1">
+  <div class="scene-title">① 消息生命周期状态机（可执行）</div>
+  <div class="scene-desc">
+    阶段 0 已把「消息从产生到持久化」定义为<strong>可执行状态机</strong>（非文档示意图）：转换表 + 守卫 + 原子性回滚。
+    点击按钮触发转换，非法转换会被<strong>拒绝并保持原状态</strong>（如 sending 不能跳过 active 直接 streaming）。
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">⚙️</span> MessageStateMachine 演示</h3>
+    <div class="sm-flow" id="sm1-flow"></div>
+    <div style="height:12px"></div>
+    <div class="btn-group">
+      <button class="btn" id="sm1-send" disabled>sendMessage → sending</button>
+      <button class="btn" id="sm1-ack">后端确认 → active</button>
+      <button class="btn secondary" id="sm1-stream">流式 delta → streaming</button>
+      <button class="btn secondary" id="sm1-settle">定稿 → settled</button>
+      <button class="btn secondary" id="sm1-persist">落盘 → persisted</button>
+      <button class="btn danger" id="sm1-ill" title="演示非法转换被拒绝">非法：sending→streaming（守卫拒绝）</button>
+      <button class="btn secondary small" id="sm1-reset">重置</button>
+    </div>
+    <div class="tip">观察点：<span class="kbd">sending → streaming</span> 被守卫拒绝（必须经过 active）；状态变化时顶部节点高亮。</div>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">📜</span> 转换日志</h3>
+    <div class="log" id="sm1-log"></div>
+  </div>
+</div>
+
+<!-- ==================== 场景 2：会话状态 + 排他锁 ==================== -->
+<div class="scene" id="scene2">
+  <div class="scene-title">② 会话状态机 + 排他锁（后端权威）</div>
+  <div class="scene-desc">
+    会话状态（idle / running / error）由后端<strong>从事件日志计算</strong>，不是存储值。
+    <span class="kbd">requestStart</span> 是仲裁：同一会话已 running 时，另一设备的 start 请求被<strong>拒绝</strong>（而非排队）。
+  </div>
+
+  <div class="metrics">
+    <div class="metric"><div class="label">会话状态</div><div class="value" id="s2-state-val">idle</div></div>
+    <div class="metric"><div class="label">事件日志条数</div><div class="value" id="s2-events-val">0</div></div>
+    <div class="metric"><div class="label">running 推导</div><div class="value ok" id="s2-calc-val">false</div></div>
+    <div class="metric"><div class="label">仲裁拒绝数</div><div class="value" id="s2-reject-val">0</div></div>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">🔄</span> 状态计算（running = 有 start 无配对 end）</h3>
+    <div class="sm-flow" id="s2-flow"></div>
+    <div style="height:12px"></div>
+    <div class="btn-group">
+      <button class="btn" id="s2-start">设备 A：requestStart</button>
+      <button class="btn" id="s2-start-b">设备 B：requestStart（排他）</button>
+      <button class="btn secondary" id="s2-end">session_end（完成）</button>
+      <button class="btn danger" id="s2-interrupt">设备 B：requestInterrupt</button>
+      <button class="btn secondary small" id="s2-reset">重置</button>
+    </div>
+    <div class="tip">观察点：设备 B 在 running 期间 requestStart 会被拒绝；状态永远从事件日志推导。</div>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">📜</span> 事件日志（append-only，日志即真相）</h3>
+    <div class="log" id="s2-log"></div>
+  </div>
+</div>
+
+<!-- ==================== 场景 3：双设备同步 ==================== -->
+<div class="scene" id="scene3">
+  <div class="scene-title">③ 双设备实时同步（事件流 + 后端权威）</div>
+  <div class="scene-desc">
+    设备 A 发消息 → 后端广播 <span class="kbd">session_start</span> → 设备 B 实时看到 running 状态与流式消息。
+    <strong>B 设备不自行维护 isStreaming</strong>，只从后端事件流推导。这是根因 3（跨设备中断/卡死）的修复。
+  </div>
+
+  <div class="device-grid">
+    <div class="device">
+      <div class="dev-head">
+        <span class="dev-dot"></span>
+        <span class="dev-name">设备 A（桌面）</span>
+        <span class="dev-status"><span class="state-chip" id="d3-a-chip">idle</span></span>
+      </div>
+      <div class="msg-list" id="d3-a-msgs">
+        <div class="msg"><span class="role">SYSTEM</span>V2SessionKernel 已就绪 · 状态源 = 后端</div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="btn-group">
+        <button class="btn" id="d3-a-send">发送消息</button>
+        <button class="btn danger" id="d3-a-interrupt">中断</button>
+      </div>
+    </div>
+    <div class="device">
+      <div class="dev-head">
+        <span class="dev-dot"></span>
+        <span class="dev-name">设备 B（移动）</span>
+        <span class="dev-status"><span class="state-chip" id="d3-b-chip">idle</span></span>
+      </div>
+      <div class="msg-list" id="d3-b-msgs">
+        <div class="msg"><span class="role">SYSTEM</span>仅监听后端事件流 · 不维护本地 isStreaming</div>
+      </div>
+      <div style="height:10px"></div>
+      <div class="btn-group">
+        <button class="btn secondary" id="d3-b-reload">模拟页面重载（重订阅）</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h3><span class="icon">📡</span> 后端事件流广播</h3>
+    <div class="log" id="d3-log"></div>
+  </div>
+</div>
+
+<!-- ==================== 场景 4：断线恢复对账 ==================== -->
+<div class="scene" id="scene4">
+  <div class="scene-title">④ 断线恢复 · 快照合并（reconcile 对账）</div>
+  <div class="scene-desc">
+    根因 6：旧实现 resume 用 <span class="kbd">setMessagesFromHistory</span> <strong>全量覆盖</strong>，恢复期间新事件会被冲掉。
+    新实现：<span class="kbd">session_reconcile</span> 对账 → 按 <strong>missing 补齐、extra 保留</strong>、状态不一致校正。<strong>不删除本地草稿</strong>。
+  </div>
+
+  <div class="device-grid">
+    <div class="device">
+      <div class="dev-head">
+        <span class="dev-dot"></span>
+        <span class="dev-name">后端 SQLite（权威日志）</span>
+        <span class="dev-status"><span class="state-chip idle" id="d4-srv-state">7 条消息</span></span>
+      </div>
+      <div class="msg-list" id="d4-srv-msgs"></div>
+    </div>
+    <div class="device">
+      <div class="dev-head">
+        <span class="dev-dot offline" id="d4-client-dot"></span>
+        <span class="dev-name">前端（离线中断）</span>
+        <span class="dev-status"><span class="state-chip" id="d4-client-state">仅 5 条</span></span>
+      </div>
+      <div class="msg-list" id="d4-client-msgs"></div>
+      <div style="height:10px"></div>
+      <div class="btn-group">
+        <button class="btn" id="d4-reconcile">恢复连接 → reconcile 对账</button>
+        <button class="btn secondary small" id="d4-reset">重置</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel" style="margin-top:16px">
+    <h3><span class="icon">📜</span> 对账结果</h3>
+    <div class="log" id="d4-log"></div>
+  </div>
+  <div class="tip">
+    对比旧行为：<span class="kbd">setMessagesFromHistory</span> 全量覆盖 → 断线期间新事件丢失。新行为：diff 只补缺失，断线期间本地新发的草稿（extra）<strong>不删除</strong>。
+  </div>
+</div>
+
+<!-- ==================== 场景 5：消费方改造 ==================== -->
+<div class="scene" id="scene5">
+  <div class="scene-title">⑤ 8 个 isStreaming 消费方改造</div>
+  <div class="scene-desc">
+    阶段 4 批次 2：8 个消费方从读 <span class="kbd">store.isStreaming</span>（前端内存态，跨设备不可靠）
+    改为订阅 <span class="kbd">kernel.getSessionState()</span>（后端权威）。统一 Hook <span class="kbd">useKernelSessionState</span> 提供订阅封装。
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">🔗</span> 改造对照表</h3>
+    <table class="cf">
+      <thead>
+        <tr><th style="width:40px">#</th><th>消费方</th><th style="width:130px">状态</th><th>改造前</th><th>改造后</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td><td>useMessageAutoScroll</td><td><span class="chip new">已改</span></td>
+          <td><span class="code before">store.isStreaming</span></td>
+          <td><span class="code after">state === 'running'</span></td>
+        </tr>
+        <tr>
+          <td>2</td><td>useVoiceCompanion（TTS 边沿）</td><td><span class="chip new">已改</span></td>
+          <td><span class="code before">isStreaming 边沿</span></td>
+          <td><span class="code after">onSessionStatusChange</span></td>
+        </tr>
+        <tr>
+          <td>3</td><td>commitMessageChat（提交信息）</td><td><span class="chip new">已改</span></td>
+          <td><span class="code before">currentMessage 跟随</span></td>
+          <td><span class="code after">kernel 订阅</span></td>
+        </tr>
+        <tr>
+          <td>4</td><td>titleGenerationService</td><td><span class="chip mid">改造中</span></td>
+          <td><span class="code before">isStreaming 下降沿</span></td>
+          <td><span class="code after">running→idle 订阅</span></td>
+        </tr>
+        <tr>
+          <td>5</td><td>promptOptimizeService</td><td><span class="chip mid">改造中</span></td>
+          <td><span class="code before">isStreaming 下降沿</span></td>
+          <td><span class="code after">running→idle 订阅</span></td>
+        </tr>
+        <tr>
+          <td>6</td><td>contextCompactHandoff（压缩交接）</td><td><span class="chip new">已改</span></td>
+          <td><span class="code before">isStreaming 回落</span></td>
+          <td><span class="code after">running→idle 订阅</span></td>
+        </tr>
+        <tr>
+          <td>7</td><td>dispatchTaskService（续派检查）</td><td><span class="chip new">已改</span></td>
+          <td><span class="code before">检查 isStreaming</span></td>
+          <td><span class="code after">后端状态查询</span></td>
+        </tr>
+        <tr>
+          <td>8</td><td>sessionStoreManager（后台切换）</td><td><span class="chip mid">改造中</span></td>
+          <td><span class="code before">streaming 转入后台</span></td>
+          <td><span class="code after">后端状态查询</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">🧩</span> 统一 Hook：useKernelSessionState</h3>
+    <div class="log" id="d5-log"><div class="line info">// 新增共享 Hook，封装 getSessionState + subscribe</div><div class="line">export function useKernelSessionState(sessionId: string) {</div><div class="line">  // 初始：kernel.getSessionState(sessionId)  ← 后端权威</div><div class="line">  // 订阅：kernel.subscribe(sessionId, handler) → setState</div><div class="line">  // 返回 { state, isStreaming, error, ... }</div><div class="line">}</div></div>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">🎯</span> 6 根因 → 阶段 4 消除进度</h3>
+    <div class="roots">
+      <div class="root"><span class="state done">已解</span><div class="body"><div class="title">R1 JSONL 并发写无锁</div><div class="desc">阶段 1a SQLite append-only 幂等，已落库</div></div></div>
+      <div class="root"><span class="state phase4">阶段4</span><div class="body"><div class="title">R2 conversationId 反向索引重启丢失</div><div class="desc">Session Registry 持久化 → 重启恢复索引（F7）</div></div></div>
+      <div class="root"><span class="state phase4">阶段4</span><div class="body"><div class="title">R3 streaming 跨设备不可靠</div><div class="desc">后端事件日志计算状态 → 8 消费方切后端（F2）</div></div></div>
+      <div class="root"><span class="state phase4">阶段4</span><div class="body"><div class="title">R4 LRU 驱逐 + 自动创建孤儿会话</div><div class="desc">注册表恢复 + 对账，取消无条件自动创建（F6/F7）</div></div></div>
+      <div class="root"><span class="state phase4">阶段4</span><div class="body"><div class="title">R5 persistedSeq 水位跨设备不协调</div><div class="desc">后端 seq 权威取代前端水位（F6）</div></div></div>
+      <div class="root"><span class="state phase4">阶段4</span><div class="body"><div class="title">R6 resume gap 全量覆盖非原子</div><div class="desc">reconcile 快照合并，不删 extra（F8）</div></div></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h3><span class="icon">🛠️</span> 分批实施节奏（可回滚）</h3>
+    <div class="steps">
+      <div class="step"><span class="num">1</span><div class="body"><div class="t">V2SessionKernel 实现</div><div class="d">5 能力接口 · 后端权威 · 影子测试</div></div><span class="badge2">影子运行</span></div>
+      <div class="step"><span class="num">2</span><div class="body"><div class="t">8 个 isStreaming 消费方改造</div><div class="d">读路径切到后端状态</div></div><span class="badge2">读路径</span></div>
+      <div class="step"><span class="num">3</span><div class="body"><div class="t">6 类触发点接入 V2 内核</div><div class="d">写路径切到 V2</div></div><span class="badge2">写路径</span></div>
+      <div class="step"><span class="num">4</span><div class="body"><div class="t">注册表恢复 + resume 快照合并</div><div class="d">消除根因 2/4/6</div></div><span class="badge2">持久化</span></div>
+      <div class="step"><span class="num">5</span><div class="body"><div class="t">Legacy 退役 + 清理</div><div class="d">前端不再维护 isStreaming / persistedSeq / 内存索引</div></div><span class="badge2">收敛</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">Polaris session-v2 阶段 4 · 交互原型 · 纯前端模拟，用于 PRD 预览与设计评审</div>
+</div>
+
+<script>
+/* ==========================================================================
+ * 模拟内核：纯前端实现 V2 内核的契约语义（与真实 session-v2 逻辑对齐）
+ * ========================================================================== */
+
+// ---- 工具 ----
+const $ = (id) => document.getElementById(id);
+const log = (el, text, cls='') => {
+  const line = document.createElement('div');
+  line.className = 'line ' + cls;
+  line.textContent = text;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+};
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ---- 场景导航 ----
+const navBtns = document.querySelectorAll('.scene-btn');
+navBtns.forEach(btn => {
+  btn.addEventListener('click', () => {
+    navBtns.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.scene').forEach(s => s.classList.remove('active'));
+    $('scene' + btn.dataset.scene.slice(5)).classList.add('active');
+  });
+});
+
+/* ========================================================================
+ * 场景 1：消息状态机
+ * ======================================================================== */
+const SM1_STATES = ['drafted', 'sending', 'active', 'streaming', 'settled', 'persisted', 'restored'];
+const sm1Flow = $('sm1-flow');
+SM1_STATES.forEach(s => {
+  const node = document.createElement('span');
+  node.className = 'sm-node';
+  node.id = 'sm1-node-' + s;
+  node.textContent = s;
+  sm1Flow.appendChild(node);
+  if (s !== 'persisted') {
+    const arr = document.createElement('span');
+    arr.className = 'sm-arrow';
+    arr.textContent = '→';
+    sm1Flow.appendChild(arr);
+  }
+});
+const sm1Log = $('sm1-log');
+log(sm1Log, '// MessageStateMachine 初始化：state = drafted', 'dim');
+log(sm1Log, '// 转换规则：drafted→sending→active→streaming→settled→persisted', 'dim');
+log(sm1Log, '// sending → streaming 是非法转换（守卫拒绝）', 'dim');
+
+let sm1State = 'drafted';
+function sm1Render() {
+  SM1_STATES.forEach(s => {
+    const node = $('sm1-node-' + s);
+    node.classList.remove('active', 'done', 'rejected');
+    const idx = SM1_STATES.indexOf(sm1State);
+    const cur = SM1_STATES.indexOf(s);
+    if (cur < idx) node.classList.add('done');
+    if (cur === idx) node.classList.add('active');
+  });
+  // 按钮状态
+  $('sm1-send').disabled = sm1State !== 'drafted';
+  $('sm1-ack').disabled = sm1State !== 'sending';
+  $('sm1-stream').disabled = !['active', 'streaming'].includes(sm1State);
+  $('sm1-settle').disabled = !['streaming', 'active'].includes(sm1State);
+  $('sm1-persist').disabled = !['settled', 'active'].includes(sm1State);
+}
+function sm1Go(to, label, cls) {
+  const prev = sm1State;
+  // 简化守卫：sending→streaming 拒绝；settled→sending 拒绝（其余按顺序允许）
+  const from = sm1State;
+  let ok = true;
+  if (to === 'streaming' && from === 'sending') ok = false;
+  if (to === 'sending' && from !== 'drafted') ok = false;
+  if (to === 'active' && from !== 'sending') ok = false;
+  if (to === 'settled' && !['streaming', 'active'].includes(from)) ok = false;
+  if (to === 'persisted' && !['settled', 'active'].includes(from)) ok = false;
+  if (ok) {
+    sm1State = to;
+    log(sm1Log, `✓ ${label}: ${prev} → ${to}`, 'ok');
+  } else {
+    log(sm1Log, `✗ ${label}: ${prev} → ${to} 被守卫拒绝（保持 ${prev}）`, 'err');
+  }
+  sm1Render();
+}
+$('sm1-send').onclick = () => sm1Go('sending', 'sendMessage');
+$('sm1-ack').onclick = () => sm1Go('active', '后端确认 conversationId');
+$('sm1-stream').onclick = () => sm1Go('streaming', '流式 delta');
+$('sm1-settle').onclick = () => sm1Go('settled', 'session_end 定稿');
+$('sm1-persist').onclick = () => sm1Go('persisted', 'saveDialog 落盘');
+$('sm1-ill').onclick = () => sm1Go('streaming', '非法：sending→streaming');
+$('sm1-reset').onclick = () => { sm1State = 'drafted'; log(sm1Log, '↺ 重置 → drafted', 'dim'); sm1Render(); };
+sm1Render();
+
+/* ========================================================================
+ * 场景 2：会话状态机 + 排他锁（事件日志计算）
+ * ======================================================================== */
+const S2_EVENTS = []; // { type, device }
+let s2Running = false;
+let s2RejectCount = 0;
+
+function s2Compute() {
+  // running = 存在 start 且无配对 end（对齐 compute_status_from_events）
+  let running = false;
+  let lastEnd = null;
+  for (const e of S2_EVENTS) {
+    if (e.type === 'session_start') running = true;
+    if (e.type === 'session_end') { running = false; lastEnd = e; }
+  }
+  return { running, lastEnd };
+}
+function s2Render() {
+  const { running } = s2Compute();
+  s2Running = running;
+  $('s2-state-val').textContent = running ? 'running' : 'idle';
+  $('s2-state-val').className = 'value ' + (running ? 'warn' : 'ok');
+  $('s2-events-val').textContent = S2_EVENTS.length;
+  $('s2-calc-val').textContent = running ? 'true' : 'false';
+  $('s2-calc-val').className = 'value ' + (running ? 'warn' : 'ok');
+  $('s2-reject-val').textContent = s2RejectCount;
+
+  const flow = $('s2-flow');
+  flow.innerHTML = '';
+  const mk = (label, cls) => {
+    const n = document.createElement('span');
+    n.className = 'sm-node ' + (cls || '');
+    n.textContent = label;
+    flow.appendChild(n);
+  };
+  mk('idle', running ? '' : 'active');
+  const a1 = document.createElement('span'); a1.className = 'sm-arrow'; a1.textContent = '⟶'; flow.appendChild(a1);
+  mk('running', running ? 'running-state' : '');
+  const a2 = document.createElement('span'); a2.className = 'sm-arrow'; a2.textContent = '⟶'; flow.appendChild(a2);
+  mk('error', '');
+  const a3 = document.createElement('span'); a3.className = 'sm-arrow'; a3.textContent = '⟶'; flow.appendChild(a3);
+  mk('idle2', running ? '' : 'active');
+  flow.querySelectorAll('.sm-node')[3].textContent = 'idle (回)';
+
+  const btnStartB = $('s2-start-b');
+  btnStartB.disabled = false;
+}
+function s2AddEvent(type, device) {
+  S2_EVENTS.push({ type, device });
+  const cls = type === 'session_start' ? 'info' : type === 'error' ? 'err' : 'ok';
+  log($('s2-log'), `${type}  device=${device}  seq=${S2_EVENTS.length}`, cls);
+}
+$('s2-start').onclick = () => {
+  const { running } = s2Compute();
+  if (running) {
+    s2RejectCount++;
+    log($('s2-log'), `✗ requestStart 被拒绝：会话已在 running（排他锁）`, 'err');
+  } else {
+    s2AddEvent('session_start', 'A');
+    log($('s2-log'), `✓ requestStart 允许：A 设备获得运行权`, 'ok');
+  }
+  s2Render();
+};
+$('s2-start-b').onclick = () => {
+  const { running } = s2Compute();
+  if (running) {
+    s2RejectCount++;
+    log($('s2-log'), `✗ 设备 B requestStart 被拒绝：running 中（同一会话单 active）`, 'err');
+  } else {
+    s2AddEvent('session_start', 'B');
+    log($('s2-log'), `✓ 设备 B requestStart 允许（A 已结束）`, 'ok');
+  }
+  s2Render();
+};
+$('s2-end').onclick = () => {
+  s2AddEvent('session_end', 'A');
+  log($('s2-log'), `✓ session_end(reason=completed) → 状态回到 idle`, 'ok');
+  s2Render();
+};
+$('s2-interrupt').onclick = () => {
+  s2AddEvent('session_end', 'B');
+  log($('s2-log'), `✓ 设备 B requestInterrupt 允许 → session_end(reason=aborted) 广播`, 'ok');
+  s2Render();
+};
+$('s2-reset').onclick = () => {
+  S2_EVENTS.length = 0; s2RejectCount = 0;
+  $('s2-log').innerHTML = '';
+  log($('s2-log'), '// 事件日志已清空（append-only 模拟）', 'dim');
+  s2Render();
+};
+s2Render();
+log($('s2-log'), '// 初始：无事件 → idle（running=false 从空日志计算）', 'dim');
+log($('s2-log'), '// 点「设备 A：requestStart」开始演示', 'dim');
+
+/* ========================================================================
+ * 场景 3：双设备同步（事件流广播）
+ * ======================================================================== */
+let d3Running = false;
+let d3Timers = [];
+function d3Chip(el, state) {
+  el.className = 'state-chip ' + state;
+  el.textContent = state === 'running' ? 'running' : 'idle';
+}
+function d3AddMsg(el, role, text, streaming=false) {
+  const msg = document.createElement('div');
+  msg.className = 'msg ' + (role === 'user' ? 'user-msg' : 'ai-msg');
+  msg.id = 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6);
+  msg.innerHTML = `<span class="role">${role.toUpperCase()}</span><span class="text">${text}</span>`;
+  el.appendChild(msg);
+  el.scrollTop = el.scrollHeight;
+  return msg;
+}
+function d3Broadcast(line, cls) {
+  log($('d3-log'), line, cls);
+}
+let d3Seq = 0;
+async function d3SendMessage() {
+  if (d3Running) { d3Broadcast('✗ 设备 A 发送被拒：会话 running（排他）', 'err'); return; }
+  d3Running = true;
+  d3Seq++;
+  const seq = d3Seq;
+  d3Chip($('d3-a-chip'), 'running');
+  d3Chip($('d3-b-chip'), 'running');
+  d3Broadcast(`[seq=${seq}] session_start  ← 后端广播`, 'info');
+  d3AddMsg($('d3-a-msgs'), 'user', '帮我分析 session-v2 阶段 4 的风险');
+  d3Broadcast(`[seq=${seq}] user_message  → 双端追加（clientMessageId 幂等）`, 'info');
+
+  const aiA = d3AddMsg($('d3-a-msgs'), 'ai', '');
+  const aiB = d3AddMsg($('d3-b-msgs'), 'ai', '');
+  const text = '阶段 4 的核心风险集中在：消费方改造的回归、双路径并存期的状态漂移、以及流式修订策略（O1）未决。建议按批次 1→5 渐进切换，每批独立可回滚。';
+  // 模拟流式：每 180ms 追加一段，双端同步
+  const chunks = text.match(/.{1,9}/g) || [];
+  for (let i = 0; i < chunks.length; i++) {
+    await sleep(160);
+    const tA = aiA.querySelector('.text'); tA.textContent = text.slice(0, (i+1)*9) + '<span class="streaming-cursor">▍</span>';
+    const tB = aiB.querySelector('.text'); tB.textContent = text.slice(0, (i+1)*9) + '<span class="streaming-cursor">▍</span>';
+    d3Broadcast(`[seq=${seq}] assistant_message delta ${i+1}/${chunks.length} → 双端`, 'dim');
+  }
+  await sleep(200);
+  aiA.querySelector('.text').textContent = text;
+  aiB.querySelector('.text').textContent = text;
+  d3Running = false;
+  d3Chip($('d3-a-chip'), 'idle');
+  d3Chip($('d3-b-chip'), 'idle');
+  d3Broadcast(`[seq=${seq}] session_end(reason=completed) → 双端状态回 idle`, 'ok');
+}
+$('d3-a-send').onclick = d3SendMessage;
+$('d3-a-interrupt').onclick = () => {
+  if (!d3Running) { d3Broadcast('✗ 无运行中会话，中断被拒', 'err'); return; }
+  d3Running = false;
+  d3Chip($('d3-a-chip'), 'idle');
+  d3Chip($('d3-b-chip'), 'idle');
+  d3Broadcast('session_end(reason=aborted) ← 设备 B 中断请求被后端确认并广播', 'warn');
+  // 截断流式：给最后一条 AI 消息加标注
+  const lists = [$('d3-a-msgs'), $('d3-b-msgs')];
+  lists.forEach(list => {
+    const ai = [...list.querySelectorAll('.ai-msg')].pop();
+    if (ai) {
+      const t = ai.querySelector('.text');
+      t.textContent = t.textContent.replace(/<span class="streaming-cursor">▍<\/span>/g, '') + ' [已中断]';
+      t.style.color = 'rgb(var(--c-status-warning))';
+    }
+  });
+};
+$('d3-b-reload').onclick = () => {
+  d3Broadcast('设备 B 页面重载 → 重订阅事件流 + getSessionSnapshot 快照合并（不分裂）', 'info');
+  log($('d3-b-msgs'), 'SYSTEM  重载完成：从后端快照重建，索引未丢（根因 2 已修复）', 'info');
+};
+
+/* ========================================================================
+ * 场景 4：断线恢复对账
+ * ======================================================================== */
+const D4_SERVER = ['M1: 需求分析', 'M2: 接口定义', 'M3: 状态机', 'M4: 案例验证', 'M5: 后端实现', 'M6: 消费方改造', 'M7: 集成测试'];
+let d4Client = ['M1: 需求分析', 'M2: 接口定义', 'M3: 状态机', 'M4: 案例验证', 'M5: 后端实现'];
+let d4Reconciled = false;
+
+function d4Render() {
+  const srv = $('d4-srv-msgs');
+  srv.innerHTML = '';
+  D4_SERVER.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'msg'; el.textContent = m;
+    srv.appendChild(el);
+  });
+  const cli = $('d4-client-msgs');
+  cli.innerHTML = '';
+  d4Client.forEach(m => {
+    const el = document.createElement('div');
+    el.className = 'msg'; el.textContent = m;
+    if (m.startsWith('M6') || m.startsWith('M7')) {
+      el.style.borderLeft = '2px solid rgb(var(--c-status-info))';
+    }
+    cli.appendChild(el);
+  });
+  $('d4-srv-state').textContent = D4_SERVER.length + ' 条消息';
+  $('d4-client-state').textContent = d4Client.length + ' 条消息';
+}
+function d4Reconcile() {
+  const missing = D4_SERVER.filter(m => !d4Client.includes(m));
+  const missingIds = missing.map(m => m.slice(0,2));
+  const logEl = $('d4-log');
+  log(logEl, `session_reconcile 对账开始`, 'info');
+  log(logEl, `  server=${D4_SERVER.length} 条 · client=${d4Client.length} 条`, 'dim');
+  log(logEl, `  missing=${JSON.stringify(missingIds)} · extra=[] · statusMismatch=false`, 'info');
+  if (missing.length > 0) {
+    d4Client = [...d4Client, ...missing];
+    log(logEl, `✓ 补齐 ${missing.length} 条缺失消息（只追加，不覆盖）`, 'ok');
+    log(logEl, `  对比旧行为 setMessagesFromHistory：全量覆盖 → 断线期间新事件会丢`, 'warn');
+  } else {
+    log(logEl, `✓ 已一致，无缺失`, 'ok');
+  }
+  $('d4-reconcile').disabled = true;
+  d4Render();
+}
+$('d4-reconcile').onclick = () => {
+  $('d4-client-dot').classList.remove('offline');
+  d4Reconcile();
+};
+$('d4-reset').onclick = () => {
+  d4Client = ['M1: 需求分析', 'M2: 接口定义', 'M3: 状态机', 'M4: 案例验证', 'M5: 后端实现'];
+  $('d4-reconcile').disabled = false;
+  $('d4-client-dot').classList.add('offline');
+  $('d4-log').innerHTML = '';
+  log($('d4-log'), '// 模拟：断线期间前端只有 5 条，后端有 7 条（M6/M7 在断线期产生）', 'dim');
+  log($('d4-log'), '// 点「恢复连接 → reconcile 对账」验证差异补齐', 'dim');
+  d4Render();
+};
+$('d4-reset').click();
+d4Render();
+
+/* ========================================================================
+ * 场景 5：静态展示（消费方对照 + 根因进度 + 批次）
+ * ======================================================================== */
+log($('d5-log'), '// useKernelSessionState —— 统一订阅封装', 'info');
+log($('d5-log'), '// 消费方改造模式：读路径切后端，写路径切 V2，分批可回滚', 'dim');
+</script>
+</body>
+</html>

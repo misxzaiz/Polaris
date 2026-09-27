@@ -236,6 +236,92 @@ impl SessionStateDb {
         Ok(affected > 0)
     }
 
+    /// 原子「仲裁 + 占位」：同一会话仅允许一个 active 操作（阶段 2 排他锁）。
+    ///
+    /// 语义与 `session_request_start_inner` 一致，但把 running 检查与 session_start
+    /// 写入放进**同一事务**——多进程/多设备并发时，SQLite 单写者 + 写锁（busy_timeout）
+    /// 保证两个请求不会同时通过检查（先到者写入 start，后到者看到 running 被拒）。
+    ///
+    /// - 空闲（或已有配对 end）→ 写入 session_start 占位，返回 Ok(None)
+    /// - 已 running → 返回 Ok(Some(reason))，reason 含启动方设备/时间
+    pub fn try_start_conversation(
+        &self,
+        conversation_id: &str,
+        device_id: &str,
+        timestamp: i64,
+    ) -> Result<Option<String>> {
+        let mut conn = self.conn.lock().unwrap();
+        // Immediate 事务：开启即抢写锁。双设备并发时后到者在此等待（busy_timeout），
+        // 前者的「检查 + 写入」原子完成后，后到者重读到 running → 被拒。
+        // deferred 事务会先读后写，读检查不拿写锁 → 两请求都可能通过检查再写 → 双 start。
+        let tx = conn
+            .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+            .map_err(|e| AppError::StateError(format!("开启仲裁事务失败: {}", e)))?;
+
+        let events = {
+            let mut stmt = tx
+                .prepare(
+                    "SELECT id, conversation_id, type, timestamp_ms, device_id, seq, reason, error_message
+                       FROM session_events WHERE conversation_id = ?1
+                      ORDER BY seq ASC",
+                )
+                .map_err(|e| AppError::StateError(format!("准备仲裁查询语句失败: {}", e)))?;
+            let rows = stmt
+                .query_map(params![conversation_id], |r| {
+                    let event_type = r.get::<_, String>(2)?;
+                    Ok(SessionEventEntry {
+                        id: r.get(0)?,
+                        conversation_id: r.get(1)?,
+                        event_type: match event_type.as_str() {
+                            "session_start" => SessionEventType::SessionStart,
+                            "session_end" => SessionEventType::SessionEnd,
+                            _ => SessionEventType::Error,
+                        },
+                        timestamp: r.get(3)?,
+                        device_id: r.get(4)?,
+                        seq: r.get(5)?,
+                        reason: r.get(6)?,
+                        error_message: r.get(7)?,
+                    })
+                })
+                .map_err(|e| AppError::StateError(format!("查询仲裁事件失败: {}", e)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| AppError::StateError(format!("读取仲裁事件行失败: {}", e)))?);
+            }
+            out
+        };
+        let status = compute_status_from_events(conversation_id, &events);
+        if status.running {
+            let reason = format!(
+                "会话已在运行中（由设备 {} 于 {} 启动）",
+                status.started_by_device.as_deref().unwrap_or("?"),
+                status.started_at.map(|t| t.to_string()).unwrap_or_else(|| "?".into()),
+            );
+            tx.rollback().ok();
+            return Ok(Some(reason));
+        }
+
+        let next: i64 = tx
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM session_events", [], |r| r.get(0))
+            .map_err(|e| AppError::StateError(format!("读取仲裁 seq 失败: {}", e)))?;
+        let id = format!(
+            "req-{}-{}",
+            conversation_id,
+            uuid::Uuid::new_v4()
+        );
+        tx.execute(
+            "INSERT OR IGNORE INTO session_events
+               (id, conversation_id, type, timestamp_ms, device_id, seq, reason, error_message)
+             VALUES (?1, ?2, 'session_start', ?3, ?4, ?5, NULL, NULL)",
+            params![id, conversation_id, timestamp, device_id, next + 1],
+        )
+        .map_err(|e| AppError::StateError(format!("写入仲裁占位事件失败: {}", e)))?;
+        tx.commit()
+            .map_err(|e| AppError::StateError(format!("提交仲裁事务失败: {}", e)))?;
+        Ok(None)
+    }
+
     /// 读取会话的所有事件（按 seq 升序）
     pub fn read_events(&self, conversation_id: &str) -> Result<Vec<SessionEventEntry>> {
         let conn = self.conn.lock().unwrap();

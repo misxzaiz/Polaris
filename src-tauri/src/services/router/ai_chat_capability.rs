@@ -153,9 +153,40 @@ impl Capability for AiChatCapability {
                             Ok(serde_json::json!(sid))
                         } else {
                             let sid = sid();
-                            core::continue_chat_inner(sid, message, options, s, callbacks, &app_paths)
-                                .await
-                                .map_err(|e| e.to_message())?;
+                            if sid.trim().is_empty() {
+                                return Err("cap.ai.chat continue 需要 sessionId 参数".to_string());
+                            }
+                            // 阶段 2 排他锁：同一会话仅允许一个 active 操作。
+                            // 事务化「仲裁 + 占位」——并发时先到者胜出，后到者直接拒绝。
+                            if let Some(reason) =
+                                crate::commands::session_state_commands::session_try_start_inner(
+                                    &sid,
+                                    "ipc",
+                                )
+                                .map_err(|e| e.to_message())?
+                            {
+                                return Err(reason);
+                            }
+                            let continue_result = core::continue_chat_inner(
+                                sid.clone(),
+                                message,
+                                options,
+                                s,
+                                callbacks,
+                                &app_paths,
+                            )
+                            .await;
+                            if let Err(e) = continue_result {
+                                // 失败补偿：引擎未启动/续接失败时释放占位（配对 session_end），
+                                // 避免占位 start 卡 running 导致后续 continue 永久被拒。
+                                core::append_session_event(
+                                    &sid,
+                                    crate::services::session_state::SessionEventType::SessionEnd,
+                                    Some("error".to_string()),
+                                    Some(e.to_message()),
+                                );
+                                return Err(e.to_message());
+                            }
                             Ok(serde_json::json!({ "ok": true }))
                         }
                     }
@@ -545,7 +576,7 @@ impl StreamingCapability for AiChatCapability {
         };
 
         // 业务核 async 调用 → 工作线程 block_on 驱动；事件经回调 → 泵通道
-        std::thread::spawn(move || {
+        std::thread::spawn(move || -> Result<(), String> {
             let result: Result<(), String> = match action.as_str() {
                 "start" => handle
                     .block_on(async {
@@ -556,13 +587,33 @@ impl StreamingCapability for AiChatCapability {
                     .map_err(|e| e.to_message()),
                 "continue" => {
                     let sid = session_id.unwrap_or_default();
-                    handle
+                    // 阶段 2 排他锁（流式路径同 invoke）：同一会话仅允许一个 active 操作。
+                    if let Some(reason) =
+                        crate::commands::session_state_commands::session_try_start_inner(
+                            &sid,
+                            "stream",
+                        )
+                        .map_err(|e| e.to_message())?
+                    {
+                        return Err(reason);
+                    }
+                    let continue_result = handle
                         .block_on(async {
-                            core::continue_chat_inner(sid, message, options, state.as_ref(), callbacks, &app_paths)
+                            core::continue_chat_inner(sid.clone(), message, options, state.as_ref(), callbacks, &app_paths)
                                 .await
                         })
-                        .map(|_| ())
-                        .map_err(|e| e.to_message())
+                        .map(|_| ());
+                    if let Err(e) = continue_result {
+                        // 失败补偿：释放占位，避免卡 running
+                        core::append_session_event(
+                            &sid,
+                            crate::services::session_state::SessionEventType::SessionEnd,
+                            Some("error".to_string()),
+                            Some(e.to_message()),
+                        );
+                        return Err(e.to_message());
+                    }
+                    Ok(())
                 }
                 other => Err(format!("cap.ai.chat 不支持流式动作: {}", other)),
             };
@@ -573,6 +624,7 @@ impl StreamingCapability for AiChatCapability {
                 ));
             }
             // tx 在此 drop → RouterBus 泵任务广播 dispatch.end(stream)
+            Ok(())
         });
 
         Ok(rx)
