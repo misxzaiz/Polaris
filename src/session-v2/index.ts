@@ -80,3 +80,19 @@ export type {
   ArbitrationCapability,
   SessionKernel,
 } from './kernel/capabilities'
+
+// ============================================================================
+// kernel — 阶段 3：LegacySessionKernel 桥接 + 注册中心
+// ============================================================================
+
+export {
+  LegacySessionKernel,
+  createLegacySessionKernel,
+} from './kernel/legacy-kernel'
+export type {
+  LegacySessionKernelDeps,
+  LegacyHistoryServiceLike,
+  LegacyDialogStorageLike,
+} from './kernel/legacy-kernel'
+
+export { getKernel, resetKernel } from './kernel/registry'
