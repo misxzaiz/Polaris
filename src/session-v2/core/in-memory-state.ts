@@ -134,7 +134,7 @@ export class InMemoryStateArbiter implements StateArbiter {
     return status
   }
 
-  async requestStart(conversationId: string, deviceId: string): Promise<{ ok: boolean; reason?: string }> {
+  async requestStart(conversationId: string, _deviceId: string): Promise<{ ok: boolean; reason?: string }> {
     const status = await this.getStatus(conversationId)
     if (status.running) {
       return {
@@ -146,7 +146,7 @@ export class InMemoryStateArbiter implements StateArbiter {
     return { ok: true }
   }
 
-  async requestInterrupt(conversationId: string, deviceId: string): Promise<{ ok: boolean; reason?: string }> {
+  async requestInterrupt(conversationId: string, _deviceId: string): Promise<{ ok: boolean; reason?: string }> {
     const status = await this.getStatus(conversationId)
     if (!status.running) {
       return { ok: false, reason: '会话未在运行中' }

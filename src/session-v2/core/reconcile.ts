@@ -26,7 +26,7 @@ import type {
  */
 export async function reconcile(
   messageLog: MessageLogStorage,
-  eventLog: SessionEventLog,
+  _eventLog: SessionEventLog,
   arbiter: { getStatus(conversationId: string): Promise<SessionStatus> },
   conversationId: string,
   clientMessages: MessageEntry[],
