@@ -23,6 +23,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { parseEventToLog } from '@/stores/schedulerStoreUtils'
 import { resolveEffectiveProfileId } from '@/stores/conversationStore/conversationStoreUtils'
+import { kernelSessionIsStreaming } from '@/session-v2/hooks/useKernelSessionState'
 import { getActiveModelProfile } from '@/stores/modelProfileStore'
 import type { AIEvent } from '@/ai-runtime'
 import type { ChatMessage } from '@/types/chat'
@@ -597,7 +598,9 @@ export async function handOffResultToSource(dispatchId: string): Promise<boolean
   const task = useDispatchStore.getState().getTask(dispatchId)
   if (!task?.sourceSessionId) return false
   const store = sessionStoreManager.getState().stores.get(task.sourceSessionId)
-  if (!store || store.getState().isStreaming) return false
+  if (!store) return false
+  // 后端权威状态检查（不再读本地 store.isStreaming）
+  if (await kernelSessionIsStreaming(task.sourceSessionId)) return false
 
   const statusText = task.status === 'completed'
     ? i18n.t('chat:dispatch.reportDone', '已完成')

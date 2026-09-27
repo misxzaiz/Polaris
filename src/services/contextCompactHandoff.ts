@@ -20,6 +20,7 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { packToFile } from './conversationPackager'
 import { loadConversationMessages } from './sessionHandoff'
+import { waitKernelSessionStreamEnd } from '@/session-v2/hooks/useKernelSessionState'
 import { isAssistantMessage } from '@/types/chat'
 import type { ConversationStoreInstance } from '@/stores/conversationStore/createConversationStore'
 import { normalizeEngineId } from '@/utils/engineDisplay'
@@ -135,7 +136,7 @@ export async function compactAndHandoff(params: CompactHandoffParams): Promise<C
       return { ok: false, error: compactStore.getState().error ?? i18n.t('chat:compactHandoff.failToast') }
     }
 
-    await waitForIdle(compactStore, signal)
+    await waitForIdle(compactSessionId, signal)
 
     const stateAfter = compactStore.getState()
     if (stateAfter.error) {
@@ -195,44 +196,20 @@ function throwIfAborted(signal?: AbortSignal): void {
 }
 
 /**
- * 等待压缩会话流式结束（isStreaming 下降沿）。
+ * 等待压缩会话流式结束（后端状态 running → idle 下降沿）。
  * 支持取消（中断会话）与超时兜底。
  */
-function waitForIdle(store: ConversationStoreInstance, signal?: AbortSignal): Promise<void> {
-  if (!store.getState().isStreaming) return Promise.resolve()
-
-  return new Promise<void>((resolve, reject) => {
-    let unsubscribe = () => {}
-    let timer: ReturnType<typeof setTimeout> | null = null
-    const cleanup = () => {
-      unsubscribe()
-      if (timer) clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-    }
-    const onAbort = () => {
-      cleanup()
+function waitForIdle(sessionId: string, signal?: AbortSignal): Promise<void> {
+  return waitKernelSessionStreamEnd(sessionId, {
+    timeoutMs: COMPACT_TIMEOUT_MS,
+    signal,
+  }).catch(async (err) => {
+    // 超时/取消：中断压缩会话
+    const store = sessionStoreManager.getState().stores.get(sessionId)
+    if (store?.getState().isStreaming) {
       void store.getState().interrupt()
-      reject(new Error(i18n.t('chat:compactHandoff.cancelled')))
     }
-
-    unsubscribe = store.subscribe((state) => {
-      if (!state.isStreaming) {
-        cleanup()
-        resolve()
-      }
-    })
-    timer = setTimeout(() => {
-      cleanup()
-      void store.getState().interrupt()
-      reject(new Error(i18n.t('chat:compactHandoff.timeout')))
-    }, COMPACT_TIMEOUT_MS)
-    signal?.addEventListener('abort', onAbort)
-
-    // 订阅建立前已经结束的竞态兜底
-    if (!store.getState().isStreaming) {
-      cleanup()
-      resolve()
-    }
+    throw err instanceof Error ? err : new Error(String(err))
   })
 }
 

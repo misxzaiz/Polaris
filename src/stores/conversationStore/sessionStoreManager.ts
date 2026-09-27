@@ -373,13 +373,27 @@ function createSessionManagerStore() {
         return
       }
 
-      // 当前活跃会话如果正在 streaming，移入后台
+      // 当前活跃会话如果正在 streaming，移入后台。
+      // 本地快照快速路径（防漏）+ 内核后端权威复核（跨设备 streaming 也转后台）。
       const currentStore = state.activeSessionId
         ? state.stores.get(state.activeSessionId)
         : null
 
       if (currentStore && currentStore.getState().isStreaming && state.activeSessionId) {
         get().addToBackground(state.activeSessionId)
+      }
+      if (state.activeSessionId) {
+        const prevActiveId = state.activeSessionId
+        void import('@/session-v2/hooks/useKernelSessionState')
+          .then((m) => m.kernelSessionIsStreaming(prevActiveId))
+          .then((streaming) => {
+            if (!streaming) return
+            const cur = get()
+            if (!cur.backgroundSessionIds.includes(prevActiveId)) {
+              get().addToBackground(prevActiveId)
+            }
+          })
+          .catch(() => { /* 复核失败：本地快照已兜底 */ })
       }
 
       // 切换到新会话

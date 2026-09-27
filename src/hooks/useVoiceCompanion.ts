@@ -32,7 +32,7 @@ import { extractSpeakableText, shouldSpeakText } from '@/services/ttsTextFilter'
 import { checkVoiceCommand, matchWakeWord, isLikelyEcho, type VoiceCommand } from '@/types/speech';
 import {
   useActiveSessionActions,
-  useActiveSessionStreaming,
+  useActiveSessionKernelStreaming,
   useActiveSessionMessages,
 } from '@/stores/conversationStore/useActiveSession';
 import { isAssistantMessage, type AssistantChatMessage } from '@/types/chat';
@@ -60,7 +60,7 @@ export function useVoiceCompanion() {
 
   // —— 主对话管道 ——
   const { sendMessage, interrupt } = useActiveSessionActions();
-  const isStreaming = useActiveSessionStreaming();
+  const isStreaming = useActiveSessionKernelStreaming();
   const { messages, currentMessage } = useActiveSessionMessages();
 
   const isSupported = speechService.supported;

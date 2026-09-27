@@ -18,6 +18,7 @@ import { useStore } from 'zustand'
 import i18n from 'i18next'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { pickLatestAssistantText } from '@/services/assistantTextUtils'
+import { subscribeKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import type { ConversationStore, ConversationStoreInstance, SendMessageOptions } from '@/stores/conversationStore/types'
@@ -117,7 +118,7 @@ export async function runTitleGeneration(options: RunTitleGenerationOptions): Pr
   activeRuns.set(sourceSessionId, abort)
 
   /**
-   * 等待源会话首轮流式结束（isStreaming true → false）。
+   * 等待源会话首轮流式结束（后端状态 running → idle）。
    * 超时 30s 后放弃（源会话可能已失败/中断）。
    */
   const waitForFirstReplyEnd = (): Promise<string | null> => {
@@ -126,31 +127,32 @@ export async function runTitleGeneration(options: RunTitleGenerationOptions): Pr
         resolve(null)
       }, 30_000)
 
-      let sawStreaming = srcStore.getState().isStreaming
-      const unsubscribe = srcStore.subscribe((state) => {
+      let sawStreaming = false
+      // 内核后端权威状态订阅（running→idle 下降沿；仅状态源切换，消息仍从 store 取）
+      const unsubscribe = subscribeKernelSessionState(sourceSessionId, (state) => {
         if (finished) {
           unsubscribe()
           clearTimeout(waitTimeout)
           resolve(null)
           return
         }
-        if (state.isStreaming) {
+        if (state.state === 'running') {
           sawStreaming = true
           return
         }
-        if (sawStreaming) {
-          // 首轮流式结束，取首条助手文本
-          unsubscribe()
-          clearTimeout(waitTimeout)
-          const text = pickLatestAssistantText(state)
-          resolve(text || null)
-          return
-        }
-        // 从未进入流式（源会话失败）
-        if (state.error) {
-          unsubscribe()
-          clearTimeout(waitTimeout)
-          resolve(null)
+        if (state.state === 'idle' || state.state === 'error') {
+          if (sawStreaming) {
+            // 首轮流式结束，取首条助手文本
+            unsubscribe()
+            clearTimeout(waitTimeout)
+            const text = pickLatestAssistantText(srcStore.getState())
+            resolve(text || null)
+          } else if (state.error) {
+            // 从未进入流式（源会话失败）
+            unsubscribe()
+            clearTimeout(waitTimeout)
+            resolve(null)
+          }
         }
       })
       cleanupFns.push(() => {
@@ -200,25 +202,25 @@ export async function runTitleGeneration(options: RunTitleGenerationOptions): Pr
     // 失败/空：保留本地截断标题，不报错
   }
 
-  // 订阅标题会话流式状态
-  let sawTitleStreaming = titleStore.getState().isStreaming
-  const unsubscribeTitle = titleStore.subscribe((state) => {
+  // 订阅标题会话流式状态（内核后端权威；消息仍从 store 取）
+  let sawTitleStreaming = false
+  const unsubscribeTitle = subscribeKernelSessionState(titleSessionId, (state) => {
     if (titleFinished) return
-    if (state.isStreaming) {
+    if (state.state === 'running') {
       sawTitleStreaming = true
       return
     }
-    if (sawTitleStreaming) {
-      const text = pickLatestAssistantText(state)
-      if (state.error && !text.trim()) {
+    if (state.state === 'idle' || state.state === 'error') {
+      if (sawTitleStreaming) {
+        const text = pickLatestAssistantText(titleStore.getState())
+        if (state.error && !text.trim()) {
+          settle(null)
+        } else {
+          settle(text)
+        }
+      } else if (state.error) {
         settle(null)
-      } else {
-        settle(text)
       }
-      return
-    }
-    if (state.error) {
-      settle(null)
     }
   })
   cleanupFns.push(unsubscribeTitle)

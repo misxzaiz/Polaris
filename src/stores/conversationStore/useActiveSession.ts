@@ -16,6 +16,7 @@ import {
   sessionStoreManager,
   useActiveSessionId,
 } from './sessionStoreManager'
+import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { useWorkspaceStore } from '../workspaceStore'
 import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft, PromptOptimizeState } from './types'
 import type { ContentBlock } from '@/types'
@@ -208,6 +209,17 @@ export function useActiveSessionStreaming() {
     useCallback((state: ConversationState) => state.isStreaming, []),
     false
   )
+}
+
+/**
+ * 获取活跃会话的流式状态（后端权威）。
+ * 消费方从 useActiveSessionStreaming（store 前端权威）切换后使用；
+ * 内部经 useKernelSessionState 订阅内核后端状态，不可用时降级本地快照。
+ */
+export function useActiveSessionKernelStreaming() {
+  const sessionId = useActiveSessionId()
+  const { isStreaming } = useKernelSessionState(sessionId)
+  return isStreaming
 }
 
 /**

@@ -24,6 +24,7 @@ import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
+import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState';
 import { ChatScrollContext } from './ChatScrollContext';
 
 // 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
@@ -133,6 +134,10 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     false
   );
 
+  // 流式状态后端权威（滚动层数据源，不再以本地 isStreaming 为准）
+  const { isStreaming: kernelStreaming } = useKernelSessionState(sessionId);
+  const scrollIsStreaming = isStreaming || kernelStreaming;
+
   // 可见区域锚点（滚动位置恢复用）
   const visibleRange = useSessionStoreSubscription(
     sessionId,
@@ -192,7 +197,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   // 流式期间始终贴底（内容向上生长），非流式仅在「跟随态&&贴底」时跟随；
   // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；
   // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
-  const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming, initialAutoScroll: atBottomOnMount });
+  const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming: scrollIsStreaming, initialAutoScroll: atBottomOnMount });
   const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef, suspendFollow } = scrollState;
 
   // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）

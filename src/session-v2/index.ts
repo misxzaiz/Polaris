@@ -95,4 +95,17 @@ export type {
   LegacyDialogStorageLike,
 } from './kernel/legacy-kernel'
 
-export { getKernel, resetKernel } from './kernel/registry'
+export {
+  V2SessionKernel,
+  createV2SessionKernel,
+} from './kernel/v2-kernel'
+export type {
+  V2SessionKernelDeps,
+  V2HistoryServiceLike,
+  V2StateQueryLike,
+  V2EventDispatcherLike,
+  V2SessionManagerLike,
+  V2SnapshotSourceLike,
+} from './kernel/v2-kernel'
+
+export { getKernel, resetKernel, getLegacyKernel, resetLegacyKernel } from './kernel/registry'

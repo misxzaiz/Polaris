@@ -12,6 +12,7 @@
 import { useMemo, useRef, useSyncExternalStore } from 'react'
 import { useStore } from 'zustand'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { useViewStore } from '@/stores'
 import { formatGitDiffSummary } from '@/services/gitContextService'
 import { pickLatestAssistantText } from '@/services/assistantTextUtils'
@@ -143,6 +144,9 @@ export function useCommitMessageSuggestion(workspaceId: string | null | undefine
 
   const store: ConversationStoreInstance | null = sessionId ? (stores.get(sessionId) ?? null) : null
 
+  // 流式状态后端权威（不再读 store.isStreaming）
+  const { isStreaming } = useKernelSessionState(sessionId)
+
   const cachedRef = useRef(EMPTY_SNAPSHOT)
 
   const getSnapshot = () => {
@@ -151,7 +155,7 @@ export function useCommitMessageSuggestion(workspaceId: string | null | undefine
     }
     const state = store.getState()
     const text = pickLatestAssistantText(state)
-    const next = { text, isStreaming: state.isStreaming, sessionId }
+    const next = { text, isStreaming, sessionId }
     if (
       cachedRef.current.text === next.text &&
       cachedRef.current.isStreaming === next.isStreaming &&

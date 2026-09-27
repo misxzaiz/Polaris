@@ -22,6 +22,7 @@ import { useStore } from 'zustand'
 import { useSyncExternalStore } from 'react'
 import i18n from 'i18next'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
+import { subscribeKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { pickLatestAssistantText, extractAssistantText } from '@/services/assistantTextUtils'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
@@ -308,22 +309,24 @@ function executeSingleRound(opts: {
     settle(r)
   }
 
-  // 完成检测：isStreaming 从 true 回落 false 视为轮次结束；
+  // 完成检测：内核后端状态 running → idle/error 视为轮次结束；
   // 从未进入流式却出现 error（如引擎启动失败）也按失败收口。
-  let sawStreaming = optStore.getState().isStreaming
-  const unsubscribe = optStore.subscribe((state) => {
+  let sawStreaming = false
+  const unsubscribe = subscribeKernelSessionState(optimizeSessionId, (state) => {
     if (finished) return
-    if (state.isStreaming) { sawStreaming = true; return }
-    if (sawStreaming) {
-      const text = pickLatestAssistantText(state)
-      if (state.error && !text.trim()) {
+    if (state.state === 'running') { sawStreaming = true; return }
+    if (state.state === 'idle' || state.state === 'error') {
+      if (sawStreaming) {
+        const text = pickLatestAssistantText(optStore.getState())
+        if (state.error && !text.trim()) {
+          finish({ ok: false, error: state.error })
+        } else {
+          finish({ ok: true, text })
+        }
+      } else if (state.error) {
         finish({ ok: false, error: state.error })
-      } else {
-        finish({ ok: true, text })
       }
-      return
     }
-    if (state.error) finish({ ok: false, error: state.error })
   })
   cleanupFns.push(unsubscribe)
 
