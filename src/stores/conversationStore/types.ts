@@ -877,7 +877,6 @@ export interface SessionManagerActions {
   makeSessionVisible: (sessionId: string) => void
 
   // ===== 批量操作 =====
-  getStreamingSessions: () => string[]
   interruptSession: (sessionId: string) => Promise<void>
   interruptAllBackground: () => Promise<void>
 

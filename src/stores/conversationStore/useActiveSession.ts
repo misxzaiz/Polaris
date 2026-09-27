@@ -203,7 +203,15 @@ export function useActiveSessionMessages() {
 }
 
 /**
- * 获取活跃会话的流式状态
+ * 获取活跃会话的流式状态。
+ *
+ * 批次 5 定位：本 hook 是**本地渲染投影**（非跨设备状态源）。
+ * - 数据源：store.isStreaming —— eventHandler 在 token 级同步维护（session_start 置
+ *   true、session_end/error 置 false），满足聊天 UI 的 token 级实时渲染需求
+ *   （输入框禁用/停止按钮/状态栏/自动滚动），kernel 订阅（事件驱动 + 1s 轮询）
+ *   无法达到该刷新粒度。
+ * - 跨设备/重启的状态权威已由 V2SessionKernel（后端 session_get_status）承担，
+ *   消费方如需后端权威请用 useActiveSessionKernelStreaming()。
  */
 export function useActiveSessionStreaming() {
   return useActiveSessionSelector(
@@ -214,7 +222,7 @@ export function useActiveSessionStreaming() {
 
 /**
  * 获取活跃会话的流式状态（后端权威）。
- * 消费方从 useActiveSessionStreaming（store 前端权威）切换后使用；
+ * 消费方从 useActiveSessionStreaming（store 本地投影）切换后使用；
  * 内部经 useKernelSessionState 订阅内核后端状态，不可用时降级本地快照。
  */
 export function useActiveSessionKernelStreaming() {

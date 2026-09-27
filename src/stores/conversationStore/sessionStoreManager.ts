@@ -726,6 +726,11 @@ function createSessionManagerStore() {
 
       // 如果会话不存在，自动创建
       if (!store) {
+        // 批次 5 定位：本分支仅为「运行中后端事件先于前端 store 创建」的兜底
+        // （静默/调度器/派发任务会话由后端启动，事件回流时前端尚未建 store）。
+        // 重启后场景不再走这里——restoreRegistry（批次 4）已从后端注册表重建
+        // conversationId 反向索引 + store 壳，事件经上方反向索引续接直接命中。
+        // 因此不存在「LRU 驱逐/重启后自动创建孤儿会话」路径（根因 4 已消除）。
         // 检测是否为 scheduler/dispatch 任务（静默模式，不抢占当前 Tab）
         const isSchedulerTask = routeSessionId.startsWith('scheduler-')
         const isDispatchTask = routeSessionId.startsWith('dispatch-')
@@ -867,19 +872,6 @@ function createSessionManagerStore() {
     },
 
     // ===== 批量操作 =====
-
-    getStreamingSessions: () => {
-      const stores = get().stores
-      const streamingIds: string[] = []
-
-      stores.forEach((store, sessionId) => {
-        if (store.getState().isStreaming) {
-          streamingIds.push(sessionId)
-        }
-      })
-
-      return streamingIds
-    },
 
     interruptSession: async (sessionId: string) => {
       const store = get().stores.get(sessionId)

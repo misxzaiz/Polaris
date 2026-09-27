@@ -1,12 +1,15 @@
 /**
- * LegacySessionKernel — 阶段 3：桥接现有业务路径（影子运行）
+ * @deprecated 阶段 5：LegacySessionKernel 已退役——生产路径一律走 V2SessionKernel
+ * （`getKernel()`）。本实现保留仅用于：
+ * 1. case-3b 影子对比测试（验证阶段 3 委托契约完整性）；
+ * 2. 渐进回退参考（如后端状态查询链路异常时的比对基准）。
  *
- * 依据 `06-实施推进.md` 阶段 3：实现 LegacySessionKernel 委托给现有
+ * 历史定位：阶段 3 桥接现有业务路径（影子运行），委托给现有
  * sessionStoreManager + eventHandler + dialogStorageService + historyService，
  * **行为零变化**，验证 6 个能力接口完整性（能力 6 仲裁由阶段 2 V2StateArbiter 覆盖，
  * 不在此实现——Legacy 侧状态仍由 eventHandler 的前端 isStreaming 权威，影子运行）。
  *
- * 设计原则：
+ * 设计原则（阶段 3 遗留记录）：
  * - 能力接口（capabilities.ts）方法名与触发全景图 6 类入口一一对应；
  * - 所有方法**完全委托**现有实现，不新增任何状态、不修改任何现有模块；
  * - 依赖注入（构造器传入），避免 import 环：本文件只 import 类型；
@@ -316,6 +319,14 @@ export class LegacySessionKernel
     if (fresh.length === 0) return
     // 追加缺失消息（对齐 createConversationStore 的追加语义）
     for (const m of fresh) store.addMessage(m)
+  }
+
+  /**
+   * @deprecated 退役内核不参与真实恢复。恢复注册表一律走 V2SessionKernel
+   * （getKernel().restoreRegistry()）；本实现仅满足接口契约，返回 0。
+   */
+  async restoreRegistry(): Promise<number> {
+    return 0
   }
 
   // ==========================================================================

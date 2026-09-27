@@ -176,7 +176,7 @@ export function useKernelSessionState(sessionId: string | null): KernelSessionSt
       setState(getKernelSessionStateSnapshot(null))
       return
     }
-    // 本地快照初值（渲染首帧不闪变；仅兜底，不作为状态源）
+    // 本地快照初值（渲染首帧不闪变；本地渲染投影，仅兜底，不作为跨设备状态源）
     const localStore = sessionStoreManager.getState().stores.get(sessionId)
     const localStreaming = localStore?.getState().isStreaming ?? false
     const localError = localStore?.getState().error ?? null

@@ -82,10 +82,12 @@ export type {
 } from './kernel/capabilities'
 
 // ============================================================================
-// kernel — 阶段 3：LegacySessionKernel 桥接 + 注册中心
+// kernel — 阶段 5：V2SessionKernel（后端权威）+ 注册中心
+// LegacySessionKernel 已退役（@deprecated），导出仅供测试契约/回退参考。
 // ============================================================================
 
 export {
+  /** @deprecated 阶段 5 已退役，仅测试/回退参考 */
   LegacySessionKernel,
   createLegacySessionKernel,
 } from './kernel/legacy-kernel'
