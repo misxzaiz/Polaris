@@ -24,7 +24,6 @@ import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
   browserClearData,
-  browserClose,
   browserCreate,
   browserFind,
   browserFindNext,
@@ -676,10 +675,11 @@ export function BrowserPanel({
         loadingTimeoutRef.current = null
       }
       browserSetAiOverlay(webviewLabel, false).catch(() => undefined)
-      // 销毁 WebView 而非隐藏，释放 renderer 进程（~350MB）。
-      // 开源节流：浏览器面板不是高频切换场景，销毁重建代价远小于常驻一个 350MB/40% CPU 的进程。
-      log('BrowserPanel UNMOUNT: destroying webview', { webviewLabel })
-      browserClose(webviewLabel).catch(() => undefined)
+      // 保活卸载：WebView 只隐藏不销毁，重挂载时 browser_create 走 get_webview 复用，
+      // 页面状态（滚动/表单/路由）完整保留，与 AI 对话的常驻体验一致。
+      // 用户主动关闭 tab 时的销毁由 tabStore.closeBrowserResources 负责（唯一销毁点）。
+      log('BrowserPanel UNMOUNT: hiding webview (keep-alive)', { webviewLabel })
+      browserSetBounds(webviewLabel, HIDDEN_BROWSER_BOUNDS).catch(() => undefined)
       lastAppliedBoundsRef.current = HIDDEN_BROWSER_BOUNDS
     }
   }, [

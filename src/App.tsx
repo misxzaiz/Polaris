@@ -7,7 +7,7 @@ import { createLogger } from './utils/logger';
 const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
-import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelDrawer, CenterStage, RightPanel } from './components/Layout';
+import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
 import { NarrowTabOverlay } from './components/Editor';
 import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
@@ -44,6 +44,7 @@ const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/Voi
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
+import type { LeftPanelType } from './stores/viewStore';
 import { useNarrowTabStore } from './stores/narrowTabStore';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
@@ -146,6 +147,14 @@ function App() {
     state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
   );
   const leftPanelType = useViewStore(state => state.leftPanelType);
+  // 面板内容保活：leftPanelType=none（关闭）时仍渲染上次激活的类型内容，
+  // 关闭外壳隐藏（LeftPanel 内部 panelVisible 控制），内容组件不卸载——
+  // 重新打开立即显示，不重建不刷新。仅显式切换类型（files→git）才卸载重建。
+  const lastLeftPanelTypeRef = useRef(leftPanelType);
+  if (leftPanelType !== 'none') {
+    lastLeftPanelTypeRef.current = leftPanelType;
+  }
+  const panelContentType: LeftPanelType = leftPanelType !== 'none' ? leftPanelType : lastLeftPanelTypeRef.current;
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
@@ -235,8 +244,9 @@ function App() {
     console.warn(`[PanelTrace] hasLeftPanel false → leftPanelType="${leftPanelType}" contribution=${!!activeLeftPanelContribution} pluginStates keys=${Object.keys(pluginStates).length}`, new Error().stack?.split('\n').slice(2, 6).join(' | '))
   }
   hasLeftPanelRef.current = hasLeftPanel;
-  // 左面板关闭退场：hasLeftPanel true→false 时保留渲染 150ms 播淡出
-  // 注意：不能依赖 hasLeftPanelRef（渲染期已更新为当前值），用上次渲染值对比
+  // 左面板关闭退场：hasLeftPanel true→false 时外壳淡出 150ms。
+  // 注意：LeftPanel 本身始终渲染保活（内容组件不卸载），leaving 只控制外壳淡出，
+  // 不再触发卸载——见渲染段注释。
   const prevHasLeftPanel = useRef(hasLeftPanel);
   useEffect(() => {
     if (prevHasLeftPanel.current && !hasLeftPanel) {
@@ -247,7 +257,6 @@ function App() {
     }
     prevHasLeftPanel.current = hasLeftPanel;
   }, [hasLeftPanel]);
-  const leftPanelRendering = hasLeftPanel || leftPanelKept;
   const leftPanelLeaving = !hasLeftPanel && leftPanelKept;
   const hasCenterStage = !isCompact && hasOpenTabs;
 
@@ -286,9 +295,11 @@ function App() {
     <div className="flex items-center justify-center h-full text-text-muted">{t('status.loading')}</div>
   );
 
-  // 左侧面板内容：桌面布局停靠在 LeftPanel，小屏模式渲染在 LeftPanelDrawer 抽屉中
+  // 左侧面板内容：始终挂载在 LeftPanel 内保活，isCompact 翻转仅切换外壳形态
+  // （桌面停靠 ↔ 抽屉覆盖），内容组件不卸载不重建
   const leftPanelContent = (
     <LeftPanelContent
+      currentType={panelContentType}
       filesContent={<FileExplorer />}
       gitContent={
         <Suspense fallback={loadingFallback}>
@@ -337,22 +348,19 @@ function App() {
               collapsed={activityBarCollapsed}
             />
 
-            {!isCompact && leftPanelRendering && (
-              <LeftPanel
-                fillRemaining={leftPanelFillRemaining}
-                fullscreen={terminalFullscreen}
-                leaving={leftPanelLeaving}
-              >
-                {leftPanelContent}
-              </LeftPanel>
-            )}
-
-            {/* 小屏模式：左侧面板以覆盖式抽屉渲染，保证扇形菜单各功能入口可用 */}
-            {isCompact && hasLeftPanel && (
-              <LeftPanelDrawer onClose={closeLeftPanel}>
-                {leftPanelContent}
-              </LeftPanelDrawer>
-            )}
+            {/* 左侧面板始终渲染（从首次打开后保活）：isCompact 翻转（最小化/拖窄窗口）
+                只切换形态（桌面停靠 ↔ 抽屉覆盖），不卸载内容组件——
+                与 RightPanel/AI 对话的常驻保活一致，避免文件树/终端重建导致"刷新"。
+                hasLeftPanel/leaving 仅控制外壳显隐，children 始终挂载。 */}
+            <LeftPanel
+              fillRemaining={leftPanelFillRemaining}
+              fullscreen={terminalFullscreen}
+              leaving={leftPanelLeaving}
+              compact={isCompact}
+              onClose={closeLeftPanel}
+            >
+              {leftPanelContent}
+            </LeftPanel>
 
             {/* 小屏模式：tab 覆盖层 —— CenterStage 被 !isCompact 门控不渲染，
                 窄窗口下打开文件/diff 由 NarrowTabOverlay 承接（按 tab.type 分流），

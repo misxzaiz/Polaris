@@ -1,8 +1,18 @@
 /**
- * LeftPanel - 左侧可切换面板组件
+ * LeftPanel - 左侧可切换面板组件（保活版）
  *
- * 配合 ActivityBar 使用,移除了头部切换器和折叠按钮
+ * 配合 ActivityBar 使用，移除了头部切换器和折叠按钮
  * 由 ActivityBar 控制面板的显示/隐藏和切换
+ *
+ * 保活设计：
+ * - children（面板内容组件）始终挂载在同一个 <aside> 根内，永不因布局切换
+ *   卸载重建——与 RightPanel/AI 对话的常驻体验一致，避免文件树/终端等
+ *   重挂载导致"刷新"。
+ * - compact 双形态通过切换同一个 <aside> 的定位样式实现：
+ *   桌面停靠（relative，参与 flex 流布局）↔ 抽屉覆盖（fixed 覆盖层）。
+ *   遮罩与顶部操作栏作为独立 sibling 条件渲染，不进入 aside、不触发 children 卸载。
+ * - leaving：关闭时外壳淡出，children 仍挂载，重新打开立即显示。
+ * - panelVisible=false（leftPanelType=none）：aside 加 hidden 隐藏，children 仍挂载。
  */
 
 import { ReactNode, useEffect, useRef, useState, useCallback } from 'react'
@@ -23,6 +33,10 @@ interface LeftPanelProps {
   fullscreen?: boolean
   /** 是否正在退场（关闭时淡出动画，由父组件延迟卸载） */
   leaving?: boolean
+  /** 小屏模式：以抽屉覆盖层渲染（原 LeftPanelDrawer 形态），children 仍保活挂载 */
+  compact?: boolean
+  /** 抽屉形态的关闭回调（点击遮罩 / 关闭按钮） */
+  onClose?: () => void
 }
 
 /**
@@ -31,63 +45,35 @@ interface LeftPanelProps {
  * - fillRemaining: flex-1 自适应填充，无拖拽条（终端激活且无编辑器时）
  * - 默认: 固定宽度 + 拖拽条
  * - leaving: 关闭退场时淡出（父组件负责延迟卸载）
+ * - compact: 抽屉覆盖形态（窄窗口），children 仍保活
  */
-export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false, leaving = false }: LeftPanelProps) {
+export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false, leaving = false, compact = false, onClose }: LeftPanelProps) {
+  const { t } = useTranslation('common')
   const width = useViewStore((state) => state.leftPanelWidth)
   const setWidth = useViewStore((state) => state.setLeftPanelWidth)
+  // 面板是否可见（type 非 none）。children 保活：不可见时外壳隐藏，内容仍挂载
+  const panelVisible = useViewStore((state) => state.leftPanelType !== 'none')
 
   // 拖拽处理（无限制）
   const handleResize = (delta: number) => {
     setWidth(width + delta)
   }
 
-  // 关键：fullscreen/fillRemaining/默认 三态合并为同一 <aside> 根，
-  // 只变 className/style/ResizeHandle，避免 React 因顶层结构变化（Fragment vs aside）
-  // 卸载整棵子树导致内容区闪白。fullscreen 与 fillRemaining 都是 flex-1 无拖拽条。
-  const isFlexible = fullscreen || fillRemaining
-  return (
-    <>
-      <aside
-        data-theme-panel
-        className={`flex flex-col bg-background-elevated border-r border-border relative transition-[width,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${isFlexible ? 'flex-1 min-w-[200px]' : 'shrink-0'} ${className}`}
-        style={isFlexible ? undefined : { width: `${width}px` }}
-      >
-        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
-      </aside>
-      {!isFlexible && (
-        <ResizeHandle direction="horizontal" position="right" onDrag={handleResize} />
-      )}
-    </>
-  )
-}
-
-interface LeftPanelDrawerProps {
-  children?: ReactNode
-  /** 关闭抽屉回调（点击遮罩 / 关闭按钮） */
-  onClose: () => void
-}
-
-/**
- * 左侧面板抽屉（小屏模式）
- * compact 模式下以覆盖式抽屉渲染左侧面板内容：半透明遮罩 + 左侧滑入面板
- */
-export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
-  const { t } = useTranslation('common')
-  const drawerRef = useRef<HTMLElement>(null)
+  // 抽屉形态：全屏展开态 + Escape 关闭
   const [expanded, setExpanded] = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
   // 进出场动画：exit() 触发退场，结束后再调 onClose 卸载
   const { mounted, phase, exit } = useTransitionState({
     duration: 240,
     onExited: onClose,
   })
-
-  // 关闭：先退场动画，结束后由 onExited 真正关闭
   const handleClose = useCallback(() => {
     exit()
   }, [exit])
 
-  // Escape 键关闭
+  // Escape 键关闭（抽屉形态）
   useEffect(() => {
+    if (!compact) return
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         // 优先退出全屏展开态，再次 Escape 才关闭抽屉
@@ -100,66 +86,95 @@ export function LeftPanelDrawer({ children, onClose }: LeftPanelDrawerProps) {
     }
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [expanded, handleClose])
+  }, [compact, expanded, handleClose])
 
-  // 打开时将焦点移入抽屉
+  // 抽屉打开时将焦点移入
   useEffect(() => {
-    if (mounted) {
+    if (compact && panelVisible && mounted) {
       drawerRef.current?.focus()
     }
-  }, [mounted])
-
-  if (!mounted) return null
+  }, [compact, panelVisible, mounted])
 
   const exiting = phase === 'exiting'
 
-  return (
-    <div
-      className="fixed inset-0 z-50"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('buttons.close')}
-    >
-      {/* 遮罩：点击关闭（淡入/淡出） */}
-      <div
-        className={`absolute inset-0 bg-black/50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+  // 抽屉下的操作栏（独立 sibling，不进 aside，不触发 children 卸载）
+  const drawerToolbar = compact && panelVisible && (
+    <div className="fixed top-0 left-0 flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0 bg-background-elevated z-[51]" style={{ width: expanded ? '100%' : 'min(85vw, 360px)', right: expanded ? 0 : undefined }}>
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
+        aria-label={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
+        title={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
+      >
+        {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+      </button>
+      <button
         onClick={handleClose}
-      />
+        className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
+        aria-label="导航面板"
+        title={t('buttons.close')}
+      >
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
 
-      {/* 抽屉面板
-          默认 min(85vw, 360px)，可全屏展开至 100vw —— 文件树半遮挡够用，
-          Git 历史/Diff/终端等宽内容面板需要全屏。展开态 width 过渡 0.3s。
-          进出场：左侧滑入/滑出。 */}
+  // 抽屉遮罩（独立 sibling）
+  const drawerMask = compact && panelVisible && (
+    <div
+      className={`fixed inset-0 z-50 bg-black/50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+      onClick={handleClose}
+    />
+  )
+
+  // 抽屉下的 ResizeHandle（只在桌面形态显示）
+  const isFlexible = fullscreen || fillRemaining
+  const desktopResizeHandle = !compact && !isFlexible && (
+    <ResizeHandle direction="horizontal" position="right" onDrag={handleResize} />
+  )
+
+  // 关键：compact 双形态切换时保持同一 <aside> 根，children 永不动位。
+  // 只切换 aside 的定位 className：
+  // - 桌面: relative，参与 flex 流布局（停靠）
+  // - 抽屉: fixed 覆盖层 + shadow + 更高 z
+  // 遮罩/操作栏作为独立 sibling 渲染，不进入 aside，避免卸载 children。
+  const asideStyle: React.CSSProperties | undefined = compact
+    ? { width: expanded ? '100%' : 'min(85vw, 360px)' }
+    : isFlexible
+      ? undefined
+      : { width: `${width}px` }
+
+  return (
+    <>
+      {drawerMask}
+      {drawerToolbar}
       <aside
         ref={drawerRef}
-        tabIndex={-1}
-        className={`absolute inset-y-0 left-0 flex flex-col bg-background-elevated border-r border-border shadow-xl outline-none transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${exiting ? 'animate-drawer-out-left' : 'animate-drawer-in-left'}`}
-        style={{ width: expanded ? '100%' : 'min(85vw, 360px)' }}
+        data-theme-panel
+        tabIndex={compact ? -1 : undefined}
+        className={`flex flex-col bg-background-elevated border-r border-border min-h-0 ${compact
+          ? 'fixed inset-y-0 left-0 z-50 shadow-xl overflow-hidden'
+          : 'relative'
+        } transition-[width,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${!panelVisible ? 'hidden' : ''} ${!compact && isFlexible ? 'flex-1 min-w-[200px]' : ''} ${!compact && !isFlexible ? 'shrink-0' : ''} ${className}`}
+        style={asideStyle}
       >
-        {/* 顶部操作栏：展开/还原 + 关闭 */}
-        <div className="flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0">
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-            aria-label={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
-            title={expanded ? t('buttons.restore', { defaultValue: '还原' }) : t('buttons.expand', { defaultValue: '全屏展开' })}
-          >
-            {expanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={handleClose}
-            className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
-            aria-label="导航面板"
-            title={t('buttons.close')}
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* 面板内容 */}
         <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
       </aside>
-    </div>
+      {desktopResizeHandle}
+    </>
+  )
+}
+
+/**
+ * 左侧面板抽屉（小屏模式）——兼容导出
+ * 保活改造后由 LeftPanel 的 compact 形态承接，本组件保留导出以防外部引用。
+ * children 仍保活挂载。
+ */
+export function LeftPanelDrawer({ children, onClose }: { children?: ReactNode; onClose?: () => void }) {
+  return (
+    <LeftPanel compact onClose={onClose}>
+      {children}
+    </LeftPanel>
   )
 }
 
