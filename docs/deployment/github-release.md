@@ -1097,7 +1097,7 @@ cd polaris-web
 
 ## v10.5.8 构建记录
 
-**构建时间**: 2026-09-29 (UTC)
+**构建时间**: 2026-09-28 (UTC)
 **Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.8
 
 ### 构建产物
