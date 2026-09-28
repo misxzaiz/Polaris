@@ -1053,3 +1053,42 @@ cd polaris-web
 - feat(chat): 运行过程补充卡片改为段落折叠+精炼卡片，chips 筛选式交互
 - feat(usage): 缓存命中率统一成本口径 B（cacheRead/(input+cacheRead)），Token 统计面板展示命中率
 - fix(chat): 补充卡片精炼化与滚动闪动修复 — 渲染器 compact 变体、blockGrouping 去重、suspendFollow 交互豁免窗口、chips 按过程类型细分、文件变更段落展开豁免 + 相对路径转绝对修复跳转
+
+---
+
+## v10.5.7 构建记录
+
+**构建时间**: 2026-09-28 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.7
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.7_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.7_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.7_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.7-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.7_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.7-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.7-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.7-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.7.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(session-v2): 会话体系重构落地——后端权威状态机（阶段 0~6）：能力接口 + 事件日志 + 仲裁/对账 + Registry，8 个 isStreaming 消费方全部切后端状态；Legacy 内核彻底移除，V2 为唯一实现
+- feat(session-v2): 案例 1~5 关键假设全部验证通过（append-only 并发零丢失 / 状态从日志计算 / 对账差异修复 / 插件扩展点覆盖 6 类触发场景）
+- feat(session): 阶段 2 排他锁——事务化仲裁 + 占位防并发双 start；阶段 5 对账集成测试 + 双设备并发矩阵验证
+- fix(session-v2): 集成测试 flaky 根治——tune_pragmas 中 busy_timeout 先于 journal_mode=WAL（修复多连接冷启动竞态）；data_root 进程级固定根目录 + 全局串行锁
+- fix(session-v2): webReconnectResync 断线恢复改用 kernel.resyncSession 快照合并，替代 setMessagesFromHistory 全量覆盖，断线期间本地已接收的新事件不再丢失
+- feat(http): 新增 cap.http 通用 HTTP 转发能力
+- feat(ui): 最小化/拖窄窗口后左面板与内置浏览器保活不刷新
+- fix(ui): WebView2 窗口隐藏时 0 宽度误触发小屏模式
+- feat(anim): 面板/浮层/弹窗进出场动画统一 token 化
+- refactor(engine): 清理 openai-protocol 引擎残留（对齐 b25f38cf）
+- docs(session-v2): AI 会话体系重构规划与根因分析、地基级改造方案、案例验证规划、各阶段实施记录与提交脉络同步
