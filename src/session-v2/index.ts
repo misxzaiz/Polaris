@@ -82,20 +82,9 @@ export type {
 } from './kernel/capabilities'
 
 // ============================================================================
-// kernel — 阶段 5：V2SessionKernel（后端权威）+ 注册中心
-// LegacySessionKernel 已退役（@deprecated），导出仅供测试契约/回退参考。
+// kernel — 阶段 6：V2SessionKernel（后端权威，唯一实现）+ 注册中心
+// 阶段 6：LegacySessionKernel 已彻底移除（文件删除），仅保留 V2。
 // ============================================================================
-
-export {
-  /** @deprecated 阶段 5 已退役，仅测试/回退参考 */
-  LegacySessionKernel,
-  createLegacySessionKernel,
-} from './kernel/legacy-kernel'
-export type {
-  LegacySessionKernelDeps,
-  LegacyHistoryServiceLike,
-  LegacyDialogStorageLike,
-} from './kernel/legacy-kernel'
 
 export {
   V2SessionKernel,
@@ -110,4 +99,4 @@ export type {
   V2SnapshotSourceLike,
 } from './kernel/v2-kernel'
 
-export { getKernel, resetKernel, getLegacyKernel, resetLegacyKernel } from './kernel/registry'
+export { getKernel, resetKernel } from './kernel/registry'

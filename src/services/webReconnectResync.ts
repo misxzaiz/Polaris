@@ -14,12 +14,9 @@
  * 触发方：transport 层收到 resume-complete { gap: true } 时调用。
  */
 
-import type { ChatMessage, EngineId } from '@/types'
 import type { ConversationStoreInstance } from '@/stores/conversationStore/types'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import { normalizeEngineId } from '@/utils/engineDisplay'
 import { createLogger } from '@/utils/logger'
-import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { currentMode, invoke, manualReconnect } from './transport'
 // 批次 3 类 4：恢复触发源从「前端 isStreaming」切到 kernel 后端权威状态，
 // 消除「页面重载/断线后前端 isStreaming 丢失 → 活跃会话漏恢复」的根因。
@@ -72,8 +69,7 @@ export async function resyncAfterResumeGap(): Promise<void> {
       if (!state.conversationId) continue
       if (!backendRunning.get(sessionId)) continue
 
-      const engineId = normalizeEngineId(manager.sessionMetadata.get(sessionId)?.engineId)
-      jobs.push(resyncSession(sessionId, store, state.conversationId, engineId))
+      jobs.push(resyncSession(sessionId, store, state.conversationId))
     }
 
     if (jobs.length === 0) {
@@ -125,23 +121,22 @@ export async function manualRefreshActiveSession(): Promise<boolean> {
     return false
   }
 
-  const engineId = normalizeEngineId(manager.sessionMetadata.get(activeSessionId)?.engineId)
-  log.info('手动恢复开始', { activeSessionId, conversationId, engineId })
+  log.info('手动恢复开始', { activeSessionId, conversationId })
 
   // 2. 重注册反向索引：后端续传事件携带的是旧前端 sessionId（contextId），
   //    dispatchEvent 的反向索引兜底依赖此映射将事件续接到本会话。
   manager.registerConversationId(conversationId, activeSessionId)
 
-  // 3. 重拉历史 + 校正流式状态
-  await resyncSession(activeSessionId, store, conversationId, engineId)
+  // 3. 快照合并 + 校正流式状态
+  await resyncSession(activeSessionId, store, conversationId)
   return true
 }
 
-/** 恢复单个会话：查询存活 → 重拉历史 → 校正流式状态 */async function resyncSession(
+/** 恢复单个会话：快照合并（kernel）+ 校正流式状态 */
+async function resyncSession(
   sessionId: string,
   store: ConversationStoreInstance,
   conversationId: string,
-  engineId: EngineId,
 ): Promise<void> {
   // 1. 查询后端会话进程是否仍在运行
   let running = false
@@ -154,24 +149,21 @@ export async function manualRefreshActiveSession(): Promise<boolean> {
     log.warn(`查询会话存活状态失败，假定已结束: ${conversationId}`, { error: String(e) })
   }
 
-  // 2. 重新拉取引擎落盘历史，覆盖本地消息（补回断线丢失内容）
+  // 2. 快照合并（阶段 6：取代 setMessagesFromHistory 全量覆盖）
+  //    全量覆盖会丢弃断线期间本地已接收的新事件；kernel.resyncSession 按 id
+  //    去重只追加缺失，恢复期间新事件不丢失（根因 6）。
   try {
-    const messages = await loadHistoryMessages(conversationId, engineId)
-    if (messages.length > 0) {
-      store.getState().setMessagesFromHistory(messages, conversationId)
-      log.info('会话历史已重载', { sessionId, conversationId, messageCount: messages.length })
-    } else {
-      log.warn('历史为空，保留现有消息', { sessionId, conversationId, engineId })
-    }
+    const kernel = await getKernel()
+    await kernel.resyncSession(sessionId)
   } catch (e) {
     log.error(
-      `重载会话历史失败: ${conversationId}`,
+      `快照合并恢复失败: ${conversationId}`,
       e instanceof Error ? e : new Error(String(e)),
     )
   }
 
   // 3. 校正流式状态：仍在运行 → 继续接收实时事件；已结束 → 正常收尾
-  //    （setMessagesFromHistory 已将 isStreaming 置 false，仅运行中需要恢复）
+  //    （快照合并不改动 isStreaming，需按后端真实状态显式校正）
   if (running) {
     store.getState().setStreaming(true)
   } else {
@@ -181,17 +173,3 @@ export async function manualRefreshActiveSession(): Promise<boolean> {
   log.info('会话流式状态已校正', { sessionId, running })
 }
 
-/** 按引擎拉取并转换落盘历史；不支持落盘历史的引擎返回空数组 */
-async function loadHistoryMessages(
-  conversationId: string,
-  engineId: EngineId,
-): Promise<ChatMessage[]> {
-  if (engineId === 'claude-code') {
-    const svc = getClaudeCodeHistoryService()
-    const history = await svc.getSessionHistory(conversationId)
-    return history.length > 0 ? svc.convertToChatMessages(history) : []
-  }
-  // 其他引擎（openai-protocol / simple-ai 等）无引擎侧落盘历史，
-  // 仅校正流式状态，不重载消息。
-  return []
-}
