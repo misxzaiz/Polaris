@@ -22,7 +22,9 @@ polaris-web/
 
 # Tauri
 /src-tauri/target/
-/src-tauri/Cargo.lock
+# 注意：Cargo.lock 必须入库。桌面端 Tauri 是二进制应用，CI 全新克隆会从零解析依赖，
+# tauri = "2.0" 这类宽松区间会浮到最新版（曾导致 2.12.0 vs @tauri-apps/api 2.11.1 硬失败），
+# 而 pnpm-lock 把 JS 侧钉死，两端版本不一致会让 `tauri build` 直接失败。
 /src-tauri/gen/schemas/
 /src-tauri/dist-web/
 

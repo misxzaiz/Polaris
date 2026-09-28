@@ -53,6 +53,27 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      # ---- 依赖锁定守卫（编译前早停）----
+      # src-tauri/Cargo.lock 必须入库且与 Cargo.toml 一致。若缺失或漂移，cargo 会从零解析
+      # 依赖，`tauri = "2.0"` / `tauri-plugin-dialog = "2.7"` 等宽松区间会浮到 crates.io 最新版
+      # （tauri 2.12.0 / dialog 2.8.0 / process 2.4.0 / opener 2.6.0），而 pnpm-lock 把 JS 侧钉死在
+      # 2.11.x，`tauri build` 的版本一致性校验随即硬失败——v10.5.7 的桌面端构建即因此挂掉，
+      # 而 Release Web / Release APK 不触发该校验，照常通过，极易误判为"只是桌面端偶发失败"。
+      - name: Verify Rust dependency lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git ls-files --error-unmatch src-tauri/Cargo.lock >/dev/null 2>&1; then
+            echo "ERROR: src-tauri/Cargo.lock 未被 git 跟踪。"
+            echo "CI 为全新克隆，无锁文件时 cargo 从零解析依赖会浮到最新版，与 pnpm-lock 钉死的 JS 侧版本不一致，"
+            echo "tauri build 必然失败。"
+            echo "处理：本地 cd src-tauri && cargo generate-lockfile，然后 git add src-tauri/Cargo.lock 重新提交；"
+            echo "并检查 .gitignore 是否排除了该文件（历史上被 /src-tauri/Cargo.lock 排除过）。"
+            exit 1
+          fi
+          (cd src-tauri && cargo metadata --locked --format-version 1 >/dev/null)
+          echo "Cargo.lock 已入库且与 Cargo.toml 一致"
+
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 

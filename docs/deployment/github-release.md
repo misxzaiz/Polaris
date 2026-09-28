@@ -1092,3 +1092,62 @@ cd polaris-web
 - feat(anim): 面板/浮层/弹窗进出场动画统一 token 化
 - refactor(engine): 清理 openai-protocol 引擎残留（对齐 b25f38cf）
 - docs(session-v2): AI 会话体系重构规划与根因分析、地基级改造方案、案例验证规划、各阶段实施记录与提交脉络同步
+
+---
+
+## v10.5.8 构建记录
+
+**构建时间**: 2026-09-29 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.8
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.8_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.8_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.8_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.8-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.8_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.8-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.8-linux-x86_64.tar.gz` | - | Linux x86_64 | Web 独立服务 |
+| `polaris-web-10.5.8-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.8.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 构建说明：v10.5.7 桌面端构建失败，本版本修复
+
+`v10.5.7` 的 Release（桌面端）工作流失败，**未产出任何桌面端安装包**，其 Release 页面当前亦不存在（API 404）。Release Web 与 Release APK 工作流成功，故 v10.5.7 标签下缺桌面端产物。
+
+**根因**：`.gitignore` 曾以 `/src-tauri/Cargo.lock` 排除该文件，锁文件从未入库。GitHub Actions 每次都是全新克隆，没有锁文件时 `cargo` 从零解析依赖，`Cargo.toml` 中 `tauri = "2.0"` / `tauri-plugin-dialog = "2.7"` 等宽松区间全部浮到 crates.io 最新版：
+
+| 包 | CI 实际解析 | pnpm-lock 钉死（JS 侧） |
+|---|---|---|
+| tauri | 2.12.0 | 2.11.1（@tauri-apps/api） |
+| tauri-plugin-dialog | 2.8.0 | 2.7.2 |
+| tauri-plugin-opener | 2.6.0 | 2.5.4 |
+| tauri-plugin-process | 2.4.0 | 2.3.1 |
+
+`tauri build` 的版本一致性校验随即硬失败：`Found version mismatched Tauri packages`。Release Web 与 Release APK 不触发该校验，照常通过，因此问题极易被误判为「桌面端偶发失败」。
+
+本地此前能正常编译纯属偶然——机器上存在一份未入库的 `Cargo.lock`。
+
+**修复**：
+
+1. `.gitignore` 移除 `/src-tauri/Cargo.lock` 排除项，锁文件（728 个条目，含 Linux 侧 gtk/glib/webkit2gtk 与 Windows 侧 webview2-com）入库，CI 从此可复现解析结果。
+2. `release.yml` 在编译前新增 `Verify Rust dependency lock` 守卫：先 `git ls-files --error-unmatch` 检查锁文件已入库，再 `cargo metadata --locked` 校验与 `Cargo.toml` 一致。缺失或漂移时秒级早停并打印修复指引，避免失败在 10 分钟编译后才暴露。
+
+> 后续维护：升级 tauri / tauri-plugin-* 依赖时，须同时更新 `src-tauri/Cargo.lock` 与 `pnpm-lock.yaml`，并保持两侧版本一致，否则桌面端构建会失败。
+
+### 变更内容
+
+本版本**源码与 v10.5.7 完全一致**（会话体系重构 session-v2 等变更的完整清单见 v10.5.7 记录），仅包含发布工程修复：
+
+- fix(build): 桌面端构建失败根治 — `src-tauri/Cargo.lock` 入库，消除 CI 从零解析依赖导致的 Tauri 版本错配（tauri 2.12.0 vs @tauri-apps/api 2.11.1）
+- ci(build): Release 工作流新增依赖锁守卫，编译前早停并给出修复指引
+- chore: 版本号 10.5.7 → 10.5.8
+
+> **注**：由于 v10.5.7 未产出桌面端安装包，v10.5.8 是首个实际包含 session-v2 会话体系重构桌面端产物的版本。桌面端用户请直接安装 v10.5.8。
