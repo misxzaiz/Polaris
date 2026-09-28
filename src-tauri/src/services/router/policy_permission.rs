@@ -165,9 +165,12 @@ impl PolicyPermission {
         // 用户在 config 显式 allow（精确规则特异性更高）可覆盖内置 deny。
         // step7 §4 验收：规则固化为代码内置默认，config 缺省也生效，部署/换机不丢。
         // 注意：cap.config 不在其中 —— 见模块文档，远程读写均为 Web/移动端刚需。
+        // cap.http 远程禁发：通用转发是 SSRF 高敏面，默认只对本地面板（Bootstrap/
+        // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
         for (cap_prefix, wildcard) in [
             ("cap.data_root", true),
             ("cap.plugin", true),
+            ("cap.http", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),
@@ -339,8 +342,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 2 条内置收紧（cap.data_root*/cap.plugin* remote deny）
-        assert_eq!(p.rule_count(), 3, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 3 条内置收紧（cap.data_root*/cap.plugin*/cap.http* remote deny）
+        assert_eq!(p.rule_count(), 4, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -368,7 +371,8 @@ mod tests {
             "cap.config* 不再内置 deny"
         );
         for cap in ["cap.data_root", "cap.data_root.get_info",
-                    "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo"] {
+                    "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo",
+                    "cap.http"] {
             assert_eq!(
                 p.check(&req(cap, Source::Remote { token: "t".into() })).unwrap(),
                 PermissionVerdict::Deny,

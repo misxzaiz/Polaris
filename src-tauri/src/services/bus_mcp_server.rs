@@ -30,8 +30,8 @@ use crate::contracts::{
 use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::router::{
-    audit_sink, ContextCapability, EventAdapter, FileAuditSink, PolicyPermission, RouterBus,
-    TodoCapability,
+    audit_sink, ContextCapability, EventAdapter, FileAuditSink, HttpCapability, PolicyPermission,
+    RouterBus, TodoCapability,
 };
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
@@ -46,7 +46,7 @@ const CALLER: &str = "polaris-bus-mcp";
 /// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
 /// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
 ///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-const DISPATCH_WHITELIST: &[&str] = &["cap.todo"];
+const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http"];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -72,6 +72,9 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
     {
         use crate::contracts::Router as _;
         let _ = router.register_handle(Box::new(TodoCapability));
+        // cap.http —— 通用 HTTP 转发（AI 经 bus_dispatch 调用外部 API）。
+        // SSRF 校验内建于能力（见 http_capability.rs），Remote 由策略 deny。
+        let _ = router.register_handle(Box::new(HttpCapability));
         let _ = router.register_handle(Box::new(crate::services::router::ContextCapability::new(
             Arc::new(std::sync::Mutex::new(ContextMemoryStore::new())),
         )));
@@ -207,8 +210,8 @@ fn handle_tools_list() -> Value {
     json!({
         "tools": [
             tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-            tool_def("bus_dispatch", "读写 Polaris 应用持久化数据（当前仅待办 cap.todo）。注意：这是数据读写工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                "target": { "type": "string", "enum": ["cap.todo"] },
+            tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）或发起外部 HTTP 请求（cap.http，通用转发）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
                 "payload": { "type": "object" }
             })),
 
@@ -235,7 +238,7 @@ fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
                 .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
             if !DISPATCH_WHITELIST.contains(&target) {
                 return Ok(tool_error(format!(
-                    "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo）"
+                    "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http）"
                 )));
             }
             target
@@ -294,6 +297,9 @@ fn handle_bus_help(router: &RouterBus) -> Value {
         "modules": [
             { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
               "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）；主应用亦经 cap_dispatch 触达" },
+            { "domain": "http", "capability": "cap.http", "入口": "bus_dispatch / 主应用 dispatch（面板）",
+              "协议": "{ action: request|ping, request: { method, url, headers?, body?, bodyType?, timeoutMs? } } → { status, statusText, ok, contentType, headers, body, isBase64, timeMs }",
+              "状态": "✅ bus_dispatch 可用；SSRF 内建校验（拒内网/元数据/本地）；二进制响应 base64；Remote 策略 deny（本地面板与 AI 均可用）" },
             { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
@@ -316,12 +322,19 @@ fn handle_bus_help(router: &RouterBus) -> Value {
                 "complete":  { "参数": { "id": "string（必填）", "lastProgress": "string?" }, "返回": "{ item }（置 completed_at）" },
                 "delete":    { "参数": { "id": "string（必填）" }, "返回": "{ item }（被删条目）" },
                 "breakdown": { "参数": {}, "返回": "{ stats: {工作区名: 数量} }" }
+            },
+            "cap.http": {
+                "ping":    { "参数": {}, "返回": "{ pong: true }" },
+                "request": { "参数": { "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）", "url": "string（必填，仅 http/https）", "headers": "{ k: v }（可含 Cookie/UA/Referer 等浏览器禁发头——宿主转发不受浏览器限制）", "body": "string?", "bodyType": "text|json|form|binary?", "timeoutMs": "number?（默认 15000）" }, "返回": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }" },
+                "边界": "SSRF 内建校验：拒 localhost/127.0.0.0-8/[::1]/0.0.0.0、云元数据 169.254.169.254、RFC1918 私网、.local/.internal 域名、非 http(s) 协议。二进制响应（image/* 等）base64 编码返回（isBase64:true）。Remote 来源策略 deny，仅本地面板/AI 可用。"
             }
         },
         "usage_examples": [
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "create", "content": "完成代码评审", "priority": "high" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all", "status": "pending" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "GET", "url": "https://api.github.com/repos/rust-lang/rust" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "POST", "url": "https://httpbin.org/post", "body": "{\"q\":\"test\"}", "bodyType": "json" } } },
             { "tool": "cap_list", "arguments": {} },
             { "tool": "cap_dispatch", "arguments": { "target": "cap.history", "payload": { "action": "list_sessions" } } },
             { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "message": "<用户消息>" } } },

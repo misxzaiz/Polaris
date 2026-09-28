@@ -368,9 +368,9 @@ pub fn create_app_state(
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
             EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
-            ContextCapability, ConfigCapability, DataRootCapability, PluginDiscoveryCapability,
-            PluginServiceManagerCapability, PromptSnippetCapability, RouterBus, StreamEchoCapability,
-            TodoCapability, audit_sink, prompt_snippet_capability,
+            ContextCapability, ConfigCapability, DataRootCapability, HttpCapability,
+            PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
+            RouterBus, StreamEchoCapability, TodoCapability, audit_sink, prompt_snippet_capability,
         };
         use crate::services::storage::SqliteStorage;
 
@@ -413,6 +413,10 @@ pub fn create_app_state(
             audit,
         ));
         let _ = bus.register_handle(Box::new(KvCapability));
+        // cap.http —— 通用 HTTP 转发（替代插件自启 node 代理：relay-devkit 的
+        // server.js / __proxy 迁此。插件面板（主窗口 Bootstrap）与 AI（Plugin，
+        // bus_dispatch 白名单）均经此触达。SSRF 校验见 http_capability.rs）
+        let _ = bus.register_handle(Box::new(HttpCapability));
         // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
         // <DataRoot>/stores/todo.db，旧命令层已全部移除，本 capability 是唯一入口）
         let _ = bus.register_handle(Box::new(TodoCapability));
