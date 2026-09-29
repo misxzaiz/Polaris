@@ -57,9 +57,26 @@ async fn run() {
     println!("[ping]      => {r}");
 
     // 2. SSRF 校验（走 invoke 前校验，应报错）
-    for bad in ["http://localhost:9860/x", "http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/x", "file:///etc/passwd"] {
+    //    localhost / 127.0.0.0/8 / ::1 已放行（本机 dev server 场景），
+    //    保留网段（私网/链路本地/未指定）+ 非 http(s) 协议仍拒绝。
+    for bad in ["http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/x", "http://192.168.1.1/x", "http://0.0.0.0/", "file:///etc/passwd"] {
         let r = cap.invoke(serde_json::json!({"action":"request","method":"GET","url":bad}), &ctx);
         println!("[ssrf]  {bad:<45} => {:?}", r.map(|_| "UNEXPECTED ALLOW".to_string()).unwrap_err());
+    }
+
+    // 2b. 回环地址已放行（应通过 SSRF 校验；后续可能因端口无人监听报错，
+    //     但错误信息应是「连接失败」而不是「内部域名/内网地址不可转发」）
+    for ok_url in ["http://localhost:9/x", "http://127.0.0.1:9/x"] {
+        let r = cap.invoke(serde_json::json!({"action":"request","method":"GET","url":ok_url,"timeoutMs":2000}), &ctx);
+        match r {
+            Ok(v) => println!("[loop]  {ok_url:<30} => status={}", v["status"]),
+            Err(e) => {
+                // 允许网络层错误（端口 9 通常无人监听），但绝不能是 SSRF 拦截错误
+                let denied = e.contains("不可转发") || e.contains("内部域名");
+                assert!(!denied, "回环地址不应被 SSRF 拦截，但收到: {e}");
+                println!("[loop]  {ok_url:<30} => 网络层错误(预期): {e}");
+            }
+        }
     }
 
     // 3. 真实 GET
