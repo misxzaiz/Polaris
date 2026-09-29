@@ -3,18 +3,36 @@
 //! 用法：cargo run --bin cap_http_check
 //! 验证 HttpCapability 的：ping、SSRF 校验、真实 GET/POST 转发、二进制 base64。
 
-use polaris_lib::contracts::{Capability as _, CapabilityId, Context, PermissionRequest, PermissionVerdict, PluginId, Source, Storage, Value};
+use polaris_lib::contracts::{
+    Capability as _, CapabilityId, Context, PermissionRequest, PermissionVerdict, PluginId, Source,
+    Storage, Value,
+};
 use polaris_lib::services::router::HttpCapability;
 
 /// 最小上下文：cap.http 不读 ctx，占位满足 trait
 struct Ctx;
 impl Context for Ctx {
-    fn resolve_cap(&self, _id: &CapabilityId) -> Result<Value, String> { Err("n/a".into()) }
-    fn storage(&self) -> Result<&dyn Storage, String> { Err("n/a".into()) }
-    fn check_permission(&self, _req: &PermissionRequest) -> Result<PermissionVerdict, String> { Ok(PermissionVerdict::Allow) }
-    fn source(&self) -> &Source { static S: Source = Source::Bootstrap; &S }
-    fn caller_id(&self) -> &PluginId { static P: std::sync::LazyLock<PluginId> = std::sync::LazyLock::new(|| PluginId("cap.http".into())); &P }
-    fn plugin_config(&self) -> Result<Value, String> { Ok(Value::Null) }
+    fn resolve_cap(&self, _id: &CapabilityId) -> Result<Value, String> {
+        Err("n/a".into())
+    }
+    fn storage(&self) -> Result<&dyn Storage, String> {
+        Err("n/a".into())
+    }
+    fn check_permission(&self, _req: &PermissionRequest) -> Result<PermissionVerdict, String> {
+        Ok(PermissionVerdict::Allow)
+    }
+    fn source(&self) -> &Source {
+        static S: Source = Source::Bootstrap;
+        &S
+    }
+    fn caller_id(&self) -> &PluginId {
+        static P: std::sync::LazyLock<PluginId> =
+            std::sync::LazyLock::new(|| PluginId("cap.http".into()));
+        &P
+    }
+    fn plugin_config(&self) -> Result<Value, String> {
+        Ok(Value::Null)
+    }
 }
 
 fn main() {
@@ -53,28 +71,42 @@ async fn run() {
     let ctx = Ctx;
 
     // 1. ping
-    let r = cap.invoke(serde_json::json!({"action": "ping"}), &ctx).expect("ping ok");
+    let r = cap
+        .invoke(serde_json::json!({"action": "ping"}), &ctx)
+        .expect("ping ok");
     println!("[ping]      => {r}");
 
-    // 2. SSRF 校验（走 invoke 前校验，应报错）
-    //    localhost / 127.0.0.0/8 / ::1 已放行（本机 dev server 场景），
-    //    保留网段（私网/链路本地/未指定）+ 非 http(s) 协议仍拒绝。
-    for bad in ["http://169.254.169.254/latest/meta-data/", "http://10.0.0.1/x", "http://192.168.1.1/x", "http://0.0.0.0/", "file:///etc/passwd"] {
-        let r = cap.invoke(serde_json::json!({"action":"request","method":"GET","url":bad}), &ctx);
-        println!("[ssrf]  {bad:<45} => {:?}", r.map(|_| "UNEXPECTED ALLOW".to_string()).unwrap_err());
+    // 2. 目标校验（已完全放开）：http/https 任意目标（含内网/元数据/内部域名）均放行；
+    //    仅非 http(s) 协议仍拒绝（reqwest 不支持，非"限制"）。
+    for bad in ["file:///etc/passwd", "gopher://x", "ftp://example.com"] {
+        let r = cap.invoke(
+            serde_json::json!({"action":"request","method":"GET","url":bad}),
+            &ctx,
+        );
+        println!(
+            "[scheme] {bad:<45} => {:?}",
+            r.map(|_| "UNEXPECTED ALLOW".to_string()).unwrap_err()
+        );
     }
 
-    // 2b. 回环地址已放行（应通过 SSRF 校验；后续可能因端口无人监听报错，
-    //     但错误信息应是「连接失败」而不是「内部域名/内网地址不可转发」）
-    for ok_url in ["http://localhost:9/x", "http://127.0.0.1:9/x"] {
-        let r = cap.invoke(serde_json::json!({"action":"request","method":"GET","url":ok_url,"timeoutMs":2000}), &ctx);
+    // 2b. 本机地址已放行：应通过校验进入实际转发；端口无人监听时错误应为
+    //     「连接失败」类网络错误，绝不是「不可转发」类校验拦截。
+    for ok_url in [
+        "http://localhost:9/x",
+        "http://127.0.0.1:9/x",
+        "http://10.0.0.1/x",
+    ] {
+        let r = cap.invoke(
+            serde_json::json!({"action":"request","method":"GET","url":ok_url,"timeoutMs":2000}),
+            &ctx,
+        );
         match r {
-            Ok(v) => println!("[loop]  {ok_url:<30} => status={}", v["status"]),
+            Ok(v) => println!("[any]   {ok_url:<30} => status={}", v["status"]),
             Err(e) => {
-                // 允许网络层错误（端口 9 通常无人监听），但绝不能是 SSRF 拦截错误
+                // 允许网络层错误（端口 9 等通常无人监听），但绝不能是校验拦截错误
                 let denied = e.contains("不可转发") || e.contains("内部域名");
-                assert!(!denied, "回环地址不应被 SSRF 拦截，但收到: {e}");
-                println!("[loop]  {ok_url:<30} => 网络层错误(预期): {e}");
+                assert!(!denied, "目标不应被校验拦截，但收到: {e}");
+                println!("[any]   {ok_url:<30} => 网络层错误(预期): {e}");
             }
         }
     }
@@ -83,14 +115,20 @@ async fn run() {
     let r = cap.invoke(serde_json::json!({
         "action":"request","method":"GET","url":"https://jsonplaceholder.typicode.com/todos/1","timeoutMs":10000
     }), &ctx).expect("GET ok");
-    println!("[get]   status={} ok={} body={}", r["status"], r["ok"], r["body"]);
+    println!(
+        "[get]   status={} ok={} body={}",
+        r["status"], r["ok"], r["body"]
+    );
 
     // 4. 真实 POST（JSON body + Content-Type 自动补）
     let r = cap.invoke(serde_json::json!({
         "action":"request","method":"POST","url":"https://jsonplaceholder.typicode.com/posts",
         "body":"{\"title\":\"cap-http\",\"body\":\"t\",\"userId\":1}","bodyType":"json","timeoutMs":10000
     }), &ctx).expect("POST ok");
-    println!("[post]  status={} ok={} body={}", r["status"], r["ok"], r["body"]);
+    println!(
+        "[post]  status={} ok={} body={}",
+        r["status"], r["ok"], r["body"]
+    );
 
     // 5. 二进制 base64（GitHub avatar，image/png）
     let r = cap.invoke(serde_json::json!({
@@ -98,7 +136,13 @@ async fn run() {
     }), &ctx).expect("bin ok");
     let is_b64 = r["isBase64"].as_bool().unwrap_or(false);
     let body = r["body"].as_str().unwrap_or("");
-    println!("[bin]   status={} isBase64={} len={} ct={}", r["status"], is_b64, body.len(), r["contentType"]);
+    println!(
+        "[bin]   status={} isBase64={} len={} ct={}",
+        r["status"],
+        is_b64,
+        body.len(),
+        r["contentType"]
+    );
 
     println!("\n✓ cap.http 冒烟验证完成（若网络可用则以上均有真实响应）");
 }

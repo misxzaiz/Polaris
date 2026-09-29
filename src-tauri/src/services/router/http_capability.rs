@@ -31,36 +31,22 @@
 //! JSON 无法携带原始字节，二进制内容（image/*、octet-stream 等）经 base64 编码
 //! 返回，`isBase64: true` 标记，前端解码后构造 blobUrl。
 //!
-//! # 安全（SSRF 防御）
+//! # 目标校验（已完全放开）
 //!
-//! `validate_target` 拒绝向以下目标发起转发，防服务端请求伪造：
-//! - 云元数据 169.254.169.254（AWS/GCP/Azure 凭证）
-//! - RFC1918 私网段（10/8、172.16/12、192.168/16）
-//! - `.local` / `.internal` 内部域名后缀
-//! - `file:` / `gopher:` 等非 http(s) 协议
+//! `validate_target` 仅保留两条硬性约束：
+//! - 协议必须是 http/https（`reqwest::Url` 要求）
+//! - URL 必须含 host
 //!
-//! 补充防线：`validate_host_candidates` 对 DNS 解析结果逐一校验（防域名级
-//! DNS-rebinding——域名合法但解析到内网）。
+//! 曾经的 SSRF 防御（内网/回环/元数据/保留段/内部域名后缀/DNS rebinding）
+//! 已**全部移除**：本能力供本地面板（Bootstrap）与本地 AI（Plugin）使用，
+//! 调用方均为本机可信进程，无匿名远程面；放开后可转发任何目标，
+//! 包括 localhost / 127.0.0.0-8 / 私网 / 云元数据等。
 //!
-//! **本地开发豁免**：`localhost` / `127.0.0.0/8` / `::1` 属本机回环地址，
-//! 开发者常需调用本机 dev server（FastAPI / Vite / webpack-dev-server 等），
-//! 已列入放行清单（`is_loopback()` 允许）。回环地址不路由到外部网络，
-//! 不构成传统 SSRF 面。
-//!
-//! **DNS rebinding 防线（保留）**：仅**显式回环 host**（`localhost`、
-//! `127.0.0.0/8`、`::1`）跳过 IP 校验；其余 host 仍要求所有 DNS 解析出的
-//! 候选 IP 都通过 `validate_ip`。这样 `foo.evil.com` 若解析到 `127.0.0.1`
-//! 仍会被拒（防 rebinding）。
-//!
-//! `0.0.0.0` / `::` 仍拒绝（语义模糊、易被反向代理误监听），请显式用
-//! `127.0.0.1` 或 `[::1]`。
-//!
-//! 注：仅作为兜底；面板（Bootstrap）走主窗口调用、AI 走 Plugin source，
-//! 均非 Remote 匿名通道。Web/移动端若放开 cap.http 白名单，本校验是第一道闸。
+//! ⚠ 风险提示：若未来对 `Source::Remote` 开放白名单，本能力将直接暴露
+//! SSRF 攻击面（可打内网、读云元数据凭证），须重新引入目标校验。
 
 use crate::contracts::{Capability, CapabilityId, Context, Value};
 use base64::Engine as _;
-use std::net::ToSocketAddrs;
 
 const CAP_ID: &str = "cap.http";
 
@@ -95,14 +81,13 @@ impl HttpCapability {
         rt.block_on(f)
     }
 
-    /// SSRF 校验：目标 URL 必须可转发。
+    /// 目标 URL 基本校验（不设 SSRF 限制）。
     ///
-    /// 校验点：
+    /// 仅校验：
     /// 1. 协议必须 http/https
-    /// 2. 主机必须是合法域名/IP，且非保留网段/元数据/内部后缀
+    /// 2. host 非空
     fn validate_target(url: &str) -> Result<(), String> {
-        let parsed = reqwest::Url::parse(url)
-            .map_err(|e| format!("URL 解析失败: {e}"))?;
+        let parsed = reqwest::Url::parse(url).map_err(|e| format!("URL 解析失败: {e}"))?;
         match parsed.scheme() {
             "http" | "https" => {}
             other => return Err(format!("cap.http 仅支持 http/https，收到 {other:?}")),
@@ -111,99 +96,8 @@ impl HttpCapability {
         if host.is_empty() {
             return Err("URL 缺少 host".into());
         }
-        // 内部域名后缀
-        let lower = host.to_ascii_lowercase();
-        for suffix in [".local", ".internal", ".localhost"] {
-            if lower == suffix.trim_start_matches('.') || lower.ends_with(suffix) {
-                return Err(format!("内部域名不可转发: {host}"));
-            }
-        }
-
-        // 回环豁免：显式回环 host（localhost / 127.x.x.x / ::1）直接放行。
-        // 用 host 名判断而非"任意一个解析 IP 是 loopback"，避免 DNS rebinding
-        // （攻击者控制 foo.evil.com 让它解析到 127.0.0.1）绕过。
-        if is_loopback_host(host) {
-            return Ok(());
-        }
-
-        // 解析所有候选 IP（含 DNS-rebinding 场景的每个结果）
-        if let Ok(addrs) = dns_lookup(host) {
-            for ip in addrs {
-                Self::validate_ip(&ip, host)?;
-            }
-        } else if !is_domain_like(host) {
-            // 非域名（裸 IP）且 DNS 解析失败 → 走 IP 字面量校验
-            if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-                Self::validate_ip(&ip, host)?;
-            }
-        }
         Ok(())
     }
-
-    /// 校验单个 IP 是否为目标可转发地址
-    fn validate_ip(ip: &std::net::IpAddr, host: &str) -> Result<(), String> {
-        match ip {
-            std::net::IpAddr::V4(v4) => {
-                // 注意：loopback 在此仍拒绝——字面量 loopback host 由
-                // `is_loopback_host` 在 `validate_target` 入口短路放行；
-                // DNS 解析到 loopback 的外来域名（rebinding）在此被拦住。
-                if v4.is_loopback()
-                    || v4.is_private()
-                    || v4.is_link_local()
-                    || v4.is_unspecified()
-                {
-                    return Err(format!("内网/保留地址不可转发: {host} ({ip})"));
-                }
-                // 云元数据 169.254.169.254 属 link-local，已覆盖
-            }
-            std::net::IpAddr::V6(v6) => {
-                if v6.is_loopback() || v6.is_unspecified() {
-                    return Err(format!("内网/保留地址不可转发: {host} ({ip})"));
-                }
-                // IPv6 私网（ULA fc00::/7）与链路本地 fe80::/10 也拒绝
-                if (v6.segments()[0] & 0xfe00) == 0xfc00 {
-                    return Err(format!("IPv6 私网地址不可转发: {host} ({ip})"));
-                }
-                if (v6.segments()[0] & 0xffc0) == 0xfe80 {
-                    return Err(format!("IPv6 链路本地不可转发: {host} ({ip})"));
-                }
-            }
-        }
-        Ok(())
-    }
-}
-
-/// 域名形态判断（粗判：含字母/连字符且非纯 IP）
-fn is_domain_like(host: &str) -> bool {
-    host.parse::<std::net::IpAddr>().is_err()
-}
-
-/// 显式回环 host 判断（`localhost`、`127.0.0.0/8`、`::1`）。
-///
-/// 仅当 host 字面量本身可识别为回环才返回 true——用于放行本机 dev server，
-/// 不走"DNS 解析后 IP 校验"路径（避免 DNS rebinding 绕过）。
-fn is_loopback_host(host: &str) -> bool {
-    if host == "localhost" {
-        return true;
-    }
-    if let Ok(ip) = host.parse::<std::net::IpAddr>() {
-        match ip {
-            std::net::IpAddr::V4(v4) => v4.is_loopback(),
-            std::net::IpAddr::V6(v6) => v6.is_loopback(),
-        }
-    } else {
-        false
-    }
-}
-
-/// 简易 DNS 解析（to_socket_addrs 同步包装；SSRF 校验场景够用）
-fn dns_lookup(host: &str) -> std::io::Result<Vec<std::net::IpAddr>> {
-    let port = 80u16;
-    let addrs = (host, port).to_socket_addrs()?;
-    Ok(addrs
-        .into_iter()
-        .map(|a| a.ip())
-        .collect::<Vec<_>>())
 }
 
 impl Capability for HttpCapability {
@@ -319,10 +213,7 @@ impl HttpCapability {
             match body_type {
                 "json" => {
                     if !has_ct {
-                        builder = builder.header(
-                            reqwest::header::CONTENT_TYPE,
-                            "application/json",
-                        );
+                        builder = builder.header(reqwest::header::CONTENT_TYPE, "application/json");
                     }
                 }
                 "form" => {
@@ -345,10 +236,7 @@ impl HttpCapability {
             .map_err(|e| format!("cap.http 请求失败: {e}"))?;
 
         let status = resp.status();
-        let status_text = status
-            .canonical_reason()
-            .unwrap_or("")
-            .to_string();
+        let status_text = status.canonical_reason().unwrap_or("").to_string();
         let content_type = resp
             .headers()
             .get(reqwest::header::CONTENT_TYPE)
@@ -360,8 +248,11 @@ impl HttpCapability {
         let mut resp_headers = serde_json::Map::new();
         for (k, v) in resp.headers() {
             let name = k.as_str().to_ascii_lowercase();
-            if name == "set-cookie" || name == "connection" || name == "transfer-encoding"
-                || name == "keep-alive" || name == "content-length"
+            if name == "set-cookie"
+                || name == "connection"
+                || name == "transfer-encoding"
+                || name == "keep-alive"
+                || name == "content-length"
             {
                 continue;
             }
@@ -398,7 +289,10 @@ impl HttpCapability {
         }
 
         let (body_out, is_base64) = if is_bin {
-            (base64::engine::general_purpose::STANDARD.encode(&bytes), true)
+            (
+                base64::engine::general_purpose::STANDARD.encode(&bytes),
+                true,
+            )
         } else {
             (String::from_utf8_lossy(&bytes).to_string(), false)
         };
@@ -421,93 +315,45 @@ impl HttpCapability {
 mod tests {
     use super::*;
 
-    // ---------- SSRF 校验 ----------
+    // ---------- 目标校验（已完全放开：仅协议 + host 非空） ----------
 
     #[test]
-    fn allow_loopback_hosts() {
-        // 本机回环地址已放行：开发者常需调用本机 dev server（FastAPI/Vite 等）。
+    fn any_scheme_http_targets_pass() {
+        // 所有 http/https 目标（含回环/私网/元数据/内部域名后缀）一律放行
         for url in [
             "http://localhost:9860/foo",
             "http://127.0.0.1:8080/",
             "http://127.8.8.8/",
             "http://[::1]:8080/",
-        ] {
-            assert!(HttpCapability::validate_target(url).is_ok(), "应放行 {url}");
-        }
-    }
-
-    fn reject_unspecified_host() {
-        // 0.0.0.0 / :: 语义模糊（Windows 上等价 localhost，但常被反向代理误监听），
-        // 显式拒绝，要求使用 127.0.0.1 或 [::1]。
-        assert!(HttpCapability::validate_target("http://0.0.0.0/").is_err());
-        assert!(HttpCapability::validate_target("http://[::]/").is_err());
-    }
-
-    #[test]
-    fn reject_private_ranges() {
-        for url in [
+            "http://0.0.0.0/",
             "http://10.0.0.1/x",
             "http://172.16.0.1/x",
-            "http://172.32.0.1/x", // 172.16/12 之外（合法，应放行）
             "http://192.168.1.1/x",
-        ] {
-            let expect_deny = url.contains("172.32") == false;
-            assert_eq!(
-                HttpCapability::validate_target(url).is_err(),
-                expect_deny,
-                "{} 判定与预期不符",
-                url
-            );
-        }
-    }
-
-    #[test]
-    fn reject_cloud_metadata() {
-        // 169.254.169.254（AWS/GCP/Azure 元数据）属 link-local，必拒
-        assert!(HttpCapability::validate_target("http://169.254.169.254/latest/meta-data/").is_err());
-    }
-
-    #[test]
-    fn reject_internal_domains() {
-        for url in ["http://db.internal/x", "http://svc.local/x", "http://foo.localhost/x"] {
-            assert!(HttpCapability::validate_target(url).is_err(), "应拒绝 {url}");
-        }
-    }
-
-    #[test]
-    fn is_loopback_host_matches_literal_only() {
-        // 字面量 loopback：直接匹配
-        for h in ["localhost", "127.0.0.1", "127.8.8.8", "::1"] {
-            assert!(is_loopback_host(h), "应识别 {h}");
-        }
-        // 非字面量：不匹配（走 DNS + validate_ip 路径，DNS 层仍会拦）
-        for h in ["foo.evil.com", "sub.localhost", "db.internal", "svc.local"] {
-            assert!(!is_loopback_host(h), "不应识别 {h}");
-        }
-        // 未指定地址：不匹配
-        for h in ["0.0.0.0", "::"] {
-            assert!(!is_loopback_host(h), "不应识别 {h}");
-        }
-    }
-
-    #[test]
-    fn reject_non_http_schemes() {
-        for url in ["file:///etc/passwd", "gopher://x", "ftp://example.com"] {
-            assert!(HttpCapability::validate_target(url).is_err(), "应拒绝 {url}");
-        }
-    }
-
-    #[test]
-    fn allow_public_targets() {
-        for url in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://db.internal/x",
+            "http://svc.local/x",
+            "http://foo.localhost/x",
             "https://jsonplaceholder.typicode.com/users",
             "https://api.github.com/repos/rust-lang/rust",
             "http://example.com/",
-            // 回环地址（本机 dev server 场景）
-            "http://localhost:9000/api/anything",
-            "http://127.0.0.1:3000/",
         ] {
             assert!(HttpCapability::validate_target(url).is_ok(), "应放行 {url}");
+        }
+    }
+
+    #[test]
+    fn non_http_schemes_still_rejected() {
+        // 非 http/https 协议仍拒（reqwest 无法表示，非"限制"而是不支持）
+        for url in [
+            "file:///etc/passwd",
+            "gopher://x",
+            "ftp://example.com",
+            "data:text/plain,hi",
+        ] {
+            assert!(
+                HttpCapability::validate_target(url).is_err(),
+                "应拒绝 {url}"
+            );
         }
     }
 

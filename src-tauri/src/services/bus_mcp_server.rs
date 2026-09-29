@@ -24,9 +24,7 @@ use std::sync::Arc;
 
 use serde_json::{json, Value};
 
-use crate::contracts::{
-    CapabilityId, Envelope, MsgId, PluginId, Router as _, Source, TraceId,
-};
+use crate::contracts::{CapabilityId, Envelope, MsgId, PluginId, Router as _, Source, TraceId};
 use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::router::{
@@ -260,7 +258,9 @@ fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
         trace: TraceId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
     };
 
-    let reply = router.dispatch(env).map_err(|e| AppError::ProcessError(e))?;
+    let reply = router
+        .dispatch(env)
+        .map_err(|e| AppError::ProcessError(e))?;
     match reply.result {
         Ok(value) => Ok(tool_text(&value.to_string())),
         Err(err) => Ok(tool_error(err)),
@@ -299,7 +299,7 @@ fn handle_bus_help(router: &RouterBus) -> Value {
               "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）；主应用亦经 cap_dispatch 触达" },
             { "domain": "http", "capability": "cap.http", "入口": "bus_dispatch / 主应用 dispatch（面板）",
               "协议": "{ action: request|ping, request: { method, url, headers?, body?, bodyType?, timeoutMs? } } → { status, statusText, ok, contentType, headers, body, isBase64, timeMs }",
-              "状态": "✅ bus_dispatch 可用；SSRF 内建校验（拒内网/元数据；localhost/127.0.0.0-8/::1 已放行供本机 dev server 使用）；二进制响应 base64；Remote 策略 deny（本地面板与 AI 均可用）" },
+              "状态": "✅ bus_dispatch 可用；目标校验已完全放开（http/https 任意目标可转发，含内网/localhost）；二进制响应 base64；Remote 策略 deny（本地面板与 AI 均可用）" },
             { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
@@ -326,7 +326,7 @@ fn handle_bus_help(router: &RouterBus) -> Value {
             "cap.http": {
                 "ping":    { "参数": {}, "返回": "{ pong: true }" },
                 "request": { "参数": { "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）", "url": "string（必填，仅 http/https）", "headers": "{ k: v }（可含 Cookie/UA/Referer 等浏览器禁发头——宿主转发不受浏览器限制）", "body": "string?", "bodyType": "text|json|form|binary?", "timeoutMs": "number?（默认 15000）" }, "返回": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }" },
-                "边界": "SSRF 内建校验：拒云元数据 169.254.169.254、RFC1918 私网（10/172.16/192.168）、.local/.internal/.localhost 域名、0.0.0.0/::、非 http(s) 协议；放行 localhost / 127.0.0.0-8 / [::1]（本机 dev server 场景）。二进制响应（image/* 等）base64 编码返回（isBase64:true）。Remote 来源策略 deny，仅本地面板/AI 可用。"
+                "边界": "目标校验已完全放开：http/https 任意目标可转发（含 localhost / 内网 / 云元数据等）；仅非 http(s) 协议拒绝。二进制响应（image/* 等）base64 编码返回（isBase64:true）。Remote 来源策略 deny，仅本地面板/AI 可用。"
             }
         },
         "usage_examples": [
