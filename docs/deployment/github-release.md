@@ -1151,3 +1151,33 @@ cd polaris-web
 - chore: 版本号 10.5.7 → 10.5.8
 
 > **注**：由于 v10.5.7 未产出桌面端安装包，v10.5.8 是首个实际包含 session-v2 会话体系重构桌面端产物的版本。桌面端用户请直接安装 v10.5.8。
+
+---
+
+## v10.5.9 构建记录
+
+**构建时间**: 2026-09-29 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.5.9
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.5.9_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.5.9_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.5.9_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.5.9-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.5.9_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.5.9-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.5.9-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.5.9-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.5.9.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(http): cap.http 放行本机回环地址以支持本地 dev server — validate_target 增加 is_loopback_host 字面量短路（localhost / 127.0.0.0-8 / ::1 直接放行）；validate_ip 保留 loopback 拒绝防 DNS rebinding；0.0.0.0 / :: 仍拒绝（语义模糊，请显式用 127.0.0.1 / [::1]）；同步新增 allow_loopback_hosts / reject_unspecified_host / is_loopback_host_matches_literal_only 单测 + cap_http_check 冒烟脚本 SSRF 用例更新
+- docs: 修正 v10.5.8 构建记录日期为 UTC 口径
