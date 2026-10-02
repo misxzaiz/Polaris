@@ -1,0 +1,640 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+<!--[if IE 6]><html class="ie6" xmlns="http://www.w3.org/1999/xhtml"><![endif]-->
+<!--[if IE 7]><html class="lt-ie8 lt-ie9" xmlns="http://www.w3.org/1999/xhtml"><![endif]-->
+<!--[if IE 8]><html class="lt-ie9" xmlns="http://www.w3.org/1999/xhtml"><![endif]-->
+<!--[if gt IE 8]><!--><html xmlns="http://www.w3.org/1999/xhtml"><!--<![endif]-->
+<head>
+  <meta http-equiv="content-type" content="text/html; charset=UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=1" />
+  <meta name="referrer" content="origin" />
+  <meta name="HandheldFriendly" content="true" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>claude code run background server command hangs how to start at DuckDuckGo</title>
+  <link title="DuckDuckGo (HTML)" type="application/opensearchdescription+xml" rel="search" href="//duckduckgo.com/opensearch_html_v2.xml" />
+  <link href="//duckduckgo.com/favicon.ico" rel="shortcut icon" />
+  <link rel="icon" href="//duckduckgo.com/favicon.ico" type="image/x-icon" />
+  <link id="icon60" rel="apple-touch-icon" href="//duckduckgo.com/assets/icons/meta/DDG-iOS-icon_60x60.png?v=2"/>
+  <link id="icon76" rel="apple-touch-icon" sizes="76x76" href="//duckduckgo.com/assets/icons/meta/DDG-iOS-icon_76x76.png?v=2"/>
+  <link id="icon120" rel="apple-touch-icon" sizes="120x120" href="//duckduckgo.com/assets/icons/meta/DDG-iOS-icon_120x120.png?v=2"/>
+  <link id="icon152" rel="apple-touch-icon" sizes="152x152" href="//duckduckgo.com/assets/icons/meta/DDG-iOS-icon_152x152.png?v=2"/>
+  <link rel="image_src" href="//duckduckgo.com/assets/icons/meta/DDG-icon_256x256.png">
+  <link rel="stylesheet" media="handheld, all" href="//duckduckgo.com/dist/h.12e359033b8c1146e5f7.css" type="text/css"/>
+</head>
+
+<body class="body--html">
+  <a name="top" id="top"></a>
+
+  <form action="/html/" method="post">
+    <input type="text" name="state_hidden" id="state_hidden" />
+  </form>
+
+  <div>
+    <div class="site-wrapper-border"></div>
+
+    <div id="header" class="header cw header--html">
+      <a title="DuckDuckGo" href="/html/" class="header__logo-wrap"></a>
+
+      <form name="x" class="header__form" action="/html/" method="post">
+        <div class="search search--header">
+          <input name="q" autocomplete="off" class="search__input" id="search_form_input_homepage" type="text" value="claude code run background server command hangs how to start" />
+          <input name="b" id="search_button_homepage" class="search__button search__button--html" value="" title="Search" alt="Search" type="submit" />
+        </div>
+
+        
+        
+        
+        
+
+        <div class="frm__select">
+          <select name="kl">
+            
+              <option value="" >All Regions</option>
+            
+              <option value="ar-es" >Argentina</option>
+            
+              <option value="au-en" >Australia</option>
+            
+              <option value="at-de" >Austria</option>
+            
+              <option value="be-fr" >Belgium (fr)</option>
+            
+              <option value="be-nl" >Belgium (nl)</option>
+            
+              <option value="br-pt" >Brazil</option>
+            
+              <option value="bg-bg" >Bulgaria</option>
+            
+              <option value="ca-en" >Canada (en)</option>
+            
+              <option value="ca-fr" >Canada (fr)</option>
+            
+              <option value="ct-ca" >Catalonia</option>
+            
+              <option value="cl-es" >Chile</option>
+            
+              <option value="cn-zh" >China</option>
+            
+              <option value="co-es" >Colombia</option>
+            
+              <option value="hr-hr" >Croatia</option>
+            
+              <option value="cz-cs" >Czech Republic</option>
+            
+              <option value="dk-da" >Denmark</option>
+            
+              <option value="ee-et" >Estonia</option>
+            
+              <option value="fi-fi" >Finland</option>
+            
+              <option value="fr-fr" >France</option>
+            
+              <option value="de-de" >Germany</option>
+            
+              <option value="gr-el" >Greece</option>
+            
+              <option value="hk-tzh" >Hong Kong</option>
+            
+              <option value="hu-hu" >Hungary</option>
+            
+              <option value="is-is" >Iceland</option>
+            
+              <option value="in-en" >India (en)</option>
+            
+              <option value="id-en" >Indonesia (en)</option>
+            
+              <option value="ie-en" >Ireland</option>
+            
+              <option value="il-en" >Israel (en)</option>
+            
+              <option value="it-it" >Italy</option>
+            
+              <option value="jp-jp" >Japan</option>
+            
+              <option value="kr-kr" >Korea</option>
+            
+              <option value="lv-lv" >Latvia</option>
+            
+              <option value="lt-lt" >Lithuania</option>
+            
+              <option value="my-en" >Malaysia (en)</option>
+            
+              <option value="mx-es" >Mexico</option>
+            
+              <option value="nl-nl" >Netherlands</option>
+            
+              <option value="nz-en" >New Zealand</option>
+            
+              <option value="no-no" >Norway</option>
+            
+              <option value="pk-en" >Pakistan (en)</option>
+            
+              <option value="pe-es" >Peru</option>
+            
+              <option value="ph-en" >Philippines (en)</option>
+            
+              <option value="pl-pl" >Poland</option>
+            
+              <option value="pt-pt" >Portugal</option>
+            
+              <option value="ro-ro" >Romania</option>
+            
+              <option value="ru-ru" >Russia</option>
+            
+              <option value="xa-ar" >Saudi Arabia</option>
+            
+              <option value="sg-en" >Singapore</option>
+            
+              <option value="sk-sk" >Slovakia</option>
+            
+              <option value="sl-sl" >Slovenia</option>
+            
+              <option value="za-en" >South Africa</option>
+            
+              <option value="es-ca" >Spain (ca)</option>
+            
+              <option value="es-es" >Spain (es)</option>
+            
+              <option value="se-sv" >Sweden</option>
+            
+              <option value="ch-de" >Switzerland (de)</option>
+            
+              <option value="ch-fr" >Switzerland (fr)</option>
+            
+              <option value="tw-tzh" >Taiwan</option>
+            
+              <option value="th-en" >Thailand (en)</option>
+            
+              <option value="tr-tr" >Turkey</option>
+            
+              <option value="us-en" >US (English)</option>
+            
+              <option value="us-es" >US (Spanish)</option>
+            
+              <option value="ua-uk" >Ukraine</option>
+            
+              <option value="uk-en" >United Kingdom</option>
+            
+              <option value="vn-en" >Vietnam (en)</option>
+            
+          </select>
+        </div>
+
+        <div class="frm__select frm__select--last">
+          <select class="" name="df">
+            
+              <option value="" selected>Any Time</option>
+            
+              <option value="d" >Past Day</option>
+            
+              <option value="w" >Past Week</option>
+            
+              <option value="m" >Past Month</option>
+            
+              <option value="y" >Past Year</option>
+            
+          </select>
+        </div>
+      </form>
+    </div>
+
+    
+
+    
+      <!-- Web results are present -->
+      <div>
+        <div class="serp__results">
+          <div id="links" class="results">
+            
+
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fclaudelab.net%2Fen%2Farticles%2Fclaude%2Dcode%2Fclaude%2Dcode%2Dlong%2Drunning%2Dprocess%2Dhang%2Dfix&amp;rut=a33ea7361ceb8f7941fe315bd314b4ddf971d142f70685c8baeda7569fcafe55">Claude Code Bash Tool Hangs on `npm run dev` and `docker run` — How to ...</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fclaudelab.net%2Fen%2Farticles%2Fclaude%2Dcode%2Fclaude%2Dcode%2Dlong%2Drunning%2Dprocess%2Dhang%2Dfix&amp;rut=a33ea7361ceb8f7941fe315bd314b4ddf971d142f70685c8baeda7569fcafe55">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/claudelab.net.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fclaudelab.net%2Fen%2Farticles%2Fclaude%2Dcode%2Fclaude%2Dcode%2Dlong%2Drunning%2Dprocess%2Dhang%2Dfix&amp;rut=a33ea7361ceb8f7941fe315bd314b4ddf971d142f70685c8baeda7569fcafe55">
+                            claudelab.net/en/articles/claude-code/claude-code-long-running-process-hang-fix
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-05-13T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fclaudelab.net%2Fen%2Farticles%2Fclaude%2Dcode%2Fclaude%2Dcode%2Dlong%2Drunning%2Dprocess%2Dhang%2Dfix&amp;rut=a33ea7361ceb8f7941fe315bd314b4ddf971d142f70685c8baeda7569fcafe55"><b>Claude</b> <b>Code&#x27;s</b> Bash tool freezes when running npm <b>run</b> dev, docker <b>run</b>, or other long-running processes. Learn <b>background</b> execution patterns, timeout strategies, and process management best practices.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Finventivehq.com%2Fknowledge%2Dbase%2Fclaude%2Fhow%2Dto%2Dfix%2Dfreezing%2Dissues&amp;rut=e9b79f19198bc7c7d9cb89a5fc865b460673b69f4d5751bc0098a5c49fafd26c">Claude Code Stuck? Fix Every Frozen State (Responding, Tool Calls ...</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Finventivehq.com%2Fknowledge%2Dbase%2Fclaude%2Fhow%2Dto%2Dfix%2Dfreezing%2Dissues&amp;rut=e9b79f19198bc7c7d9cb89a5fc865b460673b69f4d5751bc0098a5c49fafd26c">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/inventivehq.com.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Finventivehq.com%2Fknowledge%2Dbase%2Fclaude%2Fhow%2Dto%2Dfix%2Dfreezing%2Dissues&amp;rut=e9b79f19198bc7c7d9cb89a5fc865b460673b69f4d5751bc0098a5c49fafd26c">
+                            inventivehq.com/knowledge-base/claude/how-to-fix-freezing-issues
+                          </a>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Finventivehq.com%2Fknowledge%2Dbase%2Fclaude%2Fhow%2Dto%2Dfix%2Dfreezing%2Dissues&amp;rut=e9b79f19198bc7c7d9cb89a5fc865b460673b69f4d5751bc0098a5c49fafd26c"><b>Claude</b> <b>Code</b> stuck and not responding? Fix every stuck state: &quot;running in the <b>background</b>&quot;, stuck mid-tool-call, stuck at startup, frozen terminal, and hung…</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgrind.com%2Fblog%2Frun%2Dclaude%2Dcode%2Din%2Dthe%2Dbackground%2F&amp;rut=64ad6cd442fe4e7a9a9cf8dbabf5af8c0a6741abcab68c3b875c80fb99a994b8">Can Claude Code Run in the Background? Yes — 3 Ways</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgrind.com%2Fblog%2Frun%2Dclaude%2Dcode%2Din%2Dthe%2Dbackground%2F&amp;rut=64ad6cd442fe4e7a9a9cf8dbabf5af8c0a6741abcab68c3b875c80fb99a994b8">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/backgrind.com.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgrind.com%2Fblog%2Frun%2Dclaude%2Dcode%2Din%2Dthe%2Dbackground%2F&amp;rut=64ad6cd442fe4e7a9a9cf8dbabf5af8c0a6741abcab68c3b875c80fb99a994b8">
+                            backgrind.com/blog/run-claude-code-in-the-background/
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-06-14T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgrind.com%2Fblog%2Frun%2Dclaude%2Dcode%2Din%2Dthe%2Dbackground%2F&amp;rut=64ad6cd442fe4e7a9a9cf8dbabf5af8c0a6741abcab68c3b875c80fb99a994b8">The /<b>background</b> <b>command</b> (alias /bg) detaches a whole session to keep working as a <b>background</b> agent, long <b>commands</b> can <b>run</b> in the <b>background</b> inside a session, and headless mode (<b>claude</b> -p) <b>runs</b> with no terminal at all.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgroundclaude.com%2Fblog%2Fbackground%2Dcommands&amp;rut=a44f640b263114db116cc0fece4b07635409f5cbc094ab1e7ebae7d2825eaa0e">Claude Code background commands: Ctrl+B, auto-cleanup, and the 5GB ...</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgroundclaude.com%2Fblog%2Fbackground%2Dcommands&amp;rut=a44f640b263114db116cc0fece4b07635409f5cbc094ab1e7ebae7d2825eaa0e">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/backgroundclaude.com.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgroundclaude.com%2Fblog%2Fbackground%2Dcommands&amp;rut=a44f640b263114db116cc0fece4b07635409f5cbc094ab1e7ebae7d2825eaa0e">
+                            backgroundclaude.com/blog/background-commands
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-04-14T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbackgroundclaude.com%2Fblog%2Fbackground%2Dcommands&amp;rut=a44f640b263114db116cc0fece4b07635409f5cbc094ab1e7ebae7d2825eaa0e"><b>Claude</b> <b>Code</b> can <b>run</b> bash <b>commands</b> in the <b>background</b> — dev <b>servers</b>, build watchers, test runners. A field guide to Ctrl+B, the unique task IDs, <b>how</b> output retrieval works, and the edge cases (5GB cap, auto-cleanup on exit, the env var that kills the feature).</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.openhelm.ai%2Fblog%2Fwhy%2Dclaude%2Dcode%2Dhangs%2Dprevention%2Dguide&amp;rut=ce97ed2fb04d9153d2c56e4e6259375a539c6b8c82fa738fa3094c1d7412ef3b">Why Claude Code Hangs and How to Stop It | OpenHelm</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.openhelm.ai%2Fblog%2Fwhy%2Dclaude%2Dcode%2Dhangs%2Dprevention%2Dguide&amp;rut=ce97ed2fb04d9153d2c56e4e6259375a539c6b8c82fa738fa3094c1d7412ef3b">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/www.openhelm.ai.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.openhelm.ai%2Fblog%2Fwhy%2Dclaude%2Dcode%2Dhangs%2Dprevention%2Dguide&amp;rut=ce97ed2fb04d9153d2c56e4e6259375a539c6b8c82fa738fa3094c1d7412ef3b">
+                            www.openhelm.ai/blog/why-claude-code-hangs-prevention-guide
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-04-15T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.openhelm.ai%2Fblog%2Fwhy%2Dclaude%2Dcode%2Dhangs%2Dprevention%2Dguide&amp;rut=ce97ed2fb04d9153d2c56e4e6259375a539c6b8c82fa738fa3094c1d7412ef3b"><b>Claude</b> <b>Code</b> <b>hangs</b> when running unattended jobs. Learn the root causes-input loops, API timeouts, zombie processes-and <b>how</b> OpenHelm&#x27;s silence detection prevents silent failures.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flikeone.ai%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks%2Dguide%2D2026%2F&amp;rut=a366a6107088a2a6822957fb8fcd3bb72739fb7ded3f5592112d7dc100ec1ee8">Claude Code Background Tasks Guide (2026) - Like One</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flikeone.ai%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks%2Dguide%2D2026%2F&amp;rut=a366a6107088a2a6822957fb8fcd3bb72739fb7ded3f5592112d7dc100ec1ee8">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/likeone.ai.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flikeone.ai%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks%2Dguide%2D2026%2F&amp;rut=a366a6107088a2a6822957fb8fcd3bb72739fb7ded3f5592112d7dc100ec1ee8">
+                            likeone.ai/blog/claude-code-background-tasks-guide-2026/
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-07-19T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Flikeone.ai%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks%2Dguide%2D2026%2F&amp;rut=a366a6107088a2a6822957fb8fcd3bb72739fb7ded3f5592112d7dc100ec1ee8"><b>Run</b> long <b>commands</b> without freezing the session: <b>how</b> <b>Claude</b> <b>Code&#x27;s</b> run_in_background works, when to use it, and <b>how</b> <b>to</b> read output later.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenhelm.ai%2Fblog%2Fclaude%2Dcode%2Dsession%2Dhanging&amp;rut=39a079c7fbab7be0b4ce3c60f78e6d667b91844ef07cf08eb473c6b81e2da3f3">Why Claude Code Hangs (and How to Stop It) - openhelm.ai</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenhelm.ai%2Fblog%2Fclaude%2Dcode%2Dsession%2Dhanging&amp;rut=39a079c7fbab7be0b4ce3c60f78e6d667b91844ef07cf08eb473c6b81e2da3f3">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/openhelm.ai.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenhelm.ai%2Fblog%2Fclaude%2Dcode%2Dsession%2Dhanging&amp;rut=39a079c7fbab7be0b4ce3c60f78e6d667b91844ef07cf08eb473c6b81e2da3f3">
+                            openhelm.ai/blog/claude-code-session-hanging
+                          </a>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fopenhelm.ai%2Fblog%2Fclaude%2Dcode%2Dsession%2Dhanging&amp;rut=39a079c7fbab7be0b4ce3c60f78e6d667b91844ef07cf08eb473c6b81e2da3f3">A practical guide to why <b>Claude</b> <b>Code</b> sessions get stuck in headless and scheduled <b>runs</b>, and the techniques that actually prevent it.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcode.claude.com%2Fdocs%2Fen%2Ftroubleshooting&amp;rut=d9278256358cfdcf9a6732e4696ef7e9f3307b5ae5e02b0e972755991cf9f3e4">Troubleshooting - Claude Code Docs</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcode.claude.com%2Fdocs%2Fen%2Ftroubleshooting&amp;rut=d9278256358cfdcf9a6732e4696ef7e9f3307b5ae5e02b0e972755991cf9f3e4">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/code.claude.com.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcode.claude.com%2Fdocs%2Fen%2Ftroubleshooting&amp;rut=d9278256358cfdcf9a6732e4696ef7e9f3307b5ae5e02b0e972755991cf9f3e4">
+                            code.claude.com/docs/en/troubleshooting
+                          </a>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcode.claude.com%2Fdocs%2Fen%2Ftroubleshooting&amp;rut=d9278256358cfdcf9a6732e4696ef7e9f3307b5ae5e02b0e972755991cf9f3e4">Fix high CPU or memory usage, <b>hangs</b>, auto-compact thrashing, and search problems in <b>Claude</b> <b>Code</b>, and find the right page for other issues.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.aidonenow.com%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks&amp;rut=0fe183638f58cbe49e2c1584eaca53119340986e7a8149ed29073333b6184ac9">Claude Code Background Tasks: Run Long Commands Without Blocking Your ...</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.aidonenow.com%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks&amp;rut=0fe183638f58cbe49e2c1584eaca53119340986e7a8149ed29073333b6184ac9">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/www.aidonenow.com.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.aidonenow.com%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks&amp;rut=0fe183638f58cbe49e2c1584eaca53119340986e7a8149ed29073333b6184ac9">
+                            www.aidonenow.com/blog/claude-code-background-tasks
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-08-08T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fwww.aidonenow.com%2Fblog%2Fclaude%2Dcode%2Dbackground%2Dtasks&amp;rut=0fe183638f58cbe49e2c1584eaca53119340986e7a8149ed29073333b6184ac9"><b>How</b> <b>Claude</b> <b>Code</b> <b>background</b> tasks work: Ctrl+B, <b>background</b> subagents, the /tasks view, output limits, auto-cleanup rules, and knowing when a <b>run</b> finishes.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+              
+                <div class="result results_links results_links_deep web-result ">
+                  <div class="links_main links_deep result__body"> <!-- This is the visible part -->
+                    
+                      <h2 class="result__title">
+                        <a rel="nofollow" class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcrystl.dev%2Fblog%2Fclaude%2Dcode%2Dbackground%2F&amp;rut=0feb908a129153db50cb890945bee0a66766847c4877a36293054419a9ae106d">Running Claude Code in the Background: A Workflow Guide</a>
+                      </h2>
+
+                    
+
+                    
+                      <div class="result__extras">
+                        <div class="result__extras__url">
+                          <span class="result__icon">
+                            <a rel="nofollow" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcrystl.dev%2Fblog%2Fclaude%2Dcode%2Dbackground%2F&amp;rut=0feb908a129153db50cb890945bee0a66766847c4877a36293054419a9ae106d">
+                              <img class="result__icon__img" width="16" height="16" alt="" src="//external-content.duckduckgo.com/ip3/crystl.dev.ico" name="i15" />
+                            </a>
+                          </span>
+                          <a class="result__url" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcrystl.dev%2Fblog%2Fclaude%2Dcode%2Dbackground%2F&amp;rut=0feb908a129153db50cb890945bee0a66766847c4877a36293054419a9ae106d">
+                            crystl.dev/blog/claude-code-background/
+                          </a>
+                          
+                            <span>&nbsp; &nbsp; 2026-03-19T00:00:00.0000000</span>
+                          
+                        </div>
+                      </div>
+                    
+
+                    
+                      
+                        <a class="result__snippet" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fcrystl.dev%2Fblog%2Fclaude%2Dcode%2Dbackground%2F&amp;rut=0feb908a129153db50cb890945bee0a66766847c4877a36293054419a9ae106d"><b>How</b> <b>to</b> <b>run</b> <b>Claude</b> <b>Code</b> agents in the <b>background</b>, check their status, and structure tasks for async AI workflows.</a>
+                      
+                    
+
+                    <div class="clear"></div>
+                  </div>
+                </div>
+              
+            
+
+            
+              
+              
+                <div class="nav-link">
+                  <form action="/html/" method="post">
+                    <input type="submit" class='btn btn--alt' value="Next" />
+                    <input type="hidden" name="q" value="claude code run background server command hangs how to start" />
+                    <input type="hidden" name="s" value="10" />
+                    <input type="hidden" name="nextParams" value="" />
+                    <input type="hidden" name="v" value="l" />
+                    <input type="hidden" name="o" value="json" />
+                    <input type="hidden" name="dc" value="11" />
+                    <input type="hidden" name="api" value="d.js" />
+                    <input type="hidden" name="vqd" value="4-3338151525548840836503840110076357941" />
+
+                    
+                    
+                    
+                      <input name="kl" value="wt-wt" type="hidden" />
+                    
+                    
+                    
+                    
+                  </form>
+                </div>
+              
+            
+
+            <div class="feedback-btn">
+              <a rel="nofollow" href="//duckduckgo.com/feedback.html" target="_new">Feedback</a>
+            </div>
+            <div class="clear"></div>
+          </div>
+        </div>
+      </div> <!-- links wrapper //-->
+    
+  </div>
+
+  <div id="bottom_spacing2"></div>
+
+  
+    <img src="//duckduckgo.com/t/sl_h"/>
+  
+</body>
+</html>

@@ -1,0 +1,818 @@
+# Anthropic Developer Documentation
+
+This file provides an overview of the Anthropic API documentation and developer resources.
+
+## Root URL
+
+Claude Developer Platform Console (Requires login)
+
+https://platform.claude.com
+
+## Available Languages on Website
+
+The full documentation is available in the following languages on https://platform.claude.com/docs:
+
+- English (en) - 748 pages - /docs - Content included below
+- German (Deutsch) (de) - 265 pages - /docs/de - Visit website for content
+- Spanish (Español) (es) - 265 pages - /docs/es - Visit website for content
+- French (Français) (fr) - 265 pages - /docs/fr - Visit website for content
+- Italian (Italiano) (it) - 265 pages - /docs/it - Visit website for content
+- Japanese (日本語) (ja) - 265 pages - /docs/ja - Visit website for content
+- Korean (한국어) (ko) - 265 pages - /docs/ko - Visit website for content
+- Portuguese (Português) (pt-BR) - 265 pages - /docs/pt-BR - Visit website for content
+- Russian (Русский) (ru) - 265 pages - /docs/ru - Visit website for content
+- Chinese Simplified (简体中文) (zh-CN) - 265 pages - /docs/zh-CN - Visit website for content
+- Chinese Traditional (繁體中文) (zh-TW) - 265 pages - /docs/zh-TW - Visit website for content
+- Indonesian (Bahasa Indonesia) (id) - 265 pages - /docs/id - Visit website for content
+
+---
+
+## English
+
+### Docs home
+
+- [Documentation](https://platform.claude.com/docs/en/home.md)
+
+### Messages
+
+- [Overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview.md) - Agent Skills
+- [Features overview](https://platform.claude.com/docs/en/build-with-claude/overview.md)
+- [Quickstart](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/quickstart.md) - Get started with Agent Skills in the API
+- [Quickstart](https://platform.claude.com/docs/en/get-started.md) - Get started with Claude
+- [Intro to Claude](https://platform.claude.com/docs/en/intro.md)
+- [Overview](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/overview.md) - MCP tunnels
+- [Quickstart](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/quickstart.md) - MCP tunnels quickstart
+- [Overview](https://platform.claude.com/docs/en/agents-and-tools/tool-use/overview.md) - Tool use with Claude
+- [Advisor tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/advisor-tool.md)
+- [Architecture and components](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/concepts.md)
+- [Authentication](https://platform.claude.com/docs/en/manage-claude/authentication.md)
+- [Bash tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/bash-tool.md)
+- [Batch processing](https://platform.claude.com/docs/en/build-with-claude/batch-processing.md)
+- [Browser use tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/browser-use-tool.md)
+- [Build an orchestration mode](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-effort-example.md)
+- [Cache diagnostics](https://platform.claude.com/docs/en/build-with-claude/cache-diagnostics.md)
+- [Citations](https://platform.claude.com/docs/en/build-with-claude/citations.md)
+- [Amazon Bedrock (Opus 4.7 and later)](https://platform.claude.com/docs/en/build-with-claude/claude-in-amazon-bedrock.md) - Claude in Amazon Bedrock (Opus 4.7 and later)
+- [Microsoft Foundry](https://platform.claude.com/docs/en/build-with-claude/claude-in-microsoft-foundry.md) - Claude in Microsoft Foundry
+- [Amazon Bedrock (Opus 4.6 and earlier)](https://platform.claude.com/docs/en/build-with-claude/claude-on-amazon-bedrock-legacy.md) - Claude on Amazon Bedrock (Opus 4.6 and earlier)
+- [Google Cloud](https://platform.claude.com/docs/en/build-with-claude/claude-on-vertex-ai.md) - Claude on Google Cloud
+- [Claude Platform on AWS](https://platform.claude.com/docs/en/build-with-claude/claude-platform-on-aws.md)
+- [Code execution tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/code-execution-tool.md)
+- [Keep thinking blocks valid](https://platform.claude.com/docs/en/build-with-claude/compaction-thinking-blocks.md) - Compaction and preserved thinking
+- [Threshold compaction](https://platform.claude.com/docs/en/build-with-claude/compaction-threshold.md) - Compaction at a token threshold
+- [Compact in the background](https://platform.claude.com/docs/en/build-with-claude/compaction-background.md) - Compaction in the background
+- [Compact on demand](https://platform.claude.com/docs/en/build-with-claude/compaction-on-demand.md) - Compaction on demand
+- [Compaction](https://platform.claude.com/docs/en/build-with-claude/compaction.md) - Compaction overview
+- [Keep recent turns](https://platform.claude.com/docs/en/build-with-claude/compaction-keep-recent-turns.md) - Compaction that keeps recent turns
+- [Computer use tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/computer-use-tool.md)
+- [Context editing](https://platform.claude.com/docs/en/build-with-claude/context-editing.md)
+- [Context windows](https://platform.claude.com/docs/en/build-with-claude/context-windows.md)
+- [Coordinates and bounding boxes](https://platform.claude.com/docs/en/build-with-claude/vision-coordinates.md)
+- [Define tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/define-tools.md)
+- [Deploy with Docker Compose](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/deploy-compose.md) - Deploy MCP tunnels with Docker Compose
+- [Deploy with Helm](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/deploy-helm.md) - Deploy MCP tunnels with Helm
+- [Effort](https://platform.claude.com/docs/en/build-with-claude/effort.md)
+- [Embeddings](https://platform.claude.com/docs/en/build-with-claude/embeddings.md)
+- [Extended thinking (legacy)](https://platform.claude.com/docs/en/build-with-claude/extended-thinking.md) - Extended thinking
+- [Fallback credit](https://platform.claude.com/docs/en/build-with-claude/fallback-credit.md)
+- [Fast mode (research preview)](https://platform.claude.com/docs/en/build-with-claude/fast-mode.md)
+- [Files API](https://platform.claude.com/docs/en/build-with-claude/files.md)
+- [Fine-grained tool streaming](https://platform.claude.com/docs/en/agents-and-tools/tool-use/fine-grained-tool-streaming.md)
+- [Get your API key](https://platform.claude.com/docs/en/get-api-key.md) - Get your Claude API key
+- [Streaming refusals](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/handle-streaming-refusals.md) - Handle streaming refusals
+- [Handle tool calls](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls.md)
+- [How tool use works](https://platform.claude.com/docs/en/agents-and-tools/tool-use/how-tool-use-works.md)
+- [Manage tool context](https://platform.claude.com/docs/en/agents-and-tools/tool-use/manage-tool-context.md)
+- [Manage in the Console](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/console.md) - Manage tunnels in the Console
+- [MCP connector](https://platform.claude.com/docs/en/agents-and-tools/mcp-connector.md)
+- [Reference](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/reference.md) - MCP tunnels reference
+- [Security](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/security.md) - MCP tunnels security
+- [Memory tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/memory-tool.md)
+- [Mid-conversation system messages and tool changes](https://platform.claude.com/docs/en/build-with-claude/mid-conversation-system-messages.md)
+- [Multilingual support](https://platform.claude.com/docs/en/build-with-claude/multilingual-support.md)
+- [Parallel tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/parallel-tool-use.md)
+- [PDF support](https://platform.claude.com/docs/en/build-with-claude/pdf-support.md)
+- [Preserved thinking](https://platform.claude.com/docs/en/build-with-claude/preserved-thinking.md)
+- [Programmatic tool calling](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling.md)
+- [Prompt caching](https://platform.claude.com/docs/en/build-with-claude/prompt-caching.md)
+- [Refusals and fallback](https://platform.claude.com/docs/en/build-with-claude/refusals-and-fallback.md)
+- [Remote MCP servers](https://platform.claude.com/docs/en/agents-and-tools/remote-mcp-servers.md)
+- [Search results](https://platform.claude.com/docs/en/build-with-claude/search-results.md)
+- [Server tools](https://platform.claude.com/docs/en/agents-and-tools/tool-use/server-tools.md)
+- [Best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices.md) - Skill authoring best practices
+- [Skills for enterprise](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/enterprise.md)
+- [Steering and cost control](https://platform.claude.com/docs/en/build-with-claude/thinking-steering-and-cost.md) - Steering thinking
+- [Stop reasons and fallback](https://platform.claude.com/docs/en/build-with-claude/handling-stop-reasons.md)
+- [Streaming Messages](https://platform.claude.com/docs/en/build-with-claude/streaming.md) - Streaming messages
+- [Strict tool use](https://platform.claude.com/docs/en/agents-and-tools/tool-use/strict-tool-use.md)
+- [Structured outputs](https://platform.claude.com/docs/en/build-with-claude/structured-outputs.md)
+- [Task budgets (beta)](https://platform.claude.com/docs/en/build-with-claude/task-budgets.md) - Task budgets
+- [Text editor tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/text-editor-tool.md)
+- [Overview](https://platform.claude.com/docs/en/build-with-claude/thinking.md) - Thinking
+- [Tool and multi-turn workflows](https://platform.claude.com/docs/en/build-with-claude/thinking-tool-workflows.md) - Thinking in tool and multi-turn workflows
+- [Token counting](https://platform.claude.com/docs/en/build-with-claude/token-counting.md)
+- [Tool combinations](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-combinations.md)
+- [Tool reference](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-reference.md)
+- [Tool Runner (SDK)](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-runner.md) - Tool runner (SDK)
+- [Tool search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool.md)
+- [Tool use with prompt caching](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-use-with-prompt-caching.md)
+- [Troubleshooting](https://platform.claude.com/docs/en/agents-and-tools/mcp-tunnels/troubleshooting.md) - Troubleshoot MCP tunnels
+- [Troubleshooting](https://platform.claude.com/docs/en/build-with-claude/thinking-troubleshooting.md) - Troubleshooting thinking
+- [Troubleshooting](https://platform.claude.com/docs/en/agents-and-tools/tool-use/troubleshooting-tool-use.md) - Troubleshooting tool use
+- [Tutorial: Build a tool-using agent](https://platform.claude.com/docs/en/agents-and-tools/tool-use/build-a-tool-using-agent.md)
+- [Skills in the API](https://platform.claude.com/docs/en/build-with-claude/skills-guide.md) - Using Agent Skills with the API
+- [Using the Messages API](https://platform.claude.com/docs/en/build-with-claude/working-with-messages.md)
+- [Overview](https://platform.claude.com/docs/en/build-with-claude/vision.md) - Vision
+- [Web fetch tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-fetch-tool.md)
+- [Web search tool](https://platform.claude.com/docs/en/agents-and-tools/tool-use/web-search-tool.md)
+
+### Managed Agents
+
+- [Overview](https://platform.claude.com/docs/en/managed-agents/overview.md) - Claude Managed Agents overview
+- [Quickstart](https://platform.claude.com/docs/en/managed-agents/quickstart.md) - Get started with Claude Managed Agents
+- [Access GitHub](https://platform.claude.com/docs/en/managed-agents/github.md) - Accessing GitHub
+- [Attach and download files](https://platform.claude.com/docs/en/managed-agents/files.md) - Adding files
+- [Authenticate with vaults](https://platform.claude.com/docs/en/managed-agents/vaults.md)
+- [Build in Console](https://platform.claude.com/docs/en/managed-agents/onboarding.md)
+- [Cloud environment setup](https://platform.claude.com/docs/en/managed-agents/environments.md)
+- [Cloud sandbox reference](https://platform.claude.com/docs/en/managed-agents/cloud-sandboxes-reference.md)
+- [Define outcomes](https://platform.claude.com/docs/en/managed-agents/define-outcomes.md)
+- [Agent setup](https://platform.claude.com/docs/en/managed-agents/agent-setup.md) - Define your agent
+- [Dreams](https://platform.claude.com/docs/en/managed-agents/dreams.md)
+- [MCP connector](https://platform.claude.com/docs/en/managed-agents/mcp-connector.md)
+- [Migration](https://platform.claude.com/docs/en/managed-agents/migration.md)
+- [Multiagent orchestration](https://platform.claude.com/docs/en/managed-agents/multiagent-orchestration.md)
+- [Permission policies](https://platform.claude.com/docs/en/managed-agents/permission-policies.md)
+- [Managed Agents reference](https://platform.claude.com/docs/en/managed-agents/reference.md) - Reference
+- [Scheduled deployments](https://platform.claude.com/docs/en/managed-agents/scheduled-deployments.md)
+- [Security model](https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes-security.md)
+- [Integration guide](https://platform.claude.com/docs/en/managed-agents/self-hosted-sandboxes.md) - Self-hosted sandboxes
+- [Session budgets](https://platform.claude.com/docs/en/managed-agents/budgets.md)
+- [Session event stream](https://platform.claude.com/docs/en/managed-agents/events-and-streaming.md)
+- [Session operations](https://platform.claude.com/docs/en/managed-agents/session-operations.md)
+- [Agent Skills](https://platform.claude.com/docs/en/managed-agents/skills.md) - Skills
+- [Start a session](https://platform.claude.com/docs/en/managed-agents/sessions.md)
+- [Subscribe to webhooks](https://platform.claude.com/docs/en/managed-agents/webhooks.md)
+- [Tools](https://platform.claude.com/docs/en/managed-agents/tools.md)
+- [Memory stores](https://platform.claude.com/docs/en/managed-agents/memory.md) - Using agent memory
+
+### Admin
+
+- [Overview](https://platform.claude.com/docs/en/manage-claude/access-transparency.md) - Access Transparency
+- [Admin API](https://platform.claude.com/docs/en/manage-claude/admin-api.md)
+- [Analytics APIs](https://platform.claude.com/docs/en/manage-claude/analytics-api.md)
+- [API and data retention](https://platform.claude.com/docs/en/manage-claude/api-and-data-retention.md)
+- [App Attest](https://platform.claude.com/docs/en/manage-claude/app-attest.md) - App Attest for iOS and macOS apps
+- [Claude Code Analytics API](https://platform.claude.com/docs/en/manage-claude/claude-code-analytics-api.md)
+- [Overview](https://platform.claude.com/docs/en/manage-claude/compliance-api.md) - Compliance API
+- [FAQ](https://platform.claude.com/docs/en/manage-claude/compliance-faq.md) - Compliance API FAQ
+- [AWS KMS](https://platform.claude.com/docs/en/manage-claude/cmek-aws-kms.md) - Configure AWS KMS for CMEK
+- [Azure Key Vault](https://platform.claude.com/docs/en/manage-claude/cmek-azure-key-vault.md) - Configure Azure Key Vault for CMEK
+- [Google Cloud KMS](https://platform.claude.com/docs/en/manage-claude/cmek-google-cloud-kms.md) - Configure Google Cloud KMS for CMEK
+- [Configure Inference hooks](https://platform.claude.com/docs/en/manage-claude/inference-hooks-configuration.md)
+- [Create an Admin API key](https://platform.claude.com/docs/en/manage-claude/admin-api-keys.md)
+- [Overview](https://platform.claude.com/docs/en/manage-claude/cmek.md) - Customer-managed encryption keys
+- [Data residency](https://platform.claude.com/docs/en/manage-claude/data-residency.md)
+- [Design your integration](https://platform.claude.com/docs/en/manage-claude/compliance-integration-patterns.md) - Design your compliance integration
+- [Build an integration](https://platform.claude.com/docs/en/manage-claude/inference-hooks-endpoint.md) - Develop an Inference hooks integration
+- [Errors](https://platform.claude.com/docs/en/manage-claude/compliance-errors.md) - Handle Compliance API errors
+- [Overview](https://platform.claude.com/docs/en/manage-claude/inference-hooks.md) - Inference hooks
+- [Organizations, users, roles, groups, and settings](https://platform.claude.com/docs/en/manage-claude/compliance-org-data.md) - List organizations, users, roles, groups, and settings
+- [Manage WIF via API](https://platform.claude.com/docs/en/manage-claude/wif-admin-api.md) - Manage WIF with the Admin API
+- [Plugins API](https://platform.claude.com/docs/en/manage-claude/plugins-api.md)
+- [Activity Feed](https://platform.claude.com/docs/en/manage-claude/compliance-activity-feed.md) - Query the Activity Feed
+- [Rate Limits API](https://platform.claude.com/docs/en/manage-claude/rate-limits-api.md)
+- [Chats, files, and projects](https://platform.claude.com/docs/en/manage-claude/compliance-content-data.md) - Retrieve and delete chats, files, and projects
+- [Session transcripts](https://platform.claude.com/docs/en/manage-claude/compliance-sessions.md) - Retrieve session transcripts
+- [Set up the Compliance API](https://platform.claude.com/docs/en/manage-claude/compliance-api-access.md)
+- [Spend Limits API](https://platform.claude.com/docs/en/manage-claude/spend-limits-api.md)
+- [Usage and Cost API](https://platform.claude.com/docs/en/manage-claude/usage-cost-api.md)
+- [AWS](https://platform.claude.com/docs/en/manage-claude/wif-providers/aws.md) - Use WIF with AWS
+- [GitHub Actions](https://platform.claude.com/docs/en/manage-claude/wif-providers/github-actions.md) - Use WIF with GitHub Actions
+- [Google Cloud](https://platform.claude.com/docs/en/manage-claude/wif-providers/gcp.md) - Use WIF with Google Cloud
+- [Kubernetes](https://platform.claude.com/docs/en/manage-claude/wif-providers/kubernetes.md) - Use WIF with Kubernetes
+- [Microsoft Entra ID](https://platform.claude.com/docs/en/manage-claude/wif-providers/azure.md) - Use WIF with Microsoft Entra ID
+- [Okta](https://platform.claude.com/docs/en/manage-claude/wif-providers/okta.md) - Use WIF with Okta
+- [SPIFFE](https://platform.claude.com/docs/en/manage-claude/wif-providers/spiffe.md) - Use WIF with SPIFFE
+- [User management](https://platform.claude.com/docs/en/manage-claude/user-management.md)
+- [Transparency log (beta)](https://platform.claude.com/docs/en/manage-claude/access-transparency-log.md) - Verify Access Transparency events with the transparency log
+- [WIF reference](https://platform.claude.com/docs/en/manage-claude/wif-reference.md)
+- [Workload Identity Federation](https://platform.claude.com/docs/en/manage-claude/workload-identity-federation.md)
+- [Workspaces](https://platform.claude.com/docs/en/manage-claude/workspaces.md)
+
+### Best practices
+
+- [Overview](https://platform.claude.com/docs/en/about-claude/use-case-guides/overview.md) - Guides to common use cases
+- [Overview](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/overview.md) - Prompt engineering overview
+- [Additional resources](https://platform.claude.com/docs/en/about-claude/additional-resources.md)
+- [Commerce agent](https://platform.claude.com/docs/en/about-claude/use-case-guides/commerce-agents.md)
+- [Content moderation](https://platform.claude.com/docs/en/about-claude/use-case-guides/content-moderation.md)
+- [Customer support agent](https://platform.claude.com/docs/en/about-claude/use-case-guides/customer-support-chat.md)
+- [Define success and build evaluations](https://platform.claude.com/docs/en/test-and-evaluate/develop-tests.md) - Define success criteria and build evaluations
+- [Glossary](https://platform.claude.com/docs/en/about-claude/glossary.md)
+- [Increase output consistency](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/increase-consistency.md)
+- [Legal summarization](https://platform.claude.com/docs/en/about-claude/use-case-guides/legal-summarization.md)
+- [Mitigate jailbreaks](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/mitigate-jailbreaks.md) - Mitigate jailbreaks and prompt injections
+- [Prompting best practices](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/claude-prompting-best-practices.md)
+- [Prompting Claude Fable 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5.md)
+- [Prompting Claude Fable 5.1](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-fable-5-1.md)
+- [Prompting Claude Opus 4.8](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-4-8.md)
+- [Prompting Claude Opus 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5.md)
+- [Prompting Claude Opus 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-opus-5-5.md)
+- [Prompting Claude Sonnet 5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5.md)
+- [Prompting Claude Sonnet 5.5](https://platform.claude.com/docs/en/build-with-claude/prompt-engineering/prompting-claude-sonnet-5-5.md)
+- [Reduce hallucinations](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-hallucinations.md)
+- [Reduce prompt leak](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-prompt-leak.md)
+- [Reducing latency](https://platform.claude.com/docs/en/test-and-evaluate/strengthen-guardrails/reduce-latency.md)
+- [Ticket routing](https://platform.claude.com/docs/en/about-claude/use-case-guides/ticket-routing.md)
+
+### Models & pricing
+
+- [Claude Fable 5](https://platform.claude.com/docs/en/models/fable-5/overview.md)
+- [Claude Fable 5.1](https://platform.claude.com/docs/en/models/fable-5-1/overview.md)
+- [Claude Haiku 4.5](https://platform.claude.com/docs/en/models/haiku-4-5/overview.md)
+- [Claude Mythos 5](https://platform.claude.com/docs/en/models/mythos-5/overview.md)
+- [Claude Mythos 5.1](https://platform.claude.com/docs/en/models/mythos-5-1/overview.md)
+- [Claude Opus 4.5](https://platform.claude.com/docs/en/models/opus-4-5/overview.md)
+- [Claude Opus 4.6](https://platform.claude.com/docs/en/models/opus-4-6/overview.md)
+- [Claude Opus 4.7](https://platform.claude.com/docs/en/models/opus-4-7/overview.md)
+- [Claude Opus 4.8](https://platform.claude.com/docs/en/models/opus-4-8/overview.md)
+- [Claude Opus 5](https://platform.claude.com/docs/en/models/opus-5/overview.md)
+- [Claude Opus 5.5](https://platform.claude.com/docs/en/models/opus-5-5/overview.md)
+- [Claude Sonnet 4.5](https://platform.claude.com/docs/en/models/sonnet-4-5/overview.md)
+- [Claude Sonnet 4.6](https://platform.claude.com/docs/en/models/sonnet-4-6/overview.md)
+- [Claude Sonnet 5](https://platform.claude.com/docs/en/models/sonnet-5/overview.md)
+- [Claude Sonnet 5.5](https://platform.claude.com/docs/en/models/sonnet-5-5/overview.md)
+- [Model cards](https://platform.claude.com/docs/en/resources/overview.md)
+- [Models overview](https://platform.claude.com/docs/en/models/overview.md)
+- [Overview](https://platform.claude.com/docs/en/release-notes/system-prompts/overview.md) - System prompts
+- [Choosing a model](https://platform.claude.com/docs/en/about-claude/models/choosing-a-model.md) - Choosing the right model
+- [Claude Fable 5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-fable-5.md) - Claude Fable 5 system prompts
+- [Claude Fable 5.1](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-fable-5-1.md) - Claude Fable 5.1 system prompts
+- [Claude Haiku 3](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-haiku-3.md) - Claude Haiku 3 system prompts
+- [Claude Haiku 3.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-haiku-3-5.md) - Claude Haiku 3.5 system prompts
+- [Claude Haiku 4.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-haiku-4-5.md) - Claude Haiku 4.5 system prompts
+- [Claude Opus 3](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-3.md) - Claude Opus 3 system prompts
+- [Claude Opus 4](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4.md) - Claude Opus 4 system prompts
+- [Claude Opus 4.1](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4-1.md) - Claude Opus 4.1 system prompts
+- [Claude Opus 4.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4-5.md) - Claude Opus 4.5 system prompts
+- [Claude Opus 4.6](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4-6.md) - Claude Opus 4.6 system prompts
+- [Claude Opus 4.7](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4-7.md) - Claude Opus 4.7 system prompts
+- [Claude Opus 4.8](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-4-8.md) - Claude Opus 4.8 system prompts
+- [Claude Opus 5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-5.md) - Claude Opus 5 system prompts
+- [Claude Opus 5.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-opus-5-5.md) - Claude Opus 5.5 system prompts
+- [Claude Sonnet 3.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-3-5.md) - Claude Sonnet 3.5 system prompts
+- [Claude Sonnet 3.7](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-3-7.md) - Claude Sonnet 3.7 system prompts
+- [Claude Sonnet 4](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-4.md) - Claude Sonnet 4 system prompts
+- [Claude Sonnet 4.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-4-5.md) - Claude Sonnet 4.5 system prompts
+- [Claude Sonnet 4.6](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-4-6.md) - Claude Sonnet 4.6 system prompts
+- [Claude Sonnet 5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-5.md) - Claude Sonnet 5 system prompts
+- [Claude Sonnet 5.5](https://platform.claude.com/docs/en/release-notes/system-prompts/claude-sonnet-5-5.md) - Claude Sonnet 5.5 system prompts
+- [Migration guide](https://platform.claude.com/docs/en/models/fable-5-1/migration-guide.md) - Migrating to Claude Fable 5.1 and Claude Mythos 5.1
+- [Migration guide](https://platform.claude.com/docs/en/models/haiku-4-5/migration-guide.md) - Migrating to Claude Haiku 4.5
+- [Migration guide](https://platform.claude.com/docs/en/models/opus-5-5/migration-guide.md) - Migrating to Claude Opus 5.5
+- [Migration guide](https://platform.claude.com/docs/en/models/sonnet-5-5/migration-guide.md) - Migrating to Claude Sonnet 5.5
+- [Upgrade between model versions](https://platform.claude.com/docs/en/about-claude/models/migration-guide.md) - Migration guides
+- [Model deprecations](https://platform.claude.com/docs/en/about-claude/model-deprecations.md)
+- [Model IDs and versioning](https://platform.claude.com/docs/en/about-claude/models/model-ids-and-versions.md)
+- [Optimizing for cost and intelligence](https://platform.claude.com/docs/en/about-claude/models/optimizing-for-cost-and-intelligence.md)
+- [Pricing](https://platform.claude.com/docs/en/about-claude/pricing.md)
+- [What's new](https://platform.claude.com/docs/en/models/fable-5-1/whats-new-fable-5-1.md) - What's new in Claude Fable 5.1
+- [What's new](https://platform.claude.com/docs/en/models/opus-5-5/whats-new-opus-5-5.md) - What's new in Claude Opus 5.5
+- [What's new](https://platform.claude.com/docs/en/models/sonnet-5-5/whats-new-sonnet-5-5.md) - What's new in Claude Sonnet 5.5
+
+### SDKs, CLI, and libraries
+
+- [Quickstart](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/quickstart.md) - CLI quickstart
+- [Overview](https://platform.claude.com/docs/en/cli-sdks-libraries/overview.md) - SDKs, CLI, and libraries
+- [Apple Foundation Models](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/apple-foundation-models.md)
+- [C#](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/csharp.md) - C# SDK
+- [Authentication options](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/authentication.md) - CLI authentication options
+- [Scripting and automation](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/scripting.md) - CLI scripting and automation
+- [Connect to a Managed Agents session](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/sessions-connect.md) - Connect to a Managed Agents session from your terminal
+- [Go](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/go.md) - Go SDK
+- [Java](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/java.md) - Java SDK
+- [Manage resources as code](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/apply.md) - Manage resources as code with ant apply
+- [OpenAI SDK compatibility](https://platform.claude.com/docs/en/cli-sdks-libraries/libraries/openai-sdk.md)
+- [PHP](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/php.md) - PHP SDK
+- [Python](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/python.md) - Python SDK
+- [Ruby](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/ruby.md) - Ruby SDK
+- [Middleware](https://platform.claude.com/docs/en/cli-sdks-libraries/middleware.md) - SDK middleware
+- [TypeScript](https://platform.claude.com/docs/en/cli-sdks-libraries/sdks/typescript.md) - TypeScript SDK
+- [Using the CLI](https://platform.claude.com/docs/en/cli-sdks-libraries/cli/using.md)
+
+### API reference
+
+- [Features overview](https://platform.claude.com/docs/en/api/overview.md) - API overview
+- [Beta headers](https://platform.claude.com/docs/en/api/beta-headers.md)
+- [Errors](https://platform.claude.com/docs/en/api/errors.md) - Claude API errors
+- [IAM actions (Claude Platform on AWS)](https://platform.claude.com/docs/en/api/claude-platform-on-aws-iam-actions.md) - IAM actions for Claude Platform on AWS
+- [IP addresses](https://platform.claude.com/docs/en/api/ip-addresses.md)
+- [Rate limits](https://platform.claude.com/docs/en/api/rate-limits.md)
+- [Service tiers](https://platform.claude.com/docs/en/api/service-tiers.md)
+- [Supported regions](https://platform.claude.com/docs/en/api/supported-regions.md)
+- [Trigger a routine](https://platform.claude.com/docs/en/api/claude-code/routines-fire.md) - Trigger a routine through the API
+- [Versions](https://platform.claude.com/docs/en/api/versioning.md)
+
+### Claude API skill
+
+- [Overview](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/claude-api-skill.md) - Claude API skill
+
+### Release notes
+
+- [Overview](https://platform.claude.com/docs/en/release-notes/overview.md) - Claude Platform release notes
+
+### API Reference
+
+- [Acknowledge Work (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/ack.md)
+- [Activities](https://platform.claude.com/docs/en/api/compliance/activities.md)
+- [Add Federation Rule Workspace](https://platform.claude.com/docs/en/api/organization/federation/rules/workspaces/add.md)
+- [Add Federation Rule Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/workspaces/add.md)
+- [Add RBAC Group Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/members/add.md)
+- [Add Session Resource (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources/add.md)
+- [Add Workspace To Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/workspaces/add.md)
+- [Add Workspace To Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/workspaces/add.md)
+- [Agents (Beta)](https://platform.claude.com/docs/en/api/beta/agents.md)
+- [Analytics (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics.md)
+- [API Keys](https://platform.claude.com/docs/en/api/organization/api_keys.md)
+- [API Keys (Beta)](https://platform.claude.com/docs/en/api/beta/organization/api_keys.md)
+- [Approve Spend Limit Increase Request (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/increase_requests/approve.md)
+- [Apps](https://platform.claude.com/docs/en/api/compliance/apps.md)
+- [Apps (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/apps.md)
+- [Archive a Dream (Beta)](https://platform.claude.com/docs/en/api/beta/dreams/archive.md)
+- [Archive a memory store (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/archive.md)
+- [Archive Agent (Beta)](https://platform.claude.com/docs/en/api/beta/agents/archive.md)
+- [Archive Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/archive.md)
+- [Archive Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/archive.md)
+- [Archive Environment (Beta)](https://platform.claude.com/docs/en/api/beta/environments/archive.md)
+- [Archive Federation Issuer](https://platform.claude.com/docs/en/api/organization/federation/issuers/archive.md)
+- [Archive Federation Issuer (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/archive.md)
+- [Archive Federation Rule](https://platform.claude.com/docs/en/api/organization/federation/rules/archive.md)
+- [Archive Federation Rule (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/archive.md)
+- [Archive Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/archive.md)
+- [Archive Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/archive.md)
+- [Archive Session (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/archive.md)
+- [Archive Session Thread (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/archive.md)
+- [Archive Tunnel (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/archive.md)
+- [Archive Tunnel (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/archive.md)
+- [Archive Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/certificates/archive.md)
+- [Archive Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/tunnel_certificates/archive.md)
+- [Archive Vault (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/archive.md)
+- [Archive Workspace](https://platform.claude.com/docs/en/api/organization/workspaces/archive.md)
+- [Archive Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/archive.md)
+- [Artifacts](https://platform.claude.com/docs/en/api/compliance/apps/artifacts.md)
+- [Artifacts](https://platform.claude.com/docs/en/api/compliance/code/artifacts.md)
+- [Artifacts (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/artifacts.md)
+- [Attachments](https://platform.claude.com/docs/en/api/compliance/apps/projects/attachments.md)
+- [Batches](https://platform.claude.com/docs/en/api/messages/batches.md)
+- [Batches (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches.md)
+- [Beta (Beta)](https://platform.claude.com/docs/en/api/beta.md)
+- [Cancel a Dream (Beta)](https://platform.claude.com/docs/en/api/beta/dreams/cancel.md)
+- [Cancel a Message Batch](https://platform.claude.com/docs/en/api/messages/batches/cancel.md)
+- [Cancel a Message Batch (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/cancel.md)
+- [Certificates (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/certificates.md)
+- [Chat (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/apps/chat.md)
+- [Chats](https://platform.claude.com/docs/en/api/compliance/apps/chats.md)
+- [Code](https://platform.claude.com/docs/en/api/compliance/code.md)
+- [Collaborators](https://platform.claude.com/docs/en/api/compliance/apps/projects/collaborators.md)
+- [Completions](https://platform.claude.com/docs/en/api/completions.md)
+- [Compliance API](https://platform.claude.com/docs/en/api/compliance.md)
+- [Compliance Settings](https://platform.claude.com/docs/en/api/organization/compliance_settings.md)
+- [Compliance Settings (Beta)](https://platform.claude.com/docs/en/api/beta/organization/compliance_settings.md)
+- [Connectors (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/connectors.md)
+- [Cost Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/cost_report.md)
+- [Cost Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/cost_report.md)
+- [Count tokens in a Message](https://platform.claude.com/docs/en/api/messages/count_tokens.md)
+- [Count tokens in a Message (Beta)](https://platform.claude.com/docs/en/api/beta/messages/count_tokens.md)
+- [Create a Dream (Beta)](https://platform.claude.com/docs/en/api/beta/dreams/create.md)
+- [Create a memory (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories/create.md)
+- [Create a memory store (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/create.md)
+- [Create a Message](https://platform.claude.com/docs/en/api/messages/create.md)
+- [Create a Message (Beta)](https://platform.claude.com/docs/en/api/beta/messages/create.md)
+- [Create a Message Batch](https://platform.claude.com/docs/en/api/messages/batches/create.md)
+- [Create a Message Batch (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/create.md)
+- [Create a Text Completion](https://platform.claude.com/docs/en/api/completions/create.md)
+- [Create Agent (Beta)](https://platform.claude.com/docs/en/api/beta/agents/create.md)
+- [Create Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/create.md)
+- [Create Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/create.md)
+- [Create Enrollment URL (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles/create_enrollment_url.md)
+- [Create Environment (Beta)](https://platform.claude.com/docs/en/api/beta/environments/create.md)
+- [Create External Key](https://platform.claude.com/docs/en/api/organization/external_keys/create.md)
+- [Create External Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/create.md)
+- [Create Federation Issuer](https://platform.claude.com/docs/en/api/organization/federation/issuers/create.md)
+- [Create Federation Issuer (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/create.md)
+- [Create Federation Rule](https://platform.claude.com/docs/en/api/organization/federation/rules/create.md)
+- [Create Federation Rule (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/create.md)
+- [Create Invite](https://platform.claude.com/docs/en/api/organization/invites/create.md)
+- [Create Invite (Beta)](https://platform.claude.com/docs/en/api/beta/organization/invites/create.md)
+- [Create Plugin (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/create.md)
+- [Create Plugin Version (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/versions/create.md)
+- [Create RBAC Group (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/create.md)
+- [Create Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/create.md)
+- [Create Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/create.md)
+- [Create Service Account Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts/add.md)
+- [Create Service Account Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts/add.md)
+- [Create Session (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/create.md)
+- [Create Skill](https://platform.claude.com/docs/en/api/skills/create.md)
+- [Create Skill (Beta)](https://platform.claude.com/docs/en/api/beta/skills/create.md)
+- [Create Skill Version](https://platform.claude.com/docs/en/api/skills/versions/create.md)
+- [Create Skill Version (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions/create.md)
+- [Create Tunnel (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/create.md)
+- [Create Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/certificates/create.md)
+- [Create Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/tunnel_certificates/create.md)
+- [Create User Profile (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles/create.md)
+- [Create Vault (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/create.md)
+- [Create Workspace](https://platform.claude.com/docs/en/api/organization/workspaces/create.md)
+- [Create Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/create.md)
+- [Create Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/members/add.md)
+- [Create Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members/add.md)
+- [Credentials (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials.md)
+- [Delete a memory (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories/delete.md)
+- [Delete a memory store (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/delete.md)
+- [Delete a Message Batch](https://platform.claude.com/docs/en/api/messages/batches/delete.md)
+- [Delete a Message Batch (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/delete.md)
+- [Delete chat](https://platform.claude.com/docs/en/api/compliance/apps/chats/delete.md)
+- [Delete Code Artifact](https://platform.claude.com/docs/en/api/compliance/code/artifacts/delete.md)
+- [Delete Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/delete.md)
+- [Delete Environment (Beta)](https://platform.claude.com/docs/en/api/beta/environments/delete.md)
+- [Delete External Key](https://platform.claude.com/docs/en/api/organization/external_keys/delete.md)
+- [Delete External Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/delete.md)
+- [Delete file](https://platform.claude.com/docs/en/api/compliance/apps/chats/files/delete.md)
+- [Delete File](https://platform.claude.com/docs/en/api/files/delete.md)
+- [Delete File (Beta)](https://platform.claude.com/docs/en/api/beta/files/delete.md)
+- [Delete Invite](https://platform.claude.com/docs/en/api/organization/invites/delete.md)
+- [Delete Invite (Beta)](https://platform.claude.com/docs/en/api/beta/organization/invites/delete.md)
+- [Delete Plugin (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/delete.md)
+- [Delete project](https://platform.claude.com/docs/en/api/compliance/apps/projects/delete.md)
+- [Delete project document](https://platform.claude.com/docs/en/api/compliance/apps/projects/documents/delete.md)
+- [Delete RBAC Group (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/delete.md)
+- [Delete Service Account Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts/remove.md)
+- [Delete Service Account Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts/remove.md)
+- [Delete Session (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/delete.md)
+- [Delete Session Resource (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources/delete.md)
+- [Delete Skill](https://platform.claude.com/docs/en/api/skills/delete.md)
+- [Delete Skill (Beta)](https://platform.claude.com/docs/en/api/beta/skills/delete.md)
+- [Delete Skill Version](https://platform.claude.com/docs/en/api/skills/versions/delete.md)
+- [Delete Skill Version (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions/delete.md)
+- [Delete Spend Limit (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/delete.md)
+- [Delete Vault (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/delete.md)
+- [Delete Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/members/remove.md)
+- [Delete Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members/remove.md)
+- [Deny Spend Limit Increase Request (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/increase_requests/deny.md)
+- [Deployment Runs (Beta)](https://platform.claude.com/docs/en/api/beta/deployment_runs.md)
+- [Deployments (Beta)](https://platform.claude.com/docs/en/api/beta/deployments.md)
+- [Documents](https://platform.claude.com/docs/en/api/compliance/apps/projects/documents.md)
+- [Download a Claude-generated file](https://platform.claude.com/docs/en/api/compliance/apps/chats/generated_files/download.md)
+- [Download artifact content](https://platform.claude.com/docs/en/api/compliance/apps/artifacts/download.md)
+- [Download Code Artifact Version Content](https://platform.claude.com/docs/en/api/compliance/code/artifacts/retrieve_version.md)
+- [Download File](https://platform.claude.com/docs/en/api/files/download.md)
+- [Download File (Beta)](https://platform.claude.com/docs/en/api/beta/files/download.md)
+- [Download file content](https://platform.claude.com/docs/en/api/compliance/apps/chats/files/download.md)
+- [Download Plugin Version Archive (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/versions/download.md)
+- [Download Skill Version Content (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions/download.md)
+- [Dreams (Beta)](https://platform.claude.com/docs/en/api/beta/dreams.md)
+- [Effective (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/effective.md)
+- [Environments (Beta)](https://platform.claude.com/docs/en/api/beta/environments.md)
+- [Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/events.md)
+- [Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/events.md)
+- [External Keys](https://platform.claude.com/docs/en/api/organization/external_keys.md)
+- [External Keys (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys.md)
+- [Federation](https://platform.claude.com/docs/en/api/organization/federation.md)
+- [Federation (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation.md)
+- [Files](https://platform.claude.com/docs/en/api/files.md)
+- [Files](https://platform.claude.com/docs/en/api/compliance/apps/chats/files.md)
+- [Files (Beta)](https://platform.claude.com/docs/en/api/beta/files.md)
+- [Generated Files](https://platform.claude.com/docs/en/api/compliance/apps/chats/generated_files.md)
+- [Get a Dream (Beta)](https://platform.claude.com/docs/en/api/beta/dreams/retrieve.md)
+- [Get a Model](https://platform.claude.com/docs/en/api/models/retrieve.md)
+- [Get a Model (Beta)](https://platform.claude.com/docs/en/api/beta/models/retrieve.md)
+- [Get Activity Summaries (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/summaries/list.md)
+- [Get Agent (Beta)](https://platform.claude.com/docs/en/api/beta/agents/retrieve.md)
+- [Get Artifact Activity (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/artifacts/list.md)
+- [Get artifact metadata](https://platform.claude.com/docs/en/api/compliance/apps/artifacts/retrieve.md)
+- [Get chat messages](https://platform.claude.com/docs/en/api/compliance/apps/chats/messages/list.md)
+- [Get Chat Project Usage (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/apps/chat/projects/list.md)
+- [Get Claude Code Usage Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/usage_report/retrieve_claude_code.md)
+- [Get Claude-generated file metadata](https://platform.claude.com/docs/en/api/compliance/apps/chats/generated_files/retrieve.md)
+- [Get Compliance Group](https://platform.claude.com/docs/en/api/compliance/groups/retrieve.md)
+- [Get Compliance Role](https://platform.claude.com/docs/en/api/compliance/organizations/roles/retrieve.md)
+- [Get Compliance Settings](https://platform.claude.com/docs/en/api/organization/compliance_settings/retrieve.md)
+- [Get Compliance Settings (Beta)](https://platform.claude.com/docs/en/api/beta/organization/compliance_settings/retrieve.md)
+- [Get Connector Usage (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/connectors/list.md)
+- [Get Cost Over Time (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/cost_report/list.md)
+- [Get Cost Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/cost_report/retrieve.md)
+- [Get Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/retrieve.md)
+- [Get Current Organization](https://platform.claude.com/docs/en/api/organization/retrieve.md)
+- [Get Current Organization (Beta)](https://platform.claude.com/docs/en/api/beta/organization/retrieve.md)
+- [Get Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/retrieve.md)
+- [Get Deployment Run (Beta)](https://platform.claude.com/docs/en/api/beta/deployment_runs/retrieve.md)
+- [Get effective organization settings](https://platform.claude.com/docs/en/api/compliance/organizations/settings/retrieve.md)
+- [Get Environment (Beta)](https://platform.claude.com/docs/en/api/beta/environments/retrieve.md)
+- [Get External Key](https://platform.claude.com/docs/en/api/organization/external_keys/retrieve.md)
+- [Get External Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/retrieve.md)
+- [Get Federation Issuer](https://platform.claude.com/docs/en/api/organization/federation/issuers/retrieve.md)
+- [Get Federation Issuer (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/retrieve.md)
+- [Get Federation Rule](https://platform.claude.com/docs/en/api/organization/federation/rules/retrieve.md)
+- [Get Federation Rule (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/retrieve.md)
+- [Get file metadata](https://platform.claude.com/docs/en/api/compliance/apps/chats/files/retrieve.md)
+- [Get File Metadata](https://platform.claude.com/docs/en/api/files/retrieve_metadata.md)
+- [Get File Metadata (Beta)](https://platform.claude.com/docs/en/api/beta/files/retrieve_metadata.md)
+- [Get Invite](https://platform.claude.com/docs/en/api/organization/invites/retrieve.md)
+- [Get Invite (Beta)](https://platform.claude.com/docs/en/api/beta/organization/invites/retrieve.md)
+- [Get Messages Usage Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/usage_report/retrieve_messages.md)
+- [Get Per-User Cost (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/user_cost_report/list.md)
+- [Get Per-User Token Usage (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/user_usage_report/list.md)
+- [Get Plugin (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/retrieve.md)
+- [Get Plugin Marketplace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces/retrieve.md)
+- [Get Plugin Usage (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/plugins/list.md)
+- [Get Plugin Version (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/versions/retrieve.md)
+- [Get project details](https://platform.claude.com/docs/en/api/compliance/apps/projects/retrieve.md)
+- [Get project document content](https://platform.claude.com/docs/en/api/compliance/apps/projects/documents/retrieve.md)
+- [Get project document metadata](https://platform.claude.com/docs/en/api/compliance/apps/projects/documents/metadata.md)
+- [Get Queue Statistics (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/stats.md)
+- [Get RBAC Group (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/retrieve.md)
+- [Get RBAC Role (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_roles/retrieve.md)
+- [Get Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/retrieve.md)
+- [Get Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/retrieve.md)
+- [Get Service Account Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts/retrieve.md)
+- [Get Service Account Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts/retrieve.md)
+- [Get Session (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/retrieve.md)
+- [Get Session Resource (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources/retrieve.md)
+- [Get Session Thread (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/retrieve.md)
+- [Get Skill](https://platform.claude.com/docs/en/api/skills/retrieve.md)
+- [Get Skill (Beta)](https://platform.claude.com/docs/en/api/beta/skills/retrieve.md)
+- [Get Skill Usage (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/skills/list.md)
+- [Get Skill Version](https://platform.claude.com/docs/en/api/skills/versions/retrieve.md)
+- [Get Skill Version (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions/retrieve.md)
+- [Get Spend Limit (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/retrieve.md)
+- [Get Spend Limit Increase Request (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/increase_requests/retrieve.md)
+- [Get Token Usage Over Time (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/usage_report/list.md)
+- [Get Tunnel (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/retrieve.md)
+- [Get Tunnel (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/retrieve.md)
+- [Get Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/certificates/retrieve.md)
+- [Get Tunnel Certificate (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/tunnel_certificates/retrieve.md)
+- [Get User](https://platform.claude.com/docs/en/api/organization/users/retrieve.md)
+- [Get User (Beta)](https://platform.claude.com/docs/en/api/beta/organization/users/retrieve.md)
+- [Get User Profile (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles/retrieve.md)
+- [Get Vault (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/retrieve.md)
+- [Get Work Item (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/retrieve.md)
+- [Get Workspace](https://platform.claude.com/docs/en/api/organization/workspaces/retrieve.md)
+- [Get Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/retrieve.md)
+- [Get Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/members/retrieve.md)
+- [Get Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members/retrieve.md)
+- [Groups](https://platform.claude.com/docs/en/api/compliance/groups.md)
+- [Increase Requests (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/increase_requests.md)
+- [Installation Settings (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/installation_settings.md)
+- [Invites](https://platform.claude.com/docs/en/api/organization/invites.md)
+- [Invites (Beta)](https://platform.claude.com/docs/en/api/beta/organization/invites.md)
+- [Issuers](https://platform.claude.com/docs/en/api/organization/federation/issuers.md)
+- [Issuers (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers.md)
+- [List Agent Versions (Beta)](https://platform.claude.com/docs/en/api/beta/agents/versions/list.md)
+- [List Agents (Beta)](https://platform.claude.com/docs/en/api/beta/agents/list.md)
+- [List API Keys](https://platform.claude.com/docs/en/api/organization/api_keys/list.md)
+- [List API Keys (Beta)](https://platform.claude.com/docs/en/api/beta/organization/api_keys/list.md)
+- [List chats](https://platform.claude.com/docs/en/api/compliance/apps/chats/list.md)
+- [List Code Artifacts](https://platform.claude.com/docs/en/api/compliance/code/artifacts/list.md)
+- [List Compliance Group Members](https://platform.claude.com/docs/en/api/compliance/groups/members/list.md)
+- [List Compliance Groups](https://platform.claude.com/docs/en/api/compliance/groups/list.md)
+- [List Compliance Role Permissions](https://platform.claude.com/docs/en/api/compliance/organizations/roles/permissions/list.md)
+- [List Compliance Roles](https://platform.claude.com/docs/en/api/compliance/organizations/roles/list.md)
+- [List Credentials (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/list.md)
+- [List Deployment Runs (Beta)](https://platform.claude.com/docs/en/api/beta/deployment_runs/list.md)
+- [List Deployments (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/list.md)
+- [List Dreams (Beta)](https://platform.claude.com/docs/en/api/beta/dreams/list.md)
+- [List Effective Spend Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/effective/list.md)
+- [List Environments (Beta)](https://platform.claude.com/docs/en/api/beta/environments/list.md)
+- [List Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/events/list.md)
+- [List External Keys](https://platform.claude.com/docs/en/api/organization/external_keys/list.md)
+- [List External Keys (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/list.md)
+- [List Federation Issuers](https://platform.claude.com/docs/en/api/organization/federation/issuers/list.md)
+- [List Federation Issuers (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/list.md)
+- [List Federation Rule Workspaces](https://platform.claude.com/docs/en/api/organization/federation/rules/workspaces/list.md)
+- [List Federation Rule Workspaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/workspaces/list.md)
+- [List Federation Rules](https://platform.claude.com/docs/en/api/organization/federation/rules/list.md)
+- [List Federation Rules (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/list.md)
+- [List Files](https://platform.claude.com/docs/en/api/files/list.md)
+- [List Files (Beta)](https://platform.claude.com/docs/en/api/beta/files/list.md)
+- [List Invites](https://platform.claude.com/docs/en/api/organization/invites/list.md)
+- [List Invites (Beta)](https://platform.claude.com/docs/en/api/beta/organization/invites/list.md)
+- [List local sessions](https://platform.claude.com/docs/en/api/compliance/apps/sessions/local/list.md)
+- [List memories (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories/list.md)
+- [List memory stores (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/list.md)
+- [List memory versions (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memory_versions/list.md)
+- [List Message Batches](https://platform.claude.com/docs/en/api/messages/batches/list.md)
+- [List Message Batches (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/list.md)
+- [List Models](https://platform.claude.com/docs/en/api/models/list.md)
+- [List Models (Beta)](https://platform.claude.com/docs/en/api/beta/models/list.md)
+- [List Organization Rate Limits](https://platform.claude.com/docs/en/api/organization/rate_limits/list.md)
+- [List Organization Rate Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rate_limits/list.md)
+- [List organization users](https://platform.claude.com/docs/en/api/compliance/organizations/users/list.md)
+- [List organizations](https://platform.claude.com/docs/en/api/compliance/organizations/list.md)
+- [List Plugin Installation Settings (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/installation_settings/list.md)
+- [List Plugin Marketplaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces/list.md)
+- [List Plugin Shares (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/shares/list.md)
+- [List Plugin Versions (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/versions/list.md)
+- [List Plugins (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/list.md)
+- [List project attachments](https://platform.claude.com/docs/en/api/compliance/apps/projects/attachments/list.md)
+- [List project collaborators](https://platform.claude.com/docs/en/api/compliance/apps/projects/collaborators/list.md)
+- [List projects](https://platform.claude.com/docs/en/api/compliance/apps/projects/list.md)
+- [List RBAC Group Members (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/members/list.md)
+- [List RBAC Groups (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/list.md)
+- [List RBAC Role Permissions (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_roles/permissions/list.md)
+- [List RBAC Roles (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_roles/list.md)
+- [List remote sessions](https://platform.claude.com/docs/en/api/compliance/apps/sessions/remote/list.md)
+- [List Service Account Workspace Members](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts/list.md)
+- [List Service Account Workspace Members (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts/list.md)
+- [List Service Accounts](https://platform.claude.com/docs/en/api/organization/service_accounts/list.md)
+- [List Service Accounts (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/list.md)
+- [List Session Resources (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources/list.md)
+- [List Session Thread Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/events/list.md)
+- [List Session Threads (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/list.md)
+- [List Sessions (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/list.md)
+- [List Skill Versions](https://platform.claude.com/docs/en/api/skills/versions/list.md)
+- [List Skill Versions (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions/list.md)
+- [List Skills](https://platform.claude.com/docs/en/api/skills/list.md)
+- [List Skills (Beta)](https://platform.claude.com/docs/en/api/beta/skills/list.md)
+- [List Spend Limit Increase Requests (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/increase_requests/list.md)
+- [List Spend Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/list.md)
+- [List Tunnel Certificates (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/certificates/list.md)
+- [List Tunnel Certificates (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/tunnel_certificates/list.md)
+- [List Tunnels (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/list.md)
+- [List Tunnels (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/list.md)
+- [List User Activity (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/users/list.md)
+- [List User Profiles (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles/list.md)
+- [List Users](https://platform.claude.com/docs/en/api/organization/users/list.md)
+- [List Users (Beta)](https://platform.claude.com/docs/en/api/beta/organization/users/list.md)
+- [List Vaults (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/list.md)
+- [List Work Items (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/list.md)
+- [List Workspace Members](https://platform.claude.com/docs/en/api/organization/workspaces/members/list.md)
+- [List Workspace Members (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members/list.md)
+- [List Workspace Rate Limits](https://platform.claude.com/docs/en/api/organization/workspaces/rate_limits/list.md)
+- [List Workspace Rate Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/rate_limits/list.md)
+- [List Workspaces](https://platform.claude.com/docs/en/api/organization/workspaces/list.md)
+- [List Workspaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/list.md)
+- [List Workspaces For Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/workspaces/list.md)
+- [List Workspaces For Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/workspaces/list.md)
+- [Local](https://platform.claude.com/docs/en/api/compliance/apps/sessions/local.md)
+- [MCP Tunnels (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels.md)
+- [Members](https://platform.claude.com/docs/en/api/organization/workspaces/members.md)
+- [Members](https://platform.claude.com/docs/en/api/compliance/groups/members.md)
+- [Members (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members.md)
+- [Members (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/members.md)
+- [Memories (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories.md)
+- [Memory Stores (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores.md)
+- [Memory Versions (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memory_versions.md)
+- [Messages](https://platform.claude.com/docs/en/api/messages.md)
+- [Messages](https://platform.claude.com/docs/en/api/compliance/apps/chats/messages.md)
+- [Messages](https://platform.claude.com/docs/en/api/compliance/apps/sessions/local/messages.md)
+- [Messages](https://platform.claude.com/docs/en/api/compliance/apps/sessions/remote/messages.md)
+- [Messages (Beta)](https://platform.claude.com/docs/en/api/beta/messages.md)
+- [Models](https://platform.claude.com/docs/en/api/models.md)
+- [Models (Beta)](https://platform.claude.com/docs/en/api/beta/models.md)
+- [Organization](https://platform.claude.com/docs/en/api/organization.md)
+- [Organization (Beta)](https://platform.claude.com/docs/en/api/beta/organization.md)
+- [Organizations](https://platform.claude.com/docs/en/api/compliance/organizations.md)
+- [Pause Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/pause.md)
+- [Permissions](https://platform.claude.com/docs/en/api/compliance/organizations/roles/permissions.md)
+- [Permissions (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_roles/permissions.md)
+- [Plugin Marketplaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces.md)
+- [Plugins (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/plugins.md)
+- [Plugins (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins.md)
+- [Poll for Work (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/poll.md)
+- [Projects](https://platform.claude.com/docs/en/api/compliance/apps/projects.md)
+- [Projects (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/apps/chat/projects.md)
+- [Query compliance activities](https://platform.claude.com/docs/en/api/compliance/activities/list.md)
+- [Rate Limits](https://platform.claude.com/docs/en/api/organization/workspaces/rate_limits.md)
+- [Rate Limits](https://platform.claude.com/docs/en/api/organization/rate_limits.md)
+- [Rate Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/rate_limits.md)
+- [Rate Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rate_limits.md)
+- [RBAC Groups (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups.md)
+- [RBAC Roles (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_roles.md)
+- [Record Heartbeat (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/heartbeat.md)
+- [Redact a memory version (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memory_versions/redact.md)
+- [Remote](https://platform.claude.com/docs/en/api/compliance/apps/sessions/remote.md)
+- [Remove Federation Rule Workspace](https://platform.claude.com/docs/en/api/organization/federation/rules/workspaces/remove.md)
+- [Remove Federation Rule Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/workspaces/remove.md)
+- [Remove Plugin Installation Setting (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/installation_settings/remove.md)
+- [Remove RBAC Group Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/members/remove.md)
+- [Remove User](https://platform.claude.com/docs/en/api/organization/users/remove.md)
+- [Remove User (Beta)](https://platform.claude.com/docs/en/api/beta/organization/users/remove.md)
+- [Remove Workspace From Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/workspaces/remove.md)
+- [Remove Workspace From Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/workspaces/remove.md)
+- [Resources (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources.md)
+- [Retrieve a local session](https://platform.claude.com/docs/en/api/compliance/apps/sessions/local/retrieve.md)
+- [Retrieve a memory (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories/retrieve.md)
+- [Retrieve a memory store (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/retrieve.md)
+- [Retrieve a memory version (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memory_versions/retrieve.md)
+- [Retrieve a Message Batch](https://platform.claude.com/docs/en/api/messages/batches/retrieve.md)
+- [Retrieve a Message Batch (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/retrieve.md)
+- [Retrieve API Key (Admin API)](https://platform.claude.com/docs/en/api/organization/api_keys/retrieve.md)
+- [Retrieve API Key (Admin API) (Beta)](https://platform.claude.com/docs/en/api/beta/organization/api_keys/retrieve.md)
+- [Retrieve local session messages](https://platform.claude.com/docs/en/api/compliance/apps/sessions/local/messages/list.md)
+- [Retrieve Message Batch results](https://platform.claude.com/docs/en/api/messages/batches/results.md)
+- [Retrieve Message Batch results (Beta)](https://platform.claude.com/docs/en/api/beta/messages/batches/results.md)
+- [Retrieve remote session messages](https://platform.claude.com/docs/en/api/compliance/apps/sessions/remote/messages/list.md)
+- [Reveal Tunnel Token (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/reveal_token.md)
+- [Reveal Tunnel Token (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/reveal_token.md)
+- [Roles](https://platform.claude.com/docs/en/api/compliance/organizations/roles.md)
+- [Rotate Tunnel Token (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels/rotate_token.md)
+- [Rotate Tunnel Token (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/rotate_token.md)
+- [Rules](https://platform.claude.com/docs/en/api/organization/federation/rules.md)
+- [Rules (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules.md)
+- [Run Deployment Now (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/run.md)
+- [Send Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/events/send.md)
+- [Service Accounts](https://platform.claude.com/docs/en/api/organization/service_accounts.md)
+- [Service Accounts](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts.md)
+- [Service Accounts (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts.md)
+- [Service Accounts (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts.md)
+- [Sessions](https://platform.claude.com/docs/en/api/compliance/apps/sessions.md)
+- [Sessions (Beta)](https://platform.claude.com/docs/en/api/beta/sessions.md)
+- [Set Plugin Installation Setting (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/installation_settings/set.md)
+- [Set Spend Limit (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits/set.md)
+- [Settings](https://platform.claude.com/docs/en/api/compliance/organizations/settings.md)
+- [Shares (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/shares.md)
+- [Skills](https://platform.claude.com/docs/en/api/skills.md)
+- [Skills (Beta)](https://platform.claude.com/docs/en/api/beta/skills.md)
+- [Skills (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/skills.md)
+- [Spend Limits (Beta)](https://platform.claude.com/docs/en/api/beta/organization/spend_limits.md)
+- [Stop Work (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/stop.md)
+- [Stream Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/events/stream.md)
+- [Stream Session Thread Events (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads/events/stream.md)
+- [Summaries (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/summaries.md)
+- [Threads (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/threads.md)
+- [Tunnel Certificates (Beta)](https://platform.claude.com/docs/en/api/beta/organization/mcp_tunnels/tunnel_certificates.md)
+- [Tunnels (Beta)](https://platform.claude.com/docs/en/api/beta/tunnels.md)
+- [Unpause Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/unpause.md)
+- [Update a memory (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/memories/update.md)
+- [Update a memory store (Beta)](https://platform.claude.com/docs/en/api/beta/memory_stores/update.md)
+- [Update Agent (Beta)](https://platform.claude.com/docs/en/api/beta/agents/update.md)
+- [Update API Key](https://platform.claude.com/docs/en/api/organization/api_keys/update.md)
+- [Update API Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/api_keys/update.md)
+- [Update Compliance Settings](https://platform.claude.com/docs/en/api/organization/compliance_settings/update.md)
+- [Update Compliance Settings (Beta)](https://platform.claude.com/docs/en/api/beta/organization/compliance_settings/update.md)
+- [Update Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/update.md)
+- [Update Deployment (Beta)](https://platform.claude.com/docs/en/api/beta/deployments/update.md)
+- [Update Environment (Beta)](https://platform.claude.com/docs/en/api/beta/environments/update.md)
+- [Update External Key](https://platform.claude.com/docs/en/api/organization/external_keys/update.md)
+- [Update External Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/update.md)
+- [Update Federation Issuer](https://platform.claude.com/docs/en/api/organization/federation/issuers/update.md)
+- [Update Federation Issuer (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/issuers/update.md)
+- [Update Federation Rule](https://platform.claude.com/docs/en/api/organization/federation/rules/update.md)
+- [Update Federation Rule (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/update.md)
+- [Update Plugin (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/update.md)
+- [Update Plugin Marketplace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces/update.md)
+- [Update RBAC Group (Beta)](https://platform.claude.com/docs/en/api/beta/organization/rbac_groups/update.md)
+- [Update Service Account](https://platform.claude.com/docs/en/api/organization/service_accounts/update.md)
+- [Update Service Account (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/update.md)
+- [Update Service Account Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/service_accounts/update.md)
+- [Update Service Account Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/service_accounts/update.md)
+- [Update Session (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/update.md)
+- [Update Session Resource (Beta)](https://platform.claude.com/docs/en/api/beta/sessions/resources/update.md)
+- [Update User](https://platform.claude.com/docs/en/api/organization/users/update.md)
+- [Update User (Beta)](https://platform.claude.com/docs/en/api/beta/organization/users/update.md)
+- [Update User Profile (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles/update.md)
+- [Update Vault (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/update.md)
+- [Update Work Item (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work/update.md)
+- [Update Workspace](https://platform.claude.com/docs/en/api/organization/workspaces/update.md)
+- [Update Workspace (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/update.md)
+- [Update Workspace Member](https://platform.claude.com/docs/en/api/organization/workspaces/members/update.md)
+- [Update Workspace Member (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces/members/update.md)
+- [Upload File](https://platform.claude.com/docs/en/api/files/upload.md)
+- [Upload File (Beta)](https://platform.claude.com/docs/en/api/beta/files/upload.md)
+- [Usage Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/usage_report.md)
+- [Usage Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/usage_report.md)
+- [User Cost Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/user_cost_report.md)
+- [User Profiles (Beta)](https://platform.claude.com/docs/en/api/beta/user_profiles.md)
+- [User Usage Report (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/user_usage_report.md)
+- [Users](https://platform.claude.com/docs/en/api/organization/users.md)
+- [Users](https://platform.claude.com/docs/en/api/compliance/organizations/users.md)
+- [Users (Beta)](https://platform.claude.com/docs/en/api/beta/organization/users.md)
+- [Users (Beta)](https://platform.claude.com/docs/en/api/beta/organization/analytics/users.md)
+- [Validate Credential (Beta)](https://platform.claude.com/docs/en/api/beta/vaults/credentials/mcp_oauth_validate.md)
+- [Validate External Key](https://platform.claude.com/docs/en/api/organization/external_keys/validate.md)
+- [Validate External Key (Beta)](https://platform.claude.com/docs/en/api/beta/organization/external_keys/validate.md)
+- [Validate Plugin Marketplace Archive (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces/validate_archive.md)
+- [Validate Plugin Marketplace Repository (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugin_marketplaces/validate_repository.md)
+- [Vaults (Beta)](https://platform.claude.com/docs/en/api/beta/vaults.md)
+- [Versions](https://platform.claude.com/docs/en/api/skills/versions.md)
+- [Versions (Beta)](https://platform.claude.com/docs/en/api/beta/agents/versions.md)
+- [Versions (Beta)](https://platform.claude.com/docs/en/api/beta/skills/versions.md)
+- [Versions (Beta)](https://platform.claude.com/docs/en/api/beta/organization/plugins/versions.md)
+- [Webhooks (Beta)](https://platform.claude.com/docs/en/api/beta/webhooks.md)
+- [Work (Beta)](https://platform.claude.com/docs/en/api/beta/environments/work.md)
+- [Workspaces](https://platform.claude.com/docs/en/api/organization/federation/rules/workspaces.md)
+- [Workspaces](https://platform.claude.com/docs/en/api/organization/service_accounts/workspaces.md)
+- [Workspaces](https://platform.claude.com/docs/en/api/organization/workspaces.md)
+- [Workspaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/federation/rules/workspaces.md)
+- [Workspaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/service_accounts/workspaces.md)
+- [Workspaces (Beta)](https://platform.claude.com/docs/en/api/beta/organization/workspaces.md)
+
+### Other pages
+
+- [Introducing Claude Fable 5 and Claude Mythos 5](https://platform.claude.com/docs/en/models/fable-5/introducing-claude-fable-5-and-claude-mythos-5.md)
+- [API usage primer for Claude](https://platform.claude.com/docs/en/claude_api_primer.md)
+- [Migrating to Claude Mythos 5 and Claude Fable 5](https://platform.claude.com/docs/en/models/fable-5/migration-guide.md)
+
+---
+
+For more comprehensive documentation, see [llms-full.txt](https://platform.claude.com/llms-full.txt)
