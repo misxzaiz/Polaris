@@ -71,6 +71,8 @@ pub struct SimpleAIEngine {
     config: Config,
     sessions: Arc<Mutex<HashMap<String, SimpleAISession>>>,
     session_counter: std::sync::atomic::AtomicU64,
+    /// 后台任务注册表（bash background / task_* 管理工具）
+    task_registry: crate::services::TaskRegistry,
 }
 
 impl SimpleAIEngine {
@@ -79,6 +81,8 @@ impl SimpleAIEngine {
             config,
             sessions: Arc::new(Mutex::new(HashMap::new())),
             session_counter: std::sync::atomic::AtomicU64::new(0),
+            // 与 AppState / bash 工具共享同一个全局注册表
+            task_registry: crate::services::task_registry::task_registry().clone(),
         };
         engine.restore_persisted_sessions();
         engine
@@ -383,6 +387,7 @@ impl AIEngine for SimpleAIEngine {
         let skills_map = skills_map.clone();
         // 思考努力级别：透传给 run_chat_loop（经 build_request_body 映射为协议思考参数）。
         let effort = options.effort.clone();
+        let task_registry = self.task_registry.clone();
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
             sessions.lock().await.insert(sid.clone(), session);
@@ -401,6 +406,7 @@ impl AIEngine for SimpleAIEngine {
                 &file_states,
                 0,
                 &agent_allowed_tools,
+                &task_registry,
             )
             .await;
             // 回写完整历史并清除运行标记，供后续 continue_session 续接上下文。
@@ -438,6 +444,8 @@ impl AIEngine for SimpleAIEngine {
                     }
                 }
             }
+            // 会话本轮结束：清理该会话仍在跑的后台任务（bash background → TaskRegistry）
+            task_registry.cleanup_session_hook(&sid);
         });
 
         Ok(session_id)
@@ -497,6 +505,7 @@ impl AIEngine for SimpleAIEngine {
         let skills_map = skills_map.clone();
         // 思考努力级别：continue 也透传（保持会话内 effort 一致）。
         let effort = options.effort.clone();
+        let task_registry = self.task_registry.clone();
 
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
@@ -553,6 +562,7 @@ impl AIEngine for SimpleAIEngine {
                 0,
                 // continue 路径未保留 agent 定义,不过滤(白名单仅首轮生效的已知限制)
                 &[],
+                &task_registry,
             )
             .await;
 
@@ -591,6 +601,8 @@ impl AIEngine for SimpleAIEngine {
                     }
                 }
             }
+            // 会话本轮结束：清理该会话仍在跑的后台任务
+            task_registry.cleanup_session_hook(&sid);
         });
 
         Ok(())

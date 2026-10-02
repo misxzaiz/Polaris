@@ -313,6 +313,8 @@ pub struct AppState {
     /// 统一转发总线（第三步 RouterBus）— dispatch 唯一入口，共享现有 WS 广播
     /// 通道（event_broadcast），终端命令与 Web API 经同一总线访问契约能力。
     pub router: Arc<crate::services::router::RouterBus>,
+    /// 后台任务注册表（bash background / 管理面板的进程生命周期管理）
+    pub task_registry: crate::services::TaskRegistry,
 }
 
 /// 创建应用状态
@@ -515,6 +517,8 @@ pub fn create_app_state(
         plugin_service_manager: plugin_service_manager.clone(),
         executor_registry,
         router,
+        // 与 SimpleAI 引擎 / bash 工具共享同一个全局注册表
+        task_registry: crate::services::task_registry::task_registry().clone(),
     }
 }
 
@@ -593,6 +597,7 @@ impl AppState {
             plugin_service_manager: self.plugin_service_manager.clone(),
             executor_registry: self.executor_registry.clone(),
             router: self.router.clone(),
+            task_registry: self.task_registry.clone(),
         }
     }
 

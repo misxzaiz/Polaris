@@ -38,6 +38,8 @@ function getToolDescription(panelType: string): string | undefined {
       return '外部平台与机器人接入'
     case 'aiConsole':
       return 'AI 执行记录与来源概览'
+    case 'tasks':
+      return '后台任务：状态、实时日志与终止'
     case 'demoPlugin':
       return '示例插件面板'
     case 'pluginPreview':

@@ -74,6 +74,7 @@ pub(super) async fn run_chat_loop(
     file_states: &std::sync::Arc<super::tools::FileStateRegistry>,
     depth: u32,
     allowed_tools: &[String],
+    task_registry: &crate::services::TaskRegistry,
 ) -> Result<()> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
     tracing::info!(
@@ -613,6 +614,7 @@ pub(super) async fn run_chat_loop(
                 subagent_depth: depth,
                 abort_rx,
                 effort,
+                task_registry,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
             // 工具执行完成后 abort 检查：若执行期间用户已中断，

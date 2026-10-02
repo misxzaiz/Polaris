@@ -114,6 +114,7 @@ impl Tool for DispatchAgentTool {
             ctx.file_states,
             ctx.subagent_depth + 1,
             &agent_def.tools,
+            ctx.task_registry,
         )
         .await;
 

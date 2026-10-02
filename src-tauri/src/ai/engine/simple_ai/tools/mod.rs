@@ -20,6 +20,7 @@ mod fs;
 mod plan;
 mod search;
 mod skill;
+mod task;
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
@@ -42,6 +43,7 @@ use plan::UpdatePlanTool;
 use search::{GlobTool, SearchFilesTool};
 use skill::ReadSkillTool;
 use super::skill::SkillEntry;
+use task::{TaskKillTool, TaskListTool, TaskStatusTool, TaskWaitTool};
 
 // ============================================================================
 // 共享类型
@@ -92,6 +94,8 @@ pub(crate) struct ToolContext<'a> {
     pub abort_rx: &'a watch::Receiver<bool>,
     /// 会话级思考努力级别（Phase 7：dispatch_agent 子会话继承父 effort）
     pub effort: Option<&'a str>,
+    /// 后台任务注册表（bash background / task_* 管理工具共用）
+    pub task_registry: &'a crate::services::TaskRegistry,
 }
 
 pub(crate) const SUBAGENT_MAX_DEPTH: u32 = 3;
@@ -147,6 +151,10 @@ impl ToolRegistry {
             Box::new(UpdatePlanTool),
             Box::new(ReadSkillTool),
             Box::new(DispatchAgentTool),
+            Box::new(TaskStatusTool),
+            Box::new(TaskKillTool),
+            Box::new(TaskWaitTool),
+            Box::new(TaskListTool),
         ];
         // 内置浏览器工具仅桌面 Tauri 运行时可用：它依赖 AppHandle 控制当前打开的 WebView。
         #[cfg(feature = "tauri-app")]
@@ -280,6 +288,8 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
     let abort_rx: &'static watch::Receiver<bool> = Box::leak(Box::new(abort_rx));
     let file_states: &'static std::sync::Arc<FileStateRegistry> =
         Box::leak(Box::new(Arc::new(FileStateRegistry::new())));
+    let task_registry: &'static crate::services::TaskRegistry =
+        Box::leak(Box::new(crate::services::task_registry::task_registry().clone()));
     ToolContext {
         work_dir,
         session_id,
@@ -293,6 +303,7 @@ pub(crate) fn make_test_context(workdir: &str) -> ToolContext<'static> {
         subagent_depth: 0,
         abort_rx,
         effort: None,
+        task_registry,
     }
 }
 
@@ -330,6 +341,10 @@ mod tests {
             "update_plan",
             "read_skill",
             "dispatch_agent",
+            "task_status",
+            "task_kill",
+            "task_wait",
+            "task_list",
         ] {
             assert!(names.contains(&expected), "missing tool: {}", expected);
         }
@@ -338,18 +353,18 @@ mod tests {
         // Windows 上额外注册 1 个 computer 工具（电脑操作）。
         #[cfg(all(windows, feature = "tauri-app"))]
         {
-            assert_eq!(specs.len(), 13);
+            assert_eq!(specs.len(), 17);
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(windows, not(feature = "tauri-app")))]
         {
-            assert_eq!(specs.len(), 12);
+            assert_eq!(specs.len(), 16);
             assert!(names.contains(&"computer"));
         }
         #[cfg(all(not(windows), feature = "tauri-app"))]
-        assert_eq!(specs.len(), 12);
+        assert_eq!(specs.len(), 16);
         #[cfg(all(not(windows), not(feature = "tauri-app")))]
-        assert_eq!(specs.len(), 11);
+        assert_eq!(specs.len(), 15);
 
         // 未知工具经 async dispatch 返回失败。
         let cb: Arc<dyn Fn(AIEvent) + Send + Sync> = Arc::new(|_| ());
@@ -373,6 +388,7 @@ mod tests {
             subagent_depth: 0,
             abort_rx: &abort_rx,
             effort: None,
+            task_registry: crate::services::task_registry::task_registry(),
         };
         let out = reg
             .dispatch("nonexistent_tool", &serde_json::json!({}), &ctx)

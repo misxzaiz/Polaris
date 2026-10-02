@@ -129,3 +129,6 @@ pub use executor::{executor_list, executor_execute};
 pub mod router;
 #[cfg(feature = "tauri-app")]
 pub use router::{router_dispatch, router_list_caps};
+
+pub mod task;
+pub use task::{task_kill, task_list, task_read_log};

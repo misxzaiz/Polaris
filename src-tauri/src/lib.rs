@@ -1159,6 +1159,10 @@ pub fn run() {
             commands::provider_diagnostics::provider_failed_calls,
             commands::provider_diagnostics::provider_failed_calls_clear,
             commands::router::router_dispatch_stream,
+            // 后台任务管理（bash background / 管理面板）
+            commands::task::task_list,
+            commands::task::task_kill,
+            commands::task::task_read_log,
             // 插件引擎管理
             commands::plugin_engine::register_plugin_engine,
             commands::plugin_engine::unregister_plugin_engine,

@@ -180,6 +180,7 @@ let file_states = std::sync::Arc::new(
             subagent_depth: 0,
             abort_rx: &{ watch::channel(false).1 },
             effort: None,
+            task_registry: crate::services::task_registry::task_registry(),
         };
         let args = json!({
             "explanation": "kick off",
@@ -232,6 +233,7 @@ let file_states = std::sync::Arc::new(
             subagent_depth: 0,
             abort_rx: &{ watch::channel(false).1 },
             effort: None,
+            task_registry: crate::services::task_registry::task_registry(),
         };
         let first = json!({ "plan": [{"step": "a", "status": "in_progress"}] });
         let second = json!({ "plan": [{"step": "a", "status": "completed"}] });
@@ -275,6 +277,7 @@ let profile = crate::models::config::ModelProfile::default();
             subagent_depth: 0,
             abort_rx: &{ watch::channel(false).1 },
             effort: None,
+            task_registry: crate::services::task_registry::task_registry(),
         };
         let out = UpdatePlanTool.execute(&json!({ "plan": [] }), &ctx).await;
         assert!(!out.success);

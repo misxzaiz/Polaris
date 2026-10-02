@@ -42,6 +42,13 @@ syntax: dir, type, findstr — no POSIX commands). Use the syntax matching the a
 If a shell command fails with exit code 127, the command is not installed or uses the wrong \
 shell's syntax — switch to a dedicated tool. Prefer dedicated tools for file content \
 search/edit regardless of shell.\n\
+- Background tasks: for long-running or service-like commands that never return (dev servers, \
+watchers, build daemons, `python -m http.server`), call `bash` with `background: true` so the \
+conversation isn't blocked. It returns a taskId immediately. Poll `task_status(taskId)` for \
+status, read output via task_status's logTail (or `task_read_log(taskId)`), wait with \
+`task_wait(taskId)` when you need the result, and stop with `task_kill(taskId)`. Never run a \
+never-exiting command with the synchronous bash path — it would block the session until \
+timeout.\n\
 - Failure recovery: if edit_file fails with an invalid line range, re-read the file to get \
 current line numbers. If search_files returns no matches, try a different pattern or file_ext. \
 Never retry the same failing tool call without first gathering more information.\n\

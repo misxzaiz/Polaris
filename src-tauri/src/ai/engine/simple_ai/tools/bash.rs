@@ -8,6 +8,10 @@ use serde_json::{json, Value};
 
 use super::{truncate_chars, Tool, ToolContext, ToolOutcome};
 
+/// bash 工具同步路径默认超时（秒），可用 SIMPLE_AI_BASH_TIMEOUT_SECS 覆盖。
+/// 后台任务注册表的全局兜底超时也以此对齐。
+pub(crate) const DEFAULT_BASH_TIMEOUT_SECS: u64 = 600;
+
 pub(super) struct BashTool;
 
 #[async_trait::async_trait]
@@ -21,7 +25,7 @@ impl Tool for BashTool {
             "type": "function",
             "function": {
                 "name": "bash",
-                "description": "Execute a shell command and return its output. \n\nOn Windows: the shell is auto-detected (Git Bash preferred, then PowerShell, then cmd.exe). POSIX commands (grep, sed, find, rm, ls) may not be available on cmd.exe — prefer the dedicated tools (search_files, glob, read_file, edit_file) which work identically across platforms.\n\nIMPORTANT: Bash-specific syntax (&&, ||, 2>/dev/null, $(...)) only works with Git Bash. When the auto-detected shell is PowerShell or cmd.exe, these constructs fail. Rewrite using PowerShell syntax (-and, -or, 2>$null, Get-Content, Select-String) or use dedicated tools instead.\n\nIf a shell command fails with exit code 127, the command is not installed or not in PATH — use a dedicated tool instead.\n\nUse this to run build tools, scripts, and system commands, not for file content search/edit.",
+                "description": "Execute a shell command and return its output. \n\nOn Windows: the shell is auto-detected (Git Bash preferred, then PowerShell, then cmd.exe). POSIX commands (grep, sed, find, rm, ls) may not be available on cmd.exe — prefer the dedicated tools (search_files, glob, read_file, edit_file) which work identically across platforms.\n\nIMPORTANT: Bash-specific syntax (&&, ||, 2>/dev/null, $(...)) only works with Git Bash. When the auto-detected shell is PowerShell or cmd.exe, these constructs fail. Rewrite using PowerShell syntax (-and, -or, 2>$null, Get-Content, Select-String) or use dedicated tools instead.\n\nIf a shell command fails with exit code 127, the command is not installed or not in PATH — use a dedicated tool instead.\n\nUse this to run build tools, scripts, and system commands, not for file content search/edit.\n\nBACKGROUND TASKS: For long-running or service-like commands (dev servers, watchers, build daemons), set \"background\": true to run the command in the background. The tool returns immediately with a taskId; poll task_status / read the task log / kill with task_kill. Use this instead of blocking the conversation on a command that never exits.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -32,6 +36,14 @@ impl Tool for BashTool {
                         "workdir": {
                             "type": "string",
                             "description": "Working directory for the command (optional, defaults to session work_dir)"
+                        },
+                        "background": {
+                            "type": "boolean",
+                            "description": "If true, run the command as an independent background task (managed by the task registry). Returns immediately with taskId/logPath; status/logs/kill via task_status / task_read_log / task_kill. Use for dev servers, watchers, long-running scripts. Optional, defaults to false."
+                        },
+                        "timeoutMs": {
+                            "type": "number",
+                            "description": "Timeout for background tasks in milliseconds (optional). 0 = no timeout. Defaults to a global fallback. Only applies when background=true."
                         }
                     },
                     "required": ["command"]
@@ -44,7 +56,11 @@ impl Tool for BashTool {
         let command = args["command"].as_str().unwrap_or("").to_string();
         let workdir_override = args["workdir"].as_str().map(String::from);
         let default_dir = ctx.work_dir.to_string();
-        // 以 tokio::process::Command 运行 + 轮询 abort 信号，使 bash 可被用户中断：
+        // 后台模式：走任务注册表，立即返回 taskId，不阻塞对话。
+        if args["background"].as_bool().unwrap_or(false) {
+            return run_bash_background(&command, workdir_override.as_deref(), &default_dir, args, ctx).await;
+        }
+        // 同步路径：以 tokio::process::Command 运行 + 轮询 abort 信号，使 bash 可被用户中断：
         // 避免「命令跑 20s 且页面上点停止无效」的长阻塞窗口。
         run_bash_async(&command, workdir_override.as_deref(), &default_dir, ctx).await
     }
@@ -137,7 +153,7 @@ async fn run_bash_async(
         .as_ref()
         .and_then(|m| m.get("SIMPLE_AI_BASH_TIMEOUT_SECS"))
         .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(600);
+        .unwrap_or(DEFAULT_BASH_TIMEOUT_SECS);
 
     // abort_rx 在 ToolContext 中为不可变引用，`watch::Receiver::changed()` 需 `&mut`，
     // 故用 200ms 轮询检查当前值（与子进程 wait 竞速）。中断响应由 18s 级降至 200ms 级。
@@ -246,6 +262,50 @@ async fn run_bash_async(
         ToolOutcome::ok(content)
     } else {
         ToolOutcome::fail(content)
+    }
+}
+
+/// 后台执行：经任务注册表 spawn 独立进程组，stdout/stderr 写日志文件，立即返回 taskId。
+///
+/// 设计要点：
+/// - 不占用对话：返回后工具立即结束，任务状态由 task_status / task_kill / 面板管理
+/// - 不占管道：输出重定向到 <DataRoot>/tasks/<sessionId>/<taskId>.log（解决同步路径
+///   64KB 管道写满阻塞的历史根因）
+/// - 独立进程组：Windows CREATE_NEW_PROCESS_GROUP + taskkill /T /F 连根杀，
+///   杜绝父进程退出后孤儿进程残留（历史教训：8848 端口 python 孤儿服务）
+async fn run_bash_background(
+    command: &str,
+    workdir: Option<&str>,
+    default_dir: &str,
+    args: &Value,
+    ctx: &ToolContext<'_>,
+) -> ToolOutcome {
+    let cwd = workdir.unwrap_or(default_dir);
+    // 用户可用 SIMPLE_AI_BASH_TIMEOUT_SECS 覆盖注册表全局兜底；timeoutMs 参数优先。
+    let timeout_ms = args["timeoutMs"]
+        .as_u64()
+        .or_else(|| {
+            ctx.profile
+                .custom_env
+                .as_ref()
+                .and_then(|m| m.get("SIMPLE_AI_BASH_TIMEOUT_SECS"))
+                .and_then(|v| v.parse::<u64>().ok())
+                .map(|secs| secs * 1000)
+        });
+    match ctx
+        .task_registry
+        .spawn_task(ctx.session_id, command, Some(cwd), &[], timeout_ms)
+        .await
+    {
+        Ok(info) => ToolOutcome::ok(serde_json::json!({
+            "status": "running",
+            "taskId": info.task_id,
+            "pid": info.pid,
+            "logPath": info.log_path,
+            "note": "Task is running in the background. Use task_status(taskId) to poll status, task_read_log(taskId) to read output, task_kill(taskId) to stop it."
+        })
+        .to_string()),
+        Err(e) => ToolOutcome::fail(format!("Failed to start background task: {}", e)),
     }
 }
 

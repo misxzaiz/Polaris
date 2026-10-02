@@ -36,6 +36,7 @@ const SimpleTodoPanel = lazy(() => import('./components/TodoPanel/SimpleTodoPane
 const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
 const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
+const BackgroundTasksPanel = lazy(() => import('./components/BackgroundTasks/BackgroundTasksPanel').then(m => ({ default: m.BackgroundTasksPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
 const PluginPreviewPanel = lazy(() => import('./components/Plugins/PluginPreviewPanel').then(m => ({ default: m.PluginPreviewPanel })));
 const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
@@ -318,6 +319,7 @@ function App() {
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
+      tasksContent={<Suspense fallback={loadingFallback}><BackgroundTasksPanel /></Suspense>}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
       pluginPreviewContent={<Suspense fallback={loadingFallback}><PluginPreviewPanel /></Suspense>}
     />

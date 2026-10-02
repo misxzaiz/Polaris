@@ -22,6 +22,7 @@ export type PluginIconId =
   | 'Activity'
   | 'Users'
   | 'Beaker'
+  | 'ListTodo'
 
 export type PluginLeftPanelType = string
 

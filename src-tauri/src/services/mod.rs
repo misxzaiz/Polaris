@@ -37,6 +37,8 @@ pub mod form_flow;
 pub mod form_template;
 pub mod ai_history_core;
 pub mod router;
+pub mod task_registry;
+pub use task_registry::{TaskInfo, TaskRegistry, TaskStatus};
 pub mod agnes_mcp_server;
 pub mod personal_hub_crypto;
 pub mod personal_hub_mcp_server;

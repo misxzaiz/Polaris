@@ -125,6 +125,7 @@ router: {
             }
             bus
         },
+        task_registry: crate::services::task_registry::task_registry().clone(),
     })
 }
 

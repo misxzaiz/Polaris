@@ -85,6 +85,7 @@ let file_states = Box::leak(Box::new(std::sync::Arc::new(
             subagent_depth: 0,
             abort_rx,
             effort: None,
+            task_registry: crate::services::task_registry::task_registry(),
         }
     }
 
