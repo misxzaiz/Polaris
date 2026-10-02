@@ -264,7 +264,9 @@ export const LightweightMarkdown = memo(function LightweightMarkdown({
   return (
     <span className="break-words">
       {parts.map((part, index) => renderPart(part, index))}
-      {caret && <span aria-hidden className="streaming-caret" />}
+      {/* 光标只在有实质内容时才渲染：空/纯空白段（流式分割的末尾空段等）
+          不应在空行上闪烁，避免文本结束 → 工具调用开始之间出现孤立光标 */}
+      {caret && content.trim() && <span aria-hidden className="streaming-caret" />}
     </span>
   );
 });
@@ -679,6 +681,17 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
       const completedContent = paragraphs.slice(0, -1).join('\n\n') + '\n\n';
       const lastPara = paragraphs[paragraphs.length - 1];
 
+      // 末段为空/纯空白：content 以段落边界（\n\n）收尾，最后一段已经完整结束。
+      // 此时若仍按"流式中最后一段"渲染，会在空行上挂一个闪烁的打字光标
+      // （尤其文本结束 → 工具调用开始之间，消息级 isStreaming 仍为 true，光标不消失）。
+      // 按已完成段落统一渲染，等下一个 token 到达再继续流式。
+      if (!lastPara.trim()) {
+        return (
+          <div className="break-words" style={{ contain: 'content' }}
+            dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedContent) }} />
+        );
+      }
+
       return (
         <>
           <div className="break-words" style={{ contain: 'content' }}
@@ -757,6 +770,15 @@ export const ProgressiveStreamingMarkdown = memo(function ProgressiveStreamingMa
           // 已完成段落合并 + 最后一段轻量
           const completedParasContent = paragraphs.slice(0, -1).join('\n\n') + '\n\n';
           const lastPara = paragraphs[paragraphs.length - 1];
+
+          // 末段为空/纯空白：文本以段落边界收尾，最后一段已完整结束。
+          // 空段不再挂流式光标（同无代码块路径的处理）。
+          if (!lastPara.trim()) {
+            return (
+              <div key={`ctext-${index}`} className="break-words" style={{ contain: 'content' }}
+                dangerouslySetInnerHTML={{ __html: streamingMdCache.render(completedParasContent) }} />
+            );
+          }
 
           return (
             <span key={`streaming-${index}`}>

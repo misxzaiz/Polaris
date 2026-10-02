@@ -3,10 +3,8 @@
 //! MCP server for unified requirement management.
 
 use std::collections::BTreeMap;
-use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
@@ -14,36 +12,11 @@ use crate::models::requirement::{
     QueryScope, RequirementCreateParams, RequirementExecuteConfig, RequirementPriority,
     RequirementSource, RequirementStatus, RequirementUpdateParams,
 };
+use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::unified_requirement_repository::UnifiedRequirementRepository;
 
 const SERVER_NAME: &str = "polaris-requirements-mcp";
 const SERVER_VERSION: &str = "0.2.0";
-const PROTOCOL_VERSION: &str = "2024-11-05";
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcResponse<'a> {
-    jsonrpc: &'a str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcError {
-    code: i32,
-    message: String,
-}
 
 /// Run the requirements MCP server with unified repository
 pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
@@ -58,242 +31,151 @@ pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str
     });
 
     let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
-
-    // Register workspace if provided
     repository.register_workspace()?;
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
-
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
-
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            // JSON-RPC 2.0 §4.1: a Notification is a Request without an `id`
-            // field. The server MUST NOT reply to notifications. Returning
-            // any frame here makes strict clients (e.g. codex 0.130's rmcp)
-            // fail to parse it as a valid JsonRpcMessage and tear down the
-            // stdio transport. Silently consume and continue.
-            Ok(request) if request.id.is_none() => continue,
-            Ok(request) => handle_request(request, &repository),
-            Err(error) => JsonRpcResponse {
-                jsonrpc: "2.0",
-                id: Value::Null,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32700,
-                    message: format!("Parse error: {}", error),
-                }),
-            },
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
-    }
-
-    Ok(())
+    let handler = RequirementsMcpHandler { repository };
+    mcp_server_common::run_mcp_server_loop(handler)
 }
 
-fn handle_request(
-    request: JsonRpcRequest,
-    repository: &UnifiedRequirementRepository,
-) -> JsonRpcResponse<'static> {
-    let id = request.id.unwrap_or(Value::Null);
-
-    if request.jsonrpc != "2.0" {
-        return error_response(
-            id,
-            -32600,
-            "Invalid Request: jsonrpc must be 2.0".to_string(),
-        );
-    }
-
-    let result = match request.method.as_str() {
-        "initialize" => handle_initialize(),
-        "notifications/initialized" => Ok(json!({})),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(handle_tools_list()),
-        "tools/call" => handle_tools_call(request.params, repository),
-        _ => Err(AppError::ValidationError(format!(
-            "Unsupported method: {}",
-            request.method
-        ))),
-    };
-
-    match result {
-        Ok(result) => JsonRpcResponse {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => error_response(id, -32000, error.to_message()),
-    }
+struct RequirementsMcpHandler {
+    repository: UnifiedRequirementRepository,
 }
 
-fn handle_initialize() -> Result<Value> {
-    Ok(json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {
-            "tools": {}
-        },
-        "serverInfo": {
-            "name": SERVER_NAME,
-            "version": SERVER_VERSION
-        }
-    }))
-}
+impl McpServerHandler for RequirementsMcpHandler {
+    fn server_name(&self) -> &str { SERVER_NAME }
+    fn server_version(&self) -> &str { SERVER_VERSION }
 
-fn handle_tools_list() -> Value {
-    json!({
-        "tools": [
-            {
-                "name": "list_requirements",
-                "description": "列出需求。默认仅当前工作区，可通过 scope 参数查询全部。",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "scope": {
-                            "type": "string",
-                            "enum": ["workspace", "all"],
-                            "description": "workspace: 仅当前工作区（默认），all: 全部"
-                        },
-                        "status": { "type": "string", "enum": ["draft", "pending", "approved", "rejected", "executing", "completed", "failed"] },
-                        "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                        "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "create_requirement",
-                "description": "创建一条新需求。需求将关联到当前工作区。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["title", "description"],
-                    "properties": {
-                        "title": { "type": "string", "minLength": 1 },
-                        "description": { "type": "string", "minLength": 1 },
-                        "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-                        "hasPrototype": { "type": "boolean" },
-                        "generatedBy": { "type": "string", "enum": ["ai", "user"] },
-                        "generatorTaskId": { "type": "string" }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "update_requirement",
-                "description": "更新一条需求。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 },
-                        "title": { "type": "string" },
-                        "description": { "type": "string" },
-                        "status": { "type": "string", "enum": ["draft", "pending", "approved", "rejected", "executing", "completed", "failed"] },
-                        "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
-                        "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
-                        "prototypePath": { "type": "string" },
-                        "hasPrototype": { "type": "boolean" },
-                        "reviewNote": { "type": "string" },
-                        "executeLog": { "type": "string" },
-                        "executeError": { "type": "string" },
-                        "generatedBy": { "type": "string", "enum": ["ai", "user"] },
-                        "sessionId": { "type": "string" },
-                        "executeConfig": {
-                          "type": "object",
-                          "properties": {
-                            "scheduledAt": { "type": "integer" },
-                            "engineId": { "type": "string" },
-                            "workDir": { "type": "string" }
-                          },
-                          "additionalProperties": false
+    fn tools_list(&self) -> Value {
+        json!({
+                "tools": [
+                    {
+                        "name": "list_requirements",
+                        "description": "列出需求。默认仅当前工作区，可通过 scope 参数查询全部。",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "scope": {
+                                    "type": "string",
+                                    "enum": ["workspace", "all"],
+                                    "description": "workspace: 仅当前工作区（默认），all: 全部"
+                                },
+                                "status": { "type": "string", "enum": ["draft", "pending", "approved", "rejected", "executing", "completed", "failed"] },
+                                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+                                "limit": { "type": "integer", "minimum": 1, "maximum": 200 }
+                            },
+                            "additionalProperties": false
                         }
                     },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "delete_requirement",
-                "description": "删除一条需求。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 }
+                    {
+                        "name": "create_requirement",
+                        "description": "创建一条新需求。需求将关联到当前工作区。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["title", "description"],
+                            "properties": {
+                                "title": { "type": "string", "minLength": 1 },
+                                "description": { "type": "string", "minLength": 1 },
+                                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+                                "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                                "hasPrototype": { "type": "boolean" },
+                                "generatedBy": { "type": "string", "enum": ["ai", "user"] },
+                                "generatorTaskId": { "type": "string" }
+                            },
+                            "additionalProperties": false
+                        }
                     },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "save_requirement_prototype",
-                "description": "保存需求原型 HTML。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id", "html"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 },
-                        "html": { "type": "string", "minLength": 1 }
+                    {
+                        "name": "update_requirement",
+                        "description": "更新一条需求。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id"],
+                            "properties": {
+                                "id": { "type": "string", "minLength": 1 },
+                                "title": { "type": "string" },
+                                "description": { "type": "string" },
+                                "status": { "type": "string", "enum": ["draft", "pending", "approved", "rejected", "executing", "completed", "failed"] },
+                                "priority": { "type": "string", "enum": ["low", "normal", "high", "urgent"] },
+                                "tags": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+                                "prototypePath": { "type": "string" },
+                                "hasPrototype": { "type": "boolean" },
+                                "reviewNote": { "type": "string" },
+                                "executeLog": { "type": "string" },
+                                "executeError": { "type": "string" },
+                                "generatedBy": { "type": "string", "enum": ["ai", "user"] },
+                                "sessionId": { "type": "string" },
+                                "executeConfig": {
+                                  "type": "object",
+                                  "properties": {
+                                    "scheduledAt": { "type": "integer" },
+                                    "engineId": { "type": "string" },
+                                    "workDir": { "type": "string" }
+                                  },
+                                  "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
+                        }
                     },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "get_workspace_breakdown",
-                "description": "获取各工作区的需求数量统计。",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": false
-                }
-            }
-        ]
-    })
-}
+                    {
+                        "name": "delete_requirement",
+                        "description": "删除一条需求。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id"],
+                            "properties": {
+                                "id": { "type": "string", "minLength": 1 }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "save_requirement_prototype",
+                        "description": "保存需求原型 HTML。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id", "html"],
+                            "properties": {
+                                "id": { "type": "string", "minLength": 1 },
+                                "html": { "type": "string", "minLength": 1 }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "get_workspace_breakdown",
+                        "description": "获取各工作区的需求数量统计。",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {},
+                            "additionalProperties": false
+                        }
+                    }
+                ]
+            })
+    }
 
-fn handle_tools_call(params: Value, repository: &UnifiedRequirementRepository) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-
-    match name {
-        "list_requirements" => execute_list_requirements(arguments, repository),
-        "create_requirement" => execute_create_requirement(arguments, repository),
-        "update_requirement" => execute_update_requirement(arguments, repository),
-        "delete_requirement" => execute_delete_requirement(arguments, repository),
-        "save_requirement_prototype" => execute_save_prototype(arguments, repository),
-        "get_workspace_breakdown" => execute_get_workspace_breakdown(repository),
-        _ => Err(AppError::ValidationError(format!("未知工具: {}", name))),
+    fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
+        let repository = &self.repository;
+        match name {
+            "list_requirements" => execute_list_requirements(arguments, repository),
+            "create_requirement" => execute_create_requirement(arguments, repository),
+            "update_requirement" => execute_update_requirement(arguments, repository),
+            "delete_requirement" => execute_delete_requirement(arguments, repository),
+            "save_requirement_prototype" => execute_save_prototype(arguments, repository),
+            "get_workspace_breakdown" => execute_get_workspace_breakdown(repository),
+            _ => Err(AppError::ValidationError(format!("未知工具: {}", name))),
+        }
     }
 }
+
 
 // ============================================================================
 // Tool implementations
 // ============================================================================
 
 fn execute_list_requirements(
-    arguments: Value,
+    arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
     let scope = parse_scope(arguments.get("scope"));
@@ -334,7 +216,7 @@ fn execute_list_requirements(
 }
 
 fn execute_create_requirement(
-    arguments: Value,
+    arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
     let title = arguments
@@ -384,7 +266,7 @@ fn execute_create_requirement(
 }
 
 fn execute_update_requirement(
-    arguments: Value,
+    arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
@@ -425,7 +307,7 @@ fn execute_update_requirement(
 }
 
 fn execute_delete_requirement(
-    arguments: Value,
+    arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
@@ -437,7 +319,7 @@ fn execute_delete_requirement(
 }
 
 fn execute_save_prototype(
-    arguments: Value,
+    arguments: &Value,
     repository: &UnifiedRequirementRepository,
 ) -> Result<Value> {
     let id = parse_id_arg(&arguments)?;
@@ -529,15 +411,6 @@ fn format_breakdown(breakdown: &BTreeMap<String, usize>) -> String {
         .map(|(name, count)| format!("{}: {}", name, count))
         .collect::<Vec<_>>()
         .join(", ")
-}
-
-fn error_response(id: Value, code: i32, message: String) -> JsonRpcResponse<'static> {
-    JsonRpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(JsonRpcError { code, message }),
-    }
 }
 
 // ============================================================================
@@ -693,17 +566,6 @@ mod tests {
     }
 
     #[test]
-    fn initialize_returns_protocol_metadata() {
-        let value = handle_initialize().unwrap();
-        assert_eq!(
-            value["protocolVersion"],
-            Value::String(PROTOCOL_VERSION.to_string())
-        );
-        assert_eq!(
-            value["serverInfo"]["name"],
-            Value::String(SERVER_NAME.to_string())
-        );
-    }
 
     // Regression: JSON-RPC 2.0 §4.1 — a Notification is a Request whose `id`
     // field is absent. The main loop relies on `request.id.is_none()` to
@@ -713,7 +575,7 @@ mod tests {
     #[test]
     fn notification_is_detected_when_id_field_is_absent() {
         let payload = r#"{"jsonrpc":"2.0","method":"notifications/initialized"}"#;
-        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        let request: mcp_server_common::JsonRpcRequest = serde_json::from_str(payload).unwrap();
         assert!(
             request.id.is_none(),
             "missing id field must deserialize to None"
@@ -724,7 +586,7 @@ mod tests {
     #[test]
     fn explicit_null_id_collapses_to_none_by_serde_default() {
         let payload = r#"{"jsonrpc":"2.0","id":null,"method":"ping"}"#;
-        let request: JsonRpcRequest = serde_json::from_str(payload).unwrap();
+        let request: mcp_server_common::JsonRpcRequest = serde_json::from_str(payload).unwrap();
         assert!(request.id.is_none());
     }
 }

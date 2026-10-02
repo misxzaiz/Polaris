@@ -3,45 +3,18 @@
 //! MCP server for unified scheduler management.
 //! Provides tools for CRUD operations on scheduled tasks.
 
-use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
 
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
 use crate::models::scheduler::{CreateTaskParams, TriggerType};
+use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::scheduler::TaskUpdateParams;
 use crate::services::unified_scheduler_repository::UnifiedSchedulerRepository;
 
 const SERVER_NAME: &str = "polaris-scheduler-mcp";
 const SERVER_VERSION: &str = "0.2.0";
-const PROTOCOL_VERSION: &str = "2024-11-05";
-
-#[derive(Debug, Deserialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcResponse<'a> {
-    jsonrpc: &'a str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcError {
-    code: i32,
-    message: String,
-}
 
 /// Run the scheduler MCP server with unified repository
 pub fn run_scheduler_mcp_server(config_dir: &str, workspace_path: Option<&str>) -> Result<()> {
@@ -58,202 +31,135 @@ pub fn run_scheduler_mcp_server(config_dir: &str, workspace_path: Option<&str>) 
     let repository = UnifiedSchedulerRepository::new(config_dir, workspace_path);
     repository.register_workspace()?;
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = io::BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
+    let handler = SchedulerMcpHandler { repository };
+    mcp_server_common::run_mcp_server_loop(handler)
+}
 
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
+struct SchedulerMcpHandler {
+    repository: UnifiedSchedulerRepository,
+}
 
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) => handle_request(request, &repository),
-            Err(error) => JsonRpcResponse {
-                jsonrpc: "2.0",
-                id: Value::Null,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32700,
-                    message: format!("Parse error: {}", error),
-                }),
-            },
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
+impl McpServerHandler for SchedulerMcpHandler {
+    fn server_name(&self) -> &str {
+        SERVER_NAME
     }
 
-    Ok(())
-}
-
-fn handle_request(request: JsonRpcRequest, repository: &UnifiedSchedulerRepository) -> JsonRpcResponse<'static> {
-    let id = request.id.unwrap_or(Value::Null);
-
-    if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
+    fn server_version(&self) -> &str {
+        SERVER_VERSION
     }
 
-    let result = match request.method.as_str() {
-        "initialize" => handle_initialize(),
-        "notifications/initialized" => Ok(json!({})),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(handle_tools_list()),
-        "tools/call" => handle_tools_call(request.params, repository),
-        _ => Err(AppError::ValidationError(format!("Unsupported method: {}", request.method))),
-    };
-
-    match result {
-        Ok(result) => JsonRpcResponse {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => error_response(id, -32000, error.to_message()),
+    fn tools_list(&self) -> Value {
+        json!({
+            "tools": [
+                {
+                    "name": "list_tasks",
+                    "description": "列出定时任务。",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "get_task",
+                    "description": "获取单个定时任务详情。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                            "id": { "type": "string", "minLength": 1 }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "create_task",
+                    "description": "创建定时任务。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["name", "triggerType", "triggerValue", "engineId", "prompt"],
+                        "properties": {
+                            "name": { "type": "string", "minLength": 1 },
+                            "enabled": { "type": "boolean" },
+                            "triggerType": { "type": "string", "enum": ["once", "cron", "interval"] },
+                            "triggerValue": { "type": "string", "minLength": 1 },
+                            "engineId": { "type": "string", "minLength": 1 },
+                            "prompt": { "type": "string", "minLength": 1 },
+                            "workDir": { "type": "string" },
+                            "description": { "type": "string" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "update_task",
+                    "description": "更新定时任务。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                            "id": { "type": "string", "minLength": 1 },
+                            "name": { "type": "string" },
+                            "enabled": { "type": "boolean" },
+                            "triggerType": { "type": "string", "enum": ["once", "cron", "interval"] },
+                            "triggerValue": { "type": "string" },
+                            "engineId": { "type": "string" },
+                            "prompt": { "type": "string" },
+                            "workDir": { "type": "string" },
+                            "description": { "type": "string" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "delete_task",
+                    "description": "删除定时任务。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["id"],
+                        "properties": {
+                            "id": { "type": "string", "minLength": 1 }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "toggle_task",
+                    "description": "切换任务启用状态。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["id", "enabled"],
+                        "properties": {
+                            "id": { "type": "string", "minLength": 1 },
+                            "enabled": { "type": "boolean" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "get_workspace_breakdown",
+                    "description": "获取各工作区的任务数量统计。",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {},
+                        "additionalProperties": false
+                    }
+                }
+            ]
+        })
     }
-}
 
-fn handle_initialize() -> Result<Value> {
-    Ok(json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {
-            "tools": {}
-        },
-        "serverInfo": {
-            "name": SERVER_NAME,
-            "version": SERVER_VERSION
+    fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
+        match name {
+            "list_tasks" => execute_list_tasks(&self.repository),
+            "get_task" => execute_get_task(arguments, &self.repository),
+            "create_task" => execute_create_task(arguments, &self.repository),
+            "update_task" => execute_update_task(arguments, &self.repository),
+            "delete_task" => execute_delete_task(arguments, &self.repository),
+            "toggle_task" => execute_toggle_task(arguments, &self.repository),
+            "get_workspace_breakdown" => execute_get_workspace_breakdown(&self.repository),
+            _ => Err(AppError::ValidationError(format!("未知工具: {}", name))),
         }
-    }))
-}
-
-fn handle_tools_list() -> Value {
-    json!({
-        "tools": [
-            {
-                "name": "list_tasks",
-                "description": "列出定时任务。",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "get_task",
-                "description": "获取单个定时任务详情。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "create_task",
-                "description": "创建定时任务。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["name", "triggerType", "triggerValue", "engineId", "prompt"],
-                    "properties": {
-                        "name": { "type": "string", "minLength": 1 },
-                        "enabled": { "type": "boolean" },
-                        "triggerType": { "type": "string", "enum": ["once", "cron", "interval"] },
-                        "triggerValue": { "type": "string", "minLength": 1 },
-                        "engineId": { "type": "string", "minLength": 1 },
-                        "prompt": { "type": "string", "minLength": 1 },
-                        "workDir": { "type": "string" },
-                        "description": { "type": "string" }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "update_task",
-                "description": "更新定时任务。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 },
-                        "name": { "type": "string" },
-                        "enabled": { "type": "boolean" },
-                        "triggerType": { "type": "string", "enum": ["once", "cron", "interval"] },
-                        "triggerValue": { "type": "string" },
-                        "engineId": { "type": "string" },
-                        "prompt": { "type": "string" },
-                        "workDir": { "type": "string" },
-                        "description": { "type": "string" }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "delete_task",
-                "description": "删除定时任务。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "toggle_task",
-                "description": "切换任务启用状态。",
-                "inputSchema": {
-                    "type": "object",
-                    "required": ["id", "enabled"],
-                    "properties": {
-                        "id": { "type": "string", "minLength": 1 },
-                        "enabled": { "type": "boolean" }
-                    },
-                    "additionalProperties": false
-                }
-            },
-            {
-                "name": "get_workspace_breakdown",
-                "description": "获取各工作区的任务数量统计。",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": false
-                }
-            }
-        ]
-    })
-}
-
-fn handle_tools_call(params: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-
-    match name {
-        "list_tasks" => execute_list_tasks(repository),
-        "get_task" => execute_get_task(arguments, repository),
-        "create_task" => execute_create_task(arguments, repository),
-        "update_task" => execute_update_task(arguments, repository),
-        "delete_task" => execute_delete_task(arguments, repository),
-        "toggle_task" => execute_toggle_task(arguments, repository),
-        "get_workspace_breakdown" => execute_get_workspace_breakdown(repository),
-        _ => Err(AppError::ValidationError(format!("未知工具: {}", name))),
     }
 }
 
@@ -278,7 +184,7 @@ fn execute_list_tasks(repository: &UnifiedSchedulerRepository) -> Result<Value> 
     }))
 }
 
-fn execute_get_task(arguments: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
+fn execute_get_task(arguments: &Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -299,7 +205,7 @@ fn execute_get_task(arguments: Value, repository: &UnifiedSchedulerRepository) -
     }))
 }
 
-fn execute_create_task(arguments: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
+fn execute_create_task(arguments: &Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
     let name = arguments
         .get("name")
         .and_then(Value::as_str)
@@ -384,7 +290,7 @@ fn execute_create_task(arguments: Value, repository: &UnifiedSchedulerRepository
     }))
 }
 
-fn execute_update_task(arguments: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
+fn execute_update_task(arguments: &Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -421,7 +327,7 @@ fn execute_update_task(arguments: Value, repository: &UnifiedSchedulerRepository
     }))
 }
 
-fn execute_delete_task(arguments: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
+fn execute_delete_task(arguments: &Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -440,7 +346,7 @@ fn execute_delete_task(arguments: Value, repository: &UnifiedSchedulerRepository
     }))
 }
 
-fn execute_toggle_task(arguments: Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
+fn execute_toggle_task(arguments: &Value, repository: &UnifiedSchedulerRepository) -> Result<Value> {
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
@@ -514,15 +420,6 @@ fn optional_trimmed_string(value: Option<&Value>) -> Option<String> {
         .map(|v| v.to_string())
 }
 
-fn error_response(id: Value, code: i32, message: String) -> JsonRpcResponse<'static> {
-    JsonRpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(JsonRpcError { code, message }),
-    }
-}
-
 // ============================================================================
 // Tool definitions for diagnostics
 // ============================================================================
@@ -549,12 +446,5 @@ mod tests {
         assert_eq!(defs.len(), 7);
         assert!(defs.contains_key("create_task"));
         assert!(defs.contains_key("toggle_task"));
-    }
-
-    #[test]
-    fn initialize_returns_protocol_metadata() {
-        let value = handle_initialize().unwrap();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
     }
 }

@@ -22,7 +22,7 @@ import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreMana
 import { Button } from '../../Common/Button';
 import type { PermissionRequestBlock, PermissionDenialBlock, PermissionScope } from '@/types';
 import { addClaudePermissionRules } from '@/services/claudeSettingsService';
-import { getToolDisplayName } from '@/utils/toolConfig';
+import { getToolDisplayName, MCP_TOOL_PREFIX } from '@/utils/toolConfig';
 
 const log = createLogger('PermissionRequest');
 
@@ -40,7 +40,7 @@ function getToolIcon(toolName: string) {
   if (n === 'bash' || n === 'shell') return Terminal;
   if (n === 'read') return Eye;
   if (n === 'glob' || n === 'grep') return Search;
-  if (n.startsWith('mcp__')) return Boxes;
+  if (n.startsWith(MCP_TOOL_PREFIX)) return Boxes;
   return Wrench;
 }
 

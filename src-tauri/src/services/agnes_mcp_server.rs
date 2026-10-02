@@ -3,14 +3,7 @@
 //! Provides image and video generation tools via Agnes AI APIs.
 //! - Image generation: Agnes Image 2.1 Flash (text-to-image, image-to-image)
 //! - Video generation: Agnes Video V2.0 (text-to-video, image-to-video, multi-image, keyframes)
-//!
-//! JSON-RPC over stdio, same framework as other Polaris MCP servers.
-//!
-//! Credentials are read from `<config_dir>/agnes/config.json`, written by the
-//! Agnes plugin settings panel. The config is reloaded before every tool call
-//! so panel edits take effect without restarting the server.
 
-use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -19,7 +12,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
+use crate::services::mcp_server_common::{self, McpServerHandler};
 
+// Include struct/const/function definitions up to line 229 (build_http_client, AgnesConfig, etc.)
 const SERVER_NAME: &str = "polaris-agnes-mcp";
 const SERVER_VERSION: &str = "0.1.0";
 const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -143,35 +138,6 @@ pub fn normalize_num_frames(requested: u32) -> u32 {
 // JSON-RPC types
 // ============================================================================
 
-#[derive(Debug, Deserialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcResponse<'a> {
-    jsonrpc: &'a str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, Serialize)]
-struct JsonRpcError {
-    code: i32,
-    message: String,
-}
-
-// ============================================================================
-// HTTP client helpers
-// ============================================================================
-
 fn build_http_client() -> Result<reqwest::blocking::Client> {
     reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(MAX_VIDEO_TIMEOUT_SEC + 30))
@@ -227,215 +193,125 @@ fn read_json_response(resp: reqwest::blocking::Response) -> Result<Value> {
 
 // ============================================================================
 // Server main loop
-// ============================================================================
 
 pub fn run_agnes_mcp_server(config_dir: &str, _workspace_path: Option<&str>) -> Result<()> {
     let config_dir = PathBuf::from(config_dir);
     let client = build_http_client()?;
+    let handler = AgnesMcpHandler { config_dir, client };
+    mcp_server_common::run_mcp_server_loop(handler)
+}
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
+struct AgnesMcpHandler {
+    config_dir: PathBuf,
+    client: reqwest::blocking::Client,
+}
 
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
+impl McpServerHandler for AgnesMcpHandler {
+    fn server_name(&self) -> &str { SERVER_NAME }
+    fn server_version(&self) -> &str { SERVER_VERSION }
+
+    fn tools_list(&self) -> Value {
+        json!({ "tools": [
+                {
+                    "name": "generate_image",
+                    "description": "使用 Agnes Image 2.1 Flash 生成图片。支持文生图与图生图（传 images 输入图）。同步返回图片 URL 或 Base64。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["prompt"],
+                        "properties": {
+                            "prompt": { "type": "string", "minLength": 1, "description": "图片生成或编辑提示词" },
+                            "size": { "type": "string", "description": "输出尺寸，如 1024x1024、1024x768、768x1024，默认 1024x1024" },
+                            "images": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "图生图输入图数组：公开 URL 或 data:image/...;base64,"
+                            },
+                            "responseFormat": { "type": "string", "enum": ["url", "b64_json"], "description": "返回格式，默认 url" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "generate_video",
+                    "description": "使用 Agnes Video V2.0 生成视频。支持文生视频/图生视频/多图/关键帧。异步：wait=true 时阻塞轮询直到完成或超时。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["prompt"],
+                        "properties": {
+                            "prompt": { "type": "string", "minLength": 1, "description": "视频生成提示词" },
+                            "image": { "type": "string", "description": "单图模式（图生视频）的输入图 URL 或 data URI" },
+                            "images": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "多图/关键帧模式的输入图数组"
+                            },
+                            "mode": { "type": "string", "enum": ["ti2vid", "keyframes"], "description": "生成模式：ti2vid（图生视频）或 keyframes（关键帧动画）" },
+                            "width": { "type": "integer", "description": "视频宽度，默认 1152" },
+                            "height": { "type": "integer", "description": "视频高度，默认 768" },
+                            "numFrames": { "type": "integer", "description": "帧数，须 ≤441 且满足 8n+1（非法值将自动纠正），默认 121" },
+                            "frameRate": { "type": "integer", "description": "帧率 1-60，默认 24" },
+                            "seed": { "type": "integer", "description": "随机种子（可复现）" },
+                            "negativePrompt": { "type": "string", "description": "反向提示词" },
+                            "numInferenceSteps": { "type": "integer", "description": "推理步数" },
+                            "wait": { "type": "boolean", "description": "是否阻塞等待完成，默认 true。false 则立即返回 videoId 供 query_video 轮询。" },
+                            "timeoutSec": { "type": "integer", "description": "wait=true 时的轮询上限秒数，默认 300，上限 360" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "query_video",
+                    "description": "查询 Agnes 视频任务状态。完成时返回视频下载 URL。",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["videoId"],
+                        "properties": {
+                            "videoId": { "type": "string", "minLength": 1, "description": "视频 ID（由 generate_video 返回）" }
+                        },
+                        "additionalProperties": false
+                    }
+                },
+                {
+                    "name": "get_config",
+                    "description": "获取当前 Agnes 配置（API Key 脱敏）。",
+                    "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
+                },
+                {
+                    "name": "set_config",
+                    "description": "更新并持久化 Agnes 配置。部分更新：仅传需要修改的字段。",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "apiKey": { "type": "string", "description": "API Key" },
+                            "apiBase": { "type": "string", "description": "API 基础 URL" },
+                            "imageModel": { "type": "string", "description": "图片模型名称" },
+                            "videoModel": { "type": "string", "description": "视频模型名称" },
+                            "defaultSize": { "type": "string", "description": "默认图片尺寸" }
+                        },
+                        "additionalProperties": false
+                    }
+                }
+            ] })
         }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
+        
+        // ============================================================================
+        // Tool dispatch
+        // ============================================================================
+        
+    fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
+        let args = arguments;
+        let mut config = AgnesConfig::load(&self.config_dir);
+        let client = &self.client;
+        match name {
+            "generate_image" => exec_generate_image(args, &config, client),
+            "generate_video" => exec_generate_video(args, &config, client),
+            "query_video" => exec_query_video(args, &config, client),
+            "get_config" => exec_get_config(&config),
+            "set_config" => exec_set_config(args, &mut config, &self.config_dir),
+            other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
         }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) if request.id.is_none() => continue,
-            Ok(request) => handle_request(request, &config_dir, &client),
-            Err(error) => JsonRpcResponse {
-                jsonrpc: "2.0",
-                id: Value::Null,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32700,
-                    message: format!("Parse error: {error}"),
-                }),
-            },
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
-    }
-
-    Ok(())
-}
-
-// ============================================================================
-// Request handling
-// ============================================================================
-
-fn handle_request(
-    request: JsonRpcRequest,
-    config_dir: &Path,
-    client: &reqwest::blocking::Client,
-) -> JsonRpcResponse<'static> {
-    let id = request.id.unwrap_or(Value::Null);
-
-    if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
-    }
-
-    let result = match request.method.as_str() {
-        "initialize" => Ok(handle_initialize()),
-        "notifications/initialized" => Ok(json!({})),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(handle_tools_list()),
-        "tools/call" => handle_tools_call(request.params, config_dir, client),
-        other => Err(AppError::ValidationError(format!(
-            "Unsupported method: {other}"
-        ))),
-    };
-
-    match result {
-        Ok(result) => JsonRpcResponse {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => error_response(id, -32000, error.to_message()),
     }
 }
-
-fn handle_initialize() -> Value {
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": { "tools": {} },
-        "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION }
-    })
-}
-
-// ============================================================================
-// Tool definitions
-// ============================================================================
-
-fn handle_tools_list() -> Value {
-    json!({ "tools": [
-        {
-            "name": "generate_image",
-            "description": "使用 Agnes Image 2.1 Flash 生成图片。支持文生图与图生图（传 images 输入图）。同步返回图片 URL 或 Base64。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["prompt"],
-                "properties": {
-                    "prompt": { "type": "string", "minLength": 1, "description": "图片生成或编辑提示词" },
-                    "size": { "type": "string", "description": "输出尺寸，如 1024x1024、1024x768、768x1024，默认 1024x1024" },
-                    "images": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "图生图输入图数组：公开 URL 或 data:image/...;base64,"
-                    },
-                    "responseFormat": { "type": "string", "enum": ["url", "b64_json"], "description": "返回格式，默认 url" }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "generate_video",
-            "description": "使用 Agnes Video V2.0 生成视频。支持文生视频/图生视频/多图/关键帧。异步：wait=true 时阻塞轮询直到完成或超时。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["prompt"],
-                "properties": {
-                    "prompt": { "type": "string", "minLength": 1, "description": "视频生成提示词" },
-                    "image": { "type": "string", "description": "单图模式（图生视频）的输入图 URL 或 data URI" },
-                    "images": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "多图/关键帧模式的输入图数组"
-                    },
-                    "mode": { "type": "string", "enum": ["ti2vid", "keyframes"], "description": "生成模式：ti2vid（图生视频）或 keyframes（关键帧动画）" },
-                    "width": { "type": "integer", "description": "视频宽度，默认 1152" },
-                    "height": { "type": "integer", "description": "视频高度，默认 768" },
-                    "numFrames": { "type": "integer", "description": "帧数，须 ≤441 且满足 8n+1（非法值将自动纠正），默认 121" },
-                    "frameRate": { "type": "integer", "description": "帧率 1-60，默认 24" },
-                    "seed": { "type": "integer", "description": "随机种子（可复现）" },
-                    "negativePrompt": { "type": "string", "description": "反向提示词" },
-                    "numInferenceSteps": { "type": "integer", "description": "推理步数" },
-                    "wait": { "type": "boolean", "description": "是否阻塞等待完成，默认 true。false 则立即返回 videoId 供 query_video 轮询。" },
-                    "timeoutSec": { "type": "integer", "description": "wait=true 时的轮询上限秒数，默认 300，上限 360" }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "query_video",
-            "description": "查询 Agnes 视频任务状态。完成时返回视频下载 URL。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["videoId"],
-                "properties": {
-                    "videoId": { "type": "string", "minLength": 1, "description": "视频 ID（由 generate_video 返回）" }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "get_config",
-            "description": "获取当前 Agnes 配置（API Key 脱敏）。",
-            "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false }
-        },
-        {
-            "name": "set_config",
-            "description": "更新并持久化 Agnes 配置。部分更新：仅传需要修改的字段。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "apiKey": { "type": "string", "description": "API Key" },
-                    "apiBase": { "type": "string", "description": "API 基础 URL" },
-                    "imageModel": { "type": "string", "description": "图片模型名称" },
-                    "videoModel": { "type": "string", "description": "视频模型名称" },
-                    "defaultSize": { "type": "string", "description": "默认图片尺寸" }
-                },
-                "additionalProperties": false
-            }
-        }
-    ] })
-}
-
-// ============================================================================
-// Tool dispatch
-// ============================================================================
-
-fn handle_tools_call(
-    params: Value,
-    config_dir: &Path,
-    client: &reqwest::blocking::Client,
-) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let args = params.get("arguments").cloned().unwrap_or_else(|| json!({}));
-
-    // Reload config from disk on every call so panel edits apply without restart.
-    let mut config = AgnesConfig::load(config_dir);
-
-    match name {
-        "generate_image" => exec_generate_image(&args, &config, client),
-        "generate_video" => exec_generate_video(&args, &config, client),
-        "query_video" => exec_query_video(&args, &config, client),
-        "get_config" => exec_get_config(&config),
-        "set_config" => exec_set_config(&args, &mut config, config_dir),
-        other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
-    }
-}
-
-// ============================================================================
-// Tool implementations
-// ============================================================================
 
 fn exec_generate_image(
     args: &Value,
@@ -868,15 +744,6 @@ fn urlencode(input: &str) -> String {
         }
     }
     out
-}
-
-fn error_response(id: Value, code: i32, message: String) -> JsonRpcResponse<'static> {
-    JsonRpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(JsonRpcError { code, message }),
-    }
 }
 
 #[cfg(test)]

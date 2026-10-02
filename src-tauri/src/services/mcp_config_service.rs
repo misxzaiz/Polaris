@@ -10,25 +10,15 @@ use crate::services::plugin_state_service::PluginStateService;
 const MCP_CONFIG_RELATIVE_PATH: &str = ".polaris/claude/mcp.json";
 const MCP_BIN_NAME: &str = "polaris-mcp";
 const REQUIREMENTS_MCP_SERVER_NAME: &str = "polaris-requirements";
-const REQUIREMENTS_MCP_BIN_NAME: &str = "polaris-mcp";
 const PRD_PREVIEW_MCP_SERVER_NAME: &str = "polaris-prd-preview";
-const PRD_PREVIEW_MCP_BIN_NAME: &str = "polaris-mcp";
 const COMPUTER_MCP_SERVER_NAME: &str = "polaris-computer";
-const COMPUTER_MCP_BIN_NAME: &str = "polaris-mcp";
 const ASK_MCP_SERVER_NAME: &str = "polaris-ask";
-const ASK_MCP_BIN_NAME: &str = "polaris-mcp";
 const DISPATCH_MCP_SERVER_NAME: &str = "polaris-dispatch";
-const DISPATCH_MCP_BIN_NAME: &str = "polaris-mcp";
 const BROWSER_MCP_SERVER_NAME: &str = "polaris-browser";
-const BROWSER_MCP_BIN_NAME: &str = "polaris-mcp";
 const AGNES_MCP_SERVER_NAME: &str = "polaris-agnes";
-const AGNES_MCP_BIN_NAME: &str = "polaris-mcp";
 const PH_MCP_SERVER_NAME: &str = "polaris-ph";
-const PH_MCP_BIN_NAME: &str = "polaris-mcp";
 const BUS_MCP_SERVER_NAME: &str = "polaris-bus";
-const BUS_MCP_BIN_NAME: &str = "polaris-mcp";
 const SCHEDULER_MCP_SERVER_NAME: &str = "polaris-scheduler";
-const SCHEDULER_MCP_BIN_NAME: &str = "polaris-mcp";
 const REQUIREMENTS_PLUGIN_ID: &str = "polaris.requirements";
 const PRD_PREVIEW_PLUGIN_ID: &str = "polaris.prd-preview";
 const COMPUTER_PLUGIN_ID: &str = "polaris.computer";
@@ -43,6 +33,12 @@ const SCHEDULER_PLUGIN_ID: &str = "polaris.scheduler";
 /// Platform-aware executable suffix: ".exe" on Windows, "" on Linux/macOS.
 const EXE_SUFFIX: &str = std::env::consts::EXE_SUFFIX;
 
+/// All built-in MCP servers share the same binary (`polaris-mcp`).
+/// Path prefixes are constant — only `env_var_name` and `args_mode` differ per server.
+const MCP_BUNDLED_PATH: &str = "bin/polaris-mcp";
+const MCP_FALLBACK_PATH: &str = "polaris-mcp";
+const MCP_DEV_PATH: &str = "src-tauri/target/debug/polaris-mcp";
+
 /// Build a platform-correct relative path for an MCP binary.
 fn mcp_exe_path(prefix: &str) -> String {
     format!("{}{}", prefix, EXE_SUFFIX)
@@ -50,15 +46,15 @@ fn mcp_exe_path(prefix: &str) -> String {
 
 #[cfg(test)]
 fn mcp_bundle_path() -> String {
-    mcp_exe_path("bin/polaris-mcp")
+    mcp_exe_path(MCP_BUNDLED_PATH)
 }
 #[cfg(test)]
 fn mcp_fallback_path() -> String {
-    mcp_exe_path("polaris-mcp")
+    mcp_exe_path(MCP_FALLBACK_PATH)
 }
 #[cfg(test)]
 fn mcp_dev_path() -> String {
-    mcp_exe_path("src-tauri/target/debug/polaris-mcp")
+    mcp_exe_path(MCP_DEV_PATH)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -79,10 +75,6 @@ pub struct PluginMcpServerContribution {
     pub plugin_id: Option<String>,
     pub server_name: String,
     pub transport: McpServerTransport,
-    pub bin_name: String,
-    pub bundled_path_prefix: String,
-    pub fallback_path_prefix: String,
-    pub dev_path_prefix: String,
     pub env_var_name: String,
     pub args_mode: McpServerArgsMode,
     required: bool,
@@ -97,10 +89,6 @@ pub struct BuiltinPluginMcpManifest {
 impl PluginMcpServerContribution {
     pub fn builtin(
         server_name: impl Into<String>,
-        bin_name: impl Into<String>,
-        bundled_path_prefix: impl Into<String>,
-        fallback_path_prefix: impl Into<String>,
-        dev_path_prefix: impl Into<String>,
         env_var_name: impl Into<String>,
         args_mode: McpServerArgsMode,
         required: bool,
@@ -109,10 +97,6 @@ impl PluginMcpServerContribution {
             plugin_id: None,
             server_name: server_name.into(),
             transport: McpServerTransport::Stdio,
-            bin_name: bin_name.into(),
-            bundled_path_prefix: bundled_path_prefix.into(),
-            fallback_path_prefix: fallback_path_prefix.into(),
-            dev_path_prefix: dev_path_prefix.into(),
             env_var_name: env_var_name.into(),
             args_mode,
             required,
@@ -206,10 +190,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         REQUIREMENTS_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             REQUIREMENTS_MCP_SERVER_NAME,
-            REQUIREMENTS_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_REQUIREMENTS_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -219,10 +199,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         COMPUTER_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             COMPUTER_MCP_SERVER_NAME,
-            COMPUTER_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_COMPUTER_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -232,10 +208,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PRD_PREVIEW_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             PRD_PREVIEW_MCP_SERVER_NAME,
-            PRD_PREVIEW_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_PRD_PREVIEW_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -245,10 +217,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         ASK_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             ASK_MCP_SERVER_NAME,
-            ASK_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_ASK_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -258,10 +226,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         DISPATCH_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             DISPATCH_MCP_SERVER_NAME,
-            DISPATCH_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_DISPATCH_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -271,10 +235,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         BROWSER_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             BROWSER_MCP_SERVER_NAME,
-            BROWSER_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_BROWSER_MCP_PATH",
             McpServerArgsMode::AskListener,
             false,
@@ -284,10 +244,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         AGNES_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             AGNES_MCP_SERVER_NAME,
-            AGNES_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_AGNES_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -297,10 +253,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         PERSONAL_HUB_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             PH_MCP_SERVER_NAME,
-            PH_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_PH_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -310,10 +262,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         BUS_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             BUS_MCP_SERVER_NAME,
-            BUS_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_BUS_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -323,10 +271,6 @@ fn builtin_mcp_contribution_registry() -> McpServerContributionRegistry {
         SCHEDULER_PLUGIN_ID,
         PluginMcpServerContribution::builtin(
             SCHEDULER_MCP_SERVER_NAME,
-            SCHEDULER_MCP_BIN_NAME,
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "src-tauri/target/debug/polaris-mcp",
             "POLARIS_SCHEDULER_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -432,7 +376,7 @@ impl WorkspaceMcpConfigService {
                 Err(error) => {
                     tracing::warn!(
                         "[MCP] 跳过可选 MCP server {}: {}",
-                        contribution.bin_name,
+                        contribution.server_name,
                         error.to_message()
                     );
                 }
@@ -1098,10 +1042,10 @@ fn resolve_mcp_contribution_binary(
     let executable_path = resolve_mcp_executable_path(
         resource_dir,
         app_root,
-        &contribution.bin_name,
-        &mcp_exe_path(&contribution.bundled_path_prefix),
-        &mcp_exe_path(&contribution.fallback_path_prefix),
-        &mcp_exe_path(&contribution.dev_path_prefix),
+        MCP_BIN_NAME,
+        &mcp_exe_path(MCP_BUNDLED_PATH),
+        &mcp_exe_path(MCP_FALLBACK_PATH),
+        &mcp_exe_path(MCP_DEV_PATH),
         &contribution.env_var_name,
     )?;
 
@@ -1110,37 +1054,6 @@ fn resolve_mcp_contribution_binary(
         executable_path,
         args_mode: contribution.args_mode,
     })
-}
-
-#[allow(dead_code)]
-fn resolve_optional_mcp_executable_path(
-    resource_dir: Option<PathBuf>,
-    app_root: PathBuf,
-    bin_name: &str,
-    bundled_relative_path: &str,
-    bundled_fallback_relative_path: &str,
-    dev_relative_path: &str,
-    env_var_name: &str,
-) -> Option<PathBuf> {
-    match resolve_mcp_executable_path(
-        resource_dir,
-        app_root,
-        bin_name,
-        bundled_relative_path,
-        bundled_fallback_relative_path,
-        dev_relative_path,
-        env_var_name,
-    ) {
-        Ok(path) => Some(path),
-        Err(error) => {
-            tracing::warn!(
-                "[MCP] 跳过可选 MCP server {}: {}",
-                bin_name,
-                error.to_message()
-            );
-            None
-        }
-    }
 }
 
 fn resolve_mcp_executable_path(
@@ -1475,10 +1388,6 @@ mod tests {
         let mut registry = McpServerContributionRegistry::new();
         registry.register(PluginMcpServerContribution::builtin(
             "polaris-required-test",
-            "polaris-mcp",
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "missing/polaris-mcp",
             "POLARIS_REQUIRED_TEST_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             true,
@@ -1503,10 +1412,6 @@ mod tests {
         let mut registry = McpServerContributionRegistry::new();
         registry.register(PluginMcpServerContribution::builtin(
             "polaris-optional-test",
-            "polaris-mcp",
-            "bin/polaris-mcp",
-            "polaris-mcp",
-            "missing/polaris-mcp",
             "POLARIS_OPTIONAL_TEST_MCP_PATH",
             McpServerArgsMode::ConfigDirAndWorkspace,
             false,
@@ -1537,20 +1442,18 @@ mod tests {
         let workspace = temp_root.join("workspace-args");
         let app_root = temp_root.join("app-root");
         let config_dir = temp_root.join("config");
-        let plugin_executable_path = app_root.join(fixture_exe("plugins/sample/plugin-mcp"));
+        let plugin_executable_path = app_root.join(fixture_exe("src-tauri/target/debug/polaris-mcp"));
         let mut registry = McpServerContributionRegistry::new();
         registry.register_plugin_server(
             "polaris.sample",
-            PluginMcpServerContribution::builtin(
-                "polaris-sample",
-                "polaris-mcp",
-                "bin/polaris-mcp",
-                "polaris-mcp",
-                "plugins/sample/plugin-mcp",
-                "POLARIS_SAMPLE_MCP_PATH",
-                McpServerArgsMode::WorkspaceOnly,
-                true,
-            ),
+            PluginMcpServerContribution {
+                plugin_id: None,
+                server_name: "polaris-sample".to_string(),
+                transport: McpServerTransport::Stdio,
+                env_var_name: "POLARIS_SAMPLE_MCP_PATH".to_string(),
+                args_mode: McpServerArgsMode::WorkspaceOnly,
+                required: true,
+            },
         );
 
         std::fs::create_dir_all(&workspace).unwrap();

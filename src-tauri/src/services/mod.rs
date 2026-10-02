@@ -9,6 +9,7 @@ pub mod session_state;
 pub mod git;
 pub mod logger;
 pub mod mcp_config_service;
+pub mod mcp_server_common;
 pub mod plugin_service;
 pub mod plugin_service_manager;
 pub mod plugin_state_service;

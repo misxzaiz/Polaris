@@ -18,6 +18,7 @@ import type {
   PluginChatCardLoader,
 } from './types'
 import { createLogger } from '@/utils/logger'
+import { buildMcpToolName } from '@/utils/toolConfig'
 
 const log = createLogger('ChatCardRegistry')
 
@@ -145,7 +146,7 @@ class ChatCardRegistry {
   }
 
   private buildKey(mcpServerId: string, tool: string): string {
-    return `mcp__${mcpServerId}__${tool}`
+    return buildMcpToolName(mcpServerId, tool)
   }
 }
 

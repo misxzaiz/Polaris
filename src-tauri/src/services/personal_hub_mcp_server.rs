@@ -2,17 +2,7 @@
 //!
 //! MCP server for managing Personal Hub links (bookmarks, todos, notes, navigation).
 //! Uses Supabase REST API directly (via reqwest) with the session token from config.
-//!
-//! 工具:
-//! - `ph_list` — 列出条目，支持过滤器
-//! - `ph_create` — 创建条目
-//! - `ph_get` — 查看单条
-//! - `ph_update` — 更新条目
-//! - `ph_delete` — 删除条目
-//!
-//! 认证: 从 config 读取 session_token，以 Bearer token 形式附加到 Supabase REST 请求。
 
-use std::io::{self, BufRead, BufReader, Write};
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
@@ -20,6 +10,8 @@ use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
 use crate::models::config::PersonalHubConfig;
+use crate::services::mcp_server_common::{self, McpServerHandler};
+
 use crate::services::data_root::data_root;
 
 const SERVER_NAME: &str = "polaris-ph-mcp";
@@ -282,290 +274,200 @@ struct JsonRpcError {
 // ============================================================================
 
 /// Run the Personal Hub MCP server: stdio JSON-RPC loop.
+
 pub fn run_ph_mcp_server(config_dir: &str, _workspace_path: Option<&str>) -> Result<()> {
-    // 预加载 config，确保路径存在
     let _config_dir = PathBuf::from(config_dir);
+    let handler = PersonalHubMcpHandler;
+    mcp_server_common::run_mcp_server_loop(handler)
+}
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
+struct PersonalHubMcpHandler;
 
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
+impl McpServerHandler for PersonalHubMcpHandler {
+    fn server_name(&self) -> &str { SERVER_NAME }
+    fn server_version(&self) -> &str { SERVER_VERSION }
 
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            // JSON-RPC 2.0 §4.1: Notification 不回复
-            Ok(request) if request.id.is_none() => continue,
-            Ok(request) => handle_request(request),
-            Err(error) => JsonRpcResponse {
-                jsonrpc: "2.0",
-                id: Value::Null,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32700,
-                    message: format!("Parse error: {error}"),
-                }),
-            },
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
+    fn tools_list(&self) -> Value {
+        json!({
+            "tools": [
+                    {
+                        "name": "ph_list",
+                        "description": "列出 Personal Hub 条目（bookmarks/todos/notes/navigation）。支持按类型和完成状态过滤。需要先登录个人空间（设置 → 个人空间）。",
+                        "inputSchema": {
+                            "type": "object",
+                            "properties": {
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["navigation", "bookmark", "todo", "note"],
+                                    "description": "按类型筛选"
+                                },
+                                "status": {
+                                    "type": "string",
+                                    "enum": ["all", "pending", "completed"],
+                                    "description": "按完成状态筛选（仅 todo 类型有效）"
+                                },
+                                "tags": {
+                                    "type": "string",
+                                    "description": "标签关键词（逗号分隔，逻辑 OR）"
+                                },
+                                "limit": {
+                                    "type": "integer",
+                                    "minimum": 1,
+                                    "maximum": 100,
+                                    "description": "返回条数上限，默认 50"
+                                },
+                                "sortBy": {
+                                    "type": "string",
+                                    "enum": ["created_at", "updated_at", "title", "priority", "due_date"],
+                                    "description": "排序字段，默认 created_at"
+                                },
+                                "sortOrder": {
+                                    "type": "string",
+                                    "enum": ["asc", "desc"],
+                                    "description": "排序方向，默认 desc"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ph_create",
+                        "description": "在 Personal Hub 中创建一条新条目。需要先登录个人空间（设置 → 个人空间）。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["title", "type"],
+                            "properties": {
+                                "title": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "标题"
+                                },
+                                "type": {
+                                    "type": "string",
+                                    "enum": ["navigation", "bookmark", "todo", "note"],
+                                    "description": "条目类型"
+                                },
+                                "url": {
+                                    "type": "string",
+                                    "description": "链接地址（navigation/bookmark 类型必填）"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "详细描述"
+                                },
+                                "tags": {
+                                    "type": "array",
+                                    "items": { "type": "string", "minLength": 1 },
+                                    "description": "标签列表"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["low", "medium", "high"],
+                                    "description": "优先级"
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "description": "截止日期（ISO 8601）"
+                                },
+                                "completed": {
+                                    "type": "boolean",
+                                    "description": "是否已完成（仅 todo 类型有效）"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ph_get",
+                        "description": "查看 Personal Hub 单条条目的详细信息。需要先登录个人空间。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id"],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "条目 ID（UUID）"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ph_update",
+                        "description": "更新 Personal Hub 中已有的条目。需要先登录个人空间。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id"],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "条目 ID（UUID）"
+                                },
+                                "title": {
+                                    "type": "string",
+                                    "description": "更新标题"
+                                },
+                                "url": {
+                                    "type": "string",
+                                    "description": "更新链接地址"
+                                },
+                                "description": {
+                                    "type": "string",
+                                    "description": "更新描述"
+                                },
+                                "tags": {
+                                    "type": "array",
+                                    "items": { "type": "string", "minLength": 1 },
+                                    "description": "更新标签列表"
+                                },
+                                "priority": {
+                                    "type": "string",
+                                    "enum": ["low", "medium", "high"],
+                                    "description": "更新优先级"
+                                },
+                                "dueDate": {
+                                    "type": "string",
+                                    "description": "更新截止日期（ISO 8601）"
+                                },
+                                "completed": {
+                                    "type": "boolean",
+                                    "description": "更新完成状态"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    },
+                    {
+                        "name": "ph_delete",
+                        "description": "删除 Personal Hub 中的一条条目。需要先登录个人空间。",
+                        "inputSchema": {
+                            "type": "object",
+                            "required": ["id"],
+                            "properties": {
+                                "id": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "description": "条目 ID（UUID）"
+                                }
+                            },
+                            "additionalProperties": false
+                        }
+                    }
+                ] })
     }
 
-    Ok(())
-}
-
-// ============================================================================
-// Request handling
-// ============================================================================
-
-fn handle_request(request: JsonRpcRequest) -> JsonRpcResponse<'static> {
-    let id = request.id.unwrap_or(Value::Null);
-
-    if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".to_string());
-    }
-
-    let result = match request.method.as_str() {
-        "initialize" => Ok(handle_initialize()),
-        "notifications/initialized" => Ok(json!({})),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(handle_tools_list()),
-        "tools/call" => handle_tools_call(request.params),
-        other => Err(AppError::ValidationError(format!(
-            "Unsupported method: {other}"
-        ))),
-    };
-
-    match result {
-        Ok(result) => JsonRpcResponse {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => error_response(id, -32000, error.to_message()),
-    }
-}
-
-fn handle_initialize() -> Value {
-    json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": { "tools": {} },
-        "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION }
-    })
-}
-
-// ============================================================================
-// Tool definitions
-// ============================================================================
-
-fn handle_tools_list() -> Value {
-    json!({ "tools": [
-        {
-            "name": "ph_list",
-            "description": "列出 Personal Hub 条目（bookmarks/todos/notes/navigation）。支持按类型和完成状态过滤。需要先登录个人空间（设置 → 个人空间）。",
-            "inputSchema": {
-                "type": "object",
-                "properties": {
-                    "type": {
-                        "type": "string",
-                        "enum": ["navigation", "bookmark", "todo", "note"],
-                        "description": "按类型筛选"
-                    },
-                    "status": {
-                        "type": "string",
-                        "enum": ["all", "pending", "completed"],
-                        "description": "按完成状态筛选（仅 todo 类型有效）"
-                    },
-                    "tags": {
-                        "type": "string",
-                        "description": "标签关键词（逗号分隔，逻辑 OR）"
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100,
-                        "description": "返回条数上限，默认 50"
-                    },
-                    "sortBy": {
-                        "type": "string",
-                        "enum": ["created_at", "updated_at", "title", "priority", "due_date"],
-                        "description": "排序字段，默认 created_at"
-                    },
-                    "sortOrder": {
-                        "type": "string",
-                        "enum": ["asc", "desc"],
-                        "description": "排序方向，默认 desc"
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "ph_create",
-            "description": "在 Personal Hub 中创建一条新条目。需要先登录个人空间（设置 → 个人空间）。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["title", "type"],
-                "properties": {
-                    "title": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "标题"
-                    },
-                    "type": {
-                        "type": "string",
-                        "enum": ["navigation", "bookmark", "todo", "note"],
-                        "description": "条目类型"
-                    },
-                    "url": {
-                        "type": "string",
-                        "description": "链接地址（navigation/bookmark 类型必填）"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "详细描述"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": { "type": "string", "minLength": 1 },
-                        "description": "标签列表"
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "优先级"
-                    },
-                    "dueDate": {
-                        "type": "string",
-                        "description": "截止日期（ISO 8601）"
-                    },
-                    "completed": {
-                        "type": "boolean",
-                        "description": "是否已完成（仅 todo 类型有效）"
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "ph_get",
-            "description": "查看 Personal Hub 单条条目的详细信息。需要先登录个人空间。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["id"],
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "条目 ID（UUID）"
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "ph_update",
-            "description": "更新 Personal Hub 中已有的条目。需要先登录个人空间。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["id"],
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "条目 ID（UUID）"
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "更新标题"
-                    },
-                    "url": {
-                        "type": "string",
-                        "description": "更新链接地址"
-                    },
-                    "description": {
-                        "type": "string",
-                        "description": "更新描述"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": { "type": "string", "minLength": 1 },
-                        "description": "更新标签列表"
-                    },
-                    "priority": {
-                        "type": "string",
-                        "enum": ["low", "medium", "high"],
-                        "description": "更新优先级"
-                    },
-                    "dueDate": {
-                        "type": "string",
-                        "description": "更新截止日期（ISO 8601）"
-                    },
-                    "completed": {
-                        "type": "boolean",
-                        "description": "更新完成状态"
-                    }
-                },
-                "additionalProperties": false
-            }
-        },
-        {
-            "name": "ph_delete",
-            "description": "删除 Personal Hub 中的一条条目。需要先登录个人空间。",
-            "inputSchema": {
-                "type": "object",
-                "required": ["id"],
-                "properties": {
-                    "id": {
-                        "type": "string",
-                        "minLength": 1,
-                        "description": "条目 ID（UUID）"
-                    }
-                },
-                "additionalProperties": false
-            }
+    fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
+        let client = PhClient::from_config();
+        match name {
+            "ph_list" => execute_ph_list(arguments, &client),
+            "ph_create" => execute_ph_create(arguments, &client),
+            "ph_get" => execute_ph_get(arguments, &client),
+            "ph_update" => execute_ph_update(arguments, &client),
+            "ph_delete" => execute_ph_delete(arguments, &client),
+            other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
         }
-    ] })
-}
-
-// ============================================================================
-// Tool dispatch
-// ============================================================================
-
-fn handle_tools_call(params: Value) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(Value::as_str)
-        .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".to_string()))?;
-    let arguments = params
-        .get("arguments")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
-
-    // 每次调用刷新配置，使前端对 config 的修改即时生效
-    let client = PhClient::from_config();
-
-    match name {
-        "ph_list" => execute_ph_list(arguments, &client),
-        "ph_create" => execute_ph_create(arguments, &client),
-        "ph_get" => execute_ph_get(arguments, &client),
-        "ph_update" => execute_ph_update(arguments, &client),
-        "ph_delete" => execute_ph_delete(arguments, &client),
-        other => Err(AppError::ValidationError(format!("未知工具: {other}"))),
     }
 }
 
@@ -613,7 +515,7 @@ fn build_filters(arguments: &Value) -> Vec<String> {
     filters
 }
 
-fn execute_ph_list(arguments: Value, client: &PhClient) -> Result<Value> {
+fn execute_ph_list(arguments: &Value, client: &PhClient) -> Result<Value> {
     ensure_auth(client)?;
 
     // 构建查询
@@ -671,7 +573,7 @@ fn execute_ph_list(arguments: Value, client: &PhClient) -> Result<Value> {
     }))
 }
 
-fn execute_ph_create(arguments: Value, client: &PhClient) -> Result<Value> {
+fn execute_ph_create(arguments: &Value, client: &PhClient) -> Result<Value> {
     ensure_auth(client)?;
 
     let title = arguments
@@ -741,7 +643,7 @@ fn execute_ph_create(arguments: Value, client: &PhClient) -> Result<Value> {
     }))
 }
 
-fn execute_ph_get(arguments: Value, client: &PhClient) -> Result<Value> {
+fn execute_ph_get(arguments: &Value, client: &PhClient) -> Result<Value> {
     ensure_auth(client)?;
 
     let id = arguments
@@ -792,7 +694,7 @@ fn execute_ph_get(arguments: Value, client: &PhClient) -> Result<Value> {
     }))
 }
 
-fn execute_ph_update(arguments: Value, client: &PhClient) -> Result<Value> {
+fn execute_ph_update(arguments: &Value, client: &PhClient) -> Result<Value> {
     ensure_auth(client)?;
 
     let id = arguments
@@ -850,7 +752,7 @@ fn execute_ph_update(arguments: Value, client: &PhClient) -> Result<Value> {
     }))
 }
 
-fn execute_ph_delete(arguments: Value, client: &PhClient) -> Result<Value> {
+fn execute_ph_delete(arguments: &Value, client: &PhClient) -> Result<Value> {
     ensure_auth(client)?;
 
     let id = arguments
@@ -877,15 +779,6 @@ fn execute_ph_delete(arguments: Value, client: &PhClient) -> Result<Value> {
 // ============================================================================
 // Helpers
 // ============================================================================
-
-fn error_response(id: Value, code: i32, message: String) -> JsonRpcResponse<'static> {
-    JsonRpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(JsonRpcError { code, message }),
-    }
-}
 
 #[cfg(test)]
 mod tests {

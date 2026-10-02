@@ -18,7 +18,6 @@
 //! 同一业务核（TodoCapability）+ 同一存储文件，单份逻辑双入口（step7 阶段 E
 //! 的"MCP 共享业务核"形态）。context 等内存型能力不进本 server（跨进程不共享）。
 
-use std::io::{self, BufRead, Write};
 use std::path::Path;
 use std::sync::Arc;
 
@@ -27,6 +26,7 @@ use serde_json::{json, Value};
 use crate::contracts::{CapabilityId, Envelope, MsgId, PluginId, Router as _, Source, TraceId};
 use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
+use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::router::{
     audit_sink, ContextCapability, EventAdapter, FileAuditSink, HttpCapability, PolicyPermission,
     RouterBus, TodoCapability,
@@ -34,7 +34,6 @@ use crate::services::router::{
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
 const SERVER_VERSION: &str = "0.1.0";
-const PROTOCOL_VERSION: &str = "2024-11-05";
 const CALLER: &str = "polaris-bus-mcp";
 
 /// bus_dispatch 白名单：AI 可经通用转发触达的能力（逐域放开，见 step7 阶段 C）
@@ -78,195 +77,79 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         )));
     }
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut reader = io::BufReader::new(stdin.lock());
-    let mut writer = stdout.lock();
+    let handler = BusMcpHandler { router };
+    mcp_server_common::run_mcp_server_loop(handler)
+}
 
-    let mut line = String::new();
-    loop {
-        line.clear();
-        let bytes_read = reader.read_line(&mut line)?;
-        if bytes_read == 0 {
-            break;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
+/// Bus MCP handler（实现 McpServerHandler）。
+struct BusMcpHandler {
+    router: RouterBus,
+}
 
-        let response = match serde_json::from_str::<JsonRpcRequest>(trimmed) {
-            Ok(request) => handle_request(request, &router),
-            Err(error) => JsonRpcResponse {
-                jsonrpc: "2.0",
-                id: Value::Null,
-                result: None,
-                error: Some(JsonRpcError {
-                    code: -32700,
-                    message: format!("Parse error: {error}"),
-                }),
-            },
-        };
-
-        serde_json::to_writer(&mut writer, &response)?;
-        writer.write_all(b"\n")?;
-        writer.flush()?;
+impl McpServerHandler for BusMcpHandler {
+    fn server_name(&self) -> &str {
+        SERVER_NAME
     }
 
-    Ok(())
-}
-
-#[derive(Debug, serde::Deserialize)]
-struct JsonRpcRequest {
-    jsonrpc: String,
-    id: Option<Value>,
-    method: String,
-    #[serde(default)]
-    params: Value,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct JsonRpcResponse<'a> {
-    jsonrpc: &'a str,
-    id: Value,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    result: Option<Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<JsonRpcError>,
-}
-
-#[derive(Debug, serde::Serialize)]
-struct JsonRpcError {
-    code: i32,
-    message: String,
-}
-
-fn normalize_config_dir(config_dir: &str) -> String {
-    let trimmed = config_dir.trim();
-    if trimmed.is_empty() {
-        crate::services::data_root::data_root()
-            .config_dir()
-            .to_string_lossy()
-            .to_string()
-    } else {
-        trimmed.to_string()
-    }
-}
-
-fn handle_request(request: JsonRpcRequest, router: &RouterBus) -> JsonRpcResponse<'static> {
-    let id = request.id.unwrap_or(Value::Null);
-
-    if request.jsonrpc != "2.0" {
-        return error_response(id, -32600, "Invalid Request: jsonrpc must be 2.0".into());
+    fn server_version(&self) -> &str {
+        SERVER_VERSION
     }
 
-    let result: Result<Value> = match request.method.as_str() {
-        "initialize" => handle_initialize(),
-        "notifications/initialized" => Ok(json!({})),
-        "ping" => Ok(json!({})),
-        "tools/list" => Ok(handle_tools_list()),
-        "tools/call" => handle_tools_call(request.params, router),
-        _ => Err(AppError::ValidationError(format!(
-            "Unsupported method: {}",
-            request.method
-        ))),
-    };
-
-    match result {
-        Ok(result) => JsonRpcResponse {
-            jsonrpc: "2.0",
-            id,
-            result: Some(result),
-            error: None,
-        },
-        Err(error) => error_response(id, -32000, error.to_message()),
+    fn tools_list(&self) -> Value {
+        json!({
+            "tools": [
+                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）或发起外部 HTTP 请求（cap.http，通用转发）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
+                    "payload": { "type": "object" }
+                })),
+            ]
+        })
     }
-}
 
-fn handle_initialize() -> Result<Value> {
-    Ok(json!({
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": { "tools": {} },
-        "serverInfo": { "name": SERVER_NAME, "version": SERVER_VERSION }
-    }))
-}
-
-fn tool_def(name: &str, description: &str, required: &[&str], properties: Value) -> Value {
-    json!({
-        "name": name,
-        "description": description,
-        "inputSchema": {
-            "type": "object",
-            "required": required,
-            "properties": properties,
-            "additionalProperties": name.starts_with("bus_") || name == "todo_create" || name == "todo_update"
-        }
-    })
-}
-
-fn handle_tools_list() -> Value {
-    json!({
-        "tools": [
-            tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-            tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）或发起外部 HTTP 请求（cap.http，通用转发）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
-                "payload": { "type": "object" }
-            })),
-
-        ]
-    })
-}
-
-fn handle_tools_call(params: Value, router: &RouterBus) -> Result<Value> {
-    let name = params
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| AppError::ValidationError("tools/call 缺少 name".into()))?;
-    let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
-
-    let target = match name {
-        "bus_help" => {
-            // 统一 MCP tools/call 返回形态（content 文本承载 JSON）
-            return Ok(tool_text(&handle_bus_help(router).to_string()));
-        }
-        "bus_dispatch" => {
-            let target = arguments
-                .get("target")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
-            if !DISPATCH_WHITELIST.contains(&target) {
-                return Ok(tool_error(format!(
-                    "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http）"
-                )));
+    fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
+        match name {
+            "bus_help" => {
+                Ok(mcp_server_common::tool_text(&self.bus_help().to_string()))
             }
-            target
+            "bus_dispatch" => {
+                let target = arguments
+                    .get("target")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
+                if !DISPATCH_WHITELIST.contains(&target) {
+                    return Ok(tool_error(format!(
+                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http）"
+                    )));
+                }
+
+                let payload = arguments.get("payload").cloned().unwrap_or(json!({}));
+
+                let env = Envelope {
+                    id: MsgId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
+                    source: Source::Plugin {
+                        caller: PluginId(CALLER.into()),
+                    },
+                    target: CapabilityId(target.into()),
+                    payload,
+                    trace: TraceId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
+                };
+
+                let reply = self
+                    .router
+                    .dispatch(env)
+                    .map_err(|e| AppError::ProcessError(e))?;
+                match reply.result {
+                    Ok(value) => Ok(mcp_server_common::tool_text(&value.to_string())),
+                    Err(err) => Ok(tool_error(err)),
+                }
+            }
+            other => Ok(tool_error(format!("未知工具: {other}"))),
         }
-        other => {
-            return Ok(tool_error(format!("未知工具: {other}")));
-        }
-    };
-
-    let payload = arguments.get("payload").cloned().unwrap_or(json!({}));
-
-    let env = Envelope {
-        id: MsgId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
-        source: Source::Plugin {
-            caller: PluginId(CALLER.into()),
-        },
-        target: CapabilityId(target.into()),
-        payload,
-        trace: TraceId(format!("bus-mcp-{}", uuid::Uuid::new_v4())),
-    };
-
-    let reply = router
-        .dispatch(env)
-        .map_err(|e| AppError::ProcessError(e))?;
-    match reply.result {
-        Ok(value) => Ok(tool_text(&value.to_string())),
-        Err(err) => Ok(tool_error(err)),
     }
 }
 
+/// 构造 MCP tools/call 错误返回（isError=true）。
 fn tool_error(message: String) -> Value {
     json!({
         "content": [{ "type": "text", "text": message }],
@@ -276,10 +159,10 @@ fn tool_error(message: String) -> Value {
 
 /// bus_help：总线能力与工具的说明（发现/文档工具）
 ///
-/// 返回：本 server 全部工具及入参、总线上已注册的能力、bus_dispatch 白名单、
+/// 返回：本 server 全部工具及入参��总线上已注册的能力、bus_dispatch 白名单、
 /// 各业务域的迁移状态与可用入口（主应用 dispatch / 本 server 工具）。
-fn handle_bus_help(router: &RouterBus) -> Value {
-    let tools = handle_tools_list();
+fn handle_bus_help_impl(router: &RouterBus) -> Value {
+    let tools = BusMcpHandler::tools_list_placeholder();
     let registered: Vec<String> = router
         .list_capabilities()
         .iter()
@@ -287,7 +170,7 @@ fn handle_bus_help(router: &RouterBus) -> Value {
         .collect();
 
     json!({
-        "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": PROTOCOL_VERSION },
+        "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": mcp_server_common::PROTOCOL_VERSION },
         "tools": tools["tools"],
         "capabilities": {
             "registered_here": registered,
@@ -342,17 +225,33 @@ fn handle_bus_help(router: &RouterBus) -> Value {
     })
 }
 
-fn tool_text(text: &str) -> Value {
-    json!({
-        "content": [{ "type": "text", "text": text }]
-    })
+impl BusMcpHandler {
+    fn bus_help(&self) -> Value {
+        handle_bus_help_impl(&self.router)
+    }
+
+    /// 占位：返回 tools_list 的静态部分（供 handle_bus_help_impl 引用）。
+    fn tools_list_placeholder() -> Value {
+        json!({
+            "tools": [
+                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
+                    "payload": { "type": "object" }
+                })),
+            ]
+        })
+    }
 }
 
-fn error_response(id: Value, code: i32, message: String) -> JsonRpcResponse<'static> {
-    JsonRpcResponse {
-        jsonrpc: "2.0",
-        id,
-        result: None,
-        error: Some(JsonRpcError { code, message }),
+fn normalize_config_dir(config_dir: &str) -> String {
+    let trimmed = config_dir.trim();
+    if trimmed.is_empty() {
+        crate::services::data_root::data_root()
+            .config_dir()
+            .to_string_lossy()
+            .to_string()
+    } else {
+        trimmed.to_string()
     }
 }

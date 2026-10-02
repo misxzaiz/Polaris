@@ -1,13 +1,10 @@
-/*! stdio MCP 客户端（Phase 4b）
+/*! stdio MCP 客户端（简化版）
  *
  * spawn 子进程，通过 stdin/stdout 交换换行分隔的 JSON-RPC 2.0 消息。
  * 镜像 Polaris 现有 server（`requirements_mcp_server.rs` 等）的帧格式：每行一条 JSON。
  *
  * 生命周期：`McpClient::spawn` 完成 initialize 握手 + tools/list 缓存；
  * `call_tool` 发 tools/call；`Drop` 时 kill 子进程。
- *
- * 传输层已抽象：spawn 复用 `StdioTransport::spawn_with_reader`，stdin 写入经
- * `transport.send_line`，stdout 由后台 reader task 按 id 路由。
  */
 
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -29,24 +26,16 @@ use super::types::{
 /// 单次 MCP 请求的默认超时（秒）。
 ///
 /// 生成式工具（如 Agnes 文生图/视频）可能耗时数十秒到数分钟，
-/// 120s 兼顾生成式工具与防挂死：插件进程挂死时不会阻塞超过 2 分钟。
+/// 180s 兼顾生成式工具与防挂死：插件进程挂死时不会阻塞超过 3 分钟。
 /// 控制面方法（initialize/tools/list）实际秒回，不受影响。
-const MCP_CALL_TIMEOUT_SECS: u64 = 120;
-
-/// 需放宽调用超时的工具：阻塞等待用户交互（form 表单等待用户填写提交）。
-/// 对齐表单持有窗口 `form_flow::FORM_WAIT_TIMEOUT_SECS`（600s）+ 30s 缓冲，
-/// 避免 MCP client 先把工具调用判超时、用户提交却找不到 hold 的悬挂。
-const TOOLS_WITH_LONG_TIMEOUT: &[&str] = &["form"];
-const LONG_TOOL_TIMEOUT_SECS: u64 = 630;
+const MCP_CALL_TIMEOUT_SECS: u64 = 180;
 
 /// 单个 MCP server 的客户端连接。
 pub(crate) struct McpClient {
     server_name: String,
-    /// 传输层（Stdio 或 HTTP）。Stdio 经后台 reader 路由，HTTP 走直连请求-响应。
     transport: Arc<dyn McpTransport>,
     next_id: AtomicU64,
-    /// pending 请求的 response sender（按 id 路由，仅 stdio 后台 reader 使用；
-    /// HTTP 请求-响应直连不依赖）。
+    /// pending 请求的 response sender（按 id 路由）。
     pending: Arc<Mutex<std::collections::HashMap<u64, oneshot::Sender<JsonRpcResponse>>>>,
     tools: RwLock<Vec<McpTool>>,
 }
@@ -59,7 +48,6 @@ impl McpClient {
         args: &[String],
         env: &std::collections::HashMap<String, String>,
     ) -> Result<Self> {
-        // 复用 StdioTransport spawn 逻辑，避免重复的 Command 构造/CREATE_NO_WINDOW。
         let (transport, stdout) =
             StdioTransport::spawn_with_reader(server_name.clone(), command, args, env).await?;
         let transport = Arc::new(transport);
@@ -103,12 +91,8 @@ impl McpClient {
     }
 
     async fn initialize(&self) -> Result<()> {
-        // 协议版本单一来源：ProtocolVersion::current()。
         let version = ProtocolVersion::current();
 
-        // 2026-07-28 无状态协议：移除 initialize 握手 + notifications/initialized。
-        // needs_handshake() 控制是否握手——默认（2025-06-18）照旧握手，零行为变更；
-        // 切换 current() 到 V2026_07_28 后自动走无状态路径（跳握手/通知）。
         if !version.needs_handshake() {
             tracing::info!(
                 "[SimpleAI-MCP] '{}' 使用无状态协议 {}，跳过 initialize 握手",
@@ -146,8 +130,7 @@ impl McpClient {
         Ok(())
     }
 
-    /// 发请求并等响应。`timeout` 为单次请求上限（默认 `MCP_CALL_TIMEOUT_SECS`，
-    /// 阻塞型工具由 `call_tool` 放宽，见 `TOOLS_WITH_LONG_TIMEOUT`）。
+    /// 发请求并等响应。`timeout` 为单次请求上限。
     async fn call_method(
         &self,
         method: &str,
@@ -166,8 +149,12 @@ impl McpClient {
         };
         let line = serde_json::to_string(&req)
             .map_err(|e| AppError::ProcessError(format!("serialize jsonrpc request: {}", e)))?;
-        // 经由 transport 发送，统一 stdin 写入逻辑。
-        self.transport.send_line(&line).await?;
+
+        // send_line 失败时立即清理 pending，避免幽灵 sender 泄漏。
+        if let Err(e) = self.transport.send_line(&line).await {
+            self.pending.lock().await.remove(&id);
+            return Err(e);
+        }
 
         let response = tokio::time::timeout(timeout, rx)
             .await
@@ -218,16 +205,11 @@ impl McpClient {
         self.transport.send_line(&line).await
     }
 
-    /// 调用工具。form 等阻塞型工具放宽超时，其余沿用 `MCP_CALL_TIMEOUT_SECS`。
+    /// 调用工具。
     pub(crate) async fn call_tool(&self, name: &str, args: &Value) -> Result<McpCallResult> {
         let params = serde_json::json!({ "name": name, "arguments": args });
-        let timeout = if TOOLS_WITH_LONG_TIMEOUT.contains(&name) {
-            Duration::from_secs(LONG_TOOL_TIMEOUT_SECS)
-        } else {
-            Duration::from_secs(MCP_CALL_TIMEOUT_SECS)
-        };
         let result = self
-            .call_method("tools/call", Some(params), timeout)
+            .call_method("tools/call", Some(params), Duration::from_secs(MCP_CALL_TIMEOUT_SECS))
             .await?;
         serde_json::from_value(result).map_err(|e| {
             AppError::ProcessError(format!(
@@ -245,7 +227,7 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        // 尽力终止底层资源（stdio kill 子进程；HTTP no-op）。经 transport 同步终止。
+        // 尽力终止底层资源（stdio kill 子进程）。经 transport 同步终止。
         self.transport.shutdown_sync();
     }
 }
@@ -295,12 +277,10 @@ mod tests {
     use serde_json::json;
 
     /// 无状态化决策：协议版本决定是否跳过 initialize 握手。
-    /// 2026-07-28 无状态 → 跳；有状态版本 → 照常握手（零行为变更）。
     #[test]
     fn handshake_skipped_for_stateless_protocol() {
         assert!(ProtocolVersion::V2026_07_28.needs_handshake() == false);
         assert!(ProtocolVersion::V2025_06_18.needs_handshake() == true);
-        assert!(ProtocolVersion::V2024_11_05.needs_handshake() == true);
     }
 
     #[test]
@@ -313,7 +293,6 @@ mod tests {
     }
 
     /// reader_task 的路由特征：响应帧按 id 分发到 pending oneshot。
-    /// 无 id（通知）跳过。真实 worker 由 CI 集成测试覆盖。
     #[test]
     fn response_id_is_routable_number() {
         let resp: JsonRpcResponse =

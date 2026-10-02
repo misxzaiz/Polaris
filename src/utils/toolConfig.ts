@@ -144,18 +144,31 @@ export function getToolShortName(toolName: string): string {
 // ========================================
 
 /**
+ * MCP 工具名前缀：`mcp__`。
+ * 前后端共享约定（Rust 侧 `MCP_PREFIX` in `simple_ai/mcp/mod.rs`）。
+ */
+export const MCP_TOOL_PREFIX = 'mcp__';
+
+/**
  * 解析 MCP 工具完整名 `mcp__{server}__{tool}`。
  * 非 MCP 工具返回 null。
  */
 export function parseMcpToolName(toolName: string): { server: string; tool: string } | null {
-  if (!toolName.startsWith('mcp__')) return null;
-  const rest = toolName.slice('mcp__'.length);
+  if (!toolName.startsWith(MCP_TOOL_PREFIX)) return null;
+  const rest = toolName.slice(MCP_TOOL_PREFIX.length);
   const idx = rest.indexOf('__');
   if (idx <= 0) return null;
   const server = rest.slice(0, idx);
   const tool = rest.slice(idx + 2);
   if (!server || !tool) return null;
   return { server, tool };
+}
+
+/**
+ * 构造 MCP 工具完整名 `mcp__{server}__{tool}`。
+ */
+export function buildMcpToolName(server: string, tool: string): string {
+  return `${MCP_TOOL_PREFIX}${server}__${tool}`;
 }
 
 /** snake_case / kebab-case → 空格分词 */
@@ -705,7 +718,7 @@ function inferIcon(toolName: string): React.ComponentType<{ className?: string }
   if (n.includes('image') || bare.includes('image')) return FileSearch;
   if (n.includes('browser') || bare.includes('browser') || bare.includes('web')) return Globe2;
   if (n.includes('database') || n.includes('_db') || bare.includes('db')) return Database;
-  if (n.startsWith('mcp__')) return Boxes; // MCP 通用兜底：组件箱
+  if (!n.startsWith(MCP_TOOL_PREFIX)) return Boxes; // MCP 通用兜底：组件箱
   return undefined;
 }
 
