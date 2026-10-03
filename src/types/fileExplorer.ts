@@ -13,8 +13,12 @@ export interface FileInfo {
   size?: number;
   /** 修改时间 */
   modified?: string;
+  /** 创建时间 */
+  created?: string;
   /** 文件扩展名 */
   extension?: string;
+  /** 子项数量（目录专属，经 cap.fs getFileInfo 返回） */
+  child_count?: number;
   /** 子文件列表（目录） */
   children?: FileInfo[];
   /** 文件类型 */

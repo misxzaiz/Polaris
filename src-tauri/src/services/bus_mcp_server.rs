@@ -28,8 +28,8 @@ use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::router::{
-    audit_sink, ContextCapability, EventAdapter, FileAuditSink, HttpCapability, PolicyPermission,
-    RouterBus, TodoCapability,
+    audit_sink, ContextCapability, EventAdapter, FileAuditSink, FsCapability, HttpCapability,
+    PolicyPermission, RouterBus, TodoCapability,
 };
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
@@ -43,7 +43,7 @@ const CALLER: &str = "polaris-bus-mcp";
 /// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
 /// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
 ///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash"];
+const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash", "cap.fs"];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -72,6 +72,9 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         // cap.http —— 通用 HTTP 转发（AI 经 bus_dispatch 调用外部 API）。
         // SSRF 校验内建于能力（见 http_capability.rs），Remote 由策略 deny。
         let _ = router.register_handle(Box::new(HttpCapability));
+        // cap.fs —— 文件系统只读访问（list / getFileInfo / exists）。
+        // AI 经 bus_dispatch 读取应用数据文件/工作区结构；Remote 由策略 deny。
+        let _ = router.register_handle(Box::new(FsCapability));
         let _ = router.register_handle(Box::new(crate::services::router::ContextCapability::new(
             Arc::new(std::sync::Mutex::new(ContextMemoryStore::new())),
         )));
@@ -99,8 +102,8 @@ impl McpServerHandler for BusMcpHandler {
         json!({
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash"] },
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）。注意：这是数据读写/网络/文件工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
                     "payload": { "type": "object" }
                 })),
             ]
@@ -119,7 +122,7 @@ impl McpServerHandler for BusMcpHandler {
                     .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
                 if !DISPATCH_WHITELIST.contains(&target) {
                     return Ok(tool_error(format!(
-                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash）"
+                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash / cap.fs）"
                     )));
                 }
 
@@ -183,6 +186,9 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "http", "capability": "cap.http", "入口": "bus_dispatch / 主应用 dispatch（面板）",
               "协议": "{ action: request|ping, request: { method, url, headers?, body?, bodyType?, timeoutMs? } } → { status, statusText, ok, contentType, headers, body, isBase64, timeMs }",
               "状态": "✅ bus_dispatch 可用；目标校验已完全放开（http/https 任意目标可转发，含内网/localhost）；二进制响应 base64；Remote 策略 deny（本地面板与 AI 均可用）" },
+            { "domain": "fs", "capability": "cap.fs", "入口": "bus_dispatch / 主应用 dispatch（面板）",
+              "协议": "{ action: list|getFileInfo|exists, path } → { items / item / exists }（文件：size+modified+created；目录：child_count）",
+              "状态": "✅ bus_dispatch 可用；只读边界（list/getFileInfo/exists），写操作仍走 tauri command；Remote 策略 deny" },
             { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
@@ -219,6 +225,12 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
                 "kill":   { "参数": { "taskId": "string（必填）" }, "返回": "{ taskId, killed, status }（Windows 杀进程树）" },
                 "list":   { "参数": { "sessionId": "string?（按发起方 caller 过滤）", "status": "string?（running|completed|failed|killed|timeout）" }, "返回": "{ tasks: [{ taskId, status, command, pid, sessionId, startedAt, finishedAt, logLines }] }" },
                 "边界": "任务归宿主进程（TaskManager 单例），不随 AI 会话结束而终止——会话解耦。Remote 来源策略 deny，仅本地面板/AI 可用。SimpleAI 内建 bash 工具仍是会话级同步执行；cap.bash 提供后台/跨会话的长任务管理。"
+            },
+            "cap.fs": {
+                "list":     { "参数": { "path": "string（必填，绝对路径，目录）" }, "返回": "{ items: FileInfo[] }（直接子项，含 size/modified/created）" },
+                "getFileInfo": { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ item: FileInfo|null }（文件：size+modified+created；目录：child_count+modified+created，size=null）" },
+                "exists":   { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ exists: bool }" },
+                "边界": "只读能力（list/getFileInfo/exists）；创建/删除/重命名/复制等写操作走既有 tauri command 通道。FileInfo 的 modified/created 是秒级 Unix 时间戳字符串，前端需 Number(v)*1000 转 Date。Remote 来源策略 deny，仅本地面板/AI 可用。"
             }
         },
         "usage_examples": [
@@ -227,6 +239,8 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "GET", "url": "https://api.github.com/repos/rust-lang/rust" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "POST", "url": "https://httpbin.org/post", "body": "{\"q\":\"test\"}", "bodyType": "json" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.fs", "payload": { "action": "list", "path": "<绝对路径>" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.fs", "payload": { "action": "getFileInfo", "path": "<绝对路径>" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "run", "command": "npm run build", "async": true } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "status", "taskId": "<taskId>" } } },
             { "tool": "cap_list", "arguments": {} },
@@ -247,7 +261,7 @@ impl BusMcpHandler {
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
                 mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash"] },
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
                     "payload": { "type": "object" }
                 })),
             ]

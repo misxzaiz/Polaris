@@ -42,52 +42,56 @@ pub struct CommandParam {
 
 /// 文件信息结构
 #[derive(serde::Serialize)]
+#[serde(default)]
 pub struct FileInfo {
     pub name: String,
     pub path: String,
     pub is_dir: bool,
     pub size: Option<u64>,
     pub modified: Option<String>,
+    pub created: Option<String>,
     pub extension: Option<String>,
     pub children: Option<Vec<FileInfo>>,
+    /// 直接子项数（仅 `complete_file_info` 对目录填充；`read_directory` 为 None）
+    pub child_count: Option<u64>,
 }
 
-/// 读取目录内容（只读取直接子项，不递归）
-#[cfg_attr(feature = "tauri-app", tauri::command)]
-pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
-    let path_obj = Path::new(&path);
-    
+/// 读取目录内容（只读取直接子项，不递归）— 同步业务核
+///
+/// 从 `FileInfo` 读取目录列表，供 tauri command（async wrapper）与
+/// `cap.fs`（RouterBus dispatch）复用，保证「同一份逻辑双入口」。
+pub fn read_directory_inner(path_obj: &Path) -> Result<Vec<FileInfo>> {
     if !path_obj.exists() {
         return Err(AppError::InvalidPath("路径不存在".to_string()));
     }
-    
+
     if !path_obj.is_dir() {
         return Err(AppError::InvalidPath("不是目录".to_string()));
     }
-    
+
     let mut files = Vec::new();
-    
+
     let entries = fs::read_dir(path_obj)?;
-    
+
     for entry in entries {
         let entry = entry?;
         let metadata = entry.metadata()?;
-        
+
         let file_path = entry.path();
         let name = file_path.file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown")
             .to_string();
-        
+
         let is_dir = metadata.is_dir();
         let size = if !is_dir { Some(metadata.len()) } else { None };
-        
+
         // 获取修改时间
         let modified = metadata.modified()
             .ok()
             .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
             .map(|d| d.as_secs().to_string());
-        
+
         // 获取文件扩展名
         let extension = if !is_dir {
             file_path.extension()
@@ -96,20 +100,25 @@ pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
         } else {
             None
         };
-        
+
         let file_info = FileInfo {
             name,
             path: file_path.to_string_lossy().to_string(),
             is_dir,
             size,
             modified,
+            created: metadata.created()
+                .ok()
+                .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs().to_string()),
             extension,
             children: None, // 子目录内容预留，需要懒加载
+            child_count: None,
         };
-        
+
         files.push(file_info);
     }
-    
+
     // 排序：目录在前，然后按名称排序
     files.sort_by(|a, b| {
         match (a.is_dir, b.is_dir) {
@@ -118,8 +127,67 @@ pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
             _ => a.name.cmp(&b.name),
         }
     });
-    
+
     Ok(files)
+}
+
+/// 读取目录内容（tauri command wrapper，异步壳复用同步业务核）
+#[cfg_attr(feature = "tauri-app", tauri::command)]
+pub async fn read_directory(path: String) -> Result<Vec<FileInfo>> {
+    read_directory_inner(Path::new(&path))
+}
+
+/// 单个文件/目录详情（供 cap.fs `getFileInfo`）— 同步业务核
+///
+/// 文件：返回 size（字节）+ modified（秒级时间戳）；目录：children 字段承载
+/// 直接子项数量（前端展示" N 项"），size 保持 None（与 read_directory 语义一致，
+/// 不做递归统计，避免大目录 IO 成本）。
+pub fn complete_file_info(path_obj: &Path) -> Result<Option<FileInfo>> {
+    if !path_obj.exists() {
+        return Ok(None);
+    }
+
+    let metadata = fs::metadata(path_obj)?;
+    let is_dir = metadata.is_dir();
+    let name = path_obj.file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("Unknown")
+        .to_string();
+    let size = if !is_dir { Some(metadata.len()) } else { None };
+    let modified = metadata.modified()
+        .ok()
+        .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs().to_string());
+    let extension = if !is_dir {
+        path_obj.extension()
+            .and_then(|ext| ext.to_str())
+            .map(|s| s.to_lowercase())
+    } else {
+        None
+    };
+    // 目录：给出直接子项数（仅计数，不递归）；文件：None
+    let child_count = if is_dir {
+        fs::read_dir(path_obj)
+            .ok()
+            .map(|it| it.flatten().count() as u64)
+    } else {
+        None
+    };
+
+    Ok(Some(FileInfo {
+        name,
+        path: path_obj.to_string_lossy().to_string(),
+        is_dir,
+        size,
+        modified,
+        created: metadata.created()
+            .ok()
+            .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs().to_string()),
+        extension,
+        children: None,
+        child_count,
+    }))
 }
 
 /// 获取文件内容（限制大小）

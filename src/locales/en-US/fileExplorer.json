@@ -42,6 +42,7 @@
     "openFolderInExplorer": "Open Containing Folder",
     "copyPath": "Copy Path",
     "downloadFile": "Download",
+    "properties": "Properties",
     "inputFileName": "Enter file name:",
     "inputFolderName": "Enter folder name:",
     "inputNewName": "Enter new name:",
@@ -83,5 +84,23 @@
   "breadcrumb": {
     "loading": "Loading...",
     "emptyDirectory": "Empty directory"
+  },
+  "row": {
+    "modified": "Modified",
+    "items": "items"
+  },
+  "details": {
+    "title": "Properties",
+    "name": "Name",
+    "type": "Type",
+    "typeFile": "File",
+    "typeFolder": "Folder",
+    "size": "Size",
+    "itemCount": "Items",
+    "modified": "Modified",
+    "created": "Created",
+    "path": "Full Path",
+    "close": "Close",
+    "loadError": "Failed to load details: {{error}}"
   }
 }

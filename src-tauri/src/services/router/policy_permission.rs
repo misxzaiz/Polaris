@@ -174,6 +174,9 @@ impl PolicyPermission {
             // cap.bash 远程禁发：shell 命令执行是高危面，默认只对本地面板（Bootstrap/
             // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
             ("cap.bash", true),
+            // cap.fs 远程禁发：任意路径读取是高敏面，默认只对本地面板（Bootstrap/
+            // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
+            ("cap.fs", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),

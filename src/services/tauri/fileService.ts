@@ -4,6 +4,7 @@
  */
 
 import { invoke } from '@/services/transport';
+import type { FileInfo } from '@/types/fileExplorer';
 
 // ============================================================================
 // 工作区相关命令
@@ -271,4 +272,49 @@ export async function fsWatchStop() {
 /** 获取文件监听状态 */
 export async function fsWatchStatus(): Promise<boolean> {
   return invoke('fs_watch_status');
+}
+
+// ============================================================================
+// cap.fs 总线能力（只读文件系统访问，经 router_dispatch 统一转发）
+// ============================================================================
+
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface FsDispatchResponse {
+  msgId: string;
+  ok: boolean;
+  result: unknown;
+  error: string | null;
+  trace: string;
+}
+
+/**
+ * 经统一总线调用 cap.fs（读操作统一走总线，获得权限 gate + 审计；
+ * 写操作仍走上方 tauri command 通道）
+ */
+async function fsDispatch<T = unknown>(action: string, payload: Record<string, unknown> = {}): Promise<T> {
+  const res = await invoke<FsDispatchResponse>('router_dispatch', {
+    req: { target: 'cap.fs', payload: { action, ...payload } },
+  });
+  if (!res.ok) {
+    throw new Error(res.error || ('cap.fs ' + action + ' 失败'));
+  }
+  return res.result as T;
+}
+
+/** 列出目录直接子项（含 size/modified） */
+export async function fsListDirectory(path: string): Promise<FileInfo[]> {
+  const res = await fsDispatch<{ items: FileInfo[] }>('list', { path });
+  return res.items;
+}
+
+/** 获取单个文件/目录详情（文件：大小+时间；目录：子项数+时间） */
+export async function fsGetFileInfo(path: string): Promise<FileInfo | null> {
+  const res = await fsDispatch<{ item: FileInfo | null }>('getFileInfo', { path });
+  return res.item;
+}
+
+/** 检查路径是否存在 */
+export async function fsExists(path: string): Promise<boolean> {
+  const res = await fsDispatch<{ exists: boolean }>('exists', { path });
+  return res.exists;
 }

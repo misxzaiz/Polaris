@@ -367,7 +367,7 @@ pub fn create_app_state(
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
-            BashCapability, EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
+            BashCapability, EventAdapter, FileAuditSink, FsCapability, KvCapability, PolicyPermission,
             ContextCapability, ConfigCapability, DataRootCapability, HttpCapability,
             PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
             RouterBus, StreamEchoCapability, TodoCapability, audit_sink, prompt_snippet_capability,
@@ -424,6 +424,10 @@ pub fn create_app_state(
         // 不随 AI 会话结束而终止；run/status/log/wait/kill/list 六个动作）。
         // 远程默认拒绝（管理面域，见 policy_permission.rs 默认规则表）。
         let _ = bus.register_handle(Box::new(BashCapability::new()));
+        // cap.fs —— 文件系统只读访问（list / getFileInfo / exists）。
+        // 文件浏览器读取类操作统一走总线（AI/插件经 cap_dispatch/bus_dispatch 可触达，
+        // 权限+审计同源）；写操作（创建/删除/重命名）仍走既有 tauri command 通道。
+        let _ = bus.register_handle(Box::new(FsCapability));
         // cap.prompt_snippet —— 第四步迁移第二块：快捷片段唯一入口。
         // 装配时一次性只读导入旧 prompt-snippets.json（domain 为空才导入，旧文件保留）
         match prompt_snippet_capability::import_legacy_store(

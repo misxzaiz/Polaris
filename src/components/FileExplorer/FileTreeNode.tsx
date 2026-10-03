@@ -1,9 +1,10 @@
 import { memo, useEffect, useState, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, ChevronDown, Folder, Loader2, Copy, FolderOpen, Download } from 'lucide-react';
+import { ChevronRight, ChevronDown, Folder, Loader2, Copy, FolderOpen, Download, Info } from 'lucide-react';
 import { clsx } from 'clsx';
 import { FileIcon } from './FileIcon';
 import { ContextMenu, isHtmlFile, type ContextMenuItem } from './ContextMenu';
+import { FileDetailsModal } from './FileDetailsModal';
 import { useFileExplorerStore, useFileEditorStore, useToastStore } from '@/stores';
 import { openInDefaultApp } from '@/services/tauri';
 import { isTauri } from '@/utils/platform';
@@ -11,6 +12,7 @@ import { InputDialog } from '../Common/InputDialog';
 import { ConfirmDialog } from '../Common/ConfirmDialog';
 import { IconFile, IconFolder, IconEdit, IconTrash, IconExternalLink, IconOpen } from '../Common/Icons';
 import type { FileInfo } from '@/types';
+import { formatFileSize } from '@/types/attachment';
 import { getParentPath, joinPath, normalizePath, isValidFileName } from '@/utils/path';
 
 interface FileTreeNodeProps {
@@ -72,6 +74,8 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     message: string;
   }>({ visible: false, message: '' });
 
+  const [detailsVisible, setDetailsVisible] = useState(false);
+
   useEffect(() => {
     if (file.is_dir && isExpanded) {
       const cached = get_cached_folder_content(file.path);
@@ -124,6 +128,14 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
 
   const isLoading = file.is_dir && loadingFolders.has(normalizePath(file.path));
   const isCutSource = clipboard?.operation === 'cut' && normalizePath(clipboard.sourcePath) === normalizePath(file.path);
+
+  // 秒级时间戳字符串 → 本地化日期时间（非法值回退原始字符串）
+  const formatTimestamp = useCallback((seconds: string | undefined): string => {
+    if (seconds == null || seconds === '') return '';
+    const ms = Number(seconds) * 1000;
+    if (Number.isNaN(ms)) return seconds;
+    return new Date(ms).toLocaleString();
+  }, []);
 
   // children 状态:
   // - null/undefined: 尚未加载
@@ -219,6 +231,17 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
     }
 
     items.push({ id: 'separator-1', label: '-', icon: undefined, action: () => {} });
+
+    // 属性（高亮展示入口：类型/大小/修改/创建时间/路径，经 cap.fs getFileInfo）
+    items.push({
+      id: 'properties',
+      label: t('contextMenu.properties'),
+      icon: <Info size={14} />,
+      accent: true,
+      action: () => {
+        setDetailsVisible(true);
+      },
+    });
 
     // 复制文件路径
     items.push({
@@ -450,6 +473,24 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
         >
           {file.name}
         </span>
+
+        {/* 行尾信息：文件显示大小；悬浮提示显示修改时间 */}
+        {!file.is_dir && file.size != null && (
+          <span
+            className="ml-2 text-xs text-text-muted flex-shrink-0 tabular-nums"
+            title={file.modified ? `${t('row.modified')}: ${formatTimestamp(file.modified)}` : undefined}
+          >
+            {formatFileSize(file.size)}
+          </span>
+        )}
+        {file.is_dir && (
+          <span
+            className="ml-2 text-xs text-text-tertiary flex-shrink-0 tabular-nums"
+            title={file.modified ? `${t('row.modified')}: ${formatTimestamp(file.modified)}` : undefined}
+          >
+            {file.child_count != null ? `${file.child_count} ${t('row.items')}` : ''}
+          </span>
+        )}
       </div>
       
       {file.is_dir && isExpanded && hasChildren && (
@@ -516,6 +557,14 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
           onConfirm={handleConfirmDialogConfirm}
           onCancel={() => setConfirmDialog({ ...confirmDialog, visible: false })}
           type="danger"
+        />
+      )}
+
+      {/* 属性弹窗 */}
+      {detailsVisible && (
+        <FileDetailsModal
+          file={file}
+          onClose={() => setDetailsVisible(false)}
         />
       )}
     </div>

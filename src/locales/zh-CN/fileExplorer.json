@@ -42,6 +42,7 @@
     "openFolderInExplorer": "打开所在文件夹",
     "copyPath": "复制路径",
     "downloadFile": "下载",
+    "properties": "属性",
     "inputFileName": "请输入文件名:",
     "inputFolderName": "请输入文件夹名:",
     "inputNewName": "请输入新名称:",
@@ -83,5 +84,23 @@
   "breadcrumb": {
     "loading": "加载中...",
     "emptyDirectory": "空目录"
+  },
+  "row": {
+    "modified": "修改时间",
+    "items": "项"
+  },
+  "details": {
+    "title": "属性",
+    "name": "名称",
+    "type": "类型",
+    "typeFile": "文件",
+    "typeFolder": "文件夹",
+    "size": "大小",
+    "itemCount": "项目数",
+    "modified": "修改时间",
+    "created": "创建时间",
+    "path": "完整路径",
+    "close": "关闭",
+    "loadError": "加载详情失败: {{error}}"
   }
 }
