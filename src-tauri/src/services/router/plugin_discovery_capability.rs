@@ -149,6 +149,27 @@ impl Capability for PluginDiscoveryCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "插件发现/安装/卸载/更新/市场管理",
+            "note": "管理面能力（Remote 默认 deny）；安装/卸载/更新改动本地插件，需谨慎",
+            "actions": {
+                "list": { "params": { "available": "bool?" }, "returns": "插件列表" },
+                "discover": { "params": {}, "returns": "市场发现结果" },
+                "install_locations": { "params": {}, "returns": "安装位置清单" },
+                "validate_manifest": { "params": { "manifest": "必填" }, "returns": "校验结果" },
+                "install_local": { "params": { "installPath 等": "必填" }, "returns": "PluginOperationResult" },
+                "install_package": { "params": {}, "returns": "PluginOperationResult" },
+                "install_remote": { "params": { "url/id 等": "必填" }, "returns": "PluginOperationResult" },
+                "uninstall_local": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
+                "uninstall_with_cleanup": { "params": { "installPath": "string（必填）", "pluginId": "string" }, "returns": "PluginOperationResult（先停服务再删目录）" },
+                "force_uninstall": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
+                "check_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginUpdateCheckResult" },
+                "apply_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
         let action = params
             .get("action")

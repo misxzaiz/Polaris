@@ -13,6 +13,7 @@ export type PluginIconId =
   | 'Target'
   | 'ClipboardList'
   | 'Terminal'
+  | 'SquareTerminal'
   | 'Code2'
   | 'Bot'
   | 'BookOpen'

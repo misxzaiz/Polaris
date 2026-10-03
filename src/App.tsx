@@ -36,6 +36,7 @@ const SimpleTodoPanel = lazy(() => import('./components/TodoPanel/SimpleTodoPane
 const TranslatePanel = lazy(() => import('./components/Translate/TranslatePanel').then(m => ({ default: m.TranslatePanel })));
 const RequirementPanel = lazy(() => import('./components/RequirementPanel/RequirementPanel').then(m => ({ default: m.RequirementPanel })));
 const TerminalPanel = lazy(() => import('./components/Terminal/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
+const BashTaskPanel = lazy(() => import('./components/BashTask/BashTaskPanel').then(m => ({ default: m.BashTaskPanel })));
 const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel').then(m => ({ default: m.DemoPluginPanel })));
 const PluginPreviewPanel = lazy(() => import('./components/Plugins/PluginPreviewPanel').then(m => ({ default: m.PluginPreviewPanel })));
 const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
@@ -158,6 +159,7 @@ function App() {
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
+  const bashTaskHighlightId = useViewStore(state => state.bashTaskHighlightId);
   const toggleRightPanel = useViewStore(state => state.toggleRightPanel);
   const closeLeftPanel = useViewStore(state => state.closeLeftPanel);
   const activityBarCollapsed = useViewStore(state => state.activityBarCollapsed);
@@ -315,6 +317,7 @@ function App() {
       translateContent={<Suspense fallback={loadingFallback}><TranslatePanel onSendToChat={sendMessage} /></Suspense>}
       requirementContent={<Suspense fallback={loadingFallback}><RequirementPanel /></Suspense>}
       terminalContent={<Suspense fallback={loadingFallback}><TerminalPanel /></Suspense>}
+      bashTaskContent={<Suspense fallback={loadingFallback}><BashTaskPanel highlightTaskId={bashTaskHighlightId} /></Suspense>}
       developerContent={<Suspense fallback={loadingFallback}><DeveloperPanel fillRemaining /></Suspense>}
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}

@@ -16,6 +16,7 @@ import { GitPanel } from '@/components/GitPanel'
 import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
+import { VideoPreview } from '@/components/Preview/VideoPreview'
 import { BrowserPanel } from '@/components/Browser'
 import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
@@ -620,6 +621,13 @@ export function TabContent({ className = '' }: TabContentProps) {
         return (
           <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
             <ImagePreview filePath={activeTab.filePath} title={activeTab.title} />
+          </div>
+        )
+      }
+      if (activeTab.metadata?.kind === 'video') {
+        return (
+          <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
+            <VideoPreview filePath={activeTab.filePath} title={activeTab.title} />
           </div>
         )
       }

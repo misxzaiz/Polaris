@@ -110,6 +110,9 @@ secrets/
 *.jks
 *.keystore
 /src-tauri/target-test/
+/src-tauri/target-capbash-test/
+/target-capbash-test/
 
 # Local scratch (debug dumps etc.)
 scripts/tmp/
+.polaris-preview-smoke.svg

@@ -31,6 +31,7 @@ mod policy_permission;
 pub mod prompt_snippet_capability;
 mod stream_echo_capability;
 mod todo_capability;
+mod help_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
@@ -50,6 +51,7 @@ pub use kv_capability::KvCapability;
 pub use policy_permission::PolicyPermission;
 pub use prompt_snippet_capability::PromptSnippetCapability;
 pub use stream_echo_capability::StreamEchoCapability;
+pub use help_capability::HelpCapability;
 pub use todo_capability::TodoCapability;
 
 use crate::contracts::*;
@@ -300,6 +302,38 @@ impl RouterBus {
             .values()
             .map(|c| c.id())
             .collect()
+    }
+
+    /// 全量能力自描述索引（cap.help index 数据源）
+    ///
+    /// 同步表（handles）与流式平行表（streaming_caps）并集 —— 补上
+    /// `list_capabilities()` 漏掉流式能力（cap.ai.chat / cap.stream.echo）的盲区。
+    /// 每项：`{ "id", "describe", "streaming" }`，describe 缺省为 null。
+    /// 仅聚合静态 describe()，不触达 invoke（无副作用，可安全用于 help 索引）。
+    pub fn described_capabilities(&self) -> Vec<Value> {
+        let mut out: Vec<Value> = Vec::new();
+        {
+            let handles = self.handles.read().unwrap();
+            for cap in handles.values() {
+                out.push(serde_json::json!({
+                    "id": cap.id().0,
+                    "streaming": false,
+                    "describe": cap.describe(),
+                }));
+            }
+        }
+        {
+            let streaming = self.streaming_caps.read().unwrap();
+            for cap in streaming.values() {
+                out.push(serde_json::json!({
+                    "id": cap.id().0,
+                    "streaming": true,
+                    "describe": cap.describe(),
+                }));
+            }
+        }
+        out.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+        out
     }
 }
 

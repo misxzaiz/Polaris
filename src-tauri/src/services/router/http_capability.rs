@@ -105,6 +105,27 @@ impl Capability for HttpCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "通用 HTTP 转发：请求外部 API（含 Cookie/UA 等浏览器禁发头），二进制 base64",
+            "note": "目标校验已放开（http/https，含 localhost/内网）；Remote 来源默认 deny；二进制响应 base64（isBase64:true）",
+            "actions": {
+                "ping": { "params": {}, "returns": "{ pong: true }" },
+                "request": {
+                    "params": {
+                        "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）",
+                        "url": "string（必填，仅 http/https）",
+                        "headers": "{ k: v }?",
+                        "body": "string?",
+                        "bodyType": "text|json|form|binary?",
+                        "timeoutMs": "number?（默认 15000）"
+                    },
+                    "returns": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }"
+                }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

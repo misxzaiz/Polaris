@@ -42,11 +42,13 @@ syntax: dir, type, findstr — no POSIX commands). Use the syntax matching the a
 If a shell command fails with exit code 127, the command is not installed or uses the wrong \
 shell's syntax — switch to a dedicated tool. Prefer dedicated tools for file content \
 search/edit regardless of shell.\n\
-- Long-running commands: for tasks that run longer than ~1 minute (builds, servers, watch \
-loops, migrations), call the `bash` tool with `async: true`. It starts a host-level \
-background task that survives the conversation; the result contains a `taskId`, and you can \
-poll it via cap.bash (`action: status/log/wait` with `taskId`) or stop it (`action: kill`). \
-Short commands stay synchronous (default) and return full output inline.\n\
+- The `bash` tool runs commands as host-level background tasks by DEFAULT (async) and \
+returns a `taskId` immediately without blocking this conversation; the task survives the \
+conversation — poll its progress via cap.bash (`action: status/log/wait` with `taskId`) \
+or stop it (`action: kill`). If you need the full output before continuing (short \
+commands, scripts, builds you depend on), set `async: false` to wait synchronously \
+(still interruptible). For very long tasks (>1 min), keep async mode and poll with \
+cap.bash.\n\
 - Failure recovery: if edit_file fails with an invalid line range, re-read the file to get \
 current line numbers. If search_files returns no matches, try a different pattern or file_ext. \
 Never retry the same failing tool call without first gathering more information.\n\

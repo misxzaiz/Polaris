@@ -56,6 +56,14 @@ pub async fn request_trace(req: Request<Body>, next: Next) -> Response {
 /// the inner router processes the request. So /api/ws becomes /ws inside the
 /// nested handler. We must match BOTH forms to cover all cases.
 fn is_auth_skipped_path(path: &str) -> bool {
+    // /api/files/* 由 handler 内部 authorized() 统一鉴权——
+    // 它同时支持 Authorization header 与 ?token= query 两种形态。
+    // 这里跳过是为了让 <img>/<video> 的 query token 能进入 handler
+    //（img/video 无法携带自定义 header）。
+    if path.starts_with("/files/") || path.starts_with("/api/files/") {
+        return true;
+    }
+
     matches!(
         path,
         "/api/health"

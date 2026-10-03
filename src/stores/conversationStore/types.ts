@@ -533,6 +533,8 @@ export interface ConversationActions {
   appendThinkingBlock: (content: string) => void
   appendToolCallBlock: (toolId: string, toolName: string, input: Record<string, unknown>) => void
   updateToolCallBlock: (toolId: string, status: ToolStatus, output?: string, error?: string) => void
+  /** 回填 cap.bash 后台任务 ID 到工具块（幂等；start/end 双路径均可写入） */
+  updateToolCallTaskId: (toolId: string, taskId: string) => void
   updateToolCallBlockDiff: (toolId: string, diffData: import('../../types/chat').DiffData) => void
   /** apply_patch 补丁数据回填 */
   updateToolCallBlockPatch: (toolId: string, patchData: { type: 'add' | 'update' | 'delete'; filePath: string; movePath?: string; chunkCount: number; addedLines: number; removedLines: number; oldContent: string; newContent: string }[]) => void

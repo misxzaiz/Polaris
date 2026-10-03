@@ -922,6 +922,20 @@ export function createConversationStore(
         set({ currentMessage: { ...currentMessage, blocks } })
       },
 
+      updateToolCallTaskId: (toolId, taskId) => {
+        const { currentMessage, toolBlockMap } = get()
+        if (!currentMessage) return
+        const idx = toolBlockMap.get(toolId)
+        if (idx === undefined) return
+        const blocks = [...currentMessage.blocks]
+        const block = blocks[idx]
+        if (block?.type !== 'tool_call') return
+        // 幂等：已有 taskId 则不动（start 先写入，end 后到不覆盖）
+        if (block.taskId) return
+        blocks[idx] = { ...block, taskId }
+        set({ currentMessage: { ...currentMessage, blocks } })
+      },
+
       updateToolCallBlockDiff: (toolId, diffData) => {
         const { currentMessage, toolBlockMap } = get()
         if (!currentMessage) return

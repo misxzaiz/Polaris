@@ -189,6 +189,7 @@ export function LeftPanelContent({
   translateContent,
   requirementContent,
   terminalContent,
+  bashTaskContent,
   toolsContent,
   developerContent,
   integrationContent,
@@ -204,6 +205,7 @@ export function LeftPanelContent({
   translateContent?: ReactNode
   requirementContent?: ReactNode
   terminalContent?: ReactNode
+  bashTaskContent?: ReactNode
   toolsContent?: ReactNode
   developerContent?: ReactNode
   integrationContent?: ReactNode
@@ -230,6 +232,8 @@ export function LeftPanelContent({
     return <>{requirementContent}</>
   } else if (type === 'terminal') {
     return <>{terminalContent}</>
+  } else if (type === 'bashTask') {
+    return <>{bashTaskContent}</>
   } else if (type === 'tools') {
     return <>{toolsContent}</>
   } else if (type === 'developer') {

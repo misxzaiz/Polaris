@@ -57,6 +57,8 @@ interface ViewState {
   multiSessionCellWidth: number; // 每个格子的统一宽度（像素）
   expandSessionId: string | null; // 展开的会话 ID（全屏显示）
   pendingScrollToId: string | null; // 待滚动的会话 ID（一次性信号）
+  /** bash 任务面板高亮目标（tool_call 块「管理」跳转，一次性消费后清空） */
+  bashTaskHighlightId: string | null;
 }
 
 /** 视图操作 */
@@ -82,6 +84,10 @@ interface ViewActions {
   toggleLeftPanel: (type: LeftPanelType) => void; // 切换左侧面板,如果已显示则隐藏
   switchToLeftPanel: (type: LeftPanelType) => void; // VSCode 风格: 切换面板,不关闭当前
   closeLeftPanel: () => void; // 关闭左侧面板
+  /** 设置 bash 任务面板高亮目标（tool_call 块「管理」跳转用） */
+  setBashTaskHighlight: (taskId: string) => void;
+  /** 清除 bash 任务面板高亮（一次性消费） */
+  clearBashTaskHighlight: () => void;
   setLeftPanelWidth: (width: number) => void;
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
@@ -154,6 +160,7 @@ export const useViewStore = create<ViewStore>()(
       multiSessionCellWidth: 350,   // 默认格子宽度 350px
       expandSessionId: null,        // 默认无展开会话
       pendingScrollToId: null,      // 默认无待滚动会话
+      bashTaskHighlightId: null,    // bash 任务面板高亮目标（一次性）
 
       // 切换侧边栏
       toggleSidebar: () => set((state) => ({ showSidebar: !state.showSidebar })),
@@ -276,6 +283,10 @@ export const useViewStore = create<ViewStore>()(
         tracePanelChange('closeLeftPanel', get().leftPanelType, 'none')
         set({ leftPanelType: 'none' })
       },
+
+      // bash 任务面板高亮（tool_call 块「管理」跳转）
+      setBashTaskHighlight: (taskId) => set({ bashTaskHighlightId: taskId }),
+      clearBashTaskHighlight: () => set({ bashTaskHighlightId: null }),
 
       // 设置左侧面板宽度
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: width }),

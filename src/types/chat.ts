@@ -151,6 +151,8 @@ export interface ToolCallBlock {
   startedAt: string;
   completedAt?: string;
   duration?: number;
+  /** cap.bash 后台任务 ID（bash 工具异步任务，供管理面板关联/停止） */
+  taskId?: string;
   /** Diff 数据（用于 Edit 工具显示差异） */
   diffData?: DiffData;
   /** 补丁数据（用于 apply_patch 多文件补丁渲染） */

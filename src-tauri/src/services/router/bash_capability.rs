@@ -370,18 +370,7 @@ impl BashCapability {
         // 同步 run：等待完成或超时
         if !async_run {
             wait_task(&task, timeout_ms.max(1_000));
-            let mut j = task_json(&task);
-            // 同步语义：直接附带全量日志输出与退出码，调用方（SimpleAI bash 工具）
-            // 无需再经 log 动作回读。输出按行保留，含 [exit code: N] 标记与
-            // [spawn error]/[timed out]/[killed] 等状态行。
-            let buf = task.log.lock().unwrap();
-            if !buf.is_empty() {
-                j["output"] = json!(buf.iter().cloned().collect::<Vec<_>>().join("\n"));
-            }
-            if task.status() != TaskStatus::Running {
-                j["exitCode"] = json!(task.exit_code().unwrap_or(-1));
-            }
-            return Ok(j);
+            return Ok(task_json(&task));
         }
         Ok(json!({
             "taskId": task_id,
@@ -572,6 +561,24 @@ impl Default for BashCapability {
 impl Capability for BashCapability {
     fn id(&self) -> CapabilityId {
         CapabilityId(CAP_ID.into())
+    }
+
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "宿主 shell 命令执行：后台任务管理（run/status/log/wait/kill/list），任务归宿主不随会话结束",
+            "note": "Remote 来源默认 deny；任务归宿主进程（TaskManager 单例），onSessionEnd 默认 keep",
+            "actions": {
+                "run": {
+                    "params": { "command": "string（必填，shell 命令）", "workdir": "string?（默认调用方工作目录）", "env": "{ k: v }?", "timeoutMs": "number?（默认 600000，0=不限）", "async": "bool?（默认 false：同步等待完成）", "onSessionEnd": "keep|kill?（默认 keep）" },
+                    "returns": "{ taskId, pid, status, logPath }（async=false 时含 exitCode/startedAt/finishedAt）"
+                },
+                "status": { "params": { "taskId": "string（必填）" }, "returns": "{ taskId, status, exitCode?, startedAt, finishedAt? }" },
+                "log": { "params": { "taskId": "string（必填）", "offset": "int?（默认 0）", "limit": "int?（默认全部）" }, "returns": "{ taskId, offset, total, lines: string[] }" },
+                "wait": { "params": { "taskId": "string（必填）", "timeoutMs": "number?（默认 30000）" }, "returns": "{ taskId, status, exitCode?, finishedAt? }（超时返回 status=running）" },
+                "kill": { "params": { "taskId": "string（必填）" }, "returns": "{ taskId, killed, status }（Windows 杀进程树）" },
+                "list": { "params": { "sessionId": "string?", "status": "string?（running|completed|failed|killed|timeout）" }, "returns": "{ tasks: [{ taskId, status, command, pid, sessionId, startedAt, finishedAt, logLines }] }" }
+            }
+        })
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {

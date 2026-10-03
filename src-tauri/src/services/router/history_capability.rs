@@ -32,6 +32,19 @@ impl Capability for HistoryCapability {
         CapabilityId("cap.history".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "AI 会话历史：会话列表/历史消息/删除 + Claude Code 会话树",
+            "actions": {
+                "list_sessions": { "params": { "engineId": "string?（默认 claude-code）", "page": "int?", "pageSize": "int?", "workDir": "string?" }, "returns": "PagedResult<SessionMeta>" },
+                "get_session_history": { "params": { "sessionId": "string（必填）", "engineId": "string?（默认 claude-code）", "page": "int?", "pageSize": "int?" }, "returns": "PagedResult<HistoryMessage>" },
+                "delete_session": { "params": { "sessionId": "string（必填）", "engineId": "string?（默认 claude-code）" }, "returns": "{ ok: true }" },
+                "list_claude_sessions": { "params": { "workDir": "string?" }, "returns": "ClaudeSessionMeta[]" },
+                "get_claude_history": { "params": { "sessionId": "string（必填）", "projectPath": "string?" }, "returns": "ClaudeHistoryMessage[]" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

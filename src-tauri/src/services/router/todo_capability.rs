@@ -473,6 +473,39 @@ impl Capability for TodoCapability {
         CapabilityId("cap.todo".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "待办事项 CRUD：按工作区/状态/优先级查询、创建、更新、完成、删除、统计",
+            "actions": {
+                "list": {
+                    "params": { "scope": "workspace|all（默认 workspace）", "workspacePath": "string?", "workspaceName": "string?", "status": "pending|in_progress|completed?", "priority": "low|normal|high|urgent?", "limit": "int?" },
+                    "returns": "{ items: TodoItem[] }"
+                },
+                "get": { "params": { "id": "string（必填）" }, "returns": "{ item: TodoItem | null }" },
+                "create": {
+                    "params": {
+                        "content": "string（必填，非空）",
+                        "priority": "low|normal|high|urgent?",
+                        "description": "string?",
+                        "tags": "string[]?",
+                        "workspacePath": "string?",
+                        "workspaceName": "string?",
+                        "dueDate": "string?",
+                        "estimatedHours": "number?"
+                    },
+                    "returns": "{ item: TodoItem }"
+                },
+                "update": {
+                    "params": { "id": "string（必填）", "content/status/priority/description/tags/dueDate/spentHours/lastProgress": "均可选部分更新" },
+                    "returns": "{ item: TodoItem }"
+                },
+                "start": { "params": { "id": "string（必填）", "lastProgress": "string?" }, "returns": "{ item }（status→in_progress）" },
+                "complete": { "params": { "id": "string（必填）", "lastProgress": "string?" }, "returns": "{ item }（置 completed_at）" },
+                "breakdown": { "params": {}, "returns": "{ stats: { 工作区名: 数量 } }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

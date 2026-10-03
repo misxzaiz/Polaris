@@ -40,6 +40,15 @@ impl Capability for StreamEchoCapability {
         CapabilityId("cap.stream.echo".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "流式骨架 demo（验证 dispatch_stream 全链路，生产勿用）",
+            "actions": {
+                "stream": { "params": { "count": "int?（默认 3，1-100）", "intervalMs": "int?（默认 20）", "prefix": "string?" }, "returns": "事件流（stream.echo 逐条 + dispatch.end 收尾）" }
+            }
+        })
+    }
+
     fn invoke(&self, _params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         Err("cap.stream.echo 是流式能力，请走 dispatch_stream".into())
     }

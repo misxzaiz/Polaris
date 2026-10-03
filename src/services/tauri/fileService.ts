@@ -4,6 +4,7 @@
  */
 
 import { invoke } from '@/services/transport';
+import { getServerUrl, getTokenMd5 } from '@/services/transport/auth';
 import type { FileInfo } from '@/types/fileExplorer';
 
 // ============================================================================
@@ -158,6 +159,81 @@ export async function setFileClipboard(paths: string[], operation: FileClipboard
 /** 读取系统文件剪贴板 */
 export async function getFileClipboard(): Promise<SystemFileClipboard | null> {
   return invoke('get_file_clipboard');
+}
+
+// ============================================================================
+// 文件预览 URL（图片 / 视频 / SVG）
+// ============================================================================
+
+/**
+ * 判断当前是否为 Tauri 桌面环境（可用 asset:// 本地协议）。
+ * 与 transport/detector.ts 的判定保持一致。
+ */
+function isTauriEnv(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+/**
+ * 构造文件预览的可加载 URL。
+ *
+ * - 桌面 Tauri：用 `asset://` 本地协议（`convertFileSrc`）。
+ *   注意：SVG 在 Tauri v2 的 asset 协议默认关闭（`assetProtocol.enableSvg`
+ *   不是 v2 有效配置字段），所以 SVG 不走这里，走 `buildSvgBlobUrl`。
+ * - Web 模式（dev / 线上 HTTP）：后端提供 `/api/files/*` 静态路由，
+ *   `<img>`/`<video>` 的 src 无法携带 header，故附加 `?token=<md5>`。
+ *   绝对路径按 segment encodeURIComponent 拼入。
+ */
+export function buildFilePreviewUrl(filePath: string): string {
+  if (!filePath) return '';
+
+  if (isTauriEnv()) {
+    // 动态 require 避免在 web 构建里打进 Tauri API
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- 条件打包 Tauri 专属代码
+      const { convertFileSrc } = require('@tauri-apps/api/core')
+      return convertFileSrc(filePath)
+    } catch {
+      return ''
+    }
+  }
+
+  // Web 模式：走后端文件预览路由
+  const base = getServerUrl().replace(/\/$/, '');
+  if (!base) return '';
+  // 按段编码，保留路径分隔
+  const encoded = filePath.split(/[\\/]/).filter(Boolean).map(encodeURIComponent).join('/');
+  const token = getTokenMd5();
+  return `${base}/api/files/${encoded}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+
+/**
+ * 构造 SVG 预览的 Blob URL（双端通用）。
+ *
+ * 为什么 SVG 不走 asset:// / HTTP 直读：
+ * - Tauri v2 的 asset 协议默认禁用 SVG 渲染（防脚本注入），且
+ *   `assetProtocol.enableSvg` 不是 v2 的有效配置字段，桌面端无法开启；
+ * - Web 模式走 HTTP 直读本可工作，但统一用 Blob 可双端一致。
+ *
+ * 做法：读取文件文本 → `Blob([text], { type: 'image/svg+xml' })` →
+ * `URL.createObjectURL`。SVG 通常很小（<1MB），一次性读取成本可接受。
+ * 调用方在组件卸载时应 `revokeObjectURL` 释放。
+ *
+ * `reader` 参数用于测试注入（默认走 `getFileContent`）。
+ *
+ * @returns {Promise<string>} Blob URL；失败返回空字符串
+ */
+export async function buildSvgBlobUrl(
+  filePath: string,
+  reader: (p: string) => Promise<string> = getFileContent,
+): Promise<string> {
+  if (!filePath) return ''
+  try {
+    const content = await reader(filePath)
+    const blob = new Blob([content], { type: 'image/svg+xml' })
+    return URL.createObjectURL(blob)
+  } catch {
+    return ''
+  }
 }
 
 // ============================================================================

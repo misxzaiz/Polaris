@@ -92,6 +92,18 @@ impl Capability for KvCapability {
         CapabilityId("cap.kv".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "键值存储：应用持久化 KV（get/set/delete/list）",
+            "actions": {
+                "get": { "params": { "key": "string（必填）" }, "returns": "{ value: any | null }" },
+                "set": { "params": { "key": "string（必填）", "value": "any（可 JSON 序列化）" }, "returns": "{ id: string }" },
+                "delete": { "params": { "key": "string（必填）" }, "returns": "{ ok: true }" },
+                "list": { "params": {}, "returns": "{ keys: string[] }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

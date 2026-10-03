@@ -250,6 +250,19 @@ impl Capability for PromptSnippetCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "快捷片段（prompt snippet）CRUD",
+            "actions": {
+                "list": { "params": {}, "returns": "{ items: PromptSnippet[] }" },
+                "get": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet | null }" },
+                "create": { "params": { "content/name 等": "必填（按 PromptSnippet 字段）" }, "returns": "{ item: PromptSnippet }" },
+                "update": { "params": { "id": "string（必填）", "部分字段": "可选" }, "returns": "{ item: PromptSnippet }" },
+                "delete": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

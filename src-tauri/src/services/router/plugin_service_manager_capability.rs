@@ -117,6 +117,21 @@ impl Capability for PluginServiceManagerCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "插件后台服务管理：启动/停止/重启/状态/按插件停/自启",
+            "note": "管理面能力（Remote 默认 deny）；start/stop/restart 拉起或终止进程，需谨慎",
+            "actions": {
+                "start": { "params": { "pluginId": "string（必填）", "contribution": "object?" }, "returns": "服务状态" },
+                "stop": { "params": { "serviceId 等": "必填" }, "returns": "服务状态" },
+                "restart": { "params": {}, "returns": "服务状态" },
+                "list_status": { "params": {}, "returns": "{ services: [...] }" },
+                "stop_for_plugin": { "params": { "pluginId": "string（必填）" }, "returns": "服务状态" },
+                "autostart": { "params": { "pluginId": "string（必填）", "enabled": "bool" }, "returns": "服务状态" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
         let action = params
             .get("action")

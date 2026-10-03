@@ -473,6 +473,11 @@ pub fn create_app_state(
         // 第六步：流式能力（平行表，走 dispatch_stream）
         // cap.stream.echo —— 骨架 demo（验证泵任务 → EventAdapter → WS 全链路）
         let _ = bus.register_streaming(Arc::new(StreamEchoCapability));
+        // cap.help —— 总线能力索引（AI 发现全部 cap.* 的入口）。
+        // 数据源为各能力 describe() 自描述，本能力只做聚合（index/show）。
+        let _ = bus.register_handle(Box::new(crate::services::router::HelpCapability::new(
+            bus.clone(),
+        )));
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）
         bus
     };

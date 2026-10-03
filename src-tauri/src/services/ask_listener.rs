@@ -1241,17 +1241,12 @@ async fn handle_cap_list_frame(
     }
 
     use crate::contracts::Router as _;
-    let ids: Vec<String> = state
-        .router
-        .list_capabilities()
-        .iter()
-        .map(|c| c.0.clone())
-        .collect();
+    let capabilities = state.router.described_capabilities();
     let reply = json!({
         "type": "cap_list_result",
         "ok": true,
-        "capabilities": ids,
-        "note": "用 cap_dispatch(target, payload) 调用其中任意能力；cap.ai.chat 为流式能力，start/continue 需经 Web/WS 订阅事件。",
+        "capabilities": capabilities,
+        "note": "用 cap_dispatch(target, payload) 调用其中任意能力；cap.ai.chat 为流式能力，start/continue 需经 Web/WS 订阅事件。每项的 describe 为能力自描述（summary/actions/note），缺省 null 表示该能力未提供 describe。",
     });
 
     write_frame(stream, &reply).await?;

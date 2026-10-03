@@ -78,6 +78,16 @@ const corePluginManifest: PolarisPluginManifest = {
         slot: 'terminal',
       },
       {
+        id: 'bashTask.panel',
+        area: 'activityBar',
+        panelType: 'bashTask',
+        icon: 'SquareTerminal',
+        labelKey: 'labels.bashTaskPanel',
+        labelDefault: 'Bash Tasks',
+        order: 71,
+        slot: 'bashTask',
+      },
+      {
         id: 'developer.panel',
         area: 'activityBar',
         panelType: 'developer',

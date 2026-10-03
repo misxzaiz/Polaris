@@ -132,6 +132,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/auth/token", post(api::auth::handle_token_exchange))
         // Health
         .route("/health", get(api::health::handle_health))
+        // File preview static serving (media preview in Web mode)
+        .route("/files/*path", get(api::files::handle_file_request))
         // WebSocket
         .route("/ws", get(api::ws::ws_handler))
         // Catch-all IPC bridge: dispatches unmatched /api/* paths to Tauri command handlers

@@ -81,6 +81,33 @@ impl Capability for AiChatCapability {
         CapabilityId("cap.ai.chat".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "AI 会话（流式）：启动/继续/打断/输入/计划审批/问题回答/表单/待办注册",
+            "note": "流式能力：start/continue 的 token 流经 Web/WS 事件订阅；同步动作经 cap_dispatch",
+            "actions": {
+                "start": { "params": { "message": "string（必填）", "options": "ChatRequestOptions?", "sessionId": "string?" }, "returns": "{ sessionId }（事件走 chat-event 流）" },
+                "continue": { "params": { "message": "string（必填）", "sessionId": "string" }, "returns": "{ sessionId }" },
+                "interrupt": { "params": { "sessionId": "string", "engineId": "string?" }, "returns": "{ interrupted: true }" },
+                "send_input": { "params": { "sessionId": "string", "input": "string" }, "returns": "{ delivered: bool }" },
+                "approve_plan": { "params": { "sessionId": "string", "planId": "string" }, "returns": "{ ok: true }" },
+                "reject_plan": { "params": { "sessionId": "string", "planId": "string", "feedback": "string?" }, "returns": "{ ok: true }" },
+                "answer_question": { "params": { "sessionId": "string", "callId": "string", "answer": "any" }, "returns": "{ ok: true }" },
+                "respond_plugin_card": { "params": { "sessionId": "string", "interactionId": "string", "response": "any" }, "returns": "{ ok: true }" },
+                "form_submit": { "params": { "sessionId": "string", "form 字段": "any" }, "returns": "{ ok: true }" },
+                "form_skip": { "params": { "sessionId": "string" }, "returns": "{ ok: true }" },
+                "form_template_save": { "params": {}, "returns": "{ ok: true }" },
+                "form_template_list": { "params": {}, "returns": "模板列表" },
+                "register_pending_question": { "params": {}, "returns": "{ ok: true }" },
+                "register_pending_plan": { "params": {}, "returns": "{ ok: true }" },
+                "get_pending_plans": { "params": {}, "returns": "待审批计划列表" },
+                "get_pending_questions": { "params": {}, "returns": "待回答问题列表" },
+                "clear_processed_plans": { "params": {}, "returns": "{ ok: true }" },
+                "clear_answered_questions": { "params": {}, "returns": "{ ok: true }" }
+            }
+        })
+    }
+
     /// 同步动作（dispatch；RouterBus 对流式表目标自动回退到 invoke）
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params

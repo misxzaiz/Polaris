@@ -64,11 +64,16 @@ function isImagePath(path: string): boolean {
   return ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext || '');
 }
 
+function isVideoPath(path: string): boolean {
+  const ext = path.split('.').pop()?.toLowerCase();
+  return ['mp4', 'webm', 'mov', 'm4v', 'ogg', 'ogv', 'avi', 'mkv'].includes(ext || '');
+}
+
 const BINARY_EXTENSIONS = new Set([
   'msi', 'exe', 'dmg', 'deb', 'rpm', 'pkg', 'appimage', 'app',
   'zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz', 'zst',
   'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-  'mp3', 'mp4', 'avi', 'mov', 'mkv', 'flac', 'wav', 'ogg',
+  'mp3', 'flac', 'wav',
   'woff', 'woff2', 'ttf', 'otf', 'eot',
   'so', 'dll', 'dylib', 'bin', 'dat',
   'iso', 'img', 'vdi',
@@ -122,6 +127,12 @@ export const useFileEditorStore = create<FileEditorStore>((set, get) => ({
       if (isImagePath(path)) {
         set({ isOpen: false, status: 'idle', error: null, currentFile: null });
         await emit('file:preview', { path, name, kind: 'image' });
+        return;
+      }
+
+      if (isVideoPath(path)) {
+        set({ isOpen: false, status: 'idle', error: null, currentFile: null });
+        await emit('file:preview', { path, name, kind: 'video' });
         return;
       }
 

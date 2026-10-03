@@ -45,6 +45,18 @@ impl Capability for FsCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "文件系统只读访问：列目录/文件详情/存在性（写操作走 tauri command 通道）",
+            "note": "只读边界（list/getFileInfo/exists）；Remote 来源默认 deny（策略见 config permissions.rules）",
+            "actions": {
+                "list": { "params": { "path": "string（必填，绝对路径，目录）" }, "returns": "{ items: FileInfo[] }（直接子项，含 size/modified/created）" },
+                "getFileInfo": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ item: FileInfo | null }（文件：size+modified+created；目录：child_count）" },
+                "exists": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ exists: bool }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

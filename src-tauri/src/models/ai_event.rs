@@ -116,6 +116,9 @@ pub struct ToolCallStartEvent {
     pub tool: String,
     /// 工具参数
     pub args: HashMap<String, serde_json::Value>,
+    /// cap.bash 后台任务 ID（bash 工具异步任务透传，供前端管理面板关联）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 impl ToolCallStartEvent {
@@ -126,11 +129,17 @@ impl ToolCallStartEvent {
             call_id: None,
             tool,
             args,
+            task_id: None,
         }
     }
 
     pub fn with_call_id(mut self, call_id: String) -> Self {
         self.call_id = Some(call_id);
+        self
+    }
+
+    pub fn with_task_id(mut self, task_id: String) -> Self {
+        self.task_id = Some(task_id);
         self
     }
 }
@@ -153,6 +162,9 @@ pub struct ToolCallEndEvent {
     pub result: Option<serde_json::Value>,
     /// 是否成功
     pub success: bool,
+    /// cap.bash 后台任务 ID（bash 工具异步任务透传，供前端管理面板关联）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub task_id: Option<String>,
 }
 
 impl ToolCallEndEvent {
@@ -164,6 +176,7 @@ impl ToolCallEndEvent {
             tool,
             result: None,
             success,
+            task_id: None,
         }
     }
 
@@ -174,6 +187,11 @@ impl ToolCallEndEvent {
 
     pub fn with_call_id(mut self, call_id: String) -> Self {
         self.call_id = Some(call_id);
+        self
+    }
+
+    pub fn with_task_id(mut self, task_id: String) -> Self {
+        self.task_id = Some(task_id);
         self
     }
 }

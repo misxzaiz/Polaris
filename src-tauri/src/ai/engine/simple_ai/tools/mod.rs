@@ -52,14 +52,20 @@ use super::skill::SkillEntry;
 pub(crate) struct ToolOutcome {
     pub(crate) content: String,
     pub(crate) success: bool,
+    /// cap.bash 后台任务 ID（bash 工具异步任务透传，供前端管理面板关联）
+    pub(crate) task_id: Option<String>,
 }
 
 impl ToolOutcome {
     pub(crate) fn ok(content: impl Into<String>) -> Self {
-        Self { content: content.into(), success: true }
+        Self { content: content.into(), success: true, task_id: None }
     }
     pub(crate) fn fail(content: impl Into<String>) -> Self {
-        Self { content: content.into(), success: false }
+        Self { content: content.into(), success: false, task_id: None }
+    }
+    /// 带后台任务 ID 的成功结果（bash 异步任务用）
+    pub(crate) fn ok_task(content: impl Into<String>, task_id: impl Into<String>) -> Self {
+        Self { content: content.into(), success: true, task_id: Some(task_id.into()) }
     }
 }
 

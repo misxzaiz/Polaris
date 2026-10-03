@@ -201,6 +201,20 @@ pub trait Capability: Send + Sync {
     /// 依赖的能力（只读镜像，MUST 与 manifest requires 一致）
     fn dependencies(&self) -> Vec<CapabilityId>;
 
+    /// 能力自描述（供 cap.help 索引 / cap_list 列清单；默认空实现，能力可覆盖）。
+    ///
+    /// 返回形如：
+    /// ```json
+    /// { "summary": "一句话说明",
+    ///   "actions": { "<动作>": { "params": { "<参数>": "类型/说明" }, "returns": "返回结构", "note": "可选" } },
+    ///   "note": "边界/权限提示（可选）" }
+    /// ```
+    /// 这是帮助文档的单一事实来源 —— cap.help 的 index/show 与 cap_list 帧全部
+    /// 聚合自各能力 describe()，杜绝 bus_help 式手写协议随能力演进而漂移。
+    fn describe(&self) -> Value {
+        Value::Null
+    }
+
     /// drain 在途请求（swap 前调用，默认空实现）
     fn drain(&self) -> Result<(), String> {
         Ok(())

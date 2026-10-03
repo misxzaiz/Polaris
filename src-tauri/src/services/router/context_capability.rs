@@ -43,6 +43,24 @@ impl Capability for ContextCapability {
         CapabilityId("cap.context".into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "上下文记忆存储：条目 CRUD/查询 + IDE 上下文注入（内存型，跨进程不共享）",
+            "note": "内存存储（主进程），bus MCP 独立进程各有实例不共享",
+            "actions": {
+                "upsert": { "params": { "entry": "ContextEntry（必填）" }, "returns": "{ ok: true }" },
+                "upsert_many": { "params": { "entries": "ContextEntry[]（必填）" }, "returns": "{ ok: true }" },
+                "query": { "params": { "request": "查询请求（必填）" }, "returns": "查询结果" },
+                "get_all": { "params": {}, "returns": "{ entries: ContextEntry[] }" },
+                "remove": { "params": { "id": "string（必填）" }, "returns": "{ ok: true }" },
+                "clear": { "params": {}, "returns": "{ removed: true }" },
+                "ide_report_current_file": { "params": { "context": "{ file_path, content, language, workspace_id }（必填）" }, "returns": "{ ok: true }" },
+                "ide_report_file_structure": { "params": { "context": "结构上下文（必填）" }, "returns": "{ ok: true }" },
+                "ide_report_diagnostics": { "params": { "context": "诊断上下文（必填）" }, "returns": "{ ok: true }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

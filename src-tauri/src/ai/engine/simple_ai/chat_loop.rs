@@ -633,6 +633,9 @@ pub(super) async fn run_chat_loop(
                 ToolCallEndEvent::new(session_id, tool_name.to_string(), outcome.success);
             end_event.call_id = Some(call_id.clone());
             end_event.result = Some(Value::String(outcome.content.clone()));
+            if let Some(tid) = outcome.task_id.as_deref() {
+                end_event.task_id = Some(tid.to_string());
+            }
             let _ = event_callback(AIEvent::ToolCallEnd(end_event));
 
             messages.push(json!({

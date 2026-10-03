@@ -301,6 +301,11 @@ export function handleAIEvent(
         event.success ? 'completed' : 'failed',
         output,
       )
+      // cap.bash 后台任务透传（bash 工具 async 任务）：回填 taskId 到工具块，
+      // 前端可在「运行中」直接停止 / 打开管理面板关联。
+      if (event.taskId) {
+        state.updateToolCallTaskId(callId, String(event.taskId))
+      }
 
       // 插件自定义卡片（result 模式）：按工具名查注册表，命中则追加独立卡片。
       // 与工具调用卡并存（双卡模式）。interaction 模式由独立的 plugin_card 事件驱动。

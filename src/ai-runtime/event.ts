@@ -42,6 +42,8 @@ export interface ToolCallStartEvent {
   tool: string
   /** 工具参数 */
   args: Record<string, unknown>
+  /** cap.bash 后台任务 ID（bash 工具异步任务透传，供管理面板关联） */
+  taskId?: string
 }
 
 /**
@@ -59,6 +61,8 @@ export interface ToolCallEndEvent {
   result?: unknown
   /** 是否成功 */
   success: boolean
+  /** cap.bash 后台任务 ID（bash 工具异步任务透传，供管理面板关联） */
+  taskId?: string
 }
 
 /**
@@ -966,9 +970,10 @@ export function createThinkingEvent(sessionId: string, content: string): Thinkin
 export function createToolCallStartEvent(
   sessionId: string,
   tool: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  taskId?: string
 ): ToolCallStartEvent {
-  return { type: 'tool_call_start', sessionId, tool, args }
+  return { type: 'tool_call_start', sessionId, tool, args, ...(taskId ? { taskId } : {}) }
 }
 
 /**
@@ -978,9 +983,10 @@ export function createToolCallEndEvent(
   sessionId: string,
   tool: string,
   result?: unknown,
-  success = true
+  success = true,
+  taskId?: string
 ): ToolCallEndEvent {
-  return { type: 'tool_call_end', sessionId, tool, result, success }
+  return { type: 'tool_call_end', sessionId, tool, result, success, ...(taskId ? { taskId } : {}) }
 }
 
 /**

@@ -382,6 +382,19 @@ impl Capability for ConfigCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "系统配置统一入口：读 section / 白名单 patch / schema / reset_cli",
+            "note": "管理面能力：改动全局配置需谨慎（先确认用户意图）；写动作（patch/reset_cli）全源放行，鉴权靠传输层 token；modelProfiles/providerGroups 的 apiKey 在 get 中不脱敏",
+            "actions": {
+                "get": { "params": { "section": "string?（section 名或 all，默认 all）" }, "returns": "配置对象（web.token 脱敏）" },
+                "patch": { "params": { "section": "string（必填，白名单 section）", "value": "object（必填）", "或顶层形态": "{ patch: { key: value } }" }, "returns": "保存后的配置对象" },
+                "schema": { "params": {}, "returns": "{ schemaVersion: 1, sections: [{ name, fields, write }] }" },
+                "reset_cli": { "params": {}, "returns": "{ reset: true }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")

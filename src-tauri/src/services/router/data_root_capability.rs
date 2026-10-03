@@ -756,6 +756,20 @@ impl Capability for DataRootCapability {
         CapabilityId(CAP_ID.into())
     }
 
+    fn describe(&self) -> Value {
+        serde_json::json!({
+            "summary": "数据根管理：查询/扫描旧数据/迁移/校验目标/切换数据根",
+            "note": "管理面能力（Remote 默认 deny）；切换数据根（set_root）影响全局存储，需谨慎",
+            "actions": {
+                "get_info": { "params": {}, "returns": "{ info: DataRootInfo }" },
+                "scan_legacy": { "params": {}, "returns": "{ list: 旧数据清单 }" },
+                "migrate": { "params": { "options": "MigrateOptions（必填）" }, "returns": "{ report: 迁移报告 }" },
+                "validate_target": { "params": { "options": "SetDataRootOptions（必填）" }, "returns": "{ result: 校验结果 }" },
+                "set_root": { "params": { "options": "SetDataRootOptions（必填）" }, "returns": "{ report: 切换报告 }" }
+            }
+        })
+    }
+
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
         let action = params
             .get("action")

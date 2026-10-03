@@ -6,13 +6,14 @@ import { memo, useState, useMemo, useCallback, useEffect } from 'react';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Check, XCircle, ChevronDown, ChevronRight, Code, Copy, ListChecks } from 'lucide-react';
+import { Check, XCircle, ChevronDown, ChevronRight, Code, Copy, ListChecks, SquareTerminal } from 'lucide-react';
 import type { ToolCallBlock } from '@/types';
 import { getToolConfig, extractToolKeyInfo, getToolShortName } from '@/utils/toolConfig';
 import { extractFullFilePath, extractFullCommand } from '@/utils/toolInputExtractor';
 import { copyToClipboard } from '@/utils/clipboard';
 import { useFileEditorStore } from '@/stores/fileEditorStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
+import { useViewStore } from '@/stores/viewStore';
 import {
   formatDuration,
   calculateDuration,
@@ -363,6 +364,22 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
 
         {/* 右侧信息区 */}
         <div className="flex items-center gap-1.5 ml-auto shrink-0">
+          {/* cap.bash 后台任务：taskId + 管理入口 */}
+          {block.taskId && (
+            <button
+              type="button"
+              title={t('tool.manageBashTask', '管理后台任务')}
+              onClick={(e) => {
+                e.stopPropagation();
+                useViewStore.getState().setBashTaskHighlight(block.taskId as string);
+                useViewStore.getState().setLeftPanelType('bashTask');
+              }}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-primary hover:text-primary-hover bg-primary/10 hover:bg-primary/15 border border-primary/20"
+            >
+              <SquareTerminal className="w-3 h-3" />
+              {block.taskId}
+            </button>
+          )}
           {/* 耗时：仅 > 1s 才显示，秒级完成不占位 */}
           {duration && durationMs > 1000 && (
             <span className="text-[10px] text-text-muted px-1.5 py-0.5 bg-background-secondary rounded tabular-nums">

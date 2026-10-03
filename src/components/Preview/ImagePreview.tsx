@@ -1,26 +1,45 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { buildFilePreviewUrl, buildSvgBlobUrl } from '@/services/tauri/fileService'
 
 interface ImagePreviewProps {
   filePath?: string
   title?: string
 }
 
+/** 判断是否为 SVG（Tauri asset 协议默认禁渲染，需走 Blob 读取） */
+function isSvgPath(filePath?: string): boolean {
+  return !!filePath && filePath.split('.').pop()?.toLowerCase() === 'svg'
+}
+
 export function ImagePreview({ filePath, title }: ImagePreviewProps) {
+  const isSvg = useMemo(() => isSvgPath(filePath), [filePath])
+  const [svgSrc, setSvgSrc] = useState<string>('')
+
+  // SVG：双端统一走文本读取 → Blob URL，避开 Tauri asset:// 禁 SVG 的问题
+  useEffect(() => {
+    let revoked = false
+    let objectUrl = ''
+    if (filePath && isSvg) {
+      buildSvgBlobUrl(filePath).then((url) => {
+        if (!url) return
+        objectUrl = url
+        if (!revoked) setSvgSrc(url)
+        else URL.revokeObjectURL(url)
+      })
+    } else {
+      setSvgSrc('')
+    }
+    return () => {
+      revoked = true
+      if (objectUrl) URL.revokeObjectURL(objectUrl)
+    }
+  }, [filePath, isSvg])
+
   const src = useMemo(() => {
     if (!filePath) return ''
-    // In Tauri mode, use the native asset protocol; in web mode, fall back to empty
-    if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-      // Dynamic import to avoid bundling Tauri API in web mode
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-require-imports -- dynamic require for Tauri-only code path, avoids bundling in web mode
-        const { convertFileSrc } = require('@tauri-apps/api/core')
-        return convertFileSrc(filePath)
-      } catch {
-        return ''
-      }
-    }
-    return ''
-  }, [filePath])
+    if (isSvg) return svgSrc
+    return buildFilePreviewUrl(filePath)
+  }, [filePath, isSvg, svgSrc])
 
   if (!filePath) {
     return (
@@ -37,12 +56,18 @@ export function ImagePreview({ filePath, title }: ImagePreviewProps) {
       </div>
       <div className="flex-1 overflow-auto p-4">
         <div className="flex items-center justify-center">
-          <img
-            src={src}
-            alt={title || filePath}
-            className="max-w-full max-h-[80vh] object-contain rounded-md border border-border-subtle shadow-sm bg-background-surface"
-            draggable={false}
-          />
+          {src ? (
+            <img
+              src={src}
+              alt={title || filePath}
+              className="max-w-full max-h-[80vh] object-contain rounded-md border border-border-subtle shadow-sm bg-background-surface"
+              draggable={false}
+            />
+          ) : (
+            <span className="text-sm text-text-tertiary">
+              当前环境不支持图片预览
+            </span>
+          )}
         </div>
       </div>
     </div>
