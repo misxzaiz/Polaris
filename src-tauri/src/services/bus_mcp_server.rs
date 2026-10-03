@@ -43,7 +43,7 @@ const CALLER: &str = "polaris-bus-mcp";
 /// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
 /// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
 ///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http"];
+const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash"];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -99,8 +99,8 @@ impl McpServerHandler for BusMcpHandler {
         json!({
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）或发起外部 HTTP 请求（cap.http，通用转发）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）。注意：这是数据读写/网络工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash"] },
                     "payload": { "type": "object" }
                 })),
             ]
@@ -119,7 +119,7 @@ impl McpServerHandler for BusMcpHandler {
                     .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
                 if !DISPATCH_WHITELIST.contains(&target) {
                     return Ok(tool_error(format!(
-                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http）"
+                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash）"
                     )));
                 }
 
@@ -210,6 +210,15 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
                 "ping":    { "参数": {}, "返回": "{ pong: true }" },
                 "request": { "参数": { "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）", "url": "string（必填，仅 http/https）", "headers": "{ k: v }（可含 Cookie/UA/Referer 等浏览器禁发头——宿主转发不受浏览器限制）", "body": "string?", "bodyType": "text|json|form|binary?", "timeoutMs": "number?（默认 15000）" }, "返回": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }" },
                 "边界": "目标校验已完全放开：http/https 任意目标可转发（含 localhost / 内网 / 云元数据等）；仅非 http(s) 协议拒绝。二进制响应（image/* 等）base64 编码返回（isBase64:true）。Remote 来源策略 deny，仅本地面板/AI 可用。"
+            },
+            "cap.bash": {
+                "run":    { "参数": { "command": "string（必填，shell 命令）", "workdir": "string?（默认调用方工作目录）", "env": "{ k: v }?", "timeoutMs": "number?（默认 600000，0=不限）", "async": "bool?（默认 false：同步等待完成）", "onSessionEnd": "keep|kill?（默认 keep——任务归宿主，不随会话结束）" }, "返回": "{ taskId, pid, status, logPath }（async=false 时含 exitCode/startedAt/finishedAt）" },
+                "status": { "参数": { "taskId": "string（必填）" }, "返回": "{ taskId, status, exitCode?, startedAt, finishedAt? }" },
+                "log":    { "参数": { "taskId": "string（必填）", "offset": "int?（默认 0）", "limit": "int?（默认全部）" }, "返回": "{ taskId, offset, total, lines: string[] }" },
+                "wait":   { "参数": { "taskId": "string（必填）", "timeoutMs": "number?（默认 30000）" }, "返回": "{ taskId, status, exitCode?, finishedAt? }（超时返回 status=running）" },
+                "kill":   { "参数": { "taskId": "string（必填）" }, "返回": "{ taskId, killed, status }（Windows 杀进程树）" },
+                "list":   { "参数": { "sessionId": "string?（按发起方 caller 过滤）", "status": "string?（running|completed|failed|killed|timeout）" }, "返回": "{ tasks: [{ taskId, status, command, pid, sessionId, startedAt, finishedAt, logLines }] }" },
+                "边界": "任务归宿主进程（TaskManager 单例），不随 AI 会话结束而终止——会话解耦。Remote 来源策略 deny，仅本地面板/AI 可用。SimpleAI 内建 bash 工具仍是会话级同步执行；cap.bash 提供后台/跨会话的长任务管理。"
             }
         },
         "usage_examples": [
@@ -218,6 +227,8 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "GET", "url": "https://api.github.com/repos/rust-lang/rust" } } },
             { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "POST", "url": "https://httpbin.org/post", "body": "{\"q\":\"test\"}", "bodyType": "json" } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "run", "command": "npm run build", "async": true } } },
+            { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "status", "taskId": "<taskId>" } } },
             { "tool": "cap_list", "arguments": {} },
             { "tool": "cap_dispatch", "arguments": { "target": "cap.history", "payload": { "action": "list_sessions" } } },
             { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "message": "<用户消息>" } } },
@@ -236,7 +247,7 @@ impl BusMcpHandler {
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
                 mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http"] },
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash"] },
                     "payload": { "type": "object" }
                 })),
             ]

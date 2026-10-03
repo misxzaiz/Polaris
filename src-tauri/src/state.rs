@@ -367,7 +367,7 @@ pub fn create_app_state(
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
-            EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
+            BashCapability, EventAdapter, FileAuditSink, KvCapability, PolicyPermission,
             ContextCapability, ConfigCapability, DataRootCapability, HttpCapability,
             PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
             RouterBus, StreamEchoCapability, TodoCapability, audit_sink, prompt_snippet_capability,
@@ -420,6 +420,10 @@ pub fn create_app_state(
         // cap.todo —— 第四步闭环替换第一块：真实业务域（经 ctx.storage() 读写
         // <DataRoot>/stores/todo.db，旧命令层已全部移除，本 capability 是唯一入口）
         let _ = bus.register_handle(Box::new(TodoCapability));
+        // cap.bash —— 宿主级 shell 命令执行（任务后台运行 + 会话解耦：任务归宿主，
+        // 不随 AI 会话结束而终止；run/status/log/wait/kill/list 六个动作）。
+        // 远程默认拒绝（管理面域，见 policy_permission.rs 默认规则表）。
+        let _ = bus.register_handle(Box::new(BashCapability::new()));
         // cap.prompt_snippet —— 第四步迁移第二块：快捷片段唯一入口。
         // 装配时一次性只读导入旧 prompt-snippets.json（domain 为空才导入，旧文件保留）
         match prompt_snippet_capability::import_legacy_store(

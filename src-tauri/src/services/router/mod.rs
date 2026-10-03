@@ -15,6 +15,7 @@
 
 mod ai_chat_capability;
 pub mod audit_sink;
+pub mod bash_capability;
 mod config_capability;
 mod context_capability;
 mod data_root_capability;
@@ -32,6 +33,7 @@ mod todo_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
+pub use bash_capability::BashCapability;
 pub use config_capability::ConfigCapability;
 pub use context_capability::ContextCapability;
 pub use data_root_capability::DataRootCapability;

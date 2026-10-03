@@ -171,6 +171,9 @@ impl PolicyPermission {
             ("cap.data_root", true),
             ("cap.plugin", true),
             ("cap.http", true),
+            // cap.bash 远程禁发：shell 命令执行是高危面，默认只对本地面板（Bootstrap/
+            // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
+            ("cap.bash", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),
