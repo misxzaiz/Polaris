@@ -12,8 +12,6 @@ export interface ContextMenuItem {
   icon?: string | ReactNode;
   action: () => void | Promise<void>;
   disabled?: boolean;
-  /** 高亮样式（如「属性」——信息展示类入口的强调色） */
-  accent?: boolean;
 }
 
 interface ContextMenuProps {
@@ -114,10 +112,7 @@ export function ContextMenu({ visible, x, y, items, onClose }: ContextMenuProps)
           );
         }
 
-        // 普通菜单项
-        const accentClass = item.accent
-          ? 'text-primary bg-primary/10 hover:bg-primary/15 hover:text-primary font-medium'
-          : 'text-text-secondary hover:bg-background-hover hover:text-text-primary';
+        // 普通菜单项（统一样式：静态无背景，hover 轻反馈）
         return (
           <button
             key={item.id}
@@ -125,7 +120,7 @@ export function ContextMenu({ visible, x, y, items, onClose }: ContextMenuProps)
             className={`w-full px-3 py-2 text-left text-sm flex items-center gap-2 transition-colors ${
               item.disabled
                 ? 'text-text-muted cursor-not-allowed'
-                : accentClass
+                : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
             }`}
             disabled={item.disabled}
             onClick={async () => {

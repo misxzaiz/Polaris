@@ -232,12 +232,11 @@ export const FileTreeNode = memo<FileTreeNodeProps>(({
 
     items.push({ id: 'separator-1', label: '-', icon: undefined, action: () => {} });
 
-    // 属性（高亮展示入口：类型/大小/修改/创建时间/路径，经 cap.fs getFileInfo）
+    // 属性（展示入口：类型/大小/修改/创建时间/路径，经 cap.fs getFileInfo）
     items.push({
       id: 'properties',
       label: t('contextMenu.properties'),
       icon: <Info size={14} />,
-      accent: true,
       action: () => {
         setDetailsVisible(true);
       },
