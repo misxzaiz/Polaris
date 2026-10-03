@@ -1,6 +1,6 @@
 [package]
 name = "polaris"
-version = "10.1.0"
+version = "10.6.1"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
