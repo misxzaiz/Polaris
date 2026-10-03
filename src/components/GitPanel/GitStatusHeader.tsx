@@ -7,9 +7,11 @@ interface GitStatusHeaderProps {
   status: GitRepositoryStatus | null
   isLoading: boolean
   onRefresh: () => void
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
 }
 
-export function GitStatusHeader({ status, isLoading, onRefresh }: GitStatusHeaderProps) {
+export function GitStatusHeader({ status, isLoading, onRefresh, workspacePath }: GitStatusHeaderProps) {
   const { t } = useTranslation('git')
 
   if (!status) {
@@ -25,7 +27,7 @@ export function GitStatusHeader({ status, isLoading, onRefresh }: GitStatusHeade
       <div className="px-4 py-3 border-b border-border-subtle">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <BranchSelector />
+            <BranchSelector workspacePath={workspacePath} />
             <span className="text-text-tertiary text-xs">{t('noCommits')}</span>
           </div>
           <button
@@ -45,7 +47,7 @@ export function GitStatusHeader({ status, isLoading, onRefresh }: GitStatusHeade
     <div className="px-4 py-3 border-b border-border-subtle">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <BranchSelector />
+          <BranchSelector workspacePath={workspacePath} />
           {status.commit && (
             <span className="text-text-tertiary text-xs font-mono">
               {status.shortCommit}

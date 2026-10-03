@@ -26,9 +26,11 @@ interface PushDialogProps {
   onClose: () => void
   defaultRemote?: string
   defaultBranch?: string
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
 }
 
-export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: PushDialogProps) {
+export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, workspacePath: workspacePathProp }: PushDialogProps) {
   const { t } = useTranslation('git')
 
   // 状态
@@ -54,9 +56,13 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
   const getBranches = useGitStore((s) => s.getBranches)
 
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find((w) => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find((w) => w.id === targetId) || null
   })
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
 
   const toast = useToastStore()
 
@@ -77,7 +83,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
 
   // 初始化选择 - 打开时先刷新数据,再基于最新状态计算默认值
   useEffect(() => {
-    if (!isOpen || !currentWorkspace) return
+    if (!isOpen || !effectiveWorkspacePath) return
 
     // 先同步重置 UI 状态,避免残留上次的勾选/错误
     setRemoteBranchName('')
@@ -87,14 +93,13 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
     setError(null)
 
     let cancelled = false
-    const workspacePath = currentWorkspace.path
 
     void (async () => {
       // 关键:await 刷新,确保默认值基于最新数据而非旧的 store 快照
       await Promise.all([
-        getRemotes(workspacePath),
-        getBranches(workspacePath),
-        refreshStatus(workspacePath),
+        getRemotes(effectiveWorkspacePath),
+        getBranches(effectiveWorkspacePath),
+        refreshStatus(effectiveWorkspacePath),
       ])
       if (cancelled) return
 
@@ -123,7 +128,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
     return () => {
       cancelled = true
     }
-  }, [isOpen, currentWorkspace, defaultRemote, defaultBranch, getRemotes, getBranches, refreshStatus])
+  }, [isOpen, effectiveWorkspacePath, defaultRemote, defaultBranch, getRemotes, getBranches, refreshStatus])
 
   // 当本地分支改变时，同步远程分支名（如果未自定义）
   useEffect(() => {
@@ -134,7 +139,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
 
   // 处理推送
   const handlePush = useCallback(async () => {
-    if (!currentWorkspace || !selectedRemote || !selectedBranch) {
+    if (!effectiveWorkspacePath || !selectedRemote || !selectedBranch) {
       setError(t('push.noRemote') || t('push.noBranch'))
       return
     }
@@ -147,7 +152,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
 
     try {
       const result: GitPushResult = await push(
-        currentWorkspace.path,
+        effectiveWorkspacePath,
         selectedBranch,
         selectedRemote,
         force,
@@ -156,7 +161,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
       )
 
       if (result.success) {
-        await refreshStatus(currentWorkspace.path)
+        await refreshStatus(effectiveWorkspacePath)
         toast.success(t('remote.pushSuccess'), t('remote.pushSuccessDetail', { commits: result.pushedCommits }))
         onClose()
       } else if (result.needsUpstream) {
@@ -175,7 +180,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch }: Pu
       setIsPushing(false)
     }
   }, [
-    currentWorkspace,
+    effectiveWorkspacePath,
     selectedRemote,
     selectedBranch,
     force,

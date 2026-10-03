@@ -13,7 +13,12 @@ import { useToastStore } from '@/stores/toastStore'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitTag } from '@/types/git'
 
-export function TagsTab() {
+interface TagsTabProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function TagsTab({ workspacePath: workspacePathProp }: TagsTabProps) {
   const { t } = useTranslation('git')
   const [tags, setTags] = useState<GitTag[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -37,18 +42,22 @@ export function TagsTab() {
   const deleteTag = useGitStore((s) => s.deleteTag)
   const status = useGitStore((s) => s.status)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
   const toast = useToastStore()
 
   const loadTags = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
     try {
-      const result = await getTags(currentWorkspace.path)
+      const result = await getTags(workspacePath)
       setTags(result)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -56,7 +65,7 @@ export function TagsTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getTags])
+  }, [workspacePath, getTags])
 
   useEffect(() => {
     loadTags()
@@ -83,7 +92,7 @@ export function TagsTab() {
 
   // 创建标签
   const handleCreateTag = async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     // 验证标签名
     if (!newTagName.trim()) {
@@ -107,7 +116,7 @@ export function TagsTab() {
 
     try {
       await createTag(
-        currentWorkspace.path,
+        workspacePath,
         newTagName.trim(),
         newTagCommitish.trim() || undefined,
         newTagMessage.trim() || undefined
@@ -131,12 +140,12 @@ export function TagsTab() {
 
   // 删除标签
   const handleDeleteTag = async () => {
-    if (!currentWorkspace || !tagToDelete) return
+    if (!workspacePath || !tagToDelete) return
 
     setIsDeleting(true)
 
     try {
-      await deleteTag(currentWorkspace.path, tagToDelete.name)
+      await deleteTag(workspacePath, tagToDelete.name)
       toast.success(t('tags.deleteSuccess', { name: tagToDelete.name }))
       setShowDeleteModal(false)
       setTagToDelete(null)

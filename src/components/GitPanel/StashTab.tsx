@@ -12,7 +12,12 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitStashEntry } from '@/types/git'
 
-export function StashTab() {
+interface StashTabProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
   const { t } = useTranslation('git')
   const [stashes, setStashes] = useState<GitStashEntry[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -23,17 +28,21 @@ export function StashTab() {
   const stashPop = useGitStore((s) => s.stashPop)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
 
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
   const loadStashes = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
     try {
-      const result = await getStashList(currentWorkspace.path)
+      const result = await getStashList(workspacePath)
       setStashes(result)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -41,21 +50,21 @@ export function StashTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getStashList])
+  }, [workspacePath, getStashList])
 
   useEffect(() => {
     loadStashes()
   }, [loadStashes])
 
   const handleApply = async (index: number) => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setOperatingIndex(index)
     setError(null)
     try {
-      await stashPop(currentWorkspace.path, index)
+      await stashPop(workspacePath, index)
       await loadStashes()
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(workspacePath)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       setError(errorMsg)

@@ -41,7 +41,12 @@ type SwitchState =
   | { type: 'idle' }
   | { type: 'confirming'; targetBranch: string; hasChanges: boolean }
 
-export function BranchTab() {
+interface BranchTabProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) {
   const { t } = useTranslation('git')
   const [branches, setBranches] = useState<GitBranch[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -70,18 +75,22 @@ export function BranchTab() {
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const stashSave = useGitStore((s) => s.stashSave)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
   const toast = useToastStore()
 
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
   const loadBranches = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
     try {
-      await getBranches(currentWorkspace.path)
+      await getBranches(workspacePath)
       const storeBranches = useGitStore.getState().branches
       setBranches(storeBranches)
     } catch (err) {
@@ -91,7 +100,7 @@ export function BranchTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getBranches, t, toast])
+  }, [workspacePath, getBranches, t, toast])
 
   useEffect(() => {
     loadBranches()
@@ -108,13 +117,13 @@ export function BranchTab() {
 
   const doSwitchBranch = useCallback(
     async (branchName: string) => {
-      if (!currentWorkspace) return
+      if (!workspacePath) return
 
       setIsSwitching(true)
       setError(null)
       try {
-        await checkoutBranch(currentWorkspace.path, branchName)
-        await refreshStatus(currentWorkspace.path)
+        await checkoutBranch(workspacePath, branchName)
+        await refreshStatus(workspacePath)
         await loadBranches()
         setSwitchState({ type: 'idle' })
         toast.success(t('branch.switchSuccess', { branch: branchName }))
@@ -126,12 +135,12 @@ export function BranchTab() {
         setIsSwitching(false)
       }
     },
-    [currentWorkspace, checkoutBranch, refreshStatus, loadBranches, t, toast]
+    [workspacePath, checkoutBranch, refreshStatus, loadBranches, t, toast]
   )
 
   const handleSwitchBranch = useCallback(
     async (branchName: string) => {
-      if (!currentWorkspace || branchName === status?.branch) return
+      if (!workspacePath || branchName === status?.branch) return
 
       if (hasUncommittedChanges()) {
         setSwitchState({
@@ -143,23 +152,23 @@ export function BranchTab() {
         await doSwitchBranch(branchName)
       }
     },
-    [currentWorkspace, status?.branch, hasUncommittedChanges, doSwitchBranch]
+    [workspacePath, status?.branch, hasUncommittedChanges, doSwitchBranch]
   )
 
   const handleStashAndSwitch = useCallback(async () => {
-    if (!currentWorkspace || switchState.type !== 'confirming') return
+    if (!workspacePath || switchState.type !== 'confirming') return
 
     const targetBranch = switchState.targetBranch
     setIsSwitching(true)
     try {
-      await stashSave(currentWorkspace.path, `WIP: switching to ${targetBranch}`, true)
+      await stashSave(workspacePath, `WIP: switching to ${targetBranch}`, true)
       await doSwitchBranch(targetBranch)
     } catch {
       // doSwitchBranch 已处理错误
     } finally {
       setIsSwitching(false)
     }
-  }, [currentWorkspace, switchState, stashSave, doSwitchBranch])
+  }, [workspacePath, switchState, stashSave, doSwitchBranch])
 
   const handleForceSwitch = useCallback(async () => {
     if (switchState.type !== 'confirming') return
@@ -172,7 +181,7 @@ export function BranchTab() {
   }, [])
 
   const handleCreateBranch = useCallback(async (name: string, checkout: boolean, basedOn?: string) => {
-    if (!currentWorkspace || !name.trim()) return
+    if (!workspacePath || !name.trim()) return
 
     const branchName = name.trim()
     const validation = validateBranchName(branchName)
@@ -188,9 +197,9 @@ export function BranchTab() {
     setIsCreating(true)
     setError(null)
     try {
-      await createBranch(currentWorkspace.path, branchName, checkout, basedOn)
+      await createBranch(workspacePath, branchName, checkout, basedOn)
       await loadBranches()
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(workspacePath)
       setShowCreateDialog(false)
       toast.success(t('branch.createSuccess', { branch: branchName }))
     } catch (err) {
@@ -200,7 +209,7 @@ export function BranchTab() {
     } finally {
       setIsCreating(false)
     }
-  }, [currentWorkspace, branches, createBranch, loadBranches, refreshStatus, t, toast])
+  }, [workspacePath, branches, createBranch, loadBranches, refreshStatus, t, toast])
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
@@ -218,12 +227,12 @@ export function BranchTab() {
   const [forceDelete, setForceDelete] = useState(false)
 
   const handleDeleteBranch = useCallback(async () => {
-    if (!currentWorkspace || !branchToDelete) return
+    if (!workspacePath || !branchToDelete) return
 
     setIsDeleting(true)
     setError(null)
     try {
-      await deleteBranch(currentWorkspace.path, branchToDelete, forceDelete)
+      await deleteBranch(workspacePath, branchToDelete, forceDelete)
       await loadBranches()
       setShowDeleteDialog(false)
       setBranchToDelete(null)
@@ -241,7 +250,7 @@ export function BranchTab() {
     } finally {
       setIsDeleting(false)
     }
-  }, [currentWorkspace, branchToDelete, forceDelete, deleteBranch, loadBranches, t, toast])
+  }, [workspacePath, branchToDelete, forceDelete, deleteBranch, loadBranches, t, toast])
 
   const openDeleteDialog = useCallback((branchName: string) => {
     setBranchToDelete(branchName)
@@ -255,7 +264,7 @@ export function BranchTab() {
   const [isRenaming, setIsRenaming] = useState(false)
 
   const handleRenameBranch = useCallback(async (newName: string) => {
-    if (!currentWorkspace || !branchToRename || !newName.trim()) return
+    if (!workspacePath || !branchToRename || !newName.trim()) return
 
     const branchName = newName.trim()
     const validation = validateBranchName(branchName, true)
@@ -275,9 +284,9 @@ export function BranchTab() {
     setIsRenaming(true)
     setError(null)
     try {
-      await renameBranch(currentWorkspace.path, branchToRename, branchName)
+      await renameBranch(workspacePath, branchToRename, branchName)
       await loadBranches()
-      await refreshStatus(currentWorkspace.path)
+      await refreshStatus(workspacePath)
       setShowRenameDialog(false)
       setBranchToRename(null)
       toast.success(t('branch.renameSuccess', { oldBranch: branchToRename, newBranch: branchName }))
@@ -288,7 +297,7 @@ export function BranchTab() {
     } finally {
       setIsRenaming(false)
     }
-  }, [currentWorkspace, branchToRename, branches, renameBranch, loadBranches, refreshStatus, t, toast])
+  }, [workspacePath, branchToRename, branches, renameBranch, loadBranches, refreshStatus, t, toast])
 
   const openRenameDialog = useCallback((branchName: string) => {
     setBranchToRename(branchName)
@@ -302,13 +311,13 @@ export function BranchTab() {
   const [mergeResult, setMergeResult] = useState<GitMergeResult | null>(null)
 
   const handleMergeBranch = useCallback(async (noFF: boolean) => {
-    if (!currentWorkspace || !branchToMerge) return
+    if (!workspacePath || !branchToMerge) return
 
     setIsMerging(true)
     setError(null)
     setMergeResult(null)
     try {
-      const result = await mergeBranch(currentWorkspace.path, branchToMerge, noFF)
+      const result = await mergeBranch(workspacePath, branchToMerge, noFF)
       setMergeResult(result)
 
       if (result.success) {
@@ -331,7 +340,7 @@ export function BranchTab() {
     } finally {
       setIsMerging(false)
     }
-  }, [currentWorkspace, branchToMerge, mergeBranch, loadBranches, t, toast, status?.branch])
+  }, [workspacePath, branchToMerge, mergeBranch, loadBranches, t, toast, status?.branch])
 
   const openMergeDialog = useCallback((branchName: string) => {
     setBranchToMerge(branchName)
@@ -346,13 +355,13 @@ export function BranchTab() {
   const [rebaseResult, setRebaseResult] = useState<GitRebaseResult | null>(null)
 
   const handleRebaseBranch = useCallback(async () => {
-    if (!currentWorkspace || !branchToRebase) return
+    if (!workspacePath || !branchToRebase) return
 
     setIsRebasing(true)
     setError(null)
     setRebaseResult(null)
     try {
-      const result = await rebaseBranch(currentWorkspace.path, branchToRebase)
+      const result = await rebaseBranch(workspacePath, branchToRebase)
       setRebaseResult(result)
 
       if (result.success) {
@@ -378,14 +387,14 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, branchToRebase, rebaseBranch, loadBranches, t, toast])
+  }, [workspacePath, branchToRebase, rebaseBranch, loadBranches, t, toast])
 
   const handleRebaseAbort = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsRebasing(true)
     try {
-      await rebaseAbort(currentWorkspace.path)
+      await rebaseAbort(workspacePath)
       await loadBranches()
       setShowRebaseDialog(false)
       setBranchToRebase(null)
@@ -397,14 +406,14 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, rebaseAbort, loadBranches, t, toast])
+  }, [workspacePath, rebaseAbort, loadBranches, t, toast])
 
   const handleRebaseContinue = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsRebasing(true)
     try {
-      const result = await rebaseContinue(currentWorkspace.path)
+      const result = await rebaseContinue(workspacePath)
       setRebaseResult(result)
 
       if (result.success) {
@@ -425,7 +434,7 @@ export function BranchTab() {
     } finally {
       setIsRebasing(false)
     }
-  }, [currentWorkspace, rebaseContinue, loadBranches, t, toast, branchToRebase])
+  }, [workspacePath, rebaseContinue, loadBranches, t, toast, branchToRebase])
 
   const openRebaseDialog = useCallback((branchName: string) => {
     setBranchToRebase(branchName)

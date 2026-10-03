@@ -14,11 +14,13 @@ import type { GitBlameLine } from '@/types/git'
 
 interface BlameViewProps {
   filePath: string
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
   onClose: () => void
   onCommitClick?: (commitSha: string) => void
 }
 
-export function BlameView({ filePath, onClose, onCommitClick }: BlameViewProps) {
+export function BlameView({ filePath, workspacePath: workspacePathProp, onClose, onCommitClick }: BlameViewProps) {
   const { t } = useTranslation('git')
   const [lines, setLines] = useState<GitBlameLine[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -26,19 +28,23 @@ export function BlameView({ filePath, onClose, onCommitClick }: BlameViewProps) 
 
   const blameFile = useGitStore((s) => s.blameFile)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
   const toast = useToastStore()
 
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
   const loadBlame = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
 
     try {
-      const result = await blameFile(currentWorkspace.path, filePath)
+      const result = await blameFile(workspacePath, filePath)
       setLines(result.lines)
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
@@ -47,7 +53,7 @@ export function BlameView({ filePath, onClose, onCommitClick }: BlameViewProps) 
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, filePath, blameFile, toast, t])
+  }, [workspacePath, filePath, blameFile, toast, t])
 
   useEffect(() => {
     loadBlame()

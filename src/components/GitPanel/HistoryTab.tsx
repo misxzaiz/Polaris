@@ -75,6 +75,8 @@ interface HistoryTabProps {
   onOpenDiffInTab?: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => void
   onOpenFileInEditor?: (filePath: string) => void
   variant?: 'sidebar' | 'workbench'
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
 }
 
 export function HistoryTab({
@@ -83,6 +85,7 @@ export function HistoryTab({
   onOpenDiffInTab,
   onOpenFileInEditor,
   variant = 'sidebar',
+  workspacePath: workspacePathProp,
 }: HistoryTabProps) {
   const { t } = useTranslation('git')
   const [commits, setCommits] = useState<GitCommitType[]>([])
@@ -156,6 +159,9 @@ export function HistoryTab({
     return workspaces.find(w => w.id === targetId) || null
   })
   const toast = useToastStore()
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
 
   const isWorkbench = variant === 'workbench'
   const isFileHistoryMode = fileHistoryPath !== null
@@ -282,7 +288,7 @@ export function HistoryTab({
   }, [])
 
   const loadCommitDetails = useCallback(async (commit: GitCommitType) => {
-    if (!currentWorkspace) return
+    if (!effectiveWorkspacePath) return
 
     const requestId = ++detailsRequestRef.current
     setSelectedCommit(commit)
@@ -293,7 +299,7 @@ export function HistoryTab({
     setIsCommitMessageExpanded(false)
 
     try {
-      const details = await getCommitDetails(currentWorkspace.path, commit.sha)
+      const details = await getCommitDetails(effectiveWorkspacePath, commit.sha)
       if (requestId !== detailsRequestRef.current) return
       setSelectedCommit(details.commit)
       setSelectedDetails(details)
@@ -309,10 +315,10 @@ export function HistoryTab({
         setIsDetailsLoading(false)
       }
     }
-  }, [currentWorkspace, getCommitDetails])
+  }, [effectiveWorkspacePath, getCommitDetails])
 
   const loadCommitDetailsBySha = useCallback(async (commitSha: string) => {
-    if (!currentWorkspace) return
+    if (!effectiveWorkspacePath) return
 
     const requestId = ++detailsRequestRef.current
     setDetailsError(null)
@@ -320,7 +326,7 @@ export function HistoryTab({
     setIsCommitMessageExpanded(false)
 
     try {
-      const details = await getCommitDetails(currentWorkspace.path, commitSha)
+      const details = await getCommitDetails(effectiveWorkspacePath, commitSha)
       if (requestId !== detailsRequestRef.current) return
       setSelectedCommit(details.commit)
       setSelectedDetails(details)
@@ -336,10 +342,10 @@ export function HistoryTab({
         setIsDetailsLoading(false)
       }
     }
-  }, [currentWorkspace, getCommitDetails])
+  }, [effectiveWorkspacePath, getCommitDetails])
 
   const loadCommits = useCallback(async () => {
-    if (!currentWorkspace) {
+    if (!effectiveWorkspacePath) {
       setError(noWorkspaceError)
       return
     }
@@ -349,8 +355,8 @@ export function HistoryTab({
     setHasMore(true)
 
     try {
-      log.debug('Loading commits', { path: currentWorkspace.path, branch: selectedBranch || null })
-      const result = await getLog(currentWorkspace.path, PAGE_SIZE, 0, selectedBranch || undefined)
+      log.debug('Loading commits', { path: effectiveWorkspacePath, branch: selectedBranch || null })
+      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
       log.debug('Loaded commits', { count: result.length })
 
       setCommits(result)
@@ -372,7 +378,7 @@ export function HistoryTab({
     }
   }, [
     clearSelection,
-    currentWorkspace,
+    effectiveWorkspacePath,
     getLog,
     isWorkbench,
     loadCommitDetails,
@@ -382,13 +388,13 @@ export function HistoryTab({
   ])
 
   const loadMoreCommits = useCallback(async () => {
-    if (!currentWorkspace || isLoadingMore || !hasMore) return
+    if (!effectiveWorkspacePath || isLoadingMore || !hasMore) return
 
     setIsLoadingMore(true)
 
     try {
       const skip = commits.length
-      const result = await getLog(currentWorkspace.path, PAGE_SIZE, skip, selectedBranch || undefined)
+      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
 
       if (result.length === 0) {
         setHasMore(false)
@@ -402,10 +408,10 @@ export function HistoryTab({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [currentWorkspace, commits.length, getLog, hasMore, isLoadingMore, selectedBranch])
+  }, [effectiveWorkspacePath, commits.length, getLog, hasMore, isLoadingMore, selectedBranch])
 
   const loadFileHistory = useCallback(async (filePath: string) => {
-    if (!currentWorkspace) {
+    if (!effectiveWorkspacePath) {
       setError(noWorkspaceError)
       return
     }
@@ -420,7 +426,7 @@ export function HistoryTab({
 
     try {
       const result = await getFileHistory(
-        currentWorkspace.path,
+        effectiveWorkspacePath,
         filePath,
         PAGE_SIZE,
         0,
@@ -443,7 +449,7 @@ export function HistoryTab({
     }
   }, [
     clearSelection,
-    currentWorkspace,
+    effectiveWorkspacePath,
     getFileHistory,
     noWorkspaceError,
     selectFileHistoryEntry,
@@ -451,13 +457,13 @@ export function HistoryTab({
   ])
 
   const loadMoreFileHistory = useCallback(async () => {
-    if (!currentWorkspace || !fileHistoryPath || isLoadingMore || !fileHistoryHasMore) return
+    if (!effectiveWorkspacePath || !fileHistoryPath || isLoadingMore || !fileHistoryHasMore) return
 
     setIsLoadingMore(true)
 
     try {
       const result = await getFileHistory(
-        currentWorkspace.path,
+        effectiveWorkspacePath,
         fileHistoryPath,
         PAGE_SIZE,
         fileHistoryEntries.length,
@@ -477,7 +483,7 @@ export function HistoryTab({
       setIsLoadingMore(false)
     }
   }, [
-    currentWorkspace,
+    effectiveWorkspacePath,
     fileHistoryEntries.length,
     fileHistoryHasMore,
     fileHistoryPath,
@@ -505,9 +511,9 @@ export function HistoryTab({
   }, [loadCommits])
 
   useEffect(() => {
-    if (!currentWorkspace) return
-    void getBranches(currentWorkspace.path)
-  }, [currentWorkspace, getBranches])
+    if (!effectiveWorkspacePath) return
+    void getBranches(effectiveWorkspacePath)
+  }, [effectiveWorkspacePath, getBranches])
 
   // 点击外部关闭分支选择下拉框
   useEffect(() => {
@@ -560,7 +566,7 @@ export function HistoryTab({
     setSelectedBranch('')
     clearFileHistoryMode()
     clearSelection()
-  }, [clearFileHistoryMode, clearSelection, currentWorkspace?.path])
+  }, [clearFileHistoryMode, clearSelection, effectiveWorkspacePath])
 
   useEffect(() => {
     if (!targetCommitSha) return
@@ -684,7 +690,7 @@ export function HistoryTab({
         label: t('history.checkoutCommit'),
         icon: <GitBranchIcon size={14} />,
         action: () => {
-          if (!currentWorkspace) return
+          if (!effectiveWorkspacePath) return
           setConfirmDialog({
             show: true,
             title: t('history.checkoutCommitTitle'),
@@ -693,7 +699,7 @@ export function HistoryTab({
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
-                await checkoutCommit(currentWorkspace.path, commit.sha)
+                await checkoutCommit(effectiveWorkspacePath, commit.sha)
                 toast.success(t('history.checkoutCommitSuccess'))
                 void loadCommits()
               } catch (err) {
@@ -711,7 +717,7 @@ export function HistoryTab({
         label: t('cherryPick.button'),
         icon: <GitMerge size={14} />,
         action: () => {
-          if (!currentWorkspace) return
+          if (!effectiveWorkspacePath) return
           setConfirmDialog({
             show: true,
             title: t('cherryPick.title'),
@@ -719,7 +725,7 @@ export function HistoryTab({
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
-                await cherryPick(currentWorkspace.path, commit.sha)
+                await cherryPick(effectiveWorkspacePath, commit.sha)
                 toast.success(t('cherryPick.success'))
                 void loadCommits()
               } catch (err) {
@@ -734,7 +740,7 @@ export function HistoryTab({
         label: t('revert.button'),
         icon: <RotateCcw size={14} />,
         action: () => {
-          if (!currentWorkspace) return
+          if (!effectiveWorkspacePath) return
           setConfirmDialog({
             show: true,
             title: t('revert.title'),
@@ -742,7 +748,7 @@ export function HistoryTab({
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
-                await revert(currentWorkspace.path, commit.sha)
+                await revert(effectiveWorkspacePath, commit.sha)
                 toast.success(t('revert.success'))
                 void loadCommits()
               } catch (err) {
@@ -761,7 +767,7 @@ export function HistoryTab({
         icon: <Undo2 size={14} />,
         disabled: !isHeadCommit,
         action: () => {
-          if (!currentWorkspace) return
+          if (!effectiveWorkspacePath) return
           setConfirmDialog({
             show: true,
             title: t('history.undoCommitTitle'),
@@ -769,7 +775,7 @@ export function HistoryTab({
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
-                await reset(currentWorkspace.path, 'soft', commit.sha + '^')
+                await reset(effectiveWorkspacePath, 'soft', commit.sha + '^')
                 toast.success(t('history.undoCommitSuccess'))
                 void loadCommits()
               } catch (err) {
@@ -785,7 +791,7 @@ export function HistoryTab({
         icon: <Trash2 size={14} />,
         disabled: !isHeadCommit,
         action: () => {
-          if (!currentWorkspace) return
+          if (!effectiveWorkspacePath) return
           setConfirmDialog({
             show: true,
             title: t('history.dropCommitTitle'),
@@ -794,7 +800,7 @@ export function HistoryTab({
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
-                await reset(currentWorkspace.path, 'hard', commit.sha + '^')
+                await reset(effectiveWorkspacePath, 'hard', commit.sha + '^')
                 toast.success(t('history.dropCommitSuccess'))
                 void loadCommits()
               } catch (err) {
@@ -806,7 +812,7 @@ export function HistoryTab({
       },
     ]
     return items
-  }, [cherryPick, checkoutCommit, commits, copyText, currentWorkspace, loadCommits, reset, revert, t, toast])
+  }, [cherryPick, checkoutCommit, commits, copyText, effectiveWorkspacePath, loadCommits, reset, revert, t, toast])
 
   // 在中央编辑器打开某提交中某文件的 diff（复用同一标签页，identity 去重）
   const openFileDiffInTab = useCallback((commit: GitCommitType, file: GitDiffEntry) => {
@@ -1270,7 +1276,7 @@ export function HistoryTab({
                 normalizedFileSearchQuery={normalizedFileSearchQuery}
                 isWorkbench={isWorkbench}
                 isFileHistoryMode={isFileHistoryMode}
-                currentWorkspacePath={currentWorkspace?.path}
+                currentWorkspacePath={effectiveWorkspacePath}
                 onSetFileSearchQuery={setFileSearchQuery}
                 onSetFileListMode={setFileListMode}
                 onSetDiffViewMode={setDiffViewMode}
@@ -1314,10 +1320,10 @@ export function HistoryTab({
         />
       )}
 
-      {createBranchFromCommit && currentWorkspace && (
+      {createBranchFromCommit && effectiveWorkspacePath && (
         <CreateBranchFromCommitDialog
           commit={createBranchFromCommit}
-          workspacePath={currentWorkspace.path}
+          workspacePath={effectiveWorkspacePath}
           onClose={() => setCreateBranchFromCommit(null)}
           onSuccess={() => {
             setCreateBranchFromCommit(null)
@@ -1326,10 +1332,10 @@ export function HistoryTab({
         />
       )}
 
-      {createTagFromCommit && currentWorkspace && (
+      {createTagFromCommit && effectiveWorkspacePath && (
         <CreateTagFromCommitDialog
           commit={createTagFromCommit}
-          workspacePath={currentWorkspace.path}
+          workspacePath={effectiveWorkspacePath}
           onClose={() => setCreateTagFromCommit(null)}
           onSuccess={() => setCreateTagFromCommit(null)}
         />

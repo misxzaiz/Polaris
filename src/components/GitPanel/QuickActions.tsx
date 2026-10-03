@@ -15,6 +15,8 @@ import { PushDialog } from './PushDialog'
 
 interface QuickActionsProps {
   hasChanges: boolean
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
 }
 
 type PullState =
@@ -22,13 +24,17 @@ type PullState =
   | { type: 'confirming'; message: string }
   | { type: 'pulling' }
 
-export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
+export function QuickActions({ hasChanges: _hasChanges, workspacePath: workspacePathProp }: QuickActionsProps) {
   const { t } = useTranslation('git')
   const { isLoading, refreshStatus, status } = useGitStore()
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
 
   const [isPulling, setIsPulling] = useState(false)
   const [showPushDialog, setShowPushDialog] = useState(false)
@@ -40,7 +46,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
   }
 
   const handlePull = async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setError(null)
     setIsPulling(true)
@@ -48,7 +54,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
 
     try {
       const result = await invoke<{ success: boolean; fastForward: boolean; message?: string }>('git_pull', {
-        workspacePath: currentWorkspace.path,
+        workspacePath: workspacePath,
         remoteName: 'origin',
         branchName: status?.branch || null,
       })
@@ -61,7 +67,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
           setPullState({ type: 'idle' })
         }
       } else {
-        await refreshStatus(currentWorkspace.path)
+        await refreshStatus(workspacePath)
         setPullState({ type: 'idle' })
       }
     } catch (err) {
@@ -79,8 +85,8 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
   }
 
   const handleRefresh = () => {
-    if (currentWorkspace) {
-      refreshStatus(currentWorkspace.path)
+    if (workspacePath) {
+      refreshStatus(workspacePath)
     }
   }
 
@@ -111,7 +117,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
             size="sm"
             variant="secondary"
             onClick={handlePull}
-            disabled={isOperating || !currentWorkspace}
+            disabled={isOperating || !workspacePath}
             className="flex-1"
           >
             <Download size={14} />
@@ -122,7 +128,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
             size="sm"
             variant="secondary"
             onClick={handlePush}
-            disabled={isOperating || !currentWorkspace}
+            disabled={isOperating || !workspacePath}
             className="flex-1"
           >
             <Upload size={14} />
@@ -148,6 +154,7 @@ export function QuickActions({ hasChanges: _hasChanges }: QuickActionsProps) {
       <PushDialog
         isOpen={showPushDialog}
         onClose={() => setShowPushDialog(false)}
+        workspacePath={workspacePath}
       />
 
       {/* 拉取冲突提示 */}

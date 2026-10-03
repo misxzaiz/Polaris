@@ -9,7 +9,12 @@ type SwitchState =
   | { type: 'confirming'; targetBranch: string; hasChanges: boolean }
   | { type: 'switching' }
 
-export function BranchSelector() {
+interface BranchSelectorProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function BranchSelector({ workspacePath: workspacePathProp }: BranchSelectorProps) {
   const { t } = useTranslation('git')
   const [isOpen, setIsOpen] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
@@ -30,25 +35,29 @@ export function BranchSelector() {
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const stashSave = useGitStore((s) => s.stashSave)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
 
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
   const loadBranches = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
     setIsLoading(true)
     try {
-      await getBranches(currentWorkspace.path)
+      await getBranches(workspacePath)
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getBranches])
+  }, [workspacePath, getBranches])
 
   useEffect(() => {
-    if (isOpen && currentWorkspace) {
+    if (isOpen && workspacePath) {
       loadBranches()
     }
-  }, [isOpen, currentWorkspace, loadBranches])
+  }, [isOpen, workspacePath, loadBranches])
 
   useEffect(() => {
     if (showNewBranch && inputRef.current) {
@@ -75,13 +84,13 @@ export function BranchSelector() {
   }, [status])
 
   const doSwitchBranch = useCallback(async (branchName: string) => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsSwitching(true)
     setError(null)
     try {
-      await checkoutBranch(currentWorkspace.path, branchName)
-      await refreshStatus(currentWorkspace.path)
+      await checkoutBranch(workspacePath, branchName)
+      await refreshStatus(workspacePath)
       setIsOpen(false)
       setSwitchState({ type: 'idle' })
     } catch (err) {
@@ -90,32 +99,32 @@ export function BranchSelector() {
     } finally {
       setIsSwitching(false)
     }
-  }, [currentWorkspace, checkoutBranch, refreshStatus])
+  }, [workspacePath, checkoutBranch, refreshStatus])
 
   const handleSwitchBranch = useCallback(async (branchName: string) => {
-    if (!currentWorkspace || branchName === status?.branch) return
+    if (!workspacePath || branchName === status?.branch) return
 
     if (hasUncommittedChanges()) {
       setSwitchState({ type: 'confirming', targetBranch: branchName, hasChanges: true })
     } else {
       await doSwitchBranch(branchName)
     }
-  }, [currentWorkspace, status?.branch, hasUncommittedChanges, doSwitchBranch])
+  }, [workspacePath, status?.branch, hasUncommittedChanges, doSwitchBranch])
 
   const handleStashAndSwitch = useCallback(async () => {
-    if (!currentWorkspace || switchState.type !== 'confirming') return
+    if (!workspacePath || switchState.type !== 'confirming') return
 
     const targetBranch = switchState.targetBranch
     setIsSwitching(true)
     try {
-      await stashSave(currentWorkspace.path, `WIP: switching to ${targetBranch}`, true)
+      await stashSave(workspacePath, `WIP: switching to ${targetBranch}`, true)
       await doSwitchBranch(targetBranch)
     } catch {
       // 忽略错误，doSwitchBranch 已经处理
     } finally {
       setIsSwitching(false)
     }
-  }, [currentWorkspace, switchState, stashSave, doSwitchBranch])
+  }, [workspacePath, switchState, stashSave, doSwitchBranch])
 
   const handleForceSwitch = useCallback(async () => {
     if (switchState.type !== 'confirming') return
@@ -128,12 +137,12 @@ export function BranchSelector() {
   }, [])
 
   const handleCreateBranch = useCallback(async () => {
-    if (!currentWorkspace || !newBranchName.trim()) return
+    if (!workspacePath || !newBranchName.trim()) return
 
     setIsSwitching(true)
     try {
-      await createBranch(currentWorkspace.path, newBranchName.trim(), true)
-      await refreshStatus(currentWorkspace.path)
+      await createBranch(workspacePath, newBranchName.trim(), true)
+      await refreshStatus(workspacePath)
       setNewBranchName('')
       setShowNewBranch(false)
       setIsOpen(false)
@@ -142,7 +151,7 @@ export function BranchSelector() {
     } finally {
       setIsSwitching(false)
     }
-  }, [currentWorkspace, newBranchName, createBranch, refreshStatus])
+  }, [workspacePath, newBranchName, createBranch, refreshStatus])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') {

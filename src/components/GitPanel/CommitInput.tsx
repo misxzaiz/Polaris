@@ -52,9 +52,11 @@ function readStoredEngine(defaultEngine: EngineId): EngineId {
 interface CommitInputProps {
   hasChanges?: boolean
   selectedFiles?: Set<string>
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
 }
 
-export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitInputProps) {
+export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspacePath: workspacePathProp }: CommitInputProps) {
   const { t } = useTranslation('git')
   const [message, setMessage] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -86,9 +88,13 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
   const rightPanelCollapsed = useViewStore((s) => s.rightPanelCollapsed)
 
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
 
   // 订阅本工作区 commit-message 会话的最新助手消息（回流条）
   const suggestion = useCommitMessageSuggestion(currentWorkspace?.id)
@@ -115,15 +121,15 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
   }, [enginePickerOpen])
 
   const handleCommit = useCallback(async () => {
-    if (!message.trim() || !currentWorkspace) return
+    if (!message.trim() || !effectiveWorkspacePath) return
 
-    if (!currentWorkspace.path || currentWorkspace.path.trim() === '') {
+    if (!effectiveWorkspacePath.trim()) {
       logger.error('[CommitInput] Invalid workspace path')
       return
     }
 
     const reservedNames = ['nul', 'con', 'prn', 'aux', 'com1', 'com2', 'com3', 'com4', 'lpt1', 'lpt2', 'lpt3']
-    const pathLower = currentWorkspace.path.toLowerCase()
+    const pathLower = effectiveWorkspacePath.toLowerCase()
     if (reservedNames.some(name => pathLower.includes(name))) {
       logger.error('[CommitInput] Path contains Windows reserved name')
       return
@@ -134,17 +140,17 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
       const filesToCommit = hasSelectedFiles ? Array.from(selectedFiles) : undefined
 
       // 始终传递 stageAll=true，后端会根据 selectedFiles 决定暂存哪些
-      await commitChanges(currentWorkspace.path, message, true, filesToCommit)
+      await commitChanges(effectiveWorkspacePath, message, true, filesToCommit)
       setMessage('')
     } catch (err) {
       logger.error('[CommitInput] Commit failed:', err)
     }
-  }, [message, currentWorkspace, selectedFiles, commitChanges])
+  }, [message, effectiveWorkspacePath, selectedFiles, commitChanges])
 
   // 收集 diff 上下文并在右侧面板打开 commit-message 会话
   const handleGenerateWithEngine = useCallback(async (engineId: EngineId) => {
     setEnginePickerOpen(false)
-    if (!currentWorkspace || isGenerating) return
+    if (!currentWorkspace || !effectiveWorkspacePath || isGenerating) return
 
     setIsGenerating(true)
     try {
@@ -154,10 +160,10 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
         // 获取选中文件的 diff
         for (const filePath of Array.from(selectedFiles)) {
           try {
-            diffs.push(await getIndexFileDiff(currentWorkspace.path, filePath))
+            diffs.push(await getIndexFileDiff(effectiveWorkspacePath, filePath))
           } catch {
             try {
-              diffs.push(await getWorktreeFileDiff(currentWorkspace.path, filePath))
+              diffs.push(await getWorktreeFileDiff(effectiveWorkspacePath, filePath))
             } catch {
               // 忽略获取失败的文件
             }
@@ -166,7 +172,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
       } else {
         // 无选中文件时取全部暂存变更
         diffs = await invoke<GitDiffEntry[]>('git_get_index_diff', {
-          workspacePath: currentWorkspace.path,
+          workspacePath: effectiveWorkspacePath,
         })
       }
 
@@ -177,7 +183,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
 
       await openCommitMessageChat({
         workspaceId: currentWorkspace.id,
-        workspacePath: currentWorkspace.path,
+        workspacePath: effectiveWorkspacePath,
         engineId,
         diffs,
       })
@@ -186,7 +192,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles }: CommitIn
     } finally {
       setIsGenerating(false)
     }
-  }, [currentWorkspace, isGenerating, selectedFiles, getIndexFileDiff, getWorktreeFileDiff])
+  }, [currentWorkspace, effectiveWorkspacePath, isGenerating, selectedFiles, getIndexFileDiff, getWorktreeFileDiff])
 
   const handlePickEngine = useCallback((engineId: EngineId) => {
     setSelectedEngine(engineId)

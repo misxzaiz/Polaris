@@ -13,7 +13,12 @@ import { useToastStore } from '@/stores/toastStore'
 import { logger } from '@/utils/logger'
 import type { GitIgnoreTemplate } from '@/types/git'
 
-export function GitignoreTab() {
+interface GitignoreTabProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function GitignoreTab({ workspacePath: workspacePathProp }: GitignoreTabProps) {
   const { t } = useTranslation('git')
   const [content, setContent] = useState('')
   const [originalContent, setOriginalContent] = useState('')
@@ -31,18 +36,22 @@ export function GitignoreTab() {
   const addToGitignore = useGitStore((s) => s.addToGitignore)
   const getGitignoreTemplates = useGitStore((s) => s.getGitignoreTemplates)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
+
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
   const toast = useToastStore()
 
   const loadGitignore = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
     try {
-      const result = await getGitignore(currentWorkspace.path)
+      const result = await getGitignore(workspacePath)
       setContent(result.content)
       setOriginalContent(result.content)
       setExists(result.exists)
@@ -52,7 +61,7 @@ export function GitignoreTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getGitignore])
+  }, [workspacePath, getGitignore])
 
   const loadTemplates = useCallback(async () => {
     try {
@@ -73,11 +82,11 @@ export function GitignoreTab() {
 
   // 保存 .gitignore
   const handleSave = async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsSaving(true)
     try {
-      await saveGitignore(currentWorkspace.path, content)
+      await saveGitignore(workspacePath, content)
       setOriginalContent(content)
       setExists(true)
       toast.success(t('gitignore.saveSuccess'))
@@ -91,10 +100,10 @@ export function GitignoreTab() {
 
   // 添加模板规则
   const handleAddTemplate = async (template: GitIgnoreTemplate) => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     try {
-      await addToGitignore(currentWorkspace.path, template.rules)
+      await addToGitignore(workspacePath, template.rules)
       toast.success(t('gitignore.templateAdded', { name: template.name }))
       await loadGitignore()
       setShowTemplates(false)
@@ -106,10 +115,10 @@ export function GitignoreTab() {
 
   // 添加单个规则
   const handleAddRule = async (rule: string) => {
-    if (!currentWorkspace || !rule.trim()) return
+    if (!workspacePath || !rule.trim()) return
 
     try {
-      await addToGitignore(currentWorkspace.path, [rule.trim()])
+      await addToGitignore(workspacePath, [rule.trim()])
       toast.success(t('gitignore.ruleAdded'))
       await loadGitignore()
     } catch (err) {

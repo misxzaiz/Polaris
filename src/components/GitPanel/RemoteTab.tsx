@@ -26,7 +26,12 @@ import { useToastStore } from '@/stores/toastStore'
 import { PushDialog } from './PushDialog'
 import type { GitRemote } from '@/types/git'
 
-export function RemoteTab() {
+interface RemoteTabProps {
+  /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
+  workspacePath?: string
+}
+
+export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) {
   const { t } = useTranslation('git')
   const [remotes, setRemotes] = useState<GitRemote[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -59,18 +64,22 @@ export function RemoteTab() {
   const branches = useGitStore((s) => s.branches)
   const status = useGitStore((s) => s.status)
   const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId } = s
-    return workspaces.find(w => w.id === currentWorkspaceId) || null
+    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
+    const targetId = viewingWorkspaceId || currentWorkspaceId
+    return workspaces.find(w => w.id === targetId) || null
   })
   const toast = useToastStore()
 
+  // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
+  const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
   const loadRemotes = useCallback(async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsLoading(true)
     setError(null)
     try {
-      await getRemotes(currentWorkspace.path)
+      await getRemotes(workspacePath)
       // 从 store 获取更新后的 remotes
       const storeRemotes = useGitStore.getState().remotes
       setRemotes(storeRemotes)
@@ -81,7 +90,7 @@ export function RemoteTab() {
     } finally {
       setIsLoading(false)
     }
-  }, [currentWorkspace, getRemotes, t, toast])
+  }, [workspacePath, getRemotes, t, toast])
 
   useEffect(() => {
     loadRemotes()
@@ -141,7 +150,7 @@ export function RemoteTab() {
 
   // 添加远程仓库
   const handleAddRemote = async () => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     const name = newRemoteName.trim()
     const url = newRemoteUrl.trim()
@@ -159,7 +168,7 @@ export function RemoteTab() {
 
     setIsAdding(true)
     try {
-      await addRemote(currentWorkspace.path, name, url)
+      await addRemote(workspacePath, name, url)
       toast.success(t('remote.addSuccess', { name }))
       setShowAddRemote(false)
       setNewRemoteName('')
@@ -176,11 +185,11 @@ export function RemoteTab() {
 
   // 删除远程仓库
   const handleDeleteRemote = async (name: string) => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     setIsDeleting(true)
     try {
-      await removeRemote(currentWorkspace.path, name)
+      await removeRemote(workspacePath, name)
       toast.success(t('remote.deleteSuccess', { name }))
       setShowDeleteConfirm(null)
       // 刷新列表
@@ -195,19 +204,19 @@ export function RemoteTab() {
 
   // 拉取远程更新
   const handlePull = async (remoteName?: string) => {
-    if (!currentWorkspace) return
+    if (!workspacePath) return
 
     const remote = remoteName || 'origin'
     setIsPulling(true)
     setPullingRemote(remote)
 
     try {
-      const result = await pull(currentWorkspace.path, remote)
+      const result = await pull(workspacePath, remote)
 
       // 并发执行：刷新状态和分支列表（独立操作可以并行）
       await Promise.all([
-        refreshStatus(currentWorkspace.path),
-        getBranches(currentWorkspace.path)
+        refreshStatus(workspacePath),
+        getBranches(workspacePath)
       ])
 
       // 显示拉取结果
@@ -534,6 +543,7 @@ export function RemoteTab() {
           setPushTargetRemote(null)
         }}
         defaultRemote={pushTargetRemote || undefined}
+        workspacePath={workspacePath}
       />
     </div>
   )

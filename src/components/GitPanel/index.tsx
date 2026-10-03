@@ -809,6 +809,7 @@ export function GitPanel({
                 status={status}
                 isLoading={isLoading}
                 onRefresh={() => effectivePath && refreshStatus(effectivePath)}
+                workspacePath={effectivePath}
               />
 
               {selectedFiles.size > 0 && (() => {
@@ -908,8 +909,8 @@ export function GitPanel({
                 </div>
               )}
 
-              {hasChanges && <CommitInput selectedFiles={selectedFiles} />}
-              <QuickActions hasChanges={hasChanges ?? false} />
+              {hasChanges && <CommitInput selectedFiles={selectedFiles} workspacePath={effectivePath} />}
+              {<QuickActions hasChanges={hasChanges ?? false} workspacePath={effectivePath} />}
             </>
           )}
 
@@ -920,13 +921,14 @@ export function GitPanel({
               onOpenDiffInTab={onOpenDiffInTab}
               onOpenFileInEditor={onOpenFileInEditor}
               variant={variant}
+              workspacePath={effectivePath}
             />
           )}
-          {activeTab === 'branch' && <BranchTab />}
-          {activeTab === 'remote' && <RemoteTab />}
-          {activeTab === 'tags' && <TagsTab />}
-          {activeTab === 'stash' && <StashTab />}
-          {activeTab === 'gitignore' && <GitignoreTab />}
+          {activeTab === 'branch' && <BranchTab workspacePath={effectivePath} />}
+          {activeTab === 'remote' && <RemoteTab workspacePath={effectivePath} />}
+          {activeTab === 'tags' && <TagsTab workspacePath={effectivePath} />}
+          {activeTab === 'stash' && <StashTab workspacePath={effectivePath} />}
+          {activeTab === 'gitignore' && <GitignoreTab workspacePath={effectivePath} />}
           </div>
         </div>
       )}
@@ -935,6 +937,7 @@ export function GitPanel({
       {showBlame && blameFilePath && (
         <BlameView
           filePath={blameFilePath}
+          workspacePath={effectivePath}
           onClose={() => {
             setShowBlame(false)
             setBlameFilePath(null)

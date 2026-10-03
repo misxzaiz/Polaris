@@ -325,3 +325,67 @@ pub fn blame_file(path: &Path, file_path: &str) -> Result<GitBlameResult, GitSer
         lines,
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use git2::{Signature, Repository};
+
+    /// 构造"聚合工作区"场景：
+    /// - root 本身不是 git 仓库（聚合根）
+    /// - root/subA 是 git 仓库且有提交（子仓库）
+    fn build_multirepo_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+
+        // 根目录放一个普通文件，但不初始化 git —— 模拟聚合工作区
+        std::fs::write(root.join("readme.md"), "aggregate root").unwrap();
+
+        // 子仓库 subA
+        let sub = root.join("subA");
+        std::fs::create_dir_all(&sub).unwrap();
+        let repo = Repository::init(&sub).unwrap();
+
+        // 两笔提交
+        let sig = Signature::now("t", "t@t").unwrap();
+        let commit = |repo: &Repository, content: &str| -> String {
+            std::fs::write(sub.join("a.txt"), content).unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new("a.txt")).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let parent = if repo.head().is_ok() {
+                let head = repo.head().unwrap();
+                if let Some(target) = head.target() {
+                    Some(repo.find_commit(target).unwrap())
+                } else { None }
+            } else { None };
+            let parents: Vec<&git2::Commit> = parent.iter().collect();
+            repo.commit(Some("refs/heads/main"), &sig, &sig, "msg", &tree, &parents).unwrap().to_string()
+        };
+        let _ = commit(&repo, "hello\n");
+        let _ = commit(&repo, "hello\nsecond\n");
+
+        (tmp, sub)
+    }
+
+    #[test]
+    fn get_log_on_aggregate_root_fails() {
+        let (tmp, _sub) = build_multirepo_fixture();
+        let root = tmp.path();
+
+        let result = get_log(root, Some(50), Some(0), None);
+        assert!(result.is_err(), "非仓库的聚合根目录上 get_log 必须失败，实际: {:?}", result);
+    }
+
+    #[test]
+    fn get_log_on_subrepo_returns_commits() {
+        let (_tmp, sub) = build_multirepo_fixture();
+
+        let result = get_log(&sub, Some(50), Some(0), None);
+        assert!(result.is_ok(), "子仓库 get_log 应成功，实际: {:?}", result);
+        let commits = result.unwrap();
+        assert_eq!(commits.len(), 2, "子仓库应有 2 笔提交，实际: {:?}", commits);
+    }
+}
