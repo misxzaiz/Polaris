@@ -159,18 +159,15 @@ fn list_filters_by_session_and_status() {
     let id1 = r1["taskId"].as_str().unwrap().to_string();
     let id2 = r2["taskId"].as_str().unwrap().to_string();
 
-    // 等两条都完成
-    for _ in 0..50 {
-        let s1 = cap
-            .invoke(json!({ "action": "status", "taskId": id1 }), &ctx_a)
+    // 等两条都完成（wait 会阻塞到终态，避免固定轮询被慢 shell 启动拖垮）
+    for id in [&id1, &id2] {
+        let w = cap
+            .invoke(
+                json!({ "action": "wait", "taskId": id, "timeoutMs": 30000 }),
+                &ctx_a,
+            )
             .unwrap();
-        let s2 = cap
-            .invoke(json!({ "action": "status", "taskId": id2 }), &ctx_a)
-            .unwrap();
-        if s1["status"] != "running" && s2["status"] != "running" {
-            break;
-        }
-        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(w["status"], "completed", "任务应完成，resp={w}");
     }
 
     let a = cap

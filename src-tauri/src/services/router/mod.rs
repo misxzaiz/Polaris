@@ -34,6 +34,7 @@ mod todo_capability;
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
 pub use bash_capability::BashCapability;
+pub(crate) use bash_capability::detect_shell;
 pub use config_capability::ConfigCapability;
 pub use context_capability::ContextCapability;
 pub use data_root_capability::DataRootCapability;

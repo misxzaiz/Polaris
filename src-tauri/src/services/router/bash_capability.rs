@@ -189,8 +189,9 @@ fn now_ms() -> u64 {
         .unwrap_or(0)
 }
 
-/// 检测可用 shell（与 SimpleAI bash.rs 同一策略，跨平台）
-fn detect_shell() -> (&'static str, Option<String>) {
+/// 检测可用 shell（与 SimpleAI bash.rs 同一策略，跨平台）。
+/// pub(crate)：供 SimpleAI 的 context.rs 复用同一份 shell 探测结果。
+pub(crate) fn detect_shell() -> (&'static str, Option<String>) {
     #[cfg(windows)]
     {
         use std::sync::OnceLock;
@@ -369,7 +370,18 @@ impl BashCapability {
         // 同步 run：等待完成或超时
         if !async_run {
             wait_task(&task, timeout_ms.max(1_000));
-            return Ok(task_json(&task));
+            let mut j = task_json(&task);
+            // 同步语义：直接附带全量日志输出与退出码，调用方（SimpleAI bash 工具）
+            // 无需再经 log 动作回读。输出按行保留，含 [exit code: N] 标记与
+            // [spawn error]/[timed out]/[killed] 等状态行。
+            let buf = task.log.lock().unwrap();
+            if !buf.is_empty() {
+                j["output"] = json!(buf.iter().cloned().collect::<Vec<_>>().join("\n"));
+            }
+            if task.status() != TaskStatus::Running {
+                j["exitCode"] = json!(task.exit_code().unwrap_or(-1));
+            }
+            return Ok(j);
         }
         Ok(json!({
             "taskId": task_id,
