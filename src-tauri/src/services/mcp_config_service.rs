@@ -1039,6 +1039,10 @@ fn resolve_mcp_contribution_binary(
     resource_dir: Option<PathBuf>,
     app_root: PathBuf,
 ) -> Result<ResolvedMcpBinary> {
+    // NSIS/portable 平铺安装布局(如 `D:\app\polaris\`):外部二进制与主可执行文件同目录。
+    let flat_exe_dir = std::env::current_exe().ok().and_then(|p| {
+        p.parent().map(|d| d.to_path_buf())
+    });
     let executable_path = resolve_mcp_executable_path(
         resource_dir,
         app_root,
@@ -1047,6 +1051,7 @@ fn resolve_mcp_contribution_binary(
         &mcp_exe_path(MCP_FALLBACK_PATH),
         &mcp_exe_path(MCP_DEV_PATH),
         &contribution.env_var_name,
+        flat_exe_dir,
     )?;
 
     Ok(ResolvedMcpBinary {
@@ -1064,6 +1069,7 @@ fn resolve_mcp_executable_path(
     bundled_fallback_relative_path: &str,
     dev_relative_path: &str,
     env_var_name: &str,
+    flat_exe_dir: Option<PathBuf>,
 ) -> Result<PathBuf> {
     if let Some(ref resource_dir) = resource_dir {
         let bundled_candidates = [
@@ -1122,8 +1128,26 @@ fn resolve_mcp_executable_path(
         return Ok(release_path);
     }
 
+    // NSIS/portable 平铺安装布局:外部二进制与主可执行文件同目录。
+    // Tauri 在无 `Resources/` 子目录时 `resource_dir()` 返回 None,导致上面的
+    // 资源目录分支跳过;此处以 `flat_exe_dir`(`current_exe().parent()`)兜底
+    // (如 `D:\app\polaris\polaris-mcp.exe`)。
+    // 平铺布局下二进制位于根目录,即 `bundled_fallback_relative_path`(`polaris-mcp`)。
+    let flat_exe_path = mcp_exe_path(bundled_fallback_relative_path);
+    if let Some(ref exe_dir) = flat_exe_dir {
+        let flat_path = exe_dir.join(Path::new(&flat_exe_path));
+        if flat_path.exists() {
+            tracing::info!(
+                "[MCP] {} 在平铺安装目录找到: {}",
+                bin_name,
+                flat_path.display()
+            );
+            return Ok(flat_path);
+        }
+    }
+
     Err(AppError::ProcessError(format!(
-        "无法定位 {}。已检查资源路径 '{}'、'{}' 与开发路径 '{}'、'{}'",
+        "无法定位 {}。已检查资源路径 '{}'、'{}'、平铺安装路径 '{}' 与开发路径 '{}'、'{}'",
         bin_name,
         resource_dir
             .as_ref()
@@ -1139,6 +1163,14 @@ fn resolve_mcp_executable_path(
                 .display()
                 .to_string())
             .unwrap_or_else(|| "<无资源目录>".to_string()),
+        flat_exe_dir
+            .as_ref()
+            .map(|dir| {
+                dir.join(Path::new(&flat_exe_path))
+                    .display()
+                    .to_string()
+            })
+            .unwrap_or_else(|| "<无当前可执行文件目录>".to_string()),
         dev_path.display(),
         release_path.display()
     )))
@@ -1270,6 +1302,7 @@ mod tests {
             &mcp_fallback_path(),
             &mcp_dev_path(),
             "POLARIS_MCP_PATH",
+            None,
         )
         .unwrap();
         assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-mcp")));
@@ -1305,6 +1338,7 @@ mod tests {
             &mcp_fallback_path(),
             &mcp_dev_path(),
             "POLARIS_MCP_PATH",
+            None,
         )
         .unwrap();
         assert_eq!(path, resource_dir.join(fixture_exe("polaris-mcp")));
@@ -1335,6 +1369,7 @@ mod tests {
             &mcp_fallback_path(),
             &mcp_dev_path(),
             "POLARIS_MCP_PATH",
+            None,
         )
         .unwrap();
         assert_eq!(
@@ -1369,12 +1404,72 @@ mod tests {
             &mcp_fallback_path(),
             &mcp_dev_path(),
             "POLARIS_MCP_PATH",
+            None,
         )
         .unwrap();
         assert_eq!(
             path,
             app_root.join(fixture_exe("src-tauri/target/release/polaris-mcp"))
         );
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn prefers_flat_install_layout_when_resource_dir_missing() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let app_root = temp_root.join("app-root");
+        let flat_dir = temp_root.join("install");
+
+        std::fs::create_dir_all(&flat_dir).unwrap();
+        std::fs::write(flat_dir.join(fixture_exe("polaris-mcp")), "flat bin").unwrap();
+
+        let path = resolve_mcp_executable_path(
+            None, // 平铺卸载后无资源目录
+            app_root,
+            MCP_BIN_NAME,
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
+            "POLARIS_MCP_PATH",
+            Some(flat_dir.clone()),
+        )
+        .unwrap();
+        assert_eq!(path, flat_dir.join(fixture_exe("polaris-mcp")));
+
+        let _ = std::fs::remove_dir_all(&temp_root);
+    }
+
+    #[test]
+    fn prefers_bundled_resource_path_over_flat_install() {
+        let temp_root =
+            std::env::temp_dir().join(format!("polaris-mcp-test-{}", uuid::Uuid::new_v4()));
+        let app_root = temp_root.join("app-root");
+        let resource_dir = temp_root.join("resources");
+        let flat_dir = temp_root.join("install");
+
+        std::fs::create_dir_all(resource_dir.join("bin")).unwrap();
+        std::fs::create_dir_all(&flat_dir).unwrap();
+        std::fs::write(
+            resource_dir.join(fixture_exe("bin/polaris-mcp")),
+            "bundled bin",
+        )
+        .unwrap();
+        std::fs::write(flat_dir.join(fixture_exe("polaris-mcp")), "flat bin").unwrap();
+
+        let path = resolve_mcp_executable_path(
+            Some(resource_dir.clone()),
+            app_root,
+            MCP_BIN_NAME,
+            &mcp_bundle_path(),
+            &mcp_fallback_path(),
+            &mcp_dev_path(),
+            "POLARIS_MCP_PATH",
+            Some(flat_dir),
+        )
+        .unwrap();
+        assert_eq!(path, resource_dir.join(fixture_exe("bin/polaris-mcp")));
 
         let _ = std::fs::remove_dir_all(&temp_root);
     }
