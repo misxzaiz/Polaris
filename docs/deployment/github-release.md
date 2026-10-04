@@ -1181,3 +1181,38 @@ cd polaris-web
 
 - feat(http): cap.http 放行本机回环地址以支持本地 dev server — validate_target 增加 is_loopback_host 字面量短路（localhost / 127.0.0.0-8 / ::1 直接放行）；validate_ip 保留 loopback 拒绝防 DNS rebinding；0.0.0.0 / :: 仍拒绝（语义模糊，请显式用 127.0.0.1 / [::1]）；同步新增 allow_loopback_hosts / reject_unspecified_host / is_loopback_host_matches_literal_only 单测 + cap_http_check 冒烟脚本 SSRF 用例更新
 - docs: 修正 v10.5.8 构建记录日期为 UTC 口径
+
+---
+
+## v10.6.2 构建记录
+
+**构建时间**: 2026-10-04 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.6.2
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.6.2_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.6.2_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.6.2_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.6.2-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.6.2_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.6.2-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.6.2-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.6.2-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.6.2.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- feat(cap.bash): 宿主级 shell 命令执行能力入总线 + 会话解耦
+- feat(cap.bash): SimpleAI bash 工具改为 cap.bash 直通代理，支持异步后台任务
+- feat(cap.fs): 文件系统只读能力入总线 + 文件浏览器属性展示
+- feat: bash 异步任务、文件预览与 cap.help 能力完善
+- fix(file-explorer): 移除右键菜单「属性」项常驻高亮样式
+- fix(git): 多仓库模式下 Git 面板操作作用于聚合根导致无效
+- fix(ci): 同步 Cargo.lock 到 v10.6.2 版本
