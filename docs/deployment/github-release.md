@@ -171,6 +171,35 @@ git push origin vx.x.x
 
 ---
 
+## v10.6.3 构建记录
+
+**构建时间**: 2026-10-05 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.6.3
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.6.3_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.6.3_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.6.3_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.6.3-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.6.3_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.6.3-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.6.3-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.6.3-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.6.3.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- refactor: 阶段 1 路由简化 — 移除反向索引/注册表与 LRU 驱逐（eventRouter 单一 contextId 路由路径；useActiveSession 合并为单一 useSessionState 订阅；sessionStoreManager 删除 conversationIdToStoreId 反向索引与 LRU 驱逐；移除 restoreRegistry/V2SessionRegistryClient；ChatInput 斜杠命令迁至 chatCommandRouter；断线重放 token/assistant_message 幂等去重 + webChatResilience 回归测试）
+
+---
+
 ## v10.4.0 构建记录
 
 **构建时间**: 2026-08-24 (UTC)
