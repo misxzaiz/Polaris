@@ -77,20 +77,6 @@ export interface V2SnapshotSourceLike {
   getSnapshot(conversationId: string): Promise<ChatMessage[]>
 }
 
-/** 注册表客户端（批次 4：restoreRegistry 拉后端会话记录；真实为 V2SessionRegistryClient） */
-export interface V2RegistryClientLike {
-  list(): Promise<Array<{
-    id: string
-    conversationId: string | null
-    title?: string
-    engineId?: string
-    workspaceId?: string | null
-    type?: 'project' | 'free'
-    silentMode?: boolean
-    kind?: string
-  }>>
-}
-
 // ============================================================================
 // V2SessionKernel — 后端权威实现
 // ============================================================================
@@ -104,8 +90,6 @@ export interface V2SessionKernelDeps {
   streamDispatch: (payload: Record<string, unknown>) => Promise<unknown>
   /** 快照来源（resyncSession 合并；真实为 dialogStorageService） */
   snapshotSource: V2SnapshotSourceLike
-  /** 注册表客户端（批次 4 restoreRegistry；真实为 V2SessionRegistryClient） */
-  registryClient: V2RegistryClientLike
 }
 
 /**
@@ -394,54 +378,6 @@ export class V2SessionKernel
     for (const m of fresh) store.addMessage(m)
   }
 
-  async restoreRegistry(): Promise<number> {
-    // 重启恢复（批次 4）：从后端 Session Registry 拉取全部会话记录，重建
-    // conversationIdToStoreId 反向索引——前端 store 未创建/被 LRU 驱逐时，
-    // 后端续传事件也能按 conversationId 路由回正确会话。
-    let records = []
-    try {
-      records = await this.deps.registryClient.list()
-    } catch (e) {
-      // 后端不可用：静默（不阻断页面加载），返回 0
-      const msg = e instanceof Error ? e.message : String(e)
-      console.warn('[restoreRegistry] 拉取会话注册表失败', msg)
-      return 0
-    }
-    let restored = 0
-    const manager = this.deps.sessionStoreManager.getState()
-    for (const rec of records) {
-      if (!rec.conversationId) continue
-      let instance = this.getStoreInstance(rec.id)
-      if (!instance) {
-        // 会话已被 LRU 驱逐 / 尚未创建：静默重建会话壳（不激活、不加载消息——
-        // 消息由 resyncSession 按需合并），随后补 conversationId 与反向索引。
-        const sid = manager.createSession({
-          id: rec.id,
-          type: rec.type ?? 'free',
-          workspaceId: rec.workspaceId ?? undefined,
-          title: rec.title,
-          engineId: rec.engineId,
-          silentMode: rec.silentMode ?? true,
-          kind: rec.kind as 'commit-message' | 'prompt-optimize' | 'title-generation' | undefined,
-        })
-        instance = this.getStoreInstance(sid)
-      }
-      if (!instance) continue
-      // 补齐 store conversationId（若为空）——这是 dispatchEvent 事件路由
-      // 与 getSessionState 后端查询的前置条件
-      if (!instance.getState().conversationId) {
-        instance.setState({ conversationId: rec.conversationId })
-      }
-      // 重建反向索引（幂等）
-      manager.registerConversationId(rec.conversationId, rec.id)
-      restored++
-    }
-    console.info(`[restoreRegistry] 恢复 ${restored} 个会话记录`, {
-      total: records.length,
-    })
-    return restored
-  }
-
   // ==========================================================================
   // 内部辅助
   // ==========================================================================
@@ -565,7 +501,7 @@ export async function createV2SessionKernel(
 ): Promise<V2SessionKernel> {
   const { sessionStoreManager } = await import('@/stores/conversationStore/sessionStoreManager')
   const { historyService } = await import('@/services/historyService')
-  const { V2StateArbiter, V2SessionRegistryClient } = await import('../core/v2-session-event-log')
+  const { V2StateArbiter } = await import('../core/v2-session-event-log')
   const { aiChatDispatchStream } = await import('@/services/aiChatDispatch')
   const { dialogStorageService } = await import('@/services/dialogStorage')
 
@@ -578,6 +514,5 @@ export async function createV2SessionKernel(
     snapshotSource: deps?.snapshotSource ?? {
       getSnapshot: (conversationId: string) => dialogStorageService.getConversationMessages(conversationId),
     },
-    registryClient: deps?.registryClient ?? new V2SessionRegistryClient(),
   })
 }

@@ -21,6 +21,38 @@ import { dialogStorageService } from '@/services/dialogStorage'
 
 const log = createLogger('EventHandler')
 
+/**
+ * 会话最近一次流式文本事件原文（token / assistant_message）。
+ *
+ * 用途：断线重连 resume / 快照重放时，同一段内容会被重复广播，而
+ * TokenEvent/AssistantMessageEvent 无稳定事件 id，无法精确判重。重放与断线前
+ * 最后收到的事件**相邻且内容完全相同**，故用「最近一次原文」即可识别并跳过。
+ * 正常流式下连续两个 token 事件内容完全相同概率极低，不会误伤。
+ * key 用前端会话 id（state.sessionId），session_end 时清除。
+ */
+const lastStreamTextBySession = new Map<string, string>()
+
+/** 判定本次流式文本是否与最近一次收到的事件完全一致（resume 重放特征） */
+function isStreamTextReplay(sessionId: string, value: string): boolean {
+  const last = lastStreamTextBySession.get(sessionId)
+  lastStreamTextBySession.set(sessionId, value)
+  return last === value
+}
+
+/**
+ * 无 callId 时的工具块回退目标：当前消息中最后一个仍 running 的工具块。
+ * 部分引擎（流式 no-callId）只同时存在一个活动工具，tool_call_end / tool_call_update
+ * 不携带 callId 时按「最后活动工具」配对；无 running 块时返回空串（与旧行为一致，不更新）。
+ */
+function fallbackRunningToolId(currentMessage: ConversationStore['currentMessage']): string {
+  if (!currentMessage?.blocks) return ''
+  for (let i = currentMessage.blocks.length - 1; i >= 0; i--) {
+    const b = currentMessage.blocks[i]
+    if (b.type === 'tool_call' && b.status === 'running') return b.id
+  }
+  return ''
+}
+
 /** 判定是否为任务板工具（TaskCreate/TaskUpdate/TaskList/TaskGet）。
  *  TaskStop/TaskOutput 排除:实测其 task_id 是后台 shell id 空间(如 'b8wcfdfju'),
  *  与任务板数字 id 无关,应保持普通工具块渲染。 */
@@ -175,6 +207,8 @@ export function handleAIEvent(
 
     case 'session_end': {
       cancelScheduledFlush(state.sessionId)
+      // 本轮结束：清除流式文本去重缓存，避免下一轮首段与上一轮末段相同被误判为重放
+      lastStreamTextBySession.delete(state.sessionId)
       state.finishMessage()
       set({
         isStreaming: false,
@@ -218,6 +252,7 @@ export function handleAIEvent(
     }
 
     case 'token':
+      if (isStreamTextReplay(state.sessionId, event.value)) break
       state.appendTextBlock(event.value)
       break
 
@@ -226,6 +261,7 @@ export function handleAIEvent(
       break
 
     case 'assistant_message':
+      if (isStreamTextReplay(state.sessionId, event.content)) break
       state.appendTextBlock(event.content)
       break
 
@@ -266,7 +302,12 @@ export function handleAIEvent(
     }
 
     case 'tool_call_end': {
-      const callId = event.callId || ''
+      // 无 callId（部分引擎流式事件不携带）→ 回退到当前消息最后一个 running 工具块，
+      // 与 tool_call_start 前端生成 UUID 建块对应，保证工具卡能正常收尾。
+      // 显式 callId 优先（含 '' 表示确实无块可更新）。
+      const callId = event.callId
+        ? String(event.callId)
+        : fallbackRunningToolId(state.currentMessage)
       // 交互型工具（ask/form）→ 无普通 tool_call block，跳过更新
       // （question/form 卡由 question_answered / form-* 事件驱动状态）
       if (isInteractiveTool(event.tool)) {
@@ -410,9 +451,13 @@ export function handleAIEvent(
 
       const clientId = (event as { clientMessageId?: string }).clientMessageId
       const existing = state.messages
+      // content 回退比对仅在**本机会话运行期**启用（isStreaming=true）：
+      // 本机 sendMessage 发起的回显必然发生在自己会话 streaming 期间；而空闲状态
+      // （B 设备 / 看板）收到内容相同但确实是新消息的 user_message 时不比对 content，
+      // 直接追加——避免"同内容两条独立消息被 content 误判为回显而吞掉"。
       const isLocalEcho = clientId
         ? existing.some((m) => m.id === clientId)
-        : [...existing].reverse()
+        : state.isStreaming && [...existing].reverse()
             .find((m) => m.type === 'user')
             ?.content === content
 

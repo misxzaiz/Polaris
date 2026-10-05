@@ -140,7 +140,7 @@ export interface EventHandlingCapability {
 /**
  * 恢复与同步能力
  *
- * 覆盖入口：restoreFromHistory / resyncSession / restoreRegistry
+ * 覆盖入口：restoreFromHistory / resyncSession
  * 核心：快照合并（diff 本地 → 只追加缺失），非全量覆盖
  */
 export interface RecoveryCapability {
@@ -148,11 +148,6 @@ export interface RecoveryCapability {
   restoreFromHistory(historyId: string): Promise<string>
   /** 断线重连后恢复（快照合并，非全量覆盖） */
   resyncSession(sessionId: string): Promise<void>
-  /**
-   * 重启恢复（批次 4）：从后端 Session Registry 拉取全部会话记录，
-   * 重建 conversationIdToStoreId 反向索引。返回恢复的会话记录数。
-   */
-  restoreRegistry(): Promise<number>
 }
 
 // ============================================================================

@@ -1,16 +1,14 @@
 /**
  * useActiveSession - 统一的活跃会话状态 Hook
  *
- * 封装 sessionStoreManager，提供统一的活跃会话状态接口
- * 用于简化 UI 组件迁移到新架构
+ * 核心：useSessionState(sessionId, selector, fallback)
+ *   — 单一订阅实现，替代原 useActiveSessionSelector + useSessionSelector 两套平行实现
+ *   — 阶段 1 路由简化后 store 不会无中生有，订阅无需 cachedValueRef/cachedStoreRef 防 snapshot 抖动
  *
- * 使用方法：
- * 1. useActiveSession() - 获取完整状态和操作
- * 2. useActiveSessionMessages() - 只订阅消息
- * 3. useActiveSessionStreaming() - 只订阅流式状态
+ * 各命名 hook 为 useSessionState 的薄包装，保持对外签名不变。
  */
 
-import { useMemo, useCallback, useSyncExternalStore, useRef } from 'react'
+import { useMemo, useCallback, useSyncExternalStore } from 'react'
 import { useStore } from 'zustand'
 import {
   sessionStoreManager,
@@ -19,18 +17,12 @@ import {
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { getKernel } from '@/session-v2/kernel/registry'
 import { useWorkspaceStore } from '../workspaceStore'
-import type { ConversationStore, ConversationState, ConversationStoreInstance, InputDraft, PromptOptimizeState } from './types'
+import type { ConversationStore, ConversationState, InputDraft, PromptOptimizeState } from './types'
 import type { ContentBlock } from '@/types'
 import type { ChatMessage } from '@/types/chat'
 
 // ============================================================================
-// 模块级稳定空值常量
-//
-// 关键：getSnapshot 在 store 缺失时（LRU 驱逐 / 会话删除 / 创建竞态）直接
-// 返回 defaultValue。若每次渲染传入新建的 [] / {} / new Map()，
-// useSyncExternalStore 会判定 snapshot 持续变化，触发同步重渲染循环，
-// 最终抛出 React error #185（同一 root 连续 50 次同步重渲染）。
-// 因此空默认值必须为模块级单例，保证引用稳定。
+// 模块级稳定空值常量（getSnapshot 在 store 缺失时返回，保证引用稳定）
 // ============================================================================
 const EMPTY_MESSAGES: ChatMessage[] = []
 const EMPTY_INPUT_DRAFT: InputDraft = { text: '', attachments: [] }
@@ -47,372 +39,214 @@ const EMPTY_PROMPT_OPTIMIZE: PromptOptimizeState = {
   error: null,
 }
 
-/**
- * 订阅活跃会话的特定状态
- *
- * 内部使用 useSyncExternalStore 确保响应式更新
- * 使用 useRef 缓存返回值，避免 getSnapshot 返回不稳定引用导致无限循环
- */
-function useActiveSessionSelector<T>(
-  selector: (state: ConversationState) => T,
-  defaultValue: T
-): T {
-  const sessionId = useActiveSessionId()
-  const stores = useStore(sessionStoreManager, (state) => state.stores)
-
-  const store = sessionId ? stores.get(sessionId) : null
-
-  // 缓存上次的值，确保引用稳定
-  const cachedValueRef = useRef<T>(defaultValue)
-  const cachedStoreRef = useRef<typeof store>(null)
-
-  // 使用 getSnapshot 和 subscribe 模式
-  const getSnapshot = useCallback(() => {
-    if (!store) {
-      // store 不存在时返回稳定的默认值
-      return defaultValue
-    }
-
-    const newValue = selector(store.getState())
-
-    // 检查值是否真正变化（引用比较或浅比较）
-    // 对于原始类型直接比较，对于对象/数组检查引用
-    if (
-      cachedStoreRef.current === store &&
-      cachedValueRef.current === newValue
-    ) {
-      // store 相同且值引用相同，返回缓存值
-      return cachedValueRef.current
-    }
-
-    // 值变化了，更新缓存
-    cachedStoreRef.current = store
-    cachedValueRef.current = newValue
-    return newValue
-  }, [store, selector, defaultValue])
-
-  // 关键修复：当 store 为 null 时，订阅 sessionStoreManager 来监听 stores map 变化
-  const subscribe = useCallback((onChange: () => void) => {
-    if (!store) {
-      // store 为 null 时，订阅 sessionStoreManager 监听 stores 或 activeSessionId 变化
-      return sessionStoreManager.subscribe(onChange)
-    }
-    return store.subscribe(onChange)
-  }, [store])
-
-  // 服务端快照使用稳定的默认值
-  const getServerSnapshot = useCallback(() => defaultValue, [defaultValue])
-
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
-}
+// ============================================================================
+// 核心订阅实现
+// ============================================================================
 
 /**
- * 订阅指定会话的特定状态
+ * 订阅指定会话的特定状态切片。
  *
- * 与 useActiveSessionSelector 类似，但支持指定 sessionId
- * 用于多窗口场景，需要同时显示多个会话的状态
+ * @param sessionId 目标会话 ID（null 时返回 fallback）
+ * @param selector  状态选择器
+ * @param fallback  store 不存在时的回退值（必须引用稳定）
  */
-function useSessionSelector<T>(
+export function useSessionState<T>(
   sessionId: string | null,
   selector: (state: ConversationState) => T,
-  defaultValue: T
+  fallback: T,
 ): T {
+  // 订阅 stores Map，使 sessionId 对应的 store 创建/删除时触发重渲染
   const stores = useStore(sessionStoreManager, (state) => state.stores)
+  const store = sessionId ? stores.get(sessionId) ?? null : null
 
-  // 使用 ref 缓存 store 实例，避免 stores Map 变化导致的重新订阅
-  // 只有当 sessionId 变化或 store 真正不存在时才更新
-  const cachedStoreRef = useRef<ConversationStoreInstance | null>(null)
-  const cachedSessionIdRef = useRef<string | null>(null)
-
-  const store = useMemo(() => {
-    const targetStore = sessionId ? stores.get(sessionId) : null
-
-    // sessionId 变化或 store 从 null 变为有效值时更新缓存
-    if (
-      cachedSessionIdRef.current !== sessionId ||
-      (cachedStoreRef.current === null && targetStore !== null)
-    ) {
-      cachedStoreRef.current = targetStore ?? null
-      cachedSessionIdRef.current = sessionId
-    }
-
-    return cachedStoreRef.current
-  }, [stores, sessionId])
-
-  // 缓存上次的值，确保引用稳定
-  const cachedValueRef = useRef<T>(defaultValue)
+  const subscribe = useCallback(
+    (onChange: () => void) => {
+      if (!store) return sessionStoreManager.subscribe(onChange)
+      return store.subscribe(onChange)
+    },
+    [store],
+  )
 
   const getSnapshot = useCallback(() => {
-    if (!store) {
-      return defaultValue
-    }
-    const newValue = selector(store.getState())
+    if (!store) return fallback
+    return selector(store.getState())
+  }, [store, selector, fallback])
 
-    // 只有当值真正变化时才更新缓存（使用浅比较处理数组）
-    const isEqual = Array.isArray(newValue) && Array.isArray(cachedValueRef.current)
-      ? newValue === cachedValueRef.current || (
-          newValue.length === (cachedValueRef.current as T[]).length &&
-          newValue.every((item, i) => item === (cachedValueRef.current as T[])[i])
-        )
-      : newValue === cachedValueRef.current
-
-    if (isEqual) {
-      return cachedValueRef.current
-    }
-
-    cachedValueRef.current = newValue
-    return newValue
-  }, [store, selector, defaultValue])
-
-  // 订阅逻辑：订阅正确的 store
-  const subscribe = useCallback((onChange: () => void) => {
-    if (!store) {
-      // store 为 null 时，订阅 sessionStoreManager 监听 stores 变化
-      return sessionStoreManager.subscribe(onChange)
-    }
-    return store.subscribe(onChange)
-  }, [store])
-
-  const getServerSnapshot = useCallback(() => defaultValue, [defaultValue])
+  const getServerSnapshot = useCallback(() => fallback, [fallback])
 
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 
-/**
- * 获取活跃会话的消息列表
- */
+/** 订阅活跃会话的状态切片 */
+function useActiveSessionSelector<T>(
+  selector: (state: ConversationState) => T,
+  fallback: T,
+): T {
+  const sessionId = useActiveSessionId()
+  return useSessionState(sessionId, selector, fallback)
+}
+
+// ============================================================================
+// 活跃会话状态 hooks
+// ============================================================================
+
 export function useActiveSessionMessages() {
   const messages = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.messages, []),
-    EMPTY_MESSAGES
+    useCallback((s: ConversationState) => s.messages, []),
+    EMPTY_MESSAGES,
   )
   const archivedMessages = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.archivedMessages, []),
-    EMPTY_MESSAGES
+    useCallback((s: ConversationState) => s.archivedMessages, []),
+    EMPTY_MESSAGES,
   )
   const currentMessage = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.currentMessage, []),
-    null
+    useCallback((s: ConversationState) => s.currentMessage, []),
+    null,
   )
-
-  return useMemo(() => ({
-    messages,
-    archivedMessages,
-    currentMessage,
-  }), [messages, archivedMessages, currentMessage])
+  return useMemo(
+    () => ({ messages, archivedMessages, currentMessage }),
+    [messages, archivedMessages, currentMessage],
+  )
 }
 
-/**
- * 获取活跃会话的流式状态。
- *
- * 批次 5 定位：本 hook 是**本地渲染投影**（非跨设备状态源）。
- * - 数据源：store.isStreaming —— eventHandler 在 token 级同步维护（session_start 置
- *   true、session_end/error 置 false），满足聊天 UI 的 token 级实时渲染需求
- *   （输入框禁用/停止按钮/状态栏/自动滚动），kernel 订阅（事件驱动 + 1s 轮询）
- *   无法达到该刷新粒度。
- * - 跨设备/重启的状态权威已由 V2SessionKernel（后端 session_get_status）承担，
- *   消费方如需后端权威请用 useActiveSessionKernelStreaming()。
- */
+/** 本地流式投影（store.isStreaming，token 级实时渲染用） */
 export function useActiveSessionStreaming() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.isStreaming, []),
-    false
+    useCallback((s: ConversationState) => s.isStreaming, []),
+    false,
   )
 }
 
-/**
- * 获取活跃会话的流式状态（后端权威）。
- * 消费方从 useActiveSessionStreaming（store 本地投影）切换后使用；
- * 内部经 useKernelSessionState 订阅内核后端状态，不可用时降级本地快照。
- */
+/** 后端权威流式状态（跨设备/重启场景用） */
 export function useActiveSessionKernelStreaming() {
   const sessionId = useActiveSessionId()
   const { isStreaming } = useKernelSessionState(sessionId)
   return isStreaming
 }
 
-/**
- * 获取指定会话（缺省活跃会话）的历史分页游标
- * （尾部优先恢复：非空表示磁盘上还有更早消息，可向上补读）
- */
-export function useSessionHistoryPaging(sessionId: string | null) {
-  const active = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.historyPaging, []),
-    null
-  )
-  const specific = useSessionSelector(
-    sessionId,
-    useCallback((state: ConversationState) => state.historyPaging, []),
-    null
-  )
-  return sessionId ? specific : active
-}
-
-/**
- * 获取活跃会话 / 指定会话的可见区域锚点（滚动位置恢复用）。
- * 非空表示用户上次停留的可视区 { start, end }；组件重挂载时据此恢复滚动，
- * 避免面板切换/resize 后 Virtuoso 因 initialTopMostItemIndex 强制锚末尾而跳位。
- * 注意：磁盘恢复路径会把 visibleRange 重置为 null，此时应回退到末尾锚定。
- */
-export function useSessionVisibleRange(sessionId: string | null) {
-  const active = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.visibleRange, []),
-    null
-  )
-  const specific = useSessionSelector(
-    sessionId,
-    useCallback((state: ConversationState) => state.visibleRange, []),
-    null
-  )
-  return sessionId ? specific : active
-}
-
-/**
- * 获取活跃会话的错误状态
- */
 export function useActiveSessionError() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.error, []),
-    null
+    useCallback((s: ConversationState) => s.error, []),
+    null,
   )
 }
 
-/**
- * 获取活跃会话的会话 ID
- */
 export function useActiveSessionConversationId() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.conversationId, []),
-    null
+    useCallback((s: ConversationState) => s.conversationId, []),
+    null,
   )
 }
 
-/**
- * 获取活跃会话的输入草稿
- */
 export function useActiveSessionInputDraft() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.inputDraft, []),
-    EMPTY_INPUT_DRAFT
+    useCallback((s: ConversationState) => s.inputDraft, []),
+    EMPTY_INPUT_DRAFT,
   )
 }
 
-/**
- * 获取活跃会话的待发送简报（压缩交接产物）
- */
 export function useActiveSessionPendingBriefing() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.pendingBriefing, []),
-    null
+    useCallback((s: ConversationState) => s.pendingBriefing, []),
+    null,
   )
 }
 
-/**
- * 获取活跃会话的待发送队列（流式预输入 / 多行拆分入队项）
- */
 export function useActiveSessionPendingQueue() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.pendingQueue, []),
-    EMPTY_PENDING_QUEUE
+    useCallback((s: ConversationState) => s.pendingQueue, []),
+    EMPTY_PENDING_QUEUE,
   )
 }
 
-/**
- * 获取活跃会话的下一步提示建议（--prompt-suggestions）
- */
 export function useActiveSessionPromptSuggestion() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.promptSuggestion, []),
-    null
+    useCallback((s: ConversationState) => s.promptSuggestion, []),
+    null,
   )
 }
 
-/**
- * 获取活跃会话的 token 用量统计（上下文水位与成本）
- */
 export function useActiveSessionUsage() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.usageStats, []),
-    null
+    useCallback((s: ConversationState) => s.usageStats, []),
+    null,
   )
 }
 
-/**
- * 获取活跃会话的提示词优化状态（版本栈 / 优化进度）
- */
 export function useActiveSessionPromptOptimize() {
   return useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.promptOptimize, []),
-    EMPTY_PROMPT_OPTIMIZE
+    useCallback((s: ConversationState) => s.promptOptimize, []),
+    EMPTY_PROMPT_OPTIMIZE,
   )
 }
 
-/**
- * 获取活跃会话的工作区
- */
 export function useActiveSessionWorkspace() {
   const workspaceId = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.workspaceId, []),
-    null
+    useCallback((s: ConversationState) => s.workspaceId, []),
+    null,
   )
-
-  // 使用 useWorkspaceStore 根据 workspaceId 查找工作区对象
-  const workspace = useWorkspaceStore(
+  return useWorkspaceStore(
     useCallback((state) => {
       if (!workspaceId) return null
-      return state.workspaces.find((w) => w.id === workspaceId) || null
-    }, [workspaceId])
+      return state.workspaces.find((w) => w.id === workspaceId) ?? null
+    }, [workspaceId]),
   )
-
-  return workspace
 }
 
-/**
- * 获取活跃会话的 Block 映射
- */
 export function useActiveSessionBlockMaps() {
   const toolBlockMap = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.toolBlockMap, []),
-    EMPTY_BLOCK_MAP
+    useCallback((s: ConversationState) => s.toolBlockMap, []),
+    EMPTY_BLOCK_MAP,
   )
   const questionBlockMap = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.questionBlockMap, []),
-    EMPTY_BLOCK_MAP
+    useCallback((s: ConversationState) => s.questionBlockMap, []),
+    EMPTY_BLOCK_MAP,
   )
   const planBlockMap = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.planBlockMap, []),
-    EMPTY_BLOCK_MAP
+    useCallback((s: ConversationState) => s.planBlockMap, []),
+    EMPTY_BLOCK_MAP,
   )
   const activePlanId = useActiveSessionSelector(
-    useCallback((state: ConversationState) => state.activePlanId, []),
-    null
+    useCallback((s: ConversationState) => s.activePlanId, []),
+    null,
   )
-
-  return useMemo(() => ({
-    toolBlockMap,
-    questionBlockMap,
-    planBlockMap,
-    activePlanId,
-  }), [toolBlockMap, questionBlockMap, planBlockMap, activePlanId])
+  return useMemo(
+    () => ({ toolBlockMap, questionBlockMap, planBlockMap, activePlanId }),
+    [toolBlockMap, questionBlockMap, planBlockMap, activePlanId],
+  )
 }
 
+// ============================================================================
+// 活跃会话操作 hook
+// ============================================================================
+
 /**
- * 获取活跃会话的操作方法
- * 
- * 返回稳定的方法引用，内部动态获取最新的 sessionId 和 store
+ * 获取活跃会话的操作方法。
+ * 返回稳定引用；每个 action 运行时动态解析 activeSessionId 与 store。
  */
 export function useActiveSessionActions() {
-  // 使用 useMemo 确保返回的对象引用稳定
   return useMemo(() => {
-    const actions = {
+    const getStore = () => {
+      const sid = sessionStoreManager.getState().activeSessionId
+      if (!sid) return null
+      return sessionStoreManager.getState().stores.get(sid)?.getState() ?? null
+    }
+
+    /** 委托给当前活跃 store 的同步方法 */
+    const call = (method: string, ...args: unknown[]) => {
+      const store = getStore()
+      if (!store) return
+      const fn = (store as unknown as Record<string, (...a: unknown[]) => unknown>)[method]
+      if (typeof fn === 'function') return fn(...args)
+    }
+
+    return {
       sendMessage: async (...args: Parameters<ConversationStore['sendMessage']>) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        // 批次 3 类 1：UI 写入口收口到 kernel（统一写路径，行为与 store 直调一致——
-        // kernel 完整透传 workspaceDir/attachments/sendOptions 4 参）。
+        const sid = sessionStoreManager.getState().activeSessionId
+        if (!sid) return
         const kernel = await getKernel()
         await kernel.sendMessage({
-          sessionId,
+          sessionId: sid,
           content: args[0],
           workspaceDir: args[1],
           attachments: args[2],
@@ -420,229 +254,74 @@ export function useActiveSessionActions() {
         })
       },
       interrupt: async () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
+        const sid = sessionStoreManager.getState().activeSessionId
+        if (!sid) return
         const kernel = await getKernel()
-        await kernel.interrupt(sessionId)
+        await kernel.interrupt(sid)
       },
       continueChat: async (prompt?: string, allowedTools?: string[]) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
+        const sid = sessionStoreManager.getState().activeSessionId
+        if (!sid) return
         const kernel = await getKernel()
-        await kernel.continueChat(sessionId, prompt ?? '', { allowedTools })
-      },
-      deleteMessage: (messageId: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.deleteMessage(messageId)
+        await kernel.continueChat(sid, prompt ?? '', { allowedTools })
       },
       editAndResend: async (messageId: string, newContent: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
+        const sid = sessionStoreManager.getState().activeSessionId
+        if (!sid) return
         const kernel = await getKernel()
-        await kernel.editAndResend(sessionId, messageId, newContent)
+        await kernel.editAndResend(sid, messageId, newContent)
       },
       regenerateResponse: async (messageId: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
+        const sid = sessionStoreManager.getState().activeSessionId
+        if (!sid) return
         const kernel = await getKernel()
-        await kernel.regenerate(sessionId, messageId)
+        await kernel.regenerate(sid, messageId)
       },
-      // Input draft actions
-      updateInputDraft: (draft: import('./types').InputDraft) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.updateInputDraft(draft)
-      },
-      clearInputDraft: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.clearInputDraft()
-      },
-      // TCB（临时上下文块）动作：按 activeSessionId 透传，来源方/UI 统一经此接入
-      addContextBlock: (block: import('./types').ContextBlock) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return false
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return false
-        return store.addContextBlock(block)
-      },
-      removeContextBlock: (blockId: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.removeContextBlock(blockId)
-      },
-      clearContextBlocks: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.clearContextBlocks()
-      },
-      updateContextBlockNote: (blockId: string, note: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.updateContextBlockNote(blockId, note)
-      },
-      setPendingBriefing: (briefing: string | null) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.setPendingBriefing(briefing)
-      },
-      // 待发送队列操作
-      enqueuePending: (message: import('../../types/chat').PendingMessage) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.enqueuePending(message)
-      },
-      removePending: (id: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.removePending(id)
-      },
-      clearPendingQueue: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.clearPendingQueue()
-      },
-      dispatchNextPending: async () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.dispatchNextPending()
-      },
-      sendPendingNow: async (id: string) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.sendPendingNow(id)
-      },
-      setPromptSuggestion: (suggestion: string | null) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.setPromptSuggestion(suggestion)
-      },
-      // 提示词优化（版本栈操作；begin/complete/fail 由 promptOptimizeService 调用）
-      undoPromptOptimize: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.undoPromptOptimize()
-      },
-      redoPromptOptimize: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.redoPromptOptimize()
-      },
-      applyPendingPromptOptimize: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.applyPendingPromptOptimize()
-      },
-      resetPromptOptimize: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.resetPromptOptimize()
-      },
-      /** 清除优化错误提示（保留版本栈；failPromptOptimize(null) 的语义封装） */
-      clearPromptOptimizeError: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.failPromptOptimize(null)
-      },
-      clearError: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.setError(null)
-      },
-      clearMessages: () => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.clearMessages()
-      },
-      loadMoreArchivedMessages: (count = 20) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.loadMoreArchivedMessages(count)
-      },
-      onVisibleRangeChange: (start: number, end: number) => {
-        const sessionId = sessionStoreManager.getState().activeSessionId
-        if (!sessionId) return
-        const store = sessionStoreManager.getState().stores.get(sessionId)?.getState()
-        if (!store) return
-        return store.onVisibleRangeChange(start, end)
-      },
+
+      // 同步方法统一委托
+      deleteMessage: (id: string) => call('deleteMessage', id),
+      updateInputDraft: (d: InputDraft) => call('updateInputDraft', d),
+      clearInputDraft: () => call('clearInputDraft'),
+      addContextBlock: (b: import('./types').ContextBlock) => call('addContextBlock', b),
+      removeContextBlock: (id: string) => call('removeContextBlock', id),
+      clearContextBlocks: () => call('clearContextBlocks'),
+      updateContextBlockNote: (id: string, note: string) => call('updateContextBlockNote', id, note),
+      setPendingBriefing: (b: string | null) => call('setPendingBriefing', b),
+      enqueuePending: (m: import('../../types/chat').PendingMessage) => call('enqueuePending', m),
+      removePending: (id: string) => call('removePending', id),
+      clearPendingQueue: () => call('clearPendingQueue'),
+      dispatchNextPending: async () => call('dispatchNextPending'),
+      sendPendingNow: async (id: string) => call('sendPendingNow', id),
+      setPromptSuggestion: (s: string | null) => call('setPromptSuggestion', s),
+      undoPromptOptimize: () => call('undoPromptOptimize'),
+      redoPromptOptimize: () => call('redoPromptOptimize'),
+      applyPendingPromptOptimize: () => call('applyPendingPromptOptimize'),
+      resetPromptOptimize: () => call('resetPromptOptimize'),
+      clearPromptOptimizeError: () => call('failPromptOptimize', null),
+      clearError: () => call('setError', null),
+      clearMessages: () => call('clearMessages'),
+      loadMoreArchivedMessages: (count = 20) => call('loadMoreArchivedMessages', count),
+      onVisibleRangeChange: (start: number, end: number) => call('onVisibleRangeChange', start, end),
+
       // Manager actions
       switchSession: sessionStoreManager.getState().switchSession,
       deleteSession: sessionStoreManager.getState().deleteSession,
       createSession: sessionStoreManager.getState().createSession,
     }
-    return actions
-  }, []) // 空依赖数组，对象引用永远不变
+  }, []) // 引用永远稳定
 }
 
-/**
- * 获取当前活跃会话的状态和操作方法
- *
- * 返回统一的活跃会话状态和操作接口
- */
+// ============================================================================
+// 复合 hook
+// ============================================================================
+
 export function useActiveSessionChat(): ConversationStore | null {
   const sessionId = useActiveSessionId()
-  const stores = useStore(sessionStoreManager, (state) => state.stores)
-
-  const store = sessionId ? stores.get(sessionId) : null
-
-  return useMemo(() => {
-    if (!store) return null
-    return store.getState()
-  }, [store])
+  const stores = useStore(sessionStoreManager, (s) => s.stores)
+  const store = sessionId ? stores.get(sessionId) ?? null : null
+  return useMemo(() => (store ? store.getState() : null), [store])
 }
 
-/**
- * 完整的活跃会话 Hook（状态 + 操作）
- *
- * 用法：
- * ```tsx
- * const { messages, isStreaming, sendMessage, interrupt } = useActiveSession()
- * ```
- */
 export function useActiveSession() {
   const messagesState = useActiveSessionMessages()
   const isStreaming = useActiveSessionStreaming()
@@ -650,128 +329,86 @@ export function useActiveSession() {
   const conversationId = useActiveSessionConversationId()
   const blockMaps = useActiveSessionBlockMaps()
   const actions = useActiveSessionActions()
-
-  return useMemo(() => ({
-    // 消息状态
-    ...messagesState,
-
-    // 流式状态
-    isStreaming,
-
-    // 错误状态
-    error,
-
-    // 会话 ID
-    conversationId,
-
-    // Block 映射
-    ...blockMaps,
-
-    // 操作方法
-    ...actions,
-  }), [messagesState, isStreaming, error, conversationId, blockMaps, actions])
+  return useMemo(
+    () => ({
+      ...messagesState,
+      isStreaming,
+      error,
+      conversationId,
+      ...blockMaps,
+      ...actions,
+    }),
+    [messagesState, isStreaming, error, conversationId, blockMaps, actions],
+  )
 }
 
-// ========================================
-// 指定会话的 Hooks（用于多窗口场景）
-// ========================================
+// ============================================================================
+// 指定会话的 hooks（多窗口场景）
+// ============================================================================
 
-/**
- * 获取指定会话的消息列表
- *
- * 用法：
- * ```tsx
- * const { messages, archivedMessages, currentMessage } = useSessionMessages(sessionId)
- * ```
- */
 export function useSessionMessages(sessionId: string | null) {
-  const messages = useSessionSelector(
+  const messages = useSessionState(
     sessionId,
-    useCallback((state: ConversationState) => state.messages, []),
-    EMPTY_MESSAGES
+    useCallback((s: ConversationState) => s.messages, []),
+    EMPTY_MESSAGES,
   )
-  const archivedMessages = useSessionSelector(
+  const archivedMessages = useSessionState(
     sessionId,
-    useCallback((state: ConversationState) => state.archivedMessages, []),
-    EMPTY_MESSAGES
+    useCallback((s: ConversationState) => s.archivedMessages, []),
+    EMPTY_MESSAGES,
   )
-  const currentMessage = useSessionSelector(
+  const currentMessage = useSessionState(
     sessionId,
-    useCallback((state: ConversationState) => state.currentMessage, []),
-    null
+    useCallback((s: ConversationState) => s.currentMessage, []),
+    null,
   )
-
-  return useMemo(() => ({
-    messages,
-    archivedMessages,
-    currentMessage,
-  }), [messages, archivedMessages, currentMessage])
+  return useMemo(
+    () => ({ messages, archivedMessages, currentMessage }),
+    [messages, archivedMessages, currentMessage],
+  )
 }
 
-/**
- * 获取指定会话的流式状态
- */
 export function useSessionStreaming(sessionId: string | null) {
-  return useSessionSelector(
+  return useSessionState(
     sessionId,
-    useCallback((state: ConversationState) => state.isStreaming, []),
-    false
+    useCallback((s: ConversationState) => s.isStreaming, []),
+    false,
   )
 }
 
-/**
- * 获取指定会话的错误状态
- */
 export function useSessionError(sessionId: string | null) {
-  return useSessionSelector(
+  return useSessionState(
     sessionId,
-    useCallback((state: ConversationState) => state.error, []),
-    null
+    useCallback((s: ConversationState) => s.error, []),
+    null,
   )
 }
 
-/** 指定会话是否有待回答的问题（用于多窗口指示） */
-export function useSessionHasPendingQuestion(sessionId: string | null): boolean {
-  const { currentMessage, messages } = useSessionMessages(sessionId)
-  return useMemo(() => {
-    // 优先检查 currentMessage
-    if (currentMessage) {
-      const found = extractQuestionsFromBlocks(currentMessage.blocks)
-      if (found.length > 0) return true
-    }
-    // 回退到 messages 最后一条 assistant 消息
-    if (messages.length > 0) {
-      const lastMsg = messages[messages.length - 1]
-      if (lastMsg.type === 'assistant' && 'blocks' in lastMsg) {
-        const found = extractQuestionsFromBlocks(
-          (lastMsg as import('../../types/chat').AssistantChatMessage).blocks
-        )
-        return found.length > 0
-      }
-    }
-    return false
-  }, [currentMessage, messages])
+/** 历史分页游标（尾部优先恢复） */
+export function useSessionHistoryPaging(sessionId: string | null) {
+  return useSessionState(
+    sessionId,
+    useCallback((s: ConversationState) => s.historyPaging, []),
+    null,
+  )
 }
 
-// ========================================
-// 派生状态 Hooks
-// ========================================
-
-/** 是否有待回答的问题 */
-export function useHasPendingQuestion(): boolean {
-  const pendingQuestions = usePendingQuestions()
-  return useMemo(() => pendingQuestions.length > 0, [pendingQuestions])
+/** 可见区域锚点（滚动位置恢复用） */
+export function useSessionVisibleRange(sessionId: string | null) {
+  return useSessionState(
+    sessionId,
+    useCallback((s: ConversationState) => s.visibleRange, []),
+    null,
+  )
 }
 
-/**
- * 从 block 列表中提取 AskUserQuestion 待回答问题。
- *
- * 重构后只走 `question` block（由后端 ask_listener emit）。
- * 旧的 `tool_call.input` fallback 已移除：
- *  - 原生 AskUserQuestion 工具会被 CLI 标 is_error，无法回填，不应渲染卡片
- *  - polaris-ask MCP 路径下后端会先 emit `question` 再 emit tool_call/result
- */
-function extractQuestionsFromBlocks(blocks: import('../../types').ContentBlock[]): import('../../types').QuestionBlock[] {
+// ============================================================================
+// 派生状态 hooks
+// ============================================================================
+
+function extractQuestionsFromBlocks(
+  blocks: import('../../types').ContentBlock[],
+): import('../../types').QuestionBlock[] {
   const result: import('../../types').QuestionBlock[] = []
   for (const block of blocks) {
     if (block.type === 'question' && (block as import('../../types').QuestionBlock).status === 'pending') {
@@ -781,40 +418,57 @@ function extractQuestionsFromBlocks(blocks: import('../../types').ContentBlock[]
   return result
 }
 
-/** 获取活跃会话中所有待回答的问题块 */
-export function usePendingQuestions(): import('../../types').QuestionBlock[] {
-  const { currentMessage, messages } = useActiveSessionMessages()
+export function useSessionHasPendingQuestion(sessionId: string | null): boolean {
+  const { currentMessage, messages } = useSessionMessages(sessionId)
   return useMemo(() => {
-    // 优先从 currentMessage（流式中的消息）提取
     if (currentMessage) {
-      const result = extractQuestionsFromBlocks(currentMessage.blocks)
-      if (result.length > 0) return result
+      const found = extractQuestionsFromBlocks(currentMessage.blocks)
+      if (found.length > 0) return true
     }
-
-    // currentMessage 为空（session_end 后已提交），回退到 messages 最后一条 assistant 消息
-    // 仅当最后一条消息是 assistant 且其后没有 user 消息时才显示
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1]
       if (lastMsg.type === 'assistant' && 'blocks' in lastMsg) {
         return extractQuestionsFromBlocks(
-          (lastMsg as import('../../types/chat').AssistantChatMessage).blocks
+          (lastMsg as import('../../types/chat').AssistantChatMessage).blocks,
+        ).length > 0
+      }
+    }
+    return false
+  }, [currentMessage, messages])
+}
+
+export function usePendingQuestions(): import('../../types').QuestionBlock[] {
+  const { currentMessage, messages } = useActiveSessionMessages()
+  return useMemo(() => {
+    if (currentMessage) {
+      const result = extractQuestionsFromBlocks(currentMessage.blocks)
+      if (result.length > 0) return result
+    }
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg.type === 'assistant' && 'blocks' in lastMsg) {
+        return extractQuestionsFromBlocks(
+          (lastMsg as import('../../types/chat').AssistantChatMessage).blocks,
         )
       }
     }
-
     return []
   }, [currentMessage, messages])
 }
 
-/** 是否有活跃的计划（等待审批） */
+export function useHasPendingQuestion(): boolean {
+  const pendingQuestions = usePendingQuestions()
+  return useMemo(() => pendingQuestions.length > 0, [pendingQuestions])
+}
+
 export function useHasActivePlan(): boolean {
   const { planBlockMap, activePlanId } = useActiveSessionBlockMaps()
   const { currentMessage } = useActiveSessionMessages()
   return useMemo(() => {
     if (!activePlanId || !currentMessage) return false
-    const planBlockIndex = planBlockMap.get(activePlanId)
-    if (planBlockIndex === undefined) return false
-    const block = currentMessage.blocks[planBlockIndex]
+    const idx = planBlockMap.get(activePlanId)
+    if (idx === undefined) return false
+    const block = currentMessage.blocks[idx]
     if (block?.type === 'plan_mode') {
       const status = (block as ContentBlock & { status: string }).status
       return status === 'pending_approval' || status === 'drafting'

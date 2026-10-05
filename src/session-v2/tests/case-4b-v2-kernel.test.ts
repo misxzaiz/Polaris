@@ -181,7 +181,6 @@ function makeDeps(overrides?: Partial<V2SessionKernelDeps>) {
   const stateArbiter = { getStatus: vi.fn(async (conversationId: string) => makeStatus({ conversationId })) }
   const streamDispatch = vi.fn(async () => 'ack')
   const snapshotSource = { getSnapshot: vi.fn(async () => [] as ChatMessage[]) }
-  const registryClient = { list: vi.fn(async () => [] as Array<{ id: string; conversationId: string | null }>) }
   const deps: V2SessionKernelDeps = {
     sessionStoreManager: manager as unknown as V2SessionKernelDeps['sessionStoreManager'],
     historyService: historyService as unknown as V2SessionKernelDeps['historyService'],
@@ -189,10 +188,9 @@ function makeDeps(overrides?: Partial<V2SessionKernelDeps>) {
     stateArbiter: stateArbiter as unknown as V2SessionKernelDeps['stateArbiter'],
     streamDispatch: streamDispatch as unknown as V2SessionKernelDeps['streamDispatch'],
     snapshotSource: snapshotSource as unknown as V2SessionKernelDeps['snapshotSource'],
-    registryClient: registryClient as unknown as V2SessionKernelDeps['registryClient'],
     ...overrides,
   }
-  return { deps, manager, historyService, stateArbiter, snapshotSource, registryClient }
+  return { deps, manager, historyService, stateArbiter, snapshotSource }
 }
 
 describe('V2SessionKernel 后端权威验证（阶段 4）', () => {
@@ -412,47 +410,6 @@ describe('V2SessionKernel 后端权威验证（阶段 4）', () => {
     expect(result).toBe(sid)
     deps.historyService.restoreFromHistory = vi.fn(async () => false)
     await expect(kernel.restoreFromHistory('hist-x')).rejects.toThrow()
-  })
-
-  // ==========================================================================
-  // 4.5 restoreRegistry（批次 4：重启后重建 conversationIdToStoreId 反向索引）
-  // ==========================================================================
-
-  it('restoreRegistry：为被驱逐会话重建 store + 反向索引', async () => {
-    // 后端注册表有 2 个会话，前端 store 均未创建（模拟重启）
-    deps.registryClient.list = vi.fn(async () => [
-      { id: 'reg-1', conversationId: 'conv-1', title: 't1', engineId: 'claude-code', silentMode: true },
-      { id: 'reg-2', conversationId: 'conv-2', title: 't2', engineId: 'claude-code', silentMode: false },
-    ])
-    const count = await kernel.restoreRegistry()
-    expect(count).toBe(2)
-    // 静默重建会话壳
-    expect(manager.getStore('reg-1')?.getState().conversationId).toBe('conv-1')
-    expect(manager.getStore('reg-2')?.getState().conversationId).toBe('conv-2')
-    // 反向索引已重建（事件路由可恢复）
-    expect(manager.calls.some((c) => c.method === 'registerConversationId' && c.args[0] === 'conv-1' && c.args[1] === 'reg-1')).toBe(true)
-    expect(manager.calls.some((c) => c.method === 'registerConversationId' && c.args[0] === 'conv-2' && c.args[1] === 'reg-2')).toBe(true)
-  })
-
-  it('restoreRegistry：已有 store 仅补齐 conversationId，不重复创建', async () => {
-    const sid = manager.createSession({ type: 'free', id: 'existing-1' })
-    deps.registryClient.list = vi.fn(async () => [
-      { id: 'existing-1', conversationId: 'conv-x' },
-    ])
-    const before = manager.stores.size
-    const count = await kernel.restoreRegistry()
-    expect(count).toBe(1)
-    expect(manager.stores.size).toBe(before) // 未重复创建
-    expect(manager.getStore(sid)?.getState().conversationId).toBe('conv-x')
-  })
-
-  it('restoreRegistry：无 conversationId 记录跳过；后端失败返回 0', async () => {
-    deps.registryClient.list = vi.fn(async () => [
-      { id: 'no-conv', conversationId: null },
-    ])
-    expect(await kernel.restoreRegistry()).toBe(0)
-    deps.registryClient.list = vi.fn(async () => { throw new Error('db down') })
-    expect(await kernel.restoreRegistry()).toBe(0)
   })
 
   // ==========================================================================

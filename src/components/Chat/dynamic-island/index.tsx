@@ -20,7 +20,7 @@ import { clsx } from 'clsx';
 import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
 import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { findStoreByConversationId } from '@/stores/conversationStore/sessionStoreManager';
 import { aiChatDispatch } from '@/services/aiChatDispatch'
 import type { PermissionRequestBlock, QuestionBlock } from '@/types/chat';
 import './DynamicIsland.css';
@@ -152,7 +152,7 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
   const handleUrgentDecision = useCallback((card: UrgentCard, approved: boolean) => {
     void (async () => {
       try {
-        const store = sessionStoreManager.getState().getStoreByConversationId(card.sessionId);
+        const store = findStoreByConversationId(card.sessionId);
         if (!store) return;
         const blocks = store.currentMessage?.blocks ?? [];
         const block = blocks.find(b => 'id' in b && b.id === card.id);

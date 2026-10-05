@@ -27,19 +27,6 @@ export interface RoutedEvent {
 export type EventHandler = (payload: unknown) => void
 
 /**
- * 从 AIEvent 中提取 sessionId
- */
-function extractSessionId(payload: unknown): string | null {
-  if (payload && typeof payload === 'object' && 'sessionId' in payload) {
-    const sessionId = (payload as { sessionId: unknown }).sessionId
-    if (typeof sessionId === 'string') {
-      return sessionId
-    }
-  }
-  return null
-}
-
-/**
  * 从 contextId 中提取前端 sessionId
  * contextId 格式: "session-{sessionId}" 或 "main" 或其他自定义格式
  */
@@ -58,8 +45,6 @@ export class EventRouter {
   private initialized = false
   private initPromise: Promise<void> | null = null
   private destroyed = false
-  /** 是否启用 sessionId 路由（新架构） */
-  private useSessionIdRouting = true
 
   async initialize(): Promise<void> {
     if (this.initialized) return
@@ -72,81 +57,38 @@ export class EventRouter {
   private async doInitialize(): Promise<void> {
     this.unlisten = await listen<string>('chat-event', (rawPayload) => {
       try {
-        log.info('收到原始事件', { type: typeof rawPayload, preview: typeof rawPayload === 'string' ? rawPayload.slice(0, 200) : JSON.stringify(rawPayload).slice(0, 200) })
-
-        // 处理不同类型的 payload
+        // 解析事件信封：{ contextId, payload } 或裸 payload
         let rawData: unknown
         if (typeof rawPayload === 'string') {
-          try {
-            rawData = JSON.parse(rawPayload)
-          } catch {
-            // 如果解析失败，直接使用原始字符串
-            rawData = rawPayload
-          }
+          try { rawData = JSON.parse(rawPayload) } catch { rawData = rawPayload }
         } else {
-          // 已经是对象
           rawData = rawPayload
         }
 
-        let routedEvent: RoutedEvent
-
+        let contextId: ContextId = 'main'
+        let payload: unknown = rawData
         if (rawData && typeof rawData === 'object' && 'contextId' in rawData && 'payload' in rawData) {
-          routedEvent = {
-            contextId: (rawData as { contextId: string }).contextId,
-            payload: (rawData as { payload: unknown }).payload
-          }
-        } else {
-          routedEvent = {
-            contextId: 'main',
-            payload: rawData
-          }
+          contextId = (rawData as { contextId: string }).contextId
+          payload = (rawData as { payload: unknown }).payload
         }
 
-        // 多会话路由策略：
-        // 1. scheduler 任务：使用 contextId 路由到 scheduler 注册的 handler
-        // 2. session 会话：从 contextId 提取前端 sessionId 路由
-        // 3. 其他情况：使用 payload.sessionId 路由
-        // 4. 最后回退到旧架构的 contextId 路由
-
-        // Scheduler 任务：contextId 格式为 "scheduler-{taskId}"
-        // 必须使用 contextId 路由，让 scheduler handler 接收事件
-        if (routedEvent.contextId.startsWith('scheduler-')) {
-          log.debug('Scheduler 任务使用 contextId 路由', { contextId: routedEvent.contextId })
-          this.dispatch(routedEvent)
+        // 单一路由路径：从 contextId 解析前端 sessionId。
+        // contextId 格式 "session-<sessionId>" 由 sendMessage 时注入（deps.contextId），
+        // 后端原样回传，是稳定的路由通道。payload.sessionId 是后端 conversationId，不可作路由 key。
+        const frontendSessionId = extractFrontendSessionId(contextId)
+        if (frontendSessionId) {
+          this.dispatchToSession(frontendSessionId, payload as AIEvent)
           return
         }
 
-        // 派发任务：contextId 格式为 "dispatch-{depth}-{id}"
-        // 同 scheduler，必须走 contextId 路由到 dispatchTaskService 注册的 handler，
-        // 否则会被 payload.sessionId（后端会话 ID）兜底路由到错误的会话
-        if (routedEvent.contextId.startsWith('dispatch-')) {
-          log.debug('派发任务使用 contextId 路由', { contextId: routedEvent.contextId })
-          this.dispatch(routedEvent)
+        // scheduler-/dispatch- 前缀：仍走 register/dispatch 旧路径（service 自行注入 _routeSessionId）
+        if (contextId.startsWith('scheduler-') || contextId.startsWith('dispatch-')) {
+          this.dispatch({ contextId, payload })
           return
         }
 
-        const frontendSessionId = extractFrontendSessionId(routedEvent.contextId)
-
-        if (frontendSessionId && this.useSessionIdRouting) {
-          // 使用 contextId 中的前端 sessionId 路由（最可靠）
-          log.debug('使用 contextId 路由到前端会话', { contextId: routedEvent.contextId, frontendSessionId })
-          this.dispatchToSession(frontendSessionId, routedEvent.payload as AIEvent)
-          return
-        }
-
-        // 如果 contextId 不包含前端 sessionId，尝试使用 payload.sessionId 路由
-        if (this.useSessionIdRouting) {
-          const backendSessionId = extractSessionId(routedEvent.payload)
-          if (backendSessionId) {
-            log.debug('使用 payload.sessionId 路由', { backendSessionId })
-            this.dispatchToSession(backendSessionId, routedEvent.payload as AIEvent)
-            return
-          }
-        }
-
-        // 回退到 contextId 路由（旧架构兼容）
-        log.info('回退到 contextId 路由', { contextId: routedEvent.contextId, payloadType: typeof routedEvent.payload })
-        this.dispatch(routedEvent)
+        // 无 contextId 或 'main'：旧式 handler 兜底（useChat 等外部监听）
+        this.dispatch({ contextId, payload })
       } catch (e) {
         log.error('Failed to parse event', e instanceof Error ? e : new Error(String(e)))
       }
@@ -224,14 +166,6 @@ export class EventRouter {
         }
       })
     }
-  }
-
-  /**
-   * 启用或禁用 sessionId 路由
-   */
-  setSessionIdRouting(enabled: boolean): void {
-    this.useSessionIdRouting = enabled
-    log.info(`sessionId 路由已${enabled ? '启用' : '禁用'}`)
   }
 
   destroy(): void {

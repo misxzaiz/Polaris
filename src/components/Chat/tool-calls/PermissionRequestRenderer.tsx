@@ -196,12 +196,14 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
 
   const isPlanApproval = block.denials.length === 0;
 
-  // 通过 block.sessionId（后端 conversationId）反向查前端 store — O(1) 查找
+  // 通过 block.sessionId（后端 conversationId）遍历查找前端 store
   const getStoreByConversationId = useCallback((conversationId: string) => {
-    const sessionId = sessionStoreManager.getState().conversationIdToStoreId.get(conversationId);
-    if (!sessionId) return null;
-    const store = sessionStoreManager.getState().stores.get(sessionId);
-    return store?.getState() ?? null;
+    for (const store of sessionStoreManager.getState().stores.values()) {
+      if (store.getState().conversationId === conversationId) {
+        return store.getState() ?? null;
+      }
+    }
+    return null;
   }, []);
 
   const setItemDecision = useCallback((index: number, dec: ItemDecision | undefined) => {

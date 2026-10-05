@@ -17,8 +17,6 @@ import { invoke } from '@/services/transport'
 import type {
   SessionEventEntry,
   SessionEventLog,
-  SessionRecord,
-  SessionRegistry,
   SessionStatus,
   StateArbiter,
 } from './types'
@@ -120,44 +118,5 @@ export class V2StateArbiter implements StateArbiter {
       conversationId,
       deviceId,
     })
-  }
-}
-
-/**
- * V2SessionRegistryClient — 阶段 4 批次 4：后端 Session Registry 客户端
- *
- * 重启恢复的凭据来源：页面加载时 `list()` 拉取全部会话记录（含 conversationId），
- * 重建前端 `conversationIdToStoreId` 反向索引——即使前端 store 未创建/被 LRU 驱逐，
- * 后端续传事件也能按 conversationId 路由回正确会话（消除「重启后事件路由断裂」根因）。
- *
- * 与 V2SessionEventLog 同文件：同一 messages.db、同一 transport。
- */
-export class V2SessionRegistryClient implements SessionRegistry {
-  async create(record: Omit<SessionRecord, 'version' | 'createdAt' | 'updatedAt'>): Promise<SessionRecord> {
-    return invoke<SessionRecord>(CMD.register, { record })
-  }
-
-  async get(id: string): Promise<SessionRecord | null> {
-    return invoke<SessionRecord | null>(CMD.get, { id })
-  }
-
-  async list(): Promise<SessionRecord[]> {
-    return invoke<SessionRecord[]>(CMD.list)
-  }
-
-  async updateMetadata(
-    id: string,
-    patch: Partial<SessionRecord>,
-    expectedVersion: number,
-  ): Promise<SessionRecord> {
-    return invoke<SessionRecord>(CMD.updateMetadata, { id, patch, expectedVersion })
-  }
-
-  async appendMessageId(id: string, messageId: string): Promise<SessionRecord> {
-    return invoke<SessionRecord>(CMD.appendMessageId, { id, messageId })
-  }
-
-  async delete(id: string): Promise<void> {
-    return invoke<void>(CMD.delete, { id })
   }
 }

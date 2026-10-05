@@ -308,6 +308,48 @@ describe('多设备消息同步验证（修复后）', () => {
     })
   })
 
+  describe('内容相同但不同的两条用户消息（content 比对回退路径的误判缺口）', () => {
+    it('本机已有相同 content 的消息，又收到另一条独立消息（同 content）→ 不应被误判为回显跳过', () => {
+      const { set, get, store } = makeStore()
+      // B 设备空闲态（非 streaming）：收到外来 user_message 广播
+      set({ isStreaming: false } as Partial<ConversationStore>)
+      // A 设备发送过"继续"（content 无 clientMessageId 透传，走 content 比对回退）
+      store.addMessage({
+        id: 'local-1',
+        type: 'user',
+        content: '继续',
+        timestamp: new Date().toISOString(),
+      } as unknown as ChatMessage)
+
+      // B 设备（或用户本人）稍后又发了一条内容完全相同、但确是新的用户消息
+      // 后端广播回来时无 clientMessageId（引擎未透传）→ 前端必须能区分"这是新消息"
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: '继续',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+
+      // 期望：两条都是独立消息，不能因 content 相同被去重掉
+      const userMsgs = get().messages.filter((m) => m.type === 'user')
+      expect(userMsgs.length).toBe(2)
+    })
+
+    it('本机没有该 content 的消息 → 收到同 content 的 user_message 正常追加', () => {
+      const { set, get } = makeStore()
+
+      const event: AIEvent = {
+        type: 'user_message',
+        sessionId: 's1',
+        content: '继续',
+      } as AIEvent
+
+      handleAIEvent(event, set as never, get as never)
+      expect(get().messages.filter((m) => m.type === 'user').length).toBe(1)
+    })
+  })
+
   describe('存储层验证：RemoteBackend 跨设备共享（不是根因）', () => {
     it('RemoteBackend 通过 invoke 调用后端命令（不隔离设备）', async () => {
       const { RemoteBackend } = await import('@/services/dialogStorage/dialogBackend')

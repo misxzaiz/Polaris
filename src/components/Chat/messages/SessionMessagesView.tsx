@@ -4,16 +4,15 @@
  * 直接使用 zustand store 订阅特定 session 的状态，避免复杂的 hook 链
  */
 
-import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState } from 'react';
 import type { ComponentProps, MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { useConfigStore } from '@/stores/configStore';
+import { useSessionState } from '@/stores/conversationStore/useActiveSession';
 import { renderChatMessage } from './renderChatMessage';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
 import type { ChatMessage, AssistantChatMessage } from '@/types/chat';
-import type { ConversationStoreInstance, ConversationState } from '@/stores/conversationStore/types';
 import {
   findCurrentRoundIndexForRange,
   getRoundScrollTargetIndex,
@@ -27,9 +26,7 @@ import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScr
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState';
 import { ChatScrollContext } from './ChatScrollContext';
 
-// 模块级稳定空数组：store 缺失时 getSnapshot 返回 defaultValue，
-// 内联 [] 每次渲染新建引用会被 useSyncExternalStore 判定为 snapshot
-// 持续变化，触发同步重渲染循环（React error #185）。
+// 模块级稳定空数组（useSessionState fallback 必须引用稳定）
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
 /** 空状态组件 */
@@ -50,85 +47,25 @@ interface SessionMessagesViewProps {
   onEditMessage?: (messageId: string, content: string) => void;
 }
 
-/**
- * 直接订阅 session store 的 hook
- * 关键：当 store 存在时，订阅 store 本身而不是 sessionStoreManager
- */
-function useSessionStoreSubscription<T>(
-  sessionId: string,
-  selector: (state: ConversationState) => T,
-  defaultValue: T
-): T {
-  // 缓存 store 实例，避免频繁查找
-  const storeRef = useRef<ConversationStoreInstance | null>(null);
-  const cacheRef = useRef<T>(defaultValue);
-
-  // 获取 store 实例
-  const getStore = useCallback(() => {
-    return sessionStoreManager.getState().stores.get(sessionId);
-  }, [sessionId]);
-
-  // 初始化/更新 store ref
-  useEffect(() => {
-    const store = getStore();
-    if (store && storeRef.current !== store) {
-      storeRef.current = store;
-      cacheRef.current = defaultValue; // store 变化时重置缓存
-    }
-  }, [getStore, defaultValue]);
-
-  // subscribe 函数：订阅正确的 store
-  const subscribe = useCallback((onChange: () => void) => {
-    const store = getStore();
-    if (store) {
-      // 直接订阅 session store
-      return store.subscribe(onChange);
-    } else {
-      // store 不存在时，订阅 sessionStoreManager 等待 store 创建
-      return sessionStoreManager.subscribe(onChange);
-    }
-  }, [getStore]);
-
-  // getSnapshot：获取当前值
-  const getSnapshot = useCallback(() => {
-    const store = storeRef.current || getStore();
-    if (!store) return defaultValue;
-
-    const newValue = selector(store.getState());
-
-    // 引用稳定性检查
-    if (cacheRef.current === newValue) {
-      return cacheRef.current;
-    }
-
-    cacheRef.current = newValue;
-    return newValue;
-  }, [getStore, selector, defaultValue]);
-
-  const getServerSnapshot = useCallback(() => defaultValue, [defaultValue]);
-
-  return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-}
-
 export const SessionMessagesView = memo(function SessionMessagesView({ sessionId, onEditMessage }: SessionMessagesViewProps) {
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [currentRoundIndex, setCurrentRoundIndex] = useState(0);
   const collapseMode = useConfigStore((s) => s.config?.chatDisplay?.processBlockCollapse ?? 'auto');
 
   // 直接订阅特定 session store 的状态
-  const messages = useSessionStoreSubscription(
+  const messages = useSessionState(
     sessionId,
     useCallback((state) => state.messages, []),
     EMPTY_MESSAGES
   );
 
-  const currentMessage = useSessionStoreSubscription(
+  const currentMessage = useSessionState(
     sessionId,
     useCallback((state) => state.currentMessage, []),
     null
   );
 
-  const isStreaming = useSessionStoreSubscription(
+  const isStreaming = useSessionState(
     sessionId,
     useCallback((state) => state.isStreaming, []),
     false
@@ -139,7 +76,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   const scrollIsStreaming = isStreaming || kernelStreaming;
 
   // 可见区域锚点（滚动位置恢复用）
-  const visibleRange = useSessionStoreSubscription(
+  const visibleRange = useSessionState(
     sessionId,
     useCallback((state) => state.visibleRange, []),
     null as { start: number; end: number } | null

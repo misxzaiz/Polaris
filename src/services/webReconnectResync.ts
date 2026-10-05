@@ -123,11 +123,7 @@ export async function manualRefreshActiveSession(): Promise<boolean> {
 
   log.info('手动恢复开始', { activeSessionId, conversationId })
 
-  // 2. 重注册反向索引：后端续传事件携带的是旧前端 sessionId（contextId），
-  //    dispatchEvent 的反向索引兜底依赖此映射将事件续接到本会话。
-  manager.registerConversationId(conversationId, activeSessionId)
-
-  // 3. 快照合并 + 校正流式状态
+  // 2. 快照合并 + 校正流式状态
   await resyncSession(activeSessionId, store, conversationId)
   return true
 }

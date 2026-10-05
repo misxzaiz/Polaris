@@ -33,76 +33,6 @@ import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 const log = createLogger('SessionStoreManager')
 
-// ============================================================================
-// LRU 驱逐配置
-// ============================================================================
-
-/** 非活跃会话最大保留数量 */
-const MAX_IDLE_STORES = 5
-
-/**
- * 驱逐非活跃会话
- *
- * 保护规则：
- * - activeSessionId 不可驱逐
- * - backgroundSessionIds 中的不可驱逐
- * - status === 'running' 不可驱逐
- *
- * 驱逐流程：
- * 1. 过滤非保护会话
- * 2. 按 lastAccessedAt 排序
- * 3. 超出 MAX_IDLE_STORES 的最旧会话执行 dispose() + 移除
- */
-function evictIdleSessions(
-  stores: Map<string, ConversationStoreInstance>,
-  sessionMetadata: Map<string, SessionMetadata>,
-  activeSessionId: string | null,
-  backgroundSessionIds: string[]
-): { stores: Map<string, ConversationStoreInstance>; sessionMetadata: Map<string, SessionMetadata> } | null {
-  // 收集保护中的 sessionId
-  const protectedIds = new Set<string>()
-  if (activeSessionId) protectedIds.add(activeSessionId)
-  backgroundSessionIds.forEach(id => protectedIds.add(id))
-
-  // 额外保护正在运行的会话
-  sessionMetadata.forEach((meta, id) => {
-    if (meta.status === 'running') protectedIds.add(id)
-  })
-
-  // 筛选可驱逐的会话
-  const evictable: Array<{ id: string; lastAccessedAt: number }> = []
-  stores.forEach((_, id) => {
-    if (!protectedIds.has(id)) {
-      const meta = sessionMetadata.get(id)
-      if (meta) {
-        evictable.push({ id, lastAccessedAt: meta.lastAccessedAt })
-      }
-    }
-  })
-
-  // 未超出上限，无需驱逐
-  if (evictable.length <= MAX_IDLE_STORES) return null
-
-  // 按 lastAccessedAt 升序，驱逐最旧的
-  evictable.sort((a, b) => a.lastAccessedAt - b.lastAccessedAt)
-  const toEvict = evictable.slice(0, evictable.length - MAX_IDLE_STORES)
-
-  const newStores = new Map(stores)
-  const newMetadata = new Map(sessionMetadata)
-
-  for (const { id } of toEvict) {
-    const store = newStores.get(id)
-    if (store) {
-      store.getState().dispose()
-      newStores.delete(id)
-      newMetadata.delete(id)
-      log.info('LRU 驱逐会话', { id })
-    }
-  }
-
-  return { stores: newStores, sessionMetadata: newMetadata }
-}
-
 /**
  * 更新会话的 lastAccessedAt 时间戳
  */
@@ -142,7 +72,6 @@ function createSessionManagerStore() {
     backgroundSessionIds: [],
     completedNotifications: [],
     isInitialized: false,
-    conversationIdToStoreId: new Map<string, string>(),
 
     // ===== 会话生命周期 =====
 
@@ -263,18 +192,6 @@ function createSessionManagerStore() {
 
       log.info('创建会话', { sessionId })
 
-      // LRU 驱逐：非保护会话超过上限时清理最旧的
-      const currentState = get()
-      const evicted = evictIdleSessions(
-        currentState.stores,
-        currentState.sessionMetadata,
-        currentState.activeSessionId,
-        currentState.backgroundSessionIds
-      )
-      if (evicted) {
-        set({ stores: evicted.stores, sessionMetadata: evicted.sessionMetadata })
-      }
-
       // 非静默模式时自动加入多窗口视图
       if (!options.silentMode) {
         useViewStore.getState().addToMultiView(sessionId)
@@ -297,12 +214,6 @@ function createSessionManagerStore() {
       const store = get().stores.get(sessionId)
       if (store) {
         store.getState().setMessagesFromHistory(messages, conversationId, metadata?.paging)
-
-        // 注册 conversationId → sessionId 反向索引（历史恢复场景）
-        if (conversationId) {
-          get().registerConversationId(conversationId, sessionId)
-        }
-
         log.info('从历史创建会话', { sessionId, messageCount: messages.length, conversationId, forkFromId: metadata?.forkFromId })
       }
 
@@ -320,12 +231,6 @@ function createSessionManagerStore() {
 
       // 清理资源
       store.getState().dispose()
-
-      // 注销 conversationId 反向索引（防止悬垂引用）
-      const storeState = store.getState()
-      if (storeState.conversationId) {
-        get().unregisterConversationId(storeState.conversationId)
-      }
 
       set((state) => {
         const newStores = new Map(state.stores)
@@ -373,27 +278,14 @@ function createSessionManagerStore() {
         return
       }
 
-      // 当前活跃会话如果正在 streaming，移入后台。
-      // 本地快照快速路径（防漏）+ 内核后端权威复核（跨设备 streaming 也转后台）。
+      // 当前活跃会话如果正在 streaming，移入后台（单路径：本地快照）。
+      // 删除原异步 kernel 复核：它引入竞态（切换完成后异步回调仍用旧 prevActiveId）。
       const currentStore = state.activeSessionId
         ? state.stores.get(state.activeSessionId)
         : null
 
       if (currentStore && currentStore.getState().isStreaming && state.activeSessionId) {
         get().addToBackground(state.activeSessionId)
-      }
-      if (state.activeSessionId) {
-        const prevActiveId = state.activeSessionId
-        void import('@/session-v2/hooks/useKernelSessionState')
-          .then((m) => m.kernelSessionIsStreaming(prevActiveId))
-          .then((streaming) => {
-            if (!streaming) return
-            const cur = get()
-            if (!cur.backgroundSessionIds.includes(prevActiveId)) {
-              get().addToBackground(prevActiveId)
-            }
-          })
-          .catch(() => { /* 复核失败：本地快照已兜底 */ })
       }
 
       // 切换到新会话
@@ -667,104 +559,26 @@ function createSessionManagerStore() {
       return get().activeSessionId
     },
 
-    // ===== O(1) conversationId → sessionId 查找 =====
-
-    getStoreByConversationId: (conversationId) => {
-      const sessionId = get().conversationIdToStoreId.get(conversationId)
-      if (!sessionId) return undefined
-      const store = get().stores.get(sessionId)
-      return store?.getState()
-    },
-
-    registerConversationId: (conversationId, sessionId) => {
-      set((state) => {
-        const newIndex = new Map(state.conversationIdToStoreId)
-        newIndex.set(conversationId, sessionId)
-        return { conversationIdToStoreId: newIndex }
-      })
-    },
-
-    unregisterConversationId: (conversationId) => {
-      set((state) => {
-        const newIndex = new Map(state.conversationIdToStoreId)
-        newIndex.delete(conversationId)
-        return { conversationIdToStoreId: newIndex }
-      })
-    },
-
     // ===== 事件分发 =====
 
     dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => {
-      // 使用 _routeSessionId（前端 sessionId）进行路由，如果没有则使用 sessionId
-      // 如果都没有，使用当前活跃会话 ID
-      let routeSessionId = event._routeSessionId || event.sessionId || get().activeSessionId
+      // 单一路由路径：_routeSessionId 是前端 sessionId（由 EventRouter 从 contextId 解析注入）。
+      // 不再用 event.sessionId（后端 conversationId）兜底，不再回退 activeSessionId，
+      // 不再"找不到 store 就自动建会话"——这三条正是"对不准窗口/新开窗口"的根因。
+      const routeSessionId = event._routeSessionId
       if (!routeSessionId) {
-        log.warn('无法确定路由目标，缺少 sessionId 和 activeSessionId')
+        log.warn('事件缺少 _routeSessionId，丢弃', { type: event.type })
         return
       }
-      let store = get().stores.get(routeSessionId)
-
-      // conversationId 反向索引兜底：Web 页面重载/历史恢复后，后端事件携带的
-      // 旧前端 sessionId 已不存在，但该会话可能已通过历史恢复绑定到新 store
-      // （createSessionFromHistory / 手动刷新恢复注册了 conversationId → sessionId 索引）。
-      // 优先续接到恢复的会话，而不是自动创建一个丢失上下文的孤儿会话。
-      if (!store && event.sessionId) {
-        const mappedSessionId = get().conversationIdToStoreId.get(event.sessionId)
-        if (mappedSessionId && mappedSessionId !== routeSessionId) {
-          const mappedStore = get().stores.get(mappedSessionId)
-          if (mappedStore) {
-            log.info('通过 conversationId 反向索引续接事件', {
-              staleRouteId: routeSessionId,
-              conversationId: event.sessionId,
-              mappedSessionId,
-            })
-            routeSessionId = mappedSessionId
-            store = mappedStore
-          }
-        }
-      }
-
-      // 如果会话不存在，自动创建
+      const store = get().stores.get(routeSessionId)
       if (!store) {
-        // 批次 5 定位：本分支仅为「运行中后端事件先于前端 store 创建」的兜底
-        // （静默/调度器/派发任务会话由后端启动，事件回流时前端尚未建 store）。
-        // 重启后场景不再走这里——restoreRegistry（批次 4）已从后端注册表重建
-        // conversationId 反向索引 + store 壳，事件经上方反向索引续接直接命中。
-        // 因此不存在「LRU 驱逐/重启后自动创建孤儿会话」路径（根因 4 已消除）。
-        // 检测是否为 scheduler/dispatch 任务（静默模式，不抢占当前 Tab）
-        const isSchedulerTask = routeSessionId.startsWith('scheduler-')
-        const isDispatchTask = routeSessionId.startsWith('dispatch-')
-        const silentMode = isSchedulerTask || isDispatchTask
-
-        // 从 session_start 事件中提取 engineId，确保自动创建的会话绑定正确引擎
-        const eventEngineId = event.type === 'session_start' ? event.engineId : undefined
-
-        log.info('事件路由时自动创建会话', { routeSessionId, silentMode, eventEngineId })
-
-        get().createSession({
-          id: routeSessionId,
-          type: 'free',
-          title: isSchedulerTask ? '定时任务' : isDispatchTask ? '派发任务' : '新对话',
-          silentMode,
-          engineId: eventEngineId,
-        })
-        store = get().stores.get(routeSessionId)
-
-        if (!store) {
-          log.error('自动创建会话失败', undefined, { routeSessionId })
-          return
-        }
+        // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
+        // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
+        log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
+        return
       }
 
-      // 调用新架构的事件处理器
-      // 注意：事件总是路由到 routeSessionId 对应的会话，而不是当前活跃会话
-      // 这是多会话并行的核心：每个会话独立处理自己的事件
       store.getState().handleAIEvent(event)
-
-      // 注册 conversationId → sessionId 反向索引（session_start 事件携带后端 conversationId）
-      if (event.type === 'session_start' && event.sessionId) {
-        get().registerConversationId(event.sessionId, routeSessionId)
-      }
 
       // touch lastAccessedAt（LRU 追踪）
       const touchedMeta = touchSession(get().sessionMetadata, routeSessionId)
@@ -1058,9 +872,19 @@ const cachedActions = {
   get updateSessionWorkspace() { return sessionStoreManager.getState().updateSessionWorkspace },
   get addContextWorkspace() { return sessionStoreManager.getState().addContextWorkspace },
   get removeContextWorkspace() { return sessionStoreManager.getState().removeContextWorkspace },
-  get getStoreByConversationId() { return sessionStoreManager.getState().getStoreByConversationId },
-  get registerConversationId() { return sessionStoreManager.getState().registerConversationId },
-  get unregisterConversationId() { return sessionStoreManager.getState().unregisterConversationId },
+}
+
+/**
+ * 通过后端 conversationId 查找前端 store。
+ * 用于权限/提问等事件的 block 携带后端 conversationId 的场景。
+ * 简化实现：遍历 stores（会话数通常 ≤10，O(n) 可接受），不再维护反向索引。
+ */
+export function findStoreByConversationId(conversationId: string): ConversationStore | undefined {
+  const stores = sessionStoreManager.getState().stores
+  for (const store of stores.values()) {
+    if (store.getState().conversationId === conversationId) return store.getState()
+  }
+  return undefined
 }
 
 // ============================================================================
