@@ -684,7 +684,6 @@ export interface SessionMetadata {
   workspaceLocked?: boolean // 主工作区是否锁定（发送消息后锁定）
   silentMode?: boolean // 静默模式（不显示在会话列表中）
   status: 'idle' | 'running' | 'waiting' | 'error' | 'background-running'
-  lastAccessedAt: number // 最后访问时间戳（用于 LRU 驱逐）
   createdAt: string
   updatedAt: string
   /** Fork 来源会话 ID（Fork 创建时记录，发送第一条消息时作为 --fork-session 参数传给 CLI） */
@@ -871,7 +870,6 @@ export interface SessionManagerActions {
 
   // ===== 批量操作 =====
   interruptSession: (sessionId: string) => Promise<void>
-  interruptAllBackground: () => Promise<void>
 
   // ===== 初始化 =====
   initialize: () => Promise<void>

@@ -16,8 +16,6 @@ export {
   useConversationStore,
   useSessionMetadataList,
   useActiveSessionId,
-  useBackgroundSessions,
-  useCompletedNotifications,
   useSessionManagerActions,
 } from './sessionStoreManager'
 export {

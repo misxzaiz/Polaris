@@ -31,7 +31,7 @@ interface ActiveItem {
   origin: 'chat' | 'scheduler' | 'integration'
   title: string
   status: SessionStatus
-  /** 排序与时长计算基准（chat 无开始时间，用 lastAccessedAt 近似） */
+  /** 排序与时长计算基准（chat 无开始时间，用 updatedAt 近似） */
   startedAt: number
   /** 是否可跳转到会话 */
   jumpSessionId?: string
@@ -78,7 +78,7 @@ export function ActiveExecutionList() {
           origin: isSchedulerSession ? 'scheduler' : 'chat',
           title: session.title || session.id,
           status: session.status,
-          startedAt: session.lastAccessedAt,
+          startedAt: Date.parse(session.updatedAt) || Date.parse(session.createdAt) || Date.now(),
           jumpSessionId: session.id,
         })
       }

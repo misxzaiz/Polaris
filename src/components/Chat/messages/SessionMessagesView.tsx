@@ -85,8 +85,11 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
 
 
   // 合并流式消息到消息列表
+  // 注意：合并条件用 scrollIsStreaming（含后端权威 kernelStreaming），与滚动层一致。
+  // 仅看本地 isStreaming 会在 error/resume-gap 等路径上出现"本地已 false 但 currentMessage
+  // 未归档、kernel 仍 running"的中间态，导致 displayMessages 退化丢弃流式消息。
   const displayMessages = useMemo(() => {
-    if (!currentMessage || !isStreaming) {
+    if (!currentMessage || !scrollIsStreaming) {
       return messages;
     }
 
@@ -117,7 +120,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
         isStreaming: true,
       }];
     }
-  }, [messages, currentMessage, isStreaming]);
+  }, [messages, currentMessage, scrollIsStreaming]);
 
   const isEmpty = displayMessages.length === 0;
   // PENDING 状态：已发送消息、正在等待首 token

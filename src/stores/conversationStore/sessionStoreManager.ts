@@ -33,23 +33,6 @@ import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 const log = createLogger('SessionStoreManager')
 
-/**
- * 更新会话的 lastAccessedAt 时间戳
- */
-function touchSession(
-  sessionMetadata: Map<string, SessionMetadata>,
-  sessionId: string
-): Map<string, SessionMetadata> | null {
-  const meta = sessionMetadata.get(sessionId)
-  if (!meta) return null
-  const now = Date.now()
-  // 避免频繁创建新 Map（1 秒内不重复 touch）
-  if (now - meta.lastAccessedAt < 1000) return null
-  const newMetadata = new Map(sessionMetadata)
-  newMetadata.set(sessionId, { ...meta, lastAccessedAt: now })
-  return newMetadata
-}
-
 // ============================================================================
 // Manager Store Type
 // ============================================================================
@@ -100,7 +83,6 @@ function createSessionManagerStore() {
         workspaceLocked: options.workspaceLocked ?? (!!options.workspaceId),
         status: 'idle',
         silentMode: options.silentMode || false, // 设置静默模式
-        lastAccessedAt: Date.now(),
         createdAt: timestamp,
         updatedAt: timestamp,
         forkFromId: options.forkFromId,
@@ -289,12 +271,7 @@ function createSessionManagerStore() {
       }
 
       // 切换到新会话
-      // touch lastAccessedAt
-      const touched = touchSession(state.sessionMetadata, sessionId)
-      set({
-        activeSessionId: sessionId,
-        ...(touched ? { sessionMetadata: touched } : {}),
-      })
+      set({ activeSessionId: sessionId })
 
       // 如果新会话在后台运行列表中，移出（用户主动切换回来了）
       get().removeFromBackground(sessionId)
@@ -580,12 +557,6 @@ function createSessionManagerStore() {
 
       store.getState().handleAIEvent(event)
 
-      // touch lastAccessedAt（LRU 追踪）
-      const touchedMeta = touchSession(get().sessionMetadata, routeSessionId)
-      if (touchedMeta) {
-        set({ sessionMetadata: touchedMeta })
-      }
-
       // 补发到 EventBus，确保 DeveloperPanel 等订阅者能收到事件
       try {
         getEventBus().emit(event)
@@ -701,13 +672,6 @@ function createSessionManagerStore() {
         await state.interrupt()
       } catch (e) {
         log.error('打断会话失败', e instanceof Error ? e : new Error(String(e)), { sessionId })
-      }
-    },
-
-    interruptAllBackground: async () => {
-      const backgroundIds = get().backgroundSessionIds
-      for (const sessionId of backgroundIds) {
-        await get().interruptSession(sessionId)
       }
     },
 
@@ -868,7 +832,6 @@ const cachedActions = {
   get addToNotifications() { return sessionStoreManager.getState().addToNotifications },
   get removeFromNotifications() { return sessionStoreManager.getState().removeFromNotifications },
   get interruptSession() { return sessionStoreManager.getState().interruptSession },
-  get interruptAllBackground() { return sessionStoreManager.getState().interruptAllBackground },
   get updateSessionWorkspace() { return sessionStoreManager.getState().updateSessionWorkspace },
   get addContextWorkspace() { return sessionStoreManager.getState().addContextWorkspace },
   get removeContextWorkspace() { return sessionStoreManager.getState().removeContextWorkspace },
@@ -951,34 +914,6 @@ export function useSessionMetadataList(): SessionMetadata[] {
  */
 export function useActiveSessionId(): string | null {
   return useStore(sessionStoreManager, (state) => state.activeSessionId)
-}
-
-/**
- * 获取后台运行会话列表
- * 使用缓存避免数组实例变化导致的无限更新
- */
-export function useBackgroundSessions(): SessionMetadata[] {
-  return useStore(
-    sessionStoreManager,
-    (state) =>
-      state.backgroundSessionIds
-        .map((id) => state.sessionMetadata.get(id))
-        .filter((m): m is SessionMetadata => m !== undefined)
-  )
-}
-
-/**
- * 获取已完成通知列表
- * 使用缓存避免数组实例变化导致的无限更新
- */
-export function useCompletedNotifications(): SessionMetadata[] {
-  return useStore(
-    sessionStoreManager,
-    (state) =>
-      state.completedNotifications
-        .map((id) => state.sessionMetadata.get(id))
-        .filter((m): m is SessionMetadata => m !== undefined)
-  )
 }
 
 /**
