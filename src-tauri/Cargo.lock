@@ -3827,7 +3827,7 @@ dependencies = [
 
 [[package]]
 name = "polaris"
-version = "10.6.2"
+version = "10.6.3"
 dependencies = [
  "aes",
  "async-stream",
