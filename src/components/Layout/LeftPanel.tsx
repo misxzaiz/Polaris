@@ -22,7 +22,6 @@ import { useViewStore, LeftPanelType } from '@/stores/viewStore'
 import { pluginPanelRegistry } from '@/plugin-system/panelRegistry'
 import { PluginPanelHost } from '../Plugins/PluginPanelHost'
 import { ResizeHandle } from '../Common'
-import { useTransitionState } from '@/hooks/useTransitionState'
 
 interface LeftPanelProps {
   children?: ReactNode
@@ -62,14 +61,14 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   // 抽屉形态：全屏展开态 + Escape 关闭
   const [expanded, setExpanded] = useState(false)
   const drawerRef = useRef<HTMLElement>(null)
-  // 进出场动画：exit() 触发退场，结束后再调 onClose 卸载
-  const { mounted, phase, exit } = useTransitionState({
-    duration: 240,
-    onExited: onClose,
-  })
+  // 关闭：同步执行 onClose（→ closeLeftPanel 立即置 leftPanelType='none'）。
+  // 不再用 useTransitionState：LeftPanel 保活常驻挂载，其 phase 会粘滞在
+  // 'exiting'（exit() 同值 setPhase 幂等 bail out），导致再次打开后遮罩卡
+  // 'animate-mask-out'（无 forwards，播完 opacity 回 1 → 全黑），且 × 关不掉。
+  // 退场淡出由 App.tsx 的 leftPanelKept/leaving（150ms）承接。
   const handleClose = useCallback(() => {
-    exit()
-  }, [exit])
+    onClose?.()
+  }, [onClose])
 
   // Escape 键关闭（抽屉形态）
   useEffect(() => {
@@ -90,12 +89,10 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
 
   // 抽屉打开时将焦点移入
   useEffect(() => {
-    if (compact && panelVisible && mounted) {
+    if (compact && panelVisible) {
       drawerRef.current?.focus()
     }
-  }, [compact, panelVisible, mounted])
-
-  const exiting = phase === 'exiting'
+  }, [compact, panelVisible])
 
   // 抽屉下的操作栏（独立 sibling，不进 aside，不触发 children 卸载）
   const drawerToolbar = compact && panelVisible && (
@@ -119,10 +116,11 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
     </div>
   )
 
-  // 抽屉遮罩（独立 sibling）
+  // 抽屉遮罩（独立 sibling）。入场淡入；退场由 aside 的 leaving 淡出承接
+  // （App.tsx 在 hasLeftPanel true→false 时 leftPanelKept=true，150ms 后清）
   const drawerMask = compact && panelVisible && (
     <div
-      className={`fixed inset-0 z-50 bg-black/50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+      className={`fixed inset-0 z-50 bg-black/50 ${leaving ? 'opacity-0' : 'animate-mask-in'}`}
       onClick={handleClose}
     />
   )
