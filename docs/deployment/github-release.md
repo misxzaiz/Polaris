@@ -171,6 +171,36 @@ git push origin vx.x.x
 
 ---
 
+## v10.6.4 构建记录
+
+**构建时间**: 2026-10-05 (UTC)
+**Release 页面**: https://github.com/misxzaiz/Polaris/releases/tag/v10.6.4
+
+### 构建产物
+
+| 产物 | 大小 | 平台 | 说明 |
+|---|---|---|---|
+| `polaris_10.6.4_x64-setup.exe` | - | Windows x64 | NSIS 安装程序 |
+| `polaris_10.6.4_x64_en-US.msi` | - | Windows x64 | MSI 安装程序 |
+| `polaris_10.6.4_amd64.deb` | - | Linux x64 | Debian/Ubuntu 安装包 |
+| `polaris-10.6.4-1.x86_64.rpm` | - | Linux x64 | Red Hat/Fedora 安装包 |
+| `polaris_10.6.4_amd64.AppImage` | - | Linux x64 | 便携版（双击运行） |
+| `polaris-web-10.6.4-win-x64.zip` | - | Windows x64 | Web 独立服务 |
+| `polaris-web-10.6.4-linux-x86_64.tar.gz` | - | Linux x64 | Web 独立服务 |
+| `polaris-web-10.6.4-macos-arm64.tar.gz` | - | macOS ARM64 | Web 独立服务 |
+| `polaris-mobile-10.6.4.apk` | - | Android arm64-v8a | Android APK |
+
+### 自动更新说明
+
+`src-tauri/tauri.conf.json` 中 `bundle.createUpdaterArtifacts` 为 `false`，本版本**不支持 Tauri 自动更新**（不生成 `latest.json` 与 `.sig`）。updater 端点仍指向 `https://github.com/misxzaiz/Polaris/releases/latest/download/latest.json`，客户端检查更新将得到空结果。
+
+### 变更内容
+
+- fix(layout): 左侧抽屉 × 关不掉的 phase 粘滞死锁 — 移除 useTransitionState 异步退出链路改为同步 onClose（closeLeftPanel 立即置 none 并持久化）；遮罩退场态改用 App.tsx leaving prop，与 aside 淡出同源；焦点移入条件去掉 mounted。LeftPanel 保活后常驻挂载，旧 exit() 同值幂等 bail out 导致 phase 粘滞 exiting、onExited 永不触发
+- refactor(store): 移除 lastAccessedAt LRU 追踪与后台批量操作 — 删除 touchSession 及创建/切换/AI 事件路由时的 lastAccessedAt 更新；删除 interruptAllBackground 及 useBackgroundSessions/useCompletedNotifications；ActiveExecutionList 改用 updatedAt 作为排序基准；SessionMessagesView 流式合并改用 scrollIsStreaming 修复中间态丢消息
+
+---
+
 ## v10.6.3 构建记录
 
 **构建时间**: 2026-10-05 (UTC)
