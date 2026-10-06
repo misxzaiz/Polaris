@@ -24,6 +24,11 @@ import { bashCap } from './caps/bash.ts';
 import { configCap } from './caps/config.ts';
 import { historyCap } from './caps/history.ts';
 import { createAiChatCap } from './caps/ai.ts';
+import { auditCap, setAuditEmitter } from './caps/audit.ts';
+import { fsCap } from './caps/fs.ts';
+import { httpCap } from './caps/http.ts';
+import { taskCap } from './caps/task.ts';
+import { timeCap } from './caps/time.ts';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,8 +43,12 @@ async function main() {
   const policy = new DefaultPermission([
     // Remote 默认允许的能力(本地开发宽松)
     'cap.echo', 'cap.kv', 'cap.bash', 'cap.config', 'cap.history', 'cap.ai.chat',
+    'cap.audit', 'cap.fs', 'cap.http', 'cap.task', 'cap.time',
   ]);
   const router = new Router(policy, bus);
+
+  // 注入 audit 事件推送(让 audit.record 推到 EventBus)
+  setAuditEmitter((e) => bus.emit({ ...e, type: e.type }));
 
   // 2. 注册内置 cap
   router.register(echoCap);
@@ -47,6 +56,11 @@ async function main() {
   router.register(bashCap);
   router.register(configCap);
   router.register(historyCap);
+  router.register(auditCap);
+  router.register(fsCap);
+  router.register(httpCap);
+  router.register(taskCap);
+  router.register(timeCap);
   router.register(createAiChatCap(router));
 
   // 3. 加载外部插件
@@ -67,7 +81,10 @@ async function main() {
   startServer(router, bus, {
     port,
     token,
-    remoteAllow: ['cap.echo', 'cap.kv', 'cap.bash', 'cap.config', 'cap.history', 'cap.ai.chat'],
+    remoteAllow: [
+      'cap.echo', 'cap.kv', 'cap.bash', 'cap.config', 'cap.history', 'cap.ai.chat',
+      'cap.audit', 'cap.fs', 'cap.http', 'cap.task', 'cap.time',
+    ],
   });
 
   // 6. 优雅退出

@@ -13,11 +13,12 @@
  */
 
 import type {
-  Capability, CapabilityId, CallContext, CapabilityEvent,
+  Capability, CapabilityId, CallContext,
   Envelope, MsgId, PermissionPolicy, Reply, Source, StreamingCapability,
   TraceId, Value,
 } from '../contracts.ts';
 import type { EventBus } from './eventbus.ts';
+import { record, setAuditEmitter, type AuditRecord } from '../caps/audit.ts';
 
 export class Router {
   private caps = new Map<CapabilityId, Capability>();
@@ -76,22 +77,26 @@ export class Router {
     trace: TraceId,
     msgId: MsgId,
   ): Promise<Reply> {
+    const startTs = Date.now();
+    const sourceKind = source.kind;
+    // 审计开关: cap.audit 自身不审计(避免循环)
+    const shouldAudit = capId !== 'cap.audit';
+
     // 1. 权限 gate
     const verdict = this.policy.check(capId, source);
     if (verdict === 'deny') {
-      this.audit('deny', capId, source, 'permission denied');
+      if (shouldAudit) record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { error: 'permission denied' }, 0, 'deny', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error: `permission denied: ${capId}` } };
     }
     if (verdict === 'prompt') {
-      // 预览版无 Shell 审批通道,降级 deny
-      this.audit('prompt-deny', capId, source, 'prompt unavailable in preview');
+      if (shouldAudit) record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { error: 'prompt unavailable' }, 0, 'prompt-deny', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error: 'interactive permission not available' } };
     }
 
     // 2. 找句柄
     const cap = this.caps.get(capId);
     if (!cap) {
-      this.audit('deny', capId, source, 'capability not found');
+      if (shouldAudit) record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { error: 'capability not found' }, 0, 'deny', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error: `capability not found: ${capId}` } };
     }
 
@@ -105,11 +110,13 @@ export class Router {
 
     try {
       const data = await cap.invoke(payload, ctx);
-      this.audit('allow', capId, source, 'ok');
+      const durationMs = Date.now() - startTs;
+      if (shouldAudit) record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { ok: true, data }, durationMs, 'allow', startTs));
       return { msg_id: msgId, trace, result: { ok: true, data } };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
-      this.audit('allow-error', capId, source, error);
+      const durationMs = Date.now() - startTs;
+      if (shouldAudit) record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { ok: false, error }, durationMs, 'allow-error', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error } };
     }
   }
@@ -122,12 +129,17 @@ export class Router {
   ): Promise<Reply> {
     const trace = newTrace();
     const msgId = newMsgId();
+    const startTs = Date.now();
+    const sourceKind = source.kind;
+
     const verdict = this.policy.check(capId, source);
     if (verdict !== 'allow') {
+      record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { error: 'permission denied' }, 0, 'deny', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error: `permission denied: ${capId}` } };
     }
     const cap = this.streaming.get(capId);
     if (!cap) {
+      record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { error: 'streaming capability not found' }, 0, 'deny', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error: `streaming capability not found: ${capId}` } };
     }
     const ctx: CallContext = {
@@ -138,16 +150,23 @@ export class Router {
     };
     try {
       const { streamId } = await cap.stream(payload, ctx);
+      const durationMs = Date.now() - startTs;
+      record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { ok: true, streamId }, durationMs, 'stream-start', startTs));
       return { msg_id: msgId, trace, result: { ok: true, data: { stream: true, streamId } } };
     } catch (err) {
       const error = err instanceof Error ? err.message : String(err);
+      const durationMs = Date.now() - startTs;
+      record(this.makeRecord(trace, msgId, capId, sourceKind, payload, { ok: false, error }, durationMs, 'stream-error', startTs));
       return { msg_id: msgId, trace, result: { ok: false, error } };
     }
   }
 
-  private audit(kind: string, capId: CapabilityId, source: Source, detail: string): void {
-    // 预览版: console 审计; 发行版接 AuditSink(文件/SQLite)
-    console.log(`[audit] ${kind} ${capId} src=${source.kind} ${detail}`);
+  /** 构造审计记录 */
+  private makeRecord(
+    trace: TraceId, msgId: MsgId, capId: CapabilityId, source: string,
+    params: Value, result: Value, durationMs: number, kind: string, ts: number,
+  ): AuditRecord {
+    return { trace, msgId, cap: capId, source, params, result, durationMs, kind, ts };
   }
 }
 

@@ -21,7 +21,7 @@ npm start          # tsx src/main.ts，冷启 <2s
 
 访问 `http://localhost:9825`。
 
-## 能力清单（6 内置 + 1 插件示例）
+## 能力清单（11 内置 + 1 插件示例）
 
 | Cap | 说明 | 流式 |
 |---|---|---|
@@ -30,8 +30,33 @@ npm start          # tsx src/main.ts，冷启 <2s
 | `cap.bash` | Shell 任务，run/status/log/wait/kill，默认异步后台任务 | 否 |
 | `cap.config` | 配置读写，get/set/patch，存于 cap.kv(domain=config) | 否 |
 | `cap.history` | 会话历史 JSONL，append/list/get/clear/sessions | 否 |
+| `cap.audit` | 审计/事件流，list/get/byTrace/byCap/recent/stats/clear | 否 |
+| `cap.fs` | 文件系统（DataRoot 沙箱），read/write/append/list/stat/mkdir/delete/rename | 否 |
+| `cap.http` | HTTP 客户端，get/post/put/patch/delete/head | 否 |
+| `cap.task` | 任务管理（复用 bash 任务），list/get/kill/wait/clear | 否 |
+| `cap.time` | 时间工具，now/format/sleep/timestamp | 否 |
 | `cap.ai.chat` | AI 对话，流式 + 工具调用，所有 cap 自动暴露为工具 | **是** |
 | `cap.shell.info` | 插件示例，返回平台/Node 信息 | 否 |
+
+## 事件流 / 审计
+
+每次 dispatch 自动产生审计记录，经 `cap.audit` 持久化到 SQLite（`audit` 表），含：
+- `trace` / `msgId` — 全链路追溯
+- `cap` / `source` — 调用目标与来源
+- `params` / `result` — 请求与响应内容
+- `durationMs` — 耗时
+- `kind` — allow/deny/allow-error/prompt-deny/stream-start/stream-error
+- `ts` — 时间戳
+
+审计记录同时推送 `audit.event` 事件到 EventBus，前端可实时观察。`cap.audit` 自身的查询不被审计（避免循环）。
+
+AI 可通过 `cap.audit` 查询历史请求：
+```
+cap.audit { action: "byCap", cap: "cap.bash", limit: 10 }  // 查 bash 调用历史
+cap.audit { action: "byTrace", trace: "trace-xxx" }        // 按链路追溯
+cap.audit { action: "recent", since: 1696000000000 }      // 增量拉取
+cap.audit { action: "stats" }                               // 统计
+```
 
 ## HTTP API
 
