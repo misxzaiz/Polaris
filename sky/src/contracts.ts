@@ -170,3 +170,51 @@ export class DefaultPermission implements PermissionPolicy {
     }
   }
 }
+
+// ============================================================================
+// Interceptor — 拦截器(可插拔链, before/after 双向)
+// ============================================================================
+
+/**
+ * Dispatch 上下文 — 拦截器与能力共享的状态对象
+ *
+ * 拦截器间经 ctx.state 横向通信(如 permission 写 verdict, audit 读 verdict).
+ * result 在 after 链时填充(invoke 后).
+ */
+export interface DispatchContext {
+  trace: TraceId;
+  msgId: MsgId;
+  capId: CapabilityId;
+  params: Value;
+  source: Source;
+  /** 拦截器间共享状态 */
+  state: Record<string, Value>;
+  /** invoke 后的结果(after 链可用) */
+  result?: { ok: true; data: Value } | { ok: false; error: string };
+  startTs: number;
+}
+
+/** before 拦截器返回值 */
+export type BeforeResult =
+  | { kind: 'continue' }
+  | { kind: 'continue'; params: Value }   // 改写参数后继续
+  | { kind: 'deny'; error: string }       // 终止链, 返回错误
+  | { kind: 'shortCircuit'; result: Value }; // 终止链, 直接返回此结果(如缓存命中)
+
+/** after 拦截器返回值 */
+export type AfterResult =
+  | { kind: 'continue' }
+  | { kind: 'continue'; result: { ok: true; data: Value } | { ok: false; error: string } };
+
+/**
+ * Interceptor — 拦截器接口
+ *
+ * 注册时指定 priority(before 升序, after 逆序). 同 priority 按注册顺序.
+ * permission/audit/rateLimit 等都实现此接口, 经 cap.interceptor 注册.
+ */
+export interface Interceptor {
+  name: string;
+  priority: number; // 默认 100, 越小越先执行
+  before?(ctx: DispatchContext): Promise<BeforeResult>;
+  after?(ctx: DispatchContext): Promise<AfterResult>;
+}

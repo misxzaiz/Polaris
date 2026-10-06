@@ -34,5 +34,11 @@ export class EventBus {
     return this.history.slice(seq);
   }
 
+  /** 清空历史 */
+  clear(): void {
+    this.history.length = 0;
+  }
+
   get length(): number { return this.history.length; }
+  get subscriberCount(): number { return this.subs.size; }
 }

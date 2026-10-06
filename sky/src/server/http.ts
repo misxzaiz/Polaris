@@ -27,8 +27,6 @@ import { SHELL_HTML } from '../web/shell.ts';
 export interface ServerOptions {
   port: number;
   token?: string;
-  /** Remote 允许调用的 cap 列表(权限白名单) */
-  remoteAllow: string[];
 }
 
 export function startServer(

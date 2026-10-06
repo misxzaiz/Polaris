@@ -1,0 +1,6 @@
+{
+  "id": "plugin.ai-installed",
+  "name": "AI Installed Plugin",
+  "version": "0.1.0",
+  "caps": ["cap.greet"]
+}
