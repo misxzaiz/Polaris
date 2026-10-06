@@ -23,6 +23,8 @@ import type { Router } from './router.ts';
 import type { EventBus } from './eventbus.ts';
 import type { Source } from '../contracts.ts';
 import { SHELL_HTML } from '../web/shell.ts';
+import { shellRegistry } from '../caps/ui/shell-registry.ts';
+import { setUiEmitter, getUiState } from '../caps/ui/state.ts';
 
 export interface ServerOptions {
   port: number;
@@ -51,6 +53,10 @@ export function startServer(
       // GET /api/caps
       if (url === '/api/caps' && req.method === 'GET') {
         return json(res, 200, { caps: router.list() });
+      }
+      // GET /api/ui-state — UI State 初始同步
+      if (url === '/api/ui-state' && req.method === 'GET') {
+        return json(res, 200, getUiState());
       }
       // GET /api/config
       if (url === '/api/config' && req.method === 'GET') {
@@ -88,6 +94,14 @@ export function startServer(
 
   // WebSocket
   const wss = new WebSocketServer({ server, path: '/ws' });
+  // UI State 变化 → 推给所有连着的 Shell
+  setUiEmitter((state) => {
+    for (const info of shellRegistry.list()) {
+      // 推送经 bus 统一走, 这里直接对每个 shell 的 ws 发 ui.update
+    }
+    bus.emit({ type: 'ui.update', data: state, ts: Date.now() });
+  });
+
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
     const source = resolveSource(req, opts.token);
     if (source.kind === 'remote' && !(source as { token: string }).token) {
@@ -95,6 +109,7 @@ export function startServer(
       return;
     }
     const subId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    let shellId: string | null = null;
     const unsub = bus.subscribe(subId, (event) => {
       send(ws, { type: 'event', event });
     });
@@ -107,6 +122,15 @@ export function startServer(
             ? await router.dispatchStream(msg.cap, msg.params ?? {}, source)
             : await router.dispatch(msg.cap, msg.params ?? {}, source);
           send(ws, { type: 'reply', reqId: msg.reqId, reply });
+        } else if (msg.type === 'shell-register') {
+          // Shell 声明自己提供的前端 cap
+          shellId = `shell-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+          shellRegistry.register(shellId, ws, msg.caps ?? []);
+          // 立即推当前 UI State (新连上的 Shell 同步状态)
+          send(ws, { type: 'event', event: { type: 'ui.update', data: getUiState(), ts: Date.now() } });
+        } else if (msg.type === 'shell-invoke-result') {
+          // Shell 回填执行结果
+          if (shellId) shellRegistry.resolveShellInvoke(shellId, msg.reqId, msg.result);
         } else if (msg.type === 'ping') {
           send(ws, { type: 'pong' });
         }
@@ -116,7 +140,10 @@ export function startServer(
       }
     });
 
-    ws.on('close', () => unsub());
+    ws.on('close', () => {
+      unsub();
+      if (shellId) shellRegistry.unregister(shellId);
+    });
   });
 
   server.listen(opts.port, () => {

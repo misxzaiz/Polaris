@@ -47,6 +47,16 @@ import { createEngineCap } from './caps/engine.ts';
 import { createStorageCap } from './caps/storage.ts';
 import { createBusCap } from './caps/bus.ts';
 
+// UI cap (前端样式自动演进)
+import { initUiState } from './caps/ui/state.ts';
+import { uiStyleCap } from './caps/ui/style.ts';
+import { uiThemeCap } from './caps/ui/theme.ts';
+import { uiLayoutCap } from './caps/ui/layout.ts';
+import { uiComponentCap } from './caps/ui/component.ts';
+import { uiSnapshotCap } from './caps/ui/snapshot.ts';
+import { createUiObserveCap } from './caps/ui/observe.ts';
+import { shellRegistry } from './caps/ui/shell-registry.ts';
+
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -90,6 +100,15 @@ async function main() {
   router.register(createEngineCap());
   router.register(createStorageCap());
   router.register(createBusCap(bus));
+
+  // 4.5 UI cap (前端样式自动演进, AI 可操作前端)
+  initUiState();
+  router.register(uiStyleCap);
+  router.register(uiThemeCap);
+  router.register(uiLayoutCap);
+  router.register(uiComponentCap);
+  router.register(uiSnapshotCap);
+  router.register(createUiObserveCap(shellRegistry));
 
   // 5. 加载外部插件 (启动时静态加载)
   const n = await loadPlugins(router, pluginsDir);

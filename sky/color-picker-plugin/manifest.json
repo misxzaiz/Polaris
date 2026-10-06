@@ -1,0 +1,6 @@
+{
+  "id": "plugin.color-picker",
+  "name": "Color Picker Plugin",
+  "version": "0.1.0",
+  "caps": ["cap.color"]
+}
