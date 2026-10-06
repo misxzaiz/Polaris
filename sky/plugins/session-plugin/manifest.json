@@ -1,0 +1,7 @@
+{
+  "id": "plugin.session",
+  "name": "Session Manager Plugin",
+  "version": "0.1.0",
+  "description": "Session management: list/create/rename/delete/switch/getCurrent. Wraps cap.history + cap.kv for meta (title/createdAt/lastActive).",
+  "caps": ["cap.session"]
+}

@@ -92,11 +92,30 @@ async function runAiLoop(
     ? availableTools.filter(c => p.tools!.includes(c.id))
     : availableTools;
 
-  const messages: Array<Record<string, unknown>> = [...p.messages];
+  // 续聊: 若 sessionId 有值, 先从 cap.history 读历史拼进上下文.
+  // 前端只发当前 user 消息, 后端补全 — 续聊逻辑集中一处.
+  let historyMsgs: Array<{ role: string; content: string }> = [];
+  if (p.sessionId) {
+    const histReply = await ctx.dispatch('cap.history', {
+      action: 'list', sessionId: p.sessionId,
+    });
+    if (histReply.result.ok) {
+      historyMsgs = (histReply.result.data as { messages?: Array<{ role: string; content: string }> }).messages ?? [];
+    }
+  }
+  // 拼接: 历史 (剔除纯工具调用消息, AI API 不认 role=tool 无 tool_call_id 的孤儿)
+  //   + 当前用户消息
+  const filteredHist = historyMsgs.filter(m =>
+    m.role === 'user' || m.role === 'assistant'
+  ).map(m => ({
+    role: m.role,
+    content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
+  }));
+  const messages: Array<Record<string, unknown>> = [...filteredHist, ...p.messages];
 
   // 持久化用户消息
   if (p.sessionId) {
-    const last = messages[messages.length - 1];
+    const last = p.messages[p.messages.length - 1];
     if (last?.role === 'user') {
       await ctx.dispatch('cap.history', {
         action: 'append', sessionId: p.sessionId,

@@ -472,6 +472,36 @@ function render() {
   root.setProperty('--msg-assistant-maxw', c.assistantMaxWidth || '100%');
   root.setProperty('--chat-gap', c.messageGap || '10px');
   root.setProperty('--chat-fontsize', (c.fontSize || 15) + 'px');
+  // 动态渲染 custom 组件 (AI 经 cap.ui.component 添加的)
+  renderComponents();
+}
+
+// ---------------------------------------------------------------- 动态组件渲染
+// mountPoint 映射: sidebar→comp-caps-list, main→comp-chat, right→comp-config
+const MOUNT_MAP = { sidebar: 'comp-caps-list', main: 'comp-chat', right: 'comp-config' };
+const renderedComponents = new Set();
+
+function renderComponents() {
+  if (!uiState || !uiState.components) return;
+  for (const comp of uiState.components) {
+    if (comp.type !== 'custom') continue;
+    if (renderedComponents.has(comp.id)) continue; // 只渲染一次 (避免重复)
+    const hostId = MOUNT_MAP[comp.mountPoint] || MOUNT_MAP.right;
+    const host = document.getElementById(hostId);
+    if (!host) continue;
+    const wrapper = document.createElement('div');
+    wrapper.className = 'sky-custom-comp';
+    wrapper.dataset.compId = comp.id;
+    if (comp.props && comp.props.html) {
+      wrapper.innerHTML = comp.props.html;
+    }
+    host.appendChild(wrapper);
+    renderedComponents.add(comp.id);
+    // 绑定 onclick (如果 props 提供)
+    if (comp.props && comp.props.onClick) {
+      // 简化: onClick 是字符串描述, 不实际执行 (安全考虑)
+    }
+  }
 }
 
 // ---------------------------------------------------------------- 内置组件
@@ -689,17 +719,23 @@ function send() {
   currentMsgEl = addMsg('assistant', '');
   currentStreamId = null;
   pendingEvents.length = 0;
+  // 续聊: 若 session-id 为空, 自动生成并填入 (下一轮起带历史)
+  const sessionIdEl = document.getElementById('session-id');
+  let sessionId = (sessionIdEl && sessionIdEl.value) || '';
+  if (!sessionId) {
+    sessionId = 'session-' + Date.now().toString(36);
+    if (sessionIdEl) sessionIdEl.value = sessionId;
+  }
   // 标记上一轮 tool-group 关闭 (新一轮工具调用会建新 group)
   const messages = document.getElementById('messages');
   if (messages) {
     messages.querySelectorAll('.tool-group').forEach(g => { g.dataset.closed = '1'; });
   }
   currentRoundBlocks = [];
-  const sessionIdEl = document.getElementById('session-id');
   const msg = {
     type: 'dispatch', reqId: 'req-' + Date.now().toString(36),
     cap: 'cap.ai.chat', stream: true,
-    params: { messages: [{ role: 'user', content: text }], sessionId: (sessionIdEl && sessionIdEl.value) || undefined },
+    params: { messages: [{ role: 'user', content: text }], sessionId },
   };
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   else pendingDispatch.push(msg);

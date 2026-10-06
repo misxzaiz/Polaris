@@ -1,0 +1,7 @@
+{
+  "id": "plugin.workspace",
+  "name": "Workspace Manager Plugin",
+  "version": "0.1.0",
+  "description": "Multi-workspace management: set/get/list/switch/delete. Wraps cap.kv (meta) + cap.fs.list (file tree, depth<=2, excludes node_modules/.git).",
+  "caps": ["cap.workspace"]
+}
