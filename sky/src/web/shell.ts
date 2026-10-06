@@ -1,70 +1,179 @@
 /**
- * Web Shell — 响应式 UI State 渲染器
+ * Web Shell — Mobile-First 响应式渲染器
  *
- * 前端 = UI State 的渲染结果. AI 改状态 (cap.ui.*) → WS 推 ui.update → 重渲染.
+ * 手机优先 (<768px):
+ * - 单栏全屏 + 底部 Tab (聊天/Caps/设置) + 顶栏
+ * - safe-area (刘海/手势条) + visualViewport 软键盘适配
+ * - 触摸目标 >= 44px, 输入 16px 防 iOS 自动缩放
  *
- * 四层渲染:
- * 1. theme tokens → CSS 变量 (:root)
- * 2. layout 树 → grid 结构
- * 3. components → 挂到 region
- * 4. styles → 注入 <style>
+ * 桌面 (>=768px): 三栏 grid (自动, 同一份 UI State)
  *
- * Shell 反向注册: 连 WS 后声明提供 cap.ui.observe (screenshot/inspect/metrics),
- * 后端经 shell-invoke 反向调用, AI 能"看见"渲染效果 (闭环演进).
+ * AI 能力不变: cap.ui.* 改 UI State → WS ui.update → 热重渲染 (双端通用)
  */
 
 export const SHELL_HTML = `<!DOCTYPE html>
 <html lang="zh">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0e27">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Sky · Capability OS</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overscroll-behavior: none; }
   body {
-    font: var(--sky-size)/var(--sky-line-height) var(--sky-font);
-    background: var(--sky-bg); color: var(--sky-text);
+    font: 16px/var(--sky-line-height, 1.5) var(--sky-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    background: var(--sky-bg, #0d1117); color: var(--sky-text, #c9d1d9);
     overflow: hidden;
+    /* safe-area: 刘海/手势条 */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
-  #sky-root { display: grid; height: 100vh; }
-  .sky-region { overflow: auto; border-right: 1px solid var(--sky-border); padding: var(--sky-md); }
-  .sky-region:last-child { border-right: none; }
-  h2 { font-size: var(--sky-size-sm); text-transform: uppercase; color: var(--sky-text-muted); letter-spacing: 0.5px; margin-bottom: var(--sky-sm); }
-  .cap-item { background: var(--sky-bg-elevated); padding: var(--sky-sm) calc(var(--sky-sm) + 2px); border-radius: var(--sky-md); margin-bottom: 6px; font-size: var(--sky-size-sm); }
-  .cap-id { color: var(--sky-accent); font-family: var(--sky-mono); }
-  .cap-desc { color: var(--sky-text-muted); margin-top: 2px; }
-  .tag { display: inline-block; padding: 1px 6px; border-radius: var(--sky-sm); background: var(--sky-primary); color: #fff; font-size: 10px; margin-left: 6px; }
-  .msg { padding: var(--sky-sm) calc(var(--sky-sm) + 2px); border-radius: var(--sky-md); margin-bottom: var(--sky-sm); max-width: 85%; word-wrap: break-word; white-space: pre-wrap; }
-  .msg.user { background: var(--sky-primary); color: #fff; margin-left: auto; }
-  .msg.assistant { background: var(--sky-bg-elevated); }
-  .msg.tool { background: var(--sky-border); font-family: var(--sky-mono); font-size: var(--sky-size-sm); color: var(--sky-text-muted); }
-  .msg.toolResult { background: var(--sky-bg); border: 1px solid var(--sky-border); font-family: var(--sky-mono); font-size: var(--sky-size-sm); }
-  .input-row { display: flex; gap: var(--sky-sm); padding: calc(var(--sky-sm) + 4px); border-top: 1px solid var(--sky-border); }
-  .input-row input { flex: 1; background: var(--sky-bg-input); border: 1px solid var(--sky-border); color: var(--sky-text); border-radius: var(--sky-md); padding: var(--sky-sm) calc(var(--sky-sm) + 4px); font: inherit; }
-  .input-row button { background: var(--sky-success); color: #fff; border: none; border-radius: var(--sky-md); padding: 0 var(--sky-lg); cursor: pointer; }
-  .input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
-  .chat-area { flex: 1; overflow: auto; padding: var(--sky-md); display: flex; flex-direction: column; }
-  .field { margin-bottom: 10px; }
-  .field label { display: block; font-size: 11px; color: var(--sky-text-muted); margin-bottom: 4px; }
-  .field input { width: 100%; background: var(--sky-bg-input); border: 1px solid var(--sky-border); color: var(--sky-text); border-radius: var(--sky-sm); padding: 6px var(--sky-sm); font: inherit; }
-  .btn { background: var(--sky-primary); color: #fff; border: none; border-radius: var(--sky-sm); padding: 6px calc(var(--sky-sm) + 4px); cursor: pointer; font: inherit; }
-  .btn.secondary { background: var(--sky-border); color: var(--sky-text); }
-  .status { font-size: 11px; color: var(--sky-text-muted); margin-top: var(--sky-sm); }
-  .status.ok { color: var(--sky-success); }
-  .status.err { color: var(--sky-danger); }
-  .side-panel > h2 { margin-top: var(--sky-lg); }
-  .side-panel > h2:first-child { margin-top: 0; }
+
+  /* ============ 布局骨架 ============ */
+  /* 手机: 顶栏 + 内容 + Tab栏 */
+  #sky-root {
+    display: flex; flex-direction: column; height: 100vh; height: 100dvh;
+  }
+  #sky-topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(var(--safe-top) + 8px) 12px 8px;
+    background: var(--sky-bg-elevated, #161b22);
+    border-bottom: 1px solid var(--sky-border, #21262d);
+    flex-shrink: 0;
+  }
+  #sky-topbar .title { font-weight: 600; font-size: 15px; flex: 1; }
+  #sky-topbar .badge {
+    font-size: 11px; color: var(--sky-text-muted, #8b949e);
+    background: var(--sky-bg, #0d1117); padding: 2px 8px; border-radius: 10px;
+  }
+  #sky-content { flex: 1; overflow: hidden; position: relative; }
+  .sky-page {
+    position: absolute; inset: 0; overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--sky-md, 16px);
+    padding-bottom: calc(16px + var(--safe-bottom));
+    display: none;
+  }
+  .sky-page.active { display: block; }
+  #sky-tabbar {
+    display: flex;
+    background: var(--sky-bg-elevated, #161b22);
+    border-top: 1px solid var(--sky-border, #21262d);
+    padding-bottom: var(--safe-bottom);
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
+    padding: 8px 0 6px; min-height: 48px;
+    background: none; border: none; color: var(--sky-text-muted, #8b949e);
+    font-size: 11px; cursor: pointer;
+  }
+  .tab-btn.active { color: var(--sky-accent, #58a6ff); }
+  .tab-btn .icon { font-size: 18px; line-height: 1; }
+
+  /* 桌面: 三栏 (Tab 栏隐藏, 页面全显) */
+  @media (min-width: 768px) {
+    #sky-tabbar, #sky-topbar { display: none; }
+    #sky-content { display: grid; grid-template-columns: var(--desktop-cols, 260px 1fr 340px); }
+    .sky-page { display: block; position: static; border-right: 1px solid var(--sky-border, #21262d); padding-top: var(--sky-md, 16px); }
+    .sky-page:last-child { border-right: none; }
+  }
+
+  /* ============ 组件 ============ */
+  h2 { font-size: 13px; text-transform: uppercase; color: var(--sky-text-muted, #8b949e); letter-spacing: 0.5px; margin-bottom: var(--sky-sm, 8px); }
+  .cap-item {
+    background: var(--sky-bg-elevated, #161b22);
+    padding: 10px 12px; border-radius: var(--sky-md, 6px); margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .cap-id { color: var(--sky-accent, #58a6ff); font-family: var(--sky-mono, ui-monospace, monospace); font-size: 13px; }
+  .cap-desc { color: var(--sky-text-muted, #8b949e); margin-top: 2px; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 6px; border-radius: 8px; background: var(--sky-primary, #1f6feb); color: #fff; font-size: 10px; margin-left: 6px; }
+
+  /* 聊天: 消息 */
+  #page-chat { display: none; flex-direction: column; padding: 0 !important; }
+  #page-chat.active { display: flex; }
+  @media (min-width: 768px) { #page-chat { display: flex; } }
+  #messages {
+    flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    padding: var(--sky-md, 16px);
+    display: flex; flex-direction: column;
+  }
+  .msg {
+    padding: 10px 12px; border-radius: var(--sky-md, 6px); margin-bottom: 8px;
+    max-width: 88%; word-wrap: break-word; white-space: pre-wrap;
+    font-size: 15px; line-height: 1.5;
+  }
+  .msg.user { background: var(--sky-primary, #1f6feb); color: #fff; margin-left: auto; border-bottom-right-radius: 2px; }
+  .msg.assistant { background: var(--sky-bg-elevated, #161b22); border-bottom-left-radius: 2px; }
+  .msg.tool { background: var(--sky-border, #21262d); font-family: var(--sky-mono, monospace); font-size: 12px; color: var(--sky-text-muted, #8b949e); }
+  .msg.toolResult { background: var(--sky-bg, #0d1117); border: 1px solid var(--sky-border, #21262d); font-family: var(--sky-mono, monospace); font-size: 12px; max-width: 95%; }
+  #input-bar {
+    display: flex; gap: 8px;
+    padding: 10px 12px calc(10px + var(--safe-bottom));
+    border-top: 1px solid var(--sky-border, #21262d);
+    background: var(--sky-bg-elevated, #161b22);
+    flex-shrink: 0;
+    /* 键盘弹出时由 JS 调整 padding-bottom */
+  }
+  #input {
+    flex: 1; background: var(--sky-bg-input, #0d1117);
+    border: 1px solid var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9);
+    border-radius: 20px; padding: 10px 16px;
+    font: inherit; font-size: 16px; /* 16px 防 iOS 聚焦缩放 */
+    min-height: 44px;
+  }
+  #input:focus { outline: none; border-color: var(--sky-accent, #58a6ff); }
+  #send-btn {
+    background: var(--sky-success, #238636); color: #fff; border: none;
+    border-radius: 20px; padding: 0 18px; min-height: 44px; min-width: 60px;
+    cursor: pointer; font: inherit; font-size: 15px;
+  }
+  #send-btn:disabled { opacity: 0.5; }
+
+  /* 设置面板 */
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--sky-text-muted, #8b949e); margin-bottom: 4px; }
+  .field input {
+    width: 100%; background: var(--sky-bg-input, #0d1117);
+    border: 1px solid var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9);
+    border-radius: var(--sky-sm, 4px); padding: 10px 12px;
+    font: inherit; font-size: 16px; min-height: 44px;
+  }
+  .btn {
+    background: var(--sky-primary, #1f6feb); color: #fff; border: none;
+    border-radius: var(--sky-sm, 4px); padding: 10px 16px; min-height: 44px;
+    cursor: pointer; font: inherit; font-size: 15px; width: 100%;
+  }
+  .btn.secondary { background: var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9); }
+  .status { font-size: 12px; color: var(--sky-text-muted, #8b949e); margin-top: 8px; min-height: 18px; }
+  .status.ok { color: var(--sky-success, #238636); }
+  .status.err { color: var(--sky-danger, #f85149); }
 </style>
 <style id="sky-dynamic"></style>
 </head>
 <body>
-<div id="sky-root"></div>
+<div id="sky-root">
+  <div id="sky-topbar">
+    <span class="title">Sky</span>
+    <span class="badge" id="cap-badge">...</span>
+  </div>
+  <div id="sky-content">
+    <div class="sky-page" id="page-caps"><div id="comp-caps-list"></div></div>
+    <div class="sky-page" id="page-chat"><div id="comp-chat" style="display:flex;flex-direction:column;height:100%"></div></div>
+    <div class="sky-page" id="page-settings"><div id="comp-config"></div></div>
+  </div>
+  <div id="sky-tabbar">
+    <button class="tab-btn" data-page="page-caps"><span class="icon">⚡</span>Caps</button>
+    <button class="tab-btn active" data-page="page-chat"><span class="icon">💬</span>聊天</button>
+    <button class="tab-btn" data-page="page-settings"><span class="icon">⚙️</span>设置</button>
+  </div>
+</div>
 
 <script>
-// ===========================================================================
-// Sky Shell runtime
-// ===========================================================================
 const $root = document.getElementById('sky-root');
 const dynamicStyle = document.getElementById('sky-dynamic');
 let ws = null;
@@ -73,6 +182,37 @@ let currentMsgEl = null;
 const pendingEvents = [];
 const pendingDispatch = [];
 let uiState = null;
+let streamingNotifyShown = false;
+
+// ---------------------------------------------------------------- Tab 切换 (手机)
+document.getElementById('sky-tabbar').addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  switchPage(btn.dataset.page);
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+});
+
+function switchPage(id) {
+  document.querySelectorAll('.sky-page').forEach(p => p.classList.toggle('active', p.id === id));
+  if (id === 'page-chat') scrollMessages();
+}
+
+// ---------------------------------------------------------------- 键盘适配 (visualViewport)
+const vv = window.visualViewport;
+if (vv) {
+  vv.addEventListener('resize', () => {
+    // 键盘弹出: viewport 高度变小 → input-bar 上移
+    // 用 dvh + 调整 content 高度
+    document.getElementById('sky-content').style.height = vv.height + 'px';
+    scrollMessages();
+  });
+  vv.addEventListener('scroll', scrollMessages);
+}
+
+function scrollMessages() {
+  const m = document.getElementById('messages');
+  if (m) m.scrollTop = m.scrollHeight;
+}
 
 // ---------------------------------------------------------------- WS
 function connectWs() {
@@ -81,7 +221,6 @@ function connectWs() {
   const url = proto + '://' + location.host + '/ws' + (token ? '?token=' + encodeURIComponent(token) : '');
   ws = new WebSocket(url);
   ws.onopen = () => {
-    // 反向注册: 本 Shell 提供 cap.ui.observe
     ws.send(JSON.stringify({ type: 'shell-register', caps: ['cap.ui.observe'] }));
     while (pendingDispatch.length) ws.send(JSON.stringify(pendingDispatch.shift()));
   };
@@ -98,14 +237,15 @@ function connectWs() {
         if (currentMsgEl && !currentMsgEl.textContent) {
           currentMsgEl.textContent = '错误: ' + (msg.reply?.result?.error || 'unknown');
         }
-        document.getElementById('send-btn').disabled = false;
+        const btn = document.getElementById('send-btn');
+        if (btn) btn.disabled = false;
       }
     }
   };
   ws.onclose = () => setTimeout(connectWs, 1000);
 }
 
-// ------------------------------------------------- Shell invoke (前端执行 cap)
+// ---------------------------------------------------------------- Shell invoke (前端执行 cap)
 async function handleShellInvoke(msg) {
   let result;
   try {
@@ -122,15 +262,14 @@ async function handleShellInvoke(msg) {
 
 async function observeInvoke(p) {
   if (p.action === 'screenshot') {
-    // 无依赖截图: DOM 序列化 + 布局信息 (AI 可读结构)
     const html = document.documentElement.outerHTML;
     return {
-      ok: true,
-      type: 'dom-snapshot',
-      note: 'DOM structure snapshot (no pixel capture in preview). Styles are in #sky-dynamic and :root CSS vars.',
-      size: html.length,
-      dom: html.slice(0, 50000),
+      ok: true, type: 'dom-snapshot',
+      note: 'DOM snapshot (no pixel capture in preview)',
+      size: html.length, dom: html.slice(0, 50000),
       viewport: { w: innerWidth, h: innerHeight },
+      isMobile: matchMedia('(max-width: 767px)').matches,
+      activePage: document.querySelector('.sky-page.active')?.id || null,
     };
   }
   if (p.action === 'inspect') {
@@ -148,7 +287,9 @@ async function observeInvoke(p) {
     return {
       ok: true,
       viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
-      rootRegions: [...$root.children].map(c => ({ id: c.id, w: c.offsetWidth, h: c.offsetHeight })),
+      isMobile: matchMedia('(max-width: 767px)').matches,
+      activePage: document.querySelector('.sky-page.active')?.id || null,
+      keyboardHeight: vv ? Math.max(0, innerHeight - vv.height - vv.offsetTop) : 0,
       scrollY: scrollY,
       title: document.title,
     };
@@ -156,10 +297,9 @@ async function observeInvoke(p) {
   return { ok: false, error: 'unknown observe action: ' + p.action };
 }
 
-// ------------------------------------------------- UI State 渲染
+// ---------------------------------------------------------------- UI State 渲染
 function render() {
   if (!uiState) return;
-  // 1. theme → CSS 变量
   const t = uiState.theme || {};
   let css = ':root{';
   for (const [k,v] of Object.entries(t.colors||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
@@ -168,131 +308,49 @@ function render() {
   for (const [k,v] of Object.entries(t.shadows||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
   for (const [k,v] of Object.entries(t.radii||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
   css += '}';
-  dynamicStyle.textContent = css;
-
-  // 2. styles 注入
   for (const rule of (uiState.styles||[])) {
     css += rule.selector + '{' + Object.entries(rule.properties||{}).map(([k,v])=>kebab(k)+':'+v).join(';') + '}';
   }
   dynamicStyle.textContent = css;
-
-  // 3. layout → grid columns
-  const regions = uiState.layout?.children || [];
-  const cols = regions.map(r => (r.props && r.props.width) ? r.props.width : '1fr');
-  $root.style.gridTemplateColumns = cols.join(' ');
-
-  // 4. components 挂到 region (保留 chat 动态内容: 仅首次创建, 之后只同步静态部分)
-  const existing = new Map([...$root.children].map(c => [c.id, c]));
-  for (const region of regions) {
-    let el = existing.get(region.id);
-    if (!el) {
-      el = document.createElement('div');
-      el.id = region.id;
-      el.className = 'sky-region';
-      $root.appendChild(el);
-    }
-    renderRegion(el, region);
-  }
-  // 移除多余 region
-  for (const [id, el] of existing) {
-    if (!regions.find(r => r.id === id)) el.remove();
+  // 手机端: 自定义 layout 树仅在桌面 grid 生效 (手机固定 Tab 结构, theme/styles 通用)
+  if (matchMedia('(min-width: 768px)').matches) {
+    const regions = uiState.layout?.children || [];
+    document.getElementById('sky-content').style.setProperty('--desktop-cols',
+      regions.map(r => (r.props && r.props.width) ? r.props.width : '1fr').join(' ') || '260px 1fr 340px');
   }
 }
 
-function renderRegion(el, region) {
-  const comps = (uiState.components||[]).filter(c => c.mountPoint === region.id);
-  // 对 chat 区: 保留已有动态子节点, 只补缺失组件
-  for (const comp of comps) {
-    let cel = document.getElementById('comp-' + comp.id);
-    if (cel && cel.dataset.type === comp.type) {
-      // custom 组件内容需更新
-      if (comp.type === 'custom' && cel.innerHTML !== (comp.props.html||'')) {
-        cel.innerHTML = comp.props.html || '';
-        applyCompCss(comp);
-      }
-      continue;
-    }
-    cel = document.createElement('div');
-    cel.id = 'comp-' + comp.id;
-    cel.dataset.type = comp.type;
-    // 先挂载到 DOM 再渲染组件 (组件内 bindXxx 需 getElementById 生效)
-    el.appendChild(cel);
-    renderComponent(cel, comp);
-  }
-  // 移除被删组件
-  for (const child of [...el.children]) {
-    const cid = child.id.replace('comp-','');
-    if (child.id.startsWith('comp-') && !comps.find(c => c.id === cid)) child.remove();
-  }
-}
-
-function renderComponent(el, comp) {
-  switch (comp.type) {
-    case 'caps-list':
-      el.innerHTML = '<h2>Caps (<span id="cap-count">0</span>)</h2><div id="cap-list"></div>';
-      loadCaps();
-      break;
-    case 'chat':
-      el.innerHTML =
-        '<div class="chat-area" id="messages">' +
-        '<div class="msg assistant">Sky 能力 OS. AI 可调用所有 cap, 包括 UI 演进 (cap.ui.*). 试试: "把主题换成 midnight" 或 "给按钮加圆角".</div>' +
-        '</div>' +
-        '<div class="input-row"><input id="input" type="text" placeholder="发送消息..." autocomplete="off">' +
-        '<button id="send-btn">发送</button></div>';
-      bindChat();
-      break;
-    case 'config':
-      el.className += ' side-panel';
-      el.innerHTML =
-        '<h2>AI 配置</h2>' +
-        '<div class="field"><label>Base URL</label><input id="base-url" type="text" placeholder="https://api.openai.com"></div>' +
-        '<div class="field"><label>API Key</label><input id="api-key" type="password" placeholder="sk-..."></div>' +
-        '<div class="field"><label>Model</label><input id="model" type="text" placeholder="gpt-4o-mini"></div>' +
-        '<button class="btn" id="save-config">保存配置</button><div class="status" id="config-status"></div>' +
-        '<h2>会话</h2><div class="field"><label>Session ID</label><input id="session-id" type="text" placeholder="留空=不持久化"></div>' +
-        '<button class="btn secondary" id="new-session">新会话</button>';
-      bindConfig();
-      break;
-    case 'custom':
-      el.innerHTML = comp.props.html || '';
-      applyCompCss(comp);
-      break;
-    default:
-      el.innerHTML = '<div class="cap-item">未知组件类型: ' + comp.type + '</div>';
-  }
-}
-
-function applyCompCss(comp) {
-  if (!comp.props.css) return;
-  let s = document.getElementById('comp-style-' + comp.id);
-  if (!s) {
-    s = document.createElement('style');
-    s.id = 'comp-style-' + comp.id;
-    document.head.appendChild(s);
-  }
-  s.textContent = comp.props.css;
-}
-
-// ------------------------------------------------- 内置组件逻辑
+// ---------------------------------------------------------------- 内置组件
 async function loadCaps() {
   const r = await fetch('/api/caps').then(r=>r.json());
   const caps = r.caps || [];
-  const cnt = document.getElementById('cap-count');
-  const list = document.getElementById('cap-list');
-  if (!cnt || !list) return;
-  cnt.textContent = caps.length;
-  list.innerHTML = caps.map(c =>
-    '<div class="cap-item"><div><span class="cap-id">' + c.id + '</span>' +
-    (c.streaming ? '<span class="tag">stream</span>' : '') + '</div>' +
-    '<div class="cap-desc">' + c.description + '</div></div>').join('');
+  const badge = document.getElementById('cap-badge');
+  if (badge) badge.textContent = caps.length + ' caps';
+  const list = document.getElementById('comp-caps-list');
+  if (list) {
+    list.innerHTML = caps.map(c =>
+      '<div class="cap-item"><div><span class="cap-id">' + c.id + '</span>' +
+      (c.streaming ? '<span class="tag">stream</span>' : '') + '</div>' +
+      '<div class="cap-desc">' + c.description + '</div></div>').join('');
+  }
 }
 
-function bindChat() {
-  const input = document.getElementById('input');
+function buildChat() {
+  const el = document.getElementById('comp-chat');
+  if (!el || el.dataset.built) return;
+  el.dataset.built = '1';
+  el.innerHTML =
+    '<div id="messages">' +
+    '<div class="msg assistant">Sky 能力 OS (手机端). AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight"</div>' +
+    '</div>' +
+    '<div id="input-bar"><input id="input" type="text" placeholder="发送消息..." autocomplete="off" enterkeyhint="send">' +
+    '<button id="send-btn">发送</button></div>';
   const btn = document.getElementById('send-btn');
-  if (!input || !btn) return;
   btn.onclick = send;
+  const input = document.getElementById('input');
   input.onkeydown = (e) => { if (e.key === 'Enter' && !btn.disabled) send(); };
+  // iOS: 聚焦滚动到底
+  input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
 }
 
 function addMsg(cls, text) {
@@ -302,11 +360,11 @@ function addMsg(cls, text) {
   el.className = 'msg ' + cls;
   el.textContent = text;
   messages.appendChild(el);
-  messages.scrollTop = messages.scrollHeight;
+  scrollMessages();
   return el;
 }
 
-async function send() {
+function send() {
   const input = document.getElementById('input');
   const btn = document.getElementById('send-btn');
   const text = input.value.trim();
@@ -317,28 +375,35 @@ async function send() {
   currentMsgEl = addMsg('assistant', '');
   currentStreamId = null;
   pendingEvents.length = 0;
-  const sessionId = (document.getElementById('session-id')||{}).value || '';
+  const sessionIdEl = document.getElementById('session-id');
   const msg = {
     type: 'dispatch', reqId: 'req-' + Date.now().toString(36),
     cap: 'cap.ai.chat', stream: true,
-    params: { messages: [{ role: 'user', content: text }], sessionId: sessionId || undefined },
+    params: { messages: [{ role: 'user', content: text }], sessionId: (sessionIdEl && sessionIdEl.value) || undefined },
   };
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
   else pendingDispatch.push(msg);
 }
 
-function bindConfig() {
+function buildConfig() {
+  const el = document.getElementById('comp-config');
+  if (!el || el.dataset.built) return;
+  el.dataset.built = '1';
+  el.innerHTML =
+    '<h2>AI 配置</h2>' +
+    '<div class="field"><label>Base URL</label><input id="base-url" type="text" placeholder="https://api.openai.com"></div>' +
+    '<div class="field"><label>API Key</label><input id="api-key" type="password" placeholder="sk-..."></div>' +
+    '<div class="field"><label>Model</label><input id="model" type="text" placeholder="gpt-4o-mini"></div>' +
+    '<button class="btn" id="save-config">保存配置</button><div class="status" id="config-status"></div>' +
+    '<h2 style="margin-top:20px">会话</h2><div class="field"><label>Session ID</label><input id="session-id" type="text" placeholder="留空=不持久化"></div>' +
+    '<button class="btn secondary" id="new-session">新会话</button>';
   fetch('/api/config').then(r=>r.json()).then(r => {
     const cfg = r.result?.ok ? r.result.data : {};
-    const bu = document.getElementById('base-url');
-    const ak = document.getElementById('api-key');
-    const mo = document.getElementById('model');
-    if (bu) bu.value = cfg.ai?.baseUrl || '';
-    if (ak) ak.value = cfg.ai?.apiKey || '';
-    if (mo) mo.value = cfg.ai?.model || 'gpt-4o-mini';
+    document.getElementById('base-url').value = cfg.ai?.baseUrl || '';
+    document.getElementById('api-key').value = cfg.ai?.apiKey || '';
+    document.getElementById('model').value = cfg.ai?.model || 'gpt-4o-mini';
   });
-  const save = document.getElementById('save-config');
-  if (save) save.onclick = async () => {
+  document.getElementById('save-config').onclick = async () => {
     const status = document.getElementById('config-status');
     status.textContent = '保存中...'; status.className = 'status';
     const r = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
@@ -350,31 +415,26 @@ function bindConfig() {
     if (r.result?.ok) { status.textContent = '✓ 已保存'; status.className = 'status ok'; }
     else { status.textContent = '✗ ' + (r.result?.error || '失败'); status.className = 'status err'; }
   };
-  const ns = document.getElementById('new-session');
-  if (ns) ns.onclick = () => {
+  document.getElementById('new-session').onclick = () => {
     document.getElementById('session-id').value = 'session-' + Date.now().toString(36);
     const messages = document.getElementById('messages');
     if (messages) messages.innerHTML = '';
   };
 }
 
-// ------------------------------------------------- 事件处理
+// ---------------------------------------------------------------- 事件
 function handleEvent(ev) {
-  // UI State 更新 → 重渲染
-  if (ev.type === 'ui.update') {
-    uiState = ev.data;
-    render();
-    return;
-  }
+  if (ev.type === 'ui.update') { uiState = ev.data; render(); return; }
   if (ev.type === 'shell.notify') { addMsg('tool', '📢 ' + (ev.data?.message||'')); return; }
   if (ev.type === 'shell.reload') { location.reload(); return; }
   if (ev.stream_id !== currentStreamId) {
-    // 流 ID 未定: 缓冲
     if (currentStreamId === null && ev.type.startsWith('stream.')) pendingEvents.push(ev);
     return;
   }
   switch (ev.type) {
-    case 'stream.chunk': if (currentMsgEl) currentMsgEl.textContent += ev.data; break;
+    case 'stream.chunk':
+      if (currentMsgEl) { currentMsgEl.textContent += ev.data; scrollMessages(); }
+      break;
     case 'stream.tool': addMsg('tool', '🔧 ' + ev.data.name + '(' + JSON.stringify(ev.data.args).slice(0,200) + ')'); break;
     case 'stream.toolResult': addMsg('toolResult', '→ ' + ev.data.name + ': ' + JSON.stringify(ev.data.result).slice(0,400)); break;
     case 'stream.end':
@@ -388,8 +448,14 @@ function handleEvent(ev) {
 
 function kebab(s) { return s.replace(/([A-Z])/g, '-$1').toLowerCase(); }
 
+// ---------------------------------------------------------------- 启动
 connectWs();
-// 初始拉一次 UI State (防 WS 事件早于脚本就绪丢失)
+// 构建组件 (页面结构静态, 不随 UI State 重建, theme/styles 热更新即可)
+buildChat();
+buildConfig();
+loadCaps();
+// 初始化激活默认页 (聊天): 否则 .sky-page 全 display:none, 内容不可见
+switchPage('page-chat');
 fetch('/api/ui-state').then(r=>r.json()).then(r => {
   if (r && r.theme) { uiState = r; render(); }
 }).catch(()=>{});
