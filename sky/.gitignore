@@ -4,3 +4,6 @@ dist/
 *.db-journal
 data/
 .polaris-sky/
+
+# Core 运行日志 (本地调试用)
+.core.*.log

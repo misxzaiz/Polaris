@@ -77,7 +77,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   /* 桌面: 三栏 (Tab 栏隐藏, 页面全显) */
   @media (min-width: 768px) {
     #sky-tabbar, #sky-topbar { display: none; }
-    #sky-content { display: grid; grid-template-columns: var(--desktop-cols, 260px 1fr 340px); }
+    #sky-content { display: grid; grid-template-columns: var(--desktop-cols, 220px 190px 1fr 270px); }
     .sky-page { display: block; position: static; border-right: 1px solid var(--sky-border, #21262d); padding-top: var(--sky-md, 16px); }
     .sky-page:last-child { border-right: none; }
   }
@@ -266,6 +266,54 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .status { font-size: 12px; color: var(--sky-text-muted, #8b949e); margin-top: 8px; min-height: 18px; }
   .status.ok { color: var(--sky-success, #238636); }
   .status.err { color: var(--sky-danger, #f85149); }
+
+  /* 会话列表 (内置组件) */
+  .sess-list { display: flex; flex-direction: column; gap: 6px; }
+  .sess-item {
+    background: var(--sky-bg-elevated, #161b22);
+    border: 1px solid var(--sky-border, #21262d);
+    border-radius: var(--sky-md, 6px);
+    padding: 8px 10px; cursor: pointer; min-height: 44px;
+  }
+  .sess-item:hover { border-color: var(--sky-accent, #58a6ff); }
+  .sess-item.active { border-color: var(--sky-accent, #58a6ff); background: rgba(31,111,235,0.15); }
+  .sess-title {
+    font-size: 13px; color: var(--sky-text, #c9d1d9); line-height: 1.3;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .sess-meta {
+    font-size: 11px; color: var(--sky-text-muted, #8b949e);
+    margin-top: 4px; display: flex; gap: 8px; align-items: center;
+  }
+  .sess-del { margin-left: auto; color: var(--sky-text-muted, #8b949e); }
+  .sess-del:hover { color: var(--sky-danger, #f85149); }
+  .sess-empty {
+    color: var(--sky-text-muted, #8b949e); font-size: 12px;
+    padding: 16px 0; text-align: center; line-height: 1.6;
+  }
+  #sess-tools { display: flex; gap: 6px; margin-bottom: 10px; }
+  #sess-tools .btn { padding: 8px 10px; min-height: 38px; font-size: 13px; }
+
+  /* 聊天页顶栏 (会话标题 + 新会话) */
+  #chat-topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; flex-shrink: 0;
+    border-bottom: 1px solid var(--sky-border, #21262d);
+    background: var(--sky-bg-elevated, #161b22);
+  }
+  #chat-topbar .btn { width: auto; padding: 6px 10px; min-height: 32px; font-size: 12px; }
+  #chat-topbar .ct-title {
+    flex: 1; font-size: 12px; color: var(--sky-text-muted, #8b949e);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* AI 注入的自定义组件容器 */
+  .sky-custom-comp {
+    margin: 12px 0; padding: 10px 12px;
+    border: 1px dashed var(--sky-border, #21262d);
+    border-radius: 8px;
+  }
+  .sky-custom-zone { margin-top: 16px; }
 </style>
 <style id="sky-dynamic"></style>
 </head>
@@ -309,13 +357,15 @@ export const SHELL_HTML = `<!DOCTYPE html>
     <span class="badge" id="cap-badge">...</span>
   </div>
   <div id="sky-content">
+    <div class="sky-page" id="page-sessions"><div id="comp-sessions"></div></div>
     <div class="sky-page" id="page-caps"><div id="comp-caps-list"></div></div>
     <div class="sky-page" id="page-chat"><div id="comp-chat" style="display:flex;flex-direction:column;height:100%"></div></div>
     <div class="sky-page" id="page-settings"><div id="comp-config"></div></div>
   </div>
   <div id="sky-tabbar">
-    <button class="tab-btn" data-page="page-caps"><svg class="icon"><use href="#ic-caps"/></svg>Caps</button>
+    <button class="tab-btn" data-page="page-sessions"><svg class="icon"><use href="#ic-caps"/></svg>会话</button>
     <button class="tab-btn active" data-page="page-chat"><svg class="icon"><use href="#ic-chat"/></svg>聊天</button>
+    <button class="tab-btn" data-page="page-caps"><svg class="icon"><use href="#ic-tool"/></svg>能力</button>
     <button class="tab-btn" data-page="page-settings"><svg class="icon"><use href="#ic-settings"/></svg>设置</button>
   </div>
 </div>
@@ -330,6 +380,160 @@ const pendingEvents = [];
 const pendingDispatch = [];
 let uiState = null;
 let streamingNotifyShown = false;
+
+// ---------------------------------------------------------------- dispatch 助手
+let dispatchSeq = 0;
+function dispatch(cap, params) {
+  return fetch('/api/dispatch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ cap, params, reqId: 'h-' + (++dispatchSeq) }),
+  }).then(r => r.json()).then(r => r.result?.data ?? null).catch(e => {
+    console.warn('[dispatch] ' + cap, e);
+    return null;
+  });
+}
+function setSessionEl(id) {
+  const el = document.getElementById('session-id');
+  if (el) el.value = id || '';
+}
+function curSessionId() {
+  const el = document.getElementById('session-id');
+  return (el && el.value) || '';
+}
+
+// ---------------------------------------------------------------- 会话列表 (内置组件)
+function renderSessionList() {
+  const el = document.getElementById('sess-list');
+  if (!el) return;
+  el.classList.remove('sess-empty');
+  el.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div>';
+  dispatch('cap.session', { action: 'list', limit: 100 }).then(data => {
+    const sessions = (data && data.sessions) || [];
+    const cur = data && data.currentId;
+    const host = document.getElementById('sess-list');
+    if (!host) return;
+    if (!sessions.length) {
+      host.classList.add('sess-empty');
+      host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:16px 0;text-align:center;line-height:1.6">暂无会话<br>新建后自动出现在这里</div>';
+      return;
+    }
+    host.innerHTML = sessions.map(s => {
+      const d = new Date(s.lastActive || s.createdAt || Date.now());
+      const stamp = (d.getMonth()+1) + '/' + d.getDate() + ' ' +
+        String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+      const n = s.messages || 0;
+      return '<div class="sess-item' + (s.id === cur ? ' active' : '') + '" data-sid="' + esc(s.id) + '">' +
+        '<div class="sess-title">' + esc(s.title || s.id) + '</div>' +
+        '<div class="sess-meta"><span>' + n + ' 条</span><span>' + stamp + '</span>' +
+        '<span class="sess-del" data-del="' + esc(s.id) + '" title="删除"><svg class="icon"><use href="#ic-x"/></svg></span></div>' +
+        '</div>';
+    }).join('');
+  });
+}
+
+async function newSession() {
+  const data = await dispatch('cap.session', { action: 'create' });
+  const id = data && data.id;
+  if (id) { setSessionId(id); openChat(); }
+  renderSessionList();
+}
+
+async function switchSession(id) {
+  await dispatch('cap.session', { action: 'switch', sessionId: id });
+  loadSessionIntoChat(id);
+  renderSessionList();
+}
+
+async function deleteSession(id) {
+  const msgs = document.getElementById('messages');
+  const confirmed = msgs && msgs.children.length === 0
+    ? true
+    : window.confirm('删除该会话? 聊天记录将一并删除');
+  if (!confirmed) return;
+  const data = await dispatch('cap.session', { action: 'delete', sessionId: id });
+  if (data && data.wasCurrent) { setSessionId(''); clearChat(); }
+  renderSessionList();
+}
+
+// keep=true: 流式期间调用, 不清空消息区 (DOM 里已有本轮 user + 在途 assistant)
+async function loadSessionIntoChat(id, keep) {
+  setSessionId(id);
+  const msgs = document.getElementById('messages');
+  if (!msgs) return;
+  if (keep) {
+    await dispatch('cap.history', { action: 'list', sessionId: id }).catch(() => {});
+    return;
+  }
+  const data = await dispatch('cap.history', { action: 'list', sessionId: id });
+  const hist = (data && data.messages) || [];
+  msgs.innerHTML = hist.map(m =>
+    '<div class="msg ' + (m.role === 'user' ? 'user' : 'assistant') + '">' + esc(String(m.content || '')) + '</div>').join('') ||
+    '<div class="msg assistant">已切换到该会话. 继续聊吧.</div>';
+  scrollMessages();
+}
+
+// 发送后自动落盘: 若本轮尚无会话, 用首条用户消息作标题创建 (幂等: 已有则仅 switch)
+async function ensureSession(title) {
+  const cur = curSessionId();
+  if (cur) { await dispatch('cap.session', { action: 'switch', sessionId: cur }); return cur; }
+  const t = title && title.trim()
+    ? title.trim().slice(0, 40)
+    : '会话 ' + new Date().toLocaleString();
+  const data = await dispatch('cap.session', { action: 'create', title: t });
+  const id = data && data.id;
+  if (!id) return '';
+  setSessionId(id);
+  renderSessionList();
+  return id;
+}
+
+function setSessionId(id) {
+  setSessionEl(id || '');
+  updateChatTopbar();
+}
+
+function updateChatTopbar() {
+  const id = curSessionId();
+  const titleEl = document.getElementById('ct-title');
+  if (!titleEl) return;
+  titleEl.textContent = id ? id : '新会话 (发送后自动保存)';
+}
+
+function clearChat() {
+  const msgs = document.getElementById('messages');
+  if (msgs) msgs.innerHTML = '<div class="msg assistant">新会话已创建. 开始聊吧.</div>';
+}
+
+function openChat() {
+  switchPage('page-chat');
+  const i = document.getElementById('input');
+  if (i) i.focus();
+}
+
+// ---------------------------------------------------------------- 会话面板构建
+function buildSessions() {
+  const el = document.getElementById('comp-sessions');
+  if (!el || el.dataset.built) return;
+  el.dataset.built = '1';
+  el.innerHTML =
+    '<h2>会话</h2>' +
+    '<div id="sess-tools">' +
+      '<button class="btn secondary" id="sess-refresh">刷新</button>' +
+      '<button class="btn" id="sess-new">新建</button>' +
+    '</div>' +
+    '<div class="sess-list" id="sess-list"></div>';
+  document.getElementById('sess-new').onclick = newSession;
+  document.getElementById('sess-refresh').onclick = renderSessionList;
+  document.getElementById('sess-list').onclick = (e) => {
+    const del = e.target.closest('[data-del]');
+    if (del) { e.stopPropagation(); deleteSession(del.dataset.del); return; }
+    const item = e.target.closest('[data-sid]');
+    if (item) switchSession(item.dataset.sid);
+  };
+  renderSessionList();
+}
+
 
 // ---------------------------------------------------------------- Tab 切换 (手机)
 document.getElementById('sky-tabbar').addEventListener('click', (e) => {
@@ -459,12 +663,8 @@ function render() {
     css += rule.selector + '{' + Object.entries(rule.properties||{}).map(([k,v])=>kebab(k)+':'+v).join(';') + '}';
   }
   dynamicStyle.textContent = css;
-  // 手机端: 自定义 layout 树仅在桌面 grid 生效 (手机固定 Tab 结构, theme/styles 通用)
-  if (matchMedia('(min-width: 768px)').matches) {
-    const regions = uiState.layout?.children || [];
-    document.getElementById('sky-content').style.setProperty('--desktop-cols',
-      regions.map(r => (r.props && r.props.width) ? r.props.width : '1fr').join(' ') || '260px 1fr 340px');
-  }
+  // 桌面栏宽 (手机固定 Tab 结构, 不应用 grid)
+  applyDesktopCols();
   // ChatConfig → CSS 变量 (消息宽度/字号/间距)
   const c = uiState.chat || {};
   const root = document.documentElement.style;
@@ -472,36 +672,194 @@ function render() {
   root.setProperty('--msg-assistant-maxw', c.assistantMaxWidth || '100%');
   root.setProperty('--chat-gap', c.messageGap || '10px');
   root.setProperty('--chat-fontsize', (c.fontSize || 15) + 'px');
-  // 动态渲染 custom 组件 (AI 经 cap.ui.component 添加的)
+  // 动态渲染 custom 组件 (AI 经 cap.ui.component 添加/更新的) + 通知已注入组件
   renderComponents();
+  uiUpdateNotify();
 }
 
-// ---------------------------------------------------------------- 动态组件渲染
-// mountPoint 映射: sidebar→comp-caps-list, main→comp-chat, right→comp-config
-const MOUNT_MAP = { sidebar: 'comp-caps-list', main: 'comp-chat', right: 'comp-config' };
-const renderedComponents = new Set();
+// ---------------------------------------------------------------- 桌面栏布局 + 动态组件渲染 (AI 注入)
+// 栏顺序 = grid 列顺序 = .sky-page 的 DOM 顺序, 三者必须一致 (grid 按 DOM 顺序排).
+// layout.children 只提供每栏宽度, 顺序以本页 DOM 为准 — 否则 AI 重排 children 会让列宽错位.
+const COLUMNS = [
+  { region: 'sessions', page: 'page-sessions', w: '230px' },
+  { region: 'sidebar', page: 'page-caps', w: '240px' },
+  { region: 'main', page: 'page-chat', w: '1fr' },
+  { region: 'right', page: 'page-settings', w: '280px' },
+];
+// mountPoint → page id (AI 决定组件落在哪一栏)
+const MOUNT_MAP = {};
+for (const c of COLUMNS) {
+  MOUNT_MAP[c.region] = c.page;
+  MOUNT_MAP[c.page] = c.page;
+}
+MOUNT_MAP.top = MOUNT_MAP.bottom = COLUMNS[2].page;
+
+function applyDesktopCols() {
+  if (!matchMedia('(min-width: 768px)').matches) return;
+  const byId = {};
+  for (const r of (uiState && uiState.layout && uiState.layout.children) || []) byId[r.id] = r;
+  const widths = COLUMNS.map(c => {
+    const r = byId[c.region];
+    return (r && r.props && r.props.width) ? r.props.width : c.w;
+  });
+  document.getElementById('sky-content').style.setProperty('--desktop-cols', widths.join(' '));
+}
+// 窗口跨越 768px 断点时重算 (手机 Tab ⇄ 桌面 grid)
+matchMedia('(min-width: 768px)').addEventListener('change', applyDesktopCols);
+// compId → { sig, root, styleEl } — 用于内容变更检测与热更新
+const liveComponents = new Map();
+// AI 组件的 UI 更新订阅者 (js 代码可注册回调)
+const customListeners = new Set();
+
+// 暴露给 AI 自定义组件的最小运行环境
+const SKY_HOST = {
+  // 调任意 cap (走 HTTP dispatch, 与聊天同一条通路)
+  dispatch: dispatch,
+  // 读当前 UI State (返回副本, 防止外部改动污染渲染)
+  state: function () { return uiState ? structuredClone(uiState) : null; },
+  // 订阅 UI State 变更 (AI 组件可响应主题/聊天配置的调整)
+  on: function (fn) {
+    if (typeof fn === 'function') customListeners.add(fn);
+    return function off() { customListeners.delete(fn); };
+  },
+  // 当前激活的移动端页面 id
+  page: function () { return document.querySelector('.sky-page.active')?.id || null; },
+  // 切页面
+  switchPage: switchPage,
+  // 在聊天里插一条消息
+  addMsg: addMsg,
+};
+// 模板字符串内的 script 不能直接引用后定义的全局, 故挂 window
+window.__sky = SKY_HOST;
+
+function uiUpdateNotify() {
+  for (const fn of customListeners) { try { fn(uiState); } catch (e) { console.warn('[custom] listener', e); } }
+}
+
+// 内容签名: props 变了就重建 (支持 cap.ui.component update 热生效)
+function compSig(comp) {
+  try { return JSON.stringify(comp.props || {}) + '@' + (comp.mountPoint || ''); }
+  catch (e) { return Math.random().toString(36); }
+}
+
+function execCustomJs(code, root) {
+  // new Function 而非注入 script 标签: 代码来自 JSON 数据, 不会被 HTML 解析截断,
+  // 且可注入受限上下文. 代码运行在全局作用域, 但只能访问 SKY_HOST 暴露的能力.
+  // 注意: 本文件内任何位置都不能出现 script 的闭合标签字面量 — HTML 解析器会据此
+  // 提前结束 script 元素 (即便写在注释或字符串里), 整段前端都会变纯文本.
+  try {
+    const factory = new Function('root', '__sky', code);
+    factory(root, SKY_HOST);
+    return null;
+  } catch (e) {
+    return e;
+  }
+}
 
 function renderComponents() {
   if (!uiState || !uiState.components) return;
+  const seen = new Set();
   for (const comp of uiState.components) {
     if (comp.type !== 'custom') continue;
-    if (renderedComponents.has(comp.id)) continue; // 只渲染一次 (避免重复)
+    seen.add(comp.id);
     const hostId = MOUNT_MAP[comp.mountPoint] || MOUNT_MAP.right;
     const host = document.getElementById(hostId);
     if (!host) continue;
+
+    const sig = compSig(comp);
+    const prev = liveComponents.get(comp.id);
+    if (prev && prev.sig === sig) continue; // 内容未变, 跳过
+
+    // 确保该 page 内有独立挂载区块 (多组件共享)
+    let zone = document.getElementById('sky-custom-zone-' + hostId);
+    if (!zone) {
+      zone = document.createElement('div');
+      zone.id = 'sky-custom-zone-' + hostId;
+      zone.className = 'sky-custom-zone';
+      host.appendChild(zone);
+    }
+
+    // 重建: 移除旧节点 + 旧样式
+    if (prev) {
+      if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root);
+      if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl);
+    }
+
+    const props = comp.props || {};
     const wrapper = document.createElement('div');
     wrapper.className = 'sky-custom-comp';
     wrapper.dataset.compId = comp.id;
-    if (comp.props && comp.props.html) {
-      wrapper.innerHTML = comp.props.html;
+    if (props.html) wrapper.innerHTML = props.html;
+    zone.appendChild(wrapper);
+
+    let styleEl = null;
+    if (props.css) {
+      styleEl = document.createElement('style');
+      // AI 组件的 CSS 作用域限定在 wrapper 内, 防止污染全局
+      styleEl.textContent = scopeCss(props.css, wrapper);
+      document.head.appendChild(styleEl);
     }
-    host.appendChild(wrapper);
-    renderedComponents.add(comp.id);
-    // 绑定 onclick (如果 props 提供)
-    if (comp.props && comp.props.onClick) {
-      // 简化: onClick 是字符串描述, 不实际执行 (安全考虑)
+
+    liveComponents.set(comp.id, { sig: sig, root: wrapper, styleEl: styleEl });
+
+    if (typeof props.js === 'string' && props.js.trim()) {
+      const err = execCustomJs(props.js, wrapper);
+      if (err) {
+        console.warn('[custom] js error in ' + comp.id + ':', err.message);
+        const note = document.createElement('div');
+        note.style.cssText = 'margin-top:8px;padding:6px 8px;font-size:11px;border-radius:4px;' +
+          'background:rgba(248,81,73,.12);color:#f85149;';
+        note.textContent = '组件脚本错误: ' + err.message;
+        wrapper.appendChild(note);
+      }
     }
   }
+  // 清理已删除的组件 (cap.ui.component remove 后不留残骸)
+  for (const [id, prev] of liveComponents) {
+    if (seen.has(id)) continue;
+    if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root);
+    if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl);
+    liveComponents.delete(id);
+  }
+  // 挂载区块空了就一并移除 (否则遗留 .sky-custom-zone 的 16px margin 撑开设置页)
+  for (const z of document.querySelectorAll('.sky-custom-zone')) {
+    if (!z.childElementCount) z.parentNode.removeChild(z);
+  }
+}
+
+// 把 AI 组件的 CSS 选择器全部前缀到 wrapper, 限制作用域.
+// 两个坑:
+//   1) 正则 ([^{}]*)\{ 捕获组已含结尾的 {, 不能再补一个, 否则出现 {{ 使整条失效.
+//   2) @keyframes 内部的 from/to/N% 必须原样保留 (前缀会让动画完全失效).
+//      用「绝对深度」标记 keyframes 体的深度, 而非用计数器在 } 处还原 —
+//      后者会在遇到 keyframes 内第一个内层 } 时被提前清零, 导致 to 被误前缀.
+function scopeCss(css, wrapper) {
+  const id = 'sky-c-' + Math.random().toString(36).slice(2, 9);
+  wrapper.id = wrapper.id ? wrapper.id + ' ' + id : id;
+  const PREFIX = '#' + id + ' ';
+  let depth = 0;      // 当前读取位置所在的嵌套深度
+  let kfDepth = -1;   // @keyframes 体所在的深度, -1 = 不在 keyframes 内
+
+  return css.replace(/\s*([^{}]*)\{|\}/g, function (m) {
+    if (m === '}') {
+      if (depth === kfDepth) kfDepth = -1; // 关闭 @keyframes 块
+      depth--;
+      return '}';
+    }
+    const sel = m.replace(/\{$/, '').trim(); // 去掉正则匹配到的那个 {
+    if (/^@/.test(sel)) {
+      if (/^@keyframes/i.test(sel)) kfDepth = depth + 1;
+      depth++;
+      return m; // @media / @supports / @keyframes 头部原样保留
+    }
+    const inKeyframes = depth === kfDepth;
+    depth++;
+    if (inKeyframes) return m; // from{ / to{ / 0%{ / 100%{ 原样保留
+    return ' ' + sel.split(',').map(function (s) {
+      const t = s.trim();
+      return t ? PREFIX + t : t;
+    }).join(',') + '{';
+  });
 }
 
 // ---------------------------------------------------------------- 内置组件
@@ -524,6 +882,8 @@ function buildChat() {
   if (!el || el.dataset.built) return;
   el.dataset.built = '1';
   el.innerHTML =
+    '<div id="chat-topbar"><button class="btn secondary" id="ct-new">新会话</button>' +
+    '<span class="ct-title" id="ct-title">新会话 (发送后自动保存)</span></div>' +
     '<div id="messages">' +
     '<div class="msg assistant">Sky 能力 OS. AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight" 或 "改聊天字号 18px"</div>' +
     '</div>' +
@@ -534,6 +894,8 @@ function buildChat() {
   const input = document.getElementById('input');
   input.onkeydown = (e) => { if (e.key === 'Enter' && !btn.disabled) send(); };
   input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
+  const ctNew = document.getElementById('ct-new');
+  if (ctNew) ctNew.onclick = newSession;
 }
 
 // ---------------------------------------------------------------- 工具块 (调用+结果合并)
@@ -708,24 +1070,19 @@ function addMsg(cls, text) {
   return el;
 }
 
-function send() {
+async function send() {
   const input = document.getElementById('input');
   const btn = document.getElementById('send-btn');
   const text = input.value.trim();
-  if (!text) return;
-  addMsg('user', text);
-  input.value = '';
+  if (!text || btn.disabled) return;
   btn.disabled = true;
+  input.value = '';
+  addMsg('user', text);
+  // 先确保会话存在 (history 靠 sessionId 落盘, 顺序不可颠倒)
+  const sessionId = await ensureSession(text);
   currentMsgEl = addMsg('assistant', '');
   currentStreamId = null;
   pendingEvents.length = 0;
-  // 续聊: 若 session-id 为空, 自动生成并填入 (下一轮起带历史)
-  const sessionIdEl = document.getElementById('session-id');
-  let sessionId = (sessionIdEl && sessionIdEl.value) || '';
-  if (!sessionId) {
-    sessionId = 'session-' + Date.now().toString(36);
-    if (sessionIdEl) sessionIdEl.value = sessionId;
-  }
   // 标记上一轮 tool-group 关闭 (新一轮工具调用会建新 group)
   const messages = document.getElementById('messages');
   if (messages) {
@@ -751,8 +1108,9 @@ function buildConfig() {
     '<div class="field"><label>API Key</label><input id="api-key" type="password" placeholder="sk-..."></div>' +
     '<div class="field"><label>Model</label><input id="model" type="text" placeholder="gpt-4o-mini"></div>' +
     '<button class="btn" id="save-config">保存配置</button><div class="status" id="config-status"></div>' +
-    '<h2 style="margin-top:20px">会话</h2><div class="field"><label>Session ID</label><input id="session-id" type="text" placeholder="留空=不持久化"></div>' +
-    '<button class="btn secondary" id="new-session">新会话</button>';
+    '<h2 style="margin-top:20px">会话</h2>' +
+    '<div class="field"><label>当前 Session ID (隐藏元素, 真实列表在左侧会话页)</label>' +
+    '<input id="session-id" type="text" placeholder="留空=不持久化" readonly></div>';
   fetch('/api/config').then(r=>r.json()).then(r => {
     const cfg = r.result?.ok ? r.result.data : {};
     document.getElementById('base-url').value = cfg.ai?.baseUrl || '';
@@ -770,11 +1128,6 @@ function buildConfig() {
       }})}).then(r=>r.json());
     if (r.result?.ok) { status.textContent = '已保存'; status.className = 'status ok'; }
     else { status.textContent = '失败: ' + (r.result?.error || '未知错误'); status.className = 'status err'; }
-  };
-  document.getElementById('new-session').onclick = () => {
-    document.getElementById('session-id').value = 'session-' + Date.now().toString(36);
-    const messages = document.getElementById('messages');
-    if (messages) messages.innerHTML = '';
   };
 }
 
@@ -835,6 +1188,7 @@ function kebab(s) { return s.replace(/([A-Z])/g, '-$1').toLowerCase(); }
 // ---------------------------------------------------------------- 启动
 connectWs();
 // 构建组件 (页面结构静态, 不随 UI State 重建, theme/styles 热更新即可)
+buildSessions();
 buildChat();
 buildConfig();
 loadCaps();
@@ -842,6 +1196,14 @@ loadCaps();
 switchPage('page-chat');
 fetch('/api/ui-state').then(r=>r.json()).then(r => {
   if (r && r.theme) { uiState = r; render(); }
+}).catch(()=>{});
+// 恢复当前会话 (重启后回到上次聊天)
+dispatch('cap.session', { action: 'getCurrent' }).then(data => {
+  const id = data && data.currentId;
+  if (!id) return;
+  setSessionId(id);
+  if (document.getElementById('messages')?.children.length > 1) return; // 已有内容, 不覆盖
+  loadSessionIntoChat(id, true);
 }).catch(()=>{});
 </script>
 </body>
