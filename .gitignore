@@ -43,6 +43,9 @@ __pycache__/
 # Dev HTTP 模式后端发现文件（运行时生成于项目根，进程退出删除；经 vite dev middleware 提供）
 .polaris-dev/
 
+# 数据根（test-profile 编译期隔离 POLARIS_DATA_ROOT，运行时生成，不入库）
+Polaris-test/
+
 # Logs
 logs/
 *.log
