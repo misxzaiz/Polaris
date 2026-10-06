@@ -1,14 +1,10 @@
 /**
- * Web Shell — Mobile-First 响应式渲染器
+ * Web Shell — 对齐 Polaris 布局范式
  *
- * 手机优先 (<768px):
- * - 单栏全屏 + 底部 Tab (聊天/Caps/设置) + 顶栏
- * - safe-area (刘海/手势条) + visualViewport 软键盘适配
- * - 触摸目标 >= 44px, 输入 16px 防 iOS 自动缩放
- *
- * 桌面 (>=768px): 三栏 grid (自动, 同一份 UI State)
- *
- * AI 能力不变: cap.ui.* 改 UI State → WS ui.update → 热重渲染 (双端通用)
+ * 布局: TopBar + ActivityBar(36px) + LeftPanel(可切换保活) + CenterStage(聊天/编辑) + RightPanel(常驻)
+ * 响应式: 断点 500px, 小屏 compact 模式 (ActivityBar 折叠 + LeftPanel 抽屉)
+ * 保活: 面板用 hidden 属性切换, children DOM 保留, 状态不丢
+ * AI 演化: cap.ui.* 改 UI State → WS ui.update → 热重渲染
  */
 
 export const SHELL_HTML = `<!DOCTYPE html>
@@ -18,97 +14,177 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0a0e27">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Sky · Capability OS</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overscroll-behavior: none; }
   body {
-    font: 16px/var(--sky-line-height, 1.5) var(--sky-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    font: 16px/1.5 var(--sky-font, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
     background: var(--sky-bg, #0d1117); color: var(--sky-text, #c9d1d9);
     overflow: hidden;
-    /* safe-area: 刘海/手势条 */
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
   }
 
-  /* ============ 布局骨架 ============ */
-  /* 手机: 顶栏 + 内容 + Tab栏 */
+  /* ============ 布局骨架 (对齐 Polaris: Layout > TopBar + flex(ActivityBar|LeftPanel|CenterStage|RightPanel)) ============ */
   #sky-root {
     display: flex; flex-direction: column; height: 100vh; height: 100dvh;
   }
+
+  /* --- TopBar (顶部全局栏) --- */
   #sky-topbar {
     display: flex; align-items: center; gap: 8px;
     padding: calc(var(--safe-top) + 8px) 12px 8px;
     background: var(--sky-bg-elevated, #161b22);
     border-bottom: 1px solid var(--sky-border, #21262d);
-    flex-shrink: 0;
+    flex-shrink: 0; height: 40px;
   }
-  #sky-topbar .title { font-weight: 600; font-size: 15px; flex: 1; }
+  #sky-topbar .title { font-weight: 600; font-size: 14px; flex: 1; }
   #sky-topbar .badge {
     font-size: 11px; color: var(--sky-text-muted, #8b949e);
     background: var(--sky-bg, #0d1117); padding: 2px 8px; border-radius: 10px;
   }
-  #sky-content { flex: 1; overflow: hidden; position: relative; }
-  .sky-page {
-    position: absolute; inset: 0; overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-    padding: var(--sky-md, 16px);
-    padding-bottom: calc(16px + var(--safe-bottom));
-    display: none;
-  }
-  .sky-page.active { display: block; }
-  #sky-tabbar {
-    display: flex;
-    background: var(--sky-bg-elevated, #161b22);
-    border-top: 1px solid var(--sky-border, #21262d);
-    padding-bottom: var(--safe-bottom);
-    flex-shrink: 0;
-  }
-  .tab-btn {
-    flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px;
-    padding: 8px 0 6px; min-height: 48px;
+  #sky-topbar .topbar-btn {
     background: none; border: none; color: var(--sky-text-muted, #8b949e);
-    font-size: 11px; cursor: pointer;
+    cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 13px;
+    display: flex; align-items: center; gap: 4px;
   }
-  .tab-btn.active { color: var(--sky-accent, #58a6ff); }
-  .tab-btn .icon { width: 20px; height: 20px; line-height: 1; display: block; }
+  #sky-topbar .topbar-btn:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.06); }
 
-  /* 桌面: 三栏 (Tab 栏隐藏, 页面全显) */
-  @media (min-width: 768px) {
-    #sky-tabbar, #sky-topbar { display: none; }
-    #sky-content { display: grid; grid-template-columns: var(--desktop-cols, 220px 190px 1fr 270px); }
-    .sky-page { display: block; position: static; border-right: 1px solid var(--sky-border, #21262d); padding-top: var(--sky-md, 16px); }
-    .sky-page:last-child { border-right: none; }
+  /* --- 主布局横向容器 --- */
+  #sky-main { display: flex; flex: 1; overflow: hidden; position: relative; }
+
+  /* --- ActivityBar (左侧图标栏, 36px) --- */
+  #activity-bar {
+    width: 36px; flex-shrink: 0;
+    display: flex; flex-direction: column; align-items: center;
+    background: var(--sky-bg-elevated, #161b22);
+    border-right: 1px solid var(--sky-border, #21262d);
+    padding: 8px 0; gap: 2px;
+    overflow: hidden;
   }
+  .ab-icon {
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    border: none; background: none; cursor: pointer;
+    color: var(--sky-text-muted, #8b949e);
+    border-radius: 6px; flex-shrink: 0;
+    transition: color .15s, background-color .15s;
+  }
+  .ab-icon:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.06); }
+  .ab-icon.active { color: var(--sky-accent, #58a6ff); background: rgba(88,166,255,0.12); }
+  .ab-icon svg { width: 18px; height: 18px; display: block; }
+  .ab-divider { width: 20px; height: 1px; background: var(--sky-border, #21262d); margin: 4px 0; flex-shrink: 0; }
+  .ab-spacer { flex: 1; }
 
-  /* ============ 组件 ============ */
-  h2 { font-size: 13px; text-transform: uppercase; color: var(--sky-text-muted, #8b949e); letter-spacing: 0.5px; margin-bottom: var(--sky-sm, 8px); }
+  /* --- LeftPanel (可切换面板, 保活) --- */
+  #left-panel {
+    width: var(--lp-width, 240px); flex-shrink: 0;
+    background: var(--sky-bg, #0d1117);
+    border-right: 1px solid var(--sky-border, #21262d);
+    overflow: hidden; position: relative;
+    display: flex; flex-direction: column;
+  }
+  #left-panel.hidden { width: 0; border-right: none; }
+  .lp-content { display: none; flex-direction: column; flex: 1; overflow: hidden; }
+  .lp-content:not([hidden]) { display: flex; }
+  .lp-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border-bottom: 1px solid var(--sky-border, #21262d);
+    flex-shrink: 0; height: 36px;
+  }
+  .lp-header .lp-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--sky-text-muted, #8b949e); flex: 1; }
+  .lp-header .lp-btn {
+    background: none; border: none; color: var(--sky-text-muted, #8b949e);
+    cursor: pointer; padding: 2px 6px; border-radius: 4px; font-size: 13px;
+  }
+  .lp-header .lp-btn:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.06); }
+  .lp-body { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px; }
+  .lp-body.slim { padding: 8px; }
+
+  /* --- CenterStage (中间主视野, flex-1) --- */
+  #center-stage {
+    flex: 1; display: flex; flex-direction: column;
+    overflow: hidden; background: var(--sky-bg, #0d1117);
+    min-width: 0;
+  }
+  #cs-topbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 12px; border-bottom: 1px solid var(--sky-border, #21262d);
+    flex-shrink: 0; height: 36px; background: var(--sky-bg-elevated, #161b22);
+  }
+  #cs-topbar .ct-title { flex: 1; font-size: 12px; color: var(--sky-text-muted, #8b949e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #cs-topbar .ct-btn {
+    background: none; border: none; color: var(--sky-text-muted, #8b949e);
+    cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 12px;
+  }
+  #cs-topbar .ct-btn:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.06); }
+
+  /* --- RightPanel (右侧常驻栏) --- */
+  #right-panel {
+    width: var(--rp-width, 320px); flex-shrink: 0;
+    background: var(--sky-bg-elevated, #161b22);
+    border-left: 1px solid var(--sky-border, #21262d);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  #right-panel.collapsed { width: 0; border-left: none; }
+
+  /* --- 设置覆盖层 (absolute, 主布局 inert) --- */
+  #settings-overlay {
+    position: absolute; inset: 0; z-index: 50;
+    background: var(--sky-bg, #0d1117);
+    display: none; flex-direction: column;
+  }
+  #settings-overlay.open { display: flex; }
+  #settings-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: calc(var(--safe-top) + 8px) 12px 8px;
+    border-bottom: 1px solid var(--sky-border, #21262d);
+    flex-shrink: 0; height: 40px; background: var(--sky-bg-elevated, #161b22);
+  }
+  #settings-header .s-title { font-weight: 600; font-size: 14px; flex: 1; }
+  #settings-header .s-close {
+    background: none; border: none; color: var(--sky-text-muted, #8b949e);
+    cursor: pointer; padding: 4px 8px; border-radius: 4px; font-size: 16px;
+  }
+  #settings-body { flex: 1; display: flex; overflow: hidden; }
+  #settings-tabs {
+    width: 180px; flex-shrink: 0; padding: 8px 0;
+    border-right: 1px solid var(--sky-border, #21262d);
+    background: var(--sky-bg, #0d1117); overflow-y: auto;
+  }
+  .s-tab {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; cursor: pointer; font-size: 13px;
+    color: var(--sky-text-muted, #8b949e); border: none; background: none;
+    width: 100%; text-align: left;
+  }
+  .s-tab:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.04); }
+  .s-tab.active { color: var(--sky-accent, #58a6ff); background: rgba(88,166,255,0.08); border-left: 2px solid var(--sky-accent, #58a6ff); }
+  #settings-content { flex: 1; overflow-y: auto; padding: 16px; }
+
+  /* ============ 组件样式 ============ */
+  h2 { font-size: 13px; text-transform: uppercase; color: var(--sky-text-muted, #8b949e); letter-spacing: 0.5px; margin-bottom: 8px; }
   .cap-item {
     background: var(--sky-bg-elevated, #161b22);
-    padding: 10px 12px; border-radius: var(--sky-md, 6px); margin-bottom: 8px;
-    font-size: 13px;
+    padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 13px;
   }
   .cap-id { color: var(--sky-accent, #58a6ff); font-family: var(--sky-mono, ui-monospace, monospace); font-size: 13px; }
   .cap-desc { color: var(--sky-text-muted, #8b949e); margin-top: 2px; font-size: 12px; }
   .tag { display: inline-block; padding: 1px 6px; border-radius: 8px; background: var(--sky-primary, #1f6feb); color: #fff; font-size: 10px; margin-left: 6px; }
 
   /* 聊天: 消息 */
-  #page-chat { display: none; flex-direction: column; padding: 0 !important; }
-  #page-chat.active { display: flex; }
-  @media (min-width: 768px) { #page-chat { display: flex; } }
-  #messages {
+  #cs-messages {
     flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
-    padding: var(--sky-md, 16px);
-    display: flex; flex-direction: column;
-    gap: var(--chat-gap, 10px);
-    font-size: var(--chat-fontsize, 15px);
+    padding: 16px; display: flex; flex-direction: column;
+    gap: var(--chat-gap, 10px); font-size: var(--chat-fontsize, 15px);
   }
   .msg {
-    padding: 10px 14px; border-radius: var(--sky-md, 6px);
+    padding: 10px 14px; border-radius: 6px;
     word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;
-    line-height: 1.55;
-    max-width: var(--msg-user-maxw, 85%);
+    line-height: 1.55; max-width: var(--msg-user-maxw, 85%);
   }
   .msg.user {
     background: var(--sky-primary, #1f6feb); color: #fff;
@@ -118,16 +194,14 @@ export const SHELL_HTML = `<!DOCTYPE html>
     background: var(--sky-bg-elevated, #161b22);
     color: var(--sky-text, #c9d1d9);
     border-bottom-left-radius: 3px;
-    max-width: var(--msg-assistant-maxw, 100%);
-    width: 100%;
+    max-width: var(--msg-assistant-maxw, 100%); width: 100%;
   }
-  /* Markdown 渲染 (assistant) */
   .msg.assistant code:not(pre code) {
     background: var(--sky-bg, #0d1117); padding: 1px 5px; border-radius: 3px;
     font-family: var(--sky-mono, monospace); font-size: 0.9em;
   }
   .msg.assistant pre {
-    background: var(--sky-bg, #0d1117); padding: 10px 12px; border-radius: var(--sky-sm, 4px);
+    background: var(--sky-bg, #0d1117); padding: 10px 12px; border-radius: 4px;
     overflow-x: auto; margin: 6px 0; border: 1px solid var(--sky-border, #21262d);
   }
   .msg.assistant pre code { font-family: var(--sky-mono, monospace); font-size: 0.88em; white-space: pre; }
@@ -135,32 +209,26 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .msg.assistant p { margin: 0; }
   .msg.assistant p + p { margin-top: 8px; }
 
-  /* ============ 工具块 (调用 + 结果合并, 可折叠) — 对齐 Polaris 数值 ============ */
-  /* 单块: w-full, margin 6px, radius 8px, border 1px rgba(255,255,255,.15), bg rgb(26,26,31) */
+  /* 工具块 (调用 + 结果合并, 可折叠) */
   .tool-block {
     border-left: 3px solid var(--sky-text-muted, #8b949e);
     background: var(--sky-bg, #0d1117);
-    border-radius: 0 var(--sky-sm, 4px) var(--sky-sm, 4px) 0;
-    margin: 6px 0;
+    border-radius: 0 4px 4px 0; margin: 6px 0;
     font-family: var(--sky-mono, monospace); font-size: 12px;
-    overflow: hidden;
-    transition: border-color .2s, background-color .2s;
+    overflow: hidden; transition: border-color .2s, background-color .2s;
   }
   .tool-block.running { border-left-color: var(--sky-warning, #f0883e); }
   .tool-block.ok { border-left-color: var(--sky-success, #238636); }
   .tool-block.err { border-left-color: var(--sky-danger, #f85149); }
   .tool-block.card {
     border: 1px solid var(--sky-border, #21262d); border-left-width: 3px;
-    background: var(--sky-bg-elevated, #161b22);
-    border-radius: 8px;
+    background: var(--sky-bg-elevated, #161b22); border-radius: 8px;
   }
   .tool-block.running.card { border-color: rgba(255,255,255,0.15); }
-  /* 头部行: padding 6px 10px, gap 8px, 触控 min-height 36px (移动 44px) */
   .tool-head {
     display: flex; align-items: center; gap: 8px;
     padding: 6px 10px; cursor: pointer; user-select: none;
-    color: var(--sky-text, #c9d1d9);
-    font-size: 12px; line-height: 1.2;
+    color: var(--sky-text, #c9d1d9); font-size: 12px; line-height: 1.2;
     min-height: 36px;
   }
   .tool-head:hover { background: rgba(255,255,255,0.04); }
@@ -182,7 +250,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
   }
   .tool-block.expanded .tool-body { display: block; }
   .tool-block.folded .tool-body { display: none; }
-  .tool-block.folded.expanded .tool-body { display: block; }  /* 展开优先于 folded */
+  .tool-block.folded.expanded .tool-body { display: block; }
   .tool-block.folded .tool-chev { transform: rotate(0); }
   .tool-block.folded.expanded .tool-chev { transform: rotate(90deg); }
   .tool-body .tool-section {
@@ -190,53 +258,33 @@ export const SHELL_HTML = `<!DOCTYPE html>
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; margin-top: 6px;
   }
   .tool-body .tool-section:first-child { margin-top: 0; }
-  .tool-body .tool-json {
-    white-space: pre-wrap; word-break: break-all; color: var(--sky-text, #c9d1d9);
-  }
+  .tool-body .tool-json { white-space: pre-wrap; word-break: break-all; color: var(--sky-text, #c9d1d9); }
   .tool-body .tool-result-ok { color: var(--sky-success, #238636); }
   .tool-body .tool-result-err { color: var(--sky-danger, #f85149); }
 
-  /* ============ 分组折叠: 连续工具块超阈值时折叠成"展开 N 个"按钮 ============ */
   .tool-group-more {
-    display: flex; align-items: center; gap: 6px;
-    margin: 6px 0; padding: 8px 12px;
-    background: var(--sky-bg, #0d1117);
-    border: 1px dashed var(--sky-border, #21262d);
-    border-radius: 8px;
-    cursor: pointer; user-select: none;
-    color: var(--sky-text-muted, #8b949e); font-size: 12px;
-    min-height: 36px;
+    display: flex; align-items: center; gap: 6px; margin: 6px 0; padding: 8px 12px;
+    background: var(--sky-bg, #0d1117); border: 1px dashed var(--sky-border, #21262d);
+    border-radius: 8px; cursor: pointer; user-select: none;
+    color: var(--sky-text-muted, #8b949e); font-size: 12px; min-height: 36px;
     transition: background-color .15s, border-color .15s, color .15s;
   }
-  .tool-group-more:hover {
-    background: rgba(255,255,255,0.04);
-    border-color: var(--sky-accent, #58a6ff);
-    color: var(--sky-accent, #58a6ff);
-  }
+  .tool-group-more:hover { background: rgba(255,255,255,0.04); border-color: var(--sky-accent, #58a6ff); color: var(--sky-accent, #58a6ff); }
   .tool-group-more svg { width: 14px; height: 14px; flex-shrink: 0; }
-  .tool-group-more .more-count {
-    font-size: 10px; padding: 1px 6px; border-radius: 8px;
-    background: var(--sky-bg-elevated, #161b22); color: var(--sky-text, #c9d1d9);
-    margin-left: auto;
-  }
-  /* 折叠态隐藏的工具块 */
+  .tool-group-more .more-count { font-size: 10px; padding: 1px 6px; border-radius: 8px; background: var(--sky-bg-elevated, #161b22); color: var(--sky-text, #c9d1d9); margin-left: auto; }
   .tool-block.folded-hidden { display: none; }
   .tool-group.expanded .tool-block.folded-hidden { display: block; }
   .tool-group.expanded .tool-group-more { display: none; }
 
   #input-bar {
-    display: flex; gap: 8px;
-    padding: 10px 12px calc(10px + var(--safe-bottom));
+    display: flex; gap: 8px; padding: 10px 12px;
     border-top: 1px solid var(--sky-border, #21262d);
-    background: var(--sky-bg-elevated, #161b22);
-    flex-shrink: 0;
+    background: var(--sky-bg-elevated, #161b22); flex-shrink: 0;
   }
   #input {
     flex: 1; background: var(--sky-bg-input, #0d1117);
     border: 1px solid var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9);
-    border-radius: 20px; padding: 10px 16px;
-    font: inherit; font-size: 16px; /* 16px 防 iOS 聚焦缩放 */
-    min-height: 44px;
+    border-radius: 20px; padding: 10px 16px; font: inherit; font-size: 16px; min-height: 44px;
   }
   #input:focus { outline: none; border-color: var(--sky-accent, #58a6ff); }
   #send-btn {
@@ -248,18 +296,16 @@ export const SHELL_HTML = `<!DOCTYPE html>
   #send-btn svg { width: 16px; height: 16px; }
   #send-btn:disabled { opacity: 0.5; }
 
-  /* 设置面板 */
   .field { margin-bottom: 12px; }
   .field label { display: block; font-size: 12px; color: var(--sky-text-muted, #8b949e); margin-bottom: 4px; }
-  .field input {
+  .field input, .field select {
     width: 100%; background: var(--sky-bg-input, #0d1117);
     border: 1px solid var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9);
-    border-radius: var(--sky-sm, 4px); padding: 10px 12px;
-    font: inherit; font-size: 16px; min-height: 44px;
+    border-radius: 4px; padding: 10px 12px; font: inherit; font-size: 16px; min-height: 44px;
   }
   .btn {
     background: var(--sky-primary, #1f6feb); color: #fff; border: none;
-    border-radius: var(--sky-sm, 4px); padding: 10px 16px; min-height: 44px;
+    border-radius: 4px; padding: 10px 16px; min-height: 44px;
     cursor: pointer; font: inherit; font-size: 15px; width: 100%;
   }
   .btn.secondary { background: var(--sky-border, #21262d); color: var(--sky-text, #c9d1d9); }
@@ -267,13 +313,12 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .status.ok { color: var(--sky-success, #238636); }
   .status.err { color: var(--sky-danger, #f85149); }
 
-  /* 会话列表 (内置组件) */
+  /* 会话列表 */
   .sess-list { display: flex; flex-direction: column; gap: 6px; }
   .sess-item {
     background: var(--sky-bg-elevated, #161b22);
     border: 1px solid var(--sky-border, #21262d);
-    border-radius: var(--sky-md, 6px);
-    padding: 8px 10px; cursor: pointer; min-height: 44px;
+    border-radius: 6px; padding: 8px 10px; cursor: pointer; min-height: 44px;
   }
   .sess-item:hover { border-color: var(--sky-accent, #58a6ff); }
   .sess-item.active { border-color: var(--sky-accent, #58a6ff); background: rgba(31,111,235,0.15); }
@@ -282,8 +327,8 @@ export const SHELL_HTML = `<!DOCTYPE html>
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .sess-meta {
-    font-size: 11px; color: var(--sky-text-muted, #8b949e);
-    margin-top: 4px; display: flex; gap: 8px; align-items: center;
+    font-size: 11px; color: var(--sky-text-muted, #8b949e); margin-top: 4px;
+    display: flex; gap: 8px; align-items: center;
   }
   .sess-del { margin-left: auto; color: var(--sky-text-muted, #8b949e); }
   .sess-del:hover { color: var(--sky-danger, #f85149); }
@@ -291,29 +336,34 @@ export const SHELL_HTML = `<!DOCTYPE html>
     color: var(--sky-text-muted, #8b949e); font-size: 12px;
     padding: 16px 0; text-align: center; line-height: 1.6;
   }
-  #sess-tools { display: flex; gap: 6px; margin-bottom: 10px; }
-  #sess-tools .btn { padding: 8px 10px; min-height: 38px; font-size: 13px; }
-
-  /* 聊天页顶栏 (会话标题 + 新会话) */
-  #chat-topbar {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px; flex-shrink: 0;
-    border-bottom: 1px solid var(--sky-border, #21262d);
-    background: var(--sky-bg-elevated, #161b22);
-  }
-  #chat-topbar .btn { width: auto; padding: 6px 10px; min-height: 32px; font-size: 12px; }
-  #chat-topbar .ct-title {
-    flex: 1; font-size: 12px; color: var(--sky-text-muted, #8b949e);
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
 
   /* AI 注入的自定义组件容器 */
   .sky-custom-comp {
     margin: 12px 0; padding: 10px 12px;
-    border: 1px dashed var(--sky-border, #21262d);
-    border-radius: 8px;
+    border: 1px dashed var(--sky-border, #21262d); border-radius: 8px;
   }
   .sky-custom-zone { margin-top: 16px; }
+
+  /* ============ 响应式: compact 模式 (断点 500px, 对齐原 Polaris) ============ */
+  @media (max-width: 500px) {
+    #sky-topbar { height: auto; padding: calc(var(--safe-top) + 6px) 8px 6px; }
+    #activity-bar { width: 28px; }
+    .ab-icon { width: 24px; height: 24px; }
+    .ab-icon svg { width: 16px; height: 16px; }
+    #left-panel {
+      position: fixed; inset: 0 auto 0 36px; z-index: 40; width: min(85vw, 320px);
+      box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+    }
+    #left-panel.hidden { display: none; }
+    .lp-backdrop {
+      position: fixed; inset: 0; z-index: 35; background: rgba(0,0,0,0.5);
+      display: none;
+    }
+    .lp-backdrop.show { display: block; }
+    #right-panel { width: 100%; border-left: none; }
+    #right-panel.collapsed { width: 100%; }
+    #input-bar { padding-bottom: calc(10px + var(--safe-bottom)); }
+  }
 </style>
 <style id="sky-dynamic"></style>
 </head>
@@ -350,29 +400,75 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <symbol id="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
   </symbol>
+  <symbol id="ic-menu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>
+  </symbol>
+  <symbol id="ic-close" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </symbol>
+  <symbol id="ic-sessions" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="ic-files" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+  </symbol>
 </svg>
 <div id="sky-root">
   <div id="sky-topbar">
+    <button class="topbar-btn" id="tb-menu" title="菜单"><svg width="18" height="18"><use href="#ic-menu"/></svg></button>
     <span class="title">Sky</span>
     <span class="badge" id="cap-badge">...</span>
+    <button class="topbar-btn" id="tb-settings" title="设置"><svg width="18" height="18"><use href="#ic-settings"/></svg></button>
   </div>
-  <div id="sky-content">
-    <div class="sky-page" id="page-sessions"><div id="comp-sessions"></div></div>
-    <div class="sky-page" id="page-caps"><div id="comp-caps-list"></div></div>
-    <div class="sky-page" id="page-chat"><div id="comp-chat" style="display:flex;flex-direction:column;height:100%"></div></div>
-    <div class="sky-page" id="page-settings"><div id="comp-config"></div></div>
+  <div id="sky-main">
+    <div id="activity-bar"></div>
+    <div class="lp-backdrop" id="lp-backdrop"></div>
+    <div id="left-panel">
+      <div class="lp-content" data-key="sessions" id="lp-sessions"></div>
+      <div class="lp-content" data-key="files" id="lp-files" hidden></div>
+      <div class="lp-content" data-key="caps" id="lp-caps" hidden></div>
+    </div>
+    <div id="center-stage">
+      <div id="cs-topbar">
+        <span class="ct-title" id="ct-title">新会话 (发送后自动保存)</span>
+        <button class="ct-btn" id="ct-new">新会话</button>
+      </div>
+      <div id="cs-messages">
+        <div class="msg assistant">Sky 能力 OS. AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight" 或 "改聊天字号 18px"</div>
+      </div>
+      <div id="input-bar">
+        <input id="input" type="text" placeholder="发送消息..." autocomplete="off" enterkeyhint="send">
+        <button id="send-btn"><svg><use href="#ic-send"/></svg></button>
+      </div>
+    </div>
+    <div id="right-panel"></div>
   </div>
-  <div id="sky-tabbar">
-    <button class="tab-btn" data-page="page-sessions"><svg class="icon"><use href="#ic-caps"/></svg>会话</button>
-    <button class="tab-btn active" data-page="page-chat"><svg class="icon"><use href="#ic-chat"/></svg>聊天</button>
-    <button class="tab-btn" data-page="page-caps"><svg class="icon"><use href="#ic-tool"/></svg>能力</button>
-    <button class="tab-btn" data-page="page-settings"><svg class="icon"><use href="#ic-settings"/></svg>设置</button>
+  <div id="settings-overlay">
+    <div id="settings-header">
+      <span class="s-title">设置</span>
+      <button class="s-close" id="s-close"><svg width="20" height="20"><use href="#ic-close"/></svg></button>
+    </div>
+    <div id="settings-body">
+      <div id="settings-tabs"></div>
+      <div id="settings-content"></div>
+    </div>
   </div>
 </div>
-
 <script>
-const $root = document.getElementById('sky-root');
-const dynamicStyle = document.getElementById('sky-dynamic');
+// ================================================================================
+// 状态机 (替代 zustand)
+// ================================================================================
+const state = {
+  activeLeftPanel: 'sessions',
+  leftPanelVisible: true,
+  rightPanelCollapsed: false,
+  isCompact: window.innerWidth < 500,
+  settingsOpen: false,
+  settingsTab: 'general',
+  theme: 'dark',
+};
+const $ = id => document.getElementById(id);
+const dynamicStyle = $('sky-dynamic');
 let ws = null;
 let currentStreamId = null;
 let currentMsgEl = null;
@@ -380,192 +476,430 @@ const pendingEvents = [];
 const pendingDispatch = [];
 let uiState = null;
 let streamingNotifyShown = false;
-
-// ---------------------------------------------------------------- dispatch 助手
 let dispatchSeq = 0;
+
+// ================================================================================
+// dispatch 助手 (走 HTTP, 与聊天同通路)
+// ================================================================================
 function dispatch(cap, params) {
   return fetch('/api/dispatch', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: POST_METHOD, headers: JSON_HEADERS,
     body: JSON.stringify({ cap, params, reqId: 'h-' + (++dispatchSeq) }),
   }).then(r => r.json()).then(r => r.result?.data ?? null).catch(e => {
-    console.warn('[dispatch] ' + cap, e);
-    return null;
+    console.warn('[dispatch] ' + cap, e); return null;
   });
 }
-function setSessionEl(id) {
-  const el = document.getElementById('session-id');
-  if (el) el.value = id || '';
-}
-function curSessionId() {
-  const el = document.getElementById('session-id');
-  return (el && el.value) || '';
-}
+const POST_METHOD = 'POST';
+const JSON_HEADERS = { 'Content-Type': 'application/json' };
 
-// ---------------------------------------------------------------- 会话列表 (内置组件)
+function setSessionEl(id) { const el = $('session-id'); if (el) el.value = id || ''; }
+function curSessionId() { const el = $('session-id'); return (el && el.value) || ''; }
+function setSessionId(id) { setSessionEl(id); updateChatTopbar(); }
+function updateChatTopbar() {
+  const id = curSessionId(); const t = $('ct-title');
+  if (t) t.textContent = id ? id : '新会话 (发送后自动保存)';
+}
+function clearChat() {
+  const m = $('cs-messages'); if (m) m.innerHTML = '<div class="msg assistant">新会话已创建. 开始聊吧.</div>';
+}
+function openChat() { /* CenterStage 始终可见, 无需切页 */ }
+
+// ================================================================================
+// ActivityBar 注册制 (对齐原 Polaris pluginRegistry.listViewContributions)
+// ================================================================================
+const activityBarItems = [
+  { id: 'sessions', icon: 'ic-sessions', label: '会话', panel: 'sessions' },
+  { id: 'files', icon: 'ic-files', label: '文件', panel: 'files' },
+  { id: 'caps', icon: 'ic-caps', label: '能力', panel: 'caps' },
+];
+function renderActivityBar() {
+  const bar = $('activity-bar'); if (!bar) return;
+  bar.innerHTML = activityBarItems.map(it =>
+    '<button class="ab-icon' + (state.activeLeftPanel === it.panel && state.leftPanelVisible ? ' active' : '') + '" data-panel="' + it.panel + '" title="' + it.label + '">' +
+    '<svg><use href="#' + it.icon + '"/></svg></button>'
+  ).join('') + '<div class="ab-spacer"></div><div class="ab-divider"></div>' +
+    '<button class="ab-icon" id="ab-settings" title="设置"><svg><use href="#ic-settings"/></svg></button>';
+  bar.querySelectorAll('.ab-icon[data-panel]').forEach(btn => {
+    btn.onclick = () => toggleLeftPanel(btn.dataset.panel);
+  });
+  $('ab-settings').onclick = () => openSettings();
+}
+function toggleLeftPanel(type) {
+  if (state.activeLeftPanel === type && state.leftPanelVisible) {
+    state.leftPanelVisible = false;
+  } else {
+    state.activeLeftPanel = type;
+    state.leftPanelVisible = true;
+  }
+  applyLeftPanel();
+}
+function applyLeftPanel() {
+  const lp = $('left-panel'); const backdrop = $('lp-backdrop');
+  if (!state.leftPanelVisible) {
+    lp.classList.add('hidden'); backdrop.classList.remove('show'); renderActivityBar(); return;
+  }
+  lp.classList.remove('hidden');
+  document.querySelectorAll('.lp-content').forEach(el => { el.hidden = el.dataset.key !== state.activeLeftPanel; });
+  if (state.isCompact) backdrop.classList.add('show'); else backdrop.classList.remove('show');
+  renderActivityBar();
+}
+$('lp-backdrop').addEventListener('click', () => { state.leftPanelVisible = false; applyLeftPanel(); });
+
+// ================================================================================
+// 会话列表 (内置组件, 渲染到 LeftPanel 的 sessions content)
+// ================================================================================
 function renderSessionList() {
-  const el = document.getElementById('sess-list');
-  if (!el) return;
-  el.classList.remove('sess-empty');
-  el.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div>';
+  const el = $('lp-sessions'); if (!el) return;
+  el.innerHTML = '<div class="lp-header"><span class="lp-title">会话</span>' +
+    '<button class="lp-btn" id="sess-refresh">刷新</button>' +
+    '<button class="lp-btn" id="sess-new">新建</button></div>' +
+    '<div class="lp-body"><div class="sess-list" id="sess-list"><div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div></div></div>';
+  $('sess-new').onclick = newSession;
+  $('sess-refresh').onclick = renderSessionList;
+  $('sess-list').onclick = (e) => {
+    const del = e.target.closest('[data-del]'); if (del) { e.stopPropagation(); deleteSession(del.dataset.del); return; }
+    const item = e.target.closest('[data-sid]'); if (item) switchSession(item.dataset.sid);
+  };
   dispatch('cap.session', { action: 'list', limit: 100 }).then(data => {
-    const sessions = (data && data.sessions) || [];
-    const cur = data && data.currentId;
-    const host = document.getElementById('sess-list');
-    if (!host) return;
-    if (!sessions.length) {
-      host.classList.add('sess-empty');
-      host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:16px 0;text-align:center;line-height:1.6">暂无会话<br>新建后自动出现在这里</div>';
-      return;
-    }
+    const sessions = (data && data.sessions) || []; const cur = data && data.currentId;
+    const host = $('sess-list'); if (!host) return;
+    if (!sessions.length) { host.innerHTML = '<div class="sess-empty">暂无会话<br>新建后自动出现在这里</div>'; return; }
     host.innerHTML = sessions.map(s => {
       const d = new Date(s.lastActive || s.createdAt || Date.now());
-      const stamp = (d.getMonth()+1) + '/' + d.getDate() + ' ' +
-        String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
-      const n = s.messages || 0;
+      const stamp = (d.getMonth()+1) + '/' + d.getDate() + ' ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
       return '<div class="sess-item' + (s.id === cur ? ' active' : '') + '" data-sid="' + esc(s.id) + '">' +
         '<div class="sess-title">' + esc(s.title || s.id) + '</div>' +
-        '<div class="sess-meta"><span>' + n + ' 条</span><span>' + stamp + '</span>' +
-        '<span class="sess-del" data-del="' + esc(s.id) + '" title="删除"><svg class="icon"><use href="#ic-x"/></svg></span></div>' +
-        '</div>';
+        '<div class="sess-meta"><span>' + (s.messages||0) + ' 条</span><span>' + stamp + '</span>' +
+        '<span class="sess-del" data-del="' + esc(s.id) + '" title="删除"><svg class="icon" width="14" height="14"><use href="#ic-x"/></svg></span></div></div>';
     }).join('');
   });
 }
-
 async function newSession() {
   const data = await dispatch('cap.session', { action: 'create' });
-  const id = data && data.id;
-  if (id) { setSessionId(id); openChat(); }
+  if (data && data.id) { setSessionId(data.id); }
   renderSessionList();
 }
-
 async function switchSession(id) {
   await dispatch('cap.session', { action: 'switch', sessionId: id });
-  loadSessionIntoChat(id);
-  renderSessionList();
+  loadSessionIntoChat(id); renderSessionList();
 }
-
 async function deleteSession(id) {
-  const msgs = document.getElementById('messages');
-  const confirmed = msgs && msgs.children.length === 0
-    ? true
-    : window.confirm('删除该会话? 聊天记录将一并删除');
-  if (!confirmed) return;
+  const confirmed = window.confirm('删除该会话? 聊天记录将一并删除'); if (!confirmed) return;
   const data = await dispatch('cap.session', { action: 'delete', sessionId: id });
   if (data && data.wasCurrent) { setSessionId(''); clearChat(); }
   renderSessionList();
 }
-
-// keep=true: 流式期间调用, 不清空消息区 (DOM 里已有本轮 user + 在途 assistant)
 async function loadSessionIntoChat(id, keep) {
-  setSessionId(id);
-  const msgs = document.getElementById('messages');
-  if (!msgs) return;
-  if (keep) {
-    await dispatch('cap.history', { action: 'list', sessionId: id }).catch(() => {});
-    return;
-  }
+  setSessionId(id); const msgs = $('cs-messages'); if (!msgs) return;
+  if (keep) { await dispatch('cap.history', { action: 'list', sessionId: id }).catch(()=>{}); return; }
   const data = await dispatch('cap.history', { action: 'list', sessionId: id });
   const hist = (data && data.messages) || [];
-  msgs.innerHTML = hist.map(m =>
-    '<div class="msg ' + (m.role === 'user' ? 'user' : 'assistant') + '">' + esc(String(m.content || '')) + '</div>').join('') ||
+  msgs.innerHTML = hist.map(m => '<div class="msg ' + (m.role === 'user' ? 'user' : 'assistant') + '">' + esc(String(m.content || '')) + '</div>').join('') ||
     '<div class="msg assistant">已切换到该会话. 继续聊吧.</div>';
   scrollMessages();
 }
-
-// 发送后自动落盘: 若本轮尚无会话, 用首条用户消息作标题创建 (幂等: 已有则仅 switch)
 async function ensureSession(title) {
   const cur = curSessionId();
   if (cur) { await dispatch('cap.session', { action: 'switch', sessionId: cur }); return cur; }
-  const t = title && title.trim()
-    ? title.trim().slice(0, 40)
-    : '会话 ' + new Date().toLocaleString();
+  const t = title && title.trim() ? title.trim().slice(0, 40) : '会话 ' + new Date().toLocaleString();
   const data = await dispatch('cap.session', { action: 'create', title: t });
-  const id = data && data.id;
-  if (!id) return '';
-  setSessionId(id);
-  renderSessionList();
-  return id;
+  const id = data && data.id; if (!id) return '';
+  setSessionId(id); renderSessionList(); return id;
 }
 
-function setSessionId(id) {
-  setSessionEl(id || '');
-  updateChatTopbar();
+// ================================================================================
+// 文件浏览器 (LeftPanel files content — 接 cap.fs, 显示 dataRoot 内文件)
+// ================================================================================
+async function renderFileList() {
+  const el = $('lp-files'); if (!el) return;
+  el.innerHTML = '<div class="lp-header"><span class="lp-title">文件</span>' +
+    '<button class="lp-btn" id="fs-refresh">刷新</button></div>' +
+    '<div class="lp-body"><div id="fs-tree" style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div></div>';
+  $('fs-refresh').onclick = () => renderFileList();
+  const data = await dispatch('cap.fs', { action: 'list', path: '.' });
+  const host = $('fs-tree'); if (!host) return;
+  if (!data || !data.entries) { host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">读取失败</div>'; return; }
+  host.innerHTML = data.entries.map(e =>
+    '<div style="padding:4px 6px;cursor:pointer;font-size:12px;color:var(--sky-text,#c9d1d9)" data-path="' + esc(e.name) + '">' +
+    (e.type === 'dir' ? '📁 ' : '📄 ') + esc(e.name) + '</div>'
+  ).join('');
 }
 
-function updateChatTopbar() {
-  const id = curSessionId();
-  const titleEl = document.getElementById('ct-title');
-  if (!titleEl) return;
-  titleEl.textContent = id ? id : '新会话 (发送后自动保存)';
+// ================================================================================
+// 能力列表 (LeftPanel caps content)
+// ================================================================================
+async function renderCapsList() {
+  const el = $('lp-caps'); if (!el) return;
+  el.innerHTML = '<div class="lp-header"><span class="lp-title">能力</span></div><div class="lp-body" id="caps-body"></div>';
+  const r = await fetch('/api/caps').then(r=>r.json());
+  const caps = r.caps || [];
+  const badge = $('cap-badge'); if (badge) badge.textContent = caps.length + ' caps';
+  const body = $('caps-body');
+  if (body) body.innerHTML = caps.map(c =>
+    '<div class="cap-item"><div><span class="cap-id">' + c.id + '</span>' +
+    (c.streaming ? '<span class="tag">stream</span>' : '') + '</div>' +
+    '<div class="cap-desc">' + esc(c.description || '') + '</div></div>'
+  ).join('');
 }
 
-function clearChat() {
-  const msgs = document.getElementById('messages');
-  if (msgs) msgs.innerHTML = '<div class="msg assistant">新会话已创建. 开始聊吧.</div>';
+// ================================================================================
+// 聊天 (CenterStage 内)
+// ================================================================================
+function scrollMessages() { const m = $('cs-messages'); if (m) m.scrollTop = m.scrollHeight; }
+const toolBlocks = new Map();
+let currentRoundBlocks = [];
+function toolBlockKey(name, ev) { return name + '#' + (ev.data?.callSeq ?? ev._seq ?? ''); }
+function ensureToolGroup() {
+  const messages = $('cs-messages'); if (!messages) return null;
+  let group = messages.querySelector('.tool-group:last-child');
+  if (!group || group.dataset.closed === '1') { group = document.createElement('div'); group.className = 'tool-group'; messages.appendChild(group); currentRoundBlocks = []; }
+  return group;
+}
+function applyToolGroupFolding(group) {
+  const cfg = (uiState && uiState.chat) || {};
+  const threshold = cfg.toolCollapseThreshold ?? 5; const maxVisible = cfg.toolMaxVisible ?? 4;
+  const blocks = [...group.querySelectorAll('.tool-block')];
+  if (blocks.length <= threshold) { blocks.forEach(b => b.classList.remove('folded-hidden')); const more = group.querySelector('.tool-group-more'); if (more) more.remove(); return; }
+  const hidden = blocks.slice(maxVisible); hidden.forEach(b => b.classList.add('folded-hidden'));
+  let more = group.querySelector('.tool-group-more');
+  if (!more) { more = document.createElement('div'); more.className = 'tool-group-more'; more.innerHTML = '<svg><use href="#ic-chev"/></svg><span>展开剩余</span><span class="more-count">0</span>'; more.onclick = () => group.classList.toggle('expanded'); group.appendChild(more); }
+  more.querySelector('.more-count').textContent = hidden.length;
+}
+function addToolCall(ev) {
+  const messages = $('cs-messages'); if (!messages) return;
+  const cfg = (uiState && uiState.chat) || {};
+  const group = ensureToolGroup();
+  const seq = (ev.data?.callSeq ?? Date.now().toString(36)); const key = ev.data.name + '#' + seq;
+  const argsStr = cfg.toolShowFullArgs ? JSON.stringify(ev.data.args, null, 2) : JSON.stringify(ev.data.args).slice(0, cfg.toolSummaryLen || 120);
+  const summary = ev.data.name + '(' + (cfg.toolShowFullArgs ? '' : (argsStr.length < JSON.stringify(ev.data.args).length ? argsStr + '…' : argsStr)) + ')';
+  const block = document.createElement('div');
+  block.className = 'tool-block running' + (cfg.toolStyle === 'card' ? ' card' : '');
+  block.dataset.key = key;
+  const head = document.createElement('div'); head.className = 'tool-head';
+  head.innerHTML = '<svg class="tool-icon"><use href="#ic-loader"/></svg><span class="tool-name">' + esc(ev.data.name) + '</span><span class="tool-summary">' + esc(summary) + '</span><svg class="tool-chev"><use href="#ic-chev"/></svg>';
+  const body = document.createElement('div'); body.className = 'tool-body';
+  body.innerHTML = '<div class="tool-section">参数</div><div class="tool-json">' + esc(argsStr) + '</div><div class="tool-section">结果</div><div class="tool-result-pending">等待中…</div>';
+  block.appendChild(head); block.appendChild(body);
+  head.onclick = () => block.classList.toggle('expanded');
+  if (cfg.toolCollapsed === false) block.classList.add('expanded');
+  if (group) { group.appendChild(block); currentRoundBlocks.push(key); applyToolGroupFolding(group); } else { messages.appendChild(block); }
+  toolBlocks.set(key, { el: block, head, body, argsStr, status: 'running' });
+  scrollMessages();
+}
+function addToolResult(ev) {
+  const cfg = (uiState && uiState.chat) || {};
+  let target = null, targetKey = null;
+  for (const [k, v] of [...toolBlocks].reverse()) { if (k.startsWith(ev.data.name + '#') && v.status === 'running') { target = v; targetKey = k; break; } }
+  const resultStr = cfg.toolShowFullArgs ? JSON.stringify(ev.data.result, null, 2) : JSON.stringify(ev.data.result).slice(0, cfg.toolSummaryLen || 120);
+  if (!target) { addToolCall({ data: { name: ev.data.name, args: {}, callSeq: Date.now().toString(36) + '-x' } }); const lastKey = [...toolBlocks].pop()[0]; target = toolBlocks.get(lastKey); targetKey = lastKey; }
+  const ok = ev.data.result?.ok; target.status = ok ? 'ok' : 'err';
+  target.el.classList.remove('running'); target.el.classList.add(ok ? 'ok' : 'err');
+  const iconUse = target.head.querySelector('.tool-icon use'); iconUse.setAttribute('href', ok ? '#ic-check' : '#ic-x');
+  const pending = target.body.querySelector('.tool-result-pending');
+  pending.classList.remove('tool-result-pending'); pending.classList.add(ok ? 'tool-result-ok' : 'tool-result-err');
+  pending.textContent = ok ? '成功' : '失败';
+  const resultJson = document.createElement('div'); resultJson.className = 'tool-json';
+  resultJson.textContent = resultStr + (cfg.toolShowFullArgs ? '' : (JSON.stringify(ev.data.result).length > (cfg.toolSummaryLen||120) ? '…' : ''));
+  pending.after(resultJson); scrollMessages();
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function renderMarkdown(text) {
+  const BT = String.fromCharCode(96); const fence = BT + BT + BT;
+  let html = esc(text);
+  const reFence = new RegExp(fence + '(\\\\w*)\\\\n([\\\\s\\\\S]*?)' + fence, 'g');
+  html = html.replace(reFence, (_, lang, code) => '<pre><code>' + code.replace(/&quot;/g,'"') + '</code></pre>');
+  const reInline = new RegExp(BT + '([^' + BT + '\\\\n]+)' + BT, 'g');
+  html = html.replace(reInline, '<code>$1</code>');
+  html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+  html = html.split(/\\n{2,}/).map(p => '<p>' + p.replace(/\\n/g, '<br>') + '</p>').join('');
+  return html;
+}
+function addMsg(cls, text) {
+  const messages = $('cs-messages'); if (!messages) return null;
+  const el = document.createElement('div'); el.className = 'msg ' + cls;
+  const cfg = (uiState && uiState.chat) || {};
+  if (cls === 'assistant' && cfg.markdownEnabled !== false) { el.innerHTML = renderMarkdown(text); } else { el.textContent = text; }
+  messages.appendChild(el); scrollMessages(); return el;
+}
+async function send() {
+  const input = $('input'); const btn = $('send-btn');
+  const text = input.value.trim(); if (!text || btn.disabled) return;
+  btn.disabled = true; input.value = ''; addMsg('user', text);
+  const sessionId = await ensureSession(text);
+  currentMsgEl = addMsg('assistant', ''); currentStreamId = null; pendingEvents.length = 0;
+  const messages = $('cs-messages');
+  if (messages) { messages.querySelectorAll('.tool-group').forEach(g => { g.dataset.closed = '1'; }); }
+  currentRoundBlocks = [];
+  const msg = { type: 'dispatch', reqId: 'req-' + Date.now().toString(36), cap: 'cap.ai.chat', stream: true, params: { messages: [{ role: 'user', content: text }], sessionId } };
+  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg)); else pendingDispatch.push(msg);
 }
 
-function openChat() {
-  switchPage('page-chat');
-  const i = document.getElementById('input');
-  if (i) i.focus();
+// ================================================================================
+// 设置覆盖层 (tab 系统)
+// ================================================================================
+const settingsTabs = [
+  { id: 'general', label: '通用', render: renderGeneralSettings },
+  { id: 'ai', label: 'AI 配置', render: renderAiSettings },
+  { id: 'theme', label: '主题', render: renderThemeSettings },
+  { id: 'about', label: '关于', render: renderAboutSettings },
+];
+function openSettings(tab) {
+  state.settingsOpen = true; state.settingsTab = tab || 'general';
+  $('settings-overlay').classList.add('open'); renderSettings();
 }
-
-// ---------------------------------------------------------------- 会话面板构建
-function buildSessions() {
-  const el = document.getElementById('comp-sessions');
-  if (!el || el.dataset.built) return;
-  el.dataset.built = '1';
-  el.innerHTML =
-    '<h2>会话</h2>' +
-    '<div id="sess-tools">' +
-      '<button class="btn secondary" id="sess-refresh">刷新</button>' +
-      '<button class="btn" id="sess-new">新建</button>' +
-    '</div>' +
-    '<div class="sess-list" id="sess-list"></div>';
-  document.getElementById('sess-new').onclick = newSession;
-  document.getElementById('sess-refresh').onclick = renderSessionList;
-  document.getElementById('sess-list').onclick = (e) => {
-    const del = e.target.closest('[data-del]');
-    if (del) { e.stopPropagation(); deleteSession(del.dataset.del); return; }
-    const item = e.target.closest('[data-sid]');
-    if (item) switchSession(item.dataset.sid);
-  };
-  renderSessionList();
+function closeSettings() { state.settingsOpen = false; $('settings-overlay').classList.remove('open'); }
+function renderSettings() {
+  const tabs = $('settings-tabs'); if (!tabs) return;
+  tabs.innerHTML = settingsTabs.map(t => '<button class="s-tab' + (state.settingsTab === t.id ? ' active' : '') + '" data-tab="' + t.id + '">' + t.label + '</button>').join('');
+  tabs.querySelectorAll('.s-tab').forEach(btn => { btn.onclick = () => { state.settingsTab = btn.dataset.tab; renderSettings(); }; });
+  const content = $('settings-content');
+  const tab = settingsTabs.find(t => t.id === state.settingsTab);
+  if (tab && tab.render) tab.render(content);
 }
-
-
-// ---------------------------------------------------------------- Tab 切换 (手机)
-document.getElementById('sky-tabbar').addEventListener('click', (e) => {
-  const btn = e.target.closest('.tab-btn');
-  if (!btn) return;
-  switchPage(btn.dataset.page);
-  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-});
-
-function switchPage(id) {
-  document.querySelectorAll('.sky-page').forEach(p => p.classList.toggle('active', p.id === id));
-  if (id === 'page-chat') scrollMessages();
-}
-
-// ---------------------------------------------------------------- 键盘适配 (visualViewport)
-const vv = window.visualViewport;
-if (vv) {
-  vv.addEventListener('resize', () => {
-    // 键盘弹出: viewport 高度变小 → input-bar 上移
-    // 用 dvh + 调整 content 高度
-    document.getElementById('sky-content').style.height = vv.height + 'px';
-    scrollMessages();
+function renderGeneralSettings(el) {
+  el.innerHTML = '<h2>通用</h2>' +
+    '<div class="field"><label>数据根目录</label><input type="text" id="cfg-data-root" readonly></div>' +
+    '<div class="field"><label>当前会话</label><input type="text" id="cfg-session-id" readonly></div>' +
+    '<div class="status" id="general-status"></div>';
+  dispatch('cap.config', { action: 'get' }).then(cfg => {
+    // 临时占位: 实际数据根从 cap.shell.info 或 cap.storage 获取
   });
-  vv.addEventListener('scroll', scrollMessages);
+  const sid = curSessionId();
+  const sidEl = $('cfg-session-id'); if (sidEl) sidEl.value = sid || '(无)';
+}
+function renderAiSettings(el) {
+  el.innerHTML = '<h2>AI 配置</h2>' +
+    '<div class="field"><label>Base URL</label><input id="base-url" type="text" placeholder="https://api.openai.com"></div>' +
+    '<div class="field"><label>API Key</label><input id="api-key" type="password" placeholder="sk-..."></div>' +
+    '<div class="field"><label>Model</label><input id="model" type="text" placeholder="gpt-4o-mini"></div>' +
+    '<button class="btn" id="save-config">保存配置</button><div class="status" id="config-status"></div>';
+  fetch('/api/config').then(r=>r.json()).then(r => {
+    const cfg = r.result?.ok ? r.result.data : {};
+    const baseEl = $('base-url'); if (baseEl) baseEl.value = cfg.ai?.baseUrl || '';
+    const keyEl = $('api-key'); if (keyEl) keyEl.value = cfg.ai?.apiKey || '';
+    const modelEl = $('model'); if (modelEl) modelEl.value = cfg.ai?.model || 'gpt-4o-mini';
+  });
+  $('save-config').onclick = async () => {
+    const status = $('config-status'); status.textContent = '保存中...'; status.className = 'status';
+    const r = await fetch('/api/config', { method:'POST', headers: JSON_HEADERS, body: JSON.stringify({ ai: {
+      baseUrl: $('base-url').value, apiKey: $('api-key').value, model: $('model').value || 'gpt-4o-mini',
+    }})}).then(r=>r.json());
+    if (r.result?.ok) { status.textContent = '已保存'; status.className = 'status ok'; }
+    else { status.textContent = '失败: ' + (r.result?.error || '未知错误'); status.className = 'status err'; }
+  };
+}
+function renderThemeSettings(el) {
+  const presets = ['dark', 'midnight', 'ocean', 'forest', 'sunset'];
+  el.innerHTML = '<h2>主题</h2><div id="theme-presets" style="display:flex;gap:8px;flex-wrap:wrap"></div>' +
+    '<div class="status" id="theme-status" style="margin-top:12px"></div>';
+  const host = $('theme-presets');
+  host.innerHTML = presets.map(p => '<button class="btn secondary" data-theme="' + p + '" style="width:auto">' + p + '</button>').join('');
+  host.querySelectorAll('[data-theme]').forEach(btn => {
+    btn.onclick = async () => {
+      await dispatch('cap.ui.theme', { action: 'apply', preset: btn.dataset.theme });
+      const s = $('theme-status'); s.textContent = '已切换: ' + btn.dataset.theme; s.className = 'status ok';
+    };
+  });
+}
+function renderAboutSettings(el) {
+  el.innerHTML = '<h2>关于</h2><div style="font-size:13px;line-height:1.8;color:var(--sky-text-muted,#8b949e)">' +
+    '<p><strong style="color:var(--sky-text,#c9d1d9)">Sky</strong> · Capability OS</p>' +
+    '<p>Node + TypeScript 无头 Core + Web Shell</p>' +
+    '<p>一切能力通过 cap 注册, AI 可调用所有 cap 含 UI 演进</p>' +
+    '<p style="margin-top:12px">架构: 对齐 Polaris 布局范式</p>' +
+    '<p>断点: 500px (compact 模式)</p>' +
+    '<p>保活: hidden 属性 (DOM 保留, 状态不丢)</p>' +
+    '</div>';
 }
 
-function scrollMessages() {
-  const m = document.getElementById('messages');
-  if (m) m.scrollTop = m.scrollHeight;
+// ================================================================================
+// UI State 渲染 (theme + styles + chat config + 动态组件)
+// ================================================================================
+function render() {
+  if (!uiState) return;
+  const t = uiState.theme || {};
+  let css = ':root{';
+  for (const [k,v] of Object.entries(t.colors||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
+  for (const [k,v] of Object.entries(t.spacing||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
+  for (const [k,v] of Object.entries(t.typography||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
+  for (const [k,v] of Object.entries(t.shadows||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
+  for (const [k,v] of Object.entries(t.radii||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
+  css += '}';
+  for (const rule of (uiState.styles||[])) { css += rule.selector + '{' + Object.entries(rule.properties||{}).map(([k,v])=>kebab(k)+':'+v).join(';') + '}'; }
+  dynamicStyle.textContent = css;
+  const c = uiState.chat || {};
+  const root = document.documentElement.style;
+  root.setProperty('--msg-user-maxw', c.userMaxWidth || '85%');
+  root.setProperty('--msg-assistant-maxw', c.assistantMaxWidth || '100%');
+  root.setProperty('--chat-gap', c.messageGap || '10px');
+  root.setProperty('--chat-fontsize', (c.fontSize || 15) + 'px');
+  renderComponents(); uiUpdateNotify();
+}
+function kebab(s) { return s.replace(/([A-Z])/g, '-$1').toLowerCase(); }
+
+// ================================================================================
+// 动态组件渲染 (AI 注入, 真脚本执行)
+// ================================================================================
+const MOUNT_MAP = { sessions: 'lp-sessions', files: 'lp-files', caps: 'lp-caps', main: 'cs-messages', right: 'right-panel', sidebar: 'lp-sessions' };
+const liveComponents = new Map();
+const customListeners = new Set();
+const SKY_HOST = {
+  dispatch: dispatch,
+  state: function () { return uiState ? structuredClone(uiState) : null; },
+  on: function (fn) { if (typeof fn === 'function') customListeners.add(fn); return function off() { customListeners.delete(fn); }; },
+  page: function () { return state.activeLeftPanel; },
+  switchPage: (id) => toggleLeftPanel(id),
+  addMsg: addMsg,
+};
+window.__sky = SKY_HOST;
+function uiUpdateNotify() { for (const fn of customListeners) { try { fn(uiState); } catch (e) { console.warn('[custom] listener', e); } } }
+function compSig(comp) { try { return JSON.stringify(comp.props || {}) + '@' + (comp.mountPoint || ''); } catch (e) { return Math.random().toString(36); } }
+function execCustomJs(code, root) {
+  try { const factory = new Function('root', '__sky', code); factory(root, SKY_HOST); return null; }
+  catch (e) { return e; }
+}
+function renderComponents() {
+  if (!uiState || !uiState.components) return;
+  const seen = new Set();
+  for (const comp of uiState.components) {
+    if (comp.type !== 'custom') continue; seen.add(comp.id);
+    const hostId = MOUNT_MAP[comp.mountPoint] || MOUNT_MAP.right; const host = $(hostId); if (!host) continue;
+    const sig = compSig(comp); const prev = liveComponents.get(comp.id);
+    if (prev && prev.sig === sig) continue;
+    let zone = $('sky-custom-zone-' + hostId);
+    if (!zone) { zone = document.createElement('div'); zone.id = 'sky-custom-zone-' + hostId; zone.className = 'sky-custom-zone'; host.appendChild(zone); }
+    if (prev) { if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root); if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl); }
+    const props = comp.props || {}; const wrapper = document.createElement('div');
+    wrapper.className = 'sky-custom-comp'; wrapper.dataset.compId = comp.id;
+    if (props.html) wrapper.innerHTML = props.html; zone.appendChild(wrapper);
+    let styleEl = null;
+    if (props.css) { styleEl = document.createElement('style'); styleEl.textContent = scopeCss(props.css, wrapper); document.head.appendChild(styleEl); }
+    liveComponents.set(comp.id, { sig, root: wrapper, styleEl });
+    if (typeof props.js === 'string' && props.js.trim()) {
+      const err = execCustomJs(props.js, wrapper);
+      if (err) { console.warn('[custom] js error in ' + comp.id + ':', err.message); const note = document.createElement('div'); note.style.cssText = 'margin-top:8px;padding:6px 8px;font-size:11px;border-radius:4px;background:rgba(248,81,73,.12);color:#f85149;'; note.textContent = '组件脚本错误: ' + err.message; wrapper.appendChild(note); }
+    }
+  }
+  for (const [id, prev] of liveComponents) { if (seen.has(id)) continue; if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root); if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl); liveComponents.delete(id); }
+  for (const z of document.querySelectorAll('.sky-custom-zone')) { if (!z.childElementCount) z.parentNode.removeChild(z); }
+}
+function scopeCss(css, wrapper) {
+  const id = 'sky-c-' + Math.random().toString(36).slice(2, 9);
+  wrapper.id = wrapper.id ? wrapper.id + ' ' + id : id;
+  const PREFIX = '#' + id + ' '; let depth = 0; let kfDepth = -1;
+  return css.replace(/\\s*([^{}]*)\\{|\\}/g, function (m) {
+    if (m === '}') { if (depth === kfDepth) kfDepth = -1; depth--; return '}'; }
+    const sel = m.replace(/\\{$/, '').trim();
+    if (/^@/.test(sel)) { if (/^@keyframes/i.test(sel)) kfDepth = depth + 1; depth++; return m; }
+    const inKeyframes = depth === kfDepth; depth++;
+    if (inKeyframes) return m;
+    return ' ' + sel.split(',').map(function (s) { const t = s.trim(); return t ? PREFIX + t : t; }).join(',') + '{';
+  });
 }
 
-// ---------------------------------------------------------------- WS
+// ================================================================================
+// WS 连接
+// ================================================================================
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   const token = new URLSearchParams(location.search).get('token') || '';
@@ -581,630 +915,111 @@ function connectWs() {
     else if (msg.type === 'shell-invoke') handleShellInvoke(msg);
     else if (msg.type === 'reply') {
       const data = msg.reply?.result?.ok ? msg.reply.result.data : null;
-      if (data && data.streamId) {
-        currentStreamId = data.streamId;
-        while (pendingEvents.length) handleEvent(pendingEvents.shift());
-      } else if (!msg.reply?.result?.ok) {
-        if (currentMsgEl && !currentMsgEl.textContent) {
-          currentMsgEl.textContent = '错误: ' + (msg.reply?.result?.error || 'unknown');
-        }
-        const btn = document.getElementById('send-btn');
-        if (btn) btn.disabled = false;
-      }
+      if (data && data.streamId) { currentStreamId = data.streamId; while (pendingEvents.length) handleEvent(pendingEvents.shift()); }
+      else if (!msg.reply?.result?.ok) { if (currentMsgEl && !currentMsgEl.textContent) { currentMsgEl.textContent = '错误: ' + (msg.reply?.result?.error || 'unknown'); } const btn = $('send-btn'); if (btn) btn.disabled = false; }
     }
   };
   ws.onclose = () => setTimeout(connectWs, 1000);
 }
-
-// ---------------------------------------------------------------- Shell invoke (前端执行 cap)
 async function handleShellInvoke(msg) {
-  let result;
-  try {
-    if (msg.cap === 'cap.ui.observe') {
-      result = await observeInvoke(msg.params || {});
-    } else {
-      result = { ok: false, error: 'cap not provided by shell: ' + msg.cap };
-    }
-  } catch (err) {
-    result = { ok: false, error: String(err && err.message || err) };
-  }
-  ws.send(JSON.stringify({ type: 'shell-invoke-result', reqId: msg.reqId, result }));
+  const p = msg.params || {}; const action = p.action;
+  if (action === 'screenshot' || action === 'inspect' || action === 'metrics') {
+    const r = await observeInvoke(p); ws.send(JSON.stringify({ type: 'shell-invoke-result', reqId: msg.reqId, result: r }));
+  } else { ws.send(JSON.stringify({ type: 'shell-invoke-result', reqId: msg.reqId, result: { ok: false, error: 'unknown action: ' + action } })); }
 }
-
 async function observeInvoke(p) {
-  if (p.action === 'screenshot') {
-    const html = document.documentElement.outerHTML;
-    return {
-      ok: true, type: 'dom-snapshot',
-      note: 'DOM snapshot (no pixel capture in preview)',
-      size: html.length, dom: html.slice(0, 50000),
-      viewport: { w: innerWidth, h: innerHeight },
-      isMobile: matchMedia('(max-width: 767px)').matches,
-      activePage: document.querySelector('.sky-page.active')?.id || null,
-    };
+  const action = p.action;
+  if (action === 'screenshot') {
+    if (!('captureScreen' in window)) return { ok: false, error: 'screenshot not supported' };
+    return { ok: true, note: 'use browser devtools' };
   }
-  if (p.action === 'inspect') {
-    if (!p.selector) return { ok: false, error: 'selector required' };
-    const el = document.querySelector(p.selector);
-    if (!el) return { ok: false, error: 'element not found: ' + p.selector };
-    const cs = getComputedStyle(el);
-    const props = {};
-    for (const k of ['display','position','width','height','color','backgroundColor','fontSize','fontWeight','margin','padding','border','borderRadius','overflow','flexDirection','gridTemplateColumns']) {
-      props[k] = cs[k];
-    }
-    return { ok: true, selector: p.selector, tagName: el.tagName, text: (el.textContent||'').slice(0,200), computed: props, rect: el.getBoundingClientRect().toJSON() };
+  if (action === 'inspect') {
+    const sel = p.selector; if (!sel) return { ok: false, error: 'selector required' };
+    const el = document.querySelector(sel); if (!el) return { ok: false, notFound: true };
+    const r = el.getBoundingClientRect();
+    return { ok: true, tag: el.tagName, id: el.id, className: el.className, rect: { x: r.x, y: r.y, w: r.width, h: r.height }, text: (el.innerText || '').slice(0, 500) };
   }
-  if (p.action === 'metrics') {
-    return {
-      ok: true,
-      viewport: { w: innerWidth, h: innerHeight, dpr: devicePixelRatio },
-      isMobile: matchMedia('(max-width: 767px)').matches,
-      activePage: document.querySelector('.sky-page.active')?.id || null,
-      keyboardHeight: vv ? Math.max(0, innerHeight - vv.height - vv.offsetTop) : 0,
-      scrollY: scrollY,
-      title: document.title,
-    };
+  if (action === 'metrics') {
+    const entries = performance.getEntriesByType('navigation');
+    const nav = entries[0] || {};
+    return { ok: true, dom: document.documentElement.outerHTML.length, title: document.title, scrollY: window.scrollY, nav: { loadTime: nav.loadEventEnd, domContentLoaded: nav.domContentLoadedEventEnd } };
   }
-  return { ok: false, error: 'unknown observe action: ' + p.action };
+  return { ok: false, error: 'unknown observe action: ' + action };
 }
 
-// ---------------------------------------------------------------- UI State 渲染
-function render() {
-  if (!uiState) return;
-  const t = uiState.theme || {};
-  let css = ':root{';
-  for (const [k,v] of Object.entries(t.colors||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
-  for (const [k,v] of Object.entries(t.spacing||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
-  for (const [k,v] of Object.entries(t.typography||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
-  for (const [k,v] of Object.entries(t.shadows||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
-  for (const [k,v] of Object.entries(t.radii||{})) css += '--sky-' + kebab(k) + ':' + v + ';';
-  css += '}';
-  for (const rule of (uiState.styles||[])) {
-    css += rule.selector + '{' + Object.entries(rule.properties||{}).map(([k,v])=>kebab(k)+':'+v).join(';') + '}';
-  }
-  dynamicStyle.textContent = css;
-  // 桌面栏宽 (手机固定 Tab 结构, 不应用 grid)
-  applyDesktopCols();
-  // ChatConfig → CSS 变量 (消息宽度/字号/间距)
-  const c = uiState.chat || {};
-  const root = document.documentElement.style;
-  root.setProperty('--msg-user-maxw', c.userMaxWidth || '85%');
-  root.setProperty('--msg-assistant-maxw', c.assistantMaxWidth || '100%');
-  root.setProperty('--chat-gap', c.messageGap || '10px');
-  root.setProperty('--chat-fontsize', (c.fontSize || 15) + 'px');
-  // 动态渲染 custom 组件 (AI 经 cap.ui.component 添加/更新的) + 通知已注入组件
-  renderComponents();
-  uiUpdateNotify();
-}
-
-// ---------------------------------------------------------------- 桌面栏布局 + 动态组件渲染 (AI 注入)
-// 栏顺序 = grid 列顺序 = .sky-page 的 DOM 顺序, 三者必须一致 (grid 按 DOM 顺序排).
-// layout.children 只提供每栏宽度, 顺序以本页 DOM 为准 — 否则 AI 重排 children 会让列宽错位.
-const COLUMNS = [
-  { region: 'sessions', page: 'page-sessions', w: '230px' },
-  { region: 'sidebar', page: 'page-caps', w: '240px' },
-  { region: 'main', page: 'page-chat', w: '1fr' },
-  { region: 'right', page: 'page-settings', w: '280px' },
-];
-// mountPoint → page id (AI 决定组件落在哪一栏)
-const MOUNT_MAP = {};
-for (const c of COLUMNS) {
-  MOUNT_MAP[c.region] = c.page;
-  MOUNT_MAP[c.page] = c.page;
-}
-MOUNT_MAP.top = MOUNT_MAP.bottom = COLUMNS[2].page;
-
-function applyDesktopCols() {
-  if (!matchMedia('(min-width: 768px)').matches) return;
-  const byId = {};
-  for (const r of (uiState && uiState.layout && uiState.layout.children) || []) byId[r.id] = r;
-  const widths = COLUMNS.map(c => {
-    const r = byId[c.region];
-    return (r && r.props && r.props.width) ? r.props.width : c.w;
-  });
-  document.getElementById('sky-content').style.setProperty('--desktop-cols', widths.join(' '));
-}
-// 窗口跨越 768px 断点时重算 (手机 Tab ⇄ 桌面 grid)
-matchMedia('(min-width: 768px)').addEventListener('change', applyDesktopCols);
-// compId → { sig, root, styleEl } — 用于内容变更检测与热更新
-const liveComponents = new Map();
-// AI 组件的 UI 更新订阅者 (js 代码可注册回调)
-const customListeners = new Set();
-
-// 暴露给 AI 自定义组件的最小运行环境
-const SKY_HOST = {
-  // 调任意 cap (走 HTTP dispatch, 与聊天同一条通路)
-  dispatch: dispatch,
-  // 读当前 UI State (返回副本, 防止外部改动污染渲染)
-  state: function () { return uiState ? structuredClone(uiState) : null; },
-  // 订阅 UI State 变更 (AI 组件可响应主题/聊天配置的调整)
-  on: function (fn) {
-    if (typeof fn === 'function') customListeners.add(fn);
-    return function off() { customListeners.delete(fn); };
-  },
-  // 当前激活的移动端页面 id
-  page: function () { return document.querySelector('.sky-page.active')?.id || null; },
-  // 切页面
-  switchPage: switchPage,
-  // 在聊天里插一条消息
-  addMsg: addMsg,
-};
-// 模板字符串内的 script 不能直接引用后定义的全局, 故挂 window
-window.__sky = SKY_HOST;
-
-function uiUpdateNotify() {
-  for (const fn of customListeners) { try { fn(uiState); } catch (e) { console.warn('[custom] listener', e); } }
-}
-
-// 内容签名: props 变了就重建 (支持 cap.ui.component update 热生效)
-function compSig(comp) {
-  try { return JSON.stringify(comp.props || {}) + '@' + (comp.mountPoint || ''); }
-  catch (e) { return Math.random().toString(36); }
-}
-
-function execCustomJs(code, root) {
-  // new Function 而非注入 script 标签: 代码来自 JSON 数据, 不会被 HTML 解析截断,
-  // 且可注入受限上下文. 代码运行在全局作用域, 但只能访问 SKY_HOST 暴露的能力.
-  // 注意: 本文件内任何位置都不能出现 script 的闭合标签字面量 — HTML 解析器会据此
-  // 提前结束 script 元素 (即便写在注释或字符串里), 整段前端都会变纯文本.
-  try {
-    const factory = new Function('root', '__sky', code);
-    factory(root, SKY_HOST);
-    return null;
-  } catch (e) {
-    return e;
-  }
-}
-
-function renderComponents() {
-  if (!uiState || !uiState.components) return;
-  const seen = new Set();
-  for (const comp of uiState.components) {
-    if (comp.type !== 'custom') continue;
-    seen.add(comp.id);
-    const hostId = MOUNT_MAP[comp.mountPoint] || MOUNT_MAP.right;
-    const host = document.getElementById(hostId);
-    if (!host) continue;
-
-    const sig = compSig(comp);
-    const prev = liveComponents.get(comp.id);
-    if (prev && prev.sig === sig) continue; // 内容未变, 跳过
-
-    // 确保该 page 内有独立挂载区块 (多组件共享)
-    let zone = document.getElementById('sky-custom-zone-' + hostId);
-    if (!zone) {
-      zone = document.createElement('div');
-      zone.id = 'sky-custom-zone-' + hostId;
-      zone.className = 'sky-custom-zone';
-      host.appendChild(zone);
-    }
-
-    // 重建: 移除旧节点 + 旧样式
-    if (prev) {
-      if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root);
-      if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl);
-    }
-
-    const props = comp.props || {};
-    const wrapper = document.createElement('div');
-    wrapper.className = 'sky-custom-comp';
-    wrapper.dataset.compId = comp.id;
-    if (props.html) wrapper.innerHTML = props.html;
-    zone.appendChild(wrapper);
-
-    let styleEl = null;
-    if (props.css) {
-      styleEl = document.createElement('style');
-      // AI 组件的 CSS 作用域限定在 wrapper 内, 防止污染全局
-      styleEl.textContent = scopeCss(props.css, wrapper);
-      document.head.appendChild(styleEl);
-    }
-
-    liveComponents.set(comp.id, { sig: sig, root: wrapper, styleEl: styleEl });
-
-    if (typeof props.js === 'string' && props.js.trim()) {
-      const err = execCustomJs(props.js, wrapper);
-      if (err) {
-        console.warn('[custom] js error in ' + comp.id + ':', err.message);
-        const note = document.createElement('div');
-        note.style.cssText = 'margin-top:8px;padding:6px 8px;font-size:11px;border-radius:4px;' +
-          'background:rgba(248,81,73,.12);color:#f85149;';
-        note.textContent = '组件脚本错误: ' + err.message;
-        wrapper.appendChild(note);
-      }
-    }
-  }
-  // 清理已删除的组件 (cap.ui.component remove 后不留残骸)
-  for (const [id, prev] of liveComponents) {
-    if (seen.has(id)) continue;
-    if (prev.root && prev.root.parentNode) prev.root.parentNode.removeChild(prev.root);
-    if (prev.styleEl && prev.styleEl.parentNode) prev.styleEl.parentNode.removeChild(prev.styleEl);
-    liveComponents.delete(id);
-  }
-  // 挂载区块空了就一并移除 (否则遗留 .sky-custom-zone 的 16px margin 撑开设置页)
-  for (const z of document.querySelectorAll('.sky-custom-zone')) {
-    if (!z.childElementCount) z.parentNode.removeChild(z);
-  }
-}
-
-// 把 AI 组件的 CSS 选择器全部前缀到 wrapper, 限制作用域.
-// 两个坑:
-//   1) 正则 ([^{}]*)\{ 捕获组已含结尾的 {, 不能再补一个, 否则出现 {{ 使整条失效.
-//   2) @keyframes 内部的 from/to/N% 必须原样保留 (前缀会让动画完全失效).
-//      用「绝对深度」标记 keyframes 体的深度, 而非用计数器在 } 处还原 —
-//      后者会在遇到 keyframes 内第一个内层 } 时被提前清零, 导致 to 被误前缀.
-function scopeCss(css, wrapper) {
-  const id = 'sky-c-' + Math.random().toString(36).slice(2, 9);
-  wrapper.id = wrapper.id ? wrapper.id + ' ' + id : id;
-  const PREFIX = '#' + id + ' ';
-  let depth = 0;      // 当前读取位置所在的嵌套深度
-  let kfDepth = -1;   // @keyframes 体所在的深度, -1 = 不在 keyframes 内
-
-  return css.replace(/\s*([^{}]*)\{|\}/g, function (m) {
-    if (m === '}') {
-      if (depth === kfDepth) kfDepth = -1; // 关闭 @keyframes 块
-      depth--;
-      return '}';
-    }
-    const sel = m.replace(/\{$/, '').trim(); // 去掉正则匹配到的那个 {
-    if (/^@/.test(sel)) {
-      if (/^@keyframes/i.test(sel)) kfDepth = depth + 1;
-      depth++;
-      return m; // @media / @supports / @keyframes 头部原样保留
-    }
-    const inKeyframes = depth === kfDepth;
-    depth++;
-    if (inKeyframes) return m; // from{ / to{ / 0%{ / 100%{ 原样保留
-    return ' ' + sel.split(',').map(function (s) {
-      const t = s.trim();
-      return t ? PREFIX + t : t;
-    }).join(',') + '{';
-  });
-}
-
-// ---------------------------------------------------------------- 内置组件
-async function loadCaps() {
-  const r = await fetch('/api/caps').then(r=>r.json());
-  const caps = r.caps || [];
-  const badge = document.getElementById('cap-badge');
-  if (badge) badge.textContent = caps.length + ' caps';
-  const list = document.getElementById('comp-caps-list');
-  if (list) {
-    list.innerHTML = caps.map(c =>
-      '<div class="cap-item"><div><span class="cap-id">' + c.id + '</span>' +
-      (c.streaming ? '<span class="tag">stream</span>' : '') + '</div>' +
-      '<div class="cap-desc">' + c.description + '</div></div>').join('');
-  }
-}
-
-function buildChat() {
-  const el = document.getElementById('comp-chat');
-  if (!el || el.dataset.built) return;
-  el.dataset.built = '1';
-  el.innerHTML =
-    '<div id="chat-topbar"><button class="btn secondary" id="ct-new">新会话</button>' +
-    '<span class="ct-title" id="ct-title">新会话 (发送后自动保存)</span></div>' +
-    '<div id="messages">' +
-    '<div class="msg assistant">Sky 能力 OS. AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight" 或 "改聊天字号 18px"</div>' +
-    '</div>' +
-    '<div id="input-bar"><input id="input" type="text" placeholder="发送消息..." autocomplete="off" enterkeyhint="send">' +
-    '<button id="send-btn"><svg><use href="#ic-send"/></svg></button></div>';
-  const btn = document.getElementById('send-btn');
-  btn.onclick = send;
-  const input = document.getElementById('input');
-  input.onkeydown = (e) => { if (e.key === 'Enter' && !btn.disabled) send(); };
-  input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
-  const ctNew = document.getElementById('ct-new');
-  if (ctNew) ctNew.onclick = newSession;
-}
-
-// ---------------------------------------------------------------- 工具块 (调用+结果合并)
-// running → ok/err, 默认折叠, 点击展开
-// 分组折叠: 连续工具块超阈值 (默认 5) 时, 旧块折叠成"展开 N 个"按钮
-const toolBlocks = new Map(); // name+round → { el, head, body, argsStr, resultStr, status }
-let currentRoundBlocks = []; // 本轮连续工具块 (send 时清空, stream.end 时全折叠)
-
-function toolBlockKey(name, ev) {
-  return name + '#' + (ev.data?.callSeq ?? ev._seq ?? '');
-}
-
-function ensureToolGroup() {
-  // 确保 messages 下有当前 tool-group 容器; 没有则创建
-  const messages = document.getElementById('messages');
-  if (!messages) return null;
-  let group = messages.querySelector('.tool-group:last-child');
-  if (!group || group.dataset.closed === '1') {
-    group = document.createElement('div');
-    group.className = 'tool-group';
-    messages.appendChild(group);
-    currentRoundBlocks = [];
-  }
-  return group;
-}
-
-function applyToolGroupFolding(group) {
-  const cfg = (uiState && uiState.chat) || {};
-  const threshold = cfg.toolCollapseThreshold ?? 5;
-  const maxVisible = cfg.toolMaxVisible ?? 4;
-  const blocks = [...group.querySelectorAll('.tool-block')];
-  if (blocks.length <= threshold) {
-    // 未超阈值: 全部可见, 移除折叠按钮
-    blocks.forEach(b => b.classList.remove('folded-hidden'));
-    const more = group.querySelector('.tool-group-more');
-    if (more) more.remove();
-    return;
-  }
-  // 超阈值: 隐藏第 maxVisible+1 起的块, 显示"展开 N 个"按钮
-  const hidden = blocks.slice(maxVisible);
-  hidden.forEach(b => b.classList.add('folded-hidden'));
-  let more = group.querySelector('.tool-group-more');
-  if (!more) {
-    more = document.createElement('div');
-    more.className = 'tool-group-more';
-    more.innerHTML = '<svg><use href="#ic-chev"/></svg><span class="more-label">展开剩余</span><span class="more-count"></span>';
-    more.onclick = () => group.classList.toggle('expanded');
-    group.appendChild(more);
-  }
-  more.querySelector('.more-count').textContent = hidden.length;
-}
-
-function addToolCall(ev) {
-  const messages = document.getElementById('messages');
-  if (!messages) return;
-  const cfg = (uiState && uiState.chat) || {};
-  const group = ensureToolGroup();
-  const seq = (ev.data?.callSeq ?? Date.now().toString(36));
-  const key = ev.data.name + '#' + seq;
-  const argsStr = cfg.toolShowFullArgs
-    ? JSON.stringify(ev.data.args, null, 2)
-    : JSON.stringify(ev.data.args).slice(0, cfg.toolSummaryLen || 120);
-  const summary = ev.data.name + '(' + (cfg.toolShowFullArgs ? '' : (argsStr.length < JSON.stringify(ev.data.args).length ? argsStr + '…' : argsStr)) + ')';
-
-  const block = document.createElement('div');
-  block.className = 'tool-block running' + (cfg.toolStyle === 'card' ? ' card' : '');
-  block.dataset.key = key;
-
-  const head = document.createElement('div');
-  head.className = 'tool-head';
-  head.innerHTML =
-    '<svg class="tool-icon"><use href="#ic-loader"/></svg>' +
-    '<span class="tool-name">' + esc(ev.data.name) + '</span>' +
-    '<span class="tool-summary">' + esc(summary) + '</span>' +
-    '<svg class="tool-chev"><use href="#ic-chev"/></svg>';
-
-  const body = document.createElement('div');
-  body.className = 'tool-body';
-  body.innerHTML =
-    '<div class="tool-section">参数</div><div class="tool-json">' + esc(argsStr) + '</div>' +
-    '<div class="tool-section">结果</div><div class="tool-json tool-result-pending">等待中…</div>';
-
-  block.appendChild(head);
-  block.appendChild(body);
-  head.onclick = () => block.classList.toggle('expanded');
-
-  // 默认展开行为: toolCollapsed=true → 折叠; false → 展开
-  if (cfg.toolCollapsed === false) block.classList.add('expanded');
-
-  if (group) {
-    group.appendChild(block);
-    currentRoundBlocks.push(key);
-    applyToolGroupFolding(group);
-  } else {
-    messages.appendChild(block);
-  }
-  toolBlocks.set(key, { el: block, head, body, argsStr, status: 'running' });
-  scrollMessages();
-}
-
-function addToolResult(ev) {
-  // 找最近一个同名 running 块 (支持多次同 cap 调用: 取最后一个 running)
-  const cfg = (uiState && uiState.chat) || {};
-  let target = null, targetKey = null;
-  for (const [k, v] of [...toolBlocks].reverse()) {
-    if (k.startsWith(ev.data.name + '#') && v.status === 'running') {
-      target = v; targetKey = k; break;
-    }
-  }
-  const resultStr = cfg.toolShowFullArgs
-    ? JSON.stringify(ev.data.result, null, 2)
-    : JSON.stringify(ev.data.result).slice(0, cfg.toolSummaryLen || 120);
-  if (!target) {
-    // 没匹配到调用块 (跨流/丢失), 单独建一个 ok 块
-    addToolCall({ data: { name: ev.data.name, args: {}, callSeq: Date.now().toString(36) + '-x' } });
-    const lastKey = [...toolBlocks].pop()[0];
-    target = toolBlocks.get(lastKey); targetKey = lastKey;
-  }
-  const ok = ev.data.result?.ok;
-  target.status = ok ? 'ok' : 'err';
-  target.el.classList.remove('running');
-  target.el.classList.add(ok ? 'ok' : 'err');
-  // 状态图标
-  const iconUse = target.head.querySelector('.tool-icon use');
-  iconUse.setAttribute('href', ok ? '#ic-check' : '#ic-x');
-  // 结果区
-  const pending = target.body.querySelector('.tool-result-pending');
-  pending.classList.remove('tool-result-pending');
-  pending.classList.add(ok ? 'tool-result-ok' : 'tool-result-err');
-  pending.textContent = ok ? '成功' : '失败';
-  const resultJson = document.createElement('div');
-  resultJson.className = 'tool-json';
-  resultJson.textContent = resultStr + (cfg.toolShowFullArgs ? '' : (JSON.stringify(ev.data.result).length > (cfg.toolSummaryLen||120) ? '…' : ''));
-  pending.after(resultJson);
-  scrollMessages();
-}
-
-function esc(s) {
-  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-}
-
-// ---------------------------------------------------------------- 基础 Markdown (assistant)
-function renderMarkdown(text) {
-  // 转义后处理: 代码块 → 行内代码 → 粗体 → 段落
-  // (模板字符串内不能出现反引号, 用 String.fromCharCode 构造)
-  const BT = String.fromCharCode(96);
-  const fence = BT + BT + BT;
-  let html = esc(text);
-  const reFence = new RegExp(fence + '(\\\\w*)\\\\n([\\\\s\\\\S]*?)' + fence, 'g');
-  html = html.replace(reFence, (_, lang, code) =>
-    '<pre><code>' + code.replace(/&quot;/g,'"') + '</code></pre>');
-  const reInline = new RegExp(BT + '([^' + BT + '\\\\n]+)' + BT, 'g');
-  html = html.replace(reInline, '<code>$1</code>');
-  html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
-  html = html.split(/\\n{2,}/).map(p => '<p>' + p.replace(/\\n/g, '<br>') + '</p>').join('');
-  return html;
-}
-
-function addMsg(cls, text) {
-  const messages = document.getElementById('messages');
-  if (!messages) return null;
-  const el = document.createElement('div');
-  el.className = 'msg ' + cls;
-  const cfg = (uiState && uiState.chat) || {};
-  if (cls === 'assistant' && cfg.markdownEnabled !== false) {
-    el.innerHTML = renderMarkdown(text);
-  } else {
-    el.textContent = text;
-  }
-  messages.appendChild(el);
-  scrollMessages();
-  return el;
-}
-
-async function send() {
-  const input = document.getElementById('input');
-  const btn = document.getElementById('send-btn');
-  const text = input.value.trim();
-  if (!text || btn.disabled) return;
-  btn.disabled = true;
-  input.value = '';
-  addMsg('user', text);
-  // 先确保会话存在 (history 靠 sessionId 落盘, 顺序不可颠倒)
-  const sessionId = await ensureSession(text);
-  currentMsgEl = addMsg('assistant', '');
-  currentStreamId = null;
-  pendingEvents.length = 0;
-  // 标记上一轮 tool-group 关闭 (新一轮工具调用会建新 group)
-  const messages = document.getElementById('messages');
-  if (messages) {
-    messages.querySelectorAll('.tool-group').forEach(g => { g.dataset.closed = '1'; });
-  }
-  currentRoundBlocks = [];
-  const msg = {
-    type: 'dispatch', reqId: 'req-' + Date.now().toString(36),
-    cap: 'cap.ai.chat', stream: true,
-    params: { messages: [{ role: 'user', content: text }], sessionId },
-  };
-  if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(msg));
-  else pendingDispatch.push(msg);
-}
-
-function buildConfig() {
-  const el = document.getElementById('comp-config');
-  if (!el || el.dataset.built) return;
-  el.dataset.built = '1';
-  el.innerHTML =
-    '<h2>AI 配置</h2>' +
-    '<div class="field"><label>Base URL</label><input id="base-url" type="text" placeholder="https://api.openai.com"></div>' +
-    '<div class="field"><label>API Key</label><input id="api-key" type="password" placeholder="sk-..."></div>' +
-    '<div class="field"><label>Model</label><input id="model" type="text" placeholder="gpt-4o-mini"></div>' +
-    '<button class="btn" id="save-config">保存配置</button><div class="status" id="config-status"></div>' +
-    '<h2 style="margin-top:20px">会话</h2>' +
-    '<div class="field"><label>当前 Session ID (隐藏元素, 真实列表在左侧会话页)</label>' +
-    '<input id="session-id" type="text" placeholder="留空=不持久化" readonly></div>';
-  fetch('/api/config').then(r=>r.json()).then(r => {
-    const cfg = r.result?.ok ? r.result.data : {};
-    document.getElementById('base-url').value = cfg.ai?.baseUrl || '';
-    document.getElementById('api-key').value = cfg.ai?.apiKey || '';
-    document.getElementById('model').value = cfg.ai?.model || 'gpt-4o-mini';
-  });
-  document.getElementById('save-config').onclick = async () => {
-    const status = document.getElementById('config-status');
-    status.textContent = '保存中...'; status.className = 'status';
-    const r = await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ ai: {
-        baseUrl: document.getElementById('base-url').value,
-        apiKey: document.getElementById('api-key').value,
-        model: document.getElementById('model').value || 'gpt-4o-mini',
-      }})}).then(r=>r.json());
-    if (r.result?.ok) { status.textContent = '已保存'; status.className = 'status ok'; }
-    else { status.textContent = '失败: ' + (r.result?.error || '未知错误'); status.className = 'status err'; }
-  };
-}
-
-// ---------------------------------------------------------------- 事件
+// ================================================================================
+// 事件处理
+// ================================================================================
 function handleEvent(ev) {
   if (ev.type === 'ui.update') { uiState = ev.data; render(); return; }
   if (ev.type === 'shell.notify') { addMsg('assistant', '[通知] ' + (ev.data?.message||'')); return; }
   if (ev.type === 'shell.reload') { location.reload(); return; }
-  if (ev.stream_id !== currentStreamId) {
-    if (currentStreamId === null && ev.type.startsWith('stream.')) pendingEvents.push(ev);
-    return;
-  }
+  if (ev.stream_id !== currentStreamId) { if (currentStreamId === null && ev.type.startsWith('stream.')) pendingEvents.push(ev); return; }
   switch (ev.type) {
     case 'stream.chunk':
       if (currentMsgEl) {
         const cfg = (uiState && uiState.chat) || {};
-        if (cfg.markdownEnabled !== false) {
-          currentMsgEl._raw = (currentMsgEl._raw || '') + ev.data;
-          currentMsgEl.innerHTML = renderMarkdown(currentMsgEl._raw);
-        } else {
-          currentMsgEl.textContent += ev.data;
-        }
+        if (cfg.markdownEnabled !== false) { currentMsgEl._raw = (currentMsgEl._raw || '') + ev.data; currentMsgEl.innerHTML = renderMarkdown(currentMsgEl._raw); }
+        else { currentMsgEl.textContent += ev.data; }
         scrollMessages();
-      }
-      break;
+      } break;
     case 'stream.tool': addToolCall(ev); break;
     case 'stream.toolResult': addToolResult(ev); break;
     case 'stream.end':
-      currentStreamId = null;
-      const btn = document.getElementById('send-btn');
-      if (btn) btn.disabled = false;
-      // 流式结束: 自动折叠本轮所有工具块 (autoCollapseOnEnd 默认 true, 对齐 Polaris)
-      collapseCurrentRound();
-      break;
+      currentStreamId = null; const btn = $('send-btn'); if (btn) btn.disabled = false; collapseCurrentRound(); break;
   }
 }
-
 function collapseCurrentRound() {
-  const cfg = (uiState && uiState.chat) || {};
-  if (cfg.autoCollapseOnEnd === false) return;
-  currentRoundBlocks.forEach(key => {
-    const entry = toolBlocks.get(key);
-    if (entry) {
-      entry.el.classList.remove('expanded');
-      entry.el.classList.add('folded');
-    }
-  });
-  // 折叠当前 tool-group (隐藏"展开更多")
-  const messages = document.getElementById('messages');
-  if (messages) {
-    const group = messages.querySelector('.tool-group:last-child');
-    if (group) group.dataset.closed = '1';
-  }
+  const cfg = (uiState && uiState.chat) || {}; if (cfg.autoCollapseOnEnd === false) return;
+  currentRoundBlocks.forEach(key => { const entry = toolBlocks.get(key); if (entry) { entry.el.classList.remove('expanded'); entry.el.classList.add('folded'); } });
+  const messages = $('cs-messages'); if (messages) { const group = messages.querySelector('.tool-group:last-child'); if (group) group.dataset.closed = '1'; }
 }
 
-function kebab(s) { return s.replace(/([A-Z])/g, '-$1').toLowerCase(); }
+// ================================================================================
+// 键盘适配 (visualViewport)
+// ================================================================================
+const vv = window.visualViewport;
+if (vv) {
+  vv.addEventListener('resize', () => { const m = $('sky-main'); if (m) m.style.height = vv.height + 'px'; scrollMessages(); });
+  vv.addEventListener('scroll', scrollMessages);
+}
 
-// ---------------------------------------------------------------- 启动
+// ================================================================================
+// 响应式断点 (500px, 对齐原 Polaris)
+// ================================================================================
+function updateCompact() {
+  const wasCompact = state.isCompact;
+  state.isCompact = window.innerWidth < 500;
+  if (wasCompact !== state.isCompact) applyLeftPanel();
+}
+window.matchMedia('(max-width: 500px)').addEventListener('change', updateCompact);
+window.addEventListener('resize', updateCompact);
+
+// ================================================================================
+// 启动
+// ================================================================================
 connectWs();
-// 构建组件 (页面结构静态, 不随 UI State 重建, theme/styles 热更新即可)
-buildSessions();
-buildChat();
-buildConfig();
-loadCaps();
-// 初始化激活默认页 (聊天): 否则 .sky-page 全 display:none, 内容不可见
-switchPage('page-chat');
-fetch('/api/ui-state').then(r=>r.json()).then(r => {
-  if (r && r.theme) { uiState = r; render(); }
-}).catch(()=>{});
-// 恢复当前会话 (重启后回到上次聊天)
+renderActivityBar();
+renderSessionList();
+renderFileList();
+renderCapsList();
+const sendBtn = $('send-btn'); sendBtn.onclick = send;
+const input = $('input');
+input.onkeydown = (e) => { if (e.key === 'Enter' && !sendBtn.disabled) send(); };
+input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
+$('ct-new').onclick = newSession;
+$('tb-settings').onclick = () => openSettings('general');
+$('tb-menu').onclick = () => toggleLeftPanel(state.activeLeftPanel === 'sessions' ? 'files' : 'sessions');
+$('s-close').onclick = closeSettings;
+fetch('/api/ui-state').then(r=>r.json()).then(r => { if (r && r.theme) { uiState = r; render(); } }).catch(()=>{});
 dispatch('cap.session', { action: 'getCurrent' }).then(data => {
-  const id = data && data.currentId;
-  if (!id) return;
-  setSessionId(id);
-  if (document.getElementById('messages')?.children.length > 1) return; // 已有内容, 不覆盖
-  loadSessionIntoChat(id, true);
+  const id = data && data.currentId; if (!id) return; setSessionId(id);
+  if ($('cs-messages')?.children.length > 1) return; loadSessionIntoChat(id, true);
+}).catch(()=>{});
+dispatch('cap.shell', { action: 'info' }).then(info => {
+  if (info && info.caps !== undefined) { const b = $('cap-badge'); if (b) b.textContent = info.caps + ' caps'; }
 }).catch(()=>{});
 </script>
 </body>
 </html>`;
+
