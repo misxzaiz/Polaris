@@ -135,14 +135,16 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .msg.assistant p { margin: 0; }
   .msg.assistant p + p { margin-top: 8px; }
 
-  /* ============ 工具块 (调用 + 结果合并, 可折叠) ============ */
+  /* ============ 工具块 (调用 + 结果合并, 可折叠) — 对齐 Polaris 数值 ============ */
+  /* 单块: w-full, margin 6px, radius 8px, border 1px rgba(255,255,255,.15), bg rgb(26,26,31) */
   .tool-block {
     border-left: 3px solid var(--sky-text-muted, #8b949e);
     background: var(--sky-bg, #0d1117);
     border-radius: 0 var(--sky-sm, 4px) var(--sky-sm, 4px) 0;
-    margin: 2px 0;
+    margin: 6px 0;
     font-family: var(--sky-mono, monospace); font-size: 12px;
     overflow: hidden;
+    transition: border-color .2s, background-color .2s;
   }
   .tool-block.running { border-left-color: var(--sky-warning, #f0883e); }
   .tool-block.ok { border-left-color: var(--sky-success, #238636); }
@@ -150,30 +152,39 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .tool-block.card {
     border: 1px solid var(--sky-border, #21262d); border-left-width: 3px;
     background: var(--sky-bg-elevated, #161b22);
+    border-radius: 8px;
   }
+  .tool-block.running.card { border-color: rgba(255,255,255,0.15); }
+  /* 头部行: padding 6px 10px, gap 8px, 触控 min-height 36px (移动 44px) */
   .tool-head {
-    display: flex; align-items: center; gap: 6px;
-    padding: 5px 10px; cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; cursor: pointer; user-select: none;
     color: var(--sky-text, #c9d1d9);
     font-size: 12px; line-height: 1.2;
+    min-height: 36px;
   }
   .tool-head:hover { background: rgba(255,255,255,0.04); }
   .tool-head .tool-icon { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); width: 14px; height: 14px; display: block; }
-  .tool-block.running .tool-head .tool-icon { color: var(--sky-warning, #f0883e); }
+  .tool-block.running .tool-head .tool-icon { color: var(--sky-warning, #f0883e); animation: tool-spin 1s linear infinite; }
   .tool-block.ok .tool-head .tool-icon { color: var(--sky-success, #238636); }
   .tool-block.err .tool-head .tool-icon { color: var(--sky-danger, #f85149); }
-  .tool-head .tool-name { color: var(--sky-accent, #58a6ff); font-weight: 500; flex-shrink: 0; }
+  @keyframes tool-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+  .tool-head .tool-name { color: var(--sky-accent, #58a6ff); font-weight: 500; flex-shrink: 0; font-size: 12px; }
   .tool-head .tool-summary {
     color: var(--sky-text-muted, #8b949e); overflow: hidden;
-    text-overflow: ellipsis; white-space: nowrap; flex: 1; font-size: 11px;
+    text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; font-size: 12px;
   }
-  .tool-head .tool-chev { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); transition: transform .15s; width: 12px; height: 12px; display: block; }
+  .tool-head .tool-chev { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); transition: transform .2s; width: 12px; height: 12px; display: block; }
   .tool-block.expanded .tool-chev { transform: rotate(90deg); }
   .tool-body {
-    display: none; padding: 8px 10px; border-top: 1px solid var(--sky-border, #21262d);
+    display: none; padding: 12px 16px; border-top: 1px solid var(--sky-border, #21262d);
     max-height: 320px; overflow-y: auto;
   }
   .tool-block.expanded .tool-body { display: block; }
+  .tool-block.folded .tool-body { display: none; }
+  .tool-block.folded.expanded .tool-body { display: block; }  /* 展开优先于 folded */
+  .tool-block.folded .tool-chev { transform: rotate(0); }
+  .tool-block.folded.expanded .tool-chev { transform: rotate(90deg); }
   .tool-body .tool-section {
     color: var(--sky-text-muted, #8b949e); font-size: 10px;
     text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; margin-top: 6px;
@@ -184,6 +195,34 @@ export const SHELL_HTML = `<!DOCTYPE html>
   }
   .tool-body .tool-result-ok { color: var(--sky-success, #238636); }
   .tool-body .tool-result-err { color: var(--sky-danger, #f85149); }
+
+  /* ============ 分组折叠: 连续工具块超阈值时折叠成"展开 N 个"按钮 ============ */
+  .tool-group-more {
+    display: flex; align-items: center; gap: 6px;
+    margin: 6px 0; padding: 8px 12px;
+    background: var(--sky-bg, #0d1117);
+    border: 1px dashed var(--sky-border, #21262d);
+    border-radius: 8px;
+    cursor: pointer; user-select: none;
+    color: var(--sky-text-muted, #8b949e); font-size: 12px;
+    min-height: 36px;
+    transition: background-color .15s, border-color .15s, color .15s;
+  }
+  .tool-group-more:hover {
+    background: rgba(255,255,255,0.04);
+    border-color: var(--sky-accent, #58a6ff);
+    color: var(--sky-accent, #58a6ff);
+  }
+  .tool-group-more svg { width: 14px; height: 14px; flex-shrink: 0; }
+  .tool-group-more .more-count {
+    font-size: 10px; padding: 1px 6px; border-radius: 8px;
+    background: var(--sky-bg-elevated, #161b22); color: var(--sky-text, #c9d1d9);
+    margin-left: auto;
+  }
+  /* 折叠态隐藏的工具块 */
+  .tool-block.folded-hidden { display: none; }
+  .tool-group.expanded .tool-block.folded-hidden { display: block; }
+  .tool-group.expanded .tool-group-more { display: none; }
 
   #input-bar {
     display: flex; gap: 8px;
@@ -469,17 +508,59 @@ function buildChat() {
 
 // ---------------------------------------------------------------- 工具块 (调用+结果合并)
 // running → ok/err, 默认折叠, 点击展开
+// 分组折叠: 连续工具块超阈值 (默认 5) 时, 旧块折叠成"展开 N 个"按钮
 const toolBlocks = new Map(); // name+round → { el, head, body, argsStr, resultStr, status }
+let currentRoundBlocks = []; // 本轮连续工具块 (send 时清空, stream.end 时全折叠)
 
 function toolBlockKey(name, ev) {
-  // 同名工具一轮内合并; 用 stream 内自增序号区分多次同 cap 调用
   return name + '#' + (ev.data?.callSeq ?? ev._seq ?? '');
+}
+
+function ensureToolGroup() {
+  // 确保 messages 下有当前 tool-group 容器; 没有则创建
+  const messages = document.getElementById('messages');
+  if (!messages) return null;
+  let group = messages.querySelector('.tool-group:last-child');
+  if (!group || group.dataset.closed === '1') {
+    group = document.createElement('div');
+    group.className = 'tool-group';
+    messages.appendChild(group);
+    currentRoundBlocks = [];
+  }
+  return group;
+}
+
+function applyToolGroupFolding(group) {
+  const cfg = (uiState && uiState.chat) || {};
+  const threshold = cfg.toolCollapseThreshold ?? 5;
+  const maxVisible = cfg.toolMaxVisible ?? 4;
+  const blocks = [...group.querySelectorAll('.tool-block')];
+  if (blocks.length <= threshold) {
+    // 未超阈值: 全部可见, 移除折叠按钮
+    blocks.forEach(b => b.classList.remove('folded-hidden'));
+    const more = group.querySelector('.tool-group-more');
+    if (more) more.remove();
+    return;
+  }
+  // 超阈值: 隐藏第 maxVisible+1 起的块, 显示"展开 N 个"按钮
+  const hidden = blocks.slice(maxVisible);
+  hidden.forEach(b => b.classList.add('folded-hidden'));
+  let more = group.querySelector('.tool-group-more');
+  if (!more) {
+    more = document.createElement('div');
+    more.className = 'tool-group-more';
+    more.innerHTML = '<svg><use href="#ic-chev"/></svg><span class="more-label">展开剩余</span><span class="more-count"></span>';
+    more.onclick = () => group.classList.toggle('expanded');
+    group.appendChild(more);
+  }
+  more.querySelector('.more-count').textContent = hidden.length;
 }
 
 function addToolCall(ev) {
   const messages = document.getElementById('messages');
   if (!messages) return;
   const cfg = (uiState && uiState.chat) || {};
+  const group = ensureToolGroup();
   const seq = (ev.data?.callSeq ?? Date.now().toString(36));
   const key = ev.data.name + '#' + seq;
   const argsStr = cfg.toolShowFullArgs
@@ -512,7 +593,13 @@ function addToolCall(ev) {
   // 默认展开行为: toolCollapsed=true → 折叠; false → 展开
   if (cfg.toolCollapsed === false) block.classList.add('expanded');
 
-  messages.appendChild(block);
+  if (group) {
+    group.appendChild(block);
+    currentRoundBlocks.push(key);
+    applyToolGroupFolding(group);
+  } else {
+    messages.appendChild(block);
+  }
   toolBlocks.set(key, { el: block, head, body, argsStr, status: 'running' });
   scrollMessages();
 }
@@ -602,6 +689,12 @@ function send() {
   currentMsgEl = addMsg('assistant', '');
   currentStreamId = null;
   pendingEvents.length = 0;
+  // 标记上一轮 tool-group 关闭 (新一轮工具调用会建新 group)
+  const messages = document.getElementById('messages');
+  if (messages) {
+    messages.querySelectorAll('.tool-group').forEach(g => { g.dataset.closed = '1'; });
+  }
+  currentRoundBlocks = [];
   const sessionIdEl = document.getElementById('session-id');
   const msg = {
     type: 'dispatch', reqId: 'req-' + Date.now().toString(36),
@@ -677,7 +770,27 @@ function handleEvent(ev) {
       currentStreamId = null;
       const btn = document.getElementById('send-btn');
       if (btn) btn.disabled = false;
+      // 流式结束: 自动折叠本轮所有工具块 (autoCollapseOnEnd 默认 true, 对齐 Polaris)
+      collapseCurrentRound();
       break;
+  }
+}
+
+function collapseCurrentRound() {
+  const cfg = (uiState && uiState.chat) || {};
+  if (cfg.autoCollapseOnEnd === false) return;
+  currentRoundBlocks.forEach(key => {
+    const entry = toolBlocks.get(key);
+    if (entry) {
+      entry.el.classList.remove('expanded');
+      entry.el.classList.add('folded');
+    }
+  });
+  // 折叠当前 tool-group (隐藏"展开更多")
+  const messages = document.getElementById('messages');
+  if (messages) {
+    const group = messages.querySelector('.tool-group:last-child');
+    if (group) group.dataset.closed = '1';
   }
 }
 

@@ -70,6 +70,12 @@ export interface ChatConfig {
   fontSize: number;
   /** 工具调用显示完整参数 (false=截断摘要) */
   toolShowFullArgs: boolean;
+  /** 连续工具块折叠阈值: 超过此数才折叠 (对齐 Polaris collapseThreshold=5) */
+  toolCollapseThreshold: number;
+  /** 折叠前最多显示的工具块数 (对齐 Polaris maxVisibleBlocks=4) */
+  toolMaxVisible: number;
+  /** 流式结束后自动折叠本轮所有工具块 (true=只留最终文本, false=保持原状) */
+  autoCollapseOnEnd: boolean;
 }
 
 export interface UIState {
@@ -144,6 +150,9 @@ export const DEFAULT_CHAT_CONFIG: ChatConfig = {
   toolStyle: 'card',
   fontSize: 15,
   toolShowFullArgs: false,
+  toolCollapseThreshold: 5,
+  toolMaxVisible: 4,
+  autoCollapseOnEnd: true,
 };
 
 export const DEFAULT_UI_STATE: UIState = {
