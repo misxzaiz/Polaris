@@ -153,11 +153,12 @@ export const SHELL_HTML = `<!DOCTYPE html>
   }
   .tool-head {
     display: flex; align-items: center; gap: 6px;
-    padding: 7px 10px; cursor: pointer; user-select: none;
+    padding: 5px 10px; cursor: pointer; user-select: none;
     color: var(--sky-text, #c9d1d9);
+    font-size: 12px; line-height: 1.2;
   }
   .tool-head:hover { background: rgba(255,255,255,0.04); }
-  .tool-head .tool-icon { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); }
+  .tool-head .tool-icon { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); width: 14px; height: 14px; display: block; }
   .tool-block.running .tool-head .tool-icon { color: var(--sky-warning, #f0883e); }
   .tool-block.ok .tool-head .tool-icon { color: var(--sky-success, #238636); }
   .tool-block.err .tool-head .tool-icon { color: var(--sky-danger, #f85149); }
@@ -166,7 +167,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
     color: var(--sky-text-muted, #8b949e); overflow: hidden;
     text-overflow: ellipsis; white-space: nowrap; flex: 1; font-size: 11px;
   }
-  .tool-head .tool-chev { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); transition: transform .15s; }
+  .tool-head .tool-chev { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); transition: transform .15s; width: 12px; height: 12px; display: block; }
   .tool-block.expanded .tool-chev { transform: rotate(90deg); }
   .tool-body {
     display: none; padding: 8px 10px; border-top: 1px solid var(--sky-border, #21262d);
