@@ -54,6 +54,7 @@ import { uiThemeCap } from './caps/ui/theme.ts';
 import { uiLayoutCap } from './caps/ui/layout.ts';
 import { uiComponentCap } from './caps/ui/component.ts';
 import { uiSnapshotCap } from './caps/ui/snapshot.ts';
+import { uiChatCap } from './caps/ui/chat.ts';
 import { createUiObserveCap } from './caps/ui/observe.ts';
 import { shellRegistry } from './caps/ui/shell-registry.ts';
 
@@ -108,6 +109,7 @@ async function main() {
   router.register(uiLayoutCap);
   router.register(uiComponentCap);
   router.register(uiSnapshotCap);
+  router.register(uiChatCap);
   router.register(createUiObserveCap(shellRegistry));
 
   // 5. 加载外部插件 (启动时静态加载)

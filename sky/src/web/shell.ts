@@ -72,7 +72,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
     font-size: 11px; cursor: pointer;
   }
   .tab-btn.active { color: var(--sky-accent, #58a6ff); }
-  .tab-btn .icon { font-size: 18px; line-height: 1; }
+  .tab-btn .icon { width: 20px; height: 20px; line-height: 1; display: block; }
 
   /* 桌面: 三栏 (Tab 栏隐藏, 页面全显) */
   @media (min-width: 768px) {
@@ -101,23 +101,95 @@ export const SHELL_HTML = `<!DOCTYPE html>
     flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch;
     padding: var(--sky-md, 16px);
     display: flex; flex-direction: column;
+    gap: var(--chat-gap, 10px);
+    font-size: var(--chat-fontsize, 15px);
   }
   .msg {
-    padding: 10px 12px; border-radius: var(--sky-md, 6px); margin-bottom: 8px;
-    max-width: 88%; word-wrap: break-word; white-space: pre-wrap;
-    font-size: 15px; line-height: 1.5;
+    padding: 10px 14px; border-radius: var(--sky-md, 6px);
+    word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;
+    line-height: 1.55;
+    max-width: var(--msg-user-maxw, 85%);
   }
-  .msg.user { background: var(--sky-primary, #1f6feb); color: #fff; margin-left: auto; border-bottom-right-radius: 2px; }
-  .msg.assistant { background: var(--sky-bg-elevated, #161b22); border-bottom-left-radius: 2px; }
-  .msg.tool { background: var(--sky-border, #21262d); font-family: var(--sky-mono, monospace); font-size: 12px; color: var(--sky-text-muted, #8b949e); }
-  .msg.toolResult { background: var(--sky-bg, #0d1117); border: 1px solid var(--sky-border, #21262d); font-family: var(--sky-mono, monospace); font-size: 12px; max-width: 95%; }
+  .msg.user {
+    background: var(--sky-primary, #1f6feb); color: #fff;
+    margin-left: auto; border-bottom-right-radius: 3px;
+  }
+  .msg.assistant {
+    background: var(--sky-bg-elevated, #161b22);
+    color: var(--sky-text, #c9d1d9);
+    border-bottom-left-radius: 3px;
+    max-width: var(--msg-assistant-maxw, 100%);
+    width: 100%;
+  }
+  /* Markdown 渲染 (assistant) */
+  .msg.assistant code:not(pre code) {
+    background: var(--sky-bg, #0d1117); padding: 1px 5px; border-radius: 3px;
+    font-family: var(--sky-mono, monospace); font-size: 0.9em;
+  }
+  .msg.assistant pre {
+    background: var(--sky-bg, #0d1117); padding: 10px 12px; border-radius: var(--sky-sm, 4px);
+    overflow-x: auto; margin: 6px 0; border: 1px solid var(--sky-border, #21262d);
+  }
+  .msg.assistant pre code { font-family: var(--sky-mono, monospace); font-size: 0.88em; white-space: pre; }
+  .msg.assistant strong { font-weight: 600; }
+  .msg.assistant p { margin: 0; }
+  .msg.assistant p + p { margin-top: 8px; }
+
+  /* ============ 工具块 (调用 + 结果合并, 可折叠) ============ */
+  .tool-block {
+    border-left: 3px solid var(--sky-text-muted, #8b949e);
+    background: var(--sky-bg, #0d1117);
+    border-radius: 0 var(--sky-sm, 4px) var(--sky-sm, 4px) 0;
+    margin: 2px 0;
+    font-family: var(--sky-mono, monospace); font-size: 12px;
+    overflow: hidden;
+  }
+  .tool-block.running { border-left-color: var(--sky-warning, #f0883e); }
+  .tool-block.ok { border-left-color: var(--sky-success, #238636); }
+  .tool-block.err { border-left-color: var(--sky-danger, #f85149); }
+  .tool-block.card {
+    border: 1px solid var(--sky-border, #21262d); border-left-width: 3px;
+    background: var(--sky-bg-elevated, #161b22);
+  }
+  .tool-head {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 10px; cursor: pointer; user-select: none;
+    color: var(--sky-text, #c9d1d9);
+  }
+  .tool-head:hover { background: rgba(255,255,255,0.04); }
+  .tool-head .tool-icon { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); }
+  .tool-block.running .tool-head .tool-icon { color: var(--sky-warning, #f0883e); }
+  .tool-block.ok .tool-head .tool-icon { color: var(--sky-success, #238636); }
+  .tool-block.err .tool-head .tool-icon { color: var(--sky-danger, #f85149); }
+  .tool-head .tool-name { color: var(--sky-accent, #58a6ff); font-weight: 500; flex-shrink: 0; }
+  .tool-head .tool-summary {
+    color: var(--sky-text-muted, #8b949e); overflow: hidden;
+    text-overflow: ellipsis; white-space: nowrap; flex: 1; font-size: 11px;
+  }
+  .tool-head .tool-chev { flex-shrink: 0; color: var(--sky-text-muted, #8b949e); transition: transform .15s; }
+  .tool-block.expanded .tool-chev { transform: rotate(90deg); }
+  .tool-body {
+    display: none; padding: 8px 10px; border-top: 1px solid var(--sky-border, #21262d);
+    max-height: 320px; overflow-y: auto;
+  }
+  .tool-block.expanded .tool-body { display: block; }
+  .tool-body .tool-section {
+    color: var(--sky-text-muted, #8b949e); font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; margin-top: 6px;
+  }
+  .tool-body .tool-section:first-child { margin-top: 0; }
+  .tool-body .tool-json {
+    white-space: pre-wrap; word-break: break-all; color: var(--sky-text, #c9d1d9);
+  }
+  .tool-body .tool-result-ok { color: var(--sky-success, #238636); }
+  .tool-body .tool-result-err { color: var(--sky-danger, #f85149); }
+
   #input-bar {
     display: flex; gap: 8px;
     padding: 10px 12px calc(10px + var(--safe-bottom));
     border-top: 1px solid var(--sky-border, #21262d);
     background: var(--sky-bg-elevated, #161b22);
     flex-shrink: 0;
-    /* 键盘弹出时由 JS 调整 padding-bottom */
   }
   #input {
     flex: 1; background: var(--sky-bg-input, #0d1117);
@@ -131,7 +203,9 @@ export const SHELL_HTML = `<!DOCTYPE html>
     background: var(--sky-success, #238636); color: #fff; border: none;
     border-radius: 20px; padding: 0 18px; min-height: 44px; min-width: 60px;
     cursor: pointer; font: inherit; font-size: 15px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
   }
+  #send-btn svg { width: 16px; height: 16px; }
   #send-btn:disabled { opacity: 0.5; }
 
   /* 设置面板 */
@@ -156,6 +230,39 @@ export const SHELL_HTML = `<!DOCTYPE html>
 <style id="sky-dynamic"></style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="ic-caps" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M13 2L3 14h7l-1 8 10-12h-7l1-8z"/>
+  </symbol>
+  <symbol id="ic-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+  </symbol>
+  <symbol id="ic-settings" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="3"/>
+    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+  </symbol>
+  <symbol id="ic-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+  </symbol>
+  <symbol id="ic-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="9 18 15 12 9 6"/>
+  </symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+  <symbol id="ic-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </symbol>
+  <symbol id="ic-loader" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/>
+    <line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/>
+    <line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/>
+    <line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/>
+  </symbol>
+  <symbol id="ic-send" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+  </symbol>
+</svg>
 <div id="sky-root">
   <div id="sky-topbar">
     <span class="title">Sky</span>
@@ -167,9 +274,9 @@ export const SHELL_HTML = `<!DOCTYPE html>
     <div class="sky-page" id="page-settings"><div id="comp-config"></div></div>
   </div>
   <div id="sky-tabbar">
-    <button class="tab-btn" data-page="page-caps"><span class="icon">⚡</span>Caps</button>
-    <button class="tab-btn active" data-page="page-chat"><span class="icon">💬</span>聊天</button>
-    <button class="tab-btn" data-page="page-settings"><span class="icon">⚙️</span>设置</button>
+    <button class="tab-btn" data-page="page-caps"><svg class="icon"><use href="#ic-caps"/></svg>Caps</button>
+    <button class="tab-btn active" data-page="page-chat"><svg class="icon"><use href="#ic-chat"/></svg>聊天</button>
+    <button class="tab-btn" data-page="page-settings"><svg class="icon"><use href="#ic-settings"/></svg>设置</button>
   </div>
 </div>
 
@@ -318,6 +425,13 @@ function render() {
     document.getElementById('sky-content').style.setProperty('--desktop-cols',
       regions.map(r => (r.props && r.props.width) ? r.props.width : '1fr').join(' ') || '260px 1fr 340px');
   }
+  // ChatConfig → CSS 变量 (消息宽度/字号/间距)
+  const c = uiState.chat || {};
+  const root = document.documentElement.style;
+  root.setProperty('--msg-user-maxw', c.userMaxWidth || '85%');
+  root.setProperty('--msg-assistant-maxw', c.assistantMaxWidth || '100%');
+  root.setProperty('--chat-gap', c.messageGap || '10px');
+  root.setProperty('--chat-fontsize', (c.fontSize || 15) + 'px');
 }
 
 // ---------------------------------------------------------------- 内置组件
@@ -341,16 +455,123 @@ function buildChat() {
   el.dataset.built = '1';
   el.innerHTML =
     '<div id="messages">' +
-    '<div class="msg assistant">Sky 能力 OS (手机端). AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight"</div>' +
+    '<div class="msg assistant">Sky 能力 OS. AI 可调用所有 cap 含 UI 演进. 试试: "把主题换成 midnight" 或 "改聊天字号 18px"</div>' +
     '</div>' +
     '<div id="input-bar"><input id="input" type="text" placeholder="发送消息..." autocomplete="off" enterkeyhint="send">' +
-    '<button id="send-btn">发送</button></div>';
+    '<button id="send-btn"><svg><use href="#ic-send"/></svg></button></div>';
   const btn = document.getElementById('send-btn');
   btn.onclick = send;
   const input = document.getElementById('input');
   input.onkeydown = (e) => { if (e.key === 'Enter' && !btn.disabled) send(); };
-  // iOS: 聚焦滚动到底
   input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
+}
+
+// ---------------------------------------------------------------- 工具块 (调用+结果合并)
+// running → ok/err, 默认折叠, 点击展开
+const toolBlocks = new Map(); // name+round → { el, head, body, argsStr, resultStr, status }
+
+function toolBlockKey(name, ev) {
+  // 同名工具一轮内合并; 用 stream 内自增序号区分多次同 cap 调用
+  return name + '#' + (ev.data?.callSeq ?? ev._seq ?? '');
+}
+
+function addToolCall(ev) {
+  const messages = document.getElementById('messages');
+  if (!messages) return;
+  const cfg = (uiState && uiState.chat) || {};
+  const seq = (ev.data?.callSeq ?? Date.now().toString(36));
+  const key = ev.data.name + '#' + seq;
+  const argsStr = cfg.toolShowFullArgs
+    ? JSON.stringify(ev.data.args, null, 2)
+    : JSON.stringify(ev.data.args).slice(0, cfg.toolSummaryLen || 120);
+  const summary = ev.data.name + '(' + (cfg.toolShowFullArgs ? '' : (argsStr.length < JSON.stringify(ev.data.args).length ? argsStr + '…' : argsStr)) + ')';
+
+  const block = document.createElement('div');
+  block.className = 'tool-block running' + (cfg.toolStyle === 'card' ? ' card' : '');
+  block.dataset.key = key;
+
+  const head = document.createElement('div');
+  head.className = 'tool-head';
+  head.innerHTML =
+    '<svg class="tool-icon"><use href="#ic-loader"/></svg>' +
+    '<span class="tool-name">' + esc(ev.data.name) + '</span>' +
+    '<span class="tool-summary">' + esc(summary) + '</span>' +
+    '<svg class="tool-chev"><use href="#ic-chev"/></svg>';
+
+  const body = document.createElement('div');
+  body.className = 'tool-body';
+  body.innerHTML =
+    '<div class="tool-section">参数</div><div class="tool-json">' + esc(argsStr) + '</div>' +
+    '<div class="tool-section">结果</div><div class="tool-json tool-result-pending">等待中…</div>';
+
+  block.appendChild(head);
+  block.appendChild(body);
+  head.onclick = () => block.classList.toggle('expanded');
+
+  // 默认展开行为: toolCollapsed=true → 折叠; false → 展开
+  if (cfg.toolCollapsed === false) block.classList.add('expanded');
+
+  messages.appendChild(block);
+  toolBlocks.set(key, { el: block, head, body, argsStr, status: 'running' });
+  scrollMessages();
+}
+
+function addToolResult(ev) {
+  // 找最近一个同名 running 块 (支持多次同 cap 调用: 取最后一个 running)
+  const cfg = (uiState && uiState.chat) || {};
+  let target = null, targetKey = null;
+  for (const [k, v] of [...toolBlocks].reverse()) {
+    if (k.startsWith(ev.data.name + '#') && v.status === 'running') {
+      target = v; targetKey = k; break;
+    }
+  }
+  const resultStr = cfg.toolShowFullArgs
+    ? JSON.stringify(ev.data.result, null, 2)
+    : JSON.stringify(ev.data.result).slice(0, cfg.toolSummaryLen || 120);
+  if (!target) {
+    // 没匹配到调用块 (跨流/丢失), 单独建一个 ok 块
+    addToolCall({ data: { name: ev.data.name, args: {}, callSeq: Date.now().toString(36) + '-x' } });
+    const lastKey = [...toolBlocks].pop()[0];
+    target = toolBlocks.get(lastKey); targetKey = lastKey;
+  }
+  const ok = ev.data.result?.ok;
+  target.status = ok ? 'ok' : 'err';
+  target.el.classList.remove('running');
+  target.el.classList.add(ok ? 'ok' : 'err');
+  // 状态图标
+  const iconUse = target.head.querySelector('.tool-icon use');
+  iconUse.setAttribute('href', ok ? '#ic-check' : '#ic-x');
+  // 结果区
+  const pending = target.body.querySelector('.tool-result-pending');
+  pending.classList.remove('tool-result-pending');
+  pending.classList.add(ok ? 'tool-result-ok' : 'tool-result-err');
+  pending.textContent = ok ? '成功' : '失败';
+  const resultJson = document.createElement('div');
+  resultJson.className = 'tool-json';
+  resultJson.textContent = resultStr + (cfg.toolShowFullArgs ? '' : (JSON.stringify(ev.data.result).length > (cfg.toolSummaryLen||120) ? '…' : ''));
+  pending.after(resultJson);
+  scrollMessages();
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------------------------------------------------------------- 基础 Markdown (assistant)
+function renderMarkdown(text) {
+  // 转义后处理: 代码块 → 行内代码 → 粗体 → 段落
+  // (模板字符串内不能出现反引号, 用 String.fromCharCode 构造)
+  const BT = String.fromCharCode(96);
+  const fence = BT + BT + BT;
+  let html = esc(text);
+  const reFence = new RegExp(fence + '(\\\\w*)\\\\n([\\\\s\\\\S]*?)' + fence, 'g');
+  html = html.replace(reFence, (_, lang, code) =>
+    '<pre><code>' + code.replace(/&quot;/g,'"') + '</code></pre>');
+  const reInline = new RegExp(BT + '([^' + BT + '\\\\n]+)' + BT, 'g');
+  html = html.replace(reInline, '<code>$1</code>');
+  html = html.replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>');
+  html = html.split(/\\n{2,}/).map(p => '<p>' + p.replace(/\\n/g, '<br>') + '</p>').join('');
+  return html;
 }
 
 function addMsg(cls, text) {
@@ -358,7 +579,12 @@ function addMsg(cls, text) {
   if (!messages) return null;
   const el = document.createElement('div');
   el.className = 'msg ' + cls;
-  el.textContent = text;
+  const cfg = (uiState && uiState.chat) || {};
+  if (cls === 'assistant' && cfg.markdownEnabled !== false) {
+    el.innerHTML = renderMarkdown(text);
+  } else {
+    el.textContent = text;
+  }
   messages.appendChild(el);
   scrollMessages();
   return el;
@@ -412,8 +638,8 @@ function buildConfig() {
         apiKey: document.getElementById('api-key').value,
         model: document.getElementById('model').value || 'gpt-4o-mini',
       }})}).then(r=>r.json());
-    if (r.result?.ok) { status.textContent = '✓ 已保存'; status.className = 'status ok'; }
-    else { status.textContent = '✗ ' + (r.result?.error || '失败'); status.className = 'status err'; }
+    if (r.result?.ok) { status.textContent = '已保存'; status.className = 'status ok'; }
+    else { status.textContent = '失败: ' + (r.result?.error || '未知错误'); status.className = 'status err'; }
   };
   document.getElementById('new-session').onclick = () => {
     document.getElementById('session-id').value = 'session-' + Date.now().toString(36);
@@ -425,7 +651,7 @@ function buildConfig() {
 // ---------------------------------------------------------------- 事件
 function handleEvent(ev) {
   if (ev.type === 'ui.update') { uiState = ev.data; render(); return; }
-  if (ev.type === 'shell.notify') { addMsg('tool', '📢 ' + (ev.data?.message||'')); return; }
+  if (ev.type === 'shell.notify') { addMsg('assistant', '[通知] ' + (ev.data?.message||'')); return; }
   if (ev.type === 'shell.reload') { location.reload(); return; }
   if (ev.stream_id !== currentStreamId) {
     if (currentStreamId === null && ev.type.startsWith('stream.')) pendingEvents.push(ev);
@@ -433,15 +659,23 @@ function handleEvent(ev) {
   }
   switch (ev.type) {
     case 'stream.chunk':
-      if (currentMsgEl) { currentMsgEl.textContent += ev.data; scrollMessages(); }
+      if (currentMsgEl) {
+        const cfg = (uiState && uiState.chat) || {};
+        if (cfg.markdownEnabled !== false) {
+          currentMsgEl._raw = (currentMsgEl._raw || '') + ev.data;
+          currentMsgEl.innerHTML = renderMarkdown(currentMsgEl._raw);
+        } else {
+          currentMsgEl.textContent += ev.data;
+        }
+        scrollMessages();
+      }
       break;
-    case 'stream.tool': addMsg('tool', '🔧 ' + ev.data.name + '(' + JSON.stringify(ev.data.args).slice(0,200) + ')'); break;
-    case 'stream.toolResult': addMsg('toolResult', '→ ' + ev.data.name + ': ' + JSON.stringify(ev.data.result).slice(0,400)); break;
+    case 'stream.tool': addToolCall(ev); break;
+    case 'stream.toolResult': addToolResult(ev); break;
     case 'stream.end':
       currentStreamId = null;
       const btn = document.getElementById('send-btn');
       if (btn) btn.disabled = false;
-      if (ev.data && ev.data.maxRoundsHit) addMsg('tool', '⚠ 达到最大工具调用轮数');
       break;
   }
 }

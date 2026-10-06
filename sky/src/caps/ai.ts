@@ -105,8 +105,10 @@ async function runAiLoop(
     }
   }
 
-  const maxRounds = p.maxToolRounds ?? 8;
-  for (let round = 0; round < maxRounds; round++) {
+  // 工具调用循环: 无上限, 靠 finishReason !== 'tool_calls' 自然退出.
+  // (用户要求不加限制; AI 持续调用工具直到自行结束生成)
+  // round 仅作事件元信息, 不做边界.
+  for (let round = 0; ; round++) {
     // 1. 调 AI(流式)
     const result = callAiStream(aiCfg, messages, allowedTools, p.model);
 
@@ -180,11 +182,7 @@ async function runAiLoop(
     }
     // 循环继续 → AI 看到工具结果继续生成
   }
-
-  ctx.emit({
-    type: 'stream.end', stream_id: streamId,
-    data: { ok: true, maxRoundsHit: true }, ts: Date.now(),
-  });
+  // 不可达: 循环仅靠 finishReason !== 'tool_calls' 退出, 无上限.
 }
 
 // ============================================================================

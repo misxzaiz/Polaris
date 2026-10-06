@@ -47,11 +47,37 @@ export interface UIStyleRule {
   properties: Record<string, string>;
 }
 
+/**
+ * 聊天渲染配置 — 用户/AI 可经 cap.ui.chat 热调整消息布局.
+ * 持久化在 UIState.chat, 重启保留.
+ */
+export interface ChatConfig {
+  /** 用户消息最大宽度 (px 或 %), 默认 '85%' */
+  userMaxWidth: string;
+  /** 助手消息最大宽度, 默认 '100%' (左对齐, 不限宽更易读) */
+  assistantMaxWidth: string;
+  /** 工具块默认折叠状态: true=只显示摘要行, false=全展开 */
+  toolCollapsed: boolean;
+  /** 工具结果 JSON 折叠后显示前 N 字符摘要 */
+  toolSummaryLen: number;
+  /** 是否启用基础 Markdown 渲染 (代码块/行内代码/粗体) */
+  markdownEnabled: boolean;
+  /** 消息间距 px */
+  messageGap: string;
+  /** 工具块样式: 'inline' | 'card' | 'sidebar' (预览仅 inline/card) */
+  toolStyle: 'inline' | 'card' | 'sidebar';
+  /** 字号 px */
+  fontSize: number;
+  /** 工具调用显示完整参数 (false=截断摘要) */
+  toolShowFullArgs: boolean;
+}
+
 export interface UIState {
   theme: ThemeTokens;
   layout: LayoutRegion;
   components: UIComponent[];
   styles: UIStyleRule[];
+  chat: ChatConfig;
 }
 
 // ============================================================================
@@ -108,11 +134,24 @@ export const DEFAULT_COMPONENTS: UIComponent[] = [
   { id: 'config', type: 'config', mountPoint: 'right', props: {} },
 ];
 
+export const DEFAULT_CHAT_CONFIG: ChatConfig = {
+  userMaxWidth: '85%',
+  assistantMaxWidth: '100%',
+  toolCollapsed: true,
+  toolSummaryLen: 120,
+  markdownEnabled: true,
+  messageGap: '10px',
+  toolStyle: 'card',
+  fontSize: 15,
+  toolShowFullArgs: false,
+};
+
 export const DEFAULT_UI_STATE: UIState = {
   theme: DEFAULT_THEME,
   layout: DEFAULT_LAYOUT,
   components: DEFAULT_COMPONENTS,
   styles: [],
+  chat: DEFAULT_CHAT_CONFIG,
 };
 
 // ============================================================================
@@ -136,6 +175,7 @@ export function initUiState(): void {
         layout: saved.layout ?? DEFAULT_LAYOUT,
         components: saved.components ?? DEFAULT_COMPONENTS,
         styles: saved.styles ?? [],
+        chat: { ...DEFAULT_CHAT_CONFIG, ...(saved.chat ?? {}) },
       };
       console.log('[ui] state restored from storage');
     } else {
@@ -162,6 +202,7 @@ export function patchUiState(patch: Partial<UIState>): UIState {
     layout: patch.layout ?? _state.layout,
     components: patch.components ?? _state.components,
     styles: patch.styles ?? _state.styles,
+    chat: patch.chat ? { ..._state.chat, ...patch.chat } : _state.chat,
   };
   persist();
   if (_emit) _emit(_state);
