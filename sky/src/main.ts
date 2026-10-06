@@ -93,8 +93,9 @@ async function main() {
 
   // 4. 注册元 cap (AI 可管理架构)
   router.register(createInterceptorCap(router));
-  router.register(createCapabilityCap(router));
   const pluginsDir = join(__dirname, '..', 'plugins');
+  // scaffold 需要写 pluginsDir, 故与 plugin cap 共用同一路径
+  router.register(createCapabilityCap(router, { pluginsRoot: pluginsDir }));
   router.register(createPluginCap(router, pluginsDir));
   router.register(createTransportCap());
   router.register(createShellCap());

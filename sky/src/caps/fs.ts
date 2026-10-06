@@ -10,9 +10,26 @@ import { join, normalize, isAbsolute, relative } from 'node:path';
 import type { Capability, Value } from '../contracts.ts';
 import { dataRoot } from '../storage.ts';
 
-/** 安全解析路径: 相对 DataRoot, 禁止越界 */
+/**
+ * 安全解析路径: 相对 DataRoot, 禁止越界.
+ *
+ * 额外拦截 plugins/ 前缀: 插件代码必须由 cap.capability scaffold/write 落到
+ * pluginsRoot (加载器扫描的项目 plugins/), 这里若放行会把文件写进 dataRoot
+ * 的沙箱同名目录 — 加载器看不到, AI 还会以为插件装失败了. 实测会让 AI 空转
+ * 十几轮 (scaffold 生成到项目, cap.fs 又写到 dataRoot, manifest 对不上).
+ */
+const RESERVED_PREFIX = 'plugins';
+
 function safePath(p: string): string {
   if (!p || isAbsolute(p)) throw new Error(`path must be relative to dataRoot: ${p}`);
+  const first = String(p).replace(/\\/g, '/').split('/')[0];
+  if (first === RESERVED_PREFIX) {
+    throw new Error(
+      `path "${p}" is reserved: plugin files must not be written via cap.fs. ` +
+      `Use cap.capability { action: "scaffold" | "write", name: "<dir>", file: "index.ts", content: "..." } ` +
+      `then cap.plugin { action: "install", path: "./<dir>" } — that routes to the loader's plugins root.`,
+    );
+  }
   const full = normalize(join(dataRoot, p));
   const rel = relative(dataRoot, full);
   if (rel.startsWith('..') || isAbsolute(rel)) {

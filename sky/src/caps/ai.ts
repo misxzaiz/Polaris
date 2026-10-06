@@ -87,10 +87,15 @@ async function runAiLoop(
     throw new Error('AI not configured. Set ai.baseUrl + ai.apiKey via cap.config (POST /api/config or web shell).');
   }
 
-  const availableTools = router.list().filter(c => c.id !== 'cap.ai.chat');
-  const allowedTools = p.tools
-    ? availableTools.filter(c => p.tools!.includes(c.id))
-    : availableTools;
+  // 工具列表每轮刷新, 而非请求开始时快照一次.
+  // 快照版的后果: AI 在本轮 cap.plugin install 后, 新 cap 永远不在工具列表里,
+  // 于是只能绕道 cap.http POST 自己的 cap (实测真实行为, 一轮能刷十几次).
+  // 白名单场景下重算仍只在白名单内取, 不会越界.
+  const buildTools = () => {
+    const available = router.list().filter(c => c.id !== 'cap.ai.chat');
+    return p.tools ? available.filter(c => p.tools!.includes(c.id)) : available;
+  };
+  let allowedTools = buildTools();
 
   // 续聊: 若 sessionId 有值, 先从 cap.history 读历史拼进上下文.
   // 前端只发当前 user 消息, 后端补全 — 续聊逻辑集中一处.
@@ -199,7 +204,9 @@ async function runAiLoop(
         data: { name: tc.name, result: reply.result }, ts: Date.now(),
       });
     }
-    // 循环继续 → AI 看到工具结果继续生成
+    // 循环继续 → AI 看到工具结果继续生成.
+    // 上一批工具可能刚注册了新 cap (cap.plugin install), 刷新列表让下一轮可见.
+    allowedTools = buildTools();
   }
   // 不可达: 循环仅靠 finishReason !== 'tool_calls' 退出, 无上限.
 }

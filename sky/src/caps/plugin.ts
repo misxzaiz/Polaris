@@ -15,9 +15,7 @@
 
 import { existsSync, statSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve, isAbsolute } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import { pathToFileURL as pathToFileUrl } from 'node:url';
-import * as dynamicImport from 'node:module';
 import type { Capability, CallContext, Value } from '../contracts.ts';
 import type { Router } from '../server/router.ts';
 
@@ -110,12 +108,15 @@ export function createPluginCap(router: Router, pluginsRoot: string): Capability
 
         case 'reload': {
           if (!p.id && !p.path) throw new Error('id or path required for reload');
-          const target = p.id ? loaded.get(p.id)?.path : p.path;
-          if (!target) return { ok: false, error: 'plugin not found' };
-          // 先卸载
-          if (p.id) await uninstallPlugin(router, p.id);
-          // 再装
-          return await installPlugin(router, target, pluginsRoot);
+          const path = p.path || loaded.get(p.id || '')?.path;
+          if (!path) return { ok: false, error: 'plugin not found' };
+          // 先卸载: 按 id 直接取, 否则按 path 反查.
+          // 不能只在传 id 时卸载 — 传 path 的重载会撞 "plugin already loaded".
+          const toUninstall = p.id && loaded.has(p.id)
+            ? p.id
+            : findLoadedByPath(path, pluginsRoot);
+          if (toUninstall) await uninstallPlugin(router, toUninstall);
+          return await installPlugin(router, path, pluginsRoot);
         }
 
         default:
@@ -141,10 +142,21 @@ async function installPlugin(
     if (!statSync(full).isDirectory()) return { ok: false, error: 'path must be a directory' };
 
     const manifestPath = join(full, 'manifest.json');
-    if (!existsSync(manifestPath)) return { ok: false, error: 'manifest.json not found' };
-    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
-      id: string; name: string; version: string; caps?: string[];
-    };
+    if (!existsSync(manifestPath)) {
+      return { ok: false, error: `manifest.json not found at ${manifestPath} — use cap.capability scaffold or write to create it` };
+    }
+    let manifest: { id: string; name: string; version: string; caps?: string[] };
+    try {
+      manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+        id: string; name: string; version: string; caps?: string[];
+      };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      return { ok: false, error: `manifest.json is not valid JSON: ${msg}` };
+    }
+    if (!manifest.id) {
+      return { ok: false, error: 'manifest.json missing required "id" field' };
+    }
 
     if (loaded.has(manifest.id)) {
       return { ok: false, error: `plugin already loaded: ${manifest.id}` };
@@ -160,7 +172,10 @@ async function installPlugin(
     if (!indexPath) return { ok: false, error: 'index.ts/js/mjs not found' };
 
     // 动态 import (tsx 支持运行时 import .ts)
-    const url = pathToFileUrl(indexPath).href;
+    // 必须带 cache-busting query: ESM 按 URL 缓存, 若同一文件此前被
+    // cap.capability scaffold/write 的 verify 加载过, 裸 URL 会命中旧模块 —
+    // 表现为"改了代码但装出来的还是旧逻辑".
+    const url = pathToFileUrl(indexPath).href + '?v=' + Date.now();
     const mod = await import(url);
     const setup = mod.default as ((r: Router) => void | Promise<void>) | undefined;
     const teardown = mod.teardown as ((r: Router) => void | Promise<void>) | undefined;
@@ -189,6 +204,17 @@ async function installPlugin(
     const error = err instanceof Error ? err.message : String(err);
     return { ok: false, error };
   }
+}
+
+// 按目录路径反查已加载的插件 id (reload 传 path 时用于先卸载).
+// rec.path 存的是 resolve() 后的绝对路径, 而入参可能是 "./dice" — 必须同样
+// 归一化再比较, 否则永远匹配不上, reload 又会退化成 "already loaded".
+function findLoadedByPath(path: string, pluginsRoot: string): string | null {
+  const resolved = resolve(pluginsRoot, path);
+  for (const [id, rec] of loaded) {
+    if (rec.path === resolved) return id;
+  }
+  return null;
 }
 
 async function uninstallPlugin(router: Router, id: string): Promise<{ ok: true; uninstalled: string } | { ok: false; error: string }> {
