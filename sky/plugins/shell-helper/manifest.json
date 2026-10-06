@@ -1,0 +1,6 @@
+{
+  "id": "plugin.shell",
+  "name": "Shell Helper Plugin",
+  "version": "0.1.0",
+  "caps": ["cap.shell.info"]
+}
