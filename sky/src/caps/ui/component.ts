@@ -13,9 +13,32 @@ const SCHEMAS: Record<string, Record<string, unknown>> = {
   'caps-list': { props: {} },
   'chat': { props: { sessionId: 'string' } },
   'config': { props: {} },
-  'custom': { props: { html: 'string', css: 'string?' } },
+  // custom: AI 注入的组件.
+  //   html — 静态 HTML 骨架
+  //   css  — 组件私有 CSS, 会被自动作用域限定在组件容器内
+  //   js   — 组件脚本, 形如 (root, __sky) => {...}. root 是组件根元素.
+  //          __sky 提供: dispatch(capId, params) / state() / on(fn) / page() / switchPage(id) / addMsg(cls, text)
+  //   更新 props 后自动热生效, 无需重启.
+  'custom': {
+    props: { html: 'string', css: 'string?', js: 'string? (function body, ctx: (root, __sky))' },
+    runtime: {
+      '__sky.dispatch': '(capId, params) => Promise<data>',
+      '__sky.state': '() => UIState snapshot',
+      '__sky.on': '(fn) => unsubscribe()',
+      '__sky.page': '() => active page id',
+      '__sky.switchPage': '(id) => void',
+      '__sky.addMsg': '(cls, text) => void',
+    },
+  },
   'audit-panel': { props: { limit: 'number?' } },
   'message': { props: { text: 'string', role: 'string?' } },
+};
+
+// mountPoint → 目标页面 (AI 决定组件落在哪一栏)
+export const MOUNT_POINTS: Record<string, string> = {
+  sidebar: 'page-sessions', sessions: 'page-sessions',
+  main: 'page-chat', chat: 'page-chat', top: 'page-chat', bottom: 'page-chat',
+  right: 'page-settings', caps: 'page-caps', settings: 'page-settings',
 };
 
 export const uiComponentCap: Capability = {
@@ -94,9 +117,13 @@ export const uiComponentCap: Capability = {
       }
       case 'schema': {
         if (p.type) {
-          return { ok: true, type: p.type, schema: SCHEMAS[p.type] ?? { unknown: true } };
+          return {
+            ok: true, type: p.type,
+            schema: SCHEMAS[p.type] ?? { unknown: true },
+            mountPoints: MOUNT_POINTS,
+          };
         }
-        return { ok: true, types: Object.keys(SCHEMAS), schemas: SCHEMAS };
+        return { ok: true, types: Object.keys(SCHEMAS), schemas: SCHEMAS, mountPoints: MOUNT_POINTS };
       }
       default:
         throw new Error(`unknown action: ${(p as { action: string }).action}`);

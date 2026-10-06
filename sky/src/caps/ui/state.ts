@@ -84,6 +84,8 @@ export interface UIState {
   components: UIComponent[];
   styles: UIStyleRule[];
   chat: ChatConfig;
+  /** 结构基线版本 (迁移用, 不参与渲染) */
+  _v?: number;
 }
 
 // ============================================================================
@@ -127,10 +129,12 @@ export const DEFAULT_THEME: ThemeTokens = {
 export const DEFAULT_LAYOUT: LayoutRegion = {
   id: 'root',
   type: 'main',
+  // 顺序 = 桌面 grid 的列顺序 (render() 据此派生 --desktop-cols)
   children: [
+    { id: 'sessions', type: 'side', props: { width: '230px' } },
     { id: 'sidebar', type: 'side', props: { width: '240px' } },
     { id: 'main', type: 'main' },
-    { id: 'right', type: 'side', props: { width: '320px' } },
+    { id: 'right', type: 'side', props: { width: '280px' } },
   ],
 };
 
@@ -171,6 +175,39 @@ let _state: UIState = structuredClone(DEFAULT_UI_STATE);
 let _emit: ((state: UIState) => void) | null = null;
 let _initialized = false;
 
+// 结构基线版本. 修改 DEFAULT_LAYOUT / DEFAULT_COMPONENTS 时必须 +1,
+// 否则旧持久化数据会让前端页面数与 layout 栏数错位.
+const STATE_VERSION = 2;
+
+// 栏的规范顺序, 必须与 shell.ts 里 .sky-page 的 DOM 顺序一致 (grid 按 DOM 顺序排列).
+const REGION_ORDER: Array<{ id: string; type: LayoutRegion['type']; width: string | null }> = [
+  { id: 'sessions', type: 'side', width: '230px' },
+  { id: 'sidebar', type: 'side', width: '240px' },
+  { id: 'main', type: 'main', width: null },
+  { id: 'right', type: 'side', width: '280px' },
+];
+
+// 恢复后的结构修正: layout 与 components 是前端渲染的真相源, 二者必须自洽.
+function normalizeState(state: UIState): void {
+  state.layout = state.layout ?? structuredClone(DEFAULT_LAYOUT);
+  const children = state.layout.children ?? [];
+  const have = new Set(children.map(r => r.id));
+  // 缺的栏按规范顺序补到末尾 (不重排已有项, 保留 AI 自定义的布局)
+  for (const spec of REGION_ORDER) {
+    if (have.has(spec.id)) continue;
+    children.push({ id: spec.id, type: spec.type, props: spec.width ? { width: spec.width } : {} });
+    have.add(spec.id);
+  }
+  // 内置组件落到固定挂载点, 避免 AI 把 config 挪进 sidebar
+  const builtins: Record<string, string> = {
+    'caps-list': 'sidebar', chat: 'main', config: 'right',
+  };
+  for (const c of state.components) {
+    const want = builtins[c.id];
+    if (want && c.mountPoint !== want) c.mountPoint = want;
+  }
+}
+
 export function initUiState(): void {
   if (_initialized) return;
   _initialized = true;
@@ -178,20 +215,33 @@ export function initUiState(): void {
   try {
     const row = db.prepare('SELECT value FROM kv WHERE domain=? AND key=?').get('ui', 'state') as { value: string } | undefined;
     if (row) {
-      const saved = JSON.parse(row.value) as Partial<UIState>;
-      _state = {
+      const saved = JSON.parse(row.value) as Partial<UIState> & { _v?: number };
+      const restored: UIState = {
         theme: { ...DEFAULT_THEME, ...saved.theme },
-        layout: saved.layout ?? DEFAULT_LAYOUT,
-        components: saved.components ?? DEFAULT_COMPONENTS,
+        layout: saved.layout ?? structuredClone(DEFAULT_LAYOUT),
+        components: saved.components ?? structuredClone(DEFAULT_COMPONENTS),
         styles: saved.styles ?? [],
         chat: { ...DEFAULT_CHAT_CONFIG, ...(saved.chat ?? {}) },
       };
-      console.log('[ui] state restored from storage');
+      if ((saved as { _v?: number })._v === STATE_VERSION) {
+        _state = restored;
+      } else {
+        // 结构可能已变: layout 用新版基线, 其余保留用户自定义
+        _state = { ...restored, layout: structuredClone(DEFAULT_LAYOUT) };
+        _state._v = STATE_VERSION;
+        console.log('[ui] state restored with version upgrade (-> v' + STATE_VERSION + ')');
+      }
+      normalizeState(_state);
+      persist();
     } else {
       _state = structuredClone(DEFAULT_UI_STATE);
+      _state._v = STATE_VERSION;
+      normalizeState(_state);
+      persist();
     }
   } catch {
     _state = structuredClone(DEFAULT_UI_STATE);
+    _state._v = STATE_VERSION;
   }
 }
 

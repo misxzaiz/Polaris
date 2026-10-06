@@ -154,7 +154,10 @@ async function clearCurrent(call: Caller): Promise<void> {
 }
 
 async function loadMessages(sessionId: string, call: Caller): Promise<unknown[]> {
-  const r = await call('cap.history', { action: 'get', sessionId });
+  // 用 'list' 而非 'get': list 返回解析后的 { messages: [...] },
+  // get 只返回 { content } 原始 JSONL 文本 — 按 .messages 解析会永远得到 [].
+  // 曾导致 list 的 messages 计数恒为 0、getCurrent 的消息恒为空.
+  const r = await call('cap.history', { action: 'list', sessionId });
   if (!r) return [];
   const arr = (r as { messages?: unknown }).messages;
   return Array.isArray(arr) ? arr : [];
