@@ -52,6 +52,47 @@ export const SHELL_HTML = `<!DOCTYPE html>
     display: flex; align-items: center; gap: 4px;
   }
   #sky-topbar .topbar-btn:hover { color: var(--sky-text, #c9d1d9); background: rgba(255,255,255,0.06); }
+  #sky-topbar #tb-workspace { max-width: 200px; overflow: hidden; }
+  #sky-topbar #tb-workspace #ws-name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 120px; }
+
+  /* 工作区下拉菜单 */
+  .ws-dropdown {
+    position: absolute; top: 40px; right: 12px; z-index: 60;
+    background: var(--sky-bg-elevated, #161b22);
+    border: 1px solid var(--sky-border, #21262d);
+    border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    min-width: 260px; max-width: 360px; max-height: 400px; overflow-y: auto;
+    display: none; flex-direction: column;
+  }
+  .ws-dropdown.open { display: flex; }
+  .ws-dropdown-header { padding: 8px 12px; border-bottom: 1px solid var(--sky-border, #21262d); font-size: 11px; text-transform: uppercase; color: var(--sky-text-muted, #8b949e); letter-spacing: 0.5px; }
+  .ws-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer;
+    border: none; background: none; width: 100%; text-align: left;
+    color: var(--sky-text, #c9d1d9); font-size: 13px;
+  }
+  .ws-item:hover { background: rgba(255,255,255,0.06); }
+  .ws-item.active { background: rgba(88,166,255,0.12); color: var(--sky-accent, #58a6ff); }
+  .ws-item .ws-info { flex: 1; overflow: hidden; }
+  .ws-item .ws-info .ws-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-item .ws-info .ws-root { font-size: 10px; color: var(--sky-text-muted, #8b949e); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ws-item .ws-del { color: var(--sky-text-muted, #8b949e); padding: 2px 4px; border-radius: 4px; }
+  .ws-item .ws-del:hover { color: var(--sky-danger, #f85149); }
+  .ws-dropdown-footer { padding: 8px 12px; border-top: 1px solid var(--sky-border, #21262d); display: flex; gap: 8px; }
+  .ws-dropdown-footer .btn { width: auto; padding: 6px 12px; min-height: 32px; font-size: 12px; }
+
+  /* 文件树 */
+  .fs-tree { font-size: 12px; }
+  .fs-node {
+    display: flex; align-items: center; gap: 4px; padding: 3px 6px; cursor: pointer;
+    color: var(--sky-text, #c9d1d9); border-radius: 4px;
+  }
+  .fs-node:hover { background: rgba(255,255,255,0.06); }
+  .fs-node .fs-icon { width: 14px; height: 14px; flex-shrink: 0; opacity: 0.7; }
+  .fs-node .fs-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fs-node.dir .fs-icon { color: var(--sky-accent, #58a6ff); }
+  .fs-children { margin-left: 16px; }
+  .fs-children.collapsed { display: none; }
 
   /* --- 主布局横向容器 --- */
   #sky-main { display: flex; flex: 1; overflow: hidden; position: relative; }
@@ -417,6 +458,11 @@ export const SHELL_HTML = `<!DOCTYPE html>
   <div id="sky-topbar">
     <button class="topbar-btn" id="tb-menu" title="菜单"><svg width="18" height="18"><use href="#ic-menu"/></svg></button>
     <span class="title">Sky</span>
+    <button class="topbar-btn" id="tb-workspace" title="工作区">
+      <svg width="16" height="16"><use href="#ic-files"/></svg>
+      <span id="ws-name">无工作区</span>
+      <svg width="12" height="12" style="opacity:.6"><use href="#ic-chev"/></svg>
+    </button>
     <span class="badge" id="cap-badge">...</span>
     <button class="topbar-btn" id="tb-settings" title="设置"><svg width="18" height="18"><use href="#ic-settings"/></svg></button>
   </div>
@@ -453,6 +499,7 @@ export const SHELL_HTML = `<!DOCTYPE html>
       <div id="settings-content"></div>
     </div>
   </div>
+  <div class="ws-dropdown" id="ws-dropdown"></div>
 </div>
 <script>
 // ================================================================================
@@ -608,21 +655,140 @@ async function ensureSession(title) {
 }
 
 // ================================================================================
-// 文件浏览器 (LeftPanel files content — 接 cap.fs, 显示 dataRoot 内文件)
+// 工作区管理 (TopBar 选择器 + 下拉菜单)
+// ================================================================================
+let currentWorkspace = null; // { id, name, root, absolute }
+
+async function refreshWorkspace() {
+  const data = await dispatch('cap.workspace', { action: 'get', includeTree: false });
+  if (data && data.ok !== false && data.id) {
+    currentWorkspace = { id: data.id, name: data.name, root: data.root, absolute: data.absolute };
+  } else {
+    currentWorkspace = null;
+  }
+  updateWorkspaceDisplay();
+  renderFileList();
+}
+
+function updateWorkspaceDisplay() {
+  const nameEl = $('ws-name');
+  if (nameEl) nameEl.textContent = currentWorkspace ? currentWorkspace.name : '无工作区';
+}
+
+function toggleWorkspaceDropdown() {
+  const dd = $('ws-dropdown');
+  if (dd.classList.contains('open')) { dd.classList.remove('open'); return; }
+  renderWorkspaceDropdown();
+  dd.classList.add('open');
+}
+
+async function renderWorkspaceDropdown() {
+  const dd = $('ws-dropdown');
+  dd.innerHTML = '<div class="ws-dropdown-header">工作区</div><div id="ws-list" style="padding:4px 0"><div style="padding:8px 12px;color:var(--sky-text-muted,#8b949e);font-size:12px">加载中...</div></div>' +
+    '<div class="ws-dropdown-footer"><button class="btn secondary" id="ws-add-input">从路径添加</button></div>';
+  $('ws-add-input').onclick = () => {
+    const root = window.prompt('输入工作区根目录 (绝对路径, 如 D:\\\\proj\\\\my-app)');
+    if (root && root.trim()) addWorkspaceFromPath(root.trim());
+  };
+  const data = await dispatch('cap.workspace', { action: 'list' });
+  const list = $('ws-list');
+  const workspaces = (data && data.workspaces) || [];
+  const currentId = (data && data.currentId) || (currentWorkspace ? currentWorkspace.id : null);
+  if (!workspaces.length) {
+    list.innerHTML = '<div style="padding:12px;color:var(--sky-text-muted,#8b949e);font-size:12px;line-height:1.6;text-align:center">暂无工作区<br>点击「从路径添加」创建</div>';
+    return;
+  }
+  list.innerHTML = workspaces.map(w => {
+    const isCurrent = w.id === currentId;
+    return '<button class="ws-item' + (isCurrent ? ' active' : '') + '" data-wid="' + esc(w.id) + '">' +
+      '<div class="ws-info"><div class="ws-title">' + esc(w.name) + '</div>' +
+      '<div class="ws-root">' + esc(w.root) + '</div></div>' +
+      '<span class="ws-del" data-wdel="' + esc(w.id) + '" title="删除"><svg width="14" height="14"><use href="#ic-x"/></svg></span></button>';
+  }).join('');
+  list.querySelectorAll('.ws-item').forEach(btn => {
+    btn.onclick = (e) => {
+      const del = e.target.closest('[data-wdel]');
+      if (del) { e.stopPropagation(); deleteWorkspace(del.dataset.wdel); return; }
+      switchWorkspace(btn.dataset.wid);
+    };
+  });
+}
+
+async function addWorkspaceFromPath(root) {
+  const name = root.split(/[/\\\\]/).filter(Boolean).pop() || 'workspace';
+  const data = await dispatch('cap.workspace', { action: 'set', root, name });
+  if (data && data.ok !== false) {
+    await refreshWorkspace();
+    renderFileList();
+    $('ws-dropdown').classList.remove('open');
+  } else {
+    window.alert('添加工作区失败: ' + (data ? data.error : '未知错误'));
+  }
+}
+
+async function switchWorkspace(id) {
+  const data = await dispatch('cap.workspace', { action: 'switch', id });
+  if (data && data.ok !== false) {
+    await refreshWorkspace();
+    renderFileList();
+  }
+  $('ws-dropdown').classList.remove('open');
+}
+
+async function deleteWorkspace(id) {
+  const confirmed = window.confirm('删除工作区记录? (不会删除磁盘文件)');
+  if (!confirmed) return;
+  await dispatch('cap.workspace', { action: 'delete', id, force: true });
+  await refreshWorkspace();
+  renderWorkspaceDropdown();
+  renderFileList();
+}
+
+// ================================================================================
+// 文件浏览器 (LeftPanel files content — 接 cap.workspace, 显示当前工作区文件树)
 // ================================================================================
 async function renderFileList() {
   const el = $('lp-files'); if (!el) return;
   el.innerHTML = '<div class="lp-header"><span class="lp-title">文件</span>' +
     '<button class="lp-btn" id="fs-refresh">刷新</button></div>' +
-    '<div class="lp-body"><div id="fs-tree" style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div></div>';
+    '<div class="lp-body"><div id="fs-tree" class="fs-tree" style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div></div>';
   $('fs-refresh').onclick = () => renderFileList();
-  const data = await dispatch('cap.fs', { action: 'list', path: '.' });
-  const host = $('fs-tree'); if (!host) return;
-  if (!data || !data.entries) { host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">读取失败</div>'; return; }
-  host.innerHTML = data.entries.map(e =>
-    '<div style="padding:4px 6px;cursor:pointer;font-size:12px;color:var(--sky-text,#c9d1d9)" data-path="' + esc(e.name) + '">' +
-    (e.type === 'dir' ? '📁 ' : '📄 ') + esc(e.name) + '</div>'
-  ).join('');
+  const host = $('fs-tree');
+  if (!currentWorkspace) {
+    host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;line-height:1.6;padding:12px 0;text-align:center">未选择工作区<br>点击顶栏工作区按钮选择</div>';
+    return;
+  }
+  const data = await dispatch('cap.workspace', { action: 'get', includeTree: true });
+  if (!data || data.ok === false) {
+    host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">读取失败</div>';
+    return;
+  }
+  const tree = data.tree || [];
+  if (!tree.length) {
+    host.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">空目录</div>';
+    return;
+  }
+  host.innerHTML = renderFileTreeNodes(tree);
+  host.querySelectorAll('.fs-node.dir').forEach(node => {
+    node.onclick = () => {
+      const children = node.nextElementSibling;
+      if (children && children.classList.contains('fs-children')) children.classList.toggle('collapsed');
+    };
+  });
+}
+
+function renderFileTreeNodes(nodes) {
+  return nodes.map(n => {
+    const isDir = n.type === 'dir';
+    const icon = isDir ? '<svg class="fs-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>'
+      : '<svg class="fs-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>';
+    let html = '<div class="fs-node' + (isDir ? ' dir' : '') + '" data-path="' + esc(n.path) + '">' +
+      icon + '<span class="fs-name">' + esc(n.name) + '</span></div>';
+    if (isDir && n.children && n.children.length > 0) {
+      html += '<div class="fs-children">' + renderFileTreeNodes(n.children) + '</div>';
+    }
+    return html;
+  }).join('');
 }
 
 // ================================================================================
@@ -740,7 +906,9 @@ async function send() {
 const settingsTabs = [
   { id: 'general', label: '通用', render: renderGeneralSettings },
   { id: 'ai', label: 'AI 配置', render: renderAiSettings },
+  { id: 'workspace', label: '工作区', render: renderWorkspaceSettings },
   { id: 'theme', label: '主题', render: renderThemeSettings },
+  { id: 'storage', label: '数据存储', render: renderStorageSettings },
   { id: 'about', label: '关于', render: renderAboutSettings },
 ];
 function openSettings(tab) {
@@ -801,6 +969,74 @@ function renderThemeSettings(el) {
     };
   });
 }
+function renderWorkspaceSettings(el) {
+  el.innerHTML = '<h2>工作区</h2>' +
+    '<div id="ws-settings-list" style="margin-bottom:16px"><div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">加载中...</div></div>' +
+    '<h2 style="margin-top:16px">添加工作区</h2>' +
+    '<div class="field"><label>根目录路径 (绝对路径)</label><input id="ws-add-path" type="text" placeholder="D:\\\\proj\\\\my-app 或 /home/user/proj"></div>' +
+    '<div class="field"><label>名称 (可选)</label><input id="ws-add-name" type="text" placeholder="留空则用目录名"></div>' +
+    '<button class="btn" id="ws-add-btn">添加工作区</button>' +
+    '<div class="status" id="ws-status"></div>';
+  $('ws-add-btn').onclick = async () => {
+    const root = $('ws-add-path').value.trim();
+    if (!root) { $('ws-status').textContent = '请输入路径'; $('ws-status').className = 'status err'; return; }
+    const name = $('ws-add-name').value.trim() || undefined;
+    const data = await dispatch('cap.workspace', { action: 'set', root, name });
+    const s = $('ws-status');
+    if (data && data.ok !== false) { s.textContent = '已添加: ' + (data.name || root); s.className = 'status ok'; $('ws-add-path').value = ''; $('ws-add-name').value = ''; refreshWorkspace(); renderWorkspaceSettings(el); }
+    else { s.textContent = '失败: ' + (data ? data.error : '未知错误'); s.className = 'status err'; }
+  };
+  dispatch('cap.workspace', { action: 'list' }).then(data => {
+    const list = $('ws-settings-list');
+    const workspaces = (data && data.workspaces) || [];
+    const currentId = (data && data.currentId) || (currentWorkspace ? currentWorkspace.id : null);
+    if (!workspaces.length) { list.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px;padding:8px 0">暂无工作区</div>'; return; }
+    list.innerHTML = workspaces.map(w => {
+      const isCurrent = w.id === currentId;
+      return '<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:var(--sky-bg-elevated,#161b22);border:1px solid var(--sky-border,#21262d);border-radius:6px;margin-bottom:8px">' +
+        '<div style="flex:1;overflow:hidden"><div style="font-size:13px;color:var(--sky-text,#c9d1d9)">' + esc(w.name) + (isCurrent ? ' <span style="color:var(--sky-accent,#58a6ff);font-size:10px">(当前)</span>' : '') + '</div>' +
+        '<div style="font-size:11px;color:var(--sky-text-muted,#8b949e);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(w.root) + '</div></div>' +
+        (isCurrent ? '' : '<button class="btn secondary" style="width:auto;padding:6px 10px;min-height:32px;font-size:12px" data-wswitch="' + esc(w.id) + '">切换</button>') +
+        '<button class="btn secondary" style="width:auto;padding:6px 10px;min-height:32px;font-size:12px" data-wdelete="' + esc(w.id) + '">删除</button></div>';
+    }).join('');
+    list.querySelectorAll('[data-wswitch]').forEach(b => b.onclick = async () => { await switchWorkspace(b.dataset.wswitch); renderWorkspaceSettings(el); });
+    list.querySelectorAll('[data-wdelete]').forEach(b => b.onclick = async () => { await deleteWorkspace(b.dataset.wdelete); renderWorkspaceSettings(el); });
+  });
+}
+
+function renderStorageSettings(el) {
+  el.innerHTML = '<h2>数据存储</h2>' +
+    '<div id="storage-info" style="margin-bottom:12px"><div style="color:var(--sky-text-muted,#8b949e);font-size:12px">加载中...</div></div>' +
+    '<h2 style="margin-top:16px">维护</h2>' +
+    '<button class="btn secondary" id="storage-vacuum" style="width:auto">清理碎片 (VACUUM)</button>' +
+    '<div class="status" id="storage-status"></div>';
+  dispatch('cap.storage', { action: 'info' }).then(data => {
+    const info = $('storage-info');
+    if (!data || data.ok === false) { info.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">读取失败</div>'; return; }
+    const fmtSize = (n) => n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB';
+    const tables = data.tables || {};
+    const names = Object.keys(tables);
+    const tableRows = names.map(n =>
+      '<div style="display:flex;justify-content:space-between;padding:2px 0">' +
+      '<span style="color:var(--sky-text,#c9d1d9)">' + esc(n) + '</span>' +
+      '<span style="color:var(--sky-text-muted,#8b949e)">' + tables[n] + ' 行</span></div>'
+    ).join('');
+    info.innerHTML = '<div style="font-size:13px;line-height:1.8;color:var(--sky-text,#c9d1d9)">' +
+      '<p><strong style="color:var(--sky-text-muted,#8b949e);font-size:11px">后端</strong><br>' + esc(data.backend || '未知') + '</p>' +
+      '<p><strong style="color:var(--sky-text-muted,#8b949e);font-size:11px">数据库路径</strong><br><span style="word-break:break-all">' + esc(data.path || '未知') + '</span></p>' +
+      '<p><strong style="color:var(--sky-text-muted,#8b949e);font-size:11px">数据库大小</strong><br>' + (data.size != null ? fmtSize(data.size) : '未知') + '</p>' +
+      '<p style="margin-bottom:4px"><strong style="color:var(--sky-text-muted,#8b949e);font-size:11px">表 (' + names.length + ')</strong></p>' +
+      (names.length ? tableRows : '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">无表</div>') +
+      '</div>';
+  });
+  $('storage-vacuum').onclick = async () => {
+    const s = $('storage-status'); s.textContent = '清理中...'; s.className = 'status';
+    const data = await dispatch('cap.storage', { action: 'vacuum' });
+    if (data && data.ok !== false) { s.textContent = '清理完成'; s.className = 'status ok'; }
+    else { s.textContent = '失败: ' + (data ? data.error : '未知'); s.className = 'status err'; }
+  };
+}
+
 function renderAboutSettings(el) {
   el.innerHTML = '<h2>关于</h2><div style="font-size:13px;line-height:1.8;color:var(--sky-text-muted,#8b949e)">' +
     '<p><strong style="color:var(--sky-text,#c9d1d9)">Sky</strong> · Capability OS</p>' +
@@ -1003,14 +1239,24 @@ renderActivityBar();
 renderSessionList();
 renderFileList();
 renderCapsList();
+refreshWorkspace();
 const sendBtn = $('send-btn'); sendBtn.onclick = send;
 const input = $('input');
 input.onkeydown = (e) => { if (e.key === 'Enter' && !sendBtn.disabled) send(); };
 input.addEventListener('focus', () => setTimeout(scrollMessages, 300));
 $('ct-new').onclick = newSession;
 $('tb-settings').onclick = () => openSettings('general');
+$('tb-workspace').onclick = toggleWorkspaceDropdown;
 $('tb-menu').onclick = () => toggleLeftPanel(state.activeLeftPanel === 'sessions' ? 'files' : 'sessions');
 $('s-close').onclick = closeSettings;
+// 点击外部关闭工作区下拉
+document.addEventListener('click', (e) => {
+  const dd = $('ws-dropdown');
+  const btn = $('tb-workspace');
+  if (dd.classList.contains('open') && !dd.contains(e.target) && !btn.contains(e.target)) {
+    dd.classList.remove('open');
+  }
+});
 fetch('/api/ui-state').then(r=>r.json()).then(r => { if (r && r.theme) { uiState = r; render(); } }).catch(()=>{});
 dispatch('cap.session', { action: 'getCurrent' }).then(data => {
   const id = data && data.currentId; if (!id) return; setSessionId(id);
