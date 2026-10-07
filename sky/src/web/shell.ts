@@ -576,7 +576,9 @@ function connectWs() {
     ws.send(JSON.stringify({ type: 'shell-register', caps: [] }));
     while (pendingDispatch.length) ws.send(JSON.stringify(pendingDispatch.shift()));
     startHeartbeat();
-    // 重连后状态恢复: 重拉当前会话消息 (流式中断的场景在 stream 状态处理)
+    // 断线期间流式必然已死 (服务端丢失/完成): 强制作废卡死状态, 不能让界面永远"生成中"
+    if (streaming) forceEndStream('连接中断, 生成已停止');
+    // 重连后状态恢复: 重拉当前会话消息
     const sid = currentSessionId();
     if (sid && !streaming) loadSessionIntoChat(sid);
   };
@@ -696,6 +698,7 @@ async function newSession() {
   closeDrawer();
   // 新会话设置: 工作区选择 (可不选) + 可选标题
   const wsData = await dispatch('cap.workspace', { action: 'list' });
+  if (!wsData) { toast('无法连接 (可能需要登录)'); return; }  // 401 已弹登录层
   const workspaces = (wsData && wsData.workspaces) || [];
   const wsCur = (wsData && wsData.currentId) || null;
   openSheet('新会话', function (body) {
@@ -721,7 +724,8 @@ async function newSession() {
       const s = body.querySelector('#ns-status'); s.textContent = '创建中...'; s.className = 'status';
       // 工作区是全局态: 显式选择 → 切换; 选"不使用" → 清空当前选择
       if (chosen !== wsCur) {
-        await dispatch('cap.workspace', chosen ? { action: 'switch', id: chosen } : { action: 'unset' });
+        const sw = await dispatch('cap.workspace', chosen ? { action: 'switch', id: chosen } : { action: 'unset' });
+        if (!sw) { s.textContent = '保存失败 (可能需要登录)'; s.className = 'status err'; return; }
       }
       const title = body.querySelector('#ns-title').value.trim();
       const data = await dispatch('cap.session', { action: 'create' });
@@ -730,7 +734,11 @@ async function newSession() {
         setSessionId(data.id); clearChat(); showWelcome(); renderSessionList();
         while (sheetStack.length) closeSheet();
         $('input').focus();
-      } else { s.textContent = '创建失败'; s.className = 'status err'; }
+        toast('新会话已创建');
+      } else {
+        s.textContent = '创建失败 (可能需要登录, 或稍后重试)'; s.className = 'status err';
+        toast('会话创建失败');
+      }
     };
   });
 }
@@ -738,7 +746,8 @@ async function switchSession(id) {
   if (streaming) { toast('正在生成中, 请先停止'); return; }
   // 乐观 UI: 立即关抽屉切状态, 网络慢也不卡手感
   closeDrawer(); hideWelcome(); setSessionId(id); clearChat();
-  await dispatch('cap.session', { action: 'switch', sessionId: id });
+  const okSw = await dispatch('cap.session', { action: 'switch', sessionId: id });
+  if (!okSw) { toast('切换失败 (可能需要登录)'); }
   await loadSessionIntoChat(id);
   renderSessionList();
 }
@@ -760,6 +769,7 @@ async function ensureSession(title) {
   if (sid) return sid;
   const data = await dispatch('cap.session', { action: 'create' });
   if (data && data.id) { setSessionId(data.id); renderSessionList(); return data.id; }
+  toast('会话创建失败 (可能需要登录)');
   return '';
 }
 async function loadSessionIntoChat(id) {
@@ -861,6 +871,18 @@ function onStreamEnd(data) {
   }
   currentMsgEl = null; currentStreamId = null; streamRaw = '';
   scrollMessages();
+  renderSessionList();
+}
+function forceEndStream(reason) {
+  setStreaming(false);
+  if (currentMsgEl) {
+    currentMsgEl.classList.remove('typing');
+    if (!streamRaw.trim()) currentMsgEl.innerHTML = '<span style="color:var(--sky-text-muted,#8b949e)">(' + esc(reason) + ')</span>';
+  }
+  const note = document.createElement('div');
+  note.className = 'msg-note'; note.textContent = reason;
+  $('messages').appendChild(note);
+  currentMsgEl = null; currentStreamId = null; streamRaw = '';
   renderSessionList();
 }
 
