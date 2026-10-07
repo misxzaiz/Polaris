@@ -1,15 +1,16 @@
 # Sky — Capability OS
 
 > Polaris 架构契约的 Node + TypeScript 实现。无头 Core（HTTP/WS 常驻服务）+ 浏览器即 Shell。
-> 一切能力通过 cap 注册，AI 通过工具调用操作所有 cap —— 包括自写插件、自改 UI、自编辑代码。
+> **对话即全功能**：AI 对话是唯一常驻界面，其余一切（页面/面板/可视化）由 AI 现场渲染——桌面悬浮窗、手机底部抽屉、对话内卡片。
 
-## 设计基线
+## 设计基线（AI-first 交互原型，2026-10）
 
-1. **无头 Core + Web Shell**：Core 是 HTTP/WS 常驻服务，浏览器即 Shell，无桌面壳依赖。布局对齐 Polaris 范式：TopBar + ActivityBar + LeftPanel（保活切换）+ CenterStage + RightPanel + 设置覆盖层，断点 500px（compact 抽屉态）。
+1. **对话即应用**：内置 UI 只保留 消息流 + 输入区 + 会话抽屉 + 极简设置 sheet。没有传统导航/面板——需要什么界面，对 AI 说，它用 `cap.ui.window` / `cap.ui.component` 现场渲染。
 2. **一切能力通过 cap 注册**：所有能力都是 `Capability` 接口的实现，走统一 `dispatch(capId, params, ctx)` 唯一入口；before/after 拦截器链（permission → audit）可插拔。
-3. **AI 可操作所有 cap**：注册的 cap 自动暴露为 AI 工具（OpenAI function-calling），工具列表每轮刷新——AI 装的新插件当轮即可调用。AI 写插件 → 装 → 立即调用已闭环。
-4. **AI 注入的 UI 组件可交互**：`cap.ui.component` 支持 `js` 属性，前端在 `__sky = {dispatch, state, on, page, switchPage, addMsg}` 受限上下文中执行，CSS 自动作用域限定。AI 能"看见"渲染结果（`cap.ui.observe` 反向调用）形成闭环。
-5. **认证**：token 签发/吊销（SHA-256 存储）+ 服务端强制校验 + 密钥脱敏（见下文「认证」）。
+3. **AI 可操作所有 cap**：注册的 cap 自动暴露为 AI 工具（OpenAI function-calling），工具列表每轮刷新。系统提示注入能力 OS 行为契约（渲染界面、编辑文件、自写插件）。
+4. **AI 渲染的 UI 可交互**：`cap.ui.window`（桌面悬浮窗：拖拽/最小化/托盘恢复；≤640px 自动变手机底部抽屉）；`cap.ui.component`（mountPoint: "inline"）渲染进对话流。js 在 `__sky = {dispatch, close, toast}` 受限沙箱执行，CSS 自动作用域。
+5. **手机优先**：断点 640px；软键盘 visualViewport 适配；WS 断线指数退避重连 + 心跳 + 重连后自动恢复会话；PWA 可安装（manifest + service worker）。
+6. **认证**：token 签发/吊销（SHA-256 存储）+ 服务端强制校验（HTTP 401 / WS upgrade 拒绝）+ 密钥脱敏（见下文「认证」）。
 
 ## 启动
 

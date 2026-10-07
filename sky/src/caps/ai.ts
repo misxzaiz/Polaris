@@ -27,6 +27,8 @@ interface AiParams {
   tools?: string[];
   /** 模型覆盖 */
   model?: string;
+  /** 重新生成: 历史末尾已是待重答的 user 消息, 不再追加/不再重复持久化 */
+  regenerate?: boolean;
   /** 最大工具调用循环次数(防死循环) */
   maxToolRounds?: number;
 }
@@ -42,6 +44,7 @@ export function createAiChatCap(router: Router): StreamingCapability {
         sessionId: { type: 'string', description: 'Persist to cap.history if provided' },
         tools: { type: 'array', items: { type: 'string' }, description: 'Restrict available caps' },
         model: { type: 'string' },
+        regenerate: { type: 'boolean', description: 'Re-answer the last user message already in history (do not re-append)' },
       },
       required: ['messages'],
     },
@@ -157,7 +160,7 @@ const SYSTEM_PROMPT = `你是 Sky 的 AI 助手 — 一个"对话即全功能"�
     }
   }
   // 拼接: 历史 (剔除纯工具调用消息, AI API 不认 role=tool 无 tool_call_id 的孤儿)
-  //   + 当前用户消息
+  //   + 当前用户消息 (regenerate 时历史末尾已含该 user 消息, 不重复)
   const filteredHist = historyMsgs.filter(m =>
     m.role === 'user' || m.role === 'assistant'
   ).map(m => ({
@@ -167,11 +170,11 @@ const SYSTEM_PROMPT = `你是 Sky 的 AI 助手 — 一个"对话即全功能"�
   const messages: Array<Record<string, unknown>> = [
     { role: 'system', content: SYSTEM_PROMPT },
     ...filteredHist,
-    ...p.messages,
+    ...(p.regenerate ? [] : p.messages),
   ];
 
-  // 持久化用户消息
-  if (p.sessionId) {
+  // 持久化用户消息 (regenerate 跳过: 消息已在历史里)
+  if (p.sessionId && !p.regenerate) {
     const last = p.messages[p.messages.length - 1];
     if (last?.role === 'user') {
       await ctx.dispatch('cap.history', {
@@ -208,6 +211,12 @@ const SYSTEM_PROMPT = `你是 Sky 的 AI 助手 — 一个"对话即全功能"�
           ctx.emit({
             type: 'stream.chunk', stream_id: streamId,
             data: part.delta, ts: Date.now(),
+          });
+        }
+        if (part.reasoning) {
+          ctx.emit({
+            type: 'stream.reasoning', stream_id: streamId,
+            data: part.reasoning, ts: Date.now(),
           });
         }
         if (part.toolCalls) {
@@ -299,6 +308,7 @@ async function getConfig(_ctx: CallContext): Promise<{ ai: Record<string, unknow
 
 interface AiPart {
   delta?: string;
+  reasoning?: string;
   toolCalls?: Array<{ id: string; name: string; args: Record<string, unknown> }>;
   finishReason?: string;
 }
@@ -384,6 +394,12 @@ async function* callAiStream(
         const delta = choice.delta;
         if (delta?.content) {
           yield { delta: delta.content };
+        }
+        // 推理型模型思考链 (DeepSeek 风格 reasoning_content / 部分代理用 reasoning)
+        const reasoning = (delta as { reasoning_content?: string; reasoning?: string }).reasoning_content
+          ?? (delta as { reasoning?: string }).reasoning;
+        if (reasoning) {
+          yield { reasoning };
         }
         if (delta?.tool_calls) {
           for (const tc of delta.tool_calls) {

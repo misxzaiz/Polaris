@@ -30,12 +30,12 @@ import { validatePresentedToken, getAuthRequired, getMasterToken } from './auth.
 
 // Service Worker: Shell 页缓存优先, API/WS 永不缓存 (离线时显示提示页由壳处理)
 const SW_JS = [
-  "const CACHE = 'sky-shell-v1';",
+  "const CACHE = 'sky-shell-v' + Date.now(); // 每次 Core 重启都换版本号, 旧缓存自动失效",
   "self.addEventListener('install', (e) => {",
   '  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));',
   '  self.skipWaiting();',
   '});',
-  "self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });",
+  "self.addEventListener('activate', (e) => { e.waitUntil(clients.claim().then(() => caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('sky-shell-v') && k !== CACHE).map((k) => caches.delete(k)))))); });",
   "self.addEventListener('fetch', (e) => {",
   '  const url = new URL(e.request.url);',
   "  if (url.pathname.startsWith('/api') || url.pathname === '/ws') return;",

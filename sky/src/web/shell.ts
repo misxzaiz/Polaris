@@ -193,6 +193,14 @@ export const SHELL_HTML = `<!DOCTYPE html>
   .hl-k { color: #ff7b72; }
   .hl-n { color: #79c0ff; }
   .msg-note { align-self: center; font-size: 12px; color: var(--sky-text-muted, #8b949e); background: rgba(255,255,255,0.04); padding: 4px 12px; border-radius: 10px; }
+  .msg-actions { align-self: flex-start; }
+  .regen-btn {
+    display: flex; align-items: center; gap: 5px;
+    padding: 4px 10px; min-height: 30px; border-radius: 8px;
+    background: none; border: 1px solid var(--sky-border, #21262d);
+    color: var(--sky-text-muted, #8b949e); font-size: 12px;
+  }
+  .regen-btn:hover { color: var(--sky-text, #c9d1d9); border-color: var(--sky-text-muted, #8b949e); }
   .msg.typing::after {
     content: "▍"; color: var(--sky-accent, #58a6ff); animation: blink 0.9s infinite;
   }
@@ -229,6 +237,27 @@ export const SHELL_HTML = `<!DOCTYPE html>
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
 
+  /* 思考链卡片 */
+  .think-card {
+    align-self: stretch; font-size: 12px;
+    background: rgba(255,255,255,0.03);
+    border: 1px dashed var(--sky-border, #21262d); border-radius: 10px;
+    overflow: hidden;
+  }
+  .think-card .think-head {
+    display: flex; align-items: center; gap: 8px; padding: 6px 10px;
+    cursor: pointer; color: var(--sky-text-muted, #8b949e);
+  }
+  .think-card .think-label { flex: 1; text-align: left; }
+  .think-card .think-chev { display: flex; transition: transform 0.15s; opacity: 0.6; }
+  .think-card.open .think-chev { transform: rotate(180deg); }
+  .think-card .think-body {
+    display: none; padding: 4px 12px 10px 26px; max-height: 200px; overflow-y: auto;
+    color: var(--sky-text-muted, #8b949e); font-style: italic; line-height: 1.6;
+    white-space: pre-wrap; word-break: break-word;
+  }
+  .think-card.open .think-body { display: block; }
+
   /* 输入区 */
   #composer {
     flex-shrink: 0; display: flex; align-items: flex-end; gap: 8px;
@@ -260,23 +289,33 @@ export const SHELL_HTML = `<!DOCTYPE html>
   #sheet-backdrop.show { opacity: 1; pointer-events: auto; }
   #sheet {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 61;
-    max-height: 86dvh; display: none; flex-direction: column;
+    max-height: 86dvh; display: flex; flex-direction: column;
     background: var(--sky-bg-elevated, #161b22);
     border-radius: 16px 16px 0 0;
     border: 1px solid var(--sky-border, #21262d); border-bottom: none;
-    transform: translateY(100%); transition: transform 0.24s ease;
+    visibility: hidden; pointer-events: none;
+    transform: translateY(100%);
+    transition: transform 0.24s ease, visibility 0s 0.24s;
     padding-bottom: var(--safe-bottom);
   }
-  #sheet.show { transform: translateY(0); }
+  #sheet.show {
+    visibility: visible; pointer-events: auto;
+    transform: translateY(0);
+    transition: transform 0.24s ease, visibility 0s;
+  }
   @media (min-width: 700px) {
     #sheet {
       left: 50%; right: auto; bottom: auto; top: 50%;
       width: min(560px, 92vw); max-height: 84dvh;
       transform: translate(-50%, -50%) scale(0.96); opacity: 0; border-radius: 14px;
-      transition: transform 0.18s ease, opacity 0.18s;
+      transition: transform 0.18s ease, opacity 0.18s, visibility 0s 0.18s;
       border-bottom: 1px solid var(--sky-border, #21262d);
     }
-    #sheet.show { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+    #sheet.show {
+      visibility: visible; pointer-events: auto;
+      transform: translate(-50%, -50%) scale(1); opacity: 1;
+      transition: transform 0.18s ease, opacity 0.18s, visibility 0s;
+    }
   }
   .sheet-head {
     display: flex; align-items: center; justify-content: space-between;
@@ -626,7 +665,7 @@ document.addEventListener('visibilitychange', function () {
 // 事件路由 (流式 / AI 窗口 / UI State)
 // ================================================================================
 function handleEvent(ev) {
-  // 流事件归属: 匹配当前流, 或 reply 未回但流已启动 (竞态: end/error 先于 reply 到达)
+  // 事件归属: 匹配当前流, 或 reply 未回但流已启动 (竞态: end/error 先于 reply 到达)
   const mine = ev.stream_id === currentStreamId || (streaming && !currentStreamId);
   if (ev.type === 'stream.chunk') {
     if (!mine || !currentMsgEl) return;
@@ -642,6 +681,9 @@ function handleEvent(ev) {
   } else if (ev.type === 'stream.end') {
     if (!mine) return;
     onStreamEnd(ev.data || {}, ev.stream_id);
+  } else if (ev.type === 'stream.reasoning') {
+    if (!mine) return;
+    addThinkingChunk(ev.data);
   } else if (ev.type === 'ui.window') {
     if (ev.data && ev.data.action === 'open') openWindow(ev.data);
     else if (ev.data && ev.data.action === 'close') closeWindow(ev.data.id);
@@ -837,6 +879,29 @@ function setStreaming(on) {
   $('ic-stop').style.display = on ? '' : 'none';
   btn.title = on ? '停止' : '发送';
 }
+// 思考链卡片 (推理模型 reasoning_content) — 折叠可展开, 结束后自动收起
+let thinkingEl = null;
+function addThinkingChunk(text) {
+  if (!thinkingEl) {
+    thinkingEl = document.createElement('div');
+    thinkingEl.className = 'think-card';
+    thinkingEl.innerHTML = '<div class="think-head"><span class="t-dot" style="background:var(--sky-text-muted,#8b949e)"></span><span class="think-label">思考中…</span><span class="think-chev"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg></span></div><div class="think-body"></div>';
+    thinkingEl.querySelector('.think-head').onclick = function () { thinkingEl.classList.toggle('open'); };
+    if (currentMsgEl) $('messages').insertBefore(thinkingEl, currentMsgEl);
+    else $('messages').appendChild(thinkingEl);
+  }
+  const body = thinkingEl.querySelector('.think-body');
+  body.appendChild(document.createTextNode(text));
+  body.scrollTop = body.scrollHeight;
+  scrollMessages();
+}
+function finishThinking() {
+  if (!thinkingEl) return;
+  const label = thinkingEl.querySelector('.think-label');
+  if (label) label.textContent = '思考过程';
+  thinkingEl.classList.remove('open'); // 结束后收起 (点头部可展开)
+  thinkingEl = null;
+}
 function addToolCard(data) {
   const seq = ++toolSeq;
   const el = document.createElement('div');
@@ -868,6 +933,7 @@ function finishToolCard(data) {
   el.querySelector('.t-args').textContent = ok ? '完成' : '失败: ' + ((data.result && data.result.error) || '').slice(0, 80);
 }
 function onStreamEnd(data, sid) {
+  finishThinking();
   const el = (sid && streamEls.get(sid)) || currentMsgEl;
   setStreaming(false);
   if (data.aborted && el && el !== currentMsgEl) {
@@ -893,10 +959,52 @@ function onStreamEnd(data, sid) {
   }
   if (sid) streamEls.delete(sid);
   currentMsgEl = null; currentStreamId = null; streamRaw = '';
+  // 重新生成入口 (非错误/中断也提供)
+  $('messages').querySelectorAll('.msg-actions').forEach(function (n) { n.remove(); });
+  if (data.ok !== false) {
+    const act = document.createElement('div');
+    act.className = 'msg-actions';
+    act.innerHTML = '<button class="regen-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>重新生成</button>';
+    act.querySelector('.regen-btn').onclick = regenerate;
+    $('messages').appendChild(act);
+  }
   scrollMessages();
   renderSessionList();
 }
+async function regenerate() {
+  if (streaming) return;
+  const sid = currentSessionId(); if (!sid) return;
+  const rm = await dispatch('cap.history', { action: 'deleteLast', sessionId: sid });
+  if (!rm || rm.ok === false) { toast('没有可重新生成的内容'); return; }
+  const hist = await dispatch('cap.history', { action: 'list', sessionId: sid });
+  const msgs = (hist && hist.messages) || [];
+  const lastUser = [...msgs].reverse().find(function (m) { return m.role === 'user'; });
+  if (!lastUser) { toast('没有可重新生成的用户消息'); return; }
+  // 视图: 移除末尾 assistant 元素与旧 action 行, 重新流式
+  const els = [...$('messages').children].filter(function (e) { return e.className.indexOf('assistant') !== -1; });
+  if (els.length) els[els.length - 1].remove();
+  const acts = $('messages').querySelectorAll('.msg-actions'); acts.forEach(function (n) { n.remove(); });
+  setStreaming(true); streamRaw = '';
+  currentMsgEl = addMsgEl('assistant', ''); currentMsgEl.classList.add('typing');
+  thinkingEl = null;
+  scrollMessages();
+  const reqId = 'regen-' + Date.now().toString(36);
+  pendingStreamReplies[reqId] = function (reply) {
+    if (!streaming) return;
+    if (reply && reply.result && reply.result.ok) {
+      currentStreamId = reply.result.data.streamId;
+      if (currentMsgEl) streamEls.set(currentStreamId, currentMsgEl);
+    } else {
+      setStreaming(false);
+      if (currentMsgEl) currentMsgEl.classList.remove('typing');
+      const err = (reply && reply.result && reply.result.error) || '启动失败';
+      addMsgEl('assistant', renderMarkdown('**出错了:** ' + err), true);
+    }
+  };
+  wsSend({ type: 'dispatch', reqId: reqId, cap: 'cap.ai.chat', stream: true, params: { messages: [{ role: 'user', content: String(lastUser.content || '') }], sessionId: sid, regenerate: true } });
+}
 function forceEndStream(reason) {
+  finishThinking();
   setStreaming(false);
   if (currentMsgEl) {
     currentMsgEl.classList.remove('typing');
@@ -921,6 +1029,7 @@ async function send() {
   setStreaming(true);
   streamRaw = '';
   currentMsgEl = addMsgEl('assistant', ''); currentMsgEl.classList.add('typing');
+  thinkingEl = null;
   scrollMessages();
   const reqId = 'req-' + Date.now().toString(36);
   pendingStreamReplies[reqId] = function (reply) {
@@ -950,11 +1059,17 @@ function openSheet(title, buildBody) {
   // 清理上一个窗口 sheet 留下的最小化按钮
   const stale = document.querySelector('#sheet .sh-min');
   if (stale) stale.remove();
-  sheetStack.push(entry);
   $('sheet-title').textContent = title;
   const body = $('sheet-body');
   body.innerHTML = '';
-  buildBody(body, entry);
+  try { buildBody(body, entry); }
+  catch (e) {
+    console.error('[sheet build]', e);
+    body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--sky-danger,#f85149);font-size:12.5px;line-height:1.7">面板加载失败<br><code>' + esc(String(e && e.message || e)) + '</code></div>';
+    toast('面板加载失败: ' + (e && e.message || e));
+  }
+  // buildBody 失败已在 body 里展示错误信息, 仍然入栈让用户能看到错误并关闭
+  sheetStack.push(entry);
   $('sheet').classList.add('show');
   $('sheet-backdrop').classList.add('show');
   return entry;
@@ -1214,11 +1329,13 @@ function openSettings() {
 
     // AI 配置
     dispatch('cap.config', { action: 'get' }).then(function (cfg) {
+      const el = $('st-base');
+      if (!el) return; // 面板已关
       const ai = (cfg && cfg.ai) || {};
-      $('st-base').value = ai.baseUrl || '';
+      el.value = ai.baseUrl || '';
       $('st-key').value = ai.apiKey || '';
       $('st-model').value = ai.model || '';
-    });
+    }).catch(function (e) { console.warn('[settings] config.get', e); });
     $('st-ai-save').onclick = async function () {
       const s = $('st-ai-status'); s.textContent = '保存中...'; s.className = 'status';
       const data = await dispatch('cap.config', { action: 'patch', value: { ai: { baseUrl: $('st-base').value.trim(), apiKey: $('st-key').value.trim(), model: $('st-model').value.trim() } } });
@@ -1229,7 +1346,9 @@ function openSettings() {
     // 主题
     dispatch('cap.ui.theme', { action: 'presets' }).then(function (data) {
       const host = $('st-themes');
+      if (!host) return; // 面板已关
       const presets = (data && data.presets) || [];
+      if (!presets.length) { host.innerHTML = '<span style="font-size:12px;color:var(--sky-text-muted,#8b949e)">无可用主题</span>'; return; }
       host.innerHTML = presets.map(function (p) {
         return '<button class="theme-chip" data-theme="' + esc(p) + '">' + esc(p) + '</button>';
       }).join('');
@@ -1239,11 +1358,16 @@ function openSettings() {
           toast('主题: ' + chip.dataset.theme);
         };
       });
+    }).catch(function (e) {
+      const host = $('st-themes');
+      if (host) host.innerHTML = '<span style="font-size:12px;color:var(--sky-text-muted,#8b949e)">加载失败</span>';
+      console.warn('[settings] theme.presets', e);
     });
 
     // 认证
     dispatch('cap.auth', { action: 'verify' }).then(function (info) {
       const host = $('st-auth');
+      if (!host) return; // 面板已关
       const line = function (ok, text) { return '<span style="color:' + (ok ? '#3fb950' : 'var(--sky-danger,#f85149)') + '">' + text + '</span>'; };
       let html = '<div style="font-size:12.5px;line-height:1.8;color:var(--sky-text-muted,#8b949e)">' +
         '强制认证: ' + line(info && info.authRequired, info && info.authRequired ? '开' : '关 (本地开发)') +
@@ -1253,21 +1377,32 @@ function openSettings() {
       $('st-logout').onclick = function () {
         saveToken(''); toast('已清除, 刷新后生效'); setTimeout(function () { location.reload(); }, 800);
       };
+    }).catch(function (e) {
+      const host = $('st-auth');
+      if (host) host.innerHTML = '<span style="font-size:12px;color:var(--sky-text-muted,#8b949e)">读取失败</span>';
+      console.warn('[settings] auth.verify', e);
     });
 
     // 存储
     dispatch('cap.storage', { action: 'info' }).then(function (data) {
       const host = $('st-storage');
+      if (!host) return; // 面板已关
       if (!data || data.ok === false) { host.innerHTML = '<span style="font-size:12px;color:var(--sky-text-muted,#8b949e)">读取失败</span>'; return; }
       const fmt = function (n) { return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1024).toFixed(1) + ' KB'; };
       host.innerHTML = '<div style="font-size:12.5px;line-height:1.8;color:var(--sky-text-muted,#8b949e)">' +
         esc(data.backend || '') + ' · ' + (data.size != null ? fmt(data.size) : '?') + ' · ' +
         Object.keys(data.tables || {}).length + ' 表<br><span style="word-break:break-all">' + esc(data.path || '') + '</span></div>';
+    }).catch(function (e) {
+      const host = $('st-storage');
+      if (host) host.innerHTML = '<span style="font-size:12px;color:var(--sky-text-muted,#8b949e)">读取失败</span>';
+      console.warn('[settings] storage.info', e);
     });
 
     dispatch('cap.shell', { action: 'info' }).then(function (info) {
-      if (info && info.caps !== undefined) $('st-caps').textContent = info.caps + ' caps';
-    });
+      const el = $('st-caps');
+      if (!el) return; // 面板已关
+      if (info && info.caps !== undefined) el.textContent = info.caps + ' caps';
+    }).catch(function (e) { console.warn('[settings] shell.info', e); });
   });
 }
 

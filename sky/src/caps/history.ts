@@ -6,7 +6,7 @@
  * 索引(可选): 纯派生,可随时重建
  */
 
-import { mkdirSync, appendFileSync, readFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
+import { mkdirSync, appendFileSync, readFileSync, writeFileSync, existsSync, readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Capability, Value } from '../contracts.ts';
 import { dataRoot } from '../storage.ts';
@@ -19,11 +19,11 @@ function ensureDir() {
 
 export const historyCap: Capability = {
   id: 'cap.history',
-  description: 'Session history (JSONL). Actions: append/list/get/clear. Per-session file.',
+  description: 'Session history (JSONL). Actions: append/list/get/deleteLast/clear. Per-session file.',
   inputSchema: {
     type: 'object',
     properties: {
-      action: { type: 'string', enum: ['append', 'list', 'get', 'clear', 'sessions'] },
+      action: { type: 'string', enum: ['append', 'list', 'get', 'deleteLast', 'clear', 'sessions'] },
       sessionId: { type: 'string' },
       message: { description: 'Message object for append' },
     },
@@ -31,7 +31,7 @@ export const historyCap: Capability = {
   },
   async invoke(params: Value) {
     const p = params as {
-      action: 'append' | 'list' | 'get' | 'clear' | 'sessions';
+      action: 'append' | 'list' | 'get' | 'deleteLast' | 'clear' | 'sessions';
       sessionId?: string;
       message?: { role: string; content: unknown; ts?: number };
     };
@@ -56,6 +56,21 @@ export const historyCap: Capability = {
         const file = join(HISTORY_DIR, `${p.sessionId}.jsonl`);
         if (!existsSync(file)) return { ok: false, notFound: true };
         return { ok: true, content: readFileSync(file, 'utf8') };
+      }
+      case 'deleteLast': {
+        // 删除末尾的连续 assistant/tool 消息 (重新生成的准备), 返回剩余条数
+        if (!p.sessionId) throw new Error('sessionId required');
+        const file = join(HISTORY_DIR, `${p.sessionId}.jsonl`);
+        if (!existsSync(file)) return { ok: true, removed: 0 };
+        const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
+        let removed = 0;
+        while (lines.length) {
+          const last = JSON.parse(lines[lines.length - 1]) as { role?: string };
+          if (last.role === 'assistant' || last.role === 'tool') { lines.pop(); removed++; }
+          else break;
+        }
+        writeFileSync(file, lines.length ? lines.join('\n') + '\n' : '', 'utf8');
+        return { ok: true, removed };
       }
       case 'clear': {
         if (!p.sessionId) throw new Error('sessionId required');
