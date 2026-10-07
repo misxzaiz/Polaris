@@ -7,7 +7,11 @@
   "scripts": {
     "dev": "tsx watch src/main.ts",
     "start": "tsx src/main.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "npm run test:auth && npm run test:edit",
+    "test:auth": "node scripts/auth-e2e.mjs",
+    "test:edit": "node scripts/edit-e2e.mjs",
+    "test:ai-edit": "node scripts/edit-ai-e2e.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.7.0",
