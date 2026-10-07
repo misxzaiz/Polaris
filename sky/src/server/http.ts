@@ -25,11 +25,18 @@ import type { Source } from '../contracts.ts';
 import { SHELL_HTML } from '../web/shell.ts';
 import { shellRegistry } from '../caps/ui/shell-registry.ts';
 import { setUiEmitter, getUiState } from '../caps/ui/state.ts';
+import { validatePresentedToken, getAuthRequired, getMasterToken } from './auth.ts';
 
 export interface ServerOptions {
   port: number;
   token?: string;
+  authRequired?: boolean;
 }
+
+/** 无需认证即可访问的路径 (认证开启时) */
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/verify']);
+
+type RemoteSource = Extract<Source, { kind: 'remote' }>;
 
 export function startServer(
   router: Router,
@@ -43,34 +50,47 @@ export function startServer(
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return; }
 
     const url = req.url ?? '/';
-    const source = resolveSource(req, opts.token);
+    const pathname = url.split('?')[0];
+    const source = resolveSource(req);
 
     try {
+      // 强制认证: 未认证 → 401 (静态 Shell 页除外, 它承载登录界面)
+      if (getAuthRequired() && !source.authed && !PUBLIC_PATHS.has(pathname) && pathname !== '/') {
+        return json(res, 401, { error: 'unauthorized: valid token required (Authorization: Bearer sk-...)' });
+      }
+
       // GET /api/health
-      if (url === '/api/health' && req.method === 'GET') {
-        return json(res, 200, { ok: true, uptime: process.uptime(), caps: router.list().length });
+      if (pathname === '/api/health' && req.method === 'GET') {
+        return json(res, 200, { ok: true, uptime: process.uptime(), caps: router.list().length, authRequired: getAuthRequired(), authed: source.authed === true });
+      }
+      // GET /api/auth/verify — Shell 启动时校验本地存储的 token
+      if (pathname === '/api/auth/verify') {
+        const identity = source.authed
+          ? { ok: true, authRequired: getAuthRequired(), authed: true, authId: source.authId, authName: source.authName, admin: source.admin === true }
+          : { ok: true, authRequired: getAuthRequired(), authed: false };
+        return json(res, 200, identity);
       }
       // GET /api/caps
-      if (url === '/api/caps' && req.method === 'GET') {
+      if (pathname === '/api/caps' && req.method === 'GET') {
         return json(res, 200, { caps: router.list() });
       }
       // GET /api/ui-state — UI State 初始同步
-      if (url === '/api/ui-state' && req.method === 'GET') {
+      if (pathname === '/api/ui-state' && req.method === 'GET') {
         return json(res, 200, getUiState());
       }
       // GET /api/config
-      if (url === '/api/config' && req.method === 'GET') {
+      if (pathname === '/api/config' && req.method === 'GET') {
         const reply = await router.dispatch('cap.config', { action: 'get' }, source);
         return json(res, 200, reply);
       }
       // POST /api/config
-      if (url === '/api/config' && req.method === 'POST') {
+      if (pathname === '/api/config' && req.method === 'POST') {
         const body = await readBody(req);
         const reply = await router.dispatch('cap.config', { action: 'patch', value: body }, source);
         return json(res, 200, reply);
       }
       // POST /api/dispatch
-      if (url === '/api/dispatch' && req.method === 'POST') {
+      if (pathname === '/api/dispatch' && req.method === 'POST') {
         const body = await readBody(req) as { cap?: string; params?: unknown; stream?: boolean };
         if (!body.cap) return json(res, 400, { error: 'cap required' });
         if (body.stream) {
@@ -81,7 +101,7 @@ export function startServer(
         return json(res, 200, reply);
       }
       // 静态 Web Shell(根路径返回 HTML)
-      if ((url === '/' || url === '/index.html') && req.method === 'GET') {
+      if ((pathname === '/' || pathname === '/index.html') && req.method === 'GET') {
         return serveShell(res);
       }
 
@@ -92,8 +112,17 @@ export function startServer(
     }
   });
 
-  // WebSocket
-  const wss = new WebSocketServer({ server, path: '/ws' });
+  // WebSocket — upgrade 阶段即拒绝未认证连接 (101 之前, 客户端不会收到 open)
+  const wss = new WebSocketServer({ noServer: true });
+  server.on('upgrade', (req, socket, head) => {
+    const source = resolveSource(req);
+    if (getAuthRequired() && !source.authed) {
+      socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
+  });
   // UI State 变化 → 推给所有连着的 Shell
   setUiEmitter((state) => {
     for (const info of shellRegistry.list()) {
@@ -103,9 +132,9 @@ export function startServer(
   });
 
   wss.on('connection', (ws: WebSocket, req: IncomingMessage) => {
-    const source = resolveSource(req, opts.token);
-    if (source.kind === 'remote' && !(source as { token: string }).token) {
-      ws.close(4001, 'token required');
+    const source = resolveSource(req);
+    if (getAuthRequired() && !source.authed) {
+      ws.close(4001, 'unauthorized: valid token required');
       return;
     }
     const subId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -152,7 +181,7 @@ export function startServer(
     console.log(`  │  Web Shell:  http://localhost:${opts.port}            │`);
     console.log(`  │  WS:         ws://localhost:${opts.port}/ws            │`);
     console.log(`  │  Caps:       ${router.list().length}                              │`);
-    console.log(`  │  Token:      ${opts.token ? 'enabled' : 'disabled (local)'}                       │`);
+    console.log(`  │  Auth:       ${getAuthRequired() ? 'REQUIRED' : (getMasterToken() ? 'optional (master token set)' : 'disabled (local dev)')}`.padEnd(49) + '│');
     console.log(`  └─────────────────────────────────────────────┘\n`);
   });
 }
@@ -161,7 +190,7 @@ export function startServer(
 // Helpers
 // ============================================================================
 
-function resolveSource(req: IncomingMessage, token?: string): Source {
+function resolveSource(req: IncomingMessage): RemoteSource {
   const url = req.url ?? '';
   const q = new URL(url, 'http://localhost').searchParams;
   const tokenParam = q.get('token');
@@ -169,13 +198,9 @@ function resolveSource(req: IncomingMessage, token?: string): Source {
   const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
   const presented = tokenParam ?? bearerToken;
 
-  if (token) {
-    if (presented === token) return { kind: 'remote', token: presented };
-    // 无 token 或 token 错 → 视为无 token remote(权限 gate 会 deny)
-    return { kind: 'remote', token: presented ?? '' };
-  }
-  // 未配置 token(本地开发)→ 全放行
-  return { kind: 'remote', token: 'local-dev' };
+  // 身份校验: master token → admin; 已签发 token → 按角色; 其余 → 未认证
+  const identity = validatePresentedToken(presented);
+  return { kind: 'remote', token: presented ?? '', ...identity };
 }
 
 function json(res: any, status: number, body: unknown): void {

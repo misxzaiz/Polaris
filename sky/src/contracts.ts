@@ -46,7 +46,16 @@ export type CapabilityHandle = number;
  */
 export type Source =
   | { kind: 'bootstrap' }
-  | { kind: 'remote'; token: string }
+  | {
+      kind: 'remote';
+      token: string;
+      /** 认证身份(由传输层校验后注入, 调用方不可自填) */
+      authed?: boolean;
+      authId?: string;
+      authName?: string;
+      /** admin 角色可管理 token; master token 恒为 admin */
+      admin?: boolean;
+    }
   | { kind: 'plugin'; caller: PluginId };
 
 /** 权限裁决结果 */

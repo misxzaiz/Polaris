@@ -12,6 +12,7 @@
 
 import type { Interceptor, DispatchContext, BeforeResult, Source } from '../contracts.ts';
 import { record } from '../caps/audit.ts';
+import { getAuthRequired } from '../server/auth.ts';
 
 interface PermissionConfig {
   // 显式拒绝列表 (优先级高于 allow-all)
@@ -34,6 +35,8 @@ function checkSource(capId: string, source: Source): 'allow' | 'deny' {
   switch (source.kind) {
     case 'bootstrap': return 'allow';
     case 'remote':
+      // 强制认证: 未认证一律 deny (传输层 401 之外的第二道防线)
+      if (getAuthRequired() && !source.authed) return 'deny';
       // deny 列表优先
       if (_config.remoteDeny.includes(capId)) return 'deny';
       // allow 列表: 配置了就只放行列表内, 未配置放行全部

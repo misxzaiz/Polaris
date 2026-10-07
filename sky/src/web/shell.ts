@@ -33,6 +33,45 @@ export const SHELL_HTML = `<!DOCTYPE html>
     display: flex; flex-direction: column; height: 100vh; height: 100dvh;
   }
 
+  /* --- 认证登录覆盖层 --- */
+  #auth-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.75); backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #auth-overlay .auth-card {
+    background: var(--sky-bg-elevated, #161b22);
+    border: 1px solid var(--sky-border, #21262d);
+    border-radius: 12px; padding: 28px; width: min(420px, calc(100vw - 32px));
+    box-shadow: 0 16px 48px rgba(0,0,0,0.5);
+  }
+  #auth-overlay h2 { margin: 0 0 8px; font-size: 17px; color: var(--sky-text, #c9d1d9); }
+  #auth-overlay p { margin: 0 0 16px; font-size: 13px; line-height: 1.6; color: var(--sky-text-muted, #8b949e); }
+  #auth-overlay input {
+    width: 100%; padding: 10px 12px; margin-bottom: 12px;
+    background: var(--sky-bg, #0d1117); color: var(--sky-text, #c9d1d9);
+    border: 1px solid var(--sky-border, #21262d); border-radius: 8px;
+    font-size: 13px; box-sizing: border-box;
+  }
+  #auth-overlay input:focus { outline: none; border-color: var(--sky-accent, #58a6ff); }
+
+  /* --- 安全设置 token 列表 --- */
+  .tok-item {
+    display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin-bottom: 8px;
+    background: var(--sky-bg-elevated, #161b22); border: 1px solid var(--sky-border, #21262d); border-radius: 6px;
+  }
+  .tok-item .tok-info { flex: 1; overflow: hidden; }
+  .tok-item .tok-name { font-size: 13px; color: var(--sky-text, #c9d1d9); }
+  .tok-item .tok-meta { font-size: 11px; color: var(--sky-text-muted, #8b949e); }
+  .tok-item .tok-state { font-size: 10px; padding: 1px 6px; border-radius: 4px; }
+  .tok-item .tok-state.ok { background: rgba(46,160,67,0.15); color: #3fb950; }
+  .tok-item .tok-state.bad { background: rgba(248,81,73,0.15); color: #f85149; }
+  .tok-raw {
+    padding: 10px 12px; margin-bottom: 12px; font-family: ui-monospace, monospace; font-size: 12px;
+    background: rgba(88,166,255,0.08); border: 1px dashed var(--sky-accent, #58a6ff); border-radius: 6px;
+    color: var(--sky-text, #c9d1d9); word-break: break-all; line-height: 1.6;
+  }
+
   /* --- TopBar (顶部全局栏) --- */
   #sky-topbar {
     display: flex; align-items: center; gap: 8px;
@@ -500,6 +539,15 @@ export const SHELL_HTML = `<!DOCTYPE html>
     </div>
   </div>
   <div class="ws-dropdown" id="ws-dropdown"></div>
+  <div id="auth-overlay" style="display:none">
+    <div class="auth-card">
+      <h2>Sky 需要认证</h2>
+      <p>此服务器已开启接口认证. 输入访问 token (sk-...) 继续.</p>
+      <input id="auth-token-input" type="password" placeholder="sk-..." autocomplete="off">
+      <button class="btn" id="auth-login-btn">验证并进入</button>
+      <div class="status" id="auth-status"></div>
+    </div>
+  </div>
 </div>
 <script>
 // ================================================================================
@@ -530,14 +578,64 @@ let dispatchSeq = 0;
 // ================================================================================
 function dispatch(cap, params) {
   return fetch('/api/dispatch', {
-    method: POST_METHOD, headers: JSON_HEADERS,
+    method: POST_METHOD, headers: authHeaders(),
     body: JSON.stringify({ cap, params, reqId: 'h-' + (++dispatchSeq) }),
-  }).then(r => r.json()).then(r => r.result?.data ?? null).catch(e => {
+  }).then(r => {
+    if (r.status === 401) { showLogin(); return { result: { data: null } }; }
+    return r.json();
+  }).then(r => r.result?.data ?? null).catch(e => {
     console.warn('[dispatch] ' + cap, e); return null;
   });
 }
 const POST_METHOD = 'POST';
 const JSON_HEADERS = { 'Content-Type': 'application/json' };
+
+// ================================================================================
+// 认证 — token 存 localStorage, 请求附带 Bearer; 401 → 登录覆盖层
+// ================================================================================
+const AUTH_KEY = 'sky_token';
+function storedToken() { try { return localStorage.getItem(AUTH_KEY) || ''; } catch { return ''; } }
+function saveToken(t) { try { t ? localStorage.setItem(AUTH_KEY, t) : localStorage.removeItem(AUTH_KEY); } catch {} }
+function authHeaders() {
+  const t = storedToken();
+  return t ? { ...JSON_HEADERS, 'Authorization': 'Bearer ' + t } : JSON_HEADERS;
+}
+let authInfo = null; // { authRequired, authed, authName, admin }
+async function verifyAuthToken() {
+  try {
+    const r = await fetch('/api/auth/verify', { headers: authHeaders() });
+    authInfo = await r.json();
+  } catch { authInfo = null; }
+  return authInfo;
+}
+function showLogin() {
+  const ov = $('auth-overlay');
+  if (!ov) return;
+  ov.style.display = 'flex';
+  const inp = $('auth-token-input');
+  if (inp) setTimeout(() => inp.focus(), 50);
+}
+function hideLogin() { const ov = $('auth-overlay'); if (ov) ov.style.display = 'none'; }
+function setupLogin() {
+  const btn = $('auth-login-btn');
+  const inp = $('auth-token-input');
+  if (!btn || !inp) return;
+  const tryLogin = async () => {
+    const t = inp.value.trim();
+    if (!t) return;
+    saveToken(t);
+    const info = await verifyAuthToken();
+    const s = $('auth-status');
+    if (info && info.authed) {
+      hideLogin(); location.reload();
+    } else {
+      saveToken('');
+      if (s) { s.textContent = 'token 无效或已吊销'; s.className = 'status err'; }
+    }
+  };
+  btn.onclick = tryLogin;
+  inp.onkeydown = (e) => { if (e.key === 'Enter') tryLogin(); };
+}
 
 function setSessionEl(id) { const el = $('session-id'); if (el) el.value = id || ''; }
 function curSessionId() { const el = $('session-id'); return (el && el.value) || ''; }
@@ -908,6 +1006,7 @@ const settingsTabs = [
   { id: 'ai', label: 'AI 配置', render: renderAiSettings },
   { id: 'workspace', label: '工作区', render: renderWorkspaceSettings },
   { id: 'theme', label: '主题', render: renderThemeSettings },
+  { id: 'security', label: '安全', render: renderSecuritySettings },
   { id: 'storage', label: '数据存储', render: renderStorageSettings },
   { id: 'about', label: '关于', render: renderAboutSettings },
 ];
@@ -1002,6 +1101,87 @@ function renderWorkspaceSettings(el) {
     list.querySelectorAll('[data-wswitch]').forEach(b => b.onclick = async () => { await switchWorkspace(b.dataset.wswitch); renderWorkspaceSettings(el); });
     list.querySelectorAll('[data-wdelete]').forEach(b => b.onclick = async () => { await deleteWorkspace(b.dataset.wdelete); renderWorkspaceSettings(el); });
   });
+}
+
+function renderSecuritySettings(el) {
+  const info = authInfo || {};
+  const authRequired = info.authRequired === true;
+  el.innerHTML = '<h2>安全</h2>' +
+    '<div id="sec-status" style="margin-bottom:16px"></div>' +
+    '<h2 style="margin-top:8px">签发 Token</h2>' +
+    '<div class="field"><label>名称 (用途标记, 必填)</label><input id="tok-name" type="text" placeholder="例如: 手机浏览器 / CI 脚本"></div>' +
+    '<div class="field"><label>角色</label><select id="tok-role" style="width:100%;padding:8px 10px;background:var(--sky-bg,#0d1117);color:var(--sky-text,#c9d1d9);border:1px solid var(--sky-border,#21262d);border-radius:6px">' +
+    '<option value="user">user (仅调用能力)</option><option value="admin">admin (可管理 token)</option></select></div>' +
+    '<div class="field"><label>有效期 (天, 留空=永不过期)</label><input id="tok-exp" type="number" min="1" placeholder="30"></div>' +
+    '<button class="btn" id="tok-issue-btn">签发</button>' +
+    '<div id="tok-raw-box"></div>' +
+    '<h2 style="margin-top:20px">已签发 Token</h2>' +
+    '<div id="tok-list"><div style="color:var(--sky-text-muted,#8b949e);font-size:12px">加载中...</div></div>' +
+    '<div class="status" id="sec-status-msg"></div>';
+
+  // 状态区
+  const st = $('sec-status');
+  const stateHtml = (ok, text) => '<span class="tok-state ' + (ok ? 'ok' : 'bad') + '">' + text + '</span>';
+  st.innerHTML = '<div class="tok-item"><div class="tok-info">' +
+    '<div class="tok-name">强制认证: ' + stateHtml(authRequired, authRequired ? '已开启' : '未开启 (本地开发)') + '</div>' +
+    '<div class="tok-meta">当前身份: ' + (info.authed ? esc(info.authName || '已认证') + (info.admin ? ' (admin)' : ' (user)') : '未认证') +
+    (storedToken() ? ' · 本地已存 token' : ' · 本地未存 token') + '</div>' +
+    '</div></div>' +
+    '<div style="font-size:12px;color:var(--sky-text-muted,#8b949e);line-height:1.7">开启强制认证: 在配置中设 server.authRequired=true (并建议设置 server.token 作管理员主 token). 开启后所有 /api 请求需带 Authorization: Bearer sk-...</div>';
+
+  // 签发
+  $('tok-issue-btn').onclick = async () => {
+    const name = $('tok-name').value.trim();
+    if (!name) { flashStatus('请填写 token 名称', 'err'); return; }
+    const role = $('tok-role').value;
+    const expDays = parseInt($('tok-exp').value, 10);
+    const params = { action: 'issue', name, role };
+    if (expDays > 0) params.expiresDays = expDays;
+    const data = await dispatch('cap.auth', params);
+    if (data && data.ok) {
+      $('tok-raw-box').innerHTML = '<div class="tok-raw"><strong style="color:var(--sky-accent,#58a6ff)">token 原文 (仅显示这一次, 请立即保存):</strong><br>' + esc(data.token) + '</div>';
+      $('tok-name').value = ''; $('tok-exp').value = '';
+      renderTokenList();
+    } else {
+      $('tok-raw-box').innerHTML = '';
+      flashStatus('签发失败: ' + (data && data.error || '需要 admin 权限'), 'err');
+    }
+  };
+
+  function flashStatus(text, cls) {
+    const s = $('sec-status-msg'); if (!s) return;
+    s.textContent = text; s.className = 'status ' + (cls || '');
+    setTimeout(() => { if (s.textContent === text) { s.textContent = ''; s.className = 'status'; } }, 4000);
+  }
+
+  async function renderTokenList() {
+    const data = await dispatch('cap.auth', { action: 'list' });
+    const list = $('tok-list');
+    if (!list) return;
+    if (!data || data.ok === false) {
+      list.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">读取失败 (需要 admin 权限)</div>';
+      return;
+    }
+    const tokens = data.tokens || [];
+    if (!tokens.length) { list.innerHTML = '<div style="color:var(--sky-text-muted,#8b949e);font-size:12px">暂无 token</div>'; return; }
+    const fmt = (ts) => ts ? new Date(ts).toLocaleString('zh-CN') : '-';
+    list.innerHTML = tokens.map(t => {
+      const active = !t.revoked && !t.expired;
+      return '<div class="tok-item"><div class="tok-info">' +
+        '<div class="tok-name">' + esc(t.name) + ' <span class="tok-state ' + (active ? 'ok' : 'bad') + '">' + (t.revoked ? '已吊销' : (t.expired ? '已过期' : t.role)) + '</span></div>' +
+        '<div class="tok-meta">' + esc(t.prefix) + '... · 创建 ' + fmt(t.createdAt) + ' · 最近使用 ' + fmt(t.lastUsedAt) + (t.expiresAt ? ' · 过期 ' + fmt(t.expiresAt) : ' · 永不过期') + '</div>' +
+        '</div>' + (active ? '<button class="btn secondary" style="width:auto;padding:6px 10px;min-height:32px;font-size:12px" data-tok-revoke="' + esc(t.id) + '">吊销</button>' : '') +
+        '</div>';
+    }).join('');
+    list.querySelectorAll('[data-tok-revoke]').forEach(b => {
+      b.onclick = async () => {
+        if (!window.confirm('确定吊销该 token? 使用它的客户端将立即失去访问权.')) return;
+        await dispatch('cap.auth', { action: 'revoke', id: b.dataset.tokRevoke });
+        renderTokenList();
+      };
+    });
+  }
+  renderTokenList();
 }
 
 function renderStorageSettings(el) {
@@ -1138,7 +1318,7 @@ function scopeCss(css, wrapper) {
 // ================================================================================
 function connectWs() {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  const token = new URLSearchParams(location.search).get('token') || '';
+  const token = storedToken() || new URLSearchParams(location.search).get('token') || '';
   const url = proto + '://' + location.host + '/ws' + (token ? '?token=' + encodeURIComponent(token) : '');
   ws = new WebSocket(url);
   ws.onopen = () => {
@@ -1234,6 +1414,13 @@ window.addEventListener('resize', updateCompact);
 // ================================================================================
 // 启动
 // ================================================================================
+// 认证先行: 校验本地 token, 强制认证未通过则弹登录层 (后续 API 会 401, 但页面骨架照常)
+setupLogin();
+verifyAuthToken().then(info => {
+  if (info && info.authRequired && !info.authed) showLogin();
+  const b = $('cap-badge');
+  if (b && info && info.authRequired) b.title = info.authed ? ('已认证: ' + (info.authName || '')) : '未认证';
+});
 connectWs();
 renderActivityBar();
 renderSessionList();

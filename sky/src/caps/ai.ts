@@ -18,6 +18,7 @@ import type {
   Capability, CallContext, StreamingCapability, Value,
 } from '../contracts.ts';
 import type { Router } from '../server/router.ts';
+import { readConfigRaw } from './config.ts';
 
 interface AiParams {
   messages: Array<{ role: string; content: string }>;
@@ -215,10 +216,9 @@ async function runAiLoop(
 // AI HTTP 调用(OpenAI 兼容, SSE 流式解析)
 // ============================================================================
 
-async function getConfig(ctx: CallContext): Promise<{ ai: Record<string, unknown> }> {
-  const r = await ctx.dispatch('cap.config', { action: 'get' });
-  if (!r.result.ok) throw new Error(r.result.error);
-  return r.result.data as { ai: Record<string, unknown> };
+async function getConfig(_ctx: CallContext): Promise<{ ai: Record<string, unknown> }> {
+  // 内部直读: cap.config get 对非 admin remote 脱敏, AI 读自身配置走原始值
+  return readConfigRaw() as { ai: Record<string, unknown> };
 }
 
 interface AiPart {

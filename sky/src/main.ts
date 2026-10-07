@@ -18,6 +18,7 @@ import { EventBus } from './server/eventbus.ts';
 import { Router } from './server/router.ts';
 import { startServer } from './server/http.ts';
 import { loadPlugins } from './server/plugin-loader.ts';
+import { readConfigRaw } from './caps/config.ts';
 
 // 拦截器
 import { permissionInterceptor, setPermissionConfig, getPermissionConfig } from './interceptors/permission.ts';
@@ -46,6 +47,8 @@ import { createShellCap } from './caps/shell.ts';
 import { createEngineCap } from './caps/engine.ts';
 import { createStorageCap } from './caps/storage.ts';
 import { createBusCap } from './caps/bus.ts';
+import { createAuthCap } from './caps/auth.ts';
+import { setAuthState } from './server/auth.ts';
 
 // UI cap (前端样式自动演进)
 import { initUiState } from './caps/ui/state.ts';
@@ -102,6 +105,11 @@ async function main() {
   router.register(createEngineCap());
   router.register(createStorageCap());
   router.register(createBusCap(bus));
+  router.register(createAuthCap({ devMode: () => {
+    // 与传输层同一判定: 未配 master token 且未开启强制认证 = 本地开发宽松
+    const cfg = readConfigRaw() as { server?: { token?: string; authRequired?: boolean } };
+    return !cfg.server?.token && !cfg.server?.authRequired;
+  } }));
 
   // 4.5 UI cap (前端样式自动演进, AI 可操作前端)
   initUiState();
@@ -121,11 +129,15 @@ async function main() {
   const cfgReply = await router.dispatch('cap.config', { action: 'get' }, { kind: 'bootstrap' });
   if (!cfgReply.result.ok) throw new Error(cfgReply.result.error);
   const cfg = cfgReply.result.data as {
-    server?: { port?: number; token?: string };
+    server?: { port?: number; token?: string; authRequired?: boolean };
     permissions?: { remoteAllow?: string[] };
   };
   const port = cfg.server?.port ?? 9825;
   const token = cfg.server?.token || undefined;
+  const authRequired = cfg.server?.authRequired === true;
+
+  // 认证状态: master token + 强制认证开关 (传输层 401 与权限拦截器共用)
+  setAuthState(token, authRequired);
 
   // 同步权限白名单 (默认全放行已注册 cap, 本地开发宽松)
   const configuredAllow = cfg.permissions?.remoteAllow;
@@ -135,7 +147,7 @@ async function main() {
   });
 
   // 7. 启动 server
-  startServer(router, bus, { port, token });
+  startServer(router, bus, { port, token, authRequired });
 
   // 8. 优雅退出
   const shutdown = (sig: string) => {
