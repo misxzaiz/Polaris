@@ -34,16 +34,16 @@ const SCHEMAS: Record<string, Record<string, unknown>> = {
   'message': { props: { text: 'string', role: 'string?' } },
 };
 
-// mountPoint → 目标页面 (AI 决定组件落在哪一栏)
+// mountPoint: 对话流内联卡片区 (AI-first 壳只保留这一种挂载; 页面级 UI 用 cap.ui.window)
 export const MOUNT_POINTS: Record<string, string> = {
-  sidebar: 'page-sessions', sessions: 'page-sessions',
-  main: 'page-chat', chat: 'page-chat', top: 'page-chat', bottom: 'page-chat',
-  right: 'page-settings', caps: 'page-caps', settings: 'page-settings',
+  inline: 'chat-inline', chat: 'chat-inline', card: 'chat-inline',
 };
 
 export const uiComponentCap: Capability = {
   id: 'cap.ui.component',
-  description: 'UI components. Actions: list/get/add/update/remove/mount/schema. AI can add custom HTML.',
+  description: 'Inline UI cards rendered inside the chat flow. Actions: list/get/add/update/remove/mount/schema. ' +
+    'mountPoint must be "inline" (card appended to the conversation); js runs in __sky sandbox ({dispatch, toast, close}). ' +
+    'For bigger pages use cap.ui.window (floating window / mobile bottom sheet).',
   inputSchema: {
     type: 'object',
     properties: {
@@ -52,7 +52,7 @@ export const uiComponentCap: Capability = {
       component: { type: 'object', description: 'UIComponent (for add)' },
       props: { type: 'object', description: 'Props patch (for update)' },
       type: { type: 'string', description: 'Component type (for add/schema)' },
-      mountPoint: { type: 'string', description: 'Region id to mount in (for add/mount)' },
+      mountPoint: { type: 'string', description: '"inline" — card in the chat flow' },
       html: { type: 'string', description: 'HTML for mount (custom)' },
       css: { type: 'string', description: 'CSS for mount (custom)' },
     },

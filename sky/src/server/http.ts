@@ -25,7 +25,30 @@ import type { Source } from '../contracts.ts';
 import { SHELL_HTML } from '../web/shell.ts';
 import { shellRegistry } from '../caps/ui/shell-registry.ts';
 import { setUiEmitter, getUiState } from '../caps/ui/state.ts';
+import { abortAiStream } from '../caps/ai.ts';
 import { validatePresentedToken, getAuthRequired, getMasterToken } from './auth.ts';
+
+// Service Worker: Shell 页缓存优先, API/WS 永不缓存 (离线时显示提示页由壳处理)
+const SW_JS = [
+  "const CACHE = 'sky-shell-v1';",
+  "self.addEventListener('install', (e) => {",
+  '  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));',
+  '  self.skipWaiting();',
+  '});',
+  "self.addEventListener('activate', (e) => { e.waitUntil(clients.claim()); });",
+  "self.addEventListener('fetch', (e) => {",
+  '  const url = new URL(e.request.url);',
+  "  if (url.pathname.startsWith('/api') || url.pathname === '/ws') return;",
+  "  if (e.request.mode === 'navigate') {",
+  '    e.respondWith(fetch(e.request).then((r) => {',
+  '      caches.open(CACHE).then((c) => c.put("/", r.clone()));',
+  '      return r;',
+  '    }).catch(() => caches.match("/")));',
+  '    return;',
+  '  }',
+  '  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));',
+  '});',
+].join('\n');
 
 export interface ServerOptions {
   port: number;
@@ -104,6 +127,36 @@ export function startServer(
       if ((pathname === '/' || pathname === '/index.html') && req.method === 'GET') {
         return serveShell(res);
       }
+      // PWA: manifest / service worker / 图标
+      if (pathname === '/manifest.webmanifest' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
+        res.end(JSON.stringify({
+          name: 'Sky — AI Capability OS',
+          short_name: 'Sky',
+          description: 'AI 对话即全功能的能力 OS',
+          start_url: '/',
+          scope: '/',
+          display: 'standalone',
+          orientation: 'portrait',
+          background_color: '#0d1117',
+          theme_color: '#0d1117',
+          icons: [
+            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
+            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
+          ],
+        }));
+        return;
+      }
+      if (pathname === '/sw.js' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Service-Worker-Allowed': '/' });
+        res.end(SW_JS);
+        return;
+      }
+      if (pathname === '/icon.svg' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+        res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#0d1117"/><path d="M256 88l42 104 104 42-104 42-42 104-42-104-104-42 104-42z" fill="#58a6ff"/><circle cx="392" cy="120" r="18" fill="#3fb950"/></svg>');
+        return;
+      }
 
       return json(res, 404, { error: 'not found', url });
     } catch (err) {
@@ -151,6 +204,9 @@ export function startServer(
             ? await router.dispatchStream(msg.cap, msg.params ?? {}, source)
             : await router.dispatch(msg.cap, msg.params ?? {}, source);
           send(ws, { type: 'reply', reqId: msg.reqId, reply });
+        } else if (msg.type === 'stream.abort') {
+          // 停止生成: 中断对应流的 AI fetch; 结果经 stream.end(aborted) 事件回传
+          abortAiStream(String(msg.streamId || ''));
         } else if (msg.type === 'shell-register') {
           // Shell 声明自己提供的前端 cap
           shellId = `shell-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;

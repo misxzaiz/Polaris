@@ -54,7 +54,7 @@ type TreeNode = {
 };
 
 type WorkspaceCapParams = {
-  action: 'set' | 'get' | 'list' | 'switch' | 'delete';
+  action: 'set' | 'get' | 'list' | 'switch' | 'unset' | 'delete';
   root?: string;
   name?: string;
   id?: string;
@@ -92,13 +92,13 @@ function unwrapReply(reply: unknown): Value | null {
 const workspaceCap: Capability = {
   id: 'cap.workspace',
   description:
-    'Multi-workspace management: set/get/list/switch/delete. root 支持任意绝对路径 (node:fs 直读, 不限 dataRoot) 或 dataRoot 相对路径 (走 cap.fs). 文件树深度<=2, 排除 node_modules/.git.',
+    'Multi-workspace management: set/get/list/switch/unset/delete. root 支持任意绝对路径 (node:fs 直读, 不限 dataRoot) 或 dataRoot 相对路径 (走 cap.fs). 文件树深度<=2, 排除 node_modules/.git. unset 清空当前选择 (会话可以不绑定工作区).',
   inputSchema: {
     type: 'object',
     properties: {
       action: {
         type: 'string',
-        enum: ['set', 'get', 'list', 'switch', 'delete'],
+        enum: ['set', 'get', 'list', 'switch', 'unset', 'delete'],
       },
       root: {
         type: 'string',
@@ -145,6 +145,9 @@ const workspaceCap: Capability = {
           return await listWorkspaces(call);
         case 'switch':
           return await switchWorkspace(p, call);
+        case 'unset':
+          await setCurrent('', call);
+          return { ok: true, unset: true };
         case 'delete':
           return await deleteWorkspace(p, call);
         default:

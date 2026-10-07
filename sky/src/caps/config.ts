@@ -21,7 +21,12 @@ export function readConfigRaw(): Record<string, unknown> {
   const row = db.prepare('SELECT value FROM kv WHERE domain=? AND key=?').get('config', 'app') as
     | { value: string } | undefined;
   if (!row) return defaultConfig();
-  try { return JSON.parse(row.value) as Record<string, unknown>; } catch { return defaultConfig(); }
+  try {
+    const v = JSON.parse(row.value) as unknown;
+    // 纵深防御: 存了字符串/数组等非对象 → 回退默认, 不让 AI 引擎崩在 undefined
+    if (!v || typeof v !== 'object' || Array.isArray(v)) return defaultConfig();
+    return v as Record<string, unknown>;
+  } catch { return defaultConfig(); }
 }
 
 function isTrustedSource(ctx: CallContext): boolean {
@@ -89,6 +94,11 @@ export const configCap: Capability = {
       }
       case 'set': {
         if (!p.value) throw new Error('value required for set');
+        // 生产防御: 整个 config 必须是对象. 字符串(常见于 JSON.stringify 误传)
+        // 会把顶层键变成字符下标, 直接打死 AI 配置 (实测事故).
+        if (typeof p.value !== 'object' || Array.isArray(p.value)) {
+          throw new Error('config value must be a plain object (got ' + typeof p.value + '); did you JSON.stringify by mistake?');
+        }
         const cur = await readRaw();
         // 遮蔽值保护无条件生效: 任何来源发 '••••••' 都意味着"保留现值"
         const safe = unmaskTree(p.value, cur) as Record<string, unknown>;
@@ -97,6 +107,9 @@ export const configCap: Capability = {
       }
       case 'patch': {
         if (!p.value) throw new Error('value required for patch');
+        if (typeof p.value !== 'object' || Array.isArray(p.value)) {
+          throw new Error('config patch must be a plain object (got ' + typeof p.value + ')');
+        }
         const cur = await readRaw();
         const safe = unmaskTree(p.value, cur) as Record<string, unknown>;
         const merged = deepMerge(cur, safe);

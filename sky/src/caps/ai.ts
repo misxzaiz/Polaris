@@ -57,19 +57,46 @@ export function createAiChatCap(router: Router): StreamingCapability {
       const p = params as AiParams;
       if (!p.messages?.length) throw new Error('messages required');
       const streamId = `stream-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+      const ac = registerStream(streamId);
 
       // 异步执行,不阻塞 dispatch_stream 返回
-      runAiLoop(p, ctx, streamId, router).catch((err: unknown) => {
-        const msg = err instanceof Error ? err.message : String(err);
+      runAiLoop(p, ctx, streamId, router, ac.signal).catch((err: unknown) => {
+        const aborted = ac.signal.aborted || (err instanceof Error && err.name === 'AbortError');
+        const msg = aborted ? 'aborted by user' : (err instanceof Error ? err.message : String(err));
         ctx.emit({
           type: 'stream.end', stream_id: streamId,
-          data: { ok: false, error: msg }, ts: Date.now(),
+          data: aborted ? { ok: false, aborted: true, error: msg } : { ok: false, error: msg },
+          ts: Date.now(),
         });
-      });
+      }).finally(() => unregisterStream(streamId));
 
       return { streamId };
     },
   };
+}
+
+// ============================================================================
+// 流式任务注册表 — 支持客户端停止生成
+// ============================================================================
+
+const activeStreams = new Map<string, AbortController>();
+
+function registerStream(streamId: string): AbortController {
+  const ac = new AbortController();
+  activeStreams.set(streamId, ac);
+  return ac;
+}
+
+function unregisterStream(streamId: string): void {
+  activeStreams.delete(streamId);
+}
+
+/** 停止生成: 中断 AI fetch; 返回是否存在该流 */
+export function abortAiStream(streamId: string): boolean {
+  const ac = activeStreams.get(streamId);
+  if (!ac) return false;
+  ac.abort();
+  return true;
 }
 
 // ============================================================================
@@ -81,6 +108,7 @@ async function runAiLoop(
   ctx: CallContext,
   streamId: string,
   router: Router,
+  signal: AbortSignal,
 ) {
   const config = await getConfig(ctx);
   const aiCfg = config.ai as { baseUrl: string; apiKey: string; model: string; maxTokens: number };
@@ -134,26 +162,51 @@ async function runAiLoop(
   // (用户要求不加限制; AI 持续调用工具直到自行结束生成)
   // round 仅作事件元信息, 不做边界.
   for (let round = 0; ; round++) {
+    if (signal.aborted) {
+      ctx.emit({
+        type: 'stream.end', stream_id: streamId,
+        data: { ok: false, aborted: true, error: 'aborted by user' }, ts: Date.now(),
+      });
+      return;
+    }
     // 1. 调 AI(流式)
-    const result = callAiStream(aiCfg, messages, allowedTools, p.model);
+    const result = callAiStream(aiCfg, messages, allowedTools, p.model, signal);
 
     // 2. 收集 chunk + 解析工具调用
     const assistantContent: string[] = [];
     let toolCalls: Array<{ id: string; name: string; args: Record<string, unknown> }> = [];
     let finishReason = '';
 
-    for await (const part of result) {
-      if (part.delta) {
-        assistantContent.push(part.delta);
-        ctx.emit({
-          type: 'stream.chunk', stream_id: streamId,
-          data: part.delta, ts: Date.now(),
+    try {
+      for await (const part of result) {
+        if (signal.aborted) break;
+        if (part.delta) {
+          assistantContent.push(part.delta);
+          ctx.emit({
+            type: 'stream.chunk', stream_id: streamId,
+            data: part.delta, ts: Date.now(),
+          });
+        }
+        if (part.toolCalls) {
+          toolCalls = part.toolCalls;
+        }
+        if (part.finishReason) finishReason = part.finishReason;
+      }
+    } catch (err) {
+      const aborted = signal.aborted || (err instanceof Error && err.name === 'AbortError');
+      if (!aborted) throw err;
+      // 停止生成: 已生成的部分内容照常落盘 (用户能看到半截回复被保留)
+      if (assistantContent.length && p.sessionId) {
+        await ctx.dispatch('cap.history', {
+          action: 'append', sessionId: p.sessionId,
+          message: { role: 'assistant', content: assistantContent.join('') },
         });
       }
-      if (part.toolCalls) {
-        toolCalls = part.toolCalls;
-      }
-      if (part.finishReason) finishReason = part.finishReason;
+      ctx.emit({
+        type: 'stream.end', stream_id: streamId,
+        data: { ok: false, aborted: true, error: 'aborted by user' }, ts: Date.now(),
+      });
+      return;
     }
 
     const assistantMsg: Record<string, unknown> = {
@@ -232,6 +285,7 @@ async function* callAiStream(
   messages: Array<Record<string, unknown>>,
   tools: Array<{ id: string; description: string; inputSchema: Record<string, unknown> }>,
   modelOverride?: string,
+  signal?: AbortSignal,
 ): AsyncGenerator<AiPart> {
   const base = cfg.baseUrl.replace(/\/$/, '');
   // 智能拼接: 用户可能填 "https://api.x.com" 或 ".../v1" 或 ".../v1/"
@@ -262,6 +316,7 @@ async function* callAiStream(
       'Authorization': `Bearer ${cfg.apiKey}`,
     },
     body: JSON.stringify(body),
+    signal,
   });
 
   if (!resp.ok || !resp.body) {
