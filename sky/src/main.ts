@@ -48,6 +48,7 @@ import { createEngineCap } from './caps/engine.ts';
 import { createStorageCap } from './caps/storage.ts';
 import { createBusCap } from './caps/bus.ts';
 import { createAuthCap } from './caps/auth.ts';
+import { createEditCap } from './caps/edit.ts';
 import { setAuthState } from './server/auth.ts';
 
 // UI cap (前端样式自动演进)
@@ -92,6 +93,7 @@ async function main() {
   router.register(httpCap);
   router.register(taskCap);
   router.register(timeCap);
+  router.register(createEditCap());
   router.register(createAiChatCap(router));
 
   // 4. 注册元 cap (AI 可管理架构)
