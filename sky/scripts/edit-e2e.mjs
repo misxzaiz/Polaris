@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const BASE = 'http://127.0.0.1:9825';
+const MASTER = process.env.SKY_TOKEN || '';  // 强制认证开启时必需
 let pass = 0, fail = 0;
 const failures = [];
 
@@ -19,8 +20,10 @@ function ok(name, cond, detail) {
 }
 
 async function dispatch(cap, params) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (MASTER) headers['Authorization'] = 'Bearer ' + MASTER;
   const r = await fetch(BASE + '/api/dispatch', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    method: 'POST', headers,
     body: JSON.stringify({ cap, params }),
   });
   const j = await r.json().catch(() => null);

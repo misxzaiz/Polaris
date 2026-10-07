@@ -19,7 +19,9 @@ import { execSync } from 'node:child_process';
 const BASE = 'http://127.0.0.1:9825';
 let pass = 0, fail = 0;
 const failures = [];
-let userTok = null, adminTok = null, masterTok = 'sk-master-e2e';
+let userTok = null, adminTok = null;
+const masterTok = process.env.SKY_MASTER_TOKEN || 'sk-master-e2e';
+let origConfig = null; let origTokenStore = null;
 
 function ok(name, cond, detail) {
   if (cond) { pass++; console.log('  PASS ' + name); }
@@ -82,6 +84,12 @@ console.log('\n== 序章: 确保新代码 + dev 配置 ==');
     console.log('  … 检测到上次运行残留的强制认证, 用 master token 恢复');
     await dispatch('cap.config', { action: 'patch', value: { server: { token: '', authRequired: false } } }, masterTok);
   }
+  // 快照原配置与 token 库 (收尾恢复, 不吞用户设置) — 注意此时运行中的 Core 可能仍是认证态, 必须带 token
+  const snapR = await dispatch('cap.config', { action: 'get' }, masterTok);
+  if (snapR.data && typeof snapR.data === 'object' && snapR.data.ai !== undefined) origConfig = snapR.data;
+  const tsnap = await dispatch('cap.kv', { action: 'get', domain: 'auth', key: 'tokens' }, masterTok);
+  if (tsnap.data && tsnap.data.ok && tsnap.data.value) origTokenStore = tsnap.data.value;
+  console.log('  … 快照: origConfig=' + (origConfig ? '有' : '无') + ', origTokenStore=' + (origTokenStore ? '有' : '无'));
   restartCore();
   await waitCore();
 }
@@ -108,7 +116,7 @@ console.log('\n== Phase 1: dev 模式 ==');
 
   r = await dispatch('cap.auth', { action: 'list' });
   const toks = r.data?.tokens ?? [];
-  ok('list 显示 2 个 token', toks.length === 2, 'got ' + toks.length);
+  ok('list 至少含 2 个 e2e token (实际 ' + toks.length + ', 可能含用户自有)', toks.filter(t => (t.name || '').startsWith('e2e-')).length >= 2);
   ok('list 不泄露原文', JSON.stringify(r.data).includes(userTok) === false);
 
   r = await dispatch('cap.auth', { action: 'verify' }, userTok);
@@ -212,19 +220,27 @@ console.log('\n== Phase 2: 强制认证模式 ==');
 }
 
 // ============================================================================
-console.log('\n== 收尾: 恢复 dev 模式 + 清理 ==');
+console.log('\n== 收尾: 按快照恢复 + 清理 ==');
 {
-  await dispatch('cap.config', { action: 'patch', value: { server: { token: '', authRequired: false }, ai: { apiKey: '' } } }, masterTok);
+  // 恢复原配置与 token 库 (重启前写, kv 写不受认证影响)
+  if (origConfig) {
+    await dispatch('cap.config', { action: 'set', value: origConfig }, masterTok);
+  } else {
+    await dispatch('cap.config', { action: 'patch', value: { server: { token: '', authRequired: false } } }, masterTok);
+  }
+  if (origTokenStore) {
+    await dispatch('cap.kv', { action: 'set', domain: 'auth', key: 'tokens', value: origTokenStore }, masterTok);
+    ok('恢复原 token 库', true);
+  } else {
+    const r = await dispatch('cap.kv', { action: 'delete', domain: 'auth', key: 'tokens' });
+    ok('清理 token 库', r.data?.ok === true);
+  }
   restartCore();
   const h = await waitCore();
-  ok('恢复 dev: health authRequired=false', h.ok === true && h.authRequired === false);
-  // 清理 token 库 (kv domain=auth)
-  const r = await dispatch('cap.kv', { action: 'delete', domain: 'auth', key: 'tokens' });
-  ok('清理 token 库', r.data?.ok === true);
-  // 恢复用户原有的 ai 配置 (e2e 期间可能覆盖了 apiKey/model — 恢复为测试前的代理配置)
-  await dispatch('cap.config', { action: 'patch', value: { ai: { apiKey: 'sk-NfG41BEMNGNKTXxK7ghPB43dDuM4eJB7twyi0dKxRzC2wq6H', model: 'sensenova-6.8-flash-lite', baseUrl: 'http://localhost:9850/v1' } } });
-  const cfg = await dispatch('cap.config', { action: 'get' });
-  ok('AI 配置已恢复', cfg.data?.ai?.apiKey === 'sk-NfG41BEMNGNKTXxK7ghPB43dDuM4eJB7twyi0dKxRzC2wq6H');
+  const expectAuth = origConfig ? origConfig.server?.authRequired === true : false;
+  ok('配置按快照恢复 (authRequired=' + h.authRequired + ', 期望 ' + expectAuth + ')', h.ok === true && h.authRequired === expectAuth);
+  const cfg = await dispatch('cap.config', { action: 'get' }, masterTok);
+  ok('AI 配置在', cfg.data && typeof cfg.data === 'object' && !!cfg.data.ai);
 }
 
 // ============================================================================
