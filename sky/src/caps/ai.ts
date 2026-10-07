@@ -116,6 +116,25 @@ async function runAiLoop(
     throw new Error('AI not configured. Set ai.baseUrl + ai.apiKey via cap.config (POST /api/config or web shell).');
   }
 
+// ============================================================================
+// 系统提示 — 能力 OS 行为契约 (无系统提示时, 弱模型面对长工具列表会臆造
+// "工具受限/没有某能力" 的幻觉, 实测: 声称只有 echo/kv/bash 而拒绝开窗)
+// ============================================================================
+
+const SYSTEM_PROMPT = `你是 Sky 的 AI 助手 — 一个"对话即全功能"的能力 OS。
+
+能力约定:
+- 本轮提供的工具就是全部可用能力, 以工具列表为准, 不要臆测缺失或自造限制。
+- 需要任何界面 (窗口/面板/表单/可视化/仪表盘) 时, 主动用 cap.ui.window 渲染
+  悬浮窗 (参数: title + html + css + js, js 里可用 __sky.dispatch/__sky.close/__sky.toast),
+  小型交互卡片用 cap.ui.component (mountPoint: "inline")。
+- 读写编辑用户项目文件用 cap.edit (search/read/replace/undo); 会话管理用
+  cap.session; 工作区用 cap.workspace; 主题用 cap.ui.theme (apply {preset})。
+- 插件可自写: cap.capability scaffold → write → cap.plugin install, 新装能力立即可用。
+- 危险操作前向用户确认; 生成界面时用简洁现代的深色风格。
+
+回答: 简体中文, 简洁直接, 代码块标注语言。`;
+
   // 工具列表每轮刷新, 而非请求开始时快照一次.
   // 快照版的后果: AI 在本轮 cap.plugin install 后, 新 cap 永远不在工具列表里,
   // 于是只能绕道 cap.http POST 自己的 cap (实测真实行为, 一轮能刷十几次).
@@ -145,7 +164,11 @@ async function runAiLoop(
     role: m.role,
     content: typeof m.content === 'string' ? m.content : JSON.stringify(m.content),
   }));
-  const messages: Array<Record<string, unknown>> = [...filteredHist, ...p.messages];
+  const messages: Array<Record<string, unknown>> = [
+    { role: 'system', content: SYSTEM_PROMPT },
+    ...filteredHist,
+    ...p.messages,
+  ];
 
   // 持久化用户消息
   if (p.sessionId) {

@@ -563,6 +563,7 @@ let ws = null;
 let wsBackoff = 1000;
 let wsHbTimer = null;
 let lastPong = Date.now();
+let streamOrphaned = false;   // 断线时是否遗留了未完成的流
 const pendingStreamReplies = {};   // reqId → callback(streamId)
 const pendingDispatch = [];
 
@@ -574,10 +575,13 @@ function connectWs() {
   ws.onopen = function () {
     wsBackoff = 1000; lastPong = Date.now();
     ws.send(JSON.stringify({ type: 'shell-register', caps: [] }));
+    // 断线遗留的流强制作废; 但排队中的 dispatch (还没发出去) 不算遗留 — 不能误杀
+    if (streaming && streamOrphaned && !pendingDispatch.length) {
+      forceEndStream('连接中断, 生成已停止');
+    }
+    streamOrphaned = false;
     while (pendingDispatch.length) ws.send(JSON.stringify(pendingDispatch.shift()));
     startHeartbeat();
-    // 断线期间流式必然已死 (服务端丢失/完成): 强制作废卡死状态, 不能让界面永远"生成中"
-    if (streaming) forceEndStream('连接中断, 生成已停止');
     // 重连后状态恢复: 重拉当前会话消息
     const sid = currentSessionId();
     if (sid && !streaming) loadSessionIntoChat(sid);
@@ -595,6 +599,7 @@ function connectWs() {
   };
   ws.onclose = function () {
     stopHeartbeat();
+    if (streaming) streamOrphaned = true;
     setTimeout(connectWs, wsBackoff);
     wsBackoff = Math.min(wsBackoff * 2, 15000);
   };
@@ -636,7 +641,7 @@ function handleEvent(ev) {
     finishToolCard(ev.data);
   } else if (ev.type === 'stream.end') {
     if (!mine) return;
-    onStreamEnd(ev.data || {});
+    onStreamEnd(ev.data || {}, ev.stream_id);
   } else if (ev.type === 'ui.window') {
     if (ev.data && ev.data.action === 'open') openWindow(ev.data);
     else if (ev.data && ev.data.action === 'close') closeWindow(ev.data.id);
@@ -654,6 +659,10 @@ let streaming = false;
 
 function currentSessionId() { return currentSession; }
 function setSessionId(id) { currentSession = id || ''; }
+// 用户显式的新建/切换会话后, 启动期的 getCurrent 迟到响应不得覆盖 (实测竞态:
+// 晚到的旧会话 id 会让后续消息发进错误会话, 表现为"新增会话无效/串话")
+let sessionExplicit = false;
+function setSessionExplicit() { sessionExplicit = true; }
 
 async function renderSessionList() {
   const data = await dispatch('cap.session', { action: 'list' });
@@ -731,7 +740,7 @@ async function newSession() {
       const data = await dispatch('cap.session', { action: 'create' });
       if (data && data.id) {
         if (title) await dispatch('cap.session', { action: 'rename', sessionId: data.id, title: title });
-        setSessionId(data.id); clearChat(); showWelcome(); renderSessionList();
+        setSessionId(data.id); setSessionExplicit(); clearChat(); showWelcome(); renderSessionList();
         while (sheetStack.length) closeSheet();
         $('input').focus();
         toast('新会话已创建');
@@ -745,7 +754,7 @@ async function newSession() {
 async function switchSession(id) {
   if (streaming) { toast('正在生成中, 请先停止'); return; }
   // 乐观 UI: 立即关抽屉切状态, 网络慢也不卡手感
-  closeDrawer(); hideWelcome(); setSessionId(id); clearChat();
+  closeDrawer(); hideWelcome(); setSessionId(id); setSessionExplicit(); clearChat();
   const okSw = await dispatch('cap.session', { action: 'switch', sessionId: id });
   if (!okSw) { toast('切换失败 (可能需要登录)'); }
   await loadSessionIntoChat(id);
@@ -768,7 +777,7 @@ async function ensureSession(title) {
   let sid = currentSessionId();
   if (sid) return sid;
   const data = await dispatch('cap.session', { action: 'create' });
-  if (data && data.id) { setSessionId(data.id); renderSessionList(); return data.id; }
+  if (data && data.id) { setSessionId(data.id); setSessionExplicit(); renderSessionList(); return data.id; }
   toast('会话创建失败 (可能需要登录)');
   return '';
 }
@@ -802,6 +811,7 @@ let currentMsgEl = null;
 let streamRaw = '';
 let toolSeq = 0;
 const toolCards = {};
+const streamEls = new Map();   // streamId → assistant 元素 (旧流收尾不误伤新流)
 
 function scrollMessages() {
   const sc = $('scroll'); sc.scrollTop = sc.scrollHeight + 9999;
@@ -857,18 +867,31 @@ function finishToolCard(data) {
     esc(resultText.slice(0, 4000)) + (resultText.length > 4000 ? '\\n…' : '') + '</pre>';
   el.querySelector('.t-args').textContent = ok ? '完成' : '失败: ' + ((data.result && data.result.error) || '').slice(0, 80);
 }
-function onStreamEnd(data) {
+function onStreamEnd(data, sid) {
+  const el = (sid && streamEls.get(sid)) || currentMsgEl;
   setStreaming(false);
+  if (data.aborted && el && el !== currentMsgEl) {
+    // 旧流收尾: 只清它自己的元素, 不碰当前流
+    el.classList.remove('typing');
+    if (!el.textContent.trim()) el.innerHTML = '<span style="color:var(--sky-text-muted,#8b949e)">(已停止)</span>';
+    if (sid) streamEls.delete(sid);
+    return;
+  }
   if (data.aborted) {
     const note = document.createElement('div');
     note.className = 'msg-note'; note.textContent = '已停止生成';
     $('messages').appendChild(note);
   }
-  if (currentMsgEl) {
-    currentMsgEl.classList.remove('typing');
-    if (!streamRaw.trim() && !data.aborted) currentMsgEl.innerHTML = '<span style="color:var(--sky-text-muted,#8b949e)">(空回复)</span>';
-    wireCopyButtons(currentMsgEl);
+  if (el) {
+    el.classList.remove('typing');
+    if (!streamRaw.trim() && data.ok === false && data.error) {
+      el.innerHTML = '<span style="color:var(--sky-danger,#f85149)">出错了: ' + esc(data.error) + '</span>';
+    } else if (!streamRaw.trim()) {
+      el.innerHTML = '<span style="color:var(--sky-text-muted,#8b949e)">(空回复 — 模型可能只输出了思考链, 可在设置调大 max_tokens)</span>';
+    }
+    wireCopyButtons(el);
   }
+  if (sid) streamEls.delete(sid);
   currentMsgEl = null; currentStreamId = null; streamRaw = '';
   scrollMessages();
   renderSessionList();
@@ -902,8 +925,10 @@ async function send() {
   const reqId = 'req-' + Date.now().toString(36);
   pendingStreamReplies[reqId] = function (reply) {
     if (!streaming) return; // end/error 事件先于 reply 到达, 已恢复, 忽略
-    if (reply && reply.result && reply.result.ok) currentStreamId = reply.result.data.streamId;
-    else {
+    if (reply && reply.result && reply.result.ok) {
+      currentStreamId = reply.result.data.streamId;
+      if (currentMsgEl) streamEls.set(currentStreamId, currentMsgEl);
+    } else {
       setStreaming(false);
       if (currentMsgEl) currentMsgEl.classList.remove('typing');
       const err = (reply && reply.result && reply.result.error) || '启动失败';
@@ -1325,6 +1350,7 @@ fetch('/api/ui-state', { headers: authHeaders() }).then(function (r) { return r.
 
 dispatch('cap.session', { action: 'getCurrent' }).then(function (data) {
   const id = data && data.currentId; if (!id) return;
+  if (sessionExplicit) return; // 用户已显式操作会话, 迟到的启动响应不覆盖
   setSessionId(id); renderSessionList();
   loadSessionIntoChat(id);
 }).catch(function () {});
