@@ -168,7 +168,7 @@ export function RadialMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 animate-panel-in"
+      className="fixed z-popover animate-panel-in"
       style={MENU_CONTAINER_STYLE}
       onMouseEnter={() => onHover?.(true)}
       onMouseLeave={() => onHover?.(false)}

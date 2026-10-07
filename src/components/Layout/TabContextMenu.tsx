@@ -76,7 +76,7 @@ export function TabContextMenu({
   return (
     <div
       ref={menuRef}
-      className="fixed z-50 min-w-[180px] bg-background-elevated border border-border rounded-md shadow-lg py-1"
+      className="fixed z-popover min-w-[180px] bg-background-elevated border border-border rounded-md shadow-lg py-1"
       style={{ left: `${x}px`, top: `${y}px` }}
       onContextMenu={(e) => e.preventDefault()}
     >

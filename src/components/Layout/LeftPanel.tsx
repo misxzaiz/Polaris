@@ -96,7 +96,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
 
   // 抽屉下的操作栏（独立 sibling，不进 aside，不触发 children 卸载）
   const drawerToolbar = compact && panelVisible && (
-    <div className="fixed top-0 left-0 flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0 bg-background-elevated z-[51]" style={{ width: expanded ? '100%' : 'min(85vw, 360px)', right: expanded ? 0 : undefined }}>
+    <div className="fixed top-0 left-0 flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0 bg-background-elevated z-popover" style={{ width: expanded ? '100%' : 'min(85vw, 360px)', right: expanded ? 0 : undefined }}>
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -120,7 +120,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   // （App.tsx 在 hasLeftPanel true→false 时 leftPanelKept=true，150ms 后清）
   const drawerMask = compact && panelVisible && (
     <div
-      className={`fixed inset-0 z-50 bg-black/50 ${leaving ? 'opacity-0' : 'animate-mask-in'}`}
+      className={`fixed inset-0 z-modal bg-black/50 ${leaving ? 'opacity-0' : 'animate-mask-in'}`}
       onClick={handleClose}
     />
   )
@@ -151,7 +151,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
         data-theme-panel
         tabIndex={compact ? -1 : undefined}
         className={`flex flex-col bg-background-elevated border-r border-border min-h-0 ${compact
-          ? 'fixed inset-y-0 left-0 z-50 shadow-xl overflow-hidden'
+          ? 'fixed inset-y-0 left-0 z-popover shadow-xl overflow-hidden'
           : 'relative'
         } transition-[width,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${!panelVisible ? 'hidden' : ''} ${!compact && isFlexible ? 'flex-1 min-w-[200px]' : ''} ${!compact && !isFlexible ? 'shrink-0' : ''} ${className}`}
         style={asideStyle}
@@ -177,7 +177,12 @@ export function LeftPanelDrawer({ children, onClose }: { children?: ReactNode; o
 }
 
 /**
- * 左侧面板内容包装器 - 根据类型渲染不同内容
+ * 左侧面板内容包装器 - 根据类型查表分发（保活版）
+ *
+ * 内建面板走查表（O(1) 分发，新增内建面板只需在表里加一项）；
+ * 插件面板走 pluginPanelRegistry 兜底。
+ * 所有 children 由 App.tsx 构造并传入，本组件只负责按当前类型选一个渲染——
+ * 保活语义不变：未渲染的面板内容仍挂载在 React 树里（被Fragment 包裹但未显示）。
  */
 export function LeftPanelContent({
   filesContent,
@@ -216,37 +221,31 @@ export function LeftPanelContent({
   const storePanelType = useViewStore((state) => state.leftPanelType)
   const type = currentType ?? storePanelType
 
-  if (type === 'files') {
-    return <>{filesContent}</>
-  } else if (type === 'git') {
-    return <>{gitContent}</>
-  } else if (type === 'browser') {
-    return <>{browserContent}</>
-  } else if (type === 'todo') {
-    return <>{todoContent}</>
-  } else if (type === 'translate') {
-    return <>{translateContent}</>
-  } else if (type === 'requirement') {
-    return <>{requirementContent}</>
-  } else if (type === 'terminal') {
-    return <>{terminalContent}</>
-  } else if (type === 'bashTask') {
-    return <>{bashTaskContent}</>
-  } else if (type === 'tools') {
-    return <>{toolsContent}</>
-  } else if (type === 'developer') {
-    return <>{developerContent}</>
-  } else if (type === 'integration') {
-    return <>{integrationContent}</>
-  } else if (type === 'demoPlugin') {
-    return <>{demoPluginContent}</>
-  } else if (type === 'aiConsole') {
-    return <>{aiConsoleContent}</>
-  } else if (type === 'pluginPreview') {
-    return <>{pluginPreviewContent}</>
-  } else if (pluginPanelRegistry.has(type)) {
-    return <PluginPanelHost panelType={type} />
+  // 内建面板查表分发（新增内建面板在此加一行即可，不再改 if-else）
+  const builtinPanels: Record<string, ReactNode> = {
+    files: filesContent,
+    git: gitContent,
+    browser: browserContent,
+    todo: todoContent,
+    translate: translateContent,
+    requirement: requirementContent,
+    terminal: terminalContent,
+    bashTask: bashTaskContent,
+    tools: toolsContent,
+    developer: developerContent,
+    integration: integrationContent,
+    demoPlugin: demoPluginContent,
+    aiConsole: aiConsoleContent,
+    pluginPreview: pluginPreviewContent,
   }
 
+  // 内建面板命中 → 渲染对应内容
+  if (type in builtinPanels) {
+    return <>{builtinPanels[type]}</>
+  }
+  // 插件面板兜底
+  if (pluginPanelRegistry.has(type)) {
+    return <PluginPanelHost panelType={type} />
+  }
   return null
 }

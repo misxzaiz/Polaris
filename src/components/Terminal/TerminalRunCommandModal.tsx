@@ -73,7 +73,7 @@ export function TerminalRunCommandModal({ workspacePath, onClose }: TerminalRunC
 
   return (
     <OverlayGuard label="TerminalRunCommandModal">
-      <div className="fixed inset-0 z-[80] bg-black/40 flex items-start justify-center pt-[12vh]" onMouseDown={onClose}>
+      <div className="fixed inset-0 z-modal bg-black/40 flex items-start justify-center pt-[12vh]" onMouseDown={onClose}>
       <div
         className="w-[min(720px,92vw)] bg-background-elevated border border-border rounded-lg shadow-xl overflow-hidden"
         onMouseDown={(e) => e.stopPropagation()}

@@ -197,7 +197,7 @@ export function TaskCard({
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                 <div
-                  className="absolute right-0 top-full w-28 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-50 py-1"
+                  className="absolute right-0 top-full w-28 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-popover py-1"
                   onMouseEnter={() => setShowActions(true)}
                 >
                   <button

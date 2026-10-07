@@ -17,6 +17,13 @@ export default tseslint.config(
       '*.config.ts',
       'docs-site/**',
       '.codex-test/**',
+      // 构建产物与临时目录（避免 lint 扫描 minified 输出）
+      'target*/**',
+      'temp/**',
+      '.polaris-*/**',
+      'Polaris-test/**',
+      'polaris-mobile/dist/**',
+      'polaris-pocket/dist/**',
     ],
   },
   // 基础推荐规则

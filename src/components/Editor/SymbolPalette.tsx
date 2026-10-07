@@ -259,7 +259,7 @@ function SymbolPaletteInner({
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-[12vh]"
+      className="fixed inset-0 bg-black/50 flex items-start justify-center z-modal pt-[12vh]"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div

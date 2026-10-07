@@ -104,7 +104,7 @@ export function UnifiedSuggestion({
   return (
     <div
       ref={containerRef}
-      className="fixed z-50 border border-border rounded-lg shadow-lg max-h-80 overflow-auto"
+      className="fixed z-popover border border-border rounded-lg shadow-lg max-h-80 overflow-auto"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,

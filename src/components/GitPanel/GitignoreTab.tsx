@@ -241,7 +241,7 @@ export function GitignoreTab({ workspacePath: workspacePathProp }: GitignoreTabP
 
       {/* 模板选择弹窗 */}
       {showTemplates && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[480px] max-w-[90vw] max-h-[80vh] flex flex-col">
             <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between shrink-0">
               <span className="text-sm font-medium text-text-primary">{t('gitignore.addTemplate')}</span>

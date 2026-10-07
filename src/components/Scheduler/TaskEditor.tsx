@@ -214,7 +214,7 @@ export function TaskEditor({ task, onSave, onClose, title }: TaskEditorProps) {
   const enabledTemplates = templates.filter((t) => t.enabled);
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl w-[650px] max-h-[85vh] overflow-hidden border border-border-subtle shadow-2xl flex flex-col">
         {/* 头部 */}
         <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">

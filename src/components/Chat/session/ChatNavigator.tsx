@@ -235,7 +235,7 @@ export function ChatNavigator({
             // 尺寸：紧凑模式更大方便触摸
             isCompact ? 'w-9 h-9 rounded-l-xl' : 'w-7 h-12 rounded-l-xl',
             // 实心背景
-            'bg-[#1A1A1F]',
+            'bg-background-elevated',
             'border border-border/50 border-r-0',
             'shadow-lg shadow-black/5',
             // 内容布局
@@ -245,8 +245,8 @@ export function ChatNavigator({
             'group',
             // 悬停状态
             isPanelVisible
-              ? 'bg-[#22222A] shadow-xl'
-              : 'hover:bg-[#22222A] hover:shadow-xl'
+              ? 'bg-background-elevated shadow-xl'
+              : 'hover:bg-background-elevated hover:shadow-xl'
           )}
           onMouseEnter={handleFloatingBallMouseEnter}
           onMouseLeave={handleFloatingBallMouseLeave}
@@ -287,7 +287,7 @@ export function ChatNavigator({
             'border border-border/80 rounded-lg shadow-lg shadow-black/20',
             'overflow-hidden animate-dialog-in',
             'pointer-events-auto flex flex-col',
-            'absolute z-50'
+            'absolute z-popover'
           )}
           style={panelStyle}
           onMouseEnter={handlePanelMouseEnter}

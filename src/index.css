@@ -102,6 +102,18 @@
   --ease-out: ease-out;
   --ease-in-out: ease-in-out;
 
+  /* z-index scale（单一真源，禁用字面量 z-[N]）
+   * 业务组件用 z-sticky / z-dropdown / z-overlay / z-popover / z-modal / z-toast。
+   * 命名是公共 API：只增不改，改名 = 全前端破坏性变更。 */
+  --z-base: 0;
+  --z-sticky: 10;
+  --z-dropdown: 20;
+  --z-overlay: 40;       /* NarrowTabOverlay / ArtifactPreview / 编辑器覆盖层 */
+  --z-popover: 50;       /* ToolSwitcher / 各种下拉 / 建议框 */
+  --z-modal: 70;         /* 所有 Modal/Dialog/Drawer 统一 */
+  --z-toast: 90;         /* Toast / 全局通知顶层 */
+  --z-devtools: 100;     /* 调试覆盖（永不与业务冲突） */
+
   /* 沉浸变量默认值（占位，避免未定义） */
   --theme-bg-image: none;
   --theme-bg-overlay: 0.8;
@@ -126,10 +138,10 @@
   --spiderman-hover-opacity: 1;
   --spiderman-blue-accent: 0.5;
 
-  /* Thinking Orb 环颜色 */
-  --orb-color-outer: #DC2626;
-  --orb-color-middle: #3B82F6;
-  --orb-color-inner: #EF4444;
+  /* Thinking Orb 环颜色（引用 token，主题切换时跟随） */
+  --orb-color-outer: rgb(var(--c-status-danger));
+  --orb-color-middle: rgb(var(--c-primary));
+  --orb-color-inner: rgb(var(--c-status-danger));
 }
 
 * {
@@ -229,21 +241,21 @@ body {
 
 /* 优化的 prose 样式 */
 .prose {
-  --tw-prose-body: #F8F8F8;
-  --tw-prose-headings: #F8F8F8;
-  --tw-prose-lead: #B4B4B8;
-  --tw-prose-links: #60A5FA;
-  --tw-prose-bold: #F8F8F8;
-  --tw-prose-counters: #8E8E93;
-  --tw-prose-bullets: #B4B4B8;
-  --tw-prose-hr: rgba(255, 255, 255, 0.15);
-  --tw-prose-quotes: #B4B4B8;
-  --tw-prose-quote-borders: rgba(255, 255, 255, 0.15);
-  --tw-prose-code: #F8F8F8;
-  --tw-prose-pre-code: #B4B4B8;
-  --tw-prose-pre-bg: #25252B;
-  --tw-prose-th-borders: rgba(255, 255, 255, 0.15);
-  --tw-prose-td-borders: rgba(255, 255, 255, 0.15);
+  --tw-prose-body: rgb(var(--c-text-primary));
+  --tw-prose-headings: rgb(var(--c-text-primary));
+  --tw-prose-lead: rgb(var(--c-text-secondary));
+  --tw-prose-links: rgb(var(--c-status-info));
+  --tw-prose-bold: rgb(var(--c-text-primary));
+  --tw-prose-counters: rgb(var(--c-text-tertiary));
+  --tw-prose-bullets: rgb(var(--c-text-secondary));
+  --tw-prose-hr: rgb(var(--c-border) / 0.15);
+  --tw-prose-quotes: rgb(var(--c-text-secondary));
+  --tw-prose-quote-borders: rgb(var(--c-border) / 0.15);
+  --tw-prose-code: rgb(var(--c-text-primary));
+  --tw-prose-pre-code: rgb(var(--c-text-secondary));
+  --tw-prose-pre-bg: rgb(var(--c-bg-surface));
+  --tw-prose-th-borders: rgb(var(--c-border) / 0.15);
+  --tw-prose-td-borders: rgb(var(--c-border) / 0.15);
   line-height: 1.5;
 }
 
@@ -258,7 +270,7 @@ body {
 
 /* Markdown 代码块样式（排除组件自带样式的代码块） */
 .prose pre:not(.code-block-pre) {
-  background-color: #25252B;
+  background-color: rgb(var(--c-bg-surface));
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0 0 12px 12px;
   padding: 16px;
@@ -276,7 +288,7 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
   padding: 2px 8px;
   border-radius: 6px;
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 /* 标题样式 */
@@ -334,18 +346,18 @@ body {
   border-left: 4px solid rgba(255, 255, 255, 0.2);
   padding-left: 16px;
   margin: 6px 0;
-  color: #B4B4B8;
+  color: rgb(var(--c-text-secondary));
   font-style: italic;
 }
 
 /* 链接样式 */
 .prose a {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
   text-decoration: underline;
 }
 
 .prose a:hover {
-  color: #3B82F6;
+  color: rgb(var(--c-primary));
 }
 
 /* 分隔线样式 */
@@ -414,12 +426,12 @@ body {
 /* strong/em 样式 */
 .prose strong {
   font-weight: 600;
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
 }
 
 .prose em {
   font-style: italic;
-  color: #B4B4B8;
+  color: rgb(var(--c-text-secondary));
 }
 
 /* ============================================
@@ -562,7 +574,7 @@ body {
 .paragraph-segment .translated-text {
   font-size: 0.9em;
   line-height: 1.5;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   margin-top: 0.25rem;
 }
 
@@ -724,7 +736,7 @@ body {
 
 /* 基础样式 */
 .hljs {
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
   background: transparent;
 }
 
@@ -734,12 +746,12 @@ body {
 .hljs-title.inherited,
 .hljs-type,
 .hljs-meta {
-  color: #60A5FA; /* 蓝色 - 类型 */
+  color: rgb(var(--c-status-info)); /* 蓝色 - 类型 */
 }
 
 .hljs-strong {
   font-weight: bold;
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
 }
 
 /* 符号 */
@@ -748,7 +760,7 @@ body {
 .hljs-link,
 .hljs-built_in,
 .hljs-literal {
-  color: #34D399; /* 绿色 - 符号 */
+  color: rgb(var(--c-status-success)); /* 绿色 - 符号 */
 }
 
 /* 注释 */
@@ -757,13 +769,13 @@ body {
 .hljs-keyword,
 .hljs-selector-tag,
 .hljs-section {
-  color: #8E8E93; /* 灰色 - 注释 */
+  color: rgb(var(--c-text-tertiary)); /* 灰色 - 注释 */
 }
 
 .hljs-title.class_,
 .hljs-class .hljs-title,
 .hljs-type .hljs-title {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 /* 字符串 */
@@ -774,13 +786,13 @@ body {
 .hljs-variable,
 .hljs-template-variable,
 .hljs-type .hljs-type {
-  color: #FBBF24; /* 黄色 - 字符串 */
+  color: rgb(var(--c-status-warning)); /* 黄色 - 字符串 */
 }
 
 /* 数字 */
 .hljs-number,
 .hljs-regexp {
-  color: #F87171; /* 红色 - 数字 */
+  color: rgb(var(--c-status-danger)); /* 红色 - 数字 */
 }
 
 /* 函数名 */
@@ -789,7 +801,7 @@ body {
 .hljs-bullet,
 .hljs-code,
 .hljs-addition {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 /* 关键字 */
@@ -804,78 +816,78 @@ body {
 }
 
 .hljs-keyword {
-  color: #C084FC; /* 紫色 - 关键字 */
+  color: rgb(var(--c-accent-ai)); /* 紫色 - 关键字 */
 }
 
 /* 操作符 */
 .hljs-meta,
 .hljs-meta .hljs-keyword,
 .hljs-meta .hljs-string {
-  color: #F472B6;
+  color: rgb(var(--c-accent-ai));
 }
 
 /* 属性 */
 .hljs-attr {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 /* 变量 */
 .hljs-variable {
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
 }
 
 /* 常量 */
 .hljs-literal {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 /* 标签 */
 .hljs-tag {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 /* 属性值 */
 .hljs-value {
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 /* 参数 */
 .hljs-params {
-  color: #B4B4B8;
+  color: rgb(var(--c-text-secondary));
 }
 
 /* 函数调用 */
 .hljs-title.function_,
 .hljs-title.class_.inherited__,
 .hljs-title.superclass__ {
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
 }
 
 /* 修饰符 */
 .hljs-modifier {
-  color: #8E8E93;
+  color: rgb(var(--c-text-tertiary));
 }
 
 /* 链接 */
 .hljs-link {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
   text-decoration: underline;
 }
 
 /* 正则表达式 */
 .hljs-regexp {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 /* 删除线 */
 .hljs-deletion {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
   background: rgba(248, 113, 113, 0.15);
 }
 
 /* 添加线 */
 .hljs-addition {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
   background: rgba(52, 211, 153, 0.15);
 }
 
@@ -886,7 +898,7 @@ body {
 /* 词级差异 - 新增的词 */
 .diff-word-added {
   background: rgba(52, 211, 153, 0.18);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
   border-radius: 2px;
   padding: 0 1px;
 }
@@ -894,7 +906,7 @@ body {
 /* 词级差异 - 删除的词 */
 .diff-word-removed {
   background: rgba(248, 113, 113, 0.18);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
   border-radius: 2px;
   padding: 0 1px;
   text-decoration: line-through;
@@ -920,7 +932,7 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #1A1A1D;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 8px;
 }
 
@@ -934,11 +946,11 @@ body {
   gap: 8px;
   padding: 24px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .git-status-panel.error {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .git-header {
@@ -946,7 +958,7 @@ body {
   align-items: center;
   gap: 8px;
   padding: 8px;
-  background: #252529;
+  background: rgb(var(--c-bg-surface));
   border-radius: 6px;
 }
 
@@ -959,14 +971,14 @@ body {
 
 .git-header .branch-name {
   font-weight: 600;
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .git-header .commit-sha {
   font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 12px;
-  color: #9CA3AF;
-  background: #1F1F22;
+  color: rgb(var(--c-text-secondary));
+  background: rgb(var(--c-bg-elevated));
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -986,12 +998,12 @@ body {
 
 .git-header .badge.ahead {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .git-header .badge.behind {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 .git-header .refresh-btn {
@@ -1005,25 +1017,25 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
   border-left: 3px solid transparent;
 }
 
 .change-section.staged {
-  border-left-color: #34D399;
+  border-left-color: rgb(var(--c-status-success));
 }
 
 .change-section.unstaged {
-  border-left-color: #FBBF24;
+  border-left-color: rgb(var(--c-status-warning));
 }
 
 .change-section.untracked {
-  border-left-color: #60A5FA;
+  border-left-color: rgb(var(--c-status-info));
 }
 
 .change-section.conflicted {
-  border-left-color: #F87171;
+  border-left-color: rgb(var(--c-status-danger));
 }
 
 .section-title {
@@ -1032,17 +1044,17 @@ body {
   gap: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #E5E7EB;
+  color: rgb(var(--c-text-primary));
   margin: 0;
 }
 
 .section-title.error {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .section-title .count {
   font-size: 12px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .file-list {
@@ -1061,7 +1073,7 @@ body {
 }
 
 .file-item:hover {
-  background: #2A2A2E;
+  background: rgb(var(--c-bg-hover));
 }
 
 .file-path {
@@ -1080,17 +1092,17 @@ body {
 
 .file-status.status-added {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .file-status.status-modified {
   background: rgba(96, 165, 250, 0.2);
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .file-status.status-deleted {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .file-stats {
@@ -1101,11 +1113,11 @@ body {
 }
 
 .file-stats .additions {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .file-stats .deletions {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .actions {
@@ -1123,23 +1135,23 @@ body {
 .commit-input {
   flex: 1;
   padding: 6px 10px;
-  background: #2A2A2E;
-  border: 1px solid #3F3F46;
+  background: rgb(var(--c-bg-hover));
+  border: 1px solid rgb(var(--c-border) / 0.25);
   border-radius: 4px;
-  color: #F8F8F8;
+  color: rgb(var(--c-text-primary));
   font-size: 13px;
   outline: none;
 }
 
 .commit-input:focus {
-  border-color: #60A5FA;
+  border-color: rgb(var(--c-status-info));
 }
 
 .quick-actions {
   display: flex;
   gap: 8px;
   padding-top: 4px;
-  border-top: 1px solid #3F3F46;
+  border-top: 1px solid rgb(var(--c-border) / 0.25);
 }
 
 /* Git Diff 面板 */
@@ -1148,7 +1160,7 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #1A1A1D;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 8px;
   max-height: 100%;
   overflow: hidden;
@@ -1164,7 +1176,7 @@ body {
   gap: 12px;
   padding: 48px 24px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .diff-file-list {
@@ -1178,13 +1190,13 @@ body {
 .diff-file-item {
   display: flex;
   flex-direction: column;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
   overflow: hidden;
 }
 
 .diff-file-item.selected {
-  border: 1px solid #60A5FA;
+  border: 1px solid rgb(var(--c-status-info));
 }
 
 .file-header {
@@ -1197,7 +1209,7 @@ body {
 }
 
 .file-header:hover {
-  background: #2A2A2E;
+  background: rgb(var(--c-bg-hover));
 }
 
 .expand-btn {
@@ -1207,7 +1219,7 @@ body {
   padding: 0;
   background: none;
   border: none;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   cursor: pointer;
 }
 
@@ -1228,17 +1240,17 @@ body {
 
 .diff-file-item.added .change-type-badge {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .diff-file-item.modified .change-type-badge {
   background: rgba(96, 165, 250, 0.2);
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .diff-file-item.deleted .change-type-badge {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .file-diff-content {
@@ -1250,7 +1262,7 @@ body {
 .diff-binary {
   padding: 24px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   font-size: 13px;
 }
 
@@ -1258,18 +1270,18 @@ body {
   display: flex;
   gap: 16px;
   padding: 8px 12px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
   font-size: 12px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .diff-summary .additions {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .diff-summary .deletions {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 /* ============================================================================
@@ -1281,7 +1293,7 @@ body {
   flex-direction: column;
   gap: 16px;
   padding: 16px;
-  background: #1A1A1D;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 8px;
   max-height: 100%;
   overflow: hidden;
@@ -1290,7 +1302,7 @@ body {
 .git-review-panel.not-found {
   align-items: center;
   justify-content: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .review-header {
@@ -1299,7 +1311,7 @@ body {
   justify-content: space-between;
   gap: 16px;
   padding: 12px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
 }
 
@@ -1313,7 +1325,7 @@ body {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
-  color: #E5E7EB;
+  color: rgb(var(--c-text-primary));
 }
 
 .git-context {
@@ -1321,17 +1333,17 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .git-context .branch {
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
   font-weight: 500;
 }
 
 .git-context .commit {
   font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -1346,15 +1358,15 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 12px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .review-stats .stat.approved {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .review-stats .stat.rejected {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .review-content {
@@ -1373,22 +1385,22 @@ body {
 .diff-item {
   display: flex;
   flex-direction: column;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
   overflow: hidden;
   border-left: 3px solid transparent;
 }
 
 .diff-item.added {
-  border-left-color: #34D399;
+  border-left-color: rgb(var(--c-status-success));
 }
 
 .diff-item.modified {
-  border-left-color: #60A5FA;
+  border-left-color: rgb(var(--c-status-info));
 }
 
 .diff-item.deleted {
-  border-left-color: #F87171;
+  border-left-color: rgb(var(--c-status-danger));
 }
 
 .file-header {
@@ -1401,7 +1413,7 @@ body {
 }
 
 .file-header:hover {
-  background: #2A2A2E;
+  background: rgb(var(--c-bg-hover));
 }
 
 .expand-btn {
@@ -1411,7 +1423,7 @@ body {
   padding: 0;
   background: none;
   border: none;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   cursor: pointer;
 }
 
@@ -1434,22 +1446,22 @@ body {
 
 .change-type-badge.added {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .change-type-badge.modified {
   background: rgba(96, 165, 250, 0.2);
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .change-type-badge.deleted {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .change-type-badge.renamed {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 .comment-count {
@@ -1457,7 +1469,7 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .file-content {
@@ -1471,7 +1483,7 @@ body {
   gap: 8px;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid #3F3F46;
+  border-top: 1px solid rgb(var(--c-border) / 0.25);
 }
 
 .review-comment {
@@ -1479,25 +1491,25 @@ body {
   flex-direction: column;
   gap: 6px;
   padding: 10px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
   border-left: 3px solid transparent;
 }
 
 .review-comment.issue {
-  border-left-color: #F87171;
+  border-left-color: rgb(var(--c-status-danger));
 }
 
 .review-comment.suggestion {
-  border-left-color: #60A5FA;
+  border-left-color: rgb(var(--c-status-info));
 }
 
 .review-comment.question {
-  border-left-color: #FBBF24;
+  border-left-color: rgb(var(--c-status-warning));
 }
 
 .review-comment.approval {
-  border-left-color: #34D399;
+  border-left-color: rgb(var(--c-status-success));
 }
 
 .review-comment.resolved {
@@ -1521,28 +1533,28 @@ body {
 
 .comment-type-badge.issue {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .comment-type-badge.suggestion {
   background: rgba(96, 165, 250, 0.2);
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .comment-type-badge.question {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 .comment-type-badge.approval {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .comment-line {
   font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 11px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .comment-priority {
@@ -1554,17 +1566,17 @@ body {
 
 .comment-priority.high {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .comment-priority.medium {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 .comment-priority.low {
   background: rgba(156, 163, 175, 0.2);
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .resolved-badge {
@@ -1572,14 +1584,14 @@ body {
   align-items: center;
   gap: 4px;
   font-size: 11px;
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .comment-content {
   margin: 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #E5E7EB;
+  color: rgb(var(--c-text-primary));
 }
 
 .comment-actions {
@@ -1596,14 +1608,14 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
 }
 
 .review-decision p {
   margin: 0;
   font-size: 13px;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .decision-actions {
@@ -1619,14 +1631,14 @@ body {
   gap: 12px;
   padding: 48px 24px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .diff-omitted,
 .diff-binary {
   padding: 24px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   font-size: 13px;
 }
 
@@ -1639,14 +1651,14 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #1A1A1D;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 8px;
 }
 
 .git-pr-panel.empty {
   align-items: center;
   justify-content: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .pr-card {
@@ -1654,7 +1666,7 @@ body {
   flex-direction: column;
   gap: 12px;
   padding: 12px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 6px;
 }
 
@@ -1663,7 +1675,7 @@ body {
   align-items: center;
   gap: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #3F3F46;
+  border-bottom: 1px solid rgb(var(--c-border) / 0.25);
 }
 
 .pr-info {
@@ -1676,14 +1688,14 @@ body {
 .pr-number {
   font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 12px;
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
   font-weight: 600;
 }
 
 .pr-title {
   font-size: 14px;
   font-weight: 500;
-  color: #E5E7EB;
+  color: rgb(var(--c-text-primary));
 }
 
 .pr-status {
@@ -1695,15 +1707,15 @@ body {
 }
 
 .pr-status.open {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .pr-status.merged {
-  color: #A78BFA;
+  color: rgb(var(--c-accent-ai));
 }
 
 .pr-status.closed {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .pr-details {
@@ -1720,7 +1732,7 @@ body {
 }
 
 .pr-label {
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
   font-weight: 500;
   min-width: 60px;
 }
@@ -1729,28 +1741,28 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #E5E7EB;
+  color: rgb(var(--c-text-primary));
 }
 
 .pr-value code {
   font-family: var(--font-mono, 'SF Mono', 'Monaco', 'Consolas', monospace);
   font-size: 11px;
   padding: 2px 6px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 4px;
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
 }
 
 .pr-value .additions {
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .pr-value .deletions {
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .pr-value .files {
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .pr-review-status {
@@ -1763,29 +1775,29 @@ body {
 
 .pr-review-status.approved {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .pr-review-status.changes_requested {
   background: rgba(248, 113, 113, 0.2);
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
 }
 
 .pr-review-status.pending {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 .pr-review-status.commented {
   background: rgba(147, 197, 253, 0.2);
-  color: #93C5FD;
+  color: rgb(var(--c-primary-300));
 }
 
 .pr-actions {
   display: flex;
   gap: 8px;
   padding-top: 8px;
-  border-top: 1px solid #3F3F46;
+  border-top: 1px solid rgb(var(--c-border) / 0.25);
 }
 
 .pr-link {
@@ -1793,16 +1805,16 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 13px;
-  color: #60A5FA;
+  color: rgb(var(--c-status-info));
   text-decoration: none;
   padding: 6px 10px;
-  background: #1F1F22;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 4px;
   transition: background 0.15s;
 }
 
 .pr-link:hover {
-  background: #2A2A2E;
+  background: rgb(var(--c-bg-hover));
 }
 
 .pr-empty {
@@ -1812,7 +1824,7 @@ body {
   gap: 12px;
   padding: 32px 16px;
   text-align: center;
-  color: #9CA3AF;
+  color: rgb(var(--c-text-secondary));
 }
 
 .pr-push-reminder {
@@ -1845,7 +1857,7 @@ body {
   background: rgba(248, 113, 113, 0.1);
   border: 1px solid rgba(248, 113, 113, 0.3);
   border-radius: 6px;
-  color: #F87171;
+  color: rgb(var(--c-status-danger));
   font-size: 13px;
 }
 
@@ -1862,7 +1874,7 @@ body {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #1A1A1D;
+  background: rgb(var(--c-bg-elevated));
   border-radius: 8px;
 }
 
@@ -1890,12 +1902,12 @@ body {
 
 .action-group.sync-hint .hint-text.ahead {
   background: rgba(52, 211, 153, 0.2);
-  color: #34D399;
+  color: rgb(var(--c-status-success));
 }
 
 .action-group.sync-hint .hint-text.behind {
   background: rgba(251, 191, 36, 0.2);
-  color: #FBBF24;
+  color: rgb(var(--c-status-warning));
 }
 
 /* Toast 动画 */
@@ -2016,7 +2028,7 @@ html.focus-mode .chat-user-message:hover,
 html.focus-mode .chat-assistant-message:hover {
   opacity: 1;
   filter: none;
-  box-shadow: 0 0 0 1px var(--c-primary, #5b8df0), 0 8px 28px rgba(91, 141, 240, .22);
+  box-shadow: 0 0 0 1px rgb(var(--c-primary)), 0 8px 28px rgb(var(--c-primary) / .22);
   border-radius: var(--chat-bubble-radius, 16px);
 }
 

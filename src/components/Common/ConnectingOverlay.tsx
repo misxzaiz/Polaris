@@ -62,7 +62,7 @@ export function ConnectingOverlay() {
   // ========== 连接中：增强动画 ==========
   if (isConnecting) {
     return (
-      <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-background-base flex items-center justify-center z-modal">
         <div className="w-[360px] flex flex-col items-center gap-7">
 
           {/* 增强 spinner：双圈反向旋转 + 中心光晕 */}
@@ -120,7 +120,7 @@ export function ConnectingOverlay() {
   // ========== Token 鉴权（Web 模式） ==========
 
   return (
-    <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-background-base flex items-center justify-center z-modal">
       <div className="text-center space-y-6">
         {/* 文字提示 */}
         <div className="space-y-2">

@@ -519,7 +519,7 @@ export function RequirementPanel() {
           role="dialog"
           aria-modal="true"
           aria-label={t('detail.createTitle')}
-          className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
+          className="fixed inset-0 bg-overlay flex items-center justify-center z-modal"
         >
           <RequirementForm
             mode="create"

@@ -78,7 +78,7 @@ export function DropdownMenu({
       {/* 菜单内容 */}
       {isOpen && (
         <div
-          className={`absolute z-50 min-w-[160px] py-1 mt-1 bg-background-elevated border border-border rounded-lg shadow-lg ${
+          className={`absolute z-popover min-w-[160px] py-1 mt-1 bg-background-elevated border border-border rounded-lg shadow-lg ${
             align === 'right' ? 'right-0' : 'left-0'
           }`}
         >

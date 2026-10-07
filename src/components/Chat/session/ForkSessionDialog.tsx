@@ -42,7 +42,7 @@ export function ForkSessionDialog({
 
   return (
     <OverlayGuard label="ForkSessionDialog">
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/40">
       <div className="bg-background-elevated rounded-xl shadow-2xl border border-border w-[420px] max-w-[90vw]">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border">

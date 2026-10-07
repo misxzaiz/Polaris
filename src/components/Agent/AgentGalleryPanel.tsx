@@ -209,7 +209,7 @@ function CustomAgentEditor({
 
   const field = 'w-full rounded border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-text-muted focus:border-primary/50';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/40" onClick={onClose}>
       <div
         className="w-[480px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl"
         onClick={(e) => e.stopPropagation()}
@@ -603,7 +603,7 @@ function RosterBuilder({ onClose }: { onClose: () => void }) {
 
   const field = 'w-full rounded border border-border-subtle bg-transparent px-2 py-1.5 text-xs outline-none placeholder:text-text-muted focus:border-primary/50';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={onClose}>
+    <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/40" onClick={onClose}>
       <div className="w-[520px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
         <div className="mb-3 text-sm font-medium">自建专家团</div>
         <div className="space-y-2.5">
@@ -722,7 +722,7 @@ function AgentDetailDrawer({
   }, [systemPrompt, onFork]);
 
   return (
-    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+    <div className="fixed inset-0 z-modal flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30" />
       <div
         className="relative w-[520px] max-w-[96vw] flex h-full flex-col overflow-hidden border-l border-border bg-background-surface shadow-2xl"

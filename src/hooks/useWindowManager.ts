@@ -18,6 +18,7 @@ import { useViewStore } from '@/stores/viewStore';
 import { useOverlayStore } from '@/stores/overlayStore';
 import { useFocusModeStore } from '@/stores/focusModeStore';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { eventBus } from '@/services/eventBus';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { useWindowSize } from './useWindowSize';
 import * as tauri from '@/services/tauri';
@@ -76,7 +77,7 @@ export function useWindowManager({
       if (e.key === 'R' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         if (useViewStore.getState().leftPanelType === 'terminal') {
-          window.dispatchEvent(new CustomEvent('terminal:open-runner'));
+          eventBus.emit('terminal:open-runner', undefined);
         } else {
           useOverlayStore.getState().toggleFileSearch();
         }
@@ -141,7 +142,7 @@ export function useWindowManager({
         manager.switchSession(newSessionId);
         // 等一帧让视图完成切换后，请求聚焦聊天输入框（ChatInput 监听该事件）
         requestAnimationFrame(() => {
-          window.dispatchEvent(new CustomEvent('chat:focus-input'));
+          eventBus.emit('chat:focus-input', undefined);
         });
         log.info('快捷键新建会话', { newSessionId, workspaceId: activeWorkspaceId, engineId });
       }
@@ -151,14 +152,11 @@ export function useWindowManager({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isCreateSessionModalOpen, t]);
 
-  // navigate-to-settings 事件
+  // navigate-to-settings 事件（死事件，无派发点，保留监听以防未来派发）
   useEffect(() => {
-    const handleNavigateToSettings = () => {
+    return eventBus.on('navigate-to-settings', () => {
       useOverlayStore.getState().setSettingsOpen(true);
-    };
-
-    window.addEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
-    return () => window.removeEventListener('navigate-to-settings', handleNavigateToSettings as EventListener);
+    });
   }, []);
 
   return { windowWidth, windowHeight, isCompact };

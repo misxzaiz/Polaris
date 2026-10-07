@@ -189,38 +189,38 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
   }, [createCustomScript, workspacePath]);
 
   return (
-    <div className="h-64 shrink-0 border-b border-[#3c3c3c] bg-[#202020] flex flex-col">
-      <div className="h-10 px-2 flex items-center gap-2 border-b border-[#3c3c3c] bg-[#252526]">
-        <div className="flex rounded border border-[#3c3c3c] overflow-hidden">
+    <div className="h-64 shrink-0 border-b border-border bg-background-base flex flex-col">
+      <div className="h-10 px-2 flex items-center gap-2 border-b border-border bg-background-elevated">
+        <div className="flex rounded border border-border overflow-hidden">
           <button
-            className={`h-7 px-3 text-xs ${tab === 'project' ? 'bg-[#1e1e1e] text-text-primary' : 'text-text-secondary hover:bg-[#333]'}`}
+            className={`h-7 px-3 text-xs ${tab === 'project' ? 'bg-background-surface text-text-primary' : 'text-text-secondary hover:bg-background-hover'}`}
             onClick={() => setTab('project')}
           >
             项目脚本
           </button>
           <button
-            className={`h-7 px-3 text-xs border-l border-[#3c3c3c] ${tab === 'custom' ? 'bg-[#1e1e1e] text-text-primary' : 'text-text-secondary hover:bg-[#333]'}`}
+            className={`h-7 px-3 text-xs border-l border-border ${tab === 'custom' ? 'bg-background-surface text-text-primary' : 'text-text-secondary hover:bg-background-hover'}`}
             onClick={() => setTab('custom')}
           >
             自定义命令
           </button>
         </div>
         <input
-          className="h-7 flex-1 min-w-0 bg-[#1f1f1f] border border-[#3c3c3c] rounded px-2 text-xs text-text-primary"
+          className="h-7 flex-1 min-w-0 bg-background-tertiary border border-border rounded px-2 text-xs text-text-primary"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="搜索脚本或命令"
         />
-        <button className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded" onClick={() => refresh()} title="重新发现">
+        <button className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover rounded" onClick={() => refresh()} title="重新发现">
           <RefreshCw size={14} />
         </button>
-        <button className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded" onClick={handleCreateCustom} title="新增自定义命令">
+        <button className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover rounded" onClick={handleCreateCustom} title="新增自定义命令">
           <Plus size={15} />
         </button>
       </div>
 
       <div className="flex-1 min-h-0 flex">
-        <div className="w-[44%] min-w-[180px] border-r border-[#3c3c3c] overflow-y-auto">
+        <div className="w-[44%] min-w-[180px] border-r border-border overflow-y-auto">
           {visibleScripts.length === 0 ? (
             <div className="h-full flex items-center justify-center text-xs text-text-tertiary px-3 text-center">
               {loading ? '发现脚本中...' : tab === 'project' ? '未发现项目脚本' : '暂无自定义命令'}
@@ -260,16 +260,16 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                   {draft.sourcePath ? ` · ${draft.sourcePath}` : ''}
                 </div>
                 <div className="flex items-center gap-1">
-                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded" onClick={handleRun} disabled={selectedRuntime?.status === 'running'}>
+                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded" onClick={handleRun} disabled={selectedRuntime?.status === 'running'}>
                     <Play size={13} />运行
                   </button>
-                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded disabled:opacity-50" onClick={handleStop} disabled={selectedRuntime?.status !== 'running'}>
+                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded disabled:opacity-50" onClick={handleStop} disabled={selectedRuntime?.status !== 'running'}>
                     <Square size={13} />停止
                   </button>
-                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded" onClick={handleSave}>
+                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded" onClick={handleSave}>
                     <Save size={13} />保存
                   </button>
-                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-red-300 hover:bg-[#3c3c3c] rounded" onClick={handleDelete}>
+                  <button className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-red-300 hover:bg-background-hover rounded" onClick={handleDelete}>
                     {selectedIsCustom ? <Trash2 size={13} /> : <EyeOff size={13} />}
                     {selectedIsCustom ? '删除' : '隐藏'}
                   </button>
@@ -280,7 +280,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                 <label className="text-[11px] text-text-tertiary">
                   名称
                   <input
-                    className="mt-1 h-7 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 text-xs text-text-primary"
+                    className="mt-1 h-7 w-full bg-background-base border border-border rounded px-2 text-xs text-text-primary"
                     value={draft.name}
                     readOnly={!selectedIsCustom}
                     onChange={(e) => setDraft({ ...draft, name: e.target.value })}
@@ -288,14 +288,14 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                 </label>
                 <label className="text-[11px] text-text-tertiary">
                   状态
-                  <input className="mt-1 h-7 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 text-xs text-text-secondary" value={statusLabel(selectedRuntime?.status)} readOnly />
+                  <input className="mt-1 h-7 w-full bg-background-base border border-border rounded px-2 text-xs text-text-secondary" value={statusLabel(selectedRuntime?.status)} readOnly />
                 </label>
               </div>
 
               <label className="block text-[11px] text-text-tertiary">
                 命令
                 <textarea
-                  className="mt-1 h-14 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 py-1 text-xs text-text-primary font-mono resize-none"
+                  className="mt-1 h-14 w-full bg-background-base border border-border rounded px-2 py-1 text-xs text-text-primary font-mono resize-none"
                   value={draft.command}
                   readOnly={!selectedIsCustom}
                   onChange={(e) => setDraft({ ...draft, command: e.target.value })}
@@ -306,7 +306,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                 <label className="text-[11px] text-text-tertiary">
                   工作目录
                   <input
-                    className="mt-1 h-7 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 text-xs text-text-primary"
+                    className="mt-1 h-7 w-full bg-background-base border border-border rounded px-2 text-xs text-text-primary"
                     value={draft.cwd ?? ''}
                     onChange={(e) => setDraft({ ...draft, cwd: e.target.value })}
                   />
@@ -314,7 +314,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
                 <label className="text-[11px] text-text-tertiary">
                   自动执行时机
                   <select
-                    className="mt-1 h-7 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 text-xs text-text-primary"
+                    className="mt-1 h-7 w-full bg-background-base border border-border rounded px-2 text-xs text-text-primary"
                     value={draft.autoRunTrigger || 'workspace_open'}
                     disabled={!draft.autoRun}
                     onChange={(e) => setDraft({ ...draft, autoRunTrigger: e.target.value as TerminalScriptAutoRunTrigger })}
@@ -344,7 +344,7 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
               <label className="block text-[11px] text-text-tertiary">
                 环境变量
                 <textarea
-                  className="mt-1 h-12 w-full bg-[#151515] border border-[#3c3c3c] rounded px-2 py-1 text-xs text-text-primary font-mono resize-none"
+                  className="mt-1 h-12 w-full bg-background-base border border-border rounded px-2 py-1 text-xs text-text-primary font-mono resize-none"
                   value={draftEnv}
                   onChange={(e) => setDraftEnv(e.target.value)}
                   placeholder="KEY=value"
@@ -356,9 +356,9 @@ export function TerminalScriptPanel({ workspacePath }: TerminalScriptPanelProps)
       </div>
 
       {hiddenDiscoveredScriptIds.length > 0 && (
-        <div className="h-8 px-2 border-t border-[#3c3c3c] flex items-center justify-between text-xs text-text-tertiary">
+        <div className="h-8 px-2 border-t border-border flex items-center justify-between text-xs text-text-tertiary">
           <span>已隐藏 {hiddenDiscoveredScriptIds.length} 个项目脚本</span>
-          <button className="h-6 px-2 flex items-center gap-1 hover:text-text-primary hover:bg-[#3c3c3c] rounded" onClick={() => restoreHiddenProjectScripts()}>
+          <button className="h-6 px-2 flex items-center gap-1 hover:text-text-primary hover:bg-background-hover rounded" onClick={() => restoreHiddenProjectScripts()}>
             <RotateCcw size={12} />恢复隐藏
           </button>
         </div>

@@ -86,7 +86,7 @@ export function ConfirmDialog({
   return (
     <OverlayGuard label="ConfirmDialog">
       <div
-        className={`fixed inset-0 flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+        className={`fixed inset-0 flex items-center justify-center z-modal ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
         style={{ background: 'rgba(0,0,0,0.5)' }}
         onKeyDown={handleKeyDown}
       >

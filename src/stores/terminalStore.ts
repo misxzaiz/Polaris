@@ -6,6 +6,7 @@
 
 import { create } from 'zustand';
 import { invoke, listen } from '@/services/transport';
+import { eventBus } from '@/services/eventBus';
 import type { CreateTerminalSessionOptions, TerminalSession, TerminalOutputEvent, TerminalExitEvent } from '@/types/terminal';
 import type {
   DiscoveredTerminalScript,
@@ -270,9 +271,7 @@ export const useTerminalStore = create<TerminalStore>()((set, get) => ({
     const unlistenOutput = listen<TerminalOutputEvent>('terminal:output', (event) => {
       const { sessionId, data } = event;
       // 触发自定义事件，由终端组件处理
-      window.dispatchEvent(new CustomEvent('terminal-output', {
-        detail: { sessionId, data },
-      }));
+      eventBus.emit('terminal-output', { sessionId, data });
     });
 
     // 监听终端退出

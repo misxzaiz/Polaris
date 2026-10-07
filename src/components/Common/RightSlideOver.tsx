@@ -60,7 +60,7 @@ export function RightSlideOver({
       <div
         role="dialog"
         aria-modal="true"
-        className={`fixed z-50 bg-background-elevated border border-border rounded-l-xl shadow-xl overflow-hidden ${
+        className={`fixed z-modal bg-background-elevated border border-border rounded-l-xl shadow-xl overflow-hidden ${
           exiting ? 'animate-drawer-out-right' : 'animate-drawer-in-right'
         }`}
         style={{ top, right: '0', height, width }}

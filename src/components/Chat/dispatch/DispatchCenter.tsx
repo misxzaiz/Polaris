@@ -188,7 +188,7 @@ export const DispatchCenterButton = memo(function DispatchCenterButton() {
 
       {open && panelPos && (
         <div
-          className="fixed w-[340px] max-h-[420px] flex flex-col rounded-lg border border-border bg-background-elevated shadow-lg z-50"
+          className="fixed w-[340px] max-h-[420px] flex flex-col rounded-lg border border-border bg-background-elevated shadow-lg z-popover"
           style={{ left: panelPos.left, bottom: panelPos.bottom }}
         >
           <div className="flex items-center gap-2 px-3 py-2 border-b border-border">

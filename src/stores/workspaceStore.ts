@@ -13,6 +13,7 @@ import type { WorkspaceEntry } from '@/types/config';
 import * as tauri from '@/services/tauri';
 import { createLogger } from '@/utils/logger';
 import { generateUUID } from '@/utils/uuid';
+import { eventBus } from '@/services/eventBus';
 
 const log = createLogger('WorkspaceStore');
 
@@ -178,10 +179,8 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         // 同步 currentWorkspaceId 到服务端
         await persistToServer(get().workspaces, id);
 
-        window.dispatchEvent(new CustomEvent('workspace-changed', {
-          detail: { workspaceId: id, path: workspace.path }
-        }));
-        window.dispatchEvent(new CustomEvent('workspace-switched'));
+        eventBus.emit('workspace-changed', { workspaceId: id, workspacePath: workspace.path, path: workspace.path });
+        eventBus.emit('workspace-switched', undefined);
       },
 
       // 删除工作区

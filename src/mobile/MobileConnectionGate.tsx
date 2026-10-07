@@ -348,7 +348,7 @@ export function MobileConnectionGate({ children }: MobileConnectionGateProps) {
 
       {/* 相机取景框覆盖层 */}
       {showScanner && (
-        <div className="fixed inset-0 z-50 bg-black flex flex-col">
+        <div className="fixed inset-0 z-modal bg-black flex flex-col">
           <div className="flex items-center justify-between px-4 pt-4 pb-2">
             <button
               onClick={stopScanner}

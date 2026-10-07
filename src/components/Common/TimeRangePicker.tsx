@@ -192,7 +192,7 @@ export function TimeRangePicker({ start, end, onChange, allowClear = true, minDa
 
       {/* 日历弹层 */}
       {open && (
-        <div className="absolute top-full left-0 mt-1.5 z-50 w-[300px] p-3 rounded-xl border border-border bg-background-surface shadow-xl">
+        <div className="absolute top-full left-0 mt-1.5 z-popover w-[300px] p-3 rounded-xl border border-border bg-background-surface shadow-xl">
           {/* 表头：月份 + 翻页 */}
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-text-primary">{monthLabel}</span>

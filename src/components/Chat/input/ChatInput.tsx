@@ -15,6 +15,7 @@ import { Sparkles, Wand2, Undo2, Redo2, Loader2, Check, X, Bot, Zap, ChevronDown
 import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
 import { useVoiceInputStore } from '@/stores/voiceInputStore'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
+import { eventBus } from '@/services/eventBus'
 import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize, useActiveSessionPendingQueue } from '@/stores/conversationStore/useActiveSession'
 import {
   runPromptOptimize,
@@ -246,12 +247,10 @@ export function ChatInput({
 
   // 监听全局聚焦请求（快捷键新建会话等场景触发，见 useWindowManager）
   useEffect(() => {
-    const handleFocusRequest = () => {
+    return eventBus.on('chat:focus-input', () => {
       // 推迟一拍，确保会话切换引起的重渲染完成后再聚焦
       setTimeout(() => textareaRef.current?.focus(), 0)
-    }
-    window.addEventListener('chat:focus-input', handleFocusRequest)
-    return () => window.removeEventListener('chat:focus-input', handleFocusRequest)
+    })
   }, [])
 
   // 从本地 state 获取当前值
@@ -1691,7 +1690,7 @@ export function ChatInput({
                 {optimizePickerOpen && (
                   <div
                     ref={optimizePickerRef}
-                    className="absolute left-0 bottom-full mb-1 z-50 w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border flex flex-col max-h-[70vh]"
+                    className="absolute left-0 bottom-full mb-1 z-popover w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border flex flex-col max-h-[70vh]"
                   >
                     {/* 可滚动内容区 */}
                     <div className="overflow-y-auto overscroll-contain py-1.5">
@@ -1978,7 +1977,7 @@ export function ChatInput({
 
       {/* 深度优化隐私提示（首次使用） */}
       {optimizePrivacyNotice && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={() => setOptimizePrivacyNotice(false)}>
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/40" onClick={() => setOptimizePrivacyNotice(false)}>
           <div className="w-[380px] max-w-[92vw] rounded-lg border border-border bg-background-surface p-4 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="text-sm font-medium text-text-primary mb-2">{t('promptOptimize.privacyNoticeTitle')}</div>
             <p className="text-xs text-text-secondary leading-relaxed mb-4">{t('promptOptimize.privacyNoticeBody')}</p>

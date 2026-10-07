@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFileExplorerStore, useWorkspaceStore, useCommandStore, useToastStore } from '@/stores';
 import { initFileWatcherListener, startFileWatcher, stopFileWatcher } from '@/stores/fileExplorerStore';
+import { eventBus } from '@/services/eventBus';
 import { FileTree } from './FileTree';
 import { SearchBar } from './SearchBar';
 import { ContextMenu } from './ContextMenu';
@@ -61,8 +62,8 @@ export function FileExplorer() {
   // 监听工作区变化，自动加载新工作区
   // 只有当用户正在查看的是被切换掉的工作区时，才自动切换
   useEffect(() => {
-    const handleWorkspaceChange = (event: CustomEvent) => {
-      const { workspaceId: newWorkspaceId } = event.detail;
+    const offChange = eventBus.on('workspace-changed', (event) => {
+      const { workspaceId: newWorkspaceId } = event;
       const viewingWorkspace = getViewingWorkspace();
 
       // 如果用户正在查看的是旧的活动工作区，则切换到新的活动工作区
@@ -74,12 +75,10 @@ export function FileExplorer() {
           loadCustomCommands(currentWorkspace.path);
         }
       }
-    };
-
-    window.addEventListener('workspace-changed', handleWorkspaceChange as EventListener);
+    });
 
     return () => {
-      window.removeEventListener('workspace-changed', handleWorkspaceChange as EventListener);
+      offChange();
     };
   }, [load_directory, getCurrentWorkspace, getViewingWorkspace, loadCustomCommands]);
 

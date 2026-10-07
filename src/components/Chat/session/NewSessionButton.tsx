@@ -222,7 +222,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
           ref={dropdownRef}
           onKeyDown={handleKeyDown}
           className={clsx(
-            'fixed z-50',
+            'fixed z-popover',
             'w-72 max-w-[calc(100vw-16px)] flex flex-col rounded-lg shadow-lg',
             'bg-background-elevated border border-border'
           )}

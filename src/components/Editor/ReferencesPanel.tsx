@@ -231,7 +231,7 @@ function ReferencesPanelInner({ symbol, loading, items, error, truncated, onClos
 
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-[10vh]"
+      className="fixed inset-0 bg-black/50 flex items-start justify-center z-modal pt-[10vh]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

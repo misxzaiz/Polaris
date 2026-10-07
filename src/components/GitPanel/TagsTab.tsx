@@ -285,7 +285,7 @@ export function TagsTab({ workspacePath: workspacePathProp }: TagsTabProps) {
 
       {/* 创建标签弹窗 */}
       {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[400px] max-w-[90vw]">
             <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
               <span className="text-sm font-medium text-text-primary">{t('tags.createTag')}</span>
@@ -375,7 +375,7 @@ export function TagsTab({ workspacePath: workspacePathProp }: TagsTabProps) {
 
       {/* 删除确认弹窗 */}
       {showDeleteModal && tagToDelete && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[360px] max-w-[90vw]">
             <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between">
               <span className="text-sm font-medium text-text-primary">{t('tags.deleteTag')}</span>

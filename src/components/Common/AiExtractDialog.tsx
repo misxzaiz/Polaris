@@ -146,7 +146,7 @@ export function AiExtractDialog<T>({
       role="dialog"
       aria-modal="true"
       aria-label={labels.title}
-      className={`fixed inset-0 bg-overlay flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+      className={`fixed inset-0 bg-overlay flex items-center justify-center z-modal ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
     >
       <div
         className={`bg-background-elevated rounded-lg shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col ${exiting ? 'animate-dialog-out' : 'animate-dialog-in'}`}

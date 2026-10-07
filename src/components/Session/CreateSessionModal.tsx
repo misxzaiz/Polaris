@@ -171,7 +171,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   // 使用 Portal 渲染到 body
   return createPortal(
     <div
-      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]"
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal"
       onMouseDown={(e) => e.stopPropagation()}
       onClick={(e) => e.stopPropagation()}
     >

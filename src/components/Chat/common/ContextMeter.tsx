@@ -21,6 +21,7 @@
 import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import type { UsageStats } from '@/stores/conversationStore/types';
+import { eventBus } from '@/services/eventBus';
 
 interface ContextMeterProps {
   usage: UsageStats;
@@ -379,9 +380,7 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                 <button
                   className="flex items-center gap-1 text-[11px] text-text-muted hover:text-primary transition-colors"
                   onClick={() => {
-                    window.dispatchEvent(
-                      new CustomEvent('polaris:open-settings', { detail: { tab: 'token-stats' } })
-                    )
+                    eventBus.emit('polaris:open-settings', { tab: 'token-stats' })
                     setActive(false)
                   }}
                 >

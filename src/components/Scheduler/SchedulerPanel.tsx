@@ -458,7 +458,7 @@ export function SchedulerPanel() {
             {moreMenuOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setMoreMenuOpen(false)} />
-                <div className="absolute right-0 top-full mt-1 w-40 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-50 py-1">
+                <div className="absolute right-0 top-full mt-1 w-40 bg-background-surface border border-border-subtle rounded-lg shadow-lg z-popover py-1">
                   <button
                     onClick={() => { setShowTemplateManager(true); setMoreMenuOpen(false); }}
                     className="w-full px-3 py-2 text-left text-sm hover:bg-background-hover flex items-center gap-2 text-text-secondary hover:text-text-primary"

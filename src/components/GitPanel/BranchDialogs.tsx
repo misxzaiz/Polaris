@@ -35,7 +35,7 @@ export function SwitchConfirmDialog({
   const { t } = useTranslation('git')
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg relative">
         <div className="flex items-start gap-3 mb-4">
           <AlertTriangle size={20} className="text-warning shrink-0 mt-0.5" />
@@ -131,7 +131,7 @@ export function CreateBranchDialog({
   const sourceBranch = basedOn || currentBranch || 'HEAD'
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-text-primary">
@@ -220,7 +220,7 @@ export function DeleteBranchDialog({
   const { t } = useTranslation('git')
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
         <div className="flex items-start gap-3 mb-4">
           <AlertTriangle size={20} className="text-warning shrink-0 mt-0.5" />
@@ -289,7 +289,7 @@ export function RenameBranchDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-text-primary">
@@ -382,7 +382,7 @@ export function MergeBranchDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-text-primary">
@@ -518,7 +518,7 @@ export function RebaseBranchDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-text-primary">

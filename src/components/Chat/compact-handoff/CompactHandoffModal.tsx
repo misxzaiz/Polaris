@@ -134,7 +134,7 @@ function Dropdown({
         <ChevronDown size={14} className="opacity-50 shrink-0" />
       </button>
       {open && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-50 max-h-[220px] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg">
+        <div className="absolute top-full left-0 right-0 mt-1 z-popover max-h-[220px] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg">
           {options.length === 0 && (
             <div className="px-3 py-2 text-xs text-text-tertiary">—</div>
           )}
@@ -247,7 +247,7 @@ export function CompactHandoffModal({
 
   return (
     <OverlayGuard label="CompactHandoffModal">
-      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/40 p-4">
       <div className="bg-background-elevated rounded-xl shadow-2xl border border-border w-[440px] max-w-[92vw] max-h-[88vh] flex flex-col">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">

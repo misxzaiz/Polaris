@@ -1323,7 +1323,7 @@ export function BrowserPanel({
           <div
             ref={historyDropdownRef}
             data-native-webview-overlay
-            className="absolute z-50 mt-1 max-h-48 w-64 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated shadow-lg"
+            className="absolute z-popover mt-1 max-h-48 w-64 overflow-y-auto rounded-md border border-border-subtle bg-background-elevated shadow-lg"
             style={{ top: '44px', left: '12px' }}
             onClick={() => setHistoryDropdownOpen(false)}
             onMouseLeave={() => setHistoryDropdownOpen(false)}
@@ -1629,7 +1629,7 @@ export function BrowserPanel({
 
       {/* 快捷键帮助弹层 */}
       {shortcutsOpen && (
-        <div data-native-webview-overlay className="absolute right-3 top-12 z-50 w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
+        <div data-native-webview-overlay className="absolute right-3 top-12 z-popover w-80 overflow-hidden rounded-md border border-border-subtle bg-background-elevated shadow-xl">
           <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2">
             <span className="flex items-center gap-1.5 text-xs font-medium text-text-primary">
               <Keyboard size={13} className="text-primary" />

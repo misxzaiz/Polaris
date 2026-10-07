@@ -185,7 +185,7 @@ export function BranchSelector({ workspacePath: workspacePathProp }: BranchSelec
         </button>
 
         {isOpen && (
-          <div className="absolute top-full left-0 mt-1 w-80 bg-background-surface border border-border rounded-lg shadow-lg z-50 flex flex-col" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+          <div className="absolute top-full left-0 mt-1 w-80 bg-background-surface border border-border rounded-lg shadow-lg z-popover flex flex-col" style={{ maxHeight: 'calc(100vh - 200px)' }}>
             <div className="px-3 py-2 border-b border-border flex items-center justify-between shrink-0">
               <span className="text-xs font-medium text-text-secondary">
                 {t('branch.switch')}
@@ -279,7 +279,7 @@ export function BranchSelector({ workspacePath: workspacePathProp }: BranchSelec
       </div>
 
       {switchState.type === 'confirming' && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
           <div className="bg-background-elevated rounded-xl p-6 w-full max-w-md border border-border shadow-lg">
             <div className="flex items-start gap-3 mb-4">
               <AlertTriangle size={20} className="text-warning shrink-0 mt-0.5" />

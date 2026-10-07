@@ -129,6 +129,18 @@ module.exports = {
       borderRadius: {
         '4xl': '2rem',
       },
+      // z-index scale（单一真源，对应 index.css --z-* 变量）
+      // 业务组件用语义名，禁止 z-[N] 字面量
+      zIndex: {
+        base: 'var(--z-base, 0)',
+        sticky: 'var(--z-sticky, 10)',
+        dropdown: 'var(--z-dropdown, 20)',
+        overlay: 'var(--z-overlay, 40)',
+        popover: 'var(--z-popover, 50)',
+        modal: 'var(--z-modal, 70)',
+        toast: 'var(--z-toast, 90)',
+        devtools: 'var(--z-devtools, 100)',
+      },
       // 动画
       keyframes: {
         'shake-once': {

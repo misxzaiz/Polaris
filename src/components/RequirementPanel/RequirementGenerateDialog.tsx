@@ -52,7 +52,7 @@ export function RequirementGenerateDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('generate.title')}
-      className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
+      className="fixed inset-0 bg-overlay flex items-center justify-center z-modal"
     >
       <div
         className="bg-background-elevated rounded-lg shadow-xl w-full max-w-md"

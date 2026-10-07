@@ -211,7 +211,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
   const isCurrentBranch = selectedBranch === status?.branch
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onKeyDown={handleKeyDown}>
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal" onKeyDown={handleKeyDown}>
       <div className="bg-background-elevated rounded-xl w-full max-w-md border border-border shadow-lg">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-border">

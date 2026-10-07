@@ -12,6 +12,7 @@
 import { useEffect, useRef } from 'react';
 import { listen } from '@/services/transport';
 import { useTabStore } from '@/stores/tabStore';
+import { eventBus } from '@/services/eventBus';
 import { useViewStore } from '@/stores/viewStore';
 import { useNarrowTabStore } from '@/stores/narrowTabStore';
 import { initEditorFileChangeListener } from '@/stores/fileEditorStore';
@@ -200,31 +201,30 @@ export function useAppEvents() {
       }
     };
 
-    const handleWorkspaceChanged = (event: Event) => {
-      const workspacePath = (event as CustomEvent<{ path?: string }>).detail?.path;
+    const handleWorkspaceChanged = (detail: { path?: string }) => {
+      const workspacePath = detail.path;
       if (!workspacePath) return;
       useTerminalStore.getState().runAutoScripts('workspace_open', workspacePath)
         .catch((error) => log.warn('Workspace auto scripts failed', { error: String(error) }));
     };
 
-    window.addEventListener('workspace-switched', handleWorkspaceSwitched);
-    window.addEventListener('workspace-changed', handleWorkspaceChanged);
+    const offSwitched = eventBus.on('workspace-switched', handleWorkspaceSwitched)
+    const offChanged = eventBus.on('workspace-changed', handleWorkspaceChanged)
     return () => {
-      window.removeEventListener('workspace-switched', handleWorkspaceSwitched);
-      window.removeEventListener('workspace-changed', handleWorkspaceChanged);
-    };
-  }, []);
+      offSwitched()
+      offChanged()
+    }
+  }, [])
 
   // 外部 config 变更时重新同步工作区列表（另一窗口 / 插件直写 update_config_patch /
   // 手动编辑 config.json 等场景）。workspaceStore 自身写路径也会触发同一事件，
   // 以本地写入时间戳防回环：刚写入的变更不需要再拉取。
   useEffect(() => {
     let lastLocalWriteAt = 0;
-    const markLocalWrite = () => { lastLocalWriteAt = Date.now(); };
-    window.addEventListener('workspace-switched', markLocalWrite);
+    const offSwitched = eventBus.on('workspace-switched', () => { lastLocalWriteAt = Date.now(); });
 
     let unlisten: (() => void) | null = null;
-    let unlistenPromise = listen('config-changed', () => {
+    const unlistenPromise = listen('config-changed', () => {
       // 后端 emit 的 payload 仅含 performance；把事件当作"拉取信号"而非数据源。
       if (Date.now() - lastLocalWriteAt < 800) return; // 本地写入防抖（避免回环拉取）
       log.debug('config-changed → syncing workspaces from server');
@@ -235,7 +235,7 @@ export function useAppEvents() {
     unlistenPromise.then((fn) => { unlisten = fn; }).catch(() => { /* transport 不可用时静默 */ });
 
     return () => {
-      window.removeEventListener('workspace-switched', markLocalWrite);
+      offSwitched();
       unlistenPromise.then((fn) => fn()).catch(() => { /* noop */ });
       unlisten?.();
     };

@@ -12,7 +12,7 @@
  * - 关闭只清信号，不销毁 tab —— 窗口拖宽后 CenterStage 接管同一批 tab
  * - diff 的 viewMode 覆盖层内自维护（默认 unified），不污染 CenterStage 默认值
  * - min-w-0 必需：防止 CodeMirror / diff 长行撑破 flex（与 CenterStage 同一修复）
- * - z-[60]：高于 LeftPanelDrawer（z-50），从 Git 抽屉点 diff 时覆盖层在上层，
+ * - z-overlay（--z-overlay）：高于 LeftPanelDrawer（z-popover），从 Git 抽屉点 diff 时覆盖层在上层，
  *   Escape 只作用于最上层
  */
 
@@ -56,7 +56,7 @@ export function NarrowTabOverlay() {
 
   return (
     <div
-      className="polaris-editor-overlay absolute inset-0 z-[60] flex flex-col bg-background-base animate-drawer-in-bottom [&_.cm-foldGutter]:hidden"
+      className="polaris-editor-overlay absolute inset-0 z-overlay flex flex-col bg-background-base animate-drawer-in-bottom [&_.cm-foldGutter]:hidden"
       role="dialog"
       aria-modal="true"
       aria-label={title}

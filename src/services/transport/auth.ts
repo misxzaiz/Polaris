@@ -2,6 +2,8 @@
  * Web 模式服务端地址 / Token 管理
  */
 
+import { eventBus } from '@/services/eventBus';
+
 const SERVER_URL_KEY = 'polaris_server_url';
 const TOKEN_MD5_KEY = 'polaris_web_token_md5';
 /** 已连接过的服务地址历史（JSON 数组），最近使用排在前面 */
@@ -71,7 +73,7 @@ function prefetchDevDiscovery(): void {
       devDiscovery = data;
       // 通知 transport 层：发现文件就绪，可重建连接
       if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('polaris:dev-discovery-ready'));
+        eventBus.emit('polaris:dev-discovery-ready', undefined);
       }
     })
     .catch(() => {

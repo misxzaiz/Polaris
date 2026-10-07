@@ -85,7 +85,7 @@ export const MultiWindowMenu = memo(function MultiWindowMenu() {
         <div
           ref={panelRef}
           className={clsx(
-            'absolute bottom-full left-0 mb-1 z-50 p-3',
+            'absolute bottom-full left-0 mb-1 z-popover p-3',
             'min-w-[200px] rounded-lg shadow-lg',
             'bg-background-elevated border border-border'
           )}

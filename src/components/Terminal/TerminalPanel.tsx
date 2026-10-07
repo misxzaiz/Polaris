@@ -13,6 +13,7 @@ import { useTerminalStore } from '@/stores/terminalStore';
 import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { useViewStore } from '@/stores/viewStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { eventBus } from '@/services/eventBus';
 import { Plus, X, Terminal as TerminalIcon, Maximize2, Minimize2 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { TerminalScriptPanel } from './TerminalScriptPanel';
@@ -134,15 +135,15 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
 
   // 监听终端输出
   useEffect(() => {
-    const handleOutput = (e: CustomEvent<{ sessionId: string; data: string }>) => {
-      if (e.detail.sessionId !== sessionId) return;
+    const handleOutput = (e: { sessionId?: string; data: string }) => {
+      if (e.sessionId !== sessionId) return;
 
       const xterm = xtermRef.current;
       if (!xterm) return;
 
       try {
         // 解码 base64 数据为字节数组 (支持 UTF-8)
-        const binary = atob(e.detail.data);
+        const binary = atob(e.data);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i++) {
           bytes[i] = binary.charCodeAt(i);
@@ -153,10 +154,7 @@ function TerminalInstance({ sessionId, isActive }: TerminalInstanceProps) {
       }
     };
 
-    window.addEventListener('terminal-output', handleOutput as EventListener);
-    return () => {
-      window.removeEventListener('terminal-output', handleOutput as EventListener);
-    };
+    return eventBus.on('terminal-output', handleOutput);
   }, [sessionId]);
 
   // 调整大小 - 使用 ResizeObserver 监听容器尺寸变化
@@ -278,9 +276,7 @@ export function TerminalPanel() {
   }, [initEventListeners]);
 
   useEffect(() => {
-    const handleOpenRunner = () => setShowRunner(true);
-    window.addEventListener('terminal:open-runner', handleOpenRunner);
-    return () => window.removeEventListener('terminal:open-runner', handleOpenRunner);
+    return eventBus.on('terminal:open-runner', () => setShowRunner(true));
   }, []);
 
   // 自动创建第一个会话

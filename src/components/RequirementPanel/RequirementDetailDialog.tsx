@@ -139,7 +139,7 @@ export function RequirementDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-label={t('detail.editTitle')}
-        className="fixed inset-0 bg-overlay flex items-center justify-center z-50"
+        className="fixed inset-0 bg-overlay flex items-center justify-center z-modal"
       >
         <RequirementForm
           requirement={requirement}
@@ -200,7 +200,7 @@ export function RequirementDetailDialog({
         role="dialog"
         aria-modal="true"
         aria-label={t('detail.prototype')}
-        className="fixed inset-0 bg-overlay-strong z-50 flex flex-col"
+        className="fixed inset-0 bg-overlay-strong z-modal flex flex-col"
       >
         {/* 头部 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background-elevated">
@@ -238,7 +238,7 @@ export function RequirementDetailDialog({
       role="dialog"
       aria-modal="true"
       aria-label={t('detail.title')}
-      className="fixed inset-0 bg-overlay flex items-center justify-center z-50 p-4"
+      className="fixed inset-0 bg-overlay flex items-center justify-center z-modal p-4"
     >
       <div
         className={clsx(

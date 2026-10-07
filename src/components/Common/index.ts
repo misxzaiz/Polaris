@@ -13,4 +13,5 @@ export { ToastContainer } from './Toast';
 export { ConfirmDialog } from './ConfirmDialog';
 export { UnsavedDialog } from './UnsavedDialog';
 export { JsonTreeView } from './JsonTreeView';
+export { Modal } from './Modal';
 export * from './Icons/index';

@@ -136,7 +136,7 @@ export function WorkspaceQuickSwitch() {
       {/* 下拉菜单 */}
       {showDropdown && (
         <div
-          className="absolute left-0 top-full mt-1 bg-background-elevated border border-border rounded-xl shadow-xl z-50 overflow-hidden min-w-[200px] max-w-[280px]"
+          className="absolute left-0 top-full mt-1 bg-background-elevated border border-border rounded-xl shadow-xl z-popover overflow-hidden min-w-[200px] max-w-[280px]"
           data-tauri-drag-region={false}
         >
           {/* 搜索框 */}

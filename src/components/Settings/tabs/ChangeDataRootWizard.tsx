@@ -145,7 +145,7 @@ export function ChangeDataRootWizard({ current, onClose, onChanged }: Props) {
 
   return (
     <div
-      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[1000]"
+      className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget && step !== 'progress') onClose()
       }}

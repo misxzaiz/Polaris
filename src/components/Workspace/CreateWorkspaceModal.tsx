@@ -106,7 +106,7 @@ function ServerDirectoryPicker({
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[110] p-4">
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-modal p-4">
       <div className="bg-background-elevated rounded-xl w-full max-w-lg max-h-full overflow-y-auto border border-border shadow-glow">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border">
@@ -317,7 +317,7 @@ export function CreateWorkspaceModal({ onClose }: CreateWorkspaceModalProps) {
 
       {createPortal(
         <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4"
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal p-4"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >

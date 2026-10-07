@@ -148,7 +148,7 @@ function BreadcrumbDropdown({
   return (
     <div
       ref={ref}
-      className="absolute top-full left-0 mt-1 bg-background-elevated border border-border rounded-lg shadow-lg py-1 min-w-[180px] max-h-[300px] overflow-y-auto z-50"
+      className="absolute top-full left-0 mt-1 bg-background-elevated border border-border rounded-lg shadow-lg py-1 min-w-[180px] max-h-[300px] overflow-y-auto z-popover"
     >
       {loading ? (
         <div className="px-3 py-2 text-xs text-text-tertiary">

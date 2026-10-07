@@ -5,6 +5,7 @@
 import { Component, ReactNode, useEffect } from 'react';
 import i18n from 'i18next';
 import { createLogger } from '@/utils/logger';
+import { eventBus } from '@/services/eventBus';
 
 const log = createLogger('ErrorBoundary');
 
@@ -142,9 +143,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   private saveCurrentState() {
     try {
       // 触发一个事件让其他组件保存状态
-      window.dispatchEvent(new CustomEvent('app:crash-save'));
+      eventBus.emit('app:crash-save', undefined);
     } catch {
-      // 忽略 dispatch 失败的情况
+      // 忽略 emit 失败的情况
     }
   }
 
@@ -156,7 +157,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       }
 
       return (
-        <div className="fixed inset-0 bg-background-base flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-background-base flex items-center justify-center z-modal p-4">
           <div className="max-w-md w-full bg-background-surface rounded-2xl shadow-xl p-8 text-center">
             {/* 错误图标 */}
             <div className="w-16 h-16 mx-auto mb-6 rounded-full bg-danger-faint flex items-center justify-center">
@@ -241,7 +242,7 @@ export function useWhiteScreenDetection(enabled: boolean = true) {
           clearInterval(checkInterval);
 
           // 尝试触发恢复
-          window.dispatchEvent(new CustomEvent('app:recover'));
+          eventBus.emit('app:recover', undefined);
         }
       } else {
         checkCount = 0;

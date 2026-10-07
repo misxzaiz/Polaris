@@ -38,9 +38,9 @@ export function TerminalQuickRunBar({ collapsed, onToggleCollapsed, onOpenRunner
   const runtime = script ? runtimes[script.id] : undefined;
 
   return (
-    <div className="h-9 px-2 shrink-0 border-b border-[#3c3c3c] bg-[#252526] flex items-center gap-2">
+    <div className="h-9 px-2 shrink-0 border-b border-border bg-background-elevated flex items-center gap-2">
       <button
-        className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded"
+        className="h-7 w-7 flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover rounded"
         onClick={onToggleCollapsed}
         title={collapsed ? '展开脚本中心' : '折叠脚本中心'}
       >
@@ -52,7 +52,7 @@ export function TerminalQuickRunBar({ collapsed, onToggleCollapsed, onOpenRunner
       </div>
       <span className="w-12 text-xs text-text-tertiary text-right">{statusLabel(runtime?.status)}</span>
       <button
-        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded disabled:opacity-50"
+        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded disabled:opacity-50"
         disabled={!script || runtime?.status === 'running'}
         onClick={() => script && runScript(script.id)}
         title="运行最近脚本"
@@ -60,7 +60,7 @@ export function TerminalQuickRunBar({ collapsed, onToggleCollapsed, onOpenRunner
         <Play size={13} />运行
       </button>
       <button
-        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded disabled:opacity-50"
+        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded disabled:opacity-50"
         disabled={!script || runtime?.status !== 'running'}
         onClick={() => script && stopScript(script.id)}
         title="停止脚本"
@@ -68,7 +68,7 @@ export function TerminalQuickRunBar({ collapsed, onToggleCollapsed, onOpenRunner
         <Square size={13} />停止
       </button>
       <button
-        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-[#3c3c3c] rounded"
+        className="h-7 px-2 flex items-center gap-1 text-xs text-text-secondary hover:text-text-primary hover:bg-background-hover rounded"
         onClick={onOpenRunner}
         title="快速运行 Ctrl+Shift+R"
       >

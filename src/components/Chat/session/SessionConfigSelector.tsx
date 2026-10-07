@@ -525,7 +525,7 @@ export function SessionConfigSelector({
         'absolute bottom-full left-0 mb-1',
         'bg-background-elevated border border-border rounded-lg shadow-lg',
         'min-w-[180px] max-h-[240px] overflow-y-auto',
-        'z-50 animate-panel-in'
+        'z-popover animate-panel-in'
       )}>
         {items.map((item) => (
           <button
@@ -665,7 +665,7 @@ export function SessionConfigSelector({
       ))}
       {/* 自定义输入浮层 */}
       {customInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/30">
           <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
             <div className="text-xs text-text-secondary mb-2">
               {t('sessionConfig.customInputLabel', { type: selectorMeta[customInput.type].label })}
@@ -813,7 +813,7 @@ export function CompactSessionSelector({
           <ChevronDown size={10} className="opacity-50" />
         </button>
         {openDropdown === 'agent' && (
-          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-50">
+          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-popover">
             {agentList.map(agent => (
               <button
                 key={agent.id}
@@ -855,7 +855,7 @@ export function CompactSessionSelector({
           <ChevronDown size={10} className="opacity-50" />
         </button>
         {openDropdown === 'model' && (
-          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-50">
+          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-popover">
             {PRESET_MODELS.map(model => (
               <button
                 key={model.id}
@@ -881,7 +881,7 @@ export function CompactSessionSelector({
 
       {/* 自定义输入浮层 */}
       {customInput && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+        <div className="fixed inset-0 z-modal flex items-center justify-center bg-black/30">
           <div className="bg-background-elevated border border-border rounded-lg p-4 min-w-[280px] shadow-xl">
             <div className="text-xs text-text-secondary mb-2">
               {t('sessionConfig.customInputLabel', { type: selectorLabels[customInput.type] })}

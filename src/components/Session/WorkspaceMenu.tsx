@@ -116,7 +116,7 @@ export function WorkspaceMenu({ sessionId, anchorEl, onClose }: WorkspaceMenuPro
   const menuContent = (
     <div
       ref={menuRef}
-      className="fixed w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden z-50"
+      className="fixed w-64 bg-background-elevated border border-border rounded-xl shadow-lg overflow-hidden z-popover"
       style={{
         top: `${position.top}px`,
         left: `${position.left}px`,

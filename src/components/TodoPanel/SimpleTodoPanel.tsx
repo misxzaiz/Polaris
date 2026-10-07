@@ -369,7 +369,7 @@ export function SimpleTodoPanel() {
       </div>
 
       {showCreateDialog && (
-        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-overlay flex items-center justify-center z-modal">
           <TodoForm
             mode="create"
             onSubmit={handleCreateTodo}

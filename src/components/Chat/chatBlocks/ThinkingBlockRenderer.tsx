@@ -92,7 +92,7 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
             ? 'border-b border-border last:border-b-0'
             : `my-2 rounded-lg overflow-hidden border transition-colors bg-background-surface ${
                 isStreaming
-                  ? 'bg-[#0f1117]'
+                  ? 'bg-background-base'
                   : 'border-border bg-background-elevated'
               }`
         }

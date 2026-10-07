@@ -86,7 +86,7 @@ export function BlameView({ filePath, workspacePath: workspacePathProp, onClose,
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-surface border border-border-subtle rounded-lg shadow-lg w-[90vw] max-w-[1200px] h-[85vh] flex flex-col">
         {/* 标题栏 */}
         <div className="px-4 py-3 border-b border-border-subtle flex items-center justify-between shrink-0">

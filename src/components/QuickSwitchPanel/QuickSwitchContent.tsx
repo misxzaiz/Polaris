@@ -174,7 +174,7 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
         // 尺寸：更紧凑
         'w-56',
         // 实心背景
-        'bg-[#1A1A1F]',
+        'bg-background-elevated',
         // 边框
         'border border-border/40',
         'rounded-2xl rounded-tr-none',
@@ -476,7 +476,7 @@ const WorkspaceDropdown = memo(function WorkspaceDropdown({
           width: 200,
         }}
         className={cn(
-          'z-50 bg-background-elevated border border-border rounded-xl',
+          'z-popover bg-background-elevated border border-border rounded-xl',
           'shadow-xl overflow-hidden',
           'animate-dialog-in'
         )}

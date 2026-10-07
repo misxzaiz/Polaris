@@ -59,7 +59,7 @@ export function MarkdownImageViewer({ image, onClose }: MarkdownImageViewerProps
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[10000] bg-black/85 backdrop-blur-sm"
+      className="fixed inset-0 z-toast bg-black/85 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       onMouseDown={handleBackdropMouseDown}

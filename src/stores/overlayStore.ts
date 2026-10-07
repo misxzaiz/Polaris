@@ -1,19 +1,15 @@
 /**
- * overlayStore - 浏览器 WebView 覆盖层状态管理
+ * overlayStore - 浮层状态管理
  *
- * 功能：
- *   跟踪当前是否有覆盖层（模态框/面板/弹窗）遮挡内置浏览器，
- *   BrowserPanel 订阅 count > 0 时立即隐藏原生 WebView，
- *   避免 WebView2 始终位于 HTML 内容之上的问题。
- *
- * 使用方式：
- *   - 通用计数器：useOverlayStore.getState().increment() / decrement()
- *   - App.tsx 级面板：setSettingsOpen(true/false) 等自动管理 count
- *   - 或使用 <OverlayGuard> 组件自动管理（Phase 2）
+ * 两层职责：
+ *   1. 计数器（count）：跟踪当前覆盖层数量，BrowserPanel 订阅 count > 0 时
+ *      隐藏原生 WebView（避免 WebView2 始终置顶）。
+ *   2. popover 独占锁（activePopoverId）：同一 z-popover 层的浮层互斥，
+ *      打开新 popover 前自动关闭旧的，避免"DOM 序反压"导致下拉互相盖死。
  *
  * 设计原则：
- *   - 使用计数器而非单一布尔值，支持嵌套覆盖层
- *     （如 CreateSessionModal 内打开 CreateWorkspaceModal）
+ *   - 计数器支持嵌套覆盖层（如 CreateSessionModal 内打开 CreateWorkspaceModal）
+ *   - popover 锁是"建议性"的：组件打开时 claimPopover(id)，旧 id 会被通知关闭
  *   - 非持久化（persist: false），覆盖层状态随应用生命周期
  *   - 引用稳定，setter 可通过 getState() 直接调用，不依赖闭包
  */
@@ -47,6 +43,17 @@ interface OverlayState {
   /** 文件搜索是否钉住（浮窗模式）。跨会话持久化 */
   fileSearchPinned: boolean
   setFileSearchPinned: (v: boolean) => void
+
+  // ── popover 独占锁 ──
+  // 同一 z-popover 层的浮层互斥：打开新 popover 时旧 id 失效。
+  // claim 返回上一次的 id（调用方据此关闭自己）；release 仅在自己是当前持有者时清空。
+
+  /** 当前持有 popover 锁的 id（null = 无 popover 打开） */
+  activePopoverId: string | null
+  /** 认领 popover 锁。返回上一个持有者 id（调用方可通知它关闭）。 */
+  claimPopover: (id: string) => string | null
+  /** 释放 popover 锁（仅当自己是当前持有者时清空，避免被后来的 popover 误清）。 */
+  releasePopover: (id: string) => void
 }
 
 export const useOverlayStore = create<OverlayState>()(
@@ -90,10 +97,24 @@ export const useOverlayStore = create<OverlayState>()(
 
       fileSearchPinned: false,
       setFileSearchPinned: (v) => set({ fileSearchPinned: v }),
+
+      // ── popover 独占锁 ──
+
+      activePopoverId: null,
+      claimPopover: (id) => {
+        const prev = get().activePopoverId
+        set({ activePopoverId: id })
+        return prev
+      },
+      releasePopover: (id) => {
+        if (get().activePopoverId === id) {
+          set({ activePopoverId: null })
+        }
+      },
     }),
     {
       name: 'polaris-overlay',
-      // 仅持久化钉住偏好；会话级状态（count/open）不存
+      // 仅持久化钉住偏好；会话级状态（count/open/popover）不存
       partialize: (s) => ({ fileSearchPinned: s.fileSearchPinned }),
     },
   ),

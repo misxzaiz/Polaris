@@ -243,31 +243,31 @@ export default function MyPanel({ pluginId, onSendToChat }: PluginPanelProps) {
   return (
     <div style={{ padding: 16, display: 'flex', flexDirection: 'column', height: '100%', gap: 12 }}>
       <h3 style={{ margin: 0, fontSize: 14, fontWeight: 600 }}>我的面板</h3>
-      <div style={{ fontSize: 11, color: '#8E8E93' }}>插件: {pluginId}</div>
+      <div style={{ fontSize: 11, color: 'rgb(var(--c-text-tertiary))' }}>插件: {pluginId}</div>
       <textarea
         value={input}
         onChange={(e) => setInput(e.target.value)}
         style={{ flex: 1, minHeight: 80, padding: 8, borderRadius: 6,
-          border: '1px solid #3F3F46', background: '#25252B', color: '#F8F8F8',
+          border: '1px solid rgb(var(--c-border) / 0.25)', background: 'rgb(var(--c-bg-surface))', color: 'rgb(var(--c-text-primary))',
           fontFamily: 'monospace', fontSize: 12 }}
       />
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={() => setOutput(input)}
-          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #3F3F46',
-            background: '#2D2D33', color: '#B4B4B8', fontSize: 12 }}>
+          style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid rgb(var(--c-border) / 0.25)',
+            background: 'rgb(var(--c-bg-hover))', color: 'rgb(var(--c-text-secondary))', fontSize: 12 }}>
           处理
         </button>
         {onSendToChat && (
           <button onClick={() => onSendToChat('处理: ' + input)}
             style={{ padding: '6px 12px', borderRadius: 6, border: 'none',
-              background: '#3B82F6', color: '#fff', fontSize: 12 }}>
+              background: 'rgb(var(--c-primary))', color: 'rgb(var(--c-on-primary))', fontSize: 12 }}>
             发送到聊天
           </button>
         )}
       </div>
       {output && (
-        <pre style={{ padding: 8, borderRadius: 6, border: '1px solid #3F3F46',
-          background: '#25252B', color: '#B4B4B8', fontFamily: 'monospace',
+        <pre style={{ padding: 8, borderRadius: 6, border: '1px solid rgb(var(--c-border) / 0.25)',
+          background: 'rgb(var(--c-bg-surface))', color: 'rgb(var(--c-text-secondary))', fontFamily: 'monospace',
           fontSize: 12, margin: 0, overflow: 'auto' }}>
           {output}
         </pre>

@@ -23,6 +23,7 @@ import type { TransportAdapter } from './types';
 import { getServerUrl } from './auth';
 import { useToastStore } from '@/stores/toastStore';
 import { createLogger } from '@/utils/logger';
+import { eventBus } from '@/services/eventBus';
 import i18n from 'i18next';
 
 const log = createLogger('Transport');
@@ -103,7 +104,7 @@ export const rebuildTransport = rebuildHttpTransport;
 // getServerUrl() 会回退到页面 origin(9827)；发现文件到达后需重建以指向真实后端。
 // 仅 dev + VITE_FORCE_HTTP=1 时该事件会被 auth.ts 派发，线上不受影响。
 if (typeof window !== 'undefined' && import.meta.env.DEV && import.meta.env.VITE_FORCE_HTTP === '1') {
-  window.addEventListener('polaris:dev-discovery-ready', () => {
+  eventBus.on('polaris:dev-discovery-ready', () => {
     rebuildHttpTransport();
     void transport.manualReconnect?.().catch(() => {});
   });

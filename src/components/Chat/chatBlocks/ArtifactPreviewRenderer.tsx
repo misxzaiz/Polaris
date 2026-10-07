@@ -302,7 +302,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
 
     {isFullscreen && createPortal(
       <div
-        className="fixed inset-x-0 bottom-0 z-[60] flex flex-col bg-background-base"
+        className="fixed inset-x-0 bottom-0 z-overlay flex flex-col bg-background-base"
         style={{ top: `${TOPBAR_HEIGHT}px` }}
         role="dialog"
         aria-modal="true"

@@ -154,7 +154,7 @@ export function VoiceCompanionOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex flex-col overflow-hidden"
+      className="fixed inset-0 z-modal flex flex-col overflow-hidden"
       style={{ backgroundColor: 'rgb(var(--c-bg-base))' }} // 显式不透明，不复合 --window-opacity
     >
       {/* aurora 光斑：双层错相漂移，阶段微调色相 */}

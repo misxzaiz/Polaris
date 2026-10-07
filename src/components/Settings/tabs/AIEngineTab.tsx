@@ -271,7 +271,7 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
             </button>
 
             {showMore && (
-              <div className="absolute top-full right-0 mt-1 z-50 bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
+              <div className="absolute top-full right-0 mt-1 z-popover bg-surface border border-border rounded-lg shadow-lg py-1 min-w-[160px]">
                 {overflowEngines.map(engine => {
                   const meta = engineMetadatas.find(m => m.id === engine.id)
                   const status = resolveEngineStatus(engine.id, healthStatus, meta);

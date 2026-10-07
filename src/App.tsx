@@ -52,6 +52,7 @@ import { pluginRegistry } from './plugin-system';
 import { useActiveSessionActions, useActiveSessionStreaming, useActiveSessionError } from './stores/conversationStore/useActiveSession';
 import { useSessionMetadataList, useActiveSessionId } from './stores/conversationStore/sessionStoreManager';
 import { useOverlayStore } from './stores/overlayStore';
+import { eventBus } from './services/eventBus';
 import { getFileNameFromPath } from './utils/path';
 import './index.css';
 import './App.css';
@@ -195,15 +196,12 @@ function App() {
 
   useWorkspaceSync(true);
 
-  // 监听 polaris:open-settings 自定义事件（从 ContextMeter 等组件触发）
+  // 监听 polaris:open-settings 事件（从 ContextMeter 等组件触发）
   useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent).detail as { tab?: string } | undefined
-      setSettingsInitialTab(detail?.tab)
+    return eventBus.on('polaris:open-settings', ({ tab }) => {
+      setSettingsInitialTab(tab)
       useOverlayStore.getState().setSettingsOpen(true)
-    }
-    window.addEventListener('polaris:open-settings', handler)
-    return () => window.removeEventListener('polaris:open-settings', handler)
+    })
   }, [])
 
 // [临时禁用] 进入小屏模式自动关闭左侧面板（最小化后恢复面板消失的根因嫌疑）。
@@ -341,8 +339,9 @@ function App() {
         <div className="flex flex-1 overflow-hidden relative">
           {/* 主布局常驻：对话网格（MultiSessionGrid/Virtuoso 实例）不随设置页开关卸载，
               避免冷启动闪白 + 滚动位置丢失。设置页以层叠方式覆盖在上。
-              showSettings 时 inert 禁用背后交互（Tab 聚焦/点击），防止焦点跳入聊天区。 */}
-          <div className="flex flex-1 overflow-hidden" inert={showSettings}>
+              settingsRendering（含退场动画期）inert 禁用背后交互（Tab 聚焦/点击），
+              防止焦点跳入聊天区；退场结束后才释放。 */}
+          <div className="flex flex-1 overflow-hidden" inert={settingsRendering}>
             <ActivityBar
               onOpenSettings={() => useOverlayStore.getState().setSettingsOpen(true)}
               onToggleRightPanel={toggleRightPanel}
@@ -405,12 +404,15 @@ function App() {
             )}
           </div>
 
-          {/* 设置页层叠覆盖（absolute inset-0，z-50），主布局在下方常驻保活 */}
+          {/* 设置页层叠覆盖（absolute inset-0，z-modal），主布局在下方常驻保活。
+              退场动画期间 inert + aria-hidden，避免退场中的 SettingsPage 仍捕获交互。 */}
           {settingsRendering && (
             <div
-              className={`absolute inset-0 z-50 flex flex-col ${showSettings ? 'animate-panel-in-fast' : 'animate-panel-out'}`}
+              className={`absolute inset-0 z-modal flex flex-col ${showSettings ? 'animate-panel-in-fast' : 'animate-panel-out'}`}
               role="dialog"
               aria-modal="true"
+              inert={!showSettings}
+              aria-hidden={!showSettings}
             >
               <Suspense fallback={loadingFallback}>
                 <SettingsPage
@@ -437,10 +439,9 @@ function App() {
             <CreateSessionModal
               onClose={() => useOverlayStore.getState().setCreateSessionOpen(false)}
               onCreated={() => {
-                // createSession 已切换活跃会话，这里等一帧后请求聚焦输入框
-                requestAnimationFrame(() => {
-                  window.dispatchEvent(new CustomEvent('chat:focus-input'));
-                });
+                // createSession 已切换活跃会话，派发聚焦输入框事件
+                // eventBus 同步派发；ChatInput 监听器内 setTimeout(0) 推迟一拍确保重渲染完成
+                eventBus.emit('chat:focus-input', undefined);
               }}
             />
           </Suspense>

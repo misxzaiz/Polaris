@@ -3,6 +3,7 @@
  */
 
 import { ReactNode } from 'react';
+import { clsx } from 'clsx';
 
 interface LayoutProps {
   children: ReactNode;
@@ -61,14 +62,17 @@ export function Header({ title, children }: HeaderProps) {
 export function Sidebar({ children, className = '', width }: SidebarProps) {
   const widthClass = width ? undefined : 'w-[180px]';
   const style = width ? { width: `${width}px` } : undefined;
+  const resolvedClassName = clsx(
+    'flex flex-col bg-background-elevated border-r border-border shrink-0',
+    widthClass,
+    className,
+  );
 
   return (
     <aside
       data-theme-panel
-      className={`flex flex-col bg-background-elevated border-r border-border shrink-0 ${className}`}
+      className={resolvedClassName}
       style={style}
-      {...(width && { className: className + ' ' + widthClass })}
-      {...(!width && { className: (widthClass || '') + ' ' + className })}
     >
       {children}
     </aside>
@@ -88,14 +92,17 @@ export function Main({ children, className = '' }: MainProps) {
 export function Aside({ children, className = '', width }: AsideProps) {
   const widthClass = width ? undefined : 'w-[280px]';
   const style = width ? { width: `${width}px` } : undefined;
+  const resolvedClassName = clsx(
+    'flex flex-col bg-background-elevated border-l border-border shrink-0',
+    widthClass,
+    className,
+  );
 
   return (
     <aside
       data-theme-panel
-      className={`flex flex-col bg-background-elevated border-l border-border shrink-0 ${className}`}
+      className={resolvedClassName}
       style={style}
-      {...(width && { className: className + ' ' + widthClass })}
-      {...(!width && { className: (widthClass || '') + ' ' + className })}
     >
       {children}
     </aside>

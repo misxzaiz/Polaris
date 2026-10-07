@@ -185,7 +185,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
   // 没有任务路径
   if (!task.taskPath) {
     return (
-      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
         <div className="bg-background-elevated rounded-xl w-[800px] max-h-[85vh] overflow-hidden border border-border-subtle shadow-2xl flex flex-col">
           <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">
             <h2 className="text-lg font-semibold text-text-primary">
@@ -209,7 +209,7 @@ export function ProtocolDocumentViewer({ task, onClose }: ProtocolDocumentViewer
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal">
       <div className="bg-background-elevated rounded-xl w-[900px] h-[85vh] overflow-hidden border border-border-subtle shadow-2xl flex flex-col">
         {/* 头部 */}
         <div className="px-5 py-4 border-b border-border-subtle flex items-center justify-between">

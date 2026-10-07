@@ -133,7 +133,7 @@ export function SessionPreviewModal({ item, onRestore, onFork, onClose }: Sessio
   return (
     <OverlayGuard label="SessionPreviewModal">
       <div
-        className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+        className="fixed inset-0 z-overlay flex items-center justify-center bg-black/50 p-4"
         onClick={onClose}
       >
       <div

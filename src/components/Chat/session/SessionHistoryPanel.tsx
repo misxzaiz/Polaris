@@ -159,7 +159,7 @@ function WorkspaceSelector({
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <div className="absolute top-full left-0 mt-1 z-50 min-w-[140px] max-h-[50vh] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg py-1">
+        <div className="absolute top-full left-0 mt-1 z-popover min-w-[140px] max-h-[50vh] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg py-1">
           {workspaces.map(ws => (
             <button
               key={ws.id}

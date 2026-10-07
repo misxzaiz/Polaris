@@ -87,7 +87,7 @@ export function InputDialog({
   return (
     <OverlayGuard label="InputDialog">
       <div
-        className={`fixed inset-0 flex items-center justify-center z-50 ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
+        className={`fixed inset-0 flex items-center justify-center z-modal ${exiting ? 'animate-mask-out' : 'animate-mask-in'}`}
         style={{ background: 'rgba(0,0,0,0.5)' }}
       >
       <div className={`bg-background-elevated rounded-xl p-4 sm:p-6 w-full max-w-md border border-border shadow-glow ${exiting ? 'animate-dialog-out' : 'animate-dialog-in'}`}>

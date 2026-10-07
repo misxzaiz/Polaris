@@ -562,7 +562,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
     return (
       <div
         ref={panelRef}
-        className="fixed z-50 bg-background-elevated rounded-xl border border-primary/40 shadow-glow overflow-hidden flex flex-col"
+        className="fixed z-popover bg-background-elevated rounded-xl border border-primary/40 shadow-glow overflow-hidden flex flex-col"
         style={{ left: pos.x, top: pos.y, width: 480, maxHeight: '80vh' }}
         onKeyDown={handleKeyDown}
       >
@@ -600,7 +600,7 @@ export function FileSearchModal({ onClose }: FileSearchModalProps) {
   // 未钉住：原模态行为
   return (
     <div
-      className="fixed inset-0 bg-black/50 flex items-start justify-center z-50 pt-[12vh]"
+      className="fixed inset-0 bg-black/50 flex items-start justify-center z-modal pt-[12vh]"
       onClick={handleBackdropClick}
     >
       <div
