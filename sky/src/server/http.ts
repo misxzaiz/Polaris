@@ -7,6 +7,7 @@
  * - GET  /api/health            健康检查
  * - POST /api/config            便捷: 写配置(=dispatch cap.config set)
  * - GET  /api/config            便捷: 读配置
+ * - GET  /                      — 无头占位提示页(前端待重新设计)
  *
  * WebSocket /ws:
  * - 客户端发: { type: 'dispatch', cap, params, stream? }
@@ -22,33 +23,9 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { Router } from './router.ts';
 import type { EventBus } from './eventbus.ts';
 import type { Source } from '../contracts.ts';
-import { SHELL_HTML } from '../web/shell.ts';
-import { shellRegistry } from '../caps/ui/shell-registry.ts';
 import { setUiEmitter, getUiState } from '../caps/ui/state.ts';
 import { abortAiStream } from '../caps/ai.ts';
 import { validatePresentedToken, getAuthRequired, getMasterToken } from './auth.ts';
-
-// Service Worker: Shell 页缓存优先, API/WS 永不缓存 (离线时显示提示页由壳处理)
-const SW_JS = [
-  "const CACHE = 'sky-shell-v' + Date.now(); // 每次 Core 重启都换版本号, 旧缓存自动失效",
-  "self.addEventListener('install', (e) => {",
-  '  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(["/", "/manifest.webmanifest", "/icon.svg"])));',
-  '  self.skipWaiting();',
-  '});',
-  "self.addEventListener('activate', (e) => { e.waitUntil(clients.claim().then(() => caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('sky-shell-v') && k !== CACHE).map((k) => caches.delete(k)))))); });",
-  "self.addEventListener('fetch', (e) => {",
-  '  const url = new URL(e.request.url);',
-  "  if (url.pathname.startsWith('/api') || url.pathname === '/ws') return;",
-  "  if (e.request.mode === 'navigate') {",
-  '    e.respondWith(fetch(e.request).then((r) => {',
-  '      caches.open(CACHE).then((c) => c.put("/", r.clone()));',
-  '      return r;',
-  '    }).catch(() => caches.match("/")));',
-  '    return;',
-  '  }',
-  '  e.respondWith(caches.match(e.request).then((hit) => hit || fetch(e.request)));',
-  '});',
-].join('\n');
 
 export interface ServerOptions {
   port: number;
@@ -77,7 +54,7 @@ export function startServer(
     const source = resolveSource(req);
 
     try {
-      // 强制认证: 未认证 → 401 (静态 Shell 页除外, 它承载登录界面)
+      // 强制认证: 未认证 → 401 (根路径占位页除外, 它承载前端接入说明)
       if (getAuthRequired() && !source.authed && !PUBLIC_PATHS.has(pathname) && pathname !== '/') {
         return json(res, 401, { error: 'unauthorized: valid token required (Authorization: Bearer sk-...)' });
       }
@@ -86,7 +63,7 @@ export function startServer(
       if (pathname === '/api/health' && req.method === 'GET') {
         return json(res, 200, { ok: true, uptime: process.uptime(), caps: router.list().length, authRequired: getAuthRequired(), authed: source.authed === true });
       }
-      // GET /api/auth/verify — Shell 启动时校验本地存储的 token
+      // GET /api/auth/verify — 前端接入时校验持有的 token
       if (pathname === '/api/auth/verify') {
         const identity = source.authed
           ? { ok: true, authRequired: getAuthRequired(), authed: true, authId: source.authId, authName: source.authName, admin: source.admin === true }
@@ -123,39 +100,9 @@ export function startServer(
         const reply = await router.dispatch(body.cap, body.params ?? {}, source);
         return json(res, 200, reply);
       }
-      // 静态 Web Shell(根路径返回 HTML)
+      // 无头占位提示页(前端待重新设计)
       if ((pathname === '/' || pathname === '/index.html') && req.method === 'GET') {
-        return serveShell(res);
-      }
-      // PWA: manifest / service worker / 图标
-      if (pathname === '/manifest.webmanifest' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/manifest+json; charset=utf-8' });
-        res.end(JSON.stringify({
-          name: 'Sky — AI Capability OS',
-          short_name: 'Sky',
-          description: 'AI 对话即全功能的能力 OS',
-          start_url: '/',
-          scope: '/',
-          display: 'standalone',
-          orientation: 'portrait',
-          background_color: '#0d1117',
-          theme_color: '#0d1117',
-          icons: [
-            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
-            { src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'maskable' },
-          ],
-        }));
-        return;
-      }
-      if (pathname === '/sw.js' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Service-Worker-Allowed': '/' });
-        res.end(SW_JS);
-        return;
-      }
-      if (pathname === '/icon.svg' && req.method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
-        res.end('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#0d1117"/><path d="M256 88l42 104 104 42-104 42-42 104-42-104-104-42 104-42z" fill="#58a6ff"/><circle cx="392" cy="120" r="18" fill="#3fb950"/></svg>');
-        return;
+        return servePlaceholder(res, { authRequired: getAuthRequired(), authed: source.authed === true, caps: router.list().length });
       }
 
       return json(res, 404, { error: 'not found', url });
@@ -176,11 +123,8 @@ export function startServer(
     }
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, req));
   });
-  // UI State 变化 → 推给所有连着的 Shell
+  // UI State 变化 → 推送 (前端经 WS 事件订阅)
   setUiEmitter((state) => {
-    for (const info of shellRegistry.list()) {
-      // 推送经 bus 统一走, 这里直接对每个 shell 的 ws 发 ui.update
-    }
     bus.emit({ type: 'ui.update', data: state, ts: Date.now() });
   });
 
@@ -191,7 +135,6 @@ export function startServer(
       return;
     }
     const subId = `ws-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-    let shellId: string | null = null;
     const unsub = bus.subscribe(subId, (event) => {
       send(ws, { type: 'event', event });
     });
@@ -207,15 +150,6 @@ export function startServer(
         } else if (msg.type === 'stream.abort') {
           // 停止生成: 中断对应流的 AI fetch; 结果经 stream.end(aborted) 事件回传
           abortAiStream(String(msg.streamId || ''));
-        } else if (msg.type === 'shell-register') {
-          // Shell 声明自己提供的前端 cap
-          shellId = `shell-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-          shellRegistry.register(shellId, ws, msg.caps ?? []);
-          // 立即推当前 UI State (新连上的 Shell 同步状态)
-          send(ws, { type: 'event', event: { type: 'ui.update', data: getUiState(), ts: Date.now() } });
-        } else if (msg.type === 'shell-invoke-result') {
-          // Shell 回填执行结果
-          if (shellId) shellRegistry.resolveShellInvoke(shellId, msg.reqId, msg.result);
         } else if (msg.type === 'ping') {
           send(ws, { type: 'pong' });
         }
@@ -227,14 +161,12 @@ export function startServer(
 
     ws.on('close', () => {
       unsub();
-      if (shellId) shellRegistry.unregister(shellId);
     });
   });
 
   server.listen(opts.port, () => {
     console.log(`\n  ┌─────────────────────────────────────────────┐`);
     console.log(`  │  Sky preview running                        │`);
-    console.log(`  │  Web Shell:  http://localhost:${opts.port}            │`);
     console.log(`  │  WS:         ws://localhost:${opts.port}/ws            │`);
     console.log(`  │  Caps:       ${router.list().length}                              │`);
     console.log(`  │  Auth:       ${getAuthRequired() ? 'REQUIRED' : (getMasterToken() ? 'optional (master token set)' : 'disabled (local dev)')}`.padEnd(49) + '│');
@@ -276,7 +208,39 @@ function send(ws: WebSocket, obj: unknown): void {
   if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
 }
 
-function serveShell(res: any): void {
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(SHELL_HTML);
+function servePlaceholder(res: any, info: { authRequired: boolean; authed: boolean; caps: number }): void {
+  const authLabel = info.authRequired
+    ? (info.authed ? 'required · authenticated' : 'required · unauthenticated')
+    : 'disabled (local dev)';
+  const html = `<!DOCTYPE html>
+<html lang="zh"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sky — frontend pending</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+         background: #0d1117; color: #c9d1d9; font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .card { max-width: 560px; padding: 32px 40px; border: 1px solid #30363d; border-radius: 12px; background: #161b22; }
+  h1 { font-size: 16px; margin: 0 0 8px; color: #58a6ff; }
+  p { margin: 8px 0; }
+  code { background: #21262d; padding: 1px 6px; border-radius: 4px; font-size: 12px; color: #79c0ff; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid #30363d; }
+  dt { color: #8b949e; }
+  dd { margin: 0; }
+</style>
+</head><body>
+  <div class="card">
+    <h1>Sky — Capability OS</h1>
+    <p>前端已被移除，待重新设计。后端 Core 仍在运行，所有 <code>/api/*</code> 与 <code>ws://</code> 接口照常可用。</p>
+    <dl>
+      <dt>Core</dt><dd>running</dd>
+      <dt>Caps</dt><dd>${info.caps}</dd>
+      <dt>Auth</dt><dd>${authLabel}</dd>
+      <dt>Health</dt><dd><code>GET /api/health</code></dd>
+      <dt>Caps list</dt><dd><code>GET /api/caps</code></dd>
+    </dl>
+  </div>
+</body></html>`;
+  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(html);
 }

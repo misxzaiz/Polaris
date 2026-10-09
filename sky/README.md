@@ -1,16 +1,14 @@
 # Sky — Capability OS
 
-> Polaris 架构契约的 Node + TypeScript 实现。无头 Core（HTTP/WS 常驻服务）+ 浏览器即 Shell。
-> **对话即全功能**：AI 对话是唯一常驻界面，其余一切（页面/面板/可视化）由 AI 现场渲染——桌面悬浮窗、手机底部抽屉、对话内卡片。
+> Polaris 架构契约的 Node + TypeScript 实现。**无头 Core**（HTTP/WS 常驻服务），不捆绑任何前端壳。
+> 前端已被移除、待重新设计；所有能力经统一 `dispatch(capId, params, ctx)` 暴露为 HTTP/WS 接口，任意前端或 AI 客户端可直接对接。
 
-## 设计基线（AI-first 交互原型，2026-10）
+## 设计基线
 
-1. **对话即应用**：内置 UI 只保留 消息流 + 输入区 + 会话抽屉 + 极简设置 sheet。没有传统导航/面板——需要什么界面，对 AI 说，它用 `cap.ui.window` / `cap.ui.component` 现场渲染。
-2. **一切能力通过 cap 注册**：所有能力都是 `Capability` 接口的实现，走统一 `dispatch(capId, params, ctx)` 唯一入口；before/after 拦截器链（permission → audit）可插拔。
-3. **AI 可操作所有 cap**：注册的 cap 自动暴露为 AI 工具（OpenAI function-calling），工具列表每轮刷新。系统提示注入能力 OS 行为契约（渲染界面、编辑文件、自写插件）。
-4. **AI 渲染的 UI 可交互**：`cap.ui.window`（桌面悬浮窗：拖拽/最小化/托盘恢复；≤640px 自动变手机底部抽屉）；`cap.ui.component`（mountPoint: "inline"）渲染进对话流。js 在 `__sky = {dispatch, close, toast}` 受限沙箱执行，CSS 自动作用域。
-5. **手机优先**：断点 640px；软键盘 visualViewport 适配；WS 断线指数退避重连 + 心跳 + 重连后自动恢复会话；PWA 可安装（manifest + service worker）。
-6. **认证**：token 签发/吊销（SHA-256 存储）+ 服务端强制校验（HTTP 401 / WS upgrade 拒绝）+ 密钥脱敏（见下文「认证」）。
+1. **一切能力通过 cap 注册**：所有能力都是 `Capability` 接口的实现，走统一 `dispatch(capId, params, ctx)` 唯一入口；before/after 拦截器链（permission → audit）可插拔。
+2. **AI 可操作所有 cap**：注册的 cap 自动暴露为 AI 工具（OpenAI function-calling），工具列表每轮刷新。系统提示注入能力 OS 行为契约（渲染界面、编辑文件、自写插件）。
+3. **UI 能力是纯后端契约**：`cap.ui.style/theme/layout/component/window` 描述与操作 UI 状态，作为将来前端重接的接口面保留；但无内置前端为其消费。
+4. **认证**：token 签发/吊销（SHA-256 存储）+ 服务端强制校验（HTTP 401 / WS upgrade 拒绝）+ 密钥脱敏（见下文「认证」）。
 
 ## 启动
 
@@ -20,7 +18,7 @@ npm install        # 8 个包，秒装（无原生依赖；better-sqlite3 换成
 npm start          # tsx src/main.ts，冷启 <2s
 ```
 
-访问 `http://localhost:9825`。数据根目录：`%APPDATA%/Polaris-sky/`（Linux `~/.local/share/Polaris-sky/`），env `POLARIS_SKY_DATA_ROOT` 可覆盖。
+访问 `http://localhost:9825`。**前端已移除**：根路径返回占位提示页，所有 `/api/*` 与 `ws://` 接口照常可用，可直接对接你重新设计的新前端。数据根目录：`%APPDATA%/Polaris-sky/`（Linux `~/.local/share/Polaris-sky/`），env `POLARIS_SKY_DATA_ROOT` 可覆盖。
 
 生产环境建议：
 
@@ -43,11 +41,11 @@ node node_modules/tsx/dist/cli.mjs src/main.ts   # 前台运行
 
 开启后：
 
-- 除 `/api/health`、`/api/auth/verify`、Shell 静态页外，所有 HTTP 请求需 `Authorization: Bearer sk-...`（401 拒绝）
+- 除 `/api/health`、`/api/auth/verify`、占位提示页 `/` 外，所有 HTTP 请求需 `Authorization: Bearer sk-...`（401 拒绝）
 - WS 在 HTTP upgrade 阶段拒绝未认证连接
-- 浏览器首次访问弹出登录层，验证通过后 token 存 localStorage
+- 前端接入时自行实现登录层，验证通过后 token 存 localStorage
 
-token 管理（Web Shell → 设置 → 安全，或直接 dispatch）：
+token 管理（直接 dispatch，无 UI 入口）：
 
 | 动作 | 说明 |
 |---|---|
@@ -87,7 +85,7 @@ token 管理（Web Shell → 设置 → 安全，或直接 dispatch）：
 | | `cap.auth` | token 签发/列表/吊销/校验 |
 | UI | `cap.ui.style` / `cap.ui.theme` / `cap.ui.layout` | 样式/主题/布局热更新（CSS 变量） |
 | | `cap.ui.component` | 注入可交互组件（js 执行 + CSS 作用域 + 热更新） |
-| | `cap.ui.snapshot` / `cap.ui.observe` / `cap.ui.chat` | UI 快照/反向观察/AI 改 UI |
+| | `cap.ui.snapshot` / `cap.ui.chat` | UI 快照 / AI 改 UI（契约保留，待新前端消费） |
 | 插件 | `cap.session` | 会话管理（计数/切换/排序） |
 | | `cap.workspace` | 多工作区（任意绝对路径，node:fs 只读树，深度≤2） |
 | | `cap.shell.info` | 平台信息示例插件 |
@@ -126,8 +124,8 @@ GET  /api/config         — 读配置（密钥脱敏）
 POST /api/config         — 写配置（patch）
 GET  /api/ui-state       — UI State 初始同步
 POST /api/dispatch       — { cap, params, stream? } → Reply
-GET  /                   — Web Shell
-WS   /ws?token=          — { type:'dispatch'|'shell-register'|... } / 事件推送
+GET  /                   — 无头占位提示页（前端待重新设计）
+WS   /ws?token=          — { type:'dispatch'|'ping'|... } / 事件推送
 ```
 
 ## 测试
@@ -149,14 +147,13 @@ sky/
 │  ├─ storage.ts            — node:sqlite + DataRoot
 │  ├─ main.ts               — 入口（注册 cap + 拦截器 + 启动 server）
 │  ├─ caps/                 — 业务 cap（echo/kv/bash/config/edit/auth/ai...）
-│  │  ├─ ui/                — UI cap（style/theme/layout/component/observe...）
+│  │  ├─ ui/                — UI 契约 cap（style/theme/layout/component/window...）
 │  ├─ interceptors/         — permission（权限+认证 gate）/ audit
 │  ├─ server/
 │  │  ├─ router.ts          — 唯一入口 dispatch + 拦截器链
 │  │  ├─ http.ts            — HTTP + WS（认证强制）
 │  │  ├─ auth.ts            — 认证状态（master token / 已签发校验）
 │  │  └─ plugin-loader.ts   — plugins/ 扫描装载
-│  └─ web/shell.ts          — Web Shell（单文件模板，无构建）
 ├─ plugins/                 — session / workspace / shell-helper
 └─ scripts/                 — e2e 测试（auth/edit/edit-ai）
 ```
