@@ -750,29 +750,6 @@
     "security2": "Never use the service_role key on the client — it bypasses all RLS.",
     "security3": "The encryption key is stored only in the local config file; losing it means previously encrypted content cannot be decrypted."
   },
-  "dispatch": {
-    "title": "Task Dispatch",
-    "policy": "Dispatch Policy",
-    "policyHint": "Whether AI-initiated dispatch_task requests need your confirmation.",
-    "policyAuto": "Auto execute",
-    "policyAsk": "Ask every time",
-    "autoInject": "Auto-inject results into main session",
-    "autoInjectHint": "When a dispatched task finishes, its summary is injected into the source session next turn.",
-    "presets": "Dispatch Team",
-    "presetsHint": "Predefine role → engine/provider/model/duty combos; AI references them via the role parameter (e.g. /dispatch @tester).",
-    "addPreset": "Add Member",
-    "deletePreset": "Delete",
-    "savePreset": "Save",
-    "presetName": "Role name, e.g. \"tester\"",
-    "presetModel": "Model name (optional)",
-    "presetPrompt": "Duty system prompt (optional)",
-    "officialEndpoint": "Official endpoint",
-    "permissionInherit": "Permission: inherit",
-    "errors": {
-      "nameRequired": "Role name is required",
-      "nameDuplicated": "Role name already exists"
-    }
-  },
   "focus": {
     "title": "Reading Focus Mode",
     "hint": "Reduce visual distraction, focus on current content. Shortcuts Alt+F / Alt+Shift+F",

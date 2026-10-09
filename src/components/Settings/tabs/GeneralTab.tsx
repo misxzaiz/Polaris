@@ -8,7 +8,6 @@ import { useTranslation } from 'react-i18next';
 import { Smartphone, Plug, PlugZap } from 'lucide-react';
 import type { Config } from '@/types';
 import { DataStorageCard } from './DataStorageCard';
-import { DispatchSettingsSection } from './DispatchSettingsSection';
 import { FocusModeSettings } from './FocusModeSettings';
 import { SystemPromptSection } from './SystemPromptSection';
 import { useMobileConnection } from '@/mobile/MobileConnectionContext';
@@ -63,9 +62,6 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
           </div>
         </div>
       </div>
-
-      {/* 派发任务设置 — 策略/结果注入/队员预设 */}
-      <DispatchSettingsSection config={config} onConfigChange={onConfigChange} loading={loading} />
 
       {/* 阅读聚焦模式 — 独立 store，即时生效 */}
       <FocusModeSettings />
