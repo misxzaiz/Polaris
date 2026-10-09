@@ -101,7 +101,7 @@ describe('applyConfig 统一副作用入口', () => {
 })
 
 describe('sessionConfigStore persist 收敛', () => {
-  it('partialize 含 agent/model/effort/permissionMode 及供应商三态', async () => {
+  it('partialize 含 agent/model/effort/permissionMode 及供应商二态', async () => {
     const { useSessionConfig } = await import('@/stores/sessionConfigStore')
     const state = useSessionConfig.getState()
     // 模拟 persist 的 partialize
@@ -112,10 +112,11 @@ describe('sessionConfigStore persist 收敛', () => {
     expect(partial.config).toHaveProperty('model')
     expect(partial.config).toHaveProperty('effort')
     expect(partial.config).toHaveProperty('permissionMode')
-    // 方案 A：持久化供应商三态，状态栏手动选择（Profile/分组/官方）刷新后保留
+    // 持久化供应商二态，状态栏手动选择（Profile/官方）刷新后保留
     expect(partial.config).toHaveProperty('modelProfileId')
     expect(partial.config).toHaveProperty('profileMode')
-    expect(partial.config).toHaveProperty('providerGroupId')
+    // 分组路由已移除，不再持久化 providerGroupId
+    expect(partial.config).not.toHaveProperty('providerGroupId')
   })
 })
 

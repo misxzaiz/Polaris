@@ -1,0 +1,20 @@
+{
+  "name": "sky-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sky frontend — Silent Interface (AI-first, minimal shell)",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "~5.8.3"
+  },
+  "dependencies": {
+    "marked": "^14.0.0",
+    "dompurify": "^3.1.0"
+  }
+}

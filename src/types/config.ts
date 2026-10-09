@@ -433,10 +433,6 @@ export interface Config {
   modelProfiles?: ModelProfile[];
   /** 当前激活的模型 Profile ID（为空时使用官方模型） */
   activeModelProfileId?: string;
-  /** 供应商分组列表（路由 Failover/RoundRobin/Weighted 策略） */
-  providerGroups?: ProviderGroup[];
-  /** 当前激活的供应商分组 ID。None 或指向不存在的分组 → 不启用分组，走单 Profile 旧路径 */
-  activeProviderGroupId?: string;
   /** Skill 读取路径列表（支持全局绝对路径，工作区相对路径由应用层处理） */
   skillPaths?: string[];
   /** 性能与资源管理：各资源密集型功能的开关。
@@ -470,85 +466,6 @@ export interface PerformanceFeatures {
   codeEditorLanguages?: boolean;
   /** 插件服务自动启动（默认关闭） */
   pluginAutoStart?: boolean;
-}
-
-/**
- * 供应商分组路由策略。
- * 对应后端 RouteStrategy 枚举（#[serde(rename_all = "lowercase")]）：
- * - "failover"：主备切换，priority 数字小优先
- * - "roundrobin"：轮询，每次新会话轮转 Profile
- * - "weighted"：加权随机，按 weight 选择
- */
-export type RouteStrategy = 'failover' | 'roundrobin' | 'weighted'
-
-/**
- * 触发 failover 的错误模式。
- * 对应后端 FailoverPattern 枚举（externally tagged）：
- * - { HttpStatus: { code } }：HTTP 状态码命中（code=500 代表 5xx 全段）
- * - "FirstTokenTimeout"：首字超时
- * - "ConnectionRefused"：连接被拒
- * - { StderrContains: { pattern } }：stderr 关键词匹配
- */
-export type FailoverPattern =
-  | { HttpStatus: { code: number } }
-  | 'FirstTokenTimeout'
-  | 'ConnectionRefused'
-  | { StderrContains: { pattern: string } }
-
-/** 分组成员：一个 Profile 在分组中的路由元数据 */
-export interface GroupMember {
-  /** 关联的 ModelProfile ID */
-  profileId: string;
-  /** Failover 策略：数字小优先；同 priority 内轮询 */
-  priority: number;
-  /** Weighted 策略：权重值 */
-  weight: number;
-  /**
-   * 多 Key 池：同一个端点的多个 API Key。
-   * 为空时使用 Profile.apiKey（单 Key 向后兼容）。
-   * 非空时，路由策略在 Key 级别也生效。
-   */
-  keys?: string[];
-  /**
-   * Key 级路由策略。默认 roundrobin。
-   * - roundrobin：新会话轮转 Key
-   * - failover：固定第一个 Key，失败时换下一个
-   * - weighted：按 keyWeights 加权随机采样；未配置权重时退化为等权随机
-   */
-  keyStrategy?: RouteStrategy;
-  /**
-   * Key 级权重，与 keys 对齐。仅 keyStrategy = weighted 时生效。
-   * 长度应与 keys 一致；为空或长度不匹配时回退等权。
-   */
-  keyWeights?: number[];
-}
-
-/** 供应商分组配置 */
-export interface ProviderGroup {
-  /** 唯一 ID */
-  id: string;
-  /** 人可读名称 */
-  name: string;
-  /** 路由策略 */
-  strategy: RouteStrategy;
-  /** 成员列表 */
-  members: GroupMember[];
-  /** 分组默认模型名（可选，不在组内模型并集中则不生效） */
-  defaultModel?: string;
-  /** 分组适用的引擎列表。空数组或未设置 = 适用于所有引擎 */
-  targetEngines?: string[];
-  /** 可选描述文案 */
-  description?: string;
-  /** 供应商分类标签（UI 展示用） */
-  category?: string;
-  /** 触发 failover 的错误模式。空 = 使用后端默认集（401/403/429/5xx/首字超时/连接被拒） */
-  failoverOn: FailoverPattern[];
-  /** spawn 后首字超时秒数。undefined = 不做首字超时检测 */
-  firstTokenTimeoutSecs?: number;
-  /** 最多 failover 次数（防全死循环），默认 3 */
-  maxFailoverAttempts: number;
-  /** 是否启用 */
-  active: boolean;
 }
 
 /** 配置 patch：只包含要更新的顶层字段，null 用于清空可选字段 */

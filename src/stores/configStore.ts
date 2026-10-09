@@ -75,14 +75,6 @@ export async function applyConfig(config: Config): Promise<void> {
       sessionState.setModelProfileId(config.activeModelProfileId);
     }
   }
-  // 分组路由：后端已激活分组时，把全局默认 profileMode 同步为 'group'
-  if (config.activeProviderGroupId && !config.activeModelProfileId) {
-    const { useSessionConfig } = await import('./sessionConfigStore');
-    const sessionState = useSessionConfig.getState();
-    if (!sessionState.config.modelProfileId) {
-      sessionState.setProfileMode('group');
-    }
-  }
 }
 
 interface ConfigState {

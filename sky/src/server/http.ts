@@ -19,6 +19,9 @@
  */
 
 import { createServer, IncomingMessage } from 'node:http';
+import { existsSync, statSync, readFileSync } from 'node:fs';
+import { dirname, join, normalize } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { Router } from './router.ts';
 import type { EventBus } from './eventbus.ts';
@@ -27,13 +30,17 @@ import { setUiEmitter, getUiState } from '../caps/ui/state.ts';
 import { abortAiStream } from '../caps/ai.ts';
 import { validatePresentedToken, getAuthRequired, getMasterToken } from './auth.ts';
 
+// web/dist 静态前端产物路径（src/server/http.ts → sky/web/dist）
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const WEB_DIST = join(__dirname, '../../web/dist');
+
 export interface ServerOptions {
   port: number;
   token?: string;
   authRequired?: boolean;
 }
 
-/** 无需认证即可访问的路径 (认证开启时) */
+/** 无需认证即可访问的路径 (认证开启时) — 前端静态资源放行（承载登录层） */
 const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/verify']);
 
 type RemoteSource = Extract<Source, { kind: 'remote' }>;
@@ -54,8 +61,8 @@ export function startServer(
     const source = resolveSource(req);
 
     try {
-      // 强制认证: 未认证 → 401 (根路径占位页除外, 它承载前端接入说明)
-      if (getAuthRequired() && !source.authed && !PUBLIC_PATHS.has(pathname) && pathname !== '/') {
+      // 强制认证: 未认证 → 401 (根路径与前端静态资源除外, 它们承载登录界面)
+      if (getAuthRequired() && !source.authed && !PUBLIC_PATHS.has(pathname) && pathname !== '/' && !pathname.startsWith('/assets/')) {
         return json(res, 401, { error: 'unauthorized: valid token required (Authorization: Bearer sk-...)' });
       }
 
@@ -100,9 +107,19 @@ export function startServer(
         const reply = await router.dispatch(body.cap, body.params ?? {}, source);
         return json(res, 200, reply);
       }
-      // 无头占位提示页(前端待重新设计)
+      // 前端: web/dist 存在则 serve index.html, 否则占位提示页
       if ((pathname === '/' || pathname === '/index.html') && req.method === 'GET') {
+        if (existsSync(WEB_DIST)) return serveStatic(res, WEB_DIST, 'index.html');
         return servePlaceholder(res, { authRequired: getAuthRequired(), authed: source.authed === true, caps: router.list().length });
+      }
+      // web/dist 内静态资源 (js/css/字体/图标)
+      if (req.method === 'GET' && pathname.startsWith('/assets/')) {
+        if (!existsSync(WEB_DIST)) return json(res, 404, { error: 'frontend not built' });
+        const file = normalize(join(WEB_DIST, pathname));
+        if (file.startsWith(WEB_DIST) && existsSync(file) && statSync(file).isFile()) {
+          return serveStatic(res, WEB_DIST, pathname);
+        }
+        return json(res, 404, { error: 'not found', url });
       }
 
       return json(res, 404, { error: 'not found', url });
@@ -243,4 +260,25 @@ function servePlaceholder(res: any, info: { authRequired: boolean; authed: boole
 </body></html>`;
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(html);
+}
+
+/** 静态文件服务（web/dist） */
+function serveStatic(res: any, dist: string, pathname: string): void {
+  const file = normalize(join(dist, pathname));
+  if (!file.startsWith(dist)) { res.writeHead(403); res.end(); return; }
+  try {
+    const data = readFileSync(file);
+    const type = pathname.endsWith('.html') ? 'text/html; charset=utf-8'
+      : pathname.endsWith('.js') ? 'text/javascript; charset=utf-8'
+      : pathname.endsWith('.css') ? 'text/css; charset=utf-8'
+      : pathname.endsWith('.svg') ? 'image/svg+xml'
+      : pathname.endsWith('.json') ? 'application/json'
+      : pathname.endsWith('.woff') ? 'font/woff'
+      : pathname.endsWith('.woff2') ? 'font/woff2'
+      : 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
+    res.end(data);
+  } catch {
+    res.writeHead(404); res.end('not found');
+  }
 }

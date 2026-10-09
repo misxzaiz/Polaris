@@ -24,10 +24,7 @@ import { LspTab } from './tabs/LspTab';
 import { WebTab } from './tabs/WebTab';
 import { PluginTab } from './tabs/PluginTab';
 import { PersonalHubTab } from './tabs/PersonalHubTab';
-import { ShortcutsTab } from './tabs/ShortcutsTab';
 import { PerformanceTab } from './tabs/PerformanceTab';
-import { RouteLogTab } from './tabs/RouteLogTab';
-import { ProviderStatsTab } from './tabs/ProviderStatsTab';
 import { TokenStatsTab } from './tabs/TokenStatsTab';
 import { createLogger } from '@/utils/logger';
 import { applyWebServer, getConfig } from '@/services/tauri/configService';
@@ -50,18 +47,14 @@ const TAB_TITLE_KEYS: Record<SettingsTabId, string> = {
   'prompt-snippet': 'nav.promptSnippet',
   'ai-engine': 'nav.aiEngine',
   'model-provider': 'nav.modelProvider',
-
   'speech': 'nav.speech',
   'lsp': 'nav.lsp',
-  'shortcuts': 'nav.shortcuts',
   'app-update': 'nav.appUpdate',
   'advanced': 'nav.advanced',
   'web': 'nav.web',
   'personal-hub': 'nav.personalHub',
   'token-stats': 'nav.tokenStats',
   'performance': 'nav.performance',
-  'route-log': 'nav.routeLog',
-  'provider-stats': 'nav.providerStats',
 };
 
 export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
@@ -97,8 +90,8 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
     advanced: ['gitBinPath', 'sessionDir'],
     web: ['web'],
     'personal-hub': ['personalHub'],
-    'ai-engine': ['defaultEngine', 'auxiliaryEngine', 'claudeCode'],
-    'model-provider': ['modelProfiles', 'activeModelProfileId', 'providerGroups', 'activeProviderGroupId'],
+    'ai-engine': ['defaultEngine', 'claudeCode'],
+    'model-provider': ['modelProfiles', 'activeModelProfileId'],
     performance: ['performance', 'perfMigrationDismissed'],
   };
 
@@ -314,10 +307,6 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               <LspTab />
             )}
 
-            {activeTab === 'shortcuts' && (
-              <ShortcutsTab />
-            )}
-
             {activeTab === 'app-update' && (
               <AppUpdateTab />
             )}
@@ -351,14 +340,7 @@ export function SettingsPage({ onClose, initialTab }: SettingsPageProps) {
               />
             )}
 
-            {activeTab === 'route-log' && (
-              <RouteLogTab />
-            )}
-
-            {activeTab === 'provider-stats' && (
-              <ProviderStatsTab />
-            )}
-          </div>
+            </div>
 
           {/* 底部保存按钮 - 支持分组保存 */}
           <div className="px-3 sm:px-6 py-3 sm:py-4 border-t border-border-subtle">

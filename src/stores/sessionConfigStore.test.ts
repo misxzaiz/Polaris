@@ -44,9 +44,15 @@ describe('normalizeSessionConfig', () => {
       modelProfileId: 'profile_abc',
       // P2: 旧持久化数据无 profileMode → 兜底默认 'profile'（modelProfileId 为空即官方，语义与旧行为一致）
       profileMode: 'profile',
-      // DEFAULT_SESSION_CONFIG 为 Required，normalize 补全 providerGroupId（分组路由镜像）
-      providerGroupId: '',
     })
+  })
+
+  it('历史 group 值归一化为 profile（分组路由已移除）', () => {
+    const result = normalizeSessionConfig({
+      profileMode: 'group',
+      modelProfileId: '',
+    })
+    expect(result.profileMode).toBe('profile')
   })
 
   it('保留会话级 modelProfileId（P1 会话绑定）', () => {

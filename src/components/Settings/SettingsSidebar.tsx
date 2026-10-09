@@ -11,7 +11,7 @@ import {
   IconMic,
   IconMessageSquareText,
 } from '../Common/Icons';
-import { BarChart3, Download, Code2, Globe, Blocks, Server, BookOpen, Keyboard, Palette, Gauge, Activity, PieChart } from 'lucide-react';
+import { BarChart3, Download, Code2, Globe, Blocks, Server, BookOpen, Palette, Gauge } from 'lucide-react';
 import { isTauri } from '@/utils/platform';
 import type { ReactNode } from 'react';
 
@@ -23,16 +23,13 @@ export type SettingsTabId =
   | 'model-provider'
   | 'speech'
   | 'lsp'
-  | 'shortcuts'
   | 'app-update'
   | 'plugins'
   | 'advanced'
   | 'web'
   | 'personal-hub'
   | 'token-stats'
-  | 'performance'
-  | 'route-log'
-  | 'provider-stats';
+  | 'performance';
 
 export interface SettingsNavItem {
   id: SettingsTabId;
@@ -57,14 +54,11 @@ const NAV_ITEMS: SettingsNavItem[] = [
 
   { id: 'speech', icon: <IconMic size={16} />, labelKey: 'nav.speech' },
   { id: 'lsp', icon: <Code2 size={16} />, labelKey: 'nav.lsp' },
-  { id: 'shortcuts', icon: <Keyboard size={16} />, labelKey: 'nav.shortcuts' },
   { id: 'plugins', icon: <Blocks size={16} />, labelKey: 'nav.plugins' },
   { id: 'app-update', icon: <Download size={16} />, labelKey: 'nav.appUpdate' },
   { id: 'web', icon: <Globe size={16} />, labelKey: 'nav.web' },
   { id: 'personal-hub', icon: <BookOpen size={16} />, labelKey: 'nav.personalHub' },
   { id: 'performance', icon: <Gauge size={16} />, labelKey: 'nav.performance' },
-  { id: 'route-log', icon: <Activity size={16} />, labelKey: 'nav.routeLog' },
-  { id: 'provider-stats', icon: <PieChart size={16} />, labelKey: 'nav.providerStats' },
   // { id: 'advanced', icon: <IconSettings size={16} />, labelKey: 'nav.advanced' },
 ];
 

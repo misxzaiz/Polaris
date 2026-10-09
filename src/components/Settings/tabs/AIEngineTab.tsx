@@ -1,22 +1,20 @@
 /**
  * AI 引擎配置 Tab
  *
- * 布局：顶部 Tab 栏 + 引擎详情 + 全局设置
+ * 布局：顶部 Tab 栏 + 引擎详情
  * Tab 栏可横向滚动，支持 10+ 引擎。
  * 每个 Tab 显示引擎名称和状态徽章（版本/内置/未安装）。
  * 默认引擎 Tab 带有「默认」标记。
  */
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Bot, ChevronDown } from 'lucide-react';
+import { ChevronDown } from 'lucide-react';
 import { useConfigStore } from '@/stores';
-import { useCliInfoStore } from '@/stores/cliInfoStore';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
 import type { Config, EngineId, HealthStatus } from '@/types';
 import type { EngineMetadata } from '@/types/engineMetadata';
 
 import { EngineExpandDetail } from '../EngineExpandDetail';
-import { GlobalSettingsCard } from '../GlobalSettingsCard';
 
 interface AIEngineTabProps {
   config: Config;
@@ -118,9 +116,7 @@ const MAX_VISIBLE_TABS = 5;
 
 export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProps) {
   const { t } = useTranslation(['settings', 'common']);
-  const { healthStatus, resetCliConfig, refreshHealth } = useConfigStore();
-  const { agents } = useCliInfoStore();
-  const [resetting, setResetting] = useState(false);
+  const { healthStatus, refreshHealth } = useConfigStore();
   const [selectedId, setSelectedId] = useState<EngineId>(config.defaultEngine);
   const [showMore, setShowMore] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
@@ -190,21 +186,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
 
   const handleSetDefault = (engineId: EngineId) => {
     onConfigChange({ ...config, defaultEngine: engineId });
-  };
-
-  const handleSetAuxiliary = (engineId: string) => {
-    onConfigChange({ ...config, auxiliaryEngine: engineId || undefined });
-  };
-
-  const handleResetCliConfig = async () => {
-    const confirmed = window.confirm(t('aiEngine.resetCliConfirm'));
-    if (!confirmed) return;
-    setResetting(true);
-    try {
-      await resetCliConfig();
-    } finally {
-      setResetting(false);
-    }
   };
 
   const selectEngine = (id: EngineId) => {
@@ -321,72 +302,6 @@ export function AIEngineTab({ config, onConfigChange, loading }: AIEngineTabProp
         isDefault={config.defaultEngine === selectedId}
         onSetDefault={() => handleSetDefault(selectedId)}
       />
-
-      {/* ====== 全局设置 ====== */}
-      <GlobalSettingsCard
-        auxiliaryEngine={config.auxiliaryEngine}
-        onAuxiliaryChange={handleSetAuxiliary}
-        onResetCli={handleResetCliConfig}
-        resetting={resetting}
-        loading={loading}
-        engineOptions={engineList}
-        t={t}
-      />
-
-      {/* ====== 可用 Agent 列表 ====== */}
-      {agents.length > 0 && (
-        <div>
-          <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-text-secondary">
-              {t('aiEngine.availableAgents')} ({agents.length})
-            </label>
-          </div>
-          <div className="space-y-1">
-            {agents.filter(a => a.source === 'builtin').length > 0 && (
-              <div>
-                <div className="text-xs text-text-tertiary px-2 py-1">
-                  {t('aiEngine.builtinAgents')}
-                </div>
-                {agents.filter(a => a.source === 'builtin').map(agent => (
-                  <div key={agent.id} className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-background-hover">
-                    <Bot size={14} className="text-blue-400 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-text-primary truncate">{agent.name}</div>
-                      <div className="text-xs text-text-tertiary truncate">{agent.id}</div>
-                    </div>
-                    {agent.defaultModel && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 shrink-0">
-                        {agent.defaultModel}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-            {agents.filter(a => a.source === 'plugin').length > 0 && (
-              <div>
-                <div className="text-xs text-text-tertiary px-2 py-1 mt-1">
-                  {t('aiEngine.pluginAgents')}
-                </div>
-                {agents.filter(a => a.source === 'plugin').map(agent => (
-                  <div key={agent.id} className="flex items-center gap-2 px-3 py-2 rounded-md hover:bg-background-hover">
-                    <Bot size={14} className="text-purple-400 shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-text-primary truncate">{agent.name}</div>
-                      <div className="text-xs text-text-tertiary truncate">{agent.id}</div>
-                    </div>
-                    {agent.defaultModel && (
-                      <span className="text-xs px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-400 shrink-0">
-                        {agent.defaultModel}
-                      </span>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

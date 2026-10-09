@@ -1950,34 +1950,21 @@ export function createConversationStore(
             sessionConfig.modelProfileId,
             getActiveModelProfile()?.id,
           )
-          // P2: 供应商模式解析（官方/分组/指定 Profile 三态）。
-          // 与 modelProfileId 成对解析；official/group 时防御性清空 modelProfileId
-          // （即使残留旧 Profile，也绝不向分组/官方请求携带，防穿透）。
-          //
-          // defaultToGroup 兜底：后端已激活分组（config.activeProviderGroupId）但前端
-          // 全局 profileMode 仍是默认 'profile'（设置页旧版本历史遗留）时，自动补为 group。
-          // 触发条件需「无会话覆盖 + 镜像未显式选官方/group/其它 Profile」，即新会话默认行为。
-          const defaultToGroup = Boolean(
-            config?.activeProviderGroupId &&
-            !sessionMeta?.profileMode
-          )
+          // P2: 供应商模式解析（官方/指定 Profile 二态）。
+          // 与 modelProfileId 成对解析；official 时防御性清空 modelProfileId
+          // （即使残留旧 Profile，也绝不向官方请求携带，防穿透）。
           const profileMode = resolveEffectiveProfileMode(
             sessionMeta?.profileMode,
             sessionConfig.profileMode,
-            defaultToGroup,
           )
           const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
             ? undefined
             : modelProfileId
-          // 分组路由模式下生效的供应商分组 ID：会话级覆盖 > 状态栏镜像 > 全局激活（不传 = 后端回退）。
-          const effectiveProviderGroupId = profileMode === 'group'
-            ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
-            : undefined
           // 当前生效 Profile 的完整配置，用于归一化模型名（见 normalizeModelForProfile）
           const effectiveProfile = getModelProfileById(effectiveProfileId)
           // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
           // Profile 归一化：选了 Profile 但模型是它不认的 Claude 别名（opus/sonnet/haiku）时清空，
-          // 回退 profile.model 默认；官方 API 与分组路由路径 effectiveProfile 为空，别名不受影响。
+          // 回退 profile.model 默认；官方 API 路径 effectiveProfile 为空，别名不受影响。
           const resolvedModel = normalizeModelForProfile(
             sessionMeta?.model ?? runtimeConfig.model,
             effectiveProfile,
@@ -2023,7 +2010,6 @@ export function createConversationStore(
               : undefined,
             modelProfileId: effectiveProfileId,
             profileMode,
-            providerGroupId: effectiveProviderGroupId,
             clientMessageId: userMessage.id,
           }
 
@@ -2169,30 +2155,19 @@ export function createConversationStore(
           sessionConfig.modelProfileId,
           getActiveModelProfile()?.id,
         )
-        // P2: 供应商模式解析（官方/分组/指定 Profile 三态），与 sendMessage 路径一致。
-        // defaultToGroup 兜底：后端已激活分组但前端镜像未同步时自动补 group（见 sendMessage 说明）。
-        const configForMode = config
-        const defaultToGroup = Boolean(
-          configForMode?.activeProviderGroupId &&
-          !sessionMeta?.profileMode
-        )
+        // P2: 供应商模式解析（官方/指定 Profile 二态），与 sendMessage 路径一致。
         const profileMode = resolveEffectiveProfileMode(
           sessionMeta?.profileMode,
           sessionConfig.profileMode,
-          defaultToGroup,
         )
         const effectiveProfileId = isProfileModeWithoutProfile(profileMode)
           ? undefined
           : modelProfileId
-        // 分组路由模式下生效的供应商分组 ID：会话级覆盖 > 状态栏镜像 > 全局激活（不传 = 后端回退）。
-        const effectiveProviderGroupId = profileMode === 'group'
-          ? (sessionMeta?.providerGroupId ?? (sessionConfig.providerGroupId || undefined))
-          : undefined
         // 当前生效 Profile 的完整配置，用于归一化模型名（见 normalizeModelForProfile）
         const effectiveProfile = getModelProfileById(effectiveProfileId)
         // 会话级模型优先，未设置时降级到全局 sessionConfig 解析结果（resolveRuntimeConfigForEngine）。
         // Profile 归一化：选了 Profile 但模型是它不认的 Claude 别名（opus/sonnet/haiku）时清空，
-        // 回退 profile.model 默认；官方 API 与分组路由路径 effectiveProfile 为空，别名不受影响。
+        // 回退 profile.model 默认；官方 API 路径 effectiveProfile 为空，别名不受影响。
         const resolvedModel = normalizeModelForProfile(
           sessionMeta?.model ?? runtimeConfig.model,
           effectiveProfile,
@@ -2224,7 +2199,6 @@ export function createConversationStore(
               })(),
               modelProfileId: effectiveProfileId,
               profileMode,
-              providerGroupId: effectiveProviderGroupId,
             },
           })
         } catch (e) {

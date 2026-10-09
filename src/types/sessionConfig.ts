@@ -43,15 +43,16 @@ export interface CLIModel {
 /**
  * 供应商选择模式
  *
- * 状态栏「模型供应商」选择器的显式三态，配套后端 `ChatRequestOptions.profile_mode`：
- * - `official`：强制官方端点，跳过分组路由、不用 Profile。
- * - `group`：走供应商分组路由（激活分组内按策略选 Profile，失败自动 failover）。
+ * 状态栏「模型供应商」选择器的显式二态，配套后端 `ChatRequestOptions.profile_mode`：
+ * - `official`：强制官方端点，不用 Profile。
  * - `profile`：使用指定 Profile（`modelProfileId` 承载 id）。
  *
- * 未设置（undefined）时走旧逻辑：有 modelProfileId → 该 Profile；
- * 否则若激活了分组 → 分组；否则官方。
+ * 未设置（undefined）时走旧逻辑：有 modelProfileId → 该 Profile；否则官方。
+ *
+ * 历史 `'group'`（供应商分组路由）已随功能移除，持久化数据中的该值在
+ * normalizeSessionConfig 中被归一化为 `'profile'`（modelProfileId 为空即官方，语义安全）。
  */
-export type ProfileMode = 'official' | 'group' | 'profile'
+export type ProfileMode = 'official' | 'profile'
 
 /**
  * 努力级别
@@ -97,11 +98,8 @@ export interface SessionRuntimeConfig {
   permissionMode?: PermissionMode
   /** 模型 Profile ID（第三方端点配置） */
   modelProfileId?: string
-  /** 供应商选择模式（official / group / profile；undefined = 跟随全局旧逻辑） */
+  /** 供应商选择模式（official / profile；undefined = 跟随全局旧逻辑） */
   profileMode?: ProfileMode
-  /** 分组路由模式下选中的供应商分组 ID（会话级/全局镜像）。
-   *  空串或 undefined → 跟随后端 active_provider_group_id（全局激活分组）。 */
-  providerGroupId?: string
 }
 
 /**
@@ -114,7 +112,6 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   permissionMode: 'bypassPermissions',
   modelProfileId: '',
   profileMode: 'profile', // 默认「指定 Profile」语义，保持旧行为（modelProfileId 为空即官方）
-  providerGroupId: '',
 }
 /**
  * 预设 Agent 列表

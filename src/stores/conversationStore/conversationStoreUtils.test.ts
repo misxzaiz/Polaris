@@ -178,47 +178,31 @@ describe('resolveEffectiveProfileId', () => {
 })
 
 /**
- * 供应商选择模式（官方/分组/指定 Profile）三态解析。
+ * 供应商选择模式（官方/指定 Profile）二态解析。
  *
  * 优先级通 resolveEffectiveProfileId：会话级覆盖 > 状态栏镜像。返回 undefined
  * 表示跟随全局旧逻辑（发请求时不带 profileMode 字段，后端 None 向前兼容）。
  */
 describe('resolveEffectiveProfileMode', () => {
   it('会话级覆盖优先生效', () => {
-    expect(resolveEffectiveProfileMode('group', 'profile')).toBe('group')
-    expect(resolveEffectiveProfileMode('official', 'group')).toBe('official')
+    expect(resolveEffectiveProfileMode('official', 'profile')).toBe('official')
     expect(resolveEffectiveProfileMode('profile', undefined)).toBe('profile')
-    // 会话级覆盖优先于 defaultToGroup 兜底
-    expect(resolveEffectiveProfileMode('profile', undefined, true)).toBe('profile')
   })
 
   it('无会话覆盖且镜像非 profile 时跟随状态栏镜像', () => {
-    expect(resolveEffectiveProfileMode(undefined, 'group')).toBe('group')
     expect(resolveEffectiveProfileMode(undefined, 'official')).toBe('official')
     // 镜像兜底默认 'profile'
     expect(resolveEffectiveProfileMode(undefined, 'profile')).toBe('profile')
   })
 
-  it('defaultToGroup 兜底：镜像 profile 且无会话覆盖时自动补 group', () => {
-    expect(resolveEffectiveProfileMode(undefined, 'profile', true)).toBe('group')
-    // 会话覆盖存在时不触发兜底
-    expect(resolveEffectiveProfileMode('profile', 'profile', true)).toBe('profile')
-    // 镜像已是 group/official 时以镜像为准
-    expect(resolveEffectiveProfileMode(undefined, 'group', true)).toBe('group')
-    expect(resolveEffectiveProfileMode(undefined, 'official', true)).toBe('official')
-  })
-
-  it('未设置时返回 undefined（无分组兜底）', () => {
+  it('未设置时返回 undefined', () => {
     expect(resolveEffectiveProfileMode(undefined, undefined)).toBeUndefined()
-    // 有 defaultToGroup 时 undefined → group；否则 undefined
-    expect(resolveEffectiveProfileMode(undefined, undefined, true)).toBe('group')
   })
 })
 
 describe('isProfileModeWithoutProfile', () => {
-  it('official/group 不绑定单 Profile', () => {
+  it('official 不绑定单 Profile', () => {
     expect(isProfileModeWithoutProfile('official')).toBe(true)
-    expect(isProfileModeWithoutProfile('group')).toBe(true)
   })
 
   it('profile 与 undefined 绑定单 Profile（沿用旧逻辑）', () => {

@@ -208,8 +208,8 @@ export interface PromptOptimizeState {
  * 通过依赖注入解耦与全局 Store 的直接依赖
  */
 export interface StoreDeps {
-  /** 获取配置（defaultEngine + activeProviderGroupId，用于会话引擎与分组路由解析） */
-  getConfig: () => { defaultEngine?: string; activeProviderGroupId?: string } | null
+  /** 获取配置（defaultEngine，用于会话引擎解析） */
+  getConfig: () => { defaultEngine?: string } | null
   /** 获取当前会话的工作区 */
   getWorkspace: () => Workspace | null
   /** 获取当前会话的关联工作区 ID 列表 */
@@ -699,20 +699,13 @@ export interface SessionMetadata {
   /** 会话绑定的模型名（如 'sonnet'、'opus'）。undefined 时发送降级到全局 sessionConfig.model。 */
   model?: string
   /**
-   * 会话绑定的供应商选择模式（official/group/profile 三态扩展）。
+   * 会话绑定的供应商选择模式（official/profile 二态）。
    * - `undefined`：未设置 → 发送时跟随全局 sessionConfig.profileMode（旧行为）
-   * - `'official'`：用户明确选「官方 API」→ 强制官方端点（优先于分组与 Profile）
-   * - `'group'`：用户明确选「分组路由」→ 走供应商分组
+   * - `'official'`：用户明确选「官方 API」→ 强制官方端点（优先于 Profile）
    * - `'profile'`：用户明确选某 Profile（配合 modelProfileId）
    * 解析见 resolveEffectiveProfileMode。
    */
   profileMode?: ProfileMode
-  /**
-   * 会话绑定的供应商分组 ID（配合 profileMode='group'）。
-   * - `undefined`/空串：未设置 → 发送时跟随后端全局 active_provider_group_id
-   * - 具体 id：使用该分组（会话级覆盖，优先于全局激活）
-   */
-  providerGroupId?: string
   /**
    * 会话绑定的专家 agent slug（L0 用户显式 persona 覆盖）。
    * - `undefined`：未设置 → 发送时无专家（跟随全局 sessionConfig.agent，通常为空）
@@ -820,18 +813,12 @@ export interface SessionManagerActions {
   updateSessionModelProfile: (sessionId: string, modelProfileId: string | null) => void
   /**
    * 更新会话绑定的供应商选择模式。
-   * - 传具体三态值（official/group/profile）→ 写入会话级覆盖
+   * - 传具体二态值（official/profile）→ 写入会话级覆盖
    * - 传 `null` → 清除会话级覆盖（回到「未设置 → 跟随全局默认」）
    *
-   * official/group 时同步清除会话级 modelProfileId（三态互斥，防残留穿透）。
+   * official 时同步清除会话级 modelProfileId（二态互斥，防残留穿透）。
    */
   updateSessionProfileMode: (sessionId: string, profileMode: import('../../types/sessionConfig').ProfileMode | null) => void
-  /**
-   * 更新会话绑定的供应商分组 ID（配合 profileMode='group'）。
-   * - 传具体分组 id → 写入会话级覆盖（优先于全局 active_provider_group_id）
-   * - 传 `null`/空串 → 清除会话级覆盖（回到「未设置 → 跟随全局激活分组」）
-   */
-  updateSessionProviderGroupId: (sessionId: string, providerGroupId: string | null) => void
   /**
    * 更新会话绑定的模型名。
    * - 传具体模型名或空串 → 写入会话级覆盖

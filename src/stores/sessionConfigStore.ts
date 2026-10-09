@@ -18,18 +18,22 @@ import { DEFAULT_SESSION_CONFIG } from '@/types/sessionConfig'
  * 清洗会话配置：剔除废弃值，并用默认值补全缺失字段。
  * 用于 persist 反序列化（merge）时兜底，兼容旧版本持久化数据。
  * - effort='max' → 回退默认（'max' 已废弃）
+ * - profileMode='group'（供应商分组路由已移除）→ 归一化为 'profile'（modelProfileId 为空即官方）
  * - permissionMode 保留持久化值（默认值已为 bypassPermissions，见 DEFAULT_SESSION_CONFIG）
  */
 export function normalizeSessionConfig(config: SessionRuntimeConfig | undefined): SessionRuntimeConfig {
   const c = config ?? {}
+  // 持久化数据可能含已移除的 'group'（历史遗留），归一化为 'profile'（modelProfileId 为空即官方）。
+  const profileMode: ProfileMode = (c.profileMode as ProfileMode | 'group' | undefined) === 'group'
+    ? 'profile'
+    : (c.profileMode ?? DEFAULT_SESSION_CONFIG.profileMode)
   return {
     ...DEFAULT_SESSION_CONFIG,
     ...c,
     effort: c.effort === 'max' ? DEFAULT_SESSION_CONFIG.effort : c.effort ?? DEFAULT_SESSION_CONFIG.effort,
     permissionMode: c.permissionMode ?? DEFAULT_SESSION_CONFIG.permissionMode,
-    // 旧持久化数据无 profileMode：默认「profile」语义（modelProfileId 为空即官方，
-    // 与旧行为完全一致）；显式 official/group 才区别于旧行为。
-    profileMode: c.profileMode ?? DEFAULT_SESSION_CONFIG.profileMode,
+    // 旧持久化数据无 profileMode：默认「profile」语义（modelProfileId 为空即官方，与旧行为完全一致）。
+    profileMode,
   }
 }
 
@@ -44,7 +48,6 @@ interface SessionConfigState {
   setPermissionMode: (mode: PermissionMode) => void
   setModelProfileId: (profileId: string) => void
   setProfileMode: (mode: ProfileMode) => void
-  setProviderGroupId: (groupId: string) => void
   setConfig: (config: Partial<SessionRuntimeConfig>) => void
   resetConfig: () => void
 }
@@ -81,34 +84,26 @@ export const useSessionConfig = create<SessionConfigState>()(
 
       setModelProfileId: (modelProfileId) =>
         set((state) => {
-          // 空串 / 未传 = 仅清空单 Profile，不改变当前模式（保持 group/official 语义）。
-          //  场景：激活分组后取消勾选单 Profile，不应把 profileMode 强制覆盖回 'profile'。
+          // 空串 / 未传 = 仅清空单 Profile，不改变当前模式（保持 official 语义）。
           if (!modelProfileId) {
             return { config: { ...state.config, modelProfileId: '' } }
           }
-          // 非空 = 选择单 Profile，同步把模式置为 profile（互斥清理，避免「group 却残留 profileId」穿帮）
+          // 非空 = 选择单 Profile，同步把模式置为 profile（互斥清理，避免「official 却残留 profileId」穿帮）
           return { config: { ...state.config, modelProfileId, profileMode: 'profile' } }
         }),
 
-      /** 设置供应商模式（official/group/profile）。
-       *  mode=official|group 时清空 modelProfileId（官方/分组都不绑定单 Profile）；
+      /** 设置供应商模式（official/profile）。
+       *  mode=official 时清空 modelProfileId（官方不绑定单 Profile）；
        *  mode=profile 时保留 modelProfileId（由调用方先 setModelProfileId 或随后设置）。
        */
       setProfileMode: (mode) =>
         set((state) => {
           const next: SessionRuntimeConfig = { ...state.config, profileMode: mode }
-          if (mode === 'official' || mode === 'group') {
+          if (mode === 'official') {
             next.modelProfileId = ''
           }
           return { config: next }
         }),
-
-      /** 设置会话/全局选中的供应商分组 ID（配合 profileMode='group' 使用）。
-       *  不改变 profileMode（由调用方先 setProfileMode 或保持现状）。 */
-      setProviderGroupId: (providerGroupId) =>
-        set((state) => ({
-          config: { ...state.config, providerGroupId },
-        })),
 
       setConfig: (newConfig) =>
         set((state) => ({
@@ -120,12 +115,12 @@ export const useSessionConfig = create<SessionConfigState>()(
     }),
     {
       name: 'polaris-session-config',
-      // 持久化本机会话偏好：agent/model/effort/permissionMode + 供应商三态
-      // （modelProfileId/profileMode/providerGroupId）。
+      // 持久化本机会话偏好：agent/model/effort/permissionMode + 供应商二态
+      // （modelProfileId/profileMode）。
       //
-      // 背景：三字段此前刻意不持久化（派生自 configStore 后端 config.json，由 applyConfig
+      // 背景：两字段此前刻意不持久化（派生自 configStore 后端 config.json，由 applyConfig
       // 注入），但代价是「状态栏手动切换」只存在于内存镜像，刷新即丢。方案 A 将其加回，
-      // 让状态栏手动选择（Profile/分组/官方）刷新后保留。
+      // 让状态栏手动选择（Profile/官方）刷新后保留。
       //
       // 与后端 config.json 的双写一致性由两条路径保证：
       // - 设置页激活（ModelProviderTab.handleActivate）双向同步：写镜像 + 写后端 activeModelProfileId
@@ -139,7 +134,6 @@ export const useSessionConfig = create<SessionConfigState>()(
           permissionMode: state.config.permissionMode,
           modelProfileId: state.config.modelProfileId,
           profileMode: state.config.profileMode,
-          providerGroupId: state.config.providerGroupId,
         }
       }),
       // 反序列化时清洗废弃值（effort='max' / permissionMode='bypassPermissions'），
