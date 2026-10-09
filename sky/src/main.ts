@@ -60,6 +60,7 @@ import { uiComponentCap } from './caps/ui/component.ts';
 import { uiSnapshotCap } from './caps/ui/snapshot.ts';
 import { uiChatCap } from './caps/ui/chat.ts';
 import { createUiWindowCap } from './caps/ui/window.ts';
+import { createFormCap } from './caps/ui/form.ts';
 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -121,6 +122,7 @@ async function main() {
   router.register(uiSnapshotCap);
   router.register(uiChatCap);
   router.register(createUiWindowCap(bus));
+  router.register(createFormCap());
 
   // 5. 加载外部插件 (启动时静态加载)
   const n = await loadPlugins(router, pluginsDir);

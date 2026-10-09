@@ -58,7 +58,7 @@ token 管理（直接 dispatch，无 UI 入口）：
 
 **密钥脱敏**：`cap.config get` 对非 admin 的 remote 来源把 `apiKey/token/secret/password` 类字段遮蔽为 `••••••`；set/patch 收到遮蔽值时自动保留库中真实值（整表保存不会误清密钥）。
 
-## 能力清单（31 个）
+## 能力清单（32 个）
 
 | 层 | Cap | 说明 |
 |---|---|---|
@@ -86,6 +86,7 @@ token 管理（直接 dispatch，无 UI 入口）：
 | UI | `cap.ui.style` / `cap.ui.theme` / `cap.ui.layout` | 样式/主题/布局热更新（CSS 变量） |
 | | `cap.ui.component` | 注入可交互组件（js 执行 + CSS 作用域 + 热更新） |
 | | `cap.ui.snapshot` / `cap.ui.chat` | UI 快照 / AI 改 UI（契约保留，待新前端消费） |
+| | `cap.form` | 表单：拉起 → 提交 → 回执的闭环（create/submit/skip/status；三态 read + secret/hidden 掩码；目标白名单；WS 推 form/form-answered 事件） |
 | 插件 | `cap.session` | 会话管理（计数/切换/排序） |
 | | `cap.workspace` | 多工作区（任意绝对路径，node:fs 只读树，深度≤2） |
 | | `cap.shell.info` | 平台信息示例插件 |
