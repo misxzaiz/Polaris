@@ -444,6 +444,12 @@ pub async fn handle_ipc_bridge(
         "session_update_metadata" => dispatch_session_update_metadata(&args),
         "session_delete" => dispatch_session_delete(&args),
 
+        // ── Session Index（workspace 级投影，S1）───────────────────────────
+        "session_index_register" => dispatch_session_index_register(&args),
+        "session_index_list" => dispatch_session_index_list(&args),
+        "session_index_list_after" => dispatch_session_index_list_after(&args),
+        "session_index_delete" => dispatch_session_index_delete(&args),
+
         // ── History Index ──────────────────────────────────────────────────
         "history_query" => dispatch_history_query(&args),
         "history_search" => dispatch_history_search(&args),
@@ -1794,7 +1800,7 @@ async fn dispatch_scheduler_stop(state: &AppState) -> Result<Json<Value>, WebErr
 
     {
         let mut scheduler_daemon = state.scheduler_daemon.lock().await;
-        if let Some(mut daemon) = scheduler_daemon.take() {
+        if let Some(daemon) = scheduler_daemon.take() {
             daemon.stop().ok();
         }
     }
@@ -1978,7 +1984,7 @@ async fn dispatch_plugin_set_config(
 
 /// Web 模式插件配置权限校验（与 Tauri 命令层逻辑对齐）。
 fn check_plugin_config_permission(
-    state: &AppState,
+    _state: &AppState,
     plugin_id: &str,
     write: bool,
 ) -> Result<(), WebError> {
@@ -2376,6 +2382,71 @@ fn dispatch_session_delete(args: &Value) -> Result<Json<Value>, WebError> {
         .to_string();
     crate::commands::session_state_commands::session_delete_inner(id)
         .map_err(|e| WebError::Internal(format!("session_delete 失败: {}", e)))?;
+    Ok(crate::web::error::ok_response())
+}
+
+// ── Session Index dispatchers（workspace 级投影，S1）───────────────────────
+
+fn dispatch_session_index_register(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_key = args
+        .get("workspaceKey")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("workspaceKey 参数缺失".to_string()))?
+        .to_string();
+    let record: crate::services::session_state::SessionRecord =
+        serde_json::from_value(args.get("record").cloned().unwrap_or(serde_json::Value::Null))
+            .map_err(|e| WebError::BadRequest(format!("record 参数非法: {}", e)))?;
+    let proj = crate::commands::session_state_commands::session_index_register_inner(
+        workspace_key,
+        record,
+    )
+    .map_err(|e| WebError::Internal(format!("session_index_register 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(proj).unwrap()))
+}
+
+fn dispatch_session_index_list(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_key = args
+        .get("workspaceKey")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("workspaceKey 参数缺失".to_string()))?
+        .to_string();
+    let (sessions, last_seq) =
+        crate::commands::session_state_commands::session_index_list_inner(workspace_key)
+            .map_err(|e| WebError::Internal(format!("session_index_list 失败: {}", e)))?;
+    Ok(Json(serde_json::json!({ "sessions": sessions, "lastSeq": last_seq })))
+}
+
+fn dispatch_session_index_list_after(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_key = args
+        .get("workspaceKey")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("workspaceKey 参数缺失".to_string()))?
+        .to_string();
+    let after_seq = args
+        .get("afterSeq")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| WebError::BadRequest("afterSeq 参数缺失".to_string()))?;
+    let sessions = crate::commands::session_state_commands::session_index_list_after_inner(
+        workspace_key,
+        after_seq,
+    )
+    .map_err(|e| WebError::Internal(format!("session_index_list_after 失败: {}", e)))?;
+    Ok(Json(serde_json::json!({ "sessions": sessions })))
+}
+
+fn dispatch_session_index_delete(args: &Value) -> Result<Json<Value>, WebError> {
+    let workspace_key = args
+        .get("workspaceKey")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("workspaceKey 参数缺失".to_string()))?
+        .to_string();
+    let session_id = args
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("sessionId 参数缺失".to_string()))?
+        .to_string();
+    crate::commands::session_state_commands::session_index_delete_inner(workspace_key, session_id)
+        .map_err(|e| WebError::Internal(format!("session_index_delete 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
 }
 

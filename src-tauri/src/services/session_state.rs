@@ -6,6 +6,7 @@
 //! - **仲裁**：`request_start` / `request_interrupt`（running 则拒绝 start）
 //! - **对账**：`reconcile` 比对前端快照与后端日志（missing / extra / statusMismatch）
 //! - **Session Registry**：`session_records` 表，会话元数据 + messageIds + version CAS
+//! - **会话投影**：`sessions_index` 表（workspace 级权威列表，供跨端/多窗口同步）
 //!
 //! 表结构对齐前端（`src/session-v2/core/types.ts`）：
 //! ```text
@@ -22,7 +23,19 @@
 //!   version,                       -- CAS 乐观锁
 //!   created_at, updated_at
 //! )
+//! sessions_index(
+//!   workspace_key TEXT,            -- workspace 分桶（identity ?? path，由前端显式传入）
+//!   session_id TEXT,               -- 前端会话 ID（= session_records.id）
+//!   conversation_id TEXT,          -- 引擎会话 ID（可为空）
+//!   title, status('idle'|'running'|'error'|'none'),
+//!   seq, updated_at, engine_id, workspace_id, last_error, started_by_device,
+//!   created_at,                   -- PRIMARY KEY (workspace_key, session_id)
+//! )
 //! ```
+//!
+//! ⚠️ **版本号纪律**：本库与 `session_db`（消息库）共用同一 `messages.db` 文件，
+//! 各自独立用 `PRAGMA user_version` 判版本并删库重建。因此**任何新增表禁止触
+//! 版本号升级**，一律用 `CREATE TABLE IF NOT EXISTS` 幂等补建（`ensure_index_schema`）。
 
 use std::fs;
 use std::path::Path;
@@ -65,6 +78,26 @@ CREATE TABLE IF NOT EXISTS session_records (
   created_at            INTEGER NOT NULL,
   updated_at            INTEGER NOT NULL
 );
+
+-- 会话投影（workspace 级权威列表）：阶段 S1 新增，幂等补建（不升 SCHEMA_VERSION，
+-- 见模块头「版本号纪律」）。seq 为该 workspace 内会话变更序号，跨端按 seq 增量同步。
+CREATE TABLE IF NOT EXISTS sessions_index (
+  workspace_key     TEXT NOT NULL,          -- workspace 分桶 key（identity ?? path）
+  session_id        TEXT NOT NULL,          -- 前端会话 ID（= session_records.id）
+  conversation_id   TEXT,                   -- 引擎会话 ID（首次发消息后才有）
+  title             TEXT NOT NULL DEFAULT '',
+  status            TEXT NOT NULL DEFAULT 'none',  -- 'idle'|'running'|'error'|'none'
+  seq               INTEGER NOT NULL,       -- workspace 内变更序号（跨端因果序）
+  updated_at        INTEGER NOT NULL,
+  engine_id         TEXT NOT NULL DEFAULT '',
+  workspace_id      TEXT,
+  last_error        TEXT,
+  started_by_device TEXT,
+  created_at        INTEGER NOT NULL,
+  PRIMARY KEY (workspace_key, session_id)
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_index_ws_seq
+  ON sessions_index(workspace_key, seq);
 "#;
 
 /// 会话事件类型（对齐前端 `SessionEventType`）
@@ -114,6 +147,33 @@ pub struct SessionStatus {
     pub started_at: Option<i64>,
     pub ended_at: Option<i64>,
     pub started_by_device: Option<String>,
+}
+
+/// 会话投影条目（workspace 级权威列表，S1 新增；对齐前端 `SessionProjection`）
+///
+/// `seq` 为该 workspace 内的变更序号：列表变更（upsert/delete）单调递增，
+/// 跨端按 `seq` 做增量同步（`list_after`）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionProjection {
+    /// workspace 分桶 key（identity ?? path）
+    pub workspace_key: String,
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation_id: Option<String>,
+    pub title: String,
+    /// 'idle' | 'running' | 'error' | 'none'
+    pub status: String,
+    pub seq: i64,
+    pub updated_at: i64,
+    pub engine_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub workspace_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_by_device: Option<String>,
+    pub created_at: i64,
 }
 
 /// 对账结果（对齐前端 `ReconcileResult`）
@@ -192,9 +252,39 @@ impl SessionStateDb {
                 .map_err(|e| AppError::StateError(format!("写入 schema 版本失败: {}", e)))?;
         }
 
+        // 幂等补建会话投影表（S1 新增；不升版本号，避免与 session_db 版本检查互删）
+        Self::ensure_index_schema(&conn)?;
+
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// 幂等补建 `sessions_index` 投影表（不升 SCHEMA_VERSION）。
+    ///
+    /// 本库与消息库共用同一 DB 文件，各自用 `PRAGMA user_version` 判版本并删库重建，
+    /// 因此投影表必须「无论版本号多少都存在」，且对已存在库零副作用。
+    fn ensure_index_schema(conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS sessions_index (
+               workspace_key     TEXT NOT NULL,
+               session_id        TEXT NOT NULL,
+               conversation_id   TEXT,
+               title             TEXT NOT NULL DEFAULT '',
+               status            TEXT NOT NULL DEFAULT 'none',
+               seq               INTEGER NOT NULL,
+               updated_at        INTEGER NOT NULL,
+               engine_id         TEXT NOT NULL DEFAULT '',
+               workspace_id      TEXT,
+               last_error        TEXT,
+               started_by_device TEXT,
+               created_at        INTEGER NOT NULL,
+               PRIMARY KEY (workspace_key, session_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_sessions_index_ws_seq
+               ON sessions_index(workspace_key, seq);",
+        )
+        .map_err(|e| AppError::StateError(format!("补建会话投影表失败: {}", e)))
     }
 
     fn tune_pragmas(conn: &Connection) -> Result<()> {
@@ -235,6 +325,11 @@ impl SessionStateDb {
                 ],
             )
             .map_err(|e| AppError::StateError(format!("追加事件失败: {}", e)))?;
+        drop(conn); // 释放锁后再刷新投影（refresh 需重新锁 conn）
+        // 新事件 → 刷新投影状态（running/idle/error 与事件日志一致；幂等跳过则不动）
+        if affected > 0 {
+            self.refresh_index_for_conversation(&event.conversation_id)?;
+        }
         Ok(affected > 0)
     }
 
@@ -252,7 +347,7 @@ impl SessionStateDb {
         device_id: &str,
         timestamp: i64,
     ) -> Result<Option<String>> {
-        let mut conn = self.conn.lock().unwrap();
+        let conn = self.conn.lock().unwrap();
         // Immediate 事务：开启即抢写锁。双设备并发时后到者在此等待（busy_timeout），
         // 前者的「检查 + 写入」原子完成后，后到者重读到 running → 被拒。
         // deferred 事务会先读后写，读检查不拿写锁 → 两请求都可能通过检查再写 → 双 start。
@@ -348,6 +443,9 @@ impl SessionStateDb {
         .map_err(|e| AppError::StateError(format!("写入仲裁占位事件失败: {}", e)))?;
         conn.execute_batch("COMMIT")
             .map_err(|e| AppError::StateError(format!("提交仲裁事务失败: {}", e)))?;
+        drop(conn); // 释放锁后再刷新投影（refresh 需重新锁 conn）
+        // 占位成功 → 刷新投影状态为 running（跨端可见）
+        self.refresh_index_for_conversation(conversation_id)?;
         Ok(None)
     }
 
@@ -481,6 +579,285 @@ impl SessionStateDb {
         let conn = self.conn.lock().unwrap();
         conn.execute("DELETE FROM session_records WHERE id = ?1", params![id])
             .map_err(|e| AppError::StateError(format!("删除会话记录失败: {}", e)))?;
+        Ok(())
+    }
+
+    // ==========================================================================
+    // 会话投影（sessions_index：workspace 级权威列表）
+    // ==========================================================================
+    //
+    // 语义：
+    // - workspace_key 由前端显式传入（identity ?? path），后端不做猜测。
+    // - seq 为 workspace 内变更序号（MAX+1，Mutex 内串行安全），跨端按 seq 增量同步。
+    // - 事件流自动驱动投影状态：append_event / try_start_conversation 成功后刷新。
+    // - 投影可重建（派生数据），不升 SCHEMA_VERSION。
+
+    fn row_to_projection(r: &rusqlite::Row) -> rusqlite::Result<SessionProjection> {
+        Ok(SessionProjection {
+            workspace_key: r.get(0)?,
+            session_id: r.get(1)?,
+            conversation_id: r.get(2)?,
+            title: r.get(3)?,
+            status: r.get(4)?,
+            seq: r.get(5)?,
+            updated_at: r.get(6)?,
+            engine_id: r.get(7)?,
+            workspace_id: r.get(8)?,
+            last_error: r.get(9)?,
+            started_by_device: r.get(10)?,
+            created_at: r.get(11)?,
+        })
+    }
+
+    /// 生成投影条目（从 SessionRecord + 实时状态计算；不落库，供注册/刷新组装）
+    fn build_projection(
+        &self,
+        workspace_key: &str,
+        record: &SessionRecord,
+        status: Option<&SessionStatus>,
+        seq: i64,
+        updated_at: i64,
+    ) -> Result<SessionProjection> {
+        let status = match status {
+            Some(s) => s,
+            None => &self.compute_status(record.conversation_id.as_deref().unwrap_or(""))?,
+        };
+        let status_str = if status.running {
+            "running"
+        } else if status.error.is_some() {
+            "error"
+        } else if record.conversation_id.is_some() {
+            "idle"
+        } else {
+            "none"
+        };
+        Ok(SessionProjection {
+            workspace_key: workspace_key.to_string(),
+            session_id: record.id.clone(),
+            conversation_id: record.conversation_id.clone(),
+            title: record.title.clone(),
+            status: status_str.to_string(),
+            seq,
+            updated_at,
+            engine_id: record.engine_id.clone(),
+            workspace_id: record.workspace_id.clone(),
+            last_error: status.error.clone(),
+            started_by_device: status.started_by_device.clone(),
+            created_at: record.created_at,
+        })
+    }
+
+    /// 分配 workspace 内下一个投影 seq（全表 MAX+1，Mutex 内串行安全）
+    fn next_index_seq(&self, conn: &Connection) -> Result<i64> {
+        conn.query_row::<i64, _, _>("SELECT COALESCE(MAX(seq), 0) FROM sessions_index", [], |r| r.get(0))
+            .map(|max| max + 1)
+            .map_err(|e| AppError::StateError(format!("读取投影 seq 失败: {}", e)))
+    }
+
+    /// 写入（upsert）一个投影条目（调用方已持锁）。
+    ///
+    /// seq 由调用方在同一锁作用域内分配（`next_index_seq` + 1），保证原子。
+    /// 返回 seq。投影是派生数据，失败可下次刷新自愈。
+    fn upsert_projection_conn(
+        conn: &Connection,
+        projection: &SessionProjection,
+    ) -> Result<i64> {
+        let seq = projection.seq;
+        conn.execute(
+            "INSERT INTO sessions_index
+               (workspace_key, session_id, conversation_id, title, status,
+                seq, updated_at, engine_id, workspace_id, last_error, started_by_device, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+             ON CONFLICT(workspace_key, session_id) DO UPDATE SET
+               conversation_id = excluded.conversation_id,
+               title = excluded.title,
+               status = excluded.status,
+               seq = excluded.seq,
+               updated_at = excluded.updated_at,
+               engine_id = excluded.engine_id,
+               workspace_id = excluded.workspace_id,
+               last_error = excluded.last_error,
+               started_by_device = excluded.started_by_device",
+            params![
+                projection.workspace_key,
+                projection.session_id,
+                projection.conversation_id,
+                projection.title,
+                projection.status,
+                seq,
+                projection.updated_at,
+                projection.engine_id,
+                projection.workspace_id,
+                projection.last_error,
+                projection.started_by_device,
+                projection.created_at,
+            ],
+        )
+        .map_err(|e| AppError::StateError(format!("写入会话投影失败: {}", e)))?;
+        Ok(seq)
+    }
+
+    /// 写入（upsert）一个投影条目（自动加锁）。
+    fn upsert_projection(&self, projection: &SessionProjection) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        Self::upsert_projection_conn(&conn, projection)
+    }
+
+    /// 删除投影条目（幂等）；删除也分配新 seq（跨端删除可见）。
+    pub fn delete_index_entry(&self, workspace_key: &str, session_id: &str) -> Result<i64> {
+        let conn = self.conn.lock().unwrap();
+        let seq = self.next_index_seq(&conn)?;
+        conn.execute(
+            "DELETE FROM sessions_index WHERE workspace_key = ?1 AND session_id = ?2",
+            params![workspace_key, session_id],
+        )
+        .map_err(|e| AppError::StateError(format!("删除会话投影失败: {}", e)))?;
+        Ok(seq)
+    }
+
+    /// 读取某 workspace 的全量投影（按 seq 升序），附带当前最大 seq。
+    pub fn list_index(&self, workspace_key: &str) -> Result<(Vec<SessionProjection>, i64)> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT workspace_key, session_id, conversation_id, title, status, seq, updated_at,
+                        engine_id, workspace_id, last_error, started_by_device, created_at
+                   FROM sessions_index WHERE workspace_key = ?1
+                  ORDER BY seq ASC",
+            )
+            .map_err(|e| AppError::StateError(format!("准备投影列表语句失败: {}", e)))?;
+        let rows = stmt
+            .query_map(params![workspace_key], Self::row_to_projection)
+            .map_err(|e| AppError::StateError(format!("查询会话投影失败: {}", e)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| AppError::StateError(format!("读取投影行失败: {}", e)))?);
+        }
+        let last_seq = conn
+            .query_row("SELECT COALESCE(MAX(seq), 0) FROM sessions_index", [], |r| r.get(0))
+            .map_err(|e| AppError::StateError(format!("读取投影最大 seq 失败: {}", e)))?;
+        Ok((out, last_seq))
+    }
+
+    /// 读取某 workspace 在 `after_seq` 之后的投影增量（用户态 resync 数据源）。
+    pub fn list_index_after(&self, workspace_key: &str, after_seq: i64) -> Result<Vec<SessionProjection>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT workspace_key, session_id, conversation_id, title, status, seq, updated_at,
+                        engine_id, workspace_id, last_error, started_by_device, created_at
+                   FROM sessions_index WHERE workspace_key = ?1 AND seq > ?2
+                  ORDER BY seq ASC",
+            )
+            .map_err(|e| AppError::StateError(format!("准备投影增量语句失败: {}", e)))?;
+        let rows = stmt
+            .query_map(params![workspace_key, after_seq], Self::row_to_projection)
+            .map_err(|e| AppError::StateError(format!("查询投影增量失败: {}", e)))?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row.map_err(|e| AppError::StateError(format!("读取投影增量行失败: {}", e)))?);
+        }
+        Ok(out)
+    }
+
+    /// 按会话 ID 读取单条投影（供事件流刷新状态用）。
+    fn get_index_entry(&self, workspace_key: &str, session_id: &str) -> Result<Option<SessionProjection>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT workspace_key, session_id, conversation_id, title, status, seq, updated_at,
+                        engine_id, workspace_id, last_error, started_by_device, created_at
+                   FROM sessions_index WHERE workspace_key = ?1 AND session_id = ?2",
+            )
+            .map_err(|e| AppError::StateError(format!("准备投影读取语句失败: {}", e)))?;
+        let row = stmt
+            .query_row(params![workspace_key, session_id], Self::row_to_projection)
+            .optional()
+            .map_err(|e| AppError::StateError(format!("读取会话投影失败: {}", e)))?;
+        Ok(row)
+    }
+
+    /// 注册（upsert）一个会话到投影。幂等：已存在则按新数据覆盖并递增 seq。
+    ///
+    /// 这是「新建会话 → 前端同步投影」的唯一入口；状态（running/error）由事件流自动刷新，
+    /// 此处以 record 元数据为准（若 record 无 conversation_id，则状态为 none）。
+    pub fn register_index(&self, workspace_key: &str, record: &SessionRecord) -> Result<SessionProjection> {
+        let now = chrono::Utc::now().timestamp_millis();
+        // 实时计算状态（有 conversation_id 时）；无则按「未开始」处理
+        let status = if let Some(conv) = record.conversation_id.as_deref() {
+            self.compute_status(conv)?
+        } else {
+            SessionStatus {
+                conversation_id: record.conversation_id.clone().unwrap_or_default(),
+                running: false,
+                last_event_seq: 0,
+                error: None,
+                started_at: None,
+                ended_at: None,
+                started_by_device: None,
+            }
+        };
+        let conn = self.conn.lock().unwrap();
+        let seq = self.next_index_seq(&conn)?;
+        drop(conn);
+        let projection = self.build_projection(workspace_key, record, Some(&status), seq, now)?;
+        self.upsert_projection(&projection)?;
+        Ok(projection)
+    }
+
+    /// 事件流自动刷新：按 conversation_id 反查所有 workspace 中挂在该会话的投影行，
+    /// 以最新状态（compute_status）upsert 回去。append_event / try_start_conversation
+    /// 成功后调用，保证跨端看到的 running/error/idle 始终与事件日志一致。
+    pub fn refresh_index_for_conversation(&self, conversation_id: &str) -> Result<()> {
+        // 找出所有挂在该 conversation 的 (workspace_key, session_id)
+        let rows: Vec<(String, String)> = {
+            let conn = self.conn.lock().unwrap();
+            let mut stmt = conn
+                .prepare(
+                    "SELECT workspace_key, session_id FROM sessions_index
+                      WHERE conversation_id = ?1",
+                )
+                .map_err(|e| AppError::StateError(format!("准备投影反查语句失败: {}", e)))?;
+            let rows = stmt
+                .query_map(params![conversation_id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+                .map_err(|e| AppError::StateError(format!("查询投影反查失败: {}", e)))?;
+            let mut out = Vec::new();
+            for row in rows {
+                out.push(row.map_err(|e| AppError::StateError(format!("读取投影反查行失败: {}", e)))?);
+            }
+            out
+        };
+        let status = self.compute_status(conversation_id)?;
+        for (ws_key, session_id) in rows {
+            // 读取该行现有元数据，重组后 upsert（保留 title/engine_id/workspace_id/created_at）
+            let existing = self.get_index_entry(&ws_key, &session_id)?;
+            let Some(existing) = existing else { continue };
+            let now = chrono::Utc::now().timestamp_millis();
+            let conn = self.conn.lock().unwrap();
+            let seq = self.next_index_seq(&conn)?;
+            drop(conn);
+            let projection = SessionProjection {
+                workspace_key: ws_key.clone(),
+                session_id: existing.session_id,
+                conversation_id: existing.conversation_id,
+                title: existing.title,
+                status: if status.running {
+                    "running".to_string()
+                } else if status.error.is_some() {
+                    "error".to_string()
+                } else {
+                    "idle".to_string()
+                },
+                seq,
+                updated_at: now,
+                engine_id: existing.engine_id,
+                workspace_id: existing.workspace_id,
+                last_error: status.error.clone(),
+                started_by_device: status.started_by_device.clone(),
+                created_at: existing.created_at,
+            };
+            self.upsert_projection(&projection)?;
+        }
         Ok(())
     }
 
@@ -730,6 +1107,7 @@ pub fn compute_status_from_events(conversation_id: &str, events: &[SessionEventE
             SessionEventType::SessionEnd => {
                 if last_start.is_some() {
                     last_end = Some(e);
+                    last_error = None; // 配对完成：此前的错误告一段落（错误由 end 本身推导）
                 }
             }
             SessionEventType::Error => {
@@ -741,12 +1119,13 @@ pub fn compute_status_from_events(conversation_id: &str, events: &[SessionEventE
     let running = last_start.is_some() && last_end.is_none();
 
     let error = last_error
-        .map(|e| e.error_message.clone())
-        .flatten()
+        .and_then(|e| e.error_message.clone())
+        .or_else(|| {
+            last_error.map(|_| "会话出错".to_string()) // Error 事件无 message 时兜底
+        })
         .or_else(|| {
             last_end
-                .map(|e| e.error_message.clone())
-                .flatten()
+                .and_then(|e| e.error_message.clone())
         })
         .or_else(|| {
             if last_end.map(|e| e.reason.as_deref()) == Some(Some("error")) {
@@ -1045,6 +1424,17 @@ mod tests {
     }
 
     #[test]
+    fn compute_status_error_without_message_still_sets_error() {
+        let (_tmp, db) = setup_db();
+        // error 事件不带 error_message：仍应推导出 error（兜底），投影不会回退 idle
+        db.append_event(&make_event("E1", "conv-1", SessionEventType::Error, 2000, "dev-A", 2))
+            .unwrap();
+        let s = db.compute_status("conv-1").unwrap();
+        assert!(!s.running);
+        assert_eq!(s.error.as_deref(), Some("会话出错"));
+    }
+
+    #[test]
     fn compute_status_end_with_error_reason() {
         let (_tmp, db) = setup_db();
         db.append_event(&make_event("E1", "conv-1", SessionEventType::SessionStart, 1000, "dev-A", 1))
@@ -1205,5 +1595,141 @@ mod tests {
 
         assert!(db.get_record("S1").unwrap().is_none());
         assert!(db.get_record("S2").unwrap().is_some());
+    }
+
+    // ==========================================================================
+    // 会话投影（sessions_index）
+    // ==========================================================================
+
+    #[test]
+    fn index_register_and_list_roundtrip() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        let proj = db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        assert_eq!(proj.session_id, "S1");
+        assert_eq!(proj.workspace_key, "ws-A");
+        assert_eq!(proj.status, "idle");
+        assert_eq!(proj.seq, 1);
+
+        let (sessions, last_seq) = db.list_index("ws-A").unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(last_seq, 1);
+        // 其他 workspace 不可见
+        let (other, _) = db.list_index("ws-B").unwrap();
+        assert!(other.is_empty());
+    }
+
+    #[test]
+    fn index_register_is_idempotent_upsert() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        let mut rec2 = make_record("S1", Some("conv-1"));
+        rec2.title = "改标题".to_string();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        let proj = db.register_index("ws-A", &rec2).unwrap();
+        assert_eq!(proj.title, "改标题");
+        let (sessions, last_seq) = db.list_index("ws-A").unwrap();
+        assert_eq!(sessions.len(), 1);
+        assert_eq!(last_seq, 2); // 第二次注册分配了新 seq
+        assert_eq!(sessions[0].seq, 2);
+    }
+
+    #[test]
+    fn index_delete_allocates_seq_and_removes() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        let seq = db.delete_index_entry("ws-A", "S1").unwrap();
+        assert_eq!(seq, 2);
+        let (sessions, last_seq) = db.list_index("ws-A").unwrap();
+        assert!(sessions.is_empty());
+        assert_eq!(last_seq, 2);
+    }
+
+    #[test]
+    fn index_list_after_returns_incremental() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        db.create_record(&make_record("S2", Some("conv-2"))).unwrap();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        db.register_index("ws-A", &make_record("S2", Some("conv-2"))).unwrap();
+        db.delete_index_entry("ws-A", "S1").unwrap();
+
+        // after_seq=1 → 只剩 S2 的 upsert（S1 的删除仅消耗 seq，无删除行）
+        let after = db.list_index_after("ws-A", 1).unwrap();
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].session_id, "S2");
+    }
+
+    #[test]
+    fn index_status_follows_event_stream() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "idle");
+
+        // session_start 事件 → 投影状态变为 running
+        db.append_event(&make_event("E1", "conv-1", SessionEventType::SessionStart, 1000, "dev-A", 1))
+            .unwrap();
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "running");
+        assert_eq!(
+            db.get_index_entry("ws-A", "S1").unwrap().unwrap().started_by_device.as_deref(),
+            Some("dev-A")
+        );
+
+        // session_end 事件 → 回到 idle
+        db.append_event(&make_event("E2", "conv-1", SessionEventType::SessionEnd, 2000, "dev-A", 2))
+            .unwrap();
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "idle");
+
+        // error 事件 → error（即使无 error_message 也兜底）
+        db.append_event(&make_event("E3", "conv-1", SessionEventType::Error, 3000, "dev-A", 3))
+            .unwrap();
+        let p = db.get_index_entry("ws-A", "S1").unwrap().unwrap();
+        assert_eq!(p.status, "error");
+        assert!(p.last_error.is_some());
+    }
+
+    #[test]
+    fn index_refresh_only_updates_matching_conversation() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        db.create_record(&make_record("S2", Some("conv-2"))).unwrap();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        db.register_index("ws-A", &make_record("S2", Some("conv-2"))).unwrap();
+
+        db.append_event(&make_event("E1", "conv-1", SessionEventType::SessionStart, 1000, "dev-A", 1))
+            .unwrap();
+        let p1 = db.get_index_entry("ws-A", "S1").unwrap().unwrap();
+        let p2 = db.get_index_entry("ws-A", "S2").unwrap().unwrap();
+        assert_eq!(p1.status, "running");
+        assert_eq!(p2.status, "idle");
+    }
+
+    #[test]
+    fn index_try_start_marks_running() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", Some("conv-1"))).unwrap();
+        db.register_index("ws-A", &make_record("S1", Some("conv-1"))).unwrap();
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "idle");
+
+        // try_start（事务化占位）→ 投影 running
+        let reason = db.try_start_conversation("conv-1", "dev-A", 1000).unwrap();
+        assert!(reason.is_none());
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "running");
+
+        // 再次 try_start → 拒绝（已 running），投影保持 running
+        let reason2 = db.try_start_conversation("conv-1", "dev-B", 2000).unwrap();
+        assert!(reason2.is_some());
+        assert_eq!(db.get_index_entry("ws-A", "S1").unwrap().unwrap().status, "running");
+    }
+
+    #[test]
+    fn index_register_no_conversation_is_none_status() {
+        let (_tmp, db) = setup_db();
+        db.create_record(&make_record("S1", None)).unwrap();
+        let proj = db.register_index("ws-A", &make_record("S1", None)).unwrap();
+        assert_eq!(proj.status, "none");
+        assert!(proj.conversation_id.is_none());
     }
 }

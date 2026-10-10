@@ -18,7 +18,7 @@ use crate::error::Result;
 use crate::services::data_root::data_root;
 use crate::services::session_db::MessageEntry;
 use crate::services::session_state::{
-    SessionEventEntry, SessionRecord, SessionStateDb, SessionStatus,
+    SessionEventEntry, SessionProjection, SessionRecord, SessionStateDb, SessionStatus,
 };
 
 /// 会话状态库全局单例（懒初始化，与消息库同文件）
@@ -205,6 +205,38 @@ pub fn session_delete_inner(id: String) -> Result<()> {
     db()?.delete_record(&id)
 }
 
+// ── 会话投影（sessions_index，workspace 级权威列表）────────────────────────
+
+/// 注册（upsert）一个会话到投影。幂等；返回写入后的投影条目。
+/// 这是「新建会话 → 前端同步投影」的唯一入口。
+pub fn session_index_register_inner(
+    workspace_key: String,
+    record: SessionRecord,
+) -> Result<SessionProjection> {
+    db()?.register_index(&workspace_key, &record)
+}
+
+/// 读取某 workspace 的全量投影快照（附带当前最大 seq，供订阅/轮询起点）。
+pub fn session_index_list_inner(
+    workspace_key: String,
+) -> Result<(Vec<SessionProjection>, i64)> {
+    db()?.list_index(&workspace_key)
+}
+
+/// 读取某 workspace 在 after_seq 之后的投影增量（gap repair / 轮询数据源）。
+pub fn session_index_list_after_inner(
+    workspace_key: String,
+    after_seq: i64,
+) -> Result<Vec<SessionProjection>> {
+    db()?.list_index_after(&workspace_key, after_seq)
+}
+
+/// 删除投影条目（幂等；不删 session_records，仅从 workspace 列表移除）。
+pub fn session_index_delete_inner(workspace_key: String, session_id: String) -> Result<()> {
+    db()?.delete_index_entry(&workspace_key, &session_id)?;
+    Ok(())
+}
+
 // ============================================================================
 // Tauri commands（桌面端）
 // ============================================================================
@@ -312,6 +344,36 @@ pub fn session_update_metadata(
 #[tauri::command]
 pub fn session_delete(id: String) -> Result<()> {
     session_delete_inner(id)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn session_index_register(
+    workspace_key: String,
+    record: SessionRecord,
+) -> Result<SessionProjection> {
+    session_index_register_inner(workspace_key, record)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn session_index_list(workspace_key: String) -> Result<(Vec<SessionProjection>, i64)> {
+    session_index_list_inner(workspace_key)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn session_index_list_after(
+    workspace_key: String,
+    after_seq: i64,
+) -> Result<Vec<SessionProjection>> {
+    session_index_list_after_inner(workspace_key, after_seq)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn session_index_delete(workspace_key: String, session_id: String) -> Result<()> {
+    session_index_delete_inner(workspace_key, session_id)
 }
 
 // ============================================================================

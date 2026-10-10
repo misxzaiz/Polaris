@@ -1222,6 +1222,10 @@ pub fn run() {
             commands::session_state_commands::session_append_message,
             commands::session_state_commands::session_update_metadata,
             commands::session_state_commands::session_delete,
+            commands::session_state_commands::session_index_register,
+            commands::session_state_commands::session_index_list,
+            commands::session_state_commands::session_index_list_after,
+            commands::session_state_commands::session_index_delete,
             // 会话历史索引（统一时间线 / 全文搜索 / 标注）
             commands::history_index::history_query,
             commands::history_index::history_search,
