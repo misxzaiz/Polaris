@@ -73,7 +73,6 @@ export function getToolGroup(panelType: string): ToolGroupId {
       return 'integrations'
     case 'developer':
     case 'demoPlugin':
-    case 'pluginPreview':
       return 'developer'
     default:
       return 'system'

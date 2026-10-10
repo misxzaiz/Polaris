@@ -28,8 +28,8 @@ use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::router::{
-    audit_sink, ContextCapability, EventAdapter, FileAuditSink, FsCapability, HttpCapability,
-    PolicyPermission, RouterBus, TodoCapability,
+    audit_sink, BashCapability, ContextCapability, EventAdapter, FileAuditSink, FsCapability,
+    HttpCapability, PolicyPermission, RouterBus, TodoCapability,
 };
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
@@ -75,6 +75,9 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         // cap.fs —— 文件系统只读访问（list / getFileInfo / exists）。
         // AI 经 bus_dispatch 读取应用数据文件/工作区结构；Remote 由策略 deny。
         let _ = router.register_handle(Box::new(FsCapability));
+        // cap.bash —— 宿主级 shell 命令执行（与 DISPATCH_WHITELIST、工具描述对齐；
+        // 曾因缺失导致 bus_dispatch 报"能力未注册: cap.bash"）
+        let _ = router.register_handle(Box::new(BashCapability::new()));
         let _ = router.register_handle(Box::new(crate::services::router::ContextCapability::new(
             Arc::new(std::sync::Mutex::new(ContextMemoryStore::new())),
         )));

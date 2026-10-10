@@ -42,8 +42,6 @@ function getToolDescription(panelType: string): string | undefined {
       return 'AI 执行记录与来源概览'
     case 'demoPlugin':
       return '示例插件面板'
-    case 'pluginPreview':
-      return '插件预览开发页（iframe 沙盒，隔离加载 panel.js）'
     default:
       return undefined
   }
@@ -63,16 +61,6 @@ export function useToolSwitcherItems({
   const panelButtons = pluginRegistry
     .listViewContributions('activityBar')
     .filter((view) => isPluginUiEnabled(pluginStates, view.pluginId))
-    .concat([{
-      id: 'pluginPreview.panel',
-      pluginId: 'polaris.core',
-      area: 'activityBar' as const,
-      panelType: 'pluginPreview',
-      icon: 'Beaker' as const,
-      labelKey: 'labels.pluginPreview',
-      labelDefault: 'Plugin Preview',
-      order: 85,
-    }])
 
   const activePanel = panelButtons.find((btn) => btn.panelType === leftPanelType)
   const activePanelLabel = leftPanelType !== 'none' && activePanel

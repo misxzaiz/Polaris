@@ -198,7 +198,6 @@ export function LeftPanelContent({
   integrationContent,
   demoPluginContent,
   aiConsoleContent,
-  pluginPreviewContent,
   currentType,
 }: {
   filesContent: ReactNode
@@ -214,7 +213,6 @@ export function LeftPanelContent({
   integrationContent?: ReactNode
   demoPluginContent?: ReactNode
   aiConsoleContent?: ReactNode
-  pluginPreviewContent?: ReactNode
   currentType?: LeftPanelType
 }) {
   // Hook 必须在条件之外调用
@@ -236,7 +234,6 @@ export function LeftPanelContent({
     integration: integrationContent,
     demoPlugin: demoPluginContent,
     aiConsole: aiConsoleContent,
-    pluginPreview: pluginPreviewContent,
   }
 
   // 内建面板命中 → 渲染对应内容
