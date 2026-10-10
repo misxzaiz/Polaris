@@ -3,6 +3,8 @@
   "private": true,
   "version": "10.6.4",
   "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:watch": "tsc --noEmit --watch",
     "dev": "vite",
     "dev:http": "node scripts/dev-http.mjs",
     "build": "vite build",

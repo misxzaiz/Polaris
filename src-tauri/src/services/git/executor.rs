@@ -4,7 +4,7 @@
  */
 
 use git2::Repository;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::models::git::{GitDiscoveredRepo, GitServiceError};
 

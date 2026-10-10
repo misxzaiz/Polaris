@@ -35,7 +35,7 @@ use crate::models::plugin::{
 };
 use crate::services::plugin_service::PluginService;
 use crate::services::plugin_service_manager::{
-    PluginServiceManager, ServiceStatus, StartContext,
+    PluginServiceManager, StartContext,
 };
 
 const CAP_ID: &str = "cap.pluginServiceManager";

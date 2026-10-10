@@ -28,7 +28,7 @@ use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::router::{
-    audit_sink, BashCapability, ContextCapability, EventAdapter, FileAuditSink, FsCapability,
+    audit_sink, BashCapability, EventAdapter, FileAuditSink, FsCapability,
     HttpCapability, PolicyPermission, RouterBus, TodoCapability,
 };
 

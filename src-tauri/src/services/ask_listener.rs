@@ -22,7 +22,7 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
-use crate::services::form_core::{merge_template_defaults, FormTemplate};
+use crate::services::form_core::merge_template_defaults;
 use crate::services::form_flow;
 use crate::services::form_template as form_tpl;
 use crate::state::{
@@ -1240,7 +1240,6 @@ async fn handle_cap_list_frame(
         ));
     }
 
-    use crate::contracts::Router as _;
     let capabilities = state.router.described_capabilities();
     let reply = json!({
         "type": "cap_list_result",

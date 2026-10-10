@@ -36,7 +36,7 @@ pub(crate) use bash::detect_shell;
 use bash::BashTool;
 #[cfg(feature = "tauri-app")]
 use browser::BrowserTool;
-pub(crate) use file_state::{FileStateRegistry, file_mtime_ms};
+pub(crate) use file_state::FileStateRegistry;
 use fs::{EditFileTool, ListDirectoryTool, ReadFileTool, WriteFileTool};
 use plan::UpdatePlanTool;
 use search::{GlobTool, SearchFilesTool};

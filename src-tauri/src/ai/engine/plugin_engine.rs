@@ -733,7 +733,7 @@ impl PluginEngineRunner {
         &self,
         mut child: Child,
         session_id: String,
-        pid: u32,
+        _pid: u32,
         options: SessionOptions,
         initial_prompt: Option<String>,
     ) -> std::sync::mpsc::Sender<String> {
@@ -1073,7 +1073,7 @@ impl AIEngine for PluginEngineRunner {
         }
     }
 
-    fn start_session(&mut self, message: &str, mut options: SessionOptions) -> Result<String> {
+    fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
         let engine_id = self.config.id.clone();
         tracing::info!("[PluginEngine:{}] 启动会话，消息长度: {}", engine_id, message.len());
 
@@ -1132,7 +1132,7 @@ impl AIEngine for PluginEngineRunner {
         Ok(temp_id)
     }
 
-    fn continue_session(&mut self, session_id: &str, message: &str, mut options: SessionOptions) -> Result<()> {
+    fn continue_session(&mut self, session_id: &str, message: &str, options: SessionOptions) -> Result<()> {
         let engine_id = self.config.id.clone();
         tracing::info!("[PluginEngine:{}] 继续会话: {}", engine_id, session_id);
 

@@ -5,7 +5,6 @@
  */
 
 use std::fmt::Debug;
-use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;

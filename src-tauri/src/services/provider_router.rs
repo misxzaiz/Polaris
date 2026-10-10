@@ -244,7 +244,7 @@ impl ProviderRouter {
         &self,
         group: &ProviderGroup,
         tried: &[TriedPair],
-        profiles: &[ModelProfile],
+        _profiles: &[ModelProfile],
         healthy_profile_ids: &std::collections::HashSet<String>,
     ) -> Option<RouteSelection> {
         let ordered = group.ordered_members();
@@ -327,7 +327,7 @@ impl ProviderRouter {
     async fn weighted_initial(
         &self,
         members: &[&GroupMember],
-        profiles: &[ModelProfile],
+        _profiles: &[ModelProfile],
     ) -> Option<RouteSelection> {
         let total: u32 = members.iter().map(|m| m.weight.max(1)).sum();
         if total == 0 {

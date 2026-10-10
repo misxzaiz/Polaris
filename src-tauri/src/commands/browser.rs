@@ -1281,7 +1281,7 @@ fn capture_browser_screenshot(
         .get_window("main")
         .ok_or_else(|| AppError::ValidationError("主窗口不存在，无法截图".to_string()))?;
     let scale_factor = window.scale_factor().unwrap_or(1.0);
-    let position = window
+    let _position = window
         .outer_position()
         .map_err(|e| AppError::ProcessError(format!("读取窗口位置失败: {e}")))?;
 

@@ -10,7 +10,6 @@
  * 实际的 MCP 桥接在 Consumer 适配阶段完成。
  */
 
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::capabilities::{

@@ -11,7 +11,7 @@ use crate::models::git::{
     DiffChangeType, GitDiffEntry, GitDiffStatusHint, GitServiceError,
 };
 use super::executor::open_repository;
-use super::utils::{is_binary_by_extension, is_binary_bytes, MAX_INLINE_DIFF_BYTES};
+use super::utils::{is_binary_by_extension, is_binary_bytes};
 
 /// 文件 Diff 内容
 ///
@@ -245,7 +245,7 @@ fn get_diff_content(
         if !oid.is_zero() {
             match repo.find_blob(oid) {
                 Ok(blob) => {
-                    if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
+                    if blob.is_binary() {
                         Some(None)
                     } else {
                         Some(
@@ -270,7 +270,7 @@ fn get_diff_content(
         if !oid.is_zero() {
             match repo.find_blob(oid) {
                 Ok(blob) => {
-                    if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
+                    if blob.is_binary() {
                         Some(None)
                     } else {
                         Some(
@@ -292,23 +292,19 @@ fn get_diff_content(
                     Some(None)
                 } else {
                     let metadata = std::fs::metadata(&full_path);
-                    if let Ok(meta) = metadata {
-                        if meta.len() > MAX_INLINE_DIFF_BYTES as u64 {
-                            Some(None)
-                        } else {
-                            match std::fs::read(&full_path) {
-                                Ok(bytes) => {
-                                    if is_binary_bytes(&bytes) {
-                                        Some(None)
-                                    } else {
-                                        std::str::from_utf8(&bytes)
-                                            .ok()
-                                            .map(|s| s.to_string())
-                                            .map(Some)
-                                    }
+                    if metadata.is_ok() {
+                        match std::fs::read(&full_path) {
+                            Ok(bytes) => {
+                                if is_binary_bytes(&bytes) {
+                                    Some(None)
+                                } else {
+                                    std::str::from_utf8(&bytes)
+                                        .ok()
+                                        .map(|s| s.to_string())
+                                        .map(Some)
                                 }
-                                Err(_) => Some(None),
                             }
+                            Err(_) => Some(None),
                         }
                     } else {
                         Some(None)
@@ -350,7 +346,7 @@ fn get_diff_head_to_workdir_direct(
         if let Ok(entry) = head_tree.get_path(std::path::Path::new(file_path)) {
             let obj = entry.to_object(repo)?;
             if let Some(blob) = obj.as_blob() {
-                if blob.size() > MAX_INLINE_DIFF_BYTES || blob.is_binary() {
+                if blob.is_binary() {
                     Some(None)
                 } else {
                     Some(
@@ -375,25 +371,21 @@ fn get_diff_head_to_workdir_direct(
             Some(None)
         } else {
             let metadata = std::fs::metadata(&full_path);
-            if let Ok(meta) = metadata {
-                if meta.len() > MAX_INLINE_DIFF_BYTES as u64 {
-                    Some(None)
-                } else {
-                    match std::fs::read(&full_path) {
-                        Ok(bytes) => {
-                            let is_bin = is_binary_bytes(&bytes);
-                            if is_bin {
-                                Some(None)
-                            } else {
-                                Some(
-                                    std::str::from_utf8(&bytes)
-                                        .ok()
-                                        .map(|s| s.to_string()),
-                                )
-                            }
+            if metadata.is_ok() {
+                match std::fs::read(&full_path) {
+                    Ok(bytes) => {
+                        let is_bin = is_binary_bytes(&bytes);
+                        if is_bin {
+                            Some(None)
+                        } else {
+                            Some(
+                                std::str::from_utf8(&bytes)
+                                    .ok()
+                                    .map(|s| s.to_string()),
+                            )
                         }
-                        Err(_) => Some(None),
                     }
+                    Err(_) => Some(None),
                 }
             } else {
                 Some(None)
@@ -471,10 +463,7 @@ fn get_diff_index_to_workdir(
             let id = entry.id;
             debug!("暂存区找到文件条目，blob id: {:?}", id);
             if let Ok(blob) = repo.find_blob(id) {
-                if blob.size() > MAX_INLINE_DIFF_BYTES {
-                    debug!("暂存区内容超过大小限制");
-                    Some(None)
-                } else if blob.is_binary() {
+                if blob.is_binary() {
                     debug!("暂存区内容为二进制");
                     Some(None)
                 } else {
@@ -508,7 +497,7 @@ fn get_diff_index_to_workdir(
                 Ok(bytes) => {
                     let is_bin = is_binary_bytes(&bytes);
                     debug!("从文件系统读取工作区内容成功，字节长度: {}", bytes.len());
-                    if is_bin || bytes.len() > MAX_INLINE_DIFF_BYTES {
+                    if is_bin {
                         Some(None)
                     } else {
                         let content =

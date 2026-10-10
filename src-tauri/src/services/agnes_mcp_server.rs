@@ -752,7 +752,11 @@ mod tests {
 
     #[test]
     fn exposes_expected_tools() {
-        let listed = handle_tools_list();
+        let handler = AgnesMcpHandler {
+            config_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+            client: build_http_client().expect("http client"),
+        };
+        let listed = handler.tools_list();
         let tools = listed["tools"].as_array().unwrap();
         assert_eq!(tools.len(), 5);
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
@@ -765,9 +769,15 @@ mod tests {
 
     #[test]
     fn initialize_returns_protocol_metadata() {
-        let value = handle_initialize();
-        assert_eq!(value["protocolVersion"], Value::String(PROTOCOL_VERSION.to_string()));
-        assert_eq!(value["serverInfo"]["name"], Value::String(SERVER_NAME.to_string()));
+        // initialize 响应由 mcp_server_common::handle_request 构造，
+        // 这里验证常量与 handler 元数据的一致性。
+        let handler = AgnesMcpHandler {
+            config_dir: PathBuf::from(env!("CARGO_MANIFEST_DIR")),
+            client: build_http_client().expect("http client"),
+        };
+        assert_eq!(PROTOCOL_VERSION, "2024-11-05");
+        assert_eq!(handler.server_name(), SERVER_NAME);
+        assert_eq!(handler.server_version(), SERVER_VERSION);
     }
 
     #[test]

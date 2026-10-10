@@ -12,22 +12,18 @@
  * 提供统一的 AI 聊天接口，使用 EngineRegistry 管理多种 AI 引擎。
  */
 
-use serde::{Deserialize, Serialize};
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ai::{
-    ClaudeHistoryProvider, PluginHistoryProvider,
-    HistoryMessage, SessionHistoryProvider,
-    SessionMeta, launcher::{self, McpSessionConfig, McpConfigParams},
+    launcher::{self, McpSessionConfig, McpConfigParams},
 };
-use crate::ai::{EngineId, ImageAttachment, PagedResult, Pagination, SessionOptions};
+use crate::ai::{EngineId, ImageAttachment, SessionOptions};
 use crate::error::{AppError, Result};
 use crate::models::AIEvent;
 use crate::state::{PendingQuestion, QuestionAnswer, QuestionOption, QuestionStatus};
 
-use crate::services::proxy::ProxyWireApi;
 use crate::models::config::{FailoverPattern, ProfileMode, ProviderGroup, RouteStrategy};
 use crate::services::{FailoverError, ProviderRouter, RouteLogEntry, RouteLogKind, RouteSelection, TriedPair};
 
@@ -1333,7 +1329,7 @@ pub async fn start_chat_inner(
         }
 
         // 本回合用的 opts：从 base Clone，让 Profile 特定字段覆盖
-        let mut session_opts_for_this_attempt = session_opts.clone();
+        let session_opts_for_this_attempt = session_opts.clone();
 
         // 切入点 A 失败门控（应用 Profile 参数失败）
         let session_opts_for_this_attempt = match apply_model_profile_options(

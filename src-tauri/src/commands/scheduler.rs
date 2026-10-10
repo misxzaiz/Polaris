@@ -542,7 +542,7 @@ pub fn spawn_scheduler_health_monitor(app: AppHandle) {
             // 1. 丢弃失效的守护进程实例（stop 幂等，任务已退出时为空操作）
             {
                 let mut guard = state.scheduler_daemon.lock().await;
-                if let Some(mut dead) = guard.take() {
+                if let Some(dead) = guard.take() {
                     dead.stop().ok();
                 }
             }
@@ -610,7 +610,7 @@ pub async fn scheduler_stop(app: AppHandle) -> Result<SchedulerStatus> {
     {
         let state = app.state::<crate::AppState>();
         let mut scheduler_daemon = state.scheduler_daemon.lock().await;
-        if let Some(mut daemon) = scheduler_daemon.take() {
+        if let Some(daemon) = scheduler_daemon.take() {
             daemon.stop()?;
             tracing::info!("[Scheduler] 守护进程已停止");
         }

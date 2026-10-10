@@ -574,8 +574,6 @@ fn execute_ph_list(arguments: &Value, client: &PhClient) -> Result<Value> {
 }
 
 fn execute_ph_create(arguments: &Value, client: &PhClient) -> Result<Value> {
-    ensure_auth(client)?;
-
     let title = arguments
         .get("title")
         .and_then(Value::as_str)
@@ -597,6 +595,8 @@ fn execute_ph_create(arguments: &Value, client: &PhClient) -> Result<Value> {
             )));
         }
     }
+
+    ensure_auth(client)?;
 
     let mut body = json!({
         "title": title,
@@ -644,14 +644,14 @@ fn execute_ph_create(arguments: &Value, client: &PhClient) -> Result<Value> {
 }
 
 fn execute_ph_get(arguments: &Value, client: &PhClient) -> Result<Value> {
-    ensure_auth(client)?;
-
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|i| !i.is_empty())
         .ok_or_else(|| AppError::ValidationError("id 不能为空".to_string()))?;
+
+    ensure_auth(client)?;
 
     let query_refs: [(&str, &str); 1] = [("select", "*")];
     let result = client.get(&format!("links?id=eq.{}", id), &query_refs)?;
@@ -753,14 +753,14 @@ fn execute_ph_update(arguments: &Value, client: &PhClient) -> Result<Value> {
 }
 
 fn execute_ph_delete(arguments: &Value, client: &PhClient) -> Result<Value> {
-    ensure_auth(client)?;
-
     let id = arguments
         .get("id")
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|i| !i.is_empty())
         .ok_or_else(|| AppError::ValidationError("id 不能为空".to_string()))?;
+
+    ensure_auth(client)?;
 
     client.delete(&format!("links?id=eq.{}", id))?;
 
@@ -786,20 +786,18 @@ mod tests {
 
     #[test]
     fn initialize_returns_protocol_metadata() {
-        let value = handle_initialize();
-        assert_eq!(
-            value["protocolVersion"],
-            Value::String(PROTOCOL_VERSION.to_string())
-        );
-        assert_eq!(
-            value["serverInfo"]["name"],
-            Value::String(SERVER_NAME.to_string())
-        );
+        // initialize 响应由 mcp_server_common::handle_request 构造，
+        // 这里验证常量与 handler 元数据的一致性。
+        let handler = PersonalHubMcpHandler;
+        assert_eq!(PROTOCOL_VERSION, "2024-11-05");
+        assert_eq!(handler.server_name(), SERVER_NAME);
+        assert_eq!(handler.server_version(), SERVER_VERSION);
     }
 
     #[test]
     fn tools_list_contains_expected_tools() {
-        let value = handle_tools_list();
+        let handler = PersonalHubMcpHandler;
+        let value = handler.tools_list();
         let tools = value["tools"].as_array().unwrap();
         let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
         assert!(names.contains(&"ph_list"));
@@ -812,37 +810,41 @@ mod tests {
 
     #[test]
     fn create_requires_title_and_type() {
-        let params = json!({ "name": "ph_create", "arguments": {} });
-        let result = handle_tools_call(params);
+        // 参数校验先行于认证，故未认证的 client 也能触发校验分支。
+        let client = PhClient::from_config();
+        let params = json!({});
+        let result = execute_ph_create(&params, &client);
         assert!(result.is_err());
 
-        let params = json!({ "name": "ph_create", "arguments": { "title": "test" } });
-        let result = handle_tools_call(params);
+        let params = json!({ "title": "test" });
+        let result = execute_ph_create(&params, &client);
         assert!(result.is_err());
 
-        let params = json!({ "name": "ph_create", "arguments": { "type": "todo" } });
-        let result = handle_tools_call(params);
+        let params = json!({ "type": "todo" });
+        let result = execute_ph_create(&params, &client);
         assert!(result.is_err());
     }
 
     #[test]
     fn get_requires_id() {
-        let params = json!({ "name": "ph_get", "arguments": {} });
-        let result = handle_tools_call(params);
+        let client = PhClient::from_config();
+        let params = json!({});
+        let result = execute_ph_get(&params, &client);
         assert!(result.is_err());
     }
 
     #[test]
     fn delete_requires_id() {
-        let params = json!({ "name": "ph_delete", "arguments": {} });
-        let result = handle_tools_call(params);
+        let client = PhClient::from_config();
+        let params = json!({});
+        let result = execute_ph_delete(&params, &client);
         assert!(result.is_err());
     }
 
     #[test]
     fn unknown_tool_returns_error() {
-        let params = json!({ "name": "unknown_tool", "arguments": {} });
-        let result = handle_tools_call(params);
+        let handler = PersonalHubMcpHandler;
+        let result = handler.tools_call("unknown_tool", &Value::Null);
         assert!(result.is_err());
     }
 
