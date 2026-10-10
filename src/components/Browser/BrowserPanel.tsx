@@ -27,7 +27,6 @@ import {
   browserCreate,
   browserFind,
   browserFindNext,
-  browserGetHistoryState,
   browserGetMarqueeResult,
   browserGetNetworkInfo,
   browserHistory,
@@ -43,8 +42,8 @@ import {
   normalizeBrowserUrl,
   type BrowserBounds,
   type BrowserInteractionResult,
-  type BrowserMarqueeEvent,
-  type BrowserNetworkInfo,
+  type BrowserOperationEvent,
+  type MarqueeContextBlock,
   type BrowserRegion,
   type BrowserSessionInfo,
 } from '@/services/tauri/browserService'
@@ -188,15 +187,6 @@ function isBrowserOccludedByAppOverlay(
   return false
 }
 
-function isLocalDevUrl(url: string): boolean {
-  try {
-    const host = new URL(url).hostname
-    return host === 'localhost' || host === '127.0.0.1' || host === '::1'
-  } catch {
-    return false
-  }
-}
-
 export function BrowserPanel({
   tabId,
   initialUrl = 'https://www.bing.com',
@@ -209,6 +199,7 @@ export function BrowserPanel({
   const rootRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const toolbarWidthRef = useRef<HTMLDivElement>(null)
+  const historyDropdownRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
   const mountedRef = useRef(false)
   const readyRef = useRef(false)
@@ -234,7 +225,6 @@ export function BrowserPanel({
   const [address, setAddress] = useState(normalizedInitialUrl)
   const [currentUrl, setCurrentUrl] = useState(normalizedInitialUrl)
   const [pageTitle, setPageTitle] = useState('Browser')
-  const [faviconUrl, setFaviconUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const loadingRef = useRef(false)
   const [loadProgress, setLoadProgress] = useState(0)
@@ -248,22 +238,20 @@ export function BrowserPanel({
     if (toastToo) toast.error(message)
   }
   const [aiPanelOpen, setAiPanelOpen] = useState(false)
-  const [aiOperationMode, setAiOperationMode] = useState(false)
-  const [highlightCount, setHighlightCount] = useState<number | null>(null)
+  // AI 覆盖层开关在移除"AI 信息源"功能后无切换入口，恒为 false。
+  // 保留为常量：refreshOverlay effect 依赖它（恒 false = 仅关闭 overlay）。
+  const aiOperationMode = false
   const [operationEvents, setOperationEvents] = useState<BrowserOperationEvent[]>([])
-  const [boundAgentKey, setBoundAgentKey] = useState<string | null>(null)
+  // agent 所有权标识同步（ADR 0004 P2 #3）：当前 UI 不渲染，用 ref 保留语义且不触发渲染。
+  const boundAgentKeyRef = useRef<string | null>(null)
   const [marqueeMode, setMarqueeMode] = useState(false)
-  const [marqueeRegions, setMarqueeRegions] = useState<BrowserRegion[]>([])
   const marqueeRegionsRef = useRef<BrowserRegion[]>([])
-  const [marqueePolling, setMarqueePolling] = useState(false)
-  const [toolbarWidth, setToolbarWidth] = useState(0)
   const [findQuery, setFindQuery] = useState('')
   const [findOpen, setFindOpen] = useState(false)
   const findInputRef = useRef<HTMLInputElement>(null)
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
 
-  const [networkInfo, setNetworkInfo] = useState<BrowserNetworkInfo | null>(null)
   const [isMuted, setIsMuted] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
@@ -286,7 +274,6 @@ export function BrowserPanel({
   const markBrowserNavigationHandled = useTabStore((state) => state.markBrowserNavigationHandled)
   const { addContextBlock } = useActiveSessionActions()
   const closeTab = useTabStore((state) => state.closeTab)
-  const isLocalDev = useMemo(() => isLocalDevUrl(currentUrl), [currentUrl])
   const latestOperation = operationEvents[0]
 
   const navigateTo = useCallback(
@@ -500,7 +487,7 @@ export function BrowserPanel({
             updateBrowserTab(tabId, { title: session.title })
           }
           // 同步 agent 所有权标识(ADR 0004 P2 #3)
-          setBoundAgentKey(session.boundAgentKey ?? null)
+          boundAgentKeyRef.current = session.boundAgentKey ?? null
         })
         unlistenOperation = await listen<BrowserOperationEvent>('browser://operation', (event) => {
           const operation = event.payload
@@ -705,12 +692,10 @@ export function BrowserPanel({
     async function refreshOverlay() {
       if (document.hidden) return
       try {
-        const result = await browserSetAiOverlay(webviewLabel, aiOperationMode)
+        await browserSetAiOverlay(webviewLabel, aiOperationMode)
         if (cancelled) return
-        setHighlightCount(result.enabled ? result.count : null)
       } catch (e) {
         if (cancelled) return
-        setHighlightCount(null)
         if (aiOperationMode) {
           setError(e instanceof Error ? e.message : String(e))
         }
@@ -760,18 +745,6 @@ export function BrowserPanel({
         try {
           const info = await browserGetNetworkInfo(webviewLabel)
           if (cancelled) return
-          // 网络信息基本字段未变化时跳过，避免无意义重渲染
-          setNetworkInfo((prev) =>
-            prev &&
-            prev.loadTime === info.loadTime &&
-            prev.totalSizeKB === info.totalSizeKB &&
-            prev.resourceCount === info.resourceCount &&
-            prev.failedResources === info.failedResources &&
-            prev.domContentLoaded === info.domContentLoaded &&
-            prev.readyState === info.readyState
-              ? prev
-              : info
-          )
           // 同步到 tabStore，供左侧边栏展示网络信息
           updateBrowserTab(tabId, {
             metadata: {
@@ -824,7 +797,6 @@ export function BrowserPanel({
 
   const stopMarquee = useCallback(async () => {
     setMarqueeMode(false)
-    setMarqueePolling(false)
     try {
       await browserSetMarquee(webviewLabel, false)
     } catch {
@@ -834,7 +806,6 @@ export function BrowserPanel({
 
   const startMarquee = useCallback(async () => {
     if (status !== 'ready') return
-    setMarqueeRegions([])
     marqueeRegionsRef.current = []
     setMarqueeMode(true)
     // 不再打开底部 AI 面板：圈选结果改为挂载到 AI 输入框上下文块 + 左侧边栏展示
@@ -901,7 +872,6 @@ export function BrowserPanel({
   useEffect(() => {
     if (!marqueeMode || status !== 'ready') return
     let cancelled = false
-    setMarqueePolling(true)
 
     const poll = async () => {
       while (!cancelled) {
@@ -911,12 +881,11 @@ export function BrowserPanel({
           const result = await browserGetMarqueeResult(webviewLabel)
           if (cancelled) break
 
-          // 有矩形：先把 rects 写入 state（发送时至少有坐标）
+          // 有矩形：先把 rects 写入 ref（发送时至少有坐标）
           if (result.rects.length > 0) {
-            setMarqueeRegions((prev) => {
-              // 数量相同就跳过，避免重复 select_region
-              if (prev.length === result.rects.length) return prev
-              return result.rects.map((rect, idx) => ({
+            // 数量相同就跳过，避免重复 select_region
+            if (marqueeRegionsRef.current.length !== result.rects.length) {
+              marqueeRegionsRef.current = result.rects.map((rect, idx) => ({
                 id: idx,
                 rect,
                 count: 0,
@@ -924,7 +893,7 @@ export function BrowserPanel({
                 htmlSnippet: '',
                 textSnippet: '',
               }))
-            })
+            }
 
             // 异步补充元素详情（不阻塞轮询）
             void Promise.all(
@@ -938,34 +907,30 @@ export function BrowserPanel({
               })
             ).then((details) => {
               if (cancelled) return
-              setMarqueeRegions((prev) => {
-                let changed = false
-                const next = prev.map((r, i) => {
-                  const detail = details.find((d) => d?.idx === i)
-                  if (detail && r.elements.length === 0) {
-                    changed = true
-                    return {
-                      ...r,
-                      count: detail.region.count,
-                      elements: detail.region.elements,
-                      htmlSnippet: detail.region.htmlSnippet,
-                      textSnippet: detail.region.textSnippet ?? '',
-                    }
+              let changed = false
+              const next = marqueeRegionsRef.current.map((r, i) => {
+                const detail = details.find((d) => d?.idx === i)
+                if (detail && r.elements.length === 0) {
+                  changed = true
+                  return {
+                    ...r,
+                    count: detail.region.count,
+                    elements: detail.region.elements,
+                    htmlSnippet: detail.region.htmlSnippet,
+                    textSnippet: detail.region.textSnippet ?? '',
                   }
-                  return r
-                })
-                if (changed) {
-                  marqueeRegionsRef.current = next
                 }
-                return changed ? next : prev
+                return r
               })
+              if (changed) {
+                marqueeRegionsRef.current = next
+              }
             })
           }
 
           // 圈选完成：补齐缺失的区域详情，组装上下文块挂到 AI 输入框，再延迟关闭 overlay
           if (result.done) {
             cancelled = true
-            setMarqueePolling(false)
 
             // select_region 是异步的，done 时可能仍有区域详情未填充（count/elements/html 为空）。
             // 这里主动补齐，确保发送给 AI 的上下文包含真实内容（"圈选看不到上下文"的竞争根因）。
@@ -1001,20 +966,20 @@ export function BrowserPanel({
               marqueeRegionsRef.current = filled
             }
             const finalRegions = marqueeRegionsRef.current
-            const block: ContextBlock & { type: 'marquee-context' } = {
+            // 双字段兼容：type 供 marqueeStore（MarqueeContextBlock）消费，kind 供统一输入框（ContextBlock）消费。
+            const block: ContextBlock & MarqueeContextBlock = {
               id: `marquee-${webviewLabel}-${Date.now()}`,
               type: 'marquee-context',
               title: pageTitle || 'Browser',
-              url: currentUrl,
+              url: currentUrl ?? '',
               regions: finalRegions,
               userNote: undefined,
               browserLabel: webviewLabel,
               // 统一 TCB 结构：kind + data + source/dedupeKey（data 与顶层兼容字段并存，见 ContextBlock 类型注释）
-              // type 字段保留给 marqueeStore（MarqueeContextBlock）消费；kind 字段给统一输入框（ContextBlock）消费。
               kind: 'marquee-context',
               source: 'browser-marquee',
               dedupeKey: webviewLabel,
-              data: { url: currentUrl, regions: finalRegions, browserLabel: webviewLabel },
+              data: { url: currentUrl ?? '', regions: finalRegions, browserLabel: webviewLabel },
             }
             useMarqueeStore.getState().upsertBlock(block)
             // 统一入口挂载到活跃会话输入框（内部按 source+dedupeKey 去重合并）。
@@ -1036,7 +1001,6 @@ export function BrowserPanel({
     void poll()
     return () => {
       cancelled = true
-      setMarqueePolling(false)
     }
   }, [marqueeMode, status, webviewLabel, pageTitle, currentUrl, addContextBlock])
 
@@ -1056,22 +1020,9 @@ export function BrowserPanel({
     if (lastMarqueeUrlRef.current !== currentUrl) {
       lastMarqueeUrlRef.current = currentUrl
       setMarqueeMode(false)
-      setMarqueePolling(false)
       void browserSetMarquee(webviewLabel, false).catch(() => undefined)
     }
   }, [currentUrl, webviewLabel, marqueeMode])
-
-  // 监听工具栏容器宽度，用于响应式显隐
-  useEffect(() => {
-    const el = toolbarWidthRef.current
-    if (!el) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {        setToolbarWidth(entry.contentRect.width)
-      }
-    })
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [])
 
   // 组件卸载 / 会话切换时清理 overlay
   useEffect(() => {
@@ -1171,13 +1122,6 @@ export function BrowserPanel({
     'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md border border-border-subtle bg-background-surface px-2.5 text-xs font-medium text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-45'
 
 
-  const hostText = useMemo(() => {
-    try {
-      return new URL(currentUrl).host || currentUrl
-    } catch {
-      return currentUrl
-    }
-  }, [currentUrl])
   const faviconSrc = useMemo(() => {
     try {
       const url = new URL(currentUrl)

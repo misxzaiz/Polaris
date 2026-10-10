@@ -305,7 +305,6 @@ export class MessageCompactor {
         oldContent: '',
         newContent: '',
         filePath: block.diffData.filePath,
-        fullOldContent: undefined,
       }
     }
 

@@ -39,7 +39,6 @@ import { isAssistantMessage, type AssistantChatMessage } from '@/types/chat';
 import { createLogger } from '@/utils/logger';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { voiceLatencyMeter } from '@/services/voiceLatencyMeter';
-import type { LatencyMark } from '@/services/voiceLatencyMeter';
 
 const log = createLogger('useVoiceCompanion');
 

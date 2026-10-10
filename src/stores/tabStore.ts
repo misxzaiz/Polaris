@@ -82,7 +82,7 @@ interface TabActions {
 
   // Dirty 状态管理
   setTabDirty: (tabId: string, isDirty: boolean) => void
-  updateBrowserTab: (tabId: string, updates: { url?: string; title?: string }) => void
+  updateBrowserTab: (tabId: string, updates: { url?: string; title?: string; metadata?: Record<string, any> }) => void
   markBrowserNavigationHandled: (tabId: string, requestId: number) => void
   getDirtyTabs: () => Tab[]
   hasDirtyTabs: () => boolean

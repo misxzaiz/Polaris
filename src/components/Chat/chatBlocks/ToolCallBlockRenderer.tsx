@@ -440,7 +440,6 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
               </button>
             </div>
           )}
-
           {/* Edit 工具：紧凑内联 Diff（负 margin 抵消父级 px-4 padding） */}
           {showDiffButton && block.diffData && (
             <div className="mb-3 -mx-4">
@@ -457,7 +456,7 @@ export const ToolCallBlockRenderer = memo(function ToolCallBlockRenderer({
           )}
 
           {/* Write 工具：代码预览 */}
-          {isWriteTool(block.name) && block.input && (block.input.content || block.input.newContent) && (
+          {isWriteTool(block.name) && block.input && !!(block.input.content || block.input.newContent) && (
             <div className="mb-3 -mx-4">
               <CodePreviewView
                 filePath={(block.input.file_path || block.input.path || block.input.filePath) as string}

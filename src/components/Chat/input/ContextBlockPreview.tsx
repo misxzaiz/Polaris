@@ -16,6 +16,7 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Target, MessageSquarePlus, Check } from 'lucide-react'
+import type { BrowserRegion } from '@/services/tauri/browserService'
 import type { ContextBlock, ContextBlockKindSpec } from '@/stores/conversationStore/types'
 
 interface ContextBlockPreviewProps {
@@ -26,7 +27,6 @@ interface ContextBlockPreviewProps {
 }
 
 export function ContextBlockPreview({ blocks, onRemove, onUpdateNote }: ContextBlockPreviewProps) {
-  const { t } = useTranslation('chat')
   if (blocks.length === 0) return null
 
   return (
@@ -54,9 +54,11 @@ function ContextBlockItem({
 
   const spec = block.kind !== 'marquee-context' ? undefined : marqueeSpec
   const isMarquee = block.kind === 'marquee-context'
-  // 双字段兼容读取：顶层优先，data 兜底
+  // 双字段兼容读取：顶层优先，data 兜底（data.regions 为 unknown，需收敛为 BrowserRegion[]）
   const url = isMarquee ? (block.url ?? (block.data?.url as string | undefined)) : undefined
-  const regions = isMarquee ? (block.regions ?? (block.data?.regions ?? [])) : []
+  const regions: BrowserRegion[] = isMarquee
+    ? (block.regions ?? ((block.data?.regions as BrowserRegion[] | undefined) ?? []))
+    : []
   const source = block.source ?? block.kind
   const sizeSummary = regions
     .map((r) => `${Math.round(r.rect.width)}×${Math.round(r.rect.height)}`)
@@ -182,7 +184,7 @@ function BlockDetails({
   block: ContextBlock
   isMarquee: boolean
   url?: string
-  regions: Array<{ rect: { x: number; y: number; width: number; height: number }; count?: number; elements?: Array<{ kind: string; text: string }>; textSnippet?: string | null; htmlSnippet?: string }>
+  regions: BrowserRegion[]
 }) {
   const { t } = useTranslation('chat')
   if (!isMarquee) {

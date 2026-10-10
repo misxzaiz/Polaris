@@ -229,7 +229,7 @@ function buildSystemPrompt(
  * @param abortSignal 已取消则不再 settle（resolve 一个失败结果，由循环跳出）
  */
 function executeSingleRound(opts: {
-  srcStore: ConversationStore
+  srcStore: ConversationStoreInstance
   sourceSessionId: string
   workspaceId?: string
   workspacePath?: string
@@ -246,7 +246,7 @@ function executeSingleRound(opts: {
 }): Promise<{ ok: true; text: string } | { ok: false; error: string | null }> {
   return new Promise((resolve) => {
     const {
-      srcStore, sourceSessionId, workspaceId, workspacePath, engineId,
+      srcStore, workspaceId, workspacePath, engineId,
       modelProfileId, model, mode, direction, customDirectionText,
       iteration, totalIterations, sourceText, abortSignal,
     } = opts
@@ -481,7 +481,9 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
     currentText = lastVersion.text
   }
 
-  if (activeRuns.get(sourceSessionId) === abort) {
+  // 仍登记在 activeRuns 且未被顶替/取消（abort.aborted 仍为 false）时清理本 run 登记。
+  // 被新 run 顶替（417 行先取消本 run）或用户取消（499 行触发取消回调）时保留新登记。
+  if (!abort.aborted) {
     activeRuns.delete(sourceSessionId)
   }
 }

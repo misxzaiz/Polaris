@@ -1157,7 +1157,7 @@ export function createConversationStore(
         // 但 form 事件若在流结束后到达（AI 回复已完成 → currentMessage 归档到 messages），
         // formBlockMap 里的 idx 已失效；此时需跨 messages[] + currentMessage 搜索。
         const applyToBlocks = (
-          blocks: import('../../types/chat').ChatMessageBlock[]
+          blocks: import('../../types/chat').ContentBlock[]
         ): { next: typeof blocks; changed: boolean } => {
           const next = blocks.map((b) => {
             if (b.type === 'form' && b.id === formId) {

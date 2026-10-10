@@ -580,13 +580,25 @@ export const historyService = {
         if (result.items && result.items.length > 0) {
           const messages: ChatMessage[] = result.items
             .filter((m) => m.role === 'user' || m.role === 'assistant')
-            .map((m, idx) => ({
-              id: m.messageId || `${m.role}-${idx}`,
-              type: m.role === 'assistant' ? 'assistant' : 'user',
-              content: m.content,
-              timestamp: m.timestamp || new Date().toISOString(),
-              ...(m.role === 'assistant' ? { blocks: [{ type: 'text' as const, content: m.content }] } : {}),
-            }))
+            .map((m, idx): ChatMessage => {
+              const id = m.messageId || `${m.role}-${idx}`
+              const timestamp = m.timestamp || new Date().toISOString()
+              if (m.role === 'assistant') {
+                return {
+                  id,
+                  type: 'assistant',
+                  content: m.content,
+                  timestamp,
+                  blocks: [{ type: 'text' as const, content: m.content }],
+                }
+              }
+              return {
+                id,
+                type: 'user',
+                content: m.content,
+                timestamp,
+              }
+            })
           return {
             messages: withAssistantEngineId(messages, normalizeEngineId(engineId)),
             title: titleHint || '恢复的会话',
