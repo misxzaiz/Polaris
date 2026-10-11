@@ -146,4 +146,40 @@ describe('WorkspaceSessionSlice', () => {
       expect(slice.getBucket('/unknown')).not.toBeNull()
     })
   })
+
+  describe('reconcileBucketProjection（S3 残留清理）', () => {
+    it('保留快照内 + 本地已打开的会话，清理其余残留投影', () => {
+      const slice = workspaceSessionSlice.getState()
+      // 三种投影：快照内 s1 / 本地打开 s2 / 残留 stale（后端已删）
+      slice.upsertSessionProjection('/ws/A', 's1', { title: '来自快照' })
+      slice.registerSession('/ws/A', 's2', makeMetadata('s2'))
+      slice.upsertSessionProjection('/ws/A', 'stale', { title: '已删除的残留' })
+
+      // 快照含 s1，本地打开含 s2，stale 都不含
+      slice.reconcileBucketProjection('/ws/A', new Set(['s1', 's2']))
+
+      const bucket = slice.getBucket('/ws/A')!
+      expect(bucket.sessionMetadata.has('s1')).toBe(true)
+      expect(bucket.sessionMetadata.has('s2')).toBe(true)
+      expect(bucket.sessionMetadata.has('stale')).toBe(false)
+      expect(bucket.sessions.has('stale')).toBe(false)
+    })
+
+    it('空快照（后端表清空）→ 只保留本地打开的会话', () => {
+      const slice = workspaceSessionSlice.getState()
+      slice.registerSession('/ws/A', 'local', makeMetadata('local'))
+      slice.upsertSessionProjection('/ws/A', 'ghost', { title: '幽灵投影' })
+
+      slice.reconcileBucketProjection('/ws/A', new Set(['local']))
+
+      const bucket = slice.getBucket('/ws/A')!
+      expect(bucket.sessionMetadata.has('local')).toBe(true)
+      expect(bucket.sessionMetadata.has('ghost')).toBe(false)
+    })
+
+    it('桶不存在时 no-op 不报错', () => {
+      const slice = workspaceSessionSlice.getState()
+      expect(() => slice.reconcileBucketProjection('/nope', new Set())).not.toThrow()
+    })
+  })
 })

@@ -87,6 +87,32 @@ describe('WorkspaceSessionsSubscription', () => {
     sub.stop()
   })
 
+  it('start() 首拉快照清理「后端已删 + 本地未打开」的残留投影（S3 残留修复）', async () => {
+    // 预置：桶内已有一批旧投影（后端表曾被填满，后被其他端清空）
+    workspaceSessionSlice.getState().upsertSessionProjection('/ws', 'stale-a', { title: '残留A' })
+    workspaceSessionSlice.getState().upsertSessionProjection('/ws', 'stale-b', { title: '残留B' })
+
+    // 首拉快照：后端现在只有 s1（表已清理），本地已打开 local-open（sessionStoreManager 有实例）
+    mockedList.mockResolvedValue({
+      sessions: [
+        { sessionId: 's1', workspaceKey: '/ws', title: 'S1', status: 'idle', seq: 1, updatedAt: 1000, engineId: 'codex', createdAt: 1000 },
+      ],
+      lastSeq: 1,
+    })
+    mockedAfter.mockResolvedValue([])
+
+    const sub = new WorkspaceSessionsSubscription('/ws')
+    await sub.start()
+
+    const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
+    // 残留 stale-a / stale-b 应被清理（既不在快照、本地也无实例）
+    expect(bucket.sessionMetadata.has('stale-a')).toBe(false)
+    expect(bucket.sessionMetadata.has('stale-b')).toBe(false)
+    expect(bucket.sessionMetadata.has('s1')).toBe(true)
+
+    sub.stop()
+  })
+
   it('增量轮询应用 delta + 更新 lastSeq', async () => {
     mockedList.mockResolvedValue({ sessions: [], lastSeq: 0 })
     mockedAfter.mockResolvedValue([

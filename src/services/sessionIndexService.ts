@@ -77,6 +77,9 @@ export async function listWorkspaceSessionsAfter(
 /**
  * 注册（upsert）一个会话到投影。幂等；返回写入后的投影条目。
  * 这是「新建会话 → 前端同步投影」的入口。
+ *
+ * 注意：后端 SessionRecord 反序列化要求完整字段（contextWorkspaceIds / type /
+ * silentMode / messageIds / version / updatedAt 为必填），故此处补齐默认值。
  */
 export async function registerSessionToIndex(
   workspaceKey: string,
@@ -91,7 +94,20 @@ export async function registerSessionToIndex(
 ): Promise<SessionProjection> {
   return invoke<SessionProjection>('session_index_register', {
     workspaceKey,
-    record,
+    record: {
+      id: record.id,
+      title: record.title,
+      conversationId: record.conversationId,
+      engineId: record.engineId,
+      workspaceId: record.workspaceId,
+      contextWorkspaceIds: [],
+      type: record.workspaceId ? 'project' : 'free',
+      silentMode: false,
+      messageIds: [],
+      version: 1,
+      createdAt: record.createdAt,
+      updatedAt: record.createdAt,
+    },
   })
 }
 

@@ -754,6 +754,12 @@ export interface CreateSessionOptions {
   kind?: 'commit-message' | 'prompt-optimize' | 'title-generation'
   /** commit-message 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */
   commitWorkspaceId?: string
+  /**
+   * 跳过写后端 session_index 投影（恢复/ Fork 路径用）。
+   * 这些会话在本端以新 uuid 存在，无需进入「跨端会话索引」——
+   * 否则本窗口历史会污染其他端的远端会话列表。
+   */
+  skipIndexRegister?: boolean
 }
 
 /**
