@@ -33,6 +33,7 @@ import {
   resolveWorkspaceKeyFromPath,
   FREE_WORKSPACE_KEY,
 } from '../workspaceSession'
+import { registerSessionToIndex, deleteSessionFromIndex } from '@/services/sessionIndexService'
 import { useSessionConfig } from '../sessionConfigStore'
 import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
@@ -212,6 +213,19 @@ function createSessionManagerStore() {
         workspaceSessionSlice.getState().switchSessionInBucket(wsKey, sessionId)
       }
 
+      // S3：写侧接线 — 后端投影（workspace 级权威列表）。
+      // fire-and-forget：失败不影响本地会话创建；后端 register 成功后广播
+      // session-index-upserted，多端同步（含本端，经 WS/桌面 relay）。
+      void registerSessionToIndex(wsKey, {
+        id: sessionId,
+        title: metadata.title,
+        engineId: metadata.engineId ?? configEngineId ?? 'claude-code',
+        workspaceId: metadata.workspaceId ?? undefined,
+        createdAt: new Date(metadata.createdAt).getTime(),
+      }).catch((e) => {
+        log.warn('写后端会话投影失败（本地会话不受影响）', { sessionId, error: String(e) })
+      })
+
       log.info('创建会话', { sessionId })
 
       // 非静默模式时自动加入多窗口视图
@@ -293,6 +307,12 @@ function createSessionManagerStore() {
       if (deletedMetadata) {
         const wsKey = resolveSessionWorkspaceKey(deletedMetadata.workspaceId, deletedMetadata.type)
         workspaceSessionSlice.getState().unregisterSession(wsKey, sessionId)
+
+        // S3：写侧接线 — 后端投影删除（fire-and-forget）。
+        // 远端（其他浏览器/窗口）据此移除桶投影；本地 store 已销毁，桶投影由 unregister 处理。
+        void deleteSessionFromIndex(wsKey, sessionId).catch((e) => {
+          log.warn('删除后端会话投影失败', { sessionId, error: String(e) })
+        })
       }
 
       log.info('删除会话', { sessionId })
