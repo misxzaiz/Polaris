@@ -55,6 +55,12 @@ export interface WorkspaceSessionSliceActions {
     sessionId: string,
     updates: Partial<SessionMetadata>,
   ) => void
+  /** upsert 投影条目（不存在则创建，存在则合并；供订阅管理器用） */
+  upsertSessionProjection: (
+    workspaceKey: string,
+    sessionId: string,
+    projection: Partial<SessionMetadata>,
+  ) => void
   /** 切换桶内活跃会话（多窗口不互踩） */
   switchSessionInBucket: (workspaceKey: string, sessionId: string | null) => void
   /** 设置当前激活 workspace（workspace 切换时调用） */
@@ -165,6 +171,43 @@ export const workspaceSessionSlice = create<WorkspaceSessionSliceStore>((set, ge
       newMetadata.set(sessionId, {
         ...existing,
         ...updates,
+        updatedAt: new Date().toISOString(),
+      })
+      newBuckets.set(workspaceKey, { ...bucket, sessionMetadata: newMetadata })
+      return { buckets: newBuckets }
+    })
+  },
+
+  /**
+   * upsert 投影条目（不存在则创建，存在则合并）。
+   * 供订阅管理器（WorkspaceSessionsSubscription）写入后端投影——
+   * 投影来源是后端 session_index，与本地 registerSession 独立，
+   * 因此需要支持「条目尚不存在时新建」。
+   */
+  upsertSessionProjection: (workspaceKey, sessionId, projection) => {
+    get().ensureBucket(workspaceKey)
+    set((state) => {
+      const bucket = state.buckets.get(workspaceKey)!
+      const existing = bucket.sessionMetadata.get(sessionId)
+      const newBuckets = new Map(state.buckets)
+      const newMetadata = new Map(bucket.sessionMetadata)
+      // 不存在时用 projection 字段构造最小 metadata；存在则合并
+      const base = existing ?? {
+        id: sessionId,
+        title: '',
+        type: 'project' as const,
+        engineId: '',
+        workspaceId: null,
+        contextWorkspaceIds: [],
+        workspaceLocked: false,
+        status: 'idle' as const,
+        silentMode: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+      newMetadata.set(sessionId, {
+        ...base,
+        ...projection,
         updatedAt: new Date().toISOString(),
       })
       newBuckets.set(workspaceKey, { ...bucket, sessionMetadata: newMetadata })
