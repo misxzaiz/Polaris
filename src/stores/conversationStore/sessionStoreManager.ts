@@ -892,11 +892,16 @@ const cachedActions = {
  * 通过后端 conversationId 查找前端 store。
  * 用于权限/提问等事件的 block 携带后端 conversationId 的场景。
  * 简化实现：遍历 stores（会话数通常 ≤10，O(n) 可接受），不再维护反向索引。
+ * 匹配两轨：conversationId（引擎真实 id）与 syncConversationId（首轮稳定桶，
+ * 消息实时广播走后者）——Claude Code 引擎下两者不同，都需匹配。
  */
 export function findStoreByConversationId(conversationId: string): ConversationStore | undefined {
   const stores = sessionStoreManager.getState().stores
   for (const store of stores.values()) {
-    if (store.getState().conversationId === conversationId) return store.getState()
+    const st = store.getState()
+    if (st.conversationId === conversationId || st.syncConversationId === conversationId) {
+      return st
+    }
   }
   return undefined
 }

@@ -363,6 +363,10 @@ export interface ConversationState {
 
   // ===== 会话状态 =====
   conversationId: string | null
+  /** S3 同步桶：首轮 start 分配的稳定会话 id（等于 session_mapping 固化值）。
+   * 与 conversationId 不同步——conversationId 可能被 session_start 事件覆盖成引擎真实 id
+   * （Claude Code on_session_id_update），同步桶恒为稳定值，保证 user/assistant 同桶跨端路由。 */
+  syncConversationId: string | null
   currentConversationSeed: string | null
   isStreaming: boolean
   /** 用户主动点击中断的标志。用于区分"用户主动终止"与"后端意外崩溃/异常退出"。中断后后端发的 error/session_end(reason=error) 据此静默处理。 */
