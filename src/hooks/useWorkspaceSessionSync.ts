@@ -45,6 +45,10 @@ export interface RemoteSessionRef {
   /** 幂等去重身份：后端投影的 sessionId 即权威 ID */
   id: string
   remote: true
+  /** 实时预览：流式期间远端会话的最新消息文本（来自本端投影 store） */
+  preview?: string
+  /** 是否正在流式（另一端正在生成回复） */
+  streaming?: boolean
 }
 
 export type MergedSession = SessionMetadata | RemoteSessionRef
@@ -120,6 +124,13 @@ export function useMergedSessionList(): {
   const localSessions = useSessionMetadataList()
   const currentWsId = useWorkspaceStore((s) => s.currentWorkspaceId)
   const multiSessionIds = useViewStore((s) => s.multiSessionIds)
+  // 订阅投影 store 流式 tick：远端起流式期间，投影 store 内部 currentMessage 变化
+  // 不会改变 stores Map 引用，只有 tick 递增能让下方 useMemo 重算、刷新实时预览。
+  const streamingTick = useStore(sessionStoreManager, (s) => s.streamingTick)
+  // 响应式订阅 stores Map 引用（新建/删除会话时重算远端列表），
+  // 不用 getState() 是因为它在依赖数组里是非响应式读取。
+  const stores = useStore(sessionStoreManager, (s) => s.stores)
+  const sessionMetadata = useStore(sessionStoreManager, (s) => s.sessionMetadata)
 
   const bucketKey = useMemo(() => resolveCurrentBucketKey(currentWsId), [currentWsId])
 
@@ -134,7 +145,14 @@ export function useMergedSessionList(): {
     // 每次桶投影变化时重新读取完整桶（Map 引用变化即触发）
     const bucket = workspaceSessionSlice.getState().getBucket(bucketKey)
     const bucketMeta = bucket?.sessionMetadata ?? bucketMetadata
-    const localStores = sessionStoreManager.getState().stores
+
+    // 本端「真实」store 集合：排除 silent 投影 store（dispatchEvent 自动创建的
+    // 远端消费视图）。投影 store 只是为「未打开会话」提供实时预览的临时载体，
+    // 不算本端打开的会话 —— 远端条目必须继续出现在「其他窗口的会话」列表。
+    const realLocalStores = new Set<string>()
+    for (const [id] of stores) {
+      if (sessionMetadata.get(id)?.silentMode !== true) realLocalStores.add(id)
+    }
 
     // 本端认领集合（registerSession 写入 sessions Map = 本端创建的会话）
     const claimedIds = bucket
@@ -142,17 +160,54 @@ export function useMergedSessionList(): {
       : undefined
     const remote = deriveRemoteSessions(
       bucketMeta,
-      localStores,
+      realLocalStores,
       localSessions,
       multiSessionIds,
       claimedIds,
     )
+    // 实时预览增强：远端条目若本端存在 silent 投影 store（dispatchEvent 自动创建
+    // 的「远端消费视图」），从中读取最新消息文本与其流式状态，作为条目的实时预览。
+    // 这样用户无需点击即可看到远端会话的最新动态；投影 store 结束时条目恢复无预览。
+    const withPreview = remote.map((ref) => {
+      const projected = stores.get(ref.sessionId)?.getState()
+      if (!projected) return ref
+      // 流式中的内容在 currentMessage（未完成），完成后才入 messages。
+      // 预览优先取进行中的 currentMessage；否则回退到最后一条已完成消息。
+      const current = projected.currentMessage
+      const last = current ?? projected.messages[projected.messages.length - 1]
+      const preview = last
+        ? typeof last === 'object' && last && 'blocks' in last
+          ? last.blocks
+              .filter((b) => b.type === 'text')
+              .map((b) => ('content' in b ? String(b.content) : ''))
+              .join('')
+              .slice(0, 120)
+          : String((last as { content?: unknown }).content ?? '').slice(0, 120)
+        : ''
+      return {
+        ...ref,
+        ...(preview ? { preview } : {}),
+        streaming: projected.isStreaming,
+      }
+    })
     // deriveRemoteSessions 已排除全部本地实例，remote 与 localSessions 天然无 id 冲突
-    const list: MergedSession[] = [...localSessions, ...remote]
+    // 但 localSessions 含 silent 投影 store（它们在 sessionMetadata 里），需过滤：
+    // 投影 store 只为远端条目提供实时预览，不应作为本端会话出现在合并列表。
+    const list: MergedSession[] = [
+      ...localSessions.filter((m) => {
+        const meta = sessionMetadata.get(m.id)
+        return meta?.silentMode !== true
+      }),
+      ...withPreview,
+    ]
 
-    return { merged: list, remote }
+    // streamingTick 是订阅信号：值变化即触发本 useMemo 重算（刷新投影 store 的实时预览），
+    // 读一次以让依赖显式（消除 exhaustive-deps 对"未使用依赖"的警告）。
+    void streamingTick
+
+    return { merged: list, remote: withPreview }
     // multiSessionIds 参与派生（本端视口排除规则），引用变化时需重算
-  }, [localSessions, bucketMetadata, bucketKey, multiSessionIds])
+  }, [localSessions, bucketMetadata, bucketKey, multiSessionIds, stores, sessionMetadata, streamingTick])
 
   return merged
 }

@@ -79,23 +79,41 @@ function RemoteSessionsStrip({ remoteSessions, restoring, onRestore }: RemoteSes
               key={ref.sessionId}
               onClick={() => onRestore(ref)}
               disabled={busy || restoring !== null}
-              title={ref.sessionId}
+              title={ref.preview || ref.sessionId}
               className={clsx(
-                'shrink-0 flex items-center gap-1.5 max-w-[200px] px-2 py-1 rounded-md border text-xs transition-colors',
+                'shrink-0 flex flex-col items-start gap-0.5 max-w-[220px] px-2 py-1 rounded-md border text-xs transition-colors',
                 busy
                   ? 'border-border bg-background-hover text-text-muted cursor-wait'
                   : 'border-border-subtle bg-background-surface text-text-secondary hover:bg-background-hover hover:text-text-primary hover:border-border'
               )}
             >
-              {busy ? (
-                <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
-              ) : (
-                <Cloud className="w-3 h-3 shrink-0 text-text-muted" />
-              )}
-              <span className="truncate">{ref.title || '远端会话'}</span>
-              <span className="shrink-0 text-text-tertiary text-[10px]">
-                {formatUpdatedAt(ref.updatedAt)}
+              <span className="flex items-center gap-1.5 w-full min-w-0">
+                {busy ? (
+                  <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
+                ) : (
+                  <Cloud className="w-3 h-3 shrink-0 text-text-muted" />
+                )}
+                <span className="truncate flex-1">{ref.title || '远端会话'}</span>
+                {ref.streaming && (
+                  <span className="shrink-0 flex items-center gap-1 text-[10px] text-text-muted">
+                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                  </span>
+                )}
+                <span className="shrink-0 text-text-tertiary text-[10px]">
+                  {formatUpdatedAt(ref.updatedAt)}
+                </span>
               </span>
+              {(ref.preview || ref.streaming) && (
+                <span
+                  className={clsx(
+                    'w-full truncate text-[10px] leading-tight',
+                    ref.streaming ? 'text-text-secondary' : 'text-text-tertiary'
+                  )}
+                >
+                  {ref.preview || (ref.streaming ? '正在生成回复…' : '')}
+                </span>
+              )}
             </button>
           )
         })}

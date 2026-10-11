@@ -89,6 +89,7 @@ function createSessionManagerStore() {
     backgroundSessionIds: [],
     completedNotifications: [],
     isInitialized: false,
+    streamingTick: 0,
 
     // ===== 会话生命周期 =====
 
@@ -208,7 +209,9 @@ function createSessionManagerStore() {
 
       // S2：注册会话到 workspace 桶（建立桶归属，多窗口/多端不互踩）
       const wsKey = resolveSessionWorkspaceKey(metadata.workspaceId, metadata.type)
-      workspaceSessionSlice.getState().registerSession(wsKey, sessionId, metadata)
+      if (!options.skipBucketRegister) {
+        workspaceSessionSlice.getState().registerSession(wsKey, sessionId, metadata)
+      }
       if (!options.silentMode) {
         workspaceSessionSlice.getState().switchSessionInBucket(wsKey, sessionId)
       }
@@ -600,6 +603,53 @@ function createSessionManagerStore() {
         return
       }
       const store = get().stores.get(routeSessionId)
+
+      // S3 实时消费：远端会话「按需投影」。
+      // 本端未打开该会话（store 不存在）时,收到的远端流式事件原本被直接丢弃,
+      // 导致另一端(dev 桌面 / 另一浏览器)在流式期间看不到任何实时内容,只有等结束。
+      // 修复：当远端会话的流式开始事件(session_start)到达而本端无 store 时,
+      // 自动创建一个 silent 投影 store(不占视口、不进列表、不激活),
+      // 让后续 assistant_message/token/thinking 增量能实时 append 渲染。
+      // session_end 后由停止流式仍在投本会话时清理(见下)。
+      if (!store && event.type === 'session_start') {
+        log.info('远端会话流式开始,按需投影 store', {
+          routeSessionId,
+          conversationId: event.sessionId,
+          engineId: event.engineId,
+        })
+        try {
+          // 用 silent 模式创建投影 store（不激活、不进 multiSessionIds、不入列表）。
+          // 复用 createSession；skipIndexRegister:true 避免投影 store 反向写 session_index
+          // 污染跨端索引；skipBucketRegister:true 避免投影 store 认领为「本端创建」——
+          // 否则该会话会从「其他窗口的会话」列表消失，用户看不到远端条目。
+          get().createSession({
+            id: routeSessionId,
+            type: 'free',
+            title: `远端会话 ${routeSessionId.slice(0, 8)}`,
+            engineId: event.engineId,
+            silentMode: true,
+            skipIndexRegister: true,
+            skipBucketRegister: true,
+          })
+          const projected = get().stores.get(routeSessionId)
+          if (projected) {
+            // 投影 store 的会话状态：绑定期望的同步桶 = 后端 conversationId。
+            // 这样 user/assistant 消息(经 syncConversationId 桶)能正确聚合到该投影 store。
+            projected.getState().setConversationId(event.sessionId)
+            projected.getState().setStreaming(true)
+          }
+        } catch (e) {
+          log.warn('投影 store 创建失败，事件丢弃', { routeSessionId, error: String(e) })
+        }
+        // 无论投影成功与否,本次 session_start 都继续走下方 handleAIEvent(若投影成功则消费)。
+        // 重取 store：投影已创建则正常路由。
+        const afterProject = get().stores.get(routeSessionId)
+        if (afterProject) {
+          afterProject.getState().handleAIEvent(event)
+        }
+        return
+      }
+
       if (!store) {
         // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
         // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
@@ -608,6 +658,28 @@ function createSessionManagerStore() {
       }
 
       store.getState().handleAIEvent(event)
+
+      // 投影 store 流式 tick：silent 投影 store 的每个增量都递增 tick，
+      // 让 useMergedSessionList 感知 currentMessage 变化并实时刷新预览。
+      // 普通已打开会话走自身渲染链路，不依赖此 tick（避免高频事件无谓重算）。
+      const isProjectedStore = get().sessionMetadata.get(routeSessionId)?.silentMode === true
+      if (isProjectedStore) {
+        set((state) => ({ streamingTick: state.streamingTick + 1 }))
+      }
+
+      // 投影 store 生命周期：远端会话流式结束(session_end) → 清理投影 store。
+      // 仅清理「事件 id 匹配的投影」(silentMode 标记)且未被用户正式接管。
+      // 用户若已在流式期间点击恢复(createSessionFromHistory 生成非 silent store)则保留;
+      // 恢复路径会从桶移除远端条目，不会与本端投影冲突。
+      if (
+        event.type === 'session_end' &&
+        get().stores.has(routeSessionId) &&
+        get().sessionMetadata.get(routeSessionId)?.silentMode &&
+        !get().backgroundSessionIds.includes(routeSessionId)
+      ) {
+        log.info('远端会话流式结束，清理投影 store', { routeSessionId })
+        get().deleteSession(routeSessionId)
+      }
 
       // 补发到 EventBus，确保 DeveloperPanel 等订阅者能收到事件
       try {
