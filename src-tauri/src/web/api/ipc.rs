@@ -445,10 +445,10 @@ pub async fn handle_ipc_bridge(
         "session_delete" => dispatch_session_delete(&args),
 
         // ── Session Index（workspace 级投影，S1）───────────────────────────
-        "session_index_register" => dispatch_session_index_register(&args),
+        "session_index_register" => dispatch_session_index_register(&state, &args),
         "session_index_list" => dispatch_session_index_list(&args),
         "session_index_list_after" => dispatch_session_index_list_after(&args),
-        "session_index_delete" => dispatch_session_index_delete(&args),
+        "session_index_delete" => dispatch_session_index_delete(&state, &args),
 
         // ── History Index ──────────────────────────────────────────────────
         "history_query" => dispatch_history_query(&args),
@@ -2387,7 +2387,10 @@ fn dispatch_session_delete(args: &Value) -> Result<Json<Value>, WebError> {
 
 // ── Session Index dispatchers（workspace 级投影，S1）───────────────────────
 
-fn dispatch_session_index_register(args: &Value) -> Result<Json<Value>, WebError> {
+fn dispatch_session_index_register(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
     let workspace_key = args
         .get("workspaceKey")
         .and_then(|v| v.as_str())
@@ -2397,10 +2400,18 @@ fn dispatch_session_index_register(args: &Value) -> Result<Json<Value>, WebError
         serde_json::from_value(args.get("record").cloned().unwrap_or(serde_json::Value::Null))
             .map_err(|e| WebError::BadRequest(format!("record 参数非法: {}", e)))?;
     let proj = crate::commands::session_state_commands::session_index_register_inner(
-        workspace_key,
+        workspace_key.clone(),
         record,
     )
     .map_err(|e| WebError::Internal(format!("session_index_register 失败: {}", e)))?;
+    // 多端广播：Web 端经 WS 收到、桌面端经 relay 转推（lib.rs 白名单放行）。
+    let ws_msg = serde_json::json!({
+        "event": "session-index-upserted",
+        "payload": { "workspaceKey": workspace_key, "sessionId": proj.session_id, "projection": proj },
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
     Ok(Json(serde_json::to_value(proj).unwrap()))
 }
 
@@ -2434,7 +2445,10 @@ fn dispatch_session_index_list_after(args: &Value) -> Result<Json<Value>, WebErr
     Ok(Json(serde_json::json!({ "sessions": sessions })))
 }
 
-fn dispatch_session_index_delete(args: &Value) -> Result<Json<Value>, WebError> {
+fn dispatch_session_index_delete(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
     let workspace_key = args
         .get("workspaceKey")
         .and_then(|v| v.as_str())
@@ -2445,8 +2459,16 @@ fn dispatch_session_index_delete(args: &Value) -> Result<Json<Value>, WebError> 
         .and_then(|v| v.as_str())
         .ok_or_else(|| WebError::BadRequest("sessionId 参数缺失".to_string()))?
         .to_string();
-    crate::commands::session_state_commands::session_index_delete_inner(workspace_key, session_id)
+    crate::commands::session_state_commands::session_index_delete_inner(workspace_key.clone(), session_id.clone())
         .map_err(|e| WebError::Internal(format!("session_index_delete 失败: {}", e)))?;
+    // 多端广播删除（无 tombstone，对齐 ZCode session.removed）：远端据此移除桶投影。
+    let ws_msg = serde_json::json!({
+        "event": "session-index-removed",
+        "payload": { "workspaceKey": workspace_key, "sessionId": session_id },
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
     Ok(crate::web::error::ok_response())
 }
 

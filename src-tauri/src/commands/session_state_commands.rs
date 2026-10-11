@@ -349,10 +349,20 @@ pub fn session_delete(id: String) -> Result<()> {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn session_index_register(
+    state: tauri::State<'_, crate::AppState>,
     workspace_key: String,
     record: SessionRecord,
 ) -> Result<SessionProjection> {
-    session_index_register_inner(workspace_key, record)
+    let proj = session_index_register_inner(workspace_key.clone(), record)?;
+    // 多端广播：桌面端经 relay 转推、Web 端经 WS 收到。
+    let ws_msg = serde_json::json!({
+        "event": "session-index-upserted",
+        "payload": { "workspaceKey": workspace_key, "sessionId": proj.session_id, "projection": proj },
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
+    Ok(proj)
 }
 
 #[cfg(feature = "tauri-app")]
@@ -372,8 +382,21 @@ pub fn session_index_list_after(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn session_index_delete(workspace_key: String, session_id: String) -> Result<()> {
-    session_index_delete_inner(workspace_key, session_id)
+pub fn session_index_delete(
+    state: tauri::State<'_, crate::AppState>,
+    workspace_key: String,
+    session_id: String,
+) -> Result<()> {
+    session_index_delete_inner(workspace_key.clone(), session_id.clone())?;
+    // 多端广播删除（无 tombstone），远端据此移除桶投影。
+    let ws_msg = serde_json::json!({
+        "event": "session-index-removed",
+        "payload": { "workspaceKey": workspace_key, "sessionId": session_id },
+    });
+    if let Ok(msg) = serde_json::to_string(&ws_msg) {
+        let _ = state.event_broadcast.send(msg);
+    }
+    Ok(())
 }
 
 // ============================================================================
