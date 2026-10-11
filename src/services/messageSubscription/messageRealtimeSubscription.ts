@@ -1,14 +1,16 @@
 /**
- * MessageRealtimeSubscription — S3 阶段 3：Web 端实时合并远端消息（渐进方案 A）
+ * MessageRealtimeSubscription — S3 阶段 3/Phase4：Web 端实时合并远端消息（渐进方案 A）
  *
  * 目标：桌面端发消息 → 后端广播 `chat-message-upserted` → Web 端 WS 订阅 →
  * 把消息 upsert 进对应会话 store，气泡实时出现（无需「恢复」）。
  *
- * 设计（对齐 `plans/s3-message-realtime-sync-phase1-3.md` 已拍板项）：
+ * 设计（对齐 `plans/s3-message-realtime-sync-phase1-3.md` + `...-phase4-streaming.md` 已拍板项）：
  * - **纯事件驱动**：不轮询。断线 gap 由 EventBroadcaster 重放缓冲（seq）兜底，
  *   本阶段消费最新广播即可（阶段 5 再补完整 gap repair）。
  * - **conversationId 路由**：用现成 `findStoreByConversationId` 找 Web 端对应 store。
- * - **去重**：store.messages 已有该 id → 跳过（防自广播回环 + 幂等）。
+ * - **同 id 更新（Phase 4 新增）**：store.messages 已有该 id → **替换**该消息
+ *   （流式期间 assistant 增量 revise 广播：同 id 内容边打边更新，产生跨端打字效果）；
+ *   不存在 → 追加（原阶段 3 去重语义保留其「首次到达」分支）。
  * - **会话未打开**：无 store → 忽略（由会话索引投影 + 恢复兜底，本阶段不做后台填充）。
  * - **还原**：MessageEntry.content = 完整 ChatMessage JSON，`JSON.parse` 还原。
  */
@@ -69,7 +71,10 @@ export async function stopMessageRealtimeSubscription(): Promise<void> {
 }
 
 /**
- * 处理一条广播送达的消息：路由到对应会话 store，合并进消息列表。
+ * 处理一条广播送达的消息：路由到对应会话 store。
+ *
+ * - 同 id 已存在 → **替换**该消息（Phase 4 流式增量：边打边更新，不用跳过）。
+ * - 不存在 → 追加（阶段 3 原有去重语义：「首次到达」append）。
  */
 function handleMessageUpserted(payload: MessageUpsertedPayload): void {
   if (!payload || !payload.conversationId || !payload.message) return
@@ -95,10 +100,8 @@ function handleMessageUpserted(payload: MessageUpsertedPayload): void {
     return
   }
 
-  // 去重：本端已存在该消息 id → 跳过（防自广播回环 + 幂等）
-  const exists = store.messages.some((m) => m.id === chatMessage.id)
-  if (exists) return
-
-  store.addMessage(chatMessage)
+  // Phase 4：同 id 已存在 → 用新版本替换（流式增量更新），否则追加。
+  // 替换时保留远端新 content（blocks/timestamp/isStreaming 一并更新，产生跨端打字效果）。
+  store.upsertMessage(chatMessage)
   log.info('远端消息已合并进会话', { conversationId, messageId: chatMessage.id, type: chatMessage.type })
 }

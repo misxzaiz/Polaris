@@ -1,11 +1,12 @@
 /**
- * messageRealtimeSubscription 单测 — S3 阶段 3（渐进方案 A）
+ * messageRealtimeSubscription 单测 — S3 阶段 3 + Phase4（渐进方案 A）
  *
  * 覆盖核心行为：
  * 1. 启动订阅：register listen('chat-message-upserted')，handler 注册成功返回退订函数；
  * 2. 路由：按 conversationId 用 findStoreByConversationId 定位 Web 端 store；
  * 3. 合并：远端 MessageEntry.content（完整 ChatMessage JSON）还原后 addMessage 进 store；
- * 4. 去重：store 已存在同 id → 跳过（防自广播回环 + 幂等）；
+ * 4. 去重（Phase 4 更新语义）：store 已存在同 id → **upsertMessage 替换**（流式增量更新），
+ *    而非跳过（防自广播回环 + 幂等保留在「首次到达」分支）；
  * 5. 会话未打开：无 store → 忽略，不抛错；
  * 6. 结构异常：content 非合法 ChatMessage → 跳过；
  * 7. 幂等启动 / 停止清理。
@@ -42,7 +43,12 @@ vi.mock('@/services/transport', () => ({
 
 /** 当前被恶意配置的「已打开会话」store；undefined = 会话未打开 */
 let fakeStore:
-  | { conversationId: string; messages: Array<{ id: string }>; addMessage: ReturnType<typeof vi.fn> }
+  | {
+      conversationId: string
+      messages: Array<{ id: string }>
+      addMessage: ReturnType<typeof vi.fn>
+      upsertMessage: ReturnType<typeof vi.fn>
+    }
   | undefined
 
 vi.mock('@/stores/conversationStore/sessionStoreManager', () => ({
@@ -74,6 +80,15 @@ function makeUserPayload(overrides: Record<string, unknown> = {}) {
   }
 }
 
+function makeStore() {
+  return {
+    conversationId: 'conv-1',
+    messages: [],
+    addMessage: vi.fn(),
+    upsertMessage: vi.fn(),
+  }
+}
+
 function emit(payload: unknown): void {
   const handler = listeners.get('chat-message-upserted')
   // 监听已注销时 handler 为 undefined，调用方用副作用断言验证「不再投递」
@@ -102,26 +117,48 @@ describe('messageRealtimeSubscription', () => {
     expect(listeners.size).toBe(1)
   })
 
-  it('合并：远端消息还原为 ChatMessage 并 addMessage 进对应会话 store', async () => {
-    fakeStore = { conversationId: 'conv-1', messages: [], addMessage: vi.fn() }
+  it('合并：远端消息还原为 ChatMessage 并 upsertMessage 进对应会话 store', async () => {
+    fakeStore = makeStore()
     await startMessageRealtimeSubscription()
     emit(makeUserPayload())
 
-    expect(fakeStore.addMessage).toHaveBeenCalledTimes(1)
-    const msg = fakeStore.addMessage.mock.calls[0][0]
+    expect(fakeStore.upsertMessage).toHaveBeenCalledTimes(1)
+    const msg = fakeStore.upsertMessage.mock.calls[0][0]
     expect(msg.id).toBe('m1')
     expect(msg.type).toBe('user')
     expect(msg.content).toBe('你好')
   })
 
-  it('去重：本端已存在同 id → 跳过，不重复合并', async () => {
+  it('Phase 4 更新：同 id 已存在 → upsertMessage 替换（流式增量）而非跳过', async () => {
+    // 模拟 assistant 消息已在本端（流式期间）存在同 id → 用新 content 更新
     fakeStore = {
       conversationId: 'conv-1',
-      messages: [{ id: 'm1' }],
+      messages: [{ id: 'a1' }],
       addMessage: vi.fn(),
+      upsertMessage: vi.fn(),
     }
     await startMessageRealtimeSubscription()
-    emit(makeUserPayload())
+    emit(makeUserPayload({
+      message: {
+        id: 'a1',
+        conversationId: 'conv-1',
+        role: 'assistant',
+        timestamp: 1728600001000,
+        deviceId: 'dev-desktop',
+        content: {
+          id: 'a1',
+          type: 'assistant',
+          blocks: [{ type: 'text', content: '第三段' }],
+          timestamp: '2026-10-11T00:00:01.000Z',
+        },
+        version: 3,
+      },
+    }))
+    // 更新语义：调 upsertMessage 且传入最新 content
+    expect(fakeStore.upsertMessage).toHaveBeenCalledTimes(1)
+    const msg = fakeStore.upsertMessage.mock.calls[0][0]
+    expect(msg.id).toBe('a1')
+    expect(msg.blocks[0].content).toBe('第三段')
     expect(fakeStore.addMessage).not.toHaveBeenCalled()
   })
 
@@ -132,19 +169,19 @@ describe('messageRealtimeSubscription', () => {
   })
 
   it('结构异常：content 非合法 ChatMessage → 跳过且不抛错', async () => {
-    fakeStore = { conversationId: 'conv-1', messages: [], addMessage: vi.fn() }
+    fakeStore = makeStore()
     await startMessageRealtimeSubscription()
     emit(makeUserPayload({ message: { ...(makeUserPayload().message as object), content: { foo: 1 } } }))
-    expect(fakeStore.addMessage).not.toHaveBeenCalled()
+    expect(fakeStore.upsertMessage).not.toHaveBeenCalled()
   })
 
   it('停止订阅：注销事件监听，后续广播不再交付', async () => {
-    fakeStore = { conversationId: 'conv-1', messages: [], addMessage: vi.fn() }
+    fakeStore = makeStore()
     await startMessageRealtimeSubscription()
     await stopMessageRealtimeSubscription()
     expect(listeners.has('chat-message-upserted')).toBe(false)
     // 注销后 handler 已被移除 → emit 变成 no-op，不再投递到 store
     emit(makeUserPayload())
-    expect(fakeStore.addMessage).not.toHaveBeenCalled()
+    expect(fakeStore.upsertMessage).not.toHaveBeenCalled()
   })
 })

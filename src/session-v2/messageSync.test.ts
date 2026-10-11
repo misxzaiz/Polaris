@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { syncSessionToShared, clearSyncedWatermark } from './messageSync'
+import { syncSessionToShared, clearSyncedWatermark, syncStreamingMessage } from './messageSync'
 import type { ChatMessage } from '@/types/chat'
 import { getDeviceId } from '@/utils/deviceId'
 import { invoke } from '@/services/transport'
@@ -22,6 +22,9 @@ import { invoke } from '@/services/transport'
 /** 伪后端：捕获 message_append 调用并模拟幂等语义 */
 const appended: Array<Record<string, unknown>> = []
 const appendedIds = new Set<string>()
+/** 伪后端：捕获 message_revise 调用（记录 id + content + 版本演进） */
+const revised: Array<{ id: string; content: unknown }> = []
+const versionByMessage = new Map<string, number>()
 
 vi.mock('@/services/transport', () => ({
   invoke: vi.fn((cmd: string, args?: Record<string, unknown>) => {
@@ -31,7 +34,15 @@ vi.mock('@/services/transport', () => ({
       if (appendedIds.has(key)) return Promise.resolve(false)
       appendedIds.add(key)
       appended.push(entry)
+      versionByMessage.set(String(entry.id), 1)
       return Promise.resolve(true)
+    }
+    if (cmd === 'message_revise') {
+      const id = String(args?.id)
+      const version = (versionByMessage.get(id) ?? 0) + 1
+      versionByMessage.set(id, version)
+      revised.push({ id, content: args?.content })
+      return Promise.resolve(version)
     }
     return Promise.reject(new Error(`Unknown command: ${cmd}`))
   }),
@@ -57,10 +68,23 @@ function assistantMsg(id: string, blocks: unknown[] = [{ type: 'text', text: '�
   }
 }
 
+function streamingAssistantMsg(id: string, text: string): ChatMessage {
+  return {
+    id,
+    type: 'assistant',
+    engineId: 'claude-code',
+    blocks: [{ type: 'text', content: text }],
+    isStreaming: true,
+    timestamp: '2026-10-11T00:01:00.000Z',
+  }
+}
+
 describe('syncSessionToShared', () => {
   beforeEach(() => {
     appended.length = 0
     appendedIds.clear()
+    revised.length = 0
+    versionByMessage.clear()
     clearSyncedWatermark('s1')
   })
 
@@ -134,5 +158,63 @@ describe('syncSessionToShared', () => {
     vi.mocked(invoke).mockRejectedValueOnce(new Error('backend down'))
     await expect(syncSessionToShared('s1', 'conv-1', [userMsg('u1', 'hi')])).resolves.toBe(false)
     expect(appended.length).toBe(0) // 失败未写入
+  })
+})
+
+describe('syncStreamingMessage（Phase 4 流式增量）', () => {
+  beforeEach(() => {
+    appended.length = 0
+    appendedIds.clear()
+    revised.length = 0
+    versionByMessage.clear()
+    clearSyncedWatermark('s1')
+  })
+
+  afterEach(() => {
+    clearSyncedWatermark('s1')
+  })
+
+  it('conversationId 为 null → 跳过（流式开始前无后端会话）', async () => {
+    await syncStreamingMessage('s1', null, streamingAssistantMsg('a1', '首段'))
+    expect(appended.length).toBe(0)
+    expect(revised.length).toBe(0)
+  })
+
+  it('非 assistant 消息 → 跳过（user 由 syncSessionToShared 负责）', async () => {
+    await syncStreamingMessage('s1', 'conv-1', userMsg('u1', '你好'))
+    expect(appended.length).toBe(0)
+    expect(revised.length).toBe(0)
+  })
+
+  it('首次 → append v1（创建并广播），后续 → revise 新版本（流式增量）', async () => {
+    // 首次 tick：append
+    await syncStreamingMessage('s1', 'conv-1', streamingAssistantMsg('a1', '第'))
+    expect(appended.length).toBe(1)
+    expect(appended[0].id).toBe('a1')
+    expect(appended[0].conversationId).toBe('conv-1')
+    expect((appended[0].content as Record<string, unknown>).isStreaming).toBe(true)
+
+    // 第二个 tick：revise（append 不动）
+    await syncStreamingMessage('s1', 'conv-1', streamingAssistantMsg('a1', '第一段'))
+    expect(appended.length).toBe(1) // 不重复 append
+    expect(revised.length).toBe(1)
+    expect(revised[0].id).toBe('a1')
+    expect((revised[0].content as Record<string, unknown>).blocks[0].content).toBe('第一段')
+
+    // 第三个 tick：再 revise
+    await syncStreamingMessage('s1', 'conv-1', streamingAssistantMsg('a1', '第一段内容'))
+    expect(revised.length).toBe(2)
+    expect((revised[1].content as Record<string, unknown>).blocks[0].content).toBe('第一段内容')
+  })
+
+  it('失败不抛（fire-and-forget）：revise reject → 不抛异常，水位不变', async () => {
+    await syncStreamingMessage('s1', 'conv-1', streamingAssistantMsg('a1', '首段'))
+    expect(appended.length).toBe(1)
+    // 让下一次 revise 拒绝 → 不抛（fire-and-forget 语义）
+    vi.mocked(invoke).mockRejectedValueOnce(new Error('backend down'))
+    await expect(
+      syncStreamingMessage('s1', 'conv-1', streamingAssistantMsg('a1', '第二段')),
+    ).resolves.toBeUndefined()
+    expect(revised.length).toBe(0) // 该次 revise 失败未计入
   })
 })
