@@ -39,6 +39,8 @@ import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
 import { syncSessionToShared } from '@/session-v2/messageSync'
+import { upsertSessionMapping } from '@/session-v2/sessionMapping'
+import { FREE_WORKSPACE_KEY } from '@/stores/workspaceSession/types'
 
 const log = createLogger('ConversationStore')
 
@@ -2051,6 +2053,16 @@ export function createConversationStore(
               },
             })
             set({ conversationId: newSessionId })
+
+            // S5：conversationId 首次确定 → 固化 sessionId↔conversationId 映射到共享 SQLite。
+            // 供恢复路径（loadMessagesForItem → resolve mapping → 读共享消息库）定位会话。
+            // workspaceKey 从会话元数据派生（free 会话用空桶 key），仅作冗余属性。
+            const wsId = sessionMeta?.workspaceId
+            void upsertSessionMapping(
+              sessionId,
+              newSessionId,
+              wsId || FREE_WORKSPACE_KEY,
+            )
           }
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
