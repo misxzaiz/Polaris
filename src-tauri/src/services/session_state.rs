@@ -98,6 +98,21 @@ CREATE TABLE IF NOT EXISTS sessions_index (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_index_ws_seq
   ON sessions_index(workspace_key, seq);
+
+-- 会话映射表（S5 新增，幂等补建）：sessionId ↔ conversationId ↔ externalId
+-- 收敛三轨映射到后端唯一权威，前端不重复维护（spec S5 §3.1）。
+CREATE TABLE IF NOT EXISTS session_mapping (
+  session_id       TEXT PRIMARY KEY,    -- 前端 sessionId（= session_records.id）
+  conversation_id  TEXT NOT NULL,        -- 后端引擎 conversationId
+  external_id      TEXT,                 -- 旧 JSONL 文件名/URI（可为空）
+  workspace_key    TEXT NOT NULL,        -- workspace 分桶 key
+  archived         INTEGER NOT NULL DEFAULT 0,  -- JSONL 删除后标记，前端不展示
+  created_at       INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_session_mapping_ext
+  ON session_mapping(external_id);
+CREATE INDEX IF NOT EXISTS idx_session_mapping_conv
+  ON session_mapping(conversation_id);
 "#;
 
 /// 会话事件类型（对齐前端 `SessionEventType`）
@@ -173,6 +188,23 @@ pub struct SessionProjection {
     pub last_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub started_by_device: Option<String>,
+    pub created_at: i64,
+}
+
+/// 会话映射条目（S5：sessionId ↔ conversationId ↔ externalId 三轨收敛）
+///
+/// 收敛到后端唯一权威表，前端不重复维护（spec S5 §3.1）。
+/// `external_id` 为旧 JSONL 文件名/URI（可为空）；`archived` 表示 JSONL
+/// 已删除但映射保留（前端不展示，spec S5 §5 风险）。
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionMapping {
+    pub session_id: String,
+    pub conversation_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub external_id: Option<String>,
+    pub workspace_key: String,
+    pub archived: bool,
     pub created_at: i64,
 }
 
@@ -260,7 +292,7 @@ impl SessionStateDb {
         })
     }
 
-    /// 幂等补建 `sessions_index` 投影表（不升 SCHEMA_VERSION）。
+    /// 幂等补建 `sessions_index` 投影表 + `session_mapping` 映射表（不升 SCHEMA_VERSION）。
     ///
     /// 本库与消息库共用同一 DB 文件，各自用 `PRAGMA user_version` 判版本并删库重建，
     /// 因此投影表必须「无论版本号多少都存在」，且对已存在库零副作用。
@@ -282,7 +314,19 @@ impl SessionStateDb {
                PRIMARY KEY (workspace_key, session_id)
              );
              CREATE INDEX IF NOT EXISTS idx_sessions_index_ws_seq
-               ON sessions_index(workspace_key, seq);",
+               ON sessions_index(workspace_key, seq);
+             CREATE TABLE IF NOT EXISTS session_mapping (
+               session_id       TEXT PRIMARY KEY,
+               conversation_id  TEXT NOT NULL,
+               external_id      TEXT,
+               workspace_key    TEXT NOT NULL,
+               archived         INTEGER NOT NULL DEFAULT 0,
+               created_at       INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS idx_session_mapping_ext
+               ON session_mapping(external_id);
+             CREATE INDEX IF NOT EXISTS idx_session_mapping_conv
+               ON session_mapping(conversation_id);",
         )
         .map_err(|e| AppError::StateError(format!("补建会话投影表失败: {}", e)))
     }
@@ -1085,6 +1129,125 @@ impl SessionStateDb {
             .query_row(params![id], Self::row_to_record)
             .map_err(|e| AppError::StateError(format!("读取会话记录失败: {}", e)))?;
         Ok(row)
+    }
+
+    // ==========================================================================
+    // 会话映射（session_mapping：sessionId ↔ conversationId ↔ externalId）
+    // ==========================================================================
+    //
+    // 三轨映射收敛到后端唯一权威（spec S5 §3.1）。前端不重复维护。
+    // 幂等补建（ensure_index_schema），不升 SCHEMA_VERSION。
+
+    /// 写入（upsert）映射条目。幂等：session_id 已存在则更新 external_id/archived。
+    pub fn upsert_session_mapping(
+        &self,
+        session_id: &str,
+        conversation_id: &str,
+        external_id: Option<&str>,
+        workspace_key: &str,
+    ) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO session_mapping
+               (session_id, conversation_id, external_id, workspace_key, archived, created_at)
+             VALUES (?1, ?2, ?3, ?4, 0, ?5)
+             ON CONFLICT(session_id) DO UPDATE SET
+               conversation_id = excluded.conversation_id,
+               external_id = COALESCE(excluded.external_id, session_mapping.external_id),
+               workspace_key = excluded.workspace_key",
+            params![
+                session_id,
+                conversation_id,
+                external_id,
+                workspace_key,
+                chrono::Utc::now().timestamp_millis(),
+            ],
+        )
+        .map_err(|e| AppError::StateError(format!("写入会话映射失败: {}", e)))?;
+        Ok(())
+    }
+
+    /// 按 session_id 查映射。
+    pub fn get_session_mapping(&self, session_id: &str) -> Result<Option<SessionMapping>> {
+        let conn = self.conn.lock().unwrap();
+        let row = conn
+            .query_row(
+                "SELECT session_id, conversation_id, external_id, workspace_key, archived, created_at
+                   FROM session_mapping WHERE session_id = ?1",
+                params![session_id],
+                |r| {
+                    Ok(SessionMapping {
+                        session_id: r.get(0)?,
+                        conversation_id: r.get(1)?,
+                        external_id: r.get(2)?,
+                        workspace_key: r.get(3)?,
+                        archived: r.get(4)?,
+                        created_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| AppError::StateError(format!("查询会话映射失败: {}", e)))?;
+        Ok(row)
+    }
+
+    /// 按 external_id 反查映射（恢复旧 JSONL 会话用，spec S5 §3.1）。
+    pub fn find_mapping_by_external_id(&self, external_id: &str) -> Result<Option<SessionMapping>> {
+        let conn = self.conn.lock().unwrap();
+        let row = conn
+            .query_row(
+                "SELECT session_id, conversation_id, external_id, workspace_key, archived, created_at
+                   FROM session_mapping WHERE external_id = ?1",
+                params![external_id],
+                |r| {
+                    Ok(SessionMapping {
+                        session_id: r.get(0)?,
+                        conversation_id: r.get(1)?,
+                        external_id: r.get(2)?,
+                        workspace_key: r.get(3)?,
+                        archived: r.get(4)?,
+                        created_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| AppError::StateError(format!("按 external_id 查映射失败: {}", e)))?;
+        Ok(row)
+    }
+
+    /// 按 conversation_id 反查映射（权限/提问等事件用）。
+    pub fn find_mapping_by_conversation_id(&self, conversation_id: &str) -> Result<Option<SessionMapping>> {
+        let conn = self.conn.lock().unwrap();
+        let row = conn
+            .query_row(
+                "SELECT session_id, conversation_id, external_id, workspace_key, archived, created_at
+                   FROM session_mapping WHERE conversation_id = ?1",
+                params![conversation_id],
+                |r| {
+                    Ok(SessionMapping {
+                        session_id: r.get(0)?,
+                        conversation_id: r.get(1)?,
+                        external_id: r.get(2)?,
+                        workspace_key: r.get(3)?,
+                        archived: r.get(4)?,
+                        created_at: r.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| AppError::StateError(format!("按 conversation_id 查映射失败: {}", e)))?;
+        Ok(row)
+    }
+
+    /// 标记映射为 archived（JSONL 删除后，映射保留但前端不展示，spec S5 §5 风险）。
+    pub fn archive_session_mapping(&self, session_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE session_mapping SET archived = 1 WHERE session_id = ?1",
+            params![session_id],
+        )
+        .map_err(|e| AppError::StateError(format!("归档会话映射失败: {}", e)))?;
+        Ok(())
     }
 }
 
