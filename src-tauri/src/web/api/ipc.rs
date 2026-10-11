@@ -420,7 +420,7 @@ pub async fn handle_ipc_bridge(
         "dialog_delete" => dispatch_dialog_delete(&args),
 
         // ── Session Messages（session-v2 阶段 1b，SQLite append-only）────────
-        "message_append" => dispatch_message_append(&args),
+        "message_append" => dispatch_message_append(&state, &args),
         "message_revise" => dispatch_message_revise(&args),
         "message_read" => dispatch_message_read(&args),
         "message_read_history" => dispatch_message_read_history(&args),
@@ -2118,10 +2118,13 @@ fn parse_message_entry(args: &Value) -> Result<crate::services::session_db::Mess
         .map_err(|e| WebError::BadRequest(format!("message_append 参数解析失败: {}", e)))
 }
 
-fn dispatch_message_append(args: &Value) -> Result<Json<Value>, WebError> {
+fn dispatch_message_append(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
     let entry = parse_message_entry(args)?;
-    let inserted = crate::commands::session_messages::message_append_inner(entry)
+    let inserted = crate::commands::session_messages::message_append_inner(entry.clone())
         .map_err(|e| WebError::Internal(format!("message_append 失败: {}", e)))?;
+    // S3 阶段 4：反向打通——Web 端写库后同样广播，桌面端（与 Web 端）实时收到。
+    // 复用 session_messages::broadcast_message_appended（阶段 2 抽出的公共广播函数）。
+    crate::commands::session_messages::broadcast_message_appended(&state.event_broadcast, entry);
     Ok(Json(serde_json::to_value(inserted).unwrap()))
 }
 

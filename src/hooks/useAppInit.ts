@@ -22,6 +22,10 @@ import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { workspaceSessionsSubscriptionManager } from '@/services/sessionSubscription/workspaceSessionsSubscriptionManager';
+import {
+  startMessageRealtimeSubscription,
+  stopMessageRealtimeSubscription,
+} from '@/services/messageSubscription/messageRealtimeSubscription';
 import { bootstrapEngines } from '../core/engine-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
@@ -173,6 +177,11 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
     // 管理器内部订阅 workspaceStore 响应。业务代码零额外接线。
     workspaceSessionsSubscriptionManager.init();
 
+    // S3 阶段 3：启动消息实时订阅（chat-message-upserted）。
+    // 全局级（非 per-workspace）：桌面端广播 → Web 端 WS 实时合并消息气泡。
+    // 幂等，失败静默降级（桌面端无事件源/无 broadcast 时正常）。
+    void startMessageRealtimeSubscription();
+
     setInitPhase('正在初始化 AI 引擎...');
     // 按需初始化传统 AI Engine
     await bootstrapEngines(defaultEngine);
@@ -307,6 +316,8 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       cleanup();
       cleanupCliListeners();
       perfHotSwitchCleanupRef.current?.();
+      // 关闭消息实时订阅（卸载事件监听）
+      void stopMessageRealtimeSubscription();
       // 关闭所有 LSP 语言服务器进程，避免遗留子进程
       void useLspStore.getState().deactivateAll();
       disconnectTransport();

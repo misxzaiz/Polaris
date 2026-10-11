@@ -38,6 +38,7 @@ import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
+import { syncSessionToShared } from '@/session-v2/messageSync'
 
 const log = createLogger('ConversationStore')
 
@@ -347,6 +348,17 @@ export function createConversationStore(
             messages: [...messages, completedMessage],
             currentMessage: null,
           })
+
+          // S3 阶段 1：消息完成 → fire-and-forget 同步到后端共享 SQLite。
+          // conversationId 此时必已确定（assistant 流式开始前 request 已返回），
+          // 首轮的 user+assistant 随本轮完成一起全量补写（对齐「首轮回填」设计）。
+          // 失败不影响本地会话（messageSync 内部已 log + fire-and-forget）。
+          void syncSessionToShared(
+            get().sessionId,
+            get().conversationId,
+            get().messages,
+          )
+
           return completedMessage
         }
         return null
@@ -1908,6 +1920,12 @@ export function createConversationStore(
           })),
         }
         get().addMessage(userMessage)
+
+        // S3 阶段 1：user 消息入内存后 fire-and-forget 同步到后端共享 SQLite。
+        // - 首轮（conversationId===null）：sync 内部跳过（首轮 user+assistant 由
+        //   finishMessage 完成后补写，对齐「首轮回填」）；
+        // - 非首轮：这里即时同步 user，不等 assistant 完成（长流式/等待期间可见）。
+        void syncSessionToShared(sessionId, conversationId, get().messages)
 
         if (messages.length === 0) {
           // 首轮用户消息：用本地截断标题（取前 16 字符），即时可见。
