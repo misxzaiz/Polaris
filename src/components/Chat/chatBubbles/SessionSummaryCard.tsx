@@ -53,16 +53,20 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
   /** 滚动豁免：卡片展开/折叠、chips 筛选改变列表高度时禁用跟随，避免消息闪动 */
   const { suspendFollow } = useChatScrollActions();
 
+  // 兼容旧格式/远端同步消息：blocks 可能缺失（undefined）。兜底为空数组，
+  // 由下方各 useMemo 各自过滤空段落，避免 extractProcessBlocks(undefined) 崩溃。
+  const safeBlocks = blocks ?? [];
+
   // ① 运行过程：过程块
-  const processBlocks = useMemo(() => extractProcessBlocks(blocks), [blocks]);
+  const processBlocks = useMemo(() => extractProcessBlocks(safeBlocks), [safeBlocks]);
 
   // ② 变更文件
-  const fileChanges = useMemo(() => extractFileChanges(blocks), [blocks]);
+  const fileChanges = useMemo(() => extractFileChanges(safeBlocks), [safeBlocks]);
 
   // ③ 预览
   const previews = useMemo(
-    () => blocks.filter((b) => b.type === 'artifact_preview' || b.type === 'plugin_card'),
-    [blocks]
+    () => safeBlocks.filter((b) => b.type === 'artifact_preview' || b.type === 'plugin_card'),
+    [safeBlocks]
   );
 
   // 运行过程段落按类型细分（思考/工具/计划/权限…），供 chips 展示与筛选

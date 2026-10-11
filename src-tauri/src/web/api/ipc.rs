@@ -2507,10 +2507,29 @@ fn dispatch_session_mapping_find_by_conversation(args: &Value) -> Result<Json<Va
 }
 
 fn dispatch_session_mapping_upsert(args: &Value) -> Result<Json<Value>, WebError> {
-    let mapping: crate::services::session_state::SessionMapping = serde_json::from_value(args.clone())
-        .map_err(|e| WebError::BadRequest(format!("session_mapping 参数非法: {}", e)))?;
-    let saved = crate::commands::session_state_commands::session_mapping_upsert_inner(mapping)
-        .map_err(|e| WebError::Internal(format!("session_mapping_upsert 失败: {}", e)))?;
+    let session_id = args
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("sessionId 参数缺失".to_string()))?
+        .to_string();
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let external_id = args.get("externalId").and_then(|v| v.as_str()).map(|s| s.to_string());
+    let workspace_key = args
+        .get("workspaceKey")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("workspaceKey 参数缺失".to_string()))?
+        .to_string();
+    let saved = crate::commands::session_state_commands::session_mapping_upsert_inner(
+        session_id,
+        conversation_id,
+        external_id,
+        workspace_key,
+    )
+    .map_err(|e| WebError::Internal(format!("session_mapping_upsert 失败: {}", e)))?;
     Ok(Json(serde_json::to_value(saved).unwrap()))
 }
 

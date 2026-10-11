@@ -157,7 +157,7 @@ export const AssistantBubble = memo(function AssistantBubble({
 
           {/* 会话补充卡片：与正文同宽同左缘（在 chat-assistant-content 内部）。
               流式输出期间不展示，回复结束后（isStreaming=false）再出现。 */}
-          {!message.isStreaming && <SessionSummaryCard blocks={message.blocks} />}
+          {!message.isStreaming && <SessionSummaryCard blocks={message.blocks ?? []} />}
         </div>
       </div>
 
