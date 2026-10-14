@@ -156,11 +156,6 @@ function createInitialState(sessionId: string): ConversationState {
 
     // 会话状态
     conversationId: null,
-    // S3 同步桶：首轮 start 返回的稳定会话 id（newSessionId），恒等于 session_mapping 固化值。
-    // 与 conversationId 不同步——conversationId 可能被 session_start 事件覆盖成引擎真实 id
-    // （Claude Code on_session_id_update），而同步桶必须始终是 mapping 侧的稳定 id，
-    // 否则同一会话的 user/assistant 消息会分裂进不同桶（E4 实测 bug）。
-    syncConversationId: null,
     currentConversationSeed: null,
     isStreaming: false,
     isInterrupting: false,
@@ -253,8 +248,6 @@ export function createConversationStore(
   // 流式段落 flush 频率远高于共享库写频率；防抖合并多次 flush 为一次写库+广播，
   // 避免广播风暴。会话切换时定时器仍属本 store 闭包，用会话代际校验防误写。
   let _streamSyncTimer: ReturnType<typeof setTimeout> | null = null
-  // 上次流式同步完成时刻（节流计时起点；非 Date.now 边缘，直接存 ms）
-  let _lastStreamSyncAt = 0
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
   // 磁盘分页加载锁：防止向上滚动连续触发重复读盘
@@ -270,25 +263,21 @@ export function createConversationStore(
   // 防抖合并多次 flush 为一次写库+广播，避免广播风暴；同 350ms 设计对齐文档。
   const STREAM_SYNC_DEBOUNCE = 350
 
-  // S3 Phase 4：流式同步节流调度（350ms 最小间隔）。
-  // 每次段落 flush 后调用：距上次同步 ≥350ms → 立即同步；否则定时器等剩余。
-  // 用**节流**而非防抖：防抖会在持续流式下被不断 reset 永不触发（段落 flush 频率
-  // 50ms << 350ms），导致流式期间 revise 广播稀疏甚至缺失。节流保证流式期间
-  // 每 350ms 至少同步一次，同时不风暴。定时器回调代际校验防误写。
+  // S3 Phase 4：流式同步防抖调度。
+  // 每次段落 flush 后调用：重置 350ms 定时器，到期时把「最新 currentMessage」写共享库+广播。
+  // 用闭包级定时器持有当前 store 的 get（flush 内调用传入），到期代际校验防误写。
   const scheduleStreamSync = (get: () => ConversationStore): void => {
-    // 用稳定同步桶(syncConversationId)而非 conversationId:
-    // conversationId 会被 session_start 覆盖成引擎真实 id(Claude Code),导致
-    // assistant 消息写进与 user 不同的桶 → 跨端路由错位(流式消息另一端收不到)。
-    const gen = get().syncConversationId
+    if (_streamSyncTimer) clearTimeout(_streamSyncTimer)
+    // 捕获当时的会话代际（conversationId），到期后不一致则放弃（用户已切会话/已结束）。
+    const gen = get().conversationId
     if (!gen) return
-    const invoke = () => {
+    _streamSyncTimer = setTimeout(() => {
       _streamSyncTimer = null
       const st = get()
-      // 代际校验：定时器触发时若会话已切换/已 finish（同步桶变化或 currentMessage 没了）则跳过
-      if (st.syncConversationId !== gen) return
+      // 代际校验：定时器触发时若会话已切换/已 finish（conversationId 变化或 currentMessage 没了）则跳过
+      if (st.conversationId !== gen) return
       const cur = st.currentMessage
       if (!cur) return
-      _lastStreamSyncAt = Date.now()
       // currentMessage 是 CurrentAssistantMessage（无 type/timestamp），
       // 构造完整 AssistantChatMessage 供共享库 + 广播（消费端还原需要 type/timestamp）。
       void syncStreamingMessage(st.sessionId, gen, {
@@ -299,17 +288,7 @@ export function createConversationStore(
         isStreaming: true,
         timestamp: new Date().toISOString(),
       })
-    }
-    const elapsed = Date.now() - _lastStreamSyncAt
-    if (elapsed >= STREAM_SYNC_DEBOUNCE) {
-      // 距上次同步已超过窗口 → 立即节流同步
-      if (_streamSyncTimer) clearTimeout(_streamSyncTimer)
-      invoke()
-    } else {
-      // 距上次不足 → 定时器等剩余时间再同步
-      if (_streamSyncTimer) clearTimeout(_streamSyncTimer)
-      _streamSyncTimer = setTimeout(invoke, STREAM_SYNC_DEBOUNCE - elapsed)
-    }
+    }, STREAM_SYNC_DEBOUNCE)
   }
 
   // ===== 消息压缩器 =====
@@ -424,12 +403,12 @@ export function createConversationStore(
           })
 
           // S3 阶段 1：消息完成 → fire-and-forget 同步到后端共享 SQLite。
-          // 同步桶用稳定 syncConversationId（而非可能被 session_start 覆盖的 conversationId），
-          // 保证首轮 user+assistant 写进同一会话桶、跨端路由一致。
+          // conversationId 此时必已确定（assistant 流式开始前 request 已返回），
+          // 首轮的 user+assistant 随本轮完成一起全量补写（对齐「首轮回填」设计）。
           // 失败不影响本地会话（messageSync 内部已 log + fire-and-forget）。
           void syncSessionToShared(
             get().sessionId,
-            get().syncConversationId,
+            get().conversationId,
             get().messages,
           )
 
@@ -1801,13 +1780,7 @@ export function createConversationStore(
       },
 
       // ===== 会话控制 =====
-      setConversationId: (id) =>
-        set((st) => ({
-          conversationId: id,
-          // 首轮固化同步桶:仅当尚未固化时记录(引擎 session_id update 会再次调用本方法,
-          // 但同步桶保持首轮 start 分配的稳定 id,避免 user/assistant 消息分裂进不同桶)。
-          syncConversationId: st.syncConversationId ?? id,
-        })),
+      setConversationId: (id) => set({ conversationId: id }),
       setStreaming: (streaming) => set({ isStreaming: streaming }),
       setError: (error) => set({ error }),
       setProgressMessage: (message) => set({ progressMessage: message }),
@@ -1877,9 +1850,6 @@ export function createConversationStore(
           messages: processedMessages,
           archivedMessages: [],
           conversationId,
-          // 恢复历史会话：同步桶固定为该会话的 conversationId（引擎真实 id 覆盖前恢复场景
-          // 此时 conversationId 即稳定桶；后续 session_start 覆盖不影响 syncConversationId）。
-          syncConversationId: conversationId,
           isStreaming: false,
           error: null,
           currentMessage: null,
@@ -2009,11 +1979,10 @@ export function createConversationStore(
         get().addMessage(userMessage)
 
         // S3 阶段 1：user 消息入内存后 fire-and-forget 同步到后端共享 SQLite。
-        // - 首轮（syncConversationId===null）：sync 内部跳过（首轮 user+assistant 由
+        // - 首轮（conversationId===null）：sync 内部跳过（首轮 user+assistant 由
         //   finishMessage 完成后补写，对齐「首轮回填」）；
         // - 非首轮：这里即时同步 user，不等 assistant 完成（长流式/等待期间可见）。
-        // 同步桶沿用稳定 syncConversationId（非可能被 session_start 覆盖的 conversationId）。
-        void syncSessionToShared(sessionId, get().syncConversationId, get().messages)
+        void syncSessionToShared(sessionId, conversationId, get().messages)
 
         if (messages.length === 0) {
           // 首轮用户消息：用本地截断标题（取前 16 字符），即时可见。
@@ -2138,14 +2107,11 @@ export function createConversationStore(
                 forkSessionId: forkSessionId || undefined,
               },
             })
-            // 首轮固化同步桶（syncConversationId）：= start 分配的稳定会话 id。
-            // 之后 session_start 事件会把 conversationId 覆盖成引擎真实 id（Claude Code），
-            // 但同步桶保持本值不变——user/assistant 写同一桶，跨端路由一致。
-            set({ conversationId: newSessionId, syncConversationId: newSessionId })
+            set({ conversationId: newSessionId })
 
             // S3 Phase 4：首轮 user 消息「发送即实时」。
             // 此前 1930 行的 syncSessionToShared 在 start 返回前执行，conversationId=null 被跳过；
-            // 现在同步桶已确定 → 立即补同步已入队的 user 消息 → 远端实时收到首条气泡
+            // 现在 conversationId 已确定 → 立即补同步已入队的 user 消息 → 远端实时收到首条气泡
             // （不必等 assistant 完成 finishMessage 才整轮回填）。
             void syncSessionToShared(sessionId, newSessionId, get().messages)
 
