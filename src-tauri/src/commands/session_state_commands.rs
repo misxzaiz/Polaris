@@ -261,31 +261,14 @@ pub fn session_mapping_find_by_external_inner(
 }
 
 /// 写入/更新会话映射（幂等 upsert）。
-///
-/// 收清晰业务参数（sessionId / conversationId / externalId / workspaceKey），
-/// 由后端补全 `archived`(false) 与 `created_at`(now)，避免前端漏传导致反序列化失败。
-pub fn session_mapping_upsert_inner(
-    session_id: String,
-    conversation_id: String,
-    external_id: Option<String>,
-    workspace_key: String,
-) -> Result<SessionMapping> {
+pub fn session_mapping_upsert_inner(mapping: SessionMapping) -> Result<SessionMapping> {
     db()?.upsert_session_mapping(
-        &session_id,
-        &conversation_id,
-        external_id.as_deref(),
-        &workspace_key,
+        &mapping.session_id,
+        &mapping.conversation_id,
+        mapping.external_id.as_deref(),
+        &mapping.workspace_key,
     )?;
-    // 返回完整条目（含后端补全的 archived / created_at），供调用方回显/校验。
-    // 优先读取实际落库值，保证 created_at 准确。
-    Ok(db()?.get_session_mapping(&session_id)?.unwrap_or(SessionMapping {
-        session_id,
-        conversation_id,
-        external_id,
-        workspace_key,
-        archived: false,
-        created_at: chrono::Utc::now().timestamp_millis(),
-    }))
+    Ok(mapping)
 }
 
 // ============================================================================
@@ -468,13 +451,8 @@ pub fn session_mapping_find_by_conversation(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn session_mapping_upsert(
-    session_id: String,
-    conversation_id: String,
-    external_id: Option<String>,
-    workspace_key: String,
-) -> Result<SessionMapping> {
-    session_mapping_upsert_inner(session_id, conversation_id, external_id, workspace_key)
+pub fn session_mapping_upsert(mapping: SessionMapping) -> Result<SessionMapping> {
+    session_mapping_upsert_inner(mapping)
 }
 
 #[cfg(test)]
@@ -658,20 +636,16 @@ mod tests {
         // 未写映射前 resolve 返回 None
         assert!(session_mapping_resolve_inner("s1".into()).unwrap().is_none());
 
-        // upsert 写入（幂等）——新签名：收清晰业务参数，后端补全 archived/created_at
-        let saved = session_mapping_upsert_inner(
-            "s1".into(),
-            "conv-1".into(),
-            Some("ext-1".into()),
-            "__free__".into(),
-        )
-        .unwrap();
-        assert_eq!(saved.session_id, "s1");
-        assert_eq!(saved.conversation_id, "conv-1");
-        assert_eq!(saved.external_id.as_deref(), Some("ext-1"));
-        assert_eq!(saved.workspace_key, "__free__");
-        assert!(!saved.archived);
-        assert!(saved.created_at > 0);
+        // upsert 写入（幂等）
+        let mapping = crate::services::session_state::SessionMapping {
+            session_id: "s1".into(),
+            conversation_id: "conv-1".into(),
+            external_id: Some("ext-1".into()),
+            workspace_key: "__free__".into(),
+            archived: false,
+            created_at: 1000,
+        };
+        session_mapping_upsert_inner(mapping.clone()).unwrap();
 
         // resolve 命中（sessionId → mapping）
         let got = session_mapping_resolve_inner("s1".into()).unwrap().unwrap();
@@ -687,12 +661,14 @@ mod tests {
         assert_eq!(by_ext.session_id, "s1");
 
         // 幂等更新：同 sessionId 换 conversationId → upsert（CONFLICT DO UPDATE）覆盖
-        session_mapping_upsert_inner(
-            "s1".into(),
-            "conv-2".into(),
-            None,
-            "__free__".into(),
-        )
+        session_mapping_upsert_inner(crate::services::session_state::SessionMapping {
+            session_id: "s1".into(),
+            conversation_id: "conv-2".into(),
+            external_id: None,
+            workspace_key: "__free__".into(),
+            archived: false,
+            created_at: 2000,
+        })
         .unwrap();
         let updated = session_mapping_resolve_inner("s1".into()).unwrap().unwrap();
         assert_eq!(updated.conversation_id, "conv-2");
