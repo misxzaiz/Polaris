@@ -1,7 +1,7 @@
-# S3 阶段 1-5：桌面 ↔ Web 消息双向实时同步 + 共享历史恢复（渐进方案 A）
+# S3 阶段 1-4：桌面 ↔ Web 消息双向实时同步（渐进方案 A）
 
-> 状态：阶段 1-5 已实现
-> 目标：桌面端发消息 Web 端实时看到新气泡，反之亦然；历史恢复以共享 SQLite 为权威（无需点「恢复」仍可拿完整消息）
+> 状态：阶段 1-4 已实现（阶段 5 待做）
+> 目标：桌面端发消息 Web 端实时看到新气泡，反之亦然（无需点「恢复」）
 > 关联：`session-management-zcode-alignment.md`（spec v1）、当前未提交的 S3 会话投影同步批次
 > 验证约束：`cargo check`（Rust lib 测试受 Tauri DLL 限制）、前端 `pnpm tsc --noEmit` + vitest
 
@@ -135,30 +135,12 @@ Web 端 WS 订阅 chat-message-upserted
 | 2 | 消息广播 | 1 | 后端单测 + `cargo check` ✅ |
 | 3 | Web 实时合并 | 1,2 | 前端单测 + 双端手测 ✅（7 测试绿 + useAppInit 接线） |
 | 4(预留) | 反向打通 | 1,2,3 | 后端 + 前端单测 ✅ |
-| 5 | 共享历史恢复 | 1,2,3,4 | sessionMapping 单测 + 全量 186 测试绿 ✅ |
 
 > **阶段 4 已实现（2026-10-11）**：Web→桌面反向打通，三处改动——
 > 1. `ipc.rs:dispatch_message_append` 补 `state` 参数，写库后复用 `broadcast_message_appended` 广播（与桌面端 command 同一广播函数）；
 > 2. `lib.rs` 桌面 Tauri emit 中继白名单加 `chat-message-upserted`（原仅 chat-event / session-index-*），桌面 webview 实时收到；
 > 3. 桌面端零前端改动——`messageRealtimeSubscription` 已在 useAppInit 启动，tauri `listen` 事件名与 payload 形状与 WS 完全一致（`{conversationId, message}`），`handleMessageUpserted` 同一处理函数复用。
 > 自广播（Web 写→桌面收 / 桌面写→Web 收）由 `message.id` 去重跳过，与阶段 3 一致。
-
-> **阶段 5 已实现（2026-10-11）：共享历史恢复（一致性闭环）**
-> 调研发现：实时路径写后端 SQLite，但**恢复路径（`loadMessagesForItem`）只读本地 JSONL / localStorage / 引擎原生**，
-> Web 端恢复「桌面端创建的会话」会拿空/错消息源。修复分三层——
-> 1. **后端「会话映射解析」命令层**（`session_state_commands.rs` + `ipc.rs` 路由）：
->    `session_mapping_resolve`（sessionId→mapping）/ `session_mapping_find_by_conversation` /
->    `session_mapping_upsert`。复用 S5 已有的 `session_mapping` 表（此前从未被写）。
->    Rust roundtrip 测试已写（本机 cargo test 受 Tauri DLL 限制，cargo check 通过）。
-> 2. **前端写映射**（`createConversationStore.ts` sendMessage 首轮 `set({conversationId})` 后）：
->    fire-and-forget upsert，固化「前端 sessionId ↔ 引擎 conversationId」。
-> 3. **前端恢复读共享源**（`historyService.ts` `loadMessagesForItem`）：JSONL 之后、localStorage 之前
->    插入 SQLite 权威源——resolve mapping → conversationId → `V2MessageLog.read` → 完整消息恢复，
->    `source: 'shared'`。恢复优先级：自有 JSONL（本端无损）> SQLite（跨端权威）> localStorage > 引擎原生。
-> 单测：`sessionMapping.test.ts`（7 测试绿）+ 全量 186 测试绿。
->
-> **gap repair / 增量写无需额外实现**：WS 层已有 seq + lastSeq + resume + replay（`httpTransport.ts`），
-> 断线重连自动补发；幂等水位 + `INSERT OR IGNORE` 已实现「增量」效果。
 
 ---
 

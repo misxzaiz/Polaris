@@ -16,8 +16,6 @@ import { invoke } from '@/services/transport'
 import { aiHistoryDispatch } from '@/services/aiHistoryDispatch'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useViewStore } from '@/stores/index'
-import { resolveSessionMapping } from '@/session-v2/sessionMapping'
-import { V2MessageLog } from '@/session-v2/core/v2-message-log'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { normalizeEngineId } from '@/utils/engineDisplay'
@@ -53,7 +51,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'self' | 'local' | 'claude-code-native' | 'plugin-native' | 'shared'
+  source: 'self' | 'local' | 'claude-code-native' | 'plugin-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -528,48 +526,6 @@ export const historyService = {
       }
     } catch (e) {
       log.warn('自有存储恢复失败，降级', { error: e instanceof Error ? e.message : String(e) })
-    }
-
-    // 1.5 共享存储（S5：后端 SQLite 权威源）。
-    // 本端无自有 JSONL（会话在另一端创建/或经远端投影恢复）时，若共享消息库
-    // 有该会话消息，则以 SQLite 为真相恢复——避免降级到可能只有广播碎片的
-    // localStorage / 引擎原生。优先级：自有 JSONL（本端无损权威）> SQLite（跨端权威）>
-    // localStorage > 引擎原生。
-    try {
-      const mapping = await resolveSessionMapping(sessionId)
-      if (mapping && mapping.conversationId) {
-        const sharedLog = new V2MessageLog()
-        // 全量拉取（无 afterTimestamp），语义对齐 SQLite 权威：本端实时广播合并 +
-        // SQLite 自恢复都可覆盖该会话，故直接全量读取。
-        const entries = await sharedLog.read(mapping.conversationId)
-        if (entries.length > 0) {
-          const messages = entries
-            .map((entry) => {
-              // MessageEntry.content = 完整 ChatMessage JSON（阶段 1 定稿）
-              if (entry.content && typeof entry.content === 'object') {
-                return JSON.parse(JSON.stringify(entry.content)) as ChatMessage
-              }
-              return null
-            })
-            .filter((m): m is ChatMessage => m !== null)
-          if (messages.length > 0) {
-            // 首条 user 消息的文本作标题兜底；否则用会话 id 短哈希
-            const firstUser = messages.find((m) => m.type === 'user')
-            const titleText = typeof firstUser?.content === 'string' ? firstUser.content.slice(0, 24) : ''
-            return {
-              messages,
-              title: titleText || `共享会话 ${mapping.sessionId.slice(0, 8)}`,
-              engineId: normalizeEngineId(engineId ?? 'claude-code'),
-              externalSessionId: mapping.conversationId,
-              workspacePath: null,
-              source: 'shared' as const,
-              paging: null,
-            }
-          }
-        }
-      }
-    } catch (e) {
-      log.warn('共享存储恢复失败，降级', { error: e instanceof Error ? e.message : String(e) })
     }
 
     // 2. localStorage

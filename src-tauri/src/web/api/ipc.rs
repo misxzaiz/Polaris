@@ -450,11 +450,6 @@ pub async fn handle_ipc_bridge(
         "session_index_list_after" => dispatch_session_index_list_after(&args),
         "session_index_delete" => dispatch_session_index_delete(&state, &args),
 
-        // ── Session Mapping（S5：sessionId ↔ conversationId 定位 SQLite 消息）──
-        "session_mapping_resolve" => dispatch_session_mapping_resolve(&args),
-        "session_mapping_find_by_conversation" => dispatch_session_mapping_find_by_conversation(&args),
-        "session_mapping_upsert" => dispatch_session_mapping_upsert(&args),
-
         // ── History Index ──────────────────────────────────────────────────
         "history_query" => dispatch_history_query(&args),
         "history_search" => dispatch_history_search(&args),
@@ -2478,40 +2473,6 @@ fn dispatch_session_index_delete(
         let _ = state.event_broadcast.send(msg);
     }
     Ok(crate::web::error::ok_response())
-}
-
-// ── Session Mapping dispatchers（S5：恢复路径 sessionId ↔ conversationId）──
-
-fn dispatch_session_mapping_resolve(args: &Value) -> Result<Json<Value>, WebError> {
-    let session_id = args
-        .get("sessionId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("sessionId 参数缺失".to_string()))?
-        .to_string();
-    let mapping = crate::commands::session_state_commands::session_mapping_resolve_inner(session_id)
-        .map_err(|e| WebError::Internal(format!("session_mapping_resolve 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(mapping).unwrap()))
-}
-
-fn dispatch_session_mapping_find_by_conversation(args: &Value) -> Result<Json<Value>, WebError> {
-    let conversation_id = args
-        .get("conversationId")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
-        .to_string();
-    let mapping = crate::commands::session_state_commands::session_mapping_find_by_conversation_inner(
-        conversation_id,
-    )
-    .map_err(|e| WebError::Internal(format!("session_mapping_find_by_conversation 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(mapping).unwrap()))
-}
-
-fn dispatch_session_mapping_upsert(args: &Value) -> Result<Json<Value>, WebError> {
-    let mapping: crate::services::session_state::SessionMapping = serde_json::from_value(args.clone())
-        .map_err(|e| WebError::BadRequest(format!("session_mapping 参数非法: {}", e)))?;
-    let saved = crate::commands::session_state_commands::session_mapping_upsert_inner(mapping)
-        .map_err(|e| WebError::Internal(format!("session_mapping_upsert 失败: {}", e)))?;
-    Ok(Json(serde_json::to_value(saved).unwrap()))
 }
 
 // ── History Index dispatchers ───────────────────────────────────────────────

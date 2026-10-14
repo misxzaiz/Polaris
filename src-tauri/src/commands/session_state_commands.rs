@@ -18,8 +18,7 @@ use crate::error::Result;
 use crate::services::data_root::data_root;
 use crate::services::session_db::MessageEntry;
 use crate::services::session_state::{
-    SessionEventEntry, SessionMapping, SessionProjection, SessionRecord, SessionStateDb,
-    SessionStatus,
+    SessionEventEntry, SessionProjection, SessionRecord, SessionStateDb, SessionStatus,
 };
 
 /// 会话状态库全局单例（懒初始化，与消息库同文件）
@@ -238,39 +237,6 @@ pub fn session_index_delete_inner(workspace_key: String, session_id: String) -> 
     Ok(())
 }
 
-// ── 会话映射解析（S5：sessionId ↔ conversationId ↔ externalId）──────────────
-
-/// 按前端 sessionId 解析会话映射（取 conversationId / externalId，用于恢复路径
-/// 定位共享 SQLite 消息）。不存在返回 None。
-pub fn session_mapping_resolve_inner(session_id: String) -> Result<Option<SessionMapping>> {
-    db()?.get_session_mapping(&session_id)
-}
-
-/// 按后端 conversationId 反查会话映射（Web/桌面共享 SQLite 消息 → 前端会话）。
-pub fn session_mapping_find_by_conversation_inner(
-    conversation_id: String,
-) -> Result<Option<SessionMapping>> {
-    db()?.find_mapping_by_conversation_id(&conversation_id)
-}
-
-/// 按 externalId 反查会话映射（引擎原生会话 id → 前端已接管会话）。
-pub fn session_mapping_find_by_external_inner(
-    external_id: String,
-) -> Result<Option<SessionMapping>> {
-    db()?.find_mapping_by_external_id(&external_id)
-}
-
-/// 写入/更新会话映射（幂等 upsert）。
-pub fn session_mapping_upsert_inner(mapping: SessionMapping) -> Result<SessionMapping> {
-    db()?.upsert_session_mapping(
-        &mapping.session_id,
-        &mapping.conversation_id,
-        mapping.external_id.as_deref(),
-        &mapping.workspace_key,
-    )?;
-    Ok(mapping)
-}
-
 // ============================================================================
 // Tauri commands（桌面端）
 // ============================================================================
@@ -433,27 +399,9 @@ pub fn session_index_delete(
     Ok(())
 }
 
-// ── 会话映射解析命令（S5：恢复路径 sessionId ↔ conversationId 定位 SQLite 消息）──
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn session_mapping_resolve(session_id: String) -> Result<Option<SessionMapping>> {
-    session_mapping_resolve_inner(session_id)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn session_mapping_find_by_conversation(
-    conversation_id: String,
-) -> Result<Option<SessionMapping>> {
-    session_mapping_find_by_conversation_inner(conversation_id)
-}
-
-#[cfg(feature = "tauri-app")]
-#[tauri::command]
-pub fn session_mapping_upsert(mapping: SessionMapping) -> Result<SessionMapping> {
-    session_mapping_upsert_inner(mapping)
-}
+// ============================================================================
+// Tests
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -628,49 +576,5 @@ mod tests {
         assert!(session_event_append_with_seq_inner(&e1).unwrap());
         let r = session_event_read_inner("conv-1".into()).unwrap();
         assert!(r.iter().any(|ev| ev.seq == 99));
-    }
-
-    #[test]
-    fn mapping_resolve_roundtrip() {
-        setup_temp_db();
-        // 未写映射前 resolve 返回 None
-        assert!(session_mapping_resolve_inner("s1".into()).unwrap().is_none());
-
-        // upsert 写入（幂等）
-        let mapping = crate::services::session_state::SessionMapping {
-            session_id: "s1".into(),
-            conversation_id: "conv-1".into(),
-            external_id: Some("ext-1".into()),
-            workspace_key: "__free__".into(),
-            archived: false,
-            created_at: 1000,
-        };
-        session_mapping_upsert_inner(mapping.clone()).unwrap();
-
-        // resolve 命中（sessionId → mapping）
-        let got = session_mapping_resolve_inner("s1".into()).unwrap().unwrap();
-        assert_eq!(got.conversation_id, "conv-1");
-        assert_eq!(got.workspace_key, "__free__");
-
-        // 反查（conversationId → mapping）
-        let by_conv = session_mapping_find_by_conversation_inner("conv-1".into()).unwrap().unwrap();
-        assert_eq!(by_conv.session_id, "s1");
-
-        // externalId 反查
-        let by_ext = session_mapping_find_by_external_inner("ext-1".into()).unwrap().unwrap();
-        assert_eq!(by_ext.session_id, "s1");
-
-        // 幂等更新：同 sessionId 换 conversationId → upsert（CONFLICT DO UPDATE）覆盖
-        session_mapping_upsert_inner(crate::services::session_state::SessionMapping {
-            session_id: "s1".into(),
-            conversation_id: "conv-2".into(),
-            external_id: None,
-            workspace_key: "__free__".into(),
-            archived: false,
-            created_at: 2000,
-        })
-        .unwrap();
-        let updated = session_mapping_resolve_inner("s1".into()).unwrap().unwrap();
-        assert_eq!(updated.conversation_id, "conv-2");
     }
 }
