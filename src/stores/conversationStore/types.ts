@@ -766,13 +766,6 @@ export interface CreateSessionOptions {
    * 否则本窗口历史会污染其他端的远端会话列表。
    */
   skipIndexRegister?: boolean
-  /**
-   * 跳过注册到 workspace 桶（投影/预览会话用）。
-   * 常规会话需注册以建立桶归属（多窗口不互踩）；但「远端会话投影 store」
-   * 不是本端创建的会话，注册会把该会话认领为本端归属，导致其从「其他窗口的会话」
-   * 列表消失（污染远端投影）。投影 store 仅订阅渲染，不应影响跨端会话列表。
-   */
-  skipBucketRegister?: boolean
 }
 
 /**
@@ -808,13 +801,6 @@ export interface SessionManagerState {
 
   /** 初始化状态 */
   isInitialized: boolean
-
-  /**
-   * 投影 store 流式滴答：每次 dispatchEvent 路由到 silent 投影 store 时递增。
-   * 供 useMergedSessionList 等订阅方感知「投影 store 内部 currentMessage 变化」——
-   * 否则 stores Map 引用不变，UI 无法实时刷新远端会话预览。
-   */
-  streamingTick: number
 }
 
 /**
