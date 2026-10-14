@@ -613,20 +613,11 @@ pub fn run() {
                             match raw_rx.recv().await {
                                 Ok(msg) => {
                                     let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) else { continue };
-                                    // 中继 chat-event（流式/同步直发）与 session-index 广播
-                                    // （workspace 级会话投影，多端同步）。其余事件不转发给桌面 webview。
-                                    let event_name = parsed.get("event").and_then(|e| e.as_str());
-                                    let is_relayed = matches!(
-                                        event_name,
-                                        Some("chat-event")
-                                            | Some("session-index-upserted")
-                                            | Some("session-index-removed")
-                                    );
-                                    if !is_relayed {
+                                    if parsed.get("event").and_then(|e| e.as_str()) != Some("chat-event") {
                                         continue;
                                     }
                                     let Some(payload) = parsed.get("payload") else { continue };
-                                    let _ = handle.emit(event_name.unwrap_or("chat-event"), payload);
+                                    let _ = handle.emit("chat-event", payload);
                                     let is_session_end = payload
                                         .get("payload")
                                         .and_then(|p| p.get("type"))
