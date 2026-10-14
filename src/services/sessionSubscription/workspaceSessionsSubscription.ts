@@ -30,8 +30,6 @@ import {
 } from '@/services/sessionIndexService'
 import { listen } from '@/services/transport'
 import { workspaceSessionSlice } from '@/stores/workspaceSession'
-import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
-import { useViewStore } from '@/stores/index'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('WorkspaceSessionsSubscription')
@@ -250,18 +248,7 @@ export class WorkspaceSessionsSubscription {
   private defaultApplySnapshot = (snapshot: WorkspaceSessionsSnapshot): void => {
     const slice = workspaceSessionSlice.getState()
     slice.ensureBucket(this.workspaceKey)
-    // 以快照为权威：先清理「不在快照且本端未打开」的残留投影
-    // （后端表可能被其他端删除/重建，旧投影滞留会污染远端列表）
-    const keepIds = new Set(snapshot.sessions.map((s) => s.sessionId))
-    for (const id of sessionStoreManager.getState().stores.keys()) {
-      keepIds.add(id)
-    }
-    // 本端视口 multiSessionIds（本窗口打开过的历史会话）视为本地权威，不清理
-    for (const id of useViewStore.getState().multiSessionIds) {
-      keepIds.add(id)
-    }
-    slice.reconcileBucketProjection(this.workspaceKey, keepIds)
-    // 再由快照覆盖/合并投影
+    // 覆盖桶内投影：用快照重建 sessionMetadata
     for (const proj of snapshot.sessions) {
       slice.upsertSessionProjection(this.workspaceKey, proj.sessionId, {
         title: proj.title,

@@ -61,11 +61,6 @@ export interface WorkspaceSessionSliceActions {
     sessionId: string,
     projection: Partial<SessionMetadata>,
   ) => void
-  /** 以快照为权威重建桶投影（清理快照外的残留投影，保留本地已打开会话） */
-  reconcileBucketProjection: (
-    workspaceKey: string,
-    keepIds: ReadonlySet<string>,
-  ) => void
   /** 切换桶内活跃会话（多窗口不互踩） */
   switchSessionInBucket: (workspaceKey: string, sessionId: string | null) => void
   /** 设置当前激活 workspace（workspace 切换时调用） */
@@ -163,36 +158,6 @@ export const workspaceSessionSlice = create<WorkspaceSessionSliceStore>((set, ge
       })
       return { buckets: newBuckets }
     })
-  },
-
-  /**
-   * 以快照为权威重建桶投影：清理「不在保留集合」的残留投影条目。
-   *
-   * 背景（S3 数据残留修复）：后端 session_index 表可能被其他端删除/重建，
-   * 首拉快照只 upsert 不清理，导致「已不存在的旧投影」滞留桶内，
-   * 被 useMergedSessionList 误判为远端会话。
-   *
-   * 规则：保留 = 快照内 sessionId ∪ 本端已打开会话（localOpenIds，调用方算并集）。
-   * 其余（残留投影）从桶的 sessions / sessionMetadata 一并移除。
-   */
-  reconcileBucketProjection: (workspaceKey, keepIds) => {
-    const state = get()
-    const bucket = state.buckets.get(workspaceKey)
-    if (!bucket) return
-    const newBuckets = new Map(state.buckets)
-    const newSessions = new Map(bucket.sessions)
-    const newMetadata = new Map(bucket.sessionMetadata)
-    for (const id of bucket.sessionMetadata.keys()) {
-      if (keepIds.has(id)) continue
-      newSessions.delete(id)
-      newMetadata.delete(id)
-    }
-    newBuckets.set(workspaceKey, {
-      ...bucket,
-      sessions: newSessions,
-      sessionMetadata: newMetadata,
-    })
-    set({ buckets: newBuckets })
   },
 
   updateSessionMetadata: (workspaceKey, sessionId, updates) => {

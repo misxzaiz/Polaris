@@ -8,101 +8,19 @@
  * - 支持展开/关闭操作
  */
 
-import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, useEffect, useState } from 'react';
+import { memo, useCallback, useMemo, useRef, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { LayoutGrid, Cloud, Loader2 } from 'lucide-react';
+import { LayoutGrid } from 'lucide-react';
 import { SessionCell } from './SessionCell';
-import { useViewStore, useToastStore } from '@/stores';
+import { useViewStore } from '@/stores';
 import {
   useSessionMetadataList,
   useActiveSessionId,
 } from '@/stores/conversationStore/sessionStoreManager';
-import {
-  useMergedSessionList,
-  materializeRemoteSession,
-  type RemoteSessionRef,
-} from '@/hooks/useWorkspaceSessionSync';
-import { createLogger } from '@/utils/logger';
-
-const log = createLogger('MultiSessionGrid');
 
 /** 第二行静态最小高度样式 */
 const ROW2_MIN_HEIGHT_STYLE: React.CSSProperties = { minHeight: '50%' }
-
-/** 简短时间格式化（与历史面板一致，仅显示相对时间） */
-function formatUpdatedAt(iso?: string): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const now = Date.now()
-  const diff = now - d.getTime()
-  const min = Math.floor(diff / 60_000)
-  if (min < 1) return '刚刚'
-  if (min < 60) return `${min} 分钟前`
-  const hr = Math.floor(min / 60)
-  if (hr < 24) return `${hr} 小时前`
-  const day = Math.floor(hr / 24)
-  if (day < 30) return `${day} 天前`
-  return d.toLocaleDateString()
-}
-
-/**
- * 远程会话条：展示「其他窗口/端创建的、本端尚未打开的」会话，提供按需恢复。
- *
- * 设计约束：绝不自动进 multiSessionIds（本端视口），只列出可恢复条目，
- * 用户点击「恢复」才调用 historyService.restoreFromHistory 落地为本地会话。
- */
-interface RemoteSessionsStripProps {
-  remoteSessions: RemoteSessionRef[];
-  restoring: string | null;
-  onRestore: (ref: RemoteSessionRef) => void;
-}
-
-function RemoteSessionsStrip({ remoteSessions, restoring, onRestore }: RemoteSessionsStripProps) {
-  const { t } = useTranslation('chat')
-  if (remoteSessions.length === 0) return null
-  return (
-    <div className="shrink-0 border-t border-border bg-background-surface/60 px-2 py-1.5">
-      <div className="flex items-center gap-1 text-text-tertiary text-[10px] uppercase tracking-wide mb-1">
-        <Cloud className="w-3 h-3" />
-        <span>{t('multiSession.remoteSessions', '其他窗口的会话')}</span>
-        <span className="ml-1 bg-background-hover rounded-full px-1.5 py-0.5 text-[10px] leading-none">
-          {remoteSessions.length}
-        </span>
-      </div>
-      <div className="flex gap-1.5 overflow-x-auto">
-        {remoteSessions.map((ref) => {
-          const busy = restoring === ref.sessionId
-          return (
-            <button
-              key={ref.sessionId}
-              onClick={() => onRestore(ref)}
-              disabled={busy || restoring !== null}
-              title={ref.sessionId}
-              className={clsx(
-                'shrink-0 flex items-center gap-1.5 max-w-[200px] px-2 py-1 rounded-md border text-xs transition-colors',
-                busy
-                  ? 'border-border bg-background-hover text-text-muted cursor-wait'
-                  : 'border-border-subtle bg-background-surface text-text-secondary hover:bg-background-hover hover:text-text-primary hover:border-border'
-              )}
-            >
-              {busy ? (
-                <Loader2 className="w-3 h-3 shrink-0 animate-spin" />
-              ) : (
-                <Cloud className="w-3 h-3 shrink-0 text-text-muted" />
-              )}
-              <span className="truncate">{ref.title || '远端会话'}</span>
-              <span className="shrink-0 text-text-tertiary text-[10px]">
-                {formatUpdatedAt(ref.updatedAt)}
-              </span>
-            </button>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
 
 /** 暴露给父组件的方法 */
 export interface MultiSessionGridRef {
@@ -139,10 +57,6 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
     const pendingScrollToId = useViewStore(state => state.pendingScrollToId);
     const clearScrollRequest = useViewStore(state => state.clearScrollRequest);
 
-    // 远端会话（其他窗口/端创建、本端未打开的可恢复条目）
-    const { remote: remoteSessions } = useMergedSessionList();
-    const [restoring, setRestoring] = useState<string | null>(null);
-
     // 滚动容器 ref
     const row1Ref = useRef<HTMLDivElement>(null);
     const row2Ref = useRef<HTMLDivElement>(null);
@@ -156,32 +70,6 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
         .map(id => allSessionMetadata.find(m => m.id === id))
         .filter((m): m is NonNullable<typeof m> => m !== undefined);
     }, [multiSessionIds, allSessionMetadata]);
-
-    // 恢复远端会话：落地为本地会话（restoreFromHistory 内部 addToMultiView）
-    const handleRestoreRemote = useCallback(async (ref: RemoteSessionRef) => {
-      if (restoring) return
-      setRestoring(ref.sessionId)
-      try {
-        const newActive = await materializeRemoteSession(ref.sessionId, ref.engineId, ref.title)
-        if (newActive) {
-          log.info('远端会话恢复成功', { sessionId: ref.sessionId, newActive })
-        } else {
-          useToastStore.getState().addToast({
-            type: 'error',
-            title: t('history.restoreFailed', '恢复会话失败'),
-            message: t('history.restoreFailedMessage', '无法加载会话消息，会话数据可能已过期'),
-          })
-        }
-      } catch (e) {
-        useToastStore.getState().addToast({
-          type: 'error',
-          title: t('history.restoreFailed', '恢复会话失败'),
-          message: e instanceof Error ? e.message : String(e),
-        })
-      } finally {
-        setRestoring(null)
-      }
-    }, [restoring, t]);
 
     // 按行分配会话
     const { row1Sessions, row2Sessions } = useMemo(() => {
@@ -255,20 +143,13 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
       );
     }
 
-    // 空状态：引导添加会话（远程条垫底，仍可恢复其他窗口的会话）
+    // 空状态：引导添加会话
     if (displaySessions.length === 0) {
       return (
-        <div className="flex flex-col h-full">
-          <div className="flex-1 flex flex-col items-center justify-center text-center p-4">
-            <LayoutGrid className="w-12 h-12 text-text-muted mb-4" />
-            <p className="text-text-secondary text-sm mb-4">{t('multiSession.mode')}</p>
-            <p className="text-text-muted text-xs mb-4">{t('multiSession.hint')}</p>
-          </div>
-          <RemoteSessionsStrip
-            remoteSessions={remoteSessions}
-            restoring={restoring}
-            onRestore={handleRestoreRemote}
-          />
+        <div className="flex flex-col items-center justify-center h-full text-center p-4">
+          <LayoutGrid className="w-12 h-12 text-text-muted mb-4" />
+          <p className="text-text-secondary text-sm mb-4">{t('multiSession.mode')}</p>
+          <p className="text-text-muted text-xs mb-4">{t('multiSession.hint')}</p>
         </div>
       );
     }
@@ -323,13 +204,6 @@ export const MultiSessionGrid = memo(forwardRef<MultiSessionGridRef, MultiSessio
             ))}
           </div>
         )}
-
-        {/* 远程会话条：展示其他窗口/端创建、本端未打开的可恢复会话 */}
-        <RemoteSessionsStrip
-          remoteSessions={remoteSessions}
-          restoring={restoring}
-          onRestore={handleRestoreRemote}
-        />
       </div>
     );
   }

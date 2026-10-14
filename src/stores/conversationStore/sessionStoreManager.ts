@@ -216,18 +216,15 @@ function createSessionManagerStore() {
       // S3：写侧接线 — 后端投影（workspace 级权威列表）。
       // fire-and-forget：失败不影响本地会话创建；后端 register 成功后广播
       // session-index-upserted，多端同步（含本端，经 WS/桌面 relay）。
-      // 恢复/Fork 路径（skipIndexRegister）不写——本端历史不应污染跨端索引。
-      if (!options.skipIndexRegister) {
-        void registerSessionToIndex(wsKey, {
-          id: sessionId,
-          title: metadata.title,
-          engineId: metadata.engineId ?? configEngineId ?? 'claude-code',
-          workspaceId: metadata.workspaceId ?? undefined,
-          createdAt: new Date(metadata.createdAt).getTime(),
-        }).catch((e) => {
-          log.warn('写后端会话投影失败（本地会话不受影响）', { sessionId, error: String(e) })
-        })
-      }
+      void registerSessionToIndex(wsKey, {
+        id: sessionId,
+        title: metadata.title,
+        engineId: metadata.engineId ?? configEngineId ?? 'claude-code',
+        workspaceId: metadata.workspaceId ?? undefined,
+        createdAt: new Date(metadata.createdAt).getTime(),
+      }).catch((e) => {
+        log.warn('写后端会话投影失败（本地会话不受影响）', { sessionId, error: String(e) })
+      })
 
       log.info('创建会话', { sessionId })
 
@@ -240,14 +237,13 @@ function createSessionManagerStore() {
     },
 
     createSessionFromHistory: (messages, conversationId, metadata) => {
-      // 创建新会话（恢复路径：跳过写跨端索引，本端历史不污染其他端远端列表）
+      // 创建新会话
       const sessionId = get().createSession({
         type: metadata?.workspaceId ? 'project' : 'free',
         workspaceId: metadata?.workspaceId,
         title: metadata?.title || `历史会话 ${get().stores.size + 1}`,
         forkFromId: metadata?.forkFromId,
         engineId: metadata?.engineId,
-        skipIndexRegister: true,
       })
 
       // 获取新创建的 Store 并设置历史消息（paging 非空 = 尾部优先分页恢复）
