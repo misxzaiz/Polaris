@@ -28,43 +28,10 @@ import { useWorkspaceStore } from '../workspaceStore'
 import { useViewStore } from '../index'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId } from '@/utils/engineDisplay'
-import {
-  workspaceSessionSlice,
-  resolveWorkspaceKeyFromPath,
-  FREE_WORKSPACE_KEY,
-} from '../workspaceSession'
 import { useSessionConfig } from '../sessionConfigStore'
 import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 const log = createLogger('SessionStoreManager')
-
-// ============================================================================
-// S2：workspace 桶归属解析
-// ============================================================================
-
-/**
- * 从会话的 workspaceId + type 解析 workspaceKey。
- *
- * - free 会话（无 workspaceId 或 type==='free'）→ FREE_WORKSPACE_KEY
- * - 有 workspaceId → 查 workspaceStore 得 path → resolveWorkspaceKeyFromPath
- * - workspaceId 无对应 workspace（已删除等）→ FREE_WORKSPACE_KEY
- *
- * 对齐 spec §4.1：workspaceKey = identity ?? path，本地场景 identity 空 → path。
- */
-function resolveSessionWorkspaceKey(
-  workspaceId: string | null | undefined,
-  sessionType?: string,
-): string {
-  if (sessionType === 'free' || !workspaceId) {
-    return FREE_WORKSPACE_KEY
-  }
-  const wsStore = useWorkspaceStore.getState()
-  const ws = wsStore.workspaces.find((w) => w.id === workspaceId)
-  if (!ws) {
-    return FREE_WORKSPACE_KEY
-  }
-  return resolveWorkspaceKeyFromPath(ws.path)
-}
 
 // ============================================================================
 // Manager Store Type
@@ -205,13 +172,6 @@ function createSessionManagerStore() {
       // 会话级工作区感知（ChatInput 内嵌等）从创建起就是失效的。
       conversationStore.setState({ workspaceId: metadata.workspaceId })
 
-      // S2：注册会话到 workspace 桶（建立桶归属，多窗口/多端不互踩）
-      const wsKey = resolveSessionWorkspaceKey(metadata.workspaceId, metadata.type)
-      workspaceSessionSlice.getState().registerSession(wsKey, sessionId, metadata)
-      if (!options.silentMode) {
-        workspaceSessionSlice.getState().switchSessionInBucket(wsKey, sessionId)
-      }
-
       log.info('创建会话', { sessionId })
 
       // 非静默模式时自动加入多窗口视图
@@ -288,13 +248,6 @@ function createSessionManagerStore() {
       // 同步从多窗口视图移除
       useViewStore.getState().removeFromMultiView(sessionId)
 
-      // S2：从 workspace 桶移除归属
-      const deletedMetadata = state.sessionMetadata.get(sessionId)
-      if (deletedMetadata) {
-        const wsKey = resolveSessionWorkspaceKey(deletedMetadata.workspaceId, deletedMetadata.type)
-        workspaceSessionSlice.getState().unregisterSession(wsKey, sessionId)
-      }
-
       log.info('删除会话', { sessionId })
     },
 
@@ -360,14 +313,6 @@ function createSessionManagerStore() {
       }
 
       log.info('切换会话', { sessionId })
-
-      // S2：同步 workspace 桶内活跃指针（多窗口不互踩）
-      const switchMetadata = get().sessionMetadata.get(sessionId)
-      if (switchMetadata) {
-        const wsKey = resolveSessionWorkspaceKey(switchMetadata.workspaceId, switchMetadata.type)
-        workspaceSessionSlice.getState().switchSessionInBucket(wsKey, sessionId)
-        workspaceSessionSlice.getState().setActiveWorkspace(wsKey)
-      }
     },
 
     updateSessionTitle: (sessionId: string, title: string) => {
