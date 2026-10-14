@@ -82,35 +82,8 @@ pub fn message_delete_by_conversation_inner(conversation_id: String) -> Result<(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn message_append(
-    state: tauri::State<'_, crate::AppState>,
-    entry: MessageEntry,
-) -> Result<bool> {
-    let inserted = message_append_inner(entry.clone())?;
-    // S3 阶段 2：多端广播——桌面端经 relay 转推、Web 端经 WS 收到，
-    // 让他端能实时 upsert 这条消息到对应会话（渐进方案 A 桌面→web 单向）。
-    broadcast_message_appended(&state.event_broadcast, entry);
-    Ok(inserted)
-}
-
-/// 广播一条已写入的消息（供 tauri command 与 Web IPC bridge 复用）。
-///
-/// 对齐 `session_index_register` 的广播范式：`{"event":...,"payload":...}` 对象，
-/// 经全局 EventBroadcaster 分配 seq + 写入重放缓冲，断线端重连可补发。
-pub(crate) fn broadcast_message_appended(
-    broadcaster: &crate::web::EventBroadcaster,
-    entry: MessageEntry,
-) {
-    let ws_msg = serde_json::json!({
-        "event": "chat-message-upserted",
-        "payload": {
-            "conversationId": entry.conversation_id,
-            "message": entry,
-        },
-    });
-    if let Ok(msg) = serde_json::to_string(&ws_msg) {
-        let _ = broadcaster.send(msg);
-    }
+pub fn message_append(entry: MessageEntry) -> Result<bool> {
+    message_append_inner(entry)
 }
 
 #[cfg(feature = "tauri-app")]
