@@ -38,7 +38,7 @@ import { cancelScheduledFlush } from './eventHandler'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
-import { syncSessionToShared, syncStreamingMessage } from '@/session-v2/messageSync'
+import { syncSessionToShared } from '@/session-v2/messageSync'
 import { upsertSessionMapping } from '@/session-v2/sessionMapping'
 import { FREE_WORKSPACE_KEY } from '@/stores/workspaceSession/types'
 
@@ -244,10 +244,6 @@ export function createConversationStore(
   // 3. 超时保护：STREAM_FLUSH_INTERVAL 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
-  // S3 Phase 4：流式同步防抖定时器（350ms）。
-  // 流式段落 flush 频率远高于共享库写频率；防抖合并多次 flush 为一次写库+广播，
-  // 避免广播风暴。会话切换时定时器仍属本 store 闭包，用会话代际校验防误写。
-  let _streamSyncTimer: ReturnType<typeof setTimeout> | null = null
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
   // 磁盘分页加载锁：防止向上滚动连续触发重复读盘
@@ -258,38 +254,6 @@ export function createConversationStore(
   // - 现为 50ms：20fps 更新，观感平滑；末段走轻量渲染路径，成本可承受
   // 不要在未实测观感的情况下调大此值。
   const STREAM_FLUSH_INTERVAL = 50
-
-  // S3 Phase 4：流式同步防抖窗口（ms）。段落 flush 频率（~20fps）远高于共享库写频率，
-  // 防抖合并多次 flush 为一次写库+广播，避免广播风暴；同 350ms 设计对齐文档。
-  const STREAM_SYNC_DEBOUNCE = 350
-
-  // S3 Phase 4：流式同步防抖调度。
-  // 每次段落 flush 后调用：重置 350ms 定时器，到期时把「最新 currentMessage」写共享库+广播。
-  // 用闭包级定时器持有当前 store 的 get（flush 内调用传入），到期代际校验防误写。
-  const scheduleStreamSync = (get: () => ConversationStore): void => {
-    if (_streamSyncTimer) clearTimeout(_streamSyncTimer)
-    // 捕获当时的会话代际（conversationId），到期后不一致则放弃（用户已切会话/已结束）。
-    const gen = get().conversationId
-    if (!gen) return
-    _streamSyncTimer = setTimeout(() => {
-      _streamSyncTimer = null
-      const st = get()
-      // 代际校验：定时器触发时若会话已切换/已 finish（conversationId 变化或 currentMessage 没了）则跳过
-      if (st.conversationId !== gen) return
-      const cur = st.currentMessage
-      if (!cur) return
-      // currentMessage 是 CurrentAssistantMessage（无 type/timestamp），
-      // 构造完整 AssistantChatMessage 供共享库 + 广播（消费端还原需要 type/timestamp）。
-      void syncStreamingMessage(st.sessionId, gen, {
-        id: cur.id,
-        type: 'assistant',
-        engineId: cur.engineId,
-        blocks: cur.blocks,
-        isStreaming: true,
-        timestamp: new Date().toISOString(),
-      })
-    }, STREAM_SYNC_DEBOUNCE)
-  }
 
   // ===== 消息压缩器 =====
   // 模块级实例，管理消息快照的 LRU 缓存
@@ -319,21 +283,6 @@ export function createConversationStore(
       addMessage: (message) => {
         set((state) => {
           const newMessages = [...state.messages, message]
-          return { messages: newMessages }
-        })
-      },
-
-      // S3 Phase 4 upsert：媒体跨端实时合并的核心。
-      // 同 id 已存在 → 替换该消息（带远端新 content/blocks/timestamp/isStreaming）；
-      // 不存在 → 追加。替换不重排、保持原位置，仅同 id 更新（流式增量 revise 广播用）。
-      upsertMessage: (message) => {
-        set((state) => {
-          const idx = state.messages.findIndex((m) => m.id === message.id)
-          if (idx < 0) {
-            return { messages: [...state.messages, message] }
-          }
-          const newMessages = [...state.messages]
-          newMessages[idx] = message
           return { messages: newMessages }
         })
       },
@@ -887,10 +836,6 @@ export function createConversationStore(
 
         // 段落级策略：不需要自动重新调度
         // flush 时机由 appendTextBlock 中的段落检测 (\n\n) 或超时保护触发
-
-        // S3 Phase 4：段落 flush 后调度流式增量同步（350ms 防抖）。
-        // 让另一端实时看到本轮 assistant 内容边打边出现，而非等 finishMessage 全量补写。
-        scheduleStreamSync(get)
       },
 
       appendThinkingBlock: (content) => {
@@ -2108,12 +2053,6 @@ export function createConversationStore(
               },
             })
             set({ conversationId: newSessionId })
-
-            // S3 Phase 4：首轮 user 消息「发送即实时」。
-            // 此前 1930 行的 syncSessionToShared 在 start 返回前执行，conversationId=null 被跳过；
-            // 现在 conversationId 已确定 → 立即补同步已入队的 user 消息 → 远端实时收到首条气泡
-            // （不必等 assistant 完成 finishMessage 才整轮回填）。
-            void syncSessionToShared(sessionId, newSessionId, get().messages)
 
             // S5：conversationId 首次确定 → 固化 sessionId↔conversationId 映射到共享 SQLite。
             // 供恢复路径（loadMessagesForItem → resolve mapping → 读共享消息库）定位会话。

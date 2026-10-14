@@ -115,18 +115,8 @@ pub(crate) fn broadcast_message_appended(
 
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
-pub fn message_revise(
-    state: tauri::State<'_, crate::AppState>,
-    id: String,
-    content: serde_json::Value,
-) -> Result<i64> {
-    let new_version = message_revise_inner(id.clone(), content.clone())?;
-    // S3 Phase 4：修订也实时广播（流式期间 assistant 增量边写边广播，消费端同 id 更新）。
-    // 用 message_get_latest 读回完整最新版 entry，复用广播函数。
-    if let Some(entry) = message_get_latest_inner(id)? {
-        broadcast_message_appended(&state.event_broadcast, entry);
-    }
-    Ok(new_version)
+pub fn message_revise(id: String, content: serde_json::Value) -> Result<i64> {
+    message_revise_inner(id, content)
 }
 
 #[cfg(feature = "tauri-app")]

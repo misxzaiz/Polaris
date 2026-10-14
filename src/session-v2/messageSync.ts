@@ -1,11 +1,10 @@
 /**
- * messageSync — S3 阶段 1 + Phase4：桌面端消息 → 后端共享 SQLite（渐进方案 A）
+ * messageSync — S3 阶段 1：桌面端消息 → 后端共享 SQLite（渐进方案 A）
  *
  * 目标：让桌面端发送的消息（user + assistant）写入后端 `<DataRoot>/session-v2/messages.db`，
- * 供 Web 端经共享 EventBroadcaster 实时拉取（阶段 2/3 接线后）；Phase 4 扩展到
- * 流式期间「边打边」实时更新（assistant 增量 revise 广播）。
+ * 供 Web 端经共享 EventBroadcaster 实时拉取（阶段 2/3 接线后）。
  *
- * 设计（对齐 `plans/s3-message-realtime-sync-phase1-3.md` + `...-phase4-streaming.md`）：
+ * 设计（对齐 `plans/s3-message-realtime-sync-phase1-3.md` 已拍板项）：
  * - **全量写，不增量**：每次「消息完成」后，把该会话当前全部 messages 写 SQLite。
  *   幂等由后端 `INSERT OR IGNORE`(id+version) 兜底，重复写安全。
  * - **非侵入**：不重写 `createConversationStore`（2500+ 行）。由 sendMessage/finishMessage
@@ -13,8 +12,6 @@
  * - **conversationId 为 null 时不写**（首轮：发消息时后端会话尚未分配）：
  *   调用方应在 conversationId 确定后（首轮 request 返回 / 后续轮次）再同步。
  *   这天然实现「首轮回填」——首轮 user+assistant 一起补写，流水完整。
- * - **流式增量（Phase 4）**：`syncStreamingMessage` 在流式期间被 store 防抖调用，
- *   首帧 `append`(version 1) 后续 `revise`(新 version)，让另一端实时看到打字。
  * - **防重复**：模块级 `Map<sessionId, Set<messageId>>` 记录已写消息 id，
  *   既防同轮重复写，又避免流式期间反复写同一消息。
  *
@@ -129,53 +126,4 @@ export async function syncSessionToShared(
  */
 export function clearSyncedWatermark(sessionId: string): void {
   syncedMessageIds.delete(sessionId)
-}
-
-/**
- * S3 Phase 4：流式增量同步单条消息（assistant 边打边写共享库 + 实时广播）。
- *
- * 在 store 流式 flush（appendTextBlock 段落级或防抖）后调用：
- * - 该消息 id **未写入**水位 → `append`（version 1，创建 v1 并广播）；
- * - 已写入 → `revise`（新 version，后端广播最新版 entry）。
- *
- * 通过 `syncedMessageIds` 与 `syncSessionToShared` 共享同一水位，
- * 防止流式期间和 finishMessage 整轮回填对同一消息重复 append。
- *
- * @param updateId 后端会话 id（**非空**；null 时跳过，流式开始前 conversationId 未定义）
- * @param sessionId 前端会话 id（水位 key）
- * @param msg 流式中当前 assistant 消息（含最新 blocks + isStreaming）
- *
- * fire-and-forget：所有错误内部 log，不向外抛。调用方每防抖 tick 一次即可。
- */
-export async function syncStreamingMessage(
-  sessionId: string,
-  conversationId: string | null,
-  msg: ChatMessage,
-): Promise<void> {
-  if (!conversationId) return
-  // 只同步 assistant 流式消息（会话过程中 user 消息由 syncSessionToShared 负责）
-  if (msg.type !== 'assistant') return
-
-  try {
-    const wrote = syncedMessageIds.get(sessionId) ?? new Set<string>()
-    const timestampMs = msg.timestamp
-      ? new Date(msg.timestamp).getTime()
-      : Date.now()
-
-    if (!wrote.has(msg.id)) {
-      // 首次：append v1
-      const entry = toMessageEntry(msg, conversationId, timestampMs)
-      await sharedMessageLog.append(entry)
-      wrote.add(msg.id)
-      syncedMessageIds.set(sessionId, wrote)
-      log.debug('流式消息首帧已写', { sessionId, conversationId, messageId: msg.id })
-    } else {
-      // 后续：revise 新版本（后端保留版本链，read 返回最新）
-      await sharedMessageLog.revise(msg.id, JSON.parse(JSON.stringify(msg)))
-      log.debug('流式消息已修订', { sessionId, conversationId, messageId: msg.id })
-    }
-  } catch (e) {
-    // fire-and-forget：容忍竞态（append 尚未完成 / 后端瞬时错误），下个防抖 tick 重试。
-    log.warn('流式同步失败（容忍，下个 tick 重试）', { messageId: msg.id, error: String(e) })
-  }
 }

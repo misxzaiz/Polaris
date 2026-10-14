@@ -421,7 +421,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Session Messages（session-v2 阶段 1b，SQLite append-only）────────
         "message_append" => dispatch_message_append(&state, &args),
-        "message_revise" => dispatch_message_revise(&state, &args),
+        "message_revise" => dispatch_message_revise(&args),
         "message_read" => dispatch_message_read(&args),
         "message_read_history" => dispatch_message_read_history(&args),
         "message_get_latest" => dispatch_message_get_latest(&args),
@@ -2133,7 +2133,7 @@ fn dispatch_message_append(state: &AppState, args: &Value) -> Result<Json<Value>
     Ok(Json(serde_json::to_value(inserted).unwrap()))
 }
 
-fn dispatch_message_revise(state: &AppState, args: &Value) -> Result<Json<Value>, WebError> {
+fn dispatch_message_revise(args: &Value) -> Result<Json<Value>, WebError> {
     let id = args
         .get("id")
         .and_then(|v| v.as_str())
@@ -2143,13 +2143,8 @@ fn dispatch_message_revise(state: &AppState, args: &Value) -> Result<Json<Value>
         .get("content")
         .ok_or_else(|| WebError::BadRequest("content 参数缺失".to_string()))?
         .clone();
-    let version = crate::commands::session_messages::message_revise_inner(id.clone(), content)
+    let version = crate::commands::session_messages::message_revise_inner(id, content)
         .map_err(|e| WebError::Internal(format!("message_revise 失败: {}", e)))?;
-    // S3 Phase 4：修订也实时广播（流式期间 assistant 增量边写边广播，消费端同 id 更新）。
-    // 用 message_get_latest 读回完整最新版 entry，复用 broadcast_message_appended。
-    if let Ok(Some(entry)) = crate::commands::session_messages::message_get_latest_inner(id) {
-        crate::commands::session_messages::broadcast_message_appended(&state.event_broadcast, entry);
-    }
     Ok(Json(serde_json::to_value(version).unwrap()))
 }
 

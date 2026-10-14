@@ -433,8 +433,6 @@ export interface ConversationState {
 export interface ConversationActions {
   // ===== 消息操作 =====
   addMessage: (message: ChatMessage) => void
-  /** S3 Phase 4：同 id 替换或追加（跨端实时合并：流式增量 revise 广播用） */
-  upsertMessage: (message: ChatMessage) => void
   deleteMessage: (messageId: string) => void
   editMessage: (messageId: string, newContent: string) => void
   clearMessages: () => void
