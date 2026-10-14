@@ -15,33 +15,6 @@ vi.mock('@/services/sessionIndexService', () => ({
   listWorkspaceSessionsAfter: vi.fn(),
 }))
 
-// Mock transport（订阅器新依赖：listen 订阅 WS 事件）
-vi.mock('@/services/transport', () => ({
-  listen: vi.fn().mockResolvedValue(() => {}),
-}))
-
-import { listen } from '@/services/transport'
-
-/**
- * 事件分发工具：捕获 listen 注册的 handler，供测试手动触发 WS 事件。
- * 返回按事件名索引的 handler 列表。
- */
-const eventHandlers = new Map<string, ((payload: unknown) => void)[]>()
-;(listen as ReturnType<typeof vi.fn>).mockImplementation(
-  (event: string, handler: (payload: unknown) => void) => {
-    if (!eventHandlers.has(event)) eventHandlers.set(event, [])
-    eventHandlers.get(event)!.push(handler)
-    return Promise.resolve(() => {})
-  },
-)
-
-/** 触发一次 WS 事件（模拟 transport 收到广播） */
-function fireEvent(event: string, payload: unknown): void {
-  for (const h of eventHandlers.get(event) ?? []) {
-    h(payload)
-  }
-}
-
 import {
   listWorkspaceSessions,
   listWorkspaceSessionsAfter,
@@ -57,7 +30,6 @@ describe('WorkspaceSessionsSubscription', () => {
     workspaceSessionSlice.getState().reset()
     vi.clearAllMocks()
     vi.useFakeTimers()
-    eventHandlers.clear()
   })
 
   afterEach(() => {
@@ -97,7 +69,7 @@ describe('WorkspaceSessionsSubscription', () => {
     await sub.start()
 
     // 触发一次轮询
-    await vi.advanceTimersByTimeAsync(10001)
+    await vi.advanceTimersByTimeAsync(5001)
 
     const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
     expect(bucket.sessionMetadata.get('s3')?.title).toBe('New')
@@ -131,7 +103,7 @@ describe('WorkspaceSessionsSubscription', () => {
     const sub = new WorkspaceSessionsSubscription('/ws')
     await sub.start()
 
-    await vi.advanceTimersByTimeAsync(10001)
+    await vi.advanceTimersByTimeAsync(5001)
 
     // resync 后应看到 Resynced
     const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
@@ -157,89 +129,6 @@ describe('WorkspaceSessionsSubscription', () => {
     expect(mockedAfter.mock.calls.length).toBe(callCountBefore)
   })
 
-  it('WS 事件 session-index-upserted 实时 upsert 桶投影', async () => {
-    mockedList.mockResolvedValue({ sessions: [], lastSeq: 0 })
-    mockedAfter.mockResolvedValue([])
-
-    const sub = new WorkspaceSessionsSubscription('/ws')
-    await sub.start()
-
-    // 触发 upserted 事件（其他端新建会话广播）
-    fireEvent('session-index-upserted', {
-      workspaceKey: '/ws',
-      sessionId: 'remote-s1',
-      projection: {
-        sessionId: 'remote-s1',
-        workspaceKey: '/ws',
-        title: 'Remote',
-        status: 'running',
-        seq: 5,
-        updatedAt: 5000,
-        engineId: 'codex',
-        createdAt: 5000,
-      },
-    })
-
-    const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
-    expect(bucket.sessionMetadata.get('remote-s1')?.title).toBe('Remote')
-    expect(sub.getState().lastSeq).toBe(5)
-
-    sub.stop()
-  })
-
-  it('WS 事件 session-index-removed 移除桶投影（不销毁本地 store）', async () => {
-    mockedList.mockResolvedValue({
-      sessions: [
-        { sessionId: 's1', workspaceKey: '/ws', title: 'S1', status: 'idle', seq: 1, updatedAt: 1000, engineId: 'codex', createdAt: 1000 },
-      ],
-      lastSeq: 1,
-    })
-    mockedAfter.mockResolvedValue([])
-
-    const sub = new WorkspaceSessionsSubscription('/ws')
-    await sub.start()
-    expect(workspaceSessionSlice.getState().getBucket('/ws')!.sessionMetadata.has('s1')).toBe(true)
-
-    // 触发 removed 事件（其他端删除会话广播）
-    fireEvent('session-index-removed', {
-      workspaceKey: '/ws',
-      sessionId: 's1',
-    })
-
-    const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
-    expect(bucket.sessionMetadata.has('s1')).toBe(false)
-
-    sub.stop()
-  })
-
-  it('WS 事件忽略其他 workspace 桶的变更', async () => {
-    mockedList.mockResolvedValue({ sessions: [], lastSeq: 0 })
-    mockedAfter.mockResolvedValue([])
-
-    const sub = new WorkspaceSessionsSubscription('/ws')
-    await sub.start()
-
-    fireEvent('session-index-upserted', {
-      workspaceKey: '/other-ws',
-      sessionId: 'other-s1',
-      projection: {
-        sessionId: 'other-s1',
-        workspaceKey: '/other-ws',
-        title: 'Other',
-        status: 'idle',
-        seq: 1,
-        updatedAt: 1000,
-        engineId: 'codex',
-        createdAt: 1000,
-      },
-    })
-
-    const bucket = workspaceSessionSlice.getState().getBucket('/ws')!
-    expect(bucket.sessionMetadata.has('other-s1')).toBe(false)
-
-    sub.stop()
-  })
-
   it('start 失败进入 suspended，后续轮询尝试重连', async () => {
     mockedList
       .mockRejectedValueOnce(new Error('network'))
@@ -254,7 +143,7 @@ describe('WorkspaceSessionsSubscription', () => {
     mockedAfter.mockResolvedValue([
       { sessionId: 's1', workspaceKey: '/ws', title: 'Recovered', status: 'idle', seq: 1, updatedAt: 1000, engineId: 'codex', createdAt: 1000 },
     ])
-    await vi.advanceTimersByTimeAsync(10001)
+    await vi.advanceTimersByTimeAsync(5001)
     expect(sub.getState().status).toBe('active')
 
     sub.stop()

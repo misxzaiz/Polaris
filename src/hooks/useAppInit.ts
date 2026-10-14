@@ -21,7 +21,6 @@ import { usePluginStore } from '@/stores/pluginStore';
 import { usePluginServiceStore } from '@/stores/pluginServiceStore';
 import { useLspStore } from '@/stores/lspStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
-import { workspaceSessionsSubscriptionManager } from '@/services/sessionSubscription/workspaceSessionsSubscriptionManager';
 import { bootstrapEngines } from '../core/engine-bootstrap';
 import { voiceNotificationService } from '@/services/voiceNotificationService';
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService';
@@ -167,11 +166,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
 
     await sessionStoreManager.getState().initialize();
     log.info('SessionStoreManager initialized', { defaultEngine });
-
-    // S3：启动会话索引订阅管理（workspace 级会话投影多端同步）。
-    // 初始化时启动当前活跃 workspace（含 free 桶）的订阅；workspace 增删切换由
-    // 管理器内部订阅 workspaceStore 响应。业务代码零额外接线。
-    workspaceSessionsSubscriptionManager.init();
 
     setInitPhase('正在初始化 AI 引擎...');
     // 按需初始化传统 AI Engine
