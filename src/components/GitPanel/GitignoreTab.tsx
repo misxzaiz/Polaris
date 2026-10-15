@@ -8,8 +8,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RefreshCw, Loader2, Inbox, Save, Plus, X, FilePlus } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { logger } from '@/utils/logger'
 import type { GitIgnoreTemplate } from '@/types/git'
 
@@ -35,11 +35,7 @@ export function GitignoreTab({ workspacePath: workspacePathProp }: GitignoreTabP
   const saveGitignore = useGitStore((s) => s.saveGitignore)
   const addToGitignore = useGitStore((s) => s.addToGitignore)
   const getGitignoreTemplates = useGitStore((s) => s.getGitignoreTemplates)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

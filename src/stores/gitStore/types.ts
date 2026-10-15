@@ -80,6 +80,12 @@ export interface StatusState {
   isDiscovering: boolean
   /** 当前工作区下用户置顶的子仓库路径（持久化到 localStorage） */
   pinnedRepos: string[]
+  /**
+   * Git 面板独立的工作区指针（不受 FileExplorer 的 viewingWorkspaceId 影响）。
+   * 仅保存在内存：面板内下拉切换工作区时使用，不影响全局/文件浏览器的浏览状态。
+   * 跟随全局 currentWorkspaceId 变化（见 useGitActiveWorkspace）。
+   */
+  activeWorkspaceId: string | null
   // 内部状态（用于防抖和请求管理）
   _refreshPromises: Map<string, Promise<void>>
   _refreshTimeouts: Map<string, NodeJS.Timeout>
@@ -157,6 +163,8 @@ export interface StatusActions {
   getChangedFiles: () => string[]
   setSelectedFilePath: (path: string | null) => void
   setSelectedDiff: (diff: GitDiffEntry | null) => void
+  /** 设置 Git 面板独立工作区（仅内存态，不影响 FileExplorer 浏览状态） */
+  setActiveWorkspaceId: (id: string | null) => void
 }
 
 /**

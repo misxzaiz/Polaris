@@ -9,9 +9,9 @@ import { useTranslation } from 'react-i18next'
 import { Upload, Download, RefreshCw, AlertTriangle, ArrowUp, ArrowDown } from 'lucide-react'
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { invoke } from '@/services/transport'
 import { PushDialog } from './PushDialog'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 
 interface QuickActionsProps {
   hasChanges: boolean
@@ -27,11 +27,7 @@ type PullState =
 export function QuickActions({ hasChanges: _hasChanges, workspacePath: workspacePathProp }: QuickActionsProps) {
   const { t } = useTranslation('git')
   const { isLoading, refreshStatus, status } = useGitStore()
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

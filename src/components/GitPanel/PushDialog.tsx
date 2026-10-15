@@ -17,8 +17,8 @@ import {
   ArrowRight,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import type { GitPushResult } from '@/types/git'
 
 interface PushDialogProps {
@@ -55,11 +55,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
   const getRemotes = useGitStore((s) => s.getRemotes)
   const getBranches = useGitStore((s) => s.getBranches)
 
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find((w) => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Archive, Check, RefreshCw, Loader2, Inbox } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitStashEntry } from '@/types/git'
 
@@ -27,11 +27,7 @@ export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
   const getStashList = useGitStore((s) => s.getStashList)
   const stashPop = useGitStore((s) => s.stashPop)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

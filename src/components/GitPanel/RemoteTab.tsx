@@ -21,8 +21,8 @@ import {
   ArrowUp,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { PushDialog } from './PushDialog'
 import type { GitRemote } from '@/types/git'
 
@@ -63,11 +63,7 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
   const getBranches = useGitStore((s) => s.getBranches)
   const branches = useGitStore((s) => s.branches)
   const status = useGitStore((s) => s.status)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区

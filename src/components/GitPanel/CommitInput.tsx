@@ -12,7 +12,8 @@ import { Send, Sparkles, Loader2, Bot, Zap, Check, MessageSquare } from 'lucide-
 import { clsx } from 'clsx'
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore, useConfigStore, useViewStore } from '@/stores'
+import { useConfigStore, useViewStore } from '@/stores'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { invoke } from '@/services/transport'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { openCommitMessageChat, useCommitMessageSuggestion } from '@/services/commitMessageChat'
@@ -86,12 +87,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
   const [selectedEngine, setSelectedEngine] = useState<EngineId>(() => readStoredEngine(defaultEngine))
   const toggleRightPanel = useViewStore((s) => s.toggleRightPanel)
   const rightPanelCollapsed = useViewStore((s) => s.rightPanelCollapsed)
-
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

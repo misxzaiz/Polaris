@@ -8,7 +8,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, Loader2, FileText, GitCommit, User, Clock, AlertCircle } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useToastStore } from '@/stores/toastStore'
 import type { GitBlameLine } from '@/types/git'
 
@@ -27,11 +27,7 @@ export function BlameView({ filePath, workspacePath: workspacePathProp, onClose,
   const [error, setError] = useState<string | null>(null)
 
   const blameFile = useGitStore((s) => s.blameFile)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区

@@ -19,6 +19,7 @@ import { RemoteTab } from './RemoteTab'
 import { TagsTab } from './TagsTab'
 import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
@@ -56,14 +57,9 @@ export function GitPanel({
 }: GitPanelProps) {
   const { t } = useTranslation('git')
   const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
-  const currentWorkspace = useWorkspaceStore((s) => {
-    // 优先使用文件浏览器的 viewingWorkspaceId，如果没有则使用 currentWorkspaceId
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
   const allWorkspaces = useWorkspaceStore((s) => s.workspaces)
-  const setViewingWorkspace = useWorkspaceStore((s) => s.setViewingWorkspace)
+  const setActiveWorkspaceId = useGitStore((s) => s.setActiveWorkspaceId)
   const toast = useToastStore()
 
   // 多仓库模式：聚合工作区（本身非 git）下选中的子仓库路径
@@ -483,7 +479,7 @@ export function GitPanel({
                   label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
                   onClick: () => {
                     if (ws.id === currentWorkspace?.id) return
-                    setViewingWorkspace(ws.id)
+                    setActiveWorkspaceId(ws.id)
                     setSelectedRepoPath(null)
                     setSelectedFiles(new Set())
                     toast.info(`${t('workspaceSwitched')} ${ws.name}`)
@@ -703,7 +699,7 @@ export function GitPanel({
               label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
               onClick: () => {
                 if (ws.id === currentWorkspace?.id) return
-                setViewingWorkspace(ws.id)
+                setActiveWorkspaceId(ws.id)
                 setSelectedRepoPath(null)
                 setSelectedFiles(new Set())
                 toast.info(`${t('workspaceSwitched')} ${ws.name}`)

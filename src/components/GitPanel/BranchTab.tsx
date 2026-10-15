@@ -22,8 +22,8 @@ import {
   Search,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitBranch, GitMergeResult, GitRebaseResult } from '@/types/git'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
@@ -74,11 +74,7 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
   const rebaseContinue = useGitStore((s) => s.rebaseContinue)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const stashSave = useGitStore((s) => s.stashSave)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区

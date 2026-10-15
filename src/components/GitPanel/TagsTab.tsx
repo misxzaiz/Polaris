@@ -8,8 +8,8 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Tag, RefreshCw, Loader2, Inbox, Copy, GitCommit, Plus, Trash2, X, MessageSquare } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
+import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitTag } from '@/types/git'
 
@@ -41,11 +41,7 @@ export function TagsTab({ workspacePath: workspacePathProp }: TagsTabProps) {
   const createTag = useGitStore((s) => s.createTag)
   const deleteTag = useGitStore((s) => s.deleteTag)
   const status = useGitStore((s) => s.status)
-  const currentWorkspace = useWorkspaceStore((s) => {
-    const { workspaces, currentWorkspaceId, viewingWorkspaceId } = s
-    const targetId = viewingWorkspaceId || currentWorkspaceId
-    return workspaces.find(w => w.id === targetId) || null
-  })
+  const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''

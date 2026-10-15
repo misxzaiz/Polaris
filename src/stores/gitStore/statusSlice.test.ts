@@ -578,5 +578,17 @@ describe('statusSlice', () => {
       store.getState().setSelectedDiff(null)
       expect(store.getState().selectedDiff).toBeNull()
     })
+
+    it('setActiveWorkspaceId 应正确设置且可清空', () => {
+      const store = createTestStore()
+
+      expect(store.getState().activeWorkspaceId).toBeNull()
+
+      store.getState().setActiveWorkspaceId('ws-2')
+      expect(store.getState().activeWorkspaceId).toBe('ws-2')
+
+      store.getState().setActiveWorkspaceId(null)
+      expect(store.getState().activeWorkspaceId).toBeNull()
+    })
   })
 })

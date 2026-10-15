@@ -28,6 +28,7 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
   discoveredRepos: [],
   isDiscovering: false,
   pinnedRepos: [],
+  activeWorkspaceId: null,
   _refreshPromises: new Map(),
   _refreshTimeouts: new Map(),
 
@@ -257,6 +258,7 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
       discoveredRepos: [],
       isDiscovering: false,
       pinnedRepos: [],
+      activeWorkspaceId: null,
       _refreshPromises: new Map(),
       _refreshTimeouts: new Map(),
     })
@@ -294,5 +296,10 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
   // 设置选中的 Diff
   setSelectedDiff(diff: GitDiffEntry | null) {
     set({ selectedDiff: diff })
+  },
+
+  // 设置 Git 面板独立工作区（仅内存态，不影响 FileExplorer 浏览状态）
+  setActiveWorkspaceId(id: string | null) {
+    set({ activeWorkspaceId: id })
   },
 })
