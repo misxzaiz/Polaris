@@ -10,9 +10,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { RefObject } from 'react';
-import { useRef } from 'react';
 import type { VirtuosoHandle } from 'react-virtuoso';
-import { useMessageAutoScroll, AUTO_SCROLL_THRESHOLD } from './useMessageAutoScroll';
+import { useMessageAutoScroll } from './useMessageAutoScroll';
 
 /** 让 performance.now 可控 */
 const nowMock = { value: 0 };
@@ -150,20 +149,20 @@ describe('useMessageAutoScroll', () => {
       expect(result.current.autoScroll).toBe(true);
     });
 
-    it('离开态 + 未离开够远 + atBottom 翻 true → 不恢复跟随（被动触底防误恢复）', () => {
+    it('离开态 + 滚回贴底区 + atBottom 翻 true → 恢复跟随（ZCode 范式：回底即归还滚动权）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
       // 消费首帧
       act(() => result.current.handleAtBottomStateChange(true));
-      // 用户离开：上拉（handleWheel 不累计距底峰值 → 峰值 0 < 阈值）
+      // 用户离开：上拉
       act(() => result.current.handleWheel({ deltaY: -1 }));
       expect(result.current.autoScroll).toBe(false);
-      // atBottom 翻 true（惯性回弹 / 微小下滑 / 滚动条释放触底，阈值仅 4px）
+      // 用户滚回贴底区（距底 ≤ BOTTOM_ANCHOR_EPSILON_PX），atBottom 翻 true
       act(() => result.current.handleAtBottomStateChange(true));
-      // 峰值未达阈值 → 视为被动触底，不恢复跟随
-      expect(result.current.autoScroll).toBe(false);
-      // followOutput 也必须持续返回 false（Virtuoso 不会自动滚动拉回）
-      expect(result.current.followOutput(true)).toBe(false);
+      // ZCode 范式：回到底即恢复跟随，不再用「离开距离阈值」gating
+      expect(result.current.autoScroll).toBe(true);
+      // followOutput 恢复跟随语义（流式 → true）
+      expect(result.current.followOutput(true)).toBe(true);
     });
 
     it('离开态 + 离开够远后回底 → 恢复跟随（方向 A：主动往返判定）', () => {
@@ -204,12 +203,13 @@ describe('useMessageAutoScroll', () => {
   });
 
   describe('根因①回归：上拉查看时不被 AI 输出拉回底部', () => {
-    it('流式输出中用户上拉 → atBottom 瞬时翻 true 不恢复跟随 → 新 token 不划走', () => {
+    it('流式输出中用户上拉 → 未回底前新 token 不划走（补偿贴底被抑制）', () => {
       const ref = makeVirtuosoRef();
       const { result, rerender } = renderHook(
         ({ s }: { s: boolean }) => useMessageAutoScroll(ref, { isStreaming: s }),
         { initialProps: { s: true } }
       );
+      // 距底 = 500 - (0+100) = 400，离开阈值 max(40,100)=100，初始在底
       const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
       act(() => result.current.setScrollerRef(scroller));
 
@@ -219,40 +219,40 @@ describe('useMessageAutoScroll', () => {
       // 用户在底部看流式输出（跟随态）
       expect(result.current.autoScroll).toBe(true);
 
-      // 用户上拉查看历史 → 停止跟随
+      // 用户上拉查看历史（滚动到上部：距底 400 > ε）→ 停止跟随
+      // 先过 onScroll 采样（scrollTop 账目），再 wheel（此时已在离底区）
+      scroller.scrollTop = 100;
+      act(() => result.current.handleScroll());
       act(() => result.current.handleWheel({ deltaY: -1 }));
       expect(result.current.autoScroll).toBe(false);
 
-      // AI 继续输出：内容增长触发 ResizeObserver + 滚动位置微动使 atBottom 瞬时翻 true
+      // AI 继续输出：内容增长触发 ResizeObserver —— 应被抑制（跟随态 false，不补偿）
       act(() => lastRo().fire());
-      act(() => result.current.handleAtBottomStateChange(true));
-
-      // 离开态粘性：不恢复跟随，且绝不被补偿贴底
-      expect(result.current.autoScroll).toBe(false);
       expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+
+      // 用户仍在历史区（未回底）：atBottom 不翻 true（scroller 距底 400 > ε），不恢复
+      expect(result.current.autoScroll).toBe(false);
 
       // 流式结束（isStreaming→false）的自动补偿也因离开态不生效
       act(() => rerender({ s: false }));
       expect(result.current.compensateScroll()).toBe(false);
 
       // 显式回到底部（ScrollToBottomButton / 底部按钮）→ 重新进入跟随态。
-      // 此时已是非流式（rerender s:false），跟随态 + 贴底 → 'smooth'（非 false 即跟随生效）
       act(() => result.current.scrollToBottom());
       expect(result.current.autoScroll).toBe(true);
-      expect(result.current.followOutput(true)).toBe('smooth');
     });
 
-    it('离开态但峰值未达阈值 → 滚动到贴底不自动恢复跟随（抖动防护）', () => {
+    it('离开态 + 滚回贴底区（即使只轻微上拉过）→ 滚轮回底恢复跟随', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
       act(() => result.current.handleAtBottomStateChange(true)); // 消费首帧
-      act(() => result.current.handleWheel({ deltaY: -1 })); // 上拉离开（峰值 0）
+      act(() => result.current.handleWheel({ deltaY: -1 })); // 上拉离开
       expect(result.current.autoScroll).toBe(false);
 
-      // 未离开够远就回底 → atBottom 翻 true，但峰值 0 < 阈值 → 仍不恢复（方向 A）
+      // 用户滚回到底部（距底 ≤ BOTTOM_ANCHOR_EPSILON_PX）→ 恢复跟随（ZCode：回底即归还）
       act(() => result.current.handleAtBottomStateChange(true));
-      expect(result.current.autoScroll).toBe(false);
-      expect(result.current.followOutput(true)).toBe(false);
+      expect(result.current.autoScroll).toBe(true);
+      expect(result.current.followOutput(true)).toBe(true);
     });
   });
 
@@ -273,7 +273,7 @@ describe('useMessageAutoScroll', () => {
   });
 
   describe('handleScroll（滚动事件兜底：覆盖键盘/触摸板/程序化滚动）', () => {
-    it('流式中 + 距底超阈值 + scrollTop 变化 → 停止跟随', () => {
+    it('流式中 + 距底超过离开阈值 + scrollTop 变化 → 停止跟随', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
       // scroller 尺寸模拟：scrollHeight=800, clientHeight=200, scrollTop=100 → 距底 500
@@ -303,7 +303,7 @@ describe('useMessageAutoScroll', () => {
       expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
     });
 
-    it('流式中距底未超恢复阈值 → 不停止跟随（防 Virtuoso 自动滚底中间帧误停）', () => {
+    it('流式中距底未超离开阈值 → 不停止跟随（防 Virtuoso 自动滚底中间帧误停）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
       // 距底 90，恢复阈值 max(80, 200*0.5=100)=100 → 90 < 100：浅保不设 false
@@ -313,14 +313,34 @@ describe('useMessageAutoScroll', () => {
       expect(result.current.autoScroll).toBe(true);
     });
 
-    it('流式中距底超恢复阈值 → 停止跟随（滚动条/触摸板大跨度离开兜底）', () => {
+    it('流式中距底超离开阈值 → 停止跟随（滚动条/触摸板大跨度离开兜底）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
-      // 距底 700 > max(80, 200*0.5=100)：明确离开
+      // 距底 700 > max(40, 200)=200：明确离开
       const scroller = makeScroller({ scrollHeight: 1000, scrollTop: 100, clientHeight: 200 }); // 距底 700
       act(() => result.current.setScrollerRef(scroller));
       act(() => result.current.handleScroll());
       expect(result.current.autoScroll).toBe(false);
+    });
+
+    it('用户滚回贴底区（距底 ≤ ε）→ handleScroll 恢复跟随（scroll 先于 atBottom 触发）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // 初始在底部（距底 4）
+      const scroller = makeScroller({ scrollHeight: 800, scrollTop: 596, clientHeight: 200 }); // 距底 4
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => result.current.handleAtBottomStateChange(true)); // 消费首帧
+      expect(result.current.autoScroll).toBe(true);
+
+      // 用户上拉离开：距底 500 > 离开阈值 200
+      scroller.scrollTop = 100;
+      act(() => result.current.handleScroll());
+      expect(result.current.autoScroll).toBe(false);
+
+      // 用户滚回贴底区：距底 4 ≤ 48
+      scroller.scrollTop = 596;
+      act(() => result.current.handleScroll());
+      expect(result.current.autoScroll).toBe(true);
     });
   });
 
@@ -354,11 +374,11 @@ describe('useMessageAutoScroll', () => {
       expect(result.current.autoScroll).toBe(true);
     });
 
-    it('非流式 → 键盘事件忽略', () => {
+    it('非流式 → 键盘上拉同样停止跟随（离开意图与流式无关）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
       act(() => result.current.handleKeyDown({ key: 'PageUp' } as KeyboardEvent));
-      expect(result.current.autoScroll).toBe(true);
+      expect(result.current.autoScroll).toBe(false);
     });
   });
 
@@ -529,6 +549,35 @@ describe('useMessageAutoScroll', () => {
         align: 'end',
         behavior: 'smooth',
       });
+    });
+
+    it('用户上滚但 scroll 事件未派发 → ResizeObserver 补偿不贴底（未观察滚动对账）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // 距底 = 500 - (0+100) = 400 > max(40,100)=100，会命中补偿判定
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+
+      // 消费首帧
+      act(() => result.current.handleAtBottomStateChange(true));
+      expect(result.current.autoScroll).toBe(true);
+
+      // 内容增长：RO 先派发一次，记录 lastObservedScrollTop=0（scrollTop 账目）
+      act(() => lastRo().fire());
+      // 距底 400 > 100 且未上滚 → 补偿贴底（scrollToIndex 被调用）
+      expect(ref.current?.scrollToIndex).toHaveBeenCalledTimes(1);
+
+      // 重置 mock 调用计数，进入竞态场景：
+      // 用户上滚（浏览器已改 scrollTop=200，距底 200），但 scroll 事件尚未派发，
+      // lastObservedScrollTopRef 仍是上次账目的 0。
+      (ref.current?.scrollToIndex as ReturnType<typeof vi.fn>).mockClear();
+      scroller.scrollTop = 200;
+      // 注意：这里【不】调用 handleScroll —— 模拟 scroll 事件滞后窗口
+      act(() => lastRo().fire());
+
+      // 对账判出「scrollTop 已回退 > 2px」→ 不得贴底，不得解除跟随
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+      expect(result.current.autoScroll).toBe(true);
     });
 
     it('卸载时清理 observer，不再触发', () => {
