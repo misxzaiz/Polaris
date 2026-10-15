@@ -14,6 +14,7 @@ import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useConfigStore, useViewStore } from '@/stores'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { invoke } from '@/services/transport'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { openCommitMessageChat, useCommitMessageSuggestion } from '@/services/commitMessageChat'
@@ -65,7 +66,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
   const pickerRef = useRef<HTMLDivElement>(null)
   const sparkleButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { commitChanges, isLoading, status, getIndexFileDiff, getWorktreeFileDiff } = useGitStore()
+  const { commitChanges, isLoading, getIndexFileDiff, getWorktreeFileDiff } = useGitStore()
   const defaultEngine = normalizeEngineId(useConfigStore((s) => s.config?.defaultEngine))
 
   // 引擎选项（动态从元数据读取，插件注册后自动可见）
@@ -91,6 +92,8 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(effectiveWorkspacePath)
 
   // 订阅本工作区 commit-message 会话的最新助手消息（回流条）
   const suggestion = useCommitMessageSuggestion(currentWorkspace?.id)

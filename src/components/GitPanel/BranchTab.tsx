@@ -24,6 +24,7 @@ import {
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitBranch, GitMergeResult, GitRebaseResult } from '@/types/git'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
@@ -62,7 +63,6 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
   const [isCreating, setIsCreating] = useState(false)
   const [createBasedOn, setCreateBasedOn] = useState<string | undefined>(undefined)
 
-  const status = useGitStore((s) => s.status)
   const getBranches = useGitStore((s) => s.getBranches)
   const checkoutBranch = useGitStore((s) => s.checkoutBranch)
   const createBranch = useGitStore((s) => s.createBranch)
@@ -79,6 +79,8 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(workspacePath)
 
   const loadBranches = useCallback(async () => {
     if (!workspacePath) return

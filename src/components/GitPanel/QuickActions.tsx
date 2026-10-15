@@ -12,6 +12,7 @@ import { useGitStore } from '@/stores/gitStore/index'
 import { invoke } from '@/services/transport'
 import { PushDialog } from './PushDialog'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 
 interface QuickActionsProps {
   hasChanges: boolean
@@ -26,11 +27,14 @@ type PullState =
 
 export function QuickActions({ hasChanges: _hasChanges, workspacePath: workspacePathProp }: QuickActionsProps) {
   const { t } = useTranslation('git')
-  const { isLoading, refreshStatus, status } = useGitStore()
+  const isLoading = useGitStore((s) => s.isLoading)
+  const refreshStatus = useGitStore((s) => s.refreshStatus)
   const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(workspacePath)
 
   const [isPulling, setIsPulling] = useState(false)
   const [showPushDialog, setShowPushDialog] = useState(false)

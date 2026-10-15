@@ -19,6 +19,7 @@ import {
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import type { GitPushResult } from '@/types/git'
 
 interface PushDialogProps {
@@ -49,7 +50,6 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
   // Store
   const remotes = useGitStore((s) => s.remotes)
   const branches = useGitStore((s) => s.branches)
-  const status = useGitStore((s) => s.status)
   const push = useGitStore((s) => s.push)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const getRemotes = useGitStore((s) => s.getRemotes)
@@ -59,6 +59,8 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(effectiveWorkspacePath)
 
   const toast = useToastStore()
 
@@ -114,7 +116,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
         setSelectedBranch(defaultBranch)
       } else {
         setSelectedBranch(
-          state.status?.branch ||
+          state.statuses[effectiveWorkspacePath]?.branch ||
             state.branches.find((b) => b.isCurrent && !b.isRemote)?.name ||
             ''
         )

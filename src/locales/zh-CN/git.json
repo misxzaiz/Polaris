@@ -93,7 +93,9 @@
     "staged": "已暂存",
     "unstaged": "未暂存",
     "untracked": "未跟踪",
-    "noChanges": "没有变更"
+    "noChanges": "没有变更",
+    "collapse": "折叠列表",
+    "expand": "展开列表"
   },
   "changes": {
     "added": "新增",

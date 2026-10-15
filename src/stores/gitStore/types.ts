@@ -67,6 +67,11 @@ export function parseGitError(err: unknown): string {
  */
 export interface StatusState {
   status: GitRepositoryStatus | null
+  /** 按仓库路径键控的状态缓存。多仓库/多面板场景下各路径互不覆盖；
+   *  只有当前生效路径与 status 字段保持一致 */
+  statuses: Record<string, GitRepositoryStatus | null>
+  /** 每个仓库路径的刷新序号，用于丢弃乱序返回的旧请求 */
+  _statusSeq: Record<string, number>
   diffs: GitDiffEntry[]
   worktreeDiffs: GitDiffEntry[]
   indexDiffs: GitDiffEntry[]
@@ -159,8 +164,8 @@ export interface StatusActions {
   loadPinnedRepos: (workspacePath: string) => void
   clearError: () => void
   clearAll: () => void
-  hasChanges: () => boolean
-  getChangedFiles: () => string[]
+  hasChanges: (workspacePath?: string) => boolean
+  getChangedFiles: (workspacePath?: string) => string[]
   setSelectedFilePath: (path: string | null) => void
   setSelectedDiff: (diff: GitDiffEntry | null) => void
   /** 设置 Git 面板独立工作区（仅内存态，不影响 FileExplorer 浏览状态） */

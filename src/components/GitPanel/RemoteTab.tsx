@@ -23,6 +23,7 @@ import {
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { PushDialog } from './PushDialog'
 import type { GitRemote } from '@/types/git'
 
@@ -62,12 +63,13 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const getBranches = useGitStore((s) => s.getBranches)
   const branches = useGitStore((s) => s.branches)
-  const status = useGitStore((s) => s.status)
   const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(workspacePath)
 
   const loadRemotes = useCallback(async () => {
     if (!workspacePath) return

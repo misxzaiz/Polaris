@@ -7,9 +7,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { create } from 'zustand'
 
-// Mock Tauri invoke
+// Mock 统一 transport（statusSlice 经 @/services/transport 调用后端，非 @tauri-apps/api/core）
 const mockInvoke = vi.fn()
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/services/transport', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
@@ -26,6 +26,8 @@ function createTestStore() {
   return create<TestState>((...args) => ({
     // 状态
     status: null,
+    statuses: {},
+    _statusSeq: {},
     diffs: [],
     worktreeDiffs: [],
     indexDiffs: [],
@@ -33,6 +35,10 @@ function createTestStore() {
     error: null,
     selectedFilePath: null,
     selectedDiff: null,
+    discoveredRepos: [],
+    isDiscovering: false,
+    pinnedRepos: [],
+    activeWorkspaceId: null,
     _refreshPromises: new Map(),
     _refreshTimeouts: new Map(),
 
@@ -66,6 +72,8 @@ describe('statusSlice', () => {
       const state = store.getState()
 
       expect(state.status).toBeNull()
+      expect(state.statuses).toEqual({})
+      expect(state._statusSeq).toEqual({})
       expect(state.diffs).toEqual([])
       expect(state.worktreeDiffs).toEqual([])
       expect(state.indexDiffs).toEqual([])
@@ -503,6 +511,73 @@ describe('statusSlice', () => {
     })
   })
 
+  describe('statuses 多路径键控', () => {
+    const makeStatus = (branch: string): GitRepositoryStatus => ({
+      branch,
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [],
+      untracked: [],
+      conflicts: [],
+      stashes: 0,
+      isRebasing: false,
+      isMerging: false,
+      isCherryPicking: false,
+      isReverting: false,
+    })
+
+    it('不同路径的状态写入互不覆盖', async () => {
+      mockInvoke
+        .mockResolvedValueOnce(makeStatus('main'))
+        .mockResolvedValueOnce(makeStatus('dev'))
+
+      const store = createTestStore()
+      await store.getState().refreshStatus('/repo-a')
+      await store.getState().refreshStatus('/repo-b')
+
+      expect(store.getState().statuses['/repo-a']?.branch).toBe('main')
+      expect(store.getState().statuses['/repo-b']?.branch).toBe('dev')
+    })
+
+    it('乱序返回时旧请求结果被丢弃，缓存保留最新请求', async () => {
+      let resolveFirst!: (v: GitRepositoryStatus) => void
+      mockInvoke
+        .mockImplementationOnce(
+          () => new Promise<GitRepositoryStatus>((resolve) => { resolveFirst = resolve }),
+        )
+        .mockResolvedValueOnce(makeStatus('newer'))
+
+      const store = createTestStore()
+      // 第一次请求挂起
+      const first = store.getState().refreshStatus('/repo')
+      // 第二次请求立即完成
+      await store.getState().refreshStatus('/repo')
+
+      expect(store.getState().statuses['/repo']?.branch).toBe('newer')
+
+      // 旧请求后返回 → 应被丢弃
+      resolveFirst(makeStatus('stale'))
+      await first
+
+      expect(store.getState().statuses['/repo']?.branch).toBe('newer')
+    })
+
+    it('失败路径写 null 且不影响其他路径的状态', async () => {
+      mockInvoke
+        .mockResolvedValueOnce(makeStatus('main'))
+        .mockRejectedValueOnce(new Error('Not a git repository'))
+
+      const store = createTestStore()
+      await store.getState().refreshStatus('/ok-repo')
+      await store.getState().refreshStatus('/bad-repo')
+
+      expect(store.getState().statuses['/ok-repo']?.branch).toBe('main')
+      expect(store.getState().statuses['/bad-repo']).toBeNull()
+      expect(store.getState().error).toBe('Not a git repository')
+    })
+  })
+
   describe('clearError', () => {
     it('应清除错误状态', () => {
       const store = createTestStore()
@@ -541,6 +616,8 @@ describe('statusSlice', () => {
 
       const state = store.getState()
       expect(state.status).toBeNull()
+      expect(state.statuses).toEqual({})
+      expect(state._statusSeq).toEqual({})
       expect(state.diffs).toEqual([])
       expect(state.worktreeDiffs).toEqual([])
       expect(state.indexDiffs).toEqual([])

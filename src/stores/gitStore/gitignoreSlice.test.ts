@@ -7,9 +7,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { create } from 'zustand'
 
-// Mock Tauri invoke
+// Mock 统一 transport（slice 经 @/services/transport 调用后端，非 @tauri-apps/api/core）
 const mockInvoke = vi.fn()
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/services/transport', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
@@ -240,7 +240,7 @@ describe('gitignoreSlice', () => {
       const store = createTestStore()
       const result = await store.getState().getGitignoreTemplates()
 
-      expect(mockInvoke).toHaveBeenCalledWith('git_get_gitignore_templates', undefined)
+      expect(mockInvoke).toHaveBeenCalledWith('git_get_gitignore_templates')
       expect(result).toHaveLength(3)
       expect(result[0].name).toBe('Node')
     })

@@ -7,6 +7,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Fragment } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Virtuoso } from 'react-virtuoso'
 import {
   GitCommit as GitCommitIcon,
   RefreshCw,
@@ -28,6 +29,7 @@ import {
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { parseGitError } from '@/stores/gitStore'
 import type {
   GitCommit as GitCommitType,
@@ -56,6 +58,7 @@ import {
   getCommitTypeColor,
   getFileStatusBadge,
   INLINE_FILES_MAX_HEIGHT,
+  INLINE_FILES_VIRTUALIZE_THRESHOLD,
   FILE_LIST_MODE_STORAGE_KEY,
   COMMIT_LIST_WIDTH_STORAGE_KEY,
   FILE_PANE_WIDTH_STORAGE_KEY,
@@ -148,7 +151,6 @@ export function HistoryTab({
   const getFileHistory = useGitStore((s) => s.getFileHistory)
   const branches = useGitStore((s) => s.branches)
   const getBranches = useGitStore((s) => s.getBranches)
-  const currentBranchName = useGitStore((s) => s.status?.branch ?? '')
   const cherryPick = useGitStore((s) => s.cherryPick)
   const revert = useGitStore((s) => s.revert)
   const reset = useGitStore((s) => s.reset)
@@ -158,6 +160,8 @@ export function HistoryTab({
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const currentBranchName = useGitRepoStatus(effectiveWorkspacePath)?.branch ?? ''
 
   const isWorkbench = variant === 'workbench'
   const isFileHistoryMode = fileHistoryPath !== null
@@ -961,6 +965,13 @@ export function HistoryTab({
         </div>
         {files.length === 0 ? (
           <div className="pl-7 pr-3 py-2 text-xs text-text-tertiary">{t('history.noFileChanges')}</div>
+        ) : files.length > INLINE_FILES_VIRTUALIZE_THRESHOLD ? (
+          <Virtuoso
+            data={files}
+            computeItemKey={(_index, file) => getDiffKey(file)}
+            itemContent={(_index, file) => renderInlineFileRow(commit, file)}
+            style={{ height: INLINE_FILES_MAX_HEIGHT }}
+          />
         ) : (
           <div className="overflow-y-auto" style={{ maxHeight: INLINE_FILES_MAX_HEIGHT }}>
             {files.map((file) => renderInlineFileRow(commit, file))}

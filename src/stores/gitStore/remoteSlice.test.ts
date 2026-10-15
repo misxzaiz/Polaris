@@ -7,9 +7,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { create } from 'zustand'
 
-// Mock Tauri invoke
+// Mock 统一 transport（remoteSlice 经 @/services/transport 调用后端，非 @tauri-apps/api/core）
 const mockInvoke = vi.fn()
-vi.mock('@tauri-apps/api/core', () => ({
+vi.mock('@/services/transport', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 

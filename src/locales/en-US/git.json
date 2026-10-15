@@ -93,7 +93,9 @@
     "staged": "Staged",
     "unstaged": "Unstaged",
     "untracked": "Untracked",
-    "noChanges": "No changes"
+    "noChanges": "No changes",
+    "collapse": "Collapse list",
+    "expand": "Expand list"
   },
   "changes": {
     "added": "Added",

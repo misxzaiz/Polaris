@@ -85,8 +85,8 @@ export const createRemoteSlice: RemoteSlice = (set, get) => ({
     set({ isLoading: true, error: null })
 
     try {
-      // 获取当前 ahead 数量
-      const status = get().status
+      // 获取当前 ahead 数量（优先该仓库路径的状态，缺省用全局）
+      const status = get().statuses[workspacePath] ?? get().status
       const pushedCommits = status?.ahead || 0
 
       if (setUpstream) {

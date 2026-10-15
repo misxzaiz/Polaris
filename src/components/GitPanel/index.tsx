@@ -6,7 +6,6 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2, Star } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
-import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useToastStore } from '@/stores/toastStore'
 import { GitStatusHeader } from './GitStatusHeader'
 import { FileChangesList } from './FileChangesList'
@@ -20,6 +19,7 @@ import { TagsTab } from './TagsTab'
 import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
@@ -56,10 +56,8 @@ export function GitPanel({
   variant = 'sidebar',
 }: GitPanelProps) {
   const { t } = useTranslation('git')
-  const { status, isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
+  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
   const currentWorkspace = useGitActiveWorkspace()
-  const allWorkspaces = useWorkspaceStore((s) => s.workspaces)
-  const setActiveWorkspaceId = useGitStore((s) => s.setActiveWorkspaceId)
   const toast = useToastStore()
 
   // 多仓库模式：聚合工作区（本身非 git）下选中的子仓库路径
@@ -68,6 +66,10 @@ export function GitPanel({
 
   // 实际生效的仓库路径：选中子仓库时用子仓库；否则用当前工作区
   const effectivePath = selectedRepoPath ?? currentWorkspace?.path ?? ''
+
+  // 按生效路径读取状态：多仓库/多面板场景下各路径互不覆盖，
+  // 彻底避免“点开 A 仓库却显示其它仓库/工作区内容”
+  const status = useGitRepoStatus(effectivePath)
 
   const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'changes')
   const [selectedDiff, setSelectedDiff] = useState<GitDiffEntry | null>(null)
@@ -465,31 +467,9 @@ export function GitPanel({
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2 min-w-0">
             <GitPullRequest size={16} className="text-primary shrink-0" />
-            {allWorkspaces.length > 0 ? (
-              <DropdownMenu
-                align="left"
-                trigger={
-                  <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary cursor-pointer hover:text-primary transition-colors select-none min-w-0">
-                    <span className="truncate max-w-[140px]">{currentWorkspace?.name ?? t('title')}</span>
-                    <ChevronRight size={12} className="text-text-tertiary rotate-90 shrink-0" />
-                  </span>
-                }
-                items={allWorkspaces.map(ws => ({
-                  key: ws.id,
-                  label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
-                  onClick: () => {
-                    if (ws.id === currentWorkspace?.id) return
-                    setActiveWorkspaceId(ws.id)
-                    setSelectedRepoPath(null)
-                    setSelectedFiles(new Set())
-                    toast.info(`${t('workspaceSwitched')} ${ws.name}`)
-                  },
-                }))}
-                className="min-w-0"
-              />
-            ) : (
-              <span className="text-sm font-medium text-text-primary truncate">Git</span>
-            )}
+            <span className="text-sm font-medium text-text-primary truncate" title={currentWorkspace?.path}>
+              {currentWorkspace?.name ?? t('title')}
+            </span>
           </div>
           {showWorkbenchButton && (
             <button
@@ -686,27 +666,9 @@ export function GitPanel({
               {selectedRepoPath.split(/[/\\]/).pop() || selectedRepoPath}
             </span>
           )}
-          <DropdownMenu
-            align="left"
-            trigger={
-              <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary cursor-pointer hover:text-primary transition-colors select-none min-w-0">
-                <span className="truncate max-w-[140px]">{currentWorkspace?.name ?? t('title')}</span>
-                <ChevronRight size={12} className="text-text-tertiary rotate-90 shrink-0" />
-              </span>
-            }
-            items={allWorkspaces.map(ws => ({
-              key: ws.id,
-              label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
-              onClick: () => {
-                if (ws.id === currentWorkspace?.id) return
-                setActiveWorkspaceId(ws.id)
-                setSelectedRepoPath(null)
-                setSelectedFiles(new Set())
-                toast.info(`${t('workspaceSwitched')} ${ws.name}`)
-              },
-            }))}
-            className="min-w-0"
-          />
+          <span className="text-sm font-medium text-text-primary truncate min-w-0" title={currentWorkspace?.path}>
+            {currentWorkspace?.name ?? t('title')}
+          </span>
         </div>
         <div className="flex items-center gap-1">
           {showWorkbenchButton && (

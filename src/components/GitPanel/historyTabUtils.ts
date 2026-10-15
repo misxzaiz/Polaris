@@ -74,6 +74,9 @@ export function formatRelativeTime(timestamp: number | undefined, t: (key: strin
 // 内联文件清单的最大高度（px）：超出后容器内部滚动，
 // 避免文件多的提交把后续提交挤出视口。
 export const INLINE_FILES_MAX_HEIGHT = 240
+// 内联文件清单启用虚拟化的阈值：文件数超过该值走 Virtuoso 只渲染可见行，
+// 避免大提交展开时一次性渲染数百行造成卡顿。
+export const INLINE_FILES_VIRTUALIZE_THRESHOLD = 100
 
 /**
  * 依据 Conventional Commits 前缀推断提交类型的强调色，

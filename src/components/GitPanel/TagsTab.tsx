@@ -10,6 +10,7 @@ import { Tag, RefreshCw, Loader2, Inbox, Copy, GitCommit, Plus, Trash2, X, Messa
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitTag } from '@/types/git'
 
@@ -40,11 +41,12 @@ export function TagsTab({ workspacePath: workspacePathProp }: TagsTabProps) {
   const getTags = useGitStore((s) => s.getTags)
   const createTag = useGitStore((s) => s.createTag)
   const deleteTag = useGitStore((s) => s.deleteTag)
-  const status = useGitStore((s) => s.status)
   const currentWorkspace = useGitActiveWorkspace()
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(workspacePath)
   const toast = useToastStore()
 
   const loadTags = useCallback(async () => {

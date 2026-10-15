@@ -6,7 +6,8 @@
 
 import { useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, X, GitCommit, RotateCcw, Trash2, MoreHorizontal, Eye } from 'lucide-react'
+import { Virtuoso } from 'react-virtuoso'
+import { Check, X, GitCommit, RotateCcw, Trash2, MoreHorizontal, Eye, ChevronRight } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { deleteFile } from '@/services/tauri/fileService'
@@ -37,6 +38,16 @@ interface ConfirmState {
   message: string
   type?: 'danger' | 'warning'
   onConfirm: () => void
+}
+
+/** 扁平化列表行：组头（折叠头）或数据行 */
+interface FlatRow {
+  type: 'header' | 'item'
+  area: ChangeArea
+  /** 数据行在对应排序数组中的索引（组头行无意义） */
+  index: number
+  /** 数据行的文件路径（组头行为空串） */
+  path: string
 }
 
 function splitPath(filePath: string) {
@@ -95,6 +106,8 @@ export function FileChangesList({
   const [operatingPath, setOperatingPath] = useState<string | null>(null)
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; items: ContextMenuItem[] } | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null)
+  // 折叠状态：key 为 'staged' | 'unstaged' | 'untracked'
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
@@ -103,6 +116,37 @@ export function FileChangesList({
     ...unstaged.map((file) => file.path),
     ...untracked,
   ])), [staged, unstaged, untracked])
+
+  // 排序仅在对应数据变化时执行，避免每次渲染全量排序
+  const sortedStaged = useMemo(() => [...staged].sort(sortByPath), [staged])
+  const sortedUnstaged = useMemo(() => [...unstaged].sort(sortByPath), [unstaged])
+  const sortedUntracked = useMemo(() => [...untracked].sort(sortByPath), [untracked])
+
+  // 扁平化行模型：三组 [组头] + [数据行…] 交替。折叠的分组只保留组头，数据行不进入列表
+  const flatRows = useMemo<FlatRow[]>(() => {
+    const rows: FlatRow[] = []
+    const areas: ChangeArea[] = ['staged', 'unstaged', 'untracked']
+    for (const area of areas) {
+      const data = area === 'staged' ? sortedStaged : area === 'unstaged' ? sortedUnstaged : sortedUntracked
+      if (data.length === 0) continue
+      // 组头行
+      rows.push({ type: 'header', area, index: 0, path: '' })
+      if (collapsed[area]) continue
+      // 数据行（保留原语义顺序）
+      rows.push(...data.map((entry, i) => ({
+        type: 'item' as const,
+        area,
+        index: i,
+        path: typeof entry === 'string' ? entry : entry.path,
+      })))
+    }
+    return rows
+  }, [collapsed, sortedStaged, sortedUnstaged, sortedUntracked])
+
+  // 是否走虚拟化：仅当总数据行数较大时启用（小列表保持普通 DOM 渲染，零回归）
+  const totalChanges = staged.length + unstaged.length + untracked.length
+  const VIRTUALIZE_THRESHOLD = 200
+  const shouldVirtualize = totalChanges > VIRTUALIZE_THRESHOLD
 
   const runAction = useCallback(async (
     filePath: string,
@@ -227,7 +271,6 @@ export function FileChangesList({
     setContextMenu({ x: e.clientX, y: e.clientY, items })
   }, [])
 
-  const totalChanges = staged.length + unstaged.length + untracked.length
   const isAllSelected = visiblePaths.length > 0 && visiblePaths.every((path) => selectedFiles.has(path))
   const isSomeSelected = visiblePaths.some((path) => selectedFiles.has(path))
 
@@ -297,16 +340,66 @@ export function FileChangesList({
     )
   }
 
-  const renderGroup = (title: string, count: number, children: React.ReactNode) => {
-    if (count === 0) return null
+  const toggleCollapse = useCallback((area: ChangeArea) => {
+    setCollapsed((prev) => ({ ...prev, [area]: !prev[area] }))
+  }, [])
+
+  // 组头（折叠头）
+  const renderGroupHeader = (area: ChangeArea) => {
+    const isCollapsed = !!collapsed[area]
+    const count = area === 'staged' ? sortedStaged.length : area === 'unstaged' ? sortedUnstaged.length : sortedUntracked.length
     return (
-      <div className="border-b border-border-subtle">
-        <div className="sticky top-0 z-10 h-7 px-3 flex items-center justify-between text-xs font-medium text-text-secondary bg-background-surface border-b border-border-subtle">
-          <span>{title} ({count})</span>
-        </div>
-        <div>{children}</div>
+      <div
+        className="sticky top-0 z-10 h-7 px-3 flex items-center justify-between text-xs font-medium text-text-secondary bg-background-surface cursor-pointer select-none hover:bg-background-hover"
+        onClick={() => toggleCollapse(area)}
+        title={isCollapsed ? t('expand') : t('collapse')}
+      >
+        <span className="flex items-center gap-1">
+          <ChevronRight size={12} className={`transition-transform duration-150 ${isCollapsed ? '' : 'rotate-90'}`} />
+          <span>{area === 'staged' ? t('status.staged') : area === 'unstaged' ? t('status.unstaged') : t('status.untracked')} ({count})</span>
+        </span>
       </div>
     )
+  }
+
+  // 渲染扁平行（组头或数据行）
+  const renderFlatRow = (row: FlatRow) => {
+    if (row.type === 'header') {
+      return (
+        <div key={`header:${row.area}`} className="border-b border-border-subtle">
+          {renderGroupHeader(row.area)}
+        </div>
+      )
+    }
+    const { area } = row
+    if (area === 'staged') {
+      const file = sortedStaged[row.index]
+      return renderChangeRow({
+        filePath: file.path,
+        area,
+        status: file.status,
+        file,
+        additions: file.additions,
+        deletions: file.deletions,
+      })
+    }
+    if (area === 'unstaged') {
+      const file = sortedUnstaged[row.index]
+      return renderChangeRow({
+        filePath: file.path,
+        area,
+        status: file.status,
+        file,
+        additions: file.additions,
+        deletions: file.deletions,
+      })
+    }
+    const p = sortedUntracked[row.index]
+    return renderChangeRow({
+      filePath: p,
+      area,
+      status: 'untracked',
+    })
   }
 
   if (totalChanges === 0) {
@@ -335,29 +428,22 @@ export function FileChangesList({
         </span>
       </div>
 
-      {renderGroup(t('status.staged'), staged.length, [...staged].sort(sortByPath).map((file) => renderChangeRow({
-        filePath: file.path,
-        area: 'staged',
-        status: file.status,
-        file,
-        additions: file.additions,
-        deletions: file.deletions,
-      })))}
-
-      {renderGroup(t('status.unstaged'), unstaged.length, [...unstaged].sort(sortByPath).map((file) => renderChangeRow({
-        filePath: file.path,
-        area: 'unstaged',
-        status: file.status,
-        file,
-        additions: file.additions,
-        deletions: file.deletions,
-      })))}
-
-      {renderGroup(t('status.untracked'), untracked.length, [...untracked].sort(sortByPath).map((path) => renderChangeRow({
-        filePath: path,
-        area: 'untracked',
-        status: 'untracked',
-      })))}
+      {/* 三组文件变更列表：组头(可折叠) + 数据行。数据行多时走 Virtuoso 虚拟化，小列表保持普通 DOM 渲染 */}
+      {shouldVirtualize ? (
+        <Virtuoso
+          data={flatRows}
+          computeItemKey={(index) => {
+            const row = flatRows[index]
+            return row.type === 'header'
+              ? `header:${row.area}`
+              : `item:${row.area}:${row.path}`
+          }}
+          itemContent={(_index, row) => renderFlatRow(row)}
+          style={{ flex: 1, minHeight: 0 }}
+        />
+      ) : (
+        <div className="min-h-0">{flatRows.map((row) => renderFlatRow(row))}</div>
+      )}
 
       {contextMenu && (
         <ContextMenu

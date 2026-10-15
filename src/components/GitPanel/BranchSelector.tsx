@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { GitBranch as GitBranchIcon, Check, ChevronDown, Plus, Loader2, AlertTriangle, Archive } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
+import { useGitRepoStatus } from './useGitRepoStatus'
 
 type SwitchState = 
   | { type: 'idle' }
@@ -27,7 +28,6 @@ export function BranchSelector({ workspacePath: workspacePathProp }: BranchSelec
   const containerRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const status = useGitStore((s) => s.status)
   const branches = useGitStore((s) => s.branches)
   const getBranches = useGitStore((s) => s.getBranches)
   const checkoutBranch = useGitStore((s) => s.checkoutBranch)
@@ -38,6 +38,8 @@ export function BranchSelector({ workspacePath: workspacePathProp }: BranchSelec
 
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const workspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
+
+  const status = useGitRepoStatus(workspacePath)
 
   const loadBranches = useCallback(async () => {
     if (!workspacePath) return

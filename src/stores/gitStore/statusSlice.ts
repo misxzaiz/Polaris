@@ -18,6 +18,10 @@ const log = createLogger('GitStore')
 export const createStatusSlice: StatusSlice = (set, get) => ({
   // ===== 状态 =====
   status: null,
+  /** 按仓库路径键控的状态缓存。多仓库/多面板场景下各路径互不覆盖 */
+  statuses: {},
+  /** 每个仓库路径的刷新序号，用于丢弃乱序返回的旧请求 */
+  _statusSeq: {},
   diffs: [],
   worktreeDiffs: [],
   indexDiffs: [],
@@ -39,23 +43,42 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
     log.debug('refreshStatus start', { workspacePath })
     set({ isLoading: true, error: null })
 
+    // per-path 序号：后发出的请求具有更大序号，先发出的旧请求返回后直接丢弃
+    const seq = (get()._statusSeq[workspacePath] ?? 0) + 1
+    set({ _statusSeq: { ...get()._statusSeq, [workspacePath]: seq } })
+
     try {
       log.debug('Calling git_get_status', { workspacePath })
       const status = await invoke<import('@/types/git').GitRepositoryStatus>('git_get_status', {
         workspacePath,
       })
 
+      // 该路径已有更新的请求发出，本次结果已过期，丢弃
+      if ((get()._statusSeq[workspacePath] ?? 0) !== seq) {
+        log.debug('refreshStatus stale result dropped', { workspacePath, seq })
+        return
+      }
+
       log.debug('git_get_status success', { status })
-      set({ status, isLoading: false })
+      set({
+        status,
+        statuses: { ...get().statuses, [workspacePath]: status },
+        isLoading: false,
+      })
     } catch (err) {
       const message = parseGitError(err)
       log.error('git_get_status failed', err instanceof Error ? err : new Error(String(err)), {
         workspacePath,
       })
+      // 过期请求的错误同样丢弃，避免污染新请求的展示
+      if ((get()._statusSeq[workspacePath] ?? 0) !== seq) {
+        return
+      }
       set({
         error: message,
         isLoading: false,
         status: null,
+        statuses: { ...get().statuses, [workspacePath]: null },
       })
     }
   },
@@ -242,6 +265,8 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
 
     set({
       status: null,
+      statuses: {},
+      _statusSeq: {},
       diffs: [],
       worktreeDiffs: [],
       indexDiffs: [],
@@ -264,9 +289,9 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
     })
   },
 
-  // 检查是否有变更
-  hasChanges() {
-    const { status } = get()
+  // 检查是否有变更（可指定仓库路径，缺省使用全局 status）
+  hasChanges(workspacePath?: string) {
+    const status = workspacePath ? get().statuses[workspacePath] : get().status
     if (!status) return false
 
     return (
@@ -276,9 +301,9 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
     )
   },
 
-  // 获取所有变更文件
-  getChangedFiles() {
-    const { status } = get()
+  // 获取所有变更文件（可指定仓库路径，缺省使用全局 status）
+  getChangedFiles(workspacePath?: string) {
+    const status = workspacePath ? get().statuses[workspacePath] : get().status
     if (!status) return []
 
     return [
