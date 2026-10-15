@@ -11,9 +11,9 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock invoke（封装层），捕获 continue_chat 的入参以断言 allowedTools 合并结果
-const mockInvoke = vi.fn(async () => undefined)
-vi.mock('@/services/tauri', () => ({
+// Mock invoke（统一 transport），捕获 router_dispatch_stream 的入参以断言 allowedTools 合并结果
+const mockInvoke = vi.fn(async () => ({ ok: true, result: undefined }))
+vi.mock('@/services/transport', () => ({
   invoke: (...args: unknown[]) => mockInvoke(...args),
 }))
 
@@ -93,9 +93,13 @@ describe('continueChat 并入 sessionAllowedTools', () => {
     await store.getState().continueChat('[已授权] Write', ['Write', 'Bash'])
 
     expect(mockInvoke).toHaveBeenCalledTimes(1)
-    const [cmd, payload] = mockInvoke.mock.calls[0] as [string, { options: { allowedTools?: string[] } }]
-    expect(cmd).toBe('continue_chat')
-    expect([...(payload.options.allowedTools ?? [])].sort()).toEqual(['Bash', 'Read', 'Write'])
+    const [cmd, args] = mockInvoke.mock.calls[0] as [
+      string,
+      { req: { target: string; payload: { options: { allowedTools?: string[] } } } },
+    ]
+    expect(cmd).toBe('router_dispatch_stream')
+    expect(args.req.target).toBe('cap.ai.chat')
+    expect([...(args.req.payload.options.allowedTools ?? [])].sort()).toEqual(['Bash', 'Read', 'Write'])
   })
 
   it('无显式 allowedTools 时仍携带会话集合（普通续聊持续放行）', async () => {
@@ -105,8 +109,11 @@ describe('continueChat 并入 sessionAllowedTools', () => {
 
     await store.getState().continueChat('继续')
 
-    const [, payload] = mockInvoke.mock.calls[0] as [string, { options: { allowedTools?: string[] } }]
-    expect(payload.options.allowedTools).toEqual(['Bash'])
+    const [, args] = mockInvoke.mock.calls[0] as [
+      string,
+      { req: { payload: { options: { allowedTools?: string[] } } } },
+    ]
+    expect(args.req.payload.options.allowedTools).toEqual(['Bash'])
   })
 
   it('会话集合为空且无显式入参时 allowedTools 为 undefined', async () => {
@@ -115,8 +122,11 @@ describe('continueChat 并入 sessionAllowedTools', () => {
 
     await store.getState().continueChat('继续')
 
-    const [, payload] = mockInvoke.mock.calls[0] as [string, { options: { allowedTools?: string[] } }]
-    expect(payload.options.allowedTools).toBeUndefined()
+    const [, args] = mockInvoke.mock.calls[0] as [
+      string,
+      { req: { payload: { options: { allowedTools?: string[] } } } },
+    ]
+    expect(args.req.payload.options.allowedTools).toBeUndefined()
   })
 })
 

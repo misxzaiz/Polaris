@@ -940,6 +940,13 @@ pub async fn start_chat_inner(
         options.attachments.as_ref().map(|a| a.len())
     );
 
+    // 后端消息持久化：登记本轮用户请求（多数引擎不回显 user 事件，故不能依赖事件路径）。
+    // 不在此处直接落库——落库时机是「本轮首个事件到达」时，见 turn_persist::record_user_request。
+    crate::services::turn_persist::record_user_request(
+        &message,
+        options.client_message_id.as_deref(),
+    );
+
     let processed =
         if let (Some(ref dir), Some(ref atts)) = (&options.work_dir, &options.attachments) {
             if !atts.is_empty() {
@@ -1046,16 +1053,16 @@ pub async fn start_chat_inner(
             }
             _ => {}
         }
+        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
+        crate::services::turn_persist::observe(&event, &engine_str);
         // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
         let enriched = match &event {
-            AIEvent::SessionStart(_) => {
-                serde_json::to_value(&event).ok().map(|mut v| {
-                    if let Some(obj) = v.as_object_mut() {
-                        obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
-                    }
-                    v
-                })
-            }
+            AIEvent::SessionStart(_) => serde_json::to_value(&event).ok().map(|mut v| {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                }
+                v
+            }),
             _ => None,
         };
         let event_json = if let Some(ref cid) = ctx_id {
@@ -1569,16 +1576,16 @@ pub async fn continue_chat_inner(
             }
             _ => {}
         }
+        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
+        crate::services::turn_persist::observe(&event, &engine_str);
         // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
         let enriched = match &event {
-            AIEvent::SessionStart(_) => {
-                serde_json::to_value(&event).ok().map(|mut v| {
-                    if let Some(obj) = v.as_object_mut() {
-                        obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
-                    }
-                    v
-                })
-            }
+            AIEvent::SessionStart(_) => serde_json::to_value(&event).ok().map(|mut v| {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                }
+                v
+            }),
             _ => None,
         };
         let event_json = if let Some(ref cid) = ctx_id {
@@ -1618,6 +1625,13 @@ pub async fn continue_chat_inner(
 
     let mut session_opts = SessionOptions::new(event_callback);
     session_opts.on_session_id_update = Some(Arc::new(session_id_update_callback));
+
+    // 后端权威：续聊的用户消息在此落库（会话 ID 已知，且不依赖客户端在线）
+    crate::services::turn_persist::record_user_message(
+        &session_id,
+        &message,
+        options.client_message_id.as_deref(),
+    );
 
     if let Some(ref dir) = options.work_dir {
         session_opts = session_opts.with_work_dir(dir.clone());
@@ -1918,7 +1932,6 @@ pub fn append_session_event(
     let _ = crate::commands::session_state_commands::session_event_append_with_seq_inner(&event);
 }
 
-/// 启动聊天会话
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PluginCardResponse {

@@ -34,7 +34,6 @@ import {
   isProfileModeWithoutProfile,
 } from './conversationStoreUtils'
 import { dialogStorageService } from '@/services/dialogStorage'
-import { cancelScheduledFlush, cancelCheckpoint } from './eventHandler'
 import { dedupeMessagesById, normalizeRecoveredMessages } from './dedupMessages'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
@@ -343,6 +342,20 @@ export function createConversationStore(
             blocks: foldThinkingBlocks(currentMessage.blocks),
             timestamp: new Date().toISOString(),
             isStreaming: false,
+          }
+          // 同 id 已在 messages 中（客户端重开后从后端消息库恢复了「进行中轮次」的局部内容，
+          // 又被 live token 续写）：续接而非追加重复条，避免同 id 分裂、归档只剩尾部内容。
+          const existingIdx = messages.findIndex((m) => m.id === completedMessage.id)
+          if (existingIdx >= 0 && messages[existingIdx].type === 'assistant') {
+            const prev = messages[existingIdx] as typeof completedMessage
+            const merged = {
+              ...completedMessage,
+              blocks: foldThinkingBlocks([...prev.blocks, ...completedMessage.blocks]),
+            }
+            const next = [...messages]
+            next[existingIdx] = merged
+            set({ messages: next, currentMessage: null })
+            return merged
           }
           set({
             messages: [...messages, completedMessage],
@@ -2253,7 +2266,6 @@ export function createConversationStore(
 
         // 删除从 user 消息之后的所有消息（包括要重新生成的 assistant 消息）
         const newMessages = messages.slice(0, userMessageIndex)
-
         // 更新状态：删除后续消息，清空当前消息
         set({
           messages: newMessages,
@@ -2301,7 +2313,6 @@ export function createConversationStore(
 
         // 删除从该 user 消息之后的所有消息
         const newMessages = messages.slice(0, messageIndex)
-
         // 更新状态
         set({
           messages: newMessages,
@@ -2522,10 +2533,6 @@ export function createConversationStore(
           _paragraphTimer = null
         }
         _textBuffer = ''
-
-        // 取消挂起的增量落盘（会话销毁后不再需要）
-        cancelScheduledFlush(sessionId)
-        cancelCheckpoint(sessionId)
 
         // 清理压缩器快照
         compactor.clearSnapshots()

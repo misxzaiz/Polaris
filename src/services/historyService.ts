@@ -23,8 +23,29 @@ import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 import { dialogStorageService } from './dialogStorage'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { dedupeMessagesById, normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
+import { loadBackendMessages } from './sessionArchive'
 
 const log = createLogger('HistoryService')
+
+/**
+ * 合并后端消息库中的消息（S6）。
+ *
+ * 归档（JSONL）与消息库共用同一套消息 id（后端分配、前端 adopt），因此合并是精确的：
+ * 归档已有的 id 以归档为准（轮末 canonical 版），只追加归档缺失的消息——
+ * 典型为「归档尚未落盘的进行中轮次」（客户端中途关闭 / 归档前被中断）。
+ */
+async function mergeBackendMessages(
+  conversationId: string,
+  archived: ChatMessage[],
+): Promise<ChatMessage[]> {
+  const backend = await loadBackendMessages(conversationId)
+  if (backend.length === 0) return archived
+  const known = new Set(archived.map((m) => m.id))
+  const extra = backend.filter((m) => !known.has(m.id))
+  if (extra.length === 0) return archived
+  // 补入的消息尾部追加（时间上最新），并对 isStreaming 残留做中断态归一
+  return normalizeRecoveredMessages([...archived, ...extra])
+}
 
 const SESSION_HISTORY_KEY = 'event_chat_session_history'
 
@@ -515,8 +536,9 @@ export const historyService = {
         return {
           // 分页读取是纯追加不做去重：按 id 收敛（同 id 取末行 = checkpoint 最新快照），
           // 并把 isStreaming 残留快照归一为中断态，恢复后正常展示已输出的部分
-          messages: normalizeRecoveredMessages(
-            dedupeMessagesById(page.messages) as ChatMessage[],
+          messages: await mergeBackendMessages(
+            sessionId,
+            normalizeRecoveredMessages(dedupeMessagesById(page.messages) as ChatMessage[]),
           ),
           title: page.meta.title,
           engineId: normalizeEngineId(engineId || page.meta.engineId),
@@ -531,6 +553,26 @@ export const historyService = {
       }
     } catch (e) {
       log.warn('自有存储恢复失败，降级', { error: e instanceof Error ? e.message : String(e) })
+    }
+
+    // 1b. 无 JSONL 归档（会话在首轮结束前被中断 / 归档尚未落盘）→ 用后端消息库兜底。
+    // 客户端中途关闭时归档要等该轮结束才写，而消息库在流式期间已有内容。
+    try {
+      const backendMessages = await mergeBackendMessages(sessionId, [])
+      if (backendMessages.length > 0) {
+        const externalSessionId = sessionId
+        return {
+          messages: backendMessages,
+          title: '',
+          engineId: normalizeEngineId(engineId),
+          externalSessionId,
+          workspacePath: null,
+          source: 'self',
+          paging: null,
+        }
+      }
+    } catch (e) {
+      log.warn('后端消息库兜底读取失败', { error: e instanceof Error ? e.message : String(e) })
     }
 
     // 2. localStorage
@@ -667,6 +709,12 @@ export const historyService = {
     try {
       if (source === 'self') {
         await dialogStorageService.deleteConversation(sessionId)
+        // 一并清理后端消息库中的消息（S6：中断轮次的兜底副本）
+        try {
+          await invoke<void>('message_delete_by_conversation', { conversationId: sessionId })
+        } catch (e) {
+          log.warn('删除后端会话消息失败', { sessionId, error: String(e) })
+        }
         return
       }
 

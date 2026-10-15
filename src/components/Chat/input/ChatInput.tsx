@@ -270,7 +270,7 @@ export function ChatInput({
   const { currentWorkspaceId, workspaces } = useWorkspaceStore()
   const { fileMatches, searchFiles, clearResults } = useFileSearch()
 
-  // 加载历史会话列表（全引擎聚合：saveDialog 对所有引擎统一落盘）供 @对话 引用
+  // 加载历史会话列表（全引擎聚合：后端统一归档所有引擎会话）供 @对话 引用
   const searchConversations = useCallback(async (query: string) => {
     try {
       const result = await dialogStorageService.listConversations({ pageSize: 50 })

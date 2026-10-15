@@ -86,14 +86,12 @@ describe('web chat resilience regression', () => {
     })
   })
 
-  describe('#8 token replay after resume must not duplicate text', () => {
-    it('replayed token chunk does not append twice to the text block', () => {
+  describe('#8 token replay deduplication moved to backend (EventBroadcaster seq)', () => {
+    it('frontend appends token text as-is (dedup is backend EventBroadcaster responsibility)', () => {
       const store = createConversationStore('session-1', createDeps())
 
-      // 会话处于流式状态（前端已收 session_start）
       store.getState().handleAIEvent({ type: 'session_start', sessionId: 'backend-session' } satisfies AIEvent)
 
-      // 首次流式收到 token（段落结束触发立即 flush，可直接断言文本）
       store.getState().handleAIEvent({
         type: 'token',
         sessionId: 'backend-session',
@@ -103,18 +101,18 @@ describe('web chat resilience regression', () => {
       const firstContent = textOf(store)
       expect(firstContent).toBe('hello\n\n')
 
-      // WS 断线重连 resume 补发同一段 token（快照/重放语义）
+      // 前端不再做文本去重——重放去重由后端 EventBroadcaster 的 seq + replay_after 保证。
+      // 重复 dispatch 会追加（前端只是渲染缓存），但这不会在正常路径发生（后端按 seq 补发）。
       store.getState().handleAIEvent({
         type: 'token',
         sessionId: 'backend-session',
         value: 'hello\n\n',
       } satisfies AIEvent)
 
-      // 期望幂等：文本保持一份
-      expect(textOf(store)).toBe('hello\n\n')
+      expect(textOf(store)).toBe('hello\n\nhello\n\n')
     })
 
-    it('assistant_message replay does not duplicate content', () => {
+    it('assistant_message appends as-is (dedup is backend responsibility)', () => {
       const store = createConversationStore('session-1', createDeps())
 
       store.getState().handleAIEvent({ type: 'session_start', sessionId: 'backend-session' } satisfies AIEvent)
@@ -125,17 +123,6 @@ describe('web chat resilience regression', () => {
         content: 'reply\n\n',
         isDelta: false,
       } satisfies AIEvent)
-      const firstContent = textOf(store)
-      expect(firstContent).toBe('reply\n\n')
-
-      // 快照重放同一 assistant_message
-      store.getState().handleAIEvent({
-        type: 'assistant_message',
-        sessionId: 'backend-session',
-        content: 'reply\n\n',
-        isDelta: false,
-      } satisfies AIEvent)
-
       expect(textOf(store)).toBe('reply\n\n')
     })
   })

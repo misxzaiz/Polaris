@@ -117,6 +117,8 @@ pub fn message_get_latest(id: String) -> Result<Option<MessageEntry>> {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn message_delete_by_conversation(conversation_id: String) -> Result<()> {
+    // 同步丢弃该会话的流式缓冲（若仍在流式中被删除，避免后续 token 把它写回）
+    crate::services::turn_persist::forget(&conversation_id);
     message_delete_by_conversation_inner(conversation_id)
 }
 

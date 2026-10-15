@@ -85,7 +85,7 @@ describe('conversation form block', () => {
     })
   })
 
-  it('marks pending forms as failed on history restore (hold lost after restart)', () => {
+  it('marks pending forms as skipped on history restore (hold lost after restart)', () => {
     const store = createConversationStore('session-1', createDeps())
 
     store.getState().handleAIEvent({
@@ -118,7 +118,8 @@ describe('conversation form block', () => {
     expect(block).toMatchObject({
       type: 'form',
       id: 'form-3',
-      status: 'submitted',
+      // 历史恢复时仍 pending 的表单被置为「已过期/跳过」（进程重启后 form_holds 已清空）
+      status: 'skipped',
       ok: false,
     })
   })

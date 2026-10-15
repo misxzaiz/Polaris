@@ -337,7 +337,7 @@ export const useSchedulerStore = create<SchedulerState>((set, get) => ({
         unsubscribeStatus();
       }
 
-      // 始终路由到会话 Store，确保 saveDialog 写入 JSONL（不依赖 subscribe 标志）
+      // 始终路由到会话 Store，确保会话消息进入后端归档（不依赖 subscribe 标志）
       const sessionId = `scheduler-${id}`;
       const { sessionStoreManager } = await import('./conversationStore/sessionStoreManager');
       sessionStoreManager.getState().dispatchEvent({

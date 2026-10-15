@@ -325,6 +325,29 @@ impl SessionMessageDb {
         Ok(())
     }
 
+    /// 存在「流式中」残留消息的会话（每 id 最新版 content 带 `isStreaming: true`）。
+    /// 供启动恢复（`services::turn_persist::recover_pending_turns`）使用。
+    pub fn pending_streaming(&self) -> Result<Vec<(String, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.conversation_id, m.id
+                   FROM session_messages m
+                   JOIN (SELECT id, MAX(version) AS v FROM session_messages GROUP BY id) t
+                     ON m.id = t.id AND m.version = t.v
+                  WHERE m.content LIKE '%\"isStreaming\":true%'",
+            )
+            .map_err(|e| AppError::StateError(format!("准备残留流式查询失败: {}", e)))?;
+        let rows = stmt
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .map_err(|e| AppError::StateError(format!("查询残留流式失败: {}", e)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| AppError::StateError(format!("读取残留流式行失败: {}", e)))?);
+        }
+        Ok(out)
+    }
+
     /// 当前消息总数（测试辅助 + 审计）
     pub fn count(&self) -> Result<i64> {
         let conn = self.conn.lock().unwrap();
@@ -623,4 +646,9 @@ mod tests {
         // 不存在的消息 → None
         assert!(db.get_latest("ghost").unwrap().is_none());
     }
+}
+
+/// 便捷入口：存在「流式中」残留消息的会话（与命令层共享同一连接单例）
+pub fn pending_streaming_conversations() -> Result<Vec<(String, String)>> {
+    crate::commands::session_messages::db()?.pending_streaming()
 }

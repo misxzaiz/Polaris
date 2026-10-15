@@ -2114,7 +2114,10 @@ fn dispatch_dialog_delete(args: &Value) -> Result<Json<Value>, WebError> {
 
 /// 解析完整消息条目（camelCase，对齐后端 MessageEntry 反序列化）
 fn parse_message_entry(args: &Value) -> Result<crate::services::session_db::MessageEntry, WebError> {
-    serde_json::from_value(args.clone())
+    // 兼容两种载荷：`{ entry: {...} }`（与 Tauri 命令 `message_append(entry)` 对齐）
+    // 与顶层平铺 `{ id, conversationId, ... }`（既有前端包装 V2MessageLog 的形状）。
+    let payload = args.get("entry").cloned().unwrap_or_else(|| args.clone());
+    serde_json::from_value(payload)
         .map_err(|e| WebError::BadRequest(format!("message_append 参数解析失败: {}", e)))
 }
 

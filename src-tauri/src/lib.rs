@@ -794,6 +794,12 @@ pub fn run() {
                 commands::scheduler::spawn_scheduler_health_monitor(app.handle().clone());
             }
 
+            // S6：启动恢复残留的流式消息（后端被强杀在回复途中）——
+            // 落定为中断态并补一次 JSONL 归档；后台执行，失败仅告警。
+            std::thread::spawn(|| {
+                crate::services::turn_persist::recover_pending_turns();
+            });
+
             Ok(())
         })
         .on_window_event(|window, event| {
