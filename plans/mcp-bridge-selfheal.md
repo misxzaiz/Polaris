@@ -13,10 +13,11 @@
 | 文件 | 内容 | 验证 |
 |---|---|---|
 | `src-tauri/src/services/ask_listener.rs` | 固定端口池 `[56496,56497,56498,60097,60098]` + 绑定后原子落盘 meta | `cargo check` 通过 |
-| `src-tauri/src/services/ask_listener_meta.rs`（新增） | meta 读写（原子 temp+rename）+ `pid_alive` + `resolve_active_meta_preferring`（多数据根探测 + 端口偏好） | 逻辑模拟验证通过 |
+| `src-tauri/src/services/ask_listener_meta.rs`（新增） | meta 读写（原子 temp+rename）+ `pid_alive` + `resolve_active_meta_preferring`（多数据根探测 + 端口偏好）+ `mcp_config_paths`（定位各 mcp.json 落点）+ `candidate_roots`（公开访问器） | 逻辑模拟验证通过 |
 | `src-tauri/src/services/dispatch_mcp_server.rs` | `request_via_tcp` 加 fallback（直连失败→读 meta→重建 token 重连） | **cap_list / cap_dispatch 实测通过** |
 | `src-tauri/src/services/ask_mcp_server.rs` | `request_answer_via_tcp` / `request_form_ack_via_tcp` 走 `request_via_tcp_with_fallback` | `cargo check` + clippy 通过（与 browser 同模式） |
 | `src-tauri/src/services/browser_mcp_server.rs` | `request_browser_via_tcp` 加 fallback | **browser_list 实测通过** |
+| `src-tauri/src/services/bus_mcp_server.rs` | **[本次] 新增诊断工具** `bus_mcp_status` / `bus_mcp_regenerate`（独立进程，不依赖 ask 端口） | **实测通过**（见下） |
 
 ### 实测验证结果
 1. **token 漂移自愈**：用新 exe + 错误 token + 正确端口 56496 调 cap_list → 返回完整能力列表 ✅
@@ -25,6 +26,9 @@
 4. **browser 自愈**：错误端口 + 错误 token 调 browser_list → 返回 `{"items":[]}` ✅
 5. **cap_dispatch 全链路**：`cap_dispatch(cap.http, ping)` → `{"pong":true}` ✅
 6. **fallback 决策逻辑**：真实数据模拟 `resolve_active_meta_preferring(56496)` → 命中 dev 56496 ✅
+7. **【本次】`bus_mcp_status`**：`~/.claude/.polaris/claude/mcp.json` 固化 60097 vs 活跃 dev 56496 → `matches_active:false`，正确诊断出漂移 ✅
+8. **【本次】`bus_mcp_regenerate`**：3 bridge server、6 参数（3 port+3 token）原子改写 60097→56496、token→meta 最新值，session 保持不动 ✅
+9. **【本次】regenerate 后直连**：用改写后的 mcp.json 参数启动 dispatch → `cap_list` 返回 15 能力，**零 fallback**（配置=真实值，直连即通）✅
 
 ### 验证边界（如实报告）
 - `cargo test --lib` 因**存量错误**（`turn_persist.rs:909` `is_some()` on unit）无法整体运行，非本次引入；改用 `cargo check` + 逻辑模拟验证。
@@ -128,6 +132,8 @@ polaris-mcp dispatch/ask/browser  以硬编码旧端口连主进程 → Connecti
 - 注册 `cap.mcp.regenerate` → 读 meta + 复用 `mcp_config_service::resolve_workspace_mcp_runtime_service` 重新生成 `.polaris/claude/mcp.json`，返回 `{ ok, config_path, port }`。
   → AI 在 `status` 显示正常但仍连不上（配置过旧）时，可一键让后续新加载的 bridge 用上新端口。
 - `cap_list` 天然列出这两个新能力（走 described_capabilities，无需额外接线）。
+
+> **已实现（2026-10-16）**：以 `bus_mcp_status` / `bus_mcp_regenerate` 两个**直接工具**落地（非 cap.* 能力，因为 bus 进程自持轻量总线，直接实现更贴合「独立诊断通道」定位；`bus_help` 同步列出）。mcp.json 定位用 `ask_listener_meta::mcp_config_paths(config_dir)`：config_dir → 用户级 `~/.claude/.polaris/claude/mcp.json` → 各数据根 `.polaris/claude/mcp.json`。regenerate 做**最小精准改写**（只替换含 `--polaris-port`/`--polaris-token` 的 server，保留插件 server 与用户自定义），非全集重生成。
 
 ### 2.4 时序图（一次失联自愈）
 

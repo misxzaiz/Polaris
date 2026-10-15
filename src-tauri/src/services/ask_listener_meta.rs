@@ -93,10 +93,53 @@ fn candidate_root() -> Vec<std::path::PathBuf> {
 }
 
 /// 读取某个候选根的 meta（按根路径拼 `.meta/ask-listener.json`）。
-fn read_meta_at(root: &std::path::Path) -> Option<AskListenerMeta> {
+///
+/// `pub` 供 bus 诊断工具遍历各根状态。
+pub fn read_meta_at(root: &std::path::Path) -> Option<AskListenerMeta> {
     let path = root.join(".meta").join(ASK_LISTENER_META_FILE);
     let content = std::fs::read_to_string(&path).ok()?;
     serde_json::from_str::<AskListenerMeta>(&content).ok()
+}
+
+/// 候选数据根的公开访问器（供诊断/巡检任务列举各根状态）。
+///
+/// 顺序与 `resolve_active_meta_preferring` 一致：env 显式根 > 正式版 > dev。
+pub fn candidate_roots() -> Vec<std::path::PathBuf> {
+    candidate_root()
+}
+
+/// Bridge MCP 配置（`.polaris/claude/mcp.json`）的可能落点。
+///
+/// Claude Code 实际加载的配置来自**工作区根** `.polaris/claude/mcp.json`
+/// （`prepare_workspace_config(workspace_path)` 写入），Loader 也会把用户级
+/// `~/.claude/.polaris/claude/mcp.json` 一并合并。这里返回去重后的候选集，
+/// `status`/`regenerate` 据此定位需要诊断/改写的文件。
+///
+/// 顺序（按命中概率）：config_dir > 用户级 `~/.claude` > 候选数据根。
+pub fn mcp_config_paths(config_dir: &str) -> Vec<std::path::PathBuf> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+
+    let mut push = |p: &std::path::Path| {
+        if p.exists() && seen.insert(p.to_path_buf()) {
+            out.push(p.to_path_buf());
+        }
+    };
+
+    // 1. 传入的 config_dir（bus 进程的 config_dir 参数，指向应用配置根）
+    push(&std::path::Path::new(config_dir).join(".polaris/claude/mcp.json"));
+
+    // 2. 用户级 ~/.claude/.polaris/claude/mcp.json
+    if let Some(home) = dirs::home_dir() {
+        push(&home.join(".claude/.polaris/claude/mcp.json"));
+    }
+
+    // 3. 候选数据根下的同名相对路径
+    for root in candidate_root() {
+        push(&root.join(".polaris/claude/mcp.json"));
+    }
+
+    out
 }
 
 /// 解析「当前活跃主进程」的元数据。

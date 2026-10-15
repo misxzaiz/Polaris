@@ -83,13 +83,18 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         )));
     }
 
-    let handler = BusMcpHandler { router };
+    let handler = BusMcpHandler {
+        router,
+        config_dir: config_dir.clone(),
+    };
     mcp_server_common::run_mcp_server_loop(handler)
 }
 
 /// Bus MCP handler（实现 McpServerHandler）。
 struct BusMcpHandler {
     router: RouterBus,
+    /// 应用配置根（argv 传入的 config_dir；bus_mcp_status/regenerate 用它定位 mcp.json）
+    config_dir: String,
 }
 
 impl McpServerHandler for BusMcpHandler {
@@ -109,6 +114,8 @@ impl McpServerHandler for BusMcpHandler {
                     "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
                     "payload": { "type": "object" }
                 })),
+                mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态：列出各候选数据根的 ask_listener 元数据（真实端口/token/pid 及存活状态），并对比 mcp.json 固化的端口/token 是否与活跃主进程一致。失联时先用它定位是端口漂移、token 漂移还是主进程未启动。纯读，无副作用。常与 bus_mcp_regenerate 搭配：status 定位 → regenerate 修复", &[], json!({})),
+                mcp_server_common::tool_def("bus_mcp_regenerate", "一键修复 MCP Bridge 配置漂移：读取当前活跃 ask_listener 的真实端口/token，把所有存在的 .polaris/claude/mcp.json 中 --polaris-port/--polaris-token 参数改写为真实值后原子写回。适用于 status 显示配置与活跃主进程不一致但仍连不上的场景。返回更新了哪些文件与计数。注意：新配置对**新启动**的 bridge 生效，当前已连接的会话由运行时自愈", &[], json!({})),
             ]
         })
     }
@@ -144,10 +151,20 @@ impl McpServerHandler for BusMcpHandler {
                 let reply = self
                     .router
                     .dispatch(env)
-                    .map_err(|e| AppError::ProcessError(e))?;
+                    .map_err(AppError::ProcessError)?;
                 match reply.result {
                     Ok(value) => Ok(mcp_server_common::tool_text(&value.to_string())),
                     Err(err) => Ok(tool_error(err)),
+                }
+            }
+            "bus_mcp_status" => {
+                let report = bus_mcp_status_report(&self.config_dir);
+                Ok(mcp_server_common::tool_text(&report.to_string()))
+            }
+            "bus_mcp_regenerate" => {
+                match bus_mcp_regenerate(&self.config_dir) {
+                    Ok(report) => Ok(mcp_server_common::tool_text(&report.to_string())),
+                    Err(e) => Ok(tool_error(e.to_string())),
                 }
             }
             other => Ok(tool_error(format!("未知工具: {other}"))),
@@ -161,6 +178,238 @@ fn tool_error(message: String) -> Value {
         "content": [{ "type": "text", "text": message }],
         "isError": true
     })
+}
+
+/// 读取 mcp.json 里固化的 bridge 参数（--polaris-port / --polaris-token）。
+///
+/// 返回 `Some((port, token_present, server_count))`；文件缺失/解析失败返回 None。
+fn read_mcp_bridge_params(path: &std::path::Path) -> Option<(u16, bool, usize)> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let root: Value = serde_json::from_str(&content).ok()?;
+    let servers = root.get("mcpServers")?.as_object()?;
+    let mut port = None;
+    let mut token_present = false;
+    let mut bridge_count = 0;
+
+    for server in servers.values() {
+        let Some(args) = server.get("args").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        let mut has_port = false;
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                Some("--polaris-port") => {
+                    if let Some(v) = iter.next().and_then(|v| v.as_str()) {
+                        if let Ok(p) = v.parse::<u16>() {
+                            port = Some(p);
+                            has_port = true;
+                        }
+                    }
+                }
+                Some("--polaris-token") => {
+                    if iter.next().is_some() {
+                        token_present = true;
+                        has_port = true; // 标记为 bridge server
+                    }
+                }
+                _ => {}
+            }
+        }
+        if has_port {
+            bridge_count += 1;
+        }
+    }
+
+    port.map(|p| (p, token_present, bridge_count))
+}
+
+/// `bus_mcp_status`：诊断链路健康，纯读无副作用。
+fn bus_mcp_status_report(config_dir: &str) -> Value {
+    let config_dir = normalize_config_dir(config_dir);
+    let active = crate::services::ask_listener_meta::resolve_active_meta();
+
+    // 各候选根的状态
+    let candidates: Vec<Value> = crate::services::ask_listener_meta::candidate_roots()
+        .iter()
+        .map(|root| {
+            let meta = crate::services::ask_listener_meta::read_meta_at(root);
+            match meta {
+                Some(m) => json!({
+                    "root": root.to_string_lossy(),
+                    "port": m.port,
+                    "token_present": !m.token.is_empty(),
+                    "pid": m.pid,
+                    "pid_alive": crate::services::ask_listener_meta::pid_alive(m.pid),
+                    "started_at": m.started_at,
+                    "active": active.as_ref().is_some_and(|a| a.port == m.port && a.token == m.token),
+                }),
+                None => json!({
+                    "root": root.to_string_lossy(),
+                    "meta": "缺失",
+                }),
+            }
+        })
+        .collect();
+
+    let mcp_configs: Vec<Value> =
+        crate::services::ask_listener_meta::mcp_config_paths(&config_dir)
+            .iter()
+            .map(|p| {
+                let configured = read_mcp_bridge_params(p);
+                let matches = match (&active, &configured) {
+                    (
+                        Some(a),
+                        Some((c_port, c_token, _)),
+                    ) => c_port == &a.port && *c_token,
+                    _ => false,
+                };
+                json!({
+                    "path": p.to_string_lossy(),
+                    "configured_port": configured.as_ref().map(|c| c.0),
+                    "bridge_server_count": configured.as_ref().map(|c| c.2),
+                    "matches_active": matches,
+                })
+            })
+            .collect();
+
+    let ok = active.is_some();
+    let mut report = json!({
+        "ok": ok,
+        "meta_file": "candidates[].root + .meta/ask-listener.json",
+        "note": if ok {
+            "ask_listener 元数据存在（活跃主进程可自愈）。若 mcp.json matches_active=false，配置已过旧，可用 bus_mcp_regenerate 修复"
+        } else {
+            "未发现存活主进程的 ask_listener 元数据。请先启动 Polaris，或等待其重启后再诊断"
+        },
+        "candidates": candidates,
+        "mcp_configs": mcp_configs,
+    });
+    // 并入活跃 meta 摘要（顶层便于一眼定位）
+    if let Some(a) = &active {
+        report["active"] = json!({
+            "port": a.port,
+            "token_present": !a.token.is_empty(),
+            "pid": a.pid,
+            "pid_alive": crate::services::ask_listener_meta::pid_alive(a.pid),
+            "started_at": a.started_at,
+        });
+    }
+    report
+}
+
+/// `bus_mcp_regenerate`：把 mcp.json 固化的 bridge 参数改写为活跃主进程的真实值。
+///
+/// 策略：找到所有存在的 `.polaris/claude/mcp.json`，凡是 args 里含
+/// `--polaris-port`/`--polaris-token` 的 server 都替换为 meta 的真实值。
+/// 保留其它字段与 server，不做全集重生成（避免破坏插件 server 与用户自定义）。
+fn bus_mcp_regenerate(config_dir: &str) -> Result<Value> {
+    let config_dir = normalize_config_dir(config_dir);
+    let active = crate::services::ask_listener_meta::resolve_active_meta().ok_or_else(|| {
+        AppError::ProcessError("未发现存活主进程的 ask_listener 元数据，无法 regenerate".into())
+    })?;
+
+    let mut updated = Vec::new();
+    for path in crate::services::ask_listener_meta::mcp_config_paths(&config_dir) {
+        match rewrite_mcp_bridge_args(&path, &active) {
+            Ok(Some((server_count, total_args))) => {
+                updated.push(json!({
+                    "path": path.to_string_lossy(),
+                    "bridge_server_count": server_count,
+                    "args_replaced": total_args,
+                }));
+            }
+            Ok(None) => {
+                // 无 bridge server，跳过
+            }
+            Err(e) => {
+                tracing::warn!("[bus-mcp] 改写 {} 失败（跳过）: {}", path.display(), e);
+            }
+        }
+    }
+
+    if updated.is_empty() {
+        return Ok(json!({
+            "ok": true,
+            "updated": [],
+            "note": "未找到需要更新的 mcp.json（可能已与活跃主进程一致，或没有含 bridge 参数的配置）",
+        }));
+    }
+
+    Ok(json!({
+        "ok": true,
+        "port": active.port,
+        "updated": updated,
+        "note": "新配置对下次启动的连接生效；已连接会话由运行时自愈。若 Claude 缓存了旧配置，可重启会话或 reload 使其生效",
+    }))
+}
+
+/// 改写一份 mcp.json 中所有 bridge server 的 port/token 参数，原子写回。
+///
+/// 返回 `Ok(Some((bridge_server_count, replaced_arg_count)))`；无 bridge server
+/// 返回 `Ok(None)`。
+fn rewrite_mcp_bridge_args(
+    path: &std::path::Path,
+    meta: &crate::services::ask_listener_meta::AskListenerMeta,
+) -> Result<Option<(usize, usize)>> {
+    let content = std::fs::read_to_string(path)?;
+    let mut root: Value = serde_json::from_str(&content)
+        .map_err(|e| AppError::ProcessError(format!("mcp.json 解析失败: {e}")))?;
+
+    let servers = root
+        .get_mut("mcpServers")
+        .and_then(|v| v.as_object_mut())
+        .ok_or_else(|| AppError::ProcessError("mcp.json 缺少 mcpServers".into()))?;
+
+    let port_str = meta.port.to_string();
+    let mut bridge_count = 0usize;
+    let mut replaced = 0usize;
+
+    for server in servers.values_mut() {
+        let Some(args) = server.get_mut("args").and_then(|v| v.as_array_mut()) else {
+            continue;
+        };
+        let mut has_bridge_arg = false;
+        let mut i = 0;
+        while i < args.len() {
+            let is_port = args[i].as_str() == Some("--polaris-port");
+            let is_token = args[i].as_str() == Some("--polaris-token");
+            if is_port || is_token {
+                has_bridge_arg = true;
+                // 该参数后面应紧跟值
+                if i + 1 < args.len() {
+                    if is_port {
+                        args[i + 1] = Value::String(port_str.clone());
+                    } else {
+                        args[i + 1] = Value::String(meta.token.clone());
+                    }
+                    replaced += 1;
+                }
+                i += 2;
+                continue;
+            }
+            i += 1;
+        }
+        if has_bridge_arg {
+            bridge_count += 1;
+        }
+    }
+
+    if bridge_count == 0 {
+        return Ok(None);
+    }
+
+    write_json_atomically(path, &root)?;
+    Ok(Some((bridge_count, replaced)))
+}
+
+/// 原子写 JSON（temp + rename），与 mcp_config_service 同款。
+fn write_json_atomically(path: &std::path::Path, value: &Value) -> Result<()> {
+    let temp_path = path.with_extension("json.tmp");
+    let content = serde_json::to_string_pretty(value)?;
+    std::fs::write(&temp_path, format!("{}\n", content))?;
+    std::fs::rename(&temp_path, path)?;
+    Ok(())
 }
 
 /// bus_help：总线能力与工具的说明（发现/文档工具）
@@ -196,6 +445,7 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
             { "domain": "kv / prompt_snippet / config / data_root / pluginDiscovery / pluginServiceManager", "入口": "主进程总线 cap_dispatch", "状态": "✅ 可触达；config/data_root/plugin* 属管理面，改动全局配置需谨慎（先确认用户意图）" },
+            { "domain": "mcp-健康诊断", "工具": "bus_mcp_status / bus_mcp_regenerate", "说明": "诊断 ask_listener 元数据与 mcp.json 配置是否一致，失联时一键改写固化的旧端口/token。均为本 server 直接实现，不依赖 ask 端口（独立通道）", "状态": "✅ 可用" },
             { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
         "cap_dispatch": {
@@ -267,6 +517,8 @@ impl BusMcpHandler {
                     "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
                     "payload": { "type": "object" }
                 })),
+                mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态", &[], json!({})),
+                mcp_server_common::tool_def("bus_mcp_regenerate", "一键修复 MCP Bridge 配置漂移", &[], json!({})),
             ]
         })
     }
