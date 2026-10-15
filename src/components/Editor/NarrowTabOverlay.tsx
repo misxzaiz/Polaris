@@ -12,8 +12,9 @@
  * - 关闭只清信号，不销毁 tab —— 窗口拖宽后 CenterStage 接管同一批 tab
  * - diff 的 viewMode 覆盖层内自维护（默认 unified），不污染 CenterStage 默认值
  * - min-w-0 必需：防止 CodeMirror / diff 长行撑破 flex（与 CenterStage 同一修复）
- * - z-overlay（--z-overlay）：高于 LeftPanelDrawer（z-popover），从 Git 抽屉点 diff 时覆盖层在上层，
- *   Escape 只作用于最上层
+ * - z-overlay（--z-overlay）：与 LeftPanel 抽屉同层（抽屉遮罩/本体同为 z-overlay），
+ *   覆盖层渲染在 LeftPanel 之后（DOM 序靠后）自然压上，从 Git 抽屉点 diff 时
+ *   编辑器覆盖层在上层，Escape 只作用于最上层
  */
 
 import { useEffect, useState } from 'react'

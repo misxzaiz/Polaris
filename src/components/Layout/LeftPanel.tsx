@@ -94,9 +94,12 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
     }
   }, [compact, panelVisible])
 
-  // 抽屉下的操作栏（独立 sibling，不进 aside，不触发 children 卸载）
+  // 抽屉下的操作栏（展开/关闭按钮）。
+  // 形态：compact 时作为 aside 内文档流首行（与旧 LeftPanelDrawer 一致），
+  // 不用 fixed 悬浮 —— 悬浮层在遮罩降级 z-popover 后会被 aside（DOM 序靠后）
+  // 盖住，按钮点不到。content 容器带稳定 key，工具栏条件插入不会重挂载 children。
   const drawerToolbar = compact && panelVisible && (
-    <div className="fixed top-0 left-0 flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0 bg-background-elevated z-popover" style={{ width: expanded ? '100%' : 'min(85vw, 360px)', right: expanded ? 0 : undefined }}>
+    <div className="flex items-center justify-end gap-1 h-9 px-2 border-b border-border shrink-0 bg-background-elevated">
       <button
         onClick={() => setExpanded(e => !e)}
         className="w-7 h-7 rounded-md flex items-center justify-center text-text-secondary hover:text-text-primary hover:bg-background-hover transition-colors"
@@ -116,11 +119,22 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
     </div>
   )
 
-  // 抽屉遮罩（独立 sibling）。入场淡入；退场由 aside 的 leaving 淡出承接
-  // （App.tsx 在 hasLeftPanel true→false 时 leftPanelKept=true，150ms 后清）
+  // 抽屉遮罩（独立 sibling，位于 aside 之前）。入场淡入；退场由 aside 的
+  // leaving 淡出承接（App.tsx 在 hasLeftPanel true→false 时 leftPanelKept=true，
+  // 150ms 后清）。
+  // 层级：与抽屉同为 z-overlay（--z-overlay: 40），靠 DOM 序让 aside 覆盖在
+  // 遮罩之上——遮罩仅拦截抽屉外区域，抽屉内可正常点击。
+  // 不可用 z-modal（70 > 40）或 z-popover（50 > 40）：
+  //   - z-modal：遮罩盖住抽屉 → 任意点击触发 handleClose，面板"一点就自动关闭"
+  //     （回归来源 412c607c 保活合并时旧 LeftPanelDrawer 容器 z-50 同层语义
+  //     被误写成 z-modal，上轮已修）
+  //   - z-popover：抽屉盖住窄窗口编辑器覆盖层 NarrowTabOverlay（z-overlay），
+  //     打开文件后编辑器被抽屉压住，须先关文件浏览器才能看（本轮修复）
+  // 抽屉本质是覆盖层（fixed 遮罩 + 左侧浮出），归 z-overlay 家族；
+  // 编辑器覆盖层在 App.tsx 中渲染于 LeftPanel 之后，同层按 DOM 序自然压上。
   const drawerMask = compact && panelVisible && (
     <div
-      className={`fixed inset-0 z-modal bg-black/50 ${leaving ? 'opacity-0' : 'animate-mask-in'}`}
+      className={`fixed inset-0 z-overlay bg-black/50 ${leaving ? 'opacity-0' : 'animate-mask-in'}`}
       onClick={handleClose}
     />
   )
@@ -145,18 +159,20 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
   return (
     <>
       {drawerMask}
-      {drawerToolbar}
       <aside
         ref={drawerRef}
         data-theme-panel
         tabIndex={compact ? -1 : undefined}
         className={`flex flex-col bg-background-elevated border-r border-border min-h-0 ${compact
-          ? 'fixed inset-y-0 left-0 z-popover shadow-xl overflow-hidden'
+          ? 'fixed inset-y-0 left-0 z-overlay shadow-xl overflow-hidden'
           : 'relative'
         } transition-[width,opacity] duration-150 ease-[cubic-bezier(0.32,0.72,0,1)] ${leaving ? 'opacity-0 pointer-events-none' : 'opacity-100'} ${!panelVisible ? 'hidden' : ''} ${!compact && isFlexible ? 'flex-1 min-w-[200px]' : ''} ${!compact && !isFlexible ? 'shrink-0' : ''} ${className}`}
         style={asideStyle}
       >
-        <div className="flex-1 min-h-0 overflow-hidden">{children}</div>
+        {/* 抽屉形态下显示操作栏；桌面停靠形态不渲染。key 保证 children
+            （FileExplorer 等保活内容）位置稳定，工具栏条件插入不触发重挂载。 */}
+        {compact && panelVisible && drawerToolbar}
+        <div key="panel-content" className="flex-1 min-h-0 overflow-hidden">{children}</div>
       </aside>
       {desktopResizeHandle}
     </>
