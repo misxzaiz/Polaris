@@ -16,6 +16,7 @@ pub mod plugin_service_manager;
 pub mod plugin_state_service;
 pub mod prompt_store;
 pub mod storage;
+pub mod ask_listener_meta;
 pub mod ask_mcp_server;
 pub mod ask_listener;
 pub mod browser_mcp_server;

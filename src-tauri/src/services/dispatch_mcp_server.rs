@@ -32,6 +32,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
+use crate::services::ask_listener_meta;
 
 const SERVER_NAME: &str = "polaris-dispatch-mcp";
 const SERVER_VERSION: &str = "0.1.0";
@@ -784,7 +785,38 @@ fn build_roster_save_frame(arguments: &Value, config: &DispatchMcpConfig) -> Res
 }
 
 /// Connect to the main process, send the frame, read the result frame.
+///
+/// ## 自愈重连（MCP Bridge Self-heal）
+///
+/// 主进程 ask_listener 端口可能因重启漂移，而 mcp.json 里固化的 `--polaris-port`
+/// 已过期。直连配置端口失败时，读取当前活跃主进程的元数据（`resolve_active_meta`
+/// 自动探测 dev/正式版数据根）用**当前真实端口 / 新 token** 重连——会话内自愈，
+/// 无需重启 Claude 或改配置。
 fn request_via_tcp(port: u16, frame: &Value) -> Result<Value> {
+    match connect_and_request(port, frame) {
+        Ok(value) => Ok(value),
+        Err(first_err) => {
+            // 直连失败 → 尝试自愈：读活跃主进程元数据，用真实端口重连。
+            // 优先匹配 port == 配置端口 的实例（避免 dev/正式版并存时串到别的实例）。
+            if let Some(meta) = ask_listener_meta::resolve_active_meta_preferring(Some(port)) {
+                // 关键：token 也一并刷新（frame 里内嵌的是旧 token，端口对了
+                // token 旧同样会被拒）。重建 frame 的 token 字段为新值。
+                let mut rebuilt = frame.clone();
+                if let Some(obj) = rebuilt.as_object_mut() {
+                    obj.insert("token".into(), Value::String(meta.token.clone()));
+                }
+                match connect_and_request(meta.port, &rebuilt) {
+                    Ok(value) => return Ok(value),
+                    Err(_) => return Err(first_err),
+                }
+            }
+            Err(first_err)
+        }
+    }
+}
+
+/// 单次连接 + 请求（不含 fallback）。
+fn connect_and_request(port: u16, frame: &Value) -> Result<Value> {
     let addr = format!("127.0.0.1:{}", port);
     let mut stream = TcpStream::connect_timeout(
         &addr

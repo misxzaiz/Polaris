@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 
 use crate::error::{AppError, Result};
+use crate::services::ask_listener_meta;
 
 const SERVER_NAME: &str = "polaris-browser-mcp";
 const SERVER_VERSION: &str = "0.1.0";
@@ -733,7 +734,34 @@ fn extract_screenshot(value: &Value) -> Option<(String, String)> {
     Some((mime_type, data))
 }
 
+/// 连接主进程 + 发帧 + 读帧（含自愈重连）。
+///
+/// ## MCP Bridge Self-heal
+///
+/// ask_listener 端口/token 每次重启都可能漂移，而 mcp.json 固化的是旧值。
+/// 直连失败时读活跃主进程 meta（自动探测 dev/正式版数据根），用真实端口 +
+/// 新 token 重建帧重连——会话内自愈，无需重启 Claude 或改配置。
 fn request_browser_via_tcp(port: u16, frame: &Value) -> Result<Value> {
+    match connect_browser_and_request(port, frame) {
+        Ok(value) => Ok(value),
+        Err(first_err) => {
+            if let Some(meta) = ask_listener_meta::resolve_active_meta_preferring(Some(port)) {
+                let mut rebuilt = frame.clone();
+                if let Some(obj) = rebuilt.as_object_mut() {
+                    obj.insert("token".into(), Value::String(meta.token.clone()));
+                }
+                match connect_browser_and_request(meta.port, &rebuilt) {
+                    Ok(value) => return Ok(value),
+                    Err(_) => return Err(first_err),
+                }
+            }
+            Err(first_err)
+        }
+    }
+}
+
+/// 单次连接 + 请求（浏览器动作，45s 读超时）。
+fn connect_browser_and_request(port: u16, frame: &Value) -> Result<Value> {
     let addr = format!("127.0.0.1:{port}");
     let mut stream = TcpStream::connect_timeout(
         &addr

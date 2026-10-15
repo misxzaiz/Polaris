@@ -24,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
 use crate::error::{AppError, Result};
+use crate::services::ask_listener_meta;
 
 const SERVER_NAME: &str = "polaris-ask-mcp";
 const SERVER_VERSION: &str = "0.1.0";
@@ -527,27 +528,11 @@ fn handle_form_call(params: Value, config: &AskMcpConfig) -> Result<Value> {
 }
 
 /// Connect to the main process, send the ask frame, block reading the answer.
+///
+/// ## 自愈重连（MCP Bridge Self-heal）
+/// 见 `request_via_tcp_with_fallback`——直连失败时读活跃主进程 meta 重连。
 fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
-    let addr = format!("127.0.0.1:{}", port);
-    let mut stream = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .map_err(|e| AppError::ProcessError(format!("无效地址 {}: {}", addr, e)))?,
-        Duration::from_secs(5),
-    )
-    .map_err(|e| AppError::ProcessError(format!("无法连接 {}: {}", addr, e)))?;
-
-    // No read timeout — we block as long as the user takes to answer.
-    stream.set_read_timeout(None).ok();
-    stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
-
-    write_frame(&mut stream, ask_frame)?;
-
-    let answer = read_frame(&mut stream)?;
-
-    // Close gracefully so the listener side knows we're done.
-    let _ = stream.shutdown(Shutdown::Both);
-    Ok(answer)
+    request_via_tcp_with_fallback(port, ask_frame)
 }
 
 /// Connect, send a `form` frame, block reading the `form_result`/`form_error`.
@@ -559,6 +544,37 @@ fn request_answer_via_tcp(port: u16, ask_frame: &Value) -> Result<Value> {
 /// for submission. The legacy 30s ack-read cap is removed so a form open
 /// longer than 30s doesn't error the drill — see form_flow::FORM_WAIT_TIMEOUT_SECS.)
 fn request_form_ack_via_tcp(port: u16, form_frame: &Value) -> Result<Value> {
+    request_via_tcp_with_fallback(port, form_frame)
+}
+
+/// 连接主进程 + 发帧 + 读帧（含自愈重连）。
+///
+/// ## MCP Bridge Self-heal
+///
+/// ask_listener 端口/ token 每次重启都可能漂移，而 mcp.json 固化的是旧值。
+/// 直连失败时读取活跃主进程 meta（`resolve_active_meta_preferring` 自动探测
+/// dev/正式版数据根），用真实端口 + 新 token 重建帧重连——会话内自愈。
+fn request_via_tcp_with_fallback(port: u16, frame: &Value) -> Result<Value> {
+    match connect_and_request(port, frame) {
+        Ok(value) => Ok(value),
+        Err(first_err) => {
+            if let Some(meta) = ask_listener_meta::resolve_active_meta_preferring(Some(port)) {
+                let mut rebuilt = frame.clone();
+                if let Some(obj) = rebuilt.as_object_mut() {
+                    obj.insert("token".into(), Value::String(meta.token.clone()));
+                }
+                match connect_and_request(meta.port, &rebuilt) {
+                    Ok(value) => return Ok(value),
+                    Err(_) => return Err(first_err),
+                }
+            }
+            Err(first_err)
+        }
+    }
+}
+
+/// 单次连接 + 请求。No read timeout —— 阻塞等主进程回包（回答/表单提交）。
+fn connect_and_request(port: u16, frame: &Value) -> Result<Value> {
     let addr = format!("127.0.0.1:{}", port);
     let mut stream = TcpStream::connect_timeout(
         &addr
@@ -568,17 +584,17 @@ fn request_form_ack_via_tcp(port: u16, form_frame: &Value) -> Result<Value> {
     )
     .map_err(|e| AppError::ProcessError(format!("无法连接 {}: {}", addr, e)))?;
 
-    // No read timeout — block as long as the user takes to submit.
+    // No read timeout — block as long as the user takes to answer/submit.
     stream.set_read_timeout(None).ok();
     stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
-    write_frame(&mut stream, form_frame)?;
+    write_frame(&mut stream, frame)?;
 
-    let ack = read_frame(&mut stream)?;
+    let result = read_frame(&mut stream)?;
 
     // Close gracefully so the listener side knows we're done.
     let _ = stream.shutdown(Shutdown::Both);
-    Ok(ack)
+    Ok(result)
 }
 
 /// Write a length-prefixed JSON frame: u32 LE length + UTF-8 bytes.

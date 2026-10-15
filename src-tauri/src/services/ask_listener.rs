@@ -1,6 +1,6 @@
 //! Ask User Question — TCP Listener
 //!
-//! Bound on 127.0.0.1:0 at startup. The `polaris-ask-mcp` companion process
+//! Bound on 127.0.0.1 at startup. The `polaris-ask-mcp` companion process
 //! connects here when Claude CLI invokes `ask_user_question`; this listener:
 //!
 //!   1. Reads the `ask` frame (length-prefixed JSON)
@@ -10,6 +10,14 @@
 //!   5. Writes the `answer` frame back to the companion → CLI tool_result
 //!
 //! See `services::ask_mcp_server` for the client side and the frame protocol.
+//!
+//! ## 端口稳定性（MCP Bridge 自愈）
+//!
+//! 历史上用 `bind("127.0.0.1:0")`（端口 0 = 系统随机），每次主进程重启都会拿到
+//! 新端口，而 mcp.json 固化旧端口 → Bridge MCP（dispatch/ask/browser）失联。
+//! 现改为**固定端口池**：优先尝试 `[ASK_LISTENER_PORT_POOL]` 中空闲的端口，
+//! 全部占用才回落随机。绑定成功后把真实 port/token/pid **原子落盘**
+//! （`data_root().meta_dir()/ask-listener.json`），Bridge 侧连接被拒时读此文件自愈重连。
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,6 +30,7 @@ use tokio::sync::oneshot;
 use uuid::Uuid;
 
 use crate::error::{AppError, Result};
+use crate::services::ask_listener_meta::{self, AskListenerMeta};
 use crate::services::form_core::merge_template_defaults;
 use crate::services::form_flow;
 use crate::services::form_template as form_tpl;
@@ -116,22 +125,62 @@ pub struct AskListenerHandle {
     pub token: String,
 }
 
-/// Bind a TCP socket on 127.0.0.1:0 and spawn the accept loop.
+/// 固定端口池（MCP Bridge 自愈的第一道防线）。
+///
+/// 语义：端口稳定优先于完全随机——ask_listener 重启时尽可能沿用这些常用端口，
+/// mcp.json 里固化的 `--polaris-port` 因而长期有效。并发多开冲突时才 +1 换下一个，
+/// 全占用回落随机（此时自愈靠 `.meta/ask-listener.json` 兜底）。
+const ASK_LISTENER_PORT_POOL: &[u16] = &[56496, 56497, 56498, 60097, 60098];
+
+/// Bind a TCP socket on 127.0.0.1 (port pool first, random fallback) and spawn
+/// the accept loop.
 ///
 /// The loop runs for the app's lifetime — no graceful-shutdown signal is
 /// wired here because connections are short-lived (one request/response per
 /// connection) and Tokio drops the task at process exit.
 pub async fn spawn_ask_listener(state: Arc<AppState>) -> Result<AskListenerHandle> {
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .map_err(|e| AppError::ProcessError(format!("ask_listener bind 失败: {}", e)))?;
-    let local = listener
-        .local_addr()
-        .map_err(|e| AppError::ProcessError(format!("ask_listener local_addr: {}", e)))?;
-    let port = local.port();
+    // 优先从固定端口池里挑一个空闲端口；全占用才回落系统随机。
+    let mut bound: Option<(TcpListener, u16)> = None;
+    for port in ASK_LISTENER_PORT_POOL {
+        match TcpListener::bind(("127.0.0.1", *port)).await {
+            Ok(listener) => {
+                bound = Some((listener, *port));
+                break;
+            }
+            Err(_) => continue, // 端口被占用，尝试下一个
+        }
+    }
+    let (listener, port) = match bound {
+        Some(pair) => pair,
+        None => {
+            let listener = TcpListener::bind("127.0.0.1:0")
+                .await
+                .map_err(|e| AppError::ProcessError(format!("ask_listener bind 失败: {}", e)))?;
+            let local = listener
+                .local_addr()
+                .map_err(|e| AppError::ProcessError(format!("ask_listener local_addr: {}", e)))?;
+            (listener, local.port())
+        }
+    };
+
     let token = Uuid::new_v4().to_string();
 
     tracing::info!("[AskListener] 绑定 127.0.0.1:{}", port);
+
+    // 把当前真实 port/token/pid 原子落盘，供 Bridge MCP 失联时自愈重连。
+    let pid = std::process::id();
+    if let Err(e) = ask_listener_meta::write_meta(&AskListenerMeta::new(port, token.clone(), pid))
+    {
+        // 落盘失败不致命：只影响 Bridge 侧自愈能力，主进程仍正常监听。
+        tracing::warn!("[AskListener] 元数据落盘失败: {}", e);
+    } else {
+        tracing::debug!(
+            "[AskListener] 元数据已落盘 port={} pid={} path={}",
+            port,
+            pid,
+            ask_listener_meta::meta_path().display()
+        );
+    }
 
     let token_for_loop = token.clone();
     let state_for_sweeper = state.clone();
