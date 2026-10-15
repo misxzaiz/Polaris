@@ -138,7 +138,8 @@
     "deleteConfirmTitle": "删除消息",
     "deleteConfirmText": "确定要删除这条消息吗？删除后无法恢复。",
     "deleted": "消息已删除",
-    "cancel": "取消"
+    "cancel": "取消",
+    "interrupted": "回复中断（应用关闭或异常，仅显示已生成部分）"
   },
   "error": {
     "sendFailed": "发送失败",

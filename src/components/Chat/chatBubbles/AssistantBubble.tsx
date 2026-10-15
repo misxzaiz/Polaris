@@ -152,6 +152,15 @@ export const AssistantBubble = memo(function AssistantBubble({
             </MarkdownImageSurface>
           ) : null}
 
+          {/* 中断残留提示：历史恢复时若末条回复是未完成的 checkpoint 快照，
+              展示「回复中断（部分内容）」的说明条，明确这不是完整回复 */}
+          {message.interrupted && (
+            <div className="mt-1.5 flex items-center gap-1.5 text-xs text-text-tertiary rounded-md bg-background-hover px-2 py-1 w-fit">
+              <span aria-hidden>⚠️</span>
+              <span>{t('message.interrupted')}</span>
+            </div>
+          )}
+
           {/* 流式光标 —— 已移到 ProgressiveStreamingMarkdown 里"最后一段"的字符末尾。
               气泡层不再显示，避免与字符末尾 caret 重复。 */}
 

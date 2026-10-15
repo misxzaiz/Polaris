@@ -10,6 +10,7 @@ import { marked } from 'marked';
 import { MermaidDiagram } from '../Chat/common/MermaidDiagram';
 import { splitMarkdownWithMermaid, type MarkdownPart } from '@/utils/markdown';
 import { usePerformanceFlag } from '@/utils/performanceFeatures';
+import { useViewStore } from '@/stores';
 import hljs from '@/utils/highlight';
 
 interface MarkdownEditorProps {
@@ -31,12 +32,16 @@ interface TocHeading {
   level: number;
   text: string;
   id: string;
+  /** 源码行号（1-indexed），用于联动定位编辑区 */
+  line: number;
 }
 
 /** 从 Markdown 源码提取标题列表 */
 function extractHeadings(content: string): TocHeading[] {
   const result: TocHeading[] = [];
-  for (const line of content.split('\n')) {
+  const lines = content.split('\n');
+  for (let lineNo = 0; lineNo < lines.length; lineNo++) {
+    const line = lines[lineNo];
     const match = line.match(/^(#{1,6})\s+(.+)$/);
     if (match) {
       const text = match[2]
@@ -46,7 +51,7 @@ function extractHeadings(content: string): TocHeading[] {
         .replace(/\[(.+?)\]\(.+?\)/g, '$1')
         .replace(/~~(.+?)~~/g, '$1')
         .trim();
-      result.push({ level: match[1].length, text, id: `toc-h-${result.length}` });
+      result.push({ level: match[1].length, text, id: `toc-h-${result.length}`, line: lineNo + 1 });
     }
   }
   return result;
@@ -81,16 +86,28 @@ function formatContent(content: string): string {
 }
 
 export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: MarkdownEditorProps) {
-  const [viewMode, setViewMode] = useState<ViewMode>('split');
+  // 默认预览模式：大多数情况下只读不改，打开即见渲染结果
+  const [viewMode, setViewMode] = useState<ViewMode>('preview');
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isDraggingSplit, setIsDraggingSplit] = useState(false);
-  const [showToc, setShowToc] = useState(true);
+  // 大纲默认展开；小屏（compact）默认收起，避免挤占窄窗口
+  const [showToc, setShowToc] = useState(
+    () => !useViewStore.getState().compactMode.isCompactMode
+  );
+  // 当前"正在阅读"的标题 id（预览滚动联动大纲高亮）
+  const [activeTocId, setActiveTocId] = useState<string | null>(null);
 
   // 性能开关：mermaid 关闭时编辑器预览不自动加载 mermaid.js，显示"点击渲染"。
   const mermaidEnabled = usePerformanceFlag('mermaidDiagrams');
 
   const containerRef = useRef<HTMLDivElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
+  // 编辑区滚动控制句柄（由 CodeMirrorEditor 写入）
+  const editorScrollRef = useRef<{ setRatio: (r: number) => void; setLine: (l: number) => void } | null>(null);
+  // 同步计数锁：程序化滚动期间置位，防双向事件反弹。
+  // 用数字而非布尔，支持"编辑区滚→写预览→预览滚→写编辑区"这种
+  // rAF 窗口内的嵌套事件（布尔会互相误吞）。
+  const syncingRef = useRef(0);
 
   // 预览渲染
   const previewParts = useMemo(() => splitMarkdownWithMermaid(value), [value]);
@@ -170,10 +187,59 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
     document.body.style.userSelect = 'none';
   }, []);
 
+  // 大纲高亮：依据预览滚动位置选择"最接近视口顶端"的标题
+  // 由预览滚动与编辑区滚动同步两处共用。
+  const updateActiveTocId = useCallback((el: HTMLElement) => {
+    const heads = Array.from(el.querySelectorAll('h1, h2, h3, h4, h5, h6'));
+    if (heads.length === 0) return;
+    let current: Element | null = null;
+    for (const h of heads) {
+      const r = h.getBoundingClientRect();
+      if (r.top <= 90) current = h; // 视口 90px 内最高者（含顶部工具栏偏移）
+      else break;
+    }
+    const id = current?.getAttribute('id') ?? null;
+    setActiveTocId((prev) => (prev !== id ? id : prev));
+  }, []);
+
   const scrollToHeading = useCallback((id: string) => {
+    setActiveTocId(id); // 点击后立即高亮，不等滚动事件
     const el = previewRef.current?.querySelector(`#${id}`);
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }, []);
+    // 同步定位编辑区到对应源码行（split 模式下）
+    if (viewMode === 'split' && editorScrollRef.current) {
+      const toc = tocHeadings.find((h) => h.id === id);
+      if (toc) editorScrollRef.current.setLine(toc.line);
+    }
+  }, [viewMode, tocHeadings]);
+
+  // === 双向联动滚动：预览区 ↔ 编辑区（split 模式）===
+  // 用滚动比例同步（左右内容行高不一定一致，比例映射最稳）。
+  // syncingRef 作为互斥锁：程序化滚动时屏蔽对方的 scroll 事件，防止震荡。
+  useEffect(() => {
+    if (viewMode !== 'split') return;
+    const preview = previewRef.current;
+    if (!preview) return;
+
+    const onPreviewScroll = () => {
+      if (syncingRef.current > 0) return; // 程序化滚动中，忽略
+      const el = preview;
+      const max = el.scrollHeight - el.clientHeight;
+      const ratio = max > 0 ? el.scrollTop / max : 0;
+      // 回写编辑区：加锁防止编辑区 scroll 事件反弹回写导致抖动
+      syncingRef.current += 1;
+      editorScrollRef.current?.setRatio(ratio);
+      requestAnimationFrame(() => {
+        syncingRef.current = Math.max(0, syncingRef.current - 1);
+      });
+      // 预览滚动时高亮当前章节
+      updateActiveTocId(el);
+    };
+
+    preview.addEventListener('scroll', onPreviewScroll, { passive: true });
+    updateActiveTocId(preview); // 初始高亮
+    return () => preview.removeEventListener('scroll', onPreviewScroll);
+  }, [viewMode, previewParts, updateActiveTocId]); // previewParts 变化（内容重渲染）后重建监听，重新计算边界
 
   const showEditor = viewMode === 'edit' || viewMode === 'split';
   const showPreview = viewMode === 'preview' || viewMode === 'split';
@@ -249,6 +315,22 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
               onChange={onChange}
               onSave={onSave}
               readOnly={readOnly}
+              onScrollRatio={(ratio) => {
+                // 编辑区滚动 → 同步预览区（比例映射）
+                const preview = previewRef.current;
+                if (!preview || syncingRef.current > 0) return;
+                const max = preview.scrollHeight - preview.clientHeight;
+                if (max > 0) {
+                  syncingRef.current += 1;
+                  preview.scrollTop = ratio * max;
+                  // 同步后更新大纲高亮（预览位置已变）
+                  requestAnimationFrame(() => {
+                    syncingRef.current = Math.max(0, syncingRef.current - 1);
+                    if (previewRef.current) updateActiveTocId(previewRef.current);
+                  });
+                }
+              }}
+              scrollControllerRef={editorScrollRef}
             />
           </div>
         )}
@@ -276,7 +358,11 @@ export function MarkdownEditor({ value, onChange, onSave, readOnly = false }: Ma
                 {tocHeadings.map((h) => (
                   <button
                     key={h.id}
-                    className="block text-[11px] text-text-tertiary hover:text-primary transition-colors truncate w-full text-left py-0.5"
+                    className={`block text-[11px] transition-colors truncate w-full text-left py-0.5 ${
+                      activeTocId === h.id
+                        ? 'text-primary font-medium'
+                        : 'text-text-tertiary hover:text-primary'
+                    }`}
                     style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
                     onClick={() => scrollToHeading(h.id)}
                     title={h.text}

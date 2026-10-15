@@ -22,6 +22,7 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 import { dialogStorageService } from './dialogStorage'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
+import { dedupeMessagesById, normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
 
 const log = createLogger('HistoryService')
 
@@ -512,7 +513,11 @@ export const historyService = {
       )
       if (page && page.messages.length > 0) {
         return {
-          messages: page.messages,
+          // 分页读取是纯追加不做去重：按 id 收敛（同 id 取末行 = checkpoint 最新快照），
+          // 并把 isStreaming 残留快照归一为中断态，恢复后正常展示已输出的部分
+          messages: normalizeRecoveredMessages(
+            dedupeMessagesById(page.messages) as ChatMessage[],
+          ),
           title: page.meta.title,
           engineId: normalizeEngineId(engineId || page.meta.engineId),
           externalSessionId: sessionId,

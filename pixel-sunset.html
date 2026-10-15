@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>像素夕阳城市场景</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html, body {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+
+        body {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+            background: #1a1a2e;
+            font-family: 'Courier New', monospace;
+            touch-action: manipulation;
+        }
+
+        .container {
+            text-align: center;
+            width: 100%;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+        }
+
+        h1 {
+            color: #ff6b6b;
+            margin-bottom: 10px;
+            font-size: clamp(16px, 4vw, 24px);
+            text-shadow: 2px 2px 0 #c44569;
+            flex-shrink: 0;
+        }
+
+        .canvas-wrapper {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 0;
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            max-height: calc(100dvh - 140px);
+            border: 2px solid #2c3e50;
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+            display: block;
+        }
+
+        .controls {
+            margin-top: 10px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            flex-shrink: 0;
+        }
+
+        button {
+            padding: 12px 18px;
+            font-size: clamp(12px, 3vw, 14px);
+            font-family: 'Courier New', monospace;
+            background: #34495e;
+            color: #ecf0f1;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s;
+            image-rendering: pixelated;
+            min-width: 80px;
+            min-height: 44px;
+            touch-action: manipulation;
+        }
+
+        button:hover, button:active {
+            background: #e74c3c;
+            transform: translateY(-2px);
+        }
+
+        button:active {
+            transform: translateY(0);
+        }
+
+        /* 横屏适配 */
+        @media screen and (orientation: landscape) and (max-height: 500px) {
+            body {
+                flex-direction: row;
+                gap: 20px;
+            }
+
+            .container {
+                flex-direction: row;
+                align-items: center;
+            }
+
+            h1 {
+                margin-bottom: 0;
+                margin-right: 15px;
+                font-size: clamp(14px, 3vw, 20px);
+            }
+
+            .canvas-wrapper {
+                max-height: 90vh;
+            }
+
+            canvas {
+                max-height: 90vh;
+                max-width: none;
+            }
+
+            .controls {
+                margin-top: 0;
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+
+        /* 小屏幕适配 */
+        @media screen and (max-width: 480px) {
+            .canvas-wrapper {
+                max-height: calc(100dvh - 120px);
+            }
+
+            canvas {
+                border-width: 1px;
+            }
+
+            button {
+                padding: 10px 14px;
+                min-width: 70px;
+            }
+        }
+
+        /* 超大屏幕适配 */
+        @media screen and (min-width: 1024px) {
+            .canvas-wrapper {
+                max-width: 640px;
+            }
+
+            h1 {
+                margin-bottom: 20px;
+            }
+
+            .controls {
+                margin-top: 20px;
+            }
+        }
+
+        /* 暗黑模式支持 */
+        @media (prefers-color-scheme: dark) {
+            body {
+                background: #0f0f1a;
+            }
+        }
+
+        /* 减少动画偏好 */
+        @media (prefers-reduced-motion: reduce) {
+            button {
+                transition: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🌇 像素夕阳城市场景</h1>
+        <canvas id="pixelCanvas" width="640" height="480"></canvas>
+        <div class="controls">
+            <button id="toggleBtn">暂停</button>
+            <button id="speedBtn">加速</button>
+            <button id="resetBtn">重置</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('pixelCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 像素缩放
+        const PIXEL_SIZE = 4;
+        let WIDTH, HEIGHT;
+
+        // 初始化画布尺寸（响应式）
+        function initCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+
+            // 设置实际像素尺寸（考虑Retina显示屏）
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            // 设置逻辑尺寸用于计算
+            WIDTH = rect.width / PIXEL_SIZE;
+            HEIGHT = rect.height / PIXEL_SIZE;
+
+            // 缩放上下文以匹配dpr
+            ctx.scale(dpr, dpr);
+        }
+
+        // 监听窗口大小变化
+        let resizeTimeout;
+        window.addEventListener('resize', () => {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                initCanvas();
+                regenerateBuildings();
+            }, 100);
+        });
+
+        // 初始化时设置画布
+        initCanvas();
+
+        let isPlaying = true;
+        let speed = 1;
+        let time = 0;
+        let stars = [];
+
+        // 初始化星星
+        function initStars() {
+            stars = [];
+            for (let i = 0; i < 50; i++) {
+                stars.push({
+                    x: Math.random() * WIDTH,
+                    y: Math.random() * HEIGHT * 0.5,
+                    size: Math.random() * 2 + 1,
+                    twinkle: Math.random() * Math.PI * 2
+                });
+            }
+        }
+
+        // 建筑物数据（动态生成以适应宽度）
+        let buildings = [];
+
+        function regenerateBuildings() {
+            buildings = [];
+            let bx = 0;
+            while (bx < WIDTH) {
+                const w = 8 + Math.floor(Math.random() * 10);
+                const h = 50 + Math.floor(Math.random() * 80);
+                buildings.push({
+                    x: bx,
+                    w: Math.min(w, WIDTH - bx),
+                    h,
+                    color: '#2c3e50',
+                    windows: Math.random() > 0.3
+                });
+                bx += Math.min(w, WIDTH - bx) + 2;
+            }
+        }
+
+        // 初始化建筑物
+        regenerateBuildings();
+
+        // 云朵（根据宽度自适应数量）
+        let clouds = [];
+        function initClouds() {
+            clouds = [];
+            const count = Math.max(3, Math.floor(WIDTH / 150));
+            for (let i = 0; i < count; i++) {
+                clouds.push({
+                    x: Math.random() * WIDTH,
+                    y: 20 + Math.random() * 40,
+                    w: 30 + Math.random() * 20,
+                    h: 10 + Math.random() * 8,
+                    speed: 0.2 + Math.random() * 0.3
+                });
+            }
+        }
+        initClouds();
+
+        // 飞鸟（根据宽度自适应数量）
+        let birds = [];
+        function initBirds() {
+            birds = [];
+            const count = Math.max(2, Math.floor(WIDTH / 200));
+            for (let i = 0; i < count; i++) {
+                birds.push({
+                    x: Math.random() * WIDTH,
+                    y: 50 + Math.random() * 50,
+                    frame: Math.random() * Math.PI * 2,
+                    speed: 1 + Math.random() * 1
+                });
+            }
+        }
+        initBirds();
+
+        // 获取夕阳颜色
+        function getSkyColors() {
+            const cycle = (time * 0.0003) % (Math.PI * 2);
+            const sunProgress = (Math.sin(cycle) + 1) / 2;
+
+            const topColor = lerpColor('#1a1a2e', '#ff6b6b', sunProgress * 0.5);
+            const midColor = lerpColor('#16213e', '#feca57', sunProgress);
+            const bottomColor = lerpColor('#0f0f1a', '#ff9ff3', sunProgress * 0.8);
+
+            return { topColor, midColor, bottomColor, sunProgress };
+        }
+
+        // 颜色插值
+        function lerpColor(color1, color2, factor) {
+            const r1 = parseInt(color1.slice(1, 3), 16);
+            const g1 = parseInt(color1.slice(3, 5), 16);
+            const b1 = parseInt(color1.slice(5, 7), 16);
+
+            const r2 = parseInt(color2.slice(1, 3), 16);
+            const g2 = parseInt(color2.slice(3, 5), 16);
+            const b2 = parseInt(color2.slice(5, 7), 16);
+
+            const r = Math.round(r1 + (r2 - r1) * factor);
+            const g = Math.round(g1 + (g2 - g1) * factor);
+            const b = Math.round(b1 + (b2 - b1) * factor);
+
+            return `rgb(${r},${g},${b})`;
+        }
+
+        // 绘制太阳
+        function drawSun(sunProgress) {
+            const sunY = HEIGHT * 0.3 + sunProgress * HEIGHT * 0.3;
+            const sunX = WIDTH * 0.5;
+            const sunSize = 25;
+
+            const gradient = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunSize * 2);
+            gradient.addColorStop(0, 'rgba(255, 200, 50, 0.8)');
+            gradient.addColorStop(0.5, 'rgba(255, 150, 50, 0.3)');
+            gradient.addColorStop(1, 'rgba(255, 100, 50, 0)');
+
+            ctx.fillStyle = gradient;
+            ctx.fillRect(sunX - sunSize * 2, sunY - sunSize * 2, sunSize * 4, sunSize * 4);
+
+            ctx.fillStyle = '#ffd700';
+            ctx.fillRect(sunX - sunSize, sunY - sunSize, sunSize * 2, sunSize * 2);
+
+            ctx.fillStyle = '#fffacd';
+            ctx.fillRect(sunX - sunSize + 5, sunY - sunSize + 5, sunSize, sunSize);
+        }
+
+        // 绘制云朵
+        function drawCloud(cloud) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+
+            const cx = Math.floor(cloud.x);
+            const cy = Math.floor(cloud.y);
+            const w = Math.floor(cloud.w);
+            const h = Math.floor(cloud.h);
+
+            ctx.fillRect(cx, cy, w, h);
+            ctx.fillRect(cx + 5, cy - 5, w - 10, h + 5);
+            ctx.fillRect(cx + 10, cy - 8, w - 20, h + 8);
+        }
+
+        // 绘制飞鸟
+        function drawBird(bird) {
+            const wingOffset = Math.sin(bird.frame) * 3;
+            ctx.fillStyle = '#2c3e50';
+
+            ctx.fillRect(Math.floor(bird.x), Math.floor(bird.y) + wingOffset, 4, 2);
+            ctx.fillRect(Math.floor(bird.x) - 3, Math.floor(bird.y) + wingOffset - 2, 3, 2);
+
+            ctx.fillRect(Math.floor(bird.x) + 4, Math.floor(bird.y) - wingOffset, 4, 2);
+            ctx.fillRect(Math.floor(bird.x) + 7, Math.floor(bird.y) - wingOffset + 2, 3, 2);
+        }
+
+        // 绘制建筑物
+        function drawBuildings() {
+            buildings.forEach(building => {
+                const bx = Math.floor(building.x);
+                const by = HEIGHT - building.h;
+
+                ctx.fillStyle = building.color;
+                ctx.fillRect(bx, by, building.w, building.h);
+
+                if (building.windows) {
+                    const windowColor = Math.random() > 0.3 ? '#f39c12' : '#34495e';
+                    for (let wy = by + 8; wy < HEIGHT - 8; wy += 12) {
+                        for (let wx = bx + 4; wx < bx + building.w - 4; wx += 8) {
+                            if (Math.random() > 0.4) {
+                                ctx.fillStyle = windowColor;
+                                ctx.fillRect(wx, wy, 4, 6);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // 绘制星星
+        function drawStars(sunProgress) {
+            const visibility = Math.max(0, 1 - sunProgress * 1.5);
+
+            stars.forEach(star => {
+                star.twinkle += 0.05;
+                const opacity = visibility * (0.5 + 0.5 * Math.sin(star.twinkle));
+
+                if (opacity > 0.1) {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${opacity})`;
+                    ctx.fillRect(Math.floor(star.x), Math.floor(star.y), star.size, star.size);
+                }
+            });
+        }
+
+        // 绘制水面反射
+        function drawWater(sunProgress) {
+            const waterY = HEIGHT - 40;
+
+            ctx.fillStyle = `rgba(44, 62, 80, 0.8)`;
+            ctx.fillRect(0, waterY, WIDTH, 40);
+
+            const sunX = WIDTH * 0.5;
+            for (let i = 0; i < 20; i++) {
+                const offset = Math.sin(time * 0.01 + i * 0.5) * 3;
+                const alpha = 0.3 - i * 0.01;
+                ctx.fillStyle = `rgba(255, 200, 100, ${alpha})`;
+                ctx.fillRect(
+                    Math.floor(sunX - 10 + offset),
+                    Math.floor(waterY + i * 2),
+                    20,
+                    1
+                );
+            }
+
+            ctx.fillStyle = 'rgba(52, 73, 94, 0.5)';
+            for (let i = 0; i < 30; i++) {
+                const waveX = (time * 0.5 + i * 20) % WIDTH;
+                const waveY = waterY + 10 + Math.sin(time * 0.02 + i) * 3;
+                ctx.fillRect(Math.floor(waveX), Math.floor(waveY), 8, 1);
+            }
+        }
+
+        // 主渲染循环
+        function render() {
+            if (!isPlaying) return;
+
+            time += speed;
+
+            ctx.save();
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            const { topColor, midColor, bottomColor, sunProgress } = getSkyColors();
+
+            const skyGradient = ctx.createLinearGradient(0, 0, 0, HEIGHT);
+            skyGradient.addColorStop(0, topColor);
+            skyGradient.addColorStop(0.5, midColor);
+            skyGradient.addColorStop(1, bottomColor);
+            ctx.fillStyle = skyGradient;
+            ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+            drawStars(sunProgress);
+            drawSun(sunProgress);
+
+            clouds.forEach(cloud => {
+                cloud.x += cloud.speed * speed;
+                if (cloud.x > WIDTH + 50) cloud.x = -50;
+                drawCloud(cloud);
+            });
+
+            birds.forEach(bird => {
+                bird.x += bird.speed * speed;
+                bird.frame += 0.2;
+                if (bird.x > WIDTH + 20) bird.x = -20;
+                drawBird(bird);
+            });
+
+            drawBuildings();
+            drawWater(sunProgress);
+
+            requestAnimationFrame(render);
+        }
+
+        // 控制按钮
+        document.getElementById('toggleBtn').addEventListener('click', () => {
+            isPlaying = !isPlaying;
+            document.getElementById('toggleBtn').textContent = isPlaying ? '暂停' : '播放';
+            if (isPlaying) render();
+        });
+
+        document.getElementById('speedBtn').addEventListener('click', () => {
+            speed = speed === 1 ? 2 : speed === 2 ? 3 : 1;
+            document.getElementById('speedBtn').textContent = `速度: ${speed}x`;
+        });
+
+        document.getElementById('resetBtn').addEventListener('click', () => {
+            time = 0;
+            speed = 1;
+            isPlaying = true;
+            document.getElementById('toggleBtn').textContent = '暂停';
+            document.getElementById('speedBtn').textContent = '加速';
+            initStars();
+            render();
+        });
+
+        // 启动
+        initStars();
+        render();
+
+        // 触摸优化：防止双击缩放
+        document.addEventListener('dblclick', (e) => e.preventDefault());
+
+        // 页面可见性变化时暂停/恢复
+        document.addEventListener('visibilitychange', () => {
+            if (document.hidden && isPlaying) {
+                isPlaying = false;
+            } else if (!document.hidden && !isPlaying) {
+                isPlaying = true;
+                render();
+            }
+        });
+    </script>
+</body>
+</html>

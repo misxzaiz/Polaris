@@ -690,6 +690,9 @@ export interface AssistantChatMessage extends BaseChatMessage {
   blocks: ContentBlock[];
   /** 是否正在流式输出 */
   isStreaming?: boolean;
+  /** 恢复自流式 checkpoint 的中断残留（应用关闭/异常中断时回复未完成）。
+   *  仅由恢复流程设置；UI 据此展示「回复中断」提示，不进入发给引擎的上下文。 */
+  interrupted?: boolean;
   /** 兼容字段：完整文本内容（由 blocks 合成） */
   content?: string;
   /** 工具调用摘要（用于历史恢复和导出） */

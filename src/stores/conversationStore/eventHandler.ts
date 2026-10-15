@@ -9,7 +9,7 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
-import type { PluginCardBlock, ChatMessage, TaskBoardItem } from '@/types'
+import type { PluginCardBlock, ChatMessage, TaskBoardItem, ContentBlock } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -207,6 +207,14 @@ export function handleAIEvent(
 
     case 'session_end': {
       cancelScheduledFlush(state.sessionId)
+      // 取消挂起的流式 checkpoint（防抖 timer），防止其在 saveDialog 覆写完成后
+      // 再追加一条"半条快照"挤占文件末尾（parseDialogLines 按 id 取末行会回退到半条）。
+      cancelCheckpoint(state.sessionId)
+      // 轮末强制收尾：把流式中最后半条也固化到磁盘（checkpoint），之后 finishMessage
+      // 的规整覆写会用完整版按 id 替换掉这条 checkpoint 行，磁盘无冗余。
+      // 注意：不能 await——handleAIEvent 是同步 dispatch；且 checkpoint 必须排在
+      // 随后的 saveDialog 之前入队（enqueuePersist 同 key 串行，覆写会收敛 checkpoint 行）。
+      void flushCurrentMessageCheckpoint(get)
       // 本轮结束：清除流式文本去重缓存，避免下一轮首段与上一轮末段相同被误判为重放
       lastStreamTextBySession.delete(state.sessionId)
       state.finishMessage()
@@ -859,6 +867,13 @@ export function handleAIEvent(
   if (event.type !== 'session_end') {
     scheduleDialogFlush(state.sessionId, get, set)
   }
+
+  // 流式 checkpoint：把"进行中的半条"定期固化到磁盘（中断保护）。
+  // 仅在流式期间调度——token/assistant_message/thinking 都会走到这里；
+  // 防抖 1.5s + unchanged-key 跳过，正常流式下文件增量可控。
+  if (event.type === 'token' || event.type === 'assistant_message' || event.type === 'thinking') {
+    scheduleCurrentMessageCheckpoint(state.sessionId, get)
+  }
 }
 
 /**
@@ -1069,5 +1084,140 @@ async function saveDialog(get: GetState, set: SetState): Promise<void> {
     log.info('会话已保存到 JSONL', { conversationId, messageCount: messages.length })
   } catch (e) {
     log.error('保存会话到 JSONL 失败', e instanceof Error ? e : new Error(String(e)))
+  }
+}
+
+// ============================================================================
+// 流式 checkpoint（中断保护：把"进行中的半条"也固化到磁盘）
+// ============================================================================
+//
+// 背景：AI 回复期间 `currentMessage` 只存在于内存（messages 数组不含它），
+// `flushNewMessages` 的水位不动 → 应用中途关闭时整段回复在 JSONL 里一条都没有。
+//
+// 做法：token/assistant_message → appendTextBlock → 段落后内容写入 currentMessage/消息 →
+// handleAIEvent 尾部统一触发防抖 checkpoint：把 currentMessage 的**全量 blocks**
+// 以同一个 assistant id + `isStreaming: true` 追加**一条**快照行到 JSONL
+// （后端 append 纯追加校验换行后落盘，不判重 → 同 id 多行 = 同一消息的不同快照）。
+//
+// 幂等与收敛：
+// - 读取侧（jsonlCodec.parseDialogLines / 恢复注入）按 id 去重，同 id 取「末行内容」
+//   = 最新快照；第 N 次 checkpoint 只追加比上次更新的内容（unchanged-key 跳过），
+//   正常流式下 1.5s 防抖 → 文件行数增量可控。
+// - 轮末 saveDialog 整体覆写：parseDialogLines 的按 id 去重会把完整版替换掉 checkpoint
+//   行（保留首次位置 + 最后内容），磁盘最终收敛为一条完整消息，无冗余。
+// - 恢复侧把末条 isStreaming 快照归一为完整消息（见 setMessagesFromHistory / loadOlderMessages）。
+
+/** 每会话一个防抖定时器（与 flushTimers 同结构） */
+const checkpointTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const CHECKPOINT_DEBOUNCE_MS = 1500
+
+/**
+ * 调度一次防抖 checkpoint。仅在有进行中的消息时有效；
+ * 内容未变化（与上次 checkpoint 相同 key）时跳过，避免无意义的重复追加。
+ */
+export function scheduleCurrentMessageCheckpoint(sessionId: string, get: GetState): void {
+  const state = get()
+  if (!state.conversationId || !state.currentMessage) return
+  const existing = checkpointTimers.get(sessionId)
+  if (existing) clearTimeout(existing)
+  checkpointTimers.set(
+    sessionId,
+    setTimeout(() => {
+      checkpointTimers.delete(sessionId)
+      void flushCurrentMessageCheckpoint(get)
+    }, CHECKPOINT_DEBOUNCE_MS),
+  )
+}
+
+/** 取消挂起的 checkpoint（会话销毁 / 轮末规整时） */
+export function cancelCheckpoint(sessionId: string): void {
+  const existing = checkpointTimers.get(sessionId)
+  if (existing) {
+    clearTimeout(existing)
+    checkpointTimers.delete(sessionId)
+  }
+}
+
+/** 每条快照的指纹 key：id + 全部文本/思考内容。未变则跳过本次 append（幂等节流） */
+function checkpointKey(snapshot: { id: string; blocks: ContentBlock[] }): string {
+  let len = 0
+  let lastText = ''
+  const blocks = snapshot.blocks ?? []
+  for (const b of blocks) {
+    if (b.type === 'text' || b.type === 'thinking') {
+      lastText = b.content ?? ''
+      len += (b.content ?? '').length
+    } else if (b.type === 'tool_call') {
+      lastText = `tool:${b.id}` // 工具块以 id 作为是否新增的信号
+    }
+  }
+  return `${snapshot.id}:${len}:${lastText}`
+}
+
+const lastCheckpointKeyBySession = new Map<string, string>()
+
+/**
+ * 把流式中 currentMessage 的全量 blocks 追加**一条**快照行到 JSONL（进行中的半条）。
+ *
+ * 不推进水位（persistedSeq 保持不动）——这是刻意设计：
+ * - checkpoint 行写在与「下一条真实消息」相同的 seq 位置；
+ * - 消息归档后 flushNewMessages / 轮末 saveDialog 会把完整版写入**同一 seq + 同一 id** 的
+ *   后续行（append 顺序在后），读取侧按 id 去重取「末行内容」→ 完整版自然覆盖半条快照；
+ * - 若中途崩溃：磁盘保留最后一条 isStreaming 快照，恢复侧归一为中断态（部分内容可见）。
+ */
+export async function flushCurrentMessageCheckpoint(get: GetState): Promise<void> {
+  try {
+    const state = get()
+    const { conversationId, currentMessage } = state
+    if (!conversationId || !currentMessage) return
+    const blocks = currentMessage.blocks ?? []
+    const hasContent = blocks.some((b) => {
+      if (b.type === 'text') return !!b.content
+      if (b.type === 'thinking') return !!b.content
+      if (b.type === 'tool_call') return true
+      return false
+    })
+    if (!hasContent) return
+
+    // 快照：与 finishMessage 归档后同构，仅多 isStreaming:true 标记（进行中）
+    const snapshot = {
+      id: currentMessage.id,
+      type: 'assistant' as const,
+      engineId: currentMessage.engineId,
+      blocks: [...blocks],
+      timestamp: (currentMessage as { timestamp?: string }).timestamp ?? new Date().toISOString(),
+      isStreaming: true as const,
+    }
+
+    // 内容未变（上次 checkpoint 之后没有新输出）→ 跳过，不产生冗余行
+    const key = checkpointKey(snapshot)
+    if (lastCheckpointKeyBySession.get(state.sessionId) === key) return
+    lastCheckpointKeyBySession.set(state.sessionId, key)
+
+    const sameFile = state.persistedConversationId === conversationId
+    const baseSeq = sameFile ? state.persistedSeq : 0
+    // 分页恢复的会话：磁盘 seq 偏移（与 flushNewMessages 同规则）
+    const seqOffset = state.historyPaging?.earliestSeq ?? 0
+
+    await dialogStorageService.appendConversationMessages(
+      {
+        externalId: conversationId,
+        ...buildDialogMetaInput(state, state.messages),
+        messages: [snapshot],
+      },
+      seqOffset + baseSeq,
+    )
+
+    log.info('流式 checkpoint 已落盘', {
+      conversationId,
+      blocks: blocks.length,
+      charLen: blocks.reduce(
+        (n, b) => n + (b.type === 'text' ? (b.content ?? '').length : b.type === 'thinking' ? (b.content ?? '').length : 0),
+        0,
+      ),
+    })
+  } catch (e) {
+    // 落盘失败不影响流式渲染；轮末 saveDialog 仍会兜底
+    log.warn('流式 checkpoint 落盘失败（轮末兜底）', { error: String(e) })
   }
 }

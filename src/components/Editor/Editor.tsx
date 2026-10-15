@@ -176,6 +176,15 @@ interface EditorProps {
   wrapEnabled?: boolean;
   /** 文件路径（用于 EditorState 缓存键） */
   filePath?: string;
+  /** 滚动比例变化回调（0-1，用于 Markdown 联动滚动） */
+  onScrollRatio?: (ratio: number) => void;
+  /** 外部注入的滚动控制句柄：Markdown 分屏联动由父组件写入 */
+  scrollControllerRef?: React.MutableRefObject<{
+    /** 设置滚动比例（0-1），由预览区联动驱动 */
+    setRatio: (ratio: number) => void;
+    /** 设置滚动到指定行（由大纲点击驱动） */
+    setLine: (line: number) => void;
+  } | null>;
 }
 
 export function CodeMirrorEditor({
@@ -187,6 +196,8 @@ export function CodeMirrorEditor({
   lineNumbers: showLineNumbers = true,
   wrapEnabled = false,
   filePath,
+  onScrollRatio,
+  scrollControllerRef,
 }: EditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
@@ -304,6 +315,8 @@ export function CodeMirrorEditor({
 
         // 注册右键菜单上下文捕获
         view.dom.addEventListener('contextmenu', handleContextMenuCapture);
+        // 注册滚动比例回调（Markdown 分屏联动）
+        attachScrollSync(view);
 
         // 检查是否有待跳转的行号
         applyPendingGoto(view);
@@ -419,12 +432,45 @@ export function CodeMirrorEditor({
 
       // 注册右键菜单上下文捕获
       view.dom.addEventListener('contextmenu', handleContextMenuCapture);
+      // 注册滚动比例回调（Markdown 分屏联动）
+      attachScrollSync(view);
 
       log.debug('Editor view created successfully');
 
       // 检查是否有待跳转的行号
       applyPendingGoto(view);
     };
+
+    /**
+     * 滚动比例同步：监听编辑器容器滚动，通知父组件（Markdown 分屏联动）；
+     * 同时暴露外部写入句柄（预览区滚动 → 回写编辑区 / 大纲点击 → 定位行）。
+     */
+    function attachScrollSync(view: EditorView) {
+      const emitRatio = () => {
+        const scroller = view.scrollDOM;
+        const max = scroller.scrollHeight - scroller.clientHeight;
+        const ratio = max > 0 ? scroller.scrollTop / max : 0;
+        onScrollRatio?.(Math.min(1, Math.max(0, ratio)));
+      };
+      view.scrollDOM.addEventListener('scroll', emitRatio, { passive: true });
+
+      if (scrollControllerRef) {
+        scrollControllerRef.current = {
+          setRatio: (ratio) => {
+            const scroller = view.scrollDOM;
+            const max = scroller.scrollHeight - scroller.clientHeight;
+            scroller.scrollTop = Math.max(0, Math.min(1, ratio)) * max;
+          },
+          setLine: (line) => {
+            const doc = view.state.doc;
+            if (line >= 1 && line <= doc.lines) {
+              const anchor = doc.line(line).from;
+              view.dispatch({ effects: EditorView.scrollIntoView(anchor, { y: 'center' }) });
+            }
+          },
+        };
+      }
+    }
 
     /**
      * 应用待跳转的行/列。支持 LSP 跨文件跳转的精确定位：
@@ -458,6 +504,8 @@ export function CodeMirrorEditor({
       if (viewRef.current) {
         // 移除右键菜单上下文捕获
         viewRef.current.dom.removeEventListener('contextmenu', handleContextMenuCapture);
+        // 失效滚动联动句柄
+        if (scrollControllerRef) scrollControllerRef.current = null;
         useEditorContextStore.getState().clearSelectionContext();
         // 保存 EditorState（保留 undo 历史、光标、折叠等）
         const currentPath = filePathRef.current;

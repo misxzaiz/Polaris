@@ -24,6 +24,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { dialogStorageService } from './dialogStorage/service'
 import type { UnifiedHistoryItem } from './historyService'
+import { normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
 import type { ChatMessage, EngineId } from '@/types'
 import {
   packToFile,
@@ -292,7 +293,11 @@ export async function loadConversationMessages(
       } else {
         // simple-ai：self JSONL（externalId = conversationId）
         const msgs = await dialogStorageService.getConversationMessages(conversationId)
-        if (msgs.length > 0) return withAssistantEngineId(msgs, engineId)
+        if (msgs.length > 0) {
+          // getConversation 全量读取已由 parseDialogLines 按 id 去重；仍可能含
+          // checkpoint 残留（isStreaming 快照）→ 归一为中断态，避免当"进行中"续接
+          return withAssistantEngineId(normalizeRecoveredMessages(msgs), engineId)
+        }
       }
     } catch (e) {
       log.warn('按引擎加载源会话失败，回退内存消息', { engineId, conversationId, error: String(e) })
@@ -332,7 +337,9 @@ async function loadHistoryChatMessages(item: UnifiedHistoryItem): Promise<ChatMe
     }
     // simple-ai：self JSONL（externalId = item.id）
     const msgs = await dialogStorageService.getConversationMessages(item.id)
-    return msgs.length > 0 ? withAssistantEngineId(msgs, engineId) : []
+    return msgs.length > 0
+      ? withAssistantEngineId(normalizeRecoveredMessages(msgs), engineId)
+      : []
   } catch (e) {
     log.warn('加载历史会话消息失败', { sourceId: item.id, engineId, error: String(e) })
     return []

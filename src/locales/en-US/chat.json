@@ -139,7 +139,8 @@
     "deleteConfirmTitle": "Delete Message",
     "deleteConfirmText": "Are you sure you want to delete this message? This action cannot be undone.",
     "deleted": "Message deleted",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "interrupted": "Reply interrupted (app closed or errored; showing generated part only)"
   },
   "error": {
     "sendFailed": "Failed to send",

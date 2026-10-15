@@ -34,7 +34,8 @@ import {
   isProfileModeWithoutProfile,
 } from './conversationStoreUtils'
 import { dialogStorageService } from '@/services/dialogStorage'
-import { cancelScheduledFlush } from './eventHandler'
+import { cancelScheduledFlush, cancelCheckpoint } from './eventHandler'
+import { dedupeMessagesById, normalizeRecoveredMessages } from './dedupMessages'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
 import { useMarqueeStore } from '../marqueeStore'
@@ -1723,8 +1724,12 @@ export function createConversationStore(
         compactor.clearSnapshots()
         _lastCompactionRange = null // 重置压缩范围，防止旧范围阻止新会话首次压缩
 
+        // checkpoint 残留归一：历史恢复后已无流式，将 isStreaming 快照统一归一为
+        // 中断态（isStreaming:false + interrupted:true），避免末条半条被当成"进行中"
+        const baseMessages = normalizeRecoveredMessages(messages)
+
         // 为已完成的 Edit 工具回填 diffData（历史消息可能缺失）
-        const processedMessages = messages.map(msg => {
+        const processedMessages = baseMessages.map(msg => {
           if (msg.type !== 'assistant' || !msg.blocks) return msg
           let modified = false
           const blocks = msg.blocks.map(block => {
@@ -2356,7 +2361,10 @@ export function createConversationStore(
             }
             // 去重防御：磁盘页可能与内存窗口重叠（seq 漂移的极端情况）
             const inMemory = new Set(cur.messages.map((m) => m.id))
-            const fresh = page.messages.filter((m) => !inMemory.has(m.id))
+            // checkpoint 同 id 快照收敛（取末行 = 最新内容）+ isStreaming 残留归一为中断态
+            const deduped = dedupeMessagesById(page.messages) as ChatMessage[]
+            const normalized = normalizeRecoveredMessages(deduped)
+            const fresh = normalized.filter((m) => !inMemory.has(m.id))
             set({
               messages: fresh.length > 0 ? [...fresh, ...cur.messages] : cur.messages,
               // 前缀增长 → 已落盘计数同步增长（这些消息本就来自磁盘）
@@ -2517,6 +2525,7 @@ export function createConversationStore(
 
         // 取消挂起的增量落盘（会话销毁后不再需要）
         cancelScheduledFlush(sessionId)
+        cancelCheckpoint(sessionId)
 
         // 清理压缩器快照
         compactor.clearSnapshots()
