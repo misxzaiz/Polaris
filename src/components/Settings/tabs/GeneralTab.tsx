@@ -63,6 +63,49 @@ export function GeneralTab({ config, onConfigChange, loading }: GeneralTabProps)
         </div>
       </div>
 
+      {/* AI 界面控制 — cap.ui.* 能力开关（默认关闭，开启后 AI 工具集含 cap.ui.theme/cap.ui.chat） */}
+      <div className="p-4 bg-surface rounded-lg border border-border">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h3 className="text-sm font-medium text-text-primary flex items-center gap-1.5">
+              {t('uiControl.title', 'AI 界面控制')}
+            </h3>
+            <p className="text-xs text-text-secondary mt-1">
+              {t('uiControl.description', '允许 AI 调整主题配色与对话渲染配置（字号、消息间距等），三端同源生效')}
+            </p>
+            <p className="text-xs text-text-tertiary mt-0.5">
+              {t('uiControl.hint', '关闭时隐藏 bus 中的 cap.ui.* 工具；开启后 AI 即可经工具调用控制界面样式')}
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={config.uiControlEnabled === true}
+            aria-label={config.uiControlEnabled === true ? '关闭 AI 界面控制' : '开启 AI 界面控制'}
+            title={config.uiControlEnabled ? '关闭' : '开启'}
+            onClick={() => onConfigChange({ ...config, uiControlEnabled: config.uiControlEnabled !== true })}
+            disabled={loading}
+            className={`
+              relative inline-flex items-center h-6 w-11 rounded-full shrink-0
+              transition-colors
+              focus:outline-none
+              focus-visible:ring-2 focus-visible:ring-primary
+              focus-visible:ring-offset-2
+              ${loading ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}
+              ${config.uiControlEnabled === true ? 'bg-primary' : 'bg-border'}
+            `}
+          >
+            <span
+              className={`
+                inline-block h-4 w-4 transform rounded-full bg-white
+                shadow-sm transition-transform
+                ${config.uiControlEnabled === true ? 'translate-x-5' : 'translate-x-1'}
+              `}
+            />
+          </button>
+        </div>
+      </div>
+
       {/* 阅读聚焦模式 — 独立 store，即时生效 */}
       <FocusModeSettings />
 

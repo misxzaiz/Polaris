@@ -32,6 +32,8 @@ pub mod prompt_snippet_capability;
 mod stream_echo_capability;
 mod todo_capability;
 mod help_capability;
+pub mod ui_theme_capability;
+pub mod ui_chat_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
@@ -53,6 +55,8 @@ pub use prompt_snippet_capability::PromptSnippetCapability;
 pub use stream_echo_capability::StreamEchoCapability;
 pub use help_capability::HelpCapability;
 pub use todo_capability::TodoCapability;
+pub use ui_theme_capability::UiThemeCapability;
+pub use ui_chat_capability::UiChatCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;
