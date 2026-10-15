@@ -62,6 +62,8 @@ export function GitPanel({
     const targetId = viewingWorkspaceId || currentWorkspaceId
     return workspaces.find(w => w.id === targetId) || null
   })
+  const allWorkspaces = useWorkspaceStore((s) => s.workspaces)
+  const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace)
   const toast = useToastStore()
 
   // 多仓库模式：聚合工作区（本身非 git）下选中的子仓库路径
@@ -465,9 +467,35 @@ export function GitPanel({
     return (
       <div className={`h-full flex flex-col ${className}`}>
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
-          <div className="flex items-center gap-2">
-            <GitPullRequest size={16} className="text-primary" />
-            <span className="text-sm font-medium text-text-primary">Git</span>
+          <div className="flex items-center gap-2 min-w-0">
+            <GitPullRequest size={16} className="text-primary shrink-0" />
+            {allWorkspaces.length > 0 ? (
+              <DropdownMenu
+                align="left"
+                trigger={
+                  <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary cursor-pointer hover:text-primary transition-colors select-none min-w-0">
+                    <span className="truncate max-w-[140px]">{currentWorkspace?.name ?? t('title')}</span>
+                    <ChevronRight size={12} className="text-text-tertiary rotate-90 shrink-0" />
+                  </span>
+                }
+                items={allWorkspaces.map(ws => ({
+                  key: ws.id,
+                  label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
+                  onClick: () => {
+                    if (ws.id === currentWorkspace?.id) return
+                    switchWorkspace(ws.id).catch((err) => {
+                      toast.error(String(err))
+                    })
+                    setSelectedRepoPath(null)
+                    setSelectedFiles(new Set())
+                    toast.info(`${t('workspaceSwitched')} ${ws.name}`)
+                  },
+                }))}
+                className="min-w-0"
+              />
+            ) : (
+              <span className="text-sm font-medium text-text-primary truncate">Git</span>
+            )}
           </div>
           {showWorkbenchButton && (
             <button
@@ -659,13 +687,34 @@ export function GitPanel({
             </button>
           )}
           <GitPullRequest size={16} className="text-primary shrink-0" />
-          {selectedRepoPath ? (
+          {selectedRepoPath && (
             <span className="text-sm font-medium text-text-primary truncate" title={selectedRepoPath}>
               {selectedRepoPath.split(/[/\\]/).pop() || selectedRepoPath}
             </span>
-          ) : (
-            <span className="text-sm font-medium text-text-primary">{t('title')}</span>
           )}
+          <DropdownMenu
+            align="left"
+            trigger={
+              <span className="flex items-center gap-1.5 text-sm font-medium text-text-primary cursor-pointer hover:text-primary transition-colors select-none min-w-0">
+                <span className="truncate max-w-[140px]">{currentWorkspace?.name ?? t('title')}</span>
+                <ChevronRight size={12} className="text-text-tertiary rotate-90 shrink-0" />
+              </span>
+            }
+            items={allWorkspaces.map(ws => ({
+              key: ws.id,
+              label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
+              onClick: () => {
+                if (ws.id === currentWorkspace?.id) return
+                switchWorkspace(ws.id).catch((err) => {
+                  toast.error(String(err))
+                })
+                setSelectedRepoPath(null)
+                setSelectedFiles(new Set())
+                toast.info(`${t('workspaceSwitched')} ${ws.name}`)
+              },
+            }))}
+            className="min-w-0"
+          />
         </div>
         <div className="flex items-center gap-1">
           {showWorkbenchButton && (
