@@ -15,15 +15,14 @@
  *    产生的 atBottom 翻转在流式期间被忽略，不误判为用户离开。
  *  - 流式结束补偿：内容测量完成后主动贴底一次，避免停在旧估算高度的中间。
  *
- * 流式中途贴底增强（2026-09-23 实测补漏，2026-10-15 升级）：
+ * 流式中途贴底增强（2026-09-23 实测补漏）：
  *  Virtuoso 的 followOutput 只在「atBottom 翻转」时触发一次，内容一次性大幅增长
  *  （长回复单 commit +几千 px）会把 atBottom 打翻为 false，之后 followOutput 不再
  *  跟随，视口停在中间直到流式结束才被结束补偿拉回。实测轨迹里 gap 一度涨到
  *  5476px（见 memory/message-autoscroll-anchor-mode.md）。
  *  这里用 ResizeObserver 监听 scroller 内容高度：流式期间只要跟随态且距底超过
- *  streamCompensateThreshold（视口一屏高）才 rAF 合并补偿贴底一次——正常跟随由
- *  Virtuoso followOutput 每 token 贴底主导，RO 仅在 Virtuoso 明显跟丢（剧变甩开
- *  超过一屏）时兜底介入，避免与 Virtuoso 双滚动竞争造成滚动跳动。
+ *  AUTO_SCROLL_THRESHOLD 就 rAF 合并补偿贴底一次——不依赖 Virtuoso 内部状态机，
+ *  每次内容增长都能把新输出实时带回可视区。
  *
  * 配合组件使用：
  *  - Virtuoso 的 atBottomThreshold 传 AUTO_SCROLL_THRESHOLD
@@ -38,10 +37,7 @@ import type { VirtuosoHandle } from 'react-virtuoso';
 /** 贴底判定阈值：锚点模式下收敛到接近 Virtuoso 默认（4px），消灭 150px 死区 */
 export const AUTO_SCROLL_THRESHOLD = 4;
 
-/** 流式补偿贴底的下限阈值（px）：距底超过该值与「视口高度」的较大者才触发补偿。
- *  2026-10-15 升级：正常流式跟随由 Virtuoso followOutput 主导（每 token 自动贴底），
- *  若 RO 仍在固定 40px 就补偿，会与 Virtuoso 的双滚动在同帧争抢视口 → 滚动跳动。
- *  故阈值取「一屏高」（Virtuoso 明显没跟上/跟丢）才兜底补偿，消除竞争。 */
+/** 流式期间距底超过该值就触发补偿贴底（px）。取视口高度级别，避免内容仅微增就抖动。 */
 const STREAM_COMPENSATE_OFFSET = 40;
 
 /** 程序化滚动保护窗口（ms）：compensateScroll / scrollToIndex 触发 scrollTop 变化的
@@ -130,14 +126,6 @@ export function useMessageAutoScroll(
     return Math.max(MIN_RESTORE_GAP_PX, vh * RESTORE_GAP_VIEWPORT_RATIO);
   }, []);
 
-  /** 流式中途补偿所需的最小距底（px）：距底超过「视口一屏高」才兜底补偿贴底。
-   *  正常跟随由 Virtuoso followOutput 主导，这里仅在 Virtuoso 明显跟丢（距底超一屏）
-   *  时才介入，避免与 Virtuoso 双滚动竞争造成跳动。迷你格子时退化为固定下限。 */
-  const streamCompensateThreshold = useCallback(() => {
-    const vh = scrollerElRef.current?.clientHeight ?? 0;
-    return Math.max(STREAM_COMPENSATE_OFFSET, vh);
-  }, []);
-
   // 开启交互豁免窗口：卡片展开/折叠、chips 筛选等内部交互导致列表高度变化时调用，
   // 窗口内不跟随、不补偿、不恢复 autoScroll，用户视角位置保持不动。
   const suspendFollow = useCallback((ms = 350) => {
@@ -158,6 +146,7 @@ export function useMessageAutoScroll(
 
   const setAutoScroll = useCallback((v: boolean) => {
     if (v) leavePeakDistRef.current = 0; // 显式恢复跟随 → 离开峰值清零
+    console.log('[AutoScroll:setAutoScroll]', v, new Error('stack').stack?.split('\n')[2]?.trim());
     setAutoScrollState(v);
   }, []);
 
@@ -168,6 +157,7 @@ export function useMessageAutoScroll(
    *    导致的瞬时离底不应误判为用户离开（由 handleWheel 处理真正的主动离开）。
    */
   const handleAtBottomStateChange = useCallback((atBottom: boolean) => {
+    console.log('[AutoScroll:atBottomStateChange]', { atBottom, isStreaming, autoScroll: stateRef.current.autoScroll });
     if (firstAtBottomCallbackRef.current) {
       firstAtBottomCallbackRef.current = false;
       return;
@@ -193,6 +183,7 @@ export function useMessageAutoScroll(
       }
     } else if (!isStreaming) {
       // 非流式：离开底部=用户主动（内容不再增长），停止跟随
+      console.log('[AutoScroll:atBottomStateChange] 非流式且离底，停止跟随');
       setAutoScrollState(false);
     }
     // 流式且 atBottom=false：忽略，靠 followOutput + wheel + 流式补偿维持正确跟随
@@ -204,6 +195,7 @@ export function useMessageAutoScroll(
    */
   const handleWheel = useCallback((e: { deltaY: number }) => {
     if (e.deltaY < 0) {
+      console.log('[AutoScroll:handleWheel] 检测到向上滚动，停止跟随', { deltaY: e.deltaY });
       setAutoScrollState(false);
     }
   }, []);
@@ -319,9 +311,8 @@ export function useMessageAutoScroll(
 
   /**
    * 流式中途补偿触发：ResizeObserver 回调。
-   * 距底超过 streamCompensateThreshold()（视口一屏高）时才兜底补偿，
-   * 正常跟随由 Virtuoso followOutput 每 token 贴底，这里只在 Virtuoso 明显
-   * 跟丢（长回复剧变把视口甩开超过一屏）时介入，避免双滚动竞争造成的跳动。
+   * 距底超过 STREAM_COMPENSATE_OFFSET 时（内容暴增把视口甩开）才补偿，
+   * 微增不抖动。仅在跟随态 + 流式中生效。
    * 流式结束补偿窗口内也允许补偿一次，避免最终测量延迟导致停在略高于底部的位置。
    */
   const handleListResize = useCallback(() => {
@@ -332,12 +323,12 @@ export function useMessageAutoScroll(
     const allowCompensate = streaming || streamingEndPendingRef.current;
     if (!allowCompensate) return;
     const distFromBottom = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
-    if (distFromBottom > streamCompensateThreshold()) {
+    if (distFromBottom > STREAM_COMPENSATE_OFFSET) {
       // 一次性闸门：补偿后关闭，避免流式结束后内容继续增长反复拉回
       if (!streaming) streamingEndPendingRef.current = false;
       scheduleCompensate();
     }
-  }, [scheduleCompensate, streamCompensateThreshold]);
+  }, [scheduleCompensate]);
 
   /**
    * 绑定 scroller DOM：拿到滚动容器后，观察其列表子容器高度。
