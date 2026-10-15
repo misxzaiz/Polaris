@@ -450,11 +450,11 @@ describe('useMessageAutoScroll', () => {
   // 流式中途贴底增强（本次 bug 修复）
   // ============================================================
   describe('流式中途贴底增强', () => {
-    it('跟随态 + 流式中 + 距底超阈值 → 自动贴底（scrollToIndex LAST）', () => {
+    it('跟随态 + 流式中 + 距底超一屏阈值 → 兜底贴底（scrollToIndex LAST）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
 
-      // 距底 = scrollHeight - (scrollTop + clientHeight) = 500 - (0 + 100) = 400 > 40
+      // 距底 = scrollHeight - (scrollTop + clientHeight) = 500 - (0 + 100) = 400 > 一屏(100)
       const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
       act(() => result.current.setScrollerRef(scroller));
 
@@ -466,6 +466,26 @@ describe('useMessageAutoScroll', () => {
         align: 'end',
         behavior: 'auto',
       });
+    });
+
+    it('跟随态 + 流式中 + 距底未超一屏阈值 → 不兜底（正常跟随交给 Virtuoso followOutput）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // 距底 = 150 - (100 + 0) = 50 < 一屏(150)；正常跟随不介入，避免双滚动竞争
+      const scroller = makeScroller({ scrollHeight: 150, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => lastRo().fire());
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+    });
+
+    it('跟随态 + 流式中 + 距底恰为一屏 → 不兜底（严格大于一屏才介入）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // 距底 = 200 - (100 + 0) = 100 = 一屏(100)，不 > 阈值 → 不补偿
+      const scroller = makeScroller({ scrollHeight: 200, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+      act(() => lastRo().fire());
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
     });
 
     it('用户上滑离开后 → 不再自动贴底', () => {
@@ -497,7 +517,7 @@ describe('useMessageAutoScroll', () => {
     it('流式中途但距底未超阈值 → 不贴底（微增不抖动）', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
-      // 距底 = 120 - (100 + 5) = 15 < 40，不触发
+      // 距底 = 120 - (100 + 5) = 15 < max(40, 一屏5)=40，不触发
       const scroller = makeScroller({ scrollHeight: 120, scrollTop: 100, clientHeight: 5 });
       act(() => result.current.setScrollerRef(scroller));
 
