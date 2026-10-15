@@ -139,15 +139,31 @@ describe('useMessageAutoScroll', () => {
       expect(result.current.autoScroll).toBe(true);
     });
 
-    it('翻转为 true → 恢复跟随', () => {
+    it('跟随态 + atBottom 翻 true → 保持跟随', () => {
       const ref = makeVirtuosoRef();
       const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: false }));
       // 先消费首帧
       act(() => result.current.handleAtBottomStateChange(false));
-      act(() => result.current.handleAtBottomStateChange(false));
-      expect(result.current.autoScroll).toBe(false);
-      act(() => result.current.handleAtBottomStateChange(true));
       expect(result.current.autoScroll).toBe(true);
+      act(() => result.current.handleAtBottomStateChange(true));
+      // 本就处于跟随态，atBottom 翻转不改变状态
+      expect(result.current.autoScroll).toBe(true);
+    });
+
+    it('离开态 + atBottom 翻 true → 不恢复跟随（粘性离开，防意外拉回）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      // 消费首帧
+      act(() => result.current.handleAtBottomStateChange(true));
+      // 用户离开：上拉
+      act(() => result.current.handleWheel({ deltaY: -1 }));
+      expect(result.current.autoScroll).toBe(false);
+      // 意外 atBottom 翻 true（惯性回弹 / 微小下滑 / 滚动条释放触底，阈值仅 4px）
+      act(() => result.current.handleAtBottomStateChange(true));
+      // 离开态必须粘住，不能因此恢复跟随
+      expect(result.current.autoScroll).toBe(false);
+      // followOutput 也必须持续返回 false（Virtuoso 不会自动滚动拉回）
+      expect(result.current.followOutput(true)).toBe(false);
     });
 
     it('非流式翻转为 false → 停止跟随（用户主动离开）', () => {
@@ -164,6 +180,59 @@ describe('useMessageAutoScroll', () => {
       act(() => result.current.handleAtBottomStateChange(false)); // 消费首帧
       act(() => result.current.handleAtBottomStateChange(false));
       expect(result.current.autoScroll).toBe(true);
+    });
+  });
+
+  describe('根因①回归：上拉查看时不被 AI 输出拉回底部', () => {
+    it('流式输出中用户上拉 → atBottom 瞬时翻 true 不恢复跟随 → 新 token 不划走', () => {
+      const ref = makeVirtuosoRef();
+      const { result, rerender } = renderHook(
+        ({ s }: { s: boolean }) => useMessageAutoScroll(ref, { isStreaming: s }),
+        { initialProps: { s: true } }
+      );
+      const scroller = makeScroller({ scrollHeight: 500, scrollTop: 0, clientHeight: 100 });
+      act(() => result.current.setScrollerRef(scroller));
+
+      // 消费首帧
+      act(() => result.current.handleAtBottomStateChange(true));
+
+      // 用户在底部看流式输出（跟随态）
+      expect(result.current.autoScroll).toBe(true);
+
+      // 用户上拉查看历史 → 停止跟随
+      act(() => result.current.handleWheel({ deltaY: -1 }));
+      expect(result.current.autoScroll).toBe(false);
+
+      // AI 继续输出：内容增长触发 ResizeObserver + 滚动位置微动使 atBottom 瞬时翻 true
+      act(() => lastRo().fire());
+      act(() => result.current.handleAtBottomStateChange(true));
+
+      // 离开态粘性：不恢复跟随，且绝不被补偿贴底
+      expect(result.current.autoScroll).toBe(false);
+      expect(ref.current?.scrollToIndex).not.toHaveBeenCalled();
+
+      // 流式结束（isStreaming→false）的自动补偿也因离开态不生效
+      act(() => rerender({ s: false }));
+      expect(result.current.compensateScroll()).toBe(false);
+
+      // 显式回到底部（ScrollToBottomButton / 底部按钮）→ 重新进入跟随态。
+      // 此时已是非流式（rerender s:false），跟随态 + 贴底 → 'smooth'（非 false 即跟随生效）
+      act(() => result.current.scrollToBottom());
+      expect(result.current.autoScroll).toBe(true);
+      expect(result.current.followOutput(true)).toBe('smooth');
+    });
+
+    it('离开态下滚动到贴底也不自动恢复跟随（必须显式回底部）', () => {
+      const ref = makeVirtuosoRef();
+      const { result } = renderHook(() => useMessageAutoScroll(ref, { isStreaming: true }));
+      act(() => result.current.handleAtBottomStateChange(true)); // 消费首帧
+      act(() => result.current.handleWheel({ deltaY: -1 })); // 上拉离开
+      expect(result.current.autoScroll).toBe(false);
+
+      // 用户拖滚动条/滚轮回到贴底 → atBottom 翻 true，但 autoScroll 仍 false（粘性）
+      act(() => result.current.handleAtBottomStateChange(true));
+      expect(result.current.autoScroll).toBe(false);
+      expect(result.current.followOutput(true)).toBe(false);
     });
   });
 

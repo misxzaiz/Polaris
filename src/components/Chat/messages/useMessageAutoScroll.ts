@@ -143,7 +143,16 @@ export function useMessageAutoScroll(
     if (atBottom) {
       // 交互豁免窗口内：高度变化翻转 atBottom 不应恢复跟随（避免点 chips 后拉回）
       if (isSuspended()) return;
-      setAutoScrollState(true);
+      // 根因①修复（2026-10-15）：仅「原本处于跟随态」时 atBottom 翻转保持跟随；
+      // 离开态（autoScroll=false）是**粘性**的——用户上拉后任何微小下滑、惯性回弹、
+      // 滚动条释放触底，都可能让 Virtuoso 的 atBottom 瞬时翻 true（阈值仅 4px），
+      // 旧逻辑无条件 setAutoScrollState(true) 会把跟随态拉回 true，下一个流式 token
+      // 一来 followOutput 即 true 强制贴底，表现为「上拉查看却被自动划到底部」。
+      // 重新跟随只经显式 scrollToBottom / ScrollToBottomButton（setAutoScroll(true)）。
+      // 注意：必须读同步镜像 stateRef（闭包 autoScroll 是 useCallback 创建时的过期值）。
+      if (stateRef.current.autoScroll) {
+        setAutoScrollState(true);
+      }
     } else if (!isStreaming) {
       // 非流式：离开底部=用户主动（内容不再增长），停止跟随
       console.log('[AutoScroll:atBottomStateChange] 非流式且离底，停止跟随');
