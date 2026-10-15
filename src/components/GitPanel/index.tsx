@@ -63,7 +63,7 @@ export function GitPanel({
     return workspaces.find(w => w.id === targetId) || null
   })
   const allWorkspaces = useWorkspaceStore((s) => s.workspaces)
-  const switchWorkspace = useWorkspaceStore((s) => s.switchWorkspace)
+  const setViewingWorkspace = useWorkspaceStore((s) => s.setViewingWorkspace)
   const toast = useToastStore()
 
   // 多仓库模式：聚合工作区（本身非 git）下选中的子仓库路径
@@ -483,9 +483,7 @@ export function GitPanel({
                   label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
                   onClick: () => {
                     if (ws.id === currentWorkspace?.id) return
-                    switchWorkspace(ws.id).catch((err) => {
-                      toast.error(String(err))
-                    })
+                    setViewingWorkspace(ws.id)
                     setSelectedRepoPath(null)
                     setSelectedFiles(new Set())
                     toast.info(`${t('workspaceSwitched')} ${ws.name}`)
@@ -705,9 +703,7 @@ export function GitPanel({
               label: ws.id === currentWorkspace?.id ? `✓ ${ws.name}` : ws.name,
               onClick: () => {
                 if (ws.id === currentWorkspace?.id) return
-                switchWorkspace(ws.id).catch((err) => {
-                  toast.error(String(err))
-                })
+                setViewingWorkspace(ws.id)
                 setSelectedRepoPath(null)
                 setSelectedFiles(new Set())
                 toast.info(`${t('workspaceSwitched')} ${ws.name}`)

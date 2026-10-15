@@ -4,6 +4,7 @@
   "emptyRepo": "Empty repository (no commits)",
   "noCommits": "No commits",
   "workspacePath": "Workspace path",
+  "workspaceSwitched": "Switched workspace: ",
   "loading": "Loading...",
   "closeDiff": "Close Diff",
   "openWorkbench": "Open Git Workbench in editor",

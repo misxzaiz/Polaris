@@ -4,6 +4,7 @@
   "emptyRepo": "空仓库（无提交）",
   "noCommits": "无提交",
   "workspacePath": "工作区路径",
+  "workspaceSwitched": "已切换工作区：",
   "loading": "加载中...",
   "closeDiff": "关闭 Diff",
   "openWorkbench": "在编辑区打开 Git 工作台",
