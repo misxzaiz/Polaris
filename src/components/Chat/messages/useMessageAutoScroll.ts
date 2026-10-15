@@ -49,6 +49,15 @@ const PROGRAMMATIC_SCROLL_GUARD_MS = 220;
  *  避免用户停在略高于底部的位置。 */
 const STREAM_END_COMPENSATE_WINDOW_MS = 1000;
 
+/** 离开态恢复跟随的「离开距离」下限阈值（px）。
+ *  用户上拉查看历史后再拉回底部，离开期间的距底峰值必然较大；
+ *  被动回弹/微小下滑造成的峰值很小。以「距底峰值 > 阈值」判定主动回底。 */
+const MIN_RESTORE_GAP_PX = 80;
+
+/** 恢复阈值相对视口高度的比例：threshold = MAX(MIN_RESTORE_GAP_PX, clientHeight × 该值)。
+ *  取半屏——用户上拉超过半屏再回底，视为明确的主动往返；半屏内的起伏视为抖动。 */
+const RESTORE_GAP_VIEWPORT_RATIO = 0.5;
+
 export interface MessageAutoScroll {
   autoScroll: boolean;
   /** 与 react-virtuoso FollowOutputScalarType 一致：boolean(true=立即) | 'auto' | 'smooth' */
@@ -95,6 +104,11 @@ export function useMessageAutoScroll(
   // 一次（最终测量往往滞后于 isStreaming 翻转）。窗口结束置 false。
   const streamingEndPendingRef = useRef(false);
 
+  // 离开态期间的「距底峰值」（px）：用户上拉离开底部后持续累计，直到恢复跟随清零。
+  // 方向 A 的判定依据——只有离开超过阈值（MIN_RESTORE_GAP_PX / 半屏）再回底，
+  // 才视为「主动往返」而恢复跟随；峰值小的触底是抖动，保持离开不被拉走。
+  const leavePeakDistRef = useRef(0);
+
   // 交互豁免窗口：卡片内展开/筛选导致的列表高度变化不驱动滚动跟随。
   // 由 suspendFollow(ms) 开启；窗口内 followOutput / RO 补偿 / compensateScroll /
   // atBottom 翻转均被抑制，避免「点 chips 后消息位置闪动」。
@@ -103,6 +117,13 @@ export function useMessageAutoScroll(
   // 是否处于交互豁免窗口内
   const isSuspended = useCallback(() => {
     return performance.now() < suspendUntilRef.current;
+  }, []);
+
+  /** 恢复跟随所需的离开距离阈值（px）：
+   *  取固定下限与「半屏」的较大者，视口极小（迷你格子）时退化为固定下限。 */
+  const restoreGapThreshold = useCallback(() => {
+    const vh = scrollerElRef.current?.clientHeight ?? 0;
+    return Math.max(MIN_RESTORE_GAP_PX, vh * RESTORE_GAP_VIEWPORT_RATIO);
   }, []);
 
   // 开启交互豁免窗口：卡片展开/折叠、chips 筛选等内部交互导致列表高度变化时调用，
@@ -124,6 +145,7 @@ export function useMessageAutoScroll(
   stateRef.current.isStreaming = !!isStreaming;
 
   const setAutoScroll = useCallback((v: boolean) => {
+    if (v) leavePeakDistRef.current = 0; // 显式恢复跟随 → 离开峰值清零
     console.log('[AutoScroll:setAutoScroll]', v, new Error('stack').stack?.split('\n')[2]?.trim());
     setAutoScrollState(v);
   }, []);
@@ -143,15 +165,21 @@ export function useMessageAutoScroll(
     if (atBottom) {
       // 交互豁免窗口内：高度变化翻转 atBottom 不应恢复跟随（避免点 chips 后拉回）
       if (isSuspended()) return;
-      // 根因①修复（2026-10-15）：仅「原本处于跟随态」时 atBottom 翻转保持跟随；
-      // 离开态（autoScroll=false）是**粘性**的——用户上拉后任何微小下滑、惯性回弹、
-      // 滚动条释放触底，都可能让 Virtuoso 的 atBottom 瞬时翻 true（阈值仅 4px），
-      // 旧逻辑无条件 setAutoScrollState(true) 会把跟随态拉回 true，下一个流式 token
-      // 一来 followOutput 即 true 强制贴底，表现为「上拉查看却被自动划到底部」。
-      // 重新跟随只经显式 scrollToBottom / ScrollToBottomButton（setAutoScroll(true)）。
-      // 注意：必须读同步镜像 stateRef（闭包 autoScroll 是 useCallback 创建时的过期值）。
+      // 方向 A 修复（2026-10-15）：区分「主动回底」与「被动触底」——
+      //   · 跟随态：atBottom=true 保持跟随（内容增长贴底是正常的），峰值本为 0。
+      //   · 离开态：仅当离开期间的距底峰值 ≥ 阈值（用户确实上拉查看过历史、
+      //     主动拉回底部）才恢复跟随；峰值小的触底（原位微小下滑/惯性回弹/滚动条
+      //     释放）视为抖动，保持离开，避免下一个流式 token 把视口划走。
+      // 峰值在判定后统一消费清零（无论恢复与否），下一个离开周期重新累计。
       if (stateRef.current.autoScroll) {
+        leavePeakDistRef.current = 0;
         setAutoScrollState(true);
+      } else if (leavePeakDistRef.current >= restoreGapThreshold()) {
+        setAutoScrollState(true);
+        leavePeakDistRef.current = 0;
+      } else {
+        // 离开态、峰值不足（被动触底）：不恢复，但消费本次触底重置峰值
+        leavePeakDistRef.current = 0;
       }
     } else if (!isStreaming) {
       // 非流式：离开底部=用户主动（内容不再增长），停止跟随
@@ -159,7 +187,7 @@ export function useMessageAutoScroll(
       setAutoScrollState(false);
     }
     // 流式且 atBottom=false：忽略，靠 followOutput + wheel + 流式补偿维持正确跟随
-  }, [isStreaming]);
+  }, [isStreaming, restoreGapThreshold]);
 
   /**
    * 用户主动滚动中断：向上滚动 = 用户去读历史/长内容，停止跟随。
@@ -173,22 +201,34 @@ export function useMessageAutoScroll(
   }, []);
 
   /**
-   * 滚动事件兜底检测：wheel 事件无法覆盖键盘 PageUp / 触摸板 / 触控屏 / 程序化跳转。
-   * 通过采样 scrollTop 变化方向 + 距底阈值联合判定：
-   *   - 保护窗口内：跳过（我们自己触发的 scrollTop 变化）
-   *   - 非流式：跳过（非流式的"离开底部"由 handleAtBottomStateChange 兜底）
-   *   - 流式中 + scrollTop 变小 + 距底超过阈值 → 用户主动向上，停止跟随
+   * 滚动事件采样：覆盖键盘/触摸板/程序化滚动，同时维护方向 A 的离开峰值。
+   *  - 保护窗口内：跳过（我们自己触发的 scrollTop 变化）。
+   *  - 距底超阈值：累计「自上次 atBottom 事件以来的离开峰值」（取最大）。
+   *    注意：回底（距底≤阈值）**不清零**——Virtuoso 的 scroll 事件先于 atBottom
+   *    翻转触发，若在此清零，恢复判定读到 0 会误判。峰值统一在 atBottom 判定时消费。
+   *  - 流式中距底超阈值：视为用户主动向上，停止跟随。
+   *  - 非流式的主动离开由 handleAtBottomStateChange（atBottom→false）判定，
+   *    这里不设 false，避免键盘/触摸板噪声误停（保持原语义）。
    */
   const handleScroll = useCallback(() => {
-    const { isStreaming: streaming } = stateRef.current;
-    if (!streaming) return; // 非流式交给 handleAtBottomStateChange
     if (performance.now() < programmaticUntilRef.current) return;
     const scroller = scrollerElRef.current;
     if (!scroller) return;
     const distFromBottom = scroller.scrollHeight - (scroller.scrollTop + scroller.clientHeight);
-    if (distFromBottom <= AUTO_SCROLL_THRESHOLD) return;
-    setAutoScrollState(false);
-  }, []);
+    // 离开区（距底超阈值）累计离开峰值（方向 A 的主动往返判据）。
+    // 回底区（≤阈值）不干预，峰值统一在 atBottom 判定时消费清零
+    // （避免 scroll 先于 atBottom 触发的竞态）。
+    if (distFromBottom > AUTO_SCROLL_THRESHOLD && distFromBottom > leavePeakDistRef.current) {
+      leavePeakDistRef.current = distFromBottom;
+    }
+    // 流式下「显著离开」（距底超过恢复阈值，即离开超过半屏上）才停止跟随：
+    // 覆盖滚动条拖动/触摸板快速上滑等无 wheel 事件的离开；浅层滚动（跟随态下
+    // Virtuoso 自动滚底的中间帧距底短暂超4px，但远未到半屏）不误停，交回
+    // handleWheel / handleAtBottomStateChange 精确判定。
+    if (stateRef.current.isStreaming && distFromBottom > restoreGapThreshold()) {
+      setAutoScrollState(false);
+    }
+  }, [restoreGapThreshold]);
 
   /**
    * 键盘上拉检测：PageUp / Home / ArrowUp 视为用户主动向上浏览，停止跟随。
@@ -201,8 +241,9 @@ export function useMessageAutoScroll(
     }
   }, []);
 
-  /** 强制回到底部并恢复跟随 */
+  /** 强制回到底部并恢复跟随（显式入口：ScrollToBottomButton 等）。清理离开峰值。 */
   const scrollToBottom = useCallback(() => {
+    leavePeakDistRef.current = 0;
     if (virtuosoRef.current) {
       virtuosoRef.current.scrollTo({
         top: Number.MAX_SAFE_INTEGER,

@@ -138,7 +138,7 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   // 用户主动上滑才停止跟随（handleWheel），内容高度增长不误判为用户离开；
   // 流式结束/内容测量完成后 compensateScroll 补偿贴底。
   const scrollState = useMessageAutoScroll(virtuosoRef, { isStreaming: scrollIsStreaming, initialAutoScroll: atBottomOnMount });
-  const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, setAutoScroll, compensateScroll, setScrollerRef, suspendFollow } = scrollState;
+  const { autoScroll, followOutput, handleAtBottomStateChange, handleWheel, handleScroll, setAutoScroll, compensateScroll, setScrollerRef, suspendFollow } = scrollState;
 
   // 流式结束 / 内容变化后补偿一次贴底（锚点模式核心：测量完成后主动贴底）
   useEffect(() => {
@@ -222,13 +222,15 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     return onEditMessage ? { onEdit: onEditMessage } : undefined;
   }, [onEditMessage]);
 
-  // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随
+  // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随；
+  // onScroll 采样距底维护「离开峰值」（方向 A），滚动条拖动/键盘等无 wheel 事件
+  // 的离开也能被识别。
   // （组件内自持，稳定引用避免 Virtuoso 重渲染时整树卸载）
   // react-virtuoso 会给 Scroller 传 ref（内部 scrollerRef），须 forwardRef 转发，
   // 否则 virtuoso 拿不到 DOM（scrollerRef.current=null → 渲染崩溃）。
   const Scroller = useMemo(() => {
     const Scroller = forwardRef<HTMLDivElement, ComponentProps<'div'>>(
-      ({ onWheel: _ignoredWheel, ...props }, ref) => (
+      ({ onScroll: _ignoredScroll, onWheel: _ignoredWheel, ...props }, ref) => (
         <div
           {...props}
           ref={(node) => {
@@ -237,12 +239,13 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
             setScrollerRef(node);
           }}
           onWheel={handleWheel}
+          onScroll={handleScroll}
         />
       )
     );
     Scroller.displayName = 'AutoScrollScroller';
     return Scroller;
-  }, [handleWheel, setScrollerRef]);
+  }, [handleWheel, handleScroll, setScrollerRef]);
 
   return (
     <ChatScrollContext.Provider value={{ suspendFollow }}>
