@@ -353,8 +353,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 4 条内置收紧（cap.data_root*/cap.plugin*/cap.http* + cap.ui* remote deny）
-        assert_eq!(p.rule_count(), 5, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 6 条内置收紧（cap.data_root*/cap.plugin*/cap.http*/cap.bash*/cap.fs*/cap.ui* remote deny）
+        assert_eq!(p.rule_count(), 7, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny

@@ -602,15 +602,6 @@ pub fn run() {
                     .router
                     .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
 
-                // cap.ui.theme / cap.ui.chat —— AI 控制界面（主题配色 / 对话渲染配置）。
-                // 无状态能力：只校验 + 审计 + describe；效果经引擎 tool_call_end 事件落前端 store。
-                let _ = state
-                    .router
-                    .register_handle(Box::new(crate::services::router::UiThemeCapability));
-                let _ = state
-                    .router
-                    .register_handle(Box::new(crate::services::router::UiChatCapability));
-
                 // 桌面 chat-event 中继：订阅广播通道（总线流式与同步直发两条路径
                 // 都经同一 EventBroadcaster），→ Tauri emit + 完成桌面通知。
                 // 旧命令层的 window.emit 双发语义由此承接（step7 §A2）。
