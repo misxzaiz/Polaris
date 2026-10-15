@@ -270,20 +270,24 @@ module.exports = {
         // 面板/浮层（时长梯度：微交互 140 / 浮层 260 / 形变 380）
         'panel-in-fast': 'panel-in 140ms cubic-bezier(.32,.72,0,1)',
         'panel-in': 'panel-in 260ms cubic-bezier(.32,.72,0,1)',
-        'panel-out': 'panel-out 140ms cubic-bezier(.4,0,1,1)',
+        // forwards：动画播完保持 100% 关键帧（opacity 0），避免退场期间
+        // （显存渲染到卸载之间的窗口）样式回落 opacity:1 造成"闪一下"
+        'panel-out': 'panel-out 140ms cubic-bezier(.4,0,1,1) forwards',
         'dialog-in': 'dialog-in 260ms cubic-bezier(.34,1.56,.64,1)',
-        'dialog-out': 'dialog-out 140ms cubic-bezier(.4,0,1,1)',
+        // 退场动画统一 forwards：播完保持 100% 关键帧（透明/移出），
+        // 避免在"动画结束 → 组件卸载"窗口内样式回落造成闪烁/遮罩回弹
+        'dialog-out': 'dialog-out 140ms cubic-bezier(.4,0,1,1) forwards',
         'drawer-in-left': 'drawer-in-left 260ms cubic-bezier(.32,.72,0,1)',
-        'drawer-out-left': 'drawer-out-left 220ms cubic-bezier(.4,0,1,1)',
+        'drawer-out-left': 'drawer-out-left 220ms cubic-bezier(.4,0,1,1) forwards',
         'drawer-in-right': 'drawer-in-right 260ms cubic-bezier(.32,.72,0,1)',
-        'drawer-out-right': 'drawer-out-right 220ms cubic-bezier(.4,0,1,1)',
+        'drawer-out-right': 'drawer-out-right 220ms cubic-bezier(.4,0,1,1) forwards',
         'drawer-in-bottom': 'drawer-in-bottom 260ms cubic-bezier(.32,.72,0,1)',
-        'drawer-out-bottom': 'drawer-out-bottom 220ms cubic-bezier(.4,0,1,1)',
+        'drawer-out-bottom': 'drawer-out-bottom 220ms cubic-bezier(.4,0,1,1) forwards',
         'mask-in': 'mask-in 200ms ease',
-        'mask-out': 'mask-out 180ms ease',
+        'mask-out': 'mask-out 180ms ease forwards',
         'list-item-in': 'list-item-in 220ms cubic-bezier(.32,.72,0,1)',
         'capsule-in': 'capsule-in 260ms cubic-bezier(.32,.72,0,1)',
-        'capsule-out': 'capsule-out 220ms cubic-bezier(.4,0,1,1)',
+        'capsule-out': 'capsule-out 220ms cubic-bezier(.4,0,1,1) forwards',
       },
     },
   },
