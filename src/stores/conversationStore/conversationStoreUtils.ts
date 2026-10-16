@@ -4,6 +4,7 @@ import { sessionStoreManager } from './sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { listPluginMcpServerStatuses } from '@/plugin-system'
 import { usePluginStore } from '../pluginStore'
+import { useConfigStore } from '../configStore'
 import { getUserSystemPrompt } from '@/services/workspaceReference'
 import { toAppError, ErrorSource } from '@/types/errors'
 import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
@@ -58,9 +59,17 @@ export function resolveRuntimeConfigForEngine(
 }
 
 export function getDisabledPluginMcpServers(): string[] {
-  return listPluginMcpServerStatuses(usePluginStore.getState().pluginStates)
+  const list = listPluginMcpServerStatuses(usePluginStore.getState().pluginStates)
     .filter((server) => !server.enabled)
     .map((server) => server.id)
+  // cap.ui 控制界面能力（主题/对话渲染）默认不暴露给 AI：uiControlEnabled 关闭
+  // （默认）时禁用 bus MCP（polaris-bus），AI 工具集不含 bus_dispatch → 无 cap.ui.*。
+  // 开启后 bus MCP 正常挂载，AI 经 bus_dispatch 调 cap.ui.theme / cap.ui.chat。
+  // 与后端 policy_permission 的 Remote-deny 双保险互补（此处管本地 AI 工具暴露）。
+  if (!useConfigStore.getState().config?.uiControlEnabled) {
+    list.push('polaris-bus')
+  }
+  return list
 }
 
 /**

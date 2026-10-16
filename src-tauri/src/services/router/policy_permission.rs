@@ -177,6 +177,11 @@ impl PolicyPermission {
             // cap.fs 远程禁发：任意路径读取是高敏面，默认只对本地面板（Bootstrap/
             // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
             ("cap.fs", true),
+            // cap.ui 远程禁改：AI 控制界面（主题/对话渲染）作用于本地面板 DOM，
+            // 远程 Web/移动端能力来源于"控制本地 UI"无意义且在跨端场景下会漂移。
+            // 默认只对本地面板（Bootstrap/Plugin）开放；远程需要时经 config 精确 allow。
+            // 注：AI 工具暴露的大闸在前端 uiControlEnabled（默认 false），此处防远程直连旁路。
+            ("cap.ui", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),
@@ -348,8 +353,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 3 条内置收紧（cap.data_root*/cap.plugin*/cap.http* remote deny）
-        assert_eq!(p.rule_count(), 4, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 6 条内置收紧（cap.data_root*/cap.plugin*/cap.http*/cap.bash*/cap.fs*/cap.ui* remote deny）
+        assert_eq!(p.rule_count(), 7, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -378,7 +383,7 @@ mod tests {
         );
         for cap in ["cap.data_root", "cap.data_root.get_info",
                     "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo",
-                    "cap.http"] {
+                    "cap.http", "cap.ui.theme", "cap.ui.chat"] {
             assert_eq!(
                 p.check(&req(cap, Source::Remote { token: "t".into() })).unwrap(),
                 PermissionVerdict::Deny,

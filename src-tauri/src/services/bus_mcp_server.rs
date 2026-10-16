@@ -10,7 +10,8 @@
 //!
 //! - 精选 todo 工具：todo_list / todo_get / todo_create / todo_update /
 //!   todo_complete / todo_delete（对 AI 更友好的显式工具面）
-//! - `bus_dispatch`：通用转发 {target, payload}——白名单当前仅 cap.todo，
+//! - `bus_dispatch`：通用转发 {target, payload}——白名单为应用数据域（cap.todo /
+//!   cap.http / cap.fs / cap.bash）+ UI 域（cap.ui.theme / cap.ui.chat），
 //!   后续按阶段 C 的权限策略逐域放开
 //!
 //! # 与主应用的关系
@@ -43,7 +44,7 @@ const CALLER: &str = "polaris-bus-mcp";
 /// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
 /// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
 ///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash", "cap.fs"];
+const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat"];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -110,8 +111,8 @@ impl McpServerHandler for BusMcpHandler {
         json!({
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）。注意：这是数据读写/网络/文件工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）与对话渲染配置（cap.ui.chat）。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat"] },
                     "payload": { "type": "object" }
                 })),
                 mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态：列出各候选数据根的 ask_listener 元数据（真实端口/token/pid 及存活状态），并对比 mcp.json 固化的端口/token 是否与活跃主进程一致。失联时先用它定位是端口漂移、token 漂移还是主进程未启动。纯读，无副作用。常与 bus_mcp_regenerate 搭配：status 定位 → regenerate 修复", &[], json!({})),
@@ -132,7 +133,7 @@ impl McpServerHandler for BusMcpHandler {
                     .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
                 if !DISPATCH_WHITELIST.contains(&target) {
                     return Ok(tool_error(format!(
-                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash / cap.fs）"
+                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash / cap.fs / cap.ui.theme / cap.ui.chat）"
                     )));
                 }
 
@@ -446,10 +447,13 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
             { "domain": "kv / prompt_snippet / config / data_root / pluginDiscovery / pluginServiceManager", "入口": "主进程总线 cap_dispatch", "状态": "✅ 可触达；config/data_root/plugin* 属管理面，改动全局配置需谨慎（先确认用户意图）" },
             { "domain": "mcp-健康诊断", "工具": "bus_mcp_status / bus_mcp_regenerate", "说明": "诊断 ask_listener 元数据与 mcp.json 配置是否一致，失联时一键改写固化的旧端口/token。均为本 server 直接实现，不依赖 ask 端口（独立通道）", "状态": "✅ 可用" },
+            { "domain": "ui", "capability": "cap.ui.theme / cap.ui.chat", "入口": "bus_dispatch",
+              "协议": "cap.ui.theme: { action: get|patch|applyPreset|listThemes|setActive|export|import }（palette 键=语义色，映射 88 维度 token）；cap.ui.chat: { action: get|patch|reset }（config 字段对齐 ChatDisplaySettings：fontSize/lineHeight/messageSpacing/codeFontSize/fontFamily 等）",
+              "状态": "✅ bus_dispatch 可用；状态真相在前端 store，本能力校验+审计，效果经 tool_call_end 事件落前端" },
             { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
         "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 仍是应用数据域白名单（当前仅 cap.todo），两 server 职责不重叠",
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.ui.theme / cap.ui.chat），两 server 职责不重叠",
             "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
             "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
         },
@@ -514,7 +518,7 @@ impl BusMcpHandler {
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
                 mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs"] },
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat"] },
                     "payload": { "type": "object" }
                 })),
                 mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态", &[], json!({})),

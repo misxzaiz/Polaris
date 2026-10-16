@@ -421,6 +421,10 @@ export interface Config {
   web?: WebConfig;
   /** 派发任务配置（策略/结果注入/队员预设） */
   dispatch?: DispatchConfig;
+  /** 允许 AI 控制界面（cap.ui.* 工具暴露）。默认 false——关闭时 bus MCP
+   *  被禁用，AI 工具集不含 cap.ui.theme / cap.ui.chat。开启后 AI 可改
+   *  主题配色与对话渲染配置（三端同源生效）。 */
+  uiControlEnabled?: boolean;
   /** AI 对话窗口显示设置 */
   chatDisplay?: ChatDisplaySettings;
   /** 工作区列表（跨桌面/Web 共享） */

@@ -18,6 +18,7 @@ import { normalizeEngineId } from '@/utils/engineDisplay'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { dialogStorageService } from '@/services/dialogStorage'
+import { consumeCapUiDispatch } from '@/services/uiDispatchService'
 
 const log = createLogger('EventHandler')
 
@@ -49,6 +50,13 @@ function isTaskBoardTool(toolName: string): boolean {
 function isInteractiveTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
   return n.includes('ask_user_question') || n.includes('askuserquestion') || n === 'form' || n.includes('__form')
+}
+
+/** 判定是否为 bus_dispatch 工具（SimpleAI 经 MCP 挂载 → `mcp__polaris-bus__bus_dispatch`；
+ *  兼容裸名防引擎变体漂移）。命中后检查 cap.ui 消费，避免误作普通工具块。 */
+function isBusDispatchTool(toolName: string): boolean {
+  const n = toolName.toLowerCase()
+  return n.endsWith('bus_dispatch')
 }
 
 /** 从 TaskCreate 输入解析任务项(无 id,流式路径延迟到 tool_call_end 用 output 回传 taskId) */
@@ -243,6 +251,15 @@ export function handleAIEvent(
     case 'tool_call_start': {
       const toolName = event.tool
       const callId = event.callId || generateUUID()
+      // cap.ui 控制界面消费：AI 经 bus_dispatch 调 cap.ui.theme / cap.ui.chat 时，
+      // 立即把参数映射到前端 store（themeStore / configStore），界面即时生效。
+      // 独立于工具卡渲染（工具块照常创建，展示调用轨迹）。
+      if (isBusDispatchTool(toolName)) {
+        const { consumed, message } = consumeCapUiDispatch(event.args as Record<string, unknown> | undefined)
+        if (consumed) {
+          log.info('cap.ui consumed', { tool: toolName, message })
+        }
+      }
       // 交互型工具（ask/form）→ 由 question/form chat-event 渲染专用卡片，
       // 不创建普通 tool_call block（避免与 AskQuestionCard/FormCard 双面板并存）
       if (isInteractiveTool(toolName)) {
