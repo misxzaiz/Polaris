@@ -15,6 +15,8 @@ import {
   buildMeta,
   extractFirstUserText,
   extractTags,
+  parseDialogLines,
+  dedupeAssistantByContent,
 } from './jsonlCodec'
 import { DIALOG_FORMAT_VERSION } from './types'
 import type {
@@ -286,5 +288,105 @@ describe('jsonlCodec - 分析列', () => {
     expect(meta.tags).toContain('Grep')
     expect(meta.v).toBe(DIALOG_FORMAT_VERSION)
     expect(meta.type).toBe('meta')
+  })
+})
+
+// ============================================================================
+// Phase 0：assistant 内容指纹去重（根治「重复 AI 回复」）
+// ============================================================================
+
+describe('jsonlCodec - assistant 内容指纹去重', () => {
+  it('同内容不同 id 收敛为一条（保留最后一条）', () => {
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: assistantMsg('id-1', '重复回复') },
+      { type: 'msg' as const, seq: 1, message: assistantMsg('id-2', '重复回复') },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result).toHaveLength(1)
+    expect(result[0].message.id).toBe('id-2')
+  })
+
+  it('保留首次出现的位置（顺序稳定）', () => {
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: userMsg('u1', '问') },
+      { type: 'msg' as const, seq: 1, message: assistantMsg('id-1', '复') },
+      { type: 'msg' as const, seq: 2, message: assistantMsg('id-2', '复') },
+      { type: 'msg' as const, seq: 3, message: userMsg('u2', '追问') },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result.map((l) => l.message.id)).toEqual(['u1', 'id-2', 'u2'])
+  })
+
+  it('不同内容的 assistant 都保留', () => {
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: assistantMsg('a1', '内容A') },
+      { type: 'msg' as const, seq: 1, message: assistantMsg('a2', '内容B') },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result).toHaveLength(2)
+  })
+
+  it('流式快照(st=True) + 完成版(st=False) 同内容收敛为完成版', () => {
+    const streaming = { ...assistantMsg('same-id', '回复'), isStreaming: true }
+    const done = { ...assistantMsg('same-id', '回复'), isStreaming: false }
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: streaming },
+      { type: 'msg' as const, seq: 1, message: done },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result).toHaveLength(1)
+    expect((result[0].message as AssistantChatMessage).isStreaming).toBe(false)
+  })
+
+  it('实测场景：3 个不同 id 同内容收敛为 1', () => {
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: assistantMsg('b045bc1d', '你好，我是 Polaris') },
+      { type: 'msg' as const, seq: 1, message: assistantMsg('41b1597c', '你好，我是 Polaris') },
+      { type: 'msg' as const, seq: 2, message: assistantMsg('3bdf9456', '你好，我是 Polaris') },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result).toHaveLength(1)
+    expect(result[0].message.id).toBe('3bdf9456')
+  })
+
+  it('空指纹（无 text 块）的 assistant 不参与去重', () => {
+    const empty1: AssistantChatMessage = {
+      id: 'e1', type: 'assistant', timestamp: 't', engineId: 'e',
+      blocks: [{ type: 'tool_call', id: 'tc1', name: 'bash', input: {}, status: 'completed' }],
+    }
+    const empty2: AssistantChatMessage = { ...empty1, id: 'e2' }
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: empty1 },
+      { type: 'msg' as const, seq: 1, message: empty2 },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result).toHaveLength(2)
+  })
+
+  it('幂等：无重复时原样返回', () => {
+    const lines = [
+      { type: 'msg' as const, seq: 0, message: userMsg('u1', 'q') },
+      { type: 'msg' as const, seq: 1, message: assistantMsg('a1', '回复A') },
+      { type: 'msg' as const, seq: 2, message: assistantMsg('a2', '回复B') },
+    ]
+    const result = dedupeAssistantByContent(lines)
+    expect(result.map((l) => l.message.id)).toEqual(['u1', 'a1', 'a2'])
+  })
+
+  it('parseDialogLines 端到端：磁盘同内容多 id 经解析后收敛', () => {
+    const meta = buildMeta({
+      ...META_BASE,
+      messages: [assistantMsg('id-1', '重复回复')],
+    })
+    const jsonl = [
+      JSON.stringify(meta),
+      JSON.stringify({ type: 'msg', seq: 0, message: assistantMsg('id-1', '重复回复') }),
+      JSON.stringify({ type: 'msg', seq: 1, message: assistantMsg('id-2', '重复回复') }),
+      JSON.stringify({ type: 'msg', seq: 2, message: assistantMsg('id-3', '重复回复') }),
+    ].join('\n')
+    const result = parseDialogLines(jsonl)
+    expect(result).not.toBeNull()
+    expect(result!.lines).toHaveLength(1)
+    expect(result!.lines[0].message.id).toBe('id-3')
   })
 })

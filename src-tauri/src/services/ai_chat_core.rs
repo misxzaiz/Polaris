@@ -117,6 +117,14 @@ pub struct ChatRequestOptions {
     /// 前端生成的用户消息 ID（透传至 UserMessageEvent，本机回显去重用）
     #[serde(default)]
     pub client_message_id: Option<String>,
+    /// 前端预生成的 assistant 消息 ID（用于 turn_persist adopt，消除 id 漂移）。
+    ///
+    /// 背景：同一轮回复此前会被赋予不同 id（前端 currentMessage 的 generateUUID
+    /// 与后端 turn_persist 的 `xxx#axxx`），导致磁盘同内容多 id 并存、读取去重失效。
+    /// 前端在 sendMessage 时预生成 assistant id 传给后端，后端 turn_persist
+    /// 在 new_turn 时 adopt 它，实现全链路 id 统一。
+    #[serde(default)]
+    pub assistant_message_id: Option<String>,
 }
 
 // ============================================================================
@@ -945,6 +953,7 @@ pub async fn start_chat_inner(
     crate::services::turn_persist::record_user_request(
         &message,
         options.client_message_id.as_deref(),
+        options.assistant_message_id.as_deref(),
     );
 
     let processed =
@@ -1631,6 +1640,7 @@ pub async fn continue_chat_inner(
         &session_id,
         &message,
         options.client_message_id.as_deref(),
+        options.assistant_message_id.as_deref(),
     );
 
     if let Some(ref dir) = options.work_dir {

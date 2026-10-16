@@ -21,6 +21,7 @@ import { getClaudeCodeHistoryService } from './claudeCodeHistoryService'
 import { normalizeEngineId } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 import { dialogStorageService } from './dialogStorage'
+import { assistantTextFp } from './dialogStorage/jsonlCodec'
 import { useHistoryPrefsStore } from '@/stores/historyPrefsStore'
 import { dedupeMessagesById, normalizeRecoveredMessages } from '@/stores/conversationStore/dedupMessages'
 import { loadBackendMessages } from './sessionArchive'
@@ -30,9 +31,11 @@ const log = createLogger('HistoryService')
 /**
  * 合并后端消息库中的消息（S6）。
  *
- * 归档（JSONL）与消息库共用同一套消息 id（后端分配、前端 adopt），因此合并是精确的：
- * 归档已有的 id 以归档为准（轮末 canonical 版），只追加归档缺失的消息——
- * 典型为「归档尚未落盘的进行中轮次」（客户端中途关闭 / 归档前被中断）。
+ * 归档（JSONL）与消息库共用同一套消息 id（Phase 2 后端 adopt 前端 id），
+ * 因此合并是精确的：归档已有的 id 以归档为准，只追加归档缺失的消息。
+ *
+ * 防御：即便 id 仍有漂移（历史数据），也按 assistant 内容指纹二次收敛——
+ * 同内容的消息不重复追加（避免「同内容不同 id」的重复 AI 回复）。
  */
 async function mergeBackendMessages(
   conversationId: string,
@@ -40,8 +43,23 @@ async function mergeBackendMessages(
 ): Promise<ChatMessage[]> {
   const backend = await loadBackendMessages(conversationId)
   if (backend.length === 0) return archived
-  const known = new Set(archived.map((m) => m.id))
-  const extra = backend.filter((m) => !known.has(m.id))
+  // 已有的内容指纹集合（assistant 文本指纹 + id 集合双口径）
+  const knownIds = new Set(archived.map((m) => m.id))
+  const knownFps = new Set(
+    archived
+      .filter((m) => m.type === 'assistant')
+      .map((m) => assistantTextFp(m))
+      .filter(Boolean),
+  )
+  const extra = backend.filter((m) => {
+    if (knownIds.has(m.id)) return false
+    // id 不同但内容指纹相同 → 视为同一条消息的漂移副本，不追加
+    if (m.type === 'assistant') {
+      const fp = assistantTextFp(m)
+      if (fp && knownFps.has(fp)) return false
+    }
+    return true
+  })
   if (extra.length === 0) return archived
   // 补入的消息尾部追加（时间上最新），并对 isStreaming 残留做中断态归一
   return normalizeRecoveredMessages([...archived, ...extra])
@@ -385,7 +403,7 @@ export const historyService = {
     }
   },
 
-  /** 引擎原生 + localStorage 历史——「引擎历史」Tab 数据源 */
+  /** 引擎原生历史——「引擎历史」Tab 数据源 */
   async listNativeHistory(
     scope: HistoryScope,
     page: number,
@@ -396,23 +414,7 @@ export const historyService = {
     const currentWorkspace = useWorkspaceStore.getState().getCurrentWorkspace()
     const includeClaudeCode = engines.includes('claude-code')
 
-    // 1. localStorage 轻量条目
-    const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-    const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-    const localItems: UnifiedHistoryItem[] = localHistory
-      .filter((h) =>
-        engines.includes(normalizeEngineId(h.engineId || 'claude-code') as HistoryEngineFilter),
-      )
-      .map((h) => ({
-        id: h.id,
-        title: h.title,
-        timestamp: h.timestamp,
-        messageCount: h.messageCount,
-        engineId: h.engineId || 'claude-code',
-        source: 'local' as const,
-      }))
-
-    // 2. 后端分页 API
+    // 后端分页 API
     const workDir = targetWorkDir ??
       (scope === 'workspace' ? currentWorkspace?.path ?? null : null)
     const emptyPagedResult = { items: [], total: 0, page, pageSize, totalPages: 0 }
@@ -422,7 +424,7 @@ export const historyService = {
         : Promise.resolve(emptyPagedResult),
     ])
 
-    const claudeNativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map((s) => ({
+    const nativeItems: UnifiedHistoryItem[] = claudePagedResult.items.map((s) => ({
       id: s.sessionId,
       title: s.summary || '无标题会话',
       timestamp: s.updatedAt || s.createdAt || new Date().toISOString(),
@@ -437,16 +439,12 @@ export const historyService = {
       gitBranch: s.gitBranch,
       linkedPr: s.linkedPr,
     }))
-    const nativeItems = claudeNativeItems
-    const nativeIdSet = new Set(nativeItems.map((n) => n.id))
-    const uniqueLocalItems = localItems.filter((l) => !nativeIdSet.has(l.id))
-    const merged = [...uniqueLocalItems, ...nativeItems]
-    merged.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    nativeItems.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
 
-    const total = claudePagedResult.total + uniqueLocalItems.length
+    const total = claudePagedResult.total
     const totalPages = Math.ceil(total / pageSize)
 
-    return { items: merged, total, page, pageSize, totalPages, hasMore: page < totalPages }
+    return { items: nativeItems, total, page, pageSize, totalPages, hasMore: page < totalPages }
   },
 
   // ============================================================================
@@ -486,6 +484,20 @@ export const historyService = {
         loaded.externalSessionId || sessionId,
         { title: loaded.title, workspaceId, engineId: loaded.engineId, paging: loaded.paging },
       )
+
+      // 4. 后端权威对账（Phase 4）：恢复后让 kernel.resyncSession 与后端消息库对账，
+      //    补全 JSONL 归档里可能缺失的进行中轮次（客户端中途关闭场景）。
+      //    失败不阻断恢复（JSONL 已有主体内容）。
+      if (loaded.externalSessionId || sessionId) {
+        try {
+          const { getKernel } = await import('@/session-v2/kernel/registry')
+          const kernel = await getKernel()
+          await kernel.resyncSession(newSessionId)
+          log.info('恢复后 kernel 对账完成', { newSessionId })
+        } catch (e) {
+          log.warn('恢复后 kernel 对账失败（不阻断恢复）', { error: String(e) })
+        }
+      }
 
       log.info('从历史恢复成功', {
         sessionId: newSessionId,
@@ -575,26 +587,7 @@ export const historyService = {
       log.warn('后端消息库兜底读取失败', { error: e instanceof Error ? e.message : String(e) })
     }
 
-    // 2. localStorage
-    const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-    const localHistory: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-    const localSession = localHistory.find((h) => h.id === sessionId)
-
-    // 2.1 localStorage 命中
-    if (localSession) {
-      const restoredEngineId = normalizeEngineId(localSession.engineId || engineId)
-      return {
-        messages: withAssistantEngineId(localSession.data.messages || [], restoredEngineId),
-        title: localSession.title,
-        engineId: restoredEngineId,
-        externalSessionId: localSession.id,
-        workspacePath: null,
-        source: 'local',
-        paging: null,
-      }
-    }
-
-    // 3. Claude Code 原生
+    // 2. Claude Code 原生
     if (!engineId || engineId === 'claude-code') {
       const claudeCodeService = getClaudeCodeHistoryService()
       const messages = await claudeCodeService.getSessionHistory(sessionId, claudeProjectName)

@@ -205,8 +205,8 @@ export function parseDialogLines(
   // 按 seq 升序排序，保证顺序正确（核心：根治错乱）
   msgLines.sort((a, b) => a.seq - b.seq)
 
-  // 按消息 id 去重：WAL 式增量 append 与轮末整体覆写并存时，同一条消息可能出现
-  // 多行（append 竞速 rewrite）。保留「首次出现的位置 + 最后一次出现的内容」。
+  // 第一道：按消息 id 去重。WAL 式增量 append 与轮末整体覆写并存时，同一条消息
+  // 可能出现多行（同 id 的流式快照 + 完成版）。保留「首次位置 + 末内容」。
   const byId = new Map<string, DialogMessageLine>()
   for (const l of msgLines) {
     if (!isValidMessage(l.message)) continue
@@ -218,7 +218,64 @@ export function parseDialogLines(
     }
   }
 
-  return { meta, lines: [...byId.values()] }
+  // 第二道：按 assistant 内容指纹去重。同一轮回复在流式/落定/恢复过程中可能被
+  // 赋予不同 id（id 漂移），按 id 去重无法收敛。指纹 = blocks 中 text 块 content
+  // 拼接并 trim；同指纹只保留最后一条（canonical 完成版），放置在首次出现的位置。
+  const lines = dedupeAssistantByContent([...byId.values()])
+
+  return { meta, lines }
+}
+
+/**
+ * 按 assistant 内容指纹去重消息行（读取侧去重契约的第二道）。
+ *
+ * - 仅对有 text 块内容的 assistant 生效（user/tool 的内容相同通常是合法重发）
+ * - 同指纹只保留最后一条（完成版优先于流式快照），放置在首次出现的位置
+ * - 幂等：无重复时原样返回
+ */
+export function dedupeAssistantByContent(lines: DialogMessageLine[]): DialogMessageLine[] {
+  if (lines.length <= 1) return lines
+  const firstIdx = new Map<string, number>()
+  const lastLine = new Map<string, DialogMessageLine>()
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].message
+    if (m.type !== 'assistant') continue
+    const fp = assistantTextFp(m)
+    if (!fp) continue
+    if (!firstIdx.has(fp)) firstIdx.set(fp, i)
+    lastLine.set(fp, lines[i])
+  }
+  if (firstIdx.size === 0) return lines
+  const used = new Set<string>()
+  const out: DialogMessageLine[] = []
+  for (let i = 0; i < lines.length; i++) {
+    const m = lines[i].message
+    if (m.type === 'assistant') {
+      const fp = assistantTextFp(m)
+      if (fp) {
+        if (used.has(fp)) continue
+        used.add(fp)
+        const last = lastLine.get(fp)
+        if (last) out.push(last)
+        continue
+      }
+    }
+    out.push(lines[i])
+  }
+  return out
+}
+
+/** 提取 assistant 消息的文本指纹：blocks 中 text 块 content 拼接并 trim。 */
+export function assistantTextFp(msg: ChatMessage): string {
+  if (msg.type !== 'assistant' || !Array.isArray(msg.blocks)) return ''
+  let s = ''
+  for (const b of msg.blocks) {
+    if (b && typeof b === 'object' && (b as { type?: string }).type === 'text') {
+      const c = (b as { content?: string }).content
+      if (typeof c === 'string') s += c
+    }
+  }
+  return s.trim()
 }
 
 /**

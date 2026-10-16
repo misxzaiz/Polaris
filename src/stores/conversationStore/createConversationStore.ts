@@ -227,12 +227,18 @@ export function createConversationStore(
     return resolveSessionEngine(sessionId, deps.getConfig()?.defaultEngine)
   }
 
-  const createCurrentAssistantMessage = (blocks: ContentBlock[]) => ({
-    id: generateUUID(),
-    engineId: getCurrentEngineId(),
-    blocks,
-    isStreaming: true as const,
-  })
+  const createCurrentAssistantMessage = (blocks: ContentBlock[]) => {
+    // adopt 预生成的 id（sendMessage 时分配，与后端 turn_persist 一致）；
+    // 无预生成时回退到 generateUUID（兼容旧路径 / 非发送触发的创建）
+    const id = _pendingAssistantMessageId ?? generateUUID()
+    _pendingAssistantMessageId = null // adopt 后清空，避免泄漏到下一轮
+    return {
+      id,
+      engineId: getCurrentEngineId(),
+      blocks,
+      isStreaming: true as const,
+    }
+  }
 
   // ===== 流式文本缓冲区 =====
   // 段落级缓冲策略：
@@ -241,6 +247,9 @@ export function createConversationStore(
   // 3. 超时保护：STREAM_FLUSH_INTERVAL 内没有段落结束也 flush
   let _textBuffer = ''
   let _paragraphTimer: ReturnType<typeof setTimeout> | null = null
+  // 预生成的 assistant 消息 id（sendMessage 时分配，传给后端 + createCurrentAssistantMessage adopt）。
+  // 消除 id 漂移：同一轮回复在前端 currentMessage 和后端 turn_persist 用同一个 id。
+  let _pendingAssistantMessageId: string | null = null
   // 上一次压缩操作的可见范围，用于防止反馈循环（压缩→高度变化→新 range→再压缩）
   let _lastCompactionRange: { start: number; end: number } | null = null
   // 磁盘分页加载锁：防止向上滚动连续触发重复读盘
@@ -332,6 +341,8 @@ export function createConversationStore(
           clearTimeout(_paragraphTimer)
           _paragraphTimer = null
         }
+        // 清除预生成的 assistant id（本轮结束，无论是否被 adopt 都不再需要）
+        _pendingAssistantMessageId = null
 
         const { currentMessage, messages } = get()
         if (currentMessage) {
@@ -1925,6 +1936,10 @@ export function createConversationStore(
             mimeType: a.mimeType,
           })),
         }
+        // 预生成本轮 assistant 消息 id：前端 currentMessage 与后端 turn_persist 共用，
+        // 从源头消除 id 漂移（同一轮回复不再被赋予不同 id）。
+        const assistantMessageId = generateUUID()
+        _pendingAssistantMessageId = assistantMessageId
         get().addMessage(userMessage)
 
         if (messages.length === 0) {
@@ -2029,6 +2044,7 @@ export function createConversationStore(
             modelProfileId: effectiveProfileId,
             profileMode,
             clientMessageId: userMessage.id,
+            assistantMessageId,
           }
 
           if (conversationId) {

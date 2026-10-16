@@ -316,18 +316,9 @@ export async function loadConversationMessages(
  *
  * - claude-code-native：CLI 原生历史
  * - self：self JSONL
- * - local：localStorage 旧版轻量历史
  */
 async function loadHistoryChatMessages(item: UnifiedHistoryItem): Promise<ChatMessage[]> {
   const engineId = normalizeEngineId(item.engineId)
-
-  // local 旧版历史优先（内存里有完整 messages）
-  const historyJson = localStorage.getItem('event_chat_session_history')
-  const localHistory = historyJson ? JSON.parse(historyJson) : []
-  const localSession = localHistory.find((h: { id: string }) => h.id === item.id)
-  if (localSession?.data?.messages?.length > 0) {
-    return withAssistantEngineId(localSession.data.messages, engineId)
-  }
 
   try {
     if (engineId === 'claude-code') {

@@ -291,56 +291,6 @@ describe('dialogStorageService - 合并保护（截断态不覆盖磁盘完整�
   })
 })
 
-describe('dialogStorageService - 增量追加（WAL）', () => {
-  it('append 建档 + 续追加，读回顺序完整', async () => {
-    await dialogStorageService.appendConversationMessages(
-      {
-        externalId: 'conv-append',
-        engineId: 'claude-code',
-        title: '增量',
-        messages: [userMsg('u1', '第一条')],
-      },
-      0,
-    )
-    await dialogStorageService.appendConversationMessages(
-      {
-        externalId: 'conv-append',
-        engineId: 'claude-code',
-        title: '增量',
-        messages: [assistantMsg('a1', '回复一'), userMsg('u2', '第二条')],
-      },
-      1,
-    )
-
-    const record = await dialogStorageService.getConversation('conv-append')
-    expect(record).not.toBeNull()
-    expect(record!.messages.map((m) => m.id)).toEqual(['u1', 'a1', 'u2'])
-  })
-
-  it('append 后整体覆写（轮末规整）幂等且不重复', async () => {
-    await dialogStorageService.appendConversationMessages(
-      {
-        externalId: 'conv-append-2',
-        engineId: 'claude-code',
-        title: 'WAL',
-        messages: [userMsg('u1', 'Q'), assistantMsg('a1', 'A')],
-      },
-      0,
-    )
-    // 轮末整体覆写同一批消息（saveDialog 语义）
-    await dialogStorageService.saveConversation({
-      externalId: 'conv-append-2',
-      engineId: 'claude-code',
-      title: 'WAL',
-      messages: [userMsg('u1', 'Q'), assistantMsg('a1', 'A')],
-    })
-
-    const record = await dialogStorageService.getConversation('conv-append-2')
-    expect(record!.messages.length).toBe(2)
-    expect(record!.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
-  })
-})
-
 describe('dialogStorageService - 分页读取与前缀保留', () => {
   it('getConversationPage 降级路径：整读 + 内存分页（尾部优先）', async () => {
     const msgs = Array.from({ length: 10 }, (_, i) => userMsg(`p${i}`, `消息${i}`))

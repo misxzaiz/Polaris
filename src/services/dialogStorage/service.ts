@@ -21,8 +21,8 @@ import {
   parseDialogLines,
   parseMeta,
   parseMessageLine,
-  serializeMessageLine,
   buildMeta,
+  assistantTextFp,
 } from './jsonlCodec'
 import type {
   DialogMeta,
@@ -68,6 +68,52 @@ function enqueuePersist(key: string, job: () => Promise<void>): Promise<void> {
     if (persistChains.get(key) === next) persistChains.delete(key)
   })
   return next
+}
+
+// ============================================================================
+// 保存侧 assistant 内容指纹去重
+// ============================================================================
+
+/**
+ * 对 ChatMessage[] 做 assistant 内容指纹去重（保存侧去重契约）。
+ *
+ * 同一轮回复若在内存中被赋予不同 id（id 漂移），整体覆写时会把重复条目一并落盘。
+ * 写盘前按 assistant 内容指纹收敛：同内容只保留最后一条（canonical 完成版），
+ * 放置在首次出现的位置（保持对话顺序）。
+ *
+ * 与 jsonlCodec.dedupeAssistantByContent 对应（一个操作 ChatMessage[]，一个操作 DialogMessageLine[]），
+ * 复用相同的 assistantTextFp 指纹函数，保证读写两侧语义一致。
+ */
+function dedupeAssistantMessages(messages: ChatMessage[]): ChatMessage[] {
+  if (messages.length <= 1) return messages
+  const firstIdx = new Map<string, number>()
+  const lastMsg = new Map<string, ChatMessage>()
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (m.type !== 'assistant') continue
+    const fp = assistantTextFp(m)
+    if (!fp) continue
+    if (!firstIdx.has(fp)) firstIdx.set(fp, i)
+    lastMsg.set(fp, m)
+  }
+  if (firstIdx.size === 0) return messages
+  const used = new Set<string>()
+  const out: ChatMessage[] = []
+  for (let i = 0; i < messages.length; i++) {
+    const m = messages[i]
+    if (m.type === 'assistant') {
+      const fp = assistantTextFp(m)
+      if (fp) {
+        if (used.has(fp)) continue
+        used.add(fp)
+        const last = lastMsg.get(fp)
+        if (last) out.push(last)
+        continue
+      }
+    }
+    out.push(m)
+  }
+  return out
 }
 
 // ============================================================================
@@ -202,7 +248,10 @@ class DialogStorageServiceImpl {
         }
       }
 
-      const allMessages = prefix.length > 0 ? [...prefix, ...finalMessages] : finalMessages
+      const rawMessages = prefix.length > 0 ? [...prefix, ...finalMessages] : finalMessages
+      // 保存侧去重契约：同一轮回复若在内存中被赋予不同 id（id 漂移），整体覆写
+      // 前必须按 assistant 内容指纹收敛，否则磁盘重复会随每次保存自我繁殖。
+      const allMessages = dedupeAssistantMessages(rawMessages)
 
       const meta = buildMeta({
         externalId: input.externalId,
@@ -229,59 +278,6 @@ class DialogStorageServiceImpl {
       })
     })
     return { prefixCount }
-  }
-
-  /**
-   * 增量追加消息（WAL 式崩溃保护）
-   *
-   * 消息完成即落盘：崩溃/刷新最多丢"正在流式的半条消息"，不再丢整轮。
-   * 文件不存在时用 meta 建档（此时 input.messages 应为从 seq 0 起的全量）。
-   * meta 的 messageCount/updatedAt 允许暂时陈旧，轮末 saveConversation 规整。
-   */
-  async appendConversationMessages(input: SaveDialogInput, startSeq: number): Promise<void> {
-    if (!input.externalId || input.messages.length === 0) return
-
-    return enqueuePersist(input.externalId, async () => {
-      const backend = getDialogBackend()
-      const fileName = dialogFileName(input.externalId)
-      const lines = input.messages.map((m, i) => serializeMessageLine(m, startSeq + i))
-      const metaLine = JSON.stringify(
-        buildMeta({
-          externalId: input.externalId,
-          engineId: input.engineId,
-          title: input.title,
-          workspaceId: input.workspaceId,
-          workspacePath: input.workspacePath,
-          messages: input.messages,
-          updatedAt: new Date().toISOString(),
-        }),
-      )
-
-      if (typeof backend.appendFile === 'function') {
-        await backend.appendFile(fileName, metaLine, lines)
-      } else {
-        // 降级：读-拼-写（老 mock 后端）
-        const existing = await backend.readFile(fileName)
-        if (existing != null && existing.length > 0) {
-          const sep = existing.endsWith('\n') ? '' : '\n'
-          await backend.writeFile(fileName, existing + sep + lines.join('\n') + '\n')
-        } else {
-          await backend.writeFile(fileName, metaLine + '\n' + lines.join('\n') + '\n')
-        }
-      }
-
-      invalidateMetaCache()
-      // 追加的消息是完整态，直接补进恢复缓存（若已加载）
-      const cached = msgMapCache.get(input.externalId)
-      if (cached) {
-        for (const m of input.messages) cached.set(m.id, m)
-      }
-      log.debug('会话增量追加', {
-        externalId: input.externalId,
-        appended: lines.length,
-        startSeq,
-      })
-    })
   }
 
   /**

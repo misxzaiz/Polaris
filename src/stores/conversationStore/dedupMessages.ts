@@ -1,18 +1,15 @@
 /**
  * 恢复读取侧的「按消息 id 去重」工具。
  *
- * 背景：流式 checkpoint 会把"进行中的 assistant 消息"以同 id 增量追加到 JSONL
- * （同 id 多行 = 同一消息的不同快照，最后一行内容最新）；而后端 `dialog_read_page`
- * 是纯追加不做去重，前端读取时必须按 id 收敛：
- * - 保留「首次出现的位置 + 最后一次出现的内容」（与 jsonlCodec parseDialogLines 同规则）
- * - 全局全量读取（getConversation）已由 parseDialogLines 去重，无需再处理；
- *   本工具只用于**尾部优先分页（只 parse 一页）**与**恢复注入**路径。
+ * 背景：磁盘 JSONL 中同一消息可能出现多行（轮末整体覆写与历史遗留的流式快照并存），
+ * 按消息 id 收敛：保留「首次出现的位置 + 最后一次出现的内容」。
+ * 全局全量读取（getConversation）已由 parseDialogLines 去重，无需再处理；
+ * 本工具只用于**尾部优先分页（只 parse 一页）**与**恢复注入**路径。
  *
- * 归一化：流式 checkpoint 快照带 `isStreaming: true` 落盘；历史恢复后已无流式，
- * 若恢复时不处理，末条快照会被当成"进行中消息"，与后端引擎上下文不一致。
- * 恢复侧统一把它归一为**中断态完整消息**：isStreaming 置 false 并标记 interrupted，
- * 保留已输出的 blocks 供展示；同时对已经完整的消息补 timestamp（隔离已有 checkpoint
- * 写入的写侧缺省 timestamp 的历史遗留）。
+ * 归一化：历史遗留的流式快照带 `isStreaming: true` 落盘；恢复后已无流式，
+ * 若不处理，末条快照会被当成"进行中消息"，与后端引擎上下文不一致。
+ * 恢复侧统一归一为**中断态完整消息**：isStreaming 置 false 并标记 interrupted，
+ * 保留已输出的 blocks 供展示；同时对已完整消息补 timestamp（隔离历史遗留缺省）。
  */
 import type { ChatMessage } from '@/types'
 

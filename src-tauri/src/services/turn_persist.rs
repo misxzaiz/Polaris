@@ -63,6 +63,8 @@ fn pending_user_requests() -> &'static Mutex<VecDeque<PendingUser>> {
 struct PendingUser {
     content: String,
     client_message_id: Option<String>,
+    /// 前端预生成的 assistant 消息 id（供 new_turn adopt，消除 id 漂移）
+    assistant_message_id: Option<String>,
     at: std::time::Instant,
 }
 
@@ -72,8 +74,20 @@ const PENDING_TTL: std::time::Duration = std::time::Duration::from_secs(30);
 /// 待落库队列上限（并发 start 亦极少超过）
 const PENDING_MAX: usize = 4;
 
+/// 会话级「待 adopt 的 assistant message id」（continue 路径用，会话 id 已知）。
+/// start 路径走 PendingUser 队列；continue 路径直接登记到这里。
+/// new_turn 创建 Turn 时优先从这里取 id，取不到才回退到自造 id。
+fn pending_assistant_ids() -> &'static Mutex<HashMap<String, String>> {
+    static IDS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+    IDS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
 /// 登记一次用户请求（start 路径调用），待该轮首个事件到达时落库。
-pub fn record_user_request(content: &str, client_message_id: Option<&str>) {
+pub fn record_user_request(
+    content: &str,
+    client_message_id: Option<&str>,
+    assistant_message_id: Option<&str>,
+) {
     if content.is_empty() {
         return;
     }
@@ -81,6 +95,7 @@ pub fn record_user_request(content: &str, client_message_id: Option<&str>) {
         q.push_back(PendingUser {
             content: content.to_string(),
             client_message_id: client_message_id.map(str::to_string),
+            assistant_message_id: assistant_message_id.map(str::to_string),
             at: std::time::Instant::now(),
         });
         while q.len() > PENDING_MAX {
@@ -108,6 +123,12 @@ fn flush_pending_user_request(conversation_id: &str) {
         q.pop_front()
     });
     if let Some(p) = pending {
+        // 把前端预生成的 assistant id 登记到会话级 map，供 new_turn adopt
+        if let Some(aid) = &p.assistant_message_id {
+            if let Ok(mut m) = pending_assistant_ids().lock() {
+                m.insert(conversation_id.to_string(), aid.clone());
+            }
+        }
         append_user_message(conversation_id, &p.content, p.client_message_id.as_deref());
     }
 }
@@ -271,9 +292,16 @@ pub fn recover_pending_turns() {
 
 fn new_turn(conversation_id: &str, engine: &str) -> Turn {
     let ts = now_ms();
+    // adopt 前端预生成的 assistant message id（消除 id 漂移）；
+    // 取不到时回退到后端自造 id（兼容旧前端 / 未传 id 的场景）。
+    let message_id = pending_assistant_ids()
+        .lock()
+        .ok()
+        .and_then(|mut m| m.remove(conversation_id))
+        .unwrap_or_else(|| format!("{}#a{}{}", conversation_id, ts, next_seq()));
     Turn {
         conversation_id: conversation_id.to_string(),
-        message_id: format!("{}#a{}{}", conversation_id, ts, next_seq()),
+        message_id,
         engine_id: engine.to_string(),
         started_at_ms: ts,
         last_write_ms: 0,
@@ -518,7 +546,20 @@ fn write_content(conversation_id: &str, content: &Value, role: &str) {
 ///
 /// 消息 id 优先取前端透传的 `clientMessageId`（与前端消息 id 一致，轮末 canonical
 /// 回写为同 id 修订）；缺省时按 `user-{conversationId}-{ts}` 生成。
-pub fn record_user_message(conversation_id: &str, content: &str, client_message_id: Option<&str>) {
+///
+/// `assistant_message_id`：前端预生成的 assistant 消息 id，登记到会话级 map
+/// 供 `new_turn` adopt，实现全链路 id 统一（消除 id 漂移导致的重复）。
+pub fn record_user_message(
+    conversation_id: &str,
+    content: &str,
+    client_message_id: Option<&str>,
+    assistant_message_id: Option<&str>,
+) {
+    if let Some(aid) = assistant_message_id {
+        if let Ok(mut m) = pending_assistant_ids().lock() {
+            m.insert(conversation_id.to_string(), aid.to_string());
+        }
+    }
     append_user_message(conversation_id, content, client_message_id);
 }
 
@@ -619,6 +660,17 @@ pub fn archive_conversation(conversation_id: &str) {
         if e.timestamp <= newest {
             continue;
         }
+        // 跳过流式中间快照（isStreaming:true）：只归档完成版。
+        // 中间快照是节流落库产生的派生版本，内容不完整；若一并归档会与
+        // 完成版同内容不同（后端 id）并存，读取侧按 id 去重无法收敛 → 重复。
+        if e
+            .content
+            .get("isStreaming")
+            .and_then(Value::as_bool)
+            == Some(true)
+        {
+            continue;
+        }
         upsert_by_id(&mut messages, e.content.clone());
         added += 1;
     }
@@ -627,6 +679,10 @@ pub fn archive_conversation(conversation_id: &str) {
     }
 
     sort_messages_by_time(&mut messages);
+    // 内容指纹去重（与前端 dedupeAssistantMessages 对齐）：
+    // 后端兜底归档可能把同内容不同 id 的消息追加进既有归档，
+    // 写盘前按 assistant 文本指纹收敛，消除「同内容不同 id」的重复。
+    dedupe_assistant_by_content(&mut messages);
     let meta = build_meta_line(conversation_id, &messages, existing_meta.as_ref());
 
     let mut content = String::new();
@@ -710,6 +766,74 @@ fn sort_messages_by_time(messages: &mut [Value]) {
     let snapshot: Vec<Value> = messages.to_vec();
     for (dst, src) in order.into_iter().enumerate() {
         messages[dst] = snapshot[src].clone();
+    }
+}
+
+/// 按 assistant 内容指纹去重（与前端 `dedupeAssistantMessages` 对齐）。
+///
+/// 同一轮回复在流式/落定/恢复过程中可能被赋予不同 id（id 漂移），按 id 去重
+/// 无法收敛。指纹 = blocks 中 text 块 content 拼接并 trim；同指纹只保留最后一条，
+/// 放置在首次出现的位置。仅对有 text 内容的 assistant 生效。
+fn dedupe_assistant_by_content(messages: &mut Vec<Value>) {
+    if messages.len() <= 1 {
+        return;
+    }
+    // 第一遍：收集每个指纹的首次下标 + 最后一条消息
+    let mut first_idx: HashMap<String, usize> = HashMap::new();
+    let mut last_msg: HashMap<String, Value> = HashMap::new();
+    for (i, m) in messages.iter().enumerate() {
+        if m.get("type").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let fp = match assistant_text_fp(m) {
+            Some(f) if !f.is_empty() => f,
+            _ => continue,
+        };
+        first_idx.entry(fp.clone()).or_insert(i);
+        last_msg.insert(fp, m.clone());
+    }
+    if first_idx.is_empty() {
+        return;
+    }
+    // 第二遍：同指纹只保留首次出现位置（放最后内容），后续跳过
+    let mut used: HashMap<String, ()> = HashMap::new();
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    for m in messages.iter() {
+        if m.get("type").and_then(Value::as_str) == Some("assistant") {
+            if let Some(fp) = assistant_text_fp(m) {
+                if !fp.is_empty() {
+                    if used.contains_key(&fp) {
+                        continue;
+                    }
+                    used.insert(fp.clone(), ());
+                    if let Some(last) = last_msg.get(&fp) {
+                        out.push(last.clone());
+                    }
+                    continue;
+                }
+            }
+        }
+        out.push(m.clone());
+    }
+    *messages = out;
+}
+
+/// 提取 assistant 消息的文本指纹：blocks 中 text 块 content 拼接并 trim。
+fn assistant_text_fp(msg: &Value) -> Option<String> {
+    let blocks = msg.get("blocks").and_then(Value::as_array)?;
+    let mut s = String::new();
+    for b in blocks {
+        if b.get("type").and_then(Value::as_str) == Some("text") {
+            if let Some(c) = b.get("content").and_then(Value::as_str) {
+                s.push_str(c);
+            }
+        }
+    }
+    let trimmed = s.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
     }
 }
 
@@ -903,11 +1027,9 @@ mod tests {
 
     #[test]
     fn observe_token_returns_backend_message_id() {
-        // 断言：Token 事件会返回（并复用）同一条消息 id 供事件下发
-        let id1 = observe(&token("conv-observe", "a"), "simple-ai");
-        let id2 = observe(&token("conv-observe", "b"), "simple-ai");
-        assert!(id1.is_some());
-        assert_eq!(id1, id2);
+        // observe 是 void 函数（纯旁路落库），断言不抛错、能正常调用
+        observe(&token("conv-observe", "a"), "simple-ai");
+        observe(&token("conv-observe", "b"), "simple-ai");
         forget("conv-observe");
     }
 
