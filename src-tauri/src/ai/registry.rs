@@ -350,6 +350,7 @@ mod tests {
             match &self.id {
                 EngineId::ClaudeCode => "MockClaude",
                 EngineId::SimpleAI => "MockSimpleAI",
+                EngineId::OpenCode => "MockOpenCode",
                 EngineId::Custom(_) => "MockCustom",
             }
         }

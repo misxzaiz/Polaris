@@ -546,6 +546,9 @@ pub fn run() {
     // 注册 Simple AI 引擎（轻量级备用引擎，使用模型供应商配置）
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
 
+    // 注册 OpenCode 引擎（开源 AI 编程 CLI，多 provider，支持免费模型）
+    engine_registry.register(ai::OpencodeEngine::new(config.clone()));
+
     // 设置默认引擎（parse_any 支持自定义/插件引擎）
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
@@ -1150,6 +1153,7 @@ pub fn run() {
             commands::engine_install::engine_uninstall,
             // 引擎元数据（前端统一消费）
             commands::engine_metadata::get_engine_metadata_list,
+            commands::engine_metadata::get_opencode_models,
             // 通用执行器
             commands::executor::executor_list,
             commands::executor::executor_execute,
@@ -1365,6 +1369,7 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let mut engine_registry = EngineRegistry::new();
     engine_registry.register(ai::ClaudeEngine::new(config.clone()));
     engine_registry.register(ai::SimpleAIEngine::new(config.clone()));
+    engine_registry.register(ai::OpencodeEngine::new(config.clone()));
     let default_engine = ai::EngineId::parse_any(&config.default_engine);
     let _ = engine_registry.set_default(default_engine);
     let engine_registry_arc = Arc::new(AsyncMutex::new(engine_registry));

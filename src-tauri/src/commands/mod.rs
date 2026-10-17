@@ -103,7 +103,7 @@ pub use engine_install::{engine_detect_version, engine_install, engine_uninstall
 
 pub mod engine_metadata;
 #[cfg(feature = "tauri-app")]
-pub use engine_metadata::get_engine_metadata_list;
+pub use engine_metadata::{get_engine_metadata_list, get_opencode_models};
 
 pub mod plugin_engine;
 #[cfg(feature = "tauri-app")]

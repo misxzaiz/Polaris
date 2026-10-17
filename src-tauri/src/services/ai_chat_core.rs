@@ -452,6 +452,7 @@ async fn apply_model_profile_options(
     let expected_engine = match engine {
         EngineId::ClaudeCode => "claude",
         EngineId::SimpleAI => "simple-ai",
+        EngineId::OpenCode => "open-code",
         EngineId::Custom(id) => id.as_str(),
     };
     if !profile.is_for_engine(expected_engine) {
@@ -595,6 +596,34 @@ async fn apply_model_profile_options(
             let mut env_overrides = std::collections::HashMap::new();
             env_overrides.insert("__simple_ai_profile_id".to_string(), profile.id.clone());
             session_opts = session_opts.with_env_overrides(env_overrides);
+        }
+        // OpenCode 引擎：注入 OPENAI_BASE_URL/OPENAI_API_KEY 环境变量。
+        // opencode 通过环境变量识别 provider 凭据（OpenAI 兼容端点）。
+        // 注意：opencode 的模型路由用 --model <provider>/<model>，
+        // Profile 端点注入是二阶能力（初版免费模型免 Profile）。
+        EngineId::OpenCode => {
+            tracing::info!(
+                "[{}] OpenCode 引擎使用 Profile: {} (model={}, baseUrl={})",
+                log_scope,
+                profile.name,
+                profile.model,
+                profile.base_url
+            );
+            let mut env_overrides = std::collections::HashMap::new();
+            if !profile.base_url.is_empty() {
+                env_overrides.insert("OPENAI_BASE_URL".to_string(), profile.base_url.clone());
+            }
+            if !profile.api_key.is_empty() {
+                env_overrides.insert("OPENAI_API_KEY".to_string(), profile.api_key.clone());
+            }
+            if let Some(custom) = &profile.custom_env {
+                for (k, v) in custom {
+                    env_overrides.insert(k.clone(), v.clone());
+                }
+            }
+            if !env_overrides.is_empty() {
+                session_opts = session_opts.with_env_overrides(env_overrides);
+            }
         }
         // 插件引擎（Custom）：复用 Pi 的 provider 配置逻辑。
         // 当引擎 manifest 声明了 providerConfig 时，PluginEngine 会据此

@@ -24,6 +24,7 @@ import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { useAgentStore } from '@/stores/agentStore'
 import { useConfigStore } from '@/stores'
 import { useModelProfileStore } from '@/stores/modelProfileStore'
+import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { isProfileForEngine, OFFICIAL_API_PROFILE, profileModelOptions, type WireApi } from '@/types/modelProfile'
 import { useActiveSessionId, useSessionMetadataList, sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { normalizeEngineId } from '@/utils/engineDisplay'
@@ -111,11 +112,19 @@ export function SessionConfigSelector({
         : activeEngineId
 
   const isSimpleAiEngine = currentEngine === 'simple-ai'
+  const isOpencodeEngine = currentEngine === 'open-code'
   useEffect(() => {
     if (isSimpleAiEngine) {
       void useAgentStore.getState().loadSimpleAiAgents()
     }
-  }, [isSimpleAiEngine])
+    // opencode 引擎：加载模型列表（免费模型排前，glm 第一）
+    if (isOpencodeEngine) {
+      void useEngineMetadataStore.getState().loadOpencodeModels()
+    }
+  }, [isSimpleAiEngine, isOpencodeEngine])
+
+  // opencode 动态模型列表（从后端 `get_opencode_models` 获取）
+  const opencodeModels = useEngineMetadataStore(s => s.opencodeModels)
 
   // 动态 Agent 列表：claude 引擎优先 CLI 获取，SimpleAI 用两级 discover(项目级+全局 corpus)，降级 PRESET
   const dynamicAgents = useCliInfoStore(s => s.agents)
@@ -150,8 +159,20 @@ export function SessionConfigSelector({
   // - 选择官方 API（modelProfileId='' 或未选 Profile）：
   //   · claude：使用官方模型档位
   //   · simple-ai：必须由 Profile 提供，无 Profile 时为空（SimpleAI 无官方通道）
+  //   · open-code：从后端动态拉取 opencode models（免费模型排前），不受 Profile 影响
   // - 选择某个 Profile：使用该 Profile 的 modelOptions（为空时回退到 [model]）
+  //   （open-code 例外：opencode 有自己的 provider 体系，始终用 opencode models）
   const modelList = useMemo(() => {
+    // OpenCode 引擎：始终从后端动态拉取 opencode models，不受 Profile 影响
+    // （opencode 有自己的 provider 体系，Polaris Profile 对它无意义）
+    if (isOpencodeEngine) {
+      return opencodeModels.map(m => ({
+        id: m.id,
+        name: m.free ? `${m.name} (免费)` : m.name,
+        description: m.free ? t('sessionConfig.freeModel') : '',
+        supportsStreaming: true,
+      }))
+    }
     const profileId = config.modelProfileId
     if (!profileId) {
       // SimpleAI 模型完全由 Profile 驱动，无 Profile 时不可选模型
@@ -170,7 +191,7 @@ export function SessionConfigSelector({
       description: '',
       supportsStreaming: true,
     }))
-  }, [config.modelProfileId, profiles, currentEngine])
+  }, [config.modelProfileId, profiles, currentEngine, isOpencodeEngine, opencodeModels, t])
 
   // 切换供应商（Profile）后，清掉不属于该 Profile 的残留模型选择。
   // config.model 是跨 Profile 持久化的：从官方 API（opus/sonnet/haiku）切到第三方

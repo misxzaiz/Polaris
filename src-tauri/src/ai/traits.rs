@@ -39,6 +39,8 @@ pub enum EngineId {
     ClaudeCode,
     /// Simple AI 引擎（内置轻量助手，直连模型供应商 API）
     SimpleAI,
+    /// OpenCode 引擎（开源 AI 编程 CLI，支持多 provider/免费模型）
+    OpenCode,
     /// 插件注册的动态引擎（运行时发现）
     Custom(String),
 }
@@ -68,6 +70,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code",
             Self::SimpleAI => "simple-ai",
+            Self::OpenCode => "open-code",
             Self::Custom(_) => "custom",
         }
     }
@@ -109,6 +112,7 @@ impl EngineId {
         &[
             EngineId::ClaudeCode,
             EngineId::SimpleAI,
+            EngineId::OpenCode,
         ]
     }
 
@@ -117,6 +121,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => vec!["claude", "claude-code", "claudecode"],
             Self::SimpleAI => vec!["simple-ai", "simpleai", "simple_ai"],
+            Self::OpenCode => vec!["open-code", "opencode", "open_code"],
             Self::Custom(id) => vec![id.as_str()],
         }
     }
@@ -126,6 +131,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "claude-code".to_string(),
             Self::SimpleAI => "simple-ai".to_string(),
+            Self::OpenCode => "open-code".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -135,6 +141,7 @@ impl EngineId {
         match self {
             Self::ClaudeCode => "Claude Code".to_string(),
             Self::SimpleAI => "Simple AI".to_string(),
+            Self::OpenCode => "OpenCode".to_string(),
             Self::Custom(id) => id.clone(),
         }
     }
@@ -146,7 +153,7 @@ impl EngineId {
 
     /// 判断是否为已知引擎（非 Custom）
     pub fn is_known(&self) -> bool {
-        matches!(self, Self::ClaudeCode | Self::SimpleAI)
+        matches!(self, Self::ClaudeCode | Self::SimpleAI | Self::OpenCode)
     }
 }
 

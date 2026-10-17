@@ -15,6 +15,16 @@ import type { EngineMetadata } from '@/types/engineMetadata'
 
 const log = createLogger('EngineMetadataStore')
 
+/** opencode 可选模型项（对应后端 OpencodeModel） */
+export interface OpencodeModel {
+  /** 模型 ID（如 `opencode/glm-5.3-flash-free`） */
+  id: string
+  /** 显示名称（去掉 provider 前缀的简短名） */
+  name: string
+  /** 是否免费模型（免 API key） */
+  free: boolean
+}
+
 export interface EngineMetadataStore {
   /** 引擎元数据列表 */
   metadatas: EngineMetadata[]
@@ -38,6 +48,12 @@ export interface EngineMetadataStore {
   getEngineFullName: (engineId: string) => string
   /** 判断引擎是否存在 */
   hasEngine: (engineId: string) => boolean
+  /** opencode 可用模型列表 */
+  opencodeModels: OpencodeModel[]
+  /** opencode 模型是否已加载 */
+  opencodeModelsLoaded: boolean
+  /** 加载 opencode 可用模型列表 */
+  loadOpencodeModels: () => Promise<void>
 }
 
 export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => ({
@@ -45,6 +61,8 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
   loaded: false,
   loading: false,
   error: null,
+  opencodeModels: [],
+  opencodeModelsLoaded: false,
 
   load: async () => {
     if (get().loaded || get().loading) return
@@ -93,6 +111,20 @@ export const useEngineMetadataStore = create<EngineMetadataStore>((set, get) => 
 
   hasEngine: (engineId: string) => {
     return get().metadatas.some(m => m.id === engineId)
+  },
+
+  /** 加载 opencode 可用模型列表（从后端 `get_opencode_models` 命令获取） */
+  loadOpencodeModels: async () => {
+    if (get().opencodeModelsLoaded) return
+    try {
+      const models = await invoke<OpencodeModel[]>('get_opencode_models')
+      set({ opencodeModels: models, opencodeModelsLoaded: true })
+      log.info(`已加载 ${models.length} 个 opencode 模型（免费 ${models.filter(m => m.free).length} 个）`)
+    } catch (e) {
+      log.warn('加载 opencode 模型列表失败', { error: String(e) })
+      // 不设置 error（不影响引擎元数据主流程），仅标记已尝试加载避免重复请求
+      set({ opencodeModelsLoaded: true })
+    }
   },
 }))
 

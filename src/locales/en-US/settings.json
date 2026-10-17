@@ -158,6 +158,10 @@
     "simpleAi": {
       "name": "Simple AI",
       "description": "Lightweight AI assistant — uses model provider config, built-in bash/file tools, no CLI required"
+    },
+    "openCode": {
+      "name": "OpenCode",
+      "description": "Open-source AI coding CLI — multi-provider, built-in free models (GLM/DeepSeek etc.), tool use and streaming"
     }
   },
   "modelProfile": {

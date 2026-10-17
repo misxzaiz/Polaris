@@ -715,6 +715,7 @@
     "noModel": "不设置",
     "noEffort": "不设置",
     "noPermission": "不设置",
+    "freeModel": "免费模型，无需 API Key",
     "officialApi": "官方 API",
     "officialApiDesc": "使用官方 Anthropic 端点（不通过 Profile）",
     "custom": "自定义...",

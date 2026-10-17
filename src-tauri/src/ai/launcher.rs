@@ -147,6 +147,11 @@ pub fn inject_mcp_into_session_opts(
                 );
             }
         }
+        EngineId::OpenCode => {
+            // opencode 自带工具集（read/write/bash/edit 等），初版不桥接 Polaris MCP。
+            // opencode 有自己的 MCP 管理（`opencode mcp`），后续可探索桥接。
+            tracing::debug!("[SessionLauncher] OpenCode 引擎不注入 MCP（使用自带工具）");
+        }
         EngineId::Custom(_) => {
             if !mcp.mcp_servers.is_empty() {
                 opts.mcp_servers = mcp.mcp_servers.clone();

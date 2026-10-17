@@ -336,6 +336,10 @@ pub async fn handle_ipc_bridge(
             let metas = registry.list_all_metadata();
             Ok(Json(serde_json::to_value(metas).unwrap_or_default()))
         }
+        "get_opencode_models" => {
+            let models = crate::commands::engine_metadata::get_opencode_models_impl()?;
+            Ok(Json(serde_json::to_value(models).unwrap_or_default()))
+        }
         // ── Other commands ────────────────────────────────────────────────────
         "cli_get_agents" => dispatch_cli_get_agents(&state),
         "cli_get_auth_status" => dispatch_cli_get_auth_status(&state),

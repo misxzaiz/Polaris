@@ -716,6 +716,7 @@
     "noModel": "None",
     "noEffort": "None",
     "noPermission": "None",
+    "freeModel": "Free model, no API key required",
     "officialApi": "Official API",
     "officialApiDesc": "Use the official Anthropic endpoint (no profile)",
     "custom": "Custom...",

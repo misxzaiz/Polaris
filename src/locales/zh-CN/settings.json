@@ -157,6 +157,10 @@
     "simpleAi": {
       "name": "Simple AI",
       "description": "轻量级 AI 助手 — 使用模型供应商配置，内置 bash/文件工具，无需安装 CLI"
+    },
+    "openCode": {
+      "name": "OpenCode",
+      "description": "开源 AI 编程 CLI — 多 provider 支持，内置免费模型（GLM/DeepSeek 等），工具调用与流式输出"
     }
   },
   "modelProfile": {
