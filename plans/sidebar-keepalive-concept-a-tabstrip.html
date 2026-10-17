@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案A · Tab 带侧栏（浏览器式）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#0A0C16; --elev:#0C1022; --surface:#121630; --surface2:#171C3C;
+    --border:rgba(140,150,200,.14); --border2:rgba(140,150,200,.22);
+    --primary:#00D9FF; --primary-dim:rgba(0,217,255,.12);
+    --text:#E8EAF4; --text2:#A9B2CC; --text3:#7E8AB5; --muted:#5C6A92;
+    --danger:#FF6B6B; --ok:#3DDC97;
+  }
+  html,body{height:100%;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:"Segoe UI","PingFang SC","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;
+    font-size:13px; overflow:hidden;
+  }
+  /* ===== 应用外壳 ===== */
+  #app{display:flex; height:100vh;}
+  /* ===== 顶部菜单条 ===== */
+  #menubar{
+    position:fixed; top:0; left:0; right:0; height:38px; z-index:20;
+    display:flex; align-items:center; gap:10px; padding:0 12px;
+    background:var(--elev); border-bottom:1px solid var(--border);
+  }
+  #menubar .logo{width:22px;height:22px;border-radius:50%;border:1px solid var(--border2);
+    background:conic-gradient(from 0deg,var(--primary),transparent 60%,var(--primary) 75%);opacity:.9;}
+  #menubar .brand{font-size:12.5px;font-weight:600;letter-spacing:.2px;}
+  #menubar .work{font-size:11px;color:var(--text3);padding:3px 8px;border:1px solid var(--border);border-radius:6px;}
+  /* ===== 左侧侧栏 ===== */
+  #side{
+    margin-top:38px; width:318px; min-width:318px;
+    display:flex; flex-direction:column;
+    background:var(--elev); border-right:1px solid var(--border);
+    transition:width .18s cubic-bezier(.32,.72,0,1), min-width .18s;
+    overflow:hidden;
+  }
+  #side.collapsed{width:0;min-width:0;border-right:none;}
+  /* 折叠后的恢复触发条 */
+  #side-rap{
+    margin-top:38px; width:0; min-width:0; overflow:hidden; background:var(--elev);
+    transition:width .18s,min-width .18s; border-right:1px solid var(--border);
+    display:flex; flex-direction:column; align-items:center; padding-top:6px; gap:4px;
+  }
+  #side-rap.open{width:26px;min-width:26px;}
+  #side-rap button{
+    width:20px;height:20px;border-radius:5px;border:none;background:transparent;color:var(--text3);
+    cursor:pointer; display:flex;align-items:center;justify-content:center;}
+  #side-rap button:hover{color:var(--primary);background:var(--surface);}
+  /* 顶部 tab strip */
+  #tabstrip{
+    display:flex; align-items:stretch; height:38px; flex-shrink:0;
+    border-bottom:1px solid var(--border); background:var(--elev);
+    user-select:none;
+  }
+  #cb-wrap{
+    display:flex; align-items:center; padding:0 6px; border-right:1px solid var(--border);
+  }
+  #cb-wrap button{
+    width:24px;height:24px;border:none;border-radius:6px;background:transparent;color:var(--text3);
+    cursor:pointer; display:flex;align-items:center;justify-content:center;transition:.12s;
+  }
+  #cb-wrap button:hover{background:var(--surface);color:var(--primary);}
+  .tab{
+    display:flex; align-items:center; gap:6px; padding:0 10px; cursor:pointer;
+    color:var(--text3); font-size:12px; border-right:1px solid var(--border);
+    position:relative; transition:.12s; white-space:nowrap;
+  }
+  .tab .dot{width:6px;height:6px;border-radius:50%;}
+  .tab.active{color:var(--text); background:var(--surface2);}
+  .tab.active::after{content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;background:var(--primary);}
+  .tab .badge{width:16px;height:16px;border-radius:4px;background:var(--surface);
+    display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--muted);}
+  .tab .badge:hover{color:var(--text);}
+  .tab .bullet{color:var(--danger); font-size:14px; line-height:1;}
+  .tab .pending{color:var(--ok);}
+  /* 面板区域 */
+  #panels{flex:1; min-height:0; display:flex;}
+  .panel{width:100%;height:100%;display:flex;flex-direction:column;min-height:0;}
+  .panel.hidden{display:none;}
+  .panel-scroll{flex:1;min-height:0;overflow-y:auto;padding:8px 10px 28px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+  .panel-scroll::-webkit-scrollbar{width:6px}.panel-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+  /* 文件树 */
+  .tree-row{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:5px;cursor:pointer;color:var(--text2);font-size:12.5px;}
+  .tree-row:hover{background:var(--surface);}
+  .tree-row.ch{color:var(--text2);font-family:"Cascadia Code",Consolas,monospace;font-size:12px;}
+  .tree-row .fmt{width:14px;text-align:center;color:var(--text3);font-size:10px;}
+  .tree-row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tree-row .sha{color:var(--muted);font-family:Consolas,monospace;font-size:10.5px;}
+  .tree-row.deep{padding-left:18px;}
+  .tree-row.deep2{padding-left:34px;}
+  .caret{width:12px;color:var(--text3);display:inline-block;font-size:9px;transition:transform .12s;}
+  .caret.open{transform:rotate(90deg);}
+  .spacer{display:inline-block;width:12px;}
+  /* git 变更 */
+  .gh{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;}
+  .gh .seg{flex:1;} .gh .branch{color:var(--primary);font-family:Consolas,monospace;}
+  .chunk-head{display:flex;align-items:center;gap:8px;padding:6px 10px;color:var(--text3);font-size:11px;border-bottom:1px solid var(--border);}
+  .file-line{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-size:12.5px;cursor:pointer;}
+  .file-line:hover{background:var(--surface);}
+  .file-line .st{width:16px;text-align:center;} .st.m{color:#FFB454}.st.a{color:var(--ok)}.st.d{color:var(--danger)}
+  .file-line .p{flex:1; font-family:"Cascadia Code",Consolas,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .file-line .cnt{color:var(--muted);font-size:11px;}
+  .check{width:14px;height:14px;border-radius:3px;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;color:transparent;}
+  .file-line.checked .check{background:var(--primary);color:#06121a;border-color:var(--primary);}
+  /* 终端 */
+  .term{background:#06080f;font-family:"Cascadia Code",Consolas,monospace;font-size:12px;color:#C8D3E8;padding:10px 12px;line-height:1.7;}
+  .term .p{color:var(--primary);}.term .dim{color:var(--muted);}.term .ok{color:var(--ok);}
+  /* ===== 右侧工作区 ===== */
+  #work{flex:1; margin-top:38px; display:flex; flex-direction:column; background:var(--bg);}
+  #work .tabs{display:flex;align-items:center;height:36px;border-bottom:1px solid var(--border);padding:0 8px;gap:4px;}
+  #work .ftab{padding:2px 16px;border-radius:6px 6px 0 0;color:var(--text3);font-size:12px;border:1px solid transparent;}
+  #work .ftab.on{color:var(--text);background:var(--elev);border-color:var(--border);border-bottom-color:var(--elev);}
+  #work .canvas{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12.5px;}
+  #canvas-card{border:1px dashed var(--border2);border-radius:12px;padding:22px 40px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  #canvas-card .ph{color:var(--text3);font-size:12px;}
+  /* 脚注 */
+  #notes{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:30;
+    background:rgba(12,16,34,.92);border:1px solid var(--border2);border-radius:999px;padding:6px 16px;
+    font-size:11px;color:var(--text3);display:flex;gap:14px;align-items:center;
+    box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  #notes b{color:var(--primary);font-weight:600;}
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部菜单 -->
+  <div id="menubar">
+    <div class="logo"></div><span class="brand">Polaris</span>
+    <span class="work">方案Ａ · Tab 带侧栏</span>
+    <span style="flex:1"></span>
+    <span style="font-size:11px;color:var(--muted)">折叠后唤回 ▸ 左侧细条</span>
+  </div>
+
+  <!-- 侧栏:tab strip 顶部 -->
+  <div id="side">
+    <div id="tabstrip">
+      <div id="cb-wrap" title="一键折叠侧栏（Ctrl+B）">
+        <button id="collapse-btn">◀</button>
+      </div>
+      <div class="tab active" data-t="files">
+        <span class="dot" style="background:var(--primary)"></span>文件
+        <span class="badge">×</span>
+      </div>
+      <div class="tab" data-t="changes">
+        <span class="dot pending"></span>变更
+        <span class="bullet">●</span>
+      </div>
+      <div class="tab" data-t="terminal">
+        <span class="dot" style="background:var(--ok)"></span>终端
+        <span class="badge">×</span>
+      </div>
+    </div>
+
+    <div id="panels">
+      <!-- 文件面板 -->
+      <div class="panel" data-panel="files">
+        <div class="panel-scroll" id="file-scroll">
+          <!-- 目录树：由 JS 生成，展开节点状态保活 -->
+          <div id="filetree"></div>
+        </div>
+      </div>
+      <!-- 变更面板 -->
+      <div class="panel hidden" data-panel="changes">
+        <div class="gh"><span class="seg">变更</span><span class="branch">main</span><span style="color:var(--muted)">2 文件 · ▲12 ▼4</span></div>
+        <div id="changes-list">
+          <div class="file-line" data-f="src/App.tsx"><span class="check">✓</span><span class="st m">M</span><span class="p">src/App.tsx</span><span class="cnt">+12 -4</span></div>
+          <div class="file-line" data-f="src/stores/viewStore.ts"><span class="check">✓</span><span class="st m">M</span><span class="p">src/stores/viewStore.ts</span><span class="cnt">+3 -1</span></div>
+        </div>
+        <div class="panel-scroll" style="flex:1"><div style="color:var(--muted);font-size:11px;padding:8px 10px;">已暂存区域 ▸ 可勾选/展开 diff</div></div>
+      </div>
+      <!-- 终端面板 -->
+      <div class="panel hidden" data-panel="terminal">
+        <div class="term" id="term-out"><span class="p">polaris</span>@<span class="dim">workspace</span><span class="p"> ~</span> <span>$</span> pnpm test:run<br>
+          <span class="dim">[16:18:02]</span>  ✓ <span class="ok">14 passed</span> (ToolSwitcher.test.tsx)<br>
+          <span class="p">polaris</span>@<span class="dim">workspace</span><span class="p"> ~</span> <span>$</span> <span class="term-caret">▊</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 折叠后的恢复条 -->
+  <div id="side-rap">
+    <button title="文件" data-r="files">▤</button>
+    <button title="变更" data-r="changes">⚑</button>
+    <button title="终端" data-r="terminal">▣</button>
+  </div>
+
+  <!-- 右侧工作区 -->
+  <div id="work">
+    <div class="tabs"><div class="ftab on">修改日志</div></div>
+    <div class="canvas">
+      <div id="canvas-card"><span style="font-size:16px;color:var(--text3)">📄</span><span class="ph">主工作区（原型示意，不属于侧栏方案）</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="notes"><span><b>保活 ✓</b> 切换/折叠 → 展开节点、勾选、滚动都在</span><span>快捷键: <b>Ctrl+B</b> 折叠</span></div>
+
+<script>
+  // ============ 文件树（mock，展开状态保活） ============
+  const tree = [
+    {d:'src', kids:[{d:'components', kids:[{d:'Layout', kids:[{f:'ToolSwitcher.tsx'},{f:'LeftPanel.tsx'},{f:'ActivityBar.tsx'}]},{f:'App.tsx'},{f:'main.tsx'}]}]},
+    {d:'stores', kids:[{f:'viewStore.ts'},{f:'gitStore.ts'}]},
+    {d:'styles', kids:[{f:'index.css'}]},
+    {f:'package.json'},{f:'vite.config.ts'}
+  ];
+  function renderTree(nodes, deep){
+    let html='';
+    for(const n of nodes){
+      if(n.d){
+        const open = expanded.has(n.d);
+        html += `<div class="tree-row" data-dir="${n.d}" style="padding-left:${4+deep*16}px">
+          <span class="caret ${open?'open':''}">▶</span><span style="color:#9FB4E8">▤</span><span class="name">${n.d}</span></div>`;
+        if(open) html += renderTree(n.kids, deep+1);
+      } else {
+        html += `<div class="tree-row" style="padding-left:${4+deep*16+14}px"><span class="spacer"></span>
+          <span class="fmt">·</span><span class="name">${n.f}</span></div>`;
+      }
+    }
+    return html;
+  }
+  // 展开状态集合 —— 保活核心：存内存，不随面板显示/隐藏重置
+  const expanded = new Set(['src','components','Layout']);
+  function paintTree(){ document.getElementById('filetree').innerHTML = renderTree(tree, 0);
+    document.querySelectorAll('.tree-row[data-dir]').forEach(row=>{
+      row.onclick = () => { const d=row.dataset.dir; if(expanded.has(d))expanded.delete(d); else expanded.add(d); paintTree(); };
+    });
+  }
+  paintTree();
+
+  // ============ 面板切换 / 折叠（保活关键：只改 display，不重渲染） ============
+  const side = document.getElementById('side');
+  const rap  = document.getElementById('side-rap');
+  const tabs = document.querySelectorAll('#tabstrip .tab');
+  const panels = document.querySelectorAll('.panel');
+  const fileScroll = document.getElementById('file-scroll');
+
+  function switchTab(type){
+    tabs.forEach(tb => tb.classList.toggle('active', tb.dataset.t === type));
+    panels.forEach(p => p.classList.toggle('hidden', p.dataset.panel !== type));
+  }
+  tabs.forEach(tb => tb.onclick = () => switchTab(tb.dataset.t));
+  // badge × 只关闭 tab 焦点（面板仍保活缓存，点上其它 tab 再回来数据还在）
+  document.querySelectorAll('.tab .badge').forEach(b => b.onclick = e => {
+    e.stopPropagation(); const tb = b.closest('.tab'); tb.style.display='none'; switchTab('files');
+  });
+
+  const collapseBtn = document.getElementById('collapse-btn');
+  let collapsed = false;
+  function setCollapsed(v){
+    collapsed = v;
+    side.classList.toggle('collapsed', v);
+    rap.classList.toggle('open', v);
+    collapseBtn.innerHTML = v ? '▶' : '◀';
+  }
+  collapseBtn.onclick = () => setCollapsed(!collapsed);
+  // 恢复条：点击恢复侧栏并直达对应面板
+  rap.querySelectorAll('button').forEach(b => b.onclick = () => { setCollapsed(false); switchTab(b.dataset.r); });
+
+  // 勾选（变更面板，保活）
+  document.querySelectorAll('#changes-list .file-line').forEach(line => {
+    line.onclick = () => line.classList.toggle('checked');
+  });
+
+  // 全局折叠快捷键
+  window.addEventListener('keydown', e => { if((e.ctrlKey||e.metaKey) && e.key.toLowerCase()==='b'){ e.preventDefault(); setCollapsed(!collapsed); } });
+  // 面板显隐 = 保活验证：显隐前后 DOM 不变，滚动/勾选/展开全部原样。
+</script>
+</body>
+</html>

@@ -7,7 +7,7 @@ import { createLogger } from './utils/logger';
 const log = createLogger('App');
 
 import { TopMenuBar as TopMenuBarComponent } from './components/TopMenuBar';
-import { ActivityBar, LeftPanel, LeftPanelContent, CenterStage, RightPanel } from './components/Layout';
+import { ActivityBar, LeftPanel, LeftPanelContent, LeftPanelTabStrip, CenterStage, RightPanel } from './components/Layout';
 import { NarrowTabOverlay } from './components/Editor';
 import { ChatInput, ChatStatusBar, CompactHandoffProgress, ErrorBanner, CompactHandoffButton, MultiWindowMenu, NewSessionButton, DispatchCenterButton } from './components/Chat';
 import type { EditMode } from './components/Chat';
@@ -43,7 +43,6 @@ const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/Voi
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
-import type { LeftPanelType } from './stores/viewStore';
 import { useNarrowTabStore } from './stores/narrowTabStore';
 import { isPluginUiEnabled, usePluginStore } from './stores/pluginStore';
 import { pluginRegistry } from './plugin-system';
@@ -147,14 +146,10 @@ function App() {
     state => state.workspaces.find(w => w.id === state.currentWorkspaceId) || null
   );
   const leftPanelType = useViewStore(state => state.leftPanelType);
-  // 面板内容保活：leftPanelType=none（关闭）时仍渲染上次激活的类型内容，
-  // 关闭外壳隐藏（LeftPanel 内部 panelVisible 控制），内容组件不卸载——
-  // 重新打开立即显示，不重建不刷新。仅显式切换类型（files→git）才卸载重建。
-  const lastLeftPanelTypeRef = useRef(leftPanelType);
-  if (leftPanelType !== 'none') {
-    lastLeftPanelTypeRef.current = leftPanelType;
-  }
-  const panelContentType: LeftPanelType = leftPanelType !== 'none' ? leftPanelType : lastLeftPanelTypeRef.current;
+  // 记忆的激活面板（close 后 strip/外壳仍高亮该类型）。viewStore 统一记忆，
+  // 替代原先 App 内手写 lastLeftPanelTypeRef + useSection 拼接——记忆随 store 持久化，
+  // 跨会话/刷新保留。
+  const activeLeftPanelType = useViewStore(state => state.activeLeftPanelType);
   const pluginStates = usePluginStore(state => state.pluginStates);
   const rightPanelCollapsed = useViewStore(state => state.rightPanelCollapsed);
   const terminalFullscreen = useViewStore(state => state.terminalFullscreen);
@@ -294,7 +289,8 @@ function App() {
   // （桌面停靠 ↔ 抽屉覆盖），内容组件不卸载不重建
   const leftPanelContent = (
     <LeftPanelContent
-      currentType={panelContentType}
+      currentType={leftPanelType}
+      activePanelType={activeLeftPanelType}
       filesContent={<FileExplorer />}
       gitContent={
         <Suspense fallback={loadingFallback}>
@@ -353,6 +349,7 @@ function App() {
               leaving={leftPanelLeaving}
               compact={isCompact}
               onClose={closeLeftPanel}
+              topBar={isCompact ? undefined : <LeftPanelTabStrip activePanelType={activeLeftPanelType} />}
             >
               {leftPanelContent}
             </LeftPanel>

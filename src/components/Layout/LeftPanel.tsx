@@ -36,6 +36,8 @@ interface LeftPanelProps {
   compact?: boolean
   /** 抽屉形态的关闭回调（点击遮罩 / 关闭按钮） */
   onClose?: () => void
+  /** 桌面形态顶栏（高密度 tab strip）；渲染于 panel-content 前，抽屉形态不渲染 */
+  topBar?: ReactNode
 }
 
 /**
@@ -46,7 +48,7 @@ interface LeftPanelProps {
  * - leaving: 关闭退场时淡出（父组件负责延迟卸载）
  * - compact: 抽屉覆盖形态（窄窗口），children 仍保活
  */
-export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false, leaving = false, compact = false, onClose }: LeftPanelProps) {
+export function LeftPanel({ children, className = '', fillRemaining = false, fullscreen = false, leaving = false, compact = false, onClose, topBar }: LeftPanelProps) {
   const { t } = useTranslation('common')
   const width = useViewStore((state) => state.leftPanelWidth)
   const setWidth = useViewStore((state) => state.setLeftPanelWidth)
@@ -172,6 +174,7 @@ export function LeftPanel({ children, className = '', fillRemaining = false, ful
         {/* 抽屉形态下显示操作栏；桌面停靠形态不渲染。key 保证 children
             （FileExplorer 等保活内容）位置稳定，工具栏条件插入不触发重挂载。 */}
         {compact && panelVisible && drawerToolbar}
+        {!compact && topBar}
         <div key="panel-content" className="flex-1 min-h-0 overflow-hidden">{children}</div>
       </aside>
       {desktopResizeHandle}
@@ -193,13 +196,35 @@ export function LeftPanelDrawer({ children, onClose }: { children?: ReactNode; o
 }
 
 /**
- * 左侧面板内容包装器 - 根据类型查表分发（保活版）
+ * 左侧面板内容容器 —— 多面板常驻挂载（保活核心）。
  *
- * 内建面板走查表（O(1) 分发，新增内建面板只需在表里加一项）；
- * 插件面板走 pluginPanelRegistry 兜底。
- * 所有 children 由 App.tsx 构造并传入，本组件只负责按当前类型选一个渲染——
- * 保活语义不变：未渲染的面板内容仍挂载在 React 树里（被Fragment 包裹但未显示）。
+ * 旧版按当前类型单面板 dispatch（切走卸载 → 切换回来重建，Git 面板
+ * activeTab/勾选/滚动等组件本地态全被重置）。本版改为：已访问过的面板
+ * 全部渲染进容器，各自包一层显隐切换的 wrapper；切换仅改 display，
+ * 不卸载重建 —— VSCode view-container 保活模型。
+ *
+ * 懒挂载：未访问过的面板不渲染（冷启动不挂载全部 12+ 内建/插件面板），
+ * 首次激活某 pane 才挂载，此后常驻。mountedSet 用 ref 缓存（非持久化）。
  */
+type LeftPanelContentProps = {
+  filesContent: ReactNode
+  gitContent: ReactNode
+  browserContent?: ReactNode
+  todoContent: ReactNode
+  translateContent?: ReactNode
+  requirementContent?: ReactNode
+  terminalContent?: ReactNode
+  toolsContent?: ReactNode
+  developerContent?: ReactNode
+  integrationContent?: ReactNode
+  demoPluginContent?: ReactNode
+  aiConsoleContent?: ReactNode
+  /** 当前激活面板类型（关闭后依旧传递上次激活值，用于 strip/外壳高亮与保活判定），默认取 store.activeLeftPanelType */
+  currentType?: LeftPanelType
+  /** 面板激活态入口（平衡 tab strip 与 legacy ActivityBar 的权威切换） */
+  activePanelType?: LeftPanelType
+}
+
 export function LeftPanelContent({
   filesContent,
   gitContent,
@@ -214,26 +239,14 @@ export function LeftPanelContent({
   demoPluginContent,
   aiConsoleContent,
   currentType,
-}: {
-  filesContent: ReactNode
-  gitContent: ReactNode
-  browserContent?: ReactNode
-  todoContent: ReactNode
-  translateContent?: ReactNode
-  requirementContent?: ReactNode
-  terminalContent?: ReactNode
-  toolsContent?: ReactNode
-  developerContent?: ReactNode
-  integrationContent?: ReactNode
-  demoPluginContent?: ReactNode
-  aiConsoleContent?: ReactNode
-  currentType?: LeftPanelType
-}) {
+  activePanelType,
+}: LeftPanelContentProps) {
   // Hook 必须在条件之外调用
   const storePanelType = useViewStore((state) => state.leftPanelType)
+  const storeActiveType = useViewStore((state) => state.activeLeftPanelType)
   const type = currentType ?? storePanelType
 
-  // 内建面板查表分发（新增内建面板在此加一行即可，不再改 if-else）
+  // 内建面板查表（新增内建面板在此加一行即可）
   const builtinPanels: Record<string, ReactNode> = {
     files: filesContent,
     git: gitContent,
@@ -249,13 +262,38 @@ export function LeftPanelContent({
     aiConsole: aiConsoleContent,
   }
 
-  // 内建面板命中 → 渲染对应内容
-  if (type in builtinPanels) {
-    return <>{builtinPanels[type]}</>
+  // 激活面板：优先外部传入的 activePanelType（tab strip 已归一化），
+  // 其次取 store 记忆的激活类型（切换/关闭不丢），兜底用当前打开的类型。
+  const active = activePanelType
+    ?? (storeActiveType in builtinPanels || pluginPanelRegistry.has(storeActiveType) ? storeActiveType : type)
+    ?? (type in builtinPanels || pluginPanelRegistry.has(type) ? type : 'none')
+
+  // 懒挂载集合：已访问过的面板常驻，未访问过的不渲染。
+  // 用 ref 而非 state：挂载集合只增不减，不需要触发重渲染（激活切换已由 store 驱动）。
+  // 初始 `files` 常挂（默认面板，首屏即见）。useState 惰性初始化保证每次渲染引用一致。
+  const mountedRef = useRef<Set<string>>(new Set(['files']))
+  const mounted = mountedRef.current
+  if (active !== 'none') {
+    mounted.add(active)
   }
-  // 插件面板兜底
-  if (pluginPanelRegistry.has(type)) {
-    return <PluginPanelHost panelType={type} />
+
+  // 渲染所有已挂载面板，各包一个显隐 wrapper：切换只切 display，不卸载。
+  // wrapper 显隐：active 面板 h-full 撑满，其余 display:none（保活常驻 DOM）。
+  const panels: ReactNode[] = []
+  const panelTypes = [...Object.keys(builtinPanels), ...pluginPanelRegistry.listPanelTypes()]
+  const seen = new Set<string>()
+  for (const p of panelTypes) {
+    if (seen.has(p)) continue // 内建与插件重复类型只渲染一次
+    seen.add(p)
+    if (!mounted.has(p)) continue // 懒挂载
+    const isActive = p === active
+    const isBuiltin = p in builtinPanels
+    panels.push(
+      <div key={p} className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'}>
+        {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} />}
+      </div>
+    )
   }
-  return null
+
+  return <div className="flex h-full min-h-0 w-full">{panels}</div>
 }

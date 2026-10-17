@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案B · VSCode 式图标直达（无 tab strip）</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#0A0C16; --elev:#0C1022; --surface:#121630; --surface2:#171C3C;
+    --border:rgba(140,150,200,.14); --border2:rgba(140,150,200,.22);
+    --primary:#00D9FF; --primary-dim:rgba(0,217,255,.12);
+    --text:#E8EAF4; --text2:#A9B2CC; --text3:#7E8AB5; --muted:#5C6A92;
+    --danger:#FF6B6B; --ok:#3DDC97;
+  }
+  html,body{height:100%;}
+  body{background:var(--bg);color:var(--text);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",ui-sans-serif,system-ui,sans-serif;font-size:13px;overflow:hidden;}
+  #app{display:flex;height:100vh;}
+  /* 顶部菜单 */
+  #menubar{position:fixed;top:0;left:0;right:0;height:38px;z-index:20;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--elev);border-bottom:1px solid var(--border);}
+  #menubar .logo{width:22px;height:22px;border-radius:50%;border:1px solid var(--border2);background:conic-gradient(from 0deg,var(--primary),transparent 60%,var(--primary) 75%);opacity:.9;}
+  #menubar .brand{font-size:12.5px;font-weight:600;letter-spacing:.2px;}
+  #menubar .work{font-size:11px;color:var(--text3);padding:3px 8px;border:1px solid var(--border);border-radius:6px;}
+  /* ===== 左侧 ActivityBar（图标列） ===== */
+  #bar{
+    margin-top:38px; width:48px; min-width:48px; flex-shrink:0;
+    display:flex; flex-direction:column; align-items:center; padding-top:6px; gap:2px;
+    background:var(--elev); border-right:1px solid var(--border);
+  }
+  .bar-btn{
+    width:36px;height:36px;border-radius:8px;border:none;background:transparent;color:var(--text3);
+    cursor:pointer; display:flex;align-items:center;justify-content:center;font-size:17px;position:relative;transition:.12s;
+  }
+  .bar-btn:hover{background:var(--surface);color:var(--text);}
+  .bar-btn.active{background:var(--surface2);color:var(--primary);}
+  .bar-btn.active::before{content:"";position:absolute;left:-6px;top:8px;bottom:8px;width:2px;background:var(--primary);border-radius:1px;}
+  .bar-btn .nd{position:absolute;top:6px;right:7px;width:7px;height:7px;border-radius:50%;background:var(--danger);}
+  .bar-btn.spacer{margin-top:4px;height:1px;background:var(--border);width:24px;border-radius:1px;}
+  /* 面板：全部常驻 DOM，靠 display 显隐（保活） */
+  #side{ flex:1; margin-top:38px; display:flex; flex-direction:column; background:var(--elev); border-right:1px solid var(--border); min-width:0; }
+  .panel{width:100%;height:100%;display:flex;flex-direction:column;min-height:0;}
+  .panel.hidden{display:none;}
+  .panel-head{display:flex;align-items:center;gap:8px;padding:8px 10px 4px;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;}
+  .panel-scroll{flex:1;min-height:0;overflow-y:auto;padding:2px 8px 28px;scrollbar-width:thin;scrollbar-color:var(--border2) transparent;}
+  .panel-scroll::-webkit-scrollbar{width:6px}.panel-scroll::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+  /* 文件树 */
+  .tree-row{display:flex;align-items:center;gap:6px;padding:3px 4px;border-radius:5px;cursor:pointer;color:var(--text2);font-size:12.5px;}
+  .tree-row:hover{background:var(--surface);}
+  .tree-row .caret{width:12px;color:var(--text3);display:inline-block;font-size:9px;transition:transform .12s;}
+  .tree-row .caret.open{transform:rotate(90deg);}
+  .tree-row .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .tree-row .fmt{width:14px;text-align:center;color:var(--text3);font-size:10px;}
+  .spacer{display:inline-block;width:12px;}
+  /* 变更 */
+  .gh{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--border);font-size:12px;}
+  .gh .seg{flex:1;} .gh .branch{color:var(--primary);font-family:Consolas,monospace;}
+  .file-line{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);color:var(--text2);font-size:12.5px;cursor:pointer;}
+  .file-line:hover{background:var(--surface);}
+  .file-line .st{width:16px;text-align:center;} .st.m{color:#FFB454}.st.a{color:var(--ok)}.st.d{color:var(--danger)}
+  .file-line .p{flex:1;font-family:"Cascadia Code",Consolas,monospace;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .check{width:14px;height:14px;border-radius:3px;border:1px solid var(--border2);display:flex;align-items:center;justify-content:center;font-size:10px;color:transparent;transition:.1s;}
+  .file-line.checked .check{background:var(--primary);color:#06121a;border-color:var(--primary);}
+  /* 终端 */
+  .term{background:#06080f;font-family:"Cascadia Code",Consolas,monospace;font-size:12px;color:#C8D3E8;padding:10px 12px;line-height:1.7;flex:1;}
+  .term .p{color:var(--primary);}.term .dim{color:var(--muted);}.term .ok{color:var(--ok);}
+  /* 右侧 */
+  #work{flex:1;margin-top:38px;display:flex;flex-direction:column;background:var(--bg);}
+  #work .tabs{display:flex;align-items:center;height:36px;border-bottom:1px solid var(--border);padding:0 8px;gap:4px;}
+  #work .ftab{padding:2px 16px;border-radius:6px 6px 0 0;color:var(--text3);font-size:12px;border:1px solid transparent;}
+  #work .canvas{flex:1;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:12.5px;}
+  #canvas-card{border:1px dashed var(--border2);border-radius:12px;padding:22px 40px;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  #notes{position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:30;background:rgba(12,16,34,.92);border:1px solid var(--border2);border-radius:999px;padding:6px 16px;font-size:11px;color:var(--text3);display:flex;gap:14px;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  #notes b{color:var(--primary);font-weight:600;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="menubar">
+    <div class="logo"></div><span class="brand">Polaris</span>
+    <span class="work">方案Ｂ · VSCode 式图标直达</span>
+    <span style="flex:1"></span>
+    <span style="font-size:11px;color:var(--muted)">点图标 = 切换，再点 = 折叠</span>
+  </div>
+
+  <!-- ActivityBar 图标列 -->
+  <div id="bar">
+    <button class="bar-btn active" data-t="files" title="文件 ▤">▤</button>
+    <button class="bar-btn" data-t="changes" title="变更 ⚑"><span>⚑</span><span class="nd"></span></button>
+    <button class="bar-btn" data-t="terminal" title="终端 ▣">▣</button>
+    <button class="bar-btn spacer"></button>
+    <button class="bar-btn" data-t="settings" title="设置">⚙</button>
+  </div>
+
+  <!-- 面板区：三个面板常驻 DOM -->
+  <div id="side">
+    <!-- 文件 -->
+    <div class="panel" data-panel="files">
+      <div class="panel-head">资源管理器</div>
+      <div class="panel-scroll" id="file-scroll"><div id="filetree"></div></div>
+    </div>
+    <!-- 变更 -->
+    <div class="panel hidden" data-panel="changes">
+      <div class="panel-head">源代码管理</div>
+      <div class="gh"><span class="seg">变更</span><span class="branch">main</span><span style="color:var(--muted)">2 文件</span></div>
+      <div class="panel-scroll" id="ch-scroll">
+        <div class="file-line" data-f="src/App.tsx"><span class="check">✓</span><span class="st m">M</span><span class="p">src/App.tsx</span></div>
+        <div class="file-line" data-f="src/stores/viewStore.ts"><span class="check">✓</span><span class="st m">M</span><span class="p">src/stores/viewStore.ts</span></div>
+        <div class="panel-scroll" style="flex:0;padding:6px 10px;color:var(--muted);font-size:11px;">已暂存区域 ▸</div>
+      </div>
+    </div>
+    <!-- 终端 -->
+    <div class="panel hidden" data-panel="terminal">
+      <div class="panel-head">终端</div>
+      <div class="term" id="term-out"><span class="p">polaris</span>@<span class="dim">workspace</span><span class="p"> ~</span> <span>$</span> pnpm test:run<br>
+        <span class="dim">[16:18:02]</span>  ✓ <span class="ok">14 passed</span> (ToolSwitcher.test.tsx)<br>
+        <span class="p">polaris</span>@<span class="dim">workspace</span><span class="p"> ~</span> <span>$</span> <span class="term-caret">▊</span></div>
+    </div>
+  </div>
+
+  <div id="work">
+    <div class="tabs"><div class="ftab on">修改日志</div></div>
+    <div class="canvas"><div id="canvas-card"><span style="font-size:16px;color:var(--text3)">📄</span><span class="ph">主工作区（原型示意，不属于侧栏方案）</span></div></div>
+  </div>
+</div>
+
+<div id="notes"><span><b>保活 ✓</b> 切走切回/折叠 → 展开、勾选、滚动都在</span><span>折叠 = 再点当前图标 / ⌘B</span></div>
+
+<script>
+  // 文件树 + 展开状态（内存保活）
+  const tree = [
+    {d:'src', kids:[{d:'components', kids:[{d:'Layout', kids:[{f:'ToolSwitcher.tsx'},{f:'LeftPanel.tsx'},{f:'ActivityBar.tsx'}]},{f:'App.tsx'},{f:'main.tsx'}]}]},
+    {d:'stores', kids:[{f:'viewStore.ts'},{f:'gitStore'}]},
+    {d:'styles', kids:[{f:'index.css'}]},
+    {f:'package.json'},{f:'vite.config.ts'}
+  ];
+  const expanded = new Set(['src','components','Layout']);
+  function renderTree(nodes, deep){
+    let html='';
+    for(const n of nodes){
+      if(n.d){
+        const open = expanded.has(n.d);
+        html += `<div class="tree-row" data-dir="${n.d}" style="padding-left:${2+deep*16}px"><span class="caret ${open?'open':''}">▶</span><span style="color:#9FB4E8">▤</span><span class="name">${n.d}</span></div>`;
+        if(open) html += renderTree(n.kids, deep+1);
+      } else {
+        html += `<div class="tree-row" style="padding-left:${2+deep*16+14}px"><span class="spacer"></span><span class="fmt">·</span><span class="name">${n.f}</span></div>`;
+      }
+    }
+    return html;
+  }
+  function paintTree(){ document.getElementById('filetree').innerHTML = renderTree(tree,0);
+    document.querySelectorAll('.tree-row[data-dir]').forEach(row=>{ row.onclick=()=>{ const d=row.dataset.dir; if(expanded.has(d))expanded.delete(d);else expanded.add(d); paintTree(); }; }); }
+  paintTree();
+
+  // 面板切换：图标点击 = 切，再点当前 = 折叠（全 VSCode 语义）
+  const bars = document.querySelectorAll('#bar .bar-btn[data-t]');
+  const panels = document.querySelectorAll('.panel');
+  let current = 'files';
+  function show(t){ current=t;
+    bars.forEach(b=>b.classList.toggle('active', b.dataset.t===t));
+    panels.forEach(p=>p.classList.toggle('hidden', p.dataset.panel!==t));
+  }
+  bars.forEach(b=>{ b.onclick=()=>{ if(b.dataset.t===current){ /* 再点当前图标 → 折叠 */ document.getElementById('side').style.display='none'; } else { document.getElementById('side').style.display=''; show(b.dataset.t); } }; });
+
+  // 勾选保活
+  document.querySelectorAll('.file-line').forEach(line=>{ line.onclick=()=>line.classList.toggle('checked'); });
+
+  // ⌘B 折叠/展开侧栏（面板状态不动，只切 display）
+  let hidden=false;
+  window.addEventListener('keydown',e=>{ if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='b'){ e.preventDefault(); hidden=!hidden; document.getElementById('side').style.display = hidden?'none':''; } });
+</script>
+</body>
+</html>

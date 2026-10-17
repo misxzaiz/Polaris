@@ -42,6 +42,10 @@ interface ViewState {
   panelStates: Record<string, { visible: boolean; width: number }>;
   // 新布局相关状态
   leftPanelType: LeftPanelType;  // 左侧面板类型
+  /** 记忆的激活面板（close 后保留，strip 高亮与重新展开用） */
+  activeLeftPanelType: LeftPanelType;
+  /** MRU 追加 tab（从溢出 ⋯ 打开过的非固定面板，可 × 关闭）；固定核心由 PINNED_LEFT_PANEL_TYPES 常量给出 */
+  leftPanelMru: LeftPanelType[];
   leftPanelWidth: number;        // 左侧面板宽度
   rightPanelWidth: number;       // 右侧 AI 面板宽度
   rightPanelCollapsed: boolean;  // 右侧面板是否折叠
@@ -83,6 +87,8 @@ interface ViewActions {
   switchToLeftPanel: (type: LeftPanelType) => void; // VSCode 风格: 切换面板,不关闭当前
   closeLeftPanel: () => void; // 关闭左侧面板
   setLeftPanelWidth: (width: number) => void;
+  openMruTab: (type: LeftPanelType) => void; // 从 ⋯ 打开 MRU 追加 tab（记录并展开）
+  closeMruTab: (type: LeftPanelType) => void; // 关闭 MRU tab（从左侧列表中移除）
   setRightPanelWidth: (width: number) => void;
   toggleRightPanel: () => void;
   toggleTerminalFullscreen: () => void; // 切换终端全屏
@@ -135,6 +141,8 @@ export const useViewStore = create<ViewStore>()(
       },
       // 新布局初始状态
       leftPanelType: 'none' as LeftPanelType,   // 默认折叠（隐藏左侧面板）
+      activeLeftPanelType: 'files' as LeftPanelType, // 默认文件浏览器（close 后仍记忆）
+      leftPanelMru: [] as LeftPanelType[], // 默认无 MRU 追加 tab
       leftPanelWidth: 280,        // 左侧面板默认宽度
       rightPanelWidth: 400,       // 右侧 AI 面板默认宽度
       rightPanelCollapsed: false, // 右侧面板默认不折叠
@@ -251,27 +259,27 @@ export const useViewStore = create<ViewStore>()(
       // 设置左侧面板类型
       setLeftPanelType: (type: LeftPanelType) => {
         tracePanelChange('setLeftPanelType', get().leftPanelType, type)
-        set({ leftPanelType: type })
+        set({ leftPanelType: type, activeLeftPanelType: type })
       },
 
       // 切换左侧面板 (智能切换: 如果点击的是当前面板则隐藏, 否则显示该面板)
       toggleLeftPanel: (type: LeftPanelType) => set((state) => {
         const next = state.leftPanelType === type ? 'none' : type
         tracePanelChange('toggleLeftPanel', state.leftPanelType, next)
-        return { leftPanelType: next }
+        return { leftPanelType: next, activeLeftPanelType: type }
       }),
 
       // VSCode 风格: 切换到指定面板,如果已经是该面板则不做操作
       switchToLeftPanel: (type: LeftPanelType) => set((state) => {
         if (state.leftPanelType !== type) {
           tracePanelChange('switchToLeftPanel', state.leftPanelType, type)
-          return { leftPanelType: type };
+          return { leftPanelType: type, activeLeftPanelType: type };
         }
         // 如果已经是该面板,不做任何操作
         return {};
       }),
 
-      // 关闭左侧面板
+      // 关闭左侧面板（保留 activeLeftPanelType 记忆）
       closeLeftPanel: () => {
         tracePanelChange('closeLeftPanel', get().leftPanelType, 'none')
         set({ leftPanelType: 'none' })
@@ -279,6 +287,23 @@ export const useViewStore = create<ViewStore>()(
 
       // 设置左侧面板宽度
       setLeftPanelWidth: (width: number) => set({ leftPanelWidth: width }),
+
+      // 从 ⋯ 溢出面板打开：MRU 追加到左侧 strip 尾（去重、MAX_TABS=5），并展开该面板
+      openMruTab: (type: LeftPanelType) => set((state) => {
+        const mru = state.leftPanelMru.includes(type)
+          ? state.leftPanelMru.filter((p) => p !== type) // 移到末端
+          : state.leftPanelMru;
+        return {
+          leftPanelMru: [...mru, type].slice(-5),
+          leftPanelType: type,
+          activeLeftPanelType: type,
+        };
+      }),
+
+      // 关闭 MRU tab：从 strip 移除（面板数据保留，内置面板不拦截）
+      closeMruTab: (type: LeftPanelType) => set((state) => ({
+        leftPanelMru: state.leftPanelMru.filter((p) => p !== type),
+      })),
 
       // 设置右侧面板宽度
       setRightPanelWidth: (width: number) => set({ rightPanelWidth: width }),

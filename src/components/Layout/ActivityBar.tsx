@@ -34,7 +34,7 @@ interface ActivityBarProps {
   rightPanelCollapsed?: boolean
   /** 强制折叠模式（如小屏模式），入口交给顶部栏 */
   forceCollapsed?: boolean
-  /** 用户主动折叠（activityBarCollapsed）：42px ⇄ 8px 宽度过渡 + 图标渐隐 */
+  /** 用户主动折叠（activityBarCollapsed）：完全隐藏图标列，展开走顶部栏工具切换器 */
   collapsed?: boolean
 }
 
@@ -42,7 +42,6 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   const { t } = useTranslation('common')
   const leftPanelType = useViewStore((state) => state.leftPanelType)
   const toggleLeftPanel = useViewStore((state) => state.toggleLeftPanel)
-  const toggleActivityBar = useViewStore((state) => state.toggleActivityBar)
 
   const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false)
   const [toolSwitcherOpenMode, setToolSwitcherOpenMode] = useState<'click' | 'hover'>('click')
@@ -119,31 +118,18 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
     return null
   }
 
-  // 用户主动折叠：42px ⇄ 8px 宽度过渡，图标渐隐（保留设置入口）
+  // 用户主动折叠：图标列完全隐藏（display:none），展开走顶部栏工具切换器
   return (
     <div
       ref={containerRef}
       data-theme-panel
-      className={`relative flex flex-col items-center shrink-0 py-2 bg-background-elevated border-r border-border transition-[width] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${
-        collapsed ? 'w-2' : 'w-[42px]'
+      className={`relative flex flex-col items-center shrink-0 py-2 bg-background-elevated border-r border-border transition-[width,opacity] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)] ${
+        collapsed ? 'hidden w-0 border-r-0' : 'w-[42px]'
       } ${className || ''}`}
     >
-      {/* 折叠态窄条：始终占满高度（absolute 不干扰展开层布局），点击展开 */}
+      {/* 展开层：图标 + 更多工具 + 设置（折叠时整个 ActivityBar 隐藏，由顶部栏接管） */}
       <div
-        className={`absolute inset-0 flex items-center justify-center cursor-pointer transition-opacity duration-200 ${
-          collapsed ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        }`}
-        title={t('labels.showActivityBar')}
-        onClick={collapsed ? toggleActivityBar : undefined}
-      >
-        <div className="w-1 h-8 rounded-full bg-background-hover hover:bg-background-surface transition-colors" />
-      </div>
-
-      {/* 展开层：图标 + 更多工具 + 设置（折叠时渐隐） */}
-      <div
-        className={`flex flex-col items-center w-full h-full overflow-hidden transition-opacity duration-200 ${
-          collapsed ? 'opacity-0 pointer-events-none' : 'opacity-100'
-        }`}
+        className="flex flex-col items-center w-full h-full overflow-hidden"
       >
         {visibleButtons.map((btn) => {
           const Icon = pluginIconMap[btn.icon]
