@@ -119,3 +119,6 @@ secrets/
 # Local scratch (debug dumps etc.)
 scripts/tmp/
 .polaris-preview-smoke.svg
+# Local tool config / artifacts (contain absolute paths & tokens, never commit)
+opencode.json
+.impeccable/
