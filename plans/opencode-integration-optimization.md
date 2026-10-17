@@ -298,3 +298,51 @@ start/continue_session（workspace = cwd）
 `--thinking`/`--agent`/`--title` 能力位、`session export` 历史回填、
 EOF 无产出瞬态重试（b9ffe1a2 Rev3 遗留）、MCP 桥接（Rev4 专项方案，方案已备、
 实施需先定 `.polaris/` 目录约定与用户项目配置合并策略）。
+
+## Rev3.2（2026-10-17）：修复后 dev 后端真实运行时端到端实证
+
+> 驱动方式：dev 后端（target\debug\polaris.exe，9:57 启动，含 c03fa674 修复）经
+> HTTP `/api/router-dispatch-stream` → `cap.ai.chat` 流式 `action=start`
+> （engineId=opencode, model=glm-5.3-flash-free, workDir=真实工作区）发起真实会话，
+> 与 UI 聊天同链路。鉴权/契约/API 形态详见本节末「驱动杂记」。
+
+### 结果（全部通过）
+
+1. **spawn 命令行含 `--standalone`（后端日志直接证据）**：
+   `[OpencodeEngine] 执行命令: ...npm\opencode.cmd run ... --auto --standalone`；
+   进程树实测：run 客户端的子进程是**私有** `serve --stdio --port 0`，
+   不再连接共享 `serve --service`。
+2. **事件流正常（自然完成会话）**：12 事件、unknown=0、finish=true text=true
+   error=false、子进程退出 code=0、was_interrupted=false。`--standalone` 不影响
+   stdout JSONL 事件协议。
+3. **中断隔离（生成中途 `taskkill /PID <wrapper> /T /F`，与 `kill_process` 同语义）**：
+   wrapper→run→私有 serve 全树终止；**无关进程零波及**（孤儿共享服务与另一
+   活动会话均存活）。Polaris 侧记录 EOF（10 事件，外部击杀故 was_interrupted=false，
+   语义符合预期——T1 中断语义已在 c03fa674 提交与单测覆盖）。
+4. **遗留清理**：孤儿共享服务 PID 35404 已消失（自亡或手工清杀）；修复前二进制
+   拉起的旧 run 客户端（无 `--standalone`）已自行退出。
+
+### 现场观察（生产二进制仍为修复前）
+
+验证期间用户生产版 `D:\app\polaris\polaris.exe`（PID 57004，9:11 启动，**修复前
+二进制**）正拉起 2 个并发 opencode 会话，共享一个 `serve --service`——修复前风险
+形态在真实使用中出现。**生产版需更新二进制后 `--standalone` 才生效**；此前的连坐
+Transport 报错在生产二进制上仍会复现，属预期。
+
+### 驱动杂记（复现入口，供后续回归使用）
+
+- dev 后端 HTTP 鉴权：Bearer MD5(`config.web.token`)（Polaris-dev token 见
+  `%APPDATA%\Polaris-dev\config.json`）；`/api/health` 无鉴权可用。
+- 流式会话入口：`POST /api/router-dispatch-stream`，body 需 `req` 包裹层：
+  `{"req":{"target":"cap.ai.chat","payload":{"action":"start","message":"…",
+  "options":{"engineId":"opencode","model":"…","workDir":"…"}}}}`。
+- 派发（dispatch）链路**发现独立缺陷（与齿箱1/2修复无关，单列）**：
+  `dispatchTaskService.handleDispatchTaskRequest` 用同步 `aiChatDispatch`
+  （`router_dispatch`）承载 start 动作 → `cap.ai.chat` 同步分支报
+  「cap.ai.chat 不支持同步动作」→ 静默派发会话秒失败（对任何引擎）。
+  start 应走 `aiChatDispatchStream`（`router_dispatch_stream`）。
+  已在 dispatch_tasks.json 留痕，归入派发链路独立修复项。
+- 另：`/api/dispatch-create-task` 命令路径注册任务但**不 emit** `dispatch-task-request`
+  （设计如此：调用方自执行），外部驱动请用 ask_listener MCP dispatch 帧（
+  端口/token 见 `%APPDATA%\<dataRoot>\.meta\ask-listener.json`，帧格式
+  4 字节 LE 长度 + JSON）。
