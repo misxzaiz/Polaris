@@ -213,6 +213,11 @@ export interface PluginCardBlock {
   cardId: string;
   /** 完整工具名 mcp__{server}__{tool}，兜底展示用 */
   toolName: string;
+  /**
+   * 注册表加载 key（Code Mode 载体 execute 解析后的 mcp__{server}__{tool}）。
+   * 宿主 PluginCardHost 用它 load/match 组件；历史块缺失时回落 toolName。
+   */
+  cardKey?: string;
   /** 渲染模式 */
   mode: PluginCardMode;
   /** 渲染状态 */

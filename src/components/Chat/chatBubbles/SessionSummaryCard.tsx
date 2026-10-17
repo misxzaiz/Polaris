@@ -42,9 +42,6 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
   blocks: ContentBlock[];
 }) {
   const { t } = useTranslation('chat');
-  const [expanded, setExpanded] = useState(false);
-  /** 筛选激活的段落类型（null = 无筛选，全部段落可见） */
-  const [activeFilter, setActiveFilter] = useState<SectionType | null>(null);
   const openFile = useFileEditorStore((s) => s.openFile);
   const currentWorkspace = useWorkspaceStore((s) => {
     const { workspaces, currentWorkspaceId } = s;
@@ -64,6 +61,13 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
     () => blocks.filter((b) => b.type === 'artifact_preview' || b.type === 'plugin_card'),
     [blocks]
   );
+
+  // 展开态初值：存在预览块时默认展开 —— 预览块已统一折叠进本卡（blockGrouping
+  // "不再于消息正文直出"），若再默认折叠，用户完全无预览入口（PRD 预览 MCP 场景）。
+  // 仅作初值：用户手动折叠/展开后以用户操作为准，重渲染不强制。
+  const [expanded, setExpanded] = useState(() => previews.length > 0);
+  /** 筛选激活的段落类型（null = 无筛选，全部段落可见） */
+  const [activeFilter, setActiveFilter] = useState<SectionType | null>(null);
 
   // 运行过程段落按类型细分（思考/工具/计划/权限…），供 chips 展示与筛选
   const processTypeGroups = useMemo(() => {

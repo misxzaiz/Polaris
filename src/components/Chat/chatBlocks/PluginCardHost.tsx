@@ -133,27 +133,31 @@ export function PluginCardHost({ block, onSendToChat }: PluginCardHostProps) {
   const [loading, setLoading] = useState(true)
   const [loadKey, setLoadKey] = useState(0)
 
+  // 注册表加载 key：Code Mode 载体块（toolName="execute"）必须用解析出的 cardKey
+  // （eventHandler 创建块时由 resolveWithKey 写入），历史块缺失时回落 toolName。
+  const cardKey = block.cardKey ?? block.toolName
+
   const loadCard = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const C = await chatCardRegistry.load(block.toolName)
+      const C = await chatCardRegistry.load(cardKey)
       setComponent(() => C)
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e)
-      log.warn('卡片加载失败，回落兜底渲染', { toolName: block.toolName, error: message })
+      log.warn('卡片加载失败，回落兜底渲染', { toolName: block.toolName, cardKey, error: message })
       setError(message)
     } finally {
       setLoading(false)
     }
-  }, [block.toolName])
+  }, [cardKey, block.toolName])
 
   useEffect(() => {
     loadCard()
   }, [loadCard, loadKey])
 
   // 加载失败：若注册表根本没命中（非临时错误），直接兜底渲染，不显示重试
-  const registered = chatCardRegistry.match(block.toolName)
+  const registered = chatCardRegistry.match(cardKey)
   if (!loading && error && !registered) {
     return <PluginCardFallback block={block} />
   }

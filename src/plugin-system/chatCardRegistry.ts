@@ -43,6 +43,16 @@ class ChatCardRegistry {
   /** 已加载组件缓存：key → component */
   private cache = new Map<string, PluginChatCardComponent>()
 
+  // opencode 引擎用 Code Mode 调 MCP：模型在一个 execute 工具里写 JS
+  // `tools["server"].tool(...)`，tool_call 事件只看到载体工具名（execute/xecute），
+  // 直接按名匹配必然 miss → 需从 block.input.code 提取内嵌 MCP 调用再匹配。
+  private static CODE_MODE_TOOL_RE = /^(?:e?xecute)$/i
+  private static MCP_INVOCATION_RE =
+    /\btools\[\s*["']([^"']+)["']\s*\]\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/g
+  /** return 语句显式返回某次 MCP 调用 → execute 返回值即该工具的结果（卡片 data 同源） */
+  private static RETURN_MCP_RE =
+    /\breturn\b[^;]{0,200}?\btools\[\s*["']([^"']+)["']\s*\]\s*\.\s*([A-Za-z_$][\w$]*)\s*\(/
+
   register(
     pluginId: string,
     card: Omit<PluginChatCardContribution, 'pluginId'>,
@@ -109,6 +119,59 @@ class ChatCardRegistry {
    */
   match(toolName: string): CardEntry | undefined {
     return this.cards.get(toolName)
+  }
+
+  /**
+   * 解析一次工具调用应使用的卡片（含 opencode Code Mode 适配），并返回命中 key。
+   *
+   * - toolName 直接命中注册表 → key = toolName（Claude Code 等引擎的原生 MCP 工具路径）。
+   * - toolName 是 Code Mode 载体（execute/xecute）且未直接命中 → 从 block.input.code
+   *   提取内嵌 `tools["server"].tool(...)` 调用并按完整名再查注册表。
+   *   多个调用时优先 return 语句所指的那次（execute 返回值与其卡片 data 同源）。
+   */
+  resolveWithKey(toolName: string, blockInput: unknown): { entry: CardEntry; key: string } | undefined {
+    const direct = this.match(toolName)
+    if (direct) return { entry: direct, key: toolName }
+    if (!ChatCardRegistry.CODE_MODE_TOOL_RE.test(toolName)) return undefined
+    const code =
+      typeof blockInput === 'object' && blockInput !== null
+        ? (blockInput as { code?: unknown }).code
+        : undefined
+    if (typeof code !== 'string') return undefined
+
+    const invocations: Array<{ server: string; tool: string }> = []
+    for (const m of code.matchAll(ChatCardRegistry.MCP_INVOCATION_RE)) {
+      const [server, tool] = [m[1], m[2]]
+      if (this.cards.has(buildMcpToolName(server, tool))) invocations.push({ server, tool })
+    }
+    if (invocations.length === 0) return undefined
+    if (invocations.length === 1) {
+      const key = buildMcpToolName(invocations[0].server, invocations[0].tool)
+      const entry = this.match(key)
+      return entry ? { entry, key } : undefined
+    }
+
+    // 多命中：优先 return 语句指针对齐；否则取首个命中（best-effort）
+    const returnMatch = ChatCardRegistry.RETURN_MCP_RE.exec(code)
+    if (returnMatch) {
+      const returnKey = `${returnMatch[1]}__${returnMatch[2]}`
+      const preferred = invocations.find((v) => `${v.server}__${v.tool}` === returnKey)
+      if (preferred) {
+        const key = buildMcpToolName(preferred.server, preferred.tool)
+        const entry = this.match(key)
+        return entry ? { entry, key } : undefined
+      }
+    }
+    const key = buildMcpToolName(invocations[0].server, invocations[0].tool)
+    const entry = this.match(key)
+    return entry ? { entry, key } : undefined
+  }
+
+  /**
+   * resolve 的薄包装（保留既有调用方/测试口径）：返回命中 entry，不含 key。
+   */
+  resolve(toolName: string, blockInput: unknown): CardEntry | undefined {
+    return this.resolveWithKey(toolName, blockInput)?.entry
   }
 
   /**

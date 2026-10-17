@@ -9,7 +9,12 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
-import type { PluginCardBlock, ChatMessage, TaskBoardItem } from '@/types'
+import type {
+  PluginCardBlock,
+  ChatMessage,
+  TaskBoardItem,
+  ToolCallBlock,
+} from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
@@ -121,6 +126,65 @@ function computeCacheHitRate(input: number, cacheRead: number): number {
 }
 
 /**
+ * Code Mode 载体判定：blockInput 里带 `tools["server"].tool(...)` 形态的 code
+ * 字段（opencode execute 载体工具的唯一形状，普通工具输入不含内嵌 MCP 调用）。
+ */
+const CODE_MODE_CODE_RE = /\btools\[\s*["'][^"']+["']\s*\]\s*\./
+
+function isCodeModeCarrierInput(blockInput: unknown): blockInput is { code: string } {
+  if (!blockInput || typeof blockInput !== 'object') return false
+  const code = (blockInput as { code?: unknown }).code
+  return typeof code === 'string' && CODE_MODE_CODE_RE.test(code)
+}
+
+/**
+ * artifact 识别口径：与 PrdPreviewCard.tsx 的 isPreviewArtifact 对齐
+ * （artifactType 标记优先；缺标记时按 html+previewId 双字段识别）。
+ */
+function isArtifactLike(obj: unknown): obj is Record<string, unknown> {
+  if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return false
+  const o = obj as Record<string, unknown>
+  return (
+    o.artifactType === 'polaris.preview' ||
+    (typeof o.html === 'string' && typeof o.previewId === 'string')
+  )
+}
+
+/**
+ * opencode Code Mode artifact 拆包（尽力而为）。
+ *
+ * 背景：Code Mode 下 tool_call_end.result 是模型代码的 return 值（无 MCP
+ * structuredContent 信封）。裸 `return tools[…].preview_html(…)` 时返回值即
+ * artifact 本体；聚合返回（多调用 / Promise.allSettled 展开）时 artifact
+ * 包在返回对象的一层成员里。这里在返回值自身 + 一层成员（含数组元素、
+ * allSettled 的 .value 信封）中回溯第一个 artifact-like 值。
+ *
+ * 边界：仅一层遍历不递归；未命中返回原解析结果（与无拆包行为一致）。
+ */
+function unwrapCodeModeArtifact(parsed: unknown): unknown {
+  if (!parsed || typeof parsed !== 'object') return parsed
+  if (isArtifactLike(parsed)) return parsed
+
+  const members: unknown[] = []
+  if (Array.isArray(parsed)) members.push(...parsed)
+  else {
+    for (const v of Object.values(parsed as Record<string, unknown>)) {
+      if (Array.isArray(v)) members.push(...v)
+      else members.push(v)
+    }
+  }
+
+  for (const m of members) {
+    if (isArtifactLike(m)) return m
+    if (m && typeof m === 'object' && !Array.isArray(m)) {
+      const value = (m as Record<string, unknown>).value
+      if (isArtifactLike(value)) return value // Promise.allSettled 形态
+    }
+  }
+  return parsed
+}
+
+/**
  * 解析 MCP 工具结果为插件卡片数据。
  *
  * 优先级：
@@ -128,35 +192,44 @@ function computeCacheHitRate(input: number, cacheRead: number): number {
  * 2. 字符串结果中的 fenced ```json 块
  * 3. 字符串结果直接 JSON.parse
  * 4. 原始值（字符串/对象）兜底
+ * 5. opencode Code Mode 载体（blockInput 含内嵌 MCP 调用的 code）：
+ *    在解析结果自身 + 一层成员中拆包 artifact-like 值（仅装饰返回值，不改 1-4 口径）。
  *
  * 解析失败不抛错，返回原始值由卡片组件自行防御。
  */
-function parseCardData(result: unknown): unknown {
+export function parseCardData(result: unknown, blockInput?: unknown): unknown {
+  let parsed: unknown = result
+
   if (result && typeof result === 'object') {
     const obj = result as Record<string, unknown>
     if (obj.structuredContent !== undefined) {
       return obj.structuredContent
     }
-    return result
-  }
-
-  if (typeof result === 'string') {
+    parsed = result
+  } else if (typeof result === 'string') {
     const fenced = result.match(/```json\s*([\s\S]*?)```/i)
     if (fenced?.[1]) {
       try {
-        return JSON.parse(fenced[1].trim())
+        parsed = JSON.parse(fenced[1].trim())
       } catch {
         // 落到直接 parse
       }
     }
-    try {
-      return JSON.parse(result.trim())
-    } catch {
-      return result
+    if (parsed === result) {
+      try {
+        parsed = JSON.parse(result.trim())
+      } catch {
+        parsed = result
+      }
     }
   }
 
-  return result
+  // opencode Code Mode 载体：return 值无 structuredContent 信封，尝试拆包 artifact。
+  // 非 Code Mode 输入（blockInput 无 code）不进此分支，行为与旧版一致。
+  if (isCodeModeCarrierInput(blockInput)) {
+    return unwrapCodeModeArtifact(parsed)
+  }
+  return parsed
 }
 
 /**
@@ -342,18 +415,28 @@ export function handleAIEvent(
 
       // 插件自定义卡片（result 模式）：按工具名查注册表，命中则追加独立卡片。
       // 与工具调用卡并存（双卡模式）。interaction 模式由独立的 plugin_card 事件驱动。
+      // opencode Code Mode 适配：MCP 调用包在 execute 载体工具内，直接按名匹配
+      // 必 miss → resolve 会读 block.input.code 里的内嵌 MCP 调用再查注册表。
       if (event.success) {
-        const cardEntry = chatCardRegistry.match(event.tool)
-        if (cardEntry && cardEntry.mode === 'result') {
+        const { currentMessage: cardMsg, toolBlockMap: cardMap } = get()
+        const cardBlockIdx = cardMsg ? cardMap.get(callId) : undefined
+        const cardBlockInput =
+          cardBlockIdx !== undefined && cardMsg
+            ? (cardMsg.blocks[cardBlockIdx] as ToolCallBlock | undefined)?.input
+            : undefined
+        const resolved = chatCardRegistry.resolveWithKey(event.tool, cardBlockInput)
+        if (resolved && resolved.entry.mode === 'result') {
           const cardBlock: PluginCardBlock = {
             type: 'plugin_card',
             id: callId,
-            pluginId: cardEntry.pluginId,
-            cardId: cardEntry.cardId,
+            pluginId: resolved.entry.pluginId,
+            cardId: resolved.entry.cardId,
             toolName: event.tool,
+            // Code Mode 载体（execute）解析后的真实注册表 key —— 宿主 load/match 依赖
+            cardKey: resolved.key,
             mode: 'result',
             status: 'ready',
-            data: parseCardData(event.result),
+            data: parseCardData(event.result, cardBlockInput),
             createdAt: new Date().toISOString(),
           }
           state.appendPluginCardBlock(cardBlock)
