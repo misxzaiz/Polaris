@@ -346,3 +346,63 @@ Transport 报错在生产二进制上仍会复现，属预期。
   （设计如此：调用方自执行），外部驱动请用 ask_listener MCP dispatch 帧（
   端口/token 见 `%APPDATA%\<dataRoot>\.meta\ask-listener.json`，帧格式
   4 字节 LE 长度 + JSON）。
+
+## Rev5（2026-10-17）：MCP 桥接实施（R5 批次）
+
+### 实验证据（裁定 Rev4 遗留 3 决策点）
+
+1. **`OPENCODE_CONFIG` env 不被 v2.0.30 认可**：环境变量指向含 `mcp` 段的配置后
+   `opencode mcp list` 仍返回 "No MCP servers configured"（cwd 内外各测一次）。
+2. **`opencode mcp add` 写 `<cwd>\opencode.json`（项目级）**：add 后文件出现在
+   cwd；全局目录 `%USERPROFILE%\.config\opencode\` 当时无任何配置文件。
+3. 决策点裁定：
+   - `.polaris/` 嵌套目录约定【否决】：opencode 只认 cwd 根 `opencode.json`，
+     嵌套目录配置不生效 → 注入文件直接写 `<workspace>\opencode.json`。
+   - 与用户已有 opencode.json 的合并策略【裁定=跳过】：v1 不解析不合并（JSONC
+     兼容未知 + 崩溃残留覆盖用户文件语义风险不可接受），检测到已存在 → warn
+     + 本会话无 Polaris MCP 工具（引擎侧可观测）。
+   - polaris-mcp 可执行路径解析【复用现状】：`ResolvedExternalMcpServer.command`
+     即解析后的绝对 exe 路径，args 已含逐会话动态 `--polaris-port/--polaris-token`
+     （launcher 上游按 aiToolAccess 过滤，无重复解析需求）。
+4. **注入通道是 cwd 根文件 ⇒ Rev4 的「会话结束不删、幂等重写」策略废弃**：
+   该策略本意配合全局/`.polaris/` 隔离；现文件直接落在用户工作区，必须
+   会话 EOF 删除恢复原状。崩溃残留无破坏性（只向 cwd 内的 opencode 用户
+   多暴露 Polaris 内置 MCP 工具，手删即恢复）。
+
+### 实施记录
+
+- `SessionFileCleanup`（新枚举）：会话期注入文件统一收尾抽象，R4-2 长消息
+  临时文件与 R5 MCP 桥接文件共用；EOF 线程统一 `apply()`，spawn/build
+  失败路径显式清理（防早退泄漏）。
+- `build_opencode_mcp_config(&[ResolvedExternalMcpServer]) -> serde_json::Value`
+  纯函数：`{"$schema": ".../config.json", "mcp": {<name>: {"type":"local",
+  "command":[<cmd>, ...args], "enabled": true}}}`（形状经 clean-room 实验闭环：
+  echo stdio server 注册成功且被 GLM 模型调用）。
+- `write_mcp_bridge_config(workspace_dir, servers) -> Option<SessionFileCleanup>`：
+  无 server / 已有 opencode.json / 序列化或写入失败 → None（跳过注入）。
+- `spawn_event_reader` 签名 `msg_file: Option<PathBuf>` →
+  `cleanup_files: Vec<SessionFileCleanup>`。
+- `launcher.rs` OpenCode 分支：由「不注入（使用自带工具）」改为注入
+  `opts.mcp_servers`（引擎内桥接），沿用上游 aiToolAccess 过滤结果。
+- 新增单测 5 个：config 形状 ×2、写入+EOF 删除恢复 ×1、已有配置跳过且
+  不改用户文件 ×1、无 server 不落盘 ×1。
+
+### 验证（如实：测试运行受限）
+
+- `cargo check` EXIT=0；`cargo check --no-default-features --bin polaris-web
+  --bin polaris-mcp` EXIT=0（命令门控双方向）；`cargo clippy --lib` EXIT=0，
+  改动文件零新增 warning。
+- 单测**编译**通过（lib 测试 exe 链接完成），但**运行受阻于本机已知 DLL
+  限制**（`cargo test --lib` → `STATUS_ENTRYPOINT_NOT_FOUND`，测试 exe 加载
+  即挂；与历史记录一致，非本批改动引入）。5 个新单测未在真实 runtime 执行。
+- 生产级端到端（dev 后端注入真实 Polaris 内置 server 的 opencode 会话调用
+  MCP 工具闭环）**未做**：当前效果背书 = clean-room echo 实验闭环 +
+  opencode mcp add 对同一文件形状的认可。
+
+### 已知边界
+
+- 工作区已有 opencode.json → MCP 注入不生效（v1 策略），合并策略留后续批次。
+- Polaris 崩溃可能残留 `<workspace>\opencode.json`（语义无破坏性）。
+- 仍未做（沿用 Rev4 清单）：env_keys 实测固化（需真实 key）、`--thinking`/
+  `--agent`/`--title` 能力位、`session export` 历史回填、EOF 无产出瞬态重试、
+  已有配置合并策略。

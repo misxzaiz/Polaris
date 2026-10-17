@@ -148,9 +148,19 @@ pub fn inject_mcp_into_session_opts(
             }
         }
         EngineId::OpenCode => {
-            // opencode 自带工具集（read/write/bash/edit 等），初版不桥接 Polaris MCP。
-            // opencode 有自己的 MCP 管理（`opencode mcp`），后续可探索桥接。
-            tracing::debug!("[SessionLauncher] OpenCode 引擎不注入 MCP（使用自带工具）");
+            if !mcp.mcp_servers.is_empty() {
+                // R-MCP：桥接由引擎内完成——启动前在工作区写项目级 opencode.json
+                // （`mcp.<name>.{type:"local",command:[...],enabled:true}`，
+                // 实测 v2.0.30 有效），EOF 线程删除文件恢复工作区原状。
+                // 不用 `opencode mcp add --global`（污染用户全局配置，且无法
+                // 承载每会话动态参数 --polaris-port/--polaris-token）。
+                // 工作区已有 opencode.json 时引擎内跳过注入（不合并用户配置）。
+                opts.mcp_servers = mcp.mcp_servers.clone();
+                tracing::debug!(
+                    "[SessionLauncher] 注入 OpenCode MCP: {} 个 server（引擎内桥接）",
+                    mcp.mcp_servers.len()
+                );
+            }
         }
         EngineId::Custom(_) => {
             if !mcp.mcp_servers.is_empty() {

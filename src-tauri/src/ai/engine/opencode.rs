@@ -32,6 +32,7 @@ use crate::models::ai_event::{
     ToolCallEndEvent, ToolCallStartEvent, UsageEvent, AIEvent,
 };
 use crate::models::config::Config;
+use crate::services::mcp_config_service::ResolvedExternalMcpServer;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -278,6 +279,58 @@ impl ExitSignal {
     }
 }
 
+/// 会话期注入文件（R-MCP 桥接 + R4-2 长消息共用）
+///
+/// 会话结束（EOF 线程收尾）时统一清理，恢复工作区/临时目录原状。
+/// Polaris 崩溃场景可能残留（无法执行收尾）；`Delete` 残留仅为会话新建的
+/// 注入文件，无破坏性（详见 write_mcp_bridge_config 注释）。
+enum SessionFileCleanup {
+    /// 删除本次会话新建的文件
+    Delete(std::path::PathBuf),
+}
+
+impl SessionFileCleanup {
+    fn apply(&self) {
+        let Self::Delete(path) = self;
+        if let Err(e) = std::fs::remove_file(path) {
+            tracing::debug!(
+                "[OpencodeEngine] 会话注入文件清理失败 ({}): {}",
+                path.display(),
+                e
+            );
+        } else {
+            tracing::debug!(
+                "[OpencodeEngine] 会话注入文件已清理: {}",
+                path.display()
+            );
+        }
+    }
+}
+
+/// 把 Polaris 解析的 MCP server 列表转换为 opencode 项目配置的 `mcp` 段（R-MCP）
+///
+/// 形状（实测 v2.0.30 可用）：`{"mcp": {"<name>": {"type": "local",
+/// "command": ["<cmd>", "<args...>"], "enabled": true}}}`。
+fn build_opencode_mcp_config(servers: &[ResolvedExternalMcpServer]) -> serde_json::Value {
+    let mut mcp = serde_json::Map::new();
+    for srv in servers {
+        let mut command = vec![srv.command.clone()];
+        command.extend(srv.args.iter().cloned());
+        mcp.insert(
+            srv.server_name.clone(),
+            serde_json::json!({
+                "type": "local",
+                "command": command,
+                "enabled": true,
+            }),
+        );
+    }
+    serde_json::json!({
+        "$schema": "https://opencode.ai/config.json",
+        "mcp": mcp,
+    })
+}
+
 /// opencode CLI 引擎
 pub struct OpencodeEngine {
     /// 配置
@@ -483,17 +536,55 @@ impl OpencodeEngine {
         Ok(path)
     }
 
-    /// 删除临时消息文件（尽力清理）
-    fn cleanup_message_file(file: &Option<std::path::PathBuf>) {
-        if let Some(path) = file {
-            if let Err(e) = std::fs::remove_file(path) {
-                tracing::debug!(
-                    "[OpencodeEngine] 临时消息文件清理失败 ({}): {}",
-                    path.display(),
-                    e
-                );
-            }
+    /// 在工作区写入项目级 opencode.json 注入 MCP 桥接（R-MCP）
+    ///
+    /// 实测（Rev4/Rev5 证据）：opencode 按工作目录（cwd）读取项目级
+    /// `opencode.json` 的 `mcp` 段；`OPENCODE_CONFIG` env 不被 v2.0.30 认可，
+    /// 全局配置则跨项目生效且无法承载每会话动态参数（ask/dispatch 的
+    /// --polaris-port/--polaris-token）——因此注入走 cwd 项目级文件。
+    ///
+    /// v1 安全策略：**工作区已有 opencode.json 时跳过注入**（不合并/覆盖
+    /// 用户自有 opencode 配置，合并存在 JSONC 解析失败与崩溃残留覆盖语义
+    /// 风险；跳过时引擎按无 MCP 工具运行，warn 可观测）。
+    ///
+    /// 文件生命周期：会话 EOF 删除（工作区恢复原状）。Polaris 崩溃可能残留；
+    /// 残留无破坏性——只对 cwd 内使用 opencode 的用户多暴露 Polaris 内置
+    /// MCP 工具，删除文件即恢复。
+    ///
+    /// 返回 None 表示未注入（无 server / 已有配置 / 写入失败），调用方照常启动。
+    fn write_mcp_bridge_config(
+        workspace_dir: &str,
+        servers: &[ResolvedExternalMcpServer],
+    ) -> Option<SessionFileCleanup> {
+        if servers.is_empty() {
+            return None;
         }
+        let path = std::path::Path::new(workspace_dir).join("opencode.json");
+        if path.exists() {
+            tracing::warn!(
+                "[OpencodeEngine] 工作区已有 opencode.json，跳过 Polaris MCP 注入 ({})",
+                path.display()
+            );
+            return None;
+        }
+        let content = build_opencode_mcp_config(servers);
+        let rendered = match serde_json::to_string_pretty(&content) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("[OpencodeEngine] MCP 桥接配置序列化失败: {}", e);
+                return None;
+            }
+        };
+        if let Err(e) = std::fs::write(&path, rendered) {
+            tracing::warn!("[OpencodeEngine] 写入 MCP 桥接配置失败 ({}): {}", path.display(), e);
+            return None;
+        }
+        tracing::info!(
+            "[OpencodeEngine] 已注入 Polaris MCP 桥接: {} 个 server → {}",
+            servers.len(),
+            path.display()
+        );
+        Some(SessionFileCleanup::Delete(path))
     }
 
     /// 把 spawn 失败转换为 AppError（含 Windows 32767 字符限制友好提示）
@@ -551,8 +642,9 @@ impl OpencodeEngine {
         pid: u32,
         options: SessionOptions,
         exit_signal: std::sync::Arc<ExitSignal>,
-        // R4-2：--file 挂载的临时消息文件，EOF 收尾清理
-        msg_file: Option<std::path::PathBuf>,
+        // R4-2 / R-MCP：会话期注入文件（长消息临时文件、MCP 桥接配置），
+        // EOF 收尾统一删除，恢复工作区/临时目录原状
+        cleanup_files: Vec<SessionFileCleanup>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
         // T1：中断标记集合的本地句柄（kill_process 成功后会 remove 会话条目，
@@ -896,8 +988,10 @@ impl OpencodeEngine {
             if let Ok(mut signals) = exit_signals.lock() {
                 signals.remove(&temp_id);
             }
-            // R4-2：进程已退出，临时消息文件可安全删除（opencode 已读完内容）
-            Self::cleanup_message_file(&msg_file);
+            // R4-2 / R-MCP：进程已退出，会话注入文件统一清理
+            for cleanup in &cleanup_files {
+                cleanup.apply();
+            }
 
             if let Some(cb) = on_complete {
                 cb(0);
@@ -1073,12 +1167,35 @@ impl AIEngine for OpencodeEngine {
         } else {
             None
         };
-        let mut cmd = self.build_command(
+        // R-MCP：注入桥接配置（仅当工作区无 opencode.json 时创建新文件，
+        // EOF 线程统一删除恢复工作区原状；已有配置则跳过注入）
+        let bridge_work_dir = options.work_dir.clone().or_else(|| {
+            self.config
+                .work_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().to_string())
+        });
+        let mcp_bridge = bridge_work_dir
+            .as_deref()
+            .and_then(|wd| Self::write_mcp_bridge_config(wd, &options.mcp_servers));
+        let mut cmd = match self.build_command(
             message,
             msg_file.as_deref(),
             None,
             options.model.as_deref(),
-        )?;
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                // 构建失败同样无人消费注入文件，立即清理
+                if let Some(b) = &mcp_bridge {
+                    b.apply();
+                }
+                if let Some(f) = &msg_file {
+                    let _ = std::fs::remove_file(f);
+                }
+                return Err(e);
+            }
+        };
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
         let cmd_str = Self::format_command_for_log(&cmd);
@@ -1087,8 +1204,13 @@ impl AIEngine for OpencodeEngine {
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                // spawn 失败时消息文件无人消费，立即清理防泄漏
-                Self::cleanup_message_file(&msg_file);
+                // spawn 失败时注入文件无人消费，立即清理防泄漏
+                if let Some(b) = &mcp_bridge {
+                    b.apply();
+                }
+                if let Some(f) = &msg_file {
+                    let _ = std::fs::remove_file(f);
+                }
                 return Err(Self::map_spawn_error(
                     e,
                     message.len(),
@@ -1111,13 +1233,22 @@ impl AIEngine for OpencodeEngine {
             signals.insert(temp_id.clone(), std::sync::Arc::clone(&exit_signal));
         }
 
+        // R4-2 / R-MCP：注入文件统一移交 EOF 线程收尾（msg_file 与
+        // build_command 的借用已结束，此处可安全 move）
+        let mut cleanup_files: Vec<SessionFileCleanup> = Vec::new();
+        if let Some(b) = mcp_bridge {
+            cleanup_files.push(b);
+        }
+        if let Some(f) = msg_file {
+            cleanup_files.push(SessionFileCleanup::Delete(f));
+        }
         let input_sender = self.spawn_event_reader(
             child,
             temp_id.clone(),
             pid,
             options,
             exit_signal,
-            msg_file,
+            cleanup_files,
         );
 
         self.sessions.register_with_sender(
@@ -1176,12 +1307,29 @@ impl AIEngine for OpencodeEngine {
         } else {
             None
         };
-        let mut cmd = self.build_command(
+        // R-MCP：与 start_session 同规则注入桥接配置（续接是新进程，同样
+        // 需要读到 cwd 项目级 opencode.json 才能挂上 Polaris MCP server）
+        let mcp_bridge = work_dir
+            .as_deref()
+            .and_then(|wd| Self::write_mcp_bridge_config(wd, &options.mcp_servers));
+        let mut cmd = match self.build_command(
             message,
             msg_file.as_deref(),
             Some(&real_session_id),
             options.model.as_deref(),
-        )?;
+        ) {
+            Ok(c) => c,
+            Err(e) => {
+                // 构建失败同样无人消费注入文件，立即清理
+                if let Some(b) = &mcp_bridge {
+                    b.apply();
+                }
+                if let Some(f) = &msg_file {
+                    let _ = std::fs::remove_file(f);
+                }
+                return Err(e);
+            }
+        };
         self.configure_command(&mut cmd, work_dir.as_deref(), &options.env_overrides);
 
         let cmd_str = Self::format_command_for_log(&cmd);
@@ -1190,7 +1338,12 @@ impl AIEngine for OpencodeEngine {
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                Self::cleanup_message_file(&msg_file);
+                if let Some(b) = &mcp_bridge {
+                    b.apply();
+                }
+                if let Some(f) = &msg_file {
+                    let _ = std::fs::remove_file(f);
+                }
                 return Err(Self::map_spawn_error(
                     e,
                     message.len(),
@@ -1210,13 +1363,21 @@ impl AIEngine for OpencodeEngine {
             signals.insert(real_session_id.clone(), std::sync::Arc::clone(&exit_signal));
         }
 
+        // R4-2 / R-MCP：注入文件统一移交 EOF 线程收尾
+        let mut cleanup_files: Vec<SessionFileCleanup> = Vec::new();
+        if let Some(b) = mcp_bridge {
+            cleanup_files.push(b);
+        }
+        if let Some(f) = msg_file {
+            cleanup_files.push(SessionFileCleanup::Delete(f));
+        }
         let input_sender = self.spawn_event_reader(
             child,
             real_session_id.clone(),
             pid,
             options,
             exit_signal,
-            msg_file,
+            cleanup_files,
         );
 
         self.sessions.register_with_sender(
@@ -1403,5 +1564,100 @@ mod tests {
             friendly_error_message("some unknown failure"),
             "some unknown failure"
         );
+    }
+
+    fn sample_server(name: &str) -> ResolvedExternalMcpServer {
+        ResolvedExternalMcpServer {
+            plugin_id: "builtin".to_string(),
+            server_name: name.to_string(),
+            command: "C:\\polaris\\polaris-mcp.exe".to_string(),
+            args: vec![
+                "requirements".to_string(),
+                "C:\\config".to_string(),
+                "C:\\ws".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn build_opencode_mcp_config_maps_command_and_args() {
+        // R-MCP：server 列表 → opencode.json 的 mcp 段（command 数组 = [cmd, ...args]）
+        let servers = vec![sample_server("polaris-requirements")];
+        let config = build_opencode_mcp_config(&servers);
+        assert_eq!(config["$schema"], "https://opencode.ai/config.json");
+        let srv = &config["mcp"]["polaris-requirements"];
+        assert_eq!(srv["type"], "local");
+        assert_eq!(srv["enabled"], true);
+        let cmd = srv["command"].as_array().expect("command 应为数组");
+        assert_eq!(cmd.len(), 4, "command+3 个 args");
+        assert_eq!(cmd[0], "C:\\polaris\\polaris-mcp.exe");
+        assert_eq!(cmd[3], "C:\\ws");
+    }
+
+    #[test]
+    fn build_opencode_mcp_config_empty_servers_yields_empty_mcp() {
+        let config = build_opencode_mcp_config(&[]);
+        assert!(config["mcp"].as_object().unwrap().is_empty());
+    }
+
+    #[test]
+    fn write_mcp_bridge_config_creates_and_cleans_up() {
+        // R-MCP：无 opencode.json 时写入 + EOF 删除恢复原状
+        let dir = std::env::temp_dir().join(format!("polaris-oc-mcp-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wd = dir.to_string_lossy().to_string();
+        let server = sample_server("polaris-ask");
+        let cleanup = OpencodeEngine::write_mcp_bridge_config(&wd, std::slice::from_ref(&server))
+            .expect("工作区干净时应注入");
+        let cfg_path = dir.join("opencode.json");
+        assert!(cfg_path.exists(), "注入文件应存在");
+        let raw = std::fs::read_to_string(&cfg_path).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(
+            parsed["mcp"]["polaris-ask"]["enabled"],
+            serde_json::Value::Bool(true)
+        );
+        cleanup.apply();
+        assert!(!cfg_path.exists(), "apply 后注入文件应删除");
+        let _ = std::fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn write_mcp_bridge_config_skips_existing_config() {
+        // R-MCP v1 安全策略：用户已有 opencode.json → 跳过注入，不动用户文件
+        let dir =
+            std::env::temp_dir().join(format!("polaris-oc-mcp-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let cfg_path = dir.join("opencode.json");
+        std::fs::write(&cfg_path, "{\n  \"mcp\": {},\n  // jsonc 用户注释\n}").unwrap();
+        let wd = dir.to_string_lossy().to_string();
+        let server = sample_server("polaris-ask");
+        let before = std::fs::read_to_string(&cfg_path).unwrap();
+        assert!(
+            OpencodeEngine::write_mcp_bridge_config(&wd, std::slice::from_ref(&server)).is_none(),
+            "已有配置应返回 None"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&cfg_path).unwrap(),
+            before,
+            "用户文件内容不应被修改"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn write_mcp_bridge_config_no_servers_is_none() {
+        let dir =
+            std::env::temp_dir().join(format!("polaris-oc-mcp-test-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(
+            OpencodeEngine::write_mcp_bridge_config(&dir.to_string_lossy(), &[]).is_none(),
+            "无 server 不应注入"
+        );
+        assert!(
+            !dir.join("opencode.json").exists(),
+            "无 server 不应写任何文件"
+        );
+        let _ = std::fs::remove_dir(&dir);
     }
 }
