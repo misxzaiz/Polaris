@@ -161,3 +161,25 @@ continue_session                    remove 信号 → bounded wait(2s)
   `CREATE_NO_WINDOW` 防闪黑框，发现于批次 1 复查 `get_opencode_models_impl`）、
   需求 9 env_keys 实测固化、`--thinking`/`--agent`/`--title` 能力位、
   `session export` 历史回填（规划为独立 spec）。
+
+## Rev3（2026-10-17）：「Transport: The socket connection was closed unexpectedly」根因确认 + 错误文案映射
+
+### 根因（进程树实测）
+
+`opencode run` 是连接**共享后台服务**（`serve --service`）的客户端，
+且**服务进程是 CLI 的子进程**（`Get-CimInstance Win32_Process` 实测确认）。
+Polaris 中断会话 A 时 `taskkill /PID <A> /T /F` 会**连带杀掉共享服务**，
+切断了同批连到该服务的并发会话 B 的 CLI↔服务 socket（Bun fetch），
+B 即报 `Transport: The socket connection was closed unexpectedly...`。
+日志旁证：`opencode.log` 中 `serve --service` 反复重启、
+`session websocket connect failed`（connect-timeout）。
+`--standalone` 落地后该连坐路径消失；残留概率为网络/provider 侧瞬态断连。
+
+### 落地项（批次 1 追加，辅助优化）
+
+- **错误文案映射**：`opencode.rs` 新增 `friendly_error_message`，
+  在 `OpencodeEvent::Error` 推送前把已知 Bun/传输/认证类报错原文映射为
+  友好中文（注明可重试），原始错误压缩为单行截 200 字符附带；
+  未知文案原样透传，不吞 opencode 新版错误。单测 4 例。
+- **瞬态重试**（未做，留批次 2 评估）：EOF「完全无产出」分支可重试一次，
+  仅限无任何事件产出的会话，防部分输出重复。

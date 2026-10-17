@@ -170,6 +170,61 @@ impl OpencodeEvent {
     }
 }
 
+/// opencode error 事件文案 → 用户可读的中文提示
+///
+/// 根因（进程树实测，见 plans/opencode-integration-optimization.md）：
+/// opencode run 是连接共享后台服务（`serve --service`）的客户端，其 error 事件
+/// 常携带 Bun 内部 fetch 报错原文，例如
+/// "Transport: The socket connection was closed unexpectedly. For more
+/// information, pass `verbose: true` in the second argument to fetch()"。
+/// 用户无法据此判断是引擎故障还是网络问题。此类传输错误多为瞬态，重试即可恢复。
+/// 映射策略：已知传输/认证模式 → 友好文案 + 附加压缩为一行的原始错误（供排障）；
+/// 未知文案原样透传，保证 opencode 新版本错误仍可见、不吞错。
+fn friendly_error_message(raw: &str) -> String {
+    const PATTERNS: &[(&str, &str)] = &[
+        (
+            "The socket connection was closed unexpectedly",
+            "opencode 连接中断（本地服务或网络波动），可重试发送",
+        ),
+        ("ConnectionRefused", "opencode 无法连接目标服务，请确认服务运行后重试"),
+        ("Unable to connect", "opencode 无法连接目标服务，请确认服务运行后重试"),
+        (
+            "ENOTFOUND",
+            "opencode 域名解析失败，请检查网络或代理设置",
+        ),
+        (
+            "Missing Authentication header",
+            "opencode provider 缺少认证信息，请在 `opencode auth login` 配置凭据",
+        ),
+        (
+            "Missing API key",
+            "opencode provider 缺少 API key，请在 `opencode auth login` 配置凭据",
+        ),
+        (
+            "Invalid API key",
+            "opencode provider API key 无效，请在 `opencode auth login` 重新配置",
+        ),
+    ];
+    let Some(friendly) = PATTERNS
+        .iter()
+        .find_map(|(needle, text)| raw.contains(needle).then_some(*text))
+    else {
+        return raw.to_string();
+    };
+    // 压缩原始错误为单行并截断：Bun 报错可能带多行堆栈，直接透出会淹没友好文案
+    let mut condensed: String = raw
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if condensed.chars().count() > 200 {
+        condensed = condensed.chars().take(200).collect();
+        condensed.push_str("……");
+    }
+    format!("{}\n（原始错误：{}）", friendly, condensed)
+}
+
 /// 子进程退出信号（T2：去 sleep 的确定性退出等待）
 ///
 /// `Child` 所有权在 EOF 读取线程内（`spawn_event_reader` 拿走），
@@ -628,13 +683,16 @@ impl OpencodeEngine {
                     }
                     OpencodeEvent::Error { error, .. } => {
                         received_error = true;
+                        // 原始 Bun fetch 报错对用户不可读（如 socket closed），映射为友好文案
+                        let friendly = friendly_error_message(&error.message);
                         tracing::warn!(
-                            "[OpencodeEngine] 事件 error, message={}",
-                            error.message
+                            "[OpencodeEngine] 事件 error, message={} → friendly={}",
+                            error.message,
+                            friendly
                         );
                         event_callback(AIEvent::Error(ErrorEvent::new(
                             &current_session_id,
-                            error.message,
+                            friendly,
                         )));
                     }
                 }
@@ -1151,5 +1209,37 @@ mod tests {
     fn parse_invalid_json_returns_none() {
         assert!(OpencodeEvent::parse_line("not json").is_none());
         assert!(OpencodeEvent::parse_line("{broken").is_none());
+    }
+
+    #[test]
+    fn friendly_error_maps_socket_closed() {
+        // Bun fetch 真实报错原文（2026-10-17 分析记录）
+        let raw = "Transport: The socket connection was closed unexpectedly. For more information, pass `verbose: true` in the second argument to fetch()";
+        let out = friendly_error_message(raw);
+        assert!(out.contains("连接中断"), "应包含友好文案，实际: {}", out);
+        assert!(out.contains("原始错误"), "应附带原始错误，实际: {}", out);
+    }
+
+    #[test]
+    fn friendly_error_maps_multi_line_stack_condensed() {
+        let raw = "AI.Error: ConnectionRefused: Unable to connect. Is the computer able to access the url?\n    at <anonymous> (B:/~BUN/root/chunk-sh3q3pe9.js:6:26193)\n    at <anonymous> (B:/~BUN/root/chunk-jjyjbx8w.js:2:43639)";
+        let out = friendly_error_message(raw);
+        assert!(out.contains("无法连接"));
+        assert!(!out.contains('\n'), "原始错误应压缩为单行: {}", out);
+    }
+
+    #[test]
+    fn friendly_error_maps_missing_api_key() {
+        let out = friendly_error_message("Missing API key");
+        assert!(out.contains("缺少 API key"));
+        assert!(out.contains("opencode auth login"));
+    }
+
+    #[test]
+    fn friendly_error_passthrough_unknown() {
+        assert_eq!(
+            friendly_error_message("some unknown failure"),
+            "some unknown failure"
+        );
     }
 }
