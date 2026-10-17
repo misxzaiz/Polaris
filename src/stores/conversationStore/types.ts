@@ -487,6 +487,12 @@ export interface ConversationActions {
    * 与自动派发（session_end 后逐条发）互补：用户可随时把某条提前发出。
    */
   sendPendingNow: (id: string) => Promise<void>
+  /**
+   * 撤回队列项到输入框草稿（PedingQueueCard 点击「编辑」）。
+   * 语义：草稿冲突守卫（输入框非空拒绝）→ 从队列移除 → 恢复原文到 inputDraft（UI 自动同步）。
+   * 纯前端队列删除即成功，无后端 ACK 等待。
+   */
+  editPending: (id: string) => void
 
   // ===== 提示词优化（版本栈） =====
   /**
@@ -628,12 +634,17 @@ export interface ConversationActions {
   handleAIEvent: (event: AIEvent) => void
 
   // ===== 主动操作 =====
+  /**
+   * 发送消息。返回 boolean：true = 已受理（流式开始或会话启动成功）；
+   * false = 发送失败（内部已置 error + isStreaming=false）。
+   * 返回值供 pendingQueue 派发逻辑判断「失败保留队首」。
+   */
   sendMessage: (
     content: string,
     workspaceDir?: string,
     attachments?: import('../../types/attachment').Attachment[],
     options?: SendMessageOptions
-  ) => Promise<void>
+  ) => Promise<boolean>
   /** 继续会话（用于回答问题/审批计划/权限重试后） */
   continueChat: (prompt?: string, allowedTools?: string[]) => Promise<void>
   interrupt: () => Promise<void>

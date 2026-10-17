@@ -81,6 +81,11 @@ export interface PendingMessage {
   attachments?: import('./attachment').Attachment[];
   /** 入队时间戳（毫秒） */
   createdAt: number;
+  /**
+   * 派发状态（纯前端投影）：'queued' 排队等待 / 'sending' 正在发送。
+   * 用于 UI 展示「哪条正在发」与锁定正在发送的条目（禁止编辑/删除）。
+   */
+  status?: 'queued' | 'sending';
 }
 
 /** 权限拒绝详情 */

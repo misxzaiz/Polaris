@@ -61,7 +61,12 @@
     "clearQueue": "清空队列",
     "removePending": "取消此条",
     "sendNow": "立即发送",
-    "sendNowHint": "中断当前回复并立即发送此条"
+    "sendNowHint": "中断当前回复并立即发送此条",
+    "sendQueued": "发送（回复中，将加入待发送队列）",
+    "editPending": "撤回编辑",
+    "editPendingHint": "撤回此条到输入框编辑",
+    "sendFailedQueued": "发送失败，已保留在待发队列，可点击「立即发送」重试",
+    "editPendingDraftConflict": "输入框已有内容，请先清空或发送后再撤回队列消息"
   },
   "promptOptimize": {
     "sessionTitle": "提示词优化",

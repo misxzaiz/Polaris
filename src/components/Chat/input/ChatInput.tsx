@@ -1472,6 +1472,9 @@ export function ChatInput({
   }, [])
 
   const canSend = (value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0) && !disabled
+  // 是否有可提交草稿（与 canSend 内容判定同源）。
+  // 用于按钮状态机：流式 + 有草稿 → 显示发送键（点击入队）；流式 + 空 → 显示中断键。
+  const hasDraftToSubmit = value.trim() || attachments.length > 0 || contextBlocksRef.current.length > 0
 
   return (
     <div data-theme-panel className="chat-input-root border-t border-border bg-background-elevated relative" ref={containerRef} style={chatDisplayStyle}>
@@ -1939,8 +1942,12 @@ export function ChatInput({
               {statusBarSlot && value.length > 0 && (
                 <span className="hidden sm:inline-flex text-[11px] text-text-tertiary tabular-nums px-1">{value.length}</span>
               )}
-              {/* 发送/中断按钮 */}
-              {isStreaming && onInterrupt ? (
+              {/* 发送/中断按钮
+                  状态机（对齐 ZCode showStopControl = canStop && !hasDraftToSubmit）：
+                  - 流式 + 有草稿 → 发送键（handleSend 的 isStreaming 分支自动入队）
+                  - 流式 + 空输入 → 中断键
+                  - 空闲 + 有内容 → 发送键（直接发送） */}
+              {isStreaming && onInterrupt && !hasDraftToSubmit ? (
                 <button
                   onClick={onInterrupt}
                   className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors shadow-soft"
@@ -1953,7 +1960,7 @@ export function ChatInput({
                   onClick={handleSend}
                   disabled={!canSend}
                   className="shrink-0 p-1.5 rounded-full bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-soft"
-                  title={t('input.send')}
+                  title={isStreaming ? t('input.sendQueued') : t('input.send')}
                 >
                   <IconSend size={16} />
                 </button>

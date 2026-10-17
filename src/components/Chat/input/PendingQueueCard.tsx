@@ -2,14 +2,15 @@
  * PendingQueueCard - 待发送队列胶囊
  *
  * 流式回复期间的预输入 / 多行拆分的入队项，以胶囊形式挂在输入框上方。
- * 折叠态只占一行（计数徽标 + 清空）；展开可逐条查看、取消。
+ * 折叠态只占一行（计数徽标 + 清空）；展开可逐条查看、取消、编辑。
  * 队列由 ConversationStore.pendingQueue 持有，session_end / 中断后自动逐条发送。
  * 点击某一条 = 立即发送（流式中先中断当前回复再发）。
+ * status='sending' 的条目正在派发中：锁定编辑/删除/立即发送（防与派发竞争）。
  */
 
 import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ListTodo, ChevronDown, X, Trash2, Send } from 'lucide-react'
+import { ListTodo, ChevronDown, X, Trash2, Send, Pencil } from 'lucide-react'
 import { clsx } from 'clsx'
 import {
   useActiveSessionPendingQueue,
@@ -19,7 +20,7 @@ import {
 export const PendingQueueCard = memo(function PendingQueueCard() {
   const { t } = useTranslation('chat')
   const pendingQueue = useActiveSessionPendingQueue()
-  const { removePending, clearPendingQueue, sendPendingNow } = useActiveSessionActions()
+  const { removePending, clearPendingQueue, sendPendingNow, editPending } = useActiveSessionActions()
   const [expanded, setExpanded] = useState(false)
 
   if (pendingQueue.length === 0) return null
@@ -57,47 +58,71 @@ export const PendingQueueCard = memo(function PendingQueueCard() {
         </button>
       </div>
 
-      {/* 展开体：逐条查看 / 点击立即发送 / 取消 */}
+      {/* 展开体：逐条查看 / 点击立即发送 / 编辑 / 取消 */}
       {expanded && (
         <div className="px-2 pb-2 max-h-[220px] overflow-y-auto flex flex-col gap-1">
-          {pendingQueue.map((msg, i) => (
-            <div
-              key={msg.id}
-              className="flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface/60 px-2 py-1.5"
-            >
-              <span className="text-[10px] text-text-tertiary tabular-nums shrink-0 w-5 text-right">
-                {i + 1}
-              </span>
-              {/* 点击整条 = 立即发送 */}
-              <button
-                type="button"
-                onClick={() => void sendPendingNow(msg.id)}
-                className="flex-1 min-w-0 flex items-center gap-1.5 text-left group"
-                title={t('input.sendNowHint')}
+          {pendingQueue.map((msg, i) => {
+            const sending = msg.status === 'sending'
+            return (
+              <div
+                key={msg.id}
+                className={clsx(
+                  'flex items-center gap-2 rounded-md border border-border-subtle bg-background-surface/60 px-2 py-1.5',
+                  sending && 'opacity-60',
+                )}
               >
-                <span className="flex-1 min-w-0 text-xs text-text-secondary truncate" title={msg.text}>
-                  {msg.text}
+                <span className="text-[10px] text-text-tertiary tabular-nums shrink-0 w-5 text-right">
+                  {i + 1}
                 </span>
-                <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-text-tertiary group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Send size={10} />
-                  {t('input.sendNow')}
-                </span>
-              </button>
-              {msg.attachments && msg.attachments.length > 0 && (
-                <span className="text-[10px] text-text-tertiary shrink-0">
-                  {t('input.attachmentCount', { count: msg.attachments.length })}
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => removePending(msg.id)}
-                className="p-0.5 rounded text-text-tertiary hover:text-danger hover:bg-background-hover shrink-0"
-                title={t('input.removePending')}
-              >
-                <X size={12} />
-              </button>
-            </div>
-          ))}
+                {/* 点击整条 = 立即发送（sending 中锁定） */}
+                <button
+                  type="button"
+                  onClick={() => void sendPendingNow(msg.id)}
+                  disabled={sending}
+                  className="flex-1 min-w-0 flex items-center gap-1.5 text-left group disabled:cursor-not-allowed"
+                  title={t('input.sendNowHint')}
+                >
+                  <span className="flex-1 min-w-0 text-xs text-text-secondary truncate" title={msg.text}>
+                    {msg.text}
+                  </span>
+                  <span className="shrink-0 inline-flex items-center gap-0.5 text-[10px] text-text-tertiary group-hover:text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                    {sending ? (
+                      <span className="inline-block size-2.5 rounded-full border border-text-tertiary border-t-transparent animate-spin" />
+                    ) : (
+                      <>
+                        <Send size={10} />
+                        {t('input.sendNow')}
+                      </>
+                    )}
+                  </span>
+                </button>
+                {msg.attachments && msg.attachments.length > 0 && (
+                  <span className="text-[10px] text-text-tertiary shrink-0">
+                    {t('input.attachmentCount', { count: msg.attachments.length })}
+                  </span>
+                )}
+                {/* 撤回编辑（sending 中锁定） */}
+                <button
+                  type="button"
+                  onClick={() => editPending(msg.id)}
+                  disabled={sending}
+                  className="p-0.5 rounded text-text-tertiary hover:text-primary hover:bg-background-hover shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={t('input.editPendingHint')}
+                >
+                  <Pencil size={12} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removePending(msg.id)}
+                  disabled={sending}
+                  className="p-0.5 rounded text-text-tertiary hover:text-danger hover:bg-background-hover shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                  title={t('input.removePending')}
+                >
+                  <X size={12} />
+                </button>
+              </div>
+            )
+          })}
         </div>
       )}
     </div>

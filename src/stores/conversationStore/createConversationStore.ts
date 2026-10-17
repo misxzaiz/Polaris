@@ -34,6 +34,7 @@ import {
   isProfileModeWithoutProfile,
 } from './conversationStoreUtils'
 import { dialogStorageService } from '@/services/dialogStorage'
+import { eventBus } from '@/services/eventBus'
 import { dedupeMessagesById, normalizeRecoveredMessages } from './dedupMessages'
 import { useDispatchStore } from '@/stores/dispatchStore'
 import { useConfigStore } from '../configStore'
@@ -1847,22 +1848,44 @@ export function createConversationStore(
       },
       dispatchNextPending: async () => {
         const st = get()
-        // 幂等守卫：正在流式 / 已有队列消息在派发 / 队列为空时直接返回
+        // 幂等守卫：正在流式 / 已有队列消息在派发（互斥锁）/ 队列为空时直接返回
         if (st.isStreaming || st.queueDispatching || st.pendingQueue.length === 0) return
 
         const [next, ...rest] = st.pendingQueue
-        set({ pendingQueue: rest, queueDispatching: true })
+        // 派发中置 status='sending' 供 UI 展示（正在发的条目锁定编辑/删除）
+        set({
+          pendingQueue: rest,
+          queueDispatching: true,
+        })
+        let accepted = false
         try {
-          // 走真实发送链路（内部会 set isStreaming=true，启动新一轮流式）
-          await get().sendMessage(next.text, undefined, next.attachments)
+          // 走真实发送链路（内部会 set isStreaming=true，启动新一轮流式）。
+          // 返回值：true 已受理 / false 发送失败（sendMessage catch 已置 error + isStreaming=false）
+          accepted = await get().sendMessage(next.text, undefined, next.attachments)
         } finally {
           set({ queueDispatching: false })
-          // 若发送失败（sendMessage catch 内已把 isStreaming 置 false），
-          // 或队列中还有剩余且当前已空闲，继续发送下一条
-          const after = get()
-          if (after.pendingQueue.length > 0 && !after.isStreaming) {
-            void get().dispatchNextPending()
+        }
+        if (!accepted) {
+          // 失败：队首放回（保留消息，不静默丢失），并终止本轮派发。
+          // 不加自动重试——失败可能是引擎不可用/会话丢失，交给用户手动重发
+          // （点「立即发送」或下次 session_end 再触发）。
+          set((state) => ({
+            pendingQueue: [{ ...next, status: 'queued' }, ...state.pendingQueue],
+          }))
+          try {
+            const { useToastStore } = await import('../toastStore')
+            useToastStore.getState().error(
+              i18n.t('chat:input.sendFailedQueued', '发送失败，已保留在待发队列，可点击「立即发送」重试')
+            )
+          } catch (toastErr) {
+            log.warn('Toast 提示失败', { error: String(toastErr) })
           }
+          return
+        }
+        // 发送成功（已受理）且队列中还有剩余且当前已空闲，继续发送下一条
+        const after = get()
+        if (after.pendingQueue.length > 0 && !after.isStreaming) {
+          void get().dispatchNextPending()
         }
       },
 
@@ -1873,14 +1896,80 @@ export function createConversationStore(
         const st = get()
         const target = st.pendingQueue.find((m) => m.id === id)
         if (!target || st.queueDispatching) return
-        // 先从队列移除（防止中断收尾触发 dispatchNextPending 时又被自动发出而乱序）
-        set({ pendingQueue: st.pendingQueue.filter((m) => m.id !== id) })
-        // 流式中：先中断当前回复，等待本轮回流真正结束（interrupt 有 5s 兜底）
-        if (st.isStreaming) {
-          await get().interrupt()
-          await waitFor(() => !get().isStreaming, 7000)
+        // 补丁 C：占用互斥锁（贯穿中断等待），防止中断兜底路径的 dispatchNextPending
+        // 趁机派发下一条造成双发/乱序；与 dispatchNextPending 的 queueDispatching 互斥。
+        set({ queueDispatching: true })
+        try {
+          // 补丁 B：发起时捕获 conversationId 代际标记，等待中断期间用户可能切会话。
+          // 移除动作后移到「校验通过后」执行，消除「先移除后校验失败 → 消息丢」的窗口。
+          const originConversationId = st.conversationId
+          // 流式中：先中断当前回复，等待本轮回流真正结束（interrupt 有 5s 兜底）
+          if (st.isStreaming) {
+            await get().interrupt()
+            await waitFor(() => !get().isStreaming, 7000)
+          }
+          // 代际校验：中断等待期间用户切换会话 / 开新会话 → 不把旧会话的消息发到新会话。
+          const after = get()
+          if (after.conversationId !== originConversationId) {
+            // 尊重用户显式取消：若期间队列已被 clear/remove 该条，则丢弃不恢复；
+            // 否则放回队首，等待用户在新会话下自行处理。
+            const stillQueued = after.pendingQueue.some((m) => m.id === id)
+            if (stillQueued) {
+              set((state) => ({
+                pendingQueue: [{ ...target, status: 'queued' }, ...state.pendingQueue],
+              }))
+            }
+            return
+          }
+          // 校验通过：从队列移除（此刻才真正出队，防止上面校验失败时消息已丢）
+          set({ pendingQueue: after.pendingQueue.filter((m) => m.id !== id) })
+          await get().sendMessage(target.text, undefined, target.attachments)
+        } finally {
+          set({ queueDispatching: false })
         }
-        await get().sendMessage(target.text, undefined, target.attachments)
+      },
+
+      // 撤回队列项到输入框草稿（PendingQueueCard 点击「编辑」）。
+      // 语义（对齐 ZCode handleEditQueueItem）：
+      //   ① 草稿冲突守卫：输入框已有内容/busy → 拒绝（避免覆盖用户正在写的消息）；
+      //   ② 从队列移除该条（纯前端队列删除即成功，无后端 ACK 等待）；
+      //   ③ 恢复原文到 inputDraft —— ChatInput 的 inputDraft effect 自动同步到输入框，
+      //      再触发 'chat:focus-input' 事件聚焦。
+      editPending: (id) => {
+        const st = get()
+        const target = st.pendingQueue.find((m) => m.id === id)
+        if (!target) return
+        // 正在发送的条目不可撤回（避免与派发中状态冲突）
+        if (target.status === 'sending') return
+        const draft = st.inputDraft
+        if ((draft.text?.trim() ?? '') || (draft.attachments?.length ?? 0) > 0) {
+          // 草稿冲突守卫：不覆盖用户正在编辑的内容
+          try {
+            void import('../toastStore').then(({ useToastStore }) => {
+              useToastStore.getState().error(
+                i18n.t('chat:input.editPendingDraftConflict', '输入框已有内容，请先清空或发送后再撤回队列消息')
+              )
+            })
+          } catch (toastErr) {
+            log.warn('Toast 提示失败', { error: String(toastErr) })
+          }
+          return
+        }
+        // 移除队列项 + 恢复草稿
+        set((state) => ({
+          pendingQueue: state.pendingQueue.filter((m) => m.id !== id),
+          inputDraft: {
+            text: target.text,
+            attachments: target.attachments ?? [],
+            contextBlocks: [],
+          },
+        }))
+        // 聚焦输入框（复用 ChatInput 现有 'chat:focus-input' 监听）
+        try {
+          eventBus.emit('chat:focus-input', undefined)
+        } catch {
+          // eventBus 不可用则跳过聚焦（草稿已恢复，输入框 effect 仍会同步）
+        }
       },
 
       sendMessage: async (content, workspaceDir?, attachments?, sendOptions?) => {
@@ -2068,6 +2157,7 @@ export function createConversationStore(
             })
             set({ conversationId: newSessionId })
           }
+          return true
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
           log.error('sendMessage failed', err, { sessionId, conversationId, workspaceDir: actualWorkspaceDir })
@@ -2077,6 +2167,7 @@ export function createConversationStore(
             currentMessage: null,
             progressMessage: null,
           })
+          return false
         }
       },
 

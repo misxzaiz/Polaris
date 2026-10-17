@@ -62,7 +62,12 @@
     "clearQueue": "Clear queue",
     "removePending": "Remove",
     "sendNow": "Send now",
-    "sendNowHint": "Interrupt current reply and send this now"
+    "sendNowHint": "Interrupt current reply and send this now",
+    "sendQueued": "Send (queued during reply)",
+    "editPending": "Edit queued message",
+    "editPendingHint": "Pull this back to the input for editing",
+    "sendFailedQueued": "Send failed; kept in queue. Click \"Send now\" to retry",
+    "editPendingDraftConflict": "Input has content. Clear or send it before pulling back a queued message"
   },
   "promptOptimize": {
     "sessionTitle": "Prompt Optimization",

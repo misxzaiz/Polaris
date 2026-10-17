@@ -292,6 +292,7 @@ export function useActiveSessionActions() {
       clearPendingQueue: () => call('clearPendingQueue'),
       dispatchNextPending: async () => call('dispatchNextPending'),
       sendPendingNow: async (id: string) => call('sendPendingNow', id),
+      editPending: (id: string) => call('editPending', id),
       setPromptSuggestion: (s: string | null) => call('setPromptSuggestion', s),
       undoPromptOptimize: () => call('undoPromptOptimize'),
       redoPromptOptimize: () => call('redoPromptOptimize'),
