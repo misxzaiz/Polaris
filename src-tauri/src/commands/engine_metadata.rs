@@ -51,15 +51,68 @@ pub struct OpencodeModel {
 /// 排序规则：免费模型排前（`opencode/*-free` 优先于 `openrouter/*:free`），
 /// `opencode/glm-5.3-flash-free` 强制排第一；其余付费模型按字母序排在后面。
 ///
-/// 此命令不依赖 AppState，每次调用实时执行 `opencode models`。
+/// 此命令不依赖 AppState，进程内 TTL 缓存（R4-4，需求 8）：模型清单变化
+/// 极低频，每次选择器打开都 spawn CLI 代价高；实时拉取失败时降级返回
+/// 过期缓存（保证选择器始终可用），无缓存才上抛错误。
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn get_opencode_models() -> Result<Vec<OpencodeModel>> {
     get_opencode_models_impl()
 }
 
+/// 模型列表缓存条目（拉取时间 + 列表）
+struct ModelsCache {
+    fetched_at: std::time::Instant,
+    models: Vec<OpencodeModel>,
+}
+
+/// TTL：模型清单变化极低频（opencode 版本升级才会变），5 分钟一次足够
+const MODEL_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(300);
+
+static MODELS_CACHE: std::sync::Mutex<Option<ModelsCache>> = std::sync::Mutex::new(None);
+
 /// 非 Tauri 环境的共享实现（供 web bin 路径调用）
 pub fn get_opencode_models_impl() -> Result<Vec<OpencodeModel>> {
+    // 1) TTL 命中直接返回，不 spawn CLI
+    if let Ok(guard) = MODELS_CACHE.lock() {
+        if let Some(c) = guard.as_ref() {
+            if c.fetched_at.elapsed() < MODEL_CACHE_TTL {
+                return Ok(c.models.clone());
+            }
+        }
+    }
+
+    // 2) miss / 过期 → 实时拉取
+    match fetch_opencode_models_from_cli() {
+        Ok(models) => {
+            if let Ok(mut guard) = MODELS_CACHE.lock() {
+                *guard = Some(ModelsCache {
+                    fetched_at: std::time::Instant::now(),
+                    models: models.clone(),
+                });
+            }
+            Ok(models)
+        }
+        Err(e) => {
+            // 3) 失败降级：有过期缓存也返回（语义：选择器始终可用，
+            //    新鲜度损失由用户重开设置页自愈），无缓存才上抛
+            if let Ok(guard) = MODELS_CACHE.lock() {
+                if let Some(c) = guard.as_ref() {
+                    tracing::warn!(
+                        "[OpencodeModels] 实时拉取失败，降级返回过期缓存 (age={}s): {}",
+                        c.fetched_at.elapsed().as_secs(),
+                        e
+                    );
+                    return Ok(c.models.clone());
+                }
+            }
+            Err(e)
+        }
+    }
+}
+
+/// 实时执行 `opencode models` 解析输出（无缓存）
+fn fetch_opencode_models_from_cli() -> Result<Vec<OpencodeModel>> {
     let cmd_name = if cfg!(windows) { "opencode.cmd" } else { "opencode" };
     // Windows 桌面端补 CREATE_NO_WINDOW：不加会闪控制台黑框（同 ai 引擎 spawn 约定）
     let mut cmd = {

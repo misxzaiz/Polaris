@@ -183,3 +183,118 @@ B 即报 `Transport: The socket connection was closed unexpectedly...`。
   未知文案原样透传，不吞 opencode 新版错误。单测 4 例。
 - **瞬态重试**（未做，留批次 2 评估）：EOF「完全无产出」分支可重试一次，
   仅限无任何事件产出的会话，防部分输出重复。
+
+### 实证验证（2026-10-17 复核，本机 opencode v2.0.30）
+
+- **隔离性（测试 B，决定性）**：`Start-Process opencode.cmd run --standalone ...`
+  建立 wrapper→CLI→`serve --stdio --port 0` 私有服务树；生成中途
+  `taskkill /PID <wrapper> /T /F` 报告全树（含私有服务及其子进程 61384）终止。
+  并发的旧会话 run ×2 与共享 `serve --service` 完全未受波及。
+  击杀前后进程快照均在，未出现 Transport 报错泄漏。
+- **事件流不变（测试 A）**：`run --standalone --format json` 输出
+  `step_start → text`（「收到」，ses_eb871602fffe…），与解析器实测事实一致；
+  进程退出后无 `serve --stdio` 残留进程。
+- **wrapper 存活性**：Polaris 注册的 PID 为 cmd.exe wrapper；实测
+  （9:47/9:50 两个会话）wrapper 与 CLI 同刻创建、子进程存活期间持续存活，
+  PID 有效。「wrapper 早退 ⇒ taskkill 打在死 PID/PID 复用」降级为理论风险，
+  列入批次 2 观察项（kill 后校验目标进程真实退出，替代对错误码 128 的成功翻译）。
+- **遗留共享服务**：修复前二进制产生的孤儿 `serve --service`（PID 35404）仍在，
+  仅服务旧版走共享路径的会话；重建/重启 Polaris 后失效进程可手工清杀。
+  **`--standalone` 生效前提：重启 Polaris（dev/web 均需重新构建运行）。**
+
+
+## Rev4（2026-10-17）：批次 2/3-速赢 实现 spec + MCP 桥接专项方案
+
+> 本轮实测证据（v2.0.30 真跑，PowerShell/cmd 均确认）：
+> 1. `run` 位置消息参数**必须存在**，空串/省略都报 "You must provide a message"；
+>    使用 `--file <path>` 时位置参数可用 `"."` 占位，消息完整从文件送达（回复 OK 验证）。
+> 2. 图片经 `--file` 挂载：无效 PNG 不报错但模型读不到内容 —— `image_input` 仍不能定论，
+>    metadata 维持 `image_input=false`。
+> 3. **step_finish 事实修正**：纯文本轮实测无 step_finish，但工具调用轮实测**有**
+>    （reason=tool-calls、tokens 完整）。结论改为「按轮次可能出现/省略」，EOF 判定
+>    不依赖它仍正确；批次 1 保留的 StepFinish 解析分支正当生效（还能白拿 Usage）。
+> 4. 错误事件新增形态 `provider.no-route`（模型不可用）也走 stdout JSONL。
+> 5. **MCP 桥接可行性实测通过**：工作目录放项目级 `opencode.json`（`"mcp": {"<name>":
+>    {"type":"local","command":[...],"enabled":true}}`），run 会话内 MCP server 成功
+>    注册并被模型调用（echo server 闭环 `ECHO:hello-polaris`）。
+
+### 批次 2（P1）实现 spec
+
+**R4-1 未知事件兜底（需求 4）**
+```rust
+enum OpencodeEvent { ..., #[serde(other)] Unknown }   // catch-all 变体
+```
+- serde 无法在 `other` 变体捕获 tag 值：type 名从原始行 JSON 提取 debug 记录。
+- 解析完全失败（非 JSON 行）仍走 None + warn（语义不变）。
+- EOF 诊断摘要增加 `unknown` 行计数，便于版本漂移排查。
+
+**R4-2 长消息 `--file` 化 + 前置校验（需求 5）**
+- 前置校验：`message.len() >= 6000` 字节即走文件路径（32K UTF-16 限制下留足
+  escaping + 其余参数余量；6000*3=18K < 32K）。
+- 落地：temp 目录写 `polaris-opencode-<uuid>.txt`（UTF-8）→ `run . --file <path>`；
+  EOF 线程收尾 `remove_file` 清理；清理失败仅 debug（OS 会清 temp）。
+- `build_command` 新增 `via_file` 分支；start/continue 共用；spawn 失败路径也清理。
+
+**R4-3 `is_available` 缓存（需求 6）**
+- 引擎字段 `cli_available: Mutex<Option<bool>>`（&self + interior mutability）。
+- 首查执行 `get_cli_path()`，结果缓存；返回 false 让前端走 install_guide 引导。
+
+### 批次 3-速赢 实现 spec
+
+**R4-4 模型列表缓存 + 失败降级（需求 8）**
+- `get_opencode_models_impl`：进程级 `Mutex<Option<(Instant, Vec<OpencodeModel>)>>`，
+  TTL 300s 命中直接 clone；miss 执行 CLI，成功回写；
+  **失败降级**：存在过期缓存则返回过期缓存（log warn），否则原错误上抛。
+
+**R4-5 日志降级（需求 7）**
+- stdout 逐行 `info` → `debug`；事件分支 info（step_start/text/tool_use/step_finish
+  /error/EOF/子进程退出）全 `info` → `debug`（error 事件 warn 保留）；
+  stderr 每行 `warn` → `debug`（fallback 摘要逻辑不变，warn/error 关键路径保留）。
+
+### MCP 桥接专项方案（本轮只出方案，后续独立批次实施）
+
+实测确认：**项目级 `opencode.json` 的 `mcp` 段是 opencode 的原生注入通道**（非
+`opencode mcp add` 不污染全局；`--mcp-config` flag 不存在）。桥接设计：
+
+```
+start/continue_session（workspace = cwd）
+  1. resolve_polaris_builtin_mcp_servers()   # 复用 mcp_config_service 现有能力
+  2. 按会话过滤（ask/dispatch 依赖 --polaris-port/--polaris-token 动态参数）
+  3. 写 <workspace>/.polaris/opencode.json   # fonts=不动用户自己的 opencode.json
+     {"mcp": {"<server>": {"type":"local","command":[...args],"enabled":true}}}
+  4. spawn opencode run（cwd=workspace）      # 项目级配置生效
+  5. 会话结束不删（幂等重写；文件随 gitignore 建议）
+```
+- 关键差异 vs `opencode mcp add --global`：项目级配置目录隔离 dev/test 数据根，
+  不写用户全局配置；server 参数含运行时 port/token，必须每会话重写（幂等覆盖）。
+- 依赖决策点（留独立 spec 复审）：`.polaris/` 目录 workspace 路径约定、
+  与用户已有项目 `opencode.json` 的合并策略（检测到已存在则跳过注入 + warn）、
+  `polaris mcp` 命令需 `polaris-mcp` 可执行路径解析（参照 bin 注册表）。
+
+### Rev4 实施记录（2026-10-17）
+
+已实施（本节由实现时回写）：
+- **R4-1**：`OpencodeEvent` 增加 `#[serde(other)] Unknown` 变体；解析处 debug 记录
+  未知 type（serde 拿不到 tag 值，type 名从原始行 JSON 提取）+ `unknown` 计数
+  进 EOF 摘要。单测 `parse_unknown_type_falls_back_to_unknown_variant`。
+- **R4-2**：`MESSAGE_ARG_MAX_BYTES=6000` 前置校验；超过即写
+  `%TEMP%/polaris-opencode-<uuid>.txt` 走 `run . --file <path>`（位置参数 "." 占位，
+  实测消息完整送达）；EOF 收尾 `remove_file`，spawn 失败路径同样清理。
+- **R4-3**：`cli_available: Mutex<Option<bool>>` 一次探测缓存；`is_available` 不再恒
+  true，未安装返回 false 让前端走 install_guide 引导。
+- **R4-4**：`get_opencode_models_impl` 进程级 `Mutex<Option<ModelsCache>>`，
+  TTL 300s；实时拉取失败降级返回过期缓存（warn 标注 age），无缓存才上抛。
+- **R4-5**：stdout 逐行 + 事件分支 info → debug；stderr 每行 warn → debug。
+  **偏离 spec 说明**：EOF 汇总与 is_available 探测结果保留 info——每轮次仅一次、
+  是「应用内无回复」问题的诊断锚点，spec 原文写为 debug 属措辞过度。
+- 新增单测：`parse_unknown_type_falls_back_to_unknown_variant`、
+  `message_threshold_splits_arg_and_file_routes`（**cargo test --lib 本机不可用，
+  仅编译验证通过，未实际执行**）。
+
+验证：`cargo check` / `--no-default-features` 双 bin / `--tests` / `cargo clippy --lib`
+全部 EXIT=0；clippy 对改动文件无新增 warning（存量 6 个 never-read 字段为基线遗留）。
+
+仍未做（后续批次）：需求 9 env_keys 实测固化（需真实 key 联通测试）、
+`--thinking`/`--agent`/`--title` 能力位、`session export` 历史回填、
+EOF 无产出瞬态重试（b9ffe1a2 Rev3 遗留）、MCP 桥接（Rev4 专项方案，方案已备、
+实施需先定 `.polaris/` 目录约定与用户项目配置合并策略）。

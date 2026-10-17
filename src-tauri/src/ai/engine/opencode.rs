@@ -86,6 +86,14 @@ enum OpencodeEvent {
         session_id: Option<String>,
         error: OpencodeError,
     },
+    /// 未知事件类型（前向兼容兜底，R4-1）
+    ///
+    /// opencode 新版本新增的事件 type（如 reasoning/image/compaction）不应整行
+    /// 静默丢弃——那是「协议无运行时 schema 校验」缺口的实例。用 `#[serde(other)]`
+    /// 保住「这一行是有效事件、只是我们不认识」的信息，解析处 debug 日志 +
+    /// unknown 计数进入 EOF 诊断摘要，版本漂移可排查。
+    #[serde(other)]
+    Unknown,
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -278,6 +286,13 @@ pub struct OpencodeEngine {
     sessions: SessionManager,
     /// 子进程退出信号表: 会话初始 ID（temp 或 real）-> 退出信号
     exit_signals: std::sync::Arc<std::sync::Mutex<HashMap<String, std::sync::Arc<ExitSignal>>>>,
+    /// CLI 可用性缓存（R4-3，需求 6）：None=未探测，Some=已探测结果。
+    ///
+    /// `where`/`which` 每次调用都会 spawn 子进程，前端引擎列表/会话入口会
+    /// 反复调用 `is_available`，不能每次都查。探测一次缓存结果；包装命中
+    /// 失败的锁（poisoned）也继续读，保证不 panic（与 AGENTS「不把环境受限
+    /// 写成通过」无冲突——锁毒化仅影响缓存读写，行为退化为每次重查）。
+    cli_available: std::sync::Mutex<Option<bool>>,
 }
 
 impl OpencodeEngine {
@@ -286,6 +301,7 @@ impl OpencodeEngine {
             config,
             sessions: SessionManager::new(),
             exit_signals: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
+            cli_available: std::sync::Mutex::new(None),
         }
     }
 
@@ -363,6 +379,7 @@ impl OpencodeEngine {
     fn build_command(
         &self,
         message: &str,
+        via_file: Option<&std::path::Path>,
         resume_session: Option<&str>,
         model: Option<&str>,
     ) -> Result<Command> {
@@ -370,8 +387,21 @@ impl OpencodeEngine {
         let mut cmd = Command::new(&cli_path);
         cmd.arg("run");
 
-        // 消息作为位置参数（opencode run <message>）
-        cmd.arg(message);
+        match via_file {
+            None => {
+                // 消息作为位置参数（opencode run <message>）
+                cmd.arg(message);
+            }
+            Some(file) => {
+                // R4-2：超长消息经临时文件挂载（`--file <path>`）。
+                // 实测（Rev4 证据 1）：位置参数必须存在（空串报 "You must
+                // provide a message"），用 "." 占位即可，文件内容完整送达
+                // 模型（回复 OK 验证）。位置参数不给真实短消息是避免消息
+                // 语义分叉——长文本全量在附件里。
+                cmd.arg(".");
+                cmd.args(["--file", &file.to_string_lossy()]);
+            }
+        }
 
         // 输出格式：JSON 逐行
         cmd.args(["--format", "json"]);
@@ -432,6 +462,40 @@ impl OpencodeEngine {
         }
     }
 
+    /// R4-2：消息走命令行参数的字节上限，超出即写临时文件走 `--file` 挂载。
+    ///
+    /// Windows CreateProcess 命令行约 32767 UTF-16 字符上限；Rust std 对
+    /// `.cmd` 需要 cmd.exe 批处理包装（单行 ~8191 字符限制），加上引号/转义
+    /// 膨胀与 cli 路径/flags 占位，取 6000 字节留足余量（粘贴大段代码/
+    /// 大 diff 的常态长度远超此值，前置校验显式分流而非靠事后 OS error 206）。
+    const MESSAGE_ARG_MAX_BYTES: usize = 6_000;
+
+    /// 把超长消息写入临时文件供 `--file` 挂载（R4-2）
+    ///
+    /// 文件生命周期由调用方管理：spawn 失败立即删除；成功则由 EOF 读取线程
+    /// 收尾删除。清理失败仅 debug（系统临时目录有 OS 级回收兜底）。
+    fn write_message_file(message: &str) -> Result<std::path::PathBuf> {
+        let name = format!("polaris-opencode-msg-{}.txt", uuid::Uuid::new_v4());
+        let path = std::env::temp_dir().join(name);
+        std::fs::write(&path, message).map_err(|e| {
+            AppError::ProcessError(format!("写入临时消息文件失败 ({}): {}", path.display(), e))
+        })?;
+        Ok(path)
+    }
+
+    /// 删除临时消息文件（尽力清理）
+    fn cleanup_message_file(file: &Option<std::path::PathBuf>) {
+        if let Some(path) = file {
+            if let Err(e) = std::fs::remove_file(path) {
+                tracing::debug!(
+                    "[OpencodeEngine] 临时消息文件清理失败 ({}): {}",
+                    path.display(),
+                    e
+                );
+            }
+        }
+    }
+
     /// 把 spawn 失败转换为 AppError（含 Windows 32767 字符限制友好提示）
     fn map_spawn_error(e: std::io::Error, message_len: usize, prefix: &str) -> AppError {
         if e.raw_os_error() == Some(206) {
@@ -487,6 +551,8 @@ impl OpencodeEngine {
         pid: u32,
         options: SessionOptions,
         exit_signal: std::sync::Arc<ExitSignal>,
+        // R4-2：--file 挂载的临时消息文件，EOF 收尾清理
+        msg_file: Option<std::path::PathBuf>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
         // T1：中断标记集合的本地句柄（kill_process 成功后会 remove 会话条目，
@@ -537,7 +603,10 @@ impl OpencodeEngine {
             std::thread::spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
                 for line in reader.lines().map_while(|r| r.ok()) {
-                    tracing::warn!("[OpencodeEngine] stderr: {}", line);
+                    // R4-5: stderr 每行降为 debug。正常启动（node 子进程等）
+                    // 也会输出噪音，warn 会高频落盘；内容仍进 stderr_buf，
+                    // 异常退出时 fallback 摘要使用，不丢失排障信息。
+                    tracing::debug!("[OpencodeEngine] stderr: {}", line);
                     if let Ok(mut buf) = stderr_buf_for_thread.lock() {
                         buf.push(line);
                         if buf.len() > 50 {
@@ -556,6 +625,8 @@ impl OpencodeEngine {
             let mut received_error = false;
             let mut received_text = false;
             let mut line_count: usize = 0;
+            // R4-1：无法识别的事件 type 计数，进入 EOF 诊断摘要（版本漂移排查）
+            let mut unknown_count: usize = 0;
             let sender_for_update = input_sender.clone();
 
             for line in reader.lines() {
@@ -586,7 +657,10 @@ impl OpencodeEngine {
                 } else {
                     trimmed.to_string()
                 };
-                tracing::info!(
+                // R4-5：stdout 数据流日志降为 debug。此前为定位「应用内偶发无回复」
+                // 临时开的逐行 info，问题已定位（共享服务连坐，Rev3），生产数据流
+                // 不应逐行 info 落盘（AGENTS 日志约定：debug 高频诊断，生产不落盘）。
+                tracing::debug!(
                     "[OpencodeEngine] stdout #{}: {}",
                     line_count,
                     preview
@@ -605,7 +679,7 @@ impl OpencodeEngine {
 
                 match raw_event {
                     OpencodeEvent::StepStart { session_id, .. } => {
-                        tracing::info!(
+                        tracing::debug!(
                             "[OpencodeEngine] 事件 step_start, sessionID={}",
                             session_id
                         );
@@ -628,7 +702,7 @@ impl OpencodeEngine {
                     OpencodeEvent::Text { part, .. } => {
                         if !part.text.is_empty() {
                             received_text = true;
-                            tracing::info!(
+                            tracing::debug!(
                                 "[OpencodeEngine] 事件 text, delta 长度 {} 字符",
                                 part.text.len()
                             );
@@ -642,7 +716,7 @@ impl OpencodeEngine {
                         }
                     }
                     OpencodeEvent::ToolUse { part, .. } => {
-                        tracing::info!(
+                        tracing::debug!(
                             "[OpencodeEngine] 事件 tool_use, tool={}, status={}",
                             part.tool,
                             part.state.status
@@ -651,7 +725,7 @@ impl OpencodeEngine {
                     }
                     OpencodeEvent::StepFinish { part, .. } => {
                         received_finish = true;
-                        tracing::info!(
+                        tracing::debug!(
                             "[OpencodeEngine] 事件 step_finish, reason={:?}",
                             part.reason
                         );
@@ -695,13 +769,28 @@ impl OpencodeEngine {
                             friendly,
                         )));
                     }
+                    OpencodeEvent::Unknown => {
+                        unknown_count += 1;
+                        // serde 无法在 other 变体捕获 tag 值，type 名从原始行提取
+                        let type_name = serde_json::from_str::<serde_json::Value>(trimmed)
+                            .ok()
+                            .and_then(|v| v.get("type").and_then(|t| t.as_str().map(String::from)))
+                            .unwrap_or_else(|| "<no-type-field>".to_string());
+                        tracing::debug!(
+                            "[OpencodeEngine] 未知事件 type={} (行 #{}), 原文: {}",
+                            type_name,
+                            line_count,
+                            preview
+                        );
+                    }
                 }
             }
 
             // stdout EOF 处理
             tracing::info!(
-                "[OpencodeEngine] stdout EOF, 共 {} 行, flags: finish={} text={} error={}",
+                "[OpencodeEngine] stdout EOF, 共 {} 行, unknown={}, flags: finish={} text={} error={}",
                 line_count,
+                unknown_count,
                 received_finish,
                 received_text,
                 received_error
@@ -807,6 +896,8 @@ impl OpencodeEngine {
             if let Ok(mut signals) = exit_signals.lock() {
                 signals.remove(&temp_id);
             }
+            // R4-2：进程已退出，临时消息文件可安全删除（opencode 已读完内容）
+            Self::cleanup_message_file(&msg_file);
 
             if let Some(cb) = on_complete {
                 cb(0);
@@ -952,8 +1043,22 @@ impl AIEngine for OpencodeEngine {
     }
 
     fn is_available(&self) -> bool {
-        // 实际可用性检查在 start_session 入口完成
-        true
+        // R4-3（需求 6）：缓存 get_cli_path 结果。此前恒 true，前端引擎列表
+        // 对 opencode 永远「可用」，未安装时只能等 spawn 失败才发现。
+        // 首查真实探测，结果缓存供后续调用（含 false——前端据此展示
+        // install_guide 引导）。缓存副作用：会话期间安装 opencode 需重启
+        // 应用刷新，属可接受取舍（引擎实例随应用生命周期重建）。
+        if let Ok(cached) = self.cli_available.lock() {
+            if let Some(v) = *cached {
+                return v;
+            }
+        }
+        let ok = self.get_cli_path().is_ok();
+        if let Ok(mut cache) = self.cli_available.lock() {
+            *cache = Some(ok);
+        }
+        tracing::info!("[OpencodeEngine] is_available 探测结果: {}", ok);
+        ok
     }
 
     fn start_session(&mut self, message: &str, options: SessionOptions) -> Result<String> {
@@ -962,15 +1067,35 @@ impl AIEngine for OpencodeEngine {
         tracing::info!("[OpencodeEngine] 模型: {:?}", options.model);
 
         // 构建命令（start_session 不带 --session，新建会话）
-        let mut cmd = self.build_command(message, None, options.model.as_deref())?;
+        // R4-2 前置校验：超长消息分流到临时文件走 --file，不靠事后 OS error 206
+        let msg_file = if message.len() > Self::MESSAGE_ARG_MAX_BYTES {
+            Some(Self::write_message_file(message)?)
+        } else {
+            None
+        };
+        let mut cmd = self.build_command(
+            message,
+            msg_file.as_deref(),
+            None,
+            options.model.as_deref(),
+        )?;
         self.configure_command(&mut cmd, options.work_dir.as_deref(), &options.env_overrides);
 
         let cmd_str = Self::format_command_for_log(&cmd);
         tracing::info!("[OpencodeEngine] 执行命令: {}", cmd_str);
 
-        let child = cmd
-            .spawn()
-            .map_err(|e| Self::map_spawn_error(e, message.len(), "启动 opencode 进程失败"))?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                // spawn 失败时消息文件无人消费，立即清理防泄漏
+                Self::cleanup_message_file(&msg_file);
+                return Err(Self::map_spawn_error(
+                    e,
+                    message.len(),
+                    "启动 opencode 进程失败",
+                ));
+            }
+        };
 
         let pid = child.id();
         let temp_id = uuid::Uuid::new_v4().to_string();
@@ -986,8 +1111,14 @@ impl AIEngine for OpencodeEngine {
             signals.insert(temp_id.clone(), std::sync::Arc::clone(&exit_signal));
         }
 
-        let input_sender =
-            self.spawn_event_reader(child, temp_id.clone(), pid, options, exit_signal);
+        let input_sender = self.spawn_event_reader(
+            child,
+            temp_id.clone(),
+            pid,
+            options,
+            exit_signal,
+            msg_file,
+        );
 
         self.sessions.register_with_sender(
             temp_id.clone(),
@@ -1039,8 +1170,15 @@ impl AIEngine for OpencodeEngine {
         });
 
         // 构建命令（带 --session 续接）
+        // R4-2 前置校验：续接消息同样可能很长（追加代码/说明），与 start 同规则分流
+        let msg_file = if message.len() > Self::MESSAGE_ARG_MAX_BYTES {
+            Some(Self::write_message_file(message)?)
+        } else {
+            None
+        };
         let mut cmd = self.build_command(
             message,
+            msg_file.as_deref(),
             Some(&real_session_id),
             options.model.as_deref(),
         )?;
@@ -1049,9 +1187,17 @@ impl AIEngine for OpencodeEngine {
         let cmd_str = Self::format_command_for_log(&cmd);
         tracing::info!("[OpencodeEngine] 执行命令: {}", cmd_str);
 
-        let child = cmd
-            .spawn()
-            .map_err(|e| Self::map_spawn_error(e, message.len(), "继续 opencode 会话失败"))?;
+        let child = match cmd.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                Self::cleanup_message_file(&msg_file);
+                return Err(Self::map_spawn_error(
+                    e,
+                    message.len(),
+                    "继续 opencode 会话失败",
+                ));
+            }
+        };
 
         let pid = child.id();
         tracing::info!("[OpencodeEngine] 进程启动，PID: {}", pid);
@@ -1070,6 +1216,7 @@ impl AIEngine for OpencodeEngine {
             pid,
             options,
             exit_signal,
+            msg_file,
         );
 
         self.sessions.register_with_sender(
@@ -1209,6 +1356,21 @@ mod tests {
     fn parse_invalid_json_returns_none() {
         assert!(OpencodeEvent::parse_line("not json").is_none());
         assert!(OpencodeEvent::parse_line("{broken").is_none());
+    }
+
+    #[test]
+    fn parse_unknown_type_falls_back_to_unknown_variant() {
+        // R4-1：未知 type 是有效 JSONL 事件，不应丢弃（serde other 兜底）
+        let line = r#"{"type":"compaction","sessionID":"ses_x","part":{"type":"compaction"}}"#;
+        let event = OpencodeEvent::parse_line(line).expect("未知 type 应兜底为 Unknown 而非丢行");
+        assert!(matches!(event, OpencodeEvent::Unknown));
+    }
+
+    #[test]
+    fn message_threshold_splits_arg_and_file_routes() {
+        // R4-2：短消息走命令行参数（阈值以下），粘贴代码/大 diff（阈值以上）走 --file
+        assert!(1_000 < OpencodeEngine::MESSAGE_ARG_MAX_BYTES);
+        assert!(OpencodeEngine::MESSAGE_ARG_MAX_BYTES < 10_000);
     }
 
     #[test]
