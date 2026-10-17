@@ -8,11 +8,13 @@
  * - 权限用 --auto，非 --permission-mode bypassPermissions
  * - 模型用 --model <provider>/<model>（如 opencode/glm-5.3-flash-free）
  *
- * 事件流（实测）：
- *   step_start → text/tool_use → step_finish → （EOF）
+ * 事件流（实测 v2.0.30，`opencode run --format json`）：
+ *   step_start ×N → text/tool_use → … → stdout EOF
  *   error（可选，provider 鉴权失败等）
  *
- * stdout EOF 即视为会话完成，补发 SessionEnd(Completed)。
+ * **没有 step_finish / session_end 事件，完成信号 = stdout EOF**；
+ * StepFinish 解析分支与 tokens 提取保留作为前向兼容（有单测覆盖），
+ * 但 EOF 判定不依赖它。
  */
 
 use std::collections::HashMap;
@@ -168,12 +170,59 @@ impl OpencodeEvent {
     }
 }
 
+/// 子进程退出信号（T2：去 sleep 的确定性退出等待）
+///
+/// `Child` 所有权在 EOF 读取线程内（`spawn_event_reader` 拿走），
+/// `SessionManager` 只持有 PID，无法 `Child::wait`。EOF 线程在收尾时收割
+/// child 并置位本信号；`continue_session` 收到信号（进程已真实退出）后才
+/// spawn 续接进程，替代原 `kill → sleep(100ms) → spawn` 的超时掩盖方案。
+///
+/// 顺序约定：`signal()` 必须在 `child.wait()` **返回之后**调用，
+/// 保证「信号已置位 ⇒ 进程已退出」的顺序成立。
+struct ExitSignal {
+    finished: std::sync::Mutex<bool>,
+    cond: std::sync::Condvar,
+}
+
+impl ExitSignal {
+    fn new() -> Self {
+        Self {
+            finished: std::sync::Mutex::new(false),
+            cond: std::sync::Condvar::new(),
+        }
+    }
+
+    /// 置位完成信号并广播
+    fn signal(&self) {
+        if let Ok(mut f) = self.finished.lock() {
+            *f = true;
+            self.cond.notify_all();
+        }
+    }
+
+    /// bounded 等待完成信号。
+    /// 返回 true = 进程已真实退出；false = 超时或锁失败（调用方应明确报错，
+    /// 不得继续 spawn —— 否则新旧两个 opencode 实例写同一 opencode session）。
+    fn wait(&self, timeout: std::time::Duration) -> bool {
+        let guard = match self.finished.lock() {
+            Ok(g) => g,
+            Err(_) => return false,
+        };
+        match self.cond.wait_timeout_while(guard, timeout, |f: &mut bool| !*f) {
+            Ok((g, _)) => *g,
+            Err(_) => false,
+        }
+    }
+}
+
 /// opencode CLI 引擎
 pub struct OpencodeEngine {
     /// 配置
     config: Config,
     /// 会话管理器
     sessions: SessionManager,
+    /// 子进程退出信号表: 会话初始 ID（temp 或 real）-> 退出信号
+    exit_signals: std::sync::Arc<std::sync::Mutex<HashMap<String, std::sync::Arc<ExitSignal>>>>,
 }
 
 impl OpencodeEngine {
@@ -181,6 +230,7 @@ impl OpencodeEngine {
         Self {
             config,
             sessions: SessionManager::new(),
+            exit_signals: std::sync::Arc::new(std::sync::Mutex::new(HashMap::new())),
         }
     }
 
@@ -288,6 +338,11 @@ impl OpencodeEngine {
         // 自动批准权限（非交互场景必需）
         cmd.arg("--auto");
 
+        // 独立服务模式（plans §5.1 实测确认可用）：opencode 默认可能拉起后台
+        // server 进程，kill 时留下孤儿进程；--standalone 让本次 run 用私有
+        // server 随 run 进程生命周期结束，中断/续接的进程树语义才完整。
+        cmd.arg("--standalone");
+
         Ok(cmd)
     }
 
@@ -376,8 +431,14 @@ impl OpencodeEngine {
         temp_id: String,
         pid: u32,
         options: SessionOptions,
+        exit_signal: std::sync::Arc<ExitSignal>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
+        // T1：中断标记集合的本地句柄（kill_process 成功后会 remove 会话条目，
+        // 标记须独立于 SessionInfo 存活才能在 EOF 时被查到）
+        let interrupted_set = self.sessions.shared_interrupted();
+        // T2：退出信号表句柄（置位后清理自身表项，避免信号表随会话累积）
+        let exit_signals = std::sync::Arc::clone(&self.exit_signals);
         let event_callback = options.event_callback.clone();
         let on_complete = options.on_complete.clone();
         let on_error = options.on_error.clone();
@@ -389,7 +450,10 @@ impl OpencodeEngine {
         let input_sender_for_return = input_sender.clone();
 
         std::thread::spawn(move || {
-            let stdout = match child.stdout {
+            // 收割子进程需要可变绑定（T2：EOF 后 child.wait()）
+            // stdout/stderr 用 take() 取出，避免部分移动 child 导致后续 wait() 不可用
+            let mut child = child;
+            let stdout = match child.stdout.take() {
                 Some(s) => s,
                 None => {
                     if let Some(ref cb) = on_error {
@@ -399,7 +463,7 @@ impl OpencodeEngine {
                 }
             };
 
-            let stderr = match child.stderr {
+            let stderr = match child.stderr.take() {
                 Some(s) => s,
                 None => {
                     if let Some(ref cb) = on_error {
@@ -598,7 +662,33 @@ impl OpencodeEngine {
             //
             // 参考 ai_chat_core 的 SessionEndReason 语义：Completed 用于正常结束，
             // 前端据此关闭生成态。Error 触发前端错误态提示。
-            if received_error {
+            //
+            // T1 中断语义（spec 见 plans/opencode-integration-optimization.md §六）：
+            //   判定顺序 1. interrupted（最优先：用户主动中断不是引擎故障）
+            //              → 只补 SessionEnd(Aborted)，不发 fallback error / Completed
+            //            2. 收到 error 事件 → SessionEnd(Error)
+            //            3. 收到过 text 或 finish → SessionEnd(Completed)
+            //            4. 完全无产出 → fallback error + SessionEnd(Error)
+            let was_interrupted = {
+                let set = interrupted_set.lock().ok();
+                set.map(|s| s.contains(&current_session_id) || s.contains(&temp_id))
+                    .unwrap_or(false)
+            };
+            // 消费标记：无论走哪个分支都清掉，防止跨轮次脏残留
+            if let Ok(mut set) = interrupted_set.lock() {
+                set.remove(&current_session_id);
+                set.remove(&temp_id);
+            }
+            if was_interrupted {
+                tracing::info!(
+                    "[OpencodeEngine] 会话被用户中断 ({}), EOF 补发 SessionEnd(Aborted)",
+                    current_session_id
+                );
+                event_callback(AIEvent::SessionEnd(
+                    SessionEndEvent::new(&current_session_id)
+                        .with_reason(SessionEndReason::Aborted),
+                ));
+            } else if received_error {
                 // error 事件已在上面通过 event_callback 推送，这里只补 SessionEnd
                 tracing::warn!(
                     "[OpencodeEngine] 收到 error 事件后 EOF，发送 SessionEnd(Error)"
@@ -633,6 +723,31 @@ impl OpencodeEngine {
                     SessionEndEvent::new(&current_session_id)
                         .with_reason(SessionEndReason::Error),
                 ));
+            }
+
+            // T2：收割子进程真实退出状态并置位退出信号。
+            // signal() 在 wait() 返回之后调用，保证「信号已置位 ⇒ 进程已退出」。
+            match child.wait() {
+                Ok(status) => {
+                    tracing::info!(
+                        "[OpencodeEngine] 子进程退出, code={:?}, was_interrupted={}",
+                        status.code(),
+                        was_interrupted
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!("[OpencodeEngine] 子进程 wait 失败: {}", e);
+                }
+            }
+            // 直接对本进程的信号置位（不查表）。查表会与 continue_session 的
+            // “取走信号”发生竞态：若 continue 先移除表项，这里查不到就不置位，
+            // 续接方的 bounded wait 必然超时误报。EOF 线程持有自身 Arc 即可解耦。
+            exit_signal.signal();
+            // 置位后清理本进程表项，避免信号表随会话累积。
+            // 清理是安全的：能走到这里说明进程已 wait 退出；若 continue_session
+            // 稍后查不到表项，说明旧进程确已死亡，放行续接即可（不会双写）。
+            if let Ok(mut signals) = exit_signals.lock() {
+                signals.remove(&temp_id);
             }
 
             if let Some(cb) = on_complete {
@@ -686,6 +801,45 @@ impl OpencodeEngine {
             }
             callback(AIEvent::ToolCallEnd(end));
         }
+    }
+
+    /// bounded 等待旧会话子进程真实退出（T2）
+    ///
+    /// 退出信号按 spawn 时传入的初始 ID（temp 或 real）索引，
+    /// 会话参数 / 信息真实 ID / 别名都可能是该键，逐个尝试。
+    /// - 找到信号：信号已置位 → 进程已确认退出，放行；
+    ///   超时未置位 → 明确报错（调用方不得继续 spawn）。
+    /// - 未找到信号：进程大概率早已结束（或引擎重启残留），warn 后放行。
+    fn wait_session_exit(&self, candidate_ids: &[String]) -> Result<()> {
+        let consumed_signal = {
+            let mut map = self
+                .exit_signals
+                .lock()
+                .map_err(|e| AppError::Unknown(format!("锁获取失败: {}", e)))?;
+            let found = candidate_ids.iter().find_map(|k| map.get(k).cloned());
+            // 消费：无论超时与否都移除候选键，防止信号表残留
+            for k in candidate_ids {
+                map.remove(k);
+            }
+            found
+        };
+
+        let Some(signal) = consumed_signal else {
+            tracing::warn!(
+                "[OpencodeEngine] 未找到会话退出信号 (ids={:?})，跳过退出等待",
+                candidate_ids
+            );
+            return Ok(());
+        };
+
+        if !signal.wait(std::time::Duration::from_secs(2)) {
+            return Err(AppError::ProcessError(format!(
+                "旧 opencode 进程未在 2s 内退出，中止续接以免新旧实例双写同一 opencode session (ids={:?})",
+                candidate_ids
+            )));
+        }
+        tracing::info!("[OpencodeEngine] 旧进程已确认退出 (ids={:?})", candidate_ids);
+        Ok(())
     }
 }
 
@@ -768,8 +922,14 @@ impl AIEngine for OpencodeEngine {
             temp_id
         );
 
+        // T2：注册退出信号（在 spawn_event_reader 之前，EOF 线程持有同一 Arc 置位）
+        let exit_signal = std::sync::Arc::new(ExitSignal::new());
+        if let Ok(mut signals) = self.exit_signals.lock() {
+            signals.insert(temp_id.clone(), std::sync::Arc::clone(&exit_signal));
+        }
+
         let input_sender =
-            self.spawn_event_reader(child, temp_id.clone(), pid, options);
+            self.spawn_event_reader(child, temp_id.clone(), pid, options, exit_signal);
 
         self.sessions.register_with_sender(
             temp_id.clone(),
@@ -801,7 +961,12 @@ impl AIEngine for OpencodeEngine {
                 info.pid
             );
             let _ = self.sessions.kill_process(session_id);
-            std::thread::sleep(std::time::Duration::from_millis(100));
+            // T2：等待旧进程真实退出（bounded），替代原 sleep(100ms) 的超时掩盖。
+            // 信号未置位则明确报错、不 spawn —— 旧实例未死时新旧两个 opencode
+            // 进程会写同一 opencode session（双写竞态，AGENTS 禁止）。
+            let mut wait_ids = vec![session_id.to_string(), info.id.clone()];
+            wait_ids.extend(info.aliases.iter().cloned());
+            self.wait_session_exit(&wait_ids)?;
             info.id.clone()
         } else {
             tracing::warn!("[OpencodeEngine] 未找到会话信息，使用传入的 session_id");
@@ -833,11 +998,20 @@ impl AIEngine for OpencodeEngine {
         let pid = child.id();
         tracing::info!("[OpencodeEngine] 进程启动，PID: {}", pid);
 
+        // T1：中断标记清理——续接是新的一轮对话，不复用旧标记
+        self.sessions.clear_interrupted(&real_session_id);
+        // T2：注册新退出信号（在 spawn_event_reader 之前，键 = 本次 spawn 的初始 ID）
+        let exit_signal = std::sync::Arc::new(ExitSignal::new());
+        if let Ok(mut signals) = self.exit_signals.lock() {
+            signals.insert(real_session_id.clone(), std::sync::Arc::clone(&exit_signal));
+        }
+
         let input_sender = self.spawn_event_reader(
             child,
             real_session_id.clone(),
             pid,
             options,
+            exit_signal,
         );
 
         self.sessions.register_with_sender(
@@ -852,6 +1026,10 @@ impl AIEngine for OpencodeEngine {
 
     fn interrupt(&mut self, session_id: &str) -> Result<()> {
         tracing::info!("[OpencodeEngine] 中断会话: {}", session_id);
+        // 先标记后杀（明确顺序，T1）：mark_interrupted → kill_process。
+        // EOF 线程读到标记后回发 SessionEnd(Aborted)（用户中断），
+        // 而非走「无产出 fallback error + SessionEnd(Error)」把主动中断当引擎故障。
+        self.sessions.mark_interrupted(session_id);
         match self.sessions.kill_process(session_id) {
             Ok(true) => {
                 tracing::info!("[OpencodeEngine] 会话已中断: {}", session_id);

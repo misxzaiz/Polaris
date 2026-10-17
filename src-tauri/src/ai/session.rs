@@ -5,7 +5,7 @@
  * 支持通过 channel 向进程 stdin 发送输入。
  */
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Mutex, mpsc::Sender};
 use crate::error::{AppError, Result};
 
@@ -52,6 +52,9 @@ impl Clone for SessionInfo {
 pub struct SessionManager {
     /// 会话映射: session_id -> SessionInfo
     sessions: Arc<Mutex<HashMap<String, SessionInfo>>>,
+    /// 用户主动中断的会话 ID 集合（独立于 sessions：kill_process 成功后
+    /// 会 remove 会话条目，EOF 读取线程仍需查到标记以区分「用户中断」与「引擎故障」）
+    interrupted_ids: Arc<Mutex<HashSet<String>>>,
 }
 
 impl SessionManager {
@@ -59,6 +62,7 @@ impl SessionManager {
     pub fn new() -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            interrupted_ids: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -188,6 +192,60 @@ impl SessionManager {
     /// 获取会话管理器的共享引用
     pub fn shared(&self) -> Arc<Mutex<HashMap<String, SessionInfo>>> {
         Arc::clone(&self.sessions)
+    }
+
+    /// 标记用户主动中断的会话
+    ///
+    /// 独立于 `sessions` 映射存储：`kill_process` 成功后会 `remove` 会话条目，
+    /// EOF 读取线程随后仍需查到该标记以区分「用户中断」与「引擎故障」。
+    /// 同时标记真实 ID 与全部别名（EOF 线程可能以任一 ID 查询）。
+    pub fn mark_interrupted(&self, session_id: &str) {
+        // 先取会话信息（内部锁 sessions），再锁 interrupted_ids，避免持锁嵌套
+        let ids = {
+            let mut ids = vec![session_id.to_string()];
+            if let Some(info) = self.get(session_id) {
+                ids.push(info.id.clone());
+                ids.extend(info.aliases.iter().cloned());
+            }
+            ids
+        };
+        if let Ok(mut set) = self.interrupted_ids.lock() {
+            for id in ids {
+                set.insert(id);
+            }
+        }
+    }
+
+    /// 查询会话是否被用户主动中断
+    pub fn is_interrupted(&self, session_id: &str) -> bool {
+        self.interrupted_ids
+            .lock()
+            .map(|set| set.contains(session_id))
+            .unwrap_or(false)
+    }
+
+    /// 清除会话的中断标记（消费后调用，防止跨轮次脏残留）
+    ///
+    /// 同时清除真实 ID 与全部别名，语义与 mark_interrupted 对称。
+    pub fn clear_interrupted(&self, session_id: &str) {
+        let ids = {
+            let mut ids = vec![session_id.to_string()];
+            if let Some(info) = self.get(session_id) {
+                ids.push(info.id.clone());
+                ids.extend(info.aliases.iter().cloned());
+            }
+            ids
+        };
+        if let Ok(mut set) = self.interrupted_ids.lock() {
+            for id in ids {
+                set.remove(&id);
+            }
+        }
+    }
+
+    /// 获取中断标记集合的共享引用（供事件读取线程查询，与 shared() 同 pattern）
+    pub fn shared_interrupted(&self) -> Arc<Mutex<HashSet<String>>> {
+        Arc::clone(&self.interrupted_ids)
     }
 
     /// 通过共享引用更新 session_id（用于后台线程）

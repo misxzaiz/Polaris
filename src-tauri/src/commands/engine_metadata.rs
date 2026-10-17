@@ -12,6 +12,8 @@
 use crate::ai::EngineMetadata;
 use crate::error::{AppError, Result};
 use crate::state::AppState;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 #[cfg(feature = "tauri-app")]
 use tauri::State;
 
@@ -59,8 +61,15 @@ pub async fn get_opencode_models() -> Result<Vec<OpencodeModel>> {
 /// 非 Tauri 环境的共享实现（供 web bin 路径调用）
 pub fn get_opencode_models_impl() -> Result<Vec<OpencodeModel>> {
     let cmd_name = if cfg!(windows) { "opencode.cmd" } else { "opencode" };
-    let output = std::process::Command::new(cmd_name)
-        .arg("models")
+    // Windows 桌面端补 CREATE_NO_WINDOW：不加会闪控制台黑框（同 ai 引擎 spawn 约定）
+    let mut cmd = {
+        let mut c = std::process::Command::new(cmd_name);
+        c.arg("models");
+        #[cfg(windows)]
+        c.creation_flags(crate::utils::CREATE_NO_WINDOW);
+        c
+    };
+    let output = cmd
         .output()
         .map_err(|e| AppError::ProcessError(format!("执行 opencode models 失败: {}", e)))?;
 
