@@ -56,8 +56,10 @@ const SUMMARY_MAX_TOKENS: u64 = 2048;
 const SUMMARY_RETRY_MAX_TOKENS: u64 = 4096;
 /// 字符估算 token 的除数（中英混合的保守近似）。
 const CHARS_PER_TOKEN: usize = 4;
-/// 摘要输入序列化时的截断上限（字符）。
+/// 摘要输入序列化时的截断上限（字符）。tool 结果按保头保尾分配：头 60% + 尾 40%。
 const SERIALIZE_TOOL_RESULT_CAP: usize = 1000;
+const SERIALIZE_TOOL_RESULT_HEAD_CAP: usize = SERIALIZE_TOOL_RESULT_CAP * 3 / 5;
+const SERIALIZE_TOOL_RESULT_TAIL_CAP: usize = SERIALIZE_TOOL_RESULT_CAP * 2 / 5;
 const SERIALIZE_TOOL_ARGS_CAP: usize = 200;
 
 /// 每轮 token 使用量记录。
@@ -496,6 +498,20 @@ fn truncate_chars(s: &str, cap: usize) -> String {
     format!("{}…[truncated]", head)
 }
 
+/// 保头保尾截断（多字节安全）：超长文本保留头部 + 尾部，中段以省略标记代替。
+///
+/// 纯头部截断会让 tool 结果（如长文分析）的结尾总结/结论全丢；
+/// 保头+保尾保证关键结论即使超长也留在摘要输入中，供压缩模型理解。
+fn truncate_head_tail(s: &str, head_cap: usize, tail_cap: usize) -> String {
+    let total = s.chars().count();
+    if total <= head_cap + tail_cap {
+        return s.to_string();
+    }
+    let head: String = s.chars().take(head_cap).collect();
+    let tail: String = s.chars().skip(total - tail_cap).collect();
+    format!("{}…[truncated, total {} chars]…{}", head, total, tail)
+}
+
 /// 序列化单条消息为摘要输入行：保留 tool_calls 名称+参数（截断）、
 /// tool 结果（截断）、数组型 content 的 text parts。
 fn serialize_message(m: &Value) -> String {
@@ -512,7 +528,13 @@ fn serialize_message(m: &Value) -> String {
     };
     if !text.is_empty() {
         if r == "tool" {
-            parts.push(truncate_chars(&text, SERIALIZE_TOOL_RESULT_CAP));
+            // 保头保尾：头部 + 尾部（合计仍受 SERIALIZE_TOOL_RESULT_CAP 预算约束），
+            // 长文结果的关键结论通常在结尾，断头截断会把它丢给压缩模型。
+            parts.push(truncate_head_tail(
+                &text,
+                SERIALIZE_TOOL_RESULT_HEAD_CAP,
+                SERIALIZE_TOOL_RESULT_TAIL_CAP,
+            ));
         } else {
             parts.push(text);
         }
@@ -987,8 +1009,14 @@ mod tests {
         let long = "y".repeat(SERIALIZE_TOOL_RESULT_CAP + 100);
         let t = json!({"role":"tool","content": long});
         let s = serialize_message(&t);
-        assert!(s.contains("[truncated]"));
-        assert!(s.chars().count() < SERIALIZE_TOOL_RESULT_CAP + 60);
+        assert!(s.contains("[truncated"));
+        assert!(s.chars().count() < SERIALIZE_TOOL_RESULT_CAP + 80);
+
+        // 保头保尾：长文结果的结尾关键结论必须保留，不因截断丢失。
+        let long_text = format!("{}END_MARKER", "y".repeat(SERIALIZE_TOOL_RESULT_CAP + 100));
+        let t2 = json!({"role":"tool","content": long_text});
+        let s2 = serialize_message(&t2);
+        assert!(s2.contains("END_MARKER"), "保头保尾截断应保留结尾关键内容");
     }
 
     #[test]
