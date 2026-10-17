@@ -213,6 +213,61 @@ mod tests {
         let r = cap.invoke(serde_json::json!({"action": "applyPreset", "preset": "dark"}), &ctx()).unwrap();
         assert_eq!(r["preset"], "dark");
         assert!(cap.invoke(serde_json::json!({"action": "applyPreset", "preset": "unknown"}), &ctx()).is_err());
+        assert!(cap.invoke(serde_json::json!({"action": "applyPreset"}), &ctx()).is_err());
+    }
+
+    #[test]
+    fn list_themes_forwards() {
+        let cap = UiThemeCapability;
+        let r = cap.invoke(serde_json::json!({"action": "listThemes"}), &ctx()).unwrap();
+        assert_eq!(r["action"], "listThemes");
+    }
+
+    #[test]
+    fn set_active_validates_id() {
+        let cap = UiThemeCapability;
+        let r = cap.invoke(serde_json::json!({"action": "setActive", "id": "theme-1"}), &ctx()).unwrap();
+        assert_eq!(r["id"], "theme-1");
+        // 缺 id / 空 id 均拒绝
+        assert!(cap.invoke(serde_json::json!({"action": "setActive"}), &ctx()).is_err());
+        assert!(cap.invoke(serde_json::json!({"action": "setActive", "id": ""}), &ctx()).is_err());
+    }
+
+    #[test]
+    fn export_forwards() {
+        let cap = UiThemeCapability;
+        let r = cap.invoke(serde_json::json!({"action": "export"}), &ctx()).unwrap();
+        assert_eq!(r["action"], "export");
+    }
+
+    #[test]
+    fn import_validates_theme_object() {
+        let cap = UiThemeCapability;
+        let r = cap.invoke(
+            serde_json::json!({"action": "import", "theme": {"name": "x", "colors": {}}}),
+            &ctx(),
+        ).unwrap();
+        assert_eq!(r["action"], "import");
+        assert_eq!(r["theme"]["name"], "x");
+        // 非对象 theme 拒绝
+        assert!(cap.invoke(serde_json::json!({"action": "import", "theme": "nope"}), &ctx()).is_err());
+        // 缺 theme 拒绝
+        assert!(cap.invoke(serde_json::json!({"action": "import"}), &ctx()).is_err());
+    }
+
+    #[test]
+    fn palette_must_be_nonempty_object_of_strings() {
+        let cap = UiThemeCapability;
+        // 非对象
+        assert!(cap.invoke(serde_json::json!({"action": "patch", "palette": ["#fff"]}), &ctx()).is_err());
+        // 空对象
+        assert!(cap.invoke(serde_json::json!({"action": "patch", "palette": {}}), &ctx()).is_err());
+        // 空键
+        assert!(cap.invoke(serde_json::json!({"action": "patch", "palette": {"": "#fff"}}), &ctx()).is_err());
+        // 非字符串值
+        assert!(cap.invoke(serde_json::json!({"action": "patch", "palette": {"primary": 42}}), &ctx()).is_err());
+        // 空字符串值
+        assert!(cap.invoke(serde_json::json!({"action": "patch", "palette": {"primary": ""}}), &ctx()).is_err());
     }
 
     #[test]

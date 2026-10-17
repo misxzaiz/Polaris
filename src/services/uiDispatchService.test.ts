@@ -117,6 +117,45 @@ describe('applyUiThemeAction', () => {
     const res = applyUiThemeAction('setActive', { id: 'nope' })
     expect(res.ok).toBe(false)
   })
+
+  it('get: 返回当前激活主题 id', () => {
+    const res = applyUiThemeAction('get', {})
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain('active-1')
+  })
+
+  it('listThemes: 列出主题摘要（不含完整定义）', () => {
+    const res = applyUiThemeAction('listThemes', {})
+    expect(res.ok).toBe(true)
+    expect(res.message).toContain('当前')
+    expect(res.message).toContain('用户主题')
+  })
+
+  it('export: 序列化当前激活主题完整定义', () => {
+    const res = applyUiThemeAction('export', {})
+    expect(res.ok).toBe(true)
+    const parsed = JSON.parse(res.message)
+    expect(parsed.id).toBe('active-1')
+    expect(parsed.colors.primary.base).toBe('#111')
+  })
+
+  it('import: 导入主题为新用户主题并激活', () => {
+    const res = applyUiThemeAction('import', {
+      theme: { name: 'AI 导入', colors: { primary: { base: '#0f0' } } },
+    })
+    expect(res.ok).toBe(true)
+    const saved = saveThemeMock.mock.calls[0][0]
+    expect(saved.builtIn).toBe(false)
+    expect(saved.name).toBe('AI 导入')
+    expect(saved.colors.primary.base).toBe('#0f0')
+    expect(setThemeByIdMock).toHaveBeenCalledWith(saved.id)
+  })
+
+  it('import: 缺 theme 对象返回失败', () => {
+    const res = applyUiThemeAction('import', {})
+    expect(res.ok).toBe(false)
+    expect(saveThemeMock).not.toHaveBeenCalled()
+  })
 })
 
 describe('applyUiChatAction', () => {
