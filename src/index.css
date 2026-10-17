@@ -202,6 +202,33 @@ body {
   background: transparent;
 }
 
+/* 左侧面板 tab strip 溢出滚动条 - 极细 + hover 淡入（默认透明，悬停 strip 才现） */
+.left-panel-tabstrip-scroll::-webkit-scrollbar {
+  height: 3px;
+}
+.left-panel-tabstrip-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.left-panel-tabstrip-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  min-height: 0;
+}
+.left-panel-tabstrip-scroll:hover::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+}
+.left-panel-tabstrip-scroll:hover::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.left-panel-tabstrip-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.left-panel-tabstrip-scroll:hover {
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+}
+
 /* 聊天显示区域滚动条 - 极致纤细 */
 .chat-display-root ::-webkit-scrollbar {
   width: 4px;
