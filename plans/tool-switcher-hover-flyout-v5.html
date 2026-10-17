@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>工具切换器原型 v5 — 真实主题 · 锚定按钮 · pinned+溢出分层</title>
+<style>
+  /* ===== Polaris Shenzhen 主题 token（取自 Shenzhen.polaris-theme） ===== */
+  :root {
+    --c-primary: 0 217 255;          /* 霓虹青 */
+    --c-primary-hover: 0 188 230;
+    --c-bg-base: 6 8 20;
+    --c-bg-elevated: 12 15 34;
+    --c-bg-surface: 18 22 45;
+    --c-bg-hover: 24 29 55;
+    --c-bg-active: 30 36 65;
+    --c-border: 0 217 255;           /* 主题 border.base 即 cyan，用于描边须降 alpha */
+    --c-text-primary: 235 240 255;
+    --c-text-secondary: 180 196 235;
+    --c-text-tertiary: 130 145 190;  /* 对比度 ≥4.5:1，达 AA */
+    --c-text-muted: 90 100 145;      /* 仅装饰用，不作正文 */
+    --radius-md: 8px;
+    --radius-lg: 12px;               /* rounded-xl：项目浮层标准圆角 */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    height: 100vh; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+
+  /* ===== 顶部栏（还原 TopMenuBar 结构） ===== */
+  .topbar {
+    display: flex; align-items: center; height: 40px; flex-shrink: 0;
+    background: rgb(var(--c-bg-elevated));
+    border-bottom: 1px solid rgb(var(--c-border) / 0.12);
+    padding: 0 8px; position: relative; z-index: 60;
+  }
+  .logo { width: 24px; height: 24px; margin: 0 8px 0 4px; flex-shrink: 0; }
+  .logo .ring { width: 24px; height: 24px; border: 1px solid rgb(var(--c-border) / 0.22); border-radius: 50%; position: relative; }
+  .logo .ring i {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 2px solid transparent; border-top-color: rgb(var(--c-primary));
+    border-right-color: rgb(var(--c-primary) / 0.5);
+    animation: spin 1.2s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .brand { font-size: 13px; font-weight: 500; margin-right: 12px; letter-spacing: 0.02em; }
+  .sep { width: 1px; height: 16px; background: rgb(var(--c-border) / 0.14); margin-right: 8px; }
+  .ws-chip {
+    display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 10px;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--c-bg-surface));
+    border: 1px solid rgb(var(--c-border) / 0.1);
+    font-size: 12px; color: rgb(var(--c-text-secondary)); cursor: pointer;
+  }
+  .ws-chip:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  /* 触发按钮 */
+  .tool-btn {
+    display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; margin-left: 8px;
+    border: 1px solid transparent; border-radius: var(--radius-sm);
+    background: transparent; color: rgb(var(--c-text-secondary));
+    font-size: 12px; cursor: pointer; position: relative;
+    transition: background 0.15s, color 0.15s;
+  }
+  .tool-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tool-btn.open { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+  .mini-dot {
+    position: absolute; top: 1px; right: 1px; width: 6px; height: 6px; border-radius: 50%;
+    background: rgb(var(--c-primary)); box-shadow: 0 0 6px rgb(var(--c-primary) / 0.6);
+  }
+  .drag-area { flex: 1; height: 100%; }
+  .right-btns { display: flex; align-items: center; gap: 2px; }
+  .tb-icon {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    border: none; background: transparent; border-radius: var(--radius-sm);
+    color: rgb(var(--c-text-tertiary)); cursor: pointer;
+  }
+  .tb-icon:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  /* ===== 舞台 ===== */
+  .stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+  .stage-inner { text-align: center; max-width: 460px; }
+  .stage-inner h2 { font-size: 17.5px; font-weight: 600; margin-bottom: 10px; }
+  .stage-inner p { font-size: 13px; color: rgb(var(--c-text-tertiary)); line-height: 1.7; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px; padding: 5px 12px;
+    border-radius: 999px; border: 1px solid rgb(var(--c-border) / 0.16);
+    background: rgb(var(--c-bg-elevated)); font-size: 11px; color: rgb(var(--c-text-secondary));
+  }
+  .chip svg { color: rgb(var(--c-primary)); }
+
+  .notes {
+    position: absolute; right: 0; top: 0; bottom: 0; width: 304px;
+    border-left: 1px solid rgb(var(--c-border) / 0.1); background: rgb(var(--c-bg-elevated));
+    padding: 18px 16px; overflow-y: auto; font-size: 13px; line-height: 1.6;
+  }
+  .notes h3 { font-size: 13px; font-weight: 600; margin: 14px 0 6px; }
+  .notes h3:first-child { margin-top: 0; }
+  .badge {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 999px;
+    background: rgb(var(--c-primary) / 0.14); color: rgb(var(--c-primary)); margin-bottom: 6px;
+  }
+  .notes ul { padding-left: 18px; color: rgb(var(--c-text-secondary)); }
+  .notes li { margin-bottom: 3px; }
+  .notes code { background: rgb(var(--c-bg-surface)); padding: 1px 5px; border-radius: 4px; font-size: 11px; color: rgb(var(--c-primary)); }
+  .mode-switch { display: flex; border: 1px solid rgb(var(--c-border) / 0.14); border-radius: var(--radius-md); overflow: hidden; margin-bottom: 6px; }
+  .mode-switch button { flex: 1; border: none; background: transparent; color: rgb(var(--c-text-tertiary)); font-size: 13px; padding: 7px 0; cursor: pointer; }
+  .mode-switch button.on { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); font-weight: 600; }
+  kbd { background: rgb(var(--c-bg-surface)); border: 1px solid rgb(var(--c-border) / 0.14); border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 11px; }
+
+  /* ===== 悬浮窗 v5：flex 布局，锚定触发按钮 ===== */
+  /* ===== 悬浮窗 v5：flex 布局，锚定触发按钮 ===== */
+  @keyframes panelIn {
+    0% { opacity: 0; transform: translateY(4px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+  .flyout {
+    position: fixed; z-index: 50; /* z-popover：全局导航浮层层级 */
+    width: 356px;
+    background: rgb(var(--c-bg-elevated));
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.2); /* shadow-medium：项目浮层标准阴影 */
+    opacity: 0; transform: translateY(4px) scale(0.985);
+    pointer-events: none;
+    animation: panelIn 260ms cubic-bezier(.32,.72,0,1) forwards; /* panel-in：项目标准入场 */
+    display: flex; flex-direction: column;
+    max-height: min(70dvh, calc(100dvh - 64px)); /* 唯一高度源：滚动区 min-height:0 */
+  }
+  .flyout.open { opacity: 1; transform: none; pointer-events: auto; }
+
+  /* 头部：单行 */
+  .fly-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; flex-shrink: 0;
+    border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+  }
+  .head-ico {
+    width: 26px; height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-md); background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary));
+  }
+  .t1 { font-size: 13px; font-weight: 600; letter-spacing: 0.02em; }
+  .active-pill {
+    margin-left: auto; font-size: 11px; color: rgb(var(--c-text-tertiary));
+    background: rgb(var(--c-bg-surface)); border: 1px solid rgb(var(--c-border) / 0.1);
+    padding: 2px 8px; border-radius: 999px; white-space: nowrap;
+  }
+  .fly-x {
+    width: 26px; height: 26px; flex-shrink: 0;
+    border: none; background: transparent; border-radius: var(--radius-sm);
+    color: rgb(var(--c-text-tertiary)); display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .fly-x:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  /* pinned 常用行：4 个 icon-only 大按钮 */
+  .pin-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px 10px 6px; flex-shrink: 0; }
+  .pin-tile {
+    height: 40px; border: 1px solid transparent; border-radius: var(--radius-md);
+    background: transparent; color: rgb(var(--c-text-secondary));
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px;
+    cursor: pointer; transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .pin-tile:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .pin-tile.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+  .pin-tile:focus-visible, .of-tile:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: -1px; }
+  .pin-lbl { font-size: 10.5px; letter-spacing: 0.03em; }
+
+  /* 分隔 hairline */
+  .tier-sep { height: 1px; background: rgb(var(--c-border) / 0.08); margin: 0 10px; flex-shrink: 0; }
+
+  /* 溢出区：3 列紧凑网格；滚动区 min-height:0 */
+  .scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 10px 10px; }
+  .of-head {
+    font-size: 11px; font-weight: 500; letter-spacing: 0.05em;
+    color: rgb(var(--c-text-tertiary)); padding: 2px 4px 6px;
+  }
+  .of-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+  .of-tile {
+    display: flex; align-items: center; gap: 5px; height: 34px;
+    padding: 0 6px; border: none; background: transparent; border-radius: var(--radius-md);
+    color: rgb(var(--c-text-secondary)); cursor: pointer; text-align: left;
+    transition: background 0.12s, color 0.12s; min-width: 0;
+  }
+  .of-tile:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .of-tile.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+  .of-tile svg { flex-shrink: 0; }
+  .of-tile .lbl { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 底部：当前侧栏 + 关闭侧栏 */
+  .fly-foot {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 10px; flex-shrink: 0;
+    border-top: 1px solid rgb(var(--c-border) / 0.08);
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+  }
+  .fly-foot .curr { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .close-side-btn {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: none; background: transparent; border-radius: 4px;
+    color: rgb(var(--c-text-secondary)); font-size: 11px; padding: 3px 6px; min-height: 20px; cursor: pointer;
+  }
+  .close-side-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  .tooltip {
+    position: fixed; z-index: 99; max-width: 240px;
+    background: rgb(var(--c-bg-active)); border: 1px solid rgb(var(--c-border) / 0.16);
+    color: rgb(var(--c-text-secondary)); border-radius: var(--radius-sm); font-size: 11px;
+    padding: 5px 9px; pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 0.4);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip b { display: block; color: rgb(var(--c-text-primary)); font-weight: 600; margin-bottom: 1px; }
+  .tooltip .grp { color: rgb(var(--c-text-tertiary)); }
+  .empty { padding: 28px 0; text-align: center; font-size: 13px; color: rgb(var(--c-text-tertiary)); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .flyout, .tooltip, .tool-btn, .tb-icon, .pin-tile, .of-tile, .fly-x, .close-side-btn { transition: none; }
+    .logo .ring i { animation: none; }
+  }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--c-bg-hover)); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo"><div class="ring"><i></i></div></div>
+  <span class="brand">Polaris</span>
+  <span class="sep"></span>
+  <div class="ws-chip"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15 15 0 0 1 0 20 15 15 0 0 1 0-20"/></svg>Polaris</div>
+
+  <button class="tool-btn" id="toolBtn" aria-expanded="false" aria-haspopup="listbox">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+    <span id="toolLabel">工具</span>
+  </button>
+
+  <div class="drag-area"></div>
+  <div class="right-btns">
+    <button class="tb-icon" title="AI 面板"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/></svg></button>
+    <button class="tb-icon" title="通知"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></button>
+    <button class="tb-icon" title="设置"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+  </div>
+</div>
+
+<div class="stage">
+  <div class="stage-inner">
+    <div class="chip" id="panelChip"></div>
+    <h2 id="stageTitle">滑过「工具」按钮试试</h2>
+    <p id="stageDesc">浮层现在<b>锚定按钮下方</b>；顶部是 4 个常用项，下面是溢出工具 3 列网格；hover 展开不抢焦点。</p>
+  </div>
+  <div class="notes">
+    <div class="badge">v5 · 设计重做（2026-10-17）</div>
+    <div class="mode-switch">
+      <button id="modeNew" class="on">新方案</button>
+      <button id="modeOld">现状</button>
+    </div>
+    <h3>本次修正了上一版 7 个问题</h3>
+    <ul>
+      <li><b>真实主题</b>：深蓝底 + 霓虹青 accent，取 Shenzhen.polaris-theme token</li>
+      <li><b>锚定触发按钮</b>：getBoundingClientRect 定位，不再钉左上角</li>
+      <li><b>pinned + 溢出分层</b>：常驻 4 项 icon 大按钮置顶，溢出工具 3 列紧凑网格</li>
+      <li><b>单行头部</b>：标题 + 当前侧栏 pill + X；「关闭侧栏」沉到底部</li>
+      <li><b>无魔数高度</b>：flex + min-height:0 滚动区，唯一 max-height 源</li>
+      <li><b>3 列吃满宽度</b>：图标 15px + 短 label，右侧不再空置</li>
+      <li><b>一致性</b>：全部 tile 有 tooltip（含分组）；图标统一 1.75 描边</li>
+    </ul>
+    <h3>保留的交互</h3>
+    <ul>
+      <li>hover 120ms 展开 / 移出 300ms grace / click toggle / 不抢焦点</li>
+      <li><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> 全网格循环，<kbd>Enter</kbd> 选中</li>
+      <li>溢出工具激活时按钮右上 mini-dot 常驻</li>
+    </ul>
+    <h3>下一步可选项</h3>
+    <ul>
+      <li>分组标题按需回流（溢出项 >8 时再启用，现在 6 项不需要）</li>
+      <li>MRU「最近使用」行置顶（替代固定 pinned，PRD §13 备选）</li>
+    </ul>
+  </div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const svg = (paths, size) =>
+  '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+const I = {
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  gitBranch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  bookOpen: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  panelLeftClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9-3 3 3 3"/>',
+};
+
+const PINNED = [
+  { id: 'files',    icon: 'folder',     label: '文件', group: '上下文' },
+  { id: 'git',      icon: 'gitBranch',  label: '变更', group: '变更' },
+  { id: 'browser',  icon: 'globe',      label: '浏览器', group: '上下文' },
+  { id: 'terminal', icon: 'terminal',   label: '终端', group: '运行' },
+];
+const OVERFLOW = [
+  { id: 'todo',       icon: 'listChecks', label: '待办',     group: '自动化', desc: '待办与自动化任务' },
+  { id: 'translate',  icon: 'languages',  label: '翻译',     group: '集成',   desc: '翻译与语言工具' },
+  { id: 'scheduler',  icon: 'clock',      label: '定时任务', group: '运行',   desc: '定时任务和执行控制' },
+  { id: 'requirement',icon: 'bookOpen',   label: '需求库',   group: '上下文', desc: '需求库、生成与追踪' },
+  { id: 'personalHub',icon: 'user',       label: '个人中心', group: '上下文', desc: '个人链接与知识收藏' },
+  { id: 'integration',icon: 'plug',       label: '集成平台', group: '集成',   desc: '外部平台与机器人接入' },
+  { id: 'aiConsole',  icon: 'bot',        label: 'AI 控制台',group: '运行',   desc: 'AI 执行记录与来源概览' },
+  { id: 'developer',  icon: 'wrench',     label: '开发者',   group: '开发',   desc: '开发者调试工具' },
+];
+const I2 = {
+  listChecks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  languages: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+};
+Object.assign(I, I2);
+
+const ALL = [...PINNED, ...OVERFLOW];
+let activePanel = 'files';
+let mode = 'new';
+let isOpen = false;
+let openTimer = null, closeTimer = null;
+let openedByClick = false;
+const HOVER_OPEN_DELAY = 120, HOVER_CLOSE_DELAY = 300;
+const $ = id => document.getElementById(id);
+
+function overflowActive() { return OVERFLOW.some(t => t.id === activePanel); }
+function findActive() { return ALL.find(t => t.id === activePanel) || null; }
+
+function renderToolBtn() {
+  const btn = $('toolBtn');
+  btn.classList.toggle('open', isOpen);
+  btn.setAttribute('aria-expanded', String(isOpen));
+  const hasDot = btn.querySelector('.mini-dot');
+  if (overflowActive() && !hasDot) btn.insertAdjacentHTML('beforeend', '<span class="mini-dot"></span>');
+  else if (!overflowActive() && hasDot) hasDot.remove();
+}
+
+function renderChip() {
+  const t = findActive();
+  $('panelChip').innerHTML = t ? svg(I[t.icon], 13) + '<span>当前侧栏：' + t.label + '</span>' : '<span>当前侧栏：无</span>';
+}
+
+function headHtml() {
+  const t = findActive();
+  return '<div class="fly-head"><div class="head-ico">' + svg(I.grid, 14) + '</div>'
+    + '<div class="t1">工具切换器</div>'
+    + '<span class="active-pill">' + (t ? t.label : '无侧栏') + '</span>'
+    + '<button class="fly-x" id="fx" aria-label="关闭">' + svg(I.x, 13) + '</button></div>';
+}
+function pinHtml() {
+  let h = '<div class="pin-row" role="presentation">';
+  PINNED.forEach(p => {
+    h += '<button class="pin-tile ' + (p.id === activePanel ? 'active' : '') + '" role="option" aria-selected="' + (p.id === activePanel) + '" data-id="' + p.id + '" data-grp="' + p.group + '" title="' + p.label + ' · ' + p.group + '">'
+      + svg(I[p.icon], 17) + '<span class="pin-lbl">' + p.label + '</span></button>';
+  });
+  return h + '</div>';
+}
+function overflowHtml() {
+  let h = '<div class="scroll" id="flyBody" role="listbox" aria-label="更多工具">'
+    + '<div class="of-head">更多工具</div><div class="of-grid">';
+  OVERFLOW.forEach(o => {
+    h += '<button class="of-tile ' + (o.id === activePanel ? 'active' : '') + '" role="option" aria-selected="' + (o.id === activePanel) + '" data-id="' + o.id + '" data-desc="' + (o.desc || '') + '" data-grp="' + o.group + '">'
+      + svg(I[o.icon], 15) + '<span class="lbl">' + o.label + '</span></button>';
+  });
+  return h + '</div></div>';
+}
+function footHtml() {
+  const t = findActive();
+  return '<div class="fly-foot"><span class="curr">当前侧栏：' + (t ? t.label : '无') + '</span>'
+    + '<button class="close-side-btn" id="closeSide">' + svg(I.panelLeftClose, 11) + '<span>关闭侧栏</span></button></div>';
+}
+
+function anchorToBtn() {
+  const r = $('toolBtn').getBoundingClientRect();
+  const w = 356;
+  const left = Math.max(8, Math.min(r.left, window.innerWidth - w - 8));
+  const top = Math.min(r.bottom + 6, window.innerHeight - 420);
+  $('flyout').style.left = left + 'px';
+  $('flyout').style.top = top + 'px';
+}
+
+function renderFlyout() {
+  $('flyout').innerHTML = headHtml() + pinHtml() + '<div class="tier-sep"></div>' + overflowHtml() + footHtml();
+  $('fx').onclick = () => closeFlyout();
+  $('closeSide').onclick = () => { activePanel = null; syncPanel(); };
+
+  document.querySelectorAll('.pin-tile, .of-tile').forEach(el => {
+    el.onclick = () => { activePanel = el.dataset.id; syncPanel(); };
+    el.addEventListener('keydown', (e) => onFlyKey(e, el));
+    el.addEventListener('mouseenter', () => showTip(el));
+    el.addEventListener('mouseleave', () => $('tooltip').classList.remove('show'));
+  });
+  if (openedByClick) $('toolSearch') && $('toolSearch').focus({ preventScroll: true });
+}
+
+function showTip(el) {
+  const t = ALL.find(x => x.id === el.dataset.id);
+  if (!t) return;
+  const tip = $('tooltip');
+  tip.innerHTML = '<b>' + t.label + '</b>' + (t.desc ? t.desc + '<span class="grp"> · ' + t.group + '</span>' : '<span class="grp">' + t.group + '</span>');
+  const r = el.getBoundingClientRect();
+  tip.style.left = Math.min(r.right + 8, window.innerWidth - 260) + 'px';
+  tip.style.top = r.top + 'px';
+  tip.classList.add('show');
+}
+
+function tiles() { return [...document.querySelectorAll('.pin-tile, .of-tile')]; }
+function onFlyKey(e, current) {
+  const list = tiles();
+  const idx = list.indexOf(current);
+  let next = -1;
+  if (e.key === 'ArrowDown') next = idx + 4 < list.length ? idx + 4 : idx % 4;
+  else if (e.key === 'ArrowUp') next = idx - 4 >= 0 ? idx - 4 : list.length - 4 + (idx % 4);
+  else if (e.key === 'ArrowRight') next = (idx + 1) % list.length;
+  else if (e.key === 'ArrowLeft') next = (idx - 1 + list.length) % list.length;
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = list.length - 1;
+  if (next >= 0) { e.preventDefault(); list[next].focus(); }
+}
+
+function syncPanel() { closeFlyout(); renderChip(); renderToolBtn(); }
+
+function openFlyout(byClick) {
+  if (isOpen) return;
+  isOpen = true; openedByClick = !!byClick;
+  anchorToBtn();
+  renderFlyout();
+  $('flyout').classList.add('open');
+  renderToolBtn();
+}
+function closeFlyout() {
+  if (!isOpen) return;
+  isOpen = false;
+  clearTimeout(openTimer); clearTimeout(closeTimer);
+  $('flyout').classList.remove('open');
+  $('tooltip').classList.remove('show');
+  const hadFocus = document.activeElement && document.getElementById('flyout').contains(document.activeElement);
+  renderToolBtn();
+  if (hadFocus) $('toolBtn').focus();
+}
+function onOutsideIntent() {
+  clearTimeout(openTimer); clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => closeFlyout(), HOVER_CLOSE_DELAY);
+}
+
+/* DOM 先于绑定 */
+document.body.insertAdjacentHTML('beforeend', '<div class="flyout" id="flyout"></div>');
+
+const btn = $('toolBtn');
+const flyout = $('flyout');
+function bindTrigger() {
+  btn.onmouseenter = () => {
+    clearTimeout(closeTimer); clearTimeout(openTimer);
+    if (mode === 'new' && !isOpen) openTimer = setTimeout(() => openFlyout(false), HOVER_OPEN_DELAY);
+  };
+  btn.onmouseleave = onOutsideIntent;
+  flyout.onmouseenter = () => clearTimeout(closeTimer);
+  flyout.onmouseleave = onOutsideIntent;
+  btn.onclick = () => { isOpen ? closeFlyout() : openFlyout(true); };
+  btn.addEventListener('mousedown', e => e.stopPropagation());
+}
+bindTrigger();
+
+document.addEventListener('mousedown', e => {
+  if (!isOpen) return;
+  if (!e.target.closest('#flyout') && !e.target.closest('#toolBtn')) closeFlyout();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeFlyout(); });
+
+$('modeNew').onclick = () => setMode('new');
+$('modeOld').onclick = () => setMode('old');
+function setMode(m) {
+  mode = m; closeFlyout();
+  $('modeNew').classList.toggle('on', m === 'new');
+  $('modeOld').classList.toggle('on', m === 'old');
+  $('toolLabel').textContent = m === 'new' ? '工具' : '工具（现状）';
+  $('stageTitle').textContent = m === 'new' ? '滑过「工具」按钮试试' : '现状模式：必须点击才能打开';
+  $('stageDesc').innerHTML = m === 'new'
+    ? '浮层<b>锚定按钮下方</b>；顶部 4 个常用项，下方溢出工具 3 列网格；hover 展开不抢焦点。'
+    : '现状：单列大列表 + 图标杯 + description 独占行；固定 left-2 top-11，与按钮分离。';
+}
+
+renderChip();
+renderToolBtn();
+</script>
+</body>
+</html>

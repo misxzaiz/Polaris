@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>工具切换器原型 v3 — hover 直达 + 高密度飞出面板（评审修订版）</title>
+<style>
+  /* ===== Polaris Dark 主题 token（对齐 src/index.css :root） ===== */
+  :root {
+    --c-primary: 59 130 246;
+    --c-bg-base: 0 0 0;
+    --c-bg-elevated: 26 26 31;
+    --c-bg-surface: 37 37 43;
+    --c-bg-hover: 45 45 53;
+    --c-bg-active: 53 53 61;
+    --c-border: 255 255 255;
+    --c-text-primary: 248 248 248;
+    --c-text-secondary: 180 180 184;
+    --c-text-tertiary: 142 142 147;
+    --c-text-muted: 109 109 112;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+    --radius-xl: 16px;
+  }
+  /* 字号档位收敛为 3 档：11 / 14 / 17.5（评审 detect.mjs 检出散档问题） */
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: rgb(var(--c-bg-base));
+    color: rgb(var(--c-text-primary));
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+  }
+
+  /* ===== 左侧 ActivityBar（42px，与现状一致） ===== */
+  .activity-bar {
+    width: 42px;
+    flex-shrink: 0;
+    background: rgb(var(--c-bg-elevated));
+    border-right: 1px solid rgb(var(--c-border) / 0.15);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 0;
+    position: relative;
+  }
+  .ab-icon {
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgb(var(--c-text-tertiary));
+    cursor: pointer;
+    margin-bottom: 1px;
+    position: relative;
+    transition: background 0.15s, color 0.15s;
+  }
+  .ab-icon:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .ab-icon.active { color: rgb(var(--c-primary)); }
+  .ab-icon.active::before {
+    content: '';
+    position: absolute;
+    left: -5px;
+    top: 6px;
+    bottom: 6px;
+    width: 2px;
+    border-radius: 2px;
+    background: rgb(var(--c-primary));
+  }
+  /* 评审修复：溢出工具激活时 mini-dot 常驻「更多工具」，位置感不断 */
+  .tool-dot {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgb(var(--c-primary));
+  }
+  .ab-flex { flex: 1; }
+  .focus-ring:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: 1px; }
+
+  /* ===== 主内容区 ===== */
+  .stage { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; }
+  .stage-inner { text-align: center; max-width: 430px; }
+  .stage-inner h2 { font-size: 17.5px; font-weight: 600; margin-bottom: 10px; }
+  .stage-inner p { font-size: 14px; color: rgb(var(--c-text-tertiary)); line-height: 1.7; font-size: 14px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; margin-bottom: 14px;
+    padding: 5px 12px; border-radius: 999px;
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    background: rgb(var(--c-bg-elevated));
+    font-size: 11px; color: rgb(var(--c-text-secondary));
+  }
+  .chip svg { color: rgb(var(--c-primary)); }
+
+  /* ===== 右侧说明卡 ===== */
+  .notes {
+    width: 302px; flex-shrink: 0;
+    border-left: 1px solid rgb(var(--c-border) / 0.08);
+    background: rgb(var(--c-bg-elevated));
+    padding: 18px 16px;
+    overflow-y: auto;
+    font-size: 14px; line-height: 1.6;
+  }
+  .notes h3 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+  .notes h3:first-child { margin-top: 0; }
+  .fixed-badge {
+    display: inline-block; font-size: 11px; font-weight: 600;
+    padding: 2px 8px; border-radius: 999px;
+    background: rgb(52 211 153 / 0.14); color: rgb(52 211 153);
+    margin-bottom: 6px;
+  }
+  .notes ul { padding-left: 18px; color: rgb(var(--c-text-secondary)); }
+  .notes li { margin-bottom: 4px; }
+  .notes code {
+    background: rgb(var(--c-bg-surface));
+    padding: 1px 5px; border-radius: 4px;
+    font-size: 11px; color: rgb(var(--c-primary));
+  }
+  kbd {
+    background: rgb(var(--c-bg-surface));
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 11px;
+  }
+  .mode-switch {
+    display: flex;
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    border-radius: var(--radius-md); overflow: hidden; margin-bottom: 6px;
+  }
+  .mode-switch button {
+    flex: 1; border: none; background: transparent;
+    color: rgb(var(--c-text-tertiary)); font-size: 14px; padding: 8px 0; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+  }
+  .mode-switch button.on { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); font-weight: 600; }
+  .metric-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .metric {
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    background: rgb(var(--c-bg-surface));
+    border-radius: var(--radius-md); padding: 8px 10px;
+  }
+  .metric b { display: block; font-size: 17.5px; color: rgb(var(--c-primary)); }
+  .metric.old b { color: rgb(var(--c-text-tertiary)); }
+  .metric span { font-size: 11px; color: rgb(var(--c-text-tertiary)); }
+
+  /* ===== 飞出面板 ===== */
+  .flyout {
+    position: absolute; left: 52px; bottom: 12px; z-index: 50;
+    background: rgb(var(--c-bg-elevated));
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    border-radius: var(--radius-xl);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+    opacity: 0; transform: translateY(4px) scale(0.98);
+    pointer-events: none;
+    transition: opacity 0.13s ease, transform 0.13s ease;
+    display: flex; flex-direction: column;
+  }
+  .flyout.open { opacity: 1; transform: none; pointer-events: auto; }
+  .flyout.maxh { max-height: min(70dvh, calc(100dvh - 64px)); }
+
+  .flyout-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+  }
+  .head-ico {
+    width: 26px; height: 26px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: var(--radius-md);
+    background: rgb(var(--c-primary) / 0.1);
+    color: rgb(var(--c-primary));
+  }
+  .h1col { min-width: 0; flex: 1; }
+  .t1 { font-size: 14px; font-weight: 500; }
+  .t2 {
+    font-size: 11px; color: rgb(var(--c-text-tertiary));
+    display: flex; align-items: center; gap: 5px; margin-top: 1px;
+  }
+  .close-side-btn {
+    display: inline-flex; align-items: center; gap: 3px;
+    border: none; background: transparent; border-radius: 4px;
+    color: rgb(var(--c-text-secondary)); font-size: 11px;
+    padding: 3px 6px; min-height: 22px; cursor: pointer;
+  }
+  .close-side-btn:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .flyout-x {
+    width: 28px; height: 28px;
+    border: none; background: transparent; border-radius: 6px;
+    color: rgb(var(--c-text-tertiary));
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; margin-left: auto; flex-shrink: 0;
+  }
+  .flyout-x:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+
+  .search-row { padding: 6px 12px; border-bottom: 1px solid rgb(var(--c-border) / 0.08); }
+  .search-box {
+    display: flex; align-items: center; gap: 8px; height: 32px;
+    border: 1px solid rgb(var(--c-border) / 0.08);
+    background: rgb(var(--c-bg-surface));
+    border-radius: var(--radius-md); padding: 0 8px;
+    color: rgb(var(--c-text-tertiary));
+  }
+  .search-box:focus-within { border-color: rgb(var(--c-primary) / 0.5); }
+  .search-box input {
+    flex: 1; min-width: 0;
+    background: transparent; border: none;
+    color: rgb(var(--c-text-primary)); font-size: 14px;
+  }
+  .search-box input::placeholder { color: rgb(var(--c-text-tertiary)); }
+
+  .grid-body { padding: 8px; overflow-y: auto; }
+  .group { margin-bottom: 10px; }
+  .group:last-child { margin-bottom: 0; }
+  /* 评审修复：分组标题 text-tertiary（≈5.3:1 达 AA），禁用 text-muted（≈3.0:1） */
+  .group-label {
+    font-size: 11px; font-weight: 500;
+    color: rgb(var(--c-text-tertiary));
+    padding: 0 6px 4px;
+  }
+  .tool-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2px 4px; }
+  .tool-tile {
+    display: flex; align-items: center; gap: 7px; height: 34px;
+    padding: 0 6px; border: none; background: transparent;
+    border-radius: var(--radius-md); color: rgb(var(--c-text-secondary));
+    cursor: pointer; text-align: left; position: relative;
+    transition: background 0.12s, color 0.12s;
+  }
+  .tool-tile:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .tool-tile.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+  .tool-tile:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: -1px; }
+  .tool-tile svg { flex-shrink: 0; }
+  .tool-tile .lbl { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .list-body { padding: 8px; overflow-y: auto; }
+  .list-item {
+    display: flex; align-items: center; gap: 12px; width: 100%;
+    padding: 8px 10px; border: none; background: transparent;
+    border-radius: var(--radius-md); color: rgb(var(--c-text-secondary));
+    cursor: pointer; text-align: left;
+  }
+  .list-item:hover { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+  .list-item.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+  .list-item:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: -1px; }
+  .icon-cup {
+    width: 32px; height: 32px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; background: rgb(var(--c-bg-surface));
+  }
+  .list-item .lbl { display: block; font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-item .desc { display: block; font-size: 11px; color: rgb(var(--c-text-tertiary)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-item.active .desc { color: rgb(var(--c-primary) / 0.7); }
+
+  .tooltip {
+    position: fixed; z-index: 99; max-width: 240px;
+    background: rgb(var(--c-bg-active));
+    border: 1px solid rgb(var(--c-border) / 0.15);
+    color: rgb(var(--c-text-secondary));
+    border-radius: 6px; font-size: 11px;
+    padding: 5px 9px; pointer-events: none;
+    opacity: 0; transition: opacity 0.12s;
+    box-shadow: 0 4px 12px rgb(0 0 0 / 0.25);
+  }
+  .tooltip.show { opacity: 1; }
+  .tooltip b { display: block; color: rgb(var(--c-text-primary)); font-weight: 600; margin-bottom: 1px; }
+  .empty { padding: 32px 0; text-align: center; font-size: 14px; color: rgb(var(--c-text-tertiary)); }
+
+  /* 评审验收 8：动效遵循 prefers-reduced-motion */
+  @media (prefers-reduced-motion: reduce) {
+    .flyout, .tooltip, .ab-icon, .tool-tile, .list-item, .mode-switch button { transition: none; }
+  }
+  ::-webkit-scrollbar { width: 8px; }
+  ::-webkit-scrollbar-thumb { background: rgb(var(--c-bg-hover) / 0.7); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<div class="activity-bar" id="activityBar"></div>
+
+<div class="stage">
+  <div class="stage-inner">
+    <div class="chip" id="panelChip"></div>
+    <h2 id="stageTitle">鼠标停靠左下角「更多工具」试试</h2>
+    <p id="stageDesc">hover 约 0.12s 自动展开，<b>不抢走你正在输入的焦点</b>；点选即切换并收起。键盘可用：Tab / ↑↓ / Enter。</p>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="fixed-badge">评审修订版（v3，2026-10-17 critique 20/40 → 修复项）</div>
+
+  <div class="mode-switch">
+    <button id="modeNew" class="on focus-ring">新方案</button>
+    <button id="modeOld" class="focus-ring">现状</button>
+  </div>
+
+  <h3>本轮修复（对应评审 P0-P3）</h3>
+  <ul>
+    <li><b>[P0] hover 打开不再抢焦点</b>：hover 路径零 focus 调用；仅 click 打开才 focus 且 <code>preventScroll</code>；关闭归还焦点到触发键</li>
+    <li><b>[P1] 键盘契约</b>：<kbd>Tab</kbd> 进入面板 → <kbd>↑</kbd><kbd>↓</kbd> 循环 → <kbd>Enter</kbd> 选中；触发键挂 <code>aria-expanded</code></li>
+    <li><b>[P1] 位置感</b>：激活溢出工具后「更多工具」呈 <span style="color:rgb(var(--c-primary))">●</span> mini-dot 常驻</li>
+    <li><b>[P2] a11y</b>：容器 <code>listbox/option</code> 语义、每个 tile 可见焦点环；分组标题提亮至 AA（≈5.3:1）</li>
+    <li><b>[P3] grace 220→300ms</b>：触控板斜向路径不闪收；字号收敛 3 档（11/14/17.5）；<code>prefers-reduced-motion</code> 全量降级</li>
+  </ul>
+
+  <h3>保留的交互参数（PRD §4）</h3>
+  <ul>
+    <li>hover 展开 intent：<code>120ms</code></li>
+    <li>移出收起 grace：<code>300ms</code>；面板内不收起</li>
+    <li>点击触发按钮：保留 toggle（触屏/键盘回退）</li>
+    <li><kbd>Esc</kbd> / 点击外部：立即关闭</li>
+  </ul>
+
+  <div class="metric-grid">
+    <div class="metric"><b>≈1.5</b><span>目标切换步数（未实测）</span></div>
+    <div class="metric old"><b>3+</b><span>现状切换步数</span></div>
+    <div class="metric"><b>20</b><span>目标首屏可见工具</span></div>
+    <div class="metric old"><b>~8</b><span>现状首屏可见工具</span></div>
+  </div>
+
+  <h3>未决问题（PRD §13，需产品决策）</h3>
+  <ul>
+    <li>pinned 锁定 / Cmd-K palette 对照 / MRU 折叠形态——mini-dot 只是补丁不是终态</li>
+  </ul>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+/* ============ 主题工具（无反引号/无 `${`/无反斜杠，便于 PRD 预览 MCP 内联） ============ */
+const svg = (paths, size) =>
+  '<svg width="' + size + '" height="' + size + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + paths + '</svg>';
+const I = {
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  gitBranch: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  listChecks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  languages: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  bookOpen: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  panelLeftClose: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9-3 3 3 3"/>',
+  settings: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+};
+
+/* ============ 数据（对齐 toolSwitcherData + getToolGroup） ============ */
+const TOOLS = [
+  { id: 'scheduler',   icon: 'clock',      label: '定时任务', desc: '定时任务和执行控制', group: 'run' },
+  { id: 'requirement', icon: 'bookOpen',   label: '需求库',   desc: '需求库、生成与追踪', group: 'context' },
+  { id: 'personalHub', icon: 'user',       label: '个人中心', desc: '个人链接与知识收藏', group: 'context' },
+  { id: 'integration', icon: 'plug',       label: '集成平台', desc: '外部平台与机器人接入', group: 'integrations' },
+  { id: 'aiConsole',   icon: 'bot',        label: 'AI 控制台', desc: 'AI 执行记录与来源概览', group: 'run' },
+  { id: 'developer',   icon: 'wrench',     label: '开发者',   desc: '开发者调试工具', group: 'developer' },
+];
+const VISIBLE = [
+  { id: 'files',    icon: 'folder',     label: '文件', active: true },
+  { id: 'git',      icon: 'gitBranch',  label: '变更' },
+  { id: 'browser',  icon: 'globe',      label: '浏览器' },
+  { id: 'terminal', icon: 'terminal',   label: '终端' },
+  { id: 'todo',     icon: 'listChecks', label: '待办' },
+  { id: 'translate',icon: 'languages',  label: '翻译' },
+];
+const ALL = [...VISIBLE, ...TOOLS];
+const GROUP_ORDER = ['context','changes','run','automation','integrations','developer','system'];
+const GROUP_LABEL = { context:'上下文', changes:'变更', run:'运行', automation:'自动化', integrations:'集成', developer:'开发', system:'系统' };
+const GROUP_OF = t => t.group;
+
+let activePanel = 'files';
+let mode = 'new';
+let isOpen = false;
+let openTimer = null, closeTimer = null;
+let triggerRef = null;          // 关闭时归还焦点到触发按钮（评审验收 2）
+let openedByClick = false;      // hover 打开不迁移焦点（评审 P0）
+const HOVER_OPEN_DELAY = 120;
+const HOVER_CLOSE_DELAY = 300;  // 评审 P3：220 → 300
+
+const $ = (id) => document.getElementById(id);
+
+/* ============ ActivityBar ============ */
+function renderBar() {
+  const bar = $('activityBar');
+  const overflowActive = TOOLS.some(t => t.id === activePanel);
+  bar.innerHTML = VISIBLE.map(t =>
+    '<button class="ab-icon focus-ring ' + (t.id === activePanel ? 'active' : '') + '" data-id="' + t.id + '" title="' + t.label + '">' + svg(I[t.icon], 18) + '</button>'
+  ).join('')
+  + '<button class="ab-icon focus-ring ' + ((isOpen || overflowActive) ? 'active' : '') + '" id="moreBtn" aria-expanded="' + isOpen + '" aria-haspopup="listbox" title="更多工具' + (overflowActive ? '（溢出面板激活）' : '') + '">' + svg(I.grid, 18) + (overflowActive ? '<span class="tool-dot"></span>' : '') + '</button>'
+  + '<div class="ab-flex"></div>'
+  + '<button class="ab-icon focus-ring" title="设置">' + svg(I.settings, 18) + '</button>';
+
+  bar.querySelectorAll('.ab-icon[data-id]').forEach(btn => {
+    btn.onclick = () => { activePanel = btn.dataset.id; syncPanel(); };
+  });
+  if (triggerRef) triggerRef = $('moreBtn');
+  const moreBtn = $('moreBtn');
+  const flyout = $('flyout');
+
+  if (mode === 'new') {
+    moreBtn.addEventListener('mouseenter', () => {
+      clearTimeout(closeTimer); clearTimeout(openTimer);
+      if (!isOpen) openTimer = setTimeout(() => openFlyout(false), HOVER_OPEN_DELAY);
+    });
+    moreBtn.addEventListener('mouseleave', onOutsideIntent);
+    flyout.addEventListener('mouseenter', () => clearTimeout(closeTimer));
+    flyout.addEventListener('mouseleave', onOutsideIntent);
+  }
+  moreBtn.onclick = (e) => { e.stopPropagation(); isOpen ? closeFlyout() : openFlyout(true); };
+}
+
+function onOutsideIntent() {
+  clearTimeout(openTimer); clearTimeout(closeTimer);
+  closeTimer = setTimeout(() => closeFlyout(), HOVER_CLOSE_DELAY);
+}
+
+/* ============ 面板渲染 ============ */
+function headHtml() {
+  const activeLabel = ALL.find(t => t.id === activePanel)?.label || '无';
+  return '<div class="flyout-head"><div class="head-ico">' + svg(I.grid, 14) + '</div>'
+    + '<div class="h1col"><div class="t1">工具切换器</div>'
+    + '<div class="t2"><span style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">当前侧栏: ' + activeLabel + '</span>'
+    + '<span class="close-side-btn" id="closeSide" title="关闭侧栏">' + svg(I.panelLeftClose, 12) + '<span>关闭</span></span></div></div>'
+    + '<button class="flyout-x" id="fx" aria-label="关闭">' + svg(I.x, 14) + '</button></div>';
+}
+function searchHtml() {
+  return '<div class="search-row"><div class="search-box">' + svg(I.search, 14)
+    + '<input id="toolSearch" aria-label="搜索工具" placeholder="搜索工具" /></div></div>';
+}
+
+function gridBody() {
+  const items = ALL;
+  let html = '<div class="grid-body" id="flyBody" role="listbox" aria-label="工具列表">';
+  GROUP_ORDER.forEach(g => {
+    const list = items.filter(t => GROUP_OF(t) === g);
+    if (!list.length) return;
+    html += '<div class="group"><div class="group-label">' + GROUP_LABEL[g] + '</div><div class="tool-grid">';
+    list.forEach(t => {
+      html += '<button class="tool-tile ' + (t.id === activePanel ? 'active' : '') + '" role="option" aria-selected="' + (t.id === activePanel) + '" data-id="' + t.id + '" data-desc="' + (t.desc || '') + '">'
+        + svg(I[t.icon], 15) + '<span class="lbl">' + t.label + '</span></button>';
+    });
+    html += '</div></div>';
+  });
+  return html + '<div class="empty" style="display:none" id="emptyTip">没有匹配结果</div></div>';
+}
+
+function listBody() {
+  let html = '<div class="list-body" id="flyBody" role="listbox" aria-label="工具列表">';
+  GROUP_ORDER.forEach(g => {
+    const list = ALL.filter(t => GROUP_OF(t) === g);
+    if (!list.length) return;
+    html += '<div style="margin-bottom:8px"><div style="font-size:11px;color:rgb(var(--c-text-tertiary));padding:2px 4px 4px">' + GROUP_LABEL[g] + '</div>';
+    list.forEach(t => {
+      html += '<button class="list-item ' + (t.id === activePanel ? 'active' : '') + '" role="option" aria-selected="' + (t.id === activePanel) + '" data-id="' + t.id + '" data-desc="' + (t.desc || '') + '">'
+        + '<span class="icon-cup">' + svg(I[t.icon], 17) + '</span>'
+        + '<span style="min-width:0"><span class="lbl">' + t.label + '</span><span class="desc">' + (t.desc || '') + '</span></span></button>';
+    });
+    html += '</div>';
+  });
+  return html + '</div>';
+}
+
+function renderFlyout() {
+  $('flyout').style.width = (mode === 'old') ? '360px' : '380px';
+  $('flyout').innerHTML = headHtml() + searchHtml() + (mode === 'new' ? gridBody() : listBody());
+  $('closeSide').onclick = () => { activePanel = null; syncPanel(); };
+  $('fx').onclick = () => closeFlyout();
+  const input = $('toolSearch');
+  input.oninput = () => {
+    const q = input.value.trim().toLowerCase();
+    applySearch(q);
+  };
+
+  document.querySelectorAll('.tool-tile, .list-item').forEach(el => {
+    el.onclick = () => { activePanel = el.dataset.id; syncPanel(); };
+    el.addEventListener('keydown', (e) => onFlyKey(e, el));
+  });
+  if (mode === 'new') bindTooltip();
+  // 评审 P0 修复：仅 click 打开才迁移焦点（preventScroll）；hover 打开零 focus
+  if (openedByClick) input.focus({ preventScroll: true });
+}
+
+function applySearch(q) {
+  const tiles = document.querySelectorAll('.tool-tile, .list-item');
+  if (!q) { tiles.forEach(el => { el.style.display = ''; }); document.querySelectorAll('.group, [style*="margin-bottom:8px"]').forEach(el => el.style.display = ''); $('emptyTip').style.display = 'none'; return; }
+  let any = false;
+  tiles.forEach(el => {
+    const t = ALL.find(x => x.id === el.dataset.id);
+    const hay = (t.label + ' ' + (t.desc || '') + ' ' + GROUP_OF(t)).toLowerCase();
+    const hit = hay.indexOf(q) >= 0;
+    el.style.display = hit ? '' : 'none';
+    if (hit) any = true;
+  });
+  document.querySelectorAll('.group').forEach(g => {
+    g.style.display = [...g.querySelectorAll('.tool-tile, .list-item')].some(el => el.style.display !== 'none') ? '' : 'none';
+  });
+  $('emptyTip').style.display = any ? 'none' : '';
+}
+
+/* ============ 键盘契约（评审验收 3）：↑↓ 循环 + Home/End；Enter 由原生 button 语义命中 ============ */
+function flyTiles() {
+  return [...document.querySelectorAll('.tool-tile, .list-item')].filter(el => el.style.display !== 'none');
+}
+function onFlyKey(e, current) {
+  const list = flyTiles();
+  const idx = list.indexOf(current);
+  let next = -1;
+  if (e.key === 'ArrowDown') next = (idx + 1) % list.length;
+  else if (e.key === 'ArrowUp') next = (idx - 1 + list.length) % list.length;
+  else if (e.key === 'Home') next = 0;
+  else if (e.key === 'End') next = list.length - 1;
+  if (next >= 0) { e.preventDefault(); list[next].focus(); }
+}
+
+/* ============ tooltip（新方案形态：description 降级展示） ============ */
+function bindTooltip() {
+  const tip = $('tooltip');
+  document.querySelectorAll('.tool-tile[data-desc]').forEach(tile => {
+    tile.addEventListener('mouseenter', () => {
+      if (!tile.dataset.desc) return;
+      const t = ALL.find(x => x.id === tile.dataset.id);
+      tip.innerHTML = '<b>' + t.label + '</b>' + t.desc;
+      const r = tile.getBoundingClientRect();
+      tip.style.left = Math.min(r.right + 8, window.innerWidth - 260) + 'px';
+      tip.style.top = r.top + 'px';
+      tip.classList.add('show');
+    });
+    tile.addEventListener('mouseleave', () => tip.classList.remove('show'));
+  });
+}
+
+/* ============ 选择 ============ */
+function syncPanel() {
+  closeFlyout();
+  renderBar();
+  renderChip();
+}
+function renderChip() {
+  const t = ALL.find(x => x.id === activePanel);
+  $('panelChip').innerHTML = t ? svg(I[t.icon], 13) + '<span>当前侧栏：' + t.label + '</span>' : '<span>当前侧栏：无</span>';
+}
+
+/* ============ open / close ============ */
+function openFlyout(byClick) {
+  if (isOpen) return;
+  isOpen = true;
+  openedByClick = !!byClick;
+  triggerRef = $('moreBtn');
+  $('flyout').style.width = (mode === 'old') ? '360px' : '380px';
+  renderFlyout();
+  $('flyout').classList.add('open', 'maxh');
+  renderBar();
+}
+function closeFlyout() {
+  if (!isOpen) return;
+  isOpen = false;
+  clearTimeout(openTimer); clearTimeout(closeTimer);
+  $('flyout').classList.remove('open', 'maxh');
+  $('tooltip').classList.remove('show');
+  // 评审验收 2：焦点归还触发按钮
+  const hadFocus = document.activeElement && document.getElementById('flyout').contains(document.activeElement);
+  renderBar();
+  if (hadFocus && triggerRef) triggerRef.focus();
+}
+
+document.addEventListener('mousedown', (e) => {
+  if (!isOpen) return;
+  if (!e.target.closest('#flyout') && !e.target.closest('#moreBtn')) closeFlyout();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeFlyout();
+});
+
+/* ============ 模式切换 ============ */
+$('modeNew').onclick = () => setMode('new');
+$('modeOld').onclick = () => setMode('old');
+function setMode(m) {
+  mode = m;
+  closeFlyout();
+  $('modeNew').classList.toggle('on', m === 'new');
+  $('modeOld').classList.toggle('on', m === 'old');
+  $('stageTitle').textContent = m === 'new'
+    ? '鼠标停靠左下角「更多工具」试试'
+    : '现状模式：必须点击「更多工具」才能打开';
+  $('stageDesc').innerHTML = m === 'new'
+    ? 'hover 约 0.12s 自动展开，<b>不抢走你正在输入的焦点</b>；点选任意工具即切换并收起。'
+    : '单列大列表、图标杯 + description 独占行，一屏放不下需要滚动。';
+}
+
+/* ============ 初始化 ============ */
+document.body.insertAdjacentHTML('beforeend', '<div class="flyout" id="flyout"></div>');
+renderBar();
+renderChip();
+</script>
+</body>
+</html>

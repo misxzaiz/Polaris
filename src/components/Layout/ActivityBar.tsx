@@ -45,9 +45,39 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
   const toggleActivityBar = useViewStore((state) => state.toggleActivityBar)
 
   const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false)
+  const [toolSwitcherOpenMode, setToolSwitcherOpenMode] = useState<'click' | 'hover'>('click')
   const [visibleCount, setVisibleCount] = useState(8) // 默认值，实际由 ResizeObserver 计算
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const moreToolsBtnRef = useRef<HTMLButtonElement>(null)
+
+  // hover 直达：more tools 按钮 hover 120ms 展开、移出 300ms 收起；浮层 hover 保活。
+  // click toggle 保留（触屏/键盘无 hover 回退）。HOVER_OPEN_DELAY 低于"故意停靠"感知阈值、
+  // 高于快速扫过误触阈值；HOVER_CLOSE_DELAY 允许指针斜向移动进浮层途中不闪断。
+  const hoverOpenTimer = useRef<number | undefined>(undefined)
+  const hoverCloseTimer = useRef<number | undefined>(undefined)
+  const HOVER_OPEN_DELAY = 120
+  const HOVER_CLOSE_DELAY = 300
+
+  const handleToolTriggerMouseEnter = () => {
+    window.clearTimeout(hoverCloseTimer.current)
+    if (!isToolSwitcherOpen) {
+      window.clearTimeout(hoverOpenTimer.current)
+      hoverOpenTimer.current = window.setTimeout(() => {
+        setToolSwitcherOpenMode('hover')
+        setIsToolSwitcherOpen(true)
+      }, HOVER_OPEN_DELAY)
+    }
+  }
+  const handleToolTriggerMouseLeave = () => {
+    window.clearTimeout(hoverOpenTimer.current)
+    window.clearTimeout(hoverCloseTimer.current)
+    hoverCloseTimer.current = window.setTimeout(() => setIsToolSwitcherOpen(false), HOVER_CLOSE_DELAY)
+  }
+  const handleToolPanelMouseEnter = () => {
+    window.clearTimeout(hoverCloseTimer.current)
+  }
+  const handleToolPanelMouseLeave = handleToolTriggerMouseLeave
 
   const { panelButtons, toolSwitcherItems, activePanelLabel, closeLeftPanel } = useToolSwitcherItems({
     onOpenSettings,
@@ -132,7 +162,14 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
           icon={Grid2X2}
           label={t('labels.moreTools', { defaultValue: '更多工具' })}
           active={moreToolsActive}
-          onClick={() => setIsToolSwitcherOpen((open) => !open)}
+          ref={moreToolsBtnRef}
+          onMouseEnter={handleToolTriggerMouseEnter}
+          onMouseLeave={handleToolTriggerMouseLeave}
+          onClick={() => {
+            // click toggle 保留：hover 打开的浮层点按钮关闭；关闭状态点按钮则 click 方式打开
+            setToolSwitcherOpenMode('click')
+            setIsToolSwitcherOpen((open) => !open)
+          }}
         />
 
         <div className="flex-1" />
@@ -148,9 +185,13 @@ export function ActivityBar({ className, onOpenSettings, onToggleRightPanel, rig
       <ToolSwitcher
         isOpen={isToolSwitcherOpen}
         items={toolSwitcherItems}
+        openMode={toolSwitcherOpenMode}
+        anchorRef={moreToolsBtnRef}
         activePanelLabel={activePanelLabel}
         onCloseActivePanel={closeLeftPanel}
         onClose={() => setIsToolSwitcherOpen(false)}
+        onMouseEnter={handleToolPanelMouseEnter}
+        onMouseLeave={handleToolPanelMouseLeave}
       />
     </div>
   )

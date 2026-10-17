@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentType } from 'react'
+import type { ComponentType, RefObject } from 'react'
 import { Grid2X2, PanelLeftClose, Search, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
@@ -27,31 +27,17 @@ interface ToolSwitcherProps {
   items: ToolSwitcherItem[]
   onClose: () => void
   placement?: 'activityBar' | 'top'
+  /** 本次打开的来源：hover 打开不 focus 搜索框（避免吞正在输入的字符）；click 打开 focus。默认 'click' */
+  openMode?: 'click' | 'hover'
+  /** hover 触发模式下触发按钮的引用，用于把浮层锚定到按钮正下方；click 模式用预留的固定定位 */
+  anchorRef?: RefObject<HTMLElement | null>
   activePanelLabel?: string
   onCloseActivePanel?: () => void
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
 }
 
 export const PINNED_LEFT_PANEL_TYPES = new Set(['files', 'git', 'browser', 'terminal'])
-
-const TOOL_GROUP_ORDER: ToolGroupId[] = [
-  'context',
-  'changes',
-  'run',
-  'automation',
-  'integrations',
-  'developer',
-  'system',
-]
-
-const TOOL_GROUP_LABELS: Record<ToolGroupId, string> = {
-  context: '上下文',
-  changes: '变更',
-  run: '运行',
-  automation: '自动化',
-  integrations: '集成',
-  developer: '开发',
-  system: '系统',
-}
 
 export function getToolGroup(panelType: string): ToolGroupId {
   switch (panelType) {
@@ -92,19 +78,45 @@ export function ToolSwitcher({
   items,
   onClose,
   placement = 'activityBar',
+  openMode = 'click',
+  anchorRef,
   activePanelLabel,
   onCloseActivePanel,
+  onMouseEnter,
+  onMouseLeave,
 }: ToolSwitcherProps) {
   const { t } = useTranslation('common')
   const [query, setQuery] = useState('')
   const menuRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
+  // 锚定触发按钮定位：浮层左缘对齐触发按钮、下缘 +6px；窄窗 clamp 兜底不做横向溢出。
+  useEffect(() => {
+    if (!isOpen) return
+
+    const btn = anchorRef?.current
+    const menu = menuRef.current
+    if (!btn || !menu) return
+
+    const rect = btn.getBoundingClientRect()
+    const width = menu.offsetWidth
+    const height = menu.offsetHeight
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8))
+    const top = Math.min(rect.bottom + 6, window.innerHeight - height - 8)
+    menu.style.left = `${left}px`
+    menu.style.top = `${top}px`
+  }, [isOpen, anchorRef])
+
   useEffect(() => {
     if (!isOpen) return
 
     setQuery('')
-    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 30)
+    // 仅 click 打开时自动聚焦搜索框；hover 打开不抢焦点（用户注意力可能在编辑器/终端，
+    // 自动 focus 会吞正在输入的字符——数据丢失级问题，v5 设计确认保留该语义）
+    let focusTimer: number | undefined
+    if (openMode === 'click') {
+      focusTimer = window.setTimeout(() => inputRef.current?.focus(), 30)
+    }
 
     const handleMouseDown = (event: MouseEvent) => {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
@@ -122,11 +134,11 @@ export function ToolSwitcher({
     document.addEventListener('keydown', handleKeyDown)
 
     return () => {
-      window.clearTimeout(focusTimer)
+      if (focusTimer !== undefined) window.clearTimeout(focusTimer)
       document.removeEventListener('mousedown', handleMouseDown)
       document.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isOpen, onClose])
+  }, [isOpen, onClose, openMode])
 
   const filteredItems = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
@@ -138,16 +150,11 @@ export function ToolSwitcher({
     })
   }, [items, query])
 
-  const groupedItems = useMemo(() => {
-    return TOOL_GROUP_ORDER
-      .map((group) => ({
-        group,
-        items: filteredItems.filter((item) => item.group === group),
-      }))
-      .filter((section) => section.items.length > 0)
-  }, [filteredItems])
-
   if (!isOpen) return null
+
+  // pinned 常用项（文件/变更/浏览器/终端）置顶 icon 大按钮；其余溢出 3 列紧凑网格。
+  const pinnedItems = filteredItems.filter((item) => PINNED_LEFT_PANEL_TYPES.has(item.id))
+  const overflowItems = filteredItems.filter((item) => !PINNED_LEFT_PANEL_TYPES.has(item.id))
 
   // z-popover（--z-popover）：作为全局导航浮层须高于内容区覆盖层（NarrowTabOverlay/Artifact 预览等 z-overlay），
   // 低于全屏接管层（VoiceCompanion z-modal、Dialog z-modal）。z-popover 会被窄窗口
@@ -155,57 +162,38 @@ export function ToolSwitcher({
   return (
     <div
       ref={menuRef}
-      className={`fixed z-popover ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-panel-in`}
+      className={`fixed z-popover ${getPlacementClass(placement)} rounded-xl border border-border bg-background-elevated shadow-medium animate-panel-in flex flex-col`}
       style={{ maxHeight: 'min(70dvh, calc(100dvh - 64px))' }}
-      role="dialog"
+      role="listbox"
       aria-label={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
-      <div className="flex items-center gap-2 border-b border-border-subtle px-3 py-2">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+      {/* 头部：单行 */}
+      <div className="flex shrink-0 items-center gap-2 border-b border-border-subtle px-3 py-2">
+        <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
           <Grid2X2 className="h-4 w-4" />
         </div>
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium text-text-primary">
-            {t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
-          </div>
-          {activePanelLabel ? (
-            <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary">
-              <span className="truncate">
-                {t('labels.activeSidebar', { defaultValue: '当前侧栏' })}: {activePanelLabel}
-              </span>
-              {onCloseActivePanel && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onCloseActivePanel()
-                    onClose()
-                  }}
-                  className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
-                  title={t('labels.closeSidebar', { defaultValue: '关闭侧栏' })}
-                >
-                  <PanelLeftClose className="h-3 w-3" />
-                  <span>{t('buttons.close', { defaultValue: '关闭' })}</span>
-                </button>
-              )}
-            </div>
-          ) : (
-            <div className="truncate text-xs text-text-tertiary">
-              {t('labels.toolSwitcherHint', { defaultValue: '按工作流分组，支持搜索和滚动' })}
-            </div>
-          )}
+        <div className="min-w-0 flex-1 truncate text-sm font-medium text-text-primary">
+          {t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
         </div>
+        {activePanelLabel && (
+          <span className="shrink-0 rounded-full border border-border-subtle bg-background-surface px-2 py-0.5 text-[11px] text-text-tertiary">
+            {activePanelLabel}
+          </span>
+        )}
         <button
           type="button"
           onClick={onClose}
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary"
           aria-label={t('buttons.close')}
-          title={t('buttons.close')}
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="border-b border-border-subtle px-3 py-2">
+      {/* 搜索行 */}
+      <div className="shrink-0 border-b border-border-subtle px-3 py-2">
         <div className="flex h-8 items-center gap-2 rounded-lg border border-border-subtle bg-background-surface px-2 text-text-tertiary focus-within:border-border-focus focus-within:text-text-secondary">
           <Search className="h-4 w-4 shrink-0" />
           <input
@@ -218,63 +206,100 @@ export function ToolSwitcher({
         </div>
       </div>
 
-      <div
-        className="overflow-y-auto p-2"
-        style={{ maxHeight: 'calc(min(70dvh, calc(100dvh - 64px)) - 104px)' }}
-      >
-        {groupedItems.length === 0 ? (
+      {/* 滚动区：flex-1 min-h-0，唯一高度源是外层 max-height，消灭双魔数 */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        {pinnedItems.length > 0 && (
+          <div className="mb-2 grid grid-cols-4 gap-1">
+            {pinnedItems.map((item) => {
+              const Icon = item.icon
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={item.active}
+                  onClick={() => {
+                    item.onSelect()
+                    onClose()
+                  }}
+                  title={item.label}
+                  className={`flex flex-col items-center justify-center gap-0.5 rounded-md py-1.5 transition-colors ${
+                    item.active
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                  }`}
+                >
+                  <Icon size={17} />
+                  <span className="text-[10.5px] leading-tight">{item.label}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+
+        {pinnedItems.length > 0 && overflowItems.length > 0 && (
+          <div className="mb-2 mx-1 h-px bg-border-subtle" />
+        )}
+
+        {overflowItems.length === 0 && pinnedItems.length === 0 ? (
           <div className="px-3 py-8 text-center text-sm text-text-tertiary">
             {t('status.noResults', { defaultValue: '没有匹配结果' })}
           </div>
         ) : (
-          groupedItems.map((section) => (
-            <section key={section.group} className="mb-2 last:mb-0">
-              <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-text-muted">
-                {t(`toolSwitcher.groups.${section.group}`, {
-                  defaultValue: TOOL_GROUP_LABELS[section.group],
-                })}
-              </div>
-
-              <div className="space-y-1">
-                {section.items.map((item) => {
-                  const Icon = item.icon
-                  return (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => {
-                        item.onSelect()
-                        onClose()
-                      }}
-                      className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${
-                        item.active
-                          ? 'bg-primary/[0.12] text-primary'
-                          : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
-                      }`}
-                    >
-                      <span
-                        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-                          item.active ? 'bg-primary/15' : 'bg-background-surface'
-                        }`}
-                      >
-                        <Icon size={17} />
-                      </span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium">{item.label}</span>
-                        {item.description && (
-                          <span className="block truncate text-xs text-text-tertiary">
-                            {item.description}
-                          </span>
-                        )}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-            </section>
-          ))
+          overflowItems.length > 0 && (
+            <div className="grid grid-cols-3 gap-1">
+              {overflowItems.map((item) => {
+                const Icon = item.icon
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={item.active}
+                    onClick={() => {
+                      item.onSelect()
+                      onClose()
+                    }}
+                    title={item.description ? `${item.label} · ${item.description}` : item.label}
+                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left transition-colors ${
+                      item.active
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-text-secondary hover:bg-background-hover hover:text-text-primary'
+                    }`}
+                  >
+                    <Icon size={15} className="shrink-0" />
+                    <span className="truncate text-xs">{item.label}</span>
+                  </button>
+                )
+              })}
+            </div>
+          )
         )}
       </div>
+
+      {/* 底部：当前侧栏 + 关闭侧栏（沉到面板底，不再挤头部） */}
+      {(activePanelLabel || onCloseActivePanel) && (
+        <div className="flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-[11px] text-text-tertiary">
+            {activePanelLabel
+              ? `${t('labels.activeSidebar', { defaultValue: '当前侧栏' })}: ${activePanelLabel}`
+              : t('labels.activeSidebar', { defaultValue: '当前侧栏' })}
+          </span>
+          {onCloseActivePanel && (
+            <button
+              type="button"
+              onClick={() => {
+                onCloseActivePanel()
+                onClose()
+              }}
+              className="inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[11px] text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
+            >
+              <PanelLeftClose className="h-3 w-3" />
+              <span>{t('buttons.close', { defaultValue: '关闭' })}</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

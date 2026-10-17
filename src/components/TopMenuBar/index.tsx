@@ -10,7 +10,7 @@
  * - 窗口控制按钮（最小化、最大化、关闭）
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Minus, Square, X, PanelRight, PanelLeft, PanelLeftClose, Pin, Settings, Grid2X2 } from 'lucide-react';
 import { invoke } from '@/services/transport';
@@ -39,7 +39,37 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
   const [isMaximized, setIsMaximized] = useState(false);
   const [isAlwaysOnTop, setIsAlwaysOnTop] = useState(false);
   const [isToolSwitcherOpen, setIsToolSwitcherOpen] = useState(false);
+  const [toolSwitcherOpenMode, setToolSwitcherOpenMode] = useState<'click' | 'hover'>('click');
+  const toolBtnRef = useRef<HTMLButtonElement>(null);
   const showTopToolSwitcher = activityBarCollapsed || isCompactMode;
+
+  // hover 直达：工具按钮 hover 120ms 展开、移出 300ms 收起；浮层 hover 保活。
+  // click toggle 保留（触屏/键盘无 hover 回退）。
+  const hoverOpenTimer = useRef<number | undefined>(undefined);
+  const hoverCloseTimer = useRef<number | undefined>(undefined);
+  const HOVER_OPEN_DELAY = 120;
+  const HOVER_CLOSE_DELAY = 300;
+
+  const handleToolTriggerMouseEnter = () => {
+    window.clearTimeout(hoverCloseTimer.current);
+    if (!isToolSwitcherOpen) {
+      window.clearTimeout(hoverOpenTimer.current);
+      hoverOpenTimer.current = window.setTimeout(() => {
+        setToolSwitcherOpenMode('hover');
+        setIsToolSwitcherOpen(true);
+      }, HOVER_OPEN_DELAY);
+    }
+  };
+  const handleToolTriggerMouseLeave = () => {
+    window.clearTimeout(hoverOpenTimer.current);
+    window.clearTimeout(hoverCloseTimer.current);
+    hoverCloseTimer.current = window.setTimeout(() => setIsToolSwitcherOpen(false), HOVER_CLOSE_DELAY);
+  };
+  const handleToolPanelMouseEnter = () => {
+    window.clearTimeout(hoverCloseTimer.current);
+  };
+  const handleToolPanelMouseLeave = handleToolTriggerMouseLeave;
+
   const { toolSwitcherItems, activePanelLabel, closeLeftPanel: closeLeftPanelFromItems } = useToolSwitcherItems({
     onOpenSettings,
     onToggleRightPanel,
@@ -129,7 +159,14 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
 
         {showTopToolSwitcher && (
           <button
-            onClick={() => setIsToolSwitcherOpen((open) => !open)}
+            ref={toolBtnRef}
+            onMouseEnter={handleToolTriggerMouseEnter}
+            onMouseLeave={handleToolTriggerMouseLeave}
+            onClick={() => {
+              // click toggle 保留：hover 打开的浮层点按钮关闭；关闭状态点按钮则 click 方式打开
+              setToolSwitcherOpenMode('click');
+              setIsToolSwitcherOpen((open) => !open);
+            }}
             className={`ml-2 flex h-7 items-center gap-1.5 rounded-md px-2 text-sm transition-colors ${
               isToolSwitcherOpen
                 ? 'bg-primary/10 text-primary'
@@ -137,7 +174,7 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
             }`}
             title={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
             aria-label={t('labels.toolSwitcher', { defaultValue: '工具切换器' })}
-            aria-pressed={isToolSwitcherOpen}
+            aria-expanded={isToolSwitcherOpen}
             data-tauri-drag-region={false}
           >
             <Grid2X2 className="h-4 w-4" />
@@ -151,9 +188,13 @@ export function TopMenuBar({ onToggleRightPanel, rightPanelCollapsed, isCompactM
           isOpen={Boolean(showTopToolSwitcher && isToolSwitcherOpen)}
           items={toolSwitcherItems}
           placement="top"
+          openMode={toolSwitcherOpenMode}
+          anchorRef={toolBtnRef}
           activePanelLabel={activePanelLabel}
           onCloseActivePanel={closeLeftPanelFromItems}
           onClose={() => setIsToolSwitcherOpen(false)}
+          onMouseEnter={handleToolPanelMouseEnter}
+          onMouseLeave={handleToolPanelMouseLeave}
         />
       </div>
 

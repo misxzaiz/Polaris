@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>工具切换器手机端原型 — tap toggle + 底部 sheet</title>
+<style>
+:root {
+  --c-primary: 59 130 246;
+  --c-bg-base: 0 0 0;
+  --c-bg-elevated: 26 26 31;
+  --c-bg-surface: 37 37 43;
+  --c-bg-hover: 45 45 53;
+  --c-bg-active: 53 53 61;
+  --c-border: 255 255 255;
+  --c-text-primary: 248 248 248;
+  --c-text-secondary: 180 180 184;
+  --c-text-tertiary: 142 142 147;
+  --c-text-muted: 109 109 112;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+  background: #0b0b0e;
+  color: rgb(var(--c-text-primary));
+  display: flex; align-items: center; justify-content: center;
+  gap: 28px;
+  min-height: 100vh;
+  overflow: hidden;
+  flex-wrap: wrap;
+}
+@media (max-width: 860px) { body { overflow-y: auto; padding: 16px 0; } }
+
+/* ===== 手机框 ===== */
+.phone {
+  width: 390px;
+  height: min(84vh, 800px);
+  border: 2px solid rgb(var(--c-border) / 0.14);
+  border-radius: 44px;
+  background: rgb(var(--c-bg-base));
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  flex-shrink: 0;
+}
+.statusbar {
+  height: 34px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 22px; font-size: 11px; font-weight: 600;
+  color: rgb(var(--c-text-primary));
+}
+.statusbar .pills { display: flex; gap: 5px; align-items: center; }
+.statusbar .pill { width: 16px; height: 10px; border-radius: 3px; background: rgb(var(--c-text-tertiary) / 0.5); }
+.topbar {
+  height: 46px; flex-shrink: 0;
+  border-bottom: 1px solid rgb(var(--c-border) / 0.08);
+  background: rgb(var(--c-bg-elevated));
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 10px 0 14px;
+}
+.ws-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 28px; padding: 0 10px;
+  border-radius: 6px; background: rgb(var(--c-bg-surface));
+  font-size: 11px; color: rgb(var(--c-text-secondary));
+  border: 1px solid rgb(var(--c-border) / 0.08);
+  min-width: 0;
+}
+.ws-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: rgb(var(--c-status-success)); flex-shrink: 0; }
+.ws-chip span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-btn {
+  width: 38px; height: 38px; flex-shrink: 0; margin-left: auto;
+  border: none; border-radius: 10px;
+  background: transparent; color: rgb(var(--c-text-secondary));
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s, color 0.15s;
+}
+.sw-btn:active { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.sw-btn.pressed { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+
+/* 手机内容区（compact 模式：无 ActivityBar） */
+.crumbs {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px 4px; font-size: 11px; color: rgb(var(--c-text-tertiary));
+}
+.crumbs b { color: rgb(var(--c-text-secondary)); font-weight: 500; }
+.content {
+  flex: 1; margin: 8px 10px 10px;
+  border: 1px solid rgb(var(--c-border) / 0.08);
+  border-radius: 14px;
+  background: rgb(var(--c-bg-elevated));
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden;
+}
+.content-inner { text-align: center; padding: 20px; }
+.content-inner .p-ico {
+  width: 52px; height: 52px; margin: 0 auto 12px;
+  border-radius: 14px;
+  background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary));
+  display: flex; align-items: center; justify-content: center;
+}
+.content-inner h4 { font-size: 17.5px; margin: 0 0 6px; }
+.content-inner p { font-size: 14px; color: rgb(var(--c-text-tertiary)); line-height: 1.7; }
+
+/* ===== 底部遮罩 + sheet ===== */
+.backdrop {
+  position: absolute; inset: 0; z-index: 40;
+  background: rgb(0 0 0 / 0.5);
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+}
+.backdrop.open { opacity: 1; pointer-events: auto; }
+.sheet {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 50;
+  height: 78%;
+  background: rgb(var(--c-bg-elevated));
+  border: 1px solid rgb(var(--c-border) / 0.15);
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  box-shadow: 0 -8px 30px rgb(0 0 0 / 0.35);
+  transform: translateY(102%);
+  transition: transform 0.24s cubic-bezier(0.32, 0.72, 0, 1);
+  display: flex; flex-direction: column;
+}
+.sheet.open { transform: translateY(0); }
+.grabber {
+  width: 36px; height: 4px; border-radius: 999px;
+  background: rgb(var(--c-border) / 0.25);
+  margin: 8px auto 0;
+  flex-shrink: 0;
+}
+.sheet-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 10px 14px 8px;
+}
+.sh-ico {
+  width: 30px; height: 30px; flex-shrink: 0;
+  border-radius: 8px;
+  background: rgb(var(--c-primary) / 0.1); color: rgb(var(--c-primary));
+  display: flex; align-items: center; justify-content: center;
+}
+.sh-t1 { font-size: 17.5px; font-weight: 600; }
+.sh-t2 {
+  font-size: 11px; color: rgb(var(--c-text-tertiary));
+  margin-top: 1px;
+  display: flex; align-items: center; gap: 6px;
+}
+.sh-cur { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.close-side {
+  display: inline-flex; align-items: center; gap: 4px; flex-shrink: 0;
+  border: none; background: rgb(var(--c-bg-surface));
+  border-radius: 8px; color: rgb(var(--c-text-secondary));
+  font-size: 14px; padding: 4px 10px; cursor: pointer;
+  min-height: 44px;
+}
+.sheet-x {
+  width: 44px; height: 44px; margin-left: auto; flex-shrink: 0;
+  border: none; background: transparent; border-radius: 10px;
+  color: rgb(var(--c-text-tertiary));
+  display: flex; align-items: center; justify-content: center; cursor: pointer;
+}
+.sheet-x:active { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.search-row { padding: 2px 14px 8px; border-bottom: 1px solid rgb(var(--c-border) / 0.08); }
+.search-box {
+  display: flex; align-items: center; gap: 8px; height: 44px;
+  border: 1px solid rgb(var(--c-border) / 0.08);
+  background: rgb(var(--c-bg-surface));
+  border-radius: 10px; padding: 0 12px;
+  color: rgb(var(--c-text-tertiary));
+}
+.search-box input {
+  flex: 1; min-width: 0; background: transparent; border: none; outline: none;
+  color: rgb(var(--c-text-primary)); font-size: 14px;
+}
+.sheet-body {
+  padding: 8px 10px 0; overflow-y: auto; flex: 1;
+  overscroll-behavior: contain;
+}
+.group { margin-bottom: 12px; }
+.group-label {
+  font-size: 11px; font-weight: 500; color: rgb(var(--c-text-tertiary));
+  padding: 0 6px 5px;
+}
+.tool-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px 6px; }
+.tool-tile {
+  display: flex; align-items: center; gap: 9px; height: 44px;
+  padding: 0 10px; border: none; background: transparent;
+  border-radius: 10px; color: rgb(var(--c-text-secondary));
+  cursor: pointer; text-align: left;
+  transition: background 0.12s;
+  touch-action: pan-y;
+}
+.tool-tile:active { background: rgb(var(--c-bg-hover)); color: rgb(var(--c-text-primary)); }
+.tool-tile.active { background: rgb(var(--c-primary) / 0.12); color: rgb(var(--c-primary)); }
+.tool-tile:focus-visible { outline: 2px solid rgb(var(--c-primary)); outline-offset: -1px; }
+.tool-tile svg { flex-shrink: 0; }
+.tool-tile .lbl { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sheet-safe { padding-bottom: env(safe-area-inset-bottom); }
+.empty { padding: 40px 0; text-align: center; font-size: 14px; color: rgb(var(--c-text-tertiary)); }
+.hint { font-size: 11px; color: rgb(var(--c-text-tertiary)); text-align: center; padding: 8px 0 calc(10px + env(safe-area-inset-bottom)); }
+
+/* ===== 右侧说明 ===== */
+.notes {
+  width: 300px; max-height: min(84vh, 800px);
+  overflow-y: auto;
+  font-size: 14px; line-height: 1.6;
+}
+@media (max-width: 860px) { .notes { width: 390px; max-height: none; } }
+.notes h3 { font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+.notes h3:first-child { margin-top: 0; }
+.notes .badge {
+  display: inline-block; font-size: 11px; font-weight: 600;
+  padding: 2px 8px; border-radius: 999px;
+  background: rgb(var(--c-primary) / 0.14); color: rgb(var(--c-primary));
+  margin-bottom: 6px;
+}
+.notes ul { padding-left: 18px; color: rgb(var(--c-text-secondary)); }
+.notes li { margin-bottom: 5px; }
+.notes code {
+  background: rgb(var(--c-bg-surface)); padding: 1px 5px; border-radius: 4px;
+  font-size: 11px; color: rgb(var(--c-primary));
+}
+kbd {
+  background: rgb(var(--c-bg-surface));
+  border: 1px solid rgb(var(--c-border) / 0.15);
+  border-bottom-width: 2px; border-radius: 4px; padding: 0 5px; font-size: 11px;
+}
+.behaviors { border-collapse: collapse; width: 100%; font-size: 14px; }
+.behaviors th, .behaviors td {
+  border: 1px solid rgb(var(--c-border) / 0.1);
+  padding: 5px 7px; text-align: left; color: rgb(var(--c-text-secondary));
+}
+.behaviors th { color: rgb(var(--c-text-tertiary)); font-weight: 500; background: rgb(var(--c-bg-surface)); }
+.notes h3.table-title { margin-bottom: 8px; }
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-bg-hover) / 0.7); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<!-- ============ 手机框 ============ -->
+<div class="phone">
+  <div class="statusbar">
+    <span>9:41</span>
+    <div class="pills"><div class="pill"></div><div class="pill"></div><div class="pill" style="width:22px"></div></div>
+  </div>
+  <div class="topbar">
+    <div class="ws-chip"><div class="dot"></div><span>Polaris</span></div>
+    <button class="sw-btn" id="swBtn" aria-label="工具切换器" aria-expanded="false">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/></svg>
+    </button>
+  </div>
+  <div class="crumbs" id="crumbs"></div>
+  <div class="content">
+    <div class="content-inner" id="contentInner"></div>
+  </div>
+
+  <!-- 遮罩 + 底部 sheet -->
+  <div class="backdrop" id="backdrop"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-label="工具切换器"></div>
+</div>
+
+<!-- ============ 说明 ============ -->
+<div class="notes">
+  <div class="badge">PRD §9 移动端 / 触屏适配</div>
+  <p style="color:rgb(var(--c-text-tertiary));font-size:12px">手机浏览器 = compact 模式：ActivityBar 不渲染，入口在顶栏。右侧依次：① 顶栏 Grid2X2 <b>tap toggle</b> 开底部 sheet；② 44px 触控 tile 双列密排；③ 搜索过滤；④ 点选即切换并收起；⑤ 点遮罩 / <kbd>Esc</kbd> 关闭。</p>
+
+  <h3>与桌面版的关键差异</h3>
+  <ul>
+    <li>触发：无 hover 语义，仅 tap toggle（<code>pointer: coarse</code> 禁用 hover 路径）</li>
+    <li>形态：顶部下拉 → <b>底部 sheet</b>（自下而上 240ms，圆角顶缘 + 抓手条），拇指可达</li>
+    <li>触控目标：tile 34px → <b>44px</b>（WCAG 2.5.5）；顶栏按钮 38px</li>
+    <li>背景遮罩：移动端加半透明 backdrop，点击关闭、防误触下层</li>
+    <li>滚动：<code>overscroll-behavior: contain</code>，面板滚动不连带页面</li>
+    <li>安全区：<code>env(safe-area-inset-bottom)</code> 兜底 home indicator</li>
+    <li>双列网格 / 分组 / 搜索 / 「当前侧栏 + 关闭」<b>全部与桌面一致</b>（密度优化同样成立）</li>
+  </ul>
+
+  <h3 class="table-title">行为矩阵（PRD §9）</h3>
+  <table class="behaviors">
+    <tr><th>设备</th><th>hover 直达</th><th>触发</th><th>面板形态</th><th>触控目标</th></tr>
+    <tr><td>桌面鼠标</td><td>✅ 120ms</td><td>tap/click</td><td>侧向 flyout</td><td>34px</td></tr>
+    <tr><td>触屏笔记本</td><td>❌ coarse 禁用</td><td>tap/click</td><td>侧向 flyout</td><td>34px</td></tr>
+    <tr><td>手机浏览器</td><td>❌</td><td>tap toggle</td><td>底部 sheet + 遮罩</td><td>44px</td></tr>
+  </table>
+
+  <h3>实施要点</h3>
+  <ul>
+    <li>compact 判定复用 <code>useWindowManager.isCompact</code>，不新增第三套小屏判定</li>
+    <li>sheet / flyout 收敛为 <code>variant</code>，一个组件两种外壳；数据源零改动</li>
+    <li>本原型为「现状单列需滚动 + 顶栏下拉离拇指远」的对照项，桌面版见预览 v1</li>
+  </ul>
+</div>
+
+<script>
+var I = {
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  git: '<line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  terminal: '<polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/>',
+  checks: '<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+  lang: '<path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  wrench: '<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>',
+  plug: '<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>',
+  grid: '<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  plc: '<rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 3v18"/><path d="m14 9-3 3 3 3"/>'
+};
+function ico(n, s) {
+  return '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' + I[n] + '</svg>';
+}
+
+// 数据对齐 toolSwitcherData（手机端全部工具都走该入口）
+var TOOLS = [
+  { id: 'files', icon: 'folder', label: '文件', desc: '工作区文件、目录与引用' },
+  { id: 'git', icon: 'git', label: '变更', desc: '变更、提交、分支与审查' },
+  { id: 'browser', icon: 'globe', label: '浏览器', desc: '学习网页、本地预览' },
+  { id: 'terminal', icon: 'terminal', label: '终端', desc: '命令、脚本与运行环境' },
+  { id: 'todo', icon: 'checks', label: '待办', desc: '工作区待办与任务拆解' },
+  { id: 'translate', icon: 'lang', label: '翻译', desc: '选中文本与消息翻译' },
+  { id: 'scheduler', icon: 'clock', label: '定时任务', desc: '定时任务和执行控制' },
+  { id: 'requirement', icon: 'book', label: '需求库', desc: '需求库、生成与追踪' },
+  { id: 'personalHub', icon: 'user', label: '个人中心', desc: '个人链接与知识收藏' },
+  { id: 'integration', icon: 'plug', label: '集成平台', desc: '外部平台与机器人接入' },
+  { id: 'aiConsole', icon: 'bot', label: 'AI 控制台', desc: 'AI 执行记录与来源概览' },
+  { id: 'developer', icon: 'wrench', label: '开发者', desc: '开发者调试工具' }
+];
+var GROUPS = ['context','changes','run','automation','integrations','developer'];
+var GROUP_LABEL = { context:'上下文', changes:'变更', run:'运行', automation:'自动化', integrations:'集成', developer:'开发' };
+var GROUP_OF = { files:'context', browser:'context', requirement:'context', personalHub:'context', git:'changes',
+  terminal:'run', scheduler:'run', aiConsole:'run', todo:'automation', translate:'integrations',
+  integration:'integrations', developer:'developer' };
+
+var activePanel = 'files';
+var isOpen = false;
+function el(id) { return document.getElementById(id); }
+function byId(id) { for (var i = 0; i < TOOLS.length; i++) if (TOOLS[i].id === id) return TOOLS[i]; return null; }
+
+function headHtml() {
+  var cur = byId(activePanel);
+  return '<div class="grabber"></div>'
+    + '<div class="sheet-head"><div class="sh-ico">' + ico('grid', 15) + '</div>'
+    + '<div style="min-width:0"><div class="sh-t1">工具切换器</div>'
+    + '<div class="sh-t2"><span class="sh-cur">当前侧栏: ' + (cur ? cur.label : '无') + '</span>'
+    + (cur ? '<span class="close-side" id="closeSide">' + ico('plc', 11) + '<span>关闭侧栏</span></span>' : '')
+    + '</div></div>'
+    + '<button class="sheet-x" id="sx" aria-label="关闭">' + ico('x', 15) + '</button></div>'
+    + '<div class="search-row"><div class="search-box">' + ico('search', 14)
+    + '<input id="q" placeholder="搜索工具" /></div></div>';
+}
+function bodyHtml() {
+  var html = '<div class="sheet-body" id="sb">';
+  for (var g = 0; g < GROUPS.length; g++) {
+    var gname = GROUPS[g], items = [];
+    for (var i = 0; i < TOOLS.length; i++) if (GROUP_OF[TOOLS[i].id] === gname) items.push(TOOLS[i]);
+    if (!items.length) continue;
+    html += '<div class="group" data-g="' + gname + '"><div class="group-label">' + GROUP_LABEL[gname] + '</div><div class="tool-grid" role="listbox" aria-label="' + GROUP_LABEL[gname] + '">';
+    for (var j = 0; j < items.length; j++) {
+      var t = items[j];
+      html += '<button class="tool-tile ' + (t.id === activePanel ? 'active' : '') + '" role="option" aria-selected="' + (t.id === activePanel) + '" data-id="' + t.id
+        + '" title="' + t.label + ' — ' + t.desc + '">' + ico(t.icon, 16) + '<span class="lbl">' + t.label + '</span></button>';
+    }
+    html += '</div></div>';
+  }
+  return html + '<div class="empty" id="emptyTip" style="display:none">没有匹配结果</div>'
+    + '<div class="hint">44px 触控目标 · 双列密排 · 不自动弹软键盘（评审 P2 修复）</div></div>';
+}
+
+function renderSheet() {
+  el('sheet').innerHTML = headHtml() + bodyHtml() + '<div class="sheet-safe"></div>';
+  el('sx').onclick = close;
+  if (el('closeSide')) el('closeSide').onclick = function() { activePanel = null; select(); };
+  el('q').oninput = function() {
+    var qs = el('q').value.trim().toLowerCase();
+    var tiles = el('sheet').querySelectorAll('.tool-tile');
+    var any = false;
+    for (var i = 0; i < tiles.length; i++) {
+      var t = byId(tiles[i].getAttribute('data-id'));
+      var hit = (t.label + ' ' + t.desc + ' ' + GROUP_OF[t.id]).toLowerCase().indexOf(qs) >= 0;
+      tiles[i].style.display = (qs && hit) || !qs ? '' : 'none';
+      if (hit) any = true;
+    }
+    var groups = el('sheet').querySelectorAll('.group');
+    for (var g = 0; g < groups.length; g++) {
+      var vis = false, kids = groups[g].querySelectorAll('.tool-tile');
+      for (var m = 0; m < kids.length; m++) if (kids[m].style.display !== 'none') vis = true;
+      groups[g].style.display = vis || !qs ? '' : 'none';
+    }
+    el('emptyTip').style.display = qs && !any ? '' : 'none';
+  };
+  var tiles = el('sheet').querySelectorAll('.tool-tile');
+  for (var k = 0; k < tiles.length; k++) {
+    tiles[k].onclick = (function(id) { return function() { activePanel = id; select(); }; })(tiles[k].getAttribute('data-id'));
+  }
+}
+
+function toggle() { isOpen ? close() : open(); }
+function open() {
+  isOpen = true;
+  renderSheet();
+  el('backdrop').classList.add('open');
+  el('sheet').classList.add('open');
+  el('swBtn').classList.add('pressed');
+  el('swBtn').setAttribute('aria-expanded', 'true');
+  // 评审 P2 修复：mobile 打开禁止自动 focus 搜索框——软键盘弹出会盖住 78% sheet 的网格区；
+  // 搜索入口留给用户主动触发（真实实现时另以 visualViewport 监听压 sheet 高度、搜索行 sticky 键盘上方）
+}
+function close() {
+  if (!isOpen) return;
+  isOpen = false;
+  el('backdrop').classList.remove('open');
+  el('sheet').classList.remove('open');
+  el('swBtn').classList.remove('pressed');
+  el('swBtn').setAttribute('aria-expanded', 'false');
+}
+function select() {
+  close();
+  renderChrome();
+}
+
+// 主区（compact 模式下侧栏内容以覆盖层形式呈现，此处用卡片示意切换结果）
+function renderChrome() {
+  var t = byId(activePanel);
+  el('crumbs').innerHTML = t ? '工作区 / <b>' + t.label + '</b>' : '工作区 / <b>无打开的侧栏</b>';
+  el('contentInner').innerHTML = t
+    ? '<div class="p-ico">' + ico(t.icon, 24) + '</div><h4>' + t.label + '</h4><p>' + t.desc + '<br />（compact 模式：内容以 NarrowTabOverlay 覆盖层呈现）</p>'
+    : '<div class="p-ico" style="background:rgb(var(--c-bg-surface));color:rgb(var(--c-text-tertiary))">' + ico('grid', 24) + '</div><h4>无打开的侧栏</h4><p>点击顶栏田字格按钮重新选择工具</p>';
+}
+
+el('swBtn').addEventListener('click', function(e) { e.stopPropagation(); toggle(); });
+el('backdrop').addEventListener('click', close);
+document.addEventListener('keydown', function(e) { if (e.key === 'Escape') close(); });
+
+renderChrome();
+</script>
+</body>
+</html>

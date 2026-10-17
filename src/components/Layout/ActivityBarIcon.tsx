@@ -13,11 +13,13 @@ interface ActivityBarIconProps {
   active?: boolean
   onClick: () => void
   className?: string
+  onMouseEnter?: () => void
+  onMouseLeave?: () => void
   children?: ReactNode
 }
 
 export const ActivityBarIcon = forwardRef<HTMLButtonElement, ActivityBarIconProps>(
-  ({ icon: Icon, label, active = false, onClick, className, children }, ref) => {
+  ({ icon: Icon, label, active = false, onClick, className, onMouseEnter, onMouseLeave, children }, ref) => {
     // 构建 class 字符串
     const buttonClasses = [
       // 基础样式: 32x32 紧凑尺寸
@@ -45,6 +47,8 @@ export const ActivityBarIcon = forwardRef<HTMLButtonElement, ActivityBarIconProp
       <button
         ref={ref}
         onClick={onClick}
+        onMouseEnter={onMouseEnter}
+        onMouseLeave={onMouseLeave}
         className={buttonClasses}
         title={label}
         aria-label={label}
