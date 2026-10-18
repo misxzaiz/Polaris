@@ -9,7 +9,7 @@ import { persist } from 'zustand/middleware'
 import type { GitDiffEntry } from '@/types/git'
 import { useFileEditorStore } from './fileEditorStore'
 import { getFileNameFromPath } from '@/utils/path'
-import { browserClose, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
+import { browserClose, DEFAULT_BROWSER_HOME, makeBrowserWebviewLabel } from '@/services/tauri/browserService'
 
 /**
  * Tab 类型
@@ -233,7 +233,7 @@ export const useTabStore = create<TabStore>()(
       },
 
       // 打开内置浏览器 Tab
-      openBrowserTab: (url = 'https://www.bing.com', title = 'Browser', options = {}) => {
+      openBrowserTab: (url = DEFAULT_BROWSER_HOME, title = 'Browser', options = {}) => {
         const reuseExisting = options.reuseExisting ?? true
         const activate = options.activate ?? true
         const existingTab = reuseExisting

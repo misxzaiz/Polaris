@@ -305,16 +305,28 @@ export function makeBrowserWebviewLabel(tabId: string): string {
   return `browser-${tabId.replace(/[^a-zA-Z0-9_:/-]/g, '-')}`
 }
 
+/**
+ * 内置浏览器的默认搜索页。
+ *
+ * 注意：web 模式（iframe 降级）下 bing.com 会 302 到 cn.bing.com 且带
+ * `X-Frame-Options: SAMEORIGIN`，禁止被第三方页面嵌入 → iframe 白屏。
+ * DuckDuckGo 亦返回 `X-Frame-Options: SAMEORIGIN`（实测 2026-10），同样
+ * 拒绝 iframe 嵌入。Wikipedia 不发送 X-Frame-Options / frame-ancestors，
+ * 内容页与搜索页均可嵌入（后端 browser_check_embed 实测验证）。
+ */
+export const DEFAULT_BROWSER_HOME = 'https://en.wikipedia.org/wiki/Main_Page'
+
 export function normalizeBrowserUrl(input: string): string {
   const trimmed = input.trim()
-  if (!trimmed) return 'https://www.bing.com'
+  if (!trimmed) return DEFAULT_BROWSER_HOME
 
   if (/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(trimmed)) {
     return trimmed
   }
 
   if (/\s/.test(trimmed) || !trimmed.includes('.')) {
-    return `https://www.bing.com/search?q=${encodeURIComponent(trimmed)}`
+    // 搜索 fallback：DDG/Bing 均拒绝 iframe 嵌入，用 Wikipedia 搜索（可嵌入）
+    return `https://en.wikipedia.org/w/index.php?search=${encodeURIComponent(trimmed)}`
   }
 
   if (/^(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?(\/.*)?$/i.test(trimmed)) {
@@ -322,6 +334,31 @@ export function normalizeBrowserUrl(input: string): string {
   }
 
   return `https://${trimmed}`
+}
+
+export interface BrowserEmbedCheckResult {
+  embeddable: boolean
+  reason: string
+  detail?: string | null
+  finalUrl?: string | null
+}
+
+/**
+ * iframe 降级模式的嵌入性预检。
+ *
+ * web 模式下内置浏览器用 `<iframe>` 渲染页面，而 Bing/Google/GitHub/MDN
+ * 等站点通过 X-Frame-Options / CSP frame-ancestors 拒绝被第三方嵌入，
+ * 结果 iframe 白屏且不触发 onLoad。此命令由后端 HEAD/GET 探测目标 URL，
+ * 提前判断是否可嵌入。仅 web 模式（HTTP IPC）可用；tauri 模式由后端
+ * browser_* 拦截返回 4xx，调用方需容忍失败（失败时按可嵌入处理）。
+ */
+export async function browserCheckEmbed(url: string): Promise<BrowserEmbedCheckResult> {
+  try {
+    return await invoke<BrowserEmbedCheckResult>('browser_check_embed', { url })
+  } catch {
+    // 预检失败不阻塞导航：桌面 tauri 模式返回 4xx，按可嵌入处理
+    return { embeddable: true, reason: 'probe_unavailable' }
+  }
 }
 
 export async function browserRegister(

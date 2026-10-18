@@ -48,11 +48,11 @@ function nextId(): string {
 }
 
 const DEFAULT_SHORTCUTS: ShortcutItem[] = [
-  { id: nextId(), url: 'https://www.bing.com', label: 'Bing', pinned: true, order: 0 },
-  { id: nextId(), url: 'https://developer.mozilla.org', label: 'MDN', pinned: true, order: 1 },
+  { id: nextId(), url: 'https://en.wikipedia.org', label: 'Wikipedia', pinned: true, order: 0 },
+  { id: nextId(), url: 'https://www.baidu.com', label: 'Baidu', pinned: true, order: 1 },
   { id: nextId(), url: 'localhost:5173', label: 'localhost:5173', pinned: true, order: 2 },
   { id: nextId(), url: 'localhost:3000', label: 'localhost:3000', pinned: true, order: 3 },
-  { id: nextId(), url: 'https://tauri.app', label: 'Tauri', pinned: true, order: 4 },
+  { id: nextId(), url: 'https://example.com', label: 'example.com', pinned: true, order: 4 },
 ]
 
 // ─── Store 实现 ─────────────────────────────────────

@@ -23,6 +23,7 @@ import { clsx } from 'clsx'
 import { useTranslation } from 'react-i18next'
 import {
   browserAcquireComplete,
+  browserCheckEmbed,
   browserClearData,
   browserCreate,
   browserFind,
@@ -38,6 +39,7 @@ import {
   browserSetMarquee,
   browserSetMuted,
   browserToggleDevtools,
+  DEFAULT_BROWSER_HOME,
   makeBrowserWebviewLabel,
   normalizeBrowserUrl,
   type BrowserBounds,
@@ -68,11 +70,11 @@ interface BrowserPanelProps {
 }
 
 const QUICK_STARTS = [
-  { key: 'search', url: 'https://www.bing.com', label: 'Bing' },
+  { key: 'search', url: 'https://en.wikipedia.org', label: 'Wikipedia' },
   { key: 'local5173', url: 'localhost:5173', label: 'localhost:5173' },
   { key: 'local3000', url: 'localhost:3000', label: 'localhost:3000' },
-  { key: 'mdn', url: 'https://developer.mozilla.org', label: 'MDN' },
-  { key: 'tauri', url: 'https://tauri.app', label: 'Tauri' },
+  { key: 'example', url: 'https://example.com', label: 'example.com' },
+  { key: 'baidu', url: 'https://www.baidu.com', label: 'Baidu' },
 ]
 
 const MAX_OPERATION_EVENTS = 8
@@ -201,7 +203,7 @@ function isBrowserOccludedByAppOverlay(
 
 export function BrowserPanel({
   tabId,
-  initialUrl = 'https://www.bing.com',
+  initialUrl = DEFAULT_BROWSER_HOME,
   navigationRequestUrl,
   navigationRequestId,
   acquireRequestId,
@@ -267,6 +269,8 @@ export function BrowserPanel({
 
   const [isMuted, setIsMuted] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [embedBlocked, setEmbedBlocked] = useState(false)
+  const embedBlockedTimerRef = useRef<number | null>(null)
   // 供 mount effect 内的事件监听使用的最新回调引用（避免闭包捕获旧状态）
   const actionHandlersRef = useRef<{ copyUrl: () => void; toggleMute: () => void; openExternal: () => void }>({
     copyUrl: () => undefined,
@@ -317,9 +321,27 @@ export function BrowserPanel({
       try {
         if (status === 'native-unavailable') {
           // iframe 降级模式：地址栏提交直接改 iframe src，无原生 WebView 可导航
+          // X-Frame-Options / frame-ancestors 拒绝时 Chrome 渲染错误页且不触发
+          // onLoad（部分版本仍触发），所以用"后端预检 + 计时器兜底"双保险。
+          setEmbedBlocked(false)
+          if (embedBlockedTimerRef.current !== null) {
+            window.clearTimeout(embedBlockedTimerRef.current)
+          }
           if (iframeRef.current) {
             iframeRef.current.src = nextUrl
           }
+          // 计时器兜底：若 6 秒内 onLoad 未触发（被拒时典型表现）则提示
+          embedBlockedTimerRef.current = window.setTimeout(() => {
+            if (mountedRef.current && iframeRef.current) {
+              setEmbedBlocked(true)
+            }
+          }, 6000)
+          // 后端预检：主动探测 X-Frame-Options，被拒时立即提示（不等 6 秒）
+          browserCheckEmbed(nextUrl).then((result) => {
+            if (mountedRef.current && !result.embeddable) {
+              setEmbedBlocked(true)
+            }
+          })
           return
         }
         await browserNavigate(webviewLabel, nextUrl)
@@ -363,6 +385,12 @@ export function BrowserPanel({
 
   /** 降级模式（iframe）：iframe 内导航后同步地址栏/标题/历史栈 */
   const handleIframeLoad = useCallback(() => {
+    // 加载成功：清除"可能被嵌入拒绝"提示
+    setEmbedBlocked(false)
+    if (embedBlockedTimerRef.current !== null) {
+      window.clearTimeout(embedBlockedTimerRef.current)
+      embedBlockedTimerRef.current = null
+    }
     const win = iframeRef.current?.contentWindow
     if (!win || !win.location) return
     try {
@@ -480,9 +508,28 @@ export function BrowserPanel({
 
     if (!isTauriRuntime()) {
       setStatus('native-unavailable')
+      // 首次渲染即启动"嵌入被拒"兜底计时器（XFO 拒绝时 onLoad 不触发）
+      if (embedBlockedTimerRef.current !== null) {
+        window.clearTimeout(embedBlockedTimerRef.current)
+      }
+      embedBlockedTimerRef.current = window.setTimeout(() => {
+        if (mountedRef.current && iframeRef.current) {
+          setEmbedBlocked(true)
+        }
+      }, 6000)
+      // 后端预检初始 URL：被拒时立即提示，不等 6 秒兜底
+      browserCheckEmbed(normalizedInitialUrl).then((result) => {
+        if (mountedRef.current && !result.embeddable) {
+          setEmbedBlocked(true)
+        }
+      })
       return () => {
         mountedRef.current = false
         readyRef.current = false
+        if (embedBlockedTimerRef.current !== null) {
+          window.clearTimeout(embedBlockedTimerRef.current)
+          embedBlockedTimerRef.current = null
+        }
       }
     }
 
@@ -1085,6 +1132,10 @@ export function BrowserPanel({
   useEffect(() => {
     return () => {
       browserSetMarquee(webviewLabel, false).catch(() => undefined)
+      if (embedBlockedTimerRef.current !== null) {
+        window.clearTimeout(embedBlockedTimerRef.current)
+        embedBlockedTimerRef.current = null
+      }
     }
   }, [webviewLabel])
 
@@ -1475,9 +1526,52 @@ export function BrowserPanel({
             title="Polaris Browser"
             src={currentUrl}
             onLoad={handleIframeLoad}
+            onError={() => setEmbedBlocked(true)}
             className="absolute inset-0 h-full w-full border-0 bg-background-base"
             sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
           />
+        )}
+
+        {/* 降级模式：iframe 可能被目标站点禁止嵌入（X-Frame-Options / frame-ancestors）。
+            浏览器被拒时不触发 iframe 的 load 事件，用计时器兜底提示，避免白屏无从下手。 */}
+        {status === 'native-unavailable' && embedBlocked && (
+          <div
+            className="absolute top-10 left-1/2 z-20 flex max-w-[92%] -translate-x-1/2 flex-col items-center gap-2 rounded-lg border border-warning/40 bg-background-elevated/95 px-4 py-3 text-center shadow-lg"
+            data-testid="iframe-embed-blocked-hint"
+          >
+            <div className="flex items-center gap-2 text-xs font-medium text-warning">
+              <AlertTriangle size={13} />
+              <span>{t('browser.embedBlockedTitle', { defaultValue: '此页面可能禁止被内嵌显示' })}</span>
+            </div>
+            <div className="text-[11px] leading-4 text-text-tertiary">
+              {t('browser.embedBlockedHint', {
+                defaultValue: '部分网站（如 Bing/Google/GitHub/MDN）通过 X-Frame-Options 拒绝在 iframe 中显示。请在地址栏输入其他网址，或用右上角「在外部浏览器打开」。',
+              })}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => { setEmbedBlocked(false); window.open(currentUrl, '_blank', 'noopener') }}
+                className="rounded-md border border-border bg-background-hover px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {t('browser.openExternal', { defaultValue: '在外部浏览器打开' })}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setEmbedBlocked(false); navigateTo(DEFAULT_BROWSER_HOME) }}
+                className="rounded-md border border-border bg-background-hover px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {t('browser.goHome', { defaultValue: '返回默认页' })}
+              </button>
+              <button
+                type="button"
+                onClick={() => setEmbedBlocked(false)}
+                className="rounded-md border border-border bg-background-hover px-2.5 py-1 text-[11px] text-text-secondary transition-colors hover:text-text-primary"
+              >
+                {t('common.dismiss', { defaultValue: '知道了' })}
+              </button>
+            </div>
+          </div>
         )}
 
         {(loading || status === 'idle') && (
@@ -1707,7 +1801,7 @@ const SHORTCUT_LIST: { key: string; label: string; keys: string }[] = [
 
 export function BrowserLauncherPanel() {
   const { t } = useTranslation('common')
-  const [url, setUrl] = useState('https://www.bing.com')
+  const [url, setUrl] = useState(DEFAULT_BROWSER_HOME)
   const openBrowserTab = useTabStore((state) => state.openBrowserTab)
   const closeLeftPanel = useViewStore((state) => state.closeLeftPanel)
 
