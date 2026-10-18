@@ -4,7 +4,8 @@ import { pluginRegistry } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
 
 interface DemoPluginPanelProps {
-  onSendToChat?: (message: string) => void | Promise<void>
+  /** 处理函数可能返回发送成败（store.sendMessage → Promise<boolean>），不落地的场景返回 void */
+  onSendToChat?: (message: string) => void | Promise<boolean> | boolean
 }
 
 const DEMO_PLUGIN_ID = 'example.demo-mcp'

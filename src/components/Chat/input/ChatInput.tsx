@@ -63,6 +63,15 @@ import {
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { tryHandleSlashCommand } from './chatCommandRouter'
+import {
+  appendPromptHistoryEntry,
+  arePromptHistoryEntriesEqual,
+  navigatePromptHistory,
+} from './promptHistory'
+import {
+  persistPromptHistoryEntries,
+  readPromptHistoryEntries,
+} from '@/services/promptHistoryService'
 import { useAgentStore } from '@/stores/agentStore'
 import { pluginRegistry, listEnabledPluginMcpServers } from '@/plugin-system'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -119,7 +128,9 @@ export interface EditMode {
 }
 
 interface ChatInputProps {
-  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[]) => void
+  /** 返回 Promise<boolean> 时：false = 发送失败，prompt 历史提交事务据此回滚；
+   *  火烧即忘（void/undefined）时视为已提交。 */
+  onSend: (message: string, workspaceDir?: string, attachments?: Attachment[]) => Promise<boolean> | boolean | void
   disabled?: boolean
   isStreaming?: boolean
   onInterrupt?: () => void
@@ -163,6 +174,8 @@ export function ChatInput({
 
 // 获取当前会话的工作区
   const currentWorkspace = useActiveSessionWorkspace()
+  /** prompt 历史归属工作区：持久化 key 与隔离维度（按 workspace 隔离，避免跨项目串味） */
+  const promptHistoryWorkspacePath = currentWorkspace?.path ?? null
 
   // 当前会话引擎：CLI 斜杠命令建议/拦截仅对 Claude Code 引擎生效
   const activeSessionId = useActiveSessionId()
@@ -202,16 +215,61 @@ export function ChatInput({
   const contextBlocksRef = useRef<ContextBlock[]>([])
   const [activeSnippet, setActiveSnippet] = useState<PromptSnippet | null>(null)
 
-  // Prompt 历史记录（终端风格 ArrowUp 召回）
+  // Prompt 历史（终端风格 ArrowUp 召回）
+  // entries 统一为旧→新序；historyIndex=null 表示未进入浏览态。
+  // 持久化走 cap.kv（promptHistoryService，per-workspace）；内存 ref 是浏览态事实源。
   const sentHistoryRef = useRef<string[]>([])
-  const [historyIndex, setHistoryIndex] = useState(-1)
-  const savedCurrentInputRef = useRef('')
+  const [historyIndex, setHistoryIndex] = useState<number | null>(null)
+
+  // 按工作区加载历史（cap.kv）。代数号防过期加载覆盖：切工作区后早到的旧响应直接丢弃，
+  // 不用超时掩盖；加载期间已发送的条目与历史表幂等合并（append 自动去重）。
+  const promptHistoryLoadGenRef = useRef(0)
+  useEffect(() => {
+    const gen = ++promptHistoryLoadGenRef.current
+    sentHistoryRef.current = []
+    setHistoryIndex(null)
+    let alive = true
+    void readPromptHistoryEntries(promptHistoryWorkspacePath).then((loaded) => {
+      if (!alive || gen !== promptHistoryLoadGenRef.current) return
+      let merged = loaded
+      for (const entry of sentHistoryRef.current) {
+        merged = appendPromptHistoryEntry(merged, entry)
+      }
+      sentHistoryRef.current = merged
+    })
+    return () => {
+      alive = false
+    }
+  }, [promptHistoryWorkspacePath])
+
+  // 历史提交事务：成功返回且内容有变化才落库。失败（send 返回 false / 抛错）
+  // 不入史，保证「按 ↑ 召回的一定是发出过的内容」。
+  // 调用方不等待本事务完成即可做 UI 清理（回滚只影响浏览态事实源，无需阻塞输入框）。
+  const commitPromptHistory = useCallback(
+    async (text: string, send: () => Promise<boolean> | boolean | void) => {
+      const trimmed = text.trim()
+      if (!trimmed) return
+      const before = sentHistoryRef.current
+      const appended = appendPromptHistoryEntry(before, trimmed)
+      let ok: boolean
+      try {
+        ok = (await send()) !== false
+      } catch {
+        ok = false
+      }
+      if (!ok) return
+      if (arePromptHistoryEntriesEqual(before, appended)) return // 与最后一条相同：无变化不写
+      sentHistoryRef.current = appended
+      void persistPromptHistoryEntries(promptHistoryWorkspacePath, appended)
+    },
+    [promptHistoryWorkspacePath]
+  )
 
   // 编辑模式同步：进入编辑模式时填入消息内容
   useEffect(() => {
     if (editMode) {
       setLocalText(editMode.content)
-      setHistoryIndex(-1)
+      setHistoryIndex(null)
       // 聚焦输入框
       setTimeout(() => textareaRef.current?.focus(), 0)
     }
@@ -661,7 +719,7 @@ export function ChatInput({
     // 立即更新本地 state（即时响应）
     setLocalText(newValue)
     // 用户手动编辑时退出历史浏览模式
-    if (historyIndex >= 0) setHistoryIndex(-1)
+    if (historyIndex !== null) setHistoryIndex(null)
     // 防抖持久化到 Store
     debouncedPersistDraft(newValue, attachments)
 
@@ -1200,12 +1258,13 @@ export function ChatInput({
       for (const id of sentBlockIds) {
         useMarqueeStore.getState().removeBlock(id)
       }
-      // 记录到 prompt 历史（记录用户原文）
+      // 记录到 prompt 历史（记录用户原文）。入队是本地同步操作，不需要发送事务：
+      // 真正送出发生在队列派发时，失败时队列本身会保留队首；历史按「已入队即记录」处理。
       if (trimmed) {
-        const history = sentHistoryRef.current
-        if (history.length === 0 || history[0] !== trimmed) {
-          history.unshift(trimmed)
-          if (history.length > 100) history.length = 100
+        const appended = appendPromptHistoryEntry(sentHistoryRef.current, trimmed)
+        if (!arePromptHistoryEntriesEqual(sentHistoryRef.current, appended)) {
+          sentHistoryRef.current = appended
+          void persistPromptHistoryEntries(promptHistoryWorkspacePath, appended)
         }
       }
       // 清空本地 state 与草稿
@@ -1216,7 +1275,7 @@ export function ChatInput({
       setLocalContextBlocks([])
       updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
       resetPromptOptimize()
-      setHistoryIndex(-1)
+      setHistoryIndex(null)
       setSpeechWakeActive(false)
       voiceNotificationService.notifySendConfirm()
       return
@@ -1231,10 +1290,14 @@ export function ChatInput({
       updateInputDraft({ text: '', attachments: [], contextBlocks: [] })
       contextBlocksRef.current = []
       setLocalContextBlocks([])
-      setHistoryIndex(-1)
+      setHistoryIndex(null)
       resetPromptOptimize()
       if (cmd.sendText) {
-        onSend(cmd.sendText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+        // 本地斜杠命令发送同样入史（此前该分支绕过记录点，发过的 /nexus 等无法召回）
+        const sendText = cmd.sendText
+        void commitPromptHistory(sendText, () =>
+          onSend(sendText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+        )
       }
       return
     }
@@ -1302,20 +1365,15 @@ export function ChatInput({
       // 整段文本作为一条消息发送，保留用户输入的换行/空行格式。
       // （待发送队列仅用于「流式回复期间预输入」，见上方 isStreaming 分支；
       //   空闲时不再按换行拆分，避免用户写长消息按回车换行被误拆成多条排队。）
-      onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      // 发送 + 历史记录走提交事务（见 commitPromptHistory）：发送失败不入史，
+      // 不需要等待事务完成即可清理输入（回滚不影响 UI，浏览态事实源由 helper 兜底）。
+      void commitPromptHistory(trimmed, () =>
+        onSend(messageContent, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
+      )
       // 上下文块已随消息发出，清除左侧边栏对应的圈选记录
       const sentBlockIds = contextBlocksRef.current.map((b) => b.id)
       for (const id of sentBlockIds) {
         useMarqueeStore.getState().removeBlock(id)
-      }
-      // 记录到 prompt 历史（仅普通发送，编辑模式不记录），记录用户原文
-      if (trimmed) {
-        const history = sentHistoryRef.current
-        // 去重：如果最后一条相同则不重复添加
-        if (history.length === 0 || history[0] !== trimmed) {
-          history.unshift(trimmed)
-          if (history.length > 100) history.length = 100
-        }
       }
     }
 
@@ -1331,12 +1389,12 @@ export function ChatInput({
     // 退出编辑模式
     if (editMode) onCancelEdit?.()
     // 重置历史索引
-    setHistoryIndex(-1)
+    setHistoryIndex(null)
     // 发送后重置语音唤醒状态（回到待命）
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue])
+  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, promptHistoryWorkspacePath, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue, commitPromptHistory])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {
@@ -1394,30 +1452,34 @@ export function ChatInput({
       return
     }
 
-    // ArrowUp/ArrowDown prompt 历史记录（终端风格）
-    const history = sentHistoryRef.current
-    if (e.key === 'ArrowUp' && !showSuggestions && value === '' && history.length > 0) {
-      e.preventDefault()
-      if (historyIndex === -1) savedCurrentInputRef.current = value
-      const newIndex = Math.min(historyIndex + 1, history.length - 1)
-      setHistoryIndex(newIndex)
-      setLocalText(history[newIndex])
-      debouncedPersistDraft(history[newIndex], attachments)
-      return
-    }
-    if (e.key === 'ArrowDown' && !showSuggestions && historyIndex >= 0) {
-      e.preventDefault()
-      const newIndex = historyIndex - 1
-      if (newIndex < 0) {
-        setHistoryIndex(-1)
-        setLocalText(savedCurrentInputRef.current)
-        debouncedPersistDraft(savedCurrentInputRef.current, attachments)
-      } else {
-        setHistoryIndex(newIndex)
-        setLocalText(history[newIndex])
-        debouncedPersistDraft(history[newIndex], attachments)
+    // ArrowUp/ArrowDown prompt 历史召回（终端风格；语义对齐 promptHistory 模块 / ZCode）
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !showSuggestions && sentHistoryRef.current.length > 0) {
+      const blocked =
+        disabled ||              // 无可用会话时放行（P8）
+        e.shiftKey ||
+        e.ctrlKey ||
+        e.metaKey ||
+        e.altKey ||
+        e.nativeEvent.isComposing // 中文 IME 组词中按 ↑/↓ 是候选导航，不能当历史召回（P4）
+      const entries = sentHistoryRef.current
+      const isBrowsing = historyIndex !== null
+      // 只在「空输入」或「已在浏览态」时接管方向键（P1 修复：浏览态可整段上下翻），
+      // 不抢走多行输入原本的光标移动行为（对齐 ZCode PromptHistoryPlugin）。
+      if (!blocked && (isBrowsing || value === '')) {
+        const result = navigatePromptHistory(
+          entries,
+          historyIndex,
+          e.key === 'ArrowUp' ? 'up' : 'down'
+        )
+        if (result.shouldHandle) {
+          e.preventDefault()
+          setHistoryIndex(result.nextIndex)
+          setLocalText(result.nextValue)
+          // 召回值不写草稿 Store（P7）：浏览不得污染草稿，真实编辑才在
+          // handleInputChange 中持久化；翻尽退出浏览态回到浏览前输入即可。
+          return
+        }
       }
-      return
     }
 
     // ESC 关闭建议 / 中断流式输出 / 退出编辑模式
@@ -1454,8 +1516,7 @@ export function ChatInput({
     onInterrupt,
     value,
     historyIndex,
-    attachments,
-    debouncedPersistDraft,
+    disabled,
     editMode,
     onCancelEdit,
   ])

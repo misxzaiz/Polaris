@@ -243,15 +243,19 @@ export function useActiveSessionActions() {
     return {
       sendMessage: async (...args: Parameters<ConversationStore['sendMessage']>) => {
         const sid = sessionStoreManager.getState().activeSessionId
-        if (!sid) return
+        // 无活跃会话 = 未发送：以 false 供调用方（prompt 历史提交事务）判定回滚
+        if (!sid) return false
         const kernel = await getKernel()
-        await kernel.sendMessage({
+        // [prompt 历史事务] 透传发送成败：kernel 若异常返回 ok=false；
+        // v2-kernel 现已保留 store.sendMessage 的 boolean 失败信号。
+        const result = await kernel.sendMessage({
           sessionId: sid,
           content: args[0],
           workspaceDir: args[1],
           attachments: args[2],
           sendOptions: args[3],
         })
+        return result.ok !== false
       },
       interrupt: async () => {
         const sid = sessionStoreManager.getState().activeSessionId

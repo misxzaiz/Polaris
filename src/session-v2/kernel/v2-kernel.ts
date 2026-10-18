@@ -134,13 +134,16 @@ export class V2SessionKernel
     try {
       // 批次 3：完整透传 store.sendMessage 4 参签名——workDir / 附件 / 发送选项
       // （一次性系统提示、runtimeOverride 等）不再丢失，与 UI 直调行为一致。
-      await store.sendMessage(
+      // 透传发送成败：store.sendMessage 失败返回 false（内部已有错误横幅），
+      // 此处以 boolean 形式保留在 SendResult.ok 中，供调用方（如 prompt 历史提交
+      // 事务）判定回滚；此前 boolean 被丢弃，调用方无从感知失败。
+      const sent = await store.sendMessage(
         input.content,
         input.workspaceDir,
         input.attachments,
         input.sendOptions,
       )
-      return { ok: true, conversationId: store.conversationId ?? undefined }
+      return { ok: sent !== false, conversationId: store.conversationId ?? undefined }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       return { ok: false, reason: msg, retryable: true }
