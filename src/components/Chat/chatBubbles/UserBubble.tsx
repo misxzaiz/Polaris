@@ -78,8 +78,13 @@ export const UserBubble = memo(function UserBubble({
     <>
       <div className="chat-user-message flex justify-end group" onContextMenu={handleContextMenu}>
         <div className="chat-user-bubble-wrap relative max-w-[85%]">
-          {/* Hover 操作栏 - 始终显示复制按钮，有 onEdit 时显示编辑按钮 */}
-          <div className="absolute -top-8 right-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {/* Hover 操作栏 - 始终显示复制按钮，有 onEdit 时显示编辑按钮。
+              根因修复：原 -top-8 向上溢出，第一条消息上方是滚动容器
+              overflow 裁剪区（scrollTop=0 无负向可视空间，仅 10px 消息间
+              隙不够 32px），按钮被裁掉看不见。改放下方（列表底部有 120px
+              footer spacer，末条/首条均安全）；-bottom-8 会溅溢到 virtuoso
+              相邻后项区域内，DOM 在后绘制在上层，须加 z-10 反盖工具栏。 */}
+          <div className="absolute -bottom-8 right-0 z-10 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
             <button
               onClick={handleCopy}
               className="p-1.5 rounded-md text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors"
