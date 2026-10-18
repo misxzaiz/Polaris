@@ -56,6 +56,7 @@ import { useActiveSessionActions } from '@/stores/conversationStore/useActiveSes
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { useOverlayStore } from '@/stores/overlayStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
+import { isEmbeddedBrowserWebview } from '@/services/transport/detector'
 
 interface BrowserPanelProps {
   tabId: string
@@ -93,8 +94,19 @@ const log = (msg: string, data?: unknown) => {
   console.log(`[BrowserPanel] ${msg}`, data !== undefined ? data : '')
 }
 
+/**
+ * 是否处于可创建原生 WebView 的桌面主窗口环境。
+ *
+ * 与 transport/detector.ts 对齐：内置浏览器动态 webview（label `browser-*`）
+ * 里同样存在 __TAURI_INTERNALS__，但它等同普通浏览器页面，不应尝试创建
+ * 原生 WebView —— 必须走 iframe 降级，否则 web/内嵌场景会误判为 tauri 模式
+ * 而永远停在空态。
+ */
 function isTauriRuntime(): boolean {
-  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  if (typeof window === 'undefined') return false
+  if (!('__TAURI_INTERNALS__' in window)) return false
+  if (isEmbeddedBrowserWebview()) return false
+  return true
 }
 
 function parseZIndex(value: string): number {
@@ -198,6 +210,7 @@ export function BrowserPanel({
   const { t } = useTranslation('common')
   const rootRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
   const toolbarWidthRef = useRef<HTMLDivElement>(null)
   const historyDropdownRef = useRef<HTMLDivElement>(null)
   const rafRef = useRef<number | null>(null)
@@ -303,6 +316,10 @@ export function BrowserPanel({
 
       try {
         if (status === 'native-unavailable') {
+          // iframe 降级模式：地址栏提交直接改 iframe src，无原生 WebView 可导航
+          if (iframeRef.current) {
+            iframeRef.current.src = nextUrl
+          }
           return
         }
         await browserNavigate(webviewLabel, nextUrl)
@@ -321,6 +338,46 @@ export function BrowserPanel({
     },
     [status, tabId, updateBrowserTab, webviewLabel]
   )
+
+  /** 降级模式（iframe）：后退/前进 —— 通过 iframe 内容窗口的历史栈实现 */
+  const fallbackHistory = useCallback((direction: 'back' | 'forward') => {
+    const win = iframeRef.current?.contentWindow
+    if (!win) return
+    try {
+      if (direction === 'back') win.history.back()
+      else win.history.forward()
+    } catch {
+      // 跨域受限时静默；按钮是否可用见下方判断
+    }
+  }, [])
+
+  /** 降级模式（iframe）：刷新 —— 重新赋值 src 触发重新加载 */
+  const fallbackReload = useCallback(() => {
+    const frame = iframeRef.current
+    if (!frame) return
+    const url = currentUrl
+    // 置空再赋值，确保跨域页面也能强制重载
+    frame.src = 'about:blank'
+    requestAnimationFrame(() => { frame.src = url })
+  }, [currentUrl])
+
+  /** 降级模式（iframe）：iframe 内导航后同步地址栏/标题/历史栈 */
+  const handleIframeLoad = useCallback(() => {
+    const win = iframeRef.current?.contentWindow
+    if (!win || !win.location) return
+    try {
+      const url = win.location.href
+      if (!url || url === 'about:blank') return
+      if (url !== currentUrl) {
+        setCurrentUrl(url)
+        setAddress(url)
+        setPageTitle(win.document.title || 'Browser')
+        updateBrowserTab(tabId, { url, title: win.document.title || 'Browser' })
+      }
+    } catch {
+      // 跨域 iframe 读不到 location（不同源时）；保持现状
+    }
+  }, [currentUrl, tabId, updateBrowserTab])
 
 
   // 点击外部关闭历史下拉
@@ -1092,12 +1149,20 @@ export function BrowserPanel({
       }
       if (e.altKey && e.key === 'ArrowLeft') {
         e.preventDefault()
-        browserHistory(webviewLabel, 'back').catch(() => undefined)
+        if (status === 'native-unavailable') {
+          fallbackHistory('back')
+        } else {
+          browserHistory(webviewLabel, 'back').catch(() => undefined)
+        }
         return
       }
       if (e.altKey && e.key === 'ArrowRight') {
         e.preventDefault()
-        browserHistory(webviewLabel, 'forward').catch(() => undefined)
+        if (status === 'native-unavailable') {
+          fallbackHistory('forward')
+        } else {
+          browserHistory(webviewLabel, 'forward').catch(() => undefined)
+        }
         return
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === '/') {
@@ -1112,7 +1177,7 @@ export function BrowserPanel({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, setShortcutsOpen])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, setShortcutsOpen, status, fallbackHistory])
 
   // ── 缩放控制 ──
 
@@ -1139,7 +1204,13 @@ export function BrowserPanel({
           <button
             type="button"
             className={toolbarButtonClass}
-            onClick={() => browserHistory(webviewLabel, 'back').catch((e) => setError(String(e)))}
+            onClick={() => {
+              if (status === 'native-unavailable') {
+                fallbackHistory('back')
+              } else {
+                browserHistory(webviewLabel, 'back').catch((e) => setError(String(e)))
+              }
+            }}
             onMouseDown={() => {
               // 长按 500ms 显示历史下拉菜单
               const timer = window.setTimeout(() => {
@@ -1151,7 +1222,7 @@ export function BrowserPanel({
               const handleMouseUp = () => { window.clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
               document.addEventListener('mouseup', handleMouseUp)
             }}
-            disabled={status !== 'ready'}
+            disabled={status !== 'ready' && status !== 'native-unavailable'}
             title={t('browser.back', { defaultValue: '后退' })}
           >
             <ArrowLeft size={16} />
@@ -1159,7 +1230,13 @@ export function BrowserPanel({
           <button
             type="button"
             className={toolbarButtonClass}
-            onClick={() => browserHistory(webviewLabel, 'forward').catch((e) => setError(String(e)))}
+            onClick={() => {
+              if (status === 'native-unavailable') {
+                fallbackHistory('forward')
+              } else {
+                browserHistory(webviewLabel, 'forward').catch((e) => setError(String(e)))
+              }
+            }}
             onMouseDown={() => {
               // 长按 500ms 显示历史下拉菜单
               const timer = window.setTimeout(() => {
@@ -1171,7 +1248,7 @@ export function BrowserPanel({
               const handleMouseUp = () => { window.clearTimeout(timer); document.removeEventListener('mouseup', handleMouseUp) }
               document.addEventListener('mouseup', handleMouseUp)
             }}
-            disabled={status !== 'ready'}
+            disabled={status !== 'ready' && status !== 'native-unavailable'}
             title={t('browser.forward', { defaultValue: '前进' })}
           >
             <ArrowRight size={16} />
@@ -1179,8 +1256,14 @@ export function BrowserPanel({
           <button
             type="button"
             className={toolbarButtonClass}
-            onClick={() => browserReload(webviewLabel).catch((e) => setError(String(e)))}
-            disabled={status !== 'ready'}
+            onClick={() => {
+              if (status === 'native-unavailable') {
+                fallbackReload()
+              } else {
+                browserReload(webviewLabel).catch((e) => setError(String(e)))
+              }
+            }}
+            disabled={status !== 'ready' && status !== 'native-unavailable'}
             title={t('buttons.refresh')}
           >
             <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
@@ -1260,6 +1343,12 @@ export function BrowserPanel({
             </span>
           </button>
         </div>
+
+        {status === 'native-unavailable' && (
+          <span className="shrink-0 rounded-md border border-border-subtle bg-background-hover px-2 py-1 text-[11px] text-text-tertiary" title={t('browser.fallbackHint', { defaultValue: '当前环境无法创建原生 WebView，已降级为内嵌 iframe 模式' })}>
+            {t('browser.fallbackMode', { defaultValue: 'iframe 降级模式' })}
+          </span>
+        )}
       </div>
 
         {/* 历史快照下拉菜单 */}
@@ -1382,8 +1471,10 @@ export function BrowserPanel({
 
         {status === 'native-unavailable' && (
           <iframe
+            ref={iframeRef}
             title="Polaris Browser"
             src={currentUrl}
+            onLoad={handleIframeLoad}
             className="absolute inset-0 h-full w-full border-0 bg-background-base"
             sandbox="allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
           />

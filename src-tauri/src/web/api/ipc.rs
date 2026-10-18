@@ -468,6 +468,16 @@ pub async fn handle_ipc_bridge(
         "get_usage_daily_trends" => dispatch_get_usage_daily_trends(&args),
         "get_usage_recent_logs" => dispatch_get_usage_recent_logs(&args),
 
+        // ── Built-in Browser（web 模式不支持）─────────────────────────────
+        // 内置浏览器完全依赖 Tauri 原生 WebView（commands/browser.rs 全量
+        // tauri-app 门控）。web/内嵌 webview 场景没有原生能力，任何 browser_*
+        // 命令在此显式返回 4xx 明确错误，而不是落到下面 NotFound ——
+        // 否则前端 MCP/面板调用会得到「Command not supported via HTTP」这种
+        // 与浏览器无关的误导性信息。
+        cmd if cmd.starts_with("browser_") => Err(WebError::BadRequest(
+            "内置浏览器需要桌面 Tauri 运行时（tauri-app feature），web 模式不可用".into(),
+        )),
+
         // ── Unsupported ────────────────────────────────────────────────────
         _ => {
             tracing::debug!("[Web:IPC] Unsupported command: {}", command);
