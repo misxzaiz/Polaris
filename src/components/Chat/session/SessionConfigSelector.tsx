@@ -41,6 +41,16 @@ interface SessionConfigSelectorProps {
   visibleTypes?: SelectorType[]
   /** 布局变体：inline 横向紧凑（主行），panel 纵向带 label（折叠面板） */
   variant?: 'inline' | 'panel'
+  /**
+   * 引擎覆盖：传入时按该引擎过滤 Profile / 推导选择器，不依赖活跃会话引擎。
+   * 用于新建会话面板（状态栏会话的引擎 ≠ 面板待选引擎）。
+   */
+  engineOverride?: string
+  /**
+   * 选择是否写回当前活跃会话 metadata（状态栏切换 = true）。
+   * 新建会话面板传 false：面板里的选择只在「创建」时生效，不污染当前会话。
+   */
+  writeThroughToSession?: boolean
 }
 
 type SelectorType = 'agent' | 'model' | 'effort' | 'permission' | 'profile'
@@ -76,6 +86,8 @@ export function SessionConfigSelector({
   disabled = false,
   visibleTypes,
   variant = 'inline',
+  engineOverride,
+  writeThroughToSession = true,
 }: SessionConfigSelectorProps) {
   const { t } = useTranslation('chat')
   const [openDropdown, setOpenDropdown] = useState<SelectorType | null>(null)
@@ -97,13 +109,14 @@ export function SessionConfigSelector({
   // 模型 Profile 列表
   const profiles = useModelProfileStore(s => s.profiles)
 
-  // 当前引擎（用于过滤 Profile）：优先取活动会话的引擎，降级到全局默认引擎。
+  // 当前引擎（用于过滤 Profile）：优先取 engineOverride（新建会话面板），
+  // 否则取活动会话的引擎，降级到全局默认引擎。
   // 映射到 isProfileForEngine 的引擎参数（claude / simple-ai）。
   const activeSessionId = useActiveSessionId()
   const sessionMetadataList = useSessionMetadataList()
   const defaultEngine = useConfigStore(s => s.config?.defaultEngine)
   const activeMeta = sessionMetadataList.find(s => s.id === activeSessionId)
-  const activeEngineId = normalizeEngineId(activeMeta?.engineId || defaultEngine)
+  const activeEngineId = normalizeEngineId(engineOverride ?? activeMeta?.engineId ?? defaultEngine)
   const currentEngine: string =
     activeEngineId === 'simple-ai'
       ? 'simple-ai'
@@ -279,7 +292,8 @@ export function SessionConfigSelector({
       ...nextConfig,
     })
     // P1: Profile / Model / Agent 是会话级覆盖 — 写入当前会话的 metadata，实现窗口间隔离。
-    const activeId = sessionStoreManager.getState().activeSessionId
+    // 新建会话面板（writeThroughToSession=false）不写回当前会话，仅持有面板态，创建时统一透传。
+    const activeId = writeThroughToSession ? sessionStoreManager.getState().activeSessionId : null
     if (activeId) {
       if (type === 'profile') {
         // 二态供应商模式写入会话级覆盖：
@@ -300,7 +314,7 @@ export function SessionConfigSelector({
       }
     }
     setOpenDropdown(null)
-  }, [config, onChange])
+  }, [config, onChange, writeThroughToSession])
 
   const handleCustomInputConfirm = useCallback((type: SelectorType) => {
     if (!customInput || customInput.type !== type) return

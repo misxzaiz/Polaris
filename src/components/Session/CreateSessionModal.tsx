@@ -20,6 +20,14 @@ import { createLogger } from '@/utils/logger'
 import type { EngineId } from '@/types'
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
+import { SessionConfigSelector } from '@/components/Chat/session/SessionConfigSelector'
+import type { SessionRuntimeConfig } from '@/types/sessionConfig'
+import { useSessionConfig } from '@/stores/sessionConfigStore'
+import {
+  readNewSessionPrefs,
+  persistNewSessionPrefs,
+} from '@/services/newSessionPrefsService'
+import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 
 const log = createLogger('CreateSessionModal')
 
@@ -55,6 +63,53 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
   const [error, setError] = useState<string | null>(null)
   const [showCreateWorkspaceModal, setShowCreateWorkspaceModal] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  // 新建会话模型供应商/模型（面板态）：默认跟随全局（sessionConfig 镜像 + 全局激活 Profile）。
+  // 打开时若 cap.kv 有该引擎的记忆则恢复（见下方 effect），保持「按引擎记忆」语义。
+  const globalSessionConfig = useSessionConfig(s => s.config)
+  const globalActiveProfileId = useConfigStore(s => s.config?.activeModelProfileId) ?? null
+  const [providerConfig, setProviderConfig] = useState<SessionRuntimeConfig>(() => ({
+    profileMode: globalSessionConfig.profileMode ?? 'profile',
+    modelProfileId: globalSessionConfig.modelProfileId || globalActiveProfileId || '',
+    model: globalSessionConfig.model,
+  }))
+
+  // 跨渲染共享最新面板态（供创建回调与 cap.kv 持久化使用）
+  const providerModeRef = useRef(providerConfig.profileMode ?? 'profile')
+  const modelProfileIdRef = useRef(providerConfig.modelProfileId ?? '')
+  const modelRef = useRef(providerConfig.model ?? '')
+  useEffect(() => {
+    providerModeRef.current = providerConfig.profileMode ?? 'profile'
+    modelProfileIdRef.current = providerConfig.modelProfileId ?? ''
+    modelRef.current = providerConfig.model ?? ''
+  }, [providerConfig])
+
+  // 新建会话偏好记忆：cap.kv 按引擎分层（new-session-prefs:{engineId}）。
+  // 打开时 / 引擎切换时恢复该引擎上次选择；创建时写回当前面板态。
+  const rememberProvider = () => {
+    void persistNewSessionPrefs(engineId, {
+      providerMode: providerModeRef.current,
+      modelProfileId: modelProfileIdRef.current,
+      model: modelRef.current,
+    })
+  }
+
+  // 已恢复过的引擎（防止引擎切换回来时反复覆盖面板当前选择）
+  const restoredEngineRef = useRef<EngineId | null>(null)
+  useEffect(() => {
+    if (restoredEngineRef.current === engineId) return
+    restoredEngineRef.current = engineId
+    let cancelled = false
+    void readNewSessionPrefs(engineId).then((prefs) => {
+      if (cancelled || !prefs) return
+      setProviderConfig({
+        profileMode: prefs.providerMode,
+        modelProfileId: prefs.modelProfileId,
+        model: prefs.model,
+      })
+    })
+    return () => { cancelled = true }
+  }, [engineId])
 
   // 搜索过滤
   const showSearch = sortedWorkspaces.length > 3
@@ -138,6 +193,22 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
     setError(null)
 
     try {
+      // 面板选择的供应商/模型 → 会话级覆盖（official 用哨兵强制官方，优先级高于全局默认 Profile）
+      const official = providerModeRef.current === 'official'
+      const providerOverride: {
+        profileMode: 'official' | 'profile'
+        modelProfileId?: string
+        model?: string
+      } = {
+        profileMode: official ? 'official' : 'profile',
+        ...(official
+          ? { modelProfileId: OFFICIAL_API_PROFILE }
+          : modelProfileIdRef.current
+            ? { modelProfileId: modelProfileIdRef.current }
+            : {}),
+        ...(modelRef.current ? { model: modelRef.current } : {}),
+      }
+      rememberProvider()
       const sessionId = createSession(
         isFreeMode
           ? {
@@ -145,6 +216,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
               workspaceId: undefined,
               contextWorkspaceIds: [],
               engineId,
+              ...providerOverride,
             }
           : {
               type: 'project',
@@ -152,6 +224,7 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
               contextWorkspaceIds,
               workspaceLocked: true, // 创建时锁定主工作区
               engineId,
+              ...providerOverride,
             }
       )
 
@@ -242,6 +315,21 @@ export function CreateSessionModal({ onClose, onCreated }: CreateSessionModalPro
                   </button>
                 ))}
               </div>
+            </div>
+
+            {/* 模型供应商 + 模型（按当前待选引擎过滤 Profile；面板内选择，不写回当前会话） */}
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-2">
+                模型供应商 / 模型
+              </label>
+              <SessionConfigSelector
+                config={providerConfig}
+                onChange={setProviderConfig}
+                visibleTypes={['profile', 'model']}
+                variant="panel"
+                engineOverride={engineId}
+                writeThroughToSession={false}
+              />
             </div>
 
             {/* 主工作区选择区 */}

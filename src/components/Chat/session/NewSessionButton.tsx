@@ -11,6 +11,14 @@ import { useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 import type { EngineId } from '@/types';
 import { getEngineFullName, normalizeEngineId } from '@/utils/engineDisplay';
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
+import { SessionConfigSelector } from './SessionConfigSelector';
+import type { SessionRuntimeConfig } from '@/types/sessionConfig';
+import { useSessionConfig } from '@/stores/sessionConfigStore';
+import {
+  readNewSessionPrefs,
+  persistNewSessionPrefs,
+} from '@/services/newSessionPrefsService';
+import { OFFICIAL_API_PROFILE } from '@/types/modelProfile';
 
 /**
  * 新建会话按钮
@@ -20,24 +28,15 @@ import { useEngineMetadataStore } from '@/stores/engineMetadataStore';
  * - 点工作区本体 = 选定主工作区（高亮，可改，不立即创建）
  * - 行尾 + / ✓ = 增删关联工作区
  * - 底部「创建」按钮提交（回车也可）
+ *
+ * 引擎 + 模型供应商/模型记忆：cap.kv 按引擎分层（new-session-prefs:{engineId}），
+ * 每次打开面板恢复该引擎上次选择；创建时写回；不再使用 localStorage。
  */
 export const NewSessionButton = memo(function NewSessionButton() {
   const { t } = useTranslation('chat');
   const { createSession, switchSession } = useSessionManagerActions();
   const { config } = useConfigStore();
   const defaultEngineId = normalizeEngineId(config?.defaultEngine);
-
-  // 新建会话引擎记忆：localStorage 持久化「上次选择的引擎」，下次打开面板恢复。
-  const LAST_NEW_SESSION_ENGINE_KEY = 'polaris-last-new-session-engine';
-  const rememberEngine = (engineId: EngineId) => {
-    try { window.localStorage.setItem(LAST_NEW_SESSION_ENGINE_KEY, engineId); } catch { /* 静默 */ }
-  };
-  const recallEngine = (): EngineId | null => {
-    try {
-      const last = window.localStorage.getItem(LAST_NEW_SESSION_ENGINE_KEY);
-      return last ? normalizeEngineId(last) : null;
-    } catch { return null; }
-  };
 
   // 工作区列表 - 直接订阅原始数据，避免函数调用导致无限循环
   const workspaces = useWorkspaceStore(state => state.workspaces);
@@ -55,12 +54,38 @@ export const NewSessionButton = memo(function NewSessionButton() {
 
   // 下拉菜单状态
   const [isOpen, setIsOpen] = useState(false);
-  // 新建会话引擎：打开时优先恢复上次选择（localStorage），无记录则跟随全局默认引擎。
-  const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(() => {
-    const recalled = recallEngine();
-    // 记住的引擎仍存在（在可用选项中）才恢复，否则回退全局默认。
-    return recalled ?? defaultEngineId;
-  });
+  // 新建会话引擎：跟随全局默认引擎（面板内可切换；cap.kv 记忆在打开时恢复，见下方 effect）。
+  const [selectedEngineId, setSelectedEngineId] = useState<EngineId>(defaultEngineId);
+
+  // 新建会话模型供应商/模型（面板态）：默认跟随全局（sessionConfig 镜像 + 全局激活 Profile）。
+  // providerMode = 二态（官方/Profile），与 SessionMetadata.profileMode 语义一致。
+  const globalSessionConfig = useSessionConfig(s => s.config);
+  const globalActiveProfileId = useConfigStore(s => s.config?.activeModelProfileId) ?? null;
+  const [providerConfig, setProviderConfig] = useState<SessionRuntimeConfig>(() => ({
+    profileMode: globalSessionConfig.profileMode ?? 'profile',
+    modelProfileId: globalSessionConfig.modelProfileId || globalActiveProfileId || '',
+    model: globalSessionConfig.model,
+  }));
+
+  // 跨渲染共享最新面板态（供 cap.kv 持久化与创建回调使用，避免闭包过期）
+  const providerModeRef = useRef(providerConfig.profileMode ?? 'profile');
+  const modelProfileIdRef = useRef(providerConfig.modelProfileId ?? '');
+  const modelRef = useRef(providerConfig.model ?? '');
+  useEffect(() => {
+    providerModeRef.current = providerConfig.profileMode ?? 'profile';
+    modelProfileIdRef.current = providerConfig.modelProfileId ?? '';
+    modelRef.current = providerConfig.model ?? '';
+  }, [providerConfig]);
+
+  // 新建会话偏好记忆：cap.kv 按引擎分层（new-session-prefs:{engineId}），
+  // 面板内存态 = 浏览态事实源，cap.kv 只做持久化（创建时写回，下次打开恢复）。
+  const rememberEngine = (engineId: EngineId) => {
+    void persistNewSessionPrefs(engineId, {
+      providerMode: providerModeRef.current,
+      modelProfileId: modelProfileIdRef.current,
+      model: modelRef.current,
+    });
+  };
   const [searchQuery, setSearchQuery] = useState('');
   // 主工作区 + 关联工作区待定状态（两步式选择）
   const [pendingPrimaryId, setPendingPrimaryId] = useState<string | null>(null);
@@ -127,6 +152,27 @@ export const NewSessionButton = memo(function NewSessionButton() {
     }
   }, [engineOptions, selectedEngineId, defaultEngineId]);
 
+  // 面板打开 / 引擎切换：从 cap.kv 恢复「上次新建会话选择」的供应商与模型。
+  // 恢复失败（无记录/解析失败）→ 保留当前面板态（打开时 = 全局默认），静默降级。
+  const restoredEngineRef = useRef<EngineId | null>(null);
+  useEffect(() => {
+    if (!isOpen) return;
+    if (restoredEngineRef.current === selectedEngineId) return; // 已恢复过该引擎
+    restoredEngineRef.current = selectedEngineId;
+    let cancelled = false;
+    void readNewSessionPrefs(selectedEngineId).then((prefs) => {
+      if (cancelled) return;
+      if (prefs) {
+        setProviderConfig({
+          profileMode: prefs.providerMode,
+          modelProfileId: prefs.modelProfileId,
+          model: prefs.model,
+        });
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isOpen, selectedEngineId]);
+
   useEffect(() => {
     if (!isOpen) {
       // 不重置 selectedEngineId：保留上次选择（会话引擎记忆）。
@@ -164,6 +210,27 @@ export const NewSessionButton = memo(function NewSessionButton() {
     );
   }, []);
 
+  // 面板当前选择的供应商/模型 → createSession 会话级覆盖参数
+  // - official → 写 OFFICIAL_API_PROFILE 哨兵（发送链路解析为 undefined=强制官方，
+  //   优先级高于全局默认 Profile；若留空则会被全局默认 Profile 覆盖，语义不一致）
+  // - profile → 写实际 Profile id；模型仅在已选时透传
+  const providerSelection = useCallback((): {
+    profileMode: 'official' | 'profile'
+    modelProfileId?: string
+    model?: string
+  } => {
+    const official = providerModeRef.current === 'official'
+    return {
+      profileMode: official ? 'official' : 'profile',
+      ...(official
+        ? { modelProfileId: OFFICIAL_API_PROFILE }
+        : modelProfileIdRef.current
+          ? { modelProfileId: modelProfileIdRef.current }
+          : {}),
+      ...(modelRef.current ? { model: modelRef.current } : {}),
+    }
+  }, [])
+
   // 创建会话（带主+关联工作区）
   const handleCreateWithWorkspace = useCallback(() => {
     if (!pendingPrimaryId) return;
@@ -175,10 +242,12 @@ export const NewSessionButton = memo(function NewSessionButton() {
       contextWorkspaceIds: pendingContextIds,
       workspaceLocked: true,
       engineId: selectedEngineId,
+      // 面板选择的供应商/模型透传为会话级覆盖（发送链路已消费 modelProfileId/model/profileMode）
+      ...providerSelection(),
     });
     switchSession(newSessionId);
     setIsOpen(false);
-  }, [createSession, allSessionMetadata.length, pendingPrimaryId, pendingContextIds, selectedEngineId, switchSession, t]);
+  }, [createSession, allSessionMetadata.length, pendingPrimaryId, pendingContextIds, selectedEngineId, switchSession, t, providerSelection]);
 
   // 无工作区快路径（free 会话，点选即建）
   const handleCreateNoWorkspace = useCallback(() => {
@@ -187,10 +256,12 @@ export const NewSessionButton = memo(function NewSessionButton() {
       type: 'free',
       title: t('newSession.newChat', { number: allSessionMetadata.length + 1 }),
       engineId: selectedEngineId,
+      // 面板选择的供应商/模型透传为会话级覆盖
+      ...providerSelection(),
     });
     switchSession(newSessionId);
     setIsOpen(false);
-  }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession, t]);
+  }, [createSession, allSessionMetadata.length, selectedEngineId, switchSession, t, providerSelection]);
 
   // 回车提交
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -236,7 +307,7 @@ export const NewSessionButton = memo(function NewSessionButton() {
                   key={id}
                   onClick={() => {
                     setSelectedEngineId(id);
-                    rememberEngine(id);
+                    // 不在此持久化：切换只是读取目标引擎的记忆（见恢复 effect），写回发生在创建时
                   }}
                   className={clsx(
                     'flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-md text-xs transition-colors',
@@ -250,6 +321,18 @@ export const NewSessionButton = memo(function NewSessionButton() {
                   <span>{label}</span>
                 </button>
               ))}
+            </div>
+
+            {/* 模型供应商 + 模型（按当前待选引擎过滤 Profile；面板内选择，不写回当前会话） */}
+            <div className="px-1 pt-2 mt-2 border-t border-border-subtle">
+              <SessionConfigSelector
+                config={providerConfig}
+                onChange={setProviderConfig}
+                visibleTypes={['profile', 'model']}
+                variant="panel"
+                engineOverride={selectedEngineId}
+                writeThroughToSession={false}
+              />
             </div>
           </div>
 
