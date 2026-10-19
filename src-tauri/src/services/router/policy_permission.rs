@@ -182,6 +182,10 @@ impl PolicyPermission {
             // 默认只对本地面板（Bootstrap/Plugin）开放；远程需要时经 config 精确 allow。
             // 注：AI 工具暴露的大闸在前端 uiControlEnabled（默认 false），此处防远程直连旁路。
             ("cap.ui", true),
+            // cap.self.mutate 远程禁改：AI 改造（UI 部件插槽注入）与 cap.ui 同域——
+            // 作用于本地面板 DOM，远程控制无意义且可被旁路利用。只读的 cap.self.inspect
+            // 不受影响（精确前缀不同），仍对 Remote 放行（"看清这台机器"是远程刚需）。
+            ("cap.self.mutate", true),
         ] {
             rules.push(CompiledRule {
                 capability: cap_prefix.to_string(),
@@ -353,8 +357,8 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 6 条内置收紧（cap.data_root*/cap.plugin*/cap.http*/cap.bash*/cap.fs*/cap.ui* remote deny）
-        assert_eq!(p.rule_count(), 7, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 7 条内置收紧（cap.data_root*/cap.plugin*/cap.http*/cap.bash*/cap.fs*/cap.ui*/cap.self.mutate* remote deny）
+        assert_eq!(p.rule_count(), 8, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -383,13 +387,19 @@ mod tests {
         );
         for cap in ["cap.data_root", "cap.data_root.get_info",
                     "cap.pluginDiscovery", "cap.pluginServiceManager", "cap.plugin_foo",
-                    "cap.http", "cap.ui.theme", "cap.ui.chat"] {
+                    "cap.http", "cap.ui.theme", "cap.ui.chat", "cap.self.mutate"] {
             assert_eq!(
                 p.check(&req(cap, Source::Remote { token: "t".into() })).unwrap(),
                 PermissionVerdict::Deny,
                 "管理面 {cap} 应被内置规则拒绝（Remote）"
             );
         }
+        // cap.self.inspect 是只读透视：远程 AI "看清这台机器" 是刚需，不受内置 deny 影响
+        assert_eq!(
+            p.check(&req("cap.self.inspect", Source::Remote { token: "t".into() })).unwrap(),
+            PermissionVerdict::Allow,
+            "cap.self.inspect 只读，Remote 放行"
+        );
         // 未管理面能力不受影响
         assert_eq!(
             p.check(&req("cap.kv", Source::Remote { token: "t".into() })).unwrap(),

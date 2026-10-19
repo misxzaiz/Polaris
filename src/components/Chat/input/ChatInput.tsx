@@ -33,6 +33,8 @@ import { AutoResizingTextarea } from './AutoResizingTextarea'
 import { SnippetParamPanel } from './SnippetParamPanel'
 import { PendingBriefingCard } from '../compact-handoff/PendingBriefingCard'
 import { PendingQueueCard } from './PendingQueueCard'
+import { InputBanner } from './InputBanner'
+import { UiSlot } from './UiSlot'
 import { useFileSearch } from '@/hooks/useFileSearch'
 import { useSnippetStore } from '@/stores/snippetStore'
 import { resolveTemplateVariables } from '@/services/workspaceReference'
@@ -42,6 +44,7 @@ import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import type { ContextBlock } from '@/stores/conversationStore/types'
 import { formatContextBlocks } from './contextBlockRegistry'
+import { useInputUIStore } from '@/stores/inputUIStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
 import { normalizeEngineId, getEngineFullName } from '@/utils/engineDisplay'
@@ -398,7 +401,8 @@ export function ChatInput({
 
     const rect = textarea.getBoundingClientRect()
     const spaceBelow = window.innerHeight - rect.bottom
-    const suggestionHeight = 320
+    // 建议框高度可被 AI 经 cap.ui.input 即时调节（默认 320）
+    const suggestionHeight = useInputUIStore.getState().floating.height
     const shouldShowAbove = spaceBelow < suggestionHeight
 
     const left = Math.max(8, Math.min(rect.left, window.innerWidth - 300))
@@ -1680,6 +1684,12 @@ export function ChatInput({
           </div>
         </div>
       )}
+      {/* AI 注入的动态横幅（cap.ui.input banner） */}
+      <InputBanner />
+      {/* AI 注入的输入区插槽组件（cap.self.mutate input-extra） */}
+      <div className="px-2 sm:px-3 pb-0.5">
+        <UiSlot slotId="input-extra" />
+      </div>
       <div className="p-2 sm:p-3">
         {/* 输入框统一容器（纵向布局：附件预览 + textarea + 底部工具栏） */}
         <div

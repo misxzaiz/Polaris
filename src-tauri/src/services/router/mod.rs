@@ -34,6 +34,11 @@ mod todo_capability;
 mod help_capability;
 pub mod ui_theme_capability;
 pub mod ui_chat_capability;
+mod dynamic_capability;
+mod registry_capability;
+mod ui_input_capability;
+mod self_capability;
+mod self_mutate_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
@@ -57,6 +62,11 @@ pub use help_capability::HelpCapability;
 pub use todo_capability::TodoCapability;
 pub use ui_theme_capability::UiThemeCapability;
 pub use ui_chat_capability::UiChatCapability;
+pub use ui_input_capability::UiInputCapability;
+pub use self_capability::{SelfInspectCapability, mark_boot as mark_self_boot};
+pub use self_mutate_capability::SelfMutateCapability;
+pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, DynamicHandler};
+pub use registry_capability::RegistryCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;
@@ -77,17 +87,18 @@ pub struct StreamAck {
 
 /// RouterBus 实现
 ///
-/// - handles: 能力注册表（CapabilityHandle → Box<dyn Capability>）
+/// - handles: 能力注册表（CapabilityHandle → Arc<dyn Capability>）
+///
+///   统一为 Arc：`dispatch` 在 invoke 前必须释放读锁（否则动态转发重入 dispatch 会
+///   死锁）；Arc 允许「读锁内 clone 强引用 → 释放 → invoke」。register_handle 对外仍
+///   收 Box，内部 Arc::from 转换。
 /// - streaming_caps: 流式能力平行表（CapabilityId → Arc<dyn StreamingCapability>）。
-///   `Box<dyn Capability>` 与 `Arc<dyn StreamingCapability>` 不兼容（sky 同款取舍，
-///   `do/sky/src/router.rs:152`），故用平行表而非 downcast——契约注释"dispatch 检测
-///   能力是否实现此 trait"以"检测平行表"落实，不改冻结的 Capability trait。
 /// - broadcaster: 事件适配层（复用现有生产级广播器 + in-proc 订阅）
 /// - permission: 权限裁决（dispatch 是唯一入口，所有调用统一过 gate）
 /// - storage: 契约 Storage（阶段 A 可 None，阶段 B 置 Some）
 /// - audit: AuditSink（Bootstrap 直管，dispatch 落审计）
 pub struct RouterBus {
-    handles: RwLock<HashMap<CapabilityHandle, Box<dyn Capability>>>,
+    handles: RwLock<HashMap<CapabilityHandle, Arc<dyn Capability>>>,
     streaming_caps: RwLock<HashMap<CapabilityId, Arc<dyn StreamingCapability>>>,
     next_handle: AtomicU64,
     broadcaster: Arc<EventAdapter>,
@@ -120,6 +131,29 @@ impl RouterBus {
             audit,
             plugin_configs: Arc::new(RwLock::new(HashMap::new())),
         }
+    }
+
+    /// 注销能力（按 cap.id 精确匹配，同步表与流式平行表分别处理）。
+    ///
+    /// 动态能力注册表（cap.registry）用它卸载运行期注册的 cap；对启动期静态装配
+    /// 的内置能力同样可卸载（调用方负责安全边界）。不存在时返回 false（幂等）。
+    pub fn unregister(&self, id: &CapabilityId) -> bool {
+        let mut removed = false;
+        {
+            let mut handles = self.handles.write().unwrap();
+            handles.retain(|_, cap| {
+                if cap.id() == *id {
+                    removed = true;
+                    false
+                } else {
+                    true
+                }
+            });
+        }
+        if self.streaming_caps.write().unwrap().remove(id).is_some() {
+            removed = true;
+        }
+        removed
     }
 
     /// 注册流式能力（平行表；与同步表同 id 冲突拒绝）
@@ -415,8 +449,15 @@ impl Router for RouterBus {
         match handle {
             Some(h) => {
                 // 3. 调用能力
-                let handles = self.handles.read().unwrap();
-                let cap = handles.get(&h).ok_or("句柄不存在")?;
+                // 关键：先在读锁内取出 Arc 强引用，**释放锁后再 invoke**。
+                // 否则 DynamicCapability::invoke（转发重入 dispatch）会在持有读锁时
+                // 再次取同一把 handles 读锁 —— std RwLock 是写者优先，只要任一 register/
+                // unregister 写者在队列等待，就触发读-读重试死锁（持锁等锁）。
+                let cap = {
+                    let handles = self.handles.read().unwrap();
+                    handles.get(&h).cloned()
+                }
+                .ok_or("句柄不存在")?;
 
                 // 注入 ctx：Source 由传输层已注入 env（调用方不可自填）
                 let plugin_config = self.plugin_config_for(&env.target);
@@ -502,7 +543,7 @@ impl Router for RouterBus {
     fn register_handle(&self, cap: Box<dyn Capability>) -> Result<CapabilityHandle, String> {
         let handle = self.next_handle.fetch_add(1, Ordering::SeqCst);
         let mut handles = self.handles.write().unwrap();
-        handles.insert(handle, cap);
+        handles.insert(handle, Arc::from(cap));
         Ok(handle)
     }
 }

@@ -7,19 +7,24 @@
  * 不变、内部走统一通道」思路）：本服务不 invoke 后端 RouterBus（cap 执行在 MCP 侧已完成，
  * 经引擎 tool_call 事件回到前端），只做「事件参数 → store 动作」的纯前端映射。
  *
- * 状态真相仍在前端 store（themeStore / configStore）：
- * - cap.ui.theme  → themeStore（主题 DOM 写入 + localStorage 持久化 + 服务端 config 同步）
- * - cap.ui.chat   → configStore.updateConfigPatch({ chatDisplay })（现有 ChatDisplay 链路）
+ * 状态真相仍在前端 store（themeStore / configStore / inputUIStore / uiSlotStore）：
+ * - cap.ui.theme   → themeStore（主题 DOM 写入 + localStorage 持久化 + 服务端 config 同步）
+ * - cap.ui.chat    → configStore.updateConfigPatch({ chatDisplay })（现有 ChatDisplay 链路）
+ * - cap.ui.input   → inputUIStore（悬浮层/上下文条/横幅）
+ * - cap.self.mutate → uiSlotStore（具名组件插槽注入/替换/移除）
  *
  * 效果链路：AI 工具调用 → MCP bus_dispatch → RouterBus cap 校验+审计 → 引擎 tool_call_start
  * 事件 → eventHandler → 本服务 applyCapUi → store 动作 → DOM 即时生效。三端同一 React 入口。
  */
 
 import { createLogger } from '@/utils/logger'
+import { applyInputUiConfig } from '@/stores/inputUIStore'
+import { applySelfMutateAction } from '@/stores/uiSlotStore'
 import { useThemeStore } from '@/stores/themeStore'
 import { useConfigStore } from '@/stores/configStore'
 import { BUILT_IN_THEME_IDS } from '@/types/theme'
 import type { ThemeDefinition } from '@/types/theme'
+import { invoke } from '@/services/transport'
 
 const log = createLogger('UiDispatchService')
 
@@ -214,24 +219,55 @@ export function applyUiChatAction(action: string, payload: Record<string, unknow
 }
 
 /**
- * 解析 bus_dispatch 的 args，命中 cap.ui 时应用。
- * @returns 是否命中 cap.ui 域（true = 已消费）
+ * 解析 bus_dispatch 的 args，命中 cap.ui / cap.self 时应用。
+ * @returns 是否命中（true = 已消费）
  */
 export function consumeCapUiDispatch(
   args: Record<string, unknown> | undefined,
 ): { consumed: boolean; message?: string } {
   if (!args || typeof args !== 'object') return { consumed: false }
   const target = args.target as string | undefined
-  if (!target || (target !== 'cap.ui.theme' && target !== 'cap.ui.chat')) {
+  if (!target || !['cap.ui.theme', 'cap.ui.chat', 'cap.ui.input', 'cap.self.mutate'].includes(target)) {
     return { consumed: false }
   }
   const payload = (args.payload ?? {}) as Record<string, unknown>
   const action = payload.action as string | undefined
   if (!action) return { consumed: true, message: `${target} 缺 action` }
-  const result = target === 'cap.ui.theme'
-    ? applyUiThemeAction(action, payload)
-    : applyUiChatAction(action, payload)
+  let result
+  if (target === 'cap.self.mutate') {
+    result = applySelfMutateAction(action, payload)
+  } else {
+    result = target === 'cap.ui.theme'
+      ? applyUiThemeAction(action, payload)
+      : target === 'cap.ui.chat'
+        ? applyUiChatAction(action, payload)
+        : applyInputUiConfig(action, payload)
+  }
   return { consumed: true, message: result.message }
+}
+
+/** router_dispatch 返回形态（与 commands/router.rs RouterDispatchResponse 对应） */
+interface DispatchResponse {
+  ok: boolean
+  result?: Record<string, unknown>
+  error?: string
+}
+
+/**
+ * 经 RouterBus dispatch 调用任意 cap（前端 → 后端总线）。
+ * 供动态横幅动作等场景使用：AI 注入横幅 → 用户点击 → 前端直接调目标 cap。
+ */
+export async function dispatchCapUiAction(
+  target: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const res = await invoke<DispatchResponse>('router_dispatch', {
+    req: { target, payload },
+  })
+  if (!res.ok) {
+    throw new Error(res.error || `${target} 调用失败`)
+  }
+  return res.result || {}
 }
 
 // ============ 工具函数 ============

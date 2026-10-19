@@ -484,6 +484,60 @@ pub fn create_app_state(
         // 与 lib.rs setup 的注册幂等并存（RouterBus 重复注册无害）。
         let _ = bus.register_handle(Box::new(crate::services::router::UiThemeCapability));
         let _ = bus.register_handle(Box::new(crate::services::router::UiChatCapability));
+        // cap.registry —— 运行时动态能力注册表（AI 自拓展能力的入口）。
+        // 注入 bus 引用（注册/卸载/遍历动态 cap）；持久化走 ctx.storage()（kv 域）。
+        // Bootstrap 立即重装配持久化的动态能力，使重启后 cap_list 仍可见。
+        let registry_cap = crate::services::router::RegistryCapability::new(bus.clone());
+        {
+            use crate::contracts::Router as _;
+            use crate::services::router::RealContext;
+            // 重装配：用真实 storage 构造一次性 Context，读取持久化的动态能力清单。
+            let bootstrap_ctx = RealContext::new(
+                crate::contracts::Source::Bootstrap,
+                Some(storage.clone()),
+                serde_json::Value::Null,
+            );
+            let persisted = registry_cap.load_persisted(&bootstrap_ctx);
+            for config in persisted {
+                // 防撞 id：若该 id 已被内置/先前装配注册，跳过重建（避免 handles 出现
+                // 两条同 id 句柄，dispatch 按 .find() 取序不定）。正常路径不会发生，
+                // 仅防御持久化脏数据（旧版注册过 cap.kv 等内置 id）。
+                if bus.is_registered(&crate::contracts::CapabilityId(config.id.clone())) {
+                    tracing::warn!(
+                        "[cap.registry] 持久化能力 {} 与既有能力撞 id，跳过重建",
+                        config.id
+                    );
+                    continue;
+                }
+                match bus.register_handle(Box::new(
+                    crate::services::router::DynamicCapability::new(config.clone(), bus.clone()),
+                )) {
+                    Ok(_) => tracing::info!(
+                        "[cap.registry] 重启已重建动态能力: {} → {}",
+                        config.id,
+                        config.summary
+                    ),
+                    Err(e) => tracing::warn!(
+                        "[cap.registry] 重建动态能力 {} 失败（跳过）: {}",
+                        config.id,
+                        e
+                    ),
+                }
+            }
+        }
+        let _ = bus.register_handle(Box::new(registry_cap));
+        // cap.ui.input —— AI 即时调节输入区（悬浮层参数 / 上下文条 / 动态横幅）。
+        // 与 cap.ui.theme/chat 同架构位：无状态转发 + 前端 inputUIStore 为真相。
+        let _ = bus.register_handle(Box::new(crate::services::router::UiInputCapability));
+        // cap.self.inspect —— AI 透视自身（运行状态/存储占用/能力索引/健康自检）。
+        // 纯只读聚合，复用 cap.help / cap.data_root 同源数据；装配时记启动时刻。
+        crate::services::router::mark_self_boot();
+        let _ = bus.register_handle(Box::new(crate::services::router::SelfInspectCapability::new(
+            bus.clone(),
+        )));
+        // cap.self.mutate —— AI 改造自身 UI（具名插槽组件注入/替换/移除）。
+        // 与 cap.ui.input 同架构位：无状态校验 + 前端 uiSlotStore 为真相。
+        let _ = bus.register_handle(Box::new(crate::services::router::SelfMutateCapability));
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）
         bus
     };
