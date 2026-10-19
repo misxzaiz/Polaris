@@ -23,8 +23,8 @@ P0 架构垫层       ██████████ 100%  cap.git 上收 + git_
 P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全做
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
-P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
-P2 其余           ████████░░  80%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水 + FR-P2-AI4 冲突预测已完成
+P2 泳道图         ████████░░  80%  初版 lane + refs + 语义着色 + WIP/stash 节点已完成（缓存/收缩为增量）
+P2 其余           ██████████ 100%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水 + FR-P2-AI4 冲突预测
 P3 全部           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -104,6 +104,8 @@ bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单
 e2da3128 feat(git): FR-P2-3 Undo 网络（危险操作快照 + 一键恢复）
 c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 事件 + 50/ws 环形缓冲）
 2133ee20 feat(git): FR-P2-4 操作流水（写动作留痕 + git-operation 事件 + 面板折叠区）
+b6f30bca docs(git): P2 泳道图增量 spec（语义着色 + WIP/stash 虚拟节点）
+79ff77af feat(git): P2 泳道图增量（语义着色 + WIP/stash 虚拟节点上图）
 ```
 
 ---
@@ -139,9 +141,10 @@ c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 
 - `get_log` 受限 pageSize（默认 500 + load more）—— **已完成**（复用既有 20 页翻页）
 - **lane 计算放 Rust 端**（已完成，不放前端解析字符图）：`get_log_with_lanes` 拓扑序 + 简化 lane 分配（单线+合并实测对齐 `git log --graph`）；中期接 git `graph.c` mapping/new_columns/old_columns 四数组算法自绘 SVG（**增量**）
 - refs 三色（黄=当前/绿=本地/紫=远程）+ HEAD/远程标记 + 多仓竖条—— **已完成三色 badge**；HEAD 图标/多仓竖条为增量
-- 语义着色（超越点#4）：绿=本地分支内/红=未 push/灰暗=已 merge 进 main（**增量**）
-- WIP 节点 + stash 紫点上图（**增量**）
+- 语义着色（超越点#4）：绿=本地分支内/红=未 push/灰暗=已 merge 进 main（**✅ 已完成**，commit `79ff77af`，spec `plans/git-panel-p2-lane-increment-spec.md`；四态 `local/unpushed/merged/dim` 服务端预计算，三条 revwalk 可达集判定，LaneGraph 消费；dim 整行淡化）
+- WIP 节点 + stash 紫点上图（**✅ 已完成**，同上 commit；纯前端合成：statuses 分片 WIP 绿虚线空心圆 + stashListByWs 紫圆角方块，顶部虚拟行 + 4 色图例；跳转/展开 diff 为后续增量）
 - lane 收缩合并（graph.c 四数组）：初版简化算法已覆盖单线+合并；多分支交错收缩场景归 graph.c 算法（**增量**）
+- 增量 log 缓存：`(repo, head_sha, refs_snapshot)` 键持久化到 DataRoot，二次打开 p50<80ms（**增量**）
 - 性能预算：首次打开 ≤10k commits p50 < 300ms；二次打开（HEAD 未变）p50 < 80ms（增量 log 缓存按 `(repo, head_sha, refs_snapshot)` 键持久化到 DataRoot）；1k commits 60fps（react-virtuoso 已有，max-lanes=12 截断）
 
 #### FR-P2-2 file-watcher 自动 status 刷新 ✅ 已完成（commit `55c341d6`，spec `plans/git-panel-p2-watcher-spec.md`）
@@ -316,10 +319,10 @@ c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 
 
 ## 七、建议下一步
 
-**P2 剩余增量**（FR-P2-2/3/4 已完成，按 master-plan 顺序推进）：
+**P2 剩余增量**（FR-P2-2/3/4 + AI4 + 泳道图语义着色 + WIP/stash 已完成，按 master-plan 顺序推进）：
 
-1. **FR-P2-AI4 冲突预测**（fetch 后确定计算风险清单；AI 仅解释，占 token 少）
-2. 泳道图增量（语义着色 / WIP+stash 节点 / 增量 log 缓存 / graph.c 四数组收缩）
+1. ~~FR-P2-AI4 冲突预测~~ ✅ 已完成
+2. 泳道图增量（~~语义着色 / WIP+stash 节点~~ ✅ 已完成；**增量 log 缓存** / **graph.c 四数组收缩** 为独立后续增量）
 
 完成 P2 后进 P3（冲突合并器 → Interactive Rebase → AI-3 本地扫描常驻列表 → AI-6 自然语言历史查询 → AI-8 rebase 提议），再 P4 生态出口（**记得 `cargo build --bin polaris-mcp`**）。
 
