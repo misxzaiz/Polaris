@@ -501,6 +501,7 @@ pub fn create_app_state(
                 crate::contracts::Source::Bootstrap,
                 Some(storage.clone()),
                 serde_json::Value::Null,
+                None,
             );
             let persisted = registry_cap.load_persisted(&bootstrap_ctx);
             for config in persisted {
