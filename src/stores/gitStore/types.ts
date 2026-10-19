@@ -27,6 +27,8 @@ import type {
   GitBlameResult,
   BatchStageResult,
   GitStashEntry,
+  GitReflogEntry,
+  GitLogSearchFilter,
   GitIgnoreResult,
   GitIgnoreTemplate,
 } from '@/types/git'
@@ -75,6 +77,10 @@ export interface StatusState {
   diffs: GitDiffEntry[]
   worktreeDiffs: GitDiffEntry[]
   indexDiffs: GitDiffEntry[]
+  /** P1.5 分片：按 wsPath 键控的差异列表（新图面板直接读此域，防双面板互踩） */
+  diffsByWs?: Record<string, GitDiffEntry[]>
+  worktreeDiffsByWs?: Record<string, GitDiffEntry[]>
+  indexDiffsByWs?: Record<string, GitDiffEntry[]>
   isLoading: boolean
   error: string | null
   selectedFilePath: string | null
@@ -101,6 +107,8 @@ export interface StatusState {
  */
 export interface BranchState {
   branches: GitBranch[]
+  /** P1.5 分片：按 wsPath 键控的分支数据（双面板/多仓互防；新图面板直接读此域） */
+  branchesByWs?: Record<string, GitBranch[]>
 }
 
 /**
@@ -108,6 +116,8 @@ export interface BranchState {
  */
 export interface RemoteState {
   remotes: GitRemote[]
+  /** P1.5 分片：按 wsPath 键控的远程数据 */
+  remotesByWs?: Record<string, GitRemote[]>
 }
 
 /**
@@ -115,6 +125,8 @@ export interface RemoteState {
  */
 export interface TagState {
   tags: GitTag[]
+  /** P1.5 分片：按 wsPath 键控的标签数据 */
+  tagsByWs?: Record<string, GitTag[]>
 }
 
 /**
@@ -122,6 +134,8 @@ export interface TagState {
  */
 export interface CommitState {
   commits: GitCommit[]
+  /** P1.5 分片：按 wsPath 键控的提交历史 */
+  commitsByWs?: Record<string, GitCommit[]>
   commitDetails: Record<string, GitCommitDetails>
 }
 
@@ -130,6 +144,8 @@ export interface CommitState {
  */
 export interface StashState {
   stashList: GitStashEntry[]
+  /** P1.5 分片：按 wsPath 键控的 stash 数据 */
+  stashListByWs?: Record<string, GitStashEntry[]>
 }
 
 /**
@@ -194,7 +210,11 @@ export interface RemoteActions {
   getRemotes: (workspacePath: string) => Promise<void>
   addRemote: (workspacePath: string, name: string, url: string) => Promise<GitRemote>
   removeRemote: (workspacePath: string, name: string) => Promise<void>
-  push: (workspacePath: string, branchName: string, remoteName?: string, force?: boolean, setUpstream?: boolean, remoteBranchName?: string) => Promise<GitPushResult>
+  push: (workspacePath: string, branchName: string, remoteName?: string, force?: boolean, setUpstream?: boolean, remoteBranchName?: string, leaseSha?: string) => Promise<GitPushResult>
+  /** P1：force-with-lease 期望远端 sha（可选，配合 force 使用实现安全强推） */
+  pushWithLease: (workspacePath: string, branchName: string, remoteName?: string, remoteBranchName?: string, leaseSha?: string) => Promise<GitPushResult>
+  /** P1：fetch（remoteName 缺省 = origin；prune 清理已删 remote-tracking refs） */
+  fetchRemote: (workspacePath: string, remoteName?: string, prune?: boolean) => Promise<string>
   pull: (workspacePath: string, remoteName?: string, branchName?: string) => Promise<GitPullResult>
   detectHostAsync: (remoteUrl: string) => Promise<GitHostType>
 }
@@ -218,6 +238,10 @@ export interface CommitActions {
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
+  /** P1：amend HEAD（message 省略 = 仅合并 staged 内容 / --no-edit 语义；任意历史 commit amend 依赖 P3） */
+  amendCommit: (workspacePath: string, message?: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
+  /** P1：提交历史搜索（grep/author/pickaxe/since/分支范围；AI-6 参数编译器的动作端） */
+  searchLog: (workspacePath: string, filter: GitLogSearchFilter, limit?: number, skip?: number) => Promise<GitCommit[]>
   getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
   getFileHistory: (workspacePath: string, filePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitFileHistoryEntry[]>
   checkoutCommit: (workspacePath: string, commitSha: string) => Promise<void>
@@ -229,6 +253,10 @@ export interface CommitActions {
 export interface StashActions {
   stashSave: (workspacePath: string, message?: string, includeUntracked?: boolean) => Promise<string>
   stashPop: (workspacePath: string, index?: number) => Promise<void>
+  /** P1：应用 Stash 但保留 stash（与 pop 的区别：不 drop） */
+  stashApply: (workspacePath: string, index?: number) => Promise<void>
+  /** P1：查看 Stash patch 内容（raw diff 文本，交给 diff 渲染器） */
+  stashShow: (workspacePath: string, index?: number) => Promise<string>
   stashDrop: (workspacePath: string, index: number) => Promise<void>
   getStashList: (workspacePath: string) => Promise<GitStashEntry[]>
 }
@@ -271,6 +299,8 @@ export interface UtilityActions {
   isRepository: (workspacePath: string) => Promise<boolean>
   initRepository: (workspacePath: string, initialBranch?: string) => Promise<string>
   blameFile: (workspacePath: string, filePath: string) => Promise<GitBlameResult>
+  /** P1：读取 reflog（null/undefined = HEAD；一键恢复复用 checkoutCommit） */
+  getReflog: (workspacePath: string, branch?: string | null, limit?: number) => Promise<GitReflogEntry[]>
 }
 
 // ============================================================================

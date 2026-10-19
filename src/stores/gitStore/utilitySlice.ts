@@ -62,4 +62,18 @@ export const createUtilitySlice: UtilitySlice = (set, get) => ({
       throw err
     }
   },
+
+  // P1：读取 reflog（branch 省略 = HEAD；一键恢复由 UI 调 checkoutCommit 完成）
+  async getReflog(workspacePath: string, branch?: string | null, limit = 30) {
+    try {
+      return await invoke<import('@/types/git').GitReflogEntry[]>('git_get_reflog', {
+        workspacePath,
+        branch: branch || null,
+        limit,
+      })
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      return []
+    }
+  },
 })

@@ -212,9 +212,45 @@ export const disconnect = (): void => { transport.disconnect?.(); };
  *
  * Tauri 模式：直接 IPC invoke
  * HTTP 模式：POST 到对应 API endpoint
+ *
+ * ── git 域 shim（git 面板 vNext PR-1，见 plans/git-panel-p0-spec.md）──
+ * `git_*` 命令透明转发 cap.git（RouterBus）：前端 gitStore slices 的
+ * `invoke('git_xxx', args)` 签名保持不变（零改动承诺），返回值即能力的 result。
+ * 读类动作无限并发；写类动作由 PR-2a 队列收口（当前后端直调，行为同旧命令层）。
+ * Sunset：PR-2a 起 slices 逐个显式 callGitCap 后移除本拦截。
  */
+const GIT_CAP_PREFIX = 'git_'
+
+interface CapDispatchResponse {
+  msgId: string
+  ok: boolean
+  result: unknown
+  error: string | null
+  trace: string
+}
+
+async function invokeGitCap<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  const action = cmd.slice(GIT_CAP_PREFIX.length)
+  const res = await transport.invoke<CapDispatchResponse>('router_dispatch', {
+    req: {
+      target: 'cap.git',
+      payload: { action, ...(args ?? {}) },
+    },
+  })
+  if (!res || typeof res !== 'object') {
+    throw new Error(`cap.git ${action}:empty response`)
+  }
+  if (!res.ok) {
+    // 错误串格式（后端整形）："message (details)"，对齐 parseGitError 呈现习惯
+    throw new Error(res.error || `cap.git ${action} failed`)
+  }
+  return res.result as T
+}
+
 export const invoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> =>
-  transport.invoke<T>(cmd, args);
+  cmd.startsWith(GIT_CAP_PREFIX)
+    ? invokeGitCap<T>(cmd, args)
+    : transport.invoke<T>(cmd, args);
 
 /**
  * 统一 listen — 监听后端事件

@@ -98,6 +98,44 @@ export interface GitCommit {
 }
 
 /**
+ * Reflog 条目（P1：reflog UI + 一键恢复 —— 恢复复用 checkout_commit）
+ * 与 Rust models::GitReflogEntry（rename_all="camelCase"）双边同步
+ */
+export interface GitReflogEntry {
+  /** 完整提交 sha（恢复目标） */
+  sha: string
+  shortSha: string
+  /** reflog 选择器，如 HEAD@{0} / refs/heads/main@{3} */
+  selector: string
+  /** 动作描述（如 "checkout: moving from a to b"） */
+  subject: string
+  /** Unix 秒 */
+  timestamp: number
+  /** 关联分支名（selector 含 refs/heads/ 前缀时后端解析） */
+  branch?: string
+}
+
+/** 提交历史搜索过滤器（P1；与 Rust models::LogSearchFilter camelCase 同步） */
+export interface GitLogSearchFilter {
+  /** --grep（匹配整条 message，正则；fixedStrings 时为字面子串） */
+  grep?: string
+  /** --author */
+  author?: string
+  /** -S pickaxe（代码内容变更次数搜索） */
+  pickaxe?: string
+  /** 路径过滤（--） */
+  path?: string
+  /** --since（"2 weeks ago" / "2026-01-01"） */
+  since?: string
+  /** --until */
+  until?: string
+  /** 分支范围（"a..b" / "a...b" / "main"） */
+  range?: string
+  /** 字面子串模式（--fixed-strings；AI-6 编译器把"包含 xx"映射到此开关） */
+  fixedStrings?: boolean
+}
+
+/**
  * Git 提交详情
  */
 export interface GitCommitDetails {
