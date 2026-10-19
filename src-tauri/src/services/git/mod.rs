@@ -22,6 +22,7 @@ mod gitignore;
 mod reflog;
 mod undo;
 mod conflict;
+mod lane_cache;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};

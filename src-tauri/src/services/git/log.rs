@@ -18,6 +18,7 @@ use crate::models::git::{
 };
 use super::diff::convert_diff;
 use super::executor::open_repository;
+use super::lane_cache::{refs_fingerprint, LaneSemanticCache};
 
 fn commit_to_model(commit: &git2::Commit<'_>) -> GitCommit {
     let sha = commit.id().to_string();
@@ -361,6 +362,10 @@ fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
 }
 
 /// 泳道图分页查询：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
+///
+/// 增量 log 缓存（spec `plans/git-panel-p2-lane-cache-spec.md`）：只缓存语义色全量
+/// map（跨页共享），键 = (repo, branch, HEAD commit sha, refs 指纹)。HEAD 未变 &
+/// refs 未变 → 命中缓存，语义计算从 O(可达 commit)×3 条 revwalk 降到 O(页内 commit)。
 pub fn get_log_with_lanes(
     path: &Path,
     limit: Option<usize>,
@@ -376,6 +381,7 @@ pub fn get_log_with_lanes(
 
     let limit = limit.unwrap_or(500);
     let skip = skip.unwrap_or(0);
+    let branch_name = branch.map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).unwrap_or_default();
 
     // refs 聚合一次遍历，O(1) 按 sha 查
     let refs_map = collect_commit_refs(&repo);
@@ -398,7 +404,41 @@ pub fn get_log_with_lanes(
     }
 
     let rows = compute_lanes(&commits);
-    let semantic = compute_semantics(&repo, &walk_shas);
+
+    // 增量 log 缓存：语义色按 (repo, branch, HEAD, refs 指纹) 缓存。页内按 sha 查 map，
+    // 避免每次打开都重跑三条 revwalk 集合构造。配置 b"branch_name" 也纳入键（目录隔离）。
+    let semantic = {
+        // 分支 tip 必须独立解析（walk_shas[0] 在 skip>0（load more）时是中间 commit，非真 tip）
+        let tip_sha = resolve_branch_tip(&repo, &branch_name);
+        let refs_fp = refs_fingerprint(&repo);
+
+        let cached = tip_sha.as_deref().and_then(|tip| {
+            LaneSemanticCache::load(path, &branch_name, tip, &refs_fp)
+        });
+
+        if let Some(map) = cached {
+            // 命中：O(页内) 查 map；缺失 sha 按 dim 保守处理（理论上不应发生）
+            walk_shas
+                .iter()
+                .map(|sha| GitLaneSemantic {
+                    kind: map.get(sha).cloned().unwrap_or_else(|| "dim".to_string()),
+                })
+                .collect()
+        } else {
+            // 未命中：计算全量 map（真 tip 出发）+ 原子写缓存
+            let map = compute_semantics_full(&repo, tip_sha.as_deref());
+            if let (Some(tip), refs_fp) = (tip_sha.as_deref(), &refs_fp) {
+                LaneSemanticCache::store(path, &branch_name, tip, refs_fp, &map);
+            }
+            let semantic: Vec<GitLaneSemantic> = walk_shas
+                .iter()
+                .map(|sha| GitLaneSemantic {
+                    kind: map.get(sha).cloned().unwrap_or_else(|| "dim".to_string()),
+                })
+                .collect();
+            semantic
+        }
+    };
 
     Ok(GitLogPage {
         commits,
@@ -407,12 +447,39 @@ pub fn get_log_with_lanes(
     })
 }
 
+/// 独立解析「当前分支真 tip」：refs/heads/<b> > refs/remotes/<b> > revparse > HEAD。
+/// 返回 None 表示解析不出（空仓库 / detached / 异常）——此时不做缓存（语义本身也退化）。
+fn resolve_branch_tip(repo: &Repository, branch: &str) -> Option<String> {
+    if !branch.is_empty() {
+        for ref_name in [
+            format!("refs/heads/{}", branch),
+            format!("refs/remotes/{}", branch),
+        ] {
+            if let Ok(r) = repo.find_reference(&ref_name) {
+                if let Some(tip) = r.target() {
+                    // 分支 ref 必指向 commit（peel 防符号 ref 指向 tag）
+                    if let Ok(commit) = repo.find_commit(tip) {
+                        return Some(commit.id().to_string());
+                    }
+                }
+            }
+        }
+    }
+    // 带参数解析失败 / 无参数 → 回退 HEAD
+    if let Ok(head) = repo.head() {
+        if let Ok(commit) = head.peel_to_commit() {
+            return Some(commit.id().to_string());
+        }
+    }
+    None
+}
+
 /// P2 增量：语义色计算（服务端预计算，前端直接消费）
 ///
 /// 输入三条 revwalk 可达集（每 commit O(1) 查集合）：
 /// - `main_headset`：`main`（或 `master`）可达的所有 commit sha（主干历史）
 /// - `remote_headset`：全部 `refs/remotes/*` 可达的 commit sha 并集（任何远程可达 = 已 push 过）
-/// - `branch_headset`：当前 revwalk tip（HEAD）可达的 commit sha（当前分支自身历史）
+/// - `branch_headset`：当前分支 tip 可达的 commit sha（当前分支自身历史）
 ///
 /// 判定顺序（先命中即定，spec §2.2）：
 /// 1. `in main && !in branch`  → "merged"（已并入主干、当前分支不可达的历史，蓝灰）
@@ -423,13 +490,17 @@ pub fn get_log_with_lanes(
 ///
 /// 单分支无远程：全部 in branch && in main && !in remote → 均判 unpushed（红，未 push）✅
 /// 单分支已 push：均 local（绿）✅
-fn compute_semantics(
+///
+/// 全量版本：从「当前分支真 tip」出发，对**全部可达 commit** 生成 `HashMap<sha, kind>`。
+/// 这是增量 log 缓存的基础（跨页共享、与 skip 无关）。`tip_sha` 为 None（空仓库 /
+/// 解析不出）时返回空 map——此时没有页内 commit，语义自然为空。
+fn compute_semantics_full(
     repo: &Repository,
-    walk_shas: &[String],
-) -> Vec<GitLaneSemantic> {
-    if walk_shas.is_empty() {
-        return Vec::new();
-    }
+    tip_sha: Option<&str>,
+) -> std::collections::HashMap<String, String> {
+    let Some(tip_sha) = tip_sha else {
+        return std::collections::HashMap::new();
+    };
 
     // 主干分支名：main 优先，其次 master，都没有则无 merged 判定
     let main_ref = if repo.find_reference("refs/heads/main").is_ok() {
@@ -444,13 +515,14 @@ fn compute_semantics(
         .and_then(|r| revwalk_headset(repo, r).ok())
         .unwrap_or_default();
     let remote_headset = revwalk_remote_headset(repo);
-    let branch_headset = revwalk_headset_from_tip(repo, &walk_shas[0]);
+    let branch_headset = revwalk_headset_from_tip(repo, tip_sha);
 
-    let mut out = Vec::with_capacity(walk_shas.len());
-    for sha in walk_shas {
+    let mut map = std::collections::HashMap::new();
+    // branch_headset 即「当前分支全部可达 commit」——遍历它生成全量 map
+    for sha in &branch_headset {
         let in_main = main_headset.contains(sha.as_str());
         let in_remote = remote_headset.contains(sha.as_str());
-        let in_branch = branch_headset.contains(sha.as_str());
+        let in_branch = true; // 本循环即 branch 可达
 
         let kind = if in_main && !in_branch {
             "merged"
@@ -463,11 +535,9 @@ fn compute_semantics(
         } else {
             "dim"
         };
-        out.push(GitLaneSemantic {
-            kind: kind.to_string(),
-        });
+        map.insert(sha.clone(), kind.to_string());
     }
-    out
+    map
 }
 
 /// 从指定 ref 起点收集全部可达 commit sha（revwalk，拓扑序，hide 无）
