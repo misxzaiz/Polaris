@@ -240,7 +240,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "blame_file", "get_gitignore", "save_gitignore", "add_to_gitignore",
     "get_gitignore_templates", "create_pr", "get_pr_status",
     "undo_list", "undo_restore", "undo_drop",
-    "get_operations", "clear_operations",
+    "get_operations", "clear_operations", "predict_conflicts",
 ];
 
 // ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
@@ -445,6 +445,7 @@ impl Capability for GitCapability {
                 "undo_drop":    { "params": { "workspacePath": "string", "snapshotRef": "string" }, "note": "FR-P2-3 手动清理快照（连同 .restore. note）" },
                 "get_operations": { "params": { "workspacePath": "string" }, "returns": "GitOperationEntry[]", "note": "FR-P2-4 操作流水（写动作留痕，倒序，上限 50/ws）" },
                 "clear_operations": { "params": { "workspacePath": "string" }, "note": "FR-P2-4 清空本 ws 操作流水（写类动作）" },
+                "predict_conflicts": { "params": { "workspacePath": "string", "branch?": "string" }, "returns": "GitConflictPrediction", "note": "FR-P2-AI4 冲突预测（fetch 后确定性风险清单，0 token；AI 解释层已砍，仅规则建议）" },
                 "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
             },
             "note": "PR-2b 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。结构化错误载荷新增于 PR-2a。"
@@ -508,6 +509,11 @@ impl Capability for GitCapability {
                 opt_usize(p, "maxDepth").unwrap_or(4),
             )),
             "get_status" => json_ok_svc(GitService::get_status(&workspace(p)?)),
+            // FR-P2-AI4 冲突预测：确定性计算（0 token），只读，不进操作流水/撤销快照
+            "predict_conflicts" => json_ok_svc(GitService::predict_conflicts(
+                &workspace(p)?,
+                optional_string(p, "branch").as_deref(),
+            )),
             "get_diffs" => json_ok_svc(GitService::get_diff(
                 &workspace(p)?,
                 require_string(p, "baseCommit")?,
@@ -916,6 +922,7 @@ mod tests {
             "get_gitignore_templates", "create_pr", "get_pr_status",
             "undo_list", "undo_restore", "undo_drop",
             "get_operations", "clear_operations",
+            "predict_conflicts",
         ];
         known.sort();
         handled.sort();

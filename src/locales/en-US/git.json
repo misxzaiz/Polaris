@@ -252,6 +252,17 @@
     "pushNeedsUpstream": "Branch has no upstream",
     "pushNeedsForce": "Force push or pull first required"
   },
+  "conflictPredict": {
+    "title": "Conflict Prediction",
+    "badge": "Deterministic · 0 tokens",
+    "noUpstream": "Current branch has no upstream",
+    "behind": "↓{{count}} commits touch files",
+    "riskCount": "∩ local modified: {{count}} risk",
+    "advice": {
+      "none": "No overlap — safe to pull",
+      "commitOrStash": "High risk · commit or stash local WIP before pull"
+    }
+  },
   "tags": {
     "title": "Tags",
     "empty": "No tags",

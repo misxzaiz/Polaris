@@ -21,6 +21,7 @@ mod reset;
 mod gitignore;
 mod reflog;
 mod undo;
+mod conflict;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};
@@ -45,12 +46,13 @@ pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 pub use reflog::get_reflog;
 pub use undo::{create_undo_snapshot, drop_undo_snapshot, list_undo_snapshots, prune_undo_snapshots, restore_undo_snapshot};
+pub use conflict::predict_conflicts;
 
 use std::path::Path;
 
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
-    GitCommit, GitCommitDetails, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
+    GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
     GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag,
     LogSearchFilter,
@@ -529,5 +531,17 @@ impl GitService {
     /// 获取常用忽略规则模板
     pub fn get_gitignore_templates() -> Vec<GitIgnoreTemplate> {
         get_gitignore_templates()
+    }
+
+    // ========================================================================
+    // 冲突预测（FR-P2-AI4）
+    // ========================================================================
+
+    /// 冲突预测：对方 ahead commits 涉及的文件 ∩ 本地 modified → 风险清单（确定性计算，0 token）
+    pub fn predict_conflicts(
+        path: &Path,
+        branch: Option<&str>,
+    ) -> Result<GitConflictPrediction, GitServiceError> {
+        predict_conflicts(path, branch)
     }
 }

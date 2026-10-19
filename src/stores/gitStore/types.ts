@@ -35,6 +35,7 @@ import type {
   UndoSnapshotMeta,
   UndoRestoreOutcome,
   GitOperationEntry,
+  GitConflictPrediction,
 } from '@/types/git'
 
 // ============================================================================
@@ -177,6 +178,16 @@ export interface OperationsState {
   operations: GitOperationEntry[]
   /** P1.5 分片：按 wsPath 键控的操作流水 */
   operationsByWs?: Record<string, GitOperationEntry[]>
+}
+
+/**
+ * 冲突预测状态（FR-P2-AI4：fetch 后确定性风险清单，0 token）
+ */
+export interface ConflictPredictState {
+  /** 当前工作区的冲突预测结果（null = 尚未计算 / 无上游 / 计算失败） */
+  conflictPrediction: GitConflictPrediction | null
+  /** P1.5 分片：按 wsPath 键控的冲突预测结果 */
+  conflictPredictionsByWs?: Record<string, GitConflictPrediction | null>
 }
 
 // ============================================================================
@@ -353,6 +364,15 @@ export interface OperationsActions {
   clearOperations: (workspacePath: string) => Promise<void>
 }
 
+/**
+ * 冲突预测操作方法（FR-P2-AI4：只读、确定性计算，0 token）
+ */
+export interface ConflictPredictActions {
+  /** 预测某 workspace 的冲突风险（branch 缺省 = 当前 HEAD 分支）；
+   *  返回预测对象，失败返回 null（不抛错，卡片显示空态） */
+  predictConflicts: (workspacePath: string, branch?: string) => Promise<GitConflictPrediction | null>
+}
+
 // ============================================================================
 // 组合状态类型
 // ============================================================================
@@ -369,6 +389,7 @@ export type GitState = StatusState &
   PRState &
   UndoState &
   OperationsState &
+  ConflictPredictState &
   StatusActions &
   BranchActions &
   RemoteActions &
@@ -380,7 +401,8 @@ export type GitState = StatusState &
   GitignoreActions &
   UtilityActions &
   UndoActions &
-  OperationsActions
+  OperationsActions &
+  ConflictPredictActions
 
 // ============================================================================
 // Slice Creator 类型
@@ -421,3 +443,6 @@ export type UndoSlice = StateCreator<GitState, [], [], UndoState & UndoActions>
 
 /** 操作流水 Slice Creator 类型（FR-P2-4） */
 export type OperationsSlice = StateCreator<GitState, [], [], OperationsState & OperationsActions>
+
+/** 冲突预测 Slice Creator 类型（FR-P2-AI4） */
+export type ConflictPredictSlice = StateCreator<GitState, [], [], ConflictPredictState & ConflictPredictActions>

@@ -20,6 +20,7 @@
  * - utilitySlice: 工具方法
  * - undoSlice: 撤销快照（FR-P2-3 危险操作网络）
  * - operationsSlice: 操作流水（FR-P2-4 写动作留痕）
+ * - conflictPredictSlice: 冲突预测（FR-P2-AI4 确定性风险清单）
  */
 
 import { create } from 'zustand'
@@ -36,6 +37,7 @@ import { createGitignoreSlice } from './gitignoreSlice'
 import { createUtilitySlice } from './utilitySlice'
 import { createUndoSlice } from './undoSlice'
 import { createOperationsSlice } from './operationsSlice'
+import { createConflictPredictSlice } from './conflictPredictSlice'
 
 /**
  * Git Store
@@ -55,6 +57,7 @@ export const useGitStore = create<GitState>()((...a) => ({
   ...createUtilitySlice(...a),
   ...createUndoSlice(...a),
   ...createOperationsSlice(...a),
+  ...createConflictPredictSlice(...a),
 }))
 
 // 导出类型
@@ -81,6 +84,8 @@ export type {
   UndoActions,
   OperationsState,
   OperationsActions,
+  ConflictPredictState,
+  ConflictPredictActions,
 } from './types'
 
 // 导出工具函数

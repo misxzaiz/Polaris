@@ -650,3 +650,42 @@ export interface GitOperationEntry {
   /** P2.5 任务队列 taskId（未启用为 null） */
   gitTaskId: string | null
 }
+
+// ============================================================================
+// 冲突预测（FR-P2-AI4：fetch 后确定性风险清单，0 token）
+// ============================================================================
+
+/**
+ * 对方 incoming commit 预览（HEAD..upstream 中每笔提交）
+ */
+export interface GitIncomingCommitPreview {
+  /** 完整提交 sha */
+  sha: string
+  /** 短 sha（前 8 位） */
+  shortSha: string
+  /** 提交摘要（第一行） */
+  summary: string
+}
+
+/**
+ * 冲突预测结果（cap.git `predict_conflicts` 返回值）
+ * 字段与服务端 models/git.rs::GitConflictPrediction（camelCase serde）一一对应。
+ */
+export interface GitConflictPrediction {
+  /** 计算所针对的本地分支名 */
+  branch: string
+  /** 上游分支（如 origin/main）；无上游为 null */
+  upstream: string | null
+  /** 落后提交数（HEAD..upstream） */
+  behind: number
+  /** incoming commits 预览列表 */
+  incoming: GitIncomingCommitPreview[]
+  /** 本地 modified 文件（staged + unstaged，不含 untracked） */
+  localModified: string[]
+  /** incoming 涉及的全部文件 */
+  incomingFiles: string[]
+  /** 风险文件 = incomingFiles ∩ localModified（pull 可能冲突的候选） */
+  riskFiles: string[]
+  /** 规则建议："none"（安全）| "commitOrStash"（建议先提交/暂存再拉取） */
+  advice: 'none' | 'commitOrStash'
+}

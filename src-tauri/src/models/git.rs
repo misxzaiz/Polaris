@@ -878,3 +878,40 @@ pub struct GitOperationEntry {
     /// P2.5 任务队列 taskId（未启用为 None）
     pub git_task_id: Option<String>,
 }
+
+// ============================================================================
+// 冲突预测（FR-P2-AI4：fetch 后确定性风险清单）
+// ============================================================================
+
+/// 对方 ahead commits 涉及的文件 ∩ 本地 modified 文件的冲突风险清单。
+/// 纯后端确定性计算（0 token），前端直接显示；AI 解释层已由 master-plan §1.2 砍掉，
+/// 仅保留规则建议（advice）。详见 plans/git-panel-p2-conflict-predict-spec.md。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitConflictPrediction {
+    /// 计算对象分支名
+    pub branch: String,
+    /// upstream 的 shorthand 名（无上游为 None → 无比较对象）
+    pub upstream: Option<String>,
+    /// 对方领先的提交数（HEAD..upstream 计数）
+    pub behind: usize,
+    /// 对方提交预览（sha / summary，倒序新→旧）
+    pub incoming: Vec<GitIncomingCommitPreview>,
+    /// 本地已修改路径（staged + unstaged，不含纯 untracked）
+    pub local_modified: Vec<String>,
+    /// 对方提交涉及的全部路径
+    pub incoming_files: Vec<String>,
+    /// 交集 = 冲突风险清单（risk_files 空 → 直接 pull 安全）
+    pub risk_files: Vec<String>,
+    /// 建议规则："none"（安全/无上游）| "commitOrStash"（本地未提交 + 有风险 → 先提交或储藏）
+    pub advice: String,
+}
+
+/// 对方单个提交的预览（供前端展示，不进 risk 明细）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitIncomingCommitPreview {
+    pub sha: String,
+    pub short_sha: String,
+    pub summary: String,
+}

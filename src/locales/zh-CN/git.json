@@ -252,6 +252,17 @@
     "pushNeedsUpstream": "分支没有上游分支",
     "pushNeedsForce": "需要强制推送或先拉取"
   },
+  "conflictPredict": {
+    "title": "冲突预测",
+    "badge": "清单=确定计算 · 0 token",
+    "noUpstream": "当前分支无上游，无比较对象",
+    "behind": "↓{{count}} commits 涉及文件",
+    "riskCount": "∩ 本地 modified：{{count}} 处风险",
+    "advice": {
+      "none": "无重叠，可直接拉取",
+      "commitOrStash": "风险高 · 建议先 commit 本地 WIP 再 pull"
+    }
+  },
   "tags": {
     "title": "标签",
     "empty": "没有标签",
