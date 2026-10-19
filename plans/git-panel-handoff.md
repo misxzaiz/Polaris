@@ -24,7 +24,7 @@ P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全�
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
 P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
-P2 其余           ░░░░░░░░░░   0%
+P2 其余           ░░░░░░░░░░   0%（FR-P2-2 watcher 已完成，见下）
 P3 全部           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -69,6 +69,11 @@ P4 全部           ░░░░░░░░░░   0%
 - 前端 `LaneGraph.tsx` 纯渲染组件 + HistoryTab 接入（refs 三色标签）
 - **未做**（P2 增量，spec §四）：语义着色（未 push 红/已 merge 暗灰）、WIP/stash 紫点、增量 log 缓存、lane 收缩合并（graph.c 四数组）
 
+**P2 FR-P2-2 file-watcher 自动 status 刷新（commit `55c341d6`，spec `plans/git-panel-p2-watcher-spec.md`）**：
+- 前端订阅 `file-system-change` → 防抖 800ms 刷新生效仓库 status；流式抑抖（结束下降沿补刷）；复用 statusSlice per-path seq
+- 不改后端协议（沿用既有事件）；FileExplorer 负责 watcher 起停
+- 测试 `fileWatcherSubscriber.test.ts` 5 用例
+
 **提交记录**（commitlint 合规）：
 ```
 f6a05786 docs(git): 面板 vNext 规划与 P0/P1 规格
@@ -78,6 +83,8 @@ b3ccd260 test(git): 补齐存储层与 AI-1 加固测试
 98ebf387 refactor(git): 命令层 git 域整域摘除并上收 cap.git
 f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 + 后端按组原子提交）
 9e9d42e8 feat(git): P2 泳道图（lane 分配放 Rust + refs 装饰 + LaneGraph 渲染）
+d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式）
+55c341d6 feat(git): FR-P2-2 外部文件变化自动刷新 status（file-system-change 订阅）
 ```
 
 ---
@@ -118,11 +125,14 @@ f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 
 - lane 收缩合并（graph.c 四数组）：初版简化算法已覆盖单线+合并；多分支交错收缩场景归 graph.c 算法（**增量**）
 - 性能预算：首次打开 ≤10k commits p50 < 300ms；二次打开（HEAD 未变）p50 < 80ms（增量 log 缓存按 `(repo, head_sha, refs_snapshot)` 键持久化到 DataRoot）；1k commits 60fps（react-virtuoso 已有，max-lanes=12 截断）
 
-#### FR-P2-2 file-watcher 自动 status 刷新
+#### FR-P2-2 file-watcher 自动 status 刷新 ✅ 已完成（commit `55c341d6`，spec `plans/git-panel-p2-watcher-spec.md`）
 
-- `file_watcher` debounce 800ms 推 `repo_touched` 事件 → statusSlice 复用 per-path seq 机制刷新；**不轮询**
-- AI 流式期间（`useKernelSessionState(sessionId)` = streaming）暂停 status 刷新，流式结束刷一次
-- **事件不掀翻缓存**：`repo_touched` 只触发受影响路径/计数的局部 store 写入，禁止整表刷新
+- 前端订阅 `file-system-change`（**复用既有事件，不改后端**；`repo_touched` 专用事件非必需——事件本就由 FileExplorer 消费，git panel 只按生效路径刷新）
+- 防抖 800ms → 调 `refreshStatus`（复用 statusSlice per-path seq 丢弃乱序）；流式抑抖：AI 会话流式期间置待补刷，结束下降沿补刷
+- **不掀翻缓存**：只刷当前生效仓库 status，无路径级过滤（status 是轻操作且已 debounce）
+- 挂载：`GitPanel/index.tsx` mount 时 `initGitStatusWatcher(() => effectivePathRef.current)`；cleanup 取消订阅。FileExplorer 的 `startFileWatcher` 负责起停（`performance.fileWatcher` 开关）
+- 测试：`fileWatcherSubscriber.test.ts` 5 用例（未流式/流式中/下降沿/null 路径/cleanup）
+- 剩余边界：Web 端不订阅（watch 是 tauri-app feature，Web=60s 轮询是 master-plan 已接受的边界）
 
 #### FR-P2-3 Undo 网络（超越点#2）
 
