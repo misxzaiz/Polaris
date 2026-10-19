@@ -808,3 +808,47 @@ pub struct GitDiscoveredRepo {
     /// 是否有未提交变更（工作树或索引有改动）
     pub has_changes: bool,
 }
+
+// ============================================================================
+// Undo 网络（FR-P2-3：危险操作快照 + 一键恢复）
+// ============================================================================
+
+/// 撤销快照元数据（前端通知条/快照列表展示）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoSnapshotMeta {
+    /// 快照 ref 名（refs/polaris-undo/<ws>/<ts>）
+    pub name: String,
+    /// 创建时间戳（unix 秒）
+    pub created_at: i64,
+    /// 触发操作（discard / reset_hard / checkout / rebase / branch_delete）
+    pub context: String,
+    /// 快照是否捕获了未提交改动
+    pub has_changes: bool,
+    /// 快照时所在分支
+    pub branch: Option<String>,
+}
+
+/// 快照事件载荷（cap.git 危险操作成功后 emit 到前端）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoSnapshotEvent {
+    /// 仓库工作区路径
+    pub ws_path: String,
+    /// 快照 ref 名
+    pub snapshot_ref: String,
+    /// 触发操作
+    pub context: String,
+}
+
+/// 恢复快照的结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UndoRestoreOutcome {
+    /// 是否恢复成功
+    pub ok: bool,
+    /// 遇冲突时冲突文件列表（未冲突为 empty）
+    pub conflicted_files: Vec<String>,
+    /// 冲突说明（无冲突为 None）
+    pub conflict_message: Option<String>,
+}

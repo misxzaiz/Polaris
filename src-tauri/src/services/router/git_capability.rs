@@ -85,11 +85,118 @@ const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "save_gitignore",
     "add_to_gitignore",
     "create_pr",
+    "undo_restore",
+    "undo_drop",
 ];
 
 /// PR-1 临时护栏判定。
 fn is_destructive(action: &str) -> bool {
     DESTRUCTIVE_ACTIONS.contains(&action)
+}
+
+// ───────────────────────── Undo 快照（FR-P2-3） ─────────────────────────
+
+/// 真危险动作集（触发撤销快照）：discard / reset hard / checkout 覆盖 / 删分支 / rebase。
+///
+/// 日常写（commit/stage/stash 等）不在此列 —— 后果经 reflog + commit 历史天然可恢复，
+/// 快照是成本+噪音（见 plans/git-panel-p2-undo-spec.md §四）。
+const SNAPSHOT_ACTIONS: &[&str] = &[
+    "discard_changes",
+    "reset",
+    "checkout_branch",
+    "checkout_commit",
+    "delete_branch",
+    "rebase_branch",
+];
+
+/// reset 仅 hard 模式属真危险（soft/mixed 保留工作区，经 reset 自身即可回退）。
+/// 调用点在 WRITE_GATE 之后（此时能拿到 params 里的 mode）。
+fn is_snapshot_reset(params: &Value) -> bool {
+    params.get("mode").and_then(|v| v.as_str()) == Some("hard")
+}
+
+/// 是否为「应触发撤销快照」的动作（reset 需检查 mode）。
+fn needs_undo_snapshot(action: &str, params: &Value) -> bool {
+    if !SNAPSHOT_ACTIONS.contains(&action) {
+        return false;
+    }
+    if action == "reset" {
+        return is_snapshot_reset(params);
+    }
+    true
+}
+
+/// 动作 → 快照上下文标识（对应用户可读的撤销来源）。
+fn snapshot_context(action: &str) -> &'static str {
+    match action {
+        "discard_changes" => "discard",
+        "reset" => "reset_hard",
+        "checkout_branch" | "checkout_commit" => "checkout",
+        "delete_branch" => "branch_delete",
+        "rebase_branch" => "rebase",
+        _ => "undo",
+    }
+}
+
+/// 动作 → 需记录原 commit 的 extra_refs（删除分支场景：`refs/heads/<name>`）。
+fn snapshot_extra_refs(action: &str, params: &Value) -> Vec<String> {
+    if action != "delete_branch" {
+        return Vec::new();
+    }
+    // 被删分支以 name 传入（同 match 内 delete_branch 的参数契约）
+    params
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|n| format!("refs/heads/{}", n))
+        .into_iter()
+        .collect()
+}
+
+/// 统一快照钩子：在写栅栏后、match 前执行。
+/// 对「真危险」动作创建撤销快照；失败仅 warn 不阻塞原操作（undo 是安全网，非硬门槛）。
+/// 返回 `(ws_path, snapshot_ref)` 供 emit `git-undo-snapshot` 事件。
+fn create_undo_snapshot_for_action(
+    action: &str,
+    params: &Value,
+) -> Option<(String, String)> {
+    let ws_path = match workspace(params) {
+        Ok(p) => p,
+        Err(_) => return None, // 无 workspacePath（部分动作可能不需要）→ 不建快照
+    };
+    let context = snapshot_context(action);
+    let extra_refs = snapshot_extra_refs(action, params);
+
+    // 快照失败不阻塞操作：记录 warn 并返回 None（见 spec §二.2「快照失败不阻塞」）
+    match GitService::create_undo_snapshot(&ws_path, context, &extra_refs) {
+        Ok(ref_name) => {
+            tracing::debug!("[cap.git] 已创建撤销快照 {}", ref_name);
+            // 保留策略：每 ws 最多 5 个，超限清旧（快照后的例行整理）
+            if let Err(e) = GitService::prune_undo_snapshots(&ws_path, 5) {
+                tracing::warn!("[cap.git] 快照保留策略清理失败: {}", e);
+            }
+            Some((ws_path.to_string_lossy().to_string(), ref_name))
+        }
+        Err(e) => {
+            tracing::warn!(
+                "[cap.git] 危险操作 '{}' 撤销快照创建失败（操作继续）: {}",
+                action,
+                e
+            );
+            None
+        }
+    }
+}
+
+/// 危险操作成功后向前端广播 `git-undo-snapshot` 事件（经 Context::emit → 桌面中继/Web WS）。
+fn emit_undo_snapshot_event(ctx: &dyn Context, ws_path: &str, snapshot_ref: &str, action: &str) {
+    let payload = json!({
+        "wsPath": ws_path,
+        "snapshotRef": snapshot_ref,
+        "context": snapshot_context(action),
+    });
+    if let Err(e) = ctx.emit("git-undo-snapshot", payload) {
+        tracing::warn!("[cap.git] 广播 git-undo-snapshot 事件失败: {}", e);
+    }
 }
 
 /// 已注册动作全集（与下方 invoke match 一一对应；alias 在 match 前归一，
@@ -111,6 +218,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "amend_commit", "search_log", "get_reflog",
     "blame_file", "get_gitignore", "save_gitignore", "add_to_gitignore",
     "get_gitignore_templates", "create_pr", "get_pr_status",
+    "undo_list", "undo_restore", "undo_drop",
 ];
 
 // ───────────────────────── 参数提取 helpers ─────────────────────────
@@ -206,6 +314,9 @@ impl Capability for GitCapability {
                 "get_log_with_lanes": { "params": { "workspacePath": "string", "limit?": "number", "skip?": "number", "branch?": "string" }, "returns": "GitLogPage(commits+rows)" },
                 "stage_file":   { "params": { "workspacePath": "string", "filePath": "string" }, "note": "写类动作，Plugin 来源在 PR-2a 矩阵落地前被拒" },
                 "commit_changes":{ "params": { "workspacePath": "string", "message": "string", "stageAll?": "bool", "selectedFiles?": "string[]" } },
+                "undo_list":    { "params": { "workspacePath": "string" }, "returns": "UndoSnapshotMeta[]", "note": "FR-P2-3 快照列表（危险操作自动留存，倒序）" },
+                "undo_restore": { "params": { "workspacePath": "string", "snapshotRef": "string" }, "returns": "UndoRestoreOutcome", "note": "FR-P2-3 一键恢复（stash apply / 重建被删分支 ref）" },
+                "undo_drop":    { "params": { "workspacePath": "string", "snapshotRef": "string" }, "note": "FR-P2-3 手动清理快照（连同 .restore. note）" },
                 "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
             },
             "note": "PR-2b 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。结构化错误载荷新增于 PR-2a。"
@@ -247,11 +358,20 @@ impl Capability for GitCapability {
             None
         };
 
-        match a {
-            // ── 状态 / 只读 ─────────────────────────────────────────────
-            "is_repository" => Ok(json!(GitService::is_repository(
-                &workspace(p)?
-            ))),
+        // FR-P2-3 撤销快照：写栅栏通过后、match 前，对真危险动作创建操作前快照。
+        // 快照失败不阻塞操作（undo 是增强安全网，非硬门槛）；操作成功后 emit 事件供前端 toast。
+        let pending_undo: Option<(String, String)> = if needs_undo_snapshot(a, p) {
+            create_undo_snapshot_for_action(a, p)
+        } else {
+            None
+        };
+
+        let result = (|| -> Result<Value, String> {
+            match a {
+                // ── 状态 / 只读 ─────────────────────────────────────────────
+                "is_repository" => Ok(json!(GitService::is_repository(
+                    &workspace(p)?
+                ))),
             "discover_repositories" => json_ok_svc(GitService::discover_repositories(
                 &workspace(p)?,
                 opt_usize(p, "maxDepth").unwrap_or(4),
@@ -584,12 +704,33 @@ impl Capability for GitCapability {
                 require_u64(p, "prNumber")?,
             )),
 
+            // ── Undo 网络（FR-P2-3：快照列表 / 一键恢复 / 手动清理） ──────
+            "undo_list" => json_ok_svc(GitService::list_undo_snapshots(&workspace(p)?)),
+            "undo_restore" => json_ok_svc(GitService::restore_undo_snapshot(
+                &workspace(p)?,
+                require_string(p, "snapshotRef")?,
+            )),
+            "undo_drop" => json_ok_svc(GitService::drop_undo_snapshot(
+                &workspace(p)?,
+                require_string(p, "snapshotRef")?,
+            )),
+
             _ => {
                 let _ = a;
                 // KNOWN_ACTIONS 守卫已在前拦截；此臂仅兜底 match 穷尽性
                 Err(format!("Unknown cap.git action: {}", action))
             }
+            }
+        })();
+
+        // 危险操作成功后：向前端广播撤销快照事件（操作失败则不广播，快照留作安全网）
+        if result.is_ok() {
+            if let Some((ws_path, snapshot_ref)) = &pending_undo {
+                emit_undo_snapshot_event(ctx, ws_path, snapshot_ref, a);
+            }
         }
+
+        result
     }
 }
 
@@ -622,6 +763,7 @@ mod tests {
             "amend_commit", "search_log", "get_reflog",
             "blame_file", "get_gitignore", "save_gitignore", "add_to_gitignore",
             "get_gitignore_templates", "create_pr", "get_pr_status",
+            "undo_list", "undo_restore", "undo_drop",
         ];
         known.sort();
         handled.sort();
@@ -640,12 +782,13 @@ mod tests {
     fn destructive_covers_write_domain() {
         for a in ["commit_changes", "discard_changes", "reset", "push_branch", "pull",
                   "rebase_branch", "delete_branch", "stash_drop", "init_repository",
-                  "fetch", "amend_commit", "stash_apply", "commit_group"] {
+                  "fetch", "amend_commit", "stash_apply", "commit_group",
+                  "undo_restore", "undo_drop"] {
             assert!(is_destructive(a), "{} 应在破坏性名单", a);
         }
         // 只读动作不在名单（新 P1 读型动作同防护）
         for a in ["get_status", "get_log", "blame_file", "stash_list", "detect_host",
-                  "stash_show", "search_log", "get_reflog"] {
+                  "stash_show", "search_log", "get_reflog", "undo_list"] {
             assert!(!is_destructive(a), "{} 不该被拒（只读）", a);
         }
     }

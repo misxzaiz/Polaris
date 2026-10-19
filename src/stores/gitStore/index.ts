@@ -18,6 +18,7 @@
  * - prSlice: Pull Request 操作
  * - gitignoreSlice: .gitignore 管理
  * - utilitySlice: 工具方法
+ * - undoSlice: 撤销快照（FR-P2-3 危险操作网络）
  */
 
 import { create } from 'zustand'
@@ -32,6 +33,7 @@ import { createAdvancedSlice } from './advancedSlice'
 import { createPRSlice } from './prSlice'
 import { createGitignoreSlice } from './gitignoreSlice'
 import { createUtilitySlice } from './utilitySlice'
+import { createUndoSlice } from './undoSlice'
 
 /**
  * Git Store
@@ -49,6 +51,7 @@ export const useGitStore = create<GitState>()((...a) => ({
   ...createPRSlice(...a),
   ...createGitignoreSlice(...a),
   ...createUtilitySlice(...a),
+  ...createUndoSlice(...a),
 }))
 
 // 导出类型
@@ -71,6 +74,8 @@ export type {
   PRActions,
   GitignoreActions,
   UtilityActions,
+  UndoState,
+  UndoActions,
 } from './types'
 
 // 导出工具函数

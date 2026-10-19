@@ -32,6 +32,8 @@ import type {
   GitLogPage,
   GitIgnoreResult,
   GitIgnoreTemplate,
+  UndoSnapshotMeta,
+  UndoRestoreOutcome,
 } from '@/types/git'
 
 // ============================================================================
@@ -154,6 +156,16 @@ export interface StashState {
  */
 export interface PRState {
   currentPR: PullRequest | null
+}
+
+/**
+ * Undo 网络状态（FR-P2-3：危险操作快照）
+ */
+export interface UndoState {
+  /** 当前工作区的撤销快照列表（倒序按时间） */
+  undoSnapshots: UndoSnapshotMeta[]
+  /** P1.5 分片：按 wsPath 键控的快照列表（双面板/多仓互防） */
+  undoSnapshotsByWs?: Record<string, UndoSnapshotMeta[]>
 }
 
 // ============================================================================
@@ -308,6 +320,18 @@ export interface UtilityActions {
   getReflog: (workspacePath: string, branch?: string | null, limit?: number) => Promise<GitReflogEntry[]>
 }
 
+/**
+ * Undo 网络操作方法（FR-P2-3：危险操作快照 + 一键恢复）
+ */
+export interface UndoActions {
+  /** 列出某 workspace 的全部撤销快照（倒序按时间） */
+  listUndoSnapshots: (workspacePath: string) => Promise<UndoSnapshotMeta[]>
+  /** 一键恢复（stash apply / 重建被删分支 ref；遇冲突返回 conflictedFiles 不抛错） */
+  restoreUndoSnapshot: (workspacePath: string, snapshotRef: string) => Promise<UndoRestoreOutcome>
+  /** 手动清理快照（连同 .restore. note ref） */
+  dropUndoSnapshot: (workspacePath: string, snapshotRef: string) => Promise<void>
+}
+
 // ============================================================================
 // 组合状态类型
 // ============================================================================
@@ -322,6 +346,7 @@ export type GitState = StatusState &
   CommitState &
   StashState &
   PRState &
+  UndoState &
   StatusActions &
   BranchActions &
   RemoteActions &
@@ -331,7 +356,8 @@ export type GitState = StatusState &
   AdvancedActions &
   PRActions &
   GitignoreActions &
-  UtilityActions
+  UtilityActions &
+  UndoActions
 
 // ============================================================================
 // Slice Creator 类型
@@ -366,3 +392,6 @@ export type GitignoreSlice = StateCreator<GitState, [], [], GitignoreActions>
 
 /** 工具方法 Slice Creator 类型 */
 export type UtilitySlice = StateCreator<GitState, [], [], UtilityActions>
+
+/** Undo 网络 Slice Creator 类型（FR-P2-3） */
+export type UndoSlice = StateCreator<GitState, [], [], UndoState & UndoActions>

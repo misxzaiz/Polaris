@@ -22,6 +22,7 @@ import { AtomicCommitCard } from './AtomicCommitCard'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { initGitStatusWatcher } from '@/stores/gitStore/fileWatcherSubscriber'
+import { initUndoToastSubscriber } from '@/stores/gitStore/undoSubscriber'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
@@ -79,6 +80,12 @@ export function GitPanel({
       return p || null
     })
     return cleanup
+  }, [])
+
+  // FR-P2-3：挂载时订阅 git-undo-snapshot → toast「撤销」通知条（危险操作成功后可一键恢复）。
+  // 事件载荷自带 wsPath + snapshotRef，无需依赖 effectivePath，空依赖即可。
+  useEffect(() => {
+    return initUndoToastSubscriber()
   }, [])
 
   // 按生效路径读取状态：多仓库/多面板场景下各路径互不覆盖，

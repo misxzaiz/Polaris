@@ -20,6 +20,7 @@ mod stash;
 mod reset;
 mod gitignore;
 mod reflog;
+mod undo;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};
@@ -43,6 +44,7 @@ pub use stash::{stash_save, stash_list, stash_pop, stash_drop, stash_apply, stas
 pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 pub use reflog::get_reflog;
+pub use undo::{create_undo_snapshot, drop_undo_snapshot, list_undo_snapshots, prune_undo_snapshots, restore_undo_snapshot};
 
 use std::path::Path;
 
@@ -53,6 +55,7 @@ use crate::models::git::{
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag,
     LogSearchFilter,
     PullRequest,
+    UndoRestoreOutcome, UndoSnapshotMeta,
 };
 
 /// Git 服务
@@ -281,6 +284,42 @@ impl GitService {
     /// 按组原子提交（AI-2：只提交组内文件，index 其它已暂存内容不受影响，等价 `git commit <paths>`）
     pub fn commit_group(path: &Path, message: &str, files: &[String]) -> Result<String, GitServiceError> {
         commit_group(path, message, files)
+    }
+
+    // ========================================================================
+    // Undo 网络（FR-P2-3：危险操作快照 + 一键恢复）
+    // ========================================================================
+
+    /// 为 workspace 创建撤销快照（危险操作前自动调用）
+    pub fn create_undo_snapshot(
+        path: &Path,
+        context: &str,
+        extra_refs: &[String],
+    ) -> Result<String, GitServiceError> {
+        create_undo_snapshot(path, context, extra_refs)
+    }
+
+    /// 列出某 workspace 的全部快照（倒序按时间）
+    pub fn list_undo_snapshots(path: &Path) -> Result<Vec<UndoSnapshotMeta>, GitServiceError> {
+        list_undo_snapshots(path)
+    }
+
+    /// 恢复指定快照（前端「撤销」按钮）
+    pub fn restore_undo_snapshot(
+        path: &Path,
+        snapshot_ref: &str,
+    ) -> Result<UndoRestoreOutcome, GitServiceError> {
+        restore_undo_snapshot(path, snapshot_ref)
+    }
+
+    /// 删除指定快照（前端手动清理）
+    pub fn drop_undo_snapshot(path: &Path, snapshot_ref: &str) -> Result<(), GitServiceError> {
+        drop_undo_snapshot(path, snapshot_ref)
+    }
+
+    /// 按保留策略清理：每 ws 最多保留 N 个最近快照
+    pub fn prune_undo_snapshots(path: &Path, max_keep: usize) -> Result<usize, GitServiceError> {
+        prune_undo_snapshots(path, max_keep)
     }
 
     // ========================================================================

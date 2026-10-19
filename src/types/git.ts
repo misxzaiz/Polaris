@@ -574,3 +574,56 @@ export interface GitIgnoreTemplate {
   /** 规则列表 */
   rules: string[]
 }
+
+// ============================================================================
+// Undo 网络（FR-P2-3：危险操作快照 + 一键恢复）
+// ============================================================================
+
+/** 触发快照的危险操作来源 */
+export type UndoSnapshotContext =
+  | 'discard'
+  | 'reset_hard'
+  | 'checkout'
+  | 'branch_delete'
+  | 'rebase'
+  | 'undo'
+
+/**
+ * 撤销快照元数据（通知条 / 快照列表展示）
+ */
+export interface UndoSnapshotMeta {
+  /** 快照 ref 名（refs/polaris-undo/<ws>/<ts>） */
+  name: string
+  /** 创建时间戳（unix 秒） */
+  createdAt: number
+  /** 触发操作（discard / reset_hard / checkout / rebase / branch_delete） */
+  context: string
+  /** 快照是否捕获了未提交改动 */
+  hasChanges: boolean
+  /** 快照时所在分支 */
+  branch: string | null
+}
+
+/**
+ * 快照事件载荷（cap.git 危险操作成功后 emit 到前端 → toast「撤销」）
+ */
+export interface UndoSnapshotEvent {
+  /** 仓库工作区路径 */
+  wsPath: string
+  /** 快照 ref 名 */
+  snapshotRef: string
+  /** 触发操作 */
+  context: string
+}
+
+/**
+ * 快照恢复结果
+ */
+export interface UndoRestoreOutcome {
+  /** 是否恢复成功 */
+  ok: boolean
+  /** 遇冲突时冲突文件列表（未冲突为 empty） */
+  conflictedFiles: string[]
+  /** 冲突说明（无冲突为 null） */
+  conflictMessage: string | null
+}

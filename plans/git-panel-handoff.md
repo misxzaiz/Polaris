@@ -74,6 +74,12 @@ P4 全部           ░░░░░░░░░░   0%
 - 不改后端协议（沿用既有事件）；FileExplorer 负责 watcher 起停
 - 测试 `fileWatcherSubscriber.test.ts` 5 用例
 
+**P2 FR-P2-3 Undo 网络（commit 见下，spec `plans/git-panel-p2-undo-spec.md`）**：
+- `Context::emit` 事件通道基础（capability → 共享 EventBroadcaster：桌面经 Tauri 中继、Web 经 WS）+ 桌面 `git-undo-snapshot` 中继
+- 危险操作（discard/reset hard/checkout/删分支/rebase）操作前自动快照（`git stash create` + `update-ref`），保留策略 5 上限
+- 前端 `undoSlice` + `undoSubscriber`（toast「撤销」一键 restore/drop）；快照列表 + 恢复冲突平铺
+- 测试：Rust undo 5 单元 + KNOWN_ACTIONS 巡逻同步；前端 undoSlice 4 + undoSubscriber 5；e2e 手工验证
+
 **提交记录**（commitlint 合规）：
 ```
 f6a05786 docs(git): 面板 vNext 规划与 P0/P1 规格
@@ -85,6 +91,7 @@ f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 
 9e9d42e8 feat(git): P2 泳道图（lane 分配放 Rust + refs 装饰 + LaneGraph 渲染）
 d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式）
 55c341d6 feat(git): FR-P2-2 外部文件变化自动刷新 status（file-system-change 订阅）
+bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单点挂钩）
 ```
 
 ---
@@ -134,11 +141,16 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 测试：`fileWatcherSubscriber.test.ts` 5 用例（未流式/流式中/下降沿/null 路径/cleanup）
 - 剩余边界：Web 端不订阅（watch 是 tauri-app feature，Web=60s 轮询是 master-plan 已接受的边界）
 
-#### FR-P2-3 Undo 网络（超越点#2）
+#### FR-P2-3 Undo 网络（超越点#2）✅ 已完成（spec `plans/git-panel-p2-undo-spec.md`）
 
-- 危险操作（discard / reset hard / checkout 覆盖 / interactive rebase）前自动快照到 `<data_root>/git-backups/<ws>/`
-- 通知条可一键恢复
-- 删除分支保留 hash 可恢复
+- 危险操作（discard / reset hard / checkout 覆盖 / 删分支 / rebase）**操作前自动快照**，git-native 增量存储（`git stash create` 单步：只建 stash commit 对象、不改工作区、不入 stash 栈、无 pop 竞态），落 `refs/polaris-undo/<ws>/<ts>` ref（不复制文件）
+- 通知条一键恢复（`git-undo-snapshot` 事件 → toast「撤销」）：含工作区改动 → `stash apply` 打回；删除分支保留原 tip commit（`.restore.<branch>` note ref）→ 恢复时重建 ref
+- 删除分支保留 hash 可恢复 ✓
+- **保留策略**：每 ws 最多 5 个快照，超限自动清旧（`prune_undo_snapshots`）
+- **恢复遇冲突**：返回 `conflictedFiles` + 写 .rej（git 天然产物），前端 toast.error 平铺，不抛 alert
+- **事件通道**：`Context::emit` 默认方法（不破坏 15+ 测试 impl）+ `RealContext` 注入 `Arc<EventAdapter>`；桌面 `lib.rs` 中继 `git-undo-snapshot` → `app_handle.emit`（Web 经共享 EventBroadcaster→WS）
+- **快照失败不阻塞操作**：只 warn，undo 是增强安全网非硬门槛
+- 测试：Rust `undo.rs` 5 单元 + `git_capability` 巡逻（KNOWN_ACTIONS 同步）；前端 `undoSlice.test.ts`（4）+ `undoSubscriber.test.ts`（5）；e2e 手工验证 discard→undo 恢复内容 + 删分支→note ref 重建
 
 #### FR-P2-4 操作流水面板
 
