@@ -279,12 +279,33 @@ fn collect_commit_refs(repo: &Repository) -> std::collections::HashMap<String, V
 ///   2. 消费 C：lanes[lane] = None；第一个父占原 lane，merge 的其余父占右侧空闲/新 lane。
 ///   3. 渲染：node = 本行 C 所在 lane（merge 多父 → merge 节点）；其余 lane 有等待者 → empty 贯穿线。
 ///   4. edge_down = 该 lane 下一行有内容（lanes[l] 有值）；merge 的其余父 lane 有 edge_up 指向 merge 节点 lane（斜线汇入）。
+/// 单行 lane 计算：给定拓扑序 commits（新→旧），分配泳道并生成格子
+///
+/// graph.c 式收缩（P2 增量，spec `plans/git-panel-p2-lane-collapse-spec.md`）：
+/// 在初版「单线 + 合并」基础上加入**列释放 + 收缩**语义：
+/// - 维护 `processed: HashSet<sha>`（本页已输出的 commit）；
+/// - 每行前置收缩：任何 lane 等待的 sha 已处理 → 释放为 None（消 ghost 竖线）；
+/// - 父占位时，若父已处理 → 不占长期等待列（防「同一父多列等待」列泄漏）。
+///
+/// 行结构 / GitLaneRow 协议不变，前端零改动。
 fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
+    use std::collections::HashSet;
+
     let mut lanes: Vec<Option<String>> = Vec::new();
     let mut rows: Vec<GitLaneRow> = Vec::new();
+    let mut processed: HashSet<String> = HashSet::new();
 
     for commit in commits {
         let is_merge = commit.parents.len() > 1;
+
+        // 0. 前置收缩：等待的 commit 已处理 → 释放该列（ghost 竖线消除）
+        for w in lanes.iter_mut() {
+            if let Some(sha) = w {
+                if processed.contains(sha) {
+                    *w = None;
+                }
+            }
+        }
 
         // 1. 定位 C 的泳道
         let lane = match lanes.iter().position(|w| w.as_deref() == Some(commit.sha.as_str())) {
@@ -316,14 +337,19 @@ fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
         }
         for (idx, p) in commit.parents.iter().enumerate() {
             if let Some(pl) = parent_lanes.get(idx) {
-                lanes[*pl] = Some(p.clone());
+                // 已处理的父 → 占位后立即置 None（不占长期等待列 → 防列泄漏）
+                if processed.contains(p) {
+                    lanes[*pl] = None;
+                } else {
+                    lanes[*pl] = Some(p.clone());
+                }
             }
         }
 
         // 3. 渲染本行
         let mut cells = Vec::new();
-        for l in 0..lanes.len() {
-            let has_down = lanes[l].is_some();
+        for (l, lane_wait) in lanes.iter().enumerate() {
+            let has_down = lane_wait.is_some();
             let node = if l == lane {
                 if is_merge {
                     "merge"
@@ -356,6 +382,8 @@ fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
             cells,
             refs: commit.refs.clone(),
         });
+
+        processed.insert(commit.sha.clone());
     }
 
     rows
@@ -569,13 +597,7 @@ fn revwalk_headset_from_tip(
     if rw.push(oid).is_err() {
         return std::collections::HashSet::new();
     }
-    let mut set = std::collections::HashSet::new();
-    for oid in rw {
-        if let Ok(oid) = oid {
-            set.insert(oid.to_string());
-        }
-    }
-    set
+    rw.flatten().map(|o| o.to_string()).collect()
 }
 
 /// 全部远程 refs 可达 commit sha 的并集（`refs/remotes/*`）
@@ -596,10 +618,8 @@ fn revwalk_remote_headset(repo: &Repository) -> std::collections::HashSet<String
         if rw.push(obj.id()).is_err() {
             continue;
         }
-        for oid in rw {
-            if let Ok(oid) = oid {
-                set.insert(oid.to_string());
-            }
+        for oid in rw.flatten() {
+            set.insert(oid.to_string());
         }
     }
     set
@@ -1105,5 +1125,55 @@ mod tests {
         assert_eq!(by_msg.get("C"), Some(&"local"), "C 已推远程 local");
         assert_eq!(by_msg.get("B"), Some(&"local"), "B 已推远程 local");
         assert_eq!(by_msg.get("A"), Some(&"local"), "A 已推远程 local");
+    }
+
+    // ── P2 增量：lane 收缩（graph.c 式列释放） ────────────────────────
+
+    /// feature 完全合入主线后，历史 lane 应释放为 none（非 empty ghost 竖线）。
+    ///
+    /// build_lane_fixture 拓扑：A←B←C←feature(D←E)，M=merge(C,E)。
+    /// revwalk 序 M,E,D,C,B,A。E 在 lane1（merge 第二父列）等 D；D 消费 lane1 后等 C；
+    /// C 在主线 lane0 消费 → lane1 的 C 等待已被处理但本行尚未释放（C 本行渲染时 processed
+    /// 尚无 C）→ C 行 lane1 是 empty；到 B 行前置收缩释放 → B/A 行 lane1 应为 none。
+    #[test]
+    fn lanes_shrink_after_merge_released() {
+        let (_tmp, repo_path) = build_lane_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        let row_by_msg: std::collections::HashMap<&str, &GitLaneRow> = page
+            .rows
+            .iter()
+            .zip(&page.commits)
+            .map(|(r, c)| (c.message.as_str(), r))
+            .collect();
+
+        // E 之后主线继续，feature 历史列释放：B/A 行的 lane1 应为 none（无 ghost 竖线）
+        for msg in ["B", "A"] {
+            let row = row_by_msg[msg];
+            let lane1 = row.cells.iter().find(|c| c.lane == 1);
+            if let Some(cell) = lane1 {
+                assert_eq!(
+                    cell.node, "none",
+                    "{} 行 lane1 应释放为 none（feature 历史列已合入），实际: {}",
+                    msg, cell.node
+                );
+            }
+        }
+
+        // M 行的 merge 斜线语义保留：lane1（E 侧父）edge_up 指向 M 的 merge 节点 lane0
+        let m_row = row_by_msg["M"];
+        let m_lane = m_row
+            .cells
+            .iter()
+            .find(|c| c.node == "merge")
+            .map(|c| c.lane)
+            .expect("M 行应有 merge 节点");
+        let e_side = m_row.cells.iter().find(|c| c.lane == 1 && c.edge_up.is_some());
+        assert!(e_side.is_some(), "M 行 lane1 应有 edge_up 汇入");
+
+        // 列数不增长：所有行 lanes 长度 ≤ 3（active 主线 + feature + buffer），不随页累积
+        let max_lanes = page.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
+        assert!(max_lanes <= 3, "列数不应超过 3（active+feature+buffer），实际: {}", max_lanes);
+        let _ = m_lane;
     }
 }
