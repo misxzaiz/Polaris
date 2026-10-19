@@ -627,3 +627,26 @@ export interface UndoRestoreOutcome {
   /** 冲突说明（无冲突为 null） */
   conflictMessage: string | null
 }
+
+/**
+ * 操作流水条目（FR-P2-4：cap.git 写动作留痕，events 与 get_operations 同构）
+ * 字段与服务端 models/git.rs::GitOperationEntry（camelCase serde）一一对应。
+ */
+export interface GitOperationEntry {
+  /** 仓库工作区路径 */
+  wsPath: string
+  /** 动作名（commit_changes / discard_changes / ...） */
+  action: string
+  /** 展示名（后端给中文 label） */
+  label: string
+  /** 成败 */
+  ok: boolean
+  /** 耗时 ms */
+  durationMs: number
+  /** bootstrap / remote / plugin */
+  source: string
+  /** unix 秒 */
+  ts: number
+  /** P2.5 任务队列 taskId（未启用为 null） */
+  gitTaskId: string | null
+}

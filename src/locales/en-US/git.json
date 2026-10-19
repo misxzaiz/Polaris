@@ -10,6 +10,13 @@
   "openWorkbench": "Open Git Workbench in editor",
   "selectedFiles": "{{count}} files selected",
   "batchProgress": "Processing: {{current}}/{{total}}",
+  "operations": {
+    "title": "Activity Log",
+    "empty": "No operations yet",
+    "cleared": "Activity log cleared",
+    "clearFailed": "Failed to clear activity log",
+    "clearTitle": "Clear activity log"
+  },
   "stage": "Stage",
   "unstage": "Unstage",
   "discard": "Discard Changes",

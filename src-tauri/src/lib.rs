@@ -659,6 +659,36 @@ pub fn run() {
                         }
                     });
                 }
+
+                // 桌面 git-operation 中继：cap.git 写动作留痕事件 → Tauri emit，
+                // 前端操作流水面板据此实时追加（FR-P2-4）。与 git-undo-snapshot
+                // 同经 EventBroadcaster，只在事件 kind 匹配时透传 payload。
+                {
+                    let mut raw_rx = state.event_broadcast.subscribe();
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            match raw_rx.recv().await {
+                                Ok(msg) => {
+                                    let Ok(parsed) =
+                                        serde_json::from_str::<serde_json::Value>(&msg)
+                                    else {
+                                        continue;
+                                    };
+                                    if parsed.get("event").and_then(|e| e.as_str())
+                                        != Some("git-operation")
+                                    {
+                                        continue;
+                                    }
+                                    let Some(payload) = parsed.get("payload") else { continue };
+                                    let _ = handle.emit("git-operation", payload);
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(_) => break,
+                            }
+                        }
+                    });
+                }
             }
 
             commands::browser::set_browser_app_handle(app.handle().clone());

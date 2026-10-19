@@ -34,6 +34,7 @@ import type {
   GitIgnoreTemplate,
   UndoSnapshotMeta,
   UndoRestoreOutcome,
+  GitOperationEntry,
 } from '@/types/git'
 
 // ============================================================================
@@ -166,6 +167,16 @@ export interface UndoState {
   undoSnapshots: UndoSnapshotMeta[]
   /** P1.5 分片：按 wsPath 键控的快照列表（双面板/多仓互防） */
   undoSnapshotsByWs?: Record<string, UndoSnapshotMeta[]>
+}
+
+/**
+ * 操作流水状态（FR-P2-4：写动作留痕，GitKraken Activity Log 等价）
+ */
+export interface OperationsState {
+  /** 当前工作区的操作流水（倒序：最新在上，上限 50/ws，会话内滚动） */
+  operations: GitOperationEntry[]
+  /** P1.5 分片：按 wsPath 键控的操作流水 */
+  operationsByWs?: Record<string, GitOperationEntry[]>
 }
 
 // ============================================================================
@@ -332,6 +343,16 @@ export interface UndoActions {
   dropUndoSnapshot: (workspacePath: string, snapshotRef: string) => Promise<void>
 }
 
+/**
+ * 操作流水操作方法（FR-P2-4：只读展示 / 清空）
+ */
+export interface OperationsActions {
+  /** 拉取某 workspace 的操作流水（倒序，上限 50/ws） */
+  getOperations: (workspacePath: string) => Promise<GitOperationEntry[]>
+  /** 清空某 workspace 的操作流水（写类动作） */
+  clearOperations: (workspacePath: string) => Promise<void>
+}
+
 // ============================================================================
 // 组合状态类型
 // ============================================================================
@@ -347,6 +368,7 @@ export type GitState = StatusState &
   StashState &
   PRState &
   UndoState &
+  OperationsState &
   StatusActions &
   BranchActions &
   RemoteActions &
@@ -357,7 +379,8 @@ export type GitState = StatusState &
   PRActions &
   GitignoreActions &
   UtilityActions &
-  UndoActions
+  UndoActions &
+  OperationsActions
 
 // ============================================================================
 // Slice Creator 类型
@@ -395,3 +418,6 @@ export type UtilitySlice = StateCreator<GitState, [], [], UtilityActions>
 
 /** Undo 网络 Slice Creator 类型（FR-P2-3） */
 export type UndoSlice = StateCreator<GitState, [], [], UndoState & UndoActions>
+
+/** 操作流水 Slice Creator 类型（FR-P2-4） */
+export type OperationsSlice = StateCreator<GitState, [], [], OperationsState & OperationsActions>

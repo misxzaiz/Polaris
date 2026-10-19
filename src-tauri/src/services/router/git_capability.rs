@@ -25,12 +25,13 @@
 
 use crate::contracts::{Capability, CapabilityId, Context};
 use crate::models::git::{
-    CreatePROptions, GitError, GitHostType, GitServiceError, LogSearchFilter,
+    CreatePROptions, GitError, GitHostType, GitOperationEntry, GitServiceError, LogSearchFilter,
 };
 use crate::services::git::{GitService, ResetMode};
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 /// 能力 id
 pub const GIT_CAP_ID: &str = "cap.git";
@@ -87,6 +88,7 @@ const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "create_pr",
     "undo_restore",
     "undo_drop",
+    "clear_operations",
 ];
 
 /// PR-1 临时护栏判定。
@@ -199,6 +201,25 @@ fn emit_undo_snapshot_event(ctx: &dyn Context, ws_path: &str, snapshot_ref: &str
     }
 }
 
+/// 写操作完成后向前端广播 `git-operation` 事件（操作流水面板：时间 + 操作名 + 耗时 + 成败）。
+/// 事件 payload 与 record_operation 一致（GitOperationEntry camelCase），前端 prepend 即可。
+fn emit_operation_event(ctx: &dyn Context, entry: &GitOperationEntry) {
+    let payload = json!(entry);
+    if let Err(e) = ctx.emit("git-operation", payload) {
+        tracing::warn!("[cap.git] 广播 git-operation 事件失败: {}", e);
+    }
+}
+
+/// 来源 → 流水 source 字段（bootstrap / remote / plugin:<id>）。
+/// plugin 携带 id 便于前端区分不同插件来源；不外泄调用方动作参数。
+fn source_label(source: &crate::contracts::Source) -> String {
+    match source {
+        crate::contracts::Source::Bootstrap => "bootstrap".to_string(),
+        crate::contracts::Source::Remote { .. } => "remote".to_string(),
+        crate::contracts::Source::Plugin { caller } => format!("plugin:{}", caller.0),
+    }
+}
+
 /// 已注册动作全集（与下方 invoke match 一一对应；alias 在 match 前归一，
 /// 故 stash_list 与 get_stash_list 都接受）。新增动作必须两处同改。
 const KNOWN_ACTIONS: &[&str] = &[
@@ -219,7 +240,112 @@ const KNOWN_ACTIONS: &[&str] = &[
     "blame_file", "get_gitignore", "save_gitignore", "add_to_gitignore",
     "get_gitignore_templates", "create_pr", "get_pr_status",
     "undo_list", "undo_restore", "undo_drop",
+    "get_operations", "clear_operations",
 ];
+
+// ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
+
+/// 操作流水上限（每 ws，超过丢最旧）。会话内滚动，见 spec §四。
+const OPERATIONS_MAX: usize = 50;
+
+/// 各仓库的最近操作记录（倒序：最新在 0）。共享 by ws_path。
+static OPERATIONS: OnceLock<Mutex<HashMap<String, Vec<GitOperationEntry>>>> = OnceLock::new();
+
+/// 动作 → 展示名（操作流水 UI 直接呈现的中文文案）
+fn action_label(action: &str) -> &'static str {
+    match action {
+        "commit_changes" => "提交变更",
+        "commit_group" => "分组提交",
+        "stage_file" => "暂存文件",
+        "unstage_file" => "取消暂存",
+        "batch_stage" => "批量暂存",
+        "discard_changes" => "丢弃变更",
+        "reset" => "重置",
+        "checkout_branch" => "切换分支",
+        "checkout_commit" => "检出提交",
+        "create_branch" => "创建分支",
+        "delete_branch" => "删除分支",
+        "rename_branch" => "重命名分支",
+        "merge_branch" => "合并分支",
+        "rebase_branch" => "变基",
+        "rebase_abort" => "中止变基",
+        "rebase_continue" => "继续变基",
+        "cherry_pick" => "Cherry-pick",
+        "cherry_pick_abort" => "中止 Cherry-pick",
+        "cherry_pick_continue" => "继续 Cherry-pick",
+        "revert" => "Revert 提交",
+        "revert_abort" => "中止 Revert",
+        "revert_continue" => "继续 Revert",
+        "create_tag" => "创建标签",
+        "delete_tag" => "删除标签",
+        "add_remote" => "添加远程",
+        "remove_remote" => "删除远程",
+        "push_branch" => "推送分支",
+        "push_set_upstream" => "设置上游",
+        "pull" => "拉取",
+        "fetch" => "Fetch",
+        "stash_save" => "保存 Stash",
+        "stash_pop" => "应用并删除 Stash",
+        "stash_apply" => "应用 Stash",
+        "stash_drop" => "删除 Stash",
+        "amend_commit" => "修改提交",
+        "init_repository" => "初始化仓库",
+        "save_gitignore" => "保存 .gitignore",
+        "create_pr" => "创建 PR",
+        "undo_restore" => "撤销恢复",
+        "undo_drop" => "清理快照",
+        "clear_operations" => "清空操作流水",
+        _ => "Git 操作",
+    }
+}
+
+/// 追加一条操作流水（写动作在 invoke 收口处调用；最新置顶，超限丢最旧），
+/// 返回构造的条目供 emit 复用（避免双构造）。
+fn record_operation(
+    ws_path: &std::path::Path,
+    action: &str,
+    ok: bool,
+    duration_ms: u64,
+    source: &crate::contracts::Source,
+) -> GitOperationEntry {
+    let ws_path_str = ws_path.to_string_lossy().into_owned();
+    let entry = GitOperationEntry {
+        ws_path: ws_path_str.clone(),
+        action: action.to_string(),
+        label: action_label(action).to_string(),
+        ok,
+        duration_ms,
+        source: source_label(source),
+        ts: chrono::Utc::now().timestamp(),
+        git_task_id: None,
+    };
+    let mut ops = OPERATIONS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    let list = ops.entry(ws_path_str).or_default();
+    list.insert(0, entry.clone());
+    list.truncate(OPERATIONS_MAX);
+    entry
+}
+
+/// 读某 ws 的操作流水（倒序，新→旧）
+fn list_operations(ws_path: &str) -> Vec<GitOperationEntry> {
+    let ops = OPERATIONS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    ops.get(ws_path).cloned().unwrap_or_default()
+}
+
+/// 清空某 ws 的操作流水
+fn clear_operations(ws_path: &str) {
+    let mut ops = OPERATIONS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap();
+    ops.remove(ws_path);
+}
 
 // ───────────────────────── 参数提取 helpers ─────────────────────────
 
@@ -317,6 +443,8 @@ impl Capability for GitCapability {
                 "undo_list":    { "params": { "workspacePath": "string" }, "returns": "UndoSnapshotMeta[]", "note": "FR-P2-3 快照列表（危险操作自动留存，倒序）" },
                 "undo_restore": { "params": { "workspacePath": "string", "snapshotRef": "string" }, "returns": "UndoRestoreOutcome", "note": "FR-P2-3 一键恢复（stash apply / 重建被删分支 ref）" },
                 "undo_drop":    { "params": { "workspacePath": "string", "snapshotRef": "string" }, "note": "FR-P2-3 手动清理快照（连同 .restore. note）" },
+                "get_operations": { "params": { "workspacePath": "string" }, "returns": "GitOperationEntry[]", "note": "FR-P2-4 操作流水（写动作留痕，倒序，上限 50/ws）" },
+                "clear_operations": { "params": { "workspacePath": "string" }, "note": "FR-P2-4 清空本 ws 操作流水（写类动作）" },
                 "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
             },
             "note": "PR-2b 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。结构化错误载荷新增于 PR-2a。"
@@ -366,6 +494,9 @@ impl Capability for GitCapability {
             None
         };
 
+        // FR-P2-4 操作流水：写动作在 WRITE_GATE 持有期内计时（含 git2 全部修改），
+        // 结束后统一收口记录 + 广播 `git-operation`。读动作不记录（噪声）。
+        let started = std::time::Instant::now();
         let result = (|| -> Result<Value, String> {
             match a {
                 // ── 状态 / 只读 ─────────────────────────────────────────────
@@ -715,6 +846,15 @@ impl Capability for GitCapability {
                 require_string(p, "snapshotRef")?,
             )),
 
+            // ── 操作流水（FR-P2-4：只读展示 / 清空） ─────────────────────
+            "get_operations" => Ok(json!(list_operations(
+                require_string(p, "workspacePath")?
+            ))),
+            "clear_operations" => {
+                clear_operations(require_string(p, "workspacePath")?);
+                Ok(json!(null))
+            }
+
             _ => {
                 let _ = a;
                 // KNOWN_ACTIONS 守卫已在前拦截；此臂仅兜底 match 穷尽性
@@ -722,6 +862,17 @@ impl Capability for GitCapability {
             }
             }
         })();
+
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+
+        // FR-P2-4 操作流水：写动作（破坏性集合）统一收口记录，成败都留痕（失败也审计）。
+        // 记录在 WRITE_GATE 释放后做（record_operation 不碰 git，纯内存环形缓冲）。
+        if is_destructive(a) {
+            if let Ok(ws) = workspace(p) {
+                let entry = record_operation(&ws, a, result.is_ok(), elapsed_ms, ctx.source());
+                emit_operation_event(ctx, &entry);
+            }
+        }
 
         // 危险操作成功后：向前端广播撤销快照事件（操作失败则不广播，快照留作安全网）
         if result.is_ok() {
@@ -764,6 +915,7 @@ mod tests {
             "blame_file", "get_gitignore", "save_gitignore", "add_to_gitignore",
             "get_gitignore_templates", "create_pr", "get_pr_status",
             "undo_list", "undo_restore", "undo_drop",
+            "get_operations", "clear_operations",
         ];
         known.sort();
         handled.sort();
@@ -783,12 +935,12 @@ mod tests {
         for a in ["commit_changes", "discard_changes", "reset", "push_branch", "pull",
                   "rebase_branch", "delete_branch", "stash_drop", "init_repository",
                   "fetch", "amend_commit", "stash_apply", "commit_group",
-                  "undo_restore", "undo_drop"] {
+                  "undo_restore", "undo_drop", "clear_operations"] {
             assert!(is_destructive(a), "{} 应在破坏性名单", a);
         }
         // 只读动作不在名单（新 P1 读型动作同防护）
         for a in ["get_status", "get_log", "blame_file", "stash_list", "detect_host",
-                  "stash_show", "search_log", "get_reflog", "undo_list"] {
+                  "stash_show", "search_log", "get_reflog", "undo_list", "get_operations"] {
             assert!(!is_destructive(a), "{} 不该被拒（只读）", a);
         }
     }

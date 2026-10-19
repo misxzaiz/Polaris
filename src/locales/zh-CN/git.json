@@ -10,6 +10,13 @@
   "openWorkbench": "在编辑区打开 Git 工作台",
   "selectedFiles": "已选择 {{count}} 个文件",
   "batchProgress": "处理中: {{current}}/{{total}}",
+  "operations": {
+    "title": "操作流水",
+    "empty": "暂无操作记录",
+    "cleared": "已清空操作流水",
+    "clearFailed": "清空操作流水失败",
+    "clearTitle": "清空操作流水"
+  },
   "stage": "暂存",
   "unstage": "取消暂存",
   "discard": "丢弃更改",

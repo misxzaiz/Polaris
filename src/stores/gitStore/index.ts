@@ -19,6 +19,7 @@
  * - gitignoreSlice: .gitignore 管理
  * - utilitySlice: 工具方法
  * - undoSlice: 撤销快照（FR-P2-3 危险操作网络）
+ * - operationsSlice: 操作流水（FR-P2-4 写动作留痕）
  */
 
 import { create } from 'zustand'
@@ -34,6 +35,7 @@ import { createPRSlice } from './prSlice'
 import { createGitignoreSlice } from './gitignoreSlice'
 import { createUtilitySlice } from './utilitySlice'
 import { createUndoSlice } from './undoSlice'
+import { createOperationsSlice } from './operationsSlice'
 
 /**
  * Git Store
@@ -52,6 +54,7 @@ export const useGitStore = create<GitState>()((...a) => ({
   ...createGitignoreSlice(...a),
   ...createUtilitySlice(...a),
   ...createUndoSlice(...a),
+  ...createOperationsSlice(...a),
 }))
 
 // 导出类型
@@ -76,6 +79,8 @@ export type {
   UtilityActions,
   UndoState,
   UndoActions,
+  OperationsState,
+  OperationsActions,
 } from './types'
 
 // 导出工具函数

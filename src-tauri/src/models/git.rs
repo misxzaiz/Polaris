@@ -852,3 +852,29 @@ pub struct UndoRestoreOutcome {
     /// 冲突说明（无冲突为 None）
     pub conflict_message: Option<String>,
 }
+
+// ============================================================================
+// 操作流水（FR-P2-4：GitKraken Activity Log 等价）
+// ============================================================================
+
+/// 一次 cap.git 写操作留痕（前端「操作流水」面板只读展示；会话内滚动保留）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitOperationEntry {
+    /// 仓库工作区路径
+    pub ws_path: String,
+    /// 动作名（cap.git action，机器可读）
+    pub action: String,
+    /// 展示名（前端可直接呈现的中文操作名）
+    pub label: String,
+    /// 成败
+    pub ok: bool,
+    /// 耗时（ms）
+    pub duration_ms: u64,
+    /// 来源（bootstrap / remote / plugin:<id>）
+    pub source: String,
+    /// 完成时间（unix 秒）
+    pub ts: i64,
+    /// P2.5 任务队列 taskId（未启用为 None）
+    pub git_task_id: Option<String>,
+}

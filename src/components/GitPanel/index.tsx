@@ -19,10 +19,12 @@ import { TagsTab } from './TagsTab'
 import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
 import { AtomicCommitCard } from './AtomicCommitCard'
+import { OperationsLog } from './OperationsLog'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { initGitStatusWatcher } from '@/stores/gitStore/fileWatcherSubscriber'
 import { initUndoToastSubscriber } from '@/stores/gitStore/undoSubscriber'
+import { initOperationsSubscriber } from '@/stores/gitStore/operationsSubscriber'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
@@ -87,6 +89,21 @@ export function GitPanel({
   useEffect(() => {
     return initUndoToastSubscriber()
   }, [])
+
+  // FR-P2-4：挂载时订阅 git-operation → prepend 到操作流水分片。
+  // 回调经 ref 读最新 effectivePath（含子仓库选择），事件 ws 恰为生效仓库时同步 mirror 域。
+  useEffect(() => {
+    return initOperationsSubscriber(() => {
+      const p = effectivePathRef.current
+      return p || null
+    })
+  }, [])
+
+  // FR-P2-4：生效仓库变化时拉取一次操作流水（初始填充 + 切换仓库刷新）
+  useEffect(() => {
+    if (!effectivePath) return
+    void useGitStore.getState().getOperations(effectivePath)
+  }, [effectivePath])
 
   // 按生效路径读取状态：多仓库/多面板场景下各路径互不覆盖，
   // 彻底避免“点开 A 仓库却显示其它仓库/工作区内容”
@@ -949,6 +966,9 @@ export function GitPanel({
 
               {hasChanges && <CommitInput selectedFiles={selectedFiles} workspacePath={effectivePath} />}
               {<QuickActions hasChanges={hasChanges ?? false} workspacePath={effectivePath} />}
+
+              {/* FR-P2-4：操作流水折叠区（GitKraken Activity Log 等价，只读展示） */}
+              {effectivePath && <OperationsLog workspacePath={effectivePath} />}
             </>
           )}
 
