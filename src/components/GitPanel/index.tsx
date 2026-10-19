@@ -2,7 +2,7 @@
  * Git 面板主组件
  */
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2, Star } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
@@ -21,6 +21,7 @@ import { GitignoreTab } from './GitignoreTab'
 import { AtomicCommitCard } from './AtomicCommitCard'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
+import { initGitStatusWatcher } from '@/stores/gitStore/fileWatcherSubscriber'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
@@ -67,6 +68,18 @@ export function GitPanel({
 
   // 实际生效的仓库路径：选中子仓库时用子仓库；否则用当前工作区
   const effectivePath = selectedRepoPath ?? currentWorkspace?.path ?? ''
+
+  // FR-P2-2：挂载时订阅 file-system-change，自动刷新生效仓库 status。
+  // 回调经 ref 读最新 effectivePath（含子仓库选择），避免空依赖 effect 的闭包陈旧。
+  const effectivePathRef = useRef('')
+  effectivePathRef.current = effectivePath
+  useEffect(() => {
+    const cleanup = initGitStatusWatcher(() => {
+      const p = effectivePathRef.current
+      return p || null
+    })
+    return cleanup
+  }, [])
 
   // 按生效路径读取状态：多仓库/多面板场景下各路径互不覆盖，
   // 彻底避免“点开 A 仓库却显示其它仓库/工作区内容”
