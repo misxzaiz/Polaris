@@ -11,10 +11,14 @@
  * - none：空白
  * - 斜线：cell.edgeUp 指向 merge 节点 lane（换行汇入）→ 从本格画斜线到目标 lane
  *
+ * P2 增量：语义着色。`semantic` prop 由后端预计算（GitLogPage.semantic 每行一个），
+ * 节点 + 泳道线按语义色取主题 token；缺省（旧后端/未计算）回退 currentColor。
+ *
  * 与 history tab 主题 token 配合（不硬编码色值）。
  */
 
 import type { GitLaneRow } from '@/types/git'
+import type { GitLaneSemantic, GitLaneSemanticKind } from '@/types/git'
 
 const LANE_W = 14 // 每泳道宽 px
 const NODE_R = 3 // 节点半径
@@ -22,21 +26,35 @@ const NODE_R = 3 // 节点半径
 interface LaneGraphProps {
   row: GitLaneRow
   height?: number
+  /** P2 增量：本行语义色（后端预计算）；缺省回退旧行为 */
+  semantic?: GitLaneSemantic | null
 }
 
-export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
+/** 语义色 → 主题 token class。dim 走低透明度（整行淡化） */
+const SEMANTIC_COLOR: Record<GitLaneSemanticKind, string> = {
+  local: 'text-emerald-500', // 绿：当前分支内、已同步远程
+  unpushed: 'text-danger', // 红：未 push
+  merged: 'text-text-secondary', // 蓝灰：已进主干
+  dim: 'text-text-tertiary', // 灰暗：历史/孤立
+}
+
+export function LaneGraph({ row, height = 18, semantic }: LaneGraphProps) {
   if (!row.cells || row.cells.length === 0) {
     return <span className="w-0" aria-hidden />
   }
 
   const width = row.cells.length * LANE_W
+  const kind = semantic?.kind
+  // dim 行整体淡化（泳道线 + 节点都 opacity 降低）；其余语义色不额外降透明度
+  const dimmed = kind === 'dim'
+  const lineColorClass = kind ? SEMANTIC_COLOR[kind] : 'text-text-tertiary/60'
 
   return (
     <svg
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className="shrink-0 opacity-80"
+      className={`shrink-0 ${dimmed ? 'opacity-45' : 'opacity-80'}`}
       aria-hidden
     >
       {/* 竖线（empty 泳道贯穿；含 merge 行的延续线）需画在下层，节点盖在上层 */}
@@ -51,7 +69,7 @@ export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
               y2={height}
               stroke="currentColor"
               strokeWidth={1.2}
-              className="text-text-tertiary/60"
+              className={lineColorClass}
             />
           )
         }
@@ -73,7 +91,7 @@ export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
             y2={height * 0.35}
             stroke="currentColor"
             strokeWidth={1.2}
-            className="text-text-tertiary/60"
+            className={lineColorClass}
           />
         )
       })}
@@ -82,6 +100,12 @@ export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
       {row.cells.map((cell, i) => {
         const cx = cell.lane * LANE_W + LANE_W / 2
         const cy = height / 2
+        // 节点颜色：有语义色用语义色；无则回退 commit=primary / merge=text-primary
+        const nodeColorClass = kind
+          ? SEMANTIC_COLOR[kind]
+          : cell.node === 'commit'
+            ? 'text-primary'
+            : 'text-text-primary'
         if (cell.node === 'commit') {
           return (
             <circle
@@ -90,7 +114,7 @@ export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
               cy={cy}
               r={NODE_R}
               fill="currentColor"
-              className="text-primary"
+              className={nodeColorClass}
             />
           )
         }
@@ -103,7 +127,7 @@ export function LaneGraph({ row, height = 18 }: LaneGraphProps) {
               width={NODE_R * 2}
               height={NODE_R * 2}
               fill="currentColor"
-              className="text-text-primary"
+              className={nodeColorClass}
             />
           )
         }

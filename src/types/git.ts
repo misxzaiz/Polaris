@@ -142,6 +142,17 @@ export interface GitLaneRow {
 export interface GitLogPage {
   commits: GitCommit[]
   rows: GitLaneRow[]
+  /** P2 增量：每行语义色（与 commits 一一对应）；缺省空数组 = 旧后端/旧前端兼容 */
+  semantic?: GitLaneSemantic[]
+}
+
+/**
+ * 单行语义色（P2 增量：泳道图语义着色的服务端预计算）
+ * 与 Rust models::GitLaneSemantic（camelCase）双边同步
+ */
+export type GitLaneSemanticKind = 'local' | 'unpushed' | 'merged' | 'dim'
+export interface GitLaneSemantic {
+  kind: GitLaneSemanticKind
 }
 
 /**

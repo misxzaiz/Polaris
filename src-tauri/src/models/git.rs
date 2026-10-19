@@ -198,12 +198,28 @@ pub struct GitLaneRow {
     pub refs: Vec<GitCommitRef>,
 }
 
+/// 单行语义色（P2 增量：泳道图语义着色的服务端预计算）
+///
+/// 四态见 spec `plans/git-panel-p2-lane-increment-spec.md`：
+/// - "local"    —— 当前分支内、与远程已同步的本地提交（绿）
+/// - "unpushed" —— 当前分支内、任何远程不可达的提交（红，未 push）
+/// - "merged"   —— 已并入主干（main 可达）的历史提交（蓝灰）
+/// - "dim"      —— 当前分支不可达 / 陈旧孤立提交（灰暗）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLaneSemantic {
+    pub kind: String,
+}
+
 /// 泳道图分页结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitLogPage {
     pub commits: Vec<GitCommit>,
     pub rows: Vec<GitLaneRow>,
+    /// P2 增量：每行语义色，与 commits 一一对应；缺省空数组 = 旧实现/旧前端兼容
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub semantic: Vec<GitLaneSemantic>,
 }
 
 /// Git 提交详情

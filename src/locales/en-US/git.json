@@ -547,5 +547,14 @@
     "changedFiles": "Changed Files",
     "files": "files",
     "showingLines": "Showing {{count}} of {{total}} lines"
+  },
+
+  "lane": {
+    "legendLocal": "Local branch",
+    "legendUnpushed": "Unpushed",
+    "legendMerged": "Merged",
+    "legendDim": "History",
+    "wip": "Uncommitted changes",
+    "wipCount": "{{count}} files"
   }
 }

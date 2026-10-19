@@ -14,7 +14,7 @@ use git2::{DiffOptions, Oid, Repository};
 
 use crate::models::git::{
     GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitCommitRef, GitFileHistoryEntry,
-    GitLaneCell, GitLaneRow, GitLogPage, GitServiceError, LogSearchFilter,
+    GitLaneCell, GitLaneRow, GitLaneSemantic, GitLogPage, GitServiceError, LogSearchFilter,
 };
 use super::diff::convert_diff;
 use super::executor::open_repository;
@@ -381,6 +381,7 @@ pub fn get_log_with_lanes(
     let refs_map = collect_commit_refs(&repo);
 
     let mut commits = Vec::new();
+    let mut walk_shas = Vec::new();
     for (idx, oid_result) in revwalk.enumerate() {
         if idx < skip {
             continue;
@@ -392,12 +393,146 @@ pub fn get_log_with_lanes(
         let commit = repo.find_commit(oid)?;
         let mut model = commit_to_model(&commit);
         model.refs = refs_map.get(&model.sha).cloned().unwrap_or_default();
+        walk_shas.push(model.sha.clone());
         commits.push(model);
     }
 
     let rows = compute_lanes(&commits);
+    let semantic = compute_semantics(&repo, &walk_shas);
 
-    Ok(GitLogPage { commits, rows })
+    Ok(GitLogPage {
+        commits,
+        rows,
+        semantic,
+    })
+}
+
+/// P2 增量：语义色计算（服务端预计算，前端直接消费）
+///
+/// 输入三条 revwalk 可达集（每 commit O(1) 查集合）：
+/// - `main_headset`：`main`（或 `master`）可达的所有 commit sha（主干历史）
+/// - `remote_headset`：全部 `refs/remotes/*` 可达的 commit sha 并集（任何远程可达 = 已 push 过）
+/// - `branch_headset`：当前 revwalk tip（HEAD）可达的 commit sha（当前分支自身历史）
+///
+/// 判定顺序（先命中即定，spec §2.2）：
+/// 1. `in main && !in branch`  → "merged"（已并入主干、当前分支不可达的历史，蓝灰）
+/// 2. `in remote && !in branch` → "dim"（他分支/远程可见但当前不可达，灰暗）
+/// 3. `in branch && !in remote` → "unpushed"（当前分支内、未 push 到任何远程，红）
+/// 4. `in branch && in remote`  → "local"（当前分支内、已同步远程，绿）
+/// 5. else                     → "dim"（孤立提交）
+///
+/// 单分支无远程：全部 in branch && in main && !in remote → 均判 unpushed（红，未 push）✅
+/// 单分支已 push：均 local（绿）✅
+fn compute_semantics(
+    repo: &Repository,
+    walk_shas: &[String],
+) -> Vec<GitLaneSemantic> {
+    if walk_shas.is_empty() {
+        return Vec::new();
+    }
+
+    // 主干分支名：main 优先，其次 master，都没有则无 merged 判定
+    let main_ref = if repo.find_reference("refs/heads/main").is_ok() {
+        Some("refs/heads/main")
+    } else if repo.find_reference("refs/heads/master").is_ok() {
+        Some("refs/heads/master")
+    } else {
+        None
+    };
+
+    let main_headset = main_ref
+        .and_then(|r| revwalk_headset(repo, r).ok())
+        .unwrap_or_default();
+    let remote_headset = revwalk_remote_headset(repo);
+    let branch_headset = revwalk_headset_from_tip(repo, &walk_shas[0]);
+
+    let mut out = Vec::with_capacity(walk_shas.len());
+    for sha in walk_shas {
+        let in_main = main_headset.contains(sha.as_str());
+        let in_remote = remote_headset.contains(sha.as_str());
+        let in_branch = branch_headset.contains(sha.as_str());
+
+        let kind = if in_main && !in_branch {
+            "merged"
+        } else if in_remote && !in_branch {
+            "dim"
+        } else if in_branch && !in_remote {
+            "unpushed"
+        } else if in_branch && in_remote {
+            "local"
+        } else {
+            "dim"
+        };
+        out.push(GitLaneSemantic {
+            kind: kind.to_string(),
+        });
+    }
+    out
+}
+
+/// 从指定 ref 起点收集全部可达 commit sha（revwalk，拓扑序，hide 无）
+fn revwalk_headset(repo: &Repository, ref_name: &str) -> Result<std::collections::HashSet<String>, GitServiceError> {
+    let mut rw = repo.revwalk()?;
+    rw.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    rw.push_ref(ref_name)?;
+    let mut set = std::collections::HashSet::new();
+    for oid in rw {
+        set.insert(oid?.to_string());
+    }
+    Ok(set)
+}
+
+/// 从指定 commit sha 起点收集全部可达 commit sha（失败返回空集，不阻塞语义计算）
+fn revwalk_headset_from_tip(
+    repo: &Repository,
+    tip_sha: &str,
+) -> std::collections::HashSet<String> {
+    let mut rw = match repo.revwalk() {
+        Ok(rw) => rw,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    let _ = rw.set_sorting(git2::Sort::TOPOLOGICAL);
+    let oid = match git2::Oid::from_str(tip_sha) {
+        Ok(oid) => oid,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    if rw.push(oid).is_err() {
+        return std::collections::HashSet::new();
+    }
+    let mut set = std::collections::HashSet::new();
+    for oid in rw {
+        if let Ok(oid) = oid {
+            set.insert(oid.to_string());
+        }
+    }
+    set
+}
+
+/// 全部远程 refs 可达 commit sha 的并集（`refs/remotes/*`）
+fn revwalk_remote_headset(repo: &Repository) -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    let Ok(references) = repo.references_glob("refs/remotes/*") else {
+        return set;
+    };
+    for reference in references.flatten() {
+        let Ok(obj) = reference.peel(git2::ObjectType::Commit) else {
+            continue;
+        };
+        let mut rw = match repo.revwalk() {
+            Ok(rw) => rw,
+            Err(_) => continue,
+        };
+        let _ = rw.set_sorting(git2::Sort::TOPOLOGICAL);
+        if rw.push(obj.id()).is_err() {
+            continue;
+        }
+        for oid in rw {
+            if let Ok(oid) = oid {
+                set.insert(oid.to_string());
+            }
+        }
+    }
+    set
 }
 pub fn get_commit_details(
     path: &Path,
@@ -808,5 +943,97 @@ mod tests {
             c.refs.iter().any(|r| r.name == "feature" && r.kind == "local")
         });
         assert!(has_local_feature, "feature 分支应有 local ref 装饰");
+    }
+
+    // ── P2 增量：语义着色 ────────────────────────────────────────────
+
+    /// 单分支无远程仓库 → 所有提交判定 unpushed（未 push 红）
+    #[test]
+    fn semantic_all_unpushed_when_no_remote() {
+        let (_tmp, repo_path) = build_lane_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        assert_eq!(page.semantic.len(), page.commits.len(), "semantic 与 commits 一一对应");
+        for (i, s) in page.semantic.iter().enumerate() {
+            assert_eq!(
+                s.kind, "unpushed",
+                "无远程仓库的提交 #{} (sha={}) 应为 unpushed，实际: {}",
+                i, page.commits[i].sha, s.kind
+            );
+        }
+    }
+
+    /// 构造带远程的仓库：本地分支领先/落后 origin/main，语义色应区分 unpushed/merged/local
+    ///
+    /// 拓扑：master 主线 A←B←C；从 C 建远程 origin/master 指向 C；
+    /// 继续在 master 提交 D←E（本地领先）；创建 refs/remotes/origin/feature 指向 C（他分支）；
+    /// HEAD=master 可达 A..E，origin/master=C。预期：
+    /// - E, D → unpushed（branch 可达、remote 不可达）
+    /// - C, B, A → merged（在 main (=master=C) 可达）？—— C 是 origin/master 指向，且 B/C/A
+    ///   可被 main 分支遍历；但 C 同时被 branch 可达。判定 in_main && !in_branch 才是 merged，
+    ///   C/B/A 都被 branch(master) 可达 → 走 in_branch && in_remote → local（绿）。
+    fn build_remote_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo_path = tmp.path().to_path_buf();
+        let repo = Repository::init(&repo_path).unwrap();
+        let sig = Signature::now("t", "t@t").unwrap();
+
+        let commit = |repo: &Repository, file: &str, content: &str, branch: &str| -> String {
+            std::fs::write(repo_path.join(file), content).unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new(file)).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+            let parents: Vec<&git2::Commit> = parent.iter().collect();
+            repo.commit(Some(branch), &sig, &sig, content, &tree, &parents)
+                .unwrap()
+                .to_string()
+        };
+
+        let a = commit(&repo, "a.txt", "A", "refs/heads/master");
+        let b = commit(&repo, "b.txt", "B", "refs/heads/master");
+        let c = commit(&repo, "c.txt", "C", "refs/heads/master");
+
+        // origin/master 指向 C（远程同步基准）
+        let c_oid = git2::Oid::from_str(&c).unwrap();
+        repo.reference("refs/remotes/origin/master", c_oid, true, "remote master at C")
+            .unwrap();
+        // 远程他分支 origin/feature 指向 B（remote 可达但 branch 不可达 → dim 候选）
+        let b_oid = git2::Oid::from_str(&b).unwrap();
+        repo.reference("refs/remotes/origin/feature", b_oid, true, "remote feature at B")
+            .unwrap();
+
+        // 本地继续领先：D ← E
+        let _d = commit(&repo, "d.txt", "D", "refs/heads/master");
+        let _e = commit(&repo, "e.txt", "E", "refs/heads/master");
+        let _ = (a, c);
+
+        (tmp, repo_path)
+    }
+
+    /// master 主线 + 远程，语义色区分：
+    /// - E, D：branch 可达 + remote 不可达 → unpushed
+    /// - C, B：branch + remote 均可达（origin/master=C）→ local
+    /// - A：branch 可达 + remote 不可达（A 不在 origin/master 可达集）→ unpushed
+    ///   （A 在 C 之后，C 可达即 C..A 全可达，A 也应 remote 可达）→ 实际 A 也在 origin/master 可达 → local
+    #[test]
+    fn semantic_colors_unpushed_local() {
+        let (_tmp, repo_path) = build_remote_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        let by_msg: std::collections::HashMap<&str, &str> = page
+            .commits
+            .iter()
+            .zip(&page.semantic)
+            .map(|(c, s)| (c.message.as_str(), s.kind.as_str()))
+            .collect();
+
+        assert_eq!(by_msg.get("E"), Some(&"unpushed"), "E 未 push");
+        assert_eq!(by_msg.get("D"), Some(&"unpushed"), "D 未 push");
+        assert_eq!(by_msg.get("C"), Some(&"local"), "C 已推远程 local");
+        assert_eq!(by_msg.get("B"), Some(&"local"), "B 已推远程 local");
+        assert_eq!(by_msg.get("A"), Some(&"local"), "A 已推远程 local");
     }
 }

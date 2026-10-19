@@ -547,5 +547,14 @@
     "changedFiles": "变更文件",
     "files": "个文件",
     "showingLines": "显示 {{count}} / {{total}} 行"
+  },
+
+  "lane": {
+    "legendLocal": "当前分支",
+    "legendUnpushed": "未 push",
+    "legendMerged": "已进主干",
+    "legendDim": "历史",
+    "wip": "未提交改动",
+    "wipCount": "{{count}} 个文件"
   }
 }
