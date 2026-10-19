@@ -24,7 +24,7 @@ P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全�
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
 P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
-P2 其余           ██████░░░░  60%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水已完成
+P2 其余           ████████░░  80%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水 + FR-P2-AI4 冲突预测已完成
 P3 全部           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -168,10 +168,22 @@ c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 
 
 - GitKraken Activity Log 等价；复用后端 logger，前端只读
 
-#### FR-P2-AI4 冲突预测
+#### FR-P2-AI4 冲突预测 ✅ 已完成
 
-- fetch 后对「对方 ahead commits 涉及的文件 ∩ 本地 modified 文件」给风险清单
-- 清单是确定计算（前端直接显示），AI 仅解释部分消耗 token
+- spec：`plans/git-panel-p2-conflict-predict-spec.md`（四段式：目标/契约/验收/不做）
+- **实现形态**（对齐 master-plan §1.2 + 原型 `#conflict-predict` 卡片）：fetch 后确定性计算
+  「对方 ahead commits 涉及的文件 ∩ 本地 modified 文件」风险清单，**纯 git2 只读、0 token**；
+  AI 解释层已砍，仅保留一条规则建议（`advice: "none" | "commitOrStash"`）。
+- **后端**：`services/git/conflict.rs::predict_conflicts`（revwalk `HEAD..upstream` + 第一父 diff deltas
+  收集 incoming 文件集；`parse_statuses` 复用本地 modified；双指针归并求交集）；cap.git 新增只读
+  action `predict_conflicts`（KNOWN_ACTIONS + describe + match + patrol 四同步）。
+- **前端**：`conflictPredictSlice`（`invoke('git_predict_conflicts')` → transport `git_` 前缀透明转发
+  cap.git；分片 `conflictPredictionsByWs`）+ `ConflictPredictionCard`（RemoteTab handleFetch 成功后
+  并行计算并渲染）。i18n 双语（zh-CN / en-US `conflictPredict.*`）。
+- **测试**：后端 4 用例（fork 交集 / disjoint 安全 / 无上游空预测 / 非仓库报错）+ 独立 git2 harness
+  运行时验证 + 前端 slice/card/RemoteTab 9 用例全绿。
+- 门控：`cargo check --lib` ✅、clippy 新增 0 ✅、Web-only 门控 ✅、`tsc --noEmit` ✅、lint 新增 0 ✅、
+  gitStore 232 + GitPanel 37 测试 ✅。
 
 ### 3.3 P3 深水区
 
