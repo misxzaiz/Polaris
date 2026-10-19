@@ -955,6 +955,7 @@ impl OldConfig {
             dispatch: Default::default(),
             spiderman_theme: None,
             chat_display: Default::default(),
+            ui_control_enabled: false,
             workspaces: Vec::new(),
             current_workspace_id: None,
             terminal_scripts: Default::default(),
@@ -1058,6 +1059,33 @@ mod tests {
             .unwrap();
 
         assert_eq!(saved.git_bin_path, None);
+    }
+
+    #[test]
+    fn patch_persists_ui_control_enabled() {
+        // 回归：cap.ui 控制开关（uiControlEnabled）此前因 Rust Config 结构体
+        // 缺字段，在 patch → from_value<Config> 时被 serde 静默丢弃，
+        // 落盘后读回仍为 false → 设置页开关保存无效。该测试锁定「可持久化」。
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.json");
+        let config = Config::default();
+        let mut store = ConfigStore::new_test(config, config_path.clone());
+
+        let saved = store
+            .patch(serde_json::json!({
+                "uiControlEnabled": true
+            }))
+            .unwrap();
+
+        // patch 返回的配置携带该字段
+        assert!(saved.ui_control_enabled);
+        // 落盘后重新从文件加载，字段仍在（磁盘 config.json 包含 uiControlEnabled）
+        let reloaded = ConfigStore::load_from_file(&config_path).unwrap();
+        assert!(reloaded.ui_control_enabled);
+        // 不影响其他字段
+        assert_eq!(reloaded.default_engine, saved.default_engine);
+        // 默认关闭
+        assert!(!Config::default().ui_control_enabled);
     }
 
     #[test]

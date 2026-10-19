@@ -1498,6 +1498,12 @@ pub struct Config {
     #[serde(default)]
     pub chat_display: ChatDisplaySettings,
 
+    /// 允许 AI 控制界面（cap.ui.* 工具暴露）。默认 false——关闭时 bus MCP
+    /// 被禁用，AI 工具集不含 cap.ui.theme / cap.ui.chat。开启后 AI 可改
+    /// 主题配色与对话渲染配置（三端同源生效）。
+    #[serde(default)]
+    pub ui_control_enabled: bool,
+
     /// 工作区列表（跨桌面/Web 共享，持久化到配置文件）
     #[serde(default)]
     pub workspaces: Vec<WorkspaceEntry>,
@@ -1668,6 +1674,7 @@ impl Default for Config {
             dispatch: DispatchConfig::default(),
             spiderman_theme: None,
             chat_display: ChatDisplaySettings::default(),
+            ui_control_enabled: false,
             workspaces: Vec::new(),
             current_workspace_id: None,
             terminal_scripts: BTreeMap::new(),
