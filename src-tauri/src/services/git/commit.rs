@@ -45,19 +45,16 @@ fn stage_path(
     }
 }
 
-/// 提交变更
-pub fn commit(
-    path: &Path,
-    message: &str,
+/// 决定要暂存哪些文件并写入仓库 index（commit/amend 共用前置）
+fn stage_selection(
+    repo: &Repository,
     stage_all: bool,
     selected_files: Option<Vec<String>>,
-) -> Result<String, GitServiceError> {
-    let repo = open_repository(path)?;
-
+) -> Result<(), GitServiceError> {
     let mut index = repo.index()?;
 
     // 决定要暂存哪些文件
-    let files_to_stage = if let Some(ref files) = selected_files {
+    let files_to_stage = if let Some(files) = selected_files.as_ref() {
         info!("只暂存选中的 {} 个文件", files.len());
         files.clone()
     } else if stage_all {
@@ -87,9 +84,6 @@ pub fn commit(
             "nul", "con", "prn", "aux", "com1", "com2", "com3", "com4", "lpt1", "lpt2", "lpt3",
         ];
 
-        let mut added_count = 0;
-        let mut removed_count = 0;
-
         for path_str in files_to_stage {
             let path_lower = path_str.to_lowercase();
             if reserved.iter().any(|&r| path_lower.contains(r)) {
@@ -97,27 +91,32 @@ pub fn commit(
                 continue;
             }
 
-            match stage_path(&repo, &mut index, &path_str) {
-                Ok(StagedPathKind::Removed) => {
-                    debug!("标记删除文件: {}", path_str);
-                    removed_count += 1;
-                }
-                Ok(StagedPathKind::AddedOrModified) => {
-                    added_count += 1;
-                }
+            match stage_path(repo, &mut index, &path_str) {
+                Ok(_) => {}
                 Err(e) => {
                     debug!("跳过文件 {}: {:?}", path_str, e);
                 }
             }
         }
 
-        info!(
-            "已添加 {} 个文件，移除 {} 个文件到暂存区",
-            added_count, removed_count
-        );
-
         index.write()?;
     }
+
+    Ok(())
+}
+
+/// 提交变更
+pub fn commit(
+    path: &Path,
+    message: &str,
+    stage_all: bool,
+    selected_files: Option<Vec<String>>,
+) -> Result<String, GitServiceError> {
+    let repo = open_repository(path)?;
+
+    stage_selection(&repo, stage_all, selected_files)?;
+
+    let mut index = repo.index()?;
 
     // 检查是否有变更
     if index.is_empty() {
@@ -149,6 +148,41 @@ pub fn commit(
     };
 
     Ok(oid.to_string())
+}
+
+/// Amend HEAD（P1：任意历史 commit 的 amend 依赖 P3 interactive rebase，本版覆盖 HEAD）
+///
+/// - `message` Some → 替换提交信息并合入当前 index 内容；None → 保持原信息（--no-edit 语义）
+/// - 复用 `stage_selection`（stage_all / selected_files / 已暂存内容三态与 commit 完全一致）
+/// - 作者保持原提交作者；committer 使用当前签名 —— 与 `git commit --amend` 语义一致
+pub fn amend_commit(
+    path: &Path,
+    message: Option<&str>,
+    stage_all: bool,
+    selected_files: Option<Vec<String>>,
+) -> Result<String, GitServiceError> {
+    let repo = open_repository(path)?;
+
+    stage_selection(&repo, stage_all, selected_files)?;
+
+    let head_commit = repo.head()?.peel_to_commit()?;
+
+    // HEAD 无父提交（首次提交）时 amend 同样合法（Git 支持 root commit 的 --amend）
+    let mut index = repo.index()?;
+    if index.is_empty() {
+        return Err(GitServiceError::CLIError(
+            "No changes to amend (index empty)".to_string(),
+        ));
+    }
+    let tree_id = index.write_tree()?;
+    let tree = repo.find_tree(tree_id)?;
+
+    // git2 0.18 amend 签名：(update_ref, author, committer, message_encoding, message, tree)
+    // message_encoding=None 用默认 UTF-8；author=None 保持原提交作者
+    let amended_oid = head_commit.amend(Some("HEAD"), None, None, None, message, Some(&tree))?;
+
+    info!("amend 完成: {} → {}", head_commit.id(), amended_oid);
+    Ok(amended_oid.to_string())
 }
 
 /// 暂存文件

@@ -19,6 +19,7 @@ mod log;
 mod stash;
 mod reset;
 mod gitignore;
+mod reflog;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};
@@ -32,24 +33,26 @@ pub use tag::{get_tags, create_tag, delete_tag};
 pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
-pub use commit::{commit, stage_file, unstage_file, discard_changes, batch_stage};
+pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage};
 pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
-    push_branch, push_set_upstream, create_pr, get_pr_status, pull,
+    push_branch, push_set_upstream, create_pr, get_pr_status, pull, fetch,
 };
-pub use log::{get_log, get_commit_details, get_file_history, blame_file};
-pub use stash::{stash_save, stash_list, stash_pop, stash_drop};
+pub use log::{get_log, search_log, get_commit_details, get_file_history, blame_file};
+pub use stash::{stash_save, stash_list, stash_pop, stash_drop, stash_apply, stash_show};
 pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
+pub use reflog::get_reflog;
 
 use std::path::Path;
 
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitRemote,
-    GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
-    GitServiceError, PullRequest,
+    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
+    GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag,
+    LogSearchFilter,
+    PullRequest,
 };
 
 /// Git 服务
@@ -299,15 +302,21 @@ impl GitService {
         delete_remote(path, name)
     }
 
-    /// 推送分支到远程
+    /// 推送分支到远程（P1：force-with-lease 安全化 —— force 一律走 lease，裸 --force 除名）
     pub fn push_branch(
         path: &Path,
         branch_name: &str,
         remote_name: &str,
         force: bool,
         remote_branch_name: Option<&str>,
+        lease: Option<&str>,
     ) -> Result<(), GitServiceError> {
-        push_branch(path, branch_name, remote_name, force, remote_branch_name)
+        push_branch(path, branch_name, remote_name, force, remote_branch_name, lease)
+    }
+
+    /// 拉取远程更新（fetch —— 不合并；auto-fetch 调度默认关 = 前端设置项）
+    pub fn fetch(path: &Path, remote_name: Option<&str>, prune: bool) -> Result<String, GitServiceError> {
+        fetch(path, remote_name, prune)
     }
 
     /// 推送分支并设置上游
@@ -351,6 +360,35 @@ impl GitService {
         branch: Option<&str>,
     ) -> Result<Vec<GitCommit>, GitServiceError> {
         get_log(path, limit, skip, branch)
+    }
+
+    /// 提交历史搜索（P1：log 搜索 —— grep/author/pickaxe/since/范围）
+    pub fn search_log(
+        path: &Path,
+        filter: &LogSearchFilter,
+        limit: Option<usize>,
+        skip: Option<usize>,
+    ) -> Result<Vec<GitCommit>, GitServiceError> {
+        search_log(path, filter, limit, skip)
+    }
+
+    /// 读取 reflog（P1：reflog UI + 一键恢复的地基）
+    pub fn get_reflog(
+        path: &Path,
+        branch: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<GitReflogEntry>, GitServiceError> {
+        get_reflog(path, branch, limit)
+    }
+
+    /// Amend HEAD（P1；任意历史 commit amend 依赖 P3 interactive rebase）
+    pub fn amend_commit(
+        path: &Path,
+        message: Option<&str>,
+        stage_all: bool,
+        selected_files: Option<Vec<String>>,
+    ) -> Result<String, GitServiceError> {
+        amend_commit(path, message, stage_all, selected_files)
     }
 
     /// 获取单个提交详情
@@ -403,6 +441,16 @@ impl GitService {
     /// 删除 Stash
     pub fn stash_drop(path: &Path, index: usize) -> Result<(), GitServiceError> {
         stash_drop(path, index)
+    }
+
+    /// 应用 Stash（保留 stash，不 drop —— P1 parity：与 IDEA apply 对齐）
+    pub fn stash_apply(path: &Path, index: Option<usize>) -> Result<(), GitServiceError> {
+        stash_apply(path, index)
+    }
+
+    /// 查看 Stash patch 内容（P1）
+    pub fn stash_show(path: &Path, index: Option<usize>) -> Result<String, GitServiceError> {
+        stash_show(path, index)
     }
 
     // ========================================================================

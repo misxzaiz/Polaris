@@ -552,6 +552,55 @@ pub struct GitStashEntry {
 }
 
 // ============================================================================
+// Reflog（P1：reflog UI + 一键恢复）
+// ============================================================================
+
+/// Reflog 条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitReflogEntry {
+    /// 完整提交 sha（恢复目标 = checkout sha）
+    pub sha: String,
+    /// 短 sha
+    pub short_sha: String,
+    /// reflog 选择器（如 HEAD@{0}、refs/heads/main@{3}）
+    pub selector: String,
+    /// 动作描述（%gs，如 "checkout: moving from a to b"）
+    pub subject: String,
+    /// Unix 秒
+    pub timestamp: i64,
+    /// 关联分支名（%gD 无 fname? 简化：selector 含分支时前端解析）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
+}
+
+// ============================================================================
+// Log 搜索（P1：log 搜索 + AI-6 参数编译器）
+// ============================================================================
+
+/// 提交历史搜索过滤器（对应 CLI git log 的 grep/author/-S/--since 家族）
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogSearchFilter {
+    /// 提交标题匹配（--grep，匹配整条 message；git 多 --grep 为 OR 语义，取单值）
+    pub grep: Option<String>,
+    /// 作者名（--author，正则）
+    pub author: Option<String>,
+    /// 代码内容匹配（-S pickaxe），精确出现次数变化
+    pub pickaxe: Option<String>,
+    /// 路径过滤（--）
+    pub path: Option<String>,
+    /// 起始时间（--since，如 "2 weeks ago" / "2026-01-01"）
+    pub since: Option<String>,
+    /// 截止时间（--until）
+    pub until: Option<String>,
+    /// 分支范围（"a..b" | "a...b" | "main"），push_history_tip 等价的 tip 覆盖
+    pub range: Option<String>,
+    /// 正则模式开关（--extended-regexp? CLI 默认 basic；git --grep 支持基本正则；E 开关用 --fixed-strings 反向）
+    pub fixed_strings: bool,
+}
+
+// ============================================================================
 // 冲突文件
 // ============================================================================
 

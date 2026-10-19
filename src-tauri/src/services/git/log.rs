@@ -5,11 +5,16 @@
 
 use std::path::Path;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use super::utils::CREATE_NO_WINDOW;
+
 use git2::{DiffOptions, Oid, Repository};
 
 use crate::models::git::{
     GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitFileHistoryEntry,
-    GitServiceError,
+    GitServiceError, LogSearchFilter,
 };
 use super::diff::convert_diff;
 use super::executor::open_repository;
@@ -60,9 +65,118 @@ fn push_history_tip(
     Ok(())
 }
 
-/// 获取提交历史
-pub fn get_log(
+/// 提交历史搜索（P1：UI 搜索 + AI-6「自然语言 → 搜索参数」编译器的动作端）
+///
+/// CLI 实现免费复用 git 的 grep/author/pickaxe/since 家族与分支范围（a..b / a...b），
+/// 免 git2 revwalk 侧自造过滤器（裁决 5「不双实现」精神：git 已实现的不再手写）。
+///
+/// 参数语义：`filter` 各字段均可独立组合；`fixed_strings=true` 时用 --fixed-strings
+/// （字面子串，AI-6 编译器把"包含 xx"的意图映射到该开关以避免正则注入歧义）。
+pub fn search_log(
     path: &Path,
+    filter: &LogSearchFilter,
+    limit: Option<usize>,
+    skip: Option<usize>,
+) -> Result<Vec<GitCommit>, GitServiceError> {
+    let limit = limit.unwrap_or(50);
+    // 记录分隔符 = ASCII GS（%x1e），字段分隔符 = ASCII US（%x1f）
+    // %B 为完整提交信息（可多行）——必须放在最后一个字段，按记录级切分解析
+    const FORMAT: &str =
+        "%H%x1f%h%x1f%P%x1f%an%x1f%ae%x1f%ct%x1f%B%x1e";
+
+    let mut args: Vec<String> = vec![
+        "log".to_string(),
+        format!("--format={}", FORMAT),
+        "-n".to_string(),
+        limit.to_string(),
+    ];
+    if let Some(skip_n) = skip {
+        if skip_n > 0 {
+            args.push(format!("--skip={}", skip_n));
+        }
+    }
+    if filter.fixed_strings {
+        args.push("--fixed-strings".to_string());
+    }
+    if let Some(grep) = &filter.grep {
+        // -- 语法上含空格的 pattern 走 = 形式；以 '-' 开头的 pattern 前置 --grep=result
+        let mut arg = "--grep=".to_string();
+        arg.push_str(grep);
+        args.push(arg);
+    }
+    if let Some(author) = &filter.author {
+        args.push(format!("--author={}", author));
+    }
+    if let Some(pickaxe) = &filter.pickaxe {
+        args.push("-S".to_string());
+        args.push(pickaxe.clone());
+    }
+    if let Some(since) = &filter.since {
+        args.push(format!("--since={}", since));
+    }
+    if let Some(until) = &filter.until {
+        args.push(format!("--until={}", until));
+    }
+    if let Some(range) = &filter.range {
+        args.push(range.clone());
+    }
+    if let Some(p) = &filter.path {
+        args.push("--".to_string());
+        args.push(p.clone());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    #[cfg(windows)]
+    let output = std::process::Command::new("git")
+        .args(&arg_refs)
+        .current_dir(path)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+
+    #[cfg(not(windows))]
+    let output = std::process::Command::new("git")
+        .args(&arg_refs)
+        .current_dir(path)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitServiceError::CLIError(stderr.to_string()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut commits = Vec::new();
+    for record in stdout.split('\x1e') {
+        let record = record.trim();
+        if record.is_empty() {
+            continue;
+        }
+        let parts: Vec<&str> = record.split('\x1f').collect();
+        if parts.len() != 7 {
+            continue;
+        }
+        commits.push(GitCommit {
+            sha: parts[0].trim().to_string(),
+            short_sha: parts[1].trim().to_string(),
+            parents: parts[2]
+                .split_whitespace()
+                .map(String::from)
+                .collect(),
+            author: parts[3].trim().to_string(),
+            author_email: parts[4].trim().to_string(),
+            timestamp: Some(parts[5].trim().parse().unwrap_or(0)),
+            message: parts[6]
+                .trim_start()
+                .trim_end()
+                .to_string(),
+        });
+    }
+
+    Ok(commits)
+}
+
+/// 获取提交历史
+pub fn get_log(    path: &Path,
     limit: Option<usize>,
     skip: Option<usize>,
     branch: Option<&str>,
@@ -70,7 +184,11 @@ pub fn get_log(
     let repo = open_repository(path)?;
     let mut revwalk = repo.revwalk()?;
 
-    revwalk.set_sorting(git2::Sort::TIME)?;
+    // master-plan C6①：log 主遍历改拓扑序（Sort::TIME 与 lane 泳道拓扑序冲突，
+    // 跨页重放在加权时间序下不可复现）。P2 lane 图与页 N 重放均依赖显式拓扑序。
+    // 行为变化点：合并交叉处的展示顺序可能不同于旧时间序——这是裁决指定的
+    // 协议级变化，前端面板不再自行重排（lane 算法直接消费本序）。
+    revwalk.set_sorting(git2::Sort::TOPOLOGICAL)?;
 
     push_history_tip(&repo, &mut revwalk, branch)?;
 
