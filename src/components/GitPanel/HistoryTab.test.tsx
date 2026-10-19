@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { HistoryTab } from './HistoryTab'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import type { GitBranch, GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry } from '@/types/git'
+import type { GitBranch, GitCommit, GitCommitDetails, GitDiffEntry, GitFileHistoryEntry, GitReflogEntry } from '@/types/git'
 import type { GitState } from '@/stores/gitStore'
 
 vi.mock('@/components/Diff/DiffViewer', () => ({
@@ -84,6 +84,25 @@ const detailsFor = (commit: GitCommit): GitCommitDetails => ({
   totalDeletions: 3,
 })
 
+const reflogEntries: GitReflogEntry[] = [
+  {
+    selector: 'HEAD@{0}',
+    subject: 'commit: Add reflog panel',
+    sha: '3333333333333333333333333333333333333333',
+    shortSha: '3333333',
+    timestamp: 1_700_000_200,
+    branch: 'main',
+  },
+  {
+    selector: 'HEAD@{1}',
+    subject: 'commit: Fix search panel',
+    sha: '1111111111111111111111111111111111111111',
+    shortSha: '1111111',
+    timestamp: 1_700_000_000,
+    branch: null,
+  },
+]
+
 const fileHistoryEntries: GitFileHistoryEntry[] = [
   {
     commit: commits[0],
@@ -106,6 +125,10 @@ describe('HistoryTab', () => {
   const getCommitDetails = vi.fn()
   const getFileHistory = vi.fn()
   const getBranches = vi.fn()
+  const searchLog = vi.fn()
+  const getReflog = vi.fn()
+  const checkoutCommit = vi.fn()
+  const refreshStatus = vi.fn()
   const clipboardWriteText = vi.fn()
 
   beforeEach(() => {
@@ -125,11 +148,20 @@ describe('HistoryTab', () => {
       return Promise.resolve(detailsFor(commit))
     })
 
+    searchLog.mockResolvedValue(commits)
+    getReflog.mockResolvedValue(reflogEntries)
+    checkoutCommit.mockResolvedValue(undefined)
+    refreshStatus.mockResolvedValue(undefined)
+
     useGitStore.setState({
       getLog: getLog as unknown as GitState['getLog'],
       getCommitDetails: getCommitDetails as unknown as GitState['getCommitDetails'],
       getFileHistory: getFileHistory as unknown as GitState['getFileHistory'],
       getBranches: getBranches as unknown as GitState['getBranches'],
+      searchLog: searchLog as unknown as GitState['searchLog'],
+      getReflog: getReflog as unknown as GitState['getReflog'],
+      checkoutCommit: checkoutCommit as unknown as GitState['checkoutCommit'],
+      refreshStatus: refreshStatus as unknown as GitState['refreshStatus'],
       branches,
       status: {
         branch: 'main',
@@ -183,9 +215,9 @@ describe('HistoryTab', () => {
       expect(getLog).toHaveBeenCalledWith('D:/repo', 20, 0, undefined)
     })
 
-    fireEvent.change(screen.getByLabelText('history.branchFilter'), {
-      target: { value: 'feature/history' },
-    })
+    // branchFilter 是自定义下拉按钮（73715eee 起由原生 select 改造），用 change 事件无法触发
+    fireEvent.click(screen.getByLabelText('history.branchFilter'))
+    fireEvent.click(screen.getAllByRole('option').find((el) => el.textContent === 'feature/history')!)
 
     await waitFor(() => {
       expect(getLog).toHaveBeenLastCalledWith('D:/repo', 20, 0, 'feature/history')
@@ -439,5 +471,52 @@ describe('HistoryTab', () => {
 
     expect(await screen.findByText('history.title')).toBeInTheDocument()
     expect(screen.getByPlaceholderText('history.searchPlaceholder')).toBeInTheDocument()
+  })
+
+  it('enters and exits the reflog view via the reflog button', async () => {
+    render(<HistoryTab variant="workbench" />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    // 进入 reflog 模式
+    fireEvent.click(screen.getByTitle('history.reflogTitle'))
+
+    expect(await screen.findByText(/Add reflog panel/)).toBeInTheDocument()
+    expect(getReflog).toHaveBeenCalledWith('D:/repo', null, 100)
+
+    // 退出回提交历史
+    fireEvent.click(screen.getByTitle('history.backToCommitHistory'))
+
+    expect(await screen.findByPlaceholderText('history.searchPlaceholder')).toBeInTheDocument()
+  })
+
+  it('triggers exact search via searchLog when the exact toggle is on', async () => {
+    render(<HistoryTab variant="workbench" />)
+
+    await waitFor(() => {
+      expect(getCommitDetails).toHaveBeenCalledWith('D:/repo', commits[0].sha)
+    })
+
+    // 打开精确搜索 toggle
+    fireEvent.click(screen.getByTitle('history.searchExactDesc'))
+
+    // 输入查询词
+    fireEvent.change(screen.getByPlaceholderText('history.searchPlaceholder'), {
+      target: { value: 'bridge' },
+    })
+
+    await waitFor(() => {
+      expect(searchLog).toHaveBeenCalledWith(
+        'D:/repo',
+        expect.objectContaining({
+          grep: 'bridge',
+          range: undefined,
+        }),
+        100,
+        0,
+      )
+    })
   })
 })

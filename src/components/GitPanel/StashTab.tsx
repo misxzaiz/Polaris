@@ -6,7 +6,17 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Archive, Check, RefreshCw, Loader2, Inbox } from 'lucide-react'
+import {
+  Archive,
+  Check,
+  RefreshCw,
+  Loader2,
+  Inbox,
+  Eye,
+  FileDiff,
+  X,
+  Play,
+} from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { formatGitTimestamp } from '@/utils/gitFormat'
@@ -23,9 +33,15 @@ export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [operatingIndex, setOperatingIndex] = useState<number | null>(null)
+  const [showPatchIndex, setShowPatchIndex] = useState<number | null>(null)
+  const [patchContent, setPatchContent] = useState<string>('')
+  const [isPatchLoading, setIsPatchLoading] = useState(false)
+  const [patchError, setPatchError] = useState<string | null>(null)
 
   const getStashList = useGitStore((s) => s.getStashList)
   const stashPop = useGitStore((s) => s.stashPop)
+  const stashApply = useGitStore((s) => s.stashApply)
+  const stashShow = useGitStore((s) => s.stashShow)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const currentWorkspace = useGitActiveWorkspace()
 
@@ -69,11 +85,47 @@ export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
     }
   }
 
+  // P1：apply —— 应用但不移除（保留在列表）
+  const handleStashApply = async (index: number) => {
+    if (!workspacePath) return
+
+    setOperatingIndex(index)
+    setError(null)
+    try {
+      await stashApply(workspacePath, index)
+      await refreshStatus(workspacePath)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setError(errorMsg)
+    } finally {
+      setOperatingIndex(null)
+    }
+  }
+
+  // P1：show —— 查看 patch 内容
+  const handleShow = async (index: number) => {
+    if (!workspacePath) return
+
+    setShowPatchIndex(index)
+    setIsPatchLoading(true)
+    setPatchError(null)
+    try {
+      const content = await stashShow(workspacePath, index)
+      setPatchContent(content)
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      setPatchError(errorMsg)
+      setPatchContent('')
+    } finally {
+      setIsPatchLoading(false)
+    }
+  }
+
   // 使用共享的时间格式化函数
   const formatTime = (timestamp: number) => formatGitTimestamp(timestamp, t)
 
   return (
-    <div className="flex flex-col h-full min-h-0">
+    <div className="relative flex flex-col h-full min-h-0">
       <div className="px-4 py-2 border-b border-border-subtle flex items-center justify-between">
         <span className="text-sm font-medium text-text-primary">{t('stash.title')}</span>
         <button
@@ -127,17 +179,34 @@ export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
                     </div>
                   </div>
                   <div className="flex items-center gap-1">
+                    {/* P1：三动作 —— 查看 / 应用(保留) / 恢复并移除 */}
                     <button
-                      onClick={() => handleApply(stash.index)}
+                      onClick={() => handleShow(stash.index)}
+                      disabled={operatingIndex !== null}
+                      className="p-1.5 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
+                      title={t('stash.showTitle')}
+                    >
+                      <Eye size={14} />
+                    </button>
+                    <button
+                      onClick={() => handleStashApply(stash.index)}
                       disabled={operatingIndex !== null}
                       className="p-1.5 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
-                      title={t('stash.pop')}
+                      title={t('stash.applyTitle')}
                     >
                       {operatingIndex === stash.index ? (
                         <Loader2 size={14} className="animate-spin" />
                       ) : (
-                        <Check size={14} />
+                        <Play size={14} />
                       )}
+                    </button>
+                    <button
+                      onClick={() => handleApply(stash.index)}
+                      disabled={operatingIndex !== null}
+                      className="p-1.5 text-text-tertiary hover:text-danger hover:bg-danger/10 rounded transition-colors disabled:opacity-50"
+                      title={t('stash.popTitle')}
+                    >
+                      <Check size={14} />
                     </button>
                   </div>
                 </div>
@@ -146,6 +215,47 @@ export function StashTab({ workspacePath: workspacePathProp }: StashTabProps) {
           </div>
         )}
       </div>
+
+      {/* P1：stash show —— patch 查看对话框 */}
+      {showPatchIndex !== null && (
+        <div className="absolute inset-0 z-modal bg-background-elevated flex flex-col border-t border-border">
+          <div className="px-4 py-2 border-b border-border-subtle flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <FileDiff size={14} className="text-warning shrink-0" />
+              <span className="text-sm font-medium text-text-primary truncate">
+                {t('stash.show')} · stash@{'{'}{showPatchIndex}{'}'}
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setShowPatchIndex(null)
+                setPatchContent('')
+                setPatchError(null)
+              }}
+              className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors shrink-0"
+              title={t('cancel', { ns: 'common' })}
+            >
+              <X size={14} />
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto min-h-0 px-4 py-3">
+            {isPatchLoading ? (
+              <div className="flex items-center justify-center py-8 text-text-tertiary">
+                <Loader2 size={18} className="animate-spin mr-2" />
+                <span className="text-xs">{t('loading', { ns: 'common' })}</span>
+              </div>
+            ) : patchError ? (
+              <div className="text-xs text-danger">{patchError}</div>
+            ) : patchContent ? (
+              <pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap break-all leading-relaxed">
+                {patchContent}
+              </pre>
+            ) : (
+              <div className="text-xs text-text-tertiary">{t('stash.showEmpty')}</div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

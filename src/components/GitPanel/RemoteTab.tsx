@@ -27,6 +27,11 @@ import { useGitRepoStatus } from './useGitRepoStatus'
 import { PushDialog } from './PushDialog'
 import type { GitRemote } from '@/types/git'
 
+/** auto-fetch 开关持久化键（P1：本地设置项，默认关） */
+const AUTO_FETCH_STORAGE_KEY = 'polaris.git.autoFetch'
+/** auto-fetch 间隔（ms）：对齐 IDEA 建议的 20 分钟 */
+const AUTO_FETCH_INTERVAL_MS = 20 * 60 * 1000
+
 interface RemoteTabProps {
   /** 多仓库模式下生效的仓库路径（子仓库）；缺省时回退到当前工作区 */
   workspacePath?: string
@@ -52,6 +57,18 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
   const [isPulling, setIsPulling] = useState(false)
   const [pullingRemote, setPullingRemote] = useState<string | null>(null)
 
+  // 获取状态
+  const [isFetching, setIsFetching] = useState(false)
+  const [fetchingRemote, setFetchingRemote] = useState<string | null>(null)
+  // auto-fetch 设置（localStorage 持久化，默认关）
+  const [autoFetch, setAutoFetch] = useState(() => {
+    try {
+      return localStorage.getItem(AUTO_FETCH_STORAGE_KEY) === '1'
+    } catch {
+      return false
+    }
+  })
+
   // 推送对话框状态
   const [showPushDialog, setShowPushDialog] = useState(false)
   const [pushTargetRemote, setPushTargetRemote] = useState<string | null>(null)
@@ -60,6 +77,7 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
   const addRemote = useGitStore((s) => s.addRemote)
   const removeRemote = useGitStore((s) => s.removeRemote)
   const pull = useGitStore((s) => s.pull)
+  const fetchRemote = useGitStore((s) => s.fetchRemote)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const getBranches = useGitStore((s) => s.getBranches)
   const branches = useGitStore((s) => s.branches)
@@ -249,6 +267,54 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
     setShowPushDialog(true)
   }
 
+  // 获取远程更新（不合并；仅刷新 refs 与 ahead/behind）
+  const handleFetch = async (remoteName?: string) => {
+    if (!workspacePath) return
+
+    const remote = remoteName || 'origin'
+    setIsFetching(true)
+    setFetchingRemote(remote)
+
+    try {
+      await fetchRemote(workspacePath, remote, false)
+      await Promise.all([
+        refreshStatus(workspacePath),
+        getBranches(workspacePath),
+      ])
+      toast.success(t('remote.fetchSuccess'))
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      toast.error(t('remote.fetchFailed'), errorMsg)
+    } finally {
+      setIsFetching(false)
+      setFetchingRemote(null)
+    }
+  }
+
+  // auto-fetch 开关（持久化到 localStorage）
+  const handleToggleAutoFetch = useCallback(() => {
+    setAutoFetch((prev) => {
+      const next = !prev
+      try {
+        localStorage.setItem(AUTO_FETCH_STORAGE_KEY, next ? '1' : '0')
+      } catch {
+        // localStorage 不可用时静默
+      }
+      toast.success(next ? t('remote.autoFetchOn') : t('remote.autoFetchOff'))
+      return next
+    })
+  }, [t, toast])
+
+  // auto-fetch 定时拉取（默认关；开启后每 20 分钟 fetch 首个 remote）
+  useEffect(() => {
+    if (!autoFetch || !workspacePath || remotes.length === 0) return
+    const timer = window.setInterval(() => {
+      void handleFetch(remotes[0]?.name)
+    }, AUTO_FETCH_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoFetch, workspacePath, remotes.length])
+
   const renderRemoteItem = (remote: GitRemote) => {
     const host = getHostFromUrl(remote.fetchUrl || remote.pushUrl)
     const branchCount = remoteBranchCounts.get(remote.name) || 0
@@ -303,6 +369,19 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
                       <Loader2 size={12} className="animate-spin" />
                     ) : (
                       <ArrowDown size={12} />
+                    )}
+                  </button>
+                  {/* 获取按钮（P1：不合并，仅刷新 refs） */}
+                  <button
+                    onClick={() => handleFetch(remote.name)}
+                    disabled={isFetching}
+                    className="p-0.5 text-text-tertiary hover:text-primary hover:bg-primary/10 rounded transition-colors disabled:opacity-50"
+                    title={t('remote.fetchFrom', { remote: remote.name })}
+                  >
+                    {fetchingRemote === remote.name ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <RefreshCw size={12} />
                     )}
                   </button>
                   <button
@@ -400,6 +479,19 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
             title={t('refresh', { ns: 'common' })}
           >
             <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+          </button>
+          {/* auto-fetch 开关（P1：默认关；开启后每 20 分钟 fetch） */}
+          <button
+            onClick={handleToggleAutoFetch}
+            className={`p-1 rounded transition-colors ${
+              autoFetch
+                ? 'text-primary bg-primary/10 hover:bg-primary/20'
+                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
+            }`}
+            title={t('remote.autoFetchDesc')}
+            aria-label={t('remote.autoFetch')}
+          >
+            <RefreshCw size={14} className={autoFetch ? '' : 'opacity-40'} />
           </button>
         </div>
       </div>
