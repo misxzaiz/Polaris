@@ -48,6 +48,7 @@ const log = createLogger('SessionStoreManager')
 
 const PROTECTED_SESSION_KINDS: ReadonlySet<NonNullable<SessionMetadata['kind']>> = new Set([
   'commit-message',
+  'git-atomic',
 ])
 
 /** 该会话是否受驱逐豁免保护（未来任何回收策略前必查） */

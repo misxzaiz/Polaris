@@ -233,6 +233,8 @@ export interface TagActions {
  */
 export interface CommitActions {
   commitChanges: (workspacePath: string, message: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
+  /** AI-2：按组原子提交（只提交组内文件，index 其它已暂存内容不受影响，等价 git commit <paths>） */
+  commitGroup: (workspacePath: string, message: string, files: string[]) => Promise<string>
   stageFile: (workspacePath: string, filePath: string) => Promise<void>
   unstageFile: (workspacePath: string, filePath: string) => Promise<void>
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>

@@ -18,6 +18,7 @@ import { RemoteTab } from './RemoteTab'
 import { TagsTab } from './TagsTab'
 import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
+import { AtomicCommitCard } from './AtomicCommitCard'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
@@ -56,7 +57,7 @@ export function GitPanel({
   variant = 'sidebar',
 }: GitPanelProps) {
   const { t } = useTranslation('git')
-  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
+  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos, commitGroup } = useGitStore()
   const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
@@ -905,6 +906,20 @@ export function GitPanel({
                 onSelectAll={toggleSelectAll}
                 isSelectionDisabled={isBatchOperating}
               />
+
+              {hasChanges && (
+                <AtomicCommitCard
+                  workspacePath={effectivePath}
+                  workspaceId={currentWorkspace?.id}
+                  indexChanges={status.staged}
+                  worktreeChanges={status.unstaged}
+                  untracked={status.untracked}
+                  onCommitGroup={async (files, message) => {
+                    await commitGroup(effectivePath, message, files)
+                  }}
+                  disabled={isBatchOperating}
+                />
+              )}
 
               {error && (
                 <div className="px-4 py-2 mx-4 mb-2 text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg">

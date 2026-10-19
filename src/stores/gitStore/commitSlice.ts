@@ -59,6 +59,26 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
     }
   },
 
+  // AI-2：按组原子提交（只提交组内文件，index 其它已暂存内容不受影响）
+  async commitGroup(workspacePath: string, message: string, files: string[]) {
+    set({ isLoading: true, error: null })
+
+    try {
+      const sha = await invoke<string>('git_commit_group', {
+        workspacePath,
+        message,
+        files,
+      })
+
+      await get().refreshStatus(workspacePath)
+      set({ isLoading: false })
+      return sha
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
   // P1：amend HEAD（message 省略 = --no-edit 语义，仅合并 staged 内容）
   async amendCommit(
     workspacePath: string,

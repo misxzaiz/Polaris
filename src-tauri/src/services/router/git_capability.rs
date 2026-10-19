@@ -50,6 +50,7 @@ const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "stage_file",
     "unstage_file",
     "batch_stage",
+    "commit_group",
     "discard_changes",
     "reset",
     "init_repository",
@@ -97,7 +98,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "is_repository", "discover_repositories", "get_status", "get_diffs",
     "get_log", "get_commit_details", "get_file_history", "init_repository",
     "commit_changes", "stage_file", "unstage_file", "discard_changes",
-    "batch_stage", "get_worktree_diff", "get_index_diff",
+    "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
     "get_worktree_file_diff", "get_index_file_diff", "get_branches",
     "create_branch", "checkout_branch", "delete_branch", "rename_branch",
     "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",
@@ -321,6 +322,17 @@ impl Capability for GitCapability {
             "batch_stage" => {
                 let files = string_vec(p, "filePaths");
                 json_ok_svc(GitService::batch_stage(&workspace(p)?, &files))
+            }
+            "commit_group" => {
+                let files = string_vec(p, "files");
+                if files.is_empty() {
+                    return Err("Missing required argument: files".to_string());
+                }
+                json_ok_svc(GitService::commit_group(
+                    &workspace(p)?,
+                    require_string(p, "message")?,
+                    &files,
+                ))
             }
 
             // ── Diff ───────────────────────────────────────────────────
@@ -586,7 +598,7 @@ mod tests {
             "is_repository", "discover_repositories", "get_status", "get_diffs",
             "get_log", "get_commit_details", "get_file_history", "init_repository",
             "commit_changes", "stage_file", "unstage_file", "discard_changes",
-            "batch_stage", "get_worktree_diff", "get_index_diff",
+            "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
             "get_worktree_file_diff", "get_index_file_diff", "get_branches",
             "create_branch", "checkout_branch", "delete_branch", "rename_branch",
             "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",
@@ -617,7 +629,7 @@ mod tests {
     fn destructive_covers_write_domain() {
         for a in ["commit_changes", "discard_changes", "reset", "push_branch", "pull",
                   "rebase_branch", "delete_branch", "stash_drop", "init_repository",
-                  "fetch", "amend_commit", "stash_apply"] {
+                  "fetch", "amend_commit", "stash_apply", "commit_group"] {
             assert!(is_destructive(a), "{} 应在破坏性名单", a);
         }
         // 只读动作不在名单（新 P1 读型动作同防护）

@@ -33,7 +33,7 @@ pub use tag::{get_tags, create_tag, delete_tag};
 pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
-pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage};
+pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage, commit_group};
 pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
     push_branch, push_set_upstream, create_pr, get_pr_status, pull, fetch,
@@ -276,6 +276,11 @@ impl GitService {
     /// 批量暂存文件
     pub fn batch_stage(path: &Path, file_paths: &[String]) -> Result<BatchStageResult, GitServiceError> {
         batch_stage(path, file_paths)
+    }
+
+    /// 按组原子提交（AI-2：只提交组内文件，index 其它已暂存内容不受影响，等价 `git commit <paths>`）
+    pub fn commit_group(path: &Path, message: &str, files: &[String]) -> Result<String, GitServiceError> {
+        commit_group(path, message, files)
     }
 
     // ========================================================================
