@@ -95,6 +95,53 @@ export interface GitCommit {
   authorEmail: string
   timestamp: number
   parents: string[]
+  /** 该提交上的 refs 装饰（泳道图三色 + 标记）；缺省空数组 */
+  refs?: GitCommitRef[]
+}
+
+/**
+ * 提交上的 refs 装饰（与 Rust models::GitCommitRef camelCase 双边同步）
+ */
+export interface GitCommitRef {
+  /** 显示名（如 main、origin/main、HEAD、v1.0） */
+  name: string
+  /** 分类：HEAD / 本地分支 / 远程分支 / tag */
+  kind: 'head' | 'local' | 'remote' | 'tag'
+  /** ref 全名（refs/heads/main 等） */
+  target: string
+}
+
+/**
+ * 泳道格子：该 commit 在泳道列位置的绘制原语
+ * 与 Rust models::GitLaneCell camelCase 双边同步
+ */
+export interface GitLaneCell {
+  /** 泳道下标 */
+  lane: number
+  /** 节点类型：commit / merge / empty / none */
+  node: 'commit' | 'merge' | 'empty' | 'none'
+  /** 下行边（连到下一行同泳道或换行） */
+  edgeDown?: number
+  /** 上行边（连到上一行不同泳道，即换行汇入） */
+  edgeUp?: number
+}
+
+/**
+ * 单条泳道行（每 commit 一行）
+ */
+export interface GitLaneRow {
+  sha: string
+  cells: GitLaneCell[]
+  /** 冗余带 refs，前端不必再查 */
+  refs: GitCommitRef[]
+}
+
+/**
+ * 泳道图分页结果
+ */
+export interface GitLogPage {
+  commits: GitCommit[]
+  rows: GitLaneRow[]
 }
 
 /**

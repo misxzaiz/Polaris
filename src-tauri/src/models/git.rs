@@ -157,6 +157,53 @@ pub struct GitCommit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<i64>,
     pub parents: Vec<String>,
+    /// 该提交上的 refs 装饰（泳道图三色 + 标记）。缺省空数组。
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<GitCommitRef>,
+}
+
+/// 提交上的 refs 装饰（泳道图用）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRef {
+    /// 显示名（如 main、origin/main、HEAD、v1.0）
+    pub name: String,
+    /// 分类：HEAD / 本地分支 / 远程分支 / tag
+    pub kind: String,
+    /// ref 全名（refs/heads/main 等）
+    pub target: String,
+}
+
+/// 泳道格子：该 commit 在泳道列位置的绘制原语
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLaneCell {
+    /// 泳道下标
+    pub lane: usize,
+    /// 节点类型：commit / merge / empty / none
+    pub node: String,
+    /// 下行边（连到下一行同泳道或换行）
+    pub edge_down: Option<usize>,
+    /// 上行边（连到上一行不同泳道，即换行汇入）
+    pub edge_up: Option<usize>,
+}
+
+/// 单条泳道行（每 commit 一行）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLaneRow {
+    pub sha: String,
+    pub cells: Vec<GitLaneCell>,
+    /// 冗余带 refs，前端不必再查
+    pub refs: Vec<GitCommitRef>,
+}
+
+/// 泳道图分页结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitLogPage {
+    pub commits: Vec<GitCommit>,
+    pub rows: Vec<GitLaneRow>,
 }
 
 /// Git 提交详情

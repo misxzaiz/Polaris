@@ -38,7 +38,9 @@ import type {
   GitDiffEntry,
   GitFileHistoryEntry,
   GitLogSearchFilter,
+  GitLaneRow,
 } from '@/types/git'
+import { LaneGraph } from './LaneGraph'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { createLogger } from '@/utils/logger'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
@@ -75,6 +77,15 @@ import { CreateTagFromCommitDialog } from './CreateTagFromCommitDialog'
 
 const log = createLogger('HistoryTab')
 
+/** P2 泳道图：rows → sha 索引（O(n) 一次建表，渲染时 O(1) 查行） */
+function indexLaneRows(rows: GitLaneRow[]): Record<string, GitLaneRow> {
+  const map: Record<string, GitLaneRow> = {}
+  for (const row of rows) {
+    map[row.sha] = row
+  }
+  return map
+}
+
 interface HistoryTabProps {
   targetCommitSha?: string | null
   onCommitSelected?: () => void
@@ -95,6 +106,8 @@ export function HistoryTab({
 }: HistoryTabProps) {
   const { t } = useTranslation('git')
   const [commits, setCommits] = useState<GitCommitType[]>([])
+  // P2 泳道图：sha → lane 行（loadCommits 一次带出，逐行渲染 LaneGraph）
+  const [laneRows, setLaneRows] = useState<Record<string, GitLaneRow>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -155,7 +168,7 @@ export function HistoryTab({
   const [createBranchFromCommit, setCreateBranchFromCommit] = useState<GitCommitType | null>(null)
   const [createTagFromCommit, setCreateTagFromCommit] = useState<GitCommitType | null>(null)
 
-  const getLog = useGitStore((s) => s.getLog)
+  const getLogWithLanes = useGitStore((s) => s.getLogWithLanes)
   const searchLog = useGitStore((s) => s.searchLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
   const getFileHistory = useGitStore((s) => s.getFileHistory)
@@ -366,10 +379,13 @@ export function HistoryTab({
 
     try {
       log.debug('Loading commits', { path: effectiveWorkspacePath, branch: selectedBranch || null })
-      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
+      // P2 泳道图：首屏走 getLogWithLanes（commits + rows 同一次返回）
+      const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
+      const result = page.commits
       log.debug('Loaded commits', { count: result.length })
 
       setCommits(result)
+      setLaneRows(indexLaneRows(page.rows))
       setHasMore(result.length === PAGE_SIZE)
       setTotalCount(result.length)
       if (result.length === 0) {
@@ -389,7 +405,7 @@ export function HistoryTab({
   }, [
     clearSelection,
     effectiveWorkspacePath,
-    getLog,
+    getLogWithLanes,
     isWorkbench,
     loadCommitDetails,
     noWorkspaceError,
@@ -404,12 +420,14 @@ export function HistoryTab({
 
     try {
       const skip = commits.length
-      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
+      const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
+      const result = page.commits
 
       if (result.length === 0) {
         setHasMore(false)
       } else {
         setCommits(prev => [...prev, ...result])
+        setLaneRows(prev => ({ ...prev, ...indexLaneRows(page.rows) }))
         setTotalCount(prev => prev + result.length)
         setHasMore(result.length === PAGE_SIZE)
       }
@@ -418,7 +436,7 @@ export function HistoryTab({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [effectiveWorkspacePath, commits.length, getLog, hasMore, isLoadingMore, selectedBranch])
+  }, [effectiveWorkspacePath, commits.length, getLogWithLanes, hasMore, isLoadingMore, selectedBranch])
 
   const loadFileHistory = useCallback(async (filePath: string) => {
     if (!effectiveWorkspacePath) {
@@ -1051,6 +1069,7 @@ export function HistoryTab({
   const renderCommitRow = (commit: GitCommitType) => {
     const subject = commit.message.split('\n')[0]
     const isSelected = selectedCommit?.sha === commit.sha
+    const laneRow = laneRows[commit.sha]
 
     return (
       <Fragment key={commit.sha}>
@@ -1062,11 +1081,37 @@ export function HistoryTab({
             isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
           }`}
         >
-          <span
-            className="w-1.5 h-1.5 rounded-full shrink-0"
-            style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
-          />
+          {laneRow ? (
+            // P2 泳道图：有 lane 数据用 LaneGraph，节点色随选择态
+            <LaneGraph row={laneRow} />
+          ) : (
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
+            />
+          )}
           <span className="text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
+          {/* P2 refs 装饰：HEAD/本地/远程/tag 三色标签 */}
+          {(laneRow?.refs ?? commit.refs ?? []).length > 0 && (
+            <span className="flex items-center gap-1 shrink-0 overflow-hidden">
+              {(laneRow?.refs ?? commit.refs ?? []).slice(0, 4).map((ref) => (
+                <span
+                  key={`${ref.name}:${ref.target}`}
+                  className={`px-1 rounded text-[9px] font-mono border ${
+                    ref.kind === 'head'
+                      ? 'border-primary/40 bg-primary/10 text-primary'
+                      : ref.kind === 'remote'
+                        ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
+                        : ref.kind === 'tag'
+                          ? 'border-orange-500/40 bg-orange-500/10 text-orange-400'
+                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
+                  }`}
+                >
+                  {ref.name}
+                </span>
+              ))}
+            </span>
+          )}
           <span className={`flex-1 min-w-0 text-[13px] truncate ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
             {subject}
           </span>

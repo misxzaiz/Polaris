@@ -38,7 +38,7 @@ pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
     push_branch, push_set_upstream, create_pr, get_pr_status, pull, fetch,
 };
-pub use log::{get_log, search_log, get_commit_details, get_file_history, blame_file};
+pub use log::{get_log, get_log_with_lanes, search_log, get_commit_details, get_file_history, blame_file};
 pub use stash::{stash_save, stash_list, stash_pop, stash_drop, stash_apply, stash_show};
 pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
@@ -49,7 +49,7 @@ use std::path::Path;
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
+    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag,
     LogSearchFilter,
     PullRequest,
@@ -365,6 +365,16 @@ impl GitService {
         branch: Option<&str>,
     ) -> Result<Vec<GitCommit>, GitServiceError> {
         get_log(path, limit, skip, branch)
+    }
+
+    /// 泳道图分页查询（P2）—— commits（含 refs 装饰）+ rows（lane 数据）一次返回
+    pub fn get_log_with_lanes(
+        path: &Path,
+        limit: Option<usize>,
+        skip: Option<usize>,
+        branch: Option<&str>,
+    ) -> Result<GitLogPage, GitServiceError> {
+        get_log_with_lanes(path, limit, skip, branch)
     }
 
     /// 提交历史搜索（P1：log 搜索 —— grep/author/pickaxe/since/范围）

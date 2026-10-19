@@ -29,6 +29,7 @@ import type {
   GitStashEntry,
   GitReflogEntry,
   GitLogSearchFilter,
+  GitLogPage,
   GitIgnoreResult,
   GitIgnoreTemplate,
 } from '@/types/git'
@@ -240,6 +241,8 @@ export interface CommitActions {
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
+  /** P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回 */
+  getLogWithLanes: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitLogPage>
   /** P1：amend HEAD（message 省略 = 仅合并 staged 内容 / --no-edit 语义；任意历史 commit amend 依赖 P3） */
   amendCommit: (workspacePath: string, message?: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
   /** P1：提交历史搜索（grep/author/pickaxe/since/分支范围；AI-6 参数编译器的动作端） */

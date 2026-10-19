@@ -8,7 +8,7 @@ import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { CommitState } from './types'
-import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter, GitLogPage } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -206,6 +206,32 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
     } catch (err) {
       set({ error: parseGitError(err) })
       return []
+    }
+  },
+
+  // P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
+  async getLogWithLanes(
+    workspacePath: string,
+    limit = 500,
+    skip = 0,
+    branch?: string
+  ): Promise<GitLogPage> {
+    try {
+      const page = await invoke<GitLogPage>('git_get_log_with_lanes', {
+        workspacePath,
+        limit,
+        skip,
+        branch: branch || null,
+      })
+      // 与 getLog 同构：写常规 commits 镜像（泳道图与详细视图共用）
+      set({
+        commits: page.commits,
+        commitsByWs: { ...(get() as CommitState).commitsByWs, [workspacePath]: page.commits },
+      })
+      return page
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      return { commits: [], rows: [] }
     }
   },
 

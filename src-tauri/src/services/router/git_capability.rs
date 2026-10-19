@@ -96,7 +96,7 @@ fn is_destructive(action: &str) -> bool {
 /// 故 stash_list 与 get_stash_list 都接受）。新增动作必须两处同改。
 const KNOWN_ACTIONS: &[&str] = &[
     "is_repository", "discover_repositories", "get_status", "get_diffs",
-    "get_log", "get_commit_details", "get_file_history", "init_repository",
+    "get_log", "get_log_with_lanes", "get_commit_details", "get_file_history", "init_repository",
     "commit_changes", "stage_file", "unstage_file", "discard_changes",
     "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
     "get_worktree_file_diff", "get_index_file_diff", "get_branches",
@@ -203,6 +203,7 @@ impl Capability for GitCapability {
                 "get_status":   { "params": { "workspacePath": "string" }, "returns": "GitRepositoryStatus(camels)" },
                 "get_diffs":    { "params": { "workspacePath": "string", "baseCommit": "string" } },
                 "get_log":      { "params": { "workspacePath": "string", "limit?": "number", "skip?": "number", "branch?": "string" } },
+                "get_log_with_lanes": { "params": { "workspacePath": "string", "limit?": "number", "skip?": "number", "branch?": "string" }, "returns": "GitLogPage(commits+rows)" },
                 "stage_file":   { "params": { "workspacePath": "string", "filePath": "string" }, "note": "写类动作，Plugin 来源在 PR-2a 矩阵落地前被拒" },
                 "commit_changes":{ "params": { "workspacePath": "string", "message": "string", "stageAll?": "bool", "selectedFiles?": "string[]" } },
                 "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
@@ -263,6 +264,16 @@ impl Capability for GitCapability {
             "get_log" => {
                 let branch = optional_string(p, "branch");
                 json_ok_svc(GitService::get_log(
+                    &workspace(p)?,
+                    opt_usize(p, "limit").or_else(|| opt_usize(p, "maxCount")),
+                    opt_usize(p, "skip"),
+                    branch.as_deref(),
+                ))
+            }
+            // P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
+            "get_log_with_lanes" => {
+                let branch = optional_string(p, "branch");
+                json_ok_svc(GitService::get_log_with_lanes(
                     &workspace(p)?,
                     opt_usize(p, "limit").or_else(|| opt_usize(p, "maxCount")),
                     opt_usize(p, "skip"),
@@ -596,7 +607,7 @@ mod tests {
         let mut known: Vec<&str> = KNOWN_ACTIONS.to_vec();
         let mut handled = vec![
             "is_repository", "discover_repositories", "get_status", "get_diffs",
-            "get_log", "get_commit_details", "get_file_history", "init_repository",
+            "get_log", "get_log_with_lanes", "get_commit_details", "get_file_history", "init_repository",
             "commit_changes", "stage_file", "unstage_file", "discard_changes",
             "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
             "get_worktree_file_diff", "get_index_file_diff", "get_branches",

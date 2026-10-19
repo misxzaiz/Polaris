@@ -121,7 +121,7 @@ const fileHistoryEntries: GitFileHistoryEntry[] = [
 ]
 
 describe('HistoryTab', () => {
-  const getLog = vi.fn()
+  const getLogWithLanes = vi.fn()
   const getCommitDetails = vi.fn()
   const getFileHistory = vi.fn()
   const getBranches = vi.fn()
@@ -140,7 +140,7 @@ describe('HistoryTab', () => {
       configurable: true,
     })
 
-    getLog.mockResolvedValue(commits)
+    getLogWithLanes.mockResolvedValue({ commits, rows: [] })
     getFileHistory.mockResolvedValue(fileHistoryEntries)
     getBranches.mockResolvedValue(undefined)
     getCommitDetails.mockImplementation((_workspacePath: string, sha: string) => {
@@ -154,7 +154,7 @@ describe('HistoryTab', () => {
     refreshStatus.mockResolvedValue(undefined)
 
     useGitStore.setState({
-      getLog: getLog as unknown as GitState['getLog'],
+      getLogWithLanes: getLogWithLanes as unknown as GitState['getLogWithLanes'],
       getCommitDetails: getCommitDetails as unknown as GitState['getCommitDetails'],
       getFileHistory: getFileHistory as unknown as GitState['getFileHistory'],
       getBranches: getBranches as unknown as GitState['getBranches'],
@@ -212,7 +212,7 @@ describe('HistoryTab', () => {
       expect(getBranches).toHaveBeenCalledWith('D:/repo')
     })
     await waitFor(() => {
-      expect(getLog).toHaveBeenCalledWith('D:/repo', 20, 0, undefined)
+      expect(getLogWithLanes).toHaveBeenCalledWith('D:/repo', 20, 0, undefined)
     })
 
     // branchFilter 是自定义下拉按钮（73715eee 起由原生 select 改造），用 change 事件无法触发
@@ -220,7 +220,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getAllByRole('option').find((el) => el.textContent === 'feature/history')!)
 
     await waitFor(() => {
-      expect(getLog).toHaveBeenLastCalledWith('D:/repo', 20, 0, 'feature/history')
+      expect(getLogWithLanes).toHaveBeenLastCalledWith('D:/repo', 20, 0, 'feature/history')
     })
 
     await waitFor(() => {
