@@ -24,7 +24,7 @@ P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全�
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
 P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
-P2 其余           ░░░░░░░░░░   0%（FR-P2-2 watcher 已完成，见下）
+P2 其余           ██████░░░░  60%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水已完成
 P3 全部           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -80,6 +80,14 @@ P4 全部           ░░░░░░░░░░   0%
 - 前端 `undoSlice` + `undoSubscriber`（toast「撤销」一键 restore/drop）；快照列表 + 恢复冲突平铺
 - 测试：Rust undo 5 单元 + KNOWN_ACTIONS 巡逻同步；前端 undoSlice 4 + undoSubscriber 5；e2e 手工验证
 
+**P2 FR-P2-4 操作流水面板（commit 见下，spec `plans/git-panel-p2-operations-spec.md`）**：
+- 后端 `GitOperationEntry`（models/git.rs）+ 内存环形缓冲（`OPERATIONS`，50/ws）+ `get_operations`/`clear_operations` 动作
+- 写动作（`is_destructive` 集合）在 invoke 收口统一计时 + 留痕 + emit `git-operation`（成功/失败都审计）
+- `clear_operations` 入 DESTRUCTIVE_ACTIONS（写类）；`source_label`（bootstrap/remote/plugin:<id>）
+- 桌面 `git-operation` Tauri 中继（lib.rs，同 undo 中继模式）+ Web 经 EventBroadcaster
+- 前端 `operationsSlice`（get/clear）+ `operationsSubscriber`（prepend ≤50，分片 keyed 写）+ `OperationsLog.tsx` 折叠区（changes tab 底部：时间灰 + label + 耗时右对齐 + ok 红绿点，空态「暂无操作记录」）+ i18n 双语
+- 测试：Rust KNOWN_ACTIONS 巡逻 + destructive 名单同步；前端 operationsSlice 4 + operationsSubscriber 6
+
 **提交记录**（commitlint 合规）：
 ```
 f6a05786 docs(git): 面板 vNext 规划与 P0/P1 规格
@@ -92,6 +100,10 @@ f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 
 d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式）
 55c341d6 feat(git): FR-P2-2 外部文件变化自动刷新 status（file-system-change 订阅）
 bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单点挂钩）
+44643557 feat(git): FR-P2-3 undo 事件通道（Context::emit + 桌面 git-undo-snapshot 中继）
+e2da3128 feat(git): FR-P2-3 Undo 网络（危险操作快照 + 一键恢复）
+c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 事件 + 50/ws 环形缓冲）
+2133ee20 feat(git): FR-P2-4 操作流水（写动作留痕 + git-operation 事件 + 面板折叠区）
 ```
 
 ---
@@ -152,7 +164,7 @@ bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单
 - **快照失败不阻塞操作**：只 warn，undo 是增强安全网非硬门槛
 - 测试：Rust `undo.rs` 5 单元 + `git_capability` 巡逻（KNOWN_ACTIONS 同步）；前端 `undoSlice.test.ts`（4）+ `undoSubscriber.test.ts`（5）；e2e 手工验证 discard→undo 恢复内容 + 删分支→note ref 重建
 
-#### FR-P2-4 操作流水面板
+#### FR-P2-4 操作流水面板 ✅ 已完成
 
 - GitKraken Activity Log 等价；复用后端 logger，前端只读
 
@@ -291,17 +303,10 @@ bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单
 
 ## 七、建议下一步
 
-**P2 剩余增量**（泳道图 60% 已落地，按 master-plan 顺序推进）：
+**P2 剩余增量**（FR-P2-2/3/4 已完成，按 master-plan 顺序推进）：
 
-1. **FR-P2-2 file-watcher 自动 status 刷新**（无 AI 依赖，收益直接）：
-   - `file_watcher` debounce 800ms 推 `repo_touched` 事件 → statusSlice 复用 per-path seq 机制刷新；**不轮询**
-   - AI 流式期间（`useKernelSessionState(sessionId)` = streaming）暂停 status 刷新，流式结束刷一次
-   - **事件不掀翻缓存**：`repo_touched` 只触发受影响路径/计数的局部 store 写入，禁止整表刷新
-   - 先补 spec 到 `plans/git-panel-p2-watcher-spec.md`（四段式）
-2. **FR-P2-3 Undo 网络**：危险操作（discard / reset hard / checkout 覆盖 / interactive rebase）前自动快照到 `<data_root>/git-backups/<ws>/`；通知条一键恢复
-3. **FR-P2-4 操作流水面板**（复用后端 logger，前端只读）
-4. **FR-P2-AI4 冲突预测**（fetch 后确定计算风险清单；AI 仅解释，占 token 少）
-5. 泳道图增量（语义着色 / WIP+stash 节点 / 增量 log 缓存 / graph.c 四数组收缩）
+1. **FR-P2-AI4 冲突预测**（fetch 后确定计算风险清单；AI 仅解释，占 token 少）
+2. 泳道图增量（语义着色 / WIP+stash 节点 / 增量 log 缓存 / graph.c 四数组收缩）
 
 完成 P2 后进 P3（冲突合并器 → Interactive Rebase → AI-3 本地扫描常驻列表 → AI-6 自然语言历史查询 → AI-8 rebase 提议），再 P4 生态出口（**记得 `cargo build --bin polaris-mcp`**）。
 
