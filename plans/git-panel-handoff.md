@@ -171,6 +171,7 @@ c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 
 #### FR-P2-AI4 冲突预测 ✅ 已完成
 
 - spec：`plans/git-panel-p2-conflict-predict-spec.md`（四段式：目标/契约/验收/不做）
+- 提交：`946d43b8` feat + `c02b4e49` docs（spec）
 - **实现形态**（对齐 master-plan §1.2 + 原型 `#conflict-predict` 卡片）：fetch 后确定性计算
   「对方 ahead commits 涉及的文件 ∩ 本地 modified 文件」风险清单，**纯 git2 只读、0 token**；
   AI 解释层已砍，仅保留一条规则建议（`advice: "none" | "commitOrStash"`）。
