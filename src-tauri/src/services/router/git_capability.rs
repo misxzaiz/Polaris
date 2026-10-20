@@ -404,12 +404,62 @@ fn require_u64(params: &Value, key: &str) -> Result<u64, String> {
         .ok_or_else(|| format!("Missing required argument: {}", key))
 }
 
-/// GitError → 错误通道串：`message (details)`（对齐前端 parseGitError 细节呈现）
+/// GitError → 错误通道串：`message (details)`（对齐前端 parseGitError 细节呈现）。
+/// PR-2a C1：尾部追加结构化 marker（code/kind/stderrSnip），router 构造 Reply 时拆出
+/// 进 `Reply.error_detail`——错误通道串本身仍是人类可读文本，旧消费者零感知。
 fn git_err(e: GitError) -> String {
-    match e.details {
-        Some(d) => format!("{} ({})", e.message, d),
-        None => e.message,
+    let human = match e.details {
+        Some(ref d) => format!("{} ({})", e.message, d),
+        None => e.message.clone(),
+    };
+    let kind = git_error_kind(&e.code);
+    let detail = crate::contracts::ReplyErrorDetail {
+        code: Some(e.code),
+        kind: Some(kind.to_string()),
+        stderr_snip: e.details.clone().map(|d| shorten_stderr_snip(&d)),
+    };
+    crate::contracts::Reply::append_error_detail(human, &detail)
+}
+
+/// 机器码 → 粗分 kind（C1 字段级契约：前端按 kind 决定呈现/重试策略）
+fn git_error_kind(code: &str) -> &'static str {
+    match code {
+        "CONFLICTS_DETECTED" => "conflict",
+        "REBASE_IN_PROGRESS" | "CHERRY_PICK_IN_PROGRESS" | "REVERT_IN_PROGRESS"
+        | "MERGE_IN_PROGRESS" => "operation-in-progress",
+        "BRANCH_NOT_FOUND" | "COMMIT_NOT_FOUND" | "NOT_A_REPOSITORY" | "REMOTE_NOT_FOUND" => {
+            "not-found"
+        }
+        "REMOTES_AHEAD" | "REMOTE_EXISTS" => "state-conflict",
+        "CLI_NOT_FOUND" | "CLI_ERROR" => "tool",
+        "IO_ERROR" => "io",
+        "GIT_ERROR" => "git",
+        _ => "git",
     }
+}
+
+/// stderr 摘要截尾：只留尾部 8 行 / ≤512 字符（CLI stderr 可能巨长，UI 只需现场）
+fn shorten_stderr_snip(raw: &str) -> String {
+    const MAX_CHARS: usize = 512;
+    let tail: Vec<&str> = raw.lines().rev().take(8).collect::<Vec<_>>();
+    let mut snip: String = tail
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join("\n");
+    if snip.chars().count() > MAX_CHARS {
+        // 从尾端保留（stderr 现场的结论通常在最后）
+        let take: String = snip
+            .chars()
+            .rev()
+            .take(MAX_CHARS)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        snip = take;
+    }
+    snip
 }
 
 /// GitServiceError → 错误通道串（经既有 From<GitServiceError> for GitError 统一整形）

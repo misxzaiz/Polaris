@@ -21,6 +21,11 @@ import { createHttpTransport } from './httpTransport';
 import type { ConnectionStatus } from './httpTransport';
 import type { TransportAdapter } from './types';
 import { getServerUrl } from './auth';
+import { parseReplyError } from './replyError';
+
+// PR-2a C1：结构化错误类型对同模块消费者再导出（消费方 `from '@/services/transport'` 可达）
+export type { GitErrorDetail, ReplyErrorDetail } from './replyError';
+export { GitCapError } from './replyError';
 import { useToastStore } from '@/stores/toastStore';
 import { createLogger } from '@/utils/logger';
 import { eventBus } from '@/services/eventBus';
@@ -226,6 +231,8 @@ interface CapDispatchResponse {
   ok: boolean
   result: unknown
   error: string | null
+  /** PR-2a C1：结构化错误元数据（cap.git 分类；旧后端无该字段） */
+  errorDetail?: import('./replyError').ReplyErrorDetail | null
   trace: string
 }
 
@@ -241,8 +248,9 @@ async function invokeGitCap<T>(cmd: string, args?: Record<string, unknown>): Pro
     throw new Error(`cap.git ${action}:empty response`)
   }
   if (!res.ok) {
-    // 错误串格式（后端整形）："message (details)"，对齐 parseGitError 呈现习惯
-    throw new Error(res.error || `cap.git ${action} failed`)
+    // 错误串格式（后端整形）："message (details)"，对齐 parseGitError 呈现习惯；
+    // errorDetail（若后端给出）随 GitCapError 结构化携带（PR-2a C1）。
+    throw parseReplyError(res.error || `cap.git ${action} failed`, res.errorDetail)
   }
   return res.result as T
 }
