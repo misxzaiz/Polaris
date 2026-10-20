@@ -586,7 +586,7 @@ pub fn run() {
                 let _ = state
                     .router
                     .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
-                        chat_state,
+                        chat_state.clone(),
                     )));
                 // ── P2：cap.ui.render 注册（可交互渲染入口）──────────────
                 // 需 Arc<AppState>（复用 pending_plugin_cards / oneshot / 广播），

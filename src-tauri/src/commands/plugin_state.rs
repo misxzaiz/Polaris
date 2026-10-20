@@ -2,6 +2,8 @@
 
 #[cfg(feature = "tauri-app")]
 use tauri::AppHandle;
+#[cfg(feature = "tauri-app")]
+use tauri::Manager;
 
 use crate::error::Result;
 use crate::models::plugin_state::PluginStateMap;
