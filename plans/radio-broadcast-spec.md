@@ -229,7 +229,19 @@ subscribable: { status, isPlaying, currentSegment?, segmentIndex, error?, direct
   - 播报中检查 controller 私有态：`voiceStopWatcher.active=true`、`svc.supported=true`、`svc.usingNative=false`（真实 Web Speech，非降级）。
   - 向 `SpeechService.onResult` 注入 final 转录「请停止」（等价 Web Speech 引擎回调）→ watcher 命中 `STOP_KEYWORDS` → `controller.stop()`：**statusBefore=playing → statusAfter=idle，watcherActive=true→false**。语音口令→停止全链路端到端打通。
 - [x] 断网 / 未配 Key → `error` 态 + UI 提示，可重试或停止，不卡死 —— ✅ 先前 session 1037 实测：back-end 重建失败 → error 视图（「出错了」+ 停止/重试按钮）→ 重试起新会话 → API 200 OK（见 §七 上方运行时记录）；预检 `probeMimoTts` 未配 Key 直接 error 已单测覆盖。
-- [x] 桌面 `pnpm tauri:dev:web` 与 `polaris-mobile` 均能启动连续播放（移动端走 base64 通道，UI 已暴露开关）—— ⚠️ 部分实测：桌面完整 UI 播报实测通过；**base64 通道独立实测打通**（前端勾「移动端模式」→ 播报正常运行到「播报中·已播 1 句」，音频以 `audioDataUrl` 传输播放；另 HTTP 直调 cap.mcp 验证 `outputMode:'base64'` 返回 76,844 字节 RIFF/wav 可解码）。**polaris-mobile 真机/模拟器人工验证仍待做**（同一套前端代码，audio 走 base64 → `<audio>` 本地播放；移动端 Web Speech 识别不可用则静默降级为按钮停止，属既有语义）。
+- [x] 桌面 `pnpm tauri:dev:web` 与 `polaris-mobile` 均能启动连续播放（移动端走 base64 通道，UI 已暴露开关）—— ✅ **全部实测通过**（桌面 + **Android 模拟器**）：
+  - **桌面**：完整 UI 播报实测通过；
+  - **base64 通道**：前端勾「移动端模式」→ 播报运行至「播报中·已播 1 句」，音频以 `audioDataUrl` 传输播放；HTTP 直调 cap.mcp 验证 `outputMode:'base64'` 返回 76,844 字节 RIFF/wav 可解码；
+  - **Android 模拟器实机连续播放（2026-10-20 完成）**：Windows WHPX 模拟器 Chrome CDP 驱动（`adb` → 9222 → 最新 target），移动页面连桌面服务（`192.168.1.100:9821`），勾「移动端模式」选「技术」开始播报 → **自动连续播报 41 句 / 跨 6 段**（每段播完自动请求下一段生成→入队→播放，无人干预），面板状态「播报中 → 内容生成中… → 播报中」循环推进；触摸「停止」三路中断回 idle。**修复链上两处移动端专项问题**：
+    - （a）`setupSegmentEndWatch` 首帧守卫：kernel.subscribe 建订即推首帧空闲快照，被误判为「段结束下降沿」→ 取空文本「段文本为空，跳过」死循环。已加 `sawStreaming`（仅观测到 running 后 idle/error 才算下降沿，对齐 promptOptimizeService/titleGenerationService 既有守卫模式）。
+    - （b）base64 合成并发/超时：mimo-tts 单进程串行 + base64 载荷 ~200KB/句，`PREFETCH_DEPTH=2` 会让后续句在服务端排队累积、突破 `SYNTH_TIMEOUT_MS=12000`。已加移动端专用 `BASE64_PREFETCH_DEPTH=1` + `BASE64_SYNTH_TIMEOUT_MS=25000`（串行合成，单句稳定在超时内）。
+  - **自动化环境注意**（非产品缺陷）：CDP 合成点击 `isTrusted=false` 不构成 autoplay 手势授权，`<audio>.play()` 会被移动 Chrome 拒绝 → player 报「音频播放失败」计入连续错误。真机手指点击无此问题；模拟器自动化需先发 `Input.dispatchTouchEvent`（可信触摸）建立授权。
+- [x] 自动化测试（验收 #5 全量，2026-10-20 补录）—— `pnpm exec vitest run src/services/voiceBroadcast/` **4 文件 38 用例全部通过**；`pnpm exec tsc --noEmit` exit 0；`pnpm eslint src/services/voiceBroadcast/` exit 0；`cargo check` exit 0（无新 warning）。本轮为修复链新增 **5 个用例**：
+  - **sawStreaming 首帧守卫 ×2**（`radioBroadcastController.test.ts`）：首帧 idle / error（未观测到 running）→ 不触发段结束、不入队（回归保护：防「段文本为空」死循环复现）；真实 running→idle / running→error 下降沿 → 正常入队。
+  - **语音口令「停止」→ controller.stop 接线**（`radioBroadcastController.test.ts`）：start 时向 watcher 注册 onStop → 触发 watcher.callbacks.onStop → controller 三路中断回 idle。
+  - **stop 后晚到段结果不回流**（`radioBroadcastController.test.ts`）：stop 后再触发下降沿 → `enqueueSegment` 不被调用（running=false 拦截，无晚到回流）。
+  - **base64 串行预取**（`voiceBroadcastPlayer.test.ts`）：`BASE64_PREFETCH_DEPTH=1` 下首句在途时不预取第二句，释放后才合成下一句。
+  - **base64 25s 合成超时**（`voiceBroadcastPlayer.test.ts`）：fake timers 验证 file 12s / base64 25s 超时兜底各自生效。
 
 > **运行时验证说明（更新）**：cap.mcp 端到端已**无需桌面人工**——经独立 `polaris-web` 二进制 + HTTP 鉴权（`/api/auth/token` 换 MD5 → Bearer）即可真实拉起 mimo-tts stdio client 完成合成（本轮已实测，见上）。桌面主窗口（`Source::Bootstrap`）与带 token 的 `Source::Remote` 均放行；移动端经 HTTP 走同链。**仅剩的运行时依赖**：目标数据根必须含 mimo-tts 插件（真实数据根 `D:\app\polaris-s` 已含，桌面在跑）且插件已配 API Key。
 
@@ -268,7 +280,7 @@ subscribable: { status, isPlaying, currentSegment?, segmentIndex, error?, direct
 ## 九、验收标准（与需求逐条对应）
 
 1. 设「技术」方向 + 选音色 → AI 自动连续播报，无「播完等生成」长静默（预取 `PREFETCH_DEPTH=2` + 段尾即请求下段）——✅ 见 §四
-2. 说「停止」/点停止 → 播报立即结束，不残留队列播放，AI 生成终止无晚到回流/无误杀——✅ 见 §五
-3. 桌面 `pnpm tauri:dev:web` 与手机端（polaris-mobile）同一套代码都可启动连续播放（手机端本地播放，合成在服务端）——✅（移动端音频取用标记见 §六，采用 base64/服务端代理）
+2. 说「停止」/点停止 → 播报立即结束，不残留队列播放，AI 生成终止无晚到回流/无误杀——✅ 见 §五；语音口令→停止**单元级集成用例已补**（watcher.onStop → controller.stop 回 idle；stop 后晚到段结果不回流；voiceStopWatcher 命中/降级/晚到拦截 8 用例）
+3. 桌面 `pnpm tauri:dev:web` 与手机端（polaris-mobile）同一套代码都可启动连续播放（手机端本地播放，合成在服务端）——✅（移动端音频取用标记见 §六，采用 base64/服务端代理；**Android 模拟器实机验证通过**：41 句 / 6 段自动连续，证据见 §七手动验收 #3）
 4. 失败/网络异常有明确状态反馈（error 态 + 可恢复或可停止），不卡死——✅ §二状态机 + §三 3.1 失败语义
 5. `pnpm exec tsc --noEmit`、`pnpm lint`、`cargo check` 通过；新增 vitest 实际执行——✅ §七

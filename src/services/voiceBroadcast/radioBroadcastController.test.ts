@@ -98,11 +98,48 @@ vi.mock('@/services/ttsTextFilter', () => ({
 const mockProbe = vi.fn()
 vi.mock('./mcpBridge', () => ({ probeMimoTts: mockProbe }))
 
+// 语音「停止」口令 watcher mock：捕获 setCallbacks 的 onStop，供测试触发
+const { MockVoiceStopWatcher } = vi.hoisted(() => {
+  class MockVoiceStopWatcher {
+    setCallbacks = vi.fn()
+    start = vi.fn()
+    stop = vi.fn()
+    callbacks: Record<string, (...args: unknown[]) => void> = {}
+    constructor() {
+      this.setCallbacks.mockImplementation((cb: Record<string, (...args: unknown[]) => void>) => {
+        this.callbacks = { ...this.callbacks, ...cb }
+      })
+    }
+  }
+  return { MockVoiceStopWatcher }
+})
+vi.mock('./voiceStopWatcher', () => ({ VoiceStopWatcher: MockVoiceStopWatcher }))
+
 // ---- import after mock ----
 import { radioBroadcastController } from './radioBroadcastController'
 
 /** 手动驱动「一段流式结束」：取用户注册的 kernel 订阅回调并触发下降沿 */
 let kernelSubCb: ((s: { state: string; isStreaming: boolean; error: string | null }) => void) | null = null
+
+/** 触发一次 kernel running（段开始，sawStreaming 置位） */
+function fireStreamingStart(): void {
+  kernelSubCb?.({ state: 'running', isStreaming: true, error: null })
+}
+
+/** 触发一次 kernel idle 下降沿（一段 AI 流式结束） */
+function fireIdle(): void {
+  kernelSubCb?.({ state: 'idle', isStreaming: false, error: null })
+}
+
+/**
+ * 真实下降沿序列：先 running 再 idle。
+ * 说明：kernel.subscribe 建订即推首帧空闲快照，被控制器守卫拦截（不触发段结束）；
+ * 只有观测到 running 之后的 idle 才算「段结束下降沿」（对齐 sawStreaming 守卫语义）。
+ */
+function fireSegmentEnd(): void {
+  fireStreamingStart()
+  fireIdle()
+}
 
 /** 构造可注入会话 store 的最小 stub（提供 sendMessage / getState） */
 function makeSessionStore() {
@@ -139,11 +176,6 @@ beforeEach(async () => {
     await radioBroadcastController.stop()
   }
 })
-
-/** 触发一次 kernel 下降沿（模拟一段 AI 流式结束） */
-function fireSegmentEnd(): void {
-  kernelSubCb?.({ state: 'idle', isStreaming: false, error: null })
-}
 
 describe('radioBroadcastController', () => {
   it('start：预检失败 → error', async () => {
@@ -194,6 +226,43 @@ describe('radioBroadcastController', () => {
     expect(radioBroadcastController.getStatus()).toBe('idle')
   })
 
+  it('语音口令「停止」→ 触发 controller.stop（全链路接线）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    // start 时 voiceStopEnabled=true 已向 watcher setCallbacks({onStop})
+    const watcher = (radioBroadcastController as unknown as {
+      voiceStopWatcher: MockVoiceStopWatcher
+    }).voiceStopWatcher
+    expect(watcher.setCallbacks).toHaveBeenCalled()
+    // 命中口令 → watcher.onStop → controller.stop()（async，等待三路中断完成）
+    watcher.callbacks.onStop?.()
+    await vi.waitFor(() => {
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+    })
+  })
+
+  it('stop 后晚到段结果不回流播放（running=false 拦截）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // 播放中触发停止（三路中断）
+    await radioBroadcastController.stop()
+    expect(player.enqueueSegment).not.toHaveBeenCalled()
+    // 晚到段结束回调（stop 后订阅残留）→ stopped/running=false 拦截，不入队
+    fireStreamingStart()
+    fireIdle()
+    expect(player.enqueueSegment).not.toHaveBeenCalled()
+    // 语音口令 watcher 也已停
+    const watcher = (radioBroadcastController as unknown as {
+      voiceStopWatcher: MockVoiceStopWatcher
+    }).voiceStopWatcher
+    expect(watcher.stop).toHaveBeenCalled()
+  })
+
   it('段下降沿：取全文清洗后入队播放', async () => {
     await radioBroadcastController.start({
       direction: { kind: 'story', text: '小王子' },
@@ -202,6 +271,35 @@ describe('radioBroadcastController', () => {
     const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
     fireSegmentEnd()
     // 入队应被调用（播放器 enqueueSegment）
+    expect(player.enqueueSegment).toHaveBeenCalled()
+  })
+
+  it('sawStreaming 守卫：首帧 idle（未观测到 running）不触发段结束', async () => {
+    // 覆盖移动端实测根因：kernel.subscribe 建订即推首帧空闲快照，
+    // 若被误判为「段结束下降沿」会取空文本 → 段文本为空 → 死循环
+    await radioBroadcastController.start({
+      direction: { kind: 'tech', text: '分布式' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // 只触发 idle（订阅建订首帧 / 会话初始态），从未见过 running
+    fireIdle()
+    // 首帧 idle 不应被当作段结束：不取全文、不入队
+    expect(player.enqueueSegment).not.toHaveBeenCalled()
+  })
+
+  it('sawStreaming 守卫：error 下降沿同样需要先观测到 running', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'tech', text: '分布式' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // 首帧直接 error（会话启动失败）→ 不当作段结束（避免空文本错误计数）
+    kernelSubCb?.({ state: 'error', isStreaming: false, error: 'boom' })
+    expect(player.enqueueSegment).not.toHaveBeenCalled()
+    // 真实先 running 再 error 的下降沿 → 正常入队
+    fireStreamingStart()
+    kernelSubCb?.({ state: 'error', isStreaming: false, error: 'boom' })
     expect(player.enqueueSegment).toHaveBeenCalled()
   })
 

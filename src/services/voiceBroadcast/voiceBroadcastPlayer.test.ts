@@ -174,4 +174,70 @@ describe('VoiceBroadcastPlayer', () => {
       expect(onStart).toHaveBeenCalledWith('第二句。')
     })
   })
+
+  it('base64 模式：预取深度为 1（同一时刻至多 1 个在途合成）', async () => {
+    // 覆盖移动端实测：mimo-tts 单进程串行合成 + base64 载荷 ~200KB/句，
+    // 并发预取会让后续句子在服务端排队累积突破单句超时。BASE64_PREFETCH_DEPTH=1。
+    const p = new VoiceBroadcastPlayer()
+    p.setOptions({ base64Mode: true })
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+
+    // 第一个合成挂起；其余立即返回成功
+    const firstSynth = deferred<{ ok: boolean; url?: string }>()
+    const calls: Array<() => Promise<{ ok: boolean; url?: string }>> = [
+      () => firstSynth.promise,
+      async () => ({ ok: true, url: 'data:audio/wav;base64,AAAA' }),
+    ]
+    mockCallMimoTts.mockImplementation(() => calls.shift()!())
+
+    p.enqueueSegment('第一句。第二句。')
+    await vi.waitFor(() => {
+      expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+    })
+    // 首句在途时不应预取第二句（深度 1）
+    expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+
+    // 释放首句 → 第二句才开始合成
+    firstSynth.resolve({ ok: true, url: 'data:audio/wav;base64,BBBB' })
+    await vi.waitFor(() => {
+      expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+    })
+    // 首句 base64 data URL 直接播放
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledWith('第一句。')
+    })
+  })
+
+  it('base64 模式：单句合成超时为 25s（BASE64_SYNTH_TIMEOUT），file 模式仍为 12s', async () => {
+    vi.useFakeTimers()
+    try {
+      // 合成永不 settle → 只有定时器能触发超时兜底
+      const hangPromise = () => new Promise<{ ok: boolean }>(() => { /* 永不 settle */ })
+
+      // file 模式（默认）：12s 超时
+      const pFile = new VoiceBroadcastPlayer()
+      const errFile = vi.fn()
+      pFile.setCallbacks({ onSynthError: errFile })
+      mockCallMimoTts.mockImplementation(hangPromise)
+      pFile.enqueueSegment('第一句。')
+      vi.advanceTimersByTime(11000)
+      expect(errFile).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1500)
+      expect(errFile).toHaveBeenCalled() // 12s 超时触发
+
+      // base64 模式：25s 超时
+      const p64 = new VoiceBroadcastPlayer()
+      p64.setOptions({ base64Mode: true })
+      const err64 = vi.fn()
+      p64.setCallbacks({ onSynthError: err64 })
+      p64.enqueueSegment('第一句。')
+      vi.advanceTimersByTime(24000)
+      expect(err64).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(2000)
+      expect(err64).toHaveBeenCalled() // 25s 超时触发
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })

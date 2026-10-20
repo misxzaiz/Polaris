@@ -331,13 +331,22 @@ export class RadioBroadcastController {
 
   /** 订阅 kernel 状态下降沿，触发下一段请求（队列播空时） */
   private setupSegmentEndWatch(sessionId: string): void {
+    // 必须观测到 running 之后，idle/error 才算「段结束下降沿」。
+    // 根因：kernel.subscribe 建立时立即推首帧快照（v2-kernel.ts 初始 push），
+    // 会话刚创建尚未启动 AI 时为 idle，被误判为下降沿 → 取空文本 → 段空跳过。
+    // 对齐既有消费方守卫模式（promptOptimizeService / titleGenerationService 的 sawStreaming）。
+    let sawStreaming = false
     const unsub = subscribeKernelSessionState(sessionId, (state) => {
       if (this.stopped || this.sessionId !== sessionId) {
         unsub()
         return
       }
+      if (state.state === 'running') {
+        sawStreaming = true
+        return
+      }
       // running → idle/error 下降沿：一段流式结束，取全文入队
-      if (state.isStreaming === false && (state.state === 'idle' || state.state === 'error')) {
+      if (sawStreaming && state.isStreaming === false && (state.state === 'idle' || state.state === 'error')) {
         this.onSegmentEnded(sessionId)
       }
     })

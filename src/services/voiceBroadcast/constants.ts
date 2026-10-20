@@ -25,6 +25,16 @@ export const PREFETCH_DEPTH = 2
 /** 单句合成等待上限（ms）；超时该句标记失败跳过，不断链 */
 export const SYNTH_TIMEOUT_MS = 12000
 
+/**
+ * base64 模式（移动端）专用值。
+ * mimo-tts 单进程串行合成 + base64 载荷大（~200KB/句）经 HTTP 回传，
+ * 并发预取会让后续句子在服务端排队累积突破单句超时。降并发 + 放宽超时兜底。
+ */
+export const BASE64_PREFETCH_DEPTH = 1
+
+/** base64 单句合成 + 经 HTTP 回传大载荷的上限（ms），远大于桌面 file 模式的轻量 url 返回 */
+export const BASE64_SYNTH_TIMEOUT_MS = 25000
+
 /** AI 一段播报结束 → 自动请求下一段的衔接动作 */
 export const AUTO_ADVANCE_MS = 300
 

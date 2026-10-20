@@ -14,7 +14,7 @@
  */
 import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
-import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS } from './constants'
+import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS, BASE64_PREFETCH_DEPTH, BASE64_SYNTH_TIMEOUT_MS } from './constants'
 import { callMimoTts } from './mcpBridge'
 import type { QueueItem } from './types'
 
@@ -187,7 +187,11 @@ export class VoiceBroadcastPlayer {
   /** 预取：合成线领先播放线 PREFETCH_DEPTH */
   private prefetch(): void {
     const inFlight = this.inFlightSynthCount()
-    let need = PREFETCH_DEPTH - inFlight
+    // base64 模式（移动端）音频载荷大且 mimo-tts 单进程串行合成，
+    // 并发预取会让后续句子在服务端排队累积、突破单句超时（见移动端实测）。
+    // 降为 1：每句串行合成，无排队抖动，单句稳定在超时内。
+    const depth = this.base64Mode ? BASE64_PREFETCH_DEPTH : PREFETCH_DEPTH
+    let need = depth - inFlight
     if (need <= 0) return
     for (const item of this.queue) {
       if (need <= 0) break
@@ -210,6 +214,7 @@ export class VoiceBroadcastPlayer {
     this.pendingSynths.set(item.id, abort)
 
     const gen = item.gen
+    const timeoutMs = this.base64Mode ? BASE64_SYNTH_TIMEOUT_MS : SYNTH_TIMEOUT_MS
     const timer = setTimeout(() => {
       if (gen !== this.generation) return
       this.pendingSynths.delete(item.id)
@@ -218,7 +223,7 @@ export class VoiceBroadcastPlayer {
         this.callbacks.onSynthError?.(item, '合成超时')
         this.pump()
       }
-    }, SYNTH_TIMEOUT_MS)
+    }, timeoutMs)
 
     void callMimoTts({
       text: item.text,
