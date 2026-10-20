@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>本周 AI 程序员周报 · 2026-10-12 ~ 10-18</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg2: #111834;
+    --card: rgba(255,255,255,.045);
+    --card-border: rgba(255,255,255,.09);
+    --text: #e8ecf8;
+    --text2: #a7b0cc;
+    --text3: #6d7696;
+    --accent: #6366f1;
+    --accent2: #22d3ee;
+    --pink: #f472b6;
+    --amber: #fbbf24;
+    --green: #34d399;
+    --radius: 16px;
+    --shadow: 0 10px 40px rgba(0,0,0,.45);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  html { scroll-behavior:smooth; }
+  body {
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(99,102,241,.22), transparent 60%),
+      radial-gradient(900px 500px at -10% 30%, rgba(34,211,238,.12), transparent 55%),
+      var(--bg);
+    color: var(--text);
+    font-family: "PingFang SC","Microsoft YaHei",-apple-system,"Segoe UI",sans-serif;
+    line-height: 1.7;
+    padding: 32px 20px 64px;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  /* ── Hero ── */
+  .hero { text-align:center; padding: 40px 16px 28px; }
+  .kicker {
+    display:inline-flex; align-items:center; gap:8px;
+    font-size:12px; letter-spacing:.14em; color:var(--text2);
+    border:1px solid var(--card-border); background:var(--card);
+    padding:6px 14px; border-radius:999px; margin-bottom:20px;
+  }
+  .kicker .dot { width:8px; height:8px; border-radius:50%; background:var(--green); box-shadow:0 0 12px var(--green); animation:pulse 2s infinite; }
+  @keyframes pulse { 50% { opacity:.35; } }
+  h1 {
+    font-size:clamp(28px,5vw,46px); font-weight:800; letter-spacing:.02em;
+    background:linear-gradient(90deg,#fff 10%,#a5b4fc 50%,#67e8f9 90%);
+    -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent;
+  }
+  .hero .sub { margin-top:12px; color:var(--text2); font-size:15px; }
+  .hero .sub b { color:var(--text); }
+
+  /* ── Stats strip ── */
+  .stats { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:26px 0 8px; }
+  .stat {
+    background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius);
+    padding:16px 12px; text-align:center; transition:.25s;
+  }
+  .stat:hover { transform:translateY(-3px); border-color:rgba(255,255,255,.2); }
+  .stat .num { font-size:30px; font-weight:800; background:linear-gradient(90deg,var(--accent2),var(--accent)); -webkit-background-clip:text; background-clip:text; -webkit-text-fill-color:transparent; }
+  .stat .lbl { font-size:12px; color:var(--text3); margin-top:2px; }
+
+  /* ── Section ── */
+  h2.sec {
+    display:flex; align-items:center; gap:10px; margin:44px 0 18px;
+    font-size:20px; font-weight:700;
+  }
+  h2.sec::before { content:""; width:6px; height:22px; border-radius:3px; background:linear-gradient(var(--accent),var(--accent2)); }
+  .chart-card {
+    background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius);
+    padding:22px; margin-bottom:14px; box-shadow:var(--shadow);
+  }
+  .chart-title { font-size:14px; color:var(--text2); margin-bottom:16px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px; }
+  .chart-title .tag { color:var(--green); font-size:12px; }
+  .chart-title .tag2 { color:var(--amber); font-size:12px; }
+
+  /* bar chart */
+  .bars { display:flex; flex-direction:column; gap:14px; }
+  .bar-row .bar-meta { display:flex; justify-content:space-between; font-size:13px; margin-bottom:6px; }
+  .bar-row .bar-meta .name { color:var(--text2); }
+  .bar-row .bar-meta .val { font-weight:700; color:var(--text); }
+  .bar-track { height:14px; background:rgba(255,255,255,.06); border-radius:7px; overflow:hidden; }
+  .bar-fill { height:100%; width:0; border-radius:7px; transition:width 1.2s cubic-bezier(.2,.8,.2,1); }
+  .b1 { background:linear-gradient(90deg,#6366f1,#818cf8); }
+  .b2 { background:linear-gradient(90deg,#22d3ee,#67e8f9); }
+  .b3 { background:linear-gradient(90deg,#a855f7,#c084fc); }
+  .note { font-size:12px; color:var(--text3); margin-top:12px; }
+
+  /* line chart */
+  .linechart { display:flex; align-items:flex-end; gap:0; position:relative; height:170px; padding:10px 0 0; }
+  .lc-col { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:flex-end; gap:8px; height:100%; }
+  .lc-bar { width:42%; background:linear-gradient(180deg,#22d3ee,#6366f1); border-radius:6px 6px 0 0; transition:height 1.2s cubic-bezier(.2,.8,.2,1); min-height:3px; box-shadow:0 0 18px rgba(99,102,241,.4); }
+  .lc-label { font-size:11px; color:var(--text3); white-space:nowrap; }
+  .lc-val { font-size:11px; font-weight:700; color:var(--accent2); }
+
+  /* ── Tabs + cards ── */
+  .tabs { display:flex; gap:8px; margin:20px 0; }
+  .tab {
+    padding:8px 20px; border-radius:999px; border:1px solid var(--card-border);
+    background:var(--card); color:var(--text2); font-size:13px; cursor:pointer; transition:.2s;
+  }
+  .tab.active { background:linear-gradient(90deg,#6366f1,#4f46e5); color:#fff; border-color:transparent; font-weight:600; }
+  .view { display:none; }
+  .view.active { display:block; animation:fade .35s; }
+  @keyframes fade { from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:none;} }
+
+  .card-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
+  @media(max-width:900px){ .card-grid{grid-template-columns:1fr;} .stats{grid-template-columns:repeat(2,1fr);} }
+  .card {
+    background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius);
+    padding:16px; transition:.25s; position:relative; overflow:hidden;
+  }
+  .card::before { content:""; position:absolute; inset:0 0 auto 0; height:3px; opacity:0; transition:.25s;
+    background:linear-gradient(90deg,var(--cc1,var(--accent)),var(--cc2,var(--accent2))); }
+  .card:hover { transform:translateY(-4px); border-color:rgba(255,255,255,.22); box-shadow:var(--shadow); }
+  .card:hover::before { opacity:1; }
+  .card .cat { font-size:11px; letter-spacing:.08em; color:var(--cc1,var(--accent2)); font-weight:700; }
+  .card h3 { font-size:15px; font-weight:700; margin:8px 0 6px; line-height:1.5; }
+  .card .meta { font-size:11px; color:var(--text3); margin-bottom:8px; display:flex; gap:10px; flex-wrap:wrap; }
+  .card .key { font-size:13px; color:var(--text2); }
+  .card .insight {
+    margin-top:10px; font-size:12px; color:var(--green); background:rgba(52,211,153,.08);
+    border:1px solid rgba(52,211,153,.18); border-radius:8px; padding:6px 10px;
+  }
+  .card .insight b { color:var(--green); }
+  .card details { margin-top:10px; }
+  .card summary { cursor:pointer; font-size:12px; color:var(--accent2); user-select:none; }
+  .card details p { font-size:12.5px; color:var(--text2); margin-top:8px; padding-top:8px; border-top:1px dashed rgba(255,255,255,.1); }
+
+  /* ── Timeline ── */
+  .timeline { position:relative; padding-left:26px; }
+  .timeline::before { content:""; position:absolute; left:8px; top:4px; bottom:4px; width:2px;
+    background:linear-gradient(180deg,var(--accent),var(--accent2),transparent); }
+  .tl-item { position:relative; margin-bottom:18px; }
+  .tl-item::before { content:""; position:absolute; left:-23px; top:6px; width:10px; height:10px; border-radius:50%;
+    background:var(--accent2); box-shadow:0 0 12px var(--accent2); }
+  .tl-date { font-size:12px; color:var(--accent2); font-weight:700; letter-spacing:.05em; }
+  .tl-card { background:var(--card); border:1px solid var(--card-border); border-radius:12px; padding:12px 14px; margin-top:6px; }
+  .tl-card h3 { font-size:14px; font-weight:700; margin-bottom:4px; }
+  .tl-card p { font-size:12.5px; color:var(--text2); }
+
+  /* ── Bottom ── */
+  .signal-grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media(max-width:700px){ .signal-grid{grid-template-columns:1fr;} }
+  .signal { background:var(--card); border:1px solid var(--card-border); border-radius:var(--radius); padding:18px; }
+  .signal h3 { font-size:14px; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
+  .signal.this h3::before { content:"⚡"; }
+  .signal.next h3::before { content:"🔭"; }
+  .signal ul { list-style:none; }
+  .signal li { font-size:13px; color:var(--text2); padding:6px 0; border-top:1px dashed rgba(255,255,255,.07); display:flex; gap:8px; }
+  .signal li::before { content:"›"; color:var(--accent2); font-weight:700; }
+  .signal li b { color:var(--text); font-weight:600; }
+
+  footer { margin-top:48px; text-align:center; font-size:11.5px; color:var(--text3); }
+  footer .sep { margin:0 8px; opacity:.5; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- Hero -->
+  <header class="hero">
+    <div class="kicker"><span class="dot"></span>WEEKLY DIGEST · 面向开发者</div>
+    <h1>本周 AI 程序员周报</h1>
+    <p class="sub">2026-10-12 ~ 10-18 · 10 条要闻 × <b>4 大事件日</b> × <b>3 家巨头</b>，一次看完本周编程界的 AI 浪潮</p>
+  </header>
+
+  <!-- Stats -->
+  <section class="stats">
+    <div class="stat"><div class="num">10</div><div class="lbl">条本周要闻</div></div>
+    <div class="stat"><div class="num">77.9%</div><div class="lbl">DeepSWE 新纪录</div></div>
+    <div class="stat"><div class="num">12×</div><div class="lbl">Anthropic 代码合并增速</div></div>
+    <div class="stat"><div class="num">10/23</div><div class="lbl">开发者大会倒计时</div></div>
+  </section>
+
+  <!-- Chart 1 -->
+  <h2 class="sec">编程能力榜 · 一图看懂</h2>
+  <div class="chart-card">
+    <div class="chart-title">
+      <span>DeepSWE v1.1 长程软件工程基准（通过率）</span>
+      <span class="tag">Gemini 4 Argon 登顶</span>
+    </div>
+    <div class="bars">
+      <div class="bar-row">
+        <div class="bar-meta"><span class="name">Gemini 4 Argon（谷歌）</span><span class="val">77.9%</span></div>
+        <div class="bar-track"><div class="bar-fill b1" data-w="100%"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-meta"><span class="name">Claude Opus 5.5（Anthropic）</span><span class="val">74.2%</span></div>
+        <div class="bar-track"><div class="bar-fill b2" data-w="95%"></div></div>
+      </div>
+      <div class="bar-row">
+        <div class="bar-meta"><span class="name">GPT-6 Astra（OpenAI）</span><span class="val">74.1%</span></div>
+        <div class="bar-track"><div class="bar-fill b3" data-w="95%"></div></div>
+      </div>
+    </div>
+    <p class="note">▲ 此外：CWE-bench v1 漏洞修复 68%，与 GPT-6 Astra 并列第一；单次输出上限 6.4 万 → 100 万 token，主打长代码迁移与安全审计。</p>
+  </div>
+
+  <!-- Chart 2 -->
+  <div class="chart-card">
+    <div class="chart-title">
+      <span>Anthropic 每日代码合并量（次/天）</span>
+      <span class="tag2">AI 写码太快，逼着重造工具链</span>
+    </div>
+    <div class="linechart">
+      <div class="lc-col"><div class="lc-bar" style="height:4%;"></div><div class="lc-val">2,500</div><div class="lc-label">5 月</div></div>
+      <div class="lc-col"><div class="lc-bar" style="height:16%;"></div><div class="lc-val">1.1 万</div><div class="lc-label">6-7 月</div></div>
+      <div class="lc-col"><div class="lc-bar" style="height:38%;"></div><div class="lc-val">2.1 万</div><div class="lc-label">8 月</div></div>
+      <div class="lc-col"><div class="lc-bar" style="height:100%;"></div><div class="lc-val">3 万+</div><div class="lc-label">9 月（12×）</div></div>
+    </div>
+    <p class="note">▲ 一个 7 人团队用 5 个月自建全新版本控制系统 Scion，把单体代码库从 Git 完整迁移。</p>
+  </div>
+
+  <!-- Tabs -->
+  <h2 class="sec" id="news">本周要闻</h2>
+  <div class="tabs">
+    <button class="tab active" data-view="cards">卡片视图</button>
+    <button class="tab" data-view="timeline">时间轴视图</button>
+  </div>
+
+  <!-- Cards view -->
+  <div class="view active" id="view-cards">
+    <div class="card-grid">
+
+      <!-- 模型竞赛 -->
+      <div class="card" style="--cc1:#6366f1;--cc2:#818cf8;">
+        <div class="cat">模型竞赛</div>
+        <h3>Gemini 4 Argon 登顶编程榜 · 百万 token 输出，但价格吓人</h3>
+        <div class="meta"><span>10-01 发布 · 本周发酵</span><span>谷歌</span></div>
+        <p class="key">DeepSWE v1.1 拿下 77.9% 刷新纪录，CWE-bench 漏洞修复 68% 并列第一；10-14 登陆 Gemini 应用，Antigravity 编程界面同步进入 macOS。</p>
+        <details><summary>展开详情</summary><p>输出 token 上限从 6.4 万直升 100 万，官方主推长代码迁移、整份法律/金融文书分析、跨文档研究等长周期任务。评测方谷歌自己说「编程表现不佳不准确」——争议性能与价格并存（成本约为 Astra 的 60%，但绝对值仍高）。</p></details>
+        <div class="insight"><b>启示</b>：单次全量输出长代码成为卖点，提示工程从「聊天式」走向「一次性交付长任务」。</div>
+      </div>
+
+      <!-- 职业与就业 -->
+      <div class="card" style="--cc1:#f472b6;--cc2:#fb7185;">
+        <div class="cat">职业与就业</div>
+        <h3>微软 × 卡内基梅隆推出 PRAISE：给初级程序员找「师父」</h3>
+        <div class="meta"><span>10-15</span><span>微软</span></div>
+        <p class="key">当 AI 数秒写完代码、还能参与架构设计，「人工智能加速软件工程导师制」借鉴护理行业临床带教，让初级工程师与资深工程师结对成长。</p>
+        <details><summary>展开详情</summary><p>核心是回答一个现实问题：AI 时代初级程序员还有没有成长空间？PRAISE 让资深工程师负责指导新人理解系统、检验假设、善用 AI，目标是保住未来高级工程师的供给线。</p></details>
+        <div class="insight"><b>启示</b>：大厂共识转向——初级岗位被 AI 挤压，但「真人导师制」成为下一代工程师的培养答案。</div>
+      </div>
+
+      <div class="card" style="--cc1:#f472b6;--cc2:#fb7185;">
+        <div class="cat">职业与就业</div>
+        <h3>Anthropic 研究：初级岗位占比下降，但用 AI 越多产出越高</h3>
+        <div class="meta"><span>10-16</span><span>Anthropic</span></div>
+        <p class="key">联合发布两份研究，分析内部工作变化与公众对 AI 的预期：过去一年招聘中初级岗位占比下降；员工采用 AI 越多，产出上升关联越明显。</p>
+        <details><summary>展开详情</summary><p>官方自己提示边界：样本仅限本公司、环境有局限，相关性不能直接当作因果或全行业结论。可作为趋势参考，不必恐慌。</p></details>
+        <div class="insight"><b>启示</b>：AI 是效率杠杆不是裁员令——但「初级的活」确实在被重构，主动用 AI 的人才更吃香。</div>
+      </div>
+
+      <div class="card" style="--cc1:#f472b6;--cc2:#fb7185;">
+        <div class="cat">职业与就业</div>
+        <h3>All-In 播客：AI 把软件做便宜了，程序员为什么未必更少？</h3>
+        <div class="meta"><span>10-17</span><span>观点讨论</span></div>
+        <p class="key">软件价格下降会放大需求——定制开发、维护、专有数据、客户反馈这些环节依然要人。嘉宾判断，属观点而非统计验证。</p>
+        <details><summary>展开详情</summary><p>节目明示：程序员需求增加、AI 编写代码比例、软件价格趋势均为嘉宾判断，未经完整就业统计验证。保留定制软件、维护、专有数据等前提条件。</p></details>
+        <div class="insight"><b>启示</b>：需求弹性理论给「AI 抢饭碗」提供一个反方视角；但保持可迁移技能依然重要。</div>
+      </div>
+
+      <!-- 公司工程动态 -->
+      <div class="card" style="--cc1:#34d399;--cc2:#2dd4bf;">
+        <div class="cat">公司工程动态</div>
+        <h3>Anthropic 7 人 5 个月重造源码系统 Scion：合并量 12 倍</h3>
+        <div class="meta"><span>10-13</span><span>Anthropic</span></div>
+        <p class="key">每日代码合并从 5 月约 2,500 次暴增到 9 月 3 万+ 次，Git 扛不住。7 人团队用 5 个月自建版本控制系统，完成从 Git 的完整迁移。</p>
+        <details><summary>展开详情</summary><p>工程博客披露，AI 驱动的开发大幅提升产出速度，倒逼公司重造工具链。这是「AI 改变软件开发方法论」最直接的内部案例。</p></details>
+        <div class="insight"><b>启示</b>：AI 不只改代码，还改工程基础设施——版本控制、CI、评审流程都在为「AI 速度」重设计。</div>
+      </div>
+
+      <div class="card" style="--cc1:#34d399;--cc2:#2dd4bf;">
+        <div class="cat">公司工程动态</div>
+        <h3>腾讯开源 Hy-Memory 2.0：AI 记忆开始标准化</h3>
+        <div class="meta"><span>10-16</span><span>腾讯混元</span></div>
+        <p class="key">开放记忆专用模型 + 管理框架 + MemHub 三层能力，覆盖聊天、工作与代码记忆；授权导入会话后可在 10 种 AI 工具间共享记忆。</p>
+        <details><summary>展开详情</summary><p>各层既可独立接入也可组合，是国产大厂在「AI 记忆」组件标准化上的重要一步——记忆从各家私藏走向可迁移的基础设施。</p></details>
+        <div class="insight"><b>启示</b>：AI 应用的「记忆」正在成为像数据库一样的通用组件，值得开发者关注接入方式。</div>
+      </div>
+
+      <!-- 技术前沿 -->
+      <div class="card" style="--cc1:#22d3ee;--cc2:#67e8f9;">
+        <div class="cat">技术前沿</div>
+        <h3>Claude 设计的量子电路超越已发表最优方案</h3>
+        <div class="meta"><span>10-16</span><span>Anthropic</span></div>
+        <p class="key">在几乎无需人工干预的情况下，Claude 针对 8 类量子计算任务设计出比已发表最优电路更高效的方案。</p>
+        <details><summary>展开详情</summary><p>AI 从「写业务代码」侵入科学计算与硬件设计领域，量子电路这类复杂组合优化正是大模型擅长的新战场。</p></details>
+        <div class="insight"><b>启示</b>：程序员的价值边界在被重画——AI 开始触碰算法与硬件设计，交叉领域人才更稀缺。</div>
+      </div>
+
+      <div class="card" style="--cc1:#22d3ee;--cc2:#67e8f9;">
+        <div class="cat">技术前沿</div>
+        <h3>Claude Haiku 4.5 将于 10/29 下架</h3>
+        <div class="meta"><span>10-15</span><span>Anthropic</span></div>
+        <p class="key">从 Free / Pro / Max 套餐模型选择器中移除，覆盖网页端、桌面端、移动端常规聊天及 Cowork、Design 功能。</p>
+        <details><summary>展开详情</summary><p>10/29 之前仍可在「More models」中使用。模型生命周期管理常态化——小模型换代节奏明显加快。</p></details>
+        <div class="insight"><b>启示</b>：API/产品依赖具体模型版本有换代风险，工程上要预留模型可替换抽象层。</div>
+      </div>
+
+      <!-- 开发者生态 -->
+      <div class="card" style="--cc1:#fbbf24;--cc2:#f59e0b;">
+        <div class="cat">开发者生态</div>
+        <h3>2026 工博会：AI 自主编程引发工业工程师不安</h3>
+        <div class="meta"><span>10-12</span><span>上海</span></div>
+        <p class="key">AI 与工业结合成全场最热主题；观察者网 CIIF 观察：数百万工业工程师群体弥漫不安——冲击不止互联网，工业软件/嵌入式领域同样波及。</p>
+        <details><summary>展开详情</summary><p>在数以百万计的工业工程师群体中，「AI 能自主编程，程序员的未来在哪」成为现场高频提问。工业软件、嵌入式、PLC 等相对传统的方向也在被 AI 触碰。</p></details>
+        <div class="insight"><b>启示</b>：AI 的替代焦虑正在从互联网蔓延到工业软件/嵌入式，越早把 AI 当工具用越主动。</div>
+      </div>
+
+      <div class="card" style="--cc1:#fbbf24;--cc2:#f59e0b;">
+        <div class="cat">开发者生态</div>
+        <h3>2026 全球开发者先锋大会 10/23-25 上海开幕</h3>
+        <div class="meta"><span>下周预告</span><span>上海浦东</span></div>
+        <p class="key">延续「开发者，找找找」主题，含国际具身智能技能大赛，真机实景、以赛带会，具身智能成开发者新战场。</p>
+        <details><summary>展开详情</summary><p>架构为「1 场大赛 + 1 场开幕式 + N 场开发者活动」，紧扣「真机实景、实景实训」目标。下周开发者关注度将聚焦上海。</p></details>
+        <div class="insight"><b>启示</b>：具身智能从论文走向赛场——软硬结合 + AI 栈是下一波红利方向。</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Timeline view -->
+  <div class="view" id="view-timeline">
+    <div class="timeline">
+      <div class="tl-item"><div class="tl-date">10.12</div>
+        <div class="tl-card"><h3>2026 工博会开幕 · 「AI 能自主编程，程序员未来在哪」刷屏</h3><p>AI 与工业结合成全场最热；工业工程师群体的替代焦虑被推上台面。</p></div></div>
+      <div class="tl-item"><div class="tl-date">10.13</div>
+        <div class="tl-card"><h3>Anthropic 重造源码系统 Scion</h3><p>7 人 5 个月，自建版本控制系统替代 Git——AI 写码速度逼着工具链重构。</p></div></div>
+      <div class="tl-item"><div class="tl-date">10.14</div>
+        <div class="tl-card"><h3>Gemini 4 Argon 登陆 Gemini 应用</h3><p>面向 AI Pro / AI Ultra 用户开放，Antigravity 编程界面同步进入 macOS 客户端。</p></div></div>
+      <div class="tl-item"><div class="tl-date">10.15</div>
+        <div class="tl-card"><h3>微软 × CMU 推出 PRAISE 导师制</h3><p>初级工程师与资深结对，借鉴护理「临床带教」模式；同日 Anthropic 宣布 Haiku 4.5 下架时间表。</p></div></div>
+      <div class="tl-item"><div class="tl-date">10.16</div>
+        <div class="tl-card"><h3>Anthropic 研究双响炮</h3><p>Claude 量子电路超越最优方案（8 类任务）；内部研究显示初级岗位占比下降但 AI 采用与产出正相关。</p></div></div>
+      <div class="tl-item"><div class="tl-date">10.17</div>
+        <div class="tl-card"><h3>All-In 播客：软件做便宜了，程序员未必更少</h3><p>需求弹性视角：定制、维护、专有数据仍要人；观点讨论，非统计结论。</p></div></div>
+    </div>
+  </div>
+
+  <!-- Signals -->
+  <h2 class="sec">本周信号 & 下周关注</h2>
+  <div class="signal-grid">
+    <div class="signal this">
+      <h3>本周信号</h3>
+      <ul>
+        <li><b>编程基准刷新</b>：Gemini 4 Argon 77.9% 登顶 DeepSWE，AI 编码竞赛进入「长任务」阶段（百万 token 输出）。</li>
+        <li><b>工程速度飙升</b>：Anthropic 合并量 12 倍 → 工具链被迫重造，AI-native 研发流程成为必修课。</li>
+        <li><b>职业结构拐点</b>：微软导师制 + Anthropic 初级岗位报告，「初级→高级」的培养路径正在被重设计。</li>
+        <li><b>AI 记忆标准化</b>：腾讯 Hy-Memory 2.0 开源，记忆组件开始商品化。</li>
+      </ul>
+    </div>
+    <div class="signal next">
+      <h3>下周关注</h3>
+      <ul>
+        <li><b>10/23-25</b>：2026 全球开发者先锋大会（上海），具身智能赛事与开发者活动密集。</li>
+        <li><b>DeepSWE 榜</b>：新模型发布后的基准更新，看 Claude/GPT 能否反超 Argon。</li>
+        <li><b>AI 基建资金面</b>：CoreWeave CDS 利差创历史新高（1194.5 基点）、部分债券收益率 &gt;15%，黄仁勋称英伟达不兜底——算力供给预期如何传导到开发者生态。</li>
+        <li><b>Haiku 4.5 下架前</b>：10/29 前评估存量依赖，安排模型迁移。</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    Polaris 周报 · 数据来自公开新闻检索（IT之家 / 新浪 / 量子位 / 智东西 / 搜狐 等）<span class="sep">·</span>2026-10-18 生成<span class="sep">·</span>自包含单文件可离线分享
+  </footer>
+</div>
+
+<script>
+  // animate bars on load
+  window.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      document.querySelectorAll('.bar-fill').forEach(b => { b.style.width = b.dataset.w; });
+    }, 200);
+  });
+
+  // tab switching
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.getElementById('view-' + tab.dataset.view).classList.add('active');
+      // re-trigger bar animation if needed
+      if (tab.dataset.view === 'cards') {
+        document.querySelectorAll('.bar-fill').forEach(b => { b.style.width = '0'; });
+        setTimeout(() => document.querySelectorAll('.bar-fill').forEach(b => { b.style.width = b.dataset.w; }), 50);
+      }
+    });
+  });
+</script>
+</body>
+</html>
