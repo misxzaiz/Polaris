@@ -75,7 +75,7 @@ class EventBus<TMap extends Record<string, unknown>> {
         (handler as EventHandler<TMap[K]>)(payload)
       } catch (e) {
         // 单个 handler 异常不阻断其他 handler
-        // eslint-disable-next-line no-console
+         
         console.error(`[EventBus] handler error for "${String(type)}":`, e)
       }
     }

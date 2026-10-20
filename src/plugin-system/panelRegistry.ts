@@ -33,7 +33,7 @@ class PluginPanelRegistry {
         this.cache.delete(panelType)
         // [诊断] 临时：追踪面板注册被清除（切回应用时若触发 replaceInstalled 会先清空）
         try {
-          // eslint-disable-next-line no-console
+           
           console.warn(`[PanelTrace] pluginPanelRegistry.unregisterAll: ${pluginId} cleared panel "${panelType}" @`, new Error().stack?.split('\n').slice(2, 6).join(' | '))
         } catch { /* ignore */ }
       }

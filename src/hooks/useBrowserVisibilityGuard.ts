@@ -51,7 +51,7 @@ export function useBrowserVisibilityGuard(): void {
         // webview 可能已被销毁，静默
       })
       browserClose(label).catch((e) => {
-        // eslint-disable-next-line no-console
+         
         console.warn(`[BrowserVisibilityGuard] close failed for ${label}:`, String(e))
       })
     }

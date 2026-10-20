@@ -13,7 +13,7 @@ function tracePanelChange(label: string, from: string, to: string): void {
   if (to === 'none' || from !== to) {
     try {
       const stack = new Error().stack?.split('\n').slice(2, 8).join(' | ') ?? 'no-stack'
-      // eslint-disable-next-line no-console
+       
       console.warn(`[PanelTrace] ${label}: "${from}" → "${to}" @ ${stack}`)
     } catch { /* ignore */ }
   }

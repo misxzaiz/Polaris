@@ -538,7 +538,7 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       groups[getDateGroup(item.timestamp)].push(item)
     }
     return groups
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [displayItems])
 
   // 格式化文件大小

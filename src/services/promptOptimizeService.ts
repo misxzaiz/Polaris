@@ -432,7 +432,7 @@ export async function runPromptOptimize(options: RunPromptOptimizeOptions): Prom
     }
 
     const isLast = i === iterations
-    // eslint-disable-next-line no-await-in-loop -- 迭代链天然串行，每轮依赖上一轮结果；
+     
     // executeSingleRound 返回的 Promise 在该轮流式结束（isStreaming 回落）后才 resolve，
     // 故 await 可保证"上一轮完全收口（已入栈/已 fail）后再开始下一轮"，无竞态。
     const result = await executeSingleRound({

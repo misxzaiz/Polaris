@@ -99,7 +99,7 @@ function closeBrowserResources(tabs: Tab[]) {
     .filter((tab) => tab.type === 'browser')
     .forEach((tab) => {
       browserClose(makeBrowserWebviewLabel(tab.id)).catch((e) => {
-        // eslint-disable-next-line no-console
+         
         console.warn(`[tabStore] browserClose failed for tab ${tab.id}:`, String(e))
       })
     })

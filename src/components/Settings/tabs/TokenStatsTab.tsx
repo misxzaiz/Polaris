@@ -272,7 +272,7 @@ export function TokenStatsTab() {
       setTopSessions(data)
       setTopSessionsLoading(false)
     })
-  }, [viewMode, page, filterParams, getTopSessions]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [viewMode, page, filterParams, getTopSessions])  
 
   const summary = getSummary()
   const modelStats = getModelStats()
