@@ -646,6 +646,11 @@
     "rewordHint": "reword 需编辑器编排，暂未支持（可先变基后 amend）",
     "conflictTakenOver": "变基遇到 {{count}} 个冲突文件，冲突合并器已接管",
     "success": "交互式变基完成",
+    "suggestBtn": "AI-8 整理 fixup!/squash!",
+    "suggestHint": "检测 fixup!/squash! 前缀提交并按 --autosquash 语义移动到目标后（纯本地启发式）",
+    "suggestApplied": "已整理 {{moved}} 个 fixup!/squash! 提交",
+    "suggestPartial": "已整理 {{moved}} 个；{{unmatched}} 个未找到目标保持原位（{{shas}}…）",
+    "suggestNone": "没有可整理的 fixup!/squash! 提交",
     "cancel": "取消",
     "execute": "执行变基",
     "action": {

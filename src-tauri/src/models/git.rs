@@ -632,6 +632,20 @@ pub struct GitRebasePlan {
     pub first_locked: bool,
 }
 
+/// AI-8：fixup!/squash! 整理建议（纯本地启发式，建议序列可直接喂 start_interactive_rebase）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRebaseSuggestion {
+    /// 与面板相同的 base commitish
+    pub base_commitish: String,
+    /// 建议应用序（老 → 新；squash/fixup 已插到目标连段尾部）
+    pub commits: Vec<GitRebaseTodoItem>,
+    /// 成功配对目标并移动的 fixup!/squash! 条数
+    pub moved_count: usize,
+    /// 未找到目标（保持原位 pick）的 short sha 列表
+    pub unmatched: Vec<String>,
+}
+
 /// Rebase 操作结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitRebaseResult {

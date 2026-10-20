@@ -232,6 +232,8 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 检测 fixup!/squash! 与未 push 分支，建议面板化 rebase TODO 智能排序
 - 纯启发式（本地计算），AI 仅解释
 
+> ✅ **执行记录（本轮，AI-8 v1）**：后端 `rebase.rs::suggest_rebase_todos`（复用 plan revwalk；`fixup!/squash! X` 前缀匹配（大小写不敏感）最近 pick 目标 → 插到其 fixup/squash 连段尾部（保 validator「紧跟 pick」成立）；fixup-of-fixup 链/无目标 → 保持原位 pick 进 `unmatched` 如实汇报；validate_todos 兜底降级）；`assemble_suggestions` 纯函数 6 单测（移动/大小写/最近目标/组尾插入/保持原位/链拒绝）。capability `suggest_rebase_todos`（只读 + 三处名单 + 中文名）。前端 `RebaseTodoDialog` footer「AI-8 整理 fixup!/squash!」按钮（整表套用建议 + toast 分级：成功/partial 含 unmatched short sha/无候选）；type `GitRebaseSuggestion` + slice `suggestRebaseTodos` + 双语 i18n。组件测试 +2（8/8）。**欠账（如实）**：「未 push 分支」检测未做（-upstream 提示归 P4/RemoteTab 增量）；AI 解释层（v2，可挂 commitOrStash 同款 LLM 管线）。
+
 ### 3.4 P4 生态出口
 
 - cap.git 进 MCP/dispatch 白名单（**记得 `cargo build --bin polaris-mcp`**，否则 AI 看到旧 schema）

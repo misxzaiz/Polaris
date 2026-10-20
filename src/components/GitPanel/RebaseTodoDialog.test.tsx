@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { RebaseTodoDialog } from './RebaseTodoDialog'
 import { useGitStore } from '@/stores/gitStore'
-import type { GitRebasePlan, GitRebaseResult, GitRebaseTodoItem } from '@/types/git'
+import type { GitRebasePlan, GitRebaseResult, GitRebaseSuggestion, GitRebaseTodoItem } from '@/types/git'
 
 // i18n mock（src/test/setup.ts 提供：t(key) 返回 key 原文）
 
@@ -199,5 +199,79 @@ describe('RebaseTodoDialog', () => {
       expect(screen.getByText(/rebaseTodo\.nothingToRebase/)).toBeInTheDocument()
     })
     expect(screen.getByTestId('rebase-execute')).toBeDisabled()
+  })
+
+  // ───────────── P3 AI-8：suggest 建议整理 ─────────────
+
+  const suggestFn = vi.fn()
+
+  beforeEach(() => {
+    useGitStore.setState({
+      suggestRebaseTodos: suggestFn,
+    } as unknown as Partial<ReturnType<typeof useGitStore.getState>>)
+  })
+
+  async function renderWithSuggest(
+    suggestion: Partial<GitRebaseSuggestion> & { commits: GitRebaseTodoItem[] },
+  ) {
+    suggestFn.mockResolvedValue({
+      baseCommitish: '1111111',
+      movedCount: 1,
+      unmatched: [],
+      ...suggestion,
+    } as GitRebaseSuggestion)
+    planFn.mockResolvedValue(plan([
+      pick('aaaa1111', 'one'),
+      pick('bbbb2222', 'two'),
+      pick('cccc3333', 'three'),
+    ]))
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+    await waitFor(() => screen.getByText('three'))
+  }
+
+  it('AI-8 建议点击 → 整表套用建议序列（连同动作）', async () => {
+    await renderWithSuggest({
+      commits: [
+        { sha: 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111', subject: 'one', action: 'pick' },
+        { sha: 'bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222', subject: 'fixup! one', action: 'fixup' },
+        { sha: 'cccc3333cccc3333cccc3333cccc3333cccc3333', subject: 'three', action: 'pick' },
+      ],
+      movedCount: 1,
+    })
+
+    fireEvent.click(screen.getByTestId('ai8-suggest'))
+
+    await waitFor(() => {
+      expect(suggestFn).toHaveBeenCalledWith('D:/repo', '1111111')
+    })
+    // 建议序生效：行 1（index1）动作变 fixup，subject 换成建议里的行
+    await waitFor(() => {
+      expect((screen.getByTestId('todo-action-1') as HTMLSelectElement).value).toBe('fixup')
+    })
+  })
+
+  it('建议含 unmatched → warning 汇报；moved=0 → info（照常不阻断）', async () => {
+    await renderWithSuggest({
+      commits: [
+        { sha: 'aaaa1111aaaa1111aaaa1111aaaa1111aaaa1111', subject: 'one', action: 'pick' },
+        { sha: 'cccc3333cccc3333cccc3333cccc3333cccc3333', subject: 'three', action: 'pick' },
+        { sha: 'bbbb2222bbbb2222bbbb2222bbbb2222bbbb2222', subject: 'fixup! no target', action: 'pick' },
+      ],
+      movedCount: 0,
+      unmatched: ['bbbb2222'],
+    })
+
+    fireEvent.click(screen.getByTestId('ai8-suggest'))
+
+    await waitFor(() => {
+      expect((screen.getByTestId('todo-action-2') as HTMLSelectElement).value).toBe('pick')
+    })
   })
 })

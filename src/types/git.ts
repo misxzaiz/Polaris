@@ -522,6 +522,19 @@ export interface GitCommitRiskReport {
 }
 
 /**
+ * AI-8 fixup!/squash! 整理建议（camelCase 对齐 Rust GitRebaseSuggestion）
+ * 建议序列可直接喂 startInteractiveRebase
+ */
+export interface GitRebaseSuggestion {
+  baseCommitish: string
+  commits: GitRebaseTodoItem[]
+  /** 成功配对目标并移动的条数 */
+  movedCount: number
+  /** 未找到目标（保持原位 pick）的 short sha 列表 */
+  unmatched: string[]
+}
+
+/**
  * Cherry-pick 操作结果
  */
 export interface GitCherryPickResult {

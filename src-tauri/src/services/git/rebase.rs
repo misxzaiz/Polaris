@@ -7,7 +7,8 @@ use std::path::Path;
 use tracing::info;
 
 use crate::models::git::{
-    GitRebasePlan, GitRebaseResult, GitRebaseTodoAction, GitRebaseTodoItem, GitServiceError,
+    GitRebasePlan, GitRebaseResult, GitRebaseSuggestion, GitRebaseTodoAction, GitRebaseTodoItem,
+    GitServiceError,
 };
 use super::executor::open_repository;
 
@@ -253,6 +254,116 @@ pub fn plan_interactive_rebase(
     })
 }
 
+/// AI-8：检测 fixup!/squash! 提交并产出建议 todo 序列（只读，纯本地零 AI）
+///
+/// 语义对齐 `git rebase --autosquash` 的目标匹配（subject 前缀匹配，大小写不敏感）：
+/// - `fixup! X` / `squash! X` → 移动到最近一个 subject 以 X 开头的 pick 之后
+///   （含其 fixup/squash 连段尾部，保证校验器「必须紧跟 pick」成立）
+/// - rest 为空或仍是 fixup!/squash! 链（对 fixup! 的 fixup!）→ 无法安全构组，保持原位 pick 进 unmatched
+/// - 找不到目标 → 保持原位 pick 进 unmatched（如实报告，不假装成功）
+///
+/// 建议序列经 validate_todos 兜底；极端情况降级为原 plan 原序（moved=0，如实记录）。
+pub fn suggest_rebase_todos(
+    path: &Path,
+    base_commitish: &str,
+) -> Result<GitRebaseSuggestion, GitServiceError> {
+    let plan = plan_interactive_rebase(path, base_commitish)?;
+    let (commits, moved_count, mut unmatched) = assemble_suggestions(&plan.commits);
+
+    // 防御兜底：建议序列必须过校验器（构造上应恒过；万一失败按原 plan 原序降级，不静默出错序）
+    let commits = if validate_todos(&commits).is_err() {
+        unmatched.clear();
+        plan.commits.clone()
+    } else {
+        commits
+    };
+
+    Ok(GitRebaseSuggestion {
+        base_commitish: base_commitish.to_string(),
+        commits,
+        moved_count,
+        unmatched,
+    })
+}
+
+/// 纯重排核心：pick 原位保留；`fixup!/squash! X` 插到最近 subject 前缀命中（大小写不敏感）
+/// 的 pick 连段尾部。返回（建议序列, 移动数, unmatched short shas）。
+fn assemble_suggestions(
+    commits: &[GitRebaseTodoItem],
+) -> (Vec<GitRebaseTodoItem>, usize, Vec<String>) {
+    let mut out: Vec<GitRebaseTodoItem> = Vec::with_capacity(commits.len());
+    let mut moved_count = 0usize;
+    let mut unmatched: Vec<String> = Vec::new();
+
+    for item in commits {
+        let annotate = item
+            .subject
+            .strip_prefix("fixup! ")
+            .map(|rest| (GitRebaseTodoAction::Fixup, rest.trim()));
+        let annotate = annotate.or_else(|| {
+            item.subject
+                .strip_prefix("squash! ")
+                .map(|rest| (GitRebaseTodoAction::Squash, rest.trim()))
+        });
+
+        let Some((action, rest)) = annotate else {
+            out.push(item.clone());
+            continue;
+        };
+
+        let rest_lc = rest.to_lowercase();
+        let resolvable = !rest_lc.is_empty()
+            && !rest_lc.starts_with("fixup! ")
+            && !rest_lc.starts_with("squash! ");
+
+        let inserted = if resolvable {
+            // 最近（rposition）一个 subject 前缀命中且为 pick 的项
+            let idx = out.iter().rposition(|c| {
+                c.action == GitRebaseTodoAction::Pick
+                    && c.subject.to_lowercase().starts_with(&rest_lc)
+            });
+            match idx {
+                Some(mut i) => {
+                    // 跳过该 pick 之后的连续 fixup/squash 连段，插到组尾
+                    while i + 1 < out.len()
+                        && matches!(
+                            out[i + 1].action,
+                            GitRebaseTodoAction::Fixup | GitRebaseTodoAction::Squash
+                        )
+                    {
+                        i += 1;
+                    }
+                    out.insert(
+                        i + 1,
+                        GitRebaseTodoItem {
+                            sha: item.sha.clone(),
+                            subject: item.subject.clone(),
+                            action,
+                        },
+                    );
+                    true
+                }
+                None => false,
+            }
+        } else {
+            false
+        };
+
+        if inserted {
+            moved_count += 1;
+        } else {
+            unmatched.push(item.sha[..7.min(item.sha.len())].to_string());
+            out.push(GitRebaseTodoItem {
+                sha: item.sha.clone(),
+                subject: item.subject.clone(),
+                action: GitRebaseTodoAction::Pick,
+            });
+        }
+    }
+
+    (out, moved_count, unmatched)
+}
+
 /// todo 行渲染：`<action> <full-sha> <subject>`
 fn render_todo_line(item: &GitRebaseTodoItem) -> String {
     // subject 内换行削平（summary 已单行，防御外部传入）
@@ -463,5 +574,94 @@ mod tests {
             item(GitRebaseTodoAction::Fixup, "cccccccccccc", "three"),
         ];
         assert!(validate_todos(&todos).is_ok());
+    }
+
+    // ───────────── AI-8 assemble_suggestions 纯重排核心 ─────────────
+
+    #[test]
+    fn suggest_moves_fixup_after_matching_target() {
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "feat: add a"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "fixup! feat: add a"),
+            item(GitRebaseTodoAction::Pick, "333333333333", "docs: read me"),
+        ];
+        let (out, moved, unmatched) = assemble_suggestions(&commits);
+        assert_eq!(moved, 1);
+        assert!(unmatched.is_empty());
+        // fixup! 移到目标后，后续 pick 位置不变
+        assert_eq!(out[0], item(GitRebaseTodoAction::Pick, "111111111111", "feat: add a"));
+        assert_eq!(out[1], item(GitRebaseTodoAction::Fixup, "222222222222", "fixup! feat: add a"));
+        assert_eq!(out[2], item(GitRebaseTodoAction::Pick, "333333333333", "docs: read me"));
+        assert!(validate_todos(&out).is_ok());
+    }
+
+    #[test]
+    fn suggest_matches_case_insensitive_and_latest_target() {
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "Fix: B"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "fix: b"),
+            item(GitRebaseTodoAction::Pick, "333333333333", "fixup! FIX: B"),
+        ];
+        let (out, moved, _) = assemble_suggestions(&commits);
+        assert_eq!(moved, 1);
+        // 最近（第三个之前的 222…）命中
+        assert_eq!(out[2], item(GitRebaseTodoAction::Fixup, "333333333333", "fixup! FIX: B"));
+        assert_eq!(out[2].sha, "333333333333");
+    }
+
+    #[test]
+    fn suggest_squash_prefix_and_group_tail_insertion() {
+        // 两个 squash! 指向同一目标：都插到组尾（squash 后接 squash 合法——前一动作非 group 时紧跟 pick）
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "feat: x"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "squash! feat: x"),
+            item(GitRebaseTodoAction::Pick, "333333333333", "squash! FEAT: X"),
+        ];
+        let (out, moved, _) = assemble_suggestions(&commits);
+        assert_eq!(moved, 2);
+        assert_eq!(out[1].action, GitRebaseTodoAction::Squash);
+        assert_eq!(out[2].action, GitRebaseTodoAction::Squash);
+        assert!(validate_todos(&out).is_ok());
+    }
+
+    #[test]
+    fn suggest_unmatched_keeps_pick_in_place() {
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "feat: a"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "fixup! no such target"),
+            item(GitRebaseTodoAction::Pick, "333333333333", "docs: r"),
+        ];
+        let (out, moved, unmatched) = assemble_suggestions(&commits);
+        assert_eq!(moved, 0);
+        assert_eq!(unmatched, vec!["2222222".to_string()]);
+        // 保持原位 pick，序与输入一致
+        assert_eq!(out[1], item(GitRebaseTodoAction::Pick, "222222222222", "fixup! no such target"));
+        assert!(validate_todos(&out).is_ok());
+    }
+
+    #[test]
+    fn suggest_rejects_fixup_of_fixup_chain() {
+        // 对 fixup! 的 fixup!：不构链（校验器约束），保持原位 pick + unmatched
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "feat: a"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "fixup! feat: a"),
+            item(GitRebaseTodoAction::Pick, "333333333333", "fixup! fixup! feat: a"),
+        ];
+        let (out, moved, unmatched) = assemble_suggestions(&commits);
+        assert_eq!(moved, 1, "只有第一条 fixup! 可安全构组");
+        assert_eq!(unmatched, vec!["3333333".to_string()]);
+        assert_eq!(out[2], item(GitRebaseTodoAction::Pick, "333333333333", "fixup! fixup! feat: a"));
+        assert!(validate_todos(&out).is_ok());
+    }
+
+    #[test]
+    fn suggest_empty_rest_is_unmatched() {
+        let commits = [
+            item(GitRebaseTodoAction::Pick, "111111111111", "feat: a"),
+            item(GitRebaseTodoAction::Pick, "222222222222", "fixup!   "),
+        ];
+        let (_, moved, unmatched) = assemble_suggestions(&commits);
+        assert_eq!(moved, 0);
+        assert_eq!(unmatched, vec!["2222222".to_string()]);
     }
 }

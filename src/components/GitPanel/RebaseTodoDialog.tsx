@@ -17,7 +17,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ArrowDown, ArrowUp, Loader2, ListTodo, X, Check } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, Loader2, ListTodo, X, Check, Sparkles } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { parseGitError } from '@/stores/gitStore/types'
@@ -57,12 +57,39 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
   const toast = useToastStore()
   const planInteractiveRebase = useGitStore((s) => s.planInteractiveRebase)
   const startInteractiveRebase = useGitStore((s) => s.startInteractiveRebase)
+  const suggestRebaseTodos = useGitStore((s) => s.suggestRebaseTodos)
 
   const [plan, setPlan] = useState<GitRebasePlan | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [todos, setTodos] = useState<GitRebaseTodoItem[]>([])
   const [autosquash, setAutosquash] = useState(false)
   const [executing, setExecuting] = useState(false)
+  const [suggesting, setSuggesting] = useState(false)
+
+  /** P3 AI-8：拉取 fixup!/squash! 整理建议并整表套用（覆盖当前手动编辑；toast 汇报 moved/unmatched） */
+  const applySuggestion = useCallback(async () => {
+    if (suggesting) return
+    setSuggesting(true)
+    try {
+      const s = await suggestRebaseTodos(workspacePath, baseCommitish)
+      setTodos(s.commits)
+      if (s.unmatched.length > 0) {
+        toast.warning(t('rebaseTodo.suggestPartial', {
+          moved: s.movedCount,
+          unmatched: s.unmatched.length,
+          shas: s.unmatched.slice(0, 3).join(', '),
+        }))
+      } else if (s.movedCount > 0) {
+        toast.success(t('rebaseTodo.suggestApplied', { moved: s.movedCount }))
+      } else {
+        toast.info(t('rebaseTodo.suggestNone'))
+      }
+    } catch (err) {
+      toast.error(parseGitError(err))
+    } finally {
+      setSuggesting(false)
+    }
+  }, [suggesting, suggestRebaseTodos, workspacePath, baseCommitish, toast, t])
 
   useEffect(() => {
     let cancelled = false
@@ -249,7 +276,19 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
         )}
 
         <div className="flex justify-between items-center px-4 py-3 border-t border-border">
-          <span className="text-[11px] text-text-tertiary">{t('rebaseTodo.rewordHint')}</span>
+          <div className="flex flex-col gap-1 min-w-0">
+            <button
+              className="text-xs text-text-secondary hover:text-primary transition-colors flex items-center gap-1 disabled:opacity-40 self-start"
+              disabled={!plan || todos.length === 0 || suggesting || executing}
+              onClick={() => void applySuggestion()}
+              title={t('rebaseTodo.suggestHint')}
+              data-testid="ai8-suggest"
+            >
+              {suggesting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
+              {t('rebaseTodo.suggestBtn')}
+            </button>
+            <span className="text-[11px] text-text-tertiary truncate">{t('rebaseTodo.rewordHint')}</span>
+          </div>
           <div className="flex gap-2">
             <button
               className="text-xs px-3 py-1.5 rounded border border-border text-text-secondary hover:bg-background-hover transition-colors"

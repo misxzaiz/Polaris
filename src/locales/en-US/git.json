@@ -646,6 +646,11 @@
     "rewordHint": "reword requires editor orchestration, not supported yet (rebase first, then amend)",
     "conflictTakenOver": "Rebase hit {{count}} conflicted files, conflict merger has taken over",
     "success": "Interactive rebase finished",
+    "suggestBtn": "AI-8 arrange fixup!/squash!",
+    "suggestHint": "Detect fixup!/squash! commits and move them after their targets (--autosquash semantics; local heuristic)",
+    "suggestApplied": "Arranged {{moved}} fixup!/squash! commits",
+    "suggestPartial": "Arranged {{moved}}; {{unmatched}} without a target left in place ({{shas}}...)",
+    "suggestNone": "No fixup!/squash! commits to arrange",
     "cancel": "Cancel",
     "execute": "Start rebase",
     "action": {

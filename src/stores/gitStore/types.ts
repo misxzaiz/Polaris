@@ -19,6 +19,7 @@ import type {
   GitMergeResult,
   GitRebaseResult,
   GitRebasePlan,
+  GitRebaseSuggestion,
   GitRebaseTodoItem,
   GitCommitRiskReport,
   GitCherryPickResult,
@@ -251,6 +252,8 @@ export interface BranchActions {
     todos: GitRebaseTodoItem[],
     autosquash: boolean,
   ) => Promise<GitRebaseResult>
+  /** P3 AI-8：fixup!/squash! 整理建议（只读，纯本地）——建议序列可直接喂 startInteractiveRebase */
+  suggestRebaseTodos: (workspacePath: string, baseCommitish: string) => Promise<GitRebaseSuggestion>
 }
 
 /**

@@ -247,7 +247,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "undo_list", "undo_restore", "undo_drop",
     "get_operations", "clear_operations", "predict_conflicts",
     "get_conflict_state", "resolve_conflict_file",
-    "scan_commit_risk",
+    "scan_commit_risk", "suggest_rebase_todos",
 ];
 
 // ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
@@ -280,6 +280,7 @@ fn action_label(action: &str) -> &'static str {
         "start_interactive_rebase" => "面板化 Interactive Rebase",
         "plan_interactive_rebase" => "预览 Interactive Rebase 计划",
         "scan_commit_risk" => "提交前风险扫描（Review 门）",
+        "suggest_rebase_todos" => "fixup!/squash! 整理建议（AI-8）",
         "cherry_pick" => "Cherry-pick",
         "cherry_pick_abort" => "中止 Cherry-pick",
         "cherry_pick_continue" => "继续 Cherry-pick",
@@ -822,6 +823,10 @@ impl Capability for GitCapability {
             "stash_show" => json_ok_svc(GitService::stash_show(&workspace(p)?, opt_usize(p, "index"))),
         // P3 AI-3 提交前风险扫描（只读，纯本地）
         "scan_commit_risk" => json_ok_svc(GitService::scan_commit_risk(&workspace(p)?)),
+        // P3 AI-8 fixup!/squash! 整理建议（只读，纯本地）
+        "suggest_rebase_todos" => {
+            json_ok_svc(GitService::suggest_rebase_todos(&workspace(p)?, require_string(p, "baseCommitish")?))
+        }
             "stash_drop" => json_ok_svc(GitService::stash_drop(
                 &workspace(p)?,
                 require_u64(p, "index")? as usize,
@@ -976,6 +981,7 @@ mod tests {
             "get_conflict_state",
             "resolve_conflict_file",
             "scan_commit_risk",
+            "suggest_rebase_todos",
         ];
         known.sort();
         handled.sort();

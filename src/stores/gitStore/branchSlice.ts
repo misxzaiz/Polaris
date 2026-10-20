@@ -9,7 +9,7 @@ import type { BranchSlice } from './types'
 import { parseGitError } from './types'
 import type { BranchState } from './types'
 import type {
-  GitMergeResult, GitRebasePlan, GitRebaseResult, GitRebaseTodoItem,
+  GitMergeResult, GitRebasePlan, GitRebaseSuggestion, GitRebaseResult, GitRebaseTodoItem,
 } from '@/types/git'
 
 /**
@@ -206,6 +206,14 @@ export const createBranchSlice: BranchSlice = (set, get) => ({
       set({ error: parseGitError(err), isLoading: false })
       throw err
     }
+  },
+
+  // P3 AI-8：fixup!/squash! 整理建议（只读，纯本地；建议序列可直接喂 startInteractiveRebase）
+  async suggestRebaseTodos(workspacePath: string, baseCommitish: string) {
+    return invoke<GitRebaseSuggestion>('git_suggest_rebase_todos', {
+      workspacePath,
+      baseCommitish,
+    })
   },
 
   // 中止变基

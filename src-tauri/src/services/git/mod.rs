@@ -37,7 +37,7 @@ pub use branch::{get_branches, create_branch, checkout_branch, delete_branch, re
 pub use tag::{get_tags, create_tag, delete_tag};
 pub use rebase::{
     rebase_branch, rebase_abort, rebase_continue,
-    plan_interactive_rebase, start_interactive_rebase,
+    plan_interactive_rebase, start_interactive_rebase, suggest_rebase_todos,
 };
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
@@ -64,7 +64,7 @@ use std::path::Path;
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitCommitRiskReport, GitRebasePlan, GitRebaseResult,
+    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitCommitRiskReport, GitRebasePlan, GitRebaseSuggestion, GitRebaseResult,
     GitRebaseTodoItem, GitReflogEntry, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag, GitSequenceState,
     LogSearchFilter,
@@ -542,6 +542,11 @@ impl GitService {
     /// 提交前风险扫描（P3 AI-3；只读，纯本地）
     pub fn scan_commit_risk(path: &Path) -> Result<GitCommitRiskReport, GitServiceError> {
         scan_commit_risk(path)
+    }
+
+    /// AI-8：fixup!/squash! 整理建议（只读，纯本地）
+    pub fn suggest_rebase_todos(path: &Path, base_commitish: &str) -> Result<GitRebaseSuggestion, GitServiceError> {
+        suggest_rebase_todos(path, base_commitish)
     }
 
     // ========================================================================
