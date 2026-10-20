@@ -1,8 +1,9 @@
 # SimpleAI 提示词缓存命中率修复方案
 
-> 状态：**方案定稿，待实施**（2026-10-20）
+> 状态：**已实施，待线上样本验证**（2026-10-20）
 > 范围：`src-tauri/src/ai/engine/simple_ai_protocol.rs`（协议转换层）+ 2 个调用点
 > 前置分析：同模型的 SimpleAI 引擎缓存命中率约 50%，Claude CLI 路径约 96%
+> 实际收益：消除命中率的随机抖动（0%~70% → 稳定），稳定水位随规模变化（24k≈99%、70.7k≈69%）
 
 ---
 
@@ -201,6 +202,30 @@ fn cache_control_enabled(custom_env: &Option<HashMap<String, String>>) -> bool {
 ~69%。17k 无 thinking 组两次全 0 更可能是小规模 + 该请求形态未被缓存（该组被
 429 限流中断，样本不足以判定）。**结论：断点有效，但收益按「消除方差 + 提升均值」
 评估，最终仍以 usage.db 大样本为准。**
+
+### 5.2 实施落点（与 §3 方案设计的差异）
+
+**文件**：`simple_ai_protocol.rs`（+155 行）、`simple_ai/chat_loop.rs`、`simple_ai/compact.rs`。
+
+**差异一：双入口，不改原签名**。新增 `build_request_body_with_env(..., custom_env)`，
+由 `chat_loop.rs` 与 `compact.rs` 改调它；原 `build_request_body` 保持原签名不动。
+原因：文件内已有 15 处 `build_request_body` 调用点（多为测试），
+全量改签名会无谓扩大 diff。代价是存在一个不注入断点的入口，
+但既有测试全部走该入口，正好用于确认「不注入」路径不破坏原行为。
+
+**差异二：新增 `count_cache_breakpoints` 辅助函数**，实现 §3 中内联的断点计数逻辑，
+供 `apply_cache_breakpoints` 的防御性上限检查与单测共用。
+
+**超限行为**：仅 `tracing::warn!` 告警，**不裁剪**。超限断点会导致上游 400，
+但裁剪需要人为选定「丢哪几个」，而 §3 约定的取舍顺序（system > tools > 末尾 user）
+是主观假设；告警保留证据、让人工判断，比静默裁剪更符合本项目「不用防御补丁掩盖问题」的约定。
+
+**幂等性**：`apply_cache_breakpoints` 对已有断点的块不重复挂载，
+二次注入断点总数不变（二次注入后仍为 3 处）。
+
+**开关语义**：`SIMPLE_AI_CACHE_CONTROL` 未设置、空 map、非 `"false"` 值均视为开启；
+仅显式 `"false"` 关闭。env 拼写错误时**静默开启**——与 §3 一致，
+不做「拼写错误则告警」，因为告警噪音比静默开启的风险高。
 
 ## 6. 已知不确定项
 
