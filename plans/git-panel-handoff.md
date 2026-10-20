@@ -24,8 +24,9 @@ P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全�
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
 P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
-P2 其余           ░░░░░░░░░░   0%（FR-P2-2 watcher 已完成，见下）
-P3 全部           ░░░░░░░░░░   0%
+P2 其余           ██████████ 100%  FR-P2-2 watcher / FR-P2-AI4 冲突预测已完成
+P3 冲突合并器     ████████░░  80%  序列操作机 + 三窗编辑器重写 + 三态解决语义（见 §2.1 本轮记录；AI-5 建议卡 / Ignore-Append 为增量）
+P3 其余           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
 
@@ -86,6 +87,43 @@ f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 
 d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式）
 55c341d6 feat(git): FR-P2-2 外部文件变化自动刷新 status（file-system-change 订阅）
 ```
+
+### 2.1 P3 冲突域接手修复（2026-10-20，本轮接手实施）
+
+**背景**：P3 冲突合并器由前一轮 AI 落地（`a099aa3e`），存在 P0 级假解决与多处语义/时机缺陷；本轮在 `feat/git-panel-vnext` worktree 接手修复。
+
+#### 后端（`services/git/sequence.rs` + `router/git_capability.rs`）
+
+1. **P0 假解决根修**：`resolve_conflict_file` 旧实现以 `index.get_path(stage0)` 判 trackable，但冲突态 index 只有 stage1/2/3 → 写盘恒跳过，最终暂存的是磁盘上带 `<<<<<<<` marker 的原文（静默穿帮）。重写为三态契约 `ConflictFileResolution`：
+   - `WriteContent`：编辑器拼合结果无条件写盘 + add（stage0 取代冲突 stages）
+   - `CheckoutStage(ours|theirs)`：按 stage2/3 blob 原样还原到工作区（binary/delete-modify 的「保留某侧」，等价 `git checkout --ours/--theirs`）
+   - `Remove`：删盘上文件 + 移除 index 全部冲突 stages（「接受删除」；旧实现完全缺失此语义）
+2. **删类 kind 映射反转修复**：旧实现把 `(our 有,their 无)`（对方删·本地改）标成 `DeletedByUs`，与 git 约定及 models 文档注释相反 → UI「接受删除」会按反侧执行。已对齐：`(true,false)=DeletedByThem`、`(false,true)=DeletedByUs`，并补记幸存侧 stage 内容（旧实现删类 ours/theirs 全 None，「保留修改」无从落地）。
+3. capability 分发：`content` / `remove` / `side` 三参归一协议（camelCase 不变）。
+4. 新增 3 个测试（text 写盘+stage0、删类 kind/幸存内容、Remove 删盘+清冲突）。**运行受本机 DLL 限制未执行**，以 `cargo check` + `cargo test --no-run` 编译门代替。
+
+#### 前端
+
+5. **`ThreeWayMergeEditor` 整体重写（同源对位真三窗）**：旧版「ours/theirs 全文 pre ×2 + 底部 hunk 卡」双套渲染信息重影；新版 regions 数组一次驱动三列 grid（左 ours / 中 result / 右 theirs），冲突块中列就地 [Accept Ours|Theirs|Base] 决策（VS Code 式），决策后实时重渲染所选侧内容；保留 per-hunk testid 契约。
+6. **Apply All 真实现**：批量采纳全部「未决策」冲突块为本方（parse 层已吸收非重叠单侧改动，剩余块均为双侧非空重叠冲突——批量取本方是唯一确定性批量语义；旧版按钮只弹 toast 不改状态）。
+7. **`ConflictMergerDialog` 流转闭环**：解决任何文件后以 `getConflictState` 新鲜返回值决定下一步（修复旧版读 stale props 漏并行解决）；剩余 Text 自动接力进编辑器；归零后按 kind 引导——rebase/cherry_pick/revert 给 Continue/Abort（消费既有 slice 动作），merge 提示去提交。
+8. **FileChangesList 入口**：unmerged 文件右键菜单首位给「打开冲突合并器」（优先于 diff——冲突态 diff 含 marker）。
+9. gitStore `conflictSlice` 新增 `resolveConflictFile`/`removeConflictFile`/`checkoutConflictSide`（payload 收敛一处，错误按 slice 约定 parse+抛出，成功 refreshStatus）。
+10. i18n：conflict 域新增保留删除语义键（keepLocalMod/keepTheirsMod/acceptDelete/applyAll 系/guide 系等）+ FileChangesList `mergerEntry`；zh/en 483+ 键重新对齐（0 缺口）。
+11. 分支基线类型补漏：`conversationStore/types.ts` 会话 kind union 缺 `'radio-broadcast'`（radio 提交 c82b050d 的 WIP 未进分支）→ 补全解 tsc。
+
+#### 门禁结果（worktree，feat/git-panel-vnext）
+
+- `pnpm exec tsc --noEmit` = 0
+- `pnpm lint` = 6 errors / 211 warnings（**余 6 error 为分支基线遗留**，涉及 PatchDiffRenderer rules-of-hooks、useRuntimeSummary surrogate、ansiToHtml control-regex，非本域文件，不越界修改）；已顺手修复本分支机械类 9 个（prefer-const ×3 / 无用转义 ×6，其中 `toolInputExtractor.test` 的 `\s\p` 是真 bug：`\s` 吃掉反斜杠致测试语义漂移，改正转义后仍 54/54 绿）
+- cargo check --lib = 0；cargo test --no-run = 0；web-gate（--no-default-features polaris-web + polaris-mcp）= 0
+- vitest：conflict 域 31/31、GitPanel+gitStore 305/305 全绿；全量 2028 passed / 84 failed —— 84 失败为**存量**（11 个文件，Chat/tool-calls/engines/plugins/transport 域），已用 `git stash` 基线复核与本次改动无关（§六.4 已有记录）
+
+#### 未做（诚实标注）
+
+- 冲突块建议卡 AI-5（默认折叠逐块确认、采纳率指标）——P3 后增量
+- 三窗中列的 Append 双侧内容拼合（spec 备选项，中列仅单侧接受）
+- 冲突文件「跳到下一未解决」在多文件间的自动接力依赖手动关单文件编辑器后走 Dialog 接力，无跨文件键盘流
 
 ---
 
@@ -151,15 +189,17 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 
 ### 3.3 P3 深水区
 
-#### FR-P3-1 冲突合并器（超越点#3）
+#### FR-P3-1 冲突合并器（超越点#3）✅ 主体已完成（2026-10-20 接手修复，见 §2.1）
 
-- VS Code 3-way Merge Editor 规范：Left(ours)/Bottom(result)/Right(theirs) + per-conflict 控件 + **剩余未解决计数常驻**
-- 按 merge/rebase/cherry-pick 区分 current/incoming 语义标签
-- 独立对话框 + 编辑器内嵌两形态
-- 解决后直接进 staging
-- AI-5 冲突块建议卡（默认折叠、逐块确认）；采纳率 ≥ 60% 即达标
-- 先弹文件级对话框：每文件 Accept Yours/Theirs/Resolve Manually + Resolve All Simple Conflicts 一键
-- 三窗：左右只读、中央可编辑；per-conflict Accept/Ignore + Append；Apply All Non-Conflicting Changes 一键；完成后自动跳下一文件
+- ~~VS Code 3-way Merge Editor 规范：Left(ours)/Bottom(result)/Right(theirs) + per-conflict 控件 + 剩余未解决计数常驻~~ ✅ 重写版：同源 regions 三列对位（左 ours/中 result/右 theirs），冲突块中列就地决策 + 未解决计数常驻
+- ~~按 merge/rebase/cherry-pick 区分 current/incoming 语义标签~~ ✅
+- ~~独立对话框 + 编辑器内嵌两形态~~ ✅
+- ~~解决后直接进 staging~~ ✅（三态解决语义 + kind 反转修复，详见 §2.1）
+- ~~先弹文件级对话框：每文件 Accept Yours/Theirs/Resolve Manually + Resolve All Simple Conflicts 一键~~ ✅（按 kind 映射真实删除/保留语义；Resolve All Simple 循环非 Text 文件 + 修复 stale-props 接力）
+- ~~完成后自动跳下一文件~~ ✅（新鲜 getConflictState 接力下一 Text；归零后按 kind 引导 Continue/Abort/去提交）
+- ~~Apply All Non-Conflicting Changes 一键~~ ✅（语义落地为「未决策块批量取本方」——parse 层已吸收非重叠单侧改动，见 §2.1 第 6 条）
+- AI-5 冲突块建议卡（默认折叠、逐块确认）；采纳率 ≥ 60% 即达标 —— **未做，下轮增量**
+- 三窗中列 Append 双侧拼合（备选项）—— **未做，下轮增量**
 
 #### FR-P3-2 Interactive Rebase
 

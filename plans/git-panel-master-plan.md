@@ -122,3 +122,18 @@ PR-2a 主体（Reply 结构化错误、写任务队列/取消、progress 合流�
 | （真实语义差）P1 AI-6 参数编译器动作端已就绪 | △ | `search_log` 是编译器的**执行端**；自然语言 → filter 的编译（意图 → grep/author/-S 映射）属后续 AI-6 主体，本批未做 |
 
 **仍开设口（下轮）**：P1 UI 绑定（stash apply/show 按钮、amend 按钮、搜索框、fetch/auto-fetch（默认关）设置项、reflog 面板）；AI-6 编译器主体；PR-2a 主体（Reply 结构化错误、写任务队列、progress 合流）；P2 lane 主役（泳道状态机 + 契约用例，log 已切拓扑序为前置）/ C7 缓存 key / .git 副监听；P2.5 冲突协议升级；P3 序列操作机（含任意 commit amend）；P4 生态出口。
+
+## 八、执行记录（第三轮 · P3 冲突域接手修复，2026-10-20）
+
+在 `feat/git-panel-vnext` worktree 实施本轮记录（详见 `git-panel-handoff.md` §2.1）：
+
+| 项 | 状态 | 关键产物 |
+|---|---|---|
+| **C10/C11 冲突域 P0 假解决根修** | ✅ | `resolve_conflict_file` 三态重写（`WriteContent` 无条件写盘 + add / `CheckoutStage(side)` 按 stage2/3 blob 还原 / `Remove` 删盘 + 清冲突 stages）；根因 = 旧实现以 stage0 探测可写而冲突态无 stage0，暂存的是 marker 原文 |
+| **删类 kind 映射反转修复** | ✅ | `(our 有,their 无)` → `DeletedByThem`（对齐 git 约定），幸存侧 stage 内容补记（删类 内容不再全 None）；sequence.rs +3 测试（编译门过，运行受 DLL 限制） |
+| **三窗编辑器重写（真三窗）** | ✅ | regions 同源驱动三列对位、冲突块中列就地决策（VS Code 式）、Apply All 真实现（批量采纳未决策块为本方；parse 层背景：非重叠单侧改动早已被吸收）、跳下一未解决块、手编接管 |
+| **Dialog 流转闭环** | ✅ | 新鲜 `getConflictState` 接力下一 Text 文件；归零按 kind 引导（rebase/cherry_pick/revert Continue/Abort，merge 去提交）；修复旧版 stale props |
+| **入口 + 契约 + i18n** | ✅ | FileChangesList unmerged 右键 → openMerger；gitStore 三态 slice 方法；zh/en 键对齐 0 缺口 |
+| **门禁** | ✅（存量除外） | tsc 0；cargo check/test-compile/web-gate 0；vitest：conflict 31/31、GitPanel+gitStore 305/305；全量 84 failed = 11 个基线存量文件（stash 复核，与本次无关）；lint 上余 6 error 同为基线遗留（非 git 域） |
+
+**未做（增量留给下轮）**：AI-5 冲突块建议卡；中列 Append 双侧拼合；跨文件键盘流接力。**分支基线债（不属本域）**：11 个 vitest 存量失败文件（"fetch failed" 系 localhost mock 依赖）+ 6 个 lint error（PatchDiffRenderer/useRuntimeSummary/ansiToHtml）。
