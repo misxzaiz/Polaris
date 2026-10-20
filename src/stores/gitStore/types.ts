@@ -20,6 +20,7 @@ import type {
   GitRebaseResult,
   GitRebasePlan,
   GitRebaseTodoItem,
+  GitCommitRiskReport,
   GitCherryPickResult,
   GitRevertResult,
   GitCommit,
@@ -145,6 +146,8 @@ export interface CommitState {
   /** P1.5 分片：按 wsPath 键控的提交历史 */
   commitsByWs?: Record<string, GitCommit[]>
   commitDetails: Record<string, GitCommitDetails>
+  /** P3 AI-3：按 wsPath 键控的提交前风险扫描报告（Review 门，纯本地） */
+  riskScanByWs?: Record<string, GitCommitRiskReport>
 }
 
 /**
@@ -296,6 +299,8 @@ export interface CommitActions {
   getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
   getFileHistory: (workspacePath: string, filePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitFileHistoryEntry[]>
   checkoutCommit: (workspacePath: string, commitSha: string) => Promise<void>
+  /** P3 AI-3：提交前风险扫描（Review 门；只读，纯本地）——结果写入 riskScanByWs */
+  scanCommitRisk: (workspacePath: string) => Promise<GitCommitRiskReport>
 }
 
 /**

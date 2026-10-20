@@ -618,6 +618,20 @@
     "wipCount": "{{count}} 个文件"
   },
 
+  "riskScan": {
+    "title": "提交前风险扫描",
+    "badge": "Review 门 · 纯本地 · 0 token",
+    "scanning": "正在扫描暂存区...",
+    "rescan": "重新扫描",
+    "clean": "未发现风险",
+    "summarySecret": "疑似密钥 {{count}}",
+    "summaryMarker": "冲突 marker 残留 {{count}}",
+    "summaryLarge": "大文件 {{count}}",
+    "more": "其余 {{count}} 条请处理后查看完整明细",
+    "truncated": "风险条目已达上限 120，已截断",
+    "hint": "仅供核对，不阻断提交；密钥疑似泄露请立即在远程侧作废"
+  },
+
   "rebaseTodo": {
     "menuEntry": "从此提交交互式变基...",
     "title": "交互式变基",

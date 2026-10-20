@@ -719,6 +719,35 @@ pub struct GitStashEntry {
 }
 
 // ============================================================================
+// 提交风险扫描（P3 AI-3：PR 式 Review 门，纯本地零 AI）
+// ============================================================================
+
+/// 单条风险记录（serde camelCase）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRiskFinding {
+    /// 文件路径（repo 相对）
+    pub file: String,
+    /// 行号（1 起；large-file 类无行号 → None）
+    pub line: Option<u32>,
+    /// 类别：secret / conflict-marker / large-file
+    pub category: String,
+    /// secret 命中的模式名（其余类别 None）
+    pub pattern: Option<String>,
+    /// 摘要/行内容截断（secret 截 60 字符，marker 截 80）
+    pub excerpt: String,
+}
+
+/// 扫描报告
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitCommitRiskReport {
+    pub findings: Vec<GitCommitRiskFinding>,
+    /// 达 120 条上限截断（真实结果可能更多）
+    pub truncated: bool,
+}
+
+// ============================================================================
 // Reflog（P1：reflog UI + 一键恢复）
 // ============================================================================
 

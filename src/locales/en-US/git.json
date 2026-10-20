@@ -618,6 +618,20 @@
     "wipCount": "{{count}} files"
   },
 
+  "riskScan": {
+    "title": "Pre-commit risk scan",
+    "badge": "Review gate · local · 0 token",
+    "scanning": "Scanning staged changes...",
+    "rescan": "Rescan",
+    "clean": "No risks found",
+    "summarySecret": "Seems-secret {{count}}",
+    "summaryMarker": "Conflict markers {{count}}",
+    "summaryLarge": "Large files {{count}}",
+    "more": "and {{count}} more — resolve these to see full details",
+    "truncated": "Reached 120-entry cap, results truncated",
+    "hint": "Advisory only, commits are not blocked; revoke leaked secrets on the remote immediately"
+  },
+
   "rebaseTodo": {
     "menuEntry": "Interactively rebase from here...",
     "title": "Interactive Rebase",

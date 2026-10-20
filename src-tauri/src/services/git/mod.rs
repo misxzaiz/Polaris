@@ -24,6 +24,7 @@ mod undo;
 mod conflict;
 mod sequence;
 mod lane_cache;
+mod risk_scan;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};
@@ -47,6 +48,7 @@ pub use remote::{
 };
 pub use log::{get_log, get_log_with_lanes, search_log, get_commit_details, get_file_history, blame_file};
 pub use stash::{stash_save, stash_list, stash_pop, stash_drop, stash_apply, stash_show};
+pub use risk_scan::scan_commit_risk;
 pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
 pub use reflog::get_reflog;
@@ -62,7 +64,7 @@ use std::path::Path;
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebasePlan, GitRebaseResult,
+    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitCommitRiskReport, GitRebasePlan, GitRebaseResult,
     GitRebaseTodoItem, GitReflogEntry, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag, GitSequenceState,
     LogSearchFilter,
@@ -535,6 +537,11 @@ impl GitService {
     /// 查看 Stash patch 内容（P1）
     pub fn stash_show(path: &Path, index: Option<usize>) -> Result<String, GitServiceError> {
         stash_show(path, index)
+    }
+
+    /// 提交前风险扫描（P3 AI-3；只读，纯本地）
+    pub fn scan_commit_risk(path: &Path) -> Result<GitCommitRiskReport, GitServiceError> {
+        scan_commit_risk(path)
     }
 
     // ========================================================================

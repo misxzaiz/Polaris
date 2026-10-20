@@ -22,10 +22,11 @@
 P0 架构垫层       ██████████ 100%  cap.git 上收 + git_dispatch.rs 摘除
 P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全做
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
-P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
-P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
+P1 AI-3 Review门  ██████████ 100%（形态裁决：纯本地扫描 → P3 AI-3 完成，见 §四 AI-3 执行记录）
+P2 泳道图         ██████████ 100%  lane + 语义色 + WIP/stash 虚拟行 + 缓存已落地（graph.c 四数组收缩留待下轮，如实）
 P2 其余           ██████████ 100%  FR-P2-2 watcher / FR-P2-AI4 冲突预测已完成
 P3 冲突合并器     ████████░░  80%  序列操作机 + 三窗编辑器重写 + 三态解决语义（见 §2.1 本轮记录；AI-5 建议卡 / Ignore-Append 为增量）
+P3 交互式Rebase   ████████░░  80%  FR-P3-2 核心闭环 + AI-3 本地扫描完成（reword/拖拽/edit 停点 hover 未做，如实）
 P3 其余           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -136,6 +137,8 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 #### AI-3 提交前 Review 门（⚠️ **master-plan 已改形态并归 P3**）
 
 > **master-plan §1.3 裁决**：密钥/大文件/冲突标记用**纯本地扫描**（gitleaks 模式库正则，LLM 只做提交后批量语义解释），形态从「弹卡」改为**常驻面板列表**（不主动打扰）。故不再按本节旧形态实施，落地见 P3「AI-3 本地扫描常驻列表」。
+
+> ✅ **执行记录（本轮，P3 AI-3 v1）**：后端 `services/git/risk_scan.rs`（`diff_tree_to_index` 逐新增行：6 类密钥正则（AWS/OpenAI/GitHub/Slack/私钥块/键值对 kv-secret）+ 冲突 marker（`<<<<<<<`/`>>>>>>>` 行首）+ 大文件（blob >1MiB 一票报）；上限 120 条截断标注；正则 6 断言单测）；capability `scan_commit_risk`（只读 + 双名单 + 中文名映射 + 防护测试）；前端 `CommitRiskCard`（GitPanel 变更区常驻、挂载即扫 + 手动重扫、摘要计数 + 明细前 8 条 + truncated/hint；失败静默不阻断提交——Review 门语义）、slice `scanCommitRisk` + `riskScanByWs` 分片、双语 i18n `riskScan.*`。组件测试 4/4。**欠账（如实）**：跳转 diff 点击定位（明细行目前仅展示）；LLM 提交后批量语义解释（v2）。
 
 **旧目标（保留备查）**：提交前异步跑 diff 检查 → 非阻塞报告卡片。
 

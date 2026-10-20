@@ -497,6 +497,31 @@ export interface GitRebasePlan {
 }
 
 /**
+ * 提交风险扫描（P3 AI-3：PR 式 Review 门，纯本地零 AI）
+ * camelCase 对齐 Rust GitCommitRiskReport / GitCommitRiskFinding
+ */
+export type GitCommitRiskCategory = 'secret' | 'conflict-marker' | 'large-file'
+
+export interface GitCommitRiskFinding {
+  /** 文件路径（repo 相对） */
+  file: string
+  /** 行号（1 起；large-file 类无行号 → null） */
+  line?: number | null
+  /** secret / conflict-marker / large-file */
+  category: GitCommitRiskCategory | string
+  /** secret 命中的模式名（其余类别缺省） */
+  pattern?: string | null
+  /** 摘要/行内容截断 */
+  excerpt: string
+}
+
+export interface GitCommitRiskReport {
+  findings: GitCommitRiskFinding[]
+  /** 达 120 条上限截断（真实结果可能更多） */
+  truncated: boolean
+}
+
+/**
  * Cherry-pick 操作结果
  */
 export interface GitCherryPickResult {

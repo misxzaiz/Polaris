@@ -247,6 +247,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "undo_list", "undo_restore", "undo_drop",
     "get_operations", "clear_operations", "predict_conflicts",
     "get_conflict_state", "resolve_conflict_file",
+    "scan_commit_risk",
 ];
 
 // ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
@@ -278,6 +279,7 @@ fn action_label(action: &str) -> &'static str {
         "rebase_continue" => "继续变基",
         "start_interactive_rebase" => "面板化 Interactive Rebase",
         "plan_interactive_rebase" => "预览 Interactive Rebase 计划",
+        "scan_commit_risk" => "提交前风险扫描（Review 门）",
         "cherry_pick" => "Cherry-pick",
         "cherry_pick_abort" => "中止 Cherry-pick",
         "cherry_pick_continue" => "继续 Cherry-pick",
@@ -818,6 +820,8 @@ impl Capability for GitCapability {
             // P1：apply（保留 stash）与 show（读 patch —— 只读）
             "stash_apply" => json_ok_svc(GitService::stash_apply(&workspace(p)?, opt_usize(p, "index"))),
             "stash_show" => json_ok_svc(GitService::stash_show(&workspace(p)?, opt_usize(p, "index"))),
+        // P3 AI-3 提交前风险扫描（只读，纯本地）
+        "scan_commit_risk" => json_ok_svc(GitService::scan_commit_risk(&workspace(p)?)),
             "stash_drop" => json_ok_svc(GitService::stash_drop(
                 &workspace(p)?,
                 require_u64(p, "index")? as usize,
@@ -971,6 +975,7 @@ mod tests {
             "predict_conflicts",
             "get_conflict_state",
             "resolve_conflict_file",
+            "scan_commit_risk",
         ];
         known.sort();
         handled.sort();
@@ -997,7 +1002,7 @@ mod tests {
         // 只读动作不在名单（新 P1 读型动作同防护）
         for a in ["get_status", "get_log", "blame_file", "stash_list", "detect_host",
                   "stash_show", "search_log", "get_reflog", "undo_list", "get_operations",
-                  "get_conflict_state"] {
+                  "get_conflict_state", "scan_commit_risk", "plan_interactive_rebase"] {
             assert!(!is_destructive(a), "{} 不该被拒（只读）", a);
         }
     }

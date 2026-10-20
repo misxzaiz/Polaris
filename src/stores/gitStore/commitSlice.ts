@@ -8,7 +8,7 @@ import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { CommitState } from './types'
-import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter, GitLogPage } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter, GitLogPage, GitCommitRiskReport } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -311,5 +311,16 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
       set({ error: parseGitError(err), isLoading: false })
       throw err
     }
+  },
+
+  // P3 AI-3：提交前风险扫描（Review 门；只读，纯本地零 AI）
+  async scanCommitRisk(workspacePath: string) {
+    const report = await invoke<GitCommitRiskReport>('git_scan_commit_risk', {
+      workspacePath,
+    })
+    set((state) => ({
+      riskScanByWs: { ...(state.riskScanByWs ?? {}), [workspacePath]: report },
+    }))
+    return report
   },
 })

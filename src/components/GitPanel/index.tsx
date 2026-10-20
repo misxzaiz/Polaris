@@ -10,6 +10,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { GitStatusHeader } from './GitStatusHeader'
 import { FileChangesList } from './FileChangesList'
 import { CommitInput } from './CommitInput'
+import { CommitRiskCard } from './CommitRiskCard'
 import { QuickActions } from './QuickActions'
 import { HistoryTab } from './HistoryTab'
 import { BranchTab } from './BranchTab'
@@ -975,6 +976,8 @@ export function GitPanel({
               )}
 
               {hasChanges && <CommitInput selectedFiles={selectedFiles} workspacePath={effectivePath} />}
+              {/* P3 AI-3：提交前风险扫描卡（Review 门，纯本地；不阻断提交） */}
+              {effectivePath && hasChanges && <CommitRiskCard workspacePath={effectivePath} />}
               {<QuickActions hasChanges={hasChanges ?? false} workspacePath={effectivePath} />}
 
               {/* FR-P2-4：操作流水折叠区（GitKraken Activity Log 等价，只读展示） */}
