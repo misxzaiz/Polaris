@@ -161,3 +161,32 @@ PR-2a 主体（Reply 结构化错误、写任务队列/取消、progress 合流�
 | **AI-6 v0（无 LLM）** | ✅ `37ce6316` | `gitNlQuery.compileGitQuery`（显式键/引号短语/中文作者/相对时间/路径词；落空 → 整句 grep 不劣化）；HistoryTab exactSearch 接线；10 用例；欠账：LLM 归纳层（⚡⚡）、blame/diff 域 |
 
 **仍在册欠账（如实，未完成≠已完成）**：① P3-2 reword（GIT_EDITOR 二层编排）/ 拖拽 reorder / edit 停点 hover；② AI-5 冲突建议卡 / 中列 Append / 跨文件键盘流；③ graph.c 四数组 lane 收缩（性能优化，语义不变）；④ AI-6 LLM 归纳层 + blame/diff 域；⑤ P4 插件示例（GitFlow/worktree/GitLab PR，插件仓工作）；⑥ Undo toast「撤销」按钮联动；⑦ 风险卡明细跳转 diff。**分支基线债（不属本域，不越界修）**：11 个 vitest 存量失败文件（localhost mock，93f40dd3 基线复证等值）+ 6 lint error。
+
+## 十一、执行记录（第六轮 · 合并收编 + 裁决砍除 + 欠账总审计，2026-10-20 续）
+
+**合并**：`feat/git-panel-vnext` 全部 12 提交经 revert-of-reverts + cherry-pick 收编回 main（线性零冲突）；product 门禁全绿（tsc/vitest 331/cargo 三门）。
+
+**裁决砍除（用户驱动）**：
+
+| 项 | 状态 | 记录 |
+|---|---|---|
+| AI-2 建议卡从变更页移除 | ✅ `604e72f9` | 目录聚类对常见小变更多产出伪细分建议（如 locale 两目录拆两组），且常驻卡片挤压文件列表空间；引擎（gitAtomicGrouping）、store API（commit_group）、后端原子提交全部保留，重挂载点有注释标记；i18n `atomic.*` 键块已补齐（`5fc84156`） |
+| 编辑器内 Git 工作台变体下线 | ✅ `981d4d76` | 「在编辑区打开 Git 工作台」路径全摘：`tabStore.openGitTab`/TabType 'git'/CenterStage 'git' 分支/面板三处 workbench 按钮/App openGitWorkbench（-161 行）；HistoryTab 的 `variant` 内部实现保留（自包含、无外部依赖）；git 面板回归侧栏形态 = ResizeHandle 无限拖宽 + 无编辑器时 fillRemaining 自适应，宽度即全屏 |
+
+**欠账总审计（对照 PRD/master-plan 逐项核实，未实施清单）**：
+
+| # | 项 | 出处 | 现实 |
+|---|---|---|---|
+| 1 | Interactive Rebase 增量：reword（GIT_EDITOR 二层编排）/ 拖拽 reorder / edit 停点 hover | FR-P3-2 | 未实施（本轮明确标注） |
+| 2 | AI-5 agentic 冲突求解 agent + per-hunk 降级卡；中列 Append 双侧拼合；跨文件键盘流接力 | FR-P3 合并器 | 未实施 |
+| 3 | graph.c 四数组 lane 收缩算法 | FR-P2-1 | 简化版已覆盖单线+合并，交错收缩归此项（性能优化） |
+| 4 | AI-6 LLM 归纳层 + blame/diff 自然语言域 | AI-6 | v0 编译器（无 LLM）已上线；LLM 层 ⚡⚡ 未做 |
+| 5 | AI-7 危险操作防呆（「会失去什么」AI 说明 + 安全网建议 stash/新分支） | PRD AI-7 | **全量未实施**（确认弹窗仅基础版） |
+| 6 | P4 插件示例（GitFlow / worktree / GitLab PR） | P4 | 未实施（插件仓侧） |
+| 7 | Undo toast「撤销」按钮联动 | FR-P2-3 | 未实施（UndoBar 已有第一个消费点） |
+| 8 | 风险卡明细跳转 diff 定位 | AI-3 | 未实施 |
+| 9 | PR-2a 主体：Reply 结构化错误（C1 `{code,kind,stderrSnip}`）、写队列完整版（现为 WRITE_GATE 互斥最简落地）、progress 事件 4Hz 合流、取消分级语义 | C8/C1 | 部分实施 |
+| 10 | 性能预算逐项 bench 记录（log 翻页 p95<200ms / 热开 p50<50ms 等） | §预算表 | 无 bench 产物（预算数字未实测归档） |
+| 11 | C9 .git 副监听 rebase 风暴自抑制 / Web 60s 轮询兜底 | C9 | 需复核（FR-P2-2 watcher 已完成，rebase 抑制条目未见执行记录） |
+
+**分支基线债复述**：11 个 vitest 存量失败文件（localhost mock）+ 6 lint error（PatchDiffRenderer/useRuntimeSummary/ansiToHtml），不属 git 域。

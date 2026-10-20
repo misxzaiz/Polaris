@@ -28,8 +28,10 @@ P2 其余           ██████████ 100%  FR-P2-2 watcher / FR-P2
 P3 冲突合并器     ████████░░  80%  序列操作机 + 三窗编辑器重写 + 三态解决语义（见 §2.1 本轮记录；AI-5 建议卡 / Ignore-Append 为增量）
 P3 交互式Rebase   ████████░░  80%  FR-P3-2 核心闭环 + AI-3 本地扫描完成（reword/拖拽/edit 停点 hover 未做，如实）
 P3 其余           ░░░░░░░░░░   0%
-P4 全部           ░░░░░░░░░░   0%
+P4 全部           ████░░░░░░  40%  bus_dispatch 白名单 + cap.git + 图标漂移顺修完成（插件示例未做，如实）
 ```
+
+> **2026-10-20 合并后裁决记录**（详见 master-plan §十一）：① main 已收编 feat 分支全部 12 提交；② AI-2 提交建议卡按用户裁决从变更页移除（引擎/store API/后端保留，挂载点见 `GitPanel/index.tsx` 注释）；③ 「在编辑区打开 Git 工作台」变体（openGitTab/CenterStage git 分支/面板 workbench 按钮）全量下线，git 面板回归侧栏自适应宽度形态（ResizeHandle 无限拖宽）；④ 未实施全量审计清单见 master-plan §十一（含 AI-7 全量未实施 项）。
 
 ### 已完成（不要重做）
 
