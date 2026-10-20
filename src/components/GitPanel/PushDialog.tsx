@@ -466,6 +466,14 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
               </div>
             </label>
 
+            {/* AI-7 危护 v1：力推勾选后的确定性损失预报（0 token，远端不可撤销） */}
+            {force && (
+              <div className="rounded-lg border border-danger/30 bg-danger/5 p-2.5 text-xs text-text-secondary flex gap-1.5">
+                <AlertTriangle size={13} className="text-danger shrink-0 mt-0.5" />
+                <span>{t('danger.lossForcePush', { branch: remoteBranchName || selectedBranch })}</span>
+              </div>
+            )}
+
             <label className="flex items-start gap-2 cursor-pointer">
               <input
                 type="checkbox"

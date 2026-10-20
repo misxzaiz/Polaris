@@ -38,6 +38,8 @@ interface ConfirmState {
   message: string
   type?: 'danger' | 'warning'
   onConfirm: () => void
+  losses?: string[]
+  safetyNet?: string
 }
 
 /** 扁平化列表行：组头（折叠头）或数据行 */
@@ -186,6 +188,8 @@ export function FileChangesList({
         ? t('confirmRestoreSingle', { file: filePath })
         : t('confirmDiscardSingle', { file: filePath }),
       type: 'danger',
+      losses: isRestore ? undefined : [t('danger.lossDiscardFileOne', { file: filePath })],
+      safetyNet: isRestore ? undefined : t('danger.snapshotNote'),
       onConfirm: () => {
         setConfirmDialog(null)
         void runAction(filePath, () => discardChanges(workspacePath, filePath), {
@@ -204,6 +208,8 @@ export function FileChangesList({
         ? t('confirmDeleteUntrackedSingle', { file: filePath })
         : t('confirmDeleteSingle', { file: filePath }),
       type: 'danger',
+      losses: isUntracked ? [t('danger.lossDeleteUntrackedOne', { file: filePath })] : undefined,
+      safetyNet: isUntracked ? t('danger.nonSnapshotNote') : t('danger.recoverableNote'),
       onConfirm: () => {
         setConfirmDialog(null)
         void runAction(filePath, async () => {
@@ -473,6 +479,8 @@ export function FileChangesList({
           title={confirmDialog.title}
           message={confirmDialog.message}
           type={confirmDialog.type}
+          losses={confirmDialog.losses}
+          safetyNet={confirmDialog.safetyNet}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />

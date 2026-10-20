@@ -7,6 +7,19 @@
   "workspaceSwitched": "已切换工作区：",
   "loading": "加载中...",
   "closeDiff": "关闭 Diff",
+  "danger": {
+    "lossDiscardFiles": "{{count}} 个文件的未提交修改将不可逆丢失",
+    "lossDiscardFileOne": "文件 {{file}} 的未提交修改将不可逆丢失",
+    "lossDeleteUntracked": "{{count}} 个未跟踪新文件将从磁盘永久删除（未进 Git，无法恢复）",
+    "lossDeleteUntrackedOne": "文件 {{file}} 未进 Git，删除后无法恢复",
+    "lossDropCommit": "提交 {{sha}}（{{subject}}）连同其改动一并永久丢弃",
+    "lossBranchDelete": "分支 {{branch}} 的引用将被删除",
+    "lossForcePush": "远端 {{branch}} 上与本次推送不一致的提交将被本地覆盖，不可逆",
+    "snapshotNote": "该类操作已自动生成可撤销快照，误操作可在 Undo 栏一键恢复",
+    "nonSnapshotNote": "此类删除不走可撤销快照；如有疑虑，先保存 Stash 或备份文件",
+    "recoverableNote": "该文件已被 Git 跟踪，此删除随时可通过 Git 恢复",
+    "safetyNetBackupBranch": "安全网：先在该提交上创建备份分支（提交右键 → 从此提交创建分支），确认无误再丢弃"
+  },
   "selectedFiles": "已选择 {{count}} 个文件",
   "batchProgress": "处理中: {{current}}/{{total}}",
   "operations": {

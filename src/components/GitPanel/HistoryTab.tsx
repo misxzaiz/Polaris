@@ -182,6 +182,8 @@ export function HistoryTab({
     message: string
     type?: 'danger' | 'warning'
     onConfirm: () => void
+    losses?: string[]
+    safetyNet?: string
   } | null>(null)
   const [createBranchFromCommit, setCreateBranchFromCommit] = useState<GitCommitType | null>(null)
   const [createTagFromCommit, setCreateTagFromCommit] = useState<GitCommitType | null>(null)
@@ -918,6 +920,8 @@ export function HistoryTab({
             title: t('history.dropCommitTitle'),
             message: t('history.dropCommitConfirm'),
             type: 'danger',
+            losses: [t('danger.lossDropCommit', { sha: commit.sha.slice(0, 7), subject: commit.message })],
+            safetyNet: t('danger.safetyNetBackupBranch'),
             onConfirm: async () => {
               setConfirmDialog(null)
               try {
@@ -1583,6 +1587,8 @@ export function HistoryTab({
           title={confirmDialog.title}
           message={confirmDialog.message}
           type={confirmDialog.type}
+          losses={confirmDialog.losses}
+          safetyNet={confirmDialog.safetyNet}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />

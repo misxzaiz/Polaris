@@ -11,6 +11,7 @@ import {
   GitMerge,
   GitCompare,
   AlertCircle,
+  ShieldCheck,
   Square,
   Play,
 } from 'lucide-react'
@@ -242,6 +243,20 @@ export function DeleteBranchDialog({
             </p>
           </div>
         )}
+
+        {/* AI-7 危护 v1：确定性损失预报 + 可撤销快照说明（纯本地，0 token） */}
+        <div className="mb-4 rounded-lg border border-danger/30 bg-danger/5 p-3">
+          <div className="text-xs font-semibold text-danger mb-1.5">{t('lossesHeading', { ns: 'common' })}</div>
+          <ul className="space-y-1">
+            <li className="text-xs text-text-secondary whitespace-pre-wrap break-all">
+              {t('danger.lossBranchDelete', { branch: branchName })}
+            </li>
+          </ul>
+        </div>
+        <div className="mb-4 rounded-lg border border-primary/25 bg-primary/5 p-3 flex gap-1.5">
+          <ShieldCheck size={13} className="text-primary shrink-0 mt-0.5" />
+          <span className="text-xs text-text-secondary">{t('danger.snapshotNote')}</span>
+        </div>
 
         <div className="flex justify-end gap-2">
           <button

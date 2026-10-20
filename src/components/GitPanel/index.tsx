@@ -121,6 +121,8 @@ export function GitPanel({
     message: string;
     type?: 'danger' | 'warning' | 'info';
     onConfirm: () => void;
+    losses?: string[];
+    safetyNet?: string;
   } | null>(null)
 
   const handleFileClick = async (file: GitFileChange, type: 'staged' | 'unstaged') => {
@@ -311,6 +313,8 @@ export function GitPanel({
       title: t('confirmDiscardTitle'),
       message: t('confirmDiscard', { count: discardablePaths.length }),
       type: 'danger',
+      losses: [t('danger.lossDiscardFiles', { count: discardablePaths.length })],
+      safetyNet: t('danger.snapshotNote'),
       onConfirm: async () => {
         setConfirmDialog(null)
         setIsBatchOperating(true)
@@ -356,6 +360,8 @@ export function GitPanel({
       title: t('confirmDeleteTitle'),
       message: t('confirmDelete', { count: deletablePaths.length }),
       type: 'danger',
+      losses: [t('danger.lossDeleteUntracked', { count: deletablePaths.length })],
+      safetyNet: t('danger.nonSnapshotNote'),
       onConfirm: async () => {
         setConfirmDialog(null)
         setIsBatchOperating(true)
@@ -963,6 +969,8 @@ export function GitPanel({
           title={confirmDialog.title}
           message={confirmDialog.message}
           type={confirmDialog.type}
+          losses={confirmDialog.losses}
+          safetyNet={confirmDialog.safetyNet}
           onConfirm={confirmDialog.onConfirm}
           onCancel={() => setConfirmDialog(null)}
         />
