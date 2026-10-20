@@ -173,6 +173,13 @@ export function useActiveSessionUsage() {
   )
 }
 
+export function useActiveSessionStreamRate() {
+  return useActiveSessionSelector(
+    useCallback((s: ConversationState) => s.streamRate, []),
+    null,
+  )
+}
+
 export function useActiveSessionPromptOptimize() {
   return useActiveSessionSelector(
     useCallback((s: ConversationState) => s.promptOptimize, []),

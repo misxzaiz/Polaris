@@ -1085,30 +1085,38 @@ pub async fn start_chat_inner(
                 append_session_event(
                     &end.session_id,
                     crate::services::session_state::SessionEventType::SessionEnd,
-                    reason.clone(),
+                    reason,
                     None,
-                );
-                // --- hook: ai.session.end（会话结束）---
-                // 数据 `{sessionId, engineId, reason}`；sessionId 为引擎真实会话 id。
-                // 插件可做会话级清理 / 记录。
-                let _ = crate::services::hook_registry::dispatch_hooks(
-                    "ai.session.end",
-                    serde_json::json!({
-                        "sessionId": end.session_id,
-                        "engineId": engine_str,
-                        "reason": reason,
-                    }),
                 );
             }
             _ => {}
         }
         // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
         crate::services::turn_persist::observe(&event, &engine_str);
-        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
+        // 事件到达时刻（epoch ms），供前端计算 TTFT 与生成速率（TPS）。
+        // 仅给有流式时序意义的事件打戳，其余事件保持原序列化路径，不增加开销。
+        let now_ms = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        };
+        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎；
+        // 流式时序事件注入 receivedAtMs。本回调是所有引擎（claude / opencode / pi /
+        // simple_ai / 插件引擎）的唯一汇聚点，在此打戳即覆盖全引擎，
+        // 无需改各引擎代码或 event_parser。
         let enriched = match &event {
             AIEvent::SessionStart(_) => serde_json::to_value(&event).ok().map(|mut v| {
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                    obj.insert("receivedAtMs".to_string(), serde_json::Value::from(now_ms()));
+                }
+                v
+            }),
+            AIEvent::SessionEnd(_) | AIEvent::CliInit(_) | AIEvent::Usage(_) | AIEvent::Token(_)
+            | AIEvent::Thinking(_) | AIEvent::AssistantMessage(_) => serde_json::to_value(&event).ok().map(|mut v| {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("receivedAtMs".to_string(), serde_json::Value::from(now_ms()));
                 }
                 v
             }),
@@ -1208,17 +1216,6 @@ pub async fn start_chat_inner(
     // 为当前会话生成一个临时 session_id，传给 start_proxy 作为代理索引。
     // 避免按 profile_id 索引代理时跨会话互相干扰。
     let session_id = uuid::Uuid::new_v4().to_string();
-
-    // --- hook: ai.session.start（会话启动）---
-    // 数据 `{sessionId, engineId}`；此时 session_id 为临时 id（引擎真实会话 id
-    // 在首个事件到达后才有，见 session_state）。插件可做会话级注入 / 记录。
-    let _ = crate::services::hook_registry::dispatch_hooks(
-        "ai.session.start",
-        serde_json::json!({
-            "sessionId": session_id,
-            "engineId": engine.as_str(),
-        }),
-    );
 
     // ──────────────────────────────────────────────────────
     // 供应商分组路由（切入点 A/B：spawn 级 failover）
@@ -1630,30 +1627,38 @@ pub async fn continue_chat_inner(
                 append_session_event(
                     &end.session_id,
                     crate::services::session_state::SessionEventType::SessionEnd,
-                    reason.clone(),
+                    reason,
                     None,
-                );
-                // --- hook: ai.session.end（会话结束）---
-                // 数据 `{sessionId, engineId, reason}`；sessionId 为引擎真实会话 id。
-                // 插件可做会话级清理 / 记录。
-                let _ = crate::services::hook_registry::dispatch_hooks(
-                    "ai.session.end",
-                    serde_json::json!({
-                        "sessionId": end.session_id,
-                        "engineId": engine_str,
-                        "reason": reason,
-                    }),
                 );
             }
             _ => {}
         }
         // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
         crate::services::turn_persist::observe(&event, &engine_str);
-        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎
+        // 事件到达时刻（epoch ms），供前端计算 TTFT 与生成速率（TPS）。
+        // 仅给有流式时序意义的事件打戳，其余事件保持原序列化路径，不增加开销。
+        let now_ms = || {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as i64)
+                .unwrap_or(0)
+        };
+        // 为 session_start 事件注入 engineId，确保前端自动创建会话时绑定正确引擎；
+        // 流式时序事件注入 receivedAtMs。本回调是所有引擎（claude / opencode / pi /
+        // simple_ai / 插件引擎）的唯一汇聚点，在此打戳即覆盖全引擎，
+        // 无需改各引擎代码或 event_parser。
         let enriched = match &event {
             AIEvent::SessionStart(_) => serde_json::to_value(&event).ok().map(|mut v| {
                 if let Some(obj) = v.as_object_mut() {
                     obj.insert("engineId".to_string(), serde_json::Value::String(engine_str.to_string()));
+                    obj.insert("receivedAtMs".to_string(), serde_json::Value::from(now_ms()));
+                }
+                v
+            }),
+            AIEvent::SessionEnd(_) | AIEvent::CliInit(_) | AIEvent::Usage(_) | AIEvent::Token(_)
+            | AIEvent::Thinking(_) | AIEvent::AssistantMessage(_) => serde_json::to_value(&event).ok().map(|mut v| {
+                if let Some(obj) = v.as_object_mut() {
+                    obj.insert("receivedAtMs".to_string(), serde_json::Value::from(now_ms()));
                 }
                 v
             }),

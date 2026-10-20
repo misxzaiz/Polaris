@@ -15,6 +15,7 @@ import type { Attachment } from '@/types/attachment'
 import type { BrowserRegion } from '@/services/tauri/browserService'
 import type { AIEvent, ModelUsageBreakdown } from '@/ai-runtime'
 import type { ProfileMode } from '@/types/sessionConfig'
+import type { StreamRateSnapshot } from '@/services/streamRateTracker'
 import type { StoreApi, UseBoundStore } from 'zustand'
 import type { EventRouter } from '@/services/eventRouter'
 
@@ -378,6 +379,13 @@ export interface ConversationState {
    * null 表示本会话尚未收到用量事件。
    */
   usageStats: UsageStats | null
+
+  /**
+   * 当前一轮的流式生成速率快照（TTFT / TPS / 生成耗时）。
+   * 由 eventHandler 在流式事件上按节流写入，session_start / cli_init 时清空。
+   * 高频增量本身不落 store（每事件一次 set 会打断渲染），只按 EMIT_INTERVAL_MS 节流。
+   */
+  streamRate: StreamRateSnapshot | null
 
   // ===== 元数据 =====
   sessionId: string // 会话唯一标识，由后端返回或前端生成

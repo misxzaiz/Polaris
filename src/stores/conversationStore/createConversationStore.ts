@@ -161,6 +161,7 @@ function createInitialState(sessionId: string): ConversationState {
     progressMessage: null,
     promptSuggestion: null,
     usageStats: null,
+    streamRate: null,
 
     // 输入草稿
     inputDraft: {
@@ -1818,6 +1819,7 @@ export function createConversationStore(
           visibleRange: null,
           // 加载新会话历史时重置用量水位，避免沿用上一会话的数字
           usageStats: null,
+          streamRate: null,
           // 恢复的消息本就来自磁盘 → 水位直接对齐，避免下轮 session_start 全量重刷；
           // Fork（conversationId=null）水位归零，首轮 session_start 把完整历史写入新文件
           persistedSeq: conversationId ? processedMessages.length : 0,

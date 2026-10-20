@@ -21,6 +21,7 @@
 import { useState, useRef } from 'react';
 import { clsx } from 'clsx';
 import type { UsageStats } from '@/stores/conversationStore/types';
+import type { StreamRateSnapshot } from '@/services/streamRateTracker';
 import { eventBus } from '@/services/eventBus';
 
 interface ContextMeterProps {
@@ -32,6 +33,10 @@ interface ContextMeterProps {
   /** 当前会话引擎 ID：用于区分"自动压缩"vs"需手动压缩交接"提示文案。
    * simple-ai/claude-code 有运行时压缩。 */
   engineId?: string;
+  /** 本轮生成速率快照（TTFT / TPS / 耗时）。有值时在详情卡展示速率区。 */
+  streamRate?: StreamRateSnapshot | null;
+  /** 是否流式进行中（影响速率区的口径标注） */
+  streaming?: boolean;
 }
 
 /** 引擎是否具备运行时自动压缩能力 */
@@ -54,6 +59,11 @@ function fmtCost(n: number | undefined): string {
   return `$${n.toFixed(4)}`;
 }
 
+/** 毫秒 → 可读时长（<1s 显示 ms，≥1s 显示秒） */
+function fmtSeconds(ms: number): string {
+  return ms < 1000 ? `${Math.round(ms)}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
 import { formatTokensStrict } from '@/utils/formatTokens';
 
 /**
@@ -73,7 +83,7 @@ function isFocusStillInside(
   return anchor.contains(relatedTarget) || card.contains(relatedTarget);
 }
 
-export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineId }: ContextMeterProps) {
+export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineId, streamRate, streaming }: ContextMeterProps) {
   const [active, setActive] = useState(false);
   const [showRaw, setShowRaw] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
@@ -125,6 +135,12 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
       : null;
   const ariaLabel = `上下文用量 ${percentLabel}，${fmt(used)}/${winLabel}`;
   const ringOffset = RING_CIRCUMFERENCE * (1 - pctClamped);
+
+  // 生成速率区（本轮 TTFT / TPS / 耗时），仅当存在速率数据时展示
+  const rateTps = streamRate?.avgTps ?? streamRate?.tps ?? null;
+  const rateTpsLabel = rateTps != null && rateTps > 0 ? rateTps.toFixed(1) : null;
+  const rateTtft = streamRate?.ttftMs != null && streamRate.ttftMs >= 100 ? streamRate.ttftMs : null;
+  const rateGen = streamRate?.generationMs != null && streamRate.generationMs > 0 ? streamRate.generationMs : null;
 
   return (
     <div
@@ -272,6 +288,53 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
                       <span className="text-text-muted"> +{routedModels.length - 1}</span>
                     )}
                   </span>
+                </div>
+              )}
+
+              {/* 生成速率（本轮 TTFT / TPS / 生成耗时） */}
+              {(rateTpsLabel || rateTtft || rateGen) && (
+                <div className="mt-2.5 pt-2.5 border-t border-border-subtle">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span
+                      className="text-[11px] text-text-muted"
+                      title="本轮回复的端到端生成速率（含思考与工具间隔）；流式期间为即时滚窗值，结束后为全程平均"
+                    >
+                      生成速率
+                    </span>
+                    <span className="text-[10px] text-text-muted">
+                      {streaming ? '即时' : '平均'}
+                      {streamRate?.providerTokens != null
+                        ? ` · ${streamRate.providerTokens.toLocaleString()} tok`
+                        : ''}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-[1fr_auto] gap-x-3 gap-y-0.5 text-[11px]">
+                    {rateTpsLabel && (
+                      <>
+                        <span className="text-text-muted">速率 TPS</span>
+                        <span className="font-mono text-right tabular-nums text-primary">
+                          {rateTpsLabel}
+                          <span className="text-text-muted ml-1">tok/s</span>
+                        </span>
+                      </>
+                    )}
+                    {rateTtft != null && (
+                      <>
+                        <span className="text-text-muted">首 token</span>
+                        <span className="font-mono text-right tabular-nums text-text-secondary">
+                          {fmtSeconds(rateTtft)}
+                        </span>
+                      </>
+                    )}
+                    {rateGen != null && (
+                      <>
+                        <span className="text-text-muted">生成耗时</span>
+                        <span className="font-mono text-right tabular-nums text-text-secondary">
+                          {fmtSeconds(rateGen)}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
 

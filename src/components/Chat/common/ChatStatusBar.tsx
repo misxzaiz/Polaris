@@ -12,7 +12,7 @@ import { useState, useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next';
 import { useConfigStore, useModelProfileStore } from '@/stores';
 import { useVoiceInputStore } from '@/stores/voiceInputStore';
-import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage } from '@/stores/conversationStore/useActiveSession';
+import { useActiveSessionStreaming, useHasPendingQuestion, useHasActivePlan, useActiveSessionMessages, useActiveSessionUsage, useActiveSessionStreamRate } from '@/stores/conversationStore/useActiveSession';
 import { useSessionConfig } from '@/stores/sessionConfigStore';
 import { Paperclip, MoreHorizontal, Loader2, Mic, Volume1, Volume2, VolumeX, RefreshCw, ShieldAlert } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -23,6 +23,7 @@ import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from
 import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from '../session/SessionConfigSelector';
 import { ContextMeter } from './ContextMeter';
+import { StreamRateBadge } from './StreamRateBadge';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { getEngineSelectors } from '@/utils/engineCapabilities';
@@ -114,6 +115,8 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
 
   // token 用量(上下文水位 + 成本)
   const usageStats = useActiveSessionUsage();
+  // 流式生成速率(TTFT / TPS)，来自 streamRateTracker
+  const streamRate = useActiveSessionStreamRate();
   // 上下文窗口分母:优先事件携带值,其次活动 ModelProfile,再由 ContextMeter 兜底 200K
   const activeProfileContextWindow = useModelProfileStore(
     useCallback((s) => s.getActiveProfile()?.contextWindow, []),
@@ -586,8 +589,13 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
           )}
           {healthIndicator}
 
+          {/* 流式生成速率：仅在流式进行中且已有内容时展示 */}
+          {isStreaming && streamRate && streamRate.tokens > 0 && (
+            <StreamRateBadge snapshot={streamRate} streaming />
+          )}
+
           {usageStats && (
-            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} engineId={activeEngineId} />
+            <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} engineId={activeEngineId} streamRate={streamRate} streaming={isStreaming} />
           )}
 
           {!embedded && (isStreaming || inputHint || inputLength > 0) && (

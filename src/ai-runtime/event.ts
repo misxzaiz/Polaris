@@ -16,6 +16,8 @@ export interface TokenEvent {
   sessionId: string
   /** 文本内容 */
   value: string
+  /** 后端事件回调到达时刻（epoch ms），用于计算 TTFT 与生成速率；旧引擎可能缺省 */
+  receivedAtMs?: number
 }
 
 /**
@@ -27,6 +29,8 @@ export interface ThinkingEvent {
   sessionId: string
   /** 思考内容 */
   content: string
+  /** 后端事件回调到达时刻（epoch ms）；thinking 计入 output_tokens，需参与速率计算 */
+  receivedAtMs?: number
 }
 
 /**
@@ -128,6 +132,8 @@ export interface SessionStartEvent {
   sessionId: string
   /** 引擎 ID（如 "claude-code"、插件引擎），用于自动创建会话时绑定正确引擎 */
   engineId?: string
+  /** 后端事件回调到达时刻（epoch ms），作为一轮的计时起点 */
+  receivedAtMs?: number
 }
 
 /**
@@ -139,6 +145,8 @@ export interface SessionEndEvent {
   sessionId: string
   /** 结束原因 */
   reason?: 'completed' | 'aborted' | 'error'
+  /** 后端事件回调到达时刻（epoch ms），作为一轮的计时终点 */
+  receivedAtMs?: number
 }
 
 /**
@@ -169,6 +177,8 @@ export interface AssistantMessageEvent {
   isDelta: boolean
   /** 消息中包含的工具调用 */
   toolCalls?: ToolCallInfo[]
+  /** 后端事件回调到达时刻（epoch ms），用于计算 TTFT 与生成速率；旧引擎可能缺省 */
+  receivedAtMs?: number
 }
 
 /**
@@ -881,6 +891,8 @@ export interface UsageEvent {
   totalCostUsd?: number
   /** 原始 result 事件报文（含 usage/modelUsage/cost 等全字段），供调试查看请求/响应。 */
   rawPayload?: Record<string, unknown>
+  /** 后端事件回调到达时刻（epoch ms），流末精确 usage 到达时刻；旧引擎可能缺省 */
+  receivedAtMs?: number
 }
 
 /**

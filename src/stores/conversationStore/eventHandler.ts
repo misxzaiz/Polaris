@@ -24,8 +24,42 @@ import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { dialogStorageService } from '@/services/dialogStorage'
 import { consumeCapUiDispatch } from '@/services/uiDispatchService'
+import { getTracker, resetTracker } from '@/services/streamRateTracker'
 
 const log = createLogger('EventHandler')
+
+/**
+ * 记录一个流式增量到速率跟踪器，并按节流返回快照。
+ *
+ * tracker 实例按 sessionId 缓存（模块级 Map，不进 store 状态）；
+ * 只有 tracker 判定需要刷新时才 set，避免每 token 一次 store 更新打断渲染。
+ * `text` 为增量文本，内部按中英文差异化启发式估算 token 数。
+ */
+function pushStreamDelta(
+  state: ConversationStore,
+  set: (partial: Partial<ConversationStore>) => void,
+  at: number | undefined,
+  text: string,
+): void {
+  if (!at || !text) return
+  const tracker = getTracker(state.sessionId)
+  if (tracker.recordDelta(at, text)) {
+    set({ streamRate: tracker.snapshot(at) })
+  }
+}
+
+/** 记录流末 provider 精确输出 token（校正平均速率），需要时刷新快照 */
+function pushProviderUsage(
+  state: ConversationStore,
+  set: (partial: Partial<ConversationStore>) => void,
+  outputTokens: number | undefined,
+): void {
+  const tracker = getTracker(state.sessionId)
+  if (!outputTokens || outputTokens <= 0 || tracker.isEmpty()) return
+  if (tracker.markProviderUsage(outputTokens)) {
+    set({ streamRate: tracker.snapshot() })
+  }
+}
 
 /**
  * 无 callId 时的工具块回退目标：当前消息中最后一个仍 running 的工具块。
@@ -244,11 +278,14 @@ export function handleAIEvent(
 
   switch (event.type) {
     case 'session_start':
+      // 新一轮起点：重置速率跟踪器（计时基准 = session_start 到达时刻）
+      resetTracker(state.sessionId, event.receivedAtMs)
       set({
         conversationId: event.sessionId,
         isStreaming: true,
         error: null,
         promptSuggestion: null,
+        streamRate: null,
       })
       // 如果事件携带了 engineId，更新会话元数据，确保后续回复使用正确引擎
       if (event.engineId && state.sessionId) {
@@ -266,10 +303,16 @@ export function handleAIEvent(
       break
 
     case 'session_end': {
+      // 标记本轮结束并刷新最终快照（平均速率在此完成 provider 精确值校正）
+      const rateTracker = getTracker(state.sessionId)
+      rateTracker.markEnd(event.receivedAtMs)
+      const finalRate = rateTracker.isEmpty() ? null : rateTracker.snapshot(event.receivedAtMs)
+
       state.finishMessage()
       set({
         isStreaming: false,
         progressMessage: null,
+        streamRate: finalRate,
       })
 
       // 归档（轮末整体覆写 JSONL）：内容最完整（富块/附件/表单卡片），
@@ -310,14 +353,19 @@ export function handleAIEvent(
     }
 
     case 'token':
+      pushStreamDelta(state, set, event.receivedAtMs, event.value)
       state.appendTextBlock(event.value)
       break
 
     case 'thinking':
+      // thinking 也计入 output_tokens，需参与速率计算
+      pushStreamDelta(state, set, event.receivedAtMs, event.content)
       state.appendThinkingBlock(event.content)
       break
 
     case 'assistant_message':
+      // 仅增量计入；isDelta=false 的整块补发与 token/增量重复，会重复计数
+      if (event.isDelta) pushStreamDelta(state, set, event.receivedAtMs, event.content)
       state.appendTextBlock(event.content)
       break
 
@@ -696,6 +744,8 @@ export function handleAIEvent(
       //   （modelUsage 是进程累计，后到覆盖先到，直接累加会重复计数）。
       // 实际模型（actualModel）随两类事件更新：响应侧 message.model，逐轮可变。
       const prev = state.usageStats
+      // 流末 provider 精确输出 token → 校正平均速率（仅在比值合理时替换启发式估计）
+      pushProviderUsage(state, set, event.outputTokens)
       if (event.scope === 'turn') {
         set({
           usageStats: {
