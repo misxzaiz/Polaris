@@ -79,6 +79,15 @@ function App() {
     [sessionMetadataList, activeSessionId]
   );
 
+  // 全局发送桥：外部插件面板（news-curator 等）sendToChat 的降级通道。
+  // 首选路径是 LeftPanelContent → PluginPanelHost 的 onSendToChat props；
+  // 此桥覆盖 props 未传递/旧面板场景，保证「生成日报/语音」等按钮可用。
+  useEffect(() => {
+    ;(window as any).__POLARIS_SEND_TO_CHAT__ = (msg: string) => {
+      void sendMessage(msg);
+    };
+  }, [sendMessage]);
+
   // 编辑模式状态
   const [editMode, setEditMode] = useState<EditMode | null>(null);
   const handleEditMessage = useCallback((messageId: string, content: string) => {
@@ -312,6 +321,7 @@ function App() {
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
       radioBroadcastContent={<Suspense fallback={loadingFallback}><RadioBroadcastPanel /></Suspense>}
+      onSendToChat={(msg: string) => { void sendMessage(msg) }}
     />
   );
 

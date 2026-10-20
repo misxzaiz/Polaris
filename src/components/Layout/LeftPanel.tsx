@@ -224,6 +224,8 @@ type LeftPanelContentProps = {
   currentType?: LeftPanelType
   /** 面板激活态入口（平衡 tab strip 与 legacy ActivityBar 的权威切换） */
   activePanelType?: LeftPanelType
+  /** 发送消息到当前活跃会话（透传给外部插件面板，如 news-curator 的"生成日报/语音"按钮） */
+  onSendToChat?: (message: string) => void | Promise<void>
 }
 
 export function LeftPanelContent({
@@ -242,6 +244,7 @@ export function LeftPanelContent({
   radioBroadcastContent,
   currentType,
   activePanelType,
+  onSendToChat,
 }: LeftPanelContentProps) {
   // Hook 必须在条件之外调用
   const storePanelType = useViewStore((state) => state.leftPanelType)
@@ -293,7 +296,7 @@ export function LeftPanelContent({
     const isBuiltin = p in builtinPanels
     panels.push(
       <div key={p} className={isActive ? 'flex-1 min-w-0 min-h-0' : 'hidden'}>
-        {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} />}
+        {isBuiltin ? builtinPanels[p] : <PluginPanelHost panelType={p} onSendToChat={onSendToChat} />}
       </div>
     )
   }

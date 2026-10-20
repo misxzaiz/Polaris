@@ -15,6 +15,9 @@ import { eventBus } from '@/services/eventBus';
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 // 暴露后端 invoke 给外部插件面板使用（无状态调用，零服务进程）
 ;(window as any).__POLARIS_HOST_INVOKE__ = invoke;
+// 暴露"发送消息到活跃会话"给外部插件面板（news-curator 等面板的 sendToChat 兜底通道；
+// 实际实现在 App.tsx 挂载真实 sendMessage；此声明保证通道始终存在（空实现静默降级））
+;(window as any).__POLARIS_SEND_TO_CHAT__ = () => {};
 // 暴露工作区宿主 API 给外部插件面板（如 workspace-manager）。
 // 所有工作区变更委托主应用 workspaceStore 执行：持久化、事件派发、
 // 全 UI 响应式刷新由 store 自带，主应用工作区绑定天然更新。
