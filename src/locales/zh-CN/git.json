@@ -632,6 +632,27 @@
     "hint": "仅供核对，不阻断提交；密钥疑似泄露请立即在远程侧作废"
   },
 
+  "undo": {
+    "title": "可撤销操作",
+    "refresh": "刷新快照",
+    "restore": "一键恢复",
+    "restored": "已恢复",
+    "restoreFailed": "恢复失败",
+    "restoreConflict": "恢复完成但有 {{count}} 个冲突文件，请到变更区查看",
+    "drop": "丢弃快照",
+    "dropConfirm": "再次点击确认丢弃（不可恢复）",
+    "hasChanges": "快照包含未提交改动",
+    "more": "其余 {{count}} 条已折叠",
+    "ctx": {
+      "discard": "丢弃更改",
+      "reset_hard": "硬重置",
+      "checkout": "检出",
+      "rebase": "变基",
+      "branch_delete": "删除分支",
+      "undo": "恢复操作"
+    }
+  },
+
   "rebaseTodo": {
     "menuEntry": "从此提交交互式变基...",
     "title": "交互式变基",

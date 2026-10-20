@@ -632,6 +632,27 @@
     "hint": "Advisory only, commits are not blocked; revoke leaked secrets on the remote immediately"
   },
 
+  "undo": {
+    "title": "Recoverable operations",
+    "refresh": "Refresh snapshots",
+    "restore": "Restore",
+    "restored": "Restored",
+    "restoreFailed": "Restore failed",
+    "restoreConflict": "Restored with {{count}} conflicted files — check the changes list",
+    "drop": "Drop snapshot",
+    "dropConfirm": "Click again to confirm (irreversible)",
+    "hasChanges": "Snapshot contains uncommitted changes",
+    "more": "{{count}} more hidden",
+    "ctx": {
+      "discard": "Discard changes",
+      "reset_hard": "Hard reset",
+      "checkout": "Checkout",
+      "rebase": "Rebase",
+      "branch_delete": "Delete branch",
+      "undo": "Restore operation"
+    }
+  },
+
   "rebaseTodo": {
     "menuEntry": "Interactively rebase from here...",
     "title": "Interactive Rebase",

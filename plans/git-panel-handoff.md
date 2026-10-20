@@ -181,6 +181,8 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 通知条可一键恢复
 - 删除分支保留 hash 可恢复
 
+> ✅ **执行记录（本轮，UI 消费点补齐）**：`UndoBar.tsx`（GitPanel 变更区常驻条，FR-P2-3 的首个组件消费点）——快照 >0 才渲染（不主动打扰）；折叠显示最新 1 条 + 计数，展开至多 3 条 + more；恢复（`restoreUndoSnapshot` → ok/conflict/warning 分级 toast + 刷新列表）；丢弃两步确认（快照是唯一后悔药，防误触）；`undo.ctx.*` 中文语境标签（discard/reset_hard/checkout/rebase/branch_delete）+ 双语 i18n。挂载于 `index.tsx`（QuickActions 下方、OperationsLog 上方）。组件测试 4/4（空渲染/折叠展开/恢复调用刷新/两步确认）。**欠账（如实）**：危险操作完成后的 toast「撤销」按钮联动（依赖 UndoSnapshotEvent 事件监听，增量化）。
+
 #### FR-P2-4 操作流水面板
 
 - GitKraken Activity Log 等价；复用后端 logger，前端只读
