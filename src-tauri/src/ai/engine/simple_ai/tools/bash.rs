@@ -88,7 +88,6 @@ ASYNC MODE: commands run as host-level background tasks by DEFAULT (async=true) 
                 },
                 None,
                 json!({}),
-                None,
             );
             let params = json!({
                 "action": "run",
@@ -133,7 +132,6 @@ ASYNC MODE: commands run as host-level background tasks by DEFAULT (async=true) 
                     },
                     None,
                     json!({}),
-                    None,
                 );
                 let _ = cap.invoke(
                     json!({ "action": "kill", "taskId": task_id }),
@@ -151,7 +149,6 @@ ASYNC MODE: commands run as host-level background tasks by DEFAULT (async=true) 
                     },
                     None,
                     json!({}),
-                    None,
                 );
                 cap.invoke(
                     json!({ "action": "wait", "taskId": wait_task_id, "timeoutMs": 200 }),
@@ -180,7 +177,6 @@ ASYNC MODE: commands run as host-level background tasks by DEFAULT (async=true) 
                     },
                     None,
                     json!({}),
-                    None,
                 );
                 cap.invoke(json!({ "action": "log", "taskId": log_task_id }), &cap_ctx)
             })

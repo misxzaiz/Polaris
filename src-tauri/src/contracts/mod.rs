@@ -163,18 +163,6 @@ pub trait Context: Send + Sync {
 
     /// 获取当前插件的配置（从 config.json 的 plugins[id] 命名空间）
     fn plugin_config(&self) -> Result<Value, String>;
-
-    /// 能力向前端广播事件（如 `git-undo-snapshot`）。
-    ///
-    /// 默认空实现（无广播通道的上下文安全忽略）。事件载荷 `payload` 必须可跨
-    /// WASM 边界序列化（契约铁律：不返回任何含 Arc/Rc 的类型，此处仅入参 Value）。
-    ///
-    /// 实现方（RealContext）经 RouterBus 的事件适配层广播 —— 前端 Tauri 模式
-    /// 经 lib.rs 中继 `app_handle.emit(event, payload)` 可达，Web 模式经 WS 通道可达。
-    fn emit(&self, event: &str, payload: Value) -> Result<(), String> {
-        let _ = (event, payload);
-        Ok(())
-    }
 }
 
 // ============================================================================
