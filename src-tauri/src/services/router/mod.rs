@@ -424,6 +424,7 @@ impl Router for RouterBus {
                     msg_id: env.id,
                     result: Err("权限拒绝".into()),
                     trace: env.trace,
+                    error_detail: None,
                 });
             }
             PermissionVerdict::Prompt => {
@@ -443,6 +444,7 @@ impl Router for RouterBus {
                     msg_id: env.id,
                     result: Err("需用户审批，Phase 0 暂不支持".into()),
                     trace: env.trace,
+                    error_detail: None,
                 });
             }
             PermissionVerdict::Allow => {}
@@ -513,10 +515,20 @@ impl Router for RouterBus {
                     });
                 }
 
+                // PR-2a C1：cap 返回的错误串若带结构化 marker → 拆出 error_detail，
+                // Reply.result 只留干净 human 串（UI/日志/AI 消费者零感知 marker）。
+                let (result, error_detail) = match result {
+                    Err(e) => {
+                        let (clean, detail) = crate::contracts::Reply::split_error_detail(e);
+                        (Err(clean), detail)
+                    }
+                    Ok(v) => (Ok(v), None),
+                };
                 Ok(Reply {
                     msg_id: env.id,
                     result,
                     trace: env.trace,
+                    error_detail,
                 })
             }
             None => {
@@ -542,16 +554,36 @@ impl Router for RouterBus {
                         }),
                         trace: env.trace.clone(),
                     });
+                    let (result, error_detail) = match result {
+                        Err(e) => {
+                            let (clean, detail) = crate::contracts::Reply::split_error_detail(e);
+                            (Err(clean), detail)
+                        }
+                        Ok(v) => (Ok(v), None),
+                    };
+                    self.broadcaster.broadcast(Event {
+                        seq: 0,
+                        kind: "dispatch.end".into(),
+                        payload: serde_json::json!({
+                            "msg_id": env.id.0,
+                            "target": env.target.0,
+                            "status": if result.is_ok() { "ok" } else { "error" },
+                            "sync": true,
+                        }),
+                        trace: env.trace.clone(),
+                    });
                     return Ok(Reply {
                         msg_id: env.id,
                         result,
                         trace: env.trace,
+                        error_detail,
                     });
                 }
                 Ok(Reply {
                     msg_id: env.id,
                     result: Err(format!("能力未注册: {}", env.target.0)),
                     trace: env.trace,
+                    error_detail: None,
                 })
             }
         }

@@ -55,6 +55,9 @@ pub struct RouterDispatchResponse {
     pub result: Option<serde_json::Value>,
     pub error: Option<String>,
     pub trace: String,
+    /// PR-2a C1：结构化错误元数据（code/kind/stderrSnip；cap 未分类时缺省）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_detail: Option<crate::contracts::ReplyErrorDetail>,
 }
 
 /// 能力列表项（面板展示）
@@ -98,6 +101,7 @@ pub async fn router_dispatch(
         result,
         error,
         trace: reply.trace.0,
+        error_detail: reply.error_detail,
     })
 }
 

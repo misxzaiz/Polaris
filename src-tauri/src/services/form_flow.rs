@@ -353,6 +353,7 @@ mod tests {
                     msg_id: env.id,
                     result: Ok(serde_json::json!({ "item": { "content": "机密正文" } })),
                     trace: env.trace,
+                    error_detail: None,
                 })
             }
             fn subscribe(

@@ -119,6 +119,53 @@ pub struct Reply {
     pub msg_id: MsgId,
     pub result: Result<Value, String>,
     pub trace: TraceId,
+    /// PR-2a C1 结构化错误：cap 内分类好的错误元数据（kind/code/stderr_snip）。
+    /// 由 router 在构造 Reply 时从错误通道串的尾部 marker 拆出（见 `split_error_detail`），
+    /// 不改变既有 `Result<Value, String>` 通道——旧消费者零感知，新消费者字段级可用。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_detail: Option<ReplyErrorDetail>,
+}
+
+/// 结构化错误元数据（PR-2a C1：`{code, kind, stderrSnip}`，camelCase 对齐前端 TS 类型）
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplyErrorDetail {
+    /// 后端机器码（如 CONFLICTS_DETECTED），由 GitServiceError 分型产生
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub code: Option<String>,
+    /// 粗分类型：conflict / operation-in-progress / not-found / git …
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// git stderr 尾部摘要（人类可读现场，供 UI 展开原因）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stderr_snip: Option<String>,
+}
+
+/// 结构化错误载体 marker：capability 把 detail 以该 marker + JSON 追加到错误通道串尾，
+/// router 构造 Reply 时拆出并剥离。marker 不出 router（UI/日志只见干净串）。
+pub const ERR_DETAIL_MARKER: &str = "\n@@POLARIS_ERR_DETAIL@@";
+
+impl Reply {
+    /// 把结构化 detail 编码进错误串尾部（capability 侧使用）
+    pub fn append_error_detail(err: String, detail: &ReplyErrorDetail) -> String {
+        match serde_json::to_string(detail) {
+            Ok(json) => format!("{}{}{}", err, ERR_DETAIL_MARKER, json),
+            // 序列化失败 → 退化为纯串（detail 只是增强，不能弄丢基础错误）
+            Err(_) => err,
+        }
+    }
+
+    /// 从错误串尾部拆出 detail，返回（干净串，detail）。无 marker → 原样返回（None）。
+    pub fn split_error_detail(err: String) -> (String, Option<ReplyErrorDetail>) {
+        if let Some(pos) = err.rfind(ERR_DETAIL_MARKER) {
+            let raw = &err[pos + ERR_DETAIL_MARKER.len()..];
+            if let Ok(detail) = serde_json::from_str::<ReplyErrorDetail>(raw) {
+                return (err[..pos].to_string(), Some(detail));
+            }
+            // marker 在但 JSON 解析失败 → 保守：原样返回，避免吞掉错误文本
+        }
+        (err, None)
+    }
 }
 
 /// 事件（经 WS adapter 广播，含 seq 由传输层分配）
@@ -542,6 +589,7 @@ mod tests {
             msg_id: MsgId("msg-1".into()),
             result: Ok(serde_json::json!({"ok": true})),
             trace: TraceId("t".into()),
+            error_detail: None,
         };
         let s = serde_json::to_string(&ok).unwrap();
         let back: Reply = serde_json::from_str(&s).unwrap();
@@ -551,10 +599,44 @@ mod tests {
             msg_id: MsgId("msg-2".into()),
             result: Err("boom".into()),
             trace: TraceId("t".into()),
+            error_detail: None,
         };
         let s = serde_json::to_string(&err).unwrap();
         let back: Reply = serde_json::from_str(&s).unwrap();
         assert_eq!(back.result.unwrap_err(), "boom");
+    }
+
+    #[test]
+    fn reply_error_detail_append_split_roundtrip() {
+        // PR-2a C1：append → split 往返；human 串保持、字段无损
+        let detail = ReplyErrorDetail {
+            code: Some("CONFLICTS_DETECTED".into()),
+            kind: Some("conflict".into()),
+            stderr_snip: Some("CONFLICT (content): Merge conflict in a.rs".into()),
+        };
+        let encoded = Reply::append_error_detail("merge failed (details)".into(), &detail);
+        assert!(encoded.contains("merge failed (details)"));
+        assert!(encoded.contains(ERR_DETAIL_MARKER));
+
+        let (clean, back) = Reply::split_error_detail(encoded);
+        assert_eq!(clean, "merge failed (details)");
+        assert_eq!(back.as_ref(), Some(&detail));
+
+        // 无 marker → 原样
+        let (clean2, none) = Reply::split_error_detail("plain error".into());
+        assert_eq!(clean2, "plain error".to_string());
+        assert!(none.is_none());
+
+        // 序列化不进 error 载荷的字段（error_detail 缺省）→ 旧语义 JSON 无该字段
+        let err = Reply {
+            msg_id: MsgId("m".into()),
+            result: Err("boom".into()),
+            trace: TraceId("t".into()),
+            error_detail: None,
+        };
+        let s = serde_json::to_string(&err).unwrap();
+        assert!(!s.contains("errorDetail"));
+        assert!(!s.contains("error_detail"));
     }
 
     #[test]

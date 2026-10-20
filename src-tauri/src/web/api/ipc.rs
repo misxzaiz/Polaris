@@ -2831,6 +2831,7 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
         "ok": ok,
         "result": result,
         "error": error,
+        "errorDetail": reply.error_detail,
         "trace": reply.trace.0,
     })))
 }
