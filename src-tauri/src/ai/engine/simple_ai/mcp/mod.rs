@@ -6,9 +6,11 @@
  * 生命周期：会话启动时 `from_servers` 创建，多轮 tool_call 复用，会话结束 drop（kill 子进程）。
  */
 
-mod client;
 mod transport;
-mod types;
+// pub(crate)：cap.mcp（router/mcp_capability.rs）复用 McpClient（stdio tools/call）与
+// McpCallResult（is_error/text）。transport 保持私有（协议细节不外漏）。
+pub(crate) mod types;
+pub(crate) mod client;
 
 use std::collections::HashMap;
 use std::sync::Arc;

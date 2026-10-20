@@ -41,6 +41,7 @@ mod registry_capability;
 mod ui_input_capability;
 mod self_capability;
 mod self_mutate_capability;
+mod mcp_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
@@ -71,6 +72,7 @@ pub use self_capability::{SelfInspectCapability, mark_boot as mark_self_boot};
 pub use self_mutate_capability::SelfMutateCapability;
 pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, DynamicHandler};
 pub use registry_capability::RegistryCapability;
+pub use mcp_capability::{McpCapability, MCP_CAP_ID};
 
 use crate::contracts::*;
 use std::collections::HashMap;

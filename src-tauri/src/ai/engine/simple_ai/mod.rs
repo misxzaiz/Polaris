@@ -21,7 +21,9 @@ mod chat_loop;
 mod compact;
 mod context;
 mod history;
-mod mcp;
+// pub(crate) 而非 pub：仅让同 crate 内 cap.mcp（router/mcp_capability.rs）复用
+// 既有 stdio MCP client（initialize/tools/call），不暴露为公共 API。
+pub(crate) mod mcp;
 mod prompt;
 mod retry;
 mod session;
