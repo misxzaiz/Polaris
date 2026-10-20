@@ -48,6 +48,16 @@ export interface RadioBroadcastControllerOptions {
   /** 语音「停止」口令监听（说「停止/停/暂停」即停止播报；默认开） */
   voiceStopEnabled?: boolean
   volume?: number
+  /** AI 引擎（不传则跟随 config.defaultEngine）——建会话时定死，中途不可换 */
+  engineId?: string
+  /** 模型供应商 Profile（SSR 传 OFFICIAL_API_PROFILE 哨兵 = 官方 API） */
+  modelProfileId?: string
+  /** 模型名（须与所选 Profile 的 modelOptions 一致） */
+  model?: string
+  /** 播放轮次上限（播满 N 段自动停止；0/undefined = 不限） */
+  maxRounds?: number
+  /** 播放时长上限（秒数，到点自动停止；0/undefined = 不限） */
+  maxSeconds?: number
 }
 
 export type RadioBroadcastListener = (snapshot: RadioBroadcastSnapshot) => void
@@ -85,6 +95,21 @@ export class RadioBroadcastController {
   private nowPlayingText: string | null = null
   /** 错误信息（error 态） */
   private lastError: string | null = null
+
+  /** AI 引擎（会话级覆盖；undefined = 跟随 config.defaultEngine） */
+  private engineId?: string
+  /** 模型供应商 Profile（OFFICIAL_API_PROFILE 哨兵 = 官方 API） */
+  private modelProfileId?: string
+  /** 模型名（须与所选 Profile 的 modelOptions 一致） */
+  private model?: string
+  /** 轮次上限（播满 N 段自动停止） */
+  private maxRounds?: number
+  /** 时长上限（秒） */
+  private maxSeconds?: number
+  /** 开始时刻（时长上限计算起点） */
+  private startedAt = 0
+  /** 是否已达上限（limitReached 守卫位；stop() 时复位） */
+  private limitReached = false
 
   /** 停止标志：stop() 置 true，晚到回调据此丢弃（代际 + 标志双保险） */
   private stopped = false
@@ -167,6 +192,13 @@ export class RadioBroadcastController {
     this.style = opts.style
     this.base64Mode = opts.base64Mode ?? false
     this.voiceStopEnabled = opts.voiceStopEnabled ?? true
+    this.engineId = opts.engineId
+    this.modelProfileId = opts.modelProfileId
+    this.model = opts.model
+    this.maxRounds = opts.maxRounds && opts.maxRounds > 0 ? opts.maxRounds : undefined
+    this.maxSeconds = opts.maxSeconds && opts.maxSeconds > 0 ? opts.maxSeconds : undefined
+    this.startedAt = Date.now()
+    this.limitReached = false
 
     // 上一轮残留（error 态重试）：清播放器 + 弃用旧 session，从零开始
     this.player.stop()
@@ -281,6 +313,7 @@ export class RadioBroadcastController {
     this.lastSegmentSummary = ''
     this.nowPlayingText = null
     this.consecutiveErrors = 0
+    this.limitReached = false
     this.lastError = wasError ? this.lastError : null
 
     this.setStatus('idle')
@@ -304,7 +337,9 @@ export class RadioBroadcastController {
   // ================================================================
 
   private async createSession(): Promise<string> {
-    const configEngineId = useConfigStore.getState().config?.defaultEngine
+    // 引擎/供应商/模型：会话级覆盖（面板显式选择）优先，否则跟随全局（config.defaultEngine + 全局 Profile）
+    const configStore = useConfigStore.getState()
+    const engineId = this.engineId ?? configStore.config?.defaultEngine
     const workspaceStore = useWorkspaceStore.getState()
     const workspaceId = workspaceStore.currentWorkspaceId ?? 'default'
     // workspacePath 供 sendMessage 使用（无工作区时降级 fallback）
@@ -317,10 +352,12 @@ export class RadioBroadcastController {
       workspaceId,
       contextWorkspaceIds: [workspaceId],
       workspaceLocked: true,
-      engineId: configEngineId,
+      engineId,
       title: 'AI 播报',
       kind: 'radio-broadcast',
       silentMode: true,
+      ...(this.modelProfileId ? { modelProfileId: this.modelProfileId } : {}),
+      ...(this.model ? { model: this.model } : {}),
     })
 
     // 订阅 kernel 状态：running→idle/error 下降沿即「一段播报完成」（见 requestNextSegment）
@@ -392,6 +429,12 @@ export class RadioBroadcastController {
     if (this.stopped || !this.running) return
     if (this.status === 'stopping' || this.status === 'idle') return
 
+    // 已达轮次/时长上限且队列播空 → 优雅停机（不请求新段）
+    if (this.reachedLimit()) {
+      this.tryGracefulStop()
+      return
+    }
+
     // 若仍有段生成在途（AI 还在写下一段），保持 generating
     if (this.hasSegmentInFlight()) {
       this.setStatus('generating')
@@ -410,6 +453,14 @@ export class RadioBroadcastController {
       return
     }
     if (!this.sessionId) return
+
+    // 自动停止守卫（单点收敛）：轮次/时长上限命中 → 不再请求新段，交给优雅停机收尾
+    if (this.reachedLimit()) {
+      this.limitReached = true
+      // 队列空且无在途合成 → 直接优雅停机（当前音频播完收尾）；否则等 onQueueDrained 判定
+      this.tryGracefulStop()
+      return
+    }
 
     const store = sessionStoreManager.getState().stores.get(this.sessionId)
     if (!store) {
@@ -442,8 +493,36 @@ export class RadioBroadcastController {
     if (this.hasSegmentInFlight()) return
     // 队列空（段文本为空/超时/清洗后空）→ 直接续下一段；否则等 onQueueDrained
     if (this.player.queueLength === 0 && !this.player.hasPendingSynth) {
+      // 已达上限 → 优雅停机收尾
+      if (this.reachedLimit()) {
+        this.tryGracefulStop()
+        return
+      }
       this.requestNextSegment()
     }
+  }
+
+  /** 自动停止判定：轮次上限（已播段数 ≥ maxRounds）或时长上限（已播时长 ≥ maxSeconds）命中 */
+  private reachedLimit(): boolean {
+    if (this.limitReached) return true
+    if (this.maxRounds && this.segmentIndex >= this.maxRounds) return true
+    if (this.maxSeconds && this.startedAt > 0 && Date.now() - this.startedAt >= this.maxSeconds * 1000) return true
+    return false
+  }
+
+  /** 优雅停机：队列已空且无在途合成 → 走 stop() 三路中断收尾（当前音频播完、无残留队列） */
+  private tryGracefulStop(): void {
+    if (this.stopped || !this.running) return
+    if (this.player.queueLength > 0 || this.player.hasPendingSynth || this.hasSegmentInFlight()) {
+      // 队列尚有内容待播 → 交给 onQueueDrained 收尾触发；有合成/AI 在途则继续等
+      return
+    }
+    log.info('已达上限（轮次/时长），优雅停止', {
+      maxRounds: this.maxRounds,
+      maxSeconds: this.maxSeconds,
+      segmentIndex: this.segmentIndex,
+    })
+    void this.stop()
   }
 
   /** 执行一次段生成：发送消息 + 等待流式下降沿（onSegmentEnded 统一取全文入队） */

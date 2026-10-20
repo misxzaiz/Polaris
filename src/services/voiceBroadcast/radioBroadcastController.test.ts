@@ -317,4 +317,50 @@ describe('radioBroadcastController', () => {
     expect(radioBroadcastController.getStatus()).toBe('error')
     // error 后 requestNextSegment 不再触发（running=false）
   })
+
+  it('轮次上限：maxRounds 命中后队列播空即优雅停止，不再请求新段', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+      maxRounds: 1,
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // 段 1 入队 → segmentIndex=1 ≥ maxRounds
+    fireSegmentEnd()
+    expect(player.enqueueSegment).toHaveBeenCalled()
+    // 播完队列（queue 清 0）→ 触发 onQueueDrained → reachedLimit → 优雅停机回 idle
+    player.queueLength = 0
+    player.hasPendingSynth = false
+    player.callbacks.onQueueDrained?.()
+    await vi.waitFor(() => {
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+    })
+    // 停机后不再请求下一段（waitStreamEnd 计数不再增长——最后计数留在停前）
+  })
+
+  it('时长上限：maxSeconds 命中（极小值 → 启动即超时）→ 队列空即优雅停止', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'tech', text: '分布式' },
+      voice: '冰糖',
+      maxSeconds: 0.0001, // 0.1ms 内必超时
+    })
+    // start 内 requestNextSegment → reachedLimit（已超时）→ 队列空 → stop()
+    await vi.waitFor(() => {
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+    })
+  })
+
+  it('轮次未满：段入队后不触发提前停止（回归保护）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'study', text: '英语' },
+      voice: '冰糖',
+      maxRounds: 5,
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    fireSegmentEnd() // 段 1（segmentIndex=1 < maxRounds）
+    // 未达上限：段正常入队、状态保持播报中（不因 limitReached 提前停）
+    expect(player.enqueueSegment).toHaveBeenCalled()
+    expect(radioBroadcastController.getStatus()).not.toBe('idle')
+    expect(radioBroadcastController.getStatus()).not.toBe('stopping')
+  })
 })

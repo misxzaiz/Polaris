@@ -7,6 +7,7 @@
 import { useCallback } from 'react'
 import { useRadioBroadcastStore } from '@/stores/radioBroadcastStore'
 import { DIRECTION_PRESETS, MIMO_VOICES } from '@/services/voiceBroadcast/constants'
+import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
 import type { RadioBroadcastDirection, VoiceId } from '@/services/voiceBroadcast/types'
 
 export interface UseRadioBroadcastReturn {
@@ -21,7 +22,7 @@ export interface UseRadioBroadcastReturn {
   /** 是否在播报中（含 starting/generating/stopping） */
   isActive: boolean
 
-  start: (opts: { direction: RadioBroadcastDirection; voice: VoiceId; style?: string; base64Mode?: boolean; voiceStopEnabled?: boolean; volume?: number }) => Promise<void>
+  start: (opts: RadioBroadcastControllerOptions) => Promise<void>
   stop: () => Promise<void>
   pause: () => void
   resume: () => void

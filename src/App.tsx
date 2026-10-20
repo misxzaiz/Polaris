@@ -40,9 +40,8 @@ const DemoPluginPanel = lazy(() => import('./components/Plugins/DemoPluginPanel'
 const BrowserSidebarPanel = lazy(() => import('./components/Browser/BrowserSidebarPanel').then(m => ({ default: m.BrowserSidebarPanel })));
 const NotificationCenterPanel = lazy(() => import('./components/Notification/NotificationCenterPanel').then(m => ({ default: m.NotificationCenterPanel })));
 const VoiceCompanionOverlay = lazy(() => import('./components/VoiceCompanion/VoiceCompanionOverlay').then(m => ({ default: m.VoiceCompanionOverlay })));
-// AI 连续语音播报：后台播报，右下角浮层卡片（懒加载，不拖首帧）
-const RadioBroadcastPanel = lazy(() => import('./components/RadioBroadcast/RadioBroadcastPanel').then(m => ({ default: m.RadioBroadcastPanel })));
 const FocusOverlay = lazy(() => import('./components/FocusMode/FocusOverlay').then(m => ({ default: m.FocusOverlay })));
+const RadioBroadcastPanel = lazy(() => import('./components/RadioBroadcast/RadioBroadcastPanel').then(m => ({ default: m.RadioBroadcastPanel })));
 
 import { useConfigStore, useViewStore, useWorkspaceStore, useTabStore } from './stores';
 import { useNarrowTabStore } from './stores/narrowTabStore';
@@ -312,6 +311,7 @@ function App() {
       integrationContent={<Suspense fallback={loadingFallback}><IntegrationPanel /></Suspense>}
       aiConsoleContent={<Suspense fallback={loadingFallback}><ExecutionConsolePanel /></Suspense>}
       demoPluginContent={<Suspense fallback={loadingFallback}><DemoPluginPanel onSendToChat={sendMessage} /></Suspense>}
+      radioBroadcastContent={<Suspense fallback={loadingFallback}><RadioBroadcastPanel /></Suspense>}
     />
   );
 
@@ -491,11 +491,6 @@ function App() {
         {/* 语音伙伴「小陈」：未打开时渲染悬浮入口，打开时全屏通话界面 */}
         <Suspense fallback={null}>
           <VoiceCompanionOverlay />
-        </Suspense>
-
-        {/* AI 连续语音播报：后台播报浮层（方向/音色/开始/停止/暂停） */}
-        <Suspense fallback={null}>
-          <RadioBroadcastPanel />
         </Suspense>
 
         {/* 全局阅读聚焦模式：L1 语义高亮 / L2 聚光灯遮罩，pointer-events:none 不阻断交互 */}

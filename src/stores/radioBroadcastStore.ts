@@ -9,22 +9,14 @@
  */
 import { create } from 'zustand'
 import { radioBroadcastController } from '@/services/voiceBroadcast/radioBroadcastController'
+import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
 import type {
-  RadioBroadcastDirection,
   RadioBroadcastSnapshot,
-  VoiceId,
 } from '@/services/voiceBroadcast/types'
 
 export interface RadioBroadcastStoreState extends RadioBroadcastSnapshot {
   /** 开始播报（异步；Promise 在首音频就绪或失败时 resolve） */
-  start: (opts: {
-    direction: RadioBroadcastDirection
-    voice: VoiceId
-    style?: string
-    base64Mode?: boolean
-    voiceStopEnabled?: boolean
-    volume?: number
-  }) => Promise<void>
+  start: (opts: RadioBroadcastControllerOptions) => Promise<void>
   /** 停止播报（三路中断，幂等） */
   stop: () => Promise<void>
   /** 播放暂停（AI 保持生成） */
