@@ -23,5 +23,22 @@ pub async fn plugin_state_load(app: AppHandle) -> Result<PluginStateMap> {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub async fn plugin_state_save(app: AppHandle, states: PluginStateMap) -> Result<()> {
-    make_service(&app)?.save(&states)
+    let config_dir = crate::services::data_root::data_root().config_dir();
+    let service = PluginStateService::new(config_dir.clone());
+    service.save(&states)?;
+
+    // 后端统一感知：diff 旧状态 → 广播 plugin.lifecycle(state_changed)
+    let broadcaster = {
+        // AppState 经 once_cell 从 app.state() 取事件广播器（与 Web ipc 同源 channel）
+        use tauri::State;
+        let state_guard: State<'_, crate::state::AppState> = app.state();
+        state_guard.inner().event_broadcast.clone()
+    };
+    let _overview = crate::services::plugin_events::handle_plugin_state_change(
+        &config_dir,
+        &states,
+        &broadcaster,
+    );
+
+    Ok(())
 }

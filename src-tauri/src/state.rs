@@ -372,9 +372,14 @@ pub fn create_app_state(
             PluginDiscoveryCapability, PluginServiceManagerCapability, PromptSnippetCapability,
             RouterBus, StreamEchoCapability, TodoCapability, audit_sink, prompt_snippet_capability,
         };
+        use crate::services::hook_registry::{HookSystem, put_hook_system};
+        use crate::services::router::HookCapability;
         use crate::services::storage::SqliteStorage;
 
         let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
+        // cap.hook 需要复用 EventAdapter 作为 hook 事件广播通道：
+        // 先 clone 供 HookSystem 注入，原 adapter 移交 RouterBus。
+        let hook_adapter = adapter.clone();
         let storage: Arc<dyn crate::contracts::Storage> =
             Arc::new(SqliteStorage::new(&config_dir).expect("SqliteStorage 初始化失败"));
 
@@ -412,6 +417,33 @@ pub fn create_app_state(
             Some(storage.clone()),
             audit,
         ));
+        // cap.hook —— 基础 hook 机制（P1）：进程级 HookSystem 注入。
+        // 插桩点（AI 会话/工具循环）经 dispatch_hooks 广播 hook:<id> 事件 + 逐回调
+        // dispatch；cap.hook 提供注册/卸载/列出/手动派发。全局单例（desktop/web/MCP
+        // 三端各自装配一次），装配后顽固不改。broadcaster 复用 EventAdapter（事件总线
+        // 同通道），router 复用 RouterBus（回调 cap 权限+审计同源）。
+        put_hook_system(HookSystem::new(Some(bus.clone()), Some(hook_adapter)));
+        let _ = bus.register_handle(Box::new(HookCapability));
+        // P3 工具注入门：装配时从 state.json 载入全局镜像（mcpToolGates）。
+        // 引擎层 from_servers 按 (plugin_id, tool_name) 查全局过滤；set_plugin_tools
+        // 写 state.json 后重读再 put 保持实时。缺省全放行（spec §6 向后兼容）。
+        {
+            use crate::services::plugin_state_service::PluginStateService;
+            use crate::services::mcp_tool_gates::put_mcp_tool_gates;
+            let gates_map = PluginStateService::new(config_dir.clone())
+                .load()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(plugin_id, state)| {
+                    let tools = state
+                        .mcp_tool_gates
+                        .into_iter()
+                        .collect::<std::collections::HashMap<_, _>>();
+                    (plugin_id, tools)
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+            put_mcp_tool_gates(gates_map);
+        }
         let _ = bus.register_handle(Box::new(KvCapability));
         // cap.http —— 通用 HTTP 转发（替代插件自启 node 代理：relay-devkit 的
         // server.js / __proxy 迁此。插件面板（主窗口 Bootstrap）与 AI（Plugin，
@@ -575,7 +607,11 @@ pub fn create_app_state(
                 mcp_servers.len()
             );
             let _ = bus.register_handle(Box::new(
-                crate::services::router::McpCapability::with_servers(mcp_servers),
+                crate::services::router::McpCapability::with_servers(
+                    mcp_servers,
+                    Some(config_dir.clone()),
+                )
+                .with_broadcaster(event_broadcast.clone()),
             ));
         }
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）

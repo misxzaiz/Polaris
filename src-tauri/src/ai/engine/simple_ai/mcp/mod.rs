@@ -19,6 +19,7 @@ use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
 use crate::services::mcp_config_service::ResolvedExternalMcpServer;
+use crate::services::mcp_tool_gates::is_tool_blocked;
 
 use super::tools::ToolOutcome;
 use client::McpClient;
@@ -58,6 +59,16 @@ impl McpClientPool {
                     let client = Arc::new(client);
                     let tools = client.tools().await;
                     for tool in &tools {
+                        // P3 per-tool 注入门（全局 mcpToolGates，装配时载入、set_plugin_tools 更新）：
+                        // 显式关闭的工具跳过注入；缺省全放行。
+                        if is_tool_blocked(&server.plugin_id, &tool.name) {
+                            tracing::info!(
+                                "[SimpleAI-MCP] 工具 {}:{} 被 per-tool 门关闭，跳过注入",
+                                server.plugin_id,
+                                tool.name
+                            );
+                            continue;
+                        }
                         let mcp_name = format!(
                             "{}{}__{}",
                             MCP_PREFIX, server.server_name, tool.name

@@ -588,6 +588,13 @@ pub fn run() {
                     .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
                         chat_state,
                     )));
+                // ── P2：cap.ui.render 注册（可交互渲染入口）──────────────
+                // 需 Arc<AppState>（复用 pending_plugin_cards / oneshot / 广播），
+                // 与 cap.ai.chat 同装配点（AppState 构造后）。前端零改动：
+                // 广播 plugin_card 事件复用既有 eventHandler 渲染/回填。
+                let _ = state.router.register_handle(Box::new(
+                    crate::services::router::UiRenderCapability::with_state(chat_state.clone()),
+                ));
                 let _ = state
                     .router
                     .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
@@ -1370,6 +1377,12 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     let _ = state
         .router
         .register_handle(Box::new(crate::services::router::HistoryCapability::with_state(
+            state.clone(),
+        )));
+    // P2：cap.ui.render（可交互渲染入口）—— 与 cap.ai.chat 同装配点
+    let _ = state
+        .router
+        .register_handle(Box::new(crate::services::router::UiRenderCapability::with_state(
             state.clone(),
         )));
     let web_server = web::server::WebServer::new(state.clone());

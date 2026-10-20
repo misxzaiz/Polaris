@@ -598,7 +598,32 @@ pub(super) async fn run_chat_loop(
             let call_id = tc["id"].as_str().unwrap_or("").to_string();
             let tool_name = tc["function"]["name"].as_str().unwrap_or("unknown");
             let args_str = tc["function"]["arguments"].as_str().unwrap_or("{}");
-            let args: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
+            let mut args: Value = serde_json::from_str(args_str).unwrap_or(json!({}));
+
+            // --- hook: ai.tool.before（工具执行前）---
+            // 插件订阅该 hook 可改写 args / 拦截 / 追加副作用。协议：回调返回
+            // `{ "args": {...} }`。v1 仅支持 args 改写（spec §6）；
+            // 失败/无回调静默放行原 args；多个回调取第一个改写（防相互覆盖）。
+            {
+                let hook_data = json!({
+                    "sessionId": session_id,
+                    "toolName": tool_name,
+                    "args": args,
+                });
+                let overrides =
+                    crate::services::hook_registry::dispatch_hooks("ai.tool.before", hook_data);
+                for r in &overrides {
+                    if let Some(new_args) = r.get("args").and_then(|v| v.as_object()) {
+                        args = serde_json::to_value(new_args).unwrap_or(args);
+                        tracing::debug!(
+                            "[SimpleAI] hook ai.tool.before 改写 args: tool={}, session={}",
+                            tool_name,
+                            session_id
+                        );
+                        break; // v1：取第一个改写
+                    }
+                }
+            }
 
             let ctx = ToolContext {
                 work_dir,
@@ -615,6 +640,18 @@ pub(super) async fn run_chat_loop(
                 effort,
             };
             let outcome = registry.dispatch(tool_name, &args, &ctx).await;
+            // --- hook: ai.tool.after（工具执行后）---
+            // 结果观测 / 联动（v1 不做完整 result 中间变换，spec §6）。
+            // 数据含 toolName + 结果快照，插件可据此做记录/告警/联动。
+            {
+                let hook_data = json!({
+                    "sessionId": session_id,
+                    "toolName": tool_name,
+                    "result": outcome.content,
+                    "success": outcome.success,
+                });
+                let _ = crate::services::hook_registry::dispatch_hooks("ai.tool.after", hook_data);
+            }
             // 工具执行完成后 abort 检查：若执行期间用户已中断，
             // 丢弃本工具结果（不 push tool 消息），下一轮顶部检查点会自然退出。
             // 注意：不 push 半截 tool 消息可避免把「未回灌的工具结果」误发给模型。

@@ -1603,6 +1603,7 @@ mod tests {
                 ui_enabled: true,
                 mcp_enabled: false,
                 mcp_servers: Default::default(),
+                mcp_tool_gates: Default::default(),
             },
         );
 
@@ -1624,6 +1625,7 @@ mod tests {
                     REQUIREMENTS_MCP_SERVER_NAME.to_string(),
                     PluginMcpServerState { enabled: false },
                 )]),
+                mcp_tool_gates: Default::default(),
             },
         );
 
@@ -1648,6 +1650,7 @@ mod tests {
                 ui_enabled: true,
                 mcp_enabled: true,
                 mcp_servers: Default::default(),
+                mcp_tool_gates: Default::default(),
             },
         );
 

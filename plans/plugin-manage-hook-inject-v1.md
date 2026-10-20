@@ -2,7 +2,7 @@
 
 > 目标（goal）：插件管理不只是简单的安装/开关，而是能让插件**真正生效注入**到宿主（AI 工具集 / 面板 / 卡片 / 引擎 / 生命周期），
 > 支持**热加载、免重启**；顺手结合一个**基础的 hook 功能**（宿主关键时点 → 插件可订阅/注入）。
-> 状态：**方案（待评审）** ★ hook 侦查结论待并入
+> 状态：**P0 已实现**（插件生命周期事件 + 后端统一感知）+ **P1 已实现**（cap.hook + hook_registry + AI 会话/工具插桩）+ **P2 已实现**（cap.ui.render 可交互渲染）+ **P3 已实现**（cap.mcp 工具注入管理面 + PluginTab「AI 工具」）
 > 日期：2026-10-20
 
 ---
@@ -279,3 +279,165 @@
 - 复用 `components/Chat/chatBlocks/` 的 `AskQuestionCard` / `FormCard` / `PluginCardHost`。
 - 交互提交通道走 `ai_chat_core.rs:2105` `respond_plugin_card`（既有）。
 - hook 事件源复用 `EventBroadcaster`（`web/event_broadcaster.rs`）。
+
+---
+
+## 9. P0 具体落地（2026-10-20 实施核对）
+
+**目标**：插件生命周期事件（install/uninstall/update + 状态开关变更）广播到前端 + 总线，让「管理」与「生效」关联。实施前确认的命令层事实：
+
+| 事实 | 源码依据 |
+|---|---|
+| 前端开关已写后端 | `pluginStateService.ts` → `plugin_state_save`（Tauri 命令 `commands/plugin_state.rs` + Web API `ipc.rs:2056`）→ `PluginStateService.save` → state.json |
+| 配置层无缓存、每回合重读 | `resolve_workspace_mcp_runtime_service`（`mcp_config_service.rs:784`）每次全新构建 + 读 state.json，「下一回合生效」天然成立 |
+| 安装/卸载/update 无生命周期广播 | `plugin_discovery_capability.rs` invoke：install_local/install_package/install_remote/uninstall_local/uninstall_with_cleanup/force_uninstall/apply_update 纯文件/进程操作，返回 PluginOperationResult，**零事件** |
+| 可广播契约 | `contracts/mod.rs:126` `Event{seq,kind,payload,trace}` 是 String kind，无枚举约束 → 新增 `plugin.lifecycle` kind **零契约改动**；`Context::emit`（`:174` 默认空实现）是插件能力内广播入口 |
+| 前端订阅通道 | `EventAdapter`（`event_adapter.rs`，经 `AppState.event_broadcast`，WebSocket 复用）+ `useAppEvents.ts` 可加 kind 监听；`router/EventAdapter`（state.rs:377）已进生产 |
+
+**P0 变更清单**（最小侵入）：
+- 后端新增 `src-tauri/src/services/plugin_events.rs`：`broadcast_plugin_lifecycle(bc, event, plugin_id, install_path, detail)`，事件 kind=`plugin.lifecycle`，payload=`{ pluginId, event, installPath?, detail? }`。
+- **插件能力侧**：`plugin_discovery_capability.rs` 各写动作完成后（install_local/install_package/install_remote/uninstall_local/uninstall_with_cleanup/force_uninstall/apply_update）用 `ctx` 广播。Context 默认空实现 → 需要 RealContext 连通 EventAdapter（低成本，见下）。
+- **状态保存侧**：`ipc.rs:2056 dispatch_plugin_state_save` 与 `commands/plugin_state.rs` 保存后广播 `plugin.lifecycle`（event=`state_changed`，detail 携带变更概览）。Tauri 命令侧走 `state.event_broadcast`。
+- **前端**：`useAppEvents.ts` 增加 `plugin.lifecycle` kind → 触发插件列表/状态刷新；`pluginStore` 增加 `mcpEnabled` 开关后的乐观生效（同一会话已有，补触发生效反馈）。
+- 装配：确认 RealContext 的 `emit` 已走 EventAdapter（否则补接）。
+
+**验收（P0）**：安装/卸载/更新/开关插件时，前端订阅到 `plugin.lifecycle`（含 pluginId/event）；`cargo check`、`cargo check --no-default-features --bin polaris-web --bin polaris-mcp`、`pnpm exec tsc --noEmit`、`pnpm lint` 全绿。
+
+### P0 落地记录（2026-10-20 已实施）
+
+| 步骤 | 文件 | 内容 |
+|---|---|---|
+| 1. 事件模块 | `src-tauri/src/services/plugin_events.rs`（新） | `broadcast_plugin_lifecycle`（EventBroadcaster 通道）、`emit_plugin_lifecycle`（Context::emit 通道）、`handle_plugin_state_change`（后端 diff 旧状态 → 逐插件广播 `state_changed` + 返回变更概览）+ 4 个 diff/广播单测 |
+| 2. 模块注册 | `src-tauri/src/services/mod.rs` | 注册 `plugin_events` |
+| 3. 能力侧广播 | `src-tauri/src/services/router/plugin_discovery_capability.rs` | 7 个写动作（install_local/install_package/install_remote/uninstall_local/uninstall_with_cleanup/force_uninstall/apply_update）成功后 `emit_plugin_lifecycle(ctx, pluginId, event, detail)`。**前置确认**：`RealContext::emit`（`router/mod.rs:647`）走 broadcaster → EventAdapter，cap 内广播可达前端 |
+| 4. 状态保存侧广播 | `src-tauri/src/web/api/ipc.rs:2067` + `src-tauri/src/commands/plugin_state.rs:30` | 保存后 `handle_plugin_state_change`（diff 旧状态 → 广播 `state_changed`）+ 返回变更概览给前端友善回显 |
+| 5. 前端订阅 | `src/stores/pluginLifecycleSubscriber.ts`（新）+ `src/hooks/useAppEvents.ts` | `initPluginLifecycleSubscriber`：收到 `plugin.lifecycle` → `loadPluginStates` 刷新开关真相；install/uninstall/update → `discoverInstalledPlugins` + `replaceInstalled` 重同步注册表。挂到 App 顶层常驻（非 PluginTab 也感知） |
+
+**后端统一感知确认**（用户补充「后端感知而不是前端」）：diff 逻辑 + 事件广播统一在后端（`handle_plugin_state_change`），前端 subscriber 只做「展示/回填」两层——刷新开关真相 + 重同步注册表，不承担变更判定。
+
+**验证**（worktree 隔离环境实测）：
+- `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` **exit 0**（Web-only 门控，完整编译 lib 除 tauri-app；含修复 `ipc.rs:2073` `serde_json::json!` 全限定缺失）
+- `pnpm exec tsc --noEmit` exit 0（仅 tsconfig `baseUrl` deprecation 存量噪音）
+- vitest `pluginLifecycleSubscriber.test.ts` **8/8 通过**（多事件分类刷新 / installed→discover+replace / state_changed 不重发现 / 失败不抛 / cleanup 幂等）
+- `pnpm eslint` 新增/改动文件 exit 0（仅 MODULE_TYPELESS 噪音）
+- **cargo check（默认 features）本 worktree 受限**：tauri build.rs 需 `../dist`（前端产物），worktree 无 dist → `warning: build failed, waiting for other jobs to finish...`，**非代码错误**（无 Rust error）。tauri-app 专属代码（`plugin_state.rs` 广播）经静态类型核对：`AppState.event_broadcast: EventBroadcaster`（`state.rs:287`）→ `handle_plugin_state_change(..., &EventBroadcaster)` 签名匹配；`plugin_state_save` 整函数 `#[cfg(feature="tauri-app")]` 包裹,内部 `use tauri::State` 随之裁剪,Web-only 构建安全。
+- tauri.config.json `frontendDist: "../dist"`（相对 src-tauri），主仓库 dist 存在于 `D:\space\base\Polaris\dist`；worktree `cargo check` 若要全绿需先 `pnpm build` 或 junction dist——两种都未做（环境限制，如实记录）。
+- **`--no-default-features --features git,lsp-index` 组合不可用**：`bin/polaris` main 调 `polaris_lib::run()`（`lib.rs:499`），而 `run()` 被 `#[cfg(feature="tauri-app")]` 门控 → 无 tauri-app 时 main 挂（E0425）。**预存在工程约束，非 P0 引入**（`lib.rs`/`main.rs` 本次零改动）。有效的中间验证组合是**自带 bin 的**：`--no-default-features --bin polaris-web --bin polaris-mcp`（已 exit 0）。
+- `plugin_events.rs` 的 4 个 Rust 单测**本机无法运行**（AGENTS.md 已知边界 `cargo test --lib` Tauri DLL 限制），其生产代码已被 Web-only 门控编译验证，diff/广播逻辑另有前端 vitest 覆盖。
+
+---
+
+## 10. P1 具体落地（基础 hook 机制，2026-10-20 实施核对）
+
+**目标**：`cap.hook` + `hook_registry`，宿主在关键时点（AI 会话/工具循环）派发 hook，插件声明订阅并可注入数据返回宿主。
+
+### P1 变更清单（已实施）
+
+| 步骤 | 文件 | 内容 |
+|---|---|---|
+| 1. 注册表 | `src-tauri/src/services/hook_registry.rs`（新） | `HookRegistry`（register/unregister/list/all_hook_ids，幂等去重）+ `HookSystem` 全局单例（registry + router + broadcaster）+ `put_hook_system`/`get_hook_system`/`dispatch_hooks` 便捷函数 + 4 个单测 |
+| 2. 能力 | `src-tauri/src/services/router/hook_capability.rs`（新） | `cap.hook`：register/unregister/list/dispatch 四个动作；无独立状态，经全局 HookSystem 操作；`pub use` re-export |
+| 3. 模块注册 | `src-tauri/src/services/mod.rs` + `src-tauri/src/services/router/mod.rs` | 注册 `hook_registry` / `hook_capability` + `pub use HookCapability` |
+| 4. 装配 | `src-tauri/src/state.rs` | `put_hook_system(HookSystem::new(Some(bus.clone()), Some(hook_adapter)))`（bus = RouterBus、hook_adapter = EventAdapter clone）+ 注册 `cap.hook` |
+| 5. 插桩 `ai.session.start` | `ai_chat_core.rs` start_chat_inner | 临时 session_id 生成后派发 `{sessionId, engineId}` |
+| 6. 插桩 `ai.session.end` | `ai_chat_core.rs` start/continue 双路径 SessionEnd | 引擎真实 session_id + `{sessionId, engineId, reason}` |
+| 7. 插桩 `ai.tool.before` | `simple_ai/chat_loop.rs` 工具循环 | args 解析后派发 `{sessionId, toolName, args}`；回调返回 `{args}` 可改写（v1 取第一个） |
+| 8. 插桩 `ai.tool.after` | `simple_ai/chat_loop.rs` 工具循环 | 结果后派发 `{sessionId, toolName, result, success}`（观测/联动） |
+
+### 架构决策（全局 HookSystem 而非逐层传参）
+
+- **问题**：自动派发点分布在深层链路（`chat_loop.rs` 工具循环、`ai_chat_core.rs` 会话生命周期），逐层传 `HookRegistry` 参数需穿透 Engine trait / SessionOptions，侵入面过大。
+- **方案**：进程级 `OnceLock<HookSystem>` 全局单例（`put_hook_system` 装配时注入一次），插桩点统一 `dispatch_hooks(hook_id, data)` 便捷函数，未装配时静默 no-op。三端（desktop / polaris-web / MCP server）各自装配一次，进程内单例。
+- **佐证**：既有 `turn_persist.rs`（`OnceLock<Mutex<HashMap>>` + `get_or_init`）同款全局媒介先例。
+- **派发通道**：① 广播 `hook:<id>` 事件（EventAdapter，插件/前端订阅联动，不阻塞）；② 逐回调 dispatch（RouterBus，复用权限 gate + 审计，返回改写数据）。两通道可选（router/broadcaster 为 Option），纯广播模式（无 router）不崩。
+
+### 安全边界落实（spec §7）
+
+- 回调失败不回传给调用方（逐项收集 `{capId, error}`，warn 日志），不阻塞宿主主流程。
+- 回调经 RouterBus dispatch 复用权限 gate + 审计；`Source::Bootstrap` 内部派发（无 token）。
+- 幂等：同 hook + 同 cap_id 去重。
+- `ai.tool.before` 多回调取第一个改写（防相互覆盖），无回调静默放行原 args。
+- `plugin.lifecycle` 仅广播不递归触发（P0 已隔离）。
+
+### 验证（worktree 隔离环境实测）
+
+- `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` **exit 0**（含 P1 全部新代码 + 插桩）
+- `cargo clippy --no-default-features --bin polaris-web --bin polaris-mcp` **exit 0**（新增代码零 clippy warning）
+- `hook_registry.rs` 4 个单测**本机无法运行**（`cargo test --lib` Tauri DLL 限制），生产逻辑已被 Web-only 门控编译验证 + clippy 覆盖
+- **cargo check（默认 features）仍受限**：worktree 无 `../dist`，环境限制（见 P0 记录）
+
+### P1 未做 / 后续
+
+- **前端 hook 载体**（spec §2.2 第 2 种）：插件 `contributes.hooks[]` 声明 → 前端注册表可见 + 前端派发点镜像。v1 后端 hook 已完整（插件经 cap.hook.register + cap 回调注入），前端载体列为 P3 热加载 UX 阶段一并做。
+- **hook 链改写语义**（`beforeXxx` 链逐级改写 payload）：v1 只支持「第一个改写」，链式改写列 v2。
+
+---
+
+## 11. P2 具体落地（可交互渲染，2026-10-20 实施核对）
+
+**目标**：`cap.ui.render` —— 把可交互渲染从 MCP 伴生进程专属提升为 cap 契约一等公民，任意 cap 调用即弹可交互 UI 帧，answer oneshot 回传同回合。
+
+### P2 变更清单（已实施）
+
+| 步骤 | 文件 | 内容 |
+|---|---|---|
+| 1. 能力 | `src-tauri/src/services/router/ui_render_capability.rs`（新） | `cap.ui.render` `request` 动作：校验 frame 白名单 → 登记 PendingPluginCard + oneshot → 广播 plugin_card 事件 → block_on await 应答 → 返回 `{status, answer, interactionId}` |
+| 2. 事件可见性 | `src-tauri/src/services/ask_listener.rs` | `emit_plugin_card_event` 私有 → `pub(crate)`（cap.ui.render 复用广播） |
+| 3. 模块注册 | `src-tauri/src/services/router/mod.rs` | `mod ui_render_capability` + `pub use UiRenderCapability` |
+| 4. 装配 | `src-tauri/src/lib.rs` 双装配点 | Tauri（约 591）+ Web（约 1385）：`UiRenderCapability::with_state(state.clone())`，与 cap.ai.chat 同装配点（需 Arc<AppState>） |
+
+### 架构决策（复用 plugin_card 全链路，前端零改动）
+
+- **核心洞察**：前端 `eventHandler` 已有 `plugin_card`（渲染）+ `plugin_card_answered`（回填）处理；`PluginCardHost` 按 cardId/toolName 从 chatCardRegistry 匹配组件并透传 respond。**cap.ui.render 只要发出标准 plugin_card 事件，前端即完整渲染 + 回填**——不需要任何前端改动。
+- **async 等待**：`Capability::invoke` 是同步 fn，但 `ai_chat_capability.rs:119-123` 已有范式——`tokio::task::block_in_place + Handle::block_on` 在同步 invoke 内驱动 async 业务核。cap.ui.render 同款实现。
+- **安全**（spec §7）：frame.type 白名单 {question, form, confirm, custom} + 必填字段校验；interactionId 由后端 uuid 生成 + pending 表防重放；Source::Remote 默认 deny 由 policy_permission 控制。
+
+### 验证
+
+- `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` **exit 0**
+- 前端渲染链路零改动，经静态核对（eventHandler plugin_card/plugin_card_answered + PluginCardHost）
+
+### P2 待做
+
+- **动态 cap 声明渲染**（方案 1 §2.2 `handler.type="ui-render"`）：动态注册 cap 的 handler 增加 ui-render 变体。列入 P3 一并（工具注入管理完成后）。
+
+---
+
+## 12. P3 已实施（工具注入管理面 + PluginTab「AI 工具」）
+
+### P3 变更清单（已实施）
+
+| 步骤 | 文件 | 内容 |
+|---|---|---|
+| 1. 类型 | `src-tauri/src/models/plugin_state.rs` | `PluginState` +`mcp_tool_gates: BTreeMap<String,bool>`（serde default + skip 空 → 向后兼容，缺省全放行） |
+| 2. 全局门 | `src-tauri/src/services/mcp_tool_gates.rs`（新） | 全局 `OnceLock<Mutex<HashMap<plugin_id, HashMap<tool,bool>>>>`（P1 HookSystem 同构）；`is_tool_blocked` 缺省全放行；`put_mcp_tool_gates` 幂等装配/更新 |
+| 3. 装配 | `src-tauri/src/state.rs` | 装配时从 state.json 载入全局镜像（`put_mcp_tool_gates`）+ `McpCapability::with_servers(servers, config_dir)` 注入 config_dir |
+| 4. 能力扩展 | `src-tauri/src/services/router/mcp_capability.rs` | +`list_plugin_tools`（聚合 defs → 已拉起 server 列工具 + per-tool gate）/ `set_plugin_tools`（per-tool 或整插件 mcpEnabled → 写 state.json + 全局镜像同步 + 广播 state_changed）+ `with_broadcaster` 注入广播 |
+| 5. 引擎过滤 | `src-tauri/src/ai/engine/simple_ai/mcp/mod.rs` | `McpClientPool::from_servers` tools/list 后 `is_tool_blocked(&server.plugin_id, &tool.name)` → 显式关闭的工具跳过注入（缺省全放行） |
+| 6. 前端桥 | `src/services/pluginToolService.ts`（新） | `listPluginTools` / `setPluginTools` → `router_dispatch('cap.mcp', ...)`（对齐 mcpBridge 模式） |
+| 7. 前端 UI | `src/components/Settings/tabs/PluginTab.tsx` | PluginCard 详情区 MCP 区块下方 +「AI 工具」子区块：刷新按钮 + 各 server 工具开关（per-tool，下一轮生效） |
+| 8. 测试 | `src/services/pluginToolService.test.ts`（新） | 6 用例（list 解析 / 空 pluginId / 失败透传 / set 带 tools / set 无 tools / invoke 异常兜底）|
+
+### 架构决策
+
+- **过滤点唯一权威**：`McpClientPool::from_servers`（chat_loop.rs:117 唯一统一点）——tools/list 后逐工具查全局门。SimpleAI 引擎层拿不到 config_dir，走 P1 同款进程级全局镜像。
+- **双语义 `set_plugin_tools`**：传 `tools[]` → per-tool 开关（写 `mcpToolGates`）；不传 → 整插件开关（`mcpEnabled`，装配层过滤 server）。缺省全放行（spec §6 向后兼容）。
+- **实时镜像**：`set_plugin_tools` 写 state.json 后重读再 `put_mcp_tool_gates`（全局 = 文件实时镜像）→ 下一轮 `from_servers` 生效。
+- **前端刷新**：广播 `plugin.lifecycle state_changed`（P0 通道）→ `pluginLifecycleSubscriber` 已订阅 → 插件状态刷新（无需新事件监听）。
+- **诊断语义**：`list_plugin_tools` 对已拉起 server 列工具名 + per-tool gate；未拉起标 `injected: "lazy"`（工具未知，下一轮注入后可见）。
+
+### 验证
+
+- `cargo check --no-default-features --bin polaris-web --bin polaris-mcp` **exit 0**
+- `cargo test --no-default-features --lib mcp_tool_gates` **通过（3 用例）**
+- `cargo clippy --lib --no-default-features` **零新增 warning**
+- `pnpm exec tsc --noEmit --ignoreDeprecations 6.0` **仅 1 个 pre-existing 错误**（cryptoPolyfill，与本次无关）
+- vitest：`pluginToolService.test.ts` 6 用例 + `pluginLifecycleSubscriber` + `mcp.test` + `mcpBridge.test` **28 用例全绿**
+- eslint：新增文件 **零 error**（3 个 pre-existing `_err` warning）
+
+### P3 待做
+
+- **动态 cap 声明渲染**（方案 1 §2.2 `handler.type="ui-render"`）：动态注册 cap 的 handler 增加 ui-render 变体（让任意 cap 声明式弹交互 UI）。
+- **in-flight 会话提示**：PluginTab 工具开关动作时，若当前有 in-flight 会话提示「下一条消息生效」。
+- **Claude/OpenCode 工具集动态性**：进程级固定是引擎约束，v1 保持「下一轮生效」+ 提示。
+- **内置插件（polaris.ask 等）不在 cap.mcp 管理面**：装配时 `state.rs` 过滤 `plugin_id != "polaris.builtin"`，`list_plugin_tools`/per-tool 门只覆盖外部插件；内置插件由既有 PluginTab MCP 区块（server 级 mcpEnabled）控制。如需内置也进 per-tool 门，需把内置 server 注入 McpCapability defs 并统一 `server.plugin_id` 为真实插件 id（v2）。

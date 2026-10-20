@@ -224,6 +224,7 @@ impl ConfigStore {
             ui_enabled: true,
             mcp_enabled: true,
             mcp_servers: Default::default(),
+            mcp_tool_gates: Default::default(),
         });
         let already_disabled = !entry.enabled;
         entry.enabled = false;

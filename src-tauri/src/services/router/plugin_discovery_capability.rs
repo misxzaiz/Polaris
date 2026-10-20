@@ -46,8 +46,10 @@ use std::sync::{Arc, Mutex};
 use crate::contracts::{Capability, CapabilityId, Context, Value};
 use crate::models::plugin::PluginManifestSourceKind;
 use crate::services::config_store::ConfigStore;
+use crate::services::plugin_events::emit_plugin_lifecycle;
 use crate::services::plugin_service::PluginService;
 use crate::services::plugin_service_manager::PluginServiceManager;
+use serde_json::json;
 
 const CAP_ID: &str = "cap.pluginDiscovery";
 
@@ -133,6 +135,17 @@ impl PluginDiscoveryCapability {
             .ok_or_else(|| format!("cap.pluginDiscovery 缺少参数: {}", key))
     }
 
+    /// 从 source 路径末尾推断插件 id（install 场景无精确 id；目录名即插件 id）。
+    /// 无法推断时返回 "unknown"。
+    fn plugin_id_from_path_or_unknown(path: &str) -> String {
+        Path::new(path)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .map(|name| name.to_string())
+            .filter(|name| !name.is_empty())
+            .unwrap_or_else(|| "unknown".to_string())
+    }
+
     /// 包装：async 业务核在 tokio 运行时内驱动（history/ai_chat 同款范式）
     fn block_on_async<F>(f: F) -> std::result::Result<Value, String>
     where
@@ -170,7 +183,7 @@ impl Capability for PluginDiscoveryCapability {
         })
     }
 
-    fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
+    fn invoke(&self, params: Value, ctx: &dyn Context) -> std::result::Result<Value, String> {
         let action = params
             .get("action")
             .and_then(|a| a.as_str())
@@ -224,6 +237,15 @@ impl Capability for PluginDiscoveryCapability {
                     scope,
                 )
                 .map_err(map_err)?;
+                if result.success {
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(source_path);
+                    emit_plugin_lifecycle(
+                        ctx,
+                        &plugin_id,
+                        "installed",
+                        Some(json!({ "installPath": source_path })),
+                    );
+                }
                 serde_json::to_value(result).map_err(|e| e.to_string())
             }
             "install_package" => {
@@ -238,6 +260,15 @@ impl Capability for PluginDiscoveryCapability {
                     scope,
                 )
                 .map_err(map_err)?;
+                if result.success {
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(package_path);
+                    emit_plugin_lifecycle(
+                        ctx,
+                        &plugin_id,
+                        "installed",
+                        Some(json!({ "installPath": package_path })),
+                    );
+                }
                 serde_json::to_value(result).map_err(|e| e.to_string())
             }
             "install_remote" => {
@@ -255,6 +286,14 @@ impl Capability for PluginDiscoveryCapability {
                     )
                     .await
                     .map_err(map_err)?;
+                    if result.success {
+                        emit_plugin_lifecycle(
+                            ctx,
+                            "remote",
+                            "installed",
+                            Some(json!({ "installPath": source_url })),
+                        );
+                    }
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
             }
@@ -268,6 +307,15 @@ impl Capability for PluginDiscoveryCapability {
                     Path::new(install_path),
                 )
                 .map_err(map_err)?;
+                if result.success {
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(install_path);
+                    emit_plugin_lifecycle(
+                        ctx,
+                        &plugin_id,
+                        "uninstalled",
+                        Some(json!({ "installPath": install_path })),
+                    );
+                }
                 serde_json::to_value(result).map_err(|e| e.to_string())
             }
             "uninstall_with_cleanup" => {
@@ -287,6 +335,14 @@ impl Capability for PluginDiscoveryCapability {
                         Path::new(&install_path),
                     )
                     .map_err(map_err)?;
+                    if result.success {
+                        emit_plugin_lifecycle(
+                            ctx,
+                            &plugin_id,
+                            "uninstalled",
+                            Some(json!({ "installPath": install_path })),
+                        );
+                    }
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
             }
@@ -301,6 +357,15 @@ impl Capability for PluginDiscoveryCapability {
                     workspace_path.as_deref(),
                     Path::new(install_path),
                 );
+                if result.success {
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(install_path);
+                    emit_plugin_lifecycle(
+                        ctx,
+                        &plugin_id,
+                        "uninstalled",
+                        Some(json!({ "installPath": install_path })),
+                    );
+                }
                 serde_json::to_value(result).map_err(|e| e.to_string())
             }
             "check_update" => {
@@ -325,6 +390,16 @@ impl Capability for PluginDiscoveryCapability {
                     )
                     .await
                     .map_err(map_err)?;
+                    if result.success {
+                        let plugin_id =
+                            Self::plugin_id_from_path_or_unknown(&install_path);
+                        emit_plugin_lifecycle(
+                            ctx,
+                            &plugin_id,
+                            "updated",
+                            Some(json!({ "installPath": install_path })),
+                        );
+                    }
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
             }

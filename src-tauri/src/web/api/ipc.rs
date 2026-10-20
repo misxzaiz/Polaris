@@ -2057,9 +2057,20 @@ fn dispatch_plugin_state_save(state: &AppState, args: &Value) -> Result<Json<Val
     let states: crate::models::plugin_state::PluginStateMap =
         serde_json::from_value(args.get("states").cloned().unwrap_or(Value::Null))
             .map_err(|e| WebError::BadRequest(format!("Invalid plugin states: {}", e)))?;
+    let config_dir = get_config_dir(state)?;
     let service =
-        crate::services::plugin_state_service::PluginStateService::new(get_config_dir(state)?);
-    json_result!(service.save(&states))
+        crate::services::plugin_state_service::PluginStateService::new(config_dir.clone());
+    service.save(&states).map_err(|e| {
+        WebError::Internal(format!("Failed to save plugin states: {}", e))
+    })?;
+
+    // 后端统一感知：diff 旧状态 → 广播 plugin.lifecycle(state_changed) → 返回变更概览
+    let overview = crate::services::plugin_events::handle_plugin_state_change(
+        &config_dir,
+        &states,
+        &state.event_broadcast,
+    );
+    Ok(Json(serde_json::json!({ "ok": true, "lifecycle": overview })))
 }
 
 async fn dispatch_plugin_get_config(

@@ -2120,7 +2120,7 @@ fn wrap_question_route_event(session_id: &str, payload: Value) -> Value {
     }
 }
 
-fn emit_plugin_card_event(
+pub(crate) fn emit_plugin_card_event(
     state: &AppState,
     session_id: &str,
     interaction_id: &str,

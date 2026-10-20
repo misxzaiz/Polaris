@@ -42,6 +42,8 @@ mod ui_input_capability;
 mod self_capability;
 mod self_mutate_capability;
 mod mcp_capability;
+mod hook_capability;
+mod ui_render_capability;
 
 pub use ai_chat_capability::AiChatCapability;
 pub use audit_sink::FileAuditSink;
@@ -73,6 +75,8 @@ pub use self_mutate_capability::SelfMutateCapability;
 pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, DynamicHandler};
 pub use registry_capability::RegistryCapability;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
+pub use hook_capability::HookCapability;
+pub use ui_render_capability::UiRenderCapability;
 
 use crate::contracts::*;
 use std::collections::HashMap;

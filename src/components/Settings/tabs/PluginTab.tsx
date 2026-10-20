@@ -29,6 +29,11 @@ import {
   type PluginUpdateCheckResult,
 } from '@/services/pluginDiscoveryService'
 import { listMcpHealthStatuses, type McpHealthStatus } from '@/services/mcpHealthService'
+import {
+  listPluginTools,
+  setPluginTools,
+  type PluginToolServerInfo,
+} from '@/services/pluginToolService'
 import { openInDefaultApp } from '@/services/tauri/windowService'
 import { isTauri } from '@/utils/platform'
 import { usePluginStore } from '@/stores/pluginStore'
@@ -425,6 +430,9 @@ export function PluginTab() {
   const [expandedPlugins, setExpandedPlugins] = useState<Set<string>>(new Set())
   const [showGuide, setShowGuide] = useState(false)
   const [marketplaceInstalling, setMarketplaceInstalling] = useState(false)
+  const [aiToolsByPlugin, setAiToolsByPlugin] = useState<Record<string, PluginToolServerInfo[]>>({})
+  const [aiToolsLoading, setAiToolsLoading] = useState<Record<string, boolean>>({})
+  const [aiToolsError, setAiToolsError] = useState<Record<string, string | null>>({})
   const currentWorkspacePath = useWorkspaceStore((state) => state.getCurrentWorkspace()?.path)
   const pluginStates = usePluginStore((state) => state.pluginStates)
   const setPluginEnabled = usePluginStore((state) => state.setPluginEnabled)
@@ -438,6 +446,43 @@ export function PluginTab() {
     setPluginMcpEnabled(pluginId, enabled)
     pluginRegistry.reRegisterPluginEngines(pluginId)
   }, [setPluginMcpEnabled])
+
+  // P3 工具注入管理面：懒加载某插件的 AI 工具清单（cap.mcp list_plugin_tools）
+  const refreshAiTools = useCallback(async (pluginId: string) => {
+    setAiToolsLoading((prev) => ({ ...prev, [pluginId]: true }))
+    setAiToolsError((prev) => ({ ...prev, [pluginId]: null }))
+    try {
+      const result = await listPluginTools(pluginId)
+      if (!result.ok) {
+        setAiToolsError((prev) => ({ ...prev, [pluginId]: result.error ?? 'list_plugin_tools 失败' }))
+        return
+      }
+      setAiToolsByPlugin((prev) => ({ ...prev, [pluginId]: result.servers }))
+    } catch (error) {
+      setAiToolsError((prev) => ({ ...prev, [pluginId]: error instanceof Error ? error.message : String(error) }))
+    } finally {
+      setAiToolsLoading((prev) => ({ ...prev, [pluginId]: false }))
+    }
+  }, [])
+
+  // P3 工具注入管理面：切换某插件的工具注入开关（cap.mcp set_plugin_tools，下一轮生效）
+  const handleToggleAiTool = useCallback(async (pluginId: string, tool: string, enabled: boolean) => {
+    const result = await setPluginTools(pluginId, enabled, [tool])
+    if (!result.ok) {
+      setAiToolsError((prev) => ({ ...prev, [pluginId]: result.error ?? 'set_plugin_tools 失败' }))
+      return
+    }
+    // 本地乐观更新该工具的开关（toolGates）
+    setAiToolsByPlugin((prev) => ({
+      ...prev,
+      [pluginId]: (prev[pluginId] ?? []).map((server) => ({
+        ...server,
+        toolGates: server.tools.includes(tool)
+          ? { ...server.toolGates, [tool]: enabled }
+          : server.toolGates,
+      })),
+    }))
+  }, [])
 
   const discoveredPluginCount = plugins.filter((plugin) => !plugin.builtin).length
   const marketplaceInstalled = plugins.some((plugin) => plugin.id === MARKETPLACE_PLUGIN_ID)
@@ -964,6 +1009,11 @@ export function PluginTab() {
             onForceUninstall={handleForceUninstallPlugin}
             pluginStates={pluginStates}
             operationLoading={pluginOperationLoading}
+            aiTools={aiToolsByPlugin[plugin.id] ?? []}
+            aiToolsLoading={aiToolsLoading[plugin.id] ?? false}
+            aiToolsError={aiToolsError[plugin.id] ?? null}
+            onRefreshAiTools={refreshAiTools}
+            onToggleAiTool={handleToggleAiTool}
             t={t}
           />
         ))}
@@ -997,6 +1047,11 @@ interface PluginCardProps {
   onApplyUpdate: (id: string, installPath?: string) => void
   onUninstall: (id: string, installPath?: string) => void
   onForceUninstall: (id: string, installPath?: string) => void
+  aiTools: PluginToolServerInfo[]
+  aiToolsLoading: boolean
+  aiToolsError: string | null
+  onRefreshAiTools: (pluginId: string) => void
+  onToggleAiTool: (pluginId: string, tool: string, enabled: boolean) => void
   t: (key: string, options?: Record<string, unknown>) => string
 }
 
@@ -1021,6 +1076,11 @@ function PluginCard({
   onApplyUpdate,
   onUninstall,
   onForceUninstall,
+  aiTools,
+  aiToolsLoading,
+  aiToolsError,
+  onRefreshAiTools,
+  onToggleAiTool,
   t,
 }: PluginCardProps) {
   const isCorePlugin = plugin.id === 'polaris.core'
@@ -1232,6 +1292,75 @@ function PluginCard({
                 </div>
               ) : (
                 <span className="text-[11px] text-text-muted">{t('plugins.noMcpServers', { defaultValue: 'None' })}</span>
+              )}
+            </div>
+
+            {/* AI 工具（P3 工具注入管理面） */}
+            <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs font-medium text-text-secondary">
+                  {t('plugins.aiToolsSurface', { defaultValue: 'AI 工具' })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onRefreshAiTools(plugin.id)}
+                  disabled={aiToolsLoading || !state.enabled || !state.mcpEnabled}
+                  className="inline-flex items-center gap-1 text-[11px] text-primary hover:text-primary/80 disabled:opacity-40 transition-colors"
+                >
+                  {aiToolsLoading ? (
+                    <RefreshCw size={11} className="animate-spin" />
+                  ) : (
+                    <RefreshCw size={11} />
+                  )}
+                  {t('plugins.refreshAiTools', { defaultValue: '刷新' })}
+                </button>
+              </div>
+              {aiToolsError ? (
+                <span className="text-[11px] text-danger">{aiToolsError}</span>
+              ) : aiTools.length > 0 ? (
+                <div className="space-y-2">
+                  {aiTools.map((serverInfo) => (
+                    <div key={serverInfo.server}>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="text-text-secondary">{serverInfo.server}</span>
+                        <span className="text-text-muted">
+                          {serverInfo.injected === 'injected'
+                            ? t('plugins.aiToolsInjected', { defaultValue: '已注入' })
+                            : t('plugins.aiToolsLazy', { defaultValue: '下一轮可见' })}
+                        </span>
+                      </div>
+                      {serverInfo.tools.length > 0 ? (
+                        <div className="mt-1 space-y-1">
+                          {serverInfo.tools.map((tool) => {
+                            const enabled = serverInfo.toolGates?.[tool] ?? true
+                            return (
+                              <div key={tool} className="flex items-center justify-between gap-1 pl-1">
+                                <span className={`min-w-0 flex-1 truncate font-mono text-[10px] ${enabled ? 'text-text-secondary' : 'text-text-muted line-through'}`}>
+                                  {tool}
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={enabled}
+                                  disabled={!state.enabled || !state.mcpEnabled || serverInfo.injected !== 'injected'}
+                                  onChange={(event) => onToggleAiTool(plugin.id, tool, event.target.checked)}
+                                  className="h-3 w-3 shrink-0 accent-primary"
+                                />
+                              </div>
+                            )
+                          })}
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-text-muted">
+                          {t('plugins.aiToolsUnknown', { defaultValue: '工具清单未知（下一轮注入后可见）' })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <span className="text-[11px] text-text-muted">
+                  {t('plugins.noAiTools', { defaultValue: '无 AI 工具' })}
+                </span>
               )}
             </div>
 

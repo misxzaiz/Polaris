@@ -1085,8 +1085,19 @@ pub async fn start_chat_inner(
                 append_session_event(
                     &end.session_id,
                     crate::services::session_state::SessionEventType::SessionEnd,
-                    reason,
+                    reason.clone(),
                     None,
+                );
+                // --- hook: ai.session.end（会话结束）---
+                // 数据 `{sessionId, engineId, reason}`；sessionId 为引擎真实会话 id。
+                // 插件可做会话级清理 / 记录。
+                let _ = crate::services::hook_registry::dispatch_hooks(
+                    "ai.session.end",
+                    serde_json::json!({
+                        "sessionId": end.session_id,
+                        "engineId": engine_str,
+                        "reason": reason,
+                    }),
                 );
             }
             _ => {}
@@ -1197,6 +1208,17 @@ pub async fn start_chat_inner(
     // 为当前会话生成一个临时 session_id，传给 start_proxy 作为代理索引。
     // 避免按 profile_id 索引代理时跨会话互相干扰。
     let session_id = uuid::Uuid::new_v4().to_string();
+
+    // --- hook: ai.session.start（会话启动）---
+    // 数据 `{sessionId, engineId}`；此时 session_id 为临时 id（引擎真实会话 id
+    // 在首个事件到达后才有，见 session_state）。插件可做会话级注入 / 记录。
+    let _ = crate::services::hook_registry::dispatch_hooks(
+        "ai.session.start",
+        serde_json::json!({
+            "sessionId": session_id,
+            "engineId": engine.as_str(),
+        }),
+    );
 
     // ──────────────────────────────────────────────────────
     // 供应商分组路由（切入点 A/B：spawn 级 failover）
@@ -1608,8 +1630,19 @@ pub async fn continue_chat_inner(
                 append_session_event(
                     &end.session_id,
                     crate::services::session_state::SessionEventType::SessionEnd,
-                    reason,
+                    reason.clone(),
                     None,
+                );
+                // --- hook: ai.session.end（会话结束）---
+                // 数据 `{sessionId, engineId, reason}`；sessionId 为引擎真实会话 id。
+                // 插件可做会话级清理 / 记录。
+                let _ = crate::services::hook_registry::dispatch_hooks(
+                    "ai.session.end",
+                    serde_json::json!({
+                        "sessionId": end.session_id,
+                        "engineId": engine_str,
+                        "reason": reason,
+                    }),
                 );
             }
             _ => {}

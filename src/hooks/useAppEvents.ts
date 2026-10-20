@@ -23,6 +23,7 @@ import { useWorkspaceStore } from '@/stores/workspaceStore';
 import { sessionStoreManager } from '@/stores/conversationStore';
 import { getEventRouter } from '@/services/eventRouter';
 import { initDispatchTaskListener } from '@/services/dispatchTaskService';
+import { initPluginLifecycleSubscriber } from '@/stores/pluginLifecycleSubscriber';
 import { browserAcquireComplete, normalizeBrowserUrl, type BrowserAcquireRequest } from '@/services/tauri/browserService';
 import { initExecutionConsoleListeners } from '@/stores/executionConsoleStore';
 import { isAIEvent } from '@/ai-runtime';
@@ -91,6 +92,12 @@ export function useAppEvents() {
   // 派发任务请求（dispatch_task MCP）→ 创建静默后台会话执行
   useEffect(() => {
     return initDispatchTaskListener();
+  }, []);
+
+  // 插件生命周期事件（plugin.lifecycle）→ 刷新插件状态/清单（App 级常驻，
+  // 非 PluginTab 消费方也能感知安装/卸载/更新/开关变化）
+  useEffect(() => {
+    return initPluginLifecycleSubscriber();
   }, []);
 
   // file:opened → 创建 Editor Tab

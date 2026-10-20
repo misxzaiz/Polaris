@@ -110,14 +110,87 @@ impl McpClientRegistry {
 /// cap.mcp 能力实现。
 pub struct McpCapability {
     registry: McpClientRegistry,
+    /// 数据根 config_dir（写 state.json 的 per-tool gates；装配时注入，空则禁用管理面）
+    config_dir: Option<std::path::PathBuf>,
+    /// 事件广播（set_plugin_tools 广播 plugin.lifecycle 触发前端刷新）
+    broadcaster: Option<crate::web::EventBroadcaster>,
 }
 
 impl McpCapability {
     /// 用已解析 server 快照构造能力（create_app_state 装配时注入）。
-    pub fn with_servers(servers: Vec<ResolvedExternalMcpServer>) -> Self {
+    pub fn with_servers(
+        servers: Vec<ResolvedExternalMcpServer>,
+        config_dir: Option<std::path::PathBuf>,
+    ) -> Self {
         Self {
             registry: McpClientRegistry::from_servers(servers),
+            config_dir,
+            broadcaster: None,
         }
+    }
+
+    /// 注入事件广播（set_plugin_tools 触发前端刷新）。
+    pub fn with_broadcaster(mut self, broadcaster: crate::web::EventBroadcaster) -> Self {
+        self.broadcaster = Some(broadcaster);
+        self
+    }
+
+    /// 读取插件 per-tool 注入门（state.json `mcpToolGates`）。
+    ///
+    /// 返回 plugin_id → tool_name → enabled。缺省（无文件/无该插件/空 map）视为全放行。
+    fn load_tool_gates(&self) -> std::collections::BTreeMap<String, std::collections::BTreeMap<String, bool>> {
+        use crate::services::plugin_state_service::PluginStateService;
+        let Some(config_dir) = &self.config_dir else {
+            return Default::default();
+        };
+        PluginStateService::new(config_dir.clone())
+            .load()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(plugin_id, state)| (plugin_id, state.mcp_tool_gates))
+            .collect()
+    }
+
+    /// 写插件 per-tool 注入门（state.json `mcpToolGates`），并广播 state_changed。
+    ///
+    /// 幂等边界：`state` 不存在该插件记录时自动补全（缺省全放行的其它字段），
+    /// 保证 `mcpToolGates` 的写入不依赖既有状态。
+    fn save_tool_gates(
+        &self,
+        plugin_id: &str,
+        gates: &std::collections::BTreeMap<String, bool>,
+        broadcaster: Option<&crate::web::EventBroadcaster>,
+    ) -> std::result::Result<(), String> {
+        use crate::models::plugin_state::PluginState;
+        use crate::services::plugin_state_service::PluginStateService;
+        let Some(config_dir) = &self.config_dir else {
+            return Err("cap.mcp 管理面未启用（缺 config_dir）".to_string());
+        };
+        let service = PluginStateService::new(config_dir.clone());
+        let mut states = service.load().map_err(|e| format!("读 state.json 失败: {e}"))?;
+        let entry = states.entry(plugin_id.to_string()).or_insert(PluginState {
+            enabled: true,
+            ui_enabled: true,
+            mcp_enabled: true,
+            mcp_servers: Default::default(),
+            mcp_tool_gates: Default::default(),
+        });
+        entry.mcp_tool_gates = gates.clone();
+        service.save(&states).map_err(|e| format!("写 state.json 失败: {e}"))?;
+
+        // 触发前端刷新：广播 plugin.lifecycle state_changed（P0 通道）
+        if let Some(b) = broadcaster {
+            crate::services::plugin_events::broadcast_plugin_lifecycle(
+                b,
+                plugin_id,
+                "state_changed",
+                Some(serde_json::json!({
+                    "changed": ["mcpToolGates"],
+                    "effectiveFrom": "nextTurn",
+                })),
+            );
+        }
+        Ok(())
     }
 
     /// 同步 invoke 包异步（对齐 HttpCapability::block_on_async）。
@@ -150,7 +223,7 @@ impl Capability for McpCapability {
     fn describe(&self) -> Value {
         json!({
             "id": MCP_CAP_ID,
-            "description": "调用插件 MCP server 的工具（如 mimo-tts 语音合成）。action: call",
+            "description": "调用插件 MCP server 的工具（如 mimo-tts 语音合成）+ 工具注入管理面",
             "actions": {
                 "call": {
                     "params": {
@@ -159,7 +232,19 @@ impl Capability for McpCapability {
                         "arguments": { "type": "object" },
                     },
                     "returns": { "ok": "bool", "resultJson": "string?", "error": "string?" },
-                }
+                },
+                "list_plugin_tools": {
+                    "params": { "pluginId": "string（空 = 全部插件）" },
+                    "returns": "{ ok, pluginId, servers: [{ pluginId, server, tools, injected, gate, via }] }",
+                },
+                "set_plugin_tools": {
+                    "params": {
+                        "pluginId": "string（必填）",
+                        "enabled": "bool（必填）",
+                        "tools": "string[]?（缺省 = 整插件 mcpEnabled 开关）",
+                    },
+                    "returns": "{ ok, pluginId, enabled, effectiveFrom: 'nextTurn' }",
+                },
             },
         })
     }
@@ -177,12 +262,23 @@ impl Capability for McpCapability {
             }
         }
 
-        // 解析 action（当前仅支持 call）
+        // 解析 action（call + 管理面 list_plugin_tools / set_plugin_tools）
         let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
-        if action != "call" {
-            return Ok(json!({ "ok": false, "error": format!("不支持的 action: {action}") }));
+        match action {
+            "call" => self.invoke_call(payload, ctx),
+            "list_plugin_tools" => self.invoke_list_plugin_tools(payload),
+            "set_plugin_tools" => self.invoke_set_plugin_tools(payload),
+            _ => Ok(json!({
+                "ok": false,
+                "error": format!("不支持的 action: {action}"),
+            })),
         }
+    }
+}
 
+impl McpCapability {
+    /// `call`：调用插件 MCP server 的工具（既有语义）。
+    fn invoke_call(&self, payload: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let req: McpCallRequest = match serde_json::from_value(payload.clone()) {
             Ok(r) => r,
             Err(e) => {
@@ -229,6 +325,190 @@ impl Capability for McpCapability {
             }
         })
     }
+
+    /// `list_plugin_tools`：列出插件注入 AI 的工具 + 门控状态（只读诊断）。
+    ///
+    /// 聚合 `defs`（server_name → 插件归属）。工具名来自已拉起 client 的 tools/list
+    /// （未拉起 server 标 `injected: "lazy"`，下一轮注入后可见）。
+    fn invoke_list_plugin_tools(&self, payload: Value) -> Result<Value, String> {
+        let plugin_id = payload
+            .get("pluginId")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        let gates = self.load_tool_gates();
+        let gate_map = gates.get(&plugin_id);
+
+        // 按 plugin_id 聚合 server；空 plugin_id = 全部插件
+        let mut by_plugin: std::collections::BTreeMap<
+            String,
+            Vec<&ResolvedExternalMcpServer>,
+        > = std::collections::BTreeMap::new();
+        for def in self.registry.defs.values() {
+            if plugin_id.is_empty() || def.plugin_id == plugin_id {
+                by_plugin.entry(def.plugin_id.clone()).or_default().push(def);
+            }
+        }
+
+        let rt = tokio::runtime::Handle::try_current()
+            .map_err(|_| "cap.mcp list_plugin_tools 需在 tokio 运行时内调用".to_string())?;
+        let registry = &self.registry;
+        let servers = tokio::task::block_in_place(move || {
+            rt.block_on(async move {
+                let mut list: Vec<Value> = Vec::new();
+                for (_pid, defs) in &by_plugin {
+                    let plugin_gates = gates.get(&defs[0].plugin_id).cloned().unwrap_or_default();
+                    for def in defs {
+                        let tool_names: Vec<String> = match registry
+                            .clients
+                            .read()
+                            .await
+                            .get(&def.server_name)
+                            .cloned()
+                        {
+                            Some(client) => client
+                                .tools()
+                                .await
+                                .iter()
+                                .map(|t| t.name.clone())
+                                .collect(),
+                            None => Vec::new(),
+                        };
+                        let injected = if tool_names.is_empty() {
+                            "lazy" // 声明了但未拉起：工具名未知，下一轮注入后可见
+                        } else {
+                            "injected"
+                        };
+                        // per-tool gate：缺省 true（全放行）；显式 false 才是关闭
+                        let tool_gates = tool_names
+                            .iter()
+                            .map(|n| (n.clone(), plugin_gates.get(n).copied().unwrap_or(true)))
+                            .collect::<std::collections::BTreeMap<_, _>>();
+                        list.push(json!({
+                            "pluginId": def.plugin_id,
+                            "server": def.server_name,
+                            "tools": tool_names,
+                            "toolGates": tool_gates,
+                            "injected": injected,
+                            "gate": "open",
+                            "via": "external",
+                        }));
+                    }
+                }
+                list
+            })
+        });
+
+        Ok(json!({
+            "ok": true,
+            "pluginId": plugin_id,
+            "servers": servers,
+        }))
+    }
+
+    /// `set_plugin_tools`：写 state.json per-tool 门 + 更新全局镜像 + 广播（下一轮生效）。
+    ///
+    /// 双语义：
+    /// - 传 `tools: [..]` → per-tool 开关（写 `mcpToolGates`，全局镜像同步）；
+    /// - 不传 `tools` → 整插件开关（走 state.json `mcpEnabled`，由装配层过滤，v1 不做 per-tool）。
+    fn invoke_set_plugin_tools(&self, payload: Value) -> Result<Value, String> {
+        use crate::models::plugin_state::PluginState;
+        use crate::services::plugin_state_service::PluginStateService;
+        use crate::services::mcp_tool_gates::put_mcp_tool_gates;
+
+        let Some(config_dir) = &self.config_dir else {
+            return Ok(json!({ "ok": false, "error": "cap.mcp 管理面未启用（缺 config_dir）" }));
+        };
+        let plugin_id = payload
+            .get("pluginId")
+            .and_then(Value::as_str)
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| "cap.mcp set_plugin_tools 缺少 pluginId".to_string())?;
+        let enabled = payload
+            .get("enabled")
+            .and_then(Value::as_bool)
+            .ok_or_else(|| "cap.mcp set_plugin_tools 缺少 enabled（boolean）".to_string())?;
+
+        let service = PluginStateService::new(config_dir.clone());
+        let mut states = match service.load() {
+            Ok(s) => s,
+            Err(e) => return Ok(json!({ "ok": false, "error": format!("读 state.json 失败: {e}") })),
+        };
+        let entry = states.entry(plugin_id.to_string()).or_insert(PluginState {
+            enabled: true,
+            ui_enabled: true,
+            mcp_enabled: true,
+            mcp_servers: Default::default(),
+            mcp_tool_gates: Default::default(),
+        });
+
+        // 有 tools 列表 → per-tool 门（更新 state.json + 全局镜像）
+        let has_tools = payload
+            .get("tools")
+            .and_then(Value::as_array)
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+        let mut effective = std::collections::BTreeMap::new();
+        if has_tools {
+            for tool in payload["tools"].as_array().unwrap() {
+                if let Some(name) = tool.as_str() {
+                    entry.mcp_tool_gates.insert(name.to_string(), enabled);
+                    effective.insert(name.to_string(), enabled);
+                }
+            }
+        } else {
+            // 整插件开关 → mcpEnabled（装配层直接过滤 server，per-tool 不细分）
+            entry.mcp_enabled = enabled;
+        }
+
+        match service.save(&states) {
+            Ok(()) => {}
+            Err(e) => return Ok(json!({ "ok": false, "error": format!("写 state.json 失败: {e}") })),
+        }
+
+        // 全局镜像同步（引擎层 from_servers 下一轮读取）
+        let global = PluginStateService::new(config_dir.clone())
+            .load()
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(pid, st)| {
+                let tools = st
+                    .mcp_tool_gates
+                    .into_iter()
+                    .collect::<std::collections::HashMap<_, _>>();
+                (pid, tools)
+            })
+            .collect::<std::collections::HashMap<_, _>>();
+        put_mcp_tool_gates(global);
+
+        // 广播 state_changed → 前端 PluginTab 刷新（P0 通道）
+        if let Some(b) = self.broadcaster() {
+            crate::services::plugin_events::broadcast_plugin_lifecycle(
+                b,
+                plugin_id,
+                "state_changed",
+                Some(json!({
+                    "changed": ["mcpToolGates"],
+                    "effectiveFrom": "nextTurn",
+                })),
+            );
+        }
+
+        Ok(json!({
+            "ok": true,
+            "pluginId": plugin_id,
+            "enabled": enabled,
+            "tools": if has_tools { json!(effective.values().cloned().collect::<Vec<_>>()) } else { json!([]) },
+            "effectiveFrom": "nextTurn",
+        }))
+    }
+
+    /// cap.mcp 装配时注入的 broadcaster（set_plugin_tools 广播用）。
+    ///
+    /// 当前由 `McpCapability::with_broadcaster` 装配时注入；无则跳过广播（不阻塞管理面）。
+    fn broadcaster(&self) -> Option<&crate::web::EventBroadcaster> {
+        self.broadcaster.as_ref()
+    }
 }
 
 #[cfg(test)]
@@ -268,7 +548,7 @@ mod tests {
 
     /// 空 server 快照（不拉起进程；gate 分支在取 client 前即裁决）。
     fn empty_cap() -> McpCapability {
-        McpCapability::with_servers(Vec::new())
+        McpCapability::with_servers(Vec::new(), None)
     }
 
     #[test]
