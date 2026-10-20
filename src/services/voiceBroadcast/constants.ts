@@ -25,6 +25,9 @@ export const PREFETCH_DEPTH = 2
 /** 单句合成等待上限（ms）；超时该句标记失败跳过，不断链 */
 export const SYNTH_TIMEOUT_MS = 12000
 
+/** 单句合成失败自动重试次数上限（0=不重试）。1=失败后重试一次，仍失败才跳过 */
+export const SYNTH_MAX_RETRIES = 1
+
 /**
  * base64 模式（移动端）专用值。
  * mimo-tts 单进程串行合成 + base64 载荷大（~200KB/句）经 HTTP 回传，

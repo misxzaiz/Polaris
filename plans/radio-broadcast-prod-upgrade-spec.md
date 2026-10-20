@@ -158,3 +158,17 @@
 
 **方案**：改 `flex flex-wrap` + 按钮自适应宽度（与方向 pills 同模式），消除固定列数。
 ✅ 已实施
+
+### 6.4 单句合成失败自动重试（降低偶发丢句）
+
+**缺口**：合成失败/超时 → 单句直接跳过。网络闪断、mimo-tts 偶发 5xx 会让听众丢一整句。
+
+**方案**：合成失败（`callMimoTts` res.error / catch / 超时）后，若该句未重试过，重置为 `pending` 再合成一次（`QueueItem.synthAttempts`，0→1）；重试仍失败才 `failed` + `onSynthError` 跳过。**播放失败不重试**（音频已合成放不出，重试合成无意义）。`onSynthError` 仅最终失败时触发（controller 的 `consecutiveErrors` 计数不受单次重试污染）。
+✅ 已实施（`markSynthFailed` 统一收口 + `SYNTH_MAX_RETRIES=1`；2 新用例：失败重试后跳过、偶发失败重试成功不丢句；超时用例更新为双周期断言）
+
+### 6.5 播报中视图音频级波形动画（增强「正在播报」感知）
+
+**缺口**：播报中只有文字，无音频级可视化；「正在播报」的感知偏弱。
+
+**方案**：现在时不引入画布级波形（成本高），用 CSS 动画音柱（`AudioWaveform` 已用静态图标部分）：播报中/生成中的提示图标加轻微跳动动画（`animate-pulse` 或等宽音柱 keyframe），低成本提升活跃感知。
+✅ 已实施（`index.css` 新增 `eq-bars` keyframe 音柱动画，播放中替换静态图标；尊重 `prefers-reduced-motion`）

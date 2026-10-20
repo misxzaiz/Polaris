@@ -221,6 +221,8 @@ describe('radioBroadcastController', () => {
     expect(player.stop).toHaveBeenCalled()
     // 路由 2：interruptSession 被调用
     expect(mockInterruptSession).toHaveBeenCalled()
+    // 停止原因标注：手动停止（默认）
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('manual')
   })
 
   it('stop 幂等：idle 时 no-op', async () => {
@@ -243,6 +245,8 @@ describe('radioBroadcastController', () => {
     await vi.waitFor(() => {
       expect(radioBroadcastController.getStatus()).toBe('idle')
     })
+    // 停止原因标注：语音口令触发
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('voice-command')
   })
 
   it('stop 后晚到段结果不回流播放（running=false 拦截）', async () => {
@@ -338,6 +342,8 @@ describe('radioBroadcastController', () => {
       expect(radioBroadcastController.getStatus()).toBe('idle')
     })
     // 停机后不再请求下一段（waitStreamEnd 计数不再增长——最后计数留在停前）
+    // 停止原因标注：轮次上限命中
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('max-rounds')
   })
 
   it('时长上限：maxSeconds 命中（极小值 → 启动即超时）→ 队列空即优雅停止', async () => {
@@ -350,6 +356,8 @@ describe('radioBroadcastController', () => {
     await vi.waitFor(() => {
       expect(radioBroadcastController.getStatus()).toBe('idle')
     })
+    // 停止原因标注：时长上限命中
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('max-seconds')
   })
 
   it('轮次未满：段入队后不触发提前停止（回归保护）', async () => {

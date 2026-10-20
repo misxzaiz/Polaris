@@ -274,7 +274,15 @@ export function RadioBroadcastPanel() {
               className="max-h-28 overflow-y-auto rounded-md bg-[rgb(var(--c-bg-elevated)/0.5)] px-3 py-2 text-[12.5px] leading-relaxed text-text-primary"
             >
               <div className="mb-1 flex items-center gap-1 text-[10.5px] uppercase tracking-wide text-text-tertiary">
-                <Volume2 size={11} />
+                {rb.isPlaying ? (
+                  <span className="animate-eq-bars flex items-end gap-[2px]" aria-hidden>
+                    <span />
+                    <span />
+                    <span />
+                  </span>
+                ) : (
+                  <AudioWaveform size={11} />
+                )}
                 {t('radioBroadcast.nowPlaying', { defaultValue: '正在朗读' })}
               </div>
               {rb.nowPlayingText}

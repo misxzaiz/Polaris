@@ -32,6 +32,8 @@ export interface QueueItem {
   status: 'pending' | 'synthesizing' | 'ready' | 'playing' | 'done' | 'failed'
   /** 代际：stop() 时 ++，晚到音频校验用 */
   gen: number
+  /** 合成失败已重试次数（0=未重试；达到 1 次后失败即跳过，见 voiceBroadcastPlayer 重试逻辑） */
+  synthAttempts?: number
 }
 
 /** 当前播放段信息（UI 展示） */

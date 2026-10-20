@@ -14,7 +14,7 @@
  */
 import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
-import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS, BASE64_PREFETCH_DEPTH, BASE64_SYNTH_TIMEOUT_MS } from './constants'
+import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS, BASE64_PREFETCH_DEPTH, BASE64_SYNTH_TIMEOUT_MS, SYNTH_MAX_RETRIES } from './constants'
 import { callMimoTts } from './mcpBridge'
 import type { QueueItem } from './types'
 
@@ -122,6 +122,7 @@ export class VoiceBroadcastPlayer {
         url: null,
         status: 'pending',
         gen: this.generation,
+        synthAttempts: 0,
       })
     }
     log.debug('入队', { count: sentences.length, total: this.queue.length })
@@ -212,6 +213,24 @@ export class VoiceBroadcastPlayer {
     return this.queue.filter((q) => q.status === 'synthesizing').length
   }
 
+  /**
+   * 合成失败统一收口：未达重试上限 → 重置为 pending（下次 pump 重新合成一次，有限重试降偶发丢句）；
+   * 已达上限 → 标 failed + onSynthError 通知（controller 计数，跳过该句不断链）。
+   * 仅状态转换，不 pump（调用方统一在失败路径后 pump，避免重入）。
+   * 仅用于合成路径（callMimoTts 失败/超时/异常）；播放失败不走重试（音频已合成，重试无意义）。
+   */
+  private markSynthFailed(item: QueueItem, reason: string): void {
+    const attempts = item.synthAttempts ?? 0
+    if (attempts < SYNTH_MAX_RETRIES) {
+      item.synthAttempts = attempts + 1
+      item.status = 'pending'
+      log.debug('合成失败，重试一次', { itemId: item.id, attempt: attempts + 1, reason })
+      return
+    }
+    item.status = 'failed'
+    this.callbacks.onSynthError?.(item, reason)
+  }
+
   /** 合成一项（带代际 + 超时 + Abort） */
   private synthesize(item: QueueItem): void {
     if (item.status !== 'pending') return
@@ -225,8 +244,7 @@ export class VoiceBroadcastPlayer {
       if (gen !== this.generation) return
       this.pendingSynths.delete(item.id)
       if (item.status === 'synthesizing') {
-        item.status = 'failed'
-        this.callbacks.onSynthError?.(item, '合成超时')
+        this.markSynthFailed(item, '合成超时')
         this.pump()
       }
     }, timeoutMs)
@@ -250,8 +268,7 @@ export class VoiceBroadcastPlayer {
           item.status = 'ready'
           log.debug('句就绪', { len: item.text.length })
         } else {
-          item.status = 'failed'
-          this.callbacks.onSynthError?.(item, res.error ?? '合成失败')
+          this.markSynthFailed(item, res.error ?? '合成失败')
         }
         this.pump()
       })
@@ -260,8 +277,7 @@ export class VoiceBroadcastPlayer {
         if (abort.signal.aborted) return
         this.pendingSynths.delete(item.id)
         if (gen !== this.generation) return
-        item.status = 'failed'
-        this.callbacks.onSynthError?.(item, e instanceof Error ? e.message : String(e))
+        this.markSynthFailed(item, e instanceof Error ? e.message : String(e))
         this.pump()
       })
   }

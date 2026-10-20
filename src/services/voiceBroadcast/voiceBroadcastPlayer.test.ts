@@ -118,7 +118,7 @@ describe('VoiceBroadcastPlayer', () => {
     expect(p.currentText).toBeNull()
   })
 
-  it('单句合成失败：标记 failed 跳过，不断链', async () => {
+  it('单句合成失败：先重试一次，仍失败才标记 failed 跳过不断链', async () => {
     const p = new VoiceBroadcastPlayer()
     const onStart = vi.fn()
     const onSynthError = vi.fn()
@@ -128,12 +128,39 @@ describe('VoiceBroadcastPlayer', () => {
 
     p.enqueueSegment('第一句。第二句。')
 
+    // 首次失败 → 自动重试一次（共 2 次合成调用）→ 仍失败才 onSynthError
     await vi.waitFor(() => {
-      expect(onSynthError).toHaveBeenCalled()
+      expect(onSynthError).toHaveBeenCalledTimes(2) // 两句各重试后各失败
     })
-    // 第一句失败，第二句也被预取失败 → 无 ready，不播放
+    // 每句各 2 次合成（首败 + 重试）
+    expect(mockCallMimoTts).toHaveBeenCalledTimes(4)
+    // 全部失败 → 无 ready，不播放
     expect(onStart).not.toHaveBeenCalled()
     expect(p.readyCount).toBe(0)
+  })
+
+  it('单句合成偶发失败：重试成功则不丢句，正常播放', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    const onSynthError = vi.fn()
+    p.setCallbacks({ onStart, onSynthError })
+
+    // 第一次调用失败，第二次（重试）成功
+    let call = 0
+    mockCallMimoTts.mockImplementation(async () => {
+      call++
+      return call % 2 === 1 ? { ok: false, error: '偶发 5xx' } : { ok: true, url: 'http://x/ok' }
+    })
+
+    p.enqueueSegment('第一句。')
+
+    // 重试成功后这句话正常播放，onSynthError 不被触发
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledWith('第一句。')
+    })
+    expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+    expect(onSynthError).not.toHaveBeenCalled()
+    expect(p.currentText).toBe('第一句。')
   })
 
   it('队列空触发 onQueueDrained', async () => {
@@ -209,22 +236,23 @@ describe('VoiceBroadcastPlayer', () => {
     })
   })
 
-  it('base64 模式：单句合成超时为 25s（BASE64_SYNTH_TIMEOUT），file 模式仍为 12s', async () => {
+  it('base64 模式：单句合成超时为 25s（BASE64_SYNTH_TIMEOUT），file 模式仍为 12s（含重试）', async () => {
     vi.useFakeTimers()
     try {
       // 合成永不 settle → 只有定时器能触发超时兜底
       const hangPromise = () => new Promise<{ ok: boolean }>(() => { /* 永不 settle */ })
 
-      // file 模式（默认）：12s 超时
+      // file 模式（默认）：12s 超时。合成失败先重试一次，故 onSynthError 需两个超时周期（12s + 12s）
       const pFile = new VoiceBroadcastPlayer()
       const errFile = vi.fn()
       pFile.setCallbacks({ onSynthError: errFile })
       mockCallMimoTts.mockImplementation(hangPromise)
       pFile.enqueueSegment('第一句。')
-      vi.advanceTimersByTime(11000)
-      expect(errFile).not.toHaveBeenCalled()
-      vi.advanceTimersByTime(1500)
-      expect(errFile).toHaveBeenCalled() // 12s 超时触发
+      vi.advanceTimersByTime(12000)
+      expect(errFile).not.toHaveBeenCalled() // 首次超时 → 触发重试，不报错
+      vi.advanceTimersByTime(12000)
+      expect(errFile).toHaveBeenCalled() // 重试再超时 → 最终失败（24s 累计）
+      expect(mockCallMimoTts).toHaveBeenCalledTimes(2) // 首试 + 重试各一次
 
       // base64 模式：25s 超时
       const p64 = new VoiceBroadcastPlayer()
@@ -232,10 +260,10 @@ describe('VoiceBroadcastPlayer', () => {
       const err64 = vi.fn()
       p64.setCallbacks({ onSynthError: err64 })
       p64.enqueueSegment('第一句。')
-      vi.advanceTimersByTime(24000)
-      expect(err64).not.toHaveBeenCalled()
-      vi.advanceTimersByTime(2000)
-      expect(err64).toHaveBeenCalled() // 25s 超时触发
+      vi.advanceTimersByTime(25000)
+      expect(err64).not.toHaveBeenCalled() // 首次超时 → 重试
+      vi.advanceTimersByTime(25000)
+      expect(err64).toHaveBeenCalled() // 重试再超时（50s 累计）
     } finally {
       vi.useRealTimers()
     }
