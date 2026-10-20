@@ -25,7 +25,6 @@ import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { PushDialog } from './PushDialog'
-import { ConflictPredictionCard } from './ConflictPredictionCard'
 import type { GitRemote } from '@/types/git'
 
 /** auto-fetch 开关持久化键（P1：本地设置项，默认关） */
@@ -79,7 +78,6 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
   const removeRemote = useGitStore((s) => s.removeRemote)
   const pull = useGitStore((s) => s.pull)
   const fetchRemote = useGitStore((s) => s.fetchRemote)
-  const predictConflicts = useGitStore((s) => s.predictConflicts)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const getBranches = useGitStore((s) => s.getBranches)
   const branches = useGitStore((s) => s.branches)
@@ -282,8 +280,6 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
       await Promise.all([
         refreshStatus(workspacePath),
         getBranches(workspacePath),
-        // FR-P2-AI4 冲突预测：fetch 后确定性计算风险清单（0 token，与刷新并行）
-        predictConflicts(workspacePath),
       ])
       toast.success(t('remote.fetchSuccess'))
     } catch (err) {
@@ -505,9 +501,6 @@ export function RemoteTab({ workspacePath: workspacePathProp }: RemoteTabProps) 
           {error}
         </div>
       )}
-
-      {/* FR-P2-AI4 冲突预测卡片：fetch 后由 handleFetch 填充；无预测时自动隐藏 */}
-      {workspacePath && <ConflictPredictionCard workspacePath={workspacePath} />}
 
       {/* 添加远程仓库弹窗 */}
       {showAddRemote && (

@@ -130,7 +130,6 @@ describe('HistoryTab', () => {
   const checkoutCommit = vi.fn()
   const refreshStatus = vi.fn()
   const clipboardWriteText = vi.fn()
-  const getStashList = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -153,7 +152,6 @@ describe('HistoryTab', () => {
     getReflog.mockResolvedValue(reflogEntries)
     checkoutCommit.mockResolvedValue(undefined)
     refreshStatus.mockResolvedValue(undefined)
-    getStashList.mockResolvedValue([])
 
     useGitStore.setState({
       getLogWithLanes: getLogWithLanes as unknown as GitState['getLogWithLanes'],
@@ -164,7 +162,6 @@ describe('HistoryTab', () => {
       getReflog: getReflog as unknown as GitState['getReflog'],
       checkoutCommit: checkoutCommit as unknown as GitState['checkoutCommit'],
       refreshStatus: refreshStatus as unknown as GitState['refreshStatus'],
-      getStashList: getStashList as unknown as GitState['getStashList'],
       branches,
       status: {
         branch: 'main',
@@ -172,20 +169,6 @@ describe('HistoryTab', () => {
         unstaged: [],
         untracked: [],
       } as unknown as GitState['status'],
-      statuses: {
-        'D:/repo': {
-          branch: 'main',
-          commit: '1111111111111111111111111111111111111111',
-          shortCommit: '1111111',
-          ahead: 0,
-          behind: 0,
-          staged: [],
-          unstaged: [],
-          untracked: [],
-          conflicted: [],
-          isEmpty: false,
-        } as GitState['statuses'][string],
-      },
       commitDetails: {},
     })
 
@@ -535,115 +518,5 @@ describe('HistoryTab', () => {
         0,
       )
     })
-  })
-
-  // ── P2 增量：泳道图语义着色 + WIP/stash 虚拟节点 ─────────────────────
-
-  it('renders a WIP virtual lane row when the working tree is dirty', async () => {
-    // 脏工作区：statuses 有 staged/unstaged
-    useGitStore.setState({
-      statuses: {
-        'D:/repo': {
-          branch: 'main',
-          commit: '1111111111111111111111111111111111111111',
-          shortCommit: '1111111',
-          ahead: 0,
-          behind: 0,
-          staged: [{ file_path: 'a.ts', change_type: 'modified' }],
-          unstaged: [{ file_path: 'b.ts', change_type: 'modified' }],
-          untracked: ['c.ts'],
-          conflicted: [],
-          isEmpty: false,
-        } as GitState['statuses'][string],
-      },
-    })
-
-    render(<HistoryTab />)
-
-    expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
-    // WIP 虚拟行：`WIP` 标签 + 未提交改动文案（i18n key）
-    expect(screen.getByText('WIP')).toBeInTheDocument()
-    expect(screen.getByText(/lane\.wipCount/)).toBeInTheDocument()
-    // 图例 4 色说明出现
-    expect(screen.getByText('lane.legendLocal')).toBeInTheDocument()
-    expect(screen.getByText('lane.legendUnpushed')).toBeInTheDocument()
-    expect(screen.getByText('lane.legendMerged')).toBeInTheDocument()
-    expect(screen.getByText('lane.legendDim')).toBeInTheDocument()
-  })
-
-  it('does not render WIP/stash rows when tree is clean and no stash', async () => {
-    useGitStore.setState({
-      statuses: {
-        'D:/repo': {
-          branch: 'main',
-          commit: '1111111111111111111111111111111111111111',
-          shortCommit: '1111111',
-          ahead: 0,
-          behind: 0,
-          staged: [],
-          unstaged: [],
-          untracked: [],
-          conflicted: [],
-          isEmpty: false,
-        } as GitState['statuses'][string],
-      },
-      stashListByWs: {},
-    })
-
-    render(<HistoryTab />)
-    expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
-    expect(screen.queryByText('WIP')).not.toBeInTheDocument()
-    expect(screen.queryByText(/^stash/)).not.toBeInTheDocument()
-    // 无虚拟行 → 图例也不显示
-    expect(screen.queryByText('lane.legendLocal')).not.toBeInTheDocument()
-  })
-
-  it('renders a stash virtual row from stashListByWs', async () => {
-    useGitStore.setState({
-      statuses: {
-        'D:/repo': {
-          branch: 'main',
-          commit: '1111111111111111111111111111111111111111',
-          shortCommit: '1111111',
-          ahead: 0,
-          behind: 0,
-          staged: [],
-          unstaged: [],
-          untracked: [],
-          conflicted: [],
-          isEmpty: false,
-        } as GitState['statuses'][string],
-      },
-      stashListByWs: {
-        'D:/repo': [{ index: 0, message: 'WIP on main: stash test', branch: 'main', commitSha: '4444444', timestamp: 1_700_000_300 }],
-      },
-    })
-
-    render(<HistoryTab />)
-    expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
-    // stash 行：stash@{0} 前缀 + message
-    expect(screen.getByText(/stash@\{0\}/)).toBeInTheDocument()
-    expect(screen.getByText(/stash test/)).toBeInTheDocument()
-  })
-
-  it('passes semantic color to LaneGraph when backend provides semantic', async () => {
-    const semantic = [
-      { kind: 'unpushed' as const },
-      { kind: 'local' as const },
-    ]
-    // rows 需要与 commits 一一对应（LaneGraph 渲染依赖 laneRow）
-    const rows = [
-      { sha: commits[0].sha, cells: [{ lane: 0, node: 'commit' as const, edgeDown: null, edgeUp: null }], refs: [] },
-      { sha: commits[1].sha, cells: [{ lane: 0, node: 'commit' as const, edgeDown: null, edgeUp: null }], refs: [] },
-    ]
-    getLogWithLanes.mockResolvedValueOnce({ commits, rows, semantic })
-
-    render(<HistoryTab />)
-    expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
-
-    // 第一个 commit 未 push → LaneGraph 节点红（text-danger class）
-    const nodes = Array.from(document.querySelectorAll('circle'))
-    expect(nodes.length).toBeGreaterThan(0)
-    expect(nodes.some((n) => n.getAttribute('class')?.includes('text-danger'))).toBe(true)
   })
 })
