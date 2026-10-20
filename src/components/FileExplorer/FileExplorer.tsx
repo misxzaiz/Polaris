@@ -125,15 +125,25 @@ export function FileExplorer() {
 
   // 初始化加载工作区目录
   // 优先使用 viewingWorkspace，如果没有则使用当前工作区
-  useEffect(() => {
-    const viewingWorkspace = getViewingWorkspace();
-    const targetWorkspace = viewingWorkspace || getCurrentWorkspace();
+  //
+  // 2026-10-20 修复：旧实现把 getCurrentWorkspace/getViewingWorkspace 两个
+  // 方法引用放进依赖——Zustand v4 中它们稳定不变，effect 不会因 workspaces
+  // 或 currentWorkspaceId 变化而重跑。冷启动时序（syncFromServer 异步填
+  // workspaces 之后再挂载/重跑）会让此 effect 首次执行时 targetWorkspace=null
+  // 后永不重跑，UI 停在「此目录为空」。改为订阅派生 path 切片，path 就绪
+  // 立即触发加载。
+  const targetPath = useWorkspaceStore((s) => {
+    const id = s.viewingWorkspaceId ?? s.currentWorkspaceId;
+    if (!id) return null;
+    return s.workspaces.find((w) => w.id === id)?.path ?? null;
+  });
 
-    if (targetWorkspace && current_path !== targetWorkspace.path) {
-      load_directory(targetWorkspace.path);
-      loadCustomCommands(targetWorkspace.path);
+  useEffect(() => {
+    if (targetPath && current_path !== targetPath) {
+      load_directory(targetPath);
+      loadCustomCommands(targetPath);
     }
-  }, [load_directory, current_path, getCurrentWorkspace, getViewingWorkspace, loadCustomCommands]);
+  }, [targetPath, current_path, load_directory, loadCustomCommands]);
 
   const handleRefresh = useCallback(() => {
     clear_error();
