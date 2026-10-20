@@ -28,6 +28,7 @@ import type {
   RadioBroadcastDirection,
   RadioBroadcastSnapshot,
   RadioBroadcastStatus,
+  RadioBroadcastStopReason,
   VoiceId,
 } from './types'
 
@@ -115,6 +116,8 @@ export class RadioBroadcastController {
   private stopped = false
   /** 内部循环运行中标志 */
   private running = false
+  /** 最近一次停止原因（回 idle 后保留一次，供 UI Toast 反馈；error 态归 'error'） */
+  private stopReason: RadioBroadcastStopReason | null = null
   /** 已提交的段生成 Promise 集合（stop 时结清） */
   private pendingSegmentPromises = new Set<Promise<unknown>>()
   /** 当前等待中的段生成 AbortController */
@@ -139,6 +142,10 @@ export class RadioBroadcastController {
       segmentCount: this.segmentCount,
       error: this.lastError,
       nowPlayingText: this.nowPlayingText,
+      startedAt: this.startedAt,
+      maxRounds: this.maxRounds,
+      maxSeconds: this.maxSeconds,
+      stopReason: this.stopReason,
     }
   }
 
@@ -199,6 +206,7 @@ export class RadioBroadcastController {
     this.maxSeconds = opts.maxSeconds && opts.maxSeconds > 0 ? opts.maxSeconds : undefined
     this.startedAt = Date.now()
     this.limitReached = false
+    this.stopReason = null
 
     // 上一轮残留（error 态重试）：清播放器 + 弃用旧 session，从零开始
     this.player.stop()
@@ -244,7 +252,7 @@ export class RadioBroadcastController {
     if (this.voiceStopEnabled) {
       this.voiceStopWatcher.setCallbacks({
         onStop: () => {
-          void this.stop()
+          void this.stop('voice-command')
         },
       })
       this.voiceStopWatcher.start()
@@ -279,14 +287,17 @@ export class RadioBroadcastController {
   /**
    * 停止播报：三路中断（AI + 播放器 + 在途 Promise），幂等。
    * 完成后回 idle。若已在 idle 则 no-op。
+   * @param reason 停止原因（默认 manual；自动停止/口令等由调用方标注，UI 据此反馈）
    */
-  async stop(): Promise<void> {
+  async stop(reason: RadioBroadcastStopReason = 'manual'): Promise<void> {
     if (this.status === 'idle') return
     if (this.status === 'stopping') {
       log.warn('stop 忽略：已在 stopping')
       return
     }
 
+    // error 态停止归 'error'（由 error 视图触发）；其余用调用方原因
+    this.stopReason = this.status === 'error' ? 'error' : reason
     const wasError = this.status === 'error'
     this.setStatus('stopping')
     this.stopped = true
@@ -548,7 +559,10 @@ export class RadioBroadcastController {
       maxSeconds: this.maxSeconds,
       segmentIndex: this.segmentIndex,
     })
-    void this.stop()
+    // 停止原因：优先轮次命中（达到播段数上限），否则按时长
+    const reason: RadioBroadcastStopReason =
+      this.maxRounds && this.segmentIndex >= this.maxRounds ? 'max-rounds' : 'max-seconds'
+    void this.stop(reason)
   }
 
   /** 执行一次段生成：发送消息 + 等待流式下降沿（onSegmentEnded 统一取全文入队） */

@@ -250,5 +250,54 @@
   "tooltips": {
     "engineSwitchEnabled": "选择当前会话的 AI 引擎",
     "engineSwitchDisabled": "已有消息或正在运行时不能切换引擎"
+  },
+  "radioBroadcast": {
+    "panelTitle": "AI 连续播报",
+    "configView": "查看配置",
+    "backToPlayback": "返回播报",
+    "playingHint": "播报进行中，修改将应用于下次播报",
+    "playingHintShort": "播报中",
+    "nowPlaying": "正在朗读",
+    "start": "开始播报",
+    "retry": "重试",
+    "pause": "暂停",
+    "resume": "继续",
+    "stop": "停止",
+    "duration": "已播",
+    "segmentCount": "句",
+    "segment": "段",
+    "remaining": "剩余",
+    "roundsUnit": "轮",
+    "section": {
+      "content": "内容",
+      "voice": "声音",
+      "model": "模型",
+      "control": "控制"
+    },
+    "directionPlaceholder": "如：经济学基础、王阳明传、今日要闻…",
+    "directionInput": "播报内容",
+    "voiceSelect": "音色",
+    "volume": "音量",
+    "engineHint": "默认跟随全局引擎；播报进行中不可切换。",
+    "engineHintPlaying": "播报中不可切换引擎，将在下次播报生效",
+    "maxRounds": "播放轮次上限",
+    "maxSeconds": "播放时长上限",
+    "maxRoundsPlaceholder": "播 N 轮",
+    "maxSecondsPlaceholder": "播 N 分钟",
+    "invalidRounds": "请输入 ≥1 的整数",
+    "invalidSeconds": "请输入 ≥1 的整数",
+    "limitsHint": "填「播 N 轮」= 播满 N 段后自动停止；填「播 N 分钟」按时长兜底。都不填则无限连续播报。",
+    "voiceStop": "语音「停止」口令",
+    "base64": "移动端模式（base64 音频）",
+    "voiceStopHint": "说「停止」结束播报；移动端开启后音频以 base64 传输。",
+    "toast": {
+      "maxRounds": "已播满上限，自动停止播报",
+      "maxSeconds": "已达时长上限，自动停止播报",
+      "voiceStopped": "已通过语音口令停止播报",
+      "stopped": "已停止播报",
+      "error": "播报出错",
+      "invalidLimits": "轮次/时长需为 ≥1 的整数",
+      "started": "播报开始"
+    }
   }
 }

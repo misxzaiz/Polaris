@@ -21,6 +21,14 @@ export interface UseRadioBroadcastReturn {
   isPlaying: boolean
   /** 是否在播报中（含 starting/generating/stopping） */
   isActive: boolean
+  /** 本次播报开始时刻（未开始为 0） */
+  startedAt: number
+  /** 轮次上限（本次生效） */
+  maxRounds?: number
+  /** 时长上限（秒） */
+  maxSeconds?: number
+  /** 最近停止原因（回 idle 后保留一次） */
+  stopReason: ReturnType<typeof useRadioBroadcastStore.getState>['stopReason']
 
   start: (opts: RadioBroadcastControllerOptions) => Promise<void>
   stop: () => Promise<void>
@@ -41,6 +49,10 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
   const segmentCount = useRadioBroadcastStore((s) => s.segmentCount)
   const error = useRadioBroadcastStore((s) => s.error)
   const nowPlayingText = useRadioBroadcastStore((s) => s.nowPlayingText)
+  const startedAt = useRadioBroadcastStore((s) => s.startedAt)
+  const maxRounds = useRadioBroadcastStore((s) => s.maxRounds)
+  const maxSeconds = useRadioBroadcastStore((s) => s.maxSeconds)
+  const stopReason = useRadioBroadcastStore((s) => s.stopReason)
 
   const start = useCallback((opts: Parameters<UseRadioBroadcastReturn['start']>[0]) => {
     return useRadioBroadcastStore.getState().start(opts)
@@ -63,6 +75,10 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
     segmentCount,
     error,
     nowPlayingText,
+    startedAt,
+    maxRounds,
+    maxSeconds,
+    stopReason,
     isPlaying: status === 'playing',
     isActive: status === 'starting' || status === 'playing' || status === 'generating' || status === 'stopping',
     start,

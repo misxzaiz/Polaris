@@ -33,6 +33,8 @@ const EMPTY_SNAPSHOT: RadioBroadcastSnapshot = {
   segmentCount: 0,
   error: null,
   nowPlayingText: null,
+  startedAt: 0,
+  stopReason: null,
 }
 
 export const useRadioBroadcastStore = create<RadioBroadcastStoreState>()(() => ({

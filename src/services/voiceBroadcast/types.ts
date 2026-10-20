@@ -42,6 +42,14 @@ export interface RadioBroadcastSegment {
   text: string
 }
 
+/** 停止原因（自动停止 / 语音口令 / 按钮；UI 反馈用） */
+export type RadioBroadcastStopReason =
+  | 'manual'
+  | 'voice-command'
+  | 'max-rounds'
+  | 'max-seconds'
+  | 'error'
+
 /** 控制器订阅快照 */
 export interface RadioBroadcastSnapshot {
   status: RadioBroadcastStatus
@@ -55,4 +63,12 @@ export interface RadioBroadcastSnapshot {
   error: string | null
   /** 当前播放句文本（无则 null） */
   nowPlayingText: string | null
+  /** 本次播报开始时刻（Date.now()，未开始为 0；前端算累计时长） */
+  startedAt: number
+  /** 轮次上限（本次生效；未设为 undefined） */
+  maxRounds?: number
+  /** 时长上限（秒；本次生效；未设为 undefined） */
+  maxSeconds?: number
+  /** 最近一次停止原因（回 idle 后仍保留一次，供 Toast 反馈） */
+  stopReason: RadioBroadcastStopReason | null
 }

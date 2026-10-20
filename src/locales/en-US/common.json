@@ -249,5 +249,54 @@
   "tooltips": {
     "engineSwitchEnabled": "Select AI engine for current session",
     "engineSwitchDisabled": "Cannot switch engine when messages exist or session is running"
+  },
+  "radioBroadcast": {
+    "panelTitle": "AI Radio Broadcast",
+    "configView": "View config",
+    "backToPlayback": "Back to playback",
+    "playingHint": "Broadcasting in progress. Changes apply next time.",
+    "playingHintShort": "Broadcasting",
+    "nowPlaying": "Now speaking",
+    "start": "Start broadcast",
+    "retry": "Retry",
+    "pause": "Pause",
+    "resume": "Resume",
+    "stop": "Stop",
+    "duration": "Elapsed",
+    "segmentCount": "sents",
+    "segment": "seg",
+    "remaining": "left",
+    "roundsUnit": "rounds",
+    "section": {
+      "content": "Content",
+      "voice": "Voice",
+      "model": "Model",
+      "control": "Control"
+    },
+    "directionPlaceholder": "e.g. Economics basics, Biography of Wang Yangming…",
+    "directionInput": "Broadcast topic",
+    "voiceSelect": "Voice",
+    "volume": "Volume",
+    "engineHint": "Follows the global default engine; not switchable during playback.",
+    "engineHintPlaying": "Engine not switchable during playback; applies next time",
+    "maxRounds": "Max rounds",
+    "maxSeconds": "Max minutes",
+    "maxRoundsPlaceholder": "Play N rounds",
+    "maxSecondsPlaceholder": "Play N minutes",
+    "invalidRounds": "Enter an integer ≥1",
+    "invalidSeconds": "Enter an integer ≥1",
+    "limitsHint": "“Play N rounds” stops after N segments; “Play N minutes” stops by time. Empty = endless.",
+    "voiceStop": "Voice “stop” command",
+    "base64": "Mobile mode (base64 audio)",
+    "voiceStopHint": "Say “stop” to end; mobile mode transfers audio as base64.",
+    "toast": {
+      "maxRounds": "Reached round limit, auto-stopped",
+      "maxSeconds": "Reached time limit, auto-stopped",
+      "voiceStopped": "Stopped via voice command",
+      "stopped": "Broadcast stopped",
+      "error": "Broadcast failed",
+      "invalidLimits": "Rounds/minutes must be integers ≥1",
+      "started": "Broadcast started"
+    }
   }
 }
