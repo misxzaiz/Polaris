@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { RemoteTab } from './RemoteTab'
 import { useGitStore } from '@/stores/gitStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
-import type { GitRemote, GitBranch } from '@/types/git'
+import type { GitRemote, GitBranch, GitConflictPrediction } from '@/types/git'
 import type { GitState } from '@/stores/gitStore'
 
 const remotes: GitRemote[] = [
@@ -28,6 +28,7 @@ describe('RemoteTab (P1 fetch / auto-fetch)', () => {
   const fetchRemote = vi.fn()
   const getBranches = vi.fn()
   const refreshStatus = vi.fn()
+  const predictConflicts = vi.fn()
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -39,12 +40,31 @@ describe('RemoteTab (P1 fetch / auto-fetch)', () => {
     fetchRemote.mockResolvedValue(undefined)
     getBranches.mockResolvedValue(undefined)
     refreshStatus.mockResolvedValue(undefined)
+    predictConflicts.mockImplementation(async (_wsPath: string) => {
+      const prediction: GitConflictPrediction = {
+        branch: 'main',
+        upstream: 'origin/main',
+        behind: 1,
+        incoming: [{ sha: '514d4f24', shortSha: '514d4f24', summary: 'c2 remote only (a.txt)' }],
+        localModified: ['a.txt', 'b.txt'],
+        incomingFiles: ['a.txt'],
+        riskFiles: ['a.txt'],
+        advice: 'commitOrStash',
+      }
+      // 等价真实 slice 行为：写分片，卡片才能读取渲染
+      useGitStore.setState({
+        conflictPrediction: prediction,
+        conflictPredictionsByWs: { 'D:/repo': prediction },
+      })
+      return prediction
+    })
 
     useGitStore.setState({
       getRemotes: getRemotes as unknown as GitState['getRemotes'],
       fetchRemote: fetchRemote as unknown as GitState['fetchRemote'],
       getBranches: getBranches as unknown as GitState['getBranches'],
       refreshStatus: refreshStatus as unknown as GitState['refreshStatus'],
+      predictConflicts: predictConflicts as unknown as GitState['predictConflicts'],
       remotes,
       branches,
       statuses: {
@@ -84,6 +104,14 @@ describe('RemoteTab (P1 fetch / auto-fetch)', () => {
     await waitFor(() => {
       expect(fetchRemote).toHaveBeenCalledWith('D:/repo', 'origin', false)
     })
+
+    // FR-P2-AI4 冲突预测：fetch 后触发并渲染卡片
+    await waitFor(() => {
+      expect(predictConflicts).toHaveBeenCalledWith('D:/repo')
+    })
+
+    // 卡片展示风险文件（mock 返回 riskFiles=['a.txt']）
+    expect(await screen.findByText('▸ a.txt')).toBeInTheDocument()
   })
 
   it('persists auto-fetch toggle to localStorage and restores it', async () => {

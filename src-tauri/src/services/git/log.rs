@@ -14,10 +14,11 @@ use git2::{DiffOptions, Oid, Repository};
 
 use crate::models::git::{
     GitBlameLine, GitBlameResult, GitCommit, GitCommitDetails, GitCommitRef, GitFileHistoryEntry,
-    GitLaneCell, GitLaneRow, GitLogPage, GitServiceError, LogSearchFilter,
+    GitLaneCell, GitLaneRow, GitLaneSemantic, GitLogPage, GitServiceError, LogSearchFilter,
 };
 use super::diff::convert_diff;
 use super::executor::open_repository;
+use super::lane_cache::{refs_fingerprint, LaneSemanticCache};
 
 fn commit_to_model(commit: &git2::Commit<'_>) -> GitCommit {
     let sha = commit.id().to_string();
@@ -278,12 +279,33 @@ fn collect_commit_refs(repo: &Repository) -> std::collections::HashMap<String, V
 ///   2. 消费 C：lanes[lane] = None；第一个父占原 lane，merge 的其余父占右侧空闲/新 lane。
 ///   3. 渲染：node = 本行 C 所在 lane（merge 多父 → merge 节点）；其余 lane 有等待者 → empty 贯穿线。
 ///   4. edge_down = 该 lane 下一行有内容（lanes[l] 有值）；merge 的其余父 lane 有 edge_up 指向 merge 节点 lane（斜线汇入）。
+/// 单行 lane 计算：给定拓扑序 commits（新→旧），分配泳道并生成格子
+///
+/// graph.c 式收缩（P2 增量，spec `plans/git-panel-p2-lane-collapse-spec.md`）：
+/// 在初版「单线 + 合并」基础上加入**列释放 + 收缩**语义：
+/// - 维护 `processed: HashSet<sha>`（本页已输出的 commit）；
+/// - 每行前置收缩：任何 lane 等待的 sha 已处理 → 释放为 None（消 ghost 竖线）；
+/// - 父占位时，若父已处理 → 不占长期等待列（防「同一父多列等待」列泄漏）。
+///
+/// 行结构 / GitLaneRow 协议不变，前端零改动。
 fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
+    use std::collections::HashSet;
+
     let mut lanes: Vec<Option<String>> = Vec::new();
     let mut rows: Vec<GitLaneRow> = Vec::new();
+    let mut processed: HashSet<String> = HashSet::new();
 
     for commit in commits {
         let is_merge = commit.parents.len() > 1;
+
+        // 0. 前置收缩：等待的 commit 已处理 → 释放该列（ghost 竖线消除）
+        for w in lanes.iter_mut() {
+            if let Some(sha) = w {
+                if processed.contains(sha) {
+                    *w = None;
+                }
+            }
+        }
 
         // 1. 定位 C 的泳道
         let lane = match lanes.iter().position(|w| w.as_deref() == Some(commit.sha.as_str())) {
@@ -315,14 +337,19 @@ fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
         }
         for (idx, p) in commit.parents.iter().enumerate() {
             if let Some(pl) = parent_lanes.get(idx) {
-                lanes[*pl] = Some(p.clone());
+                // 已处理的父 → 占位后立即置 None（不占长期等待列 → 防列泄漏）
+                if processed.contains(p) {
+                    lanes[*pl] = None;
+                } else {
+                    lanes[*pl] = Some(p.clone());
+                }
             }
         }
 
         // 3. 渲染本行
         let mut cells = Vec::new();
-        for l in 0..lanes.len() {
-            let has_down = lanes[l].is_some();
+        for (l, lane_wait) in lanes.iter().enumerate() {
+            let has_down = lane_wait.is_some();
             let node = if l == lane {
                 if is_merge {
                     "merge"
@@ -355,12 +382,18 @@ fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
             cells,
             refs: commit.refs.clone(),
         });
+
+        processed.insert(commit.sha.clone());
     }
 
     rows
 }
 
 /// 泳道图分页查询：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
+///
+/// 增量 log 缓存（spec `plans/git-panel-p2-lane-cache-spec.md`）：只缓存语义色全量
+/// map（跨页共享），键 = (repo, branch, HEAD commit sha, refs 指纹)。HEAD 未变 &
+/// refs 未变 → 命中缓存，语义计算从 O(可达 commit)×3 条 revwalk 降到 O(页内 commit)。
 pub fn get_log_with_lanes(
     path: &Path,
     limit: Option<usize>,
@@ -376,11 +409,13 @@ pub fn get_log_with_lanes(
 
     let limit = limit.unwrap_or(500);
     let skip = skip.unwrap_or(0);
+    let branch_name = branch.map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).unwrap_or_default();
 
     // refs 聚合一次遍历，O(1) 按 sha 查
     let refs_map = collect_commit_refs(&repo);
 
     let mut commits = Vec::new();
+    let mut walk_shas = Vec::new();
     for (idx, oid_result) in revwalk.enumerate() {
         if idx < skip {
             continue;
@@ -392,12 +427,202 @@ pub fn get_log_with_lanes(
         let commit = repo.find_commit(oid)?;
         let mut model = commit_to_model(&commit);
         model.refs = refs_map.get(&model.sha).cloned().unwrap_or_default();
+        walk_shas.push(model.sha.clone());
         commits.push(model);
     }
 
     let rows = compute_lanes(&commits);
 
-    Ok(GitLogPage { commits, rows })
+    // 增量 log 缓存：语义色按 (repo, branch, HEAD, refs 指纹) 缓存。页内按 sha 查 map，
+    // 避免每次打开都重跑三条 revwalk 集合构造。配置 b"branch_name" 也纳入键（目录隔离）。
+    let semantic = {
+        // 分支 tip 必须独立解析（walk_shas[0] 在 skip>0（load more）时是中间 commit，非真 tip）
+        let tip_sha = resolve_branch_tip(&repo, &branch_name);
+        let refs_fp = refs_fingerprint(&repo);
+
+        let cached = tip_sha.as_deref().and_then(|tip| {
+            LaneSemanticCache::load(path, &branch_name, tip, &refs_fp)
+        });
+
+        if let Some(map) = cached {
+            // 命中：O(页内) 查 map；缺失 sha 按 dim 保守处理（理论上不应发生）
+            walk_shas
+                .iter()
+                .map(|sha| GitLaneSemantic {
+                    kind: map.get(sha).cloned().unwrap_or_else(|| "dim".to_string()),
+                })
+                .collect()
+        } else {
+            // 未命中：计算全量 map（真 tip 出发）+ 原子写缓存
+            let map = compute_semantics_full(&repo, tip_sha.as_deref());
+            if let (Some(tip), refs_fp) = (tip_sha.as_deref(), &refs_fp) {
+                LaneSemanticCache::store(path, &branch_name, tip, refs_fp, &map);
+            }
+            let semantic: Vec<GitLaneSemantic> = walk_shas
+                .iter()
+                .map(|sha| GitLaneSemantic {
+                    kind: map.get(sha).cloned().unwrap_or_else(|| "dim".to_string()),
+                })
+                .collect();
+            semantic
+        }
+    };
+
+    Ok(GitLogPage {
+        commits,
+        rows,
+        semantic,
+    })
+}
+
+/// 独立解析「当前分支真 tip」：refs/heads/<b> > refs/remotes/<b> > revparse > HEAD。
+/// 返回 None 表示解析不出（空仓库 / detached / 异常）——此时不做缓存（语义本身也退化）。
+fn resolve_branch_tip(repo: &Repository, branch: &str) -> Option<String> {
+    if !branch.is_empty() {
+        for ref_name in [
+            format!("refs/heads/{}", branch),
+            format!("refs/remotes/{}", branch),
+        ] {
+            if let Ok(r) = repo.find_reference(&ref_name) {
+                if let Some(tip) = r.target() {
+                    // 分支 ref 必指向 commit（peel 防符号 ref 指向 tag）
+                    if let Ok(commit) = repo.find_commit(tip) {
+                        return Some(commit.id().to_string());
+                    }
+                }
+            }
+        }
+    }
+    // 带参数解析失败 / 无参数 → 回退 HEAD
+    if let Ok(head) = repo.head() {
+        if let Ok(commit) = head.peel_to_commit() {
+            return Some(commit.id().to_string());
+        }
+    }
+    None
+}
+
+/// P2 增量：语义色计算（服务端预计算，前端直接消费）
+///
+/// 输入三条 revwalk 可达集（每 commit O(1) 查集合）：
+/// - `main_headset`：`main`（或 `master`）可达的所有 commit sha（主干历史）
+/// - `remote_headset`：全部 `refs/remotes/*` 可达的 commit sha 并集（任何远程可达 = 已 push 过）
+/// - `branch_headset`：当前分支 tip 可达的 commit sha（当前分支自身历史）
+///
+/// 判定顺序（先命中即定，spec §2.2）：
+/// 1. `in main && !in branch`  → "merged"（已并入主干、当前分支不可达的历史，蓝灰）
+/// 2. `in remote && !in branch` → "dim"（他分支/远程可见但当前不可达，灰暗）
+/// 3. `in branch && !in remote` → "unpushed"（当前分支内、未 push 到任何远程，红）
+/// 4. `in branch && in remote`  → "local"（当前分支内、已同步远程，绿）
+/// 5. else                     → "dim"（孤立提交）
+///
+/// 单分支无远程：全部 in branch && in main && !in remote → 均判 unpushed（红，未 push）✅
+/// 单分支已 push：均 local（绿）✅
+///
+/// 全量版本：从「当前分支真 tip」出发，对**全部可达 commit** 生成 `HashMap<sha, kind>`。
+/// 这是增量 log 缓存的基础（跨页共享、与 skip 无关）。`tip_sha` 为 None（空仓库 /
+/// 解析不出）时返回空 map——此时没有页内 commit，语义自然为空。
+fn compute_semantics_full(
+    repo: &Repository,
+    tip_sha: Option<&str>,
+) -> std::collections::HashMap<String, String> {
+    let Some(tip_sha) = tip_sha else {
+        return std::collections::HashMap::new();
+    };
+
+    // 主干分支名：main 优先，其次 master，都没有则无 merged 判定
+    let main_ref = if repo.find_reference("refs/heads/main").is_ok() {
+        Some("refs/heads/main")
+    } else if repo.find_reference("refs/heads/master").is_ok() {
+        Some("refs/heads/master")
+    } else {
+        None
+    };
+
+    let main_headset = main_ref
+        .and_then(|r| revwalk_headset(repo, r).ok())
+        .unwrap_or_default();
+    let remote_headset = revwalk_remote_headset(repo);
+    let branch_headset = revwalk_headset_from_tip(repo, tip_sha);
+
+    let mut map = std::collections::HashMap::new();
+    // branch_headset 即「当前分支全部可达 commit」——遍历它生成全量 map
+    for sha in &branch_headset {
+        let in_main = main_headset.contains(sha.as_str());
+        let in_remote = remote_headset.contains(sha.as_str());
+        let in_branch = true; // 本循环即 branch 可达
+
+        let kind = if in_main && !in_branch {
+            "merged"
+        } else if in_remote && !in_branch {
+            "dim"
+        } else if in_branch && !in_remote {
+            "unpushed"
+        } else if in_branch && in_remote {
+            "local"
+        } else {
+            "dim"
+        };
+        map.insert(sha.clone(), kind.to_string());
+    }
+    map
+}
+
+/// 从指定 ref 起点收集全部可达 commit sha（revwalk，拓扑序，hide 无）
+fn revwalk_headset(repo: &Repository, ref_name: &str) -> Result<std::collections::HashSet<String>, GitServiceError> {
+    let mut rw = repo.revwalk()?;
+    rw.set_sorting(git2::Sort::TOPOLOGICAL)?;
+    rw.push_ref(ref_name)?;
+    let mut set = std::collections::HashSet::new();
+    for oid in rw {
+        set.insert(oid?.to_string());
+    }
+    Ok(set)
+}
+
+/// 从指定 commit sha 起点收集全部可达 commit sha（失败返回空集，不阻塞语义计算）
+fn revwalk_headset_from_tip(
+    repo: &Repository,
+    tip_sha: &str,
+) -> std::collections::HashSet<String> {
+    let mut rw = match repo.revwalk() {
+        Ok(rw) => rw,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    let _ = rw.set_sorting(git2::Sort::TOPOLOGICAL);
+    let oid = match git2::Oid::from_str(tip_sha) {
+        Ok(oid) => oid,
+        Err(_) => return std::collections::HashSet::new(),
+    };
+    if rw.push(oid).is_err() {
+        return std::collections::HashSet::new();
+    }
+    rw.flatten().map(|o| o.to_string()).collect()
+}
+
+/// 全部远程 refs 可达 commit sha 的并集（`refs/remotes/*`）
+fn revwalk_remote_headset(repo: &Repository) -> std::collections::HashSet<String> {
+    let mut set = std::collections::HashSet::new();
+    let Ok(references) = repo.references_glob("refs/remotes/*") else {
+        return set;
+    };
+    for reference in references.flatten() {
+        let Ok(obj) = reference.peel(git2::ObjectType::Commit) else {
+            continue;
+        };
+        let mut rw = match repo.revwalk() {
+            Ok(rw) => rw,
+            Err(_) => continue,
+        };
+        let _ = rw.set_sorting(git2::Sort::TOPOLOGICAL);
+        if rw.push(obj.id()).is_err() {
+            continue;
+        }
+        for oid in rw.flatten() {
+            set.insert(oid.to_string());
+        }
+    }
+    set
 }
 pub fn get_commit_details(
     path: &Path,
@@ -808,5 +1033,147 @@ mod tests {
             c.refs.iter().any(|r| r.name == "feature" && r.kind == "local")
         });
         assert!(has_local_feature, "feature 分支应有 local ref 装饰");
+    }
+
+    // ── P2 增量：语义着色 ────────────────────────────────────────────
+
+    /// 单分支无远程仓库 → 所有提交判定 unpushed（未 push 红）
+    #[test]
+    fn semantic_all_unpushed_when_no_remote() {
+        let (_tmp, repo_path) = build_lane_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        assert_eq!(page.semantic.len(), page.commits.len(), "semantic 与 commits 一一对应");
+        for (i, s) in page.semantic.iter().enumerate() {
+            assert_eq!(
+                s.kind, "unpushed",
+                "无远程仓库的提交 #{} (sha={}) 应为 unpushed，实际: {}",
+                i, page.commits[i].sha, s.kind
+            );
+        }
+    }
+
+    /// 构造带远程的仓库：本地分支领先/落后 origin/main，语义色应区分 unpushed/merged/local
+    ///
+    /// 拓扑：master 主线 A←B←C；从 C 建远程 origin/master 指向 C；
+    /// 继续在 master 提交 D←E（本地领先）；创建 refs/remotes/origin/feature 指向 C（他分支）；
+    /// HEAD=master 可达 A..E，origin/master=C。预期：
+    /// - E, D → unpushed（branch 可达、remote 不可达）
+    /// - C, B, A → merged（在 main (=master=C) 可达）？—— C 是 origin/master 指向，且 B/C/A
+    ///   可被 main 分支遍历；但 C 同时被 branch 可达。判定 in_main && !in_branch 才是 merged，
+    ///   C/B/A 都被 branch(master) 可达 → 走 in_branch && in_remote → local（绿）。
+    fn build_remote_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let repo_path = tmp.path().to_path_buf();
+        let repo = Repository::init(&repo_path).unwrap();
+        let sig = Signature::now("t", "t@t").unwrap();
+
+        let commit = |repo: &Repository, file: &str, content: &str, branch: &str| -> String {
+            std::fs::write(repo_path.join(file), content).unwrap();
+            let mut index = repo.index().unwrap();
+            index.add_path(std::path::Path::new(file)).unwrap();
+            index.write().unwrap();
+            let tree_id = index.write_tree().unwrap();
+            let tree = repo.find_tree(tree_id).unwrap();
+            let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
+            let parents: Vec<&git2::Commit> = parent.iter().collect();
+            repo.commit(Some(branch), &sig, &sig, content, &tree, &parents)
+                .unwrap()
+                .to_string()
+        };
+
+        let a = commit(&repo, "a.txt", "A", "refs/heads/master");
+        let b = commit(&repo, "b.txt", "B", "refs/heads/master");
+        let c = commit(&repo, "c.txt", "C", "refs/heads/master");
+
+        // origin/master 指向 C（远程同步基准）
+        let c_oid = git2::Oid::from_str(&c).unwrap();
+        repo.reference("refs/remotes/origin/master", c_oid, true, "remote master at C")
+            .unwrap();
+        // 远程他分支 origin/feature 指向 B（remote 可达但 branch 不可达 → dim 候选）
+        let b_oid = git2::Oid::from_str(&b).unwrap();
+        repo.reference("refs/remotes/origin/feature", b_oid, true, "remote feature at B")
+            .unwrap();
+
+        // 本地继续领先：D ← E
+        let _d = commit(&repo, "d.txt", "D", "refs/heads/master");
+        let _e = commit(&repo, "e.txt", "E", "refs/heads/master");
+        let _ = (a, c);
+
+        (tmp, repo_path)
+    }
+
+    /// master 主线 + 远程，语义色区分：
+    /// - E, D：branch 可达 + remote 不可达 → unpushed
+    /// - C, B：branch + remote 均可达（origin/master=C）→ local
+    /// - A：branch 可达 + remote 不可达（A 不在 origin/master 可达集）→ unpushed
+    ///   （A 在 C 之后，C 可达即 C..A 全可达，A 也应 remote 可达）→ 实际 A 也在 origin/master 可达 → local
+    #[test]
+    fn semantic_colors_unpushed_local() {
+        let (_tmp, repo_path) = build_remote_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        let by_msg: std::collections::HashMap<&str, &str> = page
+            .commits
+            .iter()
+            .zip(&page.semantic)
+            .map(|(c, s)| (c.message.as_str(), s.kind.as_str()))
+            .collect();
+
+        assert_eq!(by_msg.get("E"), Some(&"unpushed"), "E 未 push");
+        assert_eq!(by_msg.get("D"), Some(&"unpushed"), "D 未 push");
+        assert_eq!(by_msg.get("C"), Some(&"local"), "C 已推远程 local");
+        assert_eq!(by_msg.get("B"), Some(&"local"), "B 已推远程 local");
+        assert_eq!(by_msg.get("A"), Some(&"local"), "A 已推远程 local");
+    }
+
+    // ── P2 增量：lane 收缩（graph.c 式列释放） ────────────────────────
+
+    /// feature 完全合入主线后，历史 lane 应释放为 none（非 empty ghost 竖线）。
+    ///
+    /// build_lane_fixture 拓扑：A←B←C←feature(D←E)，M=merge(C,E)。
+    /// revwalk 序 M,E,D,C,B,A。E 在 lane1（merge 第二父列）等 D；D 消费 lane1 后等 C；
+    /// C 在主线 lane0 消费 → lane1 的 C 等待已被处理但本行尚未释放（C 本行渲染时 processed
+    /// 尚无 C）→ C 行 lane1 是 empty；到 B 行前置收缩释放 → B/A 行 lane1 应为 none。
+    #[test]
+    fn lanes_shrink_after_merge_released() {
+        let (_tmp, repo_path) = build_lane_fixture();
+        let page = get_log_with_lanes(&repo_path, Some(50), Some(0), None).unwrap();
+
+        let row_by_msg: std::collections::HashMap<&str, &GitLaneRow> = page
+            .rows
+            .iter()
+            .zip(&page.commits)
+            .map(|(r, c)| (c.message.as_str(), r))
+            .collect();
+
+        // E 之后主线继续，feature 历史列释放：B/A 行的 lane1 应为 none（无 ghost 竖线）
+        for msg in ["B", "A"] {
+            let row = row_by_msg[msg];
+            let lane1 = row.cells.iter().find(|c| c.lane == 1);
+            if let Some(cell) = lane1 {
+                assert_eq!(
+                    cell.node, "none",
+                    "{} 行 lane1 应释放为 none（feature 历史列已合入），实际: {}",
+                    msg, cell.node
+                );
+            }
+        }
+
+        // M 行的 merge 斜线语义保留：lane1（E 侧父）edge_up 指向 M 的 merge 节点 lane0
+        let m_row = row_by_msg["M"];
+        let m_lane = m_row
+            .cells
+            .iter()
+            .find(|c| c.node == "merge")
+            .map(|c| c.lane)
+            .expect("M 行应有 merge 节点");
+        let e_side = m_row.cells.iter().find(|c| c.lane == 1 && c.edge_up.is_some());
+        assert!(e_side.is_some(), "M 行 lane1 应有 edge_up 汇入");
+
+        // 列数不增长：所有行 lanes 长度 ≤ 3（active 主线 + feature + buffer），不随页累积
+        let max_lanes = page.rows.iter().map(|r| r.cells.len()).max().unwrap_or(0);
+        assert!(max_lanes <= 3, "列数不应超过 3（active+feature+buffer），实际: {}", max_lanes);
+        let _ = m_lane;
     }
 }

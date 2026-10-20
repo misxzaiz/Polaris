@@ -110,7 +110,7 @@ pub fn get_status(path: &Path) -> Result<GitRepositoryStatus, crate::models::git
 }
 
 /// 解析文件状态（重构版：合并多状态条目）
-fn parse_statuses(
+pub(super) fn parse_statuses(
     repo: &Repository,
 ) -> Result<FileStatuses, crate::models::git::GitServiceError> {
     let mut opts = StatusOptions::new();

@@ -62,4 +62,54 @@ describe('LaneGraph (P2 泳道图)', () => {
     expect(container.querySelectorAll('line').length).toBe(1)
     expect(container.querySelectorAll('circle').length).toBe(1)
   })
+
+  // ── P2 增量：语义着色 ─────────────────────────────────────────────
+
+  it('unpushed 语义 → 节点红（text-danger）', () => {
+    const row = makeRow([
+      { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
+    ])
+    const { container } = render(<LaneGraph row={row} semantic={{ kind: 'unpushed' }} />)
+    const circle = container.querySelector('circle')
+    expect(circle?.getAttribute('class')).toContain('text-danger')
+  })
+
+  it('local 语义 → 节点绿（text-emerald-500）', () => {
+    const row = makeRow([
+      { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
+    ])
+    const { container } = render(<LaneGraph row={row} semantic={{ kind: 'local' }} />)
+    const circle = container.querySelector('circle')
+    expect(circle?.getAttribute('class')).toContain('text-emerald-500')
+  })
+
+  it('merged 语义 → 节点蓝灰（text-text-secondary），整行不淡化', () => {
+    const row = makeRow([
+      { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
+    ])
+    const { container } = render(<LaneGraph row={row} semantic={{ kind: 'merged' }} />)
+    const circle = container.querySelector('circle')
+    expect(circle?.getAttribute('class')).toContain('text-text-secondary')
+    // merged 不是 dim，svg 保持 opacity-80
+    const svg = container.querySelector('svg')
+    expect(svg?.getAttribute('class')).toContain('opacity-80')
+  })
+
+  it('dim 语义 → 整行淡化 opacity-45', () => {
+    const row = makeRow([
+      { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
+    ])
+    const { container } = render(<LaneGraph row={row} semantic={{ kind: 'dim' }} />)
+    const svg = container.querySelector('svg')
+    expect(svg?.getAttribute('class')).toContain('opacity-45')
+  })
+
+  it('无 semantic（旧后端）→ 回退 text-primary', () => {
+    const row = makeRow([
+      { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
+    ])
+    const { container } = render(<LaneGraph row={row} />)
+    const circle = container.querySelector('circle')
+    expect(circle?.getAttribute('class')).toContain('text-primary')
+  })
 })

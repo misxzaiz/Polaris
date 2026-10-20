@@ -39,6 +39,7 @@ import type {
   GitFileHistoryEntry,
   GitLogSearchFilter,
   GitLaneRow,
+  GitLaneSemantic,
 } from '@/types/git'
 import { LaneGraph } from './LaneGraph'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
@@ -86,6 +87,16 @@ function indexLaneRows(rows: GitLaneRow[]): Record<string, GitLaneRow> {
   return map
 }
 
+/** P2 增量：语义色 semantic → sha 索引（与 laneRows 同构，LaneGraph 语义着色消费） */
+function indexSemantics(semantic: GitLaneSemantic[] | undefined, commits: GitCommitType[]): Record<string, GitLaneSemantic> {
+  const map: Record<string, GitLaneSemantic> = {}
+  if (!semantic) return map
+  for (let i = 0; i < semantic.length && i < commits.length; i++) {
+    map[commits[i].sha] = semantic[i]
+  }
+  return map
+}
+
 interface HistoryTabProps {
   targetCommitSha?: string | null
   onCommitSelected?: () => void
@@ -108,6 +119,8 @@ export function HistoryTab({
   const [commits, setCommits] = useState<GitCommitType[]>([])
   // P2 泳道图：sha → lane 行（loadCommits 一次带出，逐行渲染 LaneGraph）
   const [laneRows, setLaneRows] = useState<Record<string, GitLaneRow>>({})
+  // P2 增量：sha → 语义色（与 laneRows 同步，LaneGraph 语义着色消费）
+  const [semanticBySha, setSemanticBySha] = useState<Record<string, GitLaneSemantic>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -172,6 +185,8 @@ export function HistoryTab({
   const searchLog = useGitStore((s) => s.searchLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
   const getFileHistory = useGitStore((s) => s.getFileHistory)
+  const getStashList = useGitStore((s) => s.getStashList)
+  const stashListByWs = useGitStore((s) => s.stashListByWs)
   const branches = useGitStore((s) => s.branches)
   const getBranches = useGitStore((s) => s.getBranches)
   const cherryPick = useGitStore((s) => s.cherryPick)
@@ -184,7 +199,9 @@ export function HistoryTab({
   // 多仓库模式下生效的仓库路径：优先使用父级传入的子仓库路径，否则回退当前工作区
   const effectiveWorkspacePath = workspacePathProp ?? currentWorkspace?.path ?? ''
 
-  const currentBranchName = useGitRepoStatus(effectiveWorkspacePath)?.branch ?? ''
+  // P2 增量：语义着色 + WIP 虚拟节点 —— status（含 staged/unstaged/untracked 计数）来自 statuses 分片
+  const repoStatus = useGitRepoStatus(effectiveWorkspacePath)
+  const currentBranchName = repoStatus?.branch ?? ''
 
   const isWorkbench = variant === 'workbench'
   const isFileHistoryMode = fileHistoryPath !== null
@@ -379,15 +396,18 @@ export function HistoryTab({
 
     try {
       log.debug('Loading commits', { path: effectiveWorkspacePath, branch: selectedBranch || null })
-      // P2 泳道图：首屏走 getLogWithLanes（commits + rows 同一次返回）
+      // P2 泳道图：首屏走 getLogWithLanes（commits + rows + semantic 同一次返回）
       const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
       const result = page.commits
       log.debug('Loaded commits', { count: result.length })
 
       setCommits(result)
       setLaneRows(indexLaneRows(page.rows))
+      setSemanticBySha(indexSemantics(page.semantic, result))
       setHasMore(result.length === PAGE_SIZE)
       setTotalCount(result.length)
+      // P2 增量：泳道图 stash 虚拟节点 —— 与首屏并行拉 stash 列表（已有 action，失败静默）
+      void getStashList(effectiveWorkspacePath).catch(() => {})
       if (result.length === 0) {
         clearSelection()
         hasAutoSelectedRef.current = false
@@ -406,6 +426,7 @@ export function HistoryTab({
     clearSelection,
     effectiveWorkspacePath,
     getLogWithLanes,
+    getStashList,
     isWorkbench,
     loadCommitDetails,
     noWorkspaceError,
@@ -428,6 +449,7 @@ export function HistoryTab({
       } else {
         setCommits(prev => [...prev, ...result])
         setLaneRows(prev => ({ ...prev, ...indexLaneRows(page.rows) }))
+        setSemanticBySha(prev => ({ ...prev, ...indexSemantics(page.semantic, result) }))
         setTotalCount(prev => prev + result.length)
         setHasMore(result.length === PAGE_SIZE)
       }
@@ -1082,8 +1104,8 @@ export function HistoryTab({
           }`}
         >
           {laneRow ? (
-            // P2 泳道图：有 lane 数据用 LaneGraph，节点色随选择态
-            <LaneGraph row={laneRow} />
+            // P2 泳道图：有 lane 数据用 LaneGraph，节点色随选择态 + 语义着色
+            <LaneGraph row={laneRow} semantic={semanticBySha[commit.sha] ?? null} />
           ) : (
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
@@ -1150,6 +1172,70 @@ export function HistoryTab({
     )
   }
 
+  // ── P2 增量：泳道图顶部虚拟行（WIP / stash 节点上图）+ 语义色图例 ──
+  //
+  // 虚拟行不是 commit（无 lane 数据），是「工作区 / 储藏区」在图形上的投影：
+  // - WIP 行：status 有 staged/unstaged/untracked 时出现，绿色虚线空心圆（原型 268-272/513-514）
+  // - stash 行：stashListByWs[path] 非空时出现，紫色圆角方块（原型 515-516）
+  // 图例行：4 语义色说明（当前分支/未 push/已进主干/历史）+ WIP/stash 虚线说明
+  const stashEntries = stashListByWs?.[effectiveWorkspacePath] ?? []
+  const dirtyFiles = repoStatus
+    ? repoStatus.staged.length + repoStatus.unstaged.length + repoStatus.untracked.length
+    : 0
+  const renderVirtualLaneRows = () => {
+    const hasWip = dirtyFiles > 0
+    const hasStash = stashEntries.length > 0
+    if (!hasWip && !hasStash) return null
+
+    return (
+      <>
+        {/* 语义色图例（只在有虚拟行时展示，与泳道一起给读者立标尺） */}
+        <div className="flex items-center gap-2 px-3 pt-1.5 pb-0.5 text-[9px] text-text-tertiary flex-wrap">
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />{t('lane.legendLocal')}</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-danger inline-block" />{t('lane.legendUnpushed')}</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-text-secondary inline-block" />{t('lane.legendMerged')}</span>
+          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-text-tertiary inline-block" />{t('lane.legendDim')}</span>
+        </div>
+
+        {hasWip && (
+          <div
+            className="flex items-center gap-2 px-3 py-1.5 border-l-2 border-transparent hover:bg-background-hover cursor-default"
+            title={t('lane.wip')}
+          >
+            {/* WIP 节点：绿色虚线空心圆 */}
+            <svg width={28} height={18} className="shrink-0 opacity-80" aria-hidden>
+              <circle cx={14} cy={9} r={5.5} fill="var(--c-bg-base)" stroke="rgb(var(--c-success))" strokeWidth={1.6} strokeDasharray="3 2" />
+            </svg>
+            <span className="w-[52px] text-[11px] font-mono text-text-tertiary shrink-0">WIP</span>
+            <span className="flex-1 min-w-0 text-[13px] text-text-secondary truncate">
+              {t('lane.wipCount', { count: dirtyFiles })} · {t('lane.wip')}
+            </span>
+          </div>
+        )}
+
+        {hasStash && (() => {
+          const topStash = stashEntries[0]
+          if (!topStash) return null
+          return (
+            <div
+              className="flex items-center gap-2 px-3 py-1.5 border-l-2 border-transparent hover:bg-background-hover cursor-default"
+              title={topStash.message}
+            >
+              {/* stash 节点：紫色圆角方块 */}
+              <svg width={28} height={18} className="shrink-0 opacity-80" aria-hidden>
+                <rect x={9.5} y={4.5} width={9} height={9} rx={2.5} fill="var(--c-bg-base)" stroke="rgb(var(--c-primary))" strokeWidth={1.6} />
+              </svg>
+              <span className="w-[52px] text-[11px] font-mono text-text-tertiary shrink-0">stash</span>
+              <span className="flex-1 min-w-0 text-[13px] text-text-secondary truncate">
+                {stashEntries.length > 1 ? `stash@{0} · ${topStash.message}（+${stashEntries.length - 1}）` : `stash@{0} · ${topStash.message}`}
+              </span>
+            </div>
+          )
+        })()}
+      </>
+    )
+  }
+
   const renderCommitList = () => {
     // P1：精确搜索模式 —— 直接渲染后端搜索结果（不再本地过滤）
     const isExactMode = exactSearch && searchQuery.trim().length > 0
@@ -1193,6 +1279,7 @@ export function HistoryTab({
           </div>
         ) : (
           <>
+            {!isFileHistoryMode && !isExactMode && renderVirtualLaneRows()}
             {isFileHistoryMode
               ? filteredFileHistoryEntries.map(renderFileHistoryRow)
               : (isExactMode ? searchResults : filteredCommits).map(renderCommitRow)}
