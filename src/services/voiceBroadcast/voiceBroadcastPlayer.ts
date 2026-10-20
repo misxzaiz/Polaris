@@ -87,6 +87,12 @@ export class VoiceBroadcastPlayer {
     return this.pendingSynths.size > 0
   }
 
+  /** 队列中尚未就绪可播的句数（pending + synthesizing；不含 ready/播放中/done/failed）。
+   *  控制器用它做「段级提前量」：低水位时提前请求 AI 下一段，播放的同时生成。 */
+  get pendingCount(): number {
+    return this.queue.filter((q) => q.status === 'pending' || q.status === 'synthesizing').length
+  }
+
   get currentText(): string | null {
     return this.current?.text ?? null
   }

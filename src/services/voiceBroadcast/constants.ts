@@ -38,6 +38,13 @@ export const BASE64_SYNTH_TIMEOUT_MS = 25000
 /** AI 一段播报结束 → 自动请求下一段的衔接动作 */
 export const AUTO_ADVANCE_MS = 300
 
+/**
+ * 段级低水位（句数）：队列剩余未播句数 ≤ 此值时，提前请求 AI 生成下一段，
+ * 使「播当前段的同时生成下一段」无缝衔接，而非播空才等（消除段间静默）。
+ * 需 ≥ PREFETCH_DEPTH 且 ≥ 1：太低则窗口不足以覆盖 AI 生成耗时，仍会断。
+ */
+export const SEGMENT_LOOKAHEAD_SENTENCES = 3
+
 /** 播报方向预设模板（自由文本 + 模板） */
 export interface DirectionPreset {
   key: string

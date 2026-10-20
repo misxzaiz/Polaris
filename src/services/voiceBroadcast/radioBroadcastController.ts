@@ -23,7 +23,7 @@ import { pickLatestAssistantText } from '@/services/assistantTextUtils'
 import { cleanTextForSpeech } from '@/services/ttsTextFilter'
 import { VoiceBroadcastPlayer } from './voiceBroadcastPlayer'
 import { VoiceStopWatcher } from './voiceStopWatcher'
-import { promptForDirection } from './constants'
+import { promptForDirection, SEGMENT_LOOKAHEAD_SENTENCES } from './constants'
 import type {
   RadioBroadcastDirection,
   RadioBroadcastSnapshot,
@@ -216,6 +216,10 @@ export class RadioBroadcastController {
       },
       onEnd: () => {
         this.nowPlayingText = null
+        // 段级提前量：每句播完检查队列低水位（未就绪句数 ≤ 阈值），
+        // 低水位且无段生成在途 → 提前请求下一段，实现「播当前段时并行生成下一段」。
+        // 若已在上限/停止则不请求（reachedLimit 内一并处理）。
+        this.maybeAdvanceByLookahead()
       },
       onSynthError: (_item, error) => {
         log.warn('单句合成失败（跳过）', { error })
@@ -442,6 +446,28 @@ export class RadioBroadcastController {
     }
 
     this.requestNextSegment()
+  }
+
+  /**
+   * 段级提前量（lookahead）：句播完回调触发。队列未就绪句数 ≤ 阈值
+   * 且无段生成在途时，提前请求 AI 生成下一段——当前段还在播、后台已开始
+   * 生成下一段，消除「段播空 → 静默等 AI」的断档。
+   * requestNextSegment 自带 stopped/running/stopping/reachedLimit 守卫。
+   */
+  private maybeAdvanceByLookahead(): void {
+    if (this.stopped || !this.running) return
+    if (this.status === 'stopping' || this.status === 'idle' || this.status === 'error') return
+    if (this.reachedLimit()) return // 达上限不提前请求，交给 onQueueDrained 优雅停机
+    if (this.hasSegmentInFlight()) return
+    // 阈值判断：未就绪句数 ≤ SEGMENT_LOOKAHEAD_SENTENCES（含队列播空 = 0）
+    // 已就绪（ready）的句还会继续播，此窗口内生成下一段刚好无缝衔接。
+    if (this.player.pendingCount <= SEGMENT_LOOKAHEAD_SENTENCES) {
+      log.debug('段级提前量：低水位触发提前生成下一段', {
+        pendingCount: this.player.pendingCount,
+        segmentIndex: this.segmentIndex,
+      })
+      this.requestNextSegment()
+    }
   }
 
   /** 请求 AI 生成下一段 */

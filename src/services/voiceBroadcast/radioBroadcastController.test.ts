@@ -27,6 +27,8 @@ const { MockPlayer } = vi.hoisted(() => {
     enqueueSegment = vi.fn()
     queueLength = 0
     hasPendingSynth = false
+    /** 未就绪句数（段级提前量判断用）；默认 0 = 低水位，lookahead 触发 */
+    pendingCount = 0
     /** 回调捕获：测试驱动用 */
     callbacks: Record<string, (...args: unknown[]) => void> = {}
     constructor() {
@@ -362,5 +364,37 @@ describe('radioBroadcastController', () => {
     expect(player.enqueueSegment).toHaveBeenCalled()
     expect(radioBroadcastController.getStatus()).not.toBe('idle')
     expect(radioBroadcastController.getStatus()).not.toBe('stopping')
+  })
+
+  it('段级提前量：句播完低水位（未就绪 ≤ 阈值）→ 提前请求下一段（播放时并行生成）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // 先垫队列水位：queueLength>0 让首段 runSegment 收尾（afterSegmentFinished）不空转续段
+    player.pendingCount = 0
+    player.queueLength = 2 // 已有 2 句可播
+    // 等首段 runSegment 收尾（微任务清空，避免 hasSegmentInFlight 挡提前量）
+    await new Promise((r) => setTimeout(r, 0))
+    const callsBefore = mockWaitStreamEnd.mock.calls.length // 首段已在生成
+    // 一句播完（onEnd）→ 低水位触发提前请求下一段（waitStreamEnd 再次被调用）
+    player.callbacks.onEnd?.()
+    await vi.waitFor(() => {
+      expect(mockWaitStreamEnd.mock.calls.length).toBeGreaterThan(callsBefore)
+    })
+  })
+
+  it('段级提前量：高水位（未就绪句数充足）不提前请求', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    const callsBefore = mockWaitStreamEnd.mock.calls.length
+    player.pendingCount = 10 // 远超阈值 → 无需提前请求
+    player.queueLength = 5 // 有内容在播，堵住 afterSegmentFinished 空转续段路径
+    player.callbacks.onEnd?.()
+    expect(mockWaitStreamEnd.mock.calls.length).toBe(callsBefore)
   })
 })
