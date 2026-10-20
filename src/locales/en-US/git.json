@@ -653,6 +653,17 @@
     }
   },
 
+  "atomic": {
+    "title": "Atomic commit suggestion",
+    "engineHint": "Rule engine · 0 token",
+    "highConfidence": "High confidence",
+    "lowConfidence": "Low confidence",
+    "commitGroups": "Commit {{count}} group(s)",
+    "adjust": "AI regroup",
+    "adjustHint": "Low-confidence groups present — let AI re-cluster",
+    "suggestion": "AI note"
+  },
+
   "rebaseTodo": {
     "menuEntry": "Interactively rebase from here...",
     "title": "Interactive Rebase",

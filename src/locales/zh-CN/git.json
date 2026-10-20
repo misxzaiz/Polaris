@@ -653,6 +653,17 @@
     }
   },
 
+  "atomic": {
+    "title": "原子提交建议",
+    "engineHint": "规则引擎 · 0 token",
+    "highConfidence": "高置信",
+    "lowConfidence": "低置信",
+    "commitGroups": "提交 {{count}} 组",
+    "adjust": "AI 调整分组",
+    "adjustHint": "存在低置信分组，可让 AI 重新聚类",
+    "suggestion": "AI 备注"
+  },
+
   "rebaseTodo": {
     "menuEntry": "从此提交交互式变基...",
     "title": "交互式变基",
