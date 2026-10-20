@@ -244,6 +244,28 @@ describe('RadioBroadcastPanel — 播报中视图', () => {
     // 全程没有触发 start
     expect(mockStart).not.toHaveBeenCalled()
   })
+
+  it('配置视图（播报中）内嵌迷你控制条：可停止播报，无需返回播报视图', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now(), nowPlayingText: '正在朗读的句子' })
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByText('radioBroadcast.configView'))
+    // 配置视图内也能停止
+    fireEvent.click(screen.getByText('radioBroadcast.stop'))
+    expect(mockStop).toHaveBeenCalledTimes(1)
+    // 仍留在配置视图（可继续查看）
+    expect(screen.getByText('radioBroadcast.section.content')).toBeTruthy()
+  })
+
+  it('引擎选择在播报中可点击（修改下次生效，不 disabled）', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now() })
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByText('radioBroadcast.configView'))
+    // 兜底引擎列表：Claude / Simple（engineMetadataStore 空 → useEngineOptions 兜底）
+    const claudeBtn = screen.getByRole('button', { name: /Claude/i })
+    expect(claudeBtn.getAttribute('disabled')).toBeNull()
+    fireEvent.click(claudeBtn)
+    expect(claudeBtn.getAttribute('aria-pressed')).toBe('true')
+  })
 })
 
 describe('RadioBroadcastPanel — 停止反馈 Toast', () => {

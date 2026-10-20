@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useRadioBroadcast } from '@/hooks/useRadioBroadcast'
-import type { DirectionKind, VoiceId } from '@/services/voiceBroadcast/types'
+import type { DirectionKind, RadioBroadcastStatus, VoiceId } from '@/services/voiceBroadcast/types'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { useConfigStore } from '@/stores/configStore'
 import { SessionConfigSelector } from '@/components/Chat/session/SessionConfigSelector'
@@ -290,39 +290,14 @@ export function RadioBroadcastPanel() {
             </div>
           )}
 
-          <div className="flex items-center gap-2">
-            {rb.status === 'starting' || rb.status === 'stopping' ? (
-              <button
-                type="button"
-                disabled
-                className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[rgb(var(--c-bg-elevated))] px-3 py-2 text-[13px] text-text-secondary"
-              >
-                <Loader2 size={15} className="animate-spin" />
-                {STATUS_TEXT[rb.status]}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  onClick={handlePauseResume}
-                  aria-label={rb.isPlaying ? t('radioBroadcast.pause', { defaultValue: '暂停' }) : t('radioBroadcast.resume', { defaultValue: '继续' })}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[rgb(var(--c-bg-elevated))] px-3 py-2 text-[13px] text-text-primary transition-colors hover:bg-[rgb(var(--c-bg-hover))]"
-                >
-                  {rb.isPlaying ? <Pause size={15} /> : <Play size={15} />}
-                  {rb.isPlaying ? t('radioBroadcast.pause', { defaultValue: '暂停' }) : t('radioBroadcast.resume', { defaultValue: '继续' })}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleStop}
-                  aria-label={t('radioBroadcast.stop', { defaultValue: '停止' })}
-                  className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/15 px-3 py-2 text-[13px] text-red-400 transition-colors hover:bg-red-500/25"
-                >
-                  <Square size={15} />
-                  {t('radioBroadcast.stop', { defaultValue: '停止' })}
-                </button>
-              </>
-            )}
-          </div>
+          {/* 播放控制条（暂停/继续 + 停止） */}
+          <PlaybackControls
+            status={rb.status}
+            isPlaying={rb.isPlaying}
+            playingText={null}
+            onPauseResume={handlePauseResume}
+            onStop={handleStop}
+          />
         </div>
       )}
 
@@ -422,13 +397,12 @@ export function RadioBroadcastPanel() {
               <Bot size={12} />
               {t('radioBroadcast.section.model', { defaultValue: '模型' })}
             </div>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="flex flex-wrap gap-1.5">
               {engineOptions.map(({ id, label, Icon }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => setEngineId(id)}
-                  disabled={rb.status === 'starting' || rb.status === 'stopping' || rb.isActive}
                   title={getEngineFullName(id)}
                   aria-pressed={engineId === id}
                   className={clsx(
@@ -444,9 +418,7 @@ export function RadioBroadcastPanel() {
               ))}
             </div>
             <p className="mt-1 text-[11px] text-text-tertiary">
-              {rb.isActive
-                ? t('radioBroadcast.engineHintPlaying', { defaultValue: '播报中不可切换引擎，将在下次播报生效' })
-                : t('radioBroadcast.engineHint', { defaultValue: '默认跟随全局引擎；播报进行中不可切换。' })}
+              {t('radioBroadcast.engineHintPlaying', { defaultValue: '播报中修改将在下次播报生效；默认跟随全局引擎。' })}
             </p>
             <div className="mt-1">
               <SessionConfigSelector
@@ -544,6 +516,23 @@ export function RadioBroadcastPanel() {
             </div>
           </div>
 
+          {/* 播报中：配置视图内嵌迷你控制条（双视图任一时刻均可停止/暂停） */}
+          {rb.isActive && (
+            <div className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2.5">
+              <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-text-secondary">
+                <AudioWaveform size={12} />
+                {t('radioBroadcast.nowPlaying', { defaultValue: '正在朗读' })}
+              </div>
+              <PlaybackControls
+                status={rb.status}
+                isPlaying={rb.isPlaying}
+                playingText={rb.nowPlayingText}
+                onPauseResume={handlePauseResume}
+                onStop={handleStop}
+              />
+            </div>
+          )}
+
           <button
             type="button"
             onClick={handleStart}
@@ -569,6 +558,67 @@ export function RadioBroadcastPanel() {
             )}
           </button>
         </div>
+      )}
+    </div>
+  )
+}
+
+/** 播放控制条（暂停/继续 + 停止）——播报视图与配置视图（播报中）共用，双视图均可停止/暂停 */
+function PlaybackControls({
+  status,
+  isPlaying,
+  playingText,
+  onPauseResume,
+  onStop,
+}: {
+  status: RadioBroadcastStatus
+  isPlaying: boolean
+  /** 当前播放句缩略（配置视图迷你条显示） */
+  playingText: string | null
+  onPauseResume: () => void
+  onStop: () => void
+}) {
+  const { t } = useTranslation('common')
+
+  if (status === 'starting' || status === 'stopping') {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          disabled
+          className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[rgb(var(--c-bg-elevated))] px-3 py-2 text-[13px] text-text-secondary"
+        >
+          <Loader2 size={15} className="animate-spin" />
+          {STATUS_TEXT[status]}
+        </button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        onClick={onPauseResume}
+        aria-label={isPlaying ? t('radioBroadcast.pause', { defaultValue: '暂停' }) : t('radioBroadcast.resume', { defaultValue: '继续' })}
+        className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[rgb(var(--c-bg-elevated))] px-3 py-2 text-[13px] text-text-primary transition-colors hover:bg-[rgb(var(--c-bg-hover))]"
+      >
+        {isPlaying ? <Pause size={15} /> : <Play size={15} />}
+        {isPlaying ? t('radioBroadcast.pause', { defaultValue: '暂停' }) : t('radioBroadcast.resume', { defaultValue: '继续' })}
+      </button>
+      <button
+        type="button"
+        onClick={onStop}
+        aria-label={t('radioBroadcast.stop', { defaultValue: '停止' })}
+        className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-red-500/15 px-3 py-2 text-[13px] text-red-400 transition-colors hover:bg-red-500/25"
+      >
+        <Square size={15} />
+        {t('radioBroadcast.stop', { defaultValue: '停止' })}
+      </button>
+      {playingText && (
+        <span className="min-w-0 flex-1 truncate text-[11px] text-text-tertiary" aria-hidden>
+          {playingText}
+        </span>
       )}
     </div>
   )
