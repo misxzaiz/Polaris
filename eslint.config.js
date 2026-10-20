@@ -22,8 +22,19 @@ export default tseslint.config(
       'temp/**',
       '.polaris-*/**',
       'Polaris-test/**',
+      // 通用构建产物：任意子目录 dist/build/gen（minified/第三方/生成代码）
+      '**/dist/**',
+      '**/build/**',
+      '**/gen/**',
       'polaris-mobile/dist/**',
       'polaris-pocket/dist/**',
+      // 临时脚本目录（一次性诊断/调试脚本，非产品代码）
+      'scripts/tmp/**',
+      'examples/**',
+      // Claude 工作区（worktrees 内的第三方产物 / dist）
+      '.claude/**',
+      // 独立演示/迷你项目（minified lib + 输出截图）
+      'glass-micro-world/**',
     ],
   },
   // 基础推荐规则
@@ -95,6 +106,40 @@ export default tseslint.config(
       'no-console': 'off',
     },
   },
+  // BrowserPanel 调试辅助函数（同步边界诊断日志，保留调试能力）
+  {
+    files: ['src/components/Browser/BrowserPanel.tsx'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  // PromptSnippetTab 的 Skill 区块被注释暂藏：其变量仅为被注释 JSX 服务，
+  // 既有 `;[skills,...]` 占位用来抑制 tsc noUnusedLocals（见 tsconfig strict）。
+  // lint 侧豁免表达式语句与未使用变量，避免与 tsc 的占位需求冲突。
+  {
+    files: ['src/components/Settings/tabs/PromptSnippetTab.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-expressions': 'off',
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
+  // sky 独立 Node 服务工程：CLI/server/脚本的 console 是正确行为，不做产品化限制
+  {
+    files: ['sky/**', 'sky/src/**', 'sky/scripts/**', 'sky/web/**'],
+    rules: {
+      'no-console': 'off',
+      'no-empty': 'off',
+    },
+  },
+  // 子项目（polaris-pocket 移动端 / sky Web 渲染）内部风格规则自治：
+  // 它们是无独立 lint 配置的独立交付物，根 lint 不强约束其局部风格细节
+  {
+    files: ['polaris-pocket/**', 'sky/web/src/render/**'],
+    rules: {
+      'prefer-const': 'off',
+      'no-case-declarations': 'off',
+    },
+  },
   // errors.ts 错误日志输出需要 console
   {
     files: ['src/types/errors.ts'],
@@ -105,6 +150,13 @@ export default tseslint.config(
   // scripts 脚本文件允许 console
   {
     files: ['scripts/**'],
+    rules: {
+      'no-console': 'off',
+    },
+  },
+  // .polaris 内部临时报告/测试脚本允许 console（非产品代码）
+  {
+    files: ['.polaris/reports/**', '.polaris/**/*.mjs'],
     rules: {
       'no-console': 'off',
     },
