@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Polaris Git Workbench · PRD 交互原型</title>
+<style>
+:root{
+  --bg:#0e1116; --panel:#141922; --panel2:#191f2a; --panel3:#1f2632;
+  --border:#242c38; --border2:#2e3846;
+  --text:#d8dfe9; --muted:#8a97a6; --faint:#5d6874;
+  --accent:#4c8dff; --accent-soft:rgba(76,141,255,.12);
+  --cur:#e8c268; --green:#6fce8f; --remote:#a97fe8; --push:#f2636a;
+  --dim:#4d5866; --amber:#e2a94e; --purple:#a97fe8;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  font-family:"Segoe UI","Microsoft YaHei",system-ui,sans-serif;
+  background:var(--bg); color:var(--text); font-size:13px;
+  height:100vh; display:flex; flex-direction:column; overflow:hidden;
+}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-thumb{background:#2c3542;border-radius:6px}
+
+/* 顶栏 */
+#topbar{display:flex;align-items:center;gap:10px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--border);flex:none}
+#topbar .app{font-weight:600;color:var(--faint)}
+#topbar .title{font-weight:600;margin-right:6px}
+.branch-widget{display:flex;align-items:center;gap:8px;padding:4px 10px;border:1px solid var(--border2);border-radius:8px;background:var(--panel2)}
+.bw-name{font-weight:600}
+.bw-count{display:inline-flex;padding:0 6px;border-radius:5px;font-size:11px}
+.bw-up{color:var(--push);background:rgba(242,99,106,.12)}
+.bw-down{color:#9cc3ff;background:var(--accent-soft)}
+.pill{padding:4px 12px;border-radius:999px;border:1px solid var(--border2);background:transparent;color:var(--muted);cursor:pointer;font-size:12px}
+.pill:hover{border-color:var(--accent);color:var(--text)}
+.pill.active{background:var(--accent-soft);border-color:var(--accent);color:#fff}
+.spacer{flex:1}
+
+/* 主布局 */
+#main{flex:1;display:flex;min-height:0}
+.col{display:flex;flex-direction:column;min-height:0;min-width:0;position:relative}
+#col-left{width:230px;flex:none;border-right:1px solid var(--border);background:var(--panel)}
+#col-right{width:322px;flex:none;border-left:1px solid var(--border);background:var(--panel)}
+#col-center{flex:1;background:var(--panel2)}
+.scroll{overflow-y:auto;min-height:0}
+
+/* 左栏 */
+.branch-item{display:flex;align-items:center;gap:8px;padding:4px 14px;cursor:pointer;color:var(--muted)}
+.branch-item:hover{background:var(--panel2);color:var(--text)}
+.bdot{width:9px;height:9px;border-radius:50%;flex:none}
+.branch-item .bn{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1}
+.bstar{opacity:0;font-size:11px}
+.branch-item:hover .bstar{opacity:1;color:var(--amber)}
+.ai-mini{margin:8px 14px;padding:8px 10px;border:1px dashed var(--border2);border-radius:8px;color:var(--muted);font-size:11.5px;line-height:1.5}
+.ai-mini b{color:#8fe6ab;cursor:pointer}
+
+/* 中栏 */
+#searchbar{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--border);flex:none;flex-wrap:wrap}
+#searchbar input{flex:1;min-width:170px;background:var(--panel);border:1px solid var(--border2);border-radius:8px;padding:6px 10px;color:var(--text);outline:none;font-size:12.5px}
+#searchbar input:focus{border-color:var(--accent)}
+.chip{padding:3px 9px;border-radius:6px;border:1px solid var(--border2);font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:#fff}
+.legend{display:flex;gap:12px;padding:2px 12px 6px;color:var(--faint);font-size:11px;flex:none;align-items:center;flex-wrap:wrap}
+.lg{display:flex;align-items:center;gap:4px}
+.ldot{width:8px;height:8px;border-radius:50%}
+
+/* commit 行 */
+#graphlist{padding:4px 0}
+.commit{display:flex;cursor:pointer;min-height:34px;border-left:2px solid transparent}
+.commit:hover{background:var(--panel3)}
+.commit.sel{background:var(--accent-soft);border-left-color:var(--accent)}
+.gcell{width:58px;flex:none}
+.gcell svg{display:block}
+.cinfo{flex:1;min-width:0;padding:3px 8px 3px 4px}
+.subj{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+.meta{display:flex;gap:8px;color:var(--faint);font-size:11px;margin-top:1px;white-space:nowrap;overflow:hidden}
+.ref{display:inline-block;padding:0 7px;margin-right:4px;border-radius:5px;font-size:10.5px;font-weight:600;line-height:17px;vertical-align:1px}
+.ref.head{background:var(--cur);color:#000}
+.ref.local{background:var(--accent-soft);color:#9cc3ff;border:1px solid rgba(76,141,255,.4)}
+.ref.remote{background:rgba(169,127,232,.15);color:#c9a9f5;border:1px solid rgba(169,127,232,.4)}
+.ref.tagref{background:var(--panel3);color:var(--muted);border:1px solid var(--border2)}
+.aib{display:inline-block;padding:0 6px;border-radius:5px;font-size:10px;line-height:17px;vertical-align:1px;background:rgba(111,206,143,.12);color:#8fe6ab;border:1px solid rgba(111,206,143,.35);cursor:pointer}
+.commit.st-wip .subj{color:var(--muted);font-style:italic}
+.commit.st-dim .subj{color:var(--faint)}
+
+/* 提交条 */
+#commitbar{border-top:1px solid var(--border);padding:9px 12px;flex:none;background:var(--panel);position:relative}
+.ci-row{display:flex;gap:8px;align-items:flex-start}
+#ci{flex:1;background:var(--panel2);border:1px solid var(--border2);border-radius:8px;padding:7px 10px;color:var(--text);font-size:12.5px;min-height:32px;outline:none}
+#ci:focus{border-color:var(--accent)}
+#ci:empty:before{content:attr(data-ph);color:var(--faint)}
+.btn{padding:6px 14px;border-radius:8px;border:1px solid var(--border2);background:var(--panel2);color:var(--text);cursor:pointer;font-size:12.5px;white-space:nowrap}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+.btn.primary:hover{filter:brightness(1.12)}
+.btn.ai{background:rgba(111,206,143,.12);border-color:rgba(111,206,143,.4);color:#8fe6ab}
+.btn.ghost{border-color:transparent;color:var(--muted)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.ci-foot{display:flex;gap:14px;margin-top:7px;font-size:11.5px;color:var(--faint);align-items:center}
+label.ck{display:flex;gap:5px;align-items:center;cursor:pointer;white-space:nowrap}
+
+.ai-suggest{margin-top:7px;padding:7px 10px;border:1px dashed rgba(111,206,143,.35);border-radius:8px;background:rgba(111,206,143,.06);display:none;align-items:center;gap:10px;font-size:12px;color:var(--muted)}
+.ai-suggest .msg{color:#9fe3b3;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+.card{margin:8px 12px;padding:10px 12px;border:1px solid var(--border2);border-radius:10px;background:var(--panel2);font-size:12.5px}
+.card.ai{border-color:rgba(111,206,143,.35);background:rgba(111,206,143,.05)}
+.card h4{font-size:12px;display:flex;align-items:center;gap:6px;margin-bottom:7px}
+.card.ai h4{color:#8fe6ab}
+.groupline{display:flex;align-items:flex-start;gap:7px;padding:6px 2px;border-top:1px solid var(--border)}
+.groupline:first-of-type{border-top:none}
+.g-cb{margin-top:2px}
+.g-files{color:var(--faint);font-size:11px}
+.g-msg{color:var(--text)}
+
+/* 右栏 */
+.file-item{display:flex;align-items:center;gap:8px;padding:4px 14px;cursor:pointer;color:var(--muted)}
+.file-item:hover{background:var(--panel2);color:var(--text)}
+.fst{width:16px;text-align:center;flex:none;font-weight:700;font-size:11px}
+.fn{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px}
+.fsz{color:var(--faint);font-size:11px}
+.group-h{display:flex;align-items:center;gap:8px;padding:6px 14px;cursor:pointer;color:var(--muted);font-size:12px;background:var(--panel2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.group-h .gname{flex:1;font-weight:600}
+.group-h.conflict{background:rgba(242,99,106,.1);color:#f1979c}
+
+#detail{border-top:1px solid var(--border)}
+#detail .card{margin:8px 12px}
+.sha{font-family:Consolas,monospace;color:var(--faint);font-size:11px;font-weight:400}
+.dfile{padding:3px 0;color:var(--muted);cursor:pointer;font-size:12px}
+.dfile:hover{color:#9cc3ff}
+.reason{color:var(--faint);font-size:11.5px;margin-top:3px;line-height:1.45}
+
+#activity{border-top:1px solid var(--border);display:flex;flex-direction:column}
+.act{display:flex;gap:10px;padding:3px 14px;font-size:11px;color:var(--muted);font-family:Consolas,monospace}
+.act .t{color:var(--faint);flex:none;width:56px}
+.act .ms{color:var(--faint);margin-left:auto}
+
+/* toast */
+#toastzone{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:60;align-items:center}
+.toast{padding:9px 16px;border-radius:9px;background:var(--panel3);border:1px solid var(--border2);box-shadow:0 8px 24px rgba(0,0,0,.45);animation:tin .2s;max-width:520px}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}}
+
+/* 合并器 */
+#merger{display:none;flex:1;min-height:0;flex-direction:column}
+#merger.open{display:flex}
+.merge-head{display:flex;align-items:center;gap:10px;padding:8px 14px;border-bottom:1px solid var(--border);flex:none;flex-wrap:wrap}
+.merge-head .abort{border-color:rgba(242,99,106,.4);color:#f1979c}
+.mh-count{padding:2px 9px;border-radius:999px;background:rgba(242,99,106,.15);color:#f1979c;font-weight:700;font-size:11.5px}
+.mh-count.zero{background:rgba(111,206,143,.12);color:#8fe6ab}
+.mh-sem{color:var(--muted);font-size:12px}
+.hb{padding:2px 9px;border-radius:6px;border:1px solid var(--border2);background:transparent;color:var(--text);cursor:pointer;font-size:11px;white-space:nowrap}
+.hb:hover{border-color:#9cc3ff;color:#fff}
+.hb.ai{border-color:rgba(111,206,143,.45);color:#8fe6ab;background:rgba(111,206,143,.07)}
+.hb.accepted{background:var(--accent-soft);border-color:var(--accent);color:#fff}
+#mcolumns{flex:1;min-height:0;display:flex;gap:1px;background:var(--border)}
+.mcol{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--panel2);min-height:0}
+.mhead{padding:5px 10px;font-size:11px;font-weight:700;flex:none;display:flex;gap:8px;align-items:center;border-bottom:2px solid transparent}
+.mhead.ours{color:#9cc3ff;border-bottom-color:#9cc3ff}
+.mhead.res{color:#8fe6ab;border-bottom-color:#8fe6ab}
+.mhead.theirs{color:#c9a9f5;border-bottom-color:#c9a9f5}
+.mhead .ro{font-weight:400;color:var(--faint);margin-left:auto}
+.mbody{flex:1;overflow:auto;font-family:Consolas,monospace;font-size:12px;min-height:0}
+.ml{display:flex;white-space:pre;line-height:1.65;padding:0 8px}
+.ml .no{color:var(--faint);width:34px;margin-right:10px;user-select:none;flex:none;text-align:right}
+.ml.okt{background:rgba(111,206,143,.08)}
+.hunk{margin:8px;border:1px solid var(--border2);border-radius:9px;background:var(--panel2);flex:none}
+.hunk .hh{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11.5px;color:var(--muted);flex-wrap:wrap}
+.hunk .hh .b{font-weight:700;color:var(--text)}
+.hbtns{display:flex;gap:6px;margin-left:auto}
+.hconf{padding:8px 10px;font-family:Consolas,monospace;font-size:12px;white-space:pre-wrap;line-height:1.6}
+.hc-o{color:#9cc3ff}
+.hc-t{color:#c9a9f5}
+.hai{margin:0 8px 8px;padding:8px 10px;border:1px dashed rgba(111,206,143,.4);border-radius:8px;background:rgba(111,206,143,.06);font-size:12px;display:none}
+.hai.open{display:block}
+.hai .why{color:var(--faint);font-size:11.5px;margin-top:4px;line-height:1.5}
+.mfoot{padding:9px 14px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:center;flex:none}
+.mfoot .hint{color:var(--faint);font-size:11.5px}
+
+/* diff 预览 */
+#diffview{display:none;flex:1;min-height:0;flex-direction:column}
+#diffview.open{display:flex}
+.dl{display:flex;font-family:Consolas,monospace;font-size:12px;white-space:pre;line-height:1.6;padding:0 10px}
+.dl .dd{color:var(--faint);width:36px;flex:none;user-select:none}
+.dl.add{background:rgba(111,206,143,.1);color:#8fe6ab}
+.dl.del{background:rgba(242,99,106,.1);color:#f1979c}
+.hl-w{background:rgba(230,193,66,.3);border-radius:3px}
+
+/* 标注 */
+.ann{display:none}
+body.ann .ann{display:flex}
+.tag-ann{display:none;align-items:center;justify-content:center;position:absolute;z-index:30;width:18px;height:18px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;cursor:help;top:-6px;right:-6px;box-shadow:0 2px 8px rgba(0,0,0,.5)}
+[data-ann]{position:relative}
+body.ann [data-ann]{outline:1px dashed rgba(76,141,255,.4);outline-offset:-2px}
+body.ann .tag-ann{display:flex}
+.tip{position:fixed;z-index:70;max-width:300px;padding:9px 12px;border-radius:9px;display:none;background:#1c2430;border:1px solid var(--accent);box-shadow:0 10px 30px rgba(0,0,0,.5);font-size:12px;line-height:1.55}
+.tip b{color:#9cc3ff}
+
+/* undo 条 */
+#snapbar{display:none;flex:none;background:var(--panel);border-top:1px solid var(--border);padding:8px 16px;align-items:center;gap:12px}
+#snapbar.open{display:flex}
+
+/* 预算条 */
+#budget{display:flex;gap:16px;flex:none;padding:0 16px;border-top:1px solid var(--border);background:var(--panel);color:var(--faint);font-size:11px;line-height:30px;overflow:hidden;white-space:nowrap}
+#budget b{color:var(--muted)}
+.hidden{display:none!important}
+#graphscroll{flex:1}
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <span class="app">Polaris</span>
+  <span class="title">Git Workbench</span>
+  <div class="branch-widget">
+    <span class="bw-name">demo-feature</span>
+    <span class="bw-count bw-down">↓2</span>
+    <span class="bw-count bw-up">↑3</span>
+  </div>
+  <button class="pill" onclick="toast('Fetch：拉取后 AI-4 冲突预测卡片点亮（见右栏）——清单为确定性计算，仅解释耗 token')">Fetch</button>
+  <span class="spacer"></span>
+  <span style="color:var(--faint);font-size:12px">场景：</span>
+  <button class="pill active" data-sc="normal" onclick="setSc('normal')">常规浏览</button>
+  <button class="pill" data-sc="atomic" onclick="setSc('atomic')">AI-2 原子提交</button>
+  <button class="pill" data-sc="conflict" onclick="setSc('conflict')">冲突合并器</button>
+  <button class="pill" data-sc="undo" onclick="setSc('undo')">安全网(Undo)</button>
+  <button class="pill" onclick="toggleAnn()">评审标注</button>
+</div>
+
+<div id="main">
+  <!-- ══════ 左栏 ══════ -->
+  <div class="col" id="col-left" data-ann="0">
+    <div style="padding:10px 14px 4px;font-weight:700;font-size:11px;color:var(--faint);letter-spacing:.8px">BRANCHES</div>
+    <div class="scroll" style="flex:1">
+      <div class="branch-item">
+        <span class="bdot" style="background:var(--cur)"></span><span class="bn">demo-feature</span><span class="bstar">★</span>
+      </div>
+      <div class="branch-item">
+        <span class="bdot" style="background:var(--accent)"></span><span class="bn">main</span><span class="bstar">★</span>
+      </div>
+      <div class="branch-item">
+        <span class="bdot" style="background:var(--accent)"></span><span class="bn">fix/word-diff</span><span class="bstar">★</span>
+      </div>
+      <div class="branch-item">
+        <span class="bdot" style="background:var(--remote)"></span><span class="bn">origin/release/2.1</span>
+      </div>
+      <div class="ai-mini">✦ AI-8：检测到 3 个 fixup! 提交、分支未 push —— <b onclick="toast('已生成 rebase TODO 预览（面板化拖拽，不开编辑器）')">生成 rebase 计划</b></div>
+      <div class="ai-mini" style="border-color:rgba(230,193,66,.35)">
+        右键任意分支：<b onclick="toast('Smart Checkout 三选：shelve→checkout→unshelve（IDEA 规范）')">Smart Checkout 演示</b> · 删除分支可恢复（保 hash）
+      </div>
+    </div>
+    <div style="border-top:1px solid var(--border);padding:6px 0 8px">
+      <div class="branch-item" onclick="toast('Reflog 视图：reset/checkout/commit 历史全可见，一键恢复丢失分支（IDEA 无此 UI）')">
+        <span style="color:var(--faint);width:14px">⌛</span><span class="bn">Reflog · 操作流水</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ 中栏 ══════ -->
+  <div class="col" id="col-center">
+    <div id="searchbar" data-ann="1">
+      <input id="q" placeholder="搜索消息 / hash / 正则…" oninput="renderGraph()">
+      <span class="chip" onclick="chip(this)">Branch ▾</span>
+      <span class="chip" onclick="chip(this)">User ▾</span>
+      <span class="chip" onclick="chip(this)">Path ▾</span>
+      <span class="chip" onclick="chip(this)">正则</span>
+      <span class="chip" onclick="chip(this)">No-Merges</span>
+    </div>
+    <div class="legend">
+      <span class="lg"><span class="ldot" style="background:var(--cur)"></span>当前分支头</span>
+      <span class="lg"><span class="ldot" style="background:var(--push)"></span>未 push（语义色）</span>
+      <span class="lg"><span class="ldot" style="background:var(--accent)"></span>本地</span>
+      <span class="lg"><span class="ldot" style="background:var(--remote)"></span>远程</span>
+      <span class="lg"><span class="ldot" style="background:var(--dim)"></span>已进 main（灰化）</span>
+      <span class="lg"><span class="ldot" style="outline:1.5px dashed var(--green);outline-offset:1px"></span>WIP / stash 节点上图</span>
+    </div>
+    <div class="scroll" id="graphscroll">
+      <div id="graphlist"></div>
+      <button id="loadmore" style="display:block;margin:6px auto 14px;padding:5px 16px;border-radius:8px;border:1px dashed var(--border2);background:transparent;color:var(--faint);cursor:pointer;font-size:12px"
+        onclick="toast('已加载下一页 500 commits · 增量缓存命中 &lt;80ms（Rust 分页 + 泳道预计算）')">↓ load more · 500/页</button>
+    </div>
+
+    <!-- diff 预览 -->
+    <div id="diffview">
+      <div class="merge-head">
+        <b id="dv-file" style="color:var(--text)">src/…</b>
+        <span style="color:var(--faint);font-size:11.5px">+12 −4 · 行级选区可 stage（Sublime 式一等公民）</span>
+        <span style="flex:1"></span>
+        <button class="btn ghost" onclick="closeDiff()">✕ 返回 graph</button>
+      </div>
+      <div class="mbody" id="diffbody"></div>
+    </div>
+
+    <!-- 合并器 -->
+    <div id="merger">
+      <div class="merge-head" data-ann="3">
+        <b style="color:var(--text)">DiffsControl.tsx → 三方合并</b>
+        <span class="mh-count" id="mhcount">未解决 2</span>
+        <span class="mh-sem" id="mhsem">冲突源：merge · theirs=传入</span>
+        <span style="flex:1"></span>
+        <span class="hb" onclick="toast('Resolve simple conflicts：同行非交叠编辑一键合入（IDEA 同名能力）')">Resolve simple</span>
+        <span class="hb abort" style="border:1px solid rgba(242,99,106,.4);color:#f1979c" onclick="abortMerge()">Abort</span>
+      </div>
+      <div id="mcolumns">
+        <div class="mcol">
+          <div class="mhead ours">OURS（本地）<span class="ro">read-only</span></div>
+          <div class="mbody" id="mc-ours"></div>
+        </div>
+        <div class="mcol">
+          <div class="mhead res">RESULT（中央可编辑）</div>
+          <div class="mbody" id="mc-res">
+            <div class="hunk" id="hk-0"></div>
+            <div class="hunk" id="hk-1"></div>
+            <div class="ml okt"><span class="no">78</span>export function applyRange(file, head) {</div>
+            <div class="ml okt"><span class="no">79</span>  const patch = buildPatch(file)</div>
+            <div class="ml okt"><span class="no">80</span>  return stagePatch(patch, head)</div>
+            <div class="ml okt"><span class="no">81</span>}</div>
+          </div>
+        </div>
+        <div class="mcol">
+          <div class="mhead theirs">THEIRS（传入）<span class="ro">read-only</span></div>
+          <div class="mbody" id="mc-theirs"></div>
+        </div>
+      </div>
+      <div class="mfoot">
+        <span class="hb" style="border-color:var(--accent);color:#9cc3ff" onclick="toast('Apply All Non-Conflicting：非冲突块全部纳入并自动 stage（IDEA 同名能力）')">Apply All Non-Conflicting</span>
+        <span class="hint">解决后直落 staging（少一步 manual add）</span>
+        <span style="flex:1"></span>
+        <button class="btn primary" id="done-btn" onclick="completeMerge()" disabled>Complete Merge</button>
+      </div>
+    </div>
+
+    <!-- 提交条 -->
+    <div id="commitbar" data-ann="2">
+      <div class="ci-row">
+        <div id="ci" contenteditable="true" data-ph="提交信息（Conventional Commits）…" spellcheck="false"></div>
+        <button class="btn primary" onclick="doCommit()">Commit</button>
+        <button class="btn ai" onclick="genMsg()">✦ AI 建议 ▾</button>
+      </div>
+      <div class="ci-foot">
+        <label class="ck"><input type="checkbox"> amend ▾<span style="color:var(--faint)">（可选任意本地 commit）</span></label>
+        <label class="ck"><input type="checkbox" checked onchange="toast(this.checked?'Review 门已开启：提交后 15s 内出非阻塞报告（⚡轻引擎）':'Review 门已关闭')"> 提交后 Review（AI-3 ⚡）</label>
+        <span style="margin-left:auto;color:var(--faint)" id="wipbadge"></span>
+      </div>
+      <div class="ai-suggest" id="ai-sugg">
+        <span>✦ 建议（可追问微调）：</span>
+        <span class="msg">fix(git): 预测清单空数组导致 fetch 卡片重置</span>
+        <span class="chip on" onclick="takeMsg()">采用</span>
+      </div>
+      <div class="card ai" id="atomiccard" style="display:none">
+        <h4>✦ AI-2 · 原子提交建议 <span style="margin-left:auto;color:var(--faint);font-size:11px;font-weight:400">⚡⚡ 逐组确认才执行</span></h4>
+        <div class="groupline"><input class="g-cb" type="checkbox" checked>
+          <div><div class="g-msg">fix(merge): 未解决计数随区块变更更新</div>
+          <div class="g-files">mergeCounts.ts · DiffsControl.tsx · 2 个文件</div></div></div>
+        <div class="groupline"><input class="g-cb" type="checkbox" checked>
+          <div><div class="g-msg">feat(parser): 冲突标记解析产出 hunks 结构</div>
+          <div class="g-files">conflictParser.ts · <span style="color:#8fe6ab">AI 判定为独立语义改动</span></div></div></div>
+        <div style="display:flex;gap:8px;margin-top:8px">
+          <button class="btn primary" id="atomic-go" onclick="execGroups()">确认执行 2/2 组</button>
+          <button class="btn ghost" onclick="toast('已反馈给 git-atomic 会话，AI 重排分组（同 commit-message 会话范式）')">✦ 调整分组</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════ 右栏 ══════ -->
+  <div class="col" id="col-right">
+    <div class="scroll" style="flex:1" data-ann="4">
+      <div class="group-h conflict" id="conflict-h" onclick="openMerge()">
+        ⚠️ <span class="gname">Merge Conflicts</span><span id="c-n" style="color:#f1979c;font-weight:700">2</span>
+      </div>
+      <div class="file-item" onclick="openMerge()">
+        <span class="fst" style="color:var(--push)">|C</span><span class="fn">src/components/Diff/DiffsControl.tsx</span>
+        <span class="fsz" style="color:#f1979c">解决 →</span></div>
+      <div class="file-item" onclick="openMerge()">
+        <span class="fst" style="color:var(--push)">|C</span><span class="fn">src-tauri/src/services/git/diff.rs</span>
+        <span class="fsz" style="color:#f1979c">解决 →</span></div>
+      <div class="group-h" style="border-top:none"><input type="checkbox"> <span class="gname">已暂存 (2)</span></div>
+      <div class="file-item" onclick="openDiff(1, 34)"><span class="fst" style="color:#9cc3ff">M</span><span class="fn">src/services/gitCache.ts</span><span class="fsz">+34</span></div>
+      <div class="file-item" onclick="openDiff(2, 88)"><span class="fst" style="color:#8fe6ab">A</span><span class="fn">src/services/atomicCommit.ts</span><span class="fsz">+88 −4</span></div>
+      <div class="group-h" style="border-bottom:none"><input type="checkbox"> <span class="gname">未暂存 (3)</span></div>
+      <div class="file-item" onclick="openDiff(3, 6)"><span class="fst" style="color:#9cc3ff">M</span><span class="fn">src/components/GitPanel/index.tsx</span><span class="fsz">+6 −2</span></div>
+      <div class="file-item" onclick="discardDemo()"><span class="fst" style="color:var(--amber)">U</span><span class="fn">notes/graph-algorithm.md</span><span class="fsz" style="color:var(--amber)">discard 演示 →</span></div>
+      <div class="file-item" onclick="toast('deleted 文件 discard：垃圾桶语义，受快照保护')"><span class="fst" style="color:var(--faint)">D</span><span class="fn">scripts/old-fetch.sh</span></div>
+
+      <div class="card ai" id="reviewcard" style="display:none">
+        <h4>✦ AI-3 · 提交 Review <span style="margin-left:auto;color:var(--faint);font-size:11px;font-weight:400">⚡ 后台 · 非阻塞</span></h4>
+        <div style="color:var(--muted);line-height:1.7">
+          ⚠ TODO(fixme) 残留 ×2 <span style="color:var(--faint)">· gitCache.ts:14, 88</span><br>
+          ✉ 疑似密钥字符串 "sk-…" <span style="color:var(--faint)">· 建议移入 config</span><br>
+          <span style="color:var(--faint)">点击项跳文件 · 不阻塞本次提交</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 详情 -->
+    <div id="detail" style="flex:none;max-height:48%;display:flex;flex-direction:column;border-top:1px solid var(--border)">
+      <div class="scroll" style="flex:1">
+        <div style="padding:9px 14px 2px;font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--faint)">COMMIT DETAILS <span class="sha" style="margin-left:auto;float:right" id="d-sha">3f2a10c</span></div>
+        <div class="card">
+          <div style="font-weight:600" id="d-subj"></div>
+          <div class="reason" id="d-meta"></div>
+          <div style="margin-top:8px" id="d-files"></div>
+        </div>
+        <div class="card ai" id="conflict-predict" style="display:none" data-ann="6">
+          <h4>✦ AI-4 · 冲突预测 <span style="margin-left:auto;color:var(--faint);font-size:11px;font-weight:400">清单=确定计算 · 解释=⚡⚡</span></h4>
+          <div style="color:var(--muted);line-height:1.7">
+            ↓2 commits 涉及文件 ∩ 本地 modified：<br>
+            <span style="color:var(--push)">▸ DiffsControl.tsx</span>
+            <span style="color:var(--push)">▸ diff.rs</span><br>
+            <span style="color:var(--faint)">风险高 · 建议：先 commit 本地 WIP 再 pull（解释已按 token 预算裁剪）</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 操作流水 -->
+    <div id="activity" style="flex:none;max-height:26%" data-ann="5">
+      <div style="padding:9px 14px 2px;font-size:11px;font-weight:700;letter-spacing:.8px;color:var(--faint)">操作流水 ACTIVITY</div>
+      <div class="scroll" id="actlist" style="max-height:120px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Undo 快照条 -->
+<div id="snapbar">
+  <span style="color:var(--amber)">🛡</span>
+  <span style="color:var(--muted)">已快照 5 个文件 → <b style="color:var(--text)">git-backups/ws-1/2026-10-19T10-42/</b>（快照覆盖率红线：任何 hard 路径先快照）</span>
+  <span style="flex:1"></span>
+  <button class="btn" onclick="restoreSnap()">↩ 恢复快照</button>
+  <button class="btn ghost" onclick="closeSnap()">✕</button>
+</div>
+
+<div id="budget">
+  <span><b>性能预算</b></span>
+  <span>首图 p50 &lt;300ms · Rust 泳道</span>
+  <span>热开 &lt;80ms · 增量缓存</span>
+  <span>60fps · max-lanes 12</span>
+  <span>AI 停写 ≤1s 可见（watcher 800ms）</span>
+  <span>cap.git：per-repo 串行队列 + taskId 可取消</span>
+  <span style="margin-left:auto;color:var(--faint)">原型 · 数据为 mock · 配套 plans/git-panel-prd.md</span>
+</div>
+
+<div id="toastzone"></div>
+<div class="tip" id="tipbox"></div>
+
+<script>
+'use strict';
+/* ════════ mock 数据 ════════ */
+const COMMITS = [
+ {sha:'wip', subj:'（未提交改动 · WIP 节点上图，具独立 diff）', author:'—', time:'刚刚', lane:1, wt:'wip', refs:['WIP'],
+  info:'5 files · +52 −30 · 与右栏一致', files:null, g:{v:[1], n:'wip'}},
+ {sha:'stash', subj:'stash@{0} WIP on demo-feature（stash 紫点上图）', author:'—', time:'1 小时前', lane:1, wt:'stash', refs:[],
+  info:'stash list · pop / apply / show', files:null, g:{v:[1], n:'stash'}},
+ {sha:'3f2a10c', subj:'feat(git): 冲突预测卡片挂 fetch 入口', author:'AI-Daemon', time:'昨天 22:14', lane:1, wt:'unpushed',
+  refs:['HEAD → demo-feature'], badge:'AI-4', info:'AI 产出 · 可跳转会话', files:null, g:{v:[1,2], n:'unpushed'}},
+ {sha:'8ce55b1', subj:'fix(merge): 未解决计数随区块变更常驻', author:'AI-Daemon', time:'昨天 21:03', lane:1, wt:'unpushed',
+  refs:[], badge:'P3-1', info:'…', files:null, g:{v:[1,2], n:'unpushed'}},
+ {sha:'cc09d21', subj:"merge branch 'main' into demo-feature", author:'You', time:'昨天 20:41', lane:1, wt:'merge', refs:[],
+  info:'右键可 Show Changes to Parents 回审计「当初怎么解的」', files:null, g:{v:[1], n:'merge', ent:[[2,1]]}},
+ {sha:'b41f7a0', subj:'chore: bump deps (react-virtuoso)', author:'You', time:'昨天 19:30', lane:2, wt:'local', refs:['main'],
+  info:'…', files:null, g:{v:[1,2], n:'local'}},
+ {sha:'771d3aa', subj:'fix: 大文件 diff 降级阈值调优', author:'You', time:'昨天 17:10', lane:1, wt:'local', refs:['fix/word-diff'],
+  info:'…', files:null, g:{v:[1,2], n:'local'}},
+ {sha:'5510ee2', subj:'fix: word diff 词级高亮段落渲染', author:'You', time:'昨天 16:52', lane:1, wt:'local', refs:[],
+  info:'…', files:null, g:{v:[1,2], n:'local', lea:[[1,2]]}},
+ {sha:'ee02c44', subj:"merge branch 'fix/word-diff'", author:'You', time:'昨天 15:00', lane:2, wt:'merge', refs:[],
+  info:'…', files:null, g:{v:[2], n:'merge', ent:[[1,2]]}},
+ {sha:'d771711', subj:'feat: status 刷新改事件驱动（file_watcher）', author:'You', time:'周二 11:08', lane:2, wt:'local', refs:['origin/main'],
+  info:'…', files:null, g:{v:[2], n:'local'}},
+ {sha:'9c0f330', subj:'chore: 初始仓库（演示数据）', author:'You', time:'周一 09:00', lane:2, wt:'dim', refs:[],
+  info:'…', files:null, g:{v:[2], n:'dim'}},
+];
+
+const HUNKS = [
+ {id:0, title:'#1 · 两处冲突 · 双方共改',
+  ours:'  const count = total - resolved\n  if (count > 0) openBar(count)',
+  theirs:'  useEffect(() => updBar(), [conflictTick])',
+  ai:'建议 OURS：fetch 流程在事件订阅里维护 count，与 v2 事件模型一致；THEIRS 为旧轮询写法，丢弃即对齐「不轮询」预算',
+  done:null},
+ {id:1, title:'#2 · 两处冲突 · 双方共改',
+  ours:"  if (file.conflicts === 0) stage('auto')",
+  theirs:"  await stage(typeof file.conflicts === 'number' ? 'auto' : 'prompt')",
+  ai:'建议 THEIRS：保留判空防护的版本，OURS 丢约束可致空数组误 stage（即 AI-1 修的 bug 反例）',
+  done:null},
+ {id:2, title:'#3 · 非冲突单侧改动', ours:'', theirs:'  import { tick } from "@/services/clock"',
+  ai:'', done:'right'},
+];
+
+/* ════════ 泳道渲染 ════════ */
+const LANEW = 14, CW = 58, CH = 34;
+const NODE_COLOR = { wip:'#6fce8f', stash:'#a97fe8', unpushed:'#f2636a', merge:'#6fce8f', local:'#4c8dff', dim:'#4d5866' };
+function laneX(l){ return 8 + (l-1)*LANEW }
+function laneColor(c, l){ return (l===1 && c.g.n==='unpushed') ? 'rgba(242,99,106,.55)' : 'rgba(76,141,255,.45)' }
+function esc(t){ return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') }
+
+function renderRow(c, sel){
+  let s = '<div class="commit st-'+c.wt+(sel?' sel':'')+'" onclick="pick(\''+c.sha+'\')">';
+  s += '<div class="gcell"><svg width="'+CW+'" height="'+CH+'">';
+  c.g.v.forEach(function(l){
+    var y1 = 0, y2 = CH;
+    if(c.g.ent && c.g.ent.some(function(e){return e[0]===l})) y1 = CH/2;
+    if(c.g.lea && c.g.lea.some(function(e){return e[0]===l})) y2 = CH/2;
+    if(l===c.lane){ y1 = 0; y2 = CH; }
+    if(y2>y1) s += '<line x1="'+laneX(l)+'" y1="'+y1+'" x2="'+laneX(l)+'" y2="'+y2+'" stroke="'+laneColor(c,l)+'" stroke-width="1.5"'+(c.wt==='dim'?' opacity=".45"':'')+'/>';
+  });
+  if(c.g.ent) c.g.ent.forEach(function(e){
+    var x1=laneX(e[0]), x2=laneX(e[1]), h=CH/2;
+    s += '<path d="M '+x1+' 0 C '+x1+' '+h+', '+x2+' '+h+', '+x2+' '+CH+'" fill="none" stroke="'+laneColor(c,e[1])+'" stroke-width="1.5"/>';
+  });
+  if(c.g.lea) c.g.lea.forEach(function(e){
+    var x1=laneX(e[0]), x2=laneX(e[1]), h=CH/2;
+    s += '<path d="M '+x1+' '+CH+' C '+x1+' '+h+', '+x2+' '+h+', '+x2+' 0" fill="none" stroke="'+laneColor(c,e[0])+'" stroke-width="1.5"/>';
+  });
+  var x = laneX(c.lane), y = CH/2, col = NODE_COLOR[c.wt] || '#4c8dff';
+  if(c.wt==='wip'){
+    s += '<circle cx="'+x+'" cy="'+y+'" r="5.5" fill="var(--panel2)" stroke="#6fce8f" stroke-width="1.6" stroke-dasharray="3 2"/>';
+  } else if(c.wt==='stash'){
+    s += '<rect x="'+(x-4.5)+'" y="'+(y-4.5)+'" width="9" height="9" rx="2.5" fill="var(--panel2)" stroke="#a97fe8" stroke-width="1.6"/>';
+  } else {
+    s += '<circle cx="'+x+'" cy="'+y+'" r="4.5" fill="'+col+'"/>';
+  }
+  s += '</svg></div><div class="cinfo"><div class="subj">';
+  c.refs.forEach(function(r){
+    var cls = r==='WIP' ? 'tagref' : (r.indexOf('origin')===0 ? 'remote' : (r.indexOf('HEAD')===0 ? 'head' : 'local'));
+    s += '<span class="ref '+cls+'">'+esc(r)+'</span>';
+  });
+  s += esc(c.subj);
+  if(c.badge) s += ' <span class="aib" onclick="event.stopPropagation();toast(\'\u2726 '+c.badge+' 卡片见右栏（演示入口）\')">✦'+c.badge+'</span>';
+  s += '</div><div class="meta"><span>'+(c.sha==='wip'||c.sha==='stash'?'—':c.sha)+'</span><span>'+esc(c.author)+'</span><span>'+esc(c.time)+'</span><span style="color:#566a80">'+esc(c.info||'')+'</span></div></div></div>';
+  return s;
+}
+
+/* ════════ 状态 ════════ */
+var SEL = '3f2a10c';
+var nConf = 2;      // 未解决冲突
+var verdict = {};   /* hunk 采纳记录 */
+
+function renderGraph(){
+  var q = document.getElementById('q').value.trim().toLowerCase();
+  var html = COMMITS.filter(function(c){
+    if(!q) return true;
+    return c.subj.toLowerCase().indexOf(q)>=0 || c.sha.indexOf(q)>=0 || c.author.toLowerCase().indexOf(q)>=0;
+  }).map(function(c){ return renderRow(c, c.sha===SEL) }).join('');
+  document.getElementById('graphlist').innerHTML = html || '<div style="padding:20px;color:var(--faint)">无匹配（正则语法与 branch1..branch2 范围过滤接入后生效）</div>';
+}
+
+function pick(sha){
+  SEL = sha; renderGraph();
+  var c = null;
+  for(var i=0;i<COMMITS.length;i++){ if(COMMITS[i].sha===sha){ c=COMMITS[i]; break } }
+  if(!c) return;
+  document.getElementById('d-sha').textContent = (c.sha==='wip'||c.sha==='stash') ? '—' : c.sha;
+  document.getElementById('d-subj').textContent = c.subj;
+  document.getElementById('d-meta').textContent = c.author+' · '+c.time+' · '+(c.wt==='unpushed'?'⚠ 未 push':c.wt);
+  var html;
+  if(sha==='wip'){
+    html = '<div class="dfile" style="cursor:default">graph 上一等公民：WIP 具独立 diff，可.drag 到分支（右栏未暂存区一致）</div>';
+    document.getElementById('wipbadge').textContent = 'WIP 已上图';
+  } else if(sha==='stash'){
+    html = '<div class="dfile" onclick="toast(\'stash 面板：apply(保留) / pop / show preview / Unstash to new branch（IDEA 规范）\')">stash 上下文（演示）</div>';
+  } else if(c.wt==='merge'){
+    html = '<div class="dfile" style="cursor:default">merge commit：右键 diff-to-parent 可回审计</div>';
+  } else {
+    html = '<div class="dfile">(演示) '+(c.refs[0]||c.subj).replace(/^[^:]*:\s*/,'')+' 涉及文件</div>';
+  }
+  document.getElementById('d-files').innerHTML = html;
+}
+
+function chip(el){ el.classList.toggle('on') }
+
+/* ════════ 场景 ════════ */
+function setSc(sc){
+  var pills = document.querySelectorAll('[data-sc]');
+  for(var i=0;i<pills.length;i++) pills[i].classList.toggle('active', pills[i].getAttribute('data-sc')===sc);
+  document.getElementById('atomiccard').style.display = sc==='atomic' ? 'block' : 'none';
+  document.getElementById('ai-sugg').style.display = sc==='atomic' ? 'flex' : 'none';
+  document.getElementById('reviewcard').style.display = sc==='atomic' ? 'block' : 'none';
+  document.getElementById('conflict-predict').style.display = (sc==='atomic'||sc==='conflict') ? 'block' : 'none';
+  if(sc==='undo'){ openSnap(); toast('安全网演示：右栏未暂存文件点 discard → 自动快照 + 可恢复通知条'); }
+  else closeSnap();
+  if(sc==='conflict'){ toast('点右栏任一冲突文件 → 打开三方合并器'); openMerge(); }
+  if(sc==='atomic') toast('AI-2：AI 把一揽子改动拆成语义独立 commit 组，逐组勾选确认才执行');
+}
+
+/* ════════ 提交条 ════════ */
+function genMsg(){
+  document.getElementById('ai-sugg').style.display='flex';
+  addAct('cap.ai(kind=git-commit) · 建议 842ms · 输入已裁剪', 842);
+}
+function takeMsg(){
+  document.getElementById('ci').textContent = 'fix(git): 预测清单空数组导致 fetch 卡片重置';
+  document.getElementById('ai-sugg').style.display='none';
+  toast('已采纳 AI 建议；可在右侧会话继续追问微调（kind 作用域会话，workspace 锁定）');
+}
+function doCommit(){
+  addAct('cap.git(action=commit staged×2)', 46);
+  toast('✓ commit 完成（演示）· 操作流水已留痕');
+}
+
+/* ════════ AI-2 分组 ════════ */
+function execGroups(){
+  var cbs = document.querySelectorAll('#atomiccard .g-cb');
+  var n = 0;
+  for(var i=0;i<cbs.length;i++) if(cbs[i].checked) n++;
+  if(n===0){ toast('至少勾选一组'); return }
+  addAct('cap.git(stage+commit) ×'+n+' 组原子提交', 120);
+  toast('✓ '+n+' 组 → '+n+' 个原子 commit（git log --stat 可复查组内文件一致性）');
+}
+
+/* ════════ 冲突合并器 ════════ */
+function openMerge(){
+  document.getElementById('merger').classList.add('open');
+  document.getElementById('graphscroll').classList.add('hidden');
+  closeDiff();
+  verdict = {}; nConf = 2;
+  initHunks(); syncMH();
+  addAct('cap.git(parse_conflict_markers) → 2 hunks', 9);
+}
+function initHunks(){
+  for(var i=0;i<2;i++){ renderHunk(HUNKS[i]) }
+  renderOursTheirs();
+}
+function renderHunk(h){
+  var box = document.getElementById('hk-'+h.id);
+  var v = h.done;
+  box.innerHTML =
+   '<div class="hh"><span class="b">'+esc(h.title)+'</span>'+
+   '<span class="hbtns">'+
+     '<span class="hb'+(v==="left"?" accepted":"")+'" onclick="accept('+h.id+',&quot;left&quot;)">Accept Ours</span>'+
+     '<span class="hb'+(v==="right"?" accepted":"")+'" onclick="accept('+h.id+',&quot;right&quot;)">Accept Theirs</span>'+
+     '<span class="hb ai" onclick="aiHint('+h.id+')">✦ AI 建议</span>'+
+   '</span></div>'+
+   '<div class="hconf"><span style="color:var(--faint)">&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</span>\n'+
+     '<span class="hc-o">'+esc(h.ours)+'</span>\n'+
+     '<span style="color:var(--faint)">=======</span>\n'+
+     '<span class="hc-t">'+esc(h.theirs)+'</span>\n'+
+     '<span style="color:var(--faint)">&gt;&gt;&gt;&gt;&gt;&gt;&gt; incoming</span></div>'+
+   '<div class="hai" id="hai-'+h.id+'">✦ '+esc(h.ai)+
+     '<div class="why">AI 仅建议；采纳需点击（二段式红线）。区块可再次重开。</div>'+
+     '<div style="margin-top:6px"><span class="hb ai" onclick="aiAccept('+h.id+')">采纳建议（人工确认）</span></div></div>';
+}
+function renderOursTheirs(){
+  var rows = document.getElementById('mc-ours'); var t = document.getElementById('mc-theirs');
+  var h0=HUNKS[0], h1=HUNKS[1];
+  rows.innerHTML = line(1,'  const bar = createBar()')+line(2,'  mountNextTick()')+line(3,'')+
+    hunkPane(h0.ours, h0.done==='left','ours')+line(38,'')+line(39,'  trackConflict()');
+  t.innerHTML = line(1,'  const bar = createBar()')+line(2,'  watchConflicts()')+line(3,'')+
+    hunkPane(h1.theirs, h1.done==='right','theirs')+line(38,'')+line(39,'  trackConflict()');
+}
+function line(n, s){ return '<div class="ml"><span class="no">'+n+'</span>'+esc(s)+'</div>' }
+function hunkPane(txt, ok, side){
+  var cls = ok ? (side==='ours'?'okt':'okt') : '';
+  return '<div class="ml '+cls+'"><span class="no">·</span>'+esc(txt.replace(/\n/g,' ⏎ '))+'</div>';
+}
+function accept(id, side){
+  var h = HUNKS[id];
+  if(h.done===null){ nConf--; }
+  h.done = side;
+  renderHunk(h); renderOursTheirs(); syncMH();
+  addAct('hunk accept → 直落 staging', 3);
+}
+function aiAccept(id){
+  var h = HUNKS[id];
+  var side = (id===0) ? 'left' : 'right';
+  accept(id, side);
+  toast('已采纳 AI 建议（'+(side==='left'?'OURS':'THEIRS')+'）· 右侧 git-conflict 会话可追问');
+}
+function aiHint(id){ document.getElementById('hai-'+id).classList.add('open') }
+function syncMH(){
+  var el = document.getElementById('mhcount');
+  el.textContent = '未解决 '+nConf;
+  el.classList.toggle('zero', nConf===0);
+  document.getElementById('done-btn').disabled = nConf>0;
+}
+function abortMerge(){
+  closeMerge();
+  toast('Abort：中断链幂等，操作流水留痕（§4.2 纪律）');
+  addAct('merge abort · 单位工作区回滚', 7);
+}
+function completeMerge(){
+  closeMerge();
+  var h = document.getElementById('conflict-h');
+  h.classList.remove('conflict');
+  h.innerHTML = '✓ <span class="gname">Merge Conflicts</span><span style="color:#8fe6ab">已解决 → 直落 staging</span>';
+  toast('✓ Complete Merge：结果 stage 并关闭（VS Code Merge Editor 规范）· 剩余文件可继续');
+  addAct('merge resolve → staged ×2', 12);
+}
+function closeMerge(){
+  document.getElementById('merger').classList.remove('open');
+  document.getElementById('graphscroll').classList.remove('hidden');
+}
+
+/* ════════ diff 预览 ════════ */
+function openDiff(fid, adds){
+  var files = {1:'src/services/gitCache.ts', 2:'src/services/atomicCommit.ts', 3:'src/components/GitPanel/index.tsx', 4:'notes/graph-algorithm.md', 5:'scripts/old-fetch.sh'};
+  document.getElementById('merger').classList.remove('open');
+  document.getElementById('graphscroll').classList.add('hidden');
+  var v = document.getElementById('diffview'); v.classList.add('open');
+  document.getElementById('dv-file').textContent = files[fid] || 'file';
+  var L = [
+   '<div class="dl"><span class="dd">   8</span>import { invoke } from "@/services/transport"</div>',
+   '<div class="dl del"><span class="dd">-  9</span>import { diffLines } from "diff"</div>',
+   '<div class="dl add"><span class="dd">+ 10</span>import { laneLayout } from "@/services/laneLayout"</div>',
+   '<div class="dl"><span class="dd">  11</span></div>',
+   '<div class="dl add"><span class="dd">+ 12</span>export const buildGraph = flow(</div>',
+   '<div class="dl add"><span class="dd">+ 13</span>  parseGraphChars, <span class="hl-w">// 行级选区可 stage</span></div>',
+   '<div class="dl add"><span class="dd">+ 14</span>  foldLinear,      <span class="hl-w">// → 中期 Rust 自绘弯线</span></div>',
+   '<div class="dl"><span class="dd">  15</span>)</div>'
+  ];
+  document.getElementById('diffbody').innerHTML = L.join('');
+  addAct('cap.git(action=diff) · 共享 worker', adds || 6);
+}
+function closeDiff(){
+  document.getElementById('diffview').classList.remove('open');
+  document.getElementById('graphscroll').classList.remove('hidden');
+}
+
+/* ════════ 安全网 ════════ */
+function discardDemo(){ openSnap(); addAct('snapshot → git-backups/ws-1/…（discard 前置）', 18); toast('discard 前已快照（红线）· 点通知条可恢复') }
+function openSnap(){ document.getElementById('snapbar').classList.add('open') }
+function closeSnap(){ document.getElementById('snapbar').classList.remove('open') }
+function restoreSnap(){
+  closeSnap();
+  addAct('restore snapshot → worktree（5 文件）', 22);
+  toast('↩ 已从快照恢复（IDEA 无等价能力：Local History 独立于 git 域）');
+}
+
+/* ════════ activity / toast / tip ════════ */
+function addAct(name, ms){
+  var list = document.getElementById('actlist');
+  var d = new Date();
+  var pad = function(n){ return String(n).padStart(2,'0') };
+  var el = document.createElement('div'); el.className='act';
+  el.innerHTML = '<span class="t">'+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+'</span><span>'+esc(name)+'</span><span class="ms">'+ms+'ms</span>';
+  list.insertBefore(el, list.firstChild);
+  while(list.children.length>24) list.removeChild(list.lastChild);
+}
+function toast(msg){
+  if(!msg) return;
+  var z = document.getElementById('toastzone');
+  var el = document.createElement('div'); el.className='toast'; el.textContent = msg;
+  z.appendChild(el);
+  if(z.children.length>3) z.removeChild(z.firstChild);
+  setTimeout(function(){ el.style.transition='opacity .3s'; el.style.opacity='0' }, 3600);
+  setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el) }, 4000);
+}
+
+var NOTES = [
+ '<b>① 左栏</b>：branches popup 规范（IDEA）：Recent ≤5 置顶 + Favorite★ + 「/」前缀目录分组 + 右键富菜单（Checkout and Rebase onto / Merge into / Compare with Current）+ Smart Checkout 三选（P3）。',
+ '<b>② 搜索条</b>：IDEA 规范过滤四维 + 正则 + <b>branch1..branch2</b> 范围语法；对应后端 log.rs search 参数（P1）。',
+ '<b>③ 提交条</b>：amend 可选任意本地 commit（P1）+ AI-3 after-commit Review（非阻塞）+ AI-2 原子提交卡片。AI 范式 = commitMessageChat（kind 作用域会话）。',
+ '<b>④ 合并器</b>：VS Code 规范——per-hunk 控件 + <b>未解决计数常驻</b> + current/incoming 语义标签随 merge/rebase/cherry-pick 变化 + Apply All Non-Conflicting。每区块 ✦AI-5 建议（二段式人工确认，P3）。',
+ '<b>⑤ 右栏</b>：per-file 状态着色修补（现项目缺失）；冲突红组（现仅文案提示）；点了冲突文件即合并器两形态之一。',
+ '<b>⑥ 操作流水</b>：cap.git taskId + 耗时留痕 = GitKraken Activity Log 等价 + Undo 网络证据链（IDEA 无产品级等效，P2）。',
+ '<b>⑦ AI-4</b>：清单是确定性计算（fetch 后对方 commits 文件 ∩ 本地 modified），不耗 token；AI 只产解释 → 成本 ⚡⚡分段可控。',
+ '<b>⑧ 底部</b>：性能预算条与 PRD §2 一致，验收逐项可测。'
+];
+function tip(i, ev){
+  var box = document.getElementById('tipbox');
+  box.innerHTML = NOTES[i];
+  box.style.display = 'block';
+  var w = box.offsetWidth || 280;
+  var x = ev ? ev.clientX : window.innerWidth/2;
+  var y = ev ? ev.clientY : 120;
+  box.style.left = Math.max(8, Math.min(x - w/2, window.innerWidth - w - 8)) + 'px';
+  box.style.top = (y + 16) + 'px';
+}
+
+function toggleAnn(){
+  document.body.classList.toggle('ann');
+  toast(document.body.classList.contains('ann') ? '标注模式：点编号.hover 看 PRD 依据' : '标注已关闭');
+}
+
+/* ════════ 挂事件与 init ════════ */
+var KMAP = {};
+(function initAnn(){
+  var map = document.querySelectorAll('[data-ann]');
+  for(var i=0;i<map.length;i++){
+    (function(host){
+      var k = parseInt(host.getAttribute('data-ann'), 10);
+      if(isNaN(k)) return;
+      KMAP[k] = k;
+      host.addEventListener('click', function(ev){
+        if(!document.body.classList.contains('ann')) return;
+        tip(k, ev);
+      });
+    })(map[i]);
+  }
+})();
+
+document.addEventListener('click', function(e){
+  if(!(e.target.classList && e.target.classList.contains('tag-ann'))){
+    document.getElementById('tipbox').style.display='none';
+  }
+});
+
+renderGraph();
+pick('3f2a10c');
+addAct('cap.git(action=log) 首页500 · Rust lane 预计算', 212);
+addAct('cap.git(action=get_status · per-path seq)', 24);
+addAct('file_watcher → repo_touched (debounce 800ms)', 1);
+</script>
+</body>
+</html>
