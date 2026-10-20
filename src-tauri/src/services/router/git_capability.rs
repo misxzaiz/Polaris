@@ -27,7 +27,7 @@ use crate::contracts::{Capability, CapabilityId, Context};
 use crate::models::git::{
     CreatePROptions, GitError, GitHostType, GitOperationEntry, GitServiceError, LogSearchFilter,
 };
-use crate::services::git::{GitService, ResetMode};
+use crate::services::git::{ConflictFileResolution, ConflictSide, GitService, ResetMode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -583,12 +583,24 @@ impl Capability for GitCapability {
                 &workspace(p)?,
                 require_string(p, "filePath")?,
             )),
-            // P3 冲突域：解决单个冲突文件（写回内容 + 直落 staging；写类动作）
-            "resolve_conflict_file" => json_ok_svc(GitService::resolve_conflict_file(
-                &workspace(p)?,
-                require_string(p, "filePath")?,
-                require_string(p, "content")?,
-            )),
+            // P3 冲突域：解决单个冲突文件（三态：content 写 / remove 删 / side 还原 stage；写类动作）
+            "resolve_conflict_file" => {
+                let ws_path = &workspace(p)?;
+                let file_path = require_string(p, "filePath")?;
+                let op = if let Some(content) = optional_string(p, "content") {
+                    ConflictFileResolution::WriteContent(content)
+                } else if bool_or(p, "remove", false) {
+                    ConflictFileResolution::Remove
+                } else {
+                    // 归一 side：ours=本方 stage（stage2），theirs=对方 stage（stage3）
+                    let side = match require_string(p, "side")? {
+                        "ours" => ConflictSide::Ours,
+                        _ => ConflictSide::Theirs,
+                    };
+                    ConflictFileResolution::CheckoutStage(side)
+                };
+                json_ok_svc(GitService::resolve_conflict_file(ws_path, &file_path, op))
+            }
             "unstage_file" => json_ok_svc(GitService::unstage_file(
                 &workspace(p)?,
                 require_string(p, "filePath")?,

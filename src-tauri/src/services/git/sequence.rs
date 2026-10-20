@@ -21,6 +21,24 @@ use crate::models::git::{
 };
 use super::executor::open_repository;
 
+/// 冲突侧（stage 还原语义用：ours=stage2 / theirs=stage3）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictSide {
+    Ours,
+    Theirs,
+}
+
+/// 冲突文件解决动作（三态语义，见 resolve_conflict_file 文档）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConflictFileResolution {
+    /// 写回显式内容（编辑器拼合结果 / 删类「保留修改」文本）
+    WriteContent(String),
+    /// 还原指定侧 stage 内容（binary / delete-modify 的整文件取舍）
+    CheckoutStage(ConflictSide),
+    /// 接受删除（删盘上文件 + 移除 index 冲突 stages）
+    Remove,
+}
+
 /// 探测当前序列操作类型（Git 原生优先级：rebase-merge > MERGE_HEAD > REBASE_HEAD
 /// > CHERRY_PICK_HEAD > REVERT_HEAD > 无）。
 fn detect_kind(repo: &Repository) -> GitSequenceKind {
@@ -131,24 +149,31 @@ fn build_conflict(repo: &Repository, conflict: git2::IndexConflict) -> Option<Gi
         });
     }
 
-    // 纯 stage 存在性：删取代物价
+    // 按 stage 存在性判 delete/modify（git 语义：某侧 stage 缺失 = 该侧删除了文件。
+    // 修复：旧实现把 (our 有,their 无) 标成 DeletedByUs，与 git 约定及本模型文档
+    // 注释（DeletedByUs=本地删、对方改）相反，UI 的「接受删除」会按反侧执行。
+    // 同时补记幸存侧内容：删类冲突需要一个非空 stage 内容供「保留修改」直接解决。
+    let ours_stage = our.as_ref().and_then(|e| blob_utf8(repo, e));
+    let theirs_stage = their.as_ref().and_then(|e| blob_utf8(repo, e));
     match (our.is_some(), their.is_some()) {
         (true, false) => {
+            // 对方删、本地改：stage3 缺失 → DeletedByThem；ours=本地修改内容
+            return Some(GitConflictEntry {
+                path,
+                kind: GitConflictKind::DeletedByThem,
+                base: None,
+                ours: ours_stage,
+                theirs: None,
+            });
+        }
+        (false, true) => {
+            // 本地删、对方改：stage2 缺失 → DeletedByUs；theirs=对方修改内容
             return Some(GitConflictEntry {
                 path,
                 kind: GitConflictKind::DeletedByUs,
                 base: None,
                 ours: None,
-                theirs: None,
-            });
-        }
-        (false, true) => {
-            return Some(GitConflictEntry {
-                path,
-                kind: GitConflictKind::DeletedByThem,
-                base: None,
-                ours: None,
-                theirs: None,
+                theirs: theirs_stage,
             });
         }
         _ => {}
@@ -156,8 +181,8 @@ fn build_conflict(repo: &Repository, conflict: git2::IndexConflict) -> Option<Gi
 
     // 文本冲突：读三方全文（非 UTF-8 降级 Binary 防吐乱字节）
     let base = ancestor.as_ref().and_then(|e| blob_utf8(repo, e));
-    let ours = our.as_ref().and_then(|e| blob_utf8(repo, e));
-    let theirs = their.as_ref().and_then(|e| blob_utf8(repo, e));
+    let ours = ours_stage;
+    let theirs = theirs_stage;
     let has_content = base.is_some() || ours.is_some() || theirs.is_some();
     if !has_content {
         // 三方都不可读 → 降级 binary（不乱吐）
@@ -253,27 +278,75 @@ pub fn stage_conflicted_files(path: &Path) -> Result<Vec<String>, GitServiceErro
     Ok(staged)
 }
 
-/// 解决单个冲突文件：以指定内容写回工作区文件，然后暂存（直落 staging）。
+/// 解决单个冲突文件（三态语义）：
 ///
-/// 仅适用于 Text 类冲突（有内容可写）。`deleted_by_*` 文件工作区已删，
-/// 写盘前先确认文件在 index/HEAD 中曾存在；不存在则跳过写盘仅做 add。
+/// - `Write(content)`：把内容无条件写回工作区文件 + add（git 语义：写入即用
+///   stage0 条目取代 1/2/3 冲突 stages，直落 staging）。
+/// - `CheckoutStage(side)`：把指定侧的 stage（ours=2 / theirs=3）blob 原样写回
+///   工作区 + add——binary / delete-modify 的「保留某侧修改」按 stage 还原，
+///   与 `git checkout --ours/--theirs` 语义一致，不做任何文本化转换。
+/// - `Remove`：删除盘上文件（若存在）+ 移除 index 内该路径全部冲突 stages——
+///   表达「接受删除」，旧实现完全缺失此语义（曾把删除表达成保留修改）。
+///
+/// 修复要点（根因，P3 spec 跟进）：
+/// 旧实现以 `index.get_path(path, 0)` 判 trackable，但冲突态的 index 只有
+/// stage1/2/3（stage0 不存在）→ 写盘被恒跳过，最后 add 进 index 的是**磁盘上
+/// 带 `<<<<<<<` marker 的原文**，产生「解决成功」的假象（静默穿帮）。
+///
 /// 完成后调用方应重新读取 `get_sequence_state` 刷新冲突清单。
-pub fn resolve_conflict_file(path: &Path, file_path: &str, content: &str) -> Result<(), GitServiceError> {
+pub fn resolve_conflict_file(
+    path: &Path,
+    file_path: &str,
+    op: ConflictFileResolution,
+) -> Result<(), GitServiceError> {
     use super::commit::stage_file;
 
     let repo = open_repository(path)?;
     let full_path = path.join(file_path);
 
-    // 工作区文件存在于 index/HEAD 才写盘（Text 冲突必有；删类冲突跳过写，仅 add 让 git 识别为已解决）
-    let trackable = {
-        let index = repo.index()?;
-        index.get_path(std::path::Path::new(file_path), 0).is_some()
-    };
-    if trackable {
-        if let Some(parent) = full_path.parent() {
-            std::fs::create_dir_all(parent)?;
+    match op {
+        ConflictFileResolution::WriteContent(content) => {
+            // 写语义：无条件写盘（文件父目录一并确保存在）
+            if let Some(parent) = full_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&full_path, content)?;
         }
-        std::fs::write(&full_path, content)?;
+        ConflictFileResolution::CheckoutStage(side) => {
+            let stage_no = match side {
+                ConflictSide::Ours => 2,
+                ConflictSide::Theirs => 3,
+            };
+            let entry = {
+                let index = repo.index()?;
+                index.get_path(std::path::Path::new(file_path), stage_no).ok_or_else(|| {
+                    GitServiceError::GitError(git2::Error::from_str(&format!(
+                        "conflict stage {stage_no} missing for {file_path}"
+                    )))
+                })?
+            };
+            let bytes = repo_blob_content(&repo, &entry)?;
+            if let Some(parent) = full_path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            std::fs::write(&full_path, bytes)?;
+        }
+        ConflictFileResolution::Remove => {
+            match std::fs::remove_file(&full_path) {
+                Ok(()) => {}
+                // 工作区本来就没有（本地删的工作区状态）→ 视为已删，继续移除 index
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(e.into()),
+            }
+            let mut index = repo.index()?;
+            // 冲突条目可能分布在 stage1/2/3（stage0 通常缺席），逐 stage 全部移除
+            for stage in 0..=2i32 {
+                let _ = index.remove(std::path::Path::new(file_path), stage);
+            }
+            let _ = index.remove_path(std::path::Path::new(file_path));
+            index.write()?;
+            return Ok(());
+        }
     }
 
     stage_file(path, file_path)
@@ -393,5 +466,117 @@ mod tests {
         assert!(!state.has_conflicts);
         assert!(state.conflicts.is_empty());
         assert!(guard_no_sequence(&path).is_ok());
+    }
+
+    /// 构造删/改（delete-modify）冲突仓库：本地（main）删除 del.txt，对方（feature）修改它
+    fn build_delete_modify_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let path = tmp.path().to_path_buf();
+
+        let repo = Repository::init_opts(&path, RepositoryInitOptions::new().initial_head("main"))
+            .unwrap();
+        let sig = Signature::now("t", "t@t").unwrap();
+
+        // 基线 c1：del.txt（基线内容）+ other.txt
+        std::fs::write(path.join("del.txt"), "base\n").unwrap();
+        std::fs::write(path.join("other.txt"), "other\n").unwrap();
+        let mut index = repo.index().unwrap();
+        index.add_path(std::path::Path::new("del.txt")).unwrap();
+        index.add_path(std::path::Path::new("other.txt")).unwrap();
+        index.write().unwrap();
+        let tree_id = index.write_tree().unwrap();
+        let tree = repo.find_tree(tree_id).unwrap();
+        repo.commit(Some("refs/heads/main"), &sig, &sig, "c1", &tree, &[])
+            .unwrap();
+        let head = repo.head().unwrap();
+        let parent = repo.find_commit(head.target().unwrap()).unwrap();
+
+        // feature：修改 del.txt（对方改）
+        let mut tb = repo.treebuilder(None).unwrap();
+        let blob = repo.blob(b"theirs-modized\n").unwrap();
+        let blob2 = repo.blob(b"other\n").unwrap();
+        tb.insert("del.txt", blob, 0o100644).unwrap();
+        tb.insert("other.txt", blob2, 0o100644).unwrap();
+        let ftree_id = tb.write().unwrap();
+        let ftree = repo.find_tree(ftree_id).unwrap();
+        repo.commit(Some("refs/heads/feature"), &sig, &sig, "feature modify", &ftree, &[&parent])
+            .unwrap();
+
+        // main：删除 del.txt（本地删）
+        let mut tb = repo.treebuilder(None).unwrap();
+        let blob2 = repo.blob(b"other\n").unwrap();
+        tb.insert("other.txt", blob2, 0o100644).unwrap();
+        let mtree_id = tb.write().unwrap();
+        let mtree = repo.find_tree(mtree_id).unwrap();
+        repo.commit(Some("refs/heads/main"), &sig, &sig, "main delete", &mtree, &[&parent])
+            .unwrap();
+
+        force_merge(&repo, "feature").ok();
+        (tmp, path)
+    }
+
+    #[test]
+    fn resolves_text_conflict_writes_content_and_stage0() {
+        let (_tmp, path) = build_conflict_fixture();
+        let resolved = "a\nresolved\nc\n";
+
+        resolve_conflict_file(
+            &path,
+            "file.txt",
+            ConflictFileResolution::WriteContent(resolved.into()),
+        )
+        .expect("text resolve");
+
+        // 盘上内容 = 编辑器结果（旧实现的假解决 bug：写盘被跳过、暂存 marker 原文）
+        let on_disk = String::from_utf8(std::fs::read(path.join("file.txt")).unwrap()).unwrap();
+        assert_eq!(on_disk, resolved, "写盘必须命中编辑结果");
+
+        // index 产生 stage0 条目，冲突清单不再包含该文件
+        let repo = Repository::open(&path).unwrap();
+        let index = repo.index().unwrap();
+        assert!(
+            index.get_path(std::path::Path::new("file.txt"), 0).is_some(),
+            "解决后应有 stage0 条目"
+        );
+        let state = get_sequence_state(&path).unwrap();
+        assert!(
+            !state.conflicts.iter().any(|e| e.path == "file.txt"),
+            "文本解决后冲突应消失"
+        );
+    }
+
+    #[test]
+    fn delete_modify_conflict_maps_kind_and_surviving_content() {
+        let (_tmp, path) = build_delete_modify_fixture();
+        let state = get_sequence_state(&path).unwrap();
+        let entry = state
+            .conflicts
+            .iter()
+            .find(|e| e.path == "del.txt")
+            .expect("del.txt 冲突条目");
+
+        // git 语义：本地删、对方改 → DeletedByUs，theirs=对方修改内容
+        assert_eq!(entry.kind, GitConflictKind::DeletedByUs);
+        assert!(entry.ours.is_none(), "本方 stage 缺失");
+        assert!(
+            entry.theirs.as_deref().unwrap_or_default().contains("theirs-modized"),
+            "theirs 应带对方修改内容（旧实现缺失）"
+        );
+    }
+
+    #[test]
+    fn remove_resolution_uses_delete_semantics() {
+        let (_tmp, path) = build_delete_modify_fixture();
+
+        resolve_conflict_file(&path, "del.txt", ConflictFileResolution::Remove)
+            .expect("remove resolve");
+
+        // 盘上文件被删（git merge 把修改版留在盘上；接受删除必须真删）
+        assert!(!path.join("del.txt").exists(), "接受删除后盘上不应再有文件");
+        let after = get_sequence_state(&path).unwrap();
+        assert!(
+            !after.conflicts.iter().any(|e| e.path == "del.txt"),
+            "index 中该路径冲突 stages 应全部移除"
+        );
     }
 }

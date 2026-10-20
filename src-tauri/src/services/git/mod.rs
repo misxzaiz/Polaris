@@ -49,7 +49,10 @@ pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitigno
 pub use reflog::get_reflog;
 pub use undo::{create_undo_snapshot, drop_undo_snapshot, list_undo_snapshots, prune_undo_snapshots, restore_undo_snapshot};
 pub use conflict::predict_conflicts;
-pub use sequence::{get_sequence_state, guard_no_sequence, stage_conflicted_files, resolve_conflict_file};
+pub use sequence::{
+    get_sequence_state, guard_no_sequence, stage_conflicted_files, resolve_conflict_file,
+    ConflictFileResolution, ConflictSide,
+};
 
 use std::path::Path;
 
@@ -569,8 +572,12 @@ impl GitService {
         stage_conflicted_files(path)
     }
 
-    /// 解决单个冲突文件：写内容回工作区 + 暂存（Text 类直落 staging）
-    pub fn resolve_conflict_file(path: &Path, file_path: &str, content: &str) -> Result<(), GitServiceError> {
-        resolve_conflict_file(path, file_path, content)
+    /// 解决单个冲突文件（三态：写内容 / 还原某侧 stage / 接受删除，直落 staging）
+    pub fn resolve_conflict_file(
+        path: &Path,
+        file_path: &str,
+        op: ConflictFileResolution,
+    ) -> Result<(), GitServiceError> {
+        resolve_conflict_file(path, file_path, op)
     }
 }
