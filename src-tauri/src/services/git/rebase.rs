@@ -20,16 +20,8 @@ pub fn rebase_branch(path: &Path, source_branch: &str) -> Result<GitRebaseResult
 
     let repo = open_repository(path)?;
 
-    // 检查是否有正在进行的变基
-    let rebase_state_path = path.join(".git").join("rebase-merge");
-    if rebase_state_path.exists() {
-        return Err(GitServiceError::RebaseInProgress);
-    }
-
-    // 检查是否有正在进行的合并
-    if repo.index()?.has_conflicts() {
-        return Err(GitServiceError::MergeInProgress);
-    }
+    // C11 交叉守卫：任何序列操作进行中均拒绝（merge/rebase/cherry-pick/revert 互斥）
+    super::sequence::guard_no_sequence(path)?;
 
     // 获取当前分支
     let current_branch = repo
@@ -96,7 +88,7 @@ pub fn rebase_branch(path: &Path, source_branch: &str) -> Result<GitRebaseResult
         .current_dir(path)
         .output()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let _stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if output.status.success() {
@@ -111,39 +103,19 @@ pub fn rebase_branch(path: &Path, source_branch: &str) -> Result<GitRebaseResult
             finished: true,
         })
     } else {
-        // 检查是否有冲突
-        let has_conflicts = stderr.contains("CONFLICT")
-            || stderr.contains("conflict")
-            || stdout.contains("CONFLICT");
-
-        // 获取冲突文件列表
-        let conflicts = if has_conflicts {
-            get_conflict_files(path)?
-        } else {
-            vec![]
-        };
-
-        // 获取当前步骤信息
-        let current_step = if has_conflicts {
-            let step_re = regex::Regex::new(r"Rebasing \((\d+)/(\d+)\)").unwrap();
-            if let Some(caps) = step_re.captures(&stderr) {
-                caps[1].parse().unwrap_or(1)
-            } else {
-                1
-            }
-        } else {
-            0
-        };
+        // C11：冲突判定与步数归一从序列状态回读，不信任 stderr 包含 "CONFLICT"
+        let state = super::sequence::get_sequence_state(path)?;
+        let has_conflicts = state.has_conflicts;
 
         if has_conflicts {
-            info!("变基遇到冲突: {} 个文件", conflicts.len());
+            info!("变基遇到冲突: {} 个文件", state.conflicts.len());
             Ok(GitRebaseResult {
                 success: false,
                 has_conflicts: true,
-                conflicts,
+                conflicts: state.conflicts,
                 rebased_commits: 0,
-                current_step,
-                total_steps,
+                current_step: state.current_step.unwrap_or(1),
+                total_steps: state.total_steps.unwrap_or(total_steps),
                 finished: false,
             })
         } else {
@@ -204,48 +176,22 @@ pub fn rebase_continue(path: &Path) -> Result<GitRebaseResult, GitServiceError> 
             finished: true,
         })
     } else {
-        let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
-
-        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
+        // C11：Continue 一律从状态回读（步数存活，不信任 stderr 包含 "CONFLICT"）
+        let state = super::sequence::get_sequence_state(path)?;
+        let has_conflicts = state.has_conflicts;
 
         if has_conflicts {
             Ok(GitRebaseResult {
                 success: false,
                 has_conflicts: true,
-                conflicts,
+                conflicts: state.conflicts,
                 rebased_commits: 0,
-                current_step: 0,
-                total_steps: 0,
+                current_step: state.current_step.unwrap_or(1),
+                total_steps: state.total_steps.unwrap_or(1),
                 finished: false,
             })
         } else {
             Err(GitServiceError::CLIError(stderr.to_string()))
         }
-    }
-}
-
-/// 获取冲突文件列表
-fn get_conflict_files(path: &Path) -> Result<Vec<String>, GitServiceError> {
-    #[cfg(windows)]
-    let output = std::process::Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()?;
-
-    #[cfg(not(windows))]
-    let output = std::process::Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(path)
-        .output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_string())
-            .collect())
-    } else {
-        Ok(vec![])
     }
 }

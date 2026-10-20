@@ -52,24 +52,11 @@ use commands::file_clipboard::{
 use commands::file_watcher::{
     fs_watch_start, fs_watch_stop, fs_watch_status,
 };
-#[cfg(all(feature = "tauri-app", feature = "git"))]
-use commands::git::{
-    git_is_repository, git_discover_repositories, git_init_repository, git_get_status, git_get_diffs,
-    git_get_worktree_diff, git_get_index_diff, git_get_worktree_file_diff, git_get_index_file_diff,
-    git_get_branches,
-    git_create_branch, git_checkout_branch, git_delete_branch, git_rename_branch, git_merge_branch, git_commit_changes,
-    git_stage_file, git_unstage_file, git_discard_changes,
-    git_get_remotes, git_add_remote, git_remove_remote, git_detect_host, git_push_branch, git_push_set_upstream, git_create_pr, git_get_pr_status,
-    git_pull, git_get_log, git_get_commit_details, git_get_file_history, git_batch_stage,
-    git_stash_save, git_stash_list, git_stash_pop, git_stash_drop,
-    git_rebase_branch, git_rebase_abort, git_rebase_continue,
-    git_cherry_pick, git_cherry_pick_abort, git_cherry_pick_continue,
-    git_revert, git_revert_abort, git_revert_continue,
-    git_checkout_commit, git_reset,
-    git_get_tags, git_create_tag, git_delete_tag, git_blame_file,
-    git_get_gitignore, git_save_gitignore, git_add_to_gitignore, git_get_gitignore_templates,
-    test_param_serialization, write_file_absolute, read_file_absolute,
-};
+#[cfg(feature = "tauri-app")]
+use commands::file_io::{test_param_serialization, write_file_absolute, read_file_absolute};
+// commands/git.rs 已整域摘除（git 面板 vNext PR-2b）：git_* 命令不再注册，
+// git 域动作唯一入口 = cap.git（router_dispatch → services/router/git_capability.rs）。
+// 前端 transport shim 保持 invoke('git_*') 签名不变（plans/git-panel-p0-spec.md）。
 #[cfg(feature = "tauri-app")]
 use commands::translate::baidu_translate;
 #[cfg(feature = "tauri-app")]
@@ -919,123 +906,13 @@ pub fn run() {
             commands::browser::browser_assert,
             commands::browser::browser_status,
             // 上下文管理相关
-            // Git 相关
-            #[cfg(feature = "git")]
-            git_is_repository,
-            #[cfg(feature = "git")]
-            git_discover_repositories,
-            #[cfg(feature = "git")]
-            git_init_repository,
-            #[cfg(feature = "git")]
-            git_get_status,
-            #[cfg(feature = "git")]
-            git_get_diffs,
-            #[cfg(feature = "git")]
-            git_get_worktree_diff,
-            #[cfg(feature = "git")]
-            git_get_index_diff,
-            #[cfg(feature = "git")]
-            git_get_worktree_file_diff,
-            #[cfg(feature = "git")]
-            git_get_index_file_diff,
-            #[cfg(feature = "git")]
-            git_get_branches,
-            #[cfg(feature = "git")]
-            git_create_branch,
-            #[cfg(feature = "git")]
-            git_checkout_branch,
-            #[cfg(feature = "git")]
-            git_delete_branch,
-            #[cfg(feature = "git")]
-            git_rename_branch,
-            #[cfg(feature = "git")]
-            git_merge_branch,
-            #[cfg(feature = "git")]
-            git_rebase_branch,
-            #[cfg(feature = "git")]
-            git_rebase_abort,
-            #[cfg(feature = "git")]
-            git_rebase_continue,
-            #[cfg(feature = "git")]
-            git_cherry_pick,
-            #[cfg(feature = "git")]
-            git_cherry_pick_abort,
-            #[cfg(feature = "git")]
-            git_cherry_pick_continue,
-            #[cfg(feature = "git")]
-            git_revert,
-            #[cfg(feature = "git")]
-            git_revert_abort,
-            #[cfg(feature = "git")]
-            git_revert_continue,
-            #[cfg(feature = "git")]
-            git_checkout_commit,
-            #[cfg(feature = "git")]
-            git_reset,
-            #[cfg(feature = "git")]
-            git_get_tags,
-            #[cfg(feature = "git")]
-            git_create_tag,
-            #[cfg(feature = "git")]
-            git_delete_tag,
-            #[cfg(feature = "git")]
-            git_blame_file,
-            #[cfg(feature = "git")]
-            git_get_gitignore,
-            #[cfg(feature = "git")]
-            git_save_gitignore,
-            #[cfg(feature = "git")]
-            git_add_to_gitignore,
-            #[cfg(feature = "git")]
-            git_get_gitignore_templates,
-            #[cfg(feature = "git")]
-            git_commit_changes,
-            #[cfg(feature = "git")]
-            git_stage_file,
-            #[cfg(feature = "git")]
-            git_unstage_file,
-            #[cfg(feature = "git")]
-            git_discard_changes,
-            #[cfg(feature = "git")]
-            git_get_remotes,
-            #[cfg(feature = "git")]
-            git_add_remote,
-            #[cfg(feature = "git")]
-            git_remove_remote,
-            #[cfg(feature = "git")]
-            git_detect_host,
-            #[cfg(feature = "git")]
-            git_push_branch,
-            #[cfg(feature = "git")]
-            git_push_set_upstream,
-            #[cfg(feature = "git")]
-            git_create_pr,
-            #[cfg(feature = "git")]
-            git_get_pr_status,
-            #[cfg(feature = "git")]
-            git_pull,
-            #[cfg(feature = "git")]
-            git_get_log,
-            #[cfg(feature = "git")]
-            git_get_commit_details,
-            #[cfg(feature = "git")]
-            git_get_file_history,
-            #[cfg(feature = "git")]
-            git_batch_stage,
-            #[cfg(feature = "git")]
-            git_stash_save,
-            #[cfg(feature = "git")]
-            git_stash_list,
-            #[cfg(feature = "git")]
-            git_stash_pop,
-            #[cfg(feature = "git")]
-            git_stash_drop,
-            #[cfg(feature = "git")]
-            test_param_serialization,
-            #[cfg(feature = "git")]
+            // Git 相关 —— 已摘除（git 面板 vNext PR-2b）：git_* 全域走 cap.git 总线，
+            // 见 services/router/git_capability.rs；仅存的非 git 文件 IO 命令迁至
+            // commands/file_io.rs，注册见下（write_file_absolute / read_file_absolute /
+            // test_param_serialization 不再 cfg 门控在 git feature 上）。
             write_file_absolute,
-            #[cfg(feature = "git")]
             read_file_absolute,
+            test_param_serialization,
             // 翻译相关
             baidu_translate,
             // 集成相关

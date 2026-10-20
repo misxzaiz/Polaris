@@ -7,7 +7,8 @@
 import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
-import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult } from '@/types/git'
+import type { CommitState } from './types'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter, GitLogPage } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -18,6 +19,8 @@ const log = createLogger('GitStore')
 export const createCommitSlice: CommitSlice = (set, get) => ({
   // ===== 状态 =====
   commits: [],
+  // P1.5 分片：keyed 只读数据域（新 UI 消费）
+  commitsByWs: {},
   commitDetails: {},
 
   // ===== 方法 =====
@@ -50,6 +53,52 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
 
       set({ isLoading: false })
       return commit
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
+  // AI-2：按组原子提交（只提交组内文件，index 其它已暂存内容不受影响）
+  async commitGroup(workspacePath: string, message: string, files: string[]) {
+    set({ isLoading: true, error: null })
+
+    try {
+      const sha = await invoke<string>('git_commit_group', {
+        workspacePath,
+        message,
+        files,
+      })
+
+      await get().refreshStatus(workspacePath)
+      set({ isLoading: false })
+      return sha
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
+  // P1：amend HEAD（message 省略 = --no-edit 语义，仅合并 staged 内容）
+  async amendCommit(
+    workspacePath: string,
+    message?: string,
+    stageAll = false,
+    selectedFiles?: string[]
+  ) {
+    set({ isLoading: true, error: null })
+
+    try {
+      const sha = await invoke<string>('git_amend_commit', {
+        workspacePath,
+        message: message ?? null,
+        stageAll,
+        selectedFiles: selectedFiles?.length ? selectedFiles : null,
+      })
+
+      await get().refreshStatus(workspacePath)
+      set({ isLoading: false })
+      return sha
     } catch (err) {
       set({ error: parseGitError(err), isLoading: false })
       throw err
@@ -148,8 +197,58 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
         skip,
         branch: branch || null,
       })
-      set({ commits })
+      // P1.5 分片：keyed 写 + 旧镜像域保留（未迁移 UI）
+      set({
+        commits,
+        commitsByWs: { ...(get() as CommitState).commitsByWs, [workspacePath]: commits },
+      })
       return commits
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      return []
+    }
+  },
+
+  // P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
+  async getLogWithLanes(
+    workspacePath: string,
+    limit = 500,
+    skip = 0,
+    branch?: string
+  ): Promise<GitLogPage> {
+    try {
+      const page = await invoke<GitLogPage>('git_get_log_with_lanes', {
+        workspacePath,
+        limit,
+        skip,
+        branch: branch || null,
+      })
+      // 与 getLog 同构：写常规 commits 镜像（泳道图与详细视图共用）
+      set({
+        commits: page.commits,
+        commitsByWs: { ...(get() as CommitState).commitsByWs, [workspacePath]: page.commits },
+      })
+      return page
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      return { commits: [], rows: [] }
+    }
+  },
+
+  // P1：提交历史搜索（grep/author/pickaxe/since/分支范围；不写 commits 镜像 —— 搜索结果与常规 log 视图分离）
+  async searchLog(
+    workspacePath: string,
+    filter: GitLogSearchFilter,
+    limit = 50,
+    skip = 0
+  ): Promise<GitCommit[]> {
+    try {
+      return await invoke<GitCommit[]>('git_search_log', {
+        workspacePath,
+        filter,
+        limit,
+        skip,
+      })
     } catch (err) {
       set({ error: parseGitError(err) })
       return []

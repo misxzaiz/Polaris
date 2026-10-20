@@ -89,6 +89,7 @@ pub fn push_branch(
     remote_name: &str,
     force: bool,
     remote_branch_name: Option<&str>,
+    lease: Option<&str>,
 ) -> Result<(), GitServiceError> {
     // 构建 refspec：local:remote 或 local（如果相同）
     let refspec = match remote_branch_name {
@@ -98,12 +99,25 @@ pub fn push_branch(
         _ => branch_name.to_string(),
     };
 
+    // P1 force-with-lease：裸 --force 从默认路径除名（master-plan 红线：Web Remote
+    // 强推一票制的对照组）。force=true 一律 --force-with-lease：
+    // - lease=Some(sha)：显式期望值 → --force-with-lease=<refspec-rsh>:<sha>
+    // - lease=None：按 remote-tracking 自动对照（缺失时 git 报错并透传，不静默降级裸 force）
+    let force_arg = if force {
+        match lease {
+            Some(expected_sha) => format!("--force-with-lease={}:{}", refspec, expected_sha),
+            None => "--force-with-lease".to_string(),
+        }
+    } else {
+        "--force-with-lease".to_string()
+    };
+
     #[cfg(windows)]
     let output = std::process::Command::new("git")
         .arg("push")
         .arg(remote_name)
         .arg(&refspec)
-        .arg(if force { "--force" } else { "--force-with-lease" })
+        .arg(&force_arg)
         .current_dir(path)
         .creation_flags(CREATE_NO_WINDOW)
         .output()?;
@@ -113,7 +127,7 @@ pub fn push_branch(
         .arg("push")
         .arg(remote_name)
         .arg(&refspec)
-        .arg(if force { "--force" } else { "--force-with-lease" })
+        .arg(&force_arg)
         .current_dir(path)
         .output()?;
 
@@ -123,6 +137,46 @@ pub fn push_branch(
     }
 
     Ok(())
+}
+
+/// 拉取远程更新（P1：fetch / auto-fetch 后端动作；auto-fetch 调度默认关 = 前端设置项）
+///
+/// `remote` None 时 git 默认 origin。`prune` 传递 --prune（清理远端已删 refs 的本地跟踪）。
+pub fn fetch(path: &Path, remote: Option<&str>, prune: bool) -> Result<String, GitServiceError> {
+    let mut args: Vec<String> = vec!["fetch".to_string()];
+    if prune {
+        args.push("--prune".to_string());
+    }
+    if let Some(r) = remote {
+        args.push(r.to_string());
+    }
+    let arg_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+
+    #[cfg(windows)]
+    let output = std::process::Command::new("git")
+        .args(&arg_refs)
+        .current_dir(path)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+
+    #[cfg(not(windows))]
+    let output = std::process::Command::new("git")
+        .args(&arg_refs)
+        .current_dir(path)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(GitServiceError::CLIError(stderr.to_string()));
+    }
+
+    // fetch 诊断输出在 stderr（git 惯例），stdout 常为空 —— 两者合并返回
+    let mut summary = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if !stderr.is_empty() {
+        summary.push_str(&stderr);
+    }
+    Ok(summary)
 }
 
 /// 推送分支并设置上游

@@ -27,8 +27,16 @@ import type {
   GitBlameResult,
   BatchStageResult,
   GitStashEntry,
+  GitReflogEntry,
+  GitLogSearchFilter,
+  GitLogPage,
   GitIgnoreResult,
   GitIgnoreTemplate,
+  UndoSnapshotMeta,
+  UndoRestoreOutcome,
+  GitOperationEntry,
+  GitConflictPrediction,
+  GitSequenceState,
 } from '@/types/git'
 
 // ============================================================================
@@ -75,6 +83,10 @@ export interface StatusState {
   diffs: GitDiffEntry[]
   worktreeDiffs: GitDiffEntry[]
   indexDiffs: GitDiffEntry[]
+  /** P1.5 分片：按 wsPath 键控的差异列表（新图面板直接读此域，防双面板互踩） */
+  diffsByWs?: Record<string, GitDiffEntry[]>
+  worktreeDiffsByWs?: Record<string, GitDiffEntry[]>
+  indexDiffsByWs?: Record<string, GitDiffEntry[]>
   isLoading: boolean
   error: string | null
   selectedFilePath: string | null
@@ -101,6 +113,8 @@ export interface StatusState {
  */
 export interface BranchState {
   branches: GitBranch[]
+  /** P1.5 分片：按 wsPath 键控的分支数据（双面板/多仓互防；新图面板直接读此域） */
+  branchesByWs?: Record<string, GitBranch[]>
 }
 
 /**
@@ -108,6 +122,8 @@ export interface BranchState {
  */
 export interface RemoteState {
   remotes: GitRemote[]
+  /** P1.5 分片：按 wsPath 键控的远程数据 */
+  remotesByWs?: Record<string, GitRemote[]>
 }
 
 /**
@@ -115,6 +131,8 @@ export interface RemoteState {
  */
 export interface TagState {
   tags: GitTag[]
+  /** P1.5 分片：按 wsPath 键控的标签数据 */
+  tagsByWs?: Record<string, GitTag[]>
 }
 
 /**
@@ -122,6 +140,8 @@ export interface TagState {
  */
 export interface CommitState {
   commits: GitCommit[]
+  /** P1.5 分片：按 wsPath 键控的提交历史 */
+  commitsByWs?: Record<string, GitCommit[]>
   commitDetails: Record<string, GitCommitDetails>
 }
 
@@ -130,6 +150,8 @@ export interface CommitState {
  */
 export interface StashState {
   stashList: GitStashEntry[]
+  /** P1.5 分片：按 wsPath 键控的 stash 数据 */
+  stashListByWs?: Record<string, GitStashEntry[]>
 }
 
 /**
@@ -137,6 +159,36 @@ export interface StashState {
  */
 export interface PRState {
   currentPR: PullRequest | null
+}
+
+/**
+ * Undo 网络状态（FR-P2-3：危险操作快照）
+ */
+export interface UndoState {
+  /** 当前工作区的撤销快照列表（倒序按时间） */
+  undoSnapshots: UndoSnapshotMeta[]
+  /** P1.5 分片：按 wsPath 键控的快照列表（双面板/多仓互防） */
+  undoSnapshotsByWs?: Record<string, UndoSnapshotMeta[]>
+}
+
+/**
+ * 操作流水状态（FR-P2-4：写动作留痕，GitKraken Activity Log 等价）
+ */
+export interface OperationsState {
+  /** 当前工作区的操作流水（倒序：最新在上，上限 50/ws，会话内滚动） */
+  operations: GitOperationEntry[]
+  /** P1.5 分片：按 wsPath 键控的操作流水 */
+  operationsByWs?: Record<string, GitOperationEntry[]>
+}
+
+/**
+ * 冲突预测状态（FR-P2-AI4：fetch 后确定性风险清单，0 token）
+ */
+export interface ConflictPredictState {
+  /** 当前工作区的冲突预测结果（null = 尚未计算 / 无上游 / 计算失败） */
+  conflictPrediction: GitConflictPrediction | null
+  /** P1.5 分片：按 wsPath 键控的冲突预测结果 */
+  conflictPredictionsByWs?: Record<string, GitConflictPrediction | null>
 }
 
 // ============================================================================
@@ -194,7 +246,11 @@ export interface RemoteActions {
   getRemotes: (workspacePath: string) => Promise<void>
   addRemote: (workspacePath: string, name: string, url: string) => Promise<GitRemote>
   removeRemote: (workspacePath: string, name: string) => Promise<void>
-  push: (workspacePath: string, branchName: string, remoteName?: string, force?: boolean, setUpstream?: boolean, remoteBranchName?: string) => Promise<GitPushResult>
+  push: (workspacePath: string, branchName: string, remoteName?: string, force?: boolean, setUpstream?: boolean, remoteBranchName?: string, leaseSha?: string) => Promise<GitPushResult>
+  /** P1：force-with-lease 期望远端 sha（可选，配合 force 使用实现安全强推） */
+  pushWithLease: (workspacePath: string, branchName: string, remoteName?: string, remoteBranchName?: string, leaseSha?: string) => Promise<GitPushResult>
+  /** P1：fetch（remoteName 缺省 = origin；prune 清理已删 remote-tracking refs） */
+  fetchRemote: (workspacePath: string, remoteName?: string, prune?: boolean) => Promise<string>
   pull: (workspacePath: string, remoteName?: string, branchName?: string) => Promise<GitPullResult>
   detectHostAsync: (remoteUrl: string) => Promise<GitHostType>
 }
@@ -213,11 +269,19 @@ export interface TagActions {
  */
 export interface CommitActions {
   commitChanges: (workspacePath: string, message: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
+  /** AI-2：按组原子提交（只提交组内文件，index 其它已暂存内容不受影响，等价 git commit <paths>） */
+  commitGroup: (workspacePath: string, message: string, files: string[]) => Promise<string>
   stageFile: (workspacePath: string, filePath: string) => Promise<void>
   unstageFile: (workspacePath: string, filePath: string) => Promise<void>
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
+  /** P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回 */
+  getLogWithLanes: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitLogPage>
+  /** P1：amend HEAD（message 省略 = 仅合并 staged 内容 / --no-edit 语义；任意历史 commit amend 依赖 P3） */
+  amendCommit: (workspacePath: string, message?: string, stageAll?: boolean, selectedFiles?: string[]) => Promise<string>
+  /** P1：提交历史搜索（grep/author/pickaxe/since/分支范围；AI-6 参数编译器的动作端） */
+  searchLog: (workspacePath: string, filter: GitLogSearchFilter, limit?: number, skip?: number) => Promise<GitCommit[]>
   getCommitDetails: (workspacePath: string, commitSha: string) => Promise<GitCommitDetails>
   getFileHistory: (workspacePath: string, filePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitFileHistoryEntry[]>
   checkoutCommit: (workspacePath: string, commitSha: string) => Promise<void>
@@ -229,6 +293,10 @@ export interface CommitActions {
 export interface StashActions {
   stashSave: (workspacePath: string, message?: string, includeUntracked?: boolean) => Promise<string>
   stashPop: (workspacePath: string, index?: number) => Promise<void>
+  /** P1：应用 Stash 但保留 stash（与 pop 的区别：不 drop） */
+  stashApply: (workspacePath: string, index?: number) => Promise<void>
+  /** P1：查看 Stash patch 内容（raw diff 文本，交给 diff 渲染器） */
+  stashShow: (workspacePath: string, index?: number) => Promise<string>
   stashDrop: (workspacePath: string, index: number) => Promise<void>
   getStashList: (workspacePath: string) => Promise<GitStashEntry[]>
 }
@@ -271,6 +339,59 @@ export interface UtilityActions {
   isRepository: (workspacePath: string) => Promise<boolean>
   initRepository: (workspacePath: string, initialBranch?: string) => Promise<string>
   blameFile: (workspacePath: string, filePath: string) => Promise<GitBlameResult>
+  /** P1：读取 reflog（null/undefined = HEAD；一键恢复复用 checkoutCommit） */
+  getReflog: (workspacePath: string, branch?: string | null, limit?: number) => Promise<GitReflogEntry[]>
+}
+
+/**
+ * Undo 网络操作方法（FR-P2-3：危险操作快照 + 一键恢复）
+ */
+export interface UndoActions {
+  /** 列出某 workspace 的全部撤销快照（倒序按时间） */
+  listUndoSnapshots: (workspacePath: string) => Promise<UndoSnapshotMeta[]>
+  /** 一键恢复（stash apply / 重建被删分支 ref；遇冲突返回 conflictedFiles 不抛错） */
+  restoreUndoSnapshot: (workspacePath: string, snapshotRef: string) => Promise<UndoRestoreOutcome>
+  /** 手动清理快照（连同 .restore. note ref） */
+  dropUndoSnapshot: (workspacePath: string, snapshotRef: string) => Promise<void>
+}
+
+/**
+ * 操作流水操作方法（FR-P2-4：只读展示 / 清空）
+ */
+export interface OperationsActions {
+  /** 拉取某 workspace 的操作流水（倒序，上限 50/ws） */
+  getOperations: (workspacePath: string) => Promise<GitOperationEntry[]>
+  /** 清空某 workspace 的操作流水（写类动作） */
+  clearOperations: (workspacePath: string) => Promise<void>
+}
+
+/**
+ * 冲突预测操作方法（FR-P2-AI4：只读、确定性计算，0 token）
+ */
+export interface ConflictPredictActions {
+  /** 预测某 workspace 的冲突风险（branch 缺省 = 当前 HEAD 分支）；
+   *  返回预测对象，失败返回 null（不抛错，卡片显示空态） */
+  predictConflicts: (workspacePath: string, branch?: string) => Promise<GitConflictPrediction | null>
+}
+
+// ============================================================================
+// 冲突合并器（P3：序列操作机 + 三窗合并器）
+// ============================================================================
+
+export interface ConflictState {
+  /** 各 workspace 的序列操作状态缓存（按 wsPath 分片） */
+  sequenceStatesByWs: Record<string, GitSequenceState>
+  /** 合并器打开状态（null = 关闭） */
+  mergerOpen: { wsPath: string; file?: string } | null
+}
+
+export interface ConflictActions {
+  /** 拉取某 workspace 的序列操作状态（只读，失败置空态不抛错） */
+  getConflictState: (workspacePath: string) => Promise<GitSequenceState | null>
+  /** 打开合并器（独立对话框形态） */
+  openMerger: (wsPath: string, file?: string) => void
+  /** 关闭合并器 */
+  closeMerger: () => void
 }
 
 // ============================================================================
@@ -287,6 +408,10 @@ export type GitState = StatusState &
   CommitState &
   StashState &
   PRState &
+  UndoState &
+  OperationsState &
+  ConflictPredictState &
+  ConflictState &
   StatusActions &
   BranchActions &
   RemoteActions &
@@ -296,7 +421,11 @@ export type GitState = StatusState &
   AdvancedActions &
   PRActions &
   GitignoreActions &
-  UtilityActions
+  UtilityActions &
+  UndoActions &
+  OperationsActions &
+  ConflictPredictActions &
+  ConflictActions
 
 // ============================================================================
 // Slice Creator 类型
@@ -331,3 +460,15 @@ export type GitignoreSlice = StateCreator<GitState, [], [], GitignoreActions>
 
 /** 工具方法 Slice Creator 类型 */
 export type UtilitySlice = StateCreator<GitState, [], [], UtilityActions>
+
+/** Undo 网络 Slice Creator 类型（FR-P2-3） */
+export type UndoSlice = StateCreator<GitState, [], [], UndoState & UndoActions>
+
+/** 操作流水 Slice Creator 类型（FR-P2-4） */
+export type OperationsSlice = StateCreator<GitState, [], [], OperationsState & OperationsActions>
+
+/** 冲突预测 Slice Creator 类型（FR-P2-AI4） */
+export type ConflictPredictSlice = StateCreator<GitState, [], [], ConflictPredictState & ConflictPredictActions>
+
+/** 冲突合并器 Slice Creator 类型（P3） */
+export type ConflictSlice = StateCreator<GitState, [], [], ConflictState & ConflictActions>

@@ -51,6 +51,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
   const remotes = useGitStore((s) => s.remotes)
   const branches = useGitStore((s) => s.branches)
   const push = useGitStore((s) => s.push)
+  const pushWithLease = useGitStore((s) => s.pushWithLease)
   const refreshStatus = useGitStore((s) => s.refreshStatus)
   const getRemotes = useGitStore((s) => s.getRemotes)
   const getBranches = useGitStore((s) => s.getBranches)
@@ -149,14 +150,21 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
     const targetRemoteBranch = useCustomRemoteBranch ? remoteBranchName : selectedBranch
 
     try {
-      const result: GitPushResult = await push(
-        effectiveWorkspacePath,
-        selectedBranch,
-        selectedRemote,
-        force,
-        setUpstream,
-        useCustomRemoteBranch ? targetRemoteBranch : undefined
-      )
+      const result: GitPushResult = force
+        ? await pushWithLease(
+            effectiveWorkspacePath,
+            selectedBranch,
+            selectedRemote,
+            useCustomRemoteBranch ? targetRemoteBranch : undefined,
+          )
+        : await push(
+            effectiveWorkspacePath,
+            selectedBranch,
+            selectedRemote,
+            force,
+            setUpstream,
+            useCustomRemoteBranch ? targetRemoteBranch : undefined,
+          )
 
       if (result.success) {
         await refreshStatus(effectiveWorkspacePath)
@@ -186,6 +194,7 @@ export function PushDialog({ isOpen, onClose, defaultRemote, defaultBranch, work
     useCustomRemoteBranch,
     remoteBranchName,
     push,
+    pushWithLease,
     refreshStatus,
     toast,
     t,

@@ -7,6 +7,7 @@
 import { invoke } from '@/services/transport'
 import type { BranchSlice } from './types'
 import { parseGitError } from './types'
+import type { BranchState } from './types'
 import type { GitMergeResult, GitRebaseResult } from '@/types/git'
 
 /**
@@ -20,14 +21,23 @@ export const createBranchSlice: BranchSlice = (set, get) => ({
 
   // 获取分支列表
   async getBranches(workspacePath: string) {
+    // P1.5 分片：keyed 域随返回写入（旧 branches 镜像保留给未迁移 UI）
+    const setBranches = (branches: import('@/types/git').GitBranch[]) => {
+      set({
+        branches,
+        branchesByWs: { ...(get() as BranchState).branchesByWs, [workspacePath]: branches },
+      })
+    }
+
     try {
       const branches = await invoke<import('@/types/git').GitBranch[]>('git_get_branches', {
         workspacePath,
       })
 
-      set({ branches })
+      setBranches(branches)
     } catch (err) {
       set({ error: parseGitError(err), branches: [] })
+      setBranches([])
     }
   },
 

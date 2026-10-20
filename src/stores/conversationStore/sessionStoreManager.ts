@@ -34,6 +34,29 @@ import { OFFICIAL_API_PROFILE } from '@/types/modelProfile'
 const log = createLogger('SessionStoreManager')
 
 // ============================================================================
+// 受保护会话（AI-1 驱逐豁免 · 规范先于事实）
+// ============================================================================
+//
+// master-plan AI-1 / C12 预防性修复：本管理器**目前没有**任何 LRU 或数量上限
+// 驱逐策略（会话只在 deleteSession 显式删除时销毁）。这是当前事实，不是设计
+// 保障。未来任何引入「按数量驱逐 / 后台超时回收 / store 数量上限」的改动，
+// 必须先查询 isProtectedSession —— 受保护 kind（面向 GitPanel 等功能面板的
+// 挂载型会话）被静默回收会直接破坏「回流锚点」订阅（建议条失效、用户视角的
+// AI 输出丢失），属于不可接受的隐性故障。
+//
+// 新增受保护 kind 时在此登记；新增驱逐逻辑时必须消费本函数。
+
+const PROTECTED_SESSION_KINDS: ReadonlySet<NonNullable<SessionMetadata['kind']>> = new Set([
+  'commit-message',
+  'git-atomic',
+])
+
+/** 该会话是否受驱逐豁免保护（未来任何回收策略前必查） */
+export function isProtectedSession(metadata: SessionMetadata | undefined): boolean {
+  return !!metadata && !!metadata.kind && PROTECTED_SESSION_KINDS.has(metadata.kind)
+}
+
+// ============================================================================
 // Manager Store Type
 // ============================================================================
 

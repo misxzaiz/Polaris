@@ -119,7 +119,7 @@ export interface SessionRecord {
   /** 静默模式 */
   silentMode: boolean
   /** 会话用途标记 */
-  kind?: 'commit-message' | 'prompt-optimize' | 'title-generation'
+  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation'
   /** 有序消息 ID 列表（引用 MessageLog） */
   messageIds: string[]
   /** 元数据版本号（CAS 乐观锁） */

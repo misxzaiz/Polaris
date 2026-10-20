@@ -246,10 +246,8 @@ pub fn merge_branch(
 
     let repo = open_repository(path)?;
 
-    // 检查是否有正在进行的合并
-    if repo.index()?.has_conflicts() {
-        return Err(GitServiceError::MergeInProgress);
-    }
+    // C11 交叉守卫：任何序列操作进行中均拒绝（merge/rebase/cherry-pick/revert 互斥）
+    super::sequence::guard_no_sequence(path)?;
 
     // 获取当前分支
     let current_branch = repo
@@ -315,19 +313,9 @@ pub fn merge_branch(
     let mut index = repo.index()?;
     let has_conflicts = index.has_conflicts();
 
-    // 获取冲突文件列表
+    // 冲突条目（C10：kind + stages，统一走序列状态机枚举）
     let conflicts = if has_conflicts {
-        let mut conflict_list = Vec::new();
-        for conflict in index.conflicts()?.flatten() {
-            if let Some(our) = conflict.our {
-                let path = String::from_utf8_lossy(&our.path).to_string();
-                conflict_list.push(path);
-            } else if let Some(their) = conflict.their {
-                let path = String::from_utf8_lossy(&their.path).to_string();
-                conflict_list.push(path);
-            }
-        }
-        conflict_list
+        super::sequence::get_sequence_state(path)?.conflicts
     } else {
         vec![]
     };
