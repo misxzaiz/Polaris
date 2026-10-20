@@ -56,6 +56,10 @@ pub const BROWSER_STATUS_SCRIPT: &str =
 
 pub const MUTE_CONTROL_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/mute-control.js");
+/// 面板全屏切换信号脚本（页面加载前注入）
+/// keydown 捕获 F11/Esc → 通过「标题通道」转发切换信号给宿主
+pub const FULLSCREEN_TOGGLE_SCRIPT: &str =
+    include_str!("../../resources/browser-scripts/fullscreen-toggle.js");
 
 pub const READER_EXTRACT_SCRIPT: &str =
     include_str!("../../resources/browser-scripts/reader-extract.js");

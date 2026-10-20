@@ -11,6 +11,7 @@ import {
   Keyboard,
   Loader2,
   Lock,
+  Maximize2,
   PanelBottom,
   RefreshCw,
   Search,
@@ -153,8 +154,11 @@ function isElementRendered(element: HTMLElement): boolean {
 
 function isBrowserOccludedByAppOverlay(
   browserBounds: BrowserBounds,
-  browserRoot: HTMLElement | null
+  browserRoot: HTMLElement | null,
+  options?: { fullscreen?: boolean }
 ): boolean {
+  // 面板全屏模式：webview 已铺满整个面板，不主动隐藏（否则退出条/DOM 元素会触发遮挡检测把 webview 藏掉）
+  if (options?.fullscreen) return false
   if (browserBounds.width < 1 || browserBounds.height < 1) {
     log('isBrowserOccludedByAppOverlay: bounds too small', browserBounds)
     return true
@@ -266,6 +270,10 @@ export function BrowserPanel({
   const findInputRef = useRef<HTMLInputElement>(null)
   const unlistenOverflowRef = useRef<UnlistenFn | null>(null)
   const [findResult, setFindResult] = useState<BrowserInteractionResult | null>(null)
+  // 面板内全屏：仅浏览器面板自身「上工具栏+中网页+下状态栏」合并范围，外部布局不动
+  // 触发：F11（原生走页面注入脚本标题通道，iframe 走宿主 keydown）、Esc、toolbar 按钮
+  const [fullscreen, setFullscreen] = useState(false)
+  const fullscreenRef = useRef(false)
 
   const [isMuted, setIsMuted] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -461,7 +469,7 @@ export function BrowserPanel({
       return
     }
 
-    const occluded = isBrowserOccludedByAppOverlay(bounds, rootRef.current)
+    const occluded = isBrowserOccludedByAppOverlay(bounds, rootRef.current, { fullscreen: fullscreenRef.current })
     const nextBounds = occluded ? HIDDEN_BROWSER_BOUNDS : bounds
 
     if (occluded) {
@@ -483,6 +491,11 @@ export function BrowserPanel({
     lastAppliedBoundsRef.current = nextBounds
   }, [getContainerBounds, webviewLabel])
 
+  /** 面板内全屏切换。实际状态同步由下方 useEffect 完成（保证渲染后 ref 与 state 一致）。 */
+  const toggleFullscreen = useCallback((next?: boolean) => {
+    setFullscreen((prev) => (next ?? !prev))
+  }, [])
+
   const scheduleSyncBounds = useCallback(() => {
     const now = Date.now()
     if (now - lastSyncTimeRef.current < SYNC_THROTTLE_MS) {
@@ -501,6 +514,13 @@ export function BrowserPanel({
       })
     })
   }, [syncBounds])
+
+  // 全屏状态变化时同步 bounds：工具栏/状态栏高度归零会让 containerRef rect 变大，ResizeObserver 会兜底；
+  // 显式调用一次确保立即生效（退出全屏同理，恢复后需重新计算）。
+  useEffect(() => {
+    fullscreenRef.current = fullscreen
+    scheduleSyncBounds()
+  }, [fullscreen, scheduleSyncBounds])
 
   useEffect(() => {
     mountedRef.current = true
@@ -537,6 +557,7 @@ export function BrowserPanel({
     let cleanup = false
     let unlistenSession: UnlistenFn | null = null
     let unlistenOperation: UnlistenFn | null = null
+    let unlistenFsToggle: UnlistenFn | null = null
     let mutationObserver: MutationObserver | null = null
 
     async function completeAcquire(
@@ -598,6 +619,19 @@ export function BrowserPanel({
           if (operation.label !== webviewLabel) return
 
           setOperationEvents((items) => [operation, ...items].slice(0, MAX_OPERATION_EVENTS))
+        })
+        // 全屏切换信号：原生 WebView 页面内 F11/Esc 经标题通道转发至此，label 匹配才处理
+        unlistenFsToggle = await listen<{ label: string; action?: string }>('browser://fullscreen-toggle', (event) => {
+          const payload = event.payload
+          if (payload.label !== webviewLabel) return
+          if (!readyRef.current) return
+          const action = payload.action ?? 'toggle'
+          // Esc 仅在已全屏时退出（页面内按 Esc 关闭弹窗/输入框不应误退出）；F11 双向翻转
+          if (action === 'esc') {
+            if (fullscreenRef.current) toggleFullscreen(false)
+          } else {
+            toggleFullscreen()
+          }
         })
         // 监听溢出菜单动作
         const unlistenOverflow = await listen<{ label: string; action: string }>('browser://overflow-menu-action', (event) => {
@@ -752,6 +786,7 @@ export function BrowserPanel({
       mutationObserver?.disconnect()
       unlistenSession?.()
       unlistenOperation?.()
+      unlistenFsToggle?.()
       unlistenOverflowRef.current?.()
       window.removeEventListener('resize', scheduleSyncBounds)
       window.removeEventListener('scroll', scheduleSyncBounds, true)
@@ -1225,10 +1260,22 @@ export function BrowserPanel({
         closeFind()
         return
       }
+      // F11：iframe 降级模式下宿主 window 直接捕获（原生模式下 F11 不冒泡到宿主，走页面注入脚本）
+      if (e.key === 'F11' && status === 'native-unavailable') {
+        e.preventDefault()
+        toggleFullscreen()
+        return
+      }
+      // Esc：退出全屏（仅当页面未在查找条输入时；findOpen 分支已先处理）
+      if (e.key === 'Escape' && fullscreenRef.current) {
+        e.preventDefault()
+        toggleFullscreen(false)
+        return
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, setShortcutsOpen, status, fallbackHistory])
+  }, [findOpen, openFind, closeFind, closeTab, tabId, webviewLabel, toggleMute, setShortcutsOpen, status, fallbackHistory, toggleFullscreen])
 
   // ── 缩放控制 ──
 
@@ -1249,7 +1296,11 @@ export function BrowserPanel({
 
   return (
     <div ref={rootRef} className="relative flex h-full min-h-0 flex-col overflow-hidden bg-background-base">
-      <div ref={toolbarWidthRef} className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3">
+      <div
+        ref={toolbarWidthRef}
+        className="flex shrink-0 items-center gap-2 border-b border-border-subtle bg-background-elevated px-3 transition-[height] duration-150 ease-out overflow-hidden"
+        style={fullscreen ? { height: 0, opacity: 0, borderColor: 'transparent' } : { height: '44px' }}
+      >
         {/* 导航按钮组 */}
         <div className="flex items-center gap-1">
           <button
@@ -1392,6 +1443,15 @@ export function BrowserPanel({
             <span className="hidden 2xl:inline">
               {t('browser.find', { defaultValue: '查找' })}
             </span>
+          </button>
+          <button
+            type="button"
+            className={toolbarButtonClass}
+            onClick={() => toggleFullscreen()}
+            disabled={status !== 'ready'}
+            title={t('browser.fullscreen', { defaultValue: '面板内全屏 (F11)' })}
+          >
+            <Maximize2 size={15} />
           </button>
         </div>
 
@@ -1708,7 +1768,10 @@ export function BrowserPanel({
       )}
 
       {/* 底部状态栏：常驻。圈选为核心入口（一键可达），AI 操作日志保留在线 */}
-      <footer className="flex h-9 shrink-0 items-center gap-1.5 border-t border-border-subtle bg-background-elevated px-2">
+      <footer
+        className="flex shrink-0 items-center gap-1.5 border-t border-border-subtle bg-background-elevated px-2 transition-[height] duration-150 ease-out overflow-hidden"
+        style={fullscreen ? { height: 0, opacity: 0, borderColor: 'transparent' } : { height: '36px' }}
+      >
         {/* 圈选按钮（主入口）：点击进入/退出圈选模式 */}
         <button
           type="button"
@@ -1796,6 +1859,8 @@ const SHORTCUT_LIST: { key: string; label: string; keys: string }[] = [
   { key: 'mute', label: '静音切换', keys: 'Ctrl+M' },
   { key: 'back', label: '后退', keys: 'Alt+←' },
   { key: 'forward', label: '前进', keys: 'Alt+→' },
+  { key: 'fullscreen', label: '面板内全屏', keys: 'F11' },
+  { key: 'exitFullscreen', label: '退出全屏', keys: 'Esc / F11' },
   { key: 'shortcutsHelp', label: '快捷键帮助', keys: 'Ctrl+Shift+/' },
 ]
 

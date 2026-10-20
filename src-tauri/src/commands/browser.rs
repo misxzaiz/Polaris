@@ -1598,6 +1598,9 @@ fn browser_create_with_app(
     // on_download 钩子独立 clone —— 多个闭包不能共享同一所有权
     let dl_hook_app = app.clone();
     let dl_hook_label = label.clone();
+    // 全屏信号通道（标题通道回调）独立 clone
+    let fs_toggle_app = app.clone();
+    let fs_toggle_label = label.clone();
 
     let builder = WebviewBuilder::new(label.clone(), WebviewUrl::External(normalized.clone()))
         .devtools(true)
@@ -1605,6 +1608,8 @@ fn browser_create_with_app(
         .initialization_script(browser_scripts::NET_HOOK_INIT_SCRIPT)
         // console 持久捕获：页面加载前注入，保证从头开始收集 console 消息
         .initialization_script(browser_scripts::CONSOLE_CAPTURE_SCRIPT)
+        // 面板全屏切换信号脚本：捕获页面内 F11/Esc，经标题通道通知宿主
+        .initialization_script(browser_scripts::FULLSCREEN_TOGGLE_SCRIPT)
         // 原生对话框拦截：页面加载前安装 alert/confirm/prompt 收集器
         .initialization_script(browser_scripts::dialog_script(&serde_json::json!({ "op": "install" })))
         .on_navigation(move |next_url| {
@@ -1633,12 +1638,29 @@ fn browser_create_with_app(
             true
         })
         .on_document_title_changed(move |_webview, next_title| {
+            let title = next_title.to_string();
+            // 标题通道：页面注入脚本用 document.title 转发全屏切换信号。
+            // 命中标记（__POLARIS_FS__/f11 或 /esc）时不更新 session 标题，仅转发事件给前端。
+            let action = if title.starts_with("__POLARIS_FS__/f11") {
+                Some("f11")
+            } else if title.starts_with("__POLARIS_FS__/esc") {
+                Some("esc")
+            } else {
+                None
+            };
+            if let Some(action) = action {
+                let _ = fs_toggle_app.emit(
+                    "browser://fullscreen-toggle",
+                    serde_json::json!({ "label": fs_toggle_label.clone(), "action": action }),
+                );
+                return;
+            }
             let _ = upsert_session_and_emit(
                 &title_app,
                 title_label.clone(),
                 None,
                 None,
-                Some(next_title),
+                Some(title),
             );
         })
         .on_new_window(move |next_url, _features| {
