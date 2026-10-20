@@ -146,3 +146,18 @@ PR-2a 主体（Reply 结构化错误、写任务队列/取消、progress 合流�
 |---|---|---|
 | **FR-P3-2 Interactive Rebase 核心闭环** | ✅ | 后端 `plan_interactive_rebase`（base..HEAD 应用序只读）+ `start_interactive_rebase`（面板 todo 渲染 inner todo → temp `apply_todo.cmd` 作 GIT_SEQUENCE_EDITOR 注入 `git rebase -i [--autosquash]`；C11 guard + 冲突回读 sequence state）；capability 双动作（写类 + 撤销快照）；前端 `RebaseTodoDialog`（动作下拉 + 上下移 + live 组校验 + autosquash）+ HistoryTab 右键入口 + slice 双方法 + 双语 i18n；组件测试 6/6、后端 4 单测（编译门过，运行受 DLL 限制） |
 | （如实未做）reword / 拖拽 / edit 停点 | ⬜ | reword 需 GIT_EDITOR 二层编排；拖拽以按钮替代；下轮增量 |
+
+## 十、执行记录（第五轮 · git 功能扫尾：AI-3 / AI-8 / FR-P2-3 UI / P4 / AI-6，2026-10-20 续）
+
+按 master-plan 顺序在 `feat/git-panel-vnext` 完成（每项独立单主题提交 + 门禁）：
+
+| 项 | 状态 | 关键产物 / 提交 |
+|---|---|---|
+| **P3-2 Interactive Rebase** | ✅ `41ccd8a6` | plan/start 后端（GIT_SEQUENCE_EDITOR 注入 cmd 脚本无声换 todo）+ RebaseTodoDialog + 右键入口；6 组件用例 + 4 后端单测 |
+| **AI-3 提交前风险扫描（Review 门）** | ✅ `a11f5404` | `risk_scan.rs`：6 类密钥正则 + 冲突 marker + 大文件（blob>1MiB），120 条上限截断；`CommitRiskCard` 常驻（失败静默不阻断）；4 组件用例 + 正则单测；欠账：明细跳转 diff、LLM 提交后解释（v2） |
+| **AI-8 fixup!/squash! 整理建议** | ✅ `84313dcc` | `suggest_rebase_todos`（前缀匹配 → 目标连段尾部插入；fixup-of-fixup/无目标 → unmatched 如实汇报；validate_todos 兜底降级）；Dialog AI-8 按钮 + toast 三级；纯函数 6 单测 + 组件 +2；欠账：未 push 分支检测、AI 解释层 |
+| **FR-P2-3 Undo 收尾（UI 消费点）** | ✅ `859bb68f` | `UndoBar`：折叠最新 1 条 + 展开 3 条；恢复分级 toast（ok/conflict/error）；两步确认丢弃；undoSlice 三方法首个 UI 消费点；4 组件用例；欠账：危险操作 toast「撤销」按钮联动 |
+| **P4 生态出口 v1** | ✅ `4a63f1e0` | bus_dispatch 白名单 + `cap.git`（写类经权限 gate + 审计；protocol.cap.git 只读动作协议）；`VALID_PLUGIN_ICONS` 补 `SquareTerminal`（前端 18 值对齐顺修漂移）；`cargo build --bin polaris-mcp` 重建；欠账：插件示例（插件仓侧） |
+| **AI-6 v0（无 LLM）** | ✅ `37ce6316` | `gitNlQuery.compileGitQuery`（显式键/引号短语/中文作者/相对时间/路径词；落空 → 整句 grep 不劣化）；HistoryTab exactSearch 接线；10 用例；欠账：LLM 归纳层（⚡⚡）、blame/diff 域 |
+
+**仍在册欠账（如实，未完成≠已完成）**：① P3-2 reword（GIT_EDITOR 二层编排）/ 拖拽 reorder / edit 停点 hover；② AI-5 冲突建议卡 / 中列 Append / 跨文件键盘流；③ graph.c 四数组 lane 收缩（性能优化，语义不变）；④ AI-6 LLM 归纳层 + blame/diff 域；⑤ P4 插件示例（GitFlow/worktree/GitLab PR，插件仓工作）；⑥ Undo toast「撤销」按钮联动；⑦ 风险卡明细跳转 diff。**分支基线债（不属本域，不越界修）**：11 个 vitest 存量失败文件（localhost mock，93f40dd3 基线复证等值）+ 6 lint error。
