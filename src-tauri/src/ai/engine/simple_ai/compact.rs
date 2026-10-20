@@ -245,15 +245,19 @@ async fn request_summary_once(
         .as_deref()
         .unwrap_or_else(|| profile.model.as_str());
 
-    let mut body = simple_ai_protocol::build_request_body(
+    let mut body = simple_ai_protocol::build_request_body_with_env(
         protocol,
         base_model,
         &messages,
         &[],
         Some(max_tokens),
         None, // 压缩摘要请求不注入思考级别（内部辅助请求，跟随模型默认）
+        &profile.custom_env,
     );
     // 非流式：去掉 stream/tools 相关字段。
+    // 注意：断点已在 with_env 入口注入。本请求工具列表为空，故只有 system
+    // 与末尾 user 两处断点；system（压缩指令）在多次压缩之间字节不变，
+    // 断点使其可跨压缩请求复用缓存。
     if let Some(obj) = body.as_object_mut() {
         obj.insert("stream".to_string(), json!(false));
         obj.remove("stream_options");

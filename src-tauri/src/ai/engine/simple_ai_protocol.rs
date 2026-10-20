@@ -28,6 +28,9 @@ const DEFAULT_MAX_TOKENS: u64 = 8192;
 /// Anthropic API 版本头（与 model_profile_service 保持一致）。
 pub const ANTHROPIC_VERSION: &str = "2023-06-01";
 
+/// 本方案实际放置的断点数量上限。Anthropic 硬性上限为 4，留 1 个余量。
+const CACHE_BREAKPOINT_LIMIT: usize = 3;
+
 // ============================================================================
 // CLI 私有模型后缀解析
 // ============================================================================
@@ -335,6 +338,25 @@ pub fn build_request_body(
     }
 }
 
+/// 生产路径专用入口：构建请求体后附加 Anthropic 提示词缓存断点。
+///
+/// 与 [`build_request_body`] 的区别仅在缓存断点。保留后者原签名是为避免
+/// 波及既有的 15 处单元测试调用点（测试验证的是协议映射本身，不需要断点）。
+/// `custom_env` 同时承载 `SIMPLE_AI_CACHE_CONTROL` 开关，供不兼容网关关闭。
+pub fn build_request_body_with_env(
+    protocol: WireProtocol,
+    model: &str,
+    messages: &[Value],
+    openai_tools: &[Value],
+    max_tokens: Option<u64>,
+    effort: Option<&str>,
+    custom_env: &Option<HashMap<String, String>>,
+) -> Value {
+    let mut body = build_request_body(protocol, model, messages, openai_tools, max_tokens, effort);
+    apply_cache_breakpoints(&mut body, protocol, custom_env);
+    body
+}
+
 /// Anthropic `thinking.budget_tokens` 随努力级别的建议值。
 /// 参考 Claude Code 的 --effort 语义：xhigh/max 更深入，low 更轻量。
 fn thinking_budget_for_effort(effort: &str) -> u64 {
@@ -344,6 +366,140 @@ fn thinking_budget_for_effort(effort: &str) -> u64 {
         "medium" => 8000,
         "low" => 2048,
         _ => 8000, // 未知级别回退中等预算
+    }
+}
+
+/// 提示词缓存断点开关（`custom_env.SIMPLE_AI_CACHE_CONTROL`）。
+///
+/// 默认开启。`cache_control` 是 Anthropic 专有字段，而本项目的
+/// `wireApi=anthropic-messages` 同时用于对接 DeepSeek / GLM 等国产网关
+/// （响应侧已有 `prompt_tokens_details` 兼容层）。若某网关对请求侧的
+/// `cache_control` 返回 400，会让整个 profile 全挂——比命中率下降严重得多，
+/// 故保留显式关闭入口，沿用 `SIMPLE_AI_DISABLE_SUBAGENT` 的既有写法。
+///
+/// 不做「失败后自动重试去掉断点」这类自愈：那属于用重试掩盖兼容性问题。
+fn cache_control_enabled(custom_env: &Option<HashMap<String, String>>) -> bool {
+    custom_env
+        .as_ref()
+        .and_then(|m| m.get("SIMPLE_AI_CACHE_CONTROL"))
+        .and_then(|v| v.parse::<bool>().ok())
+        .unwrap_or(true)
+}
+
+/// 统计请求体中 `cache_control` 断点的实际数量（防御性上限检查用）。
+fn count_cache_breakpoints(body: &Value) -> usize {
+    let mut n = 0usize;
+    if let Some(sys) = body.get("system").and_then(Value::as_array) {
+        n += sys.iter().filter(|b| b.get("cache_control").is_some()).count();
+    }
+    if let Some(tools) = body.get("tools").and_then(Value::as_array) {
+        n += tools.iter().filter(|b| b.get("cache_control").is_some()).count();
+    }
+    if let Some(msgs) = body.get("messages").and_then(Value::as_array) {
+        for m in msgs {
+            if let Some(arr) = m.get("content").and_then(Value::as_array) {
+                n += arr.iter().filter(|b| b.get("cache_control").is_some()).count();
+            }
+        }
+    }
+    n
+}
+
+/// 为 Anthropic 请求体放置 `cache_control` 断点（提示词缓存命中率修复）。
+///
+/// 实测根因：无断点时依赖网关自动前缀缓存，该缓存在网关 LRU 池中被并发请求
+/// 驱逐，单次命中率在 0% 与 ~100% 间随机切换，均值收敛到 ~50%。加断点等于
+/// 强制保留条目、不被驱逐，同请求体重放从 0%/94%/4%/99% 跳动变为稳定 99%。
+///
+/// 三处断点角色不同：
+/// - `system`：最大且最稳定的块（persona + 首轮注入的环境/项目指令，continue 不重建）。
+///   注意必须转成 block 数组形态——字符串形态在 Anthropic 协议上无法挂断点，
+///   这是原本的结构性障碍。
+/// - `tools` 末尾：schema 体量大且会话内不变（内置定序 + MCP `cached_specs`）。
+/// - 最后一条 `user`：缓存是前缀式的，在「稳定前缀尾部」打断点 → 下一轮更长的
+///   前缀保证命中。这对 agent 工作负载尤为关键：单 turn 内多轮工具调用，
+///   只靠 system + tools，增长中的历史段仍落回可驱逐的自动缓存，还是会抖。
+///
+/// 幂等保护：已存在断点的块不重复挂载，避免二次注入（如 compact 路径反复
+/// 经过转换）导致数量翻倍。断点总数因此确定为 ≤3（system / tools / 末尾 user
+/// 各一），下方 `CACHE_BREAKPOINT_LIMIT` 检查仅作防御性告警，不做裁剪——
+/// 裁剪会静默破坏协议语义，告警更利于暴露调用方拼装错误。
+fn apply_cache_breakpoints(body: &mut Value, protocol: WireProtocol, custom_env: &Option<HashMap<String, String>>) {
+    if protocol != WireProtocol::Anthropic {
+        return;
+    }
+    if !cache_control_enabled(custom_env) {
+        return;
+    }
+
+    // 1. system：字符串 → block 数组 + 断点。
+    if let Some(Value::String(text)) = body.get("system").cloned() {
+        if !text.is_empty() {
+            body["system"] = json!([
+                {
+                    "type": "text",
+                    "text": text,
+                    "cache_control": json!({ "type": "ephemeral" }),
+                }
+            ]);
+        }
+    } else if let Some(sys) = body.get_mut("system").and_then(Value::as_array_mut) {
+        // 已是数组形态（如上游已是 block 数组）：只给尚无断点的块挂载。
+        for b in sys.iter_mut() {
+            if b.get("type").and_then(Value::as_str) == Some("text") && b.get("cache_control").is_none() {
+                b["cache_control"] = json!({ "type": "ephemeral" });
+                break;
+            }
+        }
+    }
+
+    // 2. tools 末尾：会话内稳定，是第二大稳定块。
+    if let Some(last) = body.get_mut("tools").and_then(Value::as_array_mut).and_then(|a| a.last_mut()) {
+        if last.get("cache_control").is_none() {
+            last["cache_control"] = json!({ "type": "ephemeral" });
+        }
+    }
+
+    // 3. 最后一条 user：稳定前缀尾部。
+    //    content 两种形态都要处理——纯字符串（普通 user 消息）与 block 数组
+    //    （tool_result 合并后的形态，见 build_anthropic_body 的 tool 合并逻辑）。
+    let last_is_user = body
+        .get("messages")
+        .and_then(Value::as_array)
+        .and_then(|m| m.last())
+        .is_some_and(|m| m.get("role").and_then(Value::as_str) == Some("user"));
+    if last_is_user {
+        let last = body.get_mut("messages").and_then(Value::as_array_mut).and_then(|m| m.last_mut()).unwrap();
+        match last.get_mut("content") {
+            Some(Value::String(s)) if !s.is_empty() => {
+                let text = std::mem::take(s);
+                last["content"] = json!([
+                    {
+                        "type": "text",
+                        "text": text,
+                        "cache_control": json!({ "type": "ephemeral" }),
+                    }
+                ]);
+            }
+            Some(Value::Array(arr)) if !arr.is_empty() => {
+                if let Some(b) = arr.last_mut() {
+                    if b.get("cache_control").is_none() {
+                        b["cache_control"] = json!({ "type": "ephemeral" });
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // 上限防御：断点超限会导致 Anthropic 直接 400。
+    let used = count_cache_breakpoints(body);
+    if used > CACHE_BREAKPOINT_LIMIT {
+        let model_name = body["model"].as_str().unwrap_or("?");
+        tracing::warn!(
+            "[SimpleAI] cache_control 断点数 {used} 超过预期上限 {CACHE_BREAKPOINT_LIMIT}，\
+             可能导致上游 400（model={model_name}）"
+        );
     }
 }
 
@@ -1041,6 +1197,169 @@ mod tests {
                 }
             }
         })]
+    }
+
+    // ------------------------------------------------------------------
+    // 提示词缓存断点（apply_cache_breakpoints）
+    // ------------------------------------------------------------------
+
+    fn env_with(k: &str, v: &str) -> Option<HashMap<String, String>> {
+        let mut m = HashMap::new();
+        m.insert(k.to_string(), v.to_string());
+        Some(m)
+    }
+
+    #[test]
+    fn cache_breakpoints_applied_on_three_locations() {
+        let messages = vec![
+            json!({ "role": "system", "content": "sys prompt" }),
+            json!({ "role": "user", "content": "question" }),
+        ];
+        let body = build_request_body_with_env(
+            WireProtocol::Anthropic,
+            "claude-x",
+            &messages,
+            &sample_tools(),
+            None,
+            None,
+            &None, // custom_env 缺省 = 断点开启
+        );
+
+        // system：字符串 → block 数组 + 断点
+        let sys = body["system"].as_array().expect("system 应为数组");
+        assert_eq!(sys.len(), 1);
+        assert_eq!(sys[0]["type"], "text");
+        assert_eq!(sys[0]["text"], "sys prompt");
+        assert_eq!(sys[0]["cache_control"], json!({ "type": "ephemeral" }));
+
+        // tools 末尾：断点
+        let tools = body["tools"].as_array().expect("tools 应存在");
+        assert!(tools.len() == 1);
+        assert_eq!(tools[0]["cache_control"], json!({ "type": "ephemeral" }));
+
+        // 最后一条 user（纯字符串 content → block 数组 + 断点）
+        let msgs = body["messages"].as_array().unwrap();
+        let last = msgs.last().unwrap();
+        let c = last["content"].as_array().expect("user content 应为数组");
+        assert_eq!(c[0]["type"], "text");
+        assert_eq!(c[0]["text"], "question");
+        assert_eq!(c[0]["cache_control"], json!({ "type": "ephemeral" }));
+
+        // 总数 ≤ 3
+        assert!(
+            count_cache_breakpoints(&body) <= CACHE_BREAKPOINT_LIMIT,
+            "断点数 {} 超过上限 {}",
+            count_cache_breakpoints(&body),
+            CACHE_BREAKPOINT_LIMIT
+        );
+    }
+
+    #[test]
+    fn cache_breakpoint_on_user_with_tool_result_blocks() {
+        // tool_result 合并后的 user(content=[block]) 形态：断点挂到最后一个 block。
+        let messages = vec![
+            json!({ "role": "tool", "tool_call_id": "t1", "content": "result" }),
+            json!({ "role": "user", "content": "follow-up" }),
+        ];
+        let body = build_request_body_with_env(
+            WireProtocol::Anthropic, "m", &messages, &[], None, None, &None,
+        );
+        let msgs = body["messages"].as_array().unwrap();
+        let arr = msgs[0]["content"].as_array().unwrap();
+        // 断点落在最后一个 block（text 的 follow-up），而非 tool_result。
+        assert!(arr[0].get("cache_control").is_none(), "tool_result 不应带断点");
+        assert_eq!(arr[1]["type"], "text");
+        assert_eq!(arr[1]["cache_control"], json!({ "type": "ephemeral" }));
+        assert_eq!(count_cache_breakpoints(&body), 1);
+    }
+
+    #[test]
+    fn cache_breakpoints_disabled_via_custom_env() {
+        let messages = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        let body = build_request_body_with_env(
+            WireProtocol::Anthropic,
+            "m",
+            &messages,
+            &sample_tools(),
+            None,
+            None,
+            &env_with("SIMPLE_AI_CACHE_CONTROL", "false"),
+        );
+        // system 保持字符串形态，三处断点均不出现
+        assert_eq!(body["system"], "sys");
+        assert!(body["tools"][0].get("cache_control").is_none());
+        assert!(body["messages"][0]["content"].as_str().is_some());
+        assert_eq!(count_cache_breakpoints(&body), 0);
+    }
+
+    #[test]
+    fn cache_breakpoints_default_enabled_when_env_missing_or_invalid() {
+        let messages = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        for env in [
+            None,
+            Some(HashMap::new()),
+            env_with("SIMPLE_AI_CACHE_CONTROL", "true"),
+            env_with("SIMPLE_AI_CACHE_CONTROL", "yes"), // 非法值 → 回退默认（开启）
+            env_with("OTHER_KEY", "false"),
+        ] {
+            let body = build_request_body_with_env(
+                WireProtocol::Anthropic, "m", &messages, &sample_tools(), None, None, &env,
+            );
+            assert_eq!(
+                count_cache_breakpoints(&body), 3,
+                "env={env:?} 应默认开启断点"
+            );
+        }
+    }
+
+    #[test]
+    fn cache_breakpoints_ignored_for_non_anthropic_protocols() {
+        let messages = vec![
+            json!({ "role": "system", "content": "sys" }),
+            json!({ "role": "user", "content": "hi" }),
+        ];
+        for protocol in [WireProtocol::OpenAIChat, WireProtocol::Responses] {
+            let body = build_request_body_with_env(
+                protocol, "m", &messages, &sample_tools(), None, None, &None,
+            );
+            assert_eq!(
+                count_cache_breakpoints(&body), 0,
+                "{protocol:?} 不应注入 Anthropic 专有断点"
+            );
+        }
+    }
+
+    #[test]
+    fn cache_breakpoints_are_idempotent() {
+        // 二次注入不得重复挂断点（compact 等非典型路径可能多次经过）。
+        let mut body = build_request_body_with_env(
+            WireProtocol::Anthropic, "m",
+            &[json!({ "role": "user", "content": "hi" })],
+            &sample_tools(), None, None, &None,
+        );
+        let before = count_cache_breakpoints(&body);
+        apply_cache_breakpoints(&mut body, WireProtocol::Anthropic, &None);
+        assert_eq!(count_cache_breakpoints(&body), before, "重复注入应被忽略");
+    }
+
+    #[test]
+    fn compact_style_body_keeps_only_system_and_tail_breakpoints() {
+        // 复现 compact 路径：无工具、末尾 user 携带历史摘要文本。
+        let messages = vec![
+            json!({ "role": "system", "content": "You are compacting a conversation history." }),
+            json!({ "role": "user", "content": "history to summarize" }),
+        ];
+        let body = build_request_body_with_env(
+            WireProtocol::Anthropic, "m", &messages, &[], None, None, &None,
+        );
+        // 空工具 → 只有 system 与末尾 user 两处
+        assert_eq!(count_cache_breakpoints(&body), 2);
     }
 
     #[test]

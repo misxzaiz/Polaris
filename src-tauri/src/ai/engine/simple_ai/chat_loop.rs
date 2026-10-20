@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use tokio::sync::watch;
 
 use crate::ai::engine::simple_ai_protocol::{
-    build_request_body, CliModelSuffix, StreamDelta, StreamState, WireProtocol,
+    build_request_body_with_env, CliModelSuffix, StreamDelta, StreamState, WireProtocol,
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
@@ -231,7 +231,17 @@ pub(super) async fn run_chat_loop(
 
         // 构建请求体（按线路协议转换内部 OpenAI 消息格式）—— 用剥离后的纯模型名。
         // effort 来自会话配置（状态栏选择），映射为协议内思考参数（见 simple_ai_protocol.rs）。
-        let body = build_request_body(protocol, base_model, messages, &tools, profile.max_tokens, effort);
+        // 经 with_env 入口附加 Anthropic 缓存断点（提示词缓存命中率修复），
+        // custom_env 同时承载 SIMPLE_AI_CACHE_CONTROL 开关。
+        let body = build_request_body_with_env(
+            protocol,
+            base_model,
+            messages,
+            &tools,
+            profile.max_tokens,
+            effort,
+            &profile.custom_env,
+        );
         if tools.is_empty() {
             tracing::warn!("[SimpleAI] 工具列表为空!");
         } else {
