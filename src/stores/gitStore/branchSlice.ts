@@ -8,7 +8,9 @@ import { invoke } from '@/services/transport'
 import type { BranchSlice } from './types'
 import { parseGitError } from './types'
 import type { BranchState } from './types'
-import type { GitMergeResult, GitRebaseResult } from '@/types/git'
+import type {
+  GitMergeResult, GitRebasePlan, GitRebaseResult, GitRebaseTodoItem,
+} from '@/types/git'
 
 /**
  * 创建分支操作 Slice
@@ -165,6 +167,39 @@ export const createBranchSlice: BranchSlice = (set, get) => ({
       await get().refreshStatus(workspacePath)
       await get().getBranches(workspacePath)
 
+      set({ isLoading: false })
+      return result
+    } catch (err) {
+      set({ error: parseGitError(err), isLoading: false })
+      throw err
+    }
+  },
+
+  // 面板化 Interactive Rebase：拉取预览计划（只读，只 guard 不改仓库）
+  async planInteractiveRebase(workspacePath: string, baseCommitish: string) {
+    return invoke<GitRebasePlan>('git_plan_interactive_rebase', {
+      workspacePath,
+      baseCommitish,
+    })
+  },
+
+  // 面板化 Interactive Rebase：确认执行（写类；冲突走后续 rebase_continue + 冲突合并器闭环）
+  async startInteractiveRebase(
+    workspacePath: string,
+    baseCommitish: string,
+    todos: GitRebaseTodoItem[],
+    autosquash: boolean,
+  ) {
+    set({ isLoading: true, error: null })
+    try {
+      const result = await invoke<GitRebaseResult>('git_start_interactive_rebase', {
+        workspacePath,
+        baseCommitish,
+        todos,
+        autosquash,
+      })
+      await get().refreshStatus(workspacePath)
+      await get().getBranches(workspacePath)
       set({ isLoading: false })
       return result
     } catch (err) {

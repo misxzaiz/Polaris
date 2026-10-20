@@ -18,6 +18,8 @@ import type {
   GitPushResult,
   GitMergeResult,
   GitRebaseResult,
+  GitRebasePlan,
+  GitRebaseTodoItem,
   GitCherryPickResult,
   GitRevertResult,
   GitCommit,
@@ -237,6 +239,15 @@ export interface BranchActions {
   rebaseBranch: (workspacePath: string, sourceBranch: string) => Promise<GitRebaseResult>
   rebaseAbort: (workspacePath: string) => Promise<void>
   rebaseContinue: (workspacePath: string) => Promise<GitRebaseResult>
+  /** 面板化 Interactive Rebase（P3 FR-P3-2）：预览计划（只读） */
+  planInteractiveRebase: (workspacePath: string, baseCommitish: string) => Promise<GitRebasePlan>
+  /** 面板 todo 确认后执行（写类；冲突走 rebase_continue + 冲突合并器） */
+  startInteractiveRebase: (
+    workspacePath: string,
+    baseCommitish: string,
+    todos: GitRebaseTodoItem[],
+    autosquash: boolean,
+  ) => Promise<GitRebaseResult>
 }
 
 /**

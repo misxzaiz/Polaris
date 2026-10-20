@@ -616,5 +616,29 @@
     "legendDim": "History",
     "wip": "Uncommitted changes",
     "wipCount": "{{count}} files"
+  },
+
+  "rebaseTodo": {
+    "menuEntry": "Interactively rebase from here...",
+    "title": "Interactive Rebase",
+    "baseShort": "Base {{sha}}",
+    "nothingToRebase": "No commits to rebase after this one",
+    "summary": "Sequence: pick {{pick}} · drop {{drop}} · squash {{squash}} · fixup {{fixup}}",
+    "firstLocked": "First entry must stay pick (squash/fixup must follow a pick)",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "autosquash": "Auto-arrange fixup!/squash! commits",
+    "invalidOrder": "Invalid action order: squash/fixup must directly follow a pick (first entry must be pick)",
+    "rewordHint": "reword requires editor orchestration, not supported yet (rebase first, then amend)",
+    "conflictTakenOver": "Rebase hit {{count}} conflicted files, conflict merger has taken over",
+    "success": "Interactive rebase finished",
+    "cancel": "Cancel",
+    "execute": "Start rebase",
+    "action": {
+      "pick": "Keep",
+      "drop": "Drop",
+      "squash": "Merge (keep msg)",
+      "fixup": "Merge (discard msg)"
+    }
   }
 }

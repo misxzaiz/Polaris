@@ -26,6 +26,7 @@ import {
   Tag,
   Trash2,
   History as HistoryIcon,
+  ListTodo,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
@@ -75,6 +76,7 @@ import { CommitDetailsPane } from './CommitDetailsPane'
 import { ReflogView } from './ReflogView'
 import { CreateBranchFromCommitDialog } from './CreateBranchFromCommitDialog'
 import { CreateTagFromCommitDialog } from './CreateTagFromCommitDialog'
+import { RebaseTodoDialog } from './RebaseTodoDialog'
 
 const log = createLogger('HistoryTab')
 
@@ -171,6 +173,8 @@ export function HistoryTab({
   const paneResizeCleanupRef = useRef<(() => void) | null>(null)
 
   const [commitContextMenu, setCommitContextMenu] = useState<{ x: number; y: number; commit: GitCommitType } | null>(null)
+  /** P3 FR-P3-2：面板化 Interactive Rebase 起点（Log 右键设置） */
+  const [rebaseFromCommit, setRebaseFromCommit] = useState<GitCommitType | null>(null)
   const [confirmDialog, setConfirmDialog] = useState<{
     show: boolean
     title: string
@@ -791,6 +795,14 @@ export function HistoryTab({
         label: t('history.createTag'),
         icon: <Tag size={14} />,
         action: () => setCreateTagFromCommit(commit),
+      },
+      // -- Interactive Rebase（P3 FR-P3-2）：入口即面板，约束由 plan + 后端守卫兜底 --
+      {
+        id: 'interactive-rebase',
+        label: t('rebaseTodo.menuEntry'),
+        icon: <ListTodo size={14} />,
+        disabled: !effectiveWorkspacePath,
+        action: () => setRebaseFromCommit(commit),
       },
       {
         id: 'checkout-commit',
@@ -1592,6 +1604,18 @@ export function HistoryTab({
           workspacePath={effectiveWorkspacePath}
           onClose={() => setCreateTagFromCommit(null)}
           onSuccess={() => setCreateTagFromCommit(null)}
+        />
+      )}
+
+      {rebaseFromCommit && effectiveWorkspacePath && (
+        <RebaseTodoDialog
+          workspacePath={effectiveWorkspacePath}
+          baseCommitish={rebaseFromCommit.sha}
+          onClose={() => setRebaseFromCommit(null)}
+          onDone={() => {
+            setRebaseFromCommit(null)
+            void loadCommits()
+          }}
         />
       )}
     </div>

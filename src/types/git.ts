@@ -476,6 +476,27 @@ export interface GitRebaseResult {
 }
 
 /**
+ * Interactive Rebase（P3 FR-P3-2）面板化 todo 的单条动作（对齐 Rust GitRebaseTodoAction）
+ * reword 需编辑器编排，增量阶段未支持（handoff §2.1/§3.3）
+ */
+export type GitRebaseTodoAction = 'pick' | 'drop' | 'squash' | 'fixup'
+
+/** 单条 todo（camelCase 对齐 Rust GitRebaseTodoItem） */
+export interface GitRebaseTodoItem {
+  sha: string
+  subject: string
+  action: GitRebaseTodoAction
+}
+
+/** 面板编辑输入（camelCase 对齐 Rust GitRebasePlan） */
+export interface GitRebasePlan {
+  baseCommitish: string
+  commits: GitRebaseTodoItem[]
+  /** 首项锁定为 pick（squash/fixup 必须跟随 pick） */
+  firstLocked: boolean
+}
+
+/**
  * Cherry-pick 操作结果
  */
 export interface GitCherryPickResult {

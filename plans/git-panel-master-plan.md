@@ -137,3 +137,12 @@ PR-2a 主体（Reply 结构化错误、写任务队列/取消、progress 合流�
 | **门禁** | ✅（存量除外） | tsc 0；cargo check/test-compile/web-gate 0；vitest：conflict 31/31、GitPanel+gitStore 305/305；全量 84 failed = 11 个基线存量文件（stash 复核，与本次无关）；lint 上余 6 error 同为基线遗留（非 git 域） |
 
 **未做（增量留给下轮）**：AI-5 冲突块建议卡；中列 Append 双侧拼合；跨文件键盘流接力。**分支基线债（不属本域）**：11 个 vitest 存量失败文件（"fetch failed" 系 localhost mock 依赖）+ 6 个 lint error（PatchDiffRenderer/useRuntimeSummary/ansiToHtml）。
+
+## 九、执行记录（第四轮 · P2 收尾核实 + FR-P3-2 Interactive Rebase，2026-10-20 续）
+
+勘误：第三轮交接的「P2 泳道图 60%」为陈旧数据——实测 `get_log_with_lanes` + `compute_semantics_full`（语义色 local/unpushed/merged/dim）+ `lane_cache.rs` + WIP/stash 虚拟行 + `OperationsLog`（FR-P2-4）均已落地并挂载。
+
+| 项 | 状态 | 关键产物 |
+|---|---|---|
+| **FR-P3-2 Interactive Rebase 核心闭环** | ✅ | 后端 `plan_interactive_rebase`（base..HEAD 应用序只读）+ `start_interactive_rebase`（面板 todo 渲染 inner todo → temp `apply_todo.cmd` 作 GIT_SEQUENCE_EDITOR 注入 `git rebase -i [--autosquash]`；C11 guard + 冲突回读 sequence state）；capability 双动作（写类 + 撤销快照）；前端 `RebaseTodoDialog`（动作下拉 + 上下移 + live 组校验 + autosquash）+ HistoryTab 右键入口 + slice 双方法 + 双语 i18n；组件测试 6/6、后端 4 单测（编译门过，运行受 DLL 限制） |
+| （如实未做）reword / 拖拽 / edit 停点 | ⬜ | reword 需 GIT_EDITOR 二层编排；拖拽以按钮替代；下轮增量 |

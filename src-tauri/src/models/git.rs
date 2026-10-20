@@ -586,6 +586,52 @@ pub struct GitMergeResult {
     pub files_changed: usize,
 }
 
+/// Interactive Rebase 单条 TODO 项（面板化 todo 的最小单元；serde camelCase）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRebaseTodoItem {
+    /// 完整 sha
+    pub sha: String,
+    /// 提交标题（单行）
+    pub subject: String,
+    /// 面板动作（todo 层动作；reword 需编辑器编排，增量阶段未支持）
+    /// pick = 保留 / drop = 丢弃 / squash = 合入并保留合并消息 / fixup = 合入丢弃消息
+    pub action: GitRebaseTodoAction,
+}
+
+/// TODO 动作枚举（面板 + git inner todo 行共用）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GitRebaseTodoAction {
+    Pick,
+    Drop,
+    Squash,
+    Fixup,
+}
+
+impl GitRebaseTodoAction {
+    /// git todo 行首小写关键字
+    pub fn as_keyword(&self) -> &'static str {
+        match self {
+            GitRebaseTodoAction::Pick => "pick",
+            GitRebaseTodoAction::Drop => "drop",
+            GitRebaseTodoAction::Squash => "squash",
+            GitRebaseTodoAction::Fixup => "fixup",
+        }
+    }
+}
+
+/// Interactive Rebase 计划（预览/面板编辑的输入；sha 由 base..HEAD 反序生成）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitRebasePlan {
+    /// 变基起点（面板传回的 base commitish）
+    pub base_commitish: String,
+    /// 应用序（老 → 新）的 todo 项
+    pub commits: Vec<GitRebaseTodoItem>,
+    /// 首项（最老）不允许改非 pick（squash/fixup 必须跟随 pick）
+    pub first_locked: bool,
+}
+
 /// Rebase 操作结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitRebaseResult {

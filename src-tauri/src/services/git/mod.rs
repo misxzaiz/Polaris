@@ -34,7 +34,10 @@ pub use diff::{
 };
 pub use branch::{get_branches, create_branch, checkout_branch, delete_branch, rename_branch, merge_branch, checkout_commit};
 pub use tag::{get_tags, create_tag, delete_tag};
-pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
+pub use rebase::{
+    rebase_branch, rebase_abort, rebase_continue,
+    plan_interactive_rebase, start_interactive_rebase,
+};
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
 pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage, commit_group};
@@ -59,7 +62,8 @@ use std::path::Path;
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
+    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebasePlan, GitRebaseResult,
+    GitRebaseTodoItem, GitReflogEntry, GitRemote,
     GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag, GitSequenceState,
     LogSearchFilter,
     PullRequest,
@@ -215,6 +219,24 @@ impl GitService {
     /// 继续变基
     pub fn rebase_continue(path: &Path) -> Result<GitRebaseResult, GitServiceError> {
         rebase_continue(path)
+    }
+
+    /// 面板化 Interactive Rebase 预览计划（只读；base..HEAD 应用序）
+    pub fn plan_interactive_rebase(
+        path: &Path,
+        base_commitish: &str,
+    ) -> Result<GitRebasePlan, GitServiceError> {
+        plan_interactive_rebase(path, base_commitish)
+    }
+
+    /// 执行面板化 Interactive Rebase（GIT_SEQUENCE_EDITOR 注入面板 todo；写类）
+    pub fn start_interactive_rebase(
+        path: &Path,
+        base_commitish: &str,
+        todos: &[GitRebaseTodoItem],
+        autosquash: bool,
+    ) -> Result<GitRebaseResult, GitServiceError> {
+        start_interactive_rebase(path, base_commitish, todos, autosquash)
     }
 
     // ========================================================================

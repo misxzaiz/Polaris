@@ -616,5 +616,29 @@
     "legendDim": "历史",
     "wip": "未提交改动",
     "wipCount": "{{count}} 个文件"
+  },
+
+  "rebaseTodo": {
+    "menuEntry": "从此提交交互式变基...",
+    "title": "交互式变基",
+    "baseShort": "变基起点 {{sha}}",
+    "nothingToRebase": "此提交之后没有可变基的提交",
+    "summary": "应用序列：pick {{pick}} · drop {{drop}} · squash {{squash}} · fixup {{fixup}}",
+    "firstLocked": "首项必须保留为 pick（squash/fixup 必须跟随 pick）",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "autosquash": "自动整理 fixup!/squash! 提交",
+    "invalidOrder": "动作组合非法：squash/fixup 必须紧跟一个 pick（首项必须为 pick）",
+    "rewordHint": "reword 需编辑器编排，暂未支持（可先变基后 amend）",
+    "conflictTakenOver": "变基遇到 {{count}} 个冲突文件，冲突合并器已接管",
+    "success": "交互式变基完成",
+    "cancel": "取消",
+    "execute": "执行变基",
+    "action": {
+      "pick": "保留",
+      "drop": "丢弃",
+      "squash": "合入(留消息)",
+      "fixup": "合入(弃消息)"
+    }
   }
 }

@@ -212,6 +212,13 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 增配：lazygit 式面板化 TODO + shift+A 式「对旧 commit amend」（后台自动 interactive rebase）
 - 冲突复用 P3 冲突合并器
 
+**执行记录（本轮）**：核心闭环完成 ✅（4f 系列）
+- 后端 `plan_interactive_rebase`（base..HEAD 应用序只读预览）+ `start_interactive_rebase`（面板 todo 渲染为 inner todo → temp 目录 `apply_todo.cmd`（copy /Y）作 GIT_SEQUENCE_EDITOR 注入 `git rebase -i [--autosquash]`）；C11 guard + 冲突从 sequence state 回读（复用 rebase_continue/abort + 冲突合并器闭环）；validate：非空/首项必须 pick/squash·fixup 必须紧跟 pick（后端兜底 + 4 个单测）
+- capability：`plan_interactive_rebase`（只读）/ `start_interactive_rebase`（写类 +撤销快照 SNAPSHOT_ACTIONS）+ 中文名映射
+- 前端 `RebaseTodoDialog.tsx`（应用序行 + 动作下拉 + 上下移 reorder + live 组校验红色高亮 + `--autosquash` 复选 + 执行透传）+ HistoryTab 右键入口 + slice 双方法 + 双语 i18n
+- 测试：组件 6 用例（plan 渲染/首项锁定/组校验禁用/透传执行/冲突 onDone/空 plan）全绿
+- **未做（如实）**：reword（需 GIT_EDITOR 二层编排）、拖拽 reorder（上下移按钮替代）、edit 停点通知、禁用 hover 原因（多 parent/protected 检查）——下轮增量
+
 #### FR-P3-AI6 自然语言历史查询
 
 - 输入 = 结构化 log/blame/diff 搜索结果（非 dump）→ AI 归纳为可跳转回答（commit 卡片按钮）

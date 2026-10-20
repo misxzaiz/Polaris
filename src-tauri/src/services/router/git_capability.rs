@@ -27,6 +27,7 @@ use crate::contracts::{Capability, CapabilityId, Context};
 use crate::models::git::{
     CreatePROptions, GitError, GitHostType, GitOperationEntry, GitServiceError, LogSearchFilter,
 };
+use crate::models::git::GitRebaseTodoItem;
 use crate::services::git::{ConflictFileResolution, ConflictSide, GitService, ResetMode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -64,6 +65,7 @@ const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "rebase_branch",
     "rebase_abort",
     "rebase_continue",
+    "start_interactive_rebase",
     "cherry_pick",
     "cherry_pick_abort",
     "cherry_pick_continue",
@@ -110,6 +112,7 @@ const SNAPSHOT_ACTIONS: &[&str] = &[
     "checkout_commit",
     "delete_branch",
     "rebase_branch",
+    "start_interactive_rebase",
 ];
 
 /// reset 仅 hard 模式属真危险（soft/mixed 保留工作区，经 reset 自身即可回退）。
@@ -231,6 +234,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "get_worktree_file_diff", "get_index_file_diff", "get_branches",
     "create_branch", "checkout_branch", "delete_branch", "rename_branch",
     "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",
+    "start_interactive_rebase", "plan_interactive_rebase",
     "cherry_pick", "cherry_pick_abort", "cherry_pick_continue", "revert",
     "revert_abort", "revert_continue", "reset", "checkout_commit",
     "get_tags", "create_tag", "delete_tag", "get_remotes", "add_remote",
@@ -272,6 +276,8 @@ fn action_label(action: &str) -> &'static str {
         "rebase_branch" => "变基",
         "rebase_abort" => "中止变基",
         "rebase_continue" => "继续变基",
+        "start_interactive_rebase" => "面板化 Interactive Rebase",
+        "plan_interactive_rebase" => "预览 Interactive Rebase 计划",
         "cherry_pick" => "Cherry-pick",
         "cherry_pick_abort" => "中止 Cherry-pick",
         "cherry_pick_continue" => "继续 Cherry-pick",
@@ -673,6 +679,23 @@ impl Capability for GitCapability {
             )),
             "rebase_abort" => json_ok_svc(GitService::rebase_abort(&workspace(p)?)),
             "rebase_continue" => json_ok_svc(GitService::rebase_continue(&workspace(p)?)),
+            // P3 FR-P3-2 面板化 Interactive Rebase：预览计划（只读）+ 注入面板 todo 执行（写类）
+            "plan_interactive_rebase" => json_ok_svc(GitService::plan_interactive_rebase(
+                &workspace(p)?,
+                require_string(p, "baseCommitish")?,
+            )),
+            "start_interactive_rebase" => {
+                let todos: Vec<GitRebaseTodoItem> = serde_json::from_value(
+                    p.get("todos").cloned().unwrap_or(serde_json::Value::Null),
+                )
+                .map_err(|e| format!("invalid todos payload: {}", e))?;
+                json_ok_svc(GitService::start_interactive_rebase(
+                    &workspace(p)?,
+                    require_string(p, "baseCommitish")?,
+                    &todos,
+                    bool_or(p, "autosquash", false),
+                ))
+            }
 
             // ── Cherry-pick / Revert / Reset / Checkout commit ─────────
             "cherry_pick" => json_ok_svc(GitService::cherry_pick(
@@ -933,6 +956,7 @@ mod tests {
             "get_worktree_file_diff", "get_index_file_diff", "get_branches",
             "create_branch", "checkout_branch", "delete_branch", "rename_branch",
             "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",
+            "start_interactive_rebase", "plan_interactive_rebase",
             "cherry_pick", "cherry_pick_abort", "cherry_pick_continue", "revert",
             "revert_abort", "revert_continue", "reset", "checkout_commit",
             "get_tags", "create_tag", "delete_tag", "get_remotes", "add_remote",
