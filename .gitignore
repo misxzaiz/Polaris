@@ -122,3 +122,10 @@ scripts/tmp/
 # Local tool config / artifacts (contain absolute paths & tokens, never commit)
 opencode.json
 .impeccable/
+
+# Local release artifacts — signed installers / APKs / signing keys (never commit)
+# 含 polaris-local-dev.pfx 签名私钥：泄露=任何人可冒充应用覆盖安装
+release-local/
+
+# Local 3D render experiments (scratch frames / minified libs, not product code)
+glass-micro-world/
