@@ -23,8 +23,8 @@ P0 架构垫层       ██████████ 100%  cap.git 上收 + git_
 P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全做
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
 P1 AI-3 Review门  ░░░░░░░░░░   0%（master-plan 裁决改形态：纯本地扫描，归 P3）
-P2 泳道图         ██████████ 100%  初版 lane + refs + 语义着色 + WIP/stash 节点 + 增量 log 缓存 + lane 收缩全部完成
-P2 其余           ██████████ 100%  FR-P2-2 watcher + FR-P2-3 undo + FR-P2-4 操作流水 + FR-P2-AI4 冲突预测
+P2 泳道图         ██████░░░░  60%  初版 lane + refs 装饰已完成（语义着色/WIP/缓存/收缩为增量）
+P2 其余           ░░░░░░░░░░   0%（FR-P2-2 watcher 已完成，见下）
 P3 全部           ░░░░░░░░░░   0%
 P4 全部           ░░░░░░░░░░   0%
 ```
@@ -74,20 +74,6 @@ P4 全部           ░░░░░░░░░░   0%
 - 不改后端协议（沿用既有事件）；FileExplorer 负责 watcher 起停
 - 测试 `fileWatcherSubscriber.test.ts` 5 用例
 
-**P2 FR-P2-3 Undo 网络（commit 见下，spec `plans/git-panel-p2-undo-spec.md`）**：
-- `Context::emit` 事件通道基础（capability → 共享 EventBroadcaster：桌面经 Tauri 中继、Web 经 WS）+ 桌面 `git-undo-snapshot` 中继
-- 危险操作（discard/reset hard/checkout/删分支/rebase）操作前自动快照（`git stash create` + `update-ref`），保留策略 5 上限
-- 前端 `undoSlice` + `undoSubscriber`（toast「撤销」一键 restore/drop）；快照列表 + 恢复冲突平铺
-- 测试：Rust undo 5 单元 + KNOWN_ACTIONS 巡逻同步；前端 undoSlice 4 + undoSubscriber 5；e2e 手工验证
-
-**P2 FR-P2-4 操作流水面板（commit 见下，spec `plans/git-panel-p2-operations-spec.md`）**：
-- 后端 `GitOperationEntry`（models/git.rs）+ 内存环形缓冲（`OPERATIONS`，50/ws）+ `get_operations`/`clear_operations` 动作
-- 写动作（`is_destructive` 集合）在 invoke 收口统一计时 + 留痕 + emit `git-operation`（成功/失败都审计）
-- `clear_operations` 入 DESTRUCTIVE_ACTIONS（写类）；`source_label`（bootstrap/remote/plugin:<id>）
-- 桌面 `git-operation` Tauri 中继（lib.rs，同 undo 中继模式）+ Web 经 EventBroadcaster
-- 前端 `operationsSlice`（get/clear）+ `operationsSubscriber`（prepend ≤50，分片 keyed 写）+ `OperationsLog.tsx` 折叠区（changes tab 底部：时间灰 + label + 耗时右对齐 + ok 红绿点，空态「暂无操作记录」）+ i18n 双语
-- 测试：Rust KNOWN_ACTIONS 巡逻 + destructive 名单同步；前端 operationsSlice 4 + operationsSubscriber 6
-
 **提交记录**（commitlint 合规）：
 ```
 f6a05786 docs(git): 面板 vNext 规划与 P0/P1 规格
@@ -99,17 +85,6 @@ f1948fb2 feat(git): AI-2 原子提交建议（本地预检分组 + AI 解释层 
 9e9d42e8 feat(git): P2 泳道图（lane 分配放 Rust + refs 装饰 + LaneGraph 渲染）
 d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式）
 55c341d6 feat(git): FR-P2-2 外部文件变化自动刷新 status（file-system-change 订阅）
-bf522844 docs(git): FR-P2-3 Undo 网络 spec（git-native ref 快照 + 统一单点挂钩）
-44643557 feat(git): FR-P2-3 undo 事件通道（Context::emit + 桌面 git-undo-snapshot 中继）
-e2da3128 feat(git): FR-P2-3 Undo 网络（危险操作快照 + 一键恢复）
-c23cf6ca docs(git): FR-P2-4 操作流水 spec（写动作留痕 + git-operation 事件 + 50/ws 环形缓冲）
-2133ee20 feat(git): FR-P2-4 操作流水（写动作留痕 + git-operation 事件 + 面板折叠区）
-b6f30bca docs(git): P2 泳道图增量 spec（语义着色 + WIP/stash 虚拟节点）
-79ff77af feat(git): P2 泳道图增量（语义着色 + WIP/stash 虚拟节点上图）
-de578a21 docs(git): P2 泳道图增量 log 缓存 spec（四段式：语义 map 跨页缓存）
-f32d537d feat(git): P2 泳道图增量 log 缓存（语义 map 跨页缓存，键=repo+branch+head+refs 指纹）
-0fb115dd docs(git): P2 泳道图增量 lane 收缩合并 spec（graph.c 式列释放）
-1cd5a532 feat(git): P2 泳道图 lane 收缩合并（graph.c 式列释放，消 ghost 竖线）
 ```
 
 ---
@@ -143,14 +118,12 @@ f32d537d feat(git): P2 泳道图增量 log 缓存（语义 map 跨页缓存，�
 
 - **协议扩展**（已完成）：`GitCommit` 加 `parents: string[]`、`refs: {name, type, target}[]`（Rust `models/git.rs` + 前端 `types/git.ts` 双边同步）
 - `get_log` 受限 pageSize（默认 500 + load more）—— **已完成**（复用既有 20 页翻页）
-- **lane 计算放 Rust 端**（已完成，不放前端解析字符图）：`get_log_with_lanes` 拓扑序 + lane 分配（单线+合并+graph.c 式列释放收缩，实测对齐 `git log --graph`）
+- **lane 计算放 Rust 端**（已完成，不放前端解析字符图）：`get_log_with_lanes` 拓扑序 + 简化 lane 分配（单线+合并实测对齐 `git log --graph`）；中期接 git `graph.c` mapping/new_columns/old_columns 四数组算法自绘 SVG（**增量**）
 - refs 三色（黄=当前/绿=本地/紫=远程）+ HEAD/远程标记 + 多仓竖条—— **已完成三色 badge**；HEAD 图标/多仓竖条为增量
-- 语义着色（超越点#4）：绿=本地分支内/红=未 push/灰暗=已 merge 进 main（**✅ 已完成**，commit `79ff77af`，spec `plans/git-panel-p2-lane-increment-spec.md`；四态 `local/unpushed/merged/dim` 服务端预计算，三条 revwalk 可达集判定，LaneGraph 消费；dim 整行淡化）
-- **增量 log 缓存（✅ 已完成，commit `f32d537d`，spec `plans/git-panel-p2-lane-cache-spec.md`）**：只缓存「语义色全量 map」（跨页共享），键 = (repo 绝对路径, branch, HEAD commit sha, refs 指纹)。命中 → 页内 O(页) 查 map；未命中 → 真 tip 出发算全量 map + 原子写（`.tmp`→rename）。refs 指纹遍历全部 refs 排序拼接哈希，任何 fetch/分支增删/新 commit → 指纹变 → 自动失效。目录按 repo+branch 哈希隔离于 `cache_dir()/git-lane-semantic/`；溢出 >50 文件按 mtime 删最旧到 30；任何失败静默降级未命中（性能增强非正确性依赖）。分页语义与旧实现等价（页内 commit 均为真 tip 祖先，`in_branch` 判定一致）。测试：lane_cache 单测 3 用例 + 独立 harness 运行时验证（往返/三类失效/指纹）全绿。
-- WIP 节点 + stash 紫点上图（**✅ 已完成**，同上 commit；纯前端合成：statuses 分片 WIP 绿虚线空心圆 + stashListByWs 紫圆角方块，顶部虚拟行 + 4 色图例；跳转/展开 diff 为后续增量）
-- **lane 收缩合并（✅ 已完成，commit `1cd5a532`，spec `plans/git-panel-p2-lane-collapse-spec.md`）**：初版简化算法已覆盖单线+合并；本次加 graph.c 式列释放+收缩——`processed` 集合每行前置收缩（等待的 commit 已处理→列释放为 `none`，消 ghost 竖线）+ 父占位时已处理父不占长期等待列（防多分支交错列泄漏）。`GitLaneRow` 协议零改动，前端零改动，merge 斜线 `edge_up` 语义不变。测试：新增 `lanes_shrink_after_merge_released` 单测 + 独立 harness 运行时验证（双 merge 交错 + 单 merge 场景）。
-- 增量 log 缓存：**✅ 已完成**（commit `f32d537d`，spec `plans/git-panel-p2-lane-cache-spec.md`；只缓存语义 map 跨页共享，键 = repo+branch+head+refs 指纹，二次打开命中 O(页)）
-- 性能预算：首次打开 ≤10k commits p50 < 300ms；二次打开（HEAD 未变）p50 < 80ms（**✅ 增量 log 缓存已实现**：语义 map 按 `(repo, branch, head_sha, refs_fingerprint)` 键持久化 DataRoot，命中 O(页)）；1k commits 60fps（react-virtuoso 已有，max-lanes=12 截断）
+- 语义着色（超越点#4）：绿=本地分支内/红=未 push/灰暗=已 merge 进 main（**增量**）
+- WIP 节点 + stash 紫点上图（**增量**）
+- lane 收缩合并（graph.c 四数组）：初版简化算法已覆盖单线+合并；多分支交错收缩场景归 graph.c 算法（**增量**）
+- 性能预算：首次打开 ≤10k commits p50 < 300ms；二次打开（HEAD 未变）p50 < 80ms（增量 log 缓存按 `(repo, head_sha, refs_snapshot)` 键持久化到 DataRoot）；1k commits 60fps（react-virtuoso 已有，max-lanes=12 截断）
 
 #### FR-P2-2 file-watcher 自动 status 刷新 ✅ 已完成（commit `55c341d6`，spec `plans/git-panel-p2-watcher-spec.md`）
 
@@ -161,38 +134,20 @@ f32d537d feat(git): P2 泳道图增量 log 缓存（语义 map 跨页缓存，�
 - 测试：`fileWatcherSubscriber.test.ts` 5 用例（未流式/流式中/下降沿/null 路径/cleanup）
 - 剩余边界：Web 端不订阅（watch 是 tauri-app feature，Web=60s 轮询是 master-plan 已接受的边界）
 
-#### FR-P2-3 Undo 网络（超越点#2）✅ 已完成（spec `plans/git-panel-p2-undo-spec.md`）
+#### FR-P2-3 Undo 网络（超越点#2）
 
-- 危险操作（discard / reset hard / checkout 覆盖 / 删分支 / rebase）**操作前自动快照**，git-native 增量存储（`git stash create` 单步：只建 stash commit 对象、不改工作区、不入 stash 栈、无 pop 竞态），落 `refs/polaris-undo/<ws>/<ts>` ref（不复制文件）
-- 通知条一键恢复（`git-undo-snapshot` 事件 → toast「撤销」）：含工作区改动 → `stash apply` 打回；删除分支保留原 tip commit（`.restore.<branch>` note ref）→ 恢复时重建 ref
-- 删除分支保留 hash 可恢复 ✓
-- **保留策略**：每 ws 最多 5 个快照，超限自动清旧（`prune_undo_snapshots`）
-- **恢复遇冲突**：返回 `conflictedFiles` + 写 .rej（git 天然产物），前端 toast.error 平铺，不抛 alert
-- **事件通道**：`Context::emit` 默认方法（不破坏 15+ 测试 impl）+ `RealContext` 注入 `Arc<EventAdapter>`；桌面 `lib.rs` 中继 `git-undo-snapshot` → `app_handle.emit`（Web 经共享 EventBroadcaster→WS）
-- **快照失败不阻塞操作**：只 warn，undo 是增强安全网非硬门槛
-- 测试：Rust `undo.rs` 5 单元 + `git_capability` 巡逻（KNOWN_ACTIONS 同步）；前端 `undoSlice.test.ts`（4）+ `undoSubscriber.test.ts`（5）；e2e 手工验证 discard→undo 恢复内容 + 删分支→note ref 重建
+- 危险操作（discard / reset hard / checkout 覆盖 / interactive rebase）前自动快照到 `<data_root>/git-backups/<ws>/`
+- 通知条可一键恢复
+- 删除分支保留 hash 可恢复
 
-#### FR-P2-4 操作流水面板 ✅ 已完成
+#### FR-P2-4 操作流水面板
 
 - GitKraken Activity Log 等价；复用后端 logger，前端只读
 
-#### FR-P2-AI4 冲突预测 ✅ 已完成
+#### FR-P2-AI4 冲突预测
 
-- spec：`plans/git-panel-p2-conflict-predict-spec.md`（四段式：目标/契约/验收/不做）
-- 提交：`946d43b8` feat + `c02b4e49` docs（spec）
-- **实现形态**（对齐 master-plan §1.2 + 原型 `#conflict-predict` 卡片）：fetch 后确定性计算
-  「对方 ahead commits 涉及的文件 ∩ 本地 modified 文件」风险清单，**纯 git2 只读、0 token**；
-  AI 解释层已砍，仅保留一条规则建议（`advice: "none" | "commitOrStash"`）。
-- **后端**：`services/git/conflict.rs::predict_conflicts`（revwalk `HEAD..upstream` + 第一父 diff deltas
-  收集 incoming 文件集；`parse_statuses` 复用本地 modified；双指针归并求交集）；cap.git 新增只读
-  action `predict_conflicts`（KNOWN_ACTIONS + describe + match + patrol 四同步）。
-- **前端**：`conflictPredictSlice`（`invoke('git_predict_conflicts')` → transport `git_` 前缀透明转发
-  cap.git；分片 `conflictPredictionsByWs`）+ `ConflictPredictionCard`（RemoteTab handleFetch 成功后
-  并行计算并渲染）。i18n 双语（zh-CN / en-US `conflictPredict.*`）。
-- **测试**：后端 4 用例（fork 交集 / disjoint 安全 / 无上游空预测 / 非仓库报错）+ 独立 git2 harness
-  运行时验证 + 前端 slice/card/RemoteTab 9 用例全绿。
-- 门控：`cargo check --lib` ✅、clippy 新增 0 ✅、Web-only 门控 ✅、`tsc --noEmit` ✅、lint 新增 0 ✅、
-  gitStore 232 + GitPanel 37 测试 ✅。
+- fetch 后对「对方 ahead commits 涉及的文件 ∩ 本地 modified 文件」给风险清单
+- 清单是确定计算（前端直接显示），AI 仅解释部分消耗 token
 
 ### 3.3 P3 深水区
 
@@ -324,9 +279,19 @@ f32d537d feat(git): P2 泳道图增量 log 缓存（语义 map 跨页缓存，�
 
 ## 七、建议下一步
 
-**P2 已全部完成**（FR-P2-2/3/4 + AI4 + 泳道图初版 + 语义着色 + WIP/stash + 增量 log 缓存 + lane 收缩合并）。
+**P2 剩余增量**（泳道图 60% 已落地，按 master-plan 顺序推进）：
 
-进 P3（冲突合并器 → Interactive Rebase → AI-3 本地扫描常驻列表 → AI-6 自然语言历史查询 → AI-8 rebase 提议），再 P4 生态出口（**记得 `cargo build --bin polaris-mcp`**）。
+1. **FR-P2-2 file-watcher 自动 status 刷新**（无 AI 依赖，收益直接）：
+   - `file_watcher` debounce 800ms 推 `repo_touched` 事件 → statusSlice 复用 per-path seq 机制刷新；**不轮询**
+   - AI 流式期间（`useKernelSessionState(sessionId)` = streaming）暂停 status 刷新，流式结束刷一次
+   - **事件不掀翻缓存**：`repo_touched` 只触发受影响路径/计数的局部 store 写入，禁止整表刷新
+   - 先补 spec 到 `plans/git-panel-p2-watcher-spec.md`（四段式）
+2. **FR-P2-3 Undo 网络**：危险操作（discard / reset hard / checkout 覆盖 / interactive rebase）前自动快照到 `<data_root>/git-backups/<ws>/`；通知条一键恢复
+3. **FR-P2-4 操作流水面板**（复用后端 logger，前端只读）
+4. **FR-P2-AI4 冲突预测**（fetch 后确定计算风险清单；AI 仅解释，占 token 少）
+5. 泳道图增量（语义着色 / WIP+stash 节点 / 增量 log 缓存 / graph.c 四数组收缩）
+
+完成 P2 后进 P3（冲突合并器 → Interactive Rebase → AI-3 本地扫描常驻列表 → AI-6 自然语言历史查询 → AI-8 rebase 提议），再 P4 生态出口（**记得 `cargo build --bin polaris-mcp`**）。
 
 ---
 
