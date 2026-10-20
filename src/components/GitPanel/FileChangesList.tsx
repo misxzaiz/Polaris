@@ -7,7 +7,7 @@
 import { useMemo, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Virtuoso } from 'react-virtuoso'
-import { Check, X, GitCommit, RotateCcw, Trash2, MoreHorizontal, Eye, ChevronRight } from 'lucide-react'
+import { Check, X, GitCommit, RotateCcw, Trash2, MoreHorizontal, Eye, ChevronRight, AlertTriangle } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { deleteFile } from '@/services/tauri/fileService'
@@ -100,7 +100,7 @@ export function FileChangesList({
   isSelectionDisabled = false
 }: FileChangesListProps) {
   const { t } = useTranslation('git')
-  const { stageFile, unstageFile, discardChanges, refreshStatus } = useGitStore()
+  const { stageFile, unstageFile, discardChanges, refreshStatus, openMerger } = useGitStore()
   const toast = useToastStore()
 
   const [operatingPath, setOperatingPath] = useState<string | null>(null)
@@ -226,9 +226,22 @@ export function FileChangesList({
   }, [onFileClick, onUntrackedFileClick])
 
   const buildMenuItems = useCallback((filePath: string, area: ChangeArea, status: GitFileStatus, file?: GitFileChange): ContextMenuItem[] => {
-    const items: ContextMenuItem[] = [
+    const items: ContextMenuItem[] = []
+
+    // 冲突文件（unmerged）：菜单首位给「打开冲突合并器」入口（P3，优先于看 diff——
+    // 冲突态的 diff 含 marker，合并器才是正解路径）
+    if (status === 'unmerged') {
+      items.push({
+        id: 'merger',
+        label: t('mergerEntry'),
+        icon: <AlertTriangle size={14} />,
+        action: () => openMerger(workspacePath, filePath),
+      })
+    }
+
+    items.push(
       { id: 'diff', label: t('openDiff'), icon: <Eye size={14} />, action: () => openDiff(filePath, area, file) },
-    ]
+    )
 
     if (onBlame && area !== 'untracked' && status !== 'untracked' && status !== 'deleted') {
       items.push({ id: 'blame', label: t('blame.button'), icon: <GitCommit size={14} />, action: () => onBlame(filePath) })
@@ -263,7 +276,7 @@ export function FileChangesList({
     items.push({ id: 'sep-delete', label: '-', icon: undefined, action: () => {} })
     items.push({ id: 'delete-untracked', label: t('deleteUntracked'), icon: <Trash2 size={14} />, action: () => handleDelete(filePath, true) })
     return items
-  }, [handleDelete, handleDiscard, handleStage, handleUnstage, onBlame, openDiff, t])
+  }, [handleDelete, handleDiscard, handleStage, handleUnstage, onBlame, openDiff, openMerger, workspacePath, t])
 
   const showContextMenu = useCallback((e: React.MouseEvent, items: ContextMenuItem[]) => {
     e.preventDefault()

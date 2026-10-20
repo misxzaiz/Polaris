@@ -107,19 +107,26 @@ describe('ThreeWayMergeEditor', () => {
     expect(screen.getByTestId('resolve-done')).not.toBeDisabled()
   })
 
-  it('Apply All Non-Conflicting：反馈 toast，不触碰未解决冲突块', () => {
-    // 同时含 conflict hunk（index1 双方改）与 ours 单侧 region（index3 仅 ours 插入）
-    const c = conflict({
-      base: 'a\nb\nc\nd\n',
-      ours: 'a\nB1\nc\nX\nd\n',
-      theirs: 'a\nC1\nc\nd\n',
-    })
-    renderEditor('merge', c)
+  it('Apply All（取本方）：未决策块批量采纳 ours，重复点击 info 反馈', async () => {
+    renderEditor('merge', conflict())
+    fireEvent.click(screen.getByTestId('apply-all'))
+    expect(mockToast.success).toHaveBeenCalled()
+    expect(screen.getByText('conflict.allResolved')).toBeInTheDocument()
+    expect(screen.getByTestId('resolve-done')).not.toBeDisabled()
+    // 已无未决策块 → 再点 info 反馈，状态不变
     fireEvent.click(screen.getByTestId('apply-all'))
     expect(mockToast.info).toHaveBeenCalled()
-    // 计数未变：仍未解决（hunk 未决策）
-    expect(screen.getByText('conflict.unresolved')).toBeInTheDocument()
-    expect(screen.getByTestId('resolve-done')).toBeDisabled()
+    // 写盘内容为 ours 侧（B1）
+    fireEvent.click(screen.getByTestId('resolve-done'))
+    await vi.waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
+        workspacePath: 'D:/repo',
+        filePath: 'src/a.ts',
+        content: expect.stringContaining('B1'),
+      })
+    })
+    // 重复点击 info：共 1 次
+    expect(mockToast.info).toHaveBeenCalledTimes(1)
   })
 
   it('语义标签：merge → 左 current 右 incoming；rebase → 互换', () => {

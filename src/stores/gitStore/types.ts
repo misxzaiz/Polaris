@@ -388,6 +388,12 @@ export interface ConflictState {
 export interface ConflictActions {
   /** 拉取某 workspace 的序列操作状态（只读，失败置空态不抛错） */
   getConflictState: (workspacePath: string) => Promise<GitSequenceState | null>
+  /** 写类解决：把内容（编辑器拼合结果/保留修改文本）写回工作区 + 暂存 */
+  resolveConflictFile: (workspacePath: string, filePath: string, content: string) => Promise<boolean>
+  /** 删类解决：接受删除（删盘上文件 + 移除 index 冲突 stages） */
+  removeConflictFile: (workspacePath: string, filePath: string) => Promise<boolean>
+  /** 整文件取舍：还原指定侧 stage 内容到工作区并暂存（binary / delete-modify） */
+  checkoutConflictSide: (workspacePath: string, filePath: string, side: 'ours' | 'theirs') => Promise<boolean>
   /** 打开合并器（独立对话框形态） */
   openMerger: (wsPath: string, file?: string) => void
   /** 关闭合并器 */

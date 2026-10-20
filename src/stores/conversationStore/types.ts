@@ -732,8 +732,9 @@ export interface SessionMetadata {
    * - 'commit-message'  = GitPanel 触发的提交信息生成会话，用于回流定位
    * - 'git-atomic'      = GitPanel 触发的原子提交分组建议会话（AI-2 解释层）
    * - 'prompt-optimize' = 输入框提示词优化的一次性静默会话（完成后即删除）
+   * - 'radio-broadcast' = 电台后台连续播报生成的长会话（voiceBroadcast）
    */
-  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation'
+  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation' | 'radio-broadcast'
   /** 当 kind === 'commit-message' 时，关联的工作区 ID，用于按工作区隔离回流。 */
   commitWorkspaceId?: string
 }
@@ -763,7 +764,7 @@ export interface CreateSessionOptions {
   /** 会话绑定的专家 agent slug（可选，不指定则无专家） */
   agent?: string
   /** 会话用途标记（透传到 SessionMetadata.kind） */
-  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation'
+  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation' | 'radio-broadcast'
   /** commit-message / git-atomic 会话关联的工作区 ID（透传到 SessionMetadata.commitWorkspaceId） */
   commitWorkspaceId?: string
 }

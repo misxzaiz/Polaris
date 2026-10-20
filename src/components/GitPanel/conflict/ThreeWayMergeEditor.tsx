@@ -1,30 +1,31 @@
 /**
- * 三窗合并编辑器（P3 FR-P3-1：per-hunk 控件 + 计数 + 直落 staging）
+ * 三窗合并编辑器（P3 FR-P3-1 重写版：同源 regions 对位真三窗）
  *
- * 布局对齐 VS Code Merge Editor：
- *   左窗 ours（current/incoming 按 kind 决定）｜ 中窗 result（可编辑）｜ 右窗 theirs
+ * 布局核心（vs 旧版）：
+ *   旧版 = ours/theirs 全文 `<pre>` ×2 + 底部 hunk 卡片 ×N（同一内容渲染两遍、
+ *   窗与卡片不对位，大文件信息重影）。
+ *   新版 = **一次解析、三列同渲染**：`regions` 数组逐行驱动三列 grid——
+ *   每个区域在左（ours）/中（result）/右（theirs）占同一行位，天然对位；
+ *   冲突区域的中列就地提供 [Accept Ours | Theirs | Base] 决策控件（VS Code 式），
+ *   决策后中列实时重渲染为所选侧内容。
  *
  * 交互：
- * - 每冲突块 Accept Ours / Accept Theirs / Accept Base（decision 驱动 result 拼合）
- * - Apply All Non-Conflicting：一键把非冲突单侧改动全部纳入 result
- * - 未解决计数常驻顶栏；归零点亮「完成并暂存」
- * - 完成 → git_resolve_conflict_file（写内容 + git add，直落 staging）→ onResolved 回调
- *
- * 数据流：
- *   parseConflictMarkers(base/ours/theirs) → regions + conflicts
- *   resolutions: { conflictId → 'ours' | 'theirs' | 'base' }（未设 = 未解决）
- *   buildResult(regions, resolutions) → result 预览（或手动编辑 textarea 接管）
+ * - per-hunk 决策（resolutions 驱动 buildResult 拼合）
+ * - Apply All：**真实现**——剩余未决策冲突块批量采纳为本方（ours；parse 层
+ *   已吸收非重叠单侧改动，剩余块均为双侧非空的重叠冲突）
+ * - 跳到下一个未解决块（scrollIntoView）
+ * - 手动编辑接管中列
+ * - 完成 → git_resolve_conflict_file（写内容 + add 直落 staging）→ onResolved
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, CheckCheck, FileCode, Loader2, Pencil, X } from 'lucide-react'
+import { Check, CheckCheck, ArrowDown, FileCode, Loader2, Pencil, X } from 'lucide-react'
 import { parseConflictMarkers, buildResult, countUnresolved } from './parseConflictMarkers'
 import type { ConflictResolution, MergeRegion, ConflictHunk } from './parseConflictMarkers'
 import type { GitConflictEntry, GitSequenceKind } from '@/types/git'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
-import { invoke } from '@/services/transport'
 
 interface ThreeWayMergeEditorProps {
   workspacePath: string
@@ -37,6 +38,22 @@ interface ThreeWayMergeEditorProps {
   onError?: (message: string) => void
 }
 
+/** 冲突区域三列内容：左（ours）/ 中（result 当前态）/ 右（theirs） */
+interface RegionCells {
+  left: string[]
+  right: string[]
+}
+
+function regionDisplayLines(region: MergeRegion): RegionCells {
+  if (region.kind === 'conflict') {
+    return {
+      left: region.oursLines ?? [],
+      right: region.theirsLines ?? [],
+    }
+  }
+  return { left: region.lines, right: region.lines }
+}
+
 export function ThreeWayMergeEditor({
   workspacePath,
   conflict,
@@ -46,7 +63,7 @@ export function ThreeWayMergeEditor({
 }: ThreeWayMergeEditorProps) {
   const { t } = useTranslation('git')
   const toast = useToastStore()
-  const getConflictState = useGitStore((s) => s.getConflictState)
+  const resolveConflictFile = useGitStore((s) => s.resolveConflictFile)
 
   // 解析
   const parse = useMemo(
@@ -65,33 +82,74 @@ export function ThreeWayMergeEditor({
     () => (manualResult !== null ? 0 : countUnresolved(resolutions, hunks.length)),
     [resolutions, hunks.length, manualResult],
   )
-  const resolvedCount = hunks.length - unresolved
-  const hasNonConflictingRegions = useMemo(
-    () => regions.some((r) => r.kind === 'ours' || r.kind === 'theirs'),
-    [regions],
-  )
 
-  function hasResolved(id: number): boolean {
-    return resolutions[id] !== undefined
+  // conflict 区域 ↔ hunk 对齐（按 base 区间配对；hunk.id 即 resolutions 键）
+  const hunkByRegion = useMemo(() => {
+    const map = new Map<MergeRegion, ConflictHunk>()
+    const byBase = new Map<string, ConflictHunk>()
+    hunks.forEach((h) => byBase.set(`${h.baseStart}:${h.baseEnd}`, h))
+    let fallbackIdx = 0
+    for (const region of regions) {
+      if (region.kind !== 'conflict') continue
+      const hit = byBase.get(`${region.baseStart}:${region.baseEnd}`)
+      map.set(region, hit ?? hunks[fallbackIdx])
+      fallbackIdx++
+    }
+    return map
+  }, [regions, hunks])
+
+  // 未解决冲突区域列表（跳转到下个用）
+  const unresolvedRegions = useMemo(
+    () => regions.filter((r) => r.kind === 'conflict' && !isResolved(r)),
+    // eslint 需要显式依赖 resolutions：
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [regions, resolutions],
+  )
+  function isResolved(region: MergeRegion): boolean {
+    const hunk = hunkByRegion.get(region)
+    return hunk ? resolutions[hunk.id] !== undefined : true
   }
+
+  // 跳到下一个未解决块
+  const scrollTargetRef = useRef<HTMLDivElement | null>(null)
+  const scrollToFirstUnresolved = () => {
+    const el = scrollTargetRef.current
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+
   function setResolution(id: number, side: ConflictResolution) {
     setResolutions((prev) => ({ ...prev, [id]: side }))
   }
 
-  // 结果预览（手动编辑优先；否则按决策拼合）
+  /** 批量决策（Apply All 消费；一枚 setState 内合并） */
+  function setResolutionMany(ids: number[], side: ConflictResolution) {
+    setResolutions((prev) => {
+      const next = { ...prev }
+      for (const id of ids) next[id] = side
+      return next
+    })
+  }
+
+  // 结果（手动编辑优先；否则按决策拼合）
   const resultContent = useMemo(() => {
     if (manualResult !== null) return manualResult
     return buildResult(regions, resolutions)
   }, [regions, resolutions, manualResult])
 
-  // Apply All Non-Conflicting：buildResult 天然已把 common/ours/theirs 采纳，
-  // 冲突块需显式决策。此按钮提供一次性反馈并提示已合入的非冲突区域。
-  const applyAllNonConflicting = () => {
-    if (resolvedCount === hunks.length && hunks.length > 0) {
-      toast.success(t('conflict.applyAllAlreadyDone'))
+  /**
+   * Apply All（真实现）：把所有**未决策**的冲突块批量采纳为本方（ours）。
+   * 注：parse 层已把非重叠的单侧改动直接吸收进结果（kind=ours/theirs 区），
+   * 剩余 conflict 块都是双侧非空的重叠冲突——「批量取本方」是唯一的确定性
+   * 批量语义；逐块精确决策仍在中列完成。旧版此按钮只弹 toast、不改状态（假按钮）。
+   */
+  const applyAll = () => {
+    const pendingIds = hunks.filter((h) => resolutions[h.id] === undefined).map((h) => h.id)
+    if (pendingIds.length === 0) {
+      toast.info(t('conflict.applyAllNothing'))
       return
     }
-    toast.info(t('conflict.applyAllMerged'))
+    setResolutionMany(pendingIds, 'ours')
+    toast.success(t('conflict.applyAllResolved', { count: pendingIds.length }))
   }
 
   // 语义标签：current/incoming 方向（merge → 左 current 右 incoming；其余反）
@@ -102,12 +160,7 @@ export function ThreeWayMergeEditor({
   async function handleResolve() {
     setIsSaving(true)
     try {
-      await invoke('git_resolve_conflict_file', {
-        workspacePath,
-        filePath: conflict.path,
-        content: resultContent,
-      })
-      await getConflictState(workspacePath)
+      await resolveConflictFile(workspacePath, conflict.path, resultContent)
       toast.success(t('conflict.resolvedSuccess', { file: conflict.path }))
       onResolved(conflict.path)
     } catch (err) {
@@ -118,9 +171,23 @@ export function ThreeWayMergeEditor({
     }
   }
 
+  /** 冲突区域中列：决策后的实时结果行（未决 = pending 提示） */
+  function resolvedLines(hunk: ConflictHunk): string[] {
+    switch (resolutions[hunk.id]) {
+      case 'ours':
+        return hunk.oursLines
+      case 'theirs':
+        return hunk.theirsLines
+      case 'base':
+        return hunk.baseLines
+      default:
+        return []
+    }
+  }
+
   return (
     <div className="flex flex-col h-full min-h-0" data-testid="three-way-editor">
-      {/* 顶栏：文件 + 计数 + Apply All */}
+      {/* 顶栏：文件 + 计数 + Apply All + 跳到下一未解决 */}
       <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-background-surface">
         <div className="flex items-center gap-2 min-w-0">
           <FileCode size={14} className="text-text-tertiary shrink-0" />
@@ -128,20 +195,30 @@ export function ThreeWayMergeEditor({
             {conflict.path}
           </span>
         </div>
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {unresolved > 0 ? (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-danger/10 text-danger">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-danger/10 text-danger" data-testid="unresolved-count">
               {t('conflict.unresolved', { count: unresolved })}
             </span>
           ) : (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-success/10 text-success">
+            <span className="text-xs px-2 py-0.5 rounded-full bg-success/10 text-success" data-testid="all-resolved-count">
               {t('conflict.allResolved')}
             </span>
           )}
+          {unresolved > 0 && (
+            <button
+              className="text-xs px-2 py-1 rounded border border-border text-text-secondary hover:bg-background-hover transition-colors"
+              onClick={scrollToFirstUnresolved}
+              title={t('conflict.nextBlock')}
+              data-testid="next-block"
+            >
+              <ArrowDown size={12} className="inline mr-1" />
+              {t('conflict.nextBlock')}
+            </button>
+          )}
           <button
-            className="text-xs px-2.5 py-1 rounded border border-border text-text-secondary hover:bg-background-hover transition-colors disabled:opacity-40"
-            disabled={!hasNonConflictingRegions}
-            onClick={applyAllNonConflicting}
+            className="text-xs px-2.5 py-1 rounded border border-border text-text-secondary hover:bg-background-hover transition-colors"
+            onClick={applyAll}
             title={t('conflict.applyAllTitle')}
             data-testid="apply-all"
           >
@@ -151,130 +228,147 @@ export function ThreeWayMergeEditor({
         </div>
       </div>
 
-      {/* 三窗 */}
-      <div className="flex-1 min-h-0 overflow-auto">
-        <div className="grid grid-cols-3 gap-px bg-border">
-          {/* 左窗 ours */}
-          <div className="bg-background-elevated flex flex-col min-h-[140px]">
-            <div className="px-3 py-1.5 text-xs font-medium border-b border-border bg-background-surface flex items-center gap-1">
-              <span className={isCurrentLeft ? 'text-primary' : 'text-warning'}>◉</span>
-              {leftLabel}
-              <span className="text-text-tertiary ml-auto">{t('conflict.ours')}</span>
-            </div>
-            <pre className="px-3 py-2 text-xs leading-5 font-mono text-text-secondary whitespace-pre-wrap flex-1 overflow-auto max-h-64">
-              {conflict.ours ?? ''}
-            </pre>
-          </div>
-          {/* 中窗 result */}
-          <div className="bg-background-elevated flex flex-col min-h-[140px]">
-            <div className="px-3 py-1.5 text-xs font-medium border-b border-border bg-background-surface flex items-center gap-1">
-              <span className="text-success">◉</span>
-              {t('conflict.result')}
-            </div>
-            {manualResult === null ? (
-              <pre className="px-3 py-2 text-xs leading-5 font-mono text-text-primary whitespace-pre-wrap flex-1 overflow-auto max-h-64">
-                {resultContent || ' '}
-              </pre>
-            ) : (
-              <textarea
-                className="w-full flex-1 px-3 py-2 text-xs leading-5 font-mono bg-background-elevated text-text-primary resize-none outline-none focus:ring-1 focus:ring-primary/40 min-h-[100px] max-h-64"
-                value={manualResult}
-                onChange={(e) => setManualResult(e.target.value)}
-                spellCheck={false}
-                data-testid="manual-result"
-              />
-            )}
-          </div>
-          {/* 右窗 theirs */}
-          <div className="bg-background-elevated flex flex-col min-h-[140px]">
-            <div className="px-3 py-1.5 text-xs font-medium border-b border-border bg-background-surface flex items-center gap-1">
-              <span className={!isCurrentLeft ? 'text-primary' : 'text-warning'}>◉</span>
-              {rightLabel}
-              <span className="text-text-tertiary ml-auto">{t('conflict.theirs')}</span>
-            </div>
-            <pre className="px-3 py-2 text-xs leading-5 font-mono text-text-secondary whitespace-pre-wrap flex-1 overflow-auto max-h-64">
-              {conflict.theirs ?? ''}
-            </pre>
-          </div>
+      {/* 无文本冲突块提示（binary / 单侧改动已在 parse 吸收，无需决策） */}
+      {hunks.length === 0 && (
+        <div
+          className="px-4 py-2 text-xs text-text-tertiary bg-background-surface border-b border-border"
+          data-testid="no-blocks"
+        >
+          {t('conflict.noBlocks')}
         </div>
+      )}
 
-        {/* per-hunk 控件 */}
-        {hunks.length > 0 && (
-          <div className="px-4 py-3 space-y-2">
-            <div className="text-xs text-text-tertiary mb-2">
-              {t('conflict.conflictBlocks', { done: resolvedCount, total: hunks.length })}
-              <span className="ml-2 text-text-tertiary/70">{t('conflict.hint')}</span>
-            </div>
-            {hunks.map((hunk) => (
-              <div
-                key={hunk.id}
-                className="border rounded-md border-border bg-background-surface"
-                data-testid={`hunk-${hunk.id}`}
-              >
-                <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-background-hover/40">
-                  <span
-                    className={`text-xs font-medium ${hasResolved(hunk.id) ? 'text-success' : 'text-danger'}`}
+      {/* 三窗：同一 regions 数组驱动三列，逐区域对位 */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="grid grid-cols-3 gap-px bg-border" data-testid="merge-regions">
+          {/* 表头 */}
+          <div className="px-3 py-1.5 text-xs font-medium bg-background-surface flex items-center gap-1">
+            <span className={isCurrentLeft ? 'text-primary' : 'text-warning'}>◉</span>
+            {leftLabel}
+            <span className="text-text-tertiary ml-auto">{t('conflict.ours')}</span>
+          </div>
+          <div className="px-3 py-1.5 text-xs font-medium bg-background-surface flex items-center gap-1">
+            <span className="text-success">◉</span>
+            {t('conflict.result')}
+          </div>
+          <div className="px-3 py-1.5 text-xs font-medium bg-background-surface flex items-center gap-1">
+            <span className={!isCurrentLeft ? 'text-primary' : 'text-warning'}>◉</span>
+            {rightLabel}
+            <span className="text-text-tertiary ml-auto">{t('conflict.theirs')}</span>
+          </div>
+
+          {regions.map((region, i) => {
+            const cells = regionDisplayLines(region)
+            const hunk = hunkByRegion.get(region)
+
+            if (region.kind === 'conflict' && hunk) {
+              const firstUnresolved = unresolvedRegions[0] === region
+              const resultLines = resolvedLines(hunk)
+              return (
+                <div
+                  key={`${region.baseStart}-${region.baseEnd}-${i}`}
+                  ref={firstUnresolved ? scrollTargetRef : undefined}
+                  className="contents"
+                  data-testid={`hunk-${hunk.id}`}
+                >
+                  {/* 左：ours 行 */}
+                  <div className="bg-background-elevated min-h-[28px]">
+                    <pre className="px-3 py-1 text-xs leading-5 font-mono whitespace-pre text-text-secondary">
+                      {region.oursLines?.join('\n') || t('conflict.empty')}
+                    </pre>
+                  </div>
+                  {/* 中：决策 + 实时结果 */}
+                  <div
+                    className={`bg-background-elevated min-h-[28px] ${
+                      resolutions[hunk.id] ? 'bg-success/5' : 'bg-warning/5'
+                    }`}
                   >
-                    {hasResolved(hunk.id) ? '✓' : '⚠'} {t('conflict.block')} {hunk.id + 1}
-                  </span>
-                  <span className="text-xs text-text-tertiary ml-auto">
-                    L{hunk.startLine + 1}–{hunk.endLine}
-                  </span>
-                  <button
-                    className="text-xs px-2 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10 transition-colors"
-                    onClick={() => setResolution(hunk.id, 'ours')}
-                    data-testid={`accept-ours-${hunk.id}`}
-                  >
-                    {t('conflict.acceptOurs')}
-                  </button>
-                  <button
-                    className="text-xs px-2 py-0.5 rounded border border-warning/30 text-warning hover:bg-warning/10 transition-colors"
-                    onClick={() => setResolution(hunk.id, 'theirs')}
-                    data-testid={`accept-theirs-${hunk.id}`}
-                  >
-                    {t('conflict.acceptTheirs')}
-                  </button>
-                  <button
-                    className="text-xs px-2 py-0.5 rounded border border-border text-text-secondary hover:bg-background-hover transition-colors"
-                    onClick={() => setResolution(hunk.id, 'base')}
-                    data-testid={`accept-base-${hunk.id}`}
-                  >
-                    {t('conflict.acceptBase')}
-                  </button>
-                  {hasResolved(hunk.id) && (
-                    <button
-                      className="text-xs px-1.5 text-text-tertiary hover:text-text-primary"
-                      title={t('conflict.undo')}
-                      onClick={() =>
-                        setResolutions((prev) => {
-                          const next = { ...prev }
-                          delete next[hunk.id]
-                          return next
-                        })
-                      }
-                    >
-                      <X size={12} />
-                    </button>
-                  )}
+                    <div className="flex items-center gap-1.5 px-3 py-1 border-b border-border/50">
+                      <span
+                        className={`text-xs font-medium shrink-0 ${
+                          resolutions[hunk.id] ? 'text-success' : 'text-danger'
+                        }`}
+                      >
+                        {resolutions[hunk.id] ? '✓' : '⚠'} {t('conflict.block')} {hunk.id + 1}
+                      </span>
+                      {resolutions[hunk.id] ? (
+                        <button
+                          className="ml-auto text-text-tertiary hover:text-text-primary p-0.5"
+                          title={t('conflict.undo')}
+                          onClick={() =>
+                            setResolutions((prev) => {
+                              const next = { ...prev }
+                              delete next[hunk.id]
+                              return next
+                            })
+                          }
+                        >
+                          <X size={12} />
+                        </button>
+                      ) : (
+                        <span className="ml-auto flex gap-1">
+                          <button
+                            className="text-xs px-1.5 py-0.5 rounded border border-primary/30 text-primary hover:bg-primary/10"
+                            onClick={() => setResolution(hunk.id, 'ours')}
+                            data-testid={`accept-ours-${hunk.id}`}
+                          >
+                            {t('conflict.acceptOurs')}
+                          </button>
+                          <button
+                            className="text-xs px-1.5 py-0.5 rounded border border-warning/30 text-warning hover:bg-warning/10"
+                            onClick={() => setResolution(hunk.id, 'theirs')}
+                            data-testid={`accept-theirs-${hunk.id}`}
+                          >
+                            {t('conflict.acceptTheirs')}
+                          </button>
+                          <button
+                            className="text-xs px-1.5 py-0.5 rounded border border-border text-text-secondary hover:bg-background-hover"
+                            onClick={() => setResolution(hunk.id, 'base')}
+                            data-testid={`accept-base-${hunk.id}`}
+                          >
+                            {t('conflict.acceptBase')}
+                          </button>
+                        </span>
+                      )}
+                    </div>
+                    <pre className="px-3 py-1 text-xs leading-5 font-mono whitespace-pre text-text-primary">
+                      {resultLines.length > 0
+                        ? resultLines.join('\n')
+                        : <span className="text-text-tertiary">{t('conflict.pendingDecision')}</span>}
+                    </pre>
+                  </div>
+                  {/* 右：theirs 行 */}
+                  <div className="bg-background-elevated min-h-[28px]">
+                    <pre className="px-3 py-1 text-xs leading-5 font-mono whitespace-pre text-text-secondary">
+                      {region.theirsLines?.join('\n') || t('conflict.empty')}
+                    </pre>
+                  </div>
                 </div>
-                <div className="grid grid-cols-2 gap-px bg-border">
-                  <pre className="px-3 py-2 text-xs leading-5 font-mono whitespace-pre overflow-x-auto text-text-secondary bg-background-elevated max-h-40 overflow-y-auto">
-                    {hunk.oursLines.join('\n') || t('conflict.empty')}
+              )
+            }
+
+            // 非冲突区域（common/ours/theirs）：三列同一/单侧内容，中列只读（已吸收进结果）
+            return (
+              <div key={`${region.baseStart}-${region.baseEnd}-${i}`} className="contents" data-region-kind={region.kind}>
+                <div className="bg-background min-h-[20px]">
+                  <pre className="px-3 py-0.5 text-xs leading-5 font-mono whitespace-pre text-text-tertiary">
+                    {cells.left.join('\n') || ' '}
                   </pre>
-                  <pre className="px-3 py-2 text-xs leading-5 font-mono whitespace-pre overflow-x-auto text-text-secondary bg-background-elevated max-h-40 overflow-y-auto">
-                    {hunk.theirsLines.join('\n') || t('conflict.empty')}
+                </div>
+                <div className="bg-background-elevated/50 min-h-[20px]">
+                  <pre className="px-3 py-0.5 text-xs leading-5 font-mono whitespace-pre text-text-secondary/80">
+                    {cells.left.join('\n') || ' '}
+                  </pre>
+                </div>
+                <div className="bg-background min-h-[20px]">
+                  <pre className="px-3 py-0.5 text-xs leading-5 font-mono whitespace-pre text-text-tertiary">
+                    {cells.right.join('\n') || ' '}
                   </pre>
                 </div>
               </div>
-            ))}
-          </div>
-        )}
-
-        {hunks.length === 0 && (
-          <div className="px-4 py-6 text-center text-sm text-text-secondary">
-            {t('conflict.noBlocks')}
-          </div>
-        )}
+            )
+          })}
+        </div>
       </div>
 
       {/* 底栏：手动编辑 + 完成并暂存 */}
@@ -306,6 +400,29 @@ export function ThreeWayMergeEditor({
           </button>
         </div>
       </div>
+
+      {/* 手动编辑接管：覆盖层（保持中列可感知） */}
+      {manualResult !== null && (
+        <div className="px-4 py-2 bg-background-surface border-t border-border">
+          <textarea
+            className="w-full text-xs leading-5 font-mono bg-background-elevated text-text-primary resize-none outline-none focus:ring-1 focus:ring-primary/40 h-32"
+            value={manualResult}
+            onChange={(e) => setManualResult(e.target.value)}
+            spellCheck={false}
+            data-testid="manual-result"
+          />
+          <div className="flex justify-end mt-1">
+            <button
+              className="text-xs text-text-tertiary hover:text-text-primary"
+              onClick={() => setManualResult(null)}
+              data-testid="manual-exit"
+            >
+              <Pencil size={12} className="inline mr-1" />
+              {t('conflict.manualExit')}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

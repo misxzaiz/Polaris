@@ -54,4 +54,54 @@ export const createConflictSlice: ConflictSlice = (set, get) => ({
   closeMerger() {
     set({ mergerOpen: null })
   },
+
+  // ===== 冲突文件解决（三态，走 cap.git git_resolve_conflict_file）=====
+
+  // 写类解决：编辑器拼合结果 / 删类「保留修改」文本 → 写盘 + add（stage0 取代冲突 stages）
+  async resolveConflictFile(workspacePath: string, filePath: string, content: string) {
+    try {
+      await invoke('git_resolve_conflict_file', {
+        workspacePath,
+        filePath,
+        content,
+      })
+      await get().refreshStatus(workspacePath)
+      return true
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
+
+  // 删类解决：接受删除（删盘上文件 + 移除 index 冲突 stages）
+  async removeConflictFile(workspacePath: string, filePath: string) {
+    try {
+      await invoke('git_resolve_conflict_file', {
+        workspacePath,
+        filePath,
+        remove: true,
+      })
+      await get().refreshStatus(workspacePath)
+      return true
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
+
+  // 整文件取舍：还原指定侧 stage 内容（binary / delete-modify 的「保留某侧」）
+  async checkoutConflictSide(workspacePath: string, filePath: string, side: 'ours' | 'theirs') {
+    try {
+      await invoke('git_resolve_conflict_file', {
+        workspacePath,
+        filePath,
+        side,
+      })
+      await get().refreshStatus(workspacePath)
+      return true
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
 })

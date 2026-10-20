@@ -99,38 +99,63 @@ describe('ConflictMergerDialog', () => {
     expect(screen.queryByTestId('resolve-manually-img/icon.png')).not.toBeInTheDocument()
   })
 
-  it('Accept Yours → resolve_conflict_file 用 ours 内容', async () => {
-    renderDialog(sequence([textConf()]))
-    fireEvent.click(screen.getAllByText('conflict.acceptYours')[0])
+  it('deleted_by_them（对方删·本地改）：ours=还原本方 stage / theirs=接受删除', async () => {
+    renderDialog(sequence([{ path: 'f.ts', kind: 'deleted_by_them', ours: 'local\n' }]))
+    // 首次解决后有 busy 窗口（防并发），等按钮恢复可点再点第二个
+    const clickWhenEnabled = async (testid: string) => {
+      await vi.waitFor(() => expect(screen.getByTestId(testid)).not.toBeDisabled())
+      fireEvent.click(screen.getByTestId(testid))
+    }
+    fireEvent.click(screen.getByTestId('resolve-ours-f.ts'))
     await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
         workspacePath: 'D:/repo',
-        filePath: 'src/a.ts',
-        content: 'a\nB1\nc\n',
+        filePath: 'f.ts',
+        side: 'ours',
+      })
+    })
+    await clickWhenEnabled('resolve-theirs-f.ts')
+    await vi.waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
+        workspacePath: 'D:/repo',
+        filePath: 'f.ts',
+        remove: true,
       })
     })
   })
 
-  it('Accept Theirs → resolve_conflict_file 用 theirs 内容', async () => {
-    renderDialog(sequence([textConf()]))
-    fireEvent.click(screen.getAllByText('conflict.acceptTheirs')[0])
+  it('deleted_by_us（本地删·对方改）：ours=接受删除 / theirs=还原对方 stage', async () => {
+    renderDialog(sequence([{ path: 'g.ts', kind: 'deleted_by_us', theirs: 'remote\n' }]))
+    const clickWhenEnabled = async (testid: string) => {
+      await vi.waitFor(() => expect(screen.getByTestId(testid)).not.toBeDisabled())
+      fireEvent.click(screen.getByTestId(testid))
+    }
+    fireEvent.click(screen.getByTestId('resolve-ours-g.ts'))
     await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
         workspacePath: 'D:/repo',
-        filePath: 'src/a.ts',
-        content: 'a\nC1\nc\n',
+        filePath: 'g.ts',
+        remove: true,
+      })
+    })
+    await clickWhenEnabled('resolve-theirs-g.ts')
+    await vi.waitFor(() => {
+      expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
+        workspacePath: 'D:/repo',
+        filePath: 'g.ts',
+        side: 'theirs',
       })
     })
   })
 
-  it('Resolve All Simple：非 Text 取 ours，剩余 Text 进编辑器', async () => {
+  it('Resolve All Simple：非 Text 取本方（binary=side ours / 删类=remove），剩余 Text 进编辑器', async () => {
     renderDialog(sequence([textConf(), binaryConf()]))
     fireEvent.click(screen.getByTestId('resolve-all-simple'))
     await vi.waitFor(() => {
       expect(mockInvoke).toHaveBeenCalledWith('git_resolve_conflict_file', {
         workspacePath: 'D:/repo',
         filePath: 'img/icon.png',
-        content: 'PNG',
+        side: 'ours',
       })
     })
     // 编辑器打开（首个 Text 进编辑器）
