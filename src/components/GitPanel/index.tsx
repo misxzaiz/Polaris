@@ -20,7 +20,6 @@ import { RemoteTab } from './RemoteTab'
 import { TagsTab } from './TagsTab'
 import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
-import { AtomicCommitCard } from './AtomicCommitCard'
 import { OperationsLog } from './OperationsLog'
 import { ConflictMergerDialogHost } from './conflict/ConflictMergerDialogHost'
 import { ConflictBanner } from './conflict/ConflictBanner'
@@ -65,7 +64,7 @@ export function GitPanel({
   variant = 'sidebar',
 }: GitPanelProps) {
   const { t } = useTranslation('git')
-  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos, commitGroup } = useGitStore()
+  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
   const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
@@ -955,20 +954,8 @@ export function GitPanel({
                 onSelectAll={toggleSelectAll}
                 isSelectionDisabled={isBatchOperating}
               />
-
-              {hasChanges && (
-                <AtomicCommitCard
-                  workspacePath={effectivePath}
-                  workspaceId={currentWorkspace?.id}
-                  indexChanges={status.staged}
-                  worktreeChanges={status.unstaged}
-                  untracked={status.untracked}
-                  onCommitGroup={async (files, message) => {
-                    await commitGroup(effectivePath, message, files)
-                  }}
-                  disabled={isBatchOperating}
-                />
-              )}
+              {/* AI-2 原子提交建议卡已从 UI 移除（2026-10-20 用户反馈：目录聚类对小变更多产出伪细分建议，且常驻卡片挤压变更文件列表空间）。
+                  引擎（services/gitAtomicGrouping）与组件（AtomicCommitCard）保留，需要时在此处重新挂载。 */}
 
               {error && (
                 <div className="px-4 py-2 mx-4 mb-2 text-xs text-danger bg-danger/10 border border-danger/20 rounded-lg">

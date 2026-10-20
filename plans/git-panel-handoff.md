@@ -63,6 +63,7 @@ P4 全部           ░░░░░░░░░░   0%
 - AI 解释层（`atomicCommitChat.ts`，kind='git-atomic'）：只投喂低置信组 diff（600 chars/file 裁剪）
 - 后端按组原子提交（`commit.rs::commit_group`）：清空-仅组内-恢复三序，等价 `git commit <paths>`
 - 前端分组卡片（`AtomicCommitCard.tsx`）：逐组确认后原子提交
+- **2026-10-20 更新**：卡片已从变更页 UI 移除（用户反馈：目录聚类对常见小变更多产出伪细分建议如「fix(en-us): 更新 1 个文件」，且常驻卡片挤压变更文件列表空间，价值低于噪音成本）。引擎与组件代码保留；重挂载点 `GitPanel/index.tsx` FileChangesList 之后（有注释标记）。
 - spec `plans/git-panel-p1-ai2-spec.md`
 
 **P2 泳道图初版（commit `9e9d42e8`）**：
