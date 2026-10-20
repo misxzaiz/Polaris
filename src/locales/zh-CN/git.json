@@ -7,7 +7,6 @@
   "workspaceSwitched": "已切换工作区：",
   "loading": "加载中...",
   "closeDiff": "关闭 Diff",
-  "openWorkbench": "在编辑区打开 Git 工作台",
   "selectedFiles": "已选择 {{count}} 个文件",
   "batchProgress": "处理中: {{current}}/{{total}}",
   "operations": {

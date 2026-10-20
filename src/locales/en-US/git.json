@@ -7,7 +7,6 @@
   "workspaceSwitched": "Switched workspace: ",
   "loading": "Loading...",
   "closeDiff": "Close Diff",
-  "openWorkbench": "Open Git Workbench in editor",
   "selectedFiles": "{{count}} files selected",
   "batchProgress": "Processing: {{current}}/{{total}}",
   "operations": {

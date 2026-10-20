@@ -171,7 +171,6 @@ function App() {
   const narrowTabId = useNarrowTabStore(state => state.narrowTabId);
   const openNarrowTab = useNarrowTabStore(state => state.openNarrowTab);
   const openDiffTab = useTabStore(state => state.openDiffTab);
-  const openGitTab = useTabStore(state => state.openGitTab);
   const openEditorTab = useTabStore(state => state.openEditorTab);
   const hasOpenTabs = useTabStore(state => state.tabs.length > 0);
 
@@ -268,14 +267,6 @@ function App() {
   // 终端全屏模式优先级更高，由 fullscreen 分支单独处理。
   const leftPanelFillRemaining = !hasCenterStage && rightPanelCollapsed && !terminalFullscreen;
 
-  const openGitWorkbench = useCallback((options?: { initialGitTab?: string }) => {
-    openGitTab(options);
-    closeLeftPanel();
-    if (!rightPanelCollapsed) {
-      toggleRightPanel();
-    }
-  }, [closeLeftPanel, openGitTab, rightPanelCollapsed, toggleRightPanel]);
-
   // 打开 diff tab：窄窗口下 CenterStage 不渲染，tab 静默创建无反馈，
   // 同步打开窄窗口 tab 覆盖层（NarrowTabOverlay 按 tab.type 分流渲染）。
   // tab 意图保留，窗口拖宽后 CenterStage 接管同一批 tab。
@@ -307,7 +298,6 @@ function App() {
           <GitPanel
             onOpenDiffInTab={openDiffTabWithNarrowOverlay}
             onOpenFileInEditor={openFileInEditor}
-            onOpenWorkbench={openGitWorkbench}
           />
         </Suspense>
       }

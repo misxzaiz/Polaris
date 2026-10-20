@@ -12,7 +12,6 @@ import { useFileEditorStore } from '@/stores/fileEditorStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { useFileExplorerStore } from '@/stores/fileExplorerStore'
 import { DiffViewer } from '@/components/Diff/DiffViewer'
-import { GitPanel } from '@/components/GitPanel'
 import { EditorPanel, BreadcrumbBar } from '@/components/Editor'
 import { TabContextMenu } from './TabContextMenu'
 import { ImagePreview } from '@/components/Preview/ImagePreview'
@@ -22,7 +21,6 @@ import { UnsavedDialog } from '@/components/Common/UnsavedDialog'
 import { useToastStore } from '@/stores/toastStore'
 import { getFileNameFromPath, resolveWorkspacePath } from '@/utils/path'
 import { pluginTabRendererRegistry } from '@/plugin-system/pluginTabRendererRegistry'
-import type { ComponentProps } from 'react'
 
 interface TabBarProps {
   className?: string
@@ -233,9 +231,7 @@ export function TabBar({ className = '' }: TabBarProps) {
           metadata: tab.metadata,
         })
       } else if (tab.type === 'git') {
-        useTabStore.getState().openGitTab({
-          initialGitTab: tab.metadata?.initialGitTab,
-        })
+        // git 工作台 tab 已下线（面板回归侧栏自适应宽度形态）；历史遗留的 git tab 无重开入口
       }
     } catch (err) {
       toast.error(
@@ -455,13 +451,6 @@ export function TabContent({ className = '' }: TabContentProps) {
   })
   const [diffViewMode, setDiffViewMode] = useState<'unified' | 'split'>('split')
 
-  const initialGitTab = typeof activeTab?.metadata?.initialGitTab === 'string'
-    ? activeTab.metadata.initialGitTab as ComponentProps<typeof GitPanel>['initialTab']
-    : undefined
-  const gitFocusToken = typeof activeTab?.metadata?.gitFocusToken === 'number'
-    ? activeTab.metadata.gitFocusToken
-    : undefined
-
   // Tab 切换时确保 fileEditorStore 加载正确的文件
   useEffect(() => {
     if (activeTab?.type === 'editor' && activeTab?.filePath) {
@@ -559,21 +548,6 @@ export function TabContent({ className = '' }: TabContentProps) {
               onClose={() => closeTab(activeTab.id)}
             />
           </div>
-        </div>
-      )
-
-    case 'git':
-      return (
-        <div className={`flex-1 flex flex-col overflow-hidden ${className}`}>
-          <GitPanel
-            variant="workbench"
-            initialTab={initialGitTab}
-            focusToken={gitFocusToken}
-            onOpenDiffInTab={(diff, options) => openDiffTab(diff, options)}
-            onOpenFileInEditor={(filePath) => {
-              openEditorTab(filePath, getFileNameFromPath(filePath))
-            }}
-          />
         </div>
       )
 

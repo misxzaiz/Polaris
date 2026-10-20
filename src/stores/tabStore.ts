@@ -18,7 +18,7 @@ import { browserClose, DEFAULT_BROWSER_HOME, makeBrowserWebviewLabel } from '@/s
  * 插件可注册自定义 Tab 类型（如 "git-branch"），CenterStage 通过
  * pluginTabRendererRegistry 渲染未知类型（P0-3）。
  */
-export type TabType = 'editor' | 'diff' | 'preview' | 'git' | 'browser' | (string & {})
+export type TabType = 'editor' | 'diff' | 'preview' | 'browser' | (string & {})
 
 /** Tab 数据结构 */
 export interface Tab {
@@ -36,10 +36,6 @@ export interface Tab {
   isDirty?: boolean
   /** 标签是否固定（pin tab），固定后不可关闭且在左侧显示 */
   pinned?: boolean
-}
-
-export interface OpenGitTabOptions {
-  initialGitTab?: string
 }
 
 export interface OpenDiffTabOptions {
@@ -67,7 +63,6 @@ interface TabActions {
   openEditorTab: (filePath: string, title?: string) => string
   openPreviewTab: (filePath: string, title?: string, metadata?: Record<string, any>) => string
   openDiffTab: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => string
-  openGitTab: (options?: OpenGitTabOptions) => string
   openBrowserTab: (url?: string, title?: string, options?: OpenBrowserTabOptions) => string
   closeTab: (tabId: string) => void
   switchTab: (tabId: string) => void
@@ -185,42 +180,6 @@ export const useTabStore = create<TabStore>()(
           title: titleContext ? `${fileName} @ ${titleContext} (Diff)` : `${fileName} (Diff)`,
           closable: true,
           diffData: diff,
-          metadata,
-        }
-
-        set((state) => ({
-          tabs: [...state.tabs, newTab],
-          activeTabId: tabId,
-        }))
-
-        return tabId
-      },
-
-      // 打开 Git 工作台 Tab
-      openGitTab: (options) => {
-        const existingTab = get().tabs.find((tab) => tab.type === 'git')
-        const metadata = options
-          ? { ...options, gitFocusToken: Date.now() }
-          : { gitFocusToken: Date.now() }
-
-        if (existingTab) {
-          set((state) => ({
-            tabs: state.tabs.map((tab) =>
-              tab.id === existingTab.id
-                ? { ...tab, metadata: { ...tab.metadata, ...metadata } }
-                : tab
-            ),
-            activeTabId: existingTab.id,
-          }))
-          return existingTab.id
-        }
-
-        const tabId = `git-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const newTab: Tab = {
-          id: tabId,
-          type: 'git',
-          title: 'Git',
-          closable: true,
           metadata,
         }
 

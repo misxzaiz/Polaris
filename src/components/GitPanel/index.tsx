@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Maximize2, Rows3, Columns2, Trash2, Star } from 'lucide-react'
+import { ChevronRight, GitPullRequest, X, Check, RotateCcw, MoreHorizontal, GitBranch, FolderGit2, FileText, History, Archive, Globe, Tag, GitCommit, FileX, Rows3, Columns2, Trash2, Star } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { GitStatusHeader } from './GitStatusHeader'
@@ -40,28 +40,16 @@ import { deleteFile } from '@/services/tauri/fileService'
 
 type TabType = 'changes' | 'history' | 'branch' | 'remote' | 'tags' | 'stash' | 'gitignore'
 
-interface GitWorkbenchOpenOptions {
-  initialGitTab?: TabType
-}
-
 interface GitPanelProps {
   className?: string
   onOpenDiffInTab?: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => void
   onOpenFileInEditor?: (filePath: string) => void
-  onOpenWorkbench?: (options?: GitWorkbenchOpenOptions) => void
-  initialTab?: TabType
-  focusToken?: number
-  variant?: 'sidebar' | 'workbench'
 }
 
 export function GitPanel({
   className = '',
   onOpenDiffInTab,
   onOpenFileInEditor,
-  onOpenWorkbench,
-  initialTab,
-  focusToken,
-  variant = 'sidebar',
 }: GitPanelProps) {
   const { t } = useTranslation('git')
   const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
@@ -112,7 +100,7 @@ export function GitPanel({
   // 彻底避免“点开 A 仓库却显示其它仓库/工作区内容”
   const status = useGitRepoStatus(effectivePath)
 
-  const [activeTab, setActiveTab] = useState<TabType>(initialTab ?? 'changes')
+  const [activeTab, setActiveTab] = useState<TabType>('changes')
   const [selectedDiff, setSelectedDiff] = useState<GitDiffEntry | null>(null)
   const [isDiffLoading, setIsDiffLoading] = useState(false)
   const [showBlame, setShowBlame] = useState(false)
@@ -412,22 +400,12 @@ export function GitPanel({
   }, [currentWorkspace, initBranchName, initRepository, toast, t])
 
   const useInternalDiff = !onOpenDiffInTab
-  const showWorkbenchButton = variant === 'sidebar' && !!onOpenWorkbench
-
-  const handleOpenWorkbench = useCallback(() => {
-    onOpenWorkbench?.({ initialGitTab: activeTab })
-  }, [activeTab, onOpenWorkbench])
 
   const handleOpenSelectedDiffFile = useCallback(() => {
     if (!selectedDiff || selectedDiff.change_type === 'deleted') return
     onOpenFileInEditor?.(resolveWorkspacePath(effectivePath, selectedDiff.file_path))
   }, [effectivePath, onOpenFileInEditor, selectedDiff])
 
-  useEffect(() => {
-    if (!initialTab) return
-    setActiveTab(initialTab)
-    setSelectedDiff(null)
-  }, [focusToken, initialTab])
 
   // 工作区切换：重置多仓库选中态与本地选择
   useEffect(() => {
@@ -512,16 +490,6 @@ export function GitPanel({
               {currentWorkspace?.name ?? t('title')}
             </span>
           </div>
-          {showWorkbenchButton && (
-            <button
-              type="button"
-              onClick={handleOpenWorkbench}
-              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
-              title={t('openWorkbench')}
-            >
-              <Maximize2 size={14} />
-            </button>
-          )}
         </div>
 
         {hasDiscovered ? (
@@ -712,16 +680,6 @@ export function GitPanel({
           </span>
         </div>
         <div className="flex items-center gap-1">
-          {showWorkbenchButton && (
-            <button
-              type="button"
-              onClick={handleOpenWorkbench}
-              className="p-1 text-text-tertiary hover:text-primary hover:bg-background-surface rounded transition-all"
-              title={t('openWorkbench')}
-            >
-              <Maximize2 size={14} />
-            </button>
-          )}
           {useInternalDiff && selectedDiff && (
             <button
               type="button"
@@ -834,19 +792,6 @@ export function GitPanel({
           </div>
 
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-          {showWorkbenchButton && activeTab === 'history' && (
-            <div className="px-3 py-2 border-b border-border-subtle bg-primary/5 shrink-0">
-              <button
-                type="button"
-                onClick={handleOpenWorkbench}
-                className="w-full h-8 flex items-center justify-center gap-2 text-xs font-medium text-primary bg-background-surface border border-primary/30 rounded hover:bg-primary/10 transition-colors"
-              >
-                <Maximize2 size={13} />
-                <span className="truncate">{t('openWorkbench')}</span>
-              </button>
-            </div>
-          )}
-
           {activeTab === 'changes' && (
             <>
               <GitStatusHeader
@@ -982,7 +927,6 @@ export function GitPanel({
               onCommitSelected={() => setTargetCommitSha(null)}
               onOpenDiffInTab={onOpenDiffInTab}
               onOpenFileInEditor={onOpenFileInEditor}
-              variant={variant}
               workspacePath={effectivePath}
             />
           )}
