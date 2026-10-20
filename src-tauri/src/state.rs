@@ -544,6 +544,40 @@ pub fn create_app_state(
         // cap.self.mutate —— AI 改造自身 UI（具名插槽组件注入/替换/移除）。
         // 与 cap.ui.input 同架构位：无状态校验 + 前端 uiSlotStore 为真相。
         let _ = bus.register_handle(Box::new(crate::services::router::SelfMutateCapability));
+        // cap.mcp —— 前端点对点调用插件 MCP 工具（AI 连续语音播报的声音后端）。
+        // 复用 `resolve_workspace_mcp_runtime_service`（插件贡献 stdio server 解析链，
+        // 含 {{pluginDir}}/{{appConfigDir}} 模板替换），取已启用插件 server 快照注入。
+        // workspace_path 以 config_dir 占位：mimo-tts 等插件的 command/args 不依赖
+        // {{workspacePath}}，对依赖它的 server 由调用方传真实 workspace 再解析（后续扩展）。
+        {
+            use crate::contracts::Router as _;
+            use crate::services::mcp_config_service::resolve_workspace_mcp_runtime_service;
+            use std::path::Path;
+            let mcp_servers = resolve_workspace_mcp_runtime_service(
+                config_dir.clone(),
+                None,
+                config_dir.clone(),
+                Path::new(&config_dir),
+                None,
+                None,
+            )
+            .ok()
+            .map(|(service, _)| {
+                service
+                    .resolved_simple_ai_servers(&config_dir.to_string_lossy(), &[])
+                    .into_iter()
+                    .filter(|s| s.plugin_id != "polaris.builtin") // 仅外部插件 MCP
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+            tracing::info!(
+                "[cap.mcp] 注册 {} 个外部插件 MCP server（含 mimo-tts）",
+                mcp_servers.len()
+            );
+            let _ = bus.register_handle(Box::new(
+                crate::services::router::McpCapability::with_servers(mcp_servers),
+            ));
+        }
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）
         bus
     };
