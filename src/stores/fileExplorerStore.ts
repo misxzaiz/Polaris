@@ -12,6 +12,7 @@ import { isFileWatcherEnabled } from '@/utils/performanceFeatures';
 import { createLogger } from '@/utils/logger';
 import { getParentPath, joinPath, normalizePath } from '@/utils/path';
 import { updateFolderChildren, filterFiles, countFiles, removePathFromTree } from './fileExplorerStoreUtils';
+import { useWorkspaceStore } from './workspaceStore';
 
 const log = createLogger('FileExplorer');
 
@@ -174,10 +175,28 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
 
   // 刷新当前目录（清除缓存并重新加载）
   // 优化：先并行加载所有数据，再一次性更新，避免闪烁
+  //
+  // 关键契约（2026-10-20 修复）：
+  // 1. current_path 为空时从 workspaceStore 自举，否则冷启动竞态下刷新按钮
+  //    会静默 return——用户表现为"点刷新没反应、只有重新选工作区才显示"。
+  // 2. 展开目录的"读取失败"与"文件夹被删除"分开处理：只有路径真的不存在
+  //    才折叠（清 expanded_folders），权限/占用/瞬时错误保留展开态和旧 cache，
+  //    避免刷新一次已展开目录就无谓折叠。
   refresh_directory: async () => {
     const { current_path, expanded_folders } = get();
 
+    // 冷启动竞态兜底：workspaceStore 已就绪但本 store 尚未同步
     if (!current_path) {
+      const ws = useWorkspaceStore.getState();
+      const viewing = ws.getViewingWorkspace?.() ?? null;
+      const current = ws.getCurrentWorkspace?.() ?? null;
+      const target = viewing || current;
+      if (!target?.path) {
+        log.warn('refresh_directory 跳过：无 current_path 且 workspaceStore 未就绪');
+        return;
+      }
+      log.info('refresh_directory：current_path 为空，回退到 load_directory', { path: target.path });
+      await get().load_directory(target.path);
       return;
     }
 
@@ -186,11 +205,29 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
     try {
       const expandedPaths = Array.from(expanded_folders);
 
-      // 并行加载：根目录 + 所有展开的文件夹
-      const loadPromises: Promise<{ path: string; children: FileInfo[] | null }>[] = expandedPaths.map(
-        (folderPath) => tauri.readDirectory(folderPath)
-          .then((children) => ({ path: folderPath, children: children as FileInfo[] }))
-          .catch(() => ({ path: folderPath, children: null }))
+      // 并行加载：所有展开的文件夹。
+      // 用 union 类型区分"成功/路径真消失/其他错误"，避免把瞬时错误当作删除折叠。
+      type LoadOutcome =
+        | { path: string; status: 'ok'; children: FileInfo[] }
+        | { path: string; status: 'missing' }
+        | { path: string; status: 'error'; error: string };
+
+      const loadPromises: Promise<LoadOutcome>[] = expandedPaths.map(
+        (folderPath) =>
+          tauri.readDirectory(folderPath)
+            .then((children) => ({
+              path: folderPath,
+              status: 'ok' as const,
+              children: children as FileInfo[],
+            }))
+            .catch((err: unknown) => {
+              const msg = err instanceof Error ? err.message : String(err);
+              // 后端约定：InvalidPath（"路径不存在"/"不是目录"）视为真消失
+              const isMissing = /路径不存在|不是目录|No such file|not a directory/i.test(msg);
+              return isMissing
+                ? ({ path: folderPath, status: 'missing' } as const)
+                : ({ path: folderPath, status: 'error', error: msg } as const);
+            }),
       );
 
       // 加载根目录
@@ -202,17 +239,26 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
       // 构建新的缓存和需要移除的路径（使用规范化路径作为 key）
       const newCache = new Map<string, FileInfo[]>();
       const removedPaths = new Set<string>();
+      const failedPaths: { path: string; error: string }[] = [];
 
       for (const result of folderResults) {
-        if (result.children !== null) {
-          // 使用规范化路径作为缓存 key
+        if (result.status === 'ok') {
           newCache.set(normalizePath(result.path), result.children);
-        } else {
+        } else if (result.status === 'missing') {
           removedPaths.add(normalizePath(result.path));
+        } else {
+          failedPaths.push({ path: result.path, error: result.error });
         }
       }
 
-      // 从根目录开始，递归更新所有展开文件夹的 children
+      if (failedPaths.length > 0) {
+        log.warn('refresh_directory：部分展开目录读取失败，保留原展开态', {
+          failed: failedPaths.map((f) => ({ path: f.path, error: f.error })),
+        });
+      }
+
+      // 从根目录开始，递归更新所有成功加载的展开文件夹的 children。
+      // 保留展开态中"读取失败"目录的旧 children（updateFolderChildren 不覆盖）。
       let updatedTree = rootFiles;
       for (const [folderPath, children] of newCache) {
         updatedTree = updateFolderChildren(updatedTree, folderPath, children);
@@ -229,7 +275,7 @@ export const useFileExplorerStore = create<FileExplorerStore>((set, get) => ({
           nextCache.set(path, children);
         }
 
-        // 移除不存在的文件夹
+        // 仅"真消失"的目录从展开集合中移除；"读取失败"的保留
         removedPaths.forEach((path) => {
           nextExpanded.delete(path);
           nextCache.delete(path);
