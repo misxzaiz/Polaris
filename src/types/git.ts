@@ -389,6 +389,44 @@ export interface BranchComparison {
 }
 
 /**
+ * 冲突 kind（C10：二进制 / delete-modify / rename-delete 不再穿帮）
+ * 与服务端 models/git.rs::GitConflictKind（snake_case serde）一一对应。
+ */
+export type GitConflictKind =
+  | 'text'
+  | 'binary'
+  | 'deleted_by_us'
+  | 'deleted_by_them'
+  | 'rename_delete'
+
+/**
+ * 单文件冲突条目（C10：merge/rebase/cherry-pick/revert 四结果结构一次改齐）
+ */
+export interface GitConflictEntry {
+  path: string
+  kind: GitConflictKind
+  base?: string   // 文本冲突三方 stage 内容（binary 无）
+  ours?: string
+  theirs?: string
+}
+
+/**
+ * 当前进行中的序列操作类型（C11：merge/rebase/cherry-pick/revert 四合一）
+ */
+export type GitSequenceKind = 'none' | 'merge' | 'rebase' | 'cherry_pick' | 'revert'
+
+/**
+ * 序列操作状态（C11：Continue 一律从这里回读，不信任 stderr）
+ */
+export interface GitSequenceState {
+  kind: GitSequenceKind
+  hasConflicts: boolean
+  conflicts: GitConflictEntry[]
+  currentStep?: number  // rebase 步数（msgnum/end 回读）
+  totalSteps?: number
+}
+
+/**
  * Pull 操作结果
  */
 export interface GitPullResult {
@@ -398,7 +436,7 @@ export interface GitPullResult {
   filesChanged: number
   insertions: number
   deletions: number
-  conflicts: string[]
+  conflicts: GitConflictEntry[]
 }
 
 /**
@@ -419,7 +457,7 @@ export interface GitMergeResult {
   success: boolean       // 是否成功
   fastForward: boolean   // 是否为快进合并
   hasConflicts: boolean  // 是否有冲突
-  conflicts: string[]    // 冲突文件列表
+  conflicts: GitConflictEntry[] // 冲突条目（C10 升级：path + kind + stages）
   mergedCommits: number  // 合并的提交数
   filesChanged: number   // 变更的文件数
 }
@@ -430,7 +468,7 @@ export interface GitMergeResult {
 export interface GitRebaseResult {
   success: boolean       // 是否成功
   hasConflicts: boolean  // 是否有冲突
-  conflicts: string[]    // 冲突文件列表
+  conflicts: GitConflictEntry[] // 冲突条目（C10 升级）
   rebasedCommits: number // 变基的提交数
   currentStep: number    // 当前步骤（从 1 开始）
   totalSteps: number     // 总步骤数
@@ -443,7 +481,7 @@ export interface GitRebaseResult {
 export interface GitCherryPickResult {
   success: boolean       // 是否成功
   hasConflicts: boolean  // 是否有冲突
-  conflicts: string[]    // 冲突文件列表
+  conflicts: GitConflictEntry[] // 冲突条目（C10 升级）
   commitSha: string      // 提交 SHA
   commitMessage: string  // 提交消息
   finished: boolean      // 是否已完成
@@ -455,7 +493,7 @@ export interface GitCherryPickResult {
 export interface GitRevertResult {
   success: boolean       // 是否成功
   hasConflicts: boolean  // 是否有冲突
-  conflicts: string[]    // 冲突文件列表
+  conflicts: GitConflictEntry[] // 冲突条目（C10 升级）
   commitSha: string      // 提交 SHA
   commitMessage: string  // 提交消息
   finished: boolean      // 是否已完成

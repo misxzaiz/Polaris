@@ -22,6 +22,7 @@ mod gitignore;
 mod reflog;
 mod undo;
 mod conflict;
+mod sequence;
 mod lane_cache;
 
 // 重导出公共 API
@@ -48,6 +49,7 @@ pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitigno
 pub use reflog::get_reflog;
 pub use undo::{create_undo_snapshot, drop_undo_snapshot, list_undo_snapshots, prune_undo_snapshots, restore_undo_snapshot};
 pub use conflict::predict_conflicts;
+pub use sequence::{get_sequence_state, guard_no_sequence, stage_conflicted_files, resolve_conflict_file};
 
 use std::path::Path;
 
@@ -55,7 +57,7 @@ use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
     GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
-    GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag,
+    GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag, GitSequenceState,
     LogSearchFilter,
     PullRequest,
     UndoRestoreOutcome, UndoSnapshotMeta,
@@ -544,5 +546,31 @@ impl GitService {
         branch: Option<&str>,
     ) -> Result<GitConflictPrediction, GitServiceError> {
         predict_conflicts(path, branch)
+    }
+
+    // ========================================================================
+    // 序列操作机（P3：merge/rebase/cherry-pick/revert 四合一状态探测）
+    // ========================================================================
+
+    /// 归一读取当前序列操作状态（C11：kind + 冲突条目 + rebase 步数，只读）
+    pub fn get_sequence_state(
+        path: &Path,
+    ) -> Result<GitSequenceState, GitServiceError> {
+        get_sequence_state(path)
+    }
+
+    /// 交叉守卫：任何序列操作进行中即报对应 InProgress（C11，替代只查 has_conflicts）
+    pub fn guard_no_sequence(path: &Path) -> Result<(), GitServiceError> {
+        guard_no_sequence(path)
+    }
+
+    /// 冲突文件全部 add 进 index（解决后直落 staging；删除冲突跳过）
+    pub fn stage_conflicted_files(path: &Path) -> Result<Vec<String>, GitServiceError> {
+        stage_conflicted_files(path)
+    }
+
+    /// 解决单个冲突文件：写内容回工作区 + 暂存（Text 类直落 staging）
+    pub fn resolve_conflict_file(path: &Path, file_path: &str, content: &str) -> Result<(), GitServiceError> {
+        resolve_conflict_file(path, file_path, content)
     }
 }

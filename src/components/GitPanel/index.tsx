@@ -20,6 +20,8 @@ import { BlameView } from './BlameView'
 import { GitignoreTab } from './GitignoreTab'
 import { AtomicCommitCard } from './AtomicCommitCard'
 import { OperationsLog } from './OperationsLog'
+import { ConflictMergerDialogHost } from './conflict/ConflictMergerDialogHost'
+import { ConflictBanner } from './conflict/ConflictBanner'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { initGitStatusWatcher } from '@/stores/gitStore/fileWatcherSubscriber'
@@ -853,6 +855,14 @@ export function GitPanel({
                 workspacePath={effectivePath}
               />
 
+              {/* P3 冲突常驻入口：status 有 conflicted 时显示横幅 */}
+              {effectivePath && status?.conflicted && status.conflicted.length > 0 && (
+                <ConflictBanner
+                  workspacePath={effectivePath}
+                  conflicted={status.conflicted}
+                />
+              )}
+
               {selectedFiles.size > 0 && (() => {
                 const counts = getBatchActionCounts()
                 return (
@@ -1019,6 +1029,9 @@ export function GitPanel({
           onCancel={() => setConfirmDialog(null)}
         />
       )}
+
+      {/* P3 冲突合并器宿主（读 store.mergerOpen，任意入口 openMerger 即可弹出） */}
+      <ConflictMergerDialogHost />
     </div>
   )
 }

@@ -21,6 +21,7 @@
  * - undoSlice: 撤销快照（FR-P2-3 危险操作网络）
  * - operationsSlice: 操作流水（FR-P2-4 写动作留痕）
  * - conflictPredictSlice: 冲突预测（FR-P2-AI4 确定性风险清单）
+ * - conflictSlice: 冲突合并器（P3 序列操作机状态 + 合并器开关）
  */
 
 import { create } from 'zustand'
@@ -38,6 +39,7 @@ import { createUtilitySlice } from './utilitySlice'
 import { createUndoSlice } from './undoSlice'
 import { createOperationsSlice } from './operationsSlice'
 import { createConflictPredictSlice } from './conflictPredictSlice'
+import { createConflictSlice } from './conflictSlice'
 
 /**
  * Git Store
@@ -58,6 +60,7 @@ export const useGitStore = create<GitState>()((...a) => ({
   ...createUndoSlice(...a),
   ...createOperationsSlice(...a),
   ...createConflictPredictSlice(...a),
+  ...createConflictSlice(...a),
 }))
 
 // 导出类型
@@ -86,6 +89,8 @@ export type {
   OperationsActions,
   ConflictPredictState,
   ConflictPredictActions,
+  ConflictState,
+  ConflictActions,
 } from './types'
 
 // 导出工具函数

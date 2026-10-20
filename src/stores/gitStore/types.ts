@@ -36,6 +36,7 @@ import type {
   UndoRestoreOutcome,
   GitOperationEntry,
   GitConflictPrediction,
+  GitSequenceState,
 } from '@/types/git'
 
 // ============================================================================
@@ -374,6 +375,26 @@ export interface ConflictPredictActions {
 }
 
 // ============================================================================
+// 冲突合并器（P3：序列操作机 + 三窗合并器）
+// ============================================================================
+
+export interface ConflictState {
+  /** 各 workspace 的序列操作状态缓存（按 wsPath 分片） */
+  sequenceStatesByWs: Record<string, GitSequenceState>
+  /** 合并器打开状态（null = 关闭） */
+  mergerOpen: { wsPath: string; file?: string } | null
+}
+
+export interface ConflictActions {
+  /** 拉取某 workspace 的序列操作状态（只读，失败置空态不抛错） */
+  getConflictState: (workspacePath: string) => Promise<GitSequenceState | null>
+  /** 打开合并器（独立对话框形态） */
+  openMerger: (wsPath: string, file?: string) => void
+  /** 关闭合并器 */
+  closeMerger: () => void
+}
+
+// ============================================================================
 // 组合状态类型
 // ============================================================================
 
@@ -390,6 +411,7 @@ export type GitState = StatusState &
   UndoState &
   OperationsState &
   ConflictPredictState &
+  ConflictState &
   StatusActions &
   BranchActions &
   RemoteActions &
@@ -402,7 +424,8 @@ export type GitState = StatusState &
   UtilityActions &
   UndoActions &
   OperationsActions &
-  ConflictPredictActions
+  ConflictPredictActions &
+  ConflictActions
 
 // ============================================================================
 // Slice Creator 类型
@@ -446,3 +469,6 @@ export type OperationsSlice = StateCreator<GitState, [], [], OperationsState & O
 
 /** 冲突预测 Slice Creator 类型（FR-P2-AI4） */
 export type ConflictPredictSlice = StateCreator<GitState, [], [], ConflictPredictState & ConflictPredictActions>
+
+/** 冲突合并器 Slice Creator 类型（P3） */
+export type ConflictSlice = StateCreator<GitState, [], [], ConflictState & ConflictActions>

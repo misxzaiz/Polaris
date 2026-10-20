@@ -492,6 +492,64 @@ pub struct BranchComparison {
 }
 
 // ============================================================================
+// 冲突域协议（C10：非内容冲突全穿帮修复）
+// ============================================================================
+
+/// 冲突 kind（C10：二进制 / delete-modify / rename-delete 不再穿帮）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitConflictKind {
+    /// 文本冲突（有 marker 可解析）
+    Text,
+    /// 二进制冲突（无 marker，只能整文件取舍）
+    Binary,
+    /// delete/modify：本地删、对方改
+    DeletedByUs,
+    /// delete/modify：对方删、本地改
+    DeletedByThem,
+    /// rename/delete
+    RenameDelete,
+}
+
+/// 单文件冲突条目（C10：merge/rebase/cherry-pick/revert 四结果结构一次改齐）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GitConflictEntry {
+    pub path: String,
+    pub kind: GitConflictKind,
+    /// 冲突三方 stage 内容（Text 有内容；Binary 无，可为空）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub base: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ours: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub theirs: Option<String>,
+}
+
+/// 当前进行中的序列操作类型（C11：归一探测）
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitSequenceKind {
+    None,
+    Merge,
+    Rebase,
+    CherryPick,
+    Revert,
+}
+
+/// 序列操作状态（C11：Continue 一律从这里回读，不信任 stderr）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitSequenceState {
+    pub kind: GitSequenceKind,
+    pub has_conflicts: bool,
+    pub conflicts: Vec<GitConflictEntry>,
+    /// rebase 步数（rebase-merge/end + msgnum 回读；merge 等无步数为 None）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub current_step: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_steps: Option<usize>,
+}
+
+// ============================================================================
 // Pull 结果
 // ============================================================================
 
@@ -504,7 +562,7 @@ pub struct GitPullResult {
     pub files_changed: usize,
     pub insertions: usize,
     pub deletions: usize,
-    pub conflicts: Vec<String>,
+    pub conflicts: Vec<GitConflictEntry>,
 }
 
 // ============================================================================
@@ -520,8 +578,8 @@ pub struct GitMergeResult {
     pub fast_forward: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突文件列表
-    pub conflicts: Vec<String>,
+    /// 冲突条目列表（C10 升级：携带 kind + stages）
+    pub conflicts: Vec<GitConflictEntry>,
     /// 合并的提交数
     pub merged_commits: usize,
     /// 变更的文件数
@@ -535,8 +593,8 @@ pub struct GitRebaseResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突文件列表
-    pub conflicts: Vec<String>,
+    /// 冲突条目列表（C10 升级）
+    pub conflicts: Vec<GitConflictEntry>,
     /// 变基的提交数
     pub rebased_commits: usize,
     /// 当前步骤（从 1 开始）
@@ -554,8 +612,8 @@ pub struct GitCherryPickResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突文件列表
-    pub conflicts: Vec<String>,
+    /// 冲突条目列表（C10 升级）
+    pub conflicts: Vec<GitConflictEntry>,
     /// 提交 SHA
     pub commit_sha: String,
     /// 提交消息
@@ -571,8 +629,8 @@ pub struct GitRevertResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突文件列表
-    pub conflicts: Vec<String>,
+    /// 冲突条目列表（C10 升级）
+    pub conflicts: Vec<GitConflictEntry>,
     /// 新提交的 SHA（revert 成功后）
     pub commit_sha: String,
     /// 提交消息

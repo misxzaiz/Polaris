@@ -49,6 +49,7 @@ static WRITE_GATE: Mutex<()> = Mutex::new(());
 const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "commit_changes",
     "stage_file",
+    "resolve_conflict_file",
     "unstage_file",
     "batch_stage",
     "commit_group",
@@ -241,6 +242,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "get_gitignore_templates", "create_pr", "get_pr_status",
     "undo_list", "undo_restore", "undo_drop",
     "get_operations", "clear_operations", "predict_conflicts",
+    "get_conflict_state", "resolve_conflict_file",
 ];
 
 // ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
@@ -514,6 +516,8 @@ impl Capability for GitCapability {
                 &workspace(p)?,
                 optional_string(p, "branch").as_deref(),
             )),
+            // P3 冲突域：归一序列操作状态（只读，不进操作流水/撤销快照）
+            "get_conflict_state" => json_ok_svc(GitService::get_sequence_state(&workspace(p)?)),
             "get_diffs" => json_ok_svc(GitService::get_diff(
                 &workspace(p)?,
                 require_string(p, "baseCommit")?,
@@ -578,6 +582,12 @@ impl Capability for GitCapability {
             "stage_file" => json_ok_svc(GitService::stage_file(
                 &workspace(p)?,
                 require_string(p, "filePath")?,
+            )),
+            // P3 冲突域：解决单个冲突文件（写回内容 + 直落 staging；写类动作）
+            "resolve_conflict_file" => json_ok_svc(GitService::resolve_conflict_file(
+                &workspace(p)?,
+                require_string(p, "filePath")?,
+                require_string(p, "content")?,
             )),
             "unstage_file" => json_ok_svc(GitService::unstage_file(
                 &workspace(p)?,
@@ -923,6 +933,8 @@ mod tests {
             "undo_list", "undo_restore", "undo_drop",
             "get_operations", "clear_operations",
             "predict_conflicts",
+            "get_conflict_state",
+            "resolve_conflict_file",
         ];
         known.sort();
         handled.sort();
@@ -942,12 +954,14 @@ mod tests {
         for a in ["commit_changes", "discard_changes", "reset", "push_branch", "pull",
                   "rebase_branch", "delete_branch", "stash_drop", "init_repository",
                   "fetch", "amend_commit", "stash_apply", "commit_group",
-                  "undo_restore", "undo_drop", "clear_operations"] {
+                  "undo_restore", "undo_drop", "clear_operations",
+                  "resolve_conflict_file"] {
             assert!(is_destructive(a), "{} 应在破坏性名单", a);
         }
         // 只读动作不在名单（新 P1 读型动作同防护）
         for a in ["get_status", "get_log", "blame_file", "stash_list", "detect_host",
-                  "stash_show", "search_log", "get_reflog", "undo_list", "get_operations"] {
+                  "stash_show", "search_log", "get_reflog", "undo_list", "get_operations",
+                  "get_conflict_state"] {
             assert!(!is_destructive(a), "{} 不该被拒（只读）", a);
         }
     }

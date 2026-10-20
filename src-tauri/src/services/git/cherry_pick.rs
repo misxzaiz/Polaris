@@ -20,16 +20,8 @@ pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult,
 
     let repo = open_repository(path)?;
 
-    // 检查是否有正在进行的 cherry-pick
-    let cherry_pick_state_path = path.join(".git").join("CHERRY_PICK_HEAD");
-    if cherry_pick_state_path.exists() {
-        return Err(GitServiceError::CherryPickInProgress);
-    }
-
-    // 检查是否有正在进行的合并
-    if repo.index()?.has_conflicts() {
-        return Err(GitServiceError::MergeInProgress);
-    }
+    // C11 交叉守卫：任何序列操作进行中均拒绝（merge/rebase/cherry-pick/revert 互斥）
+    super::sequence::guard_no_sequence(path)?;
 
     // 执行 cherry-pick 操作
     #[cfg(windows)]
@@ -45,7 +37,7 @@ pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult,
         .current_dir(path)
         .output()?;
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+    let _stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if output.status.success() {
@@ -76,21 +68,16 @@ pub fn cherry_pick(path: &Path, commit_sha: &str) -> Result<GitCherryPickResult,
             finished: true,
         })
     } else {
-        let has_conflicts =
-            stderr.contains("CONFLICT") || stderr.contains("conflict") || stdout.contains("CONFLICT");
-
-        let conflicts = if has_conflicts {
-            get_conflict_files(path)?
-        } else {
-            vec![]
-        };
+        // C11：冲突判定归一从序列状态回读，不信任 stderr 包含 "CONFLICT"
+        let state = super::sequence::get_sequence_state(path)?;
+        let has_conflicts = state.has_conflicts;
 
         if has_conflicts {
-            info!("Cherry-pick 遇到冲突: {} 个文件", conflicts.len());
+            info!("Cherry-pick 遇到冲突: {} 个文件", state.conflicts.len());
             Ok(GitCherryPickResult {
                 success: false,
                 has_conflicts: true,
-                conflicts,
+                conflicts: state.conflicts,
                 commit_sha: commit_sha.to_string(),
                 commit_message: String::new(),
                 finished: false,
@@ -169,15 +156,15 @@ pub fn cherry_pick_continue(path: &Path) -> Result<GitCherryPickResult, GitServi
             finished: true,
         })
     } else {
-        let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
-
-        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
+        // C11：Continue 从状态回读，不信任 stderr 包含 "CONFLICT"
+        let state = super::sequence::get_sequence_state(path)?;
+        let has_conflicts = state.has_conflicts;
 
         if has_conflicts {
             Ok(GitCherryPickResult {
                 success: false,
                 has_conflicts: true,
-                conflicts,
+                conflicts: state.conflicts,
                 commit_sha: String::new(),
                 commit_message: String::new(),
                 finished: false,
@@ -185,31 +172,5 @@ pub fn cherry_pick_continue(path: &Path) -> Result<GitCherryPickResult, GitServi
         } else {
             Err(GitServiceError::CLIError(stderr.to_string()))
         }
-    }
-}
-
-/// 获取冲突文件列表
-fn get_conflict_files(path: &Path) -> Result<Vec<String>, GitServiceError> {
-    #[cfg(windows)]
-    let output = std::process::Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()?;
-
-    #[cfg(not(windows))]
-    let output = std::process::Command::new("git")
-        .args(["diff", "--name-only", "--diff-filter=U"])
-        .current_dir(path)
-        .output()?;
-
-    if output.status.success() {
-        Ok(String::from_utf8_lossy(&output.stdout)
-            .lines()
-            .filter(|l| !l.is_empty())
-            .map(|l| l.to_string())
-            .collect())
-    } else {
-        Ok(vec![])
     }
 }

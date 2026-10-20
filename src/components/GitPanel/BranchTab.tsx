@@ -782,6 +782,7 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
             setBranchToMerge(null)
             setMergeResult(null)
           }}
+          workspacePath={workspacePath}
         />
       )}
 
@@ -799,6 +800,7 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
             setBranchToRebase(null)
             setRebaseResult(null)
           }}
+          workspacePath={workspacePath}
         />
       )}
 
