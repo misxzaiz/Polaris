@@ -105,8 +105,10 @@ export function ensureCryptoSubtleDigest(): void {
       ? new Uint8Array(data)
       : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
     const hash = sha256Bytes(bytes);
-    // 返回独立 ArrayBuffer（与原生 digest 行为一致）
-    return Promise.resolve(hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength));
+    // 返回独立 ArrayBuffer（与原生 digest 行为一致）。typed-array `.buffer` 的静态类型是
+    // ArrayBufferLike（含 SharedArrayBuffer 的宽型），而 `slice` 实际只在新 ArrayBuffer 上截取——
+    // 显式收窄断言，避免不同环境 lib 型宽差导致的 tsc 抖动。
+    return Promise.resolve(hash.buffer.slice(hash.byteOffset, hash.byteOffset + hash.byteLength) as ArrayBuffer);
   };
 
   try {

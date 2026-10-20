@@ -7,6 +7,19 @@
   "workspaceSwitched": "Switched workspace: ",
   "loading": "Loading...",
   "closeDiff": "Close Diff",
+  "danger": {
+    "lossDiscardFiles": "Uncommitted changes in {{count}} file(s) will be lost irreversibly",
+    "lossDiscardFileOne": "Uncommitted changes in \"{{file}}\" will be lost irreversibly",
+    "lossDeleteUntracked": "{{count}} untracked file(s) will be permanently deleted from disk (not in Git, unrecoverable)",
+    "lossDeleteUntrackedOne": "\"{{file}}\" is untracked — deletion cannot be recovered",
+    "lossDropCommit": "Commit {{sha}} ({{subject}}) and its changes will be permanently dropped",
+    "lossBranchDelete": "Branch {{branch}} reference will be deleted",
+    "lossForcePush": "Commits on remote {{branch}} inconsistent with this push will be overwritten — irreversible",
+    "snapshotNote": "An undo snapshot is captured automatically for this operation — restore via the Undo bar",
+    "nonSnapshotNote": "This deletion does not create an undo snapshot; stash or back up first if unsure",
+    "recoverableNote": "This file is tracked by Git — the deletion can always be restored via Git",
+    "safetyNetBackupBranch": "Safety net: create a backup branch from this commit first (right-click → branch from commit), then re-run"
+  },
   "selectedFiles": "{{count}} files selected",
   "batchProgress": "Processing: {{current}}/{{total}}",
   "operations": {

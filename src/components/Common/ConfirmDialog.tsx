@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { AlertTriangle, ShieldCheck } from 'lucide-react';
 import { OverlayGuard } from '@/components/Browser/OverlayGuard';
 import { useTransitionState } from '@/hooks/useTransitionState';
 
@@ -15,6 +16,14 @@ interface ConfirmDialogProps {
   onConfirm: () => void;
   onCancel: () => void;
   type?: 'danger' | 'warning' | 'info';
+  /**
+   * AI-7 危护 v1（纯本地确定性预报，0 token）：
+   * 「将失去什么」条目列表——由调用方用其域内数据合成（如文件数/提交数）。
+   * 提供后渲染红色损失预告块。
+   */
+  losses?: string[];
+  /** 安全网建议（如「已自动生成可撤销快照」「先建备份分支」） */
+  safetyNet?: string;
 }
 
 export function ConfirmDialog({
@@ -25,6 +34,8 @@ export function ConfirmDialog({
   onConfirm,
   onCancel,
   type = 'danger',
+  losses,
+  safetyNet,
 }: ConfirmDialogProps) {
   const { t } = useTranslation('common');
   const confirmButtonRef = useRef<HTMLButtonElement>(null);
@@ -97,9 +108,32 @@ export function ConfirmDialog({
           </h2>
         )}
 
-        <p className="text-sm text-text-secondary whitespace-pre-wrap mb-6">
+        <p className={`text-sm text-text-secondary whitespace-pre-wrap ${losses?.length ? 'mb-4' : 'mb-6'}`}>
           {message}
         </p>
+
+        {losses && losses.length > 0 && (
+          <div className={`${safetyNet ? 'mb-4' : 'mb-6'} rounded-lg border border-danger/30 bg-danger/5 p-3`}>
+            <div className="text-xs font-semibold text-danger mb-1.5 flex items-center gap-1.5">
+              <AlertTriangle size={13} />
+              {t('lossesHeading')}
+            </div>
+            <ul className="space-y-1">
+              {losses.map((loss, i) => (
+                <li key={i} className="text-xs text-text-secondary whitespace-pre-wrap break-all">
+                  {loss}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {safetyNet && (
+          <div className="mb-6 rounded-lg border border-primary/25 bg-primary/5 p-3 flex gap-1.5">
+            <ShieldCheck size={13} className="text-primary shrink-0 mt-0.5" />
+            <span className="text-xs text-text-secondary whitespace-pre-wrap break-all">{safetyNet}</span>
+          </div>
+        )}
 
         <div className="flex justify-end gap-2">
           <button
