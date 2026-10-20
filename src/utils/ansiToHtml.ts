@@ -39,8 +39,9 @@ export function ansiToHtml(text: string): string {
     .replace(/"/g, '&quot;');
 
   // 2. 替换 ANSI 转义序列为 <span style="color:...">
-  // 匹配 \x1b[Nm 或 \x1b[N;N;...m
-  html = html.replace(/\x1b\[(\d+(?:;\d+)*)m/g, (_, codesStr) => {
+  // 匹配 \x1b[Nm 或 \x1b[N;N;...m（用运行时构造正则，避免正则里字面控制字符）
+  const ESC = String.fromCharCode(27);
+  html = html.replace(new RegExp(ESC + '\\[(\\d+(?:;\\d+)*)m', 'g'), (_, codesStr) => {
     const codes = codesStr.split(';').map(Number);
     // \x1b[0m = 重置（关闭所有 span）
     if (codes[0] === 0) return '</span>';

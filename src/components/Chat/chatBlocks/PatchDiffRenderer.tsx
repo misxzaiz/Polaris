@@ -47,14 +47,15 @@ export const PatchDiffRenderer = memo(function PatchDiffRenderer({
   });
 
   const patchData = block.patchData;
+
+  // 展开态：每个文件的折叠状态（hooks 必须在所有条件返回之前声明，保持渲染顺序一致）
+  const [expandedFiles, setExpandedFiles] = useState<Record<number, boolean>>({});
+
   if (!patchData || patchData.length === 0) return null;
 
   const totalFiles = patchData.length;
   const totalAdded = patchData.reduce((sum, f) => sum + f.addedLines, 0);
   const totalRemoved = patchData.reduce((sum, f) => sum + f.removedLines, 0);
-
-  // 展开态：每个文件的折叠状态
-  const [expandedFiles, setExpandedFiles] = useState<Record<number, boolean>>({});
 
   const toggleFile = (index: number) => {
     setExpandedFiles((prev) => ({ ...prev, [index]: !prev[index] }));

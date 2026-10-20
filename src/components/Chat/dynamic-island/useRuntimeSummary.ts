@@ -165,7 +165,7 @@ function isFailedProgress(msg: string | null): boolean {
 
 /** 从 progressMessage 去掉 emoji 前缀，得到纯文案 */
 function stripEmoji(msg: string): string {
-  return msg.replace(/^[✅❌🔧⚠️🗑️]\s*/, '').trim() || msg;
+  return msg.replace(/^(?:✅|❌|🔧|⚠️|🗑️)\s*/u, '').trim() || msg;
 }
 
 /** 截断到 max 字符，超出加 … */
@@ -773,7 +773,7 @@ export function useRuntimeSummary(sessionId: string | null): RuntimeSummary {
     return store.subscribe(onChange);
   };
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+   
   const summary = useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_SUMMARY);
 
   // 计时 effect：仅当有运行中活动时，每秒推进 tick
