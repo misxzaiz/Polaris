@@ -24,7 +24,6 @@ import {
   RotateCw,
 } from 'lucide-react'
 import { useTabStore, type TabStore } from '@/stores/tabStore'
-import { useViewStore } from '@/stores/viewStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { getKernel } from '@/session-v2/kernel/registry'
@@ -582,7 +581,6 @@ export function BrowserSidebarPanel() {
   const setActiveTabName = useBrowserSidebarStore((s) => s.setActiveTabName)
   const dlTotal = useBrowserDownloadStore(selectTotalCount)
   const openBrowserTab = useTabStore((s) => s.openBrowserTab)
-  const closeLeftPanel = useViewStore((s) => s.closeLeftPanel)
   const toast = useToastStore()
   const currentWorkspace = useWorkspaceStore((s) => s.getCurrentWorkspace())
   const [searchQuery, setSearchQuery] = useState('')
@@ -590,8 +588,7 @@ export function BrowserSidebarPanel() {
   const handleNavigate = useCallback((url: string) => {
     const normalized = normalizeBrowserUrl(url)
     openBrowserTab(normalized, 'Browser')
-    closeLeftPanel()
-  }, [openBrowserTab, closeLeftPanel])
+  }, [openBrowserTab])
 
   const handleSendToAi = useCallback(async () => {
     // 批次 3 类 1：写入口统一走 kernel（完整透传 workDir），不再经 store 直调
@@ -668,7 +665,6 @@ export function BrowserSidebarPanel() {
         <button
           onClick={() => {
             openBrowserTab()
-            closeLeftPanel()
           }}
           className="inline-flex h-7 items-center gap-1 rounded-md border border-border-subtle bg-background-surface px-2 text-xs text-text-secondary transition-colors hover:bg-background-hover hover:text-text-primary"
           title={t('browser.openTab', { defaultValue: '打开浏览器标签' })}
