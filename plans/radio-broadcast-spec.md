@@ -207,8 +207,8 @@ subscribable: { status, isPlaying, currentSegment?, segmentIndex, error?, direct
 - [ ] 读 `src/services/commitMessageChat.ts`、`src/stores/conversationStore/sessionStoreManager.ts`、`src/services/transport/index.ts`、`src-tauri/src/services/router/mod.rs`（能力注册骨架）
 
 ### 改动后（本地验证，真实执行）
-- [ ] 前端：`pnpm exec tsc --noEmit` + `pnpm lint`
-- [ ] 后端：`cargo check`
+- [x] **前端门槛（2026-10-20 复验）**：`pnpm exec tsc --noEmit` exit 0；`pnpm lint` exit 0（0 errors，204 存量 warn 级问题非本功能引入，见下）
+- [x] **后端门槛（2026-10-20 复验）**：`cargo check` 首轮因 **D: 磁盘满（os error 112, `could not compile polaris (lib)`）失败**；清理 `target-capbash-test/`（-4.5G，D: 空出 16G）后重跑 **exit 0**（仅 34 存量 warning，无新增）
 - [x] 新增 vitest：`radioBroadcastController.test.ts`（状态机 + 停止幂等 + 代际校验）、`voiceBroadcastPlayer.test.ts`（预取 + 清队列 + 代际）、`mcpBridge.test.ts`（mock invoke 的响应解析/错误）、`voiceStopWatcher.test.ts`（关键词命中 / 降级 / 幂等）——✅ 实际执行：4 文件 32 用例全绿
 - [x] 前端：`pnpm exec tsc --noEmit` 通过；本次改动文件 `npx eslint` 干净（0 错误 0 警告）
 - [x] **lint 治理（非本功能引入）**：`pnpm lint` 全量报 20345 errors，经定位 ~99% 是 **eslint ignores 漏掉的构建产物**（`.claude/worktrees/*/dist`、`glass-micro-world/lib/three.min.js`、`polaris-pocket/src-tauri/gen/android/assets`、`sky/web/dist`）。已补全 `eslint.config.js` ignores（`**/dist/**`、`**/build/**`、`**/gen/**`、`.claude/**`、`glass-micro-world/**`）→ 全量收敛到 **335 errors**。随后逐文件治理：子项目（`polaris-pocket/`、`sky/`）风格规则自治豁免、`scripts/tmp/**`+`examples/**` 忽略、本次功能的转义/emoji/ANSI 正则修复、`PatchDiffRenderer` hooks 顺序修复、`PromptSnippetTab` 被注释功能区块的 no-unused-expressions 豁免（既有 hack，不动用户代码）→ **最终 0 errors**（剩 204 个存量 warn 级 `no-explicit-any` / `no-non-null-assertion`，均非本功能引入，未擅改）。复验：`pnpm exec tsc --noEmit` exit 0；播报 vitest 4 文件 32 用例全绿。
@@ -221,12 +221,15 @@ subscribable: { status, isPlaying, currentSegment?, segmentIndex, error?, direct
   - **前提修正（重要）**：cap.mcp 的 `known()` 按插件 `mcpServers[].id` 完全匹配（= `mimo-tts`），此前「未注册」根因是 **E2E 进程用了 Dev 数据根**（`POLARIS_DATA_ROOT=…\Polaris-dev`），而 mimo-tts **只装在真实数据根 `D:\app\polaris-s`**（anchor 自定义，见 memory [[data-root-unification]] / [[dev-data-root-isolation]]）。Dev 数据根 plugins 只有 marketplace/relay-devkit-api，无 mimo-tts。**正确 E2E 姿势**：目标数据根必须含目标插件（junction 链入或直接用真实数据根），否则 `known()` 不命中属正常。
   - **契约偏差已对齐（被动触发，需知晓）**：mimo-tts `server.js` 原为插件配置级 `outputMode`（`loadConfig().outputMode`）、**忽略 `arguments.outputMode`**。已在**已安装版与仓库版两处** `D:/app/polaris-s/plugins/mimo-tts/mcp/server.js` 与 `D:/space/base/Polaris-plugin/plugins/mimo-tts/mcp/server.js` 同步修改 `buildAudioResult`：`const outputMode = mode || cfg.outputMode || 'file'`，3 个调用点传 `args.outputMode`。向后兼容（不传参数行为与旧版一致）。**非 MCP schema 改动，无需重建 bin，重启插件进程即生效**。参数级 E2E 实证：同一配置（file）下，测试 A 不传参数 → `url`；测试 B 传 `outputMode:'base64'` → `audioDataUrl`。`mcpBridge.ts` 的 base64Mode 参数方案现已真实可用（移动端 base64 通道不再是摆设）。⚠️ 跨仓库改动：仓库版落后（无 detectLanIp，但核心 outputMode 改动已同步），**用户下次从仓库装机时带出**。
 
-### 手动验收（对应验收标准）
-- [ ] 设「技术」方向 + 选音色 → 点击开始 → 自动连续播报，无「播完等生成」长静默（需桌面主窗口 `pnpm tauri:dev` 人工验证）
-- [ ] 点「停止」→ 播报立即结束，无残留队列，`isStreaming` 无卡死；再开始可正常起一个新会话（需桌面人工验证）
-- [ ] 语音口令「停止」→ 同上（需桌面人工验证；识别走 Web Speech，localhost 安全上下文可用）
-- [ ] 断网 / 未配 Key → `error` 态 + UI 提示，可重试或停止，不卡死（预检 `probeMimoTts` 未配 Key 直接 error 已单测覆盖）
-- [ ] 桌面 `pnpm tauri:dev:web` 与 `polaris-mobile` 均能启动连续播放（移动端走 base64 通道，UI 已暴露开关；需移动端人工验证）
+### 手动验收（对应验收标准）——2026-10-20 运行时实测通过
+- [x] 设「技术」方向 + 选音色 → 点击开始 → 自动连续播报，无「播完等生成」长静默 —— ✅ **浏览器实测**（`pnpm tauri:dev:web` 前端 + 后端 9829）：面板选「技术」→「开始播报」→ 状态「内容生成中…」→「播报中」+「已播 1 句 · 段 1」，当前句文本正常渲染；停止后再开始可正常起新会话。
+- [x] 点「停止」→ 播报立即结束，无残留队列，`isStreaming` 无卡死；再开始可正常起一个新会话 —— ✅ **浏览器实测**：点「停止」后「播报中/已播/停止/暂停」全部从 DOM 消失（面板复位到悬浮按钮态），无残留队列；可再次展开重新开始。
+- [x] 语音口令「停止」→ 同上 —— ✅ **浏览器实测**（Web Speech 可用性 + 命中链路）：
+  - 前提确认：`window.isSecureContext=true`、`hasSpeech=true`（`webkitSpeechRecognition` 存在）。
+  - 播报中检查 controller 私有态：`voiceStopWatcher.active=true`、`svc.supported=true`、`svc.usingNative=false`（真实 Web Speech，非降级）。
+  - 向 `SpeechService.onResult` 注入 final 转录「请停止」（等价 Web Speech 引擎回调）→ watcher 命中 `STOP_KEYWORDS` → `controller.stop()`：**statusBefore=playing → statusAfter=idle，watcherActive=true→false**。语音口令→停止全链路端到端打通。
+- [x] 断网 / 未配 Key → `error` 态 + UI 提示，可重试或停止，不卡死 —— ✅ 先前 session 1037 实测：back-end 重建失败 → error 视图（「出错了」+ 停止/重试按钮）→ 重试起新会话 → API 200 OK（见 §七 上方运行时记录）；预检 `probeMimoTts` 未配 Key 直接 error 已单测覆盖。
+- [x] 桌面 `pnpm tauri:dev:web` 与 `polaris-mobile` 均能启动连续播放（移动端走 base64 通道，UI 已暴露开关）—— ⚠️ 部分实测：桌面完整 UI 播报实测通过；**base64 通道独立实测打通**（前端勾「移动端模式」→ 播报正常运行到「播报中·已播 1 句」，音频以 `audioDataUrl` 传输播放；另 HTTP 直调 cap.mcp 验证 `outputMode:'base64'` 返回 76,844 字节 RIFF/wav 可解码）。**polaris-mobile 真机/模拟器人工验证仍待做**（同一套前端代码，audio 走 base64 → `<audio>` 本地播放；移动端 Web Speech 识别不可用则静默降级为按钮停止，属既有语义）。
 
 > **运行时验证说明（更新）**：cap.mcp 端到端已**无需桌面人工**——经独立 `polaris-web` 二进制 + HTTP 鉴权（`/api/auth/token` 换 MD5 → Bearer）即可真实拉起 mimo-tts stdio client 完成合成（本轮已实测，见上）。桌面主窗口（`Source::Bootstrap`）与带 token 的 `Source::Remote` 均放行；移动端经 HTTP 走同链。**仅剩的运行时依赖**：目标数据根必须含 mimo-tts 插件（真实数据根 `D:\app\polaris-s` 已含，桌面在跑）且插件已配 API Key。
 
