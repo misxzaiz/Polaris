@@ -44,7 +44,18 @@ const CALLER: &str = "polaris-bus-mcp";
 /// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
 /// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
 ///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-const DISPATCH_WHITELIST: &[&str] = &["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat", "cap.ui.input"];
+/// - cap.git（P4）：本地仓库读写域；写类动作经 router 权限 gate（is_destructive）+
+///   操作流水审计，复用与面板同一套审计记录
+const DISPATCH_WHITELIST: &[&str] = &[
+    "cap.todo",
+    "cap.http",
+    "cap.bash",
+    "cap.fs",
+    "cap.git",
+    "cap.ui.theme",
+    "cap.ui.chat",
+    "cap.ui.input",
+];
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -442,6 +453,9 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "fs", "capability": "cap.fs", "入口": "bus_dispatch / 主应用 dispatch（面板）",
               "协议": "{ action: list|getFileInfo|exists, path } → { items / item / exists }（文件：size+modified+created；目录：child_count）",
               "状态": "✅ bus_dispatch 可用；只读边界（list/getFileInfo/exists），写操作仍走 tauri command；Remote 策略 deny" },
+            { "domain": "git", "capability": "cap.git", "入口": "bus_dispatch / 主应用 dispatch（面板）",
+              "协议": "{ action: get_status|get_log_with_lanes|search_log|diff|get_commit_details|..., workspacePath, ...参数 }（完整协议见 protocol.cap.git 与 cap_list）",
+              "状态": "✅ bus_dispatch 可用（P4）；只读动作干道开放，写类动作经权限 gate + 审计，Remote 策略 deny" },
             { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
             { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
             { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
@@ -453,7 +467,7 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
         "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.ui.theme / cap.ui.chat），两 server 职责不重叠",
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.git / cap.ui.theme / cap.ui.chat），两 server 职责不重叠",
             "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
             "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
         },
@@ -488,6 +502,15 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
                 "getFileInfo": { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ item: FileInfo|null }（文件：size+modified+created；目录：child_count+modified+created，size=null）" },
                 "exists":   { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ exists: bool }" },
                 "边界": "只读能力（list/getFileInfo/exists）；创建/删除/重命名/复制等写操作走既有 tauri command 通道。FileInfo 的 modified/created 是秒级 Unix 时间戳字符串，前端需 Number(v)*1000 转 Date。Remote 来源策略 deny，仅本地面板/AI 可用。"
+            },
+            "cap.git": {
+                "说明": "本地仓库读写域（P4）。全部动作协议以 cap_list 返回的 schema 为准（含每动作中文名与参数），此处仅列 AI 高频只读动作。",
+                "get_status":   { "参数": { "workspacePath": "string（必填，绝对路径）" }, "返回": "{ status 等（分支/暂存/变更/上游） }" },
+                "get_log_with_lanes": { "参数": { "workspacePath": "string（必填）", "limit": "int?（默认 100）", "skip": "int?", "branch": "string?" }, "返回": "{ commits, rows }（泳道拓扑 + refs 装饰）" },
+                "search_log":   { "参数": { "workspacePath": "string（必填）", "filter": "LogSearchFilter", "limit": "int?" }, "返回": "{ commits }（作者/消息/路径组合检索）" },
+                "diff":         { "参数": { "workspacePath": "string（必填）", "kind": "worktree|index（默认 worktree）" }, "返回": "{ entries: GitDiffEntry[] }" },
+                "get_commit_details": { "参数": { "workspacePath": "string（必填）", "commitSha": "string（必填）" }, "返回": "{ files, diffs }" },
+                "边界": "写类动作（commit/push/rebase/reset/stash_drop 等）经 router 权限 gate + is_destructive 名单 + 操作流水审计，Remote 来源策略 deny；建议 AI 默认只读、写操作先向用户确认。workspacePath 必须为已注册的工作区绝对路径（与面板一致）。"
             }
         },
         "usage_examples": [

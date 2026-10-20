@@ -229,6 +229,8 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 输入 = 结构化 log/blame/diff 搜索结果（非 dump）→ AI 归纳为可跳转回答（commit 卡片按钮）
 - `kind='git-ask'`；成本 ⚡⚡
 
+> ✅ **执行记录（本轮，AI-6 v0 · 无 LLM）**：`src/services/gitNlQuery.ts::compileGitQuery`（纯函数 0 token）——显式键（author:/path:/pickaxe:/since:）+ 双引号短语（grep fixedStrings）+ 中文作者「作者X/by X」+ 中文相对时间（今天/昨天/本周/上周/本月/N天·周·月前 → --since）+ 路径词（含 `/` 或扩展名）；全部落空 → 整句 grep fixedStrings（行为不比旧路径差，宁漏勿错）。HistoryTab exactSearch 接线（compiled.filter 展开注入）。测试 10 用例（空输入/纯文本/显式键/短语/中英作者/时间矩阵/路径/组合/since 空格短语）。**欠账（如实）**：LLM 归纳层（AI 归纳为可跳转回答 + commit 卡片，v2 可挂 ⚡⚡ 管线）；blame/diff 域接入（v0 仅 log 检索）。
+
 #### FR-P3-AI8 rebase 计划提议
 
 - 检测 fixup!/squash! 与未 push 分支，建议面板化 rebase TODO 智能排序
@@ -242,6 +244,12 @@ d05a6d37 docs(git): FR-P2-2 file-watcher 自动 status 刷新 spec（四段式�
 - 插件示例：GitFlow / worktree 管理器 / GitLab PR
 - manifest 三处同步（router / 前端 / 插件仓 `D:\space\base\Polaris-plugin`）+ 17 图标白名单
 - 顺修漂移：前端 `PluginIconId` 含 `SquareTerminal` 但后端白名单无
+
+> ✅ **执行记录（本轮，P3.4→P4 v1）**：
+> - bus_dispatch 白名单 + `cap.git`（写类动作经 router 权限 gate + is_destructive + 操作流水审计；`protocol.cap.git` 列 AI 高频只读动作 get_status/get_log_with_lanes/search_log/diff/get_commit_details，完整协议指向 cap_list 动态 schema）；两处帮助文案同步
+> - **存量漂移顺修**：`VALID_PLUGIN_ICONS` 补 `SquareTerminal`（前端 `PluginIconId` 18 值 ↔ 后端白名单对齐，manifest 校验不再误拒）
+> - `cargo build --bin polaris-mcp` ✅（cap.git schema 变更后独立 bin 重建，规避 `polaris-mcp-schema-exe-staleness` 记忆已知坑）
+> - **未做（如实）**：插件示例（GitFlow/worktree 管理器/GitLab PR，依赖插件仓 `D:\space\base\Polaris-plugin` 侧工作，不属本 worktree 提交范围）；polaris-web/mcp bin 的 `cargo check --no-default-features` 项见门禁记录
 
 ---
 

@@ -39,6 +39,7 @@ const VALID_PLUGIN_ICONS: &[&str] = &[
     "Target",
     "ClipboardList",
     "Terminal",
+    "SquareTerminal",
     "Code2",
     "Bot",
     "BookOpen",
