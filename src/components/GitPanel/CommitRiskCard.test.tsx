@@ -89,4 +89,23 @@ describe('CommitRiskCard', () => {
     fireEvent.click(screen.getByTitle(/riskScan\.rescan/))
     expect(scanFn).toHaveBeenCalledTimes(2)
   })
+
+  it('A2 明细跳转：未传 onOpenFileDiff 条目不可点；传入后点击回调该文件', async () => {
+    const rpt = report([
+      { file: 'secret.env', line: 2, category: 'secret', pattern: 'kv-secret', excerpt: 'x' },
+    ])
+    mockScan(rpt, scanFn)
+
+    const { rerender } = render(<CommitRiskCard workspacePath="D:/repo" />)
+    const item = await screen.findByTestId('risk-finding-item')
+    expect(item.getAttribute('tabindex')).toBeNull()
+
+    const onOpenFileDiff = vi.fn()
+    rerender(<CommitRiskCard workspacePath="D:/repo" onOpenFileDiff={onOpenFileDiff} />)
+
+    const clickable = screen.getByTestId('risk-finding-item')
+    expect(clickable.getAttribute('tabindex')).toBe('0')
+    fireEvent.click(clickable)
+    expect(onOpenFileDiff).toHaveBeenCalledWith('secret.env')
+  })
 })

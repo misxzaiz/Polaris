@@ -635,6 +635,7 @@
     "badge": "Review gate · local · 0 token",
     "scanning": "Scanning staged changes...",
     "rescan": "Rescan",
+    "openDiff": "View diff",
     "clean": "No risks found",
     "summarySecret": "Seems-secret {{count}}",
     "summaryMarker": "Conflict markers {{count}}",

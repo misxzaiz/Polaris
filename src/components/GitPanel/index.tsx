@@ -186,6 +186,25 @@ export function GitPanel({
     setSelectedDiff(null)
   }
 
+  // A2 风险卡明细跳转：发现条目自带 file + line，扫描对象是暂存区新增行 → 取 index diff
+  const handleRiskFileDiff = useCallback(async (filePath: string) => {
+    if (!effectivePath) return
+    setIsDiffLoading(true)
+    try {
+      const diff = await getIndexFileDiff(effectivePath, filePath)
+      if (onOpenDiffInTab) {
+        onOpenDiffInTab(diff)
+      } else {
+        setSelectedDiff(diff)
+      }
+    } catch (err) {
+      logger.error('[GitPanel] 风险卡跳转 diff 失败:', err)
+      toast.error(t('errors.getDiffFailed'), err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsDiffLoading(false)
+    }
+  }, [effectivePath, getIndexFileDiff, onOpenDiffInTab, t, toast])
+
   const getBatchActionCounts = useCallback(() => {
     if (!status || selectedFiles.size === 0) {
       return { stageable: 0, unstageable: 0, discardable: 0, deletable: 0 }
@@ -916,7 +935,7 @@ export function GitPanel({
 
               {hasChanges && <CommitInput selectedFiles={selectedFiles} workspacePath={effectivePath} />}
               {/* P3 AI-3：提交前风险扫描卡（Review 门，纯本地；不阻断提交） */}
-              {effectivePath && hasChanges && <CommitRiskCard workspacePath={effectivePath} />}
+              {effectivePath && hasChanges && <CommitRiskCard workspacePath={effectivePath} onOpenFileDiff={handleRiskFileDiff} />}
               {<QuickActions hasChanges={hasChanges ?? false} workspacePath={effectivePath} />}
 
               {/* FR-P2-3 收尾：可撤销快照条（危险操作一键恢复，快照 >0 才渲染） */}
