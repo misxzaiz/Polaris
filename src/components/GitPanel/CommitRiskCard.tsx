@@ -16,6 +16,8 @@ import { useGitStore } from '@/stores/gitStore'
 
 interface CommitRiskCardProps {
   workspacePath: string
+  /** A2 明细跳转：点击发现条目 → 打开该文件（暂存区）diff */
+  onOpenFileDiff?: (filePath: string) => void
 }
 
 const CATEGORY_CLASS: Record<string, string> = {
@@ -24,7 +26,7 @@ const CATEGORY_CLASS: Record<string, string> = {
   'large-file': 'text-text-secondary',
 }
 
-export function CommitRiskCard({ workspacePath }: CommitRiskCardProps) {
+export function CommitRiskCard({ workspacePath, onOpenFileDiff }: CommitRiskCardProps) {
   const { t } = useTranslation('git')
   const report = useGitStore((s) => (workspacePath ? (s.riskScanByWs?.[workspacePath] ?? null) : null))
   const scanCommitRisk = useGitStore((s) => s.scanCommitRisk)
@@ -97,17 +99,31 @@ export function CommitRiskCard({ workspacePath }: CommitRiskCardProps) {
 
           {/* 明细（上限展示 8 条；截断提示走 footer） */}
           <ul className="mt-1 space-y-0.5">
-            {findings.slice(0, 8).map((f, i) => (
-              <li key={`${f.file}:${f.line ?? 'na'}:${i}`} className="flex items-baseline gap-1.5 min-w-0">
-                <span className={`shrink-0 ${CATEGORY_CLASS[f.category] ?? 'text-text-secondary'}`}>
-                  {t(`riskScan.category.${f.category}`, { defaultValue: f.category })}
-                </span>
-                <span className="font-mono text-[11px] text-text-secondary truncate">
-                  {f.file}{f.line != null ? `:${f.line}` : ''}
-                </span>
-                <span className="text-[11px] text-text-tertiary truncate">{f.excerpt}</span>
-              </li>
-            ))}
+            {findings.slice(0, 8).map((f, i) => {
+              const handleOpen = onOpenFileDiff
+                ? () => onOpenFileDiff(f.file)
+                : undefined
+              return (
+                <li
+                  key={`${f.file}:${f.line ?? 'na'}:${i}`}
+                  className={`flex items-baseline gap-1.5 min-w-0 ${handleOpen ? 'cursor-pointer hover:bg-background-hover rounded transition-colors' : ''}`}
+                  onClick={handleOpen}
+                  onKeyDown={(e) => { if (handleOpen && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleOpen() } }}
+                  role={handleOpen ? 'button' : undefined}
+                  tabIndex={handleOpen ? 0 : undefined}
+                  title={handleOpen ? t('riskScan.openDiff') : undefined}
+                  data-testid="risk-finding-item"
+                >
+                  <span className={`shrink-0 ${CATEGORY_CLASS[f.category] ?? 'text-text-secondary'}`}>
+                    {t(`riskScan.category.${f.category}`, { defaultValue: f.category })}
+                  </span>
+                  <span className="font-mono text-[11px] text-text-secondary truncate">
+                    {f.file}{f.line != null ? `:${f.line}` : ''}
+                  </span>
+                  <span className="text-[11px] text-text-tertiary truncate">{f.excerpt}</span>
+                </li>
+              )
+            })}
           </ul>
           {findings.length > 8 && (
             <div className="mt-0.5 text-[10px] text-text-tertiary">

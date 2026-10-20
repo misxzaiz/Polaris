@@ -635,6 +635,7 @@
     "badge": "Review 门 · 纯本地 · 0 token",
     "scanning": "正在扫描暂存区...",
     "rescan": "重新扫描",
+    "openDiff": "查看差异",
     "clean": "未发现风险",
     "summarySecret": "疑似密钥 {{count}}",
     "summaryMarker": "冲突 marker 残留 {{count}}",
