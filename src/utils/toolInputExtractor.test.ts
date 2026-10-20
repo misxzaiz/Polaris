@@ -291,7 +291,7 @@ describe('normalizeCommandForDisplay', () => {
     })
 
     it('应该处理 Windows 盘符路径', () => {
-      expect(normalizeCommandForDisplay('cd D:\space\project && dir')).toBe('dir')
+      expect(normalizeCommandForDisplay('cd D:\\space\\project && dir')).toBe('dir')
     })
   })
 })

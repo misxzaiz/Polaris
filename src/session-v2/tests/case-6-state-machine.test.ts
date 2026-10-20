@@ -133,7 +133,7 @@ describe('阶段 0：Message 状态机', () => {
   // ==========================================================================
 
   it('转换副作用在成功时执行', async () => {
-    let sideEffectRan = false
+    const sideEffectRan = false
     // 用带 onTransition 的自定义规则验证：通过 transition 后的状态变化
     await machine.transition('sending')
     await machine.transition('active', { conversationId: 'conv-1' })

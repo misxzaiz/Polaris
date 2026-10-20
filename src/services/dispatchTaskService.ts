@@ -536,7 +536,7 @@ export async function continueDispatchedTask(
 
   const manager = sessionStoreManager.getState()
   let store = manager.stores.get(task.sessionId)
-  let conversationId = store?.getState().conversationId || options?.conversationId
+  const conversationId = store?.getState().conversationId || options?.conversationId
 
   // 恢复路径：会话被 LRU 驱逐/应用重启后凭注册表 conversationId 重建静默会话
   if (!store && conversationId) {

@@ -66,7 +66,7 @@ export function stripMarkdown(text: string): string {
   s = s.replace(/~~(.*?)~~/g, '$1');
 
   // 8. 转义字符还原（\# → #，\` → `，等）
-  s = s.replace(/\\([\\`*_{}\[\]()#\+\-=|>~!\^\-])/g, '$1');
+  s = s.replace(/\\([\\`*_{}[\]()#+=|>~!^-])/g, '$1');
 
   // 9. 标题标记（### 标题）
   s = s.replace(/^#{1,6}\s*/gm, '');

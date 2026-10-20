@@ -167,7 +167,7 @@ export const useSkillStore = create<SkillState>((set, get) => ({
 
     // 1. 用户自定义路径优先；否则使用工作区默认 + DataRoot 默认
     let workspaceRelativePaths: string[] = [];
-    let absolutePaths: string[] = [];
+    const absolutePaths: string[] = [];
 
     if (configuredPaths && configuredPaths.length > 0) {
       for (const p of configuredPaths) {
