@@ -14,60 +14,13 @@ import { useStore } from 'zustand'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState'
 import { useViewStore } from '@/stores'
-import { formatGitDiffSummary, formatGitDiffWithContent } from '@/services/gitContextService'
-import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
+import { formatGitDiffSummary } from '@/services/gitContextService'
 import { pickLatestAssistantText } from '@/services/assistantTextUtils'
 import type { GitDiffEntry } from '@/types/git'
 import type { ConversationStoreInstance } from '@/stores/conversationStore/types'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('CommitMessageChat')
-
-/**
- * 判定引擎是否 agentic（具备工具调用能力，可自行跑 git 命令）。
- *
- * 判据为后端权威元数据 EngineCapabilities.tools（ai::traits）。
- * 元数据未加载/未知引擎时**安全降级为 false**（按非 agentic 处理 → 注入裁剪
- * diff 正文），宁可冗余上下文也不给幻觉脚本。见 master-plan C12/AI-1。
- */
-export function isAgenticEngine(engineId: string): boolean {
-  const engine = useEngineMetadataStore.getState().getEngine(engineId)
-  return engine?.capabilities.tools ?? false
-}
-
-/**
- * 按引擎能力生成提交信息请求上下文（双档注入）：
- *
- * - agentic 引擎：只给变更清单，指挥其用 `git diff --cached` 自取完整内容
- *   （现有已验证路径）。
- * - 非 agentic 引擎：注入裁剪后的 diff 正文（formatGitDiffWithContent），
- *   **不得**引导其执行命令——纯文本引擎拿不到 diff 时会编造变更内容（幻觉路径）。
- */
-export function buildCommitMessageUserContent(
-  diffs: GitDiffEntry[],
-  engineId: string
-): string {
-  const diffSummary = formatGitDiffSummary(diffs)
-
-  if (isAgenticEngine(engineId)) {
-    return (
-      '本次提交涉及以下暂存的 Git 变更（变更清单）：\n\n' +
-      diffSummary +
-      '\n\n请使用 `git diff --cached` 查看完整变更内容（若无法运行命令则读取上述相关文件），据此生成一条 Conventional Commits 格式的提交信息。只输出消息本身，不要解释、不要代码块标记。内容使用中文。'
-    )
-  }
-
-  return (
-    '本次提交涉及以下暂存的 Git 变更（含各文件实际内容，已按预算裁剪）：\n\n' +
-    diffSummary +
-    '\n\n=== diff 内容 ===\n\n' +
-    formatGitDiffWithContent(diffs) +
-    '\n\n=== diff 内容结束 ===\n\n' +
-    '以上是全部可见的变更内容。据此生成一条 Conventional Commits 格式的提交信息。' +
-    '不要编造未提供的代码内容；若信息不足以判断某个文件的变更意图，用中性描述概括该文件。' +
-    '只输出消息本身，不要解释、不要代码块标记。内容使用中文。'
-  )
-}
 
 /**
  * 一次性系统提示：约束 AI 仅输出 Conventional Commits 格式的提交信息。
@@ -141,7 +94,11 @@ export async function openCommitMessageChat(
     throw new Error('commit-message 会话 store 不存在')
   }
 
-  const userContent = buildCommitMessageUserContent(diffs, engineId)
+  const diffSummary = formatGitDiffSummary(diffs)
+  const userContent =
+    '本次提交涉及以下暂存的 Git 变更（变更清单）：\n\n' +
+    diffSummary +
+    '\n\n请使用 `git diff --cached` 查看完整变更内容（若无法运行命令则读取上述相关文件），据此生成一条 Conventional Commits 格式的提交信息。只输出消息本身，不要解释、不要代码块标记。内容使用中文。'
 
   await store.getState().sendMessage(userContent, workspacePath, undefined, {
     oneTimeSystemPrompt: COMMIT_MSG_SYSTEM_PROMPT,

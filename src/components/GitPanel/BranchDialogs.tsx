@@ -1,6 +1,5 @@
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useGitStore } from '@/stores/gitStore/index'
 import {
   AlertTriangle,
   Archive,
@@ -361,8 +360,6 @@ interface MergeBranchDialogProps {
   mergeResult: GitMergeResult | null
   onConfirm: (noFF: boolean) => void
   onClose: () => void
-  /** 仓库路径（冲突文件行打开合并器用） */
-  workspacePath?: string
 }
 
 export function MergeBranchDialog({
@@ -372,7 +369,6 @@ export function MergeBranchDialog({
   mergeResult,
   onConfirm,
   onClose,
-  workspacePath,
 }: MergeBranchDialogProps) {
   const { t } = useTranslation('git')
   const [noFF, setNoFF] = useState(false)
@@ -454,22 +450,10 @@ export function MergeBranchDialog({
                   <div className="text-xs text-warning/70 mt-1">
                     {t('branch.mergeConflictsDesc', { count: mergeResult.conflicts.length })}
                   </div>
-                  <div className="mt-2 max-h-24 overflow-y-auto space-y-0.5">
-                    {mergeResult.conflicts.map((entry, idx) => (
-                      <div key={idx} className="text-xs text-text-tertiary font-mono flex items-center gap-1.5">
-                        <span>{entry.path}</span>
-                        {workspacePath && (
-                          <button
-                            className="text-primary hover:underline shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              e.preventDefault()
-                              useGitStore.getState().openMerger(workspacePath, entry.path)
-                            }}
-                          >
-                            {t('branch.openMerger')}
-                          </button>
-                        )}
+                  <div className="mt-2 max-h-24 overflow-y-auto">
+                    {mergeResult.conflicts.map((file, idx) => (
+                      <div key={idx} className="text-xs text-text-tertiary font-mono">
+                        {file}
                       </div>
                     ))}
                   </div>
@@ -513,8 +497,6 @@ interface RebaseBranchDialogProps {
   onAbort: () => void
   onContinue: () => void
   onClose: () => void
-  /** 仓库路径（冲突文件行打开合并器用） */
-  workspacePath?: string
 }
 
 export function RebaseBranchDialog({
@@ -526,7 +508,6 @@ export function RebaseBranchDialog({
   onAbort,
   onContinue,
   onClose,
-  workspacePath,
 }: RebaseBranchDialogProps) {
   const { t } = useTranslation('git')
 
@@ -587,22 +568,10 @@ export function RebaseBranchDialog({
                   <div className="text-xs text-warning/70 mt-1">
                     {t('branch.rebaseConflictsDesc', { count: rebaseResult.conflicts.length })}
                   </div>
-                  <div className="mt-2 max-h-24 overflow-y-auto space-y-0.5">
-                    {rebaseResult.conflicts.map((entry, idx) => (
-                      <div key={idx} className="text-xs text-text-tertiary font-mono flex items-center gap-1.5">
-                        <span>{entry.path}</span>
-                        {workspacePath && (
-                          <button
-                            className="text-primary hover:underline shrink-0"
-                            onClick={(e) => {
-                              e.stopPropagation()
-                              e.preventDefault()
-                              useGitStore.getState().openMerger(workspacePath, entry.path)
-                            }}
-                          >
-                            {t('branch.openMerger')}
-                          </button>
-                        )}
+                  <div className="mt-2 max-h-24 overflow-y-auto">
+                    {rebaseResult.conflicts.map((file, idx) => (
+                      <div key={idx} className="text-xs text-text-tertiary font-mono">
+                        {file}
                       </div>
                     ))}
                   </div>

@@ -13,7 +13,6 @@ import { clsx } from 'clsx'
 import { Button } from '@/components/Common/Button'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useConfigStore, useViewStore } from '@/stores'
-import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { invoke } from '@/services/transport'
@@ -64,12 +63,10 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
   const [message, setMessage] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [enginePickerOpen, setEnginePickerOpen] = useState(false)
-  const [amendMode, setAmendMode] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
   const sparkleButtonRef = useRef<HTMLButtonElement>(null)
 
-  const { commitChanges, amendCommit, isLoading, getIndexFileDiff, getWorktreeFileDiff } = useGitStore()
-  const toast = useToastStore()
+  const { commitChanges, isLoading, getIndexFileDiff, getWorktreeFileDiff } = useGitStore()
   const defaultEngine = normalizeEngineId(useConfigStore((s) => s.config?.defaultEngine))
 
   // 引擎选项（动态从元数据读取，插件注册后自动可见）
@@ -123,8 +120,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
   }, [enginePickerOpen])
 
   const handleCommit = useCallback(async () => {
-    // amend 允许空消息（--no-edit 语义，沿用原提交信息）；普通提交必须有消息
-    if ((!message.trim() && !amendMode) || !effectiveWorkspacePath) return
+    if (!message.trim() || !effectiveWorkspacePath) return
 
     if (!effectiveWorkspacePath.trim()) {
       logger.error('[CommitInput] Invalid workspace path')
@@ -142,28 +138,13 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
       const hasSelectedFiles = selectedFiles && selectedFiles.size > 0
       const filesToCommit = hasSelectedFiles ? Array.from(selectedFiles) : undefined
 
-      if (amendMode) {
-        // P1：amend —— 空消息 = --no-edit（仅合并已暂存内容，沿用原提交信息）
-        await amendCommit(
-          effectiveWorkspacePath,
-          message.trim() ? message.trim() : undefined,
-          true,
-          filesToCommit,
-        )
-        toast.success(t('commit.amendSuccess'))
-      } else {
-        // 始终传递 stageAll=true，后端会根据 selectedFiles 决定暂存哪些
-        await commitChanges(effectiveWorkspacePath, message, true, filesToCommit)
-        toast.success(t('commit.success'))
-      }
+      // 始终传递 stageAll=true，后端会根据 selectedFiles 决定暂存哪些
+      await commitChanges(effectiveWorkspacePath, message, true, filesToCommit)
       setMessage('')
-      setAmendMode(false)
     } catch (err) {
       logger.error('[CommitInput] Commit failed:', err)
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      toast.error(errorMsg)
     }
-  }, [message, effectiveWorkspacePath, selectedFiles, commitChanges, amendCommit, amendMode, toast, t])
+  }, [message, effectiveWorkspacePath, selectedFiles, commitChanges])
 
   // 收集 diff 上下文并在右侧面板打开 commit-message 会话
   const handleGenerateWithEngine = useCallback(async (engineId: EngineId) => {
@@ -236,8 +217,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
 
   const hasStagedFiles = (status?.staged.length ?? 0) > 0
   const hasSelectedFiles = selectedFiles && selectedFiles.size > 0
-  // amend 允许空消息（--no-edit 语义）；普通提交必须有消息
-  const canCommit = (message.trim() || amendMode) && (hasStagedFiles || hasSelectedFiles)
+  const canCommit = message.trim() && (hasStagedFiles || hasSelectedFiles)
   const canGenerate = !isGenerating && !isLoading && !!status &&
     (status.staged.length > 0 || status.unstaged.length > 0 || (selectedFiles?.size ?? 0) > 0)
 
@@ -353,37 +333,15 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
           {getCommitHint()}
         </span>
 
-        <div className="flex items-center gap-2">
-          {/* P1：amend 开关 */}
-          <label
-            className="flex items-center gap-1.5 text-[11px] text-text-tertiary hover:text-text-secondary transition-colors cursor-pointer"
-            title={t('commit.amendDesc')}
-          >
-            <input
-              type="checkbox"
-              checked={amendMode}
-              onChange={(e) => setAmendMode(e.target.checked)}
-              disabled={isLoading || isGenerating}
-              className="w-3.5 h-3.5 rounded border-border text-primary focus:ring-primary/50 disabled:opacity-50"
-            />
-            {t('commit.amend')}
-          </label>
-          {amendMode && !message.trim() && (
-            <span className="text-[11px] text-warning">
-              {t('commit.amendEmptyMessage')}
-            </span>
-          )}
-
-          <Button
-            size="sm"
-            variant="primary"
-            onClick={handleCommit}
-            disabled={!canCommit || isLoading}
-          >
-            <Send size={14} />
-            {amendMode ? t('commit.amend') : t('commit.button')}
-          </Button>
-        </div>
+        <Button
+          size="sm"
+          variant="primary"
+          onClick={handleCommit}
+          disabled={!canCommit || isLoading}
+        >
+          <Send size={14} />
+          {t('commit.button')}
+        </Button>
       </div>
     </div>
   )

@@ -25,10 +25,6 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
   diffs: [],
   worktreeDiffs: [],
   indexDiffs: [],
-  // P1.5 分片：keyed 差异列表（新图面板消费，写点双写见 getDiffs 等）
-  diffsByWs: {},
-  worktreeDiffsByWs: {},
-  indexDiffsByWs: {},
   isLoading: false,
   error: null,
   selectedFilePath: null,
@@ -129,19 +125,13 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
         baseCommit,
       })
 
-      // P1.5 分片：keyed 写 + 旧镜像域保留（未迁移 UI）
-      set({
-        diffs,
-        isLoading: false,
-        diffsByWs: { ...get().diffsByWs, [workspacePath]: diffs },
-      })
+      set({ diffs, isLoading: false })
     } catch (err) {
       const message = parseGitError(err)
       set({
         error: message,
         isLoading: false,
         diffs: [],
-        diffsByWs: { ...get().diffsByWs, [workspacePath]: [] },
       })
     }
   },
@@ -155,18 +145,13 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
         workspacePath,
       })
 
-      set({
-        worktreeDiffs: diffs,
-        isLoading: false,
-        worktreeDiffsByWs: { ...get().worktreeDiffsByWs, [workspacePath]: diffs },
-      })
+      set({ worktreeDiffs: diffs, isLoading: false })
     } catch (err) {
       const message = parseGitError(err)
       set({
         error: message,
         isLoading: false,
         worktreeDiffs: [],
-        worktreeDiffsByWs: { ...get().worktreeDiffsByWs, [workspacePath]: [] },
       })
     }
   },
@@ -180,18 +165,13 @@ export const createStatusSlice: StatusSlice = (set, get) => ({
         workspacePath,
       })
 
-      set({
-        indexDiffs: diffs,
-        isLoading: false,
-        indexDiffsByWs: { ...get().indexDiffsByWs, [workspacePath]: diffs },
-      })
+      set({ indexDiffs: diffs, isLoading: false })
     } catch (err) {
       const message = parseGitError(err)
       set({
         error: message,
         isLoading: false,
         indexDiffs: [],
-        indexDiffsByWs: { ...get().indexDiffsByWs, [workspacePath]: [] },
       })
     }
   },

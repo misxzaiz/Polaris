@@ -106,64 +106,6 @@ pub fn stash_pop(path: &Path, index: Option<usize>) -> Result<(), GitServiceErro
     Ok(())
 }
 
-/// 应用 Stash（保留 stash —— 与 pop 的区别：不执行 drop）
-///
-/// P1 增补（parity：IDEA 有 apply；adjacent stash 弹出留,便于多场景复用）。
-pub fn stash_apply(path: &Path, index: Option<usize>) -> Result<(), GitServiceError> {
-    let stash_ref = index
-        .map(|i| format!("stash@{{{}}}", i))
-        .unwrap_or_else(|| "stash@{0}".to_string());
-
-    #[cfg(windows)]
-    let output = std::process::Command::new("git")
-        .args(["stash", "apply", &stash_ref])
-        .current_dir(path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()?;
-
-    #[cfg(not(windows))]
-    let output = std::process::Command::new("git")
-        .args(["stash", "apply", &stash_ref])
-        .current_dir(path)
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(GitServiceError::CLIError(stderr.to_string()));
-    }
-
-    Ok(())
-}
-
-/// 查看 Stash 的 patch 内容（stash@{index}）
-///
-/// 返回 raw diff 文本（前端 diff 渲染器直接消费，与 GitDiffEntry 的正文字段复用）。
-pub fn stash_show(path: &Path, index: Option<usize>) -> Result<String, GitServiceError> {
-    let stash_ref = index
-        .map(|i| format!("stash@{{{}}}", i))
-        .unwrap_or_else(|| "stash@{0}".to_string());
-
-    #[cfg(windows)]
-    let output = std::process::Command::new("git")
-        .args(["stash", "show", "-p", &stash_ref])
-        .current_dir(path)
-        .creation_flags(CREATE_NO_WINDOW)
-        .output()?;
-
-    #[cfg(not(windows))]
-    let output = std::process::Command::new("git")
-        .args(["stash", "show", "-p", &stash_ref])
-        .current_dir(path)
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(GitServiceError::CLIError(stderr.to_string()));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
 /// 删除 Stash
 pub fn stash_drop(path: &Path, index: usize) -> Result<(), GitServiceError> {
     let stash_ref = format!("stash@{{{}}}", index);

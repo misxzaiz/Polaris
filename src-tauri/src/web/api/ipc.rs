@@ -258,11 +258,8 @@ pub async fn handle_ipc_bridge(
         "download_file_binary" => dispatch_download_file_binary(&args).await,
 
         // ── Git ──────────────────────────────────────────────────────────────
-        // PR-1（git 面板 vNext）：git_* 统一转发 cap.git（RouterBus 能力内薄转发），
-        // 旧 web/api/git_dispatch.rs 双写派发表已删。兼容语义保持：成功返回裸结果
-        // JSON，失败走 WebError（500 Internal，message 为人类可读错误串）。
         cmd if cmd.starts_with("git_") => {
-            dispatch_git_via_bus(&state, cmd, &args).await
+            crate::web::api::git_dispatch::dispatch_git_command(cmd, &args).await
         }
 
         // ── Requirement ───────────────────────────────────────────────────────
@@ -2812,14 +2809,10 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
         trace: crate::contracts::TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
     };
 
-    // 性能治理（同 commands/router.rs router_dispatch）：外包 blocking 线程池，
-    // 重量级 sync capability 不占 tokio worker（git 写秒级任务尤其受益）。
-    // 若 git feature 未编译，cap.git 将以"能力未注册"应答（与旧行为等价）。
-    let router = state.router.clone();
-    let reply = tokio::task::spawn_blocking(move || router.dispatch(env))
-        .await
-        .map_err(|e| WebError::Internal(format!("dispatch join error: {}", e)))?
-        .map_err(WebError::Internal)?;
+    let reply = state
+        .router
+        .dispatch(env)
+        .map_err(|e| WebError::Internal(e))?;
 
     let (ok, result, error) = match reply.result {
         Ok(v) => (true, Some(v), None),
@@ -2833,41 +2826,6 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
         "error": error,
         "trace": reply.trace.0,
     })))
-}
-
-/// git_* 前缀命令转发至 cap.git 能力（PR-1：web 双写派发表 `git_dispatch.rs` 摘除）。
-///
-/// 兼容语义：成功返回裸结果 JSON（与旧 dispatch_git_command 一致，前端 shim 之外
-/// 的残留调用方不受影响）；失败走 WebError::Internal（人类可读错误串）。
-/// 注意：git feature 未编译时 cap.git 不在总线，dispatch 报"能力未注册"——
-/// 与旧"Git support not compiled in"等价（未知能力 → 该域整体缺席）。
-async fn dispatch_git_via_bus(
-    state: &AppState,
-    cmd: &str,
-    args: &Value,
-) -> Result<Json<Value>, WebError> {
-    let action = cmd.strip_prefix("git_").unwrap_or(cmd);
-    let mut payload = args.clone();
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("action".to_string(), Value::String(action.to_string()));
-    }
-    let env = crate::contracts::Envelope {
-        id: crate::contracts::MsgId(format!("web-git-{}", uuid::Uuid::new_v4())),
-        source: authenticated_remote_token(state),
-        target: crate::contracts::CapabilityId("cap.git".to_string()),
-        payload,
-        trace: crate::contracts::TraceId(format!("trace-git-{}", uuid::Uuid::new_v4())),
-    };
-    // 与 dispatch_router_dispatch 同策略：外包 blocking 线程池（git 写秒级不占 worker）
-    let router = state.router.clone();
-    let reply = tokio::task::spawn_blocking(move || router.dispatch(env))
-        .await
-        .map_err(|e| WebError::Internal(format!("dispatch join error: {}", e)))?
-        .map_err(WebError::Internal)?;
-    match reply.result {
-        Ok(v) => Ok(Json(v)),
-        Err(e) => Err(WebError::Internal(e)),
-    }
 }
 
 /// 审计链尾部（第五步阶段 B：契约测试面板审计链块用）

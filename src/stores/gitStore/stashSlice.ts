@@ -7,7 +7,6 @@
 import { invoke } from '@/services/transport'
 import type { StashSlice } from './types'
 import { parseGitError } from './types'
-import type { StashState } from './types'
 import type { GitStashEntry } from '@/types/git'
 
 /**
@@ -16,8 +15,6 @@ import type { GitStashEntry } from '@/types/git'
 export const createStashSlice: StashSlice = (set, get) => ({
   // ===== 状态 =====
   stashList: [],
-  // P1.5 分片：keyed 只读数据域（新 UI 消费）
-  stashListByWs: {},
 
   // ===== 方法 =====
 
@@ -61,31 +58,6 @@ export const createStashSlice: StashSlice = (set, get) => ({
     }
   },
 
-  // 应用 Stash（保留 stash —— P1：与 IDEA 的 apply 对齐，pop 场景之外可复用）
-  async stashApply(workspacePath: string, index?: number) {
-    set({ isLoading: true, error: null })
-
-    try {
-      await invoke('git_stash_apply', {
-        workspacePath,
-        index: index ?? null,
-      })
-      await get().refreshStatus(workspacePath)
-      set({ isLoading: false })
-    } catch (err) {
-      set({ error: parseGitError(err), isLoading: false })
-      throw err
-    }
-  },
-
-  // 查看 Stash patch 内容（P1：raw diff 文本）
-  async stashShow(workspacePath: string, index?: number): Promise<string> {
-    return invoke<string>('git_stash_show', {
-      workspacePath,
-      index: index ?? null,
-    })
-  },
-
   // 删除 Stash
   async stashDrop(workspacePath: string, index: number) {
     set({ isLoading: true, error: null })
@@ -98,12 +70,7 @@ export const createStashSlice: StashSlice = (set, get) => ({
       const stashList = await invoke<GitStashEntry[]>('git_stash_list', {
         workspacePath,
       })
-      // P1.5 分片：keyed 写 + 旧镜像域保留（未迁移 UI）
-      set({
-        stashList,
-        stashListByWs: { ...(get() as StashState).stashListByWs, [workspacePath]: stashList },
-        isLoading: false,
-      })
+      set({ stashList, isLoading: false })
     } catch (err) {
       set({ error: parseGitError(err), isLoading: false })
       throw err
@@ -116,11 +83,7 @@ export const createStashSlice: StashSlice = (set, get) => ({
       const stashList = await invoke<GitStashEntry[]>('git_stash_list', {
         workspacePath,
       })
-      // P1.5 分片：keyed 写 + 旧镜像域保留（未迁移 UI）
-      set({
-        stashList,
-        stashListByWs: { ...(get() as StashState).stashListByWs, [workspacePath]: stashList },
-      })
+      set({ stashList })
       return stashList
     } catch (err) {
       set({ error: parseGitError(err) })

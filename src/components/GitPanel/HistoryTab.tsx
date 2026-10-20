@@ -25,7 +25,6 @@ import {
   GitBranchPlus,
   Tag,
   Trash2,
-  History as HistoryIcon,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
@@ -37,10 +36,7 @@ import type {
   GitCommitDetails,
   GitDiffEntry,
   GitFileHistoryEntry,
-  GitLogSearchFilter,
-  GitLaneRow,
 } from '@/types/git'
-import { LaneGraph } from './LaneGraph'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
 import { createLogger } from '@/utils/logger'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
@@ -71,20 +67,10 @@ import {
 } from './historyTabUtils'
 import type { FileListMode, CopyAction } from './historyTabUtils'
 import { CommitDetailsPane } from './CommitDetailsPane'
-import { ReflogView } from './ReflogView'
 import { CreateBranchFromCommitDialog } from './CreateBranchFromCommitDialog'
 import { CreateTagFromCommitDialog } from './CreateTagFromCommitDialog'
 
 const log = createLogger('HistoryTab')
-
-/** P2 泳道图：rows → sha 索引（O(n) 一次建表，渲染时 O(1) 查行） */
-function indexLaneRows(rows: GitLaneRow[]): Record<string, GitLaneRow> {
-  const map: Record<string, GitLaneRow> = {}
-  for (const row of rows) {
-    map[row.sha] = row
-  }
-  return map
-}
 
 interface HistoryTabProps {
   targetCommitSha?: string | null
@@ -106,8 +92,6 @@ export function HistoryTab({
 }: HistoryTabProps) {
   const { t } = useTranslation('git')
   const [commits, setCommits] = useState<GitCommitType[]>([])
-  // P2 泳道图：sha → lane 行（loadCommits 一次带出，逐行渲染 LaneGraph）
-  const [laneRows, setLaneRows] = useState<Record<string, GitLaneRow>>({})
   const [isLoading, setIsLoading] = useState(false)
   const [isLoadingMore, setIsLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -119,10 +103,6 @@ export function HistoryTab({
   const [hasMore, setHasMore] = useState(true)
   const [totalCount, setTotalCount] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
-  // P1：精确搜索（后端 git search；开启时结果与常规 log 分离展示）
-  const [exactSearch, setExactSearch] = useState(false)
-  const [searchResults, setSearchResults] = useState<GitCommitType[]>([])
-  const [isSearching, setIsSearching] = useState(false)
   const [fileHistoryPath, setFileHistoryPath] = useState<string | null>(null)
   const [fileHistoryEntries, setFileHistoryEntries] = useState<GitFileHistoryEntry[]>([])
   const [fileHistoryHasMore, setFileHistoryHasMore] = useState(true)
@@ -136,8 +116,6 @@ export function HistoryTab({
   const [copiedAction, setCopiedAction] = useState<CopyAction | null>(null)
   const [isCommitMessageExpanded, setIsCommitMessageExpanded] = useState(false)
   const [isFilePaneCollapsed, setIsFilePaneCollapsed] = useState(getInitialFilePaneCollapsed)
-  // P1 reflog 模式（超越差异点 #1）：独立视图替换 commit 列表
-  const [isReflogMode, setIsReflogMode] = useState(false)
   const [commitListWidth, setCommitListWidth] = useState(() => getInitialPaneWidth(
     COMMIT_LIST_WIDTH_STORAGE_KEY,
     380,
@@ -168,8 +146,7 @@ export function HistoryTab({
   const [createBranchFromCommit, setCreateBranchFromCommit] = useState<GitCommitType | null>(null)
   const [createTagFromCommit, setCreateTagFromCommit] = useState<GitCommitType | null>(null)
 
-  const getLogWithLanes = useGitStore((s) => s.getLogWithLanes)
-  const searchLog = useGitStore((s) => s.searchLog)
+  const getLog = useGitStore((s) => s.getLog)
   const getCommitDetails = useGitStore((s) => s.getCommitDetails)
   const getFileHistory = useGitStore((s) => s.getFileHistory)
   const branches = useGitStore((s) => s.branches)
@@ -379,13 +356,10 @@ export function HistoryTab({
 
     try {
       log.debug('Loading commits', { path: effectiveWorkspacePath, branch: selectedBranch || null })
-      // P2 泳道图：首屏走 getLogWithLanes（commits + rows 同一次返回）
-      const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
-      const result = page.commits
+      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, 0, selectedBranch || undefined)
       log.debug('Loaded commits', { count: result.length })
 
       setCommits(result)
-      setLaneRows(indexLaneRows(page.rows))
       setHasMore(result.length === PAGE_SIZE)
       setTotalCount(result.length)
       if (result.length === 0) {
@@ -405,7 +379,7 @@ export function HistoryTab({
   }, [
     clearSelection,
     effectiveWorkspacePath,
-    getLogWithLanes,
+    getLog,
     isWorkbench,
     loadCommitDetails,
     noWorkspaceError,
@@ -420,14 +394,12 @@ export function HistoryTab({
 
     try {
       const skip = commits.length
-      const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
-      const result = page.commits
+      const result = await getLog(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
 
       if (result.length === 0) {
         setHasMore(false)
       } else {
         setCommits(prev => [...prev, ...result])
-        setLaneRows(prev => ({ ...prev, ...indexLaneRows(page.rows) }))
         setTotalCount(prev => prev + result.length)
         setHasMore(result.length === PAGE_SIZE)
       }
@@ -436,7 +408,7 @@ export function HistoryTab({
     } finally {
       setIsLoadingMore(false)
     }
-  }, [effectiveWorkspacePath, commits.length, getLogWithLanes, hasMore, isLoadingMore, selectedBranch])
+  }, [effectiveWorkspacePath, commits.length, getLog, hasMore, isLoadingMore, selectedBranch])
 
   const loadFileHistory = useCallback(async (filePath: string) => {
     if (!effectiveWorkspacePath) {
@@ -611,52 +583,13 @@ export function HistoryTab({
   }, [commits, loadCommitDetails, loadCommitDetailsBySha, onCommitSelected, targetCommitSha])
 
   const handleRefresh = useCallback(() => {
-    if (isReflogMode) {
-      // reflog 模式由 ReflogView 自管理刷新
-      return
-    }
     if (fileHistoryPath) {
       loadFileHistory(fileHistoryPath)
       return
     }
 
     loadCommits()
-  }, [isReflogMode, fileHistoryPath, loadCommits, loadFileHistory])
-
-  // P1：精确搜索 —— 切到精确 / query 变化时 debounce 调后端 searchLog
-  useEffect(() => {
-    if (!exactSearch || !effectiveWorkspacePath) {
-      setIsSearching(false)
-      return
-    }
-
-    const q = searchQuery.trim()
-    if (!q) {
-      setSearchResults([])
-      setIsSearching(false)
-      return
-    }
-
-    setIsSearching(true)
-    const requestId = ++detailsRequestRef.current
-    const timer = window.setTimeout(async () => {
-      try {
-        const filter: GitLogSearchFilter = {
-          grep: q,
-          range: selectedBranch || undefined,
-        }
-        const result = await searchLog(effectiveWorkspacePath, filter, 100, 0)
-        if (requestId !== detailsRequestRef.current) return
-        setSearchResults(result)
-      } catch (err) {
-        log.error('Exact search failed', err instanceof Error ? err : new Error(String(err)))
-        if (requestId === detailsRequestRef.current) setSearchResults([])
-      } finally {
-        if (requestId === detailsRequestRef.current) setIsSearching(false)
-      }
-    }, 500)
-    return () => window.clearTimeout(timer)
-  }, [exactSearch, searchQuery, effectiveWorkspacePath, selectedBranch, searchLog])
+  }, [fileHistoryPath, loadCommits, loadFileHistory])
 
   const closeCommitContextMenu = useCallback(() => setCommitContextMenu(null), [])
 
@@ -672,9 +605,6 @@ export function HistoryTab({
     setSelectedBranch(nextBranch)
     setBranchSelectOpen(false)
     setSearchQuery('')
-    setExactSearch(false)
-    setSearchResults([])
-    setIsReflogMode(false)
     hasAutoSelectedRef.current = false
     clearFileHistoryMode()
     clearSelection()
@@ -683,27 +613,12 @@ export function HistoryTab({
   const handleExitFileHistory = useCallback(() => {
     clearFileHistoryMode()
     setSearchQuery('')
-    setExactSearch(false)
-    setSearchResults([])
     clearSelection()
 
     if (isWorkbench && commits[0]) {
       void loadCommitDetails(commits[0])
     }
   }, [clearFileHistoryMode, clearSelection, commits, isWorkbench, loadCommitDetails])
-
-  // P1 reflog：进入/退出操作日志模式
-  const handleEnterReflog = useCallback(() => {
-    setIsReflogMode(true)
-    clearSelection()
-  }, [clearSelection])
-
-  const handleExitReflog = useCallback(() => {
-    setIsReflogMode(false)
-    if (isWorkbench && commits[0]) {
-      void loadCommitDetails(commits[0])
-    }
-  }, [commits, isWorkbench, loadCommitDetails])
 
   const copyText = useCallback(async (text: string | undefined, action: CopyAction) => {
     if (!text) return
@@ -1069,7 +984,6 @@ export function HistoryTab({
   const renderCommitRow = (commit: GitCommitType) => {
     const subject = commit.message.split('\n')[0]
     const isSelected = selectedCommit?.sha === commit.sha
-    const laneRow = laneRows[commit.sha]
 
     return (
       <Fragment key={commit.sha}>
@@ -1081,37 +995,11 @@ export function HistoryTab({
             isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
           }`}
         >
-          {laneRow ? (
-            // P2 泳道图：有 lane 数据用 LaneGraph，节点色随选择态
-            <LaneGraph row={laneRow} />
-          ) : (
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
-            />
-          )}
+          <span
+            className="w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ background: isSelected ? 'rgb(var(--c-primary))' : getCommitTypeColor(commit.message) }}
+          />
           <span className="text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
-          {/* P2 refs 装饰：HEAD/本地/远程/tag 三色标签 */}
-          {(laneRow?.refs ?? commit.refs ?? []).length > 0 && (
-            <span className="flex items-center gap-1 shrink-0 overflow-hidden">
-              {(laneRow?.refs ?? commit.refs ?? []).slice(0, 4).map((ref) => (
-                <span
-                  key={`${ref.name}:${ref.target}`}
-                  className={`px-1 rounded text-[9px] font-mono border ${
-                    ref.kind === 'head'
-                      ? 'border-primary/40 bg-primary/10 text-primary'
-                      : ref.kind === 'remote'
-                        ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
-                        : ref.kind === 'tag'
-                          ? 'border-orange-500/40 bg-orange-500/10 text-orange-400'
-                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                  }`}
-                >
-                  {ref.name}
-                </span>
-              ))}
-            </span>
-          )}
           <span className={`flex-1 min-w-0 text-[13px] truncate ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
             {subject}
           </span>
@@ -1151,14 +1039,8 @@ export function HistoryTab({
   }
 
   const renderCommitList = () => {
-    // P1：精确搜索模式 —— 直接渲染后端搜索结果（不再本地过滤）
-    const isExactMode = exactSearch && searchQuery.trim().length > 0
-    const activeItems = isFileHistoryMode ? fileHistoryEntries : isExactMode ? searchResults : commits
-    const filteredItems = isFileHistoryMode
-      ? filteredFileHistoryEntries
-      : isExactMode
-        ? searchResults
-        : filteredCommits
+    const activeItems = isFileHistoryMode ? fileHistoryEntries : commits
+    const filteredItems = isFileHistoryMode ? filteredFileHistoryEntries : filteredCommits
 
     return (
       <div
@@ -1169,11 +1051,6 @@ export function HistoryTab({
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={20} className="animate-spin text-text-tertiary" />
-          </div>
-        ) : isExactMode && isSearching && searchResults.length === 0 ? (
-          <div className="flex items-center justify-center py-8 text-text-tertiary">
-            <Loader2 size={16} className="animate-spin mr-2" />
-            <span className="text-xs">{t('history.searchLoading')}</span>
           </div>
         ) : activeItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-8 text-text-tertiary">
@@ -1195,7 +1072,7 @@ export function HistoryTab({
           <>
             {isFileHistoryMode
               ? filteredFileHistoryEntries.map(renderFileHistoryRow)
-              : (isExactMode ? searchResults : filteredCommits).map(renderCommitRow)}
+              : filteredCommits.map(renderCommitRow)}
 
             {isLoadingMore && (
               <div className="flex items-center justify-center py-3 text-text-tertiary">
@@ -1326,18 +1203,6 @@ export function HistoryTab({
           </div>
           <button
             type="button"
-            onClick={isReflogMode ? handleExitReflog : handleEnterReflog}
-            className={`p-1 rounded transition-colors ${
-              isReflogMode
-                ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-            }`}
-            title={t('history.reflogTitle')}
-          >
-            <HistoryIcon size={14} className={isReflogMode ? '' : 'opacity-70'} />
-          </button>
-          <button
-            type="button"
             onClick={handleRefresh}
             disabled={isLoading}
             className="p-1 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-colors disabled:opacity-50"
@@ -1348,7 +1213,6 @@ export function HistoryTab({
         </div>
       </div>
 
-      {!isReflogMode && (
       <div className="px-3 py-2 border-b border-border-subtle shrink-0">
         <div className="relative">
           <Search
@@ -1362,26 +1226,8 @@ export function HistoryTab({
             placeholder={isFileHistoryMode
               ? t('history.fileHistorySearchPlaceholder')
               : t('history.searchPlaceholder')}
-            className="w-full h-8 pl-8 pr-16 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder:text-text-tertiary"
+            className="w-full h-8 pl-8 pr-8 text-sm bg-background-surface border border-border rounded focus:outline-none focus:ring-1 focus:ring-primary text-text-primary placeholder:text-text-tertiary"
           />
-          {/* P1：精确搜索切换（git 命令搜索：grep/作者/内容/日期/分支范围） */}
-          <button
-            type="button"
-            onClick={() => {
-              setExactSearch((v) => !v)
-              setSearchResults([])
-            }}
-            disabled={isFileHistoryMode}
-            className={`absolute right-7 top-1/2 -translate-y-1/2 p-1 rounded transition-colors disabled:opacity-40 ${
-              exactSearch
-                ? 'text-primary bg-primary/10 hover:bg-primary/20'
-                : 'text-text-tertiary hover:text-text-primary hover:bg-background-hover'
-            }`}
-            title={t('history.searchExactDesc')}
-          >
-            <Search size={13} className={exactSearch ? '' : 'opacity-70'} />
-            {exactSearch && <span className="sr-only">{t('history.searchExact')}</span>}
-          </button>
           {searchQuery && (
             <button
               type="button"
@@ -1394,20 +1240,14 @@ export function HistoryTab({
           )}
         </div>
       </div>
-      )}
 
-      {!isReflogMode && error && (
+      {error && (
         <div className="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
           {error}
         </div>
       )}
 
-      {isReflogMode ? (
-        <ReflogView
-          workspacePath={effectiveWorkspacePath}
-          onBack={handleExitReflog}
-        />
-      ) : isWorkbench ? (
+      {isWorkbench ? (
         <div className="flex-1 flex min-h-0">
           <div
             className="relative border-r border-border-subtle flex flex-col min-h-0 shrink-0"

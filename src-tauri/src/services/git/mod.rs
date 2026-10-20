@@ -19,11 +19,6 @@ mod log;
 mod stash;
 mod reset;
 mod gitignore;
-mod reflog;
-mod undo;
-mod conflict;
-mod sequence;
-mod lane_cache;
 
 // 重导出公共 API
 pub use executor::{init_repository, is_repository, discover_repositories};
@@ -37,30 +32,24 @@ pub use tag::{get_tags, create_tag, delete_tag};
 pub use rebase::{rebase_branch, rebase_abort, rebase_continue};
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
-pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage, commit_group};
+pub use commit::{commit, stage_file, unstage_file, discard_changes, batch_stage};
 pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
-    push_branch, push_set_upstream, create_pr, get_pr_status, pull, fetch,
+    push_branch, push_set_upstream, create_pr, get_pr_status, pull,
 };
-pub use log::{get_log, get_log_with_lanes, search_log, get_commit_details, get_file_history, blame_file};
-pub use stash::{stash_save, stash_list, stash_pop, stash_drop, stash_apply, stash_show};
+pub use log::{get_log, get_commit_details, get_file_history, blame_file};
+pub use stash::{stash_save, stash_list, stash_pop, stash_drop};
 pub use reset::{reset, ResetMode};
 pub use gitignore::{get_gitignore, save_gitignore, add_to_gitignore, get_gitignore_templates};
-pub use reflog::get_reflog;
-pub use undo::{create_undo_snapshot, drop_undo_snapshot, list_undo_snapshots, prune_undo_snapshots, restore_undo_snapshot};
-pub use conflict::predict_conflicts;
-pub use sequence::{get_sequence_state, guard_no_sequence, stage_conflicted_files, resolve_conflict_file};
 
 use std::path::Path;
 
 use crate::models::git::{
     BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
-    GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
-    GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitRebaseResult, GitReflogEntry, GitRemote,
-    GitRepositoryStatus, GitRevertResult, GitServiceError, GitStashEntry, GitTag, GitSequenceState,
-    LogSearchFilter,
-    PullRequest,
-    UndoRestoreOutcome, UndoSnapshotMeta,
+    GitCommit, GitCommitDetails, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
+    GitIgnoreTemplate, GitMergeResult, GitPullResult, GitRebaseResult, GitRemote,
+    GitRepositoryStatus, GitRevertResult, GitStashEntry, GitTag,
+    GitServiceError, PullRequest,
 };
 
 /// Git 服务
@@ -286,47 +275,6 @@ impl GitService {
         batch_stage(path, file_paths)
     }
 
-    /// 按组原子提交（AI-2：只提交组内文件，index 其它已暂存内容不受影响，等价 `git commit <paths>`）
-    pub fn commit_group(path: &Path, message: &str, files: &[String]) -> Result<String, GitServiceError> {
-        commit_group(path, message, files)
-    }
-
-    // ========================================================================
-    // Undo 网络（FR-P2-3：危险操作快照 + 一键恢复）
-    // ========================================================================
-
-    /// 为 workspace 创建撤销快照（危险操作前自动调用）
-    pub fn create_undo_snapshot(
-        path: &Path,
-        context: &str,
-        extra_refs: &[String],
-    ) -> Result<String, GitServiceError> {
-        create_undo_snapshot(path, context, extra_refs)
-    }
-
-    /// 列出某 workspace 的全部快照（倒序按时间）
-    pub fn list_undo_snapshots(path: &Path) -> Result<Vec<UndoSnapshotMeta>, GitServiceError> {
-        list_undo_snapshots(path)
-    }
-
-    /// 恢复指定快照（前端「撤销」按钮）
-    pub fn restore_undo_snapshot(
-        path: &Path,
-        snapshot_ref: &str,
-    ) -> Result<UndoRestoreOutcome, GitServiceError> {
-        restore_undo_snapshot(path, snapshot_ref)
-    }
-
-    /// 删除指定快照（前端手动清理）
-    pub fn drop_undo_snapshot(path: &Path, snapshot_ref: &str) -> Result<(), GitServiceError> {
-        drop_undo_snapshot(path, snapshot_ref)
-    }
-
-    /// 按保留策略清理：每 ws 最多保留 N 个最近快照
-    pub fn prune_undo_snapshots(path: &Path, max_keep: usize) -> Result<usize, GitServiceError> {
-        prune_undo_snapshots(path, max_keep)
-    }
-
     // ========================================================================
     // 远程操作
     // ========================================================================
@@ -351,21 +299,15 @@ impl GitService {
         delete_remote(path, name)
     }
 
-    /// 推送分支到远程（P1：force-with-lease 安全化 —— force 一律走 lease，裸 --force 除名）
+    /// 推送分支到远程
     pub fn push_branch(
         path: &Path,
         branch_name: &str,
         remote_name: &str,
         force: bool,
         remote_branch_name: Option<&str>,
-        lease: Option<&str>,
     ) -> Result<(), GitServiceError> {
-        push_branch(path, branch_name, remote_name, force, remote_branch_name, lease)
-    }
-
-    /// 拉取远程更新（fetch —— 不合并；auto-fetch 调度默认关 = 前端设置项）
-    pub fn fetch(path: &Path, remote_name: Option<&str>, prune: bool) -> Result<String, GitServiceError> {
-        fetch(path, remote_name, prune)
+        push_branch(path, branch_name, remote_name, force, remote_branch_name)
     }
 
     /// 推送分支并设置上游
@@ -409,45 +351,6 @@ impl GitService {
         branch: Option<&str>,
     ) -> Result<Vec<GitCommit>, GitServiceError> {
         get_log(path, limit, skip, branch)
-    }
-
-    /// 泳道图分页查询（P2）—— commits（含 refs 装饰）+ rows（lane 数据）一次返回
-    pub fn get_log_with_lanes(
-        path: &Path,
-        limit: Option<usize>,
-        skip: Option<usize>,
-        branch: Option<&str>,
-    ) -> Result<GitLogPage, GitServiceError> {
-        get_log_with_lanes(path, limit, skip, branch)
-    }
-
-    /// 提交历史搜索（P1：log 搜索 —— grep/author/pickaxe/since/范围）
-    pub fn search_log(
-        path: &Path,
-        filter: &LogSearchFilter,
-        limit: Option<usize>,
-        skip: Option<usize>,
-    ) -> Result<Vec<GitCommit>, GitServiceError> {
-        search_log(path, filter, limit, skip)
-    }
-
-    /// 读取 reflog（P1：reflog UI + 一键恢复的地基）
-    pub fn get_reflog(
-        path: &Path,
-        branch: Option<&str>,
-        limit: Option<usize>,
-    ) -> Result<Vec<GitReflogEntry>, GitServiceError> {
-        get_reflog(path, branch, limit)
-    }
-
-    /// Amend HEAD（P1；任意历史 commit amend 依赖 P3 interactive rebase）
-    pub fn amend_commit(
-        path: &Path,
-        message: Option<&str>,
-        stage_all: bool,
-        selected_files: Option<Vec<String>>,
-    ) -> Result<String, GitServiceError> {
-        amend_commit(path, message, stage_all, selected_files)
     }
 
     /// 获取单个提交详情
@@ -502,16 +405,6 @@ impl GitService {
         stash_drop(path, index)
     }
 
-    /// 应用 Stash（保留 stash，不 drop —— P1 parity：与 IDEA apply 对齐）
-    pub fn stash_apply(path: &Path, index: Option<usize>) -> Result<(), GitServiceError> {
-        stash_apply(path, index)
-    }
-
-    /// 查看 Stash patch 内容（P1）
-    pub fn stash_show(path: &Path, index: Option<usize>) -> Result<String, GitServiceError> {
-        stash_show(path, index)
-    }
-
     // ========================================================================
     // .gitignore 管理
     // ========================================================================
@@ -534,43 +427,5 @@ impl GitService {
     /// 获取常用忽略规则模板
     pub fn get_gitignore_templates() -> Vec<GitIgnoreTemplate> {
         get_gitignore_templates()
-    }
-
-    // ========================================================================
-    // 冲突预测（FR-P2-AI4）
-    // ========================================================================
-
-    /// 冲突预测：对方 ahead commits 涉及的文件 ∩ 本地 modified → 风险清单（确定性计算，0 token）
-    pub fn predict_conflicts(
-        path: &Path,
-        branch: Option<&str>,
-    ) -> Result<GitConflictPrediction, GitServiceError> {
-        predict_conflicts(path, branch)
-    }
-
-    // ========================================================================
-    // 序列操作机（P3：merge/rebase/cherry-pick/revert 四合一状态探测）
-    // ========================================================================
-
-    /// 归一读取当前序列操作状态（C11：kind + 冲突条目 + rebase 步数，只读）
-    pub fn get_sequence_state(
-        path: &Path,
-    ) -> Result<GitSequenceState, GitServiceError> {
-        get_sequence_state(path)
-    }
-
-    /// 交叉守卫：任何序列操作进行中即报对应 InProgress（C11，替代只查 has_conflicts）
-    pub fn guard_no_sequence(path: &Path) -> Result<(), GitServiceError> {
-        guard_no_sequence(path)
-    }
-
-    /// 冲突文件全部 add 进 index（解决后直落 staging；删除冲突跳过）
-    pub fn stage_conflicted_files(path: &Path) -> Result<Vec<String>, GitServiceError> {
-        stage_conflicted_files(path)
-    }
-
-    /// 解决单个冲突文件：写内容回工作区 + 暂存（Text 类直落 staging）
-    pub fn resolve_conflict_file(path: &Path, file_path: &str, content: &str) -> Result<(), GitServiceError> {
-        resolve_conflict_file(path, file_path, content)
     }
 }

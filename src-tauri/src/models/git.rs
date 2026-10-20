@@ -157,69 +157,6 @@ pub struct GitCommit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub timestamp: Option<i64>,
     pub parents: Vec<String>,
-    /// 该提交上的 refs 装饰（泳道图三色 + 标记）。缺省空数组。
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub refs: Vec<GitCommitRef>,
-}
-
-/// 提交上的 refs 装饰（泳道图用）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitCommitRef {
-    /// 显示名（如 main、origin/main、HEAD、v1.0）
-    pub name: String,
-    /// 分类：HEAD / 本地分支 / 远程分支 / tag
-    pub kind: String,
-    /// ref 全名（refs/heads/main 等）
-    pub target: String,
-}
-
-/// 泳道格子：该 commit 在泳道列位置的绘制原语
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitLaneCell {
-    /// 泳道下标
-    pub lane: usize,
-    /// 节点类型：commit / merge / empty / none
-    pub node: String,
-    /// 下行边（连到下一行同泳道或换行）
-    pub edge_down: Option<usize>,
-    /// 上行边（连到上一行不同泳道，即换行汇入）
-    pub edge_up: Option<usize>,
-}
-
-/// 单条泳道行（每 commit 一行）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitLaneRow {
-    pub sha: String,
-    pub cells: Vec<GitLaneCell>,
-    /// 冗余带 refs，前端不必再查
-    pub refs: Vec<GitCommitRef>,
-}
-
-/// 单行语义色（P2 增量：泳道图语义着色的服务端预计算）
-///
-/// 四态见 spec `plans/git-panel-p2-lane-increment-spec.md`：
-/// - "local"    —— 当前分支内、与远程已同步的本地提交（绿）
-/// - "unpushed" —— 当前分支内、任何远程不可达的提交（红，未 push）
-/// - "merged"   —— 已并入主干（main 可达）的历史提交（蓝灰）
-/// - "dim"      —— 当前分支不可达 / 陈旧孤立提交（灰暗）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct GitLaneSemantic {
-    pub kind: String,
-}
-
-/// 泳道图分页结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitLogPage {
-    pub commits: Vec<GitCommit>,
-    pub rows: Vec<GitLaneRow>,
-    /// P2 增量：每行语义色，与 commits 一一对应；缺省空数组 = 旧实现/旧前端兼容
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub semantic: Vec<GitLaneSemantic>,
 }
 
 /// Git 提交详情
@@ -492,64 +429,6 @@ pub struct BranchComparison {
 }
 
 // ============================================================================
-// 冲突域协议（C10：非内容冲突全穿帮修复）
-// ============================================================================
-
-/// 冲突 kind（C10：二进制 / delete-modify / rename-delete 不再穿帮）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum GitConflictKind {
-    /// 文本冲突（有 marker 可解析）
-    Text,
-    /// 二进制冲突（无 marker，只能整文件取舍）
-    Binary,
-    /// delete/modify：本地删、对方改
-    DeletedByUs,
-    /// delete/modify：对方删、本地改
-    DeletedByThem,
-    /// rename/delete
-    RenameDelete,
-}
-
-/// 单文件冲突条目（C10：merge/rebase/cherry-pick/revert 四结果结构一次改齐）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct GitConflictEntry {
-    pub path: String,
-    pub kind: GitConflictKind,
-    /// 冲突三方 stage 内容（Text 有内容；Binary 无，可为空）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub base: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ours: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub theirs: Option<String>,
-}
-
-/// 当前进行中的序列操作类型（C11：归一探测）
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum GitSequenceKind {
-    None,
-    Merge,
-    Rebase,
-    CherryPick,
-    Revert,
-}
-
-/// 序列操作状态（C11：Continue 一律从这里回读，不信任 stderr）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitSequenceState {
-    pub kind: GitSequenceKind,
-    pub has_conflicts: bool,
-    pub conflicts: Vec<GitConflictEntry>,
-    /// rebase 步数（rebase-merge/end + msgnum 回读；merge 等无步数为 None）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub current_step: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_steps: Option<usize>,
-}
-
-// ============================================================================
 // Pull 结果
 // ============================================================================
 
@@ -562,7 +441,7 @@ pub struct GitPullResult {
     pub files_changed: usize,
     pub insertions: usize,
     pub deletions: usize,
-    pub conflicts: Vec<GitConflictEntry>,
+    pub conflicts: Vec<String>,
 }
 
 // ============================================================================
@@ -578,8 +457,8 @@ pub struct GitMergeResult {
     pub fast_forward: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突条目列表（C10 升级：携带 kind + stages）
-    pub conflicts: Vec<GitConflictEntry>,
+    /// 冲突文件列表
+    pub conflicts: Vec<String>,
     /// 合并的提交数
     pub merged_commits: usize,
     /// 变更的文件数
@@ -593,8 +472,8 @@ pub struct GitRebaseResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突条目列表（C10 升级）
-    pub conflicts: Vec<GitConflictEntry>,
+    /// 冲突文件列表
+    pub conflicts: Vec<String>,
     /// 变基的提交数
     pub rebased_commits: usize,
     /// 当前步骤（从 1 开始）
@@ -612,8 +491,8 @@ pub struct GitCherryPickResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突条目列表（C10 升级）
-    pub conflicts: Vec<GitConflictEntry>,
+    /// 冲突文件列表
+    pub conflicts: Vec<String>,
     /// 提交 SHA
     pub commit_sha: String,
     /// 提交消息
@@ -629,8 +508,8 @@ pub struct GitRevertResult {
     pub success: bool,
     /// 是否有冲突
     pub has_conflicts: bool,
-    /// 冲突条目列表（C10 升级）
-    pub conflicts: Vec<GitConflictEntry>,
+    /// 冲突文件列表
+    pub conflicts: Vec<String>,
     /// 新提交的 SHA（revert 成功后）
     pub commit_sha: String,
     /// 提交消息
@@ -670,55 +549,6 @@ pub struct GitStashEntry {
     pub branch: String,
     pub commit_sha: String,
     pub timestamp: i64,
-}
-
-// ============================================================================
-// Reflog（P1：reflog UI + 一键恢复）
-// ============================================================================
-
-/// Reflog 条目
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitReflogEntry {
-    /// 完整提交 sha（恢复目标 = checkout sha）
-    pub sha: String,
-    /// 短 sha
-    pub short_sha: String,
-    /// reflog 选择器（如 HEAD@{0}、refs/heads/main@{3}）
-    pub selector: String,
-    /// 动作描述（%gs，如 "checkout: moving from a to b"）
-    pub subject: String,
-    /// Unix 秒
-    pub timestamp: i64,
-    /// 关联分支名（%gD 无 fname? 简化：selector 含分支时前端解析）
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub branch: Option<String>,
-}
-
-// ============================================================================
-// Log 搜索（P1：log 搜索 + AI-6 参数编译器）
-// ============================================================================
-
-/// 提交历史搜索过滤器（对应 CLI git log 的 grep/author/-S/--since 家族）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LogSearchFilter {
-    /// 提交标题匹配（--grep，匹配整条 message；git 多 --grep 为 OR 语义，取单值）
-    pub grep: Option<String>,
-    /// 作者名（--author，正则）
-    pub author: Option<String>,
-    /// 代码内容匹配（-S pickaxe），精确出现次数变化
-    pub pickaxe: Option<String>,
-    /// 路径过滤（--）
-    pub path: Option<String>,
-    /// 起始时间（--since，如 "2 weeks ago" / "2026-01-01"）
-    pub since: Option<String>,
-    /// 截止时间（--until）
-    pub until: Option<String>,
-    /// 分支范围（"a..b" | "a...b" | "main"），push_history_tip 等价的 tip 覆盖
-    pub range: Option<String>,
-    /// 正则模式开关（--extended-regexp? CLI 默认 basic；git --grep 支持基本正则；E 开关用 --fixed-strings 反向）
-    pub fixed_strings: bool,
 }
 
 // ============================================================================
@@ -881,111 +711,4 @@ pub struct GitDiscoveredRepo {
     pub is_empty: bool,
     /// 是否有未提交变更（工作树或索引有改动）
     pub has_changes: bool,
-}
-
-// ============================================================================
-// Undo 网络（FR-P2-3：危险操作快照 + 一键恢复）
-// ============================================================================
-
-/// 撤销快照元数据（前端通知条/快照列表展示）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UndoSnapshotMeta {
-    /// 快照 ref 名（refs/polaris-undo/<ws>/<ts>）
-    pub name: String,
-    /// 创建时间戳（unix 秒）
-    pub created_at: i64,
-    /// 触发操作（discard / reset_hard / checkout / rebase / branch_delete）
-    pub context: String,
-    /// 快照是否捕获了未提交改动
-    pub has_changes: bool,
-    /// 快照时所在分支
-    pub branch: Option<String>,
-}
-
-/// 快照事件载荷（cap.git 危险操作成功后 emit 到前端）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UndoSnapshotEvent {
-    /// 仓库工作区路径
-    pub ws_path: String,
-    /// 快照 ref 名
-    pub snapshot_ref: String,
-    /// 触发操作
-    pub context: String,
-}
-
-/// 恢复快照的结果
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct UndoRestoreOutcome {
-    /// 是否恢复成功
-    pub ok: bool,
-    /// 遇冲突时冲突文件列表（未冲突为 empty）
-    pub conflicted_files: Vec<String>,
-    /// 冲突说明（无冲突为 None）
-    pub conflict_message: Option<String>,
-}
-
-// ============================================================================
-// 操作流水（FR-P2-4：GitKraken Activity Log 等价）
-// ============================================================================
-
-/// 一次 cap.git 写操作留痕（前端「操作流水」面板只读展示；会话内滚动保留）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitOperationEntry {
-    /// 仓库工作区路径
-    pub ws_path: String,
-    /// 动作名（cap.git action，机器可读）
-    pub action: String,
-    /// 展示名（前端可直接呈现的中文操作名）
-    pub label: String,
-    /// 成败
-    pub ok: bool,
-    /// 耗时（ms）
-    pub duration_ms: u64,
-    /// 来源（bootstrap / remote / plugin:<id>）
-    pub source: String,
-    /// 完成时间（unix 秒）
-    pub ts: i64,
-    /// P2.5 任务队列 taskId（未启用为 None）
-    pub git_task_id: Option<String>,
-}
-
-// ============================================================================
-// 冲突预测（FR-P2-AI4：fetch 后确定性风险清单）
-// ============================================================================
-
-/// 对方 ahead commits 涉及的文件 ∩ 本地 modified 文件的冲突风险清单。
-/// 纯后端确定性计算（0 token），前端直接显示；AI 解释层已由 master-plan §1.2 砍掉，
-/// 仅保留规则建议（advice）。详见 plans/git-panel-p2-conflict-predict-spec.md。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitConflictPrediction {
-    /// 计算对象分支名
-    pub branch: String,
-    /// upstream 的 shorthand 名（无上游为 None → 无比较对象）
-    pub upstream: Option<String>,
-    /// 对方领先的提交数（HEAD..upstream 计数）
-    pub behind: usize,
-    /// 对方提交预览（sha / summary，倒序新→旧）
-    pub incoming: Vec<GitIncomingCommitPreview>,
-    /// 本地已修改路径（staged + unstaged，不含纯 untracked）
-    pub local_modified: Vec<String>,
-    /// 对方提交涉及的全部路径
-    pub incoming_files: Vec<String>,
-    /// 交集 = 冲突风险清单（risk_files 空 → 直接 pull 安全）
-    pub risk_files: Vec<String>,
-    /// 建议规则："none"（安全/无上游）| "commitOrStash"（本地未提交 + 有风险 → 先提交或储藏）
-    pub advice: String,
-}
-
-/// 对方单个提交的预览（供前端展示，不进 risk 明细）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct GitIncomingCommitPreview {
-    pub sha: String,
-    pub short_sha: String,
-    pub summary: String,
 }

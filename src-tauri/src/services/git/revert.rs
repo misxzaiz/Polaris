@@ -20,8 +20,16 @@ pub fn revert(path: &Path, commit_sha: &str) -> Result<GitRevertResult, GitServi
 
     let repo = open_repository(path)?;
 
-    // C11 交叉守卫：任何序列操作进行中均拒绝（merge/rebase/cherry-pick/revert 互斥）
-    super::sequence::guard_no_sequence(path)?;
+    // 检查是否有正在进行的 revert
+    let revert_state_path = path.join(".git").join("REVERT_HEAD");
+    if revert_state_path.exists() {
+        return Err(GitServiceError::RevertInProgress);
+    }
+
+    // 检查是否有正在进行的合并
+    if repo.index()?.has_conflicts() {
+        return Err(GitServiceError::MergeInProgress);
+    }
 
     // 执行 revert 操作
     #[cfg(windows)]
@@ -37,7 +45,7 @@ pub fn revert(path: &Path, commit_sha: &str) -> Result<GitRevertResult, GitServi
         .current_dir(path)
         .output()?;
 
-    let _stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
 
     if output.status.success() {
@@ -68,16 +76,22 @@ pub fn revert(path: &Path, commit_sha: &str) -> Result<GitRevertResult, GitServi
             finished: true,
         })
     } else {
-        // C11：冲突判定归一从序列状态回读，不信任 stderr 包含 "CONFLICT"
-        let state = super::sequence::get_sequence_state(path)?;
-        let has_conflicts = state.has_conflicts;
+        let has_conflicts = stderr.contains("CONFLICT")
+            || stderr.contains("conflict")
+            || stdout.contains("CONFLICT");
+
+        let conflicts = if has_conflicts {
+            get_conflict_files(path)?
+        } else {
+            vec![]
+        };
 
         if has_conflicts {
-            info!("Revert 遇到冲突: {} 个文件", state.conflicts.len());
+            info!("Revert 遇到冲突: {} 个文件", conflicts.len());
             Ok(GitRevertResult {
                 success: false,
                 has_conflicts: true,
-                conflicts: state.conflicts,
+                conflicts,
                 commit_sha: commit_sha.to_string(),
                 commit_message: String::new(),
                 finished: false,
@@ -156,15 +170,15 @@ pub fn revert_continue(path: &Path) -> Result<GitRevertResult, GitServiceError> 
             finished: true,
         })
     } else {
-        // C11：Continue 从状态回读，不信任 stderr 包含 "CONFLICT"
-        let state = super::sequence::get_sequence_state(path)?;
-        let has_conflicts = state.has_conflicts;
+        let has_conflicts = stderr.contains("CONFLICT") || stderr.contains("conflict");
+
+        let conflicts = if has_conflicts { get_conflict_files(path)? } else { vec![] };
 
         if has_conflicts {
             Ok(GitRevertResult {
                 success: false,
                 has_conflicts: true,
-                conflicts: state.conflicts,
+                conflicts,
                 commit_sha: String::new(),
                 commit_message: String::new(),
                 finished: false,
@@ -172,5 +186,31 @@ pub fn revert_continue(path: &Path) -> Result<GitRevertResult, GitServiceError> 
         } else {
             Err(GitServiceError::CLIError(stderr.to_string()))
         }
+    }
+}
+
+/// 获取冲突文件列表
+fn get_conflict_files(path: &Path) -> Result<Vec<String>, GitServiceError> {
+    #[cfg(windows)]
+    let output = std::process::Command::new("git")
+        .args(["diff", "--name-only", "--diff-filter=U"])
+        .current_dir(path)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()?;
+
+    #[cfg(not(windows))]
+    let output = std::process::Command::new("git")
+        .args(["diff", "--name-only", "--diff-filter=U"])
+        .current_dir(path)
+        .output()?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(|l| l.to_string())
+            .collect())
+    } else {
+        Ok(vec![])
     }
 }

@@ -7,7 +7,6 @@
 import { invoke } from '@/services/transport'
 import type { TagSlice } from './types'
 import { parseGitError } from './types'
-import type { TagState } from './types'
 import type { GitTag } from '@/types/git'
 
 /**
@@ -16,31 +15,20 @@ import type { GitTag } from '@/types/git'
 export const createTagSlice: TagSlice = (set, get) => ({
   // ===== 状态 =====
   tags: [],
-  // P1.5 分片：keyed 只读数据域（新 UI 消费）
-  tagsByWs: {},
 
   // ===== 方法 =====
 
   // 获取标签列表
   async getTags(workspacePath: string) {
-    // P1.5 分片：keyed 写 + 旧镜像域保留（未迁移 UI）
-    const setTags = (tags: GitTag[]) => {
-      set({
-        tags,
-        tagsByWs: { ...(get() as TagState).tagsByWs, [workspacePath]: tags },
-      })
-    }
-
     try {
       const tags = await invoke<GitTag[]>('git_get_tags', {
         workspacePath,
       })
 
-      setTags(tags)
+      set({ tags })
       return tags
     } catch (err) {
       set({ error: parseGitError(err), tags: [] })
-      setTags([])
       return []
     }
   },

@@ -445,11 +445,6 @@ pub fn create_app_state(
         // open_path_in_explorer 属平台壳命令保留在命令层）。管理面域：远程收紧规则
         // `cap.data_root* remote deny` 在 config.json permissions.rules 注入。
         let _ = bus.register_handle(Box::new(DataRootCapability));
-        // cap.git —— git 面板 vNext PR-1：git 域动作唯一入口（前端 git_* 经
-        // transport shim → router_dispatch → cap.git；Web 双写派发表已删）。
-        // 破坏性动作对 Plugin 来源加临时护栏；完整权限矩阵 PR-2a。
-        #[cfg(feature = "git")]
-        let _ = bus.register_handle(Box::new(crate::services::router::GitCapability));
         // cap.pluginDiscovery —— 第七步阶段 C：插件发现/安装/卸载/市场管理唯一入口。
         // 注入 config_store（claude CLI 路径）+ config_dir + plugin_service_manager
         let _ = bus.register_handle(Box::new(PluginDiscoveryCapability::new(

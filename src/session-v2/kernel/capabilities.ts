@@ -79,9 +79,9 @@ export interface CreateSessionOptions {
   engineId?: string
   /** 静默模式：不显示在 UI，不激活会话 */
   silentMode?: boolean
-  /** 会话用途标记（commit-message / git-atomic / prompt-optimize / title-generation） */
-  kind?: 'commit-message' | 'git-atomic' | 'prompt-optimize' | 'title-generation'
-  /** commit-message / git-atomic 会话关联的工作区 ID */
+  /** 会话用途标记（commit-message / prompt-optimize / title-generation） */
+  kind?: 'commit-message' | 'prompt-optimize' | 'title-generation'
+  /** commit-message 会话关联的工作区 ID */
   commitWorkspaceId?: string
   /** Fork 来源会话 ID */
   forkFromId?: string

@@ -80,14 +80,7 @@ pub async fn router_dispatch(
         payload: req.payload,
         trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
     };
-    // 性能治理（git 面板 vNext PR-2a 轴，master-plan 裁决 8）：同步 dispatch 链
-    // 全局外包 blocking 线程池 —— GitService 等重量级 sync capability（commit/pull
-    // 秒级）不再长期占用 tokio worker，读动作高并发不被写动作挤压。
-    let router = state.router.clone();
-    let reply = tokio::task::spawn_blocking(move || router.dispatch(env))
-        .await
-        .map_err(|e| AppError::Unknown(format!("dispatch join error: {}", e)))?
-        .map_err(|e| AppError::Unknown(e))?;
+    let reply = state.router.dispatch(env).map_err(|e| AppError::Unknown(e))?;
     let (ok, result, error) = match reply.result {
         Ok(v) => (true, Some(v), None),
         Err(e) => (false, None, Some(e)),
