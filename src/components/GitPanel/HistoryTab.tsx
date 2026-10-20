@@ -33,6 +33,7 @@ import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
 import { parseGitError } from '@/stores/gitStore'
+import { compileGitQuery } from '@/services/gitNlQuery'
 import type {
   GitCommit as GitCommitType,
   GitCommitDetails,
@@ -668,7 +669,8 @@ export function HistoryTab({
     const timer = window.setTimeout(async () => {
       try {
         const filter: GitLogSearchFilter = {
-          grep: q,
+          // AI-6 v0：NL → 过滤器编译（无 LLM，确定性规则）；编不出 → 原样 grep，行为与旧路径一致
+          ...compileGitQuery(q).filter,
           range: selectedBranch || undefined,
         }
         const result = await searchLog(effectiveWorkspacePath, filter, 100, 0)
