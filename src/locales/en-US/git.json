@@ -649,6 +649,7 @@
     "title": "Recoverable operations",
     "refresh": "Refresh snapshots",
     "restore": "Restore",
+    "toastUndoLabel": "Undo",
     "restored": "Restored",
     "restoreFailed": "Restore failed",
     "restoreConflict": "Restored with {{count}} conflicted files — check the changes list",

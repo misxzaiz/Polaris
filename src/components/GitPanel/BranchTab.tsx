@@ -25,6 +25,7 @@ import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
+import { toastWithUndo } from './undoToast'
 import { formatGitTimestamp } from '@/utils/gitFormat'
 import type { GitBranch, GitMergeResult, GitRebaseResult } from '@/types/git'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
@@ -235,7 +236,8 @@ export function BranchTab({ workspacePath: workspacePathProp }: BranchTabProps) 
       setShowDeleteDialog(false)
       setBranchToDelete(null)
       setForceDelete(false)
-      toast.success(t('branch.deleteSuccess', { branch: branchToDelete }))
+      // A3：删除分支产生的撤销快照 → toast 携「撤销」按钮
+      await toastWithUndo(workspacePath, t('branch.deleteSuccess', { branch: branchToDelete }))
     } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err)
       if (errorMsg.includes('not fully merged')) {

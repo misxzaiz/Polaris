@@ -14,6 +14,7 @@ import { deleteFile } from '@/services/tauri/fileService'
 import { resolveWorkspacePath } from '@/utils/path'
 import { ContextMenu, type ContextMenuItem } from '@/components/FileExplorer/ContextMenu'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
+import { toastWithUndo } from './undoToast'
 import type { GitFileChange, GitFileStatus } from '@/types'
 
 type ChangeArea = 'staged' | 'unstaged' | 'untracked'
@@ -153,18 +154,26 @@ export function FileChangesList({
   const runAction = useCallback(async (
     filePath: string,
     action: () => Promise<void>,
-    messages: { success?: string; error: string }
+    messages: { success?: string; error: string },
+    /** A3：成功后尝试在 toast 上挂「撤销」按钮（有快照时） */
+    undoable = false
   ) => {
     setOperatingPath(filePath)
     try {
       await action()
-      if (messages.success) toast.success(messages.success)
+      if (messages.success) {
+        if (undoable) {
+          await toastWithUndo(workspacePath, messages.success)
+        } else {
+          toast.success(messages.success)
+        }
+      }
     } catch (err) {
       toast.error(messages.error, err instanceof Error ? err.message : String(err))
     } finally {
       setOperatingPath(null)
     }
-  }, [toast])
+  }, [toast, workspacePath])
 
   const handleStage = useCallback((filePath: string) => {
     void runAction(filePath, () => stageFile(workspacePath, filePath), {
@@ -195,11 +204,10 @@ export function FileChangesList({
         void runAction(filePath, () => discardChanges(workspacePath, filePath), {
           success: isRestore ? t('restoreSuccess') : t('discardSuccess'),
           error: t('errors.discardFailed'),
-        })
+        }, !isRestore)
       },
     })
   }, [workspacePath, discardChanges, runAction, t])
-
   const handleDelete = useCallback((filePath: string, isUntracked: boolean) => {
     setConfirmDialog({
       show: true,
