@@ -249,7 +249,12 @@ impl RouterBus {
 
         // 3. 注入 ctx（Source 由传输层注入，invoke_stream 调用期间有效）
         let plugin_config = self.plugin_config_for(&env.target);
-        let ctx = RealContext::new(env.source.clone(), self.storage.clone(), plugin_config);
+        let ctx = RealContext::new(
+            env.source.clone(),
+            self.storage.clone(),
+            plugin_config,
+            Some(self.broadcaster.clone()),
+        );
 
         // 4. 拿事件流
         let mut rx = match cap.invoke_stream(env.payload.clone(), &ctx) {
@@ -467,7 +472,12 @@ impl Router for RouterBus {
 
                 // 注入 ctx：Source 由传输层已注入 env（调用方不可自填）
                 let plugin_config = self.plugin_config_for(&env.target);
-                let ctx = RealContext::new(env.source.clone(), self.storage.clone(), plugin_config);
+                let ctx = RealContext::new(
+                    env.source.clone(),
+                    self.storage.clone(),
+                    plugin_config,
+                    Some(self.broadcaster.clone()),
+                );
 
                 let result = cap.invoke(env.payload.clone(), &ctx);
 
@@ -514,7 +524,12 @@ impl Router for RouterBus {
                 let stream_cap = self.streaming_caps.read().unwrap().get(&env.target).cloned();
                 if let Some(cap) = stream_cap {
                     let plugin_config = self.plugin_config_for(&env.target);
-                    let ctx = RealContext::new(env.source.clone(), self.storage.clone(), plugin_config);
+                    let ctx = RealContext::new(
+                        env.source.clone(),
+                        self.storage.clone(),
+                        plugin_config,
+                        Some(self.broadcaster.clone()),
+                    );
                     let result = cap.invoke(env.payload, &ctx);
                     self.broadcaster.broadcast(Event {
                         seq: 0,
@@ -573,20 +588,29 @@ impl RouterBus {
 ///
 /// - source: 由传输层注入（env.source，调用方不可自填）
 /// - storage: 契约 Storage（阶段 A 可 None）
+/// - plugin_config: 当前目标能力对应插件的配置
+/// - broadcaster: 事件适配层（能力 `emit` 的通道 —— 契约 `Context::emit` 落地）
 /// - caller_id: 调用方插件 id（dispatch 内部调用时为 Core 自身）
 pub struct RealContext {
     source: Source,
     storage: Option<Arc<dyn Storage>>,
     plugin_config: Value,
+    broadcaster: Option<Arc<EventAdapter>>,
     caller_id: PluginId,
 }
 
 impl RealContext {
-    pub fn new(source: Source, storage: Option<Arc<dyn Storage>>, plugin_config: Value) -> Self {
+    pub fn new(
+        source: Source,
+        storage: Option<Arc<dyn Storage>>,
+        plugin_config: Value,
+        broadcaster: Option<Arc<EventAdapter>>,
+    ) -> Self {
         Self {
             source,
             storage,
             plugin_config,
+            broadcaster,
             caller_id: PluginId("core".into()),
         }
     }
@@ -618,6 +642,21 @@ impl Context for RealContext {
 
     fn plugin_config(&self) -> Result<Value, String> {
         Ok(self.plugin_config.clone())
+    }
+
+    fn emit(&self, event: &str, payload: Value) -> Result<(), String> {
+        match &self.broadcaster {
+            Some(b) => {
+                b.broadcast(Event {
+                    seq: 0,
+                    kind: event.to_string(),
+                    payload,
+                    trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+                });
+                Ok(())
+            }
+            None => Err("RealContext: 无广播通道（broadcaster = None）".into()),
+        }
     }
 }
 
