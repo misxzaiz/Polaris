@@ -649,6 +649,7 @@
     "title": "可撤销操作",
     "refresh": "刷新快照",
     "restore": "一键恢复",
+    "toastUndoLabel": "撤销",
     "restored": "已恢复",
     "restoreFailed": "恢复失败",
     "restoreConflict": "恢复完成但有 {{count}} 个冲突文件，请到变更区查看",

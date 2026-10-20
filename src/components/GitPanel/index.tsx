@@ -32,6 +32,7 @@ import { DiffViewer } from '@/components/Diff/DiffViewer'
 import { Button } from '@/components/Common/Button'
 import { DropdownMenu } from '@/components/Common/DropdownMenu'
 import { ConfirmDialog } from '@/components/Common/ConfirmDialog'
+import { toastWithUndo } from './undoToast'
 import { logger } from '@/utils/logger'
 import type { GitFileChange, GitDiffEntry } from '@/types'
 import type { OpenDiffTabOptions } from '@/stores/tabStore'
@@ -348,7 +349,7 @@ export function GitPanel({
 
           await refreshStatus(effectivePath)
           setSelectedFiles(new Set())
-          toast.success(t('batchDiscardSuccess'))
+          await toastWithUndo(effectivePath, t('batchDiscardSuccess'))
         } catch (err) {
           toast.error(t('errors.batchDiscardFailed'), err instanceof Error ? err.message : String(err))
           // 操作失败后刷新状态

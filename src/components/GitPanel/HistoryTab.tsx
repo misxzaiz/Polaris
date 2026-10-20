@@ -32,6 +32,7 @@ import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
 import { useGitActiveWorkspace } from './useGitActiveWorkspace'
 import { useGitRepoStatus } from './useGitRepoStatus'
+import { toastWithUndo } from './undoToast'
 import { parseGitError } from '@/stores/gitStore'
 import { compileGitQuery } from '@/services/gitNlQuery'
 import type {
@@ -926,7 +927,7 @@ export function HistoryTab({
               setConfirmDialog(null)
               try {
                 await reset(effectiveWorkspacePath, 'hard', commit.sha + '^')
-                toast.success(t('history.dropCommitSuccess'))
+                await toastWithUndo(effectiveWorkspacePath, t('history.dropCommitSuccess'))
                 void loadCommits()
               } catch (err) {
                 toast.error(t('history.dropCommitFailed', { error: parseGitError(err) }))
