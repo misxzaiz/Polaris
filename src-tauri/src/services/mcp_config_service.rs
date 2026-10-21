@@ -294,6 +294,8 @@ struct ClaudeMcpConfig {
 #[derive(Debug, Clone)]
 struct ResolvedMcpBinary {
     server_name: String,
+    /// 归属插件 ID（内置 MCP 由 contribution 注册时携带；None = 无归属，兜底 `polaris.builtin`）
+    plugin_id: Option<String>,
     executable_path: PathBuf,
     args_mode: McpServerArgsMode,
 }
@@ -304,6 +306,8 @@ pub struct ResolvedExternalMcpServer {
     pub server_name: String,
     pub command: String,
     pub args: Vec<String>,
+    /// 是否为内置插件 MCP（trusted，AI 注入时跳过 aiToolAccess 检查；cap.mcp 管理面据此区分 via: builtin/external）
+    pub builtin: bool,
 }
 
 pub struct WorkspaceMcpConfigService {
@@ -329,6 +333,7 @@ impl WorkspaceMcpConfigService {
         if let Some(path) = requirements_executable_path {
             binaries.push(ResolvedMcpBinary {
                 server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
+                plugin_id: None,
                 executable_path: path,
                 args_mode: McpServerArgsMode::ConfigDirAndWorkspace,
             });
@@ -546,8 +551,9 @@ impl WorkspaceMcpConfigService {
     /// 解析 + `build_mcp_server_args`，外部插件走 `external_servers`。同名校验：内置优先
     /// （与 `external_plugin_mcp_server_does_not_override_builtin_server` 测试语义一致）。
     ///
-    /// 内置 MCP 的 `plugin_id` 设为 `"polaris.builtin"`，SimpleAI 分支据此跳过 `aiToolAccess`
+    /// 内置 MCP 的 `builtin` 标记为 true，SimpleAI 分支据此跳过 `aiToolAccess`
     /// 门控（内置默认信任）；外部插件由 SimpleAI 分支另行检查 `aiToolAccess`。
+    /// `plugin_id` 携带真实归属插件（如 `polaris.computer`），供 cap.mcp 管理面聚合。
     pub fn resolved_simple_ai_servers(
         &self,
         workspace_path: &str,
@@ -585,10 +591,16 @@ impl WorkspaceMcpConfigService {
                 self.ask_route_session_id.as_deref(),
             );
             servers.push(ResolvedExternalMcpServer {
-                plugin_id: "polaris.builtin".to_string(),
+                // 内置 MCP 用真实归属插件 ID（如 polaris.computer），供 cap.mcp 管理面按插件聚合；
+                // 无归属的兜底 `polaris.builtin`（仅测试构造会走到）。launcher 用 `builtin: true` 跳过 aiToolAccess。
+                plugin_id: binary
+                    .plugin_id
+                    .clone()
+                    .unwrap_or_else(|| "polaris.builtin".to_string()),
                 server_name: binary.server_name.clone(),
                 command: strip_unc_prefix(&binary.executable_path.to_string_lossy()),
                 args,
+                builtin: true,
             });
         }
 
@@ -705,6 +717,7 @@ pub fn resolve_external_plugin_mcp_servers(
                 server_name: server.id.clone(),
                 command,
                 args,
+                builtin: false,
             });
         }
     }
@@ -953,6 +966,7 @@ fn apply_tool_provider_overrides(
                 server_name: builtin_name.to_string(),
                 command: replacement.command.clone(),
                 args: replacement.args.clone(),
+                builtin: false, // toolProvider 覆盖自外部插件，走 aiToolAccess 检查
             });
 
             tracing::info!(
@@ -1056,6 +1070,7 @@ fn resolve_mcp_contribution_binary(
 
     Ok(ResolvedMcpBinary {
         server_name: contribution.server_name.clone(),
+        plugin_id: contribution.plugin_id.clone(),
         executable_path,
         args_mode: contribution.args_mode,
     })
@@ -1704,6 +1719,7 @@ mod tests {
                     plugin_script.to_string_lossy().to_string(),
                     workspace.to_string_lossy().to_string(),
                 ],
+                builtin: false,
             }]);
 
         let config_path = service
@@ -1749,6 +1765,7 @@ mod tests {
             server_name: REQUIREMENTS_MCP_SERVER_NAME.to_string(),
             command: "node".to_string(),
             args: vec!["conflict.js".to_string()],
+            builtin: false,
         }]);
 
         let config_path = service

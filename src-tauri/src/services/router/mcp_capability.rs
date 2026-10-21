@@ -391,7 +391,7 @@ impl McpCapability {
                             "toolGates": tool_gates,
                             "injected": injected,
                             "gate": "open",
-                            "via": "external",
+                            "via": if def.builtin { "builtin" } else { "external" },
                         }));
                     }
                 }
