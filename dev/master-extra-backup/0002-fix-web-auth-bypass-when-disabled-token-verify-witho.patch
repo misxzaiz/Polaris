@@ -1,0 +1,129 @@
+From 7c8d35e74b34e4f1b5b9c43abc7cdd9f227eeb06 Mon Sep 17 00:00:00 2001
+From: Assistant <user@example.com>
+Date: Sun, 26 Apr 2026 13:37:19 +0800
+Subject: [PATCH 2/5] fix(web): auth bypass when disabled, token verify without
+ auto-gen, config rollback
+
+- handle_verify_token uses get_raw_token so unconfigured servers correctly
+  return valid: false instead of auto-generating a token
+- auth_middleware short-circuits when auth_enabled is false (trusted LAN)
+- add is_auth_enabled helper for explicit auth toggle checks
+- WebTab applyConfig rolls back local state on save failure
+- integration_tests include auth_enabled field
+
+Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>
+---
+ src-tauri/src/web/api/auth.rs           |  9 ++++++++-
+ src-tauri/src/web/auth.rs               | 14 ++++++++++++++
+ src-tauri/src/web/integration_tests.rs  |  1 +
+ src/components/Settings/tabs/WebTab.tsx |  6 ++++--
+ 4 files changed, 27 insertions(+), 3 deletions(-)
+
+diff --git a/src-tauri/src/web/api/auth.rs b/src-tauri/src/web/api/auth.rs
+index 403888ed..5104e8f1 100644
+--- a/src-tauri/src/web/api/auth.rs
++++ b/src-tauri/src/web/api/auth.rs
+@@ -9,11 +9,18 @@ use super::super::auth;
+ use super::WebError;
+ 
+ /// Verify if the provided Bearer token is valid.
++///
++/// Uses `get_raw_token` (no auto-generation) so that a server with no configured
++/// token correctly returns `valid: false` instead of spuriously generating one.
+ pub async fn handle_verify_token(
+     State(state): State<Arc<AppState>>,
+     headers: axum::http::HeaderMap,
+ ) -> Result<impl IntoResponse, WebError> {
+-    let expected = auth::get_expected_token(&state)?;
++    let expected = auth::get_raw_token(&state)?;
++    if expected.is_empty() {
++        // No token configured — nothing to verify against
++        return Ok(Json(serde_json::json!({ "valid": false })));
++    }
+     let provided = auth::extract_bearer_from_headers(&headers);
+     Ok(Json(serde_json::json!({ "valid": auth::token_eq(provided, &expected) })))
+ }
+diff --git a/src-tauri/src/web/auth.rs b/src-tauri/src/web/auth.rs
+index 80a265ae..5d84ae7a 100644
+--- a/src-tauri/src/web/auth.rs
++++ b/src-tauri/src/web/auth.rs
+@@ -41,6 +41,12 @@ pub fn get_raw_token(state: &Arc<AppState>) -> Result<String, WebError> {
+     Ok(store.get().web.token.clone().unwrap_or_default())
+ }
+ 
++/// Check if token authentication is enabled in the web config.
++pub fn is_auth_enabled(state: &Arc<AppState>) -> Result<bool, WebError> {
++    let store = state.lock_config()?;
++    Ok(store.get().web.auth_enabled)
++}
++
+ /// Read the expected web token from config store, auto-generating if absent.
+ pub fn get_expected_token(state: &Arc<AppState>) -> Result<String, WebError> {
+     ensure_token(state)
+@@ -115,6 +121,9 @@ pub fn is_auth_required(path: &str, method: &Method) -> bool {
+ ///
+ /// Reads the expected token from `AppState.config_store → Config.web.token`.
+ /// The mutex lock is brief (clone a String), acceptable for LAN MVP throughput.
++///
++/// When `auth_enabled` is false, all requests are passed through without token
++/// validation — useful for trusted LAN environments.
+ pub async fn auth_middleware(
+     State(state): State<Arc<AppState>>,
+     req: Request<Body>,
+@@ -127,6 +136,11 @@ pub async fn auth_middleware(
+         return Ok(next.run(req).await);
+     }
+ 
++    // Short-circuit: if auth is disabled globally, pass through all API requests.
++    if !is_auth_enabled(&state)? {
++        return Ok(next.run(req).await);
++    }
++
+     let provided = extract_token(&req)?;
+ 
+     let expected = get_expected_token(&state)?;
+diff --git a/src-tauri/src/web/integration_tests.rs b/src-tauri/src/web/integration_tests.rs
+index 2bbdd728..0be06806 100644
+--- a/src-tauri/src/web/integration_tests.rs
++++ b/src-tauri/src/web/integration_tests.rs
+@@ -56,6 +56,7 @@ fn create_test_state() -> Arc<AppState> {
+         host: "0.0.0.0".to_string(),
+         port: 9800,
+         token: Some(TEST_TOKEN.to_string()),
++        auth_enabled: true,
+     };
+     let config_store = ConfigStore::new_test(config, std::path::PathBuf::from("/tmp/polaris_test"));
+     let (tx, _) = broadcast::channel(256);
+diff --git a/src/components/Settings/tabs/WebTab.tsx b/src/components/Settings/tabs/WebTab.tsx
+index 4366c7a9..3efd0928 100644
+--- a/src/components/Settings/tabs/WebTab.tsx
++++ b/src/components/Settings/tabs/WebTab.tsx
+@@ -85,8 +85,9 @@ export function WebTab({ loading }: WebTabProps) {
+     }
+   }, [webConfig.enabled, status?.running]);
+ 
+-  /** 即时保存并应用 Web 配置 */
++  /** 即时保存并应用 Web 配置（失败时自动回滚本地状态） */
+   const applyConfig = useCallback(async (newConfig: WebConfig) => {
++    const prevConfig = { ...webConfig };
+     setApplying(true);
+     setError(null);
+     try {
+@@ -110,12 +111,13 @@ export function WebTab({ loading }: WebTabProps) {
+           .catch(() => setLocalIps([]));
+       }
+     } catch (e: unknown) {
++      setWebConfig(prevConfig);  // 回滚到变更前的状态
+       setError(t('web.applyFailed'));
+       log.warn('Apply web config failed', { error: String(e) });
+     } finally {
+       setApplying(false);
+     }
+-  }, [t]);
++  }, [t, webConfig]);
+ 
+   /** 防抖保存（用于端口、Host、Token 变更） */
+   const debouncedApply = useCallback((newConfig: WebConfig) => {
+-- 
+2.52.0.windows.1
+
