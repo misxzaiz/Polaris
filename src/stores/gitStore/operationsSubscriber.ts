@@ -23,6 +23,26 @@ type UnlistenFn = () => void
 /** 操作流水上限（与后端 OPERATIONS_MAX 一致，prepend 时本地也裁剪） */
 const OPERATIONS_MAX = 50
 
+/**
+ * C9 序列操作活动窗口：这些写动作（rebase/merge/cherry-pick/revert 及其续行）
+ * 完成后仍有"后续 checkout 链"继续改写工作区与 .git，窗口内自动刷新放宽防抖。
+ */
+const SEQUENCE_ACTIONS: ReadonlySet<string> = new Set([
+  'rebase_branch',
+  'rebase_abort',
+  'rebase_continue',
+  'merge_branch',
+  'cherry_pick',
+  'cherry_pick_abort',
+  'cherry_pick_continue',
+  'revert',
+  'revert_abort',
+  'revert_continue',
+])
+
+/** 活动窗口时长（ms）：对齐 master-plan「rebase 中刷新预算放宽 ≤3s」 */
+export const SEQUENCE_SUPPRESS_MS = 3000
+
 const log = createLogger('GitOperationsSubscriber')
 
 /** 把条目插入分片最前（新→旧），裁剪到上限 */
@@ -65,6 +85,20 @@ export function initOperationsSubscriber(getEffectiveWs: () => string | null): (
       patch.operations = next
     }
     useGitStore.setState(patch as never)
+
+    // C9：序列动作 → 延长该 ws 的活动窗口（自动刷新放宽防抖）
+    if (SEQUENCE_ACTIONS.has(event.action)) {
+      const curUntil = useGitStore.getState().sequenceActivityUntilByWs?.[wsPath] ?? 0
+      const nextUntil = event.ts * 1000 + SEQUENCE_SUPPRESS_MS
+      if (nextUntil > curUntil) {
+        useGitStore.setState({
+          sequenceActivityUntilByWs: {
+            ...(useGitStore.getState().sequenceActivityUntilByWs ?? {}),
+            [wsPath]: nextUntil,
+          },
+        } as never)
+      }
+    }
   }
 
   listen<GitOperationEntry>('git-operation', onOperation).then((fn) => {

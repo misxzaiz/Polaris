@@ -84,6 +84,25 @@ describe('operationsSubscriber (FR-P2-4)', () => {
     expect(byWs['C:/repo']![1].action).toBe('commit_changes')
   })
 
+  it('C9 序列动作 → 置/延长活动窗口；普通动作不动窗口', () => {
+    initOperationsSubscriber(() => null)
+    const handler = captureHandler()
+
+    handler(createMockOperation(100, 'commit_changes'))
+    expect(mockState.sequenceActivityUntilByWs).toBeUndefined()
+
+    // rebase 完成事件 → 窗口 = ts*1000 + 3000
+    handler(createMockOperation(100, 'rebase_branch'))
+    const until = (mockState.sequenceActivityUntilByWs as Record<string, number>)['C:/repo']
+    expect(until).toBe(100 * 1000 + 3000)
+
+    // 后续更迟的序列事件 → 延长（不回退）
+    handler(createMockOperation(102, 'rebase_continue'))
+    const until2 = (mockState.sequenceActivityUntilByWs as Record<string, number>)['C:/repo']
+    expect(until2).toBe(102 * 1000 + 3000)
+    expect(until2).toBeGreaterThan(until)
+  })
+
   it('事件 ws 为当前生效仓库 → 同步 mirror 域 operations', () => {
     initOperationsSubscriber(() => 'C:/repo')
     const handler = captureHandler()
