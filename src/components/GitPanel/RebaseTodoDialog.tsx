@@ -9,10 +9,11 @@
  *
  * 约束（git 语义，前端 live 校验，后端兜底）：
  * - 首项必须是 pick（firstLocked）
- * - squash/fixup 的前一项必须是 pick（drop 会隔断组）
+ * - squash/fixup 的前一项必须是 pick 或 reword（drop 会隔断组）
  *
- * 未支持（如实标注增量）：reword（需 GIT_EDITOR 二层编排）、拖拽（用上下移按钮替代，
- * Virtuoso 拖拽语义放增量）。
+ * C1 reword（本轮增量）：切到 reword → 行内改写标题（newMessage）；执行时后端
+ * 预写消息文件并经 GIT_EDITOR 脚本按 todo 序回放（rebase.rs write_reword_assets）。
+ * 未支持（如实标注增量）：拖拽（用上下移按钮替代，Virtuoso 拖拽语义放增量→ C2 落地）。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -32,22 +33,23 @@ interface RebaseTodoDialogProps {
   onDone: () => void
 }
 
-const ACTION_ORDER: GitRebaseTodoAction[] = ['pick', 'drop', 'squash', 'fixup']
+const ACTION_ORDER: GitRebaseTodoAction[] = ['pick', 'reword', 'drop', 'squash', 'fixup']
 
 const ACTION_BADGE_CLASS: Record<GitRebaseTodoAction, string> = {
   pick: 'bg-primary/10 text-primary border-primary/30',
+  reword: 'bg-secondary/10 text-secondary border-secondary/30',
   drop: 'bg-danger/10 text-danger border-danger/30',
   squash: 'bg-warning/10 text-warning border-warning/30',
   fixup: 'bg-warning/10 text-warning border-warning/30',
 }
 
-/** squash/fixup 必须紧跟 pick（git 语义） */
+/** squash/fixup 必须紧跟 pick 或 reword（git 语义：两者都会产生提交承载合并） */
 function isTodoValid(todos: GitRebaseTodoItem[]): boolean {
   if (todos.length === 0) return false
   if (todos[0].action !== 'pick') return false
   for (let i = 1; i < todos.length; i++) {
     const a = todos[i].action
-    if ((a === 'squash' || a === 'fixup') && todos[i - 1].action !== 'pick') return false
+    if ((a === 'squash' || a === 'fixup') && todos[i - 1].action !== 'pick' && todos[i - 1].action !== 'reword') return false
   }
   return true
 }
@@ -108,12 +110,28 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
     }
   }, [workspacePath, baseCommitish, planInteractiveRebase])
 
-  /** 行动作切换（首项锁定 pick） */
+  /** 行动作切换（首项锁定 pick）；切到 reword 时用现 subject 预填新消息 */
   const setAction = useCallback((index: number, action: GitRebaseTodoAction) => {
     setTodos((prev) => {
       if (index === 0) return prev
       const next = [...prev]
-      next[index] = { ...next[index], action }
+      const item = next[index]
+      if (action === 'reword') {
+        next[index] = { ...item, action, newMessage: item.newMessage ?? item.subject }
+      } else {
+        // 离开 reword → 清掉残留新消息（避免串到后续编辑/快照）
+        const { newMessage: _dropped, ...rest } = item
+        next[index] = { ...rest, action }
+      }
+      return next
+    })
+  }, [])
+
+  /** C1 reword：行内编辑新标题 */
+  const setNewMessage = useCallback((index: number, message: string) => {
+    setTodos((prev) => {
+      const next = [...prev]
+      next[index] = { ...next[index], newMessage: message }
       return next
     })
   }, [])
@@ -133,7 +151,7 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
 
   const invalid = useMemo(() => !isTodoValid(todos), [todos])
   const counts = useMemo(() => {
-    const c: Record<GitRebaseTodoAction, number> = { pick: 0, drop: 0, squash: 0, fixup: 0 }
+    const c: Record<GitRebaseTodoAction, number> = { pick: 0, reword: 0, drop: 0, squash: 0, fixup: 0 }
     for (const it of todos) c[it.action]++
     return c
   }, [todos])
@@ -193,7 +211,7 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
           <>
             <div className="px-4 py-2 border-b border-border bg-background-hover/30 text-xs text-text-secondary">
               {t('rebaseTodo.summary', {
-                pick: counts.pick, drop: counts.drop, squash: counts.squash, fixup: counts.fixup,
+                pick: counts.pick, reword: counts.reword, drop: counts.drop, squash: counts.squash, fixup: counts.fixup,
               })}
             </div>
 
@@ -201,7 +219,7 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
               {todos.map((item, i) => {
                 const badRow =
                   (i === 0 && item.action !== 'pick') ||
-                  ((item.action === 'squash' || item.action === 'fixup') && i > 0 && todos[i - 1].action !== 'pick')
+                  ((item.action === 'squash' || item.action === 'fixup') && i > 0 && todos[i - 1].action !== 'pick' && todos[i - 1].action !== 'reword')
                 return (
                   <div
                     key={`${item.sha}-${i}`}
@@ -227,9 +245,19 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
                       {t(`rebaseTodo.action.${item.action}`)}
                     </span>
                     <span className="text-xs font-mono text-text-tertiary">{item.sha.slice(0, 7)}</span>
-                    <span className="text-xs text-text-primary truncate flex-1" title={item.subject}>
-                      {item.subject}
-                    </span>
+                    {item.action === 'reword' ? (
+                      <input
+                        className="text-xs text-text-primary bg-background-elevated border border-border rounded px-1.5 py-0.5 flex-1 min-w-0 focus:border-primary/60 outline-none"
+                        value={item.newMessage ?? item.subject}
+                        onChange={(e) => setNewMessage(i, e.target.value)}
+                        placeholder={t('rebaseTodo.newSubjectPlaceholder')}
+                        data-testid={`todo-reword-input-${i}`}
+                      />
+                    ) : (
+                      <span className="text-xs text-text-primary truncate flex-1" title={item.subject}>
+                        {item.subject}
+                      </span>
+                    )}
                     {badRow && <AlertTriangle size={12} className="text-danger shrink-0" />}
                     <button
                       className="p-0.5 text-text-tertiary hover:text-text-primary disabled:opacity-30"

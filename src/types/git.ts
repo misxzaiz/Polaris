@@ -477,15 +477,17 @@ export interface GitRebaseResult {
 
 /**
  * Interactive Rebase（P3 FR-P3-2）面板化 todo 的单条动作（对齐 Rust GitRebaseTodoAction）
- * reword 需编辑器编排，增量阶段未支持（handoff §2.1/§3.3）
+ * reword（C1）：后端经 GIT_EDITOR 脚本按序回放新消息（无需人工编辑器）
  */
-export type GitRebaseTodoAction = 'pick' | 'drop' | 'squash' | 'fixup'
+export type GitRebaseTodoAction = 'pick' | 'drop' | 'squash' | 'fixup' | 'reword'
 
 /** 单条 todo（camelCase 对齐 Rust GitRebaseTodoItem） */
 export interface GitRebaseTodoItem {
   sha: string
   subject: string
   action: GitRebaseTodoAction
+  /** C1 reword：新提交消息（仅 reword 携带；多行允许，后端写 msg 文件） */
+  newMessage?: string
 }
 
 /** 面板编辑输入（camelCase 对齐 Rust GitRebasePlan） */

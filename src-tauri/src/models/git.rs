@@ -587,16 +587,20 @@ pub struct GitMergeResult {
 }
 
 /// Interactive Rebase 单条 TODO 项（面板化 todo 的最小单元；serde camelCase）
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitRebaseTodoItem {
     /// 完整 sha
     pub sha: String,
     /// 提交标题（单行）
     pub subject: String,
-    /// 面板动作（todo 层动作；reword 需编辑器编排，增量阶段未支持）
+    /// 面板动作
     /// pick = 保留 / drop = 丢弃 / squash = 合入并保留合并消息 / fixup = 合入丢弃消息
+    /// reword = 保留并改写提交消息（经 GIT_EDITOR 脚本按序替换消息文件，见 rebase.rs）
     pub action: GitRebaseTodoAction,
+    /// reword 的新提交消息（单行 subject 或多行正文均可；action != Reword 时为 None）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub new_message: Option<String>,
 }
 
 /// TODO 动作枚举（面板 + git inner todo 行共用）
@@ -606,6 +610,7 @@ pub enum GitRebaseTodoAction {
     Drop,
     Squash,
     Fixup,
+    Reword,
 }
 
 impl GitRebaseTodoAction {
@@ -616,6 +621,7 @@ impl GitRebaseTodoAction {
             GitRebaseTodoAction::Drop => "drop",
             GitRebaseTodoAction::Squash => "squash",
             GitRebaseTodoAction::Fixup => "fixup",
+            GitRebaseTodoAction::Reword => "reword",
         }
     }
 }

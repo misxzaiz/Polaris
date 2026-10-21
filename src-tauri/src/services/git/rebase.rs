@@ -243,6 +243,7 @@ pub fn plan_interactive_rebase(
                 sha: oid.to_string(),
                 subject,
                 action: GitRebaseTodoAction::Pick,
+                new_message: None,
             })
         })
         .collect::<Result<Vec<_>, GitServiceError>>()?;
@@ -339,6 +340,7 @@ fn assemble_suggestions(
                             sha: item.sha.clone(),
                             subject: item.subject.clone(),
                             action,
+                            new_message: None,
                         },
                     );
                     true
@@ -357,6 +359,7 @@ fn assemble_suggestions(
                 sha: item.sha.clone(),
                 subject: item.subject.clone(),
                 action: GitRebaseTodoAction::Pick,
+                new_message: None,
             });
         }
     }
@@ -371,8 +374,9 @@ fn render_todo_line(item: &GitRebaseTodoItem) -> String {
     format!("{} {} {}", item.action.as_keyword(), item.sha, subject)
 }
 
-/// 校验面板 todo：非空；首项必须 pick；squash/fixup 的前一项必须是 pick
-/// （git 语义：squash 组必须紧跟一个 pick；drop 隔断组）——失败给 CLIError 文案
+/// 校验面板 todo：非空；首项必须 pick；squash/fixup 的前一项必须是 pick 或 reword
+/// （git 语义：squash 组必须紧跟一个会有产出的提交行——pick/reword 均产生提交；
+/// drop 会隔断组）——失败给 CLIError 文案
 fn validate_todos(todos: &[GitRebaseTodoItem]) -> Result<(), GitServiceError> {
     if todos.is_empty() {
         return Err(GitServiceError::CLIError(
@@ -386,10 +390,13 @@ fn validate_todos(todos: &[GitRebaseTodoItem]) -> Result<(), GitServiceError> {
     }
     for pair in todos.windows(2) {
         if matches!(pair[1].action, GitRebaseTodoAction::Squash | GitRebaseTodoAction::Fixup)
-            && pair[0].action != GitRebaseTodoAction::Pick
+            && !matches!(
+                pair[0].action,
+                GitRebaseTodoAction::Pick | GitRebaseTodoAction::Reword
+            )
         {
             return Err(GitServiceError::CLIError(format!(
-                "interactive rebase: '{}' must directly follow a pick (sha {})",
+                "interactive rebase: '{}' must directly follow a pick or reword (sha {})",
                 pair[1].action.as_keyword(),
                 &pair[1].sha[..7.min(pair[1].sha.len())],
             )));
@@ -397,6 +404,43 @@ fn validate_todos(todos: &[GitRebaseTodoItem]) -> Result<(), GitServiceError> {
     }
     Ok(())
 }
+
+/// reword 消息文件与顺序表写入（C1：不依赖 GIT_EDITOR 人工交互）。
+///
+/// 做法：每个 reword 项预写 `reword-K.txt`（新消息原文），并按 todo 顺序构造
+/// `reword-order.txt`（文件名清单）。GIT_EDITOR 脚本每个 reword 提交触发一次，
+/// 每次从顺序表弹出头部文件名、把对应消息文件 copy 覆盖编辑目标——git 按todo
+/// 顺序逐个调起编辑器，弹出行序即执行序，天然对齐。
+/// 返回（reword 总数）；无 reword → 0（不写文件）。
+fn write_reword_assets(temp_dir: &std::path::Path, todos: &[GitRebaseTodoItem]) -> Result<usize, GitServiceError> {
+    let mut k = 0usize;
+    let mut order = String::new();
+    for item in todos {
+        if item.action != GitRebaseTodoAction::Reword {
+            continue;
+        }
+        let msg_name = format!("reword-{}.txt", k);
+        // 消息含 \r\n → 统一 \n（git msg 文件惯例；尾部补 \n 保证文件合法）
+        let body = item
+            .new_message
+            .as_deref()
+            .unwrap_or(&item.subject)
+            .replace("\r\n", "\n");
+        std::fs::write(temp_dir.join(&msg_name), if body.ends_with('\n') { body } else { body + "\n" })?;
+        order.push_str(&msg_name);
+        order.push('\n');
+        k += 1;
+    }
+    if k > 0 {
+        std::fs::write(temp_dir.join("reword-order.txt"), &order)?;
+    }
+    Ok(k)
+}
+
+/// GIT_EDITOR 重排脚本（每个 reword 提交一次）：弹出 order 头部文件 → copy 覆盖编辑目标。
+/// batch 语义：set /p 读首行；more +1 出队。缺文件/表空 → 不覆盖（保留 git 默认消息，
+/// reword 退化为原消息——安全网失败不阻塞 rebase 主体）。
+const REWORD_EDITOR_SCRIPT_BODY: &str = "\r\n@echo off\r\nsetlocal\r\nset \"ORDER=%~dp0reword-order.txt\"\r\nif not exist \"%ORDER%\" exit /b 0\r\nset /p FIRST=<\"%ORDER%\"\r\nif not defined FIRST exit /b 0\r\nif not exist \"%~dp0%FIRST%\" exit /b 0\r\ncopy /Y \"%~dp0%FIRST%\" \"%~1\" >nul\r\nmore +1 \"%ORDER%\" > \"%ORDER%.next\"\r\nmove /Y \"%ORDER%.next\" \"%ORDER%\" >nul\r\nendlocal\r\n";
 
 /// 执行面板化 interactive rebase（写类，DESTRUCTIVE）：
 ///
@@ -445,6 +489,13 @@ pub fn start_interactive_rebase(
             "@echo off\r\ncopy /Y \"%~dp0git-rebase-todo.txt\" \"%~1\" >nul\r\n",
         )?;
 
+        // C1 reword：预写消息文件 + 顺序表；有 reword 时启用 GIT_EDITOR 消息重放脚本
+        let reword_count = write_reword_assets(&temp_dir, todos)?;
+        let editor_script_path = temp_dir.join("reword_editor.cmd");
+        if reword_count > 0 {
+            std::fs::write(&editor_script_path, REWORD_EDITOR_SCRIPT_BODY)?;
+        }
+
         let mut args = vec!["rebase".to_string(), "-i".to_string()];
         if autosquash {
             args.push("--autosquash".to_string());
@@ -465,6 +516,10 @@ pub fn start_interactive_rebase(
             .args(&args)
             .current_dir(path)
             .env("GIT_SEQUENCE_EDITOR", format!("\"{}\"", script_path.display()));
+        // C1：有 reword → GIT_EDITOR 脚本按顺序回放新消息（todo 行序 = 编辑器触发序）
+        if reword_count > 0 {
+            command.env("GIT_EDITOR", format!("\"{}\"", editor_script_path.display()));
+        }
 
         let output = command.output()?;
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -521,6 +576,16 @@ mod tests {
             sha: sha.to_string(),
             subject: subject.to_string(),
             action,
+            new_message: None,
+        }
+    }
+
+    fn item_r(action: GitRebaseTodoAction, sha: &str, subject: &str, msg: &str) -> GitRebaseTodoItem {
+        GitRebaseTodoItem {
+            sha: sha.to_string(),
+            subject: subject.to_string(),
+            action,
+            new_message: Some(msg.to_string()),
         }
     }
 
@@ -530,6 +595,67 @@ mod tests {
         assert_eq!(line, "pick abcdef1234567890 fix: bug");
         let line = render_todo_line(&item(GitRebaseTodoAction::Fixup, "abcdef1234567890", "fixup! fix: bug"));
         assert_eq!(line, "fixup abcdef1234567890 fixup! fix: bug");
+        // C1 reword：todo 行仍是 `reword <sha> <旧 subject>`；新消息走 msg 文件通道
+        let line = render_todo_line(&item_r(
+            GitRebaseTodoAction::Reword,
+            "abcdef1234567890",
+            "old subject",
+            "new subject",
+        ));
+        assert_eq!(line, "reword abcdef1234567890 old subject");
+    }
+
+    #[test]
+    fn validate_reword_and_squash_grouping() {
+        // reword 之后的 squash 合法（reword 产生提交，组前驱成立）
+        let todos = vec![
+            item(GitRebaseTodoAction::Pick, "a1", "root"),
+            item_r(GitRebaseTodoAction::Reword, "a2", "old", "new message"),
+            item(GitRebaseTodoAction::Squash, "a3", "fixup! old"),
+        ];
+        assert!(validate_todos(&todos).is_ok());
+
+        // drop 隔断后接 squash 仍非法
+        let todos = vec![
+            item(GitRebaseTodoAction::Pick, "a1", "root"),
+            item(GitRebaseTodoAction::Drop, "a2", "mid"),
+            item(GitRebaseTodoAction::Squash, "a3", "fixup! root"),
+        ];
+        assert!(validate_todos(&todos).is_err());
+    }
+
+    #[test]
+    fn reword_assets_written_in_todo_order() {
+        // C1：消息文件按 reword 出现序编号；order 表与 todo 行序一致；无 reword → 无文件
+        let dir = std::env::temp_dir().join(format!(
+            "polaris-rebase-test-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let todos = vec![
+            item(GitRebaseTodoAction::Pick, "a1", "root"),
+            item_r(GitRebaseTodoAction::Reword, "a2", "old2", "new two\nbody line"),
+            item(GitRebaseTodoAction::Fixup, "a3", "fixup! root"),
+            item_r(GitRebaseTodoAction::Reword, "a4", "old4", "new four"),
+        ];
+        assert_eq!(write_reword_assets(&dir, &todos).unwrap(), 2);
+
+        let order = std::fs::read_to_string(dir.join("reword-order.txt")).unwrap();
+        assert_eq!(order, "reword-0.txt\nreword-1.txt\n");
+        let m0 = std::fs::read_to_string(dir.join("reword-0.txt")).unwrap();
+        assert_eq!(m0, "new two\nbody line\n"); // 尾部补 \n，正文保留
+        let m1 = std::fs::read_to_string(dir.join("reword-1.txt")).unwrap();
+        assert_eq!(m1, "new four\n");
+
+        // 无 reword → 不写 order 表
+        let only_picks = vec![item(GitRebaseTodoAction::Pick, "b1", "x")];
+        assert_eq!(write_reword_assets(&dir, &only_picks).unwrap(), 0);
+        assert!(!dir.join("reword-order-2.txt").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

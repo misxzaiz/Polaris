@@ -130,6 +130,54 @@ describe('RebaseTodoDialog', () => {
     expect(screen.getByText(/rebaseTodo\.invalidOrder/)).toBeInTheDocument()
   })
 
+  it('C1 reword：切到 reword → 行内输入预填旧标题；改写后透传 newMessage', async () => {
+    planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two')]))
+    startFn.mockResolvedValue(OK_RESULT)
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('two'))
+    fireEvent.change(screen.getByTestId('todo-action-1'), { target: { value: 'reword' } })
+
+    // 行内输入出现，预填 = 旧 subject
+    const input = screen.getByTestId('todo-reword-input-1') as HTMLInputElement
+    expect(input.value).toBe('two')
+    fireEvent.change(input, { target: { value: 'two (renamed)' } })
+
+    fireEvent.click(screen.getByTestId('rebase-execute'))
+    await waitFor(() => expect(startFn).toHaveBeenCalledTimes(1))
+    expect(startFn).toHaveBeenCalledWith('D:/repo', '1111111', [
+      { sha: 'aaaa1111', subject: 'one', action: 'pick' },
+      { sha: 'bbbb2222', subject: 'two', action: 'reword', newMessage: 'two (renamed)' },
+    ], false)
+  })
+
+  it('C1 reword 之后接 squash → 校验通过（reword 可作组前驱）', async () => {
+    planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two'), pick('cccc3333', 'three')]))
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('three'))
+    fireEvent.change(screen.getByTestId('todo-action-1'), { target: { value: 'reword' } })
+    fireEvent.change(screen.getByTestId('todo-action-2'), { target: { value: 'squash' } })
+
+    expect(screen.getByTestId('rebase-execute')).not.toBeDisabled()
+  })
+
   it('合法序列执行 → 透传 todos/autosquash；成功后 onDone', async () => {
     planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two')]))
     startFn.mockResolvedValue(OK_RESULT)
