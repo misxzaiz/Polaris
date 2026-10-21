@@ -1147,8 +1147,12 @@ fn resolve_mcp_executable_path(
     // Tauri 在无 `Resources/` 子目录时 `resource_dir()` 返回 None,导致上面的
     // 资源目录分支跳过;此处以 `flat_exe_dir`(`current_exe().parent()`)兜底
     // (如 `D:\app\polaris\polaris-mcp.exe`)。
-    // 平铺布局下二进制位于根目录,即 `bundled_fallback_relative_path`(`polaris-mcp`)。
-    let flat_exe_path = mcp_exe_path(bundled_fallback_relative_path);
+    // 平铺布局下二进制位于根目录,即 `bundled_fallback_relative_path`(`polaris-mcp.exe`)。
+    // 注意:`bundled_fallback_relative_path` 由调用方以 `mcp_exe_path()` 生成,已含平台后缀
+    // (Windows 上 `polaris-mcp.exe`),此处**不能**再用 `mcp_exe_path()` 二次包裹,否则在
+    // Windows 上拼成 `polaris-mcp.exe.exe` 导致平铺安装/便携部署下所有内置 MCP 定位失败
+    // (resource_dir=None + dev/release 路径不存在时,唯一兜底即此分支)。
+    let flat_exe_path = bundled_fallback_relative_path.to_string();
     if let Some(ref exe_dir) = flat_exe_dir {
         let flat_path = exe_dir.join(Path::new(&flat_exe_path));
         if flat_path.exists() {

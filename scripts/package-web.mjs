@@ -41,17 +41,11 @@ const skipBuild = process.argv.slice(2).includes('--no-build');
 
 // 内置 MCP server 二进制。与 polaris-web 同目录打包，匹配 run_web_server 将 resource_dir
 // 设为可执行文件目录后的 fallback 解析布局（<exe_dir>/<bin>）。
-// 全部为可选 —— 缺失时对应 MCP 工具不可用，但 AI 对话正常运行。
+// f2906391 已把 11 个独立 MCP 二进制合并为单一 `polaris-mcp`（子命令调度），此处必须用
+// 合并后的二进制名；若仍用旧名（polaris-todo-mcp 等）则全部 miss，Web 便携部署会缺全部内置
+// MCP 工具（cap/ask/prd/bus/computer/browser/dispatch/agnes/ph/scheduler）。
 const mcpBins = [
-  { name: 'polaris-todo-mcp', required: false },
-  { name: 'polaris-requirements-mcp', required: false },
-  { name: 'polaris-scheduler-mcp', required: false },
-  { name: 'polaris-prd-preview-mcp', required: false },
-  { name: 'polaris-computer-mcp', required: false },
-  { name: 'polaris-ask-mcp', required: false },
-  { name: 'polaris-dispatch-mcp', required: false },
-  { name: 'polaris-browser-mcp', required: false },
-  { name: 'polaris-agnes-mcp', required: false },
+  { name: 'polaris-mcp', required: true },
 ];
 const mcpBinFile = (n) => (isWindows ? `${n}.exe` : n);
 
