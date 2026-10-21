@@ -23,7 +23,6 @@ import type { TTSConfig, WakeWordConfig, VoiceCommandConfig, VoiceCommand } from
 import { DEFAULT_TTS_CONFIG } from '@/types/speech';
 import { SessionConfigSelector } from '../session/SessionConfigSelector';
 import { ContextMeter } from './ContextMeter';
-import { StreamRateBadge } from './StreamRateBadge';
 import { getSelectedEngineHealth } from '@/utils/engineHealth';
 import { normalizeEngineId } from '@/utils/engineDisplay';
 import { getEngineSelectors } from '@/utils/engineCapabilities';
@@ -588,11 +587,6 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
             </button>
           )}
           {healthIndicator}
-
-          {/* 流式生成速率：仅在流式进行中且已有内容时展示 */}
-          {isStreaming && streamRate && streamRate.tokens > 0 && (
-            <StreamRateBadge snapshot={streamRate} streaming />
-          )}
 
           {usageStats && (
             <ContextMeter usage={usageStats} contextWindow={activeProfileContextWindow} labelMode={contextLabelMode} engineId={activeEngineId} streamRate={streamRate} streaming={isStreaming} />
