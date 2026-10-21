@@ -32,7 +32,7 @@ use crate::services::git::{ConflictFileResolution, ConflictSide, GitService, Res
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{LazyLock, Mutex, OnceLock};
 
 /// 能力 id
 pub const GIT_CAP_ID: &str = "cap.git";
@@ -41,9 +41,16 @@ pub const GIT_CAP_ID: &str = "cap.git";
 ///
 /// git2 的 index/repo 内部锁文件（index.lock etc.）不可并发写 —— 并行两次
 /// commit/stage 会以 index.lock 冲突失写。旧命令层在 UI 单入口下无此问题，
-/// 上总线后多入口（双面板 + AI + Web）必须串行写。PR-2a 后续把此栅栏升级为
-/// 带队列/取消语义的写入任务队列；本版为最简互斥（行为等价于"用户只点一次"）。
-static WRITE_GATE: Mutex<()> = Mutex::new(());
+/// 上总线后多入口（双面板 + AI + Web）必须串行写。
+///
+/// PR-2a B2（欠账清偿）：由裸 Mutex 升级为 **FIFO 票号队列闸**（polaris-gate-queue）。
+/// 差异：OS mutex 不保证排队顺序（多入口竞争时后到可先得），票号轮转先到先得；
+/// 队列深度可观测（pending()）。取消分级语义（PR-2a）：写动作已提交 git2 修改
+/// 后不可安全半途杀（index.lock/引用文件撕裂）——取消仅承诺"排队中未开始"的
+/// 任务可撤单，执行中的写必须完成或失败，读动作不承诺即时取消。此语义为
+/// 文档级约定，前端取消入口（UI 卡片）后续接线。
+static WRITE_GATE: LazyLock<polaris_gate_queue::WriteGate> =
+    LazyLock::new(polaris_gate_queue::WriteGate::new);
 
 /// PR-1 临时护栏：插件来源禁止的实施性（写/破坏性）动作集。
 /// 完整矩阵（按动作细分 allow/deny + Remote token 分级）PR-2a 落地后替换本表。
@@ -509,7 +516,7 @@ impl Capability for GitCapability {
                 "predict_conflicts": { "params": { "workspacePath": "string", "branch?": "string" }, "returns": "GitConflictPrediction", "note": "FR-P2-AI4 冲突预测（fetch 后确定性风险清单，0 token；AI 解释层已砍，仅规则建议）" },
                 "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
             },
-            "note": "PR-2b 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。结构化错误载荷新增于 PR-2a。"
+            "note": "PR-2a 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。写路径经 polaris-gate-queue FIFO 队列闸（写 max=1，票号公平）；错误通道带结构化 marker（router 拆包进 Reply.errorDetail）。取消分级：排队未开始可撤单（前端入口未接线），执行中的写不承诺半途取消。"
         })
     }
 
@@ -538,12 +545,11 @@ impl Capability for GitCapability {
             return Err(format!("Unknown cap.git action: {}", action));
         }
 
-        // 写 max=1（裁决 8）：破坏性（写类）动作全局串联，读动作不受影响。
+        // 写 max=1（裁决 8）：破坏性（写类）动作全局 FIFO 串联，读动作不受影响。
         // 生命周期覆盖整个动作调用 —— 含 GitService 内部的全部 git2 修改。
-        let _write_guard: Option<std::sync::MutexGuard<'_, ()>> = if is_destructive(a) {
-            Some(WRITE_GATE.lock().map_err(|_| {
-                "cap.git write gate poisoned（前一写动作 panic）".to_string()
-            })?)
+        // PR-2a B2：take 票号排队（FIFO），guard drop 放行下一票；取消语义见 WRITE_GATE doc注释。
+        let _write_guard: Option<polaris_gate_queue::WriteGuard<'_>> = if is_destructive(a) {
+            Some(WRITE_GATE.acquire())
         } else {
             None
         };
