@@ -16,22 +16,25 @@
 
 ---
 
-## 二、当前完成度（截至 2026-10-19）
+## 二、当前完成度（截至 2026-10-21 · 第七轮）
 
 ```
 P0 架构垫层       ██████████ 100%  cap.git 上收 + git_dispatch.rs 摘除
-P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全做
+P0 PR-2a 主体     ██████████  90%  结构化错误 + FIFO 写闸 + 4Hz 合流器（6cb04cbd/8c19f1bc）；progress 回调接线与前端 cancel 撤单入口残留
+P1 日常流水(6项)  ██████████ 100%  F1-F6 UI 绑定全做 + Undo toast 撤销联动（a394feed）
 P1 AI-2 原子提交  ██████████ 100%  本地分组预检 + AI 解释层 + commit_group
-P1 AI-3 Review门  ██████████ 100%（形态裁决：纯本地扫描 → P3 AI-3 完成，见 §四 AI-3 执行记录）
-P2 泳道图         ██████████ 100%  lane + 语义色 + WIP/stash 虚拟行 + 缓存已落地（graph.c 四数组收缩留待下轮，如实）
-P2 其余           ██████████ 100%  FR-P2-2 watcher / FR-P2-AI4 冲突预测已完成
-P3 冲突合并器     ████████░░  80%  序列操作机 + 三窗编辑器重写 + 三态解决语义（见 §2.1 本轮记录；AI-5 建议卡 / Ignore-Append 为增量）
-P3 交互式Rebase   ████████░░  80%  FR-P3-2 核心闭环 + AI-3 本地扫描完成（reword/拖拽/edit 停点 hover 未做，如实）
+P1 AI-3 Review门  ██████████ 100%（形态裁决：纯本地扫描 → P3 AI-3 完成；风险卡点击跳 diff 2e1ccab6）
+P2 泳道图         ██████████ 100%  lane + 语义色 + 缓存 + graph.c 收缩已落地（polaris-git-lanes 真实跑测 5/5，144b20ce）
+P2 其余           ██████████ 100%  FR-P2-2 watcher + C9 rebase 活动窗口自抑制（9ba1b174）；Web 60s 轮询兜底未做（边界如实）
+P3 冲突合并器     ████████░░  80%  序列操作机 + 三窗编辑器重写 + 三态解决语义（AI-5 建议卡 / Ignore-Append 为增量）
+P3 交互式Rebase   █████████░  90%  FR-P3-2 闭环 + reword（fd7e0c06）+ 拖拽（1cb69957）；edit 停点 hover 未做
 P3 其余           ░░░░░░░░░░   0%
-P4 全部           ████░░░░░░  40%  bus_dispatch 白名单 + cap.git + 图标漂移顺修完成（插件示例未做，如实）
+P4 全部           ████░░░░░░  40%  bus_dispatch 白名单 + cap.git + 图标漂移顺修完成（插件示例未做，在插件仓）
+AI-7 危护         ██████░░░░  60%  v1 losses/safetyNet + 6 调用点（9c0fa0a1）；全量（AI 说明 + 安全网建议）未做
+性能预算          ██░░░░░░░░  bench 已归档（9925a02d）：log p95≈550ms / 热开 p50≈490ms，超标实锤，根因 C6/C7，独立 PR
 ```
 
-> **2026-10-20 合并后裁决记录**（详见 master-plan §十一）：① main 已收编 feat 分支全部 12 提交；② AI-2 提交建议卡按用户裁决从变更页移除（引擎/store API/后端保留，挂载点见 `GitPanel/index.tsx` 注释）；③ 「在编辑区打开 Git 工作台」变体（openGitTab/CenterStage git 分支/面板 workbench 按钮）全量下线，git 面板回归侧栏自适应宽度形态（ResizeHandle 无限拖宽）；④ 未实施全量审计清单见 master-plan §十一（含 AI-7 全量未实施 项）。
+> **第七轮记录**（详见 master-plan §十二）：欠账 11 项中 7 项清偿（⑦⑧⑨主体⑪①③⑩），④ AI-6 LLM 归纳层 / ⑤ AI-5 agentic / ⑥ 插件示例 / edit 停点 hover / progress 回调接线如实残留；主仓 lib Rust 单测运行受 DLL 基线限制（test-compile 通过、运行受限，逐项标注）。
 
 ### 已完成（不要重做）
 

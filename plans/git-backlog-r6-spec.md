@@ -2,6 +2,8 @@
 
 > 基线：main `c0a0a594`。审计源：master-plan §十一（11 项）。
 > 纪律：每项独立单主题提交 + 门禁（tsc / 相关 vitest / cargo check + web-gate）；运行时单测受 DLL 限制以编译门代替（如实标注）。
+>
+> **执行结果（2026-10-21 收尾）**：A 组全过（A1 `9c0fa0a1` / A2 `2e1ccab6` / A3 `a394feed`）；B 组全过（B1 `6cb04cbd` / B2 `8c19f1bc`——FIFO 票号队列 mini crate 真实 4/4 / B3 `9ba1b174`）；C 组全过（C1 `fd7e0c06`——最终走了「消息文件 + GIT_EDITOR 回放脚本」方案，比 spec 预案的 exec amend 注入更稳：不经 shell 引号转义，多行消息安全 / C2 `1cb69957`）；D 组全过（D1 `9925a02d` + master-plan §十二 bench 归档——预算超标实锤，根因 C6/C7 / D2 `144b20ce`——polaris-git-lanes mini crate 真实 5/5）。E 组未做（如实）：AI-6 LLM 归纳层 / AI-5 agentic / 插件示例（插件仓另行）。数字回填与残留清单见 master-plan §十二 + handoff §二。
 
 ## 实施顺序与验收
 
