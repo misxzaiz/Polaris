@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>无限畅听电台 · 交互式 PRD 原型</title>
+<style>
+  :root{
+    --bg:#0c0e13; --panel:#131722; --panel2:#181d2b; --line:#252c3f;
+    --text:#e9e7e1; --muted:#9aa0b0; --dim:#6b7180;
+    --accent:#f0b45c; --accent2:#8f7bf5; --ok:#5ec98f; --warn:#e08a6d;
+    --serif:"Source Han Serif SC","Noto Serif SC",Georgia,serif;
+    --sans:"PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.65}
+  header.top{padding:22px 28px 14px;border-bottom:1px solid var(--line);display:flex;align-items:baseline;gap:16px;flex-wrap:wrap}
+  header.top h1{font-family:var(--serif);font-size:22px;font-weight:600;letter-spacing:.02em}
+  header.top .pos{color:var(--muted);font-size:13px}
+  header.top .pos b{color:var(--accent);font-weight:600}
+  .layout{display:flex;min-height:calc(100vh - 74px)}
+  /* ───────── 左：PRD 文档 ───────── */
+  aside.prd{width:420px;min-width:360px;border-right:1px solid var(--line);overflow-y:auto;padding:22px 24px 60px;max-height:calc(100vh - 74px)}
+  aside.prd h2{font-family:var(--serif);font-size:16px;margin:26px 0 10px;color:var(--accent);display:flex;align-items:center;gap:8px}
+  aside.prd h2:first-child{margin-top:0}
+  aside.prd h2 .n{display:inline-flex;width:20px;height:20px;border-radius:6px;background:var(--panel2);border:1px solid var(--line);align-items:center;justify-content:center;font-size:11px;color:var(--muted);font-family:var(--sans)}
+  aside.prd p, aside.prd li{color:var(--muted);font-size:13px}
+  aside.prd b{color:var(--text);font-weight:600}
+  aside.prd ul{padding-left:18px}
+  aside.prd li{margin:4px 0}
+  .kpi{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  .kpi span{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:12px;color:var(--text)}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+  th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}
+  th{color:var(--dim);font-weight:500;background:var(--panel)}
+  td{color:var(--muted)}
+  td b{color:var(--text)}
+  .phase{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;background:var(--panel)}
+  .phase h3{font-size:13px;margin-bottom:6px}
+  .phase .tag{font-size:10px;padding:2px 7px;border-radius:999px;margin-right:6px;vertical-align:1px}
+  .t-p0{background:rgba(240,180,92,.15);color:var(--accent)}
+  .t-p1{background:rgba(143,123,245,.15);color:var(--accent2)}
+  .t-p2{background:rgba(94,201,143,.15);color:var(--ok)}
+  .t-p3{background:rgba(154,160,176,.15);color:var(--muted)}
+  .note{background:rgba(224,138,109,.08);border:1px solid rgba(224,138,109,.3);border-radius:8px;padding:8px 10px;font-size:12px;color:#d8a591;margin:8px 0}
+  .loop{background:var(--panel2);border-radius:10px;padding:12px 14px;font-size:13px;color:var(--muted);margin:10px 0}
+  .loop i{color:var(--accent);font-style:normal}
+  /* ───────── 右：原型舞台 ───────── */
+  section.stage{flex:1;display:flex;flex-direction:column;align-items:center;padding:28px 20px 60px;overflow-y:auto;max-height:calc(100vh - 74px)}
+  .stage .hint{color:var(--dim);font-size:12px;margin-bottom:16px;text-align:center}
+  .phone{width:390px;height:812px;background:#08090d;border-radius:44px;padding:12px;box-shadow:0 0 0 2px #1c2233,0 30px 80px rgba(0,0,0,.6);position:relative}
+  .screen-wrap{position:relative;width:100%;height:100%;border-radius:34px;overflow:hidden;background:linear-gradient(180deg,#10131c 0%,#0c0e15 60%,#0a0c12 100%)}
+  .statusbar{display:flex;justify-content:space-between;padding:12px 22px 4px;font-size:11px;color:var(--dim)}
+  .screen{position:absolute;inset:0;padding:52px 18px 74px;display:none;flex-direction:column;overflow:hidden}
+  .screen.on{display:flex}
+  /* 底部导航 */
+  .navbar{position:absolute;bottom:0;left:0;right:0;height:64px;display:flex;border-top:1px solid var(--line);background:rgba(10,12,18,.92);backdrop-filter:blur(10px)}
+  .navbar button{flex:1;background:none;border:none;color:var(--dim);font-size:10.5px;display:flex;flex-direction:column;gap:3px;align-items:center;padding-top:9px;cursor:pointer;font-family:inherit}
+  .navbar button .ic{font-size:17px}
+  .navbar button.on{color:var(--accent)}
+  /* 屏 A 开台 */
+  .hero{font-family:var(--serif);font-size:26px;line-height:1.4;margin:18px 4px 4px}
+  .hero em{font-style:normal;color:var(--accent)}
+  .sub{color:var(--dim);font-size:12.5px;margin:0 4px 16px}
+  .askbox{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:14px 16px;display:flex;align-items:center;gap:10px;cursor:text}
+  .askbox input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:15px;font-family:inherit}
+  .askbox input::placeholder{color:var(--dim)}
+  .go{width:38px;height:38px;border-radius:12px;border:none;background:var(--accent);color:#1a1206;font-size:17px;cursor:pointer}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin:16px 4px}
+  .chips button{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:999px;padding:7px 13px;font-size:12.5px;cursor:pointer;font-family:inherit}
+  .chips button:hover{border-color:var(--accent);color:var(--accent)}
+  .sec-t{display:flex;justify-content:space-between;align-items:baseline;margin:18px 4px 8px}
+  .sec-t h4{font-size:13px;color:var(--text);font-weight:600}
+  .sec-t span{font-size:11px;color:var(--dim)}
+  .resume-card{background:linear-gradient(120deg,#1c2033,#161a28);border:1px solid var(--line);border-radius:14px;padding:13px 14px;display:flex;gap:12px;align-items:center;cursor:pointer}
+  .resume-card .cover{width:46px;height:46px;border-radius:10px;background:linear-gradient(135deg,#3a2f4d,#222840);display:flex;align-items:center;justify-content:center;font-size:20px}
+  .resume-card .meta{flex:1;min-width:0}
+  .resume-card .meta .t{font-size:13.5px;font-weight:600}
+  .resume-card .meta .d{font-size:11.5px;color:var(--dim);margin-top:2px}
+  .resume-card .pbar{height:3px;border-radius:2px;background:#2a3044;margin-top:8px;overflow:hidden}
+  .resume-card .pbar i{display:block;height:100%;width:42%;background:var(--accent)}
+  /* 屏 B 畅听 */
+  .live-head{display:flex;align-items:center;gap:10px;margin:8px 2px 2px}
+  .live-badge{display:flex;align-items:center;gap:5px;background:rgba(224,106,106,.14);color:#e88;font-size:10.5px;padding:3px 9px;border-radius:999px;border:1px solid rgba(224,106,106,.3)}
+  .live-badge i{width:6px;height:6px;border-radius:50%;background:#e66;animation:blink 1.6s infinite}
+  @keyframes blink{50%{opacity:.25}}
+  .live-title{font-family:var(--serif);font-size:17px;font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .change-swap{font-size:10.5px;color:var(--dim)}
+  .subtitle-area{flex:1;overflow-y:auto;margin:14px 2px;padding:6px 8px;-webkit-mask-image:linear-gradient(180deg,transparent 0,#000 8%,#000 88%,transparent 100%)}
+  .subtitle-area p{font-size:15.5px;line-height:2;color:var(--dim);margin:10px 0;transition:color .5s;font-family:var(--serif)}
+  .subtitle-area p.said{color:#7d8398}
+  .subtitle-area p.now{color:var(--text);font-size:16.5px}
+  .subtitle-area p.now mark{background:none;color:var(--accent)}
+  .wave{display:flex;align-items:flex-end;gap:3px;height:26px;justify-content:center;margin:4px 0 2px}
+  .wave i{width:3.5px;border-radius:2px;background:var(--accent);opacity:.85;animation:wv 1s ease-in-out infinite}
+  .wave i:nth-child(2){animation-delay:.12s}.wave i:nth-child(3){animation-delay:.24s}
+  .wave i:nth-child(4){animation-delay:.36s}.wave i:nth-child(5){animation-delay:.48s}
+  .wave i:nth-child(6){animation-delay:.6s}.wave i:nth-child(7){animation-delay:.72s}
+  @keyframes wv{0%,100%{height:6px}50%{height:24px}}
+  .paused .wave i{animation-play-state:paused;height:6px}
+  @media (prefers-reduced-motion:reduce){.wave i{animation:none;height:12px}}
+  .stats-line{text-align:center;font-size:11px;color:var(--dim);margin-bottom:8px}
+  .stats-line b{color:var(--muted);font-weight:500}
+  .sleep-badge{display:inline-flex;align-items:center;gap:4px;background:rgba(143,123,245,.15);color:var(--accent2);border-radius:999px;padding:2px 9px;font-size:10.5px;margin-left:6px}
+  .controls{display:flex;align-items:center;justify-content:space-between;padding:10px 14px 4px}
+  .controls .cbtn{background:var(--panel2);border:1px solid var(--line);color:var(--muted);border-radius:14px;min-width:52px;height:44px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-direction:column;font-family:inherit;gap:0}
+  .controls .cbtn small{font-size:8.5px;color:var(--dim)}
+  .controls .cbtn.main{width:62px;height:62px;border-radius:50%;background:var(--accent);border:none;color:#1a1206;font-size:22px}
+  .controls .cbtn.hot{color:var(--accent);border-color:rgba(240,180,92,.4)}
+  .swipe-hint{text-align:center;font-size:11px;color:var(--dim);padding:2px 0 8px}
+  .swipe-hint b{color:var(--accent2);font-weight:500}
+  /* 弹层：睡眠定时 / 插话 */
+  .sheet-mask{position:absolute;inset:0;background:rgba(4,5,8,.6);backdrop-filter:blur(3px);display:none;align-items:flex-end;z-index:20}
+  .sheet-mask.on{display:flex}
+  .sheet{background:#161a26;border:1px solid var(--line);border-radius:22px 22px 0 0;width:100%;padding:20px 20px 30px;transform:translateY(30px);animation:up .25s ease forwards}
+  @keyframes up{to{transform:translateY(0)}}
+  .sheet h4{font-family:var(--serif);font-size:16px;margin-bottom:4px}
+  .sheet .d{font-size:12px;color:var(--dim);margin-bottom:14px}
+  .sheet .opts{display:flex;flex-direction:column;gap:8px}
+  .sheet .opts button{text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 14px;color:var(--text);font-size:13.5px;cursor:pointer;font-family:inherit}
+  .sheet .opts button small{display:block;color:var(--dim);font-size:11px;margin-top:2px}
+  .sheet .opts button:hover{border-color:var(--accent)}
+  .chat-bubble{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:10px 13px;font-size:13px;color:var(--text);margin:8px 0}
+  .chat-bubble.me{background:rgba(143,123,245,.12);border-color:rgba(143,123,245,.35);margin-left:36px}
+  .chat-bubble.ai{margin-right:36px}
+  .chat-bubble .role{font-size:10.5px;color:var(--dim);margin-bottom:3px}
+  .typing{color:var(--dim);font-size:12px;padding:6px 2px}
+  .typing i{animation:blink 1s infinite}
+  .typing i:nth-child(2){animation-delay:.2s}.typing i:nth-child(3){animation-delay:.4s}
+  /* 屏 C 内容库 */
+  .job-card{background:rgba(94,201,143,.07);border:1px solid rgba(94,201,143,.25);border-radius:12px;padding:10px 13px;margin:0 4px 12px;font-size:12px;color:var(--muted)}
+  .job-card b{color:var(--ok);font-weight:500}
+  .ep-group{margin:14px 4px 6px;font-size:11px;color:var(--dim)}
+  .ep-card{display:flex;gap:11px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:11px 12px;margin:0 4px 9px;cursor:pointer}
+  .ep-card .cover{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0}
+  .ep-card .meta{flex:1;min-width:0}
+  .ep-card .t{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ep-card .d{font-size:11px;color:var(--dim);margin-top:2px}
+  .ep-card .act{display:flex;gap:8px;color:var(--dim);font-size:13px}
+  .ep-card .fav{color:var(--accent)}
+  .ep-card .dl{color:var(--ok)}
+  /* 屏 D 音色库 */
+  .vtabs{display:flex;gap:6px;margin:10px 4px 14px}
+  .vtabs button{flex:1;background:var(--panel);border:1px solid var(--line);color:var(--dim);border-radius:10px;padding:7px 0;font-size:12px;cursor:pointer;font-family:inherit}
+  .vtabs button.on{color:var(--accent);border-color:rgba(240,180,92,.4)}
+  .voice-card{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px;margin:0 4px 9px}
+  .voice-card .avatar{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+  .voice-card .meta{flex:1}
+  .voice-card .t{font-size:13.5px;font-weight:600}
+  .voice-card .d{font-size:11px;color:var(--dim);margin-top:1px}
+  .voice-card .try{width:36px;height:36px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);color:var(--accent);cursor:pointer;font-size:13px}
+  .design-cta{margin:14px 4px;background:linear-gradient(120deg,rgba(143,123,245,.16),rgba(240,180,92,.10));border:1px solid rgba(143,123,245,.35);border-radius:14px;padding:14px 16px;cursor:pointer}
+  .design-cta .t{font-size:13.5px;font-weight:600;color:var(--accent2)}
+  .design-cta .d{font-size:11.5px;color:var(--muted);margin-top:3px}
+  /* toast */
+  .toast{position:absolute;left:50%;bottom:84px;transform:translateX(-50%);background:#1e2333;border:1px solid var(--line);color:var(--text);font-size:12px;border-radius:999px;padding:8px 16px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:30;white-space:nowrap}
+  .toast.on{opacity:1}
+  .capmap{font-size:10.5px;color:#5b6373;font-family:ui-monospace,monospace}
+  @media (max-width:1000px){.layout{flex-direction:column}aside.prd{width:100%;max-height:none;border-right:none;border-bottom:1px solid var(--line)}section.stage{max-height:none}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>无限畅听电台</h1>
+  <span class="pos">定位：<b>想到什么听什么，永远有下一集</b> —— 交互式 PRD 原型 · 左侧为需求文档，右侧可点击操作（点话题开台 → 字幕自动跟读 → 插话/换台/定时 → 内容库续播）</span>
+</header>
+
+<div class="layout">
+<!-- ══════════════ 左侧 PRD ══════════════ -->
+<aside class="prd">
+  <h2><span class="n">1</span>定位与北极星</h2>
+  <p><b>一句话：</b>一个由 AI 无限生成的个人电台——用户用一句话开台，AI 连续创作并朗读，随时换台、插话、囤积、回听。<b>不是「语音播报工具」，而是「听的内容本身」。</b></p>
+  <p style="margin-top:8px">对标差异：番茄畅听/懒人听书 = 有版权内容库的「畅听」；NotebookLM = 围绕你上传文档的播客（有门槛）；Spotify AI DJ = 歌单主持。Polaris = <b>零内容门槛的即时无限电台 + 背后是真引擎可插话</b>（录音式产品做不到）。</p>
+  <div class="kpi"><span>🎯 北极星：人均单次收听时长</span><span>7 日回访开台率</span><span>插话使用率</span></div>
+
+  <h2><span class="n">2</span>用户与场景</h2>
+  <ul>
+    <li><b>睡前</b>：「讲个明朝那些事，无限续」→ 定时 30 分钟 + 播完本段停 + 淡出。</li>
+    <li><b>通勤</b>：新闻早报连播 + 实时字幕（地铁嘈杂）+ 锁屏控制。</li>
+    <li><b>学习陪伴</b>：经济学基础连播 + 插话提问「刚才那个机会成本再讲讲」。</li>
+    <li><b>家务摸鱼</b>：后台连播 + 双主播闲聊感（P3）。</li>
+  </ul>
+
+  <h2><span class="n">3</span>核心体验闭环</h2>
+  <div class="loop"><i>开台</i>（一句话/点话题，3 秒出声）→ <i>畅听</i>（无限连播·字幕跟读）→ <i>随意</i>（上滑换台·插话·定时）→ <i>沉淀</i>（好听进内容库·喜欢音色进音色库）→ <i>回来</i>（续播·订阅更新）</div>
+
+  <h2><span class="n">4</span>功能地图（原型已标注对应屏）</h2>
+  <div class="phase"><h3><span class="tag t-p0">P0 快赢</span>纯前端为主，数据已在</h3>
+    <ul>
+      <li>实时字幕跟读（屏 B 主视觉）——数据源已有 nowPlayingText</li>
+      <li>倍速 / 睡眠定时（含「播完本段」+ 淡出，屏 B 控制条）</li>
+      <li>锁屏 MediaSession 控制</li>
+      <li>合成缓存 + 音频落 data root + GC（cap.voice 前置债）</li>
+    </ul>
+  </div>
+  <div class="phase"><h3><span class="tag t-p1">P1 资产层</span>cap.voice + 两库</h3>
+    <ul>
+      <li>cap.voice 能力（synthesize / voices / library / jobs）</li>
+      <li>内容库：历史单集·续播·收藏·下载（屏 C）</li>
+      <li>音色库：预置 + 设计 + 克隆持久化（屏 D）</li>
+      <li>引擎解绑（mimo-tts 插件 ≠ 唯一，edge-tts 兜底）</li>
+    </ul>
+  </div>
+  <div class="phase"><h3><span class="tag t-p2">P2 无限体验</span>质变点</h3>
+    <ul>
+      <li>上滑换台：直播中岔到新话题不断音频感（屏 B 顶部）</li>
+      <li>插话互动：随时提问，AI 回答后继续播（屏 B 弹层）</li>
+      <li>预生成囤积：睡前一键囤 N 集离线听（屏 C 绿色任务卡）</li>
+      <li>节目/单集模型 + AI 管家工具（AI 整理/删除/合集）</li>
+    </ul>
+  </div>
+  <div class="phase"><h3><span class="tag t-p3">P3 生态</span></h3>
+    <ul><li>双主播对话（NotebookLM 式）· 订阅式更新 · 车机蓝牙深适配 · 多端同步</li></ul>
+  </div>
+
+  <h2><span class="n">5</span>用户渴望的需求来源（同类产品映射）</h2>
+  <table>
+    <tr><th>用户渴望</th><th>来自哪里</th><th>我们的落点</th></tr>
+    <tr><td><b>实时字幕</b>（嘈杂环境/无障碍/记好句）</td><td>Apple Podcasts 官方转文字、讯飞有声逐字高亮</td><td>屏 B 字幕跟读，P0</td></tr>
+    <tr><td><b>断点续播/回放</b></td><td>所有播客 App 标配</td><td>屏 C 续播卡，P1（依赖库）</td></tr>
+    <tr><td><b>倍速+跳静音+睡眠定时</b></td><td>播客/听书 App 标配，差评高频词</td><td>屏 B 控制条，P0</td></tr>
+    <tr><td><b>插话/可交互</b></td><td>NotebookLM 互动模式（最高呼声）</td><td>屏 B 插话弹层，P2，<b>我们真引擎独有优势</b></td></tr>
+    <tr><td><b>无限刷的随机感</b></td><td>抖音式无限下滑心智迁移到「听」</td><td>上滑换台，P2</td></tr>
+    <tr><td><b>囤积离线听</b></td><td>番茄畅听下载、播客自动下载</td><td>预生成 job，P2</td></tr>
+    <tr><td><b>音色即资产</b></td><td>ElevenLabs Voice Library</td><td>屏 D 音色库，P1</td></tr>
+  </table>
+  <div class="note">⚠️ 本轮联网检索不可用（websearch 三次被取消），上表基于同类产品成熟功能面与社区反馈的产品知识整理；实施前建议补一轮最新动态检索（尤其 NotebookLM 互动模式细节）。</div>
+
+  <h2><span class="n">6</span>技术依赖与风险（如实）</h2>
+  <ul>
+    <li>cap.voice：MiMo design/clone 为<b>无状态 API</b>（每次重传描述/样本），音色库本质 = 持久化参数并命名。</li>
+    <li>插件 stdio 单实例串行合成是预生成吞吐瓶颈；base64 每句 ~200KB。</li>
+    <li>9861 端口硬编码 → 收敛到核心侧托管（P1 一并解）。</li>
+    <li>MiMo 免费额度未知 → 缓存（hash(text+voice+style)）是成本护城河。</li>
+  </ul>
+
+  <h2><span class="n">7</span>非目标（本期不做）</h2>
+  <ul><li>不做版权内容库、不做社交/评论、不做主播形象虚拟人、不做 UGC 分享社区。</li></ul>
+</aside>
+
+<!-- ══════════════ 右侧原型 ══════════════ -->
+<section class="stage">
+  <div class="hint">🖐 可交互：点话题开台 → 字幕自动跟读 · 点 ✋ 插话 · 点 ⏱ 定时 · 点 ⇧ 换台 · 底部导航切换 4 屏 · 内容库卡片可续播</div>
+  <div class="phone"><div class="screen-wrap" id="wrap">
+    <div class="statusbar"><span>23:47</span><span>⟨ ·· ⟩ 🔋92%</span></div>
+
+    <!-- 屏 A：开台 -->
+    <div class="screen on" id="scr-home">
+      <div class="hero">今晚想听什么？<br><em>想多久听多久。</em></div>
+      <div class="sub">一句话开台 · AI 无限连播 · 随时插话换台</div>
+      <div class="askbox">
+        <input id="topicInput" placeholder="如：给我讲讲王阳明的一生…" aria-label="播报话题">
+        <button class="go" onclick="startFromInput()" aria-label="开台">→</button>
+      </div>
+      <div class="chips">
+        <button onclick="startTopic('睡前故事·明朝那些事','🌙')">🌙 睡前故事</button>
+        <button onclick="startTopic('经济学基础陪听','📈')">📈 经济学基础</button>
+        <button onclick="startTopic('王阳明传','🧭')">🧭 王阳明传</button>
+        <button onclick="startTopic('量子力学闲聊','⚛️')">⚛️ 量子力学</button>
+        <button onclick="startTopic('今日科技新闻早报','📰')">📰 科技早报</button>
+      </div>
+      <div class="sec-t"><h4>继续收听</h4><span>昨天 23:12</span></div>
+      <div class="resume-card" onclick="resumeLast()">
+        <div class="cover">🧭</div>
+        <div class="meta">
+          <div class="t">王阳明传 · 第 3 集</div>
+          <div class="d">听到 42% · 冰糖 · 剩余约 9 分钟</div>
+          <div class="pbar"><i></i></div>
+        </div>
+        <span style="color:var(--accent);font-size:18px">▶</span>
+      </div>
+      <div class="sec-t"><h4>你的电台</h4><span>按口味自动生成</span></div>
+      <div class="ep-card" onclick="startTopic('涨知识·冷历史串烧','⚓')">
+        <div class="cover" style="background:linear-gradient(135deg,#2c3350,#1b2033)">⚓</div>
+        <div class="meta"><div class="t">冷历史串烧 · 每晚连播</div><div class="d">已连播 12 集 · 昨晚更新</div></div>
+        <span style="color:var(--accent2);font-size:15px">∞</span>
+      </div>
+    </div>
+
+    <!-- 屏 B：畅听（核心） -->
+    <div class="screen" id="scr-live">
+      <div class="live-head">
+        <span class="live-badge"><i></i>直播生成中</span>
+        <span class="live-title" id="liveTitle">王阳明传</span>
+        <span class="change-swap" onclick="swapTopic()" title="上滑换台">⇧ 换台</span>
+      </div>
+      <div class="subtitle-area" id="subs"></div>
+      <div class="wave" id="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="stats-line">第 <b id="epNo">1</b> 集 · 已听 <b id="mins">0:00</b> · <b id="speedLabel">1.0x</b><span class="sleep-badge" id="sleepBadge" style="display:none">⏱ <span id="sleepText"></span></span></div>
+      <div class="controls">
+        <button class="cbtn" onclick="prevEp()" aria-label="上一集">⏮<small>上一集</small></button>
+        <button class="cbtn hot" onclick="openSheet('sheet-interject')" aria-label="插话提问">✋<small>插话</small></button>
+        <button class="cbtn main" id="playBtn" onclick="togglePlay()" aria-label="播放暂停">⏸</button>
+        <button class="cbtn" onclick="cycleSpeed()" aria-label="倍速"><span id="speedBtn">1.0x</span><small>倍速</small></button>
+        <button class="cbtn" onclick="openSheet('sheet-sleep')" aria-label="睡眠定时">⏱<small>定时</small></button>
+      </div>
+      <div class="swipe-hint">上滑 <b>换个话题</b>，不打断声音 · 下一集自动接续</div>
+    </div>
+
+    <!-- 屏 C：内容库 -->
+    <div class="screen" id="scr-lib">
+      <div class="hero" style="font-size:20px;margin-top:10px">内容库</div>
+      <div class="job-card" id="jobCard"><b>⏳ 预生成中</b> ·「王阳明传」囤 5 集离线听 → 已完成 2/5，睡前一键开听</div>
+      <div class="ep-group">今天</div>
+      <div class="ep-card" onclick="resumeEp('王阳明传 · 第 3 集')">
+        <div class="cover" style="background:#232a40">🧭</div>
+        <div class="meta"><div class="t">王阳明传 · 第 3 集</div><div class="d">23:12 · 11 分钟 · 冰糖 · 听到 42%</div></div>
+        <div class="act"><span class="fav">♥</span><span class="dl">⬇</span></div>
+      </div>
+      <div class="ep-card" onclick="resumeEp('经济学基础 · 机会成本')">
+        <div class="cover" style="background:#20303a">📈</div>
+        <div class="meta"><div class="t">经济学基础 · 机会成本</div><div class="d">14:30 · 8 分钟 · 苏打 · 已听完</div></div>
+        <div class="act"><span class="fav" style="color:var(--dim)">♡</span><span class="dl">⬇</span></div>
+      </div>
+      <div class="ep-group">更早</div>
+      <div class="ep-card" onclick="resumeEp('明朝那些事 · 靖难之役')">
+        <div class="cover" style="background:#33272c">🌙</div>
+        <div class="meta"><div class="t">明朝那些事 · 靖难之役</div><div class="d">10-19 · 15 分钟 · 茉莉 · 已收藏</div></div>
+        <div class="act"><span class="fav">♥</span><span class="dl" style="color:var(--dim)">⬇</span></div>
+      </div>
+      <div class="ep-card" onclick="resumeEp('科技早报 · 10 月 20 日')">
+        <div class="cover" style="background:#1f2c2a">📰</div>
+        <div class="meta"><div class="t">科技早报 · 10 月 20 日</div><div class="d">10-20 · 6 分钟 · Mia · 已听完</div></div>
+        <div class="act"><span style="color:var(--dim)">♡</span><span style="color:var(--dim)">⬇</span></div>
+      </div>
+    </div>
+
+    <!-- 屏 D：音色库 -->
+    <div class="screen" id="scr-voice">
+      <div class="hero" style="font-size:20px;margin-top:10px">音色库</div>
+      <div class="vtabs">
+        <button class="on" onclick="vtab(this,'v-preset')">预置</button>
+        <button onclick="vtab(this,'v-design')">我设计的</button>
+        <button onclick="vtab(this,'v-clone')">克隆</button>
+      </div>
+      <div id="v-preset">
+        <div class="voice-card"><div class="avatar" style="background:#3a2f4d">🍬</div><div class="meta"><div class="t">冰糖 · 温婉女声</div><div class="d">中文 · 默认</div></div><button class="try" onclick="toast('试听原型：播放 3 秒样本')">▶</button></div>
+        <div class="voice-card"><div class="avatar" style="background:#2c3a4d">🥤</div><div class="meta"><div class="t">苏打 · 沉稳男声</div><div class="d">中文</div></div><button class="try" onclick="toast('试听原型：播放 3 秒样本')">▶</button></div>
+        <div class="voice-card"><div class="avatar" style="background:#2d4d3a">🌸</div><div class="meta"><div class="t">Mia · 清亮女声</div><div class="d">英文</div></div><button class="try" onclick="toast('试听原型：播放 3 秒样本')">▶</button></div>
+      </div>
+      <div id="v-design" style="display:none">
+        <div class="voice-card"><div class="avatar" style="background:#4d3a2c">📻</div><div class="meta"><div class="t">说书人</div><div class="d">「五十多岁中年男性，嗓音沙哑沧桑，语速缓慢沉稳」 · 用过 6 次</div></div><button class="try" onclick="toast('试听原型：播放 3 秒样本')">▶</button></div>
+        <div class="design-cta" onclick="toast('P2：一句话设计音色向导 → 试听 → 命名入库')">
+          <div class="t">✨ 用一句话设计新音色</div>
+          <div class="d">如「像深夜电台主播，低沉磁性，语速慢半拍」——设计 → 试听 → 命名入库，永久复用</div>
+        </div>
+      </div>
+      <div id="v-clone" style="display:none">
+        <div class="voice-card"><div class="avatar" style="background:#3d2c4d">🎙️</div><div class="meta"><div class="t">我的声音</div><div class="d">样本：meeting-clip.wav · 12 秒 · 10-18 创建</div></div><button class="try" onclick="toast('试听原型：播放 3 秒样本')">▶</button></div>
+        <div class="design-cta" onclick="toast('P2：上传/录制 ≥10 秒样本 → 克隆入库')">
+          <div class="t">🎙️ 克隆一个声音</div>
+          <div class="d">上传或录制一段 ≥10 秒音频，克隆专属音色（仅本地使用）</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 弹层：睡眠定时 -->
+    <div class="sheet-mask" id="sheet-sleep" onclick="if(event.target===this)closeSheets()">
+      <div class="sheet">
+        <h4>睡眠定时</h4><div class="d">到点自动优雅停止：播完当前句后淡出，不截断在半句</div>
+        <div class="opts">
+          <button onclick="setSleep('15 分钟')">15 分钟<small>23:47 → 00:02</small></button>
+          <button onclick="setSleep('30 分钟')">30 分钟<small>23:47 → 00:17 · 睡前最常用</small></button>
+          <button onclick="setSleep('播完本集')">播完本集<small>讲完这个段落就停，不生硬截断</small></button>
+          <button onclick="setSleep(null)">关闭定时</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 弹层：插话 -->
+    <div class="sheet-mask" id="sheet-interject" onclick="if(event.target===this)closeSheets()">
+      <div class="sheet">
+        <h4>✋ 插话</h4><div class="d">播报自动暂停 · AI 回答完自动继续，也可以选「就着答案聊下去」</div>
+        <div class="chat-bubble ai"><div class="role">正在播</div>…先生此后不再纠结功名，转头在龙场把道理讲给山民听——</div>
+        <div class="chat-bubble me"><div class="role">你</div>等等，龙场在哪？为什么他被贬到那？</div>
+        <div class="typing" id="typing">AI 正在结合上下文回答 <i>·</i><i>·</i><i>·</i></div>
+        <div class="chat-bubble ai" id="interAnswer" style="display:none"><div class="role">AI</div>龙场在今贵州修文，是明代驿栈。王阳明因得罪宦官刘瑾被贬至此，瘴气弥漫、语言不通——但也正是这段「至暗时刻」，才有了后来的「龙场悟道」。想听我把这段展开讲一集吗？</div>
+        <div class="opts" id="interOpts" style="display:none;margin-top:10px">
+          <button onclick="closeSheets();toast('已展开为下一集，正在续播')">展开成一集讲讲</button>
+          <button onclick="closeSheets();toast('继续原节奏播报')">不用，继续播</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <!-- 底部导航 -->
+    <div class="navbar">
+      <button class="on" data-nav="scr-home" onclick="goScreen(this)"><span class="ic">📻</span>开台</button>
+      <button data-nav="scr-live" onclick="goScreen(this)"><span class="ic">🎧</span>畅听</button>
+      <button data-nav="scr-lib" onclick="goScreen(this)"><span class="ic">📚</span>内容库</button>
+      <button data-nav="scr-voice" onclick="goScreen(this)"><span class="ic">🎙️</span>音色库</button>
+    </div>
+  </div></div>
+</section>
+</div>
+
+<script>
+/* ── 简易演示状态机：仅用于原型交互模拟，非产品代码 ── */
+const SCRIPTS = {
+  '王阳明传': ['诸位，今晚我们说王阳明。','此前说到，先生因上疏营救言官，触怒了权倾朝野的刘瑾。','廷杖四十，贬谪千里——目的地，是贵州龙场。','那是个连驿站的墙都塌了一半的地方，瘴气弥漫，语言不通。','随行的仆人接连病倒，先生反倒烧水煮粥，亲自照料。','有人问他：你就不苦吗？他答：我来这里，正是修「不动心」。','一夜，他从石棺中坐起，长啸一声——原来圣人之道，吾性自足。','这就是后世所说的「龙场悟道」。','而这，恰恰只是他人生下半场的开场。','下一集，我们说他是如何在一个蛮荒之地，练出一支让朝廷侧目的军队。'],
+  '睡前故事·明朝那些事': ['夜深了，故事从建文帝削藩的那个雨夜说起。','朱棣把铠甲藏进后院，装疯，夏天裹着棉被烤火。','可他府邸的地下，正昼夜不停地打造兵器。','张玉、朱能，这些名字即将改变整个帝国的走向。','而南京城里的建文帝，还在和他的书生们讨论「仁义」。'],
+  '经济学基础陪听': ['今天从一个小问题开始：为什么演唱会黄牛票总比原价贵？','因为价格被压低时，需求大于供给，差额总要有人排队。','经济学家管这叫「价格信号被扭曲的代价」。','机会成本，是你为做一件事而放弃的最优替代。','理解了它，你就理解了绝大多数「免费」背后真正的价签。'],
+  '量子力学闲聊': ['先说结论：量子力学不是玄学，它是人类历史上最精确的理论。','但它的确反直觉——粒子可以同时处于多种状态。','薛定谔的猫，其实是在讽刺这种把微观规则套到宏观的滥用。','今晚我们慢慢聊：从黑体辐射到双缝实验。'],
+  '今日科技新闻早报': ['早上好，今天是十月二十一日，用六分钟听完科技圈。','第一条，来自航天：新一代可回收火箭完成第三次静态点火。','第二条，AI 端侧模型再刷新纪录，手机本地跑三百亿参数成为现实。','第三条，我们把它讲成一个「为什么」：端侧为什么突然可行了？']
+};
+const SWAPS = { '王阳明传':'王阳明 · 龙场悟道特辑', '经济学基础陪听':'经济学 · 市场的逻辑', '量子力学闲聊':'量子纠缠·爱因斯坦的噩梦' };
+let state = { topic:null, idx:0, playing:false, speed:1, ep:1, sec:0, timer:null, clock:null, saidAll:false };
+const $ = id => document.getElementById(id);
+
+function goScreen(btn){
+  document.querySelectorAll('.navbar button').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  $(btn.dataset.nav).classList.add('on');
+}
+function navTo(id){
+  document.querySelectorAll('.navbar button').forEach(b=>{ if(b.dataset.nav===id) b.classList.add('on'); else b.classList.remove('on'); });
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  $(id).classList.add('on');
+}
+function startFromInput(){
+  const v = $('topicInput').value.trim();
+  if(!v){ toast('先说个话题，比如「讲讲王阳明」'); return; }
+  startTopic(v, '✨');
+}
+function startTopic(name, icon){
+  state.topic = name; state.idx = 0; state.ep = 1; state.sec = 0;
+  state.playing = true; state.saidAll = false;
+  $('liveTitle').textContent = icon + ' ' + name;
+  renderSubs(true); startClock(); setPlayIcon();
+  navTo('scr-live');
+  toast('已开台 · 3 秒后出声（演示即时开始）');
+}
+function resumeLast(){ startTopic('王阳明传','🧭'); }
+function resumeEp(t){ startTopic(t,'▶'); toast('从上次位置续播（P1 语音库能力）'); }
+function renderSubs(reset){
+  const area = $('subs'); area.innerHTML='';
+  (SCRIPTS[state.topic] || SCRIPTS['王阳明传']).forEach((s,i)=>{
+    const p = document.createElement('p'); p.textContent = s; area.appendChild(p);
+  });
+  mark();
+  if(reset) area.scrollTop = 0;
+}
+function mark(){
+  const ps = $('subs').querySelectorAll('p');
+  ps.forEach((p,i)=>{ p.className = i<state.idx ? 'said' : (i===state.idx && state.idx<ps.length ? 'now' : ''); if(i===state.idx && state.idx<ps.length) p.innerHTML='<mark>▍</mark>'+p.textContent; });
+  const now = $('subs').querySelector('p.now');
+  if(now) now.scrollIntoView({block:'center', behavior:'smooth'});
+}
+function tick(){
+  if(!state.playing) return;
+  const ps = $('subs').querySelectorAll('p');
+  if(state.idx < ps.length - 1){ state.idx++; mark(); }
+  else if(!state.saidAll){
+    state.saidAll = true; state.ep++; state.idx = 0; state.saidAll = false;
+    toast('第 ' + state.ep + ' 集已生成，无缝接续（预取流水线）'); mark();
+  }
+}
+function startClock(){
+  clearInterval(state.timer); clearInterval(state.clock);
+  state.timer = setInterval(tick, 3200 / state.speed);
+  state.clock = setInterval(()=>{ if(state.playing) state.sec++; const m=Math.floor(state.sec/60), s=String(state.sec%60).padStart(2,'0'); $('mins').textContent=m+':'+s; }, 1000);
+}
+function togglePlay(){
+  state.playing = !state.playing; setPlayIcon();
+  $('wrap').classList.toggle('paused', !state.playing);
+}
+function setPlayIcon(){ $('playBtn').textContent = state.playing ? '⏸' : '▶'; }
+function cycleSpeed(){
+  const arr = [1, 1.25, 1.5, 2, 0.75]; state.speed = arr[(arr.indexOf(state.speed)+1) % arr.length];
+  $('speedBtn').textContent = state.speed + 'x'; $('speedLabel').textContent = state.speed + 'x';
+  if(state.timer) clearInterval(state.timer); state.timer = setInterval(tick, 3200 / state.speed);
+}
+function setSleep(v){
+  closeSheets();
+  const badge = $('sleepBadge');
+  if(!v){ badge.style.display='none'; toast('定时已关闭'); return; }
+  badge.style.display='inline-flex'; $('sleepText').textContent = v==='播完本集' ? '播完本集' : v;
+  toast(v==='播完本集' ? '本集播完将优雅停止（淡出，不截半句）' : ('将在 ' + v + ' 后优雅停止'));
+}
+function swapTopic(){
+  const next = SWAPS[state.topic] || state.topic + ' · 换个角度';
+  state.topic = next in SCRIPTS ? next : state.topic; state.idx = 0; state.ep++; state.saidAll=false;
+  $('liveTitle').textContent = '⇧ ' + next; renderSubs(true);
+  toast('已换台：AI 岔到新话题，声音未断（P2 上滑换台）');
+}
+function prevEp(){ if(state.ep>1){ state.ep--; state.idx=0; state.saidAll=false; mark(); toast('回听上一集（P1 内容库）'); } }
+function openSheet(id){ $(id).classList.add('on'); if(id==='sheet-interject') setTimeout(()=>{ $('typing').style.display='none'; $('interAnswer').style.display='block'; $('interOpts').style.display='flex'; }, 1400); }
+function closeSheets(){ document.querySelectorAll('.sheet-mask').forEach(m=>m.classList.remove('on')); $('typing').style.display='block'; $('interAnswer').style.display='none'; $('interOpts').style.display='none'; }
+function vtab(btn, id){
+  document.querySelectorAll('.vtabs button').forEach(b=>b.classList.remove('on')); btn.classList.add('on');
+  ['v-preset','v-design','v-clone'].forEach(v=>$(v).style.display = v===id ? 'block' : 'none');
+}
+let toastTimer=null;
+function toast(msg){ const t=$('toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer=setTimeout(()=>t.classList.remove('on'), 2600); }
+</script>
+</body>
+</html>
