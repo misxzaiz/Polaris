@@ -3857,6 +3857,7 @@ dependencies = [
  "notify-debouncer-mini",
  "pathdiff",
  "polaris-gate-queue",
+ "polaris-git-lanes",
  "portable-pty",
  "rand 0.8.6",
  "rayon",
@@ -3902,6 +3903,13 @@ dependencies = [
 [[package]]
 name = "polaris-gate-queue"
 version = "0.1.0"
+
+[[package]]
+name = "polaris-git-lanes"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "polling"

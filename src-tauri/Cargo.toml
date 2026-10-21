@@ -77,6 +77,8 @@ tauri-build = { version = "2.0", features = [], optional = true }
 [dependencies]
 # PR-2a B2：写闸 FIFO 队列 + progress 合流器（std-only mini crate，独立可真实跑测）
 polaris-gate-queue = { path = "crates/gate-queue" }
+# PR-2a D2：泳道 lane 计算核心（graph.c 语义，std-only mini crate，独立可真实跑测）
+polaris-git-lanes = { path = "crates/git-lanes" }
 tauri = { version = "2.0", features = ["devtools", "unstable"], optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
 tauri-plugin-dialog = { version = "2.7", optional = true }

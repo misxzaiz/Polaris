@@ -272,121 +272,35 @@ fn collect_commit_refs(repo: &Repository) -> std::collections::HashMap<String, V
 
 /// 单行 lane 计算：给定拓扑序 commits（新→旧），分配泳道并生成格子
 ///
-/// 简化算法（非 graph.c 四数组，覆盖「单线主分支 + 合并分支」）：
-/// - 维护泳道池 `lanes: Vec<Option<String>>`，每个元素 = 该泳道「下一行应出现的 commit sha」。
-/// - 对每个 commit C：
-///   1. 找到 lane[i] == C.sha → C 落在此 lane；找不到 → 复用空闲 lane 或追加新 lane。
-///   2. 消费 C：lanes[lane] = None；第一个父占原 lane，merge 的其余父占右侧空闲/新 lane。
-///   3. 渲染：node = 本行 C 所在 lane（merge 多父 → merge 节点）；其余 lane 有等待者 → empty 贯穿线。
-///   4. edge_down = 该 lane 下一行有内容（lanes[l] 有值）；merge 的其余父 lane 有 edge_up 指向 merge 节点 lane（斜线汇入）。
-/// 单行 lane 计算：给定拓扑序 commits（新→旧），分配泳道并生成格子
-///
-/// graph.c 式收缩（P2 增量，spec `plans/git-panel-p2-lane-collapse-spec.md`）：
-/// 在初版「单线 + 合并」基础上加入**列释放 + 收缩**语义：
-/// - 维护 `processed: HashSet<sha>`（本页已输出的 commit）；
-/// - 每行前置收缩：任何 lane 等待的 sha 已处理 → 释放为 None（消 ghost 竖线）；
-/// - 父占位时，若父已处理 → 不占长期等待列（防「同一父多列等待」列泄漏）。
-///
-/// 行结构 / GitLaneRow 协议不变，前端零改动。
+/// 算法本体抽到 std-only mini crate `polaris-git-lanes`（graph.c 四数组语义 +
+/// collapse/de-dupe，D2 欠账清偿），可在该 crate 真实跑测；本函数只做
+/// GitCommit → LaneCommit 映射与 GitLaneRow 装配（refs 装饰留在主仓）。
 fn compute_lanes(commits: &[GitCommit]) -> Vec<GitLaneRow> {
-    use std::collections::HashSet;
-
-    let mut lanes: Vec<Option<String>> = Vec::new();
-    let mut rows: Vec<GitLaneRow> = Vec::new();
-    let mut processed: HashSet<String> = HashSet::new();
-
-    for commit in commits {
-        let is_merge = commit.parents.len() > 1;
-
-        // 0. 前置收缩：等待的 commit 已处理 → 释放该列（ghost 竖线消除）
-        for w in lanes.iter_mut() {
-            if let Some(sha) = w {
-                if processed.contains(sha) {
-                    *w = None;
-                }
-            }
-        }
-
-        // 1. 定位 C 的泳道
-        let lane = match lanes.iter().position(|w| w.as_deref() == Some(commit.sha.as_str())) {
-            Some(i) => i,
-            None => lanes
-                .iter()
-                .position(|w| w.is_none())
-                .unwrap_or_else(|| {
-                    lanes.push(None);
-                    lanes.len() - 1
-                }),
-        };
-
-        // 2. 消费 C，父提交占位
-        lanes[lane] = None;
-        let mut parent_lanes = vec![lane];
-        for _ in 1..commit.parents.len() {
-            let nl = lanes
-                .iter()
-                .enumerate()
-                .skip(lane + 1)
-                .find(|(_, w)| w.is_none())
-                .map(|(i, _)| i)
-                .unwrap_or_else(|| {
-                    lanes.push(None);
-                    lanes.len() - 1
-                });
-            parent_lanes.push(nl);
-        }
-        for (idx, p) in commit.parents.iter().enumerate() {
-            if let Some(pl) = parent_lanes.get(idx) {
-                // 已处理的父 → 占位后立即置 None（不占长期等待列 → 防列泄漏）
-                if processed.contains(p) {
-                    lanes[*pl] = None;
-                } else {
-                    lanes[*pl] = Some(p.clone());
-                }
-            }
-        }
-
-        // 3. 渲染本行
-        let mut cells = Vec::new();
-        for (l, lane_wait) in lanes.iter().enumerate() {
-            let has_down = lane_wait.is_some();
-            let node = if l == lane {
-                if is_merge {
-                    "merge"
-                } else {
-                    "commit"
-                }
-            } else if has_down {
-                "empty"
-            } else {
-                "none"
-            };
-            cells.push(GitLaneCell {
-                lane: l,
-                node: node.to_string(),
-                edge_down: if has_down { Some(l) } else { None },
-                edge_up: None,
-            });
-        }
-        // merge 斜线：其余父 lane 的 cell 标 edge_up → merge 节点 lane
-        if is_merge {
-            for &pl in parent_lanes.iter().skip(1) {
-                if let Some(cell) = cells.get_mut(pl) {
-                    cell.edge_up = Some(lane);
-                }
-            }
-        }
-
-        rows.push(GitLaneRow {
-            sha: commit.sha.clone(),
-            cells,
+    let input: Vec<polaris_git_lanes::LaneCommit> = commits
+        .iter()
+        .map(|c| polaris_git_lanes::LaneCommit {
+            sha: c.sha.clone(),
+            parents: c.parents.clone(),
+        })
+        .collect();
+    polaris_git_lanes::compute_lanes(&input)
+        .into_iter()
+        .zip(commits.iter())
+        .map(|(row, commit)| GitLaneRow {
+            sha: row.sha,
+            cells: row
+                .cells
+                .into_iter()
+                .map(|c| GitLaneCell {
+                    lane: c.lane,
+                    node: c.node,
+                    edge_down: c.edge_down,
+                    edge_up: c.edge_up,
+                })
+                .collect(),
             refs: commit.refs.clone(),
-        });
-
-        processed.insert(commit.sha.clone());
-    }
-
-    rows
+        })
+        .collect()
 }
 
 /// 泳道图分页查询：commits（含 refs 装饰）+ rows（lane 数据）同一次返回
