@@ -89,7 +89,8 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
         Path::new(params.work_dir),
     );
     mcp_servers.retain(|s| {
-        if s.plugin_id == "polaris.builtin" {
+        // 内置总暴露（builtin 标记，含真实归属 plugin_id 如 polaris.computer）；外部插件检查 aiToolAccess
+        if s.builtin {
             return true;
         }
         plugins
@@ -100,10 +101,7 @@ pub fn prepare_mcp_config(params: McpConfigParams) -> Result<McpSessionConfig> {
     });
 
     if !mcp_servers.is_empty() {
-        let builtin_count = mcp_servers
-            .iter()
-            .filter(|s| s.plugin_id == "polaris.builtin")
-            .count();
+        let builtin_count = mcp_servers.iter().filter(|s| s.builtin).count();
         let plugin_count = mcp_servers.len() - builtin_count;
         tracing::info!(
             "[SessionLauncher] 解析到 {} 个可用 MCP server（内置 {} + 插件 {}，aiToolAccess 已过滤）",

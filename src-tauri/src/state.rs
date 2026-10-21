@@ -598,12 +598,13 @@ pub fn create_app_state(
                 service
                     .resolved_simple_ai_servers(&config_dir.to_string_lossy(), &[])
                     .into_iter()
-                    .filter(|s| s.plugin_id != "polaris.builtin") // 仅外部插件 MCP
+                    // 排除无归属兜底（binary 无 plugin_id）；内置插件（polaris.computer 等）与外部插件统一纳入
+                    .filter(|s| s.plugin_id != "polaris.builtin")
                     .collect::<Vec<_>>()
             })
             .unwrap_or_default();
             tracing::info!(
-                "[cap.mcp] 注册 {} 个外部插件 MCP server（含 mimo-tts）",
+                "[cap.mcp] 注册 {} 个插件 MCP server（内置 + 外部，含 mimo-tts）",
                 mcp_servers.len()
             );
             let _ = bus.register_handle(Box::new(

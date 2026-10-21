@@ -1576,6 +1576,7 @@ mod tests {
                 "C:\\config".to_string(),
                 "C:\\ws".to_string(),
             ],
+            builtin: true,
         }
     }
 
