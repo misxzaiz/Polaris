@@ -149,6 +149,40 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
     })
   }, [])
 
+  // ── C2 拖拽排序（HTML5 原生 DnD，与上下移按钮并存）─────────────────
+  // 约束：首项锁定（不可被拖走，也不可把它拖下来换位）；拖拽 = 等价 swap 的
+  // splice 移动，落到非法位置时还原（live 校验/后端兜底不变）。
+  const [dragIndex, setDragIndex] = useState<number | null>(null)
+  const [overIndex, setOverIndex] = useState<number | null>(null)
+
+  const handleDragStart = useCallback(
+    (index: number) => {
+      if (index === 0) return
+      setDragIndex(index)
+    },
+    [],
+  )
+
+  const handleDrop = useCallback(
+    (targetIndex: number) => {
+      setOverIndex(null)
+      if (dragIndex === null || dragIndex === 0 || targetIndex === 0 || dragIndex === targetIndex) {
+        setDragIndex(null)
+        return
+      }
+      const from = dragIndex
+      setTodos((prev) => {
+        if (from >= prev.length) return prev
+        const next = [...prev]
+        const [moved] = next.splice(from, 1)
+        next.splice(targetIndex, 0, moved)
+        return next
+      })
+      setDragIndex(null)
+    },
+    [dragIndex],
+  )
+
   const invalid = useMemo(() => !isTodoValid(todos), [todos])
   const counts = useMemo(() => {
     const c: Record<GitRebaseTodoAction, number> = { pick: 0, reword: 0, drop: 0, squash: 0, fixup: 0 }
@@ -224,8 +258,28 @@ export function RebaseTodoDialog({ workspacePath, baseCommitish, onClose, onDone
                   <div
                     key={`${item.sha}-${i}`}
                     className={`flex items-center gap-2 px-2 py-1.5 rounded-md border ${
-                      badRow ? 'border-danger/40 bg-danger/5' : 'border-border bg-background-surface'
+                      badRow
+                        ? 'border-danger/40 bg-danger/5'
+                        : overIndex === i && dragIndex !== null && dragIndex !== i
+                          ? 'border-primary/60 bg-primary/5'
+                          : 'border-border bg-background-surface'
                     }`}
+                    draggable={i !== 0}
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={(e) => {
+                      if (dragIndex === null || dragIndex === i || i === 0) return
+                      e.preventDefault()
+                      setOverIndex(i)
+                    }}
+                    onDragLeave={() => setOverIndex((cur) => (cur === i ? null : cur))}
+                    onDrop={(e) => {
+                      e.preventDefault()
+                      handleDrop(i)
+                    }}
+                    onDragEnd={() => {
+                      setDragIndex(null)
+                      setOverIndex(null)
+                    }}
                     data-testid={`todo-row-${i}`}
                   >
                     <span className="w-6 text-xs text-text-tertiary text-right">{i + 1}</span>
