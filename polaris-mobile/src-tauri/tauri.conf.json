@@ -4,6 +4,7 @@
   "version": "10.7.2",
   "identifier": "com.polaris.mobile",
   "build": {
+    "beforeBuildCommand": "node build-dist.mjs",
     "frontendDist": "../dist"
   },
   "app": {
