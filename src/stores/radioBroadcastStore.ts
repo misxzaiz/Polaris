@@ -23,6 +23,10 @@ export interface RadioBroadcastStoreState extends RadioBroadcastSnapshot {
   pause: () => void
   /** 恢复播放 */
   resume: () => void
+  /** 播放倍速（P0-2，即时生效） */
+  setRate: (rate: number) => void
+  /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
+  sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
 }
 
 const EMPTY_SNAPSHOT: RadioBroadcastSnapshot = {
@@ -35,6 +39,9 @@ const EMPTY_SNAPSHOT: RadioBroadcastSnapshot = {
   nowPlayingText: null,
   startedAt: 0,
   stopReason: null,
+  transcript: null,
+  sleepUntil: 0,
+  sleepAfterSegment: false,
 }
 
 export const useRadioBroadcastStore = create<RadioBroadcastStoreState>()(() => ({
@@ -51,6 +58,14 @@ export const useRadioBroadcastStore = create<RadioBroadcastStoreState>()(() => (
   },
   resume: () => {
     radioBroadcastController.resume()
+  },
+  /** 播放倍速（P0-2，即时生效） */
+  setRate: (rate: number) => {
+    radioBroadcastController.setRate(rate)
+  },
+  /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
+  sleep: (opts) => {
+    radioBroadcastController.sleep(opts)
   },
 }))
 

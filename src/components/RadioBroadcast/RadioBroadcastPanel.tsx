@@ -24,10 +24,14 @@ import {
   ArrowLeft,
   Volume2,
   CircleDot,
+  Gauge,
+  Timer,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useRadioBroadcast } from '@/hooks/useRadioBroadcast'
-import type { DirectionKind, RadioBroadcastStatus, VoiceId } from '@/services/voiceBroadcast/types'
+import type { DirectionKind, RadioBroadcastStatus, RadioBroadcastTranscript, VoiceId } from '@/services/voiceBroadcast/types'
+import { listMimoVoices } from '@/services/voiceBroadcast/mcpBridge'
+import { MIMO_VOICES } from '@/services/voiceBroadcast/constants'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { useConfigStore } from '@/stores/configStore'
 import { SessionConfigSelector } from '@/components/Chat/session/SessionConfigSelector'
@@ -75,6 +79,9 @@ function formatDuration(ms: number): string {
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${ss}` : `${m}:${ss}`
 }
 
+/** 倍速档位循环顺序（P0-2） */
+const SPEED_STEPS = [1, 1.25, 1.5, 2, 0.75] as const
+
 export function RadioBroadcastPanel() {
   const { t } = useTranslation('common')
   const rb = useRadioBroadcast()
@@ -100,6 +107,45 @@ export function RadioBroadcastPanel() {
 
   // 播报中是否正在查看配置（双视图可达，播报不中断）
   const [showConfigWhilePlaying, setShowConfigWhilePlaying] = useState(false)
+
+  // 倍速（P0-2）：prefs 持久化，播报中即时生效
+  const speed = prefs.speed ?? 1
+  const cycleSpeed = () => {
+    const idx = SPEED_STEPS.indexOf(speed as (typeof SPEED_STEPS)[number])
+    const next = SPEED_STEPS[(idx + 1 + SPEED_STEPS.length) % SPEED_STEPS.length] // idx=-1（存量 prefs 无此字段）时落到 1
+    setPrefs({ speed: next })
+    rb.setRate(next)
+  }
+
+  // 睡眠定时（P0-3）：快捷档
+  const sleepActive = rb.sleepUntil > 0 || rb.sleepAfterSegment
+  const handleSleep = (opts: { minutes?: number; afterSegment?: boolean } | null) => {
+    rb.sleep(opts)
+  }
+
+  // 动态音色列表（P0-6）：拉取失败静默回退静态预置；当前选中音色始终保留在选项中
+  const [voiceOptions, setVoiceOptions] = useState(MIMO_VOICES)
+  useEffect(() => {
+    let alive = true
+    listMimoVoices()
+      .then((res) => {
+        if (!alive || !res.ok || res.voices.length === 0) return
+        const dyn = res.voices.map((v) => ({
+          id: v.voiceId,
+          label: v.name,
+          desc: [v.language, v.gender].filter(Boolean).join(' · ') || '云端音色',
+        }))
+        const seen = new Set(dyn.map((v) => v.id))
+        setVoiceOptions([...dyn, ...MIMO_VOICES.filter((v) => !seen.has(v.id))])
+      })
+      .catch(() => { /* 拉取失败：保留静态预置兜底 */ })
+    return () => { alive = false }
+  }, [])
+  // 选中音色不在选项（动态列表加载前/被裁剪）→ 头插保证 select 可显示
+  const voiceChoices = useMemo(
+    () => (voiceOptions.some((v) => v.id === voice) ? voiceOptions : [{ id: voice, label: voice, desc: '' }, ...voiceOptions]),
+    [voiceOptions, voice],
+  )
 
   // 播报结束后复位「查看配置」态：下次开始默认回到播报视图
   useEffect(() => {
@@ -133,6 +179,7 @@ export function RadioBroadcastPanel() {
     const map: Record<string, { type: 'info' | 'error'; title: string }> = {
       'max-rounds': { type: 'info', title: t('radioBroadcast.toast.maxRounds', { defaultValue: '已播满上限，自动停止播报' }) },
       'max-seconds': { type: 'info', title: t('radioBroadcast.toast.maxSeconds', { defaultValue: '已达时长上限，自动停止播报' }) },
+      sleep: { type: 'info', title: t('radioBroadcast.toast.sleep', { defaultValue: '定时到，已停止播报' }) },
       'voice-command': { type: 'info', title: t('radioBroadcast.toast.voiceStopped', { defaultValue: '已通过语音口令停止播报' }) },
       manual: { type: 'info', title: t('radioBroadcast.toast.stopped', { defaultValue: '已停止播报' }) },
       error: { type: 'error', title: t('radioBroadcast.toast.error', { defaultValue: '播报出错' }) },
@@ -196,6 +243,7 @@ export function RadioBroadcastPanel() {
       volume,
       base64Mode,
       voiceStopEnabled,
+      rate: speed,
       engineId: engineId !== defaultEngineId ? engineId : undefined,
       modelProfileId,
       model: providerConfig.model || undefined,
@@ -267,8 +315,10 @@ export function RadioBroadcastPanel() {
             {rb.direction.text}
           </div>
 
-          {/* 正在朗读（自动滚动区域改为显示当前句 + 下句预告） */}
-          {rb.nowPlayingText && (
+          {/* 字幕跟读（P0-1）：全文滚动文稿，当前句高亮 + 自动居中 */}
+          {rb.transcript && rb.transcript.lines.length > 0 ? (
+            <TranscriptView transcript={rb.transcript} isPlaying={rb.isPlaying} />
+          ) : (
             <div
               aria-label={t('radioBroadcast.nowPlaying', { defaultValue: '正在朗读' })}
               className="max-h-28 overflow-y-auto rounded-md bg-[rgb(var(--c-bg-elevated)/0.5)] px-3 py-2 text-[12.5px] leading-relaxed text-text-primary"
@@ -283,7 +333,9 @@ export function RadioBroadcastPanel() {
                 ) : (
                   <AudioWaveform size={11} />
                 )}
-                {t('radioBroadcast.nowPlaying', { defaultValue: '正在朗读' })}
+                {rb.status === 'generating'
+                  ? t('radioBroadcast.generating', { defaultValue: '内容生成中…' })
+                  : t('radioBroadcast.nowPlaying', { defaultValue: '正在朗读' })}
               </div>
               {rb.nowPlayingText}
             </div>
@@ -291,6 +343,68 @@ export function RadioBroadcastPanel() {
 
           {/* 进度：累计时长 + 句/段 + 上限剩余 */}
           <ProgressInfo startedAt={rb.startedAt} segmentCount={rb.segmentCount} segmentIndex={rb.segment?.index} maxRounds={rb.maxRounds} maxSeconds={rb.maxSeconds} />
+
+          {/* 倍速 + 睡眠定时快捷条（P0-2 / P0-3） */}
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={cycleSpeed}
+              aria-label={t('radioBroadcast.speed', { defaultValue: '倍速' })}
+              title={t('radioBroadcast.speedHint', { defaultValue: '点击切换倍速' })}
+              className="flex items-center gap-1 rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2 py-1 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary"
+            >
+              <Gauge size={12} />
+              {speed}x
+            </button>
+            <span className="mx-0.5 h-4 w-px bg-border" aria-hidden />
+            <button
+              type="button"
+              onClick={() => handleSleep({ minutes: 15 })}
+              aria-label={t('radioBroadcast.sleep15', { defaultValue: '15 分钟后停止' })}
+              className={clsx(
+                'flex items-center gap-1 rounded-md border px-2 py-1 text-[11.5px] transition-colors',
+                sleepActive && rb.sleepUntil > 0
+                  ? 'border-[rgb(var(--c-accent)/0.5)] bg-[rgb(var(--c-accent)/0.15)] text-[rgb(var(--c-accent))]'
+                  : 'border-border bg-[rgb(var(--c-bg-elevated)/0.6)] text-text-secondary hover:text-text-primary',
+              )}
+            >
+              <Timer size={12} />
+              15m
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSleep({ minutes: 30 })}
+              aria-label={t('radioBroadcast.sleep30', { defaultValue: '30 分钟后停止' })}
+              className="flex items-center gap-1 rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2 py-1 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary"
+            >
+              <Timer size={12} />
+              30m
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSleep({ afterSegment: true })}
+              aria-label={t('radioBroadcast.sleepAfterSegment', { defaultValue: '播完本段停止' })}
+              className={clsx(
+                'rounded-md border px-2 py-1 text-[11.5px] transition-colors',
+                rb.sleepAfterSegment
+                  ? 'border-[rgb(var(--c-accent)/0.5)] bg-[rgb(var(--c-accent)/0.15)] text-[rgb(var(--c-accent))]'
+                  : 'border-border bg-[rgb(var(--c-bg-elevated)/0.6)] text-text-secondary hover:text-text-primary',
+              )}
+            >
+              {t('radioBroadcast.sleepAfterSegment', { defaultValue: '播完本段' })}
+            </button>
+            {sleepActive && (
+              <button
+                type="button"
+                onClick={() => handleSleep(null)}
+                aria-label={t('radioBroadcast.sleepCancel', { defaultValue: '取消定时' })}
+                className="rounded-md px-1.5 py-1 text-[11px] text-text-tertiary underline underline-offset-2 hover:text-text-secondary"
+              >
+                {t('radioBroadcast.sleepCancel', { defaultValue: '取消定时' })}
+                {rb.sleepUntil > 0 && `（${new Date(rb.sleepUntil).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}）`}
+              </button>
+            )}
+          </div>
 
           {rb.error && (
             <div className="rounded-md bg-red-500/10 px-2.5 py-2 text-[12px] text-red-400">
@@ -375,9 +489,9 @@ export function RadioBroadcastPanel() {
               aria-label={t('radioBroadcast.voiceSelect', { defaultValue: '音色' })}
               className="w-full rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[13px] text-text-primary outline-none focus:border-[rgb(var(--c-accent)/0.6)]"
             >
-              {rb.voices.map((v) => (
+              {voiceChoices.map((v) => (
                 <option key={v.id} value={v.id}>
-                  {v.label} — {v.desc}
+                  {v.label}{v.desc ? ` — ${v.desc}` : ''}
                 </option>
               ))}
             </select>
@@ -683,4 +797,69 @@ const STATUS_TEXT: Record<string, string> = {
   stopping: '正在停止…',
   error: '出错了',
   idle: '',
+}
+
+/** 字幕跟读（P0-1）：队列即文稿；当前句高亮并滚动到容器垂直居中（不动外层面板滚动） */
+function TranscriptView({ transcript, isPlaying }: {
+  transcript: NonNullable<RadioBroadcastTranscript>
+  isPlaying: boolean
+}) {
+  const { t } = useTranslation('common')
+  const boxRef = useRef<HTMLDivElement>(null)
+  const idx = transcript.currentIndex
+
+  useEffect(() => {
+    const box = boxRef.current
+    if (!box || idx < 0) return
+    const el = box.querySelector<HTMLElement>(`[data-line="${idx}"]`)
+    if (!el) return
+    // offsetParent = 容器自身（relative）：offsetTop 即相对容器顶
+    const target = el.offsetTop - box.clientHeight / 2 + el.clientHeight / 2
+    // jsdom 无 Element.scrollTo：能力检测 + scrollTop 兜底
+    if (typeof box.scrollTo === 'function') {
+      box.scrollTo({ top: target, behavior: 'smooth' })
+    } else {
+      box.scrollTop = target
+    }
+  }, [idx])
+
+  return (
+    <div
+      ref={boxRef}
+      aria-label={t('radioBroadcast.transcript', { defaultValue: '字幕跟读' })}
+      className="relative max-h-48 overflow-y-auto rounded-md bg-[rgb(var(--c-bg-elevated)/0.5)] px-3 py-2"
+    >
+      <div className="sticky top-0 mb-1 flex items-center gap-1 bg-transparent text-[10.5px] uppercase tracking-wide text-text-tertiary">
+        {isPlaying ? (
+          <span className="animate-eq-bars flex items-end gap-[2px]" aria-hidden>
+            <span />
+            <span />
+            <span />
+          </span>
+        ) : (
+          <AudioWaveform size={11} />
+        )}
+        {t('radioBroadcast.transcript', { defaultValue: '字幕跟读' })}
+      </div>
+      {transcript.lines.map((line, i) => (
+        <p
+          key={line.id}
+          data-line={i}
+          aria-current={i === idx ? 'step' : undefined}
+          className={clsx(
+            'py-0.5 text-[12.5px] leading-relaxed transition-colors',
+            i === idx
+              ? 'font-medium text-text-primary'
+              : line.status === 'done' || line.status === 'playing'
+                ? 'text-text-tertiary'
+                : line.status === 'failed'
+                  ? 'text-text-tertiary line-through opacity-60'
+                  : 'text-text-secondary opacity-70',
+          )}
+        >
+          {line.text}
+        </p>
+      ))}
+    </div>
+  )
 }

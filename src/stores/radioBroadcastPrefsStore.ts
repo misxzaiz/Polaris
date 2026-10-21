@@ -33,6 +33,8 @@ export interface RadioBroadcastPrefs {
   maxRounds: string
   /** 时长上限（输入文本） */
   maxSeconds: string
+  /** 播放倍速（P0-2，0.5~4） */
+  speed: number
 
   setPrefs: (patch: Partial<RadioBroadcastPrefs>) => void
 }
@@ -48,6 +50,7 @@ const DEFAULTS: Omit<RadioBroadcastPrefs, 'setPrefs'> = {
   providerConfig: { profileMode: 'profile', modelProfileId: '', model: '' },
   maxRounds: '',
   maxSeconds: '',
+  speed: 1,
 }
 
 export const useRadioBroadcastPrefsStore = create<RadioBroadcastPrefs>()(

@@ -27,6 +27,8 @@ const mockStart = vi.fn<(opts: RadioBroadcastControllerOptions) => Promise<void>
 const mockStop = vi.fn<() => Promise<void>>()
 const mockPause = vi.fn<() => void>()
 const mockResume = vi.fn<() => void>()
+const mockSetRate = vi.fn<(rate: number) => void>()
+const mockSleep = vi.fn<(opts: { minutes?: number; afterSegment?: boolean } | null) => void>()
 
 let mockState: {
   status: RadioBroadcastStatus
@@ -40,6 +42,9 @@ let mockState: {
   maxRounds?: number
   maxSeconds?: number
   stopReason: string | null
+  transcript: { lines: Array<{ id: string; text: string; status: string }>; currentIndex: number } | null
+  sleepUntil: number
+  sleepAfterSegment: boolean
 }
 
 vi.mock('@/hooks/useRadioBroadcast', () => ({
@@ -65,6 +70,11 @@ vi.mock('@/hooks/useRadioBroadcast', () => ({
     stop: mockStop,
     pause: mockPause,
     resume: mockResume,
+    setRate: mockSetRate,
+    sleep: mockSleep,
+    transcript: mockState.transcript,
+    sleepUntil: mockState.sleepUntil,
+    sleepAfterSegment: mockState.sleepAfterSegment,
     directionPresets: [],
     voices: [
       { id: '冰糖', label: '冰糖', desc: '清甜' },
@@ -90,8 +100,14 @@ vi.mock('@/stores/radioBroadcastPrefsStore', () => ({
     },
     maxRounds: '',
     maxSeconds: '',
+    speed: 1,
     setPrefs: mockSetPrefs,
   }),
+}))
+
+// P0-6：动态音色拉取（面板 mount 时调用；mock 为失败 → 走静态预置兜底）
+vi.mock('@/services/voiceBroadcast/mcpBridge', () => ({
+  listMimoVoices: vi.fn().mockResolvedValue({ ok: false, voices: [] }),
 }))
 
 vi.mock('@/components/Chat/session/SessionConfigSelector', () => ({
@@ -145,6 +161,9 @@ function makeState(overrides: Partial<typeof mockState> = {}): typeof mockState 
     nowPlayingText: null,
     startedAt: 0,
     stopReason: null,
+    transcript: null,
+    sleepUntil: 0,
+    sleepAfterSegment: false,
     ...overrides,
   }
 }
@@ -155,6 +174,8 @@ beforeEach(() => {
   mockStop.mockReset()
   mockPause.mockReset()
   mockResume.mockReset()
+  mockSetRate.mockReset()
+  mockSleep.mockReset()
   mockToast.info.mockReset()
   mockToast.warning.mockReset()
   mockToast.error.mockReset()
@@ -288,5 +309,65 @@ describe('RadioBroadcastPanel — 停止反馈 Toast', () => {
     mockState = makeState({ status: 'idle', stopReason: 'max-rounds' })
     rerender(<RadioBroadcastPanel />)
     expect(mockToast.info).toHaveBeenCalledWith('radioBroadcast.toast.maxRounds')
+  })
+
+  it('回 idle 且 stopReason=sleep → info toast（P0-3 定时到）', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now(), stopReason: null })
+    const { rerender } = render(<RadioBroadcastPanel />)
+    mockState = makeState({ status: 'idle', stopReason: 'sleep' })
+    rerender(<RadioBroadcastPanel />)
+    expect(mockToast.info).toHaveBeenCalledWith('radioBroadcast.toast.sleep')
+  })
+})
+
+describe('RadioBroadcastPanel — P0 快赢', () => {
+  it('播报中显示倍速 + 睡眠定时快捷条；点击转发 setRate / sleep', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now() })
+    render(<RadioBroadcastPanel />)
+    // 倍速 pill（当前 1x）→ 点击循环到 1.25 并转发 setRate
+    fireEvent.click(screen.getByLabelText('radioBroadcast.speed'))
+    expect(mockSetRate).toHaveBeenCalledWith(1.25)
+    // 睡眠定时快捷档
+    fireEvent.click(screen.getByLabelText('radioBroadcast.sleep15'))
+    expect(mockSleep).toHaveBeenCalledWith({ minutes: 15 })
+    fireEvent.click(screen.getByLabelText('radioBroadcast.sleep30'))
+    expect(mockSleep).toHaveBeenCalledWith({ minutes: 30 })
+    fireEvent.click(screen.getByLabelText('radioBroadcast.sleepAfterSegment'))
+    expect(mockSleep).toHaveBeenCalledWith({ afterSegment: true })
+  })
+
+  it('睡眠定时激活时显示取消入口；点击转发 sleep(null)', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now(), sleepUntil: Date.now() + 600_000 })
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByLabelText('radioBroadcast.sleepCancel'))
+    expect(mockSleep).toHaveBeenCalledWith(null)
+  })
+
+  it('字幕跟读：transcript 非空时渲染全文行 + 当前句高亮（aria-current）', () => {
+    mockState = makeState({
+      status: 'playing',
+      startedAt: Date.now(),
+      transcript: {
+        lines: [
+          { id: 'a', text: '已播完的句子', status: 'done' },
+          { id: 'b', text: '正在朗读的句子', status: 'playing' },
+          { id: 'c', text: '还未播的句子', status: 'pending' },
+        ],
+        currentIndex: 1,
+      },
+    })
+    render(<RadioBroadcastPanel />)
+    expect(screen.getByLabelText('radioBroadcast.transcript')).toBeTruthy()
+    expect(screen.getByText('已播完的句子')).toBeTruthy()
+    expect(screen.getByText('还未播的句子')).toBeTruthy()
+    // 当前句 aria-current 标记
+    expect(screen.getByText('正在朗读的句子').getAttribute('aria-current')).toBe('step')
+  })
+
+  it('start 携带倍速（prefs.speed）', () => {
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByText('radioBroadcast.start'))
+    const opts = mockStart.mock.calls[0][0]
+    expect(opts.rate).toBe(1)
   })
 })

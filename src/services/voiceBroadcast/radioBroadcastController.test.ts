@@ -25,6 +25,10 @@ const { MockPlayer } = vi.hoisted(() => {
     pause = vi.fn()
     resume = vi.fn()
     enqueueSegment = vi.fn()
+    setRate = vi.fn()
+    fadeOut = vi.fn().mockResolvedValue(undefined)
+    /** 字幕快照（P0-1）：默认 null，测试可编程 */
+    getTranscript = vi.fn(() => null)
     queueLength = 0
     hasPendingSynth = false
     /** 未就绪句数（段级提前量判断用）；默认 0 = 低水位，lookahead 触发 */
@@ -404,5 +408,98 @@ describe('radioBroadcastController', () => {
     player.queueLength = 5 // 有内容在播，堵住 afterSegmentFinished 空转续段路径
     player.callbacks.onEnd?.()
     expect(mockWaitStreamEnd.mock.calls.length).toBe(callsBefore)
+  })
+
+  // ── P0 快赢（radio-broadcast-p0-quickwins-spec）──
+
+  it('P0-1 onStart/onEnd 句级变化实时广播（修复 status 已是 playing 时不 emit 的刷新缺口）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    // 进入 playing（播放器 onStart 回调驱动）
+    ;(radioBroadcastController as unknown as { player: MockPlayer }).player.callbacks.onStart?.('第一句')
+    expect(radioBroadcastController.getStatus()).toBe('playing')
+    expect(radioBroadcastController.getSnapshot().nowPlayingText).toBe('第一句')
+    // 连续第二句（status 保持 playing）→ 快照仍实时更新（旧行为：setStatus 早退不 emit，UI 卡在第一句）
+    ;(radioBroadcastController as unknown as { player: MockPlayer }).player.callbacks.onStart?.('第二句')
+    expect(radioBroadcastController.getSnapshot().nowPlayingText).toBe('第二句')
+  })
+
+  it('P0-1 快照携带 transcript（播放器 getTranscript 透传）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    expect(radioBroadcastController.getSnapshot().transcript).toBeNull()
+    player.getTranscript.mockReturnValue({ lines: [{ id: 'a', text: '第一句', status: 'playing' }], currentIndex: 0 })
+    expect(radioBroadcastController.getSnapshot().transcript?.currentIndex).toBe(0)
+  })
+
+  it('P0-2 setRate 转发播放器；start opts.rate 随 setOptions 下发', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+      rate: 1.5,
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    expect(player.setOptions).toHaveBeenCalledWith(expect.objectContaining({ rate: 1.5 }))
+    radioBroadcastController.setRate(2)
+    expect(player.setRate).toHaveBeenCalledWith(2)
+  })
+
+  it('P0-3 睡眠定时「播完本段」：不再请求新段，队列播空即优雅停止（stopReason=sleep）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    fireSegmentEnd() // 段 1 入队（segmentIndex=1）
+    expect(player.enqueueSegment).toHaveBeenCalled()
+    radioBroadcastController.sleep({ afterSegment: true })
+    expect(radioBroadcastController.getSnapshot().sleepAfterSegment).toBe(true)
+    // 队列播空 → onQueueDrained → 达上限判定（sleepAfterSegment）→ 优雅停机
+    player.queueLength = 0
+    player.hasPendingSynth = false
+    player.callbacks.onQueueDrained?.()
+    await vi.waitFor(() => {
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+    })
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('sleep')
+  })
+
+  it('P0-3 睡眠定时（分钟档）：watchdog 到点淡出并停止（stopReason=sleep）', async () => {
+    vi.useFakeTimers()
+    try {
+      await radioBroadcastController.start({
+        direction: { kind: 'story', text: '小王子' },
+        voice: '冰糖',
+      })
+      const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+      player.queueLength = 2 // 有内容在播（不触发 afterSegmentFinished 空转）
+      radioBroadcastController.sleep({ minutes: 15 })
+      expect(radioBroadcastController.getSnapshot().sleepUntil).toBeGreaterThan(0)
+      // 快进 15 分钟（watchdog 1s interval 触发）+ 淡出 3s（50ms 步进）+ 停止微任务
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000)
+      await vi.advanceTimersByTimeAsync(3200)
+      expect(player.fadeOut).toHaveBeenCalled()
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+      expect(radioBroadcastController.getSnapshot().stopReason).toBe('sleep')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('P0-3 取消定时：清空 sleepUntil / sleepAfterSegment', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    radioBroadcastController.sleep({ afterSegment: true })
+    expect(radioBroadcastController.getSnapshot().sleepAfterSegment).toBe(true)
+    radioBroadcastController.sleep(null)
+    expect(radioBroadcastController.getSnapshot().sleepUntil).toBe(0)
+    expect(radioBroadcastController.getSnapshot().sleepAfterSegment).toBe(false)
   })
 })

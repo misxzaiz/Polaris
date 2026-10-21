@@ -16,9 +16,17 @@ import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS, BASE64_PREFETCH_DEPTH, BASE64_SYNTH_TIMEOUT_MS, SYNTH_MAX_RETRIES } from './constants'
 import { callMimoTts } from './mcpBridge'
-import type { QueueItem } from './types'
+import { SynthCache, synthCacheKey } from './synthCache'
+import type { QueueItem, RadioBroadcastTranscript } from './types'
 
 const log = createLogger('VoiceBroadcastPlayer')
+
+/** MediaSession 最小类型（局部定义，避免依赖较新 DOM lib 的媒体会话类型） */
+interface MediaSessionLike {
+  metadata: unknown
+  playbackState: string
+  setActionHandler: (action: 'play' | 'pause' | 'stop', handler: (() => void) | null) => void
+}
 
 export interface PlayerCallbacks {
   /** 开始播放某句（UI 打点） */
@@ -31,6 +39,8 @@ export interface PlayerCallbacks {
   onSynthError?: (item: QueueItem, error: string) => void
   /** 队列空但仍有在途合成（供控制器判断 generating 子状态） */
   onPendingSynth?: (count: number) => void
+  /** 锁屏 MediaSession stop 手势（P0-4）：转交控制器走三路中断 */
+  onStopRequest?: () => void
 }
 
 /**
@@ -61,20 +71,35 @@ export class VoiceBroadcastPlayer {
   /** base64 模式（移动端）：合成结果走 audioDataUrl 而非插件托管 url */
   private base64Mode = false
   private volume = 1
+  /** 播放倍速（P0-2）：当前音频即时生效，新建音频继承 */
+  private rate = 1
+  /** 锁屏会话标题（话题名，控制器 start 时注入；P0-4） */
+  private mediaTitle: string | null = null
+  /** 句合成缓存（P0-5，内存 LRU）：key = hash(text+voice+style+outputMode) */
+  private synthCache = new SynthCache()
 
   setCallbacks(cb: PlayerCallbacks): void {
     this.callbacks = { ...this.callbacks, ...cb }
   }
 
-  setOptions(opts: { voice?: string; style?: string; base64Mode?: boolean }): void {
+  setOptions(opts: { voice?: string; style?: string; base64Mode?: boolean; rate?: number; mediaTitle?: string }): void {
     this.voice = opts.voice
     this.style = opts.style
     this.base64Mode = opts.base64Mode ?? false
+    if (opts.rate !== undefined) this.setRate(opts.rate)
+    if (opts.mediaTitle !== undefined) this.mediaTitle = opts.mediaTitle
   }
 
   setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v))
     if (this.audio) this.audio.volume = this.volume
+  }
+
+  /** 播放倍速（P0-2）：对在播音频即时生效；后续新建音频在 playItem 继承 */
+  setRate(rate: number): void {
+    const clamped = Math.max(0.5, Math.min(4, rate))
+    this.rate = clamped
+    if (this.audio) this.audio.playbackRate = clamped
   }
 
   /** 队列长度（诊断/测试用） */
@@ -95,6 +120,39 @@ export class VoiceBroadcastPlayer {
 
   get currentText(): string | null {
     return this.current?.text ?? null
+  }
+
+  /**
+   * 字幕跟读文稿（P0-1）：队列即文稿（done/failed 行保留，播完即弃语义由 stop 清队列承载）。
+   * 无任何可展示内容（未入队且无在播句）返回 null。
+   */
+  getTranscript(): RadioBroadcastTranscript | null {
+    if (this.queue.length === 0 && !this.current) return null
+    const currentId = this.current?.id
+    const currentIndex = currentId ? this.queue.findIndex((q) => q.id === currentId) : -1
+    return {
+      lines: this.queue.map((q) => ({ id: q.id, text: q.text, status: q.status })),
+      currentIndex,
+    }
+  }
+
+  /**
+   * 淡出当前音频（睡眠定时到点；线性降音量后暂停）。
+   * 无在播音频（暂停中/句间隙）立即返回。期间被 stop/换句则放弃（不与代际机制打架）。
+   * 只改该 audio 元素音量，不改 this.volume（下次 playItem 仍用会话音量）。
+   */
+  async fadeOut(ms = 3000): Promise<void> {
+    const audio = this.audio
+    if (!audio || ms <= 0) return
+    const startVolume = audio.volume
+    const step = 50
+    const steps = Math.max(1, Math.floor(ms / step))
+    for (let i = 1; i <= steps; i++) {
+      await new Promise((r) => setTimeout(r, step))
+      if (this.audio !== audio) return // 期间已 stop/换句：放弃淡出
+      audio.volume = Math.max(0, startVolume * (1 - i / steps))
+    }
+    if (this.audio === audio) audio.pause()
   }
 
   /** 当前播放音频元素（音量调节等只读消费） */
@@ -231,9 +289,24 @@ export class VoiceBroadcastPlayer {
     this.callbacks.onSynthError?.(item, reason)
   }
 
-  /** 合成一项（带代际 + 超时 + Abort） */
+  /** 合成一项（带代际 + 超时 + Abort + 缓存） */
   private synthesize(item: QueueItem): void {
     if (item.status !== 'pending') return
+    // P0-5 缓存命中：跳过 API 直接就绪（微任务泵送，避免同步重入 pump 深递归）
+    const cacheKey = synthCacheKey({
+      text: item.text,
+      voice: this.voice,
+      style: this.style,
+      outputMode: this.base64Mode ? 'base64' : 'file',
+    })
+    const cached = this.synthCache.get(cacheKey)
+    if (cached) {
+      item.url = cached.url
+      item.status = 'ready'
+      log.debug('缓存命中，跳过合成', { len: item.text.length })
+      queueMicrotask(() => this.pump())
+      return
+    }
     item.status = 'synthesizing'
     const abort = new AbortController()
     this.pendingSynths.set(item.id, abort)
@@ -266,6 +339,8 @@ export class VoiceBroadcastPlayer {
         if (res.ok && res.url) {
           item.url = res.url
           item.status = 'ready'
+          // P0-5：成功结果入缓存（重听/重复句零成本）
+          this.synthCache.put(cacheKey, { url: res.url, format: res.format })
           log.debug('句就绪', { len: item.text.length })
         } else {
           this.markSynthFailed(item, res.error ?? '合成失败')
@@ -291,7 +366,9 @@ export class VoiceBroadcastPlayer {
     const audio = new Audio(item.url)
     this.audio = audio
     audio.volume = this.volume
+    audio.playbackRate = this.rate // P0-2：新句继承会话倍速
     const gen = item.gen
+    this.applyMediaSession(item)
 
     audio.onplay = () => {
       if (gen !== this.generation) {
@@ -327,5 +404,34 @@ export class VoiceBroadcastPlayer {
       this.callbacks.onSynthError?.(item, '音频播放失败')
       this.pump()
     })
+  }
+
+  /**
+   * 锁屏 / 系统媒体会话（P0-4）：每句播放时刷新 metadata（话题 + 当前句摘要），
+   * 注册 play/pause/stop 手势。stop 手势转交回调（控制器三路中断），不走播放器局部暂停。
+   * 环境不支持（jsdom / 老内核）静默跳过，不影响主链路。
+   */
+  private applyMediaSession(item: QueueItem): void {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return
+    try {
+      const ms = (navigator as unknown as { mediaSession?: MediaSessionLike }).mediaSession
+      if (!ms) return
+      const MediaMetadataCtor = (
+        globalThis as { MediaMetadata?: new (init: { title: string; artist: string; album: string }) => unknown }
+      ).MediaMetadata
+      if (MediaMetadataCtor) {
+        ms.metadata = new MediaMetadataCtor({
+          title: this.mediaTitle ?? 'AI 播报',
+          artist: item.text.slice(0, 40),
+          album: 'Polaris 无限畅听',
+        })
+      }
+      ms.playbackState = 'playing'
+      ms.setActionHandler('play', () => { void this.audio?.play().catch(() => {}) })
+      ms.setActionHandler('pause', () => { this.audio?.pause() })
+      ms.setActionHandler('stop', () => { this.callbacks.onStopRequest?.() })
+    } catch {
+      // 个别内核 setActionHandler 抛错：降级为仅展示，不阻塞播放
+    }
   }
 }

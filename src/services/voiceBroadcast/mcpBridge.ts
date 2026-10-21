@@ -115,6 +115,43 @@ export async function callMimoTts(args: MimoTtsSynthesizeArgs): Promise<MimoTtsR
 }
 
 /**
+ * 列出 mimo-tts 预置音色（P0-6：面板动态渲染，预置列表作兜底）。
+ */
+export interface MimoVoiceInfo {
+  name: string
+  voiceId: string
+  language?: string
+  gender?: string
+}
+
+export async function listMimoVoices(): Promise<{ ok: boolean; voices: MimoVoiceInfo[]; error?: string }> {
+  let res: DispatchResponse
+  try {
+    res = await invoke<DispatchResponse>('router_dispatch', {
+      req: { target: 'cap.mcp', payload: { action: 'call', mcpServerId: 'mimo-tts', tool: 'mimo_tts_list_voices', arguments: {} } },
+    })
+  } catch (e) {
+    return { ok: false, voices: [], error: `cap.mcp 调用失败: ${e instanceof Error ? e.message : String(e)}` }
+  }
+  if (!res.ok) return { ok: false, voices: [], error: res.error ?? 'cap.mcp 调用失败' }
+  const cap = res.result as McpCallResponse | undefined
+  if (!cap?.ok) return { ok: false, voices: [], error: cap?.error ?? 'cap.mcp 未返回成功' }
+
+  let parsed: { voices?: MimoVoiceInfo[] } | null = null
+  if (typeof cap.resultJson === 'string' && cap.resultJson.trim()) {
+    try {
+      parsed = JSON.parse(cap.resultJson) as { voices?: MimoVoiceInfo[] }
+    } catch {
+      return { ok: false, voices: [], error: '无法解析音色列表' }
+    }
+  }
+  if (!parsed?.voices || !Array.isArray(parsed.voices)) {
+    return { ok: false, voices: [], error: '音色列表为空' }
+  }
+  return { ok: true, voices: parsed.voices }
+}
+
+/**
  * 探测 mimo-tts 可用性（开始播报前的快速预检，避免无谓进 error 态）。
  *
  * 用最小文本合成一次；成功即返回 true。失败返回 false（原因可在 error 中看到）。

@@ -34,6 +34,15 @@ import type {
 
 const log = createLogger('RadioBroadcastController')
 
+/** 方向 key → 中文标签（锁屏媒体会话标题用；与面板 DIRECTION_LABELS 对齐） */
+const DIRECTION_LABEL: Record<string, string> = {
+  study: '学习',
+  story: '故事',
+  tech: '技术',
+  news: '新闻',
+  custom: '自定义',
+}
+
 /** 连续失败阈值：达到则进入 error 态 */
 const MAX_CONSECUTIVE_ERRORS = 3
 
@@ -59,6 +68,8 @@ export interface RadioBroadcastControllerOptions {
   maxRounds?: number
   /** 播放时长上限（秒数，到点自动停止；0/undefined = 不限） */
   maxSeconds?: number
+  /** 播放倍速（P0-2，0.5~4；缺省 1）。开播生效，播报中可经 setRate 调整 */
+  rate?: number
 }
 
 export type RadioBroadcastListener = (snapshot: RadioBroadcastSnapshot) => void
@@ -112,6 +123,16 @@ export class RadioBroadcastController {
   /** 是否已达上限（limitReached 守卫位；stop() 时复位） */
   private limitReached = false
 
+  // ── 睡眠定时（P0-3）──
+  /** 定时到点时刻（ms 时间戳；0 = 未设）。到点 → 淡出 3s → stop('sleep') */
+  private sleepUntil = 0
+  /** 「播完本段」模式：不再请求新段，当前队列播空即优雅停机 */
+  private sleepAfterSegment = false
+  /** 淡出中守卫：watchdog 只触发一次淡出 */
+  private sleepFading = false
+  /** 睡眠定时 watchdog（1s 检点；start 建、stop 清） */
+  private sleepTimer: ReturnType<typeof setInterval> | null = null
+
   /** 停止标志：stop() 置 true，晚到回调据此丢弃（代际 + 标志双保险） */
   private stopped = false
   /** 内部循环运行中标志 */
@@ -146,6 +167,9 @@ export class RadioBroadcastController {
       maxRounds: this.maxRounds,
       maxSeconds: this.maxSeconds,
       stopReason: this.stopReason,
+      transcript: this.player.getTranscript(),
+      sleepUntil: this.sleepUntil,
+      sleepAfterSegment: this.sleepAfterSegment,
     }
   }
 
@@ -207,6 +231,10 @@ export class RadioBroadcastController {
     this.startedAt = Date.now()
     this.limitReached = false
     this.stopReason = null
+    this.sleepUntil = 0
+    this.sleepAfterSegment = false
+    this.sleepFading = false
+    this.clearSleepTimer()
 
     // 上一轮残留（error 态重试）：清播放器 + 弃用旧 session，从零开始
     this.player.stop()
@@ -220,6 +248,9 @@ export class RadioBroadcastController {
       onStart: (text) => {
         this.nowPlayingText = text
         this.segmentCount++
+        // emit 修复（P0-1）：status 已是 playing 时 setStatus 会早退不通知，
+        // nowPlayingText / transcript 的句级变化须显式广播（连续句间 UI 实时刷新）
+        this.emit()
         this.setStatus('playing')
       },
       onEnd: () => {
@@ -228,6 +259,7 @@ export class RadioBroadcastController {
         // 低水位且无段生成在途 → 提前请求下一段，实现「播当前段时并行生成下一段」。
         // 若已在上限/停止则不请求（reachedLimit 内一并处理）。
         this.maybeAdvanceByLookahead()
+        this.emit() // 句级变化广播（同上）
       },
       onSynthError: (_item, error) => {
         log.warn('单句合成失败（跳过）', { error })
@@ -244,8 +276,18 @@ export class RadioBroadcastController {
         // 队列空但仍有在途合成 → generating 子状态（潜在静默窗）
         if (!this.stopped && this.running) this.setStatus('generating')
       },
+      onStopRequest: () => {
+        // 锁屏 / 系统媒体会话的停止手势（P0-4）→ 走统一三路中断
+        void this.stop('manual')
+      },
     })
-    this.player.setOptions({ voice: this.voice, style: this.style, base64Mode: this.base64Mode })
+    this.player.setOptions({
+      voice: this.voice,
+      style: this.style,
+      base64Mode: this.base64Mode,
+      ...(opts.rate !== undefined ? { rate: opts.rate } : {}),
+      mediaTitle: `${DIRECTION_LABEL[opts.direction.kind]} · ${opts.direction.text}`,
+    })
     this.player.setVolume(opts.volume ?? 1)
 
     // 语音「停止」口令监听：命中即停止播报（复用既有 speechService，失败静默降级按钮兜底）
@@ -331,6 +373,12 @@ export class RadioBroadcastController {
     this.limitReached = false
     this.lastError = wasError ? this.lastError : null
 
+    // 睡眠定时收尾：watchdog/淡出守卫复位（P0-3）
+    this.clearSleepTimer()
+    this.sleepUntil = 0
+    this.sleepAfterSegment = false
+    this.sleepFading = false
+
     this.setStatus('idle')
     log.info('播报已停止（三路中断完成）')
   }
@@ -345,6 +393,75 @@ export class RadioBroadcastController {
   resume(): void {
     if (this.status !== 'playing' && this.status !== 'generating') return
     this.player.resume()
+  }
+
+  // ================================================================
+  // 倍速 / 睡眠定时（P0-2 / P0-3）
+  // ================================================================
+
+  /** 播放倍速（即时生效；持久化归 prefs store，控制器不落盘） */
+  setRate(rate: number): void {
+    this.player.setRate(rate)
+  }
+
+  /**
+   * 睡眠定时（P0-3）。三种形态：
+   * - `{ minutes: N }` → N 分钟后淡出 3s 并停止（watchdog 1s 检点，优雅不截半句）
+   * - `{ afterSegment: true }` → 「播完本段」：不再请求新段，当前队列播空即停
+   * - `null` → 取消定时
+   * 与配置字段 maxRounds/maxSeconds 分治：那是「播报上限」语义，本方法是「收听定时」语义。
+   */
+  sleep(opts: { minutes?: number; afterSegment?: boolean } | null): void {
+    if (this.status === 'idle') return
+    if (opts === null) {
+      this.sleepUntil = 0
+      this.sleepAfterSegment = false
+      this.sleepFading = false
+      this.clearSleepTimer()
+      this.emit()
+      log.info('睡眠定时已取消')
+      return
+    }
+    if (opts.afterSegment) {
+      this.sleepAfterSegment = true
+      log.info('睡眠定时：播完本段后停止')
+      // 已无待播内容（队列空且无在途合成）→ 直接优雅停机
+      if (this.player.queueLength === 0 && !this.player.hasPendingSynth && !this.hasSegmentInFlight()) {
+        this.tryGracefulStop()
+      }
+    } else if (opts.minutes && opts.minutes > 0) {
+      this.sleepUntil = Date.now() + opts.minutes * 60_000
+      this.sleepFading = false
+      this.startSleepTimer()
+      log.info('睡眠定时已设', { minutes: opts.minutes })
+    }
+    this.emit()
+  }
+
+  /** watchdog：1s 检点 sleepUntil，到点 → 淡出 → stop('sleep')。仅触发一次。 */
+  private startSleepTimer(): void {
+    if (this.sleepTimer) return
+    this.sleepTimer = setInterval(() => {
+      if (this.sleepUntil === 0 || this.sleepFading || this.stopped) {
+        if (this.stopped || this.sleepUntil === 0) this.clearSleepTimer()
+        return
+      }
+      if (Date.now() >= this.sleepUntil) {
+        this.sleepFading = true
+        this.clearSleepTimer()
+        log.info('睡眠定时到点：淡出后停止')
+        void this.player.fadeOut(3000).then(() => {
+          if (!this.stopped) void this.stop('sleep')
+        })
+      }
+    }, 1000)
+  }
+
+  private clearSleepTimer(): void {
+    if (this.sleepTimer) {
+      clearInterval(this.sleepTimer)
+      this.sleepTimer = null
+    }
   }
 
   // ================================================================
@@ -539,11 +656,14 @@ export class RadioBroadcastController {
     }
   }
 
-  /** 自动停止判定：轮次上限（已播段数 ≥ maxRounds）或时长上限（已播时长 ≥ maxSeconds）命中 */
+  /** 自动停止判定：轮次上限（已播段数 ≥ maxRounds）或时长上限（已播时长 ≥ maxSeconds）或睡眠定时命中 */
   private reachedLimit(): boolean {
     if (this.limitReached) return true
     if (this.maxRounds && this.segmentIndex >= this.maxRounds) return true
     if (this.maxSeconds && this.startedAt > 0 && Date.now() - this.startedAt >= this.maxSeconds * 1000) return true
+    // 睡眠定时（P0-3）：到点即达上限（watchdog 另行淡出停止）；「播完本段」立即达上限（不再请求新段）
+    if (this.sleepAfterSegment) return true
+    if (this.sleepUntil > 0 && Date.now() >= this.sleepUntil) return true
     return false
   }
 
@@ -554,14 +674,19 @@ export class RadioBroadcastController {
       // 队列尚有内容待播 → 交给 onQueueDrained 收尾触发；有合成/AI 在途则继续等
       return
     }
-    log.info('已达上限（轮次/时长），优雅停止', {
+    log.info('已达上限（轮次/时长/睡眠定时），优雅停止', {
       maxRounds: this.maxRounds,
       maxSeconds: this.maxSeconds,
       segmentIndex: this.segmentIndex,
+      sleep: this.sleepUntil > 0 || this.sleepAfterSegment,
     })
-    // 停止原因：优先轮次命中（达到播段数上限），否则按时长
+    // 停止原因：睡眠定时优先（sleepUntil 到点 / 播完本段），其次轮次命中，最后时长
     const reason: RadioBroadcastStopReason =
-      this.maxRounds && this.segmentIndex >= this.maxRounds ? 'max-rounds' : 'max-seconds'
+      this.sleepUntil > 0 || this.sleepAfterSegment
+        ? 'sleep'
+        : this.maxRounds && this.segmentIndex >= this.maxRounds
+          ? 'max-rounds'
+          : 'max-seconds'
     void this.stop(reason)
   }
 

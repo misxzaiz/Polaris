@@ -29,11 +29,21 @@ export interface UseRadioBroadcastReturn {
   maxSeconds?: number
   /** 最近停止原因（回 idle 后保留一次） */
   stopReason: ReturnType<typeof useRadioBroadcastStore.getState>['stopReason']
+  /** 字幕跟读文稿（P0-1；无可展示内容为 null） */
+  transcript: ReturnType<typeof useRadioBroadcastStore.getState>['transcript']
+  /** 睡眠定时到点时刻（0 = 未设） */
+  sleepUntil: number
+  /** 睡眠定时「播完本段」模式 */
+  sleepAfterSegment: boolean
 
   start: (opts: RadioBroadcastControllerOptions) => Promise<void>
   stop: () => Promise<void>
   pause: () => void
   resume: () => void
+  /** 播放倍速（P0-2，即时生效） */
+  setRate: (rate: number) => void
+  /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
+  sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
 
   /** 方向预设（UI 选项） */
   directionPresets: typeof DIRECTION_PRESETS
@@ -53,6 +63,9 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
   const maxRounds = useRadioBroadcastStore((s) => s.maxRounds)
   const maxSeconds = useRadioBroadcastStore((s) => s.maxSeconds)
   const stopReason = useRadioBroadcastStore((s) => s.stopReason)
+  const transcript = useRadioBroadcastStore((s) => s.transcript)
+  const sleepUntil = useRadioBroadcastStore((s) => s.sleepUntil)
+  const sleepAfterSegment = useRadioBroadcastStore((s) => s.sleepAfterSegment)
 
   const start = useCallback((opts: Parameters<UseRadioBroadcastReturn['start']>[0]) => {
     return useRadioBroadcastStore.getState().start(opts)
@@ -65,6 +78,12 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
   }, [])
   const resume = useCallback(() => {
     useRadioBroadcastStore.getState().resume()
+  }, [])
+  const setRate = useCallback((rate: number) => {
+    useRadioBroadcastStore.getState().setRate(rate)
+  }, [])
+  const sleep = useCallback((opts: { minutes?: number; afterSegment?: boolean } | null) => {
+    useRadioBroadcastStore.getState().sleep(opts)
   }, [])
 
   return {
@@ -79,12 +98,17 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
     maxRounds,
     maxSeconds,
     stopReason,
+    transcript,
+    sleepUntil,
+    sleepAfterSegment,
     isPlaying: status === 'playing',
     isActive: status === 'starting' || status === 'playing' || status === 'generating' || status === 'stopping',
     start,
     stop,
     pause,
     resume,
+    setRate,
+    sleep,
     directionPresets: DIRECTION_PRESETS,
     voices: MIMO_VOICES,
   }

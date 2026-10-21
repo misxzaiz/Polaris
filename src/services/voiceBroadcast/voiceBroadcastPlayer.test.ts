@@ -23,12 +23,14 @@ type AudioInstance = {
   onended: (() => void) | null
   onerror: (() => void) | null
   volume: number
+  playbackRate: number
   src: string
 }
 const audioInstances: AudioInstance[] = []
 const MockAudio = vi.fn(function MockAudio(this: AudioInstance, src: string) {
   this.src = src
   this.volume = 1
+  this.playbackRate = 1
   this.onplay = null
   this.onended = null
   this.onerror = null
@@ -267,5 +269,102 @@ describe('VoiceBroadcastPlayer', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  // ── P0 快赢（radio-broadcast-p0-quickwins-spec）──
+
+  it('P0-5 缓存命中：同参数句二次入队不再调合成 API，直接就绪播放', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x/same' }))
+
+    // 第一遍：真实合成 → 播 → 播完
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledWith('第一句。')
+    })
+    audioInstances[audioInstances.length - 1].onended?.()
+    // 第二遍：同句同参数 → 缓存命中，callMimoTts 不再被调
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledTimes(2)
+    })
+    expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+  })
+
+  it('P0-5 缓存区分参数：不同音色/输出模式不串缓存', async () => {
+    const p = new VoiceBroadcastPlayer()
+    p.setCallbacks({ onStart: vi.fn() })
+    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x/v' }))
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第一句。')
+    })
+    // 换音色 → key 不同 → 仍需真实合成
+    p.setOptions({ voice: '茉莉' })
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  it('P0-2 setRate：新句继承倍速，播报中调整即时生效', async () => {
+    const p = new VoiceBroadcastPlayer()
+    p.setCallbacks({ onStart: vi.fn() })
+    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+
+    p.setOptions({ rate: 1.5 })
+    p.enqueueSegment('第一句。第二句。')
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第一句。')
+    })
+    expect(audioInstances[audioInstances.length - 1].playbackRate).toBe(1.5)
+    // 播报中调整 → 当前音频即时生效
+    p.setRate(2)
+    expect(audioInstances[audioInstances.length - 1].playbackRate).toBe(2)
+  })
+
+  it('P0-1 getTranscript：队列即文稿（含状态与当前索引），stop 后为 null', async () => {
+    // 合成挂起 → 两句一 ready 一 pending，状态可断言
+    const p = new VoiceBroadcastPlayer()
+    const firstSynth = deferred<{ ok: boolean; url?: string }>()
+    const calls: Array<() => Promise<{ ok: boolean; url?: string }>> = [
+      async () => ({ ok: true, url: 'http://x/1' }),
+      () => firstSynth.promise,
+    ]
+    // 第一句立即就绪并播放；第二句挂起（保持 pending）
+    mockCallMimoTts.mockImplementation(() => calls.shift()!())
+    p.enqueueSegment('第一句。第二句。')
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第一句。')
+    })
+
+    const t1 = p.getTranscript()
+    expect(t1).not.toBeNull()
+    expect(t1!.lines.map((l) => l.text)).toEqual(['第一句。', '第二句。'])
+    expect(t1!.currentIndex).toBe(0)
+    expect(t1!.lines[0].status).toBe('playing')
+    // 预取深度 2：第二句虽未就绪但已进入合成（挂起中）
+    expect(t1!.lines[1].status).toBe('synthesizing')
+
+    // stop 清队列 → 文稿消失（播完即弃语义）
+    p.stop()
+    expect(p.getTranscript()).toBeNull()
+  })
+
+  it('P0-3 fadeOut：线性降音量后暂停当前音频；期间被停则放弃', async () => {
+    const p = new VoiceBroadcastPlayer()
+    p.setCallbacks({ onStart: vi.fn() })
+    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第一句。')
+    })
+    const audio = audioInstances[audioInstances.length - 1]
+    await p.fadeOut(60)
+    expect(audio.volume).toBeLessThan(1)
+    expect(audio.volume).toBeGreaterThanOrEqual(0)
+    expect(audio.pause).toHaveBeenCalled()
   })
 })

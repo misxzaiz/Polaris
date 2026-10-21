@@ -11,8 +11,11 @@ export type RadioBroadcastStatus =
   | 'stopping'
   | 'error'
 
-/** mimo-tts 预置音色 id（对齐插件 PRESET_VOICES 的 voiceId） */
-export type VoiceId = '冰糖' | '茉莉' | '苏打' | '白桦' | 'Mia' | 'Chloe' | 'Milo' | 'Dean' | 'MiMo-默认'
+/**
+ * 音色 id（P0 放开为 string：面板经 mimo_tts_list_voices 动态拉取，
+ * 预置音色由 constants.MIMO_VOICES 兜底；不再硬编码枚举，设计/克隆音色可入播报）
+ */
+export type VoiceId = string
 
 /** 播报方向 key */
 export type DirectionKind = 'study' | 'story' | 'tech' | 'news' | 'custom'
@@ -44,13 +47,28 @@ export interface RadioBroadcastSegment {
   text: string
 }
 
-/** 停止原因（自动停止 / 语音口令 / 按钮；UI 反馈用） */
+/** 停止原因（自动停止 / 语音口令 / 按钮 / 睡眠定时；UI 反馈用） */
 export type RadioBroadcastStopReason =
   | 'manual'
   | 'voice-command'
   | 'max-rounds'
   | 'max-seconds'
+  | 'sleep'
   | 'error'
+
+/** 字幕跟读单行（P0-1）：队列即文稿，行状态与 QueueItem 对齐 */
+export interface TranscriptLine {
+  id: string
+  text: string
+  status: 'pending' | 'synthesizing' | 'ready' | 'playing' | 'done' | 'failed'
+}
+
+/** 字幕跟读快照（null = 当前无可展示文稿） */
+export interface RadioBroadcastTranscript {
+  lines: TranscriptLine[]
+  /** 当前播放行索引（-1 = 无在播句，如 generating 静默窗） */
+  currentIndex: number
+}
 
 /** 控制器订阅快照 */
 export interface RadioBroadcastSnapshot {
@@ -73,4 +91,10 @@ export interface RadioBroadcastSnapshot {
   maxSeconds?: number
   /** 最近一次停止原因（回 idle 后仍保留一次，供 Toast 反馈） */
   stopReason: RadioBroadcastStopReason | null
+  /** 字幕跟读文稿（P0-1；无可展示内容为 null） */
+  transcript: RadioBroadcastTranscript | null
+  /** 睡眠定时到点时刻（Date.now() 毫秒；0 = 未设定时） */
+  sleepUntil: number
+  /** 睡眠定时「播完本段」模式（队列播空即停，不再请求新段） */
+  sleepAfterSegment: boolean
 }
