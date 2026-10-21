@@ -23,6 +23,8 @@ import { pickLatestAssistantText } from '@/services/assistantTextUtils'
 import { cleanTextForSpeech } from '@/services/ttsTextFilter'
 import { VoiceBroadcastPlayer } from './voiceBroadcastPlayer'
 import { VoiceStopWatcher } from './voiceStopWatcher'
+import { probeVoice, addLibraryItem, buildAudioPlayUrl } from './voiceService'
+import type { LibraryItem } from './voiceService'
 import { promptForDirection, SEGMENT_LOOKAHEAD_SENTENCES } from './constants'
 import type {
   RadioBroadcastDirection,
@@ -137,6 +139,8 @@ export class RadioBroadcastController {
   private stopped = false
   /** 内部循环运行中标志 */
   private running = false
+  /** 回听模式（P1）：无 AI 会话，直插库句子播放；队列播空即 stop('finished') */
+  private replayMode = false
   /** 最近一次停止原因（回 idle 后保留一次，供 UI Toast 反馈；error 态归 'error'） */
   private stopReason: RadioBroadcastStopReason | null = null
   /** 已提交的段生成 Promise 集合（stop 时结清） */
@@ -345,6 +349,11 @@ export class RadioBroadcastController {
     this.stopped = true
     this.running = false
 
+    // 全量句入库：收尾前把播完（done）未入库的句子落库。
+    // 顺序关键：须在 player.stop() 清队列前取走（takeDoneSentences 依赖队列内容）。
+    if (!this.replayMode) this.flushDoneSentencesToLibrary()
+    this.replayMode = false
+
     // 路 1：播放器（代际 + 清队列 + 中止合成 + 停音频）
     this.player.stop()
     // 语音停止口令监听器一并停止
@@ -381,6 +390,86 @@ export class RadioBroadcastController {
 
     this.setStatus('idle')
     log.info('播报已停止（三路中断完成）')
+  }
+
+  // ================================================================
+  // 内容库回听（P1）
+  // ================================================================
+
+  /**
+   * 回听内容库单集（P1）：无 AI 会话，已合成句子直插播放器，队列播空即 stop('finished')。
+   * 与 start() 的区别：不建会话、不预检参数、不请求新段、零 AI 成本。
+   */
+  async playLibraryItem(item: LibraryItem): Promise<boolean> {
+    if (this.status !== 'idle') {
+      await this.stop('manual')
+    }
+    const prepared = item.sentences
+      .map((s) => {
+        const playUrl = typeof s.file === 'string' && s.file ? buildAudioPlayUrl(s.file) : null
+        return { text: s.text, playUrl, audioId: s.audioId ?? null, file: s.file ?? null }
+      })
+      .filter((s): s is { text: string; playUrl: string; audioId: string | null; file: string | null } => !!s.playUrl)
+    if (prepared.length === 0) {
+      this.lastError = '该单集无可播放音频（句子文件缺失或未入库）'
+      this.setStatus('error')
+      return false
+    }
+
+    this.stopped = false
+    this.running = true
+    this.replayMode = true
+    this.consecutiveErrors = 0
+    this.segmentIndex = 0
+    this.segmentCount = 0
+    this.nowPlayingText = null
+    this.limitReached = false
+    this.lastError = null
+    this.direction = { kind: 'custom', text: item.title || '畅听回放' }
+    this.voice = item.voiceRef || this.voice
+    this.startedAt = Date.now()
+    this.stopReason = null
+    this.sleepUntil = 0
+    this.sleepAfterSegment = false
+    this.sleepFading = false
+    this.clearSleepTimer()
+
+    // 上一轮残留清理（不碰会话字段：replay 无 sessionId）
+    this.player.stop()
+    this.voiceStopWatcher.stop()
+
+    this.player.setOptions({ mediaTitle: item.title })
+    this.setStatus('playing')
+    this.player.enqueuePrepared(prepared)
+    log.info('回听开始（replay）', { itemId: item.id, sentences: prepared.length })
+    return true
+  }
+
+  /**
+   * 全量句入库（P1）：把播完（done）且未入库的句子写入内容库（source='live'，fire-and-forget）。
+   * 触发点：队列播空（handleQueueDrained）与 stop() 收尾——两处已覆盖段间与最终残留。
+   */
+  private flushDoneSentencesToLibrary(): void {
+    if (this.replayMode) return
+    if (!this.sessionId) return
+    const sentences = this.player.takeDoneSentences()
+    if (sentences.length === 0) return
+    const label = DIRECTION_LABEL[this.direction?.kind ?? 'custom'] ?? '自定义'
+    const title = `${label} · ${this.direction?.text?.trim() || '畅听'}`
+    log.info('段自动入库', { sentences: sentences.length, title })
+    void addLibraryItem({
+      title,
+      topic: this.direction?.text ?? '',
+      engine: this.engineId ?? '',
+      voiceRef: this.voice,
+      style: this.style,
+      source: 'live',
+      sentences,
+    })
+      .then((res) => {
+        if (!res.ok) log.warn('段入库失败（不影响播放）', { error: res.error })
+      })
+      .catch((e) => log.warn('段入库异常（不影响播放）', { error: String(e) }))
   }
 
   /** 播放暂停（AI 保持生成） */
@@ -560,6 +649,15 @@ export class RadioBroadcastController {
   private handleQueueDrained(): void {
     if (this.stopped || !this.running) return
     if (this.status === 'stopping' || this.status === 'idle') return
+
+    // 回听模式（P1）：无 AI 会话，播完即自然结束（stopReason = 'finished'）
+    if (this.replayMode) {
+      void this.stop('finished')
+      return
+    }
+
+    // 全量句入库：把本轮播完（done）且未入库的句子存入内容库（fire-and-forget）
+    this.flushDoneSentencesToLibrary()
 
     // 已达轮次/时长上限且队列播空 → 优雅停机（不请求新段）
     if (this.reachedLimit()) {
@@ -755,11 +853,10 @@ export class RadioBroadcastController {
     return cleaned.trim()
   }
 
-  /** 预检 mimo-tts 可用性 */
+  /** 预检 mimo-tts 可用性（cap.voice voices.probe；自定义音色走 design/clone 透传） */
   private async probeMimo(): Promise<boolean> {
     try {
-      const { probeMimoTts } = await import('./mcpBridge')
-      const res = await probeMimoTts(this.voice)
+      const res = await probeVoice({ kind: 'preset', voice: this.voice })
       if (!res.ok) {
         this.lastError = `mimo-tts 不可用：${res.error ?? '未知原因'}（请检查插件 API Key 配置）`
         return false

@@ -15,7 +15,8 @@
 import { generateUUID } from '@/utils/uuid'
 import { createLogger } from '@/utils/logger'
 import { PREFETCH_DEPTH, SYNTH_TIMEOUT_MS, BASE64_PREFETCH_DEPTH, BASE64_SYNTH_TIMEOUT_MS, SYNTH_MAX_RETRIES } from './constants'
-import { callMimoTts } from './mcpBridge'
+import { synthesizeVoice, buildAudioPlayUrl } from './voiceService'
+import type { SynthResult } from './voiceService'
 import { SynthCache, synthCacheKey } from './synthCache'
 import type { QueueItem, RadioBroadcastTranscript } from './types'
 
@@ -29,8 +30,8 @@ interface MediaSessionLike {
 }
 
 export interface PlayerCallbacks {
-  /** 开始播放某句（UI 打点） */
-  onStart?: (text: string) => void
+  /** 开始播放某句（UI 打点；meta = 合成 meta，供控制器/入库用） */
+  onStart?: (text: string, meta?: { audioId?: string | null; file?: string | null }) => void
   /** 一句播放结束 */
   onEnd?: () => void
   /** 队列已空且无在途合成（段尾/停止时触发，供控制器请求下一段或进入 idle） */
@@ -75,8 +76,10 @@ export class VoiceBroadcastPlayer {
   private rate = 1
   /** 锁屏会话标题（话题名，控制器 start 时注入；P0-4） */
   private mediaTitle: string | null = null
-  /** 句合成缓存（P0-5，内存 LRU）：key = hash(text+voice+style+outputMode) */
+  /** 句合成缓存（P0-5 内存 L1）：key = hash(text+voice+style+outputMode)；后端 cap.voice 磁盘缓存为 L2 */
   private synthCache = new SynthCache()
+  /** 已取走的 done 游标（段自动入库去重）；stop 清队列时复位 */
+  private takenDoneCursor = 0
 
   setCallbacks(cb: PlayerCallbacks): void {
     this.callbacks = { ...this.callbacks, ...cb }
@@ -187,9 +190,50 @@ export class VoiceBroadcastPlayer {
     this.pump()
   }
 
+  /**
+   * 直插就绪句（P1 续播/回听）：库单集句子经 buildAudioPlayUrl 已是可播 URL，
+   * 不再走合成（零 AI 成本回听）。
+   */
+  enqueuePrepared(items: Array<{ text: string; playUrl: string; audioId?: string | null; file?: string | null }>): void {
+    for (const it of items) {
+      if (!it.playUrl) continue
+      this.queue.push({
+        id: generateUUID(),
+        text: it.text,
+        url: it.playUrl,
+        status: 'ready',
+        gen: this.generation,
+        audioId: it.audioId ?? undefined,
+        file: it.file ?? undefined,
+      })
+    }
+    log.info('就绪句直插（回听）', { count: items.length, total: this.queue.length })
+    this.pump()
+  }
+
+  /**
+   * 取走自上次调用以来播完（done）且带音频文件的句子（P1 段自动入库用）。
+   * 单调前移游标（done/failed 视为已消费）：永不越过未到终态的队头，
+   * 避免同批内跳过未播句子。指针在 stop/clear 复位；无新增返回空数组。
+   */
+  takeDoneSentences(): Array<{ text: string; audioId?: string; file?: string }> {
+    const out: Array<{ text: string; audioId?: string; file?: string }> = []
+    while (this.takenDoneCursor < this.queue.length) {
+      const q = this.queue[this.takenDoneCursor]
+      // 播放按序进行：队头未到终态（done/failed）→ 后面的更没有播完，停止扫描
+      if (q.status !== 'done' && q.status !== 'failed') break
+      if (q.status === 'done' && q.file) {
+        out.push({ text: q.text, audioId: q.audioId ?? undefined, file: q.file })
+      }
+      this.takenDoneCursor++
+    }
+    return out
+  }
+
   /** 清空队列 + 中止在途合成（stop 路径） */
   private clear(): void {
     this.queue = []
+    this.takenDoneCursor = 0
     this.pendingSynths.forEach((abort) => abort.abort())
     this.pendingSynths.clear()
   }
@@ -322,13 +366,13 @@ export class VoiceBroadcastPlayer {
       }
     }, timeoutMs)
 
-    void callMimoTts({
+    void synthesizeVoice({
       text: item.text,
-      voice: this.voice,
+      voiceRef: this.voice,
       style: this.style,
       outputMode: this.base64Mode ? 'base64' : 'file',
     })
-      .then((res) => {
+      .then((res: SynthResult) => {
         clearTimeout(timer)
         if (abort.signal.aborted) return // 已 stop：晚到结果丢弃
         this.pendingSynths.delete(item.id)
@@ -336,12 +380,27 @@ export class VoiceBroadcastPlayer {
           log.debug('丢弃旧代合成结果', { itemId: item.id })
           return
         }
-        if (res.ok && res.url) {
-          item.url = res.url
+        if (res.ok && res.dataUrl) {
+          // base64 模式：内联 dataUrl 直播
+          item.url = res.dataUrl
+          item.audioId = res.audioId
+          item.file = res.file
           item.status = 'ready'
-          // P0-5：成功结果入缓存（重听/重复句零成本）
-          this.synthCache.put(cacheKey, { url: res.url, format: res.format })
-          log.debug('句就绪', { len: item.text.length })
+          this.synthCache.put(cacheKey, { url: res.dataUrl, format: res.format })
+          log.debug('句就绪（base64）', { len: item.text.length })
+        } else if (res.ok && res.file) {
+          // file 模式：绝对路径按端构建播放 URL（Tauri asset / Web /api/files?token=，手机可达）
+          const playUrl = buildAudioPlayUrl(res.file)
+          if (!playUrl) {
+            this.markSynthFailed(item, '播放 URL 构建失败（fileService 未就绪）')
+          } else {
+            item.url = playUrl
+            item.audioId = res.audioId
+            item.file = res.file
+            item.status = 'ready'
+            this.synthCache.put(cacheKey, { url: playUrl, format: res.format })
+            log.debug('句就绪', { len: item.text.length, cached: res.cached })
+          }
         } else {
           this.markSynthFailed(item, res.error ?? '合成失败')
         }
@@ -375,7 +434,7 @@ export class VoiceBroadcastPlayer {
         audio.pause()
         return
       }
-      this.callbacks.onStart?.(item.text)
+      this.callbacks.onStart?.(item.text, { audioId: item.audioId ?? null, file: item.file ?? null })
     }
 
     audio.onended = () => {

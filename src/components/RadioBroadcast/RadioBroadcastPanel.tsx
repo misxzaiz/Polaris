@@ -9,7 +9,7 @@
  *
  * 消费：useRadioBroadcast()（状态 + action）+ useRadioBroadcastPrefsStore()（配置偏好）。
  */
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { clsx } from 'clsx'
 import {
   Bot,
@@ -26,11 +26,29 @@ import {
   CircleDot,
   Gauge,
   Timer,
+  Radio,
+  Library,
+  Mic,
+  Star,
+  Trash2,
+  Sparkles,
+  Upload,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useRadioBroadcast } from '@/hooks/useRadioBroadcast'
 import type { DirectionKind, RadioBroadcastStatus, RadioBroadcastTranscript, VoiceId } from '@/services/voiceBroadcast/types'
-import { listMimoVoices } from '@/services/voiceBroadcast/mcpBridge'
+import {
+  listLibraryItems,
+  deleteLibraryItem,
+  updateLibraryItem,
+  listCustomVoices,
+  listPresetVoices,
+  addDesignVoice,
+  addCloneVoice,
+  deleteVoice,
+  probeVoice,
+} from '@/services/voiceBroadcast/voiceService'
+import type { LibraryItem, CustomVoice, PresetVoiceInfo } from '@/services/voiceBroadcast/voiceService'
 import { MIMO_VOICES } from '@/services/voiceBroadcast/constants'
 import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { useConfigStore } from '@/stores/configStore'
@@ -108,6 +126,11 @@ export function RadioBroadcastPanel() {
   // 播报中是否正在查看配置（双视图可达，播报不中断）
   const [showConfigWhilePlaying, setShowConfigWhilePlaying] = useState(false)
 
+  // 页签（P1）：畅听（现有播放/配置双视图）/ 内容库 / 音色库
+  const [tab, setTab] = useState<'listen' | 'library' | 'voices'>('listen')
+  /** 音色列表版本号：音色库内增删后 ++，触发上方音色下拉重拉 */
+  const [voiceListVersion, setVoiceListVersion] = useState(0)
+
   // 倍速（P0-2）：prefs 持久化，播报中即时生效
   const speed = prefs.speed ?? 1
   const cycleSpeed = () => {
@@ -123,24 +146,35 @@ export function RadioBroadcastPanel() {
     rb.sleep(opts)
   }
 
-  // 动态音色列表（P0-6）：拉取失败静默回退静态预置；当前选中音色始终保留在选项中
+  // 动态音色列表（P1）：预置（voices.presets 插件下发，失败回退静态）+ 自定义（cap.voice 库）；
+  // 切到音色库页签时重拉（同步新增/删除结果）
   const [voiceOptions, setVoiceOptions] = useState(MIMO_VOICES)
   useEffect(() => {
     let alive = true
-    listMimoVoices()
-      .then((res) => {
-        if (!alive || !res.ok || res.voices.length === 0) return
-        const dyn = res.voices.map((v) => ({
-          id: v.voiceId,
-          label: v.name,
-          desc: [v.language, v.gender].filter(Boolean).join(' · ') || '云端音色',
-        }))
-        const seen = new Set(dyn.map((v) => v.id))
-        setVoiceOptions([...dyn, ...MIMO_VOICES.filter((v) => !seen.has(v.id))])
+    Promise.all([listPresetVoices(), listCustomVoices()])
+      .then(([presets, customs]) => {
+        if (!alive) return
+        const dyn = presets.ok
+          ? presets.voices.map((v) => ({
+              id: v.voiceId,
+              label: v.name,
+              desc: [v.language, v.gender].filter(Boolean).join(' · ') || '云端音色',
+            }))
+          : []
+        const customOps = customs.ok
+          ? customs.voices.map((v) => ({
+              id: v.id,
+              label: `★ ${v.name}`,
+              desc: v.type === 'clone' ? '克隆音色' : '设计音色',
+            }))
+          : []
+        const seen = new Set([...dyn, ...customOps].map((v) => v.id))
+        const merged = [...customOps, ...dyn, ...MIMO_VOICES.filter((v) => !seen.has(v.id))]
+        setVoiceOptions(merged.length > 0 ? merged : MIMO_VOICES)
       })
       .catch(() => { /* 拉取失败：保留静态预置兜底 */ })
     return () => { alive = false }
-  }, [])
+  }, [tab === 'voices', voiceListVersion])
   // 选中音色不在选项（动态列表加载前/被裁剪）→ 头插保证 select 可显示
   const voiceChoices = useMemo(
     () => (voiceOptions.some((v) => v.id === voice) ? voiceOptions : [{ id: voice, label: voice, desc: '' }, ...voiceOptions]),
@@ -182,6 +216,7 @@ export function RadioBroadcastPanel() {
       sleep: { type: 'info', title: t('radioBroadcast.toast.sleep', { defaultValue: '定时到，已停止播报' }) },
       'voice-command': { type: 'info', title: t('radioBroadcast.toast.voiceStopped', { defaultValue: '已通过语音口令停止播报' }) },
       manual: { type: 'info', title: t('radioBroadcast.toast.stopped', { defaultValue: '已停止播报' }) },
+      finished: { type: 'info', title: t('radioBroadcast.toast.finished', { defaultValue: '回听结束，已播完全部内容' }) },
       error: { type: 'error', title: t('radioBroadcast.toast.error', { defaultValue: '播报出错' }) },
     }
     const item = map[reason]
@@ -294,8 +329,38 @@ export function RadioBroadcastPanel() {
         )}
       </div>
 
+      {/* 页签栏（P1）：畅听 / 内容库 / 音色库 */}
+      <nav
+        role="tablist"
+        aria-label={t('radioBroadcast.tabs', { defaultValue: '电台页签' })}
+        className="mb-3 flex shrink-0 items-center gap-1 rounded-md bg-[rgb(var(--c-bg-elevated)/0.4)] p-0.5"
+      >
+        {([
+          { key: 'listen', label: t('radioBroadcast.tab.listen', { defaultValue: '畅听' }), Icon: Radio },
+          { key: 'library', label: t('radioBroadcast.tab.library', { defaultValue: '内容库' }), Icon: Library },
+          { key: 'voices', label: t('radioBroadcast.tab.voices', { defaultValue: '音色库' }), Icon: Mic },
+        ] as const).map(({ key, label, Icon }) => (
+          <button
+            key={key}
+            role="tab"
+            type="button"
+            aria-selected={tab === key}
+            onClick={() => setTab(key)}
+            className={clsx(
+              'flex flex-1 items-center justify-center gap-1 rounded px-2 py-1 text-[11.5px] transition-colors',
+              tab === key
+                ? 'bg-[rgb(var(--c-accent)/0.18)] text-[rgb(var(--c-accent))]'
+                : 'text-text-secondary hover:text-text-primary',
+            )}
+          >
+            <Icon size={12} />
+            {label}
+          </button>
+        ))}
+      </nav>
+
       {/* ===== 播报中视图 ===== */}
-      {showPlayingView && (
+      {tab === 'listen' && showPlayingView && (
         <div className="flex flex-col gap-3">
           {/* 播报中快捷：查看配置（不中断） */}
           {rb.isActive && (
@@ -424,7 +489,7 @@ export function RadioBroadcastPanel() {
       )}
 
       {/* ===== 配置视图 ===== */}
-      {showConfigView && (
+      {tab === 'listen' && showConfigView && (
         <div className="flex flex-col gap-3">
           {/* 播报中查看配置头：返回播放视图 */}
           {rb.isActive && (
@@ -681,6 +746,18 @@ export function RadioBroadcastPanel() {
           </button>
         </div>
       )}
+
+      {/* ===== 内容库页签（P1）===== */}
+      {tab === 'library' && <LibraryTab onPlay={(item) => { void rb.playLibraryItem(item) }} />}
+
+      {/* ===== 音色库页签（P1）===== */}
+      {tab === 'voices' && (
+        <VoicesTab
+          activeVoice={voice}
+          onSelectVoice={(id) => setVoice(id)}
+          onVoiceListChange={() => setVoiceListVersion(v => v + 1)}
+        />
+      )}
     </div>
   )
 }
@@ -861,5 +938,499 @@ function TranscriptView({ transcript, isPlaying }: {
         </p>
       ))}
     </div>
+  )
+}
+
+// ================================================================
+// 内容库 / 音色库（P1 无限畅听电台·资产层页签）
+// ================================================================
+
+/** 内容库页签：已入库单集列表（play = 控制器 replay 直插，无 AI 成本） */
+function LibraryTab({ onPlay }: { onPlay: (item: LibraryItem) => void }) {
+  const { t } = useTranslation('common')
+  const toast = useToastStore()
+  // null = 首拉中（避免空态闪烁）
+  const [items, setItems] = useState<LibraryItem[] | null>(null)
+
+  const loadItems = useCallback(
+    (showErrorToast: boolean) => {
+      listLibraryItems()
+        .then((res) => {
+          if (res.ok) setItems(res.items)
+          else {
+            setItems([])
+            if (showErrorToast) toast.error(res.error ?? t('radioBroadcast.library.loadFailed', { defaultValue: '内容库加载失败' }))
+          }
+        })
+        .catch(() => {
+          setItems([])
+          if (showErrorToast) toast.error(t('radioBroadcast.library.loadFailed', { defaultValue: '内容库加载失败' }))
+        })
+    },
+    [toast, t],
+  )
+
+  useEffect(() => {
+    loadItems(false)
+  }, [loadItems])
+
+  const toggleFavorite = (item: LibraryItem) => {
+    void updateLibraryItem(item.id, { favorite: !item.favorite })
+      .then((res) => {
+        if (res.ok && res.item) {
+          setItems((prev) => prev?.map((it) => (it.id === item.id ? (res.item ?? it) : it)) ?? null)
+        } else {
+          toast.error(t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' }))
+        }
+      })
+      .catch(() => toast.error(t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' })))
+  }
+
+  const removeItem = (item: LibraryItem) => {
+    void deleteLibraryItem(item.id)
+      .then((res) => {
+        if (res.ok) {
+          setItems((prev) => prev?.filter((it) => it.id !== item.id) ?? null)
+          toast.info(t('radioBroadcast.library.deleted', { defaultValue: '已删除单集' }))
+        } else {
+          toast.error(res.error ?? t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' }))
+        }
+      })
+      .catch(() => toast.error(t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' })))
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {items === null ? (
+        <div className="flex items-center justify-center py-8 text-[12px] text-text-tertiary">
+          <Loader2 size={14} className="mr-2 animate-spin" />
+          {t('radioBroadcast.library.loading', { defaultValue: '加载中…' })}
+        </div>
+      ) : items.length === 0 ? (
+        <div className="rounded-md border border-dashed border-border px-4 py-8 text-center text-[12px] leading-relaxed text-text-tertiary">
+          <Library size={20} className="mx-auto mb-2 opacity-50" />
+          {t('radioBroadcast.library.empty', { defaultValue: '暂无内容。畅听播报中的内容会自动存入这里，之后随时回听。' })}
+        </div>
+      ) : (
+        items.map((item) => (
+          <div
+            key={item.id}
+            className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-[12.5px] font-medium text-text-primary">{item.title}</div>
+                <div className="mt-0.5 truncate text-[10.5px] text-text-tertiary">
+                  {[
+                    item.topic || undefined,
+                    new Date(item.createdAt).toLocaleDateString(),
+                    t('radioBroadcast.library.sentences', { defaultValue: '{{count}} 句', count: item.sentences.length }),
+                    item.source === 'live' ? t('radioBroadcast.library.fromLive', { defaultValue: '畅听存档' }) : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </div>
+              </div>
+              <div className="flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => onPlay(item)}
+                  aria-label={t('radioBroadcast.library.play', { defaultValue: '回听' })}
+                  title={t('radioBroadcast.library.play', { defaultValue: '回听' })}
+                  className="flex items-center justify-center rounded-md px-1.5 py-1.5 text-text-secondary transition-colors hover:bg-[rgb(var(--c-bg-hover))] hover:text-[rgb(var(--c-accent))]"
+                >
+                  <Play size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleFavorite(item)}
+                  aria-label={item.favorite ? t('radioBroadcast.library.unfavorite', { defaultValue: '取消收藏' }) : t('radioBroadcast.library.favorite', { defaultValue: '收藏' })}
+                  aria-pressed={item.favorite}
+                  className={clsx(
+                    'flex items-center justify-center rounded-md px-1.5 py-1.5 transition-colors hover:bg-[rgb(var(--c-bg-hover))]',
+                    item.favorite ? 'text-amber-400' : 'text-text-tertiary hover:text-text-secondary',
+                  )}
+                >
+                  <Star size={14} className={item.favorite ? 'fill-amber-400' : undefined} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeItem(item)}
+                  aria-label={t('radioBroadcast.library.delete', { defaultValue: '删除' })}
+                  className="flex items-center justify-center rounded-md px-1.5 py-1.5 text-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  )
+}
+
+/** 音频试听小播放器（probe 返回 dataUrl 内联可播） */
+function ProbeAudio({ dataUrl, label }: { dataUrl: string; label: string }) {
+  return <audio src={dataUrl} controls aria-label={label} className="mt-2 h-8 w-full" />
+}
+
+/** 音色库页签：我的音色（设计/克隆）+ 新增向导 + 预置音色 */
+function VoicesTab({ activeVoice, onSelectVoice, onVoiceListChange }: {
+  activeVoice: string
+  onSelectVoice: (id: string) => void
+  /** 音色列表变化（增/删后）→ 通知面板重拉下拉 */
+  onVoiceListChange: () => void
+}) {
+  const { t } = useTranslation('common')
+  const toast = useToastStore()
+
+  const [customs, setCustoms] = useState<CustomVoice[] | null>(null)
+  const [presets, setPresets] = useState<PresetVoiceInfo[]>([])
+
+  const loadVoices = useCallback(() => {
+    listCustomVoices()
+      .then((res) => setCustoms(res.ok ? res.voices : []))
+      .catch(() => setCustoms([]))
+    listPresetVoices()
+      .then((res) => setPresets(res.ok ? res.voices : []))
+      .catch(() => { /* 失败留空：预置走畅听页静态兜底 */ })
+  }, [])
+
+  useEffect(() => {
+    loadVoices()
+  }, [loadVoices])
+
+  const refresh = () => {
+    loadVoices()
+    onVoiceListChange()
+  }
+
+  const removeVoice = (v: CustomVoice) => {
+    void deleteVoice(v.id)
+      .then((res) => {
+        if (res.ok) {
+          toast.info(t('radioBroadcast.voices.deleted', { defaultValue: '已删除音色' }))
+          refresh()
+        } else {
+          toast.error(res.error ?? t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' }))
+        }
+      })
+      .catch(() => toast.error(t('radioBroadcast.library.updateFailed', { defaultValue: '操作失败' })))
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      {/* 我的音色（design/clone，入库可播报） */}
+      <section className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2.5">
+        <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-text-secondary">
+          <Mic size={12} />
+          {t('radioBroadcast.voices.mine', { defaultValue: '我的音色' })}
+        </div>
+        {customs === null ? (
+          <div className="flex items-center py-2 text-[12px] text-text-tertiary">
+            <Loader2 size={13} className="mr-2 animate-spin" />
+            {t('radioBroadcast.library.loading', { defaultValue: '加载中…' })}
+          </div>
+        ) : customs.length === 0 ? (
+          <p className="py-1 text-[11.5px] leading-relaxed text-text-tertiary">
+            {t('radioBroadcast.voices.mineEmpty', { defaultValue: '还没有自定义音色。用下面的向导描述一个，或上传录音克隆。' })}
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1">
+            {customs.map((v) => (
+              <div
+                key={v.id}
+                className={clsx(
+                  'flex items-center justify-between gap-2 rounded px-2 py-1.5 transition-colors',
+                  activeVoice === v.id ? 'bg-[rgb(var(--c-accent)/0.12)]' : 'bg-[rgb(var(--c-bg-elevated)/0.6)]',
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={() => onSelectVoice(v.id)}
+                  className="min-w-0 flex-1 text-left"
+                >
+                  <div className="truncate text-[12.5px] text-text-primary">
+                    {v.name}
+                    {activeVoice === v.id && (
+                      <span className="ml-1.5 rounded-full bg-[rgb(var(--c-accent)/0.2)] px-1.5 py-px text-[9.5px] text-[rgb(var(--c-accent))]">
+                        {t('radioBroadcast.voices.current', { defaultValue: '当前' })}
+                      </span>
+                    )}
+                  </div>
+                  <div className="truncate text-[10.5px] text-text-tertiary">
+                    {v.type === 'clone'
+                      ? t('radioBroadcast.voices.cloneTag', { defaultValue: '克隆' })
+                      : t('radioBroadcast.voices.designTag', { defaultValue: '设计' })}
+                    {v.description ? ` · ${v.description}` : ''}
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeVoice(v)}
+                  aria-label={t('radioBroadcast.library.delete', { defaultValue: '删除' })}
+                  className="shrink-0 rounded-md p-1.5 text-text-tertiary transition-colors hover:bg-red-500/10 hover:text-red-400"
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* 新增：设计音色（description → 试听 → 入库） */}
+      <DesignVoiceWizard onSaved={refresh} />
+      {/* 新增：克隆音色（上传样本 → 试听 → 入库） */}
+      <CloneVoiceWizard onSaved={refresh} />
+
+      {/* 预置音色（插件下发；只读可选） */}
+      {presets.length > 0 && (
+        <section className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2.5">
+          <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-text-secondary">
+            <Sparkles size={12} />
+            {t('radioBroadcast.voices.preset', { defaultValue: '预置音色' })}
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {presets.map((p) => (
+              <button
+                key={p.voiceId}
+                type="button"
+                onClick={() => onSelectVoice(p.voiceId)}
+                aria-pressed={activeVoice === p.voiceId}
+                className={clsx(
+                  'rounded-md px-2 py-1 text-[11.5px] transition-colors',
+                  activeVoice === p.voiceId
+                    ? 'bg-[rgb(var(--c-accent)/0.18)] text-[rgb(var(--c-accent))]'
+                    : 'bg-[rgb(var(--c-bg-elevated)/0.6)] text-text-secondary hover:text-text-primary',
+                )}
+              >
+                {p.name}
+                {p.gender ? ` · ${p.gender}` : ''}
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+/** 试听 + 保存共用提交逻辑：probe 成功返回 dataUrl；保存不重复试听 */
+async function commitVoiceProbe(args: {
+  kind: 'design' | 'clone'
+  name: string
+  description?: string
+  sampleBase64?: string
+  sampleName?: string
+  save: boolean
+}): Promise<{ ok: boolean; dataUrl?: string; error?: string }> {
+  if (args.save) {
+    const res = args.kind === 'design'
+      ? await addDesignVoice(args.name, args.description ?? '')
+      : await addCloneVoice(args.name, args.sampleBase64 ?? '', args.sampleName)
+    return res.ok ? { ok: true } : { ok: false, error: res.error }
+  }
+  return probeVoice({
+    kind: args.kind,
+    description: args.description,
+    sampleBase64: args.sampleBase64,
+    sampleName: args.sampleName,
+  })
+}
+
+/** 设计音色向导：名称 + 外貌描述 → 试听 → 入库 */
+function DesignVoiceWizard({ onSaved }: { onSaved: () => void }) {
+  const { t } = useTranslation('common')
+  const toast = useToastStore()
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [busy, setBusy] = useState<'probe' | 'save' | null>(null)
+  const [probeUrl, setProbeUrl] = useState<string | null>(null)
+
+  const validInputs = name.trim().length > 0 && description.trim().length > 0
+
+  const submit = (save: boolean) => {
+    if (!validInputs || busy) return
+    setBusy(save ? 'save' : 'probe')
+    setProbeUrl(null)
+    void commitVoiceProbe({
+      kind: 'design',
+      name: name.trim(),
+      description: description.trim(),
+      save,
+    })
+      .then((res) => {
+        setBusy(null)
+        if (res.ok) {
+          if (save) {
+            toast.success(t('radioBroadcast.voices.saved', { defaultValue: '音色已保存' }))
+            setName('')
+            setDescription('')
+            onSaved()
+          } else if (res.dataUrl) {
+            setProbeUrl(res.dataUrl)
+          } else {
+            toast.error(t('radioBroadcast.voices.probeFailed', { defaultValue: '试听未返回音频' }))
+          }
+        } else {
+          toast.error(res.error ?? t('radioBroadcast.voices.probeFailed', { defaultValue: '试听失败' }))
+        }
+      })
+      .catch((e) => {
+        setBusy(null)
+        toast.error(String(e))
+      })
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2.5">
+      <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-text-secondary">
+        <Sparkles size={12} />
+        {t('radioBroadcast.voices.designTitle', { defaultValue: '设计一个音色' })}
+      </div>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('radioBroadcast.voices.namePlaceholder', { defaultValue: '音色名称，如：沉静男声' })}
+        aria-label={t('radioBroadcast.voices.name', { defaultValue: '音色名称' })}
+        className="w-full rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[rgb(var(--c-accent)/0.6)]"
+      />
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        rows={2}
+        placeholder={t('radioBroadcast.voices.designPlaceholder', { defaultValue: '描述音色：性别、年龄、语气、语速、情感（如：50 岁沉稳男声，语速慢，像深夜电台主持）' })}
+        aria-label={t('radioBroadcast.voices.designDesc', { defaultValue: '音色描述' })}
+        className="mt-1.5 w-full resize-none rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[12px] leading-relaxed text-text-primary outline-none placeholder:text-text-tertiary focus:border-[rgb(var(--c-accent)/0.6)]"
+      />
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={!validInputs || busy !== null}
+          onClick={() => submit(false)}
+          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'probe' ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+          {t('radioBroadcast.voices.probe', { defaultValue: '试听' })}
+        </button>
+        <button
+          type="button"
+          disabled={!validInputs || busy !== null}
+          onClick={() => submit(true)}
+          className="flex items-center gap-1 rounded-md bg-[rgb(var(--c-accent))] px-2.5 py-1.5 text-[11.5px] font-medium text-[rgb(var(--c-accent-contrast))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'save' ? <Loader2 size={12} className="animate-spin" /> : null}
+          {t('radioBroadcast.voices.save', { defaultValue: '保存' })}
+        </button>
+      </div>
+      {probeUrl && <ProbeAudio dataUrl={probeUrl} label={t('radioBroadcast.voices.probe', { defaultValue: '试听' })} />}
+    </section>
+  )
+}
+
+/** 克隆音色向导：名称 + 上传样本（≤10MB）→ 试听 → 入库 */
+function CloneVoiceWizard({ onSaved }: { onSaved: () => void }) {
+  const { t } = useTranslation('common')
+  const toast = useToastStore()
+  const [name, setName] = useState('')
+  const [sample, setSample] = useState<{ base64: string; fileName: string } | null>(null)
+  const [busy, setBusy] = useState<'probe' | 'save' | null>(null)
+  const [probeUrl, setProbeUrl] = useState<string | null>(null)
+
+  const validInputs = name.trim().length > 0 && sample !== null
+
+  const onFile = (file: File | null) => {
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error(t('radioBroadcast.voices.sampleTooLarge', { defaultValue: '样本不能超过 10MB' }))
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const raw = typeof reader.result === 'string' ? reader.result : ''
+      // 去 data URL 前缀，仅留 base64 载荷（后端两者均可解，统一裸 base64）
+      const base64 = raw.includes(',') ? raw.slice(raw.indexOf(',') + 1) : raw
+      setSample({ base64, fileName: file.name })
+    }
+    reader.onerror = () => toast.error(t('radioBroadcast.voices.sampleReadFailed', { defaultValue: '样本读取失败' }))
+    reader.readAsDataURL(file)
+  }
+
+  const submit = (save: boolean) => {
+    if (!validInputs || !sample || busy) return
+    setBusy(save ? 'save' : 'probe')
+    setProbeUrl(null)
+    void commitVoiceProbe({
+      kind: 'clone',
+      name: name.trim(),
+      sampleBase64: sample.base64,
+      sampleName: sample.fileName,
+      save,
+    })
+      .then((res) => {
+        setBusy(null)
+        if (res.ok) {
+          if (save) {
+            toast.success(t('radioBroadcast.voices.saved', { defaultValue: '音色已保存' }))
+            setName('')
+            setSample(null)
+            onSaved()
+          } else if (res.dataUrl) {
+            setProbeUrl(res.dataUrl)
+          } else {
+            toast.error(t('radioBroadcast.voices.probeFailed', { defaultValue: '试听未返回音频' }))
+          }
+        } else {
+          toast.error(res.error ?? t('radioBroadcast.voices.probeFailed', { defaultValue: '试听失败' }))
+        }
+      })
+      .catch((e) => {
+        setBusy(null)
+        toast.error(String(e))
+      })
+  }
+
+  return (
+    <section className="rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.4)] px-3 py-2.5">
+      <div className="mb-2 flex items-center gap-1.5 text-[12px] font-medium text-text-secondary">
+        <Upload size={12} />
+        {t('radioBroadcast.voices.cloneTitle', { defaultValue: '克隆一个音色' })}
+      </div>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('radioBroadcast.voices.namePlaceholder', { defaultValue: '音色名称，如：爸爸的声音' })}
+        aria-label={t('radioBroadcast.voices.name', { defaultValue: '音色名称' })}
+        className="w-full rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[12.5px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[rgb(var(--c-accent)/0.6)]"
+      />
+      <label className="mt-1.5 flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border px-2.5 py-2 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary">
+        <Upload size={12} />
+        {sample ? sample.fileName : t('radioBroadcast.voices.samplePlaceholder', { defaultValue: '上传干净人声样本（wav/mp3，≤10MB）' })}
+        <input type="file" accept="audio/wav,audio/mpeg,audio/flac,audio/mp4,audio/ogg" className="hidden" onChange={(e) => onFile(e.target.files?.[0] ?? null)} />
+      </label>
+      <div className="mt-1.5 flex items-center gap-1.5">
+        <button
+          type="button"
+          disabled={!validInputs || busy !== null}
+          onClick={() => submit(false)}
+          className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'probe' ? <Loader2 size={12} className="animate-spin" /> : <Volume2 size={12} />}
+          {t('radioBroadcast.voices.probe', { defaultValue: '试听' })}
+        </button>
+        <button
+          type="button"
+          disabled={!validInputs || busy !== null}
+          onClick={() => submit(true)}
+          className="flex items-center gap-1 rounded-md bg-[rgb(var(--c-accent))] px-2.5 py-1.5 text-[11.5px] font-medium text-[rgb(var(--c-accent-contrast))] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy === 'save' ? <Loader2 size={12} className="animate-spin" /> : null}
+          {t('radioBroadcast.voices.save', { defaultValue: '保存' })}
+        </button>
+      </div>
+      {probeUrl && <ProbeAudio dataUrl={probeUrl} label={t('radioBroadcast.voices.probe', { defaultValue: '试听' })} />}
+    </section>
   )
 }

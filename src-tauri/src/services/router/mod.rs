@@ -26,6 +26,7 @@ mod plugin_service_manager_capability;
 mod history_capability;
 mod demo_capability;
 mod event_adapter;
+mod voice_capability;
 #[cfg(feature = "git")]
 mod git_capability;
 mod kv_capability;
@@ -75,6 +76,7 @@ pub use self_mutate_capability::SelfMutateCapability;
 pub use dynamic_capability::{DynamicCapability, DynamicCapabilityConfig, DynamicHandler};
 pub use registry_capability::RegistryCapability;
 pub use mcp_capability::{McpCapability, MCP_CAP_ID};
+pub use voice_capability::{VoiceCapability, VOICE_CAP_ID};
 pub use hook_capability::HookCapability;
 pub use ui_render_capability::UiRenderCapability;
 
@@ -606,6 +608,17 @@ impl Router for RouterBus {
 }
 
 impl RouterBus {
+    /// 注册能力（Arc 版本）：调用方保留同一 Arc 强引用。
+    ///
+    /// 用途：cap.voice 委托 cap.mcp 时复用**同一能力实例**（不复制 McpClient 注册表、
+    /// 不第二次拉起插件进程——AGENTS.md「唯一权威，禁止多写路径」）。
+    pub fn register_handle_arc(&self, cap: Arc<dyn Capability>) -> Result<CapabilityHandle, String> {
+        let handle = self.next_handle.fetch_add(1, Ordering::SeqCst);
+        let mut handles = self.handles.write().unwrap();
+        handles.insert(handle, cap);
+        Ok(handle)
+    }
+
     /// 审计 deny（Deny 与 Prompt 安全失败共用）
     fn audit_deny(&self, env: &Envelope) {
         if let Some(audit) = self.audit.as_ref() {

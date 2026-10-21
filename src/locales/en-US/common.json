@@ -254,7 +254,13 @@
     "engineSwitchDisabled": "Cannot switch engine when messages exist or session is running"
   },
   "radioBroadcast": {
-    "panelTitle": "AI Radio Broadcast",
+    "panelTitle": "Infinite Radio",
+    "tabs": "Radio tabs",
+    "tab": {
+      "listen": "Listen",
+      "library": "Library",
+      "voices": "Voices"
+    },
     "configView": "View config",
     "backToPlayback": "Back to playback",
     "playingHint": "Broadcasting in progress. Changes apply next time.",
@@ -300,12 +306,48 @@
     "sleep30": "Stop in 30 minutes",
     "sleepAfterSegment": "Finish this segment",
     "sleepCancel": "Cancel timer",
+    "library": {
+      "loading": "Loading…",
+      "empty": "Nothing here yet. Broadcast content is saved automatically while listening, so you can replay it anytime.",
+      "sentences": "{{count}} lines",
+      "fromLive": "Session archive",
+      "play": "Replay",
+      "favorite": "Favorite",
+      "unfavorite": "Unfavorite",
+      "delete": "Delete",
+      "deleted": "Episode deleted",
+      "loadFailed": "Failed to load library",
+      "updateFailed": "Action failed"
+    },
+    "voices": {
+      "mine": "My voices",
+      "mineEmpty": "No custom voices yet. Design one below, or clone from a recording.",
+      "current": "Current",
+      "designTag": "Design",
+      "cloneTag": "Clone",
+      "preset": "Preset voices",
+      "designTitle": "Design a voice",
+      "cloneTitle": "Clone a voice",
+      "name": "Voice name",
+      "namePlaceholder": "Voice name",
+      "designDesc": "Voice description",
+      "designPlaceholder": "Describe: gender, age, tone, pace, mood (e.g. calm 50-year-old male, slow pace, late-night radio host)",
+      "samplePlaceholder": "Upload a clean voice sample (wav/mp3, ≤10MB)",
+      "sampleTooLarge": "Sample cannot exceed 10MB",
+      "sampleReadFailed": "Failed to read sample",
+      "probe": "Preview",
+      "probeFailed": "Preview failed",
+      "save": "Save",
+      "saved": "Voice saved",
+      "deleted": "Voice deleted"
+    },
     "toast": {
       "maxRounds": "Reached round limit, auto-stopped",
       "maxSeconds": "Reached time limit, auto-stopped",
       "sleep": "Sleep timer ended playback",
       "voiceStopped": "Stopped via voice command",
       "stopped": "Broadcast stopped",
+      "finished": "Replay finished — all content played",
       "error": "Broadcast failed",
       "invalidLimits": "Rounds/minutes must be integers ≥1",
       "started": "Broadcast started"

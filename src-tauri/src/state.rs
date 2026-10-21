@@ -607,12 +607,24 @@ pub fn create_app_state(
                 "[cap.mcp] 注册 {} 个插件 MCP server（内置 + 外部，含 mimo-tts）",
                 mcp_servers.len()
             );
-            let _ = bus.register_handle(Box::new(
+            // Arc 共享注册：cap.voice 委托 cap.mcp 时复用同一实例（不复制 client 注册表、
+            // 不第二次拉起插件进程——AGENTS.md「唯一权威，禁止多写路径」）。
+            let mcp_cap: std::sync::Arc<dyn crate::contracts::Capability> = std::sync::Arc::new(
                 crate::services::router::McpCapability::with_servers(
                     mcp_servers,
                     Some(config_dir.clone()),
                 )
                 .with_broadcaster(event_broadcast.clone()),
+            );
+            let _ = bus.register_handle_arc(mcp_cap.clone());
+
+            // cap.voice —— 无限畅听电台资产层：合成（持久缓存）/ 音色库 / 内容库。
+            // 委托 cap.mcp 合成（薄委托，不持有 client）；存储 <dataRoot>/voice/ 单写路径。
+            let _ = bus.register_handle(Box::new(
+                crate::services::router::VoiceCapability::new(
+                    data_root().voice_dir(),
+                    mcp_cap,
+                ),
             ));
         }
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）

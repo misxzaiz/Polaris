@@ -9,6 +9,7 @@ import { useRadioBroadcastStore } from '@/stores/radioBroadcastStore'
 import { DIRECTION_PRESETS, MIMO_VOICES } from '@/services/voiceBroadcast/constants'
 import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
 import type { RadioBroadcastDirection, VoiceId } from '@/services/voiceBroadcast/types'
+import type { LibraryItem } from '@/services/voiceBroadcast/voiceService'
 
 export interface UseRadioBroadcastReturn {
   status: ReturnType<typeof useRadioBroadcastStore.getState>['status']
@@ -44,6 +45,8 @@ export interface UseRadioBroadcastReturn {
   setRate: (rate: number) => void
   /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
   sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
+  /** 回听内容库单集（P1：无 AI 会话直插已合成句子，播完即止） */
+  playLibraryItem: (item: LibraryItem) => Promise<boolean>
 
   /** 方向预设（UI 选项） */
   directionPresets: typeof DIRECTION_PRESETS
@@ -85,6 +88,9 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
   const sleep = useCallback((opts: { minutes?: number; afterSegment?: boolean } | null) => {
     useRadioBroadcastStore.getState().sleep(opts)
   }, [])
+  const playLibraryItem = useCallback((item: LibraryItem) => {
+    return useRadioBroadcastStore.getState().playLibraryItem(item)
+  }, [])
 
   return {
     status,
@@ -109,6 +115,7 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
     resume,
     setRate,
     sleep,
+    playLibraryItem,
     directionPresets: DIRECTION_PRESETS,
     voices: MIMO_VOICES,
   }

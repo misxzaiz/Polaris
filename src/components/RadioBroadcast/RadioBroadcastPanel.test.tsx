@@ -17,7 +17,7 @@
  * - react-i18next 已在 src/test/setup.ts 全局 mock，t() 返回 key
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { RadioBroadcastPanel } from './RadioBroadcastPanel'
 import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
 import type { RadioBroadcastStatus } from '@/services/voiceBroadcast/types'
@@ -29,6 +29,7 @@ const mockPause = vi.fn<() => void>()
 const mockResume = vi.fn<() => void>()
 const mockSetRate = vi.fn<(rate: number) => void>()
 const mockSleep = vi.fn<(opts: { minutes?: number; afterSegment?: boolean } | null) => void>()
+const mockPlayLibraryItem = vi.fn<(item: { id: string }) => Promise<boolean>>()
 
 let mockState: {
   status: RadioBroadcastStatus
@@ -72,6 +73,7 @@ vi.mock('@/hooks/useRadioBroadcast', () => ({
     resume: mockResume,
     setRate: mockSetRate,
     sleep: mockSleep,
+    playLibraryItem: mockPlayLibraryItem,
     transcript: mockState.transcript,
     sleepUntil: mockState.sleepUntil,
     sleepAfterSegment: mockState.sleepAfterSegment,
@@ -105,9 +107,26 @@ vi.mock('@/stores/radioBroadcastPrefsStore', () => ({
   }),
 }))
 
-// P0-6：动态音色拉取（面板 mount 时调用；mock 为失败 → 走静态预置兜底）
-vi.mock('@/services/voiceBroadcast/mcpBridge', () => ({
-  listMimoVoices: vi.fn().mockResolvedValue({ ok: false, voices: [] }),
+// P1：cap.voice 拉取（面板 mount 时调用；mock 为失败 → 走静态预置兜底，不触后端）
+const mockVoiceService = vi.hoisted(() => ({
+  listLibraryItems: vi.fn(),
+  listCustomVoices: vi.fn(),
+  listPresetVoices: vi.fn(),
+  addDesignVoice: vi.fn(),
+}))
+vi.mock('@/services/voiceBroadcast/voiceService', () => ({
+  listLibraryItems: (...a: unknown[]) => mockVoiceService.listLibraryItems(...a),
+  deleteLibraryItem: vi.fn().mockResolvedValue({ ok: true }),
+  updateLibraryItem: vi.fn().mockResolvedValue({ ok: true }),
+  listCustomVoices: (...a: unknown[]) => mockVoiceService.listCustomVoices(...a),
+  listPresetVoices: (...a: unknown[]) => mockVoiceService.listPresetVoices(...a),
+  addDesignVoice: (...a: unknown[]) => mockVoiceService.addDesignVoice(...a),
+  addCloneVoice: vi.fn().mockResolvedValue({ ok: false }),
+  deleteVoice: vi.fn().mockResolvedValue({ ok: true }),
+  probeVoice: vi.fn().mockResolvedValue({ ok: false, error: '未配置' }),
+  addLibraryItem: vi.fn().mockResolvedValue({ ok: true }),
+  buildAudioPlayUrl: (file: string) => file,
+  synthesizeVoice: vi.fn().mockResolvedValue({ ok: false }),
 }))
 
 vi.mock('@/components/Chat/session/SessionConfigSelector', () => ({
@@ -172,6 +191,7 @@ beforeEach(() => {
   mockState = makeState()
   mockStart.mockReset()
   mockStop.mockReset()
+  mockPlayLibraryItem.mockReset()
   mockPause.mockReset()
   mockResume.mockReset()
   mockSetRate.mockReset()
@@ -180,6 +200,15 @@ beforeEach(() => {
   mockToast.warning.mockReset()
   mockToast.error.mockReset()
   mockSetPrefs.mockReset()
+  mockVoiceService.listLibraryItems.mockReset()
+  mockVoiceService.listCustomVoices.mockReset()
+  mockVoiceService.listPresetVoices.mockReset()
+  mockVoiceService.addDesignVoice.mockReset()
+  // 默认：库空 / 音色拉取失败（走静态预置兜底）
+  mockVoiceService.listLibraryItems.mockResolvedValue({ ok: true, items: [] })
+  mockVoiceService.listCustomVoices.mockResolvedValue({ ok: false, voices: [] })
+  mockVoiceService.listPresetVoices.mockResolvedValue({ ok: false, voices: [] })
+  mockVoiceService.addDesignVoice.mockResolvedValue({ ok: false })
 })
 
 describe('RadioBroadcastPanel — 配置视图（idle）', () => {
@@ -369,5 +398,64 @@ describe('RadioBroadcastPanel — P0 快赢', () => {
     fireEvent.click(screen.getByText('radioBroadcast.start'))
     const opts = mockStart.mock.calls[0][0]
     expect(opts.rate).toBe(1)
+  })
+
+  // ── P1 三页签（radio-broadcast-p1-asset-layer-spec）──
+
+  it('P1 页签栏：畅听/内容库/音色库三 tab，默认畅听', () => {
+    render(<RadioBroadcastPanel />)
+    expect(screen.getByRole('tablist').getAttribute('aria-label')).toBe('radioBroadcast.tabs')
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs).toHaveLength(3)
+    expect(tabs[0].getAttribute('aria-selected')).toBe('true') // listen 默认
+    // 默认配置视图在「畅听」页签内可见
+    expect(screen.getByText('radioBroadcast.start')).toBeTruthy()
+  })
+
+  it('P1 内容库：空态提示 + 有单集时回听按钮转发 playLibraryItem', async () => {
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByRole('tab', { name: 'radioBroadcast.tab.library' }))
+    // 空态
+    await vi.waitFor(() => {
+      expect(screen.getByText('radioBroadcast.library.empty')).toBeTruthy()
+    })
+    // 重渲染：有单集则列表渲染并可回听
+    mockVoiceService.listLibraryItems.mockResolvedValue({
+      ok: true,
+      items: [
+        {
+          id: 'it1', title: '经济漫谈 · 第 1 集', topic: '经济学', engine: '', voiceRef: '冰糖',
+          createdAt: 1, favorite: true, tags: [], source: 'live',
+          sentences: [{ text: '句一。', file: 'C:/1.wav' }],
+        },
+      ],
+    })
+    cleanup()
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByRole('tab', { name: 'radioBroadcast.tab.library' }))
+    await vi.waitFor(() => {
+      expect(screen.getByText('经济漫谈 · 第 1 集')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByLabelText('radioBroadcast.library.play'))
+    expect(mockPlayLibraryItem).toHaveBeenCalledWith(expect.objectContaining({ id: 'it1' }))
+  })
+
+  it('P1 音色库：设计向导保存转发 addDesignVoice；成功后触发面板重拉', async () => {
+    mockVoiceService.addDesignVoice.mockResolvedValueOnce({ ok: true })
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByRole('tab', { name: 'radioBroadcast.tab.voices' }))
+    fireEvent.change(screen.getAllByLabelText('radioBroadcast.voices.name')[0], { target: { value: '沉静男声' } })
+    fireEvent.change(screen.getByLabelText('radioBroadcast.voices.designDesc'), { target: { value: '50 岁沉稳男声' } })
+    fireEvent.click(screen.getAllByText('radioBroadcast.voices.save')[0])
+    await vi.waitFor(() => {
+      expect(mockVoiceService.addDesignVoice).toHaveBeenCalledWith('沉静男声', '50 岁沉稳男声')
+    })
+  })
+
+  it('P1 音色库：无效输入（缺名称/描述）保存按钮禁用', () => {
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByRole('tab', { name: 'radioBroadcast.tab.voices' }))
+    const saveBtn = screen.getAllByText('radioBroadcast.voices.save')[0]
+    expect((saveBtn as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -37,6 +37,10 @@ export interface QueueItem {
   gen: number
   /** 合成失败已重试次数（0=未重试；达到 1 次后失败即跳过，见 voiceBroadcastPlayer 重试逻辑） */
   synthAttempts?: number
+  /** 合成缓存 audioId（P1：库入库句子引用用） */
+  audioId?: string | null
+  /** 合成产物绝对路径（P1：内容库入库 / 续播复放用；base64 模式也有缓存文件） */
+  file?: string | null
 }
 
 /** 当前播放段信息（UI 展示） */
@@ -54,6 +58,7 @@ export type RadioBroadcastStopReason =
   | 'max-rounds'
   | 'max-seconds'
   | 'sleep'
+  | 'finished'
   | 'error'
 
 /** 字幕跟读单行（P0-1）：队列即文稿，行状态与 QueueItem 对齐 */

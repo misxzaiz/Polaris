@@ -2,7 +2,7 @@
  * P3 工具注入管理面 — cap.mcp list_plugin_tools / set_plugin_tools 前端桥
  *
  * 对应 `plans/plugin-cap-inject-render-v1.md` §2.3：插件 → AI 工具的注入管理。
- * 复用 `router_dispatch`（RouterBus 统一权限 + 审计），对齐 voiceBroadcast/mcpBridge.ts 模式。
+ * 复用 `router_dispatch`（RouterBus 统一权限 + 审计），对齐 voiceBroadcast/voiceService.ts 模式。
  *
  * 返回形状（后端 mcp_capability.rs invoke）：
  * - list_plugin_tools → { ok, pluginId, servers: [{ pluginId, server, tools, injected, gate, via }] }

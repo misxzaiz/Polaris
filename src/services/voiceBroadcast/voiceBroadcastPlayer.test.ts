@@ -5,14 +5,16 @@
  * 合成结果丢弃不播）、stop 清队列 + 中止合成、单句合成失败跳过不断链、
  * 队列空 onQueueDrained。
  *
- * mock：callMimoTts（不触 cap.mcp）、Audio（jsdom 无真实播放，手动驱动回调）。
+ * mock：synthesizeVoice（不触 cap.mcp）、Audio（jsdom 无真实播放，手动驱动回调）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// mock callMimoTts：可编程的合成结果
-const mockCallMimoTts = vi.fn()
-vi.mock('./mcpBridge', () => ({
-  callMimoTts: (...args: unknown[]) => mockCallMimoTts(...args),
+// mock synthesizeVoice：可编程的合成结果
+const mockSynthesizeVoice = vi.fn()
+vi.mock('./voiceService', () => ({
+  synthesizeVoice: (...args: unknown[]) => mockSynthesizeVoice(...args),
+  // 播放 URL 构建恒等（file 即 playUrl），断言用的字面量在 file 形态下不变
+  buildAudioPlayUrl: (file: string) => file,
 }))
 
 // mock Audio：jsdom 无真实播放；手动驱动 onplay/onended/onerror
@@ -48,7 +50,7 @@ vi.stubGlobal('Audio', MockAudio)
 import { VoiceBroadcastPlayer, splitSentences } from './voiceBroadcastPlayer'
 
 beforeEach(() => {
-  mockCallMimoTts.mockReset()
+  mockSynthesizeVoice.mockReset()
   audioInstances.length = 0
   // 每个用例前重新 stub（幂等覆盖）；不 unstub——jsdom 原生 Audio 无 onplay 驱动
   vi.stubGlobal('Audio', MockAudio)
@@ -77,7 +79,7 @@ describe('VoiceBroadcastPlayer', () => {
   it('入队即预取合成，队头 ready 自动播放', async () => {
     const p = new VoiceBroadcastPlayer()
     // 每句合成立即 resolve 一个 url
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x/1' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x/1' }))
 
     const onStart = vi.fn()
     p.setCallbacks({ onStart })
@@ -85,11 +87,11 @@ describe('VoiceBroadcastPlayer', () => {
 
     // 预取触发合成
     await vi.waitFor(() => {
-      expect(mockCallMimoTts).toHaveBeenCalled()
+      expect(mockSynthesizeVoice).toHaveBeenCalled()
     })
     // 队头 ready → 播放 → onplay → onStart
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第一句。')
+      expect(onStart).toHaveBeenCalledWith('第一句。', expect.anything())
     })
     expect(p.currentText).toBe('第一句。')
   })
@@ -103,9 +105,9 @@ describe('VoiceBroadcastPlayer', () => {
     const firstSynth = deferred<{ ok: boolean; url?: string; error?: string }>()
     const mockCalls: Array<() => Promise<{ ok: boolean; url?: string; error?: string }>> = [
       () => firstSynth.promise,
-      async () => ({ ok: true, url: 'http://x/late' }),
+      async () => ({ ok: true, file: 'http://x/late' }),
     ]
-    mockCallMimoTts.mockImplementation(() => mockCalls.shift()!())
+    mockSynthesizeVoice.mockImplementation(() => mockCalls.shift()!())
 
     p.enqueueSegment('第一句。第二句。')
 
@@ -114,7 +116,7 @@ describe('VoiceBroadcastPlayer', () => {
     expect(p.queueLength).toBe(0)
 
     // 晚到结果 resolve → 代际校验丢弃，不播放
-    firstSynth.resolve({ ok: true, url: 'http://x/first' })
+    firstSynth.resolve({ ok: true, file: 'http://x/first' })
     await new Promise((r) => setTimeout(r, 0))
     expect(onStart).not.toHaveBeenCalled()
     expect(p.currentText).toBeNull()
@@ -126,7 +128,7 @@ describe('VoiceBroadcastPlayer', () => {
     const onSynthError = vi.fn()
     p.setCallbacks({ onStart, onSynthError })
 
-    mockCallMimoTts.mockImplementation(async () => ({ ok: false, error: '未配置 API Key' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: false, error: '未配置 API Key' }))
 
     p.enqueueSegment('第一句。第二句。')
 
@@ -135,7 +137,7 @@ describe('VoiceBroadcastPlayer', () => {
       expect(onSynthError).toHaveBeenCalledTimes(2) // 两句各重试后各失败
     })
     // 每句各 2 次合成（首败 + 重试）
-    expect(mockCallMimoTts).toHaveBeenCalledTimes(4)
+    expect(mockSynthesizeVoice).toHaveBeenCalledTimes(4)
     // 全部失败 → 无 ready，不播放
     expect(onStart).not.toHaveBeenCalled()
     expect(p.readyCount).toBe(0)
@@ -149,18 +151,18 @@ describe('VoiceBroadcastPlayer', () => {
 
     // 第一次调用失败，第二次（重试）成功
     let call = 0
-    mockCallMimoTts.mockImplementation(async () => {
+    mockSynthesizeVoice.mockImplementation(async () => {
       call++
-      return call % 2 === 1 ? { ok: false, error: '偶发 5xx' } : { ok: true, url: 'http://x/ok' }
+      return call % 2 === 1 ? { ok: false, error: '偶发 5xx' } : { ok: true, file: 'http://x/ok' }
     })
 
     p.enqueueSegment('第一句。')
 
     // 重试成功后这句话正常播放，onSynthError 不被触发
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第一句。')
+      expect(onStart).toHaveBeenCalledWith('第一句。', expect.anything())
     })
-    expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+    expect(mockSynthesizeVoice).toHaveBeenCalledTimes(2)
     expect(onSynthError).not.toHaveBeenCalled()
     expect(p.currentText).toBe('第一句。')
   })
@@ -170,7 +172,7 @@ describe('VoiceBroadcastPlayer', () => {
     const onQueueDrained = vi.fn()
     p.setCallbacks({ onQueueDrained })
 
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x' }))
     p.enqueueSegment('你好。')
     // 合成后 ready → 播放；无 onended 手动触发
     await vi.waitFor(() => {
@@ -189,18 +191,18 @@ describe('VoiceBroadcastPlayer', () => {
     const onStart = vi.fn()
     p.setCallbacks({ onStart })
 
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x' }))
     p.enqueueSegment('第一句。第二句。')
 
     // 等第一句开始播
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第一句。')
+      expect(onStart).toHaveBeenCalledWith('第一句。', expect.anything())
     })
     // 驱动第一句 ended → 播放第二句
     const audio1 = audioInstances[audioInstances.length - 1]
     audio1.onended?.()
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第二句。')
+      expect(onStart).toHaveBeenCalledWith('第二句。', expect.anything())
     })
   })
 
@@ -216,25 +218,25 @@ describe('VoiceBroadcastPlayer', () => {
     const firstSynth = deferred<{ ok: boolean; url?: string }>()
     const calls: Array<() => Promise<{ ok: boolean; url?: string }>> = [
       () => firstSynth.promise,
-      async () => ({ ok: true, url: 'data:audio/wav;base64,AAAA' }),
+      async () => ({ ok: true, dataUrl: 'data:audio/wav;base64,AAAA', file: 'x1.wav' }),
     ]
-    mockCallMimoTts.mockImplementation(() => calls.shift()!())
+    mockSynthesizeVoice.mockImplementation(() => calls.shift()!())
 
     p.enqueueSegment('第一句。第二句。')
     await vi.waitFor(() => {
-      expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+      expect(mockSynthesizeVoice).toHaveBeenCalledTimes(1)
     })
     // 首句在途时不应预取第二句（深度 1）
-    expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+    expect(mockSynthesizeVoice).toHaveBeenCalledTimes(1)
 
     // 释放首句 → 第二句才开始合成
-    firstSynth.resolve({ ok: true, url: 'data:audio/wav;base64,BBBB' })
+    firstSynth.resolve({ ok: true, dataUrl: 'data:audio/wav;base64,BBBB', file: 'x2.wav' })
     await vi.waitFor(() => {
-      expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+      expect(mockSynthesizeVoice).toHaveBeenCalledTimes(2)
     })
     // 首句 base64 data URL 直接播放
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第一句。')
+      expect(onStart).toHaveBeenCalledWith('第一句。', expect.anything())
     })
   })
 
@@ -248,13 +250,13 @@ describe('VoiceBroadcastPlayer', () => {
       const pFile = new VoiceBroadcastPlayer()
       const errFile = vi.fn()
       pFile.setCallbacks({ onSynthError: errFile })
-      mockCallMimoTts.mockImplementation(hangPromise)
+      mockSynthesizeVoice.mockImplementation(hangPromise)
       pFile.enqueueSegment('第一句。')
       vi.advanceTimersByTime(12000)
       expect(errFile).not.toHaveBeenCalled() // 首次超时 → 触发重试，不报错
       vi.advanceTimersByTime(12000)
       expect(errFile).toHaveBeenCalled() // 重试再超时 → 最终失败（24s 累计）
-      expect(mockCallMimoTts).toHaveBeenCalledTimes(2) // 首试 + 重试各一次
+      expect(mockSynthesizeVoice).toHaveBeenCalledTimes(2) // 首试 + 重试各一次
 
       // base64 模式：25s 超时
       const p64 = new VoiceBroadcastPlayer()
@@ -277,26 +279,26 @@ describe('VoiceBroadcastPlayer', () => {
     const p = new VoiceBroadcastPlayer()
     const onStart = vi.fn()
     p.setCallbacks({ onStart })
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x/same' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x/same' }))
 
     // 第一遍：真实合成 → 播 → 播完
     p.enqueueSegment('第一句。')
     await vi.waitFor(() => {
-      expect(onStart).toHaveBeenCalledWith('第一句。')
+      expect(onStart).toHaveBeenCalledWith('第一句。', expect.anything())
     })
     audioInstances[audioInstances.length - 1].onended?.()
-    // 第二遍：同句同参数 → 缓存命中，callMimoTts 不再被调
+    // 第二遍：同句同参数 → 缓存命中，synthesizeVoice 不再被调
     p.enqueueSegment('第一句。')
     await vi.waitFor(() => {
       expect(onStart).toHaveBeenCalledTimes(2)
     })
-    expect(mockCallMimoTts).toHaveBeenCalledTimes(1)
+    expect(mockSynthesizeVoice).toHaveBeenCalledTimes(1)
   })
 
   it('P0-5 缓存区分参数：不同音色/输出模式不串缓存', async () => {
     const p = new VoiceBroadcastPlayer()
     p.setCallbacks({ onStart: vi.fn() })
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x/v' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x/v' }))
     p.enqueueSegment('第一句。')
     await vi.waitFor(() => {
       expect(p.currentText).toBe('第一句。')
@@ -305,14 +307,14 @@ describe('VoiceBroadcastPlayer', () => {
     p.setOptions({ voice: '茉莉' })
     p.enqueueSegment('第一句。')
     await vi.waitFor(() => {
-      expect(mockCallMimoTts).toHaveBeenCalledTimes(2)
+      expect(mockSynthesizeVoice).toHaveBeenCalledTimes(2)
     })
   })
 
   it('P0-2 setRate：新句继承倍速，播报中调整即时生效', async () => {
     const p = new VoiceBroadcastPlayer()
     p.setCallbacks({ onStart: vi.fn() })
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x' }))
 
     p.setOptions({ rate: 1.5 })
     p.enqueueSegment('第一句。第二句。')
@@ -330,11 +332,11 @@ describe('VoiceBroadcastPlayer', () => {
     const p = new VoiceBroadcastPlayer()
     const firstSynth = deferred<{ ok: boolean; url?: string }>()
     const calls: Array<() => Promise<{ ok: boolean; url?: string }>> = [
-      async () => ({ ok: true, url: 'http://x/1' }),
+      async () => ({ ok: true, file: 'http://x/1' }),
       () => firstSynth.promise,
     ]
     // 第一句立即就绪并播放；第二句挂起（保持 pending）
-    mockCallMimoTts.mockImplementation(() => calls.shift()!())
+    mockSynthesizeVoice.mockImplementation(() => calls.shift()!())
     p.enqueueSegment('第一句。第二句。')
     await vi.waitFor(() => {
       expect(p.currentText).toBe('第一句。')
@@ -356,7 +358,7 @@ describe('VoiceBroadcastPlayer', () => {
   it('P0-3 fadeOut：线性降音量后暂停当前音频；期间被停则放弃', async () => {
     const p = new VoiceBroadcastPlayer()
     p.setCallbacks({ onStart: vi.fn() })
-    mockCallMimoTts.mockImplementation(async () => ({ ok: true, url: 'http://x' }))
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, file: 'http://x' }))
     p.enqueueSegment('第一句。')
     await vi.waitFor(() => {
       expect(p.currentText).toBe('第一句。')
@@ -366,5 +368,85 @@ describe('VoiceBroadcastPlayer', () => {
     expect(audio.volume).toBeLessThan(1)
     expect(audio.volume).toBeGreaterThanOrEqual(0)
     expect(audio.pause).toHaveBeenCalled()
+  })
+
+  // ── P1 资产层（radio-broadcast-p1-asset-layer-spec）──
+
+  it('P1 onStart 携带合成 meta（audioId/file），供段自动入库', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, audioId: 'cache-key', file: 'C:/x/1.wav' }))
+
+    p.enqueueSegment('第一句。')
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalled()
+    })
+    expect(onStart).toHaveBeenCalledWith('第一句。', { audioId: 'cache-key', file: 'C:/x/1.wav' })
+  })
+
+  it('P1 enqueuePrepared：就绪句直插不合成，按序播放', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+
+    p.enqueuePrepared([
+      { text: '回放第一句。', playUrl: 'http://x/replay1', audioId: 'a1', file: 'C:/r/1.wav' },
+      { text: '回放第二句。', playUrl: 'http://x/replay2' },
+    ])
+    // 不触发任何合成
+    expect(mockSynthesizeVoice).not.toHaveBeenCalled()
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledWith('回放第一句。', { audioId: 'a1', file: 'C:/r/1.wav' })
+    })
+    // 第一句播完 → 直接过到第二句（无合成等待）
+    audioInstances[audioInstances.length - 1].onended?.()
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledWith('回放第二句。', { audioId: null, file: null })
+    })
+  })
+
+  it('P1 takeDoneSentences：滚动游标去重，stop 复位；无 audioId/file 的 done 不返回', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+    mockSynthesizeVoice.mockImplementation(async () => ({ ok: true, audioId: 'k', file: 'C:/x/1.wav' }))
+    p.enqueueSegment('第一句。第二句。')
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第一句。')
+    })
+    audioInstances[audioInstances.length - 1].onended?.()
+    await vi.waitFor(() => {
+      expect(p.currentText).toBe('第二句。')
+    })
+    // 第一句播完可取走
+    let taken = p.takeDoneSentences()
+    expect(taken).toEqual([{ text: '第一句。', audioId: 'k', file: 'C:/x/1.wav' }])
+    // 未播完第二句：重复取空
+    expect(p.takeDoneSentences()).toEqual([])
+    // 第二句播完
+    audioInstances[audioInstances.length - 1].onended?.()
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalledTimes(2)
+    })
+    taken = p.takeDoneSentences()
+    expect(taken).toEqual([{ text: '第二句。', audioId: 'k', file: 'C:/x/1.wav' }])
+    // stop 清队列 → 游标复位（stop 后重新入队可完整取回）
+    p.stop()
+    expect(p.takeDoneSentences()).toEqual([])
+  })
+
+  it('P1 enqueuePrepared 后 stop：清队列与代际语义一致，晚到仍丢弃', async () => {
+    const p = new VoiceBroadcastPlayer()
+    const onStart = vi.fn()
+    p.setCallbacks({ onStart })
+    p.enqueuePrepared([{ text: '回放句。', playUrl: 'http://x/r', file: 'C:/r.wav' }])
+    p.stop()
+    expect(p.queueLength).toBe(0)
+    // 重新入队（新代际）正常播放
+    p.enqueuePrepared([{ text: '回放句。', playUrl: 'http://x/r', file: 'C:/r.wav' }])
+    await vi.waitFor(() => {
+      expect(onStart).toHaveBeenCalled()
+    })
   })
 })

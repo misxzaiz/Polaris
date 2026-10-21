@@ -255,7 +255,13 @@
     "engineSwitchDisabled": "已有消息或正在运行时不能切换引擎"
   },
   "radioBroadcast": {
-    "panelTitle": "AI 连续播报",
+    "panelTitle": "无尽畅听电台",
+    "tabs": "电台页签",
+    "tab": {
+      "listen": "畅听",
+      "library": "内容库",
+      "voices": "音色库"
+    },
     "configView": "查看配置",
     "backToPlayback": "返回播报",
     "playingHint": "播报进行中，修改将应用于下次播报",
@@ -301,12 +307,48 @@
     "sleep30": "30 分钟后停止",
     "sleepAfterSegment": "播完本段",
     "sleepCancel": "取消定时",
+    "library": {
+      "loading": "加载中…",
+      "empty": "暂无内容。畅听播报中的内容会自动存入这里，之后随时回听。",
+      "sentences": "{{count}} 句",
+      "fromLive": "畅听存档",
+      "play": "回听",
+      "favorite": "收藏",
+      "unfavorite": "取消收藏",
+      "delete": "删除",
+      "deleted": "已删除单集",
+      "loadFailed": "内容库加载失败",
+      "updateFailed": "操作失败"
+    },
+    "voices": {
+      "mine": "我的音色",
+      "mineEmpty": "还没有自定义音色。用下面的向导描述一个，或上传录音克隆。",
+      "current": "当前",
+      "designTag": "设计",
+      "cloneTag": "克隆",
+      "preset": "预置音色",
+      "designTitle": "设计一个音色",
+      "cloneTitle": "克隆一个音色",
+      "name": "音色名称",
+      "namePlaceholder": "音色名称",
+      "designDesc": "音色描述",
+      "designPlaceholder": "描述音色：性别、年龄、语气、语速、情感（如：50 岁沉稳男声，语速慢，像深夜电台主持）",
+      "samplePlaceholder": "上传干净人声样本（wav/mp3，≤10MB)",
+      "sampleTooLarge": "样本不能超过 10MB",
+      "sampleReadFailed": "样本读取失败",
+      "probe": "试听",
+      "probeFailed": "试听失败",
+      "save": "保存",
+      "saved": "音色已保存",
+      "deleted": "已删除音色"
+    },
     "toast": {
       "maxRounds": "已播满上限，自动停止播报",
       "maxSeconds": "已达时长上限，自动停止播报",
       "sleep": "定时到，已停止播报",
       "voiceStopped": "已通过语音口令停止播报",
       "stopped": "已停止播报",
+      "finished": "回听结束，已播完全部内容",
       "error": "播报出错",
       "invalidLimits": "轮次/时长需为 ≥1 的整数",
       "started": "播报开始"

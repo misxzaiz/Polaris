@@ -8,7 +8,7 @@
  * - 控制器是唯一状态写入方
  *
  * mock：播放器（可观测 stop/enqueueSegment/setCallbacks）、会话管理、kernel hook、
- *       assistantTextUtils、ttsTextFilter、mcpBridge（probe）。
+ *       assistantTextUtils、ttsTextFilter、voiceService（probe）。
  * 播报用「软取消」不硬杀（spec §5）：interruptSession 被调用即满足中断语义断言。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -29,6 +29,10 @@ const { MockPlayer } = vi.hoisted(() => {
     fadeOut = vi.fn().mockResolvedValue(undefined)
     /** 字幕快照（P0-1）：默认 null，测试可编程 */
     getTranscript = vi.fn(() => null)
+    /** P1：段自动入库取句（默认空数组，测试可编程） */
+    takeDoneSentences = vi.fn(() => [])
+    /** P1：回听就绪句直插 */
+    enqueuePrepared = vi.fn()
     queueLength = 0
     hasPendingSynth = false
     /** 未就绪句数（段级提前量判断用）；默认 0 = 低水位，lookahead 触发 */
@@ -101,8 +105,12 @@ vi.mock('@/services/ttsTextFilter', () => ({
   cleanTextForSpeech: (...args: unknown[]) => mockClean(...args),
 }))
 
-const mockProbe = vi.fn()
-vi.mock('./mcpBridge', () => ({ probeMimoTts: mockProbe }))
+// voiceService 现在被控制器静态 import，工厂随模块初始化即执行 → 需要 hoisted
+const { mockProbe, mockLibraryAdd } = vi.hoisted(() => ({
+  mockProbe: vi.fn(),
+  mockLibraryAdd: vi.fn(),
+}))
+vi.mock('./voiceService', () => ({ probeVoice: mockProbe, addLibraryItem: mockLibraryAdd, buildAudioPlayUrl: (f: string) => f }))
 
 // 语音「停止」口令 watcher mock：捕获 setCallbacks 的 onStop，供测试触发
 const { MockVoiceStopWatcher } = vi.hoisted(() => {
@@ -501,5 +509,96 @@ describe('radioBroadcastController', () => {
     radioBroadcastController.sleep(null)
     expect(radioBroadcastController.getSnapshot().sleepUntil).toBe(0)
     expect(radioBroadcastController.getSnapshot().sleepAfterSegment).toBe(false)
+  })
+
+  // ── P1 资产层（radio-broadcast-p1-asset-layer-spec）──
+
+  /** 最小 LibraryItem 形状（控制器只读用到的字段） */
+  function makeLibraryItem(overrides: Partial<Record<string, unknown>> = {}) {
+    return {
+      id: 'item-1',
+      title: '经济漫谈 · 第 1 集',
+      topic: '经济学基础',
+      engine: 'claude-code',
+      voiceRef: '冰糖',
+      createdAt: 1,
+      favorite: false,
+      tags: [],
+      source: 'live',
+      sentences: [
+        { text: '库第一句。', audioId: 'a1', file: 'C:/lib/1.wav' },
+        { text: '库第二句。', file: 'C:/lib/2.wav' },
+      ],
+      ...overrides,
+    }
+  }
+
+  it('P1 playLibraryItem：直插就绪句 + 无 AI 会话；队列播空即 finished 停止', async () => {
+    const item = makeLibraryItem()
+    const ok = await radioBroadcastController.playLibraryItem(item as Parameters<typeof radioBroadcastController.playLibraryItem>[0])
+    expect(ok).toBe(true)
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    expect(player.enqueuePrepared).toHaveBeenCalledTimes(1)
+    const prepared = player.enqueuePrepared.mock.calls[0][0] as Array<{ text: string; playUrl: string }>
+    expect(prepared.map((s) => s.playUrl)).toEqual(['C:/lib/1.wav', 'C:/lib/2.wav'])
+    expect(player.enqueueSegment).not.toHaveBeenCalled() // 无 AI 段请求
+    expect(mockProbe).not.toHaveBeenCalled() // 无预检
+    expect(radioBroadcastController.getStatus()).toBe('playing')
+
+    // 队列播空 → 自然结束（stopReason = finished，不请求新段）
+    player.queueLength = 0
+    player.hasPendingSynth = false
+    player.callbacks.onQueueDrained?.()
+    await vi.waitFor(() => {
+      expect(radioBroadcastController.getStatus()).toBe('idle')
+    })
+    expect(radioBroadcastController.getSnapshot().stopReason).toBe('finished')
+    expect(mockLibraryAdd).not.toHaveBeenCalled() // 回听不应二次入库
+  })
+
+  it('P1 playLibraryItem：句子无 file → error 不播', async () => {
+    const item = makeLibraryItem({ sentences: [{ text: '无文件句。' }] })
+    const ok = await radioBroadcastController.playLibraryItem(item as Parameters<typeof radioBroadcastController.playLibraryItem>[0])
+    expect(ok).toBe(false)
+    expect(radioBroadcastController.getStatus()).toBe('error')
+    expect(radioBroadcastController.getSnapshot().error).toContain('无可播放')
+  })
+
+  it('P1 段自动入库：stop 收尾时把播完句子落库（source=live）', async () => {
+    mockLibraryAdd.mockResolvedValue({ ok: true, item: undefined })
+    await radioBroadcastController.start({
+      direction: { kind: 'study', text: '英语' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    player.takeDoneSentences.mockReturnValue([{ text: '已播句。', audioId: 'k', file: 'C:/x/1.wav' }])
+    await radioBroadcastController.stop()
+    expect(mockLibraryAdd).toHaveBeenCalledTimes(1)
+    const arg = mockLibraryAdd.mock.calls[0][0] as { title: string; source: string; voiceRef: string; sentences: unknown[] }
+    expect(arg.source).toBe('live')
+    expect(arg.voiceRef).toBe('冰糖')
+    expect(arg.sentences).toEqual([{ text: '已播句。', audioId: 'k', file: 'C:/x/1.wav' }])
+    expect(arg.title.length).toBeGreaterThan(0)
+  })
+
+  it('P1 stop 时 takeDoneSentences 在清队列前取走（顺序关键）', async () => {
+    await radioBroadcastController.start({
+      direction: { kind: 'news', text: '头条' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // takeDoneSentences 必须发生在 player.stop（清队列）之前
+    let playerStopped = false
+    let takenBeforeStop = false
+    player.stop.mockImplementation(() => {
+      playerStopped = true
+    })
+    player.takeDoneSentences.mockImplementation(() => {
+      takenBeforeStop = !playerStopped
+      return [{ text: 's', file: 'f' }]
+    })
+    await radioBroadcastController.stop()
+    expect(mockLibraryAdd).toHaveBeenCalled()
+    expect(takenBeforeStop).toBe(true)
   })
 })

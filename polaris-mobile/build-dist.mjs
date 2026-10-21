@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+/* eslint-disable no-console -- 构建脚手架脚本，过程日志走 stdout（AGENTS §六：协议数据流除外） */
 /**
  * 移动端 APK 打包前的前端构建脚本（Tauri beforeBuildCommand 调用）。
  *

@@ -296,6 +296,14 @@ impl DataRoot {
         self.shared("cache")
     }
 
+    /// 语音资产子目录（实例层：AI 连续播报的音色库/内容库/合成缓存归具体实例）
+    ///
+    /// cap.voice 单写路径（AGENTS 唯一权威）：voices.json / library.json /
+    /// library/audio/ / cache/ / samples/ 全部落这里，前端禁止直写。
+    pub fn voice_dir(&self) -> PathBuf {
+        self.scoped("voice")
+    }
+
     /// 元数据目录（**共享层**）
     ///
     /// 存放数据根迁移/重定位审计日志（`migration-*.json`、`relocation-*.json`、

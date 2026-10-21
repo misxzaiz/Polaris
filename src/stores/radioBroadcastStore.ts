@@ -13,6 +13,7 @@ import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/
 import type {
   RadioBroadcastSnapshot,
 } from '@/services/voiceBroadcast/types'
+import type { LibraryItem } from '@/services/voiceBroadcast/voiceService'
 
 export interface RadioBroadcastStoreState extends RadioBroadcastSnapshot {
   /** 开始播报（异步；Promise 在首音频就绪或失败时 resolve） */
@@ -27,6 +28,8 @@ export interface RadioBroadcastStoreState extends RadioBroadcastSnapshot {
   setRate: (rate: number) => void
   /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
   sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
+  /** 回听内容库单集（P1：无 AI 会话直插已合成句子） */
+  playLibraryItem: (item: LibraryItem) => Promise<boolean>
 }
 
 const EMPTY_SNAPSHOT: RadioBroadcastSnapshot = {
@@ -66,6 +69,10 @@ export const useRadioBroadcastStore = create<RadioBroadcastStoreState>()(() => (
   /** 睡眠定时（P0-3）：分钟档 / 播完本段 / null 取消 */
   sleep: (opts) => {
     radioBroadcastController.sleep(opts)
+  },
+  /** 回听内容库单集（P1） */
+  playLibraryItem: (item) => {
+    return radioBroadcastController.playLibraryItem(item)
   },
 }))
 
