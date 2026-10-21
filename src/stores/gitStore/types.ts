@@ -185,6 +185,13 @@ export interface OperationsState {
   operations: GitOperationEntry[]
   /** P1.5 分片：按 wsPath 键控的操作流水 */
   operationsByWs?: Record<string, GitOperationEntry[]>
+  /**
+   * C9 序列操作活动窗口（epoch ms，键 = wsPath）：rebase/merge/cherry-pick/revert
+   * 等长任务结束后仍会继续改写工作区/.git（后续 checkout 链），窗口内
+   * fileWatcherSubscriber 把自动刷新防抖放宽到 ≤3s（master-plan 性能预算）防风暴。
+   * operationsSubscriber 收到对应写动作 events 时延长窗口。
+   */
+  sequenceActivityUntilByWs?: Record<string, number>
 }
 
 /**

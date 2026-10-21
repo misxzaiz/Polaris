@@ -49,6 +49,8 @@
 | 长任务 | progress ≤4Hz 合流；读无限/写 max=1 | broadcast 复用（防 Lagged 丢 AI 流） |
 | diff | >2MB 仅统计档（AI-2 同步走协议化裁剪标注） | 复用 MAX_EDIT_LENGTH 范式 |
 
+> 实测归档（第七轮）：上表预算在当前实现上未达标，真机数字与根因交叉证据见 §十二「bench 实测」；修复主案 = C6/C7，独立 PR 排期。
+
 | PR | 内容（修订） | 验收 |
 |---|---|---|
 | **PR-1** | 单 `cap.git`（action=去前缀命令名）+ **invoke 兼容 shim** + **纯转发**；能力内 source+写类校验；`web/api/ipc.rs` 路由臂改指 cap.git 后删 `git_dispatch.rs`；**不动 commands/git.rs、不动 slice 与测试** | 现 vitest 全绿零改动；web-only `cargo check` 过；shim sunset 条款写入代码注释 |
@@ -177,16 +179,59 @@ PR-2a 主体（Reply 结构化错误、写任务队列/取消、progress 合流�
 
 | # | 项 | 出处 | 现实 |
 |---|---|---|---|
-| 1 | Interactive Rebase 增量：reword（GIT_EDITOR 二层编排）/ 拖拽 reorder / edit 停点 hover | FR-P3-2 | 未实施（本轮明确标注） |
+| 1 | Interactive Rebase 增量：reword（GIT_EDITOR 二层编排）/ 拖拽 reorder / edit 停点 hover | FR-P3-2 | ~~未实施~~ → 第七轮：reword `fd7e0c06` + 拖拽 `1cb69957` 已落地；edit 停点 hover 仍未做 |
 | 2 | AI-5 agentic 冲突求解 agent + per-hunk 降级卡；中列 Append 双侧拼合；跨文件键盘流接力 | FR-P3 合并器 | 未实施 |
-| 3 | graph.c 四数组 lane 收缩算法 | FR-P2-1 | 简化版已覆盖单线+合并，交错收缩归此项（性能优化） |
+| 3 | graph.c 四数组 lane 收缩算法 | FR-P2-1 | ~~简化版已覆盖单线+合并~~ → 第七轮：`144b20ce` 抽 polaris-git-lanes（父去重合并 + 即时释放，真实跑测 5/5）；协议零漂移 |
 | 4 | AI-6 LLM 归纳层 + blame/diff 自然语言域 | AI-6 | v0 编译器（无 LLM）已上线；LLM 层 ⚡⚡ 未做 |
 | 5 | AI-7 危险操作防呆（「会失去什么」AI 说明 + 安全网建议 stash/新分支） | PRD AI-7 | **全量未实施**（确认弹窗仅基础版） |
 | 6 | P4 插件示例（GitFlow / worktree / GitLab PR） | P4 | 未实施（插件仓侧） |
 | 7 | Undo toast「撤销」按钮联动 | FR-P2-3 | 未实施（UndoBar 已有第一个消费点） |
 | 8 | 风险卡明细跳转 diff 定位 | AI-3 | 未实施 |
-| 9 | PR-2a 主体：Reply 结构化错误（C1 `{code,kind,stderrSnip}`）、写队列完整版（现为 WRITE_GATE 互斥最简落地）、progress 事件 4Hz 合流、取消分级语义 | C8/C1 | 部分实施 |
-| 10 | 性能预算逐项 bench 记录（log 翻页 p95<200ms / 热开 p50<50ms 等） | §预算表 | 无 bench 产物（预算数字未实测归档） |
-| 11 | C9 .git 副监听 rebase 风暴自抑制 / Web 60s 轮询兜底 | C9 | 需复核（FR-P2-2 watcher 已完成，rebase 抑制条目未见执行记录） |
+| 9 | PR-2a 主体：Reply 结构化错误（C1 `{code,kind,stderrSnip}`）、写队列完整版（现为 WRITE_GATE 互斥最简落地）、progress 事件 4Hz 合流、取消分级语义 | C8/C1 | ~~部分实施~~ → 第七轮：结构化错误 `6cb04cbd` 全链贯通；写队列 FIFO `8c19f1bc` + 合流器本体；progress 回调接线与前端 cancel 撤单入口残留 |
+| 10 | 性能预算逐项 bench 记录（log 翻页 p95<200ms / 热开 p50<50ms 等） | §预算表 | ~~无 bench 产物~~ → 第七轮：`9925a02d` 脚本 + 真机归档（预算超标实锤，根因指向 C6/C7，见 §十二） |
+| 11 | C9 .git 副监听 rebase 风暴自抑制 / Web 60s 轮询兜底 | C9 | ~~需复核~~ → 第七轮：后端 IGNORED_DIRS 已挡 .git 事件（复核结论：.git 直写无事件）；风暴源 = rebase 的工作区 checkout 链，自抑制窗口 `9ba1b174` 落地；Web 60s 轮询兜底仍未做（watch 属 tauri feature） |
 
 **分支基线债复述**：11 个 vitest 存量失败文件（localhost mock）+ 6 lint error（PatchDiffRenderer/useRuntimeSummary/ansiToHtml），不属 git 域。
+
+---
+
+## 十二、执行记录（第七轮 · git 面板欠账总清偿，2026-10-21，worktree `feat/git-backlog-r6`）
+
+**范围**：main `c0a0a594` 切出独立分支推进；每项单主题提交 + 真实门禁（tsc/eslint/vitest/cargo check/web-gate），未完成如实标注。分支不自行并入 main，等用户指令。
+
+**提交清单与门禁**：
+
+| 组 | 项 | 提交 | 实现 | 门禁 |
+|---|---|---|---|---|
+| A1 | AI-7 危护 v1（ConfirmDialog losses/safetyNet + 6 调用点 + i18n） | `9c0fa0a1` | `danger.*` 11 键 zh/en | ConfirmDialog.test 2 过 |
+| A2 | AI-3 风险卡明细点击跳 diff | `2e1ccab6` | `onOpenFileDiff` + `handleRiskFileDiff` | CommitRiskCard.test 5/5 |
+| A3 | FR-P2-3 Undo toast「撤销」联动 | `a394feed` | `undoToast.ts` toastWithUndo + 4 接线点 | undoToast.test 3 过；git 域 16 文件 103 过 |
+| B1 | PR-2a C1 Reply 结构化错误 `{code,kind,stderrSnip}` | `6cb04cbd` | marker 承载 + router 拆包；TS `GitCapError` | cargo check 0 / web-gate 0 / replyError.test 3 过；Rust 单测已写未跑（DLL 基线） |
+| B2 | PR-2a B2 写闸 FIFO 票号队列 + 进度合流器 | `8c19f1bc` | mini crate `polaris-gate-queue`（WriteGate FIFO + ProgressCoalescer 4Hz），接线 git_capability.rs（裸 Mutex → 票号队列） | crate 测试 4/4 真实过 |
+| B3 | 欠账 ⑪ C9 rebase 风暴自抑制 | `9ba1b174` | `sequenceActivityUntilByWs` 活动窗口：序列写动作 events 延长窗口（3s），fileWatcher 防抖 800→3000 | 两 subscriber 测试 13/13 过；tsc/lint 0 |
+| C1 | 欠账 ① reword | `fd7e0c06` | todo 行内改写标题（`newMessage`）；后端预写 `reword-N.txt` + 顺序表，GIT_EDITOR 脚本按 todo 序回放（无人工交互）；squash/fixup 前驱扩为 pick∥reword | RebaseTodoDialog.test 10 过；Rust test-compile 过/运行 DLL 基线限制；顺带补 `GitRebaseTodoItem` PartialEq（实锤既有盲区：cfg(test) 不进 `cargo check` 网格，旧 assert_eq 从未编译过） |
+| C2 | 欠账 ① 拖拽 reorder | `1cb69957` | HTML5 原生 DnD（dragIndex state，测试友好）；首项锁定约束不变；与上下移按钮并存 | RebaseTodoDialog.test 12/12 过 |
+| D2 | 欠账 ③ lane 算法 graph 化 | `144b20ce` | 算法抽 mini crate `polaris-git-lanes`：graph.c 父去重合并（重复父在等待列 → 复用不新增列）+ processed 即时释放；log.rs 薄适配，`GitLaneRow` 协议零漂移 | crate 5/5 真实过；cargo check/web-gate 0；log 契约用例（build_lane_fixture）编译过/运行受限（DLL 基线） |
+| D1 | 欠账 ⑩ bench 记录 | `9925a02d` + 本节 | `scripts/bench-git.mjs`：真实链路 polaris-web→RouterBus→cap.git→git2 压测 | 见下「bench 实测」 |
+
+**bench 实测（欠账 ⑩ 归档，主仓 HEAD 基线、3265 提交仓、n=30、2026-10-21）**：
+
+形态：`cargo build --release --no-default-features --features git --bin polaris-web`（标准 web-gate 形态不含 git feature，测不了——bench 构建形态如实标注）；`POLARIS_DATA_ROOT` 隔离数据根；`/api/router_dispatch` 端到端；数据根为空仓（无历史缓存干扰）。
+
+| 场景 | p50 | p95 | max | 预算 | 判定 |
+|---|---|---|---|---|---|
+| log 首页 limit=100 | 455ms | 549ms | 565ms | p95<200ms | 超标 |
+| log 翻页 skip=100 | 449ms | 513ms | 549ms | p95<200ms | 超标 |
+| log 深翻页 skip=500 | 447ms | 531ms | 534ms | p95<200ms | 超标 |
+| 热开 status | 205ms | 258ms | — | p50<50ms | 超标 |
+| 热开 log 首页（重复） | 489ms | 629ms | — | p50<50ms | 超标 |
+
+**交叉证据**：轻 action（get_operations）p50≈3ms → HTTP/路由开销可忽略；翻页耗时与 skip 无关（首页≈深翻页）→ 成本不在页 N 重放，而在每次请求的**全史拓扑 walk + 语义着色全史 revwalk + refs 全收集**。C6（TOPOLOGICAL 版本协议漂移未落）/C7（热开廉价 key 未落）从"推测项"变为"量化的主成本项"：预算表数字在现有实现上不成立，修复路径 = C6/C7（页 N 重放 + 廉价热开 key），**本轮不动**（协议变更，须独立 PR 排期）。
+
+**本轮明确不做（如实标注，非完成项）**：
+- 欠账 ④ AI-6 LLM 归纳层（⚡⚡ 未做，维持 v0 编译器形态）；
+- 欠账 ⑤ AI-5 agentic conflict agent（探索项未开始）；
+- 欠账 ⑥ P4 插件示例（在插件仓 `D:\space\base\Polaris-plugin`，不在本 worktree）；
+- B2 残留：git2 长动作 progress 回调接线未做（合流器本体就绪）；写动作取消的前端撤单入口未接（取消分级语义已写入代码注释）；
+- interactive rebase 「edit 停点 hover」未做；
+- 主仓 lib Rust 单测运行受 DLL 基线限制（0xC0000139）——本轮 test-compile 通过的 Rust 用例运行状态已逐项如实标注。

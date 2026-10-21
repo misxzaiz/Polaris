@@ -130,6 +130,129 @@ describe('RebaseTodoDialog', () => {
     expect(screen.getByText(/rebaseTodo\.invalidOrder/)).toBeInTheDocument()
   })
 
+  it('C1 reword：切到 reword → 行内输入预填旧标题；改写后透传 newMessage', async () => {
+    planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two')]))
+    startFn.mockResolvedValue(OK_RESULT)
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('two'))
+    fireEvent.change(screen.getByTestId('todo-action-1'), { target: { value: 'reword' } })
+
+    // 行内输入出现，预填 = 旧 subject
+    const input = screen.getByTestId('todo-reword-input-1') as HTMLInputElement
+    expect(input.value).toBe('two')
+    fireEvent.change(input, { target: { value: 'two (renamed)' } })
+
+    fireEvent.click(screen.getByTestId('rebase-execute'))
+    await waitFor(() => expect(startFn).toHaveBeenCalledTimes(1))
+    expect(startFn).toHaveBeenCalledWith('D:/repo', '1111111', [
+      { sha: 'aaaa1111', subject: 'one', action: 'pick' },
+      { sha: 'bbbb2222', subject: 'two', action: 'reword', newMessage: 'two (renamed)' },
+    ], false)
+  })
+
+  it('C1 reword 之后接 squash → 校验通过（reword 可作组前驱）', async () => {
+    planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two'), pick('cccc3333', 'three')]))
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('three'))
+    fireEvent.change(screen.getByTestId('todo-action-1'), { target: { value: 'reword' } })
+    fireEvent.change(screen.getByTestId('todo-action-2'), { target: { value: 'squash' } })
+
+    expect(screen.getByTestId('rebase-execute')).not.toBeDisabled()
+  })
+
+  it('C2 拖拽：合法位置 reorder 生效并透传；拖到 0 位被拒；拖拽行 0 无效', async () => {
+    planFn.mockResolvedValue(plan([
+      pick('aaaa1111', 'one'),
+      pick('bbbb2222', 'two'),
+      pick('cccc3333', 'three'),
+    ]))
+    startFn.mockResolvedValue(OK_RESULT)
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('three'))
+
+    // 行1（two）拖到行2（three）位置 → splice 移动：one, three, two
+    fireEvent.dragStart(screen.getByTestId('todo-row-1'))
+    fireEvent.dragOver(screen.getByTestId('todo-row-2'))
+    fireEvent.drop(screen.getByTestId('todo-row-2'))
+    fireEvent.dragEnd(screen.getByTestId('todo-row-1'))
+
+    // 行序已变；验证行 1 现在是 three
+    expect(screen.getByTestId('todo-row-1')).toHaveTextContent('three')
+
+    // 首项仍是 pick → 序列合法
+    expect(screen.getByTestId('rebase-execute')).not.toBeDisabled()
+
+    fireEvent.click(screen.getByTestId('rebase-execute'))
+    await waitFor(() => expect(startFn).toHaveBeenCalledTimes(1))
+    expect(startFn).toHaveBeenCalledWith('D:/repo', '1111111', [
+      { sha: 'aaaa1111', subject: 'one', action: 'pick' },
+      { sha: 'cccc3333', subject: 'three', action: 'pick' },
+      { sha: 'bbbb2222', subject: 'two', action: 'pick' },
+    ], false)
+  })
+
+  it('C2 拖拽约束：drop 到行 0 位不生效（首项锁定）', async () => {
+    planFn.mockResolvedValue(plan([
+      pick('aaaa1111', 'one'),
+      pick('bbbb2222', 'two'),
+      pick('cccc3333', 'three'),
+    ]))
+
+    render(
+      <RebaseTodoDialog
+        workspacePath="D:/repo"
+        baseCommitish="1111111"
+        onClose={vi.fn()}
+        onDone={onDone}
+      />,
+    )
+
+    await waitFor(() => screen.getByText('three'))
+
+    // 行 1（two）拖到行 0 → 拒绝，顺序不变
+    fireEvent.dragStart(screen.getByTestId('todo-row-1'))
+    fireEvent.dragOver(screen.getByTestId('todo-row-0'))
+    fireEvent.drop(screen.getByTestId('todo-row-0'))
+    fireEvent.dragEnd(screen.getByTestId('todo-row-1'))
+
+    expect(screen.getByTestId('todo-row-0')).toHaveTextContent('one')
+    expect(screen.getByTestId('todo-row-1')).toHaveTextContent('two')
+
+    // 行 0 自身不可拖（draggable=false → 组件层不置 dragIndex）
+    fireEvent.dragStart(screen.getByTestId('todo-row-0'))
+    fireEvent.drop(screen.getByTestId('todo-row-2'))
+    fireEvent.dragEnd(screen.getByTestId('todo-row-0'))
+
+    expect(screen.getByTestId('todo-row-1')).toHaveTextContent('two')
+  })
+
   it('合法序列执行 → 透传 todos/autosquash；成功后 onDone', async () => {
     planFn.mockResolvedValue(plan([pick('aaaa1111', 'one'), pick('bbbb2222', 'two')]))
     startFn.mockResolvedValue(OK_RESULT)
