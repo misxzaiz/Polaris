@@ -134,7 +134,7 @@ function Dropdown({
         <ChevronDown size={14} className="opacity-50 shrink-0" />
       </button>
       {open && !disabled && (
-        <div className="absolute top-full left-0 right-0 mt-1 z-popover max-h-[220px] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg">
+        <div className="absolute top-full left-0 right-0 mt-1 z-dropdown max-h-[220px] overflow-y-auto bg-background-elevated border border-border rounded-lg shadow-lg">
           {options.length === 0 && (
             <div className="px-3 py-2 text-xs text-text-tertiary">—</div>
           )}

@@ -199,7 +199,7 @@ export function ContextMeter({ usage, contextWindow, labelMode = 'full', engineI
         <div
           ref={cardRef}
           className={clsx(
-            'absolute bottom-full right-0 mb-2 z-40 rounded-xl border border-border-subtle bg-background-elevated p-3 shadow-xl',
+            'absolute bottom-full right-0 mb-2 z-dropdown rounded-xl border border-border-subtle bg-background-elevated p-3 shadow-xl',
             showRaw ? 'w-[480px]' : 'w-[310px]',
           )}
           onMouseEnter={() => setActive(true)}

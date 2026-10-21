@@ -15,10 +15,11 @@
   top: 0;
   left: 50%;
   transform: translateX(-50%);
-  /* 45：低于全局浮层（ToolSwitcher/LeftPanel/LeftPanelDrawer/RadialMenu 等 z-popover），
-     但仍高于聊天区内部 z-40 的浮层（ChatNavigator/ContextMeter）。
-     岛挂在 DOM 靠后的聊天区，若同为 50 会按 DOM 序反压全局浮层。 */
-  z-index: 45;
+  /* 30（--z-float）：聊天区浮层档。
+     低于全局浮层（ToolSwitcher/LeftPanel/LeftPanelDrawer/RadialMenu 等 z-popover(50)）
+     与侧边栏抽屉（z-overlay 40）。岛挂在 DOM 靠后的聊天区，若与侧边栏同级或更高
+     会按数值/DOM 序反压侧边栏（用户可见 bug：开侧边栏时岛仍浮在上层）。 */
+  z-index: var(--z-float, 30);
   /* 宽度自适配：内容驱动，不再固定 440px */
   width: fit-content;
   min-width: 120px;

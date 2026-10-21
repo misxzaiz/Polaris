@@ -425,7 +425,7 @@ export function SessionConfigSelector({
         'absolute bottom-full left-0 mb-1',
         'bg-background-elevated border border-border rounded-lg shadow-lg',
         'min-w-[180px] max-h-[240px] overflow-y-auto',
-        'z-popover animate-panel-in'
+        'z-dropdown animate-panel-in'
       )}>
         {items.map((item) => (
           <button
@@ -706,7 +706,7 @@ export function CompactSessionSelector({
           <ChevronDown size={10} className="opacity-50" />
         </button>
         {openDropdown === 'agent' && (
-          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-popover">
+          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-dropdown">
             {agentList.map(agent => (
               <button
                 key={agent.id}
@@ -748,7 +748,7 @@ export function CompactSessionSelector({
           <ChevronDown size={10} className="opacity-50" />
         </button>
         {openDropdown === 'model' && (
-          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-popover">
+          <div className="absolute bottom-full left-0 mb-1 bg-background-elevated border border-border rounded-lg shadow-lg min-w-[140px] z-dropdown">
             {PRESET_MODELS.map(model => (
               <button
                 key={model.id}

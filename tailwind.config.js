@@ -135,6 +135,7 @@ module.exports = {
         base: 'var(--z-base, 0)',
         sticky: 'var(--z-sticky, 10)',
         dropdown: 'var(--z-dropdown, 20)',
+        float: 'var(--z-float, 30)',
         overlay: 'var(--z-overlay, 40)',
         popover: 'var(--z-popover, 50)',
         modal: 'var(--z-modal, 70)',

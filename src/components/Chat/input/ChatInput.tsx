@@ -1764,7 +1764,7 @@ export function ChatInput({
                 {optimizePickerOpen && (
                   <div
                     ref={optimizePickerRef}
-                    className="absolute left-0 bottom-full mb-1 z-popover w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border flex flex-col max-h-[70vh]"
+                    className="absolute left-0 bottom-full mb-1 z-dropdown w-[220px] rounded-lg shadow-lg bg-background-elevated border border-border flex flex-col max-h-[70vh]"
                   >
                     {/* 可滚动内容区 */}
                     <div className="overflow-y-auto overscroll-contain py-1.5">

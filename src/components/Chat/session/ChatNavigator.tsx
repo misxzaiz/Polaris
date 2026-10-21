@@ -193,10 +193,10 @@ export function ChatNavigator({
   }
 
   return (
-    <div className="absolute inset-0 pointer-events-none z-40">
+    <div className="absolute inset-0 pointer-events-none z-dropdown">
       {variant === 'timeline' ? (
         /* 时间线变体：贴边圆点列 */
-        <div className="absolute right-0 top-0 bottom-0 w-3 z-40 pointer-events-none">
+        <div className="absolute right-0 top-0 bottom-0 w-3 z-dropdown pointer-events-none">
           {/* 仅圆点区域可触发，垂直居中，不铺满全高 */}
           <div
             ref={floatingBallRef}
@@ -287,7 +287,7 @@ export function ChatNavigator({
             'border border-border/80 rounded-lg shadow-lg shadow-black/20',
             'overflow-hidden animate-dialog-in',
             'pointer-events-auto flex flex-col',
-            'absolute z-popover'
+            'absolute z-dropdown'
           )}
           style={panelStyle}
           onMouseEnter={handlePanelMouseEnter}

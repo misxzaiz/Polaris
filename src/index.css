@@ -103,12 +103,14 @@
   --ease-in-out: ease-in-out;
 
   /* z-index scale（单一真源，禁用字面量 z-[N]）
-   * 业务组件用 z-sticky / z-dropdown / z-overlay / z-popover / z-modal / z-toast。
+   * 业务组件用 z-sticky / z-dropdown / z-float / z-overlay / z-popover / z-modal / z-toast。
    * 命名是公共 API：只增不改，改名 = 全前端破坏性变更。 */
   --z-base: 0;
   --z-sticky: 10;
-  --z-dropdown: 20;
-  --z-overlay: 40;       /* NarrowTabOverlay / ArtifactPreview / 编辑器覆盖层 */
+  --z-dropdown: 20;      /* 组件内局部浮层（sticky 头、下拉、聊天区浮层） */
+  --z-float: 30;         /* 悬浮岛：聊天区顶部贴顶浮层，高于聊天区其它浮层(z-dropdown)，
+                          * 低于侧边栏抽屉(z-overlay 40)——开侧边栏时岛不反压 */
+  --z-overlay: 40;       /* NarrowTabOverlay / ArtifactPreview / 编辑器覆盖层 / 侧边栏抽屉 */
   --z-popover: 50;       /* ToolSwitcher / 各种下拉 / 建议框 */
   --z-modal: 70;         /* 所有 Modal/Dialog/Drawer 统一 */
   --z-toast: 90;         /* Toast / 全局通知顶层 */

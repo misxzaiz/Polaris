@@ -87,8 +87,8 @@ export function MessageSearchPanel({
     <div
       className={clsx(
         isCompact
-          ? 'fixed top-0 right-0 left-0 z-popover rounded-none'
-          : 'absolute top-2 right-4 z-popover',
+          ? 'fixed top-0 right-0 left-0 z-dropdown rounded-none'
+          : 'absolute top-2 right-4 z-dropdown',
         'bg-background-elevated/95 backdrop-blur-sm',
         'border border-border shadow-lg',
         isCompact ? undefined : 'rounded-lg',
