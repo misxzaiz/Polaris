@@ -41,6 +41,25 @@ impl ConnectionTestResult {
 /// 模型 Profile 服务
 pub struct ModelProfileService;
 
+/// 进程内写锁：序列化本进程对 ~/.claude/settings.json 的写入
+/// （Claude CLI 自身并发写是已知 lost-update 窗口，跨进程不承诺）。
+pub static CLAUDE_SETTINGS_FS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// settings.json 原子写的唯一临时名：`{pid}-{ts}` 防跨进程发布对方半截文件
+/// （spec F4——固定 `settings.json.tmp` 下 A 进程可能 rename 到 B 进程的半成品）。
+fn unique_tmp_path(target: &std::path::Path) -> std::path::PathBuf {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("settings.json");
+    target.with_file_name(format!("{}.tmp-{}-{ts}", name, std::process::id()))
+}
+
 impl ModelProfileService {
     /// 判断 Profile 是否使用 OpenAI Chat Completions 线路格式
     pub fn is_openai_wire_api(profile: &ModelProfile) -> bool {
@@ -237,11 +256,14 @@ impl ModelProfileService {
     /// 写入前备份原文件（`.bak`），仅更新 `config.env` 节，
     /// 保留用户手工编辑的其他配置。
     pub fn cascade_to_claude_settings(profile: &ModelProfile) -> Result<()> {
-        let claude_config_dir = dirs::config_dir()
-            .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户配置目录".to_string()))?
-            .join("claude");
+    // 路径修正（spec F4 真 bug）：Claude CLI 读取的是 ~/.claude/settings.json。
+    // 旧实现经 dirs::config_dir() 落到 %APPDATA%\claude\settings.json——CLI 永不
+    // 读取，Profile 凭证级联静默失效。存量垃圾由 legacy_storage_migrate 归档。
+    let claude_config_dir = dirs::home_dir()
+        .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户主目录".to_string()))?
+        .join(".claude");
 
-        let settings_path = claude_config_dir.join("settings.json");
+    let settings_path = claude_config_dir.join("settings.json");
 
         // 读取现有 settings.json（可能不存在）
         let mut settings: serde_json::Value = if settings_path.exists() {
@@ -288,11 +310,14 @@ impl ModelProfileService {
             settings = serde_json::json!({ "env": env_map });
         }
 
-        // 原子写入（先写临时文件再 rename）
-        let tmp_path = settings_path.with_extension("json.tmp");
+        // 原子写入（唯一 tmp 名防跨进程截胡 + 进程内写锁；spec F4）
         let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
             crate::error::AppError::ProcessError(format!("序列化 Claude settings.json 失败: {}", e))
         })?;
+        let _guard = CLAUDE_SETTINGS_FS_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp_path = unique_tmp_path(&settings_path);
         std::fs::write(&tmp_path, &pretty).map_err(|e| {
             crate::error::AppError::ProcessError(format!(
                 "写入 Claude settings.json 临时文件失败: {}",
@@ -311,14 +336,27 @@ impl ModelProfileService {
         Ok(())
     }
 
-    /// 清除 Claude Code settings.json 中由 Polaris 管理的配置节。
+    /// 清除 Claude Code settings.json 中由 Polaris 管理的配置键。
     ///
     /// 在删除所有 ModelProfile 时调用，恢复用户手工配置。
-    /// 仅移除 `env` 键，保留其他配置不变。
+    /// 修正（spec F4）：只移除 Polaris 管理的 env 键（含引擎 EnvKeyMapping
+    /// 产生的 5 槽位模型映射与 API_KEY），**不再整体删除 `env` 节**——
+    /// 保护用户自放的环境变量；路径同 cascade 改回 ~/.claude。
     pub fn clear_claude_settings_env() -> Result<()> {
-        let settings_path = dirs::config_dir()
-            .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户配置目录".to_string()))?
-            .join("claude")
+        const POLARIS_MANAGED_ENV_KEYS: [&str; 8] = [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_REASONING_MODEL",
+            "ANTHROPIC_API_KEY",
+        ];
+
+        let settings_path = dirs::home_dir()
+            .ok_or_else(|| crate::error::AppError::ConfigError("无法获取用户主目录".to_string()))?
+            .join(".claude")
             .join("settings.json");
 
         if !settings_path.exists() {
@@ -331,14 +369,19 @@ impl ModelProfileService {
         let mut settings: serde_json::Value =
             serde_json::from_str(&raw).unwrap_or(serde_json::json!({}));
 
-        if let Some(obj) = settings.as_object_mut() {
-            obj.remove("env");
+        if let Some(env_map) = settings.get_mut("env").and_then(|v| v.as_object_mut()) {
+            for key in POLARIS_MANAGED_ENV_KEYS {
+                env_map.remove(key);
+            }
         }
 
-        let tmp_path = settings_path.with_extension("json.tmp");
         let pretty = serde_json::to_string_pretty(&settings).map_err(|e| {
             crate::error::AppError::ProcessError(format!("序列化 Claude settings.json 失败: {}", e))
         })?;
+        let _guard = CLAUDE_SETTINGS_FS_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let tmp_path = unique_tmp_path(&settings_path);
         std::fs::write(&tmp_path, &pretty)?;
         std::fs::rename(&tmp_path, &settings_path)?;
 

@@ -66,15 +66,39 @@ pub async fn write_claude_settings(settings: ClaudeSettings) -> Result<()> {
                 .map_err(|e| AppError::ProcessError(format!("创建目录失败: {}", e)))?;
         }
     }
+    let content = serde_json::to_string_pretty(&settings)
+        .map_err(|e| AppError::ProcessError(format!("序列化失败: {}", e)))?;
+
+    // 原子写 + 共享写锁（spec F4）：此前为裸 fs::write——半截文件会直接
+    // 毁掉 settings.json；与 model_profile_service 的级联写共锁防互相截胡。
+    let _guard =
+        crate::services::model_profile_service::CLAUDE_SETTINGS_FS_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
     if path.exists() {
         let backup_path = path.with_extension("json.bak");
         let _ = std::fs::copy(&path, &backup_path);
     }
-    let content = serde_json::to_string_pretty(&settings)
-        .map_err(|e| AppError::ProcessError(format!("序列化失败: {}", e)))?;
-    std::fs::write(&path, content)
-        .map_err(|e| AppError::ProcessError(format!("写入文件失败: {}", e)))?;
+    let tmp = unique_tmp_path(&path);
+    std::fs::write(&tmp, &content)
+        .map_err(|e| AppError::ProcessError(format!("写入临时文件失败: {}", e)))?;
+    std::fs::rename(&tmp, &path)
+        .map_err(|e| AppError::ProcessError(format!("替换文件失败: {}", e)))?;
     Ok(())
+}
+
+/// 唯一临时文件名（{pid}-{ts}）：跨进程写同一 settings.json 时
+/// 防止 A 进程 rename 到 B 进程写了一半的固定名 tmp（spec F4）。
+fn unique_tmp_path(target: &std::path::Path) -> std::path::PathBuf {
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("settings.json");
+    target.with_file_name(format!("{}.tmp-{}-{ts}", name, std::process::id()))
 }
 
 #[cfg_attr(feature = "tauri-app", tauri::command)]
