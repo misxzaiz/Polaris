@@ -230,10 +230,53 @@ fn run_computer_mcp(_args: &[String]) -> Result<()> {
     ))
 }
 
-/// 获取默认配置目录
+/// 获取默认配置目录（单参数旧格式兜底）。
+///
+/// 根因（spec F3）：旧兜底 `com.polaris.app` 是 Tauri 遗留目录、不在 DataRoot
+/// 体系内——旧格式单参调用会把 requirements/scheduler 等 SQLite 落进遗留根。
+/// 新优先级：`POLARIS_DATA_ROOT` env > 双根探测（复用 bridge 同源逻辑：
+/// pid 存活 + started_at tie-break；全部 stale/不可判 → 正式版根 `Polaris`）。
 fn get_default_config_dir() -> Result<String> {
-    let config_dir = dirs::config_dir()
-        .ok_or_else(|| AppError::ProcessError("无法确定配置目录".to_string()))?
-        .join("com.polaris.app");
-    Ok(config_dir.to_string_lossy().to_string())
+    // 1. env 显式根（最精确：tauri:dev:web 注入 Polaris-dev）
+    if let Ok(env_root) = std::env::var("POLARIS_DATA_ROOT") {
+        let env_root = env_root.trim();
+        if !env_root.is_empty() {
+            return Ok(env_root.to_string());
+        }
+    }
+
+    let base = dirs::config_dir()
+        .ok_or_else(|| AppError::ProcessError("无法确定配置目录".to_string()))?;
+    let formal_root = base.join("Polaris");
+
+    // 2. 双根探测：meta 带 pid/stared pid 存活判定谁是「当前活跃主进程」
+    //    （与 ask_listener bridge 同源语义）；多实例同时存活时取 started_at 更新者。
+    use polaris_lib::services::ask_listener_meta;
+    let mut best: Option<(String, PathBuf)> = None;
+    for root in ask_listener_meta::candidate_roots() {
+        let Some(meta) = ask_listener_meta::read_meta_at(&root) else {
+            continue;
+        };
+        if !ask_listener_meta::pid_alive(meta.pid) {
+            continue; // pid 复用/失活 → 不可判，跳过该根
+        }
+        let better = match &best {
+            Some((started_at, _)) => meta.started_at > *started_at,
+            None => true,
+        };
+        if better {
+            best = Some((meta.started_at, root));
+        }
+    }
+
+    let chosen = best
+        .map(|(_, root)| root)
+        .unwrap_or(formal_root.clone());
+    if chosen != formal_root {
+        tracing::warn!(
+            "[polaris-mcp] config_dir 未显式传入，按 pid 判活兜底选择 {}（spec F3）",
+            chosen.display()
+        );
+    }
+    Ok(chosen.to_string_lossy().to_string())
 }

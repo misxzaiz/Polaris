@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[cfg(feature = "tauri-app")]
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 use crate::error::Result;
 use crate::models::requirement::{
@@ -39,12 +39,13 @@ pub struct ListRequirementsParams {
 #[tauri::command]
 pub async fn list_requirements(
     params: ListRequirementsParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<Vec<RequirementItem>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -111,12 +112,13 @@ pub struct CreateRequirementParams {
 #[tauri::command]
 pub async fn create_requirement(
     params: CreateRequirementParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -203,12 +205,13 @@ pub struct ExecuteConfigParam {
 #[tauri::command]
 pub async fn update_requirement(
     params: UpdateRequirementParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -259,12 +262,13 @@ pub struct DeleteRequirementParams {
 #[tauri::command]
 pub async fn delete_requirement(
     params: DeleteRequirementParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<RequirementItem> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -292,12 +296,13 @@ pub struct SavePrototypeParams {
 #[tauri::command]
 pub async fn save_requirement_prototype(
     params: SavePrototypeParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -320,12 +325,13 @@ pub struct ReadPrototypeParams {
 #[tauri::command]
 pub async fn read_requirement_prototype(
     params: ReadPrototypeParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<String> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path
@@ -351,12 +357,13 @@ pub struct GetBreakdownParams {
 #[tauri::command]
 pub async fn get_requirement_workspace_breakdown(
     params: GetBreakdownParams,
-    app: AppHandle,
+    _app: AppHandle,
 ) -> Result<BTreeMap<String, usize>> {
-    let config_dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| crate::error::AppError::ProcessError(format!("获取配置目录失败: {}", e)))?;
+    // 数据根单点红线（AGENTS 3.3）：统一走 DataRoot，与 Web/MCP 通道一致。
+    // 根因：此处曾用 app_config_dir()（= %APPDATA%/com.polaris.app 遗留目录），
+    // 而 AI/MCP 读 DataRoot（%APPDATA%/Polaris）——同一需求库双落点分裂。
+    // 遗留库由启动期一次性迁移收口（services/legacy_storage_migrate.rs）。
+    let config_dir = crate::services::data_root::data_root().config_dir();
 
     let workspace_path = params
         .workspace_path

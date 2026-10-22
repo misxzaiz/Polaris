@@ -1,5 +1,6 @@
 pub mod config_store;
 pub mod data_root;
+pub mod legacy_storage_migrate;
 pub mod instance;
 pub mod dialog_index;
 pub mod file_watcher;

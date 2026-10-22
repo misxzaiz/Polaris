@@ -3,7 +3,7 @@
 //! MCP server for unified requirement management.
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -30,15 +30,56 @@ pub fn run_requirements_mcp_server(config_dir: &str, workspace_path: Option<&str
         }
     });
 
-    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
-    repository.register_workspace()?;
+    // 旧路径只读判定（spec F3）：
+    // 显式传入的 config_dir 若是数据根之外的遗留库（旧版 mcp.json 里展开的
+    // {{appConfigDir}} 字面量），则只放行「读」；写操作报明确错误——避免
+    // 「AI 从旧库读到数据、却写进新库、下次 list 消失」的读写分裂态。
+    let readonly_reason = detect_legacy_readonly_config(&config_dir.as_path());
 
-    let handler = RequirementsMcpHandler { repository };
+    let repository = UnifiedRequirementRepository::new(config_dir, workspace_path);
+    match &readonly_reason {
+        Some(_) => {
+            tracing::warn!("[requirements-mcp] 只读模式生效，跳过 register_workspace（旧库只读）")
+        }
+        None => repository.register_workspace()?,
+    }
+
+    let handler = RequirementsMcpHandler {
+        repository,
+        readonly_reason,
+    };
     mcp_server_common::run_mcp_server_loop(handler)
+}
+
+/// 判定显式传入的 config_dir 是否为「数据根之外的遗留库」。
+///
+/// 条件：路径 ≠ DataRoot.config_dir() && 传入路径下 requirement.db 存在
+/// && DataRoot 侧 requirement.db 不存在（已迁移完成后旧配置即恢复正常写权限）。
+/// data_root() 单例在 MCP 进程内冷启动 lazy 解析可用；解析失败不 panic（放行为读写）。
+fn detect_legacy_readonly_config(config_dir: &Path) -> Option<String> {
+    let root = config_dir;
+    let data_root_dir = match std::panic::catch_unwind(crate::services::data_root::data_root) {
+        Ok(dr) => dr.config_dir(),
+        Err(_) => return None,
+    };
+    let new_db = data_root_dir.join("stores").join("requirement.db");
+    let legacy_db = root.join("stores").join("requirement.db");
+    if legacy_db.exists() && !new_db.exists() && data_root_dir.as_path() != root {
+        let reason = format!(
+            "当前会话的配置目录 {} 是数据根之外的遗留库（可能来自旧版 mcp.json 的 {{{{appConfigDir}}}}）。旧库仅可读取：list/read 已回退旧数据；写操作被拒绝。请重启主应用完成遗留迁移，或重新生成该 MCP 配置。",
+            config_dir.display()
+        );
+        tracing::warn!("[requirements-mcp] {}", reason);
+        Some(reason)
+    } else {
+        None
+    }
 }
 
 struct RequirementsMcpHandler {
     repository: UnifiedRequirementRepository,
+    /// 旧路径只读模式的原因说明（Some = 只读；None = 正常读写）
+    readonly_reason: Option<String>,
 }
 
 impl McpServerHandler for RequirementsMcpHandler {
@@ -157,6 +198,19 @@ impl McpServerHandler for RequirementsMcpHandler {
 
     fn tools_call(&self, name: &str, arguments: &Value) -> Result<Value> {
         let repository = &self.repository;
+        // 旧路径只读模式：写类工具一律拒绝（spec F3 语义定夺——写落新库会造成
+        // 「读旧写新」分裂，宁可明确报错引导用户收口）
+        if let Some(reason) = &self.readonly_reason {
+            const WRITE_TOOLS: [&str; 4] = [
+                "create_requirement",
+                "update_requirement",
+                "delete_requirement",
+                "save_requirement_prototype",
+            ];
+            if WRITE_TOOLS.contains(&name) {
+                return Err(AppError::ProcessError(reason.clone()));
+            }
+        }
         match name {
             "list_requirements" => execute_list_requirements(arguments, repository),
             "create_requirement" => execute_create_requirement(arguments, repository),

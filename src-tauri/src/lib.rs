@@ -772,6 +772,11 @@ pub fn run() {
                 });
             }
 
+            // 遗留存储一次性迁移（normalize spec F2/F4）：在任何 requirement
+            // 命令可达之前完成遗留库收编（best-effort 幂等）。
+            // dev/test 隔离根自动跳过（模块内部判定 POLARIS_DATA_ROOT）。
+            crate::services::legacy_storage_migrate::run_legacy_storage_migration();
+
             // 统一应用配置目录为数据存储根（DataRoot）。
             // 历史用 app.path().app_config_dir()（= %APPDATA%/com.polaris.app），
             // 与 ConfigStore（永远 data_root().config_dir() = %APPDATA%/Polaris）分裂，
@@ -1328,6 +1333,10 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
         engine_registry_arc,
         integration_manager,
     );
+
+    // 遗留存储一次性迁移（normalize spec F2/F4）：与桌面端同一纪律，
+    // 在任何 requirement 命令可达之前完成遗留库收编（best-effort 幂等）。
+    services::legacy_storage_migrate::run_legacy_storage_migration();
 
     // 设置 config_dir（替代 Tauri path resolver）
     let config_dir = services::data_root::data_root().config_dir();
