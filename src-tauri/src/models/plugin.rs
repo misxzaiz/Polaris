@@ -6,6 +6,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+/// 当前宿主支持的 manifest schema 版本（阶段 1.1 B-lite）。
+/// 缺省 manifestVersion 视为当前版本——兼容存量商城 manifest 的保守取舍；
+/// 显式声明了不支持的版本才 fail fast（见 plans/plugin-system-upgrade-phase1-spec.md 1.1）。
+pub(crate) const MANIFEST_SCHEMA_VERSION: &str = "1.0";
+
 /// 插件列表结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -80,7 +85,7 @@ pub struct DiscoveredPluginManifest {
 
 /// 插件来源链接元数据
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginOriginMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub repository: Option<String>,
@@ -126,7 +131,7 @@ pub enum PluginManifestSourceKind {
 
 /// 插件 manifest contributes
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginManifestContributes {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<PluginViewContribution>,
@@ -164,7 +169,7 @@ pub struct PluginManifestContributes {
 /// 纯数据描述，可跨 IPC 序列化。设置页据此自动渲染表单。
 /// 插件通过 plugin_get_config / plugin_set_config 读写（受 appConfigRead/Write 权限约束）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginConfigFieldSchemaManifest {
     /// 字段 key（插件命名空间内唯一）
     pub key: String,
@@ -194,7 +199,7 @@ pub struct PluginConfigFieldSchemaManifest {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginConfigSelectOption {
     pub label: String,
     pub value: serde_json::Value,
@@ -202,7 +207,7 @@ pub struct PluginConfigSelectOption {
 
 /// 插件样式贡献（manifest.contributes.styles）
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginStyleManifestContribution {
     pub id: String,
     pub css: String,
@@ -220,7 +225,7 @@ pub struct PluginStyleManifestContribution {
 /// 由对应的 mcpServerId 提供实现。MCP 配置解析时，插件声明的 Provider 会
 /// 替换同 capability 的内置实现。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginToolProviderManifestContribution {
     /// 能力标识（如 "shell" / "filesystem" / "compaction" / "subagent"）
     pub capability: String,
@@ -237,7 +242,7 @@ pub struct PluginToolProviderManifestContribution {
 /// `plugin:<plugin_id>:<executor_id>`，可在定时任务 executorType 中引用，
 /// 也可由任意插件/前端通过 `execute` IPC 调用。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginExecutorManifestContribution {
     /// 执行器 ID（插件命名空间内唯一）
     pub id: String,
@@ -262,7 +267,7 @@ pub struct PluginExecutorManifestContribution {
 /// Polaris 内部 manifest。适配器只有「翻译权」，准入校验由宿主独占
 /// （deny_unknown_fields + idPrefix 白名单 + 单源 schema），不享有特权代码路径。
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginAdapterManifestContribution {
     /// 适配器实例 id（插件命名空间内，如 "adapter.zcode"）
     pub id: String,
@@ -284,7 +289,7 @@ fn default_adapter_timeout_ms() -> u32 {
 
 /// 插件面板贡献
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginPanelContribution {
     pub entry: String,
     /// 是否支持全屏模式（隐藏其他面板，自适应填充整个工作区）
@@ -294,7 +299,7 @@ pub struct PluginPanelContribution {
 
 /// 插件 UI contribution
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginViewContribution {
     pub id: String,
     pub area: String,
@@ -310,7 +315,7 @@ pub struct PluginViewContribution {
 
 /// 插件 MCP server contribution
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginMcpServerManifestContribution {
     pub id: String,
     pub transport: String,
@@ -321,7 +326,7 @@ pub struct PluginMcpServerManifestContribution {
 
 /// 插件服务 contribution
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginServiceManifestContribution {
     pub id: String,
     #[serde(rename = "type")]
@@ -355,7 +360,7 @@ fn default_max_restarts() -> u32 {
 
 /// 插件引擎 contribution
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginEngineManifestContribution {
     pub id: String,
     pub name: String,
@@ -388,7 +393,7 @@ pub struct PluginEngineManifestContribution {
 
 /// 插件引擎 provider 注册声明（manifest 层，字符串形式透传给后端 PluginEngineConfig）
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginEngineProviderConfigManifest {
     /// 配置文件路径（相对 CLI 配置根目录，如 "agent/models.yml"）
     pub config_file: String,
@@ -410,7 +415,7 @@ pub struct PluginEngineProviderConfigManifest {
 
 /// 插件引擎 CLI 配置
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginEngineCliContribution {
     pub command: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -421,7 +426,7 @@ pub struct PluginEngineCliContribution {
 
 /// 插件引擎能力
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginEngineCapabilitiesContribution {
     #[serde(default)]
     pub tools: bool,
@@ -435,7 +440,7 @@ pub struct PluginEngineCapabilitiesContribution {
 
 /// 插件聊天卡片 contribution
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginChatCardManifestContribution {
     pub id: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -449,7 +454,7 @@ pub struct PluginChatCardManifestContribution {
 
 /// 插件权限声明
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct PluginManifestPermissions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_read: Option<bool>,
@@ -466,7 +471,7 @@ pub struct PluginManifestPermissions {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub(crate) struct PluginManifestFile {
     pub id: String,
     pub name: String,
@@ -474,12 +479,33 @@ pub(crate) struct PluginManifestFile {
     pub description: Option<String>,
     #[serde(default)]
     pub enabled_by_default: bool,
+    /// manifest schema 版本声明：缺省视为当前版本（兼容存量 manifested 商城插件），
+    /// 显式声明不支持的版本由 validate_manifest_fields fail fast
+    #[serde(default)]
+    pub manifest_version: Option<String>,
     #[serde(default)]
     pub contributes: PluginManifestContributes,
     #[serde(default)]
     pub permissions: PluginManifestPermissions,
     #[serde(default)]
     pub origin: PluginOriginMetadata,
+    /// 方言适配器留注的兼容元数据（宿主消费；适配器产物由宿主盖戳 steward，
+    /// 见 plans/plugin-adapter-capability-spec.md、ZCode L1 spec §2.2）
+    #[serde(default)]
+    pub compat: Option<PluginCompatMetadata>,
+}
+
+/// 方言兼容元数据（manifest.compat / 适配器翻译产物顶层 compat 键）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct PluginCompatMetadata {
+    /// 方言标识（如 "zcode"）
+    #[serde(default)]
+    pub dialect: String,
+    /// L2 起接入的方言 UI surface 定位（如 zcode ui.surfaces / resourceUri），
+    /// L1 阶段仅透传保留，宿主逻辑不得依赖
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub surface: Option<serde_json::Value>,
 }
 
 impl PluginManifestFile {

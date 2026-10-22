@@ -22,6 +22,15 @@ import type {
   PluginViewContribution,
   PolarisPluginManifest,
 } from '@/plugin-system/types'
+// 契约单源（阶段 1.1）：枚举常量与 strict 校验只从 schema.ts 引入，禁止本文件再手写副本
+import {
+  VALID_CARD_MODES as VALID_CARD_MODES_SINGLE_SOURCE,
+  VALID_PLUGIN_ICONS as VALID_PLUGIN_ICONS_SINGLE_SOURCE,
+  VALID_SOURCE_KINDS as VALID_SOURCE_KINDS_SINGLE_SOURCE,
+  VALID_TRANSPORTS as VALID_TRANSPORTS_SINGLE_SOURCE,
+  VALID_VIEW_AREAS as VALID_VIEW_AREAS_SINGLE_SOURCE,
+  unknownManifestTopLevelFields,
+} from '@/plugin-system/schema'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('PluginDiscovery')
@@ -106,29 +115,11 @@ async function dispatchPluginDiscovery(
   return res.result || {}
 }
 
-const VALID_VIEW_AREAS = new Set(['activityBar'])
-const VALID_TRANSPORTS = new Set(['stdio', 'http'])
-const VALID_SOURCE_KINDS = new Set(['user', 'project', 'adapter'])
-const VALID_CARD_MODES = new Set(['result', 'interaction'])
-const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
-  'Files',
-  'GitPullRequest',
-  'CheckSquare',
-  'Languages',
-  'Clock',
-  'ClipboardList',
-  'Terminal',
-  'Code2',
-  'Bot',
-  'BookOpen',
-  'AlertCircle',
-  'Target',
-  'Film',
-  'Globe2',
-  'Activity',
-  'Users',
-  'Beaker',
-])
+const VALID_VIEW_AREAS: Set<string> = new Set(VALID_VIEW_AREAS_SINGLE_SOURCE)
+const VALID_TRANSPORTS: Set<string> = new Set(VALID_TRANSPORTS_SINGLE_SOURCE)
+const VALID_SOURCE_KINDS: Set<string> = new Set(VALID_SOURCE_KINDS_SINGLE_SOURCE)
+const VALID_CARD_MODES: Set<string> = new Set(VALID_CARD_MODES_SINGLE_SOURCE)
+const VALID_PLUGIN_ICONS = new Set<PluginIconId>(VALID_PLUGIN_ICONS_SINGLE_SOURCE)
 
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -475,6 +466,17 @@ export function validateDiscoveredPlugin(raw: unknown): {
 
   if (!isRecord(raw)) {
     return { plugin: null, errors: ['manifest must be an object'] }
+  }
+
+  // deny_unknown_fields 语义（阶段 1.1）：发现产物未知顶层字段 fail fast，绝不静默继承
+  const unknownFields = unknownManifestTopLevelFields(raw)
+  if (unknownFields.length > 0) {
+    return {
+      plugin: null,
+      errors: unknownFields.map(
+        (field) => `manifest has unrecognized top-level field: ${field} (deny_unknown_fields fail fast)`,
+      ),
+    }
   }
 
   const id = asString(raw.id)

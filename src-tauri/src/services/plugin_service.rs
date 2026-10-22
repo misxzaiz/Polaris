@@ -12,9 +12,10 @@ use std::process::Command;
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{
-    Marketplace, PluginDiscoveryError, PluginDiscoveryResult, PluginInstallLocations,
-    PluginListResult, PluginManifestFile, PluginManifestSource, PluginManifestSourceKind,
-    PluginManifestValidationResult, PluginOperationResult, PluginScope, PluginUpdateCheckResult,
+    Marketplace, MANIFEST_SCHEMA_VERSION, PluginDiscoveryError, PluginDiscoveryResult,
+    PluginInstallLocations, PluginListResult, PluginManifestFile, PluginManifestSource,
+    PluginManifestSourceKind, PluginManifestValidationResult, PluginOperationResult, PluginScope,
+    PluginUpdateCheckResult,
 };
 
 #[cfg(windows)]
@@ -1606,6 +1607,14 @@ impl PluginService {
     /// 路径，由调用方前缀）。不做 IO —— 文件校验（本函数）与适配器翻译产物准入共用。
     pub(crate) fn validate_manifest_fields(manifest: &PluginManifestFile) -> Vec<String> {
         let mut errors: Vec<String> = Vec::new();
+        if let Some(manifest_version) = &manifest.manifest_version {
+            if manifest_version.trim() != MANIFEST_SCHEMA_VERSION {
+                errors.push(format!(
+                    "manifestVersion has unsupported value: {} (host supports {})",
+                    manifest_version, MANIFEST_SCHEMA_VERSION
+                ));
+            }
+        }
         if manifest.id.trim().is_empty() {
             errors.push("id is required and must be a non-empty string".to_string());
         }

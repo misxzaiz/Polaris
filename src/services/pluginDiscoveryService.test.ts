@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { pluginIconMap } from '@/plugin-system/icons'
+import { VALID_PLUGIN_ICONS as SCHEMA_ICONS } from '@/plugin-system/schema'
 import {
   applyPluginUpdate,
   checkPluginUpdate,
@@ -20,6 +22,38 @@ vi.mock('./transport', () => ({
 describe('pluginDiscoveryService', () => {
   beforeEach(() => {
     invokeMock.mockReset()
+  })
+
+  it('icon whitelist bidirectional alignment: schema.ts == Rust VALID_PLUGIN_ICONS == pluginIconMap (phase 1.1)', () => {
+    // Rust 侧常量的镜像基线（src-tauri/src/services/plugin_service.rs::VALID_PLUGIN_ICONS）；
+    // 若 Rust 新增/删减 icon，此基线必须同步，双向 diff 即刻暴露
+    const RUST_VALID_PLUGIN_ICONS_MIRROR = [
+      'Files',
+      'GitPullRequest',
+      'CheckSquare',
+      'Languages',
+      'Clock',
+      'Target',
+      'ClipboardList',
+      'Terminal',
+      'SquareTerminal',
+      'Code2',
+      'Bot',
+      'BookOpen',
+      'AlertCircle',
+      'Film',
+      'Globe2',
+      'Activity',
+      'Users',
+      'Beaker',
+    ] as const
+
+    const schemaIcons = [...SCHEMA_ICONS]
+    const iconMapKeys = Object.keys(pluginIconMap)
+
+    expect(schemaIcons).toEqual([...RUST_VALID_PLUGIN_ICONS_MIRROR])
+    expect(new Set(iconMapKeys).size).toBe(schemaIcons.length)
+    expect(new Set(iconMapKeys)).toEqual(new Set(schemaIcons))
   })
 
   it('normalizes discovered plugin metadata', () => {
@@ -169,6 +203,48 @@ describe('pluginDiscoveryService', () => {
 
     expect(result.plugin).toBeNull()
     expect(result.errors).toContain('source.kind must be user, project or adapter')
+  })
+
+  it('keeps SquareTerminal views (phase 1.1 icon alignment: no silent drop)', () => {
+    const result = validateDiscoveredPlugin({
+      id: 'example.term',
+      name: 'Term',
+      version: '0.1.0',
+      contributes: {
+        views: [
+          {
+            id: 'example.term.panel',
+            area: 'activityBar',
+            panelType: 'term',
+            icon: 'SquareTerminal',
+            labelKey: 'term:title',
+            order: 10,
+          },
+        ],
+      },
+      source: { kind: 'user' },
+      installPath: 'C:\\plugins\\example.term',
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.plugin?.contributes.views).toHaveLength(1)
+    expect(result.plugin?.contributes.views[0]?.icon).toBe('SquareTerminal')
+  })
+
+  it('rejects unknown top-level manifest fields (phase 1.1 deny_unknown_fields)', () => {
+    const result = validateDiscoveredPlugin({
+      id: 'example.mystery',
+      name: 'Mystery',
+      version: '1.0.0',
+      source: { kind: 'user' },
+      installPath: 'C:\\plugins\\mystery',
+      mysteryField: { sneaky: true },
+    })
+
+    expect(result.plugin).toBeNull()
+    expect(result.errors.length).toBe(1)
+    expect(result.errors[0]).toContain('unrecognized top-level field: mysteryField')
+    expect(result.errors[0]).toContain('deny_unknown_fields fail fast')
   })
 
   it('reports invalid contribution diagnostics while keeping valid metadata', () => {
