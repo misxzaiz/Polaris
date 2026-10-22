@@ -1592,50 +1592,63 @@ impl PluginService {
         };
 
         result.plugin_id = Some(manifest.id.clone());
+        // 宿主单源字段级校验（阶段 1.4 拆分）：诊断在此集中一处，文件路径与
+        // 准入链（adapter_discovery::admit_translated）均为其消费者，防「第四份手写校验」
+        for error in Self::validate_manifest_fields(&manifest) {
+            Self::push_validation_error(&mut result, &path_text, error);
+        }
+
+        result.valid = result.errors.is_empty();
+        result
+    }
+
+    /// 宿主单源字段级校验：输入已反序列化的 manifest，输出字段级诊断（不含具体文件
+    /// 路径，由调用方前缀）。不做 IO —— 文件校验（本函数）与适配器翻译产物准入共用。
+    pub(crate) fn validate_manifest_fields(manifest: &PluginManifestFile) -> Vec<String> {
+        let mut errors: Vec<String> = Vec::new();
         if manifest.id.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "id is required and must be a non-empty string");
+            errors.push("id is required and must be a non-empty string".to_string());
         }
         if manifest.name.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "name is required and must be a non-empty string");
+            errors.push("name is required and must be a non-empty string".to_string());
         }
         if manifest.version.trim().is_empty() {
-            Self::push_validation_error(&mut result, &path_text, "version is required and must be a non-empty string");
+            errors.push("version is required and must be a non-empty string".to_string());
         }
 
         for (index, view) in manifest.contributes.views.iter().enumerate() {
             let prefix = format!("contributes.views[{}]", index);
             if view.id.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+                errors.push(format!("{}.id is required", prefix));
             }
             if view.area != "activityBar" {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.area has unsupported value: {}", prefix, view.area));
+                errors.push(format!("{}.area has unsupported value: {}", prefix, view.area));
             }
             if view.panel_type.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.panelType is required", prefix));
+                errors.push(format!("{}.panelType is required", prefix));
             }
             if !VALID_PLUGIN_ICONS.contains(&view.icon.as_str()) {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.icon has unsupported value: {}", prefix, view.icon));
+                errors.push(format!("{}.icon has unsupported value: {}", prefix, view.icon));
             }
             if view.label_key.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.labelKey is required", prefix));
+                errors.push(format!("{}.labelKey is required", prefix));
             }
         }
 
         for (index, server) in manifest.contributes.mcp_servers.iter().enumerate() {
             let prefix = format!("contributes.mcpServers[{}]", index);
             if server.id.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.id is required", prefix));
+                errors.push(format!("{}.id is required", prefix));
             }
             if !VALID_TRANSPORTS.contains(&server.transport.as_str()) {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.transport has unsupported value: {}", prefix, server.transport));
+                errors.push(format!("{}.transport has unsupported value: {}", prefix, server.transport));
             }
             if server.command.trim().is_empty() {
-                Self::push_validation_error(&mut result, &path_text, format!("{}.command is required", prefix));
+                errors.push(format!("{}.command is required", prefix));
             }
         }
 
-        result.valid = result.errors.is_empty();
-        result
+        errors
     }
 
     fn push_validation_error(

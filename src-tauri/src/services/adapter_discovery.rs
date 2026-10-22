@@ -383,24 +383,28 @@ pub fn admit_translated(
         return Err("翻译产物缺少 name/version（宿主必填字段）".to_string());
     }
 
-    // 4. 反序列化为内部模型（source.kind=Adapter + adapterId 由宿主盖戳）
-    serde_json::from_value::<DiscoveredPluginManifest>(serde_json::json!({
-        "id": id,
-        "name": name,
-        "version": version,
-        "description": translated.get("description").cloned().unwrap_or(Value::Null),
-        "builtin": false,
-        "enabledByDefault": translated.get("enabledByDefault").and_then(|v| v.as_bool()).unwrap_or(false),
-        "contributes": translated.get("contributes").cloned().unwrap_or_else(|| json!({})),
-        "permissions": translated.get("permissions").cloned().unwrap_or_else(|| json!({})),
-        "origin": translated.get("origin").cloned().unwrap_or_else(|| json!({})),
-        "source": {
-            "kind": "adapter",
-            "adapterId": entry.contribution.id,
+    // 4. 宿主单源深度校验（阶段 1.4）：icon 白名单 / area / transport / command 等
+    //    与磁盘 manifest 文件共用同一套诊断（spec §3.3「产物必过宿主单源校验」），
+    //    并直接复用 PluginManifestFile::into_discovered 组装，不再手写第五个装配点。
+    let parsed = serde_json::from_value::<crate::models::plugin::PluginManifestFile>(translated.clone())
+        .map_err(|e| format!("翻译产物与宿主 manifest 契约不符: {e}"))?;
+    let field_errors = crate::services::plugin_service::PluginService::validate_manifest_fields(&parsed);
+    if !field_errors.is_empty() {
+        return Err(format!(
+            "翻译产物未通过宿主单源校验: {}",
+            field_errors.join("; ")
+        ));
+    }
+
+    // 5. 反序列化为内部模型（source.kind=Adapter + adapterId 由宿主盖戳）
+    Ok(parsed.into_discovered(
+        crate::models::plugin::PluginManifestSource {
+            kind: PluginManifestSourceKind::Adapter,
+            workspace_path: None,
+            adapter_id: Some(entry.contribution.id.clone()),
         },
-        "installPath": dialect_manifest_path,
-    }))
-    .map_err(|e| format!("翻译产物反序列化失败: {e}"))
+        PathBuf::from(dialect_manifest_path),
+    ))
 }
 
 fn push_error(errors: &mut Vec<PluginDiscoveryError>, path: String, error: String, stale: Option<bool>) {
