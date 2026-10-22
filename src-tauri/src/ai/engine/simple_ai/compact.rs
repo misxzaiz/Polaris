@@ -613,15 +613,36 @@ pub(super) async fn compact_history(
                 compressed_count
             );
 
-            // Phase 2：写入检查点（从环境变量 POLARIS_DATA_ROOT 读取路径）。
-            let data_root = profile
-                .custom_env
-                .as_ref()
-                .and_then(|m| m.get("POLARIS_DATA_ROOT"))
-                .cloned()
-                .or_else(|| std::env::var("POLARIS_DATA_ROOT").ok());
-            if let Some(ref root) = data_root {
-                write_compact_checkpoint(root, session_id, (start, end), &pre_compact_snapshot, &summary.trim());
+            // Phase 2：写入检查点。
+            // 根因修复（spec F1）：旧实现仅依赖 profile.custom_env / 进程 env 的
+            // POLARIS_DATA_ROOT——两者都是 dev/test 隔离变量，生产桌面常态为空，
+            // 检查点默认 100% 静默丢失。现主路径走 DataRoot 单例（进程内可用，
+            // 解析链 env > anchor > 默认），custom_env 仅作显式覆盖。
+            // 检查点是压缩回查/对比归档，不可用于恢复（store.rs 设计边界），
+            // 因此解析/写入失败一律 warn 不 panic、不阻断压缩主流程。
+            let checkpoint_root = resolve_checkpoint_root(
+                profile
+                    .custom_env
+                    .as_ref()
+                    .and_then(|m| m.get("POLARIS_DATA_ROOT"))
+                    .cloned()
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty()),
+                data_root_config_dir(),
+            );
+            match checkpoint_root {
+                Some(root) => write_compact_checkpoint(
+                    root.to_string_lossy().as_ref(),
+                    session_id,
+                    (start, end),
+                    &pre_compact_snapshot,
+                    &summary.trim(),
+                ),
+                None => {
+                    tracing::warn!(
+                        "[SimpleAI] 无法解析检查点存储根（custom_env 与 DataRoot 均不可用），本次压缩检查点跳过"
+                    );
+                }
             }
         }
         Ok(_) => {
@@ -679,6 +700,31 @@ use std::path::PathBuf;
 /// 获取压缩检查点存储根目录。
 fn checkpoint_root(data_root: &str) -> PathBuf {
     PathBuf::from(data_root).join("simple-ai").join("context-checkpoints")
+}
+
+/// data_root().config_dir() 的兜底版：DataRoot 初始化失败不 panic。
+///
+/// `data_root()` 内部 resolve 失败会 `expect`（data_root.rs），而检查点写入
+/// 发生在压缩主流程中——为不杀伤进行中的对话线程，此处降级为 Option。
+/// 检查点丢失可接受（归档语义，不可用于恢复）。
+fn data_root_config_dir() -> Option<PathBuf> {
+    std::panic::catch_unwind(crate::services::data_root::data_root)
+        .ok()
+        .map(|dr| dr.config_dir())
+}
+
+/// 检查点存储根解析（纯函数，单测锁定优先级）：
+/// 1) profile.custom_env["POLARIS_DATA_ROOT"] 显式覆盖（用户/管理员级覆盖口）；
+/// 2) DataRoot 单例（其解析链已含 env POLARIS_DATA_ROOT > anchor > 默认）；
+/// 均缺失 → None（调用方仅告警跳过，不再静默、不 panic）。
+fn resolve_checkpoint_root(
+    custom_env_root: Option<String>,
+    data_root_dir: Option<PathBuf>,
+) -> Option<PathBuf> {
+    if let Some(root) = custom_env_root {
+        return Some(PathBuf::from(root));
+    }
+    data_root_dir
 }
 
 /// 写入一次压缩检查点：保存压缩前的原始消息 + 压缩后的摘要。
@@ -751,6 +797,42 @@ pub(crate) fn latest_checkpoint_path(data_root: &str, session_id: &str) -> Optio
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checkpoint_root_priority_custom_env_over_data_root() {
+        // custom_env 显式覆盖优先于 DataRoot 单例（spec F1 锁定语义）
+        assert_eq!(
+            resolve_checkpoint_root(
+                Some("C:/custom-root".into()),
+                Some(PathBuf::from("C:/data-root"))
+            ),
+            Some(PathBuf::from("C:/custom-root"))
+        );
+    }
+
+    #[test]
+    fn checkpoint_root_fallback_to_data_root() {
+        assert_eq!(
+            resolve_checkpoint_root(None, Some(PathBuf::from("C:/data-root"))),
+            Some(PathBuf::from("C:/data-root"))
+        );
+    }
+
+    #[test]
+    fn checkpoint_root_missing_is_none_not_panic() {
+        // 二者皆缺 → None：调用方仅告警跳过（旧实现在此场景静默不写，
+        // 新行为为显式 warn），绝不允许 panic 打死压缩主流程。
+        assert_eq!(resolve_checkpoint_root(None, None), None);
+    }
+
+    #[test]
+    fn checkpoint_root_blank_custom_env_ignored() {
+        // 空串/纯空白视作未配置（与 data_root env 语义一致）
+        assert_eq!(
+            resolve_checkpoint_root(Some("   ".into()), Some(PathBuf::from("C:/data-root"))),
+            Some(PathBuf::from("C:/data-root"))
+        );
+    }
 
     #[test]
     fn accumulator_triggers_on_last_input_not_total() {
