@@ -40,6 +40,10 @@ pub struct PluginInstallLocations {
 pub struct PluginDiscoveryError {
     pub path: String,
     pub error: String,
+    /// 适配器合并失败标记：true 表示回退到了 stale 缓存（非实时，见
+    /// plans/plugin-adapter-capability-spec.md §3.2 容错三态）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stale: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -104,6 +108,9 @@ pub struct PluginManifestSource {
     pub kind: PluginManifestSourceKind,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub workspace_path: Option<String>,
+    /// kind 为适配器翻译来源时，翻译适配器的贡献方 id（S2 合并时填充）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adapter_id: Option<String>,
 }
 
 /// 插件来源类型
@@ -112,6 +119,9 @@ pub struct PluginManifestSource {
 pub enum PluginManifestSourceKind {
     User,
     Project,
+    /// 方言适配器翻译来源（适配器只有翻译权，准入校验宿主独占，见
+    /// plans/plugin-adapter-capability-spec.md §3.3；安装目的地等同用户级）
+    Adapter,
 }
 
 /// 插件 manifest contributes
@@ -144,6 +154,9 @@ pub struct PluginManifestContributes {
     /// 插件声明的执行器（注册到 ExecutorRegistry）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub executors: Vec<PluginExecutorManifestContribution>,
+    /// 插件声明的方言适配器（通用插件格式兼容扩展点，见 PluginAdapterManifestContribution）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adapters: Vec<PluginAdapterManifestContribution>,
 }
 
 /// 插件配置项 schema（manifest.contributes.configSchema）
@@ -241,6 +254,32 @@ pub struct PluginExecutorManifestContribution {
     /// 执行器参数 JSON Schema（描述 customParams 的结构，供前端渲染表单）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params_schema: Option<serde_json::Value>,
+}
+
+/// 插件 manifest 方言适配器贡献（plans/plugin-adapter-capability-spec.md §3.1）
+///
+/// 声明本插件可把第三方 manifest 方言（如 ZCode `.zcode-plugin`）翻译为
+/// Polaris 内部 manifest。适配器只有「翻译权」，准入校验由宿主独占
+/// （deny_unknown_fields + idPrefix 白名单 + 单源 schema），不享有特权代码路径。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginAdapterManifestContribution {
+    /// 适配器实例 id（插件命名空间内，如 "adapter.zcode"）
+    pub id: String,
+    /// 适配器 MCP server 上提供发现/翻译的工具名
+    pub tool: String,
+    /// 翻译产物插件 id 强制前缀（空串=宿主拒注册，防越权圈占其他插件的 id）
+    pub id_prefix: String,
+    /// 方言插件扫描根（支持占位符变量，如 ["${WORKSPACE}/.zcode-plugins"]）
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub roots: Vec<String>,
+    /// 单次翻译调用预算（毫秒）
+    #[serde(default = "default_adapter_timeout_ms")]
+    pub timeout_ms: u32,
+}
+
+fn default_adapter_timeout_ms() -> u32 {
+    3000
 }
 
 /// 插件面板贡献

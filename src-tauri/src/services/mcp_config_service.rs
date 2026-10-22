@@ -1259,6 +1259,7 @@ mod tests {
             enabled_by_default: true,
             contributes: PluginManifestContributes {
                 views: Vec::new(),
+                adapters: Vec::new(),
                 panel: None,
                 mcp_servers: vec![PluginMcpServerManifestContribution {
                     id: server_name.to_string(),
@@ -1283,6 +1284,7 @@ mod tests {
             source: PluginManifestSource {
                 kind: PluginManifestSourceKind::User,
                 workspace_path: None,
+                adapter_id: None,
             },
             install_path: plugin_dir.to_string_lossy().to_string(),
         }

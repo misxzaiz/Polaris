@@ -106,7 +106,7 @@ async function dispatchPluginDiscovery(
 
 const VALID_VIEW_AREAS = new Set(['activityBar'])
 const VALID_TRANSPORTS = new Set(['stdio', 'http'])
-const VALID_SOURCE_KINDS = new Set(['user', 'project'])
+const VALID_SOURCE_KINDS = new Set(['user', 'project', 'adapter'])
 const VALID_CARD_MODES = new Set(['result', 'interaction'])
 const VALID_PLUGIN_ICONS = new Set<PluginIconId>([
   'Files',
@@ -144,6 +144,8 @@ function normalizeSource(value: unknown): PluginManifestSource | undefined {
   return {
     kind: kind as PluginManifestSource['kind'],
     workspacePath: asString(value.workspacePath),
+    // 方言适配器来源（plans/plugin-adapter-capability-spec.md）：透传适配器贡献 id
+    adapterId: asString(value.adapterId),
   }
 }
 
@@ -481,7 +483,7 @@ export function validateDiscoveredPlugin(raw: unknown): {
   if (!id) errors.push('id is required and must be a string')
   if (!name) errors.push('name is required and must be a string')
   if (!version) errors.push('version is required and must be a string')
-  if (!source) errors.push('source.kind must be user or project')
+  if (!source) errors.push('source.kind must be user, project or adapter')
   if (!id || !name || !version || !source) {
     return { plugin: null, errors }
   }

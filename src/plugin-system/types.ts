@@ -317,11 +317,13 @@ export interface PluginConfigFieldSchema {
   sensitive?: boolean
 }
 
-export type PluginSourceKind = 'builtin' | 'user' | 'project'
+export type PluginSourceKind = 'builtin' | 'user' | 'project' | 'adapter'
 
 export interface PluginManifestSource {
   kind: PluginSourceKind
   workspacePath?: string
+  /** kind==='adapter' 时：翻译该方言的适配器贡献 id（如 adapter.zcode，见 plans/plugin-adapter-capability-spec.md） */
+  adapterId?: string
 }
 
 export interface PluginOriginMetadata {

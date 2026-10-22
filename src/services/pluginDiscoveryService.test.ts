@@ -97,6 +97,40 @@ describe('pluginDiscoveryService', () => {
     })).toBeNull()
   })
 
+  it('rejects metadata without a valid source', () => {
+    expect(normalizeDiscoveredPlugin({
+      id: 'example.invalid',
+      name: 'Invalid',
+      version: '0.1.0',
+    })).toBeNull()
+  })
+
+  it('accepts adapter-translated sources with adapterId passthrough', () => {
+    const result = validateDiscoveredPlugin({
+      id: 'zcode.example',
+      name: 'ZCode Example',
+      version: '0.1.0',
+      source: { kind: 'adapter', adapterId: 'adapter.zcode' },
+      installPath: 'C:\\Users\\sample\\plugins\\zcode.example',
+    })
+
+    expect(result.errors).toEqual([])
+    expect(result.plugin?.source).toEqual({ kind: 'adapter', adapterId: 'adapter.zcode' })
+  })
+
+  it('rejects unknown source kinds (silent-drop prevention, phase 1 P1-8)', () => {
+    const result = validateDiscoveredPlugin({
+      id: 'example.ghost',
+      name: 'Ghost',
+      version: '0.1.0',
+      source: { kind: 'websocket' },
+      installPath: 'C:\\plugins\\ghost',
+    })
+
+    expect(result.plugin).toBeNull()
+    expect(result.errors).toContain('source.kind must be user, project or adapter')
+  })
+
   it('reports invalid contribution diagnostics while keeping valid metadata', () => {
     const result = validateDiscoveredPlugin({
       id: 'example.partial',

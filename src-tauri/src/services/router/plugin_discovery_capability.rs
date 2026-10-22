@@ -14,7 +14,13 @@
 //! - `list`                 `{ "action": "list", "available": bool }`
 //!                            → PluginListResult（已安装/可选插件列表）
 //! - `discover`             `{ "action": "discover", "workspacePath": string? }`
-//!                            → PluginDiscoveryResult（发现已安装插件）
+//!                            → PluginDiscoveryResult（发现已安装插件；有 contributes.adapters
+//!                              贡献时进入 S2 翻译合并编排，缓存 miss 走 one-shot MCP 调用，
+//!                              失败只追加 stale errors，原生结果原样保留）
+//! - `discover_adapter`     `{ "action": "discover_adapter", "adapterId": string,
+//!                            "rootPath": string, "workspacePath": string? }`
+//!                            → PluginDiscoveryResult（强制刷新单个适配器：绕开缓存与熔断，
+//!                            调试用入口；spec: plans/plugin-adapter-capability-spec.md）
 //! - `install_locations`    `{ "action": "install_locations", "workspacePath": string? }`
 //!                            → PluginInstallLocations
 //! - `validate_manifest`    `{ "action": "validate_manifest", "sourcePath": string }`
@@ -37,6 +43,9 @@
 //!                            → PluginUpdateCheckResult
 //! - `apply_update`         `{ "action": "apply_update", "installPath": string, ... }`  (async)
 //!                            → PluginOperationResult
+//! - `adapters_list`        `{ "action": "adapters_list", "workspacePath": string? }`
+//!                            → AdapterEntry[]（通用方言适配器贡献清单，只读；
+//!                              spec: plans/plugin-adapter-capability-spec.md §3.1）
 //! 其余 plugin.rs 命令（install/enable/disable/update/uninstall + marketplace_*）
 //! 无前端消费方，保留在命令层（step7 抽核只搬有消费方的 11 个）。
 
@@ -67,6 +76,8 @@ pub const PLUGIN_DISCOVERY_ACTIONS: &[&str] = &[
     "force_uninstall",
     "check_update",
     "apply_update",
+    "adapters_list",
+    "discover_adapter",
 ];
 
 /// cap.pluginDiscovery —— 插件发现能力。
@@ -178,7 +189,9 @@ impl Capability for PluginDiscoveryCapability {
                 "uninstall_with_cleanup": { "params": { "installPath": "string（必填）", "pluginId": "string" }, "returns": "PluginOperationResult（先停服务再删目录）" },
                 "force_uninstall": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
                 "check_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginUpdateCheckResult" },
-                "apply_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" }
+                "apply_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
+                "adapters_list": { "params": { "workspacePath": "string?" }, "returns": "AdapterEntry[]（方言适配器贡献清单，只读）" },
+                "discover_adapter": { "params": { "adapterId": "string（必填）", "rootPath": "string（必填，调试用扫描根）" }, "returns": "PluginDiscoveryResult（强制刷新单个适配器，绕开缓存/熔断）" }
             }
         })
     }
@@ -205,10 +218,58 @@ impl Capability for PluginDiscoveryCapability {
             "discover" => {
                 let config_dir = self.plugin_config_dir().map_err(map_err)?;
                 let workspace_path = Self::workspace_path(&params);
-                Ok(serde_json::to_value(
-                    PluginService::discover_installed_plugins(&config_dir, workspace_path.as_deref()),
-                )
-                .map_err(|e| e.to_string())?)
+                // 快路径（零扰动）：无适配器贡献时与 S1 前行为一致（纯同步、无缓存 IO）
+                let discovery =
+                    PluginService::discover_installed_plugins(&config_dir, workspace_path.as_deref());
+                let adapters =
+                    crate::services::adapter_discovery::collect_adapters(&discovery.plugins);
+                if adapters.is_empty() {
+                    return Ok(serde_json::to_value(discovery).map_err(|e| e.to_string())?);
+                }
+                // S2 合并编排：有适配器贡献 → one-shot 翻译调用 + 缓存/熔断（spec §3.2）
+                Self::block_on_async(async move {
+                    let mut merged = discovery;
+                    for entry in &adapters {
+                        crate::services::adapter_discovery::merge_adapter(
+                            &mut merged,
+                            entry,
+                            &config_dir,
+                            None,
+                            false,
+                            &crate::services::adapter_discovery::McpOnceAdapterTransport,
+                        )
+                        .await;
+                    }
+                    serde_json::to_value(merged).map_err(|e| e.to_string())
+                })
+            }
+            "discover_adapter" => {
+                // 调试/验收入口：强制刷新单个适配器（绕开缓存与熔断，spec §3.2）
+                let config_dir = self.plugin_config_dir().map_err(map_err)?;
+                let workspace_path = Self::workspace_path(&params);
+                let adapter_id = Self::require_string(&params, "adapterId")?.to_string();
+                let root_path = Self::require_string(&params, "rootPath")?.to_string();
+                let discovery =
+                    PluginService::discover_installed_plugins(&config_dir, workspace_path.as_deref());
+                let adapters =
+                    crate::services::adapter_discovery::collect_adapters(&discovery.plugins);
+                let Some(entry) = adapters.iter().find(|a| a.contribution.id == adapter_id) else {
+                    return Err(format!("未找到适配器贡献: {adapterId}（adapters_list 可查全部）", adapterId = adapter_id));
+                };
+                Self::block_on_async(async move {
+                    let mut merged = discovery;
+                    let transport = &crate::services::adapter_discovery::McpOnceAdapterTransport;
+                    crate::services::adapter_discovery::merge_adapter(
+                        &mut merged,
+                        entry,
+                        &config_dir,
+                        Some(&root_path),
+                        true,
+                        transport,
+                    )
+                    .await;
+                    serde_json::to_value(merged).map_err(|e| e.to_string())
+                })
             }
             "install_locations" => {
                 let config_dir = self.plugin_config_dir().map_err(map_err)?;
@@ -402,6 +463,17 @@ impl Capability for PluginDiscoveryCapability {
                     }
                     serde_json::to_value(result).map_err(|e| e.to_string())
                 })
+            }
+            "adapters_list" => {
+                // 通用方言适配器贡献清单（只读）：原生扫描 → 摘取 contributes.adapters。
+                // S2 才引入翻译合并（merge_adapter），此处保持零副作用的纯采集。
+                let config_dir = self.plugin_config_dir().map_err(map_err)?;
+                let workspace_path = Self::workspace_path(&params);
+                let discovery =
+                    PluginService::discover_installed_plugins(&config_dir, workspace_path.as_deref());
+                let adapters =
+                    crate::services::adapter_discovery::collect_adapters(&discovery.plugins);
+                serde_json::to_value(adapters).map_err(|e| e.to_string())
             }
             other => Err(format!("cap.pluginDiscovery 不支持动作: {}", other)),
         }

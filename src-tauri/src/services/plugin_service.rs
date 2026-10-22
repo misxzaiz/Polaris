@@ -331,6 +331,7 @@ impl PluginService {
             PluginManifestSource {
                 kind: PluginManifestSourceKind::User,
                 workspace_path: None,
+                adapter_id: None,
             },
             &mut result,
         );
@@ -345,6 +346,7 @@ impl PluginService {
                     PluginManifestSource {
                         kind: PluginManifestSourceKind::Project,
                         workspace_path: Some(workspace.clone()),
+                        adapter_id: None,
                     },
                     &mut result,
                 );
@@ -1145,6 +1147,7 @@ impl PluginService {
                 result.errors.push(PluginDiscoveryError {
                     path: root.to_string_lossy().to_string(),
                     error: error.to_string(),
+                    stale: None,
                 });
                 return;
             }
@@ -1157,6 +1160,7 @@ impl PluginService {
                     result.errors.push(PluginDiscoveryError {
                         path: root.to_string_lossy().to_string(),
                         error: error.to_string(),
+                        stale: None,
                     });
                     continue;
                 }
@@ -1181,6 +1185,7 @@ impl PluginService {
                     Err(error) => result.errors.push(PluginDiscoveryError {
                         path: manifest_path.to_string_lossy().to_string(),
                         error: error.to_string(),
+                        stale: None,
                     }),
                 }
             }
@@ -1263,6 +1268,8 @@ impl PluginService {
             PluginManifestSourceKind::Project => workspace_path
                 .map(|path| path.join(".polaris").join("plugins"))
                 .ok_or_else(|| AppError::ConfigError("项目插件安装需要当前工作区".to_string()))?,
+            // 适配器翻译来源的插件按用户级目录安装（install_local 走 sourcePath 指向方言原目录）
+            PluginManifestSourceKind::Adapter => app_config_dir.join("plugins"),
         };
         std::fs::create_dir_all(&install_root)?;
 
@@ -1639,6 +1646,7 @@ impl PluginService {
         result.errors.push(PluginDiscoveryError {
             path: path.to_string(),
             error: error.into(),
+            stale: None,
         });
     }
 
