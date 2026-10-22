@@ -549,17 +549,9 @@ impl Router for RouterBus {
                         Some(self.broadcaster.clone()),
                     );
                     let result = cap.invoke(env.payload, &ctx);
-                    self.broadcaster.broadcast(Event {
-                        seq: 0,
-                        kind: "dispatch.end".into(),
-                        payload: serde_json::json!({
-                            "msg_id": env.id.0,
-                            "target": env.target.0,
-                            "status": if result.is_ok() { "ok" } else { "error" },
-                            "sync": true,
-                        }),
-                        trace: env.trace.clone(),
-                    });
+                    // 阶段 1.3：一次 dispatch 恰一个终态事件 —— 此前的重复
+                    // dispatch.end 广播已删除（双终态会让前端 lifecycleSubscriber
+                    // 对同一 msg_id 状态翻转两次）
                     let (result, error_detail) = match result {
                         Err(e) => {
                             let (clean, detail) = crate::contracts::Reply::split_error_detail(e);
