@@ -74,13 +74,13 @@ describe('LaneGraph (P2 泳道图)', () => {
     expect(circle?.getAttribute('class')).toContain('text-danger')
   })
 
-  it('local 语义 → 节点绿（text-emerald-500）', () => {
+  it('local 语义 → 节点绿（text-success 语义 token）', () => {
     const row = makeRow([
       { lane: 0, node: 'commit', edgeDown: null, edgeUp: null },
     ])
     const { container } = render(<LaneGraph row={row} semantic={{ kind: 'local' }} />)
     const circle = container.querySelector('circle')
-    expect(circle?.getAttribute('class')).toContain('text-emerald-500')
+    expect(circle?.getAttribute('class')).toContain('text-success')
   })
 
   it('merged 语义 → 节点蓝灰（text-text-secondary），整行不淡化', () => {
@@ -90,9 +90,9 @@ describe('LaneGraph (P2 泳道图)', () => {
     const { container } = render(<LaneGraph row={row} semantic={{ kind: 'merged' }} />)
     const circle = container.querySelector('circle')
     expect(circle?.getAttribute('class')).toContain('text-text-secondary')
-    // merged 不是 dim，svg 保持 opacity-80
+    // merged 不是 dim，svg 保持 opacity-90
     const svg = container.querySelector('svg')
-    expect(svg?.getAttribute('class')).toContain('opacity-80')
+    expect(svg?.getAttribute('class')).toContain('opacity-90')
   })
 
   it('dim 语义 → 整行淡化 opacity-45', () => {

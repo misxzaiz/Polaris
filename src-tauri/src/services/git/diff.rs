@@ -25,8 +25,12 @@ pub struct FileDiffContent {
     pub content_omitted: Option<bool>,
 }
 
-/// 获取 Diff（HEAD vs 指定 commit）
-pub fn get_diff(path: &Path, base_commit: &str) -> Result<Vec<GitDiffEntry>, GitServiceError> {
+/// 获取 Diff（指定 base vs target；target 缺省 = HEAD，保持旧语义）
+pub fn get_diff(
+    path: &Path,
+    base_commit: &str,
+    target_commit: Option<&str>,
+) -> Result<Vec<GitDiffEntry>, GitServiceError> {
     let repo = open_repository(path)?;
 
     let base_oid = Oid::from_str(base_commit)
@@ -36,15 +40,28 @@ pub fn get_diff(path: &Path, base_commit: &str) -> Result<Vec<GitDiffEntry>, Git
         .map_err(|_| GitServiceError::CommitNotFound(base_commit.to_string()))?;
     let base_tree = base_commit_obj.tree()?;
 
-    let head = repo.head()?;
-    let head_commit = head.peel_to_commit()?;
-    let head_tree = head_commit.tree()?;
+    // target 缺省 = HEAD；显式传入即「任意两提交 tree-to-tree 对比」（历史 tab 多选对比）
+    let target_tree = match target_commit {
+        Some(target) => {
+            let target_oid = Oid::from_str(target)
+                .map_err(|_| GitServiceError::CommitNotFound(target.to_string()))?;
+            let target_commit_obj = repo
+                .find_commit(target_oid)
+                .map_err(|_| GitServiceError::CommitNotFound(target.to_string()))?;
+            target_commit_obj.tree()?
+        }
+        None => {
+            let head = repo.head()?;
+            let head_commit = head.peel_to_commit()?;
+            head_commit.tree()?
+        }
+    };
 
     // 计算 Diff
     let mut diff_opts = DiffOptions::new();
     diff_opts.include_typechange(true);
 
-    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&head_tree), Some(&mut diff_opts))?;
+    let diff = repo.diff_tree_to_tree(Some(&base_tree), Some(&target_tree), Some(&mut diff_opts))?;
 
     convert_diff(&repo, &diff)
 }

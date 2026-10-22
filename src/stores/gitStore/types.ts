@@ -304,6 +304,8 @@ export interface CommitActions {
   batchUnstage: (workspacePath: string, filePaths: string[]) => Promise<BatchOpResult>
   /** 批量丢弃变更（后端自动建撤销快照；untracked 逐条记入 failed） */
   batchDiscard: (workspacePath: string, filePaths: string[]) => Promise<BatchOpResult>
+  /** 对比两个提交的 tree-to-tree diff（base→target 方向）；只读，不写 diff 状态 */
+  compareCommits: (workspacePath: string, baseSha: string, targetSha: string) => Promise<GitDiffEntry[]>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   /** P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回 */
   getLogWithLanes: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitLogPage>

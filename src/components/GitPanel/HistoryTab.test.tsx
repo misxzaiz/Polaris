@@ -229,7 +229,7 @@ describe('HistoryTab', () => {
       expect(getBranches).toHaveBeenCalledWith('D:/repo')
     })
     await waitFor(() => {
-      expect(getLogWithLanes).toHaveBeenCalledWith('D:/repo', 20, 0, undefined)
+      expect(getLogWithLanes).toHaveBeenCalledWith('D:/repo', 50, 0, undefined)
     })
 
     // branchFilter 是自定义下拉按钮（73715eee 起由原生 select 改造），用 change 事件无法触发
@@ -237,7 +237,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getAllByRole('option').find((el) => el.textContent === 'feature/history')!)
 
     await waitFor(() => {
-      expect(getLogWithLanes).toHaveBeenLastCalledWith('D:/repo', 20, 0, 'feature/history')
+      expect(getLogWithLanes).toHaveBeenLastCalledWith('D:/repo', 50, 0, 'feature/history')
     })
 
     await waitFor(() => {
@@ -246,7 +246,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getAllByTitle('history.viewFileHistory')[0])
 
     await waitFor(() => {
-      expect(getFileHistory).toHaveBeenLastCalledWith('D:/repo', 'src/App.tsx', 20, 0, 'feature/history')
+      expect(getFileHistory).toHaveBeenLastCalledWith('D:/repo', 'src/App.tsx', 50, 0, 'feature/history')
     })
   })
 
@@ -476,7 +476,7 @@ describe('HistoryTab', () => {
     fireEvent.click(screen.getAllByTitle('history.viewFileHistory')[0])
 
     await waitFor(() => {
-      expect(getFileHistory).toHaveBeenCalledWith('D:/repo', 'src/App.tsx', 20, 0, undefined)
+      expect(getFileHistory).toHaveBeenCalledWith('D:/repo', 'src/App.tsx', 50, 0, undefined)
     })
 
     expect(await screen.findByText('history.fileHistoryTitle')).toBeInTheDocument()
@@ -594,8 +594,8 @@ describe('HistoryTab', () => {
     expect(await screen.findByText('Fix search panel')).toBeInTheDocument()
     expect(screen.queryByText('WIP')).not.toBeInTheDocument()
     expect(screen.queryByText(/^stash/)).not.toBeInTheDocument()
-    // 无虚拟行 → 图例也不显示
-    expect(screen.queryByText('lane.legendLocal')).not.toBeInTheDocument()
+    // P2 起图例常显（不依赖 WIP/stash 虚拟行存在）
+    expect(screen.getByText('lane.legendLocal')).toBeInTheDocument()
   })
 
   it('renders a stash virtual row from stashListByWs', async () => {

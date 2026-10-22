@@ -112,8 +112,8 @@ impl GitService {
     // ========================================================================
 
     /// 获取 Diff（HEAD vs 指定 commit）
-    pub fn get_diff(path: &Path, base_commit: &str) -> Result<Vec<GitDiffEntry>, GitServiceError> {
-        get_diff(path, base_commit)
+    pub fn get_diff(path: &Path, base_commit: &str, target_commit: Option<&str>) -> Result<Vec<GitDiffEntry>, GitServiceError> {
+        get_diff(path, base_commit, target_commit)
     }
 
     /// 获取工作区 Diff（未暂存的变更）

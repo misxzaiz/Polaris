@@ -588,9 +588,11 @@ impl Capability for GitCapability {
             )),
             // P3 冲突域：归一序列操作状态（只读，不进操作流水/撤销快照）
             "get_conflict_state" => json_ok_svc(GitService::get_sequence_state(&workspace(p)?)),
+            // compareTo 显式传入 = 任意两提交 tree-to-tree 对比；缺省 = HEAD vs base（旧语义）
             "get_diffs" => json_ok_svc(GitService::get_diff(
                 &workspace(p)?,
                 require_string(p, "baseCommit")?,
+                optional_string(p, "compareTo").as_deref(),
             )),
             "get_log" => {
                 let branch = optional_string(p, "branch");

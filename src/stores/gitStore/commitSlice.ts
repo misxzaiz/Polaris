@@ -8,7 +8,7 @@ import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { CommitState } from './types'
-import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, BatchOpResult, GitLogSearchFilter, GitLogPage, GitCommitRiskReport } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, GitDiffEntry, BatchStageResult, BatchOpResult, GitLogSearchFilter, GitLogPage, GitCommitRiskReport } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -207,6 +207,20 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
       })
       await get().refreshStatus(workspacePath)
       return result
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
+
+  // 对比两个提交（base→target 方向的 tree-to-tree diff；只读）
+  async compareCommits(workspacePath: string, baseSha: string, targetSha: string) {
+    try {
+      return await invoke<GitDiffEntry[]>('git_get_diffs', {
+        workspacePath,
+        baseCommit: baseSha,
+        compareTo: targetSha,
+      })
     } catch (err) {
       set({ error: parseGitError(err) })
       throw err

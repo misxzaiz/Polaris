@@ -21,7 +21,7 @@ import type { GitLaneRow } from '@/types/git'
 import type { GitLaneSemantic, GitLaneSemanticKind } from '@/types/git'
 
 const LANE_W = 14 // 每泳道宽 px
-const NODE_R = 3 // 节点半径
+const NODE_R = 4 // 节点半径（18px 行高下保证可辨识）
 
 interface LaneGraphProps {
   row: GitLaneRow
@@ -30,11 +30,13 @@ interface LaneGraphProps {
   semantic?: GitLaneSemantic | null
 }
 
-/** 语义色 → 主题 token class。dim 走低透明度（整行淡化） */
+/** 语义色 → 主题 token class（success/danger/info 语义 token，禁止硬编码色值）
+ *  dim 走低透明度（整行淡化）
+ */
 const SEMANTIC_COLOR: Record<GitLaneSemanticKind, string> = {
-  local: 'text-emerald-500', // 绿：当前分支内、已同步远程
+  local: 'text-success', // 绿：当前分支内、已同步远程
   unpushed: 'text-danger', // 红：未 push
-  merged: 'text-text-secondary', // 蓝灰：已进主干
+  merged: 'text-text-secondary', // 灰蓝：已进主干
   dim: 'text-text-tertiary', // 灰暗：历史/孤立
 }
 
@@ -54,43 +56,42 @@ export function LaneGraph({ row, height = 18, semantic }: LaneGraphProps) {
       width={width}
       height={height}
       viewBox={`0 0 ${width} ${height}`}
-      className={`shrink-0 ${dimmed ? 'opacity-45' : 'opacity-80'}`}
+      className={`shrink-0 ${dimmed ? 'opacity-45' : 'opacity-90'}`}
       aria-hidden
     >
-      {/* 竖线（empty 泳道贯穿；含 merge 行的延续线）需画在下层，节点盖在上层 */}
+      {/* 竖线层（empty 泳道贯穿 + merge 行的延续线），画在下层，节点盖在上层 */}
       {row.cells.map((cell, i) => {
-        if (cell.node === 'empty' && cell.edgeDown != null) {
-          return (
-            <line
-              key={`v-${i}`}
-              x1={cell.lane * LANE_W + LANE_W / 2}
-              y1={0}
-              x2={cell.lane * LANE_W + LANE_W / 2}
-              y2={height}
-              stroke="currentColor"
-              strokeWidth={1.2}
-              className={lineColorClass}
-            />
-          )
-        }
-        return null
+        if (cell.node !== 'empty' || cell.edgeDown == null) return null
+        return (
+          <line
+            key={`v-${i}`}
+            x1={cell.lane * LANE_W + LANE_W / 2}
+            y1={0}
+            x2={cell.lane * LANE_W + LANE_W / 2}
+            y2={height}
+            stroke="currentColor"
+            strokeWidth={1.5}
+            className={lineColorClass}
+          />
+        )
       })}
 
-      {/* 斜线（merge 汇入：edgeUp → 本行 merge 节点 lane，竖线延续的泳道同时汇入） */}
+      {/* 斜线（merge 汇入：edgeUp → 本行 merge 节点 lane）。
+          起点取父泳道底缘，终点取节点圆心 —— 修正旧绘制收口偏出节点的问题 */}
       {row.cells.map((cell, i) => {
         if (cell.node !== 'empty' || cell.edgeUp == null) return null
-        // 本格是 merge 的父泳道：斜线从该 lane 底部向 merge 节点列汇入
         const fromX = cell.lane * LANE_W + LANE_W / 2
         const toX = cell.edgeUp * LANE_W + LANE_W / 2
         return (
           <line
             key={`u-${i}`}
             x1={fromX}
-            y1={height * 0.85}
+            y1={height}
             x2={toX}
-            y2={height * 0.35}
+            y2={height / 2}
             stroke="currentColor"
-            strokeWidth={1.2}
+            strokeWidth={1.5}
+            strokeLinecap="round"
             className={lineColorClass}
           />
         )

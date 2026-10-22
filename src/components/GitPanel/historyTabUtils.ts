@@ -1,7 +1,7 @@
 import type { GitDiffEntry } from '@/types/git'
 import type { DiffViewMode } from '@/components/Diff/DiffViewer'
 
-export const PAGE_SIZE = 20
+export const PAGE_SIZE = 50
 export const FILE_LIST_MODE_STORAGE_KEY = 'polaris.git.history.fileListMode'
 export const COMMIT_LIST_WIDTH_STORAGE_KEY = 'polaris.git.history.commitListWidth'
 export const FILE_PANE_WIDTH_STORAGE_KEY = 'polaris.git.history.filePaneWidth'

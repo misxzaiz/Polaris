@@ -64,6 +64,8 @@ interface CommitDetailsPaneProps {
   onOpenDiffInTab?: (diff: GitDiffEntry, options?: OpenDiffTabOptions) => void
   onOpenFileInEditor?: (filePath: string) => void
   onStartPaneResize: (pane: 'files', event: React.PointerEvent<HTMLDivElement>) => void
+  /** P1 对比态：base 侧提交（selectedDetails.commit 为 target）；存在时顶部显示对比 chip */
+  compareBase?: GitCommitType | null
 }
 
 export function CommitDetailsPane({
@@ -97,6 +99,7 @@ export function CommitDetailsPane({
   onOpenDiffInTab,
   onOpenFileInEditor,
   onStartPaneResize,
+  compareBase = null,
 }: CommitDetailsPaneProps) {
   const { t } = useTranslation('git')
 
@@ -332,6 +335,15 @@ export function CommitDetailsPane({
         </div>
       ) : selectedDetails ? (
         <div className={isWorkbench ? 'flex-1 flex min-h-0' : 'flex-1 flex flex-col min-h-0'}>
+          {/* P1 对比态 chip：selectedDetails.commit 为 target、compareBase 为 base */}
+          {compareBase && (
+            <div className="px-4 py-1.5 bg-primary/10 border-b border-primary/20 text-[11px] text-primary flex items-center gap-1.5 shrink-0">
+              <Columns2 size={12} />
+              <span className="truncate font-mono">
+                {t('history.compareChip', { base: compareBase.shortSha, target: selectedDetails.commit.shortSha })}
+              </span>
+            </div>
+          )}
           {shouldShowFilePane && (
             <div
               className={`${isWorkbench ? 'relative border-r' : 'max-h-56 border-b'} border-border-subtle shrink-0 flex flex-col min-h-0`}

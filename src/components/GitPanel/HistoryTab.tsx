@@ -27,6 +27,9 @@ import {
   Trash2,
   History as HistoryIcon,
   ListTodo,
+  Plus,
+  Check,
+  Columns2,
 } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
@@ -186,6 +189,16 @@ export function HistoryTab({
     losses?: string[]
     safetyNet?: string
   } | null>(null)
+  // P1 多选/对比：selectedCommits 键 = commit sha（Ctrl/Shift/键盘多选）；anchor 为区间锚点
+  const [selectedCommits, setSelectedCommits] = useState<Set<string>>(new Set())
+  const selectionAnchorRef = useRef<string | null>(null)
+  const [focusedSha, setFocusedSha] = useState<string | null>(null)
+  // 对比态：compareBase = 对比 chip 的 base 侧（selectedDetails.commit 为 target）
+  const [compareBase, setCompareBase] = useState<GitCommitType | null>(null)
+  const [isComparing, setIsComparing] = useState(false)
+  const [isBatchCherryPicking, setIsBatchCherryPicking] = useState(false)
+  // loadMore 失败提示（旧行为只 log，UI 无感）
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null)
   const [createBranchFromCommit, setCreateBranchFromCommit] = useState<GitCommitType | null>(null)
   const [createTagFromCommit, setCreateTagFromCommit] = useState<GitCommitType | null>(null)
 
@@ -201,6 +214,8 @@ export function HistoryTab({
   const revert = useGitStore((s) => s.revert)
   const reset = useGitStore((s) => s.reset)
   const checkoutCommit = useGitStore((s) => s.checkoutCommit)
+  // P1 对比：任意两个提交的 tree-to-tree diff（cap.git get_diffs + compareTo）
+  const compareCommits = useGitStore((s) => s.compareCommits)
   const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
@@ -228,6 +243,8 @@ export function HistoryTab({
     setFileSearchQuery('')
     setCopiedAction(null)
     setIsCommitMessageExpanded(false)
+    // 对比态随选择清理（多选条保留 —— 由 Esc / 清除按钮单独控制）
+    setCompareBase(null)
   }, [])
 
   const clearFileHistoryMode = useCallback(() => {
@@ -401,6 +418,10 @@ export function HistoryTab({
     setIsLoading(true)
     setError(null)
     setHasMore(true)
+    setLoadMoreError(null)
+    // 整段重取（新窗口）后多选 sha 集可能失效 —— 统一清空重建
+    setSelectedCommits(new Set())
+    selectionAnchorRef.current = null
 
     try {
       log.debug('Loading commits', { path: effectiveWorkspacePath, branch: selectedBranch || null })
@@ -446,22 +467,27 @@ export function HistoryTab({
     if (!effectiveWorkspacePath || isLoadingMore || !hasMore) return
 
     setIsLoadingMore(true)
+    setLoadMoreError(null)
 
     try {
-      const skip = commits.length
-      const page = await getLogWithLanes(effectiveWorkspacePath, PAGE_SIZE, skip, selectedBranch || undefined)
-      const result = page.commits
+      // 泳道连续性（P0）：不做「追加下一页」—— 每次 load more 整段重取
+      // limit=已加载+页大小、skip=0，rows 在完整覆盖窗口上重新计算，
+      // 避免跨页窗口边界 lane 重新分配导致的换列/断线。
+      const target = commits.length + PAGE_SIZE
+      const page = await getLogWithLanes(effectiveWorkspacePath, target, 0, selectedBranch || undefined)
 
-      if (result.length === 0) {
+      if (page.commits.length <= commits.length) {
         setHasMore(false)
       } else {
-        setCommits(prev => [...prev, ...result])
-        setLaneRows(prev => ({ ...prev, ...indexLaneRows(page.rows) }))
-        setSemanticBySha(prev => ({ ...prev, ...indexSemantics(page.semantic, result) }))
-        setTotalCount(prev => prev + result.length)
-        setHasMore(result.length === PAGE_SIZE)
+        setCommits(page.commits)
+        setLaneRows(indexLaneRows(page.rows))
+        setSemanticBySha(indexSemantics(page.semantic, page.commits))
+        setTotalCount(page.commits.length)
+        setHasMore(page.commits.length >= target)
       }
     } catch (err) {
+      // 失败必须呈出给用户：旧行为只 log，用户在「继续滚动查看更多」下坟卡住
+      setLoadMoreError(err instanceof Error ? err.message : String(err))
       log.error('Failed to load more commits', err instanceof Error ? err : new Error(String(err)))
     } finally {
       setIsLoadingMore(false)
@@ -639,6 +665,175 @@ export function HistoryTab({
     void loadCommitDetailsBySha(targetCommitSha)
     onCommitSelected?.()
   }, [commits, loadCommitDetails, loadCommitDetailsBySha, onCommitSelected, targetCommitSha])
+
+  // ── P1 多选 / 对比 / 批量 cherry-pick ──────────────────────────────
+
+  /** 可多选的列表形态：常规 commit 列表（file history / 精确搜索结果不开启） */
+  const isCommitListMode = !isFileHistoryMode && !exactSearch
+
+  const toggleCommitSelection = useCallback((sha: string) => {
+    setSelectedCommits(prev => {
+      const next = new Set(prev)
+      if (next.has(sha)) next.delete(sha)
+      else next.add(sha)
+      return next
+    })
+  }, [])
+
+  /** 区间选择：锚点（上次点击）到 target 在【当前过滤后展示序】内的所有提交 */
+  const selectCommitRangeTo = useCallback((targetSha: string, select: boolean) => {
+    const list = filteredCommits
+    const targetIdx = list.findIndex(c => c.sha === targetSha)
+    if (targetIdx < 0) return
+    const anchorIdx = selectionAnchorRef.current && list.some(c => c.sha === selectionAnchorRef.current)
+      ? list.findIndex(c => c.sha === selectionAnchorRef.current)
+      : targetIdx
+    const from = Math.min(anchorIdx, targetIdx)
+    const to = Math.max(anchorIdx, targetIdx)
+    setSelectedCommits(prev => {
+      const next = new Set(prev)
+      for (let i = from; i <= to; i++) {
+        const sha = list[i].sha
+        if (select) next.add(sha)
+        else next.delete(sha)
+      }
+      return next
+    })
+  }, [filteredCommits])
+
+  const clearCommitSelection = useCallback(() => {
+    setSelectedCommits(new Set())
+    selectionAnchorRef.current = null
+  }, [])
+
+  /** 对比选中两个提交（base=较旧 → target=较新，tree-to-tree diff）。
+   *  复用既有 selectedDetails 渲染通道：workbench 详情面板 / sidebar 内联面板双变体通用。 */
+  const handleCompareSelected = useCallback(async () => {
+    if (!effectiveWorkspacePath || selectedCommits.size !== 2) return
+    // commits 数组即拓扑序（新→旧）：filter 保序 → [0]=较新(target)，[1]=较旧(base)
+    const ordered = commits.filter(c => selectedCommits.has(c.sha))
+    if (ordered.length !== 2) return
+    const [newer, older] = ordered
+
+    setIsComparing(true)
+    setDetailsError(null)
+    try {
+      const files = await compareCommits(effectiveWorkspacePath, older.sha, newer.sha)
+      detailsRequestRef.current += 1
+      setSelectedCommit(newer)
+      setSelectedDetails({
+        commit: newer,
+        files,
+        totalAdditions: files.reduce((s, f) => s + (f.additions ?? 0), 0),
+        totalDeletions: files.reduce((s, f) => s + (f.deletions ?? 0), 0),
+      })
+      setSelectedFileDiff(files[0] ?? null)
+      setCompareBase(older)
+      setFileSearchQuery('')
+      setIsCommitMessageExpanded(false)
+      clearCommitSelection()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err))
+    } finally {
+      setIsComparing(false)
+    }
+  }, [clearCommitSelection, compareCommits, commits, effectiveWorkspacePath, selectedCommits, toast])
+
+  /** 批量 cherry-pick：按拓扑序反向（旧→新）逐个应用；遇首个失败即中止并报告。
+   *  复用既有单条动作（WRITE_GATE 串行 + 操作流水留痕），cap 契约不加新动作。 */
+  const handleBatchCherryPick = useCallback(() => {
+    if (!effectiveWorkspacePath || selectedCommits.size === 0 || isBatchCherryPicking) return
+    const orderedOldestFirst = [...commits.filter(c => selectedCommits.has(c.sha))].reverse()
+    if (orderedOldestFirst.length === 0) return
+
+    setConfirmDialog({
+      show: true,
+      title: t('cherryPick.batchTitle'),
+      message: t('cherryPick.batchConfirm', { count: orderedOldestFirst.length }),
+      type: 'warning',
+      onConfirm: async () => {
+        setConfirmDialog(null)
+        setIsBatchCherryPicking(true)
+        let applied = 0
+        let aborted = false
+        try {
+          for (const commit of orderedOldestFirst) {
+            try {
+              await cherryPick(effectiveWorkspacePath, commit.sha)
+              applied += 1
+            } catch (err) {
+              aborted = true
+              toast.error(t('cherryPick.batchFailed', { count: applied, error: parseGitError(err) }))
+              break
+            }
+          }
+          if (!aborted) {
+            toast.success(t('cherryPick.batchSuccess', { count: applied }))
+          }
+        } finally {
+          setIsBatchCherryPicking(false)
+          clearCommitSelection()
+          void loadCommits()
+        }
+      },
+    })
+  }, [cherryPick, clearCommitSelection, commits, effectiveWorkspacePath, isBatchCherryPicking, loadCommits, selectedCommits, t, toast])
+
+  // 列表键盘导航（对齐变更列表交互惯例）：↑/↓ 焦点、Enter 详情、Space/Shift+Space 选择、Esc 清除
+  const handleCommitListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('input, textarea, select, button, [role="dialog"], [role="option"], [role="menuitem"]')) return
+
+    if (e.key === 'Escape') {
+      if (selectedCommits.size > 0) {
+        e.preventDefault()
+        clearCommitSelection()
+      }
+      return
+    }
+
+    if (!isCommitListMode) return
+    const commitShas = filteredCommits.map(c => c.sha)
+    if (commitShas.length === 0) return
+
+    const idx = focusedSha ? commitShas.indexOf(focusedSha) : -1
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const next = idx < 0 ? 0 : Math.min(Math.max(idx + (e.key === 'ArrowDown' ? 1 : -1), 0), commitShas.length - 1)
+      setFocusedSha(commitShas[next])
+      return
+    }
+
+    if (idx < 0 || !focusedSha) return
+
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const commit = filteredCommits[idx]
+      if (commit) void loadCommitDetails(commit)
+      return
+    }
+
+    if (e.key === ' ') {
+      e.preventDefault()
+      if (e.shiftKey) {
+        selectCommitRangeTo(focusedSha, !selectedCommits.has(focusedSha))
+      } else {
+        selectionAnchorRef.current = focusedSha
+        toggleCommitSelection(focusedSha)
+      }
+    }
+  }, [clearCommitSelection, filteredCommits, focusedSha, isCommitListMode, loadCommitDetails, selectCommitRangeTo, selectedCommits, toggleCommitSelection])
+
+  // 焦点行滚动进可视区（jsdom/降级环境无 scrollIntoView —— 存在性守卫）
+  useEffect(() => {
+    if (!focusedSha) return
+    const container = scrollContainerRef.current
+    const row = container?.querySelector(`[data-sha="${focusedSha}"]`)
+    if (row && typeof row.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'nearest' })
+    }
+  }, [focusedSha, commits])
 
   const handleRefresh = useCallback(() => {
     if (isReflogMode) {
@@ -953,14 +1148,39 @@ export function HistoryTab({
     })
   }, [isFileHistoryMode, onOpenDiffInTab])
 
-  // 侧边栏：再次点击已展开的提交则收起（手风琴）；其余情况加载详情
-  const handleCommitRowClick = useCallback((commit: GitCommitType) => {
+  // 侧边栏：再次点击已展开的提交则收起（手风琴）；其余情况加载详情。
+  // P1 多选：Ctrl/Cmd+点击切换选中、Shift+点击区间选择（锚点=上次点击行）；
+  // 对比/批量操作条在列表顶部（见 renderCommitList）。
+  const handleCommitRowClick = useCallback((
+    commit: GitCommitType,
+    event: React.MouseEvent,
+  ) => {
+    // 行是 div（不可聚焦），点击后焦点仍在 body —— 显式移交列表容器，键盘导航才收得到事件
+    scrollContainerRef.current?.focus({ preventScroll: true })
+    const isModifierSelect = event.ctrlKey || event.metaKey
+    const isShiftSelect = event.shiftKey
+
+    // 修饰键多选仅在常规 commit 列表开启（file history / 精确搜索结果不参与）
+    if ((isModifierSelect || isShiftSelect) && !isFileHistoryMode && !exactSearch) {
+      setFocusedSha(commit.sha)
+      event.preventDefault()
+      if (isShiftSelect) {
+        selectCommitRangeTo(commit.sha, !selectedCommits.has(commit.sha))
+      } else {
+        selectionAnchorRef.current = commit.sha
+        toggleCommitSelection(commit.sha)
+      }
+      return
+    }
+
     if (!isWorkbench && selectedCommit?.sha === commit.sha) {
       clearSelection()
       return
     }
+    setFocusedSha(commit.sha)
+    selectionAnchorRef.current = commit.sha
     void loadCommitDetails(commit)
-  }, [clearSelection, isWorkbench, loadCommitDetails, selectedCommit?.sha])
+  }, [clearSelection, exactSearch, isFileHistoryMode, isWorkbench, loadCommitDetails, selectCommitRangeTo, selectedCommit?.sha, selectedCommits, toggleCommitSelection])
 
   // 工作台：右侧详情面板；侧边栏：直接在编辑器打开该文件的 diff
   const handleFileHistoryRowClick = useCallback((entry: GitFileHistoryEntry) => {
@@ -1110,17 +1330,26 @@ export function HistoryTab({
   const renderCommitRow = (commit: GitCommitType) => {
     const subject = commit.message.split('\n')[0]
     const isSelected = selectedCommit?.sha === commit.sha
+    const isFocused = focusedSha === commit.sha
+    const isInSelection = selectedCommits.has(commit.sha)
     const laneRow = laneRows[commit.sha]
+    const rowRefs = laneRow?.refs ?? commit.refs ?? []
 
     return (
       <Fragment key={commit.sha}>
         <div
-          onClick={() => handleCommitRowClick(commit)}
+          data-sha={commit.sha}
+          onClick={(event) => handleCommitRowClick(commit, event)}
           onContextMenu={(e) => handleCommitContextMenu(e, commit)}
           title={`${subject}\n${commit.author}`}
-          className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
-            isSelected ? 'bg-primary/10 border-primary' : 'border-transparent hover:bg-background-hover'
-          }`}
+          className={`group flex items-center gap-2 px-3 py-1.5 cursor-pointer border-l-2 transition-colors ${
+            isSelected
+              ? 'bg-primary/10 border-primary'
+            // 多选行用 warning 色区隔（详情选中用 primary，二者语义不同、可叠加出现）
+              : isInSelection
+                ? 'bg-warning/10 border-warning/60'
+                : 'border-transparent hover:bg-background-hover'
+          } ${isFocused ? 'ring-1 ring-inset ring-primary/40' : ''}`}
         >
           {laneRow ? (
             // P2 泳道图：有 lane 数据用 LaneGraph，节点色随选择态 + 语义着色
@@ -1132,33 +1361,68 @@ export function HistoryTab({
             />
           )}
           <span className="text-[11px] font-mono text-text-tertiary shrink-0">{commit.shortSha}</span>
-          {/* P2 refs 装饰：HEAD/本地/远程/tag 三色标签 */}
-          {(laneRow?.refs ?? commit.refs ?? []).length > 0 && (
+          {/* refs 装饰：色收敛到语义 token；当前分支判定按 ref.name===当前分支名
+              （后端 kind 只发 local/remote/tag，前端旧'head'判定是死代码） */}
+          {rowRefs.length > 0 && (
             <span className="flex items-center gap-1 shrink-0 overflow-hidden">
-              {(laneRow?.refs ?? commit.refs ?? []).slice(0, 4).map((ref) => (
-                <span
-                  key={`${ref.name}:${ref.target}`}
-                  className={`px-1 rounded text-[9px] font-mono border ${
-                    ref.kind === 'head'
-                      ? 'border-primary/40 bg-primary/10 text-primary'
-                      : ref.kind === 'remote'
-                        ? 'border-purple-500/40 bg-purple-500/10 text-purple-400'
-                        : ref.kind === 'tag'
-                          ? 'border-orange-500/40 bg-orange-500/10 text-orange-400'
-                          : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-400'
-                  }`}
-                >
-                  {ref.name}
-                </span>
-              ))}
+              {rowRefs.slice(0, 4).map((ref) => {
+                const isCurrentRef = ref.name === currentBranchName
+                return (
+                  <span
+                    key={`${ref.name}:${ref.target}`}
+                    title={ref.target}
+                    className={`px-1 rounded text-[9px] font-mono border ${
+                      isCurrentRef
+                        ? 'border-primary/40 bg-primary/10 text-primary font-semibold'
+                        : ref.kind === 'remote'
+                          ? 'border-info/40 bg-info/10 text-info'
+                          : ref.kind === 'tag'
+                            ? 'border-warning/40 bg-warning/10 text-warning'
+                            : 'border-success/40 bg-success/10 text-success'
+                    }`}
+                  >
+                    {ref.name}
+                  </span>
+                )
+              })}
             </span>
           )}
           <span className={`flex-1 min-w-0 text-[13px] truncate ${isSelected ? 'text-text-primary font-medium' : 'text-text-secondary'}`}>
             {subject}
           </span>
+          {/* hover 多选入口（可发现性：Ctrl/Shift 点击为快捷方式，这里是可见按钮） */}
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation()
+              setFocusedSha(commit.sha)
+              selectionAnchorRef.current = commit.sha
+              toggleCommitSelection(commit.sha)
+            }}
+            title={t('history.addSelection')}
+            className={`p-1 rounded transition-colors shrink-0 ${
+              isInSelection
+                ? 'text-warning opacity-100 bg-warning/10'
+                : 'opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-warning hover:bg-warning/10 focus:opacity-100'
+            }`}
+          >
+            {isInSelection ? <Check size={12} /> : <Plus size={12} />}
+          </button>
           <span className="text-[11px] text-text-tertiary shrink-0">{formatRelativeTime(commit.timestamp, t)}</span>
         </div>
-        {!isWorkbench && isSelected && renderInlineDetails(commit)}
+        {!isWorkbench && isSelected && (
+          <>
+            {compareBase !== null && selectedDetails?.commit.sha === commit.sha && (
+              <div className="pl-7 pr-3 py-1 bg-primary/10 border-y border-primary/20 text-[11px] text-primary flex items-center gap-1.5 shrink-0">
+                <Columns2 size={12} />
+                <span className="truncate font-mono">
+                  {t('history.compareChip', { base: compareBase.shortSha, target: selectedDetails.commit.shortSha })}
+                </span>
+              </div>
+            )}
+            {renderInlineDetails(commit)}
+          </>
+        )}
       </Fragment>
     )
   }
@@ -1201,6 +1465,16 @@ export function HistoryTab({
   const dirtyFiles = repoStatus
     ? repoStatus.staged.length + repoStatus.unstaged.length + repoStatus.untracked.length
     : 0
+  /** 语义色图例（token 化圆点；P2 起常显，不再依赖 WIP/stash 虚拟行存在） */
+  const renderLaneLegend = () => (
+    <div className="flex items-center gap-2 px-3 pt-1.5 pb-0.5 text-[9px] text-text-tertiary flex-wrap">
+      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: 'rgb(var(--c-success))' }} />{t('lane.legendLocal')}</span>
+      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-danger inline-block" />{t('lane.legendUnpushed')}</span>
+      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: 'rgb(var(--c-text-secondary))' }} />{t('lane.legendMerged')}</span>
+      <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full inline-block" style={{ background: 'rgb(var(--c-text-tertiary))' }} />{t('lane.legendDim')}</span>
+    </div>
+  )
+
   const renderVirtualLaneRows = () => {
     const hasWip = dirtyFiles > 0
     const hasStash = stashEntries.length > 0
@@ -1208,14 +1482,6 @@ export function HistoryTab({
 
     return (
       <>
-        {/* 语义色图例（只在有虚拟行时展示，与泳道一起给读者立标尺） */}
-        <div className="flex items-center gap-2 px-3 pt-1.5 pb-0.5 text-[9px] text-text-tertiary flex-wrap">
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" />{t('lane.legendLocal')}</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-danger inline-block" />{t('lane.legendUnpushed')}</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-text-secondary inline-block" />{t('lane.legendMerged')}</span>
-          <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-text-tertiary inline-block" />{t('lane.legendDim')}</span>
-        </div>
-
         {hasWip && (
           <div
             className="flex items-center gap-2 px-3 py-1.5 border-l-2 border-transparent hover:bg-background-hover cursor-default"
@@ -1269,8 +1535,47 @@ export function HistoryTab({
       <div
         ref={scrollContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto min-h-0"
+        onKeyDown={handleCommitListKeyDown}
+        tabIndex={-1}
+        className="flex-1 overflow-y-auto min-h-0 outline-none"
       >
+        {/* P1 多选操作条（sticky 常驻列表顶部；对比需恰好 2 个，cherry-pick ≥1） */}
+        {isCommitListMode && selectedCommits.size > 0 && (
+          <div className="sticky top-0 z-popover px-3 py-1.5 bg-primary/10 backdrop-blur-sm border-b border-primary/20 flex items-center gap-2 text-xs">
+            <span className="flex-1 min-w-0 truncate text-text-primary">
+              {t('history.selectedForBatch', { count: selectedCommits.size })}
+            </span>
+            <button
+              type="button"
+              onClick={handleCompareSelected}
+              disabled={selectedCommits.size !== 2 || isComparing || isBatchCherryPicking}
+              title={selectedCommits.size === 2 ? t('history.compareSelected') : t('history.compareNeedTwo')}
+              className="h-7 px-2 flex items-center gap-1 rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              {isComparing ? <Loader2 size={12} className="animate-spin" /> : <Columns2 size={12} />}
+              {t('history.compareSelected')}
+            </button>
+            <button
+              type="button"
+              onClick={handleBatchCherryPick}
+              disabled={isComparing || isBatchCherryPicking}
+              title={t('cherryPick.batchTitle')}
+              className="h-7 px-2 flex items-center gap-1 rounded border border-border bg-background-surface text-text-secondary hover:bg-background-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+            >
+              {isBatchCherryPicking ? <Loader2 size={12} className="animate-spin" /> : <GitMerge size={12} />}
+              {t('cherryPick.button')}
+            </button>
+            <button
+              type="button"
+              onClick={clearCommitSelection}
+              title={t('history.clearSelection')}
+              className="p-1.5 rounded text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-colors shrink-0"
+            >
+              <X size={13} />
+            </button>
+          </div>
+        )}
+
         {isLoading ? (
           <div className="flex items-center justify-center py-8">
             <Loader2 size={20} className="animate-spin text-text-tertiary" />
@@ -1298,10 +1603,26 @@ export function HistoryTab({
           </div>
         ) : (
           <>
+            {!isFileHistoryMode && !isExactMode && commits.length > 0 && renderLaneLegend()}
             {!isFileHistoryMode && !isExactMode && renderVirtualLaneRows()}
             {isFileHistoryMode
               ? filteredFileHistoryEntries.map(renderFileHistoryRow)
               : (isExactMode ? searchResults : filteredCommits).map(renderCommitRow)}
+
+            {!isFileHistoryMode && !isExactMode && loadMoreError && (
+              <div className="flex items-center justify-center gap-2 py-3 px-3 text-xs text-danger">
+                <span className="truncate">
+                  {t('history.loadMoreFailed')}: {loadMoreError}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => void loadMoreCommits()}
+                  className="underline hover:text-text-primary shrink-0"
+                >
+                  {t('history.retry')}
+                </button>
+              </div>
+            )}
 
             {isLoadingMore && (
               <div className="flex items-center justify-center py-3 text-text-tertiary">
@@ -1502,6 +1823,55 @@ export function HistoryTab({
       </div>
       )}
 
+      {/* P0 搜索诚信：普通模式只在「已加载页」内过滤 —— 如实告知，并一键升级全库搜索 */}
+      {!isReflogMode && !isFileHistoryMode && !exactSearch && normalizedSearchQuery && commits.length > 0 && (
+        <div className="px-3 py-1.5 bg-background-surface border-b border-border-subtle flex items-center gap-2 text-[11px] text-text-tertiary">
+          <span className="flex-1 min-w-0 truncate">
+            {t('history.localFilterNote', { shown: filteredCommits.length, loaded: commits.length })}
+          </span>
+          <button
+            type="button"
+            onClick={() => {
+              setExactSearch(true)
+              setSearchResults([])
+            }}
+            className="shrink-0 text-primary hover:underline"
+          >
+            {t('history.localFilterSwitch')}
+          </button>
+        </div>
+      )}
+
+      {/* 精确搜索：回显编译出的过滤器（grep/author/pickaxe/since） */}
+      {!isReflogMode && !isFileHistoryMode && exactSearch && normalizedSearchQuery && (() => {
+        let filter: ReturnType<typeof compileGitQuery>['filter']
+        try {
+          filter = compileGitQuery(searchQuery.trim()).filter
+        } catch {
+          return null
+        }
+        const chips: Array<[string, string]> = [
+          ['grep', filter.grep ?? ''],
+          ['author', filter.author ?? ''],
+          ['pickaxe', filter.pickaxe ?? ''],
+          ['since', filter.since ?? ''],
+        ].filter((entry): entry is [string, string] => Boolean(entry[1]))
+        if (chips.length === 0) return null
+        return (
+          <div className="px-3 py-1 border-b border-border-subtle flex items-center gap-1.5 flex-wrap">
+            {chips.map(([key, value]) => (
+              <span
+                key={key}
+                title={value}
+                className="px-1.5 py-0.5 rounded bg-primary/10 text-primary text-[10px] font-mono max-w-[180px] truncate"
+              >
+                {key}: {value}
+              </span>
+            ))}
+          </div>
+        )
+      })()}
+
       {!isReflogMode && error && (
         <div className="px-4 py-2 text-xs text-danger bg-danger/10 border-b border-danger/20">
           {error}
@@ -1563,6 +1933,7 @@ export function HistoryTab({
                 onOpenDiffInTab={onOpenDiffInTab}
                 onOpenFileInEditor={onOpenFileInEditor}
                 onStartPaneResize={startPaneResize}
+                compareBase={compareBase}
               />
             </div>
           )}
