@@ -10,9 +10,10 @@
 //!
 //! - 精选 todo 工具：todo_list / todo_get / todo_create / todo_update /
 //!   todo_complete / todo_delete（对 AI 更友好的显式工具面）
-//! - `bus_dispatch`：通用转发 {target, payload}——白名单为应用数据域（cap.todo /
-//!   cap.http / cap.fs / cap.bash）+ UI 域（cap.ui.theme / cap.ui.chat），
-//!   后续按阶段 C 的权限策略逐域放开
+//! - `bus_dispatch`：通用转发 {target, payload}——**全量放开，无白名单**。
+//!   target 为本进程 RouterBus 已注册的任何 cap.*（含运行时动态注册），
+//!   完整清单见 `tools_list` 的 target enum 与 bus_help 的 `dispatchable`。
+//!   是否放行由 RouterBus 统一裁决：注册表命中 + PolicyPermission 权限 gate + 审计。
 //!
 //! # 与主应用的关系
 //!
@@ -29,33 +30,40 @@ use crate::error::{AppError, Result};
 use crate::services::context_core::ContextMemoryStore;
 use crate::services::mcp_server_common::{self, McpServerHandler};
 use crate::services::router::{
-    audit_sink, BashCapability, EventAdapter, FileAuditSink, FsCapability,
-    HttpCapability, PolicyPermission, RouterBus, TodoCapability,
+    audit_sink, BashCapability, DataRootCapability, DynamicCapability, EventAdapter,
+    FileAuditSink, FsCapability, HookCapability, HelpCapability, HttpCapability, KvCapability,
+    PolicyPermission, PromptSnippetCapability, RegistryCapability, RouterBus,
+    SelfInspectCapability, SelfMutateCapability, TodoCapability, UiChatCapability,
+    UiInputCapability, UiThemeCapability,
 };
+#[cfg(feature = "git")]
+use crate::services::router::GitCapability;
 
 const SERVER_NAME: &str = "polaris-bus-mcp";
 const SERVER_VERSION: &str = "0.1.0";
 const CALLER: &str = "polaris-bus-mcp";
 
-/// bus_dispatch 白名单：AI 可经通用转发触达的能力（逐域放开，见 step7 阶段 C）
+/// bus_dispatch 可转发的目标 = 本进程 RouterBus 已注册能力（全量，无任何过滤）。
 ///
-/// 边界规则（与 polaris-dispatch MCP 的职责切分，防工具冲突）：
-/// - 本 server = 应用数据域（持久化数据 CRUD，全局视角，与会话无关）
-/// - polaris-dispatch = 会话桥接域（任务派发生命周期，会话绑定视角）
-/// - 永久排除：cap.ai.chat（AI 自递归）及一切任务派发/会话桥接类能力——
-///   那是 polaris-dispatch 的领地，两 server 的工具描述互不重叠
-/// - cap.git（P4）：本地仓库读写域；写类动作经 router 权限 gate（is_destructive）+
-///   操作流水审计，复用与面板同一套审计记录
-const DISPATCH_WHITELIST: &[&str] = &[
-    "cap.todo",
-    "cap.http",
-    "cap.bash",
-    "cap.fs",
-    "cap.git",
-    "cap.ui.theme",
-    "cap.ui.chat",
-    "cap.ui.input",
-];
+/// 设计原则：**bus_dispatch 不做业务判定**。目标是否可调由 RouterBus 统一裁决
+/// （注册表命中 + `PolicyPermission` gate + 审计），MCP 层只负责参数校验与转发。
+///
+/// 历史形态是独立的静态 `DISPATCH_WHITELIST` const，与注册块两处并行维护，
+/// 曾导致「白名单放行、RouterBus 报『能力未注册』」的静默失效（cap.ui.theme /
+/// cap.ui.chat / cap.ui.input / cap.git 长期在名单内但从未注册）。现改为从
+/// 注册表派生：注册即放开，新增能力只需在注册块加一行，无需再改第二处。
+///
+/// 已注册的持久化动态能力（cap.registry）同样自动可见——注册表本身已含它们。
+pub fn dispatchable_capabilities(router: &RouterBus) -> Vec<String> {
+    let mut out: Vec<String> = router
+        .list_capabilities()
+        .iter()
+        .map(|c| c.0.clone())
+        .collect();
+    out.sort();
+    out.dedup();
+    out
+}
 
 /// 运行 bus MCP server（stdio JSON-RPC）
 pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
@@ -77,7 +85,15 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         }
     };
 
-    let router = RouterBus::new(adapter, permission, Some(storage), audit);
+    // RouterBus 持有 Arc：RegistryCapability / HelpCapability / SelfInspectCapability
+    // 需要把总线引用注入自己（自注册、能力索引、能力透视），故此处提前共享所有权。
+    // storage 需克隆一份留给 cap.registry 重装配用的 bootstrap ctx（RouterBus 已持有一份）。
+    let router = Arc::new(RouterBus::new(
+        adapter,
+        permission,
+        Some(storage.clone()),
+        audit,
+    ));
     {
         use crate::contracts::Router as _;
         let _ = router.register_handle(Box::new(TodoCapability));
@@ -87,12 +103,89 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         // cap.fs —— 文件系统只读访问（list / getFileInfo / exists）。
         // AI 经 bus_dispatch 读取应用数据文件/工作区结构；Remote 由策略 deny。
         let _ = router.register_handle(Box::new(FsCapability));
-        // cap.bash —— 宿主级 shell 命令执行（与 DISPATCH_WHITELIST、工具描述对齐；
-        // 曾因缺失导致 bus_dispatch 报"能力未注册: cap.bash"）
+        // cap.bash —— 宿主级 shell 命令执行（后台任务，任务归宿主不随会话结束）。
         let _ = router.register_handle(Box::new(BashCapability::new()));
+        // cap.kv —— 键值存储（应用持久化 KV，与本 server/主应用共享存储域）。
+        let _ = router.register_handle(Box::new(KvCapability));
+        // cap.prompt_snippet —— 快捷片段 CRUD（存储走 ctx.storage()，零宿主依赖）。
+        let _ = router.register_handle(Box::new(PromptSnippetCapability));
+        // cap.data_root —— 数据根查询/扫描（只读动作可用；set_root 等管理面动作
+        // 由 RouterBus 的 PolicyPermission gate 裁决，本 server 不做业务限制）。
+        let _ = router.register_handle(Box::new(DataRootCapability));
+        // cap.hook —— 基础 hook 机制（宿主关键时点订阅/注入，无状态）。
+        let _ = router.register_handle(Box::new(HookCapability));
+        // cap.self.mutate —— 无状态转发（前端 uiSlotStore 为真相）。
+        // 曾因白名单漏配导致 AI 经 bus_dispatch 调本能力时前端 store 完全不消费，
+        // 后端 ok=true 但 DOM 无变化（接线缺口修复，2026-10-22）。
+        let _ = router.register_handle(Box::new(SelfMutateCapability));
+        // cap.ui.theme / cap.ui.chat / cap.ui.input —— AI 控制界面（主题/对话渲染/输入区）。
+        // 三个都是无状态转发（校验+审计+describe），状态真相在前端 themeStore /
+        // configStore / inputUIStore，效果经引擎 tool_call_start 事件落前端 store
+        // （前端 consumeCapUiDispatch 已覆盖三个 target）。
+        // **根因修复（2026-10-23）**：这三个能力在白名单里但从未在本进程注册，
+        // AI 经 bus_dispatch 调用时 RouterBus 直接返回「能力未注册」。
+        // 症状是「{forwarded:true, ok:true}」被误读为成功——该返回实为
+        // 「已转发给前端」的声明，与「cap 是否真的执行」无关。
+        let _ = router.register_handle(Box::new(UiThemeCapability));
+        let _ = router.register_handle(Box::new(UiChatCapability));
+        let _ = router.register_handle(Box::new(UiInputCapability));
+        // cap.git —— 本地仓库读写域。GitCapability 模块带 #[cfg(feature = "git")] gate
+        // （router/mod.rs），本处引用必须同 gate，否则 --no-default-features
+        // 构建失败（见 AGENTS.md「命令门控」节双向陷阱）。
+        // 写类动作仍经 router 权限 gate（is_destructive 名单）+ 操作流水审计。
+        #[cfg(feature = "git")]
+        let _ = router.register_handle(Box::new(GitCapability));
+        // cap.context —— 内存型能力（本进程独立实例，跨进程不共享主应用内存）。
         let _ = router.register_handle(Box::new(crate::services::router::ContextCapability::new(
             Arc::new(std::sync::Mutex::new(ContextMemoryStore::new())),
         )));
+        // cap.self.inspect —— 自身透视（能力索引/健康自检），复用本进程 bus 同源数据。
+        crate::services::router::mark_self_boot();
+        let _ = router.register_handle_arc(Arc::new(SelfInspectCapability::new(
+            router.clone(),
+        )));
+        // cap.help —— 总线能力索引（AI 发现本进程全部 cap.* 的入口）。
+        let _ = router.register_handle_arc(Arc::new(HelpCapability::new(
+            router.clone(),
+        )));
+        // cap.registry —— 运行时动态能力注册表（AI 自注册/卸载新 cap 的入口）。
+        // 这是「支持注册」的关键：注册后 bus_dispatch 立即可转发新能力，
+        // dispatchable_capabilities 与 tools_list 的 enum 自动随之更新。
+        let registry_cap = RegistryCapability::new(router.clone());
+        {
+            use crate::services::router::RealContext;
+            // 重装配：用真实 storage 构造一次性 Context，读取持久化的动态能力清单，
+            // 使重启后已注册能力仍可见（与主进程 state.rs 装配语义一致）。
+            let bootstrap_ctx = RealContext::new(
+                crate::contracts::Source::Bootstrap,
+                Some(storage.clone()),
+                serde_json::Value::Null,
+                None,
+            );
+            for config in registry_cap.load_persisted(&bootstrap_ctx) {
+                // 防撞 id：与既有能力撞 id 则跳过，避免 dispatch 按 .find() 取序不定。
+                if router.is_registered(&CapabilityId(config.id.clone())) {
+                    tracing::warn!(
+                        "[bus-mcp][cap.registry] 持久化能力 {} 与既有能力撞 id，跳过重建",
+                        config.id
+                    );
+                    continue;
+                }
+                match router.register_handle(Box::new(
+                    DynamicCapability::new(config.clone(), router.clone()),
+                )) {
+                    Ok(_) => tracing::info!(
+                        "[bus-mcp][cap.registry] 重启已重建动态能力: {}",
+                        config.id
+                    ),
+                    Err(e) => tracing::warn!(
+                        "[bus-mcp][cap.registry] 重建动态能力 {} 失败（跳过）: {e}",
+                        config.id
+                    ),
+                }
+            }
+        }
+        let _ = router.register_handle_arc(Arc::new(registry_cap));
     }
 
     let handler = BusMcpHandler {
@@ -104,7 +197,8 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
 
 /// Bus MCP handler（实现 McpServerHandler）。
 struct BusMcpHandler {
-    router: RouterBus,
+    /// 与注册块共享所有权的总线（cap.registry 等需自引用注入）。
+    router: Arc<RouterBus>,
     /// 应用配置根（argv 传入的 config_dir；bus_mcp_status/regenerate 用它定位 mcp.json）
     config_dir: String,
 }
@@ -119,12 +213,13 @@ impl McpServerHandler for BusMcpHandler {
     }
 
     fn tools_list(&self) -> Value {
+        let caps = serde_json::json!(dispatchable_capabilities(&self.router));
         json!({
             "tools": [
-                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 白名单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力：读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat", "cap.ui.input"] },
-                    "payload": { "type": "object" }
+                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明：本 server 已注册的能力（cap.*）、全部工具及入参、bus_dispatch 可转发的目标清单；并列出主进程总线全部 cap.* 能力经 polaris-dispatch 的 cap_dispatch/cap_list 工具的触达入口。首次使用请先调用本工具", &[], json!({})),
+                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力（全量放开，无白名单）：target 为本进程已注册的任何 cap.* 能力（含运行时动态注册），完整清单见 target 字段的 enum 与 bus_help 的 dispatchable。常见用途——读写应用持久化数据（cap.todo，待办）、发起外部 HTTP 请求（cap.http，通用转发）、在宿主 shell 执行命令（cap.bash，后台任务）、读取文件系统（cap.fs，只读 list/getFileInfo/exists）、控制界面主题配色（cap.ui.theme）、对话渲染配置（cap.ui.chat）与输入区即时调节（cap.ui.input）、AI 改造自身 UI 的具名插槽注入/替换/移除（cap.self.mutate，配合前端 uiSlotStore 消费，见 slotId input-extra/app-badge/message-extra）、自注册新能力（cap.registry）。是否放行由 RouterBus 统一裁决（注册表命中 + PolicyPermission 权限 gate + 审计），本工具不做业务限制。注意：这是数据读写/网络/文件/UI 工具，不是任务派发——把工作委托给后台 AI 会话请用 polaris-dispatch 的 dispatch_task 工具", &["target", "payload"], json!({
+                    "target": { "type": "string", "enum": caps, "description": "目标 cap.* 能力 id；随注册实时变化，含运行时动态注册的能力" },
+                    "payload": { "type": "object", "description": "能力动作参数，协议见 bus_help 的 protocol 段或该能力的 describe" }
                 })),
                 mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态：列出各候选数据根的 ask_listener 元数据（真实端口/token/pid 及存活状态），并对比 mcp.json 固化的端口/token 是否与活跃主进程一致。失联时先用它定位是端口漂移、token 漂移还是主进程未启动。纯读，无副作用。常与 bus_mcp_regenerate 搭配：status 定位 → regenerate 修复", &[], json!({})),
                 mcp_server_common::tool_def("bus_mcp_regenerate", "一键修复 MCP Bridge 配置漂移：读取当前活跃 ask_listener 的真实端口/token，把所有存在的 .polaris/claude/mcp.json 中 --polaris-port/--polaris-token 参数改写为真实值后原子写回。适用于 status 显示配置与活跃主进程不一致但仍连不上的场景。返回更新了哪些文件与计数。注意：新配置对**新启动**的 bridge 生效，当前已连接的会话由运行时自愈", &[], json!({})),
@@ -142,11 +237,6 @@ impl McpServerHandler for BusMcpHandler {
                     .get("target")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| AppError::ValidationError("bus_dispatch 缺少 target".into()))?;
-                if !DISPATCH_WHITELIST.contains(&target) {
-                    return Ok(tool_error(format!(
-                        "target {target} 不在 bus_dispatch 白名单内（当前仅 cap.todo / cap.http / cap.bash / cap.fs / cap.ui.theme / cap.ui.chat / cap.ui.input；注册动态能力请走 cap_dispatch）"
-                    )));
-                }
 
                 let payload = arguments.get("payload").cloned().unwrap_or(json!({}));
 
@@ -426,23 +516,20 @@ fn write_json_atomically(path: &std::path::Path, value: &Value) -> Result<()> {
 
 /// bus_help：总线能力与工具的说明（发现/文档工具）
 ///
-/// 返回：本 server 全部工具及入参��总线上已注册的能力、bus_dispatch 白名单、
-/// 各业务域的迁移状态与可用入口（主应用 dispatch / 本 server 工具）。
+/// 返回：本 server 全部工具及入参、总线上已注册（可转发）的能力、各业务域的
+/// 迁移状态与可用入口（主应用 dispatch / 本 server 工具）。
 fn handle_bus_help_impl(router: &RouterBus) -> Value {
     let tools = BusMcpHandler::tools_list_placeholder();
-    let registered: Vec<String> = router
-        .list_capabilities()
-        .iter()
-        .map(|c| c.0.clone())
-        .collect();
+    // 全量放开：本进程已注册能力即 bus_dispatch 可转发目标，两者是同一集合，
+    // 合并为单一字段避免再次出现「名单」与「注册」两份声明漂移。
+    let dispatchable = dispatchable_capabilities(router);
 
     json!({
         "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": mcp_server_common::PROTOCOL_VERSION },
         "tools": tools["tools"],
         "capabilities": {
-            "registered_here": registered,
-            "dispatch_whitelist": DISPATCH_WHITELIST,
-            "说明": "registered_here = 本进程总线已注册能力；dispatch_whitelist = bus_dispatch 可转发的目标（按阶段 C 权限策略逐域放开）"
+            "dispatchable": dispatchable,
+            "说明": "dispatchable = 本进程 RouterBus 已注册的全部 cap.* 能力（含运行时动态注册），全部可经 bus_dispatch 转发，无白名单。是否放行由 RouterBus 统一裁决：注册表命中 + PolicyPermission 权限 gate + 审计落盘。目标不在列表内会收到『能力未注册』——那是注册缺口的准确反馈，不是限制"
         },
         "modules": [
             { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
@@ -467,7 +554,7 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
         "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.git / cap.ui.theme / cap.ui.chat），两 server 职责不重叠",
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.git / cap.ui.theme / cap.ui.chat / cap.ui.input / cap.self.mutate），两 server 职责不重叠",
             "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
             "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
         },
@@ -541,7 +628,7 @@ impl BusMcpHandler {
             "tools": [
                 mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
                 mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat", "cap.ui.input"] },
+                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat", "cap.ui.input", "cap.self.mutate"] },
                     "payload": { "type": "object" }
                 })),
                 mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态", &[], json!({})),
