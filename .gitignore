@@ -120,6 +120,8 @@ secrets/
 # Local scratch (debug dumps etc.)
 scripts/tmp/
 .polaris-preview-smoke.svg
+# Local NDK linker config（含机器绝对路径，不入库）
+polaris-mobile/src-tauri/.cargo/
 # Local tool config / artifacts (contain absolute paths & tokens, never commit)
 opencode.json
 .impeccable/
@@ -127,6 +129,8 @@ opencode.json
 # Local release artifacts — signed installers / APKs / signing keys (never commit)
 # 含 polaris-local-dev.pfx 签名私钥：泄露=任何人可冒充应用覆盖安装
 release-local/
+# 常规版本构建产物（APK/EXE/MSI，体积大且可再生，不入库）
+release/
 
 # Local 3D render experiments (scratch frames / minified libs, not product code)
 glass-micro-world/
