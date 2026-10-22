@@ -2083,6 +2083,8 @@ export function ChatInput({
           </div>
         </div>
       )}
+      {/* 底部安全区：iOS 刘海屏/Home indicator 遮挡补偿（桌面浏览器 env() 无定义→0，零副作用） */}
+      <div className="h-[env(safe-area-inset-bottom)]" aria-hidden="true" />
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
+import { useContainerWidth } from '@/hooks/useContainerWidth';
 import {
   openInDefaultApp,
   setFullscreen as tauriSetFullscreen,
@@ -36,6 +37,13 @@ function createHtmlBlobUrl(html: string): string {
  */
 const TOPBAR_HEIGHT = 40;
 
+/** 窄屏判定阈值：卡片容器宽度低于此值启用移动端布局（与 ChatStatusBar narrow 分级对齐） */
+const NARROW_THRESHOLD = 560;
+/** iframe 高度自适应：16:9，上限桌面 420px，下限手机 240px */
+const FRAME_MAX_HEIGHT = 420;
+const FRAME_MIN_HEIGHT = 240;
+const FRAME_ASPECT_RATIO = 9 / 16;
+
 export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   block,
 }: {
@@ -44,6 +52,20 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const [showSource, setShowSource] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
+
+  // 窄屏判定：容器宽度 < 560 启用移动端布局（ResizeObserver，375px 手机 / 桌面宽屏自动切换）
+  const { ref: cardRef, width: cardWidth } = useContainerWidth<HTMLElement>();
+  const narrow = cardWidth > 0 && cardWidth < NARROW_THRESHOLD;
+
+  // iframe 高度：16:9 自适应，桌面 420px 封顶，手机 240px 保底
+  const frameHeight = useMemo(() => {
+    if (narrow) {
+      return Math.round(
+        Math.min(FRAME_MAX_HEIGHT, Math.max(FRAME_MIN_HEIGHT, cardWidth * FRAME_ASPECT_RATIO))
+      );
+    }
+    return FRAME_MAX_HEIGHT;
+  }, [narrow, cardWidth]);
 
   const sizeLabel = useMemo(() => {
     const bytes = new Blob([block.html]).size;
@@ -110,17 +132,21 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
     window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
   }, [block.html, block.title]);
 
-  // 进入全屏：让整个应用窗口全屏（Tauri setFullscreen / 浏览器 Fullscreen API）
+  // 进入全屏：Tauri 用窗口级全屏；Web 优先原生 Fullscreen API，
+  // iOS Safari 对非 video 元素不支持 requestFullscreen → 自动降级为应用内伪全屏（fixed 覆盖层）
   const handleEnterFullscreen = useCallback(async () => {
     try {
       if (isTauri()) {
         await tauriSetFullscreen(true);
-      } else {
-        await document.documentElement.requestFullscreen();
+        setIsFullscreen(true);
+        return;
       }
+      await document.documentElement.requestFullscreen();
       setIsFullscreen(true);
     } catch {
-      // 浏览器可能因用户交互要求限制拒绝 requestFullscreen，静默失败
+      // 原生全屏不可用（iOS Safari / 浏览器交互限制）→ 降级伪全屏，状态仍为全屏，
+      // 渲染层进入 fixed 覆盖层；Escape 兜底逻辑保留（isFullscreen 已置位）
+      setIsFullscreen(true);
     }
   }, []);
 
@@ -185,19 +211,21 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
 
   return (
     <>
-    <section className="my-2 w-full overflow-hidden rounded-lg border border-border bg-background-elevated">
+    <section ref={cardRef} className="my-2 w-full overflow-hidden rounded-lg border border-border bg-background-elevated">
       <header className="flex min-w-0 items-center gap-2 border-b border-border bg-background-surface px-3 py-2">
         <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-cyan-500/10 text-cyan-400">
           <FileText className="h-4 w-4" />
         </div>
-        <div className="min-w-0 flex-1">
+        {/* 窄屏：标题区 flex-1，元信息换行到第二行；按钮压缩为 h-6 w-6 */}
+        <div className={clsx('min-w-0 flex-1', narrow && 'basis-full')}>
           <div className="truncate text-sm font-medium text-text-primary">{block.title}</div>
           {block.description && (
             <div className="mt-0.5 truncate text-[11px] text-text-secondary" title={block.description}>
               {block.description}
             </div>
           )}
-          <div className="mt-0.5 flex min-w-0 items-center gap-2 text-[11px] text-text-tertiary">
+          {/* 元信息行：桌面单行，窄屏换行到独立一行（flex-wrap）避免被按钮挤压截断 */}
+          <div className={clsx('mt-0.5 flex items-center gap-2 text-[11px] text-text-tertiary', narrow && 'flex-wrap')}>
             <span className="shrink-0">HTML</span>
             <span className="h-1 w-1 shrink-0 rounded-full bg-text-muted" />
             <span className="shrink-0">{sizeLabel}</span>
@@ -236,52 +264,70 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
             )}
           </div>
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-1">
+        <div className={clsx('ml-auto flex shrink-0 items-center gap-1', narrow && 'self-start')}>
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50',
+              narrow ? 'h-6 w-6' : 'h-7 w-7'
+            )}
             onClick={copyHtml}
             title={copied === 'html' ? '已复制 HTML' : '复制 HTML'}
           >
-            {copied === 'html' ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied === 'html' ? <Check className={clsx('text-success', narrow ? 'h-3 w-3' : 'h-3.5 w-3.5')} /> : <Copy className={narrow ? 'h-3 w-3' : 'h-3.5 w-3.5'} />}
           </button>
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50',
+              narrow ? 'h-6 w-6' : 'h-7 w-7'
+            )}
             onClick={() => setShowSource((value) => !value)}
             title={showSource ? '收起源码' : '查看源码'}
           >
-            <Code2 className="h-3.5 w-3.5" />
+            <Code2 className={narrow ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
           </button>
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50',
+              narrow ? 'h-6 w-6' : 'h-7 w-7'
+            )}
             onClick={downloadHtml}
             title="下载 HTML"
           >
-            <Download className="h-3.5 w-3.5" />
+            <Download className={narrow ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
           </button>
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50',
+              narrow ? 'h-6 w-6' : 'h-7 w-7'
+            )}
             onClick={handleEnterFullscreen}
             title="全屏预览"
           >
-            <Maximize2 className="h-3.5 w-3.5" />
+            <Maximize2 className={narrow ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
           </button>
           <button
             type="button"
-            className="inline-flex h-7 w-7 items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50"
+            className={clsx(
+              'inline-flex items-center justify-center rounded-md text-text-tertiary transition-colors hover:bg-background-hover hover:text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/50',
+              narrow ? 'h-6 w-6' : 'h-7 w-7'
+            )}
             onClick={openInBrowser}
             title={isTauri() && block.sourcePath ? '在浏览器打开' : '在新标签页打开'}
           >
-            <ExternalLink className="h-3.5 w-3.5" />
+            <ExternalLink className={narrow ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
           </button>
         </div>
       </header>
 
       <div className="bg-background-base p-2">
-        <div className="h-[420px] min-h-[320px] overflow-hidden rounded-md border border-border bg-white">
+        <div
+          className="overflow-hidden rounded-md border border-border bg-white"
+          style={{ height: frameHeight }}
+        >
           {previewFrame}
         </div>
       </div>
