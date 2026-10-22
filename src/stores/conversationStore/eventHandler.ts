@@ -9,11 +9,19 @@ import { createLogger } from '@/utils/logger'
 import type { AIEvent } from '@/ai-runtime'
 import { isEditTool, extractEditDiff } from '@/utils/diffExtractor'
 import { parseApplyPatch } from '@/utils/patchParser'
+import {
+  extractHtmlCandidate,
+  guessTitle,
+  splitAroundHtml,
+  findLastTextBlockIndex,
+} from '@/utils/htmlCardDetect'
 import type {
   PluginCardBlock,
   ChatMessage,
   TaskBoardItem,
   ToolCallBlock,
+  ContentBlock,
+  ArtifactPreviewBlock,
 } from '@/types'
 import { chatCardRegistry } from '@/plugin-system/chatCardRegistry'
 import type { ConversationStore } from './types'
@@ -25,8 +33,20 @@ import { useCliInfoStore } from '@/stores/cliInfoStore'
 import { dialogStorageService } from '@/services/dialogStorage'
 import { consumeCapUiDispatch } from '@/services/uiDispatchService'
 import { getTracker, resetTracker } from '@/services/streamRateTracker'
+import { useSessionConfig } from '@/stores/sessionConfigStore'
 
 const log = createLogger('EventHandler')
+
+/**
+ * HTML 卡片渲染当前是否开启（会话级开关 @sessionConfigStore.htmlCardRender，默认关）。
+ *
+ * 开启时：session_end 对本轮回复的最后一段 text 做 HTML 检测，命中则替换为
+ * artifact_preview 块（inlineToBody 直出，复用现有 ArtifactPreviewRenderer 渲染）。
+ * 关闭时：检测层完全不参与，行为与既有完全一致。
+ */
+function isHtmlCardRenderEnabled(): boolean {
+  return useSessionConfig.getState().config.htmlCardRender ?? false
+}
 
 /**
  * 记录一个流式增量到速率跟踪器，并按节流返回快照。
@@ -73,6 +93,47 @@ function fallbackRunningToolId(currentMessage: ConversationStore['currentMessage
     if (b.type === 'tool_call' && b.status === 'running') return b.id
   }
   return ''
+}
+
+/**
+ * 将本轮回复最后一段文本中的自包含 HTML 提取为卡片块（MVP-A）。
+ *
+ * 命中时把该 text block 拆为 前文 + artifact_preview + 后文，两侧文字保留；
+ * 未命中返回 null（调用方保持原文本渲染）。
+ *
+ * 返回新的 blocks 数组；无变化时返回 null。
+ */
+function extractHtmlCardBlocks(blocks: ContentBlock[]): ContentBlock[] | null {
+  const lastTextIdx = findLastTextBlockIndex(blocks)
+  if (lastTextIdx < 0) return null
+
+  const textBlock = blocks[lastTextIdx]
+  // text 块保证非空（findLastTextBlockIndex 已过滤），直接取 content
+  const content = (textBlock as Extract<ContentBlock, { type: 'text' }>).content
+  const html = extractHtmlCandidate(content)
+  if (!html) return null
+
+  const { before, after } = splitAroundHtml(content)
+  const newBlocks = blocks.slice(0, lastTextIdx)
+  if (before.trim()) newBlocks.push({ type: 'text', content: before })
+  newBlocks.push({
+    type: 'artifact_preview',
+    previewId: generateUUID(),
+    title: guessTitle(html),
+    contentType: 'html',
+    html,
+    // AI 输出的完整 HTML 是回复的核心产物 → 正文直出，不进补充卡片
+    inlineToBody: true,
+  } satisfies ArtifactPreviewBlock)
+  if (after.trim()) newBlocks.push({ type: 'text', content: after })
+
+  log.info('[HtmlCard] 检测到完整 HTML，替换为卡片', {
+    title: guessTitle(html),
+    htmlLen: html.length,
+    beforeLen: before.length,
+    afterLen: after.length,
+  })
+  return newBlocks
 }
 
 /** 判定是否为任务板工具（TaskCreate/TaskUpdate/TaskList/TaskGet）。
@@ -307,6 +368,16 @@ export function handleAIEvent(
       const rateTracker = getTracker(state.sessionId)
       rateTracker.markEnd(event.receivedAtMs)
       const finalRate = rateTracker.isEmpty() ? null : rateTracker.snapshot(event.receivedAtMs)
+
+      // HTML 卡片渲染（会话级开关）：结束时对本轮回复做 HTML 卡片检测，命中则把
+      // 最后一段 text 替换为 artifact_preview 块（inlineToBody 直出）。必须在
+      // finishMessage() 之前,因为 currentMessage 在 finish 后即归档、blocks 不可再改。
+      if (isHtmlCardRenderEnabled() && state.currentMessage) {
+        const newBlocks = extractHtmlCardBlocks(state.currentMessage.blocks)
+        if (newBlocks) {
+          state.updateCurrentAssistantMessage(newBlocks)
+        }
+      }
 
       state.finishMessage()
       set({

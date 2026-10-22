@@ -57,8 +57,13 @@ export const SessionSummaryCard = memo(function SessionSummaryCard({
   const fileChanges = useMemo(() => extractFileChanges(blocks), [blocks]);
 
   // ③ 预览
+  // 排除正文直出的 HTML 卡片（inlineToBody=true）：它们已在消息流内嵌，
+  // 再进补充卡片会双份渲染。外部插件/mcp 的 artifact_preview / plugin_card 保留。
   const previews = useMemo(
-    () => blocks.filter((b) => b.type === 'artifact_preview' || b.type === 'plugin_card'),
+    () => blocks.filter(
+      (b) => (b.type === 'artifact_preview' || b.type === 'plugin_card')
+        && !(b.type === 'artifact_preview' && b.inlineToBody)
+    ),
     [blocks]
   );
 

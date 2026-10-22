@@ -100,6 +100,17 @@ export interface SessionRuntimeConfig {
   modelProfileId?: string
   /** 供应商选择模式（official / profile；undefined = 跟随全局旧逻辑） */
   profileMode?: ProfileMode
+  /**
+   * AI 输出完整自包含 HTML → 自动渲染为可交互卡片（会话级，默认关）。
+   *
+   * 开启时：AI 完整回复中的自包含 `<html>...</html>`（或 ```html 围栏包裹）在
+   * 流式结束后自动提取为 artifact_preview 卡片（inlineToBody 直出），复用现有
+   * ArtifactPreviewRenderer 渲染；纯文字回复不受影响。
+   * 关闭时：检测层完全不参与，行为与既有完全一致。
+   *
+   * MVP-B 一期为全局会话偏好（persist）；二期可下沉为 per-session metadata。
+   */
+  htmlCardRender?: boolean
 }
 
 /**
@@ -112,6 +123,7 @@ export const DEFAULT_SESSION_CONFIG: Required<SessionRuntimeConfig> = {
   permissionMode: 'bypassPermissions',
   modelProfileId: '',
   profileMode: 'profile', // 默认「指定 Profile」语义，保持旧行为（modelProfileId 为空即官方）
+  htmlCardRender: false, // 默认关：关闭时 HTML 卡片检测完全不参与，零行为变化
 }
 /**
  * 预设 Agent 列表

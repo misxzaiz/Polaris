@@ -184,6 +184,16 @@ export interface ArtifactPreviewBlock {
   contentType: 'html';
   /** 自包含 HTML 源码；用于 Web/Tauri 统一 iframe srcDoc 渲染 */
   html: string;
+  /**
+   * 是否在消息正文直出。默认 false。
+   *
+   * auto 折叠模式下，artifact_preview 默认收进补充卡片（SessionSummaryCard 预览 tab，
+   * 见 blockGrouping AutoModeRenderer）。当 AI 回复的「核心产物」是完整 HTML（如
+   * HTML 卡片检测链路产出）时，设此字段为 true，让卡片直接内嵌消息流，而非收进
+   * 折叠卡。仅前端消费：JSONL 无运行时校验，存普通布尔；外部插件/mcp 产出的
+   * artifact_preview 缺省 undefined，行为完全不变。
+   */
+  inlineToBody?: boolean;
   /** 后端保存的源文件路径（可选，仅作引用展示） */
   sourcePath?: string;
   /** 预览创建时间（ISO 8601） */

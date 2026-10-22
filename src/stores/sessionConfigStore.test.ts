@@ -44,7 +44,19 @@ describe('normalizeSessionConfig', () => {
       modelProfileId: 'profile_abc',
       // P2: 旧持久化数据无 profileMode → 兜底默认 'profile'（modelProfileId 为空即官方，语义与旧行为一致）
       profileMode: 'profile',
+      // HTML 卡片渲染：默认关（缺省即不参与，零行为变化）
+      htmlCardRender: false,
     })
+  })
+
+  it('htmlCardRender 缺省时为 false（默认关）', () => {
+    const result = normalizeSessionConfig({})
+    expect(result.htmlCardRender).toBe(false)
+  })
+
+  it('htmlCardRender 显式开启被保留', () => {
+    const result = normalizeSessionConfig({ htmlCardRender: true })
+    expect(result.htmlCardRender).toBe(true)
   })
 
   it('历史 group 值归一化为 profile（分组路由已移除）', () => {

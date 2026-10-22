@@ -521,8 +521,12 @@ const AutoModeRenderer = memo(function AutoModeRenderer({
         } else {
           foldedBlocks.push(block);
         }
+      } else if (block.type === 'artifact_preview' && block.inlineToBody) {
+        // AI 输出自动检测出的完整 HTML 卡片：核心产物 → 正文直出，
+        // 不进补充卡片（inlineToBody 由 HTML 卡片检测链路设置，见 eventHandler）。
+        resultBlocks.push(block);
       } else {
-        // artifact_preview / plugin_card：不再于消息正文直出，
+        // artifact_preview（外部插件/mcp） / plugin_card：不再于消息正文直出，
         // 统一由补充卡片（SessionSummaryCard）"预览" tab 承载，避免双份。
         foldedBlocks.push(block);
       }
