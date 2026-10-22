@@ -152,11 +152,21 @@ function isInteractiveTool(toolName: string): boolean {
   return n.includes('ask_user_question') || n.includes('askuserquestion') || n === 'form' || n.includes('__form')
 }
 
-/** 判定是否为 bus_dispatch 工具（SimpleAI 经 MCP 挂载 → `mcp__polaris-bus__bus_dispatch`；
- *  兼容裸名防引擎变体漂移）。命中后检查 cap.ui 消费，避免误作普通工具块。 */
+/** 判定是否为总线派发工具。
+ *
+ * 两个 MCP server 都能让 AI 调 cap.ui.*：
+ * - `polaris-bus` 暴露 `bus_dispatch`（工具名 `mcp__polaris-bus__bus_dispatch`），
+ *   走本进程总线，白名单含 cap.ui.theme / cap.ui.chat / cap.ui.input。
+ * - `polaris-dispatch` 暴露 `cap_dispatch`（工具名 `mcp__polaris-dispatch__cap_dispatch`），
+ *   走主进程总线，可触达全部 cap.*。
+ *
+ * 两者参数形状一致 `{ target, payload }`，前端统一按 cap.ui.* 消费。
+ * 历史只认 bus_dispatch 导致 cap_dispatch 路径双重断链：能调到 cap.ui.theme
+ * 的工具名不被识别，被识别的工具又调不到 cap.ui.theme（bus 侧未注册）。
+ * 兼容裸名防引擎变体漂移。 */
 function isBusDispatchTool(toolName: string): boolean {
   const n = toolName.toLowerCase()
-  return n.endsWith('bus_dispatch')
+  return n.endsWith('bus_dispatch') || n.endsWith('cap_dispatch')
 }
 
 /** 从 TaskCreate 输入解析任务项(无 id,流式路径延迟到 tool_call_end 用 output 回传 taskId) */

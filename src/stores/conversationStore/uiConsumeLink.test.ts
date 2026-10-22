@@ -109,4 +109,50 @@ describe('cap.ui 经 bus_dispatch tool_call_start 消费', () => {
     const patch = updateConfigPatchMock.mock.calls[0]?.[0]
     expect(patch?.chatDisplay?.fontFamily).toBe('serif')
   })
+
+  it('cap_dispatch（mcp__polaris-dispatch 前缀）携带 cap.ui.chat patch → 同样被消费', () => {
+    // cap_dispatch 走主进程总线，可触达全部 cap.*；bus 侧未注册 cap.ui.theme，
+    // 因此 cap_dispatch 是 AI 侧唯一能真正调到 cap.ui.* 的通道。
+    // 历史只认 bus_dispatch 导致该路径静默失效——本用例守护修复。
+    const store = createConversationStore('session-1', createDeps())
+    store.getState().handleAIEvent({
+      type: 'tool_call_start',
+      sessionId: 'backend-session',
+      callId: 'item_ui_5',
+      tool: 'mcp__polaris-dispatch__cap_dispatch',
+      args: {
+        target: 'cap.ui.chat',
+        payload: { action: 'patch', config: { fontSize: 20 } },
+      },
+    } as AIEvent)
+    expect(updateConfigPatchMock).toHaveBeenCalledTimes(1)
+    expect(updateConfigPatchMock.mock.calls[0][0].chatDisplay.fontSize).toBe(20)
+  })
+
+  it('裸名 cap_dispatch 同样被识别（防引擎变体漂移）', () => {
+    const store = createConversationStore('session-1', createDeps())
+    store.getState().handleAIEvent({
+      type: 'tool_call_start',
+      sessionId: 'backend-session',
+      callId: 'item_ui_6',
+      tool: 'cap_dispatch',
+      args: {
+        target: 'cap.ui.chat',
+        payload: { action: 'patch', config: { lineHeight: 1.6 } },
+      },
+    } as AIEvent)
+    expect(updateConfigPatchMock.mock.calls[0][0].chatDisplay.lineHeight).toBe(1.6)
+  })
+
+  it('cap_dispatch 携带非 cap.ui target（cap.todo）不触发副作用', () => {
+    const store = createConversationStore('session-1', createDeps())
+    store.getState().handleAIEvent({
+      type: 'tool_call_start',
+      sessionId: 'backend-session',
+      callId: 'item_ui_7',
+      tool: 'mcp__polaris-dispatch__cap_dispatch',
+      args: { target: 'cap.todo', payload: { action: 'list' } },
+    } as AIEvent)
+    expect(updateConfigPatchMock).not.toHaveBeenCalled()
+  })
 })
