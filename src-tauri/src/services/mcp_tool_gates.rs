@@ -64,9 +64,10 @@ mod tests {
 
     #[test]
     fn default_all_open() {
-        // 空全局：任何插件工具都不挡
-        let _ = fresh_gates().lock().unwrap();
+        // 空全局：任何插件工具都不挡（持锁至断言结束，防止编译器立即释放该同步锁）
+        let _guard = fresh_gates().lock();
         assert!(!is_tool_blocked("mimo-tts", "mimo_tts_synthesize"));
+        drop(_guard.unwrap());
     }
 
     #[test]

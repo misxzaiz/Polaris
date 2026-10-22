@@ -355,6 +355,7 @@ fn archive_polaris_managed_claude_settings() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     fn tmp_dir(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!(
@@ -403,7 +404,9 @@ mod tests {
             .read_dir()
             .unwrap()
             .flatten()
-            .any(|e| e.file_name().to_string_lossy().contains("incoming")));
+            .any(|e: std::fs::DirEntry| {
+                e.file_name().to_string_lossy().contains("incoming")
+            }));
         assert_table_integrity(&dst);
         assert!(src.exists(), "源必须保留（best-effort 语义）");
 
@@ -481,7 +484,7 @@ mod tests {
         assert!(data_root.join("requirements").join("workspaces.json").exists());
         assert!(
             !legacy.join("stores").join("requirement.db").exists(),
-            "源应改为 .migrated-{ts} 归档"
+            "源应改为 .migrated-<ts> 归档"
         );
         assert_table_integrity(&data_root.join("stores").join("requirement.db"));
 
