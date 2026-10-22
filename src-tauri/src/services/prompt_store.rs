@@ -295,11 +295,3 @@ impl PromptStore {
         self.save()
     }
 }
-
-impl Default for PromptStore {
-    fn default() -> Self {
-        let config = PromptConfig::with_defaults();
-        let config_path = PathBuf::from(".polaris/prompt_config.json");
-        Self { config, config_path }
-    }
-}

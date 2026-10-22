@@ -65,24 +65,12 @@ async function mergeBackendMessages(
   return normalizeRecoveredMessages([...archived, ...extra])
 }
 
-const SESSION_HISTORY_KEY = 'event_chat_session_history'
+// （event_chat_session_history 旧 localStorage 历史链路已随 'local' source 一并摘除：
+//  写入方早已废弃，只剩死代码——见 spec F5）
 
 // ============================================================================
 // 类型定义
 // ============================================================================
-
-/** 历史会话记录（localStorage 存储） */
-export interface HistoryEntry {
-  id: string
-  title: string
-  timestamp: string
-  messageCount: number
-  engineId: EngineId
-  data: {
-    messages: ChatMessage[]
-    archivedMessages: ChatMessage[]
-  }
-}
 
 /** 统一的历史条目 */
 export interface UnifiedHistoryItem {
@@ -91,7 +79,7 @@ export interface UnifiedHistoryItem {
   timestamp: string
   messageCount: number
   engineId: EngineId
-  source: 'self' | 'local' | 'claude-code-native' | 'plugin-native'
+  source: 'self' | 'claude-code-native' | 'plugin-native'
   fileSize?: number
   inputTokens?: number
   outputTokens?: number
@@ -518,7 +506,7 @@ export const historyService = {
 
   /**
    * 加载某条历史的完整消息（统一入口，供恢复 / Fork 复用）
-   * 优先级：自有 JSONL（无损，尾部优先分页）→ localStorage → 引擎原生
+   * 优先级：自有 JSONL（无损，尾部优先分页）→ 引擎原生
    */
   async loadMessagesForItem(
     sessionId: string,
@@ -711,14 +699,6 @@ export const historyService = {
         return
       }
 
-      if (source === 'local') {
-        const historyJson = localStorage.getItem(SESSION_HISTORY_KEY)
-        const history: HistoryEntry[] = historyJson ? JSON.parse(historyJson) : []
-        const filteredHistory = history.filter((h) => h.id !== sessionId)
-        localStorage.setItem(SESSION_HISTORY_KEY, JSON.stringify(filteredHistory))
-        return
-      }
-
       // 引擎原生
       await aiHistoryDispatch({
         action: 'delete_session',
@@ -729,16 +709,6 @@ export const historyService = {
       })
     } catch (e) {
       log.error('删除历史会话失败', e instanceof Error ? e : new Error(String(e)))
-    }
-  },
-
-  /** 清空 localStorage 历史（自有 JSONL 文件请逐个删除） */
-  clearHistory(): void {
-    try {
-      localStorage.removeItem(SESSION_HISTORY_KEY)
-      log.info('历史已清空')
-    } catch (e) {
-      log.error('清空历史失败', e instanceof Error ? e : new Error(String(e)))
     }
   },
 }
