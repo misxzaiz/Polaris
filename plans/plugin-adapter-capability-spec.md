@@ -84,8 +84,8 @@ discover 动作（宿主编排，capability 层）:
 | # | 切片 | 内容 | 验收 |
 |---|---|---|---|
 | S1（已实施 ✅ 2026-10-22） | 契约字段 + 采集 + 只读动作 | Rust：`AdapterContribution` 模型 + `adapter_discovery.rs` 纯采集模块（`collect_adapters` + fake 注入单测）+ `adapters_list` 动作；TS：`source.kind+="adapter"` + `adapterId` 透传 + vitest | `cargo check` 两向 / `pnpm typecheck` / vitest（本机可执行） |
-| S2 | 发现循环合并 | `merge_adapter`（one-shot 调用+缓存+熔断+admit_translated）+ `discover_adapter` 动作；依赖 1.1 schema 单源（阶段 1.4 拆 `validate_manifest_value`） | 容错三态单测（fake client）；无适配器零扰动回归 |
-| S3 | ZCode 内置适配器插件（首个消费者） | 数据驱动映射表实现 spec II §2.2 全表 + fixture golden 翻译测试 + 嗅探指纹 | 装 UI_PLUGIN.md 示例插件 e2e；spec II §2.3 验收 |
+| S2（已实施 ✅ 2026-10-22，单测编译通过、本机执行受 DLL 限制标注） | 发现循环合并 | `merge_adapter`（one-shot `McpOnceAdapterTransport` 复用 SimpleAI McpClient + 签名缓存 adapter-cache + 连续 3 次失败熔断 + `admit_translated` 准入链：unknown-field/designed 字段/idPrefix/冲突不覆盖）+ `discover_adapter {adapterId, rootPath}` 强制刷新动作 + `SourceKind::Adapter` 变体（安装目的地=用户级目录，带注释）+ `errors[].stale` 字段 | fake 注入单测 8 个（编译全过、执行被 `STATUS_ENTRYPOINT_NOT_FOUND` DLL 限制阻断）；`cargo check` ✅ / web 两向 ✅ / test profile ✅；discover 快路径零扰动（无适配器=原同步路径） |
+| S3（部分 ✅） | ZCode 内置/参考适配器插件 | `Polaris-plugin/plugins/zcode-adapter`（discover/translate 工具 + fixture + smoke.mjs 14 断言全绿 + `contributes.adapters` 声明）；宿主侧冒烟（装 DB 装运行）待 Polaris UI 可用 | smoke.mjs ✅；待宿主 e2e |
 | S4 | 交互层 | 确认页解释流 + adapters_list 健康显示 + 高级锁 | 确认页 e2e + AI 路径摘要验证 |
 | S5 | 外部通道 | 表达力表 ②/④ 依据阶段 2/3 门控逐步开放 | 逐项评审 |
 

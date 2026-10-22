@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   applyPluginUpdate,
   checkPluginUpdate,
+  discoverInstalledPlugins,
   installPluginPackage,
   installRemotePlugin,
   normalizeDiscoveredPlugin,
@@ -116,6 +117,45 @@ describe('pluginDiscoveryService', () => {
 
     expect(result.errors).toEqual([])
     expect(result.plugin?.source).toEqual({ kind: 'adapter', adapterId: 'adapter.zcode' })
+  })
+
+  it('passes through adapter staleness markers from backend discovery errors (S2 mirror)', async () => {
+    invokeMock.mockResolvedValueOnce({
+      msgId: 't',
+      ok: true,
+      result: {
+        plugins: [
+          {
+            id: 'zcode.stale-panel',
+            name: 'Stale Panel',
+            version: '0.1.0',
+            source: { kind: 'adapter', adapterId: 'adapter.zcode' },
+            installPath: 'C:\\plugins\\stale-root',
+          },
+        ],
+        errors: [
+          {
+            path: 'adapter:adapter.zcode:C:\\roots\\zcode',
+            error: '适配器连续 3 次失败已熔断，跳过本轮调用（缓存产物不可用）',
+            stale: true,
+          },
+        ],
+      },
+      error: null,
+      trace: '',
+    })
+
+    const result = await discoverInstalledPlugins()
+
+    expect(result.plugins.map((plugin) => plugin.id)).toEqual(['zcode.stale-panel'])
+    // 平滑降级语义：stale 标记必须原样透传，前端可据此区分实时失败与缓存回退
+    expect(result.errors).toEqual([
+      {
+        path: 'adapter:adapter.zcode:C:\\roots\\zcode',
+        error: '适配器连续 3 次失败已熔断，跳过本轮调用（缓存产物不可用）',
+        stale: true,
+      },
+    ])
   })
 
   it('rejects unknown source kinds (silent-drop prevention, phase 1 P1-8)', () => {

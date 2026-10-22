@@ -29,6 +29,8 @@ const log = createLogger('PluginDiscovery')
 export interface PluginDiscoveryIssue {
   path: string
   error: string
+  /** 适配器合并失败标记：true 表示回退到 stale 缓存（非实时，后端 merge_adapter 容错三态） */
+  stale?: boolean
 }
 
 interface BackendPluginDiscoveryResult {
