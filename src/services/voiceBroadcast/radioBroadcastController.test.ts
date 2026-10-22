@@ -601,4 +601,194 @@ describe('radioBroadcastController', () => {
     expect(mockLibraryAdd).toHaveBeenCalled()
     expect(takenBeforeStop).toBe(true)
   })
+
+  // ── P2 体验层（radio-broadcast-p2-experience-spec）──
+
+  /** 记录 prompt 的会话 store stub（换台/插话断言用） */
+  function makeRecordingStore() {
+    const prompts: string[] = []
+    const sendMessage = vi.fn().mockImplementation(async (p: string) => {
+      prompts.push(p)
+      return true
+    })
+    return { prompts, sendMessage, getState: () => ({ sendMessage }) }
+  }
+
+  /**
+   * 可控 waitStreamEnd 序列：显式 promises 依次消费，之后的调用一律返回
+   * 「随 signal abort reject」的挂起——避免默认即时 resolve 造成
+   * 段收尾无限续请求（微任务空转饿死宏任务 → OOM）。
+   */
+  function makeWaitSequence(initialPromises: Array<Promise<void>>) {
+    const calls = [...initialPromises]
+    mockWaitStreamEnd.mockImplementation((_sid: string, opts?: { signal?: AbortSignal }) => {
+      const next = calls.length > 0
+        ? (calls.shift() as Promise<void>)
+        : new Promise<void>((_, rej) => {
+            opts?.signal?.addEventListener('abort', () => rej(new Error('aborted')))
+          })
+      return next
+    })
+  }
+
+  /** 微任务排水：等段收尾链走完（无空转时安全） */
+  async function drainMicrotasks(): Promise<void> {
+    for (let i = 0; i < 6; i++) await Promise.resolve()
+  }
+
+  it('P2 换台：在途段收尾后才发岔题指令（旧话题最多多播一段），方向即时更新', async () => {
+    const store = makeRecordingStore()
+    mockStores.set('sess-1', store)
+    // 首段生成挂起（模拟 AI 正在写老方向内容）；后续段一律挂起直到 abort
+    let release!: () => void
+    makeWaitSequence([new Promise<void>((r) => { release = r })])
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    expect(store.prompts).toHaveLength(1) // 首段已发出
+    fireStreamingStart() // kernel running（sawStreaming 置位，模拟真实生成中）
+
+    radioBroadcastController.switchTopic({ kind: 'news', text: '今日要闻' })
+    // 方向即时更新 + 标题换台
+    expect(radioBroadcastController.getSnapshot().direction).toEqual({ kind: 'news', text: '今日要闻' })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    expect(player.setOptions).toHaveBeenCalledWith(expect.objectContaining({ mediaTitle: '新闻 · 今日要闻' }))
+    // 首段在途期间：岔题指令未发（无新 sendMessage）
+    expect(store.prompts).toHaveLength(1)
+
+    // 首段收尾 → 衔接点自动以岔题 prompt 发起新段（复用段生成唯一路径）
+    // MockPlayer 是单例：复位水位，避免上一用例残留 queueLength 堵住续段
+    player.queueLength = 0
+    player.hasPendingSynth = false
+    release()
+    await vi.waitFor(() => {
+      expect(store.prompts.length).toBeGreaterThan(1)
+    })
+    expect(store.prompts[1]).toContain('用户换台了')
+    expect(store.prompts[1]).toContain('今日要闻')
+    expect(store.prompts[1]).not.toContain('小王子')
+  })
+
+  it('P2 换台：无段在途 → 立即发岔题指令并请求生成', async () => {
+    const store = makeRecordingStore()
+    mockStores.set('sess-1', store)
+    // 首段挂起 → 释放；垫水位堵住段收尾空转，制造「无段在途」稳定态
+    let release!: () => void
+    makeWaitSequence([new Promise<void>((r) => { release = r })])
+    await radioBroadcastController.start({
+      direction: { kind: 'study', text: '英语单词' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    player.queueLength = 3
+    release()
+    await drainMicrotasks()
+    expect(store.prompts).toHaveLength(1)
+
+    radioBroadcastController.switchTopic({ kind: 'tech', text: '量子计算' })
+    await vi.waitFor(() => {
+      expect(store.prompts.length).toBe(2)
+    })
+    const lastPrompt = store.prompts[1]
+    expect(lastPrompt).toContain('用户换台了')
+    expect(lastPrompt).toContain('量子计算')
+  })
+
+  it('P2 插话（无段在途）：立即响应——暂停播报、回复入队恢复播放且不计 round', async () => {
+    const store = makeRecordingStore()
+    mockStores.set('sess-1', store)
+    // 首段挂起 → 垫水位 → 释放，得到「无段在途」稳定态
+    let release!: () => void
+    makeWaitSequence([new Promise<void>((r) => { release = r })])
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    player.queueLength = 3
+    release()
+    await drainMicrotasks()
+    expect(store.prompts).toHaveLength(1)
+
+    radioBroadcastController.interject('狐狸为什么重要？')
+    await vi.waitFor(() => {
+      expect(store.prompts.length).toBe(2)
+    })
+    // 半双工：请求发出即暂停
+    expect(player.pause).toHaveBeenCalled()
+    const lastPrompt = store.prompts[1]
+    expect(lastPrompt).toContain('听众插话')
+    expect(lastPrompt).toContain('狐狸为什么重要？')
+
+    // 回复下降沿 → 入队 + 恢复播放；round（segmentIndex）不因插话回复增长
+    fireSegmentEnd()
+    await vi.waitFor(() => {
+      expect(player.enqueueSegment).toHaveBeenCalled()
+    })
+    expect(player.resume).toHaveBeenCalled()
+    expect((radioBroadcastController as unknown as { segmentIndex: number }).segmentIndex).toBe(0)
+  })
+
+  it('P2 插话（段在途）：暂存并在收尾后响应，不立即暂停', async () => {
+    const store = makeRecordingStore()
+    mockStores.set('sess-1', store)
+    let release!: () => void
+    makeWaitSequence([new Promise<void>((r) => { release = r })])
+    await radioBroadcastController.start({
+      direction: { kind: 'news', text: '头条' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    // MockPlayer 是单例：显式复位水位，避免上一用例的 queueLength 残留堵住段收尾续请求
+    player.queueLength = 0
+    player.hasPendingSynth = false
+    radioBroadcastController.interject('关注一下股市')
+    // 在途期间：仅暂存（无新请求、不暂停）
+    expect(store.prompts).toHaveLength(1)
+    expect(player.pause).not.toHaveBeenCalled()
+    release()
+    await vi.waitFor(() => {
+      expect(store.prompts.length).toBe(2)
+    })
+    expect(store.prompts[1]).toContain('听众插话')
+    expect(store.prompts[1]).toContain('股市')
+    expect(player.pause).toHaveBeenCalled() // 发起插话请求时才进入半双工
+  })
+
+  it('P2 埋点与续播快照：start/stop 更新 metrics + radioLastSession', async () => {
+    localStorage.clear()
+    await radioBroadcastController.start({
+      direction: { kind: 'study', text: '英语' },
+      voice: '冰糖',
+    })
+    await radioBroadcastController.stop()
+    const metrics = JSON.parse(localStorage.getItem('polaris.radioMetrics') ?? '{}')
+    expect(metrics.sessionCount).toBe(1)
+    const last = JSON.parse(localStorage.getItem('polaris.radioLastSession') ?? '{}')
+    expect(last.direction).toEqual({ kind: 'study', text: '英语' })
+    expect(last.voice).toBe('冰糖')
+  })
+
+  it('P2 埋点：换台/插话/回听计数', async () => {
+    localStorage.clear()
+    const store = makeRecordingStore()
+    mockStores.set('sess-1', store)
+    await radioBroadcastController.start({
+      direction: { kind: 'story', text: '小王子' },
+      voice: '冰糖',
+    })
+    const player = (radioBroadcastController as unknown as { player: MockPlayer }).player
+    player.queueLength = 2
+    await new Promise((r) => setTimeout(r, 0))
+    radioBroadcastController.switchTopic({ kind: 'news', text: '头条' })
+    radioBroadcastController.interject('插一句')
+    await vi.waitFor(() => {
+      expect(mockWaitStreamEnd.mock.calls.length).toBeGreaterThanOrEqual(2)
+    })
+    await radioBroadcastController.stop()
+    const metrics = JSON.parse(localStorage.getItem('polaris.radioMetrics') ?? '{}')
+    expect(metrics.switchCount).toBe(1)
+    expect(metrics.interjectCount).toBe(1)
+  })
 })

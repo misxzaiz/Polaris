@@ -307,6 +307,10 @@
     "sleep30": "30 分钟后停止",
     "sleepAfterSegment": "播完本段",
     "sleepCancel": "取消定时",
+    "switchTopic": "立即换台（不停播）",
+    "interject": "插话",
+    "interjectPlaceholder": "插话：说点什么，AI 会回应后继续播报…",
+    "resumeLast": "继续上次畅听",
     "library": {
       "loading": "加载中…",
       "empty": "暂无内容。畅听播报中的内容会自动存入这里，之后随时回听。",

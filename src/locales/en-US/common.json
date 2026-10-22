@@ -306,6 +306,10 @@
     "sleep30": "Stop in 30 minutes",
     "sleepAfterSegment": "Finish this segment",
     "sleepCancel": "Cancel timer",
+    "switchTopic": "Switch topic (keeps playing)",
+    "interject": "Barge-in",
+    "interjectPlaceholder": "Barge-in: say something and the AI will reply then keep talking…",
+    "resumeLast": "Resume last listening",
     "library": {
       "loading": "Loading…",
       "empty": "Nothing here yet. Broadcast content is saved automatically while listening, so you can replay it anytime.",

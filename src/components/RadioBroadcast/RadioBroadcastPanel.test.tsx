@@ -16,7 +16,7 @@
  * - useToastStore（记录调用）
  * - react-i18next 已在 src/test/setup.ts 全局 mock，t() 返回 key
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { RadioBroadcastPanel } from './RadioBroadcastPanel'
 import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
@@ -30,6 +30,8 @@ const mockResume = vi.fn<() => void>()
 const mockSetRate = vi.fn<(rate: number) => void>()
 const mockSleep = vi.fn<(opts: { minutes?: number; afterSegment?: boolean } | null) => void>()
 const mockPlayLibraryItem = vi.fn<(item: { id: string }) => Promise<boolean>>()
+const mockSwitchTopic = vi.fn<(direction: { kind: string; text: string }) => void>()
+const mockInterject = vi.fn<(text: string) => void>()
 
 let mockState: {
   status: RadioBroadcastStatus
@@ -74,6 +76,8 @@ vi.mock('@/hooks/useRadioBroadcast', () => ({
     setRate: mockSetRate,
     sleep: mockSleep,
     playLibraryItem: mockPlayLibraryItem,
+    switchTopic: mockSwitchTopic,
+    interject: mockInterject,
     transcript: mockState.transcript,
     sleepUntil: mockState.sleepUntil,
     sleepAfterSegment: mockState.sleepAfterSegment,
@@ -187,6 +191,10 @@ function makeState(overrides: Partial<typeof mockState> = {}): typeof mockState 
   }
 }
 
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 beforeEach(() => {
   mockState = makeState()
   mockStart.mockReset()
@@ -457,5 +465,47 @@ describe('RadioBroadcastPanel — P0 快赢', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'radioBroadcast.tab.voices' }))
     const saveBtn = screen.getAllByText('radioBroadcast.voices.save')[0]
     expect((saveBtn as HTMLButtonElement).disabled).toBe(true)
+  })
+})
+
+describe('RadioBroadcastPanel — P2 体验层（换台/插话/续播）', () => {
+  it('P2 换台：播报中配置视图显示「立即换台」，点击转发 switchTopic', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now() })
+    render(<RadioBroadcastPanel />)
+    // 播报中 → 切到配置视图（查看配置入口）
+    fireEvent.click(screen.getByText('radioBroadcast.configView'))
+    fireEvent.click(screen.getByLabelText('radioBroadcast.switchTopic'))
+    expect(mockSwitchTopic).toHaveBeenCalledWith(expect.objectContaining({ text: '经济学基础' }))
+  })
+
+  it('P2 插话：播报视图输入 + 提交转发 interject，输入框清空', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now() })
+    render(<RadioBroadcastPanel />)
+    const input = screen.getByRole('textbox', { name: 'radioBroadcast.interject' })
+    fireEvent.change(input, { target: { value: '狐狸为什么重要？' } })
+    fireEvent.click(screen.getByRole('button', { name: 'radioBroadcast.interject' }))
+    expect(mockInterject).toHaveBeenCalledWith('狐狸为什么重要？')
+    expect((input as HTMLInputElement).value).toBe('')
+  })
+
+  it('P2 插话：空输入按钮禁用', () => {
+    mockState = makeState({ status: 'playing', startedAt: Date.now() })
+    render(<RadioBroadcastPanel />)
+    const sendBtn = screen.getByRole('button', { name: 'radioBroadcast.interject' }) as HTMLButtonElement
+    expect(sendBtn.disabled).toBe(true)
+  })
+
+  it('P2 续播：idle 态显示「继续上次畅听」，点击复用上次参数 start', () => {
+    localStorage.setItem('polaris.radioLastSession', JSON.stringify({
+      direction: { kind: 'study', text: '英语单词' },
+      voice: '茉莉',
+      ts: 1,
+    }))
+    render(<RadioBroadcastPanel />)
+    fireEvent.click(screen.getByLabelText('radioBroadcast.resumeLast'))
+    expect(mockStart).toHaveBeenCalledTimes(1)
+    const opts = mockStart.mock.calls[0][0]
+    expect(opts.direction).toEqual({ kind: 'study', text: '英语单词' })
+    expect(opts.voice).toBe('茉莉')
   })
 })

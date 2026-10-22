@@ -102,3 +102,21 @@ export function promptForDirection(key: string, direction: string): string {
   // 避免依赖 lib 版本 replaceAll（项目 tsconfig 非 es2021）
   return preset.split('{direction}').join(direction)
 }
+
+// ── P2 体验层（radio-broadcast-p2-experience-spec）──
+
+/**
+ * 换台岔题指令模板：同会话切换方向，不停声、不重建会话。
+ * {direction} 注入新方向文本；旧话题摘要不再带出（切换由控制器保证）。
+ */
+export function promptForSwitchTopic(direction: string): string {
+  return `用户换台了：立即切换主题，开始播报新方向「${direction}」。不要总结、告别或提及旧话题，直接从新内容第一句讲起（150~350 字）。`
+}
+
+/**
+ * 听众插话提示模板：{text} = 插话内容。
+ * 回复要求短（一两句）+ 自然接续当前话题，保证插话后人声连续不断档。
+ */
+export function promptForInterject(text: string): string {
+  return `这是听众插话：「${text}」。请先用一两句话直接回应插话，然后自然接续当前话题的播报。`
+}

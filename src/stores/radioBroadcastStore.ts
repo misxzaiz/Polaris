@@ -12,6 +12,7 @@ import { radioBroadcastController } from '@/services/voiceBroadcast/radioBroadca
 import type { RadioBroadcastControllerOptions } from '@/services/voiceBroadcast/radioBroadcastController'
 import type {
   RadioBroadcastSnapshot,
+  RadioBroadcastDirection,
 } from '@/services/voiceBroadcast/types'
 import type { LibraryItem } from '@/services/voiceBroadcast/voiceService'
 
@@ -30,6 +31,10 @@ export interface RadioBroadcastStoreState extends RadioBroadcastSnapshot {
   sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
   /** 回听内容库单集（P1：无 AI 会话直插已合成句子） */
   playLibraryItem: (item: LibraryItem) => Promise<boolean>
+  /** 换台（P2：播报中切换方向，不停声） */
+  switchTopic: (direction: RadioBroadcastDirection) => void
+  /** 插话（P2：半双工，回复入队插播） */
+  interject: (text: string) => void
 }
 
 const EMPTY_SNAPSHOT: RadioBroadcastSnapshot = {
@@ -73,6 +78,14 @@ export const useRadioBroadcastStore = create<RadioBroadcastStoreState>()(() => (
   /** 回听内容库单集（P1） */
   playLibraryItem: (item) => {
     return radioBroadcastController.playLibraryItem(item)
+  },
+  /** 换台（P2） */
+  switchTopic: (direction) => {
+    radioBroadcastController.switchTopic(direction)
+  },
+  /** 插话（P2） */
+  interject: (text) => {
+    radioBroadcastController.interject(text)
   },
 }))
 

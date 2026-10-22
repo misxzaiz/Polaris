@@ -33,6 +33,8 @@ import {
   Trash2,
   Sparkles,
   Upload,
+  RotateCcw,
+  MessageCircle,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useRadioBroadcast } from '@/hooks/useRadioBroadcast'
@@ -130,6 +132,48 @@ export function RadioBroadcastPanel() {
   const [tab, setTab] = useState<'listen' | 'library' | 'voices'>('listen')
   /** 音色列表版本号：音色库内增删后 ++，触发上方音色下拉重拉 */
   const [voiceListVersion, setVoiceListVersion] = useState(0)
+
+  // 插话输入（P2-2）：播报视图内
+  const [interjectText, setInterjectText] = useState('')
+  const commitInterject = () => {
+    if (!interjectText.trim()) return
+    rb.interject(interjectText)
+    setInterjectText('')
+  }
+
+  // 「继续上次畅听」（P2-3）：idle 态读取上次快照
+  interface LastSession {
+    direction: { kind: DirectionKind; text: string }
+    voice: VoiceId
+    ts: number
+  }
+  const [lastSession, setLastSession] = useState<LastSession | null>(null)
+  const isIdle = rb.status === 'idle'
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem('polaris.radioLastSession')
+      const parsed = raw ? (JSON.parse(raw) as LastSession) : null
+      if (parsed?.direction?.text) setLastSession(parsed)
+    } catch { /* 静默 */ }
+  }, [isIdle])
+  const resumeLastSession = () => {
+    if (!lastSession) return
+    const official = providerConfig.profileMode === 'official'
+    setKind(lastSession.direction.kind)
+    setDirectionText(lastSession.direction.text)
+    setVoice(lastSession.voice)
+    void rb.start({
+      direction: lastSession.direction,
+      voice: lastSession.voice,
+      volume,
+      base64Mode,
+      voiceStopEnabled,
+      rate: speed,
+      engineId: engineId !== defaultEngineId ? engineId : undefined,
+      modelProfileId: official ? OFFICIAL_API_PROFILE : providerConfig.modelProfileId || undefined,
+      model: providerConfig.model || undefined,
+    })
+  }
 
   // 倍速（P0-2）：prefs 持久化，播报中即时生效
   const speed = prefs.speed ?? 1
@@ -409,6 +453,30 @@ export function RadioBroadcastPanel() {
           {/* 进度：累计时长 + 句/段 + 上限剩余 */}
           <ProgressInfo startedAt={rb.startedAt} segmentCount={rb.segmentCount} segmentIndex={rb.segment?.index} maxRounds={rb.maxRounds} maxSeconds={rb.maxSeconds} />
 
+          {/* 插话（P2-2）：半双工——提交后暂停播报，AI 回复到达后自动续播 */}
+          <div className="flex items-center gap-1.5">
+            <input
+              value={interjectText}
+              onChange={(e) => setInterjectText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitInterject()
+              }}
+              placeholder={t('radioBroadcast.interjectPlaceholder', { defaultValue: '插话：说点什么，AI 会回应后继续播报…' })}
+              aria-label={t('radioBroadcast.interject', { defaultValue: '插话' })}
+              className="min-w-0 flex-1 rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[12px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[rgb(var(--c-accent)/0.6)]"
+            />
+            <button
+              type="button"
+              onClick={commitInterject}
+              disabled={!interjectText.trim()}
+              aria-label={t('radioBroadcast.interject', { defaultValue: '插话' })}
+              className="flex shrink-0 items-center gap-1 rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[11.5px] text-text-secondary transition-colors hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <MessageCircle size={12} />
+              {t('radioBroadcast.interject', { defaultValue: '插话' })}
+            </button>
+          </div>
+
           {/* 倍速 + 睡眠定时快捷条（P0-2 / P0-3） */}
           <div className="flex flex-wrap items-center gap-1.5">
             <button
@@ -540,6 +608,18 @@ export function RadioBroadcastPanel() {
               aria-label={t('radioBroadcast.directionInput', { defaultValue: '播报内容' })}
               className="mt-2 w-full rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-[13px] text-text-primary outline-none placeholder:text-text-tertiary focus:border-[rgb(var(--c-accent)/0.6)]"
             />
+            {/* 换台（P2-1）：播报中显式触发——同会话岔题，不停声 */}
+            {rb.isActive && (
+              <button
+                type="button"
+                onClick={() => rb.switchTopic({ kind, text: directionText.trim() || DIRECTION_LABELS[kind] })}
+                aria-label={t('radioBroadcast.switchTopic', { defaultValue: '立即换台' })}
+                className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-md border border-[rgb(var(--c-accent)/0.4)] bg-[rgb(var(--c-accent)/0.12)] px-2.5 py-1.5 text-[12px] text-[rgb(var(--c-accent))] transition-colors hover:bg-[rgb(var(--c-accent)/0.2)]"
+              >
+                <Radio size={12} />
+                {t('radioBroadcast.switchTopic', { defaultValue: '立即换台（不停播）' })}
+              </button>
+            )}
           </div>
 
           {/* ② 声音 */}
@@ -745,6 +825,22 @@ export function RadioBroadcastPanel() {
             )}
           </button>
         </div>
+      )}
+
+      {/* 继续上次畅听（P2-3）：idle 且有上次快照时展示快捷恢复 */}
+      {tab === 'listen' && rb.status === 'idle' && lastSession && (
+        <button
+          type="button"
+          onClick={resumeLastSession}
+          aria-label={t('radioBroadcast.resumeLast', { defaultValue: '继续上次畅听' })}
+          className="mb-3 flex w-full items-center gap-2 self-start rounded-md border border-border bg-[rgb(var(--c-bg-elevated)/0.6)] px-2.5 py-1.5 text-left text-[11.5px] text-text-secondary transition-colors hover:text-text-primary"
+        >
+          <RotateCcw size={12} className="shrink-0" />
+          <span className="min-w-0 flex-1 truncate">
+            {t('radioBroadcast.resumeLast', { defaultValue: '继续上次畅听' })}
+            ：{lastSession.direction.text}
+          </span>
+        </button>
       )}
 
       {/* ===== 内容库页签（P1）===== */}

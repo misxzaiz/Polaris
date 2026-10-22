@@ -47,6 +47,10 @@ export interface UseRadioBroadcastReturn {
   sleep: (opts: { minutes?: number; afterSegment?: boolean } | null) => void
   /** 回听内容库单集（P1：无 AI 会话直插已合成句子，播完即止） */
   playLibraryItem: (item: LibraryItem) => Promise<boolean>
+  /** 换台（P2：播报中切换方向，不停声、不重建会话） */
+  switchTopic: (direction: RadioBroadcastDirection) => void
+  /** 插话（P2：半双工，回复入队插播） */
+  interject: (text: string) => void
 
   /** 方向预设（UI 选项） */
   directionPresets: typeof DIRECTION_PRESETS
@@ -91,6 +95,12 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
   const playLibraryItem = useCallback((item: LibraryItem) => {
     return useRadioBroadcastStore.getState().playLibraryItem(item)
   }, [])
+  const switchTopic = useCallback((direction: RadioBroadcastDirection) => {
+    useRadioBroadcastStore.getState().switchTopic(direction)
+  }, [])
+  const interject = useCallback((text: string) => {
+    useRadioBroadcastStore.getState().interject(text)
+  }, [])
 
   return {
     status,
@@ -116,6 +126,8 @@ export function useRadioBroadcast(): UseRadioBroadcastReturn {
     setRate,
     sleep,
     playLibraryItem,
+    switchTopic,
+    interject,
     directionPresets: DIRECTION_PRESETS,
     voices: MIMO_VOICES,
   }

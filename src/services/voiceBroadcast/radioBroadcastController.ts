@@ -25,7 +25,7 @@ import { VoiceBroadcastPlayer } from './voiceBroadcastPlayer'
 import { VoiceStopWatcher } from './voiceStopWatcher'
 import { probeVoice, addLibraryItem, buildAudioPlayUrl } from './voiceService'
 import type { LibraryItem } from './voiceService'
-import { promptForDirection, SEGMENT_LOOKAHEAD_SENTENCES } from './constants'
+import { promptForDirection, promptForInterject, promptForSwitchTopic, SEGMENT_LOOKAHEAD_SENTENCES } from './constants'
 import type {
   RadioBroadcastDirection,
   RadioBroadcastSnapshot,
@@ -151,6 +151,14 @@ export class RadioBroadcastController {
   /** 方向预设提示词注入用（当前方向文本快照，供段间续接） */
   private lastSegmentSummary = ''
 
+  // ── P2 体验层 ──
+  /** 待执行岔题（P2-1）：在途段收尾后，下一次 requestNextSegment 用岔题 prompt */
+  private topicSwitchPending = false
+  /** 待处理插话（P2-2）：在途段存在时暂存，下一次 requestNextSegment 以插话为请求内容 */
+  private queueInterject: string | null = null
+  /** 插话回复已入队标志（onSegmentEnded 据此恢复播放，且不增 round） */
+  private interjectActive = false
+
   getStatus(): RadioBroadcastStatus {
     return this.status
   }
@@ -239,6 +247,9 @@ export class RadioBroadcastController {
     this.sleepAfterSegment = false
     this.sleepFading = false
     this.clearSleepTimer()
+    // P2 埋点：会话计数 + 收听时长 ticker（stop 清）
+    this.writeMetrics({ sessionCount: 1 })
+    this.startListenTicker()
 
     // 上一轮残留（error 态重试）：清播放器 + 弃用旧 session，从零开始
     this.player.stop()
@@ -247,6 +258,9 @@ export class RadioBroadcastController {
     this.segmentAbort = null
     this.sessionId = null
     this.lastSegmentSummary = ''
+    this.topicSwitchPending = false
+    this.queueInterject = null
+    this.interjectActive = false
 
     this.player.setCallbacks({
       onStart: (text) => {
@@ -377,6 +391,9 @@ export class RadioBroadcastController {
 
     this.sessionId = null
     this.lastSegmentSummary = ''
+    this.topicSwitchPending = false
+    this.queueInterject = null
+    this.interjectActive = false
     this.nowPlayingText = null
     this.consecutiveErrors = 0
     this.limitReached = false
@@ -387,6 +404,9 @@ export class RadioBroadcastController {
     this.sleepUntil = 0
     this.sleepAfterSegment = false
     this.sleepFading = false
+    // P2 埋点：收听 ticker 停止；「上次畅听」快照写入（续播入口用）
+    this.stopListenTicker()
+    this.saveLastSession()
 
     this.setStatus('idle')
     log.info('播报已停止（三路中断完成）')
@@ -441,6 +461,8 @@ export class RadioBroadcastController {
     this.player.setOptions({ mediaTitle: item.title })
     this.setStatus('playing')
     this.player.enqueuePrepared(prepared)
+    this.writeMetrics({ replayCount: 1 })
+    this.startListenTicker()
     log.info('回听开始（replay）', { itemId: item.id, sentences: prepared.length })
     return true
   }
@@ -470,6 +492,106 @@ export class RadioBroadcastController {
         if (!res.ok) log.warn('段入库失败（不影响播放）', { error: res.error })
       })
       .catch((e) => log.warn('段入库异常（不影响播放）', { error: String(e) }))
+  }
+
+  // ================================================================
+  // 换台 / 插话（P2 体验层）
+  // ================================================================
+
+  /**
+   * 换台（P2-1）：播报中切换方向——不停声、不重建会话。
+   * - 无段在途：立即用岔题指令发起新段（复用段生成唯一路径）；
+   * - 有段在途：标记待岔题，在途段收尾后 requestNextSegment 用岔题 prompt（旧话题内容最多多播一段）。
+   * 回听模式不适用（无会话）；面板应先 stop 再 start。
+   */
+  switchTopic(direction: RadioBroadcastDirection): void {
+    const text = direction.text.trim()
+    if (!text) return
+    if (this.stopped || !this.running || this.replayMode) return
+    if (this.status === 'stopping' || this.status === 'idle' || this.status === 'error') return
+    this.direction = { kind: direction.kind, text }
+    this.topicSwitchPending = true
+    this.lastSegmentSummary = '' // 旧方向摘要不再续接
+    this.writeMetrics({ switchCount: 1 })
+    this.player.setOptions({ mediaTitle: `${DIRECTION_LABEL[direction.kind]} · ${text}` })
+    this.emit()
+    log.info('换台', { kind: direction.kind, text, inFlight: this.hasSegmentInFlight() })
+    // 无段在途 → 立即岔题；在途 → afterSegmentFinished 衔接点自然用岔题 prompt
+    if (!this.hasSegmentInFlight()) this.requestNextSegment()
+  }
+
+  /**
+   * 插话（P2-2）：半双工——暂停当前播放，插话作为本会话新请求，
+   * 回复经 onSegmentEnded 入队并恢复播放；不计 round。
+   * 与 stop() 时序解耦：插话不 abort；用户仍可随时 stop()（三路中断幂等）。
+   */
+  interject(text: string): void {
+    const trimmed = text.trim()
+    if (!trimmed) return
+    if (this.stopped || !this.running || this.replayMode) return
+    if (this.status === 'stopping' || this.status === 'idle' || this.status === 'error') return
+    this.writeMetrics({ interjectCount: 1 })
+    if (this.hasSegmentInFlight()) {
+      // 在途段未完：暂存插话，收尾衔接点（finally → requestNextSegment）以插话为下一次请求
+      this.queueInterject = trimmed
+      log.debug('段生成在途：插话暂存，收尾后响应')
+      return
+    }
+    // 无段在途：暂存插话 → requestNextSegment 的插话分支立即发起（半双工 pause 在 buildNextSegmentPrompt 内）
+    this.queueInterject = trimmed
+    this.requestNextSegment()
+  }
+
+  /**
+   * 写埋点（P2 北极星指标）：localStorage 本机累计，无上传。
+   * bump 调用方语义：delta 累加（switchCount/interjectCount）或绝对置位（listenMs）。
+   */
+  private writeMetrics(patch: { sessionCount?: number; replayCount?: number; switchCount?: number; interjectCount?: number; listenMsDelta?: number }): void {
+    try {
+      const key = 'polaris.radioMetrics'
+      const raw = localStorage.getItem(key)
+      let m: { listenMs?: number; sessionCount?: number; switchCount?: number; interjectCount?: number; replayCount?: number } = {}
+      if (raw) {
+        try { m = JSON.parse(raw) as typeof m } catch { /* 损坏即重建 */ }
+      }
+      if (patch.listenMsDelta) m.listenMs = (m.listenMs ?? 0) + patch.listenMsDelta
+      if (patch.sessionCount) m.sessionCount = (m.sessionCount ?? 0) + patch.sessionCount
+      if (patch.replayCount) m.replayCount = (m.replayCount ?? 0) + patch.replayCount
+      if (patch.switchCount) m.switchCount = (m.switchCount ?? 0) + patch.switchCount
+      if (patch.interjectCount) m.interjectCount = (m.interjectCount ?? 0) + patch.interjectCount
+      localStorage.setItem(key, JSON.stringify(m))
+    } catch {
+      /* localStorage 不可用（隐私模式等）：埋点静默失败 */
+    }
+  }
+
+  /** 收听时长 ticker（P2 埋点）：1s 累计 listenMs；start/replay 建、stop 清 */
+  private listenTicker: ReturnType<typeof setInterval> | null = null
+  private startListenTicker(): void {
+    if (this.listenTicker) return
+    this.listenTicker = setInterval(() => {
+      this.writeMetrics({ listenMsDelta: 1000 })
+    }, 1000)
+  }
+  private stopListenTicker(): void {
+    if (this.listenTicker) {
+      clearInterval(this.listenTicker)
+      this.listenTicker = null
+    }
+  }
+
+  /**
+   * 「上次畅听」快照持久化（P2-3 续播入口）：stop 收尾时写入。
+   * 面板 idle 态读取展示「继续上次畅听」；数据在本机，无上传。
+   */
+  private saveLastSession(): void {
+    try {
+      localStorage.setItem('polaris.radioLastSession', JSON.stringify({
+        direction: this.direction,
+        voice: this.voice,
+        ts: Date.now(),
+      }))
+    } catch { /* 隐私模式等：静默 */ }
   }
 
   /** 播放暂停（AI 保持生成） */
@@ -624,6 +746,7 @@ export class RadioBroadcastController {
     const raw = pickLatestAssistantText(store.getState())
     if (!raw.trim()) {
       log.warn('段文本为空，跳过')
+      if (this.interjectActive) this.interjectActive = false
       this.consecutiveErrors++
       this.checkErrorThreshold()
       return
@@ -632,6 +755,7 @@ export class RadioBroadcastController {
     const clean = this.sanitizeForSpeech(raw)
     if (!clean.trim()) {
       log.warn('清洗后为空，跳过')
+      if (this.interjectActive) this.interjectActive = false
       this.consecutiveErrors++
       this.checkErrorThreshold()
       return
@@ -639,7 +763,13 @@ export class RadioBroadcastController {
 
     this.consecutiveErrors = 0
     this.lastSegmentSummary = clean.slice(0, 120)
-    this.segmentIndex++
+    if (this.interjectActive) {
+      // 插话回复（P2-2）：不计 round（不消费轮次上限）；恢复半双工播放
+      this.interjectActive = false
+      this.player.resume()
+    } else {
+      this.segmentIndex++
+    }
     this.player.enqueueSegment(clean)
 
     // 队尾可能仍有待播内容；由 onQueueDrained 决定何时请求下一段
@@ -810,6 +940,8 @@ export class RadioBroadcastController {
     } catch (e) {
       if (signal.aborted) return
       log.warn('段生成失败', { error: String(e) })
+      // 本段请求可能是插话（P2-2）：请求失败时半双工恢复由下一次段收尾兜底，不滞留暂停
+      this.interjectActive = false
       this.consecutiveErrors++
       this.checkErrorThreshold()
     }
@@ -832,8 +964,22 @@ export class RadioBroadcastController {
     }
   }
 
-  /** 段间续接提示（方向 + 已播摘要） */
+  /** 段间续接提示（方向 + 已播摘要；P2：岔题/插话优先级最高） */
   private buildNextSegmentPrompt(): string {
+    // 岔题（P2-1）：方向已切换，用岔题指令；本 prompt 只被消费一次
+    if (this.topicSwitchPending) {
+      this.topicSwitchPending = false
+      return promptForSwitchTopic(this.direction?.text ?? '')
+    }
+    // 插话（P2-2）：插话内容作为本次请求，回复随下降沿入队（onSegmentEnded 恢复播放）
+    if (this.queueInterject) {
+      const text = this.queueInterject
+      this.queueInterject = null
+      this.interjectActive = true
+      // 半双工：请求发出即暂停当前播放，回复到达后恢复
+      this.player.pause()
+      return promptForInterject(text)
+    }
     if (this.segmentIndex === 0) {
       return `请开始${this.direction?.text ?? ''}的第一次播报。`
     }
