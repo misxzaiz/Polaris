@@ -8,7 +8,7 @@ import { invoke } from '@/services/transport'
 import type { CommitSlice } from './types'
 import { parseGitError } from './types'
 import type { CommitState } from './types'
-import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, GitLogSearchFilter, GitLogPage, GitCommitRiskReport } from '@/types/git'
+import type { GitCommit, GitCommitDetails, GitFileHistoryEntry, BatchStageResult, BatchOpResult, GitLogSearchFilter, GitLogPage, GitCommitRiskReport } from '@/types/git'
 import { createLogger } from '@/utils/logger'
 
 const log = createLogger('GitStore')
@@ -172,6 +172,36 @@ export const createCommitSlice: CommitSlice = (set, get) => ({
   async batchStage(workspacePath: string, filePaths: string[]) {
     try {
       const result = await invoke<BatchStageResult>('git_batch_stage', {
+        workspacePath,
+        filePaths,
+      })
+      await get().refreshStatus(workspacePath)
+      return result
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
+
+  // 批量取消暂存（与 batchStage 同构：单次调用 + 单次刷新，部分成功不整体失败）
+  async batchUnstage(workspacePath: string, filePaths: string[]) {
+    try {
+      const result = await invoke<BatchOpResult>('git_batch_unstage', {
+        workspacePath,
+        filePaths,
+      })
+      await get().refreshStatus(workspacePath)
+      return result
+    } catch (err) {
+      set({ error: parseGitError(err) })
+      throw err
+    }
+  },
+
+  // 批量丢弃变更（后端对真危险动作自动建撤销快照，前端 toastWithUndo 可一键恢复）
+  async batchDiscard(workspacePath: string, filePaths: string[]) {
+    try {
+      const result = await invoke<BatchOpResult>('git_batch_discard', {
         workspacePath,
         filePaths,
       })

@@ -30,6 +30,7 @@ import type {
   GitTag,
   GitBlameResult,
   BatchStageResult,
+  BatchOpResult,
   GitStashEntry,
   GitReflogEntry,
   GitLogSearchFilter,
@@ -299,6 +300,10 @@ export interface CommitActions {
   unstageFile: (workspacePath: string, filePath: string) => Promise<void>
   discardChanges: (workspacePath: string, filePath: string) => Promise<void>
   batchStage: (workspacePath: string, filePaths: string[]) => Promise<BatchStageResult>
+  /** 批量取消暂存（单次总线调用 + 单次 status 刷新；部分成功不整体失败） */
+  batchUnstage: (workspacePath: string, filePaths: string[]) => Promise<BatchOpResult>
+  /** 批量丢弃变更（后端自动建撤销快照；untracked 逐条记入 failed） */
+  batchDiscard: (workspacePath: string, filePaths: string[]) => Promise<BatchOpResult>
   getLog: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitCommit[]>
   /** P2 泳道图：commits（含 refs 装饰）+ rows（lane 数据）同一次返回 */
   getLogWithLanes: (workspacePath: string, limit?: number, skip?: number, branch?: string) => Promise<GitLogPage>

@@ -255,7 +255,16 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
   }
 
   return (
-    <div className="px-3 py-2 border-t border-border-subtle space-y-1.5">
+    <div
+      className="px-3 py-2 border-t border-border-subtle space-y-1.5"
+      onKeyDown={(e) => {
+        // Ctrl/Cmd+Enter 快速提交（输入框聚焦时也可用，与聊天输入框习惯一致）
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && canCommit && !isLoading) {
+          e.preventDefault()
+          void handleCommit()
+        }
+      }}
+    >
       {/* AI 建议回流条 */}
       {showSuggestion && (
         <div className="flex items-start gap-2 p-2 rounded-lg bg-primary/5 border border-primary/20">
@@ -379,6 +388,7 @@ export function CommitInput({ hasChanges: _hasChanges, selectedFiles, workspaceP
             variant="primary"
             onClick={handleCommit}
             disabled={!canCommit || isLoading}
+            title={t('commit.ctrlEnterHint')}
           >
             <Send size={14} />
             {amendMode ? t('commit.amend') : t('commit.button')}

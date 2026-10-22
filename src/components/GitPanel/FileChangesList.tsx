@@ -4,9 +4,9 @@
  * 显示暂存和未暂存的文件变更，支持右键菜单
  */
 
-import { useMemo, useState, useCallback } from 'react'
+import { useMemo, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Virtuoso } from 'react-virtuoso'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { Check, X, GitCommit, RotateCcw, Trash2, MoreHorizontal, Eye, ChevronRight, AlertTriangle } from 'lucide-react'
 import { useGitStore } from '@/stores/gitStore/index'
 import { useToastStore } from '@/stores/toastStore'
@@ -29,6 +29,8 @@ interface FileChangesListProps {
   onBlame?: (filePath: string) => void
   selectedFiles?: Set<string>
   onToggleFileSelection?: (path: string) => void
+  /** Shift 区间选择：把 paths 全部置为 select（true=加入选择 / false=移出） */
+  onSelectRange?: (paths: string[], select: boolean) => void
   onSelectAll?: () => void
   isSelectionDisabled?: boolean
 }
@@ -99,6 +101,7 @@ export function FileChangesList({
   onBlame,
   selectedFiles = new Set(),
   onToggleFileSelection,
+  onSelectRange,
   onSelectAll,
   isSelectionDisabled = false
 }: FileChangesListProps) {
@@ -111,6 +114,12 @@ export function FileChangesList({
   const [confirmDialog, setConfirmDialog] = useState<ConfirmState | null>(null)
   // 折叠状态：key 为 'staged' | 'unstaged' | 'untracked'
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({})
+
+  // 区间选择锚点（`${area}:${path}`）与键盘焦点行：Shift+点击 / Shift+Space 相对锚点做区间选择
+  const anchorRef = useRef<string | null>(null)
+  const [focusedKey, setFocusedKey] = useState<string | null>(null)
+  const virtuosoRef = useRef<VirtuosoHandle | null>(null)
+  const listRef = useRef<HTMLDivElement | null>(null)
 
   const closeContextMenu = useCallback(() => setContextMenu(null), [])
 
@@ -239,6 +248,108 @@ export function FileChangesList({
     }
   }, [onFileClick, onUntrackedFileClick])
 
+  // ── 区间选择 + 键盘交互 ─────────────────────────────────────────────
+  // 展示顺序的「数据行」key（不含组头）：区间锚点、焦点移动均以此为准
+  const itemKeys = useMemo(
+    () => flatRows.filter((r) => r.type === 'item').map((r) => `${r.area}:${r.path}`),
+    [flatRows]
+  )
+
+  const splitKey = useCallback((key: string): { area: ChangeArea; path: string } => {
+    const sep = key.indexOf(':')
+    return { area: key.slice(0, sep) as ChangeArea, path: key.slice(sep + 1) }
+  }, [])
+
+  /** 找到 key 对应的数据行（供 Enter 打开 diff / Space 勾选） */
+  const getFlatItem = useCallback((key: string) => {
+    const { area, path } = splitKey(key)
+    const row = flatRows.find((r) => r.type === 'item' && r.area === area && r.path === path)
+    if (!row) return null
+    if (area === 'staged') return { area, path, file: sortedStaged[row.index] }
+    if (area === 'unstaged') return { area, path, file: sortedUnstaged[row.index] }
+    return { area, path, file: undefined }
+  }, [flatRows, splitKey, sortedStaged, sortedUnstaged])
+
+  /** 焦点行滚动进可视区：虚拟化走 scrollToIndex，普通 DOM 走 scrollIntoView */
+  const scrollIntoViewByKey = useCallback((key: string) => {
+    const topLevelIdx = flatRows.findIndex((r) => r.type === 'item' && `${r.area}:${r.path}` === key)
+    if (topLevelIdx < 0) return
+    if (shouldVirtualize) {
+      virtuosoRef.current?.scrollToIndex({ index: topLevelIdx })
+    } else {
+      listRef.current?.querySelector(`[data-row-index="${topLevelIdx}"]`)?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [flatRows, shouldVirtualize])
+
+  /** 区间选择：锚点（上次选择行）到 target 全部置为 select */
+  const selectRangeTo = useCallback((targetKey: string, select: boolean) => {
+    if (!onSelectRange) return
+    const targetIdx = itemKeys.indexOf(targetKey)
+    if (targetIdx < 0) return
+    const anchorIdx = anchorRef.current && itemKeys.indexOf(anchorRef.current) >= 0
+      ? itemKeys.indexOf(anchorRef.current)
+      : targetIdx
+    const from = Math.min(anchorIdx, targetIdx)
+    const to = Math.max(anchorIdx, targetIdx)
+    const paths = itemKeys.slice(from, to + 1).map((k) => splitKey(k).path)
+    onSelectRange(paths, select)
+  }, [itemKeys, onSelectRange, splitKey])
+
+  // 勾选框 onChange：Shift+点击 = 区间选择（锚点不变）；普通点击 = 单个切换 + 移锚点
+  const handleCheckboxChange = useCallback((key: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    if ((e.nativeEvent as MouseEvent).shiftKey) {
+      selectRangeTo(key, e.target.checked)
+      return
+    }
+    anchorRef.current = key
+    onToggleFileSelection?.(splitKey(key).path)
+  }, [onToggleFileSelection, selectRangeTo, splitKey])
+
+  // 列表键盘导航：↑/↓ 移动焦点，Enter 开 diff，Space/Shift+Space 选择。
+  // 输入打字区（非 checkbox 的 input/textarea）完全不劫持；
+  // button/select/checkbox 上 Space/Enter 是原生激活语义，也不劫持。
+  const handleListKeyDown = useCallback((e: React.KeyboardEvent) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('input:not([type="checkbox"]), textarea')) return
+
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
+      e.preventDefault()
+      onSelectAll?.()
+      return
+    }
+
+    if (target?.closest('select, button, [role="dialog"], input[type="checkbox"]')) return
+
+    const itemIdx = focusedKey ? itemKeys.indexOf(focusedKey) : -1
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (itemKeys.length === 0) return
+      const next = itemIdx < 0 ? 0 : Math.min(Math.max(itemIdx + (e.key === 'ArrowDown' ? 1 : -1), 0), itemKeys.length - 1)
+      setFocusedKey(itemKeys[next])
+      scrollIntoViewByKey(itemKeys[next])
+      return
+    }
+
+    if (itemIdx < 0 || !focusedKey) return
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const item = getFlatItem(focusedKey)
+      if (item) openDiff(item.path, item.area, item.file)
+      return
+    }
+    if (e.key === ' ') {
+      e.preventDefault()
+      const item = getFlatItem(focusedKey)
+      if (!item) return
+      if (e.shiftKey) {
+        selectRangeTo(focusedKey, !selectedFiles.has(item.path))
+      } else {
+        anchorRef.current = focusedKey
+        onToggleFileSelection?.(item.path)
+      }
+    }
+  }, [focusedKey, getFlatItem, itemKeys, onToggleFileSelection, onSelectAll, openDiff, scrollIntoViewByKey, selectRangeTo, selectedFiles])
+
   const buildMenuItems = useCallback((filePath: string, area: ChangeArea, status: GitFileStatus, file?: GitFileChange): ContextMenuItem[] => {
     const items: ContextMenuItem[] = []
 
@@ -308,18 +419,56 @@ export function FileChangesList({
     file?: GitFileChange
     additions?: number
     deletions?: number
+    /** 顶层 flatRows 序号：键盘滚动定位用 */
+    rowIndex?: number
   }) => {
-    const { filePath, area, status, file, additions, deletions } = params
+    const { filePath, area, status, file, additions, deletions, rowIndex } = params
     const selected = selectedFiles.has(filePath)
     const isOperating = operatingPath === filePath
     const { dir, name } = splitPath(filePath)
     const statusCode = getStatusCode(status, area)
+    const rowKey = `${area}:${filePath}`
+    const isFocused = focusedKey === rowKey
+
+    /** 悬停快捷按钮（单次点击直达操作，代替进右键菜单） */
+    const quickButton = (title: string, Icon: typeof Check, onClick: () => void, extraCls = '') => (
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClick() }}
+        title={title}
+        aria-label={title}
+        disabled={isSelectionDisabled || isOperating}
+        className={`p-0.5 rounded text-text-tertiary hover:text-text-primary hover:bg-background-hover transition-all disabled:opacity-40 ${extraCls}`}
+      >
+        <Icon size={12} />
+      </button>
+    )
+
+    // 各区域的快捷动作：staged → unstage；unstaged → stage + discard（deleted → 恢复）；untracked → stage
+    const quickActions = (
+      <>
+        {area === 'staged' && quickButton(t('unstage'), X, () => handleUnstage(filePath))}
+        {area === 'unstaged' && quickButton(status === 'deleted' ? t('stageDeleted') : t('stage'), Check, () => handleStage(filePath))}
+        {(area === 'unstaged' && status === 'deleted') && quickButton(t('restoreFile'), RotateCcw, () => handleDiscard(filePath, true))}
+        {(area === 'unstaged' && status !== 'deleted') && quickButton(t('discard'), RotateCcw, () => handleDiscard(filePath), 'hover:text-danger')}
+        {area === 'untracked' && quickButton(t('stage'), Check, () => handleStage(filePath))}
+      </>
+    )
 
     return (
       <div
-        key={`${area}:${filePath}`}
-        className={`grid grid-cols-[16px_28px_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 min-h-[26px] border-b border-border-subtle/60 hover:bg-background-hover group cursor-pointer ${selected ? 'bg-primary/10' : ''} ${isOperating ? 'opacity-60 pointer-events-none' : ''}`}
-        onClick={() => openDiff(filePath, area, file)}
+        key={rowKey}
+        data-row-index={rowIndex}
+        className={`grid grid-cols-[16px_28px_minmax(0,1fr)_auto_auto] items-center gap-1 px-3 min-h-[26px] border-b border-border-subtle/60 hover:bg-background-hover group cursor-pointer ${selected ? 'bg-primary/10' : ''} ${isFocused ? 'ring-1 ring-inset ring-primary/40 bg-primary/5' : ''} ${isOperating ? 'opacity-60 pointer-events-none' : ''}`}
+        onClick={(e) => {
+          // 行点击 = 查看差异（原语义）；同时更新区间锚点与键盘焦点
+          anchorRef.current = rowKey
+          setFocusedKey(rowKey)
+          openDiff(filePath, area, file)
+          if (e.shiftKey) {
+            selectRangeTo(rowKey, !selected)
+          }
+        }}
         onContextMenu={(e) => showContextMenu(e, buildMenuItems(filePath, area, status, file))}
       >
         <input
@@ -327,7 +476,7 @@ export function FileChangesList({
           checked={selected}
           onChange={(e) => {
             e.stopPropagation()
-            onToggleFileSelection?.(filePath)
+            handleCheckboxChange(rowKey, e)
           }}
           disabled={isSelectionDisabled || isOperating}
           className="w-3 h-3 rounded border-border"
@@ -353,7 +502,8 @@ export function FileChangesList({
           </span>
         )}
 
-        <div className="flex items-center justify-end opacity-80 group-hover:opacity-100">
+        <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+          {quickActions}
           <button
             onClick={(e) => showContextMenu(e, buildMenuItems(filePath, area, status, file))}
             className="p-0.5 text-text-tertiary hover:text-text-primary hover:bg-background-hover rounded transition-all"
@@ -389,8 +539,8 @@ export function FileChangesList({
     )
   }
 
-  // 渲染扁平行（组头或数据行）
-  const renderFlatRow = (row: FlatRow) => {
+  // 渲染扁平行（组头或数据行）；topLevelIndex 供数据行做键盘滚动定位
+  const renderFlatRow = (row: FlatRow, topLevelIndex?: number) => {
     if (row.type === 'header') {
       return (
         <div key={`header:${row.area}`} className="border-b border-border-subtle">
@@ -408,6 +558,7 @@ export function FileChangesList({
         file,
         additions: file.additions,
         deletions: file.deletions,
+        rowIndex: topLevelIndex,
       })
     }
     if (area === 'unstaged') {
@@ -419,6 +570,7 @@ export function FileChangesList({
         file,
         additions: file.additions,
         deletions: file.deletions,
+        rowIndex: topLevelIndex,
       })
     }
     const p = sortedUntracked[row.index]
@@ -426,6 +578,7 @@ export function FileChangesList({
       filePath: p,
       area,
       status: 'untracked',
+      rowIndex: topLevelIndex,
     })
   }
 
@@ -438,7 +591,11 @@ export function FileChangesList({
   }
 
   return (
-    <div className="flex-1 overflow-y-auto min-h-0">
+    <div
+      ref={listRef}
+      className="flex-1 overflow-y-auto min-h-0 focus:outline-none"
+      onKeyDown={handleListKeyDown}
+    >
       <div className="sticky top-0 z-20 h-8 px-3 border-b border-border-subtle bg-background-elevated flex items-center gap-2">
         <input
           type="checkbox"
@@ -449,8 +606,9 @@ export function FileChangesList({
           onChange={onSelectAll}
           disabled={isSelectionDisabled}
           className="w-3.5 h-3.5 rounded border-border"
+          title={t('selectionHints')}
         />
-        <span className="text-xs text-text-secondary truncate">
+        <span className="text-xs text-text-secondary truncate" title={t('selectionHints')}>
           {selectedFiles.size > 0 ? t('selectedFiles', { count: selectedFiles.size }) : t('selectAll')}
         </span>
       </div>
@@ -458,6 +616,7 @@ export function FileChangesList({
       {/* 三组文件变更列表：组头(可折叠) + 数据行。数据行多时走 Virtuoso 虚拟化，小列表保持普通 DOM 渲染 */}
       {shouldVirtualize ? (
         <Virtuoso
+          ref={virtuosoRef}
           data={flatRows}
           computeItemKey={(index) => {
             const row = flatRows[index]
@@ -465,11 +624,11 @@ export function FileChangesList({
               ? `header:${row.area}`
               : `item:${row.area}:${row.path}`
           }}
-          itemContent={(_index, row) => renderFlatRow(row)}
+          itemContent={(index, row) => renderFlatRow(row, index)}
           style={{ flex: 1, minHeight: 0 }}
         />
       ) : (
-        <div className="min-h-0">{flatRows.map((row) => renderFlatRow(row))}</div>
+        <div className="min-h-0">{flatRows.map((row, index) => renderFlatRow(row, index))}</div>
       )}
 
       {contextMenu && (

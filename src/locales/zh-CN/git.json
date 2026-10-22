@@ -21,6 +21,8 @@
     "safetyNetBackupBranch": "安全网：先在该提交上创建备份分支（提交右键 → 从此提交创建分支），确认无误再丢弃"
   },
   "selectedFiles": "已选择 {{count}} 个文件",
+  "selectionHints": "Shift+点击 区间选择 · Ctrl+A 全选 · ↑↓ 移动焦点 · Space 勾选 · Enter 查看差异 · Esc 清除",
+  "batchPartial": "{{ok}} 个成功，{{failed}} 个失败",
   "batchProgress": "处理中: {{current}}/{{total}}",
   "operations": {
     "title": "操作流水",
@@ -132,6 +134,7 @@
     "noFiles": "没有可提交的文件",
     "noMessage": "请输入提交信息",
     "noStaged": "没有已暂存的文件",
+    "ctrlEnterHint": "Ctrl+Enter 快速提交",
     "success": "提交成功",
     "amendSuccess": "已修正提交（amend）",
     "amend": "修正提交",

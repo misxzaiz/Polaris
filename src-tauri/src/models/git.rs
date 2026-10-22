@@ -724,6 +724,15 @@ pub struct StageFailure {
     pub error: String,
 }
 
+/// 通用批量操作结果（批量取消暂存 / 批量丢弃变更共用 BatchStageResult 同构语义）。
+/// ok = 成功路径列表；failed = 逐条失败（部分成功不整体失败）。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BatchOpResult {
+    pub ok: Vec<String>,
+    pub failed: Vec<StageFailure>,
+    pub total: usize,
+}
+
 // ============================================================================
 // Stash
 // ============================================================================

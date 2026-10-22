@@ -21,6 +21,8 @@
     "safetyNetBackupBranch": "Safety net: create a backup branch from this commit first (right-click → branch from commit), then re-run"
   },
   "selectedFiles": "{{count}} files selected",
+  "selectionHints": "Shift+click range select · Ctrl+A select all · ↑↓ move focus · Space check · Enter open diff · Esc clear",
+  "batchPartial": "{{ok}} succeeded, {{failed}} failed",
   "batchProgress": "Processing: {{current}}/{{total}}",
   "operations": {
     "title": "Activity Log",
@@ -132,6 +134,7 @@
     "noFiles": "No files to commit",
     "noMessage": "Please enter a commit message",
     "noStaged": "No staged files",
+    "ctrlEnterHint": "Ctrl+Enter to commit",
     "success": "Commit successful",
     "amendSuccess": "Commit amended",
     "amend": "Amend",

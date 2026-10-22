@@ -348,6 +348,107 @@ describe('commitSlice', () => {
     })
   })
 
+  describe('batchUnstage', () => {
+    const mockStatus: GitRepositoryStatus = {
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      staged: [
+        { path: 'file1.ts', status: 'modified' },
+        { path: 'file2.ts', status: 'added' },
+      ],
+      unstaged: [],
+      untracked: [],
+      conflicts: [],
+      stashes: 0,
+      isRebasing: false,
+      isMerging: false,
+      isCherryPicking: false,
+      isReverting: false,
+    }
+
+    it('应单次调用批量取消暂存并刷新 status', async () => {
+      const mockResult = {
+        ok: ['file1.ts', 'file2.ts'],
+        failed: [],
+        total: 2,
+      }
+      mockInvoke
+        .mockResolvedValueOnce(mockResult)
+        .mockResolvedValueOnce(mockStatus)
+
+      const store = createTestStore()
+      const result = await store.getState().batchUnstage('/workspace', ['file1.ts', 'file2.ts'])
+
+      expect(mockInvoke).toHaveBeenCalledWith('git_batch_unstage', {
+        workspacePath: '/workspace',
+        filePaths: ['file1.ts', 'file2.ts'],
+      })
+      expect(result.ok).toHaveLength(2)
+      expect(result.failed).toHaveLength(0)
+      expect(mockInvoke).toHaveBeenCalledTimes(2) // batch_unstage + refreshStatus，无逐文件调用
+    })
+
+    it('应处理部分失败的情况', async () => {
+      const mockResult = {
+        ok: ['file1.ts'],
+        failed: [{ path: 'missing.ts', error: 'File not found' }],
+        total: 2,
+      }
+      mockInvoke
+        .mockResolvedValueOnce(mockResult)
+        .mockResolvedValueOnce(mockStatus)
+
+      const store = createTestStore()
+      const result = await store.getState().batchUnstage('/workspace', ['file1.ts', 'missing.ts'])
+
+      expect(result.ok).toHaveLength(1)
+      expect(result.failed).toHaveLength(1)
+      expect(result.failed[0].path).toBe('missing.ts')
+    })
+  })
+
+  describe('batchDiscard', () => {
+    const mockStatus: GitRepositoryStatus = {
+      branch: 'main',
+      ahead: 0,
+      behind: 0,
+      staged: [],
+      unstaged: [
+        { path: 'file1.ts', status: 'modified' },
+        { path: 'file2.ts', status: 'modified' },
+      ],
+      untracked: [],
+      conflicts: [],
+      stashes: 0,
+      isRebasing: false,
+      isMerging: false,
+      isCherryPicking: false,
+      isReverting: false,
+    }
+
+    it('应单次调用批量丢弃并刷新 status', async () => {
+      const mockResult = {
+        ok: ['file1.ts'],
+        failed: [],
+        total: 1,
+      }
+      mockInvoke
+        .mockResolvedValueOnce(mockResult)
+        .mockResolvedValueOnce(mockStatus)
+
+      const store = createTestStore()
+      const result = await store.getState().batchDiscard('/workspace', ['file1.ts'])
+
+      expect(mockInvoke).toHaveBeenCalledWith('git_batch_discard', {
+        workspacePath: '/workspace',
+        filePaths: ['file1.ts'],
+      })
+      expect(result.ok).toContain('file1.ts')
+      expect(mockInvoke).toHaveBeenCalledTimes(2) // batch_discard + refreshStatus
+    })
+  })
+
   describe('getLog', () => {
     it('应成功获取提交历史', async () => {
       const mockCommits: GitCommit[] = [

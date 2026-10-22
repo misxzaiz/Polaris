@@ -53,7 +53,7 @@ export function GitPanel({
   onOpenFileInEditor,
 }: GitPanelProps) {
   const { t } = useTranslation('git')
-  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, stageFile, unstageFile, discardChanges, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
+  const { isLoading, error, refreshStatus, getWorktreeFileDiff, getIndexFileDiff, batchStage, batchUnstage, batchDiscard, initRepository, discoverRepositories, discoveredRepos, isDiscovering, pinnedRepos, togglePinnedRepo, loadPinnedRepos } = useGitStore()
   const currentWorkspace = useGitActiveWorkspace()
   const toast = useToastStore()
 
@@ -111,7 +111,6 @@ export function GitPanel({
 
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
   const [isBatchOperating, setIsBatchOperating] = useState(false)
-  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null)
   const [isInitializing, setIsInitializing] = useState(false)
   const [showInitPrompt, setShowInitPrompt] = useState(false)
   const [initBranchName, setInitBranchName] = useState('main')
@@ -255,66 +254,72 @@ export function GitPanel({
     })
   }, [status])
 
+  // 区间选择：Shift 点击 / Shift+Space 把区间内 path 全部置为 select
+  const handleSelectRange = useCallback((paths: string[], select: boolean) => {
+    setSelectedFiles(prev => {
+      const next = new Set(prev)
+      for (const path of paths) {
+        if (select) next.add(path)
+        else next.delete(path)
+      }
+      return next
+    })
+  }, [])
+
+  /** 批量部分成功文案（单次调用后有 ok / failed 计数，可如实呈现） */
+  const batchResultMessage = useCallback((okCount: number, failedCount: number, successText: string) => {
+    if (failedCount > 0) {
+      toast.warning(t('batchPartial', { ok: okCount, failed: failedCount }))
+    } else {
+      toast.success(successText)
+    }
+  }, [toast, t])
+
+  // 单次总线调用的批量操作：每类 = 1 次 cap.git 调用（后端 WRITE_GATE 串行化）+ 1 次 status 刷新。
+  // 这样替换掉旧前端 for 循环逐文件 stageFile/unstageFile/discardChanges（N 次调用 + N 次刷新）。
   const handleBatchStage = useCallback(async () => {
     if (!effectivePath || selectedFiles.size === 0) return
 
+    const stageablePaths = Array.from(selectedFiles).filter(path => {
+      return status?.unstaged.some(f => f.path === path) ||
+             status?.untracked.includes(path)
+    })
+    if (stageablePaths.length === 0) return
+
     setIsBatchOperating(true)
     try {
-      const stageablePaths = Array.from(selectedFiles).filter(path => {
-        return status?.unstaged.some(f => f.path === path) ||
-               status?.untracked.includes(path)
-      })
-
-      setBatchProgress({ current: 0, total: stageablePaths.length })
-
-      for (let i = 0; i < stageablePaths.length; i++) {
-        const path = stageablePaths[i]
-        await stageFile(effectivePath, path)
-        setBatchProgress({ current: i + 1, total: stageablePaths.length })
-      }
-
-      await refreshStatus(effectivePath)
+      const result = await batchStage(effectivePath, stageablePaths)
       setSelectedFiles(new Set())
-      toast.success(t('batchStageSuccess'))
+      batchResultMessage(result.staged.length, result.failed.length, t('batchStageSuccess'))
     } catch (err) {
       toast.error(t('errors.batchStageFailed'), err instanceof Error ? err.message : String(err))
-      // 操作失败后刷新状态
+      // 操作失败后刷新状态（store 批量动作已在成功路径刷新）
       await refreshStatus(effectivePath)
     } finally {
       setIsBatchOperating(false)
-      setBatchProgress(null)
     }
-  }, [effectivePath, selectedFiles, status, stageFile, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, batchStage, refreshStatus, toast, batchResultMessage, t])
 
   const handleBatchUnstage = useCallback(async () => {
     if (!effectivePath || selectedFiles.size === 0) return
 
+    const unstageablePaths = Array.from(selectedFiles).filter(path => {
+      return status?.staged.some(f => f.path === path)
+    })
+    if (unstageablePaths.length === 0) return
+
     setIsBatchOperating(true)
     try {
-      const unstageablePaths = Array.from(selectedFiles).filter(path => {
-        return status?.staged.some(f => f.path === path)
-      })
-
-      setBatchProgress({ current: 0, total: unstageablePaths.length })
-
-      for (let i = 0; i < unstageablePaths.length; i++) {
-        const path = unstageablePaths[i]
-        await unstageFile(effectivePath, path)
-        setBatchProgress({ current: i + 1, total: unstageablePaths.length })
-      }
-
-      await refreshStatus(effectivePath)
+      const result = await batchUnstage(effectivePath, unstageablePaths)
       setSelectedFiles(new Set())
-      toast.success(t('batchUnstageSuccess'))
+      batchResultMessage(result.ok.length, result.failed.length, t('batchUnstageSuccess'))
     } catch (err) {
       toast.error(t('errors.batchUnstageFailed'), err instanceof Error ? err.message : String(err))
-      // 操作失败后刷新状态
       await refreshStatus(effectivePath)
     } finally {
       setIsBatchOperating(false)
-      setBatchProgress(null)
     }
-  }, [effectivePath, selectedFiles, status, unstageFile, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, batchUnstage, refreshStatus, toast, batchResultMessage, t])
 
   const handleBatchDiscard = useCallback(() => {
     if (!effectivePath || selectedFiles.size === 0) return
@@ -339,28 +344,24 @@ export function GitPanel({
         setConfirmDialog(null)
         setIsBatchOperating(true)
         try {
-          setBatchProgress({ current: 0, total: discardablePaths.length })
-
-          for (let i = 0; i < discardablePaths.length; i++) {
-            const path = discardablePaths[i]
-            await discardChanges(effectivePath, path)
-            setBatchProgress({ current: i + 1, total: discardablePaths.length })
-          }
-
-          await refreshStatus(effectivePath)
+          // batch_discard 后端已自动建撤销快照，toastWithUndo 挂「撤销」按钮
+          const result = await batchDiscard(effectivePath, discardablePaths)
           setSelectedFiles(new Set())
-          await toastWithUndo(effectivePath, t('batchDiscardSuccess'))
+          await toastWithUndo(
+            effectivePath,
+            result.failed.length > 0
+              ? t('batchPartial', { ok: result.ok.length, failed: result.failed.length })
+              : t('batchDiscardSuccess')
+          )
         } catch (err) {
           toast.error(t('errors.batchDiscardFailed'), err instanceof Error ? err.message : String(err))
-          // 操作失败后刷新状态
           await refreshStatus(effectivePath)
         } finally {
           setIsBatchOperating(false)
-          setBatchProgress(null)
         }
       }
     })
-  }, [effectivePath, selectedFiles, status, discardChanges, refreshStatus, toast, t])
+  }, [effectivePath, selectedFiles, status, batchDiscard, refreshStatus, toast, t])
 
   const handleBatchDelete = useCallback(() => {
     if (!effectivePath || selectedFiles.size === 0) return
@@ -386,12 +387,9 @@ export function GitPanel({
         setConfirmDialog(null)
         setIsBatchOperating(true)
         try {
-          setBatchProgress({ current: 0, total: deletablePaths.length })
-
-          for (let i = 0; i < deletablePaths.length; i++) {
-            const path = deletablePaths[i]
+          // 磁盘删除没有批量接口：仍逐文件，但只在收尾刷新一次 status（避免中间态全表刷新）
+          for (const path of deletablePaths) {
             await deleteFile(resolveWorkspacePath(effectivePath, path))
-            setBatchProgress({ current: i + 1, total: deletablePaths.length })
           }
 
           await refreshStatus(effectivePath)
@@ -402,7 +400,6 @@ export function GitPanel({
           await refreshStatus(effectivePath)
         } finally {
           setIsBatchOperating(false)
-          setBatchProgress(null)
         }
       }
     })
@@ -426,6 +423,22 @@ export function GitPanel({
   }, [currentWorkspace, initBranchName, initRepository, toast, t])
 
   const useInternalDiff = !onOpenDiffInTab
+
+  // 面板级快捷键：F5 = 刷新仓库状态；Esc = 清除多选。
+  // 打字区与对话框内不劫持（对话框 / 菜单有自己的键盘语义）。
+  const handlePanelKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return
+    const target = e.target as HTMLElement | null
+    if (target?.closest('input, textarea, select, [role="dialog"]')) return
+    if (e.key === 'F5') {
+      e.preventDefault()
+      if (effectivePath) refreshStatus(effectivePath)
+    } else if (e.key === 'Escape') {
+      if (selectedFiles.size > 0) {
+        setSelectedFiles(new Set())
+      }
+    }
+  }, [effectivePath, refreshStatus, selectedFiles.size])
 
   const handleOpenSelectedDiffFile = useCallback(() => {
     if (!selectedDiff || selectedDiff.change_type === 'deleted') return
@@ -680,7 +693,10 @@ export function GitPanel({
   }
 
   return (
-    <div className={`h-full flex flex-col ${className}`}>
+    <div
+      className={`h-full flex flex-col ${className}`}
+      onKeyDown={handlePanelKeyDown}
+    >
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle shrink-0">
         <div className="flex items-center gap-2 min-w-0">
           {selectedRepoPath && (
@@ -840,16 +856,13 @@ export function GitPanel({
                 return (
                 <div className="px-3 py-1.5 bg-primary/5 border-b border-primary/20 flex items-center justify-between gap-2">
                   <span className="text-xs text-text-secondary flex-1 truncate">
-                    {batchProgress
-                      ? t('batchProgress', { current: batchProgress.current, total: batchProgress.total })
-                      : t('selectedFilesWithActions', {
-                        count: selectedFiles.size,
-                        stageable: counts.stageable,
-                        unstageable: counts.unstageable,
-                        discardable: counts.discardable,
-                        deletable: counts.deletable,
-                      })
-                    }
+                    {t('selectedFilesWithActions', {
+                      count: selectedFiles.size,
+                      stageable: counts.stageable,
+                      unstageable: counts.unstageable,
+                      discardable: counts.discardable,
+                      deletable: counts.deletable,
+                    })}
                   </span>
 
                   <div className="flex items-center gap-1 shrink-0">
@@ -922,6 +935,7 @@ export function GitPanel({
                 }}
                 selectedFiles={selectedFiles}
                 onToggleFileSelection={toggleFileSelection}
+                onSelectRange={handleSelectRange}
                 onSelectAll={toggleSelectAll}
                 isSelectionDisabled={isBatchOperating}
               />

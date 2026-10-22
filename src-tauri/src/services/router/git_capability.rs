@@ -60,6 +60,8 @@ const DESTRUCTIVE_ACTIONS: &[&str] = &[
     "resolve_conflict_file",
     "unstage_file",
     "batch_stage",
+    "batch_unstage",
+    "batch_discard",
     "commit_group",
     "discard_changes",
     "reset",
@@ -114,6 +116,7 @@ fn is_destructive(action: &str) -> bool {
 /// 快照是成本+噪音（见 plans/git-panel-p2-undo-spec.md §四）。
 const SNAPSHOT_ACTIONS: &[&str] = &[
     "discard_changes",
+    "batch_discard",
     "reset",
     "checkout_branch",
     "checkout_commit",
@@ -142,7 +145,7 @@ fn needs_undo_snapshot(action: &str, params: &Value) -> bool {
 /// 动作 → 快照上下文标识（对应用户可读的撤销来源）。
 fn snapshot_context(action: &str) -> &'static str {
     match action {
-        "discard_changes" => "discard",
+        "discard_changes" | "batch_discard" => "discard",
         "reset" => "reset_hard",
         "checkout_branch" | "checkout_commit" => "checkout",
         "delete_branch" => "branch_delete",
@@ -237,7 +240,7 @@ const KNOWN_ACTIONS: &[&str] = &[
     "is_repository", "discover_repositories", "get_status", "get_diffs",
     "get_log", "get_log_with_lanes", "get_commit_details", "get_file_history", "init_repository",
     "commit_changes", "stage_file", "unstage_file", "discard_changes",
-    "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
+    "batch_stage", "batch_unstage", "batch_discard", "commit_group", "get_worktree_diff", "get_index_diff",
     "get_worktree_file_diff", "get_index_file_diff", "get_branches",
     "create_branch", "checkout_branch", "delete_branch", "rename_branch",
     "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",
@@ -273,6 +276,8 @@ fn action_label(action: &str) -> &'static str {
         "stage_file" => "暂存文件",
         "unstage_file" => "取消暂存",
         "batch_stage" => "批量暂存",
+        "batch_unstage" => "批量取消暂存",
+        "batch_discard" => "批量丢弃变更",
         "discard_changes" => "丢弃变更",
         "reset" => "重置",
         "checkout_branch" => "切换分支",
@@ -678,6 +683,14 @@ impl Capability for GitCapability {
                 let files = string_vec(p, "filePaths");
                 json_ok_svc(GitService::batch_stage(&workspace(p)?, &files))
             }
+            "batch_unstage" => {
+                let files = string_vec(p, "filePaths");
+                json_ok_svc(GitService::batch_unstage(&workspace(p)?, &files))
+            }
+            "batch_discard" => {
+                let files = string_vec(p, "filePaths");
+                json_ok_svc(GitService::batch_discard(&workspace(p)?, &files))
+            }
             "commit_group" => {
                 let files = string_vec(p, "files");
                 if files.is_empty() {
@@ -1017,7 +1030,7 @@ mod tests {
             "is_repository", "discover_repositories", "get_status", "get_diffs",
             "get_log", "get_log_with_lanes", "get_commit_details", "get_file_history", "init_repository",
             "commit_changes", "stage_file", "unstage_file", "discard_changes",
-            "batch_stage", "commit_group", "get_worktree_diff", "get_index_diff",
+            "batch_stage", "batch_unstage", "batch_discard", "commit_group", "get_worktree_diff", "get_index_diff",
             "get_worktree_file_diff", "get_index_file_diff", "get_branches",
             "create_branch", "checkout_branch", "delete_branch", "rename_branch",
             "merge_branch", "rebase_branch", "rebase_abort", "rebase_continue",

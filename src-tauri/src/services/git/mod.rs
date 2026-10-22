@@ -41,7 +41,7 @@ pub use rebase::{
 };
 pub use cherry_pick::{cherry_pick, cherry_pick_abort, cherry_pick_continue};
 pub use revert::{revert, revert_abort, revert_continue};
-pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage, commit_group};
+pub use commit::{commit, amend_commit, stage_file, unstage_file, discard_changes, batch_stage, batch_unstage, batch_discard, commit_group};
 pub use remote::{
     get_remotes, detect_git_host, add_remote, delete_remote,
     push_branch, push_set_upstream, create_pr, get_pr_status, pull, fetch,
@@ -62,7 +62,7 @@ pub use sequence::{
 use std::path::Path;
 
 use crate::models::git::{
-    BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
+    BatchOpResult, BatchStageResult, CreatePROptions, GitBlameResult, GitBranch, GitCherryPickResult,
     GitCommit, GitCommitDetails, GitConflictPrediction, GitDiffEntry, GitDiscoveredRepo, GitFileHistoryEntry, GitIgnoreResult,
     GitIgnoreTemplate, GitLogPage, GitMergeResult, GitPullResult, GitCommitRiskReport, GitRebasePlan, GitRebaseSuggestion, GitRebaseResult,
     GitRebaseTodoItem, GitReflogEntry, GitRemote,
@@ -311,6 +311,16 @@ impl GitService {
     /// 批量暂存文件
     pub fn batch_stage(path: &Path, file_paths: &[String]) -> Result<BatchStageResult, GitServiceError> {
         batch_stage(path, file_paths)
+    }
+
+    /// 批量取消暂存文件
+    pub fn batch_unstage(path: &Path, file_paths: &[String]) -> Result<BatchOpResult, GitServiceError> {
+        batch_unstage(path, file_paths)
+    }
+
+    /// 批量丢弃工作区变更
+    pub fn batch_discard(path: &Path, file_paths: &[String]) -> Result<BatchOpResult, GitServiceError> {
+        batch_discard(path, file_paths)
     }
 
     /// 按组原子提交（AI-2：只提交组内文件，index 其它已暂存内容不受影响，等价 `git commit <paths>`）

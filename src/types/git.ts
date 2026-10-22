@@ -570,6 +570,16 @@ export interface BatchStageResult {
 }
 
 /**
+ * 通用批量操作结果（批量取消暂存 / 批量丢弃变更；与后端 BatchOpResult 对齐）
+ * ok = 成功路径列表；failed = 逐条失败。部分成功不整体失败。
+ */
+export interface BatchOpResult {
+  ok: string[]
+  failed: StageFailure[]
+  total: number
+}
+
+/**
  * 暂存失败信息
  */
 export interface StageFailure {

@@ -8,7 +8,7 @@ use git2::build::CheckoutBuilder;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
-use crate::models::git::{BatchStageResult, GitServiceError, StageFailure};
+use crate::models::git::{BatchOpResult, BatchStageResult, GitServiceError, StageFailure};
 use super::executor::open_repository;
 
 #[derive(Debug, Clone, Copy)]
@@ -333,6 +333,79 @@ pub fn unstage_file(path: &Path, file_path: &str) -> Result<(), GitServiceError>
 
     repo.reset_default(Some(&head_obj), [file_path])?;
     Ok(())
+}
+
+/// 批量取消暂存（与 batch_stage 同构：单 repo open、逐文件、单次 index.write）。
+/// 部分成功不整体失败：逐条错误记入 failed。
+pub fn batch_unstage(path: &Path, file_paths: &[String]) -> Result<BatchOpResult, GitServiceError> {
+    let repo = open_repository(path)?;
+    let mut index = repo.index()?;
+
+    // 空仓库/首次提交场景：reset_default 不可用，只能从 index 移除（对齐 unstage_file 单文件分支）。
+    let head_obj = repo.revparse_single("HEAD").ok();
+
+    let mut ok = Vec::new();
+    let mut failed = Vec::new();
+
+    for file_path in file_paths {
+        let result = match &head_obj {
+            Some(obj) => repo.reset_default(Some(obj), [file_path.as_str()]),
+            None => index.remove_path(std::path::Path::new(file_path)),
+        };
+        match result {
+            Ok(_) => ok.push(file_path.clone()),
+            Err(e) => failed.push(StageFailure {
+                path: file_path.clone(),
+                error: e.to_string(),
+            }),
+        }
+    }
+
+    index.write()?;
+
+    Ok(BatchOpResult {
+        ok,
+        failed,
+        total: file_paths.len(),
+    })
+}
+
+/// 批量丢弃工作区变更（单 repo open；untracked 与单文件 discard_changes 语义一致拒绝）。
+/// 逐文件 checkout：部分成功不整体失败。
+/// 撤销快照由 cap.git 层的动作钩子创建（batch_discard 已登记 SNAPSHOT_ACTIONS）。
+pub fn batch_discard(path: &Path, file_paths: &[String]) -> Result<BatchOpResult, GitServiceError> {
+    let repo = open_repository(path)?;
+
+    let mut ok = Vec::new();
+    let mut failed = Vec::new();
+
+    for file_path in file_paths {
+        // 与单文件 discard_changes 同语义：untracked 不允许 discard（只能 delete）
+        let gated = matches!(file_status(&repo, file_path)?, Some(status) if status.is_wt_new());
+        if gated {
+            failed.push(StageFailure {
+                path: file_path.clone(),
+                error: "Untracked files cannot be discarded; delete them instead".to_string(),
+            });
+            continue;
+        }
+
+        let mut checkout = CheckoutBuilder::new();
+        checkout.force().path(file_path);
+        match repo.checkout_index(None, Some(&mut checkout)) {
+            Ok(_) => ok.push(file_path.clone()),
+            Err(e) => failed.push(StageFailure {
+                path: file_path.clone(),
+                error: e.to_string(),
+            }),
+        }
+    }
+
+    Ok(BatchOpResult {
+        ok,
+        failed,
+        total: file_paths.len(),
+    })
 }
 
 /// 丢弃工作区变更
