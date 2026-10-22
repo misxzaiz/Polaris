@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Code2, Copy, Download, ExternalLink, FileText, Maximize2, X } from 'lucide-react';
 import { clsx } from 'clsx';
@@ -6,12 +6,14 @@ import type { ArtifactPreviewBlock } from '@/types';
 import { copyToClipboard } from '@/utils/clipboard';
 import { isTauri } from '@/utils/platform';
 import { useContainerWidth } from '@/hooks/useContainerWidth';
+import { invoke } from '@/services/transport';
 import {
   openInDefaultApp,
   setFullscreen as tauriSetFullscreen,
   isFullscreen as tauriIsFullscreen,
   onFullscreenChange,
 } from '@/services/tauri/windowService';
+import { forwardCardCapRequest } from '@/utils/htmlCardCapBridge';
 
 function safeFileName(value: string): string {
   // 控制字符 \x00-\x1F 通过 String.fromCharCode 构造，避免在正则字面量中直接出现（触发 no-control-regex）
@@ -52,6 +54,8 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
   const [showSource, setShowSource] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [copied, setCopied] = useState<'html' | 'path' | null>(null);
+
+  const previewFrameRef = useRef<HTMLIFrameElement | null>(null);
 
   // 窄屏判定：容器宽度 < 560 启用移动端布局（ResizeObserver，375px 手机 / 桌面宽屏自动切换）
   const { ref: cardRef, width: cardWidth } = useContainerWidth<HTMLElement>();
@@ -186,6 +190,29 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
     return () => { unlisten?.(); };
   }, []);
 
+  // HTML 卡片 Cap 桥：监听卡片 iframe 的 postMessage 请求并转发 RouterBus。
+  // 只响应本卡片 iframe 的 source；白名单外目标拒绝；卸载移除监听。
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const source = event.source
+      const frameWin = previewFrameRef.current?.contentWindow
+      if (!source || !frameWin || source !== frameWin) return
+      const data = event.data
+      if (!data || typeof data !== 'object') return
+
+      void forwardCardCapRequest(data, invoke).then((reply) => {
+        if (!reply) return
+        try {
+          frameWin.postMessage(reply, '*')
+        } catch {
+          // 卡片已卸载/跨源异常：忽略
+        }
+      })
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, []);
+
   // Escape 兜底退出（onResized 在窗口大小未变化时可能不触发，需保留键盘兜底）
   useEffect(() => {
     if (!isFullscreen) return;
@@ -200,6 +227,7 @@ export const ArtifactPreviewRenderer = memo(function ArtifactPreviewRenderer({
 
   const previewFrame = (
     <iframe
+      ref={previewFrameRef}
       title={block.title}
       srcDoc={block.html}
       sandbox="allow-scripts allow-forms allow-popups allow-modals"
