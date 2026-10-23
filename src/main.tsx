@@ -6,7 +6,7 @@ import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
 import { bootstrapTheme } from '@/services/themeEngine';
-import { invoke } from '@/services/transport';
+import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { eventBus } from '@/services/eventBus';
 
@@ -15,6 +15,9 @@ import { eventBus } from '@/services/eventBus';
 ;(window as any).__POLARIS_HOST_REACT_JSX__ = ReactJSXRuntime;
 // 暴露后端 invoke 给外部插件面板使用（无状态调用，零服务进程）
 ;(window as any).__POLARIS_HOST_INVOKE__ = invoke;
+// 暴露后端 listen 给外部插件面板使用（chat-event 等事件订阅。
+// MultiChat 插件用它在面板内直听流式事件，与现有 eventRouter 解耦：按 `mc-` contextId 前缀过滤）
+;(window as any).__POLARIS_HOST_LISTEN__ = listen;
 // 暴露"发送消息到活跃会话"给外部插件面板（news-curator 等面板的 sendToChat 兜底通道；
 // 实际实现在 App.tsx 挂载真实 sendMessage；此声明保证通道始终存在（空实现静默降级））
 ;(window as any).__POLARIS_SEND_TO_CHAT__ = () => {};
