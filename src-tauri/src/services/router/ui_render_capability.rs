@@ -656,6 +656,7 @@ impl UiRenderCapability {
                             tool_name: tool_name.clone(),
                             payload: payload.clone(),
                             status: PluginCardStatus::Pending,
+                            source: Some("ui.render".to_string()),
                         },
                     );
                 }

@@ -134,3 +134,4 @@ release/
 
 # Local 3D render experiments (scratch frames / minified libs, not product code)
 glass-micro-world/
+release-artifacts/

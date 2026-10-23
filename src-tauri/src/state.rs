@@ -98,6 +98,12 @@ pub struct PendingPluginCard {
     pub tool_name: String,
     pub payload: serde_json::Value,
     pub status: PluginCardStatus,
+    /// 发出来源标记（可选）。`Some("ui.render")` = cap.ui.render 外部入口帧：
+    /// 前端对路由 miss 的该类事件做「投递到当前活跃会话」兜底
+    /// （plans/cap-ui-render-external-entry-analysis.md 方案 C+来源标记）。
+    /// 其余来源（ask_listener MCP 伴生卡片等）不标记，行为不变。
+    #[serde(default)]
+    pub source: Option<String>,
 }
 
 /// 单条子答案

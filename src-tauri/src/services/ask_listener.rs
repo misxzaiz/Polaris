@@ -812,6 +812,7 @@ async fn handle_card_frame(
                 tool_name: tool_name.clone(),
                 payload: payload.clone(),
                 status: PluginCardStatus::Pending,
+                source: None,
             },
         );
     }
