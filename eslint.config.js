@@ -27,7 +27,6 @@ export default tseslint.config(
       '**/build/**',
       '**/gen/**',
       'polaris-mobile/dist/**',
-      'polaris-pocket/dist/**',
       // 临时脚本目录（一次性诊断/调试脚本，非产品代码）
       'scripts/tmp/**',
       'examples/**',
@@ -121,23 +120,6 @@ export default tseslint.config(
     rules: {
       '@typescript-eslint/no-unused-expressions': 'off',
       '@typescript-eslint/no-unused-vars': 'off',
-    },
-  },
-  // sky 独立 Node 服务工程：CLI/server/脚本的 console 是正确行为，不做产品化限制
-  {
-    files: ['sky/**', 'sky/src/**', 'sky/scripts/**', 'sky/web/**'],
-    rules: {
-      'no-console': 'off',
-      'no-empty': 'off',
-    },
-  },
-  // 子项目（polaris-pocket 移动端 / sky Web 渲染）内部风格规则自治：
-  // 它们是无独立 lint 配置的独立交付物，根 lint 不强约束其局部风格细节
-  {
-    files: ['polaris-pocket/**', 'sky/web/src/render/**'],
-    rules: {
-      'prefer-const': 'off',
-      'no-case-declarations': 'off',
     },
   },
   // errors.ts 错误日志输出需要 console
