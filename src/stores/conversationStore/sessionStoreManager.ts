@@ -543,15 +543,45 @@ function createSessionManagerStore() {
         log.warn('事件缺少 _routeSessionId，丢弃', { type: event.type })
         return
       }
+      // 实体渲染事件白名单：外部入口（MCP bridge / cap_dispatch 经 cap.ui.render 等调用）携带的
+      // routeSessionId 是后端 conversationId（对不上任何前端 store），但这类事件不承载会话主体逻辑，
+      // 只驱动卡片渲染 / 回答回写，兜底投递到当前活跃会话即可。其余事件保持丢弃语义，
+      // 避免重新引入「回退 activeSessionId」的历史根因（见对不准窗口/新开窗口旧 bug）。
+      const RENDER_EVENT_TYPES: ReadonlySet<string> = new Set(['plugin_card', 'plugin_card_answered'])
+
       const store = get().stores.get(routeSessionId)
+      // 实际投递目标 sessionId（未兜底 = routeSessionId；兜底 = 活跃会话）
+      let targetSessionId = routeSessionId
       if (!store) {
-        // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
-        // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
-        log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
-        return
+        if (RENDER_EVENT_TYPES.has(event.type)) {
+          const activeId = get().activeSessionId
+          const activeStore = activeId ? get().stores.get(activeId) : undefined
+          if (activeId && activeStore) {
+            log.warn('渲染事件未匹配到原始会话，兜底投递到活跃会话', {
+              routeSessionId,
+              fallback: activeId,
+              type: event.type,
+            })
+            targetSessionId = activeId
+          } else {
+            log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
+            return
+          }
+        } else {
+          // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
+          // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
+          log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
+          return
+        }
       }
 
-      store.getState().handleAIEvent(event)
+      const targetStore = get().stores.get(targetSessionId)
+      if (!targetStore) {
+        // 理论不可达（非白名单事件在此前已 return，白名单兜底已确认 activeStore 存在），防御性丢弃
+        log.warn('事件投递失败：目标会话 store 不存在', { targetSessionId, type: event.type })
+        return
+      }
+      targetStore.getState().handleAIEvent(event)
 
       // 补发到 EventBus，确保 DeveloperPanel 等订阅者能收到事件
       try {
@@ -561,7 +591,8 @@ function createSessionManagerStore() {
       }
 
       // 更新元数据状态（仅在 status 实际变化时创建新 Map，避免高频事件下无谓重建）
-      const metadata = get().sessionMetadata.get(routeSessionId)
+      // 兜底投递时用 targetSessionId（活跃会话）；正常路径 targetSessionId === routeSessionId，语义不变。
+      const metadata = get().sessionMetadata.get(targetSessionId)
       if (metadata) {
         let newStatus: SessionMetadata['status'] = metadata.status
 
@@ -571,19 +602,19 @@ function createSessionManagerStore() {
           newStatus = 'idle'
 
           // 如果是后台运行的会话，添加通知
-          if (get().backgroundSessionIds.includes(routeSessionId)) {
-            get().addToNotifications(routeSessionId)
-            get().removeFromBackground(routeSessionId)
+          if (get().backgroundSessionIds.includes(targetSessionId)) {
+            get().addToNotifications(targetSessionId)
+            get().removeFromBackground(targetSessionId)
 
             // 触发 Toast 通知
-            const sessionMetadata = get().sessionMetadata.get(routeSessionId)
+            const sessionMetadata = get().sessionMetadata.get(targetSessionId)
             if (sessionMetadata) {
               // 动态导入 toastStore 避免循环依赖
               import('@/stores/toastStore').then(({ useToastStore }) => {
                 useToastStore.getState().sessionComplete(
                   sessionMetadata.title,
-                  routeSessionId,
-                  () => get().switchSession(routeSessionId)
+                  targetSessionId,
+                  () => get().switchSession(targetSessionId)
                 )
               })
             }
@@ -597,7 +628,7 @@ function createSessionManagerStore() {
         if (newStatus !== metadata.status) {
           set((state) => {
             const newMetadata = new Map(state.sessionMetadata)
-            newMetadata.set(routeSessionId, { ...metadata, status: newStatus, updatedAt: new Date().toISOString() })
+            newMetadata.set(targetSessionId, { ...metadata, status: newStatus, updatedAt: new Date().toISOString() })
             return { sessionMetadata: newMetadata }
           })
         }
