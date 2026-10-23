@@ -183,6 +183,17 @@ export function registerBuiltinPlugins(): void {
     },
     () => import('@/plugins/agnes/AgnesMediaCard').then((m) => ({ default: m.AgnesMediaCard })),
   )
+  // cap.ui.render 帧统一渲染器（question/form/confirm/template/custom）
+  // 后端 cap.ui.render 发帧 toolName 默认即 'ui.render'，精确 key 命中。
+  // 见 plans/ui-template-runtime-v1.md §4（含 UI 模板运行时注册能力）。
+  chatCardRegistry.registerBuiltinExact(
+    'ui.render',
+    { pluginId: 'polaris.ui-frame', cardId: 'frame-renderer', mode: 'interaction' },
+    () =>
+      import('@/components/Chat/chatBlocks/UiFrameCard').then((m) => ({
+        default: m.UiFrameCard,
+      })),
+  )
 }
 
 registerBuiltinPlugins()

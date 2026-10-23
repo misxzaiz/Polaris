@@ -103,6 +103,44 @@ class ChatCardRegistry {
     this.register(pluginId, card, loader)
   }
 
+  /**
+   * 按精确 key 注册内置卡片（绕过 `mcp__{server}__{tool}` 组装）。
+   *
+   * 用途：cap 帧 toolName 直接命中（如 cap.ui.render 发帧 toolName=ui.render，
+   * 经内置 UiFrameCard 渲染，见 plans/ui-template-runtime-v1.md §4）。
+   */
+  registerBuiltinExact(
+    key: string,
+    meta: { pluginId: string; cardId: string; mode: PluginChatCardContribution['mode'] },
+    loader: PluginChatCardLoader
+  ): void {
+    const entry: CardEntry = {
+      pluginId: meta.pluginId,
+      cardId: meta.cardId,
+      mode: meta.mode,
+      mcpServerId: '(cap-frame)',
+      tools: [],
+      loader,
+    }
+    const existing = this.cards.get(key)
+    if (existing) {
+      log.warn(
+        `Exact key "${key}" already registered by plugin ${existing.pluginId} (${existing.cardId}), overriding with ${meta.pluginId} (${meta.cardId})`
+      )
+      const oldSet = this.pluginKeys.get(existing.pluginId)
+      oldSet?.delete(key)
+    }
+    this.cards.set(key, entry)
+    let keySet = this.pluginKeys.get(meta.pluginId)
+    if (!keySet) {
+      keySet = new Set()
+      this.pluginKeys.set(meta.pluginId, keySet)
+    }
+    keySet.add(key)
+    this.cache.delete(key)
+    log.debug(`Registered builtin card by exact key: ${meta.pluginId}/${meta.cardId} → ${key}`)
+  }
+
   unregisterAll(pluginId: string): void {
     const keys = this.pluginKeys.get(pluginId)
     if (!keys) return
