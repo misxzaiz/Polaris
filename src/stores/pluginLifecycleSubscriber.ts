@@ -15,7 +15,9 @@
 import { listen } from '@/services/transport'
 import { discoverInstalledPlugins } from '@/services/pluginDiscoveryService'
 import { pluginRegistry } from '@/plugin-system'
+import type { PluginServiceStatus } from '@/plugin-system/types'
 import { usePluginStore } from '@/stores/pluginStore'
+import { usePluginServiceStore } from '@/stores/pluginServiceStore'
 import { useWorkspaceStore } from '@/stores/workspaceStore'
 import { createLogger } from '@/utils/logger'
 
@@ -87,9 +89,29 @@ export function initPluginLifecycleSubscriber(): () => void {
     unlisten = fn
   })
 
+  // 后端 PluginServiceManager 状态回推（P1-3，2026-10-24 审计）：
+  // 自动重启/Error/健康翻转等后端状态变化此前只改内存，UI 长期陈旧；
+  // 现经 plugin.service.status 事件实时回填 pluginServiceStore。
+  const onServiceStatus = (payload: PluginServiceStatus) => {
+    if (disposed) return
+    if (!payload || !payload.pluginId || !payload.serviceId) return
+    usePluginServiceStore.getState().updateServiceStatus(payload)
+  }
+
+  let unlistenService: UnlistenFn | null = null
+  listen<PluginServiceStatus>('plugin.service.status', onServiceStatus).then((fn) => {
+    if (disposed) {
+      fn()
+      return
+    }
+    unlistenService = fn
+  })
+
   return () => {
     disposed = true
     unlisten?.()
     unlisten = null
+    unlistenService?.()
+    unlistenService = null
   }
 }

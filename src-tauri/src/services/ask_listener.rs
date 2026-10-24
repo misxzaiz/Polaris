@@ -130,7 +130,7 @@ pub struct AskListenerHandle {
 /// 语义：端口稳定优先于完全随机——ask_listener 重启时尽可能沿用这些常用端口，
 /// mcp.json 里固化的 `--polaris-port` 因而长期有效。并发多开冲突时才 +1 换下一个，
 /// 全占用回落随机（此时自愈靠 `.meta/ask-listener.json` 兜底）。
-const ASK_LISTENER_PORT_POOL: &[u16] = &[56496, 56497, 56498, 60097, 60098];
+pub const ASK_LISTENER_PORT_POOL: &[u16] = &[56496, 56497, 56498, 60097, 60098];
 
 /// Bind a TCP socket on 127.0.0.1 (port pool first, random fallback) and spawn
 /// the accept loop.

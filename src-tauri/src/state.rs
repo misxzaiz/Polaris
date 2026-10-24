@@ -368,8 +368,19 @@ pub fn create_app_state(
     let event_broadcast = crate::web::EventBroadcaster::new(256);
     // 插件服务管理器：router block 的 cap.pluginDiscovery 需要注入，AppState 构造也需要
     // （plugin_uninstall_with_cleanup 会先停 PluginServiceManager 服务）；提前创建一次共享。
-    let plugin_service_manager =
-        Arc::new(crate::services::plugin_service_manager::PluginServiceManager::new());
+    // P1-1（2026-10-24 审计）：注入宿主保留端口（web 服务 + ask_listener 池），
+    // 插件分配/声明端口时避让，不再与宿主端口体系互不感知。
+    let reserved_host_ports = {
+        let web_port = config_store_arc.lock().unwrap().get().web.port;
+        let mut reserved = vec![web_port];
+        reserved.extend_from_slice(crate::services::ask_listener::ASK_LISTENER_PORT_POOL);
+        reserved
+    };
+    let plugin_service_manager = Arc::new(
+        crate::services::plugin_service_manager::PluginServiceManager::with_reserved_ports(
+            reserved_host_ports,
+        ),
+    );
     let router = {
         use crate::contracts::Router as _; // dispatch / register_handle / subscribe
         use crate::services::router::{
@@ -981,4 +992,30 @@ impl AppState {
             })
             .unwrap_or(0)
     }
+}
+
+// P1-3（2026-10-24 审计）：插件服务状态回推前端——PSM broadcast → RouterBus
+// EventAdapter（kind=plugin.service.status，直达前端 transport.listen）。
+// 此前后端自动重启/Error 只改内存状态，UI 长期陈旧。
+// 独立 helper：须在 tokio runtime 上下文内调用（桌面 setup / web block_on），
+// 不能在 create_app_state（Builder 构造期、runtime 之外）里 spawn。
+pub fn spawn_plugin_status_forwarder(state: &AppState) {
+    let status_router = state.router.clone();
+    let mut status_rx = state.plugin_service_manager.subscribe_status();
+    tokio::spawn(async move {
+        loop {
+            match status_rx.recv().await {
+                Ok(status) => {
+                    status_router.emit_event(
+                        "plugin.service.status",
+                        serde_json::to_value(&status).unwrap_or(serde_json::Value::Null),
+                    );
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                    tracing::warn!(lagged = n, "plugin service status subscriber lagged");
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
 }

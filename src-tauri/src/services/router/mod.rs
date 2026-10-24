@@ -390,6 +390,19 @@ impl RouterBus {
         })
     }
 
+    /// 宿主侧直接广播事件（kind 直达前端 transport.listen 通道）。
+    ///
+    /// 用途：非 dispatch 链路的状态回推（如插件服务状态 `plugin.service.status`，
+    /// P1-3）。与 RealContext::emit 同通道，但无需 ctx。
+    pub fn emit_event(&self, kind: &str, payload: Value) {
+        self.broadcaster.broadcast(Event {
+            seq: 0,
+            kind: kind.into(),
+            payload,
+            trace: TraceId(format!("trace-{}", uuid::Uuid::new_v4())),
+        });
+    }
+
     /// 设置插件配置（供 dispatch 内 ctx 读取，键为插件 id）
     pub fn set_plugin_config(&self, plugin_id: &str, config: Value) {
         self.plugin_configs

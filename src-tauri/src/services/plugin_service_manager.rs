@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
-use tokio::sync::{watch, Mutex, Notify};
+use tokio::sync::{broadcast, watch, Mutex, Notify};
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{DiscoveredPluginManifest, PluginServiceManifestContribution};
@@ -32,6 +32,13 @@ const STOP_FINALIZE_TIMEOUT: Duration = Duration::from_secs(5);
 /// 服务稳定运行时长：超过该值后自然退出，restart_count 清零再计
 /// （否则偶发退出累计 3 次后自动重启永久失效——审计 X2-⑤）。
 const STABLE_UPTIME_SECS: u64 = 60;
+
+/// healthCheck 连续失败判死阈值：达到后置 Error 并停止探测
+/// （进程退出/重启仍由 process_watcher 处理——审计 P1-2）。
+const HEALTH_FAIL_THRESHOLD: u32 = 3;
+
+/// 端口分配 bind 探测候选上限（10000-60000 共 5 万个候选，正常几十次内命中）
+const PORT_PROBE_MAX_ATTEMPTS: u32 = 256;
 
 /// 服务类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -116,15 +123,44 @@ pub struct PluginServiceManager {
     services: Mutex<HashMap<String, ManagedService>>,
     allocated_ports: Mutex<Vec<u16>>,
     port_counter: Mutex<u16>,
+    /// 宿主自身监听端口（web 服务 / ask_listener 池），插件分配时避让
+    /// （审计 P1-1：此前插件端口与宿主端口体系互不感知）。
+    reserved_host_ports: Vec<u16>,
+    /// 服务状态变更流（前端回推：UI 长期陈旧问题的修复通道，审计 P1-3）。
+    /// 无订阅者时 send 的 Err 被忽略。
+    status_events: broadcast::Sender<ServiceStatus>,
 }
 
 impl PluginServiceManager {
     pub fn new() -> Self {
+        Self::with_reserved_ports(Vec::new())
+    }
+
+    /// 构造（带宿主保留端口表：分配/声明时避让）
+    pub fn with_reserved_ports(reserved_host_ports: Vec<u16>) -> Self {
+        let (status_events, _) = broadcast::channel(64);
         Self {
             services: Mutex::new(HashMap::new()),
             allocated_ports: Mutex::new(Vec::new()),
             port_counter: Mutex::new(10000),
+            reserved_host_ports,
+            status_events,
         }
+    }
+
+    /// 订阅服务状态变更（接线层转发到前端 `plugin.service.status` 事件）
+    pub fn subscribe_status(&self) -> broadcast::Receiver<ServiceStatus> {
+        self.status_events.subscribe()
+    }
+
+    /// 状态变更广播（fire-and-forget）
+    fn publish(&self, status: &ServiceStatus) {
+        let _ = self.status_events.send(status.clone());
+    }
+
+    /// 端口是否可绑定（OS 级探测：被占/Windows 保留段均 bind 失败——审计 P1-1）
+    async fn port_bindable(port: u16) -> bool {
+        tokio::net::TcpListener::bind(("127.0.0.1", port)).await.is_ok()
     }
 
     /// 根据插件列表批量启动（应用启动时使用）
@@ -208,13 +244,17 @@ impl PluginServiceManager {
             }
         }
 
-        // 分配端口
+        // 分配端口（P1-1：bind 探测 + 避让宿主端口 + 冲突显式报错，不再静默双启动）
         let port = match contribution.port {
             Some(p) => {
-                self.reserve_port(p).await;
+                self.reserve_port(p).await.map_err(|e| {
+                    AppError::ProcessError(format!("服务 {} 端口冲突: {}", contribution.id, e))
+                })?;
                 p
             }
-            None => self.allocate_port().await,
+            None => self.allocate_port().await.map_err(|e| {
+                AppError::ProcessError(format!("服务 {} 端口分配失败: {}", contribution.id, e))
+            })?,
         };
 
         let args = build_args(&contribution, &plugin_install_path, port, &ctx);
@@ -257,10 +297,20 @@ impl PluginServiceManager {
 
         let pid = child.id().unwrap_or(0);
 
+        // P1-2：声明了 http healthCheck 的服务以 Starting 起步，首次探测成功才
+        // 翻 Running（此前 spawn 即 Running，无就绪门槛）
+        let has_http_health = contribution.health_check.is_some()
+            && contribution.service_type.to_lowercase() == "http";
+        let initial_state = if has_http_health {
+            ServiceState::Starting
+        } else {
+            ServiceState::Running
+        };
+
         let status = ServiceStatus {
             service_id: contribution.id.clone(),
             plugin_id: plugin_id.to_string(),
-            state: ServiceState::Running,
+            state: initial_state,
             port: Some(port),
             pid: Some(pid),
             uptime: Some(0),
@@ -307,18 +357,19 @@ impl PluginServiceManager {
             stop_signal,
         );
 
-        // 启动健康检查任务
-        if contribution.health_check.is_some() && contribution.service_type.to_lowercase() == "http"
-        {
+        // 启动健康检查任务（仅 http 型；Starting→Running 门控 + 连续失败判死）
+        if has_http_health {
             self.spawn_health_check(plugin_id.to_string(), contribution.id.clone());
         }
 
-        // 返回最新 snapshot
+        // P1-3：状态回推
         let services = self.services.lock().await;
-        Ok(services
+        let snapshot = services
             .get(&service_key)
             .map(snapshot_status)
-            .unwrap_or(status))
+            .unwrap_or_else(|| status.clone());
+        self.publish(&snapshot);
+        Ok(snapshot)
     }
 
     /// 停止单个服务
@@ -359,10 +410,9 @@ impl PluginServiceManager {
                     }
                     managed.auto_restart_enabled = false; // 阻止后续自动重启
                     managed.status.state = ServiceState::Stopping;
-                    (
-                        managed.stop_signal.clone(),
-                        managed.finalize.subscribe(),
-                    )
+                    let snap = snapshot_status(managed);
+                    self.publish(&snap);
+                    (managed.stop_signal.clone(), managed.finalize.subscribe())
                 }
                 None => return Ok(stopped_snapshot()),
             }
@@ -477,7 +527,10 @@ impl PluginServiceManager {
 
     // === 内部 ===
 
-    /// 健康检查任务：周期发 GET 请求
+    /// 健康检查任务：周期发 GET 请求（P1-2 状态机化）：
+    /// - Starting 门控：首次探测成功翻 Running（spawn 不再直接等于就绪）；
+    /// - 连续失败 ≥HEALTH_FAIL_THRESHOLD → 置 Error 并停止探测
+    ///   （进程退出/自动重启仍由 process_watcher 独立处理）。
     fn spawn_health_check(self: &Arc<Self>, plugin_id: String, service_id: String) {
         let manager = self.clone();
         let key = make_key(&plugin_id, &service_id);
@@ -485,6 +538,8 @@ impl PluginServiceManager {
         tokio::spawn(async move {
             // 给进程一个初始预热时间
             tokio::time::sleep(Duration::from_secs(2)).await;
+
+            let mut consecutive_failures: u32 = 0;
 
             loop {
                 // 取必要参数 + 检查是否仍在运行
@@ -494,8 +549,12 @@ impl PluginServiceManager {
                         Some(m) => m,
                         None => return, // 服务已被移除
                     };
-                    if m.status.state != ServiceState::Running {
-                        return; // 不再运行，结束探针
+                    // Stopped/Error 终态（watcher 收尾）→ 探针退出
+                    if matches!(
+                        m.status.state,
+                        ServiceState::Stopped | ServiceState::Stopping
+                    ) {
+                        return;
                     }
                     let port = m.status.port.unwrap_or(0);
                     let path = m
@@ -520,13 +579,46 @@ impl PluginServiceManager {
                     false
                 };
 
-                if !ok {
+                if ok {
+                    consecutive_failures = 0;
                     let mut services = manager.services.lock().await;
                     if let Some(m) = services.get_mut(&key) {
-                        m.status.last_error = Some(format!("health check failed: {}", url));
-                        tracing::warn!(url = %url, "plugin service health check failed");
+                        if m.status.state == ServiceState::Starting {
+                            m.status.state = ServiceState::Running;
+                            m.status.last_error = None;
+                            let snap = snapshot_status(m);
+                            drop(services);
+                            manager.publish(&snap);
+                            tracing::info!(
+                                plugin_id = %plugin_id,
+                                service_id = %service_id,
+                                "plugin service health check passed, Starting → Running"
+                            );
+                            continue;
+                        }
                     }
-                    // 健康检查失败不直接 kill，只标记 last_error；进程是否真死交给 process_watcher
+                } else {
+                    consecutive_failures += 1;
+                    let mut services = manager.services.lock().await;
+                    if let Some(m) = services.get_mut(&key) {
+                        m.status.last_error =
+                            Some(format!("health check failed ({}): {}", consecutive_failures, url));
+                        if consecutive_failures >= HEALTH_FAIL_THRESHOLD
+                            && m.status.state != ServiceState::Error
+                        {
+                            m.status.state = ServiceState::Error;
+                            let snap = snapshot_status(m);
+                            drop(services);
+                            manager.publish(&snap);
+                            tracing::error!(
+                                plugin_id = %plugin_id,
+                                service_id = %service_id,
+                                consecutive_failures,
+                                "plugin service unhealthy, marked Error (process lifecycle stays with process_watcher)"
+                            );
+                            return;
+                        }
+                    }
                 }
 
                 tokio::time::sleep(Duration::from_secs(30)).await;
@@ -640,11 +732,24 @@ impl PluginServiceManager {
                 manager.release_port(p).await;
             }
 
+            // 重启路径（进入 Starting）：回推状态（终态路径在各自分支 publish）
+            if decision.1.is_some() {
+                let services = manager.services.lock().await;
+                if let Some(m) = services.get(&key) {
+                    let snap = snapshot_status(m);
+                    drop(services);
+                    manager.publish(&snap);
+                }
+            }
+
             // 非重启终态（用户停止 / 自动重启关闭 / 超限 Error）：finalize 通知后结束
             let Some((pid, contribution, install_path, ctx, attempt)) = decision.1 else {
                 let services = manager.services.lock().await;
                 if let Some(m) = services.get(&key) {
                     let _ = m.finalize.send(true);
+                    let snap = snapshot_status(m);
+                    drop(services);
+                    manager.publish(&snap);
                 }
                 return;
             };
@@ -675,6 +780,9 @@ impl PluginServiceManager {
                     m.status.uptime = None;
                     m.started_at = None;
                     let _ = m.finalize.send(true);
+                    let snap = snapshot_status(m);
+                    drop(services);
+                    manager.publish(&snap);
                 }
                 return;
             }
@@ -701,33 +809,72 @@ impl PluginServiceManager {
                     m.status.state = ServiceState::Error;
                     m.status.last_error = Some(e.to_string());
                     let _ = m.finalize.send(true);
+                    let snap = snapshot_status(m);
+                    drop(services);
+                    manager.publish(&snap);
                 }
             }
         });
     }
 
-    async fn allocate_port(&self) -> u16 {
+    /// 分配端口（P1-1）：计数器候选 → 跳过本管理器已分配/宿主保留端口 →
+    /// OS bind 探测（被占/Windows 保留段自动跳过）→ 记账返回。
+    /// 探测循环上限 PORT_PROBE_MAX_ATTEMPTS，超限显式报错（不再无限绕圈）。
+    async fn allocate_port(&self) -> std::result::Result<u16, String> {
         let mut counter = self.port_counter.lock().await;
         let mut ports = self.allocated_ports.lock().await;
-        loop {
+        for _ in 0..PORT_PROBE_MAX_ATTEMPTS {
             let port = *counter;
             *counter = if *counter >= 60000 {
                 10000
             } else {
                 *counter + 1
             };
-            if !ports.contains(&port) {
-                ports.push(port);
-                return port;
+            if ports.contains(&port) || self.reserved_host_ports.contains(&port) {
+                continue;
             }
+            // 探测期间持有 port 锁：分配本就串行化（互斥），且避免两路并发
+            // 同时探测同一端口的竞态。tokio Mutex 持锁跨 await 无 std 死锁风险。
+            if !Self::port_bindable(port).await {
+                continue;
+            }
+            ports.push(port);
+            return Ok(port);
         }
+        Err(format!(
+            "连续 {} 个候选端口均不可绑定",
+            PORT_PROBE_MAX_ATTEMPTS
+        ))
     }
 
-    async fn reserve_port(&self, port: u16) {
-        let mut ports = self.allocated_ports.lock().await;
-        if !ports.contains(&port) {
-            ports.push(port);
+    /// 预留 manifest 声明的固定端口（P1-1）：查重（本管理器内冲突）+ 避让
+    /// 宿主端口 + OS bind 探测，冲突显式报错（此前静默记账、可双启动）。
+    async fn reserve_port(&self, port: u16) -> std::result::Result<(), String> {
+        {
+            let ports = self.allocated_ports.lock().await;
+            if ports.contains(&port) {
+                return Err(format!(
+                    "端口 {} 已被其他插件服务占用",
+                    port
+                ));
+            }
+            if self.reserved_host_ports.contains(&port) {
+                return Err(format!("端口 {} 与宿主服务端口冲突", port));
+            }
         }
+        if !Self::port_bindable(port).await {
+            return Err(format!(
+                "端口 {} 已被外部进程占用（非本管理器分配）",
+                port
+            ));
+        }
+        let mut ports = self.allocated_ports.lock().await;
+        // 双检：探测窗口内可能被并发 reserve 抢占
+        if ports.contains(&port) {
+            return Err(format!("端口 {} 已被其他插件服务占用", port));
+        }
+        ports.push(port);
+        Ok(())
     }
 
     async fn release_port(&self, port: u16) {
