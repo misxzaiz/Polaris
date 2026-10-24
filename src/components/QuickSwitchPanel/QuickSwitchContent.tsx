@@ -10,6 +10,7 @@ import { useTranslation } from 'react-i18next'
 import { cn } from '@/utils/cn'
 import { Plus, Loader2, X, FolderOpen, ChevronDown, Lock, Check, Download, Clock, FolderPlus, Pin, PinOff, GitBranchPlus } from 'lucide-react'
 import { StatusSymbol } from './StatusSymbol'
+import { RemoteSessionsQuickSection } from '@/components/Chat/session/RemoteSessionsPanel'
 import { CreateWorkspaceModal } from '@/components/Workspace/CreateWorkspaceModal'
 import { WorkspaceSearchInput, useWorkspaceFilter } from '@/components/Workspace/WorkspaceSearchInput'
 import { createLogger } from '@/utils/logger'
@@ -227,6 +228,9 @@ export const QuickSwitchContent = memo(function QuickSwitchContent({
           )}
         </div>
       </div>
+
+      {/* 跨端会话区块（v2 · 用户指定入口）：其他设备进行中的会话，可查看/加入窗口 */}
+      <RemoteSessionsQuickSection />
 
       {/* 会话列表 */}
       <div className="py-1.5">

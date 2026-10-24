@@ -27,9 +27,6 @@ import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
 import { EmptyState as RichEmptyState } from '../common/EmptyState';
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState';
 import { getKernel } from '@/session-v2/kernel/registry';
-import { useStore } from 'zustand';
-import { remoteSessionFollower } from '@/services/remoteSessionFollower';
-import { RemoteSessionsNavSection } from '../session/RemoteSessionsPanel';
 import { ChatScrollContext } from './ChatScrollContext';
 
 // 模块级稳定空数组（useSessionState fallback 必须引用稳定）
@@ -234,13 +231,6 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
     onEditMessage?.(messageId, content)
   }, [onEditMessage, scrollIsStreaming]);
 
-  // 跨端交互 v2（方案 A）：有远端会话进行中时导航入口常驻（单轮会话也渲染），
-  // 悬停面板顶部即见「其他设备进行中」（查看/加入窗口），无需打开历史抽屉。
-  const remoteRunningCount = useStore(
-    remoteSessionFollower.store,
-    (s) => [...s.sessions.values()].filter((r) => r.status === 'running').length,
-  );
-
   const messageActions = useMemo<MessageActions | undefined>(() => {
     return { onEdit: handleEditGuarded, onRegenerate: handleRegenerateMessage };
   }, [handleEditGuarded, handleRegenerateMessage]);
@@ -318,16 +308,14 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           />
         )}
 
-        {/* 对话导航时间线（v2 方案 A）：多轮、或有远端会话、或本端流式中常驻——
-            发起端流式期间悬浮球可见（位置记忆），第二设备加入时球上出现琥珀点 */}
-        {(!isEmpty && (conversationRounds.length > 1 || remoteRunningCount > 0 || scrollIsStreaming)) && (
+        {/* 对话导航时间线（多轮会话显示轮次目录） */}
+        {!isEmpty && conversationRounds.length > 1 && (
           <ChatNavigator
             variant="timeline"
             rounds={conversationRounds}
             currentRoundIndex={currentRoundIndex}
             onScrollToBottom={scrollToBottom}
             onScrollToRound={scrollToRound}
-            headerSlot={<RemoteSessionsNavSection />}
           />
         )}
 
