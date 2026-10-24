@@ -145,11 +145,19 @@
 | 批 0 止血 | ✅ | de998480 / 9cedeb51 / 8d7b92df / ef77cf25 / 55a3c357 / 9668d6e0 | 拆库 Day1、IME、regenerate 接线、权限卡反馈、编辑双守卫、通知按端、WS 缺口1/2、小项 |
 | 批 1 存储地基 | ✅ | 01cc7c4e / 5b3e626a / c8c3cc99 / 69051c2f | JSONL 原子写、软删除墓碑（会话级+消息级）、覆盖面全量（卡片块+错误文本）、contextId 配对+即时落盘、静默门控、标注旁挂备份 |
 | 批 2 后端正确性 | ✅ | acbfa954 | Claude Aborted、SimpleAI reason 定稿+去重发、启动清 running（含 web bin）、panic 监督、start 排他、错配告警、晚到 stop、通道满、dispatch 真实 id |
-| 批 3+3b 跨端只读 | ✅ | （批3 提交） | RemoteSessionFollower（发现/回补/实时+只读面板）、审批回执路由修复、投影注册接通、列表跨端自动刷新 |
-| 批 4 状态收敛 | ✅ | a989edc7 | 块终态统一（跨 messages 回写+全局查重）、turnEpoch 代际、发送事务化（回滚+草稿恢复）、中断 8s/16s 超时、progressMessage 收敛、status 一致、信封 turnId 定稿 |
-| 批 5 路由正典化 | ✅ 最小集 | （本日提交） | **通用 conversationId 反向索引路由**（跨端事件精确投递到本端持有该会话的 store——M4 验收达成）、plugin_card 兜底优先反查、resyncSession 改读后端 SQLite（修 2.10）、store 职责声明、草稿串号修复 |
-| 批 6 打磨 | ◐ | （本日提交） | 已做：草稿串号。未做（后续）：断线横幅、回底常驻、后台完成通知、触屏长按、空态接线、语音停止、输入上限、ChatInput 拆分评估 |
-| 批 7 安全 | ◐ | （本日提交） | 已做：宿主桥 INVOKE 白名单 + LISTEN mc- 前缀过滤（与现有 14 插件核对兼容）。未做：插件 iframe 隔离评估、WS token 默认策略 |
+| 批 3+3b 跨端只读 | ✅ | d05cb901 | RemoteSessionFollower（发现/回补/实时+只读面板）、审批回执路由修复、投影注册接通、列表跨端自动刷新 |
+| 批 4 状态收敛 | ✅ | a989edc7 + f6a97e8e | 块终态统一（跨 messages 回写+全局查重）、turnEpoch 代际、发送事务化（回滚+草稿恢复）、regenerate/editAndResend 失败恢复被删历史 + undelete 命令、中断 8s/16s 超时、progressMessage 收敛、status 一致、信封 turnId 定稿 |
+| 批 5 路由正典化 | ✅ 最小集 | 424d09bf | **通用 conversationId 反向索引路由**（跨端事件精确投递到本端持有该会话的 store——M4 验收达成）、plugin_card 兜底优先反查、resyncSession 改读后端 SQLite（修 2.10）、store 职责声明 |
+| 批 6 打磨 | ◐ | 424d09bf + 0b7f5dde | 已做：草稿串号、语音「停止」实现、待处理卡片（权限/表单）徽标。未做（后续）：断线横幅、回底常驻、后台完成系统通知、触屏长按、空态接线、输入上限、ChatInput 拆分评估 |
+| 批 7 安全 | ◐ | 424d09bf | 已做：宿主桥 INVOKE 白名单 + LISTEN mc- 前缀过滤（与现有 14 插件核对兼容）。未做：插件 iframe 隔离评估、WS token 默认策略 |
+
+### 验证矩阵终值（2026-10-24 全部批次完成后）
+
+- `pnpm exec tsc --noEmit`：0 error
+- `pnpm lint`：0 error（改动文件 warning 与基线一致，无新增）
+- `cargo check` / `cargo check --no-default-features --bin polaris-web --bin polaris-mcp`：0 error
+- vitest 全量 2301 用例：2200 passed / 87 failed / 14 skipped——**87 个失败经 stash 基线对比确认为存量环境性失败**（同 14 文件集合：基线与当前均为 86 failed / 155 passed / 241，文件集合与用例计数完全一致；失败集中在 engines/claude-code、plugin 服务、language/lightweightMarkdown 等本次未触碰区域），本次全部改动零新增失败
+- 提交：16 个（每主题独立提交，任一可单独 revert）
 
 ### S1-S5 回滚考古结论（批 5 进入条件，2026-10-24 完成）
 
@@ -173,3 +181,11 @@ contextId 统一为权威 conversationId、拆除 UUID 路由层；期间若遭�
 
 批 5 反向索引已落地 → RemoteSessionFollower 的退役计时开始：反向索引稳定一个版本
 周期后，降级为诊断视图或删除流式渲染逻辑（头注已标注，防第二系统永久化）。
+
+### 剩余工作清单（下一轮，按优先级）
+
+1. **批 6 剩余**：Web 断线横幅（依赖已具备：批0 缺口修复 + 批3 Follower）；常驻「回到底部」按钮（激活死代码 ScrollToBottomButton）；后台会话完成系统通知；移动端触屏长按消息操作菜单；空态引导接线（激活 EmptyState）；输入长度上限。
+2. **批 7 剩余**：插件面板 iframe/独立 origin 隔离评估（涉插件生态兼容）；WS 未配 token 时的回环限制策略。
+3. **B5 完全同步**（单独立项）：双端操作仲裁（request_start/interrupt + deviceId）、信封 contextId 统一权威 id（双 key 拆除，见上方条款）、workspace 分桶。
+4. **协议清洗收尾**：SessionEnd.reason 各引擎对齐已在批 2 完成；Token vs AssistantMessage 双通道权威化、废弃事件停止发送（批 4 定稿的 deprecation 承诺）。
+5. **存量测试失败治理**（与本计划无关但建议单列）：engines/claude-code、pluginDiscovery/pluginServiceManager、language/lightweightMarkdown 等 14 文件 86 例环境性失败（2026-10-24 基线对比确认早于本计划存在）。
