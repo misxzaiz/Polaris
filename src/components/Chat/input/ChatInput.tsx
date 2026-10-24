@@ -16,7 +16,8 @@ import { useWorkspaceStore, useToastStore, useConfigStore } from '@/stores'
 import { useVoiceInputStore } from '@/stores/voiceInputStore'
 import { voiceNotificationService } from '@/services/voiceNotificationService'
 import { eventBus } from '@/services/eventBus'
-import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize, useActiveSessionPendingQueue } from '@/stores/conversationStore/useActiveSession'
+import { useActiveSessionInputDraft, useActiveSessionActions, useActiveSessionWorkspace, useActiveSessionPromptSuggestion, useActiveSessionPromptOptimize, useActiveSessionPendingQueue, useSessionState } from '@/stores/conversationStore/useActiveSession'
+import type { ConversationState } from '@/stores/conversationStore/types'
 import {
   runPromptOptimize,
   cancelPromptOptimize,
@@ -182,6 +183,13 @@ export function ChatInput({
 
   // 当前会话引擎：CLI 斜杠命令建议/拦截仅对 Claude Code 引擎生效
   const activeSessionId = useActiveSessionId()
+  // 中断进行中标志：停止按钮的即时反馈态（按下后按钮禁用转圈直到 session_end，
+  // 最长 5s 兜底）。此前按钮无任何状态变化，可反复点击且无「正在中断」提示（审计 5.11）。
+  const isInterrupting = useSessionState(
+    activeSessionId,
+    useCallback((s: ConversationState) => s.isInterrupting ?? false, []),
+    false
+  )
   const defaultEngine = useConfigStore((state) => state.config?.defaultEngine)
   const isClaudeEngine = useMemo(
     () => resolveSessionEngine(activeSessionId ?? '', defaultEngine) === 'claude-code',
@@ -1331,6 +1339,13 @@ export function ChatInput({
 
     // 编辑模式：调用 editAndResend 而非普通发送
     if (editMode && onEditSend) {
+      // 流式中 store 的 editAndResend 会静默拒绝（流式守卫），而下方清理逻辑
+      // 无条件清空输入 → 用户编辑改动丢失且零反馈（审计 5.4）。此处提前拦截，
+      // 保留输入与编辑态，流式结束后再发送。
+      if (isStreaming) {
+        useToastStore.getState().warning(t('input.editBlockedWhileStreaming', '回复进行中，暂不能发送编辑消息，请稍候'))
+        return
+      }
       onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
     } else {
       // 普通发送：若存在上下文块——
@@ -1427,6 +1442,10 @@ export function ChatInput({
   // 键盘事件处理
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
+      // 中文 IME 组词中按 Enter 是「确认候选词上屏」，不是发送（对齐下方 ↑/↓ 历史召回的
+      // isComposing 防护）。漏掉此判断会把组词中的半截文本直接发出，中文用户必踩。
+      if (e.nativeEvent.isComposing) return
+
       // 如果建议框打开，选择建议
       if (showSuggestions && suggestionItems.length > 0) {
         e.preventDefault()
@@ -2021,10 +2040,13 @@ export function ChatInput({
               {isStreaming && onInterrupt && !hasDraftToSubmit ? (
                 <button
                   onClick={onInterrupt}
-                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors shadow-soft"
-                  title={t('input.interrupt')}
+                  disabled={isInterrupting}
+                  className="shrink-0 p-1.5 rounded-full bg-danger text-white hover:bg-danger-hover transition-colors disabled:opacity-60 disabled:cursor-not-allowed shadow-soft"
+                  title={isInterrupting ? t('input.interrupting', '正在中断…') : t('input.interrupt')}
                 >
-                  <IconStop size={16} />
+                  {isInterrupting
+                    ? <Loader2 size={16} className="animate-spin" />
+                    : <IconStop size={16} />}
                 </button>
               ) : (
                 <button
