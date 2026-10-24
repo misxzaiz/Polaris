@@ -478,7 +478,7 @@ fn handle_tools_list() -> Value {
                         },
                         "payload": {
                             "type": "object",
-                            "description": "动作命令：{ action: string, ...动作参数 }。不同能力动作协议见 cap_list 返回。cap.ai.chat 支持 start/continue/interrupt/send_input/approve_plan/reject_plan/answer_question/respond_plugin_card/register_pending_question/register_pending_plan/get_pending_plans/get_pending_questions/clear_processed_plans/clear_answered_questions 等。"
+                            "description": "动作命令：{ action: string, ...动作参数 }。各能力支持的动作与参数以 cap_list 实时返回为准（动态生成、永不漂移）——不要依赖记忆中的动作清单；先调 cap_list 再构造 payload。管理面能力（cap.config / cap.data_root / cap.plugin*）对插件服务/插件文件的破坏性动作（stop_for_plugin / autostart / uninstall*）需用户审批：首次调用会返回确认请求 id，前端批准后重试即可。"
                         }
                     },
                     "additionalProperties": false

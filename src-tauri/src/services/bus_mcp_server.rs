@@ -573,7 +573,7 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
         ],
         "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 为应用数据域 + UI 域白名单（cap.todo / cap.http / cap.bash / cap.fs / cap.git / cap.ui.theme / cap.ui.chat / cap.ui.input / cap.self.mutate），两 server 职责不重叠",
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 亦为全量放开（无白名单，2026-10-23 根因修复后与注册表同源）；下方 modules 仅为主要能力的协议速查，不代表可用边界",
             "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
             "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
         },

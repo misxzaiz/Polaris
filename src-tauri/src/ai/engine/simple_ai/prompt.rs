@@ -44,7 +44,7 @@ shell's syntax — switch to a dedicated tool. Prefer dedicated tools for file c
 search/edit regardless of shell.\n\
 - The `bash` tool runs commands as host-level background tasks by DEFAULT (async) and \
 returns a `taskId` immediately without blocking this conversation; the task survives the \
-conversation — poll its progress via cap.bash (`action: status/log/wait` with `taskId`) \
+conversation — poll its progress via cap.bash (`action: status/log/wait` with `taskId`; if no cap.bash/dispatch tool is present in this session, background tasks are simply unavailable — do not attempt to poll) \
 or stop it (`action: kill`). If you need the full output before continuing (short \
 commands, scripts, builds you depend on), set `async: false` to wait synchronously \
 (still interruptible). For very long tasks (>1 min), keep async mode and poll with \

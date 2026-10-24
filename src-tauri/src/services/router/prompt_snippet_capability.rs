@@ -258,8 +258,17 @@ impl Capability for PromptSnippetCapability {
             "actions": {
                 "list": { "params": {}, "returns": "{ items: PromptSnippet[] }" },
                 "get": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet | null }" },
-                "create": { "params": { "content/name 等": "必填（按 PromptSnippet 字段）" }, "returns": "{ item: PromptSnippet }" },
-                "update": { "params": { "id": "string（必填）", "部分字段": "可选" }, "returns": "{ item: PromptSnippet }" },
+                "create": {
+                    "params": {
+                        "name": "string（必填）——片段名，也是 /name 快捷调用键，全局唯一",
+                        "content": "string（必填）——模板正文，支持 {{variable}} 占位符（调用时按 variables 填充）",
+                        "description": "string（可选）",
+                        "variables": "数组（可选）——每项 { name, ... }，声明 content 中的占位符",
+                        "enabled": "boolean（可选，缺省 true）"
+                    },
+                    "returns": "{ item: PromptSnippet }"
+                },
+                "update": { "params": { "id": "string（必填）", "name/content/description/variables/enabled": "均可选，只传需更新的字段" }, "returns": "{ item: PromptSnippet }" },
                 "delete": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet }" }
             }
         })
