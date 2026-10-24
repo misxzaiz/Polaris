@@ -189,8 +189,9 @@ pub(super) async fn run_chat_loop(
         round += 1;
 
         if *abort_rx.borrow() {
-            let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-            return Ok(());
+            // 中断退出：不在循环内发 SessionEnd（改由 mod.rs wrapper 统一发一次
+            // SessionEnd(Aborted)，修 reason 缺失 + 双重发送，审计 3.2）
+            return Err(AppError::Interrupted);
         }
 
         // 裁剪历史中超长的 assistant 输出，避免长会话撑爆上下文窗口（零额外 API 调用）。
@@ -336,8 +337,9 @@ pub(super) async fn run_chat_loop(
                 // 防御：清掉历史末尾不完整的工具轮次（孤儿 tool_calls / 缺结果批次），
                 // 保证中断后 continue_session 复用历史不会被协议层 400 拒绝。
                 history::sanitize_tool_pairs(messages);
-                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-                return Ok(());
+                // 中断退出：不在循环内发 SessionEnd（改由 mod.rs wrapper 统一发一次
+                // SessionEnd(Aborted)，修 reason 缺失 + 双重发送，审计 3.2）
+                return Err(AppError::Interrupted);
             }
 
             let chunk = tokio::select! {
@@ -360,8 +362,9 @@ pub(super) async fn run_chat_loop(
                         );
                         // 防御：同上，清洗不完整工具轮次（当前轮可能已 push tool_calls/tool 消息）。
                         history::sanitize_tool_pairs(messages);
-                        let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-                        return Ok(());
+                        // 中断退出：不在循环内发 SessionEnd（改由 mod.rs wrapper 统一发一次
+                        // SessionEnd(Aborted)，修 reason 缺失 + 双重发送，审计 3.2）
+                        return Err(AppError::Interrupted);
                     }
                     // 假阳性（sender 替换/关闭）：继续循环，不退出。
                     continue;
@@ -601,8 +604,9 @@ pub(super) async fn run_chat_loop(
                 // 本批 assistant(tool_calls) 已入历史但结果未齐，清洗掉不完整批次，
                 // 否则 continue 时 OpenAI/Anthropic 协议会因缺配对结果而 400。
                 history::sanitize_tool_pairs(messages);
-                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-                return Ok(());
+                // 中断退出：不在循环内发 SessionEnd（改由 mod.rs wrapper 统一发一次
+                // SessionEnd(Aborted)，修 reason 缺失 + 双重发送，审计 3.2）
+                return Err(AppError::Interrupted);
             }
 
             let call_id = tc["id"].as_str().unwrap_or("").to_string();
@@ -672,8 +676,9 @@ pub(super) async fn run_chat_loop(
                 // 本工具结果已丢弃（未 push tool 消息），但 assistant(tool_calls) 已入历史，
                 // 清洗掉不完整批次，保证 continue 可正常续接。
                 history::sanitize_tool_pairs(messages);
-                let _ = event_callback(AIEvent::SessionEnd(SessionEndEvent::new(session_id)));
-                return Ok(());
+                // 中断退出：不在循环内发 SessionEnd（改由 mod.rs wrapper 统一发一次
+                // SessionEnd(Aborted)，修 reason 缺失 + 双重发送，审计 3.2）
+                return Err(AppError::Interrupted);
             }
 
             let mut end_event =

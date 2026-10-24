@@ -63,12 +63,48 @@ fn make_event(kind: &str, payload: Value) -> Event {
     }
 }
 
+/// 判断信封 payload 是否 session_end（终态事件，丢了前端会卡流式态）
+fn is_session_end_payload(json: &Value) -> bool {
+    json.get("payload")
+        .and_then(|p| p.get("type"))
+        .and_then(Value::as_str)
+        == Some("session_end")
+}
+
+/// 业务核回调 → 流通道（emit_event 收到的已是 {contextId, payload} 信封）。
+///
+/// B2.h（审计 3.9）：此前 `let _ = tx.try_send(...)` 在通道满（512）时静默丢弃
+/// ——慢消费端连 session_end 都可能丢，前端永远转圈。策略：
+/// - 普通事件：满时 warn 后丢弃（保序优先——异步重试会导致 token 乱序）；
+/// - session_end：终态事件且其后无事件，有界阻塞重试（≤2s）尽量送达。
+fn forward_chat_event(tx: &mpsc::Sender<Event>, json: Value) {
+    match tx.try_send(make_event("chat-event", json.clone())) {
+        Ok(()) => {}
+        Err(e) if matches!(e, tokio::sync::mpsc::error::TrySendError::Full(_)) => {
+            if is_session_end_payload(&json) {
+                for _ in 0..40 {
+                    std::thread::sleep(std::time::Duration::from_millis(50));
+                    if tx.try_send(make_event("chat-event", json.clone())).is_ok() {
+                        return;
+                    }
+                }
+                tracing::error!("[cap.ai.chat] session_end 事件在通道满重试后仍丢弃（消费端阻塞）");
+            } else {
+                tracing::warn!("[cap.ai.chat] chat-event 通道满，丢弃事件（慢消费端）");
+            }
+        }
+        Err(_) => {
+            // 接收端已关闭（流提前结束）：丢弃即可
+        }
+    }
+}
+
 /// 业务核回调 → 流通道（emit_event 收到的已是 {contextId, payload} 信封）
 fn pump_callbacks(tx: &mpsc::Sender<Event>) -> core::ChatCallbacks {
     let tx = tx.clone();
     core::ChatCallbacks {
         emit_event: Arc::new(move |json| {
-            let _ = tx.try_send(make_event("chat-event", json));
+            forward_chat_event(&tx, json);
         }),
         notify_complete: Arc::new(|| {
             // 桌面完成通知由 lib.rs 中继任务按 session_end 事件触发
@@ -136,12 +172,12 @@ impl Capability for AiChatCapability {
                     let pump_tx = tx_opt;
                     core::ChatCallbacks {
                         emit_event: Arc::new(move |json| {
-                            let ev = make_event("chat-event", json);
                             match &pump_tx {
-                                Some(tx) => {
-                                    let _ = tx.try_send(ev);
+                                Some(tx) => forward_chat_event(tx, json),
+                                None => {
+                                    let ev = make_event("chat-event", json);
+                                    adapter.broadcast(ev);
                                 }
-                                None => adapter.broadcast(ev),
                             }
                         }),
                         notify_complete: Arc::new(|| {}),
@@ -174,9 +210,41 @@ impl Capability for AiChatCapability {
                             resource_dir: s.resource_dir.get().cloned().flatten(),
                         };
                         if action == "start" {
-                            let sid = core::start_chat_inner(message, options, s, callbacks, &app_paths)
-                                .await
-                                .map_err(|e| e.to_message())?;
+                            // B2.f（审计 3.8）：start 排他——此前仅 continue 有 try_start 闸，
+                            // 双击/外部重试会产生两个引擎进程、两个 conversationId，
+                            // 事件交织渲染。以 context_id 为键做并发互斥：占位仅在
+                            // start 执行期间持有（真实运行态由引擎事件流的
+                            // session_start/session_end 记录），结束即释放。
+                            let gate_key = options
+                                .context_id
+                                .clone()
+                                .filter(|c| !c.is_empty())
+                                .unwrap_or_else(|| format!("start-gate-{}", uuid::Uuid::new_v4()));
+                            if let Some(reason) =
+                                crate::commands::session_state_commands::session_try_start_inner(
+                                    &gate_key,
+                                    "start",
+                                )
+                                .map_err(|e| e.to_message())?
+                            {
+                                return Err(reason);
+                            }
+                            let start_result = core::start_chat_inner(
+                                message,
+                                options,
+                                s,
+                                callbacks,
+                                &app_paths,
+                            )
+                            .await;
+                            // 无论成败都释放 start 互斥占位（真实会话运行态由事件流记录）
+                            core::append_session_event(
+                                &gate_key,
+                                crate::services::session_state::SessionEventType::SessionEnd,
+                                Some("start-gate-released".to_string()),
+                                None,
+                            );
+                            let sid = start_result.map_err(|e| e.to_message())?;
                             Ok(serde_json::json!(sid))
                         } else {
                             let sid = sid();
@@ -605,13 +673,38 @@ impl StreamingCapability for AiChatCapability {
         // 业务核 async 调用 → 工作线程 block_on 驱动；事件经回调 → 泵通道
         std::thread::spawn(move || -> Result<(), String> {
             let result: Result<(), String> = match action.as_str() {
-                "start" => handle
-                    .block_on(async {
-                        core::start_chat_inner(message, options, state.as_ref(), callbacks, &app_paths)
-                            .await
-                    })
-                    .map(|_sid| ())
-                    .map_err(|e| e.to_message()),
+                "start" => {
+                    // B2.f（审计 3.8）：start 排他（同 invoke 路径，占位仅执行期持有）
+                    let gate_key = options
+                        .context_id
+                        .clone()
+                        .filter(|c| !c.is_empty())
+                        .unwrap_or_else(|| format!("start-gate-{}", uuid::Uuid::new_v4()));
+                    if let Some(reason) =
+                        crate::commands::session_state_commands::session_try_start_inner(
+                            &gate_key,
+                            "start",
+                        )
+                        .map_err(|e| e.to_string())?
+                    {
+                        Err(reason)
+                    } else {
+                        let start_result = handle
+                            .block_on(async {
+                                core::start_chat_inner(message, options, state.as_ref(), callbacks, &app_paths)
+                                    .await
+                            })
+                            .map(|_sid| ())
+                            .map_err(|e| e.to_message());
+                        core::append_session_event(
+                            &gate_key,
+                            crate::services::session_state::SessionEventType::SessionEnd,
+                            Some("start-gate-released".to_string()),
+                            None,
+                        );
+                        start_result
+                    }
+                }
                 "continue" => {
                     let sid = session_id.unwrap_or_default();
                     // 阶段 2 排他锁（流式路径同 invoke）：同一会话仅允许一个 active 操作。

@@ -549,6 +549,30 @@ impl SessionStateDb {
         Ok(next)
     }
 
+    /// 事件日志中「最新事件为 session_start」（= running）的会话 id 列表。
+    /// 供启动恢复（B2.c，审计 3.4）：后端被强杀后这些会话在权威状态里永久
+    /// running，后续所有 continue 被「会话已在运行中」拒绝——启动时补
+    /// session_end 落定。
+    pub fn running_conversation_ids(&self) -> Result<Vec<String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn
+            .prepare(
+                "SELECT e.conversation_id FROM session_events e
+                  WHERE e.seq = (SELECT MAX(seq) FROM session_events
+                                  WHERE conversation_id = e.conversation_id)
+                    AND e.type = 'session_start'",
+            )
+            .map_err(|e| AppError::StateError(format!("准备 running 查询失败: {}", e)))?;
+        let rows = stmt
+            .query_map([], |r| r.get::<_, String>(0))
+            .map_err(|e| AppError::StateError(format!("查询 running 会话失败: {}", e)))?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(|e| AppError::StateError(format!("读取 running 行失败: {}", e)))?);
+        }
+        Ok(out)
+    }
+
     /// 删除会话的所有事件（幂等）
     pub fn delete_events_by_conversation(&self, conversation_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();

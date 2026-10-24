@@ -850,6 +850,11 @@ pub fn run() {
             // 落定为中断态并补一次 JSONL 归档；后台执行，失败仅告警。
             std::thread::spawn(|| {
                 crate::services::turn_persist::recover_pending_turns();
+                // B2.c（审计 3.4）：事件日志中未配对的 running 会话补 session_end——
+                // 否则强杀后这些会话永久 running，continue 被「已在运行中」拒绝。
+                if let Err(e) = commands::session_state_commands::recover_unpaired_running_inner() {
+                    tracing::warn!("[Startup] 落定残留 running 会话失败: {}", e);
+                }
             });
 
             Ok(())
@@ -1329,6 +1334,15 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
     // 遗留存储一次性迁移（normalize spec F2/F4）：与桌面端同一纪律，
     // 在任何 requirement 命令可达之前完成遗留库收编（best-effort 幂等）。
     services::legacy_storage_migrate::run_legacy_storage_migration();
+
+    // S6 + B2.c 启动恢复（与桌面端同一纪律）：残留流式消息落定 + 未配对
+    // running 会话补 session_end（此前 web bin 完全没有恢复逻辑）。
+    std::thread::spawn(|| {
+        services::turn_persist::recover_pending_turns();
+        if let Err(e) = commands::session_state_commands::recover_unpaired_running_inner() {
+            tracing::warn!("[Polaris-Web] 落定残留 running 会话失败: {}", e);
+        }
+    });
 
     // 设置 config_dir（替代 Tauri path resolver）
     let config_dir = services::data_root::data_root().config_dir();

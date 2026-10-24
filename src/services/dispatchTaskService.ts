@@ -181,9 +181,22 @@ function resolveModelProfileId(
 export function attachDispatchSessionHandler(dispatchId: string, sessionId: string): () => void {
   const router = getEventRouter()
   let lastActivityReportAt = 0
+  // B2.b（审计 3.1）：start 返回值可能是 Claude 临时 uuid，被注册表当真实
+  // conversationId 持久化 → 重启/驱逐后「追加指令」必失败。session_start 事件
+  // 携带引擎真实会话 id，据此回写注册表（去重：只回报一次）。
+  let reportedConversationId: string | null = null
 
   const unsubscribe = router.register(sessionId, (payload: unknown) => {
     const aiEvent = payload as AIEvent
+
+    if (aiEvent.type === 'session_start') {
+      const realConversationId = (aiEvent as { sessionId?: string }).sessionId
+      if (realConversationId && realConversationId !== reportedConversationId) {
+        reportedConversationId = realConversationId
+        log.info('回写派发会话真实 conversationId', { dispatchId, realConversationId })
+        void reportStatus(dispatchId, 'running', { conversationId: realConversationId })
+      }
+    }
 
     sessionStoreManager.getState().dispatchEvent({
       ...aiEvent,

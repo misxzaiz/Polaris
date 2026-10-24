@@ -1815,6 +1815,33 @@ pub async fn continue_chat_inner(
         let mut registry = state.engine_registry.lock().await;
         let is_resident = matches!(engine, EngineId::SimpleAI);
         if !is_resident {
+            // B2.e（审计 3.3 错配可观测）：engineId 错配（scheduler 自动建/历史恢复
+            // 缺 engineId/fork）时，此处 try_interrupt_all 会命中 SimpleAI 的不可逆
+            // latch，误杀正在流式的会话。渐进路线先加告警不删兜底（裁决方案甲 2）：
+            // 命中即 warn + 进度事件，错配频率可观测后再决定拆除方式。
+            let mismatch = registry
+                .get(&EngineId::SimpleAI)
+                .map(|e| e.has_active_session(&session_id))
+                .unwrap_or(false);
+            if mismatch {
+                tracing::warn!(
+                    "[continue_chat_inner] engineId 错配：engine={:?} 但 SimpleAI 会话 {} 正在运行，续聊前置中断兜底将中断它",
+                    engine,
+                    session_id
+                );
+                let ctx = options
+                    .context_id
+                    .clone()
+                    .unwrap_or_else(|| "main".to_string());
+                let warn_ev = AIEvent::Progress(crate::models::ai_event::ProgressEvent::new(
+                    &session_id,
+                    "⚠️ 检测到引擎标识错配，续聊前置中断可能误杀进行中的会话（已记录）",
+                ));
+                (callbacks.emit_event)(serde_json::json!({
+                    "contextId": ctx,
+                    "payload": warn_ev,
+                }));
+            }
             registry.try_interrupt_all(&session_id);
         }
     }
@@ -1962,6 +1989,21 @@ pub async fn interrupt_chat_inner(
             "未找到会话: {}",
             session_id
         )));
+    }
+    // B2.h（审计 3.10）：晚到 stop——对已自然结束的会话，kill 死 PID 也被当
+    // 成功（taskkill 非零仍视为已处理），此前无条件补写 aborted 会把事件日志
+    // 里的 completed 改写成 aborted。先查权威状态，非 running 不补写。
+    let already_ended = crate::commands::session_state_commands::session_get_status_inner(
+        session_id.clone(),
+    )
+    .map(|s| !s.running)
+    .unwrap_or(false);
+    if already_ended {
+        tracing::info!(
+            "[interrupt_chat_inner] 会话已结束，跳过 aborted 补写（晚到 stop 不覆盖 completed）: {}",
+            session_id
+        );
+        return Ok(());
     }
     // 阶段 4 批次 4：中断成功 → 写 session_end(reason=aborted)（影子写入，失败不阻断）
     append_session_event(

@@ -54,7 +54,7 @@ use crate::ai::traits::{
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
-    ErrorEvent, SessionEndEvent, SessionStartEvent, UserMessageEvent,
+    ErrorEvent, SessionEndEvent, SessionEndReason, SessionStartEvent, UserMessageEvent,
 };
 use crate::models::config::Config;
 use crate::models::AIEvent;
@@ -385,7 +385,12 @@ impl AIEngine for SimpleAIEngine {
         let skills_map = skills_map.clone();
         // 思考努力级别：透传给 run_chat_loop（经 build_request_body 映射为协议思考参数）。
         let effort = options.effort.clone();
-        tokio::spawn(async move {
+        // B2.d（审计 3.6）panic 监督的句柄与回调副本：spawn 的 JoinHandle 此前
+        // 被丢弃，任务 panic 即静默——前端永远等不到回包、is_running 永久 true。
+        let supervisor_sessions = Arc::clone(&self.sessions);
+        let supervisor_cb = cb.clone();
+        let supervisor_sid = sid.clone();
+        let handle = tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
             sessions.lock().await.insert(sid.clone(), session);
 
@@ -418,15 +423,24 @@ impl AIEngine for SimpleAIEngine {
             match result {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] 对话循环完成, session={}", sid);
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    // reason 显式带 Completed：此前缺省导致下游按 undefined 判定
+                    // （如 dispatch 任务成败语义随引擎漂移，审计 3.11）
+                    let _ = cb(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&sid).with_reason(SessionEndReason::Completed),
+                    ));
                     if let Some(ref c) = on_complete {
                         c(0);
                     }
                 }
                 // 用户主动中断：优雅结束，不当作错误（不发红色 ErrorEvent）。
+                // 循环内的 5 个中断检查点已改为返回 Interrupted，由这里统一发
+                // 一次 SessionEnd(Aborted)——修「无 reason + 双重 session_end」
+                // （审计 3.2：中断的 dispatch 任务曾因 reason 缺失被算作 completed）。
                 Err(AppError::Interrupted) => {
                     tracing::info!("[SimpleAI] 对话循环被用户中断, session={}", sid);
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    let _ = cb(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&sid).with_reason(SessionEndReason::Aborted),
+                    ));
                     if let Some(ref c) = on_complete {
                         c(0);
                     }
@@ -434,9 +448,31 @@ impl AIEngine for SimpleAIEngine {
                 Err(e) => {
                     tracing::error!("[SimpleAI] 对话循环失败, session={}, error={}", sid, e);
                     let _ = cb(AIEvent::Error(ErrorEvent::new(&sid, e.to_string())));
-                    let _ = cb(AIEvent::SessionEnd(SessionEndEvent::new(&sid)));
+                    let _ = cb(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&sid).with_reason(SessionEndReason::Error),
+                    ));
                     if let Some(ref c) = on_complete {
                         c(0);
+                    }
+                }
+            }
+        });
+
+        // B2.d（审计 3.6）panic 监督：await 主任务句柄，panic 时兜底发
+        // error + session_end(Error) 并复位 is_running——前端不再永远转圈，
+        // 会话不再被「已在运行中」拒绝。
+        tokio::spawn(async move {
+            if let Err(join_err) = handle.await {
+                if join_err.is_panic() {
+                    let msg = format!("SimpleAI 后台任务 panic: {}", join_err);
+                    tracing::error!("[SimpleAI] {}, session={}", msg, supervisor_sid);
+                    let _ = supervisor_cb(AIEvent::Error(ErrorEvent::new(&supervisor_sid, msg)));
+                    let _ = supervisor_cb(AIEvent::SessionEnd(
+                        SessionEndEvent::new(&supervisor_sid).with_reason(SessionEndReason::Error),
+                    ));
+                    let mut guard = supervisor_sessions.lock().await;
+                    if let Some(s) = guard.get_mut(&supervisor_sid) {
+                        s.is_running = false;
                     }
                 }
             }
@@ -634,6 +670,16 @@ impl AIEngine for SimpleAIEngine {
             .try_lock()
             .map(|s| s.values().filter(|sess| sess.is_running).count())
             .unwrap_or(0)
+    }
+
+    /// B2.c（审计 3.5）：覆写默认实现（traits 默认恒 false——正在流式的
+    /// SimpleAI 会话被 is_chat_session_running 判为已完成，web 重连恢复失真）。
+    /// 以会话条目的 is_running 标记为准。
+    fn has_active_session(&self, session_id: &str) -> bool {
+        self.sessions
+            .try_lock()
+            .map(|s| s.get(session_id).map(|sess| sess.is_running).unwrap_or(false))
+            .unwrap_or(false)
     }
 
     fn update_config(&mut self, new_config: Config) {

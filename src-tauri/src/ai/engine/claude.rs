@@ -857,6 +857,11 @@ impl ClaudeEngine {
         initial_stdin_data: Option<String>,
     ) -> std::sync::mpsc::Sender<String> {
         let sessions = self.sessions.shared();
+        // 用户中断标记的共享引用：EOF 线程据此把「kill 后无 SessionEnd」判定为
+        // 用户主动中断（Aborted）而非引擎故障（error），对齐 opencode 的 T1 顺序
+        // 范式（审计 3.2：此前 Claude 中断在协议层表现为 error + session_end(Error)，
+        // 前端只能靠 isInterrupting 标志掩盖，时序不对就弹「Claude CLI 异常退出」）。
+        let interrupted_shared = self.sessions.shared_interrupted();
         let event_callback = options.event_callback.clone();
         let on_complete = options.on_complete.clone();
         let on_error = options.on_error.clone();
@@ -1045,6 +1050,14 @@ impl ClaudeEngine {
                 }
             }
 
+            // 自然收到 SessionEnd：消费（清除）中断标记，防止跨轮次脏残留
+            // （同会话下一轮真崩溃被误判为用户中断）
+            if received_session_end {
+                if let Ok(mut set) = interrupted_shared.lock() {
+                    set.remove(&current_session_id);
+                }
+            }
+
             // 如果没有收到 session_end，发送 fallback
             if !received_session_end {
                 if received_result_success {
@@ -1060,25 +1073,55 @@ impl ClaudeEngine {
                             .with_reason(SessionEndReason::Completed),
                     ));
                 } else {
-                    // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
-                    // 与 SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
-                    // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
-                    let msg = build_fallback_error_message(&stderr_buf);
-                    tracing::warn!(
-                        "[ClaudeEngine] 未收到 SessionEnd，发送 fallback error: {}",
-                        msg
-                    );
-                    event_callback(AIEvent::error(&current_session_id, msg));
-                    event_callback(AIEvent::SessionEnd(
-                        SessionEndEvent::new(&current_session_id)
-                            .with_reason(SessionEndReason::Error),
-                    ));
+                    // 用户主动中断（interrupt 先 mark_interrupted 后 kill）：EOF 无
+                    // SessionEnd 属预期，回发 Aborted 而非 error——前端不再需要
+                    // isInterrupting 掩盖，多端/时序错位也不再弹「异常退出」（审计 3.2）。
+                    let was_interrupted = if let Ok(mut set) = interrupted_shared.lock() {
+                        let hit = set.contains(&current_session_id);
+                        if hit {
+                            set.remove(&current_session_id); // 消费即清除
+                        }
+                        hit
+                    } else {
+                        false
+                    };
+                    if was_interrupted {
+                        tracing::info!(
+                            "[ClaudeEngine] 用户主动中断，回发 SessionEnd(Aborted): {}",
+                            current_session_id
+                        );
+                        event_callback(AIEvent::SessionEnd(
+                            SessionEndEvent::new(&current_session_id)
+                                .with_reason(SessionEndReason::Aborted),
+                        ));
+                    } else {
+                        // CLI 未发送 SessionEnd 即退出（崩溃/被杀/输出畸形/上游报错）。
+                        // 与 SimpleAI 对齐：先发 error 事件携带 stderr 摘要，
+                        // 再发带 reason=Error 的 session_end，避免前端"静默中断无错误"。
+                        let msg = build_fallback_error_message(&stderr_buf);
+                        tracing::warn!(
+                            "[ClaudeEngine] 未收到 SessionEnd，发送 fallback error: {}",
+                            msg
+                        );
+                        event_callback(AIEvent::error(&current_session_id, msg));
+                        event_callback(AIEvent::SessionEnd(
+                            SessionEndEvent::new(&current_session_id)
+                                .with_reason(SessionEndReason::Error),
+                        ));
+                    }
                 }
             }
 
             // 完成回调
             if let Some(cb) = on_complete {
                 cb(0);
+            }
+
+            // B2.c（审计 3.5）：自然结束后从 SessionManager 移除条目——此前条目
+            // 永不清理，已结束会话 has_active_session 恒 true（is_chat_session_running
+            // 失真，web/手机重连永远显示在运行、转圈不停）。
+            if let Ok(mut map) = sessions.lock() {
+                map.remove(&current_session_id);
             }
         });
 
@@ -1388,13 +1431,19 @@ impl AIEngine for ClaudeEngine {
     fn interrupt(&mut self, session_id: &str) -> Result<()> {
         tracing::info!("[ClaudeEngine] 中断会话: {}", session_id);
 
+        // 先标记后杀（T1 顺序，对齐 opencode）：EOF 线程读到标记后回发
+        // SessionEnd(Aborted)，而非走 fallback error 把主动中断当引擎故障。
+        self.sessions.mark_interrupted(session_id);
+
         match self.sessions.kill_process(session_id) {
             Ok(true) => {
                 tracing::info!("[ClaudeEngine] 会话已中断: {}", session_id);
                 Ok(())
             }
             Ok(false) => {
-                // session 不在 map,或 kill 命令本身失败 -> 让上层兜底
+                // session 不在 map,或 kill 命令本身失败 -> 让上层兜底。
+                // kill 未生效说明进程仍在跑：清标记避免后续误判为用户中断。
+                self.sessions.clear_interrupted(session_id);
                 tracing::warn!(
                     "[ClaudeEngine] kill_process 返回 false (session 不在本引擎或 kill 失败): {}",
                     session_id
@@ -1405,6 +1454,7 @@ impl AIEngine for ClaudeEngine {
                 )))
             }
             Err(e) => {
+                self.sessions.clear_interrupted(session_id);
                 tracing::warn!(
                     "[ClaudeEngine] kill_process 返回 Err: {} ({})",
                     e,

@@ -26,7 +26,8 @@ use crate::error::Result;
 use crate::services::data_root::data_root;
 use crate::services::session_db::MessageEntry;
 use crate::services::session_state::{
-    SessionEventEntry, SessionProjection, SessionRecord, SessionStateDb, SessionStatus,
+    SessionEventEntry, SessionEventType, SessionProjection, SessionRecord, SessionStateDb,
+    SessionStatus,
 };
 
 /// 会话状态库全局单例（懒初始化）
@@ -112,6 +113,43 @@ pub fn session_request_interrupt_inner(
 /// 追加会话事件（幂等）
 pub fn session_event_append_inner(event: SessionEventEntry) -> Result<bool> {
     db()?.append_event(&event)
+}
+
+/// 启动恢复（B2.c，审计 3.4）：把事件日志中「有 session_start 无 session_end」
+/// 的会话补一条 session_end（reason=interrupted）。
+///
+/// 根因：running = 有 start 无 end（`compute_status`）；后端被强杀后这些会话
+/// 在权威状态里永久 running——后续所有 continue 被 try_start「会话已在运行中」
+/// 拒绝，除非用户恰好点一次停止。启动时统一落定。
+/// @returns 落定的会话数
+pub fn recover_unpaired_running_inner() -> Result<usize> {
+    let ids = db()?.running_conversation_ids()?;
+    let mut recovered = 0usize;
+    for cid in ids {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let event = SessionEventEntry {
+            id: format!("core-recover-session-end-{}", uuid::Uuid::new_v4()),
+            conversation_id: cid.clone(),
+            event_type: SessionEventType::SessionEnd,
+            timestamp: ts,
+            device_id: "core".to_string(),
+            seq: 0, // 占位；由 append_with_seq 在事务内分配
+            reason: Some("interrupted: backend restarted while session running".to_string()),
+            error_message: None,
+        };
+        match session_event_append_with_seq_inner(&event) {
+            Ok(true) => {
+                tracing::info!("[SessionState] 启动落定残留 running 会话: {}", cid);
+                recovered += 1;
+            }
+            Ok(false) => {}
+            Err(e) => tracing::warn!("[SessionState] 落定 running 会话失败 {}: {}", cid, e),
+        }
+    }
+    Ok(recovered)
 }
 
 /// 追加会话事件（自动分配 seq，事务一致）— 阶段 4 批次 4 dispatch 链路附加写入用。
