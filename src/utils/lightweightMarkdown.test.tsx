@@ -389,7 +389,8 @@ describe('splitByCodeBlocks', () => {
   it('should handle open code block', () => {
     const result = splitByCodeBlocks('```\nunclosed code');
     expect(result).toHaveLength(1);
-    expect(result[0]).toEqual({ type: 'text', content: '```\nunclosed code', completed: false });
+    // 对齐实现：未闭合代码块在流式阶段按 code-block 预览渲染（completed=false，language 为空串）
+    expect(result[0]).toEqual({ type: 'code-block', content: 'unclosed code', language: '', completed: false });
   });
 
   it('should handle code block with language at end', () => {
@@ -429,7 +430,8 @@ describe('splitByCodeBlocks', () => {
     const result = splitByCodeBlocks('intro text\n```python\nprint("hello")');
     expect(result).toHaveLength(2);
     expect(result[0]).toEqual({ type: 'text', content: 'intro text\n', completed: true });
-    expect(result[1]).toEqual({ type: 'text', content: '```python\nprint("hello")', completed: false });
+    // 对齐实现：未闭合代码块按 code-block 流式预览渲染（completed=false）
+    expect(result[1]).toEqual({ type: 'code-block', content: 'print("hello")', language: 'python', completed: false });
   });
 
   it('should handle closed then open code block', () => {
@@ -437,7 +439,8 @@ describe('splitByCodeBlocks', () => {
     expect(result).toHaveLength(3);
     expect(result[0]).toEqual({ type: 'code-block', content: 'one\n', language: 'js', completed: true });
     expect(result[1]).toEqual({ type: 'text', content: '\nbetween\n', completed: true });
-    expect(result[2]).toEqual({ type: 'text', content: '```py\ntwo', completed: false });
+    // 对齐实现：未闭合代码块按 code-block 流式预览渲染（completed=false）
+    expect(result[2]).toEqual({ type: 'code-block', content: 'two', language: 'py', completed: false });
   });
 
   // Mermaid 块测试

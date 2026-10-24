@@ -7,9 +7,10 @@ describe('getLanguageFromPath', () => {
   })
 
   it('maps known extensions', () => {
-    expect(getLanguageFromPath('src/App.tsx')).toBe('javascript')
+    // 对齐实现：.tsx 映射 typescript（highlight.js 的 tsx 语言），toml 已收录为独立语言
+    expect(getLanguageFromPath('src/App.tsx')).toBe('typescript')
     expect(getLanguageFromPath('main.py')).toBe('python')
-    expect(getLanguageFromPath('Cargo.toml')).toBe('plaintext')
+    expect(getLanguageFromPath('Cargo.toml')).toBe('toml')
   })
 
   it('returns plaintext for undefined / null / empty (compactor 压缩后 input 置空场景)', () => {

@@ -14,7 +14,8 @@ describe('getSelectedEngineHealth', () => {
 
     const result = getSelectedEngineHealth(config, health)
     expect(result.engineId).toBe('claude-code')
-    expect(result.name).toBe('Claude Code')
+    // 对齐实现：显示名由后端引擎元数据动态提供，测试环境元数据为空时降级返回 engineId
+    expect(result.name).toBe('claude-code')
     expect(result.command).toBe('claude')
     expect(result.cliPath).toBe('/usr/bin/claude')
     expect(result.available).toBe(true)
@@ -34,7 +35,8 @@ describe('getSelectedEngineHealth', () => {
     const health = { claudeAvailable: false }
 
     const result = getSelectedEngineHealth(config, health)
-    expect(result.cliPath).toBe('claude')
+    // 对齐实现：未配置 cliPath 时返回空字符串（默认路径由后端解析），不再前端兜底 'claude'
+    expect(result.cliPath).toBe('')
   })
 
   it('应该处理 null 配置', () => {

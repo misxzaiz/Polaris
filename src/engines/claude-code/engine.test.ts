@@ -4,16 +4,11 @@
  * 测试 ClaudeCodeEngine 的核心功能，包括：
  * - 引擎基本属性
  * - 会话创建与管理
- * - 单例模式
  * - 资源清理
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import {
-  ClaudeCodeEngine,
-  getClaudeEngine,
-  resetClaudeEngine,
-} from './engine'
+import { ClaudeCodeEngine } from './engine'
 
 // Mock Tauri API
 vi.mock('@tauri-apps/api/core', () => ({
@@ -40,14 +35,12 @@ describe('ClaudeCodeEngine', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
-    // 重置单例
-    resetClaudeEngine()
+    // 对齐实现：模块级单例已移除，每个用例直接 new 独立实例，天然隔离
     engine = new ClaudeCodeEngine()
   })
 
   afterEach(() => {
     engine.cleanup()
-    resetClaudeEngine()
   })
 
   describe('基本属性', () => {
@@ -183,83 +176,21 @@ describe('ClaudeCodeEngine', () => {
   })
 })
 
-describe('ClaudeCodeEngine 单例', () => {
-  beforeEach(() => {
-    resetClaudeEngine()
-  })
-
-  afterEach(() => {
-    resetClaudeEngine()
-  })
-
-  describe('getClaudeEngine', () => {
-    it('应返回单例实例', () => {
-      const instance1 = getClaudeEngine()
-      const instance2 = getClaudeEngine()
-
-      expect(instance1).toBe(instance2)
-    })
-
-    it('首次调用应创建新实例', () => {
-      const instance = getClaudeEngine()
-      expect(instance).toBeDefined()
-      expect(instance.id).toBe('claude-code')
-    })
-
-    it('带配置调用时，首次应使用配置', () => {
-      const instance = getClaudeEngine({
-        claudePath: '/custom/path',
-      })
-
-      expect(instance).toBeDefined()
-    })
-
-    it('带配置调用时，后续调用应忽略配置', () => {
-      const instance1 = getClaudeEngine({
-        claudePath: '/path1',
-      })
-
-      const instance2 = getClaudeEngine({
-        claudePath: '/path2',
-      })
-
-      expect(instance1).toBe(instance2)
-    })
-  })
-
-  describe('resetClaudeEngine', () => {
-    it('应重置单例', () => {
-      const instance1 = getClaudeEngine()
-      resetClaudeEngine()
-      const instance2 = getClaudeEngine()
-
-      expect(instance1).not.toBe(instance2)
-    })
-
-    it('应清理旧实例的资源', () => {
-      const instance = getClaudeEngine()
-      instance.createSession()
-
-      resetClaudeEngine()
-
-      // 旧实例的会话应被清理
-      expect(instance.getSessions()).toHaveLength(0)
-    })
-  })
-})
+// 「ClaudeCodeEngine 单例」用例已删除：模块级单例 getClaudeEngine/resetClaudeEngine
+// 已从实现移除，实例获取与惰性工厂由 engine-bootstrap.ts + EngineRegistry 接管，
+// 其行为已在 src/ai-runtime/engine-registry.test.ts 覆盖。
 
 describe('ClaudeCodeEngine Session 集成', () => {
   let engine: ClaudeCodeEngine
 
   beforeEach(() => {
     vi.clearAllMocks()
-    resetClaudeEngine()
+    // 对齐实现：模块级单例已移除，每个用例直接 new 独立实例，天然隔离
     engine = new ClaudeCodeEngine()
   })
 
   afterEach(() => {
     engine.cleanup()
-    resetClaudeEngine()
   })
 
   describe('Session 状态管理', () => {

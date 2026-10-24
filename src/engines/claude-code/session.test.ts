@@ -25,6 +25,16 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: () => mockListen(),
 }))
 
+// 对齐实现：session 已改走 aiChatDispatch/aiChatDispatchStream（RouterBus 分发），
+// 不再直接 invoke；mock 掉分发层避免测试触发真实 HTTP transport（fetch :3000）
+const mockDispatch = vi.fn().mockResolvedValue(undefined)
+const mockDispatchStream = vi.fn().mockResolvedValue({ accepted: true })
+
+vi.mock('@/services/aiChatDispatch', () => ({
+  aiChatDispatch: (...args: unknown[]) => mockDispatch(...args),
+  aiChatDispatchStream: (...args: unknown[]) => mockDispatchStream(...args),
+}))
+
 // Mock logger
 vi.mock('../../utils/logger', () => ({
   createLogger: () => ({
@@ -339,8 +349,11 @@ describe('ClaudeCodeSession continue 方法', () => {
   it('应能继续会话', async () => {
     await session.continue('Continue the conversation')
 
-    // 验证 invoke 被调用（由于 mock 实现，只需验证无错误抛出）
-    expect(mockInvoke).toHaveBeenCalled()
+    // 对齐实现：continue 走 aiChatDispatchStream 分发链路（不再直接 invoke）
+    expect(mockDispatchStream).toHaveBeenCalled()
+    expect(mockDispatchStream).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'continue', message: 'Continue the conversation' }),
+    )
   })
 
   it('已销毁的 Session 不应能继续', async () => {
