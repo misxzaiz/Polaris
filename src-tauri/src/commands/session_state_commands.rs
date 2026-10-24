@@ -7,7 +7,15 @@
 //! - `session_register` / `session_get` / `session_list` / `session_append_message`
 //!   / `session_update_metadata` / `session_delete`：Session Registry
 //!
-//! 数据路径与消息库同文件：`<DataRoot>/session-v2/messages.db`。
+//! 数据路径：`<DataRoot>/session-v2/state.db`（独立文件）。
+//!
+//! 根因修复（2026-10-24，审计 2.1）：本库曾与消息库共用同一 `messages.db`，
+//! 但两者 SCHEMA_VERSION 不同（session_db=1 / session_state=2），各自按
+//! `PRAGMA user_version` 判版本、不符即删库重建——启动/每轮聊天打开 state 库
+//! 会把 user_version 覆写为 2，下次重启消息库开库即整库清空。拆分独立文件后
+//! 两个 schema 版本钥匙互不干扰。旧 messages.db 内的 state 表数据不迁移
+//! （本就被反复清空，无保留价值）。
+//!
 //! 旧业务路径（router_dispatch_stream / ai_chat_capability）零改动，影子运行原则。
 //!
 //! inner 实现同时供 Tauri command 与 Web IPC 桥调用（对齐 session_messages 模式）。
@@ -21,12 +29,12 @@ use crate::services::session_state::{
     SessionEventEntry, SessionProjection, SessionRecord, SessionStateDb, SessionStatus,
 };
 
-/// 会话状态库全局单例（懒初始化，与消息库同文件）
+/// 会话状态库全局单例（懒初始化）
 static SESSION_STATE_DB: Mutex<Option<Arc<SessionStateDb>>> = Mutex::new(None);
 
-/// 状态库文件路径（与消息库同文件，便于跨表事务）
+/// 状态库文件路径（独立于消息库 messages.db，见模块注释根因说明）
 fn state_db_path() -> std::path::PathBuf {
-    data_root().root().join("session-v2").join("messages.db")
+    data_root().root().join("session-v2").join("state.db")
 }
 
 /// 获取（或懒初始化）状态库实例
@@ -395,11 +403,13 @@ mod tests {
         let tmp = std::env::temp_dir().join(name);
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let path = tmp.join("messages.db");
+        // 两库拆分独立文件（对齐生产路径）：同文件会因 user_version 1 vs 2 互删，
+        // 测试同样会复现「先开 state 库再开消息库 → state 表被清」的竞态。
+        let state_path = tmp.join("state.db");
+        let message_path = tmp.join("messages.db");
 
-        // 状态库与消息库同一文件路径
-        *SESSION_STATE_DB.lock().unwrap() = Some(Arc::new(SessionStateDb::open(&path).unwrap()));
-        crate::commands::session_messages::set_test_db_for_testing(SessionMessageDb::open(&path).unwrap());
+        *SESSION_STATE_DB.lock().unwrap() = Some(Arc::new(SessionStateDb::open(&state_path).unwrap()));
+        crate::commands::session_messages::set_test_db_for_testing(SessionMessageDb::open(&message_path).unwrap());
     }
 
     fn make_event(

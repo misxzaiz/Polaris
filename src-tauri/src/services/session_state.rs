@@ -33,9 +33,11 @@
 //! )
 //! ```
 //!
-//! ⚠️ **版本号纪律**：本库与 `session_db`（消息库）共用同一 `messages.db` 文件，
-//! 各自独立用 `PRAGMA user_version` 判版本并删库重建。因此**任何新增表禁止触
-//! 版本号升级**，一律用 `CREATE TABLE IF NOT EXISTS` 幂等补建（`ensure_index_schema`）。
+//! ⚠️ **版本号纪律**：本库使用独立 `state.db` 文件（2026-10-24 拆分，根因：
+//! 曾与 `session_db`（消息库）共用 `messages.db`，两者 SCHEMA_VERSION 不同
+//! 各自删库重建导致互删清库）。虽已拆分，仍保持「新增表禁止触版本号升级，
+//! 一律 `CREATE TABLE IF NOT EXISTS` 幂等补建（`ensure_index_schema`）」的纪律，
+//! 事件/记录可从上游重建，避免升版触发删库。
 
 use std::fs;
 use std::path::Path;
