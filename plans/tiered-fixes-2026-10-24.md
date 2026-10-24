@@ -70,16 +70,16 @@
 
 | 主题 | 内容 |
 |---|---|
-| `a164fa8f` | P0-X1 动态转发保留原始 Source（安全） |
-| `fc69fdde` | P0-X4/X5 审计补全 + dispatch 超时护栏 |
-| `626ba55f` | P0-X2/X3 停止竞态 + 退出孤儿进程 |
-| `c8cf5956` | 审计报告 + P0 spec 归档 |
-| `0993d84d` | P1-a/b/c 端口治理 + healthCheck 状态机 + 状态回推 |
-| `8cfcda4c` | P1-d/e MCP stderr 消费 + 更新先停服务 |
-| `62ec326e` | P1-f/g Web token 分级 + X8 + AI 操控审批门 |
-| `9a1c5f0c` | P2 前置：X12 查重 + X6 归属校验 + RealContext 补全 |
-| `079854d4` | P2-b/c PluginRpc + 覆盖链 + OVERRIDE_LEVELS |
-| `0097f887` | P2-d contributes.capabilities + 装配器 + executors 门控 |
-| `56d9dab0` | P3 AI 使用说明治理四处 |
-| `d6a9fb57` | P4 skill 插件化 |
-| `8e73ab6b` | P5 CSS 校验/scoped + slot 漂移修复 |
+| `8ff3709f` | P0-X1 动态转发保留原始 Source（安全） |
+| `f0ae25ca` | P0-X4/X5 审计补全 + dispatch 超时护栏 |
+| `aba91319` | P0-X2/X3 停止竞态 + 退出孤儿进程 |
+| `93aca7b8` | 审计报告 + P0 spec 归档 |
+| `0ecf97e8` | P1-a/b/c 端口治理 + healthCheck 状态机 + 状态回推 |
+| `2d30c02e` | P1-d/e MCP stderr 消费 + 更新先停服务 |
+| `ddc179c3` | P1-f/g Web token 分级 + X8 + AI 操控审批门 |
+| `67be4af3` | P2 前置：X12 查重 + X6 归属校验 + RealContext 补全 |
+| `37948cf1` | P2-b/c PluginRpc + 覆盖链 + OVERRIDE_LEVELS |
+| `32b2ea8a` | P2-d contributes.capabilities + 装配器 + executors 门控 |
+| `3ba88134` | P3 AI 使用说明治理四处 |
+| `4e74d175` | P4 skill 插件化 |
+| `d75282ce` | P5 CSS 校验/scoped + slot 漂移修复 |
