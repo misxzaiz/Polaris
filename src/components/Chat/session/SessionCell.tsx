@@ -14,7 +14,7 @@ import { clsx } from 'clsx';
 import { Loader2, XCircle, X, Circle, Maximize2, Minimize2, Square, ArrowUpToLine } from 'lucide-react';
 import { SessionMessagesView } from '../messages/SessionMessagesView';
 import { useSessionMetadataList, useSessionManagerActions } from '@/stores/conversationStore/sessionStoreManager';
-import { useSessionStreaming, useSessionHasPendingQuestion } from '@/stores/conversationStore/useActiveSession';
+import { useSessionStreaming, useSessionHasPendingQuestion, useSessionHasPendingCards } from '@/stores/conversationStore/useActiveSession';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
 import { useViewStore } from '@/stores/viewStore';
 import { useWorkspaceStore, useConfigStore } from '@/stores';
@@ -68,6 +68,8 @@ export const SessionCell = memo(function SessionCell({
 
   // 是否有待回答的问题
   const hasPendingQuestion = useSessionHasPendingQuestion(sessionId);
+  // 批 6（审计 5.9）：待处理交互卡（权限/表单）指示——切走的会话卡在等确认时给徽标
+  const hasPendingCards = useSessionHasPendingCards(sessionId);
 
   // 工作区菜单状态
   const [showWorkspaceMenu, setShowWorkspaceMenu] = useState(false);
@@ -178,6 +180,12 @@ export const SessionCell = memo(function SessionCell({
           {/* 待回答问题指示 - 仅非活跃会话显示 */}
           {hasPendingQuestion && !isActive && !isStreaming && (
             <span className="w-1.5 h-1.5 bg-warning rounded-full shrink-0" title={t('sessionCell.pendingQuestion')} />
+          )}
+
+          {/* 批 6（审计 5.9）：待处理交互卡（权限/表单）指示——非活跃会话等待
+              用户授权时给脉冲徽标，切走的用户知道要回来处理 */}
+          {hasPendingCards && !isActive && !isStreaming && (
+            <span className="w-1.5 h-1.5 bg-warning rounded-full shrink-0 animate-pulse" title="有待处理的权限/表单确认" />
           )}
 
           {/* 中断按钮 - 仅在流式状态时显示 */}

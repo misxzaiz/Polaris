@@ -449,6 +449,33 @@ export function useSessionHasPendingQuestion(sessionId: string | null): boolean 
   }, [currentMessage, messages])
 }
 
+/**
+ * 批 6（审计 5.9）：会话是否有待处理的交互卡片（权限确认 / 表单）。
+ * 与 useSessionHasPendingQuestion 同范式——非活跃会话等待用户授权时
+ * Cell 显示徽标，用户切走后知道那边卡在等确认。
+ */
+export function useSessionHasPendingCards(sessionId: string | null): boolean {
+  const { currentMessage, messages } = useSessionMessages(sessionId)
+  return useMemo(() => {
+    const hasPending = (blocks: import('../../types/chat').ContentBlock[] | undefined) =>
+      !!blocks?.some(
+        (b) =>
+          (b.type === 'permission_request' && b.status === 'pending') ||
+          (b.type === 'form' && b.status === 'pending'),
+      )
+    if (hasPending(currentMessage?.blocks)) return true
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1]
+      if (lastMsg.type === 'assistant' && 'blocks' in lastMsg) {
+        return hasPending(
+          (lastMsg as import('../../types/chat').AssistantChatMessage).blocks,
+        )
+      }
+    }
+    return false
+  }, [currentMessage, messages])
+}
+
 export function usePendingQuestions(): import('../../types').QuestionBlock[] {
   const { currentMessage, messages } = useActiveSessionMessages()
   return useMemo(() => {

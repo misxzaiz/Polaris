@@ -266,8 +266,19 @@ export function ChatStatusBar({ children, embedded = false }: ChatStatusBarProps
 
     switch (cmd) {
       case 'interrupt':
+        // 批 6（审计 5.11）：语音「停止/中断」此前是空壳——现在真正调用活跃
+        // 会话的 interrupt（与停止按钮同一链路，含超时兜底）。动态 import
+        // manager 直取活跃会话（useActiveSessionActions 是 hook 不能在此调用）。
         if (isStreaming) {
-          // ChatInput 也会消费 send，这里不处理 send/clear
+          void import('@/stores/conversationStore/sessionStoreManager').then(
+            ({ sessionStoreManager }) => {
+              const sid = sessionStoreManager.getState().activeSessionId
+              const store = sid
+                ? sessionStoreManager.getState().stores.get(sid)
+                : undefined
+              void store?.getState().interrupt()
+            },
+          )
         }
         break;
       case 'undo':
