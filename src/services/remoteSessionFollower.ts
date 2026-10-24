@@ -476,11 +476,127 @@ function applyLiveEvent(
 // 对外 API
 // ============================================================================
 
+/**
+ * 把远端会话接入本端窗口（spec：remote-session-join-v2 §2.2，能力层）。
+ *
+ * 复用既有管线，零新增后端代码：
+ * - createSessionFromHistory 建本端会话格（消息源 = message_read 后端权威，
+ *   conversationId 挂上 store）→ 反向索引路由此后自动把实时事件投进本端 store；
+ * - 加入后发送走 continue 到同一引擎会话；双端并发由后端 try_start 单写者
+ *   仲裁拒绝（reason 带启动设备）；
+ * - is_chat_session_running 校正流式状态（对齐 webReconnectResync 恢复语义）；
+ * - 从跟随列表移除该条目（isLocalConversation 过滤天然阻止再收录，防双入口）。
+ *
+ * @returns 本端新会话 id；失败返回 null（调用方 toast）
+ */
+export async function joinRemoteSession(conversationId: string): Promise<string | null> {
+  const s = store.getState().sessions.get(conversationId)
+  if (!s) {
+    log.warn('加入失败：会话不在跟随列表', { conversationId })
+    return null
+  }
+  if (isLocalConversation(conversationId)) {
+    log.info('该会话已在本端，直接切换', { conversationId })
+    return null
+  }
+
+  try {
+    const { invoke } = await import('@/services/transport')
+    const { sessionStoreManager } = await import('@/stores/conversationStore/sessionStoreManager')
+    const { useViewStore } = await import('@/stores/viewStore')
+
+    // ① 元数据：投影优先（title/engineId），降级首条用户消息截断标题
+    let title = shortConversationTitle(conversationId)
+    let engineId: string | undefined = s.engineId
+    try {
+      const indexResult = await invoke<{ sessions: Array<Record<string, unknown>> }>(
+        'session_index_list',
+        { workspaceKey: 'default' },
+      )
+      const row = indexResult?.sessions?.find(
+        (r) => r['conversationId'] === conversationId,
+      )
+      if (row) {
+        if (typeof row['title'] === 'string' && row['title'].trim()) title = row['title']
+        if (typeof row['engineId'] === 'string' && row['engineId']) engineId = row['engineId']
+      }
+    } catch {
+      // 投影查询失败：走降级链（标题用 conversationId 短标识）
+    }
+
+    // ② 后端权威消息快照 → ChatMessage[]
+    const entries = await invoke<Array<{ content: Record<string, unknown> }>>('message_read', {
+      conversationId,
+      afterTimestamp: null,
+      limit: null,
+    })
+    const messages = entries.map((e) => e.content)
+    if (messages.length === 0) {
+      // 空会话（极端：用户消息尚未落库即加入）：用首条用户消息文本生成标题
+      const firstUser = s.messages.find((m) => m.role === 'user')
+      if (firstUser?.text) title = firstUser.text.slice(0, 24)
+    } else if (title === shortConversationTitle(conversationId)) {
+      const firstUserEntry = messages.find((m) => m['type'] === 'user')
+      const c = firstUserEntry?.['content']
+      if (typeof c === 'string' && c.trim()) title = c.slice(0, 24)
+    }
+
+    // ③ 建本端会话格（createSessionFromHistory 把 conversationId 挂上 store）
+    const manager = sessionStoreManager.getState()
+    const sessionId = manager.createSessionFromHistory(messages as never, conversationId, {
+      title,
+      engineId,
+    })
+    useViewStore.getState().addToMultiView(sessionId)
+    manager.switchSession(sessionId)
+
+    // ④ 校正流式状态：远端仍在流式 → 本端 setStreaming(true) 接实时续流
+    const store2 = manager.stores.get(sessionId)
+    if (store2) {
+      try {
+        const running = await invoke<{ running: boolean }>('is_chat_session_running', {
+          sessionId: conversationId,
+        })
+        if (running?.running) {
+          store2.getState().setStreaming(true)
+        }
+      } catch {
+        // 查询失败保守不置位（实时 session_end 到达仍会正常收尾）
+      }
+    }
+
+    // ⑤ 从跟随列表移除（防双入口）
+    removeFollowerEntry(conversationId)
+
+    log.info('远端会话已加入本端窗口', { conversationId, sessionId, title, engineId })
+    return sessionId
+  } catch (e) {
+    log.error('加入远端会话失败', e instanceof Error ? e : new Error(String(e)), {
+      conversationId,
+    })
+    return null
+  }
+}
+
+function shortConversationTitle(conversationId: string): string {
+  return conversationId.length > 14 ? `${conversationId.slice(0, 12)}…` : conversationId
+}
+
+function removeFollowerEntry(conversationId: string): void {
+  const cur = store.getState().sessions
+  if (!cur.has(conversationId)) return
+  const next = new Map(cur)
+  next.delete(conversationId)
+  store.setState({ sessions: next })
+}
+
 export const remoteSessionFollower = {
   start: () => store.getState().startFollower(),
   stop: () => store.getState().stopFollower(),
   openSession: (conversationId: string) => store.getState().openSession(conversationId),
   closeSession: () => store.getState().closeSession(),
+  /** 一键加入：远端会话 → 本端正式会话格（spec remote-session-join-v2 §2.2） */
+  joinSession: (conversationId: string) => joinRemoteSession(conversationId),
   /** 组件用 useStore(store, selector) 订阅 */
   store,
 }
