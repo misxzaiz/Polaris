@@ -575,8 +575,12 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
     useViewStore.getState().addToMultiView(sessionId)
     manager.switchSession(sessionId)
 
-    // ④ 校正流式状态：远端仍在流式 → 本端 setStreaming(true) 接实时续流
-    const store2 = manager.stores.get(sessionId)
+    // ④ 校正流式状态：远端仍在流式 → 本端接实时续流（流式接续 + status 同步）。
+    // 必须重新取新鲜快照：步骤③ createSessionFromHistory 内部 set() 重建了
+    // stores Map——上面 manager 快照里的旧 Map 没有新会话，get 返回 undefined
+    // 会把整块校正静默跳过（2026-10-24 插桩实证：running 中加入后 isStreaming
+    // 停留 false → 无中断按钮 + token 走迟到追加分支 → 页面卡死 P0）。
+    const store2 = sessionStoreManager.getState().stores.get(sessionId)
     if (store2) {
       try {
         const running = await invoke<{ running: boolean }>('is_chat_session_running', {
@@ -599,8 +603,13 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
             sessionStoreManager.setState({ sessionMetadata: newMetadata })
           }
         }
-      } catch {
-        // 查询失败保守不置位（实时 session_end 到达仍会正常收尾）
+      } catch (e) {
+        // 查询失败不再静默（让失败变响亮）：isStreaming 停留 false 的表现与
+        // 「会话已结束」无法区分，至少留日志供断点定位。
+        log.warn('加入会话的流式状态校正失败', {
+          conversationId,
+          error: e instanceof Error ? e.message : String(e),
+        })
       }
     }
 
