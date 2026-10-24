@@ -157,6 +157,7 @@ function createInitialState(sessionId: string): ConversationState {
     currentConversationSeed: null,
     isStreaming: false,
     isInterrupting: false,
+    turnEpoch: 0,
     error: null,
     progressMessage: null,
     promptSuggestion: null,
@@ -205,6 +206,69 @@ function createInitialState(sessionId: string): ConversationState {
     // 元数据
     sessionId,
   }
+}
+
+// ============================================================================
+// 批 4a（审计 4.2/4.3）：块级终态统一回写。
+//
+// 根因：session_end 与 tool_call_end / plugin_card_answered / agent_run_end
+// 乱序到达（桌面直发+广播双通道）时，currentMessage 已被 finishMessage 归档，
+// updateXxxBlock 的 `if (!currentMessage) return` 把终态丢弃——历史消息里的
+// 卡片永久 running，且随轮末 saveDialog 写入 JSONL 永久化。
+// question / form 已各自修复跨 messages 搜索；此 helper 把同一范式收敛为
+// 唯一实现，append 侧幂等同样全局查重（防归档后重发产生幽灵双卡）。
+// ============================================================================
+
+type AnyContentBlock = import('../../types/chat').ContentBlock
+
+/** 判断某 id 的某类型块是否已存在于 currentMessage 或任何归档消息 */
+function hasBlockAnywhere(
+  state: ConversationState,
+  type: string,
+  id: string,
+): boolean {
+  if (state.currentMessage?.blocks.some((b) => b.type === type && 'id' in b && b.id === id)) {
+    return true
+  }
+  return state.messages.some(
+    (m) =>
+      m.type === 'assistant' &&
+      m.blocks?.some((b) => b.type === type && 'id' in b && b.id === id),
+  )
+}
+
+/**
+ * 按 match 定位块并回写 patch：先查 currentMessage，miss 则跨 messages[] 回写。
+ * @returns 是否命中并写入
+ */
+function updateBlockAcrossSession(
+  get: () => ConversationState,
+  set: (partial: Partial<ConversationState>) => void,
+  match: (b: AnyContentBlock) => boolean,
+  patch: (b: AnyContentBlock) => AnyContentBlock,
+): boolean {
+  const { currentMessage, messages } = get()
+  if (currentMessage) {
+    const idx = currentMessage.blocks.findIndex(match)
+    if (idx >= 0) {
+      const blocks = [...currentMessage.blocks]
+      blocks[idx] = patch(blocks[idx])
+      set({ currentMessage: { ...currentMessage, blocks } })
+      return true
+    }
+  }
+  let touched = false
+  const newMessages = messages.map((msg) => {
+    if (msg.type !== 'assistant' || !msg.blocks) return msg
+    const idx = msg.blocks.findIndex(match)
+    if (idx < 0) return msg
+    touched = true
+    const blocks = [...msg.blocks]
+    blocks[idx] = patch(blocks[idx])
+    return { ...msg, blocks }
+  })
+  if (touched) set({ messages: newMessages })
+  return touched
 }
 
 /**
@@ -902,6 +966,15 @@ export function createConversationStore(
           }
           return
         }
+        // 批 4a：map 命中但 currentMessage 已归档——块在历史消息里，重发
+        // 不追加（否则开新消息装重复工具卡，且无 end 永久 running）
+        if (existingIdx !== undefined && !currentMessage) {
+          return
+        }
+        // map miss（快照/恢复路径）：全局查重兜底
+        if (hasBlockAnywhere(get(), 'tool_call', toolId)) {
+          return
+        }
 
         const block = {
           type: 'tool_call' as const,
@@ -933,25 +1006,56 @@ export function createConversationStore(
 
       updateToolCallBlock: (toolId, status, output?, error?) => {
         const { currentMessage, toolBlockMap } = get()
-        if (!currentMessage) return
-        const idx = toolBlockMap.get(toolId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        const block = blocks[idx]
-        if (block?.type !== 'tool_call') return
-        blocks[idx] = {
-          ...block,
-          status,
-          output: output ?? block.output,
-          error: error ?? block.error,
-          completedAt: status === 'completed' || status === 'failed' ? new Date().toISOString() : block.completedAt,
+        const completedAt = status === 'completed' || status === 'failed' ? new Date().toISOString() : undefined
+        const patch = (b: AnyContentBlock): AnyContentBlock => {
+          if (b.type !== 'tool_call') return b
+          return {
+            ...b,
+            status,
+            output: output ?? b.output,
+            error: error ?? b.error,
+            completedAt: completedAt ?? b.completedAt,
+          }
         }
-        set({ currentMessage: { ...currentMessage, blocks } })
+        if (currentMessage) {
+          const idx = toolBlockMap.get(toolId)
+          if (idx === undefined) {
+            // map miss（快照/恢复路径未登记）：跨会话回写兜底
+            updateBlockAcrossSession(
+              get, set,
+              (b) => b.type === 'tool_call' && b.id === toolId,
+              patch,
+            )
+            return
+          }
+          const blocks = [...currentMessage.blocks]
+          const block = blocks[idx]
+          if (block?.type !== 'tool_call') return
+          blocks[idx] = patch(block)
+          set({ currentMessage: { ...currentMessage, blocks } })
+          return
+        }
+        // 批 4a（审计 4.2）：归档后到达的终态——跨 messages[] 回写，
+        // 不再丢弃（否则历史工具卡永久 running 且写入 JSONL 永久化）
+        updateBlockAcrossSession(
+          get, set,
+          (b) => b.type === 'tool_call' && b.id === toolId,
+          patch,
+        )
       },
 
       updateToolCallTaskId: (toolId, taskId) => {
+        const apply = () =>
+          updateBlockAcrossSession(
+            get, set,
+            (b): b is AnyContentBlock => b.type === 'tool_call' && b.id === toolId && !('taskId' in b && b.taskId),
+            (b) => (b.type === 'tool_call' && !b.taskId ? { ...b, taskId } : b),
+          )
         const { currentMessage, toolBlockMap } = get()
-        if (!currentMessage) return
+        if (!currentMessage) {
+          apply()
+          return
+        }
         const idx = toolBlockMap.get(toolId)
         if (idx === undefined) return
         const blocks = [...currentMessage.blocks]
@@ -1153,8 +1257,10 @@ export function createConversationStore(
         const { currentMessage, formBlockMap, streamingUpdateCounter } = get()
         const newMap = new Map(formBlockMap)
 
-        // 幂等：同 id 表单不重复追加（拉起帧与历史恢复可能并发）
-        if (currentMessage?.blocks.some((b) => b.type === 'form' && b.id === block.id)) {
+        // 幂等：同 id 表单不重复追加（拉起帧与历史恢复可能并发）。
+        // 批 4a：查重范围扩到归档消息（session_end 后重发不再产生幽灵双卡，
+        // 对齐 question 已修范式）
+        if (hasBlockAnywhere(get(), 'form', block.id)) {
           return
         }
 
@@ -1239,8 +1345,9 @@ export function createConversationStore(
         const { currentMessage, pluginCardBlockMap, streamingUpdateCounter } = get()
         const newMap = new Map(pluginCardBlockMap)
 
-        // 幂等：同 id 卡片不重复追加（tool_call_end 与 plugin_card 事件可能并发到达）
-        if (currentMessage?.blocks.some((b) => b.type === 'plugin_card' && b.id === block.id)) {
+        // 幂等：同 id 卡片不重复追加（tool_call_end 与 plugin_card 事件可能并发到达）。
+        // 批 4a：查重范围扩到归档消息（同 form/question 范式）
+        if (hasBlockAnywhere(get(), 'plugin_card', block.id)) {
           return
         }
 
@@ -1264,15 +1371,26 @@ export function createConversationStore(
 
       updatePluginCardBlock: (id, updates) => {
         const { currentMessage, pluginCardBlockMap } = get()
-        if (!currentMessage) return
-        const idx = pluginCardBlockMap.get(id)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        if (blocks[idx]?.type === 'plugin_card') {
-          const existing = blocks[idx] as import('../../types/chat').PluginCardBlock
-          blocks[idx] = { ...existing, ...updates }
-          set({ currentMessage: { ...currentMessage, blocks } })
+        const patch = (b: AnyContentBlock): AnyContentBlock =>
+          b.type === 'plugin_card'
+            ? ({ ...b, ...updates } as typeof b)
+            : b
+        if (currentMessage) {
+          const idx = pluginCardBlockMap.get(id)
+          if (idx !== undefined && currentMessage.blocks[idx]?.type === 'plugin_card') {
+            const blocks = [...currentMessage.blocks]
+            blocks[idx] = patch(blocks[idx])
+            set({ currentMessage: { ...currentMessage, blocks } })
+            return
+          }
         }
+        // 批 4a（审计 4.2）：归档后到达的 plugin_card_answered——跨 messages[]
+        // 回写，不再丢弃
+        updateBlockAcrossSession(
+          get, set,
+          (b) => b.type === 'plugin_card' && b.id === id,
+          patch,
+        )
       },
 
       appendContextCompactBlock: (trigger, preTokens, postTokens) => {
@@ -1402,14 +1520,23 @@ export function createConversationStore(
 
       updateAgentRunBlock: (taskId, updates) => {
         const { currentMessage, agentRunBlockMap } = get()
-        if (!currentMessage) return
-        const idx = agentRunBlockMap.get(taskId)
-        if (idx === undefined) return
-        const blocks = [...currentMessage.blocks]
-        if (blocks[idx]?.type === 'agent_run') {
-          blocks[idx] = { ...blocks[idx], ...updates }
-          set({ currentMessage: { ...currentMessage, blocks } })
+        const patch = (b: AnyContentBlock): AnyContentBlock =>
+          b.type === 'agent_run' ? ({ ...b, ...updates } as typeof b) : b
+        if (currentMessage) {
+          const idx = agentRunBlockMap.get(taskId)
+          if (idx !== undefined && currentMessage.blocks[idx]?.type === 'agent_run') {
+            const blocks = [...currentMessage.blocks]
+            blocks[idx] = patch(blocks[idx])
+            set({ currentMessage: { ...currentMessage, blocks } })
+            return
+          }
         }
+        // 批 4a（审计 4.2）：归档后到达的 agent_run_end——跨 messages[] 回写
+        updateBlockAcrossSession(
+          get, set,
+          (b) => b.type === 'agent_run' && b.id === taskId,
+          patch,
+        )
       },
 
       appendAgentToolCall: (taskId, toolId, toolName) => {
@@ -1906,9 +2033,19 @@ export function createConversationStore(
           // 移除动作后移到「校验通过后」执行，消除「先移除后校验失败 → 消息丢」的窗口。
           const originConversationId = st.conversationId
           // 流式中：先中断当前回复，等待本轮回流真正结束（interrupt 有 5s 兜底）
+          // 批 4d（审计 4.9）：interrupt 已有 8s invoke 超时 + 5s 定时器兜底，
+          // 外层再设 16s 硬界——后端彻底死亡时不再无限持锁卡死整个待发队列。
           if (st.isStreaming) {
-            await get().interrupt()
-            await waitFor(() => !get().isStreaming, 7000)
+            await Promise.race([
+              get().interrupt().catch(() => undefined),
+              new Promise((r) => setTimeout(r, 16000)),
+            ])
+            await waitFor(() => !get().isStreaming, 3000)
+            if (get().isStreaming) {
+              // 有界等待仍未复位：本地强制收尾（等价 interrupt 兜底路径），解锁队列
+              set({ isStreaming: false, isInterrupting: false, progressMessage: null })
+              get().finishMessage()
+            }
           }
           // 代际校验：中断等待期间用户切换会话 / 开新会话 → 不把旧会话的消息发到新会话。
           const after = get()
@@ -2050,6 +2187,9 @@ export function createConversationStore(
           taskBoardBlockMap: new Map(),
           activeTaskBoardId: null,
           pendingTaskCreates: [],
+          // 批 4b（审计 4.1）：轮次代际 +1——interrupt 兜底定时器等跨轮回调
+          // 据此识别旧轮次，不再误杀新一轮流式
+          turnEpoch: get().turnEpoch + 1,
         })
 
         try {
@@ -2163,12 +2303,27 @@ export function createConversationStore(
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
           log.error('sendMessage failed', err, { sessionId, conversationId, workspaceDir: actualWorkspaceDir })
+          // 批 4c（审计 4.4/5.2）：失败事务化——回滚乐观用户消息 + 恢复草稿。
+          // 此前失败消息留在界面却从未进引擎上下文（UI/引擎历史从此分叉），
+          // 且输入已被清空、ErrorBanner 重试再追加一条造成内容重复。
+          const draftNow = get().inputDraft
+          const draftEmpty = !draftNow?.text && (!draftNow?.attachments || draftNow.attachments.length === 0)
           set({
             error: resolveChatError(e, { sessionId, workspaceDir: actualWorkspaceDir }),
             isStreaming: false,
             currentMessage: null,
             progressMessage: null,
+            // 回滚本轮乐观追加的用户消息（未进引擎上下文，不该留在历史）
+            messages: get().messages.filter((m) => m.id !== userMessage.id),
           })
+          if (draftEmpty) {
+            // 恢复草稿（用户未输入新内容时回填，含附件；不覆盖新输入）
+            get().updateInputDraft({
+              text: content,
+              attachments: attachments ?? [],
+              contextBlocks: [],
+            })
+          }
           return false
         }
       },
@@ -2190,10 +2345,17 @@ export function createConversationStore(
         set({ isInterrupting: true })
 
         try {
-          await aiChatDispatch({ action: 'interrupt',
+          // 批 4d（审计 4.9）：invoke 挂起兜底——后端死亡时 interrupt 的 dispatch
+          // 可能永不 resolve（其内部 5s 定时器在 invoke resolve 后才启动，救不了
+          // 这条路），此处 8s 有界等待，超时按失败处理走强制收尾 + toast。
+          const interruptInvoke = aiChatDispatch({ action: 'interrupt',
             sessionId: conversationId,
             engineId: engine,
           })
+          const invokeTimeout = new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('interrupt invoke 超时（后端无响应）')), 8000),
+          )
+          await Promise.race([interruptInvoke, invokeTimeout])
           log.info('Session interrupted, waiting for backend session_end to finalize', {
             conversationId,
           })
@@ -2202,11 +2364,16 @@ export function createConversationStore(
           // session_end 永不到达时 isStreaming/isInterrupting 会卡死 UI。
           // 5s 后仍处于流式状态则强制结束（本地 isStreaming=false + finishMessage，
           // 与 session_end 到达时的收尾一致，避免半截消息）。
+          // 批 4b（审计 4.1）：捕获轮次代际——中断后 5s 内用户追问会开启新一轮
+          // （turnEpoch 递增），本定时器属于旧轮次，不得强制收尾（否则新回复被
+          // 无声截断，且无任何错误提示）。
+          const epochAtInterrupt = get().turnEpoch
           setTimeout(() => {
             const st = get()
             // 代际校验：中断等待期间用户可能已切会话/开新会话，conversationId 变化则失效，
             // 避免误杀新一轮流式。
             if (st.conversationId !== conversationId) return
+            if (st.turnEpoch !== epochAtInterrupt) return
             if (st.isStreaming || st.isInterrupting) {
               log.warn('Interrupt timeout fallback: backend session_end not received, force-finishing streaming', {
                 conversationId,
@@ -2214,7 +2381,10 @@ export function createConversationStore(
                 isInterrupting: st.isInterrupting,
                 hasCurrentMessage: !!st.currentMessage,
               })
-              set({ isStreaming: false, isInterrupting: false })
+              // 批 4b（审计 4.10）：强制收尾路径同样清理 progressMessage——
+              // 此前只复位流式标志，灵动岛从 progressMessage 派生的 running 卡
+              // 持续转圈直到下次事件
+              set({ isStreaming: false, isInterrupting: false, progressMessage: null })
               get().finishMessage()
               // 中断兜底强制收尾后，若有待发送队列则继续派发（session_end 不会到达此路径）
               void get().dispatchNextPending()
@@ -2226,7 +2396,8 @@ export function createConversationStore(
 
           // invoke 本身失败（如后端未找到会话）：session_end 不会到达，
           // 前端需主动结束流式状态避免 UI 卡死。
-          set({ isStreaming: false, isInterrupting: false })
+          // 批 4b（审计 4.10）：同步清理 progressMessage（同超时兜底路径）
+          set({ isStreaming: false, isInterrupting: false, progressMessage: null })
           get().finishMessage()
           // 中断失败兜底收尾后，若有待发送队列则继续派发
           void get().dispatchNextPending()

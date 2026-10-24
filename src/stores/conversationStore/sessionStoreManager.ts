@@ -710,7 +710,12 @@ function createSessionManagerStore() {
             voiceNotificationService.notifyBackgroundComplete()
           }
         } else if (event.type === 'error') {
-          newStatus = 'error'
+          // 批 4d（审计 4.11）：用户主动中断时后端 fallback 会发 error 事件，
+          // eventHandler 已按 isInterrupting 静默处理；元数据侧同步判定——
+          // 否则会话列表/标签显示「错误」徽标而聊天区无任何错误提示，自相矛盾。
+          const isUserInterrupt =
+            get().stores.get(targetSessionId)?.getState().isInterrupting === true
+          newStatus = isUserInterrupt ? 'idle' : 'error'
         }
 
         if (newStatus !== metadata.status) {

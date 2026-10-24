@@ -368,6 +368,9 @@ export interface ConversationState {
   isStreaming: boolean
   /** 用户主动点击中断的标志。用于区分"用户主动终止"与"后端意外崩溃/异常退出"。中断后后端发的 error/session_end(reason=error) 据此静默处理。 */
   isInterrupting: boolean
+  /** 轮次代际：每次 sendMessage 递增。interrupt 兜底定时器等跨轮异步回调据此识别
+   * 「所属轮次已被新一轮取代」，避免误杀新一轮流式（审计 4.1）。 */
+  turnEpoch: number
   error: string | null
   progressMessage: string | null
   /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */

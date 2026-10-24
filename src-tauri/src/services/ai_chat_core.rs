@@ -1064,6 +1064,10 @@ pub async fn start_chat_inner(
 
     let engine_str = engine.as_str();
     let ctx_id = options.context_id.clone();
+    // 批 4a（协议定稿，裁决方案 B4.a）：本轮 turnId——信封层标识，前端跨轮
+    // 异步回调（interrupt 兜底定时器等）与后续幂等水位消费；旧前端忽略未知字段
+    // 天然兼容。
+    let turn_id = format!("turn-{}", uuid::Uuid::new_v4());
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
@@ -1138,15 +1142,15 @@ pub async fn start_chat_inner(
         };
         let event_json = if let Some(ref cid) = ctx_id {
             if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": cid, "payload": enriched })
+                serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": enriched })
             } else {
-                serde_json::json!({ "contextId": cid, "payload": event })
+                serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": event })
             }
         } else {
             if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": "main", "payload": enriched })
+                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
             } else {
-                serde_json::json!({ "contextId": "main", "payload": event })
+                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
             }
         };
         tracing::debug!(
@@ -1629,6 +1633,10 @@ pub async fn continue_chat_inner(
 
     let engine_str = engine.as_str();
     let ctx_id = options.context_id.clone();
+    // 批 4a（协议定稿，裁决方案 B4.a）：本轮 turnId——信封层标识，前端跨轮
+    // 异步回调（interrupt 兜底定时器等）与后续幂等水位消费；旧前端忽略未知字段
+    // 天然兼容。
+    let turn_id = format!("turn-{}", uuid::Uuid::new_v4());
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
     let event_callback = move |event: AIEvent| {
@@ -1703,15 +1711,15 @@ pub async fn continue_chat_inner(
         };
         let event_json = if let Some(ref cid) = ctx_id {
             if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": cid, "payload": enriched })
+                serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": enriched })
             } else {
-                serde_json::json!({ "contextId": cid, "payload": event })
+                serde_json::json!({ "contextId": cid, "turnId": turn_id, "payload": event })
             }
         } else {
             if let Some(ref enriched) = enriched {
-                serde_json::json!({ "contextId": "main", "payload": enriched })
+                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": enriched })
             } else {
-                serde_json::json!({ "contextId": "main", "payload": event })
+                serde_json::json!({ "contextId": "main", "turnId": turn_id, "payload": event })
             }
         };
         tracing::debug!(

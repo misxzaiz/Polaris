@@ -658,6 +658,9 @@ export function handleAIEvent(
       set({
         error: event.error,
         isStreaming: false,
+        // 批 4b（审计 4.10）：error 收尾同样清 progressMessage——若后续
+        // session_end 丢失，灵动岛不再残留「🔧 XX」转圈
+        progressMessage: null,
       })
       // currentMessage 不清空：消息固化由随后的 session_end handler 的 finishMessage()
       // 统一负责。此前在 error handler 里直接置 null 会导致流式输出被丢弃（中断时
