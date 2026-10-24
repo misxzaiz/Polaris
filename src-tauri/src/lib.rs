@@ -868,6 +868,22 @@ pub fn run() {
                 // 主窗口关闭时，退出整个应用
                 if label == "main" {
                     tracing::info!("[Window] 主窗口关闭，退出应用");
+                    // X3（2026-10-24 审计）：退出前停掉插件后台服务，防孤儿进程。
+                    // 此前直接 exit(0)：kill_on_drop 失效、stop_all 无调用方，
+                    // 插件服务在应用退出后变孤儿。上限 3s——宁可超时退出也不
+                    // 阻塞用户关闭（退避窗口内的服务由 kill_on_drop 兜底）。
+                    if let Some(state) = window.app_handle().try_state::<crate::AppState>() {
+                        let psm = state.plugin_service_manager.clone();
+                        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            tauri::async_runtime::block_on(async {
+                                let _ = tokio::time::timeout(
+                                    std::time::Duration::from_secs(3),
+                                    psm.stop_all(),
+                                )
+                                .await;
+                            });
+                        }));
+                    }
                     // 退出整个应用
                     std::process::exit(0);
                 }

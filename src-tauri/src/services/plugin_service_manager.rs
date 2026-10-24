@@ -19,10 +19,19 @@ use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use tokio::process::{Child, Command};
-use tokio::sync::Mutex;
+use tokio::sync::{watch, Mutex, Notify};
 
 use crate::error::{AppError, Result};
 use crate::models::plugin::{DiscoveredPluginManifest, PluginServiceManifestContribution};
+
+/// 停止等待 finalize 的上限：kill(TerminateProcess) + wait 通常毫秒级，
+/// 超时说明进程不可杀（系统级卡死），返回时状态可能仍是 Stopping——
+/// 状态由 watcher 最终收敛，不无限阻塞调用方。
+const STOP_FINALIZE_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// 服务稳定运行时长：超过该值后自然退出，restart_count 清零再计
+/// （否则偶发退出累计 3 次后自动重启永久失效——审计 X2-⑤）。
+const STABLE_UPTIME_SECS: u64 = 60;
 
 /// 服务类型
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -80,16 +89,26 @@ pub struct StartContext {
 }
 
 /// 管理的服务（内部状态）
+///
+/// 进程所有权（2026-10-24 审计 X2 修复）：child 由 `spawn_process_watcher`
+/// **参数持有**，不再经 map 交接——历史设计 watcher 启动即 `take()` 走 child，
+/// `stop_service` 随后 `take()` 恒得 None，kill 分支永远不执行，导致
+/// 停止/重启后进程不死（僵尸占端口、双进程并存）。现在「谁持有谁负责杀」：
+/// 停止请求经 `stop_signal` 通知 watcher，由 watcher kill + wait + 收尾。
 struct ManagedService {
     contribution: PluginServiceManifestContribution,
     plugin_id: String,
     install_path: String,
     ctx: StartContext,
     status: ServiceStatus,
-    child: Option<Child>,
     started_at: Option<Instant>,
     /// 自动重启控制：true 表示进程退出后允许重启
     auto_restart_enabled: bool,
+    /// 停止信号（stop_service → watcher；Notify permit 语义，先通知后等待不丢失）
+    stop_signal: Arc<Notify>,
+    /// 终态信号（watcher → stop_service；终态置 true。watch channel 存值，
+    /// 「watcher 先收尾、stop 后订阅」与反序都不丢）
+    finalize: watch::Sender<bool>,
 }
 
 /// 插件服务管理器
@@ -175,11 +194,15 @@ impl PluginServiceManager {
     ) -> Result<ServiceStatus> {
         let service_key = make_key(plugin_id, &contribution.id);
 
-        // 已在 Running 则直接返回
+        // 已在 Running/Starting 则直接返回（Starting 也挡：防自动重启退避窗口内
+        // 的并发 start 双拉进程——审计 X2-⑥，历史只挡 Running）
         {
             let services = self.services.lock().await;
             if let Some(existing) = services.get(&service_key) {
-                if existing.status.state == ServiceState::Running {
+                if matches!(
+                    existing.status.state,
+                    ServiceState::Running | ServiceState::Starting
+                ) {
                     return Ok(snapshot_status(existing));
                 }
             }
@@ -220,12 +243,17 @@ impl PluginServiceManager {
             command.creation_flags(CREATE_NO_WINDOW);
         }
 
-        let child = command.spawn().map_err(|e| {
-            AppError::ProcessError(format!(
-                "Failed to start service {} (command='{}'): {}",
-                contribution.id, contribution.command, e
-            ))
-        })?;
+        let child = match command.spawn() {
+            Ok(c) => c,
+            Err(e) => {
+                // spawn 失败：端口已分配但无进程，回滚防泄漏
+                self.release_port(port).await;
+                return Err(AppError::ProcessError(format!(
+                    "Failed to start service {} (command='{}'): {}",
+                    contribution.id, contribution.command, e
+                )));
+            }
+        };
 
         let pid = child.id().unwrap_or(0);
 
@@ -240,14 +268,19 @@ impl PluginServiceManager {
             restart_count: 0,
         };
 
-        // 写入 map（保留 child）
+        let stop_signal = Arc::new(Notify::new());
+        let (finalize, _finalize_rx) = watch::channel(false);
+
+        // 写入 map，然后立即把 child 移交 watcher（map 不持有进程句柄）
         {
             let mut services = self.services.lock().await;
-            // 如果已存在记录（之前 stopped），保留 restart_count
-            let restart_count = services
-                .get(&service_key)
-                .map(|m| m.status.restart_count)
-                .unwrap_or(0);
+            // restart_count 规则（审计 X2-⑤）：
+            // - Starting（自动重启窗口，watcher 递增后转拉起）→ 保留计数
+            // - 其余（用户手动 start/restart，前态 Stopped/Error）→ 清零重计
+            let restart_count = match services.get(&service_key) {
+                Some(m) if m.status.state == ServiceState::Starting => m.status.restart_count,
+                _ => 0,
+            };
             let mut status_with_history = status.clone();
             status_with_history.restart_count = restart_count;
             services.insert(
@@ -258,15 +291,21 @@ impl PluginServiceManager {
                     install_path: plugin_install_path.clone(),
                     ctx: ctx.clone(),
                     status: status_with_history,
-                    child: Some(child),
                     started_at: Some(Instant::now()),
                     auto_restart_enabled: contribution.restart_on_failure,
+                    stop_signal: stop_signal.clone(),
+                    finalize,
                 },
             );
         }
 
-        // 启动进程监视任务（等子进程退出 → 触发重启或标记停止）
-        self.spawn_process_watcher(plugin_id.to_string(), contribution.id.clone());
+        // 启动进程监视任务（持有 child：等退出 → 触发重启或停止收尾；响应停止信号）
+        self.spawn_process_watcher(
+            plugin_id.to_string(),
+            contribution.id.clone(),
+            child,
+            stop_signal,
+        );
 
         // 启动健康检查任务
         if contribution.health_check.is_some() && contribution.service_type.to_lowercase() == "http"
@@ -283,6 +322,12 @@ impl PluginServiceManager {
     }
 
     /// 停止单个服务
+    ///
+    /// X2 修复后的语义：本方法**不直接 kill**（不持有 child）；置 Stopping +
+    /// 关自动重启 → 经 `stop_signal` 通知 watcher（child 持有者）执行
+    /// kill + wait + 收尾（含端口释放，时序保证「进程真退出后才释放端口」，
+    /// 杜绝僵尸占端口后的再分配冲突），并在 finalize 通道上等待收尾完成
+    /// （上限 `STOP_FINALIZE_TIMEOUT`）。
     pub async fn stop_service(
         self: &Arc<Self>,
         plugin_id: &str,
@@ -290,51 +335,7 @@ impl PluginServiceManager {
     ) -> Result<ServiceStatus> {
         let service_key = make_key(plugin_id, service_id);
 
-        let (child_opt, port_opt) = {
-            let mut services = self.services.lock().await;
-            match services.get_mut(&service_key) {
-                Some(managed) => {
-                    managed.auto_restart_enabled = false; // 阻止后续自动重启
-                    managed.status.state = ServiceState::Stopping;
-                    let child = managed.child.take();
-                    let port = managed.status.port;
-                    (child, port)
-                }
-                None => {
-                    return Ok(ServiceStatus {
-                        service_id: service_id.to_string(),
-                        plugin_id: plugin_id.to_string(),
-                        state: ServiceState::Stopped,
-                        port: None,
-                        pid: None,
-                        uptime: None,
-                        last_error: None,
-                        restart_count: 0,
-                    });
-                }
-            }
-        };
-
-        if let Some(mut child) = child_opt {
-            // Tokio Child::kill 是 async；先发 kill 信号
-            let _ = child.kill().await;
-            let _ = child.wait().await;
-        }
-
-        if let Some(port) = port_opt {
-            self.release_port(port).await;
-        }
-
-        let mut services = self.services.lock().await;
-        if let Some(managed) = services.get_mut(&service_key) {
-            managed.status.state = ServiceState::Stopped;
-            managed.status.pid = None;
-            managed.status.uptime = None;
-            managed.started_at = None;
-            return Ok(snapshot_status(managed));
-        }
-
-        Ok(ServiceStatus {
+        let stopped_snapshot = || ServiceStatus {
             service_id: service_id.to_string(),
             plugin_id: plugin_id.to_string(),
             state: ServiceState::Stopped,
@@ -343,7 +344,53 @@ impl PluginServiceManager {
             uptime: None,
             last_error: None,
             restart_count: 0,
+        };
+
+        let (stop_signal, mut finalize_rx) = {
+            let mut services = self.services.lock().await;
+            match services.get_mut(&service_key) {
+                Some(managed) => {
+                    // 已是终态（进程必已退出，端口已由 watcher 收尾释放）
+                    if matches!(
+                        managed.status.state,
+                        ServiceState::Stopped | ServiceState::Error
+                    ) {
+                        return Ok(snapshot_status(managed));
+                    }
+                    managed.auto_restart_enabled = false; // 阻止后续自动重启
+                    managed.status.state = ServiceState::Stopping;
+                    (
+                        managed.stop_signal.clone(),
+                        managed.finalize.subscribe(),
+                    )
+                }
+                None => return Ok(stopped_snapshot()),
+            }
+        };
+
+        // 通知 watcher 停止（Notify permit 语义：watcher 尚未进入 select 也无妨）
+        stop_signal.notify_one();
+
+        // 等 watcher 收尾（终态置 true / 通道关闭）；上限 STOP_FINALIZE_TIMEOUT。
+        // 超时不代表失败——极退避窗口内的停止由 watcher 退避后复查收敛（见
+        // spawn_process_watcher），此处不无限阻塞调用方。
+        let _ = tokio::time::timeout(STOP_FINALIZE_TIMEOUT, async {
+            loop {
+                if *finalize_rx.borrow_and_update() {
+                    break;
+                }
+                if finalize_rx.changed().await.is_err() {
+                    break; // watcher 结束（通道关闭），读最终状态即可
+                }
+            }
         })
+        .await;
+
+        let mut services = self.services.lock().await;
+        if let Some(managed) = services.get_mut(&service_key) {
+            return Ok(snapshot_status(managed));
+        }
+        Ok(stopped_snapshot())
     }
 
     /// 停止指定插件的所有服务
@@ -487,101 +534,173 @@ impl PluginServiceManager {
         });
     }
 
-    /// 进程退出监视：等子进程退出后触发自动重启或停止收尾
-    fn spawn_process_watcher(self: &Arc<Self>, plugin_id: String, service_id: String) {
+    /// 进程退出监视（X2 修复后的形态，2026-10-24 审计）：
+    /// - **参数持有 child**（不经 map 交接）——「谁持有谁负责杀」；
+    /// - `select!` 同时等「停止信号」与「进程退出」（tokio `Child::wait`
+    ///   cancel-safe，取消后重建 future 无泄漏）；
+    /// - 所有终态路径统一收尾：置终态 → **进程真退出后才释放端口** →
+    ///   finalize 通道置 true（唤醒等待中的 stop_service）；
+    /// - 自动重启退避 sleep 后**复查停止意图**：停止请求落在退避窗口内时
+    ///   收敛为 Stopped，而不是继续拉起。
+    fn spawn_process_watcher(
+        self: &Arc<Self>,
+        plugin_id: String,
+        service_id: String,
+        mut child: Child,
+        stop_signal: Arc<Notify>,
+    ) {
         let manager = self.clone();
         let key = make_key(&plugin_id, &service_id);
 
         tokio::spawn(async move {
-            // 取出 child（waiting 阶段独占）
-            let mut child = {
-                let mut services = manager.services.lock().await;
-                match services.get_mut(&key).and_then(|m| m.child.take()) {
-                    Some(c) => c,
-                    None => return,
+            // 两条出路：用户请求停止（kill + wait） / 进程自然退出
+            let (user_stop, exit_note) = tokio::select! {
+                _ = stop_signal.notified() => {
+                    let _ = child.start_kill();
+                    let _ = child.wait().await;
+                    (true, "stopped by user".to_string())
+                }
+                res = child.wait() => {
+                    let msg = match &res {
+                        Ok(status) => format!("exited with {:?}", status),
+                        Err(e) => format!("wait failed: {}", e),
+                    };
+                    tracing::info!(
+                        plugin_id = %plugin_id,
+                        service_id = %service_id,
+                        "plugin service process {}",
+                        msg
+                    );
+                    (false, msg)
                 }
             };
 
-            let exit_result = child.wait().await;
-            let exit_msg = match &exit_result {
-                Ok(status) => format!("exited with {:?}", status),
-                Err(e) => format!("wait failed: {}", e),
-            };
-
-            tracing::info!(
-                plugin_id = %plugin_id,
-                service_id = %service_id,
-                "plugin service process {}",
-                exit_msg
-            );
-
-            // 决定是否重启
-            let restart_decision = {
+            // 锁内只改状态/取决策数据（文件头纪律：持锁不跨 await 做副作用）
+            // decision = (待释放端口, 重启参数)
+            let decision = {
                 let mut services = manager.services.lock().await;
                 let m = match services.get_mut(&key) {
                     Some(m) => m,
-                    None => return,
+                    None => return, // 记录已被移除，无需收尾
                 };
+                let port = m.status.port.take();
 
-                // 用户主动停止
-                if !m.auto_restart_enabled {
+                if user_stop || !m.auto_restart_enabled {
                     m.status.state = ServiceState::Stopped;
                     m.status.pid = None;
-                    return;
+                    m.status.uptime = None;
+                    m.started_at = None;
+                    (port, None)
+                } else {
+                    // 稳定运行 ≥STABLE_UPTIME_SECS 后自然退出 → 计数清零再计
+                    let uptime = m
+                        .started_at
+                        .map(|t| t.elapsed().as_secs())
+                        .unwrap_or(0);
+                    if uptime >= STABLE_UPTIME_SECS {
+                        m.status.restart_count = 0;
+                    }
+                    if m.status.restart_count >= m.contribution.max_restarts {
+                        m.status.state = ServiceState::Error;
+                        m.status.pid = None;
+                        m.status.uptime = None;
+                        m.started_at = None;
+                        m.status.last_error = Some(format!(
+                            "Exceeded max restarts ({})",
+                            m.contribution.max_restarts
+                        ));
+                        tracing::error!(
+                            plugin_id = %m.plugin_id,
+                            service_id = %m.contribution.id,
+                            "plugin service exceeded max restarts"
+                        );
+                        (port, None)
+                    } else {
+                        m.status.restart_count += 1;
+                        m.status.state = ServiceState::Starting;
+                        m.status.pid = None;
+                        m.status.last_error = Some(exit_note);
+                        (
+                            port,
+                            Some((
+                                m.plugin_id.clone(),
+                                m.contribution.clone(),
+                                m.install_path.clone(),
+                                m.ctx.clone(),
+                                m.status.restart_count,
+                            )),
+                        )
+                    }
                 }
-
-                if m.status.restart_count >= m.contribution.max_restarts {
-                    m.status.state = ServiceState::Error;
-                    m.status.last_error =
-                        Some(format!("Exceeded max restarts ({})", m.contribution.max_restarts));
-                    tracing::error!(
-                        plugin_id = %m.plugin_id,
-                        service_id = %m.contribution.id,
-                        "plugin service exceeded max restarts"
-                    );
-                    return;
-                }
-
-                m.status.restart_count += 1;
-                m.status.state = ServiceState::Starting;
-                m.status.last_error = Some(exit_msg.clone());
-
-                Some((
-                    m.plugin_id.clone(),
-                    m.contribution.clone(),
-                    m.install_path.clone(),
-                    m.ctx.clone(),
-                    m.status.restart_count,
-                ))
             };
 
-            if let Some((pid, contribution, install_path, ctx, attempt)) = restart_decision {
-                // 指数退避
-                let delay_secs = std::cmp::min(2u64.pow(attempt.min(6)), 60);
-                tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+            // 锁外副作用：释放端口（进程已退出，此刻释放安全——修复「端口先释放
+            // 而进程未死，新服务 bind 失败却被标 Running」的错序）
+            if let Some(p) = decision.0 {
+                manager.release_port(p).await;
+            }
 
+            // 非重启终态（用户停止 / 自动重启关闭 / 超限 Error）：finalize 通知后结束
+            let Some((pid, contribution, install_path, ctx, attempt)) = decision.1 else {
+                let services = manager.services.lock().await;
+                if let Some(m) = services.get(&key) {
+                    let _ = m.finalize.send(true);
+                }
+                return;
+            };
+
+            // 指数退避
+            let delay_secs = std::cmp::min(2u64.pow(attempt.min(6)), 60);
+            tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+
+            // 退避窗口内收到停止请求（stop_service 已置 auto_restart_enabled=false）
+            // → 收敛为 Stopped + finalize，不再拉起
+            let still_enabled = {
+                let services = manager.services.lock().await;
+                services
+                    .get(&key)
+                    .map(|m| m.auto_restart_enabled)
+                    .unwrap_or(false)
+            };
+            if !still_enabled {
                 tracing::info!(
                     plugin_id = %pid,
                     service_id = %contribution.id,
-                    attempt,
-                    "auto-restarting plugin service"
+                    "stop requested during restart backoff, giving up auto-restart"
                 );
+                let mut services = manager.services.lock().await;
+                if let Some(m) = services.get_mut(&key) {
+                    m.status.state = ServiceState::Stopped;
+                    m.status.pid = None;
+                    m.status.uptime = None;
+                    m.started_at = None;
+                    let _ = m.finalize.send(true);
+                }
+                return;
+            }
 
-                if let Err(e) = manager
-                    .start_service_internal(&pid, contribution.clone(), install_path, ctx)
-                    .await
-                {
-                    tracing::error!(
-                        plugin_id = %pid,
-                        service_id = %contribution.id,
-                        error = %e,
-                        "auto-restart failed"
-                    );
-                    let mut services = manager.services.lock().await;
-                    if let Some(m) = services.get_mut(&key) {
-                        m.status.state = ServiceState::Error;
-                        m.status.last_error = Some(e.to_string());
-                    }
+            tracing::info!(
+                plugin_id = %pid,
+                service_id = %contribution.id,
+                attempt,
+                "auto-restarting plugin service"
+            );
+
+            if let Err(e) = manager
+                .start_service_internal(&pid, contribution.clone(), install_path, ctx)
+                .await
+            {
+                tracing::error!(
+                    plugin_id = %pid,
+                    service_id = %contribution.id,
+                    error = %e,
+                    "auto-restart failed"
+                );
+                let mut services = manager.services.lock().await;
+                if let Some(m) = services.get_mut(&key) {
+                    m.status.state = ServiceState::Error;
+                    m.status.last_error = Some(e.to_string());
+                    let _ = m.finalize.send(true);
                 }
             }
         });
