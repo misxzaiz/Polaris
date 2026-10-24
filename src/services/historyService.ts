@@ -689,8 +689,21 @@ export const historyService = {
   ): Promise<void> {
     try {
       if (source === 'self') {
+        // 根因修复（审计 2.2）：流式中的会话先 best-effort 中断再删除。
+        // 墓碑（message_delete_by_conversation 内写入）已阻断「删除后复活」，
+        // 中断只是避免引擎继续空烧 token；等待有上限，不阻塞删除本身。
+        try {
+          const running = await invoke<{ running: boolean }>('is_chat_session_running', { sessionId })
+          if (running?.running) {
+            const { aiChatDispatch } = await import('@/services/aiChatDispatch')
+            await aiChatDispatch({ action: 'interrupt', sessionId, engineId }).catch(() => undefined)
+            await new Promise((resolve) => setTimeout(resolve, 600))
+          }
+        } catch {
+          // 运行态查询失败不阻塞删除（墓碑兜底一切晚到事件）
+        }
         await dialogStorageService.deleteConversation(sessionId)
-        // 一并清理后端消息库中的消息（S6：中断轮次的兜底副本）
+        // 一并清理后端消息库中的消息 + 写会话级墓碑（阻断晚到事件复活链）
         try {
           await invoke<void>('message_delete_by_conversation', { conversationId: sessionId })
         } catch (e) {

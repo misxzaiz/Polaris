@@ -2375,6 +2375,20 @@ export function createConversationStore(
 
         // 删除从 user 消息之后的所有消息（包括要重新生成的 assistant 消息）
         const newMessages = messages.slice(0, userMessageIndex)
+        // 根因修复（审计 2.3）：本地截断后给后端消息库下消息级墓碑（时间阈值 =
+        // 被移除的首条消息），防止恢复时 mergeBackendMessages 把被截断的旧分支
+        // 从尾部「复活」。fire-and-forget：失败不影响本地操作（下次 session_end
+        // 的 canonical 覆写仍会修正归档）。
+        const removedFromTs = messages[userMessageIndex]?.timestamp
+        const convId = get().conversationId
+        if (removedFromTs && convId) {
+          void import('@/services/transport')
+            .then(({ invoke }) => invoke('message_tombstone_after', {
+              conversationId: convId,
+              afterTs: Date.parse(removedFromTs) || 0,
+            }))
+            .catch(() => undefined)
+        }
         // 更新状态：删除后续消息，清空当前消息
         set({
           messages: newMessages,
@@ -2422,6 +2436,19 @@ export function createConversationStore(
 
         // 删除从该 user 消息之后的所有消息
         const newMessages = messages.slice(0, messageIndex)
+        // 根因修复（审计 2.3）：同 regenerateResponse——本地截断后下消息级墓碑，
+        // 防止恢复时旧分支复活（fire-and-forget，详见 regenerateResponse 注释）。
+        {
+          const convId = get().conversationId
+          if (convId) {
+            void import('@/services/transport')
+              .then(({ invoke }) => invoke('message_tombstone_after', {
+                conversationId: convId,
+                afterTs: Date.parse(targetMessage.timestamp) || 0,
+              }))
+              .catch(() => undefined)
+          }
+        }
         // 更新状态
         set({
           messages: newMessages,

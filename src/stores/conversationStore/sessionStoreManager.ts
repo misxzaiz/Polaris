@@ -234,6 +234,28 @@ function createSessionManagerStore() {
         return
       }
 
+      // B1.f（审计 2.8/2.2）：销毁内存的同时清理磁盘——此前只销毁内存，
+      // JSONL 与后端消息库不删：一次性静默会话残留为历史垃圾条目；
+      // 流式中的会话被后端 turn_persist 重建「复活」。best-effort，
+      // 失败仅告警（磁盘残留可由用户从历史面板再删）。
+      const conversationId = store.getState().conversationId
+      if (conversationId) {
+        void (async () => {
+          try {
+            const { dialogStorageService } = await import('@/services/dialogStorage')
+            await dialogStorageService.deleteConversation(conversationId)
+          } catch (e) {
+            log.warn('删除会话 JSONL 失败', { conversationId, error: String(e) })
+          }
+          try {
+            const { invoke } = await import('@/services/transport')
+            await invoke('message_delete_by_conversation', { conversationId })
+          } catch (e) {
+            log.warn('删除后端会话消息失败', { conversationId, error: String(e) })
+          }
+        })()
+      }
+
       // 清理资源
       store.getState().dispose()
 

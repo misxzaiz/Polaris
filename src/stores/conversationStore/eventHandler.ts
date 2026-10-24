@@ -399,7 +399,21 @@ export function handleAIEvent(
       // 归档（轮末整体覆写 JSONL）：内容最完整（富块/附件/表单卡片），
       // 也是历史列表与恢复的数据源。客户端中途关闭时前端不在场，
       // 由后端 turn_persist 兜底把本轮补进归档（只追加比归档更新的消息）。
-      saveDialog(get, set)
+      // B1.f（审计 2.8）：一次性静默会话（标题生成/压缩交接）不落盘——此前
+      // 无条件 saveDialog 且销毁时不删 JSONL，历史列表持续出现「生成标题」类
+      // 垃圾条目。静默会话的内容只在运行期被消费（标题回填/简报交接）。
+      // 防御式读取：测试环境对 sessionStoreManager 的 mock 可能没有 getState，
+      // 读取失败按非静默处理（保持 saveDialog 旧行为）。
+      const sessionMeta = (() => {
+        try {
+          return sessionStoreManager.getState().sessionMetadata.get(state.sessionId)
+        } catch {
+          return undefined
+        }
+      })()
+      if (!sessionMeta?.silentMode) {
+        saveDialog(get, set)
+      }
 
       // 会话完成桌面通知（近似按端过滤，审计 1.5）：此处只在事件命中本端 store
       // 时执行——跨端会话的事件路由不到这里，天然不再触发桌面通知（原 lib.rs
@@ -409,7 +423,6 @@ export function handleAIEvent(
       // sessionStoreManager 访问之前：测试会 mock manager，且动态 import
       // transport 可避免 store 层静态引 transport 触发模块级网络初始化。
       if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
-        const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(state.sessionId)
         if (!sessionMeta?.silentMode) {
           void import('@/services/transport')
             .then(({ invoke }) => invoke('notify_session_complete', {}))
