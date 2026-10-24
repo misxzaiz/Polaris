@@ -167,7 +167,18 @@ async fn handle_ws_connection(mut socket: WebSocket, state: Arc<AppState>) {
                         }
                     }
                     Err(broadcast::error::RecvError::Lagged(n)) => {
-                        tracing::warn!("WS client lagged behind by {} messages, continuing", n);
+                        // 根因修复（2026-10-24，审计 1.7 缺口1）：消费慢触发 Lagged 时
+                        // 客户端仍在线、却已漏收事件——此前仅 warn 后继续，客户端既不知道
+                        // 丢了事件、也不会发起 resume。改为下发 resync-suggest 控制帧，
+                        // 客户端据此走与 resume-gap 相同的全量恢复兜底。
+                        tracing::warn!("WS client lagged behind by {} messages, suggesting resync", n);
+                        if socket
+                            .send(Message::Text(r#"{"type":"resync-suggest"}"#.into()))
+                            .await
+                            .is_err()
+                        {
+                            break;
+                        }
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         tracing::info!("WS client disconnected: broadcast channel closed");

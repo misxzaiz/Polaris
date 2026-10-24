@@ -85,8 +85,19 @@ export interface HttpTransportOptions {
    * Called when the server reports a replay gap on resume —
    * events were missed beyond the server buffer and a full state
    * resync (e.g. re-fetching session history) is required.
+   *
+   * Also invoked for the `resync-suggest` control frame: the server detected
+   * this client lagged off the live channel while still connected (events
+   * dropped in-flight, no resume will ever fire) — same full-resync remedy.
    */
   onResumeGap?: () => void;
+  /**
+   * Called once on the first successful connect of this transport instance
+   * (fresh page load, lastSeq === 0). Nothing can be resumed at WS level
+   * (replaying the whole buffer would double-deliver to snapshot-restored
+   * sessions), so the app layer should snapshot-pull backend state instead.
+   */
+  onFreshConnect?: () => void;
 }
 
 /** How long to wait for any server frame after a liveness probe before force-closing (ms). */
@@ -111,6 +122,8 @@ export function createHttpTransport(
   let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   /** Highest event seq received from the server — basis for resume + dedupe. */
   let lastSeq = 0;
+  /** Whether onFreshConnect has been signaled for this transport instance. */
+  let freshConnectHandled = false;
   /** Liveness probe timer — armed on wake-up when the socket looks open. */
   let probeTimer: ReturnType<typeof setTimeout> | null = null;
   const listeners = new Map<string, Set<(payload: unknown) => void>>();
@@ -190,10 +203,16 @@ export function createHttpTransport(
         // so the server applies the subscription filter to replayed events.
         syncSubscriptions();
         // Resume: ask the server to replay events missed while disconnected.
-        // lastSeq === 0 means fresh page load — nothing to resume.
+        // lastSeq === 0 means fresh page load — nothing to resume (replaying the
+        // whole buffer would double-deliver to snapshot-restored sessions);
+        // instead signal the app layer to snapshot-pull backend-running sessions
+        // (审计 1.7 缺口2：重载后页面关闭窗口内的流式增量此前永久丢失).
         if (lastSeq > 0) {
           log.info(`Requesting event resume from seq ${lastSeq}`);
           sendWsMsg({ type: 'resume', lastSeq });
+        } else if (!freshConnectHandled) {
+          freshConnectHandled = true;
+          options?.onFreshConnect?.();
         }
         resolve();
       };
@@ -226,6 +245,14 @@ export function createHttpTransport(
             latestSeq?: number;
           };
           // Resume protocol control messages
+          if (data.type === 'resync-suggest') {
+            // Server says this client lagged off the live channel while still
+            // connected — events were dropped in-flight and no resume will fire.
+            // Same remedy as resume-gap: full state resync (审计 1.7 缺口1).
+            log.warn('Server suggested resync (client lagged) — triggering full resync');
+            options?.onResumeGap?.();
+            return;
+          }
           if (data.type === 'resume-complete') {
             const latest = typeof data.latestSeq === 'number' ? data.latestSeq : null;
             // Server restart resets seq to 0 — a latestSeq below our lastSeq

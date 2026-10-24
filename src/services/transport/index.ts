@@ -68,6 +68,22 @@ function handleResumeGap(): void {
     });
 }
 
+/**
+ * 首次连接（页面重载，lastSeq=0）兜底：页面关闭窗口内的流式增量不在 WS
+ * 重放范围内，恢复只能靠后端权威快照。延迟触发（等 app init 重建 stores），
+ * resyncAfterResumeGap 幂等且只作用于后端仍在 running 的会话。
+ * （审计 1.7 缺口2 的近似修复；完整的投影发现机制在跨端批次落地。）
+ */
+function handleFreshConnect(): void {
+  setTimeout(() => {
+    void import('../webReconnectResync')
+      .then((m) => m.resyncAfterResumeGap())
+      .catch((err) => {
+        log.error('Fresh-connect 兜底恢复失败', err instanceof Error ? err : new Error(String(err)));
+      });
+  }, 3000);
+}
+
 /** 当前传输模式 */
 export const currentMode = detectTransport();
 
@@ -87,6 +103,7 @@ function createConfiguredHttpTransport(): TransportAdapter {
     {
       onStatusChange: handleConnectionStatusChange,
       onResumeGap: handleResumeGap,
+      onFreshConnect: handleFreshConnect,
     },
   );
 }
