@@ -314,7 +314,7 @@ pub struct WorkspaceMcpConfigService {
     binaries: Vec<ResolvedMcpBinary>,
     external_servers: Vec<ResolvedExternalMcpServer>,
     /// 插件声明的工具能力覆盖（capability → 插件 mcpServerId）
-    tool_providers: Vec<crate::models::plugin::PluginToolProviderManifestContribution>,
+    tool_providers: Vec<(String, crate::models::plugin::PluginToolProviderManifestContribution)>,
     config_dir: PathBuf,
     ask_listener: Option<crate::services::ask_listener::AskListenerHandle>,
     ask_route_session_id: Option<String>,
@@ -413,7 +413,7 @@ impl WorkspaceMcpConfigService {
     /// 声明的 mcpServerId 对应的外部 server 会替换这些内置 server。
     pub fn with_tool_providers(
         mut self,
-        tool_providers: Vec<crate::models::plugin::PluginToolProviderManifestContribution>,
+        tool_providers: Vec<(String, crate::models::plugin::PluginToolProviderManifestContribution)>,
     ) -> Self {
         self.tool_providers = tool_providers;
         self
@@ -904,17 +904,27 @@ pub const BUILTIN_SUBAGENT_MCP_SERVER_NAME: &str = "polaris-subagent";
 ///
 /// 仅收集已启用（enabled + mcp_enabled）插件的声明，保持与
 /// `resolve_external_plugin_mcp_servers` 的启用判定一致。
+/// 返回 (插件 id, 声明)——X6（2026-10-24 审计）需要归属校验：
+/// toolProvider 的 mcpServerId 必须属于声明插件自己的 mcpServers，
+/// 防止插件 A 劫持插件 B 的 server（前端类型注释声称的约束此前 Rust 未实现）。
 fn collect_tool_providers(
     plugins: &[DiscoveredPluginManifest],
     plugin_states: &PluginStateMap,
-) -> Vec<crate::models::plugin::PluginToolProviderManifestContribution> {
+) -> Vec<(String, crate::models::plugin::PluginToolProviderManifestContribution)> {
     let mut collected = Vec::new();
     for plugin in plugins {
         let plugin_state = plugin_states.get(&plugin.id);
         if !is_plugin_mcp_enabled(plugin, plugin_state) {
             continue;
         }
-        collected.extend(plugin.contributes.tool_providers.iter().cloned());
+        collected.extend(
+            plugin
+                .contributes
+                .tool_providers
+                .iter()
+                .cloned()
+                .map(|c| (plugin.id.clone(), c)),
+        );
     }
     collected
 }
@@ -931,9 +941,9 @@ fn collect_tool_providers(
 fn apply_tool_provider_overrides(
     servers: &mut Vec<ResolvedExternalMcpServer>,
     external_servers: &[ResolvedExternalMcpServer],
-    tool_providers: &[crate::models::plugin::PluginToolProviderManifestContribution],
+    tool_providers: &[(String, crate::models::plugin::PluginToolProviderManifestContribution)],
 ) {
-    for provider in tool_providers {
+    for (provider_plugin_id, provider) in tool_providers {
         let builtin_names = capability_to_builtin_servers(&provider.capability);
         if builtin_names.is_empty() {
             tracing::info!(
@@ -953,6 +963,18 @@ fn apply_tool_provider_overrides(
             );
             continue;
         };
+
+        // X6 归属校验：替换 server 必须属于声明插件自己（防跨插件劫持）
+        if replacement.plugin_id != *provider_plugin_id {
+            tracing::warn!(
+                "[MCP] toolProvider capability={} 由插件 {} 声明，但 mcpServerId={} 属于插件 {}——拒绝跨插件劫持，跳过",
+                provider.capability,
+                provider_plugin_id,
+                provider.mcp_server_id,
+                replacement.plugin_id
+            );
+            continue;
+        }
 
         for &builtin_name in &builtin_names {
             // 移除内置同名 server（若存在）

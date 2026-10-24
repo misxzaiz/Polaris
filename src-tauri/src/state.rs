@@ -413,7 +413,7 @@ pub fn create_app_state(
         // P1-f（X9/X7）：注入 web 鉴权 token——「token 匹配的 Remote」放行
         // cap.pluginServiceManager（Web 模式插件服务管理），未鉴权 Remote 不变。
         policy_permission.set_web_token(config_store_arc.lock().unwrap().get().web.token.clone());
-        let permission = Box::new(policy_permission);
+        let permission = Arc::new(policy_permission);
 
         // 审计通道：Bootstrap 直管 JSONL（<DataRoot>/audit/dispatch.jsonl），
         // 打开失败不阻塞启动（审计缺失可见可查，不允许崩溃主流程）

@@ -93,7 +93,7 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         .map(String::from);
     let policy = PolicyPermission::from_config(permissions_cfg.as_ref());
     policy.set_web_token(web_token);
-    let permission = Box::new(policy);
+    let permission = Arc::new(policy);
     let audit: Option<Arc<dyn crate::contracts::AuditSink>> = {
         match FileAuditSink::open(&audit_sink::audit_file_path_named("dispatch-mcp.jsonl")) {
             Ok(sink) => Some(Arc::new(sink)),

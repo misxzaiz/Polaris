@@ -130,7 +130,7 @@ pub struct RouterBus {
     streaming_caps: RwLock<HashMap<CapabilityId, Arc<dyn StreamingCapability>>>,
     next_handle: AtomicU64,
     broadcaster: Arc<EventAdapter>,
-    permission: Box<dyn Permission>,
+    permission: Arc<dyn Permission>,
     storage: Option<Arc<dyn Storage>>,
     audit: Option<Arc<dyn AuditSink>>,
     plugin_configs: Arc<RwLock<HashMap<String, Value>>>,
@@ -142,12 +142,12 @@ impl RouterBus {
     /// 创建总线
     ///
     /// - `broadcaster`: 事件适配层（包住现有生产级广播器）
-    /// - `permission`: 权限裁决（可用 `StaticPermission`）
+    /// - `permission`: 权限裁决（Arc 共享：dispatch 注入 RealContext 供能力内二次裁决）
     /// - `storage`: 契约 Storage（阶段 A 可 None；阶段 B 接 SqliteStorage）
     /// - `audit`: AuditSink（阶段 A 可 None；由 Bootstrap 直管注入）
     pub fn new(
         broadcaster: Arc<EventAdapter>,
-        permission: Box<dyn Permission>,
+        permission: Arc<dyn Permission>,
         storage: Option<Arc<dyn Storage>>,
         audit: Option<Arc<dyn AuditSink>>,
     ) -> Self {
@@ -280,11 +280,12 @@ impl RouterBus {
 
         // 3. 注入 ctx（Source 由传输层注入，invoke_stream 调用期间有效）
         let plugin_config = self.plugin_config_for(&env.target);
-        let ctx = RealContext::new(
+        let ctx = RealContext::with_permission(
             env.source.clone(),
             self.storage.clone(),
             plugin_config,
             Some(self.broadcaster.clone()),
+            self.permission.clone(),
         );
 
         // 4. 拿事件流
@@ -620,11 +621,12 @@ impl Router for RouterBus {
 
                 // 注入 ctx：Source 由传输层已注入 env（调用方不可自填）
                 let plugin_config = self.plugin_config_for(&env.target);
-                let ctx = RealContext::new(
+                let ctx = RealContext::with_permission(
                     env.source.clone(),
                     self.storage.clone(),
                     plugin_config,
                     Some(self.broadcaster.clone()),
+                    self.permission.clone(),
                 );
 
                 let started = std::time::Instant::now();
@@ -692,11 +694,12 @@ impl Router for RouterBus {
                 let stream_cap = self.streaming_caps.read().unwrap().get(&env.target).cloned();
                 if let Some(cap) = stream_cap {
                     let plugin_config = self.plugin_config_for(&env.target);
-                    let ctx = RealContext::new(
+                    let ctx = RealContext::with_permission(
                         env.source.clone(),
                         self.storage.clone(),
                         plugin_config,
                         Some(self.broadcaster.clone()),
+                        self.permission.clone(),
                     );
                     let started = std::time::Instant::now();
                     let payload = env.payload.clone();
@@ -764,6 +767,17 @@ impl Router for RouterBus {
     }
 
     fn register_handle(&self, cap: Box<dyn Capability>) -> Result<CapabilityHandle, String> {
+        // X12（2026-10-24 审计）：拒绝同 id 重复注册——双注册后 dispatch 遍历
+        // HashMap 取序不定，分派不可预测。装配点全部 `let _ =` 忽略错误，
+        // 重复注册静默变为「保留先注册者」，无行为回归。
+        let id = cap.id();
+        {
+            let handles = self.handles.read().unwrap();
+            if handles.values().any(|c| c.id() == id) {
+                tracing::warn!(capability = %id.0, "register_handle: 能力 id 已注册，拒绝重复注册");
+                return Err(format!("能力 {} 已注册，不可重复注册", id.0));
+            }
+        }
         let handle = self.next_handle.fetch_add(1, Ordering::SeqCst);
         let mut handles = self.handles.write().unwrap();
         handles.insert(handle, Arc::from(cap));
@@ -777,6 +791,15 @@ impl RouterBus {
     /// 用途：cap.voice 委托 cap.mcp 时复用**同一能力实例**（不复制 McpClient 注册表、
     /// 不第二次拉起插件进程——AGENTS.md「唯一权威，禁止多写路径」）。
     pub fn register_handle_arc(&self, cap: Arc<dyn Capability>) -> Result<CapabilityHandle, String> {
+        // X12：同 register_handle——同 id 拒绝（幂等注册走 register_streaming 语义）
+        let id = cap.id();
+        {
+            let handles = self.handles.read().unwrap();
+            if handles.values().any(|c| c.id() == id) {
+                tracing::warn!(capability = %id.0, "register_handle_arc: 能力 id 已注册，拒绝重复注册");
+                return Err(format!("能力 {} 已注册，不可重复注册", id.0));
+            }
+        }
         let handle = self.next_handle.fetch_add(1, Ordering::SeqCst);
         let mut handles = self.handles.write().unwrap();
         handles.insert(handle, cap);
@@ -845,6 +868,9 @@ pub struct RealContext {
     plugin_config: Value,
     broadcaster: Option<Arc<EventAdapter>>,
     caller_id: PluginId,
+    /// 与 dispatch 同源的权限策略（2026-10-24 审计：check_permission 此前恒
+    /// Allow——能力内二次裁决拿不到策略）。dispatch 经 with_permission 注入。
+    permission: Option<Arc<dyn Permission>>,
 }
 
 impl RealContext {
@@ -855,12 +881,39 @@ impl RealContext {
         broadcaster: Option<Arc<EventAdapter>>,
     ) -> Self {
         Self {
+            caller_id: derive_caller_id(&source),
             source,
             storage,
             plugin_config,
             broadcaster,
-            caller_id: PluginId("core".into()),
+            permission: None,
         }
+    }
+
+    /// dispatch 用构造：附加与主 gate 同源的权限策略（能力内二次裁决）
+    pub fn with_permission(
+        source: Source,
+        storage: Option<Arc<dyn Storage>>,
+        plugin_config: Value,
+        broadcaster: Option<Arc<EventAdapter>>,
+        permission: Arc<dyn Permission>,
+    ) -> Self {
+        Self {
+            caller_id: derive_caller_id(&source),
+            source,
+            storage,
+            plugin_config,
+            broadcaster,
+            permission: Some(permission),
+        }
+    }
+}
+
+/// 调用方插件 id：Plugin 来源取 caller；Bootstrap/Remote（非插件进程）为 core
+fn derive_caller_id(source: &Source) -> PluginId {
+    match source {
+        Source::Plugin { caller } => caller.clone(),
+        _ => PluginId("core".into()),
     }
 }
 
@@ -876,8 +929,12 @@ impl Context for RealContext {
         }
     }
 
-    fn check_permission(&self, _req: &PermissionRequest) -> Result<PermissionVerdict, String> {
-        Ok(PermissionVerdict::Allow)
+    fn check_permission(&self, req: &PermissionRequest) -> Result<PermissionVerdict, String> {
+        match &self.permission {
+            Some(p) => p.check(req),
+            // 无策略上下文（测试/独立构造）：保持历史 Allow 语义
+            None => Ok(PermissionVerdict::Allow),
+        }
     }
 
     fn source(&self) -> &Source {
@@ -933,7 +990,7 @@ mod tests {
     }
 
     fn make_router(
-        permission: Box<dyn Permission>,
+        permission: Arc<dyn Permission>,
         audit: Option<Arc<dyn AuditSink>>,
     ) -> (Arc<RouterBus>, Arc<EventAdapter>) {
         let broadcaster = Arc::new(EventAdapter::new(64));
@@ -948,7 +1005,7 @@ mod tests {
 
     #[test]
     fn dispatch_echo_returns_payload() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let env = Envelope {
@@ -968,7 +1025,7 @@ mod tests {
 
     #[test]
     fn dispatch_unregistered_returns_err() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
 
         let env = Envelope {
             id: MsgId("m2".into()),
@@ -984,7 +1041,7 @@ mod tests {
 
     #[test]
     fn dispatch_remote_denied_by_permission() {
-        let (router, _) = make_router(Box::new(DenyRemotePermission), None);
+        let (router, _) = make_router(Arc::new(DenyRemotePermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let env = Envelope {
@@ -1016,7 +1073,7 @@ mod tests {
     /// （历史 bug：转发改写为 Plugin 身份，整条 Remote deny 基线被洗白）。
     #[test]
     fn dynamic_forward_preserves_remote_source() {
-        let (router, _) = make_router(Box::new(DenyRemoteForCap("cap.echo".into())), None);
+        let (router, _) = make_router(Arc::new(DenyRemoteForCap("cap.echo".into())), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let dyn_cap = DynamicCapability::new(
@@ -1079,7 +1136,7 @@ mod tests {
     #[test]
     fn dispatch_prompt_denied_safely() {
         let (router, _) = make_router(
-            Box::new(ProgrammablePermission(Mutex::new(PermissionVerdict::Prompt))),
+            Arc::new(ProgrammablePermission(Mutex::new(PermissionVerdict::Prompt))),
             None,
         );
         router.register_handle(Box::new(EchoCapability)).unwrap();
@@ -1099,7 +1156,7 @@ mod tests {
     #[test]
     fn dispatch_allow_records_audit() {
         let audit = Arc::new(RecordingAudit(Mutex::new(Vec::new())));
-        let (router, _) = make_router(Box::new(AllowAllPermission), Some(audit.clone()));
+        let (router, _) = make_router(Arc::new(AllowAllPermission), Some(audit.clone()));
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let env = Envelope {
@@ -1119,7 +1176,7 @@ mod tests {
     #[test]
     fn dispatch_deny_records_audit() {
         let audit = Arc::new(RecordingAudit(Mutex::new(Vec::new())));
-        let (router, _) = make_router(Box::new(DenyRemotePermission), Some(audit.clone()));
+        let (router, _) = make_router(Arc::new(DenyRemotePermission), Some(audit.clone()));
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let env = Envelope {
@@ -1138,7 +1195,7 @@ mod tests {
 
     #[test]
     fn plugin_config_fallback() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
         router.set_plugin_config("cap.ai", serde_json::json!({"exact": true}));
         router.set_plugin_config("ai", serde_json::json!({"plugin": true}));
 
@@ -1159,7 +1216,7 @@ mod tests {
     /// 验证 dispatch 广播了 dispatch.start / dispatch.end（trace 匹配）
     #[test]
     fn dispatch_broadcasts_start_and_end() {
-        let (router, broadcaster) = make_router(Box::new(AllowAllPermission), None);
+        let (router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
 
         let mut rx = broadcaster.subscribe(Filter {
@@ -1243,7 +1300,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_stream_pumps_events_and_ends() {
-        let (router, broadcaster) = make_router(Box::new(AllowAllPermission), None);
+        let (router, broadcaster) = make_router(Arc::new(AllowAllPermission), None);
         router
             .register_streaming(Arc::new(StreamEchoCapability))
             .unwrap();
@@ -1288,7 +1345,7 @@ mod tests {
 
     #[tokio::test]
     async fn sync_dispatch_on_streaming_target_is_rejected() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
         router
             .register_streaming(Arc::new(StreamEchoCapability))
             .unwrap();
@@ -1308,7 +1365,7 @@ mod tests {
 
     #[tokio::test]
     async fn dispatch_stream_unregistered_returns_err() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
         let r = router.dispatch_stream(Envelope {
             id: MsgId("s3".into()),
             source: Source::Bootstrap,
@@ -1325,7 +1382,7 @@ mod tests {
         let audit = Arc::new(crate::services::router::event_adapter::tests_support::RecordingAudit(
             Mutex::new(Vec::new()),
         ));
-        let (router, _) = make_router(Box::new(DenyRemotePermission), Some(audit.clone()));
+        let (router, _) = make_router(Arc::new(DenyRemotePermission), Some(audit.clone()));
         router
             .register_streaming(Arc::new(StreamEchoCapability))
             .unwrap();
@@ -1347,7 +1404,7 @@ mod tests {
 
     #[tokio::test]
     async fn register_streaming_conflicts_with_sync_handle() {
-        let (router, _) = make_router(Box::new(AllowAllPermission), None);
+        let (router, _) = make_router(Arc::new(AllowAllPermission), None);
         router.register_handle(Box::new(EchoCapability)).unwrap();
         let r = router.register_streaming(Arc::new(StreamEchoCapability));
         // cap.stream.echo 与 cap.echo 不同 id —— 注册成功
