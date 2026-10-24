@@ -318,8 +318,9 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           />
         )}
 
-        {/* 对话导航时间线（有远端会话时单轮也渲染——入口前移，v2 方案 A） */}
-        {(!isEmpty && (conversationRounds.length > 1 || remoteRunningCount > 0)) && (
+        {/* 对话导航时间线（v2 方案 A）：多轮、或有远端会话、或本端流式中常驻——
+            发起端流式期间悬浮球可见（位置记忆），第二设备加入时球上出现琥珀点 */}
+        {(!isEmpty && (conversationRounds.length > 1 || remoteRunningCount > 0 || scrollIsStreaming)) && (
           <ChatNavigator
             variant="timeline"
             rounds={conversationRounds}
