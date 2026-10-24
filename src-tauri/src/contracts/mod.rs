@@ -98,11 +98,10 @@ pub struct PermissionRequest {
 
 /// Prompt 裁决的用户审批出口（P1-g，2026-10-24 审计）。
 ///
-/// dispatch 遇 `PermissionVerdict::Prompt` 时：
-/// 1. 先 `has_approval`——已有未过期的用户批准（同一 capability+action+source 摘要）
-///    则放行；
-/// 2. 否则 `request_approval` 登记审批请求并广播 UI 事件（**非阻塞**），
-///    dispatch 以「待审批」错误返回，调用方（AI）在用户批准后重试即放行。
+/// dispatch 遇 `PermissionVerdict::Prompt` 时：先 `has_approval`——已有未过期的
+/// 用户批准（同一 capability+action+source 摘要）则放行；否则 `request_approval`
+/// 登记审批请求并广播 UI 事件（**非阻塞**），dispatch 以「待审批」错误返回，
+/// 调用方（AI）在用户批准后重试即放行。
 /// 实现方：`services::router::permission_prompt::PermissionPromptRegistry`。
 pub trait PermissionPromptSink: Send + Sync {
     /// 登记一次审批请求并广播 `permission.prompt` 事件，返回 request id。
@@ -115,8 +114,9 @@ pub trait PermissionPromptSink: Send + Sync {
 
 /// 覆盖模式（P2-c，2026-10-24 审计：cap 自由度 L3）
 ///
-/// - `Override`：完全替换——新 handler 响应全部调用，原 handler 不再触达；
-/// - `Fallback`：新 handler 失败/出错时下探原 handler（灰度替换）。
+/// - `Override`: 完全替换——新 handler 响应全部调用，原 handler 不再触达
+/// - `Fallback`: 新 handler 失败/出错时下探原 handler（灰度替换）
+///
 /// `wrap`（包装式增强）v1 未实现，注册时显式拒绝。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
