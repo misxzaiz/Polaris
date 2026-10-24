@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>跨端会话跟随 v2 — 交互原型（对话导航入口 + 一键加入）</title>
+<style>
+  /* ===== 设计 token（对齐 Polaris 主题语义） ===== */
+  :root {
+    --bg-surface: #0f1117;
+    --bg-elevated: #171a23;
+    --bg-hover: #1f2430;
+    --bg-input: #141822;
+    --border: #262b38;
+    --border-subtle: #1d2230;
+    --text-primary: #e6e9f0;
+    --text-secondary: #a8b0c0;
+    --text-tertiary: #6b7385;
+    --text-muted: #454c5e;
+    --primary: #6d7cff;
+    --primary-hover: #8592ff;
+    --primary-soft: rgba(109, 124, 255, 0.12);
+    --warning: #e8a33d;
+    --danger: #e0566a;
+    --green: #3fb27f;
+    --radius: 10px;
+    --shadow-lg: 0 12px 40px rgba(0,0,0,.45);
+    --shadow-sm: 0 2px 10px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #0a0c11;
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    font-size: 14px;
+    min-height: 100vh;
+    padding: 24px;
+  }
+
+  /* ===== 顶部说明区 ===== */
+  .doc-header { max-width: 1180px; margin: 0 auto 18px; }
+  .doc-header h1 { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+  .doc-header p { color: var(--text-tertiary); font-size: 12.5px; line-height: 1.7; }
+  .doc-header .hl { color: var(--primary-hover); }
+
+  /* ===== 场景切换器 ===== */
+  .scene-switcher {
+    max-width: 1180px; margin: 0 auto 14px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .scene-btn {
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-elevated); color: var(--text-secondary);
+    font-size: 12.5px; cursor: pointer; transition: all .15s;
+  }
+  .scene-btn:hover { border-color: var(--primary); color: var(--text-primary); }
+  .scene-btn.active { background: var(--primary-soft); border-color: var(--primary); color: var(--primary-hover); font-weight: 600; }
+  .scene-hint { font-size: 12px; color: var(--text-tertiary); margin-left: 6px; }
+
+  /* ===== 应用窗口模拟 ===== */
+  .app {
+    max-width: 1180px; margin: 0 auto; height: 640px;
+    background: var(--bg-surface); border: 1px solid var(--border);
+    border-radius: 14px; overflow: hidden; display: flex; flex-direction: column;
+    box-shadow: var(--shadow-lg); position: relative;
+  }
+  .titlebar {
+    height: 36px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+    background: var(--bg-elevated); border-bottom: 1px solid var(--border-subtle);
+    font-size: 11.5px; color: var(--text-tertiary); flex-shrink: 0;
+  }
+  .titlebar .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .titlebar .dev-tag {
+    margin-left: auto; display: flex; align-items: center; gap: 5px;
+    color: var(--green); font-size: 11px;
+  }
+  .titlebar .dev-tag::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  .main { flex: 1; display: flex; min-height: 0; }
+
+  /* ===== 会话格（MultiSessionGrid 单格模拟） ===== */
+  .grid-area { flex: 1; display: flex; gap: 6px; padding: 6px; min-width: 0; }
+  .cell {
+    flex: 1; display: flex; flex-direction: column; min-width: 0;
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius); overflow: hidden; position: relative;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .cell.active { border-color: rgba(109,124,255,.55); box-shadow: 0 0 0 1px rgba(109,124,255,.25); }
+  .cell-head {
+    display: flex; align-items: center; gap: 7px; padding: 8px 12px;
+    border-bottom: 1px solid var(--border-subtle); font-size: 12px; flex-shrink: 0;
+  }
+  .cell-title { color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell-status { font-size: 10.5px; color: var(--text-tertiary); }
+  .pulse { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: pulse 1.4s ease-in-out infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%,100% { opacity: 1; transform: scale(1);} 50% { opacity: .45; transform: scale(.8);} }
+  .cell-messages { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .cell-messages::-webkit-scrollbar { width: 5px; }
+  .cell-messages::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* 消息气泡 */
+  .msg { max-width: 82%; padding: 8px 12px; border-radius: 10px; font-size: 12.5px; line-height: 1.65; }
+  .msg.user { align-self: flex-end; background: linear-gradient(135deg, var(--primary), #5563e8); color: #fff; border-bottom-right-radius: 3px; }
+  .msg.ai { align-self: flex-start; background: var(--bg-elevated); border: 1px solid var(--border-subtle); border-bottom-left-radius: 3px; color: var(--text-secondary); }
+  .msg.ai.remote-origin { border-color: rgba(232,163,61,.35); }
+  .msg .cursor { display: inline-block; width: 7px; height: 13px; background: var(--primary); vertical-align: -2px; animation: blink .9s step-end infinite; margin-left: 2px; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .toolchip {
+    display: flex; align-items: center; gap: 6px; font-size: 10.5px; color: var(--text-tertiary);
+    background: var(--bg-hover); border-radius: 6px; padding: 4px 8px; margin-bottom: 6px; width: fit-content;
+  }
+  .toolchip .st-done { color: var(--green); } .toolchip .st-run { color: var(--warning); }
+
+  /* ===== 悬浮球 + 对话导航面板 ===== */
+  .navigator-zone { position: absolute; right: 0; top: 42%; transform: translateY(-50%); z-index: 30; }
+  .nav-ball {
+    width: 30px; height: 50px; background: var(--bg-elevated);
+    border: 1px solid var(--border); border-right: none;
+    border-radius: 10px 0 0 10px; box-shadow: var(--shadow-sm);
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    transition: all .15s; position: relative;
+  }
+  .nav-ball:hover { background: var(--bg-hover); }
+  .nav-ball.has-remote { border-color: rgba(232,163,61,.5); }
+  .nav-ball.has-remote .ball-dot {
+    position: absolute; top: 7px; right: 9px; width: 6px; height: 6px;
+    border-radius: 50%; background: var(--warning); animation: pulse 1.4s infinite;
+  }
+  .nav-icon { display: flex; flex-direction: column; gap: 3px; width: 15px; }
+  .nav-icon span { height: 2px; background: var(--text-muted); border-radius: 2px; }
+  .nav-icon span:nth-child(1) { width: 70%; }
+  .nav-icon span:nth-child(2) { width: 55%; margin-left: auto; }
+  .nav-icon span:nth-child(3) { width: 45%; margin-left: auto; }
+
+  .nav-panel {
+    position: absolute; right: 34px; top: 50%; transform: translateY(-50%);
+    width: 268px; max-height: 480px; background: var(--bg-elevated);
+    border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow-lg);
+    display: none; flex-direction: column; overflow: hidden;
+  }
+  .navigator-zone.open .nav-panel { display: flex; }
+  .nav-panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 12px; font-size: 10.5px; color: var(--text-tertiary);
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .nav-panel-body { overflow-y: auto; flex: 1; }
+
+  /* —— 新区块：其他设备进行中 —— */
+  .remote-section { border-bottom: 1px solid var(--border-subtle); background: rgba(232,163,61,.045); }
+  .remote-section-title {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 12px 4px; font-size: 10.5px; color: var(--warning); font-weight: 600;
+  }
+  .remote-card { margin: 6px 8px 10px; padding: 9px 11px; background: var(--bg-surface);
+    border: 1px solid rgba(232,163,61,.3); border-radius: 9px; }
+  .remote-card .rc-title { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-primary); font-weight: 500; }
+  .remote-card .rc-meta { font-size: 10.5px; color: var(--text-tertiary); margin: 4px 0 8px 13px; }
+  .remote-card .rc-actions { display: flex; gap: 6px; margin-left: 13px; }
+  .rc-btn {
+    padding: 4px 12px; border-radius: 7px; font-size: 11px; cursor: pointer;
+    border: 1px solid var(--border); background: var(--bg-elevated); color: var(--text-secondary);
+    transition: all .13s;
+  }
+  .rc-btn:hover { border-color: var(--text-muted); color: var(--text-primary); }
+  .rc-btn.primary { background: var(--primary); border-color: var(--primary); color: #fff; font-weight: 600; }
+  .rc-btn.primary:hover { background: var(--primary-hover); }
+
+  /* 轮次列表 */
+  .round-item { padding: 7px 12px; cursor: pointer; position: relative; transition: background .12s; }
+  .round-item:hover { background: var(--bg-hover); }
+  .round-item.current { background: var(--primary-soft); }
+  .round-item.current::before { content: ""; position: absolute; left: 0; top: 6px; bottom: 6px; width: 2.5px; background: var(--primary); border-radius: 2px; }
+  .round-line1 { display: flex; align-items: center; gap: 6px; margin-bottom: 2px; }
+  .round-num { font-size: 10px; font-weight: 600; width: 14px; text-align: right; color: var(--text-muted); flex-shrink: 0; }
+  .round-item.current .round-num { color: var(--primary-hover); }
+  .round-summary { font-size: 12px; color: var(--text-secondary); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .round-item.current .round-summary { color: var(--text-primary); }
+  .round-time { font-size: 9.5px; color: var(--text-muted); }
+  .round-line2 { padding-left: 20px; font-size: 10.5px; color: var(--text-tertiary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* ===== 只读 Overlay ===== */
+  .overlay-mask {
+    position: absolute; inset: 0; background: rgba(5,7,12,.62); z-index: 50;
+    display: none; align-items: center; justify-content: center; backdrop-filter: blur(2px);
+  }
+  .overlay-mask.show { display: flex; }
+  .overlay-card {
+    width: 62%; max-width: 560px; height: 78%; background: var(--bg-surface);
+    border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--shadow-lg);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .ov-head { display: flex; align-items: center; gap: 8px; padding: 11px 16px; border-bottom: 1px solid var(--border-subtle); font-size: 12.5px; }
+  .ov-title { font-weight: 600; flex: 1; }
+  .ov-tag { font-size: 10.5px; color: var(--text-tertiary); }
+  .ov-close { cursor: pointer; color: var(--text-tertiary); padding: 3px 7px; border-radius: 6px; font-size: 14px; }
+  .ov-close:hover { background: var(--bg-hover); color: var(--text-primary); }
+  .ov-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+  .ov-foot { padding: 8px 16px; border-top: 1px solid var(--border-subtle); font-size: 10.5px; color: var(--text-tertiary); }
+
+  /* ===== Toast（仲裁拒绝演示） ===== */
+  .toast {
+    position: absolute; top: 52px; left: 50%; transform: translateX(-50%) translateY(-8px);
+    background: var(--bg-elevated); border: 1px solid rgba(224,86,106,.45);
+    border-radius: 10px; padding: 10px 16px; font-size: 12px; z-index: 60;
+    box-shadow: var(--shadow-lg); opacity: 0; transition: all .25s; pointer-events: none;
+    max-width: 460px;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast .t-title { color: var(--danger); font-weight: 600; margin-bottom: 2px; }
+  .toast .t-body { color: var(--text-secondary); font-size: 11.5px; line-height: 1.5; }
+
+  /* ===== 底部输入区 ===== */
+  .input-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border-subtle); flex-shrink: 0; }
+  .input-box {
+    flex: 1; background: var(--bg-input); border: 1px solid var(--border);
+    border-radius: 10px; padding: 9px 14px; font-size: 12.5px; color: var(--text-muted);
+  }
+  .send-btn {
+    width: 34px; height: 34px; border-radius: 50%; background: var(--primary);
+    display: flex; align-items: center; justify-content: center; color: #fff; font-size: 14px; flex-shrink: 0;
+  }
+
+  /* ===== 注记 ===== */
+  .note {
+    position: absolute; z-index: 70; background: #fffbe8; color: #6b5900;
+    font-size: 11.5px; line-height: 1.55; padding: 8px 12px; border-radius: 8px;
+    box-shadow: var(--shadow-sm); max-width: 230px; pointer-events: none;
+  }
+  .note::before { content: "💡 "; }
+  .note b { color: #4a3d00; }
+  .note.arrow-right::after {
+    content: ""; position: absolute; right: -7px; top: 50%; transform: translateY(-50%);
+    border: 7px solid transparent; border-left-color: #fffbe8; border-right: none;
+  }
+  .hidden { display: none !important; }
+
+  /* 加入会话格动画 */
+  @keyframes cellIn { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: scale(1); } }
+  .cell.just-joined { animation: cellIn .3s ease; }
+</style>
+</head>
+<body>
+
+<div class="doc-header">
+  <h1>跨端会话跟随 v2 — 交互原型</h1>
+  <p>
+    两个优化：<span class="hl">① 入口前移</span>——「其他设备进行中」从历史抽屉前移到消息区右缘的<span class="hl">对话导航</span>悬浮面板（视线常驻区，无需打开历史）；
+    <span class="hl">② 一键加入</span>——远端会话可接入本端窗口成为正式会话格，实时同步且可发送（双端并发由后端单写者仲裁兜底）。
+    切换下方场景体验交互流；<b>琥珀色边框 = 跨端元素</b>。
+  </p>
+</div>
+
+<div class="scene-switcher">
+  <button class="scene-btn active" data-scene="discover">场景 1 · 发现（导航入口）</button>
+  <button class="scene-btn" data-scene="view">场景 2 · 只读查看</button>
+  <button class="scene-btn" data-scene="join">场景 3 · 加入窗口</button>
+  <button class="scene-btn" data-scene="conflict">场景 4 · 双端并发仲裁</button>
+  <span class="scene-hint">点击切换，或在原型内直接操作按钮</span>
+</div>
+
+<div class="app" id="app">
+  <div class="titlebar">
+    <span class="dot" style="background:#e0566a"></span>
+    <span class="dot" style="background:#e8a33d"></span>
+    <span class="dot" style="background:#3fb27f"></span>
+    <span style="margin-left:8px">Polaris — 多会话工作台</span>
+    <span class="dev-tag">本机 · 桌面端</span>
+  </div>
+
+  <div class="main">
+    <!-- 会话格 1：本地会话 -->
+    <div class="grid-area">
+      <div class="cell active" id="cell-local">
+        <div class="cell-head">
+          <span class="pulse"></span>
+          <span class="cell-title">Polaris 重构讨论</span>
+          <span class="cell-status">流式中</span>
+        </div>
+        <div class="cell-messages" id="msgs-local">
+          <div class="msg user">继续方案丙的 P3 阶段，先做反向索引路由</div>
+          <div class="msg ai">
+            <div class="toolchip">🔧 read_file <span class="st-done">✓ sessionStoreManager.ts</span></div>
+            正在梳理 dispatchEvent 的路由分支… 反向索引以 payload.sessionId（引擎 conversationId）为键反查本端 store<span class="cursor"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 会话格 2：加入后出现的远端会话格（场景 3 显示） -->
+      <div class="cell hidden just-joined" id="cell-joined">
+        <div class="cell-head">
+          <span class="pulse" style="background:var(--warning)"></span>
+          <span class="cell-title">移动端调研会话 <span style="color:var(--warning);font-size:10px;margin-left:4px">来自手机</span></span>
+          <span class="cell-status">实时同步</span>
+        </div>
+        <div class="cell-messages" id="msgs-joined">
+          <div class="msg user">帮我调研一下移动端适配方案的取舍</div>
+          <div class="msg ai remote-origin">
+            <div class="toolchip">🔧 web_search <span class="st-done">✓ react-native vs pwa</span></div>
+            对比了三个方案的维护成本…（此会话由手机发起，已加入本端窗口，实时同步中）<span class="cursor"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 对话导航悬浮球 + 面板 -->
+    <div class="navigator-zone" id="navZone">
+      <div class="nav-panel">
+        <div class="nav-panel-head"><span>对话导航</span><span>2 轮</span></div>
+        <div class="nav-panel-body">
+          <!-- ① 其他设备进行中（新增区块） -->
+          <div class="remote-section" id="remoteSection">
+            <div class="remote-section-title">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 2v4M12 18v4M4.9 4.9l2.8 2.8M16.3 16.3l2.8 2.8M2 12h4M18 12h4M4.9 19.1l2.8-2.8M16.3 7.7l2.8-2.8"/></svg>
+              其他设备进行中 (1)
+            </div>
+            <div class="remote-card">
+              <div class="rc-title">
+                <span class="pulse" style="width:6px;height:6px;background:var(--warning)"></span>
+                移动端调研会话
+              </div>
+              <div class="rc-meta">手机 · Claude · 始于 3 分钟前</div>
+              <div class="rc-actions">
+                <button class="rc-btn" onclick="goScene('view')">查看</button>
+                <button class="rc-btn primary" onclick="goScene('join')">加入窗口 →</button>
+              </div>
+            </div>
+          </div>
+          <!-- ② 本会话轮次 -->
+          <div class="round-item current">
+            <div class="round-line1"><span class="round-num">1</span><span class="round-summary">继续方案丙的 P3 阶段…</span><span class="round-time">14:02</span></div>
+            <div class="round-line2">🔧 正在梳理 dispatchEvent 的路由分支</div>
+          </div>
+          <div class="round-item">
+            <div class="round-line1"><span class="round-num">2</span><span class="round-summary">加入远端会话后如何同步</span><span class="round-time">14:05</span></div>
+            <div class="round-line2">反向索引路由会把事件投进新格</div>
+          </div>
+        </div>
+      </div>
+      <div class="nav-ball has-remote" id="navBall" onclick="toggleNav()">
+        <span class="ball-dot"></span>
+        <div class="nav-icon"><span></span><span></span><span></span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 底部输入 -->
+  <div class="input-bar">
+    <div class="input-box" id="inputBox">回复进行中…（输入后 Enter 入队）</div>
+    <div class="send-btn">↑</div>
+  </div>
+
+  <!-- 只读 Overlay（场景 2） -->
+  <div class="overlay-mask" id="overlay">
+    <div class="overlay-card">
+      <div class="ov-head">
+        <span class="pulse" style="background:var(--warning)"></span>
+        <span class="ov-title">移动端调研会话</span>
+        <span class="ov-tag">进行中 · 实时同步</span>
+        <span class="ov-close" onclick="goScene('discover')">✕</span>
+      </div>
+      <div class="ov-body">
+        <div class="msg user">帮我调研一下移动端适配方案的取舍</div>
+        <div class="msg ai remote-origin">
+          <div class="toolchip">🔧 web_search <span class="st-done">✓ react-native vs pwa 2026</span></div>
+          <div class="toolchip">🔧 read_file <span class="st-done">✓ src/App.tsx</span></div>
+          对比了三个方案的维护成本与包体积…（只读视图：此会话由其他设备发起，实时同步；操作请回到发起设备）<span class="cursor"></span>
+        </div>
+      </div>
+      <div class="ov-foot">只读视图 · 不影响本端会话格布局 · <span style="color:var(--primary-hover);cursor:pointer" onclick="goScene('join')">改为加入窗口 →</span></div>
+    </div>
+  </div>
+
+  <!-- 仲裁拒绝 Toast（场景 4） -->
+  <div class="toast" id="conflictToast">
+    <div class="t-title">发送失败：会话已在运行中</div>
+    <div class="t-body">该会话正由设备「手机」处理（单写者仲裁）。等待其回复结束（通常数秒）后即可在本端继续对话。</div>
+  </div>
+
+  <!-- 注记 -->
+  <div class="note arrow-right" id="note1" style="right: 40px; top: 26%;">
+    <b>入口前移</b>：悬浮球常驻消息区右缘（琥珀点=有远端会话），悬停即见——无需再打开历史抽屉
+  </div>
+  <div class="note arrow-right hidden" id="note3" style="right: 40px; top: 26%;">
+    <b>加入后</b>：远端会话成为正式会话格（琥珀标记注明来源），实时同步、可直接发送；导航中该条目自动移除
+  </div>
+</div>
+
+<script>
+  const scenes = ['discover', 'view', 'join', 'conflict'];
+  function goScene(s) {
+    document.querySelectorAll('.scene-btn').forEach(b => b.classList.toggle('active', b.dataset.scene === s));
+
+    const overlay = document.getElementById('overlay');
+    const joined = document.getElementById('cell-joined');
+    const local = document.getElementById('cell-local');
+    const remoteSection = document.getElementById('remoteSection');
+    const ball = document.getElementById('navBall');
+    const toast = document.getElementById('conflictToast');
+    const note1 = document.getElementById('note1');
+    const note3 = document.getElementById('note3');
+    const navZone = document.getElementById('navZone');
+    const inputBox = document.getElementById('inputBox');
+
+    overlay.classList.toggle('show', s === 'view');
+    joined.classList.toggle('hidden', !(s === 'join' || s === 'conflict'));
+    local.classList.toggle('active', s !== 'join' || s === 'conflict');
+    joined.classList.toggle('active', s === 'join');
+    remoteSection.classList.toggle('hidden', s === 'join' || s === 'conflict');
+    ball.classList.toggle('has-remote', s === 'discover' || s === 'view');
+    note1.classList.toggle('hidden', s !== 'discover');
+    note3.classList.toggle('hidden', s !== 'join');
+    navZone.classList.toggle('open', s === 'discover');
+    inputBox.textContent = s === 'join'
+      ? '（已加入远端会话，可直接输入，发送将续接原会话上下文）'
+      : s === 'conflict' ? '帮我补充第 4 点对比…（Enter 发送）'
+      : '回复进行中…（输入后 Enter 入队）';
+
+    if (s === 'conflict') {
+      setTimeout(() => toast.classList.add('show'), 350);
+    } else {
+      toast.classList.remove('show');
+    }
+    if (s !== 'discover') navZone.classList.remove('open');
+  }
+  function toggleNav() {
+    document.getElementById('navZone').classList.toggle('open');
+  }
+  // 悬停展开/移出收起
+  const zone = document.getElementById('navZone');
+  zone.addEventListener('mouseenter', () => zone.classList.add('open'));
+  document.getElementById('app').addEventListener('click', (e) => {
+    if (!zone.contains(e.target)) zone.classList.remove('open');
+  });
+  // 模拟流式：本地格光标后文字缓慢增长
+  (function stream() {
+    const el = document.querySelector('#msgs-local .msg.ai');
+    const full = '；随后 turnId 作为唯一代际载体，定时器与迟到事件全部按其归宿。';
+    let i = 0;
+    setInterval(() => {
+      if (i >= full.length) return;
+      const cursor = el.querySelector('.cursor');
+      cursor.insertAdjacentText('beforebegin', full[i++]);
+    }, 220);
+  })();
+  goScene('discover');
+</script>
+</body>
+</html>
