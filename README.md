@@ -70,10 +70,6 @@ pnpm run package:web
 
 [linux.do](https://linux.do/) - 讨论与反馈
 
-扫码加入 QQ 群交流：
-
-<img src="docs/assets/qq-group-qrcode.jpg" alt="Polaris QQ 群二维码" width="240" />
-
 ## 致谢
 
 本项目在开发和灵感阶段参考或使用了以下服务与工具，特此感谢：
@@ -92,6 +88,7 @@ pnpm run package:web
 - [Agnes](https://agnes-ai.com/)
 - [agency-agents-zh](https://github.com/jnMetaCode/agency-agents-zh)
 - [OpenMinis](https://github.com/OpenMinis/OpenMinis)（设备端 AI Agent，Linux 沙箱 + Native Offload 架构参考）
+- zCode（AI 编程工作台 monorepo）——本项目的工程治理与组织方式抄了 zCode 的大量内容，特此致谢
 
 如有遗漏或需要补充其他工具，欢迎联系我们加上。
 
