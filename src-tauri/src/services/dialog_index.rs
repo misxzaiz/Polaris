@@ -410,6 +410,8 @@ fn rebuild_self_index(conn: &Connection) -> Result<()> {
             }
         }
     }
+    // 回放标注备份：JSONL meta 不含标注列，重建后从旁挂文件恢复（审计 2.7）
+    restore_annotations_after_rebuild(conn);
     tracing::info!(
         "[DialogIndex] 自有会话索引重建完成: {} 个会话, 耗时 {:?}",
         count,
@@ -504,6 +506,154 @@ pub fn on_self_delete(name: &str) {
     if let Err(e) = result {
         tracing::warn!("[DialogIndex] 删除索引失败 {}: {}", name, e);
     }
+    // 同步清理标注备份（审计 2.7）
+    remove_annotation_backup(&external_id);
+}
+
+// ============================================================================
+// 标注旁挂备份（审计 2.7，B1.i）
+// ============================================================================
+
+/// 标注备份条目（与 HistoryMarks 字段对齐；只记录被显式设置过的字段）
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase", default)]
+struct AnnotationBackup {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    starred: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pinned: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archived: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    note: Option<String>,
+}
+
+/// 标注备份文件：`<DataRoot>/session-v2/annotations.json`。
+///
+/// 根因（审计 2.7）：置顶/星标/归档/颜色/标签/备注只存 index.db，而 `with_conn`
+/// 对任何操作错误都删 index.db 重建、重建只从 JSONL meta 恢复（标注列不可再生）
+/// ——一次索引异常即丢全部标注。旁挂文件随标注写更新（原子写），重建时回放。
+/// 刻意不放 JSONL meta 行：前端轮末整体覆写会重建 meta，标注字段无法在前端
+/// 侧可靠保留；旁挂文件与 JSONL 管线零耦合。
+fn annotations_path() -> PathBuf {
+    data_root().root().join("session-v2").join("annotations.json")
+}
+
+fn load_annotation_backups() -> HashMap<String, AnnotationBackup> {
+    let Ok(text) = std::fs::read_to_string(annotations_path()) else {
+        return HashMap::new();
+    };
+    serde_json::from_str(&text).unwrap_or_default()
+}
+
+fn save_annotation_backups(map: &HashMap<String, AnnotationBackup>) -> Result<()> {
+    let path = annotations_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::StateError(format!("创建标注目录失败: {}", e)))?;
+    }
+    let text = serde_json::to_string(map)
+        .map_err(|e| AppError::StateError(format!("序列化标注失败: {}", e)))?;
+    // 原子写：唯一 tmp + rename（与 dialog_write_inner 同纪律）
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, text)
+        .map_err(|e| AppError::StateError(format!("写标注 tmp 失败: {}", e)))?;
+    if std::fs::rename(&tmp, &path).is_err() {
+        if path.exists() {
+            let _ = std::fs::remove_file(&path);
+        }
+        std::fs::rename(&tmp, &path)
+            .map_err(|e| AppError::StateError(format!("替换标注文件失败: {}", e)))?;
+    }
+    Ok(())
+}
+
+fn update_annotation_backup(id: &str, marks: &HistoryMarks) {
+    let mut map = load_annotation_backups();
+    let entry = map.entry(id.to_string()).or_default();
+    if let Some(v) = marks.starred {
+        entry.starred = Some(v);
+    }
+    if let Some(v) = marks.pinned {
+        entry.pinned = Some(v);
+    }
+    if let Some(v) = marks.archived {
+        entry.archived = Some(v);
+    }
+    if let Some(v) = &marks.color {
+        entry.color = Some(v.clone());
+    }
+    if let Some(v) = &marks.user_tags {
+        entry.user_tags = Some(v.clone());
+    }
+    if let Some(v) = &marks.note {
+        entry.note = Some(v.clone());
+    }
+    if let Err(e) = save_annotation_backups(&map) {
+        tracing::warn!("[DialogIndex] 标注备份写失败 {}: {}", id, e);
+    }
+}
+
+fn remove_annotation_backup(id: &str) {
+    let mut map = load_annotation_backups();
+    if map.remove(id).is_some() {
+        if let Err(e) = save_annotation_backups(&map) {
+            tracing::warn!("[DialogIndex] 标注备份删除失败 {}: {}", id, e);
+        }
+    }
+}
+
+/// 重建后回放标注备份（rebuild_self_index 末尾调用）
+fn restore_annotations_after_rebuild(conn: &Connection) {
+    let backups = load_annotation_backups();
+    if backups.is_empty() {
+        return;
+    }
+    let mut restored = 0usize;
+    for (id, a) in &backups {
+        let mut sets: Vec<String> = Vec::new();
+        let mut args: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        if let Some(v) = a.starred {
+            sets.push("starred = ?".into());
+            args.push(Box::new(v as i64));
+        }
+        if let Some(v) = a.pinned {
+            sets.push("pinned = ?".into());
+            args.push(Box::new(v as i64));
+        }
+        if let Some(v) = a.archived {
+            sets.push("archived = ?".into());
+            args.push(Box::new(v as i64));
+        }
+        if let Some(v) = &a.color {
+            sets.push("color = ?".into());
+            args.push(Box::new(if v.is_empty() { None } else { Some(v.clone()) }));
+        }
+        if let Some(v) = &a.user_tags {
+            sets.push("user_tags = ?".into());
+            args.push(Box::new(serde_json::to_string(v).unwrap_or_else(|_| "[]".into())));
+        }
+        if let Some(v) = &a.note {
+            sets.push("note = ?".into());
+            args.push(Box::new(if v.is_empty() { None } else { Some(v.clone()) }));
+        }
+        if sets.is_empty() {
+            continue;
+        }
+        args.push(Box::new(id.clone()));
+        let sql = format!("UPDATE sessions SET {} WHERE id = ?", sets.join(", "));
+        if conn
+            .execute(&sql, params_from_iter(args.iter().map(|b| b.as_ref())))
+            .is_ok()
+        {
+            restored += 1;
+        }
+    }
+    tracing::info!("[DialogIndex] 标注备份回放完成: {} 个会话", restored);
 }
 
 // ============================================================================
@@ -1165,6 +1315,8 @@ pub fn history_mark_inner(id: &str, marks: HistoryMarks) -> Result<()> {
         if n == 0 {
             return Err(AppError::ValidationError(format!("会话不在索引中: {}", id)));
         }
+        // 标注旁挂备份（尽力而为，失败不阻断标注生效——下次重建少一层保险而已）
+        update_annotation_backup(&id, &marks);
         Ok(())
     })
 }
