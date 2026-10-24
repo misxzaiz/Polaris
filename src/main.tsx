@@ -6,6 +6,7 @@ import { MobileConnectionGate } from "./mobile/MobileConnectionGate";
 import { isMobileTauriRuntime } from "./mobile/platform";
 import "./i18n";
 import { bootstrapTheme } from '@/services/themeEngine';
+import { remoteSessionFollower } from '@/services/remoteSessionFollower';
 import { invoke, listen } from '@/services/transport';
 import { createHostWorkspaceApi } from '@/plugin-system/hostWorkspaceApi';
 import { eventBus } from '@/services/eventBus';
@@ -85,6 +86,12 @@ eventBus.on('workspace-changed', (ws) => {
 (() => {
   bootstrapTheme();
 })();
+
+// 跨端只读会话跟随（批 3/v2）：lifecycle 轮询发现 + chat-event 实时订阅。
+// 静态 import + 顶层启动——此前动态 import 排在 useAppInit 长链尾部（连坐跳过）
+// 和 main 动态 import（早期时序不稳）两种形态都实测未执行；静态模块图无失败面。
+// start 内部幂等；invoke 懒初始化 transport，此处无需等待连接建立。
+remoteSessionFollower.start();
 
 const root = document.getElementById("root") as HTMLElement;
 

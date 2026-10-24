@@ -250,12 +250,6 @@ export function useAppInit({ onNoWorkspaces }: UseAppInitOptions) {
       maybeAutoMigrateOpfs(),
     );
 
-    // 批 3：跨端只读会话跟随（lifecycle 轮询发现 + chat-event 实时订阅，
-    // 轻量常驻；另一设备的流式会话在本端历史面板「其他设备进行中」可见）
-    void import('@/services/remoteSessionFollower').then(({ remoteSessionFollower }) =>
-      remoteSessionFollower.start(),
-    );
-
     setInitPhase('准备就绪');
     // 专家/专家团数据预加载(全局存储,启动即可加载)
     if (currentMode === 'tauri' || currentMode === 'http') {
