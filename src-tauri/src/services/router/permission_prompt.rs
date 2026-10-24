@@ -50,6 +50,8 @@ struct PendingEntry {
     capability: String,
     action: Option<String>,
     source_kind: &'static str,
+    /// 登记时刻（诊断预留；审批摘要粒度不含时间）
+    #[allow(dead_code)]
     created_at_ms: i64,
 }
 

@@ -11,7 +11,6 @@
 //! RouterBus 经进程级 OnceLock 共享（模式同 hook_registry / mcp_tool_gates）：
 //! PluginDiscoveryCapability / plugin_state command 无 AppState.router 直达通道。
 
-use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use crate::contracts::{CapabilityId, ReplaceMode};
@@ -100,7 +99,7 @@ pub fn sync_plugin_capabilities(
 
 fn register_one(
     router: &Arc<RouterBus>,
-    plugin_id: &str,
+    _plugin_id: &str,
     contrib: &crate::models::plugin::PluginCapabilityManifestContribution,
 ) -> Result<(), String> {
     if !contrib.id.starts_with("cap.") {
