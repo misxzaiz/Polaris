@@ -31,6 +31,7 @@ mod voice_capability;
 mod git_capability;
 mod kv_capability;
 mod policy_permission;
+pub mod permission_prompt;
 pub mod prompt_snippet_capability;
 mod stream_echo_capability;
 mod todo_capability;
@@ -64,6 +65,7 @@ pub use demo_capability::{EchoCapability, FaultyCapability};
 pub use event_adapter::{EventAdapter, static_perm::StaticPermission};
 pub use kv_capability::KvCapability;
 pub use policy_permission::PolicyPermission;
+pub use permission_prompt::PermissionPromptRegistry;
 pub use prompt_snippet_capability::PromptSnippetCapability;
 pub use stream_echo_capability::StreamEchoCapability;
 pub use help_capability::HelpCapability;
@@ -132,6 +134,8 @@ pub struct RouterBus {
     storage: Option<Arc<dyn Storage>>,
     audit: Option<Arc<dyn AuditSink>>,
     plugin_configs: Arc<RwLock<HashMap<String, Value>>>,
+    /// Prompt 裁决的用户审批出口（P1-g）。None → Prompt 维持 Phase 0 安全失败。
+    prompt_sink: RwLock<Option<Arc<dyn PermissionPromptSink>>>,
 }
 
 impl RouterBus {
@@ -156,7 +160,13 @@ impl RouterBus {
             storage,
             audit,
             plugin_configs: Arc::new(RwLock::new(HashMap::new())),
+            prompt_sink: RwLock::new(None),
         }
+    }
+
+    /// 注入用户审批出口（装配时；P1-g）
+    pub fn set_prompt_sink(&self, sink: Arc<dyn PermissionPromptSink>) {
+        *self.prompt_sink.write().unwrap() = Some(sink);
     }
 
     /// 注销能力（按 cap.id 精确匹配，同步表与流式平行表分别处理）。
@@ -237,6 +247,7 @@ impl RouterBus {
             capability: env.target.clone(),
             resource: env.target.0.clone(),
             source: env.source.clone(),
+            action: payload_action(&env.payload),
         };
         match self.permission.check(&perm_req)? {
             PermissionVerdict::Deny => {
@@ -493,6 +504,7 @@ impl Router for RouterBus {
             capability: env.target.clone(),
             resource: env.target.0.clone(),
             source: env.source.clone(),
+            action: payload_action(&env.payload),
         };
         match self.permission.check(&perm_req)? {
             PermissionVerdict::Deny => {
@@ -515,24 +527,71 @@ impl Router for RouterBus {
                 });
             }
             PermissionVerdict::Prompt => {
-                // Phase 0 无 Shell，动态请求直接 Deny（安全失败）
-                self.audit_deny(&env, "prompt");
-                self.broadcaster.broadcast(Event {
-                    seq: 0,
-                    kind: "dispatch.deny".into(),
-                    payload: serde_json::json!({
-                        "msg_id": env.id.0,
-                        "target": env.target.0,
-                        "reason": "prompt not supported in phase 0",
-                    }),
-                    trace: env.trace.clone(),
-                });
-                return Ok(Reply {
-                    msg_id: env.id,
-                    result: Err("需用户审批，Phase 0 暂不支持".into()),
-                    trace: env.trace,
-                    error_detail: None,
-                });
+                // P1-g：有审批出口且已有有效批准 → 放行（批准 + 重试模式）
+                let sink_opt = self.prompt_sink.read().unwrap().clone();
+                let already_approved = sink_opt
+                    .as_ref()
+                    .map(|s| s.has_approval(&perm_req))
+                    .unwrap_or(false);
+                if already_approved {
+                    // 已批准，继续后续流程
+                } else if let Some(sink) = sink_opt {
+                    // 无批准：登记审批请求（非阻塞）+ 广播 permission.prompt 事件，
+                    // 返回待审批错误（AI 在用户批准后重试即放行）
+                    match sink.request_approval(&perm_req) {
+                        Ok(request_id) => {
+                            self.audit_deny(&env, "prompt_pending");
+                            self.broadcaster.broadcast(Event {
+                                seq: 0,
+                                kind: "dispatch.deny".into(),
+                                payload: serde_json::json!({
+                                    "msg_id": env.id.0,
+                                    "target": env.target.0,
+                                    "reason": "permission prompt pending",
+                                    "requestId": request_id,
+                                }),
+                                trace: env.trace.clone(),
+                            });
+                            return Ok(Reply {
+                                msg_id: env.id,
+                                result: Err(format!(
+                                    "需用户审批：已发起确认请求 {}（前端确认后请重试本调用）",
+                                    request_id
+                                )),
+                                trace: env.trace,
+                                error_detail: None,
+                            });
+                        }
+                        Err(e) => {
+                            self.audit_deny(&env, "prompt_sink_error");
+                            return Ok(Reply {
+                                msg_id: env.id,
+                                result: Err(format!("审批通道异常: {}", e)),
+                                trace: env.trace,
+                                error_detail: None,
+                            });
+                        }
+                    }
+                } else {
+                    // 无审批出口：维持 Phase 0 安全失败
+                    self.audit_deny(&env, "prompt");
+                    self.broadcaster.broadcast(Event {
+                        seq: 0,
+                        kind: "dispatch.deny".into(),
+                        payload: serde_json::json!({
+                            "msg_id": env.id.0,
+                            "target": env.target.0,
+                            "reason": "prompt not supported in phase 0",
+                        }),
+                        trace: env.trace.clone(),
+                    });
+                    return Ok(Reply {
+                        msg_id: env.id,
+                        result: Err("需用户审批，Phase 0 暂不支持".into()),
+                        trace: env.trace,
+                        error_detail: None,
+                    });
+                }
             }
             PermissionVerdict::Allow => {}
         }
@@ -756,6 +815,14 @@ fn audit_append(audit: &dyn AuditSink, entry: &AuditEntry) {
             "审计写入失败（fail-open，dispatch 结果不受影响）"
         );
     }
+}
+
+/// payload 动作名提取（P1-g 权限 action 粒度用）
+fn payload_action(payload: &Value) -> Option<String> {
+    payload
+        .get("action")
+        .and_then(|a| a.as_str())
+        .map(|a| a.chars().take(64).collect())
 }
 
 /// payload 动作摘要（审计 detail 用）：只记动作名，不落参数明文——

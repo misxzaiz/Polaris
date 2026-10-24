@@ -314,6 +314,8 @@ pub struct AppState {
     pub failed_call_collector: Arc<tokio::sync::Mutex<crate::services::FailedCallCollector>>,
     /// 插件服务管理器 — 管理插件声明的后台服务
     pub plugin_service_manager: Arc<crate::services::plugin_service_manager::PluginServiceManager>,
+    /// Prompt 权限审批登记表（P1-g；respond_permission_request 回填入口）
+    pub permission_prompt: Arc<crate::services::router::permission_prompt::PermissionPromptRegistry>,
     /// 通用执行器注册表 — 统一管理所有执行器（内置 + 插件自定义）
     pub executor_registry: crate::services::executor::ExecutorRegistry,
     /// 统一转发总线（第三步 RouterBus）— dispatch 唯一入口，共享现有 WS 广播
@@ -393,7 +395,7 @@ pub fn create_app_state(
         use crate::services::router::HookCapability;
         use crate::services::storage::SqliteStorage;
 
-        let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
+    let adapter = Arc::new(EventAdapter::from_broadcaster(event_broadcast.clone()));
         // cap.hook 需要复用 EventAdapter 作为 hook 事件广播通道：
         // 先 clone 供 HookSystem 注入，原 adapter 移交 RouterBus。
         let hook_adapter = adapter.clone();
@@ -407,9 +409,11 @@ pub fn create_app_state(
             .get()
             .permissions
             .clone();
-        let permission = Box::new(PolicyPermission::from_config(
-            initial_permissions.as_ref(),
-        ));
+        let policy_permission = PolicyPermission::from_config(initial_permissions.as_ref());
+        // P1-f（X9/X7）：注入 web 鉴权 token——「token 匹配的 Remote」放行
+        // cap.pluginServiceManager（Web 模式插件服务管理），未鉴权 Remote 不变。
+        policy_permission.set_web_token(config_store_arc.lock().unwrap().get().web.token.clone());
+        let permission = Box::new(policy_permission);
 
         // 审计通道：Bootstrap 直管 JSONL（<DataRoot>/audit/dispatch.jsonl），
         // 打开失败不阻塞启动（审计缺失可见可查，不允许崩溃主流程）
@@ -648,6 +652,19 @@ pub fn create_app_state(
         bus
     };
 
+    // P1-g：Prompt 裁决的用户审批出口（非阻塞批准 + 重试模式）。
+    // router block 内的 adapter 已 move 进 RouterBus，此处包同一底层
+    // EventBroadcaster 的新 EventAdapter（广播同源：都进 event_broadcast），
+    // 仅用于审批事件 broadcast（registry 无 in-proc 订阅者，无分叉问题）。
+    let permission_prompt = Arc::new(
+        crate::services::router::permission_prompt::PermissionPromptRegistry::new(
+            Arc::new(crate::services::router::EventAdapter::from_broadcaster(
+                event_broadcast.clone(),
+            )),
+        ),
+    );
+    router.set_prompt_sink(permission_prompt.clone());
+
     AppState {
         config_store: config_store_arc.clone(),
         sessions: Arc::new(Mutex::new(HashMap::new())),
@@ -694,6 +711,7 @@ pub fn create_app_state(
         plugin_service_manager: plugin_service_manager.clone(),
         executor_registry,
         router,
+        permission_prompt,
     }
 }
 
@@ -772,6 +790,7 @@ impl AppState {
             plugin_service_manager: self.plugin_service_manager.clone(),
             executor_registry: self.executor_registry.clone(),
             router: self.router.clone(),
+            permission_prompt: self.permission_prompt.clone(),
         }
     }
 

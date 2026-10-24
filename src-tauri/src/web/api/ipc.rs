@@ -324,6 +324,7 @@ pub async fn handle_ipc_bridge(
 
         // ── Contract Router: 统一转发总线（契约第三步 P2）───────────────
         "router_dispatch" => dispatch_router_dispatch(&state, &args).await,
+        "respond_permission_request" => dispatch_respond_permission_request(&state, &args).await,
         "router_dispatch_stream" => dispatch_router_dispatch_stream(&state, &args).await,
         "audit_tail" => dispatch_audit_tail(&args),
         "audit_verify" => dispatch_audit_verify(),
@@ -2895,6 +2896,27 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
         "errorDetail": reply.error_detail,
         "trace": reply.trace.0,
     })))
+}
+
+/// 权限审批回填（P1-g）：web 前端确认卡 → 批准/拒绝（与桌面 command 同源）
+async fn dispatch_respond_permission_request(
+    state: &AppState,
+    args: &Value,
+) -> Result<Json<Value>, WebError> {
+    let request_id = args
+        .get("requestId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("缺少 requestId".into()))?
+        .to_string();
+    let approved = args.get("approved").and_then(|v| v.as_bool()).unwrap_or(false);
+    let resolved = {
+        use crate::contracts::PermissionPromptSink as _;
+        state
+            .permission_prompt
+            .resolve(&request_id, approved)
+            .map_err(WebError::Internal)?
+    };
+    Ok(Json(serde_json::json!({ "resolved": resolved })))
 }
 
 /// git_* 前缀命令转发至 cap.git 能力（PR-1：web 双写派发表 `git_dispatch.rs` 摘除）。

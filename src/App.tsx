@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef, useMemo, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer } from './components/Common';
+import { Layout, ConnectingOverlay, ErrorBoundary, ToastContainer, PermissionPromptHost } from './components/Common';
 import { FileExplorer } from './components/FileExplorer';
 import { createLogger } from './utils/logger';
 
@@ -472,6 +472,9 @@ function App() {
 
         {/* 全局 Toast 通知：挂载在视图切换之外，经 Portal 渲染到 body，浮于所有面板/弹窗之上 */}
         <ToastContainer />
+
+        {/* 全局权限审批卡（P1-g）：AI 高危动作（停插件服务/卸载插件）需用户确认 */}
+        <PermissionPromptHost />
 
         {/* LSP 符号面板（Mod+Shift+O），只有在 LSP keymap 触发后才有内容挂载 */}
         <Suspense fallback={null}>

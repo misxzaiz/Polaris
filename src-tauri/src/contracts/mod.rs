@@ -88,6 +88,29 @@ pub struct PermissionRequest {
     pub capability: CapabilityId,
     pub resource: String,
     pub source: Source,
+    /// payload 动作名（P1-g，2026-10-24 审计：权限粒度此前只有 capability×source，
+    /// 无法表达「同一能力允许读、破坏性动作需审批」）。策略匹配先试
+    /// `cap.x:action` 再回退 `cap.x`，用户既有 bare-id 规则不受影响。
+    /// dispatch 由 payload.action 提取；测试/直调可 None。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<String>,
+}
+
+/// Prompt 裁决的用户审批出口（P1-g，2026-10-24 审计）。
+///
+/// dispatch 遇 `PermissionVerdict::Prompt` 时：
+/// 1. 先 `has_approval`——已有未过期的用户批准（同一 capability+action+source 摘要）
+///    则放行；
+/// 2. 否则 `request_approval` 登记审批请求并广播 UI 事件（**非阻塞**），
+///    dispatch 以「待审批」错误返回，调用方（AI）在用户批准后重试即放行。
+/// 实现方：`services::router::permission_prompt::PermissionPromptRegistry`。
+pub trait PermissionPromptSink: Send + Sync {
+    /// 登记一次审批请求并广播 `permission.prompt` 事件，返回 request id。
+    fn request_approval(&self, req: &PermissionRequest) -> Result<String, String>;
+    /// 是否存在对 req 的有效批准（未过期）。
+    fn has_approval(&self, req: &PermissionRequest) -> bool;
+    /// 用户裁决回填（approve → 记批准；deny → 清 pending）。
+    fn resolve(&self, request_id: &str, approved: bool) -> Result<bool, String>;
 }
 
 /// 权限裁决结果

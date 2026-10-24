@@ -85,6 +85,10 @@ struct CompiledRule {
     wildcard: bool,
     source: SourceClass,
     verdict: RuleVerdict,
+    /// 仅对「已鉴权 Remote」（token 与 config.web.token 匹配）生效的内置放行规则
+    /// （P1-f，2026-10-24 审计 X9/X7：Web 模式插件服务管理放行子集）。
+    /// 用户 config 规则恒为 false（不受 token 影响）。
+    require_auth: bool,
 }
 
 impl CompiledRule {
@@ -114,6 +118,10 @@ impl CompiledRule {
 /// 空规则表 = 全放行（与 `StaticPermission` 等价）；收紧规则经 config 显式启用。
 pub struct PolicyPermission {
     rules: RwLock<Vec<CompiledRule>>,
+    /// config.web.token（P1-f）：非空时「token 匹配的 Remote」视为已鉴权 Web 会话，
+    /// `require_auth` 的内置放行规则对其生效（如 cap.pluginServiceManager）。
+    /// None/未设置 → Remote 维持现状全 deny（X9 零回归）。
+    web_token: RwLock<Option<String>>,
 }
 
 impl PolicyPermission {
@@ -121,7 +129,24 @@ impl PolicyPermission {
     pub fn new() -> Self {
         Self {
             rules: RwLock::new(Vec::new()),
+            web_token: RwLock::new(None),
         }
+    }
+
+    /// 注入 web 鉴权 token（装配时从 config.web.token 读取；P1-f）
+    pub fn set_web_token(&self, token: Option<String>) {
+        *self.web_token.write().unwrap() = token.filter(|t| !t.is_empty());
+    }
+
+    /// source 是否为「已鉴权 Remote」（token 与 web_token 一致且非空）
+    fn is_authenticated_remote(&self, source: &Source) -> bool {
+        let Source::Remote { token } = source else {
+            return false;
+        };
+        if token.is_empty() {
+            return false; // 内置浏览器 webview 的空 token 占位恒为未鉴权
+        }
+        matches!(&*self.web_token.read().unwrap(), Some(expected) if expected == token)
     }
 
     /// 从 config.json `permissions` 段构造。
@@ -157,6 +182,7 @@ impl PolicyPermission {
                     wildcard,
                     source,
                     verdict,
+                    require_auth: false,
                 });
             }
         }
@@ -169,7 +195,6 @@ impl PolicyPermission {
         // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
         for (cap_prefix, wildcard) in [
             ("cap.data_root", true),
-            ("cap.plugin", true),
             ("cap.http", true),
             // cap.bash 远程禁发：shell 命令执行是高危面，默认只对本地面板（Bootstrap/
             // Plugin）开放；Web/移动端需要时经 config 精确 allow 显式放开。
@@ -192,10 +217,49 @@ impl PolicyPermission {
                 wildcard,
                 source: SourceClass::Remote,
                 verdict: RuleVerdict::Deny,
+                require_auth: false,
+            });
+        }
+        // P1-f（X9/X7）：cap.plugin 的 Remote deny 拆为两档——
+        // 已鉴权 Remote（token 匹配）放行 cap.pluginServiceManager（服务启停/状态，
+        // Web 模式管理插件的刚需），cap.pluginDiscovery（安装/卸载=文件系统变更）
+        // 仍 deny；未鉴权 Remote 维持全 deny（零回归）。放在 deny 之后 push，
+        // 同特异性（均前缀通配）后者覆盖前者。
+        rules.push(CompiledRule {
+            capability: "cap.plugin".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Deny,
+            require_auth: false,
+        });
+        rules.push(CompiledRule {
+            capability: "cap.pluginServiceManager".to_string(),
+            wildcard: true,
+            source: SourceClass::Remote,
+            verdict: RuleVerdict::Allow,
+            require_auth: true,
+        });
+        // P1-g（审计：AI 操控插件无门控）：Plugin 源（AI 会话）的高危动作需用户
+        // 审批。动作编码进 resource（`capId:action`，dispatch 从 payload.action 注入），
+        // 与内置 deny 同表匹配。批准经 PermissionPromptSink（一次性、10 分钟 TTL）。
+        for prompt_cap in [
+            "cap.pluginServiceManager:stop_for_plugin",
+            "cap.pluginServiceManager:autostart",
+            "cap.pluginDiscovery:uninstall_local",
+            "cap.pluginDiscovery:uninstall_with_cleanup",
+            "cap.pluginDiscovery:force_uninstall",
+        ] {
+            rules.push(CompiledRule {
+                capability: prompt_cap.to_string(),
+                wildcard: false,
+                source: SourceClass::Plugin,
+                verdict: RuleVerdict::Prompt,
+                require_auth: false,
             });
         }
         Self {
             rules: RwLock::new(rules),
+            web_token: RwLock::new(None),
         }
     }
 
@@ -206,11 +270,20 @@ impl PolicyPermission {
         self.rules.read().unwrap().len()
     }
 
-    /// 命中规则（无匹配 → None；特异性高者优先，同特异性后者覆盖前者）
-    fn best_match(&self, capability: &str, source: SourceClass) -> Option<CompiledRule> {
+    /// 命中规则（无匹配 → None；特异性高者优先，同特异性后者覆盖前者）。
+    /// `authenticated_remote`：false 时跳过 require_auth 规则。
+    fn best_match(
+        &self,
+        capability: &str,
+        source: SourceClass,
+        authenticated_remote: bool,
+    ) -> Option<CompiledRule> {
         let rules = self.rules.read().unwrap();
         let mut best: Option<(u8, CompiledRule)> = None;
         for rule in rules.iter() {
+            if rule.require_auth && !authenticated_remote {
+                continue;
+            }
             if rule.matches(capability, source) {
                 let spec = rule.specificity();
                 match &best {
@@ -232,7 +305,16 @@ impl Default for PolicyPermission {
 impl Permission for PolicyPermission {
     fn check(&self, req: &PermissionRequest) -> Result<PermissionVerdict, String> {
         let class = SourceClass::of(&req.source);
-        match self.best_match(&req.capability.0, class) {
+        let authenticated_remote = self.is_authenticated_remote(&req.source);
+        // P1-g：动作级匹配——先试 `capId:action`（更具体），无命中回退 bare id，
+        // 用户既有 bare-id 规则不受影响。
+        if let Some(a) = &req.action {
+            let suffixed = format!("{}:{}", req.capability.0, a);
+            if let Some(rule) = self.best_match(&suffixed, class, authenticated_remote) {
+                return Ok(rule.verdict.to_contract());
+            }
+        }
+        match self.best_match(&req.capability.0, class, authenticated_remote) {
             Some(rule) => Ok(rule.verdict.to_contract()),
             None => Ok(PermissionVerdict::Allow),
         }

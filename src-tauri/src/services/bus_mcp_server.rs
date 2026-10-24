@@ -74,7 +74,26 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
             .map_err(|e| AppError::ProcessError(format!("SqliteStorage 初始化失败: {e}")))?,
     );
     let adapter = Arc::new(EventAdapter::new(64));
-    let permission = Box::new(PolicyPermission::from_config(None));
+    // X8（2026-10-24 审计）：此前 from_config(None) 忽略用户 permissions.rules——
+    // 同机两套权限语义。现从 config.json 装载规则 + web.token（token 分级与主进程一致）。
+    let config_value = std::fs::read_to_string(Path::new(&config_dir).join("config.json"))
+        .ok()
+        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok());
+    let permissions_cfg = config_value.as_ref().and_then(|v| {
+        v.get("permissions").and_then(|p| {
+            serde_json::from_value::<crate::models::config::PermissionPolicyConfig>(p.clone())
+                .ok()
+        })
+    });
+    let web_token = config_value
+        .as_ref()
+        .and_then(|v| v.get("web"))
+        .and_then(|w| w.get("token"))
+        .and_then(|t| t.as_str())
+        .map(String::from);
+    let policy = PolicyPermission::from_config(permissions_cfg.as_ref());
+    policy.set_web_token(web_token);
+    let permission = Box::new(policy);
     let audit: Option<Arc<dyn crate::contracts::AuditSink>> = {
         match FileAuditSink::open(&audit_sink::audit_file_path_named("dispatch-mcp.jsonl")) {
             Ok(sink) => Some(Arc::new(sink)),

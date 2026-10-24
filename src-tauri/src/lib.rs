@@ -627,6 +627,30 @@ pub fn run() {
                     });
                 }
 
+                // 插件服务状态回推中继（P1-3，2026-10-24 审计）：总线事件
+                // `plugin.service.status` → Tauri emit（WS 侧 EventBroadcaster 直达）。
+                // 前端 pluginLifecycleSubscriber 回填 pluginServiceStore。
+                {
+                    let mut raw_rx = state.event_broadcast.subscribe();
+                    let handle = app.handle().clone();
+                    tauri::async_runtime::spawn(async move {
+                        loop {
+                            match raw_rx.recv().await {
+                                Ok(msg) => {
+                                    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&msg) else { continue };
+                                    if parsed.get("event").and_then(|e| e.as_str()) != Some("plugin.service.status") {
+                                        continue;
+                                    }
+                                    let Some(payload) = parsed.get("payload") else { continue };
+                                    let _ = handle.emit("plugin.service.status", payload);
+                                }
+                                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                                Err(_) => break,
+                            }
+                        }
+                    });
+                }
+
                 // 桌面 git-undo-snapshot 中继：cap.git 危险操作快照事件 → Tauri emit，
                 // 前端 toast「撤销」按钮据此弹出（FR-P2-3）。与 chat-event 同经
                 // EventBroadcaster，只在事件 kind 匹配时透传 payload。
@@ -1122,6 +1146,7 @@ pub fn run() {
             commands::router::router_dispatch,
             commands::router::router_list_caps,
             commands::router::audit_tail,
+            commands::router::respond_permission_request,
             commands::router::audit_verify,
             commands::provider_diagnostics::provider_route_logs,
             commands::provider_diagnostics::provider_route_logs_clear,

@@ -15,3 +15,4 @@ export { UnsavedDialog } from './UnsavedDialog';
 export { JsonTreeView } from './JsonTreeView';
 export { Modal } from './Modal';
 export * from './Icons/index';
+export { PermissionPromptHost } from './PermissionPromptHost';

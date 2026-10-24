@@ -15,7 +15,7 @@
 use crate::contracts::{CapabilityId, Envelope, MsgId, Source, TraceId};
 use crate::error::{AppError, Result};
 use serde::{Deserialize, Serialize};
-use crate::contracts::Router as _; // dispatch / subscribe / register_handle
+use crate::contracts::{PermissionPromptSink as _, Router as _}; // dispatch / subscribe / register_handle / resolve
 
 /// 主窗口 label（本地信任域；tauri.conf.json 主窗口配置）
 pub const MAIN_WINDOW_LABEL: &str = "main";
@@ -207,6 +207,21 @@ pub async fn audit_tail(count: Option<usize>) -> Result<AuditTailResponse> {
         crate::services::router::audit_sink::tail_lines(&path, count.unwrap_or(20))
             .map_err(|e| AppError::Unknown(e))?;
     Ok(AuditTailResponse { lines, total })
+}
+
+/// 权限审批回填（P1-g，2026-10-24 审计）：前端确认卡 → 批准/拒绝。
+/// 批准后 AI 重试原调用即放行（PermissionPromptRegistry，10 分钟 TTL）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn respond_permission_request(
+    state: tauri::State<'_, crate::AppState>,
+    request_id: String,
+    approved: bool,
+) -> Result<bool> {
+    state
+        .permission_prompt
+        .resolve(&request_id, approved)
+        .map_err(AppError::Unknown)
 }
 
 /// 审计链校验（逐条重算 sha256 链，篡改定位到行号）
