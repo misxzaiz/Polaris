@@ -6,7 +6,6 @@
 
 import { forwardRef, memo, useMemo, useRef, useCallback, useEffect, useState } from 'react';
 import type { ComponentProps, MutableRefObject } from 'react';
-import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useConfigStore } from '@/stores/configStore';
 import { useToastStore } from '@/stores/toastStore';
@@ -24,6 +23,8 @@ import { ChatNavigator } from '../session/ChatNavigator';
 import { DynamicIsland } from '../dynamic-island';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, BOTTOM_ANCHOR_EPSILON_PX } from './useMessageAutoScroll';
+import { ScrollToBottomButton } from '../common/ScrollToBottomButton';
+import { EmptyState as RichEmptyState } from '../common/EmptyState';
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState';
 import { getKernel } from '@/session-v2/kernel/registry';
 import { ChatScrollContext } from './ChatScrollContext';
@@ -31,17 +32,9 @@ import { ChatScrollContext } from './ChatScrollContext';
 // 模块级稳定空数组（useSessionState fallback 必须引用稳定）
 const EMPTY_MESSAGES: ChatMessage[] = [];
 
-/** 空状态组件 */
-const EmptyState = memo(function EmptyState() {
-  const { t } = useTranslation('chat');
-  return (
-    <div className="h-full flex items-center justify-center text-text-muted">
-      <div className="text-center">
-        <p className="text-sm">{t('emptyState.startChat')}</p>
-      </div>
-    </div>
-  );
-});
+// 批 6（审计 5.11）：空态从一行字升级为富引导（common/EmptyState——Bot 图标 +
+// 三特性卡片，此前是死代码从未渲染）。Virtuoso EmptyPlaceholder 承接，整树不卸载。
+const EmptyState = RichEmptyState;
 
 interface SessionMessagesViewProps {
   sessionId: string;
@@ -304,6 +297,16 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
           increaseViewportBy={VIEWPORT_EXTENSION}
           initialTopMostItemIndex={isEmpty ? 0 : restoreIndex}
         />
+
+        {/* 回到底部常驻按钮（批 6，审计 5.11）：脱离跟随时显示——此前唯一入口埋在
+            ChatNavigator 悬浮面板底部（需 hover 展开），且单轮会话完全不渲染导航，
+            可发现性差。showNewIndicator=流式中且脱离跟随（有新内容正在生成）。 */}
+        {!isEmpty && !autoScroll && (
+          <ScrollToBottomButton
+            onClick={scrollToBottom}
+            showNewIndicator={scrollIsStreaming}
+          />
+        )}
 
         {/* 对话导航时间线 */}
         {!isEmpty && conversationRounds.length > 1 && (

@@ -8,6 +8,7 @@ import { Image, Code, FileText, File, Pencil, Copy, Check } from 'lucide-react';
 import type { UserChatMessage } from '@/types';
 import { formatFileSize, getFileIcon } from '@/types/attachment';
 import { useToastStore } from '@/stores/toastStore';
+import { useLongPress } from './useLongPress';
 import { MessageContextMenu } from '../chatBubbles/MessageContextMenu';
 
 export const UserBubble = memo(function UserBubble({
@@ -61,6 +62,13 @@ export const UserBubble = memo(function UserBubble({
     setContextMenu(null);
   }, []);
 
+  // 批 6（审计 5.8）：触屏长按弹出消息菜单——消息操作此前全部 hover/右键，
+  // 触屏不可达。与右键共用同一 contextMenu state 与 MessageContextMenu。
+  const openMenuAt = useCallback((x: number, y: number) => {
+    setContextMenu({ visible: true, x, y });
+  }, []);
+  const { touchHandlers: longPressHandlers } = useLongPress(openMenuAt);
+
   // 复制消息内容
   const handleCopy = useCallback(async () => {
     try {
@@ -83,7 +91,7 @@ export const UserBubble = memo(function UserBubble({
 
   return (
     <>
-      <div className="chat-user-message flex justify-end group" onContextMenu={handleContextMenu}>
+      <div className="chat-user-message flex justify-end group" onContextMenu={handleContextMenu} {...longPressHandlers}>
         <div className="chat-user-bubble-wrap relative max-w-[85%]">
           {/* Hover 操作栏 - 始终显示复制按钮，有 onEdit 时显示编辑按钮。
               根因修复：原 -top-8 向上溢出，第一条消息上方是滚动容器

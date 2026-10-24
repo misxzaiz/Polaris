@@ -16,6 +16,7 @@ import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
 import { useConfigStore } from '@/stores/configStore';
 import { useThemeStore } from '@/stores/themeStore';
 import { useToastStore } from '@/stores/toastStore';
+import { useLongPress } from './useLongPress';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -97,9 +98,15 @@ export const AssistantBubble = memo(function AssistantBubble({
     setContextMenu(null);
   }, []);
 
+  // 批 6（审计 5.8）：触屏长按弹出消息菜单（同 UserBubble，共用手势 hook）
+  const openMenuAt = useCallback((x: number, y: number) => {
+    setContextMenu({ visible: true, x, y });
+  }, []);
+  const { touchHandlers: longPressHandlers } = useLongPress(openMenuAt);
+
   return (
     <>
-      <div className="chat-assistant-message flex gap-2 p-2 rounded-lg group" onContextMenu={handleContextMenu}>
+      <div className="chat-assistant-message flex gap-2 p-2 rounded-lg group" onContextMenu={handleContextMenu} {...longPressHandlers}>
         {/* Avatar */}
         <div className="shrink-0 mt-0.5">
           <div className="w-5 h-5 rounded-full bg-primary-faint flex items-center justify-center overflow-hidden">

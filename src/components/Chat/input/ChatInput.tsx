@@ -1221,6 +1221,20 @@ export function ChatInput({
     const trimmed = value.trim()
     const hasBlocks = contextBlocksRef.current.length > 0
     if (disabled && attachments.length === 0 && !hasBlocks) return
+    // 批 6（审计 5.11）：输入长度上限——附件有完整限制而纯文本无上限，粘贴
+    // 几十万字符直接进草稿与引擎。与附件纪律对齐（validateAttachment 同形态
+    // toast 拦截），普通对话远低于此阈值，只有误粘贴大文件内容才会触达。
+    const MAX_INPUT_CHARS = 200_000
+    if (trimmed.length > MAX_INPUT_CHARS) {
+      useToastStore.getState().warning(
+        t('input.tooLong', '消息过长（{{count}} 字符，上限 {{max}}）', {
+          count: trimmed.length,
+          max: MAX_INPUT_CHARS,
+        }),
+        t('input.tooLongHint', '请分段发送，或把大段内容存为文件后用 @引用'),
+      )
+      return
+    }
     // 输入为空但有待发送队列：Enter 直接发送队首（立即优先；流式中自动中断当前回复再发）
     if (!trimmed && !editMode && pendingQueue.length > 0 && attachments.length === 0 && !hasBlocks) {
       void sendPendingNow(pendingQueue[0].id)

@@ -41,10 +41,15 @@ function handleConnectionStatusChange(status: ConnectionStatus): void {
 
   if (status === 'failed') {
     if (!connectionLostToastId) {
-      connectionLostToastId = store.error(
-        i18n.t('settings:web.connectionLost'),
-        i18n.t('settings:web.connectionLostDesc'),
-      );
+      // 批 6（审计 5.10）：断线提示常驻——此前 6s 自动消失，之后用户面对的是
+      // 静默停住的流式与状态栏角落一个 title-only 小图标。duration 0 = 不自动
+      // 移除，恢复时主动 removeToast（下方 connected 分支已有）。
+      connectionLostToastId = store.addToast({
+        type: 'error',
+        title: i18n.t('settings:web.connectionLost'),
+        message: i18n.t('settings:web.connectionLostDesc'),
+        duration: 0,
+      });
     }
   } else if (status === 'connected') {
     if (connectionLostToastId) {
