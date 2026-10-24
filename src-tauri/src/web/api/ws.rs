@@ -60,6 +60,18 @@ fn validate_ws_token(query: &WsAuthParams, state: &AppState) -> Result<(), u16> 
 
     // No token configured — open mode
     let Some(raw_token) = required else {
+        // 批 7（审计 1.9 完整形态前的缓解）：开放模式每次连接告警——部署在
+        // 0.0.0.0 且无 token 时，局域网内任意设备可订阅全部 chat-event 明文。
+        // 不在此处强制拒绝（会破坏现有局域网使用），以告警提示配置 token；
+        // 绑定回环的部署（host=127.0.0.1）无暴露面，不告警。
+        if !state.clone_config_web().map(|c| c.web.host).unwrap_or_default()
+            .split(',').map(str::trim)
+            .all(|h| h == "127.0.0.1" || h == "localhost" || h == "::1" || h.is_empty())
+        {
+            tracing::warn!(
+                "[WS] 未配置访问 token 且服务绑定非回环地址——局域网内任意设备可连接并读取全部会话事件。建议在配置 web.token 启用鉴权"
+            );
+        }
         return Ok(());
     };
 
