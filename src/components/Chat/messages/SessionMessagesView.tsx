@@ -9,6 +9,7 @@ import type { ComponentProps, MutableRefObject } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useConfigStore } from '@/stores/configStore';
+import { useToastStore } from '@/stores/toastStore';
 import { useSessionState } from '@/stores/conversationStore/useActiveSession';
 import { renderChatMessage } from './renderChatMessage';
 import type { MessageScrollActions, MessageActions } from './renderChatMessage';
@@ -24,6 +25,7 @@ import { DynamicIsland } from '../dynamic-island';
 import { VIEWPORT_EXTENSION, FOOTER_SPACER_STYLE } from '../chatUtils/constants';
 import { useMessageAutoScroll, BOTTOM_ANCHOR_EPSILON_PX } from './useMessageAutoScroll';
 import { useKernelSessionState } from '@/session-v2/hooks/useKernelSessionState';
+import { getKernel } from '@/session-v2/kernel/registry';
 import { ChatScrollContext } from './ChatScrollContext';
 
 // 模块级稳定空数组（useSessionState fallback 必须引用稳定）
@@ -218,9 +220,27 @@ export const SessionMessagesView = memo(function SessionMessagesView({ sessionId
   }), [scrollToMessage, scrollToTop, scrollToBottom]);
 
   // 消息操作
+  // 重新生成：直连 kernel（委托该会话 store 的 regenerateResponse，内部含流式守卫）。
+  // 此前 messageActions 只构造 onEdit，AssistantBubble 的 onRegenerate 分支永远不渲染，
+  // 后端链路就绪的能力从未暴露到 UI（审计 5.5）。按显式 sessionId 调用，
+  // 多开格中的后台会话也能在格内重新生成。
+  const handleRegenerateMessage = useCallback((messageId: string) => {
+    void getKernel().then((kernel) => kernel.regenerate(sessionId, messageId))
+  }, [sessionId]);
+
+  // 编辑入口守卫：流式中进入编辑态后，发送会被 store 静默拒绝并清空输入（审计 5.4）。
+  // 在入口拦截并提示，避免用户白改一通后丢失。ChatInput 侧还有第二道发送时守卫。
+  const handleEditGuarded = useCallback((messageId: string, content: string) => {
+    if (scrollIsStreaming) {
+      useToastStore.getState().warning('回复进行中，暂不能编辑消息，请等回复结束')
+      return
+    }
+    onEditMessage?.(messageId, content)
+  }, [onEditMessage, scrollIsStreaming]);
+
   const messageActions = useMemo<MessageActions | undefined>(() => {
-    return onEditMessage ? { onEdit: onEditMessage } : undefined;
-  }, [onEditMessage]);
+    return { onEdit: handleEditGuarded, onRegenerate: handleRegenerateMessage };
+  }, [handleEditGuarded, handleRegenerateMessage]);
 
   // Scroller 包装：向上滚动=用户主动离开，通知锚点模式停止跟随；
   // onScroll 采样距底维护「落点裁决」（恢复跟随 / 流式中离开），滚动条拖动、

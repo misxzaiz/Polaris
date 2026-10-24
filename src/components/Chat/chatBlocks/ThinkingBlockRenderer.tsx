@@ -119,7 +119,11 @@ export const ThinkingBlockRenderer = memo(function ThinkingBlockRenderer({
 
           <Brain className="w-4 h-4 text-primary/60 shrink-0" />
 
-          <span className="text-xs font-medium text-primary/70">思考中</span>
+          {/* 流式中显示「思考中」，完成后显示「已思考」——此前无条件显示「思考中」，
+              历史消息里已完成的思考块让用户误以为还在想（审计 5.11） */}
+          <span className="text-xs font-medium text-primary/70">
+            {isStreaming ? '思考中' : '已思考'}
+          </span>
 
           {/* 展开/折叠箭头 */}
           <ChevronDown

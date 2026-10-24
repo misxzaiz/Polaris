@@ -21,6 +21,7 @@ import { ChevronDown, Square, TriangleAlert, CircleCheck } from 'lucide-react';
 import { useRuntimeSummary, formatDuration, type CompactSlide, type UrgentCard } from './useRuntimeSummary';
 import { DynamicIslandExpanded } from './DynamicIslandExpanded';
 import { findStoreByConversationId } from '@/stores/conversationStore/sessionStoreManager';
+import { useToastStore } from '@/stores/toastStore';
 import { aiChatDispatch } from '@/services/aiChatDispatch'
 import type { PermissionRequestBlock, QuestionBlock } from '@/types/chat';
 import './DynamicIsland.css';
@@ -192,8 +193,13 @@ export function DynamicIsland({ sessionId = null }: DynamicIslandProps) {
             answer: { answers: [], declined: !approved },
           });
         }
-      } catch {
-        // 决策失败交由消息流兜底，此处静默
+      } catch (error) {
+        // 决策失败：消息流中的卡片保持 pending（可去卡片重试），但此前完全静默、
+        // 用户以为点了没反应（审计 5.6）。这里给最小可见反馈。
+        useToastStore.getState().error(
+          '快捷决策失败，请在消息卡片中重试',
+          error instanceof Error ? error.message : String(error)
+        );
       }
     })();
   }, []);

@@ -12,6 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { aiChatDispatch } from '@/services/aiChatDispatch'
 import { createLogger } from '@/utils/logger';
+import { useToastStore } from '@/stores/toastStore';
 import {
   Check,
   XCircle,
@@ -256,10 +257,15 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
       }
     } catch (error) {
       log.error('批准计划失败:', error instanceof Error ? error : new Error(String(error)));
+      // 提交失败卡片停留待审批态（可重试），但必须有可见反馈——此前仅落日志（审计 5.6）
+      useToastStore.getState().error(
+        t('plan.approveFailed', '批准计划失败，请重试'),
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       setIsSubmitting(false);
     }
-  }, [isInteractive, isSubmitting, conversationId, block.id, buildApprovalPrompt, continueChat]);
+  }, [isInteractive, isSubmitting, conversationId, block.id, buildApprovalPrompt, continueChat, t]);
 
   // 拒绝计划
   const handleReject = useCallback(async () => {
@@ -283,6 +289,10 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
       setShowFeedbackInput(false);
     } catch (error) {
       log.error('拒绝计划失败:', error instanceof Error ? error : new Error(String(error)));
+      useToastStore.getState().error(
+        t('plan.rejectFailed', '拒绝计划失败，请重试'),
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -294,6 +304,7 @@ export const PlanModeBlockRenderer = memo(function PlanModeBlockRenderer({
     rejectFeedback,
     buildApprovalPrompt,
     continueChat,
+    t,
   ]);
 
   // 从 stages 中提取扁平步骤列表

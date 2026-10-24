@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { createLogger } from '@/utils/logger';
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager';
+import { useToastStore } from '@/stores/toastStore';
 import { Button } from '../../Common/Button';
 import type { PermissionRequestBlock, PermissionDenialBlock, PermissionScope } from '@/types';
 import { addClaudePermissionRules } from '@/services/claudeSettingsService';
@@ -312,11 +313,16 @@ export const PermissionRequestRenderer = memo(function PermissionRequestRenderer
       }
     } catch (error) {
       log.error('提交权限决策失败:', error instanceof Error ? error : new Error(String(error)));
-      // continueChat 失败：保持 submittedStatus 为 null，UI 停留在 pending 态
+      // continueChat 失败：保持 submittedStatus 为 null，UI 停留在 pending 态（可重试）。
+      // 此前仅落日志，用户点提交无任何可见反馈（审计 5.6），对齐 AskQuestionCard 加 toast。
+      useToastStore.getState().error(
+        t('permission.submitFailed', '权限决策提交失败，请重试'),
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       setIsProcessing(false);
     }
-  }, [isProcessing, counts.decided, block.denials, block.id, block.sessionId, decisions, scope, getStoreByConversationId]);
+  }, [isProcessing, counts.decided, block.denials, block.id, block.sessionId, decisions, scope, getStoreByConversationId, t]);
 
   // 键盘：Enter=批准/提交，Shift+Enter=拒绝/全部拒绝（保留 plan 原交互）
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {

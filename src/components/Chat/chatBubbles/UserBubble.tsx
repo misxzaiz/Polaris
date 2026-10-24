@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { Image, Code, FileText, File, Pencil, Copy, Check } from 'lucide-react';
 import type { UserChatMessage } from '@/types';
 import { formatFileSize, getFileIcon } from '@/types/attachment';
+import { useToastStore } from '@/stores/toastStore';
 import { MessageContextMenu } from '../chatBubbles/MessageContextMenu';
 
 export const UserBubble = memo(function UserBubble({
@@ -66,8 +67,14 @@ export const UserBubble = memo(function UserBubble({
       await navigator.clipboard.writeText(message.content);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* ignore */ }
-  }, [message.content]);
+    } catch (e) {
+      // 此前静默吞错，用户以为复制成功（审计 5.11）
+      useToastStore.getState().error(
+        t('contextMenu.copyFailed', '复制失败'),
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }, [message.content, t]);
 
   // 编辑消息
   const handleEdit = useCallback(() => {

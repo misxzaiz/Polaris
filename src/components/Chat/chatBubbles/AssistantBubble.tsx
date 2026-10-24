@@ -15,6 +15,7 @@ import { getEngineDisplayName } from '@/utils/engineDisplay';
 import { MarkdownImageSurface } from '../common/MarkdownImageSurface';
 import { useConfigStore } from '@/stores/configStore';
 import { useThemeStore } from '@/stores/themeStore';
+import { useToastStore } from '@/stores/toastStore';
 
 export const AssistantBubble = memo(function AssistantBubble({
   message,
@@ -59,8 +60,14 @@ export const AssistantBubble = memo(function AssistantBubble({
       await navigator.clipboard.writeText(messageText);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch { /* 复制失败静默处理 */ }
-  }, [messageText]);
+    } catch (e) {
+      // 此前静默吞错，用户以为复制成功（审计 5.11）
+      useToastStore.getState().error(
+        t('contextMenu.copyFailed', '复制失败'),
+        e instanceof Error ? e.message : String(e)
+      );
+    }
+  }, [messageText, t]);
 
   // 右键菜单状态
   const [contextMenu, setContextMenu] = useState<{
