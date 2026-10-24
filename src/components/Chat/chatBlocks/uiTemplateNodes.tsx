@@ -9,6 +9,7 @@
 import type { ReactNode } from 'react'
 import type { UiGap, UiTemplateNode, UiTone } from '@/plugin-system/uiFrameTypes'
 import { interpolateParams } from '@/plugin-system/uiFrameTypes'
+import { ChartNodeView } from './chartNodeView'
 
 /** 渲染上下文：插值参数 + 交互闭包依赖 */
 export interface UiNodeRenderContext {
@@ -227,6 +228,8 @@ function renderNode(node: UiTemplateNode, ctx: UiNodeRenderContext): ReactNode {
         </label>
       )
     }
+    case 'chart':
+      return <ChartNodeView node={node} />
     default:
       return (
         <span className="rounded bg-error-faint/40 px-2 py-1 text-[11px] text-danger">

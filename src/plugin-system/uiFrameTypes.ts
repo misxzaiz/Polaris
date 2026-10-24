@@ -44,6 +44,26 @@ export type UiTemplateNode =
       placeholder?: string
       default?: string
     }
+  | {
+      type: 'chart'
+      /** 图表类型（area 不在 v1 契约内，填充效果由 bar 的 fill-opacity 表达） */
+      chartType: 'line' | 'bar' | 'pie'
+      /** X 轴标签（pie 下与 data 一一对应） */
+      labels: string[]
+      datasets: UiChartDataset[]
+      title?: string
+      /** 图例（默认 true） */
+      showLegend?: boolean
+      /** 网格线（默认 true，pie 忽略） */
+      showGrid?: boolean
+    }
+
+/** chart 节点的数据集；color 是数据语义色（可选 #RRGGBB，缺省走主题色序列） */
+export interface UiChartDataset {
+  label: string
+  data: number[]
+  color?: string
+}
 
 /** 模板按钮（footer；应答 action = id） */
 export interface UiTemplateButton {

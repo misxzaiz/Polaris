@@ -1,6 +1,6 @@
 # spec: cap.ui.render 图表节点扩展（chart）
 
-> 日期：2026-10-25 · 状态：待实施
+> 日期：2026-10-25 · 状态：**已实施（2026-10-25，v1.1 修订选型为自绘 SVG）**
 > 背景：`cap.ui.render` DSL 当前不支持图表节点，导致折线图/柱状图等可视化需求需绕道 HTML 预览或表格。本方案扩展 DSL 白名单，增加声明式图表节点。
 
 ---
@@ -49,9 +49,10 @@ const TEMPLATE_NODE_TYPES: &[&str] = &[
 
 | 决策点 | 选择 | 理由 |
 |---|---|---|
-| 图表库 | Chart.js v4（CDN） | 成熟、轻量、支持多种图表类型 |
-| 渲染位置 | 前端 React 组件内嵌 Canvas | 与既有 DSL 渲染器对齐，无需 iframes |
-| 节点形态 | DSL 扩展 `chart` 节点 + 子节点 `datasets` | 保持声明式风格，参数化数据 |
+| 图表实现 | **自绘 SVG（v1.1 修订，实施采用）** | 零新依赖；SVG 经 style 注入 `rgb(var(--c-*))` 完全主题化，无硬编码颜色；DSL 数据规模（labels ≤100 / datasets ≤10）手绘完全可控；hover 用原生 `<title>` |
+| ~~图表库~~ | ~~Chart.js v4（v1.0 原案，已否决）~~ | 原示例代码有三处 `area` 字面量比较（类型联合不含 area，TS2367）、硬编码颜色违反主题纪律、CDN 方案在桌面离线场景不可靠 |
+| 渲染位置 | 前端 React 组件内嵌 SVG | 与既有 DSL 渲染器对齐，无需 iframes/canvas |
+| 节点形态 | DSL 扩展 `chart` 节点 + `datasets` 数组 | 保持声明式风格，参数化数据；无 `fillColor`（bar 填充用 fill-opacity 表达） |
 | 模式 | 仅 `display`（fire-and-forget） | 图表为展示型，无需交互应答 |
 | 持久化 | 不支持 | 图表数据临时性，不入 Storage |
 
@@ -59,37 +60,34 @@ const TEMPLATE_NODE_TYPES: &[&str] = &[
 
 ## 4. DSL Schema（提案）
 
-### 4.1 chart 节点定义
+### 4.1 chart 节点定义（v1.1 实施版）
 
 ```typescript
 type UiTemplateNode =
   | // ... 既有节点 ...
   | {
       type: 'chart'
-      /** 图表类型：'line' | 'bar' | 'pie' */
+      /** 图表类型：'line' | 'bar' | 'pie'（area 不在 v1 契约内） */
       chartType: 'line' | 'bar' | 'pie'
-      /** X 轴标签 */
+      /** X 轴标签（pie 下与 data 一一对应） */
       labels: string[]
-      /** 数据集列表 */
-      datasets: ChartDataset[]
+      datasets: UiChartDataset[]
       /** 图表标题（可选） */
       title?: string
       /** 是否显示图例（默认 true） */
       showLegend?: boolean
-      /** 是否显示网格线（默认 true） */
+      /** 是否显示网格线（默认 true，pie 忽略） */
       showGrid?: boolean
     }
 
-/** 单个数据集 */
-type ChartDataset = {
+/** 单个数据集（无 fillColor：bar 填充用 fill-opacity 表达） */
+type UiChartDataset = {
   /** 数据集标签（图例显示） */
   label: string
-  /** 数据点值 */
+  /** 数据点值（与 labels 等长，后端校验） */
   data: number[]
-  /** 线条/柱子颜色（可选，默认自动分配） */
+  /** 数据语义色（可选 #RRGGBB，缺省走主题 CSS 变量色序列） */
   color?: string
-  /** 填充颜色（area 模式，可选） */
-  fillColor?: string
 }
 ```
 
@@ -119,7 +117,9 @@ type ChartDataset = {
 
 ---
 
-## 5. 后端改动（Rust）
+## 5. 后端改动（Rust）——已实施
+
+落点 `src-tauri/src/services/router/ui_render_capability.rs`：`TEMPLATE_NODE_TYPES` 白名单加 `"chart"`；`validate_template_node` 新增 `"chart"` 分支（chartType ∈ line/bar/pie、labels 1–100、datasets 1–10、data 与 labels 等长且为有限数字、color 须 #RRGGBB、title ≤120、showLegend/showGrid 布尔）。以下为设计草案（实现以代码为准，错误消息风格对齐既有中文前缀格式）：
 
 ### 5.1 扩展白名单
 
@@ -202,163 +202,16 @@ const TEMPLATE_NODE_TYPES: &[&str] = &[
 
 ---
 
-## 6. 前端改动（TypeScript/React）
+## 6. 前端改动（TypeScript/React）——已实施
 
-### 6.1 类型扩展
+实现落点（v1.1 自绘 SVG 版）：
 
-**文件**：`src/plugin-system/uiFrameTypes.ts`
-
-```typescript
-export type UiTemplateNode =
-  | { type: 'vstack'; gap?: UiGap; children: UiTemplateNode[] }
-  | { type: 'hstack'; gap?: UiGap; align?: 'start' | 'center' | 'end'; children: UiTemplateNode[] }
-  | { type: 'text'; content: string; tone?: UiTone; bold?: boolean }
-  | { type: 'metric'; label?: string; value: string; hint?: string }
-  | { type: 'badge'; label: string; tone?: UiTone }
-  | { type: 'table'; columns: string[]; rows: string[][] }
-  | { type: 'progress'; value: number; label?: string }
-  | { type: 'divider'; label?: string }
-  | { type: 'input'; field: string; label?: string; placeholder?: string; multiline?: boolean; default?: string }
-  | { type: 'select'; field: string; options: string[]; label?: string; placeholder?: string; default?: string }
-  | {
-      /** 新增：图表节点 */
-      type: 'chart'
-      chartType: 'line' | 'bar' | 'pie'
-      labels: string[]
-      datasets: ChartDataset[]
-      title?: string
-      showLegend?: boolean
-      showGrid?: boolean
-    }
-
-export type ChartDataset = {
-  label: string
-  data: number[]
-  color?: string
-  fillColor?: string
-}
-```
-
-### 6.2 渲染器扩展
-
-**文件**：`src/components/Chat/chatBlocks/uiTemplateNodes.tsx`
-
-新增 `ChartNodeRenderer` 组件：
-
-```tsx
-import { useEffect, useRef } from 'react'
-import Chart from 'chart.js/auto'
-
-interface ChartNodeProps {
-  node: {
-    type: 'chart'
-    chartType: 'line' | 'bar' | 'pie'
-    labels: string[]
-    datasets: ChartDataset[]
-    title?: string
-    showLegend?: boolean
-    showGrid?: boolean
-  }
-}
-
-const DEFAULT_COLORS = [
-  '#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6',
-  '#ec4899', '#06b6d4', '#f97316', '#6366f1', '#14b8a6'
-]
-
-export function ChartNodeRenderer({ node }: ChartNodeProps) {
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const chartRef = useRef<Chart | null>(null)
-
-  useEffect(() => {
-    if (!canvasRef.current) return
-    
-    // 销毁旧实例
-    if (chartRef.current) {
-      chartRef.current.destroy()
-    }
-
-    const ctx = canvasRef.current.getContext('2d')
-    if (!ctx) return
-
-    // 构建数据集
-    const datasets = node.datasets.map((ds, i) => ({
-      label: ds.label,
-      data: ds.data,
-      borderColor: ds.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length],
-      backgroundColor: ds.fillColor || (ds.color || DEFAULT_COLORS[i % DEFAULT_COLORS.length]) + '20',
-      fill: node.chartType === 'area',
-      tension: 0.3,
-    }))
-
-    // 创建图表
-    chartRef.current = new Chart(ctx, {
-      type: node.chartType === 'area' ? 'line' : node.chartType,
-      data: { labels: node.labels, datasets },
-      options: {
-        responsive: true,
-        maintainAspectRatio: true,
-        plugins: {
-          legend: { display: node.showLegend !== false },
-          title: { 
-            display: !!node.title,
-            text: node.title,
-            color: '#e0e0e0',
-            font: { size: 14 }
-          },
-          tooltip: {
-            backgroundColor: '#16213e',
-            titleColor: '#fff',
-            bodyColor: '#ccc',
-          }
-        },
-        scales: node.chartType !== 'pie' ? {
-          x: { 
-            grid: { color: '#2a2a4a' },
-            ticks: { color: '#888' }
-          },
-          y: {
-            grid: { color: '#2a2a4a' },
-            ticks: { color: '#888' }
-          }
-        } : undefined
-      }
-    })
-
-    return () => {
-      if (chartRef.current) {
-        chartRef.current.destroy()
-      }
-    }
-  }, [node])
-
-  return (
-    <div className="w-full p-3 rounded-lg bg-background-elevated">
-      <canvas ref={canvasRef} className="max-h-80" />
-    </div>
-  )
-}
-```
-
-### 6.3 注册到渲染器
-
-**文件**：同上，在 `renderTemplateNodes` 函数中新增分支：
-
-```tsx
-case 'chart': {
-  const chartNode = node as Extract<UiTemplateNode, { type: 'chart' }>
-  return <ChartNodeRenderer key={i} node={chartNode} />
-}
-```
-
-### 6.4 样式适配
-
-图表容器使用主题 token：
-- `bg-background-elevated` — 背景
-- `border-border` — 边框（可选）
-- `rounded-lg` — 圆角
-
----
+- `src/plugin-system/uiFrameTypes.ts`：`UiTemplateNode` 新增 `chart` 变体 + `UiChartDataset` 接口（见 §4.1）。
+- `src/components/Chat/chatBlocks/chartNodeView.tsx`（新增）：`ChartNodeView` 渲染器。line/bar 走 `AxisChart`（viewBox 600×280，y 轴 nice 刻度 + 网格线，bar 用 fill-opacity，line 用 polyline + 数据点圆点）；pie 走 `PieChart`（扇区 path，单扇区 100% 退化为 circle，图例附百分比）。hover 提示用 SVG `<title>`；图例是 HTML div（便于换行）。
+- `src/components/Chat/chatBlocks/uiTemplateNodes.tsx`：`renderNode` 加 `case 'chart'` 分发到 `ChartNodeView`。
+- 主题纪律：默认系列色序列 = 主题 CSS 变量（`rgb(var(--c-primary))` / `--c-accent-ai` / `--c-status-*` 循环），**只能经 style 注入**（SVG presentation attribute 不解析 var()）；网格线用 `var(--c-border)`；文字 `fill="currentColor"` + Tailwind `text-text-*`。调用方显式 `color`（hex）是数据语义色，直接使用。
+- x 轴标签 >16 个时隔位抽样显示（`labelStride`），避免重叠。
+- NaN/Infinity 数据点渲染时钳制为 0（后端已校验拒绝，前端轻防御）。
 
 ## 7. 调用示例
 
@@ -444,73 +297,44 @@ curl -X POST http://localhost:9829/api/router_dispatch \
 
 ---
 
-## 10. 影响范围
+## 10. 影响范围（实施结果）
 
 | 文件 | 改动类型 | 说明 |
 |---|---|---|
-| `src-tauri/src/services/router/ui_render_capability.rs` | 修改 | 白名单 + 校验 |
-| `src/plugin-system/uiFrameTypes.ts` | 修改 | 类型定义 |
-| `src/components/Chat/chatBlocks/uiTemplateNodes.tsx` | 修改 | 渲染器 |
-| `src/components/Chat/chatBlocks/UiFrameCard.tsx` | 小改 | 透传 chart 节点 |
+| `src-tauri/src/services/router/ui_render_capability.rs` | 修改 | 白名单 + chart 校验分支 + 5 个单测（本机 cargo test 受限，CI 兜底）+ describe 文案 |
+| `src/plugin-system/uiFrameTypes.ts` | 修改 | `chart` 变体 + `UiChartDataset` |
+| `src/components/Chat/chatBlocks/chartNodeView.tsx` | **新增** | 自绘 SVG 渲染器（AxisChart / PieChart / niceMax） |
+| `src/components/Chat/chatBlocks/chartNodeView.test.tsx` | **新增** | 8 个 vitest 用例（全过） |
+| `src/components/Chat/chatBlocks/uiTemplateNodes.tsx` | 修改 | `case 'chart'` 分发 |
+| `src/components/Chat/chatBlocks/UiFrameCard.tsx` | 不改 | template 帧自动经 renderTemplateNodes 走到新 case |
 
 ---
 
 ## 11. 依赖
 
-- Chart.js v4 CDN（`https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js`）
-- 需在前端组件中 `import Chart from 'chart.js/auto'` 或动态加载
+**无新增依赖**（v1.1 自绘 SVG；v1.0 原案的 Chart.js v4 CDN 方案已否决——桌面离线场景 CDN 不可靠，且引库需新增 npm 依赖）。
 
 ---
 
-## 12. 测试计划
+## 12. 测试计划——已落地
 
-### 12.1 单元测试（前端）
+### 12.1 前端（`src/components/Chat/chatBlocks/chartNodeView.test.tsx`，8 用例全过）
 
-```typescript
-// src/plugin-system/uiFrameTypes.test.ts
-describe('ChartDataset schema', () => {
-  it('valid dataset', () => {
-    expect(isChartDataset({ label: 'test', data: [1, 2, 3] })).toBe(true)
-  })
-  
-  it('invalid data length', () => {
-    expect(isChartDataset({ label: 'test', data: [1, 2] })).toBe(false) // labels 长度不匹配
-  })
-})
-```
+- `niceMax` 刻度取整（1/2/5×10^k）
+- line：折线数、每点 hover title、图例文本
+- bar：柱矩形数量
+- pie：扇区 path + 图例百分比；单扇区 100% 退化为 circle
+- showLegend=false 图例消失；自定义 color 生效
+- 默认系列色走主题 CSS 变量（style 注入断言）
+- NaN 数据点钳制为 0，坐标不含 NaN
+- vstack 嵌套 chart 经 renderTemplateNodes 统一入口渲染
 
-### 12.2 集成测试（Rust）
+### 12.2 Rust（`ui_render_capability.rs` tests 模块，5 用例）
 
-```rust
-#[test]
-fn test_validate_chart_node_valid() {
-    let node = json!({
-        "type": "chart",
-        "chartType": "line",
-        "labels": ["A", "B", "C"],
-        "datasets": [{
-            "label": "Series 1",
-            "data": [1, 2, 3],
-            "color": "#3b82f6"
-        }]
-    });
-    assert!(validate_template_node(&node, 1, &mut 1).is_ok());
-}
-
-#[test]
-fn test_validate_chart_node_invalid_type() {
-    let node = json!({
-        "type": "chart",
-        "chartType": "3d", // 无效
-        "labels": [],
-        "datasets": []
-    });
-    assert!(validate_template_node(&node, 1, &mut 1).is_err());
-}
-```
+valid 节点 / 非法 chartType（含 area）/ data 长度不匹配 / 坏 color（#12345、#GGGGGG、无 # 前缀）/ 空 labels 或空 datasets。本机 `cargo test --lib` 受 Tauri DLL 限制不可跑（AGENTS.md §九），由 CI 执行，本地以 `cargo check` 验证编译。
 
 ---
 
-**文档版本**：v1.0  
+**文档版本**：v1.1（实施版：选型改自绘 SVG、删除 area/fillColor、标注已实施）  
 **最后更新**：2026-10-25  
-**状态**：待实施
+**状态**：已实施

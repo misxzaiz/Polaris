@@ -98,7 +98,12 @@ const TEMPLATE_NODE_TYPES: &[&str] = &[
     "divider",
     "input",
     "select",
+    "chart",
 ];
+
+/// chart 节点规模上限（labels 与各 dataset.data 等长，datasets 1-10）
+const CHART_MAX_LABELS: usize = 100;
+const CHART_MAX_DATASETS: usize = 10;
 
 /// 模板结构上限（防滥用；与前端渲染容错上限一致）
 const TEMPLATE_MAX_NODES: usize = 64;
@@ -389,6 +394,118 @@ impl UiRenderCapability {
                     })?;
                     if s.chars().count() > 64 {
                         return Err("cap.ui.render.register select option 超长（>64 字符）".to_string());
+                    }
+                }
+            }
+            "chart" => {
+                let chart_type = obj
+                    .get("chartType")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| "cap.ui.render.register chart 缺少 chartType".to_string())?;
+                if !matches!(chart_type, "line" | "bar" | "pie") {
+                    return Err(format!(
+                        "cap.ui.render.register chart.chartType 不支持: {}（允许 line/bar/pie）",
+                        chart_type
+                    ));
+                }
+                let labels = obj
+                    .get("labels")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| "cap.ui.render.register chart 缺少 labels 数组".to_string())?;
+                if labels.is_empty() || labels.len() > CHART_MAX_LABELS {
+                    return Err(format!(
+                        "cap.ui.render.register chart labels 数量越界（1-{CHART_MAX_LABELS}，当前 {}）",
+                        labels.len()
+                    ));
+                }
+                for label in labels {
+                    let s = label.as_str().ok_or_else(|| {
+                        "cap.ui.render.register chart label 必须是字符串".to_string()
+                    })?;
+                    if s.chars().count() > 64 {
+                        return Err(
+                            "cap.ui.render.register chart label 超长（>64 字符）".to_string()
+                        );
+                    }
+                }
+                let datasets = obj
+                    .get("datasets")
+                    .and_then(|v| v.as_array())
+                    .ok_or_else(|| "cap.ui.render.register chart 缺少 datasets 数组".to_string())?;
+                if datasets.is_empty() || datasets.len() > CHART_MAX_DATASETS {
+                    return Err(format!(
+                        "cap.ui.render.register chart datasets 数量越界（1-{CHART_MAX_DATASETS}，当前 {}）",
+                        datasets.len()
+                    ));
+                }
+                for (i, ds) in datasets.iter().enumerate() {
+                    let ds_obj = ds.as_object().ok_or_else(|| {
+                        format!("cap.ui.render.register chart dataset[{i}] 必须是对象")
+                    })?;
+                    let ds_label = ds_obj
+                        .get("label")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            format!("cap.ui.render.register chart dataset[{i}] 缺少 label")
+                        })?;
+                    if ds_label.chars().count() > 100 {
+                        return Err(format!(
+                            "cap.ui.render.register chart dataset[{i}] label 超长（>100 字符）"
+                        ));
+                    }
+                    let data = ds_obj
+                        .get("data")
+                        .and_then(|v| v.as_array())
+                        .ok_or_else(|| {
+                            format!("cap.ui.render.register chart dataset[{i}] 缺少 data 数组")
+                        })?;
+                    if data.len() != labels.len() {
+                        return Err(format!(
+                            "cap.ui.render.register chart dataset[{i}] data 长度 {} 与 labels 长度 {} 不一致",
+                            data.len(),
+                            labels.len()
+                        ));
+                    }
+                    for v in data {
+                        if !matches!(v.as_f64(), Some(n) if n.is_finite()) {
+                            return Err(format!(
+                                "cap.ui.render.register chart dataset[{i}] data 含非有限数字"
+                            ));
+                        }
+                    }
+                    if let Some(color) = ds_obj.get("color") {
+                        let c = color.as_str().ok_or_else(|| {
+                            format!(
+                                "cap.ui.render.register chart dataset[{i}].color 必须是字符串"
+                            )
+                        })?;
+                        let valid = c.len() == 7
+                            && c.starts_with('#')
+                            && c[1..].bytes().all(|b| b.is_ascii_hexdigit());
+                        if !valid {
+                            return Err(format!(
+                                "cap.ui.render.register chart dataset[{i}].color 格式错误（应为 #RRGGBB）: {c}"
+                            ));
+                        }
+                    }
+                }
+                if let Some(title) = obj.get("title") {
+                    let t = title.as_str().ok_or_else(|| {
+                        "cap.ui.render.register chart.title 必须是字符串".to_string()
+                    })?;
+                    if t.chars().count() > 120 {
+                        return Err(
+                            "cap.ui.render.register chart.title 超长（>120 字符）".to_string()
+                        );
+                    }
+                }
+                for key in ["showLegend", "showGrid"] {
+                    if let Some(v) = obj.get(key) {
+                        if !v.is_boolean() {
+                            return Err(format!(
+                                "cap.ui.render.register chart.{key} 必须是布尔"
+                            ));
+                        }
                     }
                 }
             }
@@ -747,7 +864,7 @@ impl Capability for UiRenderCapability {
                     "templateId": "string 必填 ≤64 [A-Za-z0-9\\-_./:]",
                     "title": "string?",
                     "description": "string?",
-                    "dsl": "Node[] 必填（vstack/hstack/text/metric/badge/table/progress/divider/input/select，text 支持 {{param}} 插值）",
+                    "dsl": "Node[] 必填（vstack/hstack/text/metric/badge/table/progress/divider/input/select/chart，text 支持 {{param}} 插值；chart = {chartType: line|bar|pie, labels, datasets: [{label, data, color?}], title?, showLegend?, showGrid?}，前端自绘 SVG 渲染）",
                     "buttons": "[{id,label,danger?}]?（≤8）",
                     "persist": "boolean? 默认 true（仅内存传 false）"
                 }, "returns": "{ registered, templateId, persisted }" },
@@ -786,5 +903,86 @@ impl Capability for UiRenderCapability {
 
     fn dependencies(&self) -> Vec<CapabilityId> {
         Vec::new()
+    }
+}
+
+// 本机 cargo test --lib 受 Tauri DLL 启动限制不可跑（AGENTS.md §九），
+// 单测由 CI 执行，本地以 cargo check 验证编译。
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn validate_chart(node: Value) -> std::result::Result<(), String> {
+        let mut count = 0usize;
+        UiRenderCapability::validate_template_node(&node, 1, &mut count)
+    }
+
+    #[test]
+    fn chart_node_valid() {
+        let node = json!({
+            "type": "chart",
+            "chartType": "line",
+            "labels": ["4月", "5月", "6月"],
+            "datasets": [
+                {"label": "A", "data": [1.0, 2.0, 3.0], "color": "#f59e0b"},
+                {"label": "B", "data": [3.0, 2.0, 1.0]}
+            ],
+            "title": "走势",
+            "showLegend": true,
+            "showGrid": false
+        });
+        assert!(validate_chart(node).is_ok());
+    }
+
+    #[test]
+    fn chart_node_rejects_unknown_chart_type() {
+        let node = json!({
+            "type": "chart",
+            "chartType": "area",
+            "labels": ["a"],
+            "datasets": [{"label": "A", "data": [1.0]}]
+        });
+        assert!(validate_chart(node).is_err());
+    }
+
+    #[test]
+    fn chart_node_rejects_data_length_mismatch() {
+        let node = json!({
+            "type": "chart",
+            "chartType": "bar",
+            "labels": ["a", "b", "c"],
+            "datasets": [{"label": "A", "data": [1.0, 2.0]}]
+        });
+        assert!(validate_chart(node).is_err());
+    }
+
+    #[test]
+    fn chart_node_rejects_bad_color() {
+        for bad in ["#12345", "#GGGGGG", "3b82f6"] {
+            let node = json!({
+                "type": "chart",
+                "chartType": "pie",
+                "labels": ["a"],
+                "datasets": [{"label": "A", "data": [1.0], "color": bad}]
+            });
+            assert!(validate_chart(node).is_err(), "color {bad} 应被拒绝");
+        }
+    }
+
+    #[test]
+    fn chart_node_rejects_empty_labels_or_datasets() {
+        let base = json!({
+            "type": "chart",
+            "chartType": "line",
+            "labels": ["a"],
+            "datasets": [{"label": "A", "data": [1.0]}]
+        });
+        let mut empty_labels = base.clone();
+        empty_labels["labels"] = json!([]);
+        assert!(validate_chart(empty_labels).is_err());
+        let mut empty_datasets = base;
+        empty_datasets["datasets"] = json!([]);
+        assert!(validate_chart(empty_datasets).is_err());
     }
 }
