@@ -295,6 +295,16 @@ export function ChatInput({
     300
   )
 
+  // 批 6（审计 5.3 草稿串号）：会话切换时取消挂起的防抖持久化——
+  // 300ms 窗口内 A 会话的草稿回调会在切到 B 后才执行，updateInputDraft
+  // 按调用时刻的活跃会话落盘，A 的草稿写进 B 且 A 丢最后一段输入。
+  // 取消后 A 的草稿停留在 A 的最后一次已落盘状态（≤300ms 损失，可接受）。
+  useEffect(() => {
+    return () => {
+      cancelPersistDraft()
+    }
+  }, [activeSessionId, cancelPersistDraft])
+
   // 会话切换时同步 Store 草稿到本地 state（只在 sessionId 变化时执行）
   // inputDraft 在 sessionId 变化时才会更新，无需添加依赖
   useEffect(() => {

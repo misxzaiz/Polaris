@@ -507,6 +507,7 @@ export async function createV2SessionKernel(
   const { V2StateArbiter } = await import('../core/v2-session-event-log')
   const { aiChatDispatchStream } = await import('@/services/aiChatDispatch')
   const { dialogStorageService } = await import('@/services/dialogStorage')
+  const { invoke } = await import('@/services/transport')
 
   return new V2SessionKernel({
     sessionStoreManager: deps?.sessionStoreManager ?? sessionStoreManager,
@@ -514,8 +515,21 @@ export async function createV2SessionKernel(
     eventDispatcher: deps?.eventDispatcher ?? sessionStoreManager.getState(),
     stateArbiter: deps?.stateArbiter ?? new V2StateArbiter(),
     streamDispatch: deps?.streamDispatch ?? ((payload) => aiChatDispatchStream(payload)),
+    // 批 5（审计 2.10 修正）：快照源从 JSONL 改为后端消息库（SQLite 权威，
+    // 含 turn_persist 落库的卡片块/错误文本/墓碑过滤）——resyncSession 真正
+    // 「与后端消息库对账」，不再名不副实。JSONL 作为读失败的兜底降级。
     snapshotSource: deps?.snapshotSource ?? {
-      getSnapshot: (conversationId: string) => dialogStorageService.getConversationMessages(conversationId),
+      getSnapshot: async (conversationId: string) => {
+        try {
+          const entries = await invoke<Array<{ content: ChatMessage }>>(
+            'message_read',
+            { conversationId, afterTimestamp: null, limit: null },
+          )
+          return entries.map((e) => e.content)
+        } catch {
+          return dialogStorageService.getConversationMessages(conversationId)
+        }
+      },
     },
   })
 }

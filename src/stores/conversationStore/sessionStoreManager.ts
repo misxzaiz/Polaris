@@ -570,38 +570,14 @@ function createSessionManagerStore() {
       // 只驱动卡片渲染 / 回答回写，兜底投递到当前活跃会话即可。其余事件保持丢弃语义，
       // 避免重新引入「回退 activeSessionId」的历史根因（见对不准窗口/新开窗口旧 bug）。
       const RENDER_EVENT_TYPES: ReadonlySet<string> = new Set(['plugin_card', 'plugin_card_answered'])
-      // B3（审计 1.3/1.4）：按引擎 conversationId 寻址的「会话动作回执」事件
-      // ——路由 miss 时按 payload.sessionId 反查持有该 conversationId 的会话投递
-      const CONVERSATION_ROUTED_EVENT_TYPES: ReadonlySet<string> = new Set([
-        'question_answered',
-        'plan_approval_result',
-      ])
 
       const store = get().stores.get(routeSessionId)
       // 实际投递目标 sessionId（未兜底 = routeSessionId；兜底 = 活跃会话）
       let targetSessionId = routeSessionId
       if (!store) {
         if (RENDER_EVENT_TYPES.has(event.type)) {
-          const activeId = get().activeSessionId
-          const activeStore = activeId ? get().stores.get(activeId) : undefined
-          if (activeId && activeStore) {
-            log.warn('渲染事件未匹配到原始会话，兜底投递到活跃会话', {
-              routeSessionId,
-              fallback: activeId,
-              type: event.type,
-            })
-            targetSessionId = activeId
-          } else {
-            log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
-            return
-          }
-        } else if (CONVERSATION_ROUTED_EVENT_TYPES.has(event.type)) {
-          // B3（审计 1.3/1.4）：question_answered / plan_approval_result 的信封按
-          // 引擎 conversationId 寻址（session-<引擎id>），对不上本地 UUID 键——
-          // 此前必丢（本端靠乐观更新掩盖，跨端卡片永远停在待处理态）。
-          // 事件 payload 自带 sessionId（引擎 conversationId），按 conversationId
-          // 反查本端 store 投递到发起会话。语义安全：只在「确有会话持有该
-          // conversationId」时投递，不触碰「回退 activeSessionId」旧根因。
+          // 渲染卡片事件：优先 conversationId 精确反查；查不到才活跃会话兜底
+          // （批 5 收敛：外部入口卡片优先回到来源会话，跨端不再误投活跃会话）
           const conversationId = (event as { sessionId?: string }).sessionId
           const entry = conversationId
             ? [...get().stores.entries()].find(
@@ -609,25 +585,48 @@ function createSessionManagerStore() {
               )
             : undefined
           if (entry) {
-            log.info('会话动作回执按 conversationId 反查投递', {
+            log.info('渲染事件按 conversationId 反查投递', {
               routeSessionId,
               target: entry[0],
               type: event.type,
             })
             targetSessionId = entry[0]
           } else {
-            log.warn('会话动作回执未找到持有该 conversationId 的会话，丢弃', {
-              routeSessionId,
-              conversationId,
-              type: event.type,
-            })
-            return
+            const activeId = get().activeSessionId
+            const activeStore = activeId ? get().stores.get(activeId) : undefined
+            if (activeId && activeStore) {
+              log.warn('渲染事件未匹配到原始会话，兜底投递到活跃会话', {
+                routeSessionId,
+                fallback: activeId,
+                type: event.type,
+              })
+              targetSessionId = activeId
+            } else {
+              log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
+              return
+            }
           }
         } else {
-          // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
-          // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
-          log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
-          return
+          // 批 5（审计 1.1 根因 / 裁决方案 M4）：跨端事件路由。事件的 contextId
+          // 是**发起端**的本地 UUID（对不上本端键），但 payload.sessionId 是引擎
+          // conversationId（跨端同构）——按其反查本端持有该会话的 store 精确投递。
+          // 两端从历史恢复同一会话后，任一端发起的流式双方都能渲染。
+          // 语义安全：只在「确有会话持有该 conversationId」时投递（精确匹配，
+          // 不触碰「回退 activeSessionId」旧根因）；无 sessionId 或查不到才丢弃。
+          const conversationId = (event as { sessionId?: string }).sessionId
+          const entry = conversationId
+            ? [...get().stores.entries()].find(
+                ([, s]) => s.getState().conversationId === conversationId,
+              )
+            : undefined
+          if (entry) {
+            targetSessionId = entry[0]
+          } else {
+            // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
+            // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
+            log.warn('事件未匹配到会话，丢弃', { routeSessionId, type: event.type })
+            return
+          }
         }
       }
 

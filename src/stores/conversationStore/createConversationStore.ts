@@ -2,7 +2,13 @@ import { generateUUID } from '@/utils/uuid';
 /**
  * ConversationStore 工厂函数
  *
- * 每个会话创建独立的 Store 实例
+ * 每个会话创建独立的 Store 实例。
+ *
+ * 职责声明（批 5，裁决方案确立的终态方向，吸收自方案丙）：
+ * 本 store 是**后端投影的渲染缓存**——消息真相在后端（turn_persist →
+ * session_messages SQLite + JSONL 归档），本 store 只负责本端渲染态的即时
+ * 维护与用户交互；恢复/对账以 kernel.resyncSession 读后端为准。新能力
+ * 不在本文件增加持久化语义（持久化统一走后端命令）。
  */
 
 import { create, StoreApi, UseBoundStore } from 'zustand'
