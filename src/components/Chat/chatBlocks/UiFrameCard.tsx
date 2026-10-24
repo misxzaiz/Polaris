@@ -420,9 +420,52 @@ function ConfirmFrameView({ frame, disabled, busy, onAnswer }: FrameViewProps) {
   )
 }
 
-/** custom 帧（注册表未命中的自定义数据）：JSON 折叠 */
+/** custom 帧（注册表未命中的自定义数据）：支持 HTML 图表渲染 */
 function CustomFrameView({ frame }: { frame: Record<string, unknown> }) {
   const [expanded, setExpanded] = useState(false)
+  const [htmlSrc, setHtmlSrc] = useState<string | null>(null)
+
+  // 检测是否为 HTML 图表数据
+  const isHtmlChart = (
+    typeof frame.html === 'string' &&
+    (frame.html.includes('<canvas') || frame.html.includes('<svg') || frame.html.includes('<script'))
+  ) || false
+
+  // 处理 HTML 渲染（仅允许内联 data URI，安全）
+  useEffect(() => {
+    if (typeof frame.html === 'string' && isHtmlChart) {
+      // 将 HTML 转换为 blob URL（沙箱隔离）
+      const blob = new Blob([frame.html], { type: 'text/html' })
+      const url = URL.createObjectURL(blob)
+      setHtmlSrc(url)
+      return () => URL.revokeObjectURL(url)
+    }
+  }, [frame.html, isHtmlChart])
+
+  if (isHtmlChart && htmlSrc) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="rounded-md border border-border bg-background-surface">
+          <iframe
+            src={htmlSrc}
+            className="w-full min-h-[300px]"
+            sandbox="allow-scripts"
+            title="Chart Preview"
+          />
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-text-muted">
+          <span>📊 HTML 图表渲染</span>
+          <button
+            onClick={() => window.open(htmlSrc, '_blank')}
+            className="rounded px-2 py-0.5 bg-primary/10 text-primary hover:bg-primary/20"
+          >
+            新窗口查看
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   const dataText = JSON.stringify(frame, null, 2)
   return (
     <div className="flex flex-col gap-1">
