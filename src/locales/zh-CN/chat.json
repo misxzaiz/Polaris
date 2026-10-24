@@ -769,5 +769,15 @@
       "items": "项",
       "frequent": "频繁"
     }
+  },
+  "remoteSession": {
+    "navTitle": "其他设备进行中",
+    "startedAt": "始于",
+    "view": "查看",
+    "join": "加入窗口",
+    "joined": "已加入会话",
+    "joinedHint": "实时同步中，可直接发送/中断；原设备仍可继续查看",
+    "joinFailed": "加入失败",
+    "joinFailedHint": "会话可能已结束或已在本端打开"
   }
 }

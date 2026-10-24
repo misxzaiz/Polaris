@@ -559,6 +559,17 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
         })
         if (running?.running) {
           store2.getState().setStreaming(true)
+          // 同步 metadata.status（session_start 事件已错过，dispatchEvent 的
+          // status 推导不会执行）——否则 Cell 状态点停留 idle 与实际流式不符。
+          // 用户补充需求：加入后必须可中断/继续——isStreaming + status 是
+          // 停止按钮与状态显示的数据源。
+          const mgr = sessionStoreManager.getState()
+          const meta = mgr.sessionMetadata.get(sessionId)
+          if (meta) {
+            const newMetadata = new Map(mgr.sessionMetadata)
+            newMetadata.set(sessionId, { ...meta, status: 'running' })
+            sessionStoreManager.setState({ sessionMetadata: newMetadata })
+          }
         }
       } catch {
         // 查询失败保守不置位（实时 session_end 到达仍会正常收尾）

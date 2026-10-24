@@ -26,6 +26,12 @@ interface ChatNavigatorProps {
   onScrollToRound: (roundIndex: number) => void;
   /** 导航样式变体：'floating' 当前浮球 | 'timeline' 右侧时间线 */
   variant?: 'floating' | 'timeline';
+  /**
+   * 面板顶部扩展槽（跨端会话交互 v2）：渲染在轮次列表上方。
+   * 由调用方注入「其他设备进行中」区块（RemoteSessionsNavSection），
+   * ChatNavigator 保持轮次导航的单一职责。
+   */
+  headerSlot?: React.ReactNode;
 }
 
 /** 延迟隐藏时间（毫秒） */
@@ -40,6 +46,7 @@ export function ChatNavigator({
   onScrollToBottom,
   onScrollToRound,
   variant = 'floating',
+  headerSlot,
 }: ChatNavigatorProps) {
   const { t } = useTranslation('chat');
   const { isCompact } = useWindowSize({ compactThreshold: 500 });
@@ -188,7 +195,7 @@ export function ChatNavigator({
     };
   }, [isPanelVisible, isCompact]);
 
-  if (rounds.length === 0) {
+  if (rounds.length === 0 && !headerSlot) {
     return null;
   }
 
@@ -303,8 +310,9 @@ export function ChatNavigator({
             </span>
           </div>
 
-          {/* 对话轮次列表 */}
+          {/* 对话轮次列表（顶部扩展槽：跨端会话区块由调用方注入） */}
           <div className="overflow-y-auto chat-navigator-list flex-1 min-h-0">
+            {headerSlot}
             {rounds.map((round, idx) => (
               <div
                 key={round.roundIndex}

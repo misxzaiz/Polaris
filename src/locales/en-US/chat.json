@@ -770,5 +770,15 @@
       "items": "items",
       "frequent": "frequent"
     }
+  },
+  "remoteSession": {
+    "navTitle": "Running on other devices",
+    "startedAt": "started",
+    "view": "View",
+    "join": "Join window",
+    "joined": "Session joined",
+    "joinedHint": "Syncing live — send/interrupt directly; the original device stays in sync",
+    "joinFailed": "Join failed",
+    "joinFailedHint": "The session may have ended or is already open locally"
   }
 }
