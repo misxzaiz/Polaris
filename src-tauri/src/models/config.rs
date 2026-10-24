@@ -1393,6 +1393,15 @@ pub struct PermissionPolicyConfig {
     pub rules: Vec<PermissionRuleConfig>,
 }
 
+/// cap 覆盖授权配置（P2-c）：L2 级覆盖白名单
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CapOverrideConfig {
+    /// 允许被插件覆盖的 L2 级 cap id 白名单
+    #[serde(default)]
+    pub allow: Vec<String>,
+}
+
 /// 应用配置（新版本）
 ///
 /// 使用嵌套结构，支持多个 AI 引擎
@@ -1412,6 +1421,12 @@ pub struct Config {
     /// dispatch 权限策略（第五步 PolicyPermission 覆盖规则；缺省 = 全放行）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions: Option<PermissionPolicyConfig>,
+
+    /// cap 覆盖授权（P2-c，2026-10-24 审计）：L2 级能力（bash/fs/http 等高危域）
+    /// 被插件覆盖需在此白名单显式列出目标 cap id；L0（prompt_snippet/ui/kv 等
+    /// 低危域）无需配置，L4（registry/help/ai.chat/self/mcp）永不放开。
+    #[serde(default)]
+    pub cap_override: CapOverrideConfig,
 
     /// 界面语言
     #[serde(default)]
@@ -1652,6 +1667,7 @@ impl Default for Config {
             default_engine: default_default_engine(),
             auxiliary_engine: None,
             permissions: None,
+            cap_override: Default::default(),
             language: None,
             theme: None,
             active_theme_id: None,

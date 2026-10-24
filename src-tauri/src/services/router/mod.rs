@@ -125,6 +125,14 @@ pub struct StreamAck {
 /// - permission: 权限裁决（dispatch 是唯一入口，所有调用统一过 gate）
 /// - storage: 契约 Storage（阶段 A 可 None，阶段 B 置 Some）
 /// - audit: AuditSink（Bootstrap 直管，dispatch 落审计）
+/// 覆盖链槽位（P2-c）：同一 cap id 的覆盖栈——末位为 active handler。
+#[derive(Clone)]
+pub struct OverrideSlot {
+    pub cap: Arc<dyn Capability>,
+    pub mode: ReplaceMode,
+    pub registered_at_ms: u64,
+}
+
 pub struct RouterBus {
     handles: RwLock<HashMap<CapabilityHandle, Arc<dyn Capability>>>,
     streaming_caps: RwLock<HashMap<CapabilityId, Arc<dyn StreamingCapability>>>,
@@ -136,6 +144,10 @@ pub struct RouterBus {
     plugin_configs: Arc<RwLock<HashMap<String, Value>>>,
     /// Prompt 裁决的用户审批出口（P1-g）。None → Prompt 维持 Phase 0 安全失败。
     prompt_sink: RwLock<Option<Arc<dyn PermissionPromptSink>>>,
+    /// 覆盖链（P2-c）：cap id → 覆盖栈（末位 active；fallback 失败下探，栈空回 base）
+    overrides: RwLock<HashMap<CapabilityId, Vec<OverrideSlot>>>,
+    /// L2 级覆盖白名单（config.capOverride.allow；装配注入）
+    override_allowlist: RwLock<std::collections::HashSet<String>>,
 }
 
 impl RouterBus {
@@ -161,7 +173,102 @@ impl RouterBus {
             audit,
             plugin_configs: Arc::new(RwLock::new(HashMap::new())),
             prompt_sink: RwLock::new(None),
+            overrides: RwLock::new(HashMap::new()),
+            override_allowlist: RwLock::new(std::collections::HashSet::new()),
         }
+    }
+
+    // ===== 覆盖链（P2-c，cap 自由度 L3）=====
+
+    /// 注入 L2 覆盖白名单（config.capOverride.allow，装配时）
+    pub fn set_override_allowlist(&self, ids: Vec<String>) {
+        *self.override_allowlist.write().unwrap() = ids.into_iter().collect();
+    }
+
+    /// 目标 id 是否在 L2 白名单内
+    pub fn override_allowed(&self, id: &str) -> bool {
+        self.override_allowlist.read().unwrap().contains(id)
+    }
+
+    /// 目标是否被覆盖（describe/cap_list 可观测）
+    pub fn is_overridden(&self, id: &CapabilityId) -> bool {
+        self.overrides
+            .read()
+            .unwrap()
+            .get(id)
+            .map(|s| !s.is_empty())
+            .unwrap_or(false)
+    }
+
+    /// 注册覆盖 handler：目标必须已注册（同步表/流式表/既有覆盖栈）。
+    /// 覆盖栈末位为 active；Fallback 模式失败下探，栈空回 base handle。
+    pub fn register_override(
+        &self,
+        id: CapabilityId,
+        cap: Arc<dyn Capability>,
+        mode: ReplaceMode,
+    ) -> Result<(), String> {
+        {
+            let handles = self.handles.read().unwrap();
+            let has_base = handles.values().any(|c| c.id() == id);
+            let has_stream = self.streaming_caps.read().unwrap().contains_key(&id);
+            let has_override = self
+                .overrides
+                .read()
+                .unwrap()
+                .get(&id)
+                .map(|s| !s.is_empty())
+                .unwrap_or(false);
+            if !has_base && !has_stream && !has_override {
+                return Err(format!(
+                    "覆盖目标 {} 未注册（覆盖只能作用于既有能力；注册全新能力请去掉 replace）",
+                    id.0
+                ));
+            }
+        }
+        self.overrides
+            .write()
+            .unwrap()
+            .entry(id)
+            .or_default()
+            .push(OverrideSlot {
+                cap,
+                mode,
+                registered_at_ms: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0),
+            });
+        Ok(())
+    }
+
+    /// 卸载一层覆盖（栈顶弹出；栈空自动移除键，base handler 恢复响应）。
+    /// 返回是否弹出了覆盖（false = 目标本无覆盖）。
+    pub fn unregister_override(&self, id: &CapabilityId) -> bool {
+        let mut map = self.overrides.write().unwrap();
+        if let Some(stack) = map.get_mut(id) {
+            stack.pop();
+            if stack.is_empty() {
+                map.remove(id);
+            }
+            return true;
+        }
+        false
+    }
+
+    /// 目标 id 的覆盖链快照（describe/透视用）
+    pub fn override_chain_of(&self, id: &CapabilityId) -> Vec<(String, ReplaceMode, u64)> {
+        self.overrides
+            .read()
+            .unwrap()
+            .get(id)
+            .map(|stack| {
+                stack
+                    .iter()
+                    .map(|s| (s.cap.id().0.clone(), s.mode, s.registered_at_ms))
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     /// 注入用户审批出口（装配时；P1-g）
@@ -462,10 +569,16 @@ impl RouterBus {
         let mut out: Vec<Value> = Vec::new();
         {
             let handles = self.handles.read().unwrap();
+            let overrides = self.overrides.read().unwrap();
             for cap in handles.values() {
+                let overridden = overrides
+                    .get(&cap.id())
+                    .map(|s| !s.is_empty())
+                    .unwrap_or(false);
                 out.push(serde_json::json!({
                     "id": cap.id().0,
                     "streaming": false,
+                    "overridden": overridden,
                     "describe": cap.describe(),
                 }));
             }
@@ -608,31 +721,70 @@ impl Router for RouterBus {
 
         match handle {
             Some(h) => {
-                // 3. 调用能力
+                // 3. 构造候选链（P2-c 覆盖链）：覆盖栈栈顶优先，base handler 恒在
+                // 末位兜底。override 模式失败即刻返回（不触达 base）；fallback 模式
+                // 失败下探下一个候选。
                 // 关键：先在读锁内取出 Arc 强引用，**释放锁后再 invoke**。
                 // 否则 DynamicCapability::invoke（转发重入 dispatch）会在持有读锁时
                 // 再次取同一把 handles 读锁 —— std RwLock 是写者优先，只要任一 register/
                 // unregister 写者在队列等待，就触发读-读重试死锁（持锁等锁）。
-                let cap = {
+                let base = {
                     let handles = self.handles.read().unwrap();
                     handles.get(&h).cloned()
                 }
                 .ok_or("句柄不存在")?;
+                let chain: Vec<OverrideSlot> = self
+                    .overrides
+                    .read()
+                    .unwrap()
+                    .get(&env.target)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut candidates: Vec<(Arc<dyn Capability>, ReplaceMode)> = chain
+                    .iter()
+                    .rev()
+                    .map(|slot| (slot.cap.clone(), slot.mode))
+                    .collect();
+                candidates.push((base, ReplaceMode::Override));
 
-                // 注入 ctx：Source 由传输层已注入 env（调用方不可自填）
-                let plugin_config = self.plugin_config_for(&env.target);
-                let ctx = RealContext::with_permission(
-                    env.source.clone(),
-                    self.storage.clone(),
-                    plugin_config,
-                    Some(self.broadcaster.clone()),
-                    self.permission.clone(),
-                );
+                // 依次尝试候选；候选全部失败时取最后一个错误
+                let mut started = std::time::Instant::now();
+                let mut final_outcome: Option<(
+                    Result<Value, String>,
+                    Option<crate::contracts::ReplyErrorDetail>,
+                )> = None;
+                for (cap, mode) in &candidates {
+                    let plugin_config = self.plugin_config_for(&env.target);
+                    let ctx = RealContext::with_permission(
+                        env.source.clone(),
+                        self.storage.clone(),
+                        plugin_config,
+                        Some(self.broadcaster.clone()),
+                        self.permission.clone(),
+                    );
+                    let outcome = match cap.invoke(env.payload.clone(), &ctx) {
+                        Err(e) => {
+                            let (clean, detail) = crate::contracts::Reply::split_error_detail(e);
+                            (Err(clean), detail)
+                        }
+                        Ok(v) => (Ok(v), None),
+                    };
+                    let ok = outcome.0.is_ok();
+                    final_outcome = Some(outcome);
+                    if ok || *mode == ReplaceMode::Override {
+                        break;
+                    }
+                    tracing::warn!(
+                        capability = %env.target.0,
+                        handler = %cap.id().0,
+                        "覆盖 handler 失败，fallback 下探"
+                    );
+                }
+                let (result, error_detail) =
+                    final_outcome.expect("候选链非空（base handler 恒在）");
+                let duration_ms = started.elapsed().as_millis() as u64;
 
-                let started = std::time::Instant::now();
-                let result = cap.invoke(env.payload.clone(), &ctx);
-
-                // 4. 广播 dispatch.end 追踪事件
+                // 4. 广播 dispatch.end 追踪事件（一次 dispatch 恰一个终态）
                 let end_payload = match &result {
                     Ok(_) => serde_json::json!({
                         "msg_id": env.id.0,
@@ -668,20 +820,11 @@ impl Router for RouterBus {
                             },
                             prev_hash: String::new(),
                             detail: payload_action_detail(&env.payload),
-                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                            duration_ms: Some(duration_ms),
                         },
                     );
                 }
 
-                // PR-2a C1：cap 返回的错误串若带结构化 marker → 拆出 error_detail，
-                // Reply.result 只留干净 human 串（UI/日志/AI 消费者零感知 marker）。
-                let (result, error_detail) = match result {
-                    Err(e) => {
-                        let (clean, detail) = crate::contracts::Reply::split_error_detail(e);
-                        (Err(clean), detail)
-                    }
-                    Ok(v) => (Ok(v), None),
-                };
                 Ok(Reply {
                     msg_id: env.id,
                     result,

@@ -932,6 +932,7 @@ impl OldConfig {
             default_engine: "claude-code".to_string(),
             auxiliary_engine: None,
             permissions: None,
+            cap_override: Default::default(),
             language: None,
             theme: None,
             active_theme_id: None,

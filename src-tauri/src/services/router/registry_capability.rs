@@ -40,6 +40,17 @@ const REGISTRY_DOMAIN: &str = "cap.registry";
 /// - `cap.help` / `cap.context`：元能力，无业务 forward 价值
 const SENSITIVE_TARGETS: &[&str] = &["cap.ai.chat", "cap.registry", "cap.help", "cap.context"];
 
+/// 覆盖分级表（P2-c，2026-10-24 审计；替代旧 SENSITIVE_TARGETS 一刀切）：
+/// - L0 低危/展示域：任意插件可覆盖（无需授权）；
+/// - L2 高危域：需 config.capOverride.allow 白名单显式列出；
+/// - L4 永不覆盖：元能力/自递归高危/AI 核心通道（config 也不可放开）。
+/// 其余一律按 L2 处理（保守默认）。
+const OVERRIDE_L0_PREFIXES: &[&str] = &["cap.prompt_snippet", "cap.ui.", "cap.kv", "cap.history", "cap.context"];
+const OVERRIDE_L4_PREFIXES: &[&str] = &[
+    "cap.registry", "cap.help", "cap.ai.chat", "cap.stream.", "cap.self.",
+    "cap.mcp", "cap.voice", "cap.hook", "cap.plugin",
+];
+
 /// cap.registry —— 动态能力注册表
 ///
 /// 需要 `Arc<RouterBus>` 引用以注册/卸载动态能力。
@@ -50,6 +61,30 @@ pub struct RegistryCapability {
 impl RegistryCapability {
     pub fn new(router: Arc<RouterBus>) -> Self {
         Self { router }
+    }
+
+    /// 覆盖权限分级判定（P2-c）：L0 放行 / L2 白名单 / L4 拒绝
+    fn check_override_permission(&self, id: &str) -> Result<(), String> {
+        if !id.starts_with("cap.") {
+            return Err(format!("覆盖目标必须以 `cap.` 开头: {}", id));
+        }
+        if OVERRIDE_L4_PREFIXES.iter().any(|p| id.starts_with(p)) {
+            return Err(format!(
+                "覆盖目标 {} 属于 L4 永不覆盖域（元能力/自递归高危/AI 核心通道），config 也不可放开",
+                id
+            ));
+        }
+        if OVERRIDE_L0_PREFIXES.iter().any(|p| id.starts_with(p)) {
+            return Ok(());
+        }
+        if self.router.override_allowed(id) {
+            Ok(())
+        } else {
+            Err(format!(
+                "覆盖目标 {} 属于 L2 高危域：需在 config.capOverride.allow 白名单显式列出后方可覆盖",
+                id
+            ))
+        }
     }
 
     /// 校验 id 合法性 + 不覆盖既有 cap（含内置与已注册动态）。
@@ -127,42 +162,123 @@ impl RegistryCapability {
             .pointer("/handler/type")
             .and_then(Value::as_str)
             .unwrap_or("forward");
-        if handler_type != "forward" {
-            return Err(format!("cap.registry 暂只支持 handler.type=forward，收到 {}", handler_type));
-        }
-        let target = params
-            .pointer("/handler/target")
-            .and_then(Value::as_str)
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .ok_or_else(|| "cap.registry register 需要 handler.target".to_string())?;
-        if !target.starts_with("cap.") {
-            return Err(format!("handler.target 必须以 `cap.` 开头: {}", target));
-        }
-        if SENSITIVE_TARGETS.contains(&target) {
-            return Err(format!(
-                "handler.target {} 属于敏感能力，禁止动态转发（防自递归/特权放大）",
-                target
-            ));
-        }
-        // 拒绝覆盖既有 cap（含内置与已注册动态）
-        self.check_id_available(id)?;
-        // 拒绝覆盖要转发的底层能力自身（防止自引用环）
-        if id == target {
-            return Err(format!("动态能力 id 不能等于转发目标: {}", id));
+        // P2-b：handler 类型分派——forward（别名）/ plugin-rpc（经 cap.mcp 调
+        // 插件进程工具）/ wasm（P4 占位，注册即拒绝）
+        let handler = match handler_type {
+            "forward" => {
+                let target = params
+                    .pointer("/handler/target")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| "cap.registry register 需要 handler.target".to_string())?;
+                if !target.starts_with("cap.") {
+                    return Err(format!("handler.target 必须以 `cap.` 开头: {}", target));
+                }
+                if SENSITIVE_TARGETS.contains(&target) {
+                    return Err(format!(
+                        "handler.target {} 属于敏感能力，禁止动态转发（防自递归/特权放大）",
+                        target
+                    ));
+                }
+                // 拒绝覆盖要转发的底层能力自身（防止自引用环）
+                if id == target {
+                    return Err(format!("动态能力 id 不能等于转发目标: {}", id));
+                }
+                let defaults = params.get("handler").and_then(|h| h.get("defaults")).cloned();
+                crate::services::router::DynamicHandler::Forward {
+                    target: target.to_string(),
+                    defaults,
+                }
+            }
+            "plugin-rpc" => {
+                let server_id = params
+                    .pointer("/handler/serverId")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| "cap.registry register（plugin-rpc）需要 handler.serverId（插件 mcpServers[].id）".to_string())?;
+                let tool = params
+                    .pointer("/handler/tool")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .ok_or_else(|| "cap.registry register（plugin-rpc）需要 handler.tool".to_string())?;
+                let plugin_id = params
+                    .pointer("/handler/pluginId")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string();
+                let timeout_ms = params
+                    .pointer("/handler/timeoutMs")
+                    .and_then(Value::as_u64);
+                crate::services::router::DynamicHandler::PluginRpc {
+                    plugin_id,
+                    server_id: server_id.to_string(),
+                    tool: tool.to_string(),
+                    timeout_ms,
+                }
+            }
+            "wasm" => {
+                return Err("cap.registry：wasm handler 为 P4 预留占位，尚未实现".to_string());
+            }
+            other => {
+                return Err(format!(
+                    "cap.registry 仅支持 handler.type=forward / plugin-rpc（wasm 为 P4 占位），收到 {}",
+                    other
+                ));
+            }
+        };
+        // 覆盖注册（P2-c）：replace=true 时 id 可以是既有 cap（经分级授权表放行），
+        // handler 复用 forward / plugin-rpc 实现（覆盖栈栈顶 active）。
+        // v1 覆盖不持久化——重启后覆盖失效、base 恢复（安全降级，记录于 spec）。
+        let replace = params.get("replace").and_then(Value::as_bool).unwrap_or(false);
+        if replace {
+            let mode = crate::contracts::ReplaceMode::parse(
+                params.get("replaceMode").and_then(Value::as_str).unwrap_or("override"),
+            )?;
+            self.check_override_permission(id)?;
+            self.router.register_override(
+                CapabilityId(id.to_string()),
+                std::sync::Arc::new(DynamicCapability::new(
+                    DynamicCapabilityConfig {
+                        id: id.to_string(),
+                        summary: summary.to_string(),
+                        description: params
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .map(str::to_string),
+                        handler,
+                        persist: false,
+                    },
+                    self.router.clone(),
+                )),
+                mode,
+            )?;
+            tracing::warn!(
+                capability = %id,
+                "cap.override.register：能力被覆盖（审计随 dispatch.ok 落 action=register）"
+            );
+            return Ok(json!({
+                "registered": true,
+                "id": id,
+                "replaced": true,
+                "mode": params.get("replaceMode").and_then(Value::as_str).unwrap_or("override"),
+                "persisted": false,
+                "note": "覆盖注册 v1 不持久化：宿主重启后覆盖失效，base handler 自动恢复",
+            }));
         }
 
-        let defaults = params.get("handler").and_then(|h| h.get("defaults")).cloned();
+        // 拒绝覆盖既有 cap（含内置与已注册动态）
+        self.check_id_available(id)?;
+
         let persist = params.get("persist").and_then(Value::as_bool).unwrap_or(true);
 
         let config = DynamicCapabilityConfig {
             id: id.to_string(),
             summary: summary.to_string(),
             description: params.get("description").and_then(Value::as_str).map(str::to_string),
-            handler: crate::services::router::DynamicHandler::Forward {
-                target: target.to_string(),
-                defaults,
-            },
+            handler,
             persist,
         };
 
@@ -183,7 +299,7 @@ impl RegistryCapability {
             "registered": true,
             "id": config.id,
             "dynamic": true,
-            "handler": { "type": "forward", "target": target },
+            "handler": config.handler,
             "persisted": persist,
         }))
     }
@@ -197,6 +313,16 @@ impl RegistryCapability {
             .ok_or_else(|| "cap.registry unregister 需要 id".to_string())?;
         if !id.starts_with("cap.") {
             return Err(format!("非法能力 id: {}", id));
+        }
+        // P2-c：先试弹出覆盖层（覆盖方卸载 → base handler 无感恢复）
+        if self.router.unregister_override(&CapabilityId(id.clone())) {
+            tracing::warn!(capability = %id, "cap.override.unregister：覆盖弹出，base handler 恢复");
+            return Ok(json!({
+                "unregistered": true,
+                "id": id,
+                "mode": "override-popped",
+                "note": "覆盖层已弹出，原 handler 恢复响应",
+            }));
         }
         // 只允许卸载动态能力 —— 通过「是否在持久化域或由本注册器标记」判断：
         // 内置能力不在动态域，unregister 内置是危险操作，拒绝。

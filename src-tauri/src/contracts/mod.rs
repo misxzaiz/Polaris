@@ -113,6 +113,29 @@ pub trait PermissionPromptSink: Send + Sync {
     fn resolve(&self, request_id: &str, approved: bool) -> Result<bool, String>;
 }
 
+/// 覆盖模式（P2-c，2026-10-24 审计：cap 自由度 L3）
+///
+/// - `Override`：完全替换——新 handler 响应全部调用，原 handler 不再触达；
+/// - `Fallback`：新 handler 失败/出错时下探原 handler（灰度替换）。
+/// `wrap`（包装式增强）v1 未实现，注册时显式拒绝。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ReplaceMode {
+    Override,
+    Fallback,
+}
+
+impl ReplaceMode {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s {
+            "override" | "Override" => Ok(Self::Override),
+            "fallback" | "Fallback" => Ok(Self::Fallback),
+            "wrap" => Err("覆盖模式 wrap（包装式）v1 未实现——仅支持 override / fallback".into()),
+            other => Err(format!("未知覆盖模式: {}（仅支持 override / fallback）", other)),
+        }
+    }
+}
+
 /// 权限裁决结果
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PermissionVerdict {
