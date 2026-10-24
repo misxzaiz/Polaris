@@ -175,7 +175,10 @@ impl DataRoot {
         }
 
         let anchor = read_anchor().unwrap_or_else(|e| {
-            // 锚点损坏不应阻止启动，记录警告后用默认值
+            // 锚点损坏不应阻止启动，记录警告后用默认值。
+            // 注意：DataRoot 首次初始化可能发生在 Logger::init 内部（log_dir 先于
+            // tracing subscriber 就绪），此处换 tracing::warn! 会被静默丢弃，
+            // 故保留 eprintln! 作为启动期 stderr 兜底通道。
             eprintln!("[DataRoot] 锚点读取失败，使用默认值: {}", e);
             Anchor::default()
         });

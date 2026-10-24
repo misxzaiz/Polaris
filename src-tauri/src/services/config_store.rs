@@ -26,14 +26,14 @@ impl ConfigStore {
     pub fn new() -> Result<Self> {
         let config_dir = data_root().config_dir();
 
-        eprintln!("配置目录: {:?}", config_dir);
+        tracing::info!("[ConfigStore] 配置目录: {:?}", config_dir);
 
         // 确保配置目录存在（DataRoot::ensure 已创建，此处兜底）
         std::fs::create_dir_all(&config_dir)?;
-        eprintln!("配置目录已创建");
+        tracing::debug!("[ConfigStore] 配置目录已创建");
 
         let config_path = config_dir.join("config.json");
-        eprintln!("配置文件路径: {:?}", config_path);
+        tracing::info!("[ConfigStore] 配置文件路径: {:?}", config_path);
 
         let mut config = Self::load_from_file(&config_path)?;
 
@@ -47,8 +47,8 @@ impl ConfigStore {
         // 验证配置
         config.validate();
 
-        eprintln!("当前引擎: {}", config.default_engine);
-        eprintln!("当前 claude_code.cli_path: {}", config.claude_code.cli_path);
+        tracing::info!("[ConfigStore] 当前引擎: {}", config.default_engine);
+        tracing::info!("[ConfigStore] 当前 claude_code.cli_path: {}", config.claude_code.cli_path);
         // 说明：不再在启动时将占位符"claude"改写为绝对路径并写回配置。
         // CLI 路径统一由 `Config::resolve_claude_cmd()` 运行时解析
         // （未手动指定时自动检测 PATH/常见安装位置），避免持久化可能过期的路径。
@@ -214,7 +214,7 @@ impl ConfigStore {
         let mut states = match state_service.load() {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[ConfigStore] 迁移 ask 开关：读取插件状态失败 {}", e);
+                tracing::warn!("[ConfigStore] 迁移 ask 开关：读取插件状态失败 {}", e);
                 return;
             }
         };
@@ -233,7 +233,7 @@ impl ConfigStore {
             return;
         }
         if !already_disabled {
-            eprintln!(
+            tracing::info!(
                 "[ConfigStore] 已把 legacy interaction.askMcpEnabled=false 迁移到 polaris.ask 插件禁用"
             );
         }
@@ -298,12 +298,12 @@ impl ConfigStore {
 
         match self.save() {
             Ok(()) => {
-                eprintln!("[ConfigStore] 配置保存成功");
+                tracing::info!("[ConfigStore] 配置保存成功");
                 Ok(())
             }
             Err(e) => {
                 // 保存失败，恢复旧配置
-                eprintln!("[ConfigStore] 配置保存失败，回滚: {:?}", e);
+                tracing::error!("[ConfigStore] 配置保存失败，回滚: {:?}", e);
                 self.config = old_config;
                 Err(e)
             }
@@ -329,11 +329,11 @@ impl ConfigStore {
 
         match self.save() {
             Ok(()) => {
-                eprintln!("[ConfigStore] 配置 patch 保存成功");
+                tracing::info!("[ConfigStore] 配置 patch 保存成功");
                 Ok(self.config.clone())
             }
             Err(e) => {
-                eprintln!("[ConfigStore] 配置 patch 保存失败，回滚: {:?}", e);
+                tracing::error!("[ConfigStore] 配置 patch 保存失败，回滚: {:?}", e);
                 self.config = old_config;
                 Err(e)
             }
@@ -386,19 +386,20 @@ impl ConfigStore {
     }
 
     fn detect_cli_version(cmd: &str, log_prefix: &str) -> Option<String> {
-        eprintln!("[{}] 尝试执行: {} --version", log_prefix, cmd);
+        tracing::info!("[{}] 尝试执行: {} --version", log_prefix, cmd);
 
         let output = Self::run_cli_version_command(cmd);
 
         match output {
             Ok(output) => {
-                eprintln!("[{}] 进程退出码: {:?}", log_prefix, output.status.code());
-                eprintln!(
+                // 原始 stdout/stderr 可能很长，降为 debug；生产默认 info 不落这些
+                tracing::debug!("[{}] 进程退出码: {:?}", log_prefix, output.status.code());
+                tracing::debug!(
                     "[{}] stdout: {}",
                     log_prefix,
                     String::from_utf8_lossy(&output.stdout)
                 );
-                eprintln!(
+                tracing::debug!(
                     "[{}] stderr: {}",
                     log_prefix,
                     String::from_utf8_lossy(&output.stderr)
@@ -409,15 +410,15 @@ impl ConfigStore {
                         .lines()
                         .next()
                         .map(|s| s.to_string());
-                    eprintln!("[{}] 解析成功: {:?}", log_prefix, version);
+                    tracing::info!("[{}] 解析成功: {:?}", log_prefix, version);
                     version
                 } else {
-                    eprintln!("[{}] 命令执行失败", log_prefix);
+                    tracing::warn!("[{}] 命令执行失败", log_prefix);
                     None
                 }
             }
             Err(e) => {
-                eprintln!("[{}] 启动进程失败: {:?}", log_prefix, e);
+                tracing::warn!("[{}] 启动进程失败: {:?}", log_prefix, e);
                 None
             }
         }

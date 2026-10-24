@@ -498,6 +498,15 @@ fn detect_claude(state: tauri::State<AppState>) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 #[cfg(feature = "tauri-app")]
 pub fn run() {
+    // 启用日志系统（使用 RUST_LOG 环境变量控制日志级别）
+    // 开发: RUST_LOG=polaris=debug
+    // 生产: RUST_LOG=polaris=info
+    //
+    // 必须先于 ConfigStore::new()：配置加载/保存日志走 tracing，
+    // 若 ConfigStore 先创建，其启动期事件会因无 subscriber 被静默丢弃
+    // （Logger 仅依赖 data_root() 单例，不读配置，调序安全）。
+    let _logger_guard = Logger::init(true);
+
     // 初始化配置存储
     let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
@@ -518,11 +527,6 @@ pub fn run() {
             }
         }
     }
-
-    // 启用日志系统（使用 RUST_LOG 环境变量控制日志级别）
-    // 开发: RUST_LOG=polaris=debug
-    // 生产: RUST_LOG=polaris=info
-    let _logger_guard = Logger::init(true);
 
     // 初始化 AI 引擎注册表
     let config = config_store.get().clone();
@@ -1338,12 +1342,13 @@ async fn web_scheduler_health_monitor(
 }
 
 pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token: Option<String>) {
+    // 启用日志系统（先于 ConfigStore，理由同 run()：配置日志走 tracing，
+    // 早于 Logger 初始化的事件会因无 subscriber 被静默丢弃）
+    let _logger_guard = Logger::init(true);
+
     // 初始化配置存储
     let mut config_store = ConfigStore::new()
         .expect("无法初始化配置存储");
-
-    // 启用日志系统
-    let _logger_guard = Logger::init(true);
 
     // CLI token 覆盖（优先级: CLI args > 环境变量 > 配置文件）。
     // 仅内存覆盖，不持久化到 config.json。
