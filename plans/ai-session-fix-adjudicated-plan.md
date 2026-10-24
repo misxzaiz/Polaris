@@ -182,10 +182,17 @@ contextId 统一为权威 conversationId、拆除 UUID 路由层；期间若遭�
 批 5 反向索引已落地 → RemoteSessionFollower 的退役计时开始：反向索引稳定一个版本
 周期后，降级为诊断视图或删除流式渲染逻辑（头注已标注，防第二系统永久化）。
 
-### 剩余工作清单（下一轮，按优先级）
+### 剩余工作清单（2026-10-24 二次更新：批 6/7 与测试债已全部完成）
 
-1. **批 6 剩余**：Web 断线横幅（依赖已具备：批0 缺口修复 + 批3 Follower）；常驻「回到底部」按钮（激活死代码 ScrollToBottomButton）；后台会话完成系统通知；移动端触屏长按消息操作菜单；空态引导接线（激活 EmptyState）；输入长度上限。
-2. **批 7 剩余**：插件面板 iframe/独立 origin 隔离评估（涉插件生态兼容）；WS 未配 token 时的回环限制策略。
-3. **B5 完全同步**（单独立项）：双端操作仲裁（request_start/interrupt + deviceId）、信封 contextId 统一权威 id（双 key 拆除，见上方条款）、workspace 分桶。
-4. **协议清洗收尾**：SessionEnd.reason 各引擎对齐已在批 2 完成；Token vs AssistantMessage 双通道权威化、废弃事件停止发送（批 4 定稿的 deprecation 承诺）。
-5. **存量测试失败治理**（与本计划无关但建议单列）：engines/claude-code、pluginDiscovery/pluginServiceManager、language/lightweightMarkdown 等 14 文件 86 例环境性失败（2026-10-24 基线对比确认早于本计划存在）。
+已完成（本轮新增提交，见 git log d3d5d6bf..237d7942）：
+- ✅ 批 6 全部：断线提示常驻、回底常驻按钮、富空态、输入上限、触屏长按、语音停止、待处理卡片徽标（后台完成通知经评估判定已覆盖，见 v2 spec §5.3）
+- ✅ 批 7 全部：WS 开放模式告警；插件隔离裁定不强制迁移（防线移至 marketplace 权限展示，v2 spec §5.1）
+- ✅ 跨端交互 v2：交互原型 + joinSession 能力层 + 对话导航入口（查看/加入窗口）+ 加入后操作完整性验证（中断/继续/仲裁闭环）
+- ✅ 存量测试债清偿：14 文件 86 例全部修复（测试与实现漂移对齐，无实现真 bug）+ case-1/case-4 墙钟护栏放宽；**全量 2290 用例 0 失败**
+- ✅ ChatInput 拆分评估：挂起（触发条件成文，v2 spec §5.2）
+
+仍开放（单独立项）：
+1. **B5 完全同步**：信封 contextId 统一权威 id（双 key 拆除条款计时中）、workspace 分桶、跨端光标/未读。
+2. **协议清洗收尾**：Token vs AssistantMessage 双通道权威化、废弃事件停止发送（批 4 定稿的 deprecation 承诺）。
+3. **marketplace 安装环节权限展示**（插件供应链防线，替代运行时隔离）。
+4. **双端手测**：v2 验收 N1-N7（UI 与链路已就绪，需真机双端验证）。
