@@ -116,6 +116,28 @@ impl StdioTransport {
             .stdout
             .take()
             .ok_or_else(|| AppError::ProcessError("MCP server stdout not captured".to_string()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| AppError::ProcessError("MCP server stderr not captured".to_string()))?;
+
+        // X10（2026-10-24 审计）：stderr 必须持续消费——此前 piped 后无人读取，
+        // 爱写日志的 server 会写满 OS 管道缓冲区而永久阻塞。消费落 debug 日志
+        // （带 server 名定位；生产不落盘）。
+        let stderr_server = server_name.clone();
+        tokio::spawn(async move {
+            use tokio::io::{AsyncBufReadExt, BufReader};
+            let mut lines = BufReader::new(stderr).lines();
+            loop {
+                match lines.next_line().await {
+                    Ok(Some(line)) => {
+                        tracing::debug!(server = %stderr_server, "mcp stderr: {}", line);
+                    }
+                    Ok(None) => break, // EOF：进程退出或 stderr 关闭
+                    Err(_) => break,
+                }
+            }
+        });
 
         Ok((
             Self {

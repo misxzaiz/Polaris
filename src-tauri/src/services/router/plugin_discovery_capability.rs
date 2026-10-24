@@ -444,6 +444,14 @@ impl Capability for PluginDiscoveryCapability {
                 let install_path = Self::require_string(&params, "installPath")?.to_string();
                 let config_dir = config_dir.map_err(map_err)?;
                 Self::block_on_async(async move {
+                    // P1-5（2026-10-24 审计）：更新前先停该插件的全部后台服务——
+                    // 此前直接 rename 换目录，Windows 下运行中进程持有旧文件，
+                    // rename 高概率失败；且运行中服务会继续跑旧代码。
+                    let plugin_id = Self::plugin_id_from_path_or_unknown(&install_path);
+                    let _ = self
+                        .plugin_service_manager
+                        .stop_services_for_plugin(&plugin_id)
+                        .await;
                     let result = PluginService::apply_local_plugin_update(
                         &config_dir,
                         workspace_path.as_deref(),
@@ -452,8 +460,6 @@ impl Capability for PluginDiscoveryCapability {
                     .await
                     .map_err(map_err)?;
                     if result.success {
-                        let plugin_id =
-                            Self::plugin_id_from_path_or_unknown(&install_path);
                         emit_plugin_lifecycle(
                             ctx,
                             &plugin_id,
