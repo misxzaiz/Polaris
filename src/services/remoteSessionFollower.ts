@@ -136,11 +136,24 @@ async function discoveryLoop(): Promise<void> {
 /** 冷启动全量：读全部 lifecycle 事件推导当前 running 集合 */
 async function seedRunningSessions(): Promise<void> {
   const events = await invoke<RemoteLifecycleEvent[]>('session_event_read_after_seq', { seq: 0 })
+  const state = deriveSessionsFromEvents(events)
+  applyDiscovered(state)
+}
+
+/**
+ * 从 lifecycle 事件序列推导会话状态（纯函数，可单测锁定）。
+ * 规则：session_start 建/保 running；session_end/error 收尾；
+ * 后到的 start 重新拉起（重启后端补写的场景）。
+ */
+export function deriveSessionsFromEvents(
+  events: RemoteLifecycleEvent[],
+): Map<string, RemoteSessionState> {
   const state = new Map<string, RemoteSessionState>()
   for (const ev of events) {
     if (isIgnorableConversation(ev.conversationId)) continue
     if (ev.type === 'session_start') {
-      if (!state.has(ev.conversationId)) {
+      const existing = state.get(ev.conversationId)
+      if (!existing) {
         state.set(ev.conversationId, {
           conversationId: ev.conversationId,
           status: 'running',
@@ -148,6 +161,12 @@ async function seedRunningSessions(): Promise<void> {
           messages: [],
           backfilled: false,
         })
+      } else if (existing.status !== 'running') {
+        // 后端重启补写 / 同会话新一轮：已收尾的会话重新拉起（单测锁定的场景）
+        existing.status = 'running'
+        existing.startedAt = ev.timestamp
+        existing.endedAt = undefined
+        existing.endReason = undefined
       }
     } else if (ev.type === 'session_end' || ev.type === 'error') {
       const s = state.get(ev.conversationId)
@@ -157,9 +176,15 @@ async function seedRunningSessions(): Promise<void> {
         s.endReason = ev.reason ?? undefined
       }
     }
+  }
+  return state
+}
+
+/** 增量水位推进（事件 → lastSeq），与推导分离供 pollOnce 复用 */
+function advanceSeq(events: RemoteLifecycleEvent[]): void {
+  for (const ev of events) {
     lastSeq = Math.max(lastSeq, ev.seq)
   }
-  applyDiscovered(state)
 }
 
 interface RemoteLifecycleEvent {
@@ -179,8 +204,8 @@ async function pollOnce(): Promise<void> {
     seq: lastSeq,
   })
   if (events.length === 0) return
+  advanceSeq(events)
   for (const ev of events) {
-    lastSeq = Math.max(lastSeq, ev.seq)
     if (isIgnorableConversation(ev.conversationId)) continue
     if (ev.type === 'session_start') {
       upsertSession(ev.conversationId, {
