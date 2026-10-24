@@ -36,11 +36,13 @@ describe('createHttpTransport', () => {
 
     await transport.invoke('update_config', { config });
 
+    // config 读写已切 cap.config 总线，httpTransport 不再特判 /api/settings，
+    // 走通用 kebab-case 路由，原始 args 对象原样序列化发送
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:9800/api/settings',
+      'http://127.0.0.1:9800/api/update-config',
       expect.objectContaining({
-        method: 'PATCH',
-        body: JSON.stringify(config),
+        method: 'POST',
+        body: JSON.stringify({ config }),
       })
     );
   });
@@ -54,11 +56,12 @@ describe('createHttpTransport', () => {
 
     await transport.invoke('update_config_patch', { patch });
 
+    // 同上：不再特判 /api/settings，走通用路由，原始 args 对象原样序列化发送
     expect(globalThis.fetch).toHaveBeenCalledWith(
-      'http://127.0.0.1:9800/api/settings',
+      'http://127.0.0.1:9800/api/update-config-patch',
       expect.objectContaining({
-        method: 'PATCH',
-        body: JSON.stringify(patch),
+        method: 'POST',
+        body: JSON.stringify({ patch }),
       })
     );
   });

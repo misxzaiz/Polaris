@@ -19,6 +19,20 @@ vi.mock('./transport', () => ({
   invoke: invokeMock,
 }))
 
+/**
+ * 服务已迁移到 RouterBus（invoke('router_dispatch', { req: { target, payload } })），
+ * mock 返回形态对齐 commands/router.rs RouterDispatchResponse。
+ */
+function dispatchOk(result: unknown) {
+  return {
+    msgId: 'm1',
+    ok: true,
+    result,
+    error: null,
+    trace: 't',
+  }
+}
+
 describe('pluginDiscoveryService', () => {
   beforeEach(() => {
     invokeMock.mockReset()
@@ -355,12 +369,12 @@ describe('pluginDiscoveryService', () => {
   })
 
   it('calls the backend manifest validation command', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockResolvedValueOnce(dispatchOk({
       valid: true,
       manifestPath: 'D:\\plugins\\demo\\plugin.json',
       pluginId: 'example.demo-mcp',
       errors: [],
-    })
+    }))
 
     await expect(validatePluginManifest('D:\\plugins\\demo')).resolves.toEqual({
       valid: true,
@@ -368,13 +382,19 @@ describe('pluginDiscoveryService', () => {
       pluginId: 'example.demo-mcp',
       errors: [],
     })
-    expect(invokeMock).toHaveBeenCalledWith('plugin_validate_manifest', {
-      sourcePath: 'D:\\plugins\\demo',
+    expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+      req: {
+        target: 'cap.pluginDiscovery',
+        payload: {
+          action: 'validate_manifest',
+          sourcePath: 'D:\\plugins\\demo',
+        },
+      },
     })
   })
 
   it('calls the backend update check command', async () => {
-    invokeMock.mockResolvedValueOnce({
+    invokeMock.mockResolvedValueOnce(dispatchOk({
       pluginId: 'example.demo-mcp',
       currentVersion: '0.1.0',
       latestVersion: '0.2.0',
@@ -382,7 +402,7 @@ describe('pluginDiscoveryService', () => {
       checked: true,
       sourceUrl: 'https://example.test/plugin.json',
       downloadUrl: 'https://example.test/plugin.zip',
-    })
+    }))
 
     await expect(checkPluginUpdate('D:\\plugins\\demo')).resolves.toEqual({
       pluginId: 'example.demo-mcp',
@@ -393,46 +413,70 @@ describe('pluginDiscoveryService', () => {
       sourceUrl: 'https://example.test/plugin.json',
       downloadUrl: 'https://example.test/plugin.zip',
     })
-    expect(invokeMock).toHaveBeenCalledWith('plugin_check_update', {
-      installPath: 'D:\\plugins\\demo',
+    expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+      req: {
+        target: 'cap.pluginDiscovery',
+        payload: {
+          action: 'check_update',
+          installPath: 'D:\\plugins\\demo',
+        },
+      },
     })
   })
 
   it('calls the backend package install command', async () => {
-    invokeMock.mockResolvedValueOnce({ success: true })
+    invokeMock.mockResolvedValueOnce(dispatchOk({ success: true }))
 
     await expect(installPluginPackage('D:\\packages\\demo.zip', 'user')).resolves.toEqual({ success: true })
-    expect(invokeMock).toHaveBeenCalledWith('plugin_install_package', {
-      packagePath: 'D:\\packages\\demo.zip',
-      scope: 'user',
-      workspacePath: undefined,
+    expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+      req: {
+        target: 'cap.pluginDiscovery',
+        payload: {
+          action: 'install_package',
+          packagePath: 'D:\\packages\\demo.zip',
+          scope: 'user',
+          workspacePath: undefined,
+        },
+      },
     })
   })
 
   it('calls the backend remote install command', async () => {
-    invokeMock.mockResolvedValueOnce({ success: true })
+    invokeMock.mockResolvedValueOnce(dispatchOk({ success: true }))
 
     await expect(installRemotePlugin('https://example.test/plugin.json', 'project', 'D:\\space\\project')).resolves.toEqual({ success: true })
-    expect(invokeMock).toHaveBeenCalledWith('plugin_install_remote', {
-      sourceUrl: 'https://example.test/plugin.json',
-      scope: 'project',
-      workspacePath: 'D:\\space\\project',
+    expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+      req: {
+        target: 'cap.pluginDiscovery',
+        payload: {
+          action: 'install_remote',
+          sourceUrl: 'https://example.test/plugin.json',
+          scope: 'project',
+          workspacePath: 'D:\\space\\project',
+        },
+      },
     })
   })
 
   it('calls the backend apply update command', async () => {
-    invokeMock.mockResolvedValueOnce({ success: true })
+    invokeMock.mockResolvedValueOnce(dispatchOk({ success: true }))
 
     await expect(applyPluginUpdate('D:\\plugins\\demo')).resolves.toEqual({ success: true })
-    expect(invokeMock).toHaveBeenCalledWith('plugin_apply_update', {
-      installPath: 'D:\\plugins\\demo',
-      workspacePath: undefined,
+    expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+      req: {
+        target: 'cap.pluginDiscovery',
+        payload: {
+          action: 'apply_update',
+          installPath: 'D:\\plugins\\demo',
+          workspacePath: undefined,
+        },
+      },
     })
   })
 
   describe('uninstallPluginWithCleanup', () => {
     it('calls the backend enhanced uninstall command with pluginId', async () => {
-      invokeMock.mockResolvedValueOnce({ success: true, message: 'Plugin uninstalled' })
+      invokeMock.mockResolvedValueOnce(dispatchOk({ success: true, message: 'Plugin uninstalled' }))
 
       const result = await uninstallPluginWithCleanup(
         'D:\\plugins\\demo',
@@ -441,29 +485,41 @@ describe('pluginDiscoveryService', () => {
       )
 
       expect(result).toEqual({ success: true, message: 'Plugin uninstalled' })
-      expect(invokeMock).toHaveBeenCalledWith('plugin_uninstall_with_cleanup', {
-        installPath: 'D:\\plugins\\demo',
-        pluginId: 'example.demo-plugin',
-        workspacePath: 'D:\\workspace',
+      expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+        req: {
+          target: 'cap.pluginDiscovery',
+          payload: {
+            action: 'uninstall_with_cleanup',
+            installPath: 'D:\\plugins\\demo',
+            pluginId: 'example.demo-plugin',
+            workspacePath: 'D:\\workspace',
+          },
+        },
       })
     })
 
     it('works without workspacePath', async () => {
-      invokeMock.mockResolvedValueOnce({ success: true })
+      invokeMock.mockResolvedValueOnce(dispatchOk({ success: true }))
 
       await uninstallPluginWithCleanup('D:\\plugins\\demo', 'example.demo-plugin')
-      expect(invokeMock).toHaveBeenCalledWith('plugin_uninstall_with_cleanup', {
-        installPath: 'D:\\plugins\\demo',
-        pluginId: 'example.demo-plugin',
-        workspacePath: undefined,
+      expect(invokeMock).toHaveBeenCalledWith('router_dispatch', {
+        req: {
+          target: 'cap.pluginDiscovery',
+          payload: {
+            action: 'uninstall_with_cleanup',
+            installPath: 'D:\\plugins\\demo',
+            pluginId: 'example.demo-plugin',
+            workspacePath: undefined,
+          },
+        },
       })
     })
 
     it('handles failure returns', async () => {
-      invokeMock.mockResolvedValueOnce({
+      invokeMock.mockResolvedValueOnce(dispatchOk({
         success: false,
         error: '进程仍在运行，无法删除目录',
-      })
+      }))
 
       const result = await uninstallPluginWithCleanup('D:\\plugins\\demo', 'example.demo-plugin')
       expect(result.success).toBe(false)

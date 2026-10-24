@@ -1,11 +1,11 @@
 /**
  * AgentRunBlockRenderer 组件测试
  *
- * 测试范围：
- * - 渲染：显示 Agent 类型、状态、进度、工具调用、错误信息
- * - 交互：展开/折叠、键盘导航
- * - 状态：不同状态的显示
- * - 无障碍：ARIA 属性
+ * 测试范围（对齐 440163a3 精简设计：agent 运行态由动态岛接管实时展示，
+ * 消息流内仅保留极简历史行 + 可展开的嵌套工具列表）：
+ * - 渲染：agentType、状态图标、工具计数、耗时、错误信息
+ * - 交互：点击展开/折叠嵌套工具列表
+ * - 状态：running/success/error/canceled 的图标表达
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -23,12 +23,6 @@ vi.mock('react-i18next', () => ({
         'status.completed': '已完成',
         'status.failed': '失败',
         'status.canceled': '已取消',
-        'agent.agentRunAriaLabel': `Agent: ${options?.type || 'Unknown'}`,
-        'agent.toggleDetails': '切换详情',
-        'agent.toolCount': `${options?.count || 0} 个工具`,
-        'agent.completed': '已完成',
-        'agent.toolCalls': '工具调用',
-        'agent.output': '输出',
       };
       return translations[key] || key;
     },
@@ -77,49 +71,39 @@ describe('AgentRunBlockRenderer', () => {
       expect(screen.getByText('CodeReviewer')).toBeInTheDocument();
     });
 
-    it('应该显示运行状态标签', () => {
-      const block = createAgentRunBlock({ status: 'running' });
-      render(<AgentRunBlockRenderer block={block} />);
+    it('运行中状态应显示旋转状态图标（无文本标签）', () => {
+      const { container } = render(<AgentRunBlockRenderer block={createAgentRunBlock({ status: 'running' })} />);
 
-      expect(screen.getByText('运行中')).toBeInTheDocument();
+      // 精简设计：状态用图标表达（Loader2 + animate-spin），不再渲染文本标签
+      expect(container.querySelector('.animate-spin')).toBeInTheDocument();
     });
 
-    it('应该显示成功状态标签', () => {
-      const block = createAgentRunBlock({ status: 'success', isActive: false });
-      render(<AgentRunBlockRenderer block={block} />);
+    it('成功状态应显示完成图标（绿色，无文本标签）', () => {
+      const { container } = render(<AgentRunBlockRenderer block={createAgentRunBlock({ status: 'success' })} />);
 
-      expect(screen.getByText('已完成')).toBeInTheDocument();
+      expect(container.querySelector('.text-green-500')).toBeInTheDocument();
+      expect(container.querySelector('.animate-spin')).not.toBeInTheDocument();
     });
 
-    it('应该显示错误状态标签', () => {
+    it('错误状态应显示失败标签与错误信息', () => {
       const block = createAgentRunBlock({ status: 'error', error: '出错了' });
       render(<AgentRunBlockRenderer block={block} />);
 
+      // 错误态保留文本标签（行内「失败」标记 + 详情区错误信息）
       expect(screen.getByText('失败')).toBeInTheDocument();
+      expect(screen.getByText('出错了')).toBeInTheDocument();
     });
 
-    it('应该显示取消状态标签', () => {
-      const block = createAgentRunBlock({ status: 'canceled' });
-      render(<AgentRunBlockRenderer block={block} />);
+    it('取消状态应显示取消图标（灰色，无文本标签）', () => {
+      const { container } = render(<AgentRunBlockRenderer block={createAgentRunBlock({ status: 'canceled' })} />);
 
-      expect(screen.getByText('已取消')).toBeInTheDocument();
+      expect(container.querySelector('.text-gray-500')).toBeInTheDocument();
     });
 
-    it('应该显示进度消息', () => {
-      const block = createAgentRunBlock({ status: 'running', progressMessage: '正在分析代码' });
-      render(<AgentRunBlockRenderer block={block} />);
+    // 注：440163a3 精简设计后，进度消息（progressMessage）与进度条（progressPercent）
+    // 不再于消息流内渲染（实时进度由动态岛承载），对应用例随之移除。
 
-      expect(screen.getByText('正在分析代码')).toBeInTheDocument();
-    });
-
-    it('应该显示进度条（运行中且有进度百分比）', () => {
-      const block = createAgentRunBlock({ status: 'running', progressPercent: 75 });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      expect(screen.getByText('75%')).toBeInTheDocument();
-    });
-
-    it('运行中状态应有工具调用摘要', () => {
+    it('运行中状态应显示工具完成计数（done/total）', () => {
       const block = createAgentRunBlock({
         status: 'running',
         toolCalls: [
@@ -129,8 +113,8 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      // 工具数量和已完成数量在同一行
-      expect(screen.getByText(/2 个工具/)).toBeInTheDocument();
+      // 精简行内计数：已完成/总数
+      expect(screen.getByText('1/2')).toBeInTheDocument();
     });
 
     it('应该显示错误信息', () => {
@@ -162,29 +146,16 @@ describe('AgentRunBlockRenderer', () => {
       expect(screen.queryByText('hidden_tool')).not.toBeInTheDocument();
     });
 
-    it('点击应展开显示工具调用列表', () => {
+    it('点击行应展开显示工具调用列表', () => {
       const block = createAgentRunBlock({
         toolCalls: [createNestedToolCall({ name: 'visible_tool' })],
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      // 点击展开
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      // 极简历史行本身是原生 button，点击切换展开
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('visible_tool')).toBeInTheDocument();
-    });
-
-    it('展开后显示工具调用列表标题', () => {
-      const block = createAgentRunBlock({
-        toolCalls: [createNestedToolCall()],
-      });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
-
-      expect(screen.getByText('工具调用')).toBeInTheDocument();
     });
 
     it('展开后显示工具摘要', () => {
@@ -193,23 +164,13 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('测试工具摘要')).toBeInTheDocument();
     });
 
-    it('展开后显示输出内容', () => {
-      const block = createAgentRunBlock({
-        output: '这是 Agent 的输出内容',
-      });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
-
-      expect(screen.getByText('这是 Agent 的输出内容')).toBeInTheDocument();
-    });
+    // 注：精简设计展开态仅渲染嵌套工具行（名称 + 摘要），
+    // 旧的「工具调用」列表标题与块级 output 展示已移除，对应用例随之移除。
 
     it('再次点击应折叠工具调用列表', () => {
       const block = createAgentRunBlock({
@@ -217,7 +178,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
+      const header = screen.getByRole('button');
 
       // 展开
       fireEvent.click(header);
@@ -228,77 +189,34 @@ describe('AgentRunBlockRenderer', () => {
       expect(screen.queryByText('toggle_tool')).not.toBeInTheDocument();
     });
 
-    it('无工具调用时不显示展开箭头', () => {
-      const block = createAgentRunBlock({ toolCalls: [] });
-      render(<AgentRunBlockRenderer block={block} />);
+    it('无工具调用时不显示展开箭头且点击不展开', () => {
+      const { container } = render(<AgentRunBlockRenderer block={createAgentRunBlock({ toolCalls: [] })} />);
 
-      // 没有 ChevronDown 图标（箭头）
-      const header = screen.getByRole('button', { name: '切换详情' });
-      // 只检查没有展开/折叠交互
-      expect(header).toBeInTheDocument();
-    });
-  });
+      // 无 ChevronDown 箭头
+      expect(container.querySelector('svg.lucide-chevron-down')).not.toBeInTheDocument();
 
-  describe('键盘导航', () => {
-    it('Enter 键应展开/折叠', () => {
-      const block = createAgentRunBlock({
-        toolCalls: [createNestedToolCall({ name: 'keyboard_tool' })],
-      });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      const header = screen.getByRole('button', { name: '切换详情' });
-
-      // 按 Enter 展开
-      fireEvent.keyDown(header, { key: 'Enter' });
-      expect(screen.getByText('keyboard_tool')).toBeInTheDocument();
-
-      // 再按 Enter 折叠
-      fireEvent.keyDown(header, { key: 'Enter' });
-      expect(screen.queryByText('keyboard_tool')).not.toBeInTheDocument();
+      // 点击无展开行为（hasToolCalls=false 时 onClick 直接返回）
+      fireEvent.click(screen.getByRole('button'));
+      expect(screen.queryByText('read_file')).not.toBeInTheDocument();
     });
 
-    it('Space 键应展开/折叠', () => {
-      const block = createAgentRunBlock({
-        toolCalls: [createNestedToolCall({ name: 'space_tool' })],
-      });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      const header = screen.getByRole('button', { name: '切换详情' });
-
-      // 按 Space 展开
-      fireEvent.keyDown(header, { key: ' ' });
-      expect(screen.getByText('space_tool')).toBeInTheDocument();
-    });
+    // 注：展开行是原生 <button>，Enter/Space 激活由浏览器原生处理；
+    // jsdom 的 keyDown 不合成 click，故不再保留手写 keyDown 用例。
   });
 
   describe('无障碍', () => {
-    it('应有正确的 ARIA role 属性', () => {
-      const block = createAgentRunBlock();
-      render(<AgentRunBlockRenderer block={block} />);
-
-      expect(screen.getByRole('region')).toBeInTheDocument();
-    });
-
-    it('应有正确的 aria-label', () => {
+    it('极简历史行应为原生 button（可聚焦键盘可达）', () => {
       const block = createAgentRunBlock({ agentType: 'MyAgent' });
       render(<AgentRunBlockRenderer block={block} />);
 
-      expect(screen.getByRole('region')).toHaveAttribute('aria-label', 'Agent: MyAgent');
+      // 精简设计移除了 region 容器与 aria-label，行的可访问名称来自其文本内容
+      const row = screen.getByRole('button');
+      expect(row).toBeInTheDocument();
+      expect(row.textContent).toContain('MyAgent');
     });
 
-    it('展开按钮应有正确的 aria-expanded 属性', () => {
-      const block = createAgentRunBlock({
-        toolCalls: [createNestedToolCall()],
-      });
-      render(<AgentRunBlockRenderer block={block} />);
-
-      const header = screen.getByRole('button', { name: '切换详情' });
-      expect(header).toHaveAttribute('aria-expanded', 'false');
-
-      // 展开后
-      fireEvent.click(header);
-      expect(header).toHaveAttribute('aria-expanded', 'true');
-    });
+    // 注：440163a3 精简设计后不再有 region role / aria-label / aria-expanded 属性，
+    // 对应用例随之移除；展开态语义由原生 button 的点击行为承担。
   });
 
   describe('嵌套工具调用状态', () => {
@@ -308,8 +226,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('completed_tool')).toBeInTheDocument();
     });
@@ -320,8 +237,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('running_tool')).toBeInTheDocument();
     });
@@ -332,8 +248,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('failed_tool')).toBeInTheDocument();
     });
@@ -344,8 +259,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('pending_tool')).toBeInTheDocument();
     });
@@ -360,8 +274,7 @@ describe('AgentRunBlockRenderer', () => {
       });
       render(<AgentRunBlockRenderer block={block} />);
 
-      const header = screen.getByRole('button', { name: '切换详情' });
-      fireEvent.click(header);
+      fireEvent.click(screen.getByRole('button'));
 
       expect(screen.getByText('first_tool')).toBeInTheDocument();
       expect(screen.getByText('second_tool')).toBeInTheDocument();
@@ -369,4 +282,3 @@ describe('AgentRunBlockRenderer', () => {
     });
   });
 });
-

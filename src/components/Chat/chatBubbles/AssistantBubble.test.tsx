@@ -77,9 +77,12 @@ function readFormStatus(container: HTMLElement): {
 }
 
 describe('AssistantBubble memo comparator', () => {
+  // 注意：74f2dbed 起 auto 模式（默认）非流式消息不再于正文直出 form/plugin_card 等块
+  // （折叠进 SessionSummaryCard），本组测试关注的是 memo comparator 放行逻辑，
+  // 故显式传 collapseMode="legacy" 走正文直出路径以观察 DOM 变化。
   it('非流式消息 blocks 引用变化时重渲染（form 块从 pending → submitted 上屏）', () => {
     const { container, rerender } = render(
-      <AssistantBubble message={makeAssistantMessage([makeFormBlock('pending')])} />
+      <AssistantBubble message={makeAssistantMessage([makeFormBlock('pending')])} collapseMode="legacy" />
     );
 
     // pending 态：可交互表单面板存在，无 success 条
@@ -88,7 +91,7 @@ describe('AssistantBubble memo comparator', () => {
 
     // 模拟 form-answered：blocks 引用变化，form 块转为 submitted
     rerender(
-      <AssistantBubble message={makeAssistantMessage([makeFormBlock('submitted')])} />
+      <AssistantBubble message={makeAssistantMessage([makeFormBlock('submitted')])} collapseMode="legacy" />
     );
 
     // 修复后应重渲染：表单面板消失，success 条出现
@@ -98,12 +101,14 @@ describe('AssistantBubble memo comparator', () => {
 
   it('非流式消息 blocks 引用相同时不重渲染（DOM 不变）', () => {
     const message = makeAssistantMessage([makeFormBlock('pending')]);
-    const { container, rerender } = render(<AssistantBubble message={message} />);
+    const { container, rerender } = render(
+      <AssistantBubble message={message} collapseMode="legacy" />
+    );
 
     expect(readFormStatus(container).pendingForm).toBe(true);
 
     // 同引用重新渲染
-    rerender(<AssistantBubble message={message} />);
+    rerender(<AssistantBubble message={message} collapseMode="legacy" />);
 
     // 仍为 pending：表单面板存在，无 success 条
     expect(readFormStatus(container).pendingForm).toBe(true);

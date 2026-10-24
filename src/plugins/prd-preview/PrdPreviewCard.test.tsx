@@ -29,6 +29,15 @@ import { getFileContent } from '@/services/tauri/fileService'
 
 const mockGetFileContent = vi.mocked(getFileContent)
 
+// ArtifactPreviewRenderer 内部经 useContainerWidth 使用 ResizeObserver 测量容器宽度，
+// jsdom 无该 API → 按仓库惯例（ArtifactPreviewRenderer.test.tsx）stub 一个无操作实现
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal('ResizeObserver', ResizeObserverStub)
+
 const fullArtifact = {
   artifactType: 'polaris.preview',
   previewId: 'p-full',

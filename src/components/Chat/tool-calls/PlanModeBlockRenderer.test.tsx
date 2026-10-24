@@ -1,31 +1,27 @@
 /**
  * PlanModeBlockRenderer 组件测试
  *
- * 测试范围：
- * - 渲染：显示计划标题、描述、阶段列表、任务列表、进度条
- * - 交互：批准/拒绝操作、反馈输入、阶段展开/折叠
+ * 测试范围（对齐 b7838424 扁平高密度设计重构后的实现）：
+ * - 渲染：显示计划标题、扁平步骤列表（stage.name 或 tasks[].description）、进度条
+ * - 交互：批准/拒绝操作（走 aiChatDispatch 总线）、反馈输入
  * - 状态：drafting/pending_approval/approved/rejected/executing/completed/canceled
- * - 无障碍：ARIA 属性、键盘导航
+ * - 无障碍：ARIA 属性、Escape 关闭反馈输入
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import {
-  PlanModeBlockRenderer,
-  PLAN_STATUS_CONFIG,
-  PLAN_TASK_STATUS_CONFIG,
-} from './PlanModeBlockRenderer';
+import { PlanModeBlockRenderer, PLAN_STATUS_CONFIG } from './PlanModeBlockRenderer';
 import type { PlanModeBlock, PlanStageBlock } from '../../types';
 
-// Mock Tauri invoke
-const mockInvoke = vi.fn();
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => mockInvoke(...args),
+// Mock aiChatDispatch（组件已上总线：approve_plan/reject_plan 走 cap.ai.chat dispatch）
+const mockAiChatDispatch = vi.fn();
+vi.mock('@/services/aiChatDispatch', () => ({
+  aiChatDispatch: (...args: unknown[]) => mockAiChatDispatch(...args),
 }));
 
-// Mock zustand store and hooks
+// Mock zustand store and hooks（specifier 须与组件 import 一致：'@/stores/...'）
 const mockContinueChat = vi.fn();
-vi.mock('../../stores/conversationStore/useActiveSession', () => ({
+vi.mock('@/stores/conversationStore/useActiveSession', () => ({
   useActiveSessionConversationId: () => 'test-conversation-id',
   useActiveSessionActions: () => ({ continueChat: mockContinueChat }),
 }));
@@ -53,7 +49,6 @@ vi.mock('react-i18next', () => ({
         'plan.approvalButtonsLabel': '审批按钮组',
         'plan.approveAriaLabel': '批准计划',
         'plan.rejectAriaLabel': '拒绝计划',
-        'plan.stageAriaLabel': `阶段 ${options?.name}: ${options?.completed}/${options?.total} 任务完成`,
       };
       return translations[key] || key;
     },
@@ -90,7 +85,7 @@ function createPlanModeBlock(overrides?: Partial<PlanModeBlock>): PlanModeBlock 
 describe('PlanModeBlockRenderer', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockInvoke.mockResolvedValue(undefined);
+    mockAiChatDispatch.mockResolvedValue({});
     mockContinueChat.mockResolvedValue(undefined);
   });
 
@@ -106,18 +101,15 @@ describe('PlanModeBlockRenderer', () => {
       expect(screen.getByText('我的测试计划')).toBeInTheDocument();
     });
 
-    it('应该显示计划描述', () => {
-      const block = createPlanModeBlock({ description: '计划描述内容' });
-      render(<PlanModeBlockRenderer block={block} />);
-
-      expect(screen.getByText('计划描述内容')).toBeInTheDocument();
-    });
+    // 注：b7838424 将渲染器重构为扁平高密度设计后，正文不再渲染 block.description
+    // （仅标题 + 状态徽标 + 步骤列表 + 反馈），计划描述展示行为已彻底移除，对应用例随之移除。
 
     it('应该显示阶段列表', () => {
+      // 扁平格式：stage 无 tasks 时 stage.name 直出为步骤行
       const block = createPlanModeBlock({
         stages: [
-          createPlanStage({ stageId: 'stage-1', name: '阶段一' }),
-          createPlanStage({ stageId: 'stage-2', name: '阶段二' }),
+          createPlanStage({ stageId: 'stage-1', name: '阶段一', tasks: [] }),
+          createPlanStage({ stageId: 'stage-2', name: '阶段二', tasks: [] }),
         ],
       });
       render(<PlanModeBlockRenderer block={block} />);
@@ -144,14 +136,9 @@ describe('PlanModeBlockRenderer', () => {
       expect(progressElements.length).toBeGreaterThanOrEqual(1);
     });
 
-    it('当 isActive 为 true 时应显示激活样式', () => {
-      const block = createPlanModeBlock({ isActive: true });
-      const { container } = render(<PlanModeBlockRenderer block={block} />);
-
-      // 检查是否有 violet 边框样式
-      const mainDiv = container.firstChild as HTMLElement;
-      expect(mainDiv.className).toMatch(/violet/);
-    });
+    // 注：b7838424 扁平化重构后 isActive 不再有 violet 激活样式（无独立视觉态），
+    // 其语义收窄为「pending_approval 时是否可交互」的门槛，
+    // 该行为已由「pending_approval 状态应显示审批按钮」/「isActive 为 false 时不应显示审批按钮」覆盖。
   });
 
   describe('状态显示', () => {
@@ -222,7 +209,8 @@ describe('PlanModeBlockRenderer', () => {
       fireEvent.click(screen.getByText('批准'));
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('approve_plan', {
+        expect(mockAiChatDispatch).toHaveBeenCalledWith({
+          action: 'approve_plan',
           sessionId: 'test-conversation-id',
           planId: 'test-plan-id',
         });
@@ -264,7 +252,8 @@ describe('PlanModeBlockRenderer', () => {
       fireEvent.click(screen.getByText('确认拒绝'));
 
       await waitFor(() => {
-        expect(mockInvoke).toHaveBeenCalledWith('reject_plan', {
+        expect(mockAiChatDispatch).toHaveBeenCalledWith({
+          action: 'reject_plan',
           sessionId: 'test-conversation-id',
           planId: 'test-plan-id',
           feedback: '需要修改',
@@ -285,36 +274,29 @@ describe('PlanModeBlockRenderer', () => {
     });
   });
 
-  describe('阶段展开/折叠', () => {
-    it('点击阶段头部应展开阶段', () => {
+  describe('扁平步骤列表', () => {
+    // 注：b7838424 重构后阶段不再可展开/折叠，嵌套 tasks 展平为始终可见的步骤行
+    it('嵌套格式的任务应展平直出（无需展开）', () => {
       const block = createPlanModeBlock({
         stages: [createPlanStage({ stageId: 'stage-1', name: '阶段一' })],
       });
       render(<PlanModeBlockRenderer block={block} />);
 
-      // 点击阶段头部
-      const stageHeader = screen.getByText('阶段一').closest('div')!;
-      fireEvent.click(stageHeader);
-
-      // 展开后应显示任务列表
       expect(screen.getByText('任务 1')).toBeInTheDocument();
+      expect(screen.getByText('任务 2')).toBeInTheDocument();
     });
 
-    it('再次点击应折叠阶段', () => {
+    it('点击步骤行不改变列表（无折叠交互）', () => {
+      // stage 无 tasks → stage.name 直出为步骤行
       const block = createPlanModeBlock({
-        stages: [createPlanStage({ stageId: 'stage-1', name: '阶段一' })],
+        stages: [createPlanStage({ stageId: 'stage-1', name: '阶段一', tasks: [] })],
       });
       render(<PlanModeBlockRenderer block={block} />);
 
-      const stageHeader = screen.getByText('阶段一').closest('div')!;
+      fireEvent.click(screen.getByText('阶段一'));
 
-      // 展开
-      fireEvent.click(stageHeader);
-      expect(screen.getByText('任务 1')).toBeInTheDocument();
-
-      // 折叠
-      fireEvent.click(stageHeader);
-      expect(screen.queryByText('任务 1')).not.toBeInTheDocument();
+      // 扁平设计：步骤始终可见，点击不会折叠
+      expect(screen.getByText('阶段一')).toBeInTheDocument();
     });
   });
 
@@ -333,10 +315,6 @@ describe('PlanModeBlockRenderer', () => {
       });
       render(<PlanModeBlockRenderer block={block} />);
 
-      // 展开阶段
-      const stageHeader = screen.getByText('阶段 1').closest('div')!;
-      fireEvent.click(stageHeader);
-
       expect(screen.getByText('已完成任务')).toBeInTheDocument();
       expect(screen.getByText('进行中任务')).toBeInTheDocument();
       expect(screen.getByText('待执行任务')).toBeInTheDocument();
@@ -351,10 +329,6 @@ describe('PlanModeBlockRenderer', () => {
         ],
       });
       render(<PlanModeBlockRenderer block={block} />);
-
-      // 展开阶段
-      const stageHeader = screen.getByText('阶段 1').closest('div')!;
-      fireEvent.click(stageHeader);
 
       const taskText = screen.getByText('完成任务');
       expect(taskText.className).toMatch(/line-through/);
@@ -405,19 +379,20 @@ describe('PlanModeBlockRenderer', () => {
       expect(screen.getByLabelText('拒绝计划')).toBeInTheDocument();
     });
 
-    it('阶段应有键盘导航支持', () => {
-      const block = createPlanModeBlock({
-        stages: [createPlanStage({ stageId: 'stage-1', name: '阶段一' })],
-      });
-      render(<PlanModeBlockRenderer block={block} />);
+    it('反馈输入框应有键盘导航支持（Escape 关闭）', () => {
+      const block = createPlanModeBlock({ status: 'pending_approval', isActive: true });
+      const { container } = render(<PlanModeBlockRenderer block={block} />);
 
-      // 找到可聚焦的阶段头部
-      const stageButton = screen.getByText('阶段一').closest('[role="button"]')!;
+      // 打开反馈输入
+      fireEvent.click(screen.getByText('拒绝'));
+      expect(screen.getByPlaceholderText('请输入拒绝原因或修改建议...')).toBeInTheDocument();
 
-      // 按 Enter 应展开/折叠
-      fireEvent.keyDown(stageButton, { key: 'Enter' });
+      // 按 Escape 应关闭反馈输入
+      fireEvent.keyDown(container.querySelector('[role="region"]')!, { key: 'Escape' });
 
-      expect(screen.getByText('任务 1')).toBeInTheDocument();
+      expect(
+        screen.queryByPlaceholderText('请输入拒绝原因或修改建议...')
+      ).not.toBeInTheDocument();
     });
   });
 
@@ -432,12 +407,7 @@ describe('PlanModeBlockRenderer', () => {
       expect(PLAN_STATUS_CONFIG.canceled).toBeDefined();
     });
 
-    it('PLAN_TASK_STATUS_CONFIG 应包含所有任务状态', () => {
-      expect(PLAN_TASK_STATUS_CONFIG.pending).toBeDefined();
-      expect(PLAN_TASK_STATUS_CONFIG.in_progress).toBeDefined();
-      expect(PLAN_TASK_STATUS_CONFIG.completed).toBeDefined();
-      expect(PLAN_TASK_STATUS_CONFIG.failed).toBeDefined();
-      expect(PLAN_TASK_STATUS_CONFIG.skipped).toBeDefined();
-    });
+    // 注：b7838424 精简状态配置后 PLAN_TASK_STATUS_CONFIG 导出已移除
+    // （任务状态由 PlanStepItem 内联处理），对应用例随之移除。
   });
 });

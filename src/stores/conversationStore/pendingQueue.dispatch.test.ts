@@ -24,9 +24,13 @@ vi.mock('@/plugin-system/chatCardRegistry', () => ({
   chatCardRegistry: {
     register: () => {},
     registerBuiltin: () => {},
+    // builtinPlugins.ts 会调 registerBuiltinExact 注册 'ui.render'（ui-template-runtime-v1），
+    // mock 需提供该方法，否则模块初始化即抛 TypeError
+    registerBuiltinExact: () => {},
     unregisterAll: () => {},
     match: () => undefined,
     get: () => undefined,
+    resolve: () => undefined,
   },
 }))
 vi.mock('@/services/aiChatDispatch', () => ({
