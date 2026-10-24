@@ -26,6 +26,7 @@ import {
   getUserThemes,
   migrateLegacyConfigTheme,
 } from '@/services/themeService';
+import { applyCustomCss, clearCustomCss } from '@/services/themeEngine';
 
 const log = createLogger('ThemeStore');
 
@@ -207,6 +208,13 @@ function flattenAndInject(theme: ThemeDefinition): void {
     for (const v of immersiveVars) {
       el.style.removeProperty(v);
     }
+  }
+
+  // 应用用户自定义 CSS（L6 逃生舱）
+  if (theme.customCss) {
+    applyCustomCss(theme.customCss);
+  } else {
+    clearCustomCss();
   }
 }
 

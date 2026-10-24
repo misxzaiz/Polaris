@@ -442,14 +442,14 @@ body {
 
 .prose th,
 .prose td {
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid rgb(var(--c-border) / 0.5);
   padding: 6px 8px;
   word-break: break-word;
   overflow-wrap: break-word;
 }
 
 .prose th {
-  background-color: rgba(255, 255, 255, 0.05);
+  background-color: rgb(var(--c-border) / 0.08);
 }
 
 /* strong/em 样式 */

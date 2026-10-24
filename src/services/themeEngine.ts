@@ -290,6 +290,7 @@ export function applyThemeSync(id: ThemeId = BUILT_IN_THEME_IDS.DARK): void {
     injectCSSVars(flattenThemeToCSSVars(dark));
     document.documentElement.setAttribute('data-theme', BUILT_IN_THEME_IDS.DARK);
     document.documentElement.removeAttribute('data-theme-immersive');
+    clearCustomCss();
     return;
   }
 
@@ -299,6 +300,13 @@ export function applyThemeSync(id: ThemeId = BUILT_IN_THEME_IDS.DARK): void {
   // 扁平化 + 注入
   const vars = flattenThemeToCSSVars(merged);
   injectCSSVars(vars);
+
+  // 应用用户自定义 CSS（L6 逃生舱）
+  if (merged.customCss) {
+    applyCustomCss(merged.customCss);
+  } else {
+    clearCustomCss();
+  }
 
   // 设置 data-* 属性
   document.documentElement.setAttribute('data-theme', id);
