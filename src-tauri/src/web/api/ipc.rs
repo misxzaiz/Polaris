@@ -434,6 +434,7 @@ pub async fn handle_ipc_bridge(
         "message_get_latest" => dispatch_message_get_latest(&args),
         "message_delete_by_conversation" => dispatch_message_delete_by_conversation(&args),
         "message_tombstone_after" => dispatch_message_tombstone_after(&args),
+        "message_revise_undelete" => dispatch_message_revise_undelete(&args),
 
         // ── Session State（session-v2 阶段 2，状态权威）────────────────────
         "session_get_status" => dispatch_session_get_status(&args),
@@ -2349,6 +2350,21 @@ fn dispatch_message_tombstone_after(args: &Value) -> Result<Json<Value>, WebErro
     let n = crate::commands::session_messages::message_tombstone_after_inner(conversation_id, after_ts)
         .map_err(|e| WebError::Internal(format!("message_tombstone_after 失败: {}", e)))?;
     Ok(Json(serde_json::json!({ "tombstoned": n })))
+}
+
+fn dispatch_message_revise_undelete(args: &Value) -> Result<Json<Value>, WebError> {
+    let conversation_id = args
+        .get("conversationId")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("conversationId 参数缺失".to_string()))?
+        .to_string();
+    let after_ts = args
+        .get("afterTs")
+        .and_then(|v| v.as_i64())
+        .ok_or_else(|| WebError::BadRequest("afterTs 参数缺失".to_string()))?;
+    let n = crate::commands::session_messages::message_revise_undelete_inner(conversation_id, after_ts)
+        .map_err(|e| WebError::Internal(format!("message_revise_undelete 失败: {}", e)))?;
+    Ok(Json(serde_json::json!({ "untombstoned": n })))
 }
 
 // ── Session State dispatchers（session-v2 阶段 2）────────────────────────────

@@ -87,6 +87,11 @@ pub fn message_tombstone_after_inner(conversation_id: String, after_ts: i64) -> 
     db()?.tombstone_messages_after(&conversation_id, after_ts)
 }
 
+/// 撤销消息级墓碑（审计 4.5）：重发失败恢复历史时同步清除墓碑。
+pub fn message_revise_undelete_inner(conversation_id: String, after_ts: i64) -> Result<u64> {
+    db()?.untombstone_messages_after(&conversation_id, after_ts)
+}
+
 // ============================================================================
 // Tauri commands（桌面端）
 // ============================================================================
@@ -135,6 +140,12 @@ pub fn message_delete_by_conversation(conversation_id: String) -> Result<()> {
 #[tauri::command]
 pub fn message_tombstone_after(conversation_id: String, after_ts: i64) -> Result<u64> {
     message_tombstone_after_inner(conversation_id, after_ts)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn message_revise_undelete(conversation_id: String, after_ts: i64) -> Result<u64> {
+    message_revise_undelete_inner(conversation_id, after_ts)
 }
 
 // ============================================================================

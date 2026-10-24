@@ -2584,9 +2584,26 @@ export function createConversationStore(
         const workspace = deps.getWorkspace()
         const workspaceDir = workspace?.path || undefined
 
-        // 调用 sendMessage（会自动处理重新生成）
+        // 批 4 补遗（审计 4.5）：先删后发的事务化——sendMessage 失败时恢复被删
+        // 消息。否则旧回复已从内存消失、新回复没来，下次 session_end 整体覆写
+        // JSONL 时被删历史永久丢失。墓碑同步撤销（恢复旧分支后它不再是"应删"）。
         const { sendMessage } = get()
-        await sendMessage(userContent, workspaceDir)
+        const sent = await sendMessage(userContent, workspaceDir)
+        if (sent === false) {
+          log.warn('regenerateResponse: 重发失败，恢复被截断的历史消息', {
+            removedCount: messages.length - userMessageIndex,
+          })
+          set({ messages, currentMessage: null })
+          const restoredConvId = get().conversationId
+          if (removedFromTs && restoredConvId) {
+            void import('@/services/transport')
+              .then(({ invoke }) => invoke('message_revise_undelete', {
+                conversationId: restoredConvId,
+                afterTs: Date.parse(removedFromTs) || 0,
+              }))
+              .catch(() => undefined)
+          }
+        }
       },
 
       editAndResend: async (userMessageId, newContent) => {
@@ -2643,8 +2660,24 @@ export function createConversationStore(
         const workspace = deps.getWorkspace()
         const workspaceDir = workspace?.path || undefined
 
+        // 批 4 补遗（审计 4.5）：同 regenerateResponse——失败恢复被删历史
         const { sendMessage } = get()
-        await sendMessage(newContent, workspaceDir)
+        const sent = await sendMessage(newContent, workspaceDir)
+        if (sent === false) {
+          log.warn('editAndResend: 重发失败，恢复被截断的历史消息', {
+            removedCount: messages.length - messageIndex,
+          })
+          set({ messages, currentMessage: null })
+          const restoredConvId = get().conversationId
+          if (restoredConvId) {
+            void import('@/services/transport')
+              .then(({ invoke }) => invoke('message_revise_undelete', {
+                conversationId: restoredConvId,
+                afterTs: Date.parse(targetMessage.timestamp) || 0,
+              }))
+              .catch(() => undefined)
+          }
+        }
       },
 
       loadMoreArchivedMessages: (count = 20) => {

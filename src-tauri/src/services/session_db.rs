@@ -409,6 +409,26 @@ impl SessionMessageDb {
         Ok(affected as u64)
     }
 
+    /// 撤销消息级墓碑（审计 4.5 恢复路径）：regenerate/editAndResend 重发失败
+    /// 时前端恢复被截断的历史，同步清除对应墓碑（否则恢复的消息在下次 read
+    /// 时仍被过滤）。
+    /// @returns 清除行数
+    pub fn untombstone_messages_after(
+        &self,
+        conversation_id: &str,
+        after_ts_ms: i64,
+    ) -> Result<u64> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn
+            .execute(
+                "UPDATE session_messages SET deleted_at = NULL
+                  WHERE conversation_id = ?1 AND timestamp_ms >= ?2 AND deleted_at IS NOT NULL",
+                params![conversation_id, after_ts_ms],
+            )
+            .map_err(|e| AppError::StateError(format!("撤销消息墓碑失败: {}", e)))?;
+        Ok(affected as u64)
+    }
+
     /// 伪会话行迁移（B1.h）：把 `pending-*` 伪会话的行归入真实会话（幂等——
     /// 伪会话无行时影响 0 行）。真实会话已墓碑时由调用方保证不迁。
     pub fn reattribute_conversation(&self, from: &str, to: &str) -> Result<u64> {
