@@ -1964,6 +1964,31 @@ export function createConversationStore(
         })
       },
 
+      /**
+       * 流式接续（跨端加入/断线恢复）：把快照末条 assistant 接续为 currentMessage，
+       * 后续实时 token 走正常流式追加。见 types.ts 方法注释（不接续会卡死页面）。
+       */
+      resumeStreamingFromLastAssistant: () => {
+        const { messages } = get()
+        const last = messages[messages.length - 1]
+        if (last && last.type === 'assistant') {
+          // 重建 toolBlockMap：流式工具块更新按 id 定位依赖它
+          const newMap = new Map<string, number>()
+          ;(last.blocks ?? []).forEach((b, idx) => {
+            if (b.type === 'tool_call') newMap.set(b.id, idx)
+          })
+          set({
+            messages: messages.slice(0, -1),
+            currentMessage: { ...last, isStreaming: true },
+            toolBlockMap: newMap,
+            isStreaming: true,
+          })
+        } else {
+          // 末条是 user（已发消息未回）：token 到达走正常新建路径
+          set({ isStreaming: true })
+        }
+      },
+
       // ===== 事件处理 =====
       handleAIEvent: (event) => handleAIEvent(event, set, get),
 

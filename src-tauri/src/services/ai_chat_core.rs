@@ -1070,17 +1070,32 @@ pub async fn start_chat_inner(
     let turn_id = format!("turn-{}", uuid::Uuid::new_v4());
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
+    // 修复（2026-10-24，跨端跟随实测）：见闭包内注释——首事件补写 session_start
+    let lifecycle_start_logged = std::sync::atomic::AtomicBool::new(false);
+    let lifecycle_start_flag = std::sync::Arc::new(lifecycle_start_logged);
     let event_callback = move |event: AIEvent| {
         // 阶段 4 批次 4：dispatch 链路附加写入 session_events（影子，失败不阻断）。
-        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
-        match &event {
-            AIEvent::SessionStart(start) => {
+        // 修复（2026-10-24，跨端跟随实测）：Claude 等 CLI 引擎不发 SessionStart 事件，
+        // 真实会话在 lifecycle 中没有 start 记录——跨端跟随发现不了它、启动清 running
+        // 与「会话已在运行中」仲裁也失真。改为：本请求首个事件到达时以事件的真实
+        // session_id 补写 session_start（标志防重；发过 SessionStart 的引擎不双写）。
+        {
+            use std::sync::atomic::Ordering;
+            let sid = event.session_id();
+            if !sid.is_empty() && !lifecycle_start_flag.swap(true, Ordering::SeqCst) {
                 append_session_event(
-                    &start.session_id,
+                    &sid,
                     crate::services::session_state::SessionEventType::SessionStart,
                     None,
                     None,
                 );
+            }
+        }
+        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
+        match &event {
+            AIEvent::SessionStart(start) => {
+                // session_start 已由闭包开头首事件补写覆盖（标志互斥），不再重复写
+                let _ = &start.session_id;
             }
             AIEvent::SessionEnd(end) => {
                 let reason = end.reason.as_ref().map(|r| match r {
@@ -1639,17 +1654,32 @@ pub async fn continue_chat_inner(
     let turn_id = format!("turn-{}", uuid::Uuid::new_v4());
     let emit_ref = callbacks.emit_event.clone();
     let notify_ref = callbacks.notify_complete.clone();
+    // 修复（2026-10-24，跨端跟随实测）：见闭包内注释——首事件补写 session_start
+    let lifecycle_start_logged = std::sync::atomic::AtomicBool::new(false);
+    let lifecycle_start_flag = std::sync::Arc::new(lifecycle_start_logged);
     let event_callback = move |event: AIEvent| {
         // 阶段 4 批次 4：dispatch 链路附加写入 session_events（影子，失败不阻断）。
-        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
-        match &event {
-            AIEvent::SessionStart(start) => {
+        // 修复（2026-10-24，跨端跟随实测）：Claude 等 CLI 引擎不发 SessionStart 事件，
+        // 真实会话在 lifecycle 中没有 start 记录——跨端跟随发现不了它、启动清 running
+        // 与「会话已在运行中」仲裁也失真。改为：本请求首个事件到达时以事件的真实
+        // session_id 补写 session_start（标志防重；发过 SessionStart 的引擎不双写）。
+        {
+            use std::sync::atomic::Ordering;
+            let sid = event.session_id();
+            if !sid.is_empty() && !lifecycle_start_flag.swap(true, Ordering::SeqCst) {
                 append_session_event(
-                    &start.session_id,
+                    &sid,
                     crate::services::session_state::SessionEventType::SessionStart,
                     None,
                     None,
                 );
+            }
+        }
+        // SessionStart/SessionEnd 的 session_id 即引擎会话 ID（conversation_id）。
+        match &event {
+            AIEvent::SessionStart(start) => {
+                // session_start 已由闭包开头首事件补写覆盖（标志互斥），不再重复写
+                let _ = &start.session_id;
             }
             AIEvent::SessionEnd(end) => {
                 let reason = end.reason.as_ref().map(|r| match r {

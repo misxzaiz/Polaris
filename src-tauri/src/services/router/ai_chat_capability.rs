@@ -215,10 +215,16 @@ impl Capability for AiChatCapability {
                             // 事件交织渲染。以 context_id 为键做并发互斥：占位仅在
                             // start 执行期间持有（真实运行态由引擎事件流的
                             // session_start/session_end 记录），结束即释放。
+                            // 前缀必须带 start-gate-：try_start 占位会写 lifecycle
+                            // session_start，无前缀的 contextId 会被跨端跟随当成
+                            // 真实会话（幻影卡片，2026-10-24 浏览器实测）。加前缀后
+                            // Follower 的 isIgnorableConversation 过滤生效，排他
+                            // 语义不变（仍按 contextId 分组互斥）。
                             let gate_key = options
                                 .context_id
                                 .clone()
                                 .filter(|c| !c.is_empty())
+                                .map(|c| format!("start-gate-{}", c))
                                 .unwrap_or_else(|| format!("start-gate-{}", uuid::Uuid::new_v4()));
                             if let Some(reason) =
                                 crate::commands::session_state_commands::session_try_start_inner(
@@ -675,10 +681,12 @@ impl StreamingCapability for AiChatCapability {
             let result: Result<(), String> = match action.as_str() {
                 "start" => {
                     // B2.f（审计 3.8）：start 排他（同 invoke 路径，占位仅执行期持有）
+                    // 同上：start-gate- 前缀防 lifecycle 幻影会话
                     let gate_key = options
                         .context_id
                         .clone()
                         .filter(|c| !c.is_empty())
+                        .map(|c| format!("start-gate-{}", c))
                         .unwrap_or_else(|| format!("start-gate-{}", uuid::Uuid::new_v4()));
                     if let Some(reason) =
                         crate::commands::session_state_commands::session_try_start_inner(

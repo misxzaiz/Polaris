@@ -641,6 +641,14 @@ export interface ConversationActions {
     paging?: { earliestSeq: number; hasMore: boolean; sourceId: string } | null
   ) => void
 
+  /**
+   * 流式接续（跨端加入/断线恢复用）：把快照末条 assistant 消息接续为 currentMessage，
+   * 后续实时 token 走正常流式追加路径。若末条是 user 则只置流式标志（token 到达
+   * 时按正常路径新建 currentMessage）。不调用则 token 走「迟到追加」分支不断
+   * 拼接上一条消息——高频 set 导致页面卡死（2026-10-24 加入会话实测）。
+   */
+  resumeStreamingFromLastAssistant: () => void
+
   // ===== 事件处理（核心） =====
   handleAIEvent: (event: AIEvent) => void
 

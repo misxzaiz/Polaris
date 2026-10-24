@@ -583,7 +583,10 @@ export async function joinRemoteSession(conversationId: string): Promise<string 
           sessionId: conversationId,
         })
         if (running?.running) {
-          store2.getState().setStreaming(true)
+          // 流式接续：把快照末条 assistant 接续为 currentMessage + isStreaming=true。
+          // 必须接续——否则实时 token 走「迟到追加」分支高频拼接上一条消息，
+          // 页面在数十秒内卡死（2026-10-24 加入 running 会话实测 P0）。
+          store2.getState().resumeStreamingFromLastAssistant()
           // 同步 metadata.status（session_start 事件已错过，dispatchEvent 的
           // status 推导不会执行）——否则 Cell 状态点停留 idle 与实际流式不符。
           // 用户补充需求：加入后必须可中断/继续——isStreaming + status 是
@@ -635,6 +638,16 @@ export const remoteSessionFollower = {
   joinSession: (conversationId: string) => joinRemoteSession(conversationId),
   /** 组件用 useStore(store, selector) 订阅 */
   store,
+}
+
+/** 结束会话在列表中的保留窗口：running 立即消失会让用户来不及反应（实测：
+ * simple-ai 回复 ok 仅数秒），保留近期结束的会话供查看/加入（引擎可 continue） */
+export const ENDED_KEEP_WINDOW_MS = 5 * 60 * 1000
+
+/** 远端会话是否应出现在跟随列表（running + 窗口内 ended）——UI 与导航入口共用口径 */
+export function isListableRemote(s: { status: string; endedAt?: number }): boolean {
+  if (s.status === 'running') return true
+  return s.status === 'ended' && !!s.endedAt && Date.now() - s.endedAt < ENDED_KEEP_WINDOW_MS
 }
 
 /** 当前 running 的远端会话（列表用，按启动时间倒序） */
