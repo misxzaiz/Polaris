@@ -82,7 +82,7 @@ pub fn emit_plugin_lifecycle(
         let states = crate::services::plugin_state_service::PluginStateService::new(config_dir)
             .load()
             .unwrap_or_default();
-        crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+        crate::services::plugin_capability_assembly::sync_plugin_contributions(
             &router,
             &discovery.plugins,
             &states,

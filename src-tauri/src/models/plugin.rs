@@ -158,6 +158,13 @@ pub struct PluginManifestContributes {
     #[serde(default)]
     pub capabilities: Vec<PluginCapabilityManifestContribution>,
 
+    /// 插件提供的 skill（P4，2026-10-24 审计：宿主已有 SKILL.md 渐进披露机制，
+    /// 此前插件无注册通道）。约定 skill 目录 `<pluginDir>/skills/<id>/SKILL.md`；
+    /// 生命周期同步时复制到 `<DataRoot>/skills/plugin-<pluginId>-<id>/`
+    /// （SimpleAI discover_skills 已扫描该目录，零引擎改动）。
+    #[serde(default)]
+    pub skills: Vec<PluginSkillManifestContribution>,
+
     /// 插件声明的样式贡献（CSS 注入）
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub styles: Vec<PluginStyleManifestContribution>,
@@ -241,6 +248,16 @@ pub struct PluginToolProviderManifestContribution {
     pub mcp_server_id: String,
     /// 覆盖描述（UI 展示用）
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+/// 插件提供的 skill 声明（P4）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginSkillManifestContribution {
+    /// skill id（目录名，也是 DataRoot 同步目录后缀）
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 }
 

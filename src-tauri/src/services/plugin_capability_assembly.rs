@@ -34,6 +34,21 @@ pub fn router_bus() -> Option<Arc<RouterBus>> {
     ROUTER_BUS.get().cloned()
 }
 
+/// 插件贡献统一同步入口（P2-d capabilities + P4 skills）。
+/// 全部生命周期挂点（启动 / plugin_state_save / emit_plugin_lifecycle）统一调用。
+pub fn sync_plugin_contributions(
+    router: &Arc<RouterBus>,
+    plugins: &[DiscoveredPluginManifest],
+    plugin_states: &PluginStateMap,
+) -> Vec<String> {
+    let mut synced = sync_plugin_capabilities(router, plugins, plugin_states);
+    synced.extend(crate::services::plugin_skills::sync_plugin_skills(
+        plugins,
+        plugin_states,
+    ));
+    synced
+}
+
 /// 全量同步插件 cap 贡献（幂等，可重复调用）。
 /// 返回本次生效注册的 cap id 列表（诊断用）。
 pub fn sync_plugin_capabilities(

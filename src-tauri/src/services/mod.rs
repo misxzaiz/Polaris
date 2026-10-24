@@ -16,6 +16,7 @@ pub mod plugin_service;
 pub mod plugin_service_manager;
 pub mod plugin_state_service;
 pub mod plugin_capability_assembly;
+pub mod plugin_skills;
 pub mod plugin_events;
 pub mod adapter_discovery;
 pub mod hook_registry;

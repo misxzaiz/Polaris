@@ -46,7 +46,7 @@ pub async fn plugin_state_save(app: AppHandle, states: PluginStateMap) -> Result
     if let Some(router) = crate::services::plugin_capability_assembly::router_bus() {
         let discovery =
             crate::services::plugin_service::PluginService::discover_installed_plugins(&config_dir, None);
-        crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+        crate::services::plugin_capability_assembly::sync_plugin_contributions(
             &router,
             &discovery.plugins,
             &states,

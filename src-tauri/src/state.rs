@@ -671,13 +671,13 @@ pub fn create_app_state(
         )
         .load()
         .unwrap_or_default();
-        let registered = crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+        let registered = crate::services::plugin_capability_assembly::sync_plugin_contributions(
             &router,
             &discovery.plugins,
             &states,
         );
         if !registered.is_empty() {
-            tracing::info!("[PluginCapAssembly] 启动期注册插件 cap 贡献: {:?}", registered);
+            tracing::info!("[PluginCapAssembly] 启动期同步插件贡献: {:?}", registered);
         }
     }
 

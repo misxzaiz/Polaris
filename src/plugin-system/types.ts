@@ -253,6 +253,13 @@ export interface PluginToolProviderContribution {
  * 插件提供的 cap 声明（P2-d，2026-10-24 审计）。handler 形态与 cap.registry
  * register 一致；replaces=true 走覆盖链（L0/L2/L4 分级授权）。
  */
+/** 插件提供的 skill 声明（P4） */
+export interface PluginSkillContribution {
+  /** skill id（目录名；期望 <pluginDir>/skills/<id>/SKILL.md） */
+  id: string
+  description?: string
+}
+
 export interface PluginCapabilityContribution {
   /** 注册的 cap id（cap.* 开头；replaces=true 时为目标既有 cap id） */
   id: string
@@ -370,6 +377,8 @@ export interface PolarisPluginManifest {
     toolProviders?: PluginToolProviderContribution[]
     /** 插件提供的 cap（P2-d）：经 cap 总线注册，replaces=true 为覆盖注册 */
     capabilities?: PluginCapabilityContribution[]
+    /** 插件提供的 skill（P4）：<pluginDir>/skills/<id>/SKILL.md，同步到 DataRoot */
+    skills?: PluginSkillContribution[]
     styles?: PluginStyleContribution[]
     /** 插件配置项 schema。声明后设置页自动渲染配置表单。 */
     configSchema?: PluginConfigFieldSchema[]
