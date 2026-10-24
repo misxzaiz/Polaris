@@ -2396,10 +2396,10 @@ pub async fn approve_plan(
     // 发送事件通知前端计划已批准
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, true);
 
-    let payload = serde_json::json!({
-        "contextId": "main",
-        "payload": event
-    });
+    // B3（审计 1.3）：此前硬编码 contextId="main"，前端路由必丢（本端靠乐观
+    // 更新掩盖，另一端的审批卡永远停在待处理态）。改按引擎 conversationId
+    // 寻址，前端按 conversationId 反查投递到发起会话。
+    let payload = wrap_session_routed_event(&session_id, serde_json::json!(event));
 
     // Dual emission: also broadcast to WebSocket clients
     broadcast_chat_event(&state.event_broadcast, &payload);
@@ -2443,10 +2443,8 @@ pub async fn reject_plan(
     let event = PlanApprovalResultEvent::new(&session_id, &plan_id, false)
         .with_feedback(feedback.unwrap_or_default());
 
-    let payload = serde_json::json!({
-        "contextId": "main",
-        "payload": event
-    });
+    // B3（审计 1.3）：同 approve_plan——去硬编码 main，按 conversationId 寻址
+    let payload = wrap_session_routed_event(&session_id, serde_json::json!(event));
 
     // Dual emission: also broadcast to WebSocket clients
     broadcast_chat_event(&state.event_broadcast, &payload);

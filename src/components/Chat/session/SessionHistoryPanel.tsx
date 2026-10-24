@@ -22,6 +22,7 @@ import { useEngineMetadataStore } from '@/stores/engineMetadataStore'
 import { sessionStoreManager } from '@/stores/conversationStore/sessionStoreManager'
 import { useToastStore } from '@/stores/index'
 import { createLogger } from '@/utils/logger'
+import { listen } from '@/services/transport'
 import {
   Clock, MessageSquare, Trash2, RotateCcw, HardDrive, Loader2, X, ChevronDown,
   Globe, FolderOpen, List, GitBranch, Star, Pin, Archive, ArchiveRestore, Play, RefreshCw, Check,
@@ -30,6 +31,7 @@ import { ForkIndicator } from './ForkIndicator'
 import { SessionTree } from './SessionTree'
 import { ForkSessionDialog } from './ForkSessionDialog'
 import { SessionPreviewModal } from './SessionPreviewModal'
+import { RemoteSessionsStrip, RemoteSessionOverlay } from './RemoteSessionsPanel'
 import { getEngineFullName } from '@/utils/engineDisplay'
 import { getPathBasename, normalizeWorkspacePath } from '@/utils/workspacePath'
 
@@ -273,6 +275,24 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
       cancelled = true
     }
   }, [currentWorkspace?.path, fetchPage, refreshTick, selectedWorkspaceId, workspaces])
+
+  // B3b（审计 1.6）：跨端会话生命周期自动刷新——chat-event 是全端广播，任何端
+  // 的 session_start/session_end 都会到达本端；轮末落盘后 JSONL/索引即有新会话，
+  // 防抖 800ms 触发一次列表重载（此前 A 端新建会话 B 端必须手动刷新才可见）。
+  // 进行中的会话由 RemoteSessionsStrip 实时展示（轮末前也在列表外可见）。
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null
+    const unlistenPromise = listen<{ payload?: { payload?: { type?: string } } }>('chat-event', (envelope) => {
+      const type = envelope?.payload?.payload?.type
+      if (type !== 'session_start' && type !== 'session_end') return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => setRefreshTick((v) => v + 1), 800)
+    })
+    return () => {
+      if (timer) clearTimeout(timer)
+      void unlistenPromise.then((unlisten) => unlisten())
+    }
+  }, [])
 
   // 全文搜索（防抖 250ms）
   useEffect(() => {
@@ -849,6 +869,9 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
 
       {/* 会话列表 */}
       <div ref={scrollContainerRef} className="flex-1 overflow-y-auto min-h-0">
+        {/* 其他设备进行中的会话（跨端只读跟随，批 3） */}
+        <RemoteSessionsStrip />
+
         {/* 继续工作区 */}
         {continueItems.length > 0 && viewMode === 'list' && (
           <div className="px-3 sm:px-4 pt-3 pb-1">
@@ -1011,6 +1034,9 @@ export function SessionHistoryPanel({ onClose }: SessionHistoryPanelProps) {
           onClose={() => setPreviewTarget(null)}
         />
       )}
+
+      {/* 远端会话只读跟随视图（跨端，批 3） */}
+      <RemoteSessionOverlay />
     </div>
   )
 }

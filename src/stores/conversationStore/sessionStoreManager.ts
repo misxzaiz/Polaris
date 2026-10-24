@@ -570,6 +570,12 @@ function createSessionManagerStore() {
       // 只驱动卡片渲染 / 回答回写，兜底投递到当前活跃会话即可。其余事件保持丢弃语义，
       // 避免重新引入「回退 activeSessionId」的历史根因（见对不准窗口/新开窗口旧 bug）。
       const RENDER_EVENT_TYPES: ReadonlySet<string> = new Set(['plugin_card', 'plugin_card_answered'])
+      // B3（审计 1.3/1.4）：按引擎 conversationId 寻址的「会话动作回执」事件
+      // ——路由 miss 时按 payload.sessionId 反查持有该 conversationId 的会话投递
+      const CONVERSATION_ROUTED_EVENT_TYPES: ReadonlySet<string> = new Set([
+        'question_answered',
+        'plan_approval_result',
+      ])
 
       const store = get().stores.get(routeSessionId)
       // 实际投递目标 sessionId（未兜底 = routeSessionId；兜底 = 活跃会话）
@@ -589,6 +595,34 @@ function createSessionManagerStore() {
             log.warn('渲染事件未匹配到会话且无活跃会话，丢弃', { routeSessionId, type: event.type })
             return
           }
+        } else if (CONVERSATION_ROUTED_EVENT_TYPES.has(event.type)) {
+          // B3（审计 1.3/1.4）：question_answered / plan_approval_result 的信封按
+          // 引擎 conversationId 寻址（session-<引擎id>），对不上本地 UUID 键——
+          // 此前必丢（本端靠乐观更新掩盖，跨端卡片永远停在待处理态）。
+          // 事件 payload 自带 sessionId（引擎 conversationId），按 conversationId
+          // 反查本端 store 投递到发起会话。语义安全：只在「确有会话持有该
+          // conversationId」时投递，不触碰「回退 activeSessionId」旧根因。
+          const conversationId = (event as { sessionId?: string }).sessionId
+          const entry = conversationId
+            ? [...get().stores.entries()].find(
+                ([, s]) => s.getState().conversationId === conversationId,
+              )
+            : undefined
+          if (entry) {
+            log.info('会话动作回执按 conversationId 反查投递', {
+              routeSessionId,
+              target: entry[0],
+              type: event.type,
+            })
+            targetSessionId = entry[0]
+          } else {
+            log.warn('会话动作回执未找到持有该 conversationId 的会话，丢弃', {
+              routeSessionId,
+              conversationId,
+              type: event.type,
+            })
+            return
+          }
         } else {
           // store 不存在 = 前端尚未创建该会话（用户从未打开 / 已删除）。
           // 事件丢弃，由前端主动创建会话后再发起新一轮对话。
@@ -604,6 +638,38 @@ function createSessionManagerStore() {
         return
       }
       targetStore.getState().handleAIEvent(event)
+
+      // B3b（审计 1.6）：session_start 到达时把会话注册进后端 sessions_index 投影
+      // （该表已有刷新机制但此前零注册方——孤儿资产）。投影是批 5 跨端会话列表
+      // 的数据底座；workspace_key 暂用 default 桶（分桶属 B5）。静默会话不注册
+      // （不进任何列表）。fire-and-forget，失败不阻断。
+      if (event.type === 'session_start') {
+        const meta = get().sessionMetadata.get(targetSessionId)
+        if (meta && !meta.silentMode) {
+          const conversationId = (event as { sessionId?: string }).sessionId
+          void import('@/services/transport')
+            .then(({ invoke }) =>
+              invoke('session_index_register', {
+                workspaceKey: 'default',
+                record: {
+                  id: targetSessionId,
+                  conversationId: conversationId ?? null,
+                  title: meta.title ?? '',
+                  engineId: meta.engineId ?? '',
+                  workspaceId: meta.workspaceId ?? null,
+                  contextWorkspaceIds: meta.contextWorkspaceIds ?? [],
+                  type: meta.type ?? 'free',
+                  silentMode: false,
+                  messageIds: [],
+                  version: 1,
+                  createdAt: Date.now(),
+                  updatedAt: Date.now(),
+                },
+              }),
+            )
+            .catch(() => { /* 投影注册失败不阻断会话；批 5 接列表消费时再上报告警 */ })
+        }
+      }
 
       // 补发到 EventBus，确保 DeveloperPanel 等订阅者能收到事件
       try {
