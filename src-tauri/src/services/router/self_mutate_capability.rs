@@ -147,6 +147,8 @@ impl Capability for SelfMutateCapability {
                             source: ctx.source().clone(),
                             action: format!("{}.{}", action, params.get("slotId").and_then(Value::as_str).unwrap_or("")),
                             prev_hash: String::new(),
+                            detail: None,
+                            duration_ms: None,
                         },
                     );
                     // 审计写入失败不阻塞改造生效，但记录到日志便于追溯

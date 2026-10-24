@@ -2858,11 +2858,29 @@ async fn dispatch_router_dispatch(state: &AppState, args: &Value) -> Result<Json
     // 性能治理（同 commands/router.rs router_dispatch）：外包 blocking 线程池，
     // 重量级 sync capability 不占 tokio worker（git 写秒级任务尤其受益）。
     // 若 git feature 未编译，cap.git 将以"能力未注册"应答（与旧行为等价）。
+    // X5 护栏：DISPATCH_SYNC_TIMEOUT 兜「能力 handler 永不返回」的挂死——
+    // 只解除调用方阻塞（blocking 线程无法强取消，由能力自行完成）。
     let router = state.router.clone();
-    let reply = tokio::task::spawn_blocking(move || router.dispatch(env))
-        .await
-        .map_err(|e| WebError::Internal(format!("dispatch join error: {}", e)))?
-        .map_err(WebError::Internal)?;
+    let reply = match tokio::time::timeout(
+        crate::services::router::DISPATCH_SYNC_TIMEOUT,
+        tokio::task::spawn_blocking(move || router.dispatch(env)),
+    )
+    .await
+    {
+        Ok(joined) => joined
+            .map_err(|e| WebError::Internal(format!("dispatch join error: {}", e)))?
+            .map_err(WebError::Internal)?,
+        Err(_) => {
+            tracing::error!(
+                timeout_secs = crate::services::router::DISPATCH_SYNC_TIMEOUT.as_secs(),
+                "web dispatch 超时（能力 handler 未返回，放弃等待）"
+            );
+            return Err(WebError::Internal(format!(
+                "dispatch 超时（上限 {}s）：能力 handler 未返回",
+                crate::services::router::DISPATCH_SYNC_TIMEOUT.as_secs()
+            )));
+        }
+    };
 
     let (ok, result, error) = match reply.result {
         Ok(v) => (true, Some(v), None),

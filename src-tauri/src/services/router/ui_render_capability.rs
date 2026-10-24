@@ -479,6 +479,8 @@ impl UiRenderCapability {
                     source: ctx.source().clone(),
                     action: "ui_template.register".into(),
                     prev_hash: String::new(),
+                    detail: None,
+                    duration_ms: None,
                 },
             ) {
                 return Err(format!("cap.ui.render 模板审计写入失败: {}", e));
@@ -517,6 +519,8 @@ impl UiRenderCapability {
                     source: ctx.source().clone(),
                     action: "ui_template.unregister".into(),
                     prev_hash: String::new(),
+                    detail: None,
+                    duration_ms: None,
                 },
             ) {
                 return Err(format!("cap.ui.render 模板审计写入失败: {}", e));

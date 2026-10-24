@@ -163,6 +163,8 @@ impl Capability for UiInputCapability {
                         source: ctx.source().clone(),
                         action: format!("ui.input.{}", action),
                         prev_hash: String::new(),
+                        detail: None,
+                        duration_ms: None,
                     },
                 );
                 let _ = txn.commit();

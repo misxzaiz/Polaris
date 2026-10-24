@@ -466,6 +466,8 @@ mod tests {
             source: Source::Bootstrap,
             action: "store".into(),
             prev_hash: "0".repeat(64),
+            detail: None,
+            duration_ms: None,
         }
     }
 
@@ -710,6 +712,8 @@ mod tests {
             source: Source::Remote { token: "SECRET_TOKEN".into() },
             action: "store".into(),
             prev_hash: "0".repeat(64),
+            detail: None,
+            duration_ms: None,
         };
         txn.append_audit("audit_src", &entry).unwrap();
         txn.commit().unwrap();
@@ -773,6 +777,8 @@ mod tests {
             source: Source::Bootstrap,
             action: "store".into(),
             prev_hash: "0".repeat(64),
+            detail: None,
+            duration_ms: None,
         };
         let item = Item {
             id: Id("t1".into()),

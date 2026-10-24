@@ -350,6 +350,13 @@ pub struct AuditEntry {
     pub source: Source,
     pub action: String,
     pub prev_hash: String, // tamper-evident 链
+    /// 资源摘要（payload 动作名，如 `action=run`；字符级截断，不含参数明文——
+    /// 参数可能携带 token 等敏感值，只记「做了什么动作」不记「参数是什么」）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// dispatch 耗时（毫秒；能力 invoke 自计时，非流式全程）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<u64>,
 }
 
 // ============================================================================
@@ -677,6 +684,8 @@ mod tests {
             source: Source::Plugin { caller: PluginId("cap.ai".into()) },
             action: "store".into(),
             prev_hash: "abc123".into(),
+            detail: None,
+            duration_ms: None,
         };
         let s = serde_json::to_string(&entry).unwrap();
         let back: AuditEntry = serde_json::from_str(&s).unwrap();

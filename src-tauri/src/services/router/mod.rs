@@ -84,6 +84,20 @@ use crate::contracts::*;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
+
+/// X5 护栏：同步 dispatch 单次调用上限（入口层 tokio::time::timeout 包裹）。
+///
+/// 取 900s —— 必须大于能力层最长合法阻塞（cap.bash 内建默认 600s），只兜
+/// 「能力 handler 永不返回」的挂死（占满 spawn_blocking 池），不截断任何
+/// 合法长操作。这不是同步 bug 的遮羞布：超时有显式错误串 + 告警日志。
+/// v1 常量；配置化（config.router.*）留给后续梯队。
+pub const DISPATCH_SYNC_TIMEOUT: Duration = Duration::from_secs(900);
+
+/// X5 护栏：流式泵 idle 上限——超过该时长无任何事件且通道未关，视为能力侧
+/// 挂死，泵任务强制广播 dispatch.end(error) 收场。取 300s：容忍慢供应商的
+/// 长思考间隔，只拦「永不发事件也永不关闭」的泄漏流。
+pub const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(300);
 
 /// 流式应答（dispatch_stream 立即返回；事件经 EventAdapter 通道推送）
 ///
@@ -226,7 +240,7 @@ impl RouterBus {
         };
         match self.permission.check(&perm_req)? {
             PermissionVerdict::Deny => {
-                self.audit_deny(&env);
+                self.audit_deny(&env, "permission");
                 self.broadcaster.broadcast(Event {
                     seq: 0,
                     kind: "dispatch.deny".into(),
@@ -241,7 +255,7 @@ impl RouterBus {
                 return Err("权限拒绝".into());
             }
             PermissionVerdict::Prompt => {
-                self.audit_deny(&env);
+                self.audit_deny(&env, "prompt");
                 return Err("需用户审批，Phase 0 暂不支持".into());
             }
             PermissionVerdict::Allow => {}
@@ -284,24 +298,78 @@ impl RouterBus {
 
         // 5. 审计（接受即记，事件本身不逐条落审计）
         if let Some(audit) = self.audit.as_ref() {
-            let _ = audit.append(&AuditEntry {
-                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                capability: env.target.clone(),
-                source: env.source.clone(),
-                action: "dispatch.stream.start".into(),
-                prev_hash: String::new(),
-            });
+            audit_append(
+                audit.as_ref(),
+                &AuditEntry {
+                    timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    capability: env.target.clone(),
+                    source: env.source.clone(),
+                    action: "dispatch.stream.start".into(),
+                    prev_hash: String::new(),
+                    detail: payload_action_detail(&env.payload),
+                    duration_ms: None,
+                },
+            );
         }
 
-        // 6. 泵任务：Receiver → EventAdapter（trace 统一覆写；sender 全关后收尾）
+        // 6. 泵任务：Receiver → EventAdapter（trace 统一覆写；sender 全关后收尾）。
+        // X5 护栏：idle watchdog——能力侧若因故障/泄漏永不发事件也永不关通道，
+        // 泵任务会无限挂起且不广播 dispatch.end（前端 lifecycle 挂起）。超过
+        // STREAM_IDLE_TIMEOUT 无事件即强制收场（广播 error 终态 + 落审计）。
         let adapter = self.broadcaster.clone();
         let trace = env.trace.clone();
         let msg_id = env.id.clone();
         let target = env.target.0.clone();
+        let audit = self.audit.clone();
         tokio::spawn(async move {
-            while let Some(mut ev) = rx.recv().await {
-                ev.trace = trace.clone();
-                adapter.broadcast(ev);
+            loop {
+                let recv = tokio::time::timeout(STREAM_IDLE_TIMEOUT, rx.recv()).await;
+                match recv {
+                    Ok(Some(mut ev)) => {
+                        ev.trace = trace.clone();
+                        adapter.broadcast(ev);
+                    }
+                    // 通道关闭：正常收尾
+                    Ok(None) => break,
+                    // idle 超时：强制收场，防 dispatch.end 永不到达
+                    Err(_) => {
+                        tracing::error!(
+                            target = %target,
+                            idle_secs = STREAM_IDLE_TIMEOUT.as_secs(),
+                            "流式泵 idle 超时，强制广播 dispatch.end(error)"
+                        );
+                        if let Some(audit) = audit.as_ref() {
+                            audit_append(
+                                audit.as_ref(),
+                                &AuditEntry {
+                                    timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                                    capability: CapabilityId(target.clone()),
+                                    source: Source::Bootstrap, // 泵任务宿主侧，无调用方可引用
+                                    action: "dispatch.stream.timeout".into(),
+                                    prev_hash: String::new(),
+                                    detail: Some(format!("streamIdleTimeout={}s", STREAM_IDLE_TIMEOUT.as_secs())),
+                                    duration_ms: None,
+                                },
+                            );
+                        }
+                        adapter.broadcast(Event {
+                            seq: 0,
+                            kind: "dispatch.end".into(),
+                            payload: serde_json::json!({
+                                "msg_id": msg_id.0,
+                                "target": target,
+                                "status": "error",
+                                "error": format!(
+                                    "stream idle timeout ({}s)",
+                                    STREAM_IDLE_TIMEOUT.as_secs()
+                                ),
+                                "stream": true,
+                            }),
+                            trace: trace.clone(),
+                        });
+                        return; // drop rx：能力侧后续 send 失败自止
+                    }
+                }
             }
             adapter.broadcast(Event {
                 seq: 0,
@@ -415,7 +483,7 @@ impl Router for RouterBus {
         };
         match self.permission.check(&perm_req)? {
             PermissionVerdict::Deny => {
-                self.audit_deny(&env);
+                self.audit_deny(&env, "permission");
                 self.broadcaster.broadcast(Event {
                     seq: 0,
                     kind: "dispatch.deny".into(),
@@ -435,7 +503,7 @@ impl Router for RouterBus {
             }
             PermissionVerdict::Prompt => {
                 // Phase 0 无 Shell，动态请求直接 Deny（安全失败）
-                self.audit_deny(&env);
+                self.audit_deny(&env, "prompt");
                 self.broadcaster.broadcast(Event {
                     seq: 0,
                     kind: "dispatch.deny".into(),
@@ -487,6 +555,7 @@ impl Router for RouterBus {
                     Some(self.broadcaster.clone()),
                 );
 
+                let started = std::time::Instant::now();
                 let result = cap.invoke(env.payload.clone(), &ctx);
 
                 // 4. 广播 dispatch.end 追踪事件
@@ -510,15 +579,24 @@ impl Router for RouterBus {
                     trace: env.trace.clone(),
                 });
 
-                // 审计 allow（dispatch 成功）
+                // 审计（X4：成败分别记 action；detail 记动作名，不落参数明文）
                 if let Some(audit) = self.audit.as_ref() {
-                    let _ = audit.append(&AuditEntry {
-                        timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                        capability: env.target.clone(),
-                        source: env.source.clone(),
-                        action: "dispatch.ok".into(),
-                        prev_hash: String::new(),
-                    });
+                    audit_append(
+                        audit.as_ref(),
+                        &AuditEntry {
+                            timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                            capability: env.target.clone(),
+                            source: env.source.clone(),
+                            action: if result.is_ok() {
+                                "dispatch.ok".into()
+                            } else {
+                                "dispatch.error".into()
+                            },
+                            prev_hash: String::new(),
+                            detail: payload_action_detail(&env.payload),
+                            duration_ms: Some(started.elapsed().as_millis() as u64),
+                        },
+                    );
                 }
 
                 // PR-2a C1：cap 返回的错误串若带结构化 marker → 拆出 error_detail，
@@ -548,7 +626,9 @@ impl Router for RouterBus {
                         plugin_config,
                         Some(self.broadcaster.clone()),
                     );
-                    let result = cap.invoke(env.payload, &ctx);
+                    let started = std::time::Instant::now();
+                    let payload = env.payload.clone();
+                    let result = cap.invoke(payload.clone(), &ctx);
                     // 阶段 1.3：一次 dispatch 恰一个终态事件 —— 此前的重复
                     // dispatch.end 广播已删除（双终态会让前端 lifecycleSubscriber
                     // 对同一 msg_id 状态翻转两次）
@@ -559,6 +639,26 @@ impl Router for RouterBus {
                         }
                         Ok(v) => (Ok(v), None),
                     };
+                    // X4：回退分支补审计——这是 cap.ai.chat 同步动作的高频路径，
+                    // 历史版本整段零审计（2026-10-24 审计 X4-①）
+                    if let Some(audit) = self.audit.as_ref() {
+                        audit_append(
+                            audit.as_ref(),
+                            &AuditEntry {
+                                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                                capability: env.target.clone(),
+                                source: env.source.clone(),
+                                action: if result.is_ok() {
+                                    "dispatch.ok".into()
+                                } else {
+                                    "dispatch.error".into()
+                                },
+                                prev_hash: String::new(),
+                                detail: payload_action_detail(&payload),
+                                duration_ms: Some(started.elapsed().as_millis() as u64),
+                            },
+                        );
+                    }
                     self.broadcaster.broadcast(Event {
                         seq: 0,
                         kind: "dispatch.end".into(),
@@ -611,18 +711,45 @@ impl RouterBus {
         Ok(handle)
     }
 
-    /// 审计 deny（Deny 与 Prompt 安全失败共用）
-    fn audit_deny(&self, env: &Envelope) {
+    /// 审计 deny（Deny 与 Prompt 安全失败共用；拒绝原因编码进 action 后缀，
+    /// 沿用本模块既有 `dispatch.deny:<reason>` 编码风格）
+    fn audit_deny(&self, env: &Envelope, reason: &str) {
         if let Some(audit) = self.audit.as_ref() {
-            let _ = audit.append(&AuditEntry {
-                timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
-                capability: env.target.clone(),
-                source: env.source.clone(),
-                action: "dispatch.deny".into(),
-                prev_hash: String::new(),
-            });
+            audit_append(
+                audit.as_ref(),
+                &AuditEntry {
+                    timestamp_ms: chrono::Utc::now().timestamp_millis() as u64,
+                    capability: env.target.clone(),
+                    source: env.source.clone(),
+                    action: format!("dispatch.deny:{}", reason),
+                    prev_hash: String::new(),
+                    detail: payload_action_detail(&env.payload),
+                    duration_ms: None,
+                },
+            );
         }
     }
+}
+
+/// 审计 append 失败告警（X4：原三处 `let _ =` 静默吞错，磁盘满/IO 故障时
+/// 审计链无声断流）。行为保持 fail-open——dispatch 结果不因审计故障被丢弃
+/// （fail-closed 会让一次磁盘满挂掉全部能力调用）——但绝不无声。
+fn audit_append(audit: &dyn AuditSink, entry: &AuditEntry) {
+    if let Err(e) = audit.append(entry) {
+        tracing::error!(
+            capability = %entry.capability.0,
+            action = %entry.action,
+            error = %e,
+            "审计写入失败（fail-open，dispatch 结果不受影响）"
+        );
+    }
+}
+
+/// payload 动作摘要（审计 detail 用）：只记动作名，不落参数明文——
+/// 参数可能携带 token 等敏感值；字符级截断防超长动作名污染审计行。
+fn payload_action_detail(payload: &Value) -> Option<String> {
+    let action = payload.get("action")?.as_str()?;
+    Some(format!("action={}", action).chars().take(64).collect())
 }
 
 /// 真实上下文（dispatch 内部调用能力时注入）

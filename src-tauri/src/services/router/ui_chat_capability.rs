@@ -106,6 +106,8 @@ impl Capability for UiChatCapability {
                         source: ctx.source().clone(),
                         action: "ui.chat.patch".to_string(),
                         prev_hash: String::new(),
+                        detail: None,
+                        duration_ms: None,
                     },
                 );
                 let _ = txn.commit();

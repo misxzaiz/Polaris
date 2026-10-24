@@ -35,9 +35,19 @@ struct AuditRecord {
     prev_hash: String,
     /// 本条记录哈希（tamper-evident）
     record_hash: String,
+    /// 资源摘要（2026-10-24 审计 X4；旧记录缺省 → None）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
+    /// dispatch 耗时 ms（同上；旧记录缺省 → None）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
 }
 
 /// 参与哈希计算的核心字段（canonical JSON）
+///
+/// 兼容性铁律：**新增字段只追加在既有五字段之后且 Option+skip**——旧记录
+/// （无新字段）的 canonical JSON 与历史哈希完全一致，`verify_chain` 对混合链
+/// （旧记录 + 新记录）依然通过；新记录的新字段纳入哈希，防篡改不降级。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AuditRecordCore<'a> {
@@ -46,6 +56,10 @@ struct AuditRecordCore<'a> {
     source: &'a str,
     action: &'a str,
     prev_hash: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    duration_ms: Option<u64>,
 }
 
 /// Source 变体名（审计落盘脱敏：不存 token 明文）
@@ -64,6 +78,8 @@ fn record_hash_of(
     source: &str,
     action: &str,
     prev_hash: &str,
+    detail: Option<&str>,
+    duration_ms: Option<u64>,
 ) -> String {
     let core = AuditRecordCore {
         timestamp_ms,
@@ -71,6 +87,8 @@ fn record_hash_of(
         source,
         action,
         prev_hash,
+        detail,
+        duration_ms,
     };
     let canonical = serde_json::to_string(&core).unwrap_or_default();
     let mut hasher = Sha256::new();
@@ -168,6 +186,8 @@ impl AuditSink for FileAuditSink {
             source,
             &entry.action,
             &prev_hash,
+            entry.detail.as_deref(),
+            entry.duration_ms,
         );
         let record = AuditRecord {
             timestamp_ms: entry.timestamp_ms,
@@ -176,6 +196,8 @@ impl AuditSink for FileAuditSink {
             action: entry.action.clone(),
             prev_hash,
             record_hash,
+            detail: entry.detail.clone(),
+            duration_ms: entry.duration_ms,
         };
         let line = serde_json::to_string(&record).map_err(|e| format!("审计序列化失败: {}", e))?;
         state
@@ -239,13 +261,16 @@ pub fn verify_chain(path: &Path) -> Result<u64, usize> {
         if rec.prev_hash != expected_prev {
             return Err(line_no);
         }
-        // 2. 内容完整性：重算哈希必须一致
+        // 2. 内容完整性：重算哈希必须一致（旧记录无 detail/durationMs → None，
+        //    canonical JSON 与历史格式一致，混合链兼容）
         let recomputed = record_hash_of(
             rec.timestamp_ms,
             &rec.capability,
             &rec.source,
             &rec.action,
             &rec.prev_hash,
+            rec.detail.as_deref(),
+            rec.duration_ms,
         );
         if recomputed != rec.record_hash {
             return Err(line_no);
@@ -280,6 +305,8 @@ mod tests {
             source: Source::Remote { token: "SECRET".into() },
             action: action.into(),
             prev_hash: String::new(),
+            detail: None,
+            duration_ms: None,
         }
     }
 
@@ -348,6 +375,49 @@ mod tests {
         let first = fs::read_to_string(&path).unwrap();
         let rec: AuditRecord = serde_json::from_str(first.lines().next().unwrap()).unwrap();
         assert_eq!(rec.prev_hash, GENESIS_HASH, "首条 prev_hash 应为 GENESIS");
+        let _ = fs::remove_dir_all(path.parent().unwrap());
+    }
+
+    /// X4 回归：新字段（detail/durationMs）落盘 + 旧格式记录构成的混合链
+    /// 仍可整体校验（升级审计文件不破坏既有 tamper-evident 链）。
+    #[test]
+    fn mixed_old_and_new_format_chain_verifies() {
+        let path = tmp_path("mixed");
+        // 1) 手工写一条「旧格式」记录（无 detail/durationMs）。
+        //    canonical 串手工按 AuditRecordCore 声明序拼（serde_json::json! 的
+        //    Map 字段序不确定，不能用于复现结构体序列化形态）。
+        let old_canonical = format!(
+            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.todo\",\
+             \"source\":\"Bootstrap\",\"action\":\"dispatch.ok\",\"prevHash\":\"{}\"}}",
+            GENESIS_HASH
+        );
+        let mut hasher = Sha256::new();
+        hasher.update(GENESIS_HASH.as_bytes());
+        hasher.update(old_canonical.as_bytes());
+        let old_hash = format!("{:x}", hasher.finalize());
+        let old_line = format!(
+            "{{\"timestampMs\":1700000000000,\"capability\":\"cap.todo\",\
+             \"source\":\"Bootstrap\",\"action\":\"dispatch.ok\",\
+             \"prevHash\":\"{}\",\"recordHash\":\"{}\"}}",
+            GENESIS_HASH, old_hash
+        );
+        fs::write(&path, format!("{}\n", old_line)).unwrap();
+
+        // 2) 以新格式续链（带 detail/durationMs）
+        let sink = FileAuditSink::open(&path).unwrap();
+        assert_eq!(sink.count(), 1, "应扫描到旧格式历史记录");
+        let mut enriched = entry("dispatch.error");
+        enriched.detail = Some("action=run".into());
+        enriched.duration_ms = Some(42);
+        sink.append(&enriched).unwrap();
+
+        // 3) 混合链整体校验通过，且新字段确实落盘
+        assert_eq!(verify_chain(&path).unwrap(), 2, "旧格式 + 新格式混合链应校验通过");
+        let content = fs::read_to_string(&path).unwrap();
+        let new_line = content.lines().nth(1).unwrap();
+        assert!(new_line.contains("\"detail\":\"action=run\""), "detail 应落盘");
+        assert!(new_line.contains("\"durationMs\":42"), "durationMs 应落盘");
+        assert!(!content.contains("SECRET"), "token 明文仍不落盘");
         let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 }

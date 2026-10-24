@@ -90,6 +90,8 @@ impl Capability for UiThemeCapability {
                         source: ctx.source().clone(),
                         action: format!("ui.theme.{}", action),
                         prev_hash: String::new(),
+                        detail: None,
+                        duration_ms: None,
                     },
                 );
                 let _ = txn.commit();

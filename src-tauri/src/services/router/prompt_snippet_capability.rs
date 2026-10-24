@@ -77,6 +77,8 @@ fn audit_entry(ctx: &dyn Context, action: &str) -> AuditEntry {
         action: action.to_string(),
         // 哈希链由 FileAuditSink（Bootstrap 直管）维护；domain_audit 是域内轨迹
         prev_hash: String::new(),
+        detail: None,
+        duration_ms: None,
     }
 }
 
