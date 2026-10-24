@@ -3,11 +3,14 @@
 //! 把对话从浏览器 OPFS 搬到磁盘 jsonl，统一接管在 `<DataRoot>/dialogs/` 下。
 //!
 //! 文件命名：`<externalId>.jsonl`（externalId 由前端清洗为 `[a-zA-Z0-9._-]+`）。
-//! 写入策略：原子写入（`*.jsonl.tmp` → rename），避免崩溃时半截 jsonl。
+//! 写入策略：原子写入（唯一后缀 `*.tmp` → sync → rename），避免崩溃时半截 jsonl；
+//! 详见 `dialog_write_inner` 的根因注释。
 
 use std::fs;
-use std::io::{BufRead, BufReader};
-use std::path::PathBuf;
+use std::io::{BufRead, BufReader, Write};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime};
 
 use serde::Serialize;
 
@@ -104,6 +107,8 @@ pub fn dialog_read_inner(name: &str) -> Result<Option<String>> {
 /// 会话越大收益越明显(几十 MB 的历史文件只读几百字节)。
 pub fn dialog_list_meta_inner() -> Result<Vec<DialogMetaEntry>> {
     let dir = dialogs_dir()?;
+    // 顺带回收崩溃遗留的 tmp（列表是历史面板的常规入口，低频且非关键路径）
+    sweep_stale_tmp_files(&dir);
     let mut out: Vec<DialogMetaEntry> = Vec::new();
     if let Ok(entries) = fs::read_dir(&dir) {
         for e in entries.flatten() {
@@ -141,15 +146,64 @@ pub fn dialog_write_inner(name: &str, content: &str) -> Result<()> {
         .parent()
         .ok_or_else(|| AppError::ConfigError("无法解析对话目录".to_string()))?;
     fs::create_dir_all(parent)?;
-    let tmp = parent.join(format!("{}.tmp", name));
-    fs::write(&tmp, content)?;
-    if target.exists() {
-        fs::remove_file(&target)?;
+    // 根因修复（2026-10-24，审计 2.4/2.5）：
+    // 1) tmp 曾固定为 `{name}.tmp`——前端轮末整写与后端 archive_conversation 整写
+    //    走同一 `dialog_write_inner`（同进程多线程），共用同一 tmp 名会互相覆写
+    //    半截文件。改为唯一后缀（pid + 单调序号），双写者互不干扰；
+    // 2) 写后 `sync_data` 刷盘——此前无 fsync，崩溃/断电时 rename 可能落空文件；
+    // 3) rename 先试原子覆盖（POSIX 语义；目标不存在时 Windows 也成功），失败
+    //    再退回 remove+rename 重试环，把「文件不存在」窗口压到最短。
+    //    已知边界：Windows 上 remove→rename 间仍有微小窗口，事务级替换需
+    //    ReplaceFileW，留待后续批次。
+    static TMP_SEQ: AtomicU64 = AtomicU64::new(0);
+    let seq = TMP_SEQ.fetch_add(1, Ordering::Relaxed);
+    let tmp = parent.join(format!("{}.{}.{}.tmp", name, std::process::id(), seq));
+    {
+        let mut f = fs::File::create(&tmp)?;
+        f.write_all(content.as_bytes())?;
+        f.sync_data()?;
     }
-    fs::rename(&tmp, &target)?;
+    let rename_result = (|| -> Result<()> {
+        if fs::rename(&tmp, &target).is_err() {
+            if target.exists() {
+                fs::remove_file(&target)?;
+            }
+            fs::rename(&tmp, &target)?;
+        }
+        Ok(())
+    })();
+    if rename_result.is_err() {
+        // rename 失败清理自己的 tmp 不留垃圾（崩溃遗留的由 sweep_stale_tmp 兜底）
+        let _ = fs::remove_file(&tmp);
+        rename_result?;
+    }
     // 索引维护（尽力而为，绝不阻塞主写路径）
     crate::services::dialog_index::on_self_write(name, content);
     Ok(())
+}
+
+/// 回收崩溃遗留的 tmp 文件（审计 2.5：tmp 残留无任何回收逻辑，dialog_list 只认
+/// `.jsonl`，残留文件永远躺在目录里）。只删修改时间早于 1 小时的 `*.tmp`，
+/// 避免误删并发写者刚创建的 tmp（唯一后缀后并发 tmp 同样以 .tmp 结尾）。
+fn sweep_stale_tmp_files(dir: &Path) {
+    let Ok(entries) = fs::read_dir(dir) else { return };
+    let cutoff = SystemTime::now()
+        .checked_sub(Duration::from_secs(3600))
+        .unwrap_or(SystemTime::UNIX_EPOCH);
+    for entry in entries.flatten() {
+        let file_name = entry.file_name();
+        let Some(n) = file_name.to_str() else { continue };
+        if !n.ends_with(".tmp") {
+            continue;
+        }
+        if let Ok(meta) = entry.metadata() {
+            if let Ok(modified) = meta.modified() {
+                if modified < cutoff {
+                    let _ = fs::remove_file(entry.path());
+                }
+            }
+        }
+    }
 }
 
 /// 增量追加消息行（WAL 式崩溃保护）。
