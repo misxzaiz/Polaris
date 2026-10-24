@@ -162,7 +162,7 @@ breakdown()
 
 ### 3.3 测试数据
 
-当前环境待办总数：**9 个 pending**（含历史测试数据）
+当前环境待办共 9 个（8 pending + 1 completed，含历史测试数据）：
 
 | ID 前缀 | 内容 | 优先级 | 状态 |
 |---|---|---|---|
@@ -334,5 +334,15 @@ reset() → { ok: true, reset: true }
 
 ---
 
-**文档版本**：v1.0  
+## 9. 勘误（2026-10-25，代码复核）
+
+本报告为历史实测记录，结论按当时二进制行为记录；以下事项经后续代码核对已与现状不符：
+
+- **§6.1「bus_dispatch 白名单」机制已废除**：`bus_mcp_server.rs` 现从注册表派生可转发目标（`dispatchable_capabilities`），bus 进程静态注册 17 个能力（远多于表中 8 个），静态 `DISPATCH_WHITELIST` 已删除。表中「必须 cap_dispatch」的能力（self.inspect/self.mutate/ui.render/ai.chat/kv/mcp）里，`cap.self.inspect`、`cap.self.mutate`、`cap.kv` 现已可在 bus_dispatch 触达；`cap.ui.render` / `cap.ai.chat` / `cap.mcp` 仍为主进程特有。实测时若白名单仍生效，说明当时运行的 bus-mcp 独立 bin 为旧构建（参考记忆 `polaris-mcp-schema-exe-staleness` 的同类过期问题）。
+- **§7.2「bus_dispatch 白名单硬编码」建议已解决**：注册表派生后新增能力无需再维护第二处名单。
+- **§3.3 计数修正**：表格实为 8 pending + 1 completed，原表述「9 个 pending」不准。
+
+---
+
+**文档版本**：v1.1  
 **最后更新**：2026-10-25

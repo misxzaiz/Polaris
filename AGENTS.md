@@ -68,7 +68,7 @@
   - `services/`（业务核：ai_chat_core、ask_listener、plugin_service 等）
   - `models/`（AIEvent 等跨进程协议类型）
   - `services/router/`（**RouterBus —— cap 总线**）
-- **cap 总线是统一权限/审计通道**。已装配能力（`router/` 目录）：`cap.ai.chat`（流式 + form 动作）、`cap.bash`、`cap.todo`、`cap.http`、`cap.fs`、`cap.data_root`、`cap.config`、`cap.context`、`cap.history`、`cap.kv`、`cap.plugin_discovery`、`cap.plugin_service_manager`、`cap.prompt_snippet`、`cap.help`。
+- **cap 总线是统一权限/审计通道**。已装配能力（`router/` 目录，共 26 个，2026-10-25 实测对齐）：`cap.ai.chat`（流式 + form 动作）、`cap.bash`、`cap.todo`、`cap.http`、`cap.fs`、`cap.data_root`、`cap.config`、`cap.context`、`cap.history`、`cap.hook`、`cap.kv`、`cap.mcp`、`cap.voice`、`cap.registry`、`cap.help`、`cap.stream.echo`（流式骨架）、`cap.prompt_snippet`、`cap.pluginDiscovery`、`cap.pluginServiceManager`、`cap.ui.render`（含 DSL 模板 + chart 图表节点）、`cap.ui.theme`、`cap.ui.chat`、`cap.ui.input`、`cap.self.inspect`、`cap.self.mutate`、`cap.git`（feature 门控）。**新增能力须同步本清单与 `plans/two-bus-architecture.md`**。
 - **迁移方向**：高频命令应从 `commands/` 迁上 RouterBus，每迁一个砍一个旧命令；以 `dataRootService.ts` 前端样板 + `router/` 内 capability 实现为范式。
 
 ### 3.3 数据根与隔离

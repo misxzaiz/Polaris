@@ -44,22 +44,20 @@
 |---|---|
 | **MCP Server** | `polaris-bus`（独立进程） |
 | **工具名** | `mcp__polaris-bus__bus_dispatch` |
-| **入口限制** | 白名单制，仅 8 个能力 |
-| **设计目的** | 轻量、安全、高频操作 |
+| **入口限制** | 无静态白名单——可转发目标 = 本进程 RouterBus 已注册能力（注册表派生） |
+| **设计目的** | 轻量、高频操作；独立进程崩溃不影响主进程 |
 
-**白名单能力：**
-```typescript
-const BUS_DISPATCH_WHITELIST = [
-  'cap.todo',      // 待办事项 CRUD
-  'cap.http',      // HTTP 请求转发
-  'cap.bash',      // 后台任务管理
-  'cap.fs',        // 文件系统只读
-  'cap.git',       // Git 域动作（P4）
-  'cap.ui.theme',  // 主题配色控制
-  'cap.ui.chat',   // 对话渲染配置
-  'cap.ui.input',  // 输入区 UI 调节
-] as const
+**历史形态**是静态 `DISPATCH_WHITELIST`（8 项白名单），与注册块两处并行维护，曾导致「白名单放行、RouterBus 报能力未注册」的静默失效；**已废除**，改为注册表派生（`bus_mcp_server.rs` 的 `dispatchable_capabilities`）：注册即放开，新增能力只需在注册块加一行，`tools_list` 的 target enum 与 `bus_help` 每次调用时实时重算。
+
+**bus 进程静态注册的能力（17 个；`git` feature 关闭时 16）：**
+
+```text
+cap.todo  cap.http  cap.fs  cap.bash  cap.kv  cap.prompt_snippet  cap.data_root
+cap.hook  cap.self.mutate  cap.ui.theme  cap.ui.chat  cap.ui.input  cap.git
+cap.context  cap.self.inspect  cap.help  cap.registry
 ```
+
+另含经 cap.registry 重建的动态能力。注意 `cap.registry` / `cap.help` / `cap.self.inspect` 在 bus 进程与主进程是**同名不同实例**（各自管理本进程注册表）。
 
 **典型调用示例：**
 ```json
@@ -84,7 +82,7 @@ const BUS_DISPATCH_WHITELIST = [
 | **入口限制** | 无限制，可触达全部 cap.* |
 | **设计目的** | 完整能力访问、跨进程通信 |
 
-**全量能力清单（24 个）：**
+**全量能力清单（26 个，主进程 RouterBus 注册表实测）：**
 ```typescript
 const ALL_CAPABILITIES = [
   // AI 会话
@@ -121,6 +119,7 @@ const ALL_CAPABILITIES = [
   'cap.stream.echo',   // 流式骨架 demo
   'cap.todo',          // 待办事项（与 bus 共享实现）
   'cap.voice',         // 语音合成
+  'cap.help',          // 能力索引/详情（与 bus 同名不同实例）
 ] as const
 ```
 
@@ -141,20 +140,15 @@ const ALL_CAPABILITIES = [
 
 ## 3. 能力重叠说明
 
-以下能力在两条总线上**都可访问**（bus 白名单 + 主进程全量）：
+bus 进程注册表 ⊂ 主进程注册表（26 项中 17 项两边都有）。重叠能力的实现代码在
+`services/router/` 下**只写一份**，但两条总线各自进程实例化（同代码、不同实例；
+cap.registry / cap.help / cap.self.inspect 各管本进程注册表）。
 
-| 能力 | bus_dispatch | cap_dispatch | 说明 |
-|---|---|---|---|
-| `cap.bash` | ✅ | ✅ | 后台任务管理 |
-| `cap.fs` | ✅ | ✅ | 文件系统只读 |
-| `cap.git` | ✅ | ✅ | Git 域动作 |
-| `cap.http` | ✅ | ✅ | HTTP 请求转发 |
-| `cap.todo` | ✅ | ✅ | 待办事项 CRUD |
-| `cap.ui.theme` | ✅ | ✅ | 主题配色 |
-| `cap.ui.chat` | ✅ | ✅ | 对话渲染 |
-| `cap.ui.input` | ✅ | ✅ | 输入区 UI |
+**仅主进程有的 9 个**：`cap.ai.chat`（流式）、`cap.history`、`cap.ui.render`、
+`cap.mcp`、`cap.voice`、`cap.config`、`cap.stream.echo`、`cap.pluginDiscovery`、
+`cap.pluginServiceManager`——这些依赖主进程状态（会话/事件广播/插件进程池），只能走 `cap_dispatch`。
 
-**结论**：对于重叠能力，优先使用 `bus_dispatch`（更轻量、独立进程不依赖主进程状态）。
+**结论**：重叠能力优先 `bus_dispatch`（独立进程、不依赖主进程状态）；主进程特有能力只能 `cap_dispatch`。
 
 ---
 
@@ -162,13 +156,12 @@ const ALL_CAPABILITIES = [
 
 ```
 需要调用 cap.* 能力？
-├─ 是否在白名单内？（todo/http/bash/fs/git/ui.theme/ui.chat/ui.input）
-│  ├─ 是 → 使用 bus_dispatch（轻量、稳定）
-│  └─ 否 → 使用 cap_dispatch（唯一选择）
-│
-├─ 是否涉及主进程特有状态？（context/kv/plugin/ai.chat/history/render）
-│  ├─ 是 → 必须用 cap_dispatch
-│  └─ 否 → 走上面决策
+├─ 目标是否在 bus 进程注册表？（17 个静态：todo/http/fs/bash/kv/prompt_snippet/
+│  data_root/hook/git/ui.theme/ui.chat/ui.input/self.mutate/self.inspect/help/registry
+│  + 动态注册能力；tools_list 的 target enum 实时可查）
+│  ├─ 是 → 优先 bus_dispatch（独立进程、轻量稳定）
+│  └─ 否（ai.chat/history/ui.render/mcp/voice/config/stream.echo/
+│     pluginDiscovery/pluginServiceManager）→ cap_dispatch（唯一选择）
 │
 └─ 是否是流式操作？（ai.chat start/continue）
    └─ 是 → 必须用 cap_dispatch（WebSocket 事件订阅）
@@ -182,14 +175,18 @@ const ALL_CAPABILITIES = [
 
 ```rust
 // src-tauri/src/services/bus_mcp_server.rs
-// 独立进程，自持轻量总线
-// 只注册白名单能力，其余请求拒绝
+// 独立进程，自持轻量总线：静态注册 17 个能力（git 门控时 16）
+// + 经 cap.registry 重建的动态能力。
+// 可转发目标从注册表派生，无静态白名单：
 
-const DISPATCH_WHITELIST: &[&str] = &[
-    "cap.todo", "cap.http", "cap.bash", "cap.fs",
-    "cap.git", "cap.ui.theme", "cap.ui.chat", "cap.ui.input",
-];
+pub fn dispatchable_capabilities(router: &RouterBus) -> Vec<String> {
+    let mut out = router.list_capabilities().iter().map(|c| c.0.clone()).collect();
+    out.sort(); out.dedup(); out  // 每次调用实时重算
+}
 ```
+
+bus_dispatch 分支不做名单检查——直接构造 `Envelope` 交给本进程 RouterBus，
+由注册表命中 + PolicyPermission + 审计统一裁决。
 
 ### 5.2 polaris-dispatch 架构
 
@@ -204,18 +201,18 @@ const DISPATCH_WHITELIST: &[&str] = &[
 
 ### 5.3 共享实现
 
-重叠能力（bash/fs/git/http/todo/ui.*）在 `services/router/` 下**只实现一次**，两条总线通过不同入口复用同一 Capability 实例。
+重叠能力（bash/fs/git/http/todo/kv/ui.* 等）在 `services/router/` 下**代码只实现一次**，两条总线在各自进程内实例化复用（同代码、不同实例）。
 
 ---
 
 ## 6. 常见错误
 
-### 错误 1：用 bus_dispatch 调用非白名单能力
+### 错误 1：用 bus_dispatch 调 bus 进程未注册的能力
 
 ```json
-// ❌ 错误
+// ❌ 错误：cap.ui.render 只在主进程注册
 {"target": "cap.ui.render", ...}
-// 返回：target cap.ui.render 不在 bus_dispatch 白名单内
+// 返回：能力未注册类错误（bus 进程 RouterBus 统一裁决，非白名单报错）
 
 // ✅ 正确
 {"target": "cap.ui.render", ...}  // 用 cap_dispatch
@@ -241,5 +238,5 @@ const DISPATCH_WHITELIST: &[&str] = &[
 
 ---
 
-**文档版本**：v1.0  
+**文档版本**：v1.1（2026-10-25 勘误：bus_dispatch 静态白名单已废除、改注册表派生；主进程能力清单修正为 26 并补 cap.help）  
 **最后更新**：2026-10-25
