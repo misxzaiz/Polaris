@@ -69,9 +69,9 @@
 
 ## 提交拆分 —— 实际
 
-1. `3f44f3d4 fix(router): 动态能力转发保留原始调用方 Source，封堵 Remote deny 洗白`（X1）
-2. `fd295b7a fix(router): 审计补全与 dispatch 超时护栏（审计 X4/X5）`（X4+X5 合并——mod.rs 中两处改动交织于同一函数，拆分无收益）
-3. `550fcc6c fix(plugins): 插件服务停止竞态与退出孤儿进程修复（审计 X2/X3）`
-4. `fc7997ce docs(plans): 插件与 Cap 机制审计报告 + P0 地基修复实施 spec 归档`
+1. `8ff3709f fix(router): 动态能力转发保留原始调用方 Source，封堵 Remote deny 洗白`（X1）
+2. `f0ae25ca fix(router): 审计补全与 dispatch 超时护栏（审计 X4/X5）`（X4+X5 合并——mod.rs 中两处改动交织于同一函数，拆分无收益）
+3. `aba91319 fix(plugins): 插件服务停止竞态与退出孤儿进程修复（审计 X2/X3）`
+4. `93aca7b8 docs(plans): 插件与 Cap 机制审计报告 + P0 地基修复实施 spec 归档`
 
-> 注：实施期间 main 前进 4 个提交（AI 会话域修复），分支已变基至 `69051c2f` 并复跑全部门槛（cargo check / web-only 门控均 0 error）。
+> 注：实施期间 main 两度前进（AI 会话域修复，零文件冲突），分支最终变基至 `6ee1b2ef` 并复跑全部门槛（cargo check / web-only 门控均 0 error）。
