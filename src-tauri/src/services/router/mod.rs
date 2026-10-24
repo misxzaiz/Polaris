@@ -792,6 +792,83 @@ mod tests {
         assert!(reply.result.unwrap_err().contains("权限拒绝"));
     }
 
+    /// 仅对指定 capability 拒绝 Remote（X1 回归测试用）
+    struct DenyRemoteForCap(String);
+    impl Permission for DenyRemoteForCap {
+        fn check(&self, req: &PermissionRequest) -> Result<PermissionVerdict, String> {
+            if req.capability.0 == self.0 && matches!(req.source, Source::Remote { .. }) {
+                Ok(PermissionVerdict::Deny)
+            } else {
+                Ok(PermissionVerdict::Allow)
+            }
+        }
+    }
+
+    /// X1 回归（2026-10-24 审计）：动态别名转发不得提权——Remote 调用方经
+    /// forward 别名访问被 Remote-deny 的目标 cap，必须在转发后的 gate 被拒
+    /// （历史 bug：转发改写为 Plugin 身份，整条 Remote deny 基线被洗白）。
+    #[test]
+    fn dynamic_forward_preserves_remote_source() {
+        let (router, _) = make_router(Box::new(DenyRemoteForCap("cap.echo".into())), None);
+        router.register_handle(Box::new(EchoCapability)).unwrap();
+
+        let dyn_cap = DynamicCapability::new(
+            DynamicCapabilityConfig {
+                id: "cap.dyn.echo".into(),
+                summary: "cap.echo 别名（回归测试）".into(),
+                description: None,
+                handler: DynamicHandler::Forward {
+                    target: "cap.echo".into(),
+                    defaults: None,
+                },
+                persist: false,
+            },
+            router.clone(),
+        );
+        router.register_handle(Box::new(dyn_cap)).unwrap();
+
+        // 对照 1：Bootstrap 直接调目标 cap → 放行
+        let reply = router
+            .dispatch(Envelope {
+                id: MsgId("x1-a".into()),
+                source: Source::Bootstrap,
+                target: CapabilityId("cap.echo".into()),
+                payload: Value::Null,
+                trace: TraceId("t".into()),
+            })
+            .unwrap();
+        assert!(reply.result.is_ok());
+
+        // 对照 2：Remote 直接调目标 cap → 拒绝（deny 基线生效）
+        let reply = router
+            .dispatch(Envelope {
+                id: MsgId("x1-b".into()),
+                source: Source::Remote { token: "t".into() },
+                target: CapabilityId("cap.echo".into()),
+                payload: Value::Null,
+                trace: TraceId("t".into()),
+            })
+            .unwrap();
+        assert!(reply.result.is_err());
+
+        // 主断言：Remote 经动态别名调目标 cap → 同样拒绝（转发保留原始 source）
+        let reply = router
+            .dispatch(Envelope {
+                id: MsgId("x1-c".into()),
+                source: Source::Remote { token: "t".into() },
+                target: CapabilityId("cap.dyn.echo".into()),
+                payload: Value::Null,
+                trace: TraceId("t".into()),
+            })
+            .unwrap();
+        let err = reply.result.unwrap_err();
+        assert!(
+            err.contains("权限拒绝"),
+            "转发应保留原始 source 并被目标 gate 拒绝: {}",
+            err
+        );
+    }
+
     #[test]
     fn dispatch_prompt_denied_safely() {
         let (router, _) = make_router(

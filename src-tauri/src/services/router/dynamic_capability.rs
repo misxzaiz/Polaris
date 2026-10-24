@@ -26,7 +26,10 @@
 //! # 安全
 //!
 //! - 拒绝注册既有内置 cap（cap.kv 等）与已注册的动态 cap（cap.registry 内校验）；
-//! - 转发仍过 RouterBus.dispatch 统一权限 gate + 审计（Source::Plugin 身份）。
+//! - 转发仍过 RouterBus.dispatch 统一权限 gate + 审计，且**保留原始调用方
+//!   Source**（转发不得提权：Remote 调用方经别名转发后，目标 cap 仍按 Remote
+//!   判权——修复点见 2026-10-24 审计 X1，曾改写为 Plugin 身份导致 Remote deny
+//!   基线可被别名洗白）。
 
 use std::sync::Arc;
 
@@ -105,7 +108,7 @@ impl Capability for DynamicCapability {
         })
     }
 
-    fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
+    fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let target = self.handler_target();
         let payload = match self.config.handler {
             DynamicHandler::Forward { ref defaults, .. } => {
@@ -118,12 +121,12 @@ impl Capability for DynamicCapability {
             }
         };
 
-        // 构造 Envelope 走 RouterBus.dispatch —— 权限 + 审计与其它调用统一
+        // 构造 Envelope 走 RouterBus.dispatch —— 权限 + 审计与其它调用统一。
+        // Source 保留原始调用方（转发不得提权）：目标 cap 的权限 gate 按真实
+        // 来源裁决，Remote 调用方无法借别名洗白为 Plugin 身份（审计 X1）。
         let env = Envelope {
             id: MsgId(format!("dynamic-{}", uuid::Uuid::new_v4())),
-            source: Source::Plugin {
-                caller: PluginId(format!("dynamic:{}", self.config.id)),
-            },
+            source: ctx.source().clone(),
             target: CapabilityId(target.clone()),
             payload,
             trace: TraceId(format!("dynamic-{}", uuid::Uuid::new_v4())),
