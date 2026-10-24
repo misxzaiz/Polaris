@@ -36,6 +36,7 @@ use commands::window::{
     toggle_devtools,
     set_always_on_top,
     is_always_on_top,
+    notify_session_complete,
 };
 #[cfg(feature = "tauri-app")]
 use commands::file_explorer::{
@@ -600,8 +601,11 @@ pub fn run() {
                     .register_streaming(Arc::new(crate::services::router::StreamEchoCapability));
 
                 // 桌面 chat-event 中继：订阅广播通道（总线流式与同步直发两条路径
-                // 都经同一 EventBroadcaster），→ Tauri emit + 完成桌面通知。
+                // 都经同一 EventBroadcaster），→ Tauri emit。
                 // 旧命令层的 window.emit 双发语义由此承接（step7 §A2）。
+                // 完成通知已移至前端按需调用 notify_session_complete（审计 1.5 根因：
+                // 此处曾对任何端的 session_end 无条件弹系统通知，手机/web 跑完的
+                // 会话桌面也弹——改为前端事件命中本端 store 且非静默时才通知）。
                 {
                     let mut raw_rx = state.event_broadcast.subscribe();
                     let handle = app.handle().clone();
@@ -615,20 +619,6 @@ pub fn run() {
                                     }
                                     let Some(payload) = parsed.get("payload") else { continue };
                                     let _ = handle.emit("chat-event", payload);
-                                    let is_session_end = payload
-                                        .get("payload")
-                                        .and_then(|p| p.get("type"))
-                                        .and_then(|t| t.as_str())
-                                        == Some("session_end");
-                                    if is_session_end {
-                                        use tauri_plugin_notification::NotificationExt;
-                                        let _ = handle
-                                            .notification()
-                                            .builder()
-                                            .title("Polaris")
-                                            .body("AI 回复已完成")
-                                            .show();
-                                    }
                                 }
                                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                                 Err(_) => break,
@@ -944,6 +934,7 @@ pub fn run() {
             toggle_devtools,
             set_always_on_top,
             is_always_on_top,
+            notify_session_complete,
             commands::browser::browser_create,
             commands::browser::browser_clear_orphaned_sessions,
             commands::browser::browser_set_bounds,

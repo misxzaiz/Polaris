@@ -48,3 +48,30 @@ pub async fn is_always_on_top(app: AppHandle) -> Result<bool, String> {
         Err("主窗口不存在".to_string())
     }
 }
+
+/// 会话完成桌面通知（由前端在事件命中本端会话时调用）
+///
+/// 根因修复（2026-10-24，审计 1.5）：原 lib.rs 桌面 chat-event 中继对**任何端**
+/// 的 session_end 无条件弹系统通知——手机/web 跑完的会话，桌面也弹「AI 回复已完成」。
+/// 改为前端路由决策：事件命中本端 store 且非静默会话才调用本命令。
+/// 主窗口聚焦时跳过（用户正盯着界面，无需打扰）。
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub async fn notify_session_complete(
+    app: AppHandle,
+    title: Option<String>,
+    body: Option<String>,
+) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_focused().unwrap_or(false) {
+            return Ok(());
+        }
+    }
+    use tauri_plugin_notification::NotificationExt;
+    app.notification()
+        .builder()
+        .title(title.unwrap_or_else(|| "Polaris".to_string()))
+        .body(body.unwrap_or_else(|| "AI 回复已完成".to_string()))
+        .show()
+        .map_err(|e| e.to_string())
+}

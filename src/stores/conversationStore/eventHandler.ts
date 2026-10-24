@@ -401,6 +401,22 @@ export function handleAIEvent(
       // 由后端 turn_persist 兜底把本轮补进归档（只追加比归档更新的消息）。
       saveDialog(get, set)
 
+      // 会话完成桌面通知（近似按端过滤，审计 1.5）：此处只在事件命中本端 store
+      // 时执行——跨端会话的事件路由不到这里，天然不再触发桌面通知（原 lib.rs
+      // 中继对任何端 session_end 无条件弹）。静默会话（标题生成/压缩交接）不通知；
+      // 命令内部主窗口聚焦时也会跳过。
+      // 守卫用原生 __TAURI_INTERNALS__ 探测（通知命令仅桌面端存在），并放在
+      // sessionStoreManager 访问之前：测试会 mock manager，且动态 import
+      // transport 可避免 store 层静态引 transport 触发模块级网络初始化。
+      if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+        const sessionMeta = sessionStoreManager.getState().sessionMetadata.get(state.sessionId)
+        if (!sessionMeta?.silentMode) {
+          void import('@/services/transport')
+            .then(({ invoke }) => invoke('notify_session_complete', {}))
+            .catch(() => { /* 通知失败不影响主流程 */ })
+        }
+      }
+
       // 兜底：后端标记 reason=error 但未单独发 error 事件时（或 error 事件丢失），
       // 给一个可见提示，避免"静默中断无错误信息"。
       // 正常路径下 error 事件先到达，state.error 已被填充原文，此条件不触发。
