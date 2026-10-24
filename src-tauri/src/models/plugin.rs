@@ -358,6 +358,15 @@ pub struct PluginViewContribution {
     pub order: i32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub badge: Option<String>,
+    /// 插槽定位（P5，2026-10-24 审计漂移修复）：前端 types.ts 早已支持
+    /// slot/slotMode（shadow/chain/append），Rust 侧此前缺字段——外部插件
+    /// manifest 声明了会因 deny_unknown_fields 整体装不上（该功能实际只对
+    /// 前端内嵌 builtin 插件可用）。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot: Option<String>,
+    /// 插槽模式：shadow（覆盖默认面板）| chain（链式替换）| append（追加）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub slot_mode: Option<String>,
 }
 
 /// 插件 MCP server contribution

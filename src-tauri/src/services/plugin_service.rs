@@ -1642,6 +1642,15 @@ impl PluginService {
             if view.label_key.trim().is_empty() {
                 errors.push(format!("{}.labelKey is required", prefix));
             }
+            // P5：slotMode 值域校验（值错误此前延迟到运行时静默失效，前移到安装期）
+            if let Some(mode) = &view.slot_mode {
+                if !matches!(mode.as_str(), "shadow" | "chain" | "append") {
+                    errors.push(format!(
+                        "{}.slotMode has unsupported value: {} (supported: shadow | chain | append)",
+                        prefix, mode
+                    ));
+                }
+            }
         }
 
         for (index, server) in manifest.contributes.mcp_servers.iter().enumerate() {

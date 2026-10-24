@@ -68,9 +68,13 @@ export function PluginPanelHost({ panelType, onSendToChat }: PluginPanelHostProp
     return <LoadingFallback />
   }
 
+  // P5：data-plugin-scope —— slot 模式的插件样式以该属性为作用域根
+  // （styles.ts scopeCss 前缀 [data-plugin-scope="<pluginId>"]）
   return (
-    <Suspense fallback={<LoadingFallback />}>
-      <Component pluginId={pluginId} onSendToChat={onSendToChat} />
-    </Suspense>
+    <div data-plugin-scope={pluginId} className="contents">
+      <Suspense fallback={<LoadingFallback />}>
+        <Component pluginId={pluginId} onSendToChat={onSendToChat} />
+      </Suspense>
+    </div>
   )
 }
