@@ -250,6 +250,24 @@ export interface PluginToolProviderContribution {
 }
 
 /**
+ * 插件提供的 cap 声明（P2-d，2026-10-24 审计）。handler 形态与 cap.registry
+ * register 一致；replaces=true 走覆盖链（L0/L2/L4 分级授权）。
+ */
+export interface PluginCapabilityContribution {
+  /** 注册的 cap id（cap.* 开头；replaces=true 时为目标既有 cap id） */
+  id: string
+  summary: string
+  description?: string
+  /**
+   * handler 定义：{type:'forward',target,defaults?} 或
+   * {type:'plugin-rpc',pluginId?,serverId,tool,timeoutMs?}
+   */
+  handler: Record<string, unknown>
+  replaces?: boolean
+  replaceMode?: 'override' | 'fallback'
+}
+
+/**
  * 样式贡献声明（manifest.contributes.styles[]）
  *
  * 插件通过 CSS 注入改造任意 UI 样式。CSS 片段注入到独立的
@@ -350,6 +368,8 @@ export interface PolarisPluginManifest {
     chatCards?: Omit<PluginChatCardContribution, 'pluginId'>[]
     engines?: PluginEngineContribution[]
     toolProviders?: PluginToolProviderContribution[]
+    /** 插件提供的 cap（P2-d）：经 cap 总线注册，replaces=true 为覆盖注册 */
+    capabilities?: PluginCapabilityContribution[]
     styles?: PluginStyleContribution[]
     /** 插件配置项 schema。声明后设置页自动渲染配置表单。 */
     configSchema?: PluginConfigFieldSchema[]

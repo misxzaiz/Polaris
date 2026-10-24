@@ -9,6 +9,7 @@ import type {
   PluginChatCardLoader,
   PluginEngineContribution,
   PolarisPluginManifest,
+  PluginCapabilityContribution,
 } from './types'
 import { pluginPanelRegistry } from './panelRegistry'
 import { chatCardRegistry } from './chatCardRegistry'
@@ -288,6 +289,19 @@ class PluginRegistry {
    * 表示该插件要用自己的 MCP server 接管该能力。后端 MCP 配置解析时
    * 会用插件声明的 server 替换同 capability 的内置实现。
    */
+  /**
+   * 列出所有已注册插件的 cap 贡献点（P2-d）。
+   * 仅展示清单数据；实际注册在宿主启动/插件生命周期同步时由后端完成。
+   */
+  listCapabilityContributions(): (PluginCapabilityContribution & { pluginId: string })[] {
+    return this.listPlugins().flatMap((plugin) =>
+      (plugin.contributes.capabilities ?? []).map((cap) => ({
+        ...cap,
+        pluginId: plugin.id,
+      }))
+    )
+  }
+
   listToolProviderContributions(): (PluginToolProviderContribution & { pluginId: string })[] {
     return this.listPlugins()
       .flatMap((plugin) =>

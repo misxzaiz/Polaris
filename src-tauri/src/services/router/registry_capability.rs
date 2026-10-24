@@ -51,6 +51,33 @@ const OVERRIDE_L4_PREFIXES: &[&str] = &[
     "cap.mcp", "cap.voice", "cap.hook", "cap.plugin",
 ];
 
+/// 覆盖权限分级判定（pub(crate)：plugin_capability_assembly 复用同一权威）
+pub(crate) fn check_override_permission(
+    router: &crate::services::router::RouterBus,
+    id: &str,
+) -> Result<(), String> {
+    if !id.starts_with("cap.") {
+        return Err(format!("覆盖目标必须以 `cap.` 开头: {}", id));
+    }
+    if OVERRIDE_L4_PREFIXES.iter().any(|p| id.starts_with(p)) {
+        return Err(format!(
+            "覆盖目标 {} 属于 L4 永不覆盖域（元能力/自递归高危/AI 核心通道），config 也不可放开",
+            id
+        ));
+    }
+    if OVERRIDE_L0_PREFIXES.iter().any(|p| id.starts_with(p)) {
+        return Ok(());
+    }
+    if router.override_allowed(id) {
+        Ok(())
+    } else {
+        Err(format!(
+            "覆盖目标 {} 属于 L2 高危域：需在 config.capOverride.allow 白名单显式列出后方可覆盖",
+            id
+        ))
+    }
+}
+
 /// cap.registry —— 动态能力注册表
 ///
 /// 需要 `Arc<RouterBus>` 引用以注册/卸载动态能力。
@@ -65,26 +92,7 @@ impl RegistryCapability {
 
     /// 覆盖权限分级判定（P2-c）：L0 放行 / L2 白名单 / L4 拒绝
     fn check_override_permission(&self, id: &str) -> Result<(), String> {
-        if !id.starts_with("cap.") {
-            return Err(format!("覆盖目标必须以 `cap.` 开头: {}", id));
-        }
-        if OVERRIDE_L4_PREFIXES.iter().any(|p| id.starts_with(p)) {
-            return Err(format!(
-                "覆盖目标 {} 属于 L4 永不覆盖域（元能力/自递归高危/AI 核心通道），config 也不可放开",
-                id
-            ));
-        }
-        if OVERRIDE_L0_PREFIXES.iter().any(|p| id.starts_with(p)) {
-            return Ok(());
-        }
-        if self.router.override_allowed(id) {
-            Ok(())
-        } else {
-            Err(format!(
-                "覆盖目标 {} 属于 L2 高危域：需在 config.capOverride.allow 白名单显式列出后方可覆盖",
-                id
-            ))
-        }
+        check_override_permission(&self.router, id)
     }
 
     /// 校验 id 合法性 + 不覆盖既有 cap（含内置与已注册动态）。
@@ -315,7 +323,7 @@ impl RegistryCapability {
             return Err(format!("非法能力 id: {}", id));
         }
         // P2-c：先试弹出覆盖层（覆盖方卸载 → base handler 无感恢复）
-        if self.router.unregister_override(&CapabilityId(id.clone())) {
+        if self.router.unregister_override(&CapabilityId(id.to_string())) {
             tracing::warn!(capability = %id, "cap.override.unregister：覆盖弹出，base handler 恢复");
             return Ok(json!({
                 "unregistered": true,

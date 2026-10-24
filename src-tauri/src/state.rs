@@ -356,9 +356,14 @@ pub fn create_app_state(
         for error in &discovery.errors {
             tracing::warn!("[ExecutorRegistry] 插件发现诊断 {}: {}", error.path, error.error);
         }
+        let executor_states =
+            crate::services::plugin_state_service::PluginStateService::new(config_dir.clone())
+                .load()
+                .unwrap_or_default();
         crate::services::executor::register_plugin_executors(
             &mut executor_registry,
             &discovery.plugins,
+            &executor_states,
         );
     }
 
@@ -651,6 +656,30 @@ pub fn create_app_state(
         // cap.ai.chat —— 第七步阶段 A2 起在 lib.rs 装配点注册（需 Arc<AppState>）
         bus
     };
+
+    // P2-c：L2 覆盖白名单（config.capOverride.allow）注入
+    {
+        let allow = config_store_arc.lock().unwrap().get().cap_override.allow.clone();
+        router.set_override_allowlist(allow);
+    }
+    // P2-d：进程级 RouterBus 注册（插件 cap 贡献装配点用）+ 启动期同步
+    {
+        crate::services::plugin_capability_assembly::put_router_bus(router.clone());
+        let discovery = PluginService::discover_installed_plugins(&config_dir, None);
+        let states = crate::services::plugin_state_service::PluginStateService::new(
+            config_dir.clone(),
+        )
+        .load()
+        .unwrap_or_default();
+        let registered = crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+            &router,
+            &discovery.plugins,
+            &states,
+        );
+        if !registered.is_empty() {
+            tracing::info!("[PluginCapAssembly] 启动期注册插件 cap 贡献: {:?}", registered);
+        }
+    }
 
     // P1-g：Prompt 裁决的用户审批出口（非阻塞批准 + 重试模式）。
     // router block 内的 adapter 已 move 进 RouterBus，此处包同一底层

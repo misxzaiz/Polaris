@@ -834,11 +834,26 @@ impl TaskExecutor for PluginExecutor {
 pub fn register_plugin_executors(
     registry: &mut ExecutorRegistry,
     plugins: &[crate::models::plugin::DiscoveredPluginManifest],
+    plugin_states: &crate::models::plugin_state::PluginStateMap,
 ) {
     for plugin in plugins {
         if plugin.contributes.executors.is_empty() {
             continue;
         }
+
+        // 门控（2026-10-24 审计 P2-d）：禁用插件的执行器不再注册——此前与
+        // MCP（enabled + mcp_enabled）/ 服务（enabled）三层门不一致，「禁用一个
+        // 插件」撤不掉它的执行器。
+        let enabled = plugin_states
+            .get(&plugin.id)
+            .map(|st| st.enabled)
+            .unwrap_or(plugin.enabled_by_default);
+        if !enabled {
+            tracing::info!(plugin = %plugin.id, "插件已禁用，跳过 executors 注册");
+            continue;
+        }
+        // 注：仅扫 User scope（启动期无 workspace 上下文）——项目级插件的
+        // executors 仍不注册，与 MCP 侧差异记录于 spec 待后续治理。
 
         let plugin_id = &plugin.id;
         let install_path = &plugin.install_path;

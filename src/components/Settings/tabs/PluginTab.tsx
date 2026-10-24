@@ -1086,10 +1086,12 @@ function PluginCard({
   const isCorePlugin = plugin.id === 'polaris.core'
   const views = plugin.contributes.views ?? []
   const engines = plugin.contributes.engines ?? []
+  // P2-d：插件提供的 cap（能力提供者展示面；纯能力插件此前在设置页只剩 MCP 开关）
+  const capabilities = plugin.contributes.capabilities ?? []
   const permissionEntries = Object.entries(plugin.permissions).filter(([, enabled]) => enabled)
   const originEntries = Object.entries(plugin.origin ?? {})
     .filter(([, value]) => typeof value === 'string' && value.length > 0)
-  const hasDetails = views.length > 0 || engines.length > 0 || mcpServerStatuses.length > 0 || permissionEntries.length > 0 || originEntries.length > 0
+  const hasDetails = views.length > 0 || engines.length > 0 || mcpServerStatuses.length > 0 || permissionEntries.length > 0 || originEntries.length > 0 || capabilities.length > 0
 
   return (
     <div className={`rounded-lg border transition-colors ${expanded ? 'border-border-subtle bg-background-surface' : 'border-transparent hover:border-border-subtle hover:bg-background-surface/50'}`}>
@@ -1384,6 +1386,32 @@ function PluginCard({
                 <span className="text-[11px] text-text-muted">{t('plugins.noEngines', { defaultValue: 'None' })}</span>
               )}
             </div>
+
+            {/* 能力提供（P2-d）：插件注册/覆盖的 cap */}
+            {capabilities.length > 0 && (
+              <div className="rounded border border-border-subtle bg-background-elevated p-2.5">
+                <div className="mb-1.5">
+                  <span className="text-xs font-medium text-text-secondary">
+                    {t('plugins.capabilitiesTitle', { defaultValue: '提供的 Cap 能力' })}
+                  </span>
+                </div>
+                <div className="space-y-1">
+                  {capabilities.map((cap) => (
+                    <div key={cap.id} className="rounded bg-background-surface/60 px-2 py-1.5">
+                      <div className="flex items-center gap-2">
+                        <code className="text-[11px] text-text-primary">{cap.id}</code>
+                        {cap.replaces && (
+                          <span className="rounded bg-warning-faint px-1 text-[10px] text-warning">
+                            {t('plugins.capOverride', { defaultValue: '覆盖' })} {cap.replaceMode ?? 'override'}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-text-secondary">{cap.summary}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* 权限 */}
             <div className="rounded border border-border-subtle bg-background-elevated p-2.5">

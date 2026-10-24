@@ -72,6 +72,22 @@ pub fn emit_plugin_lifecycle(
     event: &str,
     detail: Option<Value>,
 ) {
+    // P2-d：插件生命周期变化 → cap 贡献增量同步（installed/uninstalled/updated
+    // 统一出口；幂等全量重算；RouterBus 未装配时静默跳过）
+    if let Some(router) = crate::services::plugin_capability_assembly::router_bus() {
+        let config_dir = crate::services::data_root::data_root().config_dir();
+        let discovery = crate::services::plugin_service::PluginService::discover_installed_plugins(
+            &config_dir, None,
+        );
+        let states = crate::services::plugin_state_service::PluginStateService::new(config_dir)
+            .load()
+            .unwrap_or_default();
+        crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+            &router,
+            &discovery.plugins,
+            &states,
+        );
+    }
     if let Err(e) = ctx.emit(
         PLUGIN_LIFECYCLE_EVENT,
         lifecycle_payload(plugin_id, event, detail),

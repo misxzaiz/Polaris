@@ -42,5 +42,16 @@ pub async fn plugin_state_save(app: AppHandle, states: PluginStateMap) -> Result
         &broadcaster,
     );
 
+    // P2-d：启停切换 → 插件 cap 贡献增量同步（幂等全量重算）
+    if let Some(router) = crate::services::plugin_capability_assembly::router_bus() {
+        let discovery =
+            crate::services::plugin_service::PluginService::discover_installed_plugins(&config_dir, None);
+        crate::services::plugin_capability_assembly::sync_plugin_capabilities(
+            &router,
+            &discovery.plugins,
+            &states,
+        );
+    }
+
     Ok(())
 }
