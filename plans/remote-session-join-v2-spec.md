@@ -138,3 +138,27 @@
 ### 5.3 后台会话完成通知的现状说明
 
 批 0 已覆盖主路径：`notify_session_complete` 在主窗口失焦时弹系统通知（本端会话触发）。批 3b 后消息中心（NotificationCenterPanel）+ SessionCell toast（后台会话 addToNotifications）已承接「聚焦但非活跃」场景。剩余边际（聚焦时 Cell 徽标）已有流式脉冲点。**判定：已覆盖，不再追加。**
+
+---
+
+## 6. 实施记录（2026-10-24，方案 A/B 全部落地）
+
+| 项 | 提交 | 内容 |
+|---|---|---|
+| B 能力层 | （joinSession 提交） | joinRemoteSession：投影元数据 → 后端消息库建格 → MultiView → 流式校正 → Follower 清理 |
+| A 导航入口 | （v2 方案 A 提交） | ChatNavigator headerSlot + RemoteSessionsNavSection（查看/加入）+ 渲染条件放宽 + i18n |
+
+### 加入后操作完整性验证（用户补充需求：中断/继续必须可用）
+
+源码走查结论——**中断/继续链路在加入会话上结构性闭环，无半接管**：
+
+1. **中断**：加入端点停止 → store.interrupt()（守卫 conversationId+isStreaming 均已在加入时置位）→ `resolveSessionEngine` 读 metadata.engineId（joinSession 已从投影写入）→ `aiChatDispatch({action:'interrupt', sessionId: conversationId})` → 后端 `interrupt_chat_inner` 按 conversationId 找引擎会话——**多端共享同一后端进程，引擎会话就在那里**，中断直接生效；engineId 错配时后端仍有 try_interrupt_all 兜底 → `session_end(Aborted)` 广播 → 发起端与加入端的 store **各自**正常收尾（批 2 后 Aborted 是明确协议，无需 isInterrupting 掩盖）。
+2. **继续（发送）**：store 有 conversationId → sendMessage 走 continue 到同一引擎会话，上下文无缝；远端仍 running 时后端 `session_try_start` 事务化仲裁拒绝（reason 带启动设备），ErrorBanner/toast 可见——双端并发安全。
+3. **状态一致性**（实施中补的缺口）：加入时 session_start 事件已错过、dispatchEvent 的 status 推导不会执行 → joinSession 显式同步 `metadata.status='running'`，Cell 状态点与停止按钮的数据源对齐。
+4. **轮末双写**：两端各自 saveDialog 写同一 JSONL——批 1 原子写加固（唯一 tmp+fsync）+ 墓碑使其安全（最后写者赢，内容等价）。
+
+### 验收状态
+
+- N1-N3（发现/查看/加入）：UI 已落地，待双端手测
+- N4（加入后发送续接）/ N5（双端仲裁）/ N6（远端结束后继续）：链路已验证 + 后端能力批 2 就绪，待双端手测
+- N7（加入后 Follower 移除）：joinRemoteSession 第 ⑤ 步实现
