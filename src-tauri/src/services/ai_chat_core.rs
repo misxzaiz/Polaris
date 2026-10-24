@@ -978,11 +978,13 @@ pub async fn start_chat_inner(
     );
 
     // 后端消息持久化：登记本轮用户请求（多数引擎不回显 user 事件，故不能依赖事件路径）。
-    // 不在此处直接落库——落库时机是「本轮首个事件到达」时，见 turn_persist::record_user_request。
+    // 落库时机：请求时立即写伪会话 + 轮次首事件到达时按 context_id 认领迁移
+    // （见 turn_persist::record_user_request，B1.e/B1.h）。
     crate::services::turn_persist::record_user_request(
         &message,
         options.client_message_id.as_deref(),
         options.assistant_message_id.as_deref(),
+        options.context_id.as_deref(),
     );
 
     let processed =
@@ -1102,8 +1104,9 @@ pub async fn start_chat_inner(
             }
             _ => {}
         }
-        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
-        crate::services::turn_persist::observe(&event, &engine_str);
+        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档。
+        // context_id 随闭包捕获传入：轮次首事件按请求归属认领用户消息（B1.e）。
+        crate::services::turn_persist::observe_ctx(&event, &engine_str, ctx_id.as_deref());
         // 事件到达时刻（epoch ms），供前端计算 TTFT 与生成速率（TPS）。
         // 仅给有流式时序意义的事件打戳，其余事件保持原序列化路径，不增加开销。
         let now_ms = || {
@@ -1666,8 +1669,9 @@ pub async fn continue_chat_inner(
             }
             _ => {}
         }
-        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档
-        crate::services::turn_persist::observe(&event, &engine_str);
+        // 后端消息持久化（旁路，失败不阻断）：累加当前轮 + 轮末兜底归档。
+        // context_id 随闭包捕获传入：轮次首事件按请求归属认领用户消息（B1.e）。
+        crate::services::turn_persist::observe_ctx(&event, &engine_str, ctx_id.as_deref());
         // 事件到达时刻（epoch ms），供前端计算 TTFT 与生成速率（TPS）。
         // 仅给有流式时序意义的事件打戳，其余事件保持原序列化路径，不增加开销。
         let now_ms = || {

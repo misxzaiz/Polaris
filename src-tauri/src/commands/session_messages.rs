@@ -73,7 +73,18 @@ pub fn message_get_latest_inner(id: String) -> Result<Option<MessageEntry>> {
 }
 
 pub fn message_delete_by_conversation_inner(conversation_id: String) -> Result<()> {
+    // 根因修复（审计 2.2）：forget 移入 inner——此前只在 Tauri command 包装层调用，
+    // Web IPC 路径直接调 inner 不清流式缓冲，删除后晚到事件继续写库「复活」会话。
+    // delete_by_conversation 同时写会话级墓碑（session_db），turn_persist 各写入
+    // 路径据此跳过该会话。
+    crate::services::turn_persist::forget(&conversation_id);
     db()?.delete_by_conversation(&conversation_id)
+}
+
+/// 消息级墓碑：标记会话内 timestamp >= after_ts 的消息为已删除（审计 2.3）。
+/// 前端 regenerate/editAndResend 本地截断后调用，防止恢复时旧分支「复活」。
+pub fn message_tombstone_after_inner(conversation_id: String, after_ts: i64) -> Result<u64> {
+    db()?.tombstone_messages_after(&conversation_id, after_ts)
 }
 
 // ============================================================================
@@ -117,9 +128,13 @@ pub fn message_get_latest(id: String) -> Result<Option<MessageEntry>> {
 #[cfg(feature = "tauri-app")]
 #[tauri::command]
 pub fn message_delete_by_conversation(conversation_id: String) -> Result<()> {
-    // 同步丢弃该会话的流式缓冲（若仍在流式中被删除，避免后续 token 把它写回）
-    crate::services::turn_persist::forget(&conversation_id);
     message_delete_by_conversation_inner(conversation_id)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn message_tombstone_after(conversation_id: String, after_ts: i64) -> Result<u64> {
+    message_tombstone_after_inner(conversation_id, after_ts)
 }
 
 // ============================================================================

@@ -101,10 +101,34 @@ impl SessionMessageDb {
             conn.pragma_update(None, "user_version", SCHEMA_VERSION)
                 .map_err(|e| AppError::StateError(format!("写入 schema 版本失败: {}", e)))?;
         }
+        // 软删除 schema 幂等补建（审计 2.2/2.3 根因修复，2026-10-24）：
+        // - 消息级墓碑 deleted_at：regenerate/editAndResend 后旧分支不再在恢复时复活；
+        // - 会话级墓碑 tombstoned_conversations：删除流式中的会话后，晚到的 Token/
+        //   SessionEnd 事件与 archive_conversation 不得重建它。
+        // 不升 SCHEMA_VERSION（版本不符会删库重建，违背墓碑的持久语义），
+        // 全部用幂等 ALTER/CREATE，老库打开时自动补齐。
+        Self::ensure_soft_delete_schema(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
         })
+    }
+
+    /// 幂等补建软删除 schema：消息级 deleted_at 列 + 会话级墓碑表。
+    fn ensure_soft_delete_schema(conn: &Connection) -> Result<()> {
+        // ALTER TABLE 无 IF NOT EXISTS：重复加列报 duplicate column，忽略即可幂等
+        let _ = conn.execute(
+            "ALTER TABLE session_messages ADD COLUMN deleted_at INTEGER",
+            [],
+        );
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS tombstoned_conversations (
+               conversation_id TEXT PRIMARY KEY,
+               deleted_at_ms   INTEGER NOT NULL
+             );",
+        )
+        .map_err(|e| AppError::StateError(format!("补建会话墓碑表失败: {}", e)))?;
+        Ok(())
     }
 
     fn tune_pragmas(conn: &Connection) -> Result<()> {
@@ -217,6 +241,7 @@ impl SessionMessageDb {
                           WHERE conversation_id = ?1 GROUP BY id) t
                      ON m.id = t.id AND m.version = t.v
                   WHERE m.conversation_id = ?1
+                    AND m.deleted_at IS NULL
                     AND (?2 IS NULL OR m.timestamp_ms > ?2)
                   ORDER BY m.timestamp_ms ASC
                   LIMIT ?3",
@@ -314,7 +339,8 @@ impl SessionMessageDb {
             .transpose()
     }
 
-    /// 删除会话的所有消息（幂等）
+    /// 删除会话的所有消息（幂等）。同时写会话级墓碑：晚到事件（流式中删除时
+    /// Token/SessionEnd 仍在管道里）不得再为本会话重建任何内容（审计 2.2）。
     pub fn delete_by_conversation(&self, conversation_id: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -322,7 +348,91 @@ impl SessionMessageDb {
             params![conversation_id],
         )
         .map_err(|e| AppError::StateError(format!("删除会话消息失败: {}", e)))?;
+        self.tombstone_conversation_locked(&conn, conversation_id)?;
         Ok(())
+    }
+
+    /// 会话级墓碑：插入（幂等）。此后 turn_persist 的所有写入路径跳过该会话。
+    pub fn tombstone_conversation(&self, conversation_id: &str) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        self.tombstone_conversation_locked(&conn, conversation_id)
+    }
+
+    fn tombstone_conversation_locked(&self, conn: &Connection, conversation_id: &str) -> Result<()> {
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        conn.execute(
+            "INSERT OR REPLACE INTO tombstoned_conversations (conversation_id, deleted_at_ms)
+             VALUES (?1, ?2)",
+            params![conversation_id, ts],
+        )
+        .map_err(|e| AppError::StateError(format!("写入会话墓碑失败: {}", e)))?;
+        Ok(())
+    }
+
+    /// 会话是否已墓碑（turn_persist 各写入路径的闸门）
+    pub fn is_conversation_tombstoned(&self, conversation_id: &str) -> Result<bool> {
+        let conn = self.conn.lock().unwrap();
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM tombstoned_conversations WHERE conversation_id = ?1",
+                params![conversation_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| AppError::StateError(format!("查询会话墓碑失败: {}", e)))?;
+        Ok(n > 0)
+    }
+
+    /// 消息级墓碑：把会话内 timestamp >= after_ts 的消息标记删除（审计 2.3）。
+    /// 前端 regenerate/editAndResend 本地截断后调用，防止恢复时 mergeBackendMessages
+    /// 把已被截断的旧分支从尾部「复活」。
+    /// @returns 标记行数
+    pub fn tombstone_messages_after(
+        &self,
+        conversation_id: &str,
+        after_ts_ms: i64,
+    ) -> Result<u64> {
+        let conn = self.conn.lock().unwrap();
+        let ts = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let affected = conn
+            .execute(
+                "UPDATE session_messages SET deleted_at = ?3
+                  WHERE conversation_id = ?1 AND timestamp_ms >= ?2 AND deleted_at IS NULL",
+                params![conversation_id, after_ts_ms, ts],
+            )
+            .map_err(|e| AppError::StateError(format!("写消息墓碑失败: {}", e)))?;
+        Ok(affected as u64)
+    }
+
+    /// 伪会话行迁移（B1.h）：把 `pending-*` 伪会话的行归入真实会话（幂等——
+    /// 伪会话无行时影响 0 行）。真实会话已墓碑时由调用方保证不迁。
+    pub fn reattribute_conversation(&self, from: &str, to: &str) -> Result<u64> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn
+            .execute(
+                "UPDATE session_messages SET conversation_id = ?2 WHERE conversation_id = ?1",
+                params![from, to],
+            )
+            .map_err(|e| AppError::StateError(format!("迁移伪会话消息失败: {}", e)))?;
+        Ok(affected as u64)
+    }
+
+    /// 清扫所有 `pending-` 伪会话行（启动恢复用：重启后内存配对丢失，
+    /// 无人认领的即时落盘行成为孤儿，直接删除）。
+    pub fn delete_pending_conversations(&self) -> Result<u64> {
+        let conn = self.conn.lock().unwrap();
+        let affected = conn
+            .execute(
+                "DELETE FROM session_messages WHERE conversation_id LIKE 'pending-%'",
+                [],
+            )
+            .map_err(|e| AppError::StateError(format!("清扫伪会话消息失败: {}", e)))?;
+        Ok(affected as u64)
     }
 
     /// 存在「流式中」残留消息的会话（每 id 最新版 content 带 `isStreaming: true`）。
@@ -335,7 +445,8 @@ impl SessionMessageDb {
                    FROM session_messages m
                    JOIN (SELECT id, MAX(version) AS v FROM session_messages GROUP BY id) t
                      ON m.id = t.id AND m.version = t.v
-                  WHERE m.content LIKE '%\"isStreaming\":true%'",
+                  WHERE m.content LIKE '%\"isStreaming\":true%'
+                    AND m.deleted_at IS NULL",
             )
             .map_err(|e| AppError::StateError(format!("准备残留流式查询失败: {}", e)))?;
         let rows = stmt

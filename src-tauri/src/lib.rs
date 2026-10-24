@@ -1156,6 +1156,7 @@ pub fn run() {
             commands::session_messages::message_read_history,
             commands::session_messages::message_get_latest,
             commands::session_messages::message_delete_by_conversation,
+            commands::session_messages::message_tombstone_after,
             // 会话状态权威命令层（session-v2 阶段 2）
             commands::session_state_commands::session_get_status,
             commands::session_state_commands::session_request_start,
