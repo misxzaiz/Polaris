@@ -439,6 +439,13 @@ pub struct SessionOptions {
     /// 前端生成的用户消息 ID（透传至 UserMessageEvent.client_message_id，
     /// 用于本机回显去重与多设备消息对齐）
     pub client_message_id: Option<String>,
+
+    /// 客户端类型（desktop / web / mobile-web / mobile-app）。
+    /// SimpleAI 经 environment_context 注入 `<client>` 段；其余引擎由
+    /// ai_chat_core 以追加系统提示行告知。None = 客户端未上报（旧版前端）。
+    pub client_type: Option<String>,
+    /// 客户端平台描述（windows / android / ios 等）
+    pub client_platform: Option<String>,
 }
 
 /// 插件引擎通过 provider 配置文件（如 `~/.omp/agent/models.yml`）注册自定义 provider 的配置。
@@ -505,6 +512,8 @@ impl SessionOptions {
             pi_provider_config: None,
             pi_model: None,
             client_message_id: None,
+            client_type: None,
+            client_platform: None,
         }
     }
 

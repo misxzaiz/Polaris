@@ -125,6 +125,14 @@ pub struct ChatRequestOptions {
     /// 在 new_turn 时 adopt 它，实现全链路 id 统一。
     #[serde(default)]
     pub assistant_message_id: Option<String>,
+    /// 客户端类型（desktop / web / mobile-web / mobile-app），由前端运行环境检测。
+    /// 用于环境上下文注入，让 AI 知道用户实际在用哪个端对话（服务端 os/cwd
+    /// 是运行时环境，不等于用户环境）。缺省不注入。
+    #[serde(default)]
+    pub client_type: Option<String>,
+    /// 客户端平台描述（windows / android / ios 等），配合 client_type 使用。
+    #[serde(default)]
+    pub client_platform: Option<String>,
 }
 
 // ============================================================================
@@ -137,10 +145,40 @@ fn with_additional_disallowed_tools(
 ) -> SessionOptions {
     for tool in tools {
         if !session_opts.disallowed_tools.iter().any(|t| t == tool) {
-            session_opts.disallowed_tools.push((*tool).to_string());
+            session_opts.disallowed_tools.push(tool.to_string());
         }
     }
     session_opts
+}
+
+/// 客户端身份注入（start/continue 共用）。
+///
+/// SimpleAI 经 `environment_context` 注入结构化 `<client>` 段（simple_ai/context.rs）；
+/// 其余引擎（Claude 等）无该机制，向 `append_system_prompt` 追加一行客户端事实陈述。
+/// 目的：避免模型把服务端 os/cwd 当作用户环境（如 APK 移动端对话被答成
+/// 「你在用电脑桌面客户端」——2026-10-25 修复，见 plans/ai-client-context-spec.md）。
+fn inject_client_context(
+    session_opts: &mut SessionOptions,
+    options: &ChatRequestOptions,
+    engine_str: &str,
+) {
+    let Some(ref client_type) = options.client_type else {
+        return;
+    };
+    session_opts.client_type = Some(client_type.clone());
+    session_opts.client_platform = options.client_platform.clone();
+    if engine_str != "simple-ai" {
+        let platform = options.client_platform.as_deref().unwrap_or("unknown");
+        let line = format!(
+            "\n\nCurrent client: {client_type} ({platform}). The user may be talking from a \
+different device than this runtime — answer client/environment questions based on this fact, \
+and do not assume the user is on a desktop app."
+        );
+        match &mut session_opts.append_system_prompt {
+            Some(prompt) => prompt.push_str(&line),
+            None => session_opts.append_system_prompt = Some(line.trim().to_string()),
+        }
+    }
 }
 
 /// 附件处理结果
@@ -1205,6 +1243,7 @@ pub async fn start_chat_inner(
     if let Some(ref id) = options.client_message_id {
         session_opts.client_message_id = Some(id.clone());
     }
+    inject_client_context(&mut session_opts, &options, &engine.as_str());
     // 统一 MCP 注入
     launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);
     if let Some(ref dirs) = options.additional_dirs {
@@ -1797,6 +1836,7 @@ pub async fn continue_chat_inner(
     if let Some(ref id) = options.client_message_id {
         session_opts.client_message_id = Some(id.clone());
     }
+    inject_client_context(&mut session_opts, &options, &engine.as_str());
     // 统一 MCP 注入
     launcher::inject_mcp_into_session_opts(&mut session_opts, &engine, &mcp_config);
     if let Some(ref dirs) = options.additional_dirs {

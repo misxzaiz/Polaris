@@ -341,7 +341,11 @@ impl AIEngine for SimpleAIEngine {
         // 部分 openai-chat-completions 兼容 provider 要求 system 消息只能在最开头。
         // 上下文消息仅首轮注入；continue_session 不重复注入（已在历史中）。
         let mut messages: Vec<Value> = vec![json!({ "role": "system", "content": system_prompt })];
-        for ctx_msg in build_context_messages(&work_dir) {
+        for ctx_msg in build_context_messages(
+            &work_dir,
+            options.client_type.as_deref(),
+            options.client_platform.as_deref(),
+        ) {
             messages.push(ctx_msg);
         }
         if let Some(skill_index) = skill::build_skill_index_message(&skills_list) {

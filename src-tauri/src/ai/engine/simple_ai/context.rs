@@ -21,11 +21,19 @@ const INSTRUCTION_FILENAMES: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];
 const MAX_INSTRUCTION_BYTES: usize = 32 * 1024;
 
 /// 构建首轮注入的上下文消息：始终含一条 `environment_context`，发现到项目指令时再追加一条。
-pub(super) fn build_context_messages(work_dir: &str) -> Vec<Value> {
+///
+/// `client_type` / `client_platform` 来自前端运行环境检测（ChatRequestOptions.clientType），
+/// 描述用户实际对话所用的客户端；与 os/cwd（服务端运行时环境）区分，避免模型
+/// 把服务端环境当作用户环境（见 plans/ai-client-context-spec.md）。
+pub(super) fn build_context_messages(
+    work_dir: &str,
+    client_type: Option<&str>,
+    client_platform: Option<&str>,
+) -> Vec<Value> {
     let mut msgs = Vec::new();
     msgs.push(json!({
         "role": "user",
-        "content": build_environment_context(work_dir),
+        "content": build_environment_context(work_dir, client_type, client_platform),
     }));
     if let Some(instructions) = discover_project_instructions(work_dir) {
         msgs.push(json!({ "role": "user", "content": instructions }));
@@ -37,7 +45,14 @@ pub(super) fn build_context_messages(work_dir: &str) -> Vec<Value> {
 ///
 /// shell 由 `detect_shell()` 动态检测（复用 bash.rs 的缓存逻辑），
 /// 让 LLM 准确知道当前 shell 类型，避免生成不适配的命令语法。
-fn build_environment_context(work_dir: &str) -> String {
+/// os/cwd/shell 描述的是**服务端（Polaris 运行时）环境**；用户客户端
+/// （可能是手机 / 浏览器 / 远程桌面）由 `<client>` 段单独描述，仅在前端
+/// 上报时注入。
+fn build_environment_context(
+    work_dir: &str,
+    client_type: Option<&str>,
+    client_platform: Option<&str>,
+) -> String {
     let os = if cfg!(windows) {
         "Windows"
     } else if cfg!(target_os = "macos") {
@@ -48,12 +63,28 @@ fn build_environment_context(work_dir: &str) -> String {
     let shell = super::tools::detect_shell().0;
     let date = chrono::Local::now().format("%Y-%m-%d").to_string();
     let cwd = xml_escape(&display_path(work_dir));
+    let mut client_block = String::new();
+    if let Some(ct) = client_type {
+        let platform = xml_escape(client_platform.unwrap_or("unknown"));
+        client_block = format!(
+            "\n  \
+<client>\n    \
+<type>{}</type>\n    \
+<platform>{platform}</platform>\n  \
+</client>\n  \
+<note>The os/cwd/shell above describe the Polaris server runtime, not the user's device. \
+The user's actual client is described in &lt;client&gt; — answer client-related questions \
+based on it.</note>\n",
+            xml_escape(ct)
+        );
+    }
     format!(
         "<environment_context>\n  \
 <cwd>{cwd}</cwd>\n  \
 <os>{os}</os>\n  \
 <shell>{shell}</shell>\n  \
-<current_date>{date}</current_date>\n\
+<current_date>{date}</current_date>\n  \
+{client_block}\
 </environment_context>"
     )
 }
@@ -179,7 +210,7 @@ mod tests {
     #[test]
     fn environment_context_has_expected_tags() {
         let dir = tempfile::tempdir().unwrap();
-        let msgs = build_context_messages(dir.path().to_str().unwrap());
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
         assert!(!msgs.is_empty());
         let env = msgs[0]["content"].as_str().unwrap();
         assert!(env.contains("<environment_context>"));
@@ -192,7 +223,7 @@ mod tests {
     #[test]
     fn no_instruction_files_yields_only_env_context() {
         let dir = tempfile::tempdir().unwrap();
-        let msgs = build_context_messages(dir.path().to_str().unwrap());
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
         assert_eq!(msgs.len(), 1);
     }
 
@@ -201,7 +232,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("AGENTS.md"), "Use tabs not spaces.").unwrap();
-        let msgs = build_context_messages(dir.path().to_str().unwrap());
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
         assert_eq!(msgs.len(), 2);
         let instr = msgs[1]["content"].as_str().unwrap();
         assert!(instr.contains("Use tabs not spaces."));
@@ -214,7 +245,7 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         std::fs::write(dir.path().join("AGENTS.md"), "AGENTS_MARKER").unwrap();
         std::fs::write(dir.path().join("CLAUDE.md"), "CLAUDE_MARKER").unwrap();
-        let msgs = build_context_messages(dir.path().to_str().unwrap());
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
         let instr = msgs[1]["content"].as_str().unwrap();
         let ai = instr.find("AGENTS_MARKER").unwrap();
         let ci = instr.find("CLAUDE_MARKER").unwrap();
@@ -229,7 +260,7 @@ mod tests {
         let sub = root.path().join("packages").join("app");
         std::fs::create_dir_all(&sub).unwrap();
         std::fs::write(sub.join("AGENTS.md"), "SUB_RULE").unwrap();
-        let msgs = build_context_messages(sub.to_str().unwrap());
+        let msgs = build_context_messages(sub.to_str().unwrap(), None, None);
         let instr = msgs[1]["content"].as_str().unwrap();
         let ri = instr.find("ROOT_RULE").unwrap();
         let si = instr.find("SUB_RULE").unwrap();
@@ -242,9 +273,33 @@ mod tests {
         std::fs::create_dir(dir.path().join(".git")).unwrap();
         let big = "A".repeat(MAX_INSTRUCTION_BYTES + 5000);
         std::fs::write(dir.path().join("AGENTS.md"), &big).unwrap();
-        let msgs = build_context_messages(dir.path().to_str().unwrap());
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
         let instr = msgs[1]["content"].as_str().unwrap();
         assert!(instr.contains("truncated"));
         assert!(instr.len() < MAX_INSTRUCTION_BYTES + 2000);
+    }
+
+    #[test]
+    fn client_context_injected_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        let msgs = build_context_messages(
+            dir.path().to_str().unwrap(),
+            Some("mobile-app"),
+            Some("android"),
+        );
+        let env = msgs[0]["content"].as_str().unwrap();
+        assert!(env.contains("<client>"));
+        assert!(env.contains("<type>mobile-app</type>"));
+        assert!(env.contains("<platform>android</platform>"));
+        assert!(env.contains("server runtime"));
+    }
+
+    #[test]
+    fn client_context_absent_when_not_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let msgs = build_context_messages(dir.path().to_str().unwrap(), None, None);
+        let env = msgs[0]["content"].as_str().unwrap();
+        assert!(!env.contains("<client>"));
+        assert!(!env.contains("server runtime"));
     }
 }

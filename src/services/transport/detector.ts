@@ -67,3 +67,52 @@ export function detectTransport(): TransportMode {
     hostname === 'tauri.localhost';
   return isLocalHost ? 'tauri' : 'http';
 }
+
+// ============ 客户端身份描述（供 AI 环境上下文注入） ============
+//
+// 与 detectTransport（传输选择）分离：本节回答「用户在用什么端与 AI 对话」，
+// 值会经 chatOptions.clientType 传入后端 ChatRequestOptions，注入
+// <environment_context> 的 <client> 段（见 plans/ai-client-context-spec.md），
+// 避免 AI 把服务端 os/cwd 当作用户环境。
+
+export type ClientType = 'desktop' | 'web' | 'mobile-web' | 'mobile-app'
+
+export interface ClientDescriptor {
+  clientType: ClientType
+  /** 平台描述（windows / android / ios / mac 等），尽力检测 */
+  clientPlatform: string
+}
+
+/** Android WebView UA 带 `; wv)` 片段，用于区分 APK 壳与手机浏览器 */
+function isAndroidWebView(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /Android/i.test(navigator.userAgent) && /;\s*wv\)/.test(navigator.userAgent)
+}
+
+/**
+ * 检测当前客户端形态。
+ * - desktop：桌面 Tauri IPC（主窗口）
+ * - mobile-app：Android WebView 壳（APK）或移动端 Tauri runtime
+ * - mobile-web：手机浏览器
+ * - web：桌面浏览器 / 内置浏览器 webview
+ * WebView 与浏览器的区分是尽力而为（iOS WKWebView 无稳定标记，归入 mobile-web）。
+ */
+export function detectClientDescriptor(): ClientDescriptor {
+  if (typeof navigator === 'undefined') {
+    return { clientType: 'web', clientPlatform: 'unknown' }
+  }
+  const ua = navigator.userAgent
+  const mobile = /Android|iPhone|iPad|iPod/i.test(ua)
+  let clientType: ClientType
+  if (mobile) {
+    const mobileTauri = '__TAURI_INTERNALS__' in window
+    clientType = isAndroidWebView() || mobileTauri ? 'mobile-app' : 'mobile-web'
+  } else {
+    clientType = detectTransport() === 'tauri' ? 'desktop' : 'web'
+  }
+  const uaData = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData
+  const clientPlatform = uaData?.platform
+    ?? navigator.platform
+    ?? (mobile ? (/Android/i.test(ua) ? 'android' : 'ios') : 'unknown')
+  return { clientType, clientPlatform }
+}

@@ -14,6 +14,7 @@ import { generateUUID } from '@/utils/uuid';
 import { create, StoreApi, UseBoundStore } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 import { aiChatDispatch, aiChatDispatchStream } from '@/services/aiChatDispatch'
+import { detectClientDescriptor } from '@/services/transport/detector'
 import { speechService } from '@/services/speechService'
 import type { ConversationStore, ConversationState, StoreDeps } from './types'
 import type { ContentBlock, EngineId, ChatMessage, TaskBoardBlock, TaskBoardItem } from '@/types'
@@ -2286,6 +2287,7 @@ export function createConversationStore(
             set({ pendingBriefing: null })
           }
 
+          const clientDescriptor = detectClientDescriptor()
           const chatOptions = {
             appendSystemPrompt: normalizeForInvoke(appendPrompt),
             systemPrompt: userPrompt ? normalizeForInvoke(userPrompt) : null,
@@ -2307,6 +2309,8 @@ export function createConversationStore(
             profileMode,
             clientMessageId: userMessage.id,
             assistantMessageId,
+            clientType: clientDescriptor.clientType,
+            clientPlatform: clientDescriptor.clientPlatform,
           }
 
           if (conversationId) {
@@ -2502,6 +2506,7 @@ export function createConversationStore(
           effectiveProfile,
         )
         const disabledMcpServers = getDisabledPluginMcpServers()
+        const clientDescriptor = detectClientDescriptor()
 
         try {
           await aiChatDispatchStream({
@@ -2528,6 +2533,8 @@ export function createConversationStore(
               })(),
               modelProfileId: effectiveProfileId,
               profileMode,
+              clientType: clientDescriptor.clientType,
+              clientPlatform: clientDescriptor.clientPlatform,
             },
           })
         } catch (e) {
