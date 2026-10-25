@@ -1155,7 +1155,9 @@ pub struct WebConfig {
     #[serde(default = "default_web_port")]
     pub port: u16,
 
-    /// 认证 Token（None → 首次启动自动生成）
+    /// 认证 Token（None/空 → API 无鉴权；未设 token 时 P0 闸拒绝绑定非回环地址，
+    /// 见 web/server.rs ensure_bind_allowed 与 plans/p0-web-security-gate-spec.md。
+    /// 注意：并无"首次启动自动生成"逻辑——该注释与事实不符，已修正。）
     #[serde(default)]
     pub token: Option<String>,
 }

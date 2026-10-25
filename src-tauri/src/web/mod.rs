@@ -3,6 +3,7 @@ pub mod auth;
 pub mod error;
 pub mod event_broadcaster;
 pub mod middleware;
+pub mod rate_limit;
 pub mod router;
 pub mod server;
 

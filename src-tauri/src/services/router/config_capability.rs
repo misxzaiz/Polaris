@@ -820,7 +820,7 @@ mod tests {
             mask_remote_secrets(&mut full);
             full["modelProfiles"].clone()
         };
-        patch_val[0]["name"] = "renamed";
+        patch_val[0]["name"] = Value::String("renamed".into());
         restore_remote_sentinels("modelProfiles", &mut patch_val, &current).expect("合法哨兵应还原");
         assert_eq!(patch_val[0]["apiKey"], "sk-real-key-1", "按 id 还原现值");
         assert_eq!(patch_val[0]["name"], "renamed", "非密钥修改保留");

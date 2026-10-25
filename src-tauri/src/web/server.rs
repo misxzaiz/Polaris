@@ -1,4 +1,5 @@
 use std::io::ErrorKind;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use tokio::task::JoinHandle;
@@ -8,6 +9,78 @@ use crate::AppState;
 use super::router::create_router;
 
 const ENV_WEB_PORT: &str = "POLARIS_WEB_PORT";
+
+/// 判定 host 是否为回环地址（仅本机可达）。
+fn is_loopback_host(host: &str) -> bool {
+    matches!(host, "127.0.0.1" | "localhost" | "::1" | "[::1]")
+}
+
+/// 绑定闸的纯决策（与构建档无关，可单测）：
+/// - token 已设置 → 放行；
+/// - token 未设置 + 回环 → 放行但告警；
+/// - token 未设置 + 非回环 → 拒绝（debug 构建在动作映射处豁免为告警）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BindDecision {
+    Allow,
+    AllowWithWarn,
+    Reject,
+}
+
+fn decide_bind(host: &str, token_set: bool) -> BindDecision {
+    if token_set {
+        return BindDecision::Allow;
+    }
+    if is_loopback_host(host) {
+        BindDecision::AllowWithWarn
+    } else {
+        BindDecision::Reject
+    }
+}
+
+/// P0 安全部署闸（plans/p0-web-security-gate-spec.md §1）：
+/// 未设置 token 时拒绝绑定非回环地址——token 为 None/空即 API 完全开放
+/// （web/middleware.rs 对 None/空直接放行），绑到 0.0.0.0 等于把无鉴权 API
+/// 暴露给整个局域网/公网。
+///
+/// - debug 构建（debug_assertions）对 Reject 仅告警不拒绝：保住
+///   `pnpm tauri:dev:web` 的手机局域网联调工作流（与 dev 发现文件同一纪律：
+///   开发便利不进 release）。
+fn ensure_bind_allowed(state: &AppState, host: &str) -> Result<(), String> {
+    // 配置读取失败按"token 未知"处理：非回环绑定宁可拒绝（fail closed）。
+    let token_set = match state.clone_config_web() {
+        Ok(config) => config.web.token.is_some_and(|t| !t.is_empty()),
+        Err(_) => false,
+    };
+    match decide_bind(host, token_set) {
+        BindDecision::Allow => Ok(()),
+        BindDecision::AllowWithWarn => {
+            tracing::warn!(
+                "[Web][安全] 未设置 token，服务仅绑定回环地址 {}；局域网/远程访问不可用。\
+                 设置 token（config.json web.token / 环境变量 POLARIS_WEB_TOKEN / CLI --token）以启用非回环绑定",
+                host
+            );
+            Ok(())
+        }
+        BindDecision::Reject => {
+            #[cfg(debug_assertions)]
+            {
+                tracing::warn!(
+                    "[Web][安全] debug 构建豁免：未设置 token 仍绑定 {}（release 构建将拒绝）。\
+                     生产部署请先设置 token",
+                    host
+                );
+                Ok(())
+            }
+
+            #[cfg(not(debug_assertions))]
+            Err(format!(
+                "[Web][安全] 拒绝绑定 {host}：未设置 token 时非回环绑定等于把无鉴权 API 开放给局域网/公网。\
+                 修复：设置 token（config.json web.token、环境变量 POLARIS_WEB_TOKEN 或 CLI --token）后重试；\
+                 若仅需本机经反代访问，改绑 127.0.0.1"
+            ))
+        }
+    }
+}
 
 /// Dev-only: 发现文件目录名（位于项目根，由 vite dev middleware 映射到
 /// `/.polaris-dev/server.json`；不放 public/ 避免 build 时被拷进产物）。
@@ -154,6 +227,9 @@ impl WebServer {
         host: &str,
         preferred_port: u16,
     ) -> Result<WebServerHandle, Box<dyn std::error::Error + Send + Sync>> {
+        // P0 安全部署闸：绑定前校验 token × host 组合（spec §1）
+        ensure_bind_allowed(&self.state, host)?;
+
         let shutdown = self.shutdown.clone();
         let state = self.state.clone();
         let mut port = preferred_port;
@@ -182,9 +258,12 @@ impl WebServer {
 
                     let task = tokio::spawn(async move {
                         let app = create_router(state);
-                        let result = axum::serve(listener, app)
-                            .with_graceful_shutdown(async move { task_shutdown.cancelled().await })
-                            .await;
+                        let result = axum::serve(
+                            listener,
+                            app.into_make_service_with_connect_info::<SocketAddr>(),
+                        )
+                        .with_graceful_shutdown(async move { task_shutdown.cancelled().await })
+                        .await;
 
                         if let Err(e) = &result {
                             tracing::error!("[Web] Server error: {}", e);
@@ -225,6 +304,20 @@ impl WebServer {
             .and_then(|(host, port)| port.parse::<u16>().ok().map(|port| (host.to_string(), port)))
             .unwrap_or_else(|| (addr.clone(), 0));
 
+        // P0 安全部署闸：绑定前校验 token × host 组合（spec §1）。
+        // 本路径无 Result 返回通道，失败在任务内记录并以端口 0 退出表达。
+        if let Err(msg) = ensure_bind_allowed(&self.state, &host) {
+            tracing::error!("{}", msg);
+            // 不起服务：立即返回一个已取消的句柄，让等待方感知到服务器未运行。
+            self.shutdown.cancel();
+            return WebServerHandle {
+                shutdown: self.shutdown,
+                task: tokio::spawn(async { Err("web server bind rejected by security gate".into()) }),
+                host,
+                port: 0,
+            };
+        }
+
         let task = tokio::spawn(async move {
             let app = create_router(state);
             let listener = match tokio::net::TcpListener::bind(&addr).await {
@@ -237,9 +330,12 @@ impl WebServer {
             let local_addr = listener.local_addr()?;
             tracing::info!("[Web] Server listening on {}", local_addr);
 
-            let result = axum::serve(listener, app)
-                .with_graceful_shutdown(async move { shutdown.cancelled().await })
-                .await;
+            let result = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .with_graceful_shutdown(async move { shutdown.cancelled().await })
+            .await;
 
             if let Err(e) = &result {
                 tracing::error!("[Web] Server error: {}", e);
@@ -287,5 +383,17 @@ mod tests {
         std::env::set_var(ENV_WEB_PORT, "not-a-number");
         assert_eq!(WebServer::resolve_port(9800), 9800);
         std::env::remove_var(ENV_WEB_PORT);
+    }
+
+    // P0 安全部署闸 spec §1：绑定决策矩阵
+    #[test]
+    fn bind_decision_matrix() {
+        assert_eq!(decide_bind("0.0.0.0", true), BindDecision::Allow);
+        assert_eq!(decide_bind("192.168.1.5", true), BindDecision::Allow);
+        assert_eq!(decide_bind("127.0.0.1", false), BindDecision::AllowWithWarn);
+        assert_eq!(decide_bind("localhost", false), BindDecision::AllowWithWarn);
+        assert_eq!(decide_bind("::1", false), BindDecision::AllowWithWarn);
+        assert_eq!(decide_bind("0.0.0.0", false), BindDecision::Reject);
+        assert_eq!(decide_bind("192.168.1.5", false), BindDecision::Reject);
     }
 }

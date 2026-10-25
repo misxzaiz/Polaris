@@ -1512,10 +1512,16 @@ pub fn run_web_server(cli_port: Option<u16>, cli_host: Option<String>, cli_token
             });
         }
 
-        let handle = web_server
-            .start_on_available_port(&host, port)
-            .await
-            .expect("Failed to start standalone web server");
+        let handle = match web_server.start_on_available_port(&host, port).await {
+            Ok(handle) => handle,
+            Err(e) => {
+                // P0 安全部署闸等启动失败：stderr + 非零退出，替代 panic
+                //（独立部署下 panic 栈对运维不可读，错误本身已带修复指引）。
+                tracing::error!("[Polaris-Web] 启动失败: {}", e);
+                eprintln!("polaris-web: 启动失败: {}", e);
+                std::process::exit(1);
+            }
+        };
         // 等待 Ctrl+C 信号以优雅关停
         tokio::signal::ctrl_c().await.ok();
         tracing::info!("[Polaris-Web] Received shutdown signal, stopping...");
