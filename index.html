@@ -4,6 +4,15 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/tauri.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <!-- PWA（阶段 1B）：安装入口（Android WebAPK / iOS 添加到主屏幕）与主题色。
+         主题色取主题 --c-bg-base（0 0 0），与系统启动屏/状态栏一致。 -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="theme-color" content="#000000" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Polaris" />
+    <link rel="apple-touch-icon" href="/icons/icon-256.png" />
     <title>Polaris</title>
     <!-- 使用系统等宽字体，避免外部字体加载阻塞首帧渲染 -->
     <!-- Windows: Cascadia Code (Win11) / Consolas；macOS: SF Mono；Linux: Fira Code / monospace -->

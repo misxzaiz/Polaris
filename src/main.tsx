@@ -92,6 +92,16 @@ eventBus.on('workspace-changed', (ws) => {
   bootstrapTheme();
 })();
 
+// PWA Service Worker 注册（阶段 1B）：仅生产构建，dev 的 HMR 与之互不干扰。
+// 注册失败静默降级（PWA 是增强项，不是功能依赖）；协议数据 /api/、/ws 在 SW 内直连。
+if (import.meta.env.PROD && typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => {
+      console.warn('[PWA] Service Worker 注册失败（离线壳不可用，功能不受影响）', err)
+    })
+  })
+}
+
 // 跨端只读会话跟随（批 3/v2）：lifecycle 轮询发现 + chat-event 实时订阅。
 // 静态 import + 顶层启动——此前动态 import 排在 useAppInit 长链尾部（连坐跳过）
 // 和 main 动态 import（早期时序不稳）两种形态都实测未执行；静态模块图无失败面。
