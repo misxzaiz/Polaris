@@ -18,7 +18,9 @@
 //! 曾内置 `cap.config*` + Remote deny，导致移动端/Web 连接即「权限拒绝」。
 //! 写保护曾下沉到 `ConfigCapability::invoke` 内部按 source 校验（Remote 拒绝写），
 //! 产品决策已放开：远程（Web/移动端）可写，鉴权依赖传输层 token。
-//! 内置 deny 仅保留能力级「远程完全不可用」域：`cap.data_root*` / `cap.plugin*`。
+//! 内置 deny 仅保留能力级「远程完全不可用」域：`cap.data_root*` / `cap.plugin*`
+//! （`cap.plugin*` 中 `cap.pluginDiscovery` 的只读动作经 P1-h 拆分放行，见
+//! `from_config` 内注释与 `plans/plugin-discovery-remote-readonly-split.md`）。
 use crate::contracts::{Permission, PermissionRequest, PermissionVerdict, Source};
 use crate::models::config::PermissionPolicyConfig;
 use std::sync::RwLock;
@@ -246,6 +248,33 @@ impl PolicyPermission {
             verdict: RuleVerdict::Allow,
             require_auth: true,
         });
+        // P1-h（2026-10-25）：cap.pluginDiscovery 只读动作对已鉴权 Remote 放行。
+        // 根因：上方 `cap.plugin*` 通配 deny 把只读发现（discover/list 等）一并挡在
+        // Remote 门外，移动端/Web 插件页完全无法列插件——商城（polaris.marketplace）
+        // 本身是经 discover 出现的已安装插件，故连商城入口都消失。按 P1-f 同款
+        // 思路拆读写：只读动作放行（需 token 鉴权），写动作（install_*/uninstall_*/
+        // apply_update = 文件系统变更）维持 deny；discover_adapter 为调试用强制
+        // 刷新入口（绕缓存/熔断 + one-shot MCP 网络调用），UI 无消费方，不放行。
+        // 匹配走 P1-g 动作级规则：dispatch 注入 payload.action → check 先试
+        // `capId:action`（精确，特异性 2）后回退 bare id（通配 deny，特异性 1），
+        // 精确 allow 胜出；未鉴权时 require_auth 规则被 best_match 跳过，回落
+        // 通配 deny（X9 零回归语义不变）。spec: plans/plugin-discovery-remote-readonly-split.md
+        for action in [
+            "discover",
+            "list",
+            "install_locations",
+            "validate_manifest",
+            "adapters_list",
+            "check_update",
+        ] {
+            rules.push(CompiledRule {
+                capability: format!("cap.pluginDiscovery:{}", action),
+                wildcard: false,
+                source: SourceClass::Remote,
+                verdict: RuleVerdict::Allow,
+                require_auth: true,
+            });
+        }
         // P1-g（审计：AI 操控插件无门控）：Plugin 源（AI 会话）的高危动作需用户
         // 审批。动作编码进 resource（`capId:action`，dispatch 从 payload.action 注入），
         // 与内置 deny 同表匹配。批准经 PermissionPromptSink（一次性、10 分钟 TTL）。
@@ -303,8 +332,6 @@ impl PolicyPermission {
             web_token: RwLock::new(None),
         }
     }
-
-    /// 当前生效规则数（诊断用）
 
     /// 当前生效规则数（诊断用）
     pub fn rule_count(&self) -> usize {
@@ -373,6 +400,16 @@ mod tests {
             resource: cap.into(),
             source,
             action: None,
+        }
+    }
+
+    /// 携带动作的请求（P1-g/P1-h 动作级规则匹配用，与 dispatch 注入 payload.action 对齐）
+    fn req_action(cap: &str, action: &str, source: Source) -> PermissionRequest {
+        PermissionRequest {
+            capability: CapabilityId(cap.into()),
+            resource: cap.into(),
+            source,
+            action: Some(action.into()),
         }
     }
 
@@ -481,9 +518,10 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 17 条内置（6 通配 remote deny + cap.plugin deny
-        // + pluginServiceManager require_auth allow + 5+4 条 Plugin prompt；ui_control=true 无条件 deny）
-        assert_eq!(p.rule_count(), 18, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 23 条内置（6 通配 remote deny + cap.plugin deny
+        // + pluginServiceManager require_auth allow + 6 条 pluginDiscovery 只读
+        // require_auth allow（P1-h）+ 5+4 条 Plugin prompt；ui_control=true 无条件 deny）
+        assert_eq!(p.rule_count(), 24, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -537,6 +575,68 @@ mod tests {
         );
         assert_eq!(
             p.check(&req("cap.pluginDiscovery", Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) })).unwrap(),
+            PermissionVerdict::Allow
+        );
+    }
+
+    #[test]
+    fn plugin_discovery_readonly_split_for_authenticated_remote() {
+        // P1-h：已鉴权 Remote（token 匹配 web.token）放行插件发现域只读动作，
+        // 写动作维持拒绝。根因：cap.plugin* 通配 deny 曾把只读 discover 一并挡在
+        // Remote 门外，移动端/Web 插件页列表为空、商城（polaris.marketplace
+        // 经 discover 出现）入口随之消失。
+        let p = PolicyPermission::from_config(None, false);
+        p.set_web_token(Some("secret".into()));
+        let remote = Source::Remote { token: "secret".into() };
+
+        // 只读动作放行：动作级精确规则（特异性 2）胜过 cap.plugin* 通配 deny（特异性 1）
+        for action in [
+            "discover",
+            "list",
+            "install_locations",
+            "validate_manifest",
+            "adapters_list",
+            "check_update",
+        ] {
+            assert_eq!(
+                p.check(&req_action("cap.pluginDiscovery", action, remote.clone())).unwrap(),
+                PermissionVerdict::Allow,
+                "已鉴权 Remote 应放行只读动作 {action}"
+            );
+        }
+        // 写动作维持 deny（安装/卸载/更新 = 文件系统变更）；discover_adapter
+        // 为调试用强制刷新入口（绕缓存/熔断 + 网络调用），不放行
+        for action in [
+            "install_local",
+            "install_package",
+            "install_remote",
+            "uninstall_local",
+            "uninstall_with_cleanup",
+            "force_uninstall",
+            "apply_update",
+            "discover_adapter",
+        ] {
+            assert_eq!(
+                p.check(&req_action("cap.pluginDiscovery", action, remote.clone())).unwrap(),
+                PermissionVerdict::Deny,
+                "写动作 {action} 应对 Remote 维持拒绝"
+            );
+        }
+        // bare id（无 action）回落 cap.plugin* 通配 deny
+        assert_eq!(
+            p.check(&req("cap.pluginDiscovery", remote.clone())).unwrap(),
+            PermissionVerdict::Deny
+        );
+        // 未鉴权 Remote（token 不匹配）只读也不放行（X9 零回归语义不变）
+        let wrong = Source::Remote { token: "other".into() };
+        assert_eq!(
+            p.check(&req_action("cap.pluginDiscovery", "discover", wrong)).unwrap(),
+            PermissionVerdict::Deny,
+            "未鉴权 Remote 不进入 require_auth 放行规则"
+        );
+        // Bootstrap（桌面 IPC）不受内置 Remote 规则影响
+        assert_eq!(
+            p.check(&req_action("cap.pluginDiscovery", "discover", Source::Bootstrap)).unwrap(),
             PermissionVerdict::Allow
         );
     }

@@ -176,7 +176,7 @@ impl Capability for PluginDiscoveryCapability {
     fn describe(&self) -> Value {
         serde_json::json!({
             "summary": "插件发现/安装/卸载/更新/市场管理",
-            "note": "管理面能力（Remote 默认 deny）；安装/卸载/更新改动本地插件，需谨慎",
+            "note": "管理面能力（Remote 默认 deny；已鉴权 Remote 放行只读动作 discover/list/install_locations/validate_manifest/adapters_list/check_update，写动作仍 deny）；安装/卸载/更新改动本地插件，需谨慎",
             "actions": {
                 "list": { "params": { "available": "bool?" }, "returns": "插件列表" },
                 "discover": { "params": {}, "returns": "市场发现结果" },
