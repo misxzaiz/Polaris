@@ -69,10 +69,10 @@ t4 旧轮迟到 SessionEnd（仅 t1 路径可能）：turnId ≠ activeTurnId �
 
 ## 五、实施记录
 
-- **B1/B2 引擎级轮次互斥**：`session.rs` 增 `turn_lock` + `run_done_rx`；`mod.rs` start/continue 统一「持锁贯穿 run + 旧轮在跑先发中断并等 run_done（收尾事件发出后置位）再开新轮」，panic 监督补发 done 信号，continue 兜底路径（会话缺失）保持旧行为。
-- **B3 可路由失败终态**：`ai_chat_capability.rs` 失败分支追加 `error`+`session_end(reason=error)` 双事件（`{contextId,payload}` 信封）；continue 排他门拒绝从闭包 `return` 改为 match 值（此前会绕过失败分发）；`stream.error` 保留并补 `sessionId`。
-- **B4 不可中断窗口收窄**：`compact.rs` 全链路（compact_history → summarize_range_rolling → request_summary(_once)）透传 abort_rx，Interrupted 直接上抛；`tools/mod.rs` 两处 `pool.call` 以 `mcp_call_raced` select 竞速。
-- **F1 turnId 代际过滤**：`eventRouter.ts` 提取信封 turnId 注入 `_turnId`；`sessionStoreManager.dispatchEvent` 入口经 `observeTurnEvent` 闸门（旧轮迟到终态整事件丢弃）；新轮首事件顺带重挂 isStreaming（兜底路径自愈）。新增 `turnFilter.test.ts`（7 用例）。
-- **F2 乐观 running**：`sendMessage` dispatch 受理后置 `sessionMetadata.status='running'`（background-running 不覆盖）。
-- **F3 中断等待语义**：`interrupt()` ACK 后有界等待（8s）isStreaming 复位再 resolve；`sendPendingNow` 二级等待缩为 2s 衔接兜底。
-- **验证**：`tsc --noEmit` ✅；eslint 改动文件 0 error（1 warning 为存量非改动行）；vitest 全量 2323+ passed（失败项确认与本改动无关，见提交信息）；`cargo check` 0 error、改动文件无新增 warning（顺手清 chat_loop 存量 unused import）；`cargo check --no-default-features --bin polaris-web --bin polaris-mcp` ✅。本机 cargo test --lib 不可用（AGENTS.md 九），以 check 代替。
+- **spec**：a6aa30f6
+- **B1/B2 引擎级轮次互斥**：3381b681 —— `session.rs` 增 `turn_lock` + `run_done_rx`；`mod.rs` start/continue 统一「持锁贯穿 run + 旧轮在跑先发中断并等 run_done（收尾事件发出后置位）再开新轮」，panic 监督补发 done 信号，continue 兜底路径（会话缺失）保持旧行为。
+- **B3 可路由失败终态**：2891a325 —— `ai_chat_capability.rs` 失败分支追加 `error`+`session_end(reason=error)` 双事件（`{contextId,payload}` 信封）；continue 排他门拒绝从闭包 `return` 改为 match 值（此前会绕过失败分发）；`stream.error` 保留并补 `sessionId`。
+- **B4 不可中断窗口收窄**：45fae73b —— `compact.rs` 全链路（compact_history → summarize_range_rolling → request_summary(_once)）透传 abort_rx，Interrupted 直接上抛；`tools/mod.rs` 两处 `pool.call` 以 `mcp_call_raced` select 竞速。
+- **F1/F2/F3 前端收敛**：23a3108b —— `eventRouter.ts` 提取信封 turnId 注入 `_turnId`；`sessionStoreManager.dispatchEvent` 入口经 `observeTurnEvent` 闸门（旧轮迟到终态整事件丢弃）；新轮首事件顺带重挂 isStreaming（兜底路径自愈）；`sendMessage` 受理后乐观置 running；`interrupt()` ACK 后有界等待收尾再 resolve、`sendPendingNow` 二级等待缩为 2s。新增 `turnFilter.test.ts`（7 用例）。
+- **验证**：`tsc --noEmit` 0 错；eslint 改动文件 0 error（1 warning 为存量非改动行）；vitest 全量 2323 passed（唯一失败 `pluginLifecycleSubscriber.test.ts` 2 例经 stash 对照确认为 HEAD 上即失败的存量问题，与本改动无关）；`cargo check` 0 error、改动文件无新增 warning；`cargo check --no-default-features --bin polaris-web --bin polaris-mcp` 通过。本机 cargo test --lib 不可用（AGENTS.md 九），以 check 代替。
+- **遗留观察项**：跨端真机手测（验收 1-5）待做；kill 型引擎（Codex/Pi）的 continue 语义未在本 spec 范围（旧根因 C 仍在）。
