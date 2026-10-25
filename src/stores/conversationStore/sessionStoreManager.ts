@@ -556,7 +556,7 @@ function createSessionManagerStore() {
 
     // ===== 事件分发 =====
 
-    dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string }) => {
+    dispatchEvent: (event: AIEvent & { sessionId?: string; _routeSessionId?: string; _turnId?: string }) => {
       // 单一路由路径：_routeSessionId 是前端 sessionId（由 EventRouter 从 contextId 解析注入）。
       // 不再用 event.sessionId（后端 conversationId）兜底，不再回退 activeSessionId，
       // 不再"找不到 store 就自动建会话"——这三条正是"对不准窗口/新开窗口"的根因。
@@ -636,6 +636,18 @@ function createSessionManagerStore() {
         log.warn('事件投递失败：目标会话 store 不存在', { targetSessionId, type: event.type })
         return
       }
+
+      // 轮次代际过滤（spec F1）：后端信封 turnId 标识事件所属轮次，store.activeTurnId
+      // 随最新非终态事件推进。终态事件（session_end/error）的 turnId 落后于 activeTurnId
+      // = 旧轮迟到终态（典型：中断兜底超时后新一轮已开跑，旧轮才真正退出并发
+      // SessionEnd）——整事件丢弃，防止误杀新轮流式态与翻转元数据 status。
+      // 仅在事件带 _turnId 时过滤：scheduler/dispatch 直投与测试无此字段，语义不变。
+      const turnId = (event as { _turnId?: string })._turnId
+      if (turnId && !targetStore.getState().observeTurnEvent(turnId, event.type)) {
+        log.info('旧轮次迟到的终态事件已丢弃', { targetSessionId, type: event.type, turnId })
+        return
+      }
+
       targetStore.getState().handleAIEvent(event)
 
       // B3b（审计 1.6）：session_start 到达时把会话注册进后端 sessions_index 投影

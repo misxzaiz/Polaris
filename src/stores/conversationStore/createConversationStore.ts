@@ -165,6 +165,7 @@ function createInitialState(sessionId: string): ConversationState {
     isStreaming: false,
     isInterrupting: false,
     turnEpoch: 0,
+    activeTurnId: null,
     error: null,
     progressMessage: null,
     promptSuggestion: null,
@@ -1993,6 +1994,28 @@ export function createConversationStore(
       // ===== 事件处理 =====
       handleAIEvent: (event) => handleAIEvent(event, set, get),
 
+      // 轮次代际观测（spec F1）：见 types.ts observeTurnEvent 注释。
+      // 由 sessionStoreManager 在事件入口调用，返回 false 时整事件丢弃——
+      // 修复「旧轮迟到的 session_end/error 落在新轮流式期间，误杀新一轮」。
+      observeTurnEvent: (turnId, eventType) => {
+        const isTerminal = eventType === 'session_end' || eventType === 'error'
+        const current = get().activeTurnId
+        if (!isTerminal) {
+          if (current !== turnId) {
+            // 新轮首事件到达即重挂流式态：超时兜底路径下旧轮 session_end 可能
+            // 先于新轮事件到达（activeTurnId 仍指旧轮 → 未被过滤）而把
+            // isStreaming 置 false；新轮事件继续流入时据此恢复真实流式态。
+            set({
+              activeTurnId: turnId,
+              ...(get().isStreaming ? {} : { isStreaming: true }),
+            })
+          }
+          return true
+        }
+        // 终态：activeTurnId 未观测过（null）时无法判定新旧，放行保持旧语义
+        return current === null || current === turnId
+      },
+
       // ===== 主动操作 =====
 
       // ===== 待发送队列（流式预输入 / 多行拆分入队） =====
@@ -2064,17 +2087,20 @@ export function createConversationStore(
           // 补丁 B：发起时捕获 conversationId 代际标记，等待中断期间用户可能切会话。
           // 移除动作后移到「校验通过后」执行，消除「先移除后校验失败 → 消息丢」的窗口。
           const originConversationId = st.conversationId
-          // 流式中：先中断当前回复，等待本轮回流真正结束（interrupt 有 5s 兜底）
+          // 流式中：先中断当前回复并等待本轮回流真正结束。
           // 批 4d（审计 4.9）：interrupt 已有 8s invoke 超时 + 5s 定时器兜底，
           // 外层再设 16s 硬界——后端彻底死亡时不再无限持锁卡死整个待发队列。
+          // spec F3：interrupt() 现已内置「等 session_end 复位」的有界等待，
+          // 此处二级等待仅为衔接性兜底（如 session_end 事件在传输中延迟）。
           if (st.isStreaming) {
             await Promise.race([
               get().interrupt().catch(() => undefined),
               new Promise((r) => setTimeout(r, 16000)),
             ])
-            await waitFor(() => !get().isStreaming, 3000)
+            await waitFor(() => !get().isStreaming, 2000)
             if (get().isStreaming) {
-              // 有界等待仍未复位：本地强制收尾（等价 interrupt 兜底路径），解锁队列
+              // 有界等待仍未复位：本地强制收尾（等价 interrupt 兜底路径），解锁队列。
+              // 引擎侧正确性由后端轮次互斥（spec B1）与本端终态代际过滤（F1）保证。
               set({ isStreaming: false, isInterrupting: false, progressMessage: null })
               get().finishMessage()
             }
@@ -2334,6 +2360,27 @@ export function createConversationStore(
             })
             set({ conversationId: newSessionId })
           }
+
+          // 乐观置 running（spec F2）：SimpleAI 等引擎续聊不发 session_start 事件，
+          // 而元数据 status 只认 session_start 置 running——中断后再发消息起会话
+          // 格子永远灰点（「会话没有启动中」）。dispatch 受理即置 running，
+          // 失败终态由后续 error/session_end 事件经 dispatchEvent 纠正。
+          // background-running（用户显式转后台）不覆盖。
+          try {
+            const mgrState = sessionStoreManager.getState()
+            const meta = mgrState.sessionMetadata.get(sessionId)
+            if (meta && meta.status !== 'running' && meta.status !== 'background-running') {
+              const newMetadata = new Map(mgrState.sessionMetadata)
+              newMetadata.set(sessionId, {
+                ...meta,
+                status: 'running',
+                updatedAt: new Date().toISOString(),
+              })
+              sessionStoreManager.setState({ sessionMetadata: newMetadata })
+            }
+          } catch {
+            /* 元数据更新失败不阻断发送 */
+          }
           return true
         } catch (e) {
           const err = e instanceof Error ? e : new Error(String(e))
@@ -2394,6 +2441,14 @@ export function createConversationStore(
           log.info('Session interrupted, waiting for backend session_end to finalize', {
             conversationId,
           })
+
+          // 中断 ACK ≠ 引擎已停（spec F3）：ACK 只代表 abort 信号已置位，引擎要到
+          // 下一个检查点才退出（工具执行/压缩摘要等窗口内更长）。此前此处直接
+          // resolve，调用方（sendPendingNow/删除截断）拿到「已停」假象照常推进，
+          // 撞上后端旧轮未退出的竞态。改为有界等待 session_end 收尾（isStreaming
+          // 复位）再 resolve：正常路径毫秒级；引擎卡死时由上方 5s 兜底定时器强制
+          // 收尾解锁，本等待随之满足（8s 上界仅为极端双保险）。
+          await waitFor(() => !get().isStreaming, 8000)
 
           // 超时兜底：后端协作式中断可能一直不消费（罕见但存在——如无限递归、死循环），
           // session_end 永不到达时 isStreaming/isInterrupting 会卡死 UI。

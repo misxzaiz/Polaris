@@ -371,6 +371,10 @@ export interface ConversationState {
   /** 轮次代际：每次 sendMessage 递增。interrupt 兜底定时器等跨轮异步回调据此识别
    * 「所属轮次已被新一轮取代」，避免误杀新一轮流式（审计 4.1）。 */
   turnEpoch: number
+  /** 当前轮次的信封 turnId（后端每请求生成、随事件信封回传）。随最新非终态事件推进；
+   * 终态事件（session_end/error）turnId 落后于它 = 旧轮迟到终态，sessionStoreManager
+   * 据此丢弃（spec F1），防止旧轮收尾误杀新轮流式态。null = 尚未观测到带 turnId 的事件。 */
+  activeTurnId: string | null
   error: string | null
   progressMessage: string | null
   /** 下一步提示建议（--prompt-suggestions），点击填入输入框；null 表示无建议 */
@@ -651,6 +655,13 @@ export interface ConversationActions {
 
   // ===== 事件处理（核心） =====
   handleAIEvent: (event: AIEvent) => void
+  /**
+   * 轮次代际观测（spec F1）：sessionStoreManager 收到带 `_turnId` 的事件时调用。
+   * 非终态事件推进 activeTurnId 并放行；终态事件（session_end/error）turnId 与
+   * activeTurnId 不一致 = 旧轮迟到终态 → 返回 false（调用方整事件丢弃）。
+   * activeTurnId 为 null（尚未观测到轮次）时放行，保持旧事件源语义。
+   */
+  observeTurnEvent: (turnId: string, eventType: string) => boolean
 
   // ===== 主动操作 =====
   /**

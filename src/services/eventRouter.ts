@@ -67,9 +67,12 @@ export class EventRouter {
 
         let contextId: ContextId = 'main'
         let payload: unknown = rawData
+        let turnId: string | undefined
         if (rawData && typeof rawData === 'object' && 'contextId' in rawData && 'payload' in rawData) {
-          contextId = (rawData as { contextId: string }).contextId
-          payload = (rawData as { payload: unknown }).payload
+          const envelope = rawData as { contextId: string; payload: unknown; turnId?: string }
+          contextId = envelope.contextId
+          payload = envelope.payload
+          turnId = envelope.turnId
         }
 
         // 单一路由路径：从 contextId 解析前端 sessionId。
@@ -77,7 +80,7 @@ export class EventRouter {
         // 后端原样回传，是稳定的路由通道。payload.sessionId 是后端 conversationId，不可作路由 key。
         const frontendSessionId = extractFrontendSessionId(contextId)
         if (frontendSessionId) {
-          this.dispatchToSession(frontendSessionId, payload as AIEvent)
+          this.dispatchToSession(frontendSessionId, payload as AIEvent, turnId)
           return
         }
 
@@ -102,15 +105,19 @@ export class EventRouter {
    *
    * @param frontendSessionId 前端 sessionId（用于路由到正确的 store）
    * @param event AI 事件（包含后端 sessionId，用于 API 调用）
+   * @param turnId 事件信封的轮次标识（后端每请求生成；注入 `_turnId` 供
+   *   sessionStoreManager 做终态事件的代际过滤——旧轮迟到的 session_end
+   *   不再误杀新轮流式态，见 spec F1）
    */
-  private dispatchToSession(frontendSessionId: string, event: AIEvent): void {
+  private dispatchToSession(frontendSessionId: string, event: AIEvent, turnId?: string): void {
     try {
       // 使用 _routeSessionId 字段传递路由用的前端 sessionId
       // 不覆盖 event.sessionId（后端 sessionId），保持 API 调用正确
       const eventWithRouteId = {
         ...event,
         _routeSessionId: frontendSessionId,
-      } as AIEvent & { _routeSessionId: string }
+        ...(turnId ? { _turnId: turnId } : {}),
+      } as AIEvent & { _routeSessionId: string; _turnId?: string }
       sessionStoreManager.getState().dispatchEvent(eventWithRouteId)
     } catch (e) {
       log.error('分发事件到会话失败', e as Error, { frontendSessionId })
