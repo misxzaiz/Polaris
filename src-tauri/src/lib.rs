@@ -1197,6 +1197,7 @@ pub fn run() {
             commands::dialog_storage::dialog_read,
             commands::dialog_storage::dialog_read_page,
             commands::dialog_storage::dialog_write,
+            commands::dialog_storage::dialog_consolidate,
             commands::dialog_storage::dialog_append,
             commands::dialog_storage::dialog_delete,
             // 会话消息 SQLite 命令层（session-v2 阶段 1b）

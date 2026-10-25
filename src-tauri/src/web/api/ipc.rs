@@ -424,6 +424,7 @@ pub async fn handle_ipc_bridge(
         "dialog_read" => dispatch_dialog_read(&args),
         "dialog_read_page" => dispatch_dialog_read_page(&args),
         "dialog_write" => dispatch_dialog_write(&args),
+        "dialog_consolidate" => dispatch_dialog_consolidate(&args),
         "dialog_append" => dispatch_dialog_append(&args),
         "dialog_delete" => dispatch_dialog_delete(&args),
 
@@ -2210,8 +2211,7 @@ fn dispatch_dialog_write(args: &Value) -> Result<Json<Value>, WebError> {
     Ok(crate::web::error::ok_response())
 }
 
-fn dispatch_dialog_append(args: &Value) -> Result<Json<Value>, WebError> {
-    let name = args
+fn dispatch_dialog_append(args: &Value) -> Result<Json<Value>, WebError> {    let name = args
         .get("name")
         .and_then(|v| v.as_str())
         .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
@@ -2228,6 +2228,28 @@ fn dispatch_dialog_append(args: &Value) -> Result<Json<Value>, WebError> {
     crate::commands::dialog_storage::dialog_append_inner(name, meta_line, &lines)
         .map_err(|e| WebError::Internal(format!("dialog_append 失败: {}", e)))?;
     Ok(crate::web::error::ok_response())
+}
+
+/// 前端整写的原子合并写入口（阶段 1A⑥，plans/jsonl-single-writer-spec.md §2）
+fn dispatch_dialog_consolidate(args: &Value) -> Result<Json<Value>, WebError> {
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("name 参数缺失".to_string()))?;
+    let meta_json = args
+        .get("metaJson")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("metaJson 参数缺失".to_string()))?;
+    let messages_json = args
+        .get("messagesJson")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| WebError::BadRequest("messagesJson 参数缺失".to_string()))?;
+    let result =
+        crate::commands::dialog_storage::dialog_consolidate_inner(name, meta_json, messages_json)
+            .map_err(|e| WebError::Internal(format!("dialog_consolidate 失败: {}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap_or(
+        serde_json::json!({ "total": 0 }),
+    )))
 }
 
 fn dispatch_dialog_read_page(args: &Value) -> Result<Json<Value>, WebError> {

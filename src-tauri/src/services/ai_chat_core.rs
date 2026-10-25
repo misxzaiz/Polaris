@@ -133,6 +133,11 @@ pub struct ChatRequestOptions {
     /// 客户端平台描述（windows / android / ios 等），配合 client_type 使用。
     #[serde(default)]
     pub client_platform: Option<String>,
+    /// 发起请求的设备 id（前端每安装 UUID，localStorage 持久化）。
+    /// 落到用户消息 MessageEntry.device_id，审计 reason"由设备 X 启动"可归因
+    /// （阶段 1A⑥ spec §3）。缺省回退 "core"。
+    #[serde(default)]
+    pub device_id: Option<String>,
 }
 
 // ============================================================================
@@ -1023,6 +1028,7 @@ pub async fn start_chat_inner(
         options.client_message_id.as_deref(),
         options.assistant_message_id.as_deref(),
         options.context_id.as_deref(),
+        options.device_id.as_deref(),
     );
 
     let processed =
@@ -1822,6 +1828,7 @@ pub async fn continue_chat_inner(
         &message,
         options.client_message_id.as_deref(),
         options.assistant_message_id.as_deref(),
+        options.device_id.as_deref(),
     );
 
     if let Some(ref dir) = options.work_dir {

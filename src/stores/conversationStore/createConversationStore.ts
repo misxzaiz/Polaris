@@ -2337,6 +2337,7 @@ export function createConversationStore(
             assistantMessageId,
             clientType: clientDescriptor.clientType,
             clientPlatform: clientDescriptor.clientPlatform,
+            deviceId: clientDescriptor.deviceId || undefined,
           }
 
           if (conversationId) {
@@ -2590,6 +2591,7 @@ export function createConversationStore(
               profileMode,
               clientType: clientDescriptor.clientType,
               clientPlatform: clientDescriptor.clientPlatform,
+              deviceId: clientDescriptor.deviceId || undefined,
             },
           })
         } catch (e) {

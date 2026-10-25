@@ -81,6 +81,26 @@ export interface ClientDescriptor {
   clientType: ClientType
   /** 平台描述（windows / android / ios / mac 等），尽力检测 */
   clientPlatform: string
+  /**
+   * 每安装稳定设备 id（localStorage 持久化，首次生成 UUID）。
+   * 随聊天请求透传到后端用户消息 MessageEntry.device_id，审计可归因
+   * （阶段 1A⑥，plans/jsonl-single-writer-spec.md §3）。不可用时空串（后端回退 "core"）。
+   */
+  deviceId: string
+}
+
+/** 每安装稳定设备 id：localStorage 惰性生成，读不到存储（隐私模式/SSR）返回空串 */
+function getDeviceId(): string {
+  try {
+    const KEY = 'polaris_device_id'
+    const existing = localStorage.getItem(KEY)
+    if (existing) return existing
+    const fresh = crypto.randomUUID()
+    localStorage.setItem(KEY, fresh)
+    return fresh
+  } catch {
+    return ''
+  }
 }
 
 /** Android WebView UA 带 `; wv)` 片段，用于区分 APK 壳与手机浏览器 */
@@ -99,7 +119,7 @@ function isAndroidWebView(): boolean {
  */
 export function detectClientDescriptor(): ClientDescriptor {
   if (typeof navigator === 'undefined') {
-    return { clientType: 'web', clientPlatform: 'unknown' }
+    return { clientType: 'web', clientPlatform: 'unknown', deviceId: '' }
   }
   const ua = navigator.userAgent
   const mobile = /Android|iPhone|iPad|iPod/i.test(ua)
@@ -114,5 +134,5 @@ export function detectClientDescriptor(): ClientDescriptor {
   const clientPlatform = uaData?.platform
     ?? navigator.platform
     ?? (mobile ? (/Android/i.test(ua) ? 'android' : 'ios') : 'unknown')
-  return { clientType, clientPlatform }
+  return { clientType, clientPlatform, deviceId: getDeviceId() }
 }

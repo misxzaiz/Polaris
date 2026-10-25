@@ -74,6 +74,17 @@ export interface DialogBackend {
    */
   appendFile?(name: string, metaLine: string, lines: string[]): Promise<void>
   /**
+   * 原子合并写（阶段 1A⑥）：后端锁内 读盘 → 按 id 合并上抛快照 → 去重 → 原子落盘。
+   * 消除前端 读盘-落盘 TOCTOU 与后端归档的丢更新竞态。
+   * 可选：仅 RemoteBackend 实现（OPFS/localStorage 单机无并发写者，覆盖语义安全，
+   * service 层自动降级 writeFile）。
+   */
+  consolidateFile?(
+    name: string,
+    metaJson: string,
+    messagesJson: string,
+  ): Promise<{ total: number }>
+  /**
    * 尾部优先分页读取（大会话恢复只取一页）。
    * 可选：不实现时 service 层降级为整读 + 内存分页。
    */
@@ -89,6 +100,14 @@ export class RemoteBackend implements DialogBackend {
 
   async writeFile(name: string, content: string): Promise<void> {
     await invoke<void>('dialog_write', { name, content })
+  }
+
+  async consolidateFile(
+    name: string,
+    metaJson: string,
+    messagesJson: string,
+  ): Promise<{ total: number }> {
+    return invoke<{ total: number }>('dialog_consolidate', { name, metaJson, messagesJson })
   }
 
   async readFile(name: string): Promise<string | null> {

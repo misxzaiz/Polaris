@@ -6,13 +6,16 @@
 //! 写入策略：原子写入（唯一后缀 `*.tmp` → sync → rename），避免崩溃时半截 jsonl；
 //! 详见 `dialog_write_inner` 的根因注释。
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::{Duration, SystemTime};
+use std::sync::Mutex;
+use std::time::{Duration, Instant, SystemTime};
 
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::error::{AppError, Result};
 use crate::services::data_root::data_root;
@@ -140,7 +143,25 @@ pub fn dialog_list_meta_inner() -> Result<Vec<DialogMetaEntry>> {
     Ok(out)
 }
 
+/// 全局 JSONL 写锁：同一后端进程内的全部写者（前端整写/合并写、后端归档、
+/// WAL 追加）在此串行，消除「读-合并-写」交错导致的逻辑丢更新
+/// （阶段 1A⑥，plans/jsonl-single-writer-spec.md §1）。
+/// 方案 A 拓扑下所有前端写都经本进程（Tauri IPC / Web HTTP 同一入口），
+/// 进程内锁即全局锁；写路径低频（轮末），单全局锁足够，不做 per-file 分片。
+static DIALOG_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_dialog_write() -> std::sync::MutexGuard<'static, ()> {
+    // 投毒只发生在持锁线程 panic 时；写互斥不承载需要毒化保护的不变式
+    DIALOG_WRITE_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 pub fn dialog_write_inner(name: &str, content: &str) -> Result<()> {
+    let _guard = lock_dialog_write();
+    dialog_write_locked(name, content)
+}
+
+/// 无锁原子写（唯一 tmp + sync + rename）。调用方必须已持 `DIALOG_WRITE_LOCK`。
+fn dialog_write_locked(name: &str, content: &str) -> Result<()> {
     let target = dialog_path(name)?;
     let parent = target
         .parent()
@@ -225,6 +246,8 @@ pub fn dialog_append_inner(name: &str, meta_line: Option<&str>, lines: &[String]
         }
     }
 
+    // WAL 追加与整写/合并写同锁串行（spec §1）
+    let _guard = lock_dialog_write();
     let target = dialog_path(name)?;
     let parent = target
         .parent()
@@ -378,6 +401,232 @@ pub fn dialog_delete_inner(name: &str) -> Result<()> {
 }
 
 // ============================================================================
+// JSONL 行级编解码 helper（自 turn_persist 迁入：前端合并写与后端归档共用
+// 同一套解析/合并/去重契约，单一真源。turn_persist 经 pub(crate) 引用。）
+// ============================================================================
+
+/// ISO 8601 → epoch ms（解析失败返回 None）
+pub(crate) fn parse_iso(s: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.timestamp_millis())
+}
+
+/// 取消息 JSON 的时间戳（epoch ms）；无 timestamp 返回 None
+pub(crate) fn message_ts(msg: &Value) -> Option<i64> {
+    msg.get("timestamp").and_then(Value::as_str).and_then(parse_iso)
+}
+
+/// 解析既有 JSONL：返回 (meta 行, 消息列表)。消息按 id 收敛（首位置 + 末内容）。
+pub(crate) fn parse_existing_dialog(raw: Option<&str>) -> (Option<Value>, Vec<Value>) {
+    let mut meta = None;
+    let mut messages: Vec<Value> = Vec::new();
+    let Some(text) = raw else {
+        return (meta, messages);
+    };
+    for (i, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Ok(v) = serde_json::from_str::<Value>(line) else {
+            continue;
+        };
+        if i == 0 || v.get("type").and_then(Value::as_str) == Some("meta") {
+            meta = Some(v);
+            continue;
+        }
+        if v.get("type").and_then(Value::as_str) == Some("msg") {
+            if let Some(msg) = v.get("message") {
+                upsert_by_id(&mut messages, msg.clone());
+            }
+        }
+    }
+    (meta, messages)
+}
+
+/// 按 id 插入/覆盖：保留首次出现的位置，内容取最新（与 `parseDialogLines`+前端去重同规则）
+pub(crate) fn upsert_by_id(messages: &mut Vec<Value>, msg: Value) {
+    let id = msg.get("id").and_then(Value::as_str).unwrap_or("").to_string();
+    if id.is_empty() {
+        messages.push(msg);
+        return;
+    }
+    if let Some(slot) = messages
+        .iter_mut()
+        .find(|m| m.get("id").and_then(Value::as_str) == Some(id.as_str()))
+    {
+        *slot = msg;
+    } else {
+        messages.push(msg);
+    }
+}
+
+/// 按消息时间升序稳定排序；缺失/不可解析的时间沿用前一条（保持相对顺序）
+pub(crate) fn sort_messages_by_time(messages: &mut [Value]) {
+    let mut prev = 0i64;
+    let mut keyed: Vec<(i64, usize)> = Vec::with_capacity(messages.len());
+    for (i, m) in messages.iter().enumerate() {
+        let ts = m
+            .get("timestamp")
+            .and_then(Value::as_str)
+            .and_then(parse_iso)
+            .unwrap_or(prev);
+        prev = ts;
+        keyed.push((ts, i));
+    }
+    keyed.sort_by_key(|(ts, i)| (*ts, *i));
+    let order: Vec<usize> = keyed.into_iter().map(|(_, i)| i).collect();
+    let snapshot: Vec<Value> = messages.to_vec();
+    for (dst, src) in order.into_iter().enumerate() {
+        messages[dst] = snapshot[src].clone();
+    }
+}
+
+/// 按 assistant 内容指纹去重（与前端 `dedupeAssistantMessages` 对齐）。
+///
+/// 同一轮回复在流式/落定/恢复过程中可能被赋予不同 id（id 漂移），按 id 去重
+/// 无法收敛。指纹 = blocks 中 text 块 content 拼接并 trim；同指纹只保留最后一条，
+/// 放置在首次出现的位置。仅对有 text 内容的 assistant 生效。
+pub(crate) fn dedupe_assistant_by_content(messages: &mut Vec<Value>) {
+    if messages.len() <= 1 {
+        return;
+    }
+    // 第一遍：收集每个指纹的首次下标 + 最后一条消息
+    let mut first_idx: HashMap<String, usize> = HashMap::new();
+    let mut last_msg: HashMap<String, Value> = HashMap::new();
+    for (i, m) in messages.iter().enumerate() {
+        if m.get("type").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        let fp = match assistant_text_fp(m) {
+            Some(f) if !f.is_empty() => f,
+            _ => continue,
+        };
+        first_idx.entry(fp.clone()).or_insert(i);
+        last_msg.insert(fp, m.clone());
+    }
+    if first_idx.is_empty() {
+        return;
+    }
+    // 第二遍：同指纹只保留首次出现位置（放最后内容），后续跳过
+    let mut used: HashMap<String, ()> = HashMap::new();
+    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
+    for m in messages.iter() {
+        if m.get("type").and_then(Value::as_str) == Some("assistant") {
+            if let Some(fp) = assistant_text_fp(m) {
+                if !fp.is_empty() {
+                    if used.contains_key(&fp) {
+                        continue;
+                    }
+                    used.insert(fp.clone(), ());
+                    if let Some(last) = last_msg.get(&fp) {
+                        out.push(last.clone());
+                    }
+                    continue;
+                }
+            }
+        }
+        out.push(m.clone());
+    }
+    *messages = out;
+}
+
+/// 提取 assistant 消息的文本指纹：blocks 中 text 块 content 拼接并 trim。
+fn assistant_text_fp(msg: &Value) -> Option<String> {
+    let blocks = msg.get("blocks").and_then(Value::as_array)?;
+    let mut s = String::new();
+    for b in blocks {
+        if b.get("type").and_then(Value::as_str) == Some("text") {
+            if let Some(c) = b.get("content").and_then(Value::as_str) {
+                s.push_str(c);
+            }
+        }
+    }
+    let trimmed = s.trim().to_string();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed)
+    }
+}
+
+// ============================================================================
+// dialog_consolidate —— 前端整写的原子合并写入口（阶段 1A⑥，spec §2）
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+pub struct ConsolidateResult {
+    /// 合并后的消息总数
+    pub total: usize,
+}
+
+/// 前端「读盘→合并→整写」的落盘末端改造：锁内 读盘 → 按 id 合并上抛前端快照 →
+/// 去重 → 原子写。前端读盘与落盘之间其他写者（后端归档、另一端前端）的新增
+/// 以盘面独有行的形式保留，不再被陈旧快照覆掉。
+///
+/// 语义：整写从「覆盖」变为「按 id 合并」——单条消息删除不经此路径传播
+/// （现状无消息级删除流；会话删除走 dialog_delete 不受影响）。
+pub fn dialog_consolidate_inner(
+    name: &str,
+    meta_json: &str,
+    messages_json: &str,
+) -> Result<ConsolidateResult> {
+    let _guard = lock_dialog_write();
+    let target = dialog_path(name)?;
+    let existing = if target.exists() {
+        Some(fs::read_to_string(&target)?)
+    } else {
+        None
+    };
+    let (content, total) = consolidate_compute(existing.as_deref(), meta_json, messages_json)?;
+    if total == 0 {
+        // 防御：空快照不落盘（避免异常客户端清空归档）；既有文件原样保留
+        return Ok(ConsolidateResult { total });
+    }
+    dialog_write_locked(name, &content)?;
+    Ok(ConsolidateResult { total })
+}
+
+/// 纯计算核（可单测）：输入既有文件原文 + 前端 meta/快照，输出落盘内容与消息总数。
+fn consolidate_compute(
+    existing_raw: Option<&str>,
+    meta_json: &str,
+    messages_json: &str,
+) -> Result<(String, usize)> {
+    let (existing_meta, mut messages) = parse_existing_dialog(existing_raw);
+    let incoming: Vec<Value> = serde_json::from_str(messages_json)
+        .map_err(|e| AppError::ValidationError(format!("messages_json 非法: {}", e)))?;
+    for m in incoming {
+        upsert_by_id(&mut messages, m);
+    }
+    sort_messages_by_time(&mut messages);
+    dedupe_assistant_by_content(&mut messages);
+    let total = messages.len();
+    if total == 0 {
+        return Ok((String::new(), 0));
+    }
+
+    let mut meta: Value = serde_json::from_str(meta_json)
+        .map_err(|e| AppError::ValidationError(format!("meta_json 非法: {}", e)))?;
+    // createdAt 以盘面既有值为准（前端本就透传，双保险防会话创建时间漂移）
+    if let Some(created) = existing_meta
+        .as_ref()
+        .and_then(|m| m.get("createdAt"))
+        .cloned()
+    {
+        meta["createdAt"] = created;
+    }
+
+    let mut content = String::new();
+    content.push_str(&meta.to_string());
+    content.push('\n');
+    for (i, m) in messages.iter().enumerate() {
+        content.push_str(&serde_json::json!({ "type": "msg", "seq": i, "message": m }).to_string());
+        content.push('\n');
+    }
+    Ok((content, total))
+}
+
+// ============================================================================
 // Tauri 命令
 // ============================================================================
 
@@ -403,6 +652,16 @@ pub fn dialog_read(name: String) -> Result<Option<String>> {
 #[tauri::command]
 pub fn dialog_write(name: String, content: String) -> Result<()> {
     dialog_write_inner(&name, &content)
+}
+
+#[cfg(feature = "tauri-app")]
+#[tauri::command]
+pub fn dialog_consolidate(
+    name: String,
+    meta_json: String,
+    messages_json: String,
+) -> Result<ConsolidateResult> {
+    dialog_consolidate_inner(&name, &meta_json, &messages_json)
 }
 
 #[cfg(feature = "tauri-app")]
@@ -474,5 +733,103 @@ mod tests {
     fn test_atomic_write_helper_validates_path() {
         // 非法名字应在 path 阶段就拒绝
         assert!(dialog_path("bad/../name.jsonl").is_err());
+    }
+
+    // ===================================================================
+    // dialog_consolidate 合并语义（spec §2，纯计算核测试）
+    // ===================================================================
+
+    fn line(seq: usize, msg: Value) -> String {
+        serde_json::json!({ "type": "msg", "seq": seq, "message": msg }).to_string()
+    }
+
+    fn meta_line(created: &str) -> String {
+        serde_json::json!({
+            "type": "meta",
+            "externalId": "s1",
+            "title": "旧标题",
+            "engineId": "simple-ai",
+            "createdAt": created,
+            "updatedAt": "2026-10-25T10:00:00.000Z",
+            "messageCount": 2,
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn consolidate_merges_snapshot_and_preserves_disk_only() {
+        // 盘面:meta + 两条消息(其中 msg-b 是并发写者新增,前端快照里没有)
+        let existing = format!(
+            "{}\n{}\n{}\n",
+            meta_line("2026-10-24T08:00:00.000Z"),
+            line(0, serde_json::json!({"id":"a","type":"user","content":"hi","timestamp":"2026-10-25T09:00:00.000Z"})),
+            line(1, serde_json::json!({"id":"b","type":"assistant","blocks":[{"type":"text","content":"并发新增"}],"timestamp":"2026-10-25T09:00:05.000Z"})),
+        );
+        // 前端快照:只有 a 的更新版(内容更富)
+        let incoming = serde_json::json!([
+            {"id":"a","type":"user","content":"hi","timestamp":"2026-10-25T09:00:00.000Z","attachments":[{"name":"x.png"}]},
+        ])
+        .to_string();
+        let new_meta = serde_json::json!({
+            "type": "meta",
+            "externalId": "s1",
+            "title": "新标题",
+            "createdAt": "2026-10-24T08:00:00.000Z",
+        })
+        .to_string();
+
+        let (content, total) =
+            consolidate_compute(Some(&existing), &new_meta, &incoming).expect("合并成功");
+        assert_eq!(total, 2, "盘面独有的并发新增必须保留");
+        assert!(content.contains("并发新增"), "盘面独有行不丢");
+        assert!(content.contains("attachments"), "快照富内容上抛");
+        assert!(content.contains("新标题"), "前端 meta 为准");
+        // createdAt 以盘面为准
+        let meta_json: Value =
+            serde_json::from_str(content.lines().next().unwrap()).unwrap();
+        assert_eq!(meta_json["createdAt"], "2026-10-24T08:00:00.000Z");
+    }
+
+    #[test]
+    fn consolidate_sorts_and_dedupes_assistant_by_content() {
+        let existing = format!(
+            "{}\n{}\n",
+            meta_line("2026-10-24T08:00:00.000Z"),
+            line(0, serde_json::json!({"id":"a","type":"user","content":"q","timestamp":"2026-10-25T09:00:00.000Z"})),
+        );
+        // 快照:同一回复两个 id(id 漂移)同内容 → 指纹去重只留一条
+        let incoming = serde_json::json!([
+            {"id":"a","type":"user","content":"q","timestamp":"2026-10-25T09:00:00.000Z"},
+            {"id":"x1","type":"assistant","blocks":[{"type":"text","content":"same"}],"timestamp":"2026-10-25T09:00:05.000Z"},
+            {"id":"x2","type":"assistant","blocks":[{"type":"text","content":"same"}],"timestamp":"2026-10-25T09:00:06.000Z"},
+        ])
+        .to_string();
+        let (content, total) =
+            consolidate_compute(Some(&existing), &meta_line("2026-10-24T08:00:00.000Z"), &incoming)
+                .expect("合并成功");
+        assert_eq!(total, 2, "同内容 assistant 去重后: user + 1 条 assistant");
+        assert!(content.contains("\"id\":\"x2\""), "保留最后完成版");
+        assert!(!content.contains("\"id\":\"x1\""), "丢弃漂移 id");
+    }
+
+    #[test]
+    fn consolidate_empty_snapshot_is_noop() {
+        let existing = format!(
+            "{}\n{}\n",
+            meta_line("2026-10-24T08:00:00.000Z"),
+            line(0, serde_json::json!({"id":"a","type":"user","content":"hi","timestamp":"2026-10-25T09:00:00.000Z"})),
+        );
+        let (content, total) =
+            consolidate_compute(Some(&existing), &meta_line("x"), "[]").expect("空快照");
+        assert_eq!(total, 0, "空快照标记 no-op");
+        assert!(content.is_empty(), "不产生落盘内容");
+    }
+
+    #[test]
+    fn consolidate_rejects_bad_payload() {
+        let err = consolidate_compute(None, "not-json", "[]");
+        assert!(err.is_err(), "非法 meta 必须拒绝");
+        let err = consolidate_compute(None, "{}", "not-json");
+        assert!(err.is_err(), "非法 messages 必须拒绝");
     }
 }

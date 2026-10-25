@@ -21,6 +21,10 @@ use std::sync::{Mutex, OnceLock};
 
 use serde_json::{json, Value};
 
+use crate::commands::dialog_storage::{
+    dedupe_assistant_by_content, message_ts, parse_existing_dialog, parse_iso, sort_messages_by_time,
+    upsert_by_id,
+};
 use crate::models::{AIEvent, SessionEndReason};
 
 /// 节流写库间隔（ms）：流式 token 高频，按时间窗合并写入。
@@ -79,6 +83,8 @@ struct PendingUser {
     client_message_id: Option<String>,
     /// 前端预生成的 assistant 消息 id（供 new_turn adopt，消除 id 漂移）
     assistant_message_id: Option<String>,
+    /// 发起请求的真实设备 id（前端每安装 UUID；None = 旧前端/插件来源，落 "core"）
+    device_id: Option<String>,
     at: std::time::Instant,
 }
 
@@ -108,6 +114,7 @@ pub fn record_user_request(
     client_message_id: Option<&str>,
     assistant_message_id: Option<&str>,
     context_id: Option<&str>,
+    device_id: Option<&str>,
 ) {
     if content.is_empty() {
         return;
@@ -122,6 +129,7 @@ pub fn record_user_request(
             content: content.to_string(),
             client_message_id: client_message_id.map(str::to_string),
             assistant_message_id: assistant_message_id.map(str::to_string),
+            device_id: device_id.map(str::to_string),
             at: std::time::Instant::now(),
         });
         while q.len() > PENDING_MAX {
@@ -130,7 +138,12 @@ pub fn record_user_request(
     }
     // B1.h：立即落盘到伪会话（不设墓碑闸门——伪会话不可能被删除入口指向）
     if ctx_key != PENDING_NO_CONTEXT_KEY {
-        append_user_message_row(&pending_conversation_id(&ctx_key), content, client_message_id);
+        append_user_message_row(
+            &pending_conversation_id(&ctx_key),
+            content,
+            client_message_id,
+            device_id,
+        );
     }
 }
 
@@ -181,7 +194,12 @@ fn flush_pending_user_request(conversation_id: &str, context_id: Option<&str>) {
             let pseudo = pending_conversation_id(&ctx_key);
             reattribute_pending_rows(&pseudo, conversation_id);
         } else {
-            append_user_message(conversation_id, &p.content, p.client_message_id.as_deref());
+            append_user_message(
+                conversation_id,
+                &p.content,
+                p.client_message_id.as_deref(),
+                p.device_id.as_deref(),
+            );
         }
     }
 }
@@ -208,11 +226,6 @@ fn iso(ms: i64) -> String {
     chrono::DateTime::from_timestamp_millis(ms)
         .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Millis, true))
         .unwrap_or_default()
-}
-
-/// ISO 8601 → epoch ms（解析失败返回 None）
-fn parse_iso(s: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(s).ok().map(|d| d.timestamp_millis())
 }
 
 // ============================================================================
@@ -927,16 +940,22 @@ pub fn record_user_message(
     content: &str,
     client_message_id: Option<&str>,
     assistant_message_id: Option<&str>,
+    device_id: Option<&str>,
 ) {
     if let Some(aid) = assistant_message_id {
         if let Ok(mut m) = pending_assistant_ids().lock() {
             m.insert(conversation_id.to_string(), aid.to_string());
         }
     }
-    append_user_message(conversation_id, content, client_message_id);
+    append_user_message(conversation_id, content, client_message_id, device_id);
 }
 
-fn append_user_message(conversation_id: &str, content: &str, client_message_id: Option<&str>) {
+fn append_user_message(
+    conversation_id: &str,
+    content: &str,
+    client_message_id: Option<&str>,
+    device_id: Option<&str>,
+) {
     if conversation_id.trim().is_empty() || content.is_empty() {
         return;
     }
@@ -948,11 +967,19 @@ fn append_user_message(conversation_id: &str, content: &str, client_message_id: 
     if let Ok(mut map) = turns().lock() {
         map.remove(conversation_id);
     }
-    append_user_message_row(conversation_id, content, client_message_id);
+    append_user_message_row(conversation_id, content, client_message_id, device_id);
 }
 
 /// 用户消息落库裸写（无闸门无副作用）——供 append_user_message 与 B1.h 即时落盘共用
-fn append_user_message_row(conversation_id: &str, content: &str, client_message_id: Option<&str>) {
+///
+/// device_id：发起请求的真实设备（前端每安装 UUID 透传）；None/空回退 "core"
+/// （旧前端/插件/内部来源）——助手消息恒 "core"（由主机后端产生，语义正确）。
+fn append_user_message_row(
+    conversation_id: &str,
+    content: &str,
+    client_message_id: Option<&str>,
+    device_id: Option<&str>,
+) {
     if conversation_id.trim().is_empty() || content.is_empty() {
         return;
     }
@@ -971,7 +998,11 @@ fn append_user_message_row(conversation_id: &str, content: &str, client_message_
         conversation_id: conversation_id.to_string(),
         role: "user".to_string(),
         timestamp: ts,
-        device_id: "core".to_string(),
+        device_id: device_id
+            .map(str::trim)
+            .filter(|d| !d.is_empty())
+            .unwrap_or("core")
+            .to_string(),
         content: payload,
         version: 1,
         parent_version: None,
@@ -1088,144 +1119,9 @@ pub fn archive_conversation(conversation_id: &str) {
     }
 }
 
-/// 取消息 JSON 的时间戳（epoch ms）；无 timestamp 返回 None
-fn message_ts(msg: &Value) -> Option<i64> {
-    msg.get("timestamp").and_then(Value::as_str).and_then(parse_iso)
-}
-
-/// 解析既有 JSONL：返回 (meta 行, 消息列表)。消息按 id 收敛（首位置 + 末内容）。
-fn parse_existing_dialog(raw: Option<&str>) -> (Option<Value>, Vec<Value>) {
-    let mut meta = None;
-    let mut messages: Vec<Value> = Vec::new();
-    let Some(text) = raw else {
-        return (meta, messages);
-    };
-    for (i, line) in text.lines().enumerate() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let Ok(v) = serde_json::from_str::<Value>(line) else {
-            continue;
-        };
-        if i == 0 || v.get("type").and_then(Value::as_str) == Some("meta") {
-            meta = Some(v);
-            continue;
-        }
-        if v.get("type").and_then(Value::as_str) == Some("msg") {
-            if let Some(msg) = v.get("message") {
-                upsert_by_id(&mut messages, msg.clone());
-            }
-        }
-    }
-    (meta, messages)
-}
-
-/// 按 id 插入/覆盖：保留首次出现的位置，内容取最新（与 `parseDialogLines`+前端去重同规则）
-fn upsert_by_id(messages: &mut Vec<Value>, msg: Value) {
-    let id = msg.get("id").and_then(Value::as_str).unwrap_or("").to_string();
-    if id.is_empty() {
-        messages.push(msg);
-        return;
-    }
-    if let Some(slot) = messages
-        .iter_mut()
-        .find(|m| m.get("id").and_then(Value::as_str) == Some(id.as_str()))
-    {
-        *slot = msg;
-    } else {
-        messages.push(msg);
-    }
-}
-
-/// 按消息时间升序稳定排序；缺失/不可解析的时间沿用前一条（保持相对顺序）
-fn sort_messages_by_time(messages: &mut [Value]) {
-    let mut prev = 0i64;
-    let mut keyed: Vec<(i64, usize)> = Vec::with_capacity(messages.len());
-    for (i, m) in messages.iter().enumerate() {
-        let ts = m
-            .get("timestamp")
-            .and_then(Value::as_str)
-            .and_then(parse_iso)
-            .unwrap_or(prev);
-        prev = ts;
-        keyed.push((ts, i));
-    }
-    keyed.sort_by_key(|(ts, i)| (*ts, *i));
-    let order: Vec<usize> = keyed.into_iter().map(|(_, i)| i).collect();
-    let snapshot: Vec<Value> = messages.to_vec();
-    for (dst, src) in order.into_iter().enumerate() {
-        messages[dst] = snapshot[src].clone();
-    }
-}
-
-/// 按 assistant 内容指纹去重（与前端 `dedupeAssistantMessages` 对齐）。
-///
-/// 同一轮回复在流式/落定/恢复过程中可能被赋予不同 id（id 漂移），按 id 去重
-/// 无法收敛。指纹 = blocks 中 text 块 content 拼接并 trim；同指纹只保留最后一条，
-/// 放置在首次出现的位置。仅对有 text 内容的 assistant 生效。
-fn dedupe_assistant_by_content(messages: &mut Vec<Value>) {
-    if messages.len() <= 1 {
-        return;
-    }
-    // 第一遍：收集每个指纹的首次下标 + 最后一条消息
-    let mut first_idx: HashMap<String, usize> = HashMap::new();
-    let mut last_msg: HashMap<String, Value> = HashMap::new();
-    for (i, m) in messages.iter().enumerate() {
-        if m.get("type").and_then(Value::as_str) != Some("assistant") {
-            continue;
-        }
-        let fp = match assistant_text_fp(m) {
-            Some(f) if !f.is_empty() => f,
-            _ => continue,
-        };
-        first_idx.entry(fp.clone()).or_insert(i);
-        last_msg.insert(fp, m.clone());
-    }
-    if first_idx.is_empty() {
-        return;
-    }
-    // 第二遍：同指纹只保留首次出现位置（放最后内容），后续跳过
-    let mut used: HashMap<String, ()> = HashMap::new();
-    let mut out: Vec<Value> = Vec::with_capacity(messages.len());
-    for m in messages.iter() {
-        if m.get("type").and_then(Value::as_str) == Some("assistant") {
-            if let Some(fp) = assistant_text_fp(m) {
-                if !fp.is_empty() {
-                    if used.contains_key(&fp) {
-                        continue;
-                    }
-                    used.insert(fp.clone(), ());
-                    if let Some(last) = last_msg.get(&fp) {
-                        out.push(last.clone());
-                    }
-                    continue;
-                }
-            }
-        }
-        out.push(m.clone());
-    }
-    *messages = out;
-}
-
-/// 提取 assistant 消息的文本指纹：blocks 中 text 块 content 拼接并 trim。
-fn assistant_text_fp(msg: &Value) -> Option<String> {
-    let blocks = msg.get("blocks").and_then(Value::as_array)?;
-    let mut s = String::new();
-    for b in blocks {
-        if b.get("type").and_then(Value::as_str) == Some("text") {
-            if let Some(c) = b.get("content").and_then(Value::as_str) {
-                s.push_str(c);
-            }
-        }
-    }
-    let trimmed = s.trim().to_string();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
+// 行级编解码 helper（parse_existing_dialog / upsert_by_id / sort_messages_by_time /
+// dedupe_assistant_by_content / message_ts / parse_iso）已迁至
+// `commands/dialog_storage.rs` 单一真源（阶段 1A⑥），本文件经 use 引用。
 
 /// 构建 meta 行（字段与前端 `DialogMeta` 对齐）
 fn build_meta_line(conversation_id: &str, messages: &[Value], existing: Option<&Value>) -> Value {

@@ -265,8 +265,16 @@ class DialogStorageServiceImpl {
         tokenUsage: input.tokenUsage,
       })
 
-      const jsonl = serializeDialog(meta, allMessages)
-      await backend.writeFile(fileName, jsonl)
+      // 落盘末端（阶段 1A⑥）：远程后端走 dialog_consolidate——后端锁内把本快照
+      // 按 id 合并上抛到当前盘面再原子写，消除与后端归档/另一端前端的
+      // 读-合并-写竞态（本方法前段的 readFile 合并快照之外，落盘瞬间的新增不丢）。
+      // OPFS/localStorage 等单机后端无此方法 → 降级整写覆盖（无并发写者，安全）。
+      if (typeof backend.consolidateFile === 'function') {
+        await backend.consolidateFile(fileName, JSON.stringify(meta), JSON.stringify(allMessages))
+      } else {
+        const jsonl = serializeDialog(meta, allMessages)
+        await backend.writeFile(fileName, jsonl)
+      }
       invalidateMetaCache()
       // 磁盘内容已变，恢复缓存作废（下次兜底恢复时重建）
       msgMapCache.delete(input.externalId)
