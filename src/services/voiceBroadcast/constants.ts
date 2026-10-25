@@ -6,7 +6,7 @@
  */
 import type { VoiceId } from './types'
 
-/** mimo-tts 预置音色（与插件 PRESET_VOICES 对齐） */
+/** mimo-tts 预置音色（与插件 PRESET_VOICES 的 voiceId 对齐；MiMo-默认 的 API id 是 mimo_default） */
 export const MIMO_VOICES: ReadonlyArray<{ id: VoiceId; label: string; desc: string }> = [
   { id: '冰糖', label: '冰糖', desc: '中文女声 · 温婉' },
   { id: '茉莉', label: '茉莉', desc: '中文女声' },
@@ -16,8 +16,16 @@ export const MIMO_VOICES: ReadonlyArray<{ id: VoiceId; label: string; desc: stri
   { id: 'Chloe', label: 'Chloe', desc: '英文女声' },
   { id: 'Milo', label: 'Milo', desc: '英文男声' },
   { id: 'Dean', label: 'Dean', desc: '英文男声' },
-  { id: 'MiMo-默认', label: 'MiMo-默认', desc: '中英混合自动' },
+  { id: 'mimo_default', label: 'MiMo-默认', desc: '中英混合自动' },
 ]
+
+/**
+ * 纠正历史存量音色值：旧版静态表把显示名「MiMo-默认」当 id 存进 prefs/lastSession，
+ * 透传给 MiMo API 会 400 Param Incorrect（Unknown voice）。读取持久化 voice 时统一过这里。
+ */
+export function normalizeVoiceId(voice: VoiceId): VoiceId {
+  return voice === 'MiMo-默认' ? 'mimo_default' : voice
+}
 
 /** 预取流水线：播放当前句时最多保持多少句处于「合成中/已合成」 */
 export const PREFETCH_DEPTH = 2

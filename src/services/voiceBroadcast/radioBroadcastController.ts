@@ -1004,7 +1004,12 @@ export class RadioBroadcastController {
     try {
       const res = await probeVoice({ kind: 'preset', voice: this.voice })
       if (!res.ok) {
-        this.lastError = `mimo-tts 不可用：${res.error ?? '未知原因'}（请检查插件 API Key 配置）`
+        const detail = res.error ?? '未知原因'
+        // 仅鉴权类问题才提示查 Key；参数类错误（HTTP 400 等）原样透出，避免误导排查方向
+        const isAuthIssue = /未配置 API Key|HTTP 401|Invalid API Key/i.test(detail)
+        this.lastError = isAuthIssue
+          ? `mimo-tts 不可用：${detail}（请在「语音合成」插件面板配置 API Key）`
+          : `mimo-tts 不可用：${detail}`
         return false
       }
       return true
