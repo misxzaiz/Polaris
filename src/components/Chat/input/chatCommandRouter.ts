@@ -69,9 +69,9 @@ export function tryHandleSlashCommand(text: string, ctx: SlashCommandContext): S
     }
     const matches = capCmd.firstToken ? matchCaps(caps, capCmd.firstToken) : []
     if (matches.length === 1 && matches[0]) {
-      // 唯一命中：注入该能力完整协议，正文跟随其后
+      // 唯一命中：正文在前，该能力完整协议块在末尾（末尾包含契约）
       const detail = buildCapDetailBlock(matches[0])
-      return { handled: true, sendText: capCmd.remainder ? `${detail}\n\n${capCmd.remainder}` : detail }
+      return { handled: true, sendText: capCmd.remainder ? `${capCmd.remainder}\n\n${detail}` : detail }
     }
     if (matches.length > 1) {
       useToastStore.getState().info('/cap', i18n.t('chat:capCmd.ambiguous', {
@@ -81,8 +81,9 @@ export function tryHandleSlashCommand(text: string, ctx: SlashCommandContext): S
       }))
       return { handled: true }
     }
-    // 首个 token 不命中（或无 token）：整体视为正文，注入全量速查
-    return { handled: true, sendText: `${buildCapDigestBlock(caps)}\n\n${capCmd.rest}` }
+    // 首个 token 不命中（或无 token）：整体视为正文在前，末尾注入全量速查
+    const digest = buildCapDigestBlock(caps)
+    return { handled: true, sendText: capCmd.rest ? `${capCmd.rest}\n\n${digest}` : digest }
   }
 
   // /nexus <scenario> <goal> → 组队派发（拓扑波次）

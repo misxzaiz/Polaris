@@ -44,7 +44,7 @@ import type { Workspace, EngineId } from '@/types'
 import { getChatDisplayStyleVars } from '@/types'
 import type { Attachment } from '@/types/attachment'
 import type { ContextBlock } from '@/stores/conversationStore/types'
-import { formatContextBlocks } from './contextBlockRegistry'
+import { materializeContextBlocks, upsertContextBlock } from './contextBlockRegistry'
 import { useInputUIStore } from '@/stores/inputUIStore'
 import { useMarqueeStore } from '@/stores/marqueeStore'
 import { createLogger } from '@/utils/logger'
@@ -67,7 +67,7 @@ import {
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { tryHandleSlashCommand } from './chatCommandRouter'
-import { buildCapDetailBlock, buildCapDigestBlock, matchCaps } from '@/services/capSlashCommand'
+import { buildCapReferenceBlock, matchCaps, parseCapSlashCommand } from '@/services/capSlashCommand'
 import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import {
   appendPromptHistoryEntry,
@@ -1189,27 +1189,28 @@ export function ChatInput({
       applySlashReplacement(`mcp-${mcp.id} `)
       return
     } else if (item.type === 'cap') {
-      // /cap 条目：选中即展开注入块（与片段同模式，所见即所发，可继续编辑正文）。
-      // 不能走 replaceSlashToken——/cap <查询> 是双 token（命令+参数），
-      // 单 token 正则 \S*$ 匹配不上会静默不替换（2026-10-25 用户实测缺陷）；
-      // /cap 恒在消息首，仿 agent 分支做整条前缀替换。
-      // 目录未就绪时退回 `/cap ...` 命令文本，发送时由 chatCommandRouter 兜底展开。
+      // /cap 条目：选中转为轻量引用 chip（cap-help ContextBlock），正文仅移除 `/cap <查询>` 前缀。
+      // 引用与正文解耦：正文零标记 token，chip 走 ContextBlockPreview 通道，发送时统一在消息末尾物化。
+      // 不能走 replaceSlashToken——/cap <查询> 是双 token，/cap 恒在消息首，仿 agent 分支整条前缀替换。
+      // 目录未就绪/空目录 → 保留现文本回退（/cap 命令文本，发送时由 chatCommandRouter 兜底）。
       const cap = item.data as CapSuggestion
-      const state = useCapCatalogStore.getState()
-      const entry = cap.id ? state.caps.find(c => c.id === cap.id) : undefined
-      const expanded = entry
-        ? buildCapDetailBlock(entry)
-        : (!cap.id && state.caps.length > 0 ? buildCapDigestBlock(state.caps) : null)
-      const prefix = expanded ?? (cap.id ? `/cap ${cap.id} ` : '/cap ')
-      const replaced = prefix + textAfterCursor
+      const catalog = useCapCatalogStore.getState()
+      const entry = cap.id ? catalog.caps.find(c => c.id === cap.id) : undefined
+      const canConvert = Boolean(entry) || (!cap.id && catalog.caps.length > 0)
+      if (!canConvert) return
+      const block = buildCapReferenceBlock(entry, catalog.caps)
+      const nextBlocks = upsertContextBlock(contextBlocksRef.current, block)
+      contextBlocksRef.current = nextBlocks
+      setLocalContextBlocks(nextBlocks)
+      const replaced = textAfterCursor
       setLocalText(replaced)
-      updateInputDraft({ text: replaced, attachments, contextBlocks: contextBlocksRef.current })
+      // 立即整体回写草稿（不走防抖路径），防切会话/发送竞态丢块
+      updateInputDraft({ text: replaced, attachments, contextBlocks: nextBlocks })
       setShowSuggestions(false)
       setSuggestionItems([])
       setTimeout(() => {
         textarea.focus()
-        const cursor = prefix.length
-        textarea.setSelectionRange(cursor, cursor)
+        textarea.setSelectionRange(0, 0)
       }, 0)
       return
     } else if (item.type === 'conversation') {
@@ -1319,36 +1320,32 @@ export function ChatInput({
       ) {
         return
       }
-      // 上下文块：有工作区 → 落盘引用；无 → 全文拼入（与空闲分支同逻辑）
-      const tcbBlocks = contextBlocksRef.current
-      let messageContent = trimmed
-      if (tcbBlocks.length > 0) {
-        const workspacePath = currentWorkspace?.path
-        let usedReference = false
-        if (workspacePath) {
-          try {
-            const { packContextBlocksAsReference, buildTcbReferencePrompt } = await import('./contextBlockRegistry')
-            const { hasContent, fileRef } = await packContextBlocksAsReference(tcbBlocks, workspacePath)
-            if (hasContent) {
-              const reference = buildTcbReferencePrompt(fileRef)
-              messageContent = trimmed
-                ? `${reference}\n\n${trimmed}`
-                : reference
-              usedReference = true
-            }
-          } catch (e) {
-            log.warn('圈选上下文落盘失败，降级全文拼入', { error: String(e) })
+      // 流式 /cap 收编：目录就绪时转为引用 chip（正文取剩余部分），不再把注入块字面入队；
+      // 目录未就绪 / 多命中 → 维持字面入队（已知残余，见 plans/reference-mapping-spec.md R5）
+      let effectiveText = trimmed
+      const capCmd = parseCapSlashCommand(trimmed)
+      if (capCmd) {
+        const catalog = useCapCatalogStore.getState()
+        if (catalog.loaded && catalog.caps.length > 0) {
+          const matches = capCmd.firstToken ? matchCaps(catalog.caps, capCmd.firstToken) : []
+          if (matches.length === 1 && matches[0]) {
+            const nextBlocks = upsertContextBlock(contextBlocksRef.current, buildCapReferenceBlock(matches[0]))
+            contextBlocksRef.current = nextBlocks
+            setLocalContextBlocks(nextBlocks)
+            updateInputDraft({ text: capCmd.remainder, attachments: localAttachments, contextBlocks: nextBlocks })
+            effectiveText = capCmd.remainder
+          } else if (!capCmd.firstToken || matches.length === 0) {
+            const nextBlocks = upsertContextBlock(contextBlocksRef.current, buildCapReferenceBlock(undefined, catalog.caps))
+            contextBlocksRef.current = nextBlocks
+            setLocalContextBlocks(nextBlocks)
+            updateInputDraft({ text: capCmd.rest, attachments: localAttachments, contextBlocks: nextBlocks })
+            effectiveText = capCmd.rest
           }
         }
-        if (!usedReference) {
-          const blocksText = formatContextBlocks(tcbBlocks)
-          messageContent = blocksText
-            ? trimmed
-              ? `${blocksText}\n\n${trimmed}`
-              : blocksText
-            : trimmed
-        }
       }
+      // 引用内容发送单点物化：统一追加在正文之后（末尾包含契约，plans/reference-mapping-spec.md）
+      const { trailing } = await materializeContextBlocks(contextBlocksRef.current, currentWorkspace?.path)
+      const messageContent = trailing ? (effectiveText ? `${effectiveText}\n\n${trailing}` : trailing) : effectiveText
       enqueuePending({
         id: crypto.randomUUID(),
         text: messageContent,
@@ -1360,10 +1357,11 @@ export function ChatInput({
       for (const id of sentBlockIds) {
         useMarqueeStore.getState().removeBlock(id)
       }
-      // 记录到 prompt 历史（记录用户原文）。入队是本地同步操作，不需要发送事务：
+      // 记录到 prompt 历史（记录用户正文；/cap 引用已转 chip，不入史）。
+      // 入队是本地同步操作，不需要发送事务：
       // 真正送出发生在队列派发时，失败时队列本身会保留队首；历史按「已入队即记录」处理。
-      if (trimmed) {
-        const appended = appendPromptHistoryEntry(sentHistoryRef.current, trimmed)
+      if (effectiveText) {
+        const appended = appendPromptHistoryEntry(sentHistoryRef.current, effectiveText)
         if (!arePromptHistoryEntriesEqual(sentHistoryRef.current, appended)) {
           sentHistoryRef.current = appended
           void persistPromptHistoryEntries(promptHistoryWorkspacePath, appended)
@@ -1395,8 +1393,10 @@ export function ChatInput({
       setHistoryIndex(null)
       resetPromptOptimize()
       if (cmd.sendText) {
-        // 本地斜杠命令发送同样入史（此前该分支绕过记录点，发过的 /nexus 等无法召回）
-        const sendText = cmd.sendText
+        // 本地斜杠命令发送：当前挂着的引用 chips 一并物化追加在 sendText 末尾
+        //（修复旧分支静默丢弃 TCB 的洞）；prompt 历史照旧记录 sendText 全文
+        const { trailing } = await materializeContextBlocks(contextBlocksRef.current, currentWorkspace?.path)
+        const sendText = trailing ? `${cmd.sendText}\n\n${trailing}` : cmd.sendText
         void commitPromptHistory(sendText, () =>
           onSend(sendText, currentWorkspace?.path, attachments.length > 0 ? attachments : undefined)
         )
@@ -1438,39 +1438,12 @@ export function ChatInput({
       }
       onEditSend(editMode.messageId, trimmed, currentWorkspace?.path)
     } else {
-      // 普通发送：若存在上下文块——
-      //   有工作区 → 全文落盘为 .polaris-handoff/tcb-*.md，消息只放「引导语 + @path 引用」，
-      //              避免把圈选全文拼入消息体造成膨胀（引擎按 @path 读取文件）；
-      //   无工作区 / 落盘失败 → 降级为全文拼入（保持原行为，不丢功能）。
-      const tcbBlocks = contextBlocksRef.current
-      let messageContent = trimmed
-      if (tcbBlocks.length > 0) {
-        const workspacePath = currentWorkspace?.path
-        let usedReference = false
-        if (workspacePath) {
-          try {
-            const { packContextBlocksAsReference, buildTcbReferencePrompt } = await import('./contextBlockRegistry')
-            const { hasContent, fileRef } = await packContextBlocksAsReference(tcbBlocks, workspacePath)
-            if (hasContent) {
-              const reference = buildTcbReferencePrompt(fileRef)
-              messageContent = trimmed
-                ? `${reference}\n\n${trimmed}`
-                : reference
-              usedReference = true
-            }
-          } catch (e) {
-            log.warn('圈选上下文落盘失败，降级全文拼入', { error: String(e) })
-          }
-        }
-        if (!usedReference) {
-          const blocksText = formatContextBlocks(tcbBlocks)
-          messageContent = blocksText
-            ? trimmed
-              ? `${blocksText}\n\n${trimmed}`
-              : blocksText
-            : trimmed
-        }
-      }
+      // 普通发送：引用内容（TCB / cap-help / 插件 kind）单点物化，统一追加在用户正文
+      // **之后**（末尾包含契约）：有工作区 → 全部落盘为一个 .polaris-handoff/tcb-*.md，
+      // 末尾只放固定引导句 + @path（引擎按引用读取，避免消息体膨胀）；
+      // 无工作区 / 落盘失败 → 末尾追加格式化全文（保底不丢内容）。
+      const { trailing } = await materializeContextBlocks(contextBlocksRef.current, currentWorkspace?.path)
+      const messageContent = trailing ? (trimmed ? `${trimmed}\n\n${trailing}` : trailing) : trimmed
       // 整段文本作为一条消息发送，保留用户输入的换行/空行格式。
       // （待发送队列仅用于「流式回复期间预输入」，见上方 isStreaming 分支；
       //   空闲时不再按换行拆分，避免用户写长消息按回车换行被误拆成多条排队。）
@@ -1503,7 +1476,7 @@ export function ChatInput({
     setSpeechWakeActive(false)
     // 语音提醒：发送确认
     voiceNotificationService.notifySendConfirm()
-  }, [value, disabled, isStreaming, attachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, promptHistoryWorkspacePath, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue, commitPromptHistory])
+  }, [value, disabled, isStreaming, attachments, localAttachments, onSend, updateInputDraft, cancelPersistDraft, currentWorkspace, promptHistoryWorkspacePath, setSpeechWakeActive, editMode, onEditSend, onCancelEdit, isClaudeEngine, t, optimizeRunning, activeSessionId, resetPromptOptimize, enqueuePending, sendPendingNow, pendingQueue, commitPromptHistory])
 
   // 处理语音命令（放在 handleSend 之后，避免变量声明顺序问题）
   useEffect(() => {

@@ -17,7 +17,8 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { X, ChevronDown, Target, MessageSquarePlus, Check } from 'lucide-react'
 import type { BrowserRegion } from '@/services/tauri/browserService'
-import type { ContextBlock, ContextBlockKindSpec } from '@/stores/conversationStore/types'
+import type { ContextBlock } from '@/stores/conversationStore/types'
+import { getKindSpec } from './contextBlockRegistry'
 
 interface ContextBlockPreviewProps {
   blocks: ContextBlock[]
@@ -52,7 +53,8 @@ function ContextBlockItem({
   const [editingNote, setEditingNote] = useState(false)
   const [noteDraft, setNoteDraft] = useState(block.userNote ?? '')
 
-  const spec = block.kind !== 'marquee-context' ? undefined : marqueeSpec
+  // 注册表查表：已知 kind 走 kind-known 样式（cap-help ⚡ 等）；未注册走通用降级
+  const spec = getKindSpec(block.kind)
   const isMarquee = block.kind === 'marquee-context'
   // 双字段兼容读取：顶层优先，data 兜底（data.regions 为 unknown，需收敛为 BrowserRegion[]）
   const url = isMarquee ? (block.url ?? (block.data?.url as string | undefined)) : undefined
@@ -245,7 +247,4 @@ function BlockDetails({
   )
 }
 
-/** marquee-context 注册表引用（供 chip 判断已知 kind；渲染/格式化为内置实现） */
-const marqueeSpec: ContextBlockKindSpec = {
-  icon: '🎯',
-}
+/** marquee-context 的 icon/样式已收敛到 contextBlockRegistry 注册表（🎯），此处不再持本地副本 */

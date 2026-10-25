@@ -9,8 +9,10 @@
  * 语义：
  * - `/cap`            → 全量紧凑速查（id + 中文短名 + summary 一行）
  * - `/cap <查询> 正文` → 查询唯一命中时注入该能力完整 describe 协议
- * - 查询命中顺序：id 精确 > 中文名精确 > id 后缀（cap.X/.X）> 子串
+ * - 查询命中顺序：id 精确 > 中文名精确 > id 后缀 > 子串
  */
+
+import type { ContextBlock } from '@/stores/conversationStore/types'
 
 /** 目录条目（capCatalogStore 从 cap.help index 解析而来） */
 export interface CapCatalogEntry {
@@ -79,23 +81,50 @@ export function matchCaps(caps: CapCatalogEntry[], query: string): CapCatalogEnt
  * 全量紧凑速查块：每个能力一行（id + 中文短名 + summary）。
  * 注入后 AI 无需调用 cap_list 即知「有什么」；「怎么调」引导到 cap.help show / cap_list。
  */
-export function buildCapDigestBlock(caps: CapCatalogEntry[]): string {
+export function buildCapDigestBlock(caps: CapCatalogEntry[], note?: string): string {
   const lines = caps.map((c) => {
     const summary = c.summary ? `：${c.summary}` : ''
     const tag = c.streaming ? '（流式，同步 cap_dispatch 不可调）' : ''
     return `- ${c.id}（${c.name}）${tag}${summary}`
   })
-  return [
-    `[cap 能力速查 · ${caps.length} 项 · 实时来自 cap.help；动作协议细节用 cap.help show target=<id> 或 cap_list 查询，不要凭记忆猜]`,
-    ...lines,
-  ].join('\n')
+  let head = `[cap 能力速查 · ${caps.length} 项 · 实时来自 cap.help；动作协议细节用 cap.help show target=<id> 或 cap_list 查询，不要凭记忆猜]`
+  if (note) head += `\n（用户备注：${note}）`
+  return [head, ...lines].join('\n')
 }
 
 /** 详情块头：唯一命中时注入该能力完整协议 */
-export function buildCapDetailBlock(cap: CapCatalogEntry): string {
-  const header = `[cap 协议 · ${cap.id}（${cap.name}）${cap.streaming ? '· 流式能力，同步 cap_dispatch 不可调' : ''} · 实时来自 cap.help，下方 JSON 即完整调用协议]`
+export function buildCapDetailBlock(cap: CapCatalogEntry, note?: string): string {
+  let header = `[cap 协议 · ${cap.id}（${cap.name}）${cap.streaming ? '· 流式能力，同步 cap_dispatch 不可调' : ''} · 实时来自 cap.help，下方 JSON 即完整调用协议]`
+  if (note) header += `\n（用户备注：${note}）`
   const body = cap.describe
     ? `\n\`\`\`json\n${JSON.stringify(cap.describe, null, 2)}\n\`\`\``
     : '\n（该能力未提供 describe 自描述，协议用 cap_list 实时查询）'
   return header + body
+}
+
+/**
+ * 构造 cap 引用块（cap-help ContextBlock）——/cap 选中的轻量引用形态。
+ *
+ * 引用映射库的接入点：数据存 block.data **选中时刻的快照**（所见即所发、离线可发，
+ * 重选同 cap 由 source+dedupeKey 原位覆盖刷新），block.userNote 承载用户备注，
+ * 发送时由 contextBlockRegistry 的 cap-help.format 物化（buildCapDetail/DigestBlock 复用）。
+ */
+export function buildCapReferenceBlock(entry?: CapCatalogEntry, digestCaps?: CapCatalogEntry[]): ContextBlock {
+  return entry
+    ? {
+        id: crypto.randomUUID(),
+        kind: 'cap-help',
+        title: `cap 协议 · ${entry.name}`,
+        source: 'cap-slash',
+        dedupeKey: entry.id,
+        data: { mode: 'detail', entry },
+      }
+    : {
+        id: crypto.randomUUID(),
+        kind: 'cap-help',
+        title: `cap 能力速查`,
+        source: 'cap-slash',
+        dedupeKey: '__digest__',
+        data: { mode: 'digest', caps: digestCaps ?? [] },
+      }
 }
