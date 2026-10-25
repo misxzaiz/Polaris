@@ -151,9 +151,16 @@ impl PolicyPermission {
 
     /// 从 config.json `permissions` 段构造。
     ///
+    /// `ui_control_enabled`（config 同名字段，默认 false）：关闭时追加 Plugin 源
+    /// （AI 会话）对 `cap.ui*` / `cap.self.mutate*` 的 deny。前端挂载门
+    /// （disabledMcpServers）只摘 polaris-bus，挡不住 polaris-dispatch 的
+    /// cap_dispatch 路径；策略层 deny 补齐该旁路（2026-10-25 治理收紧，
+    /// plans/router-governance-hardening-spec.md）。与其余内置规则一致：
+    /// 装配时载入、改动需重启生效；config 精确 allow（特异性更高）可覆盖。
+    ///
     /// 装配时校验：非法规则跳过并记 warn（不阻塞启动，可见可查）；
     /// 全部规则合法时行为与配置严格一致。
-    pub fn from_config(config: Option<&PermissionPolicyConfig>) -> Self {
+    pub fn from_config(config: Option<&PermissionPolicyConfig>, ui_control_enabled: bool) -> Self {
         let mut rules = Vec::new();
         if let Some(cfg) = config {
             for rule in &cfg.rules {
@@ -257,6 +264,40 @@ impl PolicyPermission {
                 require_auth: false,
             });
         }
+        // 2026-10-25 高危 cap 扩面（router-governance-hardening）：AI 会话触达的
+        // 宿主级破坏面默认需用户逐次审批（基建 PermissionPromptHost 已存在）。
+        // - cap.bash:run：宿主级 shell 执行（任务存活期超越会话）
+        // - cap.http*：通用转发，SSRF 目标校验已放开，任意目标可发
+        // - cap.data_root:set_root：数据根迁移/切换（含 overwrite 破坏性选项）
+        // - cap.registry:register：动态能力注册（可插入常驻转发/插件 RPC 通道）
+        for prompt_cap in [
+            ("cap.bash:run", false),
+            ("cap.http", true),
+            ("cap.data_root:set_root", false),
+            ("cap.registry:register", false),
+        ] {
+            rules.push(CompiledRule {
+                capability: prompt_cap.0.to_string(),
+                wildcard: prompt_cap.1,
+                source: SourceClass::Plugin,
+                verdict: RuleVerdict::Prompt,
+                require_auth: false,
+            });
+        }
+        // ui_control_enabled=false（默认）：AI 会话禁控 UI 域（cap.ui* / cap.self.mutate*）。
+        // 追加在 prompt 规则之后 → 同特异性后者覆盖，deny 优先；config 精确 allow
+        // （特异性 2 > 通配 1）仍可放开。Bootstrap（本机用户直点 UI）不受影响。
+        if !ui_control_enabled {
+            for ui_cap in ["cap.ui", "cap.self.mutate"] {
+                rules.push(CompiledRule {
+                    capability: ui_cap.to_string(),
+                    wildcard: true,
+                    source: SourceClass::Plugin,
+                    verdict: RuleVerdict::Deny,
+                    require_auth: false,
+                });
+            }
+        }
         Self {
             rules: RwLock::new(rules),
             web_token: RwLock::new(None),
@@ -331,12 +372,13 @@ mod tests {
             capability: CapabilityId(cap.into()),
             resource: cap.into(),
             source,
+            action: None,
         }
     }
 
     fn policy_from(rules: serde_json::Value) -> PolicyPermission {
         let cfg: PermissionPolicyConfig = serde_json::from_value(rules).unwrap();
-        PolicyPermission::from_config(Some(&cfg))
+        PolicyPermission::from_config(Some(&cfg), true)
     }
 
     #[test]
@@ -439,8 +481,9 @@ mod tests {
                 { "capability": "cap.valid", "source": "remote", "verdict": "deny" }
             ]
         }));
-        // 1 条合法 config 规则 + 7 条内置收紧（cap.data_root*/cap.plugin*/cap.http*/cap.bash*/cap.fs*/cap.ui*/cap.self.mutate* remote deny）
-        assert_eq!(p.rule_count(), 8, "三条非法规则应被跳过，内置默认并入");
+        // 1 条合法 config 规则 + 17 条内置（6 通配 remote deny + cap.plugin deny
+        // + pluginServiceManager require_auth allow + 5+4 条 Plugin prompt；ui_control=true 无条件 deny）
+        assert_eq!(p.rule_count(), 18, "三条非法规则应被跳过，内置默认并入");
         assert_eq!(
             p.check(&req("cap.valid", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
@@ -454,8 +497,8 @@ mod tests {
 
     #[test]
     fn builtin_rules_deny_remote_management_caps() {
-        // config 缺省（from_config(None)）也收紧管理面：内置默认规则生效
-        let p = PolicyPermission::from_config(None);
+        // config 缺省（from_config(None, false)）也收紧管理面：内置默认规则生效
+        let p = PolicyPermission::from_config(None, false);
         // cap.config 远程读写均放行（读是 Web/移动端刚需；写也已放开，能力内不再拒写）
         assert_eq!(
             p.check(&req("cap.config", Source::Remote { token: "t".into() })).unwrap(),
@@ -515,6 +558,77 @@ mod tests {
         assert_eq!(
             p.check(&req("cap.pluginServiceManager", Source::Remote { token: "t".into() })).unwrap(),
             PermissionVerdict::Deny
+        );
+    }
+
+    #[test]
+    fn ui_control_disabled_denies_plugin_ui() {
+        // ui_control_enabled=false（生产默认）：Plugin 源（AI 会话）禁控 UI 域——
+        // 补齐 cap_dispatch 旁路（前端挂载门只摘 polaris-bus）。
+        let p = PolicyPermission::from_config(None, false);
+        let plugin = Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) };
+        for cap in ["cap.ui.theme", "cap.ui.chat", "cap.ui.input", "cap.ui.render", "cap.self.mutate"] {
+            assert_eq!(
+                p.check(&req(cap, plugin.clone())).unwrap(),
+                PermissionVerdict::Deny,
+                "ui_control 关闭时 {cap} 应对 Plugin 源拒绝"
+            );
+        }
+        // 开启后放行；Bootstrap（本机 UI）不受开关影响
+        let p_on = PolicyPermission::from_config(None, true);
+        assert_eq!(
+            p_on.check(&req("cap.ui.theme", plugin.clone())).unwrap(),
+            PermissionVerdict::Allow
+        );
+        assert_eq!(
+            p.check(&req("cap.ui.theme", Source::Bootstrap)).unwrap(),
+            PermissionVerdict::Allow
+        );
+        // config 精确 allow 可覆盖内置通配 deny（特异性 2 > 1）
+        let p_user = policy_from(serde_json::json!({
+            "rules": [
+                { "capability": "cap.ui.theme", "source": "plugin", "verdict": "allow" }
+            ]
+        }));
+        // 注意：policy_from 固定 ui_control=true，此处手工构造 false 验证覆盖语义
+        let cfg: PermissionPolicyConfig = serde_json::from_value(serde_json::json!({
+            "rules": [
+                { "capability": "cap.ui.theme", "source": "plugin", "verdict": "allow" }
+            ]
+        })).unwrap();
+        let p_user_off = PolicyPermission::from_config(Some(&cfg), false);
+        assert_eq!(
+            p_user_off.check(&req("cap.ui.theme", plugin)).unwrap(),
+            PermissionVerdict::Allow,
+            "config 精确 allow 覆盖 ui_control deny"
+        );
+    }
+
+    #[test]
+    fn high_risk_plugin_actions_prompt() {
+        let p = PolicyPermission::from_config(None, true);
+        let plugin = Source::Plugin { caller: crate::contracts::PluginId("cap.ai".into()) };
+        for cap in [
+            "cap.bash:run",
+            "cap.http",
+            "cap.http:fetch",
+            "cap.data_root:set_root",
+            "cap.registry:register",
+        ] {
+            assert_eq!(
+                p.check(&req(cap, plugin.clone())).unwrap(),
+                PermissionVerdict::Prompt,
+                "{cap} 对 Plugin 源应需审批"
+            );
+        }
+        // Bootstrap（本机面板）不受影响；bash 其他动作（status/kill）不弹审批
+        assert_eq!(
+            p.check(&req("cap.bash:run", Source::Bootstrap)).unwrap(),
+            PermissionVerdict::Allow
+        );
+        assert_eq!(
+            p.check(&req("cap.bash:kill", plugin.clone())).unwrap(),
+            PermissionVerdict::Allow
         );
     }
 }

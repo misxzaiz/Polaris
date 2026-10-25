@@ -111,7 +111,7 @@ router: {
             let adapter = Arc::new(EventAdapter::new(256));
             let bus = Arc::new(RouterBus::new(
                 adapter,
-                Box::new(PolicyPermission::from_config(None)),
+                Arc::new(PolicyPermission::from_config(None, true)),
                 None,
                 None,
             ));

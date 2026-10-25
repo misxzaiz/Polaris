@@ -414,7 +414,16 @@ pub fn create_app_state(
             .get()
             .permissions
             .clone();
-        let policy_permission = PolicyPermission::from_config(initial_permissions.as_ref());
+        // ui_control_enabled 一并载入：关闭（默认）时策略层追加 Plugin 源对 cap.ui*/
+        // cap.self.mutate* 的 deny，补齐 polaris-dispatch(cap_dispatch) 旁路——
+        // 前端挂载门只摘 polaris-bus（见 conversationStoreUtils.getDisabledPluginMcpServers）。
+        let ui_control_enabled = config_store_arc
+            .lock()
+            .unwrap()
+            .get()
+            .ui_control_enabled;
+        let policy_permission =
+            PolicyPermission::from_config(initial_permissions.as_ref(), ui_control_enabled);
         // P1-f（X9/X7）：注入 web 鉴权 token——「token 匹配的 Remote」放行
         // cap.pluginServiceManager（Web 模式插件服务管理），未鉴权 Remote 不变。
         policy_permission.set_web_token(config_store_arc.lock().unwrap().get().web.token.clone());

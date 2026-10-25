@@ -130,7 +130,7 @@ fn register_one(
 mod tests {
     use super::*;
     use crate::models::plugin::PluginCapabilityManifestContribution;
-    use crate::services::router::event_adapter::EventAdapter;
+    use crate::services::router::EventAdapter;
     use crate::services::router::KvCapability;
     use crate::contracts::{Permission, PermissionRequest, PermissionVerdict};
 
@@ -151,6 +151,7 @@ mod tests {
         ));
         use crate::contracts::Router as _;
         let _ = bus.register_handle(Box::new(KvCapability));
+        let _ = bus.register_handle(Box::new(crate::services::router::UiThemeCapability));
         bus
     }
 
@@ -173,7 +174,7 @@ mod tests {
             false,
             serde_json::json!({"type": "forward", "target": "cap.kv"}),
         );
-        let out = sync_plugin_capabilities(&router, &[], &HashMap::new());
+        let out = sync_plugin_capabilities(&router, &[], &std::collections::BTreeMap::new());
         assert!(out.is_empty(), "无插件时无注册");
 
         // 直接以单插件调用（构造 DiscoveredPluginManifest 较重，走 register_one 语义）
@@ -201,16 +202,23 @@ mod tests {
             serde_json::json!({"type": "forward", "target": "cap.kv"}),
         );
         assert!(register_one(&router, "p", &c2).is_err());
-        // L0 放行（cap.kv 已注册为 base，覆盖合法）
+        // cap.kv 已移出 L0（2026-10-25 收窄，覆盖可劫持动态 cap 持久化键空间）→ 按 L2 拒绝
         let c3 = contrib(
             "cap.kv",
             true,
             serde_json::json!({"type": "forward", "target": "cap.kv"}),
         );
-        assert!(register_one(&router, "p", &c3).is_ok());
-        assert!(router.is_overridden(&CapabilityId("cap.kv".into())));
+        assert!(register_one(&router, "p", &c3).is_err(), "cap.kv 覆盖需白名单授权");
+        // L0 放行（cap.ui.* 展示域，UiThemeCapability 已注册为 base）
+        let c4 = contrib(
+            "cap.ui.theme",
+            true,
+            serde_json::json!({"type": "forward", "target": "cap.kv"}),
+        );
+        assert!(register_one(&router, "p", &c4).is_ok());
+        assert!(router.is_overridden(&CapabilityId("cap.ui.theme".into())));
         // 弹出恢复
-        assert!(router.unregister_override(&CapabilityId("cap.kv".into())));
-        assert!(!router.is_overridden(&CapabilityId("cap.kv".into())));
+        assert!(router.unregister_override(&CapabilityId("cap.ui.theme".into())));
+        assert!(!router.is_overridden(&CapabilityId("cap.ui.theme".into())));
     }
 }

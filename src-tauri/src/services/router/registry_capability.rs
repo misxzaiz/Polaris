@@ -45,7 +45,12 @@ const SENSITIVE_TARGETS: &[&str] = &["cap.ai.chat", "cap.registry", "cap.help", 
 /// - L2 高危域：需 config.capOverride.allow 白名单显式列出；
 /// - L4 永不覆盖：元能力/自递归高危/AI 核心通道（config 也不可放开）。
 /// 其余一律按 L2 处理（保守默认）。
-const OVERRIDE_L0_PREFIXES: &[&str] = &["cap.prompt_snippet", "cap.ui.", "cap.kv", "cap.history", "cap.context"];
+///
+/// 2026-10-25 收窄（router-governance-hardening spec）：cap.kv / cap.history /
+/// cap.context / cap.prompt_snippet 移出 L0——覆盖 cap.kv 可劫持动态 cap 持久化
+/// 键空间、cap.history 可劫持历史读取，均非「展示域」低危面。L0 仅保留 cap.ui.*
+/// （插件换 UI 皮）；被移出的前缀回落到 L2 白名单授权。
+const OVERRIDE_L0_PREFIXES: &[&str] = &["cap.ui."];
 const OVERRIDE_L4_PREFIXES: &[&str] = &[
     "cap.registry", "cap.help", "cap.ai.chat", "cap.stream.", "cap.self.",
     "cap.mcp", "cap.voice", "cap.hook", "cap.plugin",
@@ -518,7 +523,7 @@ mod tests {
     /// 构建带 EchoCapability 转发目标的 RouterBus（可带 storage）。
     fn make_bus(storage: Option<Arc<dyn crate::contracts::Storage>>) -> Arc<RouterBus> {
         let adapter = Arc::new(EventAdapter::new(64));
-        let permission = Box::new(PolicyPermission::default());
+        let permission = Arc::new(PolicyPermission::default());
         let bus = Arc::new(RouterBus::new(adapter, permission, storage, None));
         let _ = bus.register_handle(Box::new(EchoCapability));
         bus

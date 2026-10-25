@@ -91,7 +91,17 @@ pub fn run_bus_mcp_server(config_dir: &str) -> Result<()> {
         .and_then(|w| w.get("token"))
         .and_then(|t| t.as_str())
         .map(String::from);
-    let policy = PolicyPermission::from_config(permissions_cfg.as_ref());
+    // ui_control_enabled 与主进程同源（X8 同款语义对齐）：关闭时 bus 进程也禁
+    // Plugin 源调 cap.ui*（本进程注册了 cap.ui.theme/chat/input）。
+    let ui_control_enabled = config_value
+        .as_ref()
+        .and_then(|v| {
+            v.get("uiControlEnabled")
+                .or_else(|| v.get("ui_control_enabled"))
+        })
+        .and_then(|b| b.as_bool())
+        .unwrap_or(false);
+    let policy = PolicyPermission::from_config(permissions_cfg.as_ref(), ui_control_enabled);
     policy.set_web_token(web_token);
     let permission = Arc::new(policy);
     let audit: Option<Arc<dyn crate::contracts::AuditSink>> = {
