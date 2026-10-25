@@ -375,6 +375,11 @@ impl AIEngine for SimpleAIEngine {
         session.is_running = true;
         let mut abort_rx = session.abort_rx.clone();
         let file_states = session.file_states.clone();
+        // 本轮收尾信号（引擎级互斥）：epilogue 置位，供下一次 continue 等待本轮
+        // 真正退出后再开新轮；panic 时 sender 被 drop，等待方按已收尾处理。
+        let (done_tx, done_rx) = watch::channel(false);
+        session.run_done_rx = Some(done_rx);
+        let turn_lock = session.turn_lock.clone();
         // 启动后台任务：先插入会话，再跑对话循环，结束后回写完整历史。
         //
         // 合并为单个 spawn 的关键原因：
@@ -394,9 +399,16 @@ impl AIEngine for SimpleAIEngine {
         let supervisor_sessions = Arc::clone(&self.sessions);
         let supervisor_cb = cb.clone();
         let supervisor_sid = sid.clone();
+        // panic 时主任务的 epilogue 不会执行，收尾信号由监督任务补发，
+        // 防止下一次 continue 死等 run_done。
+        let supervisor_done_tx = done_tx.clone();
         let handle = tokio::spawn(async move {
             tracing::info!("[SimpleAI] 后台任务启动, session={}", sid);
             sessions.lock().await.insert(sid.clone(), session);
+
+            // 轮次互斥：新会话无旧轮、锁即刻获得；保持与 continue 同构的
+            // 「持锁贯穿整个 run」纪律，防止 continue 在插入与运行之间挤入。
+            let _turn_guard = turn_lock.lock().await;
 
             // messages 为 spawn 局部独占，避免 run_chat_loop 长时间持锁阻塞 interrupt。
             let result = run_chat_loop(
@@ -423,7 +435,6 @@ impl AIEngine for SimpleAIEngine {
                     s.is_running = false;
                 }
             }
-
             match result {
                 Ok(()) => {
                     tracing::info!("[SimpleAI] 对话循环完成, session={}", sid);
@@ -460,6 +471,10 @@ impl AIEngine for SimpleAIEngine {
                     }
                 }
             }
+            // 本轮收尾信号：在收尾事件（上方 match 发出的 SessionEnd/Error）之后
+            // 置位，让下一个 continue 严格晚于旧轮终态事件启动——正常路径下前端
+            // 收到的新轮首事件必然晚于旧轮 SessionEnd，无需依赖 turnId 过滤兜底。
+            let _ = done_tx.send(true);
         });
 
         // B2.d（审计 3.6）panic 监督：await 主任务句柄，panic 时兜底发
@@ -478,6 +493,7 @@ impl AIEngine for SimpleAIEngine {
                     if let Some(s) = guard.get_mut(&supervisor_sid) {
                         s.is_running = false;
                     }
+                    let _ = supervisor_done_tx.send(true);
                 }
             }
         });
@@ -543,8 +559,47 @@ impl AIEngine for SimpleAIEngine {
         tokio::spawn(async move {
             tracing::info!("[SimpleAI] continue_session 后台任务启动, session={}", sid);
 
+            // 引擎级轮次互斥（spec B1）：同一会话的轮次串行化，消除双
+            // run_chat_loop 并发（旧轮迟到 SessionEnd 与新轮事件交错、
+            // 历史双写覆盖、is_running 被旧轮 epilogue 误清）。
+            // 1) 排队拿 turn_lock——并发 continue 依次执行；
+            // 2) 旧 run 仍在跑时先向其 abort 通道发中断（「立即发送」=
+            //    先停旧轮语义），随后在 sessions 锁外等待其 run_done
+            //    收尾信号——不阻塞 interrupt 的 try_lock 快路径；
+            // 3) 旧轮真正退出（历史已写回、收尾事件已发）后才读历史开新轮。
+            //    等待期间旧轮 panic 且监督未补发时 sender 被 drop，
+            //    changed() 返回 Err 按「已收尾」处理，不会死锁。
+            let (turn_lock, old_done) = {
+                let mut guard = sessions.lock().await;
+                match guard.get_mut(&sid) {
+                    Some(session) => {
+                        if session.is_running {
+                            let _ = session.abort_tx.send(true);
+                            tracing::info!(
+                                "[SimpleAI] continue 时旧轮仍在运行，已请求中断并等待收尾, session={}",
+                                sid
+                            );
+                        }
+                        (session.turn_lock.clone(), session.run_done_rx.clone())
+                    }
+                    // 会话不存在（异常路径）：无旧轮可等，独立锁直跑（与旧兜底行为一致）。
+                    None => (
+                        std::sync::Arc::new(tokio::sync::Mutex::new(())),
+                        None,
+                    ),
+                }
+            };
+            let _turn_guard = turn_lock.lock().await;
+            if let Some(mut done) = old_done {
+                while !*done.borrow() {
+                    if done.changed().await.is_err() {
+                        break;
+                    }
+                }
+            }
+
             // 获取会话历史与中断接收端，并标记运行中（单次加锁完成）。
-            let (mut existing_messages, mut abort_rx, file_states) = {
+            let (mut existing_messages, mut abort_rx, file_states, done_tx) = {
                 let mut guard = sessions.lock().await;
                 if let Some(session) = guard.get_mut(&sid) {
                     session.is_running = true;
@@ -560,17 +615,27 @@ impl AIEngine for SimpleAIEngine {
                     session.abort_tx = new_tx;
                     let task_rx = new_rx.clone();
                     session.abort_rx = new_rx;
-                    (session.messages.clone(), task_rx, session.file_states.clone())
+                    // 本轮收尾信号：epilogue 置位，供下一次 continue 等待。
+                    let (done_tx, done_rx) = watch::channel(false);
+                    session.run_done_rx = Some(done_rx);
+                    (
+                        session.messages.clone(),
+                        task_rx,
+                        session.file_states.clone(),
+                        done_tx,
+                    )
                 } else {
                     // 会话不存在（异常路径）：用仅含系统提示词的初始历史兜底。
                     let system_prompt = build_system_prompt();
                     let (_, rx) = watch::channel(false);
+                    let (done_tx, _) = watch::channel(false);
                     (
                         vec![json!({ "role": "system", "content": system_prompt })],
                         rx,
                         std::sync::Arc::new(
                             crate::ai::engine::simple_ai::tools::FileStateRegistry::new(),
                         ),
+                        done_tx,
                     )
                 }
             };
@@ -633,6 +698,9 @@ impl AIEngine for SimpleAIEngine {
                     }
                 }
             }
+            // 本轮收尾信号：在收尾事件发出后置位（同 start_session），唤醒
+            // 等待本会话空闲的下一个 continue。
+            let _ = done_tx.send(true);
         });
 
         Ok(())
