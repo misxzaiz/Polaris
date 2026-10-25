@@ -218,7 +218,7 @@ impl ToolRegistry {
                         "[SimpleAI] 工具 {} 被 toolProvider 覆盖，路由到 {}",
                         name, mcp_name
                     );
-                    return pool.call(&mcp_name, args).await;
+                    return mcp_call_raced(pool, &mcp_name, args, ctx.abort_rx).await;
                 }
             }
         }
@@ -228,12 +228,39 @@ impl ToolRegistry {
             None => {
                 if let Some(pool) = &self.mcp_pool {
                     if super::mcp::McpClientPool::parse_tool_name(name).is_some() {
-                        return pool.call(name, args).await;
+                        return mcp_call_raced(pool, name, args, ctx.abort_rx).await;
                     }
                 }
                 ToolOutcome::fail(format!("Unknown tool: {}", name))
             }
         }
+    }
+}
+
+/// 等待中断信号置位。sender 被替换/关闭（changed() Err）时视为无中断，
+/// 永久挂起——select 语义下仅由另一分支（工具调用完成）收尾。
+async fn abort_signal(abort_rx: &watch::Receiver<bool>) {
+    let mut signal = abort_rx.clone();
+    while !*signal.borrow() {
+        if signal.changed().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
+/// 与中断信号竞速的 MCP 工具调用（spec B4）：MCP 请求无法协作式取消，
+/// 此前 in-flight 调用期间用户中断形同失效（只能等调用自然返回）。
+/// select 竞速——中断置位时丢弃在途请求 future，返回失败结果；
+/// 迟到的响应由 MCP client 的等待方丢弃，不影响后续调用。
+async fn mcp_call_raced(
+    pool: &super::mcp::McpClientPool,
+    mcp_name: &str,
+    args: &Value,
+    abort_rx: &watch::Receiver<bool>,
+) -> ToolOutcome {
+    tokio::select! {
+        outcome = pool.call(mcp_name, args) => outcome,
+        _ = abort_signal(abort_rx) => ToolOutcome::fail("工具调用已被用户中断".to_string()),
     }
 }
 

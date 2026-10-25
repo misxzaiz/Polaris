@@ -16,8 +16,7 @@ use crate::ai::engine::simple_ai_protocol::{
 };
 use crate::error::{AppError, Result};
 use crate::models::ai_event::{
-    ProgressEvent, SessionEndEvent, ThinkingEvent, TokenEvent, ToolCallEndEvent, ToolCallStartEvent,
-    UsageEvent,
+    ProgressEvent, ThinkingEvent, TokenEvent, ToolCallEndEvent, ToolCallStartEvent, UsageEvent,
 };
 use crate::models::AIEvent;
 
@@ -212,8 +211,7 @@ pub(super) async fn run_chat_loop(
                     usage_acc.total_input
                 );
                 let compacted =
-                    compact::compact_history(messages, profile, context_window, event_callback, session_id)
-                        .await?;
+                    compact::compact_history(messages, profile, context_window, event_callback, session_id, &mut *abort_rx).await?;
                 if compacted {
                     // 清零触发基准，待下一轮真实 usage 刷新（天然一轮冷却）。
                     usage_acc.reset_last();

@@ -20,6 +20,7 @@
 use std::sync::Arc;
 
 use serde_json::{json, Value};
+use tokio::sync::watch;
 
 use crate::ai::engine::simple_ai_protocol::{self, CliModelSuffix, WireProtocol};
 use crate::error::{AppError, Result};
@@ -230,6 +231,7 @@ async fn request_summary_once(
     history_text: &str,
     max_tokens: u64,
     extra_instruction: &str,
+    abort_rx: &mut watch::Receiver<bool>,
 ) -> std::result::Result<String, SummaryFailure> {
     let protocol = WireProtocol::from_wire_api(profile.wire_api.as_deref());
     let instruction = format!("{}{}", base_instruction, extra_instruction);
@@ -296,14 +298,15 @@ async fn request_summary_once(
     }
     let req = req.body(body.to_string());
     // 摘要请求也走重试（2 次，基数 500ms）。
-    // 注：摘要请求无会话级 abort_rx（compact 内部独立小请求），传入 None ——
-    // 不打断其退避，但主对话循环在 compact 前后的 abort 检查已保证整体可中断。
+    // 修复（spec B4）：透传会话级 abort_rx——此前传 None，压缩（含滚动分段
+    // 多次请求）期间用户中断形同失效，只能等全部段摘要完才在循环检查点退出。
+    // 中断时 send_with_retry 返回 Interrupted，经 SummaryFailure::Other 上抛。
     // header_timeout 传 COMPACT_TIMEOUT_SECS：摘要为非流式请求，该超时等效覆盖全请求。
     let response = retry::send_with_retry(
         req,
         2,
         500,
-        None,
+        Some(abort_rx),
         &url,
         Some(std::time::Duration::from_secs(COMPACT_TIMEOUT_SECS)),
     )
@@ -321,8 +324,18 @@ async fn request_summary(
     profile: &crate::models::config::ModelProfile,
     base_instruction: &str,
     history_text: &str,
+    abort_rx: &mut watch::Receiver<bool>,
 ) -> Result<String> {
-    match request_summary_once(profile, base_instruction, history_text, SUMMARY_MAX_TOKENS, "").await {
+    match request_summary_once(
+        profile,
+        base_instruction,
+        history_text,
+        SUMMARY_MAX_TOKENS,
+        "",
+        &mut *abort_rx,
+    )
+    .await
+    {
         Ok(s) => Ok(s),
         Err(SummaryFailure::Truncated) => {
             tracing::warn!(
@@ -335,6 +348,7 @@ async fn request_summary(
                 history_text,
                 SUMMARY_RETRY_MAX_TOKENS,
                 COMPACT_RETRY_SUFFIX,
+                abort_rx,
             )
             .await
             {
@@ -359,6 +373,7 @@ async fn summarize_range_rolling(
     profile: &crate::models::config::ModelProfile,
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     session_id: &str,
+    abort_rx: &mut watch::Receiver<bool>,
 ) -> Result<String> {
     let per_segment_budget = ((window as f64) * SEGMENT_INPUT_BUDGET_RATIO) as u64;
     let segments = segment_compact_range(messages, start, end, per_segment_budget);
@@ -374,7 +389,7 @@ async fn summarize_range_rolling(
     // 不超预算（或退化为单段）→ 与现状完全一致的单次摘要路径。
     if segments.len() <= 1 {
         let (s, e) = segments.first().copied().unwrap_or((start, end));
-        return request_summary(profile, COMPACT_INSTRUCTION, &serialize_seg(s, e)).await;
+        return request_summary(profile, COMPACT_INSTRUCTION, &serialize_seg(s, e), abort_rx).await;
     }
 
     tracing::info!(
@@ -393,14 +408,15 @@ async fn summarize_range_rolling(
         let seg_text = serialize_seg(s, e);
         running = if running.is_empty() {
             // 首段：普通摘要。
-            request_summary(profile, COMPACT_INSTRUCTION, &seg_text).await?
+            request_summary(profile, COMPACT_INSTRUCTION, &seg_text, &mut *abort_rx).await?
         } else {
             // 后续段：把已有摘要与新片段一起交给模型合并。
             let merged_input = format!(
                 "<existing_summary>\n{}\n</existing_summary>\n\n<new_segment>\n{}\n</new_segment>",
                 running, seg_text
             );
-            request_summary(profile, COMPACT_ROLLING_INSTRUCTION, &merged_input).await?
+            request_summary(profile, COMPACT_ROLLING_INSTRUCTION, &merged_input, &mut *abort_rx)
+                .await?
         };
     }
     Ok(running)
@@ -573,6 +589,7 @@ pub(super) async fn compact_history(
     window: u64,
     event_callback: &Arc<dyn Fn(AIEvent) + Send + Sync>,
     session_id: &str,
+    abort_rx: &mut watch::Receiver<bool>,
 ) -> Result<bool> {
     // keep_recent 可经 custom_env 覆盖（最小 1，防止全压光/越界）。
     let keep_recent = profile
@@ -600,7 +617,7 @@ pub(super) async fn compact_history(
     let pre_compact_snapshot = messages.clone();
 
     // 摘要：区间不超预算走单次；超预算（本身超窗，原本必 400）走滚动分段。
-    match summarize_range_rolling(messages, start, end, window, profile, event_callback, session_id).await {
+    match summarize_range_rolling(messages, start, end, window, profile, event_callback, session_id, abort_rx).await {
         Ok(summary) if !summary.trim().is_empty() => {
             let compressed_count = end - start;
             messages.drain(start..end);
@@ -651,6 +668,16 @@ pub(super) async fn compact_history(
             *messages = pre_compact_snapshot;
         }
         Err(e) => {
+            // 用户中断（spec B4）：直接上抛 Interrupted——此刻 messages 尚未被
+            // 改动（替换只发生在 Ok 分支），无需回滚；由 run_chat_loop 的 `?`
+            // 送至 mod.rs wrapper 统一发 SessionEnd(Aborted)。
+            if matches!(e, AppError::Interrupted) {
+                tracing::info!(
+                    "[SimpleAI] 压缩摘要请求被用户中断，上抛中断, session={}",
+                    session_id
+                );
+                return Err(e);
+            }
             // Phase 3：失败自动回滚——恢复原始消息，绝不丢历史。
             // fallback_drop_oldest 仅作为极端容忍（不可达时）兜底，这里改为恢复全量。
             tracing::warn!(
