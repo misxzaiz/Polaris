@@ -17,7 +17,7 @@
 //!
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
-//! - `request` `{ "action": "request", "method": "GET", "url": "...",
+//! - `request` `{ "action": "request", "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE", "url": "...",
 //!                 "headers": { k: v }, "body": "<raw>", "bodyType": "json|text|form|binary",
 //!                 "timeoutMs": 15000 }`
 //!                 → `{ "status": 200, "statusText": "OK", "ok": true,
@@ -45,7 +45,9 @@
 //! ⚠ 风险提示：若未来对 `Source::Remote` 开放白名单，本能力将直接暴露
 //! SSRF 攻击面（可打内网、读云元数据凭证），须重新引入目标校验。
 
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
+};
 use base64::Engine as _;
 
 const CAP_ID: &str = "cap.http";
@@ -55,6 +57,9 @@ const MAX_BINARY_BYTES: usize = 32 * 1024 * 1024;
 
 /// 请求默认超时（毫秒）
 const DEFAULT_TIMEOUT_MS: u64 = 15_000;
+
+/// 支持的动作清单（describe 与未知动作错误文案共用，单一事实来源）
+const HTTP_ACTIONS: &[&str] = &["ping", "request"];
 
 /// cap.http —— 通用 HTTP 转发能力（无状态，无依赖注入）
 pub struct HttpCapability;
@@ -106,24 +111,31 @@ impl Capability for HttpCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "通用 HTTP 转发：请求外部 API（含 Cookie/UA 等浏览器禁发头），二进制 base64",
-            "note": "目标校验已放开（http/https，含 localhost/内网）；Remote 来源默认 deny；二进制响应 base64（isBase64:true）",
-            "actions": {
+        standard_describe(
+            CAP_ID,
+            "HTTP转发",
+            "通用 HTTP 转发：请求外部 API（含 Cookie/UA 等浏览器禁发头），二进制 base64",
+            Some(
+                "目标校验已放开（http/https，含 localhost/内网）；Remote 来源默认 deny；二进制响应 base64（isBase64:true）",
+            ),
+            serde_json::json!({
                 "ping": { "params": {}, "returns": "{ pong: true }" },
                 "request": {
                     "params": {
-                        "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）",
+                        "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|TRACE（默认 GET）",
                         "url": "string（必填，仅 http/https）",
                         "headers": "{ k: v }?",
                         "body": "string?",
-                        "bodyType": "text|json|form|binary?",
+                        "bodyType": "text|json|form|binary?（json/form 缺省自动补 Content-Type）",
                         "timeoutMs": "number?（默认 15000）"
                     },
-                    "returns": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }"
+                    "returns": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }",
+                    // example：bus_help usage_examples 派生源（载荷已对 invoke request 分支核对；
+                    // 每动作一个 example，POST 变体参数见 params，不再单列）
+                    "example": { "action": "request", "method": "GET", "url": "https://api.github.com/repos/rust-lang/rust" }
                 }
-            }
-        })
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
@@ -142,7 +154,10 @@ impl Capability for HttpCapability {
                     .unwrap_or("GET")
                     .to_ascii_uppercase();
                 if !is_valid_method(&method) {
-                    return Err(format!("cap.http 不支持方法: {method}"));
+                    // 错误即文档：附合法方法清单，AI 可据此自纠
+                    return Err(format!(
+                        "cap.http 不支持方法: {method}（支持 GET/POST/PUT/DELETE/PATCH/HEAD/OPTIONS/TRACE）"
+                    ));
                 }
                 let url = params
                     .get("url")
@@ -178,7 +193,7 @@ impl Capability for HttpCapability {
                     Self::do_request(&method, &url, &headers, body, body_type, timeout_ms).await
                 })
             }
-            other => Err(format!("cap.http 不支持动作: {}", other)),
+            other => Err(unsupported_action(CAP_ID, other, HTTP_ACTIONS)),
         }
     }
 
@@ -411,6 +426,32 @@ mod tests {
     fn missing_action_is_rejected() {
         let r = HttpCapability.invoke(serde_json::json!({}), &_null_ctx());
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn unknown_action_error_lists_supported() {
+        let r = HttpCapability.invoke(serde_json::json!({ "action": "put" }), &_null_ctx());
+        let msg = r.unwrap_err();
+        assert!(msg.contains("ping, request"), "应列支持清单: {msg}");
+        assert!(msg.contains("cap.help show target=cap.http"), "应指协议入口: {msg}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        let d = HttpCapability.describe();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 应过契约校验: {problems:?}");
+        // actions 键与 HTTP_ACTIONS 清单一致（未知动作错误文案与 describe 同源）
+        let mut keys: Vec<&str> = d["actions"]
+            .as_object()
+            .expect("actions 应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected = HTTP_ACTIONS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "describe 动作清单应与 HTTP_ACTIONS 一致");
     }
 
     // ---------- 真实转发（走 reqwest::blocking，单测脱离 tokio 运行时） ----------

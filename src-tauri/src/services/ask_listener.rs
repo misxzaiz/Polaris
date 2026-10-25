@@ -1210,8 +1210,11 @@ async fn handle_dispatch_frame(
 /// 执行结果。帧协议：{ type:"cap", token, target:"cap.*", payload:{action,...} }。
 ///
 /// 权限：以 Source::Plugin 注入（bus 桥的既定身份），走主进程 PolicyPermission gate。
-/// 管理面能力（cap.config/cap.data_root/cap.plugin*）内置 remote-deny 不拦 Plugin，
-/// 但工具描述已标注「需谨慎」。
+/// 内置 remote-deny 面（cap.data_root/cap.http/cap.bash/cap.fs/cap.ui/cap.self.mutate，
+/// 见 policy_permission.rs，**不含 cap.config**——Web/移动端连接刚需，2026-10-25 起）
+/// 不拦 Plugin 来源；管理面动作（bash:run/http/data_root:set_root/registry:register/
+/// pluginServiceManager:stop_for_plugin,autostart/pluginDiscovery:uninstall_* 等）
+/// 由主进程审批出口裁决：首次调用返回确认请求 id，前端批准后重试即放行。
 async fn handle_cap_frame(
     stream: &mut TcpStream,
     frame: Value,
@@ -1295,7 +1298,7 @@ async fn handle_cap_list_frame(
         "type": "cap_list_result",
         "ok": true,
         "capabilities": capabilities,
-        "note": "用 cap_dispatch(target, payload) 调用其中任意能力；cap.ai.chat 为流式能力，start/continue 需经 Web/WS 订阅事件。每项的 describe 为能力自描述（summary/actions/note），缺省 null 表示该能力未提供 describe。",
+        "note": "用 cap_dispatch(target, payload) 调用其中任意能力。每项 describe 为能力自描述（顶层键 id/name/summary/note?/actions，动作内含 params/returns），缺省 null 表示该能力未提供 describe。streaming:true 的能力仅 WS 流式通道（dispatch_stream）可调、cap_dispatch 同步不可调（如 cap.stream.echo）；cap.ai.chat 为混合型例外——start/continue 可经 cap_dispatch 同步调用（RouterBus 对流式表目标同步 dispatch 自动回退 invoke），token 流经 WS chat-event 事件订阅。",
     });
 
     write_frame(stream, &reply).await?;

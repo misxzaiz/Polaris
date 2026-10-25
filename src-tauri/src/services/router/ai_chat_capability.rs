@@ -7,8 +7,11 @@
 //!   泵通道 → RouterBus 泵任务 → EventAdapter（chat-event 线格式与历史一致）
 //! - 同步动作（dispatch）：`interrupt` / `send_input` / `approve_plan` /
 //!   `reject_plan` / `answer_question` / `respond_plugin_card` /
+//!   `form_submit` / `form_skip` / `form_template_save` / `form_template_list` /
 //!   `register_pending_question` / `register_pending_plan` / `get_pending_plans` /
 //!   `get_pending_questions` / `clear_processed_plans` / `clear_answered_questions`
+//!   （start/continue 也可经 dispatch 同步调用：RouterBus 对流式表目标自动回退
+//!   invoke，同步返回结果；token 流仍走 chat-event 事件订阅）
 //!
 //! # 状态持有
 //!
@@ -23,9 +26,93 @@
 //! 流式的引擎读线程经 `std::thread` + 持有的 Handle block_on 驱动核心 async 调用。
 
 use crate::services::ai_chat_core as core;
-use crate::contracts::{Capability, CapabilityId, Context, Event, StreamingCapability, TraceId, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Event,
+    StreamingCapability, TraceId, Value,
+};
 use std::sync::Arc;
 use tokio::sync::mpsc;
+
+/// 同步动作清单（describe 与未知动作错误文案共用，单一事实来源；
+/// describe_contract 测试断言两者一致）
+const SYNC_ACTIONS: &[&str] = &[
+    "start",
+    "continue",
+    "interrupt",
+    "send_input",
+    "approve_plan",
+    "reject_plan",
+    "answer_question",
+    "respond_plugin_card",
+    "form_submit",
+    "form_skip",
+    "form_template_save",
+    "form_template_list",
+    "register_pending_question",
+    "register_pending_plan",
+    "get_pending_plans",
+    "get_pending_questions",
+    "clear_processed_plans",
+    "clear_answered_questions",
+];
+
+/// 流式动作清单（invoke_stream 仅支持 start/continue）
+const STREAM_ACTIONS: &[&str] = &["start", "continue"];
+
+/// describe 内容（模块级函数：单测无需构造 AppState 即可校验契约形状）。
+///
+/// 形状经 `standard_describe` 构造（id/name/summary/note/actions 五键白名单）；
+/// params/returns 以 invoke/invoke_stream 实现为准逐项核对（2026-10-25 审计）。
+fn describe_value() -> Value {
+    standard_describe(
+        "cap.ai.chat",
+        "AI会话",
+        "AI 会话（流式）：启动/继续/打断/输入/计划审批/问题回答/表单/待答注册",
+        Some(
+            "start/continue 可经 cap_dispatch 同步调用（RouterBus 对流式表目标自动回退 invoke 并返回结果），token 流经 WS chat-event 事件订阅",
+        ),
+        serde_json::json!({
+            "start": {
+                "params": { "message": "string（必填，非空）", "options": "ChatRequestOptions 对象?；缺省时兼容顶层平铺 camelCase 字段", "sessionId": "string?" },
+                "returns": "sessionId 字符串（JSON string，非 { sessionId } 包装）；token/事件走 chat-event 流",
+                // example：bus_help usage_examples 派生源（payload 已对 start 参数校验核对）
+                "example": { "action": "start", "message": "<用户消息>" }
+            },
+            "continue": {
+                "params": { "message": "string（必填，非空）", "sessionId": "string（必填）", "options": "ChatRequestOptions 对象?；缺省时兼容顶层平铺 camelCase 字段" },
+                "returns": "{ ok: true }（事件走 chat-event 流）"
+            },
+            "interrupt": { "params": { "sessionId": "string（必填）", "engineId": "string?" }, "returns": "{ interrupted: true }" },
+            "send_input": { "params": { "sessionId": "string（必填）", "input": "string（必填）" }, "returns": "{ delivered: bool }" },
+            "approve_plan": { "params": { "sessionId": "string（必填）", "planId": "string（必填）" }, "returns": "{ ok: true }" },
+            "reject_plan": { "params": { "sessionId": "string（必填）", "planId": "string（必填）", "feedback": "string?" }, "returns": "{ ok: true }" },
+            "answer_question": { "params": { "sessionId": "string（必填）", "callId": "string（必填）", "answer": "QuestionAnswer 对象（必填）：{ answers: [{ selected: string[], customInput?: string, declined?: bool }], declined?: bool }" }, "returns": "{ ok: true }" },
+            "respond_plugin_card": { "params": { "sessionId": "string（必填）", "interactionId": "string（必填）", "response": "PluginCardResponse 对象（必填）" }, "returns": "{ ok: true }" },
+            "form_submit": {
+                "params": { "formId": "string（必填，表单 hold id）", "values": "any?（字段值，按表单字段名）", "private": "bool?（用户私密提交，服务端强制脱敏回执）", "read": "string?（AI 声明的读取模式；未传 private 时 read=none 视为私密）" },
+                "returns": "目标能力执行结果（dispatch 模式转发目标能力 reply；collect 模式为 { collected: true }）"
+            },
+            "form_skip": { "params": { "formId": "string（必填）" }, "returns": "{ ok: true }" },
+            "form_template_save": {
+                "params": { "formId": "string（必填）", "templateName": "string?（缺省用表单标题，再缺省取 formId 前缀）", "version": "string?（缺省 v1）" },
+                "returns": "{ ok, name, version, title, slugified }（name 为最终落盘名，可能已 slug 化）"
+            },
+            "form_template_list": { "params": {}, "returns": "{ templates: [模板元信息] }（不含字段值）" },
+            "register_pending_question": {
+                "params": { "options": "QuestionOption 数组（必填，每项 { value: string 必填, label?, description? }）", "sessionId": "string?", "callId": "string?", "header": "string?", "multiSelect": "bool?（默认 false）", "allowCustomInput": "bool?（默认 false）" },
+                "returns": "{ ok: true }"
+            },
+            "register_pending_plan": {
+                "params": { "planId": "string（缺失时按空串注册、不报错，务必显式传入）", "sessionId": "string?", "title": "string?", "description": "string?" },
+                "returns": "{ ok: true }"
+            },
+            "get_pending_plans": { "params": { "sessionId": "string?（过滤）" }, "returns": "PendingPlan[] 裸数组（JSON 数组，无包装键）" },
+            "get_pending_questions": { "params": { "sessionId": "string?（过滤）" }, "returns": "PendingQuestion[] 裸数组（JSON 数组，无包装键）" },
+            "clear_processed_plans": { "params": {}, "returns": "{ removed: 移除条数 }" },
+            "clear_answered_questions": { "params": {}, "returns": "{ removed: 移除条数 }" }
+        }),
+    )
+}
 
 /// cap.ai.chat —— AI 聊天能力（唯一实现）
 pub struct AiChatCapability {
@@ -118,30 +205,7 @@ impl Capability for AiChatCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "AI 会话（流式）：启动/继续/打断/输入/计划审批/问题回答/表单/待办注册",
-            "note": "流式能力：start/continue 的 token 流经 Web/WS 事件订阅；同步动作经 cap_dispatch",
-            "actions": {
-                "start": { "params": { "message": "string（必填）", "options": "ChatRequestOptions?", "sessionId": "string?" }, "returns": "{ sessionId }（事件走 chat-event 流）" },
-                "continue": { "params": { "message": "string（必填）", "sessionId": "string" }, "returns": "{ sessionId }" },
-                "interrupt": { "params": { "sessionId": "string", "engineId": "string?" }, "returns": "{ interrupted: true }" },
-                "send_input": { "params": { "sessionId": "string", "input": "string" }, "returns": "{ delivered: bool }" },
-                "approve_plan": { "params": { "sessionId": "string", "planId": "string" }, "returns": "{ ok: true }" },
-                "reject_plan": { "params": { "sessionId": "string", "planId": "string", "feedback": "string?" }, "returns": "{ ok: true }" },
-                "answer_question": { "params": { "sessionId": "string", "callId": "string", "answer": "any" }, "returns": "{ ok: true }" },
-                "respond_plugin_card": { "params": { "sessionId": "string", "interactionId": "string", "response": "any" }, "returns": "{ ok: true }" },
-                "form_submit": { "params": { "sessionId": "string", "form 字段": "any" }, "returns": "{ ok: true }" },
-                "form_skip": { "params": { "sessionId": "string" }, "returns": "{ ok: true }" },
-                "form_template_save": { "params": {}, "returns": "{ ok: true }" },
-                "form_template_list": { "params": {}, "returns": "模板列表" },
-                "register_pending_question": { "params": {}, "returns": "{ ok: true }" },
-                "register_pending_plan": { "params": {}, "returns": "{ ok: true }" },
-                "get_pending_plans": { "params": {}, "returns": "待审批计划列表" },
-                "get_pending_questions": { "params": {}, "returns": "待回答问题列表" },
-                "clear_processed_plans": { "params": {}, "returns": "{ ok: true }" },
-                "clear_answered_questions": { "params": {}, "returns": "{ ok: true }" }
-            }
-        })
+        describe_value()
     }
 
     /// 同步动作（dispatch；RouterBus 对流式表目标自动回退到 invoke）
@@ -323,7 +387,10 @@ impl Capability for AiChatCapability {
                         let answer: crate::state::QuestionAnswer = get("answer")
                             .cloned()
                             .and_then(|v| serde_json::from_value(v).ok())
-                            .ok_or_else(|| "answer 参数缺失或非法".to_string())?;
+                            .ok_or_else(|| {
+                                "answer 参数缺失或非法（需为 QuestionAnswer 对象：{ answers: [{ selected: string[], customInput?, declined? }], declined? }）"
+                                    .to_string()
+                            })?;
                         core::answer_question(sid(), call_id, answer, s)
                             .await
                             .map_err(|e| e.to_message())?;
@@ -621,7 +688,7 @@ impl Capability for AiChatCapability {
                             core::clear_answered_questions(s).map_err(|e| e.to_message())?;
                         Ok(serde_json::json!({ "removed": removed }))
                     }
-                    other => Err(format!("cap.ai.chat 不支持同步动作: {}", other)),
+                    other => Err(unsupported_action("cap.ai.chat", other, SYNC_ACTIONS)),
                 }
             })
         })
@@ -758,7 +825,7 @@ impl StreamingCapability for AiChatCapability {
                         }
                     }
                 }
-                other => Err(format!("cap.ai.chat 不支持流式动作: {}", other)),
+                other => Err(unsupported_action("cap.ai.chat", other, STREAM_ACTIONS)),
             };
             if let Err(error) = result {
                 // 失败终态双通道（spec B3）：
@@ -794,5 +861,32 @@ impl StreamingCapability for AiChatCapability {
         });
 
         Ok(rx)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contracts::validate_describe;
+
+    #[test]
+    fn describe_contract() {
+        let d = describe_value();
+        let problems = validate_describe("cap.ai.chat", &d);
+        assert!(
+            problems.is_empty(),
+            "describe 应过契约校验: {problems:?}"
+        );
+        // actions 键与 SYNC_ACTIONS 清单一致（未知动作错误文案与 describe 同源）
+        let mut keys: Vec<&str> = d["actions"]
+            .as_object()
+            .expect("actions 应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected: Vec<&str> = SYNC_ACTIONS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "describe 动作清单应与 SYNC_ACTIONS 一致");
     }
 }

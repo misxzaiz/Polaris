@@ -33,7 +33,9 @@ use serde_json::{json, Value};
 use tokio::sync::RwLock;
 
 use crate::ai::engine::simple_ai::mcp::client::McpClient;
-use crate::contracts::{Capability, CapabilityId, Context, Source};
+use crate::contracts::{
+    Capability, CapabilityId, Context, Source, standard_describe, unsupported_action,
+};
 use crate::services::mcp_config_service::ResolvedExternalMcpServer;
 
 /// cap.mcp 能力 ID。
@@ -220,22 +222,33 @@ impl Capability for McpCapability {
     }
 
     /// 能力自描述（cap.help 索引）。
+    ///
+    /// describe 一律经 standard_describe 构造（2026-10-25 审计：旧手写顶层
+    /// "id"/"description" 键与其余能力 "summary" 键两套口径，按 cap_list note
+    /// 宣称的 summary/actions/note 读会落空）。逐条对齐实现：
+    /// - call.arguments 无 #[serde(default)]（McpCallRequest），payload 缺 arguments
+    ///   会被 serde 以 missing field 拒绝 → describe 标 required。
+    /// - call 实际可能返回 isError:true（invoke_call isError 分支，插件工具自身报错）。
+    /// - list_plugin_tools 的 servers 条目含 toolGates（工具名→bool 门，缺省 true）。
+    /// - set_plugin_tools 实际返回含 tools 数组（per-tool 生效清单）。
     fn describe(&self) -> Value {
-        json!({
-            "id": MCP_CAP_ID,
-            "description": "调用插件 MCP server 的工具（如 mimo-tts 语音合成）+ 工具注入管理面",
-            "actions": {
+        standard_describe(
+            MCP_CAP_ID,
+            "插件工具",
+            "调用插件 MCP server 的工具（如 mimo-tts 语音合成）+ 工具注入管理面（list / set per-tool 门）",
+            Some("权限：仅本地（Bootstrap/Plugin）或携带有效 token 的 Remote 可调。call 失败与插件工具 isError 均回 { ok:false, error }（isError:true = 插件工具自身报错）；set_plugin_tools 写 state.json mcpToolGates，下一轮会话生效（effectiveFrom: nextTurn）"),
+            json!({
                 "call": {
                     "params": {
                         "mcpServerId": { "type": "string", "required": true },
                         "tool": { "type": "string", "required": true },
-                        "arguments": { "type": "object" },
+                        "arguments": { "type": "object", "required": true },
                     },
-                    "returns": { "ok": "bool", "resultJson": "string?", "error": "string?" },
+                    "returns": "{ ok, resultJson: string | null（content[0].text 聚合，空结果为 null）, error?: string, isError?: true }",
                 },
                 "list_plugin_tools": {
-                    "params": { "pluginId": "string（空 = 全部插件）" },
-                    "returns": "{ ok, pluginId, servers: [{ pluginId, server, tools, injected, gate, via }] }",
+                    "params": { "pluginId": "string?（空 = 全部插件）" },
+                    "returns": "{ ok, pluginId, servers: [{ pluginId, server, tools, toolGates, injected, gate, via }] }（toolGates 为 工具名→bool 门，缺省 true；injected: 'injected'|'lazy'）",
                 },
                 "set_plugin_tools": {
                     "params": {
@@ -243,10 +256,10 @@ impl Capability for McpCapability {
                         "enabled": "bool（必填）",
                         "tools": "string[]?（缺省 = 整插件 mcpEnabled 开关）",
                     },
-                    "returns": "{ ok, pluginId, enabled, effectiveFrom: 'nextTurn' }",
+                    "returns": "{ ok, pluginId, enabled, tools, effectiveFrom: 'nextTurn' }（tools 为 per-tool 生效清单，整插件开关时为空数组）",
                 },
-            },
-        })
+            }),
+        )
     }
 
     fn invoke(&self, payload: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -263,14 +276,24 @@ impl Capability for McpCapability {
         }
 
         // 解析 action（call + 管理面 list_plugin_tools / set_plugin_tools）
+        // 2026-10-25 审计：缺 action 与未知 action 分开点名——缺省走 unwrap_or("")
+        // 时旧文案「不支持的 action: 」带尾随空格且不列合法动作，无法自我纠正。
         let action = payload.get("action").and_then(Value::as_str).unwrap_or("");
         match action {
             "call" => self.invoke_call(payload, ctx),
             "list_plugin_tools" => self.invoke_list_plugin_tools(payload),
             "set_plugin_tools" => self.invoke_set_plugin_tools(payload),
-            _ => Ok(json!({
+            "" => Ok(json!({
                 "ok": false,
-                "error": format!("不支持的 action: {action}"),
+                "error": "cap.mcp 需要 action 参数（call / list_plugin_tools / set_plugin_tools）",
+            })),
+            other => Ok(json!({
+                "ok": false,
+                "error": unsupported_action(
+                    MCP_CAP_ID,
+                    other,
+                    &["call", "list_plugin_tools", "set_plugin_tools"],
+                ),
             })),
         }
     }
@@ -288,8 +311,10 @@ impl McpCapability {
 
         // 防绕权：只允许调用已解析插件声明的 server
         if !self.registry.known(&req.mcp_server_id) {
+            // 2026-10-25 审计：报错同时指引发现途径（list_plugin_tools 空 pluginId 即全量清单）
             return Ok(json!({ "ok": false, "error": format!(
-                "MCP server 未注册或未启用: {}", req.mcp_server_id
+                "MCP server 未注册或未启用: {}（可先调 action=list_plugin_tools、pluginId 留空查看已注册 server）",
+                req.mcp_server_id
             ) }));
         }
 
@@ -595,5 +620,37 @@ mod tests {
         let err = reply["error"].as_str().unwrap();
         assert!(err.contains("mimo-tts"), "gate 应放行后报未注册，实际: {err}");
         assert!(!err.contains("token"), "不应再报 token 拒绝，实际: {err}");
+        // 2026-10-25 审计：未注册 server 的报错指引发现途径
+        assert!(err.contains("list_plugin_tools"), "应指引 list_plugin_tools 自查: {err}");
+    }
+
+    #[test]
+    fn unknown_or_missing_action_lists_supported() {
+        let cap = empty_cap();
+        let ctx = TestCtx { source: Source::Bootstrap };
+        // 未知动作：列出合法 action + cap.help 指引（contracts::unsupported_action）
+        let reply = cap
+            .invoke(serde_json::json!({ "action": "wat" }), &ctx)
+            .unwrap();
+        let err = reply["error"].as_str().unwrap();
+        assert!(err.contains("call, list_plugin_tools, set_plugin_tools"), "应列合法动作: {err}");
+        assert!(err.contains("cap.help show target=cap.mcp"), "应附自查入口: {err}");
+        // 缺 action：单独点名，不产出「不支持的 action: 」尾随空格
+        let reply = cap.invoke(serde_json::json!({}), &ctx).unwrap();
+        let err = reply["error"].as_str().unwrap();
+        assert!(err.contains("需要 action 参数"), "缺 action 应单独点名: {err}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约校验（contracts::validate_describe）：顶层键白名单 + 每动作 params/returns 齐全
+        let problems = crate::contracts::validate_describe(MCP_CAP_ID, &empty_cap().describe());
+        assert!(problems.is_empty(), "cap.mcp describe 契约违例: {problems:?}");
+        // 审计修正回归：顶层口径为 summary（cap_list note 宣称的字段），arguments 标 required
+        let d = empty_cap().describe();
+        assert_eq!(d["id"], MCP_CAP_ID);
+        assert_eq!(d["name"], "插件工具");
+        assert!(d.get("description").is_none(), "不得残留旧 description 键");
+        assert_eq!(d["actions"]["call"]["params"]["arguments"]["required"], true);
     }
 }

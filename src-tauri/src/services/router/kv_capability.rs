@@ -13,7 +13,10 @@
 //! 底层：经 `ctx.storage()` 访问契约 `Storage`（接线为 SqliteStorage，domain=`kv`），
 //! 数据落在 `<DataRoot>/stores/kv.db`。`Source`/权限/审计由 RouterBus dispatch 统一把关。
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, Value};
+use crate::contracts::{
+    AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, standard_describe,
+    unsupported_action, Value,
+};
 
 /// cap.kv —— 键值存储能力（真实业务，非 demo）
 pub struct KvCapability;
@@ -95,15 +98,22 @@ impl Capability for KvCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "键值存储：应用持久化 KV（get/set/delete/list）",
-            "actions": {
+        // describe 一律经 standard_describe 构造（contracts 单一事实来源，顶层键不手拼）。
+        // 2026-10-25 审计修正：delete 实际返回 { deleted: true }（do_delete），
+        // 旧 describe 写 { ok: true } 会误导 AI 误判结果；set 的 value 实现可省略
+        //（缺省 null），describe 以 ? 后缀标注可选并注明缺省值。
+        standard_describe(
+            "cap.kv",
+            "键值存储",
+            "键值存储：数据根内持久化 KV（get/set/delete/list），set/delete 与域审计同库同事务",
+            Some("数据落 <DataRoot>/stores/kv.db（SqliteStorage，domain=kv）；get 不存在的键不报错，返回 value:null"),
+            serde_json::json!({
                 "get": { "params": { "key": "string（必填）" }, "returns": "{ value: any | null }" },
-                "set": { "params": { "key": "string（必填）", "value": "any（可 JSON 序列化）" }, "returns": "{ id: string }" },
-                "delete": { "params": { "key": "string（必填）" }, "returns": "{ ok: true }" },
+                "set": { "params": { "key": "string（必填）", "value?": "any（可 JSON 序列化，缺省 null）" }, "returns": "{ id: string }" },
+                "delete": { "params": { "key": "string（必填）" }, "returns": "{ deleted: true }" },
                 "list": { "params": {}, "returns": "{ keys: string[] }" }
-            }
-        })
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -136,7 +146,8 @@ impl Capability for KvCapability {
                 Self::do_delete(ctx, key)
             }
             "list" => Self::do_list(ctx),
-            other => Err(format!("cap.kv 不支持动作: {}", other)),
+            // 错误即文档：未知动作附合法清单 + cap.help 自查入口（contracts::unsupported_action）
+            other => Err(unsupported_action("cap.kv", other, &["get", "set", "delete", "list"])),
         }
     }
 
@@ -272,5 +283,21 @@ mod tests {
         let ctx = make_ctx();
         let r = cap.invoke(serde_json::json!({"action": "explode"}), &ctx);
         assert!(r.is_err());
+        // 自纠文案：列出合法动作 + cap.help 指引（contracts::unsupported_action）
+        let err = r.unwrap_err();
+        assert!(err.contains("get, set, delete, list"), "应列合法动作: {err}");
+        assert!(err.contains("cap.help show target=cap.kv"), "应附自查入口: {err}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约校验（contracts::validate_describe）：顶层键白名单 + 每动作 params/returns 齐全
+        let problems = crate::contracts::validate_describe("cap.kv", &KvCapability.describe());
+        assert!(problems.is_empty(), "cap.kv describe 契约违例: {problems:?}");
+        // 审计修正回归：delete 返回形状与实现（do_delete → { deleted: true }）一致
+        let d = KvCapability.describe();
+        assert_eq!(d["id"], "cap.kv");
+        assert_eq!(d["name"], "键值存储");
+        assert_eq!(d["actions"]["delete"]["returns"], "{ deleted: true }");
     }
 }

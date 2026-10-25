@@ -23,11 +23,12 @@
 //! - `list`    `{}` → `{ "items": [PromptSnippet...] }`
 //! - `get`     `{ "id" }` → `{ "item": PromptSnippet | null }`
 //! - `create`  `{ "name", "description"?, "content", "variables"?, "enabled"? }` → `{ "item" }`
-//! - `update`  `{ "id", ...fields }` → `{ "item": PromptSnippet | null }`
+//! - `update`  `{ "id", ...fields }` → `{ "item": PromptSnippet }`（片段不存在时直接报错）
 //! - `delete`  `{ "id" }` → `{ "deleted": bool, "item": PromptSnippet | null }`
 
 use crate::contracts::{
-    AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, Value,
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Id,
+    Item, Query, Value,
 };
 use crate::models::prompt_snippet::{PromptSnippet, SnippetVariable};
 use chrono::Utc;
@@ -37,6 +38,9 @@ pub struct PromptSnippetCapability;
 
 const DOMAIN: &str = "prompt_snippet";
 const CAP_ID: &str = "cap.prompt_snippet";
+
+/// 支持的 action 协议（未知动作错误与缺 action 错误同源，与 describe 动作清单一致）
+const PROMPT_SNIPPET_ACTIONS: &[&str] = &["list", "get", "create", "update", "delete"];
 
 // ---------------------------------------------------------------------------
 // 存储 helpers
@@ -49,8 +53,14 @@ fn load_all(ctx: &dyn Context) -> Result<Vec<PromptSnippet>, String> {
         .map_err(|e| format!("cap.prompt_snippet 读取失败: {}", e))?;
     let mut snippets = Vec::with_capacity(items.len());
     for item in items {
-        if let Ok(s) = serde_json::from_value::<PromptSnippet>(item.data) {
-            snippets.push(s);
+        match serde_json::from_value::<PromptSnippet>(item.data) {
+            Ok(s) => snippets.push(s),
+            // 审计复核项：静默吞错会令损坏片段从 list/get 无声消失（AI 与前端都
+            // 无法发现丢失原因）。保留其余条目可用，但至少 warn 记录 id 与错误。
+            Err(e) => tracing::warn!(
+                snippet_id = %item.id.0,
+                "cap.prompt_snippet 条目反序列化失败，已从 list 跳过: {e}"
+            ),
         }
     }
     snippets.sort_by(|a, b| a.created_at.cmp(&b.created_at).then(a.name.cmp(&b.name)));
@@ -102,9 +112,22 @@ fn now_ms() -> i64 {
     Utc::now().timestamp_millis()
 }
 
-fn parse_variables(v: Option<&Value>) -> Vec<SnippetVariable> {
-    v.and_then(|v| serde_json::from_value::<Vec<SnippetVariable>>(v.clone()).ok())
-        .unwrap_or_default()
+/// 解析 variables 参数（SnippetVariable 数组）。
+///
+/// 审计 high：原实现对解析失败 `ok().unwrap_or_default()` 静默置空——AI 照旧
+/// describe 传 `name` 字段不会报错但变量全部丢失（数据静默错误）。改为显式
+/// 报错并附 SnippetVariable 字段结构（对齐 models/prompt_snippet.rs 的
+/// camelCase serde 改名），AI 可据错误自纠。
+fn parse_variables(v: Option<&Value>) -> Result<Vec<SnippetVariable>, String> {
+    match v {
+        // 缺省与显式 null 均视为空（保持原行为：不报错）
+        None | Some(Value::Null) => Ok(Vec::new()),
+        Some(v) => serde_json::from_value::<Vec<SnippetVariable>>(v.clone()).map_err(|e| {
+            format!(
+                "cap.prompt_snippet variables 解析失败: {e}（每项需 {{ key, label, type: \"text\"|\"textarea\", required?, defaultValue?, placeholder? }}）"
+            )
+        }),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -180,12 +203,13 @@ impl PromptSnippetCapability {
         }
 
         let now = now_ms();
+        let variables = parse_variables(params.get("variables"))?;
         let snippet = PromptSnippet {
             id: format!("snippet-{}", uuid::Uuid::new_v4()),
             name: name.to_string(),
             description: params.get("description").and_then(|d| d.as_str()).map(String::from),
             content: content.to_string(),
-            variables: parse_variables(params.get("variables")),
+            variables,
             enabled: params.get("enabled").and_then(|e| e.as_bool()).unwrap_or(true),
             created_at: now,
             updated_at: now,
@@ -216,7 +240,7 @@ impl PromptSnippetCapability {
             snippet.content = v.to_string();
         }
         if let Some(v) = params.get("variables") {
-            snippet.variables = parse_variables(Some(v));
+            snippet.variables = parse_variables(Some(v))?;
         }
         if let Some(v) = params.get("enabled").and_then(|e| e.as_bool()) {
             snippet.enabled = v;
@@ -253,32 +277,43 @@ impl Capability for PromptSnippetCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "快捷片段（prompt snippet）CRUD",
-            "actions": {
-                "list": { "params": {}, "returns": "{ items: PromptSnippet[] }" },
+        // 2026-10-25 审计归一：经 standard_describe 构造，params/returns 对齐实现——
+        // create.variables 每项为 SnippetVariable{key,label,type,required?,defaultValue?,placeholder?}
+        // （camelCase serde，models/prompt_snippet.rs:22-39），delete 返回 { deleted, item }。
+        standard_describe(
+            CAP_ID,
+            "片段CRUD",
+            "快捷片段（prompt snippet）CRUD：/name 快捷调用的模板片段，content 支持 {{variable}} 占位符",
+            Some("数据落数据根 SqliteStorage（domain=prompt_snippet）；片段名全局唯一；bus 进程亦注册本能力（bus_dispatch 可达）"),
+            serde_json::json!({
+                "list": { "params": {}, "returns": "{ items: PromptSnippet[] }（按 createdAt 升序）" },
                 "get": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet | null }" },
                 "create": {
                     "params": {
                         "name": "string（必填）——片段名，也是 /name 快捷调用键，全局唯一",
                         "content": "string（必填）——模板正文，支持 {{variable}} 占位符（调用时按 variables 填充）",
                         "description": "string（可选）",
-                        "variables": "数组（可选）——每项 { name, ... }，声明 content 中的占位符",
+                        "variables": "数组（可选）——每项 { key, label, type: \"text\"|\"textarea\", required?, defaultValue?, placeholder? }，声明 content 中的占位符；字段名错误会显式报错",
                         "enabled": "boolean（可选，缺省 true）"
                     },
                     "returns": "{ item: PromptSnippet }"
                 },
                 "update": { "params": { "id": "string（必填）", "name/content/description/variables/enabled": "均可选，只传需更新的字段" }, "returns": "{ item: PromptSnippet }" },
-                "delete": { "params": { "id": "string（必填）" }, "returns": "{ item: PromptSnippet }" }
-            }
-        })
+                "delete": { "params": { "id": "string（必填）" }, "returns": "{ deleted: bool, item: PromptSnippet | null }（片段不存在时 deleted=false 不报错）" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")
             .and_then(|a| a.as_str())
-            .ok_or_else(|| "cap.prompt_snippet 需要 action 参数（list/get/create/update/delete）".to_string())?;
+            .ok_or_else(|| {
+                format!(
+                    "cap.prompt_snippet 需要 action 参数（{}）",
+                    PROMPT_SNIPPET_ACTIONS.join("/")
+                )
+            })?;
         match action {
             "list" => Self::action_list(ctx),
             "get" => {
@@ -297,7 +332,8 @@ impl Capability for PromptSnippetCapability {
                     .ok_or_else(|| "delete 需要 id 参数".to_string())?;
                 Self::action_delete(ctx, id)
             }
-            other => Err(format!("cap.prompt_snippet 不支持动作: {}", other)),
+            // 审计错误工效：未知动作附支持清单与协议入口（错误即文档，可自纠）
+            other => Err(unsupported_action(CAP_ID, other, PROMPT_SNIPPET_ACTIONS)),
         }
     }
 
@@ -520,5 +556,66 @@ mod tests {
         let ctx = make_ctx();
         let r = cap.invoke(serde_json::json!({"action": "explode"}), &ctx);
         assert!(r.is_err());
+    }
+
+    /// describe 契约测试：standard_describe 构造 + validate_describe 零违例 +
+    /// 动作清单与实现一致
+    #[test]
+    fn describe_contract() {
+        let cap = PromptSnippetCapability;
+        let d = cap.describe();
+        let id = cap.id().0;
+        let problems = crate::contracts::validate_describe(&id, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        assert_eq!(d["id"], "cap.prompt_snippet");
+        assert_eq!(d["name"], "片段CRUD");
+        for action in PROMPT_SNIPPET_ACTIONS {
+            assert!(
+                d["actions"].get(*action).is_some(),
+                "describe 缺动作 {action}"
+            );
+        }
+        // 审计 paramDrift 抽查：variables 字段名与 delete 返回形状已对齐实现
+        assert!(d["actions"]["create"]["params"]["variables"]
+            .as_str()
+            .unwrap()
+            .contains("key"));
+        assert!(d["actions"]["delete"]["returns"]
+            .as_str()
+            .unwrap()
+            .contains("deleted"));
+    }
+
+    /// 审计 high：variables 字段名写错须显式报错（原实现静默置空 → 变量无声丢失）
+    #[test]
+    fn invalid_variables_error_instead_of_silent_drop() {
+        let cap = PromptSnippetCapability;
+        let ctx = make_ctx();
+        let r = cap.invoke(
+            serde_json::json!({
+                "action": "create",
+                "name": "坏变量",
+                "content": "x",
+                "variables": [{ "name": "week" }]
+            }),
+            &ctx,
+        );
+        let err = r.unwrap_err();
+        assert!(err.contains("variables 解析失败"), "实际: {err}");
+        assert!(err.contains("key"), "错误应附字段结构自纠提示: {err}");
+
+        // 合法 variables（含缺省字段）照常创建
+        let ok = cap
+            .invoke(
+                serde_json::json!({
+                    "action": "create",
+                    "name": "好变量",
+                    "content": "{{week}}",
+                    "variables": [{ "key": "week", "label": "周次", "type": "text" }]
+                }),
+                &ctx,
+            )
+            .unwrap();
+        assert_eq!(ok["item"]["variables"][0]["key"], "week");
     }
 }

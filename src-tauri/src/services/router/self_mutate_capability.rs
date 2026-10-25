@@ -2,7 +2,8 @@
 //!
 //! 目标（goal 衍生）：「支持 AI 对自身任意操作和改造」的 UI 部件层。
 //! 与 cap.ui.input 同架构位：状态真相在前端 `uiSlotStore`（Zustand），
-//! 本能力只校验 + 审计 + describe。效果经引擎 tool_call_end 事件（uiDispatchService）。
+//! 本能力只校验 + 审计 + describe。效果经引擎 tool_call_start 事件（uiDispatchService，
+//! eventHandler 在 tool_call_start 分支消费，tool_call_end 不消费）。
 //!
 //! # 插槽模型
 //!
@@ -15,7 +16,9 @@
 //! 安全边界：kind 必须在前端注册的 SLOT_KINDS 白名单内；props 顶层白名单校验。
 //! 禁止任意 HTML/脚本字符串 —— 这是「改造」与「注入攻击」的分界线。
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Value,
+};
 
 /// 合法插槽 id 白名单（前端 uiSlotStore 注册的具名挂载点）
 const SLOT_IDS: &[&str] = &["input-extra", "app-badge", "message-extra"];
@@ -81,7 +84,13 @@ impl SelfMutateCapability {
                 }
             }
             "clearSlot" => {}
-            _ => return Err(format!("cap.self.mutate 不支持动作: {}", action)),
+            // 防御分支（invoke 已先行收敛 setSlot/clearSlot，此处常态不可达）；
+            // 与 invoke 的未知动作错误同款自纠文案，保持错误风格统一
+            _ => return Err(unsupported_action(
+                "cap.self.mutate",
+                action,
+                &["listSlots", "setSlot", "clearSlot"],
+            )),
         }
         Ok(())
     }
@@ -104,15 +113,21 @@ impl Capability for SelfMutateCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "自身管理·改造：具名 UI 部件插槽注入/替换/移除",
-            "note": "插槽是白名单具名挂载点（input-extra/app-badge/message-extra），组件种类同样白名单（status-badge/tooltip-label/quick-action）；禁止任意 HTML/脚本注入。状态在前端 uiSlotStore，经 tool_call_end 事件即时生效。",
-            "actions": {
-                "listSlots": { "params": {}, "returns": "{ slots: [{ id, current: null | { kind, ts } }] }" },
-                "setSlot": { "params": { "slotId": "input-extra|app-badge|message-extra（必填）", "kind": "status-badge|tooltip-label|quick-action（必填）", "props": "object?（可选，见 UI 注册表）" }, "returns": "{ ok, slotId, kind }" },
-                "clearSlot": { "params": { "slotId": "input-extra|app-badge|message-extra（必填）" }, "returns": "{ ok, slotId }" }
-            }
-        })
+        // 2026-10-25 审计归一：listSlots returns 区分「同步回包」与「前端消费侧应答」
+        // 两种形状（同步回包仅转发标记，slots 快照由前端 uiSlotStore 组装）；
+        // setSlot props 列出 PROPS_KEYS 合法集（后端硬校验，此前「见 UI 注册表」
+        // 指向前端注册表、AI 首调必被拒）；效果消费点改为 tool_call_start。
+        standard_describe(
+            "cap.self.mutate",
+            "自身改造",
+            "自身管理·改造：具名 UI 部件插槽注入/替换/移除（白名单插槽 + 白名单组件种类）",
+            Some("插槽白名单 input-extra/app-badge/message-extra；组件种类白名单 status-badge/tooltip-label/quick-action；props 键白名单硬校验（label/text/tone/target/height），未知键拒绝；禁止任意 HTML/脚本注入。状态真相在前端 uiSlotStore：setSlot/clearSlot 同步回包为回显，效果由前端消费 tool_call_start 事件生效；listSlots 同步回包仅转发标记，插槽快照由前端消费侧组装、不作为同步返回值。"),
+            serde_json::json!({
+                "listSlots": { "params": {}, "returns": "同步回包 { ok, forwarded, capability, action }；插槽快照 [{ id, current: null | { kind, ts } }] 由前端消费侧组装（非本调用同步返回值）" },
+                "setSlot": { "params": { "slotId": "input-extra|app-badge|message-extra（必填）", "kind": "status-badge|tooltip-label|quick-action（必填）", "props": "object?（可选；键白名单 label/text/tone/target/height，未知键后端硬拒）" }, "returns": "{ ok, capability, action, slotId, kind }" },
+                "clearSlot": { "params": { "slotId": "input-extra|app-badge|message-extra（必填）" }, "returns": "{ ok, capability, action, slotId, kind: null }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -158,7 +173,11 @@ impl Capability for SelfMutateCapability {
                 }
                 Ok(SelfMutateCapability::echo(action, &params))
             }
-            other => Err(format!("cap.self.mutate 不支持动作: {}", other)),
+            other => Err(unsupported_action(
+                "cap.self.mutate",
+                other,
+                &["listSlots", "setSlot", "clearSlot"],
+            )),
         }
     }
 
@@ -282,5 +301,36 @@ mod tests {
     fn unknown_action_rejected() {
         let cap = SelfMutateCapability;
         assert!(cap.invoke(json!({ "action": "nope" }), &ctx()).is_err());
+    }
+
+    /// describe 契约测试：标准形状 + props 白名单键全量入 describe
+    /// （审计：setSlot props「见 UI 注册表」指向前端注册表，AI 首调必被拒）
+    #[test]
+    fn describe_contract() {
+        use crate::contracts::validate_describe;
+
+        let cap = SelfMutateCapability;
+        let d = cap.describe();
+        let problems = validate_describe("cap.self.mutate", &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        const ACTIONS: [&str; 3] = ["listSlots", "setSlot", "clearSlot"];
+        for action in ACTIONS {
+            assert!(d["actions"].get(action).is_some(), "describe 缺动作 {action}");
+        }
+        // PROPS_KEYS 合法集必须全部出现在 setSlot.props 描述里
+        let props_desc = d["actions"]["setSlot"]["params"]["props"].as_str().unwrap();
+        for key in PROPS_KEYS {
+            assert!(props_desc.contains(*key), "describe setSlot.props 缺合法键 {key}");
+        }
+        assert!(!props_desc.contains("见 UI 注册表"), "props 描述仍指向前端注册表");
+        // 未知动作错误自纠文案列出全部合法动作
+        let err = cap
+            .invoke(json!({ "action": "nope" }), &ctx())
+            .unwrap_err();
+        for action in ACTIONS {
+            assert!(err.contains(action), "错误文案缺合法动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help show target=cap.self.mutate"), "{err}");
     }
 }

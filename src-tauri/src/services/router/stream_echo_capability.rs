@@ -13,7 +13,10 @@
 //! 实现取 std::thread + `try_send` 重试：不要求调用方处于 tokio 运行时
 //! （路由泵任务才需要），对齐契约"能力内部 spawn 任务逐 token 发送"。
 
-use crate::contracts::{Capability, CapabilityId, Context, Event, StreamingCapability, TraceId, Value};
+use crate::contracts::{
+    standard_describe, Capability, CapabilityId, Context, Event, StreamingCapability, TraceId,
+    Value,
+};
 use tokio::sync::mpsc;
 
 /// cap.stream.echo —— 流式回显 demo
@@ -41,16 +44,26 @@ impl Capability for StreamEchoCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "流式骨架 demo（验证 dispatch_stream 全链路，生产勿用）",
-            "actions": {
-                "stream": { "params": { "count": "int?（默认 3，1-100）", "intervalMs": "int?（默认 20）", "prefix": "string?" }, "returns": "事件流（stream.echo 逐条 + dispatch.end 收尾）" }
-            }
-        })
+        // 2026-10-25 审计：本能力仅实现 StreamingCapability（dispatch_stream/WS 泵链路），
+        // 同步 invoke 恒拒绝；describe 须显式标注「仅流式通道」，否则 AI 照
+        // cap_list 的 actions.stream 经 cap_dispatch 构造调用必失败。
+        // bus 进程（bus_mcp_server.rs 注册块）未注册本能力，仅主进程
+        // state.rs register_streaming 注册。
+        standard_describe(
+            "cap.stream.echo",
+            "流式回显",
+            "流式骨架 demo：经 WS 流式通道按间隔推送 count 条 stream.echo 事件后收尾（验证 dispatch_stream 全链路，生产勿用）",
+            Some("仅 WS 流式通道（dispatch_stream/WS）真实可用，cap_dispatch/bus_dispatch 同步 invoke 恒拒绝；bus 进程未注册本能力，仅主进程注册"),
+            serde_json::json!({
+                "stream": { "params": { "count": "int?（默认 3，clamp 1-100）", "intervalMs": "int?（默认 20，clamp 0-1000）", "prefix": "string?" }, "returns": "事件流（stream.echo 逐条 { i, total, prefix } + dispatch.end 收尾）" }
+            }),
+        )
     }
 
     fn invoke(&self, _params: Value, _ctx: &dyn Context) -> Result<Value, String> {
-        Err("cap.stream.echo 是流式能力，请走 dispatch_stream".into())
+        // 审计错误工效修正：原文案「请走 dispatch_stream」对 AI 不可行动（MCP 工具面
+        // 没有 dispatch_stream 工具），改为明确指出同步通道不可用，避免误导重试。
+        Err("cap.stream.echo 仅支持流式通道 dispatch_stream/WS，不可经 cap_dispatch/bus_dispatch 同步调用".into())
     }
 
     fn dependencies(&self) -> Vec<CapabilityId> {
@@ -147,6 +160,27 @@ mod tests {
         let r = cap.invoke(serde_json::json!({}), &ctx);
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("dispatch_stream"));
+    }
+
+    /// describe 契约测试：standard_describe 构造 + validate_describe 零违例 +
+    /// 流式通道标注在场（审计 actionDrift：AI 须能从 describe 判断本能力不可同步调用）
+    #[test]
+    fn describe_contract() {
+        let cap = StreamEchoCapability;
+        let d = cap.describe();
+        let id = cap.id().0;
+        let problems = crate::contracts::validate_describe(&id, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        assert_eq!(d["id"], "cap.stream.echo");
+        assert_eq!(d["name"], "流式回显");
+        assert!(
+            d["note"].as_str().unwrap().contains("cap_dispatch"),
+            "note 应标注同步通道不可调"
+        );
+        assert!(
+            d["actions"]["stream"]["params"].is_object(),
+            "应保留 stream 动作协议"
+        );
     }
 
     #[tokio::test]

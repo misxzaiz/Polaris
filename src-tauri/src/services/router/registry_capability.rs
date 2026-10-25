@@ -9,9 +9,16 @@
 //! - `register` `{ "id": "cap.user.xxx", "summary": "...", "description": "...",
 //!     "handler": { "type": "forward", "target": "cap.todo", "defaults": { "action": "list" } },
 //!     "persist": true }`
-//!   → `{ "registered": true, "id": "...", "dynamic": true }`
+//!   → `{ "registered": true, "id": "...", "dynamic": true, "handler": …, "persisted": … }`
+//!   handler 两种形态：`forward`（target=cap.* 底层能力，可选 defaults）或
+//!   `plugin-rpc`（serverId/tool 必填，可选 pluginId/timeoutMs，经 cap.mcp 调插件
+//!   进程工具）；wasm 为 P4 占位，注册即拒绝。
+//! - 覆盖注册（P2-c）：`replace: true` 时 id 可为既有 cap，受 L0/L2/L4 分级授权
+//!   约束，`replaceMode: 'override'|'fallback'`（缺省 override）；v1 覆盖不持久化，
+//!   重启后 base 恢复 → `{ "registered": true, "replaced": true, "mode": …, "persisted": false }`
 //! - `unregister` `{ "id": "cap.user.xxx" }` → `{ "unregistered": true, "id": "..." }`
-//! - `list` `{}` → `{ "dynamic": [{ "id", "summary", "handler_target" }], "builtin": ["cap.kv", ...] }`
+//!   （命中覆盖层时附带 `mode: "override-popped"` + note；动态卸载附 `removed`）
+//! - `list` `{}` → `{ "dynamic": [{ "id", "summary" }], "builtin": ["cap.kv", ...] }`
 //! - `exists` `{ "id": "cap.user.xxx" }` → `{ "exists": true, "dynamic": true }`
 //!
 //! # 设计要点
@@ -189,9 +196,12 @@ impl RegistryCapability {
                     return Err(format!("handler.target 必须以 `cap.` 开头: {}", target));
                 }
                 if SENSITIVE_TARGETS.contains(&target) {
+                    // 2026-10-25 审计：文案列出四个敏感 id——AI 无法预判 cap.help/cap.context
+                    // 也不可转发，只说「敏感」不给清单会逼 AI 二次试错
                     return Err(format!(
-                        "handler.target {} 属于敏感能力，禁止动态转发（防自递归/特权放大）",
-                        target
+                        "handler.target {} 属于敏感能力（{}），禁止动态转发（防自递归/特权放大）",
+                        target,
+                        SENSITIVE_TARGETS.join(" / ")
                     ));
                 }
                 // 拒绝覆盖要转发的底层能力自身（防止自引用环）
@@ -359,23 +369,37 @@ impl Capability for RegistryCapability {
     }
 
     fn describe(&self) -> Value {
-        json!({
-            "summary": "运行时动态能力注册表：AI 可注册/卸载新 cap（forward 转发既有能力），立即生效并可持久化",
-            "actions": {
-                "register": { "params": { "id": "cap.*（唯一，不可与已有能力重名）", "summary": "能力描述", "description": "动作协议说明（可选）", "handler": { "type": "forward", "target": "cap.* 底层能力", "defaults": "默认 payload（可选）" }, "persist": "bool（默认 true）" }, "returns": "{ registered, id, handler }" },
-                "unregister": { "params": { "id": "cap.* 动态能力 id" }, "returns": "{ unregistered }" },
-                "list": { "params": {}, "returns": "{ dynamic: [...], builtin: [...] }" },
-                "exists": { "params": { "id": "cap.*" }, "returns": "{ exists, dynamic }" }
-            },
-            "note": "动态能力 = forward 转发（invoke 时把 payload 发给 handler.target，默认回退 defaults）。注册后 cap_list/cap.help 立即可见、cap_dispatch 可调。注册/卸载均过统一权限 gate + 审计。持久化存 kv 域，重启自动重建。"
-        })
+        // describe 一律经 standard_describe 构造（contracts 单一事实来源）。
+        // 2026-10-25 审计修正：补 handler plugin-rpc 形态（serverId/tool 必填，
+        // pluginId/timeoutMs 可选，wasm 显式拒绝）、replace/replaceMode 覆盖注册
+        // 参数（do_register 覆盖分支），unregister 返回补 mode/removed（do_unregister）。
+        standard_describe(
+            "cap.registry",
+            "能力注册",
+            "运行时动态能力注册表：注册/卸载新 cap（forward 转发既有能力或 plugin-rpc 调插件工具），亦可覆盖既有 cap（replace），注册立即生效并可持久化",
+            Some("注册后 cap_list/cap.help 立即可见、cap_dispatch 可调；注册/卸载均过统一权限 gate + 审计。persist=true（默认）存 kv 域并重启自动重建。覆盖注册（replace）受 L0/L2/L4 分级约束（L0=cap.ui.* 任意覆盖；L2 需 config.capOverride.allow 白名单；L4=元能力/AI 核心通道永不覆盖），v1 覆盖不持久化、重启后 base 恢复。forward.target 禁止敏感能力：cap.ai.chat / cap.registry / cap.help / cap.context。"),
+            json!({
+                "register": { "params": {
+                    "id": "cap.*（必填，不可与已有能力重名；replace=true 时可为既有 cap）",
+                    "summary": "string（必填，能力一句话描述）",
+                    "description?": "string（动作协议说明）",
+                    "handler": "必填对象：{ type: 'forward', target: 'cap.* 底层能力', defaults?: object（payload 缺省值） } 或 { type: 'plugin-rpc', serverId: '插件 mcpServers[].id', tool: 'string', pluginId?: string, timeoutMs?: int }",
+                    "persist?": "bool（默认 true；仅新注册生效，覆盖注册恒不持久化）",
+                    "replace?": "bool（默认 false；true = 覆盖既有 cap 的 handler）",
+                    "replaceMode?": "'override'|'fallback'（默认 override，仅 replace=true 时生效；wrap v1 未实现）"
+                }, "returns": "新注册 { registered: true, id, dynamic: true, handler, persisted }；覆盖注册 { registered: true, id, replaced: true, mode, persisted: false, note }" },
+                "unregister": { "params": { "id": "cap.*（必填）" }, "returns": "{ unregistered: true, id, mode?: 'override-popped', note? }（弹出覆盖层）或 { unregistered: true, id, removed: bool }（卸载动态能力；内置能力拒绝）" },
+                "list": { "params": {}, "returns": "{ dynamic: [{ id, summary }], builtin: string[] }" },
+                "exists": { "params": { "id": "cap.*" }, "returns": "{ exists: bool, dynamic: bool }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")
             .and_then(Value::as_str)
-            .ok_or_else(|| "cap.registry 需要 action".to_string())?;
+            .ok_or_else(|| "cap.registry 需要 action 参数（register/unregister/list/exists）".to_string())?;
         match action {
             "register" => self.do_register(ctx, &params),
             "unregister" => self.do_unregister(ctx, &params),
@@ -387,7 +411,12 @@ impl Capability for RegistryCapability {
                     "dynamic": !id.is_empty() && self.router.is_dynamic(&CapabilityId(id.into())),
                 }))
             }
-            other => Err(format!("cap.registry 不支持动作: {}", other)),
+            // 错误即文档：列出合法动作 + cap.help 自查入口（contracts::unsupported_action）
+            other => Err(unsupported_action(
+                "cap.registry",
+                other,
+                &["register", "unregister", "list", "exists"],
+            )),
         }
     }
 
@@ -729,5 +758,43 @@ mod tests {
         assert!(cap2.load_persisted(&ctx).is_empty());
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unknown_action_lists_supported() {
+        let cap = RegistryCapability::new(make_bus(None));
+        // 未知动作：列出合法动作 + cap.help 自查入口（contracts::unsupported_action）
+        let r = cap.invoke(json!({ "action": "explode" }), &ctx());
+        let err = r.unwrap_err();
+        assert!(
+            err.contains("register, unregister, list, exists"),
+            "应列合法动作: {err}"
+        );
+        assert!(err.contains("cap.help show target=cap.registry"), "应附自查入口: {err}");
+        // 缺 action：点名合法动作
+        let r = cap.invoke(json!({}), &ctx());
+        assert!(
+            r.unwrap_err().contains("需要 action 参数"),
+            "缺 action 应列合法动作"
+        );
+    }
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约校验（contracts::validate_describe）：顶层键白名单 + 每动作 params/returns 齐全
+        let cap = RegistryCapability::new(make_bus(None));
+        let problems = crate::contracts::validate_describe("cap.registry", &cap.describe());
+        assert!(problems.is_empty(), "cap.registry describe 契约违例: {problems:?}");
+        // 审计修正回归：register params 覆盖 plugin-rpc 形态与 replace/replaceMode
+        let d = cap.describe();
+        assert_eq!(d["id"], "cap.registry");
+        assert_eq!(d["name"], "能力注册");
+        let handler_desc = d["actions"]["register"]["params"]["handler"]
+            .as_str()
+            .unwrap();
+        assert!(handler_desc.contains("plugin-rpc"), "handler 应含 plugin-rpc 形态: {handler_desc}");
+        let params = d["actions"]["register"]["params"].as_object().unwrap();
+        assert!(params.contains_key("replace?"), "应补 replace 参数: {params:?}");
+        assert!(params.contains_key("replaceMode?"), "应补 replaceMode 参数: {params:?}");
     }
 }

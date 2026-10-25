@@ -564,33 +564,46 @@ impl RouterBus {
     ///
     /// 同步表（handles）与流式平行表（streaming_caps）并集 —— 补上
     /// `list_capabilities()` 漏掉流式能力（cap.ai.chat / cap.stream.echo）的盲区。
-    /// 每项：`{ "id", "describe", "streaming" }`，describe 缺省为 null。
+    /// 每项四键：`{ "id", "streaming", "overridden", "describe" }`，describe 缺省
+    /// 为 null；流式分支恒 `overridden: false`（流式 dispatch 直查平行表、不消费
+    /// 覆盖链，见 `dispatch_stream`），与同步分支键集对齐 —— AI 统一按四键解析
+    /// 不再落空。
     /// 仅聚合静态 describe()，不触达 invoke（无副作用，可安全用于 help 索引）。
+    /// 聚合时对每项 describe 跑 validate_describe 契约校验：违例仅
+    /// `warn_describe_violations` 日志告警，不阻断条目输出（协议保守；静态能力
+    /// 已全部迁移 standard_describe，告警保留为回归巡逻）。
     pub fn described_capabilities(&self) -> Vec<Value> {
         let mut out: Vec<Value> = Vec::new();
         {
             let handles = self.handles.read().unwrap();
             let overrides = self.overrides.read().unwrap();
             for cap in handles.values() {
+                let id = cap.id();
+                let describe = cap.describe();
+                warn_describe_violations(&id.0, &describe);
                 let overridden = overrides
-                    .get(&cap.id())
+                    .get(&id)
                     .map(|s| !s.is_empty())
                     .unwrap_or(false);
                 out.push(serde_json::json!({
-                    "id": cap.id().0,
+                    "id": id.0,
                     "streaming": false,
                     "overridden": overridden,
-                    "describe": cap.describe(),
+                    "describe": describe,
                 }));
             }
         }
         {
             let streaming = self.streaming_caps.read().unwrap();
             for cap in streaming.values() {
+                let id = cap.id();
+                let describe = cap.describe();
+                warn_describe_violations(&id.0, &describe);
                 out.push(serde_json::json!({
-                    "id": cap.id().0,
+                    "id": id.0,
                     "streaming": true,
-                    "describe": cap.describe(),
+                    "overridden": false,
+                    "describe": describe,
                 }));
             }
         }
@@ -702,7 +715,11 @@ impl Router for RouterBus {
                     });
                     return Ok(Reply {
                         msg_id: env.id,
-                        result: Err("需用户审批，Phase 0 暂不支持".into()),
+                        // 本进程未接审批出口（bus MCP 进程形态）：指路主进程通道——
+                        // 主进程 cap_dispatch 有 PermissionPromptSink，返回确认请求 id。
+                        result: Err(
+                            "需用户审批，本进程未接审批出口（Phase 0 形态）：bus 进程请改经主进程 cap_dispatch 调用（可返回确认请求 id，前端批准后重试即放行）".into(),
+                        ),
                         trace: env.trace,
                         error_detail: None,
                     });
@@ -997,6 +1014,22 @@ fn payload_action(payload: &Value) -> Option<String> {
 fn payload_action_detail(payload: &Value) -> Option<String> {
     let action = payload.get("action")?.as_str()?;
     Some(format!("action={}", action).chars().take(64).collect())
+}
+
+/// describe 契约校验告警（described_capabilities 聚合点用）：违例仅日志，
+/// 不阻断聚合——协议保守，cap_list 每项键形状与 describe 内容不变。
+/// 静态能力已全部迁移 standard_describe（2026-10-25），本告警保留为回归巡逻：
+/// 防未来新能力手写异形顶层键 / 动态注册能力（describe 缺省 Null，校验视为
+/// 「未声明」不告警）注入非对象 describe。
+fn warn_describe_violations(id: &str, describe: &Value) {
+    let problems = validate_describe(id, describe);
+    if !problems.is_empty() {
+        tracing::warn!(
+            capability = id,
+            "describe 契约违例（不阻断，构造请走 contracts::standard_describe）: {}",
+            problems.join("; ")
+        );
+    }
 }
 
 /// 真实上下文（dispatch 内部调用能力时注入）

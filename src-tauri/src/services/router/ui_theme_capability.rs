@@ -5,9 +5,9 @@
 //! 本能力**不存状态**：只做参数校验 + 审计 + describe。
 //!
 //! 生效链路：AI 工具调用 → MCP `bus_dispatch` → RouterBus dispatch 本能力 →
-//! 引擎发出 tool_call_end 事件（tool=cap.ui.theme, args=payload）→ 前端
-//! eventHandler 解析 args → 调 `themeStore` 落 DOM + 持久化。三端（App/Web/桌面）
-//! 同一事件管线。
+//! 引擎发出 tool_call_start 事件（tool=cap.ui.theme, args=payload）→ 前端
+//! eventHandler 在 tool_call_start 分支消费（eventHandler.ts 唯一消费点）→
+//! 调 `themeStore` 落 DOM + 持久化。三端（App/Web/桌面）同一事件管线。
 //!
 //! # 动作协议（payload `{ "action": ... }`）
 //!
@@ -23,7 +23,9 @@
 //! 语义色映射（palette 键 → 88 维度 token）是前端映射层的职责；后端只校验
 //! 结构合法（object / 值非空），不引入第二套主题模型。
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Value,
+};
 
 /// cap.ui.theme —— 主题控制能力（无状态，前端为真相）
 pub struct UiThemeCapability;
@@ -55,20 +57,24 @@ impl Capability for UiThemeCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "控制应用主题配色（AI 改 88 维度设计 token / 切换内置主题）",
-            "actions": {
-                "get": { "params": {}, "returns": "前端应答当前主题", "note": "前端 store 为真相" },
-                "patch": { "params": { "palette": "object：语义色键→CSS 色值" }, "returns": "{ applied: true }" },
-                "applyPreset": { "params": { "preset": "dark|light" }, "returns": "{ applied: string }" },
-                "listThemes": { "params": {}, "returns": "内置+用户主题列表" },
-                "setActive": { "params": { "id": "主题 id" }, "returns": "{ applied: id }" },
-                "export": { "params": {}, "returns": "当前完整 ThemeDefinition" },
-                "import": { "params": { "theme": "完整或部分 ThemeDefinition（缺省以 Dark 补全）" }, "returns": "{ installed: id }" },
-                "delete": { "params": { "id": "用户主题 id" }, "returns": "{ deleted: id }" }
-            },
-            "note": "状态在前端 themeStore；本能力只校验+审计，效果经 tool_call_end 事件落前端"
-        })
+        // 2026-10-25 审计归一：returns 改为实际同步回包形状（转发声明，非执行结果）；
+        // 真实效果由前端在 tool_call_start 事件消费（eventHandler 唯一消费点）。
+        standard_describe(
+            "cap.ui.theme",
+            "主题控制",
+            "控制应用主题配色（AI patch 语义色 / 切换内置主题 / 导入导出用户主题）",
+            Some("状态真相在前端 themeStore，本能力只校验+审计+转发：同步回包是转发声明（{ ok, forwarded, capability, action, … }），不是执行结果；真实效果由前端消费 tool_call_start 事件落 DOM（不发生在 tool_call_end）。写类动作（patch/applyPreset/setActive/import/delete）落域审计。"),
+            serde_json::json!({
+                "get": { "params": {}, "returns": "{ ok, forwarded, capability, to: \"frontend\" }（当前主题由前端消费侧应答，不作为同步返回值）" },
+                "patch": { "params": { "palette": "object（必填，非空）：语义色键→CSS 色值字符串，如 primary→#ff0、text.muted→#888" }, "returns": "{ ok, forwarded, capability, action, palette }" },
+                "applyPreset": { "params": { "preset": "dark|light（必填）" }, "returns": "{ ok, forwarded, capability, action, preset }" },
+                "listThemes": { "params": {}, "returns": "{ ok, forwarded, capability, action }（内置+用户主题列表由前端消费侧聚合，不作为同步返回值）" },
+                "setActive": { "params": { "id": "string（必填，非空）：目标主题 id" }, "returns": "{ ok, forwarded, capability, action, id }" },
+                "export": { "params": {}, "returns": "{ ok, forwarded, capability, action }（当前完整 ThemeDefinition 由前端消费侧导出，不作为同步返回值）" },
+                "import": { "params": { "theme": "object（必填）：完整或部分 ThemeDefinition；后端仅校验为对象，缺失维度由前端以 Dark 兜底补全（mergeThemes）" }, "returns": "{ ok, forwarded, capability, action, theme }" },
+                "delete": { "params": { "id": "string（必填，非空）：用户主题 id（前端拒绝内置主题）" }, "returns": "{ ok, forwarded, capability, action, id }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -150,7 +156,20 @@ impl Capability for UiThemeCapability {
                 }
                 Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.theme", "action": "import", "theme": theme }))
             }
-            other => Err(format!("cap.ui.theme 不支持动作: {}", other)),
+            other => Err(unsupported_action(
+                "cap.ui.theme",
+                other,
+                &[
+                    "get",
+                    "patch",
+                    "applyPreset",
+                    "listThemes",
+                    "setActive",
+                    "export",
+                    "delete",
+                    "import",
+                ],
+            )),
         }
     }
 
@@ -297,5 +316,39 @@ mod tests {
     fn unknown_action_errs() {
         let cap = UiThemeCapability;
         assert!(cap.invoke(serde_json::json!({"action": "explode"}), &ctx()).is_err());
+    }
+
+    /// describe 契约测试：标准形状 + 动作集与实现 match 分支一致
+    /// （审计 actionDrift：外部协议串曾漏 delete——此处以实现为锚自动跟随）
+    #[test]
+    fn describe_contract() {
+        use crate::contracts::validate_describe;
+
+        let cap = UiThemeCapability;
+        let d = cap.describe();
+        let problems = validate_describe("cap.ui.theme", &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        const ACTIONS: [&str; 8] = [
+            "get",
+            "patch",
+            "applyPreset",
+            "listThemes",
+            "setActive",
+            "export",
+            "delete",
+            "import",
+        ];
+        for action in ACTIONS {
+            assert!(d["actions"].get(action).is_some(), "describe 缺动作 {action}");
+        }
+        // 未知动作错误自纠文案列出全部合法动作（错误即文档）
+        let err = cap
+            .invoke(serde_json::json!({"action": "explode"}), &ctx())
+            .unwrap_err();
+        for action in ACTIONS {
+            assert!(err.contains(action), "错误文案缺合法动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help show target=cap.ui.theme"), "{err}");
     }
 }

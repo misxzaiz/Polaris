@@ -1,17 +1,23 @@
 //! cap.ui.chat —— AI 控制对话渲染配置
 //!
 //! 与 cap.ui.theme 同架构位：状态真相在前端 `chatRenderStore`（Zustand + localStorage），
-//! 本能力只校验 + 审计 + describe。效果经 tool_call_end 事件落前端。
+//! 本能力只校验 + 审计 + describe。效果经引擎 tool_call_start 事件落前端
+//! （eventHandler 在 tool_call_start 分支消费，tool_call_end 不消费）。
 //!
 //! # 动作协议（payload `{ "action": ... }`）
 //!
-//! - `get`   `{}` → 前端应答当前 ChatConfig
-//! - `patch` `{ "config": { "fontSize": 18, "messageGap": "16px", "toolCollapsed": false, ... } }`
+//! - `get`   `{}` → 同步回包转发标记，当前渲染配置由前端消费侧应答
+//! - `patch` `{ "config": { "fontSize": 18, "messageSpacing": "spacious", "contentWidth": 720, ... } }`
 //! - `reset` `{}` → 恢复默认渲染配置
 //!
-//! 字段集对齐 sky ChatConfig 中与 Polaris 渲染相关的子集（见前端 chatRenderStore）。
+//! 字段白名单（UNKNOWN 字段拒绝，防静默漂移）：fontSize / lineHeight /
+//! paragraphSpacing / messageSpacing / contentWidth / codeFontSize /
+//! inputFontSize / fontFamily —— 对齐前端真实消费的 ChatDisplaySettings
+//! （src/types/config.ts）。不含工具块折叠 / Markdown 开关等字段。
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Value,
+};
 
 /// cap.ui.chat —— 对话渲染配置能力（无状态，前端为真相）
 pub struct UiChatCapability;
@@ -34,7 +40,12 @@ impl UiChatCapability {
         ];
         for k in obj.keys() {
             if !KNOWN.contains(&k.as_str()) {
-                return Err(format!("cap.ui.chat 未知配置字段: {}", k));
+                // 错误即文档：列出合法字段集，AI 可自我纠正（审计 errorErgonomics）
+                return Err(format!(
+                    "cap.ui.chat 未知配置字段: {}（合法集: {}）",
+                    k,
+                    KNOWN.join(", ")
+                ));
             }
         }
         if let Some(ts) = obj.get("messageSpacing") {
@@ -69,15 +80,20 @@ impl Capability for UiChatCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "控制对话渲染配置（字号/消息宽度/工具块折叠/Markdown 开关）",
-            "actions": {
-                "get": { "params": {}, "returns": "前端应答当前 ChatConfig" },
-                "patch": { "params": { "config": "object：渲染配置字段子集" }, "returns": "{ applied: true }" },
-                "reset": { "params": {}, "returns": "{ reset: true }" }
-            },
-            "note": "状态在前端 chatRenderStore；字段白名单 + 类型校验在此层"
-        })
+        // 2026-10-25 审计归一：summary 删除 KNOWN 白名单外的「工具块折叠/Markdown 开关」
+        // （patch 未知字段会被硬拒，照旧文案构造必失败）；patch.params 列全白名单 8 字段；
+        // returns 改为实际同步回包形状（转发声明），效果由前端消费 tool_call_start 事件。
+        standard_describe(
+            "cap.ui.chat",
+            "对话渲染",
+            "控制对话渲染配置（正文字号/行高/段距/消息间距/内容宽度/代码与输入框字号/字体族）",
+            Some("状态真相在前端 chatRenderStore，本能力只校验+审计+转发：同步回包是转发声明（{ ok, forwarded, capability, action, … }），真实效果由前端消费 tool_call_start 事件落 DOM。patch 字段白名单硬校验（未知字段拒绝）：fontSize/codeFontSize 限 (0, 64] 数值，messageSpacing 限 compact/comfortable/spacious，fontFamily 限 system/serif/mono；lineHeight/paragraphSpacing/contentWidth/inputFontSize 后端不校验类型、原样转发前端消费。"),
+            serde_json::json!({
+                "get": { "params": {}, "returns": "{ ok, forwarded, capability, action }（当前渲染配置由前端消费侧应答，不作为同步返回值）" },
+                "patch": { "params": { "config": { "fontSize": "number?：(0, 64]", "lineHeight": "number?（后端不校验）", "paragraphSpacing": "number?（后端不校验）", "messageSpacing": "compact|comfortable|spacious（可省）", "contentWidth": "number?（后端不校验）", "codeFontSize": "number?：(0, 64]", "inputFontSize": "number?（后端不校验）", "fontFamily": "system|serif|mono（可省）" } }, "returns": "{ ok, forwarded, capability, action, config }（config 必填且至少含一个合法字段，空对象拒绝）" },
+                "reset": { "params": {}, "returns": "{ ok, forwarded, capability, action }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -117,7 +133,11 @@ impl Capability for UiChatCapability {
                 Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.chat", "action": "patch", "config": config }))
             }
             "reset" => Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.chat", "action": "reset" })),
-            other => Err(format!("cap.ui.chat 不支持动作: {}", other)),
+            other => Err(unsupported_action(
+                "cap.ui.chat",
+                other,
+                &["get", "patch", "reset"],
+            )),
         }
     }
 
@@ -205,5 +225,47 @@ mod tests {
     fn unknown_action_errs() {
         let cap = UiChatCapability;
         assert!(cap.invoke(serde_json::json!({"action": "boom"}), &ctx()).is_err());
+    }
+
+    /// describe 契约测试：标准形状 + patch 白名单 8 字段全部入 describe
+    /// （审计 high：summary 曾宣称 KNOWN 外的「工具块折叠/Markdown 开关」）
+    #[test]
+    fn describe_contract() {
+        use crate::contracts::validate_describe;
+
+        let cap = UiChatCapability;
+        let d = cap.describe();
+        let problems = validate_describe("cap.ui.chat", &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        const ACTIONS: [&str; 3] = ["get", "patch", "reset"];
+        for action in ACTIONS {
+            assert!(d["actions"].get(action).is_some(), "describe 缺动作 {action}");
+        }
+        // KNOWN 白名单 8 字段必须全部出现在 patch.params（文档面与实现同源）
+        const KNOWN: [&str; 8] = [
+            "fontSize",
+            "lineHeight",
+            "paragraphSpacing",
+            "messageSpacing",
+            "contentWidth",
+            "codeFontSize",
+            "inputFontSize",
+            "fontFamily",
+        ];
+        for field in KNOWN {
+            assert!(
+                d["actions"]["patch"]["params"]["config"].get(field).is_some(),
+                "describe patch.params.config 缺白名单字段 {field}"
+            );
+        }
+        // 未知动作错误自纠文案列出全部合法动作
+        let err = cap
+            .invoke(serde_json::json!({"action": "boom"}), &ctx())
+            .unwrap_err();
+        for action in ACTIONS {
+            assert!(err.contains(action), "错误文案缺合法动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help show target=cap.ui.chat"), "{err}");
     }
 }

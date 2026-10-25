@@ -26,7 +26,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
+};
 use crate::error::AppError;
 use crate::services::data_root::{data_root, dir_stats, scan_legacy_data, DataRoot, LegacySource};
 use crate::error::Result;
@@ -757,17 +759,25 @@ impl Capability for DataRootCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "数据根管理：查询/扫描旧数据/迁移/校验目标/切换数据根",
-            "note": "管理面能力（Remote 默认 deny）；切换数据根（set_root）影响全局存储，需谨慎",
-            "actions": {
-                "get_info": { "params": {}, "returns": "{ info: DataRootInfo }" },
-                "scan_legacy": { "params": {}, "returns": "{ list: 旧数据清单 }" },
-                "migrate": { "params": { "options": "MigrateOptions（必填）" }, "returns": "{ report: 迁移报告 }" },
-                "validate_target": { "params": { "options": "SetDataRootOptions（必填）" }, "returns": "{ result: 校验结果 }" },
-                "set_root": { "params": { "options": "SetDataRootOptions（必填）" }, "returns": "{ report: 切换报告 }" }
-            }
-        })
+        // describe 经 standard_describe 构造（2026-10-25 审计归一）：返回形状与
+        // invoke 实现对齐——五动作全部裸序列化（无 {info}/{list}/{report} 包装键），
+        // options 按结构体字段展开（mode 为必填枚举这一硬约束此前仅存在于源码）。
+        standard_describe(
+            CAP_ID,
+            "数据根",
+            "数据根管理：查询当前信息/扫描旧版残留/迁移合并/校验目标路径/切换数据根",
+            Some(
+                "管理面能力：Remote（Web/移动端）默认 deny；set_root 对插件来源（AI 经 \
+                 cap_dispatch）需用户逐次审批，切换影响全局存储且需重启生效",
+            ),
+            serde_json::json!({
+                "get_info": { "params": {}, "returns": "DataRootInfo（root/anchorFile/isCustom/totalSizeBytes/totalFileCount/subdirs[]，裸对象无包装键）" },
+                "scan_legacy": { "params": {}, "returns": "LegacySource[]（旧版残留数据源裸数组；路径供 migrate 的 options.sources 使用）" },
+                "migrate": { "params": { "options": "MigrateOptions（必填）：{ sources: string[]（必填，须为 scan_legacy 返回路径之一）, overwrite?: bool（默认 false；true=冲突时覆盖目标，不可逆） }" }, "returns": "MigrateReport（successCount/skippedCount/conflictCount/errorCount/logFile/items[]）" },
+                "validate_target": { "params": { "options": "SetDataRootOptions（必填）：{ newPath: string|null（null=恢复默认）, mode: \"switch_only\"|\"move_data\"（必填枚举） }" }, "returns": "TargetValidation（ok/errors[]/warnings[]/resolvedPath/currentSizeBytes）" },
+                "set_root": { "params": { "options": "SetDataRootOptions（必填）：{ newPath: string|null（null=恢复默认）, mode: \"switch_only\"|\"move_data\"（必填枚举） }" }, "returns": "SetDataRootReport（oldRoot/newRoot/mode/moveReport?/restartRequired；move_data 复制失败时报错且锚点不切换）" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
@@ -800,7 +810,9 @@ impl Capability for DataRootCapability {
                 let report = set_data_root_inner(options).map_err(|e| e.to_string())?;
                 serde_json::to_value(report).map_err(|e| e.to_string())
             }
-            other => Err(format!("cap.data_root 不支持动作: {}", other)),
+            // 未知动作文案统一走 contracts::unsupported_action（列出合法动作与
+            // cap.help 指路，AI 可自纠；与缺 action 文案的 DATA_ROOT_ACTIONS 清单同源）
+            other => Err(unsupported_action(CAP_ID, other, DATA_ROOT_ACTIONS)),
         }
     }
 
@@ -812,7 +824,22 @@ impl Capability for DataRootCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contracts::validate_describe;
     use tempfile::TempDir;
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约巡逻：顶层键白名单 + actions 非空 + 每动作含 params/returns
+        let d = DataRootCapability.describe();
+        let problems = validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        // 动作清单与 invoke 分支同源（DATA_ROOT_ACTIONS）
+        let actions = d["actions"].as_object().unwrap();
+        assert_eq!(actions.len(), DATA_ROOT_ACTIONS.len());
+        for name in DATA_ROOT_ACTIONS {
+            assert!(actions.contains_key(*name), "describe 缺动作 {name}");
+        }
+    }
 
     #[test]
     fn map_legacy_subpath_root_file_no_trailing_separator() {

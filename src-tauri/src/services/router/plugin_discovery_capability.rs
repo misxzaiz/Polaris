@@ -52,7 +52,9 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
+};
 use crate::models::plugin::PluginManifestSourceKind;
 use crate::services::config_store::ConfigStore;
 use crate::services::plugin_events::emit_plugin_lifecycle;
@@ -103,6 +105,41 @@ impl PluginDiscoveryCapability {
             app_config_dir,
             plugin_service_manager,
         }
+    }
+
+    /// describe 文档（单测可直接校验；`describe()` 委托本函数）。
+    ///
+    /// 不走实例构造的原因：`ConfigStore::new()` 有真实文件 IO（建目录/读
+    /// config.json），单测无法凭空构造本能力实例。
+    ///
+    /// 2026-10-25 审计 paramDrift 修正（对齐 invoke 实现的真实参数键）：
+    /// validate_manifest=sourcePath、install_local=sourcePath、
+    /// install_package=packagePath、install_remote=sourceUrl、
+    /// uninstall_with_cleanup 的 pluginId 必填；discover/install_locations/
+    /// discover_adapter 补可选 workspacePath。
+    fn describe_doc() -> Value {
+        standard_describe(
+            CAP_ID,
+            "插件发现",
+            "插件发现/安装/卸载/更新/适配器贡献统一管理面（安装/卸载/更新会改动本地插件目录）",
+            Some("管理面能力：cap.plugin* 对 Remote 通配 deny，已鉴权 Remote 仅放行只读动作 discover/list/install_locations/validate_manifest/adapters_list/check_update（写动作仍 deny）；Plugin 来源的 uninstall_local/uninstall_with_cleanup/force_uninstall 需用户审批"),
+            serde_json::json!({
+                "list": { "params": { "available": "bool?" }, "returns": "PluginListResult（installed/available 列表）" },
+                "discover": { "params": { "workspacePath": "string?" }, "returns": "PluginDiscoveryResult（发现已安装插件；有适配器贡献时合并 one-shot MCP 翻译结果）" },
+                "discover_adapter": { "params": { "adapterId": "string（必填）", "rootPath": "string（必填，调试用扫描根）", "workspacePath": "string?" }, "returns": "PluginDiscoveryResult（强制刷新单个适配器，绕开缓存/熔断，调试用）" },
+                "install_locations": { "params": { "workspacePath": "string?" }, "returns": "PluginInstallLocations" },
+                "validate_manifest": { "params": { "sourcePath": "string（必填）——插件 manifest 所在路径" }, "returns": "PluginManifestValidationResult" },
+                "install_local": { "params": { "sourcePath": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
+                "install_package": { "params": { "packagePath": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
+                "install_remote": { "params": { "sourceUrl": "string（必填）", "scope": "\"user\"|\"project\"?（缺省 user）", "workspacePath": "string?" }, "returns": "PluginOperationResult（异步安装）" },
+                "uninstall_local": { "params": { "installPath": "string（必填）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
+                "uninstall_with_cleanup": { "params": { "installPath": "string（必填）", "pluginId": "string（必填）——用于先停该插件后台服务", "workspacePath": "string?" }, "returns": "PluginOperationResult（先停 PluginServiceManager 服务再杀进程删目录）" },
+                "force_uninstall": { "params": { "installPath": "string（必填）", "workspacePath": "string?" }, "returns": "PluginOperationResult" },
+                "check_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginUpdateCheckResult" },
+                "apply_update": { "params": { "installPath": "string（必填）", "workspacePath": "string?" }, "returns": "PluginOperationResult（更新前先停该插件全部后台服务）" },
+                "adapters_list": { "params": { "workspacePath": "string?" }, "returns": "AdapterEntry[]（方言适配器贡献清单，只读）" }
+            }),
+        )
     }
 
     /// claude_code.cli_path（自动解析，未手动指定时走 PATH/常见位置检测）
@@ -174,26 +211,7 @@ impl Capability for PluginDiscoveryCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "插件发现/安装/卸载/更新/市场管理",
-            "note": "管理面能力（Remote 默认 deny；已鉴权 Remote 放行只读动作 discover/list/install_locations/validate_manifest/adapters_list/check_update，写动作仍 deny）；安装/卸载/更新改动本地插件，需谨慎",
-            "actions": {
-                "list": { "params": { "available": "bool?" }, "returns": "插件列表" },
-                "discover": { "params": {}, "returns": "市场发现结果" },
-                "install_locations": { "params": {}, "returns": "安装位置清单" },
-                "validate_manifest": { "params": { "manifest": "必填" }, "returns": "校验结果" },
-                "install_local": { "params": { "installPath 等": "必填" }, "returns": "PluginOperationResult" },
-                "install_package": { "params": {}, "returns": "PluginOperationResult" },
-                "install_remote": { "params": { "url/id 等": "必填" }, "returns": "PluginOperationResult" },
-                "uninstall_local": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
-                "uninstall_with_cleanup": { "params": { "installPath": "string（必填）", "pluginId": "string" }, "returns": "PluginOperationResult（先停服务再删目录）" },
-                "force_uninstall": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
-                "check_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginUpdateCheckResult" },
-                "apply_update": { "params": { "installPath": "string（必填）" }, "returns": "PluginOperationResult" },
-                "adapters_list": { "params": { "workspacePath": "string?" }, "returns": "AdapterEntry[]（方言适配器贡献清单，只读）" },
-                "discover_adapter": { "params": { "adapterId": "string（必填）", "rootPath": "string（必填，调试用扫描根）" }, "returns": "PluginDiscoveryResult（强制刷新单个适配器，绕开缓存/熔断）" }
-            }
-        })
+        Self::describe_doc()
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> std::result::Result<Value, String> {
@@ -481,11 +499,46 @@ impl Capability for PluginDiscoveryCapability {
                     crate::services::adapter_discovery::collect_adapters(&discovery.plugins);
                 serde_json::to_value(adapters).map_err(|e| e.to_string())
             }
-            other => Err(format!("cap.pluginDiscovery 不支持动作: {}", other)),
+            // 审计错误工效：未知动作附支持清单与协议入口（错误即文档，可自纠）
+            other => Err(unsupported_action(CAP_ID, other, PLUGIN_DISCOVERY_ACTIONS)),
         }
     }
 
     fn dependencies(&self) -> Vec<CapabilityId> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// describe 契约测试：standard_describe 构造 + validate_describe 零违例 +
+    /// 动作清单与实现一致 + 审计 paramDrift 修正抽查。
+    /// 注：走 `describe_doc()` 而非构造实例——ConfigStore::new() 有真实文件 IO，
+    /// describe() 逐字委托本函数，校验等价。
+    #[test]
+    fn describe_contract() {
+        let d = PluginDiscoveryCapability::describe_doc();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        assert_eq!(d["id"], "cap.pluginDiscovery");
+        assert_eq!(d["name"], "插件发现");
+        for action in PLUGIN_DISCOVERY_ACTIONS {
+            assert!(
+                d["actions"].get(*action).is_some(),
+                "describe 缺动作 {action}"
+            );
+        }
+        // 审计 paramDrift 抽查：真实参数键名（非 manifest/installPath 等 串键）
+        assert!(d["actions"]["validate_manifest"]["params"]["sourcePath"].is_string());
+        assert!(d["actions"]["install_local"]["params"]["sourcePath"].is_string());
+        assert!(d["actions"]["install_package"]["params"]["packagePath"].is_string());
+        assert!(d["actions"]["install_remote"]["params"]["sourceUrl"].is_string());
+        // uninstall_with_cleanup 的 pluginId 必填标注
+        assert!(d["actions"]["uninstall_with_cleanup"]["params"]["pluginId"]
+            .as_str()
+            .unwrap()
+            .contains("必填"));
     }
 }

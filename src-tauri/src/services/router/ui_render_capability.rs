@@ -71,7 +71,10 @@ use std::sync::{Arc, Mutex};
 use serde_json::{json, Map, Value};
 use tokio::sync::oneshot;
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Id, Item, Query};
+use crate::contracts::{
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Id,
+    Item, Query,
+};
 use crate::services::ask_listener::{PluginCardOutcome, emit_plugin_card_event};
 use crate::state::{AppState, PendingPluginCard, PluginCardStatus};
 
@@ -126,6 +129,42 @@ pub struct UiRenderCapability {
 }
 
 impl UiRenderCapability {
+    /// describe 文档（单测可直接校验；`describe()` 委托本函数）。
+    ///
+    /// 不走实例构造的原因：`UiRenderCapability::with_state` 需要 `Arc<AppState>`，
+    /// 单测构造过重；本函数不读任何实例字段，抽成关联函数零依赖。
+    fn describe_doc() -> Value {
+        // 2026-10-25 审计归一：经 standard_describe 构造；request 参数/返回与
+        // do_request 实现逐字段一致（审计核对通过，仅 returns 细化 answer 语义）
+        standard_describe(
+            CAP_ID,
+            "界面渲染",
+            "可交互渲染 + UI 模板运行时注册：register 注册 DSL 模板 → request 填参渲染对话卡片，交互帧阻塞等待用户应答（180s 超时按 declined），display 模式不等应答",
+            Some("frame.type 白名单 question/form/confirm/custom/template；模板不落地 dsl 以外的执行面，无任意 HTML"),
+            serde_json::json!({
+                "register": { "params": {
+                    "templateId": "string 必填 ≤64 [A-Za-z0-9\\-_./:]",
+                    "title": "string?",
+                    "description": "string?",
+                    "dsl": "Node[] 必填（vstack/hstack/text/metric/badge/table/progress/divider/input/select/chart，text 支持 {{param}} 插值；chart = {chartType: line|bar|pie, labels, datasets: [{label, data, color?}], title?, showLegend?, showGrid?}，前端自绘 SVG 渲染）",
+                    "buttons": "[{id,label,danger?}]?（≤8）",
+                    "persist": "boolean? 默认 true（仅内存传 false）"
+                }, "returns": "{ registered: true, templateId, persisted }" },
+                "unregister": { "params": { "templateId": "string" }, "returns": "{ unregistered: true, templateId }" },
+                "list": { "params": {}, "returns": "{ templates: [{templateId,title,description,owner,persisted}] }" },
+                "request": { "params": {
+                    "sessionId": "string（必填）",
+                    "pluginId": "string（必填）",
+                    "cardId": "string（必填）",
+                    "toolName": "string?（默认 ui.render）",
+                    "mode": "string? display = 不等应答 fire-and-forget",
+                    "title": "string?",
+                    "frame": "object（type: question|form|confirm|custom|template；template 帧带 templateId+params）"
+                }, "returns": "{ status: answered|declined|timeout|displayed, answer: any（answered=应答内容，declined/timeout=null，displayed 无此键）, interactionId }" }
+            }),
+        )
+    }
+
     pub fn with_state(state: Arc<AppState>) -> Self {
         Self {
             state,
@@ -856,48 +895,27 @@ impl Capability for UiRenderCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "可交互渲染 + UI 模板运行时注册：register 注册 DSL 模板 → request 填参渲染对话卡片，用户操作 answer 同回合回传",
-            "note": "frame.type 白名单 question/form/confirm/custom/template；模板不落地 dsl 以外的执行面，无任意 HTML",
-            "actions": {
-                "register": { "params": {
-                    "templateId": "string 必填 ≤64 [A-Za-z0-9\\-_./:]",
-                    "title": "string?",
-                    "description": "string?",
-                    "dsl": "Node[] 必填（vstack/hstack/text/metric/badge/table/progress/divider/input/select/chart，text 支持 {{param}} 插值；chart = {chartType: line|bar|pie, labels, datasets: [{label, data, color?}], title?, showLegend?, showGrid?}，前端自绘 SVG 渲染）",
-                    "buttons": "[{id,label,danger?}]?（≤8）",
-                    "persist": "boolean? 默认 true（仅内存传 false）"
-                }, "returns": "{ registered, templateId, persisted }" },
-                "unregister": { "params": { "templateId": "string" }, "returns": "{ unregistered, templateId }" },
-                "list": { "params": {}, "returns": "{ templates: [{templateId,title,description,owner,persisted}] }" },
-                "request": { "params": {
-                    "sessionId": "string（必填）",
-                    "pluginId": "string（必填）",
-                    "cardId": "string（必填）",
-                    "toolName": "string?（默认 ui.render）",
-                    "mode": "string? display = 不等应答 fire-and-forget",
-                    "title": "string?",
-                    "frame": "object（type: question|form|confirm|custom|template；template 帧带 templateId+params）"
-                }, "returns": "{ status: answered|declined|timeout|displayed, answer?, interactionId }" }
-            }
-        })
+        Self::describe_doc()
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> std::result::Result<Value, String> {
-        let action = params
-            .get("action")
-            .and_then(|a| a.as_str())
-            .unwrap_or("")
-            .to_string();
-        match action.as_str() {
-            "register" => self.do_register(&params, ctx),
-            "unregister" => {
+        let action = params.get("action").and_then(|a| a.as_str());
+        match action {
+            Some("register") => self.do_register(&params, ctx),
+            Some("unregister") => {
                 let template_id = Self::require_str(&params, "templateId")?.to_string();
                 self.do_unregister(&template_id, ctx)
             }
-            "list" => self.do_list(ctx),
-            "request" => self.do_request(&params, ctx),
-            _ => Err(format!("cap.ui.render 仅支持动作 {:?}", UI_RENDER_ACTIONS)),
+            Some("list") => self.do_list(ctx),
+            Some("request") => self.do_request(&params, ctx),
+            // 审计错误工效对齐：缺 action 指名参数，未知动作列支持清单与协议入口
+            // （本能力原为唯一全量列动作清单的模板实现，迁移 unsupported_action 后
+            // 各能力文案统一）
+            None => Err(format!(
+                "cap.ui.render 需要 action 参数（{:?}）",
+                UI_RENDER_ACTIONS
+            )),
+            Some(other) => Err(unsupported_action(CAP_ID, other, UI_RENDER_ACTIONS)),
         }
     }
 
@@ -916,6 +934,32 @@ mod tests {
     fn validate_chart(node: Value) -> std::result::Result<(), String> {
         let mut count = 0usize;
         UiRenderCapability::validate_template_node(&node, 1, &mut count)
+    }
+
+    /// describe 契约测试：standard_describe 构造 + validate_describe 零违例 +
+    /// 动作清单与实现一致。注：走 `describe_doc()` 而非构造实例——
+    /// `with_state` 需要 Arc<AppState> 过重，describe() 逐字委托本函数。
+    #[test]
+    fn describe_contract() {
+        let d = UiRenderCapability::describe_doc();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        assert_eq!(d["id"], "cap.ui.render");
+        assert_eq!(d["name"], "界面渲染");
+        for action in UI_RENDER_ACTIONS {
+            assert!(
+                d["actions"].get(*action).is_some(),
+                "describe 缺动作 {action}"
+            );
+        }
+        // 审计一致性抽查：request 必填三键与 returns 形状
+        for key in ["sessionId", "pluginId", "cardId"] {
+            assert!(d["actions"]["request"]["params"][key].is_string(), "缺 {key}");
+        }
+        assert!(d["actions"]["request"]["returns"]
+            .as_str()
+            .unwrap()
+            .contains("interactionId"));
     }
 
     #[test]

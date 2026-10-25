@@ -21,10 +21,14 @@
 //!
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
-//! - `run`    `{ "action":"run", "command":"...", "workdir":"可选",
-//!               "env":{k:v} 可选, "timeoutMs":可选毫秒, "async":bool 可选,
+//! - `run`    `{ "action":"run", "command":"...", "workdir":"可选（缺省为宿主
+//!               进程工作目录，非调用方目录）", "env":{k:v} 可选,
+//!               "timeoutMs":可选毫秒（默认 600000，0=不设超时上限）, "async":bool 可选,
 //!               "onSessionEnd":"keep|kill" 可选（默认 keep）}`
-//!               → `{ "taskId":"t1", "pid":123, "status":"running|...", "logPath":"" }`
+//!               → 同步（async=false）：`{ "taskId":"t1", "pid":123, "status":"...",
+//!                 "exitCode":0, "startedAt":..., "finishedAt":... }`（等待结束后返回，无 logPath）
+//!                 异步（async=true）：`{ "taskId":"t1", "pid":123, "status":"running", "logPath":"" }`
+//!                 （logPath 恒为空串，日志经 action=log 获取）
 //! - `status` `{ "action":"status", "taskId":"t1" }`
 //!               → `{ "taskId":"t1", "status":"...", "exitCode":可选, "startedAt":..., "finishedAt":可选 }`
 //! - `log`    `{ "action":"log", "taskId":"t1", "offset":0, "limit":200 }`
@@ -41,7 +45,9 @@
 //! `sessionId` 过滤即按该来源字符串匹配；`onSessionEnd:"kill"` 的回收由调用方在会话
 //! 结束时遍历归属会话的 running 任务并调用 `kill` 原语完成。默认 `keep`（会话解耦）。
 
-use crate::contracts::{Capability, CapabilityId, Context, Source, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Source, Value,
+};
 use serde_json::json;
 use std::collections::VecDeque;
 use std::io::{BufReader, Read};
@@ -53,6 +59,9 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CAP_ID: &str = "cap.bash";
+
+/// 支持的动作清单（describe 与未知动作错误文案共用，单一事实来源）
+const BASH_ACTIONS: &[&str] = &["run", "status", "log", "wait", "kill", "list"];
 
 /// 默认超时：10 分钟（与 SimpleAI bash 工具一致，防脚本死循环）
 const DEFAULT_TIMEOUT_MS: u64 = 600_000;
@@ -564,21 +573,27 @@ impl Capability for BashCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "宿主 shell 命令执行：后台任务管理（run/status/log/wait/kill/list），任务归宿主不随会话结束",
-            "note": "Remote 来源默认 deny；任务归宿主进程（TaskManager 单例），onSessionEnd 默认 keep",
-            "actions": {
+        standard_describe(
+            CAP_ID,
+            "Shell任务",
+            "宿主 shell 命令执行：后台任务管理（run/status/log/wait/kill/list），任务归宿主不随会话结束",
+            Some(
+                "Remote 来源默认 deny；任务归宿主进程（TaskManager 单例），onSessionEnd 默认 keep；workdir 缺省为宿主进程工作目录，AI 调用应显式传 workdir",
+            ),
+            serde_json::json!({
                 "run": {
-                    "params": { "command": "string（必填，shell 命令）", "workdir": "string?（默认调用方工作目录）", "env": "{ k: v }?", "timeoutMs": "number?（默认 600000，0=不限）", "async": "bool?（默认 false：同步等待完成）", "onSessionEnd": "keep|kill?（默认 keep）" },
-                    "returns": "{ taskId, pid, status, logPath }（async=false 时含 exitCode/startedAt/finishedAt）"
+                    "params": { "command": "string（必填，shell 命令）", "workdir": "string?（缺省为宿主进程工作目录——非调用方目录，需要特定目录时显式传）", "env": "{ k: v }?", "timeoutMs": "number?（默认 600000；0=不设超时上限，async=false 时按最长 1s 同步等待后返回当前状态）", "async": "bool?（默认 false：同步等待完成）", "onSessionEnd": "keep|kill?（默认 keep）" },
+                    "returns": "async=false（默认）：任务对象 { taskId, pid, status, exitCode?, startedAt, finishedAt? }（等待结束后返回，无 logPath）；async=true：{ taskId, pid, status, logPath }（logPath 恒为空串，日志经 action=log 获取）",
+                    // example：bus_help usage_examples 派生源（载荷已对 action_run/status 分支核对）
+                    "example": { "action": "run", "command": "npm run build", "async": true }
                 },
-                "status": { "params": { "taskId": "string（必填）" }, "returns": "{ taskId, status, exitCode?, startedAt, finishedAt? }" },
+                "status": { "params": { "taskId": "string（必填）" }, "returns": "{ taskId, pid, status, exitCode?, startedAt, finishedAt? }", "example": { "action": "status", "taskId": "<taskId>" } },
                 "log": { "params": { "taskId": "string（必填）", "offset": "int?（默认 0）", "limit": "int?（默认全部）" }, "returns": "{ taskId, offset, total, lines: string[] }" },
-                "wait": { "params": { "taskId": "string（必填）", "timeoutMs": "number?（默认 30000）" }, "returns": "{ taskId, status, exitCode?, finishedAt? }（超时返回 status=running）" },
+                "wait": { "params": { "taskId": "string（必填）", "timeoutMs": "number?（默认 30000）" }, "returns": "{ taskId, pid, status, exitCode?, startedAt, finishedAt? }（超时返回 status=running）" },
                 "kill": { "params": { "taskId": "string（必填）" }, "returns": "{ taskId, killed, status }（Windows 杀进程树）" },
-                "list": { "params": { "sessionId": "string?", "status": "string?（running|completed|failed|killed|timeout）" }, "returns": "{ tasks: [{ taskId, status, command, pid, sessionId, startedAt, finishedAt, logLines }] }" }
-            }
-        })
+                "list": { "params": { "sessionId": "string?（来源过滤）", "status": "string?（running|completed|failed|killed|timeout）" }, "returns": "{ tasks: [{ taskId, status, command, pid, sessionId, onSessionEnd, startedAt, finishedAt, logLines }] }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -670,7 +685,7 @@ impl Capability for BashCapability {
                 }
                 Ok(json!({ "tasks": out }))
             }
-            other => Err(format!("cap.bash 不支持动作: {}", other)),
+            other => Err(unsupported_action(CAP_ID, other, BASH_ACTIONS)),
         }
     }
 
@@ -805,5 +820,28 @@ mod tests {
         let ctx = plugin_ctx("s");
         let r = cap.invoke(json!({ "action": "wat" }), &ctx);
         assert!(r.is_err());
+        // 错误文案应可自纠：列出支持动作与协议入口（unsupported_action）
+        let msg = r.unwrap_err();
+        assert!(msg.contains("run, status, log, wait, kill, list"), "应列支持清单: {msg}");
+        assert!(msg.contains("cap.help show target=cap.bash"), "应指协议入口: {msg}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        let cap = BashCapability::new();
+        let d = cap.describe();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 应过契约校验: {problems:?}");
+        // actions 键与 BASH_ACTIONS 清单一致（未知动作错误文案与 describe 同源）
+        let mut keys: Vec<&str> = d["actions"]
+            .as_object()
+            .expect("actions 应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected = BASH_ACTIONS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "describe 动作清单应与 BASH_ACTIONS 一致");
     }
 }

@@ -1,13 +1,14 @@
 //! cap.ui.input —— AI 即时调节输入区（悬浮层参数 + 动态横幅）
 //!
 //! 与 cap.ui.theme / cap.ui.chat 同架构位：状态真相在前端 `inputUIStore`（Zustand），
-//! 本能力只校验 + 审计 + describe。效果经引擎 tool_call_end 事件（uiDispatchService）。
+//! 本能力只校验 + 审计 + describe。效果经引擎 tool_call_start 事件（uiDispatchService，
+//! eventHandler 在 tool_call_start 分支消费，tool_call_end 不消费）。
 //!
 //! # 动作协议（payload `{ "action": ... }`）
 //!
-//! - `get`   `{}` → 前端应答当前输入区 UI 状态
+//! - `get`   `{}` → 同步回包转发标记，当前输入区 UI 状态由前端消费侧应答
 //! - `patch` `{ "config": { "floating": {...}, "showContextMeter": bool } }`
-//! - `banner` `{ "banner": { "text": "...", "tone": "info|warn|success", "action": { "label": "...", "dispatch": {target,payload} } } }`
+//! - `banner` `{ "banner": { "text": "...", "tone": "info|warn|success|danger", "action": { "label": "...", "dispatch": {target,payload} } } }`
 //!   → 在输入区上方注入一条动态横幅；`banner: null` 清除
 //! - `reset` `{}` → 恢复默认（清横幅 + 复原悬浮层）
 //!
@@ -17,7 +18,9 @@
 //! - `floating.gap`（string：悬浮浮窗与输入框间距，rem/px）
 //! - `showContextMeter`（bool：上下文用量条是否可见）
 
-use crate::contracts::{AuditEntry, Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Value,
+};
 
 /// cap.ui.input —— 输入区即时调节能力（无状态，前端为真相）
 pub struct UiInputCapability;
@@ -34,7 +37,12 @@ impl UiInputCapability {
         const KNOWN: &[&str] = &["floating", "showContextMeter"];
         for k in obj.keys() {
             if !KNOWN.contains(&k.as_str()) {
-                return Err(format!("cap.ui.input 未知配置字段: {}", k));
+                // 错误即文档：列出合法字段集（审计 errorErgonomics）
+                return Err(format!(
+                    "cap.ui.input 未知配置字段: {}（合法集: {}）",
+                    k,
+                    KNOWN.join(", ")
+                ));
             }
         }
         if let Some(f) = obj.get("floating") {
@@ -44,7 +52,11 @@ impl UiInputCapability {
             const FLOATING_KNOWN: &[&str] = &["enabled", "height", "gap"];
             for k in fobj.keys() {
                 if !FLOATING_KNOWN.contains(&k.as_str()) {
-                    return Err(format!("cap.ui.input floating 未知字段: {}", k));
+                    return Err(format!(
+                        "cap.ui.input floating 未知字段: {}（合法集: {}）",
+                        k,
+                        FLOATING_KNOWN.join(", ")
+                    ));
                 }
             }
             if let Some(en) = fobj.get("enabled") {
@@ -131,16 +143,21 @@ impl Capability for UiInputCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "即时调节输入区 UI（悬浮层参数 / 上下文条可见性 / 动态横幅）",
-            "actions": {
-                "get": { "params": {}, "returns": "前端应答当前输入区 UI 状态" },
-                "patch": { "params": { "config": { "floating": { "enabled": "bool?", "height": "number?", "gap": "string?" }, "showContextMeter": "bool?" } }, "returns": "{ applied: true }" },
-                "banner": { "params": { "banner": "object（text/tonne/action 见 actions.banner）或 null 清除横幅" }, "returns": "{ shown: true }" },
-                "reset": { "params": {}, "returns": "{ reset: true }" }
-            },
-            "note": "状态在前端 inputUIStore；字段白名单 + 类型校验在此层。banner=null 清除横幅。效果经 tool_call_end 事件即时生效。"
-        })
+        // 2026-10-25 审计归一：修正 banner 参数「tonne」拼写错误并写全约束
+        // （text 必填 ≤500 / tone 枚举 / action.label 必填 / dispatch.target 须 cap.*），
+        // returns 改为实际同步回包形状，效果消费点改为 tool_call_start。
+        standard_describe(
+            "cap.ui.input",
+            "输入区调节",
+            "即时调节输入区 UI（悬浮层参数 / 上下文用量条可见性 / 动态横幅）",
+            Some("状态真相在前端 inputUIStore，本能力只校验+审计+转发：同步回包是转发声明（{ ok, forwarded, capability, action, … }），真实效果由前端消费 tool_call_start 事件即时生效。banner=null 清除横幅。字段白名单硬校验（未知字段拒绝）。"),
+            serde_json::json!({
+                "get": { "params": {}, "returns": "{ ok, forwarded, capability, action }（当前输入区 UI 状态由前端消费侧应答，不作为同步返回值）" },
+                "patch": { "params": { "config": { "floating": { "enabled": "bool?：悬浮浮窗开关", "height": "number?：(0, 1200] px", "gap": "string?：浮窗与输入框间距（rem/px）" }, "showContextMeter": "bool?：上下文用量条可见性" } }, "returns": "{ ok, forwarded, capability, action, config }（config 必填且至少含一个合法字段，空对象拒绝）" },
+                "banner": { "params": { "banner": "object 或 null（null=清除横幅）：text 必填（非空，≤500 字符）；tone 可选，枚举 info/warn/success/danger；action 可选但提供时 label 必填，action.dispatch 可选、target 必须以 cap.* 开头" }, "returns": "{ ok, forwarded, capability, action, banner }" },
+                "reset": { "params": {}, "returns": "{ ok, forwarded, capability, action }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -188,7 +205,11 @@ impl Capability for UiInputCapability {
                 Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.input", "action": "banner", "banner": banner }))
             }
             "reset" => Ok(serde_json::json!({ "ok": true, "forwarded": true, "capability": "cap.ui.input", "action": "reset" })),
-            other => Err(format!("cap.ui.input 不支持动作: {}", other)),
+            other => Err(unsupported_action(
+                "cap.ui.input",
+                other,
+                &["get", "patch", "banner", "reset"],
+            )),
         }
     }
 
@@ -284,5 +305,36 @@ mod tests {
     fn unknown_action_errs() {
         let cap = UiInputCapability;
         assert!(cap.invoke(serde_json::json!({"action": "boom"}), &ctx()).is_err());
+    }
+
+    /// describe 契约测试：标准形状 + banner 约束写全（审计：tonne 拼写错误、
+    /// tone 枚举/text≤500/label 必填/dispatch.target 约束此前未进任何文档面）
+    #[test]
+    fn describe_contract() {
+        use crate::contracts::validate_describe;
+
+        let cap = UiInputCapability;
+        let d = cap.describe();
+        let problems = validate_describe("cap.ui.input", &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        const ACTIONS: [&str; 4] = ["get", "patch", "banner", "reset"];
+        for action in ACTIONS {
+            assert!(d["actions"].get(action).is_some(), "describe 缺动作 {action}");
+        }
+        // 「tonne」拼写错误已修正，tone 枚举四值写全
+        let banner_desc = d["actions"]["banner"]["params"]["banner"].as_str().unwrap();
+        assert!(!banner_desc.contains("tonne"), "banner 参数仍有 tonne 拼写错误");
+        for tone in ["info", "warn", "success", "danger"] {
+            assert!(banner_desc.contains(tone), "banner 约束缺 tone 枚举值 {tone}");
+        }
+        // 未知动作错误自纠文案列出全部合法动作
+        let err = cap
+            .invoke(serde_json::json!({"action": "boom"}), &ctx())
+            .unwrap_err();
+        for action in ACTIONS {
+            assert!(err.contains(action), "错误文案缺合法动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help show target=cap.ui.input"), "{err}");
     }
 }

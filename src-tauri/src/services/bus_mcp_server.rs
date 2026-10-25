@@ -18,7 +18,9 @@
 //! # 与主应用的关系
 //!
 //! 同一业务核（TodoCapability）+ 同一存储文件，单份逻辑双入口（step7 阶段 E
-//! 的"MCP 共享业务核"形态）。context 等内存型能力不进本 server（跨进程不共享）。
+//! 的"MCP 共享业务核"形态）。cap.context 为本进程**独立**内存实例：已注册、
+//! 可经 bus_dispatch 调用，但与主进程内存互不共享（经 bus 写入的条目主进程
+//! 不可见，读主进程上下文须经主进程 cap_dispatch）。
 
 use std::path::Path;
 use std::sync::Arc;
@@ -543,15 +545,150 @@ fn write_json_atomically(path: &std::path::Path, value: &Value) -> Result<()> {
     Ok(())
 }
 
+/// 域 → 能力导航表（bus_help modules 段数据源）。
+///
+/// 只维护分组与策略面警示（审批门槛/Remote 语义/ui 门控等跨能力语义）——动作
+/// 协议、参数、返回一律不在本表出现（protocol 段已从 describe 派生，重复维护
+/// 必漂移：旧版曾在此漂移出 cap.git 不存在的 `diff` 幽灵动作、http 返回漏 url、
+/// ui.theme 漏 delete）。「入口」不写死，handle_bus_help_impl 按 id 是否在本
+/// 进程 dispatchable 集合自动判定。警示内容与 policy_permission.rs 的审批规则
+/// 对齐（2026-10-25 核对），仅作导航提示，裁决权威在 RouterBus 权限 gate。
+const MODULE_DOMAINS: &[(&str, &[&str], Option<&str>)] = &[
+    ("todo", &["cap.todo"], None),
+    ("http", &["cap.http"], Some("Remote 来源默认 deny；cap.http（任意目标转发）需用户审批")),
+    ("fs", &["cap.fs"], Some("只读边界（list/getFileInfo/exists）；Remote 来源默认 deny")),
+    ("bash", &["cap.bash"], Some("Remote 来源默认 deny；cap.bash:run 需用户审批；任务归宿主进程（TaskManager 单例），不随 AI 会话结束")),
+    ("kv", &["cap.kv"], None),
+    ("prompt_snippet", &["cap.prompt_snippet"], None),
+    ("data_root", &["cap.data_root"], Some("管理面：set_root（数据根迁移/切换）需用户审批")),
+    ("hook", &["cap.hook"], None),
+    ("git", &["cap.git"], Some("只读动作干道开放；写类动作经权限 gate + 操作流水审计；Remote 来源默认 deny")),
+    ("context", &["cap.context"], Some("独立内存实例：本进程与主进程各持一份、互不共享——经 bus_dispatch 写入的条目主进程不可见，读主进程上下文须经 cap_dispatch")),
+    ("ui", &["cap.ui.theme", "cap.ui.chat", "cap.ui.input", "cap.ui.render"], Some("ui_control_enabled=false（默认）时 AI 会话禁控 UI 域（策略 deny）；状态真相在前端 store，效果经引擎 tool_call_start 事件落前端")),
+    ("self", &["cap.self.mutate", "cap.self.inspect"], Some("cap.self.mutate 同受 ui_control_enabled 门控；状态真相在前端 uiSlotStore")),
+    ("registry", &["cap.registry"], Some("register（动态能力注册）需用户审批")),
+    ("help", &["cap.help"], None),
+    ("ai-chat", &["cap.ai.chat"], Some("混合型：start/continue 可经 cap_dispatch 同步调用（RouterBus 自动回退 invoke），token 流经 WS chat-event 订阅")),
+    ("history", &["cap.history"], None),
+    ("mcp", &["cap.mcp"], None),
+    ("voice", &["cap.voice"], None),
+    ("config", &["cap.config"], Some("管理面：patch/reset_cli 直接生效（无审批门槛），调用需谨慎——先确认用户意图")),
+    ("plugin", &["cap.pluginDiscovery", "cap.pluginServiceManager"], Some("管理面：uninstall*/stop_for_plugin/autostart 需用户审批；改动插件服务/文件需谨慎")),
+    ("stream", &["cap.stream.echo"], Some("仅 WS 流式通道（dispatch_stream），cap_dispatch 同步不可调")),
+];
+
+/// 从 described_capabilities 派生 bus_help 的 protocol 段（纯函数，便于无 RouterBus 单测）。
+///
+/// - 每个提供 describe 的注册能力一个键：值 = describe 去掉冗余 `id` 键（id 即键名），
+///   name/summary/note/actions 原样透传——与 cap_list 同源，杜绝第二份手写协议
+/// - describe 为 null（动态注册/测试夹具）的归入「未提供自描述」清单
+/// - 「说明」声明来源与 payload 通配形状；streaming 语义见 cap_list 每项 streaming 标记
+fn derive_protocol(described: &[Value]) -> Value {
+    let mut protocol = serde_json::Map::new();
+    protocol.insert(
+        "说明".to_string(),
+        json!("已注册能力的动作协议，聚合自各能力 describe()（与 cap_list 同源）。bus_dispatch / cap_dispatch 的 payload = { \"action\": <动作>, ...动作参数 }；各能力边界/审批/Remote 语义见对应 note 字段"),
+    );
+    let mut undescribed: Vec<String> = Vec::new();
+    for entry in described {
+        let Some(id) = entry.get("id").and_then(Value::as_str).map(String::from) else {
+            continue;
+        };
+        // describe 缺省（trait 默认 Null）或非对象 → 归入「未提供自描述」
+        let Some(describe_obj) = entry.get("describe").and_then(Value::as_object) else {
+            undescribed.push(id);
+            continue;
+        };
+        let mut cap_entry = serde_json::Map::new();
+        for key in ["name", "summary", "note", "actions"] {
+            if let Some(v) = describe_obj.get(key) {
+                cap_entry.insert(key.to_string(), v.clone());
+            }
+        }
+        protocol.insert(id, Value::Object(cap_entry));
+    }
+    if !undescribed.is_empty() {
+        undescribed.sort();
+        protocol.insert("未提供自描述".to_string(), json!(undescribed));
+    }
+    Value::Object(protocol)
+}
+
+/// 从各能力 describe 动作内的 example 字段派生 usage_examples（纯函数）。
+///
+/// 每条渲染为 bus_dispatch 调用 `{ tool, arguments: { target, payload } }`；
+/// 无 example 的能力/动作不生成示例（宁缺毋滥：示例载荷与实现的一致性由
+/// describe 单一来源维护，不在此手写第二份）。
+fn derive_usage_examples(described: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = Vec::new();
+    for entry in described {
+        let Some(id) = entry.get("id").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(actions) = entry
+            .get("describe")
+            .and_then(|d| d.get("actions"))
+            .and_then(Value::as_object)
+        else {
+            continue;
+        };
+        for spec in actions.values() {
+            let Some(example) = spec.get("example") else {
+                continue;
+            };
+            out.push(json!({
+                "tool": "bus_dispatch",
+                "arguments": { "target": id, "payload": example },
+            }));
+        }
+    }
+    out
+}
+
 /// bus_help：总线能力与工具的说明（发现/文档工具）
 ///
-/// 返回：本 server 全部工具及入参、总线上已注册（可转发）的能力、各业务域的
-/// 迁移状态与可用入口（主应用 dispatch / 本 server 工具）。
-fn handle_bus_help_impl(router: &RouterBus) -> Value {
-    let tools = BusMcpHandler::tools_list_placeholder();
+/// 四段全部派生自注册表（describe 单一权威，spec: plans/cap-describe-contract-unify-spec.md）：
+/// - tools：真实 `tools_list()`（bus_dispatch 的 target enum 与注册表同源，随注册实时变化）
+/// - protocol：`derive_protocol(described_capabilities)`——手写协议已删（旧版手写
+///   五能力协议，曾漂移出 cap.git 不存在的 `diff` 幽灵动作）
+/// - usage_examples：`derive_usage_examples(described_capabilities)`——从动作级
+///   example 字段派生，载荷与实现的一致性由各能力 describe 自身维护
+/// - modules：域→能力导航 + 策略面警示；「入口」按 id 是否在本进程 dispatchable
+///   自动判定（根除「已注册却标『仅主进程』」的错标），协议一律不在此维护
+fn handle_bus_help_impl(router: &RouterBus, tools: &Value) -> Value {
+    let described = router.described_capabilities();
     // 全量放开：本进程已注册能力即 bus_dispatch 可转发目标，两者是同一集合，
     // 合并为单一字段避免再次出现「名单」与「注册」两份声明漂移。
     let dispatchable = dispatchable_capabilities(router);
+    let dispatchable_set: std::collections::HashSet<&str> =
+        dispatchable.iter().map(String::as_str).collect();
+
+    // modules：分组静态（MODULE_DOMAINS）、入口动态（按本进程 dispatchable 判定）
+    let modules: Vec<Value> = MODULE_DOMAINS
+        .iter()
+        .map(|(domain, caps, warn)| {
+            let entries: Vec<String> = caps
+                .iter()
+                .map(|cap| {
+                    if dispatchable_set.contains(cap) {
+                        format!("{cap}（bus_dispatch）")
+                    } else {
+                        format!("{cap}（主进程 cap_dispatch）")
+                    }
+                })
+                .collect();
+            let mut row = json!({ "domain": domain, "capabilities": caps, "入口": entries });
+            if let Some(warn) = warn {
+                row["警示"] = json!(warn);
+            }
+            row
+        })
+        .collect();
+
+    let mut usage = derive_usage_examples(&described);
+    // cap_list 是 polaris-dispatch 的工具级自发现入口（无 cap describe 可派生），
+    // 保留一条静态示例指路；主进程总线动作协议一律以 cap_list 返回为准。
+    usage.push(json!({ "tool": "cap_list", "arguments": {} }));
 
     json!({
         "server": { "name": SERVER_NAME, "version": SERVER_VERSION, "protocol": mcp_server_common::PROTOCOL_VERSION },
@@ -560,110 +697,23 @@ fn handle_bus_help_impl(router: &RouterBus) -> Value {
             "dispatchable": dispatchable,
             "说明": "dispatchable = 本进程 RouterBus 已注册的全部 cap.* 能力（含运行时动态注册），全部可经 bus_dispatch 转发，无白名单。是否放行由 RouterBus 统一裁决：注册表命中 + PolicyPermission 权限 gate + 审计落盘。目标不在列表内会收到『能力未注册』——那是注册缺口的准确反馈，不是限制"
         },
-        "modules": [
-            { "domain": "todo", "capability": "cap.todo", "storage": "SqliteStorage stores/todo.db（与本server/主应用共享）",
-              "状态": "✅ bus_dispatch 可用（动作协议见 protocol.cap.todo）；主应用亦经 cap_dispatch 触达" },
-            { "domain": "http", "capability": "cap.http", "入口": "bus_dispatch / 主应用 dispatch（面板）",
-              "协议": "{ action: request|ping, request: { method, url, headers?, body?, bodyType?, timeoutMs? } } → { status, statusText, ok, contentType, headers, body, isBase64, timeMs }",
-              "状态": "✅ bus_dispatch 可用；目标校验已完全放开（http/https 任意目标可转发，含内网/localhost）；二进制响应 base64；Remote 策略 deny（本地面板与 AI 均可用）" },
-            { "domain": "fs", "capability": "cap.fs", "入口": "bus_dispatch / 主应用 dispatch（面板）",
-              "协议": "{ action: list|getFileInfo|exists, path } → { items / item / exists }（文件：size+modified+created；目录：child_count）",
-              "状态": "✅ bus_dispatch 可用；只读边界（list/getFileInfo/exists），写操作仍走 tauri command；Remote 策略 deny" },
-            { "domain": "git", "capability": "cap.git", "入口": "bus_dispatch / 主应用 dispatch（面板）",
-              "协议": "{ action: get_status|get_log_with_lanes|search_log|diff|get_commit_details|..., workspacePath, ...参数 }（完整协议见 protocol.cap.git 与 cap_list）",
-              "状态": "✅ bus_dispatch 可用（P4）；只读动作干道开放，写类动作经权限 gate + 审计，Remote 策略 deny" },
-            { "domain": "ai-chat", "capability": "cap.ai.chat", "入口": "polaris-dispatch 的 cap_dispatch 工具（target=cap.ai.chat）", "状态": "✅ 主进程总线；AI 可经 cap_dispatch 同步动作（start/continue/interrupt 等），流式走 WS 事件" },
-            { "domain": "context", "capability": "cap.context", "storage": "内存（主应用进程）", "状态": "✅ 主进程总线；经 cap_dispatch 触达（本 server 不注册内存型能力，跨进程不共享）" },
-            { "domain": "history", "capability": "cap.history", "入口": "主应用总线（读文件系统会话树）", "状态": "✅ 主进程总线；经 cap_dispatch 触达" },
-            { "domain": "kv / prompt_snippet / config / data_root / pluginDiscovery / pluginServiceManager", "入口": "主进程总线 cap_dispatch", "状态": "✅ 可触达；config/data_root/plugin* 属管理面，改动全局配置需谨慎（先确认用户意图）" },
-            { "domain": "mcp-健康诊断", "工具": "bus_mcp_status / bus_mcp_regenerate", "说明": "诊断 ask_listener 元数据与 mcp.json 配置是否一致，失联时一键改写固化的旧端口/token。均为本 server 直接实现，不依赖 ask 端口（独立通道）", "状态": "✅ 可用" },
-            { "domain": "ui", "capability": "cap.ui.theme / cap.ui.chat", "入口": "bus_dispatch",
-              "协议": "cap.ui.theme: { action: get|patch|applyPreset|listThemes|setActive|export|import }（palette 键=语义色，映射 88 维度 token）；cap.ui.chat: { action: get|patch|reset }（config 字段对齐 ChatDisplaySettings：fontSize/lineHeight/messageSpacing/codeFontSize/fontFamily 等）",
-              "状态": "✅ bus_dispatch 可用；状态真相在前端 store，本能力校验+审计，效果经 tool_call_end 事件落前端" },
-            { "domain": "dialog / requirement / scheduler / browser 等", "状态": "⏳ 阶段 B 尾/C/D 迁移后逐域接入" }
-        ],
+        "modules": modules,
         "cap_dispatch": {
-            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 亦为全量放开（无白名单，2026-10-23 根因修复后与注册表同源）；下方 modules 仅为主要能力的协议速查，不代表可用边界",
-            "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力 id 与说明",
-            "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.todo / cap.config）", "payload": "{ action, ...动作参数 }（不同能力动作协议见 cap_list 返回）" } }
+            "说明": "主进程总线全部 cap.* 能力的统一入口，由 polaris-dispatch MCP 提供（工具 cap_dispatch / cap_list）。本 server 的 bus_dispatch 亦为全量放开（无白名单，2026-10-23 根因修复后与注册表同源）；modules 仅域→能力导航与策略警示，动作协议一律见 protocol 段（与 cap_list 同源）",
+            "cap_list": "列出主进程总线当前已注册的全部 cap.* 能力（每项含 describe 自描述与 streaming 标记）",
+            "cap_dispatch": { "参数": { "target": "cap.* 能力 id（如 cap.ai.chat / cap.history / cap.bash / cap.http，非穷举——全量以 cap_list 返回为准）", "payload": "{ action, ...动作参数 }（动作协议见 cap_list 返回的 describe；报缺少参数时以错误文案列出的参数键名为准）" } }
         },
-        "protocol": {
-            "说明": "bus_dispatch 的 payload = { \"action\": <动作>, ...动作参数 }。各白名单能力的动作协议如下（与能力实现逐一对应）",
-            "cap.todo": {
-                "list":      { "参数": { "scope": "workspace|all（默认 workspace）", "workspacePath": "string?", "status": "pending|in_progress|completed", "priority": "low|normal|high|urgent", "limit": "int?" }, "返回": "{ items: TodoItem[] }" },
-                "get":       { "参数": { "id": "string（必填）" }, "返回": "{ item: TodoItem|null }" },
-                "create":    { "参数": { "content": "string（必填，非空）", "priority": "low|normal|high|urgent?", "description": "string?", "tags": "string[]?", "workspacePath": "string?", "workspaceName": "string?", "dueDate": "string?", "estimatedHours": "number?" }, "返回": "{ item: TodoItem }" },
-                "update":    { "参数": { "id": "string（必填）", "content/status/priority/description/tags/dueDate/spentHours/lastProgress 等": "均可选部分更新" }, "返回": "{ item: TodoItem }" },
-                "start":     { "参数": { "id": "string（必填）", "lastProgress": "string?" }, "返回": "{ item }（status→in_progress）" },
-                "complete":  { "参数": { "id": "string（必填）", "lastProgress": "string?" }, "返回": "{ item }（置 completed_at）" },
-                "delete":    { "参数": { "id": "string（必填）" }, "返回": "{ item }（被删条目）" },
-                "breakdown": { "参数": {}, "返回": "{ stats: {工作区名: 数量} }" }
-            },
-            "cap.http": {
-                "ping":    { "参数": {}, "返回": "{ pong: true }" },
-                "request": { "参数": { "method": "GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS（默认 GET）", "url": "string（必填，仅 http/https）", "headers": "{ k: v }（可含 Cookie/UA/Referer 等浏览器禁发头——宿主转发不受浏览器限制）", "body": "string?", "bodyType": "text|json|form|binary?", "timeoutMs": "number?（默认 15000）" }, "返回": "{ status, statusText, ok, contentType, headers, body, isBase64, url, timeMs }" },
-                "边界": "目标校验已完全放开：http/https 任意目标可转发（含 localhost / 内网 / 云元数据等）；仅非 http(s) 协议拒绝。二进制响应（image/* 等）base64 编码返回（isBase64:true）。Remote 来源策略 deny，仅本地面板/AI 可用。"
-            },
-            "cap.bash": {
-                "run":    { "参数": { "command": "string（必填，shell 命令）", "workdir": "string?（默认调用方工作目录）", "env": "{ k: v }?", "timeoutMs": "number?（默认 600000，0=不限）", "async": "bool?（默认 false：同步等待完成）", "onSessionEnd": "keep|kill?（默认 keep——任务归宿主，不随会话结束）" }, "返回": "{ taskId, pid, status, logPath }（async=false 时含 exitCode/startedAt/finishedAt）" },
-                "status": { "参数": { "taskId": "string（必填）" }, "返回": "{ taskId, status, exitCode?, startedAt, finishedAt? }" },
-                "log":    { "参数": { "taskId": "string（必填）", "offset": "int?（默认 0）", "limit": "int?（默认全部）" }, "返回": "{ taskId, offset, total, lines: string[] }" },
-                "wait":   { "参数": { "taskId": "string（必填）", "timeoutMs": "number?（默认 30000）" }, "返回": "{ taskId, status, exitCode?, finishedAt? }（超时返回 status=running）" },
-                "kill":   { "参数": { "taskId": "string（必填）" }, "返回": "{ taskId, killed, status }（Windows 杀进程树）" },
-                "list":   { "参数": { "sessionId": "string?（按发起方 caller 过滤）", "status": "string?（running|completed|failed|killed|timeout）" }, "返回": "{ tasks: [{ taskId, status, command, pid, sessionId, startedAt, finishedAt, logLines }] }" },
-                "边界": "任务归宿主进程（TaskManager 单例），不随 AI 会话结束而终止——会话解耦。Remote 来源策略 deny，仅本地面板/AI 可用。SimpleAI 内建 bash 工具仍是会话级同步执行；cap.bash 提供后台/跨会话的长任务管理。"
-            },
-            "cap.fs": {
-                "list":     { "参数": { "path": "string（必填，绝对路径，目录）" }, "返回": "{ items: FileInfo[] }（直接子项，含 size/modified/created）" },
-                "getFileInfo": { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ item: FileInfo|null }（文件：size+modified+created；目录：child_count+modified+created，size=null）" },
-                "exists":   { "参数": { "path": "string（必填，绝对路径）" }, "返回": "{ exists: bool }" },
-                "边界": "只读能力（list/getFileInfo/exists）；创建/删除/重命名/复制等写操作走既有 tauri command 通道。FileInfo 的 modified/created 是秒级 Unix 时间戳字符串，前端需 Number(v)*1000 转 Date。Remote 来源策略 deny，仅本地面板/AI 可用。"
-            },
-            "cap.git": {
-                "说明": "本地仓库读写域（P4）。全部动作协议以 cap_list 返回的 schema 为准（含每动作中文名与参数），此处仅列 AI 高频只读动作。",
-                "get_status":   { "参数": { "workspacePath": "string（必填，绝对路径）" }, "返回": "{ status 等（分支/暂存/变更/上游） }" },
-                "get_log_with_lanes": { "参数": { "workspacePath": "string（必填）", "limit": "int?（默认 100）", "skip": "int?", "branch": "string?" }, "返回": "{ commits, rows }（泳道拓扑 + refs 装饰）" },
-                "search_log":   { "参数": { "workspacePath": "string（必填）", "filter": "LogSearchFilter", "limit": "int?" }, "返回": "{ commits }（作者/消息/路径组合检索）" },
-                "diff":         { "参数": { "workspacePath": "string（必填）", "kind": "worktree|index（默认 worktree）" }, "返回": "{ entries: GitDiffEntry[] }" },
-                "get_commit_details": { "参数": { "workspacePath": "string（必填）", "commitSha": "string（必填）" }, "返回": "{ files, diffs }" },
-                "边界": "写类动作（commit/push/rebase/reset/stash_drop 等）经 router 权限 gate + is_destructive 名单 + 操作流水审计，Remote 来源策略 deny；建议 AI 默认只读、写操作先向用户确认。workspacePath 必须为已注册的工作区绝对路径（与面板一致）。"
-            }
-        },
-        "usage_examples": [
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "create", "content": "完成代码评审", "priority": "high" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "list", "scope": "all", "status": "pending" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.todo", "payload": { "action": "complete", "id": "<todo id>" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "GET", "url": "https://api.github.com/repos/rust-lang/rust" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.http", "payload": { "action": "request", "method": "POST", "url": "https://httpbin.org/post", "body": "{\"q\":\"test\"}", "bodyType": "json" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.fs", "payload": { "action": "list", "path": "<绝对路径>" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.fs", "payload": { "action": "getFileInfo", "path": "<绝对路径>" } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "run", "command": "npm run build", "async": true } } },
-            { "tool": "bus_dispatch", "arguments": { "target": "cap.bash", "payload": { "action": "status", "taskId": "<taskId>" } } },
-            { "tool": "cap_list", "arguments": {} },
-            { "tool": "cap_dispatch", "arguments": { "target": "cap.history", "payload": { "action": "list_sessions" } } },
-            { "tool": "cap_dispatch", "arguments": { "target": "cap.ai.chat", "payload": { "action": "start", "message": "<用户消息>" } } },
-        ]
+        "protocol": derive_protocol(&described),
+        "usage_examples": usage,
     })
 }
 
 impl BusMcpHandler {
     fn bus_help(&self) -> Value {
-        handle_bus_help_impl(&self.router)
-    }
-
-    /// 占位：返回 tools_list 的静态部分（供 handle_bus_help_impl 引用）。
-    fn tools_list_placeholder() -> Value {
-        json!({
-            "tools": [
-                mcp_server_common::tool_def("bus_help", "查询总线能力与工具说明", &[], json!({})),
-                mcp_server_common::tool_def("bus_dispatch", "调用 Polaris 总线能力", &["target", "payload"], json!({
-                    "target": { "type": "string", "enum": ["cap.todo", "cap.http", "cap.bash", "cap.fs", "cap.ui.theme", "cap.ui.chat", "cap.ui.input", "cap.self.mutate"] },
-                    "payload": { "type": "object" }
-                })),
-                mcp_server_common::tool_def("bus_mcp_status", "查询 MCP Bridge 链路健康状态", &[], json!({})),
-                mcp_server_common::tool_def("bus_mcp_regenerate", "一键修复 MCP Bridge 配置漂移", &[], json!({})),
-            ]
-        })
+        // tools 段用真实 tools_list()（动态 target enum 与注册表同源），
+        // 替代旧 tools_list_placeholder 静态 8 项 enum（已删除）。
+        let tools = self.tools_list();
+        handle_bus_help_impl(&self.router, &tools)
     }
 }
 
@@ -676,5 +726,133 @@ fn normalize_config_dir(config_dir: &str) -> String {
             .to_string()
     } else {
         trimmed.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::contracts::standard_describe;
+
+    /// 构造与 RouterBus::described_capabilities 同形状的条目
+    fn entry(id: &str, describe: Value) -> Value {
+        json!({ "id": id, "streaming": false, "overridden": false, "describe": describe })
+    }
+
+    #[test]
+    fn derive_protocol_covers_exactly_the_described_caps() {
+        let described = vec![
+            entry("cap.b", Value::Null), // describe 缺省 → 归入未提供自描述
+            entry(
+                "cap.a",
+                standard_describe(
+                    "cap.a",
+                    "甲能力",
+                    "说明",
+                    Some("边界"),
+                    json!({ "ping": { "params": {}, "returns": "{ pong: true }" } }),
+                ),
+            ),
+        ];
+        let protocol = derive_protocol(&described);
+        let obj = protocol.as_object().unwrap();
+        // 协议键集 == 提供 describe 的注册能力集（此处仅 cap.a）
+        let cap_keys: Vec<&str> = obj
+            .keys()
+            .filter(|k| k.starts_with("cap."))
+            .map(|k| k.as_str())
+            .collect();
+        assert_eq!(cap_keys, vec!["cap.a"]);
+        // describe 为 null 的能力归入「未提供自描述」清单
+        assert_eq!(obj["未提供自描述"], json!(["cap.b"]));
+        // 能力条目 = describe 去掉冗余 id 键，name/summary/note/actions 原样透传
+        let a = &obj["cap.a"];
+        assert_eq!(a["name"], "甲能力");
+        assert_eq!(a["summary"], "说明");
+        assert_eq!(a["note"], "边界");
+        assert!(a.get("id").is_none(), "id 即键名，条目内不再重复");
+        assert!(a["actions"].get("ping").is_some());
+
+        // 全部能力都提供 describe 时不出「未提供自描述」键
+        let all_described = derive_protocol(&[entry(
+            "cap.a",
+            standard_describe(
+                "cap.a",
+                "甲能力",
+                "说明",
+                None,
+                json!({ "ping": { "params": {}, "returns": "{}" } }),
+            ),
+        )]);
+        assert!(all_described
+            .as_object()
+            .unwrap()
+            .get("未提供自描述")
+            .is_none());
+    }
+
+    #[test]
+    fn derive_usage_examples_render_dispatch_calls() {
+        let described = vec![entry(
+            "cap.a",
+            standard_describe(
+                "cap.a",
+                "甲能力",
+                "说明",
+                None,
+                json!({
+                    "ping": { "params": {}, "returns": "{}", "example": { "action": "ping" } },
+                    "pong": { "params": {}, "returns": "{}" }
+                }),
+            ),
+        )];
+        let out = derive_usage_examples(&described);
+        assert_eq!(out.len(), 1, "无 example 的动作不生成示例");
+        assert_eq!(out[0]["tool"], "bus_dispatch");
+        assert_eq!(out[0]["arguments"]["target"], "cap.a");
+        assert_eq!(out[0]["arguments"]["payload"], json!({ "action": "ping" }));
+
+        // describe 缺省的能力不生成示例
+        let empty = derive_usage_examples(&[entry("cap.b", Value::Null)]);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn bus_help_derives_from_registry() {
+        use crate::contracts::Router as _;
+        let adapter = Arc::new(EventAdapter::new(64));
+        let permission = Arc::new(PolicyPermission::from_config(None, false));
+        let router = RouterBus::new(adapter, permission, None, None);
+        let _ = router.register_handle(Box::new(TodoCapability));
+
+        let help = handle_bus_help_impl(&router, &json!({ "tools": [] }));
+        // protocol 键集 == 提供 describe 的注册能力集（本测试仅注册 cap.todo）
+        let protocol = help["protocol"].as_object().unwrap();
+        let cap_keys: Vec<&str> = protocol
+            .keys()
+            .filter(|k| k.starts_with("cap."))
+            .map(|k| k.as_str())
+            .collect();
+        assert_eq!(cap_keys, vec!["cap.todo"]);
+        // usage_examples 从 describe.example 派生（cap.todo 首批 create/list/complete）
+        let usage = help["usage_examples"].as_array().unwrap();
+        let targets: Vec<&str> = usage
+            .iter()
+            .filter_map(|e| e["arguments"]["target"].as_str())
+            .collect();
+        assert!(
+            targets.contains(&"cap.todo"),
+            "usage_examples 应含 cap.todo 示例: {usage:?}"
+        );
+        // modules 入口自动判定：本进程已注册 → bus_dispatch
+        let modules = help["modules"].as_array().unwrap();
+        let todo_row = modules.iter().find(|m| m["domain"] == "todo").unwrap();
+        assert_eq!(todo_row["入口"], json!(["cap.todo（bus_dispatch）"]));
+        // 未注册进本进程的能力自动标主进程入口（旧版错标「已注册」的反向校验）
+        let ai_row = modules.iter().find(|m| m["domain"] == "ai-chat").unwrap();
+        assert_eq!(
+            ai_row["入口"],
+            json!(["cap.ai.chat（主进程 cap_dispatch）"])
+        );
     }
 }

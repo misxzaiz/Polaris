@@ -8,11 +8,14 @@
 //!
 //! # 动作协议（payload `{ "action": ... }`）
 //!
-//! - `index` `{}` → `{ "capabilities": [ { id, streaming, describe } ] }`
-//!   （describe 缺省为 null；仅聚合静态自描述，无副作用）
-//! - `show`  `{ "target": "cap.fs" }` → `{ "capability": { id, streaming, describe } | null }`
+//! - `index` `{}` → `{ "capabilities": [ { id, streaming, overridden, describe } ] }`
+//!   （describe 缺省为 null；仅聚合静态自描述，无副作用。条目统一四键——流式条目
+//!   streaming:true 且 overridden 恒 false，见 RouterBus::described_capabilities）
+//! - `show`  `{ "target": "cap.fs" }` → `{ "capability": { id, streaming, overridden, describe } | null }`
 
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    Capability, CapabilityId, Context, standard_describe, unsupported_action, Value,
+};
 use crate::services::router::RouterBus;
 
 const CAP_ID: &str = "cap.help";
@@ -57,24 +60,30 @@ impl Capability for HelpCapability {
                     .unwrap_or(Value::Null);
                 Ok(serde_json::json!({ "capability": found }))
             }
-            other => Err(format!("cap.help 不支持动作: {}", other)),
+            other => Err(unsupported_action(CAP_ID, other, &["index", "show"])),
         }
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "总线能力索引：列出全部已注册 cap.* 及其自描述协议（AI 发现能力的入口）",
-            "actions": {
+        // describe 一律经 standard_describe 构造（contracts 单一事实来源）。
+        // 2026-10-25 审计修正：index/show 的条目实际含 overridden 字段（源码复核
+        // router/mod.rs:588-607——同步条目带覆盖态，流式条目恒 false 但键集一致）。
+        standard_describe(
+            CAP_ID,
+            "能力索引",
+            "总线能力索引：列出全部已注册 cap.* 及其自描述协议（AI 发现能力的入口）",
+            Some("index/show 均只读聚合各能力 describe()，无副作用；show 未命中返回 capability:null。动态能力（cap.registry 注册）同样在册"),
+            serde_json::json!({
                 "index": {
                     "params": {},
-                    "returns": "{ capabilities: [{ id, streaming, describe }] }（describe 为各能力 describe()，缺省 null）"
+                    "returns": "{ capabilities: [{ id, streaming, overridden, describe }] }（describe 为各能力 describe()，缺省 null；流式条目 streaming:true 且 overridden 恒 false）"
                 },
                 "show": {
                     "params": { "target": "string（必填，cap.* 能力 id）" },
-                    "returns": "{ capability: { id, streaming, describe } | null }"
+                    "returns": "{ capability: { id, streaming, overridden, describe } | null }"
                 }
-            }
-        })
+            }),
+        )
     }
 
     fn dependencies(&self) -> Vec<CapabilityId> {
@@ -174,6 +183,28 @@ mod tests {
         );
         assert!(
             cap.invoke(serde_json::json!({ "action": "wat" }), &ctx()).is_err()
+        );
+        // 未知动作自纠文案：列出合法动作 + cap.help 指引（contracts::unsupported_action）
+        let err = cap
+            .invoke(serde_json::json!({ "action": "wat" }), &ctx())
+            .unwrap_err();
+        assert!(err.contains("index, show"), "应列合法动作: {err}");
+        assert!(err.contains("cap.help show target=cap.help"), "应附自查入口: {err}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约校验（contracts::validate_describe）：顶层键白名单 + 每动作 params/returns 齐全
+        let cap = HelpCapability::new(make_router());
+        let problems = crate::contracts::validate_describe(CAP_ID, &cap.describe());
+        assert!(problems.is_empty(), "cap.help describe 契约违例: {problems:?}");
+        // 审计修正回归：条目形状含 overridden（源码 router/mod.rs:588-607 四键统一）
+        let d = cap.describe();
+        assert_eq!(d["id"], CAP_ID);
+        assert_eq!(d["name"], "能力索引");
+        assert!(
+            d["actions"]["index"]["returns"].as_str().unwrap().contains("overridden"),
+            "index returns 应补 overridden 字段"
         );
     }
 }

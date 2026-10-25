@@ -29,7 +29,9 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
+};
 use crate::models::plugin::{
     DiscoveredPluginManifest, PluginServiceManifestContribution,
 };
@@ -69,6 +71,41 @@ pub struct PluginServiceManagerCapability {
 }
 
 impl PluginServiceManagerCapability {
+    /// describe 文档（单测可直接校验；`describe()` 委托本函数）。
+    ///
+    /// 不走实例构造的原因：单测虽可用 `PluginServiceManager::new()` 构造，
+    /// 但本函数不读任何实例字段，抽成关联函数让契约测试零依赖。
+    ///
+    /// 2026-10-25 审计 paramDrift 修正（对齐 invoke 实现）：start 补
+    /// installPath+contribution 必填、stop/restart 补 pluginId+serviceId、
+    /// autostart 改 pluginStates map（顶层 pluginId/enabled 被实现完全忽略）、
+    /// list_status/stop_for_plugin/autostart 返回裸数组；note 的「Remote 默认
+    /// deny」已过时（policy_permission.rs P1-f 已改为已鉴权 Remote 放行）。
+    fn describe_doc() -> Value {
+        standard_describe(
+            CAP_ID,
+            "插件服务",
+            "插件后台服务管理：启动/停止/重启/状态查询/按插件停止/按状态自启",
+            Some("管理面能力：已鉴权 Remote 放行（require_auth，未鉴权 deny）；Plugin 来源的 stop_for_plugin/autostart 需用户审批；start/stop/restart 拉起或终止进程，需谨慎"),
+            serde_json::json!({
+                "start": { "params": {
+                    "pluginId": "string（必填）",
+                    "installPath": "string（必填）",
+                    "contribution": "object（必填，含 id/type/command；可选 argsTemplate/port/healthCheck/healthCheckTimeout/autoStart）",
+                    "workspacePath": "string?"
+                }, "returns": "ServiceStatus" },
+                "stop": { "params": { "pluginId": "string（必填）", "serviceId": "string（必填）" }, "returns": "ServiceStatus" },
+                "restart": { "params": { "pluginId": "string（必填）", "serviceId": "string（必填）" }, "returns": "ServiceStatus" },
+                "list_status": { "params": {}, "returns": "ServiceStatus[]（裸数组）" },
+                "stop_for_plugin": { "params": { "pluginId": "string（必填）" }, "returns": "ServiceStatus[]（裸数组）" },
+                "autostart": { "params": {
+                    "pluginStates": "object（必填语义）——map: pluginId → { enabled: bool }，按各插件 enabled 决定是否启动其服务；缺省/空对象时不报错但不会启停任何服务",
+                    "workspacePath": "string?"
+                }, "returns": "ServiceStatus[]（裸数组）" }
+            }),
+        )
+    }
+
     pub fn new(
         plugin_service_manager: Arc<PluginServiceManager>,
         app_config_dir: std::path::PathBuf,
@@ -118,18 +155,7 @@ impl Capability for PluginServiceManagerCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "插件后台服务管理：启动/停止/重启/状态/按插件停/自启",
-            "note": "管理面能力（Remote 默认 deny）；start/stop/restart 拉起或终止进程，需谨慎",
-            "actions": {
-                "start": { "params": { "pluginId": "string（必填）", "contribution": "object?" }, "returns": "服务状态" },
-                "stop": { "params": { "serviceId 等": "必填" }, "returns": "服务状态" },
-                "restart": { "params": {}, "returns": "服务状态" },
-                "list_status": { "params": {}, "returns": "{ services: [...] }" },
-                "stop_for_plugin": { "params": { "pluginId": "string（必填）" }, "returns": "服务状态" },
-                "autostart": { "params": { "pluginId": "string（必填）", "enabled": "bool" }, "returns": "服务状态" }
-            }
-        })
+        Self::describe_doc()
     }
 
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> std::result::Result<Value, String> {
@@ -147,13 +173,21 @@ impl Capability for PluginServiceManagerCapability {
             "start" => {
                 let plugin_id = Self::require_string(&params, "pluginId")?.to_string();
                 let install_path = Self::require_string(&params, "installPath")?.to_string();
-                let contribution: PluginServiceManifestContribution = serde_json::from_value(
-                    params
-                        .get("contribution")
-                        .cloned()
-                        .unwrap_or(Value::Null),
-                )
-                .map_err(|e| format!("contribution 解析失败: {}", e))?;
+                let contribution: PluginServiceManifestContribution =
+                    serde_json::from_value(
+                        params
+                            .get("contribution")
+                            .cloned()
+                            .unwrap_or(Value::Null),
+                    )
+                    .map_err(|e| {
+                        // 审计错误工效：原文案只有 serde 原始错误，未说明该字段必填
+                        // 及必填子字段（id/type/command 均无 #[serde(default)]），
+                        // AI 无法据此自纠。附字段结构提示。
+                        format!(
+                            "contribution 解析失败: {e}（必填对象，含 id/type/command；可选 argsTemplate/port/healthCheck/healthCheckTimeout/autoStart）"
+                        )
+                    })?;
                 let workspace_path = Self::workspace_path(&params);
                 let psm = self.plugin_service_manager.clone();
                 let ctx = self.build_ctx(workspace_path);
@@ -238,11 +272,111 @@ impl Capability for PluginServiceManagerCapability {
                     serde_json::to_value(statuses).map_err(|e| e.to_string())
                 })
             }
-            other => Err(format!("cap.pluginServiceManager 不支持动作: {}", other)),
+            // 审计错误工效：未知动作附支持清单与协议入口（错误即文档，可自纠）
+            other => Err(unsupported_action(
+                CAP_ID,
+                other,
+                PLUGIN_SERVICE_MANAGER_ACTIONS,
+            )),
         }
     }
 
     fn dependencies(&self) -> Vec<CapabilityId> {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 最小测试 Context（对齐 stream_echo_capability tests 范式；本能力 invoke
+    /// 只用 require_string/workspace_path，不触达 storage/权限）
+    struct TestCtx;
+    impl Context for TestCtx {
+        fn resolve_cap(&self, _id: &CapabilityId) -> Result<Value, String> {
+            Err("not implemented".into())
+        }
+        fn storage(&self) -> Result<&dyn crate::contracts::Storage, String> {
+            Err("not implemented".into())
+        }
+        fn check_permission(
+            &self,
+            _req: &crate::contracts::PermissionRequest,
+        ) -> Result<crate::contracts::PermissionVerdict, String> {
+            Ok(crate::contracts::PermissionVerdict::Allow)
+        }
+        fn source(&self) -> &crate::contracts::Source {
+            static S: crate::contracts::Source = crate::contracts::Source::Bootstrap;
+            &S
+        }
+        fn caller_id(&self) -> &crate::contracts::PluginId {
+            static C: crate::contracts::PluginId = crate::contracts::PluginId(String::new());
+            &C
+        }
+        fn plugin_config(&self) -> Result<Value, String> {
+            Ok(Value::Null)
+        }
+    }
+
+    /// describe 契约测试：standard_describe 构造 + validate_describe 零违例 +
+    /// 动作清单与实现一致 + 审计 paramDrift 修正抽查。
+    /// PluginServiceManager::new() 纯内存（broadcast channel + Mutex 表），
+    /// 可无副作用构造真实实例走 trait describe()。
+    #[test]
+    fn describe_contract() {
+        let cap = PluginServiceManagerCapability::new(
+            Arc::new(PluginServiceManager::new()),
+            std::path::PathBuf::from("."),
+        );
+        let d = cap.describe();
+        let id = cap.id().0;
+        let problems = crate::contracts::validate_describe(&id, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+        assert_eq!(d["id"], "cap.pluginServiceManager");
+        assert_eq!(d["name"], "插件服务");
+        for action in PLUGIN_SERVICE_MANAGER_ACTIONS {
+            assert!(
+                d["actions"].get(*action).is_some(),
+                "describe 缺动作 {action}"
+            );
+        }
+        // 审计 paramDrift 抽查：start 必填三件套 / stop-restart 双键 /
+        // autostart 用 pluginStates map / list_status 裸数组
+        assert!(d["actions"]["start"]["params"]["installPath"].is_string());
+        assert!(d["actions"]["start"]["params"]["contribution"]
+            .as_str()
+            .unwrap()
+            .contains("必填"));
+        assert!(d["actions"]["stop"]["params"]["pluginId"].is_string());
+        assert!(d["actions"]["stop"]["params"]["serviceId"].is_string());
+        assert!(d["actions"]["restart"]["params"]["serviceId"].is_string());
+        assert!(d["actions"]["autostart"]["params"]["pluginStates"]
+            .as_str()
+            .unwrap()
+            .contains("pluginStates"));
+        assert!(d["actions"]["list_status"]["returns"]
+            .as_str()
+            .unwrap()
+            .contains("裸数组"));
+        // note 已对齐 P1-f：不再写「Remote 默认 deny」
+        let note = d["note"].as_str().unwrap();
+        assert!(!note.contains("Remote 默认 deny"), "过时表述仍在: {note}");
+    }
+
+    /// 审计错误工效：未知动作错误应列出全部支持动作（unsupported_action 生成）
+    #[test]
+    fn unknown_action_lists_supported_actions() {
+        let cap = PluginServiceManagerCapability::new(
+            Arc::new(PluginServiceManager::new()),
+            std::path::PathBuf::from("."),
+        );
+        let err = cap
+            .invoke(serde_json::json!({"action": "explode"}), &TestCtx)
+            .unwrap_err();
+        for action in PLUGIN_SERVICE_MANAGER_ACTIONS {
+            assert!(err.contains(action), "错误应含动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help"), "错误应指路协议入口: {err}");
     }
 }

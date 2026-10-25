@@ -29,7 +29,9 @@ use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-use crate::contracts::{Capability, CapabilityId, Context, Source};
+use crate::contracts::{
+    Capability, CapabilityId, Context, Source, standard_describe, unsupported_action,
+};
 
 /// cap.voice 能力 ID。
 pub const VOICE_CAP_ID: &str = "cap.voice";
@@ -560,7 +562,22 @@ impl VoiceCapability {
                 }
                 Ok(json!({ "ok": true, "dataUrl": data_url }))
             }
-            _ => Ok(json!({ "ok": false, "error": format!("不支持的 voices action: {action}") })),
+            _ => Ok(json!({
+                "ok": false,
+                // 错误即文档：列出 voices 族合法动作 + cap.help 自查入口（contracts::unsupported_action）
+                "error": unsupported_action(
+                    VOICE_CAP_ID,
+                    action,
+                    &[
+                        "voices.list",
+                        "voices.presets",
+                        "voices.add",
+                        "voices.update",
+                        "voices.delete",
+                        "voices.probe",
+                    ],
+                ),
+            })),
         }
     }
 
@@ -708,7 +725,22 @@ impl VoiceCapability {
                     "cacheBytes": cache_bytes,
                 }))
             }
-            _ => Ok(json!({ "ok": false, "error": format!("不支持的 library action: {action}") })),
+            _ => Ok(json!({
+                "ok": false,
+                // 错误即文档：列出 library 族合法动作 + cap.help 自查入口（contracts::unsupported_action）
+                "error": unsupported_action(
+                    VOICE_CAP_ID,
+                    action,
+                    &[
+                        "library.list",
+                        "library.add",
+                        "library.get",
+                        "library.update",
+                        "library.delete",
+                        "library.stats",
+                    ],
+                ),
+            })),
         }
     }
 
@@ -808,26 +840,36 @@ impl Capability for VoiceCapability {
         vec![CapabilityId("cap.mcp".into())]
     }
 
+    /// 能力自描述（cap.help 索引）。
+    ///
+    /// describe 一律经 standard_describe 构造（2026-10-25 审计：旧手写顶层
+    /// "id"/"description" 键与其余能力 "summary" 键两套口径）。逐条对齐实现：
+    /// - synthesize 的 voiceRef 实际可省（缺省"冰糖"）。
+    /// - voices.add 的 type 实际可省（缺省 design）。
+    /// - voices.probe 的 kind 实际可省（缺省 preset）。
+    /// - library.add 实现接受可选 tags: string[]。
     fn describe(&self) -> Value {
-        json!({
-            "id": VOICE_CAP_ID,
-            "description": "语义化语音能力：合成（带持久缓存）/ 音色库（design/clone 参数持久化）/ 内容库（播报资产与续播）",
-            "actions": {
-                "synthesize": { "params": { "text": "string", "voiceRef": "string(预置名或自定义音色id)", "style": "string?", "outputMode": "'file'|'base64'?" }, "returns": "{ ok, audioId, cached, format, sizeBytes, file?, dataUrl? }" },
-                "voices.presets": { "params": {}, "returns": "{ ok, voices }" },
-                "voices.list": { "params": {}, "returns": "{ ok, voices: CustomVoice[] }" },
-                "voices.add": { "params": { "type": "'design'|'clone'", "name": "string", "description": "design 必填", "sampleBase64": "clone 必填", "sampleName": "string?" }, "returns": "{ ok, voice }" },
-                "voices.update": { "params": { "voiceId": "string", "name?": "string", "description?": "string" }, "returns": "{ ok, voice }" },
-                "voices.delete": { "params": { "voiceId": "string" }, "returns": "{ ok }" },
-                "voices.probe": { "params": { "kind": "'preset'|'design'|'clone'", "voice?": "string", "description?": "string", "sampleBase64?": "string", "text?": "string" }, "returns": "{ ok, dataUrl? }" },
-                "library.list": { "params": { "filter?": "{ favorite?: bool }" }, "returns": "{ ok, items }" },
-                "library.add": { "params": { "title": "string", "topic?": "string", "engine?": "string", "voiceRef?": "string", "style?": "string", "source?": "string", "sentences": "[{ text, audioId?, file? }]" }, "returns": "{ ok, item }" },
-                "library.get": { "params": { "itemId": "string" }, "returns": "{ ok, item }" },
-                "library.update": { "params": { "itemId": "string", "title?": "string", "favorite?": "bool", "tags?": "string[]" }, "returns": "{ ok, item }" },
-                "library.delete": { "params": { "itemId": "string" }, "returns": "{ ok }" },
+        standard_describe(
+            VOICE_CAP_ID,
+            "语音电台",
+            "语义化语音能力：合成（带持久缓存）/ 音色库（design/clone 参数持久化）/ 内容库（播报资产与续播）",
+            Some("权限对齐 cap.mcp（仅本地或携带有效 token 的 Remote）。合成结果落持久缓存（key=FNV-1a(engine|voiceRef|style|text)，跨重启命中零 API 成本）；library.add 复制句子音频入内容库自持，voices.delete / library.delete 级联删样本/音频资产"),
+            json!({
+                "synthesize": { "params": { "text": "string（必填）", "voiceRef?": "string（预置名或自定义音色id，缺省 \"冰糖\"）", "style?": "string", "outputMode?": "'file'|'base64'（缺省 file）" }, "returns": "{ ok, audioId, cached, format, sizeBytes, file?, dataUrl? }（base64 模式才有 dataUrl）" },
+                "voices.presets": { "params": {}, "returns": "{ ok, voices } 或 { ok: false, voices: [], error }" },
+                "voices.list": { "params": {}, "returns": "{ ok, voices: CustomVoice[] }（仅自定义音色，预置音色经 voices.presets 拉取）" },
+                "voices.add": { "params": { "type?": "'design'|'clone'（缺省 design）", "name": "string（必填）", "description?": "design 必填：音色描述文本", "sampleBase64?": "clone 必填：样本 base64（≤10MB）", "sampleName?": "string（推断样本扩展名）" }, "returns": "{ ok, voice: CustomVoice }" },
+                "voices.update": { "params": { "voiceId": "string（必填）", "name?": "string", "description?": "string" }, "returns": "{ ok, voice: CustomVoice }" },
+                "voices.delete": { "params": { "voiceId": "string（必填）" }, "returns": "{ ok }（级联删样本文件）" },
+                "voices.probe": { "params": { "kind?": "'preset'|'design'|'clone'（缺省 preset）", "voice?": "string（kind=preset 时，预置名或自定义音色id，缺省 \"冰糖\"）", "description?": "string（kind=design 必填）", "sampleBase64?": "string（kind=clone 必填）", "sampleName?": "string", "text?": "string（缺省固定欢迎语）" }, "returns": "{ ok, dataUrl }（试听不入库，临时样本用后即删）" },
+                "library.list": { "params": { "filter?": "{ favorite?: bool }" }, "returns": "{ ok, items: LibraryItem[] }（新的在前）" },
+                "library.add": { "params": { "title": "string（必填）", "topic?": "string", "engine?": "string（缺省 mimo-tts）", "voiceRef?": "string", "style?": "string", "source?": "string（缺省 live）", "tags?": "string[]", "sentences": "[{ text, audioId?, file? }]（必填，至少一句）" }, "returns": "{ ok, item: LibraryItem }（句子 file 已复制入内容库）" },
+                "library.get": { "params": { "itemId": "string（必填）" }, "returns": "{ ok, item: LibraryItem } 或 { ok: false, error }" },
+                "library.update": { "params": { "itemId": "string（必填）", "title?": "string", "favorite?": "bool", "tags?": "string[]" }, "returns": "{ ok, item: LibraryItem }" },
+                "library.delete": { "params": { "itemId": "string（必填）" }, "returns": "{ ok }（级联删音频目录）" },
                 "library.stats": { "params": {}, "returns": "{ ok, count, totalBytes, cacheBytes }" },
-            },
-        })
+            }),
+        )
     }
 
     fn invoke(&self, payload: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -839,7 +881,25 @@ impl Capability for VoiceCapability {
             "synthesize" => self.invoke_synthesize(&payload, ctx),
             a if a.starts_with("voices.") => self.invoke_voices(&action, &payload),
             a if a.starts_with("library.") => self.invoke_library(&action, &payload),
-            _ => Ok(json!({ "ok": false, "error": format!("不支持的 action: {action}") })),
+            // 缺 action 单独点名（缺省空串落未知分支会出现「不支持动作: 」空动作名）
+            "" => Ok(json!({
+                "ok": false,
+                "error": "cap.voice 需要 action 参数（synthesize / voices.* / library.*，协议见 cap.help show target=cap.voice）",
+            })),
+            _ => Ok(json!({
+                "ok": false,
+                // 错误即文档：顶层未知动作给动作族提示（voices.* / library.* 再细分），
+                // 2026-10-25 审计：13 个动作不列族只能再查 cap_list 恢复
+                "error": unsupported_action(
+                    VOICE_CAP_ID,
+                    &action,
+                    &[
+                        "synthesize",
+                        "voices.*（list/presets/add/update/delete/probe）",
+                        "library.*（list/add/get/update/delete/stats）",
+                    ],
+                ),
+            })),
         }
     }
 }
@@ -1128,5 +1188,42 @@ mod tests {
         assert_eq!(a, b);
         assert_ne!(a, fnv1a("mimo-tts|茉莉||第一句"));
         assert!(a.contains('_'), "应带长度后缀: {a}");
+    }
+
+    #[test]
+    fn unknown_action_lists_action_families() {
+        let cap = VoiceCapability::new(temp_root("unknown"), FakeSynth::new());
+        let ctx = boot_ctx();
+        // 顶层未知动作：动作族提示 + cap.help 自查入口（contracts::unsupported_action）
+        let reply = cap.invoke(json!({ "action": "sing" }), &ctx).unwrap();
+        let err = reply["error"].as_str().unwrap();
+        assert!(err.contains("synthesize"), "应列动作族: {err}");
+        assert!(err.contains("cap.help show target=cap.voice"), "应附自查入口: {err}");
+        // 缺 action 单独点名
+        let reply = cap.invoke(json!({}), &ctx).unwrap();
+        assert!(
+            reply["error"].as_str().unwrap().contains("需要 action 参数"),
+            "缺 action 应单独点名: {reply}"
+        );
+    }
+
+    #[test]
+    fn describe_contract() {
+        // describe 契约校验（contracts::validate_describe）：顶层键白名单 + 每动作 params/returns 齐全
+        let cap = VoiceCapability::new(temp_root("describe"), FakeSynth::new());
+        let problems = crate::contracts::validate_describe(VOICE_CAP_ID, &cap.describe());
+        assert!(problems.is_empty(), "cap.voice describe 契约违例: {problems:?}");
+        // 审计修正回归：顶层口径为 summary，13 个动作全量在册
+        let d = cap.describe();
+        assert_eq!(d["id"], VOICE_CAP_ID);
+        assert_eq!(d["name"], "语音电台");
+        assert!(d.get("description").is_none(), "不得残留旧 description 键");
+        let actions = d["actions"].as_object().unwrap();
+        assert_eq!(actions.len(), 13, "动作清单: {actions:?}");
+        assert!(actions.contains_key("library.add"));
+        assert!(
+            actions["library.add"]["params"].get("tags?").is_some(),
+            "library.add 应补 tags 参数: {actions:?}"
+        );
     }
 }

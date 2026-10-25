@@ -308,14 +308,18 @@ pub trait Capability: Send + Sync {
 
     /// 能力自描述（供 cap.help 索引 / cap_list 列清单；默认空实现，能力可覆盖）。
     ///
-    /// 返回形如：
+    /// 标准形状（2026-10-25 审计统一：此前 cap.mcp / cap.voice 手写 "id"/"description"
+    /// 键，与其余能力 "summary" 键两套口径；顶层键集以 [`validate_describe`] 白名单为准）：
     /// ```json
-    /// { "summary": "一句话说明",
-    ///   "actions": { "<动作>": { "params": { "<参数>": "类型/说明" }, "returns": "返回结构", "note": "可选" } },
-    ///   "note": "边界/权限提示（可选）" }
+    /// { "id": "cap.x",      // 由 standard_describe 注入，能力体不手写
+    ///   "name": "中文短名",  // 采纳审计 suggestedName 清单（如 "AI会话"/"Shell任务"）
+    ///   "summary": "一句话说明",
+    ///   "note": "边界/权限提示（可选）",
+    ///   "actions": { "<动作>": { "params": { "<参数>": "类型/说明" }, "returns": "返回结构" } } }
     /// ```
     /// 这是帮助文档的单一事实来源 —— cap.help 的 index/show 与 cap_list 帧全部
     /// 聚合自各能力 describe()，杜绝 bus_help 式手写协议随能力演进而漂移。
+    /// 构造一律走 [`standard_describe`]，勿手拼顶层键。
     fn describe(&self) -> Value {
         Value::Null
     }
@@ -340,6 +344,95 @@ pub trait StreamingCapability: Capability {
         params: Value,
         ctx: &dyn Context,
     ) -> Result<tokio::sync::mpsc::Receiver<Event>, String>;
+}
+
+// ============================================================================
+// describe 标准形状契约 helper（2026-10-25 审计：cap.mcp / cap.voice 手写
+// "id"/"description" 键与其余能力 "summary" 键两套口径，收敛为单一事实来源）
+// ============================================================================
+
+/// 构造 describe 标准形状：`{ id, name, summary, note?, actions }`。
+///
+/// - `id` 由本 helper 注入，能力体不再手写 id 键（根除手写 id 漂移的可能）
+/// - `name` 取中文短名（审计 suggestedName 清单，如 cap.ai.chat → "AI会话"）
+/// - `actions` 为 `{ "<动作>": { "params": …, "returns": … } }` 映射，原样透传
+/// - `note` 为 None 时省略该键（`note?` 可选语义）
+pub fn standard_describe(
+    id: &str,
+    name: &str,
+    summary: &str,
+    note: Option<&str>,
+    actions: Value,
+) -> Value {
+    let mut obj = serde_json::Map::new();
+    obj.insert("id".into(), Value::String(id.into()));
+    obj.insert("name".into(), Value::String(name.into()));
+    obj.insert("summary".into(), Value::String(summary.into()));
+    if let Some(note) = note {
+        obj.insert("note".into(), Value::String(note.into()));
+    }
+    obj.insert("actions".into(), actions);
+    Value::Object(obj)
+}
+
+/// 校验 describe 是否符合标准形状，返回违例清单（空 = 合法）。
+///
+/// 校验项：顶层键白名单 `{ id, name, summary, note, actions }`；actions 非空；
+/// 每个动作含 `params` / `returns`；`id` 键存在时必须与能力 id 一致（迁移期
+/// 防手写 id 漂移）。默认 describe（`Value::Null`）视为「未声明」，返回空——
+/// 聚合层不因能力未覆盖 describe 而告警。消费方两处：各能力契约测试（严格
+/// 断言）与 `described_capabilities` 聚合层（仅 warn，协议保守不阻断）。
+pub fn validate_describe(id: &str, describe: &Value) -> Vec<String> {
+    // 未声明（trait 默认实现）无可校验，不算违例
+    if describe.is_null() {
+        return Vec::new();
+    }
+    const TOP_LEVEL_KEYS: [&str; 5] = ["id", "name", "summary", "note", "actions"];
+    let mut problems = Vec::new();
+    let Some(obj) = describe.as_object() else {
+        problems.push(format!("{id}: describe 顶层必须是对象，实际为 {describe}"));
+        return problems;
+    };
+    for key in obj.keys() {
+        if !TOP_LEVEL_KEYS.contains(&key.as_str()) {
+            problems.push(format!(
+                "{id}: 顶层键 \"{key}\" 不在白名单 [{}]（请改用 standard_describe 构造）",
+                TOP_LEVEL_KEYS.join(", ")
+            ));
+        }
+    }
+    if let Some(actual) = obj.get("id") {
+        if actual.as_str() != Some(id) {
+            problems.push(format!("{id}: describe.id = {actual}，与能力 id 不一致"));
+        }
+    }
+    match obj.get("actions") {
+        Some(Value::Object(actions)) if !actions.is_empty() => {
+            for (action, spec) in actions {
+                for field in ["params", "returns"] {
+                    if spec.get(field).is_none() {
+                        problems.push(format!("{id}: 动作 \"{action}\" 缺 \"{field}\""));
+                    }
+                }
+            }
+        }
+        Some(Value::Object(_)) => {
+            problems.push(format!("{id}: actions 为空对象（至少声明一个动作）"));
+        }
+        Some(other) => problems.push(format!("{id}: actions 必须是对象，实际为 {other}")),
+        None => problems.push(format!("{id}: 缺顶层键 \"actions\"")),
+    }
+    problems
+}
+
+/// 生成「不支持动作」自纠文案（错误即文档：AI 按提示可 cap.help show 自查协议）。
+///
+/// 形如：`不支持动作: fly（支持: echo, ping；协议见 cap.help show target=cap.x）`
+pub fn unsupported_action(cap: &str, action: &str, supported: &[&str]) -> String {
+    format!(
+        "不支持动作: {action}（支持: {}；协议见 cap.help show target={cap}）",
+        supported.join(", ")
+    )
 }
 
 // ============================================================================
@@ -770,5 +863,101 @@ mod tests {
             }
             _ => panic!("expected MissingProvider"),
         }
+    }
+
+    #[test]
+    fn standard_describe_injects_id_and_optional_note() {
+        // 标准形状四键（note=None 省略），id 由 helper 注入、能力体不手写
+        let d = standard_describe(
+            "cap.bash",
+            "Shell任务",
+            "执行 shell 命令",
+            None,
+            serde_json::json!({ "run": { "params": { "cmd": "string" }, "returns": "{ ok }" } }),
+        );
+        let obj = d.as_object().unwrap();
+        // serde_json 未启用 preserve_order（Map = BTreeMap，键按字典序），
+        // 断言与键序无关：只校验四键恰齐 + 各键取值正确
+        let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(keys, vec!["actions", "id", "name", "summary"]);
+        assert_eq!(obj["id"], "cap.bash");
+        assert_eq!(obj["name"], "Shell任务");
+        assert!(obj.get("note").is_none());
+
+        // note=Some 时携带，且整体过 validate_describe
+        let d = standard_describe(
+            "cap.kv",
+            "键值存储",
+            "键值存取",
+            Some("数据根内持久化"),
+            serde_json::json!({ "get": { "params": { "key": "string" }, "returns": "Value" } }),
+        );
+        assert_eq!(d["note"], "数据根内持久化");
+        assert!(validate_describe("cap.kv", &d).is_empty());
+    }
+
+    #[test]
+    fn validate_describe_flags_shape_violations() {
+        // 默认 describe（Null）= 未声明，不算违例（聚合层不告警）
+        assert!(validate_describe("cap.x", &Value::Null).is_empty());
+
+        // 旧口径（cap.mcp / cap.voice 现状）：手写 "description" 键 → 白名单违例；
+        // id 值正确时不额外报 id 漂移
+        let legacy = serde_json::json!({
+            "id": "cap.mcp",
+            "description": "旧字段",
+            "actions": { "call": { "params": {}, "returns": "{ ok }" } },
+        });
+        let problems = validate_describe("cap.mcp", &legacy);
+        assert!(
+            problems.iter().any(|p| p.contains("description")),
+            "应命中白名单违例，实际: {problems:?}"
+        );
+        assert!(!problems.iter().any(|p| p.contains("不一致")));
+
+        // 手写 id 与能力 id 漂移
+        let drifted = serde_json::json!({
+            "id": "cap.other",
+            "summary": "s",
+            "actions": { "a": { "params": {}, "returns": "{}" } },
+        });
+        assert!(
+            validate_describe("cap.x", &drifted)
+                .iter()
+                .any(|p| p.contains("不一致"))
+        );
+
+        // actions 为空对象 / 缺 actions 键 / actions 非对象
+        let empty_actions = serde_json::json!({ "summary": "s", "actions": {} });
+        assert!(
+            validate_describe("cap.x", &empty_actions)
+                .iter()
+                .any(|p| p.contains("空对象"))
+        );
+        let no_actions = serde_json::json!({ "summary": "s" });
+        assert!(
+            validate_describe("cap.x", &no_actions)
+                .iter()
+                .any(|p| p.contains("缺顶层键 \"actions\""))
+        );
+        assert_eq!(validate_describe("cap.x", &serde_json::json!("oops")).len(), 1);
+
+        // 动作缺 params / returns（各自定位到具体动作）
+        let missing = serde_json::json!({
+            "summary": "s",
+            "actions": { "a": { "params": {} }, "b": { "returns": "{}" } },
+        });
+        let problems = validate_describe("cap.x", &missing);
+        assert!(problems.iter().any(|p| p.contains("\"a\"") && p.contains("returns")));
+        assert!(problems.iter().any(|p| p.contains("\"b\"") && p.contains("params")));
+    }
+
+    #[test]
+    fn unsupported_action_message_has_supported_list_and_help_hint() {
+        assert_eq!(
+            unsupported_action("cap.demo", "fly", &["echo", "ping"]),
+            "不支持动作: fly（支持: echo, ping；协议见 cap.help show target=cap.demo）"
+        );
     }
 }

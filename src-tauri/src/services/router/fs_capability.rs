@@ -1,7 +1,7 @@
 //! cap.fs —— 文件系统访问统一入口（cap.fs 契约）
 //!
 //! 定位：把文件浏览器的读取操作从 tauri command / Web IPC 直调，迁移到
-//! RouterBus 统一总线（cat htttp / cap.bash / cap.context 同构）。收益：
+//! RouterBus 统一总线（cap.http / cap.bash / cap.context 同构）。收益：
 //! - 文件读取对 AI / 插件开放（bus_dispatch 白名单可加 cap.fs）
 //! - 权限 gate + 审计 + Source 注入统一走 dispatch
 //! - 桌面与 Web 单份逻辑（cap.fs 业务核与 tauri command 层复用同一批同步函数）
@@ -18,8 +18,10 @@
 //! # 数据字段（与前端 `types/fileExplorer.ts` 对齐，snake_case 直通）
 //!
 //! 每个 FileInfo 含：`name / path / is_dir / size(字节,目录为 null) /
-//! modified(秒级时间戳字符串,目录同样返回) / extension / children`。
-//! modified 是秒级 Unix 时间戳字符串，前端需 `Number(v) * 1000` 转 Date。
+//! modified(秒级时间戳字符串,目录同样返回) / created(秒级时间戳字符串) /
+//! extension / children`。
+//! modified/created 是秒级 Unix 时间戳字符串，前端需 `Number(v) * 1000` 转 Date。
+//! 注意 `list` 的子项 `child_count` 恒为 null；目录子项数仅 `getFileInfo` 提供。
 //!
 //! # 只读性
 //!
@@ -29,7 +31,9 @@
 //! 边界与 cap.data_root 的 `open_path_in_explorer` 同思路（平台壳命令不进总线）。
 
 use crate::commands::file_explorer::{complete_file_info, read_directory_inner};
-use crate::contracts::{Capability, CapabilityId, Context, Value};
+use crate::contracts::{
+    standard_describe, unsupported_action, Capability, CapabilityId, Context, Value,
+};
 use std::path::Path;
 
 /// cap.fs —— 文件系统只读访问能力（无状态）
@@ -46,22 +50,26 @@ impl Capability for FsCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "文件系统只读访问：列目录/文件详情/存在性（写操作走 tauri command 通道）",
-            "note": "只读边界（list/getFileInfo/exists）；Remote 来源默认 deny（策略见 config permissions.rules）",
-            "actions": {
-                "list": { "params": { "path": "string（必填，绝对路径，目录）" }, "returns": "{ items: FileInfo[] }（直接子项，含 size/modified/created）" },
-                "getFileInfo": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ item: FileInfo | null }（文件：size+modified+created；目录：child_count）" },
+        standard_describe(
+            CAP_ID,
+            "文件只读",
+            "文件系统只读访问：列目录/文件详情/存在性（写操作走 tauri command 通道）",
+            Some(
+                "只读边界（list/getFileInfo/exists）；Remote 来源默认 deny（策略见 config permissions.rules）",
+            ),
+            serde_json::json!({
+                "list": { "params": { "path": "string（必填，绝对路径，目录）" }, "returns": "{ items: FileInfo[] }（直接子项，含 size/modified/created；子项 child_count 恒为 null，目录子项数仅 getFileInfo 提供；路径不存在报错「路径不存在」）", "example": { "action": "list", "path": "<绝对路径>" } },
+                "getFileInfo": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ item: FileInfo | null }（不存在返回 item=null 不报错；文件：size+modified+created；目录：child_count、size=null）", "example": { "action": "getFileInfo", "path": "<绝对路径>" } },
                 "exists": { "params": { "path": "string（必填，绝对路径）" }, "returns": "{ exists: bool }" }
-            }
-        })
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
         let action = params
             .get("action")
             .and_then(|a| a.as_str())
-            .ok_or_else(|| format!("cap.fs 需要 action 参数（{:?}）", FS_ACTIONS))?;
+            .ok_or_else(|| format!("cap.fs 需要 action 参数（{}）", FS_ACTIONS.join(", ")))?;
 
         match action {
             "list" => {
@@ -93,7 +101,7 @@ impl Capability for FsCapability {
                     .ok_or_else(|| "cap.fs exists 需要 path 参数".to_string())?;
                 Ok(serde_json::json!({ "exists": Path::new(path).exists() }))
             }
-            other => Err(format!("cap.fs 不支持动作: {}", other)),
+            other => Err(unsupported_action(CAP_ID, other, FS_ACTIONS)),
         }
     }
 
@@ -265,5 +273,23 @@ mod tests {
             .invoke(json!({ "action": "wat" }), &NullCtx(Source::Bootstrap));
         assert!(r.is_err());
         assert!(r.unwrap_err().contains("不支持动作"));
+    }
+
+    #[test]
+    fn describe_contract() {
+        let d = FsCapability.describe();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 应过契约校验: {problems:?}");
+        // actions 键与 FS_ACTIONS 常量一致（未知动作错误文案与 describe 同源）
+        let mut keys: Vec<&str> = d["actions"]
+            .as_object()
+            .expect("actions 应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected: Vec<&str> = FS_ACTIONS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "describe 动作清单应与 FS_ACTIONS 一致");
     }
 }

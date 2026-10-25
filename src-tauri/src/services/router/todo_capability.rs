@@ -14,10 +14,10 @@
 //!
 //! # 动作协议（payload 统一 `{ "action": ... }`）
 //!
-//! - `list`       `{ "action": "list", "scope"?, "status"?, "priority"?, "limit"? }`
+//! - `list`       `{ "action": "list", "scope"?, "workspacePath"?, "status"?, "priority"?, "limit"? }`
 //!                          → `{ "items": [TodoItem...] }`
-//! - `get`        `{ "action": "get", "id" }` → `{ "item": TodoItem } | null`
-//! - `create`     `{ "action": "create", "content", "workSpacePath"? ... }` → `{ "item": TodoItem }`
+//! - `get`        `{ "action": "get", "id" }` → `{ "item": TodoItem | null }`
+//! - `create`     `{ "action": "create", "content", "workspacePath"? ... }` → `{ "item": TodoItem }`
 //! - `update`     `{ "action": "update", "id", ...fields }` → `{ "item": TodoItem }`
 //! - `delete`     `{ "action": "delete", "id" }` → `{ "item": TodoItem }`
 //! - `start`      `{ "action": "start", "id", "lastProgress"? }` → `{ "item": TodoItem }`
@@ -25,7 +25,8 @@
 //! - `breakdown`  `{ "action": "breakdown", "scope"? }` → `{ "stats": {workspaceName:count} }`
 
 use crate::contracts::{
-    AuditEntry, Capability, CapabilityId, Context, Id, Item, Query, Value,
+    standard_describe, unsupported_action, AuditEntry, Capability, CapabilityId, Context, Id,
+    Item, Query, Value,
 };
 use crate::models::todo::{TodoCreateParams, TodoItem, TodoPriority, TodoStatus, TodoSubtask, TodoUpdateParams};
 use chrono::Utc;
@@ -35,6 +36,11 @@ pub struct TodoCapability;
 
 const DOMAIN: &str = "todo";
 const CAP_ID: &str = "cap.todo";
+
+/// 支持的动作清单（describe 与未知动作错误文案共用，单一事实来源）
+const TODO_ACTIONS: &[&str] = &[
+    "list", "get", "create", "update", "delete", "start", "complete", "breakdown",
+];
 
 // ---------------------------------------------------------------------------
 // 存储 helpers
@@ -476,36 +482,47 @@ impl Capability for TodoCapability {
     }
 
     fn describe(&self) -> Value {
-        serde_json::json!({
-            "summary": "待办事项 CRUD：按工作区/状态/优先级查询、创建、更新、完成、删除、统计",
-            "actions": {
+        standard_describe(
+            CAP_ID,
+            "待办",
+            "待办事项 CRUD：按工作区/状态/优先级查询、创建、更新、完成、删除、统计",
+            None,
+            serde_json::json!({
                 "list": {
-                    "params": { "scope": "workspace|all（默认 workspace）", "workspacePath": "string?", "workspaceName": "string?", "status": "pending|in_progress|completed?", "priority": "low|normal|high|urgent?", "limit": "int?" },
-                    "returns": "{ items: TodoItem[] }"
+                    "params": { "scope": "workspace|all（默认 workspace：未传 workspacePath 时仅返回全局待办）", "workspacePath": "string?（scope=workspace 时按此过滤）", "status": "pending|in_progress|completed?", "priority": "low|normal|high|urgent?", "limit": "int?" },
+                    "returns": "{ items: TodoItem[] }",
+                    // example：bus_help usage_examples 派生源（describe 单一权威，载荷已对 action_list 实现核对）
+                    "example": { "action": "list", "scope": "all", "status": "pending" }
                 },
-                "get": { "params": { "id": "string（必填）" }, "returns": "{ item: TodoItem | null }" },
+                "get": { "params": { "id": "string（必填）" }, "returns": "{ item: TodoItem | null }（不存在时 item=null，不报错）" },
                 "create": {
                     "params": {
                         "content": "string（必填，非空）",
                         "priority": "low|normal|high|urgent?",
                         "description": "string?",
                         "tags": "string[]?",
+                        "relatedFiles": "string[]?",
+                        "sessionId": "string?",
+                        "workspaceId": "string?",
                         "workspacePath": "string?",
                         "workspaceName": "string?",
+                        "subTasks": "[{ title: string }]?（空标题子项被剔除）",
                         "dueDate": "string?",
                         "estimatedHours": "number?"
                     },
-                    "returns": "{ item: TodoItem }"
+                    "returns": "{ item: TodoItem }",
+                    "example": { "action": "create", "content": "完成代码评审", "priority": "high" }
                 },
                 "update": {
-                    "params": { "id": "string（必填）", "content/status/priority/description/tags/dueDate/spentHours/lastProgress": "均可选部分更新" },
+                    "params": { "id": "string（必填）", "content/status/priority/description/tags/relatedFiles/dueDate/estimatedHours/spentHours/reminderTime/dependsOn/sessionId/subTasks/lastProgress/lastError": "均可选部分更新（camelCase 字段名直接平铺进 payload）" },
                     "returns": "{ item: TodoItem }"
                 },
+                "delete": { "params": { "id": "string（必填）" }, "returns": "{ item: TodoItem }（被删条目）" },
                 "start": { "params": { "id": "string（必填）", "lastProgress": "string?" }, "returns": "{ item }（status→in_progress）" },
-                "complete": { "params": { "id": "string（必填）", "lastProgress": "string?" }, "returns": "{ item }（置 completed_at）" },
+                "complete": { "params": { "id": "string（必填）", "lastProgress": "string?" }, "returns": "{ item }（置 completed_at）", "example": { "action": "complete", "id": "<todo id>" } },
                 "breakdown": { "params": {}, "returns": "{ stats: { 工作区名: 数量 } }" }
-            }
-        })
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -531,7 +548,7 @@ impl Capability for TodoCapability {
             "start" => Self::action_start(ctx, &params),
             "complete" => Self::action_complete(ctx, &params),
             "breakdown" => Self::action_breakdown(ctx),
-            other => Err(format!("cap.todo 不支持动作: {}", other)),
+            other => Err(unsupported_action(CAP_ID, other, TODO_ACTIONS)),
         }
     }
 
@@ -816,5 +833,31 @@ mod tests {
         let ctx = make_ctx();
         let r = cap.invoke(serde_json::json!({"action": "explode"}), &ctx);
         assert!(r.is_err());
+        // 错误文案应可自纠：列出支持动作与协议入口（unsupported_action）
+        let msg = r.unwrap_err();
+        assert!(
+            msg.contains("list, get, create, update, delete, start, complete, breakdown"),
+            "应列支持清单: {msg}"
+        );
+        assert!(msg.contains("cap.help show target=cap.todo"), "应指协议入口: {msg}");
+    }
+
+    #[test]
+    fn describe_contract() {
+        let cap = TodoCapability;
+        let d = cap.describe();
+        let problems = crate::contracts::validate_describe(CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 应过契约校验: {problems:?}");
+        // actions 键与 TODO_ACTIONS 清单一致（未知动作错误文案与 describe 同源）
+        let mut keys: Vec<&str> = d["actions"]
+            .as_object()
+            .expect("actions 应为对象")
+            .keys()
+            .map(String::as_str)
+            .collect();
+        keys.sort_unstable();
+        let mut expected = TODO_ACTIONS.to_vec();
+        expected.sort_unstable();
+        assert_eq!(keys, expected, "describe 动作清单应与 TODO_ACTIONS 一致");
     }
 }

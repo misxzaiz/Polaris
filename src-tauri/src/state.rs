@@ -551,7 +551,8 @@ pub fn create_app_state(
             bus.clone(),
         )));
         // cap.ui.theme / cap.ui.chat —— AI 控制界面（主题配色 / 对话渲染配置）。
-        // 无状态能力：只校验 + 审计 + describe；效果经引擎 tool_call_end 事件落前端 store。
+        // 无状态能力：只校验 + 审计 + describe；效果经引擎 tool_call_start 事件落前端 store
+        // （前端消费点：eventHandler.ts 的 case 'tool_call_start' → consumeCapUiDispatch）。
         // 注册在共享 state（三端同源：桌面 tauri / headless polaris-web / MCP server），
         // 与 lib.rs setup 的注册幂等并存（RouterBus 重复注册无害）。
         let _ = bus.register_handle(Box::new(crate::services::router::UiThemeCapability));

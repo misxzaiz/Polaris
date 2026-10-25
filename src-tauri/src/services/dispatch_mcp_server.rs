@@ -460,13 +460,11 @@ fn handle_tools_list() -> Value {
                 "name": CAP_DISPATCH_TOOL_NAME,
                 "description": concat!(
                     "调用 Polaris 主进程总线上任意已注册能力（cap.*）——AI 会话的",
-                    "统一入口。target 取能力 id（如 cap.ai.chat / cap.history / ",
-                    "cap.todo / cap.kv / cap.prompt_snippet / cap.context / ",
-                    "cap.config / cap.data_root / cap.pluginDiscovery / ",
-                    "cap.pluginServiceManager）。payload 为动作命令：{ action, ...参数 }。",
-                    "先调 cap_list 了解每个能力支持的动作与字段，再用本工具调用。",
-                    "管理面能力（cap.config / cap.data_root / cap.plugin*）会改动全局",
-                    "配置或插件，调用需谨慎——请先确认用户意图。"
+                    "统一入口。target 取能力 id（如 cap.ai.chat / cap.bash / cap.http / ",
+                    "cap.fs / cap.git / cap.history 等，非穷举——全量以 cap_list 返回为准）。",
+                    "payload 为动作命令：{ action, ...参数 }。先调 cap_list 了解每个能力",
+                    "支持的动作与字段，再用本工具调用。管理面能力（config / data_root / ",
+                    "plugin* / registry）会改动全局配置或插件，调用需谨慎——请先确认用户意图。"
                 ),
                 "inputSchema": {
                     "type": "object",
@@ -478,7 +476,7 @@ fn handle_tools_list() -> Value {
                         },
                         "payload": {
                             "type": "object",
-                            "description": "动作命令：{ action: string, ...动作参数 }。各能力支持的动作与参数以 cap_list 实时返回为准（动态生成、永不漂移）——不要依赖记忆中的动作清单；先调 cap_list 再构造 payload。管理面能力（cap.config / cap.data_root / cap.plugin*）对插件服务/插件文件的破坏性动作（stop_for_plugin / autostart / uninstall*）需用户审批：首次调用会返回确认请求 id，前端批准后重试即可。"
+                            "description": "动作命令：{ action: string, ...动作参数 }。各能力支持的动作与参数以 cap_list 实时返回为准；若报缺少参数，以错误文案列出的参数键名为准。高危动作需用户审批（首次调用返回确认请求 id，前端批准后重试即可）——按策略当前含：cap.bash:run、cap.http（任意目标转发）、cap.data_root:set_root、cap.registry:register、cap.pluginServiceManager 的 stop_for_plugin/autostart、cap.pluginDiscovery 的 uninstall_*/force_uninstall。"
                         }
                     },
                     "additionalProperties": false
@@ -489,7 +487,8 @@ fn handle_tools_list() -> Value {
                 "description": concat!(
                     "列出 Polaris 总线上当前已注册的全部 cap.* 能力及其动作协议，",
                     "供 cap_dispatch 精确构造 payload。首次调用 cap_dispatch 前请先",
-                    "调用本工具，避免传错 action/参数。返回每个能力的 id 与动作清单。"
+                    "调用本工具，避免传错 action/参数。返回每个能力的 id、streaming ",
+                    "标记与 describe 自描述（id/name/summary/note?/actions）。"
                 ),
                 "inputSchema": {
                     "type": "object",

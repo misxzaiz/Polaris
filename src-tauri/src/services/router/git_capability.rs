@@ -260,6 +260,16 @@ const KNOWN_ACTIONS: &[&str] = &[
     "scan_commit_risk", "suggest_rebase_todos",
 ];
 
+/// 未知动作自纠文案（contracts::unsupported_action，错误即文档）：列出
+/// KNOWN_ACTIONS 全集 + stash_list 别名，并指向 cap.help 发现入口——AI 按文案
+/// 即可自纠，不再出现「仅回显非法动作名、合法动作无处可查」（2026-10-25 审计）。
+fn unsupported_git_action(action: &str) -> String {
+    let mut supported: Vec<&str> = KNOWN_ACTIONS.to_vec();
+    // 别名：invoke 在 match 前归一 get_stash_list → stash_list（合法拼写）
+    supported.push("get_stash_list");
+    crate::contracts::unsupported_action(GIT_CAP_ID, action, &supported)
+}
+
 // ───────────────────────── 操作流水（FR-P2-4） ─────────────────────────
 
 /// 操作流水上限（每 ws，超过丢最旧）。会话内滚动，见 spec §四。
@@ -268,7 +278,10 @@ const OPERATIONS_MAX: usize = 50;
 /// 各仓库的最近操作记录（倒序：最新在 0）。共享 by ws_path。
 static OPERATIONS: OnceLock<Mutex<HashMap<String, Vec<GitOperationEntry>>>> = OnceLock::new();
 
-/// 动作 → 展示名（操作流水 UI 直接呈现的中文文案）
+/// 动作 → 中文展示名（双消费方：操作流水 UI 文案 + `describe_actions()` 每动作
+/// 中文名——2026-10-25 审计：中文名此前不经 describe 暴露，故本表须覆盖
+/// KNOWN_ACTIONS 全集；漏登动作在 describe 中落 `_` 兜底并由 describe_contract
+/// 测试点名）。
 fn action_label(action: &str) -> &'static str {
     match action {
         "commit_changes" => "提交变更",
@@ -318,6 +331,37 @@ fn action_label(action: &str) -> &'static str {
         "undo_restore" => "撤销恢复",
         "undo_drop" => "清理快照",
         "clear_operations" => "清空操作流水",
+        // ── 只读/查询动作（describe 中文说明用；操作流水只记写动作，故此前未列） ──
+        "is_repository" => "是否 Git 仓库",
+        "discover_repositories" => "发现嵌套仓库",
+        "get_status" => "读取仓库状态",
+        "get_diffs" => "提交间差异",
+        "get_log" => "提交日志",
+        "get_log_with_lanes" => "泳道日志",
+        "get_commit_details" => "提交详情",
+        "get_file_history" => "文件历史",
+        "get_worktree_diff" => "工作区差异",
+        "get_index_diff" => "暂存区差异",
+        "get_worktree_file_diff" => "工作区单文件差异",
+        "get_index_file_diff" => "暂存区单文件差异",
+        "get_branches" => "分支列表",
+        "get_tags" => "标签列表",
+        "get_remotes" => "远程列表",
+        "detect_host" => "识别 Git 托管主机",
+        "stash_list" => "Stash 列表",
+        "stash_show" => "查看 Stash 内容",
+        "search_log" => "搜索提交历史",
+        "get_reflog" => "Reflog",
+        "blame_file" => "文件 Blame",
+        "get_gitignore" => "读取 .gitignore",
+        "add_to_gitignore" => "追加 .gitignore 规则",
+        "get_gitignore_templates" => ".gitignore 模板",
+        "get_pr_status" => "PR 状态",
+        "undo_list" => "撤销快照列表",
+        "get_operations" => "操作流水",
+        "predict_conflicts" => "冲突预测",
+        "get_conflict_state" => "冲突/序列状态",
+        "resolve_conflict_file" => "解决冲突文件",
         _ => "Git 操作",
     }
 }
@@ -492,6 +536,449 @@ fn workspace(params: &Value) -> Result<PathBuf, String> {
 
 // ───────────────────────── 能力本体 ─────────────────────────
 
+// （describe 协议生成的模块级 helper：PLUGIN_DENY_NOTE / action_docs /
+// describe_actions / unsupported_git_action —— trait impl 只能含 trait 条目，
+// 故置于 struct 之前。）
+
+/// 写类动作的统一 Plugin 拒绝提示（describe 每个破坏性动作的 note；审计：此前仅
+/// stage_file 有 note，同为 DESTRUCTIVE_ACTIONS 的 commit_changes/undo_restore/
+/// undo_drop/clear_operations 无——经 cap_list 读 describe 的 AI 会误以为可调）。
+const PLUGIN_DENY_NOTE: &str = "写类动作：Plugin（AI/插件）来源一律拒绝（PR-2a 权限矩阵落地前临时护栏）；仅本地面板（Bootstrap/Remote）可调，AI 无「确认后重试」通道";
+
+/// 动作 → (params, returns) 协议说明（describe 精化表，键 = KNOWN_ACTIONS 成员）。
+///
+/// - 参数键名与 invoke match 臂的 require_string / optional_string / bool_or /
+///   opt_usize / string_vec 提取一一对应（必填直书，可选 `?` 后缀并附缺省值）；
+/// - returns 为 GitService 签名返回值的 serde 序列化结果（camelCase；`()` → null）；
+/// - 兜底臂：KNOWN_ACTIONS 新动作漏登本表时仍以通用条目全量出现在 describe
+///   （不漂移丢动作），由 describe_contract 测试与代码评审补精化。
+fn action_docs(action: &str) -> (Value, &'static str) {
+    let ws = "string（git 仓库目录绝对路径，必填）";
+    match action {
+        // ── 状态 / 只读 ─────────────────────────────────────────────
+        "is_repository" => (
+            json!({ "workspacePath": ws }),
+            "bool（是否 git 仓库，裸 bool）",
+        ),
+        "discover_repositories" => (
+            json!({
+                "workspacePath": "string（搜索根目录绝对路径，必填）",
+                "maxDepth?": "number（递归深度，默认 4）"
+            }),
+            "GitDiscoveredRepo[]（嵌套仓库清单，聚合工作区场景）",
+        ),
+        "get_status" => (
+            json!({ "workspacePath": ws }),
+            "GitRepositoryStatus（camelCase：分支/暂存/未暂存/冲突清单等）",
+        ),
+        "predict_conflicts" => (
+            json!({ "workspacePath": ws, "branch?": "string（目标分支，缺省当前）" }),
+            "GitConflictPrediction（确定性规则冲突风险清单，0 token，只读）",
+        ),
+        "get_conflict_state" => (
+            json!({ "workspacePath": ws }),
+            "GitSequenceState（merge/rebase/cherry-pick/revert 归一状态 + 冲突条目）",
+        ),
+        "get_diffs" => (
+            json!({
+                "workspacePath": ws,
+                "baseCommit": "string（必填，基准提交）",
+                "compareTo?": "string（缺省 = HEAD vs baseCommit；显式传入 = 任意两提交 tree-to-tree 对比）"
+            }),
+            "GitDiffEntry[]",
+        ),
+        "get_log" => (
+            json!({
+                "workspacePath": ws,
+                "limit?": "number（默认 50）",
+                "maxCount?": "number（limit 别名，旧前端兼容）",
+                "skip?": "number",
+                "branch?": "string"
+            }),
+            "GitCommit[]（裸数组）",
+        ),
+        "get_log_with_lanes" => (
+            json!({
+                "workspacePath": ws,
+                "limit?": "number（默认 500）",
+                "maxCount?": "number（limit 别名，旧前端兼容）",
+                "skip?": "number",
+                "branch?": "string"
+            }),
+            "GitLogPage（commits 含 refs 装饰 + rows 泳道数据）",
+        ),
+        "get_commit_details" => (
+            json!({ "workspacePath": ws, "commitSha": "string（必填）" }),
+            "GitCommitDetails（{ commit, files, totalAdditions, totalDeletions }）",
+        ),
+        "get_file_history" => (
+            json!({
+                "workspacePath": ws,
+                "filePath": "string（必填）",
+                "limit?": "number（默认 50）",
+                "skip?": "number",
+                "branch?": "string"
+            }),
+            "GitFileHistoryEntry[]（{ commit, file } 条目）",
+        ),
+
+        // ── 仓库初始化 ─────────────────────────────────────────────
+        "init_repository" => (
+            json!({ "workspacePath": ws, "initialBranch?": "string" }),
+            "string（初始化结果信息）",
+        ),
+
+        // ── 提交 / 暂存 ────────────────────────────────────────────
+        "commit_changes" => (
+            json!({
+                "workspacePath": ws,
+                "message": "string（必填，提交信息）",
+                "stageAll?": "bool（默认 false，暂存全部后提交）",
+                "selectedFiles?": "string[]（指定提交的文件清单）"
+            }),
+            "string（新提交 sha）",
+        ),
+        "stage_file" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "resolve_conflict_file" => (
+            json!({
+                "workspacePath": ws,
+                "filePath": "string（必填，冲突文件）",
+                "content?": "string（写入内容；与 remove/side 三态互斥）",
+                "remove?": "bool（true = 删除该文件）",
+                "side?": "string（\"ours\"|\"theirs\"，还原对应侧 stage；缺省 theirs）"
+            }),
+            "null（解决后直落 staging）",
+        ),
+        "unstage_file" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "discard_changes" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "null（丢弃该文件工作区变更）",
+        ),
+        "batch_stage" => (
+            json!({ "workspacePath": ws, "filePaths": "string[]（必填）" }),
+            "BatchStageResult",
+        ),
+        "batch_unstage" => (
+            json!({ "workspacePath": ws, "filePaths": "string[]（必填）" }),
+            "BatchOpResult",
+        ),
+        "batch_discard" => (
+            json!({ "workspacePath": ws, "filePaths": "string[]（必填）" }),
+            "BatchOpResult",
+        ),
+        "commit_group" => (
+            json!({
+                "workspacePath": ws,
+                "message": "string（必填）",
+                "files": "string[]（必填且非空，组内文件清单）"
+            }),
+            "string（新提交 sha；只提交组内文件，index 其它已暂存内容不受影响）",
+        ),
+
+        // ── Diff ───────────────────────────────────────────────────
+        "get_worktree_diff" => (
+            json!({ "workspacePath": ws }),
+            "GitDiffEntry[]（工作区变更）",
+        ),
+        "get_index_diff" => (
+            json!({ "workspacePath": ws }),
+            "GitDiffEntry[]（暂存区变更）",
+        ),
+        "get_worktree_file_diff" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "GitDiffEntry（单文件工作区差异）",
+        ),
+        "get_index_file_diff" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "GitDiffEntry（单文件暂存差异）",
+        ),
+
+        // ── 分支 ───────────────────────────────────────────────────
+        "get_branches" => (json!({ "workspacePath": ws }), "GitBranch[]"),
+        "create_branch" => (
+            json!({
+                "workspacePath": ws,
+                "name": "string（必填）",
+                "checkout?": "bool（默认 false，创建后立即切换）",
+                "startPoint?": "string（起点 commitish，缺省 HEAD）"
+            }),
+            "null（成功无载荷）",
+        ),
+        "checkout_branch" => (
+            json!({ "workspacePath": ws, "name": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "delete_branch" => (
+            json!({ "workspacePath": ws, "name": "string（必填）", "force?": "bool（默认 false，强删未合并分支）" }),
+            "null（成功无载荷；删除前自动留撤销快照）",
+        ),
+        "rename_branch" => (
+            json!({ "workspacePath": ws, "oldName": "string（必填）", "newName": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "merge_branch" => (
+            json!({ "workspacePath": ws, "sourceBranch": "string（必填）", "noFF?": "bool（默认 false）" }),
+            "GitMergeResult（冲突时 Err 带 CONFLICTS_DETECTED 结构化码）",
+        ),
+        "rebase_branch" => (
+            json!({ "workspacePath": ws, "sourceBranch": "string（必填）" }),
+            "GitRebaseResult（变基前自动留撤销快照）",
+        ),
+        "rebase_abort" => (
+            json!({ "workspacePath": ws }),
+            "null（中止进行中的 rebase）",
+        ),
+        "rebase_continue" => (json!({ "workspacePath": ws }), "GitRebaseResult"),
+        "plan_interactive_rebase" => (
+            json!({ "workspacePath": ws, "baseCommitish": "string（必填）" }),
+            "GitRebasePlan（只读预览，不落盘）",
+        ),
+        "start_interactive_rebase" => (
+            json!({
+                "workspacePath": ws,
+                "baseCommitish": "string（必填）",
+                "todos": "GitRebaseTodoItem[]（面板 todo 序列，必填）",
+                "autosquash?": "bool（默认 false）"
+            }),
+            "GitRebaseResult（GIT_SEQUENCE_EDITOR 注入面板 todo 执行）",
+        ),
+
+        // ── Cherry-pick / Revert / Reset / Checkout commit ─────────
+        "cherry_pick" => (
+            json!({ "workspacePath": ws, "commitSha": "string（必填）" }),
+            "GitCherryPickResult",
+        ),
+        "cherry_pick_abort" => (
+            json!({ "workspacePath": ws }),
+            "null（中止进行中的 cherry-pick）",
+        ),
+        "cherry_pick_continue" => (json!({ "workspacePath": ws }), "GitCherryPickResult"),
+        "revert" => (
+            json!({ "workspacePath": ws, "commitSha": "string（必填）" }),
+            "GitRevertResult",
+        ),
+        "revert_abort" => (
+            json!({ "workspacePath": ws }),
+            "null（中止进行中的 revert）",
+        ),
+        "revert_continue" => (json!({ "workspacePath": ws }), "GitRevertResult"),
+        "reset" => (
+            json!({
+                "workspacePath": ws,
+                "commitSha": "string（必填）",
+                "mode": "string（必填：\"soft\"|\"mixed\"|\"hard\"；非法值报 Unknown reset mode 并列出合法值）"
+            }),
+            "null（成功无载荷；hard 模式自动留撤销快照）",
+        ),
+        "checkout_commit" => (
+            json!({ "workspacePath": ws, "commitSha": "string（必填）" }),
+            "null（进入 detached HEAD）",
+        ),
+
+        // ── 标签 ───────────────────────────────────────────────────
+        "get_tags" => (json!({ "workspacePath": ws }), "GitTag[]"),
+        "create_tag" => (
+            json!({
+                "workspacePath": ws,
+                "name": "string（必填）",
+                "commitish?": "string（打标对象，缺省 HEAD）",
+                "message?": "string（附注信息）"
+            }),
+            "GitTag",
+        ),
+        "delete_tag" => (
+            json!({ "workspacePath": ws, "name": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+
+        // ── 远程 / 推送 / 拉取 ─────────────────────────────────────
+        "get_remotes" => (json!({ "workspacePath": ws }), "GitRemote[]"),
+        "add_remote" => (
+            json!({ "workspacePath": ws, "name": "string（必填）", "url": "string（必填）" }),
+            "GitRemote",
+        ),
+        "remove_remote" => (
+            json!({ "workspacePath": ws, "name": "string（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "detect_host" => (
+            json!({ "remoteUrl": "string（必填；本动作无 workspacePath）" }),
+            "GitHostType（裸字符串值）",
+        ),
+        "push_branch" => (
+            json!({
+                "workspacePath": ws,
+                "branchName": "string（必填）",
+                "remoteName?": "string（默认 \"origin\"）",
+                "force?": "bool（默认 false）",
+                "remoteBranchName?": "string（远端分支名，缺省同名）",
+                "leaseSha?": "string（force-with-lease 期望远端 sha；缺省按 remote-tracking 自动对照）"
+            }),
+            "null（成功无载荷）",
+        ),
+        "push_set_upstream" => (
+            json!({
+                "workspacePath": ws,
+                "branchName": "string（必填）",
+                "remoteName?": "string（默认 \"origin\"）",
+                "remoteBranchName?": "string"
+            }),
+            "null（成功无载荷）",
+        ),
+        "pull" => (
+            json!({
+                "workspacePath": ws,
+                "remoteName?": "string（默认 \"origin\"）",
+                "branchName?": "string"
+            }),
+            "GitPullResult",
+        ),
+        "fetch" => (
+            json!({ "workspacePath": ws, "remoteName?": "string", "prune?": "bool（默认 false，清理已删远端分支引用）" }),
+            "string（fetch 结果摘要）",
+        ),
+
+        // ── Stash ──────────────────────────────────────────────────
+        "stash_list" => (json!({ "workspacePath": ws }), "GitStashEntry[]"),
+        "stash_save" => (
+            json!({
+                "workspacePath": ws,
+                "message?": "string（stash 描述）",
+                "includeUntracked?": "bool（默认 false，含未跟踪文件）"
+            }),
+            "string（stash 标识）",
+        ),
+        "stash_pop" => (
+            json!({ "workspacePath": ws, "index?": "number（缺省最近一条）" }),
+            "null（应用并删除该 stash）",
+        ),
+        "stash_apply" => (
+            json!({ "workspacePath": ws, "index?": "number（缺省最近一条）" }),
+            "null（应用但保留 stash）",
+        ),
+        "stash_drop" => (
+            json!({ "workspacePath": ws, "index": "number（必填）" }),
+            "null（成功无载荷）",
+        ),
+        "stash_show" => (
+            json!({ "workspacePath": ws, "index?": "number（缺省最近一条）" }),
+            "string（stash patch 文本）",
+        ),
+
+        // ── Amend / 搜索 / Reflog ──────────────────────────────────
+        "amend_commit" => (
+            json!({
+                "workspacePath": ws,
+                "message?": "string（缺省沿用原提交信息）",
+                "stageAll?": "bool（默认 false）",
+                "selectedFiles?": "string[]（追加暂存的文件清单）"
+            }),
+            "string（amend 后提交 sha）",
+        ),
+        "search_log" => (
+            json!({
+                "workspacePath": ws,
+                "filter": "LogSearchFilter（必填对象：fixedStrings bool 必填；可选 grep/author/pickaxe/path/since/until/range）",
+                "limit?": "number（默认 50）",
+                "skip?": "number"
+            }),
+            "GitCommit[]（裸数组，作者/消息/路径组合检索）",
+        ),
+        "get_reflog" => (
+            json!({ "workspacePath": ws, "branch?": "string", "limit?": "number" }),
+            "GitReflogEntry[]",
+        ),
+
+        // ── Blame / gitignore ──────────────────────────────────────
+        "blame_file" => (
+            json!({ "workspacePath": ws, "filePath": "string（必填）" }),
+            "GitBlameResult",
+        ),
+        "get_gitignore" => (json!({ "workspacePath": ws }), "GitIgnoreResult"),
+        "save_gitignore" => (
+            json!({ "workspacePath": ws, "content": "string（必填，整份文件内容）" }),
+            "null（成功无载荷）",
+        ),
+        "add_to_gitignore" => (
+            json!({ "workspacePath": ws, "rules": "string[]（必填，追加规则）" }),
+            "null（成功无载荷）",
+        ),
+        "get_gitignore_templates" => (json!({}), "GitIgnoreTemplate[]（内置模板清单，无参数）"),
+
+        // ── PR ─────────────────────────────────────────────────────
+        "create_pr" => (
+            json!({ "workspacePath": ws, "options": "CreatePROptions（必填对象）" }),
+            "PullRequest",
+        ),
+        "get_pr_status" => (
+            json!({ "workspacePath": ws, "prNumber": "number（必填）" }),
+            "PullRequest",
+        ),
+
+        // ── Undo 快照 / 操作流水 ───────────────────────────────────
+        "undo_list" => (
+            json!({ "workspacePath": ws }),
+            "UndoSnapshotMeta[]（危险操作自动留存的快照，倒序）",
+        ),
+        "undo_restore" => (
+            json!({ "workspacePath": ws, "snapshotRef": "string（必填）" }),
+            "UndoRestoreOutcome（stash apply / 重建被删分支 ref）",
+        ),
+        "undo_drop" => (
+            json!({ "workspacePath": ws, "snapshotRef": "string（必填）" }),
+            "null（连同 .restore. note 一并清理）",
+        ),
+        "get_operations" => (
+            json!({ "workspacePath": ws }),
+            "GitOperationEntry[]（写动作流水，倒序，每 ws 上限 50）",
+        ),
+        "clear_operations" => (json!({ "workspacePath": ws }), "null（清空本 ws 流水）"),
+
+        // ── P3 提交风险 / 整理建议 ─────────────────────────────────
+        "scan_commit_risk" => (
+            json!({ "workspacePath": ws }),
+            "GitCommitRiskReport（提交前风险扫描，只读纯本地）",
+        ),
+        "suggest_rebase_todos" => (
+            json!({ "workspacePath": ws, "baseCommitish": "string（必填）" }),
+            "GitRebaseSuggestion（fixup!/squash! 整理建议）",
+        ),
+
+        // 兜底：新动作漏登精化表时的通用条目（describe 仍全量出现，不丢动作）
+        _ => (
+            json!({ "workspacePath": ws }),
+            "GitService 返回值的 camelCase JSON 序列化",
+        ),
+    }
+}
+
+/// describe actions 全量生成（单一来源，杜绝手写第二份动作清单——2026-10-25 审计：
+/// 旧 describe 仅 12/77 动作 + "..." 占位）：动作键取 KNOWN_ACTIONS（与 invoke
+/// match 由 every_known_action_is_handled 巡逻同源），中文说明取 action_label，
+/// 参数/返回取 action_docs，写类动作统一加 Plugin 拒绝 note。常量加动作，
+/// describe / 未知动作报错自动跟随。
+fn describe_actions() -> Value {
+    let mut actions = serde_json::Map::new();
+    for a in KNOWN_ACTIONS {
+        let (params, returns) = action_docs(a);
+        let mut spec = serde_json::Map::new();
+        spec.insert("label".into(), json!(action_label(a)));
+        spec.insert("params".into(), params);
+        spec.insert("returns".into(), json!(returns));
+        if is_destructive(a) {
+            spec.insert("note".into(), json!(PLUGIN_DENY_NOTE));
+        }
+        actions.insert((*a).to_string(), Value::Object(spec));
+    }
+    Value::Object(actions)
+}
+
 pub struct GitCapability;
 
 impl Capability for GitCapability {
@@ -504,25 +991,22 @@ impl Capability for GitCapability {
     }
 
     fn describe(&self) -> Value {
-        json!({
-            "summary": "Git 域动作入口：状态/差异/提交/分支/远程/标签/stash/blame 读写（完整动作清单见 plans/git-panel-p0-spec.md）",
-            "actions": {
-                "get_status":   { "params": { "workspacePath": "string" }, "returns": "GitRepositoryStatus(camels)" },
-                "get_diffs":    { "params": { "workspacePath": "string", "baseCommit": "string" } },
-                "get_log":      { "params": { "workspacePath": "string", "limit?": "number", "skip?": "number", "branch?": "string" } },
-                "get_log_with_lanes": { "params": { "workspacePath": "string", "limit?": "number", "skip?": "number", "branch?": "string" }, "returns": "GitLogPage(commits+rows)" },
-                "stage_file":   { "params": { "workspacePath": "string", "filePath": "string" }, "note": "写类动作，Plugin 来源在 PR-2a 矩阵落地前被拒" },
-                "commit_changes":{ "params": { "workspacePath": "string", "message": "string", "stageAll?": "bool", "selectedFiles?": "string[]" } },
-                "undo_list":    { "params": { "workspacePath": "string" }, "returns": "UndoSnapshotMeta[]", "note": "FR-P2-3 快照列表（危险操作自动留存，倒序）" },
-                "undo_restore": { "params": { "workspacePath": "string", "snapshotRef": "string" }, "returns": "UndoRestoreOutcome", "note": "FR-P2-3 一键恢复（stash apply / 重建被删分支 ref）" },
-                "undo_drop":    { "params": { "workspacePath": "string", "snapshotRef": "string" }, "note": "FR-P2-3 手动清理快照（连同 .restore. note）" },
-                "get_operations": { "params": { "workspacePath": "string" }, "returns": "GitOperationEntry[]", "note": "FR-P2-4 操作流水（写动作留痕，倒序，上限 50/ws）" },
-                "clear_operations": { "params": { "workspacePath": "string" }, "note": "FR-P2-4 清空本 ws 操作流水（写类动作）" },
-                "predict_conflicts": { "params": { "workspacePath": "string", "branch?": "string" }, "returns": "GitConflictPrediction", "note": "FR-P2-AI4 冲突预测（fetch 后确定性风险清单，0 token；AI 解释层已砍，仅规则建议）" },
-                "...": "其余动作与旧 git_* 命令一一对应（action=去前缀命令名）"
-            },
-            "note": "PR-2a 形态：直调 GitService（命令层已摘除）；casing 维持 camelCase 现状（裁决 3）。写路径经 polaris-gate-queue FIFO 队列闸（写 max=1，票号公平）；错误通道带结构化 marker（router 拆包进 Reply.errorDetail）。取消分级：排队未开始可撤单（前端入口未接线），执行中的写不承诺半途取消。"
-        })
+        // 2026-10-25 审计归一：summary 不再指向 plans/git-panel-p0-spec.md（AI 经
+        // MCP 无该文件读取通道，且该文件并无动作清单——指针双向断裂）；全量动作
+        // 清单即本 describe 的 actions（与 KNOWN_ACTIONS 常量同源生成，加动作自动跟随）。
+        let summary = format!(
+            "Git 仓库域唯一动作入口：{} 个动作覆盖仓库发现/状态/差异/日志/分支/标签/远程/stash/blame/撤销快照/冲突域的读写；action = 去 git_ 前缀命令名，camelCase 参数原样透传（全量清单即 actions，与源码 KNOWN_ACTIONS 同源）",
+            KNOWN_ACTIONS.len()
+        );
+        crate::contracts::standard_describe(
+            GIT_CAP_ID,
+            "Git 仓库域",
+            &summary,
+            Some(
+                "直调 GitService（命令层已整域摘除）；workspacePath 为 git 仓库目录绝对路径（无需在 Polaris 注册）。写路径经 polaris-gate-queue FIFO 队列闸（写 max=1，票号公平）；取消分级：排队未开始可撤单（前端入口未接线），执行中的写不承诺半途取消。错误通道带结构化 marker（router 拆包进 Reply.errorDetail）。标注「写类动作」的动作对 Plugin（AI/插件）来源一律拒绝（不存在确认后重试通道），仅本地面板（Bootstrap/Remote）可调。",
+            ),
+            describe_actions(),
+        )
     }
 
     fn invoke(&self, params: Value, ctx: &dyn Context) -> Result<Value, String> {
@@ -547,7 +1031,8 @@ impl Capability for GitCapability {
         let a: &str = if action == "get_stash_list" { "stash_list" } else { action.as_str() };
 
         if !KNOWN_ACTIONS.contains(&a) {
-            return Err(format!("Unknown cap.git action: {}", action));
+            // 错误即文档：列出合法动作全集 + cap.help 发现入口（AI 可据文案自纠）
+            return Err(unsupported_git_action(&action));
         }
 
         // 写 max=1（裁决 8）：破坏性（写类）动作全局 FIFO 串联，读动作不受影响。
@@ -989,7 +1474,7 @@ impl Capability for GitCapability {
             _ => {
                 let _ = a;
                 // KNOWN_ACTIONS 守卫已在前拦截；此臂仅兜底 match 穷尽性
-                Err(format!("Unknown cap.git action: {}", action))
+                Err(unsupported_git_action(&action))
             }
             }
         })();
@@ -1057,6 +1542,49 @@ mod tests {
         known.sort();
         handled.sort();
         assert_eq!(known, handled, "KNOWN_ACTIONS 与 invoke match 分支失同步 —— 新动作需两处同改");
+    }
+
+    /// describe 契约巡逻（2026-10-25 审计）：standard_describe 标准形状
+    /// （validate_describe 零违例）+ 动作键与 KNOWN_ACTIONS 全集一致
+    /// （全量化：多一个幽灵动作 / 少一个漏登都失败，杜绝 "..." 占位）。
+    #[test]
+    fn describe_contract() {
+        let d = GitCapability.describe();
+        let problems = crate::contracts::validate_describe(GIT_CAP_ID, &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        let actions = d.get("actions").and_then(|v| v.as_object()).unwrap();
+        let mut declared: Vec<&str> = actions.keys().map(String::as_str).collect();
+        declared.sort_unstable();
+        let mut known = KNOWN_ACTIONS.to_vec();
+        known.sort_unstable();
+        assert_eq!(declared, known, "describe actions 与 KNOWN_ACTIONS 失同步");
+
+        // 每动作：中文说明非空（不落 action_label 兜底）；写类动作必带 Plugin 拒绝 note
+        for a in KNOWN_ACTIONS {
+            let spec = &actions[*a];
+            assert!(
+                !spec["label"].as_str().unwrap_or_default().is_empty(),
+                "动作 {a} 缺中文说明"
+            );
+            assert!(spec["params"].is_object(), "动作 {a} params 非对象");
+            assert!(spec["returns"].is_string(), "动作 {a} returns 非字符串");
+            if is_destructive(a) {
+                let note = spec["note"].as_str().unwrap_or_default();
+                assert!(note.contains("Plugin"), "写类动作 {a} 缺 Plugin 拒绝 note");
+            }
+        }
+    }
+
+    /// 未知动作错误文案可自纠：列出合法动作（含 stash_list 别名）+ cap.help 发现入口。
+    /// 用审计点名的幽灵动作 diff 作反例（KNOWN_ACTIONS 无裸 diff，只有 get_diffs 家族）。
+    #[test]
+    fn unsupported_action_lists_known_actions_and_help_entry() {
+        let msg = unsupported_git_action("diff");
+        assert!(msg.contains("不支持动作: diff"), "实际: {msg}");
+        assert!(msg.contains("get_diffs"), "实际: {msg}");
+        assert!(msg.contains("get_stash_list"), "别名也应列出，实际: {msg}");
+        assert!(msg.contains("cap.help show target=cap.git"), "实际: {msg}");
     }
 
     /// alias：get_stash_list 归一为 stash_list（均为只读，不在破坏性名单）

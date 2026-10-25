@@ -21,7 +21,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{json, Value};
 
-use crate::contracts::{Capability, CapabilityId, Context};
+use crate::contracts::{standard_describe, unsupported_action, Capability, CapabilityId, Context};
 use crate::services::data_root::{data_root, dir_stats};
 use crate::services::router::RouterBus;
 
@@ -213,16 +213,21 @@ impl Capability for SelfInspectCapability {
     }
 
     fn describe(&self) -> Value {
-        json!({
-            "summary": "自身管理·透视：运行状态 / 存储占用 / 能力索引 / 健康自检（只读）",
-            "note": "AI 看清 Polaris 全貌：一次调用即获运行聚合，复用 cap.help / cap.data_root 同源数据。纯只读，无清理能力。",
-            "actions": {
-                "status": { "params": {}, "returns": "{ version, uptimeSec, dataRoot, capabilityCount, os, arch }" },
-                "diskUsage": { "params": {}, "returns": "{ dataRootBytes, dataRootFiles, subdirs[], largestSubdir }" },
-                "capabilities": { "params": {}, "returns": "{ total, bySource: { builtin, dynamic, streaming }, dynamicDetails[] }" },
-                "health": { "params": {}, "returns": "{ ok, checks: { dataRootReadable, configDirReadable, auditChain } }" }
-            }
-        })
+        // 2026-10-25 审计归一：status 补 dataRootIsCustom、capabilities 补
+        // streamingCount/builtinCount/dynamicCount（实现实际返回的计数字段，
+        // 此前 returns 声明漏记）；本能力四动作均为同步执行的真实结果（非转发）。
+        standard_describe(
+            "cap.self.inspect",
+            "自身透视",
+            "自身管理·透视：运行状态 / 存储占用 / 能力索引 / 健康自检（一次调用即获运行聚合）",
+            Some("纯只读，无清理能力；复用 cap.help / cap.data_root 同源数据。四动作均无参数，同步返回真实结果（非转发声明）。"),
+            json!({
+                "status": { "params": {}, "returns": "{ version, uptimeSec, dataRoot, dataRootIsCustom, capabilityCount, os, arch }" },
+                "diskUsage": { "params": {}, "returns": "{ dataRootBytes, dataRootFiles, subdirs: [{ name, sizeBytes, fileCount }], largestSubdir: { name, sizeBytes } | null }" },
+                "capabilities": { "params": {}, "returns": "{ total, streamingCount, builtinCount, dynamicCount, bySource: { builtin[], dynamic[], streaming[] }, dynamicDetails: [{ id, summary }] }" },
+                "health": { "params": {}, "returns": "{ ok, checks: { dataRootReadable, configDirReadable, auditChain: { ok, detail } } }" }
+            }),
+        )
     }
 
     fn invoke(&self, params: Value, _ctx: &dyn Context) -> Result<Value, String> {
@@ -236,7 +241,11 @@ impl Capability for SelfInspectCapability {
             "diskUsage" => Ok(self.disk_usage()),
             "capabilities" => Ok(self.capabilities()),
             "health" => Ok(self.health()),
-            other => Err(format!("cap.self.inspect 不支持动作: {}", other)),
+            other => Err(unsupported_action(
+                "cap.self.inspect",
+                other,
+                &["status", "diskUsage", "capabilities", "health"],
+            )),
         }
     }
 
@@ -362,5 +371,37 @@ mod tests {
     fn unknown_action_rejected() {
         let cap = SelfInspectCapability::new(make_bus());
         assert!(cap.invoke(json!({ "action": "nope" }), &ctx()).is_err());
+    }
+
+    /// describe 契约测试：标准形状 + returns 补齐实现实际返回的字段
+    /// （审计 paramDrift：status 漏 dataRootIsCustom、capabilities 漏三个计数字段）
+    #[test]
+    fn describe_contract() {
+        use crate::contracts::validate_describe;
+
+        let cap = SelfInspectCapability::new(make_bus());
+        let d = cap.describe();
+        let problems = validate_describe("cap.self.inspect", &d);
+        assert!(problems.is_empty(), "describe 契约违例: {problems:?}");
+
+        const ACTIONS: [&str; 4] = ["status", "diskUsage", "capabilities", "health"];
+        for action in ACTIONS {
+            assert!(d["actions"].get(action).is_some(), "describe 缺动作 {action}");
+        }
+        // status returns 含 dataRootIsCustom；capabilities returns 含三个计数字段
+        let status_returns = d["actions"]["status"]["returns"].as_str().unwrap();
+        assert!(status_returns.contains("dataRootIsCustom"), "{status_returns}");
+        let caps_returns = d["actions"]["capabilities"]["returns"].as_str().unwrap();
+        for field in ["streamingCount", "builtinCount", "dynamicCount"] {
+            assert!(caps_returns.contains(field), "capabilities returns 缺 {field}");
+        }
+        // 未知动作错误自纠文案列出全部合法动作
+        let err = cap
+            .invoke(json!({ "action": "nope" }), &ctx())
+            .unwrap_err();
+        for action in ACTIONS {
+            assert!(err.contains(action), "错误文案缺合法动作 {action}: {err}");
+        }
+        assert!(err.contains("cap.help show target=cap.self.inspect"), "{err}");
     }
 }
