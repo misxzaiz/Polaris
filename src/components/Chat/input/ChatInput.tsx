@@ -67,7 +67,7 @@ import {
   type CliCommandSuggestion,
 } from '@/services/cliSlashCommands'
 import { tryHandleSlashCommand } from './chatCommandRouter'
-import { matchCaps } from '@/services/capSlashCommand'
+import { buildCapDetailBlock, buildCapDigestBlock, matchCaps } from '@/services/capSlashCommand'
 import { useCapCatalogStore } from '@/stores/capCatalogStore'
 import {
   appendPromptHistoryEntry,
@@ -1189,10 +1189,28 @@ export function ChatInput({
       applySlashReplacement(`mcp-${mcp.id} `)
       return
     } else if (item.type === 'cap') {
-      // /cap 能力条目：整 token 替换为 `/cap <id> `（命令项 id 为空 → 仅 `/cap `），
-      // 空格后由 /cap 参数补全分支继续接管（中文短名过滤）
+      // /cap 条目：选中即展开注入块（与片段同模式，所见即所发，可继续编辑正文）。
+      // 不能走 replaceSlashToken——/cap <查询> 是双 token（命令+参数），
+      // 单 token 正则 \S*$ 匹配不上会静默不替换（2026-10-25 用户实测缺陷）；
+      // /cap 恒在消息首，仿 agent 分支做整条前缀替换。
+      // 目录未就绪时退回 `/cap ...` 命令文本，发送时由 chatCommandRouter 兜底展开。
       const cap = item.data as CapSuggestion
-      applySlashReplacement(cap.id ? `/cap ${cap.id} ` : '/cap ')
+      const state = useCapCatalogStore.getState()
+      const entry = cap.id ? state.caps.find(c => c.id === cap.id) : undefined
+      const expanded = entry
+        ? buildCapDetailBlock(entry)
+        : (!cap.id && state.caps.length > 0 ? buildCapDigestBlock(state.caps) : null)
+      const prefix = expanded ?? (cap.id ? `/cap ${cap.id} ` : '/cap ')
+      const replaced = prefix + textAfterCursor
+      setLocalText(replaced)
+      updateInputDraft({ text: replaced, attachments, contextBlocks: contextBlocksRef.current })
+      setShowSuggestions(false)
+      setSuggestionItems([])
+      setTimeout(() => {
+        textarea.focus()
+        const cursor = prefix.length
+        textarea.setSelectionRange(cursor, cursor)
+      }, 0)
       return
     } else if (item.type === 'conversation') {
       // @对话 引用：加载源消息 → packForReference 落盘 → 把 @对话 替换为 @path（复用现有 @path 注入链）
