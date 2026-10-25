@@ -1,6 +1,6 @@
 # SimpleAI 提示词缓存命中率修复方案
 
-> 状态：**已实施，待线上样本验证**（2026-10-20）
+> 状态：**已实施；§9 取证修正——缓存实际已 ~99% 命中，线上 50% 为统计假象，解析 bug 已修**（2026-10-25）
 > 范围：`src-tauri/src/ai/engine/simple_ai_protocol.rs`（协议转换层）+ 2 个调用点
 > 前置分析：同模型的 SimpleAI 引擎缓存命中率约 50%，Claude CLI 路径约 96%
 > 实际收益：消除命中率的随机抖动（0%~70% → 稳定），稳定水位随规模变化（24k≈99%、70.7k≈69%）
@@ -271,3 +271,58 @@ GROUP BY engine_id, model ORDER BY n DESC;
 
 网关直连探测（A/B 组）：`http://localhost:9850/v1/messages`，`anthropic-version: 2023-06-01`。
 响应侧字段名：`usage.input_tokens` / `usage.cache_read_input_tokens` / `usage.cache_creation_input_tokens`。
+
+---
+
+## 9. 追加取证：50% 是统计假象，真实命中率 ~99%（2026-10-25）
+
+§5.2 实施后，usage.db 里 simple-ai（deepseek-v4-flash）命中率连续 8 天钉在 **50.2%~50.7%**
+（每天 n=125~2898），一度让人以为断点修复无效。本轮受控取证证明：**缓存实际一直在 ~97-99%
+命中，50% 是 Polaris 流式 usage 解析把两个口径的数字混用造成的假象**。解析 bug 已修。
+
+### 9.1 排除过程（受控重放，合成请求直打网关）
+
+1. **双计假设证伪**：合成纯文本请求 1k→120k 梯度，上游报告的 `input_tokens` 与
+   tiktoken(o200k) 真实计数 **1.00~1.08 倍吻合**，任何尺寸均无放大。纯文本 47k
+   请求重复发送命中 47104/47111（99.99%）。
+2. **网关 key 轮换假设证伪**：网关（CLIProxyAPI 8.0.38）sensenova provider 4 个
+   upstream key 逐请求轮换（`routing.strategy=round-robin`、`session-affinity=false`，
+   此时源码确认不装粘性选择器）。但 ① claude 会话混用 sk-3/sk-b 仍 97-99%；
+   ② SimpleAI 同轮 15 个请求逐一对齐 key，每个 key 都 ~51%；③ 相邻请求（不同 key）
+   的 cache_read 几乎相同——**上游缓存内容寻址、4 key 共享，轮换不伤命中**。
+   claude 引擎之所以显示 95%+，是其用量经 Claude CLI 自身换算（口径正确）。
+3. **带工具时的缓存规则**（对断点方案的补充证据）：带 tools 的请求，缓存只覆盖到
+   最后一个 `cache_control` 断点；无断点的区段不进缓存（对照：纯文本无断点自动全量缓存，
+   47k 重复 99.99%）。这解释了为何「断点方案」对本链路是必要而非可选。
+
+### 9.2 根因：message_start 与 message_delta 的 input_tokens 双口径
+
+实测同一体流式重复（CLIProxyAPI→sensenova）：
+
+```
+message_start.usage = { input_tokens: 41087 }                          ← 预估/未结算值
+message_delta.usage = { input_tokens: 167, cache_read_input_tokens: 45312 } ← 修正后的最终值
+```
+
+修复前的解析（`simple_ai_protocol.rs` 的 `feed_anthropic`）：`cache_read` 按「后到覆盖」
+取 delta 值 ✓，但 `input_tokens` 只取 message_start 值、从不被 delta 修正 ✗。两个口径
+混用后：真实未命中 167、真实命中 45312（99.6%），被记成 41087/(41087+45312) ≈ 52%。
+
+用真实流量复核（该网关 start 预估值 ≈ 真实 prompt − ~4.4k 恒差）：例如
+`in=62677, rd=67072` → 62677+4392 ≈ 67069 ≈ rd，即该请求**实际全命中**；
+而 `rd=0` 的行（如 10:53:23）是真未命中。8 天恒定 50.x%、§5.1 中「70.7k 稳定 69%」
+与「24k 稳定 99%」的规模矛盾，均由此口径混用解释。
+
+### 9.3 修复
+
+`message_delta` 携带 `usage.input_tokens` 时覆盖 start 值（与 cache 字段同策略；
+Anthropic 官方 API 的 delta 不带该字段，行为不变）。新增单测
+`anthropic_delta_input_tokens_overrides_start_estimate` 复刻实测序列。
+
+### 9.4 结论修正
+
+- 断点方案（b66b2128）**实际有效**：修复线上真实命中率 ~97-99%。
+- usage.db / ContextMeter / TokenStats 中 simple-ai 的历史 50% 数据为统计假象，
+  修复后新数据以 delta 口径为准（与 claude 引擎口径一致）。
+- 历史数据无法事后校正（usage.db 只存了混用口径的 input）；如需回溯，可按
+  `hit = rd/(rd+input+4392)` 近似还原（该网关经验值，仅供粗估）。

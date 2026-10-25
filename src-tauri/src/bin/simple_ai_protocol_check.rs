@@ -86,6 +86,28 @@ fn main() {
     assert_eq!(u.cache_read, 0, "anthropic cache_read omitted -> 0");
     assert_eq!(u.cache_creation, 0, "anthropic cache_creation omitted -> 0");
 
+    // Anthropic：delta 回带修正后的 input_tokens（CLIProxyAPI→sensenova 实测形态：
+    // start 为预估/未结算值，delta 为最终值）。不覆盖会把 99.6% 真实命中统计成 ~52%
+    // （docs/simpleai-prompt-cache-breakpoints-plan.md §9）。
+    let mut s = StreamState::new(WireProtocol::Anthropic);
+    s.feed(&json!({
+        "type": "message_start",
+        "message": { "usage": { "input_tokens": 41087 } }
+    }));
+    s.feed(&json!({
+        "type": "message_delta",
+        "usage": {
+            "input_tokens": 167,
+            "output_tokens": 64,
+            "cache_read_input_tokens": 45312
+        }
+    }));
+    let u = s.finish_usage().expect("anthropic delta-corrected usage");
+    assert_eq!(u.input_tokens, 167, "delta input_tokens overrides start estimate");
+    assert_eq!(u.output_tokens, 64, "delta output");
+    assert_eq!(u.cache_read, 45312, "delta cache_read");
+    assert_eq!(u.total_tokens, 231, "total from corrected input");
+
     // Responses：缓存读取 + 实际模型。
     let mut s = StreamState::new(WireProtocol::Responses);
     s.feed(&json!({
@@ -119,5 +141,5 @@ fn main() {
         eprintln!("{} 项断言失败", failures);
         std::process::exit(1);
     }
-    println!("simple_ai_protocol usage/cache/model 解析验证通过 (7 组)");
+    println!("simple_ai_protocol usage/cache/model 解析验证通过 (8 组)");
 }

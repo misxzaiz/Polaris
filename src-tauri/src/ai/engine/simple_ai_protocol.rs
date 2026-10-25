@@ -780,7 +780,8 @@ pub enum StreamDelta {
 /// - Anthropic：`message_start.message.usage.input_tokens` +
 ///   `message_delta.usage.output_tokens`（分两次累积）；缓存字段
 ///   `cache_creation_input_tokens` / `cache_read_input_tokens` 在 start/delta
-///   的 usage 中按需出现，后到覆盖先到。
+///   的 usage 中按需出现，后到覆盖先到。部分网关的 delta 还会回带修正后的
+///   `input_tokens`（start 值为预估），同样后到覆盖，避免口径混用。
 /// - Responses：`response.completed.response.usage`，缓存读取取
 ///   `input_tokens_details.cached_tokens`。
 #[derive(Debug, Default, Clone, Copy)]
@@ -1055,6 +1056,16 @@ impl StreamState {
                     .unwrap_or(0);
                 let mut usage = self.usage.unwrap_or_default();
                 usage.output_tokens = output;
+                // 部分网关（实测 CLIProxyAPI→sensenova 链路）在 message_delta.usage
+                // 回带**修正后的 input_tokens**——message_start 里的是预估/未结算值。
+                // 若不覆盖，input（start 口径）与 cache_read（delta 口径）混用，
+                // 会把 ~99% 的真实缓存命中率统计成 ~50% 的假象
+                // （取证记录见 docs/simpleai-prompt-cache-breakpoints-plan.md §9）。
+                // 与下方缓存字段同策略：delta 携带即覆盖，未携带保持 start 值
+                // （Anthropic 官方 API 的 delta 不带 input_tokens，行为不变）。
+                if let Some(i) = chunk.pointer("/usage/input_tokens").and_then(|v| v.as_u64()) {
+                    usage.input_tokens = i;
+                }
                 usage.total_tokens = usage.input_tokens + usage.output_tokens;
                 // 部分端点把 cache_read/cache_creation 放在 message_delta.usage
                 // （而非 message_start），同样覆盖式累积。
@@ -1442,6 +1453,35 @@ mod tests {
         assert_eq!(final_usage.total_tokens, 280);
         assert_eq!(final_usage.cache_creation, 100);
         assert_eq!(final_usage.cache_read, 60);
+    }
+
+    #[test]
+    fn anthropic_delta_input_tokens_overrides_start_estimate() {
+        // 实测 CLIProxyAPI→sensenova 链路：message_start.usage.input_tokens 为
+        // 预估/未结算值（41087），message_delta.usage 回带修正后的 input_tokens
+        // （167）与 cache_read。若不覆盖，167 的真实未命中会被记成 41087，
+        // 命中率从 99.6% 失真为 ~52%
+        // （见 docs/simpleai-prompt-cache-breakpoints-plan.md §9）。
+        let mut s = StreamState::new(WireProtocol::Anthropic);
+        let start = json!({
+            "type": "message_start",
+            "message": { "usage": { "input_tokens": 41087 } }
+        });
+        let _ = s.feed(&start);
+        let delta = json!({
+            "type": "message_delta",
+            "usage": {
+                "input_tokens": 167,
+                "output_tokens": 64,
+                "cache_read_input_tokens": 45312
+            }
+        });
+        let _ = s.feed(&delta);
+        let usage = s.finish_usage().expect("usage");
+        assert_eq!(usage.input_tokens, 167);
+        assert_eq!(usage.output_tokens, 64);
+        assert_eq!(usage.cache_read, 45312);
+        assert_eq!(usage.total_tokens, 231);
     }
 
     #[test]
